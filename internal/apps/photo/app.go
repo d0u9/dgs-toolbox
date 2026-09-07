@@ -18,7 +18,7 @@ func New() tui.App {
 				Name:        "Import",
 				Description: "Photo import placeholder. No files are changed.",
 				New: func() tui.CommandModel {
-					return placeholder.New("Photo Import")
+					return newImportModel()
 				},
 			},
 			{

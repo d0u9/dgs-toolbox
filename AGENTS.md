@@ -6,6 +6,8 @@ Build a small Go demo to settle the CLI and TUI structure for `dgs`.
 
 Use Photo and GPX as demo domains. Do not implement real photo or GPX behavior yet.
 
+Shared interface decisions live in [`docs/tui.md`](docs/tui.md). Read it before changing any TUI or interactive command flow. Component-specific documents are linked from that shared design, including the File Explorer specification at [`docs/file-explorer.md`](docs/file-explorer.md); follow the links relevant to the component being changed. Update design documents incrementally only when a decision is confirmed, and do not fill undecided sections speculatively. Photo Import is currently the first concrete example, not the owner of the shared design language.
+
 ## Technology
 
 - Go
@@ -98,4 +100,3 @@ Implement only enough to demonstrate:
 Do not implement real importing, encoding, file operations, databases, persistence, background tasks, plugin loading, or speculative shared infrastructure.
 
 Stop after the demo works so the interaction design can be reviewed before adding more rules.
-

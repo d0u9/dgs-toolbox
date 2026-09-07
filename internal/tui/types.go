@@ -15,6 +15,12 @@ type CommandModel interface {
 	Status() Status
 }
 
+// ShellKeyCapturer lets a command retain keys that normally belong to the
+// shell. Text editors use this so q is text and Esc cancels editing.
+type ShellKeyCapturer interface {
+	CapturesShellKey(key string) bool
+}
+
 // Command describes a leaf command and creates a fresh model each time it is
 // selected.
 type Command struct {
