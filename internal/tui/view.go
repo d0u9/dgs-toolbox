@@ -80,7 +80,7 @@ func (m Model) pickerView(width, height int) string {
 	}
 	if m.pickerHelp {
 		content := pickerTitleStyle.Render("PICKER HELP") + "\n\n" +
-			mutedStyle.Render("↑/↓ select  •  enter open  •  esc exit  •  q quit")
+			mutedStyle.Render("↑/k ↓/j select  •  enter open  •  esc exit  •  q quit")
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
 	}
 
@@ -120,9 +120,9 @@ func (m Model) statusBar(width int) string {
 		status = Status{Left: "CONFIRM", Center: "QUIT DGS?", Right: "y Quit  n/esc Cancel"}
 	}
 
-	leftWidth := width / 3
-	rightWidth := width / 3
-	centerWidth := width - leftWidth - rightWidth
+	leftWidth := width / 5
+	centerWidth := width * 3 / 10
+	rightWidth := width - leftWidth - centerWidth
 	left := placeText(status.Left, leftWidth, lipgloss.Left)
 	center := placeText(status.Center, centerWidth, lipgloss.Center)
 	right := placeText(status.Right, rightWidth, lipgloss.Right)
@@ -139,7 +139,7 @@ func (m Model) pickerStatus() Status {
 	if m.pickerHelp {
 		return Status{Left: "PICKER", Center: context, Right: "? Close  esc Exit  q Quit"}
 	}
-	return Status{Left: "PICKER", Center: context, Right: "↑↓ Move  ↵ Open  q Quit"}
+	return Status{Left: "PICKER", Center: context, Right: "↑/k ↓/j Move  ↵ Open  q Quit"}
 }
 
 func (m Model) breadcrumb() string {
@@ -147,12 +147,12 @@ func (m Model) breadcrumb() string {
 	if m.active != nil {
 		app := m.apps[m.activeApp]
 		command := app.Commands[m.activeCommand]
-		return strings.Join(append(parts, app.Name, command.Name), " / ")
+		return strings.Join(append(parts, app.ID, command.ID), " › ")
 	}
 	if m.pickerApp >= 0 {
-		parts = append(parts, m.apps[m.pickerApp].Name)
+		parts = append(parts, m.apps[m.pickerApp].ID)
 	}
-	return strings.Join(append(parts, "commands"), " / ")
+	return strings.Join(append(parts, "commands"), " › ")
 }
 
 func joinLeftRight(left, right string, width int) string {

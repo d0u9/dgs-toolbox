@@ -10,10 +10,12 @@ import (
 )
 
 type stubCommand struct {
-	label  string
-	width  int
-	height int
-	help   bool
+	label     string
+	width     int
+	height    int
+	help      bool
+	captureQ  bool
+	capturedQ bool
 }
 
 func (m stubCommand) Init() tea.Cmd { return nil }
@@ -25,6 +27,9 @@ func (m stubCommand) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if msg.String() == "?" {
 			m.help = !m.help
+		}
+		if msg.String() == "q" && m.captureQ {
+			m.capturedQ = true
 		}
 	}
 	return m, nil
@@ -40,6 +45,10 @@ func (m stubCommand) View() string {
 
 func (m stubCommand) Status() Status {
 	return Status{Left: "ACTIVE", Center: m.label, Right: "? Help  esc Back"}
+}
+
+func (m stubCommand) CapturesShellKey(key string) bool {
+	return m.captureQ && key == "q"
 }
 
 func newStub(label string) func() CommandModel {
@@ -71,7 +80,7 @@ func TestGlobalPickerStartsLeafAndReturns(t *testing.T) {
 	if m.active == nil || !strings.Contains(m.View(), "PHOTO ENCODE") {
 		t.Fatalf("selected command did not replace picker:\n%s", m.View())
 	}
-	if !strings.Contains(m.View(), "dgs / Photo / Encode") {
+	if !strings.Contains(m.View(), "dgs › photo › encode") {
 		t.Fatalf("active command breadcrumb missing:\n%s", m.View())
 	}
 
@@ -79,6 +88,18 @@ func TestGlobalPickerStartsLeafAndReturns(t *testing.T) {
 	m = updated.(Model)
 	if cmd != nil || m.active != nil || !strings.Contains(m.View(), "CHOOSE A COMMAND") {
 		t.Fatalf("escape did not return to global picker:\n%s", m.View())
+	}
+}
+
+func TestCommandPickerSupportsVimVerticalNavigation(t *testing.T) {
+	m := NewModel(testApps, Launch{})
+	m = update(t, m, "j")
+	if m.selected != 1 {
+		t.Fatalf("j selected index %d, want 1", m.selected)
+	}
+	m = update(t, m, "k")
+	if m.selected != 0 {
+		t.Fatalf("k selected index %d, want 0", m.selected)
 	}
 }
 
@@ -110,7 +131,7 @@ func TestDomainPickerIsScoped(t *testing.T) {
 			t.Fatalf("domain picker contains app index %d, want 1", choice.appIndex)
 		}
 	}
-	if !strings.Contains(m.View(), "dgs / GPX / commands") {
+	if !strings.Contains(m.View(), "dgs › gpx › commands") {
 		t.Fatalf("domain picker breadcrumb missing:\n%s", m.View())
 	}
 }
@@ -126,7 +147,7 @@ func TestDirectCommandEscapeReturnsToParentPickerThenConfirmsExit(t *testing.T) 
 	if cmd != nil || m.active != nil {
 		t.Fatal("first escape should return to the parent picker")
 	}
-	if !strings.Contains(m.View(), "dgs / Photo / commands") {
+	if !strings.Contains(m.View(), "dgs › photo › commands") {
 		t.Fatalf("parent picker breadcrumb missing:\n%s", m.View())
 	}
 
@@ -150,6 +171,20 @@ func TestQuitConfirmationCanBeCancelledWithoutDiscardingCommand(t *testing.T) {
 	m = update(t, m, "n")
 	if m.confirmQuit || m.active == nil || !strings.Contains(m.View(), "GPX INSPECT") {
 		t.Fatalf("cancel should resume the active command:\n%s", m.View())
+	}
+}
+
+func TestActiveTextEditorCanCaptureQFromShell(t *testing.T) {
+	apps := []App{{ID: "photo", Name: "Photo", Commands: []Command{{
+		ID: "import", Name: "Import", New: func() CommandModel {
+			return stubCommand{label: "PHOTO IMPORT", captureQ: true}
+		},
+	}}}}
+	m := NewModel(apps, Launch{App: "photo", Command: "import"})
+	m = update(t, m, "q")
+	active := m.active.(stubCommand)
+	if m.confirmQuit || !active.capturedQ {
+		t.Fatal("captured q should reach the editor without opening quit confirmation")
 	}
 }
 

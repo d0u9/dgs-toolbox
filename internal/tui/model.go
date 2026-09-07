@@ -110,6 +110,11 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.active != nil {
+		if capturer, ok := m.active.(ShellKeyCapturer); ok && capturer.CapturesShellKey(key) {
+			return m.forwardToActive(msg)
+		}
+	}
 	if key == "q" {
 		m.confirmQuit = true
 		return m, nil
