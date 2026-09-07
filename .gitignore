@@ -1,0 +1,35 @@
+# Operating-system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editor and temporary files
+*~
+*.swp
+*.swo
+*.tmp
+*.temp
+
+# Go build outputs
+/bin/
+/dgs
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go test, coverage, profiling, and tracing outputs
+*.out
+coverage.*
+*.coverprofile
+*.prof
+cpu.out
+mem.out
+trace.out
+testdata
