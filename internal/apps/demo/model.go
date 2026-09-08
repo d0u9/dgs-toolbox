@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"dgs-toolbox/internal/tui"
+	"dgs-toolbox/internal/tui/confirm"
 	"dgs-toolbox/internal/tui/datafield"
 	"dgs-toolbox/internal/tui/divider"
 	"dgs-toolbox/internal/tui/fieldset"
@@ -36,13 +37,15 @@ var (
 )
 
 type model struct {
-	controls form.Model
-	fields   datafield.Navigator
-	picker   fileexplorer.Model
-	picking  bool
-	width    int
-	height   int
-	event    string
+	controls     form.Model
+	fields       datafield.Navigator
+	picker       fileexplorer.Model
+	picking      bool
+	confirming   bool
+	confirmation confirm.Model
+	width        int
+	height       int
+	event        string
 }
 
 func newModel() tui.CommandModel {
@@ -101,6 +104,9 @@ func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		m.picker, _, cmd = m.picker.Update(msg)
 		return m, cmd
 	}
+	if m.confirming {
+		return m, nil
+	}
 	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
 		return m, nil
 	}
@@ -139,7 +145,7 @@ func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			case pathID:
 				return m.openPicker()
 			case buttonID:
-				m.event = "Demo action triggered — no side effects"
+				m.openConfirmation()
 			}
 			break
 		}
@@ -177,6 +183,19 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
+	if m.confirming {
+		var decision confirm.Decision
+		m.confirmation, decision = m.confirmation.Update(key)
+		switch decision {
+		case confirm.Confirmed:
+			m.event = "Confirmation accepted — no side effects"
+			m.confirming = false
+		case confirm.Cancelled:
+			m.event = "Confirmation cancelled"
+			m.confirming = false
+		}
+		return m, nil
+	}
 	if m.fields.Move(key) {
 		m.syncControlFocus()
 		return m, nil
@@ -193,13 +212,24 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case pathID:
 			return m.openPicker()
 		case buttonID:
-			m.event = "Demo action triggered — no side effects"
+			m.openConfirmation()
 		}
 	}
 	if key == form.PrimaryActionKey {
-		m.event = "Demo action triggered — no side effects"
+		m.openConfirmation()
 	}
 	return m, nil
+}
+
+func (m *model) openConfirmation() {
+	m.confirmation = confirm.New(confirm.Config{
+		Title:        "RUN DEMO ACTION?",
+		Message:      "This demonstrates the reusable confirmation dialog.",
+		Detail:       "The demo never changes files.",
+		ConfirmLabel: "Run",
+		CancelLabel:  "No",
+	})
+	m.confirming = true
 }
 
 func (m model) activeControlIDs() []string {
@@ -251,6 +281,9 @@ func (m model) View() string {
 	if m.picking {
 		return overlay.Place(workspace, m.pickerView(), m.width, m.height)
 	}
+	if m.confirming {
+		return overlay.Place(workspace, m.confirmation.View(m.width), m.width, m.height)
+	}
 	return workspace
 }
 
@@ -294,6 +327,9 @@ func (m model) Status() tui.Status {
 		}
 		return tui.Status{Left: "BROWSE", Center: "File Explorer component", Right: m.picker.Hint()}
 	}
+	if m.confirming {
+		return tui.Status{Left: "CONFIRM", Center: "Confirmation dialog component", Right: "tab Switch  enter Select  esc Continue"}
+	}
 	if m.controls.IsActive() {
 		if m.controls.CapturesText() {
 			return tui.Status{Left: "EDIT", Center: "Text input component", Right: "↵ Apply  esc Cancel"}
@@ -304,6 +340,9 @@ func (m model) Status() tui.Status {
 }
 
 func (m model) CapturesShellKey(key string) bool {
+	if m.confirming {
+		return key == "esc" || key == "q" || key == "ctrl+c"
+	}
 	if m.picking {
 		return key == "esc" || (key == "q" && m.picker.CapturesText())
 	}

@@ -192,13 +192,96 @@ func TestImportNavigationMatchesParameterLayout(t *testing.T) {
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	model.controls.SetFocusID(operationID)
-	want := []string{extensionsID, duplicatesID, classifyID, buttonID, operationID}
+	want := []string{extensionsID, duplicatesID, parallelID, classifyID, buttonID, operationID}
 	for _, wantID := range want {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(importModel)
 		if got := model.controls.FocusedID(); got != wantID {
 			t.Fatalf("focused %q, want %q", got, wantID)
 		}
+	}
+}
+
+func TestProcessingPreviewUsesConfiguredWorkersAndLandscapeLayout(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 140, 28
+	model.stage = parameterStage
+	model.scan.source = []scannedFile{{path: "one.JPG", size: 100}, {path: "two.DNG", size: 200}, {path: "three.JPG", size: 300}, {path: "four.DNG", size: 400}}
+	model.configureExtensions()
+	model.controls.SetValue(parallelID, "3")
+	updated, cmd := model.startProcessingPreview()
+	model = updated.(importModel)
+	if cmd == nil || model.stage != processingStage || len(model.processing.workers) != 3 {
+		t.Fatalf("stage=%v workers=%d cmd=%v", model.stage, len(model.processing.workers), cmd != nil)
+	}
+	view := model.View()
+	for _, want := range []string{"NO FILES ARE CHANGED", "Workers", "Next files", "Recent results", "COPYING", "one.JPG", "two.DNG", "["} {
+		if !strings.Contains(view, want) {
+			t.Errorf("processing view missing %q:\n%s", want, view)
+		}
+	}
+	if lipgloss.Width(view) != 140 || lipgloss.Height(view) != 28 {
+		t.Fatalf("processing view size = %dx%d", lipgloss.Width(view), lipgloss.Height(view))
+	}
+	for range 15 {
+		model.advanceProcessingPreview()
+	}
+	if len(model.processing.verified) == 0 {
+		t.Fatal("processing preview did not advance workers")
+	}
+}
+
+func TestProcessingGuardsReturnAndExit(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.stage = processingStage
+	model.processing = processingState{
+		files:   []scannedFile{{path: "one.JPG"}},
+		workers: []processingWorker{{number: 1, file: scannedFile{path: "one.JPG"}, phase: workerCopying}},
+	}
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(importModel)
+	if !model.leaveConfirm || model.leaveExits || model.stage != processingStage {
+		t.Fatalf("Esc did not guard return: confirm=%v exits=%v stage=%v", model.leaveConfirm, model.leaveExits, model.stage)
+	}
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(importModel)
+	if model.leaveConfirm || model.stage != processingStage || cmd == nil {
+		t.Fatalf("cancel did not resume: confirm=%v stage=%v cmd=%v", model.leaveConfirm, model.stage, cmd != nil)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	model = updated.(importModel)
+	if !model.leaveConfirm || !model.leaveExits {
+		t.Fatal("q did not guard application exit")
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(importModel)
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("confirmed exit did not return a quit command")
+	}
+}
+
+func TestProcessingStatusDistinguishesRunningPausedAndComplete(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.stage = processingStage
+	model.processing = processingState{
+		files:   []scannedFile{{path: "one.JPG"}},
+		workers: []processingWorker{{number: 1, file: scannedFile{path: "one.JPG"}, phase: workerCopying}},
+	}
+	if status := model.Status(); status.Left != "PROCESSING · RUNNING" || !strings.Contains(status.Right, "p Pause") {
+		t.Fatalf("running status = %#v", status)
+	}
+	model.processing.paused = true
+	if status := model.Status(); status.Left != "PROCESSING · PAUSED" || !strings.Contains(status.Right, "p Resume") {
+		t.Fatalf("paused status = %#v", status)
+	}
+	model.processing.paused = false
+	model.processing.verified = append(model.processing.verified, model.processing.files[0])
+	model.processing.workers[0].phase = workerDone
+	if status := model.Status(); status.Left != "PROCESSING · COMPLETE" || strings.Contains(status.Right, "p Pause") {
+		t.Fatalf("complete status = %#v", status)
 	}
 }
 
@@ -321,7 +404,7 @@ func TestNextShortcutStartsScanAndOpensParameterScreen(t *testing.T) {
 	}
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	model = updated.(importModel)
-	if model.stage != scanStage || model.Status().Left != "SCANNING" || cmd == nil {
+	if model.stage != scanStage || model.Status().Left != "SCAN · READING" || cmd == nil {
 		t.Fatal("n did not start the scan screen")
 	}
 	if !strings.Contains(model.View(), "Reading source and destination") || !strings.Contains(model.View(), "▐") {

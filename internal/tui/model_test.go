@@ -7,15 +7,18 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type stubCommand struct {
-	label     string
-	width     int
-	height    int
-	help      bool
-	captureQ  bool
-	capturedQ bool
+	label         string
+	width         int
+	height        int
+	help          bool
+	captureQ      bool
+	capturedQ     bool
+	captureCtrlC  bool
+	capturedCtrlC bool
 }
 
 func (m stubCommand) Init() tea.Cmd { return nil }
@@ -30,6 +33,9 @@ func (m stubCommand) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "q" && m.captureQ {
 			m.capturedQ = true
+		}
+		if msg.String() == "ctrl+c" && m.captureCtrlC {
+			m.capturedCtrlC = true
 		}
 	}
 	return m, nil
@@ -48,7 +54,7 @@ func (m stubCommand) Status() Status {
 }
 
 func (m stubCommand) CapturesShellKey(key string) bool {
-	return m.captureQ && key == "q"
+	return (m.captureQ && key == "q") || (m.captureCtrlC && key == "ctrl+c")
 }
 
 func newStub(label string) func() CommandModel {
@@ -218,6 +224,21 @@ func TestActiveTextEditorCanCaptureQFromShell(t *testing.T) {
 	}
 }
 
+func TestActiveWorkCanCaptureCtrlCFromShell(t *testing.T) {
+	apps := []App{{ID: "photo", Name: "Photo", Commands: []Command{{
+		ID: "import", Name: "Import", New: func() CommandModel {
+			return stubCommand{label: "PHOTO IMPORT", captureCtrlC: true}
+		},
+	}}}}
+	m := NewModel(apps, Launch{App: "photo", Command: "import"})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = updated.(Model)
+	active := m.active.(stubCommand)
+	if cmd != nil || !active.capturedCtrlC {
+		t.Fatal("captured ctrl+c should reach active work without quitting")
+	}
+}
+
 func TestHelpIsContextual(t *testing.T) {
 	m := NewModel(testApps, Launch{})
 	m = update(t, m, "?")
@@ -265,6 +286,25 @@ func TestBarsNeverWrapInNarrowTerminal(t *testing.T) {
 		if got := lipgloss.Height(bar); got != 1 {
 			t.Fatalf("bar height = %d, want 1: %q", got, bar)
 		}
+	}
+}
+
+func TestStatusCenterUsesWholeBarMidpoint(t *testing.T) {
+	width := 100
+	center := "● Processing"
+	bar := renderStatusBar(Status{
+		Left:   "PROCESSING · PAUSED",
+		Center: center,
+		Right:  "p Resume  esc Back  q Quit",
+	}, width)
+	plain := ansi.Strip(bar)
+	start := strings.Index(plain, center)
+	if start < 0 {
+		t.Fatalf("center content missing: %q", plain)
+	}
+	contentMidpoint := start + lipgloss.Width(center)/2
+	if delta := contentMidpoint - width/2; delta < -1 || delta > 1 {
+		t.Fatalf("center midpoint = %d, whole bar midpoint = %d: %q", contentMidpoint, width/2, plain)
 	}
 }
 

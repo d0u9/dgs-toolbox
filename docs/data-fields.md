@@ -17,7 +17,7 @@ Plain `h/j/k/l` and arrow keys remain owned by controls inside the active data f
 
 ## Mouse convention
 
-A primary-button click anywhere inside a data field's rectangular fieldset switches focus to that field. This includes its legend, border, padding, and content. Clicking the gap between fields leaves focus unchanged. A focus click does not also activate a control; a subsequent click-to-operate convention remains a separate decision.
+A primary-button click anywhere inside a data field's rectangular fieldset switches focus to that field. This includes its legend, border, padding, and content. Clicking the gap between fields leaves focus unchanged. When the hit cell belongs to an interactive child control or list row, the same click may also operate that child according to its component contract. Clicking only the fieldset border or padding changes field focus without triggering a child action.
 
 Scrollable data fields may use hover-based wheel input. The field under the pointer receives the wheel event without becoming focused; focus remains an explicit keyboard-navigation or primary-click action.
 

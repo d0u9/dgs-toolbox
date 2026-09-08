@@ -30,7 +30,7 @@ var (
 	statusCenterStyle = lipgloss.NewStyle().Foreground(barText).Background(barColor)
 	statusRightStyle  = lipgloss.NewStyle().
 				Foreground(barText).
-				Background(lipgloss.AdaptiveColor{Light: "#D8D8E5", Dark: "#303041"})
+				Background(barColor)
 )
 
 // View renders a one-row top bar, a flexible workspace, and a one-row status
@@ -119,16 +119,65 @@ func (m Model) statusBar(width int) string {
 	if m.confirmQuit {
 		status = Status{Left: "CONFIRM", Center: "QUIT DGS?", Right: "y Quit  n/esc Cancel"}
 	}
+	return renderStatusBar(status, width)
+}
 
-	leftWidth := width * 14 / 100
-	centerWidth := width * 48 / 100
-	rightWidth := width - leftWidth - centerWidth
-	left := placeText(status.Left, leftWidth, lipgloss.Left)
-	center := placeText(status.Center, centerWidth, lipgloss.Center)
-	right := placeText(status.Right, rightWidth, lipgloss.Right)
-	return statusLeftStyle.Render(left) +
-		statusCenterStyle.Render(center) +
-		statusRightStyle.Render(right)
+func renderStatusBar(status Status, width int) string {
+	// The state is a compact chip, not a percentage-based panel: on a wide
+	// terminal it should remain proportional to its label while the workflow
+	// track owns the flexible middle region.
+	leftWidth := min(lipgloss.Width(status.Left)+2, max(1, width/4))
+	remaining := max(0, width-leftWidth)
+	rightWidth := min(lipgloss.Width(status.Right)+2, remaining/2)
+	centerWidth := remaining - rightWidth
+	return statusCell(statusLeftStyle, status.Left, leftWidth, lipgloss.Left) +
+		statusCenterCell(statusCenterStyle, status.Center, centerWidth, leftWidth, width) +
+		statusCell(statusRightStyle, status.Right, rightWidth, lipgloss.Right)
+}
+
+// statusCell gives every status region a small horizontal inset. At extreme
+// narrow widths it relinquishes the inset rather than allowing the one-row
+// shell chrome to overflow.
+func statusCell(style lipgloss.Style, text string, width int, position lipgloss.Position) string {
+	if width <= 0 {
+		return ""
+	}
+	if width < 3 {
+		return renderStatusContent(style, placeText(text, width, position))
+	}
+	return renderStatusContent(style.Padding(0, 1), placeText(text, width-2, position))
+}
+
+// statusCenterCell positions its text against the center of the complete bar,
+// not the center of the leftover region between asymmetrical side cells.
+func statusCenterCell(style lipgloss.Style, text string, width, leftWidth, totalWidth int) string {
+	if width <= 0 {
+		return ""
+	}
+	if width < 3 {
+		return renderStatusContent(style, placeText(text, width, lipgloss.Center))
+	}
+	innerWidth := width - 2
+	text = truncate(text, innerWidth)
+	textWidth := lipgloss.Width(text)
+	desiredX := (totalWidth - textWidth) / 2
+	localX := desiredX - leftWidth - 1
+	localX = max(0, min(localX, innerWidth-textWidth))
+	content := strings.Repeat(" ", localX) + text + strings.Repeat(" ", innerWidth-localX-textWidth)
+	return renderStatusContent(style.Padding(0, 1), content)
+}
+
+// renderStatusContent restores the cell style after nested ANSI spans reset
+// themselves. Without this, a styled stepper can expose the terminal's own
+// background in rectangular patches inside the status bar.
+func renderStatusContent(style lipgloss.Style, content string) string {
+	probe := style.Render("x")
+	marker := strings.Index(probe, "x")
+	if marker > 0 {
+		prefix := strings.TrimRight(probe[:marker], " ")
+		content = strings.ReplaceAll(content, "\x1b[0m", "\x1b[0m"+prefix)
+	}
+	return style.Render(content)
 }
 
 func (m Model) pickerStatus() Status {
