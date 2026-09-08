@@ -35,7 +35,7 @@ The status workflow is:
 3. Processing
 4. Result
 
-The implemented interaction includes Directories, Parameters, and a landscape Processing preview. A read-only Scan transition connects the first two screens. Processing advances simulated worker states only; no copy, hash, rename, or delete behavior is implemented yet. Result remains undesigned.
+The implemented interaction includes Directories, Parameters, a landscape Processing preview, and a landscape Result preview. A read-only Scan transition connects the first two screens. Processing advances simulated worker states only; no copy, hash, rename, state-file cleanup, or delete behavior is implemented yet.
 
 ## Setup screen
 
@@ -51,15 +51,17 @@ Photo Import uses a directory-only Setup screen. Scanning those directories open
 │   Destination  …/testdata/photo-import/dst│
 ╰───────────────────────────────────────────╯
 
-  [ Scan directories ]
+
+                                                                   Next →  n
+                                                                   › Parameters
 ```
 
 The current composition is specific to Photo Import:
 
 - Source and Destination occupy separate rows on the first screen.
 - Do not connect the paths with an animated data-flow line.
-- Setup focuses Source, Destination, and Scan directories.
-- `n` or Scan directories begins the same read-only scan transition.
+- Setup focuses Source and Destination; the shared Page Actions component is fixed at the workspace bottom-right.
+- `n` or the `Next → Parameters` action begins the same read-only scan transition.
 
 ## Scan transition
 
@@ -127,7 +129,7 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 - Duplicates: filename-conflict policy. Skip leaves the existing destination untouched, Replace intends to publish the verified new file at that path, and Keep both chooses a new unique filename. Replace is not the default; its backup and rollback semantics remain to be designed before implementation.
 - Parallelism: positive worker count controlling concurrent file transfers; default `1` for predictable removable-media I/O and bounded resource use.
 - Organize by EXIF date: checkbox controlling whether imported files are placed in date-based subdirectories.
-- Start processing preview: opens a simulated, side-effect-free Processing screen.
+- `Next → Processing`: opens a simulated, side-effect-free Processing screen.
 
 ## Processing screen
 
@@ -137,9 +139,38 @@ Each Worker owns one file and exposes a distinct state: Copying, Verifying, Publ
 
 The aggregate progress bar reserves a fixed right-hand status segment such as `42% │ 4/12 verified`. Calculate the bar width from the remaining cells after that segment, rather than stretching it to the fieldset width and truncating the right-hand information.
 
-The preview supports 1–8 workers and defaults to 1. It simulates state transitions so layout and density can be evaluated, explicitly labels itself `NO FILES ARE CHANGED`, and never creates `.dgs-part` or `.dgs-state` files. `p` pauses or resumes the preview. During Processing, every key that could leave active work is guarded: `Esc` asks before returning to Parameters, and `q` or Ctrl+C asks before exiting. While the confirmation is open, worker scheduling is frozen. The shared dialog defaults to No; Tab switches actions, Enter invokes the selected action, and Esc continues processing. It does not transition to Result.
+The preview supports 1–8 workers and defaults to 1. It simulates state transitions so layout and density can be evaluated, explicitly labels itself `NO FILES ARE CHANGED`, and never creates `.dgs-part` or `.dgs-state` files. `p` pauses or resumes the preview. During Processing, every key that could leave active work is guarded: `Esc` asks before returning to Parameters, and `q` or Ctrl+C asks before exiting. While the confirmation is open, worker scheduling is frozen. The shared dialog defaults to No; Tab switches actions, Enter invokes the selected action, and Esc continues processing.
 
 Photo Import status uses the shared three-part bar as follows: the left chip identifies `SCAN · READING`, `PROCESSING · RUNNING`, `PROCESSING · PAUSED`, `PROCESSING · COMPLETE`, or confirmation state; the center keeps the workflow track; and the right side contains only context-valid controls. A paused import replaces `p Pause` with `p Resume`; a completed preview no longer advertises pause.
+
+## Result screen
+
+Processing remains visible when it reaches complete so its final worker state can be inspected. Enter or `n` then opens Result. Result uses a landscape summary rather than another progress surface:
+
+```text
+╭─ Import result ─────────────────────────────────────────────────────────────╮
+│ VERIFIED PREVIEW · NO FILES WERE CHANGED                                   │
+│ 41/41 files passed Source and Destination SHA-256 comparison               │
+│ Published 2.4 GB   Skipped 0   Failed 0                                    │
+╰────────────────────────────────────────────────────────────────────────────╯
+
+╭─ Verified files ───────────────────────────╮ ╭─ Verification summary ──────╮
+│ 41 verified files · 2.4 GB                 │ │ ✓ Source stream hashed       │
+│ › 1 ✓ IMG_0001.JPG · 24 MB · SHA-256 MATCH │ │ ✓ Destination read back     │
+│   2 ✓ IMG_0002.DNG  · 51 MB · SHA-256 MATCH│ │ ✓ SHA-256 matched            │
+│                                             │ │ ✓ Published after verify     │
+│                                             │ ╰──────────────────────────────╯
+│                                             │ ╭─ State file ─────────────────╮
+│                                             │ │ › [x] Delete .dgs-state      │
+╰─────────────────────────────────────────────╯ ╰──────────────────────────────╯
+
+                                      ← Prev  esc        Next →  n
+                                      Processing          › Commands
+```
+
+The full-width header answers whether the batch is trustworthy before showing detail. The left pane owns the complete per-file result inventory and uses the shared numbered, selectable, vertically scrollable list. The right side separates integrity evidence from the final state-file decision. Do not mix cleanup controls into the verification summary.
+
+Delete `.dgs-state` is selected by default, matching the confirmed lifecycle decision. The explanatory copy makes retaining it an audit or diagnostic choice. In the side-effect-free preview, toggling or finishing changes no files. `Alt+h/l` moves between the result inventory and state-file actions; list navigation uses the shared arrow/Vim behavior, mouse wheel works while hovering the inventory, and primary click changes focus or activates a control. `Esc` returns to the completed Processing view.
 
 ## Proposed verified-transfer algorithm
 
@@ -249,7 +280,7 @@ The fixture intentionally contains multiple screens of files in both Source and 
 - Duplicate and conflict presentation.
 - Real transfer progress and error recovery behavior beyond the Processing preview.
 - Cancellation and confirmation.
-- Result, empty, warning, and error states.
+- Partial-success, empty, warning, and error variants of Result.
 - Narrow-terminal layout beyond shared shrinking behavior.
 - Photo Encode screens.
 

@@ -178,7 +178,7 @@ The form ends with one primary action using the same focus marker:
 › Continue
 ```
 
-Primary actions use the shared bracketed button presentation, such as `[ Continue ]`. The owning command defines the action label and effect.
+Local form actions may use the shared bracketed button presentation. Transitions between workflow pages use the shared two-row Page Actions component, which names both the direction and destination; see [`parameter-controls.md`](parameter-controls.md).
 
 ## Form keyboard behavior
 
