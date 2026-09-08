@@ -376,7 +376,7 @@ func TestMouseClickSwitchesParameterDataFieldFocus(t *testing.T) {
 	layout := model.parameterLayout()
 
 	updated, _ := model.Update(tea.MouseMsg{
-		X:      2,
+		X:      layout.leftWidth + 2,
 		Y:      layout.sourceHeight + 2,
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
@@ -387,7 +387,7 @@ func TestMouseClickSwitchesParameterDataFieldFocus(t *testing.T) {
 	}
 
 	updated, _ = model.Update(tea.MouseMsg{
-		X:      layout.leftWidth + 2,
+		X:      2,
 		Y:      layout.parameterHeight + 2,
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
@@ -402,9 +402,8 @@ func TestMouseClickOperatesParameterControls(t *testing.T) {
 	model := newImportModel().(importModel)
 	model.width, model.height = 120, 30
 	model.stage = parameterStage
-	layout := model.parameterLayout()
 	updated, _ := model.Update(tea.MouseMsg{
-		X:      layout.leftWidth + 3 + 30,
+		X:      3 + 30,
 		Y:      2,
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
@@ -428,7 +427,7 @@ func TestMouseWheelScrollsHoveredListWithoutChangingFocus(t *testing.T) {
 	}
 	model.syncResultLists()
 	updated, _ := model.Update(tea.MouseMsg{
-		X:      2,
+		X:      model.parameterLayout().leftWidth + 2,
 		Y:      3,
 		Button: tea.MouseButtonWheelDown,
 		Action: tea.MouseActionPress,
@@ -448,7 +447,7 @@ func TestClickSelectsNumberedRowAndSpaceProvidesQuickLookCommand(t *testing.T) {
 	model.stage = parameterStage
 	model.scan.source = []scannedFile{{path: "first.jpg"}, {path: "second.jpg"}, {path: "third.jpg"}}
 	model.syncResultLists()
-	updated, _ := model.Update(tea.MouseMsg{X: 8, Y: 3, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	updated, _ := model.Update(tea.MouseMsg{X: model.parameterLayout().leftWidth + 8, Y: 4, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	model = updated.(importModel)
 	if model.parameterFields.Current() != "source-results" || model.sourceList.Cursor() != 1 {
 		t.Fatalf("field=%q cursor=%d", model.parameterFields.Current(), model.sourceList.Cursor())
@@ -467,7 +466,7 @@ func TestRightClickOpensReusableContextMenuWithoutChangingFocus(t *testing.T) {
 	model.parameterFields.Set("parameters")
 	model.scan.source = []scannedFile{{path: "first.jpg"}, {path: "second.jpg"}}
 	model.syncResultLists()
-	updated, _ := model.Update(tea.MouseMsg{X: 8, Y: 3, Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
+	updated, _ := model.Update(tea.MouseMsg{X: model.parameterLayout().leftWidth + 8, Y: 4, Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
 	model = updated.(importModel)
 	if !model.menu.IsOpen() || model.sourceList.Cursor() != 1 {
 		t.Fatal("right click did not select the row and open its menu")
@@ -566,9 +565,11 @@ func TestParameterScreenUsesAsymmetricSplitLayout(t *testing.T) {
 	}
 	lines := strings.Split(view, "\n")
 	buttonLine := lines[model.height-2]
-	lastLine := lines[model.height-1]
-	if !strings.Contains(buttonLine, "Directories") || !strings.Contains(buttonLine, "Processing") || !strings.HasPrefix(lastLine, "╰") {
-		t.Fatalf("page actions do not keep their bottom breathing room: button=%q bottom=%q", buttonLine, lastLine)
+	if !strings.Contains(buttonLine, "Directories") || !strings.Contains(buttonLine, "Processing") || strings.Index(buttonLine, "Directories") >= model.parameterLayout().leftWidth {
+		t.Fatalf("page actions are not anchored in the bottom-left pane: %q", buttonLine)
+	}
+	if !strings.Contains(view, "Root  "+model.paths[sourceField]) || !strings.Contains(view, "Root  "+model.paths[destinationField]) {
+		t.Fatal("source and destination roots are not visible above their relative file lists")
 	}
 }
 
@@ -576,7 +577,7 @@ func TestAltNavigationMovesBetweenParameterDataFields(t *testing.T) {
 	model := newImportModel().(importModel)
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
-	tests := []struct{ key, want string }{{"alt+h", "source-results"}, {"alt+j", "destination-results"}, {"alt+l", "summary"}, {"alt+k", "parameters"}}
+	tests := []struct{ key, want string }{{"alt+l", "source-results"}, {"alt+j", "destination-results"}, {"alt+h", "summary"}, {"alt+k", "parameters"}}
 	for _, test := range tests {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(test.key[len(test.key)-1])}, Alt: true})
 		model = updated.(importModel)

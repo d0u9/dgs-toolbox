@@ -198,14 +198,14 @@ func newImportModel() tui.CommandModel {
 			form.Field{ID: deleteStateID, Kind: form.Checkbox, Label: "Delete .dgs-state", Checked: true},
 		),
 		parameterFields: datafield.New(
-			datafield.Field{ID: "source-results", Row: 0, Col: 0},
-			datafield.Field{ID: "destination-results", Row: 1, Col: 0},
-			datafield.Field{ID: "parameters", Row: 0, Col: 1},
-			datafield.Field{ID: "summary", Row: 1, Col: 1},
+			datafield.Field{ID: "parameters", Row: 0, Col: 0},
+			datafield.Field{ID: "summary", Row: 1, Col: 0},
+			datafield.Field{ID: "source-results", Row: 0, Col: 1},
+			datafield.Field{ID: "destination-results", Row: 1, Col: 1},
 		),
 		resultFields: datafield.New(
-			datafield.Field{ID: "result-files", Row: 0, Col: 0},
-			datafield.Field{ID: "result-actions", Row: 0, Col: 1},
+			datafield.Field{ID: "result-actions", Row: 0, Col: 0},
+			datafield.Field{ID: "result-files", Row: 0, Col: 1},
 		),
 		sourceList:      scrolllist.New(),
 		destinationList: scrolllist.New(),
@@ -353,13 +353,12 @@ func (m importModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.updateResultMouse(msg)
 	}
 	if m.stage == processingStage && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= m.height-4 {
-		rightWidth := m.width - min(max(48, m.width*2/3), m.width-28) - 1
-		x := msg.X - (m.width - rightWidth)
+		leftWidth, _ := landscapeColumnWidths(m.width)
 		navigation := pageactions.Config{Prev: &pageactions.Action{Destination: "Parameters"}}
 		if m.processingComplete() {
 			navigation.Next = &pageactions.Action{Destination: "Result"}
 		}
-		switch pageactions.Hit(navigation, rightWidth, x, msg.Y-(m.height-4)) {
+		switch pageactions.Hit(navigation, leftWidth, msg.X, msg.Y-(m.height-4)) {
 		case pageactions.Prev:
 			m.beginLeaveConfirmation(false)
 		case pageactions.Next:
@@ -402,6 +401,9 @@ func (m importModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
 		return m, nil
 	}
+	if msg.Y >= m.height-4 {
+		return m.clickParameters(msg.X, msg.Y)
+	}
 	m.selectHoveredResult(hit, msg.Y)
 	if m.parameterFields.FocusAt(msg.X, msg.Y) {
 		m.pendingListG = false
@@ -418,16 +420,15 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	lowerY := lipgloss.Height(fieldset.View("Import result", m.resultHeaderContent(), m.width)) + 1
 	lowerHeight := max(8, m.height-lowerY)
-	leftWidth := min(max(48, m.width*2/3), m.width-31)
-	rightWidth := m.width - leftWidth - 1
+	leftWidth, rightWidth := landscapeColumnWidths(m.width)
 	cleanupHeight := 5
 	integrityHeight := max(5, lowerHeight-cleanupHeight-5)
 	cleanupY := lowerY + integrityHeight + 1
-	m.resultFields.SetBounds("result-files", datafield.Bounds{X: 0, Y: lowerY, Width: leftWidth, Height: lowerHeight})
-	m.resultFields.SetBounds("result-actions", datafield.Bounds{X: leftWidth + 1, Y: cleanupY, Width: rightWidth, Height: cleanupHeight})
+	m.resultFields.SetBounds("result-actions", datafield.Bounds{X: 0, Y: cleanupY, Width: leftWidth, Height: cleanupHeight})
+	m.resultFields.SetBounds("result-files", datafield.Bounds{X: leftWidth + 1, Y: lowerY, Width: rightWidth, Height: lowerHeight})
 	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= m.height-4 {
 		navigation := resultPageActions()
-		switch pageactions.Hit(navigation, rightWidth, msg.X-leftWidth-1, msg.Y-(m.height-4)) {
+		switch pageactions.Hit(navigation, leftWidth, msg.X, msg.Y-(m.height-4)) {
 		case pageactions.Prev:
 			m.restartImport()
 		case pageactions.Next:
@@ -452,7 +453,7 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.controls.SetFocusID(deleteStateID)
-	m.controls.Click([]string{deleteStateID}, msg.X-leftWidth-3, msg.Y-cleanupY-1)
+	m.controls.Click([]string{deleteStateID}, msg.X-2, msg.Y-cleanupY-1)
 	return m, nil
 }
 
@@ -477,7 +478,7 @@ func (m importModel) clickSetup(x, y int) (tea.Model, tea.Cmd) {
 
 func (m importModel) clickParameters(x, y int) (tea.Model, tea.Cmd) {
 	layout := m.parameterLayout()
-	localX := x - layout.leftWidth - 3
+	localX := x - 2
 	importIDs := []string{operationID, extensionsID, duplicatesID, parallelID}
 	if _, ok := m.controls.Click(importIDs, localX, y-2); ok {
 		m.syncResultLists()
@@ -488,7 +489,7 @@ func (m importModel) clickParameters(x, y int) (tea.Model, tea.Cmd) {
 			Prev: &pageactions.Action{Destination: "Directories"},
 			Next: &pageactions.Action{Destination: "Processing"},
 		}
-		switch pageactions.Hit(navigation, layout.rightWidth, x-layout.leftWidth-1, y-(m.height-4)) {
+		switch pageactions.Hit(navigation, layout.leftWidth, x, y-(m.height-4)) {
 		case pageactions.Prev:
 			m.stage = setupStage
 			m.controls.SetFocusID(destinationID)
@@ -502,20 +503,20 @@ func (m importModel) clickParameters(x, y int) (tea.Model, tea.Cmd) {
 
 func (m *importModel) registerParameterBounds() {
 	layout := m.parameterLayout()
-	m.parameterFields.SetBounds("source-results", datafield.Bounds{X: 0, Y: 0, Width: layout.leftWidth, Height: layout.sourceHeight})
-	m.parameterFields.SetBounds("destination-results", datafield.Bounds{X: 0, Y: layout.sourceHeight + 1, Width: layout.leftWidth, Height: layout.destinationHeight})
-	m.parameterFields.SetBounds("parameters", datafield.Bounds{X: layout.leftWidth + 1, Y: 0, Width: layout.rightWidth, Height: layout.parameterHeight})
-	m.parameterFields.SetBounds("summary", datafield.Bounds{X: layout.leftWidth + 1, Y: layout.parameterHeight + 1, Width: layout.rightWidth, Height: layout.summaryHeight})
+	m.parameterFields.SetBounds("parameters", datafield.Bounds{X: 0, Y: 0, Width: layout.leftWidth, Height: layout.parameterHeight})
+	m.parameterFields.SetBounds("summary", datafield.Bounds{X: 0, Y: layout.parameterHeight + 1, Width: layout.leftWidth, Height: layout.summaryHeight})
+	m.parameterFields.SetBounds("source-results", datafield.Bounds{X: layout.leftWidth + 1, Y: 0, Width: layout.rightWidth, Height: layout.sourceHeight})
+	m.parameterFields.SetBounds("destination-results", datafield.Bounds{X: layout.leftWidth + 1, Y: layout.sourceHeight + 1, Width: layout.rightWidth, Height: layout.destinationHeight})
 }
 
 func (m *importModel) scrollResultList(id string, delta int) {
 	layout := m.parameterLayout()
 	switch id {
 	case "source-results":
-		m.sourceList.SetSize(max(1, layout.leftWidth-4), max(1, layout.sourceHeight-3))
+		m.sourceList.SetSize(max(1, layout.rightWidth-4), max(1, layout.sourceHeight-4))
 		m.sourceList.Scroll(delta)
 	case "destination-results":
-		m.destinationList.SetSize(max(1, layout.leftWidth-4), max(1, layout.destinationHeight-3))
+		m.destinationList.SetSize(max(1, layout.rightWidth-4), max(1, layout.destinationHeight-4))
 		m.destinationList.Scroll(delta)
 	}
 }
@@ -748,10 +749,8 @@ func (m *importModel) updateListNavigation(key string) bool {
 }
 
 func (m importModel) resultListWidth() int {
-	rightWidth := max(50, m.width*2/5)
-	rightWidth = min(rightWidth, max(50, m.width-14))
-	leftWidth := max(12, m.width-rightWidth-1)
-	return max(1, leftWidth-4)
+	_, rightWidth := landscapeColumnWidths(m.width)
+	return max(1, rightWidth-4)
 }
 
 func (m *importModel) activeResultList() *scrolllist.Model {
@@ -770,7 +769,7 @@ func (m *importModel) sizeResultList(list *scrolllist.Model, id string) {
 	if id == "destination-results" {
 		height = layout.destinationHeight
 	}
-	list.SetSize(max(1, layout.leftWidth-4), max(1, height-3))
+	list.SetSize(max(1, layout.rightWidth-4), max(1, height-4))
 }
 
 func (m *importModel) syncResultLists() {
@@ -829,10 +828,10 @@ func (m *importModel) selectHoveredResult(id string, mouseY int) bool {
 	switch id {
 	case "source-results":
 		m.sizeResultList(&m.sourceList, id)
-		return m.sourceList.SelectRow(mouseY - 2)
+		return m.sourceList.SelectRow(mouseY - 3)
 	case "destination-results":
 		m.sizeResultList(&m.destinationList, id)
-		return m.destinationList.SelectRow(mouseY - layout.sourceHeight - 3)
+		return m.destinationList.SelectRow(mouseY - layout.sourceHeight - 4)
 	default:
 		return false
 	}
@@ -1170,16 +1169,14 @@ func (m importModel) resultView() string {
 	header := fieldset.View("Import result", headerContent, m.width)
 
 	lowerHeight := max(8, m.height-lipgloss.Height(header)-1)
-	leftWidth := max(48, m.width*2/3)
-	leftWidth = min(leftWidth, m.width-31)
-	rightWidth := m.width - leftWidth - 1
+	leftWidth, rightWidth := landscapeColumnWidths(m.width)
 	filesFocused := m.resultFields.Current() == "result-files"
 	actionsFocused := m.resultFields.Current() == "result-actions"
 	results := m.resultList
-	results.SetSize(leftWidth-4, lowerHeight-3)
+	results.SetSize(rightWidth-4, lowerHeight-3)
 	leftContent := importNoteStyle.Render(fmt.Sprintf("%d verified files · %s", len(m.processing.verified), formatBytes(bytes))) + "\n" +
 		results.View(filesFocused, importSectionStyle, importNoteStyle)
-	left := fieldset.ViewFocused("Verified files", leftContent, leftWidth, filesFocused)
+	filesPane := fieldset.ViewFocused("Verified files", leftContent, rightWidth, filesFocused)
 
 	integrity := strings.Join([]string{
 		importSectionStyle.Render("INTEGRITY"),
@@ -1194,7 +1191,7 @@ func (m importModel) resultView() string {
 		fmt.Sprintf("Skipped       %d files", m.processing.skipped),
 		fmt.Sprintf("Failed        %d files", m.processing.failed),
 	}, "\n")
-	actions := m.controls.ViewFocusedWidth([]string{deleteStateID}, actionsFocused, rightWidth-4)
+	actions := m.controls.ViewFocusedWidth([]string{deleteStateID}, actionsFocused, leftWidth-4)
 	cleanupNote := importNoteStyle.Render("Delete is the default. Retain state only for audit or diagnosis.")
 	if m.actionNotice != "" {
 		cleanupNote = importNoteStyle.Render(m.actionNotice)
@@ -1202,14 +1199,14 @@ func (m importModel) resultView() string {
 	cleanup := actions + "\n\n" + cleanupNote
 	cleanupHeight := 5
 	integrityHeight := max(5, lowerHeight-cleanupHeight-5)
-	right := lipgloss.JoinVertical(
+	actionsPane := lipgloss.JoinVertical(
 		lipgloss.Left,
-		fieldset.View("Verification summary", fitContentHeight(integrity, integrityHeight-2, rightWidth-4), rightWidth),
+		fieldset.View("Verification summary", fitContentHeight(integrity, integrityHeight-2, leftWidth-4), leftWidth),
 		"",
-		fieldset.ViewFocused("State file", fitContentHeight(cleanup, cleanupHeight-2, rightWidth-4), rightWidth, actionsFocused),
-		pageactions.View(resultPageActions(), rightWidth),
+		fieldset.ViewFocused("State file", fitContentHeight(cleanup, cleanupHeight-2, leftWidth-4), leftWidth, actionsFocused),
+		pageactions.View(resultPageActions(), leftWidth),
 	)
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right))
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, actionsPane, " ", filesPane))
 }
 
 func (m importModel) scanView() string {
@@ -1304,24 +1301,22 @@ func (m importModel) processingView() string {
 	header := fieldset.View("Import progress", headerContent, m.width)
 
 	lowerHeight := max(8, m.height-lipgloss.Height(header)-1)
-	leftWidth := max(48, m.width*2/3)
-	leftWidth = min(leftWidth, m.width-28)
-	rightWidth := m.width - leftWidth - 1
-	workers := fieldset.View("Workers", fitContentHeight(m.workerRows(leftWidth-4, lowerHeight-2), lowerHeight-2, leftWidth-4), leftWidth)
-	rightTopHeight := max(4, lowerHeight/2)
-	rightBottomHeight := max(4, lowerHeight-rightTopHeight-5)
+	leftWidth, rightWidth := landscapeColumnWidths(m.width)
+	workers := fieldset.View("Workers", fitContentHeight(m.workerRows(rightWidth-4, lowerHeight-2), lowerHeight-2, rightWidth-4), rightWidth)
+	leftTopHeight := max(4, lowerHeight/2)
+	leftBottomHeight := max(4, lowerHeight-leftTopHeight-5)
 	navigation := pageactions.Config{Prev: &pageactions.Action{Destination: "Parameters"}}
 	if m.processingComplete() {
 		navigation.Next = &pageactions.Action{Destination: "Result"}
 	}
-	right := lipgloss.JoinVertical(
+	queuePane := lipgloss.JoinVertical(
 		lipgloss.Left,
-		fieldset.View("Next files", fitContentHeight(m.pendingRows(rightWidth-4), rightTopHeight-2, rightWidth-4), rightWidth),
+		fieldset.View("Next files", fitContentHeight(m.pendingRows(leftWidth-4), leftTopHeight-2, leftWidth-4), leftWidth),
 		"",
-		fieldset.View("Recent results", fitContentHeight(m.recentRows(rightWidth-4), rightBottomHeight-2, rightWidth-4), rightWidth),
-		pageactions.View(navigation, rightWidth),
+		fieldset.View("Recent results", fitContentHeight(m.recentRows(leftWidth-4), leftBottomHeight-2, leftWidth-4), leftWidth),
+		pageactions.View(navigation, leftWidth),
 	)
-	view := lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, workers, " ", right))
+	view := lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, queuePane, " ", workers))
 	if m.leaveConfirm {
 		view = overlay.Place(view, m.leaveConfirmationView(), m.width, m.height)
 	}
@@ -1574,33 +1569,33 @@ func (m importModel) parameterView() string {
 	summaryFocused := m.parameterFields.Current() == "summary"
 	sourceHeight, destinationHeight := layout.sourceHeight, layout.destinationHeight
 	sourceList, destinationList := m.sourceList, m.destinationList
-	sourceList.SetSize(leftWidth-4, max(1, sourceHeight-3))
-	destinationList.SetSize(leftWidth-4, max(1, destinationHeight-3))
-	sourceContent := importNoteStyle.Render(inventorySummary(m.filteredSource())) + "\n" + sourceList.View(sourceFocused, importSectionStyle, importNoteStyle)
-	destinationContent := importNoteStyle.Render(inventorySummary(m.scan.destination)) + "\n" + destinationList.View(destinationFocused, importSectionStyle, importNoteStyle)
-	sourceContent = fitContentHeight(sourceContent, sourceHeight-2, leftWidth-4)
-	destinationContent = fitContentHeight(destinationContent, destinationHeight-2, leftWidth-4)
-	left := lipgloss.JoinVertical(
+	sourceList.SetSize(rightWidth-4, max(1, sourceHeight-4))
+	destinationList.SetSize(rightWidth-4, max(1, destinationHeight-4))
+	sourceContent := directoryRootLine(m.paths[sourceField], rightWidth-4) + "\n" + importNoteStyle.Render(inventorySummary(m.filteredSource())) + "\n" + sourceList.View(sourceFocused, importSectionStyle, importNoteStyle)
+	destinationContent := directoryRootLine(m.paths[destinationField], rightWidth-4) + "\n" + importNoteStyle.Render(inventorySummary(m.scan.destination)) + "\n" + destinationList.View(destinationFocused, importSectionStyle, importNoteStyle)
+	sourceContent = fitContentHeight(sourceContent, sourceHeight-2, rightWidth-4)
+	destinationContent = fitContentHeight(destinationContent, destinationHeight-2, rightWidth-4)
+	filesPane := lipgloss.JoinVertical(
 		lipgloss.Left,
-		fieldset.ViewFocused("Source", sourceContent, leftWidth, sourceFocused),
-		resultFlowDivider(leftWidth),
-		fieldset.ViewFocused("Destination", destinationContent, leftWidth, destinationFocused),
+		fieldset.ViewFocused("Source", sourceContent, rightWidth, sourceFocused),
+		resultFlowDivider(rightWidth),
+		fieldset.ViewFocused("Destination", destinationContent, rightWidth, destinationFocused),
 	)
 	summaryContent := m.importSummaryView()
 	parameterHeight := layout.parameterHeight
-	parameterContent := m.parametersView(rightWidth-4, parametersFocused)
-	parameterContent = fitContentHeight(parameterContent, parameterHeight-2, rightWidth-4)
-	right := lipgloss.JoinVertical(
+	parameterContent := m.parametersView(leftWidth-4, parametersFocused)
+	parameterContent = fitContentHeight(parameterContent, parameterHeight-2, leftWidth-4)
+	controlsPane := lipgloss.JoinVertical(
 		lipgloss.Left,
-		fieldset.ViewFocused("Parameters", parameterContent, rightWidth, parametersFocused),
+		fieldset.ViewFocused("Parameters", parameterContent, leftWidth, parametersFocused),
 		"",
-		fieldset.ViewFocused("Import summary", summaryContent, rightWidth, summaryFocused),
+		fieldset.ViewFocused("Import summary", summaryContent, leftWidth, summaryFocused),
 		pageactions.View(pageactions.Config{
 			Prev: &pageactions.Action{Destination: "Directories"},
 			Next: &pageactions.Action{Destination: "Processing"},
-		}, rightWidth),
+		}, leftWidth),
 	)
-	view := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+	view := lipgloss.JoinHorizontal(lipgloss.Top, controlsPane, " ", filesPane)
 	if m.menu.IsOpen() {
 		x, y := m.menu.Position()
 		view = overlay.PlaceAt(view, m.menu.View(), x, y, m.width, m.height)
@@ -1615,9 +1610,7 @@ type parameterLayout struct {
 }
 
 func (m importModel) parameterLayout() parameterLayout {
-	rightWidth := max(50, m.width*2/5)
-	rightWidth = min(rightWidth, max(50, m.width-14))
-	leftWidth := max(12, m.width-rightWidth-1)
+	leftWidth, rightWidth := landscapeColumnWidths(m.width)
 	sourceHeight := max(3, (m.height-1)/2)
 	destinationHeight := max(3, m.height-1-sourceHeight)
 	summaryHeight := lipgloss.Height(m.importSummaryView()) + 2
@@ -1627,6 +1620,16 @@ func (m importModel) parameterLayout() parameterLayout {
 		sourceHeight: sourceHeight, destinationHeight: destinationHeight,
 		parameterHeight: parameterHeight, summaryHeight: summaryHeight,
 	}
+}
+
+func landscapeColumnWidths(width int) (int, int) {
+	usable := max(2, width-1)
+	left := min(90, max(1, usable/3))
+	return left, max(1, usable-left)
+}
+
+func directoryRootLine(path string, width int) string {
+	return importNoteStyle.Render(ansi.Truncate("Root  "+path, max(1, width), "…"))
 }
 
 func resultFlowDivider(width int) string {
