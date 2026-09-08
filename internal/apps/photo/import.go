@@ -598,6 +598,9 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.stage == resultStage {
+		if key == "esc" {
+			return m, func() tea.Msg { return tui.RequestQuitMsg{} }
+		}
 		if key == "r" {
 			m.restartImport()
 			return m, nil
@@ -1739,7 +1742,7 @@ func (m importModel) Status() tui.Status {
 		return m.withWorkflow(tui.Status{Left: left, Right: right})
 	}
 	if m.stage == resultStage {
-		return m.withWorkflow(tui.Status{Left: "RESULT · VERIFIED", Right: "alt+h/l Focus  ↑↓ Browse  space Toggle  n Next  esc Prev"})
+		return m.withWorkflow(tui.Status{Left: "RESULT · VERIFIED", Right: "alt+h/l Focus  ↑↓ Browse  space Toggle  r Again  esc/q Quit"})
 	}
 	if m.picking {
 		if m.picker.HasDialog() {
