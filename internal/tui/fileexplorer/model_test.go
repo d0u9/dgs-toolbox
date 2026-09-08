@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -296,6 +297,9 @@ func TestPathInputCompletesOneDirectoryLevelAndRespectsFilter(t *testing.T) {
 	if !tree.CapturesText() || !strings.Contains(tree.View(), "PATH") {
 		t.Fatal("/ did not open path input")
 	}
+	if tree.editor.Value() != "" {
+		t.Fatalf("path input started with %q, want empty", tree.editor.Value())
+	}
 	tree.editor.SetValue(filepath.Join(root, "ph"))
 	tree.completions = nil
 	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -308,9 +312,21 @@ func TestPathInputCompletesOneDirectoryLevelAndRespectsFilter(t *testing.T) {
 	if got := tree.editor.Value(); got != filepath.Join(parent, "beach.jpg") {
 		t.Fatalf("file completion = %q, want beach.jpg", got)
 	}
-	_, selected, _ := tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tree, selected, cmd := tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if selected != "" || cmd != nil || len(tree.completions) != 0 || tree.action != actionPath {
+		t.Fatalf("first Enter did not accept the completion in path input")
+	}
+	tree, selected, cmd = tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if selected != "" || cmd == nil {
+		t.Fatalf("path input selected %q instead of returning to the tree", selected)
+	}
+	tree, _, _ = tree.Update(cmd())
+	if tree.SelectedPath() != filepath.Join(parent, "beach.jpg") {
+		t.Fatalf("focused path = %q, want beach.jpg", tree.SelectedPath())
+	}
+	_, selected, _ = tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if selected != filepath.Join(parent, "beach.jpg") {
-		t.Fatalf("path selection = %q, want beach.jpg", selected)
+		t.Fatalf("tree selection = %q, want beach.jpg", selected)
 	}
 }
 
@@ -374,8 +390,8 @@ func TestPathPasteReplacesExistingValueAndTrimsTrailingSpace(t *testing.T) {
 	tree := New(root, 60, 12)
 	tree, _, _ = tree.Update(tree.Init()())
 	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
-	if tree.editor.Value() == "" {
-		t.Fatal("path input was expected to start with the focused path")
+	if tree.editor.Value() != "" {
+		t.Fatalf("path input started with %q, want empty", tree.editor.Value())
 	}
 
 	pasted := target + "   \n"
@@ -383,9 +399,87 @@ func TestPathPasteReplacesExistingValueAndTrimsTrailingSpace(t *testing.T) {
 	if got := tree.editor.Value(); got != target {
 		t.Fatalf("pasted value = %q, want replacement %q", got, target)
 	}
-	_, selected, _ := tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tree, selected, cmd := tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if selected != "" || cmd == nil {
+		t.Fatalf("pasted path selected %q instead of navigating", selected)
+	}
+	tree, _, _ = tree.Update(cmd())
+	_, selected, _ = tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if selected != target {
-		t.Fatalf("selected pasted path = %q, want %q", selected, target)
+		t.Fatalf("selected tree path = %q, want %q", selected, target)
+	}
+}
+
+func TestEmptyPathTabOffersFilteredEntries(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "album"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "photo.jpg"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tree := New(root, 60, 12, WithFilter(Extensions("jpg")))
+	tree, _, _ = tree.Update(tree.Init()())
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if len(tree.completions) != 2 {
+		t.Fatalf("empty completion returned %v, want directory and matching file", tree.completions)
+	}
+	for _, completion := range tree.completions {
+		if strings.Contains(completion, "notes.txt") {
+			t.Fatalf("completion ignored filter: %v", tree.completions)
+		}
+	}
+}
+
+func TestMouseClickExpandsAndDoubleClickSelects(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tree := New(root, 60, 12)
+	tree, _, _ = tree.Update(tree.Init()())
+	tree, selected, cmd := tree.Update(tea.MouseMsg{X: 4, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if selected != "" || cmd == nil || tree.SelectedPath() != child {
+		t.Fatal("single click did not focus and expand directory")
+	}
+	tree, _, _ = tree.Update(cmd())
+	_, selected, _ = tree.Update(tea.MouseMsg{X: 4, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if selected != child {
+		t.Fatalf("double click selected %q, want %q", selected, child)
+	}
+}
+
+func TestSeparateMouseClicksToggleDirectory(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tree := New(root, 60, 12)
+	tree, _, _ = tree.Update(tree.Init()())
+	tree, _, cmd := tree.Update(tea.MouseMsg{X: 4, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	tree, _, _ = tree.Update(cmd())
+	tree.lastClickAt = time.Now().Add(-time.Second)
+	tree, selected, _ := tree.Update(tea.MouseMsg{X: 4, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if selected != "" || tree.find(child).expanded {
+		t.Fatal("a separate second click did not collapse the directory")
+	}
+}
+
+func TestFileRowsShowHumanReadableSize(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "photo.jpg"), make([]byte, 1536), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tree := New(root, 60, 12, WithFilter(Extensions("jpg")))
+	tree, _, _ = tree.Update(tree.Init()())
+	if view := tree.View(); !strings.Contains(view, "photo.jpg") || !strings.Contains(view, "1.5 KB") {
+		t.Fatalf("file row does not show its size:\n%s", view)
 	}
 }
 

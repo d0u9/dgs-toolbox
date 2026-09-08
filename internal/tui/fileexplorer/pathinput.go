@@ -65,6 +65,18 @@ func (t *Model) completePath(reverse bool) {
 	t.editor.CursorEnd()
 }
 
+func (t *Model) acceptCompletion() bool {
+	if len(t.completions) == 0 {
+		return false
+	}
+	t.editor.SetValue(t.completions[t.completionIndex])
+	t.editor.CursorEnd()
+	t.completions = nil
+	t.completionIndex = 0
+	t.notice = ""
+	return true
+}
+
 func (t Model) pathCompletions(value string) ([]string, error) {
 	value = trimPathInput(value)
 	expanded := expandInputHome(value)
@@ -163,9 +175,7 @@ func (t Model) acceptPath() (Model, string, error) {
 		return t, "", err
 	}
 	if info.IsDir() {
-		if t.filter.kind == directoryFilter {
-			return t, path, nil
-		}
+		t.id = explorerID.Add(1)
 		t.root = &directoryNode{path: path, name: displayPath(path), expanded: true, loading: true, isDir: true}
 		t.selected = 0
 		t.action = actionNone
@@ -176,5 +186,13 @@ func (t Model) acceptPath() (Model, string, error) {
 	if t.filter.kind == directoryFilter || !t.filter.includesFile(filepath.Base(path)) {
 		return t, "", fmt.Errorf("path does not match %s", t.filter.Label())
 	}
-	return t, path, nil
+	parent := filepath.Dir(path)
+	t.id = explorerID.Add(1)
+	t.root = &directoryNode{path: parent, name: displayPath(parent), expanded: true, loading: true, isDir: true}
+	t.selected = 0
+	t.focusAfterLoad = path
+	t.action = actionNone
+	t.editor.Blur()
+	t.refresh()
+	return t, "", nil
 }

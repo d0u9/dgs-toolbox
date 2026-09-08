@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"dgs-toolbox/internal/tui/confirm"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -23,6 +25,7 @@ type Model struct {
 	activeApp     int
 	activeCommand int
 	confirmQuit   bool
+	quitDialog    confirm.Model
 	width         int
 	height        int
 	now           time.Time
@@ -76,6 +79,9 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case RequestQuitMsg:
+		m.openQuitConfirmation()
+		return m, nil
 	case tickMsg:
 		m.now = time.Time(msg)
 		return m, tick()
@@ -110,13 +116,16 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.forwardToActive(msg)
 			}
 		}
-		return m, tea.Quit
+		m.openQuitConfirmation()
+		return m, nil
 	}
 	if m.confirmQuit {
-		switch key {
-		case "y", "Y":
+		var decision confirm.Decision
+		m.quitDialog, decision = m.quitDialog.Update(key)
+		switch decision {
+		case confirm.Confirmed:
 			return m, tea.Quit
-		case "n", "N", "esc":
+		case confirm.Cancelled:
 			m.confirmQuit = false
 		}
 		return m, nil
@@ -127,7 +136,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if key == "q" {
-		m.confirmQuit = true
+		m.openQuitConfirmation()
 		return m, nil
 	}
 	if key == "esc" {
@@ -137,7 +146,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.activeCommand = -1
 			return m, nil
 		}
-		m.confirmQuit = true
+		m.openQuitConfirmation()
 		return m, nil
 	}
 
@@ -171,6 +180,15 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) openQuitConfirmation() {
+	m.confirmQuit = true
+	m.quitDialog = confirm.New(confirm.Config{
+		Title: "QUIT DGS?", Message: "Exit the application?",
+		Detail:       "No active file operation will be interrupted.",
+		ConfirmLabel: "Yes", CancelLabel: "No",
+	})
 }
 
 func (m Model) activate(selected choice) Model {

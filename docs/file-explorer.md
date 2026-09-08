@@ -81,6 +81,9 @@ w              Collapse every directory already present in the tree
 -              Move the Explorer root up one directory
 =              Make the focused directory the Explorer root
 Enter          Choose the focused item when valid for the active filter
+Primary click  Focus a row and toggle a directory open or closed
+Double-click   Choose the focused item when valid for the active filter
+Space          Preview the focused file
 Esc            Cancel and return to the calling screen
 ?              Show contextual help
 ```
@@ -114,18 +117,22 @@ While editing a name, printable keys—including `q` and the Vim navigation lett
 
 ## Direct path input
 
-`/` opens a shell-like path input at the bottom without replacing the tree. Support absolute paths, paths relative to the focused directory, and `~`.
+`/` opens an initially empty, shell-like path input at the bottom without replacing the tree. Support absolute paths, paths relative to the focused directory, and `~`.
 
 ```text
 Tab            Complete or select the next candidate
 Shift+Tab      Select the previous candidate
-Enter          Select a valid completed path
+Enter          Accept the highlighted completion; with no list open, navigate the tree to the path
 Esc            Cancel and return to the unchanged tree
 ```
 
 Completion reads only the directory containing the current path fragment; it never recursively scans the filesystem. Match the final fragment fuzzily and case-insensitively. For example, `/tmp/f<Tab>` may offer both `/tmp/1-foo/` and `/tmp/2-far/`.
 
 Show up to five matching candidates immediately above the input. Further `Tab` presses move forward and `Shift+Tab` moves backward. Append a path separator to directory completions. Show hidden entries only when the fragment begins with `.`. File candidates must obey the active filter.
+
+When the final fragment is empty, `Tab` offers every visible entry in that directory which satisfies the active filter. While candidates are visible, `Enter` accepts the highlighted completion and remains in path input. A subsequent `Enter` returns to the tree at that location. Path input never confirms the caller's final value: `Enter` or double-click in the tree performs the final selection. This keeps file operations available after direct navigation.
+
+Regular-file rows show a human-readable size in a right-aligned column. Directory rows reserve that area for navigation rather than reporting filesystem-specific directory entry sizes.
 
 Pasting replaces the prefilled input instead of appending to it. Trim trailing spaces, newlines, and other whitespace from pasted and submitted paths.
 

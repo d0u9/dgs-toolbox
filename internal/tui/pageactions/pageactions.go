@@ -16,7 +16,10 @@ const (
 	Next
 )
 
-type Action struct{ Destination string }
+type Action struct {
+	Destination string
+	Title       string
+}
 type Config struct {
 	Prev *Action
 	Next *Action
@@ -40,10 +43,18 @@ func View(config Config, width int) string {
 	g := resolve(config, contentWidth)
 	prev, next := []string{"", ""}, []string{"", ""}
 	if config.Prev != nil {
-		prev = button("← Prev  esc", config.Prev.Destination, g.prevWidth, false)
+		title := config.Prev.Title
+		if title == "" {
+			title = "← Prev  esc"
+		}
+		prev = button(title, config.Prev.Destination, g.prevWidth, false)
 	}
 	if config.Next != nil {
-		next = button("Next →  n", config.Next.Destination, g.nextWidth, true)
+		title := config.Next.Title
+		if title == "" {
+			title = "Next →  n"
+		}
+		next = button(title, config.Next.Destination, g.nextWidth, true)
 	}
 	lines := []string{strings.Repeat(" ", max(0, width))}
 	for row := 0; row < 2; row++ {
@@ -98,10 +109,18 @@ func Hit(config Config, width, x, y int) Direction {
 func resolve(config Config, width int) geometry {
 	g := geometry{gap: 2}
 	if config.Prev != nil {
-		g.prevWidth = min(24, max(16, max(lipgloss.Width("← Prev  esc"), lipgloss.Width(config.Prev.Destination))+4))
+		title := config.Prev.Title
+		if title == "" {
+			title = "← Prev  esc"
+		}
+		g.prevWidth = min(24, max(16, max(lipgloss.Width(title), lipgloss.Width(config.Prev.Destination))+4))
 	}
 	if config.Next != nil {
-		g.nextWidth = min(24, max(16, max(lipgloss.Width("Next →  n"), lipgloss.Width(config.Next.Destination))+4))
+		title := config.Next.Title
+		if title == "" {
+			title = "Next →  n"
+		}
+		g.nextWidth = min(24, max(16, max(lipgloss.Width(title), lipgloss.Width(config.Next.Destination))+4))
 	}
 	if g.prevWidth == 0 || g.nextWidth == 0 {
 		g.gap = 0

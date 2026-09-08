@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"dgs-toolbox/internal/apps/photo/importer"
 	"dgs-toolbox/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,7 +35,7 @@ func TestImportStartsWithDirectoriesOnly(t *testing.T) {
 			t.Errorf("setup view does not contain %q:\n%s", text, view)
 		}
 	}
-	for _, hidden := range []string{"Operation", "Extensions", "Duplicates", "CLASSIFICATION", "Review import"} {
+	for _, hidden := range []string{"Operation", "Extensions", "Duplicates", "Review import"} {
 		if strings.Contains(view, hidden) {
 			t.Errorf("setup view unexpectedly contains %q:\n%s", hidden, view)
 		}
@@ -192,7 +193,7 @@ func TestImportNavigationMatchesParameterLayout(t *testing.T) {
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	model.controls.SetFocusID(operationID)
-	want := []string{extensionsID, duplicatesID, parallelID, classifyID, operationID}
+	want := []string{extensionsID, duplicatesID, parallelID, operationID}
 	for _, wantID := range want {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(importModel)
@@ -202,20 +203,31 @@ func TestImportNavigationMatchesParameterLayout(t *testing.T) {
 	}
 }
 
-func TestProcessingPreviewUsesConfiguredWorkersAndLandscapeLayout(t *testing.T) {
+func TestProcessingUsesConfiguredWorkersAndLandscapeLayout(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot, destinationRoot := filepath.Join(root, "src"), filepath.Join(root, "dst")
+	for _, name := range []string{"one.JPG", "two.DNG", "three.JPG", "four.DNG"} {
+		if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sourceRoot, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	model := newImportModel().(importModel)
 	model.width, model.height = 140, 28
 	model.stage = parameterStage
+	model.paths = [pathFieldCount]string{sourceRoot, destinationRoot}
 	model.scan.source = []scannedFile{{path: "one.JPG", size: 100}, {path: "two.DNG", size: 200}, {path: "three.JPG", size: 300}, {path: "four.DNG", size: 400}}
 	model.configureExtensions()
 	model.controls.SetValue(parallelID, "3")
-	updated, cmd := model.startProcessingPreview()
+	updated, cmd := model.startProcessing()
 	model = updated.(importModel)
 	if cmd == nil || model.stage != processingStage || len(model.processing.workers) != 3 {
 		t.Fatalf("stage=%v workers=%d cmd=%v", model.stage, len(model.processing.workers), cmd != nil)
 	}
 	view := model.View()
-	for _, want := range []string{"NO FILES ARE CHANGED", "Workers", "Next files", "Recent results", "COPYING", "one.JPG", "two.DNG", "["} {
+	for _, want := range []string{"SHA-256 VERIFIED BEFORE PUBLISH", "Workers", "Next files", "Recent results", "["} {
 		if !strings.Contains(view, want) {
 			t.Errorf("processing view missing %q:\n%s", want, view)
 		}
@@ -223,11 +235,13 @@ func TestProcessingPreviewUsesConfiguredWorkersAndLandscapeLayout(t *testing.T) 
 	if lipgloss.Width(view) != 140 || lipgloss.Height(view) != 28 {
 		t.Fatalf("processing view size = %dx%d", lipgloss.Width(view), lipgloss.Height(view))
 	}
-	for range 15 {
-		model.advanceProcessingPreview()
+	for !model.processingComplete() {
+		message := cmd()
+		updated, cmd = model.Update(message)
+		model = updated.(importModel)
 	}
-	if len(model.processing.verified) == 0 {
-		t.Fatal("processing preview did not advance workers")
+	if len(model.processing.verified) != 4 {
+		t.Fatalf("verified=%d, want 4", len(model.processing.verified))
 	}
 }
 
@@ -244,10 +258,10 @@ func TestProcessingGuardsReturnAndExit(t *testing.T) {
 	if !model.leaveConfirm || model.leaveExits || model.stage != processingStage {
 		t.Fatalf("Esc did not guard return: confirm=%v exits=%v stage=%v", model.leaveConfirm, model.leaveExits, model.stage)
 	}
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(importModel)
-	if model.leaveConfirm || model.stage != processingStage || cmd == nil {
-		t.Fatalf("cancel did not resume: confirm=%v stage=%v cmd=%v", model.leaveConfirm, model.stage, cmd != nil)
+	if model.leaveConfirm || model.stage != processingStage || model.processing.paused {
+		t.Fatalf("cancel did not resume: confirm=%v stage=%v paused=%v", model.leaveConfirm, model.stage, model.processing.paused)
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
@@ -257,7 +271,8 @@ func TestProcessingGuardsReturnAndExit(t *testing.T) {
 	}
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(importModel)
-	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model.processing.complete = true
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("confirmed exit did not return a quit command")
 	}
@@ -280,6 +295,7 @@ func TestProcessingStatusDistinguishesRunningPausedAndComplete(t *testing.T) {
 	model.processing.paused = false
 	model.processing.verified = append(model.processing.verified, model.processing.files[0])
 	model.processing.workers[0].phase = workerDone
+	model.processing.complete = true
 	if status := model.Status(); status.Left != "PROCESSING · COMPLETE" || strings.Contains(status.Right, "p Pause") {
 		t.Fatalf("complete status = %#v", status)
 	}
@@ -293,6 +309,8 @@ func TestCompletedProcessingOpensLandscapeResultPreview(t *testing.T) {
 		files:    []scannedFile{{path: "DCIM/one.JPG", size: 2048}, {path: "DCIM/two.DNG", size: 4096}},
 		verified: []scannedFile{{path: "DCIM/one.JPG", size: 2048}, {path: "DCIM/two.DNG", size: 4096}},
 		workers:  []processingWorker{{number: 1, phase: workerDone}},
+		complete: true,
+		results:  []importer.FileResult{{Index: 0, Source: "DCIM/one.JPG", Destination: "one.JPG", Size: 2048, Phase: importer.PhaseComplete}, {Index: 1, Source: "DCIM/two.DNG", Destination: "two.DNG", Size: 4096, Phase: importer.PhaseComplete}},
 	}
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(importModel)
@@ -300,7 +318,7 @@ func TestCompletedProcessingOpensLandscapeResultPreview(t *testing.T) {
 		t.Fatalf("result stage=%v delete-state=%v", model.stage, model.controls.Checked(deleteStateID))
 	}
 	view := model.View()
-	for _, want := range []string{"Import result", "Verified files", "Verification summary", "State file", "SHA-256 MATCH", "Delete .dgs-state", "NO FILES WERE CHANGED"} {
+	for _, want := range []string{"Import result", "Verified files", "Verification summary", "State file", "SHA-256 MATCH", "Delete .dgs-state", "TRANSFER COMPLETE"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("result view missing %q:\n%s", want, view)
 		}
@@ -497,7 +515,7 @@ func TestParameterScreenUsesAsymmetricSplitLayout(t *testing.T) {
 	}
 	model.syncResultLists()
 	view := model.View()
-	for _, want := range []string{"Source", "Destination", "▼  ▼  ▼", "Parameters", "Import summary", "Eligible", "Duplicates", "Will copy", "EXIF date folders"} {
+	for _, want := range []string{"Source", "Destination", "▼  ▼  ▼", "Parameters", "Import summary", "Eligible", "Duplicates", "Will copy", "Workers"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("split view does not contain %q:\n%s", want, view)
 		}

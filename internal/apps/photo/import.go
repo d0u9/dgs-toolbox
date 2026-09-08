@@ -1,6 +1,7 @@
 package photo
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -11,11 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"dgs-toolbox/internal/apps/photo/importer"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/confirm"
 	"dgs-toolbox/internal/tui/contextmenu"
 	"dgs-toolbox/internal/tui/datafield"
-	"dgs-toolbox/internal/tui/divider"
 	"dgs-toolbox/internal/tui/fieldset"
 	"dgs-toolbox/internal/tui/fileexplorer"
 	"dgs-toolbox/internal/tui/form"
@@ -41,14 +42,13 @@ const (
 	operationID   = "operation"
 	extensionsID  = "extensions"
 	duplicatesID  = "duplicates"
-	classifyID    = "classify"
 	parallelID    = "parallelism"
 	deleteStateID = "delete-state"
 )
 
 var (
 	setupIDs     = []string{sourceID, destinationID}
-	parameterIDs = []string{operationID, extensionsID, duplicatesID, parallelID, classifyID}
+	parameterIDs = []string{operationID, extensionsID, duplicatesID, parallelID}
 )
 
 type importStage int
@@ -87,7 +87,8 @@ type scanDoneMsg struct {
 	summary    scanSummary
 }
 
-type processingTickMsg time.Time
+type transferEventMsg importer.Event
+type transferDoneMsg importer.Result
 
 type workerPhase int
 
@@ -100,18 +101,25 @@ const (
 )
 
 type processingWorker struct {
-	number   int
-	file     scannedFile
-	phase    workerPhase
-	progress int
+	number          int
+	jobIndex        int
+	file            scannedFile
+	phase           workerPhase
+	progress        int
+	sourceHash      string
+	destinationHash string
 }
 
 type processingState struct {
 	files        []scannedFile
-	next         int
 	verified     []scannedFile
+	results      []importer.FileResult
+	failed       int
+	skipped      int
+	finished     map[int]importer.Phase
 	workers      []processingWorker
 	paused       bool
+	complete     bool
 	workerOffset int
 }
 
@@ -164,7 +172,13 @@ type importModel struct {
 	processing           processingState
 	leaveConfirm         bool
 	leaveExits           bool
+	leaveWasPaused       bool
 	leaveDialog          confirm.Model
+	transferCancel       context.CancelFunc
+	transferController   *importer.Controller
+	transferUpdates      <-chan tea.Msg
+	pendingExit          bool
+	pendingReturn        bool
 }
 
 func newImportModel() tui.CommandModel {
@@ -181,7 +195,6 @@ func newImportModel() tui.CommandModel {
 			form.Field{ID: extensionsID, Kind: form.MultiCheckbox, Label: "Extensions", SelectAll: true},
 			form.Field{ID: duplicatesID, Kind: form.Option, Label: "Duplicates", Value: "Skip", Options: []string{"Skip", "Replace", "Keep both"}},
 			form.Field{ID: parallelID, Kind: form.Number, Label: "Parallelism", Value: "1", Min: 1, Max: 8, Step: 1},
-			form.Field{ID: classifyID, Kind: form.Checkbox, Label: "Organize by EXIF date", Checked: true},
 			form.Field{ID: deleteStateID, Kind: form.Checkbox, Label: "Delete .dgs-state", Checked: true},
 		),
 		parameterFields: datafield.New(
@@ -220,8 +233,14 @@ func scanTick() tea.Cmd {
 	return tea.Tick(120*time.Millisecond, func(now time.Time) tea.Msg { return scanTickMsg(now) })
 }
 
-func processingTick() tea.Cmd {
-	return tea.Tick(220*time.Millisecond, func(now time.Time) tea.Msg { return processingTickMsg(now) })
+func waitTransferUpdate(updates <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		message, ok := <-updates
+		if !ok {
+			return nil
+		}
+		return message
+	}
 }
 
 func scanDirectories(paths [pathFieldCount]string) scanSummary {
@@ -285,15 +304,19 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.parameterFields.Set("parameters")
 		m.controls.SetFocusID(operationID)
 		return m, nil
-	case processingTickMsg:
-		if m.stage != processingStage || m.processing.paused || m.leaveConfirm {
-			return m, nil
+	case transferEventMsg:
+		m.applyTransferEvent(importer.Event(msg))
+		return m, waitTransferUpdate(m.transferUpdates)
+	case transferDoneMsg:
+		m.applyTransferResult(importer.Result(msg))
+		if m.pendingExit {
+			return m, tea.Quit
 		}
-		m.advanceProcessingPreview()
-		if m.processingComplete() {
-			return m, nil
+		if m.pendingReturn {
+			m.pendingReturn = false
+			m.stage = parameterStage
 		}
-		return m, processingTick()
+		return m, nil
 	case tea.MouseMsg:
 		return m.updateMouse(msg)
 	case tea.KeyMsg:
@@ -310,8 +333,17 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m importModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.picking {
+		width, height := m.modalSize()
+		msg.X -= (m.width-width)/2 + 1
+		msg.Y -= (m.height-height)/2 + 4
 		var cmd tea.Cmd
-		m.picker, _, cmd = m.picker.Update(msg)
+		var selected string
+		m.picker, selected, cmd = m.picker.Update(msg)
+		if selected != "" {
+			m.paths[m.pickerFor] = displayPath(selected)
+			m.controls.SetValue(setupIDs[m.pickerFor], m.paths[m.pickerFor])
+			m.picking = false
+		}
 		return m, cmd
 	}
 	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.stage == setupStage {
@@ -329,10 +361,9 @@ func (m importModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		switch pageactions.Hit(navigation, rightWidth, x, msg.Y-(m.height-4)) {
 		case pageactions.Prev:
-			m.leaveConfirm, m.leaveExits = true, false
-			m.leaveDialog = m.newLeaveDialog()
+			m.beginLeaveConfirmation(false)
 		case pageactions.Next:
-			m.openResultPreview()
+			m.openResult()
 		}
 		return m, nil
 	}
@@ -385,7 +416,7 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.width < 80 || m.height < 16 {
 		return m, nil
 	}
-	lowerY := 6
+	lowerY := lipgloss.Height(fieldset.View("Import result", m.resultHeaderContent(), m.width)) + 1
 	lowerHeight := max(8, m.height-lowerY)
 	leftWidth := min(max(48, m.width*2/3), m.width-31)
 	rightWidth := m.width - leftWidth - 1
@@ -395,15 +426,12 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.resultFields.SetBounds("result-files", datafield.Bounds{X: 0, Y: lowerY, Width: leftWidth, Height: lowerHeight})
 	m.resultFields.SetBounds("result-actions", datafield.Bounds{X: leftWidth + 1, Y: cleanupY, Width: rightWidth, Height: cleanupHeight})
 	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= m.height-4 {
-		navigation := pageactions.Config{
-			Prev: &pageactions.Action{Destination: "Processing"},
-			Next: &pageactions.Action{Destination: "Commands"},
-		}
+		navigation := resultPageActions()
 		switch pageactions.Hit(navigation, rightWidth, msg.X-leftWidth-1, msg.Y-(m.height-4)) {
 		case pageactions.Prev:
-			m.stage = processingStage
+			m.restartImport()
 		case pageactions.Next:
-			m.actionNotice = "Finish selected · preview remains open"
+			return m, func() tea.Msg { return tui.RequestQuitMsg{} }
 		}
 		return m, nil
 	}
@@ -430,15 +458,10 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m importModel) clickSetup(x, y int) (tea.Model, tea.Cmd) {
 	contentWidth := min(tui.DefaultContentWidth, max(24, m.width-4))
-	topPadding := 2
-	if m.height < 28 {
-		topPadding = 1
-	}
-	if m.height < 23 {
-		topPadding = 0
-	}
+	contentHeight := 11
+	topPadding := max(0, (max(1, m.height-4)-contentHeight)/2)
 	left := max(0, (m.width-contentWidth)/2)
-	if id, ok := m.controls.Click([]string{sourceID, destinationID}, x-left-2, y-topPadding-6); ok {
+	if id, ok := m.controls.Click([]string{sourceID, destinationID}, x-left-2, y-topPadding-7); ok {
 		if id == sourceID {
 			return m.openPicker(sourceField)
 		}
@@ -456,13 +479,8 @@ func (m importModel) clickParameters(x, y int) (tea.Model, tea.Cmd) {
 	layout := m.parameterLayout()
 	localX := x - layout.leftWidth - 3
 	importIDs := []string{operationID, extensionsID, duplicatesID, parallelID}
-	importHeight := lipgloss.Height(m.controls.ViewFocused(importIDs, true))
 	if _, ok := m.controls.Click(importIDs, localX, y-2); ok {
 		m.syncResultLists()
-		return m, nil
-	}
-	classifyY := importHeight + 5
-	if _, ok := m.controls.Click([]string{classifyID}, localX, y-classifyY); ok {
 		return m, nil
 	}
 	if y >= m.height-4 {
@@ -476,7 +494,7 @@ func (m importModel) clickParameters(x, y int) (tea.Model, tea.Cmd) {
 			m.controls.SetFocusID(destinationID)
 			return m, nil
 		case pageactions.Next:
-			return m.startProcessingPreview()
+			return m.startProcessing()
 		}
 	}
 	return m, nil
@@ -510,14 +528,21 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch decision {
 		case confirm.Confirmed:
 			m.leaveConfirm = false
+			if m.transferCancel != nil && !m.processingComplete() {
+				m.pendingExit = m.leaveExits
+				m.pendingReturn = !m.leaveExits
+				m.transferCancel()
+				return m, nil
+			}
 			if m.leaveExits {
 				return m, tea.Quit
 			}
 			m.stage = parameterStage
 		case confirm.Cancelled:
 			m.leaveConfirm = false
-			if !m.processing.paused && !m.processingComplete() {
-				return m, processingTick()
+			if !m.leaveWasPaused && !m.processingComplete() {
+				m.processing.paused = false
+				m.transferController.Resume()
 			}
 		}
 		return m, nil
@@ -549,13 +574,13 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.stage == processingStage {
 		switch key {
 		case "esc", "q", "ctrl+c":
-			m.leaveConfirm = true
-			m.leaveExits = key != "esc"
-			m.leaveDialog = m.newLeaveDialog()
+			m.beginLeaveConfirmation(key != "esc")
 		case "p":
 			m.processing.paused = !m.processing.paused
-			if !m.processing.paused && !m.processingComplete() {
-				return m, processingTick()
+			if m.processing.paused {
+				m.transferController.Pause()
+			} else {
+				m.transferController.Resume()
 			}
 		case "up", "k":
 			m.processing.workerOffset = max(0, m.processing.workerOffset-1)
@@ -567,14 +592,14 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.processing.workerOffset = max(0, len(m.processing.workers)-1)
 		case "enter", form.PrimaryActionKey:
 			if m.processingComplete() {
-				m.openResultPreview()
+				m.openResult()
 			}
 		}
 		return m, nil
 	}
 	if m.stage == resultStage {
-		if key == "esc" {
-			m.stage = processingStage
+		if key == "r" {
+			m.restartImport()
 			return m, nil
 		}
 		if m.resultFields.Move(key) {
@@ -602,9 +627,6 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.controls.HandleInteraction(key) {
 			return m, nil
-		}
-		if key == form.PrimaryActionKey {
-			m.actionNotice = "Finish selected · preview remains open"
 		}
 		return m, nil
 	}
@@ -677,7 +699,7 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.stage == setupStage {
 			return m.startScan()
 		}
-		return m.startProcessingPreview()
+		return m.startProcessing()
 	case "?":
 		m.help = !m.help
 	}
@@ -861,24 +883,77 @@ func openFileCmd(path string, quickLook bool) tea.Cmd {
 	}
 }
 
-func (m importModel) startProcessingPreview() (tea.Model, tea.Cmd) {
+func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
+	if m.controls.Value(duplicatesID) == "Replace" {
+		m.actionNotice = "Replace is unavailable until atomic backup and rollback are implemented"
+		return m, nil
+	}
+	files := append([]scannedFile(nil), m.filteredSource()...)
+	jobs := make([]importer.Job, 0, len(files))
+	sourceRoot := expandHome(m.paths[sourceField])
+	destinationRoot := expandHome(m.paths[destinationField])
+	for _, file := range files {
+		jobs = append(jobs, importer.Job{
+			Source:      filepath.Join(sourceRoot, filepath.FromSlash(file.path)),
+			Destination: filepath.Join(destinationRoot, filepath.Base(filepath.FromSlash(file.path))),
+		})
+	}
+	operation := importer.Copy
+	if m.controls.Value(operationID) == "Move" {
+		operation = importer.Move
+	}
+	conflict := importer.Skip
+	if m.controls.Value(duplicatesID) == "Keep both" {
+		conflict = importer.KeepBoth
+	}
+	controller := &importer.Controller{}
+	ctx, cancel := context.WithCancel(context.Background())
+	events := make(chan importer.Event, max(16, len(jobs)))
+	updates := make(chan tea.Msg, max(16, len(jobs)))
+	plan := importer.Plan{
+		Jobs: jobs, Operation: operation, Conflict: conflict,
+		Workers:    max(1, m.controls.IntValue(parallelID)),
+		StatePath:  filepath.Join(destinationRoot, ".dgs-state"),
+		Controller: controller,
+	}
 	m.stage = processingStage
-	m.processing = processingState{files: append([]scannedFile(nil), m.filteredSource()...)}
+	m.actionNotice = ""
+	m.processing = processingState{files: files, finished: make(map[int]importer.Phase)}
 	count := max(1, m.controls.IntValue(parallelID))
 	m.processing.workers = make([]processingWorker, count)
 	for index := range m.processing.workers {
-		m.processing.workers[index].number = index + 1
-		m.assignWorker(index)
+		m.processing.workers[index] = processingWorker{number: index + 1, jobIndex: -1, phase: workerIdle}
 	}
-	return m, processingTick()
+	m.transferCancel = cancel
+	m.transferController = controller
+	m.transferUpdates = updates
+	go func() {
+		resultChannel := make(chan importer.Result, 1)
+		go func() {
+			resultChannel <- importer.Run(ctx, plan, events)
+			close(events)
+		}()
+		for event := range events {
+			updates <- transferEventMsg(event)
+		}
+		updates <- transferDoneMsg(<-resultChannel)
+		close(updates)
+	}()
+	return m, waitTransferUpdate(updates)
 }
 
-func (m *importModel) openResultPreview() {
-	items := make([]scrolllist.Item, 0, len(m.processing.verified))
-	for _, file := range m.processing.verified {
+func (m *importModel) openResult() {
+	items := make([]scrolllist.Item, 0, len(m.processing.results))
+	for _, result := range m.processing.results {
+		label := fmt.Sprintf("✓  %s  ·  %s  ·  SHA-256 MATCH", filepath.Base(result.Destination), formatBytes(result.Size))
+		if result.Phase == importer.PhaseSkipped {
+			label = fmt.Sprintf("–  %s  ·  skipped", filepath.Base(result.Destination))
+		}
+		if result.Phase == importer.PhaseFailed {
+			label = fmt.Sprintf("!  %s  ·  %s", filepath.Base(result.Source), result.Error)
+		}
 		items = append(items, scrolllist.Item{
-			ID:    file.path,
-			Label: fmt.Sprintf("✓  %s  ·  %s  ·  SHA-256 MATCH", file.path, formatBytes(file.size)),
+			ID: result.Source, Label: label,
 		})
 	}
 	m.resultList.SetItems(items)
@@ -886,40 +961,82 @@ func (m *importModel) openResultPreview() {
 	m.stage = resultStage
 }
 
-func (m *importModel) assignWorker(index int) {
-	worker := &m.processing.workers[index]
-	if m.processing.next >= len(m.processing.files) {
-		worker.phase, worker.progress = workerDone, 100
-		return
-	}
-	worker.file = m.processing.files[m.processing.next]
-	m.processing.next++
-	worker.phase, worker.progress = workerCopying, 0
+func (m importModel) processingComplete() bool {
+	return m.processing.complete
 }
 
-func (m *importModel) advanceProcessingPreview() {
-	for index := range m.processing.workers {
-		worker := &m.processing.workers[index]
-		switch worker.phase {
-		case workerCopying:
-			worker.progress = min(100, worker.progress+13)
-			if worker.progress == 100 {
-				worker.phase, worker.progress = workerVerifying, 0
-			}
-		case workerVerifying:
-			worker.progress = min(100, worker.progress+20)
-			if worker.progress == 100 {
-				worker.phase, worker.progress = workerPublishing, 100
-			}
-		case workerPublishing:
-			m.processing.verified = append(m.processing.verified, worker.file)
-			m.assignWorker(index)
+func (m *importModel) workerForJob(index int) *processingWorker {
+	for workerIndex := range m.processing.workers {
+		if m.processing.workers[workerIndex].jobIndex == index {
+			return &m.processing.workers[workerIndex]
 		}
 	}
+	for workerIndex := range m.processing.workers {
+		if m.processing.workers[workerIndex].jobIndex < 0 {
+			m.processing.workers[workerIndex].jobIndex = index
+			if index >= 0 && index < len(m.processing.files) {
+				m.processing.workers[workerIndex].file = m.processing.files[index]
+			}
+			return &m.processing.workers[workerIndex]
+		}
+	}
+	return nil
 }
 
-func (m importModel) processingComplete() bool {
-	return len(m.processing.verified) == len(m.processing.files)
+func (m *importModel) applyTransferEvent(event importer.Event) {
+	worker := m.workerForJob(event.Index)
+	if worker == nil {
+		return
+	}
+	switch event.Phase {
+	case importer.PhaseCopying:
+		worker.phase = workerCopying
+	case importer.PhaseVerifying:
+		worker.phase = workerVerifying
+	case importer.PhasePublishing, importer.PhaseDeletingSource:
+		worker.phase = workerPublishing
+	case importer.PhaseComplete, importer.PhaseSkipped, importer.PhaseFailed:
+		m.processing.finished[event.Index] = event.Phase
+		if event.Phase == importer.PhaseComplete && event.Index >= 0 && event.Index < len(m.processing.files) {
+			m.processing.verified = append(m.processing.verified, m.processing.files[event.Index])
+		}
+		if event.Phase == importer.PhaseSkipped {
+			m.processing.skipped++
+		}
+		if event.Phase == importer.PhaseFailed {
+			m.processing.failed++
+		}
+		worker.phase = workerDone
+		worker.jobIndex = -1
+	}
+	if event.Total > 0 {
+		worker.progress = min(100, int(event.Bytes*100/event.Total))
+	}
+	worker.sourceHash = event.SourceHash
+	worker.destinationHash = event.DestinationHash
+}
+
+func (m *importModel) applyTransferResult(result importer.Result) {
+	m.processing.results = result.Files
+	m.processing.verified = nil
+	m.processing.failed, m.processing.skipped = 0, 0
+	for _, item := range result.Files {
+		if item.Phase == importer.PhaseComplete && item.Index >= 0 && item.Index < len(m.processing.files) {
+			m.processing.verified = append(m.processing.verified, m.processing.files[item.Index])
+		}
+		if item.Phase == importer.PhaseFailed {
+			m.processing.failed++
+		}
+		if item.Phase == importer.PhaseSkipped {
+			m.processing.skipped++
+		}
+	}
+	for index := range m.processing.workers {
+		m.processing.workers[index].phase = workerDone
+		m.processing.workers[index].jobIndex = -1
+	}
+	m.processing.complete = true
+	m.processing.paused = false
 }
 
 func (m importModel) startScan() (tea.Model, tea.Cmd) {
@@ -950,8 +1067,8 @@ func (m *importModel) sizePicker() {
 }
 
 func (m importModel) modalSize() (int, int) {
-	width := min(72, m.width-4)
-	height := min(22, m.height-4)
+	width := min(92, m.width-4)
+	height := min(30, m.height-2)
 	return max(20, width), max(8, height)
 }
 
@@ -1045,16 +1162,8 @@ func (m importModel) resultView() string {
 		)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 	}
-	total := len(m.processing.files)
-	bytes := int64(0)
-	for _, file := range m.processing.verified {
-		bytes += file.size
-	}
-	headerContent := strings.Join([]string{
-		"VERIFIED PREVIEW  ·  NO FILES WERE CHANGED",
-		fmt.Sprintf("%d/%d files passed Source and Destination SHA-256 comparison", len(m.processing.verified), total),
-		fmt.Sprintf("Published %s   Skipped 0   Failed 0", formatBytes(bytes)),
-	}, "\n")
+	bytes := m.publishedBytes()
+	headerContent := m.resultHeaderContent()
 	header := fieldset.View("Import result", headerContent, m.width)
 
 	lowerHeight := max(8, m.height-lipgloss.Height(header)-1)
@@ -1079,7 +1188,8 @@ func (m importModel) resultView() string {
 		importSectionStyle.Render("TRANSFER"),
 		fmt.Sprintf("Workers       %d", len(m.processing.workers)),
 		fmt.Sprintf("Verified      %d files", len(m.processing.verified)),
-		"Failed        0 files",
+		fmt.Sprintf("Skipped       %d files", m.processing.skipped),
+		fmt.Sprintf("Failed        %d files", m.processing.failed),
 	}, "\n")
 	actions := m.controls.ViewFocusedWidth([]string{deleteStateID}, actionsFocused, rightWidth-4)
 	cleanupNote := importNoteStyle.Render("Delete is the default. Retain state only for audit or diagnosis.")
@@ -1094,10 +1204,7 @@ func (m importModel) resultView() string {
 		fieldset.View("Verification summary", fitContentHeight(integrity, integrityHeight-2, rightWidth-4), rightWidth),
 		"",
 		fieldset.ViewFocused("State file", fitContentHeight(cleanup, cleanupHeight-2, rightWidth-4), rightWidth, actionsFocused),
-		pageactions.View(pageactions.Config{
-			Prev: &pageactions.Action{Destination: "Processing"},
-			Next: &pageactions.Action{Destination: "Commands"},
-		}, rightWidth),
+		pageactions.View(resultPageActions(), rightWidth),
 	)
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right))
 }
@@ -1111,11 +1218,50 @@ func (m importModel) scanView() string {
 		importHeadingStyle.Render("Reading source and destination"),
 		importNoteStyle.Render("Collecting file names and counts. No files are being changed."),
 		"",
+		fmt.Sprintf("%-13s %s", "Source", ansi.Truncate(m.paths[sourceField], max(1, width-15), "…")),
+		fmt.Sprintf("%-13s %s", "Destination", ansi.Truncate(m.paths[destinationField], max(1, width-15), "…")),
+		"",
 		scanProgressView(m.progress, barWidth),
 		"",
 		importNoteStyle.Render("Esc  Cancel scan"),
 	)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
+func resultPageActions() pageactions.Config {
+	return pageactions.Config{
+		Prev: &pageactions.Action{Title: "↻ Again  r", Destination: "New import"},
+		Next: &pageactions.Action{Title: "Quit  q", Destination: "Exit dgs"},
+	}
+}
+
+func (m *importModel) restartImport() {
+	width, height, paths := m.width, m.height, m.paths
+	fresh := newImportModel().(importModel)
+	fresh.width, fresh.height, fresh.paths = width, height, paths
+	fresh.controls.SetValue(sourceID, paths[sourceField])
+	fresh.controls.SetValue(destinationID, paths[destinationField])
+	*m = fresh
+}
+
+func (m importModel) publishedBytes() int64 {
+	var bytes int64
+	for _, result := range m.processing.results {
+		if result.Phase == importer.PhaseComplete {
+			bytes += result.Size
+		}
+	}
+	return bytes
+}
+
+func (m importModel) resultHeaderContent() string {
+	return strings.Join([]string{
+		"TRANSFER COMPLETE  ·  VERIFIED BEFORE PUBLISH",
+		"Source       " + m.paths[sourceField],
+		"Destination  " + m.paths[destinationField],
+		fmt.Sprintf("%d/%d files passed Source and Destination SHA-256 comparison", len(m.processing.verified), len(m.processing.files)),
+		fmt.Sprintf("Published %s   Skipped %d   Failed %d", formatBytes(m.publishedBytes()), m.processing.skipped, m.processing.failed),
+	}, "\n")
 }
 
 func scanProgressView(percent float64, width int) string {
@@ -1129,7 +1275,7 @@ func (m importModel) processingView() string {
 	if m.width < 80 || m.height < 16 {
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
-			importStepStyle.Render("PROCESSING PREVIEW  ·  PHOTO IMPORT"),
+			importStepStyle.Render("PROCESSING  ·  PHOTO IMPORT"),
 			importHeadingStyle.Render("More space required"),
 			importNoteStyle.Render("Use at least 80 columns and 16 workspace rows for the landscape processing view."),
 		)
@@ -1143,13 +1289,13 @@ func (m importModel) processingView() string {
 		state = "PAUSED"
 	}
 	if m.processingComplete() {
-		state = "PREVIEW COMPLETE"
+		state = "COMPLETE"
 	}
 	progressInfo := fmt.Sprintf("%3d%% │ %d/%d verified", percent, verified, total)
 	progressWidth := max(8, m.width-lipgloss.Width(progressInfo)-7)
 	headerContent := strings.Join([]string{
-		fmt.Sprintf("%s  ·  NO FILES ARE CHANGED", state),
-		fmt.Sprintf("Files %d/%d verified   Workers %d   Active %d   Pending %d   Failed 0", verified, total, len(m.processing.workers), m.activeWorkerCount(), max(0, total-verified-m.activeWorkerCount())),
+		fmt.Sprintf("%s  ·  SHA-256 VERIFIED BEFORE PUBLISH", state),
+		fmt.Sprintf("Files %d/%d verified   Workers %d   Active %d   Pending %d   Skipped %d   Failed %d", verified, total, len(m.processing.workers), m.activeWorkerCount(), max(0, total-verified-m.processing.skipped-m.processing.failed-m.activeWorkerCount()), m.processing.skipped, m.processing.failed),
 		compactProgressBar(percent, progressWidth) + " " + progressInfo,
 	}, "\n")
 	header := fieldset.View("Import progress", headerContent, m.width)
@@ -1233,13 +1379,13 @@ func (m importModel) workerRows(width, height int) string {
 		name := ansi.Truncate(filepath.Base(worker.file.path), fileWidth, "...")
 		sourceHash, destinationHash := "computing", "waiting"
 		if worker.phase >= workerVerifying {
-			sourceHash = "simulated"
+			sourceHash = shortHash(worker.sourceHash, "ready")
 		}
 		if worker.phase == workerVerifying {
 			destinationHash = "computing"
 		}
 		if worker.phase == workerPublishing {
-			destinationHash = "MATCH"
+			destinationHash = shortHash(worker.destinationHash, "MATCH")
 		}
 		barWidth := max(8, width-11)
 		lines = append(lines,
@@ -1272,6 +1418,17 @@ func (m importModel) leaveConfirmationView() string {
 	return m.leaveDialog.View(m.width)
 }
 
+func (m *importModel) beginLeaveConfirmation(exits bool) {
+	m.leaveWasPaused = m.processing.paused
+	if !m.processing.paused && !m.processingComplete() {
+		m.processing.paused = true
+		m.transferController.Pause()
+	}
+	m.leaveConfirm = true
+	m.leaveExits = exits
+	m.leaveDialog = m.newLeaveDialog()
+}
+
 func (m importModel) newLeaveDialog() confirm.Model {
 	title := "RETURN TO PARAMETERS?"
 	message := "Processing will stop at its current state."
@@ -1282,7 +1439,7 @@ func (m importModel) newLeaveDialog() confirm.Model {
 	return confirm.New(confirm.Config{
 		Title:        title,
 		Message:      message,
-		Detail:       "This preview has not changed any files.",
+		Detail:       "Verified files stay published; the current partial file stays unpublished.",
 		ConfirmLabel: "Yes",
 		CancelLabel:  "No",
 	})
@@ -1302,14 +1459,33 @@ func workerPhaseLabel(phase workerPhase) string {
 }
 
 func (m importModel) pendingRows(width int) string {
-	if m.processing.next >= len(m.processing.files) {
-		return importNoteStyle.Render("No pending files")
+	active := make(map[int]struct{}, len(m.processing.workers))
+	for _, worker := range m.processing.workers {
+		if worker.jobIndex >= 0 {
+			active[worker.jobIndex] = struct{}{}
+		}
 	}
-	lines := make([]string, 0, len(m.processing.files)-m.processing.next)
-	for index := m.processing.next; index < len(m.processing.files); index++ {
+	lines := make([]string, 0, len(m.processing.files))
+	for index := range m.processing.files {
+		if _, done := m.processing.finished[index]; done {
+			continue
+		}
+		if _, running := active[index]; running {
+			continue
+		}
 		lines = append(lines, fmt.Sprintf("%3d  %s", index+1, ansi.Truncate(filepath.Base(m.processing.files[index].path), max(1, width-5), "...")))
 	}
+	if len(lines) == 0 {
+		return importNoteStyle.Render("No pending files")
+	}
 	return strings.Join(lines, "\n")
+}
+
+func shortHash(hash, fallback string) string {
+	if hash == "" {
+		return fallback
+	}
+	return hash[:min(8, len(hash))]
 }
 
 func (m importModel) recentRows(width int) string {
@@ -1359,27 +1535,22 @@ func (m importModel) pickerView() string {
 
 func (m importModel) setupView() string {
 	contentWidth := min(tui.DefaultContentWidth, max(24, m.width-4))
-	topPadding := 2
-	if m.height < 28 {
-		topPadding = 1
-	}
-	if m.height < 23 {
-		topPadding = 0
-	}
 	header := lipgloss.JoinVertical(
 		lipgloss.Left,
 		importStepStyle.Render("SETUP  ·  PHOTO IMPORT"),
 		importHeadingStyle.Render("Choose directories"),
 		importNoteStyle.Render("Select the source and destination to scan before configuring the import."),
 	)
+	directoryControls := "\n" + m.controls.View([]string{sourceID, destinationID}) + "\n"
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		"",
 		"",
-		fieldset.View("Directories", m.controls.View([]string{sourceID, destinationID}), contentWidth),
+		fieldset.View("Directories", directoryControls, contentWidth),
 	)
-	return strings.Repeat("\n", topPadding) + content
+	availableHeight := max(1, m.height-4)
+	return lipgloss.Place(contentWidth, availableHeight, lipgloss.Left, lipgloss.Center, content)
 }
 
 func (m importModel) parameterView() string {
@@ -1404,6 +1575,8 @@ func (m importModel) parameterView() string {
 	destinationList.SetSize(leftWidth-4, max(1, destinationHeight-3))
 	sourceContent := importNoteStyle.Render(inventorySummary(m.filteredSource())) + "\n" + sourceList.View(sourceFocused, importSectionStyle, importNoteStyle)
 	destinationContent := importNoteStyle.Render(inventorySummary(m.scan.destination)) + "\n" + destinationList.View(destinationFocused, importSectionStyle, importNoteStyle)
+	sourceContent = fitContentHeight(sourceContent, sourceHeight-2, leftWidth-4)
+	destinationContent = fitContentHeight(destinationContent, destinationHeight-2, leftWidth-4)
 	left := lipgloss.JoinVertical(
 		lipgloss.Left,
 		fieldset.ViewFocused("Source", sourceContent, leftWidth, sourceFocused),
@@ -1464,16 +1637,11 @@ func resultFlowDivider(width int) string {
 func (m importModel) importSummaryView() string {
 	plan := m.buildPlan()
 	action := strings.ToUpper(plan.operation[:1]) + plan.operation[1:]
-	classification := "No"
-	if m.controls.Checked(classifyID) {
-		classification = "EXIF date folders"
-	}
 	return strings.Join([]string{
 		fmt.Sprintf("Eligible       %s", fileCount(plan.eligible)),
 		fmt.Sprintf("Duplicates     %s", fileCount(plan.duplicates)),
 		fmt.Sprintf("Skipped        %s", fileCount(plan.skipped)),
 		fmt.Sprintf("Will %-9s %s", strings.ToLower(action), fileCount(plan.processed)),
-		"Classification " + classification,
 		fmt.Sprintf("Workers        %d", max(1, m.controls.IntValue(parallelID))),
 	}, "\n")
 }
@@ -1531,10 +1699,6 @@ func (m importModel) parametersView(width int, focused bool) string {
 		lipgloss.Left,
 		importSectionStyle.Render("IMPORT"),
 		m.controls.ViewFocusedWidth([]string{operationID, extensionsID, duplicatesID, parallelID}, focused, width),
-		"",
-		divider.Anchored(width),
-		importSectionStyle.Render("CLASSIFICATION"),
-		m.controls.ViewFocusedWidth([]string{classifyID}, focused, width),
 	)
 }
 

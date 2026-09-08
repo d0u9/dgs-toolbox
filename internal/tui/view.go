@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"dgs-toolbox/internal/tui/overlay"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -51,7 +53,7 @@ func (m Model) View() string {
 		workspace = m.active.View()
 	}
 	if m.confirmQuit {
-		workspace = m.quitConfirmation(width, height-2)
+		workspace = overlay.Place(workspace, m.quitDialog.View(width), width, height-2)
 	}
 	return top + "\n" + workspace + "\n" + status
 }
@@ -105,19 +107,13 @@ func (m Model) pickerView(width, height int) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, b.String())
 }
 
-func (m Model) quitConfirmation(width, height int) string {
-	content := pickerTitleStyle.Render("QUIT DGS?") + "\n\n" +
-		mutedStyle.Render("y confirm  •  n/esc cancel")
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
-}
-
 func (m Model) statusBar(width int) string {
 	status := m.pickerStatus()
 	if m.active != nil {
 		status = m.active.Status()
 	}
 	if m.confirmQuit {
-		status = Status{Left: "CONFIRM", Center: "QUIT DGS?", Right: "y Quit  n/esc Cancel"}
+		status = Status{Left: "CONFIRM · QUIT", Center: "QUIT DGS?"}
 	}
 	return renderStatusBar(status, width)
 }
