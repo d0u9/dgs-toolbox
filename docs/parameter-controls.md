@@ -65,10 +65,24 @@ The shared control vocabulary includes:
   Strategy        (●) First   ( ) Second    Radio
   Extensions      [x] JPG                    Multi-checkbox
                   [ ] DNG
-  [ Continue ]                              Button
+  [ Action ]                                Local button
 ```
 
-Use the same `›` focus marker and accent color as the rest of the TUI. The focused control receives a restrained full-row background highlight, including its marker, label, and value; this makes the current row immediately scannable without adding another border. Keep labels aligned where a label/value structure applies. The fieldset is the grouping boundary; do not wrap every control in its own border. Buttons use brackets to communicate their distinct action role.
+Use the same `›` focus marker and accent color as the rest of the TUI. The focused control receives a restrained full-row background highlight, including its marker, label, and value; this makes the current row immediately scannable without adding another border. Keep labels aligned where a label/value structure applies. The fieldset is the grouping boundary; do not wrap every control in its own border. Bracketed buttons are reserved for local actions inside a form; workflow transitions use the shared Page Actions component described below.
+
+### Page Actions
+
+Workflow pages use `internal/tui/pageactions` for consistent navigation at the bottom-right of the page or right-hand pane. A page action has two rows: the first names `← Prev` or `Next →`, and the second names the destination step. Next is visually primary; Prev is quieter. For example:
+
+```text
+
+  ← Prev  esc        Next →  n
+  Directories        › Processing
+```
+
+The blank first row gives the controls breathing space from the content above. The component also reserves one blank row below and one cell at the right, so buttons never touch the status bar or terminal edge. Each action is a two-line solid button with horizontal inset: direction and shortcut first (`esc` for Prev and `n` for Next), destination second. Prev uses a quiet neutral fill. Next uses the accent fill, bold text, and a `›` lead marker. Page Actions have no border, because rectangular outlines are reserved for Fieldsets and DataFields; the filled shape keeps navigation visually distinct from content structure.
+
+Show Next on every page that has a forward destination. Show Prev beside it when returning is supported. The destination label is required: do not use a generic bracketed string that forces the user to infer what follows. `n` invokes Next and `Esc` invokes Prev when those shortcuts are valid. Primary clicks invoke the action under the pointer.
 
 ## Navigation
 

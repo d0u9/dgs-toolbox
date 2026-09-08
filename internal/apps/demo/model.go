@@ -12,6 +12,7 @@ import (
 	"dgs-toolbox/internal/tui/fileexplorer"
 	"dgs-toolbox/internal/tui/form"
 	"dgs-toolbox/internal/tui/overlay"
+	"dgs-toolbox/internal/tui/pageactions"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -301,9 +302,13 @@ func (m model) textFieldView(width int) string {
 
 func (m model) actionFieldView(width int) string {
 	return fieldset.ViewFocused(
-		"Action · Anchored Section Divider",
+		"Actions · Local and Page Navigation",
 		m.controls.ViewFocusedWidth([]string{buttonID}, m.fields.Current() == "action", width-4)+"\n\n"+
-			divider.Anchored(width-4)+"\n"+mutedStyle.Render(m.event),
+			divider.Anchored(width-4)+"\n"+mutedStyle.Render(m.event)+"\n\n"+
+			pageactions.View(pageactions.Config{
+				Prev: &pageactions.Action{Destination: "Parameters"},
+				Next: &pageactions.Action{Destination: "Processing"},
+			}, width-4),
 		width,
 		m.fields.Current() == "action",
 	)

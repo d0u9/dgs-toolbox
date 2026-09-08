@@ -20,6 +20,7 @@ import (
 	"dgs-toolbox/internal/tui/fileexplorer"
 	"dgs-toolbox/internal/tui/form"
 	"dgs-toolbox/internal/tui/overlay"
+	"dgs-toolbox/internal/tui/pageactions"
 	"dgs-toolbox/internal/tui/scrolllist"
 	"dgs-toolbox/internal/tui/stepper"
 
@@ -42,13 +43,12 @@ const (
 	duplicatesID  = "duplicates"
 	classifyID    = "classify"
 	parallelID    = "parallelism"
-	scanID        = "scan"
-	buttonID      = "button"
+	deleteStateID = "delete-state"
 )
 
 var (
-	setupIDs     = []string{sourceID, destinationID, scanID}
-	parameterIDs = []string{operationID, extensionsID, duplicatesID, parallelID, classifyID, buttonID}
+	setupIDs     = []string{sourceID, destinationID}
+	parameterIDs = []string{operationID, extensionsID, duplicatesID, parallelID, classifyID}
 )
 
 type importStage int
@@ -58,6 +58,7 @@ const (
 	scanStage
 	parameterStage
 	processingStage
+	resultStage
 )
 
 type scannedFile struct {
@@ -151,8 +152,10 @@ type importModel struct {
 	scan                 scanSummary
 	scanGeneration       int
 	parameterFields      datafield.Navigator
+	resultFields         datafield.Navigator
 	sourceList           scrolllist.Model
 	destinationList      scrolllist.Model
+	resultList           scrolllist.Model
 	menu                 contextmenu.Model
 	menuTarget           string
 	pendingListG         bool
@@ -179,8 +182,7 @@ func newImportModel() tui.CommandModel {
 			form.Field{ID: duplicatesID, Kind: form.Option, Label: "Duplicates", Value: "Skip", Options: []string{"Skip", "Replace", "Keep both"}},
 			form.Field{ID: parallelID, Kind: form.Number, Label: "Parallelism", Value: "1", Min: 1, Max: 8, Step: 1},
 			form.Field{ID: classifyID, Kind: form.Checkbox, Label: "Organize by EXIF date", Checked: true},
-			form.Field{ID: scanID, Kind: form.Button, Label: "Scan directories"},
-			form.Field{ID: buttonID, Kind: form.Button, Label: "Start processing preview"},
+			form.Field{ID: deleteStateID, Kind: form.Checkbox, Label: "Delete .dgs-state", Checked: true},
 		),
 		parameterFields: datafield.New(
 			datafield.Field{ID: "source-results", Row: 0, Col: 0},
@@ -188,8 +190,13 @@ func newImportModel() tui.CommandModel {
 			datafield.Field{ID: "parameters", Row: 0, Col: 1},
 			datafield.Field{ID: "summary", Row: 1, Col: 1},
 		),
+		resultFields: datafield.New(
+			datafield.Field{ID: "result-files", Row: 0, Col: 0},
+			datafield.Field{ID: "result-actions", Row: 0, Col: 1},
+		),
 		sourceList:      scrolllist.New(),
 		destinationList: scrolllist.New(),
+		resultList:      scrolllist.New(),
 		menu:            contextmenu.New(contextmenu.Item{ID: "open", Label: "Open with default app"}),
 		width:           80, height: 22,
 	}
@@ -310,6 +317,25 @@ func (m importModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.stage == setupStage {
 		return m.clickSetup(msg.X, msg.Y)
 	}
+	if m.stage == resultStage {
+		return m.updateResultMouse(msg)
+	}
+	if m.stage == processingStage && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= m.height-4 {
+		rightWidth := m.width - min(max(48, m.width*2/3), m.width-28) - 1
+		x := msg.X - (m.width - rightWidth)
+		navigation := pageactions.Config{Prev: &pageactions.Action{Destination: "Parameters"}}
+		if m.processingComplete() {
+			navigation.Next = &pageactions.Action{Destination: "Result"}
+		}
+		switch pageactions.Hit(navigation, rightWidth, x, msg.Y-(m.height-4)) {
+		case pageactions.Prev:
+			m.leaveConfirm, m.leaveExits = true, false
+			m.leaveDialog = m.newLeaveDialog()
+		case pageactions.Next:
+			m.openResultPreview()
+		}
+		return m, nil
+	}
 	if m.stage != parameterStage || m.width < 63 {
 		return m, nil
 	}
@@ -355,6 +381,53 @@ func (m importModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.width < 80 || m.height < 16 {
+		return m, nil
+	}
+	lowerY := 6
+	lowerHeight := max(8, m.height-lowerY)
+	leftWidth := min(max(48, m.width*2/3), m.width-31)
+	rightWidth := m.width - leftWidth - 1
+	cleanupHeight := 5
+	integrityHeight := max(5, lowerHeight-cleanupHeight-5)
+	cleanupY := lowerY + integrityHeight + 1
+	m.resultFields.SetBounds("result-files", datafield.Bounds{X: 0, Y: lowerY, Width: leftWidth, Height: lowerHeight})
+	m.resultFields.SetBounds("result-actions", datafield.Bounds{X: leftWidth + 1, Y: cleanupY, Width: rightWidth, Height: cleanupHeight})
+	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= m.height-4 {
+		navigation := pageactions.Config{
+			Prev: &pageactions.Action{Destination: "Processing"},
+			Next: &pageactions.Action{Destination: "Commands"},
+		}
+		switch pageactions.Hit(navigation, rightWidth, msg.X-leftWidth-1, msg.Y-(m.height-4)) {
+		case pageactions.Prev:
+			m.stage = processingStage
+		case pageactions.Next:
+			m.actionNotice = "Finish selected · preview remains open"
+		}
+		return m, nil
+	}
+	hit := m.resultFields.HitAt(msg.X, msg.Y)
+	if hit == "result-files" && msg.Action == tea.MouseActionPress && (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) {
+		delta := -3
+		if msg.Button == tea.MouseButtonWheelDown {
+			delta = 3
+		}
+		m.resultList.Scroll(delta)
+		return m, nil
+	}
+	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress || !m.resultFields.FocusAt(msg.X, msg.Y) {
+		return m, nil
+	}
+	if hit == "result-files" {
+		m.resultList.SelectRow(msg.Y - lowerY - 2)
+		return m, nil
+	}
+	m.controls.SetFocusID(deleteStateID)
+	m.controls.Click([]string{deleteStateID}, msg.X-leftWidth-3, msg.Y-cleanupY-1)
+	return m, nil
+}
+
 func (m importModel) clickSetup(x, y int) (tea.Model, tea.Cmd) {
 	contentWidth := min(tui.DefaultContentWidth, max(24, m.width-4))
 	topPadding := 2
@@ -373,7 +446,7 @@ func (m importModel) clickSetup(x, y int) (tea.Model, tea.Cmd) {
 			return m.openPicker(destinationField)
 		}
 	}
-	if id, ok := m.controls.Click([]string{scanID}, x-left, y-topPadding-10); ok && id == scanID {
+	if pageactions.Hit(pageactions.Config{Next: &pageactions.Action{Destination: "Parameters"}}, m.width, x, y-(m.height-4)) == pageactions.Next {
 		return m.startScan()
 	}
 	return m, nil
@@ -392,9 +465,19 @@ func (m importModel) clickParameters(x, y int) (tea.Model, tea.Cmd) {
 	if _, ok := m.controls.Click([]string{classifyID}, localX, y-classifyY); ok {
 		return m, nil
 	}
-	buttonY := 1 + lipgloss.Height(m.parametersView(layout.rightWidth-4, true)) + 2
-	if id, ok := m.controls.Click([]string{buttonID}, localX, y-buttonY); ok && id == buttonID {
-		return m.startProcessingPreview()
+	if y >= m.height-4 {
+		navigation := pageactions.Config{
+			Prev: &pageactions.Action{Destination: "Directories"},
+			Next: &pageactions.Action{Destination: "Processing"},
+		}
+		switch pageactions.Hit(navigation, layout.rightWidth, x-layout.leftWidth-1, y-(m.height-4)) {
+		case pageactions.Prev:
+			m.stage = setupStage
+			m.controls.SetFocusID(destinationID)
+			return m, nil
+		case pageactions.Next:
+			return m.startProcessingPreview()
+		}
 	}
 	return m, nil
 }
@@ -459,7 +542,7 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if key == "esc" {
 			m.scanGeneration++
 			m.stage = setupStage
-			m.controls.SetFocusID(scanID)
+			m.controls.SetFocusID(destinationID)
 		}
 		return m, nil
 	}
@@ -482,12 +565,52 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.processing.workerOffset = 0
 		case "G", "end":
 			m.processing.workerOffset = max(0, len(m.processing.workers)-1)
+		case "enter", form.PrimaryActionKey:
+			if m.processingComplete() {
+				m.openResultPreview()
+			}
+		}
+		return m, nil
+	}
+	if m.stage == resultStage {
+		if key == "esc" {
+			m.stage = processingStage
+			return m, nil
+		}
+		if m.resultFields.Move(key) {
+			if m.resultFields.Current() == "result-actions" {
+				m.controls.SetFocusID(deleteStateID)
+			}
+			return m, nil
+		}
+		if m.resultFields.Current() == "result-files" {
+			switch key {
+			case "up", "k":
+				m.resultList.Move(-1)
+			case "down", "j":
+				m.resultList.Move(1)
+			case "g", "home":
+				m.resultList.First()
+			case "G", "end":
+				m.resultList.Last()
+			case "left", "h":
+				m.resultList.Pan(-4)
+			case "right", "l":
+				m.resultList.Pan(4)
+			}
+			return m, nil
+		}
+		if m.controls.HandleInteraction(key) {
+			return m, nil
+		}
+		if key == form.PrimaryActionKey {
+			m.actionNotice = "Finish selected · preview remains open"
 		}
 		return m, nil
 	}
 	if m.stage == parameterStage && key == "esc" {
 		m.stage = setupStage
-		m.controls.SetFocusID(scanID)
+		m.controls.SetFocusID(destinationID)
 		return m, nil
 	}
 	if m.picking {
@@ -548,10 +671,6 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openPicker(sourceField)
 		case destinationID:
 			return m.openPicker(destinationField)
-		case scanID:
-			return m.startScan()
-		case buttonID:
-			return m.startProcessingPreview()
 		}
 	case form.PrimaryActionKey:
 		m.help = false
@@ -754,6 +873,19 @@ func (m importModel) startProcessingPreview() (tea.Model, tea.Cmd) {
 	return m, processingTick()
 }
 
+func (m *importModel) openResultPreview() {
+	items := make([]scrolllist.Item, 0, len(m.processing.verified))
+	for _, file := range m.processing.verified {
+		items = append(items, scrolllist.Item{
+			ID:    file.path,
+			Label: fmt.Sprintf("✓  %s  ·  %s  ·  SHA-256 MATCH", file.path, formatBytes(file.size)),
+		})
+	}
+	m.resultList.SetItems(items)
+	m.resultFields.Set("result-files")
+	m.stage = resultStage
+}
+
 func (m *importModel) assignWorker(index int) {
 	worker := &m.processing.workers[index]
 	if m.processing.next >= len(m.processing.files) {
@@ -866,6 +998,9 @@ func displayPath(path string) string {
 }
 
 func (m importModel) View() string {
+	if m.stage == resultStage {
+		return m.resultView()
+	}
 	if m.stage == processingStage {
 		return m.processingView()
 	}
@@ -889,10 +1024,82 @@ func (m importModel) View() string {
 		)
 	}
 	workspace := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, content)
+	if m.stage == setupStage {
+		workspace = overlay.PlaceAt(workspace, pageactions.View(pageactions.Config{
+			Next: &pageactions.Action{Destination: "Parameters"},
+		}, m.width), 0, max(0, m.height-4), m.width, m.height)
+	}
 	if m.picking {
 		return overlay.Place(workspace, m.pickerView(), m.width, m.height)
 	}
 	return workspace
+}
+
+func (m importModel) resultView() string {
+	if m.width < 80 || m.height < 16 {
+		content := lipgloss.JoinVertical(
+			lipgloss.Left,
+			importStepStyle.Render("RESULT  ·  PHOTO IMPORT"),
+			importHeadingStyle.Render("More space required"),
+			importNoteStyle.Render("Use at least 80 columns and 16 workspace rows for the landscape result view."),
+		)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+	}
+	total := len(m.processing.files)
+	bytes := int64(0)
+	for _, file := range m.processing.verified {
+		bytes += file.size
+	}
+	headerContent := strings.Join([]string{
+		"VERIFIED PREVIEW  ·  NO FILES WERE CHANGED",
+		fmt.Sprintf("%d/%d files passed Source and Destination SHA-256 comparison", len(m.processing.verified), total),
+		fmt.Sprintf("Published %s   Skipped 0   Failed 0", formatBytes(bytes)),
+	}, "\n")
+	header := fieldset.View("Import result", headerContent, m.width)
+
+	lowerHeight := max(8, m.height-lipgloss.Height(header)-1)
+	leftWidth := max(48, m.width*2/3)
+	leftWidth = min(leftWidth, m.width-31)
+	rightWidth := m.width - leftWidth - 1
+	filesFocused := m.resultFields.Current() == "result-files"
+	actionsFocused := m.resultFields.Current() == "result-actions"
+	results := m.resultList
+	results.SetSize(leftWidth-4, lowerHeight-3)
+	leftContent := importNoteStyle.Render(fmt.Sprintf("%d verified files · %s", len(m.processing.verified), formatBytes(bytes))) + "\n" +
+		results.View(filesFocused, importSectionStyle, importNoteStyle)
+	left := fieldset.ViewFocused("Verified files", leftContent, leftWidth, filesFocused)
+
+	integrity := strings.Join([]string{
+		importSectionStyle.Render("INTEGRITY"),
+		"✓ Source stream hashed",
+		"✓ Destination read back independently",
+		"✓ SHA-256 digests matched",
+		"✓ Final names published after verification",
+		"",
+		importSectionStyle.Render("TRANSFER"),
+		fmt.Sprintf("Workers       %d", len(m.processing.workers)),
+		fmt.Sprintf("Verified      %d files", len(m.processing.verified)),
+		"Failed        0 files",
+	}, "\n")
+	actions := m.controls.ViewFocusedWidth([]string{deleteStateID}, actionsFocused, rightWidth-4)
+	cleanupNote := importNoteStyle.Render("Delete is the default. Retain state only for audit or diagnosis.")
+	if m.actionNotice != "" {
+		cleanupNote = importNoteStyle.Render(m.actionNotice)
+	}
+	cleanup := actions + "\n\n" + cleanupNote
+	cleanupHeight := 5
+	integrityHeight := max(5, lowerHeight-cleanupHeight-5)
+	right := lipgloss.JoinVertical(
+		lipgloss.Left,
+		fieldset.View("Verification summary", fitContentHeight(integrity, integrityHeight-2, rightWidth-4), rightWidth),
+		"",
+		fieldset.ViewFocused("State file", fitContentHeight(cleanup, cleanupHeight-2, rightWidth-4), rightWidth, actionsFocused),
+		pageactions.View(pageactions.Config{
+			Prev: &pageactions.Action{Destination: "Processing"},
+			Next: &pageactions.Action{Destination: "Commands"},
+		}, rightWidth),
+	)
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right))
 }
 
 func (m importModel) scanView() string {
@@ -953,12 +1160,17 @@ func (m importModel) processingView() string {
 	rightWidth := m.width - leftWidth - 1
 	workers := fieldset.View("Workers", fitContentHeight(m.workerRows(leftWidth-4, lowerHeight-2), lowerHeight-2, leftWidth-4), leftWidth)
 	rightTopHeight := max(4, lowerHeight/2)
-	rightBottomHeight := max(4, lowerHeight-rightTopHeight-1)
+	rightBottomHeight := max(4, lowerHeight-rightTopHeight-5)
+	navigation := pageactions.Config{Prev: &pageactions.Action{Destination: "Parameters"}}
+	if m.processingComplete() {
+		navigation.Next = &pageactions.Action{Destination: "Result"}
+	}
 	right := lipgloss.JoinVertical(
 		lipgloss.Left,
 		fieldset.View("Next files", fitContentHeight(m.pendingRows(rightWidth-4), rightTopHeight-2, rightWidth-4), rightWidth),
 		"",
 		fieldset.View("Recent results", fitContentHeight(m.recentRows(rightWidth-4), rightBottomHeight-2, rightWidth-4), rightWidth),
+		pageactions.View(navigation, rightWidth),
 	)
 	view := lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, workers, " ", right))
 	if m.leaveConfirm {
@@ -1166,8 +1378,6 @@ func (m importModel) setupView() string {
 		"",
 		"",
 		fieldset.View("Directories", m.controls.View([]string{sourceID, destinationID}), contentWidth),
-		"",
-		m.controls.View([]string{scanID}),
 	)
 	return strings.Repeat("\n", topPadding) + content
 }
@@ -1202,14 +1412,17 @@ func (m importModel) parameterView() string {
 	)
 	summaryContent := m.importSummaryView()
 	parameterHeight := layout.parameterHeight
-	parameterContent := m.parametersView(rightWidth-4, parametersFocused) + "\n\n" +
-		m.controls.ViewFocusedWidth([]string{buttonID}, parametersFocused, rightWidth-4)
+	parameterContent := m.parametersView(rightWidth-4, parametersFocused)
 	parameterContent = fitContentHeight(parameterContent, parameterHeight-2, rightWidth-4)
 	right := lipgloss.JoinVertical(
 		lipgloss.Left,
 		fieldset.ViewFocused("Parameters", parameterContent, rightWidth, parametersFocused),
 		"",
 		fieldset.ViewFocused("Import summary", summaryContent, rightWidth, summaryFocused),
+		pageactions.View(pageactions.Config{
+			Prev: &pageactions.Action{Destination: "Directories"},
+			Next: &pageactions.Action{Destination: "Processing"},
+		}, rightWidth),
 	)
 	view := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
 	if m.menu.IsOpen() {
@@ -1232,7 +1445,7 @@ func (m importModel) parameterLayout() parameterLayout {
 	sourceHeight := max(3, (m.height-1)/2)
 	destinationHeight := max(3, m.height-1-sourceHeight)
 	summaryHeight := lipgloss.Height(m.importSummaryView()) + 2
-	parameterHeight := max(3, m.height-summaryHeight-1)
+	parameterHeight := max(3, m.height-summaryHeight-5)
 	return parameterLayout{
 		leftWidth: leftWidth, rightWidth: rightWidth,
 		sourceHeight: sourceHeight, destinationHeight: destinationHeight,
@@ -1357,9 +1570,12 @@ func (m importModel) Status() tui.Status {
 		}
 		if m.processingComplete() {
 			left = "PROCESSING · COMPLETE"
-			right = "↑↓ Workers  esc Back  q Quit"
+			right = "↑↓ Workers  n Next  esc Prev  q Quit"
 		}
 		return m.withWorkflow(tui.Status{Left: left, Right: right})
+	}
+	if m.stage == resultStage {
+		return m.withWorkflow(tui.Status{Left: "RESULT · VERIFIED", Right: "alt+h/l Focus  ↑↓ Browse  space Toggle  n Next  esc Prev"})
 	}
 	if m.picking {
 		if m.picker.HasDialog() {
@@ -1399,6 +1615,8 @@ func (m importModel) withWorkflow(status tui.Status) tui.Status {
 		current = 1
 	case processingStage:
 		current = 2
+	case resultStage:
+		current = 3
 	}
 	status.Center = stepper.View([]string{"Directories", "Parameters", "Processing", "Result"}, current, max(1, m.width*48/100))
 	return status
@@ -1413,6 +1631,9 @@ func scanStatus(summary scanSummary) string {
 func (m importModel) CapturesShellKey(key string) bool {
 	if m.leaveConfirm || m.stage == processingStage {
 		return key == "esc" || key == "q" || key == "ctrl+c"
+	}
+	if m.stage == resultStage {
+		return key == "esc"
 	}
 	if m.menu.IsOpen() {
 		return key == "esc" || key == "q"
@@ -1432,6 +1653,8 @@ func (m importModel) CommandPath() []string {
 		return []string{"scan"}
 	case processingStage:
 		return []string{"processing"}
+	case resultStage:
+		return []string{"result"}
 	default:
 		return []string{"setup"}
 	}

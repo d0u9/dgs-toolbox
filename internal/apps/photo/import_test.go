@@ -28,13 +28,13 @@ func TestImportStartsWithDirectoriesOnly(t *testing.T) {
 		"testdata/photo-import/src",
 		"Destination",
 		"testdata/photo-import/dst",
-		"Scan directories",
+		"Next →",
 	} {
 		if !strings.Contains(view, text) {
 			t.Errorf("setup view does not contain %q:\n%s", text, view)
 		}
 	}
-	for _, hidden := range []string{"Parameters", "Operation", "Extensions", "Duplicates", "CLASSIFICATION", "Review import"} {
+	for _, hidden := range []string{"Operation", "Extensions", "Duplicates", "CLASSIFICATION", "Review import"} {
 		if strings.Contains(view, hidden) {
 			t.Errorf("setup view unexpectedly contains %q:\n%s", hidden, view)
 		}
@@ -192,7 +192,7 @@ func TestImportNavigationMatchesParameterLayout(t *testing.T) {
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	model.controls.SetFocusID(operationID)
-	want := []string{extensionsID, duplicatesID, parallelID, classifyID, buttonID, operationID}
+	want := []string{extensionsID, duplicatesID, parallelID, classifyID, operationID}
 	for _, wantID := range want {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(importModel)
@@ -282,6 +282,34 @@ func TestProcessingStatusDistinguishesRunningPausedAndComplete(t *testing.T) {
 	model.processing.workers[0].phase = workerDone
 	if status := model.Status(); status.Left != "PROCESSING · COMPLETE" || strings.Contains(status.Right, "p Pause") {
 		t.Fatalf("complete status = %#v", status)
+	}
+}
+
+func TestCompletedProcessingOpensLandscapeResultPreview(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 140, 28
+	model.stage = processingStage
+	model.processing = processingState{
+		files:    []scannedFile{{path: "DCIM/one.JPG", size: 2048}, {path: "DCIM/two.DNG", size: 4096}},
+		verified: []scannedFile{{path: "DCIM/one.JPG", size: 2048}, {path: "DCIM/two.DNG", size: 4096}},
+		workers:  []processingWorker{{number: 1, phase: workerDone}},
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(importModel)
+	if model.stage != resultStage || !model.controls.Checked(deleteStateID) {
+		t.Fatalf("result stage=%v delete-state=%v", model.stage, model.controls.Checked(deleteStateID))
+	}
+	view := model.View()
+	for _, want := range []string{"Import result", "Verified files", "Verification summary", "State file", "SHA-256 MATCH", "Delete .dgs-state", "NO FILES WERE CHANGED"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("result view missing %q:\n%s", want, view)
+		}
+	}
+	if lipgloss.Width(view) != 140 || lipgloss.Height(view) != 28 {
+		t.Fatalf("result view size = %dx%d", lipgloss.Width(view), lipgloss.Height(view))
+	}
+	if status := model.Status(); status.Left != "RESULT · VERIFIED" || !strings.Contains(status.Center, "● Result") {
+		t.Fatalf("result status = %#v", status)
 	}
 }
 
@@ -418,7 +446,7 @@ func TestNextShortcutStartsScanAndOpensParameterScreen(t *testing.T) {
 	}
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	model = updated.(importModel)
-	if model.stage != setupStage || !strings.Contains(model.View(), "Scan directories") {
+	if model.stage != setupStage || !strings.Contains(model.View(), "Next →") || !strings.Contains(model.View(), "Parameters") {
 		t.Fatal("Esc did not return from Parameters to Setup")
 	}
 }
@@ -481,9 +509,11 @@ func TestParameterScreenUsesAsymmetricSplitLayout(t *testing.T) {
 	if !strings.HasSuffix(firstLine, "╮") {
 		t.Fatalf("right pane is not flush with terminal edge: %q", firstLine)
 	}
-	lastLine := strings.Split(view, "\n")[model.height-1]
-	if !strings.HasPrefix(lastLine, "╰") || !strings.HasSuffix(lastLine, "╯") || strings.Count(lastLine, "╰") != 2 {
-		t.Fatalf("left pane and summary do not both reach the bottom edge: %q", lastLine)
+	lines := strings.Split(view, "\n")
+	buttonLine := lines[model.height-2]
+	lastLine := lines[model.height-1]
+	if !strings.Contains(buttonLine, "Directories") || !strings.Contains(buttonLine, "Processing") || !strings.HasPrefix(lastLine, "╰") {
+		t.Fatalf("page actions do not keep their bottom breathing room: button=%q bottom=%q", buttonLine, lastLine)
 	}
 }
 

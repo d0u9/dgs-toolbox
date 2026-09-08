@@ -15,7 +15,7 @@ func TestGalleryShowsReusableComponents(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
 	m = updated.(model)
 	view := m.View()
-	for _, want := range []string{"COMPONENT DEMO", "Path · opens File Explorer", "Selection controls", "Text input", "Anchored Section Divider", "── ◆ ──", "System", "[ ] Show hidden", "(●) Comfortable", "Trigger demo action"} {
+	for _, want := range []string{"COMPONENT DEMO", "Path · opens File Explorer", "Selection controls", "Text input", "Actions · Local and Page Navigation", "── ◆ ──", "System", "[ ] Show hidden", "(●) Comfortable", "Trigger demo action", "← Prev", "Next →", "Processing"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view does not contain %q:\n%s", want, view)
 		}
