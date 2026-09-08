@@ -33,15 +33,29 @@ Status bar     exactly one terminal row
 
 ### Top bar
 
-- Left: the current command path, such as `dgs › photo › import`.
-- Right: the current local time.
+- Left: a tab region reserved for command- or workspace-level tabs.
+- Right: breadcrumb, local time, network upload/download rate, CPU utilization, and disk read/write rate.
+- Place the breadcrumb immediately to the left of the clock. A typical right-hand sequence is `dgs › photo › import › processing  15:04:05  NET ↑… ↓…  CPU …  DISK R… W…`.
+- The breadcrumb is never rendered on the left; keeping that area free allows the tab system to grow without competing with navigation context.
 - The row must never wrap.
+
+Top-bar telemetry belongs to the shared shell rather than individual commands. Collection, refresh interval, unavailable-state language, and narrow-screen truncation priority remain implementation decisions; do not let telemetry change workspace height or block interaction.
 
 ### Workspace
 
 The active command owns the workspace. The shell supplies the available width and height after reserving the top and bottom rows.
 
-Command configuration surfaces prefer a shared content width of 100 terminal cells, defined by `tui.DefaultContentWidth`. Center that surface in wider terminals and shrink it to fit narrower terminals; never force a 100-cell layout beyond the available viewport.
+The primary target is a landscape, normally maximized terminal. Choose one of three shared column skeletons before composing command-specific Fieldsets and DataFields:
+
+| Skeleton | Width allocation | Wide-screen cap |
+|---|---|---|
+| One column | One 100-cell content surface, horizontally centered | 100 cells |
+| Two columns | Left `1/3`, right `2/3` | Left never exceeds 90 cells; right receives the remainder |
+| Three columns | Left `1/4`, center `1/2`, right `1/4` | Left and right never exceed 90 cells each; center receives the remaining width |
+
+Ratios are initial allocations, not permission to overflow. On a narrower terminal, subtract inter-column gutters first and shrink columns proportionally within their minimum viable content widths. If a screen cannot remain legible, show its existing resize prompt rather than wrap structural regions or add horizontal scrolling to the whole workspace. Exact gutter width, minimum column widths, and responsive collapse behavior are still undecided.
+
+The one-column 100-cell width is defined by `tui.DefaultContentWidth`. It is a preferred maximum, not a forced terminal width: shrink it to the available viewport while retaining outer breathing room where possible. Two- and three-column screens use the available landscape width rather than being enclosed inside the centered 100-cell surface.
 
 ### Status bar
 
@@ -205,6 +219,12 @@ An application stage with active work may capture the shell's return and exit ke
 Consequential interruptions use the shared confirmation component in `internal/tui/confirm`. It renders a compact framed dialog with a title, message, optional detail, and two actions. The negative or safe action is focused by default. `Tab` and `Shift+Tab` switch focus, `Enter` invokes the focused action, and `Esc` always cancels. The selected button carries the visual focus treatment; keyboard hints appear once in the dialog footer and are not duplicated in the global status bar.
 
 The status bar shows only controls valid in the current state. For example, edit mode should describe how to accept or cancel the edit rather than showing form-navigation hints.
+
+Every action that quits `dgs`, including `q`, Ctrl+C, picker exit, and a command-owned Quit button, routes through this shared confirmation component. Do not render a separate inline `y/n` prompt or terminate immediately. The dialog keeps the underlying workspace visible, focuses No by default, uses Tab or Shift+Tab to switch actions, Enter to invoke the focused action, and Esc to continue. Active work may provide more specific interruption copy, but it still uses the same component and interaction contract.
+
+### Page actions
+
+Workflow transitions use the shared two-row Page Actions component. Its first row names the action and shortcut; its second row describes the destination. Previous and Next are defaults, not mandatory labels: terminal pages may instead expose explicit actions such as `↻ Again  r / New import` and `Quit  q / Exit dgs`. This keeps the destination visible without misrepresenting a restart or exit as backward/forward navigation.
 
 ## File Explorer
 
