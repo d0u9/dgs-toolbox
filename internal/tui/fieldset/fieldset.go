@@ -19,11 +19,23 @@ var (
 // View renders a fully closed rectangle of exactly width cells. The legend is
 // part of the top border and content is padded inside the remaining edges.
 func View(legend, content string, width int) string {
+	return ViewFocused(legend, content, width, false)
+}
+
+// ViewFocused renders a fieldset with an explicit, non-color-only focus cue.
+func ViewFocused(legend, content string, width int, focused bool) string {
 	width = max(12, width)
 	innerWidth := width - 4
-	legend = ansi.Truncate(strings.TrimSpace(legend), max(1, width-8), "…")
+	legend = strings.TrimSpace(legend)
+	activeBorder, activeLegend := borderStyle, legendStyle
+	if focused {
+		legend = "› " + legend
+		activeBorder = lipgloss.NewStyle().Bold(true).Foreground(legendColor)
+		activeLegend = activeBorder
+	}
+	legend = ansi.Truncate(legend, max(1, width-8), "…")
 	topFill := max(1, width-lipgloss.Width(legend)-5)
-	top := borderStyle.Render("╭─ ") + legendStyle.Render(legend) + borderStyle.Render(" "+strings.Repeat("─", topFill)+"╮")
+	top := activeBorder.Render("╭─ ") + activeLegend.Render(legend) + activeBorder.Render(" "+strings.Repeat("─", topFill)+"╮")
 
 	lines := strings.Split(content, "\n")
 	if content == "" {
@@ -34,8 +46,8 @@ func View(legend, content string, width int) string {
 	for _, line := range lines {
 		line = ansi.Truncate(line, innerWidth, "…")
 		padding := strings.Repeat(" ", max(0, innerWidth-lipgloss.Width(line)))
-		rows = append(rows, borderStyle.Render("│ ")+line+padding+borderStyle.Render(" │"))
+		rows = append(rows, activeBorder.Render("│ ")+line+padding+activeBorder.Render(" │"))
 	}
-	rows = append(rows, borderStyle.Render("╰"+strings.Repeat("─", width-2)+"╯"))
+	rows = append(rows, activeBorder.Render("╰"+strings.Repeat("─", width-2)+"╯"))
 	return strings.Join(rows, "\n")
 }

@@ -88,6 +88,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		return m.updateKey(msg)
+	case tea.MouseMsg:
+		if m.active != nil && msg.Y > 0 && msg.Y < m.height-1 {
+			msg.Y--
+			return m.forwardToActive(msg)
+		}
+		return m, nil
 	default:
 		if m.active != nil {
 			return m.forwardToActive(msg)

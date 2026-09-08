@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"dgs-toolbox/internal/tui"
+	"dgs-toolbox/internal/tui/datafield"
+	"dgs-toolbox/internal/tui/divider"
 	"dgs-toolbox/internal/tui/fieldset"
 	"dgs-toolbox/internal/tui/fileexplorer"
 	"dgs-toolbox/internal/tui/form"
@@ -25,7 +27,6 @@ const (
 )
 
 var (
-	ids        = []string{pathID, optionID, checkboxID, radioID, textID, buttonID}
 	accent     = lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"}
 	muted      = lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#94A3B8"}
 	panel      = lipgloss.AdaptiveColor{Light: "#EAF4F4", Dark: "#243447"}
@@ -36,6 +37,7 @@ var (
 
 type model struct {
 	controls form.Model
+	fields   datafield.Navigator
 	picker   fileexplorer.Model
 	picking  bool
 	width    int
@@ -57,6 +59,12 @@ func newModel() tui.CommandModel {
 			form.Field{ID: radioID, Kind: form.Radio, Label: "Density", Value: "Comfortable", Options: []string{"Compact", "Comfortable"}},
 			form.Field{ID: buttonID, Kind: form.Button, Label: "Trigger demo action"},
 		),
+		fields: datafield.New(
+			datafield.Field{ID: "path", Row: 0, Col: 0},
+			datafield.Field{ID: "selection", Row: 1, Col: 0},
+			datafield.Field{ID: "text", Row: 2, Col: 0},
+			datafield.Field{ID: "action", Row: 3, Col: 0},
+		),
 		width:  80,
 		height: 22,
 		event:  "No component action yet",
@@ -73,6 +81,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sizePicker()
 		}
 		return m, nil
+	case tea.MouseMsg:
+		return m.updateMouse(msg)
 	case tea.KeyMsg:
 		return m.updateKey(msg)
 	default:
@@ -83,6 +93,71 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.picking {
+		var cmd tea.Cmd
+		m.picker, _, cmd = m.picker.Update(msg)
+		return m, cmd
+	}
+	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	width := min(tui.DefaultContentWidth, max(24, m.width-4))
+	x, y := max(0, (m.width-width)/2), 4
+	type placedField struct {
+		id, view string
+		y        int
+	}
+	placed := make([]placedField, 0, 4)
+	for _, field := range []struct {
+		id   string
+		view string
+	}{
+		{"path", m.pathFieldView(width)},
+		{"selection", m.selectionFieldView(width)},
+		{"text", m.textFieldView(width)},
+		{"action", m.actionFieldView(width)},
+	} {
+		height := lipgloss.Height(field.view)
+		placed = append(placed, placedField{id: field.id, view: field.view, y: y})
+		m.fields.SetBounds(field.id, datafield.Bounds{X: x, Y: y, Width: width, Height: height})
+		y += height + 1
+	}
+	if m.fields.FocusAt(msg.X, msg.Y) {
+		m.syncControlFocus()
+		for _, field := range placed {
+			if field.id != m.fields.Current() {
+				continue
+			}
+			id, used := m.controls.Click(m.activeControlIDs(), msg.X-x-2, msg.Y-field.y-1)
+			if !used {
+				break
+			}
+			switch id {
+			case pathID:
+				return m.openPicker()
+			case buttonID:
+				m.event = "Demo action triggered — no side effects"
+			}
+			break
+		}
+	}
+	return m, nil
+}
+
+func (m *model) syncControlFocus() {
+	switch m.fields.Current() {
+	case "path":
+		m.controls.SetFocusID(pathID)
+	case "selection":
+		m.controls.SetFocusID(optionID)
+	case "text":
+		m.controls.SetFocusID(textID)
+	case "action":
+		m.controls.SetFocusID(buttonID)
+	}
 }
 
 func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -102,11 +177,15 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
+	if m.fields.Move(key) {
+		m.syncControlFocus()
+		return m, nil
+	}
 	if m.controls.HandleInteraction(key) {
 		m.event = "Control value changed"
 		return m, nil
 	}
-	if m.controls.UpdateNavigationWithin(ids, key) {
+	if m.controls.UpdateNavigationWithin(m.activeControlIDs(), key) {
 		return m, nil
 	}
 	if key == "enter" {
@@ -117,7 +196,23 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.event = "Demo action triggered — no side effects"
 		}
 	}
+	if key == form.PrimaryActionKey {
+		m.event = "Demo action triggered — no side effects"
+	}
 	return m, nil
+}
+
+func (m model) activeControlIDs() []string {
+	switch m.fields.Current() {
+	case "selection":
+		return []string{optionID, checkboxID, radioID}
+	case "text":
+		return []string{textID}
+	case "action":
+		return []string{buttonID}
+	default:
+		return []string{pathID}
+	}
 }
 
 func (m model) openPicker() (tea.Model, tea.Cmd) {
@@ -144,19 +239,41 @@ func (m model) View() string {
 		titleStyle.Render("COMPONENT DEMO"),
 		mutedStyle.Render("Interactive reference for shared dgs TUI components."),
 		"",
-		fieldset.View("Path · opens File Explorer", m.controls.View([]string{pathID}), width),
+		m.pathFieldView(width),
 		"",
-		fieldset.View("Selection controls", m.controls.View([]string{optionID, checkboxID, radioID}), width),
+		m.selectionFieldView(width),
 		"",
-		fieldset.View("Text input", m.controls.View([]string{textID}), width),
+		m.textFieldView(width),
 		"",
-		fieldset.View("Action", m.controls.View([]string{buttonID})+"\n"+mutedStyle.Render(m.event), width),
+		m.actionFieldView(width),
 	)
 	workspace := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, content)
 	if m.picking {
 		return overlay.Place(workspace, m.pickerView(), m.width, m.height)
 	}
 	return workspace
+}
+
+func (m model) pathFieldView(width int) string {
+	return fieldset.ViewFocused("Path · opens File Explorer", m.controls.ViewFocusedWidth([]string{pathID}, m.fields.Current() == "path", width-4), width, m.fields.Current() == "path")
+}
+
+func (m model) selectionFieldView(width int) string {
+	return fieldset.ViewFocused("Selection controls", m.controls.ViewFocusedWidth([]string{optionID, checkboxID, radioID}, m.fields.Current() == "selection", width-4), width, m.fields.Current() == "selection")
+}
+
+func (m model) textFieldView(width int) string {
+	return fieldset.ViewFocused("Text input", m.controls.ViewFocusedWidth([]string{textID}, m.fields.Current() == "text", width-4), width, m.fields.Current() == "text")
+}
+
+func (m model) actionFieldView(width int) string {
+	return fieldset.ViewFocused(
+		"Action · Anchored Section Divider",
+		m.controls.ViewFocusedWidth([]string{buttonID}, m.fields.Current() == "action", width-4)+"\n\n"+
+			divider.Anchored(width-4)+"\n"+mutedStyle.Render(m.event),
+		width,
+		m.fields.Current() == "action",
+	)
 }
 
 func (m model) pickerView() string {
@@ -183,7 +300,7 @@ func (m model) Status() tui.Status {
 		}
 		return tui.Status{Left: "SELECT", Center: "Option component", Right: "↑/k ↓/j Choose  ↵ Apply  esc Cancel"}
 	}
-	return tui.Status{Left: "DEMO", Center: m.event, Right: "arrows/hjkl Move  ↵ Use  space Toggle"}
+	return tui.Status{Left: "DEMO", Center: m.event, Right: "click / alt+hjkl Focus  hjkl Within  n Next"}
 }
 
 func (m model) CapturesShellKey(key string) bool {

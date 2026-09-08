@@ -12,6 +12,6 @@ func Run(apps []App, launch Launch) error {
 	if model.launchErr != "" {
 		return fmt.Errorf("cannot launch TUI: %s", model.launchErr)
 	}
-	_, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }

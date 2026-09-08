@@ -6,7 +6,7 @@ Build a small Go demo to settle the CLI and TUI structure for `dgs`.
 
 Use Photo and GPX as demo domains. Do not implement real photo or GPX behavior yet.
 
-Shared interface decisions live in [`docs/tui.md`](docs/tui.md). Read it before changing any TUI or interactive command flow. Component-specific documents are linked from that shared design, including the File Explorer specification at [`docs/file-explorer.md`](docs/file-explorer.md); follow the links relevant to the component being changed. Update design documents incrementally only when a decision is confirmed, and do not fill undecided sections speculatively. Photo Import is currently the first concrete example, not the owner of the shared design language.
+Shared interface decisions live in [`docs/tui.md`](docs/tui.md). Read it before changing any TUI or interactive command flow. Component-specific documents are linked from that shared design, including [`docs/file-explorer.md`](docs/file-explorer.md), [`docs/parameter-controls.md`](docs/parameter-controls.md), and [`docs/data-fields.md`](docs/data-fields.md); follow the links relevant to the component being changed. App-specific designs live under `docs/apps/<app>/`, including [`docs/apps/photo/import.md`](docs/apps/photo/import.md), and must not be promoted into shared requirements. Update design documents incrementally only when a decision is confirmed, and do not fill undecided sections speculatively.
 
 ## Technology
 
@@ -21,6 +21,7 @@ Commands are hierarchical:
 
 ```text
 dgs
+dgs demo
 dgs photo
 dgs photo import
 dgs photo encode
@@ -33,6 +34,7 @@ A single `dgs` process has only one active leaf command at a time. It does not d
 
 Startup behavior:
 
+- A direct root leaf such as `dgs demo` opens its TUI directly.
 - A leaf command such as `dgs photo import` opens its TUI directly.
 - An incomplete command such as `dgs` or `dgs photo` opens a command picker scoped to the available choices.
 - Selecting a command replaces the picker with that command's TUI.

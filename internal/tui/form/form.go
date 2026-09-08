@@ -9,6 +9,9 @@ import (
 
 type Kind int
 
+// PrimaryActionKey advances from a form using its current values.
+const PrimaryActionKey = "n"
+
 const (
 	Path Kind = iota
 	Option
@@ -16,34 +19,42 @@ const (
 	Text
 	Radio
 	Button
+	MultiCheckbox
 )
 
 type Field struct {
-	ID      string
-	Kind    Kind
-	Label   string
-	Value   string
-	Options []string
-	Checked bool
+	ID        string
+	Kind      Kind
+	Label     string
+	Value     string
+	Options   []string
+	Selected  []string
+	SelectAll bool
+	Checked   bool
 }
 
 type Model struct {
-	fields   []Field
-	focus    int
-	activeID string
-	original string
-	choice   int
+	fields      []Field
+	focus       int
+	activeID    string
+	original    string
+	choice      int
+	multiChoice int
 }
 
 var (
 	accent     = lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"}
 	muted      = lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#94A3B8"}
 	focusStyle = lipgloss.NewStyle().Bold(true).Foreground(accent)
+	mutedStyle = lipgloss.NewStyle().Foreground(muted)
 	labelStyle = lipgloss.NewStyle().Foreground(muted).Width(16)
+	rowStyle   = lipgloss.NewStyle().Bold(true).Foreground(accent).Background(
+		lipgloss.AdaptiveColor{Light: "#DDF3F0", Dark: "#173F3B"},
+	)
 )
 
 func New(fields ...Field) Model {
-	return Model{fields: append([]Field(nil), fields...)}
+	return Model{fields: append([]Field(nil), fields...), multiChoice: -1}
 }
 
 func (m *Model) UpdateNavigation(key string) bool {
@@ -99,6 +110,9 @@ func (m *Model) SetFocusID(id string) {
 	for index := range m.fields {
 		if m.fields[index].ID == id {
 			m.focus = index
+			if m.fields[index].Kind == MultiCheckbox {
+				m.multiChoice = -1
+			}
 			return
 		}
 	}
@@ -113,6 +127,52 @@ func (m Model) Value(id string) string {
 		}
 	}
 	return ""
+}
+
+func (m Model) Checked(id string) bool {
+	for _, field := range m.fields {
+		if field.ID == id {
+			return field.Checked
+		}
+	}
+	return false
+}
+
+func (m Model) Values(id string) []string {
+	for _, field := range m.fields {
+		if field.ID == id {
+			return append([]string(nil), field.Selected...)
+		}
+	}
+	return nil
+}
+
+// SetOptions replaces a dynamic option set. When selectAll is true every new
+// option is selected; otherwise existing selections are retained when valid.
+func (m *Model) SetOptions(id string, options []string, selectAll bool) {
+	for index := range m.fields {
+		if m.fields[index].ID != id {
+			continue
+		}
+		m.fields[index].Options = append([]string(nil), options...)
+		selected := make([]string, 0, len(options))
+		for _, option := range options {
+			if selectAll || contains(m.fields[index].Selected, option) {
+				selected = append(selected, option)
+			}
+		}
+		m.fields[index].Selected = selected
+		return
+	}
+}
+
+func (m *Model) SetValues(id string, values []string) {
+	for index := range m.fields {
+		if m.fields[index].ID == id {
+			m.fields[index].Selected = append([]string(nil), values...)
+			return
+		}
+	}
 }
 
 func (m *Model) SetValue(id, value string) {
@@ -148,7 +208,7 @@ func (m *Model) HandleInteraction(key string) bool {
 			return true
 		}
 	case Option:
-		if key == "enter" {
+		if key == "enter" || key == " " {
 			m.begin(field)
 			return true
 		}
@@ -166,6 +226,11 @@ func (m *Model) HandleInteraction(key string) bool {
 			m.moveChoice(1, field.Options)
 			return true
 		}
+	case MultiCheckbox:
+		if key == "right" || key == "l" || key == "enter" {
+			m.beginMulti(field)
+			return true
+		}
 	}
 	return false
 }
@@ -176,7 +241,38 @@ func (m *Model) begin(field Field) {
 	m.choice = optionIndex(field.Options, field.Value)
 }
 
+func (m *Model) beginMulti(field Field) {
+	m.activeID = field.ID
+	if field.SelectAll {
+		m.multiChoice = -1
+	} else {
+		m.multiChoice = 0
+	}
+}
+
 func (m *Model) handleActive(field Field, key string) bool {
+	if field.Kind == MultiCheckbox {
+		minimum := 0
+		if field.SelectAll {
+			minimum = -1
+		}
+		maximum := max(minimum, len(field.Options)-1)
+		switch key {
+		case "esc", "left", "h":
+			m.activeID = ""
+		case "up", "k":
+			m.multiChoice = max(minimum, m.multiChoice-1)
+		case "down", "j":
+			m.multiChoice = min(maximum, m.multiChoice+1)
+		case " ", "enter":
+			if m.multiChoice == -1 {
+				m.selectAll(field.ID)
+			} else if m.multiChoice < len(field.Options) {
+				m.toggleSelected(field.ID, field.Options[m.multiChoice])
+			}
+		}
+		return true
+	}
 	switch key {
 	case "esc":
 		m.fields[m.focus].Value = m.original
@@ -248,11 +344,21 @@ func (m Model) focusedField() (Field, bool) {
 }
 
 func (m Model) View(ids []string) string {
+	return m.ViewFocused(ids, true)
+}
+
+// ViewFocused hides internal focus when the containing data field is inactive.
+func (m Model) ViewFocused(ids []string, focusVisible bool) string {
+	return m.ViewFocusedWidth(ids, focusVisible, 0)
+}
+
+// ViewFocusedWidth highlights the complete focused row up to width cells.
+func (m Model) ViewFocusedWidth(ids []string, focusVisible bool, width int) string {
 	rows := make([]string, 0, len(ids))
 	for _, id := range ids {
 		for _, field := range m.fields {
 			if field.ID == id {
-				rows = append(rows, m.render(field, m.Focused(id)))
+				rows = append(rows, m.render(field, focusVisible && m.Focused(id), width))
 				break
 			}
 		}
@@ -260,11 +366,11 @@ func (m Model) View(ids []string) string {
 	return strings.Join(rows, "\n")
 }
 
-func (m Model) render(field Field, focused bool) string {
+func (m Model) render(field Field, focused bool, width int) string {
 	marker := "  "
 	style := lipgloss.NewStyle()
 	if focused {
-		marker = focusStyle.Render("› ")
+		marker = "› "
 		style = focusStyle
 	}
 	var value string
@@ -280,6 +386,7 @@ func (m Model) render(field Field, focused bool) string {
 				}
 				rows = append(rows, choiceMarker+style.Render(option))
 			}
+			rows[0] = highlightRow(rows[0], focused, width)
 			return strings.Join(rows, "\n")
 		}
 	case Checkbox:
@@ -288,7 +395,7 @@ func (m Model) render(field Field, focused bool) string {
 			mark = "x"
 		}
 		value = "[" + mark + "] " + field.Label
-		return marker + style.Render(value)
+		return highlightRow(marker+style.Render(value), focused, width)
 	case Radio:
 		choices := make([]string, len(field.Options))
 		for index, option := range field.Options {
@@ -299,13 +406,167 @@ func (m Model) render(field Field, focused bool) string {
 			choices[index] = "(" + mark + ") " + option
 		}
 		value = strings.Join(choices, "   ")
+	case MultiCheckbox:
+		rows := make([]string, 0, len(field.Options)+1)
+		if field.SelectAll {
+			row := marker + labelStyle.Render(field.Label) + "[ All ]"
+			rows = append(rows, highlightRow(row, focused && m.multiChoice == -1, width))
+		}
+		for index, option := range field.Options {
+			mark := " "
+			if contains(field.Selected, option) {
+				mark = "x"
+			}
+			prefix := strings.Repeat(" ", 18)
+			if index == 0 && !field.SelectAll {
+				prefix = marker + labelStyle.Render(field.Label)
+			}
+			rows = append(rows, highlightRow(prefix+"["+mark+"] "+option, focused && index == m.multiChoice, width))
+		}
+		if len(rows) == 0 {
+			return highlightRow(marker+labelStyle.Render(field.Label)+mutedStyle.Render("No values"), focused, width)
+		}
+		return strings.Join(rows, "\n")
 	case Button:
-		return marker + style.Render("[ "+field.Label+" ]")
+		return highlightRow(marker+style.Render("[ "+field.Label+" ]"), focused, width)
 	default:
 		value = field.Value
 		if field.Kind == Text && m.activeID == field.ID {
 			value += focusStyle.Render("█")
 		}
 	}
-	return marker + labelStyle.Render(field.Label) + style.Render(value)
+	return highlightRow(marker+labelStyle.Render(field.Label)+style.Render(value), focused, width)
+}
+
+func highlightRow(row string, focused bool, width int) string {
+	if !focused {
+		return row
+	}
+	if width > 0 {
+		return rowStyle.Width(width).Render(row)
+	}
+	return rowStyle.Render(row)
+}
+
+// Click handles a primary click relative to a rendered form. It returns the
+// clicked field ID so its owner can perform Path and Button actions.
+func (m *Model) Click(ids []string, x, y int) (string, bool) {
+	if x < 0 || y < 0 {
+		return "", false
+	}
+	row := 0
+	for _, id := range ids {
+		fieldIndex := m.index(id)
+		if fieldIndex < 0 {
+			continue
+		}
+		field := m.fields[fieldIndex]
+		height := 1
+		if m.activeID == id && field.Kind == Option {
+			height += len(field.Options)
+		}
+		if field.Kind == MultiCheckbox {
+			height = max(1, len(field.Options)+boolInt(field.SelectAll))
+		}
+		if y < row || y >= row+height {
+			row += height
+			continue
+		}
+		if m.activeID != "" && m.activeID != id {
+			activeIndex := m.index(m.activeID)
+			if activeIndex >= 0 && m.fields[activeIndex].Kind == Option {
+				m.fields[activeIndex].Value = m.original
+			}
+			m.activeID = ""
+		}
+		m.focus = fieldIndex
+		if field.Kind == Option && m.activeID == id && y > row {
+			choice := y - row - 1
+			if choice < len(field.Options) {
+				m.fields[fieldIndex].Value = field.Options[choice]
+				m.activeID = ""
+				return id, true
+			}
+		}
+		switch field.Kind {
+		case Checkbox:
+			m.fields[fieldIndex].Checked = !field.Checked
+		case Option, Text:
+			m.begin(field)
+		case Radio:
+			start := 18
+			for _, option := range field.Options {
+				end := start + lipgloss.Width(option) + 4
+				if x >= start && x < end {
+					m.fields[fieldIndex].Value = option
+					break
+				}
+				start = end + 3
+			}
+		case MultiCheckbox:
+			optionIndex := y - row
+			if field.SelectAll && optionIndex == 0 {
+				m.multiChoice = -1
+				m.activeID = id
+				m.selectAll(id)
+				break
+			}
+			optionIndex -= boolInt(field.SelectAll)
+			if optionIndex < len(field.Options) {
+				m.multiChoice = optionIndex
+				m.activeID = id
+				m.toggleSelected(id, field.Options[optionIndex])
+			}
+		}
+		return id, true
+	}
+	return "", false
+}
+
+func (m Model) index(id string) int {
+	for index := range m.fields {
+		if m.fields[index].ID == id {
+			return index
+		}
+	}
+	return -1
+}
+
+func (m *Model) toggleSelected(id, option string) {
+	index := m.index(id)
+	if index < 0 {
+		return
+	}
+	values := m.fields[index].Selected
+	for valueIndex, value := range values {
+		if value == option {
+			m.fields[index].Selected = append(values[:valueIndex], values[valueIndex+1:]...)
+			return
+		}
+	}
+	m.fields[index].Selected = append(values, option)
+}
+
+func (m *Model) selectAll(id string) {
+	index := m.index(id)
+	if index < 0 {
+		return
+	}
+	m.fields[index].Selected = append([]string(nil), m.fields[index].Options...)
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
