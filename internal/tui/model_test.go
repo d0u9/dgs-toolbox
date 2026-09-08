@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	dgsconfig "dgs-toolbox/internal/config"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -212,6 +214,18 @@ func TestQuitConfirmationCanBeCancelledWithoutDiscardingCommand(t *testing.T) {
 	}
 }
 
+func TestCommandQuitRequestUsesSharedConfirmation(t *testing.T) {
+	m := NewModel(testApps, Launch{App: "gpx", Command: "inspect"})
+	updated, cmd := m.Update(RequestQuitMsg{})
+	m = updated.(Model)
+	if cmd != nil || !m.confirmQuit || !m.quitDialog.CancelChosen() {
+		t.Fatalf("request quit: cmd=%v confirm=%v cancel-focused=%v", cmd != nil, m.confirmQuit, m.quitDialog.CancelChosen())
+	}
+	if view := m.View(); !strings.Contains(view, "Tab switch") || !strings.Contains(view, "[ No ]") {
+		t.Fatalf("shared quit dialog missing:\n%s", view)
+	}
+}
+
 func TestActiveTextEditorCanCaptureQFromShell(t *testing.T) {
 	apps := []App{{ID: "photo", Name: "Photo", Commands: []Command{{
 		ID: "import", Name: "Import", New: func() CommandModel {
@@ -276,6 +290,67 @@ func TestViewFillsTerminalAndBarsStayOneRow(t *testing.T) {
 	}
 	if got := lipgloss.Height(m.statusBar(100)); got != 1 {
 		t.Fatalf("status bar height = %d, want 1", got)
+	}
+}
+
+func TestTopBarPlacesTabLeftAndBreadcrumbBeforeClockRight(t *testing.T) {
+	m := NewModel(testApps, Launch{App: "photo", Command: "import"})
+	m.now = time.Date(2026, time.September, 9, 9, 7, 5, 0, time.Local)
+	bar := ansi.Strip(m.topBar(100))
+	if !strings.HasPrefix(bar, " PHOTO IMPORT ") {
+		t.Fatalf("top bar tab is not left-aligned: %q", bar)
+	}
+	breadcrumb := strings.Index(bar, "dgs › photo › import")
+	clock := strings.Index(bar, "09:07:05")
+	if breadcrumb < 0 || clock < 0 || breadcrumb >= clock {
+		t.Fatalf("top bar right metadata order is wrong: %q", bar)
+	}
+}
+
+func TestTopBarShowsLiveSystemRates(t *testing.T) {
+	m := NewModel(testApps, Launch{App: "photo", Command: "import"})
+	m.now = time.Date(2026, time.September, 9, 9, 7, 5, 0, time.Local)
+	m.metrics = shellMetrics{ready: true, cpuPercent: 17, networkUp: 2 * 1024 * 1024, networkDown: 3 * 1024, diskRead: 4 * 1024 * 1024, diskWrite: 5 * 1024}
+	bar := ansi.Strip(m.topBar(180))
+	for _, want := range []string{"dgs › photo › import │ DISK R  4.0M/s W  5.0K/s │ NET ↑  2.0M/s ↓  3.0K/s │ CPU  17% │ 09:07:05"} {
+		if !strings.Contains(bar, want) {
+			t.Fatalf("top bar missing %q: %q", want, bar)
+		}
+	}
+}
+
+func TestTopBarMetricCellsKeepStableWidth(t *testing.T) {
+	m := NewModel(testApps, Launch{App: "photo", Command: "import"})
+	m.metrics = shellMetrics{ready: true, cpuPercent: 1, networkUp: 1, networkDown: 1, diskRead: 1, diskWrite: 1}
+	first := ansi.Strip(m.topBarMetadata(180))
+	m.metrics = shellMetrics{ready: true, cpuPercent: 100, networkUp: 999 * 1024 * 1024, networkDown: 88 * 1024, diskRead: 7 * 1024 * 1024 * 1024, diskWrite: 66 * 1024 * 1024}
+	second := ansi.Strip(m.topBarMetadata(180))
+	if lipgloss.Width(first) != lipgloss.Width(second) {
+		t.Fatalf("metric metadata width moved from %d to %d:\n%s\n%s", lipgloss.Width(first), lipgloss.Width(second), first, second)
+	}
+}
+
+func TestTopBarVisibilityCanDisableIndividualGlobalCells(t *testing.T) {
+	m := NewModelWithConfig(testApps, Launch{App: "photo", Command: "import"}, dgsconfig.TopBarVisibility{
+		Disk: true, Network: false, CPU: true, Time: false,
+	})
+	m.metrics = shellMetrics{ready: true, cpuPercent: 12, diskRead: 1024, diskWrite: 2048}
+	bar := ansi.Strip(m.topBar(140))
+	if !strings.Contains(bar, "DISK R") || !strings.Contains(bar, "CPU  12%") {
+		t.Fatalf("enabled cells missing: %q", bar)
+	}
+	if strings.Contains(bar, "NET") || strings.Contains(bar, ":") {
+		t.Fatalf("disabled cells remain visible: %q", bar)
+	}
+}
+
+func TestMetricsCalculateRatesFromCounterDeltas(t *testing.T) {
+	var metrics shellMetrics
+	start := time.Date(2026, time.September, 9, 9, 0, 0, 0, time.UTC)
+	metrics.update(metricCounters{at: start, cpuTotal: 100, cpuIdle: 80, networkRead: 1000, networkWrite: 2000, diskRead: 3000, diskWrite: 4000})
+	metrics.update(metricCounters{at: start.Add(2 * time.Second), cpuTotal: 200, cpuIdle: 120, networkRead: 5000, networkWrite: 8000, diskRead: 11000, diskWrite: 14000})
+	if !metrics.ready || metrics.cpuPercent != 60 || metrics.networkDown != 2000 || metrics.networkUp != 3000 || metrics.diskRead != 4000 || metrics.diskWrite != 5000 {
+		t.Fatalf("metrics = %#v", metrics)
 	}
 }
 

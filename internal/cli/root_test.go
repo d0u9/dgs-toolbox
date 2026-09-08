@@ -1,10 +1,15 @@
 package cli
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"dgs-toolbox/internal/apps"
+	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 )
 
@@ -39,5 +44,31 @@ func TestCommandRoutes(t *testing.T) {
 				t.Fatalf("launch = %#v, want %#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestExportConfigFlagWritesDefaultsWithoutStartingTUI(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dgs", "config.json")
+	t.Setenv(config.EnvPath, path)
+	called := false
+	command := NewRootCommand(apps.All(), func(tui.Launch) error {
+		called = true
+		return nil
+	})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetArgs([]string{"--export-config", path})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("export started the TUI")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"disk": true`) || !strings.Contains(output.String(), path) {
+		t.Fatalf("config=%s output=%q", data, output.String())
 	}
 }

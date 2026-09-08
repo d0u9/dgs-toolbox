@@ -15,7 +15,12 @@ var (
 	barColor    = lipgloss.AdaptiveColor{Light: "#E8E8F2", Dark: "#242433"}
 	barText     = lipgloss.AdaptiveColor{Light: "#20202A", Dark: "#F2F2F2"}
 
-	topBarStyle      = lipgloss.NewStyle().Foreground(barText).Background(barColor)
+	topBarStyle    = lipgloss.NewStyle().Foreground(barText).Background(barColor)
+	topBarTabStyle = lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#101010"}).
+			Background(accentColor).
+			Padding(0, 1)
+	topBarMetaStyle  = lipgloss.NewStyle().Foreground(barText).Background(barColor)
 	pickerTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(accentColor)
@@ -70,9 +75,77 @@ func (m Model) viewportSize() (int, int) {
 }
 
 func (m Model) topBar(width int) string {
-	left := " " + m.breadcrumb()
-	right := m.now.Format("15:04:05") + " "
-	return topBarStyle.Render(joinLeftRight(left, right, width))
+	left := topBarTabStyle.Render(m.tabLabel())
+	available := max(0, width-lipgloss.Width(left)-1)
+	right := topBarMetaStyle.Render(m.topBarMetadata(available) + " ")
+	return renderStatusContent(topBarStyle, joinLeftRight(left, right, width))
+}
+
+func (m Model) topBarMetadata(width int) string {
+	metricCells := make([]string, 0, 3)
+	if m.topBarVisibility.Disk {
+		metricCells = append(metricCells, fmt.Sprintf("DISK R%8s W%8s", fixedMetricValue(formatRate(m.metrics.diskRead), m.metrics.ready), fixedMetricValue(formatRate(m.metrics.diskWrite), m.metrics.ready)))
+	}
+	if m.topBarVisibility.Network {
+		metricCells = append(metricCells, fmt.Sprintf("NET ↑%8s ↓%8s", fixedMetricValue(formatRate(m.metrics.networkUp), m.metrics.ready), fixedMetricValue(formatRate(m.metrics.networkDown), m.metrics.ready)))
+	}
+	if m.topBarVisibility.CPU {
+		metricCells = append(metricCells, fmt.Sprintf("CPU %4s", fixedMetricValue(formatCPU(m.metrics), m.metrics.ready)))
+	}
+	const separator = " │ "
+	parts := make([]string, 0, len(metricCells)+2)
+	for count := len(metricCells); count >= 0; count-- {
+		parts = append(parts[:0], m.breadcrumb())
+		parts = append(parts, metricCells[:count]...)
+		if m.topBarVisibility.Time {
+			parts = append(parts, m.now.Format("15:04:05"))
+		}
+		if lipgloss.Width(strings.Join(parts, separator)) <= width || count == 0 {
+			break
+		}
+	}
+	return truncate(strings.Join(parts, separator), width)
+}
+
+func fixedMetricValue(value string, ready bool) string {
+	if !ready {
+		return "--"
+	}
+	return truncate(value, 8)
+}
+
+func formatCPU(metrics shellMetrics) string {
+	if !metrics.ready {
+		return "--"
+	}
+	return fmt.Sprintf("%.0f%%", metrics.cpuPercent)
+}
+
+func formatRate(bytesPerSecond float64) string {
+	switch {
+	case bytesPerSecond >= 1024*1024*1024:
+		return fmt.Sprintf("%.1fG/s", bytesPerSecond/(1024*1024*1024))
+	case bytesPerSecond >= 1024*1024:
+		return fmt.Sprintf("%.1fM/s", bytesPerSecond/(1024*1024))
+	case bytesPerSecond >= 1024:
+		return fmt.Sprintf("%.1fK/s", bytesPerSecond/1024)
+	default:
+		return fmt.Sprintf("%.0fB/s", bytesPerSecond)
+	}
+}
+
+func (m Model) tabLabel() string {
+	if m.active != nil {
+		app := m.apps[m.activeApp]
+		if app.Direct {
+			return strings.ToUpper(app.Name)
+		}
+		return strings.ToUpper(app.Name + " " + app.Commands[m.activeCommand].Name)
+	}
+	if m.pickerApp >= 0 {
+		return strings.ToUpper(m.apps[m.pickerApp].Name + " COMMANDS")
+	}
+	return "COMMANDS"
 }
 
 func (m Model) pickerView(width, height int) string {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	dgsconfig "dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui/confirm"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,33 +18,40 @@ type choice struct {
 // Model is the single shell model. It owns the picker and exactly one active
 // leaf command; replacing or leaving a command discards its model.
 type Model struct {
-	apps          []App
-	pickerApp     int
-	selected      int
-	pickerHelp    bool
-	active        CommandModel
-	activeApp     int
-	activeCommand int
-	confirmQuit   bool
-	quitDialog    confirm.Model
-	width         int
-	height        int
-	now           time.Time
-	launchErr     string
+	apps             []App
+	pickerApp        int
+	selected         int
+	pickerHelp       bool
+	active           CommandModel
+	activeApp        int
+	activeCommand    int
+	confirmQuit      bool
+	quitDialog       confirm.Model
+	width            int
+	height           int
+	now              time.Time
+	metrics          shellMetrics
+	topBarVisibility dgsconfig.TopBarVisibility
+	launchErr        string
 }
 
 type tickMsg time.Time
 
 // NewModel creates either a scoped picker or a directly active leaf command.
 func NewModel(apps []App, launch Launch) Model {
+	return NewModelWithConfig(apps, launch, dgsconfig.DefaultTopBarVisibility())
+}
+
+func NewModelWithConfig(apps []App, launch Launch, topBar dgsconfig.TopBarVisibility) Model {
 	m := Model{
-		apps:          apps,
-		pickerApp:     -1,
-		activeApp:     -1,
-		activeCommand: -1,
-		width:         80,
-		height:        24,
-		now:           time.Now(),
+		apps:             apps,
+		pickerApp:        -1,
+		activeApp:        -1,
+		activeCommand:    -1,
+		width:            80,
+		height:           24,
+		now:              time.Now(),
+		topBarVisibility: topBar,
 	}
 
 	if launch.App == "" {
@@ -71,10 +79,14 @@ func NewModel(apps []App, launch Launch) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	if m.active == nil {
-		return tick()
+	metrics := tea.Cmd(nil)
+	if m.topBarVisibility.Disk || m.topBarVisibility.Network || m.topBarVisibility.CPU {
+		metrics = sampleMetricsCmd()
 	}
-	return tea.Batch(tick(), m.active.Init())
+	if m.active == nil {
+		return tea.Batch(tick(), metrics)
+	}
+	return tea.Batch(tick(), metrics, m.active.Init())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -84,7 +96,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.now = time.Time(msg)
+		if m.topBarVisibility.Disk || m.topBarVisibility.Network || m.topBarVisibility.CPU {
+			return m, tea.Batch(tick(), sampleMetricsCmd())
+		}
 		return m, tick()
+	case metricsMsg:
+		if msg.err == nil {
+			m.metrics.update(msg.counters)
+		}
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
