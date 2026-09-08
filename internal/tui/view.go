@@ -147,6 +147,9 @@ func (m Model) breadcrumb() string {
 	if m.active != nil {
 		app := m.apps[m.activeApp]
 		command := app.Commands[m.activeCommand]
+		if app.Direct {
+			return strings.Join(append(parts, app.ID), " › ")
+		}
 		return strings.Join(append(parts, app.ID, command.ID), " › ")
 	}
 	if m.pickerApp >= 0 {

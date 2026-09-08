@@ -221,6 +221,9 @@ func (m Model) choices() []choice {
 func (m Model) choiceLabel(selected choice) string {
 	app := m.apps[selected.appIndex]
 	command := app.Commands[selected.commandIndex]
+	if app.Direct {
+		return app.Name
+	}
 	if m.pickerApp >= 0 {
 		return command.Name
 	}

@@ -28,6 +28,17 @@ func NewRootCommand(apps []tui.App, run tui.Runner) *cobra.Command {
 }
 
 func newAppCommand(app tui.App, run tui.Runner) *cobra.Command {
+	if app.Direct && len(app.Commands) == 1 {
+		leaf := app.Commands[0]
+		return &cobra.Command{
+			Use:   app.ID,
+			Short: app.Description,
+			Args:  cobra.NoArgs,
+			RunE: func(_ *cobra.Command, _ []string) error {
+				return run(tui.Launch{App: app.ID, Command: leaf.ID})
+			},
+		}
+	}
 	command := &cobra.Command{
 		Use:   app.ID,
 		Short: app.Description,

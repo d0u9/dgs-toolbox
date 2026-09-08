@@ -66,6 +66,17 @@ var testApps = []App{
 	}},
 }
 
+func TestDirectCommandUsesSingleBreadcrumbSegment(t *testing.T) {
+	apps := []App{{
+		ID: "demo", Name: "Component Demo", Direct: true,
+		Commands: []Command{{ID: "demo", Name: "Component Demo", New: newStub("DEMO")}},
+	}}
+	m := NewModel(apps, Launch{App: "demo", Command: "demo"})
+	if got := m.breadcrumb(); got != "dgs › demo" {
+		t.Fatalf("breadcrumb = %q, want %q", got, "dgs › demo")
+	}
+}
+
 func TestGlobalPickerStartsLeafAndReturns(t *testing.T) {
 	m := NewModel(testApps, Launch{})
 	if m.active != nil || len(m.choices()) != 4 {
