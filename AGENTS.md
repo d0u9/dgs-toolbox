@@ -2,9 +2,9 @@
 
 ## Current goal
 
-Build a small Go demo to settle the CLI and TUI structure for `dgs`.
+Build the Photo Import workflow for `dgs`, including its real, integrity-verified Processing engine. Keep GPX and the remaining Photo commands as demo domains.
 
-Use Photo and GPX as demo domains. Do not implement real photo or GPX behavior yet.
+Photo Import may perform real file operations only after the user starts Processing. Its highest-priority contract is that a destination file is not published under its final name until an independent destination readback matches the Source SHA-256 digest. Follow the confirmed algorithm and unresolved boundaries in [`docs/apps/photo/import.md`](docs/apps/photo/import.md).
 
 Shared interface decisions live in [`docs/tui.md`](docs/tui.md). Read it before changing any TUI or interactive command flow. Component-specific documents are linked from that shared design, including [`docs/file-explorer.md`](docs/file-explorer.md), [`docs/parameter-controls.md`](docs/parameter-controls.md), and [`docs/data-fields.md`](docs/data-fields.md); follow the links relevant to the component being changed. App-specific designs live under `docs/apps/<app>/`, including [`docs/apps/photo/import.md`](docs/apps/photo/import.md), and must not be promoted into shared requirements. Update design documents incrementally only when a decision is confirmed, and do not fill undecided sections speculatively.
 
@@ -41,7 +41,7 @@ Startup behavior:
 - Leaving a command returns to the command picker so the user can choose again.
 - Starting another command creates a fresh command model; the previous command does not remain active in the background.
 
-Photo and GPX are only mock demonstrations of this model.
+GPX and Photo commands other than Photo Import remain mock demonstrations of this model.
 
 ## Shared TUI shell
 
@@ -88,9 +88,9 @@ Leaf commands expose Bubble Tea models/components and do not create nested `tea.
 
 At a command's root, `Esc` returns to the command picker. In the picker, `Esc` exits. More detailed navigation and cancellation behavior will be designed later.
 
-## Demo scope
+## Implementation scope
 
-Implement only enough to demonstrate:
+Continue to demonstrate:
 
 - The Cobra command hierarchy.
 - Global and domain-scoped command pickers.
@@ -99,6 +99,6 @@ Implement only enough to demonstrate:
 - The shared three-region layout.
 - Photo and GPX placeholder command screens.
 
-Do not implement real importing, encoding, file operations, databases, persistence, background tasks, plugin loading, or speculative shared infrastructure.
+Implement Photo Import Processing with bounded worker concurrency, same-directory `.dgs-part` files, SHA-256 source hashing during copy, independent destination readback, verified atomic publication, whole-file retry, and a versioned `.dgs-state` file. Keep this logic outside the TUI model and cover it with filesystem tests.
 
-Stop after the demo works so the interaction design can be reviewed before adding more rules.
+Do not implement real Photo Encode or GPX behavior, databases, plugin loading, or speculative shared infrastructure. Do not claim stronger durability than the user-space/filesystem API boundary documented for Photo Import.
