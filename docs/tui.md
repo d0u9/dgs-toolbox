@@ -34,12 +34,31 @@ Status bar     exactly one terminal row
 ### Top bar
 
 - Left: a tab region reserved for command- or workspace-level tabs.
-- Right: breadcrumb, local time, network upload/download rate, CPU utilization, and disk read/write rate.
-- Place the breadcrumb immediately to the left of the clock. A typical right-hand sequence is `dgs › photo › import › processing  15:04:05  NET ↑… ↓…  CPU …  DISK R… W…`.
+- Right: breadcrumb, disk read/write rate, network upload/download rate, CPU utilization, and local time—in that exact order.
+- A typical right-hand sequence is `dgs › photo › import › processing │ DISK R… W… │ NET ↑… ↓… │ CPU … │ 15:04:05`. The breadcrumb anchors the left edge of this region and the clock anchors its right edge.
 - The breadcrumb is never rendered on the left; keeping that area free allows the tab system to grow without competing with navigation context.
 - The row must never wrap.
 
-Top-bar telemetry belongs to the shared shell rather than individual commands. Collection, refresh interval, unavailable-state language, and narrow-screen truncation priority remain implementation decisions; do not let telemetry change workspace height or block interaction.
+Top-bar telemetry belongs to the shared shell rather than individual commands. Sample cumulative system counters asynchronously with the one-second shell tick and derive per-second rates from consecutive samples. Show `--` until two valid samples exist; a failed sample must not block interaction or replace the last valid values. Disk, Network, CPU, and Time are separate fixed-width cells whose values align right inside their cell; changing digits or units must not move adjacent cells or the breadcrumb. Separate cells with a quiet `│`, for example `dgs › photo › import │ DISK R  4.0M/s W  5.0K/s │ NET ↑  2.0M/s ↓  3.0K/s │ CPU  17% │ 15:04:05`. On narrow screens, remove whole CPU, Network, and Disk cells in that order while always retaining the breadcrumb and the clock when Time is enabled; never show a partially clipped metric or let telemetry change workspace height.
+
+The global configuration controls the visibility of Disk, Network, CPU, and Time independently. All four default to enabled; omitting one key preserves that default. The breadcrumb is structural and cannot be disabled. Load JSON from the operating system's user configuration directory at `dgs/config.json`, or from the path in `DGS_CONFIG` when set:
+
+```json
+{
+  "tui": {
+    "top_bar": {
+      "disk": true,
+      "network": true,
+      "cpu": true,
+      "time": true
+    }
+  }
+}
+```
+
+Setting any value to `false` removes that entire fixed-width cell and its adjacent separator. If Disk, Network, and CPU are all disabled, the shell does not start the system-counter sampler.
+
+Run `dgs --export-config` to create `dgs-config.json` in the current working directory and print its absolute path. An optional positional path writes elsewhere: `dgs --export-config /path/to/config.json` uses that exact file, while an existing directory receives `dgs-config.json`. The command never overwrites an existing file. Export destinations are explicit and independent of `DGS_CONFIG`; the environment variable controls where `dgs` loads configuration. The exported file is an editable template: move it to the operating system's global `dgs/config.json` location or set `DGS_CONFIG` to its path before launching `dgs`.
 
 ### Workspace
 

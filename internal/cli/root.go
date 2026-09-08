@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"fmt"
+
+	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 
 	"github.com/spf13/cobra"
@@ -10,16 +13,35 @@ import (
 // rendered by the TUI. The runner is injected so routing can be tested without
 // opening a terminal.
 func NewRootCommand(apps []tui.App, run tui.Runner) *cobra.Command {
+	var exportConfig bool
 	root := &cobra.Command{
 		Use:           "dgs",
 		Short:         "A small toolbox for photo and GPX workflows",
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Args:          cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Args: func(command *cobra.Command, args []string) error {
+			if exportConfig {
+				return cobra.MaximumNArgs(1)(command, args)
+			}
+			return cobra.NoArgs(command, args)
+		},
+		RunE: func(command *cobra.Command, args []string) error {
+			if exportConfig {
+				destination := ""
+				if len(args) == 1 {
+					destination = args[0]
+				}
+				path, err := config.ExportDefault(destination)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(command.OutOrStdout(), "Exported default config to %s\n", path)
+				return nil
+			}
 			return run(tui.Launch{})
 		},
 	}
+	root.Flags().BoolVar(&exportConfig, "export-config", false, "write the default global configuration")
 
 	for _, app := range apps {
 		root.AddCommand(newAppCommand(app, run))
