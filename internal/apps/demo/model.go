@@ -101,8 +101,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.picking {
+		width, height := m.modalSize()
+		msg.X -= (m.width-width)/2 + 1
+		msg.Y -= (m.height-height)/2 + 4
 		var cmd tea.Cmd
-		m.picker, _, cmd = m.picker.Update(msg)
+		var selected string
+		m.picker, selected, cmd = m.picker.Update(msg)
+		if selected != "" {
+			m.controls.SetValue(pathID, selected)
+			m.picking = false
+		}
 		return m, cmd
 	}
 	if m.confirming {
@@ -259,7 +267,7 @@ func (m *model) sizePicker() {
 }
 
 func (m model) modalSize() (int, int) {
-	return max(20, min(76, m.width-4)), max(8, min(22, m.height-4))
+	return max(20, min(96, m.width-4)), max(8, min(30, m.height-2))
 }
 
 func (m model) View() string {

@@ -192,7 +192,9 @@ func TestDirectCommandEscapeReturnsToParentPickerThenConfirmsExit(t *testing.T) 
 	if cmd != nil || !m.confirmQuit || !strings.Contains(m.View(), "QUIT DGS?") {
 		t.Fatal("second escape should request confirmation from the picker")
 	}
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(Model)
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Fatalf("confirmation message type = %T, want tea.QuitMsg", cmd())
 	}
@@ -204,7 +206,7 @@ func TestQuitConfirmationCanBeCancelledWithoutDiscardingCommand(t *testing.T) {
 	if !m.confirmQuit || m.active == nil {
 		t.Fatal("q should request confirmation and preserve the active command")
 	}
-	m = update(t, m, "n")
+	m = update(t, m, "enter")
 	if m.confirmQuit || m.active == nil || !strings.Contains(m.View(), "GPX INSPECT") {
 		t.Fatalf("cancel should resume the active command:\n%s", m.View())
 	}

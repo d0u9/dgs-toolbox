@@ -2,6 +2,10 @@ package tui
 
 import tea "github.com/charmbracelet/bubbletea"
 
+// RequestQuitMsg lets a mouse action inside a command request the shell-owned
+// quit confirmation instead of terminating the Bubble Tea program directly.
+type RequestQuitMsg struct{}
+
 // Status is the three-part contribution rendered by the shared status bar.
 type Status struct {
 	Left   string

@@ -3,15 +3,19 @@ package fileexplorer
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var explorerID atomic.Int64
@@ -43,11 +47,13 @@ type directoryNode struct {
 	loading  bool
 	err      error
 	isDir    bool
+	size     int64
 }
 
 type directoryEntry struct {
 	name  string
 	isDir bool
+	size  int64
 }
 
 type directoryReadMsg struct {
@@ -73,6 +79,8 @@ type Model struct {
 	completions     []string
 	completionIndex int
 	focusAfterLoad  string
+	lastClickPath   string
+	lastClickAt     time.Time
 }
 
 func New(root string, width, height int, options ...Option) Model {
@@ -130,6 +138,7 @@ func (t Model) Update(msg tea.Msg) (Model, string, tea.Cmd) {
 				depth:  node.depth + 1,
 				parent: node,
 				isDir:  entry.isDir,
+				size:   entry.size,
 			})
 		}
 		t.refresh()
@@ -153,6 +162,8 @@ func (t Model) Update(msg tea.Msg) (Model, string, tea.Cmd) {
 		return t, "", nil
 	case tea.KeyMsg:
 		return t.updateKey(msg)
+	case tea.MouseMsg:
+		return t.updateMouse(msg)
 	default:
 		return t, "", nil
 	}
@@ -254,12 +265,58 @@ func (t Model) updateKey(msg tea.KeyMsg) (Model, string, tea.Cmd) {
 		t.notice = ""
 		t.completions = nil
 		t.completionIndex = 0
-		t.editor.SetValue(displayPath(t.SelectedPath()))
+		t.editor.SetValue("")
 		t.editor.Focus()
 		return t, "", textinput.Blink
+	case " ":
+		node := t.visible[t.selected]
+		if !node.isDir {
+			return t, "", previewFile(node.path)
+		}
 	}
 	t.refresh()
 	return t, "", nil
+}
+
+func (t Model) updateMouse(msg tea.MouseMsg) (Model, string, tea.Cmd) {
+	if t.action != actionNone || msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
+		return t, "", nil
+	}
+	row := t.viewport.YOffset + msg.Y
+	if row < 0 || row >= len(t.visible) {
+		return t, "", nil
+	}
+	now := time.Now()
+	node := t.visible[row]
+	double := t.lastClickPath == node.path && now.Sub(t.lastClickAt) <= 500*time.Millisecond
+	t.selected = row
+	t.lastClickPath, t.lastClickAt = node.path, now
+	if double && t.selectable(node) {
+		t.refresh()
+		return t, node.path, nil
+	}
+	if node.isDir {
+		node.expanded = !node.expanded
+		if node.expanded && !node.loaded && !node.loading {
+			node.loading = true
+			t.refresh()
+			return t, "", readDirectory(t.id, node.path, t.filter)
+		}
+	}
+	t.refresh()
+	return t, "", nil
+}
+
+func previewFile(path string) tea.Cmd {
+	return func() tea.Msg {
+		var command *exec.Cmd
+		if runtime.GOOS == "darwin" {
+			command = exec.Command("qlmanage", "-p", path)
+		} else {
+			command = exec.Command("xdg-open", path)
+		}
+		return command.Start()
+	}
 }
 
 func (t Model) makeSelectedRoot() (Model, string, tea.Cmd) {
@@ -356,6 +413,9 @@ func (t Model) updateAction(msg tea.KeyMsg) (Model, string, tea.Cmd) {
 			t.completePath(true)
 			return t, "", nil
 		case "enter":
+			if t.acceptCompletion() {
+				return t, "", nil
+			}
 			updated, selected, err := t.acceptPath()
 			if err != nil {
 				t.notice = err.Error()
@@ -642,7 +702,7 @@ func (t *Model) refresh() {
 
 	lines := make([]string, len(t.visible))
 	for i, node := range t.visible {
-		lines[i] = renderDirectoryNode(node, i == t.selected)
+		lines[i] = renderDirectoryNode(node, i == t.selected, t.viewport.Width)
 	}
 	t.viewport.SetContent(strings.Join(lines, "\n"))
 	if t.selected < t.viewport.YOffset {
@@ -663,7 +723,7 @@ func appendVisible(visible *[]*directoryNode, node *directoryNode) {
 	}
 }
 
-func renderDirectoryNode(node *directoryNode, selected bool) string {
+func renderDirectoryNode(node *directoryNode, selected bool, width int) string {
 	if !node.isDir {
 		marker := "  "
 		style := rowStyle
@@ -671,7 +731,8 @@ func renderDirectoryNode(node *directoryNode, selected bool) string {
 			marker = "› "
 			style = selectedStyle
 		}
-		return style.Render(marker + strings.Repeat("  ", node.depth) + "  " + node.name)
+		label := marker + strings.Repeat("  ", node.depth) + "  " + node.name
+		return renderSizedRow(style, label, formatFileSize(node.size), width)
 	}
 	icon := "▸"
 	switch {
@@ -691,6 +752,11 @@ func renderDirectoryNode(node *directoryNode, selected bool) string {
 		style = selectedStyle
 	}
 	iconText := disclosureStyle.Render(icon)
+	if selected {
+		// Keep the selected row as one continuous styled span so ANSI resets in
+		// nested icon styles cannot punch holes in the highlight background.
+		iconText = icon
+	}
 	if node.loading {
 		iconText = mutedStyle.Render(icon)
 	}
@@ -698,7 +764,28 @@ func renderDirectoryNode(node *directoryNode, selected bool) string {
 	if node.err != nil {
 		line += "  " + errorStyle.Render(fmt.Sprintf("(%v)", node.err))
 	}
-	return style.Render(line)
+	return style.Width(width).MaxWidth(width).Render(line)
+}
+
+func renderSizedRow(style lipgloss.Style, label, size string, width int) string {
+	sizeWidth := lipgloss.Width(size)
+	label = ansi.Truncate(label, max(1, width-sizeWidth-2), "…")
+	line := label + strings.Repeat(" ", max(1, width-lipgloss.Width(label)-sizeWidth)) + size
+	return style.Width(width).MaxWidth(width).Render(line)
+}
+
+func formatFileSize(size int64) string {
+	units := []string{"B", "KB", "MB", "GB", "TB"}
+	value := float64(size)
+	unit := 0
+	for value >= 1024 && unit < len(units)-1 {
+		value /= 1024
+		unit++
+	}
+	if unit == 0 {
+		return fmt.Sprintf("%d B", size)
+	}
+	return fmt.Sprintf("%.1f %s", value, units[unit])
 }
 
 func (t Model) find(path string) *directoryNode {
@@ -732,7 +819,11 @@ func readDirectory(id int64, path string, filter Filter) tea.Cmd {
 			if !directory && !filter.includesFile(entry.Name()) {
 				continue
 			}
-			visible = append(visible, directoryEntry{name: entry.Name(), isDir: directory})
+			var size int64
+			if info, infoErr := entry.Info(); infoErr == nil {
+				size = info.Size()
+			}
+			visible = append(visible, directoryEntry{name: entry.Name(), isDir: directory, size: size})
 		}
 		sort.Slice(visible, func(i, j int) bool {
 			if visible[i].isDir != visible[j].isDir {
