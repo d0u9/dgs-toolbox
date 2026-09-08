@@ -29,7 +29,7 @@ Use SHA-256 by default because it is cryptographically strong, available in the 
 - Processing uses bounded whole-file workers and exposes Copy, Verify, and Publish separately. A final photo name is never visible before independent SHA-256 readback succeeds; Source modification time is applied before publication.
 - Every quit path uses the shared safe-default confirmation dialog. Active Processing pauses while it is open and cancels cleanly only after confirmation.
 - Result is terminal: it summarizes Source, Destination, verified published bytes, skipped files, and failures, then offers only Again or Quit—not navigation back into completed work.
-- The internal vertical subdivisions—Source/Destination on the left and Parameters/Summary on the right—remain Photo Import decisions rather than shared layout rules.
+- The internal subdivisions—controls and actions in the narrow left column, detailed file or worker data in the wider right column—remain Photo Import decisions rather than shared layout rules.
 
 ## Confirmed workflow
 
@@ -78,32 +78,35 @@ The scan collects regular-file names and counts from both roots without reading 
 
 After scanning, divide the entire workspace into two asymmetric panes:
 
-- Left: separate Source and Destination inventories in the shared one-third column, capped at 90 cells.
-- Right: Parameters above Import summary in the shared two-thirds column, consuming all remaining width and ending at the terminal's right edge.
+- Left: Parameters above Import summary in the shared one-third column, capped at 90 cells. Page Actions is anchored at the bottom-left.
+- Right: separate Source and Destination inventories in the shared two-thirds column, consuming all remaining width and ending at the terminal's right edge.
 - Keep one terminal cell between panes.
 - Below 63 total columns, replace the panes with a resize prompt instead of overflowing or breaking either fieldset.
-- Source occupies the upper half of the full-height left pane and Destination occupies the lower half. Both fieldsets keep those equal fixed heights even when either inventory is empty.
+- Source occupies the upper half of the full-height right pane and Destination occupies the lower half. Both fieldsets keep those equal fixed heights even when either inventory is empty.
 - A strong `━━━ ▼  ▼  ▼ ━━━` directional divider between them communicates Source-to-Destination flow. Keep two cells between arrows so the direction cue remains legible instead of becoming a dense glyph cluster.
-- Import summary uses the natural fixed height of its content and is anchored to the bottom-right corner.
-- Parameters starts at the top-right and expands through all space above the summary.
+- Each inventory displays its configured root directory before its count and relative file list. This keeps the selected SD card and destination mount visible while preserving compact, scannable relative paths below it.
+- Import summary uses the natural fixed height of its content and is anchored near the bottom-left actions.
+- Parameters starts at the top-left and expands through all space above the summary and actions.
 
 This screen does not use the centered 100-cell configuration surface. Its two-column skeleton is shared; the content arranged inside each column is specific to Photo Import.
 
 ```text
-╭─ Source ───────────────────────────╮ ╭─ Parameters ─────────────────────╮
-│ 24 files · 420 B                   │ │ IMPORT                           │
-│ › DCIM/100LEICA/IMG_0001.JPG       │ │ Operation  (●) Copy  ( ) Move    │
-│ · DCIM/100LEICA/IMG_0002.JPG       │ │ Extensions [x] DNG               │
-│ · DCIM/100LEICA/IMG_0003.DNG       │ │ Duplicates Skip                  │
-╰────────────────────────────────────╯ │ Parallelism 1                    │
-━━━━━━━━━━━━━ ▼  ▼  ▼ ━━━━━━━━━━━━━━━━ ╰──────────────────────────────────╯
-╭─ Destination ──────────────────────╮ ╭─ Import summary ─────────────────╮
-│ 11 files · 260 B                   │ │ Eligible       24 files          │
-│ › Existing Album/IMG_0001.JPG      │ │ Duplicates      2 files          │
-│ · Existing Album/IMG_0002.JPG      │ │ Skipped         2 files          │
-│ · Existing Album/IMG_0999.JPG      │ │ Workers        1                 │
-│                                    │ │ Will copy      22 files          │
-╰────────────────────────────────────╯ ╰──────────────────────────────────╯
+╭─ Parameters ─────────────╮ ╭─ Source ─────────────────────────────────────╮
+│ IMPORT                   │ │ Root  /Volumes/SD                            │
+│ Operation  (●) Copy      │ │ 24 files · 420 B                            │
+│ Extensions [x] DNG       │ │ › DCIM/100LEICA/IMG_0001.JPG                │
+│ Duplicates Skip          │ │ · DCIM/100LEICA/IMG_0002.JPG                │
+│ Parallelism 1            │ ╰──────────────────────────────────────────────╯
+╰──────────────────────────╯ ━━━━━━━━━━━━━━━ ▼  ▼  ▼ ━━━━━━━━━━━━━━━━━━━━━━━
+╭─ Import summary ─────────╮ ╭─ Destination ────────────────────────────────╮
+│ Eligible       24 files  │ │ Root  /Volumes/Photos/Import                 │
+│ Duplicates      2 files  │ │ 11 files · 260 B                            │
+│ Skipped         2 files  │ │ › Existing Album/IMG_0001.JPG               │
+│ Workers         1        │ │ · Existing Album/IMG_0002.JPG               │
+│ Will copy      22 files  │ │ · Existing Album/IMG_0999.JPG               │
+╰──────────────────────────╯ ╰──────────────────────────────────────────────╯
+
+  ← Directories            n  Processing →
 ```
 
 The summary updates immediately when Operation, Extensions, Duplicates, or Parallelism changes. Extensions are discovered from the scanned Source inventory, normalized case-insensitively, sorted, and rendered as independent checkboxes; extensions absent from Source are not offered. All discovered extensions begin selected. A leading `[ All ]` action selects every discovered extension again, providing an explicit recovery from an empty filtered Source viewport. Right/l or Enter enters the extension subitems; Up/Down or k/j then moves through All and the extensions, Space or Enter invokes the current row, and Left/h or Esc exits the group. Duplicates opens with either Space or Enter. Changing the selection immediately filters the Source viewport and summary from the same source of truth. Destination remains complete so existing files and conflicts stay visible. Duplicate detection currently compares file basenames case-insensitively. Do not summarize a long inventory with text such as `… 8 files more`; make each inventory a navigable viewport instead. Source and Destination rows use the shared one-based line-number gutter. Within either list, `j/k` or Down/Up moves one file, `gg` moves to the first file, `G` moves to the last, and `h/l` or Left/Right pans long paths horizontally. The selected file uses `›` and the viewport follows it. A primary click selects a row and focuses its inventory. Hovering over either inventory and using the mouse wheel scrolls that inventory by three rows without changing focus. Space opens the selected file in macOS Quick Look. Right-clicking a row selects it and opens the shared context menu; Open with default app delegates to macOS `open`. `Alt+h/j/k/l` moves spatially among Source, Destination, Parameters, and Import summary. `Esc` returns to Setup. The shared `n` Next Screen shortcut starts Processing without requiring traversal through unchanged parameters.
@@ -134,7 +137,7 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 
 ## Processing screen
 
-Processing uses the shared two-column landscape skeleton and keeps vertical stacks shallow. A compact full-width header shows file progress, aggregate progress, active workers, pending files, and failures. Below it, the left one-third column (capped at 90 cells) contains the worker list; the right two-thirds column is divided vertically between Next files and Recent results.
+Processing uses the shared two-column landscape skeleton and keeps vertical stacks shallow. A compact full-width header shows file progress, aggregate progress, active workers, pending files, and failures. Below it, the narrow left column is divided vertically between Next files and Recent results, with Page Actions at bottom-left. The wider right column contains the worker list so filenames, metadata, step tracks, hashes, and progress bars receive the available width.
 
 Each Worker owns one file and exposes a distinct state: Copying, Verifying, Publishing, or Idle. Each compact worker entry includes the current filename, file size, phase progress bar, and Source/Destination hash state. It also uses a stable three-step track—`COPY → VERIFY → PUBLISH`—where completed steps use `✓`, the active step uses `●`, and forthcoming steps use `○`; this makes both completed and remaining work visible without relying only on a phase label. Render only configured workers; do not create placeholder worker cards to fill a landscape viewport. When workers exceed the visible height, keep them in one vertically scrollable list instead of laying them out side by side. Up/Down or `k/j` scrolls that list, while `g`/Home and `G`/End jump to its beginning or end. Do not display `MATCH` until independent destination verification has completed. Overall completion counts verified and published files, not merely copied bytes.
 
@@ -157,21 +160,21 @@ Processing remains visible when it reaches complete so its final worker state ca
 │ Published 2.4 GB   Skipped 0   Failed 0                                    │
 ╰────────────────────────────────────────────────────────────────────────────╯
 
-╭─ Verified files ───────────────────────────╮ ╭─ Verification summary ──────╮
-│ 41 verified files · 2.4 GB                 │ │ ✓ Source stream hashed       │
-│ › 1 ✓ IMG_0001.JPG · 24 MB · SHA-256 MATCH │ │ ✓ Destination read back     │
-│   2 ✓ IMG_0002.DNG  · 51 MB · SHA-256 MATCH│ │ ✓ SHA-256 matched            │
-│                                             │ │ ✓ Published after verify     │
-│                                             │ ╰──────────────────────────────╯
-│                                             │ ╭─ State file ─────────────────╮
-│                                             │ │ › [x] Delete .dgs-state      │
-╰─────────────────────────────────────────────╯ ╰──────────────────────────────╯
+╭─ Verification summary ───╮ ╭─ Verified files ─────────────────────────────╮
+│ ✓ Source stream hashed   │ │ 41 verified files · 2.4 GB                  │
+│ ✓ Destination read back  │ │ › 1 ✓ IMG_0001.JPG · 24 MB · SHA-256 MATCH  │
+│ ✓ SHA-256 matched        │ │   2 ✓ IMG_0002.DNG  · 51 MB · SHA-256 MATCH │
+│ ✓ Published after verify │ │                                              │
+╰──────────────────────────╯ │                                              │
+╭─ State file ─────────────╮ │                                              │
+│ › [x] Delete .dgs-state  │ │                                              │
+╰──────────────────────────╯ ╰──────────────────────────────────────────────╯
 
-                                      ↻ Again  r          Quit  q
-                                      New import          › Exit dgs
+  ↻ Again  r      Quit  q
+  New import      › Exit dgs
 ```
 
-The full-width header answers whether the batch is trustworthy before showing detail. It repeats Source and Destination and reports the total bytes successfully verified and published; skipped and failed files do not contribute to this byte count. Below it, Result uses the shared two-column skeleton. The left one-third column owns the complete per-file result inventory and uses the shared numbered, selectable, vertically scrollable list. The wider right side separates integrity evidence from the final state-file decision. Do not mix cleanup controls into the verification summary.
+The full-width header answers whether the batch is trustworthy before showing detail. It repeats Source and Destination and reports the total bytes successfully verified and published; skipped and failed files do not contribute to this byte count. Below it, Result uses the shared two-column skeleton. The narrow left side separates integrity evidence from the final state-file decision and anchors Page Actions at bottom-left. The wider right column owns the complete per-file result inventory and uses the shared numbered, selectable, vertically scrollable list. Do not mix cleanup controls into the verification summary.
 
 Delete `.dgs-state` is selected by default, matching the confirmed lifecycle decision. The explanatory copy makes retaining it an audit or diagnostic choice. State-file deletion on Finish remains part of Result implementation, not Processing. `Alt+h/l` moves between the result inventory and state-file actions; list navigation uses the shared arrow/Vim behavior, mouse wheel works while hovering the inventory, and primary click changes focus or activates a control.
 
