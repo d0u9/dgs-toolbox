@@ -21,6 +21,12 @@ type ShellKeyCapturer interface {
 	CapturesShellKey(key string) bool
 }
 
+// CommandPathContributor lets an active command append workflow state to the
+// shell breadcrumb without taking ownership of the top bar.
+type CommandPathContributor interface {
+	CommandPath() []string
+}
+
 // Command describes a leaf command and creates a fresh model each time it is
 // selected.
 type Command struct {
