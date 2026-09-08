@@ -318,7 +318,7 @@ func TestCompletedProcessingOpensLandscapeResultPreview(t *testing.T) {
 		t.Fatalf("result stage=%v delete-state=%v", model.stage, model.controls.Checked(deleteStateID))
 	}
 	view := model.View()
-	for _, want := range []string{"Import result", "Verified files", "Verification summary", "State file", "SHA-256 MATCH", "Delete .dgs-state", "TRANSFER COMPLETE"} {
+	for _, want := range []string{"Import result", "Verified files", "Verification summary", "State file", "SHA-256 MATCH", "Delete .dgs-state", "TRANSFER COMPLETE", "Source", "Destination", "Published 6.0 KB", "Again", "Quit"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("result view missing %q:\n%s", want, view)
 		}
@@ -328,6 +328,43 @@ func TestCompletedProcessingOpensLandscapeResultPreview(t *testing.T) {
 	}
 	if status := model.Status(); status.Left != "RESULT · VERIFIED" || !strings.Contains(status.Center, "● Result") {
 		t.Fatalf("result status = %#v", status)
+	}
+}
+
+func TestScanViewRepeatsSelectedPaths(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 100, 24
+	model.paths = [pathFieldCount]string{"/Volumes/CAMERA/DCIM", "/Volumes/PHOTOS/Import"}
+	model.stage = scanStage
+	view := model.View()
+	for _, want := range []string{"Source", "/Volumes/CAMERA/DCIM", "Destination", "/Volumes/PHOTOS/Import"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("scan view missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestResultAgainReturnsToDirectoriesAndKeepsPaths(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.stage = resultStage
+	model.paths = [pathFieldCount]string{"/source", "/destination"}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(importModel)
+	if model.stage != setupStage || model.paths != [pathFieldCount]string{"/source", "/destination"} {
+		t.Fatalf("restart stage=%v paths=%v", model.stage, model.paths)
+	}
+}
+
+func TestResultEscapeRequestsQuitInsteadOfReturningToProcessing(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.stage = resultStage
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(importModel)
+	if model.stage != resultStage || cmd == nil {
+		t.Fatalf("escape stage=%v cmd=%v", model.stage, cmd != nil)
+	}
+	if _, ok := cmd().(tui.RequestQuitMsg); !ok {
+		t.Fatalf("escape message type = %T", cmd())
 	}
 }
 
