@@ -2,7 +2,7 @@
 
 ## Purpose
 
-File Explorer is the shared file and directory selector for every interactive `dgs` command. It is a reusable Bubble Tea component, not part of Photo Import itself.
+File Explorer is the shared file and directory selector for every interactive `dgs` command. It is a reusable Bubble Tea component rather than an app-owned workspace.
 
 Read [`tui.md`](tui.md) first for the shared shell, keyboard, status-bar, and parameter-form conventions. This document defines the File Explorer-specific behavior.
 
@@ -64,7 +64,7 @@ Show this compact label at the upper right of the Explorer.
 
 In `DIR` mode, hide files. In a file mode, keep directories visible for navigation, show only matching files, and allow only matching files to be selected. Extension matching is case-insensitive.
 
-Photo Import Source and Destination currently use `DIR`.
+Callers choose the appropriate filter. Command-specific filter choices belong in that command's design document.
 
 ## Tree navigation
 

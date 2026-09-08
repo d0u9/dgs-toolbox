@@ -62,3 +62,87 @@ func TestInteractiveControls(t *testing.T) {
 		t.Fatalf("radio = %q, want Move", got)
 	}
 }
+
+func TestMouseClickOperatesControls(t *testing.T) {
+	model := New(
+		Field{ID: "radio", Kind: Radio, Label: "Mode", Value: "Copy", Options: []string{"Copy", "Move"}},
+		Field{ID: "option", Kind: Option, Label: "Theme", Value: "Light", Options: []string{"Light", "Dark"}},
+		Field{ID: "check", Kind: Checkbox, Label: "Hidden"},
+	)
+	if id, ok := model.Click([]string{"radio", "option", "check"}, 30, 0); !ok || id != "radio" || model.Value("radio") != "Move" {
+		t.Fatalf("radio click: id=%q value=%q", id, model.Value("radio"))
+	}
+	model.Click([]string{"radio", "option", "check"}, 3, 1)
+	if !model.IsActive() {
+		t.Fatal("option click did not open choices")
+	}
+	model.Click([]string{"radio", "option", "check"}, 3, 3)
+	if model.Value("option") != "Dark" || model.IsActive() {
+		t.Fatal("option choice was not applied")
+	}
+	model.Click([]string{"radio", "option", "check"}, 3, 2)
+	if !model.Checked("check") {
+		t.Fatal("checkbox click did not toggle")
+	}
+}
+
+func TestMultiCheckboxSupportsDynamicOptions(t *testing.T) {
+	model := New(Field{ID: "extensions", Kind: MultiCheckbox, Label: "Extensions", SelectAll: true})
+	model.SetOptions("extensions", []string{"DNG", "JPG", "PNG"}, true)
+	model.SetFocusID("extensions")
+	model.HandleInteraction("right")
+	model.HandleInteraction("down")
+	model.HandleInteraction("down")
+	model.HandleInteraction(" ")
+	if got := model.Values("extensions"); len(got) != 2 || got[0] != "DNG" || got[1] != "PNG" {
+		t.Fatalf("selected = %#v", got)
+	}
+	if !strings.Contains(model.View([]string{"extensions"}), "[ ] JPG") {
+		t.Fatal("unchecked dynamic extension is not rendered")
+	}
+	model.Click([]string{"extensions"}, 20, 0)
+	if got := model.Values("extensions"); len(got) != 3 {
+		t.Fatalf("All selected %#v", got)
+	}
+}
+
+func TestClickingMultiCheckboxClosesAnotherOptionWithoutSharingCursor(t *testing.T) {
+	model := New(
+		Field{ID: "extensions", Kind: MultiCheckbox, Label: "Extensions", Options: []string{"DNG", "JPG"}, Selected: []string{"DNG", "JPG"}, SelectAll: true},
+		Field{ID: "duplicates", Kind: Option, Label: "Duplicates", Value: "Skip", Options: []string{"Skip", "Replace", "Keep both"}},
+	)
+	model.SetFocusID("duplicates")
+	model.HandleInteraction("enter")
+	model.HandleInteraction("down")
+	model.Click([]string{"extensions", "duplicates"}, 20, 1)
+	if model.activeID != "extensions" || model.Value("duplicates") != "Skip" {
+		t.Fatal("clicking Extensions did not cancel the unconfirmed option")
+	}
+	if got := model.Values("extensions"); len(got) != 1 || got[0] != "JPG" {
+		t.Fatalf("extensions = %#v", got)
+	}
+}
+
+func TestSpaceOpensOptionAndMultiCheckboxUsesVerticalSubnavigation(t *testing.T) {
+	model := New(
+		Field{ID: "duplicates", Kind: Option, Label: "Duplicates", Value: "Skip", Options: []string{"Skip", "Replace"}},
+		Field{ID: "extensions", Kind: MultiCheckbox, Label: "Extensions", Options: []string{"DNG", "JPG"}, Selected: []string{"DNG", "JPG"}, SelectAll: true},
+	)
+	model.SetFocusID("duplicates")
+	if !model.HandleInteraction(" ") || !model.IsActive() {
+		t.Fatal("Space did not open Option")
+	}
+	model.HandleInteraction("esc")
+	model.SetFocusID("extensions")
+	model.HandleInteraction("right")
+	model.HandleInteraction("down")
+	model.HandleInteraction("down")
+	model.HandleInteraction(" ")
+	if got := model.Values("extensions"); len(got) != 1 || got[0] != "DNG" {
+		t.Fatalf("vertical subnavigation selected %#v", got)
+	}
+	model.HandleInteraction("left")
+	if model.IsActive() {
+		t.Fatal("Left did not leave multi-checkbox subitems")
+	}
+}

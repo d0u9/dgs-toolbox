@@ -77,6 +77,25 @@ func TestDirectCommandUsesSingleBreadcrumbSegment(t *testing.T) {
 	}
 }
 
+type contextualStub struct{ stubCommand }
+
+func (m contextualStub) CommandPath() []string { return []string{"scan"} }
+func (m contextualStub) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updated, cmd := m.stubCommand.Update(msg)
+	m.stubCommand = updated.(stubCommand)
+	return m, cmd
+}
+
+func TestCommandCanContributeBreadcrumbState(t *testing.T) {
+	apps := []App{{ID: "photo", Name: "Photo", Commands: []Command{{
+		ID: "import", Name: "Import", New: func() CommandModel { return contextualStub{stubCommand{label: "IMPORT"}} },
+	}}}}
+	m := NewModel(apps, Launch{App: "photo", Command: "import"})
+	if got := m.breadcrumb(); got != "dgs › photo › import › scan" {
+		t.Fatalf("breadcrumb = %q", got)
+	}
+}
+
 func TestGlobalPickerStartsLeafAndReturns(t *testing.T) {
 	m := NewModel(testApps, Launch{})
 	if m.active != nil || len(m.choices()) != 4 {
