@@ -36,8 +36,8 @@ func TestGalleryControlsAreInteractive(t *testing.T) {
 	m.controls.SetFocusID(buttonID)
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
-	if !strings.Contains(m.View(), "Demo action triggered") {
-		t.Fatal("button did not report activation")
+	if !m.confirming || !strings.Contains(m.View(), "RUN DEMO ACTION?") {
+		t.Fatal("button did not open confirmation dialog")
 	}
 }
 
@@ -77,7 +77,7 @@ func TestSharedNextScreenShortcut(t *testing.T) {
 	m := newModel().(model)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(form.PrimaryActionKey)})
 	m = updated.(model)
-	if !strings.Contains(m.event, "triggered") {
-		t.Fatal("shared next-screen shortcut did not trigger the primary action")
+	if !m.confirming {
+		t.Fatal("shared next-screen shortcut did not open confirmation dialog")
 	}
 }

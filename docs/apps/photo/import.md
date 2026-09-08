@@ -6,17 +6,36 @@ This document owns decisions specific to `dgs photo import`. Read [`../../tui.md
 
 Photo Import is a concrete consumer of the shared design language. Its page composition, labels, parameter groups, defaults, and workflow do not define requirements for other apps or commands.
 
-## Proposed flow
+## Product scenario and integrity contract
 
-The proposed stages are:
+The primary scenario is importing camera files from an SD card into durable storage. Data integrity is the highest-priority requirement: a destination file must not be published under its final photo or video filename until the bytes read from Source and the bytes independently read back from Destination produce the same cryptographic hash.
 
-1. Setup
-2. Scan
-3. Review
-4. Import
-5. Result
+This contract describes integrity at publication time. It cannot promise that a file will never be corrupted after import; later bit rot and external modification require a separate audit feature.
 
-Setup, read-only Scan, Parameters, and a lightweight Review placeholder are currently demonstrated. No copy or move behavior is implemented.
+Use SHA-256 by default because it is cryptographically strong, available in the Go standard library, and normally I/O-bound for this workload. Keep the algorithm identified in temporary state so a future version can add another algorithm without making old state ambiguous.
+
+## Confirmed design summary
+
+- Keep two main screens: Directories first, then the scanned Parameters workspace.
+- Directories places Source and Destination on separate rows inside one fieldset and uses repository mock folders by default.
+- A cancellable, read-only progress transition scans both directories before Parameters is shown.
+- Parameters is an app-specific edge-to-edge split: Source and Destination inventories fill the left side; Parameters and a bottom-anchored Summary fill the right side.
+- Shared DataField focus uses `Alt+h/j/k/l` and primary clicks. Child controls remain operable by keyboard and mouse.
+- Source and Destination use the shared numbered scroll-list component, including full-row selection, Vim navigation, hover-wheel scrolling, Quick Look, and a reusable right-click menu.
+- Extension filters are derived from Source, use dynamic multi-checkboxes plus `[ All ]`, and immediately filter Source and Summary while Destination remains unfiltered.
+- The status bar shows the complete workflow and emphasizes the current step; the top breadcrumb shows the more detailed local state.
+- The 100-cell preferred configuration width is shared, but this second-screen split and its `max(50 cells, 40%)` right pane are Photo Import decisions only.
+
+## Confirmed workflow
+
+The status workflow is:
+
+1. Directories
+2. Parameters
+3. Processing
+4. Result
+
+The implemented interaction includes Directories, Parameters, and a landscape Processing preview. A read-only Scan transition connects the first two screens. Processing advances simulated worker states only; no copy, hash, rename, or delete behavior is implemented yet. Result remains undesigned.
 
 ## Setup screen
 
@@ -94,7 +113,7 @@ The shell breadcrumb includes workflow state: Setup uses `dgs › photo › impo
 The Setup workspace begins with a separate introduction region:
 
 1. Quiet eyebrow: `SETUP · PHOTO IMPORT`.
-2. Prominent title: `Configure import`.
+2. Prominent title: `Choose directories`.
 3. One concise explanatory sentence.
 
 Use two rows of top breathing room on a comfortably sized Setup terminal, one on a medium-height terminal, and none when height is constrained. Leave additional space between the introduction and the first fieldset.
@@ -105,15 +124,99 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 - Destination: directory selected through File Explorer.
 - Operation: radio choice between Copy and Move.
 - Extensions: dynamic multi-checkbox choices derived from the extensions actually present in Source; all are selected initially.
-- Duplicates: option with Skip, Replace, and Keep both.
+- Duplicates: filename-conflict policy. Skip leaves the existing destination untouched, Replace intends to publish the verified new file at that path, and Keep both chooses a new unique filename. Replace is not the default; its backup and rollback semantics remain to be designed before implementation.
+- Parallelism: positive worker count controlling concurrent file transfers; default `1` for predictable removable-media I/O and bounded resource use.
 - Organize by EXIF date: checkbox controlling whether imported files are placed in date-based subdirectories.
-- Review import: preview-only action during the demo.
+- Start processing preview: opens a simulated, side-effect-free Processing screen.
+
+## Processing screen
+
+Processing is designed for a landscape terminal: use width aggressively and keep vertical stacks shallow. A compact full-width header shows file progress, aggregate progress, active workers, pending files, and failures. Below it, a wide Worker activity list occupies roughly two thirds of the workspace; the remaining third is divided vertically between Next files and Recent results.
+
+Each Worker owns one file and exposes a distinct state: Copying, Verifying, Publishing, or Idle. Each compact worker entry includes the current filename, file size, phase progress bar, and Source/Destination hash state. It also uses a stable three-step track—`COPY → VERIFY → PUBLISH`—where completed steps use `✓`, the active step uses `●`, and forthcoming steps use `○`; this makes both completed and remaining work visible without relying only on a phase label. Render only configured workers; do not create placeholder worker cards to fill a landscape viewport. When workers exceed the visible height, keep them in one vertically scrollable list instead of laying them out side by side. Up/Down or `k/j` scrolls that list, while `g`/Home and `G`/End jump to its beginning or end. Do not display `MATCH` until independent destination verification has completed. Overall completion counts verified and published files, not merely copied bytes.
+
+The aggregate progress bar reserves a fixed right-hand status segment such as `42% │ 4/12 verified`. Calculate the bar width from the remaining cells after that segment, rather than stretching it to the fieldset width and truncating the right-hand information.
+
+The preview supports 1–8 workers and defaults to 1. It simulates state transitions so layout and density can be evaluated, explicitly labels itself `NO FILES ARE CHANGED`, and never creates `.dgs-part` or `.dgs-state` files. `p` pauses or resumes the preview. During Processing, every key that could leave active work is guarded: `Esc` asks before returning to Parameters, and `q` or Ctrl+C asks before exiting. While the confirmation is open, worker scheduling is frozen. The shared dialog defaults to No; Tab switches actions, Enter invokes the selected action, and Esc continues processing. It does not transition to Result.
+
+Photo Import status uses the shared three-part bar as follows: the left chip identifies `SCAN · READING`, `PROCESSING · RUNNING`, `PROCESSING · PAUSED`, `PROCESSING · COMPLETE`, or confirmation state; the center keeps the workflow track; and the right side contains only context-valid controls. A paused import replaces `p Pause` with `p Resume`; a completed preview no longer advertises pause.
+
+## Proposed verified-transfer algorithm
+
+This section records the current implementation direction; transfer behavior is not implemented yet.
+
+For each file:
+
+1. Resolve the final destination and create a uniquely named temporary file in that same destination directory, for example `.IMG_0001.JPG.dgs-part`. A same-directory temporary file allows the final rename to be atomic on the destination filesystem.
+2. Open Source once and stream it sequentially into the temporary file while updating the Source SHA-256 digest in the same pass. Do not perform a separate pre-hash pass over Source.
+3. Flush and close the temporary file. Where supported, sync it before verification. The integrity guarantee is defined at the user-space/filesystem API boundary; it does not attempt to prove physical-media cache behavior.
+4. Read the temporary file sequentially and compute the Destination SHA-256 digest. This second destination read is required by the integrity contract and is not considered redundant scanning.
+5. Compare size and digest. On mismatch, keep the final filename absent and report a hard verification failure. A later retry restarts this individual file from byte zero.
+6. On a match, rename the temporary file atomically to the final filename. Sync the containing directory where supported before reporting success. The presence of the correct final extension means verification succeeded at publication time.
+7. For Move, delete that individual Source file immediately after its verified destination has been published successfully. A failure processing another file does not roll back already verified and moved files.
+
+Normal successful operation therefore has the minimum strict-verification I/O profile: one sequential Source read, one Destination write, and one sequential Destination verification read. Hashing is performed during those required streams. Directory inventory and EXIF metadata collection must not reread complete file contents.
+
+### Resume state
+
+Resume operates at whole-file granularity, not byte or chunk granularity. Interrupted transfers use a versioned, atomically updated import-state file. It records the batch plan and which individual files have completed successfully. At minimum, record:
+
+- Source identity: normalized path, size, modification time, and any available stable file identity.
+- Destination temporary and final filenames.
+- Hash algorithm and the verified Source/Destination digest for completed files.
+- Intended final path and the parameters that affect it.
+- Per-file state such as pending, transferring, verified, source-deleted, or failed.
+
+Persist state only at file-state transitions so bookkeeping does not amplify data I/O. If a process stops while one `.dgs-part` is incomplete, that partial file is never resumed internally. On retry, discard or truncate it and transfer that photo again from byte zero. Already published and recorded files are not recopied.
+
+Before skipping an item recorded as complete, confirm that the expected final destination still exists and matches the recorded identity or digest policy. Before retrying an incomplete item, confirm that Source still matches its recorded identity. Never rename a leftover partial file merely because its expected byte count has been reached.
+
+The Result screen must offer an explicit choice to delete or retain the import-state file after the batch has reached its terminal state. Delete is the default. Retaining it supports auditing or later diagnosis; deleting it does not delete imported photos.
+
+### Source and destination entry policy
+
+Import regular files only. Directories are traversal structure rather than transfer items. Source symbolic links are skipped and reported because following one could read outside the selected SD-card root, and its target could change between scan and transfer. FIFOs, sockets, block or character devices, and other special entries are rejected because reading them can block, produce an unbounded stream, or access something other than the scanned file.
+
+Destination path components and an existing final entry must be checked with non-following metadata operations. Do not write through a destination symbolic link. Create temporary files exclusively so an unrelated existing file cannot be silently reused.
+
+If a regular Source file disappears after Scan, fail that item clearly and continue or stop according to the later batch-failure policy; never create an empty final file. If it changes while being copied, detect the change by comparing size, modification time, and available stable file identity before and after the stream. Discard the unverified temporary result and require a fresh transfer of that image.
+
+### Parallelism
+
+Implement parallelism as a bounded worker pool over files, not as multiple writers to one file. Default to one worker because SD cards and external disks often perform worse under competing reads and writes. Each worker owns at most one Source stream, one destination temporary file, and bounded copy buffers. The UI must expose active, verified, failed, and pending counts independently; completion means every published file passed verification.
+
+Concurrency increases throughput only when the source and destination devices benefit from it. It does not relax ordering, temporary-file, sync, or verification rules.
+
+### Storage topology
+
+The transfer engine must behave correctly when Destination is a local USB volume, another disk on the same host, or a NAS mount. Always create `.dgs-part` in the final destination directory so publication never depends on a cross-filesystem rename. Treat rename and sync guarantees as those offered by the mounted filesystem and server at the user-space API boundary; do not claim stronger physical-media durability.
+
+Use sequential streams and bounded buffers for every topology. Do not use direct I/O or a platform-specific cache bypass as a correctness requirement. A local same-device copy, a cross-device copy, and a network copy all receive the same independent destination readback and SHA-256 comparison.
+
+Classify failures rather than collapsing them into verification errors: Source read, Destination write, sync/close, Destination readback, hash mismatch, atomic publish, Source delete, and transient network or mount loss are distinct outcomes. Preserve state after a NAS disconnect so a whole-file retry can resume the batch safely.
+
+Parallelism remains an explicit user choice with default 1. Do not silently raise it based on CPU count. Multiple workers operate on different files; they never split one file into concurrent ranges. This avoids excessive seeks on SD cards or disks and avoids multiplying network requests on a NAS unless the user chooses that tradeoff.
+
+### Confirmed failure behavior
+
+- Disk-space preflight is not required. A write may fail when the destination becomes full; preserve batch state, report the affected file, and allow the user to free space and retry. The affected photo restarts from byte zero.
+- Move commits per image: publish the verified destination, then immediately delete that Source image.
+- Incomplete `.dgs-part` content is never promoted and is not byte-resumed.
+
+### Remaining failure and conflict questions
+
+The following decisions must be settled before implementation:
+
+- How Replace publishes atomically when a final destination already exists and how the previous file remains recoverable.
+- Whether an existing destination with the same size and SHA-256 is treated as already imported without rewriting it.
+- How to identify a Source file reliably when SD-card timestamps are coarse or unreliable.
+- Whether a leftover `.dgs-part` is removed immediately on failure or retained until the next retry for diagnosis.
 
 Example status values:
 
 ```text
 Left:    READY
-Center:  Choose directories to scan
+Center:  Directories › Parameters › Processing › Result
 Right:   arrows/hjkl  n Next  ↵ Select  ? Help
 ```
 
@@ -121,8 +224,8 @@ After the scan:
 
 ```text
 Left:    PARAMETERS
-Center:  4 source · 2 destination
-Right:   arrows/hjkl  n Next  ↵ Select  esc Back
+Center:  Directories › Parameters › Processing › Result
+Right:   click / alt+hjkl Focus  space Preview  right-click Menu
 ```
 
 Selector state uses `SELECT` and text editing uses `EDIT`. The Review placeholder uses `REVIEW`, explicitly states that no files changed, and offers `Esc Back`.
@@ -142,10 +245,9 @@ The fixture intentionally contains multiple screens of files in both Source and 
 
 ## Still undesigned
 
-- Scan progress.
 - Review layout and file grouping.
 - Duplicate and conflict presentation.
-- Import progress.
+- Real transfer progress and error recovery behavior beyond the Processing preview.
 - Cancellation and confirmation.
 - Result, empty, warning, and error states.
 - Narrow-terminal layout beyond shared shrinking behavior.

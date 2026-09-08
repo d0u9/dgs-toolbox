@@ -1,6 +1,7 @@
 package form
 
 import (
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -20,6 +21,7 @@ const (
 	Radio
 	Button
 	MultiCheckbox
+	Number
 )
 
 type Field struct {
@@ -31,6 +33,9 @@ type Field struct {
 	Selected  []string
 	SelectAll bool
 	Checked   bool
+	Min       int
+	Max       int
+	Step      int
 }
 
 type Model struct {
@@ -138,6 +143,11 @@ func (m Model) Checked(id string) bool {
 	return false
 }
 
+func (m Model) IntValue(id string) int {
+	value, _ := strconv.Atoi(m.Value(id))
+	return value
+}
+
 func (m Model) Values(id string) []string {
 	for _, field := range m.fields {
 		if field.ID == id {
@@ -229,6 +239,15 @@ func (m *Model) HandleInteraction(key string) bool {
 	case MultiCheckbox:
 		if key == "right" || key == "l" || key == "enter" {
 			m.beginMulti(field)
+			return true
+		}
+	case Number:
+		if key == "left" || key == "h" || key == "-" {
+			m.adjustNumber(-1, field)
+			return true
+		}
+		if key == "right" || key == "l" || key == "+" || key == "=" || key == "enter" {
+			m.adjustNumber(1, field)
 			return true
 		}
 	}
@@ -429,6 +448,8 @@ func (m Model) render(field Field, focused bool, width int) string {
 		return strings.Join(rows, "\n")
 	case Button:
 		return highlightRow(marker+style.Render("[ "+field.Label+" ]"), focused, width)
+	case Number:
+		value = "[ - ]  " + field.Value + "  [ + ]"
 	default:
 		value = field.Value
 		if field.Kind == Text && m.activeID == field.ID {
@@ -517,6 +538,12 @@ func (m *Model) Click(ids []string, x, y int) (string, bool) {
 				m.activeID = id
 				m.toggleSelected(id, field.Options[optionIndex])
 			}
+		case Number:
+			if x >= 18 && x < 23 {
+				m.adjustNumber(-1, field)
+			} else if x >= 26 {
+				m.adjustNumber(1, field)
+			}
 		}
 		return id, true
 	}
@@ -553,6 +580,27 @@ func (m *Model) selectAll(id string) {
 		return
 	}
 	m.fields[index].Selected = append([]string(nil), m.fields[index].Options...)
+}
+
+func (m *Model) adjustNumber(direction int, field Field) {
+	index := m.index(field.ID)
+	if index < 0 {
+		return
+	}
+	value, err := strconv.Atoi(field.Value)
+	if err != nil {
+		value = field.Min
+	}
+	step := field.Step
+	if step < 1 {
+		step = 1
+	}
+	minimum, maximum := field.Min, field.Max
+	if maximum < minimum {
+		maximum = minimum
+	}
+	value = min(maximum, max(minimum, value+direction*step))
+	m.fields[index].Value = strconv.Itoa(value)
 }
 
 func boolInt(value bool) int {

@@ -1,4 +1,4 @@
-// Package stepper renders compact workflow progress for the shared status bar.
+// Package stepper renders compact, stateful progress tracks.
 package stepper
 
 import (
@@ -7,15 +7,25 @@ import (
 	"strings"
 )
 
-var currentStyle = lipgloss.NewStyle().Bold(true).Underline(true)
+var (
+	completedStyle = lipgloss.NewStyle().Bold(true)
+	currentStyle   = lipgloss.NewStyle().Bold(true)
+	pendingStyle   = lipgloss.NewStyle()
+)
 
+// View renders every step as completed, current, or forthcoming. A current
+// value equal to len(steps) represents a fully completed track.
 func View(steps []string, current, width int) string {
 	parts := make([]string, len(steps))
 	for i, step := range steps {
-		if i == current {
-			step = currentStyle.Render(step)
+		switch {
+		case i < current:
+			parts[i] = completedStyle.Render("✓ " + step)
+		case i == current:
+			parts[i] = currentStyle.Render("● " + step)
+		default:
+			parts[i] = pendingStyle.Render("○ " + step)
 		}
-		parts[i] = step
 	}
-	return ansi.Truncate(strings.Join(parts, "  ›  "), width, "…")
+	return ansi.Truncate(strings.Join(parts, " ── "), width, "…")
 }

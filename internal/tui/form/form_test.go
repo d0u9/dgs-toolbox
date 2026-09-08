@@ -146,3 +146,17 @@ func TestSpaceOpensOptionAndMultiCheckboxUsesVerticalSubnavigation(t *testing.T)
 		t.Fatal("Left did not leave multi-checkbox subitems")
 	}
 }
+
+func TestNumberControlIsBounded(t *testing.T) {
+	model := New(Field{ID: "workers", Kind: Number, Label: "Workers", Value: "1", Min: 1, Max: 3, Step: 1})
+	model.HandleInteraction("right")
+	model.HandleInteraction("right")
+	model.HandleInteraction("right")
+	if got := model.IntValue("workers"); got != 3 {
+		t.Fatalf("workers=%d", got)
+	}
+	model.HandleInteraction("left")
+	if got := model.IntValue("workers"); got != 2 {
+		t.Fatalf("workers=%d", got)
+	}
+}

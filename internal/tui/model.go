@@ -105,6 +105,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
+		if m.active != nil {
+			if capturer, ok := m.active.(ShellKeyCapturer); ok && capturer.CapturesShellKey(key) {
+				return m.forwardToActive(msg)
+			}
+		}
 		return m, tea.Quit
 	}
 	if m.confirmQuit {

@@ -45,12 +45,18 @@ Command configuration surfaces prefer a shared content width of 100 terminal cel
 
 ### Status bar
 
-- Left: current command state.
+- Left: a compact state chip. It identifies the current command stage and, when relevant, its activity state such as `PROCESSING · RUNNING` or `PROCESSING · PAUSED`.
 - Center: workflow steps when a command has a multi-step flow; otherwise a contextual summary.
-- Right: contextual key hints.
+- Right: only the actions valid in the current state, in descending order of immediacy.
 - The row must never wrap.
 
-A workflow stepper presents the complete sequence with `›` separators and renders the current step in bold with an underline, so progress is not communicated by color alone. Commands provide the labels and current index; the shell owns placement and truncation. Photo Import is the first consumer, not the source of a mandatory workflow for every command.
+The state chip takes its natural label width plus a small inset; it must not expand to a fixed percentage of a wide terminal. Each of the three status regions has one cell of left and right padding. Position the center content against the midpoint of the entire terminal row, not the midpoint of the leftover region between the side cells. If asymmetric side content would overlap it, constrain the center content within the available gap. The right hint region is content-sized and flush to the terminal edge. At an extremely narrow width, sacrifice the inset before allowing the bar to wrap or overflow.
+
+The center and right regions share one continuous background color. Nested styled content such as the workflow stepper must restore that background after ANSI resets; terminal-default background patches must not appear around bold or underlined spans.
+
+A shared stepper presents the complete sequence as a stateful track: completed steps use `✓`, the current step uses `●`, and forthcoming steps use `○`, joined by `──`. The current step is bold without an underline; the state glyphs keep progress understandable without relying on color. Commands provide the labels and current index; the shell owns placement and truncation. Reuse this component for both workflow state and smaller staged operations such as `COPY → VERIFY → PUBLISH`. Photo Import is the first consumer, not the source of a mandatory workflow for every command.
+
+The status bar allocates enough central space for a short four-step workflow. On narrow terminals, truncate the stepper rather than wrapping or increasing the status bar height.
 
 ## Keyboard convention
 
@@ -191,6 +197,12 @@ q              Quit when not editing text
 ```
 
 While editing text, printable keys—including `q`—belong to the input. Contextual shortcuts apply only when the field is not capturing text.
+
+An application stage with active work may capture the shell's return and exit keys, including Ctrl+C, to present a confirmation before work is interrupted. This is lifecycle behavior owned by that application stage, not a required layout or interaction for idle screens.
+
+### Confirmation dialog
+
+Consequential interruptions use the shared confirmation component in `internal/tui/confirm`. It renders a compact framed dialog with a title, message, optional detail, and two actions. The negative or safe action is focused by default. `Tab` and `Shift+Tab` switch focus, `Enter` invokes the focused action, and `Esc` always cancels. The selected button carries the visual focus treatment; keyboard hints appear once in the dialog footer and are not duplicated in the global status bar.
 
 The status bar shows only controls valid in the current state. For example, edit mode should describe how to accept or cancel the edit rather than showing form-navigation hints.
 

@@ -17,6 +17,8 @@ Rows use one-based, right-aligned line numbers. The width grows with the collect
 
 Inventory headers, fieldset legends, and app-specific row metadata remain outside the component.
 
-# Context Menu
+## Context Menu
 
 `internal/tui/contextmenu` is the shared anchored-menu component. Apps supply action IDs and labels, open it at a pointer position, and execute the selected action. It supports keyboard movement, Enter, Escape, and primary-click selection. Menus clamp to the workspace edge and render above the underlying workspace without changing its layout.
+
+Right-clicking a list row may select that row for the contextual action without changing the containing data-field focus. The menu action belongs to the app: Photo Import currently contributes Quick Look on Space and `Open with default app` in the menu, while the shared list and menu contain no macOS-specific behavior.
