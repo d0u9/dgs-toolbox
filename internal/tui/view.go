@@ -120,8 +120,8 @@ func (m Model) statusBar(width int) string {
 		status = Status{Left: "CONFIRM", Center: "QUIT DGS?", Right: "y Quit  n/esc Cancel"}
 	}
 
-	leftWidth := width / 5
-	centerWidth := width * 3 / 10
+	leftWidth := width * 14 / 100
+	centerWidth := width * 48 / 100
 	rightWidth := width - leftWidth - centerWidth
 	left := placeText(status.Left, leftWidth, lipgloss.Left)
 	center := placeText(status.Center, centerWidth, lipgloss.Center)
@@ -148,9 +148,14 @@ func (m Model) breadcrumb() string {
 		app := m.apps[m.activeApp]
 		command := app.Commands[m.activeCommand]
 		if app.Direct {
-			return strings.Join(append(parts, app.ID), " › ")
+			parts = append(parts, app.ID)
+		} else {
+			parts = append(parts, app.ID, command.ID)
 		}
-		return strings.Join(append(parts, app.ID, command.ID), " › ")
+		if contributor, ok := m.active.(CommandPathContributor); ok {
+			parts = append(parts, contributor.CommandPath()...)
+		}
+		return strings.Join(parts, " › ")
 	}
 	if m.pickerApp >= 0 {
 		parts = append(parts, m.apps[m.pickerApp].ID)

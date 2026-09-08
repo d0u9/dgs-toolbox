@@ -1,6 +1,7 @@
 package photo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,37 +13,51 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func TestImportSetupScreen(t *testing.T) {
+func TestImportStartsWithDirectoriesOnly(t *testing.T) {
 	model := newImportModel()
-	updated, _ := model.Update(tea.WindowSizeMsg{Width: 90, Height: 28})
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 126, Height: 30})
 	model = updated.(tui.CommandModel)
 
 	view := model.View()
 	for _, text := range []string{
-		"PHOTO IMPORT",
+		"SETUP  ·  PHOTO IMPORT",
+		"Choose directories",
+		"Select the source and destination to scan",
+		"Directories",
 		"Source",
-		"/Volumes/LEICA",
+		"testdata/photo-import/src",
 		"Destination",
-		"~/Pictures/Photos",
-		"Review import",
-		"Review the plan before any files are copied.",
+		"testdata/photo-import/dst",
+		"Scan directories",
 	} {
 		if !strings.Contains(view, text) {
 			t.Errorf("setup view does not contain %q:\n%s", text, view)
 		}
 	}
+	for _, hidden := range []string{"Parameters", "Operation", "Extensions", "Duplicates", "CLASSIFICATION", "Review import"} {
+		if strings.Contains(view, hidden) {
+			t.Errorf("setup view unexpectedly contains %q:\n%s", hidden, view)
+		}
+	}
+	lines := strings.Split(view, "\n")
+	if len(lines) < 3 || strings.TrimSpace(lines[0]) != "" || strings.TrimSpace(lines[1]) != "" {
+		t.Errorf("large workspace does not give the page header two rows of breathing room:\n%s", view)
+	}
+	if strings.Contains(view, "──›") || strings.Contains(view, "● ─") {
+		t.Errorf("setup view still contains the animated data-flow line:\n%s", view)
+	}
 	if strings.Contains(view, "Archive") {
 		t.Errorf("setup view still uses Archive:\n%s", view)
 	}
-	if got := lipgloss.Width(view); got != 90 {
-		t.Errorf("view width = %d, want 90", got)
+	if got := lipgloss.Width(view); got != 126 {
+		t.Errorf("view width = %d, want 126", got)
 	}
-	if got := lipgloss.Height(view); got != 28 {
-		t.Errorf("view height = %d, want 28", got)
+	if got := lipgloss.Height(view); got != 30 {
+		t.Errorf("view height = %d, want 30", got)
 	}
 
 	status := model.Status()
-	if status.Left != "READY" || status.Center != "No source scanned" {
+	if status.Left != "READY" || !strings.Contains(status.Center, "Directories") || !strings.Contains(status.Center, "Result") {
 		t.Errorf("status = %#v", status)
 	}
 }
@@ -103,7 +118,7 @@ func TestPathFieldOpensDirectoryPickerAndSelectsDirectory(t *testing.T) {
 	if got := model.paths[sourceField]; got != want {
 		t.Fatalf("source = %q, want %q", got, want)
 	}
-	if model.Status().Center != "No source scanned" {
+	if !strings.Contains(model.Status().Center, "Directories") {
 		t.Fatal("choosing a path changed scan state")
 	}
 }
@@ -126,17 +141,369 @@ func TestChooseTreeRoot(t *testing.T) {
 	}
 }
 
-func TestImportFormSupportsVimVerticalNavigation(t *testing.T) {
+func TestImportFormSupportsSharedControlNavigation(t *testing.T) {
 	model := newImportModel().(importModel)
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	model = updated.(importModel)
-	if model.focus != destinationField {
-		t.Fatalf("j focused field %d, want destination", model.focus)
+	if model.controls.FocusedID() != destinationID {
+		t.Fatalf("j focused %q, want destination", model.controls.FocusedID())
 	}
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	model = updated.(importModel)
-	if model.focus != sourceField {
-		t.Fatalf("k focused field %d, want source", model.focus)
+	if model.controls.FocusedID() != sourceID {
+		t.Fatalf("k focused %q, want source", model.controls.FocusedID())
+	}
+}
+
+func TestImportControlsCanBeChanged(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.stage = parameterStage
+	model.parameterFields.Set("parameters")
+	model.controls.SetFocusID(duplicatesID)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(importModel)
+	if !model.controls.IsActive() || !strings.Contains(model.View(), "Replace") {
+		t.Fatal("Enter did not open the duplicate option menu")
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(importModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(importModel)
+	if got := model.controls.Value(duplicatesID); got != "Replace" {
+		t.Fatalf("duplicates = %q, want Replace", got)
+	}
+
+	model.controls.SetOptions(extensionsID, []string{"JPG", "DNG"}, true)
+	model.extensionsConfigured = true
+	model.controls.SetFocusID(extensionsID)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRight})
+	model = updated.(importModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(importModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	model = updated.(importModel)
+	if got := model.controls.Values(extensionsID); len(got) != 1 || got[0] != "DNG" {
+		t.Fatalf("extensions = %#v, want DNG only", got)
+	}
+}
+
+func TestImportNavigationMatchesParameterLayout(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.stage = parameterStage
+	model.parameterFields.Set("parameters")
+	model.controls.SetFocusID(operationID)
+	want := []string{extensionsID, duplicatesID, classifyID, buttonID, operationID}
+	for _, wantID := range want {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(importModel)
+		if got := model.controls.FocusedID(); got != wantID {
+			t.Fatalf("focused %q, want %q", got, wantID)
+		}
+	}
+}
+
+func TestMouseClickSwitchesParameterDataFieldFocus(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 120, 30
+	model.stage = parameterStage
+	model.parameterFields.Set("parameters")
+	layout := model.parameterLayout()
+
+	updated, _ := model.Update(tea.MouseMsg{
+		X:      2,
+		Y:      layout.sourceHeight + 2,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(importModel)
+	if got := model.parameterFields.Current(); got != "destination-results" {
+		t.Fatalf("click focused %q, want destination-results", got)
+	}
+
+	updated, _ = model.Update(tea.MouseMsg{
+		X:      layout.leftWidth + 2,
+		Y:      layout.parameterHeight + 2,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(importModel)
+	if got := model.parameterFields.Current(); got != "summary" {
+		t.Fatalf("click focused %q, want summary", got)
+	}
+}
+
+func TestMouseClickOperatesParameterControls(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 120, 30
+	model.stage = parameterStage
+	layout := model.parameterLayout()
+	updated, _ := model.Update(tea.MouseMsg{
+		X:      layout.leftWidth + 3 + 30,
+		Y:      2,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(importModel)
+	if model.controls.Value(operationID) != "Move" {
+		t.Fatalf("radio click selected %q, want Move", model.controls.Value(operationID))
+	}
+	if model.parameterFields.Current() != "parameters" {
+		t.Fatal("control click did not focus Parameters")
+	}
+}
+
+func TestMouseWheelScrollsHoveredListWithoutChangingFocus(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 120, 30
+	model.stage = parameterStage
+	model.parameterFields.Set("parameters")
+	for i := 0; i < 40; i++ {
+		model.scan.source = append(model.scan.source, scannedFile{path: fmt.Sprintf("photo-%02d.jpg", i)})
+	}
+	model.syncResultLists()
+	updated, _ := model.Update(tea.MouseMsg{
+		X:      2,
+		Y:      3,
+		Button: tea.MouseButtonWheelDown,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(importModel)
+	if model.sourceList.Top() != 3 {
+		t.Fatalf("wheel set source top to %d, want 3", model.sourceList.Top())
+	}
+	if got := model.parameterFields.Current(); got != "parameters" {
+		t.Fatalf("wheel changed focus to %q", got)
+	}
+}
+
+func TestClickSelectsNumberedRowAndSpaceProvidesQuickLookCommand(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 120, 30
+	model.stage = parameterStage
+	model.scan.source = []scannedFile{{path: "first.jpg"}, {path: "second.jpg"}, {path: "third.jpg"}}
+	model.syncResultLists()
+	updated, _ := model.Update(tea.MouseMsg{X: 8, Y: 3, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	model = updated.(importModel)
+	if model.parameterFields.Current() != "source-results" || model.sourceList.Cursor() != 1 {
+		t.Fatalf("field=%q cursor=%d", model.parameterFields.Current(), model.sourceList.Cursor())
+	}
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	model = updated.(importModel)
+	if cmd == nil || !strings.Contains(model.actionNotice, "second.jpg") {
+		t.Fatal("Space did not prepare Quick Look for the selected row")
+	}
+}
+
+func TestRightClickOpensReusableContextMenuWithoutChangingFocus(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 120, 30
+	model.stage = parameterStage
+	model.parameterFields.Set("parameters")
+	model.scan.source = []scannedFile{{path: "first.jpg"}, {path: "second.jpg"}}
+	model.syncResultLists()
+	updated, _ := model.Update(tea.MouseMsg{X: 8, Y: 3, Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
+	model = updated.(importModel)
+	if !model.menu.IsOpen() || model.sourceList.Cursor() != 1 {
+		t.Fatal("right click did not select the row and open its menu")
+	}
+	if model.parameterFields.Current() != "parameters" {
+		t.Fatal("right click unexpectedly changed data-field focus")
+	}
+	if !strings.Contains(model.View(), "Open with default app") {
+		t.Fatal("context menu is not rendered over the workspace")
+	}
+}
+
+func TestNextShortcutStartsScanAndOpensParameterScreen(t *testing.T) {
+	model := newImportModel().(importModel)
+	if model.controls.FocusedID() != sourceID {
+		t.Fatal("test must begin on Source")
+	}
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	model = updated.(importModel)
+	if model.stage != scanStage || model.Status().Left != "SCANNING" || cmd == nil {
+		t.Fatal("n did not start the scan screen")
+	}
+	if !strings.Contains(model.View(), "Reading source and destination") || !strings.Contains(model.View(), "▐") {
+		t.Fatal("scan screen does not show progress")
+	}
+	summary := scanDirectories(model.paths)
+	updated, _ = model.Update(scanDoneMsg{generation: model.scanGeneration, summary: summary})
+	model = updated.(importModel)
+	if model.stage != parameterStage || !strings.Contains(model.View(), "Source") || !strings.Contains(model.View(), "Destination") || !strings.Contains(model.View(), "Parameters") {
+		t.Fatal("scan completion did not open the parameter screen")
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(importModel)
+	if model.stage != setupStage || !strings.Contains(model.View(), "Scan directories") {
+		t.Fatal("Esc did not return from Parameters to Setup")
+	}
+}
+
+func TestScanDirectoriesCollectsBothInventories(t *testing.T) {
+	source := t.TempDir()
+	destination := t.TempDir()
+	if err := os.Mkdir(filepath.Join(source, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "nested", "one.jpg"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(destination, "existing.dng"), []byte("two"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	summary := scanDirectories([pathFieldCount]string{source, destination})
+	if len(summary.errors) != 0 || len(summary.source) != 1 || len(summary.destination) != 1 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if summary.source[0].path != "nested/one.jpg" || summary.destination[0].path != "existing.dng" {
+		t.Fatalf("unexpected files: %#v", summary)
+	}
+}
+
+func TestCancelledScanIgnoresLateResult(t *testing.T) {
+	model := newImportModel().(importModel)
+	updated, _ := model.startScan()
+	model = updated.(importModel)
+	generation := model.scanGeneration
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(importModel)
+	updated, _ = model.Update(scanDoneMsg{generation: generation, summary: scanSummary{source: []scannedFile{{path: "late.jpg"}}}})
+	model = updated.(importModel)
+	if model.stage != setupStage || len(model.scan.source) != 0 {
+		t.Fatal("cancelled scan accepted a late result")
+	}
+}
+
+func TestParameterScreenUsesAsymmetricSplitLayout(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 120, 28
+	model.stage = parameterStage
+	model.parameterFields.Set("parameters")
+	model.scan = scanSummary{
+		source:      []scannedFile{{path: "DCIM/IMG_0001.JPG", size: 10}, {path: "DCIM/IMG_0002.DNG", size: 20}},
+		destination: []scannedFile{{path: "Existing/IMG_0001.JPG", size: 10}},
+	}
+	model.syncResultLists()
+	view := model.View()
+	for _, want := range []string{"Source", "Destination", "▼  ▼  ▼", "Parameters", "Import summary", "Eligible", "Duplicates", "Will copy", "EXIF date folders"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("split view does not contain %q:\n%s", want, view)
+		}
+	}
+	if got := lipgloss.Width(view); got != 120 {
+		t.Fatalf("split view width = %d, want 120", got)
+	}
+	firstLine := strings.Split(view, "\n")[0]
+	if !strings.HasSuffix(firstLine, "╮") {
+		t.Fatalf("right pane is not flush with terminal edge: %q", firstLine)
+	}
+	lastLine := strings.Split(view, "\n")[model.height-1]
+	if !strings.HasPrefix(lastLine, "╰") || !strings.HasSuffix(lastLine, "╯") || strings.Count(lastLine, "╰") != 2 {
+		t.Fatalf("left pane and summary do not both reach the bottom edge: %q", lastLine)
+	}
+}
+
+func TestAltNavigationMovesBetweenParameterDataFields(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.stage = parameterStage
+	model.parameterFields.Set("parameters")
+	tests := []struct{ key, want string }{{"alt+h", "source-results"}, {"alt+j", "destination-results"}, {"alt+l", "summary"}, {"alt+k", "parameters"}}
+	for _, test := range tests {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(test.key[len(test.key)-1])}, Alt: true})
+		model = updated.(importModel)
+		if got := model.parameterFields.Current(); got != test.want {
+			t.Fatalf("%s focused %q, want %q", test.key, got, test.want)
+		}
+	}
+}
+
+func TestResultListsUseVimNavigationInsteadOfMoreText(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 100, 20
+	model.stage = parameterStage
+	for index := range 20 {
+		model.scan.source = append(model.scan.source, scannedFile{path: fmt.Sprintf("deep/path/with/many/nested/directories/file-%02d-with-an-extraordinarily-long-name.jpg", index)})
+	}
+	model.syncResultLists()
+	model.parameterFields.Set("source-results")
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	model = updated.(importModel)
+	if model.sourceList.Cursor() != 19 || model.sourceList.Top() == 0 {
+		t.Fatalf("G did not move to the end: cursor=%d top=%d", model.sourceList.Cursor(), model.sourceList.Top())
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(importModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(importModel)
+	if model.sourceList.Cursor() != 0 || model.sourceList.Top() != 0 {
+		t.Fatal("gg did not return to the first file")
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	model = updated.(importModel)
+	if model.sourceList.Horizontal() == 0 {
+		t.Fatal("l did not scroll a long path horizontally")
+	}
+	if strings.Contains(model.View(), "files more") {
+		t.Fatal("result list still uses a remaining-files message")
+	}
+}
+
+func TestImportSummaryRespondsToParameters(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.scan = scanSummary{
+		source:      []scannedFile{{path: "one.JPG"}, {path: "two.DNG"}, {path: "notes.txt"}},
+		destination: []scannedFile{{path: "old/one.jpg"}},
+	}
+	plan := model.buildPlan()
+	if plan.eligible != 3 || plan.duplicates != 1 || plan.skipped != 1 || plan.processed != 2 {
+		t.Fatalf("default plan = %#v", plan)
+	}
+	model.controls.SetOptions(extensionsID, []string{"DNG", "JPG", "TXT"}, true)
+	model.controls.SetValues(extensionsID, []string{"DNG"})
+	model.extensionsConfigured = true
+	model.controls.SetValue(operationID, "Move")
+	plan = model.buildPlan()
+	if plan.eligible != 1 || plan.duplicates != 0 || plan.processed != 1 || plan.operation != "move" {
+		t.Fatalf("filtered plan = %#v", plan)
+	}
+}
+
+func TestExtensionsComeFromSourceAndFilterItsViewport(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.scan.source = []scannedFile{{path: "one.JPG"}, {path: "two.DNG"}, {path: "notes.txt"}, {path: "three.jpg"}}
+	model.scan.destination = []scannedFile{{path: "existing.PNG"}}
+	model.configureExtensions()
+	if got := model.controls.Values(extensionsID); len(got) != 3 || got[0] != "DNG" || got[1] != "JPG" || got[2] != "TXT" {
+		t.Fatalf("source extensions = %#v", got)
+	}
+	model.controls.SetValues(extensionsID, []string{"JPG"})
+	model.syncResultLists()
+	if len(model.filteredSource()) != 2 {
+		t.Fatalf("filtered source has %d files, want 2", len(model.filteredSource()))
+	}
+	if model.sourceList.Cursor() != 0 {
+		t.Fatal("filtered viewport did not clamp selection")
+	}
+	model.controls.SetFocusID(extensionsID)
+	model.controls.HandleInteraction("enter")
+	model.controls.HandleInteraction("enter")
+	model.syncResultLists()
+	if len(model.filteredSource()) != 4 {
+		t.Fatal("All did not restore every source extension")
+	}
+}
+
+func TestParameterScreenRequestsMinimumWidthWithoutOverflow(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 60, 22
+	model.stage = parameterStage
+	view := model.View()
+	if !strings.Contains(view, "at least 63 columns") {
+		t.Fatalf("narrow view does not explain its minimum width:\n%s", view)
+	}
+	if got := lipgloss.Width(view); got != 60 {
+		t.Fatalf("narrow view width = %d, want 60", got)
 	}
 }
 

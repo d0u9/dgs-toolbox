@@ -15,6 +15,12 @@ func Place(background, foreground string, width, height int) string {
 	x := max(0, (width-frontWidth)/2)
 	y := max(0, (height-frontHeight)/2)
 
+	return PlaceAt(background, foreground, x, y, width, height)
+}
+
+// PlaceAt composites foreground at workspace coordinates and clips it to the viewport.
+func PlaceAt(background, foreground string, x, y, width, height int) string {
+	frontWidth := lipgloss.Width(foreground)
 	backLines := strings.Split(background, "\n")
 	frontLines := strings.Split(foreground, "\n")
 	for i := range backLines {
