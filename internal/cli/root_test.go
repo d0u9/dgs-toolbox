@@ -15,6 +15,7 @@ func TestCommandRoutes(t *testing.T) {
 		want tui.Launch
 	}{
 		{name: "toolbox", want: tui.Launch{}},
+		{name: "demo", args: []string{"demo"}, want: tui.Launch{App: "demo", Command: "demo"}},
 		{name: "photo", args: []string{"photo"}, want: tui.Launch{App: "photo"}},
 		{name: "photo import", args: []string{"photo", "import"}, want: tui.Launch{App: "photo", Command: "import"}},
 		{name: "photo encode", args: []string{"photo", "encode"}, want: tui.Launch{App: "photo", Command: "encode"}},

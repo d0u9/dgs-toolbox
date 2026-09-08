@@ -35,7 +35,10 @@ type App struct {
 	ID          string
 	Name        string
 	Description string
-	Commands    []Command
+	// Direct exposes an app with one command as `dgs <app>` and launches that
+	// command immediately instead of opening an app-scoped picker.
+	Direct   bool
+	Commands []Command
 }
 
 // Launch identifies the navigation root selected by the CLI. Empty fields
