@@ -46,6 +46,12 @@ type TabContributor interface {
 	Tabs() []Tab
 }
 
+// TabSelectedMsg reports a primary click on a shell-rendered tab. The shell
+// owns tab hit testing; the command owns what activating that tab means.
+type TabSelectedMsg struct {
+	Index int
+}
+
 // Command describes a leaf command and creates a fresh model each time it is
 // selected.
 type Command struct {

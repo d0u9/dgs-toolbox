@@ -7,7 +7,8 @@
 - Capture uses command-owned sessions presented as tabs rather than the
   sequential page workflow used by Photo Import.
 - The initial session is `Scan`, rendered as the active `SCAN` tab at the
-  left of the shared top bar.
+  left of the shared top bar. `Route` is the second session; see
+  [`route.md`](route.md) for its layout, keys, and configuration.
 - Scan uses the shared three-column landscape skeleton. All three columns use
   the same workspace background and are rendered as Fieldsets.
 - The left quarter starts with the scrollable `CAPTURES` list, which extends

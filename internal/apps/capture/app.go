@@ -18,11 +18,11 @@ func New() tui.App {
 			Name:        "Scan",
 			Description: "Open the Capture workspace",
 			New: func() tui.CommandModel {
-				return newModel()
+				return newSession()
 			},
 			NewWithConfig: func(global config.Config) tui.CommandModel {
 				root, indexFile := global.CaptureScanSettings()
-				return newModelWithSettings(root, indexFile)
+				return newSessionWithSettings(root, indexFile, global.CaptureRouteDestinations())
 			},
 		}},
 	}
