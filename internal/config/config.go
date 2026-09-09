@@ -13,8 +13,18 @@ const EnvPath = "DGS_TOOLBOX_CONFIG"
 const ExportFilename = "dgs-config.json"
 
 type Config struct {
-	TUI   TUI   `json:"tui"`
-	Photo Photo `json:"photo"`
+	TUI     TUI     `json:"tui"`
+	Photo   Photo   `json:"photo"`
+	Capture Capture `json:"capture"`
+}
+
+type Capture struct {
+	Scan CaptureScan `json:"scan"`
+}
+
+type CaptureScan struct {
+	Root      string `json:"root"`
+	IndexFile string `json:"index_file"`
 }
 
 type Photo struct {
@@ -48,7 +58,15 @@ func Default() Config {
 	return Config{TUI: TUI{TopBar: TopBar{
 		Disk: boolPointer(true), Network: boolPointer(true),
 		CPU: boolPointer(true), Time: boolPointer(true),
-	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}}
+	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Capture: Capture{Scan: CaptureScan{IndexFile: "index.json"}}}
+}
+
+func (c Config) CaptureScanSettings() (root, indexFile string) {
+	indexFile = c.Capture.Scan.IndexFile
+	if indexFile == "" {
+		indexFile = "index.json"
+	}
+	return c.Capture.Scan.Root, indexFile
 }
 
 func (c Config) PhotoImportStateFile() string {
@@ -139,6 +157,10 @@ func LoadPath(path string) (Config, error) {
 	stateFile := config.PhotoImportStateFile()
 	if filepath.Base(stateFile) != stateFile || stateFile == "." || stateFile == ".." {
 		return Config{}, fmt.Errorf("decode config %s: photo.import.state_file must be a filename, got %q", path, stateFile)
+	}
+	_, indexFile := config.CaptureScanSettings()
+	if filepath.Base(indexFile) != indexFile || indexFile == "." || indexFile == ".." {
+		return Config{}, fmt.Errorf("decode config %s: capture.scan.index_file must be a filename, got %q", path, indexFile)
 	}
 	return config, nil
 }

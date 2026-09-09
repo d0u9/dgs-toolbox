@@ -75,6 +75,35 @@ func TestPhotoImportStateFileRejectsPaths(t *testing.T) {
 	}
 }
 
+func TestCaptureScanSettingsDefaultAndCanBeConfigured(t *testing.T) {
+	root, indexFile := (Config{}).CaptureScanSettings()
+	if root != "" || indexFile != "index.json" {
+		t.Fatalf("default Capture Scan settings = %q, %q", root, indexFile)
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"capture":{"scan":{"root":"/captures","index_file":"capture.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, indexFile = loaded.CaptureScanSettings()
+	if root != "/captures" || indexFile != "capture.json" {
+		t.Fatalf("configured Capture Scan settings = %q, %q", root, indexFile)
+	}
+}
+
+func TestCaptureIndexFileRejectsPaths(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"capture":{"scan":{"index_file":"metadata/index.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadPath(path); err == nil {
+		t.Fatal("Capture index file path was accepted; only a filename is safe")
+	}
+}
+
 func TestLoadPathOverridesEnvironmentConfig(t *testing.T) {
 	directory := t.TempDir()
 	environmentPath := filepath.Join(directory, "environment.json")
@@ -113,6 +142,9 @@ func TestExportDefaultCreatesEditableConfigWithoutOverwrite(t *testing.T) {
 	}
 	if loaded.PhotoImportStateFile() != ".dgs-state" {
 		t.Fatalf("exported state file = %q", loaded.PhotoImportStateFile())
+	}
+	if root, indexFile := loaded.CaptureScanSettings(); root != "" || indexFile != "index.json" {
+		t.Fatalf("exported Capture Scan settings = %q, %q", root, indexFile)
 	}
 	if _, err := ExportDefault(path); err == nil {
 		t.Fatal("second export overwrote existing config")

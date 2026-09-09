@@ -17,7 +17,7 @@ func NewRootCommand(apps []tui.App, run tui.Runner) *cobra.Command {
 	var configPath string
 	root := &cobra.Command{
 		Use:           "dgs",
-		Short:         "A small toolbox for photo and GPX workflows",
+		Short:         "A small workflow toolbox",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args: func(command *cobra.Command, args []string) error {

@@ -59,6 +59,12 @@ The global configuration controls the visibility of Disk, Network, CPU, and Time
       "source": "",
       "destination": ""
     }
+  },
+  "capture": {
+    "scan": {
+      "root": "",
+      "index_file": "index.json"
+    }
   }
 }
 ```
@@ -75,15 +81,17 @@ The active command owns the workspace. The shell supplies the available width an
 
 The primary target is a landscape, normally maximized terminal. Choose one of three shared column skeletons before composing command-specific Fieldsets and DataFields:
 
-| Skeleton | Width allocation | Wide-screen cap |
-|---|---|---|
-| One column | One 100-cell content surface, horizontally centered | 100 cells |
-| Two columns | Left `1/3`, right `2/3` | Left never exceeds 90 cells; right receives the remainder |
-| Three columns | Left `1/4`, center `1/2`, right `1/4` | Left and right never exceed 90 cells each; center receives the remaining width |
+| Skeleton | Variant | Width allocation | Wide-screen cap |
+|---|---|---|---|
+| One column | Centered | One 100-cell content surface, horizontally centered | 100 cells |
+| Two columns | Leading narrow | Left `1/3`, right `2/3` | Left never exceeds 90 cells; right receives the remainder |
+| Two columns | Equal | Left `1/2`, right `1/2` | Divide the available width equally |
+| Three columns | Center wide | Left `1/4`, center `1/2`, right `1/4` | Left and right never exceed 90 cells each; center receives the remaining width |
+| Three columns | Trailing wide | Left `1/4`, center `1/4`, right `1/2` | Left and center never exceed 90 cells each; right receives the remaining width |
 
 Ratios are initial allocations, not permission to overflow. On a narrower terminal, subtract inter-column gutters first and shrink columns proportionally within their minimum viable content widths. If a screen cannot remain legible, show its existing resize prompt rather than wrap structural regions or add horizontal scrolling to the whole workspace. Exact gutter width, minimum column widths, and responsive collapse behavior are still undecided.
 
-The one-column 100-cell width is defined by `tui.DefaultContentWidth`. It is a preferred maximum, not a forced terminal width: shrink it to the available viewport while retaining outer breathing room where possible. Two- and three-column screens use the available landscape width rather than being enclosed inside the centered 100-cell surface.
+The one-column 100-cell width is defined by `tui.DefaultContentWidth`. It is a preferred maximum, not a forced terminal width: shrink it to the available viewport while retaining outer breathing room where possible. Two- and three-column screens use the available landscape width rather than being enclosed inside the centered 100-cell surface. Each command chooses the variant that matches its information hierarchy and records that choice in its app-specific design.
 
 ### Status bar
 

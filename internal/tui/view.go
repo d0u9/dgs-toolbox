@@ -20,6 +20,10 @@ var (
 			Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#101010"}).
 			Background(accentColor).
 			Padding(0, 1)
+	topBarInactiveTabStyle = lipgloss.NewStyle().
+				Foreground(barText).
+				Background(barColor).
+				Padding(0, 1)
 	topBarMetaStyle  = lipgloss.NewStyle().Foreground(barText).Background(barColor)
 	pickerTitleStyle = lipgloss.NewStyle().
 				Bold(true).
@@ -75,10 +79,31 @@ func (m Model) viewportSize() (int, int) {
 }
 
 func (m Model) topBar(width int) string {
-	left := topBarTabStyle.Render(m.tabLabel())
+	left := m.topBarTabs()
 	available := max(0, width-lipgloss.Width(left)-1)
 	right := topBarMetaStyle.Render(m.topBarMetadata(available) + " ")
 	return renderStatusContent(topBarStyle, joinLeftRight(left, right, width))
+}
+
+func (m Model) topBarTabs() string {
+	if m.active != nil {
+		if contributor, ok := m.active.(TabContributor); ok {
+			tabs := contributor.Tabs()
+			if len(tabs) > 0 {
+				var rendered strings.Builder
+				for _, tab := range tabs {
+					label := strings.ToUpper(tab.Label)
+					if tab.Active {
+						rendered.WriteString(topBarTabStyle.Render(label))
+					} else {
+						rendered.WriteString(topBarInactiveTabStyle.Render(label))
+					}
+				}
+				return rendered.String()
+			}
+		}
+	}
+	return topBarTabStyle.Render(m.tabLabel())
 }
 
 func (m Model) topBarMetadata(width int) string {

@@ -33,6 +33,19 @@ type CommandPathContributor interface {
 	CommandPath() []string
 }
 
+// Tab describes one command-owned session in the shell's top-left tab bar.
+// Commands without a TabContributor keep the shell's derived command label.
+type Tab struct {
+	Label  string
+	Active bool
+}
+
+// TabContributor lets a command populate the shell-owned tab bar without
+// taking ownership of the rest of the top bar.
+type TabContributor interface {
+	Tabs() []Tab
+}
+
 // Command describes a leaf command and creates a fresh model each time it is
 // selected.
 type Command struct {

@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dgs:capture:index:v1",
+  "title": "DGS Capture Index v1",
+  "description": "Metadata contract for a v1 DGS Capture directory.",
+  "type": "object",
+  "required": [
+    "schema",
+    "source",
+    "position",
+    "id",
+    "isDone",
+    "createdAt",
+    "type",
+    "dir"
+  ],
+  "properties": {
+    "schema": {
+      "const": "v1"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "app",
+        "device"
+      ],
+      "properties": {
+        "app": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device": {
+          "type": "object",
+          "required": [
+            "os",
+            "systemVesion",
+            "name"
+          ],
+          "properties": {
+            "os": {
+              "type": "string",
+              "minLength": 1
+            },
+            "systemVesion": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "position": {
+      "type": "object",
+      "required": [
+        "altitude",
+        "longitude",
+        "latitude"
+      ],
+      "properties": {
+        "altitude": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locality": {
+          "type": "string",
+          "minLength": 1
+        },
+        "city": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region ": {
+          "type": "string",
+          "minLength": 1
+        },
+        "country": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "isDone": {
+      "type": "string",
+      "enum": [
+        "true",
+        "false"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]{64}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dir": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}
