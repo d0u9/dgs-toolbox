@@ -50,6 +50,18 @@ func (m Model) Selected() (Item, bool) {
 	return m.items[m.cursor], true
 }
 
+// SelectID focuses the first item with the requested stable identifier.
+func (m *Model) SelectID(id string) bool {
+	for index, item := range m.items {
+		if item.ID == id {
+			m.cursor = index
+			m.ensureVisible()
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Model) Move(delta int) {
 	if len(m.items) == 0 {
 		return
@@ -113,6 +125,12 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 		}
 		label := ansi.Cut(m.items[index].Label, m.horizontal, m.horizontal+labelWidth)
 		row := marker + number + " " + label
+		if index == m.top && m.top > 0 {
+			row = overflowMarkedRow(row, m.width, "↑ more")
+		}
+		if index == end-1 && end < len(m.items) {
+			row = overflowMarkedRow(row, m.width, "↓ more")
+		}
 		if selected {
 			row = selectedRowStyle.Width(m.width).Render(row)
 		}
@@ -122,6 +140,10 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 		lines = append(lines, strings.Repeat(" ", m.width))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func overflowMarkedRow(row string, width int, marker string) string {
+	return ansi.Truncate(row, max(1, width-lipgloss.Width(marker)-1), "…") + " " + marker
 }
 
 func (m Model) numberWidth() int { return len(fmt.Sprintf("%d", max(1, len(m.items)))) }

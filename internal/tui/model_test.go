@@ -94,6 +94,31 @@ func (m contextualStub) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+type tabbedStub struct{ stubCommand }
+
+func (m tabbedStub) Tabs() []Tab { return []Tab{{Label: "scan", Active: true}} }
+func (m tabbedStub) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updated, cmd := m.stubCommand.Update(msg)
+	m.stubCommand = updated.(stubCommand)
+	return m, cmd
+}
+
+func TestCommandCanContributeTopBarTabs(t *testing.T) {
+	apps := []App{{ID: "capture", Name: "Capture", Direct: true, Commands: []Command{{
+		ID: "scan", Name: "Scan", New: func() CommandModel {
+			return tabbedStub{stubCommand{label: "SCAN"}}
+		},
+	}}}}
+	m := NewModel(apps, Launch{App: "capture", Command: "scan"})
+	bar := ansi.Strip(m.topBar(100))
+	if !strings.HasPrefix(bar, " SCAN ") {
+		t.Fatalf("top bar does not show the active Scan tab: %q", bar)
+	}
+	if !strings.Contains(bar, "dgs › capture") {
+		t.Fatalf("top bar is missing the Capture breadcrumb: %q", bar)
+	}
+}
+
 func TestCommandCanContributeBreadcrumbState(t *testing.T) {
 	apps := []App{{ID: "photo", Name: "Photo", Commands: []Command{{
 		ID: "import", Name: "Import", New: func() CommandModel { return contextualStub{stubCommand{label: "IMPORT"}} },
