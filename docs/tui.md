@@ -100,7 +100,24 @@ A shared stepper presents the complete sequence as a stateful track: completed s
 
 The status bar allocates enough central space for a short four-step workflow. On narrow terminals, truncate the stepper rather than wrapping or increasing the status bar height.
 
-## Keyboard convention
+## Global key bindings
+
+These bindings form the shared navigation baseline for every picker and command screen. A component may give them a more specific contextual meaning, but it must preserve the same direction and exit behavior:
+
+```text
+Arrow keys / h j k l       Move the cursor or selection inside the active component
+Alt+Arrow / Alt+h j k l    Move focus between DataFields in that direction
+Tab                        Move to the next selectable control
+Shift+Tab                  Move to the previous selectable control
+<CR>                       Confirm or invoke the focused item
+Ctrl+C                     Request exit through the shared confirmation dialog
+```
+
+Ctrl+C never terminates `dgs` immediately. It opens the shared safe-default confirmation dialog, with No selected. If work is active, the owning command may pause or cancel it as part of the confirmed exit, but it must still use the shared dialog.
+
+`<CR>` means the Enter/Return key. It confirms the currently focused item, opens it when it owns a child interaction, or invokes its primary action. Tab and Shift+Tab traverse selectable controls in forward and reverse order respectively; they do not replace `Alt+Arrow` or `Alt+h/j/k/l`, which remain the spatial navigation keys between DataFields.
+
+### Movement inside the active component
 
 Wherever arrow-key navigation is available, support the equivalent Vim navigation keys:
 
@@ -115,7 +132,9 @@ The exact action remains contextual, but arrow keys and their Vim equivalents mu
 
 Printable keys belong to the active text input while editing. In text-entry mode, `h`, `j`, `k`, and `l` insert characters and must not trigger navigation. Contextual help and the status bar should show compact hints such as `↑/k`, `↓/j`, `←/h`, and `→/l` where those controls are relevant.
 
-Multi-region workspaces use `Alt+h/j/k/l` for spatial movement between data fields. Read [`data-fields.md`](data-fields.md) before changing field-level focus, spatial navigation, or focused fieldset presentation.
+### Movement between DataFields
+
+Multi-region workspaces use `Alt+Arrow` and `Alt+h/j/k/l` for spatial movement between data fields. The direction is literal: Left or `h` selects the nearest field to the left, Down or `j` the nearest below, Up or `k` the nearest above, and Right or `l` the nearest to the right. Plain arrow keys and `h/j/k/l` remain inside the currently focused DataField. Read [`data-fields.md`](data-fields.md) before changing field-level focus, spatial navigation, or focused fieldset presentation.
 
 Read [`scroll-lists.md`](scroll-lists.md) before changing numbered viewport lists or contextual right-click menus.
 
