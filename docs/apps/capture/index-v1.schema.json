@@ -87,10 +87,6 @@
       "type": "object",
       "description": "Descriptive location. Every field is optional; a present field must be a non-empty string.",
       "properties": {
-        "address": {
-          "type": "string",
-          "minLength": 1
-        },
         "locality": {
           "type": "string",
           "minLength": 1

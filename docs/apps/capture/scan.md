@@ -15,6 +15,8 @@
   down to a compact `CAPTURE ROOT` path control pinned to the workspace bottom
   and aligned with the center and right Fieldsets. Enter or a primary click on
   the Root control opens the shared directory-only File Explorer as an overlay.
+  This control is shared with Route rather than reimplemented per session, and
+  both sessions move to a root chosen in either one.
 - `CAPTURES` includes only immediate child directories containing a regular
   file whose name matches the configured index filename and whose contents
   validate against the declared Capture index schema. Invalid JSON, unsupported
@@ -94,9 +96,10 @@
 
 `place` may provide `locality`, `city`, `region`, and `country` as optional
 non-empty strings. Capture Info presents available values as four separate rows
-inside an indented `Location` group after GPS, and falls back to the optional
-`address` as a single row when the structured fields are absent. Descriptive
-fields are accepted only inside `place`; `coordinates` takes `altitude`,
+inside an indented `Location` group after GPS. There is no free-form `address`
+field: a place is described by its structured parts, and anything that reads as
+one name is composed from them. Descriptive fields are accepted only inside
+`place`; `coordinates` takes `altitude`,
 `longitude`, and `latitude` and nothing else.
 
 A Capture with no `coordinates` shows neither the GPS row nor the Apple, Google,
@@ -138,8 +141,8 @@ The v1 Capture metadata contract is defined by
   example `note` or `photo_note`, and replaces the earlier top-level `type`.
 - Location is split in two and both halves are optional. `coordinates` carries
   `altitude`, `longitude`, and `latitude` and nothing else; `place` carries the
-  descriptive fields `address`, `locality`, `city`, `region`, and `country`,
-  each optional but non-empty when present. A Capture may have coordinates, a
+  descriptive fields `locality`, `city`, `region`, and `country`, each optional
+  but non-empty when present. A Capture may have coordinates, a
   place, both, or neither: taken indoors it may know its city and no
   coordinates, and a bare Capture may know neither.
 - The schema describes only what the Capture sessions read. A producer may
@@ -153,10 +156,10 @@ The v1 Capture metadata contract is defined by
 ## Mock Capture root
 
 `testdata/capture` is a generated Capture root for exercising Scan and Route
-without touching real data. It holds eight valid Captures—note with a text
-attachment, photo with JPEG and PNG attachments, voice memo with a WAV, a
-single-line `address` place (the only Capture carrying undescribed producer
-fields), a partly filled place, an ignored `"null"` attachment beside a real
+without touching real data. It holds eight valid Captures—a `been_here` note with a
+text attachment, photo with JPEG and PNG attachments, voice memo with a WAV, a
+Capture carrying undescribed producer fields (the only one), a `quick_mark`
+with a partly filled place, an ignored `"null"` attachment beside a real
 one, a place with no coordinates, and a required-fields-only Capture with no
 location at all—plus three directories that must be rejected: `not-a-capture` (no index file),
 `invalid-schema` (`"schema": "v2"`), and `invalid-json` (truncated JSON).

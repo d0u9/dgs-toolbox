@@ -41,10 +41,11 @@ type Coordinates struct {
 }
 
 // Place is the descriptive half of a Capture's location. Every field is
-// optional: a Capture may know its city without a street address, or carry
-// coordinates with no place at all.
+// optional: a Capture may know its city without knowing its locality, or carry
+// coordinates with no place at all. There is no free-form address field: a
+// place is described by its structured parts, and anything that reads as one
+// name is composed from them.
 type Place struct {
-	Address  string `json:"address"`
 	Locality string `json:"locality"`
 	City     string `json:"city"`
 	Region   string `json:"region"`
@@ -216,7 +217,7 @@ func validatePlace(value any) error {
 	if err != nil {
 		return err
 	}
-	fields := []string{"address", "locality", "city", "region", "country"}
+	fields := []string{"locality", "city", "region", "country"}
 	if err := requireOnly(place, nil, fields, "index.place"); err != nil {
 		return err
 	}
