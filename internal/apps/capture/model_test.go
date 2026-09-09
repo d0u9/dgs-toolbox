@@ -8,11 +8,13 @@ import (
 	"testing"
 
 	"dgs-toolbox/internal/apps/capture/indexschema"
+	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/tui/scrolllist"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestScanIsTheInitialCaptureSession(t *testing.T) {
@@ -113,13 +115,13 @@ func TestLoadCapturesOnlyIncludesDirectoriesWithConfiguredIndexFile(t *testing.T
 		t.Fatalf("capture count = %d, want 1", m.captureCount)
 	}
 	selected, ok := m.captures.Selected()
-	if !ok || selected.Label != "▸ alpha/" {
+	if !ok || selected.Label != "▸   alpha/" {
 		t.Fatalf("selected Capture = %#v, %v", selected, ok)
 	}
 	updated, _ = m.updateCaptureList("o")
 	m = updated.(model)
 	selected, _ = m.captures.Selected()
-	if selected.Label != "▾ alpha/" {
+	if selected.Label != "▾   alpha/" {
 		t.Fatalf("expanded Capture row = %#v", selected)
 	}
 	m.captures.Move(1)
@@ -419,5 +421,185 @@ func TestCaptureInfoGroupsStructuredLocation(t *testing.T) {
 	}
 	if position != len(want) {
 		t.Fatalf("structured Location group is incomplete: %#v", properties)
+	}
+}
+
+// Scan answers whether a Capture has been organized: the organizer's record is
+// a file in the tree, the row is marked, and Capture Info reports the pass.
+func TestScanShowsTheOrganizeRecord(t *testing.T) {
+	root := routeTestRoot(t, "alpha", "beta")
+	run := organizer.Run{
+		OrganizedAt: "2026-09-09T21:40:12+10:00",
+		Recipe:      "obsidian_location_daily",
+		RecipeName:  "Location + Daily",
+		Actions:     []organizer.RecordedAction{{Action: organizer.ActionDailyAppend, Target: "Daily/2026-09-09.md"}},
+	}
+	if _, err := organizer.AppendRun(filepath.Join(root, "alpha"), run); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newModelWithSettings(root, "index.json")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
+	m = updated.(model)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(model)
+
+	organizedRow, ok := m.captures.Selected()
+	if !ok || !strings.Contains(organizedRow.Label, "● alpha") {
+		t.Fatalf("organized capture row = %q", organizedRow.Label)
+	}
+	m.captures.Move(1)
+	if next, _ := m.captures.Selected(); strings.Contains(next.Label, "●") {
+		t.Fatalf("unorganized capture row = %q, want no marker", next.Label)
+	}
+
+	// The record is a real file in the directory and belongs in the tree.
+	m.captures.First()
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	m = updated.(model)
+	if view := ansi.Strip(m.View()); !strings.Contains(view, organizer.RecordFilename) {
+		t.Fatalf("the organize record is missing from the tree:\n%s", view)
+	}
+
+	m.captures.First()
+	m.refreshDetails(false)
+	info := ""
+	for _, property := range m.captureProperties() {
+		info += property.name + " " + property.value + "\n"
+	}
+	for _, want := range []string{"Organized", "Recipe Location + Daily", "When 2026-09-09T21:40:12+10:00", "obsidian.daily.append · Daily/2026-09-09.md"} {
+		if !strings.Contains(info, want) {
+			t.Fatalf("capture info is missing %q:\n%s", want, info)
+		}
+	}
+}
+
+// A JSON preview is offered in two shapes: the file as written, and its
+// structure. Both are rendered when the file is read, so t switches between
+// them without a reload.
+func TestScanTogglesJSONPreviewBetweenSourceAndTree(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := newModelWithSettings(root, "index.json")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 24})
+	m = updated.(model)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(model)
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	m = updated.(model)
+	m.captures.Move(1)
+	m = settlePreview(t, m)
+
+	if !m.previewIsJSON {
+		t.Fatal("the index was not recognised as JSON")
+	}
+	if !strings.Contains(m.previewLegend(), "SOURCE") {
+		t.Fatalf("legend = %q, want the shape named", m.previewLegend())
+	}
+	source := ansi.Strip(m.View())
+	if !strings.Contains(source, `"schema": "v1"`) {
+		t.Fatalf("source view does not show the file as written:\n%s", source)
+	}
+
+	// The switch belongs to the preview: it does nothing from another field.
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	m = updated.(model)
+	if !strings.Contains(m.previewLegend(), "SOURCE") {
+		t.Fatalf("t outside the preview changed the shape: %q", m.previewLegend())
+	}
+	if strings.Contains(m.Status().Right, "t ") {
+		t.Fatalf("the CAPTURES hint offers t: %q", m.Status().Right)
+	}
+
+	m.fields.Set(centerField)
+	if !strings.Contains(m.Status().Right, "t Tree") {
+		t.Fatalf("the preview hint does not offer the switch: %q", m.Status().Right)
+	}
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	m = updated.(model)
+	if !strings.Contains(m.previewLegend(), "TREE") {
+		t.Fatalf("legend = %q after toggling", m.previewLegend())
+	}
+	if !strings.Contains(m.Status().Right, "t Source") {
+		t.Fatalf("the tree hint does not offer the way back: %q", m.Status().Right)
+	}
+	tree := ansi.Strip(m.View())
+	if !strings.Contains(tree, "schema : v1") || !strings.Contains(tree, "coordinates : {") {
+		t.Fatalf("tree view does not show the structure:\n%s", tree)
+	}
+	if strings.Contains(tree, `"schema": "v1"`) {
+		t.Fatalf("tree view still shows the source:\n%s", tree)
+	}
+
+	// The choice is remembered, so a reader who wants structure keeps it for
+	// the next file.
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	m = updated.(model)
+	if !strings.Contains(m.previewLegend(), "SOURCE") {
+		t.Fatalf("legend = %q after toggling back", m.previewLegend())
+	}
+}
+
+// settlePreview runs the preview load chain, which hands the request off before
+// reading the file.
+func settlePreview(t *testing.T, m model) model {
+	t.Helper()
+	updated, cmd := m.Update(m.loadSelectedPreview()())
+	m = updated.(model)
+	for range 4 {
+		if cmd == nil {
+			break
+		}
+		updated, cmd = m.Update(cmd())
+		m = updated.(model)
+	}
+	return m
+}
+
+// The tree draws itself for one width and one focus state, so a resize or a
+// focus change has to redraw it: a row painted for a wider column runs over the
+// fieldset border, and a cursor painted for a focused field stays lit after the
+// focus has left it.
+func TestScanJSONTreeRedrawsOnResizeAndFocusChange(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+
+	root := routeTestRoot(t, "alpha")
+	m := newModelWithSettings(root, "index.json")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 24})
+	m = updated.(model)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(model)
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	m = updated.(model)
+	m.captures.Move(1)
+	m = settlePreview(t, m)
+	m.fields.Set(centerField)
+	updated, _ = m.updatePreview("t")
+	m = updated.(model)
+	updated, _ = m.updatePreview("down")
+	m = updated.(model)
+
+	// Narrower: every row must still fit its column. A resize reloads the
+	// preview, because an image preview is rendered for a size.
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m = settlePreview(t, updated.(model))
+	for index, line := range strings.Split(m.View(), "\n") {
+		if got := lipgloss.Width(line); got != 120 {
+			t.Fatalf("line %d is %d cells wide, want 120:\n%s", index, got, ansi.Strip(line))
+		}
+	}
+
+	// Read the preview's own content: the CAPTURES list marks its selection
+	// with the same style, and cutting a column out of the composed view
+	// re-opens whatever style was active at the cut.
+	marker := selectionSGR(t)
+	if !strings.Contains(m.preview.View(), marker) {
+		t.Fatalf("the tree cursor is not marked while the preview has focus:\n%s", ansi.Strip(m.View()))
+	}
+	m.fields.Set(capturesField)
+	m.refreshDetails(false)
+	if strings.Contains(m.preview.View(), marker) {
+		t.Fatal("the tree cursor stays lit after the focus has left the preview")
 	}
 }

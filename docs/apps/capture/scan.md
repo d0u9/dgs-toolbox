@@ -94,6 +94,55 @@
   Root control or Captures reaches Preview, `Alt+L` from Preview reaches Capture
   Info, and `Alt+J`/`Alt+K` move between the stacked Capture Info and File Info.
 
+Each Capture row carries `●` once the Capture has been organized, and the
+organizer's record `organize.json` appears in its file list beside the index.
+Capture Info reports the organizing state in an `Organized` group: the Recipe of
+the most recent pass, when it ran, how many passes there have been when there is
+more than one, and the Actions that pass planned with their targets. A Capture
+with no record reads `· Not organized` rather than omitting the group, because
+whether a Capture has been handled is a question Scan should always answer. The
+record is read once with the Capture, so Scan and Route agree on which Captures
+are done. See [`organizer.md`](organizer.md) for the record itself.
+
+A JSON preview is offered in two shapes: `SOURCE` is the file as written,
+keeping its key order and formatting, and `TREE` is its structure — nesting,
+item counts, and a colour per value type, with keys sorted so two producers'
+files read the same way. The legend names the current shape and the choice is
+remembered across files. Neither shape substitutes for the other, which is why
+both are kept rather than one replacing the other; both are prepared when the
+file is read, so switching costs no reload.
+
+`t` switches between them. It belongs to `PREVIEW` and exists nowhere else: a
+key that does nothing in three fields out of four is a key whose context the
+reader has to remember. The status bar hint follows the same rule — it offers
+`t Tree` only for a JSON file, `t Source` only while the tree is shown, and
+nothing at all otherwise.
+
+The tree is navigated the way the File Explorer is navigated, because a tree the
+reader already knows how to walk should not be walked differently here:
+`↑/k` and `↓/j` move, `→/l` expands or steps into what is open, `←/h` collapses
+or steps out to the parent, `o` toggles, `O` collapses the parent and focuses
+it, `w` collapses everything below the root, and `g`/`G` jump to the ends. A
+click selects a row. While the tree is shown these replace the preview's
+scrolling keys, and the tree scrolls itself to keep the cursor on screen.
+
+The tree draws itself for one width and one focus state, so it is redrawn
+whenever either changes: a row painted for a wider column would run over the
+fieldset border, and a cursor painted for a focused field would stay lit after
+the focus had left it. Rows are clipped by terminal cells rather than by
+counting runes, because a coloured row carries escape sequences that occupy no
+cells and a CJK value occupies two per rune.
+
+Indentation is four spaces per level. A container shows `▸` or `▾` and how many
+items it holds; collapsed it reads `{ … }` with that count, so a reader can tell
+an empty container from one worth opening. An expanded container closes with its
+bracket on a line of its own: a reader asked to read JSON should see JSON, and
+an opening brace with no closing one reads as truncated however clear the
+indentation is. A closing bracket is a line rather than a node — the cursor
+steps over it, and clicking one selects the container it closes. The top level opens expanded and
+deeper containers start collapsed, so a file opens as an outline rather than as
+everything at once.
+
 `place` may provide `locality`, `city`, `region`, and `country` as optional
 non-empty strings. Capture Info presents available values as four separate rows
 inside an indented `Location` group after GPS. There is no free-form `address`

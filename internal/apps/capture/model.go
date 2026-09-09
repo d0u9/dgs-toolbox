@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/apps/capture/indexschema"
+	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/datafield"
 	"dgs-toolbox/internal/tui/divider"
@@ -78,6 +79,11 @@ type captureEntry struct {
 	name  string
 	files []string
 	index indexschema.Index
+	// record is what the Capture directory says about how it was organized.
+	// It is read once with the Capture rather than by each session, so Scan and
+	// Route agree on which Captures have been handled.
+	record    organizer.Record
+	organized bool
 }
 
 type previewLoadedMsg struct {
@@ -87,6 +93,10 @@ type previewLoadedMsg struct {
 	properties []property
 	err        error
 	centered   bool
+	// tree is the structural view of a JSON file, carried beside the source so
+	// switching between them costs no reload.
+	tree   jsonTree
+	isJSON bool
 }
 
 type previewRequestMsg struct {
@@ -126,6 +136,13 @@ type model struct {
 	fileCursor     int
 	previewRequest uint64
 	previewIsImage bool
+	// previewSource is the JSON preview's shape: the file as written, or its
+	// structure. It is remembered across selections, because a reader who wants
+	// structure wants it for the next file too.
+	previewSource  string
+	previewTree    jsonTree
+	previewIsJSON  bool
+	previewAsTree  bool
 	imagePreviewed bool
 	previewNotice  string
 }
@@ -220,13 +237,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.path != m.previewPath || (msg.requestID != 0 && msg.requestID != m.previewRequest) {
 			return m, nil
 		}
+		m.previewSource, m.previewTree, m.previewIsJSON = msg.content, msg.tree, msg.isJSON
 		if msg.err != nil {
 			m.setPreviewNotice("! " + msg.err.Error())
 		} else if msg.centered {
 			m.setPreviewNotice(msg.content)
 		} else {
 			m.previewNotice = ""
-			m.preview.SetContent(msg.content)
+			m.setPreviewShape()
 		}
 		m.fileProperties = msg.properties
 		m.fileCursor = firstProperty(m.fileProperties)
@@ -299,6 +317,15 @@ func (m model) Status() tui.Status {
 	case capturesField:
 		return tui.Status{Left: "SCAN", Center: center, Right: "↑/k ↓/j Move  o Open  O Close  w Close all  space Quick Look  R Refresh"}
 	case centerField:
+		// The hint names only what this field can do right now: t appears for a
+		// JSON file and nowhere else, and the tree's own keys replace the
+		// scrolling ones while the tree is what is shown.
+		if m.showingJSONTree() {
+			return tui.Status{Left: "PREVIEW", Center: center, Right: "↑/k ↓/j Move  l Open  h Close  o Toggle  w Close all  t Source"}
+		}
+		if m.previewIsJSON && m.previewNotice == "" {
+			return tui.Status{Left: "PREVIEW", Center: center, Right: "↑/k ↓/j Scroll  h/l Pan  t Tree  R Refresh  alt+hjkl Focus"}
+		}
 		return tui.Status{Left: "PREVIEW", Center: center, Right: "↑/k ↓/j Scroll  h/l Pan  R Refresh  alt+hjkl Focus"}
 	case captureInfoField:
 		return tui.Status{Left: "CAPTURE INFO", Center: center, Right: "↑/k ↓/j Scroll  alt+hjkl Focus"}
@@ -319,6 +346,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingGG = false
 		return m, loadCaptures(m.root, m.indexFile)
 	}
+
 	if m.fields.Move(key) {
 		m.refreshDetails(false)
 		m.pendingGG = false
@@ -413,6 +441,16 @@ func (m model) updatePreview(key string) (tea.Model, tea.Cmd) {
 		cmd := m.renderSelectedImage()
 		return m, cmd
 	}
+	// The shape switch belongs to the preview and lives nowhere else: a key
+	// that does nothing in three of four fields is a key the reader has to
+	// remember the context of.
+	if key == "t" && m.toggleJSONShape() {
+		return m, nil
+	}
+	if m.showingJSONTree() && m.previewTree.Update(key) {
+		m.setPreviewShape()
+		return m, nil
+	}
 	switch key {
 	case "up", "k":
 		m.preview.ScrollUp(1)
@@ -501,6 +539,9 @@ func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.captures.SelectRow(msg.Y - 1) {
 			return m, m.loadSelectedPreview()
 		}
+	}
+	if hit == centerField && m.showingJSONTree() && m.previewTree.SelectRow(msg.Y-1) {
+		m.setPreviewShape()
 	}
 	if hit == captureInfoField {
 		m.selectCaptureInfoRow(msg.Y)
@@ -643,6 +684,13 @@ func (m *model) refreshDetails(reset bool) {
 	}
 	m.captureInfo.SetContent(renderProperties(m.captureScrollableProperties(), width, m.captureScrollableCursor(), m.fields.Current() == captureInfoField, capturePropertyKeyWidth))
 	m.fileInfo.SetContent(renderProperties(m.fileProperties, width, m.fileCursor, m.fields.Current() == fileInfoField, 0))
+	// The tree draws itself for one width and one focus state, so it has to be
+	// redrawn whenever either changes: a row painted for a wider column runs
+	// over the fieldset border, and a cursor painted for a focused field stays
+	// lit after the focus has left it.
+	if m.showingJSONTree() {
+		m.setPreviewShape()
+	}
 	if reset {
 		m.captureInfo.GotoTop()
 		m.fileInfo.GotoTop()
@@ -825,7 +873,48 @@ func (m model) previewLegend() string {
 	if m.previewPath == "" {
 		return "PREVIEW"
 	}
-	return "PREVIEW · " + filepath.Base(m.previewPath)
+	legend := "PREVIEW · " + filepath.Base(m.previewPath)
+	if m.previewIsJSON {
+		// The shape is named in the legend because the two views answer
+		// different questions and a reader arriving at a file should not have
+		// to work out which one they are looking at.
+		if m.previewAsTree {
+			return legend + " · TREE"
+		}
+		return legend + " · SOURCE"
+	}
+	return legend
+}
+
+// showingJSONTree reports whether the preview is currently the tree, which is
+// what makes the tree's own keys and the shape switch available.
+func (m model) showingJSONTree() bool {
+	return m.previewIsJSON && m.previewAsTree && m.previewNotice == ""
+}
+
+// setPreviewShape renders the current shape into the viewport. The tree draws
+// itself for the viewport's height because it scrolls itself: a cursor that
+// leaves the window is worse than one that drags it.
+func (m *model) setPreviewShape() {
+	if m.showingJSONTree() {
+		focused := m.fields.Current() == centerField
+		m.preview.SetContent(m.previewTree.View(m.preview.Width, m.preview.Height, focused))
+		m.preview.GotoTop()
+		return
+	}
+	m.preview.SetContent(m.previewSource)
+}
+
+// toggleJSONShape switches a JSON preview between the file as written and its
+// structure, without reloading: both were prepared when the file was read.
+func (m *model) toggleJSONShape() bool {
+	if !m.previewIsJSON || m.previewNotice != "" {
+		return false
+	}
+	m.previewAsTree = !m.previewAsTree
+	m.setPreviewShape()
+	m.preview.SetXOffset(0)
+	return true
 }
 
 func (m *model) clearPreview(message string) {
@@ -1006,6 +1095,7 @@ func (m model) captureProperties() []property {
 			}
 		}
 	}
+	props = append(props, organizeProperties(entry)...)
 	validAttachments := 0
 	for _, attachment := range index.Attachments {
 		if attachment.Kind != "null" {
@@ -1057,8 +1147,14 @@ func (m *model) rebuildCaptureItems() {
 		if m.expanded[capture.path] {
 			marker = "▾ "
 		}
+		// An organized Capture is marked in the tree as well as in Capture
+		// Info, so the state is visible without selecting every row.
+		organized := "  "
+		if capture.organized {
+			organized = "● "
+		}
 		items = append(items, scrolllist.Item{
-			ID: "capture:" + capture.path, Label: marker + capture.name + string(os.PathSeparator),
+			ID: "capture:" + capture.path, Label: marker + organized + capture.name + string(os.PathSeparator),
 		})
 		if !m.expanded[capture.path] {
 			continue
@@ -1093,8 +1189,10 @@ func loadCaptures(root, indexFile string) tea.Cmd {
 				continue
 			}
 			capturePath := filepath.Join(root, entry.Name())
+			record, organized := organizer.ReadRecord(capturePath)
 			captures = append(captures, captureEntry{
 				path: capturePath, name: entry.Name(), files: captureFiles(capturePath, indexFile, index.Attachments), index: index,
+				record: record, organized: organized,
 			})
 		}
 		sort.Slice(captures, func(i, j int) bool { return strings.ToLower(captures[i].name) < strings.ToLower(captures[j].name) })
@@ -1105,6 +1203,12 @@ func loadCaptures(root, indexFile string) tea.Cmd {
 func captureFiles(capturePath, indexFile string, attachments []indexschema.Attachment) []string {
 	files := []string{indexFile}
 	seen := map[string]struct{}{filepath.Clean(indexFile): struct{}{}}
+	// The organizer's own record is a real file in the directory and belongs in
+	// the tree beside the index, even though no attachment refers to it.
+	if info, err := os.Lstat(filepath.Join(capturePath, organizer.RecordFilename)); err == nil && info.Mode().IsRegular() {
+		files = append(files, organizer.RecordFilename)
+		seen[organizer.RecordFilename] = struct{}{}
+	}
 	for _, attachment := range attachments {
 		if attachment.Kind == "null" || attachment.Name == "" {
 			continue
@@ -1160,4 +1264,33 @@ func fitHeight(content string, height, width int) string {
 		lines = append(lines, strings.Repeat(" ", max(1, width)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// organizeProperties reports how a Capture was organized, from the record in
+// its own directory. A Capture with no record is simply not organized yet,
+// which is shown as one line rather than as an absent group: whether a Capture
+// has been handled is a question Scan should always answer.
+func organizeProperties(entry captureEntry) []property {
+	props := []property{{name: "Organized", section: true}}
+	latest, ok := entry.record.Latest()
+	if !entry.organized || !ok {
+		return append(props, property{name: "Status", value: "· Not organized", indent: 1})
+	}
+	props = append(props,
+		property{name: "Recipe", value: latest.RecipeName, indent: 1},
+		property{name: "When", value: latest.OrganizedAt, indent: 1},
+	)
+	if runs := len(entry.record.Runs); runs > 1 {
+		// Earlier passes are kept, so the count is the only hint in Scan that
+		// this Capture was organized more than once.
+		props = append(props, property{name: "Runs", value: fmt.Sprintf("%d", runs), indent: 1})
+	}
+	for _, action := range latest.Actions {
+		value := string(action.Action)
+		if action.Target != "" {
+			value += " · " + action.Target
+		}
+		props = append(props, property{name: "Action", value: value, indent: 1})
+	}
+	return props
 }
