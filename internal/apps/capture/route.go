@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -70,9 +71,6 @@ type routeModel struct {
 	// moves the cursor to the next Capture: the dialog must keep reporting the
 	// Capture it ran, not the one now selected behind it.
 	runContext organizer.Context
-	// records is what each Capture directory says about how it was organized,
-	// read once per load. A Capture carrying one is shown below the divider.
-	records map[string]organizer.Record
 	// recipeSet is the Set this session offers: the built-ins with whatever the
 	// configured Recipe directory layered over them.
 	recipeSet organizer.Set
@@ -125,7 +123,6 @@ func newRouteModelWithRecipes(root, indexFile string, set organizer.Set) routeMo
 		recipes:     scrolllist.New(),
 		actions:     scrolllist.New(),
 		selections:  make(map[string]organizer.Selection),
-		records:     make(map[string]organizer.Record),
 		recipeSet:   set,
 		editor:      editor,
 		note:        note,
@@ -162,7 +159,6 @@ func (m routeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.entries = nil
 		} else {
 			m.entries = msg.captures
-			m.loadRecords()
 			m.pruneSelections()
 		}
 		m.rebuildCaptureItems()
@@ -331,7 +327,6 @@ func (m *routeModel) applyRoot(root string) {
 	m.entries = nil
 	m.captures.SetItems(nil)
 	m.selections = make(map[string]organizer.Selection)
-	m.records = make(map[string]organizer.Record)
 	m.loadError = ""
 	m.cancelEdit()
 	m.refresh()
@@ -800,7 +795,7 @@ func (m routeModel) run() (tea.Model, tea.Cmd) {
 		if err != nil {
 			m.runError = err.Error()
 		} else {
-			m.records[entry.path] = record
+			m.markOrganized(entry.path, record)
 			m.advanceToNextPending(entry)
 		}
 	}
@@ -809,6 +804,18 @@ func (m routeModel) run() (tea.Model, tea.Cmd) {
 	m.fields.Set(routeCapturesField)
 	m.refresh()
 	return m, nil
+}
+
+// markOrganized records the new state on the Capture itself, so Scan and Route
+// read the same answer without either re-reading the directory.
+func (m *routeModel) markOrganized(path string, record organizer.Record) {
+	for index := range m.entries {
+		if m.entries[index].path == path {
+			m.entries[index].record = record
+			m.entries[index].organized = true
+			return
+		}
+	}
 }
 
 // advanceToNextPending moves the cursor to the first Capture still to handle,
@@ -968,6 +975,10 @@ func (m *routeModel) pruneSelections() {
 // including a Capture with no Recipe yet.
 func (m routeModel) readyCount() (ready int, blocked int) {
 	for _, entry := range m.entries {
+		if entry.organized {
+			ready++
+			continue
+		}
 		selection, ok := m.selections[entry.path]
 		if !ok {
 			blocked++
@@ -1047,7 +1058,7 @@ func captureOffset(created time.Time) string {
 // captureMarker distinguishes the three states a Capture can be in: no Recipe
 // chosen, a Recipe whose plan is still blocked, and a plan ready to run.
 func (m routeModel) captureMarker(entry captureEntry) string {
-	if m.organized(entry) {
+	if entry.organized {
 		return "● "
 	}
 	selection, ok := m.selections[entry.path]
@@ -1065,22 +1076,10 @@ func (m routeModel) captureMarker(entry captureEntry) string {
 	return "◐ "
 }
 
-// loadRecords reads what each Capture directory says about itself. A Capture
-// organized in an earlier session is recognised on load, not only in the
-// session that organized it.
-func (m *routeModel) loadRecords() {
-	m.records = make(map[string]organizer.Record, len(m.entries))
-	for _, entry := range m.entries {
-		if record, ok := organizer.ReadRecord(entry.path); ok {
-			m.records[entry.path] = record
-		}
-	}
-}
-
-func (m routeModel) organized(entry captureEntry) bool {
-	_, ok := m.records[entry.path]
-	return ok
-}
+// organized reports whether the Capture carries an organizing record. The
+// record is read with the Capture rather than by this session, so a Capture
+// organized in an earlier session is recognised on load.
+func (m routeModel) organized(entry captureEntry) bool { return entry.organized }
 
 // orderedEntries puts the Captures still to handle first and the organized ones
 // after them, each run keeping the load order. The list is one field with a
@@ -1108,14 +1107,12 @@ func (m *routeModel) rebuildCaptureItems() {
 	items := make([]scrolllist.Item, 0, len(ordered))
 	for _, entry := range ordered {
 		detail := routeCaptureDetail(entry)
-		if record, ok := m.records[entry.path]; ok {
+		if latest, ok := entry.record.Latest(); entry.organized && ok {
 			// An organized Capture is labelled by its most recent pass, with a
 			// count when there has been more than one.
-			if latest, ok := record.Latest(); ok {
-				detail += "  → " + latest.RecipeName
-				if len(record.Runs) > 1 {
-					detail += fmt.Sprintf(" ×%d", len(record.Runs))
-				}
+			detail += "  → " + latest.RecipeName
+			if len(entry.record.Runs) > 1 {
+				detail += fmt.Sprintf(" ×%d", len(entry.record.Runs))
 			}
 		} else if selection, ok := m.selections[entry.path]; ok {
 			if recipe, ok := m.recipeSet.Lookup(selection.Recipe); ok {
@@ -1572,16 +1569,14 @@ func (m routeModel) fieldsContent(width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// truncate clips a plain label to width, without styling.
+// truncate clips to width terminal cells, not to a count of runes: a styled
+// string carries escape sequences that occupy no cells, and a wide rune
+// occupies two, so counting runes clips a coloured or CJK line far too early.
 func truncate(value string, width int) string {
-	runes := []rune(value)
-	if len(runes) <= width {
-		return value
+	if width <= 0 {
+		return ""
 	}
-	if width <= 1 {
-		return string(runes[:max(0, width)])
-	}
-	return string(runes[:width-1]) + "…"
+	return ansi.Truncate(value, width, "…")
 }
 
 // truncateStyled clips a rendered line to width. A styled line carries escape

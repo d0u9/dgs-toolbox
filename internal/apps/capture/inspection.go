@@ -68,7 +68,14 @@ func loadFilePreviewRequest(path string, width, height int, jsonHint bool, reque
 			if err := json.Indent(&formatted, data, "", "  "); err != nil {
 				return previewLoadedMsg{path: path, requestID: requestID, properties: props, err: fmt.Errorf("invalid JSON: %w", err)}
 			}
-			data = formatted.Bytes()
+			tree, err := newJSONTree(data)
+			if err != nil {
+				return previewLoadedMsg{path: path, requestID: requestID, properties: props, err: err}
+			}
+			return previewLoadedMsg{
+				path: path, requestID: requestID, properties: props,
+				content: withLineNumbers(formatted.String()), tree: tree, isJSON: true,
+			}
 		}
 		if !isText(data, kind) {
 			return previewLoadedMsg{path: path, requestID: requestID, properties: props, content: "· No inline preview for this file type", centered: true}
