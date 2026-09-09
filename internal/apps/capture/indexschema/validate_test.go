@@ -22,7 +22,6 @@ const validIndex = `{
     "latitude": -33.76910836568016
   },
   "place": {
-    "address": "28 Cambridge St\nEpping NSW 2121\nAustralia",
     "city": "Sydney",
     "region": "NSW",
     "country": "Australia"
@@ -30,7 +29,6 @@ const validIndex = `{
   "id": "20260909163435556-2376",
   "isDone": "true",
   "payload": {
-    "address": "28 Cambridge St\nEpping NSW 2121\nAustralia",
     "text": "棒",
     "img": "163440087-6979.jpg"
   },
@@ -100,7 +98,7 @@ func TestValidateRejectsSchemaViolations(t *testing.T) {
 		{name: "wrong schema", old: `"schema": "v1"`, new: `"schema": "v2"`},
 		{name: "payload is not object", old: `"payload": {`, new: `"payload": [`},
 		{name: "latitude outside range", old: `"latitude": -33.76910836568016`, new: `"latitude": -133.0`},
-		{name: "place address is not string", old: `"address": "28 Cambridge St\nEpping NSW 2121\nAustralia"`, new: `"address": 28`},
+		{name: "place has no address field", old: `"city": "Sydney"`, new: `"address": "28 Cambridge St"`},
 		{name: "place is not object", old: `"place": {`, new: `"place": [`},
 		{name: "descriptive field inside coordinates", old: `"latitude": -33.76910836568016`, new: `"latitude": -33.76910836568016, "city": "Sydney"`},
 		{name: "source without workflow", old: `"workflow": "photo_note",`, new: ``},

@@ -31,12 +31,12 @@ func Write(root string) (err error) {
 	must(os.MkdirAll(root, 0o755))
 	write(filepath.Join(root, "README.txt"), []byte("Mock Capture root for the Capture Scan and Route TUIs.\nEvery directory here is generated; see docs/apps/capture/index-v1.schema.json.\n"))
 
-	// 1 note with a text attachment
-	note := capture{Dir: "2000-01-01-note-example", Workflow: "note", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+	// 1 been_here with a text attachment: the workflow Route organizes first
+	note := capture{Dir: "2000-01-01-note-example", Workflow: "been_here", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
 		ID: "cap-2000-01-01-example", Created: "2000-01-01T12:00:00.000Z",
 		Lat: 12.34001, Lon: 56.78001, Alt: 12.4,
 		Place:   map[string]string{"locality": "Example place", "city": "Example place", "region": "Example place", "country": "Example place"},
-		Payload: map[string]any{"text": "Example note for a synthetic capture.", "words": 10}}
+		Payload: map[string]any{"note": "Example note for a synthetic capture.", "words": 10}}
 	note.attach("text", "note.txt", []byte("Example note for a synthetic capture.\n"))
 	note.build(root)
 
@@ -59,22 +59,21 @@ func Write(root string) (err error) {
 	voice.attach("audio", "memo.wav", wavBytes(1.5, 440))
 	voice.build(root)
 
-	// 4 single-line address instead of structured place fields, and the only
-	// Capture carrying undescribed producer fields
-	addressOnly := capture{Dir: "2000-01-04-address-only", Workflow: "note", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPad",
-		ID: "cap-2000-01-04-address-only", Created: "2000-01-04T12:00:00.000Z",
+	// 4 the only Capture carrying undescribed producer fields
+	extra := capture{Dir: "2000-01-04-extra-fields", Workflow: "been_here", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPad",
+		ID: "cap-2000-01-04-extra-fields", Created: "2000-01-04T12:00:00.000Z",
 		Lat: 12.34004, Lon: 56.78004, Alt: 31,
 		Extra:   true,
-		Place:   map[string]string{"address": "Flinders Street Station\nMelbourne VIC 3000\nAustralia"},
-		Payload: map[string]any{"text": "A single-line address instead of structured place fields."}}
-	addressOnly.build(root)
+		Place:   map[string]string{"locality": "Example place", "city": "Example place", "region": "Example place", "country": "Example place"},
+		Payload: map[string]any{"note": "Producer fields the schema does not describe are ignored, not rejected."}}
+	extra.build(root)
 
-	// 5 place without a locality
-	partial := capture{Dir: "2000-01-05-partial-place", Workflow: "note", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+	// 5 quick_mark, and a place without a locality
+	partial := capture{Dir: "2000-01-05-partial-place", Workflow: "quick_mark", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
 		ID: "cap-2000-01-05-partial", Created: "2000-01-05T12:00:00.000Z",
 		Lat: 12.34005, Lon: 56.78005, Alt: 19,
 		Place:   map[string]string{"city": "Example place", "region": "Example place", "country": "Example place"},
-		Payload: map[string]any{"text": "A place may fill only some of its fields."}}
+		Payload: map[string]any{"mark": "A place may fill only some of its fields."}}
 	partial.build(root)
 
 	// 6 ignored attachment kind plus a real one
@@ -88,10 +87,10 @@ func Write(root string) (err error) {
 	mixed.build(root)
 
 	// 7 place without coordinates
-	indoors := capture{Dir: "2000-01-07-place-only", Workflow: "note", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+	indoors := capture{Dir: "2000-01-07-place-only", Workflow: "been_here", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
 		ID: "cap-2000-01-07-place-only", Created: "2000-01-07T12:00:00.000Z", NoCoordinates: true,
 		Place:   map[string]string{"city": "Example place", "region": "Example place", "country": "Example place"},
-		Payload: map[string]any{"text": "Indoors, so the Shortcut recorded no coordinates."}}
+		Payload: map[string]any{"note": "Indoors, so the Shortcut recorded no coordinates."}}
 	indoors.build(root)
 
 	// 8 required fields only: no position, no place
