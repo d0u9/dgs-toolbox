@@ -911,21 +911,31 @@ func openFileCmd(path string, quickLook bool) tea.Cmd {
 	}
 }
 
+// buildJobs mirrors the scanned Source hierarchy under Destination. Using the
+// relative path rather than the basename keeps files that share a name in
+// different Source subdirectories on distinct destinations, so a single batch
+// never contains two jobs competing for one final name or one .dgs-part file.
+func buildJobs(sourceRoot, destinationRoot string, files []scannedFile) []importer.Job {
+	jobs := make([]importer.Job, 0, len(files))
+	for _, file := range files {
+		relative := filepath.FromSlash(file.path)
+		jobs = append(jobs, importer.Job{
+			Source:      filepath.Join(sourceRoot, relative),
+			Destination: filepath.Join(destinationRoot, relative),
+		})
+	}
+	return jobs
+}
+
 func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 	if m.controls.Value(duplicatesID) == "Replace" {
 		m.actionNotice = "Replace is unavailable until atomic backup and rollback are implemented"
 		return m, nil
 	}
 	files := append([]scannedFile(nil), m.filteredSource()...)
-	jobs := make([]importer.Job, 0, len(files))
 	sourceRoot := expandHome(m.paths[sourceField])
 	destinationRoot := expandHome(m.paths[destinationField])
-	for _, file := range files {
-		jobs = append(jobs, importer.Job{
-			Source:      filepath.Join(sourceRoot, filepath.FromSlash(file.path)),
-			Destination: filepath.Join(destinationRoot, filepath.Base(filepath.FromSlash(file.path))),
-		})
-	}
+	jobs := buildJobs(sourceRoot, destinationRoot, files)
 	operation := importer.Copy
 	if m.controls.Value(operationID) == "Move" {
 		operation = importer.Move
@@ -1046,6 +1056,10 @@ func (m *importModel) applyTransferEvent(event importer.Event) {
 
 func (m *importModel) applyTransferResult(result importer.Result) {
 	m.processing.results = result.Files
+	if result.StateError != nil {
+		// Verified files remain verified; only resume for a later retry is lost.
+		m.actionNotice = "Could not persist " + m.stateFilename + ": " + result.StateError.Error()
+	}
 	m.processing.verified = nil
 	m.processing.failed, m.processing.skipped = 0, 0
 	for _, item := range result.Files {
@@ -1709,14 +1723,14 @@ func (m importModel) importSummaryView() string {
 }
 
 func (m importModel) buildPlan() importPlan {
-	destinationNames := make(map[string]struct{}, len(m.scan.destination))
+	destinationPaths := make(map[string]struct{}, len(m.scan.destination))
 	for _, file := range m.scan.destination {
-		destinationNames[strings.ToLower(filepath.Base(file.path))] = struct{}{}
+		destinationPaths[strings.ToLower(file.path)] = struct{}{}
 	}
 	plan := importPlan{operation: strings.ToLower(m.controls.Value(operationID))}
 	for _, file := range m.filteredSource() {
 		plan.eligible++
-		if _, exists := destinationNames[strings.ToLower(filepath.Base(file.path))]; exists {
+		if _, exists := destinationPaths[strings.ToLower(file.path)]; exists {
 			plan.duplicates++
 		}
 	}

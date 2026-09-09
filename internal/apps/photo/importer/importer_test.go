@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,6 +161,69 @@ func TestRunReservesDistinctKeepBothNamesAcrossWorkers(t *testing.T) {
 	}
 	if result.Files[0].Destination == result.Files[1].Destination {
 		t.Fatalf("workers published the same destination %q", result.Files[0].Destination)
+	}
+}
+
+func TestRunDiscardsPartialFileOnFailure(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "src", "IMG_0001.JPG")
+	destination := filepath.Join(root, "dst", "IMG_0001.JPG")
+	writeFile(t, source, strings.Repeat("camera-bytes-", 200000))
+	// Cancelling mid-copy exercises a failure path that runs after the .dgs-part
+	// file has been created exclusively.
+	ctx, cancel := context.WithCancel(context.Background())
+	controller := &Controller{}
+	controller.Pause()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+		controller.Resume()
+	}()
+	result := Run(ctx, Plan{
+		Jobs:      []Job{{Source: source, Destination: destination}},
+		Operation: Copy, Conflict: Skip, Workers: 1, Controller: controller,
+	}, nil)
+	if result.Files[0].Phase != PhaseFailed {
+		t.Fatalf("result = %#v", result)
+	}
+	if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cancelled transfer published a destination: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(destination))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".dgs-part") {
+			t.Fatalf("failed transfer left a partial file %q", entry.Name())
+		}
+	}
+}
+
+func TestRunKeepsPublishedFilesCompleteWhenStateCannotBeWritten(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "src", "IMG_0001.JPG")
+	destination := filepath.Join(root, "dst", "IMG_0001.JPG")
+	writeFile(t, source, "camera-bytes")
+	// A directory at the state path makes every write fail without affecting
+	// the transfer itself.
+	statePath := filepath.Join(root, "dst", ".dgs-state")
+	if err := os.MkdirAll(statePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := Run(context.Background(), Plan{
+		Jobs:      []Job{{Source: source, Destination: destination}},
+		Operation: Copy, Conflict: Skip, Workers: 1, StatePath: statePath,
+	}, nil)
+	if result.StateError == nil {
+		t.Fatal("unwritable state file was not reported")
+	}
+	if result.Files[0].Phase != PhaseComplete || result.Files[0].Error != "" {
+		t.Fatalf("bookkeeping failure changed the transfer outcome: %#v", result.Files[0])
+	}
+	published, err := os.ReadFile(destination)
+	if err != nil || string(published) != "camera-bytes" {
+		t.Fatalf("destination = %q, err = %v", published, err)
 	}
 }
 
