@@ -3,73 +3,112 @@ package capture
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
+	"time"
 
-	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/datafield"
 	"dgs-toolbox/internal/tui/fieldset"
+	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/scrolllist"
 
-	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 const (
-	routeCapturesField     = "route-captures"
-	routeSummaryField      = "route-summary"
-	routeDestinationsField = "route-destinations"
-	routePlanField         = "route-plan"
-	routePropertyKeyWidth  = 12
+	routeCapturesField    = "route-captures"
+	routeRootField        = "route-root"
+	routeRecipesField     = "route-recipes"
+	routeActionsField     = "route-actions"
+	routeFieldsField      = "route-fields"
+	routePropertyKeyWidth = 12
 )
 
-// routeModel is the Route session: it assigns each scanned Capture to one of
-// the configured destinations. This session only records the plan; nothing is
-// moved on disk.
+// routeModel is the Route session: it organizes each scanned Capture by
+// choosing a Recipe, enabling the Actions to run, and supplying whatever those
+// Actions still need. Every domain judgement belongs to the organizer package;
+// this model calls FindRecipes, MissingFields, and Build, and draws the result.
+// The session records the plan only: nothing is moved and no Action is run.
+//
+// The four columns are a progressive selection, each the result of the one to
+// its left: Captures, Recipes, Actions, Fields.
 type routeModel struct {
-	width        int
-	height       int
-	root         string
-	indexFile    string
-	entries      []captureEntry
-	captures     scrolllist.Model
-	destinations []config.CaptureDestination
-	targets      scrolllist.Model
-	assignments  map[string]string
-	summary      viewport.Model
-	plan         viewport.Model
-	fields       datafield.Navigator
-	loadError    string
-	pendingGG    bool
+	width       int
+	height      int
+	root        string
+	indexFile   string
+	rootControl rootControl
+	entries     []captureEntry
+	captures    scrolllist.Model
+	recipes     scrolllist.Model
+	actions     scrolllist.Model
+	// selections is the per-Capture decision, keyed by Capture path.
+	selections map[string]organizer.Selection
+	fieldRows  []routeFieldRow
+	fieldIndex int
+	editor     textinput.Model
+	editing    bool
+	// note is the multiline editor. A quarter-width column cannot hold a
+	// paragraph, so a multiline field is edited in an overlay over the
+	// workspace instead of in place.
+	note        textarea.Model
+	editingNote bool
+	// runPlans is what the last Run showed. Actions are not implemented yet,
+	// so running a Capture reports the plan it would execute instead of
+	// touching anything.
+	runPlans   []organizer.ActionPlan
+	runCapture string
+	runError   string
+	running    bool
+	// records is what each Capture directory says about how it was organized,
+	// read once per load. A Capture carrying one is shown below the divider.
+	records   map[string]organizer.Record
+	fields    datafield.Navigator
+	loadError string
+	pendingGG bool
 }
 
-func newRouteModel(root, indexFile string, destinations []config.CaptureDestination) routeModel {
-	summary := viewport.New(20, 10)
-	plan := viewport.New(20, 8)
-	summary.MouseWheelEnabled = false
-	plan.MouseWheelEnabled = false
+// routeFieldRow is one row of the FIELDS column: a requirement of the focused
+// Action, with whatever the Context currently resolves for it. A value the
+// Capture itself carries is read-only; anything else is the user's to supply.
+type routeFieldRow struct {
+	requirement organizer.FieldRequirement
+	value       string
+	editable    bool
+}
+
+func newRouteModel(root, indexFile string) routeModel {
+	editor := textinput.New()
+	editor.Prompt = ""
+	note := textarea.New()
+	note.ShowLineNumbers = false
+	note.Prompt = ""
 	m := routeModel{
-		width:        80,
-		height:       22,
-		root:         root,
-		indexFile:    indexFile,
-		captures:     scrolllist.New(),
-		destinations: destinations,
-		targets:      scrolllist.New(),
-		assignments:  make(map[string]string),
-		summary:      summary,
-		plan:         plan,
+		width:       80,
+		height:      22,
+		root:        root,
+		indexFile:   indexFile,
+		rootControl: newRootControl(root),
+		captures:    scrolllist.New(),
+		recipes:     scrolllist.New(),
+		actions:     scrolllist.New(),
+		selections:  make(map[string]organizer.Selection),
+		records:     make(map[string]organizer.Record),
+		editor:      editor,
+		note:        note,
 		fields: datafield.New(
 			datafield.Field{ID: routeCapturesField, Row: 0, Col: 0},
-			datafield.Field{ID: routeSummaryField, Row: 0, Col: 1},
-			datafield.Field{ID: routeDestinationsField, Row: 0, Col: 2},
-			datafield.Field{ID: routePlanField, Row: 1, Col: 2},
+			datafield.Field{ID: routeRootField, Row: 1, Col: 0},
+			datafield.Field{ID: routeRecipesField, Row: 0, Col: 1},
+			datafield.Field{ID: routeActionsField, Row: 0, Col: 2},
+			datafield.Field{ID: routeFieldsField, Row: 0, Col: 3},
 		),
 	}
 	m.fields.Set(routeCapturesField)
-	m.rebuildDestinationItems()
 	m.refresh()
 	return m
 }
@@ -81,6 +120,10 @@ func (m routeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resizeComponents()
+		m.rootControl.Resize(m.width, m.height)
+		return m, nil
+	case rootChangedMsg:
+		m.applyRoot(msg.root)
 		return m, nil
 	case capturesLoadedMsg:
 		m.root = msg.root
@@ -90,71 +133,340 @@ func (m routeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.entries = nil
 		} else {
 			m.entries = msg.captures
-			m.pruneAssignments()
+			m.loadRecords()
+			m.pruneSelections()
 		}
 		m.rebuildCaptureItems()
 		m.refresh()
 		return m, nil
+	}
+
+	if m.rootControl.Picking() {
+		return m.updatePicker(msg)
+	}
+
+	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.updateKey(msg)
+	case tea.MouseMsg:
+		return m.updateMouse(msg)
 	}
 	return m, nil
 }
 
+func (m routeModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	selected, cmd := m.rootControl.Update(msg)
+	if selected == "" {
+		return m, cmd
+	}
+	return m, tea.Batch(cmd, rootChanged(selected))
+}
+
+// updateMouse gives every DataField the same reach as the keyboard. A click
+// selects a row and focuses its field, as the shared list convention says, and
+// two places where the pointer has an unambiguous target act directly: the
+// checkbox in ACTIONS toggles that Action, and an editable row in FIELDS opens
+// its editor. Choosing a Recipe stays on Enter, because it resets the enabled
+// Action set and should not happen from a stray click.
+func (m routeModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	hit := m.fields.HitAt(msg.X, msg.Y)
+	if hit == "" {
+		return m, nil
+	}
+	if msg.Action == tea.MouseActionPress && (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) {
+		return m.scrollField(hit, msg.Button == tea.MouseButtonWheelDown)
+	}
+	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	if m.editing || m.editingNote || m.running {
+		return m, nil
+	}
+	m.fields.FocusAt(msg.X, msg.Y)
+	m.pendingGG = false
+	switch hit {
+	case routeRootField:
+		if m.rootControl.Clicked(msg.X-2, msg.Y-m.captureListHeight()-1) {
+			return m.openPicker()
+		}
+	case routeCapturesField:
+		if m.captures.SelectRow(msg.Y - 1) {
+			m.refresh()
+		}
+	case routeRecipesField:
+		m.recipes.SelectRow(msg.Y - 1)
+		m.refresh()
+	case routeActionsField:
+		if !m.actions.SelectRow(msg.Y - 1) {
+			return m, nil
+		}
+		m.refresh()
+		if m.clickedCheckbox(msg.X) {
+			m.toggleAction()
+			m.refresh()
+		}
+	case routeFieldsField:
+		if !m.selectFieldRow(msg.Y) {
+			return m, nil
+		}
+		if row, ok := m.focusedFieldRow(); ok && row.editable {
+			return m.beginEdit()
+		}
+	}
+	return m, nil
+}
+
+// scrollField moves the list under the pointer without changing focus, matching
+// how the wheel behaves in Scan.
+func (m routeModel) scrollField(hit string, down bool) (tea.Model, tea.Cmd) {
+	delta := -3
+	if down {
+		delta = 3
+	}
+	switch hit {
+	case routeCapturesField:
+		m.captures.Scroll(delta)
+	case routeRecipesField:
+		m.recipes.Scroll(delta)
+	case routeActionsField:
+		m.actions.Scroll(delta)
+	default:
+		return m, nil
+	}
+	m.refresh()
+	return m, nil
+}
+
+// clickedCheckbox reports whether the pointer landed on an Action's [x], which
+// is the three cells at the start of its label.
+func (m routeModel) clickedCheckbox(x int) bool {
+	widths := m.columnWidths()
+	column := widths[0] + columnGutter + widths[1] + columnGutter
+	start := column + 2 + m.actions.LabelOffset()
+	return x >= start && x < start+3
+}
+
+// selectFieldRow moves the FIELDS cursor to the clicked row. The column renders
+// one row per requirement from the top of its fieldset, so the row index is the
+// offset from the border.
+func (m *routeModel) selectFieldRow(y int) bool {
+	index := y - 1
+	if index < 0 || index >= len(m.fieldRows) {
+		return false
+	}
+	m.fieldIndex = index
+	return true
+}
+
+func (m routeModel) openPicker() (tea.Model, tea.Cmd) {
+	return m, m.rootControl.Open(m.width, m.height)
+}
+
+// applyRoot points Route at a new root and drops the previous scan result.
+// Selections are keyed by Capture path, so those under the old root go with it.
+func (m *routeModel) applyRoot(root string) {
+	m.root = root
+	m.rootControl.SetRoot(root)
+	m.entries = nil
+	m.captures.SetItems(nil)
+	m.selections = make(map[string]organizer.Selection)
+	m.records = make(map[string]organizer.Record)
+	m.loadError = ""
+	m.cancelEdit()
+	m.refresh()
+}
+
 func (m routeModel) View() string {
-	if m.width < 48 || m.height < 8 {
+	if m.width < 72 || m.height < 8 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, scanMutedStyle.Render("Resize terminal for Capture Route"))
 	}
-	left, center, right := m.columnWidths()
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-		m.capturesColumn(left), " ", m.summaryColumn(center), " ", m.rightColumn(right))
+	widths := m.columnWidths()
+	workspace := lipgloss.JoinHorizontal(lipgloss.Top,
+		m.leftColumn(widths[0]), " ",
+		m.recipesColumn(widths[1]), " ",
+		m.actionsColumn(widths[2]), " ",
+		m.fieldsColumn(widths[3]))
+	if m.rootControl.Picking() {
+		return overlay.Place(workspace, m.rootControl.OverlayView(m.width, m.height), m.width, m.height)
+	}
+	if m.editingNote {
+		return overlay.Place(workspace, m.noteOverlay(), m.width, m.height)
+	}
+	if m.running {
+		return overlay.Place(workspace, m.runOverlay(), m.width, m.height)
+	}
+	return workspace
+}
+
+// runOverlay reports what the plan would do. Every Action is a stub: the dialog
+// names each one, the target it resolved, and the values it would carry, so the
+// pipeline can be walked end to end before any Action writes anything.
+func (m routeModel) runOverlay() string {
+	width := max(30, min(76, m.width-8))
+	inner := max(10, width-4)
+	ctx, _ := m.context()
+	lines := []string{scanMutedStyle.Render(m.runCapture), ""}
+	if m.runError != "" {
+		lines = append(lines, scanMutedStyle.Render("! "+m.runError), "")
+	}
+	for index, plan := range m.runPlans {
+		marker := "●"
+		if !plan.Ready() {
+			marker = "○"
+		}
+		lines = append(lines, fmt.Sprintf("%s %d %s", marker, index+1, plan.Action))
+		lines = append(lines, m.runDetails(ctx, plan)...)
+	}
+	if len(m.runPlans) == 0 {
+		lines = append(lines, scanMutedStyle.Render("· No action is enabled, so there is nothing to run"))
+	}
+	note := "Actions are not implemented yet; only " + organizer.RecordFilename + " was appended to."
+	if !m.runReady() {
+		note = "Blocked, so nothing was recorded; fill the missing fields first."
+	}
+	lines = append(lines,
+		"",
+		scanMutedStyle.Render(note),
+		scanMutedStyle.Render("esc Close"),
+	)
+	for i, line := range lines {
+		lines[i] = truncateStyled(line, inner)
+	}
+	return fieldset.View("RUN", strings.Join(lines, "\n"), width)
+}
+
+// runReady reports whether the plan just shown could actually run.
+func (m routeModel) runReady() bool {
+	if len(m.runPlans) == 0 {
+		return false
+	}
+	for _, plan := range m.runPlans {
+		if !plan.Ready() {
+			return false
+		}
+	}
+	return true
+}
+
+// runDetails lists what one Action would carry: its target, then the value of
+// every requirement it declares, or the fields still blocking it.
+func (m routeModel) runDetails(ctx organizer.Context, plan organizer.ActionPlan) []string {
+	var lines []string
+	target := plan.Target
+	if target == "" {
+		target = "· unresolved"
+	}
+	lines = append(lines, scanMutedStyle.Render(fmt.Sprintf("      %-*s%s", routePropertyKeyWidth, "target", target)))
+	def, ok := organizer.LookupAction(plan.Action)
+	if !ok {
+		return lines
+	}
+	for _, req := range def.Required {
+		value := ctx.String(req.Field)
+		if value == "" {
+			value = "· missing"
+		}
+		label := truncate(req.Label, routePropertyKeyWidth-1)
+		lines = append(lines, scanMutedStyle.Render(fmt.Sprintf("      %-*s%s", routePropertyKeyWidth, label, singleLine(value))))
+	}
+	return lines
+}
+
+// noteOverlay is the multiline editor floated over the workspace, titled by the
+// field being edited so it is clear which Action is waiting on it.
+func (m routeModel) noteOverlay() string {
+	legend := "NOTE"
+	if row, ok := m.focusedFieldRow(); ok {
+		legend = strings.ToUpper(row.requirement.Label)
+	}
+	body := m.note.View() + "\n" + scanMutedStyle.Render("ctrl+s Commit  esc Cancel")
+	return fieldset.View(legend, body, m.note.Width()+4)
+}
+
+// CapturesShellKey keeps Esc inside Route wherever it still has work to do:
+// while a field is being edited, and in every column but the leftmost, where it
+// walks back one column. Only from CAPTURES does Esc reach the shell and leave
+// the command.
+func (m routeModel) CapturesShellKey(key string) bool {
+	if m.editing || m.editingNote || m.running {
+		return true
+	}
+	if key == "esc" {
+		switch m.fields.Current() {
+		case routeRecipesField, routeActionsField, routeFieldsField:
+			return true
+		}
+	}
+	return m.rootControl.CapturesShellKey(key)
 }
 
 func (m routeModel) Status() tui.Status {
+	if m.rootControl.Picking() {
+		if m.rootControl.HasDialog() {
+			return tui.Status{Left: "BROWSE", Center: "CAPTURE ROOT"}
+		}
+		return tui.Status{Left: "BROWSE", Center: "CAPTURE ROOT", Right: m.rootControl.Hint()}
+	}
 	center := m.statusValue()
+	if m.running {
+		return tui.Status{Left: "RUN", Center: center, Right: "esc Close"}
+	}
+	if m.editingNote {
+		return tui.Status{Left: "EDIT", Center: center, Right: "ctrl+s Commit  esc Cancel"}
+	}
+	if m.editing {
+		return tui.Status{Left: "EDIT", Center: center, Right: "↵ Commit  esc Cancel"}
+	}
 	switch m.fields.Current() {
 	case routeCapturesField:
-		return tui.Status{Left: "ROUTE", Center: center, Right: "↑/k ↓/j Move  ↵ Choose destination  u Unassign  R Refresh"}
-	case routeSummaryField:
-		return tui.Status{Left: "CAPTURE", Center: center, Right: "↑/k ↓/j Scroll  alt+hjkl Focus"}
-	case routeDestinationsField:
-		return tui.Status{Left: "DESTINATIONS", Center: center, Right: "↑/k ↓/j Move  ↵ Assign  alt+hjkl Focus"}
-	case routePlanField:
-		return tui.Status{Left: "ROUTE PLAN", Center: center, Right: "↑/k ↓/j Scroll  alt+hjkl Focus"}
+		return tui.Status{Left: "ROUTE", Center: center, Right: "↑/k ↓/j Move  ↵ Recipe  x Run  u Clear  R Refresh"}
+	case routeRootField:
+		return tui.Status{Left: "CAPTURE ROOT", Center: center, Right: "↵ Browse  R Refresh  tab Next  alt+hjkl Focus"}
+	case routeRecipesField:
+		return tui.Status{Left: "RECIPES", Center: center, Right: "↑/k ↓/j Move  ↵ Choose  esc Back"}
+	case routeActionsField:
+		return tui.Status{Left: "ACTIONS", Center: center, Right: "↑/k ↓/j Move  space Toggle  ↵ Fields  x Run  esc Back"}
+	case routeFieldsField:
+		return tui.Status{Left: "FIELDS", Center: center, Right: "↑/k ↓/j Move  ↵ Edit  x Run  esc Back"}
 	default:
 		return tui.Status{Left: "ROUTE", Center: center, Right: "tab Next  alt+hjkl Focus"}
 	}
 }
 
 func (m routeModel) statusValue() string {
-	switch m.fields.Current() {
-	case routeDestinationsField:
-		if destination, ok := m.selectedDestination(); ok {
-			return destination.Name + " · " + displayPath(destination.Path)
-		}
-		return "No destinations configured"
-	case routeCapturesField, routeSummaryField:
-		if entry, ok := m.selectedCapture(); ok {
-			if target, assigned := m.assignments[entry.path]; assigned {
-				return entry.path + " → " + displayPath(target)
-			}
-			return entry.path
-		}
+	if m.fields.Current() == routeRootField {
+		return m.root
 	}
-	routed, total := m.routedCount(), len(m.entries)
-	return fmt.Sprintf("%d/%d ROUTED · %d DESTINATIONS", routed, total, len(m.destinations))
+	if entry, ok := m.selectedCapture(); ok {
+		if recipe, ok := m.selectedRecipe(); ok {
+			return entry.path + " → " + recipe.Name
+		}
+		return entry.path
+	}
+	ready, blocked := m.readyCount()
+	return fmt.Sprintf("%d/%d READY · %d BLOCKED", ready, len(m.entries), blocked)
 }
 
 func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.running {
+		if key == "esc" || key == "enter" || key == "q" {
+			m.running = false
+		}
+		return m, nil
+	}
+	if key == "x" {
+		return m.run()
+	}
+	if m.editingNote {
+		return m.updateNote(msg)
+	}
+	if m.editing {
+		return m.updateEditor(msg)
+	}
 	if key == "R" {
 		m.pendingGG = false
 		return m, loadCaptures(m.root, m.indexFile)
-	}
-	if key == "alt+j" || key == "alt+down" || key == "alt+k" || key == "alt+up" {
-		m.cycleFields(key == "alt+j" || key == "alt+down")
-		m.refresh()
-		return m, nil
 	}
 	if m.fields.Move(key) || key == "tab" || key == "shift+tab" {
 		if key == "tab" || key == "shift+tab" {
@@ -165,14 +477,20 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch m.fields.Current() {
+	case routeRootField:
+		m.pendingGG = false
+		if key == "enter" {
+			return m.openPicker()
+		}
+		return m, nil
 	case routeCapturesField:
 		return m.updateCaptures(key)
-	case routeDestinationsField:
-		return m.updateDestinations(key)
-	case routeSummaryField:
-		m.summary = scrollViewport(m.summary, key)
-	case routePlanField:
-		m.plan = scrollViewport(m.plan, key)
+	case routeRecipesField:
+		return m.updateRecipes(key)
+	case routeActionsField:
+		return m.updateActions(key)
+	case routeFieldsField:
+		return m.updateFields(key)
 	}
 	m.pendingGG = false
 	return m, nil
@@ -200,11 +518,12 @@ func (m routeModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
 		m.pendingGG = true
 		return m, nil
 	case "enter":
-		m.fields.Set(routeDestinationsField)
+		m.fields.Set(routeRecipesField)
 	case "u", "backspace":
+		// Clearing drops the whole Selection: recipe, enabled set, and the
+		// values supplied under it.
 		if entry, ok := m.selectedCapture(); ok {
-			delete(m.assignments, entry.path)
-			m.rebuildCaptureItems()
+			delete(m.selections, entry.path)
 		}
 	}
 	m.pendingGG = false
@@ -212,17 +531,17 @@ func (m routeModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m routeModel) updateDestinations(key string) (tea.Model, tea.Cmd) {
+func (m routeModel) updateRecipes(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "up", "k":
-		m.targets.Move(-1)
+		m.recipes.Move(-1)
 	case "down", "j":
-		m.targets.Move(1)
+		m.recipes.Move(1)
 	case "G", "end":
-		m.targets.Last()
+		m.recipes.Last()
 	case "g":
 		if m.pendingGG {
-			m.targets.First()
+			m.recipes.First()
 			m.pendingGG = false
 			m.refresh()
 			return m, nil
@@ -230,14 +549,7 @@ func (m routeModel) updateDestinations(key string) (tea.Model, tea.Cmd) {
 		m.pendingGG = true
 		return m, nil
 	case "enter":
-		entry, hasCapture := m.selectedCapture()
-		destination, hasDestination := m.selectedDestination()
-		if hasCapture && hasDestination {
-			m.assignments[entry.path] = destination.Path
-			m.rebuildCaptureItems()
-			m.captures.Move(1)
-			m.fields.Set(routeCapturesField)
-		}
+		m.chooseRecipe()
 	case "esc":
 		m.fields.Set(routeCapturesField)
 	}
@@ -246,22 +558,225 @@ func (m routeModel) updateDestinations(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func scrollViewport(view viewport.Model, key string) viewport.Model {
+// chooseRecipe records the focused Recipe with its default Action set. Values
+// already supplied are kept: enrichment is keyed by field, not by Recipe.
+func (m *routeModel) chooseRecipe() {
+	entry, ok := m.selectedCapture()
+	if !ok {
+		return
+	}
+	recipe, ok := m.focusedCandidate()
+	if !ok {
+		return
+	}
+	selection := organizer.NewSelection(recipe)
+	if previous, ok := m.selections[entry.path]; ok {
+		selection.Enrichment = previous.Enrichment
+	}
+	m.selections[entry.path] = selection
+	m.fields.Set(routeActionsField)
+}
+
+func (m routeModel) updateActions(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "up", "k":
-		view.ScrollUp(1)
+		m.actions.Move(-1)
 	case "down", "j":
-		view.ScrollDown(1)
-	case "g", "home":
-		view.GotoTop()
+		m.actions.Move(1)
 	case "G", "end":
-		view.GotoBottom()
+		m.actions.Last()
+	case " ", "space":
+		m.toggleAction()
+	case "enter":
+		m.fields.Set(routeFieldsField)
+	case "esc":
+		m.fields.Set(routeRecipesField)
 	}
-	return view
+	m.pendingGG = false
+	m.refresh()
+	return m, nil
+}
+
+// toggleAction enables or disables the focused Action for this Capture only.
+// A disabled Action leaves the plan and takes its requirements with it.
+func (m *routeModel) toggleAction() {
+	selection, _, ok := m.currentSelection()
+	if !ok {
+		return
+	}
+	if id, ok := m.focusedAction(); ok {
+		selection.Toggle(id)
+	}
+}
+
+func (m routeModel) updateFields(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "up", "k":
+		m.moveFieldCursor(-1)
+	case "down", "j":
+		m.moveFieldCursor(1)
+	case "enter":
+		return m.beginEdit()
+	case "esc":
+		m.fields.Set(routeActionsField)
+	}
+	m.pendingGG = false
+	m.refresh()
+	return m, nil
+}
+
+func (m *routeModel) moveFieldCursor(delta int) {
+	if len(m.fieldRows) == 0 {
+		return
+	}
+	m.fieldIndex = min(len(m.fieldRows)-1, max(0, m.fieldIndex+delta))
+}
+
+func (m routeModel) beginEdit() (tea.Model, tea.Cmd) {
+	row, ok := m.focusedFieldRow()
+	if !ok || !row.editable {
+		return m, nil
+	}
+	if row.requirement.Input == organizer.InputMultiline {
+		m.editingNote = true
+		m.note.SetValue(row.value)
+		m.note.SetWidth(max(20, min(72, m.width-8)))
+		m.note.SetHeight(max(3, min(10, m.height-8)))
+		m.note.CursorEnd()
+		m.note.Focus()
+		return m, textarea.Blink
+	}
+	m.editing = true
+	m.editor.SetValue(row.value)
+	m.editor.CursorEnd()
+	m.editor.Focus()
+	return m, textinput.Blink
+}
+
+func (m routeModel) updateEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.cancelEdit()
+		m.refresh()
+		return m, nil
+	case "enter":
+		// Committing keeps focus on the row, so a value can be revised without
+		// walking back to it.
+		if selection, _, ok := m.currentSelection(); ok {
+			if row, ok := m.focusedFieldRow(); ok {
+				selection.Set(row.requirement.Field, strings.TrimSpace(m.editor.Value()))
+			}
+		}
+		m.cancelEdit()
+		m.refresh()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.editor, cmd = m.editor.Update(msg)
+	return m, cmd
+}
+
+// updateNote drives the multiline overlay. Enter inserts a newline there, so
+// the edit is committed with ctrl+s and abandoned with Esc.
+func (m routeModel) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.cancelEdit()
+		m.refresh()
+		return m, nil
+	case "ctrl+s":
+		if selection, _, ok := m.currentSelection(); ok {
+			if row, ok := m.focusedFieldRow(); ok {
+				selection.Set(row.requirement.Field, strings.TrimSpace(m.note.Value()))
+			}
+		}
+		m.cancelEdit()
+		m.refresh()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.note, cmd = m.note.Update(msg)
+	return m, cmd
+}
+
+func (m *routeModel) cancelEdit() {
+	m.editing = false
+	m.editor.Blur()
+	m.editor.SetValue("")
+	m.editingNote = false
+	m.note.Blur()
+	m.note.SetValue("")
+}
+
+// run builds the plan for the selected Capture and shows it. No Action is
+// implemented, so nothing is written outside the Capture directory; what is
+// written is the organizer's own record, marking the Capture handled and moving
+// it below the divider. A blocked plan is shown but not recorded: a Capture is
+// handled only once its plan could actually run.
+func (m routeModel) run() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedCapture()
+	if !ok {
+		return m, nil
+	}
+	selection, recipe, ok := m.currentSelection()
+	if !ok {
+		return m, nil
+	}
+	ctx, _ := m.context()
+	enabled := selection.EnabledActions(recipe)
+	m.runPlans = organizer.Build(ctx, recipe, enabled)
+	m.runCapture = entry.name + "  ·  " + recipe.Name
+	m.runError = ""
+	m.running = true
+	if organizer.Ready(ctx, recipe, enabled) {
+		run := organizer.NewRun(recipe, selection, m.runPlans, time.Now())
+		record, err := organizer.AppendRun(entry.path, run)
+		if err != nil {
+			m.runError = err.Error()
+		} else {
+			m.records[entry.path] = record
+			m.advanceToNextPending(entry)
+		}
+	}
+	// Focus returns to CAPTURES so the next Capture can be handled without
+	// walking back through the columns.
+	m.fields.Set(routeCapturesField)
+	m.refresh()
+	return m, nil
+}
+
+// advanceToNextPending moves the cursor to the first Capture still to handle,
+// preferring the one after the Capture just organized so a run of Captures is
+// worked through in order.
+func (m *routeModel) advanceToNextPending(organized captureEntry) {
+	after := false
+	var first string
+	for _, entry := range m.entries {
+		if entry.path == organized.path {
+			after = true
+			continue
+		}
+		if m.organized(entry) {
+			continue
+		}
+		if after {
+			m.captures.SetItems(nil)
+			m.rebuildCaptureItems()
+			m.captures.SelectID("capture:" + entry.path)
+			return
+		}
+		if first == "" {
+			first = entry.path
+		}
+	}
+	m.rebuildCaptureItems()
+	if first != "" {
+		m.captures.SelectID("capture:" + first)
+	}
 }
 
 func (m *routeModel) cycleFields(forward bool) {
-	order := []string{routeCapturesField, routeSummaryField, routeDestinationsField, routePlanField}
+	order := []string{routeCapturesField, routeRootField, routeRecipesField, routeActionsField, routeFieldsField}
 	current := 0
 	for index, id := range order {
 		if id == m.fields.Current() {
@@ -288,29 +803,234 @@ func (m routeModel) selectedCapture() (captureEntry, bool) {
 	return captureEntry{}, false
 }
 
-func (m routeModel) selectedDestination() (config.CaptureDestination, bool) {
-	item, ok := m.targets.Selected()
+// currentSelection returns the Selection and Recipe of the selected Capture.
+// A Selection carries its state in maps, so the returned value shares the
+// enabled set and the enrichment with the stored one and Toggle and Set on it
+// are visible to the model.
+func (m routeModel) currentSelection() (organizer.Selection, organizer.Recipe, bool) {
+	entry, ok := m.selectedCapture()
 	if !ok {
-		return config.CaptureDestination{}, false
+		return organizer.Selection{}, organizer.Recipe{}, false
 	}
-	for _, destination := range m.destinations {
-		if destination.Path == strings.TrimPrefix(item.ID, "destination:") {
-			return destination, true
-		}
+	selection, ok := m.selections[entry.path]
+	if !ok {
+		return organizer.Selection{}, organizer.Recipe{}, false
 	}
-	return config.CaptureDestination{}, false
+	recipe, ok := organizer.LookupRecipe(selection.Recipe)
+	if !ok {
+		return organizer.Selection{}, organizer.Recipe{}, false
+	}
+	return selection, recipe, true
 }
 
-func (m *routeModel) pruneAssignments() {
+// selectedRecipe is the Recipe chosen for the selected Capture, if any.
+func (m routeModel) selectedRecipe() (organizer.Recipe, bool) {
+	_, recipe, ok := m.currentSelection()
+	return recipe, ok
+}
+
+// candidates are the Recipes offered for the selected Capture. Nothing is
+// preselected: choosing among them is always the user's decision.
+func (m routeModel) candidates() []organizer.Recipe {
+	entry, ok := m.selectedCapture()
+	if !ok {
+		return nil
+	}
+	return organizer.FindRecipes(captureFor(entry))
+}
+
+func (m routeModel) focusedCandidate() (organizer.Recipe, bool) {
+	item, ok := m.recipes.Selected()
+	if !ok {
+		return organizer.Recipe{}, false
+	}
+	id := organizer.RecipeID(strings.TrimPrefix(item.ID, "recipe:"))
+	for _, recipe := range m.candidates() {
+		if recipe.ID == id {
+			return recipe, true
+		}
+	}
+	return organizer.Recipe{}, false
+}
+
+func (m routeModel) focusedAction() (organizer.ActionID, bool) {
+	item, ok := m.actions.Selected()
+	if !ok {
+		return "", false
+	}
+	return organizer.ActionID(strings.TrimPrefix(item.ID, "action:")), true
+}
+
+func (m routeModel) focusedFieldRow() (routeFieldRow, bool) {
+	if m.fieldIndex < 0 || m.fieldIndex >= len(m.fieldRows) {
+		return routeFieldRow{}, false
+	}
+	return m.fieldRows[m.fieldIndex], true
+}
+
+// context resolves the selected Capture together with what the user supplied.
+func (m routeModel) context() (organizer.Context, bool) {
+	entry, ok := m.selectedCapture()
+	if !ok {
+		return organizer.Context{}, false
+	}
+	var enrichment map[organizer.FieldID]any
+	if selection, ok := m.selections[entry.path]; ok {
+		enrichment = selection.Enrichment
+	}
+	return organizer.NewContext(captureFor(entry), enrichment), true
+}
+
+func captureFor(entry captureEntry) organizer.Capture {
+	return organizer.Capture{Path: entry.path, Name: entry.name, Index: entry.index}
+}
+
+func (m *routeModel) pruneSelections() {
 	known := make(map[string]bool, len(m.entries))
 	for _, entry := range m.entries {
 		known[entry.path] = true
 	}
-	for path := range m.assignments {
+	for path := range m.selections {
 		if !known[path] {
-			delete(m.assignments, path)
+			delete(m.selections, path)
 		}
 	}
+}
+
+// readyCount summarizes the session: a Capture is ready when it has a Recipe,
+// at least one enabled Action, and nothing missing. Everything else is blocked,
+// including a Capture with no Recipe yet.
+func (m routeModel) readyCount() (ready int, blocked int) {
+	for _, entry := range m.entries {
+		selection, ok := m.selections[entry.path]
+		if !ok {
+			blocked++
+			continue
+		}
+		recipe, ok := organizer.LookupRecipe(selection.Recipe)
+		if !ok {
+			blocked++
+			continue
+		}
+		ctx := organizer.NewContext(captureFor(entry), selection.Enrichment)
+		if organizer.Ready(ctx, recipe, selection.EnabledActions(recipe)) {
+			ready++
+		} else {
+			blocked++
+		}
+	}
+	return ready, blocked
+}
+
+// routeCaptureLabel identifies a Capture by what organizing decisions are made
+// on—when it was taken—rather than by its directory name, which carries no
+// meaning for the operator. The folder path remains available in the status bar.
+func routeCaptureLabel(entry captureEntry) string {
+	if created := formatCaptureTime(entry.index.CreatedAt); created != "" {
+		return created
+	}
+	return entry.name + string(os.PathSeparator)
+}
+
+// routeCaptureDetail is the second row of a Route Capture: what produced the
+// Capture. Together the two rows carry more identity than one row of a quarter
+// column can hold without truncating the timestamp.
+func routeCaptureDetail(entry captureEntry) string {
+	parts := make([]string, 0, 2)
+	if app := entry.index.Source.App; app != "" {
+		parts = append(parts, app)
+	}
+	if workflow := entry.index.Source.Workflow; workflow != "" {
+		parts = append(parts, workflow)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// formatCaptureTime renders an RFC 3339 createdAt as a compact local-to-the-
+// Capture wall clock keeping its original offset: 2026-10-10 12:23:24 +11.
+// Whole-hour offsets drop their minutes; UTC reads as Z. An unparseable value
+// is shown verbatim so a malformed index is visible rather than hidden.
+func formatCaptureTime(value string) string {
+	if value == "" {
+		return ""
+	}
+	created, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return value
+	}
+	return created.Format("2006-01-02 15:04:05") + " " + captureOffset(created)
+}
+
+func captureOffset(created time.Time) string {
+	_, seconds := created.Zone()
+	if seconds == 0 {
+		return "Z"
+	}
+	sign := "+"
+	if seconds < 0 {
+		sign = "-"
+		seconds = -seconds
+	}
+	hours, minutes := seconds/3600, (seconds%3600)/60
+	if minutes == 0 {
+		return fmt.Sprintf("%s%d", sign, hours)
+	}
+	return fmt.Sprintf("%s%d:%02d", sign, hours, minutes)
+}
+
+// captureMarker distinguishes the three states a Capture can be in: no Recipe
+// chosen, a Recipe whose plan is still blocked, and a plan ready to run.
+func (m routeModel) captureMarker(entry captureEntry) string {
+	if m.organized(entry) {
+		return "● "
+	}
+	selection, ok := m.selections[entry.path]
+	if !ok {
+		return "○ "
+	}
+	recipe, ok := organizer.LookupRecipe(selection.Recipe)
+	if !ok {
+		return "○ "
+	}
+	ctx := organizer.NewContext(captureFor(entry), selection.Enrichment)
+	if organizer.Ready(ctx, recipe, selection.EnabledActions(recipe)) {
+		return "● "
+	}
+	return "◐ "
+}
+
+// loadRecords reads what each Capture directory says about itself. A Capture
+// organized in an earlier session is recognised on load, not only in the
+// session that organized it.
+func (m *routeModel) loadRecords() {
+	m.records = make(map[string]organizer.Record, len(m.entries))
+	for _, entry := range m.entries {
+		if record, ok := organizer.ReadRecord(entry.path); ok {
+			m.records[entry.path] = record
+		}
+	}
+}
+
+func (m routeModel) organized(entry captureEntry) bool {
+	_, ok := m.records[entry.path]
+	return ok
+}
+
+// orderedEntries puts the Captures still to handle first and the organized ones
+// after them, each run keeping the load order. The list is one field with a
+// rule through it rather than two fields, so the cursor walks from the last
+// unhandled Capture into the handled ones without leaving the column.
+func (m routeModel) orderedEntries() ([]captureEntry, int) {
+	pending := make([]captureEntry, 0, len(m.entries))
+	done := make([]captureEntry, 0, len(m.entries))
+	for _, entry := range m.entries {
+		if m.organized(entry) {
+			done = append(done, entry)
+			continue
+		}
+		pending = append(pending, entry)
+	}
+	return append(pending, done...), len(pending)
 }
 
 func (m *routeModel) rebuildCaptureItems() {
@@ -318,173 +1038,305 @@ func (m *routeModel) rebuildCaptureItems() {
 	if item, ok := m.captures.Selected(); ok {
 		selected = item.ID
 	}
-	items := make([]scrolllist.Item, 0, len(m.entries))
-	for _, entry := range m.entries {
-		marker := "○ "
-		suffix := ""
-		if target, ok := m.assignments[entry.path]; ok {
-			marker = "● "
-			suffix = "  → " + m.destinationName(target)
+	ordered, boundary := m.orderedEntries()
+	items := make([]scrolllist.Item, 0, len(ordered))
+	for _, entry := range ordered {
+		detail := routeCaptureDetail(entry)
+		if record, ok := m.records[entry.path]; ok {
+			// An organized Capture is labelled by its most recent pass, with a
+			// count when there has been more than one.
+			if latest, ok := record.Latest(); ok {
+				detail += "  → " + latest.RecipeName
+				if len(record.Runs) > 1 {
+					detail += fmt.Sprintf(" ×%d", len(record.Runs))
+				}
+			}
+		} else if selection, ok := m.selections[entry.path]; ok {
+			if recipe, ok := organizer.LookupRecipe(selection.Recipe); ok {
+				detail += "  → " + recipe.Name
+			}
+		}
+		if detail != "" {
+			detail = "  " + detail
 		}
 		items = append(items, scrolllist.Item{
-			ID:    "capture:" + entry.path,
-			Label: marker + entry.name + string(os.PathSeparator) + suffix,
+			ID:     "capture:" + entry.path,
+			Label:  m.captureMarker(entry) + routeCaptureLabel(entry),
+			Detail: detail,
 		})
 	}
 	m.captures.SetItems(items)
+	m.captures.SetDivider(boundary, "ORGANIZED")
 	if selected != "" {
 		m.captures.SelectID(selected)
 	}
 }
 
-func (m *routeModel) rebuildDestinationItems() {
-	items := make([]scrolllist.Item, 0, len(m.destinations))
-	for _, destination := range m.destinations {
-		items = append(items, scrolllist.Item{
-			ID:    "destination:" + destination.Path,
-			Label: destination.Name + "  " + displayPath(destination.Path),
-		})
+// rebuildRecipeItems refills the candidate list for the selected Capture. The
+// list changes as the Capture cursor moves, because FindRecipes narrows by
+// workflow and by what the Capture already carries.
+func (m *routeModel) rebuildRecipeItems() {
+	selected := ""
+	if item, ok := m.recipes.Selected(); ok {
+		selected = item.ID
 	}
-	m.targets.SetItems(items)
-}
-
-func (m routeModel) destinationName(path string) string {
-	for _, destination := range m.destinations {
-		if destination.Path == path {
-			return destination.Name
+	candidates := m.candidates()
+	items := make([]scrolllist.Item, 0, len(candidates))
+	for _, recipe := range candidates {
+		items = append(items, scrolllist.Item{ID: "recipe:" + string(recipe.ID), Label: recipe.Name})
+	}
+	m.recipes.SetItems(items)
+	if selected == "" || !m.recipes.SelectID(selected) {
+		if selection, _, ok := m.currentSelection(); ok {
+			m.recipes.SelectID("recipe:" + string(selection.Recipe))
 		}
 	}
-	return filepath.Base(path)
 }
 
-func (m routeModel) routedCount() int {
-	count := 0
-	for _, entry := range m.entries {
-		if _, ok := m.assignments[entry.path]; ok {
-			count++
-		}
+// rebuildActionItems shows the Action Plan of the chosen Recipe. Each row
+// carries two independent markers: enabled, and whether that Action's
+// requirements are met. A disabled Action shows neither readiness nor target,
+// because it does not enter the plan at all.
+func (m *routeModel) rebuildActionItems() {
+	selected := ""
+	if item, ok := m.actions.Selected(); ok {
+		selected = item.ID
 	}
-	return count
-}
-
-func (m routeModel) columnWidths() (left, center, right int) {
-	available := m.width - 2*columnGutter
-	left = min(90, max(12, available/4))
-	right = min(90, max(12, available/4))
-	center = available - left - right
-	return left, center, right
-}
-
-func (m routeModel) destinationsHeight() int { return max(7, m.height*3/5) }
-
-func (m *routeModel) resizeComponents() {
-	if m.width < 48 || m.height < 8 {
+	selection, recipe, ok := m.currentSelection()
+	if !ok {
+		m.actions.SetItems(nil)
 		return
 	}
-	left, center, right := m.columnWidths()
-	m.captures.SetSize(max(1, left-4), max(1, m.height-2))
-	m.summary.Width = max(1, center-4)
-	m.summary.Height = max(1, m.height-2)
-	top := m.destinationsHeight()
-	m.targets.SetSize(max(1, right-4), max(1, top-2))
-	m.plan.Width = max(1, right-4)
-	m.plan.Height = max(1, m.height-top-2)
+	ctx, _ := m.context()
+	plans := organizer.Build(ctx, recipe, selection.EnabledActions(recipe))
+	byAction := make(map[organizer.ActionID]organizer.ActionPlan, len(plans))
+	for _, plan := range plans {
+		byAction[plan.Action] = plan
+	}
+
+	items := make([]scrolllist.Item, 0, len(recipe.Actions))
+	for _, id := range recipe.Actions {
+		def, ok := organizer.LookupAction(id)
+		if !ok {
+			continue
+		}
+		label, detail := "[ ]   "+def.Label, ""
+		if plan, enabled := byAction[id]; enabled {
+			marker := "○ "
+			if plan.Ready() {
+				marker = "● "
+			}
+			label = "[x] " + marker + def.Label
+			detail = "      " + plan.Target
+			if plan.Target == "" {
+				detail = "      · target unresolved"
+			}
+		}
+		items = append(items, scrolllist.Item{ID: "action:" + string(id), Label: label, Detail: detail})
+	}
+	m.actions.SetItems(items)
+	if selected != "" {
+		m.actions.SelectID(selected)
+	}
+}
+
+// rebuildFieldRows lists the requirements of the Action under the ACTIONS
+// cursor — not the union across the whole Recipe — so a missing input is
+// attributable to the Action that needs it. Values the Capture itself carries
+// are read-only; everything else is the user's to supply.
+func (m *routeModel) rebuildFieldRows() {
+	m.fieldRows = nil
+	selection, recipe, ok := m.currentSelection()
+	if !ok {
+		m.fieldIndex = 0
+		return
+	}
+	id, ok := m.focusedAction()
+	if !ok {
+		m.fieldIndex = 0
+		return
+	}
+	ctx, _ := m.context()
+	enabled := selection.EnabledActions(recipe)
+	requirements := recipe.RequiredFields([]organizer.ActionID{id})
+	for _, req := range requirements {
+		if req.When != nil && !req.When(ctx) {
+			continue
+		}
+		m.fieldRows = append(m.fieldRows, routeFieldRow{
+			requirement: req,
+			value:       ctx.String(req.Field),
+			// A disabled Action does not enter the plan, so its fields are
+			// shown for reference but not accepted as input.
+			editable: !ctx.FromCapture(req.Field) && contains(enabled, id),
+		})
+	}
+	m.fieldIndex = min(max(0, len(m.fieldRows)-1), max(0, m.fieldIndex))
+}
+
+func contains(values []organizer.ActionID, want organizer.ActionID) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+// columnWidths splits the workspace into four equal columns. Remainder cells
+// are handed to the leftmost columns so the four widths never differ by more
+// than one cell and always sum to the available width.
+func (m routeModel) columnWidths() [4]int {
+	available := max(4, m.width-3*columnGutter)
+	base := available / 4
+	extra := available % 4
+	var widths [4]int
+	for i := range widths {
+		widths[i] = base
+		if i < extra {
+			widths[i]++
+		}
+	}
+	return widths
+}
+
+func (m *routeModel) resizeComponents() {
+	if m.width < 72 || m.height < 8 {
+		return
+	}
+	widths := m.columnWidths()
+	m.captures.SetSize(max(1, widths[0]-4), max(1, m.captureListHeight()-2))
+	m.recipes.SetSize(max(1, widths[1]-4), max(1, m.height-2))
+	m.actions.SetSize(max(1, widths[2]-4), max(1, m.height-2))
+	m.editor.Width = max(1, widths[3]-6)
 	m.setFieldBounds()
 	m.refresh()
 }
 
 func (m *routeModel) setFieldBounds() {
-	left, center, right := m.columnWidths()
-	m.fields.SetBounds(routeCapturesField, datafield.Bounds{X: 0, Y: 0, Width: left, Height: m.height})
-	m.fields.SetBounds(routeSummaryField, datafield.Bounds{X: left + columnGutter, Y: 0, Width: center, Height: m.height})
-	rightX := left + center + 2*columnGutter
-	top := m.destinationsHeight()
-	m.fields.SetBounds(routeDestinationsField, datafield.Bounds{X: rightX, Y: 0, Width: right, Height: top})
-	m.fields.SetBounds(routePlanField, datafield.Bounds{X: rightX, Y: top, Width: right, Height: m.height - top})
+	widths := m.columnWidths()
+	listHeight := m.captureListHeight()
+	m.fields.SetBounds(routeCapturesField, datafield.Bounds{X: 0, Y: 0, Width: widths[0], Height: listHeight})
+	m.fields.SetBounds(routeRootField, datafield.Bounds{X: 0, Y: listHeight, Width: widths[0], Height: rootHeight})
+	x := widths[0] + columnGutter
+	for i, id := range [3]string{routeRecipesField, routeActionsField, routeFieldsField} {
+		width := widths[i+1]
+		m.fields.SetBounds(id, datafield.Bounds{X: x, Y: 0, Width: width, Height: m.height})
+		x += width + columnGutter
+	}
 }
 
+// refresh rebuilds each column from the one to its left, so a move in CAPTURES
+// re-narrows the candidates and a toggle in ACTIONS re-computes the plan.
 func (m *routeModel) refresh() {
-	_, center, right := m.columnWidths()
-	m.summary.SetContent(renderProperties(m.summaryProperties(), max(1, center-4), -1, false, routePropertyKeyWidth))
-	m.plan.SetContent(m.planContent(max(1, right-4)))
+	m.rebuildCaptureItems()
+	m.rebuildRecipeItems()
+	m.rebuildActionItems()
+	m.rebuildFieldRows()
 }
 
-func (m routeModel) summaryProperties() []property {
-	entry, ok := m.selectedCapture()
-	if !ok {
-		return nil
-	}
-	index := entry.index
-	destination := "· Unassigned"
-	if target, assigned := m.assignments[entry.path]; assigned {
-		destination = m.destinationName(target) + " · " + displayPath(target)
-	}
-	attachments := 0
-	for _, attachment := range index.Attachments {
-		if attachment.Kind != "null" {
-			attachments++
-		}
-	}
-	return []property{
-		{name: "Capture", value: entry.name},
-		{name: "ID", value: index.ID},
-		{name: "Created", value: index.CreatedAt},
-		{name: "Workflow", value: index.Source.Workflow},
-		{name: "Files", value: fmt.Sprintf("%d", len(entry.files))},
-		{name: "Attachments", value: fmt.Sprintf("%d", attachments)},
-		{name: "Route", section: true},
-		{name: "Destination", value: destination, indent: 1},
-	}
-}
-
-func (m routeModel) planContent(width int) string {
-	if len(m.destinations) == 0 {
-		return scanMutedStyle.Render("· No destinations configured")
-	}
-	counts := make(map[string]int, len(m.destinations))
-	for _, target := range m.assignments {
-		counts[target]++
-	}
-	properties := make([]property, 0, len(m.destinations)+2)
-	for _, destination := range m.destinations {
-		properties = append(properties, property{name: destination.Name, value: fmt.Sprintf("%d", counts[destination.Path])})
-	}
-	properties = append(properties,
-		property{separator: true},
-		property{name: "Unassigned", value: fmt.Sprintf("%d", len(m.entries)-m.routedCount())},
-	)
-	return renderProperties(properties, width, -1, false, 0)
-}
-
-func (m routeModel) capturesColumn(width int) string {
+func (m routeModel) leftColumn(width int) string {
+	listHeight := m.captureListHeight()
 	captures := m.captures
-	captures.SetSize(max(1, width-4), max(1, m.height-2))
-	content := fitHeight(captures.View(m.fields.Current() == routeCapturesField, scanTitleStyle, scanMutedStyle), m.height-2, width-4)
+	captures.SetSize(max(1, width-4), max(1, listHeight-2))
+	content := fitHeight(captures.View(m.fields.Current() == routeCapturesField, scanTitleStyle, scanMutedStyle), listHeight-2, width-4)
 	if m.loadError != "" {
-		content = fitHeight(scanMutedStyle.Render("! "+m.loadError), m.height-2, width-4)
+		content = fitHeight(scanMutedStyle.Render("! "+m.loadError), listHeight-2, width-4)
 	} else if len(m.entries) == 0 {
-		content = fitHeight(scanMutedStyle.Render("· No captures found"), m.height-2, width-4)
+		content = fitHeight(scanMutedStyle.Render("· No captures found"), listHeight-2, width-4)
 	}
-	return fieldset.ViewFocused("CAPTURES", content, width, m.fields.Current() == routeCapturesField)
+	list := fieldset.ViewFocused("CAPTURES", content, width, m.fields.Current() == routeCapturesField)
+	return list + "\n" + m.rootControl.Fieldset(width, m.fields.Current() == routeRootField)
 }
 
-func (m routeModel) summaryColumn(width int) string {
-	content := viewportWithMarkers(m.summary, width-4)
+// captureListHeight reserves the compact CAPTURE ROOT control at the bottom of
+// the left column, exactly as Scan does.
+func (m routeModel) captureListHeight() int { return m.height - rootHeight }
+
+func (m routeModel) recipesColumn(width int) string {
+	focused := m.fields.Current() == routeRecipesField
+	recipes := m.recipes
+	recipes.SetSize(max(1, width-4), max(1, m.height-2))
+	content := recipes.View(focused, scanTitleStyle, scanMutedStyle)
 	if _, ok := m.selectedCapture(); !ok {
-		content = lipgloss.Place(max(1, width-4), max(1, m.height-2), lipgloss.Center, lipgloss.Center, scanMutedStyle.Render("· Select a capture"))
+		content = scanMutedStyle.Render("· Select a capture")
+	} else if len(m.candidates()) == 0 {
+		content = scanMutedStyle.Render("· No recipe matches this capture")
 	}
-	return fieldset.ViewFocused("CAPTURE", fitHeight(content, m.height-2, width-4), width, m.fields.Current() == routeSummaryField)
+	return fieldset.ViewFocused("RECIPES", fitHeight(content, m.height-2, width-4), width, focused)
 }
 
-func (m routeModel) rightColumn(width int) string {
-	top := m.destinationsHeight()
-	targets := m.targets
-	targets.SetSize(max(1, width-4), max(1, top-2))
-	destinations := fitHeight(targets.View(m.fields.Current() == routeDestinationsField, scanTitleStyle, scanMutedStyle), top-2, width-4)
-	if len(m.destinations) == 0 {
-		destinations = fitHeight(scanMutedStyle.Render("· Configure capture.route.destinations"), top-2, width-4)
+func (m routeModel) actionsColumn(width int) string {
+	focused := m.fields.Current() == routeActionsField
+	actions := m.actions
+	actions.SetSize(max(1, width-4), max(1, m.height-2))
+	content := actions.View(focused, scanTitleStyle, scanMutedStyle)
+	if _, _, ok := m.currentSelection(); !ok {
+		content = scanMutedStyle.Render("· Choose a recipe")
 	}
-	plan := fitHeight(viewportWithMarkers(m.plan, width-4), m.height-top-2, width-4)
-	return fieldset.ViewFocused("DESTINATIONS", destinations, width, m.fields.Current() == routeDestinationsField) + "\n" +
-		fieldset.ViewFocused("ROUTE PLAN", plan, width, m.fields.Current() == routePlanField)
+	return fieldset.ViewFocused("ACTIONS", fitHeight(content, m.height-2, width-4), width, focused)
+}
+
+func (m routeModel) fieldsColumn(width int) string {
+	focused := m.fields.Current() == routeFieldsField
+	inner := max(1, width-4)
+	content := m.fieldsContent(inner)
+	if _, _, ok := m.currentSelection(); !ok {
+		content = scanMutedStyle.Render("· Choose a recipe")
+	} else if len(m.fieldRows) == 0 {
+		content = scanMutedStyle.Render("· This action needs nothing")
+	}
+	return fieldset.ViewFocused("FIELDS", fitHeight(content, m.height-2, inner), width, focused)
+}
+
+// fieldsContent renders one requirement per row: its label, then the resolved
+// value muted when it comes from the Capture, the supplied value when the user
+// gave one, and an empty slot when it is still missing. A required field is
+// marked so the blockage is visible without a separate missing-field count.
+func (m routeModel) fieldsContent(width int) string {
+	focused := m.fields.Current() == routeFieldsField
+	lines := make([]string, 0, len(m.fieldRows))
+	for index, row := range m.fieldRows {
+		label := row.requirement.Label
+		if row.requirement.Required {
+			label += "*"
+		}
+		cursor := "  "
+		if focused && index == m.fieldIndex {
+			cursor = "> "
+		}
+		value := row.value
+		if m.editing && index == m.fieldIndex {
+			value = m.editor.View()
+		} else if value == "" {
+			value = "___"
+		}
+		line := cursor + fmt.Sprintf("%-*s", routePropertyKeyWidth, truncate(label, routePropertyKeyWidth)) + value
+		if !row.editable {
+			line = scanMutedStyle.Render(line)
+		}
+		lines = append(lines, truncateStyled(line, width))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// truncate clips a plain label to width, without styling.
+func truncate(value string, width int) string {
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	if width <= 1 {
+		return string(runes[:max(0, width)])
+	}
+	return string(runes[:width-1]) + "…"
+}
+
+// truncateStyled clips a rendered line to width. A styled line carries escape
+// sequences, so it is measured with lipgloss rather than by rune count.
+func truncateStyled(line string, width int) string {
+	if lipgloss.Width(line) <= width {
+		return line
+	}
+	return lipgloss.NewStyle().MaxWidth(width).Render(line)
 }

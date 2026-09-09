@@ -22,7 +22,7 @@ func New() tui.App {
 			},
 			NewWithConfig: func(global config.Config) tui.CommandModel {
 				root, indexFile := global.CaptureScanSettings()
-				return newSessionWithSettings(root, indexFile, global.CaptureRouteDestinations())
+				return newSessionWithSettings(root, indexFile)
 			},
 		}},
 	}

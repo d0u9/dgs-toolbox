@@ -40,7 +40,7 @@ func TestMockCaptureRootIsUsable(t *testing.T) {
 		t.Fatalf("mock captures expose %d attachment files, want 5", attachments)
 	}
 
-	m := newRouteModel(root, "index.json", nil)
+	m := newRouteModel(root, "index.json")
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	updated, _ = updated.(routeModel).Update(loaded)
 	if got := len(updated.(routeModel).entries); got != 8 {

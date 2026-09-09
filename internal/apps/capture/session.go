@@ -1,7 +1,6 @@
 package capture
 
 import (
-	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,12 +15,12 @@ type session struct {
 }
 
 func newSession() session {
-	return newSessionWithSettings("", "index.json", nil)
+	return newSessionWithSettings("", "index.json")
 }
 
-func newSessionWithSettings(root, indexFile string, destinations []config.CaptureDestination) session {
+func newSessionWithSettings(root, indexFile string) session {
 	scan := newModelWithSettings(root, indexFile)
-	return session{scan: scan, route: newRouteModel(scan.root, scan.indexFile, destinations)}
+	return session{scan: scan, route: newRouteModel(scan.root, scan.indexFile)}
 }
 
 func (s session) Init() tea.Cmd { return s.scan.Init() }
@@ -32,6 +31,9 @@ func (s session) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return s.broadcast(msg)
 	case capturesLoadedMsg:
 		return s.broadcast(msg)
+	case rootChangedMsg:
+		updated, cmd := s.broadcast(msg)
+		return updated, tea.Batch(cmd, loadCaptures(msg.root, s.scan.indexFile))
 	case tui.TabSelectedMsg:
 		if msg.Index >= 0 && msg.Index < 2 {
 			s.active = msg.Index
@@ -58,7 +60,10 @@ func (s session) switchesTab(key string) bool {
 	if capturer, ok := s.activeModel().(tui.ShellKeyCapturer); ok && capturer.CapturesShellKey(key) {
 		return false
 	}
-	return !s.scan.picking || s.active != 0
+	if s.active == 1 {
+		return !s.route.rootControl.Picking()
+	}
+	return !s.scan.rootControl.Picking()
 }
 
 func (s session) activeModel() tea.Model {

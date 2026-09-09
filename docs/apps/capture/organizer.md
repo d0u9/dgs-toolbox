@@ -1,0 +1,378 @@
+# Capture Organizer Model
+
+The data abstraction underneath Capture organizing. It is independent of any
+TUI: the sessions in [`scan.md`](scan.md) and [`route.md`](route.md) are one
+front end over this model, and nothing here may be shaped by their layout.
+
+Assigning a Capture to a single configured destination is the degenerate case
+of this model: a Capture is organized by choosing a *Recipe*, filling in whatever the
+Recipe still needs, and executing the *Actions* the Recipe expands into. The
+three concepts stay separate and are never collapsed into one another.
+
+- **Recipe** — a way of organizing one class of Capture. It is named for the
+  outcome ("Location + Daily Note"), not for the mechanics.
+- **Action** — a single concrete execution unit a Recipe expands into
+  (`obsidian.daily.append`). A Recipe is not an Action.
+- **Missing Fields** — the inputs still lacking for this Capture, right now.
+  Not a property of the Recipe, but of Recipe × enabled Actions × Capture ×
+  enrichment.
+- **Selection** — what the user has decided about one Capture: which Recipe,
+  which of its Actions are enabled, and what they filled in.
+
+## Pipeline
+
+```text
+Capture
+   ↓
+FindCandidateRecipes()
+   ↓
+Select Recipe
+   ↓
+Toggle Actions          (Recipe supplies the default enabled set)
+   ↓
+Resolve Fields          (Context)
+   ↓
+Find Missing Fields
+   ↓
+Enrich                  (prompt for missing fields)
+   ↓
+Build Action Plan
+   ↓
+Preview
+   ↓
+Execute
+```
+
+## Recipe
+
+A Recipe has exactly three parts: `match`, `fields`, `actions`.
+
+```yaml
+id: obsidian_location_daily
+name: Location + Daily
+
+match:
+  workflows:
+    - been_here
+    - photo_note
+
+fields:
+  - id: place.name
+    required: true
+    input: text
+  - id: content
+    required: true
+    input: multiline
+  - id: tags
+    required: false
+    input: multi_select
+
+actions:
+  - id: obsidian.location.upsert
+  - id: obsidian.daily.append
+  - id: capture.archive
+```
+
+`match` does not trigger execution. It decides which Recipes are *offered* for
+a Capture, so a caller offers four candidates rather than thirty. A `been_here`
+Capture offers `Location`, `Location + Daily`, `Daily`, `Archive`; a
+`quick_mark` Capture offers `Daily`, `Reminder`, `Calendar`, `Apple Note`,
+`Archive`.
+
+## Actions declare their own requirements
+
+Each Action declares what it needs, and the effective required set is the
+**union of the enabled Actions' requirements plus the Recipe's own extra
+declarations**. A Recipe never restates its Actions' requirements by hand —
+otherwise adding a required field to an Action silently breaks every Recipe
+that forgot to sync.
+
+```text
+obsidian.location.upsert  requires  place.name, coordinates.latitude,
+                                    coordinates.longitude
+obsidian.daily.append     requires  createdAt, content
+capture.archive           requires  —
+
+Recipe "Location + Daily", all three enabled, therefore requires
+  place.name, coordinates.latitude, coordinates.longitude,
+  createdAt, content
+  + anything the Recipe itself adds (e.g. project)
+```
+
+## Actions are toggleable per Capture
+
+A Recipe supplies the **default** enabled set — every Action it lists. The user
+may disable individual Actions for one Capture without leaving the Recipe, so
+that Capture can skip `capture.archive` while the rest of the plan stands.
+
+A disabled Action contributes nothing: it is absent from the Action Plan, and
+its requirements are absent from the required set, so a field only it needed
+never blocks the Capture. Requirements the Recipe declares itself belong to no
+Action and therefore **stay required regardless of which Actions are enabled**.
+
+Because the enabled set is per-Capture state rather than a property of the
+Recipe, it is passed in rather than read off the Recipe:
+
+```go
+type Selection struct {
+    Recipe     RecipeID
+    Enabled    map[ActionID]bool   // defaults from the Recipe, user may override
+    Enrichment map[FieldID]any
+}
+
+func MissingFields(ctx Context, recipe Recipe, enabled []ActionID) []FieldRequirement
+func Build(ctx Context, recipe Recipe, enabled []ActionID) []ActionPlan
+```
+
+Disabling every Action is legal but yields an empty plan; such a Capture counts
+as blocked, never as ready. There is no separate single-select mode — enabling
+exactly one Action is just one state of the same set, and how many an Action
+list starts with is the Recipe's decision.
+
+A standing preference to always skip an Action belongs in a Recipe of its own
+(`Location + Daily` beside `Location + Daily (keep)`), not in this per-Capture
+override, which is deliberately transient.
+
+## Fields are logical, not JSON paths
+
+A field is a `FieldID`, never a hardcoded path into the Capture JSON, because
+the same logical field is sourced differently per workflow:
+
+```text
+been_here   content ← payload.note
+photo_note  content ← payload.text
+quick_mark  content ← payload.mark
+```
+
+```text
+Capture JSON → Field Resolver → Logical Fields → Recipe
+```
+
+Some logical fields have no counterpart in the index at all and are composed
+from what it does carry. `place.name` is the case that matters: the index has
+no name field and no free-form address to borrow one from, so a name is
+composed from the two most specific structured parts present — `Chuo, Osaka`
+rather than the whole locality-to-country chain, which reads as an address
+instead of a name. A composed value is a starting point, not the Capture's own
+data: it satisfies the requirement so nothing is blocked needlessly, and the
+user may still replace it.
+
+A field requirement carries enough to drive an input surface on its own — a
+bare string list is not sufficient, because the caller must know to ask for a
+datetime rather than free text:
+
+```go
+type FieldRequirement struct {
+    Field    FieldID
+    Label    string
+    Required bool
+    Input    InputType   // text, multiline, multi_select, datetime, …
+    When     Predicate   // optional; conditional requirement
+    Validate Validator
+}
+```
+
+`When` covers conditional requirements — Calendar needs `start_at` only when
+`all_day` is false, and `end_at` only when `has_end` is true. A requirement
+whose `When` evaluates false is skipped entirely when computing missing fields.
+
+## Context
+
+Recipes never read the Capture JSON directly. A `Context` is resolved first and
+holds the Capture plus the user's enrichment, read in priority order:
+
+```text
+user-supplied enrichment  →  original Capture data  →  derived data
+```
+
+Only the middle layer is the Capture's own. A caller distinguishes it to decide
+what may be edited: enriched and derived values are the user's to change,
+Capture data is not.
+
+The original Capture on disk is never mutated. Given a Capture carrying
+`coordinates`, `place.city = Epping`, and `place.region = NSW`, the Context
+already composes `place.name = Epping, NSW`; supplying `Epping Station` as
+enrichment replaces it, and the Capture file stays untouched either way.
+
+## Missing fields
+
+Requirements are attributed to the Action that declared them, so a caller can
+say *which* Action is blocking rather than only that something is missing. A
+field required by two enabled Actions is reported once per Action, and filling
+it satisfies both.
+
+```go
+func MissingFields(ctx Context, recipe Recipe, enabled []ActionID) []FieldRequirement {
+    var missing []FieldRequirement
+    for _, req := range recipe.RequiredFields(enabled) {
+        if req.When != nil && !req.When(ctx) {
+            continue
+        }
+        value, ok := ctx.Get(req.Field)
+        if !ok || !req.Validate(value) {
+            missing = append(missing, req)
+        }
+    }
+    return missing
+}
+```
+
+## Action Definition vs Action Plan
+
+An **Action Definition** says what `obsidian.daily.append` *is*. An **Action
+Plan** says what it will do to *this* Capture — which file, which content.
+Preview renders the plan, and execution consumes it. No Action is implemented
+yet: each one declares its requirements and resolves its target, and running a
+plan reports what it would do rather than doing it.
+
+```text
+Recipe + enabled Actions + Context → Build() → []ActionPlan
+```
+
+The plan holds one entry per **enabled** Action, in the order the Recipe lists
+them. An Action with unmet requirements still appears in the plan with its
+target unresolved, so the blockage is visible rather than silently dropped.
+
+```json
+{
+  "action": "obsidian.daily.append",
+  "target": "Daily/2026-09-09.md",
+  "content": "- 这里晚上可以再来看看"
+}
+```
+
+## Worked example
+
+Capture:
+
+```json
+{
+  "source": { "workflow": "been_here" },
+  "createdAt": "2026-09-09T21:31:22.900+10:00",
+  "coordinates": { "latitude": -33.7691, "longitude": 151.082 },
+  "place": { "city": "Epping", "region": "NSW" }
+}
+```
+
+Candidates: `Location`, `Location + Daily`, `Daily`, `Archive`. Selecting
+`Location + Daily` resolves:
+
+```text
+createdAt   ✓    place.city  ✓    place.name  ~ Epping, NSW (composed)
+latitude    ✓    region      ✓    content     ✗
+longitude   ✓
+```
+
+so only `Note` is strictly missing, attributed to `obsidian.daily.append`. The
+composed place name is offered for editing rather than demanded, and renaming
+it to `Epping Station` is a choice. With all three Actions enabled, the plan is:
+
+```text
+1. UPSERT   Obsidian/Locations/Epping Station.md
+2. APPEND   Obsidian/Daily/2026-09-09.md
+3. ARCHIVE  Capture 20260909213122900-4620
+```
+
+Disabling `capture.archive` leaves the first two entries unchanged; disabling
+`obsidian.daily.append` drops entry 2 and, with it, the `content` requirement,
+so `Note` is no longer asked for.
+
+## The organize record
+
+A Capture that has been organized carries `organize.json` in its own directory,
+beside `index.json`. The two are named for who writes them: `index.json` is the
+producer's record of what was captured and stays untouched, `organize.json` is
+this tool's record of how it was organized. Keeping the decision next to the
+Capture rather than in a session file means a Capture organized in one session
+is recognised as handled in the next, and stays recognised if the Capture is
+moved.
+
+A Capture may be organized more than once — a new Action appears, or the first
+pass turns out to have been wrong — so the record holds a list of runs rather
+than one decision. Each run records what was decided at that moment:
+
+```json
+{
+  "schema": "v1",
+  "runs": [
+    {
+      "organizedAt": "2026-09-09T21:40:12+10:00",
+      "recipe": "obsidian_location_daily",
+      "recipeName": "Location + Daily",
+      "actions": [
+        { "action": "obsidian.location.upsert", "target": "Locations/Epping Station.md", "executed": false },
+        { "action": "obsidian.daily.append", "target": "Daily/2026-09-09.md", "executed": false }
+      ],
+      "fields": { "place.name": "Epping Station" }
+    }
+  ]
+}
+```
+
+`executed` stays false while Actions are stubs. The record distinguishes
+*decided* from *executed* from the start, so once Actions do write something, a
+later run can tell what already happened rather than guessing from the presence
+of the file. `fields` holds the enrichment only — what the user supplied — not
+the values that resolve from the Capture, which are not this record's to keep.
+
+Organizing a Capture again **appends** a run: a pass made against an older set
+of Actions stays visible beside the one that followed it, which is the whole
+point of keeping the record next to the Capture. Nothing is overwritten. What
+marks a Capture handled is the presence of a run, not the presence of the file,
+and callers with room for one line show the most recent run.
+
+## Built-in Recipes
+
+Recipes are compiled in until user definitions exist, so Route always has
+something to offer:
+
+| Recipe | Workflows | Actions |
+| --- | --- | --- |
+| Location | `been_here` | location.upsert, archive |
+| Location + Daily | `been_here` | location.upsert, daily.append, archive |
+| Photo + Location | `photo_note` | location.upsert, daily.append, archive |
+| Daily | `been_here`, `photo_note`, `quick_mark` | daily.append, archive |
+| Apple Note | `photo_note`, `quick_mark` | notes.create, archive |
+| Reminder | `quick_mark` | reminders.create, archive |
+| Calendar | `quick_mark` | calendar.create, archive |
+| Archive | any | archive |
+
+`Archive` matches every workflow, so no Capture is ever left with an empty
+candidate list. The two location Recipes additionally require the Capture to
+carry a location at all, so a `been_here` with neither coordinates nor place
+falls back to `Daily` and `Archive`.
+
+The Apple Actions declare their requirements and name their targets but talk to
+no Apple API yet. They exist so the model is exercised against Actions that
+need fields the Obsidian ones do not — a `datetime` due date, a conditional
+`start_at` that is required only when the event is not all day — rather than
+being designed around one workflow.
+
+## Implementation order
+
+First cut is these types and functions, headless and table-tested, with no
+Apple integrations at all:
+
+```go
+type Recipe
+type FieldID
+type FieldRequirement
+type ActionDefinition
+type ActionPlan
+type Selection
+type Context
+
+func FindRecipes(capture Capture) []Recipe
+func MissingFields(ctx Context, recipe Recipe, enabled []ActionID) []FieldRequirement
+func Build(ctx Context, recipe Recipe, enabled []ActionID) []ActionPlan
+```
+
+The package carries no bubbletea dependency: a Capture goes in, candidate
+Recipes come out; two fields are supplied as enrichment, three Action Plans
+come out. Every domain judgement lives here, and the TUI only calls these
+functions and draws the result.
+
+`been_here → Location / Location + Daily` is driven end to end before
+`photo_note` and `quick_mark` are added, and before any of Apple Notes,
+Reminders, or Calendar is touched — those bring their own API detail and must
+not shape the model.
