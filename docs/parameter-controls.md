@@ -54,6 +54,14 @@ The component lives in `internal/tui/divider`. Its visual contract is:
 
 The caller owns the empty row because vertical density may vary by composition; the divider component owns only the one-row rule.
 
+`Labelled` is the same rule with a name after the anchor, for a divider that introduces the run below it rather than merely separating two of them:
+
+```text
+── ◆ ORGANIZED ───────────────────────────
+```
+
+The label sits between the anchor and the trailing rule, takes the same quiet line color, and is clipped when the width cannot hold it. An empty label gives the plain rule, so one call site can carry both. Use a label only where the run below needs naming; between two peer sections the plain anchor already says enough.
+
 ## Control vocabulary
 
 The shared control vocabulary includes:
