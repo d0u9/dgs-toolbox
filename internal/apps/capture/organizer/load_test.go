@@ -26,7 +26,6 @@ fields:
     required: true
 actions:
   - id: obsidian.daily.append
-  - id: capture.archive
 `
 
 func TestLoadLayersFilesOverTheBuiltins(t *testing.T) {
@@ -48,7 +47,7 @@ func TestLoadLayersFilesOverTheBuiltins(t *testing.T) {
 	if recipe.Name != "Work Daily" || recipe.Source != filepath.Join(dir, "work_daily.yaml") {
 		t.Fatalf("recipe = %+v", recipe)
 	}
-	if len(recipe.Actions) != 2 || recipe.Actions[0] != ActionDailyAppend {
+	if len(recipe.Actions) != 1 || recipe.Actions[0] != ActionDailyAppend {
 		t.Fatalf("actions = %v", recipe.Actions)
 	}
 	if len(recipe.Fields) != 1 || recipe.Fields[0].Field != "project" || !recipe.Fields[0].Required {
@@ -105,8 +104,8 @@ func TestLoadReportsBadFilesWithoutDroppingTheRest(t *testing.T) {
 	}{
 		{name: "unknown action", body: "name: X\nactions:\n  - id: obsidian.nope\n", want: `unknown action "obsidian.nope"`},
 		{name: "no action", body: "name: X\n", want: "would organize nothing"},
-		{name: "misspelled key", body: "name: X\nactons:\n  - id: capture.archive\n", want: "field actons not found"},
-		{name: "unknown input", body: "name: X\nfields:\n  - id: due\n    input: calendar\nactions:\n  - id: capture.archive\n", want: `unknown input "calendar"`},
+		{name: "misspelled key", body: "name: X\nactons:\n  - id: obsidian.daily.append\n", want: "field actons not found"},
+		{name: "unknown input", body: "name: X\nfields:\n  - id: due\n    input: calendar\nactions:\n  - id: obsidian.daily.append\n", want: `unknown input "calendar"`},
 		{name: "malformed yaml", body: "name: [unclosed\n", want: "decode"},
 	}
 

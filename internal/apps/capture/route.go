@@ -376,15 +376,14 @@ func (m routeModel) runOverlay() string {
 	if len(m.runPlans) == 0 {
 		lines = append(lines, scanMutedStyle.Render("· No action is enabled, so there is nothing to run"))
 	}
-	note := "Actions are not implemented yet; only " + organizer.RecordFilename + " was appended to."
+	note, keys := "Nothing has happened yet. No Action is implemented, so running "+
+		"this writes only "+organizer.RecordFilename+".", "↵ Run   esc Cancel"
 	if !m.runReady() {
-		note = "Blocked, so nothing was recorded; fill the missing fields first."
+		note, keys = "Blocked: fill the missing values before running this.", "esc Close"
 	}
-	lines = append(lines,
-		"",
-		scanMutedStyle.Render(note),
-		scanMutedStyle.Render("esc Close"),
-	)
+	lines = append(lines, "")
+	lines = append(lines, detailParagraph(note, inner)...)
+	lines = append(lines, scanMutedStyle.Render(keys))
 	for i, line := range lines {
 		lines[i] = truncateStyled(line, inner)
 	}
@@ -416,6 +415,9 @@ func (m routeModel) runDetails(ctx organizer.Context, plan organizer.ActionPlan)
 	def, ok := organizer.LookupAction(plan.Action)
 	if !ok {
 		return lines
+	}
+	for _, effect := range def.Effects {
+		lines = append(lines, scanMutedStyle.Render(fmt.Sprintf("      %-*s%s", routePropertyKeyWidth, "effect", effect)))
 	}
 	for _, req := range def.Required {
 		value := ctx.String(req.Field)
@@ -467,6 +469,9 @@ func (m routeModel) Status() tui.Status {
 	}
 	center := m.statusValue()
 	if m.running {
+		if m.runReady() {
+			return tui.Status{Left: "RUN", Center: center, Right: "↵ Run  esc Cancel"}
+		}
 		return tui.Status{Left: "RUN", Center: center, Right: "esc Close"}
 	}
 	if m.editingNote {
@@ -508,7 +513,10 @@ func (m routeModel) statusValue() string {
 func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if m.running {
-		if key == "esc" || key == "enter" || key == "q" {
+		switch key {
+		case "enter", "y":
+			return m.commitRun()
+		case "esc", "q":
 			m.running = false
 		}
 		return m, nil
@@ -768,11 +776,11 @@ func (m *routeModel) cancelEdit() {
 	m.note.SetValue("")
 }
 
-// run builds the plan for the selected Capture and shows it. No Action is
-// implemented, so nothing is written outside the Capture directory; what is
-// written is the organizer's own record, marking the Capture handled and moving
-// it below the divider. A blocked plan is shown but not recorded: a Capture is
-// handled only once its plan could actually run.
+// run builds the plan for the selected Capture and asks about it. Nothing
+// happens yet: the dialog states what would be done, and only confirming it
+// carries the plan out. The asymmetry decides this — confirming costs one
+// keystroke each time, while a mistaken x would write into a vault and move
+// Captures out of reach.
 func (m routeModel) run() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedCapture()
 	if !ok {
@@ -789,16 +797,36 @@ func (m routeModel) run() (tea.Model, tea.Cmd) {
 	m.runCapture = entry.name + "  ·  " + recipe.Name
 	m.runError = ""
 	m.running = true
-	if organizer.Ready(ctx, recipe, enabled) {
-		run := organizer.NewRun(recipe, selection, m.runPlans, time.Now())
-		record, err := organizer.AppendRun(entry.path, run)
-		if err != nil {
-			m.runError = err.Error()
-		} else {
-			m.markOrganized(entry.path, record)
-			m.advanceToNextPending(entry)
-		}
+	m.refresh()
+	return m, nil
+}
+
+// commitRun carries out the plan the dialog is showing. No Action is
+// implemented, so what is written is the organizer's own record, marking the
+// Capture handled and moving it below the divider. A blocked plan cannot be
+// confirmed: a Capture is handled only once its plan could actually run.
+func (m routeModel) commitRun() (tea.Model, tea.Cmd) {
+	if !m.runReady() {
+		return m, nil
 	}
+	entry, ok := m.selectedCapture()
+	if !ok {
+		return m, nil
+	}
+	selection, recipe, ok := m.currentSelection()
+	if !ok {
+		return m, nil
+	}
+	run := organizer.NewRun(recipe, selection, m.runPlans, time.Now())
+	record, err := organizer.AppendRun(entry.path, run)
+	if err != nil {
+		m.runError = err.Error()
+		m.refresh()
+		return m, nil
+	}
+	m.markOrganized(entry.path, record)
+	m.advanceToNextPending(entry)
+	m.running = false
 	// Focus returns to CAPTURES so the next Capture can be handled without
 	// walking back through the columns.
 	m.fields.Set(routeCapturesField)

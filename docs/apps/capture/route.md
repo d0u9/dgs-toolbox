@@ -218,8 +218,11 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   `ctrl+s` commits. `Esc` abandons an edit; `Backspace` and `Delete` edit the
   text while an editor is open and only walk back once it is closed. Committing does not move focus away, so a value can be revised
   immediately.
-- The `RUN` dialog is a preview, not a confirmation: it opens on `x`, reports,
-  and closes on `Esc`, `Enter`, or `q`. It is rendered generically from the
+- The `RUN` dialog is a confirmation, not a report: `x` opens it and nothing has
+  happened yet, `Enter` or `y` carries the plan out, and `Esc` or `q` cancels
+  with nothing done. The asymmetry decides this — confirming costs one keystroke
+  each time, while a mistaken `x` would write into a vault. A blocked plan
+  cannot be confirmed and says so instead of offering to run. It is rendered generically from the
   plan — the target each Action resolved, then the value of every requirement
   that Action declares — rather than from per-Action display code, so a new
   Action needs no dialog work to appear in it.
@@ -233,14 +236,16 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   │                                                    │
   │ ● 1 obsidian.location.upsert                       │
   │       target      Locations/Chuo, Osaka.md         │
+  │       effect      Creates it, or updates it in…    │
   │       Place name  Chuo, Osaka                      │
   │ ○ 2 apple.reminders.create                         │
   │       target      · unresolved                     │
   │       Due         · missing                        │
   │                                                    │
-  │ Actions are not implemented yet; only              │
-  │ organize.json was appended to.                     │
-  │ esc Close                                          │
+  │ Nothing has happened yet. No Action is             │
+  │ implemented, so running this writes only           │
+  │ organize.json.                                     │
+  │ ↵ Run   esc Cancel                                 │
   ╰────────────────────────────────────────────────────╯
   ```
 
@@ -249,12 +254,12 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   enabled Action, the target it resolved, and the value of every field it would
   carry. A blocked Action is listed with `○` and its missing values read
   `· missing`. `Esc` closes the dialog.
-- A run whose plan is ready appends to the organizer's record in the Capture
+- Confirming a ready plan appends to the organizer's record in the Capture
   directory, moves that Capture below the `ORGANIZED` rule, and puts the cursor
-  on the next Capture still to handle. Focus returns to `CAPTURES` either way,
-  so a run of Captures is worked through without walking back up the columns. A
-  blocked plan is shown but records nothing: a Capture counts as handled only
-  once its plan could actually run.
+  on the next Capture still to handle. Focus returns to `CAPTURES`, so a run
+  of Captures is worked through without walking back up the columns. A blocked
+  plan records nothing: a Capture counts as handled only once its plan could
+  actually run.
 - `R` refreshes the Capture list from any DataField.
 - Every column is reachable with the pointer as well as the keyboard. A primary
   click selects a row and focuses its Fieldset, and the wheel scrolls the list

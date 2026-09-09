@@ -72,28 +72,28 @@ func TestFindRecipesNarrowsCandidates(t *testing.T) {
 		{
 			name:    "been_here offers the location recipes",
 			capture: beenHere(),
-			want:    []RecipeID{"obsidian_location", "obsidian_location_daily", "obsidian_daily", "archive_only"},
+			want:    []RecipeID{"obsidian_location", "obsidian_location_daily", "obsidian_daily"},
 		},
 		{
 			name: "quick_mark offers a different set entirely",
 			capture: Capture{Index: indexschema.Index{
 				Source: indexschema.Source{Workflow: "quick_mark"},
 			}},
-			want: []RecipeID{"obsidian_daily", "apple_note", "apple_reminder", "apple_calendar", "archive_only"},
+			want: []RecipeID{"obsidian_daily", "apple_note", "apple_reminder", "apple_calendar"},
 		},
 		{
 			name: "a location recipe needs a location, so been_here without one drops them",
 			capture: Capture{Index: indexschema.Index{
 				Source: indexschema.Source{Workflow: "been_here"},
 			}},
-			want: []RecipeID{"obsidian_daily", "archive_only"},
+			want: []RecipeID{"obsidian_daily"},
 		},
 		{
-			name: "an unknown workflow can still only be archived",
+			name: "an unknown workflow is offered nothing",
 			capture: Capture{Index: indexschema.Index{
 				Source: indexschema.Source{Workflow: "voice_memo"},
 			}},
-			want: []RecipeID{"archive_only"},
+			want: nil,
 		},
 	}
 
@@ -170,19 +170,15 @@ func TestMissingFieldsFollowsTheEnabledSet(t *testing.T) {
 	}{
 		{
 			name:    "all actions enabled asks for the note the capture has no text for",
-			enabled: []ActionID{ActionLocationUpsert, ActionDailyAppend, ActionCaptureArchive},
+			enabled: []ActionID{ActionLocationUpsert, ActionDailyAppend, ActionDailyAppend},
 			want:    []FieldID{FieldContent},
 		},
 		{
 			name:    "disabling the daily note drops the content requirement",
-			enabled: []ActionID{ActionLocationUpsert, ActionCaptureArchive},
+			enabled: []ActionID{ActionLocationUpsert},
 			want:    nil,
 		},
-		{
-			name:    "disabling the archive changes nothing, it requires no field",
-			enabled: []ActionID{ActionLocationUpsert, ActionDailyAppend},
-			want:    []FieldID{FieldContent},
-		},
+
 		{
 			name:    "no action enabled requires nothing",
 			enabled: nil,
@@ -258,14 +254,15 @@ func TestMissingFieldsAreAttributedToTheirAction(t *testing.T) {
 }
 
 func TestRecipeFieldsStayRequiredWhateverIsEnabled(t *testing.T) {
+	// The Recipe's own field belongs to no Action, so it is required whether or
+	// not anything is enabled.
 	recipe := Recipe{
-		ID:      "with_project",
-		Actions: []ActionID{ActionCaptureArchive},
-		Fields:  []FieldRequirement{text("project", "Project")},
+		ID:     "with_project",
+		Fields: []FieldRequirement{text("project", "Project")},
 	}
 	ctx := NewContext(beenHere(), nil)
 
-	for _, enabled := range [][]ActionID{{ActionCaptureArchive}, nil} {
+	for _, enabled := range [][]ActionID{{ActionDailyAppend}, nil} {
 		got := fieldIDs(MissingFields(ctx, recipe, enabled))
 		if !equalFields(got, []FieldID{"project"}) {
 			t.Errorf("enabled %v: missing = %v, want [project]", enabled, got)
@@ -275,8 +272,7 @@ func TestRecipeFieldsStayRequiredWhateverIsEnabled(t *testing.T) {
 
 func TestOptionalAndConditionalRequirementsDoNotBlock(t *testing.T) {
 	never := Recipe{
-		ID:      "conditional",
-		Actions: []ActionID{ActionCaptureArchive},
+		ID: "conditional",
 		Fields: []FieldRequirement{
 			optional(text(FieldTags, "Tags")),
 			{
@@ -314,7 +310,6 @@ func TestBuildProducesThePlanFromTheWorkedExample(t *testing.T) {
 	}{
 		{ActionLocationUpsert, "Locations/Epping Station.md"},
 		{ActionDailyAppend, "Daily/2026-09-09.md"},
-		{ActionCaptureArchive, "20260909213122900-4620"},
 	}
 
 	if len(plans) != len(want) {
@@ -338,8 +333,8 @@ func TestBuildKeepsBlockedActionsVisible(t *testing.T) {
 	ctx := NewContext(placeless(), nil)
 
 	plans := Build(ctx, recipe, recipe.Actions)
-	if len(plans) != 3 {
-		t.Fatalf("got %d plans, want 3", len(plans))
+	if len(plans) != 2 {
+		t.Fatalf("got %d plans, want 2", len(plans))
 	}
 	if plans[0].Ready() || plans[0].Target != "" {
 		t.Errorf("location plan should be blocked with no target, got %q", plans[0].Target)
@@ -350,26 +345,24 @@ func TestBuildKeepsBlockedActionsVisible(t *testing.T) {
 	if plans[1].Ready() {
 		t.Error("daily plan should be blocked by the missing note")
 	}
-	if !plans[2].Ready() {
-		t.Error("archive requires nothing and should be ready")
-	}
+
 }
 
 func TestBuildOmitsDisabledActions(t *testing.T) {
 	recipe := locationDaily(t)
 	selection := NewSelection(recipe)
-	selection.Toggle(ActionCaptureArchive)
+	selection.Toggle(ActionDailyAppend)
 	ctx := NewContext(beenHere(), selection.Enrichment)
 
 	enabled := selection.EnabledActions(recipe)
 	plans := Build(ctx, recipe, enabled)
 	for _, plan := range plans {
-		if plan.Action == ActionCaptureArchive {
+		if plan.Action == ActionDailyAppend {
 			t.Error("disabled action must not enter the plan")
 		}
 	}
-	if len(plans) != 2 {
-		t.Errorf("got %d plans, want 2", len(plans))
+	if len(plans) != 1 {
+		t.Errorf("got %d plans, want 1", len(plans))
 	}
 }
 

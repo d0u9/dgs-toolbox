@@ -182,6 +182,19 @@ func splitFieldRows(m routeModel) (resolved, missing []routeFieldRow) {
 	return resolved, missing
 }
 
+// runAndConfirm presses x and confirms the dialog, which is what carrying out a
+// plan now takes.
+func runAndConfirm(t *testing.T, m routeModel) routeModel {
+	t.Helper()
+	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(routeModel)
+	if !m.running {
+		t.Fatal("x did not open the run dialog")
+	}
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEnter})
+	return updated.(routeModel)
+}
+
 func mustContext(t *testing.T, m routeModel) organizer.Context {
 	t.Helper()
 	ctx, ok := m.context()
@@ -518,24 +531,42 @@ func TestRouteRunShowsThePlanWithoutExecutingIt(t *testing.T) {
 	if !m.running {
 		t.Fatal("x did not open the run dialog")
 	}
-	if len(m.runPlans) != 3 {
+	if len(m.runPlans) != 2 {
 		t.Fatalf("run plans = %d, want one per enabled action", len(m.runPlans))
 	}
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"RUN", "obsidian.location.upsert", "Locations/Epping Station.md", "Actions are not implemented yet"} {
+	for _, want := range []string{"RUN", "obsidian.location.upsert", "Locations/Epping Station.md", "Nothing has happened yet", "↵ Run"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("run dialog is missing %q:\n%s", want, view)
 		}
 	}
+	// The dialog states what each Action would do, because it is now the point
+	// where that is decided.
+	if !strings.Contains(view, "Creates Locations/") {
+		t.Fatalf("the confirmation does not say what an action does:\n%s", view)
+	}
 	if !m.CapturesShellKey("esc") {
 		t.Fatal("Esc must close the dialog rather than leave the command")
 	}
+
+	// Esc cancels, and nothing has happened.
 	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(routeModel)
 	if m.running {
 		t.Fatal("Esc did not close the run dialog")
 	}
-	// Focus returns to CAPTURES so the next Capture can be handled.
+	if _, err := os.Stat(filepath.Join(root, "alpha", organizer.RecordFilename)); !os.IsNotExist(err) {
+		t.Fatal("cancelling still recorded the capture")
+	}
+
+	// Confirming carries it out and returns focus to CAPTURES.
+	m = runAndConfirm(t, m)
+	if m.running {
+		t.Fatal("confirming did not close the dialog")
+	}
+	if _, err := os.Stat(filepath.Join(root, "alpha", organizer.RecordFilename)); err != nil {
+		t.Fatalf("confirming did not record the capture: %v", err)
+	}
 	if got := m.fields.Current(); got != routeCapturesField {
 		t.Fatalf("focus after running = %q, want %q", got, routeCapturesField)
 	}
@@ -550,12 +581,19 @@ func TestRouteRunRecordsNothingWhenBlocked(t *testing.T) {
 	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = updated.(routeModel)
 	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "nothing was recorded") {
+	if !strings.Contains(view, "Blocked") {
 		t.Fatalf("blocked run should say so:\n%s", view)
 	}
 	if !strings.Contains(view, "· missing") {
 		t.Fatalf("blocked run should name the missing values:\n%s", view)
 	}
+	if strings.Contains(view, "↵ Run") {
+		t.Fatalf("a blocked plan should not offer to run:\n%s", view)
+	}
+
+	// Confirming a blocked plan does nothing at all.
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(routeModel)
 	if _, err := os.Stat(filepath.Join(root, "alpha", organizer.RecordFilename)); !os.IsNotExist(err) {
 		t.Fatal("a blocked run must not record the capture as organized")
 	}
@@ -571,8 +609,7 @@ func TestRouteRecordsOrganizedCapturesAndSortsThemBelowTheDivider(t *testing.T) 
 	selection.Set(organizer.FieldContent, "note")
 	m.refresh()
 
-	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	m = updated.(routeModel)
+	m = runAndConfirm(t, m)
 
 	data, err := os.ReadFile(filepath.Join(root, "alpha", organizer.RecordFilename))
 	if err != nil {
@@ -586,7 +623,7 @@ func TestRouteRecordsOrganizedCapturesAndSortsThemBelowTheDivider(t *testing.T) 
 		t.Fatalf("record holds %d runs, want 1", len(record.Runs))
 	}
 	run := record.Runs[0]
-	if run.Recipe != "obsidian_location_daily" || len(run.Actions) != 3 {
+	if run.Recipe != "obsidian_location_daily" || len(run.Actions) != 2 {
 		t.Fatalf("run = %+v", run)
 	}
 	if run.Fields[organizer.FieldPlaceName] != "Epping Station" {
@@ -601,8 +638,6 @@ func TestRouteRecordsOrganizedCapturesAndSortsThemBelowTheDivider(t *testing.T) 
 		t.Fatalf("cursor after running = %q, want beta", item.ID)
 	}
 
-	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
-	m = updated.(routeModel)
 	reloaded, _ := m.Update(loadCaptures(root, "index.json")())
 	m = reloaded.(routeModel)
 
@@ -624,17 +659,11 @@ func TestRouteOrganizingAgainAppendsARun(t *testing.T) {
 	selection.Set(organizer.FieldPlaceName, "Epping Station")
 	selection.Set(organizer.FieldContent, "first pass")
 	m.refresh()
-	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	m = updated.(routeModel)
-	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
-	m = updated.(routeModel)
+	m = runAndConfirm(t, m)
 
 	// Organize the same Capture again, under a different Recipe.
 	m = chooseRecipe(t, m, "Location")
-	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	m = updated.(routeModel)
-	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
-	m = updated.(routeModel)
+	m = runAndConfirm(t, m)
 
 	record, ok := organizer.ReadRecord(filepath.Join(root, "alpha"))
 	if !ok {
@@ -873,11 +902,11 @@ func TestRouteFieldsDeduplicateAcrossActions(t *testing.T) {
 func TestRouteActionDetailNamesNeedsAndEffects(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
 	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
-	m.actions.SelectID("action:" + string(organizer.ActionCaptureArchive))
+	m.actions.SelectID("action:" + string(organizer.ActionLocationUpsert))
 	m.refresh()
 
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"capture.archive", "Needs   nothing", "Effects", "Moves the Capture directory"} {
+	for _, want := range []string{"obsidian.location.upsert", "Place name*", "Effects", "Creates Locations/"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("action detail is missing %q:\n%s", want, view)
 		}
@@ -979,13 +1008,20 @@ func TestRouteRunDialogReportsTheCaptureItRan(t *testing.T) {
 	selection.Set(organizer.FieldContent, "the note I typed")
 	m.refresh()
 
+	// Confirming moves the cursor to the next Capture, so the dialog is read
+	// while it is still open, and again on the way out.
 	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = updated.(routeModel)
+	before := ansi.Strip(m.View())
+	if !strings.Contains(before, "the note I typed") {
+		t.Fatalf("the dialog does not report the capture it is about to run:\n%s", before)
+	}
+	m = runAndConfirm(t, m)
 
-	// The cursor has already moved on.
 	if item, _ := m.captures.Selected(); item.ID != "capture:"+filepath.Join(root, "beta") {
 		t.Fatalf("cursor = %q, want the next capture", item.ID)
 	}
+	m.running = true
 	view := ansi.Strip(m.View())
 	if !strings.Contains(view, "the note I typed") {
 		t.Fatalf("the dialog lost the value it ran with:\n%s", view)

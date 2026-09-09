@@ -6,6 +6,14 @@ and the note says what shipped instead.
 
 ## Deferred
 
+- **An Archive session.** Archiving is not a Recipe Action: it does not write a
+  Capture somewhere, it takes the Capture out of reach, and a Capture that has
+  been archived can no longer be worked on. It belongs to a third Capture tab
+  that acts on Captures already organized, not to the session that organizes
+  them. `capture.archive` was removed from the Actions rather than left in place
+  waiting, so no Recipe can quietly retire a Capture as a side effect of
+  organizing it.
+
 - **`datetime` and `multi_select` input controls.** `FIELDS` renders `text`
   inline and `multiline` in an overlay; the other two input types have no
   control yet, so a requirement carrying one can be seen but not filled. The

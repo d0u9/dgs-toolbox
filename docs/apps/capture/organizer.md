@@ -110,12 +110,13 @@ of needing one added somewhere else.
 ```text
 obsidian.location.upsert  Creates Locations/<place name>.md, or updates it in
                           place when it exists
-capture.archive           Moves the Capture directory into the archive
-                          Leaves nothing behind under the Capture root
+obsidian.daily.append     Appends one entry to the note for the day the Capture
+                          was taken
+                          Creates that note when the day has none
 ```
 
-This is what a reader needs before running a plan, and it is the only place an
-irreversible Action says so.
+This is what a reader needs before running a plan, and the confirmation dialog
+shows it beside each Action for exactly that reason.
 
 ## Actions are toggleable per Capture
 
@@ -399,14 +400,13 @@ file exists:
 
 | Recipe | Workflows | Actions |
 | --- | --- | --- |
-| Location | `been_here` | location.upsert, archive |
-| Location + Daily | `been_here` | location.upsert, daily.append, archive |
-| Photo + Location | `photo_note` | location.upsert, daily.append, archive |
-| Daily | `been_here`, `photo_note`, `quick_mark` | daily.append, archive |
-| Apple Note | `photo_note`, `quick_mark` | notes.create, archive |
-| Reminder | `quick_mark` | reminders.create, archive |
-| Calendar | `quick_mark` | calendar.create, archive |
-| Archive | any | archive |
+| Location | `been_here` | location.upsert |
+| Location + Daily | `been_here` | location.upsert, daily.append |
+| Photo + Location | `photo_note` | location.upsert, daily.append |
+| Daily | `been_here`, `photo_note`, `quick_mark` | daily.append |
+| Apple Note | `photo_note`, `quick_mark` | notes.create |
+| Reminder | `quick_mark` | reminders.create |
+| Calendar | `quick_mark` | calendar.create |
 
 A file in the Recipe directory is layered over this set. `Archive` matches every
 workflow, so no Capture is ever left with an empty candidate list. The two location Recipes additionally require the Capture to
