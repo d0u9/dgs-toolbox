@@ -9,11 +9,22 @@ import (
 	"path/filepath"
 )
 
-const EnvPath = "DGS_CONFIG"
+const EnvPath = "DGS_TOOLBOX_CONFIG"
 const ExportFilename = "dgs-config.json"
 
 type Config struct {
-	TUI TUI `json:"tui"`
+	TUI   TUI   `json:"tui"`
+	Photo Photo `json:"photo"`
+}
+
+type Photo struct {
+	Import PhotoImport `json:"import"`
+}
+
+type PhotoImport struct {
+	StateFile   string `json:"state_file"`
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
 }
 
 type TUI struct {
@@ -37,7 +48,18 @@ func Default() Config {
 	return Config{TUI: TUI{TopBar: TopBar{
 		Disk: boolPointer(true), Network: boolPointer(true),
 		CPU: boolPointer(true), Time: boolPointer(true),
-	}}}
+	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}}
+}
+
+func (c Config) PhotoImportStateFile() string {
+	if c.Photo.Import.StateFile == "" {
+		return ".dgs-state"
+	}
+	return c.Photo.Import.StateFile
+}
+
+func (c Config) PhotoImportPaths() (source, destination string) {
+	return c.Photo.Import.Source, c.Photo.Import.Destination
 }
 
 func DefaultTopBarVisibility() TopBarVisibility {
@@ -94,6 +116,12 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve config path: %w", err)
 	}
+	return LoadPath(path)
+}
+
+// LoadPath loads an explicit configuration file. It intentionally bypasses
+// DGS_TOOLBOX_CONFIG so command-line configuration can override the environment.
+func LoadPath(path string) (Config, error) {
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return Config{}, nil
@@ -107,6 +135,10 @@ func Load() (Config, error) {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {
 		return Config{}, fmt.Errorf("decode config %s: %w", path, err)
+	}
+	stateFile := config.PhotoImportStateFile()
+	if filepath.Base(stateFile) != stateFile || stateFile == "." || stateFile == ".." {
+		return Config{}, fmt.Errorf("decode config %s: photo.import.state_file must be a filename, got %q", path, stateFile)
 	}
 	return config, nil
 }

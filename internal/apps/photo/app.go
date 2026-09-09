@@ -2,6 +2,7 @@ package photo
 
 import (
 	"dgs-toolbox/internal/apps/placeholder"
+	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 )
 
@@ -19,6 +20,10 @@ func New() tui.App {
 				Description: "Photo import placeholder. No files are changed.",
 				New: func() tui.CommandModel {
 					return newImportModel()
+				},
+				NewWithConfig: func(global config.Config) tui.CommandModel {
+					source, destination := global.PhotoImportPaths()
+					return newImportModelWithSettings(global.PhotoImportStateFile(), source, destination)
 				},
 			},
 			{

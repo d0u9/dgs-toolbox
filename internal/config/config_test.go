@@ -17,6 +17,19 @@ func TestMissingConfigUsesAllTopBarMetrics(t *testing.T) {
 	}
 }
 
+func TestLegacyEnvironmentVariableIsIgnored(t *testing.T) {
+	legacyPath := filepath.Join(t.TempDir(), "legacy.json")
+	t.Setenv("DGS_CONFIG", legacyPath)
+	t.Setenv(EnvPath, "")
+	path, err := Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path == legacyPath {
+		t.Fatalf("legacy environment variable still selected %q", path)
+	}
+}
+
 func TestPartialConfigOnlyOverridesNamedMetrics(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(`{"tui":{"top_bar":{"network":false,"time":false}}}`), 0o600); err != nil {
@@ -30,6 +43,56 @@ func TestPartialConfigOnlyOverridesNamedMetrics(t *testing.T) {
 	got := config.TopBarVisibility()
 	if !got.Disk || got.Network || !got.CPU || got.Time {
 		t.Fatalf("visibility = %#v", got)
+	}
+}
+
+func TestPhotoImportStateFileDefaultsAndCanBeConfigured(t *testing.T) {
+	if got := (Config{}).PhotoImportStateFile(); got != ".dgs-state" {
+		t.Fatalf("default state file = %q", got)
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"photo":{"import":{"state_file":".photo-import-state"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvPath, path)
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.PhotoImportStateFile(); got != ".photo-import-state" {
+		t.Fatalf("configured state file = %q", got)
+	}
+}
+
+func TestPhotoImportStateFileRejectsPaths(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"photo":{"import":{"state_file":"nested/state"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvPath, path)
+	if _, err := Load(); err == nil {
+		t.Fatal("state file path was accepted; only a filename is safe")
+	}
+}
+
+func TestLoadPathOverridesEnvironmentConfig(t *testing.T) {
+	directory := t.TempDir()
+	environmentPath := filepath.Join(directory, "environment.json")
+	explicitPath := filepath.Join(directory, "explicit.json")
+	if err := os.WriteFile(environmentPath, []byte(`{"photo":{"import":{"source":"/environment/source"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(explicitPath, []byte(`{"photo":{"import":{"source":"/explicit/source","destination":"/explicit/destination"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvPath, environmentPath)
+	loaded, err := LoadPath(explicitPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, destination := loaded.PhotoImportPaths()
+	if source != "/explicit/source" || destination != "/explicit/destination" {
+		t.Fatalf("paths = %q, %q", source, destination)
 	}
 }
 
@@ -47,6 +110,9 @@ func TestExportDefaultCreatesEditableConfigWithoutOverwrite(t *testing.T) {
 	visibility := loaded.TopBarVisibility()
 	if !visibility.Disk || !visibility.Network || !visibility.CPU || !visibility.Time {
 		t.Fatalf("visibility = %#v", visibility)
+	}
+	if loaded.PhotoImportStateFile() != ".dgs-state" {
+		t.Fatalf("exported state file = %q", loaded.PhotoImportStateFile())
 	}
 	if _, err := ExportDefault(path); err == nil {
 		t.Fatal("second export overwrote existing config")

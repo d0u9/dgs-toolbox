@@ -1,5 +1,7 @@
 package tui
 
+import "dgs-toolbox/internal/config"
+
 import tea "github.com/charmbracelet/bubbletea"
 
 // RequestQuitMsg lets a mouse action inside a command request the shell-owned
@@ -34,10 +36,11 @@ type CommandPathContributor interface {
 // Command describes a leaf command and creates a fresh model each time it is
 // selected.
 type Command struct {
-	ID          string
-	Name        string
-	Description string
-	New         func() CommandModel
+	ID            string
+	Name          string
+	Description   string
+	New           func() CommandModel
+	NewWithConfig func(config.Config) CommandModel
 }
 
 // App describes a command domain and its leaf commands.
@@ -55,8 +58,9 @@ type App struct {
 // mean the global picker; App alone means a domain picker; both fields mean a
 // direct leaf command.
 type Launch struct {
-	App     string
-	Command string
+	App        string
+	Command    string
+	ConfigPath string
 }
 
 // Runner is injected into the command tree to keep CLI tests independent of a
