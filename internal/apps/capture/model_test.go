@@ -144,7 +144,7 @@ func TestCaptureSettingsPopulateRootControlAndIndexFilter(t *testing.T) {
 	if m.root != "/configured/captures" || m.indexFile != "capture.json" {
 		t.Fatalf("settings = %q, %q", m.root, m.indexFile)
 	}
-	if got := m.controls.Value(rootPathID); got != "/configured/captures" {
+	if got := m.rootControl.Display(); got != "/configured/captures" {
 		t.Fatalf("Root control = %q", got)
 	}
 }
@@ -363,7 +363,7 @@ func TestImageRequiresEnterBeforeRendering(t *testing.T) {
 }
 
 func TestLocationFlattensMultilineAddress(t *testing.T) {
-	got := singleLineAddress("28 Cambridge St\nEpping NSW 2121\r\nAustralia")
+	got := singleLine("28 Cambridge St\nEpping NSW 2121\r\nAustralia")
 	if got != "28 Cambridge St · Epping NSW 2121 · Australia" {
 		t.Fatalf("single-line location = %q", got)
 	}

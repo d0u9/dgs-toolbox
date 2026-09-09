@@ -15,15 +15,12 @@ import (
 	"dgs-toolbox/internal/tui/datafield"
 	"dgs-toolbox/internal/tui/divider"
 	"dgs-toolbox/internal/tui/fieldset"
-	"dgs-toolbox/internal/tui/fileexplorer"
-	"dgs-toolbox/internal/tui/form"
 	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/scrolllist"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 var (
@@ -58,6 +55,17 @@ const (
 	maxPreviewBytes         = 1024 * 1024
 	capturePropertyKeyWidth = 12
 )
+
+// rootChangedMsg announces a new Capture root chosen in either session. The
+// Capture session broadcasts it so Scan and Route stay on one shared root and
+// one shared load.
+type rootChangedMsg struct {
+	root string
+}
+
+func rootChanged(root string) tea.Cmd {
+	return func() tea.Msg { return rootChangedMsg{root: root} }
+}
 
 type capturesLoadedMsg struct {
 	root     string
@@ -101,9 +109,7 @@ type model struct {
 	height         int
 	root           string
 	indexFile      string
-	controls       form.Model
-	picking        bool
-	picker         fileexplorer.Model
+	rootControl    rootControl
 	captures       scrolllist.Model
 	entries        []captureEntry
 	expanded       map[string]bool
@@ -148,13 +154,11 @@ func newModelWithSettings(root, indexFile string) model {
 	captureInfo.MouseWheelEnabled = false
 	fileInfo.MouseWheelEnabled = false
 	m := model{
-		width:     80,
-		height:    22,
-		root:      root,
-		indexFile: indexFile,
-		controls: form.New(form.Field{
-			ID: rootPathID, Kind: form.Path, Label: "Root", Value: displayPath(root),
-		}),
+		width:         80,
+		height:        22,
+		root:          root,
+		indexFile:     indexFile,
+		rootControl:   newRootControl(root),
 		captures:      scrolllist.New(),
 		expanded:      make(map[string]bool),
 		preview:       preview,
@@ -183,9 +187,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resizeComponents()
-		if m.picking {
-			m.sizePicker()
-		}
+		m.rootControl.Resize(m.width, m.height)
 		if m.previewPath != "" && (!m.previewIsImage || m.imagePreviewed) {
 			if m.previewIsImage {
 				cmd := m.renderSelectedImage()
@@ -193,6 +195,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.loadSelectedPreview()
 		}
+		return m, nil
+	case rootChangedMsg:
+		m.applyRoot(msg.root)
 		return m, nil
 	case capturesLoadedMsg:
 		if msg.root != m.root {
@@ -247,7 +252,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.picking {
+	if m.rootControl.Picking() {
 		return m.updatePicker(msg)
 	}
 
@@ -274,18 +279,18 @@ func (m model) View() string {
 	center := fieldset.ViewFocused(m.previewLegend(), previewContent, centerWidth, m.fields.Current() == centerField)
 	right := m.rightColumn(rightWidth)
 	workspace := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", center, " ", right)
-	if m.picking {
-		return overlay.Place(workspace, m.pickerView(), m.width, m.height)
+	if m.rootControl.Picking() {
+		return overlay.Place(workspace, m.rootControl.OverlayView(m.width, m.height), m.width, m.height)
 	}
 	return workspace
 }
 
 func (m model) Status() tui.Status {
-	if m.picking {
-		if m.picker.HasDialog() {
+	if m.rootControl.Picking() {
+		if m.rootControl.HasDialog() {
 			return tui.Status{Left: "BROWSE", Center: "CAPTURE ROOT"}
 		}
-		return tui.Status{Left: "BROWSE", Center: "CAPTURE ROOT", Right: m.picker.Hint()}
+		return tui.Status{Left: "BROWSE", Center: "CAPTURE ROOT", Right: m.rootControl.Hint()}
 	}
 	center := m.statusValue()
 	switch m.fields.Current() {
@@ -305,7 +310,7 @@ func (m model) Status() tui.Status {
 }
 
 func (m model) CapturesShellKey(key string) bool {
-	return m.picking && (key == "esc" || (key == "q" && m.picker.CapturesText()))
+	return m.rootControl.CapturesShellKey(key)
 }
 
 func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -488,7 +493,7 @@ func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.refreshDetails(false)
 	m.pendingGG = false
 	if hit == rootField {
-		if id, used := m.controls.Click([]string{rootPathID}, msg.X-2, msg.Y-m.captureListHeight()-1); used && id == rootPathID {
+		if m.rootControl.Clicked(msg.X-2, msg.Y-m.captureListHeight()-1) {
 			return m.openPicker()
 		}
 	}
@@ -509,32 +514,29 @@ func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) openPicker() (tea.Model, tea.Cmd) {
-	width, height := m.modalSize()
-	m.picker = fileexplorer.New(m.root, width-2, height-6, fileexplorer.WithFilter(fileexplorer.Directories()))
-	m.picking = true
-	return m, m.picker.Init()
+	cmd := m.rootControl.Open(m.width, m.height)
+	return m, cmd
 }
 
 func (m model) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "esc" && !m.picker.HasDialog() {
-		m.picking = false
-		return m, nil
-	}
-	picker, selected, cmd := m.picker.Update(msg)
-	m.picker = picker
+	selected, cmd := m.rootControl.Update(msg)
 	if selected == "" {
 		return m, cmd
 	}
-	m.root = selected
-	m.controls.SetValue(rootPathID, displayPath(selected))
+	return m, tea.Batch(cmd, rootChanged(selected))
+}
+
+// applyRoot points Scan at a new root and drops everything derived from the
+// previous one. The reload is issued by the Capture session.
+func (m *model) applyRoot(root string) {
+	m.root = root
+	m.rootControl.SetRoot(root)
 	m.entries = nil
 	m.expanded = make(map[string]bool)
 	m.captures.SetItems(nil)
 	m.captureCount = 0
 	m.clearPreview("· Select a file")
 	m.loadError = ""
-	m.picking = false
-	return m, tea.Batch(cmd, loadCaptures(selected, m.indexFile))
 }
 
 func (m *model) cycleSelectableField(reverse bool) {
@@ -583,12 +585,7 @@ func (m *model) setFieldBounds() {
 }
 
 func (m model) leftColumn(width int) string {
-	root := fieldset.ViewFocused(
-		"CAPTURE ROOT",
-		m.rootPathView(width-4),
-		width,
-		m.fields.Current() == rootField,
-	)
+	root := m.rootControl.Fieldset(width, m.fields.Current() == rootField)
 	listHeight := m.captureListHeight()
 	captures := m.captures
 	captures.SetSize(max(1, width-4), max(1, listHeight-2))
@@ -598,17 +595,6 @@ func (m model) leftColumn(width int) string {
 	}
 	list := fieldset.ViewFocused("CAPTURES", content, width, m.fields.Current() == capturesField)
 	return list + "\n" + root
-}
-
-func (m model) rootPathView(width int) string {
-	marker := "  "
-	style := lipgloss.NewStyle()
-	if m.fields.Current() == rootField {
-		marker = "› "
-		style = scanFocusedPathStyle
-	}
-	path := ansi.Truncate(m.controls.Value(rootPathID), max(1, width-2), "…")
-	return style.Width(max(1, width)).MaxWidth(max(1, width)).Render(marker + path)
 }
 
 func (m model) columnWidths() (left, center, right int) {
@@ -835,30 +821,6 @@ func (m model) statusValue() string {
 	return fmt.Sprintf("%d CAPTURES · %s", m.captureCount, m.indexFile)
 }
 
-func (m model) modalSize() (int, int) {
-	return max(20, min(96, m.width-4)), max(8, min(30, m.height-2))
-}
-
-func (m *model) sizePicker() {
-	width, height := m.modalSize()
-	m.picker.SetSize(width-2, height-6)
-}
-
-func (m model) pickerView() string {
-	width, height := m.modalSize()
-	label := "FILE EXPLORER · CAPTURE ROOT"
-	filter := scanFilterStyle.Render(m.picker.FilterLabel())
-	headerWidth := max(1, width-4)
-	label = ansi.Truncate(label, max(1, headerWidth-lipgloss.Width(filter)-1), "…")
-	header := scanTitleStyle.Render(label) + strings.Repeat(" ", max(1, headerWidth-lipgloss.Width(label)-lipgloss.Width(filter))) + filter
-	selected := ansi.Truncate(displayPath(m.picker.SelectedPath()), headerWidth, "…")
-	if notice := m.picker.Notice(); notice != "" {
-		selected = ansi.Truncate(notice, headerWidth, "…")
-	}
-	body := lipgloss.JoinVertical(lipgloss.Left, header, scanMutedStyle.Render(selected), "", m.picker.View(), scanMutedStyle.Render(m.picker.Hint()))
-	return scanModalStyle.Width(width - 2).Height(height - 2).MaxWidth(width).MaxHeight(height).Render(body)
-}
-
 func (m model) previewLegend() string {
 	if m.previewPath == "" {
 		return "PREVIEW"
@@ -1024,10 +986,10 @@ func (m model) captureProperties() []property {
 	}
 	place := index.CapturePlace()
 	location := []property{
-		{name: "Locality", value: singleLineAddress(place.Locality), indent: 1},
-		{name: "City", value: singleLineAddress(place.City), indent: 1},
-		{name: "Region", value: singleLineAddress(place.Region), indent: 1},
-		{name: "Country", value: singleLineAddress(place.Country), indent: 1},
+		{name: "Locality", value: singleLine(place.Locality), indent: 1},
+		{name: "City", value: singleLine(place.City), indent: 1},
+		{name: "Region", value: singleLine(place.Region), indent: 1},
+		{name: "Country", value: singleLine(place.Country), indent: 1},
 	}
 	hasLocation := false
 	for _, item := range location {
@@ -1043,8 +1005,6 @@ func (m model) captureProperties() []property {
 				props = append(props, item)
 			}
 		}
-	} else if address := singleLineAddress(place.Address); address != "" {
-		props = append(props, property{name: "Location", section: true}, property{name: "Address", value: address, indent: 1})
 	}
 	validAttachments := 0
 	for _, attachment := range index.Attachments {
@@ -1076,7 +1036,9 @@ func (m model) captureProperties() []property {
 	return props
 }
 
-func singleLineAddress(address string) string {
+// singleLine flattens a place field onto one row. The schema asks for
+// single-line values, but a producer may still write a newline into one.
+func singleLine(address string) string {
 	parts := strings.FieldsFunc(address, func(r rune) bool { return r == '\n' || r == '\r' })
 	lines := make([]string, 0, len(parts))
 	for _, part := range parts {
