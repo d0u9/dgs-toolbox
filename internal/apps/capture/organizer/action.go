@@ -22,8 +22,13 @@ const (
 // ActionDefinition says what an Action is: its label, what it requires, and how
 // it names the thing it will write. It says nothing about any one Capture.
 type ActionDefinition struct {
-	ID       ActionID
-	Label    string
+	ID    ActionID
+	Label string
+	// Effects say what this Action does outside the Capture, in the terms a
+	// reader needs before running it: what it creates, what it changes, and
+	// what it does not undo. Declared here rather than written into a screen,
+	// so the TUI and the generated reference say the same thing.
+	Effects  []string
 	Required []FieldRequirement
 	// Target resolves the concrete destination for one Capture. It returns an
 	// empty string when the inputs it needs are still missing, so an
@@ -46,8 +51,9 @@ func (p ActionPlan) Ready() bool { return len(p.Missing) == 0 }
 
 var actionDefinitions = map[ActionID]ActionDefinition{
 	ActionLocationUpsert: {
-		ID:    ActionLocationUpsert,
-		Label: "Location note",
+		ID:      ActionLocationUpsert,
+		Label:   "Location note",
+		Effects: []string{"Creates Locations/<place name>.md, or updates it in place when it exists"},
 		Required: []FieldRequirement{
 			text(FieldPlaceName, "Place name"),
 			{Field: FieldLatitude, Label: "Latitude", Required: true, Input: InputText},
@@ -62,8 +68,9 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		},
 	},
 	ActionDailyAppend: {
-		ID:    ActionDailyAppend,
-		Label: "Daily note",
+		ID:      ActionDailyAppend,
+		Label:   "Daily note",
+		Effects: []string{"Appends one entry to the note for the day the Capture was taken", "Creates that note when the day has none"},
 		Required: []FieldRequirement{
 			{Field: FieldCreatedAt, Label: "Created", Required: true, Input: InputText},
 			multiline(FieldContent, "Note"),
@@ -77,17 +84,19 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		},
 	},
 	ActionCaptureArchive: {
-		ID:     ActionCaptureArchive,
-		Label:  "Archive capture",
-		Target: func(ctx Context) string { return ctx.Capture.Name },
+		ID:      ActionCaptureArchive,
+		Label:   "Archive capture",
+		Effects: []string{"Moves the Capture directory into the archive", "Leaves nothing behind under the Capture root"},
+		Target:  func(ctx Context) string { return ctx.Capture.Name },
 	},
 	// The Apple Actions exist so the model can be exercised against more than
 	// one workflow. Each declares its requirements and names its target; none
 	// of them talks to an Apple API yet, and that detail must not shape the
 	// model when it arrives.
 	ActionAppleNoteCreate: {
-		ID:    ActionAppleNoteCreate,
-		Label: "Apple note",
+		ID:      ActionAppleNoteCreate,
+		Label:   "Apple note",
+		Effects: []string{"Creates a new note in Apple Notes", "Never edits an existing note, so running twice makes two"},
 		Required: []FieldRequirement{
 			text(FieldTitle, "Title"),
 			multiline(FieldContent, "Body"),
@@ -95,8 +104,9 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		Target: func(ctx Context) string { return ctx.String(FieldTitle) },
 	},
 	ActionReminderCreate: {
-		ID:    ActionReminderCreate,
-		Label: "Reminder",
+		ID:      ActionReminderCreate,
+		Label:   "Reminder",
+		Effects: []string{"Creates a reminder due at the given time", "Never edits an existing reminder, so running twice makes two"},
 		Required: []FieldRequirement{
 			text(FieldTitle, "Title"),
 			{Field: FieldDueAt, Label: "Due", Required: true, Input: InputDateTime},
@@ -110,8 +120,9 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		},
 	},
 	ActionCalendarCreate: {
-		ID:    ActionCalendarCreate,
-		Label: "Calendar event",
+		ID:      ActionCalendarCreate,
+		Label:   "Calendar event",
+		Effects: []string{"Creates a calendar event", "Never edits an existing event, so running twice makes two"},
 		Required: []FieldRequirement{
 			text(FieldTitle, "Title"),
 			// An all-day event needs no start time, so the requirement is

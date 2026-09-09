@@ -123,3 +123,65 @@ func missingFor(missing []FieldRequirement, id ActionID) []FieldRequirement {
 	}
 	return out
 }
+
+// FieldState is one logical field the enabled Actions ask for, together with
+// what the Context currently resolves for it.
+type FieldState struct {
+	Requirement FieldRequirement
+	Value       string
+	// FromCapture marks a value the Capture itself carries, which is not the
+	// user's to edit. An enriched or composed value is.
+	FromCapture bool
+}
+
+// Fields is what the enabled Actions ask for, split by whether it has a value
+// yet: resolved first, then the ones still to supply. A field two Actions both
+// require appears once, so it is filled once and satisfies both, and the
+// Action that needed it is answered by the Action list rather than by repeating
+// the field. Requirements whose condition does not hold are left out entirely.
+func Fields(ctx Context, recipe Recipe, enabled []ActionID) (resolved []FieldState, missing []FieldState) {
+	seen := make(map[FieldID]bool)
+	for _, req := range recipe.RequiredFields(enabled) {
+		if seen[req.Field] {
+			continue
+		}
+		if req.When != nil && !req.When(ctx) {
+			continue
+		}
+		seen[req.Field] = true
+		state := FieldState{
+			Requirement: req,
+			Value:       ctx.String(req.Field),
+			FromCapture: ctx.FromCapture(req.Field),
+		}
+		if req.satisfied(ctx) {
+			resolved = append(resolved, state)
+			continue
+		}
+		missing = append(missing, state)
+	}
+	return resolved, missing
+}
+
+// Needs lists what one Action requires of this Capture, in the order it
+// declares them, so a reader can see which fields belong to which Action
+// without the field list having to repeat itself.
+func Needs(ctx Context, id ActionID) []FieldState {
+	def, ok := LookupAction(id)
+	if !ok {
+		return nil
+	}
+	var states []FieldState
+	for _, req := range def.Required {
+		if req.When != nil && !req.When(ctx) {
+			continue
+		}
+		req.Action = id
+		states = append(states, FieldState{
+			Requirement: req,
+			Value:       ctx.String(req.Field),
+			FromCapture: ctx.FromCapture(req.Field),
+		})
+	}
+	return states
+}

@@ -39,6 +39,11 @@ var selectedRowStyle = lipgloss.NewStyle().Bold(true).
 	Foreground(lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"}).
 	Background(lipgloss.AdaptiveColor{Light: "#DDF3F0", Dark: "#173F3B"})
 
+// SelectedRowStyle is how a list marks the row under the cursor. It is exported
+// so a hand-rendered list elsewhere marks its selection the same way: one
+// screen should not highlight two lists differently.
+func SelectedRowStyle() lipgloss.Style { return selectedRowStyle }
+
 func New() Model { return Model{width: 20, height: 4, divider: -1} }
 
 // SetDivider draws a labelled rule above the item at index, splitting the list

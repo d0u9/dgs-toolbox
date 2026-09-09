@@ -99,6 +99,24 @@ Recipe "Location + Daily", all three enabled, therefore requires
   + anything the Recipe itself adds (e.g. project)
 ```
 
+## Actions declare their effects
+
+An Action also declares what it does outside the Capture: what it creates, what
+it changes in place, and what running it twice does. Declared on the Action
+rather than written into a screen, so the session and the generated reference
+say the same thing, and so a new Action arrives with its own explanation instead
+of needing one added somewhere else.
+
+```text
+obsidian.location.upsert  Creates Locations/<place name>.md, or updates it in
+                          place when it exists
+capture.archive           Moves the Capture directory into the archive
+                          Leaves nothing behind under the Capture root
+```
+
+This is what a reader needs before running a plan, and it is the only place an
+irreversible Action says so.
+
 ## Actions are toggleable per Capture
 
 A Recipe supplies the **default** enabled set — every Action it lists. The user
@@ -200,6 +218,12 @@ Requirements are attributed to the Action that declared them, so a caller can
 say *which* Action is blocking rather than only that something is missing. A
 field required by two enabled Actions is reported once per Action, and filling
 it satisfies both.
+
+`Fields` is the view for filling things in rather than for attributing them: it
+returns the union across the enabled Actions, deduplicated, split into what the
+Context can already answer and what it cannot. `Needs` is the other direction —
+one Action's own requirements — so attribution and completion are separate
+questions with separate answers instead of one list trying to serve both.
 
 ```go
 func MissingFields(ctx Context, recipe Recipe, enabled []ActionID) []FieldRequirement {

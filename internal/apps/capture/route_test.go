@@ -7,13 +7,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"dgs-toolbox/internal/apps/capture/indexschema"
 	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/tui"
+	"dgs-toolbox/internal/tui/scrolllist"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func routeTestRoot(t *testing.T, names ...string) string {
@@ -113,11 +117,16 @@ func TestRouteMarksBlockedActionsAndClearsThemOnceFilled(t *testing.T) {
 		t.Fatalf("a blocked action should show no invented target:\n%s", view)
 	}
 
-	// FIELDS shows the focused action's own requirement, not the whole union.
-	if len(m.fieldRows) == 0 || m.fieldRows[0].requirement.Field != organizer.FieldPlaceName {
-		t.Fatalf("fields column = %#v, want the location action requirements", m.fieldRows)
+	// FIELDS lists the union across enabled actions, split by state: what
+	// already has a value, then what is still missing.
+	resolved, missing := splitFieldRows(m)
+	if !equalFieldIDs(resolved, []organizer.FieldID{organizer.FieldLatitude, organizer.FieldLongitude, organizer.FieldCreatedAt}) {
+		t.Fatalf("resolved = %v", fieldRowIDs(resolved))
 	}
-	if m.fieldRows[1].editable {
+	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldPlaceName, organizer.FieldContent, organizer.FieldTags}) {
+		t.Fatalf("missing = %v", fieldRowIDs(missing))
+	}
+	if resolved[0].editable {
 		t.Fatal("latitude comes from the capture and must not be editable")
 	}
 
@@ -139,6 +148,38 @@ func TestRouteMarksBlockedActionsAndClearsThemOnceFilled(t *testing.T) {
 	if !strings.Contains(view, "Locations/Epping Station.md") {
 		t.Fatalf("plan should show the resolved target:\n%s", view)
 	}
+}
+
+func fieldRowIDs(rows []routeFieldRow) []organizer.FieldID {
+	ids := make([]organizer.FieldID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.requirement.Field)
+	}
+	return ids
+}
+
+func equalFieldIDs(rows []routeFieldRow, want []organizer.FieldID) bool {
+	got := fieldRowIDs(rows)
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func splitFieldRows(m routeModel) (resolved, missing []routeFieldRow) {
+	for _, row := range m.fieldRows {
+		if row.missing {
+			missing = append(missing, row)
+			continue
+		}
+		resolved = append(resolved, row)
+	}
+	return resolved, missing
 }
 
 func mustContext(t *testing.T, m routeModel) organizer.Context {
@@ -185,6 +226,10 @@ func TestRouteEditingAFieldRecordsEnrichment(t *testing.T) {
 	if got := m.fields.Current(); got != routeFieldsField {
 		t.Fatalf("focus = %q, want %q", got, routeFieldsField)
 	}
+	for m.fieldRows[m.fieldIndex].requirement.Field != organizer.FieldPlaceName {
+		updated, _ = m.updateFields("down")
+		m = updated.(routeModel)
+	}
 	updated, _ = m.updateFields("enter")
 	m = updated.(routeModel)
 	if !m.editing {
@@ -204,6 +249,48 @@ func TestRouteEditingAFieldRecordsEnrichment(t *testing.T) {
 	// Focus stays on the row so the value can be revised immediately.
 	if got := m.fields.Current(); got != routeFieldsField {
 		t.Fatalf("focus after committing = %q, want %q", got, routeFieldsField)
+	}
+}
+
+// Backspace and Delete walk back a column like Esc, but never leave the
+// command: a key held down should not fall out of the session.
+func TestRouteBackspaceWalksBackWithoutLeavingTheCommand(t *testing.T) {
+	for _, key := range []string{"backspace", "delete"} {
+		t.Run(key, func(t *testing.T) {
+			root := routeTestRoot(t, "alpha")
+			m := chooseRecipe(t, loadedRoute(t, root), "Location")
+			updated, _ := m.updateActions("enter")
+			m = updated.(routeModel)
+
+			for _, want := range []string{routeActionsField, routeRecipesField, routeCapturesField} {
+				if !m.CapturesShellKey(key) {
+					t.Fatalf("%s from %q was handed to the shell", key, m.fields.Current())
+				}
+				switch m.fields.Current() {
+				case routeFieldsField:
+					updated, _ = m.updateFields(key)
+				case routeActionsField:
+					updated, _ = m.updateActions(key)
+				case routeRecipesField:
+					updated, _ = m.updateRecipes(key)
+				}
+				m = updated.(routeModel)
+				if got := m.fields.Current(); got != want {
+					t.Fatalf("%s moved to %q, want %q", key, got, want)
+				}
+			}
+
+			// From CAPTURES there is nowhere to go back to, and unlike Esc it
+			// must not leave the command or clear anything.
+			if m.CapturesShellKey(key) {
+				t.Fatalf("%s from CAPTURES should be inert, not handled", key)
+			}
+			updated, _ = m.updateCaptures(key)
+			m = updated.(routeModel)
+			if _, _, ok := m.currentSelection(); !ok {
+				t.Fatalf("%s cleared the selection from CAPTURES", key)
+			}
+		})
 	}
 }
 
@@ -624,15 +711,15 @@ func TestRouteMouseDrivesEveryColumn(t *testing.T) {
 		t.Fatal("clicking the label must not toggle the action")
 	}
 
-	// FIELDS: a click on an editable row opens its editor. Re-enable the
-	// action first: a disabled one contributes no editable field.
+	// FIELDS: a single click selects the row without opening its editor.
+	// Re-enable the action first: a disabled one contributes no editable field.
 	m = click(m, checkbox, 1)
 	m = click(m, columnX(3), 1)
 	if got := m.fields.Current(); got != routeFieldsField {
 		t.Fatalf("focus = %q, want %q", got, routeFieldsField)
 	}
-	if !m.editing {
-		t.Fatal("clicking an editable field row did not open its editor")
+	if m.editing {
+		t.Fatal("a single click should select the row, not start editing")
 	}
 
 	// The wheel scrolls the list under the pointer without changing focus.
@@ -644,5 +731,266 @@ func TestRouteMouseDrivesEveryColumn(t *testing.T) {
 	}
 	if m.captures.Top() < before {
 		t.Fatal("the wheel did not scroll the captures list")
+	}
+}
+
+// A double click does what Enter does in that column, so the pointer alone can
+// drive the whole session.
+func TestRouteDoubleClickActsLikeEnter(t *testing.T) {
+	root := routeTestRoot(t, "alpha", "beta")
+	m := loadedRoute(t, root)
+	widths := m.columnWidths()
+	columnX := func(index int) int {
+		x := 0
+		for i := 0; i < index; i++ {
+			x += widths[i] + columnGutter
+		}
+		return x + 4
+	}
+	click := func(m routeModel, x, y int) routeModel {
+		updated, _ := m.updateMouse(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		return updated.(routeModel)
+	}
+	doubleClick := func(m routeModel, x, y int) routeModel {
+		return click(click(m, x, y), x, y)
+	}
+
+	// CAPTURES: Enter moves to RECIPES.
+	m = doubleClick(m, columnX(0), 1)
+	if got := m.fields.Current(); got != routeRecipesField {
+		t.Fatalf("focus after double-clicking a capture = %q, want %q", got, routeRecipesField)
+	}
+
+	// RECIPES: Enter chooses the recipe and moves to ACTIONS.
+	m = doubleClick(m, columnX(1), 2)
+	if got := m.fields.Current(); got != routeActionsField {
+		t.Fatalf("focus after double-clicking a recipe = %q, want %q", got, routeActionsField)
+	}
+	selection, _, ok := m.currentSelection()
+	if !ok || selection.Recipe != "obsidian_location_daily" {
+		t.Fatalf("double-clicking a recipe did not choose it: %+v", selection)
+	}
+
+	// ACTIONS: Enter moves to FIELDS.
+	m = doubleClick(m, columnX(2), 1)
+	if got := m.fields.Current(); got != routeFieldsField {
+		t.Fatalf("focus after double-clicking an action = %q, want %q", got, routeFieldsField)
+	}
+
+	// FIELDS: Enter edits the row. The rows above the rule come from the
+	// capture, so the editable one is below it.
+	row := m.missingStart() + 2 // one for the border, one for the rule
+	m = doubleClick(m, columnX(3), row)
+	if !m.editing {
+		t.Fatalf("double-clicking a missing field row did not open its editor:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+// Two presses on a checkbox are two toggles, not a double click.
+func TestRouteCheckboxClicksDoNotPairIntoADoubleClick(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	widths := m.columnWidths()
+	checkbox := widths[0] + columnGutter + widths[1] + columnGutter + 2 + m.actions.LabelOffset()
+	click := func(m routeModel, y int) routeModel {
+		updated, _ := m.updateMouse(tea.MouseMsg{X: checkbox, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		return updated.(routeModel)
+	}
+
+	selection, recipe, _ := m.currentSelection()
+	before := len(selection.EnabledActions(recipe))
+	m = click(click(m, 1), 1)
+	selection, recipe, _ = m.currentSelection()
+	if got := len(selection.EnabledActions(recipe)); got != before {
+		t.Fatalf("enabled actions = %d, want %d after toggling off and on again", got, before)
+	}
+	if got := m.fields.Current(); got != routeActionsField {
+		t.Fatalf("focus = %q, want the checkbox not to have advanced a column", got)
+	}
+}
+
+// A second press long after the first is a fresh click, not a double one.
+func TestRouteDoubleClickWindowExpires(t *testing.T) {
+	root := routeTestRoot(t, "alpha", "beta")
+	m := loadedRoute(t, root)
+	press := func(m routeModel) routeModel {
+		updated, _ := m.updateMouse(tea.MouseMsg{X: 4, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		return updated.(routeModel)
+	}
+
+	m = press(m)
+	m.lastClick.at = time.Now().Add(-2 * doubleClickWindow)
+	m = press(m)
+	if got := m.fields.Current(); got != routeCapturesField {
+		t.Fatalf("focus = %q, want the slow second press to be a fresh click", got)
+	}
+}
+
+// Toggling an Action off takes the fields only it required out of both halves,
+// and leaves a field another enabled Action still needs.
+func TestRouteFieldsFollowTheEnabledActions(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+
+	_, missing := splitFieldRows(m)
+	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldPlaceName, organizer.FieldContent, organizer.FieldTags}) {
+		t.Fatalf("missing = %v", fieldRowIDs(missing))
+	}
+
+	m.actions.SelectID("action:" + string(organizer.ActionDailyAppend))
+	updated, _ := m.updateActions(" ")
+	m = updated.(routeModel)
+
+	resolved, missing := splitFieldRows(m)
+	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldPlaceName, organizer.FieldTags}) {
+		t.Fatalf("missing after disabling the daily note = %v", fieldRowIDs(missing))
+	}
+	for _, row := range resolved {
+		if row.requirement.Field == organizer.FieldCreatedAt {
+			t.Fatal("createdAt was required only by the disabled action and should be gone")
+		}
+	}
+}
+
+// A field two enabled Actions both require appears once, so it is filled once.
+func TestRouteFieldsDeduplicateAcrossActions(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+
+	count := 0
+	for _, row := range m.fieldRows {
+		if row.requirement.Field == organizer.FieldContent {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("content appears %d times, want once", count)
+	}
+}
+
+// The ACTIONS detail says what the focused Action needs of this Capture and
+// what it will do outside it, which is where a field is attributed.
+func TestRouteActionDetailNamesNeedsAndEffects(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	m.actions.SelectID("action:" + string(organizer.ActionCaptureArchive))
+	m.refresh()
+
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"capture.archive", "Needs   nothing", "Effects", "Moves the Capture directory"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("action detail is missing %q:\n%s", want, view)
+		}
+	}
+
+	m.actions.SelectID("action:" + string(organizer.ActionDailyAppend))
+	m.refresh()
+	view = ansi.Strip(m.View())
+	for _, want := range []string{"obsidian.daily.append", "Note*     · missing", "Appends one entry"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("action detail is missing %q:\n%s", want, view)
+		}
+	}
+}
+
+// A Recipe explains itself before it is chosen, because choosing one resets the
+// enabled Action set and should not be how its content is discovered.
+func TestRouteRecipeDetailDescribesTheCandidateUnderTheCursor(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := loadedRoute(t, root)
+	updated, _ := m.updateCaptures("enter")
+	m = updated.(routeModel)
+	m.recipes.SelectID("recipe:obsidian_location_daily")
+	m.refresh()
+
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"obsidian_location_daily", "Runs", "Location note", "Daily note", "Matches been_here", "Source  built-in"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("recipe detail is missing %q:\n%s", want, view)
+		}
+	}
+	if _, _, ok := m.currentSelection(); ok {
+		t.Fatal("describing a recipe must not choose it")
+	}
+}
+
+// The row under the FIELDS cursor is marked the way every other list on the
+// screen marks one: the same style, not a lone character the muted style then
+// paints over.
+func TestRouteFieldsHighlightMatchesTheOtherLists(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+
+	root := routeTestRoot(t, "alpha")
+	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	updated, _ := m.updateActions("enter")
+	m = updated.(routeModel)
+	for m.fieldRows[m.fieldIndex].requirement.Field != organizer.FieldPlaceName {
+		updated, _ = m.updateFields("down")
+		m = updated.(routeModel)
+	}
+
+	// "Place name*" also appears in the ACTIONS detail pane, so the lines are
+	// read from the FIELDS column alone.
+	widths := m.columnWidths()
+	start := widths[0] + widths[1] + widths[2] + 3*columnGutter
+	marker := selectionSGR(t)
+	var selected, unselected string
+	for _, line := range strings.Split(m.View(), "\n") {
+		column := ansi.Cut(line, start, start+widths[3])
+		switch {
+		case strings.Contains(ansi.Strip(column), "Place name*"):
+			selected = column
+		case strings.Contains(ansi.Strip(column), "Note*"):
+			unselected = column
+		}
+	}
+	if selected == "" || unselected == "" {
+		t.Fatalf("field rows not found:\n%s", ansi.Strip(m.View()))
+	}
+	if !strings.Contains(selected, marker) {
+		t.Errorf("the selected field row does not use the shared selection style:\n%q", selected)
+	}
+	if strings.Contains(unselected, marker) {
+		t.Errorf("an unselected field row carries the selection style:\n%q", unselected)
+	}
+}
+
+// selectionSGR is the escape sequence the shared selected-row style emits.
+func selectionSGR(t *testing.T) string {
+	t.Helper()
+	rendered := scrolllist.SelectedRowStyle().Render("x")
+	index := strings.Index(rendered, "x")
+	if index <= 0 {
+		t.Fatalf("selection style emits no sequence: %q", rendered)
+	}
+	return rendered[:index]
+}
+
+// Running moves the cursor to the next Capture, so the dialog must keep
+// reporting the Capture it ran rather than re-resolving whatever is selected
+// behind it.
+func TestRouteRunDialogReportsTheCaptureItRan(t *testing.T) {
+	root := routeTestRoot(t, "alpha", "beta")
+	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldPlaceName, "Epping Station")
+	selection.Set(organizer.FieldContent, "the note I typed")
+	m.refresh()
+
+	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(routeModel)
+
+	// The cursor has already moved on.
+	if item, _ := m.captures.Selected(); item.ID != "capture:"+filepath.Join(root, "beta") {
+		t.Fatalf("cursor = %q, want the next capture", item.ID)
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "the note I typed") {
+		t.Fatalf("the dialog lost the value it ran with:\n%s", view)
+	}
+	if strings.Contains(view, "· missing") {
+		t.Fatalf("the dialog is reporting the next capture's values:\n%s", view)
 	}
 }

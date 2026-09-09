@@ -35,20 +35,28 @@ uneven division go to the leftmost columns. Because four columns need more
 width than Scan's three, Route shows its resize prompt on narrower terminals
 than Scan does.
 
-Each column is the result of the selection in the column to its left, so the
-work reads left to right and every column narrows the one after it:
+`CAPTURES` narrows `RECIPES`, and the chosen Recipe fills `ACTIONS` and
+`FIELDS`. The last two are peers rather than a further narrowing: `ACTIONS` is
+where the plan is shaped and each Action explains itself, `FIELDS` is the one
+place everything gets filled in. Moving the `ACTIONS` cursor changes only its
+own detail pane; toggling an Action changes what `FIELDS` asks for.
 
 ```text
 CAPTURES              RECIPES            ACTIONS                    FIELDS
-                      FindRecipes()      Build() over enabled set   the Action's
-                                                                    requirements
+                      candidates         the plan, one row each     what the enabled
+                                                                    actions ask for
 
-  1 ◐               > Location + Daily   [x] ● obsidian.location…   Place name* ___
-      → Loc + Daily   Location             Locations/Epping…md      Latitude  -33.76
-  2 ○               Daily                [x] ○ obsidian.daily…      Longitude 151.08
-  3 ○               Archive                · target unresolved
-─ ORGANIZED ─────                        [ ]   capture.archive
-  4 ● → Daily ×2
+  1 ◐               > Location + Daily   [x] ● obsidian.location…   Latitude  -33.76
+      → Loc + Daily   Location             Locations/Epping…md      Longitude 151.08
+  2 ○               Daily              > [x] ○ obsidian.daily…      Created   2026-…
+  3 ○               Archive                Daily/2026-09-09.md    ── ◆ MISSING ─────
+─ ◆ ORGANIZED ───                        [ ]   capture.archive       Place name* ___
+  4 ● → Daily ×2                                                     Note*       ___
+                                       ── ◆ obsidian.daily.append ─
+                                         needs  createdAt  2026-…
+                                                content  · missing
+                                         effect Appends one entry
+                                                to the day's note
 ```
 
 - The left column repeats Scan's arrangement: the scrollable `CAPTURES` list
@@ -96,12 +104,53 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   preselected and no candidate is highlighted as recommended — choosing the
   Recipe is the user's decision, and a lone candidate is still confirmed with
   `Enter`. With no candidate it shows `· No recipe matches this capture`.
+- A pane below the list describes the candidate under the cursor: what it
+  `Runs`, what it `Asks` for beyond its Actions, what it `Matches`, and its
+  `Source` — `built-in` or the filename that defined it. It is there because
+  choosing a Recipe resets the enabled Action set, so choosing one must not be
+  how its content is discovered.
 - `ACTIONS` shows the Action Plan of the chosen Recipe: one row per Action, in
   the order the Recipe lists them, with the resolved target beneath the Action
   name. Each row carries two independent markers, which are never merged:
   `[x]`/`[ ]` for enabled, and `●`/`○` for whether that Action's requirements
   are met. A disabled row is dimmed, shows no readiness marker and no target,
   because it does not enter the plan at all.
+- Below the list, a pane describes the Action under the cursor: what it `Needs`
+  of this Capture, field by field with the value or `· missing`, and what its
+  `Effect` is outside the Capture — what it creates, what it changes, what
+  running it twice does. The effects are declared on the Action itself, so this
+  pane and the generated reference say the same thing.
+- Both detail panes share one fixed height, so neither list resizes as the
+  cursor moves between entries that describe themselves at different lengths,
+  and the two rules line up across the columns.
+- A pane is written as headed sections — a quiet header on its own line, its
+  items indented under it — rather than as a hanging key column. A key column
+  costs width the content needs, and at a quarter of the screen that showed up
+  as truncated field names. A single value small enough to sit beside its key
+  still does, where a header of its own would waste a row.
+
+  ```text
+  ── ◆ obsidian.location.upsert ──────
+  Needs
+    Place name*  · missing
+    Latitude*    34.66939
+    Longitude*   135.50122
+  Effects
+    Creates Locations/<place name>.md,
+      or updates it in place when it
+      exists
+  ```
+
+- Within a section: names are muted and values are not, so the eye lands on the
+  content; the name column is sized to the longest name present rather than
+  fixed, so a short list is not padded out to fit one it does not contain; a
+  wrapped sentence is indented further than its first line, so it cannot be
+  mistaken for the next item; and a field value is clipped rather than wrapped,
+  because it is a datum rather than a sentence and `FIELDS` carries it in full a
+  column away. Fields are named by the same label `FIELDS` uses, so one screen
+  never calls one thing two names.
+- This pane is where a field is attributed to the Action that asked for it,
+  which is why `FIELDS` does not have to repeat the attribution.
 
   ```text
     [x] ● obsidian.location.upsert
@@ -111,13 +160,25 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
     [ ]   capture.archive
   ```
 
-- `FIELDS` shows the requirements of the Action under the `ACTIONS` cursor —
-  not the union across the whole Recipe — so a missing input is attributable to
-  the Action that needs it. Values already resolved from the Capture are shown
-  as muted read-only rows; unmet requirements are editable slots marked `*`
-  when required. Fields the Recipe itself declares are shown under every Action
-  and stay required whatever is enabled. It uses the same fixed 12-cell key
-  column as Capture Info so values never shift as the cursor changes.
+- `FIELDS` is what the **enabled** Actions ask for, deduplicated and split by
+  state: the fields that already have a value, then a `MISSING` rule, then the
+  ones still to supply. A field two Actions both require appears once, so it is
+  filled once and satisfies both. Toggling an Action off takes the fields only
+  it required out of both halves; toggling it back on brings them back.
+- The split is by state, not by importance: above the rule is what the Capture
+  can already answer — from its own data, from a composed value, or from
+  something supplied earlier — and below it is the work left. A value the
+  Capture itself carries is muted and read-only; a composed or supplied one
+  stays editable, so a composed place name can be replaced. It uses the same
+  fixed 12-cell key column as Capture Info so values never shift as the cursor
+  changes.
+- An optional field with no value sits below the rule too, unmarked. Only the
+  `*` rows block the plan, so a `MISSING` list of unmarked rows is still ready
+  to run.
+- The row under the cursor is marked with the shared selected-row style, the
+  same one the lists in the other columns use, rather than with a marker
+  character alone: a read-only row is muted, and a muted line paints over a
+  lone marker.
 - At a quarter of the width `FIELDS` renders `text` inline. A `multiline` field
   is a paragraph and does not fit a quarter column, so it is edited in an
   overlay over the workspace, titled by the field. `datetime` and
@@ -132,14 +193,18 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 
 - `CAPTURE ROOT`: `Enter` opens the File Explorer overlay; `Esc` closes it
   without changing the root.
-- `Enter` advances one column to the right and `Esc` returns one column to the
-  left, so the four columns are walked as one progressive selection. Route owns
-  `Esc` in every column but `CAPTURES`, where it falls through to the shell and
-  leaves the command; a half-made selection is therefore never abandoned by one
-  stray `Esc`.
+- `Enter` advances one column to the right, and `Esc`, `Backspace`, or `Delete`
+  returns one column to the left, so the four columns are walked as one
+  progressive selection. Route owns those keys in every column but `CAPTURES`.
+- From `CAPTURES` there is nowhere further left: `Esc` falls through to the
+  shell and leaves the command, so a half-made selection is never abandoned by
+  one stray press; `Backspace` and `Delete` are inert there, because a key held
+  down while walking back should not fall out of the session.
 - `CAPTURES`: `↑/k` and `↓/j` move, `h/l` pan, `g g`/`G` jump to the first and
-  last Capture, `Enter` moves focus to `RECIPES`, and `u` or `Backspace` clears
-  the whole Selection for the current Capture.
+  last Capture, `Enter` moves focus to `RECIPES`, and `u` clears the whole
+  Selection for the current Capture. Clearing is `u` alone: `Backspace` walks
+  back a column everywhere else, and one key with two meanings on one screen is
+  how a Selection gets cleared by accident.
 - `RECIPES`: `↑/k` and `↓/j` move, `Enter` chooses the Recipe, enables its
   default Action set, and moves focus to `ACTIONS`. Choosing a different Recipe
   replaces the Action set; enrichment already supplied is kept, since it is
@@ -150,14 +215,17 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 - `FIELDS`: `↑/k` and `↓/j` move between rows and `Enter` edits the focused
   editable row. A `text` row is edited in place and committed with `Enter`; a
   `multiline` row opens the overlay, where `Enter` inserts a newline and
-  `ctrl+s` commits. `Esc` abandons an edit, and from a row it returns to
-  `ACTIONS`. Committing does not move focus away, so a value can be revised
+  `ctrl+s` commits. `Esc` abandons an edit; `Backspace` and `Delete` edit the
+  text while an editor is open and only walk back once it is closed. Committing does not move focus away, so a value can be revised
   immediately.
 - The `RUN` dialog is a preview, not a confirmation: it opens on `x`, reports,
   and closes on `Esc`, `Enter`, or `q`. It is rendered generically from the
   plan — the target each Action resolved, then the value of every requirement
   that Action declares — rather than from per-Action display code, so a new
   Action needs no dialog work to appear in it.
+
+  The dialog reports the Capture it ran, not whichever one the cursor moved on
+  to afterwards.
 
   ```text
   ╭─ RUN ──────────────────────────────────────────────╮
@@ -190,11 +258,14 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 - `R` refreshes the Capture list from any DataField.
 - Every column is reachable with the pointer as well as the keyboard. A primary
   click selects a row and focuses its Fieldset, and the wheel scrolls the list
-  under the pointer without changing focus. Two places where the pointer has an
-  unambiguous target act directly: clicking an Action's `[x]` toggles it, and
-  clicking an editable `FIELDS` row opens its editor. Choosing a Recipe stays on
-  `Enter` — it resets the enabled Action set, so it should not follow from a
-  stray click.
+  under the pointer without changing focus.
+- A double click on a row does what `Enter` does in that column, so the pointer
+  alone can drive the session: on a Capture it moves to `RECIPES`, on a Recipe
+  it chooses it, on an Action it moves to `FIELDS`, and on an editable field row
+  it opens its editor. Splitting select from act this way means a stray click
+  never chooses a Recipe, which would reset the enabled Action set.
+- The exception is an Action's `[x]`: a press on it toggles that Action and does
+  not pair into a double click, because toggling twice would mean nothing.
 - The four Fieldsets sit in one row, so `Alt+L`/`Alt+Right` and
   `Alt+H`/`Alt+Left` walk `Captures ↔ Recipes ↔ Actions ↔ Fields` without the
   progressive-selection semantics of `Enter`. `Alt+J`/`Alt+Down` from Captures
