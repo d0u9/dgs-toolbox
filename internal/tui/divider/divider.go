@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
@@ -21,4 +22,20 @@ func Anchored(width int) string {
 	return lineStyle.Render("──") +
 		anchorStyle.Render(" ◆ ") +
 		lineStyle.Render(strings.Repeat("─", width-5))
+}
+
+// Labelled renders the anchored rule with a label after the anchor, naming the
+// section it introduces rather than merely separating it. The label is clipped
+// when the width cannot hold it; an empty label gives a plain Anchored rule.
+func Labelled(label string, width int) string {
+	width = max(5, width)
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return Anchored(width)
+	}
+	// "── ◆ " and one trailing space around the label, then at least one cell
+	// of trailing rule.
+	label = ansi.Truncate(label, max(1, width-7), "…")
+	head := lineStyle.Render("──") + anchorStyle.Render(" ◆ ") + lineStyle.Render(label+" ")
+	return head + lineStyle.Render(strings.Repeat("─", max(1, width-lipgloss.Width(head))))
 }
