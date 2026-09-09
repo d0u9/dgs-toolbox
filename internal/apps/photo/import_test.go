@@ -675,9 +675,11 @@ func TestResultListsUseVimNavigationInsteadOfMoreText(t *testing.T) {
 
 func TestImportSummaryRespondsToParameters(t *testing.T) {
 	model := newImportModel().(importModel)
+	// Duplicates compare the full relative path, because Destination mirrors the
+	// Source hierarchy: "old/two.dng" does not collide with "two.DNG" at the root.
 	model.scan = scanSummary{
 		source:      []scannedFile{{path: "one.JPG"}, {path: "two.DNG"}, {path: "notes.txt"}},
-		destination: []scannedFile{{path: "old/one.jpg"}},
+		destination: []scannedFile{{path: "one.jpg"}, {path: "old/two.dng"}},
 	}
 	plan := model.buildPlan()
 	if plan.eligible != 3 || plan.duplicates != 1 || plan.skipped != 1 || plan.processed != 2 {
@@ -770,5 +772,28 @@ func TestExplorerDialogHintsAreNotRepeatedInStatusBar(t *testing.T) {
 	}
 	if count := strings.Count(model.View(), "n/esc cancel"); count != 1 {
 		t.Fatalf("delete cancel hint appears %d times, want once", count)
+	}
+}
+
+func TestBuildJobsMirrorsSourceHierarchy(t *testing.T) {
+	jobs := buildJobs("/card", "/library", []scannedFile{
+		{path: "DCIM/100MSDCF/IMG_0001.JPG"},
+		{path: "DCIM/101MSDCF/IMG_0001.JPG"},
+		{path: "IMG_0002.JPG"},
+	})
+	want := []string{
+		filepath.Join("/library", "DCIM", "100MSDCF", "IMG_0001.JPG"),
+		filepath.Join("/library", "DCIM", "101MSDCF", "IMG_0001.JPG"),
+		filepath.Join("/library", "IMG_0002.JPG"),
+	}
+	seen := map[string]struct{}{}
+	for index, job := range jobs {
+		if job.Destination != want[index] {
+			t.Fatalf("job %d destination = %q, want %q", index, job.Destination, want[index])
+		}
+		if _, exists := seen[job.Destination]; exists {
+			t.Fatalf("two jobs share destination %q", job.Destination)
+		}
+		seen[job.Destination] = struct{}{}
 	}
 }

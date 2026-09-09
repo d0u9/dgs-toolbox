@@ -136,7 +136,14 @@ type FileResult struct {
 	Error           string `json:"error,omitempty"`
 }
 
-type Result struct{ Files []FileResult }
+// Result carries the per-file transfer outcomes. StateError reports a failure
+// to persist the import-state file, which is bookkeeping rather than transfer
+// I/O: files that were verified and published stay complete, and only whole-file
+// resume for a later retry is degraded.
+type Result struct {
+	Files      []FileResult
+	StateError error
+}
 
 type State struct {
 	Version       int          `json:"version"`
@@ -177,7 +184,9 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 		pendingIndices = append(pendingIndices, i)
 	}
 	if plan.StatePath != "" {
-		_ = writeState(plan.StatePath, &state)
+		if err := writeState(plan.StatePath, &state); err != nil {
+			result.StateError = fmt.Errorf("write state: %w", err)
+		}
 	}
 
 	jobs := make(chan int)
@@ -209,10 +218,12 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 		result.Files[outcome.result.Index] = outcome.result
 		state.Files[outcome.result.Index] = outcome.result
 		if plan.StatePath != "" {
-			if err := writeState(plan.StatePath, &state); err != nil && outcome.event.Err == nil {
-				outcome.event.Phase, outcome.event.Err = PhaseFailed, fmt.Errorf("write state: %w", err)
-				result.Files[outcome.result.Index].Phase = PhaseFailed
-				result.Files[outcome.result.Index].Error = outcome.event.Err.Error()
+			// A file that reached the destination under its final name has already
+			// satisfied the integrity contract. Failing to record that is a
+			// bookkeeping failure, so keep the transfer outcome intact and report
+			// the state error once for the batch.
+			if err := writeState(plan.StatePath, &state); err != nil && result.StateError == nil {
+				result.StateError = fmt.Errorf("write state: %w", err)
 			}
 		}
 		emit(ctx, events, outcome.event)
@@ -322,7 +333,14 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	job := plan.Jobs[index]
 	base := Event{Index: index, Source: job.Source, Destination: job.Destination}
 	result := FileResult{Index: index, Source: job.Source, Destination: job.Destination}
+	// partial names the exclusively created .dgs-part file once it belongs to
+	// this transfer, so every failure path discards it instead of leaving an
+	// unverifiable remnant in the destination directory.
+	var partial string
 	fail := func(err error) (FileResult, Event) {
+		if partial != "" {
+			_ = os.Remove(partial)
+		}
 		result.Phase, result.Error = PhaseFailed, err.Error()
 		base.Phase, base.Err = PhaseFailed, err
 		return result, base
@@ -373,6 +391,7 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	if err != nil {
 		return fail(fmt.Errorf("open destination temporary file: %w", err))
 	}
+	partial = temporary
 	sourceDigest := sha256.New()
 	buffer := make([]byte, 1024*1024)
 	var copied int64
@@ -465,6 +484,7 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	if err := os.Rename(temporary, job.Destination); err != nil {
 		return fail(fmt.Errorf("publish destination: %w", err))
 	}
+	partial = ""
 	if err := syncDirectory(filepath.Dir(job.Destination)); err != nil {
 		return fail(fmt.Errorf("sync destination directory: %w", err))
 	}
