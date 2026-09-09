@@ -83,12 +83,6 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 			return path.Join("Daily", day+".md")
 		},
 	},
-	ActionCaptureArchive: {
-		ID:      ActionCaptureArchive,
-		Label:   "Archive capture",
-		Effects: []string{"Moves the Capture directory into the archive", "Leaves nothing behind under the Capture root"},
-		Target:  func(ctx Context) string { return ctx.Capture.Name },
-	},
 	// The Apple Actions exist so the model can be exercised against more than
 	// one workflow. Each declares its requirements and names its target; none
 	// of them talks to an Apple API yet, and that detail must not shape the
