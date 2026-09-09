@@ -22,40 +22,58 @@ type Attachment struct {
 
 type Device struct {
 	OS            string `json:"os"`
-	SystemVersion string `json:"systemVesion"`
+	SystemVersion string `json:"systemVersion"`
 	Name          string `json:"name"`
 }
 
 type Source struct {
-	App    string `json:"app"`
-	Device Device `json:"device"`
+	App      string `json:"app"`
+	Workflow string `json:"workflow"`
+	Device   Device `json:"device"`
 }
 
-type Position struct {
-	Altitude     float64 `json:"altitude"`
-	Longitude    float64 `json:"longitude"`
-	Latitude     float64 `json:"latitude"`
-	Address      string  `json:"address"`
-	Locality     string  `json:"locality"`
-	City         string  `json:"city"`
-	Region       string  `json:"region"`
-	LegacyRegion string  `json:"region "`
-	Country      string  `json:"country"`
+// Coordinates is the numeric half of a Capture's location. Descriptive fields
+// live in Place and are not accepted here.
+type Coordinates struct {
+	Altitude  float64 `json:"altitude"`
+	Longitude float64 `json:"longitude"`
+	Latitude  float64 `json:"latitude"`
+}
+
+// Place is the descriptive half of a Capture's location. Every field is
+// optional: a Capture may know its city without a street address, or carry
+// coordinates with no place at all.
+type Place struct {
+	Address  string `json:"address"`
+	Locality string `json:"locality"`
+	City     string `json:"city"`
+	Region   string `json:"region"`
+	Country  string `json:"country"`
 }
 
 // Index is the typed subset used by Capture Scan after validation. Payload is
-// deliberately dynamic because its fields are defined by the capture type.
+// deliberately dynamic because its fields are defined by the workflow.
+// Coordinates and Place are pointers because a Capture may carry coordinates, a
+// place, both, or neither. Fields the schema does not describe are ignored:
+// producers may write whatever else they need.
 type Index struct {
 	Schema      string         `json:"schema"`
 	Source      Source         `json:"source"`
-	Position    Position       `json:"position"`
+	Coordinates *Coordinates   `json:"coordinates"`
+	Place       *Place         `json:"place"`
 	ID          string         `json:"id"`
-	IsDone      string         `json:"isDone"`
 	Payload     map[string]any `json:"payload"`
 	Attachments []Attachment   `json:"attachments"`
 	CreatedAt   string         `json:"createdAt"`
-	Type        string         `json:"type"`
-	Dir         string         `json:"dir"`
+}
+
+// CapturePlace returns the Capture's descriptive location, or an empty Place
+// when it has none.
+func (i Index) CapturePlace() Place {
+	if i.Place == nil {
+		return Place{}
+	}
+	return *i.Place
 }
 
 // ReadFile validates and decodes a Capture index.
@@ -114,10 +132,9 @@ func Validate(reader io.Reader) error {
 	if err != nil {
 		return err
 	}
-	if err := requireOnly(root,
-		[]string{"schema", "source", "position", "id", "isDone", "createdAt", "type", "dir"},
-		[]string{"schema", "source", "position", "id", "isDone", "payload", "attachments", "createdAt", "type", "dir"},
-		"index"); err != nil {
+	// Only the described fields are checked; anything else a producer writes is
+	// ignored rather than rejected.
+	if err := require(root, []string{"schema", "source", "id", "createdAt"}, "index"); err != nil {
 		return err
 	}
 	if schema, err := nonEmptyString(root, "schema", "index"); err != nil || schema != "v1" {
@@ -128,12 +145,6 @@ func Validate(reader io.Reader) error {
 	}
 	if _, err := nonEmptyString(root, "id", "index"); err != nil {
 		return err
-	}
-	if done, err := nonEmptyString(root, "isDone", "index"); err != nil || (done != "true" && done != "false") {
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("index.isDone must equal %q or %q", "true", "false")
 	}
 	if payload, exists := root["payload"]; exists {
 		if _, err := asObject(payload, "index.payload"); err != nil {
@@ -147,17 +158,18 @@ func Validate(reader io.Reader) error {
 	if _, err := time.Parse(time.RFC3339Nano, createdAt); err != nil {
 		return fmt.Errorf("index.createdAt must be an RFC 3339 date-time: %w", err)
 	}
-	if _, err := nonEmptyString(root, "type", "index"); err != nil {
-		return err
-	}
-	if _, err := nonEmptyString(root, "dir", "index"); err != nil {
-		return err
-	}
 	if err := validateSource(root["source"]); err != nil {
 		return err
 	}
-	if err := validatePosition(root["position"]); err != nil {
-		return err
+	if coordinates, exists := root["coordinates"]; exists {
+		if err := validateCoordinates(coordinates); err != nil {
+			return err
+		}
+	}
+	if place, exists := root["place"]; exists {
+		if err := validatePlace(place); err != nil {
+			return err
+		}
 	}
 	if attachments, ok := root["attachments"]; ok {
 		if err := validateAttachments(attachments); err != nil {
@@ -172,21 +184,24 @@ func validateSource(value any) error {
 	if err != nil {
 		return err
 	}
-	if err := requireOnly(source, []string{"app", "device"}, []string{"app", "device"}, "index.source"); err != nil {
+	fields := []string{"app", "workflow", "device"}
+	if err := requireOnly(source, fields, fields, "index.source"); err != nil {
 		return err
 	}
-	if _, err := nonEmptyString(source, "app", "index.source"); err != nil {
-		return err
+	for _, field := range []string{"app", "workflow"} {
+		if _, err := nonEmptyString(source, field, "index.source"); err != nil {
+			return err
+		}
 	}
 	device, err := asObject(source["device"], "index.source.device")
 	if err != nil {
 		return err
 	}
-	fields := []string{"os", "systemVesion", "name"}
-	if err := requireOnly(device, fields, fields, "index.source.device"); err != nil {
+	deviceFields := []string{"os", "systemVersion", "name"}
+	if err := requireOnly(device, deviceFields, deviceFields, "index.source.device"); err != nil {
 		return err
 	}
-	for _, field := range fields {
+	for _, field := range deviceFields {
 		if _, err := nonEmptyString(device, field, "index.source.device"); err != nil {
 			return err
 		}
@@ -194,40 +209,53 @@ func validateSource(value any) error {
 	return nil
 }
 
-func validatePosition(value any) error {
-	position, err := asObject(value, "index.position")
+// validatePlace checks the descriptive location object. Every field is
+// optional, but a present field must be a non-empty string.
+func validatePlace(value any) error {
+	place, err := asObject(value, "index.place")
 	if err != nil {
 		return err
 	}
-	required := []string{"altitude", "longitude", "latitude"}
-	allowed := []string{"altitude", "longitude", "latitude", "address", "locality", "city", "region", "region ", "country"}
-	if err := requireOnly(position, required, allowed, "index.position"); err != nil {
+	fields := []string{"address", "locality", "city", "region", "country"}
+	if err := requireOnly(place, nil, fields, "index.place"); err != nil {
 		return err
 	}
-	for _, field := range []string{"address", "locality", "city", "region", "region ", "country"} {
-		if _, exists := position[field]; !exists {
+	for _, field := range fields {
+		if _, exists := place[field]; !exists {
 			continue
 		}
-		if _, err := nonEmptyString(position, field, "index.position"); err != nil {
+		if _, err := nonEmptyString(place, field, "index.place"); err != nil {
 			return err
 		}
 	}
-	if _, err := number(position, "altitude", "index.position"); err != nil {
+	return nil
+}
+
+func validateCoordinates(value any) error {
+	coordinates, err := asObject(value, "index.coordinates")
+	if err != nil {
 		return err
 	}
-	longitude, err := number(position, "longitude", "index.position")
+	fields := []string{"altitude", "longitude", "latitude"}
+	if err := requireOnly(coordinates, fields, fields, "index.coordinates"); err != nil {
+		return err
+	}
+	if _, err := number(coordinates, "altitude", "index.coordinates"); err != nil {
+		return err
+	}
+	longitude, err := number(coordinates, "longitude", "index.coordinates")
 	if err != nil {
 		return err
 	}
 	if longitude < -180 || longitude > 180 {
-		return fmt.Errorf("index.position.longitude must be between -180 and 180")
+		return fmt.Errorf("index.coordinates.longitude must be between -180 and 180")
 	}
-	latitude, err := number(position, "latitude", "index.position")
+	latitude, err := number(coordinates, "latitude", "index.coordinates")
 	if err != nil {
 		return err
 	}
 	if latitude < -90 || latitude > 90 {
-		return fmt.Errorf("index.position.latitude must be between -90 and 90")
+		return fmt.Errorf("index.coordinates.latitude must be between -90 and 90")
 	}
 	return nil
 }
@@ -270,11 +298,19 @@ func asObject(value any, path string) (map[string]any, error) {
 	return object, nil
 }
 
-func requireOnly(object map[string]any, required, allowed []string, path string) error {
+// require reports a missing field without constraining the rest of the object.
+func require(object map[string]any, required []string, path string) error {
 	for _, field := range required {
 		if _, ok := object[field]; !ok {
 			return fmt.Errorf("%s.%s is required", path, field)
 		}
+	}
+	return nil
+}
+
+func requireOnly(object map[string]any, required, allowed []string, path string) error {
+	if err := require(object, required, path); err != nil {
+		return err
 	}
 	allowedSet := make(map[string]struct{}, len(allowed))
 	for _, field := range allowed {

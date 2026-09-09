@@ -1,0 +1,238 @@
+// Package mockcapture generates a Capture root of mock v1 Captures. The
+// generated tree is a fixture for Capture Scan and Route; testdata is not
+// tracked, so regenerate it with `go run ./cmd/mockcapture`.
+package mockcapture
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
+	"math"
+	"os"
+	"path/filepath"
+)
+
+// Write replaces root with a freshly generated set of mock Captures.
+func Write(root string) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("generate mock captures: %v", recovered)
+		}
+	}()
+
+	must(os.RemoveAll(root))
+	must(os.MkdirAll(root, 0o755))
+	write(filepath.Join(root, "README.txt"), []byte("Mock Capture root for the Capture Scan and Route TUIs.\nEvery directory here is generated; see docs/apps/capture/index-v1.schema.json.\n"))
+
+	// 1 note with a text attachment
+	note := capture{Dir: "2000-01-01-note-example", Workflow: "note", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+		ID: "cap-2000-01-01-example", Created: "2000-01-01T12:00:00.000Z",
+		Lat: 12.34001, Lon: 56.78001, Alt: 12.4,
+		Place:   map[string]string{"locality": "Example place", "city": "Example place", "region": "Example place", "country": "Example place"},
+		Payload: map[string]any{"text": "Example note for a synthetic capture.", "words": 10}}
+	note.attach("text", "note.txt", []byte("Example note for a synthetic capture.\n"))
+	note.build(root)
+
+	// 2 photo with jpeg + png thumbnail
+	photo := capture{Dir: "2000-01-02-photo-example", Workflow: "photo_note", App: "Camera", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+		ID: "cap-2000-01-02-example", Created: "2000-01-02T12:00:00.000Z",
+		Lat: 12.34002, Lon: 56.78002, Alt: 41,
+		Place:   map[string]string{"locality": "Example place", "city": "Example place", "region": "Example place", "country": "Example place"},
+		Payload: map[string]any{"lens": "26mm", "iso": 400}}
+	photo.attach("image", "street.jpg", jpegBytes(640, 400))
+	photo.attach("image", "street-thumb.png", pngBytes(160, 100))
+	photo.build(root)
+
+	// 3 voice memo with a real WAV
+	voice := capture{Dir: "2000-01-03-voice-memo", Workflow: "voice_memo", App: "Voice Memos", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+		ID: "cap-2000-01-03-memo", Created: "2000-01-03T12:00:00.000Z",
+		Lat: 12.34003, Lon: 56.78003, Alt: 8,
+		Place:   map[string]string{"locality": "Example place", "city": "Example place", "region": "Example place", "country": "Example place"},
+		Payload: map[string]any{"transcript": "Example reminder for a synthetic capture."}}
+	voice.attach("audio", "memo.wav", wavBytes(1.5, 440))
+	voice.build(root)
+
+	// 4 single-line address instead of structured place fields, and the only
+	// Capture carrying undescribed producer fields
+	addressOnly := capture{Dir: "2000-01-04-address-only", Workflow: "note", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPad",
+		ID: "cap-2000-01-04-address-only", Created: "2000-01-04T12:00:00.000Z",
+		Lat: 12.34004, Lon: 56.78004, Alt: 31,
+		Extra:   true,
+		Place:   map[string]string{"address": "Flinders Street Station\nMelbourne VIC 3000\nAustralia"},
+		Payload: map[string]any{"text": "A single-line address instead of structured place fields."}}
+	addressOnly.build(root)
+
+	// 5 place without a locality
+	partial := capture{Dir: "2000-01-05-partial-place", Workflow: "note", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+		ID: "cap-2000-01-05-partial", Created: "2000-01-05T12:00:00.000Z",
+		Lat: 12.34005, Lon: 56.78005, Alt: 19,
+		Place:   map[string]string{"city": "Example place", "region": "Example place", "country": "Example place"},
+		Payload: map[string]any{"text": "A place may fill only some of its fields."}}
+	partial.build(root)
+
+	// 6 ignored attachment kind plus a real one
+	mixed := capture{Dir: "2000-01-06-null-attachment", Workflow: "photo_note", App: "Camera", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+		ID: "cap-2000-01-06-mixed", Created: "2000-01-06T12:00:00.000Z",
+		Lat: 12.34006, Lon: 56.78006, Alt: 27,
+		Place:   map[string]string{"city": "Example place", "region": "Example place", "country": "Example place"},
+		Payload: map[string]any{"note": "The null attachment must not appear in the tree."}}
+	mixed.attach("null", "ignored.bin", nil)
+	mixed.attach("image", "river.png", pngBytes(320, 200))
+	mixed.build(root)
+
+	// 7 place without coordinates
+	indoors := capture{Dir: "2000-01-07-place-only", Workflow: "note", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+		ID: "cap-2000-01-07-place-only", Created: "2000-01-07T12:00:00.000Z", NoCoordinates: true,
+		Place:   map[string]string{"city": "Example place", "region": "Example place", "country": "Example place"},
+		Payload: map[string]any{"text": "Indoors, so the Shortcut recorded no coordinates."}}
+	indoors.build(root)
+
+	// 8 required fields only: no position, no place
+	minimal := capture{Dir: "2000-01-08-minimal", Workflow: "note", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+		ID: "cap-2000-01-08-minimal", Created: "2000-01-08T12:00:00.000Z", NoCoordinates: true}
+	minimal.build(root)
+
+	// Rejected neighbours: Scan and Route must skip all three.
+	must(os.MkdirAll(filepath.Join(root, "not-a-capture"), 0o755))
+	write(filepath.Join(root, "not-a-capture", "notes.txt"), []byte("No index file, so this directory is not a Capture.\n"))
+	must(os.MkdirAll(filepath.Join(root, "invalid-schema"), 0o755))
+	write(filepath.Join(root, "invalid-schema", "index.json"), []byte("{\n  \"schema\": \"v2\",\n  \"id\": \"cap-invalid-schema\"\n}\n"))
+	must(os.MkdirAll(filepath.Join(root, "invalid-json"), 0o755))
+	write(filepath.Join(root, "invalid-json", "index.json"), []byte("{ \"schema\": \"v1\", truncated\n"))
+	return nil
+}
+
+type attachment struct {
+	Kind   string `json:"kind"`
+	Name   string `json:"name,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
+	data   []byte
+}
+
+type capture struct {
+	Dir, Workflow, App, OS, System, Device, ID, Created string
+	Lat, Lon, Alt                                       float64
+	NoCoordinates                                       bool
+	Extra                                               bool
+	Place                                               map[string]string
+	Payload                                             map[string]any
+	attachments                                         []attachment
+}
+
+func (c *capture) attach(kind, name string, data []byte) {
+	item := attachment{Kind: kind, Name: name, data: data}
+	if data != nil {
+		sum := sha256.Sum256(data)
+		item.SHA256 = hex.EncodeToString(sum[:])
+	}
+	c.attachments = append(c.attachments, item)
+}
+
+func (c capture) build(root string) {
+	dir := filepath.Join(root, c.Dir)
+	must(os.MkdirAll(dir, 0o755))
+	index := map[string]any{
+		"schema":    "v1",
+		"source":    map[string]any{"app": c.App, "workflow": c.Workflow, "device": map[string]any{"os": c.OS, "systemVersion": c.System, "name": c.Device}},
+		"id":        c.ID,
+		"createdAt": c.Created,
+	}
+	if !c.NoCoordinates {
+		index["coordinates"] = map[string]any{"altitude": c.Alt, "longitude": c.Lon, "latitude": c.Lat}
+	}
+	if len(c.Place) > 0 {
+		place := map[string]any{}
+		for key, value := range c.Place {
+			place[key] = value
+		}
+		index["place"] = place
+	}
+	// One Capture carries extra producer fields the schema does not describe,
+	// proving the Capture sessions accept and ignore them.
+	if c.Extra {
+		index["isDone"] = "true"
+		index["dir"] = c.Dir
+	}
+	if c.Payload != nil {
+		index["payload"] = c.Payload
+	}
+	if len(c.attachments) > 0 {
+		index["attachments"] = c.attachments
+	}
+	data, err := json.MarshalIndent(index, "", "  ")
+	must(err)
+	write(filepath.Join(dir, "index.json"), append(data, '\n'))
+	for _, item := range c.attachments {
+		if item.data == nil {
+			continue
+		}
+		write(filepath.Join(dir, item.Name), item.data)
+	}
+}
+
+func pngBytes(width, height int) []byte {
+	var buffer bytes.Buffer
+	must(png.Encode(&buffer, gradient(width, height)))
+	return buffer.Bytes()
+}
+
+func jpegBytes(width, height int) []byte {
+	var buffer bytes.Buffer
+	must(jpeg.Encode(&buffer, gradient(width, height), &jpeg.Options{Quality: 85}))
+	return buffer.Bytes()
+}
+
+func gradient(width, height int) image.Image {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.Set(x, y, color.RGBA{
+				R: uint8(255 * x / width),
+				G: uint8(255 * y / height),
+				B: uint8(160 - 120*((x+y)%2)),
+				A: 255,
+			})
+		}
+	}
+	return img
+}
+
+func wavBytes(seconds float64, hertz float64) []byte {
+	const rate = 8000
+	samples := int(seconds * rate)
+	var body bytes.Buffer
+	for i := 0; i < samples; i++ {
+		value := int16(6000 * math.Sin(2*math.Pi*hertz*float64(i)/rate))
+		must(binary.Write(&body, binary.LittleEndian, value))
+	}
+	var file bytes.Buffer
+	file.WriteString("RIFF")
+	must(binary.Write(&file, binary.LittleEndian, uint32(36+body.Len())))
+	file.WriteString("WAVEfmt ")
+	must(binary.Write(&file, binary.LittleEndian, uint32(16)))
+	must(binary.Write(&file, binary.LittleEndian, uint16(1)))
+	must(binary.Write(&file, binary.LittleEndian, uint16(1)))
+	must(binary.Write(&file, binary.LittleEndian, uint32(rate)))
+	must(binary.Write(&file, binary.LittleEndian, uint32(rate*2)))
+	must(binary.Write(&file, binary.LittleEndian, uint16(2)))
+	must(binary.Write(&file, binary.LittleEndian, uint16(16)))
+	file.WriteString("data")
+	must(binary.Write(&file, binary.LittleEndian, uint32(body.Len())))
+	file.Write(body.Bytes())
+	return file.Bytes()
+}
+
+func write(path string, data []byte) { must(os.WriteFile(path, data, 0o644)) }
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}

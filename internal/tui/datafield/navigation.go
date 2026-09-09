@@ -90,11 +90,11 @@ func (n *Navigator) Move(key string) bool {
 		if (dr < 0 && rDiff >= 0) || (dr > 0 && rDiff <= 0) || (dc < 0 && cDiff >= 0) || (dc > 0 && cDiff <= 0) {
 			continue
 		}
-		score := abs(rDiff)*10 + abs(cDiff)*10
+		// The distance along the requested axis dominates so movement lands
+		// in the adjacent column or row; the other axis only breaks ties.
+		score := abs(cDiff)*1000 + abs(rDiff)
 		if dr != 0 {
-			score += abs(cDiff)
-		} else {
-			score += abs(rDiff)
+			score = abs(rDiff)*1000 + abs(cDiff)
 		}
 		if score < bestScore {
 			best, bestScore = index, score

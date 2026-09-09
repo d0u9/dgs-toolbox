@@ -142,7 +142,7 @@ Printable keys belong to the active text input while editing. In text-entry mode
 
 ### Movement between DataFields
 
-Multi-region workspaces use `Alt+Arrow` and `Alt+h/j/k/l` for spatial movement between data fields. The direction is literal: Left or `h` selects the nearest field to the left, Down or `j` the nearest below, Up or `k` the nearest above, and Right or `l` the nearest to the right. Plain arrow keys and `h/j/k/l` remain inside the currently focused DataField. Read [`data-fields.md`](data-fields.md) before changing field-level focus, spatial navigation, or focused fieldset presentation.
+Multi-region workspaces use `Alt+Arrow` and `Alt+h/j/k/l` for spatial movement between data fields. The direction is literal: Left or `h` selects the nearest field to the left, Down or `j` the nearest below, Up or `k` the nearest above, and Right or `l` the nearest to the right. The distance along the requested axis is what decides: horizontal movement always lands in the adjacent column and vertical movement in the adjacent row, with the other axis only breaking ties between equally close fields. Plain arrow keys and `h/j/k/l` remain inside the currently focused DataField. Read [`data-fields.md`](data-fields.md) before changing field-level focus, spatial navigation, or focused fieldset presentation.
 
 Read [`scroll-lists.md`](scroll-lists.md) before changing numbered viewport lists or contextual right-click menus.
 

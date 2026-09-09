@@ -2,17 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:dgs:capture:index:v1",
   "title": "DGS Capture Index v1",
-  "description": "Metadata contract for a v1 DGS Capture directory.",
+  "description": "Metadata contract for a v1 DGS Capture directory. Fields not described here are ignored.",
   "type": "object",
   "required": [
     "schema",
     "source",
-    "position",
     "id",
-    "isDone",
-    "createdAt",
-    "type",
-    "dir"
+    "createdAt"
   ],
   "properties": {
     "schema": {
@@ -20,8 +16,10 @@
     },
     "source": {
       "type": "object",
+      "description": "The application that executed the capture workflow, for example Shortcuts.",
       "required": [
         "app",
+        "workflow",
         "device"
       ],
       "properties": {
@@ -29,11 +27,16 @@
           "type": "string",
           "minLength": 1
         },
+        "workflow": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The producing workflow, for example note or photo_note."
+        },
         "device": {
           "type": "object",
           "required": [
             "os",
-            "systemVesion",
+            "systemVersion",
             "name"
           ],
           "properties": {
@@ -41,7 +44,7 @@
               "type": "string",
               "minLength": 1
             },
-            "systemVesion": {
+            "systemVersion": {
               "type": "string",
               "minLength": 1
             },
@@ -55,7 +58,7 @@
       },
       "additionalProperties": false
     },
-    "position": {
+    "coordinates": {
       "type": "object",
       "required": [
         "altitude",
@@ -75,7 +78,15 @@
           "type": "number",
           "minimum": -90,
           "maximum": 90
-        },
+        }
+      },
+      "additionalProperties": false,
+      "description": "Numeric location. Optional; descriptive location lives in place."
+    },
+    "place": {
+      "type": "object",
+      "description": "Descriptive location. Every field is optional; a present field must be a non-empty string.",
+      "properties": {
         "address": {
           "type": "string",
           "minLength": 1
@@ -92,10 +103,6 @@
           "type": "string",
           "minLength": 1
         },
-        "region ": {
-          "type": "string",
-          "minLength": 1
-        },
         "country": {
           "type": "string",
           "minLength": 1
@@ -106,13 +113,6 @@
     "id": {
       "type": "string",
       "minLength": 1
-    },
-    "isDone": {
-      "type": "string",
-      "enum": [
-        "true",
-        "false"
-      ]
     },
     "payload": {
       "type": "object"
@@ -144,15 +144,7 @@
     "createdAt": {
       "type": "string",
       "format": "date-time"
-    },
-    "type": {
-      "type": "string",
-      "minLength": 1
-    },
-    "dir": {
-      "type": "string",
-      "minLength": 1
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }
