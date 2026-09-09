@@ -32,6 +32,7 @@ type Model struct {
 	now              time.Time
 	metrics          shellMetrics
 	topBarVisibility dgsconfig.TopBarVisibility
+	globalConfig     dgsconfig.Config
 	launchErr        string
 }
 
@@ -39,10 +40,21 @@ type tickMsg time.Time
 
 // NewModel creates either a scoped picker or a directly active leaf command.
 func NewModel(apps []App, launch Launch) Model {
-	return NewModelWithConfig(apps, launch, dgsconfig.DefaultTopBarVisibility())
+	return NewModelWithGlobalConfig(apps, launch, dgsconfig.Default())
 }
 
 func NewModelWithConfig(apps []App, launch Launch, topBar dgsconfig.TopBarVisibility) Model {
+	global := dgsconfig.Default()
+	global.TUI.TopBar.Disk = boolPointer(topBar.Disk)
+	global.TUI.TopBar.Network = boolPointer(topBar.Network)
+	global.TUI.TopBar.CPU = boolPointer(topBar.CPU)
+	global.TUI.TopBar.Time = boolPointer(topBar.Time)
+	return NewModelWithGlobalConfig(apps, launch, global)
+}
+
+func boolPointer(value bool) *bool { return &value }
+
+func NewModelWithGlobalConfig(apps []App, launch Launch, global dgsconfig.Config) Model {
 	m := Model{
 		apps:             apps,
 		pickerApp:        -1,
@@ -51,7 +63,8 @@ func NewModelWithConfig(apps []App, launch Launch, topBar dgsconfig.TopBarVisibi
 		width:            80,
 		height:           24,
 		now:              time.Now(),
-		topBarVisibility: topBar,
+		topBarVisibility: global.TopBarVisibility(),
+		globalConfig:     global,
 	}
 
 	if launch.App == "" {
@@ -213,11 +226,15 @@ func (m *Model) openQuitConfirmation() {
 
 func (m Model) activate(selected choice) Model {
 	command := m.apps[selected.appIndex].Commands[selected.commandIndex]
-	if command.New == nil {
+	if command.New == nil && command.NewWithConfig == nil {
 		m.launchErr = fmt.Sprintf("command %q has no model factory", command.ID)
 		return m
 	}
-	m.active = command.New()
+	if command.NewWithConfig != nil {
+		m.active = command.NewWithConfig(m.globalConfig)
+	} else {
+		m.active = command.New()
+	}
 	m.activeApp = selected.appIndex
 	m.activeCommand = selected.commandIndex
 	m.pickerHelp = false

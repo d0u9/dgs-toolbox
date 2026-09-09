@@ -148,6 +148,7 @@ var (
 // read-only directory picker; review and scan behavior remain disabled.
 type importModel struct {
 	paths                [pathFieldCount]string
+	stateFilename        string
 	controls             form.Model
 	picking              bool
 	pickerFor            int
@@ -182,12 +183,27 @@ type importModel struct {
 }
 
 func newImportModel() tui.CommandModel {
+	return newImportModelWithStateFile(".dgs-state")
+}
+
+func newImportModelWithStateFile(stateFilename string) tui.CommandModel {
+	return newImportModelWithSettings(stateFilename, "", "")
+}
+
+func newImportModelWithSettings(stateFilename, source, destination string) tui.CommandModel {
 	paths := [pathFieldCount]string{
 		demoPath("src"),
 		demoPath("dst"),
 	}
+	if source != "" {
+		paths[sourceField] = displayPath(expandHome(source))
+	}
+	if destination != "" {
+		paths[destinationField] = displayPath(expandHome(destination))
+	}
 	return importModel{
-		paths: paths,
+		paths:         paths,
+		stateFilename: stateFilename,
 		controls: form.New(
 			form.Field{ID: sourceID, Kind: form.Path, Label: "Source", Value: paths[sourceField]},
 			form.Field{ID: destinationID, Kind: form.Path, Label: "Destination", Value: paths[destinationField]},
@@ -195,7 +211,7 @@ func newImportModel() tui.CommandModel {
 			form.Field{ID: extensionsID, Kind: form.MultiCheckbox, Label: "Extensions", SelectAll: true},
 			form.Field{ID: duplicatesID, Kind: form.Option, Label: "Duplicates", Value: "Skip", Options: []string{"Skip", "Replace", "Keep both"}},
 			form.Field{ID: parallelID, Kind: form.Number, Label: "Parallelism", Value: "1", Min: 1, Max: 8, Step: 1},
-			form.Field{ID: deleteStateID, Kind: form.Checkbox, Label: "Delete .dgs-state", Checked: true},
+			form.Field{ID: deleteStateID, Kind: form.Checkbox, Label: "Delete " + stateFilename, Checked: true},
 		),
 		parameterFields: datafield.New(
 			datafield.Field{ID: "parameters", Row: 0, Col: 0},
@@ -430,9 +446,12 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		navigation := resultPageActions()
 		switch pageactions.Hit(navigation, leftWidth, msg.X, msg.Y-(m.height-4)) {
 		case pageactions.Prev:
+			if !m.cleanupResultState() {
+				return m, nil
+			}
 			m.restartImport()
 		case pageactions.Next:
-			return m, func() tea.Msg { return tui.RequestQuitMsg{} }
+			m.beginLeaveConfirmation(true)
 		}
 		return m, nil
 	}
@@ -529,6 +548,9 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch decision {
 		case confirm.Confirmed:
 			m.leaveConfirm = false
+			if m.stage == resultStage && !m.cleanupResultState() {
+				return m, nil
+			}
 			if m.transferCancel != nil && !m.processingComplete() {
 				m.pendingExit = m.leaveExits
 				m.pendingReturn = !m.leaveExits
@@ -599,10 +621,14 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.stage == resultStage {
-		if key == "esc" {
-			return m, func() tea.Msg { return tui.RequestQuitMsg{} }
+		if key == "esc" || key == "q" || key == "ctrl+c" {
+			m.beginLeaveConfirmation(true)
+			return m, nil
 		}
 		if key == "r" {
+			if !m.cleanupResultState() {
+				return m, nil
+			}
 			m.restartImport()
 			return m, nil
 		}
@@ -915,7 +941,7 @@ func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 	plan := importer.Plan{
 		Jobs: jobs, Operation: operation, Conflict: conflict,
 		Workers:    max(1, m.controls.IntValue(parallelID)),
-		StatePath:  filepath.Join(destinationRoot, ".dgs-state"),
+		StatePath:  filepath.Join(destinationRoot, m.stateFilename),
 		Controller: controller,
 	}
 	m.stage = processingStage
@@ -1206,7 +1232,11 @@ func (m importModel) resultView() string {
 		fieldset.ViewFocused("State file", fitContentHeight(cleanup, cleanupHeight-2, leftWidth-4), leftWidth, actionsFocused),
 		pageactions.View(resultPageActions(), leftWidth),
 	)
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, actionsPane, " ", filesPane))
+	view := lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, actionsPane, " ", filesPane))
+	if m.leaveConfirm {
+		view = overlay.Place(view, m.leaveConfirmationView(), m.width, m.height)
+	}
+	return view
 }
 
 func (m importModel) scanView() string {
@@ -1236,12 +1266,25 @@ func resultPageActions() pageactions.Config {
 }
 
 func (m *importModel) restartImport() {
-	width, height, paths := m.width, m.height, m.paths
-	fresh := newImportModel().(importModel)
+	width, height, paths, stateFilename := m.width, m.height, m.paths, m.stateFilename
+	fresh := newImportModelWithStateFile(stateFilename).(importModel)
 	fresh.width, fresh.height, fresh.paths = width, height, paths
 	fresh.controls.SetValue(sourceID, paths[sourceField])
 	fresh.controls.SetValue(destinationID, paths[destinationField])
 	*m = fresh
+}
+
+func (m *importModel) cleanupResultState() bool {
+	if !m.controls.Checked(deleteStateID) {
+		return true
+	}
+	path := filepath.Join(expandHome(m.paths[destinationField]), m.stateFilename)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		m.actionNotice = "Could not delete " + path + ": " + err.Error()
+		return false
+	}
+	m.actionNotice = "Deleted " + path
+	return true
 }
 
 func (m importModel) publishedBytes() int64 {
@@ -1428,6 +1471,19 @@ func (m *importModel) beginLeaveConfirmation(exits bool) {
 }
 
 func (m importModel) newLeaveDialog() confirm.Model {
+	if m.stage == resultStage {
+		detail := "The import-state file will be retained."
+		if m.controls.Checked(deleteStateID) {
+			detail = "The selected " + m.stateFilename + " file will be deleted before exit."
+		}
+		return confirm.New(confirm.Config{
+			Title:        "EXIT DGS?",
+			Message:      "The verified import is complete.",
+			Detail:       detail,
+			ConfirmLabel: "Yes",
+			CancelLabel:  "No",
+		})
+	}
 	title := "RETURN TO PARAMETERS?"
 	message := "Processing will stop at its current state."
 	if m.leaveExits {
@@ -1803,7 +1859,7 @@ func (m importModel) CapturesShellKey(key string) bool {
 		return key == "esc" || key == "q" || key == "ctrl+c"
 	}
 	if m.stage == resultStage {
-		return key == "esc"
+		return key == "esc" || key == "q" || key == "ctrl+c"
 	}
 	if m.menu.IsOpen() {
 		return key == "esc" || key == "q"

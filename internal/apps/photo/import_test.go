@@ -8,11 +8,29 @@ import (
 	"testing"
 
 	"dgs-toolbox/internal/apps/photo/importer"
+	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+func TestPhotoAppInjectsConfiguredImportStateFilename(t *testing.T) {
+	app := New()
+	model := app.Commands[0].NewWithConfig(config.Config{
+		Photo: config.Photo{Import: config.PhotoImport{
+			StateFile:   ".custom-photo-state",
+			Source:      "~/Pictures/camera",
+			Destination: "/Volumes/Photos/import",
+		}},
+	}).(importModel)
+	if model.stateFilename != ".custom-photo-state" {
+		t.Fatalf("state filename = %q", model.stateFilename)
+	}
+	if model.paths[sourceField] != "~/Pictures/camera" || model.paths[destinationField] != "/Volumes/Photos/import" {
+		t.Fatalf("configured paths = %#v", model.paths)
+	}
+}
 
 func TestImportStartsWithDirectoriesOnly(t *testing.T) {
 	model := newImportModel()
@@ -355,16 +373,53 @@ func TestResultAgainReturnsToDirectoriesAndKeepsPaths(t *testing.T) {
 	}
 }
 
-func TestResultEscapeRequestsQuitInsteadOfReturningToProcessing(t *testing.T) {
+func TestResultConfirmedCtrlCDeletesSelectedStateFileBeforeExit(t *testing.T) {
+	destination := t.TempDir()
+	statePath := filepath.Join(destination, ".photo-import-state")
+	if err := os.WriteFile(statePath, []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	model := newImportModelWithStateFile(".photo-import-state").(importModel)
+	model.stage = resultStage
+	model.paths[destinationField] = destination
+	if !strings.Contains(model.controls.View([]string{deleteStateID}), "Delete .photo-import-state") {
+		t.Fatal("configured state filename is not shown on Result")
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	model = updated.(importModel)
+	if !model.leaveConfirm || model.stage != resultStage {
+		t.Fatalf("ctrl-c confirm=%v stage=%v", model.leaveConfirm, model.stage)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(importModel)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(importModel)
+	if cmd == nil {
+		t.Fatal("confirmed ctrl-c did not quit")
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("state file remains after confirmed exit: %v", err)
+	}
+}
+
+func TestResultAgainHonorsRetainStateSelection(t *testing.T) {
+	destination := t.TempDir()
+	statePath := filepath.Join(destination, ".dgs-state")
+	if err := os.WriteFile(statePath, []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	model := newImportModel().(importModel)
 	model.stage = resultStage
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model.paths[destinationField] = destination
+	model.controls.SetFocusID(deleteStateID)
+	model.controls.HandleInteraction(" ")
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	model = updated.(importModel)
-	if model.stage != resultStage || cmd == nil {
-		t.Fatalf("escape stage=%v cmd=%v", model.stage, cmd != nil)
+	if model.stage != setupStage {
+		t.Fatalf("again stage=%v", model.stage)
 	}
-	if _, ok := cmd().(tui.RequestQuitMsg); !ok {
-		t.Fatalf("escape message type = %T", cmd())
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("unchecked state file was removed: %v", err)
 	}
 }
 

@@ -21,6 +21,7 @@ func TestCommandRoutes(t *testing.T) {
 	}{
 		{name: "toolbox", want: tui.Launch{}},
 		{name: "demo", args: []string{"demo"}, want: tui.Launch{App: "demo", Command: "demo"}},
+		{name: "capture", args: []string{"capture"}, want: tui.Launch{App: "capture", Command: "scan"}},
 		{name: "photo", args: []string{"photo"}, want: tui.Launch{App: "photo"}},
 		{name: "photo import", args: []string{"photo", "import"}, want: tui.Launch{App: "photo", Command: "import"}},
 		{name: "photo encode", args: []string{"photo", "encode"}, want: tui.Launch{App: "photo", Command: "encode"}},
@@ -70,5 +71,20 @@ func TestExportConfigFlagWritesDefaultsWithoutStartingTUI(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"disk": true`) || !strings.Contains(output.String(), path) {
 		t.Fatalf("config=%s output=%q", data, output.String())
+	}
+}
+
+func TestConfigFlagIsPassedToDirectCommandAndOverridesEnvironment(t *testing.T) {
+	var got tui.Launch
+	command := NewRootCommand(apps.All(), func(launch tui.Launch) error {
+		got = launch
+		return nil
+	})
+	command.SetArgs([]string{"photo", "import", "-c", "/tmp/explicit-config.json"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got.ConfigPath != "/tmp/explicit-config.json" {
+		t.Fatalf("config path = %q", got.ConfigPath)
 	}
 }

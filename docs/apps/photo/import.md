@@ -129,6 +129,7 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 
 - Source: directory selected through File Explorer.
 - Destination: directory selected through File Explorer.
+- `photo.import.source` and `photo.import.destination` in `dgs-config.json` optionally prefill those two fields. Empty values retain the repository mock directories for UI testing; users can still change either path in Directories.
 - Operation: radio choice between Copy and Move.
 - Extensions: dynamic multi-checkbox choices derived from the extensions actually present in Source; all are selected initially.
 - Duplicates: filename-conflict policy. Skip leaves the existing destination untouched, Replace intends to publish the verified new file at that path, and Keep both chooses a new unique filename. Replace is not the default; its backup and rollback semantics remain to be designed before implementation.
@@ -176,7 +177,7 @@ Processing remains visible when it reaches complete so its final worker state ca
 
 The full-width header answers whether the batch is trustworthy before showing detail. It repeats Source and Destination and reports the total bytes successfully verified and published; skipped and failed files do not contribute to this byte count. Below it, Result uses the shared two-column skeleton. The narrow left side separates integrity evidence from the final state-file decision and anchors Page Actions at bottom-left. The wider right column owns the complete per-file result inventory and uses the shared numbered, selectable, vertically scrollable list. Do not mix cleanup controls into the verification summary.
 
-Delete `.dgs-state` is selected by default, matching the confirmed lifecycle decision. The explanatory copy makes retaining it an audit or diagnostic choice. State-file deletion on Finish remains part of Result implementation, not Processing. `Alt+h/l` moves between the result inventory and state-file actions; list navigation uses the shared arrow/Vim behavior, mouse wheel works while hovering the inventory, and primary click changes focus or activates a control.
+Delete state is selected by default, matching the confirmed lifecycle decision. Its filename is configured by the global configuration key `photo.import.state_file` and defaults to `.dgs-state`. The value must be a filename rather than a path so state cannot escape the selected Destination. The file lives directly inside that root as `<Destination>/<state_file>`; it is not stored in Source or in a global application-data directory. Result renders the configured filename in its cleanup control and confirmation copy. The explanatory copy makes retaining it an audit or diagnostic choice. When deletion is selected, leaving Result through Again or a confirmed exit—including Esc, `q`, Ctrl+C, and the Quit action—must remove the state file before navigation or process termination. If removal fails, remain on Result and report the error rather than silently exiting. When deletion is not selected, every exit path retains the file. `Alt+h/l` moves between the result inventory and state-file actions; list navigation uses the shared arrow/Vim behavior, mouse wheel works while hovering the inventory, and primary click changes focus or activates a control.
 
 Result is terminal: it does not navigate back to Processing. `r` or the Again action starts a fresh Photo Import at Directories while retaining the last Source and Destination paths for convenient review or adjustment. Esc, `q`, Ctrl+C, or the Quit action opens the shared Quit confirmation; none exits immediately. Esc never returns to the previous workflow page.
 
@@ -245,7 +246,7 @@ Parallelism remains an explicit user choice with default 1. Do not silently rais
 
 ### Remaining failure and conflict questions
 
-The following decisions must be settled before implementation:
+The core Processing engine is implemented. The following decisions must be settled before adding the corresponding conflict handling and recovery enhancements:
 
 - How Replace publishes atomically when a final destination already exists and how the previous file remains recoverable.
 - Whether an existing destination with the same size and SHA-256 is treated as already imported without rewriting it.
@@ -287,7 +288,7 @@ The fixture intentionally contains multiple screens of files in both Source and 
 
 - Review layout and file grouping.
 - Duplicate and conflict presentation.
-- Result-stage state-file cleanup and retry controls.
+- Result-stage retry controls beyond starting a fresh import.
 - Cancellation and confirmation.
 - Partial-success, empty, warning, and error variants of Result.
 - Narrow-terminal layout beyond shared shrinking behavior.

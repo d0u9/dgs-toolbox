@@ -94,7 +94,7 @@ func (m Model) View(width int) string {
 	content = append(content,
 		"",
 		noteStyle.Render(strings.Repeat("─", innerWidth)),
-		confirm+"  "+cancel,
+		lipgloss.NewStyle().Width(innerWidth).Align(lipgloss.Right).Render(cancel+"  "+confirm),
 		noteStyle.Render("Tab switch  ·  Enter select  ·  Esc continue"),
 	)
 	return frameStyle.Width(outerWidth - 2).Render(strings.Join(content, "\n"))

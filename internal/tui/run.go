@@ -10,11 +10,17 @@ import (
 
 // Run starts the one and only top-level Bubble Tea program.
 func Run(apps []App, launch Launch) error {
-	global, err := config.Load()
+	var global config.Config
+	var err error
+	if launch.ConfigPath != "" {
+		global, err = config.LoadPath(launch.ConfigPath)
+	} else {
+		global, err = config.Load()
+	}
 	if err != nil {
 		return fmt.Errorf("cannot load global config: %w", err)
 	}
-	model := NewModelWithConfig(apps, launch, global.TopBarVisibility())
+	model := NewModelWithGlobalConfig(apps, launch, global)
 	if model.launchErr != "" {
 		return fmt.Errorf("cannot launch TUI: %s", model.launchErr)
 	}

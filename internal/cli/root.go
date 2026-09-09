@@ -14,6 +14,7 @@ import (
 // opening a terminal.
 func NewRootCommand(apps []tui.App, run tui.Runner) *cobra.Command {
 	var exportConfig bool
+	var configPath string
 	root := &cobra.Command{
 		Use:           "dgs",
 		Short:         "A small toolbox for photo and GPX workflows",
@@ -38,18 +39,19 @@ func NewRootCommand(apps []tui.App, run tui.Runner) *cobra.Command {
 				fmt.Fprintf(command.OutOrStdout(), "Exported default config to %s\n", path)
 				return nil
 			}
-			return run(tui.Launch{})
+			return run(tui.Launch{ConfigPath: configPath})
 		},
 	}
 	root.Flags().BoolVar(&exportConfig, "export-config", false, "write the default global configuration")
+	root.PersistentFlags().StringVarP(&configPath, "config", "c", "", "read configuration from this file")
 
 	for _, app := range apps {
-		root.AddCommand(newAppCommand(app, run))
+		root.AddCommand(newAppCommand(app, run, &configPath))
 	}
 	return root
 }
 
-func newAppCommand(app tui.App, run tui.Runner) *cobra.Command {
+func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Command {
 	if app.Direct && len(app.Commands) == 1 {
 		leaf := app.Commands[0]
 		return &cobra.Command{
@@ -57,7 +59,7 @@ func newAppCommand(app tui.App, run tui.Runner) *cobra.Command {
 			Short: app.Description,
 			Args:  cobra.NoArgs,
 			RunE: func(_ *cobra.Command, _ []string) error {
-				return run(tui.Launch{App: app.ID, Command: leaf.ID})
+				return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath})
 			},
 		}
 	}
@@ -66,7 +68,7 @@ func newAppCommand(app tui.App, run tui.Runner) *cobra.Command {
 		Short: app.Description,
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return run(tui.Launch{App: app.ID})
+			return run(tui.Launch{App: app.ID, ConfigPath: *configPath})
 		},
 	}
 
@@ -77,7 +79,7 @@ func newAppCommand(app tui.App, run tui.Runner) *cobra.Command {
 			Short: leaf.Description,
 			Args:  cobra.NoArgs,
 			RunE: func(_ *cobra.Command, _ []string) error {
-				return run(tui.Launch{App: app.ID, Command: leaf.ID})
+				return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath})
 			},
 		})
 	}
