@@ -128,6 +128,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.updateKey(msg)
 	case tea.MouseMsg:
+		if m.active != nil && msg.Y == 0 && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			if index, ok := m.tabAtX(msg.X); ok {
+				return m.forwardToActive(TabSelectedMsg{Index: index})
+			}
+			return m, nil
+		}
 		if m.active != nil && msg.Y > 0 && msg.Y < m.height-1 {
 			msg.Y--
 			return m.forwardToActive(msg)

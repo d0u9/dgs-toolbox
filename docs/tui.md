@@ -33,7 +33,16 @@ Status bar     exactly one terminal row
 
 ### Top bar
 
-- Left: a tab region reserved for command- or workspace-level tabs.
+- Left: a tab region reserved for command- or workspace-level tabs. Tabs are
+  rendered by the shell from the active command's `Tabs()`; a primary click on
+  a tab sends that command a `TabSelectedMsg` carrying the tab index, so the
+  shell owns hit testing and the command owns what activating a tab means.
+  Commands must not bind `Ctrl+Arrow` for tab switching—macOS reserves it for
+  switching Desktops. A tab is never narrower than nine cells; its uppercased
+  label is centered in that space and longer labels expand the tab rather than
+  being truncated. Tabs are separated by one top-bar cell, and an inactive tab
+  carries its own quiet background—distinct from both the active tab and the
+  top bar—so every click target is visible. A click in the gap selects no tab.
 - Right: breadcrumb, disk read/write rate, network upload/download rate, CPU utilization, and local time—in that exact order.
 - A typical right-hand sequence is `dgs › photo › import › processing │ DISK R… W… │ NET ↑… ↓… │ CPU … │ 15:04:05`. The breadcrumb anchors the left edge of this region and the clock anchors its right edge.
 - The breadcrumb is never rendered on the left; keeping that area free allows the tab system to grow without competing with navigation context.

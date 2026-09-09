@@ -111,8 +111,8 @@ func TestCommandCanContributeTopBarTabs(t *testing.T) {
 	}}}}
 	m := NewModel(apps, Launch{App: "capture", Command: "scan"})
 	bar := ansi.Strip(m.topBar(100))
-	if !strings.HasPrefix(bar, " SCAN ") {
-		t.Fatalf("top bar does not show the active Scan tab: %q", bar)
+	if !strings.HasPrefix(bar, "  SCAN   ") {
+		t.Fatalf("top bar does not show the active Scan tab at its minimum width: %q", bar)
 	}
 	if !strings.Contains(bar, "dgs › capture") {
 		t.Fatalf("top bar is missing the Capture breadcrumb: %q", bar)
@@ -429,4 +429,68 @@ func update(t *testing.T, m Model, key string) Model {
 		t.Fatalf("updated model type = %T, want Model", updated)
 	}
 	return result
+}
+
+type twoTabStub struct {
+	stubCommand
+	active int
+}
+
+func (m twoTabStub) Tabs() []Tab {
+	return []Tab{{Label: "scan", Active: m.active == 0}, {Label: "route", Active: m.active == 1}}
+}
+
+func (m twoTabStub) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if selected, ok := msg.(TabSelectedMsg); ok {
+		m.active = selected.Index
+		return m, nil
+	}
+	updated, cmd := m.stubCommand.Update(msg)
+	m.stubCommand = updated.(stubCommand)
+	return m, cmd
+}
+
+func TestShortTabsKeepAMinimumWidth(t *testing.T) {
+	apps := []App{{ID: "capture", Name: "Capture", Direct: true, Commands: []Command{{
+		ID: "scan", Name: "Scan", New: func() CommandModel { return twoTabStub{stubCommand: stubCommand{label: "SCAN"}} },
+	}}}}
+	m := NewModel(apps, Launch{App: "capture", Command: "scan"})
+	bar := ansi.Strip(m.topBar(100))
+	if !strings.HasPrefix(bar, "  SCAN      ROUTE  ") {
+		t.Fatalf("tabs are not padded to the minimum width and separated: %q", bar)
+	}
+	if got := lipgloss.Width(renderTab(topBarTabStyle, "destinations")); got != len("destinations")+2 {
+		t.Fatalf("long tab width = %d, want %d", got, len("destinations")+2)
+	}
+	if topBarInactiveTabStyle.GetBackground() == topBarStyle.GetBackground() {
+		t.Fatal("inactive tabs must be painted so their click target is visible")
+	}
+}
+
+func TestClickingATabTellsTheCommandWhichTabWasSelected(t *testing.T) {
+	apps := []App{{ID: "capture", Name: "Capture", Direct: true, Commands: []Command{{
+		ID: "scan", Name: "Scan", New: func() CommandModel { return twoTabStub{stubCommand: stubCommand{label: "SCAN"}} },
+	}}}}
+	m := NewModel(apps, Launch{App: "capture", Command: "scan"})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = updated.(Model)
+
+	bar := ansi.Strip(m.topBar(100))
+	routeX := strings.Index(bar, "ROUTE")
+	if routeX < 0 {
+		t.Fatalf("top bar is missing the Route tab: %q", bar)
+	}
+	click := tea.MouseMsg{X: routeX, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	updated, _ = m.Update(click)
+	m = updated.(Model)
+	if got := m.active.(twoTabStub).active; got != 1 {
+		t.Fatalf("clicking ROUTE selected tab %d, want 1", got)
+	}
+
+	click.X = 1
+	updated, _ = m.Update(click)
+	m = updated.(Model)
+	if got := m.active.(twoTabStub).active; got != 0 {
+		t.Fatalf("clicking SCAN selected tab %d, want 0", got)
+	}
 }

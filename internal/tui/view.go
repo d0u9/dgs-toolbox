@@ -10,6 +10,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// minTabWidth is the smallest rendered width of a top-bar tab, and tabGap is
+// the number of top-bar cells between two tabs, both in cells.
+const (
+	minTabWidth = 9
+	tabGap      = 1
+)
+
 var (
 	accentColor = lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#7D7AFF"}
 	barColor    = lipgloss.AdaptiveColor{Light: "#E8E8F2", Dark: "#242433"}
@@ -20,9 +27,10 @@ var (
 			Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#101010"}).
 			Background(accentColor).
 			Padding(0, 1)
+	inactiveTabColor       = lipgloss.AdaptiveColor{Light: "#CFCFE4", Dark: "#3A3A52"}
 	topBarInactiveTabStyle = lipgloss.NewStyle().
 				Foreground(barText).
-				Background(barColor).
+				Background(inactiveTabColor).
 				Padding(0, 1)
 	topBarMetaStyle  = lipgloss.NewStyle().Foreground(barText).Background(barColor)
 	pickerTitleStyle = lipgloss.NewStyle().
@@ -86,24 +94,59 @@ func (m Model) topBar(width int) string {
 }
 
 func (m Model) topBarTabs() string {
-	if m.active != nil {
-		if contributor, ok := m.active.(TabContributor); ok {
-			tabs := contributor.Tabs()
-			if len(tabs) > 0 {
-				var rendered strings.Builder
-				for _, tab := range tabs {
-					label := strings.ToUpper(tab.Label)
-					if tab.Active {
-						rendered.WriteString(topBarTabStyle.Render(label))
-					} else {
-						rendered.WriteString(topBarInactiveTabStyle.Render(label))
-					}
-				}
-				return rendered.String()
-			}
-		}
+	tabs := m.commandTabs()
+	if len(tabs) == 0 {
+		return topBarTabStyle.Render(m.tabLabel())
 	}
-	return topBarTabStyle.Render(m.tabLabel())
+	var rendered strings.Builder
+	for index, tab := range tabs {
+		if index > 0 {
+			rendered.WriteString(topBarStyle.Render(strings.Repeat(" ", tabGap)))
+		}
+		style := topBarInactiveTabStyle
+		if tab.Active {
+			style = topBarTabStyle
+		}
+		rendered.WriteString(renderTab(style, tab.Label))
+	}
+	return rendered.String()
+}
+
+// renderTab draws one tab at no less than minTabWidth cells so short labels
+// keep a stable, clickable target; longer labels expand instead of truncating.
+func renderTab(style lipgloss.Style, label string) string {
+	text := strings.ToUpper(label)
+	width := max(minTabWidth, lipgloss.Width(text)+2)
+	return style.Width(width).Align(lipgloss.Center).Render(text)
+}
+
+func (m Model) commandTabs() []Tab {
+	if m.active == nil {
+		return nil
+	}
+	contributor, ok := m.active.(TabContributor)
+	if !ok {
+		return nil
+	}
+	return contributor.Tabs()
+}
+
+// tabAtX maps a top-bar column to a command tab. It mirrors the widths and
+// gaps used when the tabs are rendered so hit testing cannot drift from the
+// view; a click in the gap between two tabs selects neither.
+func (m Model) tabAtX(x int) (int, bool) {
+	if x < 0 {
+		return 0, false
+	}
+	start := 0
+	for index, tab := range m.commandTabs() {
+		width := lipgloss.Width(renderTab(topBarTabStyle, tab.Label))
+		if x < start+width {
+			return index, true
+		}
+		start += width + tabGap
+	}
+	return 0, false
 }
 
 func (m Model) topBarMetadata(width int) string {

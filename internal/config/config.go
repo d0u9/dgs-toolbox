@@ -19,7 +19,19 @@ type Config struct {
 }
 
 type Capture struct {
-	Scan CaptureScan `json:"scan"`
+	Scan  CaptureScan  `json:"scan"`
+	Route CaptureRoute `json:"route"`
+}
+
+// CaptureRoute configures the Capture Route session: the destinations a
+// Capture can be dispatched to.
+type CaptureRoute struct {
+	Destinations []CaptureDestination `json:"destinations"`
+}
+
+type CaptureDestination struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 type CaptureScan struct {
@@ -67,6 +79,22 @@ func (c Config) CaptureScanSettings() (root, indexFile string) {
 		indexFile = "index.json"
 	}
 	return c.Capture.Scan.Root, indexFile
+}
+
+// CaptureRouteDestinations returns the configured Route destinations. Entries
+// without a path are dropped; an entry without a name is labelled by its path.
+func (c Config) CaptureRouteDestinations() []CaptureDestination {
+	destinations := make([]CaptureDestination, 0, len(c.Capture.Route.Destinations))
+	for _, destination := range c.Capture.Route.Destinations {
+		if destination.Path == "" {
+			continue
+		}
+		if destination.Name == "" {
+			destination.Name = filepath.Base(destination.Path)
+		}
+		destinations = append(destinations, destination)
+	}
+	return destinations
 }
 
 func (c Config) PhotoImportStateFile() string {
