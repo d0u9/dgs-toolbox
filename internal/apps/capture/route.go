@@ -66,7 +66,10 @@ type routeModel struct {
 	running    bool
 	// records is what each Capture directory says about how it was organized,
 	// read once per load. A Capture carrying one is shown below the divider.
-	records   map[string]organizer.Record
+	records map[string]organizer.Record
+	// recipeSet is the Set this session offers: the built-ins with whatever the
+	// configured Recipe directory layered over them.
+	recipeSet organizer.Set
 	fields    datafield.Navigator
 	loadError string
 	pendingGG bool
@@ -82,6 +85,10 @@ type routeFieldRow struct {
 }
 
 func newRouteModel(root, indexFile string) routeModel {
+	return newRouteModelWithRecipes(root, indexFile, organizer.Builtin())
+}
+
+func newRouteModelWithRecipes(root, indexFile string, set organizer.Set) routeModel {
 	editor := textinput.New()
 	editor.Prompt = ""
 	note := textarea.New()
@@ -98,6 +105,7 @@ func newRouteModel(root, indexFile string) routeModel {
 		actions:     scrolllist.New(),
 		selections:  make(map[string]organizer.Selection),
 		records:     make(map[string]organizer.Record),
+		recipeSet:   set,
 		editor:      editor,
 		note:        note,
 		fields: datafield.New(
@@ -816,7 +824,7 @@ func (m routeModel) currentSelection() (organizer.Selection, organizer.Recipe, b
 	if !ok {
 		return organizer.Selection{}, organizer.Recipe{}, false
 	}
-	recipe, ok := organizer.LookupRecipe(selection.Recipe)
+	recipe, ok := m.recipeSet.Lookup(selection.Recipe)
 	if !ok {
 		return organizer.Selection{}, organizer.Recipe{}, false
 	}
@@ -836,7 +844,7 @@ func (m routeModel) candidates() []organizer.Recipe {
 	if !ok {
 		return nil
 	}
-	return organizer.FindRecipes(captureFor(entry))
+	return m.recipeSet.Find(captureFor(entry))
 }
 
 func (m routeModel) focusedCandidate() (organizer.Recipe, bool) {
@@ -907,7 +915,7 @@ func (m routeModel) readyCount() (ready int, blocked int) {
 			blocked++
 			continue
 		}
-		recipe, ok := organizer.LookupRecipe(selection.Recipe)
+		recipe, ok := m.recipeSet.Lookup(selection.Recipe)
 		if !ok {
 			blocked++
 			continue
@@ -988,7 +996,7 @@ func (m routeModel) captureMarker(entry captureEntry) string {
 	if !ok {
 		return "○ "
 	}
-	recipe, ok := organizer.LookupRecipe(selection.Recipe)
+	recipe, ok := m.recipeSet.Lookup(selection.Recipe)
 	if !ok {
 		return "○ "
 	}
@@ -1052,7 +1060,7 @@ func (m *routeModel) rebuildCaptureItems() {
 				}
 			}
 		} else if selection, ok := m.selections[entry.path]; ok {
-			if recipe, ok := organizer.LookupRecipe(selection.Recipe); ok {
+			if recipe, ok := m.recipeSet.Lookup(selection.Recipe); ok {
 				detail += "  → " + recipe.Name
 			}
 		}

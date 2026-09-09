@@ -13,6 +13,11 @@ func New() tui.App {
 		Name:        "Capture",
 		Description: "Organize captured data",
 		Direct:      true,
+		Reports: []tui.Report{{
+			Flag:        "recipes",
+			Description: "list the recipes this binary offers and what each one needs",
+			Run:         writeRecipeReport,
+		}},
 		Commands: []tui.Command{{
 			ID:          "scan",
 			Name:        "Scan",
@@ -22,7 +27,7 @@ func New() tui.App {
 			},
 			NewWithConfig: func(global config.Config) tui.CommandModel {
 				root, indexFile := global.CaptureScanSettings()
-				return newSessionWithSettings(root, indexFile)
+				return newSessionWithSettings(root, indexFile, loadRecipes(global).Set)
 			},
 		}},
 	}

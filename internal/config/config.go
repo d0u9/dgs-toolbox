@@ -23,6 +23,9 @@ type Config struct {
 // destinations, so it has no settings of its own.
 type Capture struct {
 	Scan CaptureScan `json:"scan"`
+	// Recipes is the directory holding one file per organizer Recipe. Empty
+	// means the "recipes" directory beside the configuration file.
+	Recipes string `json:"recipes"`
 }
 
 type CaptureScan struct {
@@ -70,6 +73,20 @@ func (c Config) CaptureScanSettings() (root, indexFile string) {
 		indexFile = "index.json"
 	}
 	return c.Capture.Scan.Root, indexFile
+}
+
+// CaptureRecipesDir is where Capture reads user-defined Recipes. It defaults to
+// a directory beside the configuration file, so a user who has a config has a
+// place to put Recipes without configuring a second path.
+func (c Config) CaptureRecipesDir() string {
+	if c.Capture.Recipes != "" {
+		return c.Capture.Recipes
+	}
+	path, err := Path()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(path), "recipes")
 }
 
 func (c Config) PhotoImportStateFile() string {

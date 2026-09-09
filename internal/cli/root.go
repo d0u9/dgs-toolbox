@@ -54,22 +54,31 @@ func NewRootCommand(apps []tui.App, run tui.Runner) *cobra.Command {
 func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Command {
 	if app.Direct && len(app.Commands) == 1 {
 		leaf := app.Commands[0]
-		return &cobra.Command{
+		command := &cobra.Command{
 			Use:   app.ID,
 			Short: app.Description,
 			Args:  cobra.NoArgs,
-			RunE: func(_ *cobra.Command, _ []string) error {
-				return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath})
-			},
 		}
+		chosen := addReports(command, app.Reports)
+		command.RunE = func(cmd *cobra.Command, _ []string) error {
+			if report, ok := chosen(); ok {
+				return runReport(cmd, report, *configPath)
+			}
+			return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath})
+		}
+		return command
 	}
 	command := &cobra.Command{
 		Use:   app.ID,
 		Short: app.Description,
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return run(tui.Launch{App: app.ID, ConfigPath: *configPath})
-		},
+	}
+	chosen := addReports(command, app.Reports)
+	command.RunE = func(cmd *cobra.Command, _ []string) error {
+		if report, ok := chosen(); ok {
+			return runReport(cmd, report, *configPath)
+		}
+		return run(tui.Launch{App: app.ID, ConfigPath: *configPath})
 	}
 
 	for _, leaf := range app.Commands {
@@ -84,4 +93,37 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 		})
 	}
 	return command
+}
+
+// addReports turns an app's reports into flags on its command and returns the
+// one the caller asked for. A report answers on stdout and never opens the TUI.
+func addReports(command *cobra.Command, reports []tui.Report) func() (tui.Report, bool) {
+	selected := make([]bool, len(reports))
+	for index, report := range reports {
+		command.Flags().BoolVar(&selected[index], report.Flag, false, report.Description)
+	}
+	return func() (tui.Report, bool) {
+		for index, chosen := range selected {
+			if chosen {
+				return reports[index], true
+			}
+		}
+		return tui.Report{}, false
+	}
+}
+
+// runReport loads the configuration the report reads and writes it to stdout.
+func runReport(command *cobra.Command, report tui.Report, configPath string) error {
+	global, err := loadConfig(configPath)
+	if err != nil {
+		return err
+	}
+	return report.Run(command.OutOrStdout(), global)
+}
+
+func loadConfig(path string) (config.Config, error) {
+	if path != "" {
+		return config.LoadPath(path)
+	}
+	return config.Load()
 }

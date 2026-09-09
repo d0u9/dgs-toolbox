@@ -321,10 +321,57 @@ point of keeping the record next to the Capture. Nothing is overwritten. What
 marks a Capture handled is the presence of a run, not the presence of the file,
 and callers with room for one line show the most recent run.
 
+## Recipe files
+
+A Recipe is defined by one YAML file in the Recipe directory —
+`capture.recipes` in the configuration, defaulting to `recipes` beside
+`config.json`. A folder rather than one list because Recipes are added one at a
+time and each should diff on its own; YAML rather than JSON because a Recipe is
+written by hand and wants comments explaining why it exists.
+
+```yaml
+# Everything noted during work hours goes into the work vault's daily note,
+# tagged with the project it belongs to.
+name: Work Daily
+
+match:
+  workflows: [been_here, quick_mark]
+
+fields:
+  - id: project
+    label: Project
+    required: true
+
+actions:
+  - id: obsidian.daily.append
+  - id: capture.archive
+```
+
+- **The filename is the id.** `work_daily.yaml` defines `work_daily`. A file
+  cannot claim an id that disagrees with where it lives, and renaming the file
+  is how a Recipe is renamed.
+- **A file replaces the built-in with the same id**, in place, rather than
+  patching it. A user file is the whole Recipe, so reading it tells the whole
+  story without also reading what it inherited.
+- **Actions are objects, not bare strings** (`- id: …`). They need nothing else
+  today; the shape leaves room for per-Recipe Action parameters without
+  rewriting every existing file.
+- **An unknown key is an error**, not an ignored line — a misspelled key would
+  otherwise change nothing and say nothing. So is naming an Action this binary
+  does not have: the Recipe would silently do less than it claims.
+- **A bad file fails alone.** The rest of the directory still loads and the
+  session still opens, because a Recipe is not a precondition the way the
+  configuration file is. `dgs capture --recipes` lists what loaded, where each
+  Recipe came from, and every file that was rejected with its reason.
+
+What a file configures is composition — which workflows a Recipe matches, which
+Actions it runs, what it asks for beyond them. It cannot define an Action:
+Actions are compiled in, and a Recipe references them by id.
+
 ## Built-in Recipes
 
-Recipes are compiled in until user definitions exist, so Route always has
-something to offer:
+The built-ins are always present, so Route has something to offer before any
+file exists:
 
 | Recipe | Workflows | Actions |
 | --- | --- | --- |
@@ -337,8 +384,8 @@ something to offer:
 | Calendar | `quick_mark` | calendar.create, archive |
 | Archive | any | archive |
 
-`Archive` matches every workflow, so no Capture is ever left with an empty
-candidate list. The two location Recipes additionally require the Capture to
+A file in the Recipe directory is layered over this set. `Archive` matches every
+workflow, so no Capture is ever left with an empty candidate list. The two location Recipes additionally require the Capture to
 carry a location at all, so a `been_here` with neither coordinates nor place
 falls back to `Daily` and `Archive`.
 

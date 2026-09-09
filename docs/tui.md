@@ -105,6 +105,17 @@ The one-column 100-cell width is defined by `tui.DefaultContentWidth`. It is a p
 
 The equal four-column skeleton suits screens whose regions are peers rather than a subject with supporting detail: every column is full height, carries one Fieldset, and none is visually primary. It needs more width than the other skeletons, so a command using it shows its resize prompt earlier.
 
+### App reports
+
+An app may expose non-interactive reports: what it supports, what it loaded, why
+a file was rejected. Each becomes a boolean flag on the app's own command
+(`dgs capture --recipes`), writes to stdout, and returns without opening the
+TUI. Reports are declared in the app registry beside its commands, so the
+command hierarchy stays generic and no app is special-cased in the CLI.
+
+A report is written from the registry it describes rather than from a hand-kept
+list, so it cannot drift from the behaviour it documents.
+
 ### Status bar
 
 - Left: a compact state chip. It identifies the current command stage and, when relevant, its activity state such as `PROCESSING · RUNNING` or `PROCESSING · PAUSED`.
