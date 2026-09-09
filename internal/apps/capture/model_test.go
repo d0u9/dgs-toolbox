@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"dgs-toolbox/internal/apps/capture/indexschema"
-	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/scrolllist"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,10 +23,6 @@ func TestScanIsTheInitialCaptureSession(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 28})
 	m = updated.(model)
 
-	tabs := m.Tabs()
-	if len(tabs) != 1 || tabs[0] != (tui.Tab{Label: "Scan", Active: true}) {
-		t.Fatalf("tabs = %#v", tabs)
-	}
 	view := m.View()
 	for _, want := range []string{"CAPTURE ROOT", "CAPTURES", "PREVIEW", "CAPTURE INFO", "FILE INFO"} {
 		if !strings.Contains(view, want) {
@@ -35,8 +30,11 @@ func TestScanIsTheInitialCaptureSession(t *testing.T) {
 		}
 	}
 	lines := strings.Split(ansi.Strip(view), "\n")
-	if len(lines) < 4 || !strings.Contains(lines[3], "CAPTURES") {
-		t.Fatalf("Capture Root is not the compact three-row field:\n%s", view)
+	if len(lines) < rootHeight+1 || !strings.Contains(lines[len(lines)-rootHeight], "CAPTURE ROOT") {
+		t.Fatalf("Capture Root is not the compact three-row field below Captures:\n%s", view)
+	}
+	if !strings.Contains(lines[0], "CAPTURES") {
+		t.Fatalf("Captures is not the top field of the left column:\n%s", view)
 	}
 	left, _, _ := m.columnWidths()
 	if got := lipgloss.Height(m.leftColumn(left)); got != m.height {
@@ -50,7 +48,7 @@ func TestSelectingExpandedIndexLoadsPreview(t *testing.T) {
 	if err := os.Mkdir(capturePath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	index := []byte(`{"schema":"v1","source":{"app":"Shortcut","device":{"os":"iOS","systemVesion":"26.4.2","name":"Phone"}},"position":{"altitude":0,"longitude":0,"latitude":0},"id":"capture-1","isDone":"true","payload":{},"createdAt":"2026-09-09T16:34:35.556+10:00","type":"note","dir":"capture-1"}`)
+	index := []byte(`{"schema":"v1","source":{"app":"Shortcut","workflow":"note","device":{"os":"iOS","systemVersion":"26.4.2","name":"Phone"}},"coordinates":{"altitude":0,"longitude":0,"latitude":0},"id":"capture-1","payload":{},"createdAt":"2026-09-09T16:34:35.556+10:00"}`)
 	if err := os.WriteFile(filepath.Join(capturePath, "index.json"), index, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +92,7 @@ func TestLoadCapturesOnlyIncludesDirectoriesWithConfiguredIndexFile(t *testing.T
 			t.Fatal(err)
 		}
 	}
-	valid := []byte(`{"schema":"v1","source":{"app":"Shortcut","device":{"os":"iOS","systemVesion":"26.4.2","name":"Phone"}},"position":{"altitude":0,"longitude":0,"latitude":0},"id":"capture-1","isDone":"true","payload":{},"attachments":[{"kind":"null"},{"kind":"Image","name":"photo.jpg"},{"kind":"Image","name":"missing.jpg"}],"createdAt":"2026-09-09T16:34:35.556+10:00","type":"note","dir":"capture-1"}`)
+	valid := []byte(`{"schema":"v1","source":{"app":"Shortcut","workflow":"note","device":{"os":"iOS","systemVersion":"26.4.2","name":"Phone"}},"coordinates":{"altitude":0,"longitude":0,"latitude":0},"id":"capture-1","payload":{},"attachments":[{"kind":"null"},{"kind":"Image","name":"photo.jpg"},{"kind":"Image","name":"missing.jpg"}],"createdAt":"2026-09-09T16:34:35.556+10:00"}`)
 	if err := os.WriteFile(filepath.Join(root, "alpha", "capture.json"), valid, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -239,27 +237,38 @@ func TestCaptureCollapseKeys(t *testing.T) {
 func TestCaptureInfoUsesCompactRequestedOrder(t *testing.T) {
 	m := newModel()
 	m.entries = []captureEntry{{path: "/capture/alpha", name: "alpha", index: indexschema.Index{
-		ID: "capture-id", CreatedAt: "2026-09-09T16:34:35+10:00", Type: "photo_note", IsDone: "true",
-		Source:   indexschema.Source{App: "Shortcut", Device: indexschema.Device{OS: "iOS", SystemVersion: "26.4", Name: "Phone"}},
-		Position: indexschema.Position{Latitude: -33.7, Longitude: 151.1, Altitude: 93},
+		ID: "capture-id", CreatedAt: "2026-09-09T16:34:35+10:00", Schema: "v1",
+		Source:      indexschema.Source{App: "Shortcut", Workflow: "photo_note", Device: indexschema.Device{OS: "iOS", SystemVersion: "26.4", Name: "Phone"}},
+		Coordinates: &indexschema.Coordinates{Latitude: -33.7, Longitude: 151.1, Altitude: 93},
 	}}}
 	m.rebuildCaptureItems()
 	props := m.captureProperties()
-	if len(props) < 4 || props[0].name != "ID" || props[1].name != "Created" || props[2].name != "Type" || props[3].name != "Schema" {
+	if len(props) < 6 || props[0].name != "ID" || props[1].name != "Created" || props[2].name != "Schema" || props[3].name != "Source" {
 		t.Fatalf("first properties = %#v", props[:min(4, len(props))])
 	}
-	for _, item := range props {
-		if item.name == "Done" || item.name == "isDone" {
-			t.Fatal("isDone should not be displayed")
+	// Workflow is part of the Source group, and undescribed producer fields
+	// are never presented.
+	workflow := false
+	for index, item := range props {
+		switch item.name {
+		case "Workflow":
+			if item.indent != 1 || item.value != "photo_note" || props[index-1].name != "App" {
+				t.Fatalf("Workflow is not the second Source row: %#v", props[:6])
+			}
+			workflow = true
+		case "Type", "Done", "isDone", "dir":
+			t.Fatalf("%q should not be displayed", item.name)
 		}
+	}
+	if !workflow {
+		t.Fatalf("Workflow row is missing: %#v", props)
 	}
 }
 
 func TestCaptureMapValueAppearsCompleteInStatus(t *testing.T) {
 	m := newModel()
 	m.entries = []captureEntry{{path: "/capture/alpha", name: "alpha", index: indexschema.Index{
-		Schema: "v1", ID: "capture-id", CreatedAt: "2026-09-09T16:34:35+10:00", Type: "photo_note",
-		Position: indexschema.Position{Latitude: -33.7, Longitude: 151.1},
+		Schema: "v1", ID: "capture-id", CreatedAt: "2026-09-09T16:34:35+10:00", Coordinates: &indexschema.Coordinates{Latitude: -33.7, Longitude: 151.1},
 	}}}
 	m.rebuildCaptureItems()
 	m.fields.Set(captureInfoField)
@@ -287,26 +296,34 @@ func TestJSONFileInfoDoesNotExposeDocumentProperties(t *testing.T) {
 	}
 }
 
-func TestAltJKCyclesPrimaryScanFieldsInRequestedOrder(t *testing.T) {
-	m := newModel()
-	order := []string{centerField, captureInfoField, fileInfoField, capturesField}
-	for _, want := range order {
-		updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}, Alt: true})
-		m = updated.(model)
-		if got := m.fields.Current(); got != want {
-			t.Fatalf("Alt+J focus = %q, want %q", got, want)
-		}
+func TestAltNavigationFollowsFieldPositions(t *testing.T) {
+	cases := []struct {
+		from string
+		key  tea.KeyType
+		want string
+	}{
+		{capturesField, tea.KeyDown, rootField},
+		{rootField, tea.KeyUp, capturesField},
+		{capturesField, tea.KeyRight, centerField},
+		{rootField, tea.KeyRight, centerField},
+		{centerField, tea.KeyRight, captureInfoField},
+		{captureInfoField, tea.KeyDown, fileInfoField},
+		{fileInfoField, tea.KeyLeft, centerField},
 	}
-	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}, Alt: true})
-	m = updated.(model)
-	if got := m.fields.Current(); got != fileInfoField {
-		t.Fatalf("Alt+K focus = %q, want %q", got, fileInfoField)
+	for _, tc := range cases {
+		m := newModel()
+		m.fields.Set(tc.from)
+		updated, _ := m.updateKey(tea.KeyMsg{Type: tc.key, Alt: true})
+		m = updated.(model)
+		if got := m.fields.Current(); got != tc.want {
+			t.Errorf("alt+%v from %s = %q, want %q", tc.key, tc.from, got, tc.want)
+		}
 	}
 }
 
 func TestInfoKeyboardSelectionPersists(t *testing.T) {
 	m := newModel()
-	m.entries = []captureEntry{{path: "/capture/alpha", name: "alpha", index: indexschema.Index{Schema: "v1", ID: "id", CreatedAt: "created", Type: "type"}}}
+	m.entries = []captureEntry{{path: "/capture/alpha", name: "alpha", index: indexschema.Index{Schema: "v1", ID: "id", CreatedAt: "created", Source: indexschema.Source{Workflow: "note"}}}}
 	m.rebuildCaptureItems()
 	m.fields.Set(captureInfoField)
 	m.captureCursor = 0
@@ -352,11 +369,44 @@ func TestLocationFlattensMultilineAddress(t *testing.T) {
 	}
 }
 
+// A Capture without coordinates shows no GPS row and no map links; one
+// without a place shows no Location group.
+func TestCaptureInfoOmitsAbsentLocation(t *testing.T) {
+	m := newModel()
+	m.entries = []captureEntry{{path: "/capture/alpha", name: "alpha", index: indexschema.Index{
+		Schema: "v1", ID: "id", CreatedAt: "created", Place: &indexschema.Place{City: "Canberra", Country: "Australia"},
+	}}}
+	m.rebuildCaptureItems()
+	for _, item := range m.captureProperties() {
+		if item.name == "GPS" || item.fixed {
+			t.Fatalf("a Capture without coordinates must not show %q: %#v", item.name, item)
+		}
+	}
+
+	m.entries[0].index.Place = nil
+	m.entries[0].index.Coordinates = &indexschema.Coordinates{Latitude: -33.7, Longitude: 151.1, Altitude: 93}
+	properties := m.captureProperties()
+	gps, maps := false, 0
+	for _, item := range properties {
+		if item.name == "GPS" {
+			gps = true
+		}
+		if item.name == "Location" {
+			t.Fatalf("a Capture without a place must not show a Location group: %#v", properties)
+		}
+		if item.fixed {
+			maps++
+		}
+	}
+	if !gps || maps != 3 {
+		t.Fatalf("coordinates must still show GPS and three map links: gps=%t maps=%d", gps, maps)
+	}
+}
+
 func TestCaptureInfoGroupsStructuredLocation(t *testing.T) {
 	m := newModel()
 	m.entries = []captureEntry{{path: "/capture/alpha", name: "alpha", index: indexschema.Index{
-		Schema: "v1", ID: "id", CreatedAt: "created", Type: "been_here",
-		Position: indexschema.Position{Locality: "28 Cambridge St", City: "Epping", LegacyRegion: "NSW", Country: "Australia"},
+		Schema: "v1", ID: "id", CreatedAt: "created", Place: &indexschema.Place{Locality: "28 Cambridge St", City: "Epping", Region: "NSW", Country: "Australia"},
 	}}}
 	m.rebuildCaptureItems()
 	properties := m.captureProperties()

@@ -10,10 +10,10 @@
   left of the shared top bar.
 - Scan uses the shared three-column landscape skeleton. All three columns use
   the same workspace background and are rendered as Fieldsets.
-- The left quarter starts with a compact `CAPTURE ROOT` path control. Enter or
-  a primary click opens the shared directory-only File Explorer as an overlay.
-  The scrollable `CAPTURES` list begins immediately below it and extends to
-  the workspace bottom, aligned with the center and right Fieldsets.
+- The left quarter starts with the scrollable `CAPTURES` list, which extends
+  down to a compact `CAPTURE ROOT` path control pinned to the workspace bottom
+  and aligned with the center and right Fieldsets. Enter or a primary click on
+  the Root control opens the shared directory-only File Explorer as an overlay.
 - `CAPTURES` includes only immediate child directories containing a regular
   file whose name matches the configured index filename and whose contents
   validate against the declared Capture index schema. Invalid JSON, unsupported
@@ -56,9 +56,10 @@
 - Informational Preview states such as selection prompts, loading messages, and
   `Press Enter to preview` are centered horizontally and vertically.
 - The right column is divided vertically. `CAPTURE INFO` shows fixed index
-  fields in `ID`, `Created`, `Type`, `Schema` order, an indented Source group, and latitude,
-  longitude, and altitude on one compact GPS row. The persisted `isDone` value
-  is not presented. The shared anchored Divider separates metadata from
+  fields in `ID`, `Created`, `Schema` order, an indented Source group whose rows
+  are `App`, `Workflow`, `Device`, `System`, and latitude, longitude, and
+  altitude on one compact GPS row. Fields the schema does not describe are never
+  presented. The shared anchored Divider separates metadata from
   clickable OSC 8 links for Apple Maps, Google Maps, and Amap. The divider and
   three map rows are pinned to the bottom of Capture Info while metadata above
   them scrolls. Non-null
@@ -85,22 +86,26 @@
   selecting a map row therefore exposes its complete URL in the wider status
   region even when the right column truncates its display.
 - Capture Info and File Info property rows are selectable by primary click as
-  well as Up/Down. Capture Scan gives `Alt+J` and `Alt+K` an explicit cyclic
-  field order: `Captures → Preview → Capture Info → File Info`; `Alt+K` walks
-  the same order in reverse. Horizontal Alt navigation remains spatial.
+  well as Up/Down. All Alt navigation is spatial: `Alt+J`/`Alt+Down`
+  from Captures reaches the Capture Root below it, `Alt+L`/`Alt+Right` from the
+  Root control or Captures reaches Preview, `Alt+L` from Preview reaches Capture
+  Info, and `Alt+J`/`Alt+K` move between the stacked Capture Info and File Info.
 
-Position may provide `locality`, `city`, `region`, and `country` as optional
+`place` may provide `locality`, `city`, `region`, and `country` as optional
 non-empty strings. Capture Info presents available values as four separate rows
-inside an indented `Location` group after GPS. The wire spelling `"region "`
-with a trailing space is accepted as a compatibility alias for `region`; the UI
-always labels it `Region`. The earlier optional `address` remains accepted as a
-legacy fallback when the structured location fields are absent. Embedded CR/LF
-line breaks are normalized to ` · ` so every property and the status bar remain
-one row.
+inside an indented `Location` group after GPS, and falls back to the optional
+`address` as a single row when the structured fields are absent. Descriptive
+fields are accepted only inside `place`; `coordinates` takes `altitude`,
+`longitude`, and `latitude` and nothing else.
+
+A Capture with no `coordinates` shows neither the GPS row nor the Apple, Google,
+and Amap links, and a Capture with no `place` shows no `Location` group, rather
+than a zero coordinate or an empty group. Embedded CR/LF line breaks are
+normalized to ` · ` so every property and the status bar remain one row.
 - With `CAPTURES` focused, Space opens the selected Capture directory, index,
   or attachment in macOS Quick Look. This delegates to `qlmanage -p`; Capture
   does not implement its own image rendering or require Chafa.
-- `Tab` and `Shift+Tab` move between the Root control and Captures list.
+- `Tab` and `Shift+Tab` move between the Captures list and the Root control.
   `Alt+Arrow` and `Alt+h/j/k/l` move between DataFields. Captures uses the
   shared scroll-list keys and mouse-wheel behavior.
 - Scan opens with the `CAPTURES` DataField focused.
@@ -127,12 +132,39 @@ one row.
 The v1 Capture metadata contract is defined by
 [`index-v1.schema.json`](index-v1.schema.json).
 
-- `schema`, `source`, `position`, `id`, `isDone`, `createdAt`,
-  `type`, and `dir` are required.
+- `schema`, `source`, `id`, and `createdAt` are required. `source` requires
+  `app`, `workflow`, and `device`; `workflow` names the producing workflow, for
+  example `note` or `photo_note`, and replaces the earlier top-level `type`.
+- Location is split in two and both halves are optional. `coordinates` carries
+  `altitude`, `longitude`, and `latitude` and nothing else; `place` carries the
+  descriptive fields `address`, `locality`, `city`, `region`, and `country`,
+  each optional but non-empty when present. A Capture may have coordinates, a
+  place, both, or neither: taken indoors it may know its city and no
+  coordinates, and a bare Capture may know neither.
+- The schema describes only what the Capture sessions read. A producer may
+  write other fields; they are neither required nor rejected, and never
+  presented.
 - `attachments` is optional. Every attachment is an object and requires a
   string `kind`. The string value `null` means the item is ignored.
-- `payload` is optional. When present it is an object whose type-specific fields
-  are deliberately unconstrained by the base v1 schema.
-- v1 retains the wire field name `systemVesion` and represents `isDone` as the
-  strings `true` or `false`. Correcting either representation requires a new
-  schema version rather than silently changing v1.
+- `payload` is optional. When present it is an object whose workflow-specific
+  fields are deliberately unconstrained by the base v1 schema.
+
+## Mock Capture root
+
+`testdata/capture` is a generated Capture root for exercising Scan and Route
+without touching real data. It holds eight valid Captures—note with a text
+attachment, photo with JPEG and PNG attachments, voice memo with a WAV, a
+single-line `address` place (the only Capture carrying undescribed producer
+fields), a partly filled place, an ignored `"null"` attachment beside a real
+one, a place with no coordinates, and a required-fields-only Capture with no
+location at all—plus three directories that must be rejected: `not-a-capture` (no index file),
+`invalid-schema` (`"schema": "v2"`), and `invalid-json` (truncated JSON).
+
+`testdata` is not tracked, so the fixture is generated rather than committed:
+
+```bash
+go run ./cmd/mockcapture
+```
+
+Then point `capture.scan.root` at `testdata/capture`, or start `dgs` from the
+repository root and browse to it with the Capture Root control.

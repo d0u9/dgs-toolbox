@@ -162,8 +162,8 @@ func newModelWithSettings(root, indexFile string) model {
 		captureInfo:   captureInfo,
 		fileInfo:      fileInfo,
 		fields: datafield.New(
-			datafield.Field{ID: rootField, Row: 0, Col: 0},
-			datafield.Field{ID: capturesField, Row: 1, Col: 0},
+			datafield.Field{ID: capturesField, Row: 0, Col: 0},
+			datafield.Field{ID: rootField, Row: 1, Col: 0},
 			datafield.Field{ID: centerField, Row: 0, Col: 1},
 			datafield.Field{ID: captureInfoField, Row: 0, Col: 2},
 			datafield.Field{ID: fileInfoField, Row: 1, Col: 2},
@@ -304,10 +304,6 @@ func (m model) Status() tui.Status {
 	}
 }
 
-func (m model) Tabs() []tui.Tab {
-	return []tui.Tab{{Label: "Scan", Active: true}}
-}
-
 func (m model) CapturesShellKey(key string) bool {
 	return m.picking && (key == "esc" || (key == "q" && m.picker.CapturesText()))
 }
@@ -317,16 +313,6 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key == "R" {
 		m.pendingGG = false
 		return m, loadCaptures(m.root, m.indexFile)
-	}
-	if key == "alt+j" || key == "alt+down" {
-		m.cycleScanFields(1)
-		m.refreshDetails(false)
-		return m, nil
-	}
-	if key == "alt+k" || key == "alt+up" {
-		m.cycleScanFields(-1)
-		m.refreshDetails(false)
-		return m, nil
 	}
 	if m.fields.Move(key) {
 		m.refreshDetails(false)
@@ -502,12 +488,12 @@ func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.refreshDetails(false)
 	m.pendingGG = false
 	if hit == rootField {
-		if id, used := m.controls.Click([]string{rootPathID}, msg.X-2, msg.Y-1); used && id == rootPathID {
+		if id, used := m.controls.Click([]string{rootPathID}, msg.X-2, msg.Y-m.captureListHeight()-1); used && id == rootPathID {
 			return m.openPicker()
 		}
 	}
 	if hit == capturesField {
-		if m.captures.SelectRow(msg.Y - rootHeight - 1) {
+		if m.captures.SelectRow(msg.Y - 1) {
 			return m, m.loadSelectedPreview()
 		}
 	}
@@ -552,7 +538,7 @@ func (m model) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) cycleSelectableField(reverse bool) {
-	order := []string{rootField, capturesField, centerField, captureInfoField, fileInfoField}
+	order := []string{capturesField, rootField, centerField, captureInfoField, fileInfoField}
 	current := 0
 	for i, id := range order {
 		if m.fields.Current() == id {
@@ -565,26 +551,6 @@ func (m *model) cycleSelectableField(reverse bool) {
 		step = -1
 	}
 	m.fields.Set(order[(current+step+len(order))%len(order)])
-}
-
-func (m *model) cycleScanFields(delta int) {
-	order := []string{capturesField, centerField, captureInfoField, fileInfoField}
-	current := -1
-	for index, id := range order {
-		if m.fields.Current() == id {
-			current = index
-			break
-		}
-	}
-	if current < 0 {
-		if delta > 0 {
-			m.fields.Set(capturesField)
-		} else {
-			m.fields.Set(fileInfoField)
-		}
-		return
-	}
-	m.fields.Set(order[(current+delta+len(order))%len(order)])
 }
 
 func (m *model) resizeComponents() {
@@ -606,9 +572,9 @@ func (m *model) resizeComponents() {
 
 func (m *model) setFieldBounds() {
 	left, center, right := m.columnWidths()
-	capturesY := rootHeight
-	m.fields.SetBounds(rootField, datafield.Bounds{X: 0, Y: 0, Width: left, Height: rootHeight})
-	m.fields.SetBounds(capturesField, datafield.Bounds{X: 0, Y: capturesY, Width: left, Height: m.captureListHeight()})
+	listHeight := m.captureListHeight()
+	m.fields.SetBounds(capturesField, datafield.Bounds{X: 0, Y: 0, Width: left, Height: listHeight})
+	m.fields.SetBounds(rootField, datafield.Bounds{X: 0, Y: listHeight, Width: left, Height: rootHeight})
 	m.fields.SetBounds(centerField, datafield.Bounds{X: left + columnGutter, Y: 0, Width: center, Height: m.height})
 	rightX := left + center + 2*columnGutter
 	top := m.rightTopHeight()
@@ -631,7 +597,7 @@ func (m model) leftColumn(width int) string {
 		content = fitHeight(scanMutedStyle.Render("! "+m.loadError), listHeight-2, width-4)
 	}
 	list := fieldset.ViewFocused("CAPTURES", content, width, m.fields.Current() == capturesField)
-	return root + "\n" + list
+	return list + "\n" + root
 }
 
 func (m model) rootPathView(width int) string {
@@ -1044,23 +1010,24 @@ func (m model) captureProperties() []property {
 	props := []property{
 		{name: "ID", value: index.ID},
 		{name: "Created", value: index.CreatedAt},
-		{name: "Type", value: index.Type},
 		{name: "Schema", value: index.Schema},
 		{name: "Source", section: true},
 		{name: "App", value: index.Source.App, indent: 1},
+		{name: "Workflow", value: index.Source.Workflow, indent: 1},
 		{name: "Device", value: index.Source.Device.Name, indent: 1},
 		{name: "System", value: index.Source.Device.OS + " " + index.Source.Device.SystemVersion, indent: 1},
-		{name: "GPS", value: fmt.Sprintf("%.5f,%.5f · %.0fm", index.Position.Latitude, index.Position.Longitude, index.Position.Altitude)},
 	}
-	region := index.Position.Region
-	if region == "" {
-		region = index.Position.LegacyRegion
+	// A Capture may carry no coordinates at all, and its place may be known
+	// without them. Absent groups are omitted rather than shown as zeroes.
+	if position := index.Coordinates; position != nil {
+		props = append(props, property{name: "GPS", value: fmt.Sprintf("%.5f,%.5f · %.0fm", position.Latitude, position.Longitude, position.Altitude)})
 	}
+	place := index.CapturePlace()
 	location := []property{
-		{name: "Locality", value: singleLineAddress(index.Position.Locality), indent: 1},
-		{name: "City", value: singleLineAddress(index.Position.City), indent: 1},
-		{name: "Region", value: singleLineAddress(region), indent: 1},
-		{name: "Country", value: singleLineAddress(index.Position.Country), indent: 1},
+		{name: "Locality", value: singleLineAddress(place.Locality), indent: 1},
+		{name: "City", value: singleLineAddress(place.City), indent: 1},
+		{name: "Region", value: singleLineAddress(place.Region), indent: 1},
+		{name: "Country", value: singleLineAddress(place.Country), indent: 1},
 	}
 	hasLocation := false
 	for _, item := range location {
@@ -1076,7 +1043,7 @@ func (m model) captureProperties() []property {
 				props = append(props, item)
 			}
 		}
-	} else if address := singleLineAddress(index.Position.Address); address != "" {
+	} else if address := singleLineAddress(place.Address); address != "" {
 		props = append(props, property{name: "Location", section: true}, property{name: "Address", value: address, indent: 1})
 	}
 	validAttachments := 0
@@ -1099,11 +1066,13 @@ func (m model) captureProperties() []property {
 			props = append(props, property{name: "SHA-256", value: attachment.SHA256, indent: 2})
 		}
 	}
-	props = append(props,
-		property{name: "Apple", value: mapURLLink(appleMapsURL(index.Position.Latitude, index.Position.Longitude)), fixed: true},
-		property{name: "Google", value: mapURLLink(googleMapsURL(index.Position.Latitude, index.Position.Longitude)), fixed: true},
-		property{name: "AMap", value: mapURLLink(amapURL(index.Position.Latitude, index.Position.Longitude)), fixed: true},
-	)
+	if position := index.Coordinates; position != nil {
+		props = append(props,
+			property{name: "Apple", value: mapURLLink(appleMapsURL(position.Latitude, position.Longitude)), fixed: true},
+			property{name: "Google", value: mapURLLink(googleMapsURL(position.Latitude, position.Longitude)), fixed: true},
+			property{name: "AMap", value: mapURLLink(amapURL(position.Latitude, position.Longitude)), fixed: true},
+		)
+	}
 	return props
 }
 
