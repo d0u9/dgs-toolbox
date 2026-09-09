@@ -4,7 +4,7 @@ package organizer
 // come later, and until then these are what Route offers. been_here is the
 // workflow the model was built against; photo_note and quick_mark are here to
 // exercise it against Recipes whose Actions require different fields.
-var builtinRecipes = []Recipe{
+var builtinRecipes = withBuiltinSource([]Recipe{
 	{
 		ID:    "obsidian_location",
 		Name:  "Location",
@@ -66,10 +66,19 @@ var builtinRecipes = []Recipe{
 		Match:   Match{},
 		Actions: []ActionID{ActionCaptureArchive},
 	},
+})
+
+// withBuiltinSource labels the compiled-in Recipes so a reader can tell them
+// apart from the ones a file defined.
+func withBuiltinSource(recipes []Recipe) []Recipe {
+	for index := range recipes {
+		recipes[index].Source = BuiltinSource
+	}
+	return recipes
 }
 
 // Recipes returns every known Recipe, in a stable order.
-func Recipes() []Recipe { return append([]Recipe(nil), builtinRecipes...) }
+func Recipes() []Recipe { return Builtin().All() }
 
 // LookupRecipe returns a Recipe by id.
 func LookupRecipe(id RecipeID) (Recipe, bool) {

@@ -19,9 +19,16 @@ and the note says what shipped instead.
   brings Obsidian vault paths, idempotent upsert, and failure handling, none of
   which should shape the model. `RecordedAction.executed` already exists for
   that day and stays false until then.
-- **User-defined Recipes.** Recipes are compiled in. Configuration comes once
-  the built-in set has been used enough to know what is worth configuring, and
-  will live with the Actions rather than under `capture.route`.
+- **Per-Recipe Action parameters.** A Recipe names its Actions but cannot
+  configure them, so every Recipe writing a daily note writes to the same place.
+  Recipe files already spell Actions as objects (`- id: …`) so a `with:` can be
+  added without rewriting them, and the Action definitions would need to declare
+  what they accept.
+- **Action documentation as a generated artefact.** `--recipes` covers the
+  registry in text. An `--actions` report in text, Markdown, JSON, and HTML —
+  plus a generated `docs/apps/capture/actions.md` guarded by a staleness test,
+  the way `cmd/mockcapture` guards the mock root — keeps reference material from
+  drifting away from the registry.
 - **Configuration migration.** Config decoding is strict, so removing a field
   breaks every existing config file with an `unknown field` error that does not
   say what to delete. Removing `capture.route.destinations` broke exactly this

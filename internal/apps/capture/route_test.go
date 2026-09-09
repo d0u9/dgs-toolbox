@@ -329,7 +329,7 @@ func TestCaptureSessionActivatesClickedTab(t *testing.T) {
 
 func TestCaptureSessionSharesOneCaptureLoad(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	s := newSessionWithSettings(root, "index.json")
+	s := newSessionWithSettings(root, "index.json", organizer.Builtin())
 	updated, _ := s.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	s = updated.(session)
 	updated, _ = s.Update(loadCaptures(root, "index.json")())

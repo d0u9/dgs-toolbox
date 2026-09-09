@@ -210,10 +210,23 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 ## Configuration
 
 Recipes are not configured per session. They are defined by the organizer model
-in [`organizer.md`](organizer.md), and Route renders whichever ones
-`FindRecipes` returns. They are compiled in for now: user defined Recipes and
-the paths their Actions write to come later, and will be configured with the
-Actions themselves rather than under `capture.route`.
+in [`organizer.md`](organizer.md), and Route renders whichever candidates the
+Set returns. The Set is the built-in Recipes with the files in
+`capture.recipes` layered over them:
+
+```json
+{
+  "capture": {
+    "scan": { "root": "~/Captures", "index_file": "index.json" },
+    "recipes": "~/.config/dgs/recipes"
+  }
+}
+```
+
+An unset `recipes` means the `recipes` directory beside the configuration file.
+A missing directory is not an error; it is the normal state of an installation
+that has defined no Recipe of its own. The paths Actions write to are not
+configurable yet.
 
 Route therefore has no configuration of its own beyond the Capture root and
 index filename it shares with Scan. A Capture whose workflow matches no Recipe

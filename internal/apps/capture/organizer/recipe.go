@@ -13,8 +13,12 @@ type Match struct {
 // Recipe has exactly three parts: what it matches, what it needs beyond its
 // Actions, and the Actions it expands into.
 type Recipe struct {
-	ID      RecipeID
-	Name    string
+	ID   RecipeID
+	Name string
+	// Source is where the Recipe came from: BuiltinSource, or the path of the
+	// file that defined it. A reader asking why a Recipe behaves as it does
+	// needs to know which one to open.
+	Source  string
 	Match   Match
 	Fields  []FieldRequirement
 	Actions []ActionID

@@ -1,8 +1,12 @@
 package tui
 
-import "dgs-toolbox/internal/config"
+import (
+	"io"
 
-import tea "github.com/charmbracelet/bubbletea"
+	"dgs-toolbox/internal/config"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 // RequestQuitMsg lets a mouse action inside a command request the shell-owned
 // quit confirmation instead of terminating the Bubble Tea program directly.
@@ -62,6 +66,16 @@ type Command struct {
 	NewWithConfig func(config.Config) CommandModel
 }
 
+// Report writes something an app knows about itself to stdout instead of
+// opening its TUI: what it supports, what it loaded, why a file was rejected.
+// The CLI turns each one into a flag on the app's command, so an app adds a
+// report without the command hierarchy learning anything app-specific.
+type Report struct {
+	Flag        string
+	Description string
+	Run         func(out io.Writer, global config.Config) error
+}
+
 // App describes a command domain and its leaf commands.
 type App struct {
 	ID          string
@@ -71,6 +85,9 @@ type App struct {
 	// command immediately instead of opening an app-scoped picker.
 	Direct   bool
 	Commands []Command
+	// Reports are the app's non-interactive outputs, exposed as flags on its
+	// command.
+	Reports []Report
 }
 
 // Launch identifies the navigation root selected by the CLI. Empty fields

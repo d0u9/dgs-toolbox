@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,12 +16,12 @@ type session struct {
 }
 
 func newSession() session {
-	return newSessionWithSettings("", "index.json")
+	return newSessionWithSettings("", "index.json", organizer.Builtin())
 }
 
-func newSessionWithSettings(root, indexFile string) session {
+func newSessionWithSettings(root, indexFile string, recipes organizer.Set) session {
 	scan := newModelWithSettings(root, indexFile)
-	return session{scan: scan, route: newRouteModel(scan.root, scan.indexFile)}
+	return session{scan: scan, route: newRouteModelWithRecipes(scan.root, scan.indexFile, recipes)}
 }
 
 func (s session) Init() tea.Cmd { return s.scan.Init() }
