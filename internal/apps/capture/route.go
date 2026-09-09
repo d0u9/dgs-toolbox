@@ -3,12 +3,14 @@ package capture
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/datafield"
+	"dgs-toolbox/internal/tui/divider"
 	"dgs-toolbox/internal/tui/fieldset"
 	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/scrolllist"
@@ -64,6 +66,10 @@ type routeModel struct {
 	runCapture string
 	runError   string
 	running    bool
+	// runContext is the Context the plan was built from, kept because running
+	// moves the cursor to the next Capture: the dialog must keep reporting the
+	// Capture it ran, not the one now selected behind it.
+	runContext organizer.Context
 	// records is what each Capture directory says about how it was organized,
 	// read once per load. A Capture carrying one is shown below the divider.
 	records map[string]organizer.Record
@@ -73,15 +79,30 @@ type routeModel struct {
 	fields    datafield.Navigator
 	loadError string
 	pendingGG bool
+	lastClick routeClick
 }
 
-// routeFieldRow is one row of the FIELDS column: a requirement of the focused
-// Action, with whatever the Context currently resolves for it. A value the
-// Capture itself carries is read-only; anything else is the user's to supply.
+// routeClick remembers the previous primary click so the next one can be
+// recognised as a double click on the same row.
+type routeClick struct {
+	field string
+	row   int
+	at    time.Time
+}
+
+// doubleClickWindow is how long a second press on the same row still counts as
+// a double click.
+const doubleClickWindow = 500 * time.Millisecond
+
+// routeFieldRow is one row of the FIELDS column. missing marks the rows below
+// the rule: the fields the enabled Actions ask for and the Context cannot yet
+// answer. A value the Capture itself carries is read-only; anything else,
+// composed or supplied, is the user's to change.
 type routeFieldRow struct {
 	requirement organizer.FieldRequirement
 	value       string
 	editable    bool
+	missing     bool
 }
 
 func newRouteModel(root, indexFile string) routeModel {
@@ -170,12 +191,12 @@ func (m routeModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmd, rootChanged(selected))
 }
 
-// updateMouse gives every DataField the same reach as the keyboard. A click
-// selects a row and focuses its field, as the shared list convention says, and
-// two places where the pointer has an unambiguous target act directly: the
-// checkbox in ACTIONS toggles that Action, and an editable row in FIELDS opens
-// its editor. Choosing a Recipe stays on Enter, because it resets the enabled
-// Action set and should not happen from a stray click.
+// updateMouse gives every DataField the same reach as the keyboard. A single
+// click selects a row and focuses its field, as the shared list convention
+// says, and a double click on that row does what Enter does there, so the whole
+// session can be driven with the pointer alone. The one direct target is an
+// Action's checkbox: a press on it toggles that Action and never pairs into a
+// double click, because toggling twice would mean nothing.
 func (m routeModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	hit := m.fields.HitAt(msg.X, msg.Y)
 	if hit == "" {
@@ -192,36 +213,62 @@ func (m routeModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	m.fields.FocusAt(msg.X, msg.Y)
 	m.pendingGG = false
+	double := m.isDoubleClick(hit, msg.Y)
+	m.lastClick = routeClick{field: hit, row: msg.Y, at: time.Now()}
+
 	switch hit {
 	case routeRootField:
 		if m.rootControl.Clicked(msg.X-2, msg.Y-m.captureListHeight()-1) {
 			return m.openPicker()
 		}
 	case routeCapturesField:
-		if m.captures.SelectRow(msg.Y - 1) {
-			m.refresh()
+		if !m.captures.SelectRow(msg.Y - 1) {
+			return m, nil
+		}
+		m.refresh()
+		if double {
+			return m.updateCaptures("enter")
 		}
 	case routeRecipesField:
 		m.recipes.SelectRow(msg.Y - 1)
 		m.refresh()
+		if double {
+			return m.updateRecipes("enter")
+		}
 	case routeActionsField:
 		if !m.actions.SelectRow(msg.Y - 1) {
 			return m, nil
 		}
 		m.refresh()
 		if m.clickedCheckbox(msg.X) {
+			// A toggle is its own action, so it does not pair into a double
+			// click: two presses on a checkbox mean off then on again.
+			m.lastClick = routeClick{}
 			m.toggleAction()
 			m.refresh()
+			return m, nil
+		}
+		if double {
+			return m.updateActions("enter")
 		}
 	case routeFieldsField:
 		if !m.selectFieldRow(msg.Y) {
 			return m, nil
 		}
-		if row, ok := m.focusedFieldRow(); ok && row.editable {
+		if double {
 			return m.beginEdit()
 		}
 	}
 	return m, nil
+}
+
+// isDoubleClick reports whether this press pairs with the previous one: the
+// same row of the same field, soon enough after it.
+func (m routeModel) isDoubleClick(field string, row int) bool {
+	if m.lastClick.field != field || m.lastClick.row != row {
+		return false
+	}
+	return !m.lastClick.at.IsZero() && time.Since(m.lastClick.at) <= doubleClickWindow
 }
 
 // scrollField moves the list under the pointer without changing focus, matching
@@ -254,11 +301,17 @@ func (m routeModel) clickedCheckbox(x int) bool {
 	return x >= start && x < start+3
 }
 
-// selectFieldRow moves the FIELDS cursor to the clicked row. The column renders
-// one row per requirement from the top of its fieldset, so the row index is the
-// offset from the border.
+// selectFieldRow moves the FIELDS cursor to the clicked row. The MISSING rule
+// takes a row of its own without being one, so a click below it maps one row
+// higher, and a click on the rule selects nothing.
 func (m *routeModel) selectFieldRow(y int) bool {
 	index := y - 1
+	if missingAt := m.missingStart(); missingAt >= 0 && index >= missingAt {
+		if index == missingAt {
+			return false
+		}
+		index--
+	}
 	if index < 0 || index >= len(m.fieldRows) {
 		return false
 	}
@@ -312,7 +365,7 @@ func (m routeModel) View() string {
 func (m routeModel) runOverlay() string {
 	width := max(30, min(76, m.width-8))
 	inner := max(10, width-4)
-	ctx, _ := m.context()
+	ctx := m.runContext
 	lines := []string{scanMutedStyle.Render(m.runCapture), ""}
 	if m.runError != "" {
 		lines = append(lines, scanMutedStyle.Render("! "+m.runError), "")
@@ -394,12 +447,14 @@ func (m routeModel) noteOverlay() string {
 // CapturesShellKey keeps Esc inside Route wherever it still has work to do:
 // while a field is being edited, and in every column but the leftmost, where it
 // walks back one column. Only from CAPTURES does Esc reach the shell and leave
-// the command.
+// the command. Backspace and Delete walk back the same way, but never leave the
+// command, so a key held down cannot fall out of the session.
 func (m routeModel) CapturesShellKey(key string) bool {
 	if m.editing || m.editingNote || m.running {
 		return true
 	}
-	if key == "esc" {
+	switch key {
+	case "esc", "backspace", "delete":
 		switch m.fields.Current() {
 		case routeRecipesField, routeActionsField, routeFieldsField:
 			return true
@@ -431,11 +486,11 @@ func (m routeModel) Status() tui.Status {
 	case routeRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: center, Right: "↵ Browse  R Refresh  tab Next  alt+hjkl Focus"}
 	case routeRecipesField:
-		return tui.Status{Left: "RECIPES", Center: center, Right: "↑/k ↓/j Move  ↵ Choose  esc Back"}
+		return tui.Status{Left: "RECIPES", Center: center, Right: "↑/k ↓/j Move  ↵ Choose  esc/⌫ Back"}
 	case routeActionsField:
-		return tui.Status{Left: "ACTIONS", Center: center, Right: "↑/k ↓/j Move  space Toggle  ↵ Fields  x Run  esc Back"}
+		return tui.Status{Left: "ACTIONS", Center: center, Right: "↑/k ↓/j Move  space Toggle  ↵ Fields  x Run  esc/⌫ Back"}
 	case routeFieldsField:
-		return tui.Status{Left: "FIELDS", Center: center, Right: "↑/k ↓/j Move  ↵ Edit  x Run  esc Back"}
+		return tui.Status{Left: "FIELDS", Center: center, Right: "↑/k ↓/j Move  ↵ Edit  x Run  esc/⌫ Back"}
 	default:
 		return tui.Status{Left: "ROUTE", Center: center, Right: "tab Next  alt+hjkl Focus"}
 	}
@@ -527,9 +582,11 @@ func (m routeModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		m.fields.Set(routeRecipesField)
-	case "u", "backspace":
+	case "u":
 		// Clearing drops the whole Selection: recipe, enabled set, and the
-		// values supplied under it.
+		// values supplied under it. Backspace does not do this: it walks back a
+		// column everywhere else, and one key with two meanings on one screen
+		// is how a Selection gets cleared by accident.
 		if entry, ok := m.selectedCapture(); ok {
 			delete(m.selections, entry.path)
 		}
@@ -558,7 +615,7 @@ func (m routeModel) updateRecipes(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		m.chooseRecipe()
-	case "esc":
+	case "esc", "backspace", "delete":
 		m.fields.Set(routeCapturesField)
 	}
 	m.pendingGG = false
@@ -597,7 +654,7 @@ func (m routeModel) updateActions(key string) (tea.Model, tea.Cmd) {
 		m.toggleAction()
 	case "enter":
 		m.fields.Set(routeFieldsField)
-	case "esc":
+	case "esc", "backspace", "delete":
 		m.fields.Set(routeRecipesField)
 	}
 	m.pendingGG = false
@@ -625,7 +682,7 @@ func (m routeModel) updateFields(key string) (tea.Model, tea.Cmd) {
 		m.moveFieldCursor(1)
 	case "enter":
 		return m.beginEdit()
-	case "esc":
+	case "esc", "backspace", "delete":
 		m.fields.Set(routeActionsField)
 	}
 	m.pendingGG = false
@@ -733,6 +790,7 @@ func (m routeModel) run() (tea.Model, tea.Cmd) {
 	ctx, _ := m.context()
 	enabled := selection.EnabledActions(recipe)
 	m.runPlans = organizer.Build(ctx, recipe, enabled)
+	m.runContext = ctx
 	m.runCapture = entry.name + "  ·  " + recipe.Name
 	m.runError = ""
 	m.running = true
@@ -1148,10 +1206,12 @@ func (m *routeModel) rebuildActionItems() {
 	}
 }
 
-// rebuildFieldRows lists the requirements of the Action under the ACTIONS
-// cursor — not the union across the whole Recipe — so a missing input is
-// attributable to the Action that needs it. Values the Capture itself carries
-// are read-only; everything else is the user's to supply.
+// rebuildFieldRows lists what the enabled Actions ask for, deduplicated and
+// split by state: the fields that already have a value, then the ones still to
+// supply. A field two Actions both require appears once, so it is filled once
+// and satisfies both; which Action needed it is answered by the ACTIONS column
+// rather than by repeating the field here. Toggling an Action off takes the
+// fields only it required out of both halves.
 func (m *routeModel) rebuildFieldRows() {
 	m.fieldRows = nil
 	selection, recipe, ok := m.currentSelection()
@@ -1159,36 +1219,34 @@ func (m *routeModel) rebuildFieldRows() {
 		m.fieldIndex = 0
 		return
 	}
-	id, ok := m.focusedAction()
-	if !ok {
-		m.fieldIndex = 0
-		return
-	}
 	ctx, _ := m.context()
-	enabled := selection.EnabledActions(recipe)
-	requirements := recipe.RequiredFields([]organizer.ActionID{id})
-	for _, req := range requirements {
-		if req.When != nil && !req.When(ctx) {
-			continue
-		}
+	resolved, missing := organizer.Fields(ctx, recipe, selection.EnabledActions(recipe))
+	for _, state := range resolved {
 		m.fieldRows = append(m.fieldRows, routeFieldRow{
-			requirement: req,
-			value:       ctx.String(req.Field),
-			// A disabled Action does not enter the plan, so its fields are
-			// shown for reference but not accepted as input.
-			editable: !ctx.FromCapture(req.Field) && contains(enabled, id),
+			requirement: state.Requirement,
+			value:       state.Value,
+			editable:    !state.FromCapture,
+		})
+	}
+	for _, state := range missing {
+		m.fieldRows = append(m.fieldRows, routeFieldRow{
+			requirement: state.Requirement,
+			editable:    true,
+			missing:     true,
 		})
 	}
 	m.fieldIndex = min(max(0, len(m.fieldRows)-1), max(0, m.fieldIndex))
 }
 
-func contains(values []organizer.ActionID, want organizer.ActionID) bool {
-	for _, value := range values {
-		if value == want {
-			return true
+// missingStart is the row the MISSING rule is drawn above, or -1 when nothing
+// is missing.
+func (m routeModel) missingStart() int {
+	for index, row := range m.fieldRows {
+		if row.missing {
+			return index
 		}
 	}
-	return false
+	return -1
 }
 
 // columnWidths splits the workspace into four equal columns. Remainder cells
@@ -1214,8 +1272,8 @@ func (m *routeModel) resizeComponents() {
 	}
 	widths := m.columnWidths()
 	m.captures.SetSize(max(1, widths[0]-4), max(1, m.captureListHeight()-2))
-	m.recipes.SetSize(max(1, widths[1]-4), max(1, m.height-2))
-	m.actions.SetSize(max(1, widths[2]-4), max(1, m.height-2))
+	m.recipes.SetSize(max(1, widths[1]-4), max(1, m.recipeListHeight()))
+	m.actions.SetSize(max(1, widths[2]-4), max(1, m.actionListHeight()))
 	m.editor.Width = max(1, widths[3]-6)
 	m.setFieldBounds()
 	m.refresh()
@@ -1263,26 +1321,192 @@ func (m routeModel) captureListHeight() int { return m.height - rootHeight }
 
 func (m routeModel) recipesColumn(width int) string {
 	focused := m.fields.Current() == routeRecipesField
+	inner := max(1, width-4)
 	recipes := m.recipes
-	recipes.SetSize(max(1, width-4), max(1, m.height-2))
+	recipes.SetSize(inner, max(1, m.recipeListHeight()))
 	content := recipes.View(focused, scanTitleStyle, scanMutedStyle)
 	if _, ok := m.selectedCapture(); !ok {
 		content = scanMutedStyle.Render("· Select a capture")
 	} else if len(m.candidates()) == 0 {
 		content = scanMutedStyle.Render("· No recipe matches this capture")
 	}
-	return fieldset.ViewFocused("RECIPES", fitHeight(content, m.height-2, width-4), width, focused)
+	body := fitHeight(content, m.recipeListHeight(), inner) + "\n" + m.recipeDetail(inner)
+	return fieldset.ViewFocused("RECIPES", fitHeight(body, m.height-2, inner), width, focused)
 }
 
 func (m routeModel) actionsColumn(width int) string {
 	focused := m.fields.Current() == routeActionsField
+	inner := max(1, width-4)
 	actions := m.actions
-	actions.SetSize(max(1, width-4), max(1, m.height-2))
+	actions.SetSize(inner, max(1, m.actionListHeight()))
 	content := actions.View(focused, scanTitleStyle, scanMutedStyle)
 	if _, _, ok := m.currentSelection(); !ok {
 		content = scanMutedStyle.Render("· Choose a recipe")
 	}
-	return fieldset.ViewFocused("ACTIONS", fitHeight(content, m.height-2, width-4), width, focused)
+	body := fitHeight(content, m.actionListHeight(), inner) + "\n" + m.actionDetail(inner)
+	return fieldset.ViewFocused("ACTIONS", fitHeight(body, m.height-2, inner), width, focused)
+}
+
+// routeDetailHeight is fixed so a list does not resize as the cursor moves
+// between entries that describe themselves at different lengths. RECIPES and
+// ACTIONS share it, so their rules line up across the two columns.
+const routeDetailHeight = 10
+
+// routeDetailKeyWidth is the label column of a detail pane's single-value rows.
+// Labels are quiet; values carry the normal foreground, so the eye lands on the
+// content rather than on the scaffolding.
+const routeDetailKeyWidth = 8
+
+func (m routeModel) actionListHeight() int { return max(1, m.height-2-routeDetailHeight) }
+func (m routeModel) recipeListHeight() int { return max(1, m.height-2-routeDetailHeight) }
+
+// actionDetail describes the Action under the cursor: what it needs of this
+// Capture, and what it will do outside it. The needs are here rather than in
+// FIELDS because FIELDS lists the union across enabled Actions; this is where
+// a field is attributed to the Action that asked for it. Fields are named by
+// the same label FIELDS uses, so one screen does not call one thing two names.
+func (m routeModel) actionDetail(width int) string {
+	id, ok := m.focusedAction()
+	if !ok {
+		return ""
+	}
+	def, hasDef := organizer.LookupAction(id)
+	if !hasDef {
+		return ""
+	}
+	ctx, _ := m.context()
+	lines := []string{divider.Labelled(string(id), width)}
+
+	needs := organizer.Needs(ctx, id)
+	if len(needs) == 0 {
+		lines = append(lines, detailInline("Needs", scanMutedStyle.Render("nothing"), width))
+	} else {
+		lines = append(lines, detailHeader("Needs"))
+		lines = append(lines, detailFields(needs, width)...)
+	}
+	if len(def.Effects) > 0 {
+		lines = append(lines, detailHeader("Effects"))
+		for _, effect := range def.Effects {
+			lines = append(lines, detailParagraph(effect, width)...)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// recipeDetail describes the Recipe under the cursor before it is chosen,
+// because choosing one resets the enabled Action set and should not be the way
+// to find out what it does.
+func (m routeModel) recipeDetail(width int) string {
+	recipe, ok := m.focusedCandidate()
+	if !ok {
+		return ""
+	}
+	lines := []string{divider.Labelled(string(recipe.ID), width)}
+	labels := make([]string, 0, len(recipe.Actions))
+	for _, id := range recipe.Actions {
+		if def, ok := organizer.LookupAction(id); ok {
+			labels = append(labels, def.Label)
+			continue
+		}
+		labels = append(labels, string(id)+" (unknown)")
+	}
+	lines = append(lines, detailHeader("Runs"))
+	for _, label := range labels {
+		lines = append(lines, detailItem(label, width))
+	}
+	if len(recipe.Fields) > 0 {
+		lines = append(lines, detailHeader("Asks"))
+		for _, field := range recipe.Fields {
+			lines = append(lines, detailItem(requirementLabel(field), width))
+		}
+	}
+	lines = append(lines, detailInline("Matches", workflowSummary(recipe), width))
+	lines = append(lines, detailInline("Source", recipeSource(recipe), width))
+	return strings.Join(lines, "\n")
+}
+
+func workflowSummary(recipe organizer.Recipe) string {
+	if len(recipe.Match.Workflows) == 0 {
+		return "any workflow"
+	}
+	return strings.Join(recipe.Match.Workflows, ", ")
+}
+
+// recipeSource names the file a Recipe came from by its filename: the directory
+// is the same for every one of them and would crowd out the name.
+func recipeSource(recipe organizer.Recipe) string {
+	if recipe.Source == "" || recipe.Source == organizer.BuiltinSource {
+		return organizer.BuiltinSource
+	}
+	return filepath.Base(recipe.Source)
+}
+
+func requirementLabel(requirement organizer.FieldRequirement) string {
+	if requirement.Required {
+		return requirement.Label + "*"
+	}
+	return requirement.Label
+}
+
+// A detail pane is written as headed sections rather than as a hanging key
+// column: the key column costs width the content needs, and at a quarter of the
+// screen that showed up as truncated field names. A header on its own line
+// gives every item the full column.
+
+// detailHeader names a group of items.
+func detailHeader(text string) string { return scanMutedStyle.Render(text) }
+
+// detailItem is one line under a header.
+func detailItem(text string, width int) string {
+	return truncateStyled("  "+truncate(text, max(1, width-2)), width)
+}
+
+// detailFields lists requirements as two aligned columns under a header. The
+// name column is sized to the longest name present rather than fixed, so a
+// short list is not padded out to fit one it does not contain. A value is
+// clipped rather than wrapped: it is a datum, not a sentence, and FIELDS
+// carries it in full a column away.
+func detailFields(states []organizer.FieldState, width int) []string {
+	nameWidth := 0
+	for _, state := range states {
+		nameWidth = max(nameWidth, lipgloss.Width(requirementLabel(state.Requirement)))
+	}
+	nameWidth = min(nameWidth, max(4, width/2))
+	lines := make([]string, 0, len(states))
+	for _, state := range states {
+		name := fmt.Sprintf("%-*s", nameWidth, truncate(requirementLabel(state.Requirement), nameWidth))
+		value := singleLine(state.Value)
+		if value == "" {
+			value = scanMutedStyle.Render("· missing")
+		} else {
+			value = truncate(value, max(1, width-nameWidth-4))
+		}
+		lines = append(lines, truncateStyled("  "+scanMutedStyle.Render(name)+"  "+value, width))
+	}
+	return lines
+}
+
+// detailParagraph is one sentence under a header, wrapped with its continuation
+// indented further than the first line, so a wrapped effect cannot be mistaken
+// for the next one.
+func detailParagraph(text string, width int) []string {
+	wrapped := strings.Split(lipgloss.NewStyle().Width(max(1, width-4)).Render(text), "\n")
+	lines := make([]string, 0, len(wrapped))
+	for index, part := range wrapped {
+		indent := "  "
+		if index > 0 {
+			indent = "    "
+		}
+		lines = append(lines, truncateStyled(indent+strings.TrimRight(part, " "), width))
+	}
+	return lines
+}
+
+// detailInline is a single value small enough to sit beside its key, where a
+// header of its own would waste a row.
+func detailInline(key, value string, width int) string {
+	row := scanMutedStyle.Render(fmt.Sprintf("%-*s", routeDetailKeyWidth, key)) + value
+	return truncateStyled(row, width)
 }
 
 func (m routeModel) fieldsColumn(width int) string {
@@ -1303,27 +1527,47 @@ func (m routeModel) fieldsColumn(width int) string {
 // marked so the blockage is visible without a separate missing-field count.
 func (m routeModel) fieldsContent(width int) string {
 	focused := m.fields.Current() == routeFieldsField
-	lines := make([]string, 0, len(m.fieldRows))
+	missingAt := m.missingStart()
+	lines := make([]string, 0, len(m.fieldRows)+1)
 	for index, row := range m.fieldRows {
-		label := row.requirement.Label
-		if row.requirement.Required {
-			label += "*"
+		if index == missingAt {
+			lines = append(lines, divider.Labelled("MISSING", width))
 		}
-		cursor := "  "
-		if focused && index == m.fieldIndex {
-			cursor = "> "
-		}
+		selected := focused && index == m.fieldIndex
+		editing := m.editing && index == m.fieldIndex
+		label := fmt.Sprintf("%-*s", routePropertyKeyWidth, truncate(requirementLabel(row.requirement), routePropertyKeyWidth-1))
 		value := row.value
-		if m.editing && index == m.fieldIndex {
+		if editing {
 			value = m.editor.View()
 		} else if value == "" {
 			value = "___"
 		}
-		line := cursor + fmt.Sprintf("%-*s", routePropertyKeyWidth, truncate(label, routePropertyKeyWidth)) + value
-		if !row.editable {
-			line = scanMutedStyle.Render(line)
+
+		if selected && !editing {
+			// The row under the cursor is marked the way every other list on
+			// the screen marks one, rather than by a character the muted style
+			// then paints over.
+			row := "› " + label + value
+			lines = append(lines, scrolllist.SelectedRowStyle().Width(width).Render(truncate(row, width)))
+			continue
+		}
+		cursor := "  "
+		if selected {
+			cursor = "› "
+		}
+		// The label is scaffolding and the value is the content, so only the
+		// label is muted by default; a value the Capture owns is muted too,
+		// which is what marks it read-only.
+		line := cursor + scanMutedStyle.Render(label)
+		if row.editable {
+			line += value
+		} else {
+			line += scanMutedStyle.Render(value)
 		}
 		lines = append(lines, truncateStyled(line, width))
+	}
+	if missingAt < 0 && len(m.fieldRows) > 0 {
+		lines = append(lines, "", scanMutedStyle.Render("· Nothing missing"))
 	}
 	return strings.Join(lines, "\n")
 }
