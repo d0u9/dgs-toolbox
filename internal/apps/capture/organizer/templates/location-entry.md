@@ -1,0 +1,4 @@
+- `{{.Clock}} {{.Offset}}` · {{.Content}} {{.ID}}
+    - {{.Address}}
+    - {{.CopyLink}}
+    - {{.MapLinks}}

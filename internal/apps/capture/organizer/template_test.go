@@ -32,7 +32,7 @@ func TestDailyEntryWritesWhatTheCaptureKnows(t *testing.T) {
 		"- 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620",
 		"  - Coffee under the bridge",
 		"  - -33.76910, 151.08200",
-		"  - address: Epping, NSW",
+		"  - address: NSW, Epping",
 	}, "\n")
 	if got := mustEntry(t, templated(t, full)); got != want {
 		t.Fatalf("entry =\n%s\nwant\n%s", got, want)
@@ -121,7 +121,7 @@ func TestBuiltinDailyEntryTemplateRenders(t *testing.T) {
 		t.Fatalf("the shipped template does not render: %v", err)
 	}
 	got := strings.Join(entry, "\n")
-	for _, want := range []string{captureMark(capture), "Coffee under the bridge", "-33.76910", "151.08200", "Epping, NSW"} {
+	for _, want := range []string{captureMark(capture), "Coffee under the bridge", "-33.76910", "151.08200", "NSW, Epping"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the shipped entry is missing %q:\n%s", want, got)
 		}

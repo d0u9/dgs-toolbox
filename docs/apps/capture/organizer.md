@@ -426,7 +426,7 @@ is worse than one that refuses. `Unimplemented` names those Actions so a caller
 can refuse to offer a plan that cannot work, instead of accepting it and failing
 afterwards.
 
-Only `obsidian.daily.append` is implemented. It writes the Capture into the
+`obsidian.location.append` and `obsidian.daily.append` are implemented. It writes the Capture into the
 daily note for the day it was taken:
 
 - **Where** is configured, not discovered. `capture.obsidian.daily_note` is a
@@ -461,6 +461,69 @@ daily note for the day it was taken:
   claim a line exists that no longer does. The reference is also a link target,
   so what was written can be pointed at.
 - **Nothing is guessed.** With no vault configured the Action refuses.
+
+### The running list of places
+
+`obsidian.location.append` puts the Capture at the top of a note that is one
+long timeline of places, newest first, grouped under a day:
+
+```markdown
+- *2026-09-09 周三*
+- `21:31:22 +10` · 在家调试Claude ^dgs-20260909213122900-4620
+    - Australia, New South Wales, Sydney, Epping
+    - [(-33.76910, 151.08200)](obsidian://quickadd?choice=…)
+    - [Apple](…) · [高德](…) · [Google](…)
+```
+
+The shape follows conventions the vault already keeps, and the reasons are the
+vault's rather than this tool's:
+
+- **The date marker's shape is fixed in code**, only its weekday text coming
+  from the `weekday` mapping table. Archiving reads the year back out of the
+  marker, so a marker a reader could reshape is one the archive could no longer
+  recognise.
+- **No blank line separates a marker from its entries.** They are items of one
+  list, and a blank line there breaks the list — and with it the rule the
+  stylesheet draws down the timeline.
+- **The address runs coarsest first** — country, region, city, locality — which
+  reads as a place being narrowed down. The composed place *name* goes the other
+  way, most specific first, because a name is what you would call the spot.
+- **Coordinates are shown as "latitude, longitude"** and linked to the vault
+  command that copies them the other way round. What is read and what is copied
+  differ deliberately: maps want one order, the services that take a pasted pair
+  want the other.
+- **Map links declare their source system.** Coordinates are WGS-84, which is
+  what a device records; the Chinese services use shifted systems, so
+  `coordinate=wgs84` and `coord_type=wgs84` are set and they convert. Without
+  that a position lands a few hundred metres off inside China and identically
+  everywhere else.
+- **Links are encoded the way `encodeURIComponent` encodes**, because that is
+  what wrote the links already in the note: a space is `%20` rather than `+`,
+  which some parsers read back as a literal plus.
+
+`capture.obsidian.location_archive` names where a year that has rolled over is
+moved to, one file per year, and empty means nothing is archived. Without it the
+list grows without limit and every new entry rewrites all of it.
+
+Two things move a year out of the running list, and both matter:
+
+- **A Capture from a year that has already rolled over is written straight into
+  that year's file**, not at the top of this year's list. Organizing happens
+  long after capturing, so this is the ordinary case rather than an edge.
+- **The rest of that year goes with it** the next time this year's list is
+  written. Archiving happens in the same pass — the whole file is rewritten
+  either way, because a list that grows at the top cannot be appended to — and
+  touches nothing when no year has rolled over.
+
+What counts as this year is the **clock's** answer, not the Capture's. A Capture
+says when it was taken, which is exactly the thing that must not decide it:
+organizing one from two years ago would otherwise treat its year as current and
+archive everything since.
+
+The Action does **not** write the daily note. A Recipe combining it with
+`obsidian.daily.append` does that, and the daily note's own `section` parameter
+decides which heading it lands under: two Actions the reader can enable
+separately, rather than one that quietly does two things.
 
 ## Templates
 

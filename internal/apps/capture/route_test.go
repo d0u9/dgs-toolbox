@@ -47,6 +47,8 @@ func routeVault(t *testing.T) organizer.Settings {
 	settings := organizer.DefaultSettings()
 	settings.ObsidianVault = t.TempDir()
 	settings.DailyNote = "Daily/{{.Date}}.md"
+	settings.LocationNote = "88 Inbox/06 Locations.md"
+	settings.LocationArchive = "88 Inbox/06 Locations"
 	settings.TemplateDir = templates
 	return settings
 }
@@ -129,43 +131,44 @@ func TestRouteMarksBlockedActionsAndClearsThemOnceFilled(t *testing.T) {
 	if !strings.Contains(view, "[x] ○ Location note") {
 		t.Fatalf("location action should be enabled and blocked:\n%s", view)
 	}
-	if !strings.Contains(view, "target unresolved") {
-		t.Fatalf("a blocked action should show no invented target:\n%s", view)
+	// The location note's path does not depend on anything the Capture is
+	// missing, so it is shown even while the Action is blocked.
+	if !strings.Contains(view, "88 Inbox/06 Locations.md") {
+		t.Fatalf("the target the action would write to is not shown:\n%s", view)
 	}
 
 	// FIELDS lists the union across enabled actions, split by state: what
 	// already has a value, then what is still missing.
 	resolved, missing := splitFieldRows(m)
-	if !equalFieldIDs(resolved, []organizer.FieldID{organizer.FieldLatitude, organizer.FieldLongitude, organizer.FieldCreatedAt}) {
+	if !equalFieldIDs(resolved, []organizer.FieldID{organizer.FieldCreatedAt}) {
 		t.Fatalf("resolved = %v", fieldRowIDs(resolved))
 	}
 	// What is still to supply comes first.
 	if !m.fieldRows[0].missing {
 		t.Fatalf("the first row is %q, want a missing field", m.fieldRows[0].requirement.Field)
 	}
-	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldPlaceName, organizer.FieldContent, organizer.FieldTags}) {
+	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldContent, organizer.FieldTags}) {
 		t.Fatalf("missing = %v", fieldRowIDs(missing))
 	}
 	if resolved[0].editable {
-		t.Fatal("latitude comes from the capture and must not be editable")
+		t.Fatal("createdAt comes from the capture and must not be editable")
 	}
 
 	selection, recipe, ok := m.currentSelection()
 	if !ok {
 		t.Fatal("no selection")
 	}
-	selection.Set(organizer.FieldPlaceName, "Epping Station")
 	selection.Set(organizer.FieldContent, "晚上再来看看")
 	m.refresh()
 
 	if !organizer.Ready(mustContext(t, m), recipe, selection.EnabledActions(recipe)) {
-		t.Fatal("capture should be ready once both fields are supplied")
+		t.Fatal("capture should be ready once the note is supplied")
 	}
 	view = ansi.Strip(m.View())
 	if !strings.Contains(view, "[x] ● Location note") {
 		t.Fatalf("location action should be ready:\n%s", view)
 	}
-	if !strings.Contains(view, "Locations/Epping Station.md") {
+	if !strings.Contains(view, "88 Inbox/06 Locations.md") {
 		t.Fatalf("plan should show the resolved target:\n%s", view)
 	}
 }
@@ -189,6 +192,28 @@ func equalFieldIDs(rows []routeFieldRow, want []organizer.FieldID) bool {
 		}
 	}
 	return true
+}
+
+// focusField moves the FIELDS cursor onto a field, failing rather than walking
+// for ever when the column does not hold it.
+func fieldIDsOf(requirements []organizer.FieldRequirement) []organizer.FieldID {
+	ids := make([]organizer.FieldID, 0, len(requirements))
+	for _, requirement := range requirements {
+		ids = append(ids, requirement.Field)
+	}
+	return ids
+}
+
+func focusField(t *testing.T, m routeModel, field organizer.FieldID) routeModel {
+	t.Helper()
+	for index, row := range m.fieldRows {
+		if row.requirement.Field == field {
+			m.fieldIndex = index
+			return m
+		}
+	}
+	t.Fatalf("FIELDS holds no %q: %v", field, fieldRowIDs(m.fieldRows))
+	return m
 }
 
 func splitFieldRows(m routeModel) (resolved, missing []routeFieldRow) {
@@ -243,8 +268,9 @@ func TestRouteToggleDropsAnActionAndItsRequirements(t *testing.T) {
 
 	selection, recipe, _ := m.currentSelection()
 	before := organizer.MissingFields(mustContext(t, m), recipe, selection.EnabledActions(recipe))
+	// Both Actions want the note, so it is reported once for each of them.
 	if len(before) != 2 {
-		t.Fatalf("missing before = %d, want place name and content", len(before))
+		t.Fatalf("missing before = %v, want the note for each action", fieldIDsOf(before))
 	}
 
 	m.actions.SelectID("action:" + string(organizer.ActionDailyAppend))
@@ -253,7 +279,7 @@ func TestRouteToggleDropsAnActionAndItsRequirements(t *testing.T) {
 
 	selection, recipe, _ = m.currentSelection()
 	after := organizer.MissingFields(mustContext(t, m), recipe, selection.EnabledActions(recipe))
-	if len(after) != 1 || after[0].Field != organizer.FieldPlaceName {
+	if len(after) != 1 || after[0].Action != organizer.ActionLocationAppend {
 		t.Fatalf("missing after disabling the daily note = %v", after)
 	}
 	view := ansi.Strip(m.View())
@@ -271,24 +297,22 @@ func TestRouteEditingAFieldRecordsEnrichment(t *testing.T) {
 	if got := m.fields.Current(); got != routeFieldsField {
 		t.Fatalf("focus = %q, want %q", got, routeFieldsField)
 	}
-	for m.fieldRows[m.fieldIndex].requirement.Field != organizer.FieldPlaceName {
-		updated, _ = m.updateFields("down")
-		m = updated.(routeModel)
-	}
+	// The note is a multiline field, so it is edited in the overlay.
+	m = focusField(t, m, organizer.FieldContent)
 	updated, _ = m.updateFields("enter")
 	m = updated.(routeModel)
-	if !m.editing {
+	if !m.editingNote {
 		t.Fatal("Enter on an editable row did not start editing")
 	}
-	m.editor.SetValue("Epping Station")
-	updated, _ = m.updateEditor(tea.KeyMsg{Type: tea.KeyEnter})
+	m.note.SetValue("Epping Station")
+	updated, _ = m.updateNote(tea.KeyMsg{Type: tea.KeyCtrlS})
 	m = updated.(routeModel)
 
-	if m.editing {
-		t.Fatal("Enter did not commit the edit")
+	if m.editingNote {
+		t.Fatal("ctrl+s did not commit the edit")
 	}
 	selection, _, ok := m.currentSelection()
-	if !ok || selection.Enrichment[organizer.FieldPlaceName] != "Epping Station" {
+	if !ok || selection.Enrichment[organizer.FieldContent] != "Epping Station" {
 		t.Fatalf("enrichment = %v", selection.Enrichment)
 	}
 	// Focus stays on the row so the value can be revised immediately.
@@ -394,10 +418,7 @@ func TestRouteEditsAMultilineFieldInAnOverlay(t *testing.T) {
 	m.refresh()
 	updated, _ := m.updateActions("enter")
 	m = updated.(routeModel)
-	for m.fieldRows[m.fieldIndex].requirement.Field != organizer.FieldContent {
-		updated, _ = m.updateFields("down")
-		m = updated.(routeModel)
-	}
+	m = focusField(t, m, organizer.FieldContent)
 
 	updated, _ = m.updateFields("enter")
 	m = updated.(routeModel)
@@ -833,9 +854,10 @@ func TestRouteDoubleClickActsLikeEnter(t *testing.T) {
 	}
 
 	// FIELDS: Enter edits the row. The rows still to supply come first, so the
-	// first row below the border is editable.
+	// first row below the border is editable — the note, which opens in the
+	// overlay because it is multiline.
 	m = doubleClick(m, columnX(3), 1)
-	if !m.editing {
+	if !m.editing && !m.editingNote {
 		t.Fatalf("double-clicking a missing field row did not open its editor:\n%s", ansi.Strip(m.View()))
 	}
 }
@@ -880,14 +902,15 @@ func TestRouteDoubleClickWindowExpires(t *testing.T) {
 	}
 }
 
-// Toggling an Action off takes the fields only it required out of both halves,
-// and leaves a field another enabled Action still needs.
+// FIELDS follows the enabled Actions: a field two of them want is asked for
+// once and stays while either is enabled, and the Recipe's own field stays
+// whatever is enabled.
 func TestRouteFieldsFollowTheEnabledActions(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
 	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
 
 	_, missing := splitFieldRows(m)
-	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldPlaceName, organizer.FieldContent, organizer.FieldTags}) {
+	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldContent, organizer.FieldTags}) {
 		t.Fatalf("missing = %v", fieldRowIDs(missing))
 	}
 
@@ -895,14 +918,14 @@ func TestRouteFieldsFollowTheEnabledActions(t *testing.T) {
 	updated, _ := m.updateActions(" ")
 	m = updated.(routeModel)
 
-	resolved, missing := splitFieldRows(m)
-	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldPlaceName, organizer.FieldTags}) {
+	// The location note wants the same two, so disabling the daily note
+	// changes nothing here — and the parameter that belonged to it is gone.
+	_, missing = splitFieldRows(m)
+	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldContent, organizer.FieldTags}) {
 		t.Fatalf("missing after disabling the daily note = %v", fieldRowIDs(missing))
 	}
-	for _, row := range resolved {
-		if row.requirement.Field == organizer.FieldCreatedAt {
-			t.Fatal("createdAt was required only by the disabled action and should be gone")
-		}
+	if len(parameterRows(m)) != 0 {
+		t.Fatalf("the disabled action's parameter is still listed: %+v", parameterRows(m))
 	}
 }
 
@@ -927,11 +950,11 @@ func TestRouteFieldsDeduplicateAcrossActions(t *testing.T) {
 func TestRouteActionDetailNamesNeedsAndEffects(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
 	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
-	m.actions.SelectID("action:" + string(organizer.ActionLocationUpsert))
+	m.actions.SelectID("action:" + string(organizer.ActionLocationAppend))
 	m.refresh()
 
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"obsidian.location.upsert", "Place name*", "Effects", "Creates Locations/"} {
+	for _, want := range []string{"obsidian.location.append", "Note*", "Effects", "running list of places"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("action detail is missing %q:\n%s", want, view)
 		}
@@ -980,13 +1003,10 @@ func TestRouteFieldsHighlightMatchesTheOtherLists(t *testing.T) {
 	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
 	updated, _ := m.updateActions("enter")
 	m = updated.(routeModel)
-	for m.fieldRows[m.fieldIndex].requirement.Field != organizer.FieldPlaceName {
-		updated, _ = m.updateFields("down")
-		m = updated.(routeModel)
-	}
+	m = focusField(t, m, organizer.FieldContent)
 
-	// "Place name*" also appears in the ACTIONS detail pane, so the lines are
-	// read from the FIELDS column alone.
+	// "Note*" also appears in the ACTIONS detail pane, so the lines are read
+	// from the FIELDS column alone.
 	widths := m.columnWidths()
 	start := widths[0] + widths[1] + widths[2] + 3*columnGutter
 	marker := selectionSGR(t)
@@ -994,9 +1014,9 @@ func TestRouteFieldsHighlightMatchesTheOtherLists(t *testing.T) {
 	for _, line := range strings.Split(m.View(), "\n") {
 		column := ansi.Cut(line, start, start+widths[3])
 		switch {
-		case strings.Contains(ansi.Strip(column), "Place name*"):
-			selected = column
 		case strings.Contains(ansi.Strip(column), "Note*"):
+			selected = column
+		case strings.Contains(ansi.Strip(column), "Created*"):
 			unselected = column
 		}
 	}
@@ -1057,17 +1077,17 @@ func TestRouteRunDialogReportsTheCaptureItRan(t *testing.T) {
 // A plan naming an Action that has only been declared is refused before it is
 // offered, not after it has failed.
 func TestRouteRefusesAPlanWithAnUnimplementedAction(t *testing.T) {
-	root := routeTestRoot(t, "alpha")
-	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	root := quickMarkRoot(t, "alpha")
+	m := chooseRecipe(t, loadedRoute(t, root), "Apple Note")
 	selection, _, _ := m.currentSelection()
-	selection.Set(organizer.FieldPlaceName, "Epping Station")
+	selection.Set(organizer.FieldTitle, "a title")
 	selection.Set(organizer.FieldContent, "a note")
 	m.refresh()
 
 	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = updated.(routeModel)
 	dialog := ansi.Strip(m.runOverlay())
-	if !strings.Contains(dialog, "Not implemented yet: obsidian.location.upsert") {
+	if !strings.Contains(dialog, "Not implemented yet: apple.notes.create") {
 		t.Fatalf("the dialog does not say what cannot run:\n%s", dialog)
 	}
 	if strings.Contains(dialog, "↵ Run") {
@@ -1080,19 +1100,37 @@ func TestRouteRefusesAPlanWithAnUnimplementedAction(t *testing.T) {
 		t.Fatal("confirming an unrunnable plan recorded something")
 	}
 
-	// Disabling the Action it names makes the rest runnable.
+	// Choosing a recipe whose Actions all exist makes it runnable again.
 	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(routeModel)
-	m.fields.Set(routeActionsField)
-	m.actions.SelectID("action:" + string(organizer.ActionLocationUpsert))
-	updated, _ = m.updateActions(" ")
-	m = updated.(routeModel)
+	m = chooseRecipe(t, m, "Daily")
+	selection, _, _ = m.currentSelection()
+	selection.Set(organizer.FieldContent, "a note")
+	m.refresh()
 
 	m = runAndConfirm(t, m)
 	record, ok := organizer.ReadRecord(filepath.Join(root, "alpha"))
 	if !ok || !record.Organized() {
 		t.Fatalf("the remaining action did not run: %+v", record)
 	}
+}
+
+// quickMarkRoot is a Capture root whose Captures match the Apple Recipes, which
+// are the ones still waiting on their APIs.
+func quickMarkRoot(t *testing.T, names ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, name := range names {
+		path := filepath.Join(root, name)
+		if err := os.Mkdir(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		index := []byte(`{"schema":"v1","source":{"app":"Shortcut","workflow":"quick_mark","device":{"os":"iOS","systemVersion":"26.4.2","name":"Phone"}},"id":"` + name + `","payload":{"mark":"a note"},"createdAt":"2026-09-09T16:34:35.556+10:00"}`)
+		if err := os.WriteFile(filepath.Join(path, "index.json"), index, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
 }
 
 // The entry lands in the vault, under the configured section, once.
@@ -1348,11 +1386,11 @@ func TestRouteRunButtonIsQuietUntilThePlanCanRun(t *testing.T) {
 	}
 
 	// An Action that cannot run keeps it quiet too.
-	m = chooseRecipe(t, m, "Location + Daily")
-	selection, _, _ = m.currentSelection()
-	selection.Set(organizer.FieldPlaceName, "Epping Station")
-	m.refresh()
-	if subtitle, ready = m.runReadiness(); ready || subtitle != "Not implemented" {
+	quick := chooseRecipe(t, loadedRoute(t, quickMarkRoot(t, "alpha")), "Apple Note")
+	selection, _, _ = quick.currentSelection()
+	selection.Set(organizer.FieldTitle, "a title")
+	quick.refresh()
+	if subtitle, ready = quick.runReadiness(); ready || subtitle != "Not implemented" {
 		t.Fatalf("readiness = %q %v with an unimplemented action", subtitle, ready)
 	}
 }

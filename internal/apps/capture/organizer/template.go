@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -33,6 +34,9 @@ const (
 	// invent, and an empty note among templated ones is one they have to
 	// repair by hand later.
 	DailyNoteTemplate = "daily-note.md"
+	// LocationEntryTemplate is one Capture's entry in the running list of
+	// places. It has a compiled-in default too.
+	LocationEntryTemplate = "location-entry.md"
 )
 
 // Value is a template field. It prints itself wrapped in markers the renderer
@@ -68,6 +72,15 @@ type EntryData struct {
 	// a template decides the order and the punctuation between them.
 	Latitude  Value
 	Longitude Value
+	// Clock is the time of day the Capture records, and Offset the zone it was
+	// recorded in, written as hours: "+10", "+9.5". Separate from When so a
+	// template can put them where it wants.
+	Clock  Value
+	Offset Value
+	// CopyLink is the position, shown as it is read and linked to the command
+	// that copies it. MapLinks is the map services' links, already joined.
+	CopyLink Value
+	MapLinks Value
 	// Altitude is metres above sea level, as the Capture recorded it. It is
 	// separate from Coordinates because a template may want the position
 	// without it.
@@ -117,6 +130,7 @@ func templateFuncs(settings Settings) template.FuncMap {
 func entryData(ctx Context) EntryData {
 	created := ctx.String(FieldCreatedAt)
 	content := strings.TrimSpace(ctx.String(FieldContent))
+	latitude, longitude := coordinate(ctx, FieldLatitude), coordinate(ctx, FieldLongitude)
 	data := EntryData{
 		When:         Value(FormatTimestamp(created)),
 		Date:         Value(dayOf(created)),
@@ -124,8 +138,12 @@ func entryData(ctx Context) EntryData {
 		ID:           Value(captureMark(ctx.Capture)),
 		Content:      Value(content),
 		ContentLines: contentLines(content),
-		Latitude:     Value(coordinate(ctx, FieldLatitude)),
-		Longitude:    Value(coordinate(ctx, FieldLongitude)),
+		Latitude:     Value(latitude),
+		Longitude:    Value(longitude),
+		Clock:        Value(clockOf(created)),
+		Offset:       Value(offsetOf(created)),
+		CopyLink:     Value(copyLink(ctx, latitude, longitude)),
+		MapLinks:     Value(mapLinksLine(ctx, latitude, longitude)),
 		Altitude:     Value(altitude(ctx)),
 		Address:      Value(address(ctx)),
 		Place:        Value(ctx.String(FieldPlaceName)),
@@ -156,12 +174,15 @@ func contentLines(content string) []string {
 	return lines
 }
 
-// address names the place from its structured parts, most specific first, so an
-// entry reads as a place rather than as coordinates a person has to decode.
+// address names the place from its structured parts, coarsest first — country,
+// region, city, locality. That is the order the vault's own entries use, and it
+// reads as a place being narrowed down rather than as an address on an
+// envelope. The composed place *name* goes the other way, most specific first,
+// because a name is what you would call the spot.
 func address(ctx Context) string {
 	place := ctx.Capture.Index.CapturePlace()
 	parts := make([]string, 0, 4)
-	for _, part := range []string{place.Locality, place.City, place.Region, place.Country} {
+	for _, part := range []string{place.Country, place.Region, place.City, place.Locality} {
 		if trimmed := strings.TrimSpace(part); trimmed != "" {
 			parts = append(parts, trimmed)
 		}
@@ -391,4 +412,63 @@ func renderSection(ctx Context, section string) (string, error) {
 	}
 	rendered, _, _ := stripMarkers(out.String())
 	return rendered, nil
+}
+
+// clockOf is the time of day the Capture recorded, to the second: the running
+// list is a timeline, and two entries a minute apart should not read as one.
+func clockOf(createdAt string) string {
+	if len(createdAt) < 19 || createdAt[10] != 'T' {
+		return ""
+	}
+	return createdAt[11:19]
+}
+
+// offsetOf writes the zone as hours — "+10", "+9.5", "+5.75" — rather than as
+// "+10:00". It is shorter, and how many hours away it was is the thing a reader
+// is actually asking when they see it.
+func offsetOf(createdAt string) string {
+	created, err := time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return ""
+	}
+	_, seconds := created.Zone()
+	sign := "+"
+	if seconds < 0 {
+		sign, seconds = "-", -seconds
+	}
+	hours := strconv.FormatFloat(float64(seconds)/3600, 'f', -1, 64)
+	return sign + hours
+}
+
+// mapLinksLine is the map services' links on one line. The pin is named by the
+// most specific part of the address; the whole of it in a URL is too long to
+// read and no more accurate, since the position comes from the coordinates.
+func mapLinksLine(ctx Context, latitude, longitude string) string {
+	place := ctx.Capture.Index.CapturePlace()
+	label := ""
+	for _, part := range []string{place.Locality, place.City, place.Region, place.Country} {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			label = trimmed
+			break
+		}
+	}
+	links := MapLinks(latitude, longitude, label, ctx.Settings.MapServices)
+	parts := make([]string, 0, len(links))
+	for _, link := range links {
+		parts = append(parts, fmt.Sprintf("[%s](%s)", link.Short, link.URL))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// locationEntry is what one Capture becomes in the running list of places.
+func locationEntry(ctx Context) ([]string, error) {
+	data := entryData(ctx)
+	if data.Content == "" {
+		return nil, nil
+	}
+	parsed, err := LoadTemplate(ctx.Settings, LocationEntryTemplate)
+	if err != nil {
+		return nil, err
+	}
+	return renderEntry(parsed, data)
 }

@@ -87,7 +87,7 @@ func TestDailyAppendCreatesTheNoteAndItsSection(t *testing.T) {
 		"- 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620\n" +
 		"  - Coffee under the bridge\n" +
 		"  - -33.76910, 151.08200\n" +
-		"  - address: Epping, NSW\n"
+		"  - address: NSW, Epping\n"
 	if string(note) != want {
 		t.Fatalf("note = %q, want %q", note, want)
 	}
@@ -179,7 +179,7 @@ func TestDailyAppendAddsTheSectionWhenTheNoteHasNone(t *testing.T) {
 		"- 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620\n" +
 		"  - the new entry\n" +
 		"  - -33.76910, 151.08200\n" +
-		"  - address: Epping, NSW\n"
+		"  - address: NSW, Epping\n"
 	if string(note) != want {
 		t.Fatalf("note = %q, want %q", note, want)
 	}

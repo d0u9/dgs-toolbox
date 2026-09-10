@@ -59,8 +59,17 @@ type CaptureObsidian struct {
 	// the plugin in use puts notes, which is not the same question.
 	DailyNote string `json:"daily_note"`
 	// Section is the heading a Capture is written under in a daily note.
-	Section   string `json:"section"`
-	Locations string `json:"locations"`
+	Section string `json:"section"`
+	// LocationNote is the running list of places, relative to the vault, and
+	// LocationArchive the folder a year that has rolled over is moved into.
+	LocationNote    string `json:"location_note"`
+	LocationArchive string `json:"location_archive"`
+	// MapServices names which map links an entry carries, in order. Empty
+	// means all of them.
+	MapServices string `json:"map_services"`
+	// CoordinateChoice is the vault command a coordinate links to, which puts
+	// it on the clipboard.
+	CoordinateChoice string `json:"coordinate_choice"`
 }
 
 type CaptureScan struct {
@@ -101,7 +110,7 @@ func Default() Config {
 		CPU: boolPointer(true), Time: boolPointer(true),
 	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Capture: Capture{
 		Scan:     CaptureScan{IndexFile: "index.json"},
-		Obsidian: CaptureObsidian{Locations: "Locations"},
+		Obsidian: CaptureObsidian{},
 	}}
 }
 

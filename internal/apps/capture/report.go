@@ -133,9 +133,10 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	if obsidian.Section != "" {
 		settings.DailySection = obsidian.Section
 	}
-	if obsidian.Locations != "" {
-		settings.LocationsFolder = obsidian.Locations
-	}
+	settings.LocationNote = obsidian.LocationNote
+	settings.LocationArchive = obsidian.LocationArchive
+	settings.MapServices = obsidian.MapServices
+	settings.CoordinateChoice = obsidian.CoordinateChoice
 	return settings
 }
 

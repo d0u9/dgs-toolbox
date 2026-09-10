@@ -71,7 +71,7 @@ name: My Location
 match:
   workflows: [been_here, quick_mark]
 actions:
-  - id: obsidian.location.upsert
+  - id: obsidian.location.append
 `)
 
 	loaded := Load(dir)
