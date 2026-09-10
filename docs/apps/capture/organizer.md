@@ -367,8 +367,7 @@ and callers with room for one line show the most recent run.
 ## Recipe files
 
 A Recipe is defined by one YAML file in the Recipe directory —
-`capture.recipes` in the configuration, defaulting to `recipes` beside
-`config.json`. A folder rather than one list because Recipes are added one at a
+`<config dir>/capture/recipes`. A folder rather than one list because Recipes are added one at a
 time and each should diff on its own; YAML rather than JSON because a Recipe is
 written by hand and wants comments explaining why it exists.
 

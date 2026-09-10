@@ -343,8 +343,8 @@ Set returns. The Set is the built-in Recipes with the files in
 
 ```json
 {
+  "config_dir": "",
   "capture": {
-    "templates": "",
     "obsidian": {
       "vault": "~/Vaults/personal",
       "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
@@ -355,9 +355,11 @@ Set returns. The Set is the built-in Recipes with the files in
 ```
 
 `daily_note` is where a day's note lives, relative to the vault, as a template
-over the date. `templates` is the one directory every non-embedded template is
-read from — `daily-note.md`, and any file replacing a compiled-in default —
-defaulting to `templates` beside the configuration file the way `recipes` does.
+over the date. The files Route reads live under the configuration directory in
+Capture's own corner of it — `capture/recipes/` and `capture/templates/` — so
+neither has to be named here; see [`tui.md`](../../tui.md). `capture.recipes`
+and `capture.templates` still take a path of their own for a directory that
+lives somewhere else.
 
 `section` is the heading a Capture is written under in a daily note, `DGS` when
 unset; it may carry its own hashes to ask for a deeper level. An unset `recipes`
