@@ -82,7 +82,24 @@ App-specific settings remain under their app key. `photo.import.state_file` conf
 
 Setting any value to `false` removes that entire fixed-width cell and its adjacent separator. If Disk, Network, and CPU are all disabled, the shell does not start the system-counter sampler.
 
-Run `dgs --export-config` to create `dgs-config.json` in the current working directory and print its absolute path. An optional positional path writes elsewhere: `dgs --export-config /path/to/config.json` uses that exact file, while an existing directory receives `dgs-config.json`. The command never overwrites an existing file. Export destinations are explicit and independent of `DGS_TOOLBOX_CONFIG`; the environment variable controls where `dgs` loads configuration. The exported file is an editable template: move it to the operating system's global `dgs/config.json` location or set `DGS_TOOLBOX_CONFIG` to its path before launching `dgs`. `dgs -c /path/to/config.json …` (or `--config`) loads that exact configuration file and takes precedence over `DGS_TOOLBOX_CONFIG`. Paths that default to sitting beside the configuration—Capture's recipe and template directories—resolve against the file actually loaded rather than against the operating system's location, so `--config` selects a whole configuration and not only one file of it.
+Run `dgs --export-config` to create `dgs-config.json` in the current working directory and print its absolute path. An optional positional path writes elsewhere: `dgs --export-config /path/to/config.json` uses that exact file, while an existing directory receives `dgs-config.json`. The command never overwrites an existing file. Export destinations are explicit and independent of `DGS_TOOLBOX_CONFIG`; the environment variable controls where `dgs` loads configuration. The exported file is an editable template: move it to the operating system's global `dgs/config.json` location or set `DGS_TOOLBOX_CONFIG` to its path before launching `dgs`. `dgs -c /path/to/config.json …` (or `--config`) loads that exact configuration file and takes precedence over `DGS_TOOLBOX_CONFIG`.
+
+### The configuration directory
+
+Settings that are values live in the configuration file; everything a command reads from disk—recipes, templates, whatever a later command needs—lives under one directory, `config_dir`. It defaults to the directory the configuration file was loaded from, so `--config` selects a whole configuration and not only one file of it.
+
+dgs is a toolbox, so that directory is laid out **by command**:
+
+```text
+<config_dir>/
+  capture/
+    recipes/
+    templates/
+  photo/
+    …
+```
+
+A command asks for its own corner rather than for a path of its own in the configuration file: two commands both wanting `templates` is the normal case, not a collision to work around, and adding a command adds no configuration keys. A single directory may still be given a path of its own—`capture.templates` for templates kept beside the vault they belong to—but nothing has to be named to get the usual arrangement.
 
 ### Workspace
 

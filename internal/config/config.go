@@ -13,9 +13,16 @@ const EnvPath = "DGS_TOOLBOX_CONFIG"
 const ExportFilename = "dgs-config.json"
 
 type Config struct {
-	TUI     TUI     `json:"tui"`
-	Photo   Photo   `json:"photo"`
-	Capture Capture `json:"capture"`
+	// ConfigDir is where the file-based configuration lives: the recipes,
+	// templates and anything else a command reads from disk rather than from
+	// this file. dgs is a toolbox, so it is laid out by command —
+	// <config dir>/<command>/<what> — and a command asks for its own corner
+	// rather than for a path of its own in here. Empty means the directory the
+	// configuration file was loaded from.
+	ConfigDir string  `json:"config_dir"`
+	TUI       TUI     `json:"tui"`
+	Photo     Photo   `json:"photo"`
+	Capture   Capture `json:"capture"`
 	// dir is the directory the configuration was loaded from. Paths that
 	// default to sitting beside the configuration resolve against this rather
 	// than against the operating system's location, so --config points at a
@@ -103,9 +110,37 @@ func (c Config) CaptureScanSettings() (root, indexFile string) {
 	return c.Capture.Scan.Root, indexFile
 }
 
-// CaptureTemplatesDir is where Capture reads templates that replace the
-// compiled-in ones. Like the Recipe directory it sits beside the configuration
-// file by default rather than at a path fixed by the tool.
+// Dir is the root of the file-based configuration: the configured directory, or
+// the one the configuration file itself was loaded from. A run with --config
+// points at a whole configuration, so what it reads from disk belongs to it
+// rather than to the location the operating system would have chosen.
+func (c Config) Dir() string {
+	if c.ConfigDir != "" {
+		return c.ConfigDir
+	}
+	if c.dir != "" {
+		return c.dir
+	}
+	path, err := Path()
+	if err != nil {
+		return ""
+	}
+	return filepath.Dir(path)
+}
+
+// AppDir is one command's corner of it. Commands are given a corner each
+// because they are unrelated: two of them both wanting "templates" is the
+// normal case, not a collision to be worked around.
+func (c Config) AppDir(app string) string {
+	dir := c.Dir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, app)
+}
+
+// CaptureTemplatesDir is where Capture reads every template that is not
+// compiled in.
 func (c Config) CaptureTemplatesDir() string {
 	return c.captureDir(c.Capture.Templates, "templates")
 }
@@ -117,23 +152,20 @@ func (c Config) CaptureRecipesDir() string {
 	return c.captureDir(c.Capture.Recipes, "recipes")
 }
 
-// captureDir resolves a configured directory, falling back to one named beside
-// the configuration file that was actually loaded — not beside the one the
-// operating system would have chosen. A run with --config points at a whole
-// configuration, and its recipes and templates belong to it.
+// captureDir resolves one of Capture's directories: the configured path when
+// there is one, and otherwise its place in the layout. An explicit path is
+// still allowed, for a directory that lives somewhere of its own — a vault's
+// templates kept with the vault, say — but nothing has to be named to get the
+// usual arrangement.
 func (c Config) captureDir(configured, name string) string {
 	if configured != "" {
 		return configured
 	}
-	dir := c.dir
-	if dir == "" {
-		path, err := Path()
-		if err != nil {
-			return ""
-		}
-		dir = filepath.Dir(path)
+	app := c.AppDir("capture")
+	if app == "" {
+		return ""
 	}
-	return filepath.Join(dir, name)
+	return filepath.Join(app, name)
 }
 
 // CaptureObsidian returns the Obsidian settings as configured. Defaults are

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -179,9 +180,10 @@ func TestExportPathAcceptsFileOrExistingDirectory(t *testing.T) {
 	}
 }
 
-// Paths that default to sitting beside the configuration resolve against the
-// file that was loaded, not against the location the operating system would
-// have chosen: --config points at a whole configuration.
+// The file-based configuration is laid out by command under one root, and the
+// root defaults to the directory of the file that was loaded rather than the
+// location the operating system would have chosen: --config points at a whole
+// configuration.
 func TestCaptureDirectoriesFollowTheLoadedConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dgs-config.json")
@@ -194,11 +196,11 @@ func TestCaptureDirectoriesFollowTheLoadedConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := loaded.CaptureRecipesDir(); got != filepath.Join(dir, "recipes") {
-		t.Fatalf("recipes = %q, want them beside the loaded config", got)
+	if got := loaded.CaptureRecipesDir(); got != filepath.Join(dir, "capture", "recipes") {
+		t.Fatalf("recipes = %q, want them under the command's own directory", got)
 	}
-	if got := loaded.CaptureTemplatesDir(); got != filepath.Join(dir, "templates") {
-		t.Fatalf("templates = %q, want them beside the loaded config", got)
+	if got := loaded.CaptureTemplatesDir(); got != filepath.Join(dir, "capture", "templates") {
+		t.Fatalf("templates = %q, want them under the command's own directory", got)
 	}
 
 	// A configured path is used as given.
@@ -208,5 +210,45 @@ func TestCaptureDirectoriesFollowTheLoadedConfig(t *testing.T) {
 	loaded, _ = LoadPath(path)
 	if got := loaded.CaptureRecipesDir(); got != "/somewhere/else" {
 		t.Fatalf("recipes = %q, want the configured path", got)
+	}
+}
+
+// config_dir moves the whole file-based configuration, and each command reads
+// its own corner of it. dgs is a toolbox: two commands both wanting
+// "templates" is the normal case, not a collision to work around.
+func TestConfigDirIsLaidOutByCommand(t *testing.T) {
+	root := t.TempDir()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dgs-config.json")
+	body := `{"config_dir": ` + strconv.Quote(root) + `}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Dir(); got != root {
+		t.Fatalf("dir = %q, want the configured root", got)
+	}
+	if got := loaded.AppDir("photo"); got != filepath.Join(root, "photo") {
+		t.Fatalf("photo dir = %q", got)
+	}
+	if got := loaded.CaptureRecipesDir(); got != filepath.Join(root, "capture", "recipes") {
+		t.Fatalf("recipes = %q", got)
+	}
+	if got := loaded.CaptureTemplatesDir(); got != filepath.Join(root, "capture", "templates") {
+		t.Fatalf("templates = %q", got)
+	}
+
+	// A directory of its own is still allowed, for one that lives elsewhere.
+	body = `{"config_dir": ` + strconv.Quote(root) + `, "capture": {"templates": "/vault/Templates"}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _ = LoadPath(path)
+	if got := loaded.CaptureTemplatesDir(); got != "/vault/Templates" {
+		t.Fatalf("templates = %q, want the configured path", got)
 	}
 }
