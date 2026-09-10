@@ -105,8 +105,11 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   Recipe is the user's decision, and a lone candidate is still confirmed with
   `Enter`. With no candidate it shows `· No recipe matches this capture`.
 - A pane below the list describes the candidate under the cursor: what it
-  `Runs`, what it `Asks` for beyond its Actions, what it `Matches`, and its
-  `Source` — `built-in` or the filename that defined it. It is there because
+  `Runs`, what it `Asks` for beyond its Actions, its `Source` — `built-in` or
+  the filename that defined it — and last what it `Matches`, a line per
+  workflow. Matches goes last and takes a line each because it is the longest
+  of the groups and the one a reader checks least often, and a run of names on
+  one line reads as a sentence rather than as a list. It is there because
   choosing a Recipe resets the enabled Action set, so choosing one must not be
   how its content is discovered.
 - `ACTIONS` shows the Action Plan of the chosen Recipe: one row per Action, in
