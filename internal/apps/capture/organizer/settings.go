@@ -23,8 +23,17 @@ type Settings struct {
 	// DailyNote is where a day's note lives, relative to the vault, as a
 	// template over the date: "00 Daily Log/{{.Year}}/{{.Date}}.md".
 	DailyNote string
-	// LocationsFolder is relative to the vault.
-	LocationsFolder string
+	// LocationNote is the running list of places, relative to the vault, newest
+	// first. LocationArchive is where a year that has rolled over is moved to;
+	// empty means nothing is archived and the list grows without limit.
+	LocationNote    string
+	LocationArchive string
+	// MapServices names which map links an entry carries, by name or short
+	// name, in the order they are written. Empty means all of them.
+	MapServices string
+	// CoordinateChoice is the vault command a coordinate links to, which puts
+	// it on the clipboard. Empty means the coordinates are written unlinked.
+	CoordinateChoice string
 	// DailySection is the heading a Capture is appended under. Its own section
 	// rather than the end of the note, so what this tool writes stays
 	// distinguishable from what the reader wrote.
@@ -43,7 +52,7 @@ type Settings struct {
 // DefaultSettings are the values that have a sensible default. The paths do
 // not: where a reader keeps their notes is not something to assume.
 func DefaultSettings() Settings {
-	return Settings{LocationsFolder: "Locations", DailySection: DefaultDailySection}
+	return Settings{DailySection: DefaultDailySection}
 }
 
 // DefaultDailySection is the heading this tool writes under. It is a template
@@ -61,13 +70,6 @@ func (s Settings) section() string {
 		return DefaultDailySection
 	}
 	return strings.TrimSpace(s.DailySection)
-}
-
-func (s Settings) locations() string {
-	if s.LocationsFolder == "" {
-		return "Locations"
-	}
-	return s.LocationsFolder
 }
 
 // vaultPath resolves a vault-relative target to where it will actually be

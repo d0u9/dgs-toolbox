@@ -24,8 +24,10 @@ and the note says what shipped instead.
 - **The remaining Action implementations.** `obsidian.daily.append` writes; the
   rest declare and refuse. The Apple Actions need their APIs and the input
   controls their fields ask for.
-- **`obsidian.location.upsert`.** Deferred for want of a need, not for want of a
-  design. Writing a note that may already exist and may have been edited by hand
+- **A note per place.** `obsidian.location.append` records places as one running
+  timeline, which is what the vault it was written for keeps. A note per place —
+  the earlier `obsidian.location.upsert` — is a different thing, deferred for
+  want of a need rather than of a design. Writing a note that may already exist and may have been edited by hand
   is a different problem from appending to one: it means deciding what counts as
   the same place when the name is typed by hand, whether a second visit's
   coordinates replace the first's, and how to change one frontmatter key while

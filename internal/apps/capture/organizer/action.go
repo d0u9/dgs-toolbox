@@ -2,7 +2,6 @@ package organizer
 
 import (
 	"fmt"
-	"path"
 	"strings"
 )
 
@@ -11,7 +10,7 @@ import (
 type ActionID string
 
 const (
-	ActionLocationUpsert  ActionID = "obsidian.location.upsert"
+	ActionLocationAppend  ActionID = "obsidian.location.append"
 	ActionDailyAppend     ActionID = "obsidian.daily.append"
 	ActionCaptureArchive  ActionID = "capture.archive"
 	ActionAppleNoteCreate ActionID = "apple.notes.create"
@@ -75,22 +74,19 @@ type ActionPlan struct {
 func (p ActionPlan) Ready() bool { return len(p.Missing) == 0 }
 
 var actionDefinitions = map[ActionID]ActionDefinition{
-	ActionLocationUpsert: {
-		ID:      ActionLocationUpsert,
-		Label:   "Location note",
-		Effects: []string{"Creates Locations/<place name>.md, or updates it in place when it exists"},
+	ActionLocationAppend: {
+		ID:    ActionLocationAppend,
+		Label: "Location note",
+		Effects: []string{
+			"Adds the Capture to the top of the running list of places, under its day",
+			"Moves any year that has rolled over into the archive as it goes",
+			"Writes nothing the second time: an entry carries the Capture's id and is added once",
+		},
 		Required: []FieldRequirement{
-			text(FieldPlaceName, "Place name"),
-			{Field: FieldLatitude, Label: "Latitude", Required: true, Input: InputText},
-			{Field: FieldLongitude, Label: "Longitude", Required: true, Input: InputText},
+			{Field: FieldCreatedAt, Label: "Created", Required: true, Input: InputText},
+			multiline(FieldContent, "Note"),
 		},
-		Target: func(ctx Context) string {
-			name := ctx.String(FieldPlaceName)
-			if name == "" {
-				return ""
-			}
-			return path.Join(ctx.Settings.locations(), name+".md")
-		},
+		Target: func(ctx Context) string { return ctx.Settings.LocationNote },
 	},
 	ActionDailyAppend: {
 		ID:    ActionDailyAppend,
@@ -173,7 +169,8 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 // variable whose initializer refers to a function that refers back to it.
 func init() {
 	implementations := map[ActionID]func(Context, ActionPlan) (bool, error){
-		ActionDailyAppend: appendToDailyNote,
+		ActionDailyAppend:    appendToDailyNote,
+		ActionLocationAppend: appendToLocationNote,
 	}
 	for id, run := range implementations {
 		def := actionDefinitions[id]

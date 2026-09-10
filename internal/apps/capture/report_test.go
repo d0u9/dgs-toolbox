@@ -46,7 +46,7 @@ func TestRecipeReportNamesFieldsAndTheirInputTypes(t *testing.T) {
 	report := out.String()
 
 	for _, want := range []string{
-		"place.name*",             // required, marked
+		"content*",                // required, marked
 		"tags",                    // optional, unmarked
 		"start_at* (conditional)", // required only when the predicate holds
 		"content                  multiline",

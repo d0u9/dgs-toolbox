@@ -170,13 +170,14 @@ func TestMissingFieldsFollowsTheEnabledSet(t *testing.T) {
 	}{
 		{
 			name:    "all actions enabled asks for the note the capture has no text for",
-			enabled: []ActionID{ActionLocationUpsert, ActionDailyAppend, ActionDailyAppend},
-			want:    []FieldID{FieldContent},
+			enabled: []ActionID{ActionLocationAppend, ActionDailyAppend},
+			// Both Actions want it; it is reported once per Action that does.
+			want: []FieldID{FieldContent, FieldContent},
 		},
 		{
-			name:    "disabling the daily note drops the content requirement",
-			enabled: []ActionID{ActionLocationUpsert},
-			want:    nil,
+			name:    "the location note wants the note too, so disabling the daily one keeps it",
+			enabled: []ActionID{ActionLocationAppend},
+			want:    []FieldID{FieldContent},
 		},
 
 		{
@@ -186,7 +187,7 @@ func TestMissingFieldsFollowsTheEnabledSet(t *testing.T) {
 		},
 		{
 			name:       "enrichment satisfies the note",
-			enabled:    []ActionID{ActionLocationUpsert, ActionDailyAppend},
+			enabled:    []ActionID{ActionLocationAppend, ActionDailyAppend},
 			enrichment: map[FieldID]any{FieldPlaceName: "Epping Station", FieldContent: "晚上再来看看"},
 			want:       nil,
 		},
@@ -242,13 +243,18 @@ func TestMissingFieldsAreAttributedToTheirAction(t *testing.T) {
 	ctx := NewContext(placeless(), nil)
 	missing := MissingFields(ctx, recipe, recipe.Actions)
 
-	want := map[FieldID]ActionID{
-		FieldPlaceName: ActionLocationUpsert,
-		FieldContent:   ActionDailyAppend,
-	}
+	// The note is wanted by both, so it is reported once for each of them and
+	// each report names the Action that asked.
+	seen := map[ActionID]bool{}
 	for _, req := range missing {
-		if req.Action != want[req.Field] {
-			t.Errorf("%s attributed to %q, want %q", req.Field, req.Action, want[req.Field])
+		if req.Field != FieldContent {
+			t.Errorf("%s is missing, want only the note", req.Field)
+		}
+		seen[req.Action] = true
+	}
+	for _, action := range []ActionID{ActionLocationAppend, ActionDailyAppend} {
+		if !seen[action] {
+			t.Errorf("nothing attributed to %q", action)
 		}
 	}
 }
@@ -308,7 +314,8 @@ func TestBuildProducesThePlanFromTheWorkedExample(t *testing.T) {
 		action ActionID
 		target string
 	}{
-		{ActionLocationUpsert, "Locations/Epping Station.md"},
+		// Neither target resolves until the vault says where its note lives.
+		{ActionLocationAppend, ""},
 		{ActionDailyAppend, ""},
 	}
 
@@ -391,8 +398,8 @@ func TestSelectionDefaultsToEveryAction(t *testing.T) {
 		}
 	}
 
-	selection.Toggle(ActionLocationUpsert)
-	selection.Toggle(ActionLocationUpsert)
+	selection.Toggle(ActionLocationAppend)
+	selection.Toggle(ActionLocationAppend)
 	if len(selection.EnabledActions(recipe)) != len(recipe.Actions) {
 		t.Error("toggling twice should restore the default set")
 	}

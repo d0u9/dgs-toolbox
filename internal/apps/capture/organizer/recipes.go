@@ -13,7 +13,7 @@ var builtinRecipes = withBuiltinSource([]Recipe{
 		ID:      "obsidian_location",
 		Name:    "Location",
 		Match:   Match{Workflows: []string{"been_here"}, RequiresAny: []FieldID{FieldLatitude, FieldCity}},
-		Actions: []ActionID{ActionLocationUpsert},
+		Actions: []ActionID{ActionLocationAppend},
 	},
 	{
 		ID:    "obsidian_location_daily",
@@ -22,7 +22,7 @@ var builtinRecipes = withBuiltinSource([]Recipe{
 		Fields: []FieldRequirement{
 			optional(FieldRequirement{Field: FieldTags, Label: "Tags", Input: InputMultiSelect}),
 		},
-		Actions: []ActionID{ActionLocationUpsert, ActionDailyAppend},
+		Actions: []ActionID{ActionLocationAppend, ActionDailyAppend},
 	},
 	{
 		ID:      "obsidian_daily",
@@ -34,7 +34,7 @@ var builtinRecipes = withBuiltinSource([]Recipe{
 		ID:      "photo_location_daily",
 		Name:    "Photo + Location",
 		Match:   Match{Workflows: []string{"photo_note"}, RequiresAny: []FieldID{FieldLatitude, FieldCity}},
-		Actions: []ActionID{ActionLocationUpsert, ActionDailyAppend},
+		Actions: []ActionID{ActionLocationAppend, ActionDailyAppend},
 	},
 	{
 		ID:      "apple_note",
