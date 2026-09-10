@@ -958,7 +958,7 @@ func TestRouteRecipeDetailDescribesTheCandidateUnderTheCursor(t *testing.T) {
 	m.refresh()
 
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"obsidian_location_daily", "Runs", "Location note", "Daily note", "Matches been_here", "Source  built-in"} {
+	for _, want := range []string{"obsidian_location_daily", "Runs", "Location note", "Daily note", "Source  built-in", "Matches", "- been_here"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("recipe detail is missing %q:\n%s", want, view)
 		}

@@ -1918,16 +1918,25 @@ func (m routeModel) recipeDetail(width int) string {
 			lines = append(lines, detailItem(requirementLabel(field), width))
 		}
 	}
-	lines = append(lines, detailInline("Matches", workflowSummary(recipe), width))
 	lines = append(lines, detailInline("Source", recipeSource(recipe), width))
+	// Matches comes last and takes a line per workflow: it is the longest of
+	// the groups and the one a reader checks least often, and a run of names on
+	// one line is read as a sentence rather than as a list.
+	lines = append(lines, detailHeader("Matches"))
+	for _, workflow := range matchedWorkflows(recipe) {
+		lines = append(lines, detailItem("- "+workflow, width))
+	}
 	return strings.Join(lines, "\n")
 }
 
-func workflowSummary(recipe organizer.Recipe) string {
+// matchedWorkflows are the workflows a Recipe is offered for, one per line. A
+// Recipe naming none is offered for all of them, which is a fact about it
+// rather than an empty list.
+func matchedWorkflows(recipe organizer.Recipe) []string {
 	if len(recipe.Match.Workflows) == 0 {
-		return "any workflow"
+		return []string{"any workflow"}
 	}
-	return strings.Join(recipe.Match.Workflows, ", ")
+	return recipe.Match.Workflows
 }
 
 // recipeSource names the file a Recipe came from by its filename: the directory
