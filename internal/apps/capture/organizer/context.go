@@ -23,11 +23,22 @@ func (c Capture) Workflow() string { return c.Index.Source.Workflow }
 type Context struct {
 	Capture    Capture
 	Enrichment map[FieldID]any
+	// Settings are where the Actions write. They belong to the Context because
+	// a target is resolved from the Capture and the settings together: the same
+	// Capture organized against a different vault plans a different path.
+	Settings Settings
 }
 
-// NewContext builds a Context over a Capture and the values the user supplied.
+// NewContext builds a Context over a Capture and the values the user supplied,
+// with default folder names and no vault.
 func NewContext(capture Capture, enrichment map[FieldID]any) Context {
-	return Context{Capture: capture, Enrichment: enrichment}
+	return Context{Capture: capture, Enrichment: enrichment, Settings: DefaultSettings()}
+}
+
+// WithSettings returns the Context reading against different settings.
+func (c Context) WithSettings(settings Settings) Context {
+	c.Settings = settings
+	return c
 }
 
 // Get returns the value of a logical field and whether it resolved at all.

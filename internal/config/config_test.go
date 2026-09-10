@@ -178,3 +178,35 @@ func TestExportPathAcceptsFileOrExistingDirectory(t *testing.T) {
 		t.Fatalf("file export path=%q err=%v", path, err)
 	}
 }
+
+// Paths that default to sitting beside the configuration resolve against the
+// file that was loaded, not against the location the operating system would
+// have chosen: --config points at a whole configuration.
+func TestCaptureDirectoriesFollowTheLoadedConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dgs-config.json")
+	if err := os.WriteFile(path, []byte(`{"capture": {"scan": {"index_file": "index.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvPath, filepath.Join(t.TempDir(), "elsewhere", "config.json"))
+
+	loaded, err := LoadPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.CaptureRecipesDir(); got != filepath.Join(dir, "recipes") {
+		t.Fatalf("recipes = %q, want them beside the loaded config", got)
+	}
+	if got := loaded.CaptureTemplatesDir(); got != filepath.Join(dir, "templates") {
+		t.Fatalf("templates = %q, want them beside the loaded config", got)
+	}
+
+	// A configured path is used as given.
+	if err := os.WriteFile(path, []byte(`{"capture": {"recipes": "/somewhere/else"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _ = LoadPath(path)
+	if got := loaded.CaptureRecipesDir(); got != "/somewhere/else" {
+		t.Fatalf("recipes = %q, want the configured path", got)
+	}
+}

@@ -48,10 +48,10 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 
   1 ◐               > Location + Daily   [x] ● obsidian.location…   Latitude  -33.76
       → Loc + Daily   Location             Locations/Epping…md      Longitude 151.08
-  2 ○               Daily              > [x] ○ obsidian.daily…      Created   2026-…
-  3 ○               Archive                Daily/2026-09-09.md    ── ◆ MISSING ─────
-─ ◆ ORGANIZED ───                        [ ]   capture.archive       Place name* ___
-  4 ● → Daily ×2                                                     Note*       ___
+  2 ○               Daily              > [x] ○ obsidian.daily…      Note*       ___
+  3 ○               Archive                Daily/2026-09-09.md    ── ◆ RESOLVED ────
+─ ◆ ORGANIZED ───                                                    Latitude  -33.76
+  4 ● → Daily ×2                                                     Created   2026-…
                                        ── ◆ obsidian.daily.append ─
                                          needs  createdAt  2026-…
                                                 content  · missing
@@ -161,18 +161,21 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   ```
 
 - `FIELDS` is what the **enabled** Actions ask for, deduplicated and split by
-  state: the fields that already have a value, then a `MISSING` rule, then the
-  ones still to supply. A field two Actions both require appears once, so it is
+  state: the fields still to supply, then a `RESOLVED` rule, then the ones that
+  already have a value. What is still to supply comes first because it is the
+  work — the cursor lands on it without being moved there — and what is
+  answered follows as reference. With nothing missing the top reads
+  `· Nothing missing` in place of that group. A field two Actions both require appears once, so it is
   filled once and satisfies both. Toggling an Action off takes the fields only
   it required out of both halves; toggling it back on brings them back.
-- The split is by state, not by importance: above the rule is what the Capture
+- The split is by state, not by importance: below the rule is what the Capture
   can already answer — from its own data, from a composed value, or from
-  something supplied earlier — and below it is the work left. A value the
+  something supplied earlier — and above it is the work left. A value the
   Capture itself carries is muted and read-only; a composed or supplied one
   stays editable, so a composed place name can be replaced. It uses the same
   fixed 12-cell key column as Capture Info so values never shift as the cursor
   changes.
-- An optional field with no value sits below the rule too, unmarked. Only the
+- An optional field with no value sits above the rule too, unmarked. Only the
   `*` rows block the plan, so a `MISSING` list of unmarked rows is still ready
   to run.
 - The row under the cursor is marked with the shared selected-row style, the
@@ -242,9 +245,7 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   │       target      · unresolved                     │
   │       Due         · missing                        │
   │                                                    │
-  │ Nothing has happened yet. No Action is             │
-  │ implemented, so running this writes only           │
-  │ organize.json.                                     │
+  │ Nothing has happened yet.                          │
   │ ↵ Run   esc Cancel                                 │
   ╰────────────────────────────────────────────────────╯
   ```
@@ -254,12 +255,22 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   enabled Action, the target it resolved, and the value of every field it would
   carry. A blocked Action is listed with `○` and its missing values read
   `· missing`. `Esc` closes the dialog.
-- Confirming a ready plan appends to the organizer's record in the Capture
-  directory, moves that Capture below the `ORGANIZED` rule, and puts the cursor
+- Confirming a ready plan carries the Actions out, appends what happened to the
+  organizer's record in the Capture directory, moves that Capture below the
+  `ORGANIZED` rule, and puts the cursor
   on the next Capture still to handle. Focus returns to `CAPTURES`, so a run
   of Captures is worked through without walking back up the columns. A blocked
   plan records nothing: a Capture counts as handled only once its plan could
   actually run.
+- A plan naming an Action that has been declared but not implemented is refused
+  before it is offered: the dialog names the Action and does not show `↵ Run`.
+  Disabling that Action makes the rest runnable. Refusing up front rather than
+  accepting and failing afterwards, because the second teaches the reader
+  nothing until after they have committed.
+- A run that fails part way through leaves the dialog open on what went wrong,
+  names the Action that stopped it, and leaves the Capture above the rule. Each
+  Action's marker becomes its outcome: `✓` ran, `·` had nothing left to do, `✗`
+  failed.
 - `R` refreshes the Capture list from any DataField.
 - Every column is reachable with the pointer as well as the keyboard. A primary
   click selects a row and focuses its Fieldset, and the wheel scrolls the list
@@ -299,7 +310,20 @@ Set returns. The Set is the built-in Recipes with the files in
 }
 ```
 
-An unset `recipes` means the `recipes` directory beside the configuration file.
+```json
+{
+  "capture": {
+    "obsidian": {
+      "vault": "~/Vaults/personal",
+      "section": "DGS"
+    }
+  }
+}
+```
+
+`section` is the heading a Capture is written under in a daily note, `DGS` when
+unset; it may carry its own hashes to ask for a deeper level. An unset `recipes`
+means the `recipes` directory beside the configuration file.
 A missing directory is not an error; it is the normal state of an installation
 that has defined no Recipe of its own. The paths Actions write to are not
 configurable yet.

@@ -16,12 +16,12 @@ type session struct {
 }
 
 func newSession() session {
-	return newSessionWithSettings("", "index.json", organizer.Builtin())
+	return newSessionWithSettings("", "index.json", organizer.Builtin(), organizer.DefaultSettings())
 }
 
-func newSessionWithSettings(root, indexFile string, recipes organizer.Set) session {
+func newSessionWithSettings(root, indexFile string, recipes organizer.Set, settings organizer.Settings) session {
 	scan := newModelWithSettings(root, indexFile)
-	return session{scan: scan, route: newRouteModelWithRecipes(scan.root, scan.indexFile, recipes)}
+	return session{scan: scan, route: newRouteModelWithSettings(scan.root, scan.indexFile, recipes, settings)}
 }
 
 func (s session) Init() tea.Cmd { return s.scan.Init() }

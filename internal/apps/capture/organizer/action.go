@@ -30,10 +30,16 @@ type ActionDefinition struct {
 	// so the TUI and the generated reference say the same thing.
 	Effects  []string
 	Required []FieldRequirement
-	// Target resolves the concrete destination for one Capture. It returns an
-	// empty string when the inputs it needs are still missing, so an
-	// unresolved target stays visible instead of being invented.
+	// Target resolves the concrete destination for one Capture, relative to
+	// whatever root the Action writes under. It returns an empty string when
+	// the inputs it needs are still missing, so an unresolved target stays
+	// visible instead of being invented.
 	Target func(Context) string
+	// Run carries the Action out, reporting whether there was nothing left to
+	// do. A nil Run is an Action that has been declared but not implemented: it
+	// plans and explains itself, and refuses to run rather than silently doing
+	// nothing.
+	Run func(Context, ActionPlan) (skipped bool, err error)
 }
 
 // ActionPlan is what one enabled Action will do to one Capture. Definition is
@@ -64,24 +70,29 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 			if name == "" {
 				return ""
 			}
-			return path.Join("Locations", name+".md")
+			return path.Join(ctx.Settings.locations(), name+".md")
 		},
 	},
 	ActionDailyAppend: {
-		ID:      ActionDailyAppend,
-		Label:   "Daily note",
-		Effects: []string{"Appends one entry to the note for the day the Capture was taken", "Creates that note when the day has none"},
+		ID:    ActionDailyAppend,
+		Label: "Daily note",
+		Effects: []string{
+			"Appends the Capture under the note's DGS heading as one nested entry, adding that heading when it has none",
+			"Creates the note itself when the day has none",
+			"Writes nothing the second time: an entry carries the Capture's id and is added once",
+		},
 		Required: []FieldRequirement{
 			{Field: FieldCreatedAt, Label: "Created", Required: true, Input: InputText},
 			multiline(FieldContent, "Note"),
 		},
 		Target: func(ctx Context) string {
-			day := dayOf(ctx.String(FieldCreatedAt))
-			if day == "" {
+			name, err := dailyNoteName(ctx)
+			if err != nil || name == "" {
 				return ""
 			}
-			return path.Join("Daily", day+".md")
+			return path.Join(ctx.Settings.daily(), name)
 		},
+		Run: appendToDailyNote,
 	},
 	// The Apple Actions exist so the model can be exercised against more than
 	// one workflow. Each declares its requirements and names its target; none

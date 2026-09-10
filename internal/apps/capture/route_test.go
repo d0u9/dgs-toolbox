@@ -38,7 +38,9 @@ func routeTestRoot(t *testing.T, names ...string) string {
 
 func loadedRoute(t *testing.T, root string) routeModel {
 	t.Helper()
-	m := newRouteModel(root, "index.json")
+	settings := organizer.DefaultSettings()
+	settings.ObsidianVault = t.TempDir()
+	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	m = updated.(routeModel)
 	updated, _ = m.Update(loadCaptures(root, "index.json")())
@@ -122,6 +124,10 @@ func TestRouteMarksBlockedActionsAndClearsThemOnceFilled(t *testing.T) {
 	resolved, missing := splitFieldRows(m)
 	if !equalFieldIDs(resolved, []organizer.FieldID{organizer.FieldLatitude, organizer.FieldLongitude, organizer.FieldCreatedAt}) {
 		t.Fatalf("resolved = %v", fieldRowIDs(resolved))
+	}
+	// What is still to supply comes first.
+	if !m.fieldRows[0].missing {
+		t.Fatalf("the first row is %q, want a missing field", m.fieldRows[0].requirement.Field)
 	}
 	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldPlaceName, organizer.FieldContent, organizer.FieldTags}) {
 		t.Fatalf("missing = %v", fieldRowIDs(missing))
@@ -429,7 +435,7 @@ func TestCaptureSessionActivatesClickedTab(t *testing.T) {
 
 func TestCaptureSessionSharesOneCaptureLoad(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	s := newSessionWithSettings(root, "index.json", organizer.Builtin())
+	s := newSessionWithSettings(root, "index.json", organizer.Builtin(), organizer.DefaultSettings())
 	updated, _ := s.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	s = updated.(session)
 	updated, _ = s.Update(loadCaptures(root, "index.json")())
@@ -520,9 +526,8 @@ func TestRouteCaptureRowsUseIndexIdentityNotFolderName(t *testing.T) {
 // writes nothing but the organizer's own record.
 func TestRouteRunShowsThePlanWithoutExecutingIt(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	m := chooseRecipe(t, loadedRoute(t, root), "Daily")
 	selection, _, _ := m.currentSelection()
-	selection.Set(organizer.FieldPlaceName, "Epping Station")
 	selection.Set(organizer.FieldContent, "晚上再来看看")
 	m.refresh()
 
@@ -531,18 +536,18 @@ func TestRouteRunShowsThePlanWithoutExecutingIt(t *testing.T) {
 	if !m.running {
 		t.Fatal("x did not open the run dialog")
 	}
-	if len(m.runPlans) != 2 {
+	if len(m.runPlans) != 1 {
 		t.Fatalf("run plans = %d, want one per enabled action", len(m.runPlans))
 	}
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"RUN", "obsidian.location.upsert", "Locations/Epping Station.md", "Nothing has happened yet", "↵ Run"} {
+	for _, want := range []string{"RUN", "obsidian.daily.append", "Nothing has happened yet", "↵ Run"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("run dialog is missing %q:\n%s", want, view)
 		}
 	}
 	// The dialog states what each Action would do, because it is now the point
 	// where that is decided.
-	if !strings.Contains(view, "Creates Locations/") {
+	if !strings.Contains(view, "Appends the Capture") {
 		t.Fatalf("the confirmation does not say what an action does:\n%s", view)
 	}
 	if !m.CapturesShellKey("esc") {
@@ -576,7 +581,7 @@ func TestRouteRunShowsThePlanWithoutExecutingIt(t *testing.T) {
 // plan could actually run.
 func TestRouteRunRecordsNothingWhenBlocked(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	m := chooseRecipe(t, loadedRoute(t, root), "Daily")
 
 	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = updated.(routeModel)
@@ -603,9 +608,8 @@ func TestRouteRunRecordsNothingWhenBlocked(t *testing.T) {
 // earlier session is still recognised after a reload.
 func TestRouteRecordsOrganizedCapturesAndSortsThemBelowTheDivider(t *testing.T) {
 	root := routeTestRoot(t, "alpha", "beta")
-	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	m := chooseRecipe(t, loadedRoute(t, root), "Daily")
 	selection, _, _ := m.currentSelection()
-	selection.Set(organizer.FieldPlaceName, "Epping Station")
 	selection.Set(organizer.FieldContent, "note")
 	m.refresh()
 
@@ -623,14 +627,14 @@ func TestRouteRecordsOrganizedCapturesAndSortsThemBelowTheDivider(t *testing.T) 
 		t.Fatalf("record holds %d runs, want 1", len(record.Runs))
 	}
 	run := record.Runs[0]
-	if run.Recipe != "obsidian_location_daily" || len(run.Actions) != 2 {
+	if run.Recipe != "obsidian_daily" || len(run.Actions) != 1 {
 		t.Fatalf("run = %+v", run)
 	}
-	if run.Fields[organizer.FieldPlaceName] != "Epping Station" {
+	if run.Fields[organizer.FieldContent] != "note" {
 		t.Fatalf("run fields = %v", run.Fields)
 	}
-	if run.Actions[0].Executed {
-		t.Fatal("no action is implemented, so none may be recorded as executed")
+	if !run.Actions[0].Executed || !record.Organized() {
+		t.Fatalf("the run did not record what happened: %+v", run.Actions[0])
 	}
 
 	// The cursor lands on the next Capture still to handle.
@@ -654,15 +658,14 @@ func TestRouteRecordsOrganizedCapturesAndSortsThemBelowTheDivider(t *testing.T) 
 // was wrong — and the record grows rather than being replaced.
 func TestRouteOrganizingAgainAppendsARun(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	m := chooseRecipe(t, loadedRoute(t, root), "Daily")
 	selection, _, _ := m.currentSelection()
-	selection.Set(organizer.FieldPlaceName, "Epping Station")
 	selection.Set(organizer.FieldContent, "first pass")
 	m.refresh()
 	m = runAndConfirm(t, m)
 
-	// Organize the same Capture again, under a different Recipe.
-	m = chooseRecipe(t, m, "Location")
+	// Organize the same Capture again.
+	m = chooseRecipe(t, m, "Daily")
 	m = runAndConfirm(t, m)
 
 	record, ok := organizer.ReadRecord(filepath.Join(root, "alpha"))
@@ -672,12 +675,9 @@ func TestRouteOrganizingAgainAppendsARun(t *testing.T) {
 	if len(record.Runs) != 2 {
 		t.Fatalf("record holds %d runs, want the first pass kept beside the second", len(record.Runs))
 	}
-	if record.Runs[0].Recipe != "obsidian_location_daily" || record.Runs[1].Recipe != "obsidian_location" {
-		t.Fatalf("runs = %q, %q", record.Runs[0].Recipe, record.Runs[1].Recipe)
-	}
 	latest, _ := record.Latest()
-	if latest.Recipe != "obsidian_location" {
-		t.Fatalf("latest = %q, want the most recent pass", latest.Recipe)
+	if latest.Recipe != "obsidian_daily" || !latest.Actions[0].Skipped {
+		t.Fatalf("the second pass should find its work already done: %+v", latest.Actions)
 	}
 	if item, _ := m.captures.Selected(); !strings.Contains(item.Detail, "×2") {
 		t.Fatalf("row = %q, want the pass count", item.Detail)
@@ -806,10 +806,9 @@ func TestRouteDoubleClickActsLikeEnter(t *testing.T) {
 		t.Fatalf("focus after double-clicking an action = %q, want %q", got, routeFieldsField)
 	}
 
-	// FIELDS: Enter edits the row. The rows above the rule come from the
-	// capture, so the editable one is below it.
-	row := m.missingStart() + 2 // one for the border, one for the rule
-	m = doubleClick(m, columnX(3), row)
+	// FIELDS: Enter edits the row. The rows still to supply come first, so the
+	// first row below the border is editable.
+	m = doubleClick(m, columnX(3), 1)
 	if !m.editing {
 		t.Fatalf("double-clicking a missing field row did not open its editor:\n%s", ansi.Strip(m.View()))
 	}
@@ -915,7 +914,7 @@ func TestRouteActionDetailNamesNeedsAndEffects(t *testing.T) {
 	m.actions.SelectID("action:" + string(organizer.ActionDailyAppend))
 	m.refresh()
 	view = ansi.Strip(m.View())
-	for _, want := range []string{"obsidian.daily.append", "Note*     · missing", "Appends one entry"} {
+	for _, want := range []string{"obsidian.daily.append", "Note*     · missing", "Appends the Capture"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("action detail is missing %q:\n%s", want, view)
 		}
@@ -1002,9 +1001,8 @@ func selectionSGR(t *testing.T) string {
 // behind it.
 func TestRouteRunDialogReportsTheCaptureItRan(t *testing.T) {
 	root := routeTestRoot(t, "alpha", "beta")
-	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	m := chooseRecipe(t, loadedRoute(t, root), "Daily")
 	selection, _, _ := m.currentSelection()
-	selection.Set(organizer.FieldPlaceName, "Epping Station")
 	selection.Set(organizer.FieldContent, "the note I typed")
 	m.refresh()
 
@@ -1028,5 +1026,126 @@ func TestRouteRunDialogReportsTheCaptureItRan(t *testing.T) {
 	}
 	if strings.Contains(view, "· missing") {
 		t.Fatalf("the dialog is reporting the next capture's values:\n%s", view)
+	}
+}
+
+// A plan naming an Action that has only been declared is refused before it is
+// offered, not after it has failed.
+func TestRouteRefusesAPlanWithAnUnimplementedAction(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldPlaceName, "Epping Station")
+	selection.Set(organizer.FieldContent, "a note")
+	m.refresh()
+
+	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(routeModel)
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Not implemented yet: obsidian.location.upsert") {
+		t.Fatalf("the dialog does not say what cannot run:\n%s", view)
+	}
+	if strings.Contains(view, "↵ Run") {
+		t.Fatalf("a plan that cannot run should not offer to:\n%s", view)
+	}
+
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(routeModel)
+	if _, err := os.Stat(filepath.Join(root, "alpha", organizer.RecordFilename)); !os.IsNotExist(err) {
+		t.Fatal("confirming an unrunnable plan recorded something")
+	}
+
+	// Disabling the Action it names makes the rest runnable.
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(routeModel)
+	m.fields.Set(routeActionsField)
+	m.actions.SelectID("action:" + string(organizer.ActionLocationUpsert))
+	updated, _ = m.updateActions(" ")
+	m = updated.(routeModel)
+
+	m = runAndConfirm(t, m)
+	record, ok := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	if !ok || !record.Organized() {
+		t.Fatalf("the remaining action did not run: %+v", record)
+	}
+}
+
+// The entry lands in the vault, under the configured section, once.
+func TestRouteWritesTheEntryIntoTheVault(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	vault := t.TempDir()
+	settings := organizer.DefaultSettings()
+	settings.ObsidianVault = vault
+	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+	m = updated.(routeModel)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(routeModel)
+
+	m = chooseRecipe(t, m, "Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldContent, "the note I typed")
+	m.refresh()
+	m = runAndConfirm(t, m)
+
+	note, err := os.ReadFile(filepath.Join(vault, "Daily", "2026-09-09.md"))
+	if err != nil {
+		t.Fatalf("nothing was written to the vault: %v", err)
+	}
+	for _, want := range []string{"# DGS", "the note I typed", "^dgs-alpha"} {
+		if !strings.Contains(string(note), want) {
+			t.Fatalf("note is missing %q:\n%s", want, note)
+		}
+	}
+}
+
+// Running lands on the top of what is left, not on whatever followed the
+// Capture just organized: a Capture skipped earlier would otherwise be stranded
+// above the cursor for the rest of the session.
+func TestRouteAdvancesToTheTopOfWhatIsLeft(t *testing.T) {
+	root := routeTestRoot(t, "a", "b", "c")
+	m := loadedRoute(t, root)
+
+	// Work on the second Capture, leaving the first for later.
+	m.captures.SelectID("capture:" + filepath.Join(root, "b"))
+	m.refresh()
+	m = chooseRecipe(t, m, "Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldContent, "note")
+	m.refresh()
+	m = runAndConfirm(t, m)
+
+	if item, _ := m.captures.Selected(); item.ID != "capture:"+filepath.Join(root, "a") {
+		t.Fatalf("cursor = %q, want the first capture still to handle", item.ID)
+	}
+	if got := m.captures.Cursor(); got != 0 {
+		t.Fatalf("cursor row = %d, want the top of the list", got)
+	}
+}
+
+// A Capture no Recipe matches cannot be worked on, so the cursor passes over it
+// rather than landing there after every run.
+func TestRouteAdvancesPastCapturesNoRecipeMatches(t *testing.T) {
+	root := routeTestRoot(t, "a", "b")
+	// A workflow the built-in Recipes do not match.
+	index := []byte(`{"schema":"v1","source":{"app":"Shortcut","workflow":"voice_memo","device":{"os":"iOS","systemVersion":"26.4.2","name":"Phone"}},"id":"unmatched","payload":{},"createdAt":"2026-09-09T16:34:35.556+10:00"}`)
+	if err := os.Mkdir(filepath.Join(root, "0-unmatched"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "0-unmatched", "index.json"), index, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := loadedRoute(t, root)
+
+	m.captures.SelectID("capture:" + filepath.Join(root, "a"))
+	m.refresh()
+	m = chooseRecipe(t, m, "Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldContent, "note")
+	m.refresh()
+	m = runAndConfirm(t, m)
+
+	if item, _ := m.captures.Selected(); item.ID != "capture:"+filepath.Join(root, "b") {
+		t.Fatalf("cursor = %q, want the first capture that can be organized", item.ID)
 	}
 }

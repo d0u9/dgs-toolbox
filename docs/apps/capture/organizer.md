@@ -222,7 +222,7 @@ it satisfies both.
 
 `Fields` is the view for filling things in rather than for attributing them: it
 returns the union across the enabled Actions, deduplicated, split into what the
-Context can already answer and what it cannot. `Needs` is the other direction —
+Context cannot yet answer and what it can. `Needs` is the other direction —
 one Action's own requirements — so attribution and completion are separate
 questions with separate answers instead of one list trying to serve both.
 
@@ -334,10 +334,13 @@ than one decision. Each run records what was decided at that moment:
 }
 ```
 
-`executed` stays false while Actions are stubs. The record distinguishes
-*decided* from *executed* from the start, so once Actions do write something, a
-later run can tell what already happened rather than guessing from the presence
-of the file. `fields` holds the enrichment only — what the user supplied — not
+Each recorded Action says whether it `executed`, whether it was `skipped`
+because its work was already done, and the `error` that stopped it otherwise, so
+a failed pass explains itself later rather than only to whoever was watching.
+
+A Capture counts as **organized** when its most recent run finished — every
+Action executed. A run that failed part way through is history, not a state to
+move on from, so the Capture stays where it was. `fields` holds the enrichment only — what the user supplied — not
 the values that resolve from the Capture, which are not this record's to keep.
 
 Organizing a Capture again **appends** a run: a pass made against an older set
@@ -392,6 +395,89 @@ actions:
 What a file configures is composition — which workflows a Recipe matches, which
 Actions it runs, what it asks for beyond them. It cannot define an Action:
 Actions are compiled in, and a Recipe references them by id.
+
+## Executing a plan
+
+`Execute` carries a plan out in order and stops at the first failure, because
+the Actions of one Recipe are usually related — a location note and the daily
+entry pointing at it — and running the rest after one has failed leaves a state
+nobody asked for. What did happen is reported rather than rolled back: an entry
+added to a note cannot be un-added safely.
+
+Each Action reports one of three outcomes: it ran, it was **skipped** because
+its work was already done, or it failed with a reason. An Action that has been
+declared but not implemented fails with `ErrNotImplemented` rather than
+reporting success — a plan claiming everything is done while nothing was written
+is worse than one that refuses. `Unimplemented` names those Actions so a caller
+can refuse to offer a plan that cannot work, instead of accepting it and failing
+afterwards.
+
+Only `obsidian.daily.append` is implemented. It writes the Capture into the
+daily note for the day it was taken:
+
+- **Where** comes from the vault, not from this tool's configuration. Obsidian
+  keeps the daily note folder and filename format in the vault itself, and the
+  plugin actually in use decides which file is authoritative — the core plugin's
+  `daily-notes.json` stays behind after the plugin is switched off, so a stale
+  file must not win over `periodic-notes` when that is what creates the notes.
+  The format is a Moment.js pattern and is translated to a Go layout; a token
+  with no equivalent is an error rather than a guess, because writing a Capture
+  into the wrong file is worse than refusing to write it.
+- **What** comes from a template, below.
+- **Under which heading**: its own section, `# DGS` by default and configured by
+  `capture.obsidian.section`, added at the end of the note when it has none. The
+  configured value may carry its own hashes — `## Captured` asks for a
+  second-level heading — and a section then ends at the next heading of its own
+  level or shallower, so a subheading inside it still belongs to it. Its own section so what this tool writes stays
+  distinguishable from what the reader wrote, and so an entry is never appended
+  onto the end of somebody else's sentence.
+- **Once.** The entry carries the Capture's id as an Obsidian block reference
+  (`^dgs-<id>`), and an entry already in the note is skipped rather than added
+  again. The note is the record of what it holds: deleting the line by hand is
+  enough to have it written again, where bookkeeping kept anywhere else could
+  claim a line exists that no longer does. The reference is also a link target,
+  so what was written can be pointed at.
+- **Nothing is guessed.** With no vault configured the Action refuses.
+
+## Templates
+
+What an Action writes is a Go `text/template`, not a shape invented here: a
+standard engine brings conditionals, loops over a Capture's attachments, and
+errors reported when the template is read rather than as a blank discovered in a
+note later. The default is compiled in, so the tool writes sensibly before
+anything is configured, and a directory of templates overrides the defaults **by
+filename** — replacing one does not mean supplying them all.
+
+```gotemplate
+- {{.When}} {{.ID}}
+{{- range .ContentLines}}
+  - {{.}}
+{{- end}}
+  - {{.Coordinates}}
+  - address: {{.Address}}
+```
+
+A rendered line is dropped when every placeholder on it resolved to nothing —
+`- address:` with no address says nothing and still costs a row. That is how
+"write only what the Capture knows" is expressed without every template having
+to say it, and why the common case needs no conditionals.
+
+The test is what the placeholders produced, not what the line looks like
+afterwards, so a line written as a literal heading (`- Content:`) is kept while
+one holding only a label and an empty value is not. Fields print themselves
+wrapped in markers the renderer strips for exactly this, which is also why a
+field is a `Value` rather than a plain string; its underlying kind is still a
+string, so `{{if .Place}}` and `{{range}}` behave as expected.
+
+The data a template may name is a declared struct rather than a map, so a
+misspelled field fails when the template is parsed: `When`, `Date`, `Time`,
+`ID`, `Content`, `ContentLines`, `Coordinates`, `Altitude`, `Address`, `Place`,
+`Workflow`, `App`, `Capture`, and `Attachments` (each with `Name` and `Kind`). `indent`,
+`join`, `trim`, and `default` are available as functions.
+
+`ContentLines` is the Capture's text one line per item, with blank lines
+dropped: a note written across several lines is several things worth reading,
+and a blank line between them is spacing rather than content.
 
 ## Built-in Recipes
 

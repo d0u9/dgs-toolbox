@@ -36,6 +36,27 @@ type Run struct {
 	Fields      map[FieldID]any  `json:"fields,omitempty"`
 }
 
+// Complete reports whether every Action of this run was carried out. A Capture
+// counts as organized only when its most recent pass finished: a run that
+// failed part way through is history, not a state to move on from.
+func (r Run) Complete() bool {
+	if len(r.Actions) == 0 {
+		return false
+	}
+	for _, action := range r.Actions {
+		if !action.Executed {
+			return false
+		}
+	}
+	return true
+}
+
+// Organized reports whether the Capture's most recent pass finished.
+func (r Record) Organized() bool {
+	latest, ok := r.Latest()
+	return ok && latest.Complete()
+}
+
 // Latest is the most recent run, which is what a caller shows when it has room
 // for one. A record always carries at least one run in practice, but an
 // externally edited file may not.
@@ -53,13 +74,28 @@ type RecordedAction struct {
 	Action   ActionID `json:"action"`
 	Target   string   `json:"target"`
 	Executed bool     `json:"executed"`
+	// Skipped marks an Action that found its work already done, which is a
+	// success with a different meaning.
+	Skipped bool `json:"skipped,omitempty"`
+	// Error is why an Action did not run, kept so a failed pass explains
+	// itself later rather than only in the session that attempted it.
+	Error string `json:"error,omitempty"`
 }
 
-// NewRun captures a decision as it stands now.
-func NewRun(recipe Recipe, selection Selection, plans []ActionPlan, at time.Time) Run {
-	actions := make([]RecordedAction, 0, len(plans))
-	for _, plan := range plans {
-		actions = append(actions, RecordedAction{Action: plan.Action, Target: plan.Target})
+// NewRun records a decision and what became of it. The results say which
+// Actions actually ran, so the record distinguishes what was decided from what
+// happened — a later pass need not guess from the file's existence.
+func NewRun(recipe Recipe, selection Selection, results []Result, at time.Time) Run {
+	actions := make([]RecordedAction, 0, len(results))
+	for _, result := range results {
+		action := RecordedAction{Action: result.Action, Target: result.Target, Executed: result.Executed}
+		if result.Err != nil {
+			action.Error = result.Err.Error()
+		}
+		if result.Skipped {
+			action.Skipped = true
+		}
+		actions = append(actions, action)
 	}
 	fields := make(map[FieldID]any, len(selection.Enrichment))
 	for field, value := range selection.Enrichment {

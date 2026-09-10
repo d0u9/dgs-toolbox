@@ -120,6 +120,23 @@ func requirementList(requirements []organizer.FieldRequirement) string {
 	return strings.Join(parts, ", ")
 }
 
+// obsidianSettings is where the Actions write, from the configuration. The
+// folder and filename format are not configured: they are read from the vault,
+// which already says what they are.
+func obsidianSettings(global config.Config) organizer.Settings {
+	obsidian := global.CaptureObsidian()
+	settings := organizer.DefaultSettings()
+	settings.ObsidianVault = expandHome(obsidian.Vault)
+	settings.TemplateDir = expandHome(global.CaptureTemplatesDir())
+	if obsidian.Section != "" {
+		settings.DailySection = obsidian.Section
+	}
+	if obsidian.Locations != "" {
+		settings.LocationsFolder = obsidian.Locations
+	}
+	return settings.FromVault()
+}
+
 // loadRecipes reads the configured Recipe directory. Failures are carried
 // rather than returned as an error: a bad Recipe file must not stop the session
 // from opening, only that Recipe from being offered.
