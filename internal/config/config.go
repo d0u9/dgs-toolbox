@@ -41,8 +41,11 @@ type Capture struct {
 	// Templates holds templates overriding the compiled-in ones by filename.
 	// Empty means the "templates" directory beside the configuration file,
 	// which is where recipes live too.
-	Templates string          `json:"templates"`
-	Obsidian  CaptureObsidian `json:"obsidian"`
+	Templates string `json:"templates"`
+	// Mappings translate a value on its way into a note, by table name: what a
+	// Capture records against what this vault files it under.
+	Mappings map[string]map[string]string `json:"mappings"`
+	Obsidian CaptureObsidian              `json:"obsidian"`
 }
 
 // CaptureObsidian tells the Obsidian Actions where to write. Vault is an

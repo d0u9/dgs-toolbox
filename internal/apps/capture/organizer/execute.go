@@ -139,7 +139,11 @@ func appendToDailyNote(ctx Context, plan ActionPlan) (skipped bool, err error) {
 		return true, nil
 	}
 
-	updated := insertUnderSection(string(existing), ctx.Parameter(ActionDailyAppend, ParameterSection), entry)
+	section, err := sectionFor(ctx)
+	if err != nil {
+		return false, err
+	}
+	updated := insertUnderSection(string(existing), section, entry)
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 		return false, fmt.Errorf("write %s: %w", target, err)
 	}
@@ -206,6 +210,21 @@ func insertUnderSection(note, section string, entry []string) string {
 	return strings.Join(updated, "\n") + "\n"
 }
 
+// sectionFor is the heading this Capture is written under, rendered against the
+// Capture itself: a heading naming the app or the device tells a reader months
+// later where the entries under it came from.
+func sectionFor(ctx Context) (string, error) {
+	section := ctx.Parameter(ActionDailyAppend, ParameterSection)
+	if !strings.Contains(section, "{{") {
+		return section, nil
+	}
+	rendered, err := renderSection(ctx, section)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(rendered), nil
+}
+
 // sectionHeading is the heading a Capture is written under, and its level. A
 // configured section may carry its own hashes — "## Captured" asks for a
 // second-level heading — and otherwise it is a first-level one.
@@ -237,7 +256,7 @@ func dailyEntry(ctx Context) ([]string, error) {
 	if data.Content == "" {
 		return nil, nil
 	}
-	parsed, err := LoadTemplate(ctx.Settings.TemplateDir, DailyEntryTemplate)
+	parsed, err := LoadTemplate(ctx.Settings, DailyEntryTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +306,7 @@ func dailyNotePath(ctx Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path, err := renderNote("daily note path", ctx.Settings.DailyNote, noteData(ctx, day))
+	path, err := renderNote(ctx.Settings, "daily note path", ctx.Settings.DailyNote, noteData(ctx, day))
 	if err != nil {
 		return "", err
 	}
@@ -318,7 +337,7 @@ func createDailyNote(ctx Context, path string) error {
 	if err != nil {
 		return err
 	}
-	rendered, err := renderNote(DailyNoteTemplate, text, noteData(ctx, day))
+	rendered, err := renderNote(ctx.Settings, DailyNoteTemplate, text, noteData(ctx, day))
 	if err != nil {
 		return err
 	}

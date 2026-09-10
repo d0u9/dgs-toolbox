@@ -129,6 +129,7 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	settings.ObsidianVault = expandHome(obsidian.Vault)
 	settings.TemplateDir = expandHome(global.CaptureTemplatesDir())
 	settings.DailyNote = obsidian.DailyNote
+	settings.Mappings = global.Capture.Mappings
 	if obsidian.Section != "" {
 		settings.DailySection = obsidian.Section
 	}

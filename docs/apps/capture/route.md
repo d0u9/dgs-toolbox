@@ -348,7 +348,7 @@ Set returns. The Set is the built-in Recipes with the files in
     "obsidian": {
       "vault": "~/Vaults/personal",
       "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
-      "section": "DGS"
+      "section": "Captured{{with .Device}} - {{.}}{{end}}"
     }
   }
 }

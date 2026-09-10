@@ -15,7 +15,7 @@ const testEntryTemplate = `- {{.When}} {{.ID}}
 {{- range .ContentLines}}
   - {{.}}
 {{- end}}
-  - {{.Coordinates}}
+  - {{.Latitude}}, {{.Longitude}}
   - address: {{.Address}}`
 
 func testSettings(t *testing.T) Settings {
@@ -83,7 +83,7 @@ func TestDailyAppendCreatesTheNoteAndItsSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "---\nDate: 2026-09-09\n---\n\n# DGS\n\n" +
+	want := "---\nDate: 2026-09-09\n---\n\n# Captured\n\n" +
 		"- 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620\n" +
 		"  - Coffee under the bridge\n" +
 		"  - -33.76910, 151.08200\n" +
@@ -111,7 +111,7 @@ func TestDailyAppendWritesAnEntryOnce(t *testing.T) {
 	}
 
 	// Deleting the entry by hand is enough to have it written again.
-	os.WriteFile(filepath.Join(vault, plan.Target), []byte("# DGS\n"), 0o644)
+	os.WriteFile(filepath.Join(vault, plan.Target), []byte("# Captured\n"), 0o644)
 	Execute(ctx, []ActionPlan{plan})
 	restored, _ := os.ReadFile(filepath.Join(vault, plan.Target))
 	if !strings.Contains(string(restored), "Coffee under the bridge") {
@@ -128,7 +128,7 @@ func TestDailyAppendKeepsTheNoteAndWritesUnderItsSection(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	existing := "---\nDate: 2026-09-09\n---\n\n# 今日活动\n\n1. 已有的内容\n\n# DGS\n\n- an earlier entry ^dgs-other\n\n# 想说的\n\n无\n"
+	existing := "---\nDate: 2026-09-09\n---\n\n# 今日活动\n\n1. 已有的内容\n\n# Captured\n\n- an earlier entry ^dgs-other\n\n# 想说的\n\n无\n"
 	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestDailyAppendKeepsTheNoteAndWritesUnderItsSection(t *testing.T) {
 	section, entry, next := -1, -1, -1
 	for index, line := range lines {
 		switch {
-		case line == "# DGS":
+		case line == "# Captured":
 			section = index
 		case strings.Contains(line, "the new entry"):
 			entry = index
@@ -175,7 +175,7 @@ func TestDailyAppendAddsTheSectionWhenTheNoteHasNone(t *testing.T) {
 
 	Execute(ctx, []ActionPlan{plan})
 	note, _ := os.ReadFile(path)
-	want := "# 今日活动\n\n1. 已有的内容\n\n# DGS\n\n" +
+	want := "# 今日活动\n\n1. 已有的内容\n\n# Captured\n\n" +
 		"- 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620\n" +
 		"  - the new entry\n" +
 		"  - -33.76910, 151.08200\n" +
@@ -226,7 +226,7 @@ func TestDailyAppendMatchesTheMarkAsAWholeWord(t *testing.T) {
 
 	mark := captureMark(ctx.Capture)
 	for _, edited := range []string{mark + "-2", "x" + mark, mark + "x"} {
-		if err := os.WriteFile(path, []byte("# DGS\n\n- an edited entry "+edited+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte("# Captured\n\n- an edited entry "+edited+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		results := Execute(ctx, []ActionPlan{plan})
@@ -240,7 +240,7 @@ func TestDailyAppendMatchesTheMarkAsAWholeWord(t *testing.T) {
 	}
 
 	// The mark itself, on a line of its own or beside text, still counts.
-	os.WriteFile(path, []byte("# DGS\n\n- something "+mark+"\n"), 0o644)
+	os.WriteFile(path, []byte("# Captured\n\n- something "+mark+"\n"), 0o644)
 	if results := Execute(ctx, []ActionPlan{plan}); !results[0].Skipped {
 		t.Fatal("the entry was written twice")
 	}
@@ -254,7 +254,7 @@ func TestDailyAppendWritesUnderTheConfiguredSection(t *testing.T) {
 		section string
 		heading string
 	}{
-		{section: "", heading: "# DGS"},
+		{section: "", heading: "# Captured"},
 		{section: "Captures", heading: "# Captures"},
 		{section: "## Captured", heading: "## Captured"},
 	}
@@ -287,7 +287,7 @@ func TestDailyAppendWritesAfterASubheadingInsideItsSection(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	existing := "# DGS\n\n## Morning\n\n- an earlier entry ^dgs-other\n\n# 想说的\n\n无\n"
+	existing := "# Captured\n\n## Morning\n\n- an earlier entry ^dgs-other\n\n# 想说的\n\n无\n"
 	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestDailyAppendRefusesWithoutAConfiguredPathOrTemplate(t *testing.T) {
 	}
 	existing := filepath.Join(vault, plans[0].Target)
 	os.MkdirAll(filepath.Dir(existing), 0o755)
-	os.WriteFile(existing, []byte("# DGS\n"), 0o644)
+	os.WriteFile(existing, []byte("# Captured\n"), 0o644)
 	if results := Execute(ctx, plans); !Executed(results) {
 		t.Fatalf("appending to a note that exists needs no template: %+v", results)
 	}
@@ -409,5 +409,57 @@ func TestCreatedNoteComesFromTheConfiguredTemplate(t *testing.T) {
 		if !strings.Contains(string(note), want) {
 			t.Errorf("the created note is missing %q:\n%s", want, note)
 		}
+	}
+}
+
+// The heading is a template over the Capture, so a note read months later says
+// where the entries under it came from.
+func TestDailySectionNamesWhereTheEntriesCameFrom(t *testing.T) {
+	named := beenHere()
+	named.Index.Source.Device.Name = "Phone"
+	ctx, vault := vaultContext(t, named, "note text")
+	plan := dailyPlan(t, ctx)
+	if results := Execute(ctx, []ActionPlan{plan}); !Executed(results) {
+		t.Fatalf("results = %+v", results)
+	}
+	note, _ := os.ReadFile(filepath.Join(vault, plan.Target))
+	if !strings.Contains(string(note), "# Captured - Phone\n") {
+		t.Fatalf("note = %q, want the device in the heading", note)
+	}
+
+	// A Capture from another device writes under its own heading.
+	other := beenHere()
+	other.Index.ID = "second"
+	other.Index.Source.Device.Name = "Camera phone"
+	next := NewContext(other, map[FieldID]any{FieldContent: "another"}).WithSettings(ctx.Settings)
+	Execute(next, []ActionPlan{dailyPlan(t, next)})
+	note, _ = os.ReadFile(filepath.Join(vault, plan.Target))
+	for _, want := range []string{"# Captured - Phone\n", "# Captured - Camera phone\n"} {
+		if !strings.Contains(string(note), want) {
+			t.Fatalf("note is missing %q:\n%s", want, note)
+		}
+	}
+
+	// A Capture that records no device leaves the heading on its own rather
+	// than trailing a separator with nothing after it.
+	nameless := beenHere()
+	nameless.Index.ID = "third"
+	nameless.Index.Source.Device.Name = ""
+	bare := NewContext(nameless, map[FieldID]any{FieldContent: "no device"}).WithSettings(ctx.Settings)
+	Execute(bare, []ActionPlan{dailyPlan(t, bare)})
+	note, _ = os.ReadFile(filepath.Join(vault, plan.Target))
+	if !strings.Contains(string(note), "\n# Captured\n") {
+		t.Fatalf("a capture with no device did not fall back to the bare heading:\n%s", note)
+	}
+
+	// A heading with no placeholders is written as it stands.
+	settings := ctx.Settings
+	settings.DailySection = "DGS"
+	plain := NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings)
+	plain.Capture.Index.ID = "fourth"
+	Execute(plain, []ActionPlan{dailyPlan(t, plain)})
+	note, _ = os.ReadFile(filepath.Join(vault, plan.Target))
+	if !strings.Contains(string(note), "# DGS\n") {
+		t.Fatalf("a literal heading was not written as it stands:\n%s", note)
 	}
 }

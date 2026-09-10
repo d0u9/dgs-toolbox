@@ -121,7 +121,7 @@ func TestBuiltinDailyEntryTemplateRenders(t *testing.T) {
 		t.Fatalf("the shipped template does not render: %v", err)
 	}
 	got := strings.Join(entry, "\n")
-	for _, want := range []string{captureMark(capture), "Coffee under the bridge", "-33.76910, 151.08200", "Epping, NSW"} {
+	for _, want := range []string{captureMark(capture), "Coffee under the bridge", "-33.76910", "151.08200", "Epping, NSW"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the shipped entry is missing %q:\n%s", want, got)
 		}
@@ -169,5 +169,45 @@ func TestEntryAltitude(t *testing.T) {
 	capture.Index.Coordinates = nil
 	if got := string(entryData(NewContext(capture, nil)).Altitude); got != "" {
 		t.Errorf("altitude = %q, want none without a position", got)
+	}
+}
+
+// A value can be translated on its way into a note. The engine can do it inline
+// for a case or two; a table belongs in the configuration, where it is data
+// rather than something buried in a template.
+func TestMappedTranslatesAValueThroughATable(t *testing.T) {
+	settings := DefaultSettings()
+	settings.TemplateDir = t.TempDir()
+	settings.Mappings = map[string]map[string]string{
+		"country": {"Australia": "🇦🇺_Australia"},
+	}
+	capture := beenHere()
+	capture.Index.Place.Country = "Australia"
+	ctx := NewContext(capture, nil).WithSettings(settings)
+	day, _ := captureDay(ctx)
+
+	render := func(body string) string {
+		t.Helper()
+		out, err := renderNote(settings, "test", body, noteData(ctx, day))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	if got := render(`{{mapped "country" .Country}}`); got != "🇦🇺_Australia" {
+		t.Errorf("mapped = %q", got)
+	}
+	// A value the table does not mention comes back as it was: a mapping says
+	// how some names are written here, not which names are allowed.
+	if got := render(`{{mapped "country" .Region}}`); got != "NSW" {
+		t.Errorf("unmapped = %q, want the value unchanged", got)
+	}
+	if got := render(`{{mapped "nothing" .Country}}`); got != "Australia" {
+		t.Errorf("unknown table = %q, want the value unchanged", got)
+	}
+	// The engine can also do it inline, without a table.
+	if got := render(`{{if eq .Country "Australia"}}AU{{else}}{{.Country}}{{end}}`); got != "AU" {
+		t.Errorf("inline = %q", got)
 	}
 }
