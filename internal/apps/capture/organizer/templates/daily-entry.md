@@ -3,6 +3,5 @@
     {{- range .ContentLines}}
         - {{.}}
     {{- end}}
-    - {{.Coordinates}}
-    - Altitude: {{.Altitude}}
+    - Coordinates: {{.Latitude}}, {{.Longitude}}{{with .Altitude}}, {{.}}{{end}}
     - Address: {{.Address}}

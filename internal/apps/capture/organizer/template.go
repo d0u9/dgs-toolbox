@@ -64,16 +64,21 @@ type EntryData struct {
 	// blank lines dropped, for a template writing one item per line.
 	Content      Value
 	ContentLines []string
-	Coordinates  Value
+	// Latitude and Longitude are separate rather than one position string, so
+	// a template decides the order and the punctuation between them.
+	Latitude  Value
+	Longitude Value
 	// Altitude is metres above sea level, as the Capture recorded it. It is
 	// separate from Coordinates because a template may want the position
 	// without it.
 	Altitude Value
 	// Address is the place from its structured parts, most specific first.
-	Address     Value
-	Place       Value
-	Workflow    Value
-	App         Value
+	Address  Value
+	Place    Value
+	Workflow Value
+	App      Value
+	// Device is the device the Capture was taken on.
+	Device      Value
 	Capture     Value
 	Attachments []Attachment
 }
@@ -84,14 +89,28 @@ type Attachment struct {
 	Kind string
 }
 
-var templateFuncs = template.FuncMap{
-	"indent": func(spaces int, value string) string {
-		pad := strings.Repeat(" ", spaces)
-		return strings.ReplaceAll(value, "\n", "\n"+pad)
-	},
-	"join":    strings.Join,
-	"trim":    strings.TrimSpace,
-	"default": func(fallback, value string) string { return orDefault(value, fallback) },
+// templateFuncs are bound to the settings the template is rendered against,
+// because one of them reads the configured mappings.
+func templateFuncs(settings Settings) template.FuncMap {
+	return template.FuncMap{
+		"indent": func(spaces int, value string) string {
+			pad := strings.Repeat(" ", spaces)
+			return strings.ReplaceAll(value, "\n", "\n"+pad)
+		},
+		"join":    strings.Join,
+		"trim":    strings.TrimSpace,
+		"default": func(fallback, value string) string { return orDefault(value, fallback) },
+		// mapped translates a value through a named table. A value the table
+		// does not mention comes back as it was: a mapping says how some names
+		// are written in this vault, not which names are allowed, and dropping
+		// the rest would lose data the Capture actually carried.
+		"mapped": func(table string, value Value) Value {
+			if replacement, ok := settings.Mappings[table][string(value)]; ok {
+				return Value(replacement)
+			}
+			return value
+		},
+	}
 }
 
 // entryData collects what a template may write about one Capture.
@@ -105,12 +124,14 @@ func entryData(ctx Context) EntryData {
 		ID:           Value(captureMark(ctx.Capture)),
 		Content:      Value(content),
 		ContentLines: contentLines(content),
-		Coordinates:  Value(coordinates(ctx)),
+		Latitude:     Value(coordinate(ctx, FieldLatitude)),
+		Longitude:    Value(coordinate(ctx, FieldLongitude)),
 		Altitude:     Value(altitude(ctx)),
 		Address:      Value(address(ctx)),
 		Place:        Value(ctx.String(FieldPlaceName)),
 		Workflow:     Value(ctx.Capture.Workflow()),
 		App:          Value(ctx.Capture.Index.Source.App),
+		Device:       Value(ctx.Capture.Index.Source.Device.Name),
 		Capture:      Value(ctx.Capture.Name),
 	}
 	for _, attachment := range ctx.Capture.Index.Attachments {
@@ -148,15 +169,15 @@ func address(ctx Context) string {
 	return strings.Join(parts, ", ")
 }
 
-// coordinates is the position as Capture Info shows it, to five decimals:
-// enough to identify a doorway, short enough to read.
-func coordinates(ctx Context) string {
-	latitude, hasLatitude := ctx.Get(FieldLatitude)
-	longitude, hasLongitude := ctx.Get(FieldLongitude)
-	if !hasLatitude || !hasLongitude {
+// coordinate is one half of a position, to five decimals: enough to identify a
+// doorway, short enough to read. A Capture with no position has neither half,
+// so a template naming both drops the line rather than writing half of one.
+func coordinate(ctx Context, field FieldID) string {
+	value, ok := ctx.Get(field)
+	if !ok {
 		return ""
 	}
-	return fmt.Sprintf("%.5f, %.5f", asFloat(latitude), asFloat(longitude))
+	return fmt.Sprintf("%.5f", asFloat(value))
 }
 
 // altitude is metres above sea level, rounded: a Capture's altitude is accurate
@@ -183,12 +204,12 @@ func asFloat(value any) float64 {
 // LoadTemplate reads a template by name, preferring the configured directory
 // over the compiled-in default so a reader can replace one without having to
 // supply all of them.
-func LoadTemplate(dir, name string) (*template.Template, error) {
-	text, err := templateText(dir, name)
+func LoadTemplate(settings Settings, name string) (*template.Template, error) {
+	text, err := templateText(settings.TemplateDir, name)
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := template.New(name).Funcs(templateFuncs).Option("missingkey=error").Parse(text)
+	parsed, err := template.New(name).Funcs(templateFuncs(settings)).Option("missingkey=error").Parse(text)
 	if err != nil {
 		return nil, fmt.Errorf("template %s: %w", name, err)
 	}
@@ -285,6 +306,9 @@ type NoteData struct {
 	Day       Value
 	Weekday   Value
 	DayOfYear Value
+	// Now is when the note is being created, which is not the day it is for: a
+	// note written today for last week records both.
+	Now Value
 	// Country, Region, City and Locality come from the Capture that prompted
 	// the note.
 	Country  Value
@@ -293,6 +317,9 @@ type NoteData struct {
 	Locality Value
 	// Place is the composed name, most specific first.
 	Place Value
+	// Latitude and Longitude are separate here too, for the same reason.
+	Latitude  Value
+	Longitude Value
 }
 
 // noteData collects what a daily note's template may write for one day.
@@ -305,11 +332,14 @@ func noteData(ctx Context, day time.Time) NoteData {
 		Day:       Value(day.Format("02")),
 		Weekday:   Value(day.Format("Monday")),
 		DayOfYear: Value(fmt.Sprintf("%d", day.YearDay())),
+		Now:       Value(time.Now().Format(time.RFC3339)),
 		Country:   Value(strings.TrimSpace(place.Country)),
 		Region:    Value(strings.TrimSpace(place.Region)),
 		City:      Value(strings.TrimSpace(place.City)),
 		Locality:  Value(strings.TrimSpace(place.Locality)),
 		Place:     Value(address(ctx)),
+		Latitude:  Value(coordinate(ctx, FieldLatitude)),
+		Longitude: Value(coordinate(ctx, FieldLongitude)),
 	}
 }
 
@@ -334,14 +364,30 @@ func LoadNoteTemplate(dir string) (string, error) {
 // renderNote fills a template read from a file. Unlike an entry, nothing is
 // pruned: a note is a document the reader will edit, and dropping lines out of
 // it because a value was unknown would leave them wondering what was removed.
-func renderNote(name, text string, data NoteData) (string, error) {
-	parsed, err := template.New(name).Funcs(templateFuncs).Option("missingkey=error").Parse(text)
+func renderNote(settings Settings, name, text string, data NoteData) (string, error) {
+	parsed, err := template.New(name).Funcs(templateFuncs(settings)).Option("missingkey=error").Parse(text)
 	if err != nil {
 		return "", fmt.Errorf("template %s: %w", name, err)
 	}
 	var out strings.Builder
 	if err := parsed.Execute(&out, data); err != nil {
 		return "", fmt.Errorf("template %s: %w", name, err)
+	}
+	rendered, _, _ := stripMarkers(out.String())
+	return rendered, nil
+}
+
+// renderSection fills a heading template against the Capture. It shares the
+// entry's data, because a heading names the same thing the entries under it
+// describe.
+func renderSection(ctx Context, section string) (string, error) {
+	parsed, err := template.New("section").Funcs(templateFuncs(ctx.Settings)).Option("missingkey=error").Parse(section)
+	if err != nil {
+		return "", fmt.Errorf("section: %w", err)
+	}
+	var out strings.Builder
+	if err := parsed.Execute(&out, entryData(ctx)); err != nil {
+		return "", fmt.Errorf("section: %w", err)
 	}
 	rendered, _, _ := stripMarkers(out.String())
 	return rendered, nil

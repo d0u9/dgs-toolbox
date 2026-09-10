@@ -442,11 +442,16 @@ daily note for the day it was taken:
   one is an error naming the file it expected, rather than a bare note.
   Appending to a note that already exists needs no template.
 - **What** comes from a template, below.
-- **Under which heading**: its own section, `# DGS` by default and configured by
-  `capture.obsidian.section`, added at the end of the note when it has none. The
-  configured value may carry its own hashes — `## Captured` asks for a
-  second-level heading — and a section then ends at the next heading of its own
-  level or shallower, so a subheading inside it still belongs to it. Its own section so what this tool writes stays
+- **Under which heading**: its own section, added at the end of the note when it
+  has none. The heading is a template over the Capture, `{{.App}} - Captured` by
+  default and configured by `capture.obsidian.section`: a note is read months
+  later, and "Shortcut - Captured" says where the entries under it came from,
+  which a fixed word does not. Captures from different apps therefore land under
+  different headings, each grouped. A value with no placeholders is written as it
+  stands.
+- The value may carry its own hashes — `## Captured` asks for a second-level
+  heading — and a section then ends at the next heading of its own level or
+  shallower, so a subheading inside it still belongs to it. Its own section so what this tool writes stays
   distinguishable from what the reader wrote, and so an entry is never appended
   onto the end of somebody else's sentence.
 - **Once.** The entry carries the Capture's id as an Obsidian block reference
@@ -471,7 +476,7 @@ filename** — replacing one does not mean supplying them all.
 {{- range .ContentLines}}
   - {{.}}
 {{- end}}
-  - {{.Coordinates}}
+  - {{.Latitude}}, {{.Longitude}}
   - address: {{.Address}}
 ```
 
@@ -489,9 +494,46 @@ string, so `{{if .Place}}` and `{{range}}` behave as expected.
 
 The data a template may name is a declared struct rather than a map, so a
 misspelled field fails when the template is parsed: `When`, `Date`, `Time`,
-`ID`, `Content`, `ContentLines`, `Coordinates`, `Altitude`, `Address`, `Place`,
-`Workflow`, `App`, `Capture`, and `Attachments` (each with `Name` and `Kind`). `indent`,
-`join`, `trim`, and `default` are available as functions.
+`ID`, `Content`, `ContentLines`, `Latitude`, `Longitude`, `Altitude`,
+`Address`, `Place`, `Workflow`, `App`, `Capture`, and `Attachments` (each with
+`Name` and `Kind`).
+
+`Latitude` and `Longitude` are separate rather than one position string, so a
+template decides the order and the punctuation between them — and a Capture with
+no position has neither, so a line naming both is dropped rather than written as
+half a position. `indent`,
+`join`, `trim`, `default` and `mapped` are available as functions.
+
+### Translating a value
+
+What a Capture records and what a vault files it under are not always the same
+string: `Australia` against `🇦🇺_Australia`. The engine can settle a case or two
+inline —
+
+```gotemplate
+country: "{{if eq .Country "Australia"}}🇦🇺_Australia{{else}}{{.Country}}{{end}}"
+```
+
+— but a table of them is data rather than something to bury in a template, so it
+is declared in the configuration and read by `mapped`:
+
+```json
+{
+  "capture": {
+    "mappings": {
+      "country": { "Australia": "🇦🇺_Australia", "China": "🇨🇳_中国" }
+    }
+  }
+}
+```
+
+```gotemplate
+country: "{{mapped "country" .Country}}"
+```
+
+A value the table does not mention comes back unchanged. A mapping says how some
+names are written in this vault, not which names are allowed, and dropping the
+rest would lose what the Capture actually carried.
 
 `ContentLines` is the Capture's text one line per item, with blank lines
 dropped: a note written across several lines is several things worth reading,
@@ -500,8 +542,10 @@ and a blank line between them is spacing rather than content.
 ### The daily note's own template
 
 `daily-note.md` is rendered the same way, against a different data set: `Date`,
-`Year`, `Month`, `Day`, `Weekday`, `DayOfYear`, and `Country`, `Region`, `City`,
-`Locality` and `Place` from the Capture that prompted the note.
+`Year`, `Month`, `Day`, `Weekday`, `DayOfYear`, `Now`, and `Country`, `Region`,
+`City`, `Locality`, `Place`, `Latitude` and `Longitude` from the Capture that
+prompted the note. `Now` is when the note is being created, which is not the day
+it is for: a note written today for last week records both.
 
 This is the answer to a vault template written for a plugin that asks the reader
 questions as it runs. Half of what it asks need not be asked: the date is the

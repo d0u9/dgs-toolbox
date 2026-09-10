@@ -1116,7 +1116,7 @@ func TestRouteWritesTheEntryIntoTheVault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("nothing was written to the vault: %v", err)
 	}
-	for _, want := range []string{"# DGS", "the note I typed", "^dgs-alpha"} {
+	for _, want := range []string{"# Captured - Phone", "the note I typed", "^dgs-alpha"} {
 		if !strings.Contains(string(note), want) {
 			t.Fatalf("note is missing %q:\n%s", want, note)
 		}

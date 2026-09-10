@@ -29,6 +29,11 @@ type Settings struct {
 	// rather than the end of the note, so what this tool writes stays
 	// distinguishable from what the reader wrote.
 	DailySection string
+	// Mappings translate a value on its way into a note, by table name:
+	// "Australia" is what a Capture records, and a vault may file it under
+	// "🇦🇺_Australia". Declared rather than coded because which names a vault
+	// uses is that vault's business, and there is no end to them.
+	Mappings map[string]map[string]string
 	// TemplateDir holds every template that is not compiled in, by filename:
 	// the daily note's, and any that replaces a compiled-in default. One place
 	// to look, rather than a path in the configuration for each.
@@ -41,8 +46,15 @@ func DefaultSettings() Settings {
 	return Settings{LocationsFolder: "Locations", DailySection: DefaultDailySection}
 }
 
-// DefaultDailySection is the heading this tool writes under.
-const DefaultDailySection = "DGS"
+// DefaultDailySection is the heading this tool writes under. It is a template
+// over the Capture rather than a fixed word: a note is read months later, and
+// "Captured - Doug's iPhone" says where the entries under it came from, which
+// "DGS" does not.
+//
+// The device is written with "with" rather than as a bare placeholder, so a
+// Capture that records no device name leaves "Captured" on its own instead of a
+// heading trailing a separator with nothing after it.
+const DefaultDailySection = "Captured{{with .Device}} - {{.}}{{end}}"
 
 func (s Settings) section() string {
 	if strings.TrimSpace(s.DailySection) == "" {
