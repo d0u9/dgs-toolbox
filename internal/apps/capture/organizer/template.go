@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 )
 
 // Templates are Go text/template rather than a shape invented here. The entry
@@ -22,8 +23,17 @@ import (
 //go:embed templates/*.md
 var builtinTemplates embed.FS
 
-// DailyEntryTemplate is the name of the template one Capture is written with.
-const DailyEntryTemplate = "daily-entry.md"
+const (
+	// DailyEntryTemplate is the template one Capture is written with. It has a
+	// compiled-in default, so the tool writes sensibly before anything is
+	// configured.
+	DailyEntryTemplate = "daily-entry.md"
+	// DailyNoteTemplate is the template a missing daily note is created from.
+	// It has no default: what a reader's note should hold is not something to
+	// invent, and an empty note among templated ones is one they have to
+	// repair by hand later.
+	DailyNoteTemplate = "daily-note.md"
+)
 
 // Value is a template field. It prints itself wrapped in markers the renderer
 // strips afterwards, which is how a line knows whether the blank on it came
@@ -185,6 +195,13 @@ func LoadTemplate(dir, name string) (*template.Template, error) {
 	return parsed, nil
 }
 
+func orDefault(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
 func templateText(dir, name string) (string, error) {
 	if dir != "" {
 		data, err := os.ReadFile(filepath.Join(dir, name))
@@ -251,4 +268,81 @@ func stripMarkers(line string) (text string, named, empty int) {
 		out.WriteString(value)
 		line = line[start+end+len(valueClose):]
 	}
+}
+
+// NoteData is what a daily note's own template may name: the day it is for, and
+// what the Capture that prompted it knows about where it was taken.
+//
+// It exists because a vault's own daily template is usually written for a
+// plugin that asks the reader questions as it runs — country, region, weather —
+// and none of that can be answered without a person. Half of it need not be
+// asked at all: the date is the date, and the Capture already carries where it
+// was. What is genuinely unanswerable is left to the reader to fill in later.
+type NoteData struct {
+	Date      Value
+	Year      Value
+	Month     Value
+	Day       Value
+	Weekday   Value
+	DayOfYear Value
+	// Country, Region, City and Locality come from the Capture that prompted
+	// the note.
+	Country  Value
+	Region   Value
+	City     Value
+	Locality Value
+	// Place is the composed name, most specific first.
+	Place Value
+}
+
+// noteData collects what a daily note's template may write for one day.
+func noteData(ctx Context, day time.Time) NoteData {
+	place := ctx.Capture.Index.CapturePlace()
+	return NoteData{
+		Date:      Value(day.Format("2006-01-02")),
+		Year:      Value(day.Format("2006")),
+		Month:     Value(day.Format("01")),
+		Day:       Value(day.Format("02")),
+		Weekday:   Value(day.Format("Monday")),
+		DayOfYear: Value(fmt.Sprintf("%d", day.YearDay())),
+		Country:   Value(strings.TrimSpace(place.Country)),
+		Region:    Value(strings.TrimSpace(place.Region)),
+		City:      Value(strings.TrimSpace(place.City)),
+		Locality:  Value(strings.TrimSpace(place.Locality)),
+		Place:     Value(address(ctx)),
+	}
+}
+
+// LoadNoteTemplate reads the template a daily note is created from. Unlike the
+// entry template it has no compiled-in default, so a missing one names the file
+// that was expected rather than falling back to something invented here.
+func LoadNoteTemplate(dir string) (string, error) {
+	if strings.TrimSpace(dir) == "" {
+		return "", ErrNoDailyTemplate
+	}
+	path := filepath.Join(dir, DailyNoteTemplate)
+	text, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("%w: expected %s", ErrNoDailyTemplate, path)
+		}
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	return string(text), nil
+}
+
+// renderNote fills a template read from a file. Unlike an entry, nothing is
+// pruned: a note is a document the reader will edit, and dropping lines out of
+// it because a value was unknown would leave them wondering what was removed.
+func renderNote(name, text string, data NoteData) (string, error) {
+	parsed, err := template.New(name).Funcs(templateFuncs).Option("missingkey=error").Parse(text)
+	if err != nil {
+		return "", fmt.Errorf("template %s: %w", name, err)
+	}
+	var out strings.Builder
+	if err := parsed.Execute(&out, data); err != nil {
+		return "", fmt.Errorf("template %s: %w", name, err)
+	}
+	rendered, _, _ := stripMarkers(out.String())
+	return rendered, nil
 }

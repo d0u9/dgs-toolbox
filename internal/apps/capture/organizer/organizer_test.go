@@ -309,7 +309,7 @@ func TestBuildProducesThePlanFromTheWorkedExample(t *testing.T) {
 		target string
 	}{
 		{ActionLocationUpsert, "Locations/Epping Station.md"},
-		{ActionDailyAppend, "Daily/2026-09-09.md"},
+		{ActionDailyAppend, ""},
 	}
 
 	if len(plans) != len(want) {
@@ -339,8 +339,8 @@ func TestBuildKeepsBlockedActionsVisible(t *testing.T) {
 	if plans[0].Ready() || plans[0].Target != "" {
 		t.Errorf("location plan should be blocked with no target, got %q", plans[0].Target)
 	}
-	if plans[1].Target != "Daily/2026-09-09.md" {
-		t.Errorf("daily target = %q, want it resolved from createdAt", plans[1].Target)
+	if plans[1].Target != "" {
+		t.Errorf("daily target = %q, want none until a path is configured", plans[1].Target)
 	}
 	if plans[1].Ready() {
 		t.Error("daily plan should be blocked by the missing note")

@@ -430,14 +430,18 @@ afterwards.
 Only `obsidian.daily.append` is implemented. It writes the Capture into the
 daily note for the day it was taken:
 
-- **Where** comes from the vault, not from this tool's configuration. Obsidian
-  keeps the daily note folder and filename format in the vault itself, and the
-  plugin actually in use decides which file is authoritative — the core plugin's
-  `daily-notes.json` stays behind after the plugin is switched off, so a stale
-  file must not win over `periodic-notes` when that is what creates the notes.
-  The format is a Moment.js pattern and is translated to a Go layout; a token
-  with no equivalent is an error rather than a guess, because writing a Capture
-  into the wrong file is worse than refusing to write it.
+- **Where** is configured, not discovered. `capture.obsidian.daily_note` is a
+  path relative to the vault, written as a template over the date:
+  `00 Daily Log/{{.Year}}/{{.Date}}.md`. A vault does keep its own daily note
+  settings, and reading them looked at first like sparing the reader a
+  duplicate — but a vault says where the plugin in use puts notes, which is not
+  the same question as where this tool should write, and a wrong guess files a
+  Capture where nobody is looking. What is not configured is an error.
+- **What a missing note is created from** is `daily-note.md` in the template
+  directory. A note is never created from nothing — an empty note among
+  templated ones is one the reader has to repair later — so a directory without
+  one is an error naming the file it expected, rather than a bare note.
+  Appending to a note that already exists needs no template.
 - **What** comes from a template, below.
 - **Under which heading**: its own section, `# DGS` by default and configured by
   `capture.obsidian.section`, added at the end of the note when it has none. The
@@ -493,6 +497,25 @@ misspelled field fails when the template is parsed: `When`, `Date`, `Time`,
 `ContentLines` is the Capture's text one line per item, with blank lines
 dropped: a note written across several lines is several things worth reading,
 and a blank line between them is spacing rather than content.
+
+### The daily note's own template
+
+`daily-note.md` is rendered the same way, against a different data set: `Date`,
+`Year`, `Month`, `Day`, `Weekday`, `DayOfYear`, and `Country`, `Region`, `City`,
+`Locality` and `Place` from the Capture that prompted the note.
+
+This is the answer to a vault template written for a plugin that asks the reader
+questions as it runs. Half of what it asks need not be asked: the date is the
+date, and the Capture already carries where it was taken. The rest — weather,
+mood, who was there — genuinely cannot be answered without a person, and is left
+empty for them to fill in.
+
+It is also how the same tool serves vaults that are nothing alike. The template
+is the mapping: it says which of *this* vault's fields take which value, in this
+vault's own names and its own language, and a value it does not want is simply
+not referenced. Nothing is pruned from a created note, unlike an entry, because
+a note is a document the reader will edit and a line quietly removed is one they
+will wonder about.
 
 ## Built-in Recipes
 

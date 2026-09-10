@@ -344,13 +344,20 @@ Set returns. The Set is the built-in Recipes with the files in
 ```json
 {
   "capture": {
+    "templates": "",
     "obsidian": {
       "vault": "~/Vaults/personal",
+      "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
       "section": "DGS"
     }
   }
 }
 ```
+
+`daily_note` is where a day's note lives, relative to the vault, as a template
+over the date. `templates` is the one directory every non-embedded template is
+read from — `daily-note.md`, and any file replacing a compiled-in default —
+defaulting to `templates` beside the configuration file the way `recipes` does.
 
 `section` is the heading a Capture is written under in a daily note, `DGS` when
 unset; it may carry its own hashes to ask for a deeper level. An unset `recipes`
