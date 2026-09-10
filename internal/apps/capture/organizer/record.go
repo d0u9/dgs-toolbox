@@ -80,6 +80,10 @@ type RecordedAction struct {
 	// Error is why an Action did not run, kept so a failed pass explains
 	// itself later rather than only in the session that attempted it.
 	Error string `json:"error,omitempty"`
+	// Parameters are the values the Action ran with. Recorded because where a
+	// Capture was written is part of what happened: a reader coming back to
+	// this months later would otherwise assume the default.
+	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
 // NewRun records a decision and what became of it. The results say which
@@ -89,6 +93,12 @@ func NewRun(recipe Recipe, selection Selection, results []Result, at time.Time) 
 	actions := make([]RecordedAction, 0, len(results))
 	for _, result := range results {
 		action := RecordedAction{Action: result.Action, Target: result.Target, Executed: result.Executed}
+		if parameters := selection.Parameters[result.Action]; len(parameters) > 0 {
+			action.Parameters = make(map[string]string, len(parameters))
+			for name, value := range parameters {
+				action.Parameters[name] = value
+			}
+		}
 		if result.Err != nil {
 			action.Error = result.Err.Error()
 		}

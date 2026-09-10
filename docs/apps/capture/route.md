@@ -175,6 +175,29 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   stays editable, so a composed place name can be replaced. It uses the same
   fixed 12-cell key column as Capture Info so values never shift as the cursor
   changes.
+- Below both, a pinned `PARAMETERS` group says how the enabled Actions behave
+  rather than what they need: `daily.append · Section`, and whatever a later
+  Action declares. Every parameter is listed whether or not it has been changed
+  — one nobody can see is one nobody knows to change — and one left at its
+  default is muted whole, because it asks nothing of the reader. Editing one
+  overrides that Action **for this Capture only**; the next Capture starts from
+  the default again, since an override that stayed on would quietly apply to
+  Captures nobody meant it for.
+- The control that runs the plan is not in the column. It sits below the
+  workspace at the bottom right, as the shared two-line filled button this TUI
+  puts page actions in everywhere else — `Run  x` over what it would run. It
+  acts on everything above it rather than on the field list, so it belongs to
+  the screen and not to one fieldset, and the four columns end one row above it.
+  One click presses it, since a button is pressed rather than selected.
+- It is filled only when pressing it would carry the plan out. Anything still in
+  the way leaves it quiet and takes its second line: `Choose a recipe`,
+  `Missing Note`, `2 fields missing`, `No action enabled`, `Not implemented`. So
+  the button answers "can I run this yet, and if not why" without the dialog
+  having to be opened to find out.
+- A parameter row names the Action it belongs to, because `FIELDS` lists every
+  enabled Action's and two of them may well share a parameter name. The column
+  stays independent of the `ACTIONS` cursor either way: moving that cursor
+  changes only its own detail pane.
 - An optional field with no value sits above the rule too, unmarked. Only the
   `*` rows block the plan, so a `MISSING` list of unmarked rows is still ready
   to run.
@@ -286,8 +309,16 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   `Alt+H`/`Alt+Left` walk `Captures ↔ Recipes ↔ Actions ↔ Fields` without the
   progressive-selection semantics of `Enter`. `Alt+J`/`Alt+Down` from Captures
   reaches the Capture Root below it, and `Alt+K`/`Alt+Up` returns.
-  `Tab`/`Shift+Tab` cycle
-  `Captures → Capture Root → Recipes → Actions → Fields`.
+  `Tab`/`Shift+Tab` cycle the fields that have something to select right now:
+  `Captures` always, `Recipes` once a Capture with candidates is selected, and
+  `Actions` and `Fields` once a Recipe is chosen. The `Capture Root` is not in
+  the ring — it is a setting rather than a step, and a ring is walked to get
+  through the work, so a setting in it costs a keystroke every time round for
+  something touched once a session. `Alt+J`/`Alt+Down` still reaches it.
+  A column waiting on a decision nobody has made holds nothing to select, and
+  stopping there teaches the reader only that they are somewhere useless. The
+  spatial keys are not gated this way — `Alt+Arrow` means "the field to the
+  right", and that field is where it is whether or not it is ready.
 - The status bar center shows the selected Capture path, plus ` → <recipe>`
   once one is chosen; with nothing selected it summarizes
   `<ready>/<total> READY · <n> BLOCKED`. An already organized Capture counts as

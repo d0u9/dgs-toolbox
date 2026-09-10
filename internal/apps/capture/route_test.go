@@ -179,13 +179,25 @@ func equalFieldIDs(rows []routeFieldRow, want []organizer.FieldID) bool {
 
 func splitFieldRows(m routeModel) (resolved, missing []routeFieldRow) {
 	for _, row := range m.fieldRows {
-		if row.missing {
+		switch {
+		case row.parameter:
+		case row.missing:
 			missing = append(missing, row)
-			continue
+		default:
+			resolved = append(resolved, row)
 		}
-		resolved = append(resolved, row)
 	}
 	return resolved, missing
+}
+
+func parameterRows(m routeModel) []routeFieldRow {
+	var rows []routeFieldRow
+	for _, row := range m.fieldRows {
+		if row.parameter {
+			rows = append(rows, row)
+		}
+	}
+	return rows
 }
 
 // runAndConfirm presses x and confirms the dialog, which is what carrying out a
@@ -539,16 +551,16 @@ func TestRouteRunShowsThePlanWithoutExecutingIt(t *testing.T) {
 	if len(m.runPlans) != 1 {
 		t.Fatalf("run plans = %d, want one per enabled action", len(m.runPlans))
 	}
-	view := ansi.Strip(m.View())
-	for _, want := range []string{"RUN", "obsidian.daily.append", "Nothing has happened yet", "↵ Run"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("run dialog is missing %q:\n%s", want, view)
+	dialog := ansi.Strip(m.runOverlay())
+	for _, want := range []string{"obsidian.daily.append", "Writes", "With", "Nothing has happened yet", "↵ Run"} {
+		if !strings.Contains(dialog, want) {
+			t.Fatalf("run dialog is missing %q:\n%s", want, dialog)
 		}
 	}
 	// The dialog states what each Action would do, because it is now the point
 	// where that is decided.
-	if !strings.Contains(view, "Appends the Capture") {
-		t.Fatalf("the confirmation does not say what an action does:\n%s", view)
+	if !strings.Contains(dialog, "Appends the Capture") {
+		t.Fatalf("the confirmation does not say what an action does:\n%s", dialog)
 	}
 	if !m.CapturesShellKey("esc") {
 		t.Fatal("Esc must close the dialog rather than leave the command")
@@ -585,15 +597,15 @@ func TestRouteRunRecordsNothingWhenBlocked(t *testing.T) {
 
 	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = updated.(routeModel)
-	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "Blocked") {
-		t.Fatalf("blocked run should say so:\n%s", view)
+	dialog := ansi.Strip(m.runOverlay())
+	if !strings.Contains(dialog, "Blocked") {
+		t.Fatalf("blocked run should say so:\n%s", dialog)
 	}
-	if !strings.Contains(view, "· missing") {
-		t.Fatalf("blocked run should name the missing values:\n%s", view)
+	if !strings.Contains(dialog, "· missing") {
+		t.Fatalf("blocked run should name the missing values:\n%s", dialog)
 	}
-	if strings.Contains(view, "↵ Run") {
-		t.Fatalf("a blocked plan should not offer to run:\n%s", view)
+	if strings.Contains(dialog, "↵ Run") {
+		t.Fatalf("a blocked plan should not offer to run:\n%s", dialog)
 	}
 
 	// Confirming a blocked plan does nothing at all.
@@ -1010,7 +1022,7 @@ func TestRouteRunDialogReportsTheCaptureItRan(t *testing.T) {
 	// while it is still open, and again on the way out.
 	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = updated.(routeModel)
-	before := ansi.Strip(m.View())
+	before := ansi.Strip(m.runOverlay())
 	if !strings.Contains(before, "the note I typed") {
 		t.Fatalf("the dialog does not report the capture it is about to run:\n%s", before)
 	}
@@ -1019,8 +1031,7 @@ func TestRouteRunDialogReportsTheCaptureItRan(t *testing.T) {
 	if item, _ := m.captures.Selected(); item.ID != "capture:"+filepath.Join(root, "beta") {
 		t.Fatalf("cursor = %q, want the next capture", item.ID)
 	}
-	m.running = true
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.runOverlay())
 	if !strings.Contains(view, "the note I typed") {
 		t.Fatalf("the dialog lost the value it ran with:\n%s", view)
 	}
@@ -1041,12 +1052,12 @@ func TestRouteRefusesAPlanWithAnUnimplementedAction(t *testing.T) {
 
 	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = updated.(routeModel)
-	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "Not implemented yet: obsidian.location.upsert") {
-		t.Fatalf("the dialog does not say what cannot run:\n%s", view)
+	dialog := ansi.Strip(m.runOverlay())
+	if !strings.Contains(dialog, "Not implemented yet: obsidian.location.upsert") {
+		t.Fatalf("the dialog does not say what cannot run:\n%s", dialog)
 	}
-	if strings.Contains(view, "↵ Run") {
-		t.Fatalf("a plan that cannot run should not offer to:\n%s", view)
+	if strings.Contains(dialog, "↵ Run") {
+		t.Fatalf("a plan that cannot run should not offer to:\n%s", dialog)
 	}
 
 	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1149,3 +1160,274 @@ func TestRouteAdvancesPastCapturesNoRecipeMatches(t *testing.T) {
 		t.Fatalf("cursor = %q, want the first capture that can be organized", item.ID)
 	}
 }
+
+// A parameter says how an Action behaves rather than what it needs. It is
+// listed whether or not it has been changed — one nobody can see is one nobody
+// knows to change — and editing it overrides that Action for this Capture only.
+func TestRouteParametersAreListedAndOverridable(t *testing.T) {
+	root := routeTestRoot(t, "alpha", "beta")
+	m := chooseRecipe(t, loadedRoute(t, root), "Daily")
+
+	rows := parameterRows(m)
+	if len(rows) != 1 || rows[0].action != organizer.ActionDailyAppend || rows[0].name != organizer.ParameterSection {
+		t.Fatalf("parameters = %+v", rows)
+	}
+	if rows[0].value != organizer.DefaultDailySection || rows[0].overridden {
+		t.Fatalf("parameter = %+v, want the default, not an override", rows[0])
+	}
+	// They come last, below the work and the reference.
+	if !m.fieldRows[len(m.fieldRows)-1].parameter {
+		t.Fatal("parameters are not pinned to the bottom")
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "PARAMETERS") || !strings.Contains(view, "daily.append · Section") {
+		t.Fatalf("the column does not name the action a parameter belongs to:\n%s", view)
+	}
+
+	// Editing one overrides it for this Capture.
+	m.fields.Set(routeFieldsField)
+	for !m.fieldRows[m.fieldIndex].parameter {
+		updated, _ := m.updateFields("down")
+		m = updated.(routeModel)
+	}
+	updated, _ := m.updateFields("enter")
+	m = updated.(routeModel)
+	m.editor.SetValue("今日活动")
+	updated, _ = m.updateEditor(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(routeModel)
+
+	rows = parameterRows(m)
+	if rows[0].value != "今日活动" || !rows[0].overridden {
+		t.Fatalf("parameter = %+v, want the override", rows[0])
+	}
+	selection, _, _ := m.currentSelection()
+	if selection.Parameters[organizer.ActionDailyAppend][organizer.ParameterSection] != "今日活动" {
+		t.Fatalf("the override was not recorded on the selection: %v", selection.Parameters)
+	}
+
+	// It belongs to this Capture: the next one starts from the default again.
+	m.fields.Set(routeCapturesField)
+	m.captures.SelectID("capture:" + filepath.Join(root, "beta"))
+	m.refresh()
+	m = chooseRecipe(t, m, "Daily")
+	if rows = parameterRows(m); rows[0].value != organizer.DefaultDailySection || rows[0].overridden {
+		t.Fatalf("the next capture inherited an override: %+v", rows[0])
+	}
+}
+
+// The override decides where the entry is written, and the record says so: a
+// reader coming back later would otherwise assume the default.
+func TestRouteRunHonoursAndRecordsAParameter(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	vault := t.TempDir()
+	settings := organizer.DefaultSettings()
+	settings.ObsidianVault = vault
+	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+	m = updated.(routeModel)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(routeModel)
+
+	m = chooseRecipe(t, m, "Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldContent, "the note")
+	selection.SetParameter(organizer.ActionDailyAppend, organizer.ParameterSection, "今日活动")
+	m.refresh()
+	m = runAndConfirm(t, m)
+
+	note, err := os.ReadFile(filepath.Join(vault, "Daily", "2026-09-09.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(note), "# 今日活动\n") {
+		t.Fatalf("the entry ignored the override:\n%s", note)
+	}
+	record, _ := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	latest, _ := record.Latest()
+	if got := latest.Actions[0].Parameters[organizer.ParameterSection]; got != "今日活动" {
+		t.Fatalf("the record does not say where it wrote: %+v", latest.Actions[0])
+	}
+}
+
+// The control that runs the plan sits under the column it acts on, taking its
+// room from that column alone rather than shortening all four, and not pressed
+// into the corner: a row of space above it, a row below, and clear of the
+// column's right edge.
+func TestRouteRunButtonSitsUnderTheFieldsColumn(t *testing.T) {
+	m := loadedRoute(t, routeTestRoot(t, "alpha"))
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 24})
+	m = updated.(routeModel)
+
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	if len(lines) != 24 {
+		t.Fatalf("the view is %d rows, want the session height", len(lines))
+	}
+	widths := m.columnWidths()
+	column := func(line string) string {
+		start := widths[0] + widths[1] + widths[2] + 3*columnGutter
+		return ansi.Cut(line, start, start+widths[3])
+	}
+
+	// The other columns still run to the last row; only the fourth ends early.
+	if !strings.Contains(lines[len(lines)-1], "╰") {
+		t.Fatalf("the other columns were shortened:\n%s", lines[len(lines)-1])
+	}
+	if got := column(lines[len(lines)-1]); strings.TrimSpace(got) != "" {
+		t.Fatalf("the fourth column runs to the last row: %q", got)
+	}
+
+	// A row of space above the button and a row below it.
+	button := len(lines) - 3
+	if got := strings.TrimSpace(column(lines[button])); got != "Run  x" {
+		t.Fatalf("the button is not two rows above the bottom: %q", got)
+	}
+	for _, blank := range []int{button - 1, button + 2} {
+		if got := strings.TrimSpace(column(lines[blank])); got != "" {
+			t.Fatalf("row %d beside the button is not empty: %q", blank, got)
+		}
+	}
+	if strings.Contains(column(lines[button]), "│") {
+		t.Fatalf("the button is inside the fieldset: %q", column(lines[button]))
+	}
+
+	// It is clear of the column's right edge rather than flush against it.
+	if !strings.HasSuffix(column(lines[button]), " ") {
+		t.Fatalf("the button touches the column edge: %q", column(lines[button]))
+	}
+}
+
+// A button is pressed, not selected: one click acts.
+func TestRouteRunButtonActsOnASingleClick(t *testing.T) {
+	m := chooseRecipe(t, loadedRoute(t, routeTestRoot(t, "alpha")), "Daily")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 24})
+	m = updated.(routeModel)
+
+	updated, _ = m.updateMouse(tea.MouseMsg{
+		X: m.width - 10, Y: m.height - 3,
+		Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
+	})
+	m = updated.(routeModel)
+	if !m.running {
+		t.Fatal("clicking the button did not open the run dialog")
+	}
+}
+
+// The button answers "can I run this yet?" without the dialog being opened: it
+// is filled only when pressing it would carry the plan out, and says what is in
+// the way otherwise.
+func TestRouteRunButtonIsQuietUntilThePlanCanRun(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := loadedRoute(t, root)
+
+	if subtitle, ready := m.runReadiness(); ready || subtitle != "Choose a recipe" {
+		t.Fatalf("readiness = %q %v before a recipe is chosen", subtitle, ready)
+	}
+
+	m = chooseRecipe(t, m, "Daily")
+	subtitle, ready := m.runReadiness()
+	if ready || !strings.Contains(subtitle, "Missing Note") {
+		t.Fatalf("readiness = %q %v with a field still missing", subtitle, ready)
+	}
+
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldContent, "note")
+	m.refresh()
+	if subtitle, ready = m.runReadiness(); !ready || subtitle != "Daily" {
+		t.Fatalf("readiness = %q %v once nothing is missing", subtitle, ready)
+	}
+
+	// An Action that cannot run keeps it quiet too.
+	m = chooseRecipe(t, m, "Location + Daily")
+	selection, _, _ = m.currentSelection()
+	selection.Set(organizer.FieldPlaceName, "Epping Station")
+	m.refresh()
+	if subtitle, ready = m.runReadiness(); ready || subtitle != "Not implemented" {
+		t.Fatalf("readiness = %q %v with an unimplemented action", subtitle, ready)
+	}
+}
+
+// Tab walks the fields that have something to select. A column waiting on a
+// decision nobody has made holds nothing, and stopping there teaches the reader
+// only that they are somewhere useless.
+func TestRouteTabFollowsWhatIsSelectable(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := loadedRoute(t, root)
+
+	// With no Recipe chosen, Tab walks the Captures, the Root, and the
+	// candidates — not the Actions or Fields of a Recipe nobody has picked.
+	var walked []string
+	for range 4 {
+		m.cycleFields(true)
+		walked = append(walked, m.fields.Current())
+	}
+	want := []string{routeRecipesField, routeCapturesField, routeRecipesField, routeCapturesField}
+	for index, field := range want {
+		if walked[index] != field {
+			t.Fatalf("tab walked %v, want %v", walked, want)
+		}
+	}
+
+	// Choosing one brings its columns into the walk.
+	m = chooseRecipe(t, m, "Daily")
+	m.fields.Set(routeRecipesField)
+	m.cycleFields(true)
+	if got := m.fields.Current(); got != routeActionsField {
+		t.Fatalf("tab from RECIPES = %q, want %q once a recipe is chosen", got, routeActionsField)
+	}
+	m.cycleFields(true)
+	if got := m.fields.Current(); got != routeFieldsField {
+		t.Fatalf("tab from ACTIONS = %q, want %q", got, routeFieldsField)
+	}
+
+	// Clearing it takes them out again, from wherever the focus happens to be.
+	updated, _ := m.updateCaptures("u")
+	m = updated.(routeModel)
+	m.fields.Set(routeFieldsField)
+	m.cycleFields(true)
+	if got := m.fields.Current(); got != routeCapturesField {
+		t.Fatalf("tab from a column that is no longer selectable = %q", got)
+	}
+
+	// The Capture Root is a setting rather than a step, so it is not in the
+	// ring, but it is still directly below CAPTURES.
+	m.fields.Set(routeCapturesField)
+	if !m.fields.Move("alt+down") || m.fields.Current() != routeRootField {
+		t.Fatalf("alt+down = %q, want the Capture Root", m.fields.Current())
+	}
+
+	// The arrows are spatial and still reach every column: a field is where it
+	// is whether or not it is ready.
+	m.fields.Set(routeCapturesField)
+	if !m.fields.Move("alt+right") || m.fields.Current() != routeRecipesField {
+		t.Fatalf("alt+right = %q, want %q", m.fields.Current(), routeRecipesField)
+	}
+	if !m.fields.Move("alt+right") || m.fields.Current() != routeActionsField {
+		t.Fatalf("alt+right = %q, want %q", m.fields.Current(), routeActionsField)
+	}
+}
+
+// A value wider than the column folds under its label rather than being clipped
+// at the edge: a section written as a template is unreadable cut in half.
+func TestRouteFoldsALongFieldValueUnderItsLabel(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	m := loadedRoute(t, root)
+	m = chooseRecipe(t, m, "Daily")
+	selection, _, _ := m.currentSelection()
+	selection.Set(organizer.FieldContent, "a note long enough that it cannot sit on one line of this column")
+	m.refresh()
+
+	var rows int
+	for _, line := range m.fieldLines(40) {
+		if line.row >= 0 && strings.Contains(ansi.Strip(line.text), "cannot sit") {
+			rows++
+		}
+	}
+	if rows == 0 {
+		t.Fatal("the value was clipped away instead of folded")
+	}
+	for _, line := range m.fieldLines(40) {
+		if width := lipgloss.Width(line.text); width > 40 {
+			t.Fatalf("line is %d cells wide, want it to fit the column:\n%s", width, ansi.Strip(line.text))
+		}
+	}
+}
+

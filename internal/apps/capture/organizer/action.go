@@ -30,6 +30,11 @@ type ActionDefinition struct {
 	// so the TUI and the generated reference say the same thing.
 	Effects  []string
 	Required []FieldRequirement
+	// Parameters are how the Action behaves rather than what it needs: a
+	// default answers for almost every Capture, and the occasional one wants
+	// something else. Declared here so a new Action arrives with its own,
+	// without the screens that show them learning anything about it.
+	Parameters []ParameterDefinition
 	// Target resolves the concrete destination for one Capture, relative to
 	// whatever root the Action writes under. It returns an empty string when
 	// the inputs it needs are still missing, so an unresolved target stays
@@ -41,6 +46,20 @@ type ActionDefinition struct {
 	// nothing.
 	Run func(Context, ActionPlan) (skipped bool, err error)
 }
+
+// ParameterDefinition is one knob of an Action. Default reads the configured
+// value, so the layers stay ordered: what the Action ships with, what the
+// configuration says, and what this one Capture was given.
+type ParameterDefinition struct {
+	Name    string
+	Label   string
+	Input   InputType
+	Default func(Settings) string
+}
+
+// ParameterSection is the heading a Capture is written under. It is the same
+// name in the Action, the record, and a Recipe file.
+const ParameterSection = "section"
 
 // ActionPlan is what one enabled Action will do to one Capture. Definition is
 // the what; Plan is the where and the with-what.
@@ -85,6 +104,12 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 			{Field: FieldCreatedAt, Label: "Created", Required: true, Input: InputText},
 			multiline(FieldContent, "Note"),
 		},
+		Parameters: []ParameterDefinition{{
+			Name:    ParameterSection,
+			Label:   "Section",
+			Input:   InputText,
+			Default: func(settings Settings) string { return settings.section() },
+		}},
 		Target: func(ctx Context) string {
 			name, err := dailyNoteName(ctx)
 			if err != nil || name == "" {
@@ -92,7 +117,6 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 			}
 			return path.Join(ctx.Settings.daily(), name)
 		},
-		Run: appendToDailyNote,
 	},
 	// The Apple Actions exist so the model can be exercised against more than
 	// one workflow. Each declares its requirements and names its target; none
@@ -142,6 +166,20 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		},
 		Target: func(ctx Context) string { return ctx.String(FieldTitle) },
 	},
+}
+
+// The implementations are wired here rather than in the literal above: an
+// Action reads the registry to resolve its own parameters, and Go rejects a
+// variable whose initializer refers to a function that refers back to it.
+func init() {
+	implementations := map[ActionID]func(Context, ActionPlan) (bool, error){
+		ActionDailyAppend: appendToDailyNote,
+	}
+	for id, run := range implementations {
+		def := actionDefinitions[id]
+		def.Run = run
+		actionDefinitions[id] = def
+	}
 }
 
 // LookupAction returns the definition of an Action.

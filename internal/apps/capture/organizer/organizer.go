@@ -1,5 +1,7 @@
 package organizer
 
+import "strings"
+
 // Selection is what the user has decided about one Capture: which Recipe,
 // which of its Actions are enabled, and what they supplied. The enabled set is
 // per-Capture state rather than a property of the Recipe, so it is passed into
@@ -8,6 +10,9 @@ type Selection struct {
 	Recipe     RecipeID
 	Enabled    map[ActionID]bool
 	Enrichment map[FieldID]any
+	// Parameters are per-Capture overrides of how an Action behaves, by Action
+	// and parameter name.
+	Parameters map[ActionID]map[string]string
 }
 
 // NewSelection starts a Selection on a Recipe with its default Action set.
@@ -16,6 +21,7 @@ func NewSelection(recipe Recipe) Selection {
 		Recipe:     recipe.ID,
 		Enabled:    recipe.DefaultEnabled(),
 		Enrichment: make(map[FieldID]any),
+		Parameters: make(map[ActionID]map[string]string),
 	}
 }
 
@@ -42,6 +48,55 @@ func (s Selection) Set(field FieldID, value any) {
 		return
 	}
 	s.Enrichment[field] = value
+}
+
+// SetParameter records an override for one Action, or clears it when the value
+// is empty: an empty override is the default, not a blank.
+func (s Selection) SetParameter(action ActionID, name, value string) {
+	if strings.TrimSpace(value) == "" {
+		delete(s.Parameters[action], name)
+		return
+	}
+	if s.Parameters[action] == nil {
+		s.Parameters[action] = make(map[string]string)
+	}
+	s.Parameters[action][name] = value
+}
+
+// ParameterState is one Action's parameter as it stands for this Capture.
+type ParameterState struct {
+	Action     ActionID
+	Definition ParameterDefinition
+	Value      string
+	// Overridden marks a value given for this Capture rather than inherited.
+	Overridden bool
+}
+
+// Parameters lists the knobs of the enabled Actions, in Recipe order, with the
+// value each would use. Every one is listed, whether or not it has been
+// changed: a parameter nobody can see is a parameter nobody knows to change.
+func Parameters(ctx Context, recipe Recipe, enabled []ActionID) []ParameterState {
+	var states []ParameterState
+	for _, id := range recipe.Actions {
+		if !contains(enabled, id) {
+			continue
+		}
+		def, ok := LookupAction(id)
+		if !ok {
+			continue
+		}
+		for _, parameter := range def.Parameters {
+			override, overridden := ctx.Parameters[id][parameter.Name]
+			value := ctx.Parameter(id, parameter.Name)
+			states = append(states, ParameterState{
+				Action:     id,
+				Definition: parameter,
+				Value:      value,
+				Overridden: overridden && strings.TrimSpace(override) != "",
+			})
+		}
+	}
+	return states
 }
 
 // FindRecipes returns the Recipes offered for a Capture. It narrows the
