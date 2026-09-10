@@ -97,7 +97,7 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		Label: "Daily note",
 		Effects: []string{
 			"Appends the Capture under the note's DGS heading as one nested entry, adding that heading when it has none",
-			"Creates the note itself when the day has none",
+			"Creates the note from the configured template when the day has none",
 			"Writes nothing the second time: an entry carries the Capture's id and is added once",
 		},
 		Required: []FieldRequirement{
@@ -111,11 +111,11 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 			Default: func(settings Settings) string { return settings.section() },
 		}},
 		Target: func(ctx Context) string {
-			name, err := dailyNoteName(ctx)
-			if err != nil || name == "" {
+			target, err := dailyNotePath(ctx)
+			if err != nil {
 				return ""
 			}
-			return path.Join(ctx.Settings.daily(), name)
+			return target
 		},
 	},
 	// The Apple Actions exist so the model can be exercised against more than

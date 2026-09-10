@@ -43,6 +43,11 @@ type Capture struct {
 // records stays vault-relative and survives the vault moving.
 type CaptureObsidian struct {
 	Vault string `json:"vault"`
+	// DailyNote is where a day's note lives, relative to the vault, written as
+	// a template over the date: "00 Daily Log/{{.Year}}/{{.Date}}.md". It is
+	// configured rather than read from the vault, because a vault says where
+	// the plugin in use puts notes, which is not the same question.
+	DailyNote string `json:"daily_note"`
 	// Section is the heading a Capture is written under in a daily note.
 	Section   string `json:"section"`
 	Locations string `json:"locations"`

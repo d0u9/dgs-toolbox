@@ -128,13 +128,14 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	settings := organizer.DefaultSettings()
 	settings.ObsidianVault = expandHome(obsidian.Vault)
 	settings.TemplateDir = expandHome(global.CaptureTemplatesDir())
+	settings.DailyNote = obsidian.DailyNote
 	if obsidian.Section != "" {
 		settings.DailySection = obsidian.Section
 	}
 	if obsidian.Locations != "" {
 		settings.LocationsFolder = obsidian.Locations
 	}
-	return settings.FromVault()
+	return settings
 }
 
 // loadRecipes reads the configured Recipe directory. Failures are carried

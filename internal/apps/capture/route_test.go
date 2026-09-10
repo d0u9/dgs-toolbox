@@ -36,10 +36,24 @@ func routeTestRoot(t *testing.T, names ...string) string {
 	return root
 }
 
-func loadedRoute(t *testing.T, root string) routeModel {
+// routeVault is a vault with a daily note template in it, configured the way a
+// reader configures one.
+func routeVault(t *testing.T) organizer.Settings {
 	t.Helper()
+	templates := t.TempDir()
+	if err := os.WriteFile(filepath.Join(templates, organizer.DailyNoteTemplate), []byte("---\nDate: {{.Date}}\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	settings := organizer.DefaultSettings()
 	settings.ObsidianVault = t.TempDir()
+	settings.DailyNote = "Daily/{{.Date}}.md"
+	settings.TemplateDir = templates
+	return settings
+}
+
+func loadedRoute(t *testing.T, root string) routeModel {
+	t.Helper()
+	settings := routeVault(t)
 	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	m = updated.(routeModel)
@@ -1084,9 +1098,8 @@ func TestRouteRefusesAPlanWithAnUnimplementedAction(t *testing.T) {
 // The entry lands in the vault, under the configured section, once.
 func TestRouteWritesTheEntryIntoTheVault(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	vault := t.TempDir()
-	settings := organizer.DefaultSettings()
-	settings.ObsidianVault = vault
+	settings := routeVault(t)
+	vault := settings.ObsidianVault
 	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	m = updated.(routeModel)
@@ -1218,9 +1231,8 @@ func TestRouteParametersAreListedAndOverridable(t *testing.T) {
 // reader coming back later would otherwise assume the default.
 func TestRouteRunHonoursAndRecordsAParameter(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	vault := t.TempDir()
-	settings := organizer.DefaultSettings()
-	settings.ObsidianVault = vault
+	settings := routeVault(t)
+	vault := settings.ObsidianVault
 	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	m = updated.(routeModel)
@@ -1238,7 +1250,7 @@ func TestRouteRunHonoursAndRecordsAParameter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(note), "# 今日活动\n") {
+	if !strings.Contains(string(note), "\n# 今日活动\n") {
 		t.Fatalf("the entry ignored the override:\n%s", note)
 	}
 	record, _ := organizer.ReadRecord(filepath.Join(root, "alpha"))

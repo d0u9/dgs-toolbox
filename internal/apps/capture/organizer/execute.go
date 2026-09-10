@@ -98,7 +98,15 @@ func missingList(missing []FieldRequirement) string {
 // note and the section when they are missing. It rewrites the note from what it
 // held, so a note edited by hand keeps everything it already has.
 func appendToDailyNote(ctx Context, plan ActionPlan) (skipped bool, err error) {
-	path, ok := ctx.Settings.vaultPath(plan.Target)
+	// The target is resolved again rather than taken from the plan, so a plan
+	// whose target could not be worked out fails with the reason it could not
+	// be — which is what the reader has to fix — instead of with a missing
+	// vault.
+	target, err := dailyNotePath(ctx)
+	if err != nil {
+		return false, err
+	}
+	path, ok := ctx.Settings.vaultPath(target)
 	if !ok {
 		return false, ErrNoVault
 	}
@@ -111,8 +119,17 @@ func appendToDailyNote(ctx Context, plan ActionPlan) (skipped bool, err error) {
 	}
 
 	existing, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("read %s: %w", plan.Target, err)
+	if errors.Is(err, os.ErrNotExist) {
+		// The day has no note yet, so it is created from the configured
+		// template before the entry is added to it.
+		if err := createDailyNote(ctx, path); err != nil {
+			return false, err
+		}
+		if existing, err = os.ReadFile(path); err != nil {
+			return false, fmt.Errorf("read %s: %w", target, err)
+		}
+	} else if err != nil {
+		return false, fmt.Errorf("read %s: %w", target, err)
 	}
 	// The note itself is the record of what was written. A Capture already
 	// present is skipped rather than added twice, and deleting the entry by
@@ -123,11 +140,8 @@ func appendToDailyNote(ctx Context, plan ActionPlan) (skipped bool, err error) {
 	}
 
 	updated := insertUnderSection(string(existing), ctx.Parameter(ActionDailyAppend, ParameterSection), entry)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, fmt.Errorf("create the note's folder: %w", err)
-	}
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
-		return false, fmt.Errorf("write %s: %w", plan.Target, err)
+		return false, fmt.Errorf("write %s: %w", target, err)
 	}
 	return false, nil
 }
@@ -254,24 +268,64 @@ func blockIDSafe(id string) string {
 	return strings.Trim(safe.String(), "-")
 }
 
-// dailyNoteName is the filename the vault would give the day the Capture was
-// taken, using the vault's own format.
-func dailyNoteName(ctx Context) (string, error) {
-	created := ctx.String(FieldCreatedAt)
-	day, err := time.Parse(time.RFC3339, created)
-	if err != nil {
-		// A malformed timestamp often still carries a readable date, but that
-		// reading only matches the default format.
-		if plain := dayOf(created); plain != "" && strings.TrimSpace(ctx.Settings.DailyFormat) == "" {
-			return plain + ".md", nil
-		}
-		return "", fmt.Errorf("createdAt %q is not a timestamp", created)
+// ErrNoDailyNote is returned when nothing says where a day's note lives.
+var ErrNoDailyNote = errors.New("no daily note path is configured")
+
+// ErrNoDailyTemplate is returned when a note has to be created and the template
+// directory holds nothing to create it from.
+var ErrNoDailyTemplate = errors.New("no daily note template")
+
+// dailyNotePath is where the day's note lives, from the configured path
+// template. Configured rather than discovered: a vault's own settings say where
+// the plugin in use puts notes, which is not the same question, and a wrong
+// guess writes a Capture into a file nobody was looking at.
+func dailyNotePath(ctx Context) (string, error) {
+	if strings.TrimSpace(ctx.Settings.DailyNote) == "" {
+		return "", ErrNoDailyNote
 	}
-	layout, err := momentLayout(ctx.Settings.DailyFormat)
+	day, err := captureDay(ctx)
 	if err != nil {
 		return "", err
 	}
-	return day.Format(layout) + ".md", nil
+	path, err := renderNote("daily note path", ctx.Settings.DailyNote, noteData(ctx, day))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(path), nil
+}
+
+// captureDay is the day the Capture was taken, in the offset it recorded: the
+// entry belongs to that day, not to the day it happened to be somewhere else.
+func captureDay(ctx Context) (time.Time, error) {
+	created := ctx.String(FieldCreatedAt)
+	day, err := time.Parse(time.RFC3339, created)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("createdAt %q is not a timestamp", created)
+	}
+	return day, nil
+}
+
+// createDailyNote writes the day's note from the configured template. A note is
+// never created from nothing: an empty note among templated ones is one the
+// reader has to repair by hand later, and this tool has no way to know what it
+// should have held.
+func createDailyNote(ctx Context, path string) error {
+	text, err := LoadNoteTemplate(ctx.Settings.TemplateDir)
+	if err != nil {
+		return err
+	}
+	day, err := captureDay(ctx)
+	if err != nil {
+		return err
+	}
+	rendered, err := renderNote(DailyNoteTemplate, text, noteData(ctx, day))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create the note's folder: %w", err)
+	}
+	return os.WriteFile(path, []byte(rendered), 0o644)
 }
 
 // timeOf takes the wall clock the Capture recorded, without converting it: the
