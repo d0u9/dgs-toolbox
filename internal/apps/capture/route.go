@@ -71,6 +71,11 @@ type routeModel struct {
 	// moves the cursor to the next Capture: the dialog must keep reporting the
 	// Capture it ran, not the one now selected behind it.
 	runContext organizer.Context
+	// runResults is what became of the plan once it was confirmed, kept so the
+	// dialog can report a failure instead of closing over it.
+	runResults []organizer.Result
+	// settings are where the Actions write, from the configuration.
+	settings organizer.Settings
 	// recipeSet is the Set this session offers: the built-ins with whatever the
 	// configured Recipe directory layered over them.
 	recipeSet organizer.Set
@@ -108,6 +113,10 @@ func newRouteModel(root, indexFile string) routeModel {
 }
 
 func newRouteModelWithRecipes(root, indexFile string, set organizer.Set) routeModel {
+	return newRouteModelWithSettings(root, indexFile, set, organizer.DefaultSettings())
+}
+
+func newRouteModelWithSettings(root, indexFile string, set organizer.Set, settings organizer.Settings) routeModel {
 	editor := textinput.New()
 	editor.Prompt = ""
 	note := textarea.New()
@@ -124,6 +133,7 @@ func newRouteModelWithRecipes(root, indexFile string, set organizer.Set) routeMo
 		actions:     scrolllist.New(),
 		selections:  make(map[string]organizer.Selection),
 		recipeSet:   set,
+		settings:    settings,
 		editor:      editor,
 		note:        note,
 		fields: datafield.New(
@@ -297,13 +307,18 @@ func (m routeModel) clickedCheckbox(x int) bool {
 	return x >= start && x < start+3
 }
 
-// selectFieldRow moves the FIELDS cursor to the clicked row. The MISSING rule
-// takes a row of its own without being one, so a click below it maps one row
-// higher, and a click on the rule selects nothing.
+// selectFieldRow moves the FIELDS cursor to the clicked row. The rule, and the
+// line that stands in for it when nothing is missing, take rows of their own
+// without being rows, so a click below one maps a row higher and a click on the
+// rule itself selects nothing.
 func (m *routeModel) selectFieldRow(y int) bool {
 	index := y - 1
-	if missingAt := m.missingStart(); missingAt >= 0 && index >= missingAt {
-		if index == missingAt {
+	resolvedAt := m.resolvedStart()
+	if resolvedAt == 0 {
+		index--
+	}
+	if resolvedAt > 0 && index >= resolvedAt {
+		if index == resolvedAt {
 			return false
 		}
 		index--
@@ -358,7 +373,9 @@ func (m routeModel) View() string {
 // names each one, the target it resolved, and the values it would carry, so the
 // pipeline can be walked end to end before any Action writes anything.
 func (m routeModel) runOverlay() string {
-	width := max(30, min(76, m.width-8))
+	// Wide enough for a sentence: an effect is what the reader is being asked
+	// to agree to, and a clipped one asks them to agree to half of it.
+	width := max(40, min(104, m.width-8))
 	inner := max(10, width-4)
 	ctx := m.runContext
 	lines := []string{scanMutedStyle.Render(m.runCapture), ""}
@@ -370,27 +387,78 @@ func (m routeModel) runOverlay() string {
 		if !plan.Ready() {
 			marker = "○"
 		}
+		if outcome, ok := m.resultMarker(plan.Action); ok {
+			marker = outcome
+		}
 		lines = append(lines, fmt.Sprintf("%s %d %s", marker, index+1, plan.Action))
-		lines = append(lines, m.runDetails(ctx, plan)...)
+		lines = append(lines, m.runDetails(ctx, plan, inner)...)
 	}
 	if len(m.runPlans) == 0 {
 		lines = append(lines, scanMutedStyle.Render("· No action is enabled, so there is nothing to run"))
 	}
-	note, keys := "Nothing has happened yet. No Action is implemented, so running "+
-		"this writes only "+organizer.RecordFilename+".", "↵ Run   esc Cancel"
-	if !m.runReady() {
+	note, keys := "Nothing has happened yet.", "↵ Run   esc Cancel"
+	switch {
+	case !m.runReady():
 		note, keys = "Blocked: fill the missing values before running this.", "esc Close"
+	case len(organizer.Unimplemented(m.runPlans)) > 0:
+		note, keys = "Not implemented yet: "+actionList(organizer.Unimplemented(m.runPlans))+
+			". Disable it, or choose a recipe without it.", "esc Close"
+	case m.runError != "":
+		note, keys = "! "+m.runError, "esc Close"
+	case len(m.runResults) > 0:
+		note, keys = m.resultSummary(), "esc Close"
 	}
 	lines = append(lines, "")
 	lines = append(lines, detailParagraph(note, inner)...)
 	lines = append(lines, scanMutedStyle.Render(keys))
-	for i, line := range lines {
-		lines[i] = truncateStyled(line, inner)
-	}
 	return fieldset.View("RUN", strings.Join(lines, "\n"), width)
 }
 
-// runReady reports whether the plan just shown could actually run.
+// resultSummary says what became of the plan, naming the Action that stopped it
+// rather than reporting a count: which one failed is the only useful part.
+func (m routeModel) resultSummary() string {
+	for _, result := range m.runResults {
+		if result.Err != nil {
+			return "! " + string(result.Action) + ": " + result.Err.Error()
+		}
+	}
+	written, skipped := 0, 0
+	for _, result := range m.runResults {
+		if result.Skipped {
+			skipped++
+			continue
+		}
+		written++
+	}
+	if skipped > 0 && written == 0 {
+		return "Already written; nothing to do."
+	}
+	if skipped > 0 {
+		return fmt.Sprintf("Done: %d written, %d already there.", written, skipped)
+	}
+	return "Done."
+}
+
+// resultMarker is how one Action's outcome is shown beside it in the dialog.
+func (m routeModel) resultMarker(action organizer.ActionID) (string, bool) {
+	for _, result := range m.runResults {
+		if result.Action != action {
+			continue
+		}
+		switch {
+		case result.Err != nil:
+			return "✗", true
+		case result.Skipped:
+			return "·", true
+		default:
+			return "✓", true
+		}
+	}
+	return "", false
+}
+
+// runReady reports whether the plan just shown could actually run: every value
+// it needs is present, and every Action it names is implemented.
 func (m routeModel) runReady() bool {
 	if len(m.runPlans) == 0 {
 		return false
@@ -403,29 +471,62 @@ func (m routeModel) runReady() bool {
 	return true
 }
 
+// runRunnable reports whether confirming would do anything: a plan naming an
+// Action that has only been declared is refused before it is offered, not after
+// it has failed.
+func (m routeModel) runRunnable() bool {
+	return m.runReady() && len(organizer.Unimplemented(m.runPlans)) == 0
+}
+
+func actionList(actions []organizer.ActionID) string {
+	names := make([]string, 0, len(actions))
+	for _, action := range actions {
+		names = append(names, string(action))
+	}
+	return strings.Join(names, ", ")
+}
+
 // runDetails lists what one Action would carry: its target, then the value of
 // every requirement it declares, or the fields still blocking it.
-func (m routeModel) runDetails(ctx organizer.Context, plan organizer.ActionPlan) []string {
+func (m routeModel) runDetails(ctx organizer.Context, plan organizer.ActionPlan, width int) []string {
 	var lines []string
 	target := plan.Target
 	if target == "" {
 		target = "· unresolved"
 	}
-	lines = append(lines, scanMutedStyle.Render(fmt.Sprintf("      %-*s%s", routePropertyKeyWidth, "target", target)))
+	lines = append(lines, dialogRow("target", target, width)...)
 	def, ok := organizer.LookupAction(plan.Action)
 	if !ok {
 		return lines
 	}
 	for _, effect := range def.Effects {
-		lines = append(lines, scanMutedStyle.Render(fmt.Sprintf("      %-*s%s", routePropertyKeyWidth, "effect", effect)))
+		lines = append(lines, dialogRow("effect", effect, width)...)
 	}
 	for _, req := range def.Required {
 		value := ctx.String(req.Field)
 		if value == "" {
 			value = "· missing"
 		}
-		label := truncate(req.Label, routePropertyKeyWidth-1)
-		lines = append(lines, scanMutedStyle.Render(fmt.Sprintf("      %-*s%s", routePropertyKeyWidth, label, singleLine(value))))
+		lines = append(lines, dialogRow(req.Label, singleLine(value), width)...)
+	}
+	return lines
+}
+
+// dialogRow is one labelled line of the run dialog, wrapped under a hanging
+// indent rather than clipped: the dialog is where a reader agrees to what will
+// happen, and half a sentence is not something anyone can agree to.
+func dialogRow(key, value string, width int) []string {
+	const indent = 6
+	label := fmt.Sprintf("%s%-*s", strings.Repeat(" ", indent), routePropertyKeyWidth+2, truncate(key, routePropertyKeyWidth+1))
+	pad := strings.Repeat(" ", lipgloss.Width(label))
+	wrapped := strings.Split(lipgloss.NewStyle().Width(max(8, width-lipgloss.Width(label))).Render(value), "\n")
+	lines := make([]string, 0, len(wrapped))
+	for index, part := range wrapped {
+		prefix := label
+		if index > 0 {
+			prefix = pad
+		}
+		lines = append(lines, scanMutedStyle.Render(prefix+strings.TrimRight(part, " ")))
 	}
 	return lines
 }
@@ -469,7 +570,7 @@ func (m routeModel) Status() tui.Status {
 	}
 	center := m.statusValue()
 	if m.running {
-		if m.runReady() {
+		if m.runRunnable() && len(m.runResults) == 0 {
 			return tui.Status{Left: "RUN", Center: center, Right: "↵ Run  esc Cancel"}
 		}
 		return tui.Status{Left: "RUN", Center: center, Right: "esc Close"}
@@ -796,6 +897,7 @@ func (m routeModel) run() (tea.Model, tea.Cmd) {
 	m.runContext = ctx
 	m.runCapture = entry.name + "  ·  " + recipe.Name
 	m.runError = ""
+	m.runResults = nil
 	m.running = true
 	m.refresh()
 	return m, nil
@@ -806,7 +908,7 @@ func (m routeModel) run() (tea.Model, tea.Cmd) {
 // Capture handled and moving it below the divider. A blocked plan cannot be
 // confirmed: a Capture is handled only once its plan could actually run.
 func (m routeModel) commitRun() (tea.Model, tea.Cmd) {
-	if !m.runReady() {
+	if !m.runRunnable() {
 		return m, nil
 	}
 	entry, ok := m.selectedCapture()
@@ -817,7 +919,10 @@ func (m routeModel) commitRun() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	run := organizer.NewRun(recipe, selection, m.runPlans, time.Now())
+	// The Actions run first and the record says what happened, so a failure is
+	// written down rather than reported only to whoever was watching.
+	m.runResults = organizer.Execute(m.runContext, m.runPlans)
+	run := organizer.NewRun(recipe, selection, m.runResults, time.Now())
 	record, err := organizer.AppendRun(entry.path, run)
 	if err != nil {
 		m.runError = err.Error()
@@ -825,6 +930,12 @@ func (m routeModel) commitRun() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.markOrganized(entry.path, record)
+	if !record.Organized() {
+		// A pass that failed part way through leaves the Capture where it is,
+		// with the dialog open on what went wrong.
+		m.refresh()
+		return m, nil
+	}
 	m.advanceToNextPending(entry)
 	m.running = false
 	// Focus returns to CAPTURES so the next Capture can be handled without
@@ -846,33 +957,36 @@ func (m *routeModel) markOrganized(path string, record organizer.Record) {
 	}
 }
 
-// advanceToNextPending moves the cursor to the first Capture still to handle,
-// preferring the one after the Capture just organized so a run of Captures is
-// worked through in order.
+// advanceToNextPending moves the cursor to the top of what is left to do. The
+// Captures still to handle are the run above the rule, so the first of them is
+// where the work continues — not the one that followed the Capture just
+// organized, which leaves the cursor stranded below anything skipped earlier.
+//
+// A Capture no Recipe matches cannot be worked on, so it is passed over when
+// choosing where to land: it would otherwise take the cursor after every run
+// and have to be stepped past every time.
 func (m *routeModel) advanceToNextPending(organized captureEntry) {
-	after := false
-	var first string
-	for _, entry := range m.entries {
+	m.rebuildCaptureItems()
+	ordered, boundary := m.orderedEntries()
+	pending := ordered[:boundary]
+
+	for _, entry := range pending {
 		if entry.path == organized.path {
-			after = true
 			continue
 		}
-		if m.organized(entry) {
+		if len(m.recipeSet.Find(captureFor(entry))) == 0 {
 			continue
 		}
-		if after {
-			m.captures.SetItems(nil)
-			m.rebuildCaptureItems()
+		m.captures.SelectID("capture:" + entry.path)
+		return
+	}
+	// Everything left is unorganizable, so land on it anyway rather than
+	// leaving the cursor on a Capture that has just moved below the rule.
+	for _, entry := range pending {
+		if entry.path != organized.path {
 			m.captures.SelectID("capture:" + entry.path)
 			return
 		}
-		if first == "" {
-			first = entry.path
-		}
-	}
-	m.rebuildCaptureItems()
-	if first != "" {
-		m.captures.SelectID("capture:" + first)
 	}
 }
 
@@ -979,7 +1093,7 @@ func (m routeModel) context() (organizer.Context, bool) {
 	if selection, ok := m.selections[entry.path]; ok {
 		enrichment = selection.Enrichment
 	}
-	return organizer.NewContext(captureFor(entry), enrichment), true
+	return organizer.NewContext(captureFor(entry), enrichment).WithSettings(m.settings), true
 }
 
 func captureFor(entry captureEntry) organizer.Capture {
@@ -1017,7 +1131,7 @@ func (m routeModel) readyCount() (ready int, blocked int) {
 			blocked++
 			continue
 		}
-		ctx := organizer.NewContext(captureFor(entry), selection.Enrichment)
+		ctx := organizer.NewContext(captureFor(entry), selection.Enrichment).WithSettings(m.settings)
 		if organizer.Ready(ctx, recipe, selection.EnabledActions(recipe)) {
 			ready++
 		} else {
@@ -1031,7 +1145,7 @@ func (m routeModel) readyCount() (ready int, blocked int) {
 // on—when it was taken—rather than by its directory name, which carries no
 // meaning for the operator. The folder path remains available in the status bar.
 func routeCaptureLabel(entry captureEntry) string {
-	if created := formatCaptureTime(entry.index.CreatedAt); created != "" {
+	if created := organizer.FormatTimestamp(entry.index.CreatedAt); created != "" {
 		return created
 	}
 	return entry.name + string(os.PathSeparator)
@@ -1051,38 +1165,6 @@ func routeCaptureDetail(entry captureEntry) string {
 	return strings.Join(parts, " · ")
 }
 
-// formatCaptureTime renders an RFC 3339 createdAt as a compact local-to-the-
-// Capture wall clock keeping its original offset: 2026-10-10 12:23:24 +11.
-// Whole-hour offsets drop their minutes; UTC reads as Z. An unparseable value
-// is shown verbatim so a malformed index is visible rather than hidden.
-func formatCaptureTime(value string) string {
-	if value == "" {
-		return ""
-	}
-	created, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		return value
-	}
-	return created.Format("2006-01-02 15:04:05") + " " + captureOffset(created)
-}
-
-func captureOffset(created time.Time) string {
-	_, seconds := created.Zone()
-	if seconds == 0 {
-		return "Z"
-	}
-	sign := "+"
-	if seconds < 0 {
-		sign = "-"
-		seconds = -seconds
-	}
-	hours, minutes := seconds/3600, (seconds%3600)/60
-	if minutes == 0 {
-		return fmt.Sprintf("%s%d", sign, hours)
-	}
-	return fmt.Sprintf("%s%d:%02d", sign, hours, minutes)
-}
-
 // captureMarker distinguishes the three states a Capture can be in: no Recipe
 // chosen, a Recipe whose plan is still blocked, and a plan ready to run.
 func (m routeModel) captureMarker(entry captureEntry) string {
@@ -1097,7 +1179,7 @@ func (m routeModel) captureMarker(entry captureEntry) string {
 	if !ok {
 		return "○ "
 	}
-	ctx := organizer.NewContext(captureFor(entry), selection.Enrichment)
+	ctx := organizer.NewContext(captureFor(entry), selection.Enrichment).WithSettings(m.settings)
 	if organizer.Ready(ctx, recipe, selection.EnabledActions(recipe)) {
 		return "● "
 	}
@@ -1246,13 +1328,9 @@ func (m *routeModel) rebuildFieldRows() {
 	}
 	ctx, _ := m.context()
 	resolved, missing := organizer.Fields(ctx, recipe, selection.EnabledActions(recipe))
-	for _, state := range resolved {
-		m.fieldRows = append(m.fieldRows, routeFieldRow{
-			requirement: state.Requirement,
-			value:       state.Value,
-			editable:    !state.FromCapture,
-		})
-	}
+	// What is still to supply comes first: it is the work, and the cursor
+	// lands on it without being moved there. What is already answered follows
+	// as reference.
 	for _, state := range missing {
 		m.fieldRows = append(m.fieldRows, routeFieldRow{
 			requirement: state.Requirement,
@@ -1260,14 +1338,23 @@ func (m *routeModel) rebuildFieldRows() {
 			missing:     true,
 		})
 	}
+	for _, state := range resolved {
+		m.fieldRows = append(m.fieldRows, routeFieldRow{
+			requirement: state.Requirement,
+			value:       state.Value,
+			editable:    !state.FromCapture,
+		})
+	}
 	m.fieldIndex = min(max(0, len(m.fieldRows)-1), max(0, m.fieldIndex))
 }
 
-// missingStart is the row the MISSING rule is drawn above, or -1 when nothing
-// is missing.
-func (m routeModel) missingStart() int {
+// resolvedStart is the row the rule is drawn above: the first field that
+// already has a value. It is -1 when every field is still missing, and 0 when
+// none is — the rule is dropped in the first case and the "nothing missing"
+// line takes its place in the second.
+func (m routeModel) resolvedStart() int {
 	for index, row := range m.fieldRows {
-		if row.missing {
+		if !row.missing {
 			return index
 		}
 	}
@@ -1552,11 +1639,14 @@ func (m routeModel) fieldsColumn(width int) string {
 // marked so the blockage is visible without a separate missing-field count.
 func (m routeModel) fieldsContent(width int) string {
 	focused := m.fields.Current() == routeFieldsField
-	missingAt := m.missingStart()
-	lines := make([]string, 0, len(m.fieldRows)+1)
+	resolvedAt := m.resolvedStart()
+	lines := make([]string, 0, len(m.fieldRows)+2)
+	if resolvedAt == 0 {
+		lines = append(lines, scanMutedStyle.Render("· Nothing missing"))
+	}
 	for index, row := range m.fieldRows {
-		if index == missingAt {
-			lines = append(lines, divider.Labelled("MISSING", width))
+		if index == resolvedAt {
+			lines = append(lines, divider.Labelled("RESOLVED", width))
 		}
 		selected := focused && index == m.fieldIndex
 		editing := m.editing && index == m.fieldIndex
@@ -1590,9 +1680,6 @@ func (m routeModel) fieldsContent(width int) string {
 			line += scanMutedStyle.Render(value)
 		}
 		lines = append(lines, truncateStyled(line, width))
-	}
-	if missingAt < 0 && len(m.fieldRows) > 0 {
-		lines = append(lines, "", scanMutedStyle.Render("· Nothing missing"))
 	}
 	return strings.Join(lines, "\n")
 }

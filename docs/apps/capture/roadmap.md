@@ -21,12 +21,23 @@ and the note says what shipped instead.
   cannot be run. They were built anyway, to keep the organizer model honest
   against Actions whose requirements differ from Obsidian's, and are excluded
   from the first pass on purpose.
-- **Real Action implementations.** Every Action declares its requirements and
-  resolves its target, but none of them writes anything: running a Capture
-  shows what it would do and appends to `organize.json`. Implementing them
-  brings Obsidian vault paths, idempotent upsert, and failure handling, none of
-  which should shape the model. `RecordedAction.executed` already exists for
-  that day and stays false until then.
+- **The remaining Action implementations.** `obsidian.daily.append` writes; the
+  rest declare and refuse. The Apple Actions need their APIs and the input
+  controls their fields ask for.
+- **`obsidian.location.upsert`.** Deferred for want of a need, not for want of a
+  design. Writing a note that may already exist and may have been edited by hand
+  is a different problem from appending to one: it means deciding what counts as
+  the same place when the name is typed by hand, whether a second visit's
+  coordinates replace the first's, and how to change one frontmatter key while
+  leaving every other key — and the meta-bind controls among them — exactly as
+  they were.
+
+  The cheaper design to reach for first, if the need appears: write
+  `[[Place Name]]` into the daily entry and create no note at all. Obsidian
+  shows it as a link waiting to be filled, its backlinks already list every day
+  the place was visited, and a note gets created — with the reader's own
+  template — only if they ever want to write something there. That answers every
+  question above by not asking it.
 - **Per-Recipe Action parameters.** A Recipe names its Actions but cannot
   configure them, so every Recipe writing a daily note writes to the same place.
   Recipe files already spell Actions as objects (`- id: …`) so a `with:` can be

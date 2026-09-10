@@ -16,6 +16,11 @@ type Config struct {
 	TUI     TUI     `json:"tui"`
 	Photo   Photo   `json:"photo"`
 	Capture Capture `json:"capture"`
+	// dir is the directory the configuration was loaded from. Paths that
+	// default to sitting beside the configuration resolve against this rather
+	// than against the operating system's location, so --config points at a
+	// whole configuration and not only at one file of it.
+	dir string
 }
 
 // Capture configures the Capture command. Route organizes a Capture through
@@ -26,6 +31,21 @@ type Capture struct {
 	// Recipes is the directory holding one file per organizer Recipe. Empty
 	// means the "recipes" directory beside the configuration file.
 	Recipes string `json:"recipes"`
+	// Templates holds templates overriding the compiled-in ones by filename.
+	// Empty means the "templates" directory beside the configuration file,
+	// which is where recipes live too.
+	Templates string          `json:"templates"`
+	Obsidian  CaptureObsidian `json:"obsidian"`
+}
+
+// CaptureObsidian tells the Obsidian Actions where to write. Vault is an
+// absolute path; the folders are relative to it, so what an Action plans and
+// records stays vault-relative and survives the vault moving.
+type CaptureObsidian struct {
+	Vault string `json:"vault"`
+	// Section is the heading a Capture is written under in a daily note.
+	Section   string `json:"section"`
+	Locations string `json:"locations"`
 }
 
 type CaptureScan struct {
@@ -64,7 +84,10 @@ func Default() Config {
 	return Config{TUI: TUI{TopBar: TopBar{
 		Disk: boolPointer(true), Network: boolPointer(true),
 		CPU: boolPointer(true), Time: boolPointer(true),
-	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Capture: Capture{Scan: CaptureScan{IndexFile: "index.json"}}}
+	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Capture: Capture{
+		Scan:     CaptureScan{IndexFile: "index.json"},
+		Obsidian: CaptureObsidian{Locations: "Locations"},
+	}}
 }
 
 func (c Config) CaptureScanSettings() (root, indexFile string) {
@@ -75,19 +98,44 @@ func (c Config) CaptureScanSettings() (root, indexFile string) {
 	return c.Capture.Scan.Root, indexFile
 }
 
+// CaptureTemplatesDir is where Capture reads templates that replace the
+// compiled-in ones. Like the Recipe directory it sits beside the configuration
+// file by default rather than at a path fixed by the tool.
+func (c Config) CaptureTemplatesDir() string {
+	return c.captureDir(c.Capture.Templates, "templates")
+}
+
 // CaptureRecipesDir is where Capture reads user-defined Recipes. It defaults to
 // a directory beside the configuration file, so a user who has a config has a
 // place to put Recipes without configuring a second path.
 func (c Config) CaptureRecipesDir() string {
-	if c.Capture.Recipes != "" {
-		return c.Capture.Recipes
-	}
-	path, err := Path()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(path), "recipes")
+	return c.captureDir(c.Capture.Recipes, "recipes")
 }
+
+// captureDir resolves a configured directory, falling back to one named beside
+// the configuration file that was actually loaded — not beside the one the
+// operating system would have chosen. A run with --config points at a whole
+// configuration, and its recipes and templates belong to it.
+func (c Config) captureDir(configured, name string) string {
+	if configured != "" {
+		return configured
+	}
+	dir := c.dir
+	if dir == "" {
+		path, err := Path()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Dir(path)
+	}
+	return filepath.Join(dir, name)
+}
+
+// CaptureObsidian returns the Obsidian settings as configured. Defaults are
+// applied by the organizer, which owns what they are; an unset vault is left
+// empty rather than guessed, because writing into a directory nobody named is
+// worse than refusing to write.
+func (c Config) CaptureObsidian() CaptureObsidian { return c.Capture.Obsidian }
 
 func (c Config) PhotoImportStateFile() string {
 	if c.Photo.Import.StateFile == "" {
@@ -162,7 +210,7 @@ func Load() (Config, error) {
 func LoadPath(path string) (Config, error) {
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Config{}, nil
+		return Config{dir: filepath.Dir(path)}, nil
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("open config %s: %w", path, err)
@@ -182,6 +230,7 @@ func LoadPath(path string) (Config, error) {
 	if filepath.Base(indexFile) != indexFile || indexFile == "." || indexFile == ".." {
 		return Config{}, fmt.Errorf("decode config %s: capture.scan.index_file must be a filename, got %q", path, indexFile)
 	}
+	config.dir = filepath.Dir(path)
 	return config, nil
 }
 

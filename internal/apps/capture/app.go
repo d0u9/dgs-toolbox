@@ -27,7 +27,7 @@ func New() tui.App {
 			},
 			NewWithConfig: func(global config.Config) tui.CommandModel {
 				root, indexFile := global.CaptureScanSettings()
-				return newSessionWithSettings(root, indexFile, loadRecipes(global).Set)
+				return newSessionWithSettings(root, indexFile, loadRecipes(global).Set, obsidianSettings(global))
 			},
 		}},
 	}
