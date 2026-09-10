@@ -118,6 +118,21 @@ obsidian.daily.append     Appends one entry to the note for the day the Capture
 This is what a reader needs before running a plan, and the confirmation dialog
 shows it beside each Action for exactly that reason.
 
+## Actions declare their parameters
+
+A requirement is what an Action needs; a parameter is how it behaves. The
+heading a Capture is written under is a parameter: a default answers for almost
+every Capture, and the occasional one wants somewhere else.
+
+Parameters resolve in layers, each more specific than the last: what the Action
+ships with, what the configuration says, and what this one Capture was given.
+The override is per-Capture and is not remembered across them — one that stayed
+on would quietly apply to Captures nobody meant it for.
+
+The values an Action ran with are written into its record. Where a Capture was
+written is part of what happened, and a reader coming back months later would
+otherwise assume the default.
+
 ## Actions are toggleable per Capture
 
 A Recipe supplies the **default** enabled set — every Action it lists. The user

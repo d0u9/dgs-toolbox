@@ -27,6 +27,10 @@ type Context struct {
 	// a target is resolved from the Capture and the settings together: the same
 	// Capture organized against a different vault plans a different path.
 	Settings Settings
+	// Parameters are this Capture's overrides, by Action and name. They are
+	// per-Capture rather than remembered across them: an override that stayed
+	// on would quietly apply to Captures nobody meant it for.
+	Parameters map[ActionID]map[string]string
 }
 
 // NewContext builds a Context over a Capture and the values the user supplied,
@@ -39,6 +43,30 @@ func NewContext(capture Capture, enrichment map[FieldID]any) Context {
 func (c Context) WithSettings(settings Settings) Context {
 	c.Settings = settings
 	return c
+}
+
+// WithParameters returns the Context carrying one Capture's overrides.
+func (c Context) WithParameters(parameters map[ActionID]map[string]string) Context {
+	c.Parameters = parameters
+	return c
+}
+
+// Parameter is what an Action should use: the override for this Capture when
+// there is one, and the configured default otherwise.
+func (c Context) Parameter(action ActionID, name string) string {
+	if value, ok := c.Parameters[action][name]; ok && strings.TrimSpace(value) != "" {
+		return value
+	}
+	def, ok := LookupAction(action)
+	if !ok {
+		return ""
+	}
+	for _, parameter := range def.Parameters {
+		if parameter.Name == name && parameter.Default != nil {
+			return parameter.Default(c.Settings)
+		}
+	}
+	return ""
 }
 
 // Get returns the value of a logical field and whether it resolved at all.

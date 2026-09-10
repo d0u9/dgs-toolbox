@@ -105,6 +105,17 @@ The one-column 100-cell width is defined by `tui.DefaultContentWidth`. It is a p
 
 The equal four-column skeleton suits screens whose regions are peers rather than a subject with supporting detail: every column is full height, carries one Fieldset, and none is visually primary. It needs more width than the other skeletons, so a command using it shows its resize prompt earlier.
 
+### Tab and the spatial keys
+
+`Tab`/`Shift+Tab` cycle the *selectable* controls of the active session, which
+is not the same as all of them. A field with nothing in it yet — waiting on a
+choice made in another field — is skipped, because stopping there tells the
+reader only that they are somewhere useless; so is a field that holds a setting
+rather than a step of the work, since a ring is walked to get through the work
+and a setting in it costs a keystroke every time round. `Alt+Arrow` and `Alt+h j k l` are
+spatial and are not gated that way: they name a direction, and the field in that
+direction is where it is whether or not it is ready.
+
 ### App reports
 
 An app may expose non-interactive reports: what it supports, what it loaded, why

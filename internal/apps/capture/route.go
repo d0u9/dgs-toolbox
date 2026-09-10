@@ -13,6 +13,7 @@ import (
 	"dgs-toolbox/internal/tui/divider"
 	"dgs-toolbox/internal/tui/fieldset"
 	"dgs-toolbox/internal/tui/overlay"
+	"dgs-toolbox/internal/tui/pageactions"
 	"dgs-toolbox/internal/tui/scrolllist"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -20,6 +21,23 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+)
+
+// The run dialog and the Run button share the page-action language: a solid
+// fill marks something that acts, as against the bordered fields that hold
+// data. Colours are the shell's, so the dialog does not become its own theme.
+var (
+	runAccent    = lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"}
+	runPanel     = lipgloss.AdaptiveColor{Light: "#DDF3F0", Dark: "#173F3B"}
+	runQuietFill = lipgloss.AdaptiveColor{Light: "#EEF2F4", Dark: "#303747"}
+
+	runHeaderStyle  = lipgloss.NewStyle().Bold(true).Foreground(runAccent).Background(runQuietFill)
+	runActionStyle  = lipgloss.NewStyle().Bold(true).Foreground(runAccent)
+	runGroupStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#94A3B8"})
+	runFailedStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F87171"})
+	runPrimaryStyle = lipgloss.NewStyle().Bold(true).Foreground(runPanel).Background(runAccent).Padding(0, 1)
+	runQuietStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#94A3B8"}).
+			Background(runQuietFill).Padding(0, 1)
 )
 
 const (
@@ -106,6 +124,14 @@ type routeFieldRow struct {
 	value       string
 	editable    bool
 	missing     bool
+	// parameter marks a row that says how an Action behaves rather than what it
+	// needs: a default answers for almost every Capture, and this is where the
+	// occasional one is given something else. Overridden marks a value given
+	// for this Capture rather than inherited.
+	parameter  bool
+	action     organizer.ActionID
+	name       string
+	overridden bool
 }
 
 func newRouteModel(root, indexFile string) routeModel {
@@ -204,6 +230,15 @@ func (m routeModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 // Action's checkbox: a press on it toggles that Action and never pairs into a
 // double click, because toggling twice would mean nothing.
 func (m routeModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// The page action is below the workspace and belongs to no field, so it is
+	// tested before the fields are. A button is pressed rather than selected:
+	// one click acts.
+	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.runButtonHit(msg.X, msg.Y) {
+		if m.editing || m.editingNote || m.running {
+			return m, nil
+		}
+		return m.run()
+	}
 	hit := m.fields.HitAt(msg.X, msg.Y)
 	if hit == "" {
 		return m, nil
@@ -307,29 +342,6 @@ func (m routeModel) clickedCheckbox(x int) bool {
 	return x >= start && x < start+3
 }
 
-// selectFieldRow moves the FIELDS cursor to the clicked row. The rule, and the
-// line that stands in for it when nothing is missing, take rows of their own
-// without being rows, so a click below one maps a row higher and a click on the
-// rule itself selects nothing.
-func (m *routeModel) selectFieldRow(y int) bool {
-	index := y - 1
-	resolvedAt := m.resolvedStart()
-	if resolvedAt == 0 {
-		index--
-	}
-	if resolvedAt > 0 && index >= resolvedAt {
-		if index == resolvedAt {
-			return false
-		}
-		index--
-	}
-	if index < 0 || index >= len(m.fieldRows) {
-		return false
-	}
-	m.fieldIndex = index
-	return true
-}
-
 func (m routeModel) openPicker() (tea.Model, tea.Cmd) {
 	return m, m.rootControl.Open(m.width, m.height)
 }
@@ -369,49 +381,109 @@ func (m routeModel) View() string {
 	return workspace
 }
 
-// runOverlay reports what the plan would do. Every Action is a stub: the dialog
-// names each one, the target it resolved, and the values it would carry, so the
-// pipeline can be walked end to end before any Action writes anything.
+// runOverlay is where a reader agrees to what will happen, so it is written to
+// be read rather than to be complete: the Capture and Recipe as a heading, one
+// block per Action with its name in the accent, and its details as two aligned
+// columns — what it writes, how it is set, what it will do, and the values it
+// carries. Groups rather than a flat list, because the four answer different
+// questions and a reader is usually checking one of them.
 func (m routeModel) runOverlay() string {
-	// Wide enough for a sentence: an effect is what the reader is being asked
-	// to agree to, and a clipped one asks them to agree to half of it.
 	width := max(40, min(104, m.width-8))
 	inner := max(10, width-4)
 	ctx := m.runContext
-	lines := []string{scanMutedStyle.Render(m.runCapture), ""}
+
+	lines := []string{runHeaderStyle.Width(inner).Render(" " + m.runCapture)}
 	if m.runError != "" {
-		lines = append(lines, scanMutedStyle.Render("! "+m.runError), "")
+		lines = append(lines, "", runFailedStyle.Render("! "+m.runError))
 	}
 	for index, plan := range m.runPlans {
-		marker := "●"
-		if !plan.Ready() {
-			marker = "○"
-		}
-		if outcome, ok := m.resultMarker(plan.Action); ok {
-			marker = outcome
-		}
-		lines = append(lines, fmt.Sprintf("%s %d %s", marker, index+1, plan.Action))
-		lines = append(lines, m.runDetails(ctx, plan, inner)...)
+		lines = append(lines, "")
+		lines = append(lines, m.runActionBlock(ctx, index, plan, inner)...)
 	}
 	if len(m.runPlans) == 0 {
-		lines = append(lines, scanMutedStyle.Render("· No action is enabled, so there is nothing to run"))
+		lines = append(lines, "", scanMutedStyle.Render("· No action is enabled, so there is nothing to run"))
 	}
-	note, keys := "Nothing has happened yet.", "↵ Run   esc Cancel"
+
+	lines = append(lines, "")
+	lines = append(lines, detailParagraph(m.runNote(), inner)...)
+	lines = append(lines, "", m.runButtons())
+	return fieldset.View("RUN", strings.Join(lines, "\n"), width)
+}
+
+// runActionBlock is one Action of the plan: its outcome, its name, and its
+// details grouped by the question they answer.
+func (m routeModel) runActionBlock(ctx organizer.Context, index int, plan organizer.ActionPlan, width int) []string {
+	marker, style := "●", runActionStyle
+	if !plan.Ready() {
+		marker = "○"
+	}
+	if outcome, ok := m.resultMarker(plan.Action); ok {
+		marker = outcome
+		if outcome == "✗" {
+			style = runFailedStyle
+		}
+	}
+	lines := []string{style.Render(fmt.Sprintf("%s %d %s", marker, index+1, plan.Action))}
+
+	target := plan.Target
+	if target == "" {
+		target = "· unresolved"
+	}
+	lines = append(lines, dialogGroup("Writes", [][2]string{{"", target}}, width)...)
+	def, ok := organizer.LookupAction(plan.Action)
+	if !ok {
+		return lines
+	}
+
+	settings := make([][2]string, 0, len(def.Parameters))
+	for _, parameter := range def.Parameters {
+		settings = append(settings, [2]string{parameter.Label, ctx.Parameter(plan.Action, parameter.Name)})
+	}
+	lines = append(lines, dialogGroup("Set", settings, width)...)
+
+	values := make([][2]string, 0, len(def.Required))
+	for _, req := range def.Required {
+		value := ctx.String(req.Field)
+		if value == "" {
+			value = "· missing"
+		}
+		values = append(values, [2]string{req.Label, singleLine(value)})
+	}
+	lines = append(lines, dialogGroup("With", values, width)...)
+
+	effects := make([][2]string, 0, len(def.Effects))
+	for _, effect := range def.Effects {
+		effects = append(effects, [2]string{"", "· " + effect})
+	}
+	return append(lines, dialogGroup("Will", effects, width)...)
+}
+
+// runNote is the one sentence that says where the reader stands.
+func (m routeModel) runNote() string {
 	switch {
 	case !m.runReady():
-		note, keys = "Blocked: fill the missing values before running this.", "esc Close"
+		return "Blocked: fill the missing values before running this."
 	case len(organizer.Unimplemented(m.runPlans)) > 0:
-		note, keys = "Not implemented yet: "+actionList(organizer.Unimplemented(m.runPlans))+
-			". Disable it, or choose a recipe without it.", "esc Close"
+		return "Not implemented yet: " + actionList(organizer.Unimplemented(m.runPlans)) +
+			". Disable it, or choose a recipe without it."
 	case m.runError != "":
-		note, keys = "! "+m.runError, "esc Close"
+		return "Nothing was recorded."
 	case len(m.runResults) > 0:
-		note, keys = m.resultSummary(), "esc Close"
+		return m.resultSummary()
 	}
-	lines = append(lines, "")
-	lines = append(lines, detailParagraph(note, inner)...)
-	lines = append(lines, scanMutedStyle.Render(keys))
-	return fieldset.View("RUN", strings.Join(lines, "\n"), width)
+	return "Nothing has happened yet."
+}
+
+// runButtons are filled rather than written as keys, because they are what the
+// dialog is for. The affirmative one is quiet until it can be taken.
+func (m routeModel) runButtons() string {
+	run, cancel := runQuietStyle.Render("↵ Run"), runQuietStyle.Render("esc Close")
+	if m.runRunnable() && len(m.runResults) == 0 {
+		run = runPrimaryStyle.Render("↵ Run")
+		cancel = runQuietStyle.Render("esc Cancel")
+		return run + "  " + cancel
+	}
+	return cancel
 }
 
 // resultSummary says what became of the plan, naming the Action that stopped it
@@ -486,47 +558,63 @@ func actionList(actions []organizer.ActionID) string {
 	return strings.Join(names, ", ")
 }
 
-// runDetails lists what one Action would carry: its target, then the value of
-// every requirement it declares, or the fields still blocking it.
-func (m routeModel) runDetails(ctx organizer.Context, plan organizer.ActionPlan, width int) []string {
-	var lines []string
-	target := plan.Target
-	if target == "" {
-		target = "· unresolved"
-	}
-	lines = append(lines, dialogRow("target", target, width)...)
-	def, ok := organizer.LookupAction(plan.Action)
-	if !ok {
-		return lines
-	}
-	for _, effect := range def.Effects {
-		lines = append(lines, dialogRow("effect", effect, width)...)
-	}
-	for _, req := range def.Required {
-		value := ctx.String(req.Field)
-		if value == "" {
-			value = "· missing"
+// Column widths inside the run dialog: the group answers which question, the
+// key names the item within it.
+const (
+	dialogIndent    = 4
+	dialogGroupWide = 8
+	dialogKeyWide   = 12
+)
+
+// dialogGroup renders one group of an Action's block: a label naming what the
+// group answers, then its items as a second column. Grouping rather than a flat
+// list of labels, because a reader is usually checking one question — where it
+// writes, what it is set to, what it carries, what it will do — and a flat list
+// makes them find it among the others.
+func dialogGroup(group string, items [][2]string, width int) []string {
+	// A group whose items have no names of their own does not reserve the
+	// column for them: an empty column is a gap the eye has to cross.
+	keyed := false
+	for _, item := range items {
+		if item[0] != "" {
+			keyed = true
 		}
-		lines = append(lines, dialogRow(req.Label, singleLine(value), width)...)
+	}
+	var lines []string
+	for index, item := range items {
+		label := ""
+		if index == 0 {
+			label = group
+		}
+		lines = append(lines, dialogRow(label, item[0], item[1], keyed, width)...)
 	}
 	return lines
 }
 
-// dialogRow is one labelled line of the run dialog, wrapped under a hanging
-// indent rather than clipped: the dialog is where a reader agrees to what will
-// happen, and half a sentence is not something anyone can agree to.
-func dialogRow(key, value string, width int) []string {
-	const indent = 6
-	label := fmt.Sprintf("%s%-*s", strings.Repeat(" ", indent), routePropertyKeyWidth+2, truncate(key, routePropertyKeyWidth+1))
-	pad := strings.Repeat(" ", lipgloss.Width(label))
-	wrapped := strings.Split(lipgloss.NewStyle().Width(max(8, width-lipgloss.Width(label))).Render(value), "\n")
+// dialogRow is one line of a group, wrapped under a hanging indent rather than
+// clipped: the dialog is where a reader agrees to what will happen, and half a
+// sentence is not something anyone can agree to.
+func dialogRow(group, key, value string, keyed bool, width int) []string {
+	prefix := strings.Repeat(" ", dialogIndent) +
+		fmt.Sprintf("%-*s", dialogGroupWide, truncate(group, dialogGroupWide-1))
+	if keyed {
+		prefix += fmt.Sprintf("%-*s", dialogKeyWide, truncate(key, dialogKeyWide-1))
+	}
+	pad := strings.Repeat(" ", lipgloss.Width(prefix))
+	// A bulleted line indents its continuation under the text, not under the
+	// bullet, so a wrapped sentence is not read as the next one.
+	hanging := ""
+	if strings.HasPrefix(value, "· ") {
+		hanging = "  "
+	}
+	wrapped := strings.Split(lipgloss.NewStyle().Width(max(8, width-lipgloss.Width(prefix)-lipgloss.Width(hanging))).Render(value), "\n")
 	lines := make([]string, 0, len(wrapped))
 	for index, part := range wrapped {
-		prefix := label
+		start := prefix
 		if index > 0 {
-			prefix = pad
+			start = pad + hanging
 		}
-		lines = append(lines, scanMutedStyle.Render(prefix+strings.TrimRight(part, " ")))
+		lines = append(lines, runGroupStyle.Render(start)+strings.TrimRight(part, " "))
 	}
 	return lines
 }
@@ -831,11 +919,7 @@ func (m routeModel) updateEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		// Committing keeps focus on the row, so a value can be revised without
 		// walking back to it.
-		if selection, _, ok := m.currentSelection(); ok {
-			if row, ok := m.focusedFieldRow(); ok {
-				selection.Set(row.requirement.Field, strings.TrimSpace(m.editor.Value()))
-			}
-		}
+		m.commitEdit(strings.TrimSpace(m.editor.Value()))
 		m.cancelEdit()
 		m.refresh()
 		return m, nil
@@ -854,11 +938,7 @@ func (m routeModel) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case "ctrl+s":
-		if selection, _, ok := m.currentSelection(); ok {
-			if row, ok := m.focusedFieldRow(); ok {
-				selection.Set(row.requirement.Field, strings.TrimSpace(m.note.Value()))
-			}
-		}
+		m.commitEdit(strings.TrimSpace(m.note.Value()))
 		m.cancelEdit()
 		m.refresh()
 		return m, nil
@@ -866,6 +946,24 @@ func (m routeModel) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.note, cmd = m.note.Update(msg)
 	return m, cmd
+}
+
+// commitEdit writes an edited row back where it came from: a field is
+// enrichment, a parameter is an override of how one Action behaves.
+func (m *routeModel) commitEdit(value string) {
+	selection, _, ok := m.currentSelection()
+	if !ok {
+		return
+	}
+	row, ok := m.focusedFieldRow()
+	if !ok {
+		return
+	}
+	if row.parameter {
+		selection.SetParameter(row.action, row.name, value)
+		return
+	}
+	selection.Set(row.requirement.Field, value)
 }
 
 func (m *routeModel) cancelEdit() {
@@ -990,13 +1088,43 @@ func (m *routeModel) advanceToNextPending(organized captureEntry) {
 	}
 }
 
+// tabOrder is the fields Tab walks: the ones that have something to select
+// right now. A column waiting on a decision that has not been made yet — the
+// Recipes of no Capture, the Actions of no Recipe — holds nothing to select,
+// and stopping there teaches the reader only that they are somewhere useless.
+//
+// Alt and the arrow keys still reach every column, because those are spatial:
+// they mean "the field to the right", and that field is where it is whether or
+// not it is ready.
+func (m routeModel) tabOrder() []string {
+	// The Capture Root is not in the ring. It is a setting rather than a step,
+	// and a ring is walked to get through the work: putting a setting in it
+	// costs a keystroke every time round for something touched once a session.
+	// Alt and the arrows still reach it, since it is directly below CAPTURES.
+	order := []string{routeCapturesField}
+	if _, ok := m.selectedCapture(); ok && len(m.candidates()) > 0 {
+		order = append(order, routeRecipesField)
+	}
+	if _, _, ok := m.currentSelection(); ok {
+		order = append(order, routeActionsField, routeFieldsField)
+	}
+	return order
+}
+
 func (m *routeModel) cycleFields(forward bool) {
-	order := []string{routeCapturesField, routeRootField, routeRecipesField, routeActionsField, routeFieldsField}
-	current := 0
+	order := m.tabOrder()
+	// Focus can sit in a column that has since been left behind — clearing a
+	// Selection empties ACTIONS under the cursor — so a field that is not in
+	// the order walks from the start rather than nowhere.
+	current, found := 0, false
 	for index, id := range order {
 		if id == m.fields.Current() {
-			current = index
+			current, found = index, true
 		}
+	}
+	if !found {
+		m.fields.Set(order[0])
+		return
 	}
 	step := 1
 	if !forward {
@@ -1090,10 +1218,13 @@ func (m routeModel) context() (organizer.Context, bool) {
 		return organizer.Context{}, false
 	}
 	var enrichment map[organizer.FieldID]any
+	var parameters map[organizer.ActionID]map[string]string
 	if selection, ok := m.selections[entry.path]; ok {
-		enrichment = selection.Enrichment
+		enrichment, parameters = selection.Enrichment, selection.Parameters
 	}
-	return organizer.NewContext(captureFor(entry), enrichment).WithSettings(m.settings), true
+	return organizer.NewContext(captureFor(entry), enrichment).
+		WithSettings(m.settings).
+		WithParameters(parameters), true
 }
 
 func captureFor(entry captureEntry) organizer.Capture {
@@ -1345,20 +1476,270 @@ func (m *routeModel) rebuildFieldRows() {
 			editable:    !state.FromCapture,
 		})
 	}
+	// The knobs come last: they are pinned below the work and the reference
+	// because almost every Capture leaves them alone.
+	for _, state := range organizer.Parameters(ctx, recipe, selection.EnabledActions(recipe)) {
+		m.fieldRows = append(m.fieldRows, routeFieldRow{
+			requirement: organizer.FieldRequirement{Label: state.Definition.Label, Input: state.Definition.Input},
+			value:       state.Value,
+			editable:    true,
+			parameter:   true,
+			action:      state.Action,
+			name:        state.Definition.Name,
+			overridden:  state.Overridden,
+		})
+	}
 	m.fieldIndex = min(max(0, len(m.fieldRows)-1), max(0, m.fieldIndex))
 }
 
-// resolvedStart is the row the rule is drawn above: the first field that
-// already has a value. It is -1 when every field is still missing, and 0 when
-// none is — the rule is dropped in the first case and the "nothing missing"
-// line takes its place in the second.
-func (m routeModel) resolvedStart() int {
+// routeFieldLine is one rendered line of the FIELDS column. row is the field it
+// shows, or -1 for a rule and for the line that stands in for one: those take a
+// line without being selectable, and mapping a click has to know the difference.
+type routeFieldLine struct {
+	text string
+	row  int
+}
+
+// fieldLines lays the column out once, so what is drawn and what a click means
+// cannot disagree.
+func (m routeModel) fieldLines(width int) []routeFieldLine {
+	var lines []routeFieldLine
+	rule := func(label string) {
+		lines = append(lines, routeFieldLine{text: divider.Labelled(label, width), row: -1})
+	}
+	if len(m.fieldRows) == 0 {
+		lines = append(lines, routeFieldLine{text: scanMutedStyle.Render("· Choose a recipe"), row: -1})
+	}
+	section := ""
 	for index, row := range m.fieldRows {
-		if !row.missing {
-			return index
+		switch {
+		case row.parameter && section != "parameters":
+			section = "parameters"
+			rule("PARAMETERS")
+		case !row.missing && !row.parameter && section != "resolved":
+			section = "resolved"
+			if index == 0 {
+				lines = append(lines, routeFieldLine{text: scanMutedStyle.Render("· Nothing missing"), row: -1})
+			}
+			rule("RESOLVED")
+		}
+		for _, text := range m.fieldRowText(index, row, width) {
+			lines = append(lines, routeFieldLine{text: text, row: index})
 		}
 	}
-	return -1
+	return lines
+}
+
+func (m routeModel) fieldsContent(width int) string {
+	texts := make([]string, 0, len(m.fieldRows)+3)
+	for _, line := range m.fieldLines(width) {
+		texts = append(texts, line.text)
+	}
+	return strings.Join(texts, "\n")
+}
+
+// runActionsHeight is what the page action takes from the column it sits under:
+// a row of breathing space, the two-line button, and a row below it, so the
+// control is not pressed into the corner of the screen.
+const runActionsHeight = 4
+
+// runButtonWidth is fixed rather than sized to its label, so the control does
+// not move as the Recipe under it changes.
+const runButtonWidth = 24
+
+// fieldsHeight is what the FIELDS fieldset gets. The action takes its room from
+// that column alone — the way the Capture Root control takes its room from the
+// column above it — rather than shortening all four, which would leave three
+// columns ending early for the sake of one control.
+func (m routeModel) fieldsHeight() int { return max(4, m.height-runActionsHeight) }
+
+// runActions renders the control that runs the plan, at the bottom right: the
+// shared two-line filled button, so it reads as the same kind of thing as the
+// page actions of other commands. It stays quiet until a Recipe has been
+// chosen, because until then there is no plan to run.
+func (m routeModel) runActions(width int) string {
+	subtitle, ready := m.runReadiness()
+	button := min(runButtonWidth, max(12, width-2))
+	indent := strings.Repeat(" ", max(0, width-button-1))
+	lines := []string{strings.Repeat(" ", max(0, width))}
+	for _, line := range pageactions.Button("Run  x", subtitle, button, ready) {
+		row := indent + line
+		lines = append(lines, row+strings.Repeat(" ", max(0, width-lipgloss.Width(row))))
+	}
+	return strings.Join(lines, "\n") + "\n" + strings.Repeat(" ", max(0, width))
+}
+
+// runReadiness is what the button says and whether it is lit. It is filled only
+// when pressing it would carry the plan out; anything still in the way leaves it
+// quiet and says what that is, so the button answers "can I run this yet?"
+// without the reader opening the dialog to find out.
+func (m routeModel) runReadiness() (subtitle string, ready bool) {
+	selection, recipe, chosen := m.currentSelection()
+	if !chosen {
+		return "Choose a recipe", false
+	}
+	ctx, ok := m.context()
+	if !ok {
+		return recipe.Name, false
+	}
+	enabled := selection.EnabledActions(recipe)
+	if len(enabled) == 0 {
+		return "No action enabled", false
+	}
+	if missing := organizer.MissingFields(ctx, recipe, enabled); len(missing) > 0 {
+		if len(missing) == 1 {
+			return "Missing " + missing[0].Label, false
+		}
+		return fmt.Sprintf("%d fields missing", len(missing)), false
+	}
+	if pending := organizer.Unimplemented(organizer.Build(ctx, recipe, enabled)); len(pending) > 0 {
+		return "Not implemented", false
+	}
+	return recipe.Name, true
+}
+
+// runButtonHit reports whether a click landed on the button, which sits under
+// the fourth column rather than across the screen.
+func (m routeModel) runButtonHit(x, y int) bool {
+	top := m.fieldsHeight() + 1
+	if y < top || y > top+1 {
+		return false
+	}
+	widths := m.columnWidths()
+	column := widths[0] + widths[1] + widths[2] + 3*columnGutter
+	button := min(runButtonWidth, max(12, widths[3]-2))
+	start := column + max(0, widths[3]-button-1)
+	return x >= start && x < start+button
+}
+
+// routeFieldValueLines is how far a value is allowed to fold. A value is worth
+// reading in full, and a column of them is worth scanning: a note of twenty
+// lines would push every other field off the screen, so a long one folds to
+// here and says it was cut.
+const routeFieldValueLines = 3
+
+// fieldRowText draws one field. A row under the cursor is marked the way every
+// other list on the screen marks one, rather than by a character the muted
+// style then paints over.
+//
+// It returns the lines of one row rather than a line: a value wider than the
+// column — a section written as a template, a note of more than a few words —
+// folds instead of being clipped, because a value the reader cannot see is one
+// they cannot check. A parameter puts its value on a line of its own: its name
+// carries the Action it belongs to as well, and the two together leave nothing
+// of the column for the value to sit in.
+func (m routeModel) fieldRowText(index int, row routeFieldRow, width int) []string {
+	focused := m.fields.Current() == routeFieldsField
+	selected := focused && index == m.fieldIndex
+	editing := m.editing && index == m.fieldIndex
+
+	keyWidth := routePropertyKeyWidth
+	label := requirementLabel(row.requirement)
+	if row.parameter {
+		// A knob is named by the Action it belongs to: FIELDS lists every
+		// enabled Action's, and two of them may well share a name.
+		label = shortAction(row.action) + " · " + row.requirement.Label
+		keyWidth = 0
+	} else {
+		label = fmt.Sprintf("%-*s", keyWidth, truncate(label, keyWidth-1))
+	}
+
+	value := row.value
+	if editing {
+		// The editor draws its own line and carries a cursor, so it is left
+		// alone: folding it would put the cursor somewhere it cannot be.
+		value = m.editor.View()
+	} else if value == "" {
+		value = "___"
+	}
+
+	cursor := "  "
+	if selected {
+		cursor = "› "
+	}
+	paint := func(line string) string {
+		if selected {
+			return scrolllist.SelectedRowStyle().Width(width).Render(truncate(line, width))
+		}
+		return truncateStyled(line, width)
+	}
+	// The label is scaffolding and the value is the content, so only the label
+	// is muted by default. A parameter left at its default is muted whole: it
+	// is not something the reader has to do anything about.
+	render := func(text string) string {
+		if row.editable && (!row.parameter || row.overridden) {
+			return text
+		}
+		return scanMutedStyle.Render(text)
+	}
+
+	if row.parameter {
+		lines := []string{paint(cursor + scanMutedStyle.Render(truncate(label, width-2)))}
+		if editing {
+			return append(lines, paint("    "+value))
+		}
+		for _, part := range foldValue(value, max(8, width-4), routeFieldValueLines) {
+			lines = append(lines, paint("    "+render(part)))
+		}
+		return lines
+	}
+	if editing {
+		return []string{paint(cursor + scanMutedStyle.Render(label) + value)}
+	}
+
+	parts := foldValue(value, max(8, width-keyWidth-2), routeFieldValueLines)
+	// A folded line continues under the value rather than under the label, so
+	// the second line of one field is not read as another field's.
+	indent := strings.Repeat(" ", keyWidth)
+	lines := make([]string, 0, len(parts))
+	for part := range parts {
+		key, mark := indent, "  "
+		if part == 0 {
+			key, mark = label, cursor
+		}
+		lines = append(lines, paint(mark+scanMutedStyle.Render(key)+render(parts[part])))
+	}
+	return lines
+}
+
+// foldValue breaks a value into at most limit lines of width cells, marking the
+// last one when there was more. Its own newlines break lines too: a note is
+// written in lines, and running them together would misreport what it says.
+func foldValue(value string, width, limit int) []string {
+	var folded []string
+	for _, paragraph := range strings.Split(value, "\n") {
+		wrapped := lipgloss.NewStyle().Width(width).Render(paragraph)
+		for _, line := range strings.Split(wrapped, "\n") {
+			folded = append(folded, strings.TrimRight(line, " "))
+		}
+	}
+	if len(folded) > limit {
+		folded = folded[:limit]
+		folded[limit-1] = truncate(folded[limit-1], max(1, width-1)) + "…"
+	}
+	return folded
+}
+
+// shortAction drops the namespace an Action shares with its siblings, which is
+// the part that says nothing when they are listed together.
+func shortAction(action organizer.ActionID) string {
+	name := string(action)
+	if index := strings.Index(name, "."); index >= 0 {
+		return name[index+1:]
+	}
+	return name
+}
+
+// selectFieldRow moves the FIELDS cursor to the clicked line, which is not
+// necessarily a field: the rules take lines of their own.
+func (m *routeModel) selectFieldRow(y int) bool {
+	lines := m.fieldLines(max(1, m.columnWidths()[3]-4))
+	index := y - 1
+	if index < 0 || index >= len(lines) || lines[index].row < 0 {
+		return false
+	}
+	m.fieldIndex = lines[index].row
+	return true
 }
 
 // columnWidths splits the workspace into four equal columns. Remainder cells
@@ -1398,8 +1779,13 @@ func (m *routeModel) setFieldBounds() {
 	m.fields.SetBounds(routeRootField, datafield.Bounds{X: 0, Y: listHeight, Width: widths[0], Height: rootHeight})
 	x := widths[0] + columnGutter
 	for i, id := range [3]string{routeRecipesField, routeActionsField, routeFieldsField} {
-		width := widths[i+1]
-		m.fields.SetBounds(id, datafield.Bounds{X: x, Y: 0, Width: width, Height: m.height})
+		width, height := widths[i+1], m.height
+		if id == routeFieldsField {
+			// The action under this column is not part of the field, so a
+			// click on it is not a click into the list.
+			height = m.fieldsHeight()
+		}
+		m.fields.SetBounds(id, datafield.Bounds{X: x, Y: 0, Width: width, Height: height})
 		x += width + columnGutter
 	}
 }
@@ -1625,63 +2011,8 @@ func (m routeModel) fieldsColumn(width int) string {
 	focused := m.fields.Current() == routeFieldsField
 	inner := max(1, width-4)
 	content := m.fieldsContent(inner)
-	if _, _, ok := m.currentSelection(); !ok {
-		content = scanMutedStyle.Render("· Choose a recipe")
-	} else if len(m.fieldRows) == 0 {
-		content = scanMutedStyle.Render("· This action needs nothing")
-	}
-	return fieldset.ViewFocused("FIELDS", fitHeight(content, m.height-2, inner), width, focused)
-}
-
-// fieldsContent renders one requirement per row: its label, then the resolved
-// value muted when it comes from the Capture, the supplied value when the user
-// gave one, and an empty slot when it is still missing. A required field is
-// marked so the blockage is visible without a separate missing-field count.
-func (m routeModel) fieldsContent(width int) string {
-	focused := m.fields.Current() == routeFieldsField
-	resolvedAt := m.resolvedStart()
-	lines := make([]string, 0, len(m.fieldRows)+2)
-	if resolvedAt == 0 {
-		lines = append(lines, scanMutedStyle.Render("· Nothing missing"))
-	}
-	for index, row := range m.fieldRows {
-		if index == resolvedAt {
-			lines = append(lines, divider.Labelled("RESOLVED", width))
-		}
-		selected := focused && index == m.fieldIndex
-		editing := m.editing && index == m.fieldIndex
-		label := fmt.Sprintf("%-*s", routePropertyKeyWidth, truncate(requirementLabel(row.requirement), routePropertyKeyWidth-1))
-		value := row.value
-		if editing {
-			value = m.editor.View()
-		} else if value == "" {
-			value = "___"
-		}
-
-		if selected && !editing {
-			// The row under the cursor is marked the way every other list on
-			// the screen marks one, rather than by a character the muted style
-			// then paints over.
-			row := "› " + label + value
-			lines = append(lines, scrolllist.SelectedRowStyle().Width(width).Render(truncate(row, width)))
-			continue
-		}
-		cursor := "  "
-		if selected {
-			cursor = "› "
-		}
-		// The label is scaffolding and the value is the content, so only the
-		// label is muted by default; a value the Capture owns is muted too,
-		// which is what marks it read-only.
-		line := cursor + scanMutedStyle.Render(label)
-		if row.editable {
-			line += value
-		} else {
-			line += scanMutedStyle.Render(value)
-		}
-		lines = append(lines, truncateStyled(line, width))
-	}
-	return strings.Join(lines, "\n")
+	column := fieldset.ViewFocused("FIELDS", fitHeight(content, m.fieldsHeight()-2, inner), width, focused)
+	return column + "\n" + m.runActions(width)
 }
 
 // truncate clips to width terminal cells, not to a count of runes: a styled

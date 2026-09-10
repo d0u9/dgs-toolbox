@@ -54,6 +54,10 @@ The component lives in `internal/tui/divider`. Its visual contract is:
 
 The caller owns the empty row because vertical density may vary by composition; the divider component owns only the one-row rule.
 
+### Filled action button
+
+`pageactions.Button` renders the two-line filled control the page navigation is built from, for a command that needs one elsewhere: the first line is what it does and the key that does it, the second says where it leads or what it acts on. Capture Route ends its `FIELDS` column with one. A solid fill marks something that acts, as against the bordered fields that hold data, and one implementation keeps every such control looking like the same thing.
+
 `Labelled` is the same rule with a name after the anchor, for a divider that introduces the run below it rather than merely separating two of them:
 
 ```text

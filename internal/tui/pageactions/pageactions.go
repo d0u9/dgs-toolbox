@@ -74,6 +74,17 @@ func View(config Config, width int) string {
 	return strings.Join(lines, "\n")
 }
 
+// Button renders the two-line filled control this package uses, for a command
+// that needs one outside page navigation. A solid fill is how the TUI marks
+// something that acts, as against the bordered fields that hold data, and one
+// implementation keeps every such control looking like the same thing.
+//
+// The first line is what the control does and the key that does it; the second
+// says where it leads or what it acts on.
+func Button(title, subtitle string, width int, primary bool) []string {
+	return button(title, subtitle, width, primary)
+}
+
 func button(title, destination string, width int, primary bool) []string {
 	style := secondaryStyle
 	prefix := ""

@@ -122,7 +122,7 @@ func appendToDailyNote(ctx Context, plan ActionPlan) (skipped bool, err error) {
 		return true, nil
 	}
 
-	updated := insertUnderSection(string(existing), ctx.Settings.section(), entry)
+	updated := insertUnderSection(string(existing), ctx.Parameter(ActionDailyAppend, ParameterSection), entry)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, fmt.Errorf("create the note's folder: %w", err)
 	}
