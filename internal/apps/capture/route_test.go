@@ -1740,3 +1740,23 @@ func TestRouteAttachmentsFollowTheSelectedCapture(t *testing.T) {
 		t.Fatalf("the pane does not say the capture holds nothing:\n%s", m.attachmentsPane(80))
 	}
 }
+
+// An open editor owns every key it is given: x is a letter in a note, not the
+// key that opens the run dialog.
+func TestRouteEditorKeepsTheKeysTheSessionAlsoUses(t *testing.T) {
+	m := loadedRoute(t, routeTestRoot(t, "alpha"))
+	m.editing = true
+	m.editor.SetValue("")
+	m.editor.Focus()
+
+	for _, key := range []string{"x", "R"} {
+		updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		m = updated.(routeModel)
+		if m.running {
+			t.Fatalf("%q opened the run dialog while a field was being edited", key)
+		}
+	}
+	if got := m.editor.Value(); got != "xR" {
+		t.Fatalf("the editor received %q, want every key typed into it", got)
+	}
+}
