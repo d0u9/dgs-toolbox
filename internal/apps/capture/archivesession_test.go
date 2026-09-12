@@ -273,3 +273,47 @@ func TestCaptureSessionCyclesThreeTabs(t *testing.T) {
 		t.Fatalf("tabs = %#v", tabs)
 	}
 }
+
+// A Capture rejected in Scan has to be in Archive's REJECT column when that tab
+// is next looked at, or the only way to take the move back would be to reopen
+// the command.
+func TestCaptureSessionTellsArchiveAboutAScanRejection(t *testing.T) {
+	root := organizedRoot(t, nil, []string{"junk"})
+	rejectRoot := filepath.Join(t.TempDir(), "Rejected")
+	s := newSessionWithSettings(root, "index.json", filepath.Join(t.TempDir(), "Archive"), rejectRoot,
+		organizer.Set{}, organizer.DefaultSettings())
+	updated, _ := s.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	s = updated.(session)
+	updated, _ = s.Update(loadCaptures(root, "index.json")())
+	s = updated.(session)
+
+	if !s.scan.captures.SelectID("capture:" + filepath.Join(root, "junk")) {
+		t.Fatal("the capture is not listed in Scan")
+	}
+	rejected, cmd := s.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	s = rejected.(session)
+	if cmd == nil {
+		t.Fatal("rejecting in Scan started no reload")
+	}
+	// Scan is in front, so the folder read has to reach the tab behind it.
+	for _, msg := range collect(cmd) {
+		updated, _ = s.Update(msg)
+		s = updated.(session)
+	}
+	if len(s.archive.rejected) != 1 || s.archive.rejected[0].name != "junk" {
+		t.Fatalf("Archive's reject column = %#v, want the capture Scan sent there", s.archive.rejected)
+	}
+}
+
+// collect runs a command, flattening a batch into the messages it produced.
+func collect(cmd tea.Cmd) []tea.Msg {
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		msgs := make([]tea.Msg, 0, len(batch))
+		for _, inner := range batch {
+			msgs = append(msgs, collect(inner)...)
+		}
+		return msgs
+	}
+	return []tea.Msg{msg}
+}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"dgs-toolbox/internal/apps/capture/archive"
 	"dgs-toolbox/internal/apps/capture/indexschema"
 	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/tui"
@@ -45,14 +46,20 @@ var (
 )
 
 const (
-	rootField               = "capture-root"
-	capturesField           = "captures"
-	centerField             = "preview"
-	captureInfoField        = "capture-info"
-	fileInfoField           = "file-info"
-	rootPathID              = "root-path"
-	columnGutter            = 1
-	rootHeight              = 3
+	rootField        = "capture-root"
+	capturesField    = "captures"
+	centerField      = "preview"
+	captureInfoField = "capture-info"
+	fileInfoField    = "file-info"
+	rejectedField    = "rejected"
+	rootPathID       = "root-path"
+	columnGutter     = 1
+	rootHeight       = 3
+	// rejectedHeight is the small pane under FILE INFO: a legend, its border,
+	// and three rows. Three because it is an undo within reach rather than a
+	// history — what was rejected a dozen Captures ago is Archive's to show.
+	rejectedHeight          = 5
+	rejectedRows            = 3
 	maxPreviewBytes         = 1024 * 1024
 	capturePropertyKeyWidth = 12
 )
@@ -148,10 +155,37 @@ type model struct {
 	previewAsTree  bool
 	imagePreviewed bool
 	previewNotice  string
+	// rejectRoot is where a Capture rejected from this session goes. Scan is
+	// where a Capture is first looked at, so it is where an accident is first
+	// recognised; sending it away here saves carrying it through Route only to
+	// throw it out at the end. The move and the folder belong to Archive —
+	// this is the same rejection, asked for one screen earlier.
+	rejectRoot string
+	// notice is what became of the last rejection, said in the status bar
+	// where it was asked for. It lasts until the next keystroke: a move is
+	// reported, not dwelt on, and Archive is where it is taken back.
+	notice    string
+	noticeBad bool
+	// rejected is what this session has sent away, most recent first. It is
+	// kept here so the undo is within reach of the screen the mistake was made
+	// on: a Capture rejected by accident should not need another tab to be
+	// taken back. Archive holds the whole reject folder; this is the tail of
+	// it, and only what this run of Scan put there.
+	rejected       []captureEntry
+	rejectedCursor int
 }
 
 func newModel() model {
 	return newModelWithSettings("", "index.json")
+}
+
+// newModelWithReject is Scan as a session has it: with the folder a Capture
+// rejected here is moved to. It is passed in rather than read here, because it
+// is Archive's folder and one configuration key has one reader.
+func newModelWithReject(root, indexFile, rejectRoot string) model {
+	m := newModelWithSettings(root, indexFile)
+	m.rejectRoot = expandHome(rejectRoot)
+	return m
 }
 
 func newModelWithSettings(root, indexFile string) model {
@@ -191,6 +225,7 @@ func newModelWithSettings(root, indexFile string) model {
 			datafield.Field{ID: centerField, Row: 0, Col: 1},
 			datafield.Field{ID: captureInfoField, Row: 0, Col: 2},
 			datafield.Field{ID: fileInfoField, Row: 1, Col: 2},
+			datafield.Field{ID: rejectedField, Row: 2, Col: 2},
 		),
 	}
 	m.fields.Set(capturesField)
@@ -318,7 +353,7 @@ func (m model) Status() tui.Status {
 	case rootField:
 		return tui.Status{Left: "SCAN", Center: center, Right: "↵ Browse  R Refresh  tab Next  alt+hjkl Focus"}
 	case capturesField:
-		return tui.Status{Left: "SCAN", Center: center, Right: "↑/k ↓/j Move  o Open  O Close  w Close all  space Quick Look  R Refresh"}
+		return tui.Status{Left: "SCAN", Center: center, Right: "↑/k ↓/j Move  o Open  O Close  w Close all  space Quick Look  ⌫ Reject  R Refresh"}
 	case centerField:
 		// The hint names only what this field can do right now: t appears for a
 		// JSON file and nowhere else, and the tree's own keys replace the
@@ -334,16 +369,61 @@ func (m model) Status() tui.Status {
 		return tui.Status{Left: "CAPTURE INFO", Center: center, Right: "↑/k ↓/j Scroll  alt+hjkl Focus"}
 	case fileInfoField:
 		return tui.Status{Left: "FILE INFO", Center: center, Right: "↑/k ↓/j Scroll  alt+hjkl Focus"}
+	case rejectedField:
+		return tui.Status{Left: "REJECTED", Center: center, Right: "↑/k ↓/j Move  u Undo  R Refresh  alt+hjkl Focus"}
 	default:
 		return tui.Status{Left: "SCAN", Center: center, Right: "tab Next  alt+hjkl Focus"}
 	}
 }
 
+// CapturesShellKey keeps Backspace and Delete in the session: they reject the
+// selected Capture here, and a key held down while walking a list must not fall
+// out of the command.
 func (m model) CapturesShellKey(key string) bool {
+	if key == "backspace" || key == "delete" {
+		return true
+	}
 	return m.rootControl.CapturesShellKey(key)
 }
 
+// rejectSelected moves the Capture the cursor is in — the folder row, or the
+// file row's own Capture — to the reject folder, now, on disk. Nothing is asked
+// first, for the reason Archive asks nothing: the move is taken back with R in
+// Archive's REJECT column, and a confirmation on every accidental Capture costs
+// more than the undo does. A Capture rejected here is gone from the shared load
+// that feeds all three sessions, so the reload is broadcast rather than applied
+// to this one.
+func (m model) rejectSelected() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedCapture()
+	if !ok {
+		return m, nil
+	}
+	if m.rejectRoot == "" {
+		m.notice, m.noticeBad = "No reject folder configured — set capture.archive.reject", true
+		return m, nil
+	}
+	if _, err := archive.Move(entry.path, m.rejectRoot); err != nil {
+		m.notice, m.noticeBad = entry.name+": "+err.Error(), true
+		return m, nil
+	}
+	m.notice, m.noticeBad = entry.name+" → reject", false
+	delete(m.expanded, entry.path)
+	// The Capture is the same Capture at its new path, remembered so it can be
+	// walked back from here.
+	rejected := entry
+	rejected.path = archive.Destination(m.rejectRoot, entry.path)
+	m.rejected = append([]captureEntry{rejected}, m.rejected...)
+	m.rejectedCursor = 0
+	return m, tea.Batch(
+		loadCaptures(m.root, m.indexFile),
+		loadArchiveFolder(destinationReject, m.rejectRoot, m.indexFile),
+	)
+}
+
 func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The notice reports one keystroke's outcome, so the next keystroke is
+	// where it stops being the answer to "where am I?".
+	m.notice, m.noticeBad = "", false
 	key := msg.String()
 	if key == "R" {
 		m.pendingGG = false
@@ -376,6 +456,9 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateInfoViewport(key, true)
 	case fileInfoField:
 		return m.updateInfoViewport(key, false)
+	case rejectedField:
+		m.pendingGG = false
+		return m.updateRejected(key)
 	default:
 		m.pendingGG = false
 	}
@@ -419,6 +502,9 @@ func (m model) updateCaptureList(key string) (tea.Model, tea.Cmd) {
 	case "R":
 		m.pendingGG = false
 		return m, loadCaptures(m.root, m.indexFile)
+	case "backspace", "delete":
+		m.pendingGG = false
+		return m.rejectSelected()
 	case "G", "end":
 		m.captures.Last()
 		m.pendingGG = false
@@ -622,7 +708,7 @@ func (m *model) resizeComponents() {
 	m.captureInfo.Width = max(1, right-4)
 	m.captureInfo.Height = max(1, top-2-m.captureMapHeight())
 	m.fileInfo.Width = max(1, right-4)
-	m.fileInfo.Height = max(1, m.height-top-2)
+	m.fileInfo.Height = max(1, m.fileInfoHeight()-2)
 	m.refreshDetails(false)
 	m.setFieldBounds()
 }
@@ -636,7 +722,10 @@ func (m *model) setFieldBounds() {
 	rightX := left + center + 2*columnGutter
 	top := m.rightTopHeight()
 	m.fields.SetBounds(captureInfoField, datafield.Bounds{X: rightX, Y: 0, Width: right, Height: top})
-	m.fields.SetBounds(fileInfoField, datafield.Bounds{X: rightX, Y: top, Width: right, Height: m.height - top})
+	m.fields.SetBounds(fileInfoField, datafield.Bounds{X: rightX, Y: top, Width: right, Height: m.fileInfoHeight()})
+	m.fields.SetBounds(rejectedField, datafield.Bounds{
+		X: rightX, Y: top + m.fileInfoHeight(), Width: right, Height: rejectedHeight,
+	})
 }
 
 func (m model) leftColumn(width int) string {
@@ -678,10 +767,96 @@ func (m model) rightColumn(width int) string {
 		capture += "\n" + divider.Anchored(innerWidth) + "\n" + renderProperties(mapProperties, innerWidth, m.captureMapCursor(), m.fields.Current() == captureInfoField, capturePropertyKeyWidth)
 	}
 	capture = fitHeight(capture, captureHeight, innerWidth)
-	fileHeight := m.height - topHeight
+	fileHeight := m.fileInfoHeight()
 	file := fitHeight(viewportWithMarkers(m.fileInfo, width-4), fileHeight-2, width-4)
 	return fieldset.ViewFocused("CAPTURE INFO", capture, width, m.fields.Current() == captureInfoField) + "\n" +
-		fieldset.ViewFocused("FILE INFO", file, width, m.fields.Current() == fileInfoField)
+		fieldset.ViewFocused("FILE INFO", file, width, m.fields.Current() == fileInfoField) + "\n" +
+		m.rejectedPane(width)
+}
+
+// fileInfoHeight is what is left of the right column once CAPTURE INFO above
+// and the rejected pane below have taken theirs.
+func (m model) fileInfoHeight() int {
+	return max(3, m.height-m.rightTopHeight()-rejectedHeight)
+}
+
+// rejectedPane is the last few Captures this session sent away, named by their
+// folders, with the undo on them. It is here rather than only in Archive
+// because the mistake is made on this screen: a Capture rejected by accident
+// should be taken back without changing tabs, while the cursor is still on the
+// row it was rejected from. It is deliberately small — three rows — because it
+// is a reach back, not a history; the whole reject folder is Archive's to show.
+func (m model) rejectedPane(width int) string {
+	inner := max(1, width-4)
+	focused := m.fields.Current() == rejectedField
+	lines := make([]string, 0, rejectedRows)
+	if len(m.rejected) == 0 {
+		lines = append(lines, scanMutedStyle.Render("· Nothing rejected"))
+	}
+	for index, entry := range m.rejectedVisible() {
+		// The folder name, because this is the undo for a mistake: what the
+		// reader has to recognise is the directory that just disappeared from
+		// the list above, and that is what it was called there.
+		row := entry.name + string(filepath.Separator)
+		if focused && index == m.rejectedCursor {
+			lines = append(lines, scrolllist.SelectedRowStyle().Width(inner).Render(truncate("› "+row, inner)))
+			continue
+		}
+		lines = append(lines, truncateStyled("  "+row, inner))
+	}
+	return fieldset.ViewFocused("REJECTED", fitHeight(strings.Join(lines, "\n"), rejectedHeight-2, inner), width, focused)
+}
+
+// rejectedVisible is the part of the tail that fits.
+func (m model) rejectedVisible() []captureEntry {
+	if len(m.rejected) <= rejectedRows {
+		return m.rejected
+	}
+	return m.rejected[:rejectedRows]
+}
+
+// updateRejected drives the small undo pane. `u` rather than `R`: `R` is the
+// Scan-wide refresh in every DataField, and one letter with two meanings on one
+// screen is how a Capture gets moved by someone who meant to rescan.
+func (m model) updateRejected(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "up", "k":
+		m.rejectedCursor = max(0, m.rejectedCursor-1)
+	case "down", "j":
+		m.rejectedCursor = min(len(m.rejectedVisible())-1, m.rejectedCursor+1)
+	case "u":
+		return m.restoreRejected()
+	case "R":
+		return m, loadCaptures(m.root, m.indexFile)
+	}
+	return m, nil
+}
+
+// restoreRejected puts the Capture under the cursor back in the Capture root,
+// where it was before the key that sent it away.
+func (m model) restoreRejected() (tea.Model, tea.Cmd) {
+	visible := m.rejectedVisible()
+	if m.rejectedCursor < 0 || m.rejectedCursor >= len(visible) {
+		return m, nil
+	}
+	entry := visible[m.rejectedCursor]
+	if _, err := archive.Move(entry.path, m.root); err != nil {
+		m.notice, m.noticeBad = entry.name+": "+err.Error(), true
+		return m, nil
+	}
+	remaining := make([]captureEntry, 0, len(m.rejected))
+	for _, rejected := range m.rejected {
+		if rejected.path != entry.path {
+			remaining = append(remaining, rejected)
+		}
+	}
+	m.rejected = remaining
+	m.rejectedCursor = min(max(0, len(m.rejectedVisible())-1), m.rejectedCursor)
+	m.notice, m.noticeBad = entry.name+" → captures", false
+	return m, tea.Batch(
+		loadCaptures(m.root, m.indexFile),
+		loadArchiveFolder(destinationReject, m.rejectRoot, m.indexFile),
+	)
 }
 
 func (m model) columnRightWidth() int {
@@ -857,6 +1032,12 @@ func (m *model) selectFileInfoRow(y int) {
 }
 
 func (m model) statusValue() string {
+	if m.notice != "" {
+		if m.noticeBad {
+			return "! " + m.notice
+		}
+		return m.notice
+	}
 	switch m.fields.Current() {
 	case rootField:
 		return m.root
@@ -879,6 +1060,11 @@ func (m model) statusValue() string {
 		if m.fileCursor >= 0 && m.fileCursor < len(m.fileProperties) {
 			return m.fileProperties[m.fileCursor].value
 		}
+	case rejectedField:
+		if visible := m.rejectedVisible(); m.rejectedCursor < len(visible) {
+			return visible[m.rejectedCursor].path
+		}
+		return "· Nothing rejected in this session"
 	}
 	return fmt.Sprintf("%d CAPTURES · %s", m.captureCount, m.indexFile)
 }

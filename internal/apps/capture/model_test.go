@@ -507,8 +507,10 @@ func TestScanTogglesJSONPreviewBetweenSourceAndTree(t *testing.T) {
 	if !strings.Contains(m.previewLegend(), "SOURCE") {
 		t.Fatalf("t outside the preview changed the shape: %q", m.previewLegend())
 	}
-	if strings.Contains(m.Status().Right, "t ") {
-		t.Fatalf("the CAPTURES hint offers t: %q", m.Status().Right)
+	// The hint is checked for the switch itself rather than for a bare "t",
+	// which any word ending in one would match.
+	if strings.Contains(m.Status().Right, "t Tree") || strings.Contains(m.Status().Right, "t Source") {
+		t.Fatalf("the CAPTURES hint offers the shape switch: %q", m.Status().Right)
 	}
 
 	m.fields.Set(centerField)
@@ -655,5 +657,141 @@ func TestScanSlowClicksDoNotToggleACaptureFolder(t *testing.T) {
 	m = updated.(model)
 	if m.expanded["/capture/alpha"] {
 		t.Fatal("two slow clicks opened the folder")
+	}
+}
+
+// Scan is where a Capture is first looked at, so it is where an accident is
+// first recognised: rejecting one there saves carrying it through Route only to
+// throw it out at the end.
+func TestScanRejectsTheSelectedCaptureIntoTheRejectFolder(t *testing.T) {
+	root := routeTestRoot(t, "junk", "keeper")
+	rejectRoot := filepath.Join(t.TempDir(), "Rejected")
+	m := newModelWithReject(root, "index.json", rejectRoot)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m = updated.(model)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(model)
+	if !m.captures.SelectID("capture:" + filepath.Join(root, "junk")) {
+		t.Fatal("the capture to reject is not listed")
+	}
+
+	updated, cmd := m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = updated.(model)
+	if _, err := os.Stat(filepath.Join(rejectRoot, "junk")); err != nil {
+		t.Fatalf("backspace did not reject the capture: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "junk")); !os.IsNotExist(err) {
+		t.Fatalf("the capture is still in the capture root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "keeper")); err != nil {
+		t.Fatalf("another capture was moved: %v", err)
+	}
+	if m.notice != "junk → reject" {
+		t.Fatalf("notice = %q", m.notice)
+	}
+	if cmd == nil {
+		t.Fatal("the rejection did not reload the shared capture list")
+	}
+	// A file row belongs to its Capture, so rejecting from inside one moves the
+	// Capture it is part of.
+	if !m.captures.SelectID("capture:" + filepath.Join(root, "keeper")) {
+		t.Fatal("the remaining capture is not listed")
+	}
+	updated, _ = m.updateCaptureList("o")
+	m = updated.(model)
+	updated, _ = m.updateCaptureList("down")
+	m = updated.(model)
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyDelete})
+	m = updated.(model)
+	if _, err := os.Stat(filepath.Join(rejectRoot, "keeper")); err != nil {
+		t.Fatalf("delete on a file row did not reject its capture: %v", err)
+	}
+}
+
+func TestScanSaysWhichKeyToSetWithNoRejectFolder(t *testing.T) {
+	root := routeTestRoot(t, "junk")
+	m := newModelWithReject(root, "index.json", "")
+	updated, _ := m.Update(loadCaptures(root, "index.json")())
+	m = updated.(model)
+
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = updated.(model)
+	if !m.noticeBad || !strings.Contains(m.notice, "capture.archive.reject") {
+		t.Fatalf("notice = %q, want the key named", m.notice)
+	}
+	if _, err := os.Stat(filepath.Join(root, "junk")); err != nil {
+		t.Fatalf("the capture should not have moved: %v", err)
+	}
+	// Backspace stays in the session whether or not it could do anything, so a
+	// key held down while walking the list cannot leave the command.
+	if !m.CapturesShellKey("backspace") {
+		t.Fatal("backspace falls through to the shell")
+	}
+}
+
+// The undo belongs on the screen the mistake was made on: a Capture rejected by
+// accident should be taken back without changing tabs.
+func TestScanUndoesARejectionFromItsOwnPane(t *testing.T) {
+	root := routeTestRoot(t, "junk")
+	rejectRoot := filepath.Join(t.TempDir(), "Rejected")
+	m := newModelWithReject(root, "index.json", rejectRoot)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m = updated.(model)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(model)
+	m.captures.SelectID("capture:" + filepath.Join(root, "junk"))
+
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = updated.(model)
+	if len(m.rejected) != 1 || m.rejected[0].path != filepath.Join(rejectRoot, "junk") {
+		t.Fatalf("the pane did not remember the rejection: %#v", m.rejected)
+	}
+	if !strings.Contains(m.View(), "REJECTED") || !strings.Contains(m.View(), "junk/") {
+		t.Fatal("the rejected pane does not name the folder that was sent away")
+	}
+
+	m.fields.Set(rejectedField)
+	updated, cmd := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	m = updated.(model)
+	if _, err := os.Stat(filepath.Join(root, "junk")); err != nil {
+		t.Fatalf("u did not put the capture back: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(rejectRoot, "junk")); !os.IsNotExist(err) {
+		t.Fatalf("the capture is still in the reject folder: %v", err)
+	}
+	if len(m.rejected) != 0 {
+		t.Fatalf("the pane still lists a restored capture: %#v", m.rejected)
+	}
+	if cmd == nil {
+		t.Fatal("the undo started no reload")
+	}
+}
+
+// Three rows, most recent first: it is a reach back rather than a history, and
+// the whole reject folder is Archive's to show.
+func TestScanRejectedPaneKeepsTheLastThreeMostRecentFirst(t *testing.T) {
+	root := routeTestRoot(t, "one", "two", "three", "four")
+	rejectRoot := filepath.Join(t.TempDir(), "Rejected")
+	m := newModelWithReject(root, "index.json", rejectRoot)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m = updated.(model)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(model)
+
+	for _, name := range []string{"one", "two", "three", "four"} {
+		m.captures.SelectID("capture:" + filepath.Join(root, name))
+		updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
+		m = updated.(model)
+	}
+	if len(m.rejected) != 4 {
+		t.Fatalf("remembered %d rejections, want every one of them", len(m.rejected))
+	}
+	visible := m.rejectedVisible()
+	if len(visible) != 3 || visible[0].name != "four" || visible[2].name != "two" {
+		t.Fatalf("visible = %v, want the last three most recent first", visible)
+	}
+	pane := m.rejectedPane(m.columnRightWidth())
+	if strings.Contains(pane, "one/") || !strings.Contains(pane, "four/") {
+		t.Fatalf("the pane shows more than it has room for:\n%s", pane)
 	}
 }

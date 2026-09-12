@@ -22,6 +22,12 @@
   moves the Capture itself, and one that has been moved is no longer in the
   root the other sessions read. Keeping it out of the Actions means no Recipe
   can quietly retire a Capture as a side effect of organizing it.
+- Scan rejects a Capture too, with the same `Backspace` into the same folder —
+  see [`scan.md`](scan.md). An accident is recognised the first time a Capture
+  is looked at, and this session is where it is taken back: a Capture Scan sent
+  away appears in `REJECT` here, and `R` returns it to the Capture root. Scan
+  has its own three-row undo for what it rejected in this run; this session is
+  where anything older than that is taken back.
 - A Capture that has not been organized is refused the archive: the archive is
   where handled Captures are kept, and one that was never organized would
   arrive there having had nothing done to it. Any Capture can be rejected,
