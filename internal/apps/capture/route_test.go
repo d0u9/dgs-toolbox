@@ -1448,7 +1448,7 @@ func TestRouteTabFollowsWhatIsSelectable(t *testing.T) {
 		m.cycleFields(true)
 		walked = append(walked, m.fields.Current())
 	}
-	want := []string{routeRecipesField, routeCapturesField, routeRecipesField, routeCapturesField}
+	want := []string{routeRecipesField, routePayloadField, routeCapturesField, routeRecipesField}
 	for index, field := range want {
 		if walked[index] != field {
 			t.Fatalf("tab walked %v, want %v", walked, want)

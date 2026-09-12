@@ -31,7 +31,9 @@
 Route uses the shared equal four-column landscape skeleton: four columns of
 `1/4` each, one Fieldset per column, left to right `CAPTURES`, `RECIPES`,
 `ACTIONS`, `FIELDS`. The two middle columns end short of the workspace bottom,
-where one `ATTACHMENTS` Fieldset spans both. The four regions are peers in the organizing
+where `PAYLOAD` sits under `RECIPES` and `ATTACHMENTS` under `ACTIONS`.
+These bottom panes take one third of the workspace height, with a ten-row
+minimum on shorter terminals. The four regions are peers in the organizing
 task, so none of them is widened over the others. Remainder cells from an
 uneven division go to the leftmost columns. Because four columns need more
 width than Scan's three, Route shows its resize prompt on narrower terminals
@@ -221,27 +223,16 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   overlay over the workspace, titled by the field. `datetime` and
   `multi_select` do not fit either and are not editable yet; the Recipes that
   need them show the requirement and report the Action as blocked.
-- `ATTACHMENTS` is what the Capture holds: its files on the left, and the
-  details of the one under the cursor on the right. Organizing a Capture is
-  deciding what to do with what it holds, and until this pane existed that
-  could only be read one tab away in Scan — the columns above say what will be
-  written, and this says what is being written about.
-
-  It spans `RECIPES` and `ACTIONS` rather than taking a column: neither half is
-  worth a quarter of the screen on its own — a list of two filenames, and a
-  dozen short rows — and they are one question asked in two parts. The room
-  comes out of those two columns alone, the way the Capture Root control takes
-  its room from the column above it, so the outer two still run the height of
-  the workspace.
-
-  ```text
-  ── ◆ ATTACHMENTS ──────────────────────────────────────
-    1 note.txt                    Kind  note
-    2 memo.wav                    Name  note.txt
-                                  Type  text/plain
-                                  Size  13 B
-                               Created  2026-09-09T16:34…
-  ```
+- `PAYLOAD` shows the selected Capture's payload as indented JSON, preserving
+  nested objects and arrays. Long lines wrap; Up/Down or j/k, Page Up/Down,
+  Home/End and the wheel scroll the content. Its legend shows the current row
+  when there is more content. It joins the Tab ring when there is payload;
+  spatial navigation and clicks can always reach it. Esc returns to RECIPES.
+- `ATTACHMENTS` sits beside Payload. Its file list is above the selected file's
+  details, separated by a blank row and the shared anchored divider. Page Up/Down
+  scroll the details; the wheel over the details scrolls them independently of
+  the file list. Both bottom panes follow the selected Capture, leaving the
+  outer columns at full height.
 
 - The list is the attachments the index names and the directory really holds,
   in manifest order; one the index names and the scan could not find is not

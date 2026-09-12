@@ -17,6 +17,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -401,6 +402,12 @@ func (m archiveModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if hit == rejectFolderField {
 		row = msg.Y - m.destinationHeight() - 1
 	}
+	if hit == archiveFolderField {
+		row -= lipgloss.Height(m.destinationHeader(destinationArchive, max(1, m.columnWidths()[2]-4)))
+	}
+	if hit == rejectFolderField {
+		row -= lipgloss.Height(m.destinationHeader(destinationReject, max(1, m.columnWidths()[2]-4)))
+	}
 	if !list.SelectRow(row) {
 		return m, nil
 	}
@@ -631,7 +638,7 @@ func (m *archiveModel) cycleFields(forward bool) {
 }
 
 func (m archiveModel) View() string {
-	if m.width < 72 || m.height < 10 {
+	if m.width < 72 || m.height < 10 || !m.pathsFit() {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, scanMutedStyle.Render("Resize terminal for Capture Archive"))
 	}
 	widths := m.columnWidths()
@@ -709,7 +716,9 @@ func (m archiveModel) destinationPane(destination archiveDestination, width, hei
 
 	var content string
 	list := *m.listFor(destination)
-	list.SetSize(inner, max(1, height-3))
+	header := m.destinationHeader(destination, inner)
+	headerHeight := lipgloss.Height(header)
+	list.SetSize(inner, max(1, height-2-headerHeight))
 	switch {
 	case folder == "":
 		content = scanMutedStyle.Render("· Set " + folderKey(destination))
@@ -723,11 +732,7 @@ func (m archiveModel) destinationPane(destination archiveDestination, width, hei
 	// The folder is named above its contents rather than in a control: it is
 	// configuration, so it is something to read and not something to change
 	// here.
-	header := scanMutedStyle.Render(truncate(displayPath(folder), inner))
-	if folder == "" {
-		header = scanMutedStyle.Render("· No folder")
-	}
-	body := header + "\n" + fitHeight(content, max(1, height-3), inner)
+	body := header + "\n" + fitHeight(content, max(1, height-2-headerHeight), inner)
 	return fieldset.ViewFocused(legend, body, width, focused)
 }
 
@@ -744,7 +749,7 @@ func (m archiveModel) detail(width int) string {
 		detailInline("Name", entry.name+string(filepath.Separator), width),
 		detailInline("Source", routeCaptureDetail(entry), width),
 		detailInline("Sitting", m.sittingIn(), width),
-		detailInline("Folder", displayPath(entry.path), width),
+		scanMutedStyle.Render("Folder") + "\n" + ansi.Hardwrap(displayPath(entry.path), max(1, width), true),
 	}
 	lines = append(lines, "", divider.Labelled("ORGANIZED", width))
 	if !entry.organized {
@@ -876,7 +881,7 @@ func (m archiveModel) buttonHit(x, y int) (archiveAction, bool) {
 }
 
 func (m *archiveModel) resizeComponents() {
-	if m.width < 72 || m.height < 10 {
+	if m.width < 72 || m.height < 10 || !m.pathsFit() {
 		return
 	}
 	widths := m.columnWidths()
@@ -889,8 +894,8 @@ func (m *archiveModel) resizeComponents() {
 	right := center + widths[1] + columnGutter
 	top := m.destinationHeight()
 	bottom := max(4, m.height-archiveActionsHeight-top)
-	m.archive.SetSize(max(1, widths[2]-4), max(1, top-3))
-	m.reject.SetSize(max(1, widths[2]-4), max(1, bottom-3))
+	m.archive.SetSize(max(1, widths[2]-4), max(1, top-2-lipgloss.Height(m.destinationHeader(destinationArchive, max(1, widths[2]-4)))))
+	m.reject.SetSize(max(1, widths[2]-4), max(1, bottom-2-lipgloss.Height(m.destinationHeader(destinationReject, max(1, widths[2]-4)))))
 	m.fields.SetBounds(archiveFolderField, datafield.Bounds{X: right, Y: 0, Width: widths[2], Height: top})
 	m.fields.SetBounds(rejectFolderField, datafield.Bounds{X: right, Y: top, Width: widths[2], Height: bottom})
 }
@@ -938,4 +943,22 @@ func (m archiveModel) statusValue() string {
 	}
 	return fmt.Sprintf("%d CAPTURES · %d ARCHIVED · %d REJECTED",
 		len(m.entries), len(m.archived), len(m.rejected))
+}
+
+// Paths get the full column width and wrap without dropping the final component.
+func (m archiveModel) destinationHeader(destination archiveDestination, width int) string {
+	folder := m.folderFor(destination)
+	if folder == "" {
+		return scanMutedStyle.Render("· No folder")
+	}
+	return scanMutedStyle.Render(ansi.Hardwrap(displayPath(folder), max(1, width), true))
+}
+
+// Keep complete paths and at least one two-line Capture row inside each pane.
+func (m archiveModel) pathsFit() bool {
+	width := max(1, m.columnWidths()[2]-4)
+	top := m.destinationHeight()
+	bottom := max(4, m.height-archiveActionsHeight-top)
+	return lipgloss.Height(m.destinationHeader(destinationArchive, width))+4 <= top &&
+		lipgloss.Height(m.destinationHeader(destinationReject, width))+4 <= bottom
 }
