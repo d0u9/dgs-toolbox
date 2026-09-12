@@ -17,12 +17,19 @@ const (
 	FieldCity      FieldID = "place.city"
 	FieldRegion    FieldID = "place.region"
 	FieldCountry   FieldID = "place.country"
-	FieldLatitude  FieldID = "coordinates.latitude"
-	FieldLongitude FieldID = "coordinates.longitude"
-	FieldTags      FieldID = "tags"
-	FieldDueAt     FieldID = "due_at"
-	FieldStartAt   FieldID = "start_at"
-	FieldAllDay    FieldID = "all_day"
+	// FieldCoordinates is the position itself, which is the field a Recipe
+	// means when it asks whether the Capture has one at all. Latitude and
+	// longitude are the same question asked twice — the index carries them as
+	// one object, so neither can be present without the other — and a Recipe
+	// naming one of them to mean "has a position" reads as though the other
+	// could be missing.
+	FieldCoordinates FieldID = "coordinates"
+	FieldLatitude    FieldID = "coordinates.latitude"
+	FieldLongitude   FieldID = "coordinates.longitude"
+	FieldTags        FieldID = "tags"
+	FieldDueAt       FieldID = "due_at"
+	FieldStartAt     FieldID = "start_at"
+	FieldAllDay      FieldID = "all_day"
 )
 
 // InputType tells a caller how to ask for a field. A bare field name is not

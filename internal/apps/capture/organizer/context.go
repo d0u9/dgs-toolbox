@@ -197,6 +197,11 @@ func resolve(capture Capture, field FieldID) (any, bool) {
 		return present(index.CapturePlace().Region)
 	case FieldCountry:
 		return present(index.CapturePlace().Country)
+	case FieldCoordinates:
+		if index.Coordinates == nil {
+			return nil, false
+		}
+		return fmt.Sprintf("%v, %v", index.Coordinates.Latitude, index.Coordinates.Longitude), true
 	case FieldLatitude:
 		if index.Coordinates == nil {
 			return nil, false
