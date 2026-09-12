@@ -74,6 +74,17 @@ CAPTURES              CAPTURE                             ARCHIVE
   each naming its folder and then listing what that folder holds. The folder is
   written above the list rather than put in a control: it is configuration, so
   it is something to read here and not something to change here.
+- The three lists are drawn in one of two views, swapped with `v`. The index
+  view leads with when the Capture was taken and carries what produced it
+  underneath; the folder view leads with the directory name and carries the
+  timestamp underneath. A Capture is identified by its index by default,
+  because a generated folder name such as `aaaa-xxxxx` says nothing about what
+  is in it — but that name is what every other tool on the machine calls it, so
+  a reader comparing this screen with a Finder window, a backup or a terminal
+  needs the other view too. Neither view drops the other fact: a row answering
+  only one of the two questions would send the reader across for every Capture.
+  The view belongs to the session rather than to one column, so a Capture moved
+  between columns is not renamed by arriving.
 - A Capture is in exactly one of the three lists, and a move is watched leaving
   one and arriving in the other. That is the whole state of the session: there
   are no marks to keep track of, because nothing is pending.

@@ -100,9 +100,16 @@ type archiveModel struct {
 	folderError map[archiveDestination]string
 	notice      string
 	noticeBad   bool
-	fields      datafield.Navigator
-	pendingGG   bool
-	lastClick   routeClick
+	// byFolder is which of the two views the three lists are drawn in. A
+	// Capture is identified by its index — when it was taken, what produced it
+	// — because a generated folder name says nothing about what is in it. But
+	// the folder name is what every other tool on the machine calls it, so a
+	// reader comparing this screen with a Finder window, a backup, or a
+	// terminal needs the other view as well.
+	byFolder  bool
+	fields    datafield.Navigator
+	pendingGG bool
+	lastClick routeClick
 }
 
 func newArchiveModel(root, indexFile, archiveRoot, rejectRoot string) archiveModel {
@@ -225,6 +232,15 @@ func (m archiveModel) applyFolder(msg archiveFolderLoadedMsg) archiveModel {
 
 func (m archiveModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if key == "v" {
+		// The view belongs to the session rather than to one column: the same
+		// Capture is named the same way wherever it is listed, or moving one
+		// between columns would look like it changed.
+		m.byFolder = !m.byFolder
+		m.pendingGG = false
+		m.rebuildItems()
+		return m, nil
+	}
 	if m.fields.Move(key) || key == "tab" || key == "shift+tab" {
 		if key == "tab" || key == "shift+tab" {
 			m.cycleFields(key == "tab")
@@ -618,16 +634,10 @@ func (m *archiveModel) rebuildItems() {
 			entries, boundary = orderByOrganized(entries)
 		}
 		for _, entry := range entries {
-			detail := routeCaptureDetail(entry)
-			if latest, ok := entry.record.Latest(); ok && entry.organized {
-				detail += "  → " + latest.RecipeName
-			}
-			if detail != "" {
-				detail = "      " + detail
-			}
+			label, detail := m.rowText(entry)
 			items = append(items, scrolllist.Item{
 				ID:     archiveItemID(destination, entry.path),
-				Label:  routeCaptureLabel(entry),
+				Label:  label,
 				Detail: detail,
 			})
 		}
@@ -639,6 +649,35 @@ func (m *archiveModel) rebuildItems() {
 			list.SelectID(selected)
 		}
 	}
+}
+
+// rowText is one row in whichever view is current. The two views swap which
+// fact leads: the index view reads as when the Capture was taken with what
+// produced it under it, and the folder view reads as the directory name with
+// the timestamp under it. Neither drops the other, because a row that answered
+// only one of the two questions would send the reader to the other view for
+// every Capture.
+func (m archiveModel) rowText(entry captureEntry) (label string, detail string) {
+	if m.byFolder {
+		detail = organizer.FormatTimestamp(entry.index.CreatedAt)
+		if detail == "" {
+			detail = routeCaptureDetail(entry)
+		}
+		return entry.name + string(filepath.Separator), indentDetail(detail)
+	}
+	detail = routeCaptureDetail(entry)
+	if latest, ok := entry.record.Latest(); ok && entry.organized {
+		detail += "  → " + latest.RecipeName
+	}
+	return routeCaptureLabel(entry), indentDetail(detail)
+}
+
+// indentDetail lines a second row up under the first, past the row number.
+func indentDetail(detail string) string {
+	if detail == "" {
+		return ""
+	}
+	return "      " + detail
 }
 
 // orderByOrganized puts the Captures still to organize first and the organized
@@ -794,6 +833,7 @@ func (m archiveModel) detail(width int) string {
 	}
 	lines := []string{
 		detailInline("Capture", routeCaptureLabel(entry), width),
+		detailInline("Name", entry.name+string(filepath.Separator), width),
 		detailInline("Source", routeCaptureDetail(entry), width),
 		detailInline("Sitting", m.sittingIn(), width),
 		detailInline("Folder", displayPath(entry.path), width),
@@ -981,11 +1021,11 @@ func (m archiveModel) Status() tui.Status {
 	case archiveRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: m.root, Right: "↵ Browse  R Refresh  tab Next"}
 	case archiveFolderField:
-		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑/k ↓/j Move  R Restore  ⌫ Reject  tab Next"}
+		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑/k ↓/j Move  R Restore  ⌫ Reject  v View  tab Next"}
 	case rejectFolderField:
-		return tui.Status{Left: "REJECT", Center: center, Right: "↑/k ↓/j Move  R Restore  a Archive  tab Next"}
+		return tui.Status{Left: "REJECT", Center: center, Right: "↑/k ↓/j Move  R Restore  a Archive  v View  tab Next"}
 	default:
-		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑/k ↓/j Move  a Archive  ⌫ Reject  R Refresh"}
+		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑/k ↓/j Move  a Archive  ⌫ Reject  v View  R Refresh"}
 	}
 }
 

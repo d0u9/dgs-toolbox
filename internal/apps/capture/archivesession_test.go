@@ -317,3 +317,29 @@ func collect(cmd tea.Cmd) []tea.Msg {
 	}
 	return []tea.Msg{msg}
 }
+
+// The two views answer two questions about the same Capture: what it is, and
+// what every other tool on the machine calls it.
+func TestArchiveSwitchesBetweenIndexAndFolderViews(t *testing.T) {
+	root := organizedRoot(t, []string{"aaaa-xxxxx"}, nil)
+	m := loadedArchive(t, root, filepath.Join(t.TempDir(), "Archive"), filepath.Join(t.TempDir(), "Reject"))
+
+	label, detail := m.rowText(m.entries[0])
+	if !strings.HasPrefix(label, "2026-09-09") || !strings.Contains(detail, "Shortcut") {
+		t.Fatalf("index view = %q / %q, want the timestamp with its source under it", label, detail)
+	}
+
+	m = press(t, m, "v")
+	label, detail = m.rowText(m.entries[0])
+	if !strings.HasPrefix(label, "aaaa-xxxxx") || !strings.Contains(detail, "2026-09-09") {
+		t.Fatalf("folder view = %q / %q, want the directory name with the timestamp under it", label, detail)
+	}
+	if !strings.Contains(m.View(), "aaaa-xxxxx") {
+		t.Fatal("the folder view is not drawn in the column")
+	}
+
+	m = press(t, m, "v")
+	if label, _ := m.rowText(m.entries[0]); !strings.HasPrefix(label, "2026-09-09") {
+		t.Fatalf("v did not switch back: %q", label)
+	}
+}
