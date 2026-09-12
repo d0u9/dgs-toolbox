@@ -115,18 +115,21 @@ type filePropertiesLoadedMsg struct {
 }
 
 type model struct {
-	width          int
-	height         int
-	root           string
-	indexFile      string
-	rootControl    rootControl
-	captures       scrolllist.Model
-	entries        []captureEntry
-	expanded       map[string]bool
-	captureCount   int
-	fields         datafield.Navigator
-	loadError      string
-	pendingGG      bool
+	width        int
+	height       int
+	root         string
+	indexFile    string
+	rootControl  rootControl
+	captures     scrolllist.Model
+	entries      []captureEntry
+	expanded     map[string]bool
+	captureCount int
+	fields       datafield.Navigator
+	loadError    string
+	pendingGG    bool
+	// lastClick remembers the previous press so a second one on the same row
+	// reads as a double click, the way it does in Route.
+	lastClick      routeClick
 	preview        viewport.Model
 	previewPath    string
 	fileProperties []property
@@ -530,6 +533,8 @@ func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.fields.FocusAt(msg.X, msg.Y)
 	m.refreshDetails(false)
 	m.pendingGG = false
+	double := pairsWithLastClick(m.lastClick, hit, msg.Y)
+	m.lastClick = routeClick{field: hit, row: msg.Y, at: time.Now()}
 	if hit == rootField {
 		if m.rootControl.Clicked(msg.X-2, msg.Y-m.captureListHeight()-1) {
 			return m.openPicker()
@@ -537,6 +542,15 @@ func (m model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if hit == capturesField {
 		if m.captures.SelectRow(msg.Y - 1) {
+			// A Capture is a folder, so a double click opens and closes it —
+			// the same gesture a file manager uses, and the same thing the
+			// keyboard's enter does on that row.
+			if double {
+				m.toggleSelectedCapture()
+				// A folder that has just been opened or closed is no longer
+				// the row it was, so the next press starts a new pair.
+				m.lastClick = routeClick{}
+			}
 			return m, m.loadSelectedPreview()
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"dgs-toolbox/internal/apps/capture/indexschema"
 	"dgs-toolbox/internal/apps/capture/organizer"
@@ -601,5 +602,58 @@ func TestScanJSONTreeRedrawsOnResizeAndFocusChange(t *testing.T) {
 	m.refreshDetails(false)
 	if strings.Contains(m.preview.View(), marker) {
 		t.Fatal("the tree cursor stays lit after the focus has left the preview")
+	}
+}
+
+// A Capture is a folder, so double clicking it opens and closes it the way a
+// file manager does. A single click only selects: clicking down the list must
+// not leave a trail of opened folders behind it.
+func TestScanDoubleClickTogglesACaptureFolder(t *testing.T) {
+	m := newModel()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 28})
+	m = updated.(model)
+	m.entries = []captureEntry{{path: "/capture/alpha", name: "alpha", files: []string{"index.json"}}}
+	m.rebuildCaptureItems()
+
+	click := func(m model) model {
+		updated, _ := m.updateMouse(tea.MouseMsg{X: 4, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		return updated.(model)
+	}
+
+	m = click(m)
+	if m.expanded["/capture/alpha"] {
+		t.Fatal("a single click opened the folder, want it only selected")
+	}
+	m = click(m)
+	if !m.expanded["/capture/alpha"] {
+		t.Fatal("a double click did not open the folder")
+	}
+	// The pair is spent, so the next two presses close it again rather than
+	// the third press alone doing it.
+	m = click(m)
+	if !m.expanded["/capture/alpha"] {
+		t.Fatal("a third click closed the folder, want the pair to have been spent")
+	}
+	m = click(m)
+	if m.expanded["/capture/alpha"] {
+		t.Fatal("a second double click did not close the folder")
+	}
+}
+
+// Two presses far enough apart are two clicks, not one double click.
+func TestScanSlowClicksDoNotToggleACaptureFolder(t *testing.T) {
+	m := newModel()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 28})
+	m = updated.(model)
+	m.entries = []captureEntry{{path: "/capture/alpha", name: "alpha", files: []string{"index.json"}}}
+	m.rebuildCaptureItems()
+
+	updated, _ = m.updateMouse(tea.MouseMsg{X: 4, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = updated.(model)
+	m.lastClick.at = time.Now().Add(-time.Second)
+	updated, _ = m.updateMouse(tea.MouseMsg{X: 4, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = updated.(model)
+	if m.expanded["/capture/alpha"] {
+		t.Fatal("two slow clicks opened the folder")
 	}
 }
