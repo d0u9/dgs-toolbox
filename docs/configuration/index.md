@@ -24,14 +24,12 @@ wins:
 2. `DGS_TOOLBOX_CONFIG` in the environment.
 3. `$XDG_CONFIG_HOME/dgs-toolbox/dgs-config.json`, or
    `~/.config/dgs-toolbox/dgs-config.json` when that variable is unset.
-4. `<user configuration directory>/dgs/config.json` — on macOS,
-   `~/Library/Application Support/dgs/config.json`.
 
-The last two are tried in that order and the first that exists is used, so the
-XDG directory is where a configuration kept by hand belongs: it is the folder
-the reader's other tools already keep their files in. The name is the one
-`--export-config` writes, so a file copied out of it lands under the name it
-already has. When neither exists, the XDG path is the one named as missing.
+One default location rather than a list tried in turn: "which file am I
+editing?" should not have an answer that depends on which files exist. It is
+the folder the reader's other tools already keep their files in, and the name
+is the one `--export-config` writes, so a file copied out of it is found under
+the name it already has.
 
 `dgs-toolbox/` is the whole configuration, not only the file: `config_dir`
 defaults to the folder the file was found in, so the recipes and templates sit

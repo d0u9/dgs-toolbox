@@ -10,28 +10,6 @@ type Set struct {
 // NewSet builds a Set from an explicit list, for callers that construct one.
 func NewSet(recipes []Recipe) Set { return Set{recipes: append([]Recipe(nil), recipes...)} }
 
-// With layers Recipes over this Set: one whose id matches replaces the Recipe
-// it shadows in place, keeping the order stable, and one with a new id is
-// appended. Overriding rather than merging means a user file is the whole
-// Recipe, not a patch on a built-in that has to be read alongside it.
-func (s Set) With(recipes []Recipe) Set {
-	merged := append([]Recipe(nil), s.recipes...)
-	for _, recipe := range recipes {
-		replaced := false
-		for index, existing := range merged {
-			if existing.ID == recipe.ID {
-				merged[index] = recipe
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			merged = append(merged, recipe)
-		}
-	}
-	return Set{recipes: merged}
-}
-
 // All returns every Recipe in the Set, in a stable order.
 func (s Set) All() []Recipe { return append([]Recipe(nil), s.recipes...) }
 
