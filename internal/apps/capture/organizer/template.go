@@ -77,10 +77,13 @@ type EntryData struct {
 	// template can put them where it wants.
 	Clock  Value
 	Offset Value
-	// CopyLink is the position, shown as it is read and linked to the command
-	// that copies it. MapLinks is the map services' links, already joined.
-	CopyLink Value
-	MapLinks Value
+	// copyLink and mapLinks are what the CopyLink and MapLinks methods render.
+	// They are methods rather than values because which services an entry
+	// carries and which vault command a coordinate links to are decisions about
+	// how the line reads, and the line is the template's: a configuration key
+	// deciding them would be the configuration doing the template's job.
+	copyLink func(choice string) string
+	mapLinks func(services string) string
 	// Altitude is metres above sea level, as the Capture recorded it. It is
 	// separate from Coordinates because a template may want the position
 	// without it.
@@ -126,6 +129,27 @@ func templateFuncs(settings Settings) template.FuncMap {
 	}
 }
 
+// CopyLink is the position, shown as it is read and linked to the vault command
+// that copies it. The command is named by the template because it is that
+// vault's command: "{{.CopyLink "Copy Coordinates (lng, lat)"}}". Called with
+// nothing, the position is written unlinked.
+func (d EntryData) CopyLink(choice ...string) Value {
+	if d.copyLink == nil {
+		return ""
+	}
+	return Value(d.copyLink(strings.Join(choice, "")))
+}
+
+// MapLinks is the map services' links, joined. The services are named by the
+// template, by name or short name, in the order they are written:
+// "{{.MapLinks "Apple, 高德"}}". Called with nothing, every service is written.
+func (d EntryData) MapLinks(services ...string) Value {
+	if d.mapLinks == nil {
+		return ""
+	}
+	return Value(d.mapLinks(strings.Join(services, ", ")))
+}
+
 // entryData collects what a template may write about one Capture.
 func entryData(ctx Context) EntryData {
 	created := ctx.String(FieldCreatedAt)
@@ -142,8 +166,8 @@ func entryData(ctx Context) EntryData {
 		Longitude:    Value(longitude),
 		Clock:        Value(clockOf(created)),
 		Offset:       Value(offsetOf(created)),
-		CopyLink:     Value(copyLink(ctx, latitude, longitude)),
-		MapLinks:     Value(mapLinksLine(ctx, latitude, longitude)),
+		copyLink:     func(choice string) string { return copyLink(ctx, latitude, longitude, choice) },
+		mapLinks:     func(services string) string { return mapLinksLine(ctx, latitude, longitude, services) },
 		Altitude:     Value(altitude(ctx)),
 		Address:      Value(address(ctx)),
 		Place:        Value(ctx.String(FieldPlaceName)),
@@ -456,7 +480,7 @@ func offsetOf(createdAt string) string {
 // mapLinksLine is the map services' links on one line. The pin is named by the
 // most specific part of the address; the whole of it in a URL is too long to
 // read and no more accurate, since the position comes from the coordinates.
-func mapLinksLine(ctx Context, latitude, longitude string) string {
+func mapLinksLine(ctx Context, latitude, longitude, services string) string {
 	place := ctx.Capture.Index.CapturePlace()
 	label := ""
 	for _, part := range []string{place.Locality, place.City, place.Region, place.Country} {
@@ -465,7 +489,7 @@ func mapLinksLine(ctx Context, latitude, longitude string) string {
 			break
 		}
 	}
-	links := MapLinks(latitude, longitude, label, ctx.Settings.MapServices)
+	links := MapLinks(latitude, longitude, label, services)
 	parts := make([]string, 0, len(links))
 	for _, link := range links {
 		parts = append(parts, fmt.Sprintf("[%s](%s)", link.Short, link.URL))

@@ -25,12 +25,6 @@ const (
 // locationMarker matches a date marker and captures its year.
 var locationMarker = regexp.MustCompile(`^- \*(\d{4})-\d{2}-\d{2} .+\*$`)
 
-// weekdaysZH are the day names the marker uses when nothing maps them.
-var weekdaysZH = map[time.Weekday]string{
-	time.Sunday: "周日", time.Monday: "周一", time.Tuesday: "周二", time.Wednesday: "周三",
-	time.Thursday: "周四", time.Friday: "周五", time.Saturday: "周六",
-}
-
 // ErrNoLocationNote is returned when nothing says which note the running list
 // lives in.
 var ErrNoLocationNote = errors.New("no location note is configured")
@@ -120,9 +114,13 @@ func archiveHeader(ctx Context, year string) string {
 
 // locationDateMarker is the day's tick on the timeline. The italics are what
 // the vault's stylesheet recognises, and what the archive matches on.
+// The day's name is written through the weekday mapping table, which ships and
+// is laid down by --init: a vault writing its days in another language says so
+// in that file rather than in a Go map only the compiler reads. With no table,
+// the day is named the way the clock names it.
 func locationDateMarker(ctx Context, day time.Time) string {
-	weekday := weekdaysZH[day.Weekday()]
-	if mapped, ok := ctx.Settings.Mappings["weekday"][day.Weekday().String()]; ok {
+	weekday := day.Weekday().String()
+	if mapped, ok := ctx.Settings.Mappings["weekday"][weekday]; ok {
 		weekday = mapped
 	}
 	return fmt.Sprintf("- *%s %s*", day.Format(locationDateLayout), weekday)
@@ -312,9 +310,9 @@ func prependToArchive(ctx Context, year, moving string) error {
 // vault's copy command, which puts it on the clipboard the other way round.
 // What is read and what is copied deliberately differ: maps want one order and
 // the services that take a pasted pair want the other.
-func copyLink(ctx Context, latitude, longitude string) string {
+func copyLink(ctx Context, latitude, longitude, choice string) string {
 	shown := fmt.Sprintf("(%s, %s)", latitude, longitude)
-	choice := strings.TrimSpace(ctx.Settings.CoordinateChoice)
+	choice = strings.TrimSpace(choice)
 	if choice == "" || latitude == "" || longitude == "" {
 		return shown
 	}

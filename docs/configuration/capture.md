@@ -12,17 +12,12 @@ model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
       "root": "~/Captures",
       "index_file": "index.json"
     },
-    "mappings": {
-      "country": { "China": "🇨🇳_中国" }
-    },
     "obsidian": {
       "vault": "~/Vaults/personal",
       "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
       "section": "Captured{{with .Device}} - {{.}}{{end}}",
       "location_note": "88 Inbox/06 Locations.md",
-      "location_archive": "88 Inbox/06 Locations",
-      "map_services": "Apple, 高德, Google",
-      "coordinate_choice": "Copy Coordinates (lng, lat)"
+      "location_archive": "88 Inbox/06 Locations"
     }
   }
 }
@@ -47,6 +42,7 @@ Capture reads three directories, and none of them is configurable:
 <config_dir>/capture/
   recipes/     one file per Recipe
   workflows/   one file per workflow: where it keeps each field
+  mappings/    one file per translation table
   templates/   daily-note.md, and any compiled-in template you replace
 ```
 
@@ -199,26 +195,31 @@ chosen.
 
 ## Mappings
 
-`capture.mappings` translates a value on its way into a note, by table name:
-what a Capture recorded against what this vault files it under. A template
-reads one with `{{mapped "country" .Country}}`; a value the table does not
-mention comes back as it was, because a mapping says how some names are
-written here, not which names are allowed.
+What a Capture records and what a vault files it under are not always the same
+string: `Australia` against `🇦🇺_Australia`. One file per table, named after it,
+and the file is the table:
 
-```json
-{
-  "capture": {
-    "mappings": {
-      "country": { "Australia": "🇦🇺_Australia", "China": "🇨🇳_中国" },
-      "weekday": { "Monday": "周一" }
-    }
-  }
-}
+```yaml
+# ~/.config/dgs-toolbox/capture/mappings/country.yaml
+Australia: 🇦🇺_Australia
+China: 🇨🇳_中国
 ```
 
-Table names are the templates' business rather than the configuration's. Two
-are read by what ships today: `country`, by the entry templates, and
-`weekday`, by the location note's date marker.
+A template asks for one by name:
+
+```gotemplate
+country: "{{mapped "country" .Country}}"
+```
+
+A value the table does not mention is written as it was — a mapping says how
+some names are written here, not which names are allowed, and dropping the rest
+would lose what the Capture carried. A table nothing asks for changes nothing:
+it is the template that decides where a translation applies, so the same
+Capture can be filed one way in the daily note and another in the list of
+places.
+
+`dgs capture --init` writes the tables this version ships, currently
+`weekday.yaml`, which the location note's date marker asks for.
 
 ## The vault
 
@@ -242,10 +243,20 @@ are read by what ships today: `country`, by the entry templates, and
 
 ## Map links and coordinates
 
-| Key | Meaning | Default |
-| --- | --- | --- |
-| `capture.obsidian.map_services` | Which map links an entry carries, by name or short name, comma-separated, in the order they are written. A name nothing matches is left out rather than guessed at. | empty — every service, in the order below |
-| `capture.obsidian.coordinate_choice` | The vault command a coordinate links to, which puts it on the clipboard. | empty — the coordinates are written unlinked |
+These are not configuration. The location entry's template decides which map
+services a line carries and which vault command a coordinate links to, because
+they are decisions about how that line reads:
+
+```gotemplate
+- {{.CopyLink "Copy Coordinates (lng, lat)"}}
+- {{.MapLinks "Apple, 高德, Google"}}
+```
+
+`MapLinks` takes the services by name or short name, in the order they are
+written, and with no argument writes every one of them. A name nothing matches
+is left out rather than guessed at. `CopyLink` takes the vault command that
+puts a position on the clipboard; with no argument the position is written
+unlinked.
 
 The services, by name and short name: `Apple 地图` / `Apple`, `高德地图` /
 `高德`, `Google 地图` / `Google`, `百度地图` / `百度`, `OpenStreetMap` / `OSM`.

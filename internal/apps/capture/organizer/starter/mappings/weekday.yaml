@@ -1,0 +1,13 @@
+# What a Capture records against what this vault files it under. A value the
+# table does not mention is written as it was: a table says how some names are
+# written here, not which names are allowed.
+#
+# Asked for by a template as {{mapped "weekday" .Weekday}}, and by the location
+# note for the day it writes above an entry.
+Monday: 周一
+Tuesday: 周二
+Wednesday: 周三
+Thursday: 周四
+Friday: 周五
+Saturday: 周六
+Sunday: 周日

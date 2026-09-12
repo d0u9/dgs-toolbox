@@ -6,7 +6,8 @@ import (
 	"sort"
 )
 
-// starterFiles are the Recipes and workflow descriptions this toolbox ships.
+// starterFiles are the Recipes, workflow descriptions and mapping tables this
+// toolbox ships.
 // They are files rather than Go values, and they are not loaded: both are
 // things a reader owns and edits, so what is in effect is only ever what is in
 // their own directories. What is compiled in is a copy to start from, written
@@ -17,7 +18,7 @@ import (
 // not existed for some time, and nobody noticed, because nothing read them but
 // the compiler.
 //
-//go:embed starter/recipes/*.yaml starter/workflows/*.yaml
+//go:embed starter/recipes/*.yaml starter/workflows/*.yaml starter/mappings/*.yaml
 var starterFiles embed.FS
 
 // StarterKind is one of the directories a starter file belongs in, named the
@@ -27,10 +28,11 @@ type StarterKind string
 const (
 	StarterRecipes   StarterKind = "recipes"
 	StarterWorkflows StarterKind = "workflows"
+	StarterMappings  StarterKind = "mappings"
 )
 
 // StarterKinds are the directories laid down, in the order they are written.
-var StarterKinds = []StarterKind{StarterRecipes, StarterWorkflows}
+var StarterKinds = []StarterKind{StarterRecipes, StarterWorkflows, StarterMappings}
 
 // StarterFile is one shipped file: the directory it belongs in, the filename it
 // is written under — which is its id — and its contents.
