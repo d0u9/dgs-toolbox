@@ -172,12 +172,38 @@ Keyed by Action it would be repeated for each Action in the Recipe, and it
 would come too late — a Recipe's `requires_any` is checked before any Action is
 chosen.
 
+### One field out of several keys
+
+Some workflows keep in pieces what an Action asks for as one thing — a title
+and a body, say. A source that carries `{{ }}` is a template over the payload
+rather than a key in it, so the field is whole by the time an Action asks:
+
+```yaml
+# ~/.config/dgs-toolbox/capture/workflows/quick_note.yaml
+fields:
+  content: "{{.title}}{{with .body}}\n\n{{.}}{{end}}"
+```
+
+The payload is the data, so `.title` is `payload.title` and `.meta.heading`
+reaches into it. The functions every other template in this toolbox has —
+`join`, `trim`, `default`, `indent`, `mapped` — are here too.
+
+A piece that is not always there is guarded with `{{with}}`, which writes
+nothing when the key is absent. A key named without a guard, on a Capture that
+does not carry it, leaves the whole field missing and Route asks for it in
+`FIELDS` — the same answer a path that resolves to nothing gives.
+
+A template that does not parse is a different thing: it is a mistake, so the
+file is refused when it loads, naming the field. A template and a plain key can
+be listed together, and the first that resolves answers.
+
 ### The rules
 
 - **Paths start at `payload`** and may go deeper: `payload.detail.long`. The
   rest of the index has one meaning already and needs no telling. A file with a
   path starting anywhere else is rejected, with the field that is wrong, rather
-  than quietly resolving to nothing.
+  than quietly resolving to nothing. A source carrying `{{ }}` is a template
+  instead, and is held to parsing rather than to that shape.
 - **A bad file fails alone.** The rest of the directory still loads and the
   session still opens. `dgs capture --recipes` ends with a `SOURCES` section
   saying what was read, from where, and what was rejected.

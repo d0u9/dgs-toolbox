@@ -1,6 +1,11 @@
 # The filename is the workflow, the way a Recipe's filename is its id. This one
 # keeps its text under "text" rather than the "note" the toolbox would assume,
 # and carries its own labels.
+#
+# A source carrying {{ }} is a template over the payload rather than a key in
+# it, for a workflow that keeps in pieces what an Action asks for as one thing.
+# An optional piece is guarded with "with": a key named without a guard, on a
+# Capture that does not carry it, leaves the field missing and Route asks.
 fields:
-  content: payload.text
+  content: "{{.text}}{{with .detail}}\n\n{{.}}{{end}}"
   tags: payload.labels
