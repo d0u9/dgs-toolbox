@@ -75,6 +75,11 @@ func (c Context) Get(field FieldID) (any, bool) {
 	if value, ok := c.Enrichment[field]; ok && !isEmpty(value) {
 		return value, true
 	}
+	// A configured source comes before the compiled-in one so a workflow can
+	// correct what the toolbox assumed as well as name what it never knew.
+	if value, ok := sourced(c.Settings, c.Capture, field); ok {
+		return value, true
+	}
 	if value, ok := resolve(c.Capture, field); ok {
 		return value, true
 	}
@@ -91,6 +96,90 @@ func (c Context) String(field FieldID) string {
 		return s
 	}
 	return fmt.Sprint(value)
+}
+
+// sourced reads a field from where the configuration says this workflow keeps
+// it. The path is into the Capture's own payload, which is the half of the
+// index a workflow defines; everything else in the index has one meaning and
+// needs no telling.
+func sourced(settings Settings, capture Capture, field FieldID) (any, bool) {
+	// A workflow's own entry answers for it; AnyWorkflow answers for the ones
+	// that have none. The specific wins whole rather than per path: a workflow
+	// that says where it keeps a field has said it, and falling through to a
+	// general list afterwards would read a key it did not name.
+	paths, ok := settings.Sources[capture.Workflow()][field]
+	if !ok {
+		paths = settings.Sources[AnyWorkflow][field]
+	}
+	for _, path := range paths {
+		if value, ok := valueAt(capture.Index, strings.TrimSpace(path)); ok {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+// AnyWorkflow is the workflow a source block answers for when the Capture's own
+// workflow has none of its own.
+const AnyWorkflow = "*"
+
+// PayloadRoot is the one thing a source path may start from.
+const PayloadRoot = "payload"
+
+// valueAt walks a dotted path into the payload. A path that does not resolve is
+// not an error here: the field is simply still missing, and the reader is asked
+// for it the way any other missing field is.
+func valueAt(index indexschema.Index, path string) (any, bool) {
+	segments := strings.Split(path, ".")
+	if len(segments) < 2 || segments[0] != PayloadRoot {
+		return nil, false
+	}
+	var current any = index.Payload
+	for _, segment := range segments[1:] {
+		holder, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current, ok = holder[segment]
+		if !ok {
+			return nil, false
+		}
+	}
+	return payloadValue(current)
+}
+
+// payloadValue turns what JSON decoded into what a field is. A list of strings
+// is kept as one — tags are a field like any other — and anything else that is
+// not a string is rendered, so a number written where text was expected is
+// still the value the Capture carried rather than nothing at all.
+func payloadValue(value any) (any, bool) {
+	switch v := value.(type) {
+	case nil:
+		return nil, false
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil, false
+		}
+		return v, true
+	case []any:
+		items := make([]string, 0, len(v))
+		for _, item := range v {
+			text, ok := item.(string)
+			if !ok || strings.TrimSpace(text) == "" {
+				continue
+			}
+			items = append(items, text)
+		}
+		if len(items) == 0 {
+			return nil, false
+		}
+		return items, true
+	case bool:
+		return fmt.Sprint(v), true
+	case float64:
+		return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%f", v), "0"), "."), true
+	}
+	return nil, false
 }
 
 // resolve reads a logical field out of the Capture itself.

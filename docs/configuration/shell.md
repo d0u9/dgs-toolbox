@@ -60,13 +60,16 @@ file:
   dgs-config.json
   capture/
     recipes/
+    workflows/
     templates/
   photo/
     …
 ```
 
-A command's directory may still be moved somewhere else by naming it — see
-`capture.recipes` and `capture.templates` in [Capture](capture.md#recipes-and-templates).
+The layout is not configurable: `config_dir` moves the whole thing, and a
+directory that genuinely belongs elsewhere is a symlink. See
+[Capture](capture.md#what-sits-beside-the-configuration-file) for what it reads
+from each of its own.
 
 ## The top bar
 

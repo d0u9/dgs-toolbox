@@ -331,15 +331,14 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 ## Configuration
 
 Recipes are not configured per session. They are defined by files in
-`capture.recipes` — every one of them, with none compiled in — and Route
+`<config dir>/capture/recipes` — every one of them, with none compiled in — and Route
 renders whichever candidates the Set returns. `dgs capture --export-recipes`
 lays down the ones this version ships:
 
 ```json
 {
   "capture": {
-    "scan": { "root": "~/Captures", "index_file": "index.json" },
-    "recipes": "~/.config/dgs/recipes"
+    "scan": { "root": "~/Captures", "index_file": "index.json" }
   }
 }
 ```
@@ -359,10 +358,9 @@ lays down the ones this version ships:
 
 `daily_note` is where a day's note lives, relative to the vault, as a template
 over the date. The files Route reads live under the configuration directory in
-Capture's own corner of it — `capture/recipes/` and `capture/templates/` — so
-neither has to be named here; see [`tui.md`](../../tui.md). `capture.recipes`
-and `capture.templates` still take a path of their own for a directory that
-lives somewhere else.
+Capture's own corner of it — `capture/recipes/`, `capture/workflows/` and
+`capture/templates/` — and none of them is named here or anywhere else; see
+[`tui.md`](../../tui.md).
 
 An installation whose Recipe directory is empty offers no Recipe at all, and
 Route shows an empty `RECIPES` column rather than an error.
@@ -370,10 +368,9 @@ Route shows an empty `RECIPES` column rather than an error.
 `section` is the heading a Capture is written under in a daily note, defaulting
 to `Captured{{with .Device}} - {{.}}{{end}}`; it may carry its own hashes to ask
 for a deeper level. Every key is listed in
-[`configuration/capture.md`](../../configuration/capture.md). An unset `recipes`
-means the `recipes` directory beside the configuration file.
-A missing directory is not an error; it is an installation that has not been
-given its Recipes yet.
+[`configuration/capture.md`](../../configuration/capture.md). A missing Recipe
+directory is not an error; it is an installation that has not been given its
+Recipes yet.
 
 Route therefore has no configuration of its own beyond the Capture root and
 index filename it shares with Scan. A Capture whose workflow matches no Recipe

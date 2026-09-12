@@ -52,6 +52,7 @@ func writeRecipeReport(out io.Writer, global config.Config) error {
 		}
 	}
 	writeFieldReference(out, recipes)
+	writeFieldSources(out, loadWorkflows(global))
 	if len(loaded.Failures) > 0 {
 		// A rejected file is the first thing its author needs to see, so it is
 		// repeated at the end where the report stops scrolling.
@@ -183,6 +184,49 @@ func writeFieldReference(out io.Writer, recipes []organizer.Recipe) {
 	}
 }
 
+// writeFieldSources says where a workflow's fields are read from, and from
+// which file. It is printed even when nothing is configured, because "no
+// workflow file describes this one" is the answer to why a field a Capture
+// plainly carries is still being asked for.
+func writeFieldSources(out io.Writer, loaded organizer.LoadedWorkflows) {
+	count := 0
+	for _, fields := range loaded.Sources {
+		count += len(fields)
+	}
+	fmt.Fprintf(out, "\nSOURCES  %d\n", count)
+	dir := loaded.Dir
+	if dir == "" {
+		dir = "· no workflow directory configured"
+	}
+	fmt.Fprintf(out, "  from     %s\n", dir)
+	fmt.Fprintf(out, "  files    %d read, %d failed\n\n", loaded.Files-len(loaded.Failures), len(loaded.Failures))
+	if count == 0 {
+		fmt.Fprintf(out, "  · every field is read the way this binary reads its own workflows\n")
+	}
+	workflows := make([]string, 0, len(loaded.Sources))
+	for workflow := range loaded.Sources {
+		workflows = append(workflows, workflow)
+	}
+	sort.Strings(workflows)
+	for _, workflow := range workflows {
+		fields := make([]string, 0, len(loaded.Sources[workflow]))
+		for field := range loaded.Sources[workflow] {
+			fields = append(fields, string(field))
+		}
+		sort.Strings(fields)
+		for index, field := range fields {
+			name := workflow
+			if index > 0 {
+				name = ""
+			}
+			fmt.Fprintf(out, "  %-24s %-16s %s\n", name, field, strings.Join(loaded.Sources[workflow][organizer.FieldID(field)], "  or  "))
+		}
+	}
+	for _, failure := range loaded.Failures {
+		fmt.Fprintf(out, "\n  ! %s\n    %v\n", failure.Path, failure.Err)
+	}
+}
+
 func workflowList(recipe organizer.Recipe) string {
 	if len(recipe.Match.Workflows) == 0 {
 		return "any"
@@ -228,6 +272,7 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	settings.TemplateDir = expandHome(global.CaptureTemplatesDir())
 	settings.DailyNote = obsidian.DailyNote
 	settings.Mappings = global.Capture.Mappings
+	settings.Sources = loadWorkflows(global).Sources
 	if obsidian.Section != "" {
 		settings.DailySection = obsidian.Section
 	}
@@ -236,6 +281,13 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	settings.MapServices = obsidian.MapServices
 	settings.CoordinateChoice = obsidian.CoordinateChoice
 	return settings
+}
+
+// loadWorkflows reads the configured workflow directory. Failures are carried
+// rather than returned, the way a Recipe's are: a file that cannot be read
+// costs its own workflow the fields it described, not the session.
+func loadWorkflows(global config.Config) organizer.LoadedWorkflows {
+	return organizer.LoadWorkflows(expandHome(global.CaptureWorkflowsDir()))
 }
 
 // loadRecipes reads the configured Recipe directory. Failures are carried

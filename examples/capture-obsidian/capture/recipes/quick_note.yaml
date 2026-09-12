@@ -1,0 +1,10 @@
+# A workflow of my own, whose payload keeps its text under "text" rather than
+# the "note" this toolbox would assume. capture.sources in dgs-config.json says
+# so once; nothing here has to mention a payload key.
+name: Quick Note
+
+match:
+  workflows: [quick_note]
+
+actions:
+  - id: obsidian.daily.append

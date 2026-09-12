@@ -12,8 +12,6 @@ model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
       "root": "~/Captures",
       "index_file": "index.json"
     },
-    "recipes": "",
-    "templates": "",
     "mappings": {
       "country": { "China": "🇨🇳_中国" }
     },
@@ -41,17 +39,22 @@ survives the vault moving.
 | `capture.scan.root` | The directory Scan lists Captures from. It can also be chosen in the session. | empty — Scan opens with no root |
 | `capture.scan.index_file` | The filename that makes a folder a Capture. A bare filename, not a path: a configuration giving a path is refused. | `index.json` |
 
-## Recipes and templates
+## What sits beside the configuration file
 
-Both default to Capture's corner of the configuration directory —
-`<config_dir>/capture/recipes` and `<config_dir>/capture/templates` — so
-neither has to be named. A path is for a directory that lives somewhere of its
-own, a vault's templates kept with the vault, say.
+Capture reads three directories, and none of them is configurable:
 
-| Key | Meaning | Default |
-| --- | --- | --- |
-| `capture.recipes` | One file per Recipe, and the whole set — see [Recipes](#recipes) below. A missing or empty directory means Route offers nothing until `dgs capture --export-recipes` has been run; a Recipe file that fails to load takes only itself out of the Set. | `<config_dir>/capture/recipes` |
-| `capture.templates` | Templates read by filename. One replaces the compiled-in template of the same name; `daily-note.md` has no compiled-in default and must be here for a missing daily note to be created. | `<config_dir>/capture/templates` |
+```text
+<config_dir>/capture/
+  recipes/     one file per Recipe
+  workflows/   one file per workflow: where it keeps each field
+  templates/   daily-note.md, and any compiled-in template you replace
+```
+
+The layout is the answer to "where does this installation keep its Capture
+configuration?", and a path for each would make that answer three paths to go
+and look up. `config_dir` moves the whole thing at once, and a directory that
+genuinely belongs elsewhere — a vault's templates kept with the vault — is a
+symlink.
 
 The filenames the templates directory is read by:
 
@@ -118,6 +121,79 @@ deleting the file does not.
 `enabled: false` on one action inside a Recipe is the smaller switch: the
 Action stays in the Recipe and is still listed in `ACTIONS`, it is simply not
 ticked when the Recipe is chosen.
+
+## Workflows: where a field is kept
+
+An Action asks for a logical field — `content`, the text that was written —
+and a workflow keeps it under whatever key its author chose. One file per
+workflow says which, in the workflow directory:
+
+```yaml
+# ~/.config/dgs-toolbox/capture/workflows/quick_note.yaml
+fields:
+  content: payload.text
+  tags: payload.labels
+```
+
+The filename is the workflow, the way a Recipe's filename is its id. With that
+file, a `quick_note` Capture whose payload is
+`{"text": "buy milk", "labels": ["errand"]}` answers `content` and `tags`
+without anyone typing them, and a Recipe naming `obsidian.daily.append` runs
+with nothing missing. Nothing in the Recipe mentions a payload key, and nothing
+in `dgs-config.json` does either — workflows arrive one at a time and there is
+no end to them, so they are a directory rather than a section of one file that
+grows without bound.
+
+### Many workflows, one field
+
+A field may name several keys, tried in order, and one file may answer for a
+family of workflows. `"*"` answers for any workflow with no file of its own:
+
+```yaml
+# ~/.config/dgs-toolbox/capture/workflows/notes.yaml
+workflows: ["*"]
+
+fields:
+  content:
+    - payload.text
+    - payload.body
+    - payload.note
+```
+
+`quick_note_1` writing `payload.text`, `quick_note_2` writing `payload.body`
+and `xxx1` writing `payload.note` all answer `content` from that one file. A
+workflow with a file of its own has said where it keeps its fields and is not
+read through the general list as well — but two files naming the same workflow
+compose field by field, so a family file and a file for one of its members do
+not erase each other.
+
+This is keyed by workflow rather than by Action on purpose. Which key holds the
+text is a fact about the workflow that wrote the Capture; an Action only ever
+asks for `content`, and every Action that asks is answered by the same file.
+Keyed by Action it would be repeated for each Action in the Recipe, and it
+would come too late — a Recipe's `requires_any` is checked before any Action is
+chosen.
+
+### The rules
+
+- **Paths start at `payload`** and may go deeper: `payload.detail.long`. The
+  rest of the index has one meaning already and needs no telling. A file with a
+  path starting anywhere else is rejected, with the field that is wrong, rather
+  than quietly resolving to nothing.
+- **A bad file fails alone.** The rest of the directory still loads and the
+  session still opens. `dgs capture --recipes` ends with a `SOURCES` section
+  saying what was read, from where, and what was rejected.
+- **A path that leads nowhere leaves the field missing**, which Route asks for
+  in `FIELDS` the way it asks for any other. It is not an error: a Capture that
+  happens not to carry the key is the ordinary case.
+- **A list of strings stays a list**, so `tags` arrives as tags rather than as
+  a rendered array. A number or boolean is read as its text.
+- **A described source wins over the compiled-in one**, so a workflow can
+  correct what the toolbox assumed as well as name what it never knew. What the
+  reader typed in `FIELDS` still wins over both.
+- **A workflow with no file is read as before.** The toolbox knows its own
+  three — `been_here` keeps its note under `note`, `photo_note` under `text`,
+  `quick_mark` under `mark` — and anything else falls back to `payload.note`.
 
 ## Mappings
 

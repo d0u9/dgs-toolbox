@@ -42,6 +42,7 @@ beside it and the lot moves, copies or goes under version control as one thing.
   dgs-config.json
   capture/
     recipes/     # dgs capture --export-recipes writes the shipped ones here
+    workflows/   # one file per workflow: where it keeps each field
     templates/
 ```
 
@@ -68,8 +69,6 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `tui.top_bar.time` | [shell](shell.md#the-top-bar) | `true` |
 | `capture.scan.root` | [capture](capture.md#the-capture-root) | empty — Scan opens with no root |
 | `capture.scan.index_file` | [capture](capture.md#the-capture-root) | `index.json` |
-| `capture.recipes` | [capture](capture.md#recipes-and-templates) | `<config_dir>/capture/recipes` |
-| `capture.templates` | [capture](capture.md#recipes-and-templates) | `<config_dir>/capture/templates` |
 | `capture.mappings` | [capture](capture.md#mappings) | none |
 | `capture.obsidian.vault` | [capture](capture.md#the-vault) | empty — the Obsidian Actions refuse to run |
 | `capture.obsidian.daily_note` | [capture](capture.md#the-daily-note) | empty — the daily Action refuses to run |

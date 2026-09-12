@@ -182,6 +182,37 @@ quick_mark  content ← payload.mark
 Capture JSON → Field Resolver → Logical Fields → Recipe
 ```
 
+Those three are the workflows this toolbox ships shortcuts for, and they are
+all it can know on its own. Any other workflow says where it keeps a field in a
+file of its own, in the workflow directory — `<config dir>/capture/workflows`:
+
+```yaml
+# quick_note.yaml — the filename is the workflow, as a Recipe's is its id
+fields:
+  content: payload.text
+  tags: payload.labels
+```
+
+A field may name several keys, tried in order, and one file may answer for a
+family of workflows with `workflows: [a, b]`; `"*"` answers for any workflow
+with no file of its own. A directory rather than a section of the configuration
+file because workflows arrive one at a time and there is no end to them.
+
+It is keyed by workflow rather than by Action because which key holds the text
+is a fact about the workflow that wrote the Capture: an Action only ever asks
+for `content`, and the same file answers every Action that asks. It would also
+come too late keyed by Action, since a Recipe's `requires_any` is checked
+before any Action is chosen.
+
+The resolver reads enrichment, then the workflow's file, then its own reading,
+then what it can derive. A described source therefore corrects an assumption as
+well as filling a gap, and what the reader typed still wins over both. Paths
+are into `payload`, which is the half of the index a workflow defines;
+everything else has one meaning already. A path that resolves to nothing leaves
+the field missing and Route asks for it, because a Capture that happens not to
+carry the key is ordinary rather than wrong. See
+[`configuration/capture.md`](../../configuration/capture.md#workflows-where-a-field-is-kept).
+
 Some logical fields have no counterpart in the index at all and are composed
 from what it does carry. `place.name` is the case that matters: the index has
 no name field and no free-form address to borrow one from, so a name is

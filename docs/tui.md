@@ -101,7 +101,7 @@ dgs is a toolbox, so that directory is laid out **by command**:
     …
 ```
 
-A command asks for its own corner rather than for a path of its own in the configuration file: two commands both wanting `templates` is the normal case, not a collision to work around, and adding a command adds no configuration keys. A single directory may still be given a path of its own—`capture.templates` for templates kept beside the vault they belong to—but nothing has to be named to get the usual arrangement.
+A command asks for its own corner rather than for a path of its own in the configuration file: two commands both wanting `templates` is the normal case, not a collision to work around, and adding a command adds no configuration keys. The layout itself is not configurable: `config_dir` moves all of it at once, and a directory that genuinely belongs elsewhere—templates kept beside the vault they belong to—is a symlink. A path per directory would make "where does this installation keep its configuration?" a question with as many answers as there are directories.
 
 ### Workspace
 

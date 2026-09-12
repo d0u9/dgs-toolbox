@@ -204,13 +204,17 @@ func TestCaptureDirectoriesFollowTheLoadedConfig(t *testing.T) {
 		t.Fatalf("templates = %q, want them under the command's own directory", got)
 	}
 
-	// A configured path is used as given.
+	if got := loaded.CaptureWorkflowsDir(); got != filepath.Join(dir, "capture", "workflows") {
+		t.Fatalf("workflows = %q, want them under the command's own directory", got)
+	}
+
+	// The layout is not negotiable: a path for each directory would make
+	// "where does this installation keep its configuration?" three answers.
 	if err := os.WriteFile(path, []byte(`{"capture": {"recipes": "/somewhere/else"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	loaded, _ = LoadPath(path)
-	if got := loaded.CaptureRecipesDir(); got != "/somewhere/else" {
-		t.Fatalf("recipes = %q, want the configured path", got)
+	if _, err := LoadPath(path); err == nil {
+		t.Fatal("a path of its own was accepted, want the unknown key refused")
 	}
 }
 
@@ -243,14 +247,8 @@ func TestConfigDirIsLaidOutByCommand(t *testing.T) {
 		t.Fatalf("templates = %q", got)
 	}
 
-	// A directory of its own is still allowed, for one that lives elsewhere.
-	body = `{"config_dir": ` + strconv.Quote(root) + `, "capture": {"templates": "/vault/Templates"}}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	loaded, _ = LoadPath(path)
-	if got := loaded.CaptureTemplatesDir(); got != "/vault/Templates" {
-		t.Fatalf("templates = %q, want the configured path", got)
+	if got := loaded.CaptureWorkflowsDir(); got != filepath.Join(root, "capture", "workflows") {
+		t.Fatalf("workflows = %q", got)
 	}
 }
 
