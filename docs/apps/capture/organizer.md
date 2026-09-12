@@ -200,7 +200,19 @@ fields:
 
 A field may name several keys, tried in order, and one file may answer for a
 family of workflows with `workflows: [a, b]`; `"*"` answers for any workflow
-with no file of its own. A directory rather than a section of the configuration
+with no file of its own. A source carrying `{{ }}` is a template over the
+payload rather than a key in it, for a workflow that keeps in pieces what an
+Action asks for as one thing:
+
+```yaml
+fields:
+  content: "{{.title}}{{with .body}}\n\n{{.}}{{end}}"
+```
+
+An optional piece is guarded with `{{with}}`; a key named without a guard, on a
+Capture that does not carry it, leaves the field missing the way an unresolved
+path does. A template that does not parse is a mistake rather than a Capture
+being ordinary, so the file is refused when it loads. A directory rather than a section of the configuration
 file because workflows arrive one at a time and there is no end to them.
 
 It is keyed by workflow rather than by Action because which key holds the text

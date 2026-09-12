@@ -3,6 +3,7 @@ package organizer
 import (
 	"fmt"
 	"strings"
+	"text/template"
 
 	"dgs-toolbox/internal/apps/capture/indexschema"
 )
@@ -111,12 +112,74 @@ func sourced(settings Settings, capture Capture, field FieldID) (any, bool) {
 	if !ok {
 		paths = settings.Sources[AnyWorkflow][field]
 	}
-	for _, path := range paths {
-		if value, ok := valueAt(capture.Index, strings.TrimSpace(path)); ok {
+	for _, source := range paths {
+		if value, ok := valueOf(settings, capture.Index, strings.TrimSpace(source)); ok {
 			return value, true
 		}
 	}
 	return nil, false
+}
+
+// valueOf reads one source: a payload key, or a template over the payload when
+// a field is several of them put together.
+func valueOf(settings Settings, index indexschema.Index, source string) (any, bool) {
+	if IsTemplateSource(source) {
+		return composed(settings, index, source)
+	}
+	return valueAt(index, source)
+}
+
+// IsTemplateSource reports whether a source composes a value rather than
+// pointing at one. The two are told apart by the placeholders themselves: a
+// payload key has none, and anything that does is a template.
+func IsTemplateSource(source string) bool { return strings.Contains(source, "{{") }
+
+// composed renders a source template over the payload, so a field kept as
+// several keys is one field by the time an Action asks for it:
+//
+//	content: "{{.title}}{{with .body}}\n\n{{.}}{{end}}"
+//
+// The payload is the data, because that is the half of the index the workflow
+// defines and the only half whose shape it is describing. A template that names
+// a key the Capture does not carry leaves the field missing rather than failing
+// the run — the same answer a path that resolves to nothing gives, and the
+// reason optional pieces are written with "with" — so a Capture that happens
+// not to carry one is asked about rather than refused.
+func composed(settings Settings, index indexschema.Index, source string) (any, bool) {
+	parsed, err := ParseSource(settings, source)
+	if err != nil {
+		return nil, false
+	}
+	var out strings.Builder
+	if err := parsed.Execute(&out, index.Payload); err != nil {
+		return nil, false
+	}
+	// A key named without a guard, on a Capture that does not carry it, renders
+	// as the sentinel the template package writes for exactly that. It must not
+	// reach a note, and it is not an error either: it is this Capture missing a
+	// piece the source expected, so the field stays missing and is asked for.
+	rendered := strings.TrimSpace(out.String())
+	if strings.Contains(rendered, missingValue) {
+		return nil, false
+	}
+	return payloadValue(rendered)
+}
+
+// missingValue is what text/template writes where a map has no such key. The
+// alternative, refusing to render at all, would take "with" down with it — and
+// guarding an optional piece with "with" is exactly how a source says a piece
+// is optional.
+const missingValue = "<no value>"
+
+// ParseSource parses a source template. It is exported so a workflow file can
+// be refused when it is loaded rather than rendering to nothing months later:
+// a template that does not parse is a mistake, where a key that is absent is
+// only a Capture that did not carry it.
+func ParseSource(settings Settings, source string) (*template.Template, error) {
+	return template.New("source").
+		Funcs(templateFuncs(settings)).
+		Option("missingkey=zero").
+		Parse(source)
 }
 
 // AnyWorkflow is the workflow a source block answers for when the Capture's own

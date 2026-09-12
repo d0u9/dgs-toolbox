@@ -87,9 +87,10 @@ type workflowDocument struct {
 	Fields    map[string]workflowPaths `yaml:"fields"`
 }
 
-// workflowPaths is one path or a list of them. Both spellings are honest: a
+// workflowPaths is one source or a list of them. Both spellings are honest: a
 // field kept in one place is a string, and a field a family keeps in slightly
-// different places is the list of those places.
+// different places is the list of those places. A source is a payload key, or a
+// template over the payload when the field is several keys put together.
 type workflowPaths []string
 
 func (p *workflowPaths) UnmarshalYAML(node *yaml.Node) error {
@@ -140,11 +141,22 @@ func LoadWorkflowFile(path string) (workflows []string, fields map[FieldID][]str
 			return nil, nil, fmt.Errorf("field %q names no payload key", field)
 		}
 		for _, source := range paths {
+			if IsTemplateSource(source) {
+				// A template is checked here rather than when it is rendered:
+				// one that does not parse is a mistake, and a mistake that
+				// only shows up as a field quietly staying empty is one nobody
+				// finds. What it names is not checked — that is the Capture's
+				// business, and a key it does not carry is ordinary.
+				if _, err := ParseSource(Settings{}, source); err != nil {
+					return nil, nil, fmt.Errorf("field %q: %w", field, err)
+				}
+				continue
+			}
 			// A path that starts anywhere else resolves to nothing, and a
 			// field that silently stays missing is the confusion these files
 			// exist to end.
 			if !strings.HasPrefix(source, PayloadRoot+".") || strings.TrimSpace(source) == PayloadRoot+"." {
-				return nil, nil, fmt.Errorf("field %q must name a payload key, got %q", field, source)
+				return nil, nil, fmt.Errorf("field %q must name a payload key or a template over the payload, got %q", field, source)
 			}
 		}
 		fields[FieldID(field)] = paths

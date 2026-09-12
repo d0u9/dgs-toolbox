@@ -124,3 +124,96 @@ func TestLoadWorkflowsTreatsAMissingDirectoryAsNone(t *testing.T) {
 		}
 	}
 }
+
+// A field kept as several keys is one field by the time an Action asks for it:
+// the source composes it, and the Action never learns it was in pieces.
+func TestASourceMayComposeSeveralKeys(t *testing.T) {
+	dir := t.TempDir()
+	writeWorkflow(t, dir, "quick_note.yaml", `
+fields:
+  content: "{{.title}}{{with .body}}\n\n{{.}}{{end}}"
+`)
+	loaded := LoadWorkflows(dir)
+	if len(loaded.Failures) != 0 {
+		t.Fatalf("failures = %v", loaded.Failures)
+	}
+	settings := DefaultSettings()
+	settings.Sources = loaded.Sources
+
+	capture := quickNote()
+	capture.Index.Payload = map[string]any{"title": "Milk", "body": "and the parcel"}
+	if got := NewContext(capture, nil).WithSettings(settings).String(FieldContent); got != "Milk\n\nand the parcel" {
+		t.Fatalf("content = %q, want both pieces", got)
+	}
+
+	// An optional piece guarded with "with" simply is not written.
+	capture.Index.Payload = map[string]any{"title": "Milk"}
+	if got := NewContext(capture, nil).WithSettings(settings).String(FieldContent); got != "Milk" {
+		t.Fatalf("content = %q, want the piece that is there", got)
+	}
+
+	// A key named without a guard is the Capture not carrying it, which is
+	// ordinary: the field stays missing and Route asks for it.
+	capture.Index.Payload = map[string]any{"body": "no title at all"}
+	if value, ok := NewContext(capture, nil).WithSettings(settings).Get(FieldContent); ok {
+		t.Fatalf("content = %#v, want the field left missing", value)
+	}
+}
+
+// A template and a payload key can be listed together, first one that resolves
+// answering, so a family file can compose for most and point for the rest.
+func TestASourceListMixesTemplatesAndKeys(t *testing.T) {
+	dir := t.TempDir()
+	writeWorkflow(t, dir, "notes.yaml", `
+workflows: ["*"]
+fields:
+  content:
+    - "{{.title}} — {{.body}}"
+    - payload.text
+`)
+	loaded := LoadWorkflows(dir)
+	if len(loaded.Failures) != 0 {
+		t.Fatalf("failures = %v", loaded.Failures)
+	}
+	settings := DefaultSettings()
+	settings.Sources = loaded.Sources
+
+	capture := quickNote()
+	capture.Index.Payload = map[string]any{"text": "just the one key"}
+	if got := NewContext(capture, nil).WithSettings(settings).String(FieldContent); got != "just the one key" {
+		t.Fatalf("content = %q, want the key the template could not answer for", got)
+	}
+}
+
+// A template that does not parse is a mistake, and a mistake that shows up as a
+// field quietly staying empty is one nobody finds. The file is refused.
+func TestAWorkflowFileWithABrokenTemplateIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	writeWorkflow(t, dir, "broken.yaml", "fields:\n  content: \"{{.title\"\n")
+	loaded := LoadWorkflows(dir)
+	if len(loaded.Failures) != 1 || !strings.Contains(loaded.Failures[0].Err.Error(), `field "content"`) {
+		t.Fatalf("failures = %v, want the field named", loaded.Failures)
+	}
+}
+
+// The functions a template may call are the ones every other template in the
+// toolbox has, so a source composes the same way a note does.
+func TestASourceMayUseTheTemplateFunctions(t *testing.T) {
+	dir := t.TempDir()
+	writeWorkflow(t, dir, "quick_note.yaml", `
+fields:
+  content: '{{join .tags ", "}} · {{trim .title}}'
+`)
+	loaded := LoadWorkflows(dir)
+	if len(loaded.Failures) != 0 {
+		t.Fatalf("failures = %v", loaded.Failures)
+	}
+	settings := DefaultSettings()
+	settings.Sources = loaded.Sources
+
+	capture := quickNote()
+	capture.Index.Payload = map[string]any{"title": "  Milk  ", "tags": []string{"errand", "today"}}
+	if got := NewContext(capture, nil).WithSettings(settings).String(FieldContent); got != "errand, today · Milk" {
+		t.Fatalf("content = %q", got)
+	}
+}
