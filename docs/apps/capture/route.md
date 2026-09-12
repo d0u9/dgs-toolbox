@@ -28,9 +28,10 @@
 
 ## Layout
 
-Route uses the shared equal four-column landscape skeleton: four full-height
-columns of `1/4` each, one Fieldset per column, left to right `CAPTURES`,
-`RECIPES`, `ACTIONS`, `FIELDS`. The four regions are peers in the organizing
+Route uses the shared equal four-column landscape skeleton: four columns of
+`1/4` each, one Fieldset per column, left to right `CAPTURES`, `RECIPES`,
+`ACTIONS`, `FIELDS`. The two middle columns end short of the workspace bottom,
+where one `ATTACHMENTS` Fieldset spans both. The four regions are peers in the organizing
 task, so none of them is widened over the others. Remainder cells from an
 uneven division go to the leftmost columns. Because four columns need more
 width than Scan's three, Route shows its resize prompt on narrower terminals
@@ -214,6 +215,46 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   overlay over the workspace, titled by the field. `datetime` and
   `multi_select` do not fit either and are not editable yet; the Recipes that
   need them show the requirement and report the Action as blocked.
+- `ATTACHMENTS` is what the Capture holds: its files on the left, and the
+  details of the one under the cursor on the right. Organizing a Capture is
+  deciding what to do with what it holds, and until this pane existed that
+  could only be read one tab away in Scan — the columns above say what will be
+  written, and this says what is being written about.
+
+  It spans `RECIPES` and `ACTIONS` rather than taking a column: neither half is
+  worth a quarter of the screen on its own — a list of two filenames, and a
+  dozen short rows — and they are one question asked in two parts. The room
+  comes out of those two columns alone, the way the Capture Root control takes
+  its room from the column above it, so the outer two still run the height of
+  the workspace.
+
+  ```text
+  ── ◆ ATTACHMENTS ──────────────────────────────────────
+    1 note.txt                    Kind  note
+    2 memo.wav                    Name  note.txt
+                                  Type  text/plain
+                                  Size  13 B
+                               Created  2026-09-09T16:34…
+  ```
+
+- The list is the attachments the index names and the directory really holds,
+  in manifest order; one the index names and the scan could not find is not
+  listed, because the pane is about files that are there. The details are the
+  ones Scan shows for a file — name, type, size, dates, and an image's
+  dimensions and EXIF — read by the same inspection, so one file does not read
+  as two different files in two tabs. What the index calls the file heads the
+  same key column, so the two read as one list rather than as a caption over a
+  table.
+- The pane follows the `CAPTURES` cursor, so it always describes the Capture
+  being organized; a Capture holding nothing says `· No attachments`. A file's
+  details are read asynchronously and every request carries a generation, so a
+  slow read cannot replace what a later selection put on screen.
+- `↑/k` and `↓/j` move between files and `g g`/`G` jump to the ends. `Esc`,
+  `Backspace` or `Delete` leaves the pane for `ACTIONS`, the column above it:
+  the pane sits below the progressive selection rather than in it, so it is
+  left the way it was entered. It joins the `Tab` ring as soon as the Capture
+  has attachments, whether or not a Recipe has been chosen — what a Capture
+  holds is read before deciding what to do with it, not after.
 - The Capture's own summary — ID, files, attachments — no longer has a column.
   Its resolved values appear in `FIELDS` alongside the values being supplied,
   which is the same Context read from both sides, and its path stays in the
