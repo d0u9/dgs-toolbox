@@ -12,13 +12,13 @@ import (
 	"dgs-toolbox/internal/config"
 )
 
-// starterConfig is an installation that has been given the Recipes this
-// version ships, which is what a reader has after --export-recipes. Writing
-// them is how the tests get them, so the exporter is exercised too.
+// starterConfig is an installation that has been given the files this version
+// ships, which is what a reader has after --init. Writing them is how the tests
+// get them, so the command that writes them is exercised too.
 func starterConfig(t *testing.T) config.Config {
 	t.Helper()
 	global := config.Config{ConfigDir: t.TempDir()}
-	if err := writeStarterRecipes(io.Discard, global); err != nil {
+	if err := writeStarters(io.Discard, global); err != nil {
 		t.Fatal(err)
 	}
 	return global

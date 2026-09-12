@@ -64,45 +64,58 @@ func writeRecipeReport(out io.Writer, global config.Config) error {
 	return nil
 }
 
-// writeStarterRecipes lays the shipped Recipes down in the configured Recipe
-// directory. They are written rather than loaded because a Recipe is something
-// the reader owns: once it is a file in their directory, editing it is the
-// obvious thing and nothing in the binary argues with what they wrote.
+// writeStarters lays the shipped files down in the configuration: the Recipes,
+// and the descriptions of the workflows this toolbox has shortcuts for. They
+// are written rather than loaded because both are things the reader owns: once
+// a file is in their directory, editing it is the obvious thing and nothing in
+// the binary argues with what they wrote.
+//
+// One command rather than one per directory. What a reader wants is an
+// installation that works, and being told to run three things in the right
+// order to get one is a worse answer than a list of what was written.
 //
 // A file that is already there is kept, never overwritten. Someone running this
-// a second time is asking for what is missing, not for their own edits to be
-// undone.
-func writeStarterRecipes(out io.Writer, global config.Config) error {
-	dir := expandHome(global.CaptureRecipesDir())
-	if dir == "" {
-		return errors.New("no recipe directory: configure capture.recipes, or a config_dir for it to sit under")
+// again after an upgrade is asking for what is new, not for their own edits to
+// be undone.
+func writeStarters(out io.Writer, global config.Config) error {
+	directories := map[organizer.StarterKind]string{
+		organizer.StarterRecipes:   expandHome(global.CaptureRecipesDir()),
+		organizer.StarterWorkflows: expandHome(global.CaptureWorkflowsDir()),
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
+	written, kept := 0, 0
+	for _, kind := range organizer.StarterKinds {
+		dir := directories[kind]
+		if dir == "" {
+			return errors.New("no configuration directory: a configuration file has to exist, or config_dir has to name one")
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", dir, err)
+		}
+		fmt.Fprintf(out, "%s  %s\n\n", strings.ToUpper(string(kind)), dir)
+		for _, starter := range organizer.StartersOf(kind) {
+			path := filepath.Join(dir, starter.Name)
+			file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+			if errors.Is(err, os.ErrExist) {
+				fmt.Fprintf(out, "  kept     %s\n", starter.Name)
+				kept++
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("create %s: %w", path, err)
+			}
+			if _, err := file.Write(starter.Data); err != nil {
+				file.Close()
+				return fmt.Errorf("write %s: %w", path, err)
+			}
+			if err := file.Close(); err != nil {
+				return fmt.Errorf("close %s: %w", path, err)
+			}
+			fmt.Fprintf(out, "  written  %s\n", starter.Name)
+			written++
+		}
+		fmt.Fprintln(out)
 	}
-	fmt.Fprintf(out, "RECIPES  %s\n\n", dir)
-	written := 0
-	for _, starter := range organizer.Starters() {
-		path := filepath.Join(dir, starter.Name)
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if errors.Is(err, os.ErrExist) {
-			fmt.Fprintf(out, "  kept     %s\n", starter.Name)
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("create %s: %w", path, err)
-		}
-		if _, err := file.Write(starter.Data); err != nil {
-			file.Close()
-			return fmt.Errorf("write %s: %w", path, err)
-		}
-		if err := file.Close(); err != nil {
-			return fmt.Errorf("close %s: %w", path, err)
-		}
-		fmt.Fprintf(out, "  written  %s\n", starter.Name)
-		written++
-	}
-	fmt.Fprintf(out, "\n%d written, %d already there\n", written, len(organizer.Starters())-written)
+	fmt.Fprintf(out, "%d written, %d already there\n", written, kept)
 	return nil
 }
 

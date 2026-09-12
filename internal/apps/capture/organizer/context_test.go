@@ -92,14 +92,19 @@ func TestASourceThatDoesNotResolveLeavesTheFieldMissing(t *testing.T) {
 	}
 }
 
-// A workflow with no entry is read the way it always was.
-func TestAWorkflowWithNoSourceKeepsTheCompiledInReading(t *testing.T) {
+// Nothing in the payload is read without a file saying where it is: the index
+// gives the payload no meaning, and guessing at one in Go would be a second way
+// of saying what a workflow file says.
+func TestAWorkflowWithNoSourceResolvesNothingFromThePayload(t *testing.T) {
 	capture := quickNote()
-	capture.Index.Source.Workflow = "been_here"
-	capture.Index.Payload["note"] = "from the built-in key"
+	capture.Index.Payload = map[string]any{"note": "under the key the toolbox used to assume"}
 	ctx := NewContext(capture, nil).WithSettings(DefaultSettings())
-	if got := ctx.String(FieldContent); got != "from the built-in key" {
-		t.Fatalf("content = %q, want the compiled-in reading", got)
+	if value, ok := ctx.Get(FieldContent); ok {
+		t.Fatalf("content = %#v, want nothing until a workflow file says where it is", value)
+	}
+	// What the index does give a meaning is still read.
+	if got := ctx.String(FieldCreatedAt); got == "" {
+		t.Fatal("createdAt did not resolve")
 	}
 }
 

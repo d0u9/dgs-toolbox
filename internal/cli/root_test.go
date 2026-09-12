@@ -101,8 +101,8 @@ func TestReportFlagWritesToStdoutWithoutStartingTUI(t *testing.T) {
 	var output bytes.Buffer
 	command.SetOut(&output)
 	// The recipes are files, so an installation that has not been given them
-	// has none: they are written out first, by the flag that does that.
-	command.SetArgs([]string{"capture", "--export-recipes"})
+	// has none: they are laid down first, by the flag that does that.
+	command.SetArgs([]string{"capture", "--init"})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}

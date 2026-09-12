@@ -69,7 +69,7 @@ func TestLoadReadsARecipeFile(t *testing.T) {
 // than adding a second Recipe under the same name.
 func TestLoadKeepsOneRecipePerID(t *testing.T) {
 	dir := t.TempDir()
-	for _, starter := range Starters() {
+	for _, starter := range StartersOf(StarterRecipes) {
 		writeRecipe(t, dir, starter.Name, string(starter.Data))
 	}
 	writeRecipe(t, dir, "obsidian_location.yaml", `
@@ -97,8 +97,8 @@ actions:
 	if count != 1 {
 		t.Fatalf("the id appears %d times, want one recipe per file", count)
 	}
-	if got := len(loaded.Set.All()); got != len(Starters()) {
-		t.Fatalf("set holds %d recipes, want the %d files in the directory", got, len(Starters()))
+	if got := len(loaded.Set.All()); got != len(StartersOf(StarterRecipes)) {
+		t.Fatalf("set holds %d recipes, want the %d files in the directory", got, len(StartersOf(StarterRecipes)))
 	}
 }
 
@@ -272,7 +272,7 @@ actions:
 func starterSet(t *testing.T) Set {
 	t.Helper()
 	dir := t.TempDir()
-	for _, starter := range Starters() {
+	for _, starter := range StartersOf(StarterRecipes) {
 		if err := os.WriteFile(filepath.Join(dir, starter.Name), starter.Data, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -282,6 +282,33 @@ func starterSet(t *testing.T) Set {
 		t.Fatalf("the shipped recipes do not load: %v", loaded.Failures)
 	}
 	return loaded.Set
+}
+
+// starterSources is where the workflows this version ships keep their fields,
+// loaded the way a run loads them. The compiled-in reading is a last resort
+// only, so a test about a shipped workflow reads the shipped file.
+func starterSources(t *testing.T) map[string]map[FieldID][]string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, starter := range StartersOf(StarterWorkflows) {
+		if err := os.WriteFile(filepath.Join(dir, starter.Name), starter.Data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loaded := LoadWorkflows(dir)
+	if len(loaded.Failures) > 0 {
+		t.Fatalf("the shipped workflows do not load: %v", loaded.Failures)
+	}
+	return loaded.Sources
+}
+
+// starterSettings are the defaults with the shipped workflow descriptions read
+// in, which is what an installation has after dgs capture --init.
+func starterSettings(t *testing.T) Settings {
+	t.Helper()
+	settings := DefaultSettings()
+	settings.Sources = starterSources(t)
+	return settings
 }
 
 // starterRecipe is one of them, by id.

@@ -332,7 +332,7 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 
 Recipes are not configured per session. They are defined by files in
 `<config dir>/capture/recipes` — every one of them, with none compiled in — and Route
-renders whichever candidates the Set returns. `dgs capture --export-recipes`
+renders whichever candidates the Set returns. `dgs capture --init`
 lays down the ones this version ships:
 
 ```json

@@ -178,13 +178,16 @@ photo_note  content ← payload.text
 quick_mark  content ← payload.mark
 ```
 
+Those three are shipped as workflow files, not compiled in: they are the same
+kind of statement anyone else's workflow makes, and a copy in Go would be a
+second way of saying it that nothing but the compiler reads.
+
 ```text
 Capture JSON → Field Resolver → Logical Fields → Recipe
 ```
 
-Those three are the workflows this toolbox ships shortcuts for, and they are
-all it can know on its own. Any other workflow says where it keeps a field in a
-file of its own, in the workflow directory — `<config dir>/capture/workflows`:
+Any workflow says where it keeps a field in a file of its own, in the workflow
+directory — `<config dir>/capture/workflows`:
 
 ```yaml
 # quick_note.yaml — the filename is the workflow, as a Recipe's is its id
@@ -406,7 +409,7 @@ written by hand and wants comments explaining why it exists.
 workflows it matches, which Actions it runs, what it asks for beyond them — and
 that is the reader's to own, not the binary's to assert. What the binary carries
 is a copy to start from, written into the directory by
-`dgs capture --export-recipes` and thereafter an ordinary file like any other.
+`dgs capture --init` and thereafter an ordinary file like any other.
 An installation that has never run it has no Recipes, and Route says so with an
 empty `RECIPES` column rather than by pretending to offer something.
 
@@ -680,8 +683,8 @@ will wonder about.
 
 ## The recipes this version ships
 
-`dgs capture --export-recipes` writes these into the Recipe directory, skipping
-any file already there. They are a starting point, not a base to inherit from:
+`dgs capture --init` writes these into the Recipe directory, skipping any file
+already there. They are a starting point, not a base to inherit from:
 once written, they are the reader's files.
 
 | Recipe | Id | Workflows | Actions |

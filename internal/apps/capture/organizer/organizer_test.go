@@ -137,6 +137,8 @@ func TestContextReadsEnrichmentBeforeCapture(t *testing.T) {
 	}
 }
 
+// The workflows this toolbox ships shortcuts for are described in files like
+// any other, so their readings are exercised through those files.
 func TestContentIsSourcedPerWorkflow(t *testing.T) {
 	tests := []struct {
 		workflow string
@@ -155,7 +157,8 @@ func TestContentIsSourcedPerWorkflow(t *testing.T) {
 				Source:  indexschema.Source{Workflow: tc.workflow},
 				Payload: tc.payload,
 			}}
-			if got := NewContext(capture, nil).String(FieldContent); got != tc.want {
+			ctx := NewContext(capture, nil).WithSettings(starterSettings(t))
+			if got := ctx.String(FieldContent); got != tc.want {
 				t.Errorf("content = %q, want %q", got, tc.want)
 			}
 		})

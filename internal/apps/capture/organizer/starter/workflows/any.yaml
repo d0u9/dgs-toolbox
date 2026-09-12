@@ -1,0 +1,11 @@
+# The fallback for a workflow with no file of its own. A field may name several
+# keys and the first that resolves is used, so a shortcut written later is
+# often read correctly without being described at all — and when it is not, it
+# gets a file of its own beside these.
+workflows: ["*"]
+
+fields:
+  content:
+    - payload.note
+    - payload.text
+    - payload.mark

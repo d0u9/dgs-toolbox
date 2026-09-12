@@ -18,9 +18,9 @@ func New() tui.App {
 			Description: "list the recipes this binary offers and what each one needs",
 			Run:         writeRecipeReport,
 		}, {
-			Flag:        "export-recipes",
-			Description: "write the recipes this version ships into the recipe directory",
-			Run:         writeStarterRecipes,
+			Flag:        "init",
+			Description: "write the recipes and workflow descriptions this version ships into the configuration",
+			Run:         writeStarters,
 		}, {
 			Flag:        "actions",
 			Description: "list the actions a recipe may name, and what each one does",
