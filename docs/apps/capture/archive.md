@@ -173,3 +173,14 @@ it. Every key is listed in
 [`configuration/capture.md`](../../configuration/capture.md).
 
 Work deferred out of this session is listed in [`roadmap.md`](roadmap.md).
+
+## Path display
+
+The Archive and Reject folder paths wrap onto as many rows as needed above
+their lists, using the full inner width. The lists use the remaining rows,
+including for scrolling and mouse hit testing. The centre Capture pane puts
+`Folder` on its own line and wraps the path below it, preserving the final
+directory name rather than clipping it.
+
+If a terminal cannot hold a complete destination path and one Capture row,
+Archive shows its resize prompt instead of clipping the path or overflowing.

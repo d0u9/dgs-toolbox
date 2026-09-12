@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -45,6 +46,7 @@ const (
 	routeRecipesField     = "route-recipes"
 	routeActionsField     = "route-actions"
 	routeFieldsField      = "route-fields"
+	routePayloadField     = "route-payload"
 	routeAttachmentsField = "route-attachments"
 	routePropertyKeyWidth = 12
 )
@@ -58,15 +60,18 @@ const (
 // The four columns are a progressive selection, each the result of the one to
 // its left: Captures, Recipes, Actions, Fields.
 type routeModel struct {
-	width       int
-	height      int
-	root        string
-	indexFile   string
-	rootControl rootControl
-	entries     []captureEntry
-	captures    scrolllist.Model
-	recipes     scrolllist.Model
-	actions     scrolllist.Model
+	attachmentOffset int
+	payloadOffset    int
+	payloadCapture   string
+	width            int
+	height           int
+	root             string
+	indexFile        string
+	rootControl      rootControl
+	entries          []captureEntry
+	captures         scrolllist.Model
+	recipes          scrolllist.Model
+	actions          scrolllist.Model
 	// selections is the per-Capture decision, keyed by Capture path.
 	selections map[string]organizer.Selection
 	fieldRows  []routeFieldRow
@@ -188,7 +193,8 @@ func newRouteModelWithSettings(root, indexFile string, set organizer.Set, settin
 			datafield.Field{ID: routeRecipesField, Row: 0, Col: 1},
 			datafield.Field{ID: routeActionsField, Row: 0, Col: 2},
 			datafield.Field{ID: routeFieldsField, Row: 0, Col: 3},
-			datafield.Field{ID: routeAttachmentsField, Row: 1, Col: 1},
+			datafield.Field{ID: routePayloadField, Row: 1, Col: 1},
+			datafield.Field{ID: routeAttachmentsField, Row: 1, Col: 2},
 		),
 	}
 	m.fields.Set(routeCapturesField)
@@ -274,6 +280,14 @@ func (m routeModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	hit := m.fields.HitAt(msg.X, msg.Y)
 	if hit == "" {
+		return m, nil
+	}
+	if hit == routeAttachmentsField && msg.Y >= m.middleHeight()+1+routeAttachmentListHeight+2 && (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) {
+		delta := -3
+		if msg.Button == tea.MouseButtonWheelDown {
+			delta = 3
+		}
+		m.scrollAttachmentDetail(delta)
 		return m, nil
 	}
 	if msg.Action == tea.MouseActionPress && (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) {
@@ -371,6 +385,9 @@ func (m routeModel) scrollField(hit string, down bool) (tea.Model, tea.Cmd) {
 		m.recipes.Scroll(delta)
 	case routeActionsField:
 		m.actions.Scroll(delta)
+	case routePayloadField:
+		m.scrollPayload(delta)
+		return m, nil
 	case routeAttachmentsField:
 		m.attachments.Scroll(delta)
 		m.refresh()
@@ -414,7 +431,7 @@ func (m routeModel) View() string {
 	}
 	widths := m.columnWidths()
 	middle := lipgloss.JoinHorizontal(lipgloss.Top, m.recipesColumn(widths[1]), " ", m.actionsColumn(widths[2]))
-	middle += "\n" + m.attachmentsPane(widths[1]+columnGutter+widths[2])
+	middle += "\n" + lipgloss.JoinHorizontal(lipgloss.Top, m.payloadPane(widths[1]), " ", m.attachmentsPane(widths[2]))
 	workspace := lipgloss.JoinHorizontal(lipgloss.Top,
 		m.leftColumn(widths[0]), " ",
 		middle, " ",
@@ -707,7 +724,7 @@ func (m routeModel) CapturesShellKey(key string) bool {
 	switch key {
 	case "esc", "backspace", "delete":
 		switch m.fields.Current() {
-		case routeRecipesField, routeActionsField, routeFieldsField, routeAttachmentsField:
+		case routeRecipesField, routeActionsField, routeFieldsField, routePayloadField, routeAttachmentsField:
 			return true
 		}
 	}
@@ -745,8 +762,10 @@ func (m routeModel) Status() tui.Status {
 		return tui.Status{Left: "ACTIONS", Center: center, Right: "↑/k ↓/j Move  space Toggle  ↵ Fields  x Run  esc/⌫ Back"}
 	case routeFieldsField:
 		return tui.Status{Left: "FIELDS", Center: center, Right: "↑/k ↓/j Move  ↵ Edit  x Run  esc/⌫ Back"}
+	case routePayloadField:
+		return tui.Status{Left: "PAYLOAD", Center: center, Right: "↑/k ↓/j Scroll  esc/⌫ Back  alt+hjkl Focus"}
 	case routeAttachmentsField:
-		return tui.Status{Left: "ATTACHMENTS", Center: m.attachmentStatus(), Right: "↑/k ↓/j Move  esc/⌫ Back  alt+hjkl Focus"}
+		return tui.Status{Left: "ATTACHMENTS", Center: m.attachmentStatus(), Right: "↑/k ↓/j Move  pgup/pgdown Details  esc/⌫ Back"}
 	default:
 		return tui.Status{Left: "ROUTE", Center: center, Right: "tab Next  alt+hjkl Focus"}
 	}
@@ -840,6 +859,24 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateActions(key)
 	case routeFieldsField:
 		return m.updateFields(key)
+	case routePayloadField:
+		switch key {
+		case "up", "k":
+			m.scrollPayload(-1)
+		case "down", "j":
+			m.scrollPayload(1)
+		case "pgdown":
+			m.scrollPayload(m.bottomHeight() - 2)
+		case "pgup":
+			m.scrollPayload(2 - m.bottomHeight())
+		case "home":
+			m.payloadOffset = 0
+		case "end", "G":
+			m.scrollPayload(len(m.payloadLines(m.columnWidths()[1] - 4)))
+		case "esc", "backspace":
+			m.fields.Set(routeRecipesField)
+		}
+		return m, nil
 	case routeAttachmentsField:
 		return m.updateAttachments(key)
 	}
@@ -851,6 +888,14 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // not the progressive selection here: the pane is below that walk rather than
 // in it, so Esc leaves it the way it came, back to the column above.
 func (m routeModel) updateAttachments(key string) (tea.Model, tea.Cmd) {
+	if key == "pgdown" || key == "pgup" {
+		delta := m.attachmentDetailHeight()
+		if key == "pgup" {
+			delta = -delta
+		}
+		m.scrollAttachmentDetail(delta)
+		return m, nil
+	}
 	if listMoveKey(&m.attachments, key, &m.pendingGG, false) {
 		return m, m.loadAttachment()
 	}
@@ -1209,6 +1254,9 @@ func (m routeModel) tabOrder() []string {
 	// The attachments are in the ring as soon as the Capture has any, whether
 	// or not a Recipe has been chosen: what a Capture holds is read before
 	// deciding what to do with it, not after.
+	if entry, ok := m.selectedCapture(); ok && len(entry.index.Payload) > 0 {
+		order = append(order, routePayloadField)
+	}
 	if len(m.captureAttachments()) > 0 {
 		order = append(order, routeAttachmentsField)
 	}
@@ -1803,7 +1851,7 @@ func (m *routeModel) resizeComponents() {
 	m.captures.SetSize(max(1, widths[0]-4), max(1, m.captureListHeight()-2))
 	m.recipes.SetSize(max(1, widths[1]-4), max(1, m.recipeListHeight()))
 	m.actions.SetSize(max(1, widths[2]-4), max(1, m.actionListHeight()))
-	m.attachments.SetSize(max(1, (widths[1]+columnGutter+widths[2]-4)/3), max(1, routeAttachmentsHeight-2))
+	m.attachments.SetSize(max(1, widths[2]-4), routeAttachmentListHeight)
 	m.editor.Width = max(1, widths[3]-6)
 	m.setFieldBounds()
 	m.refresh()
@@ -1816,8 +1864,9 @@ func (m *routeModel) setFieldBounds() {
 	m.fields.SetBounds(routeRootField, datafield.Bounds{X: 0, Y: listHeight, Width: widths[0], Height: rootHeight})
 	x := widths[0] + columnGutter
 	m.fields.SetBounds(routeAttachmentsField, datafield.Bounds{
-		X: x, Y: m.middleHeight(), Width: widths[1] + columnGutter + widths[2], Height: routeAttachmentsHeight,
+		X: x + widths[1] + columnGutter, Y: m.middleHeight(), Width: widths[2], Height: m.bottomHeight(),
 	})
+	m.fields.SetBounds(routePayloadField, datafield.Bounds{X: x, Y: m.middleHeight(), Width: widths[1], Height: m.bottomHeight()})
 	for i, id := range [3]string{routeRecipesField, routeActionsField, routeFieldsField} {
 		width, height := widths[i+1], m.middleHeight()
 		if id == routeFieldsField {
@@ -1833,6 +1882,11 @@ func (m *routeModel) setFieldBounds() {
 // refresh rebuilds each column from the one to its left, so a move in CAPTURES
 // re-narrows the candidates and a toggle in ACTIONS re-computes the plan.
 func (m *routeModel) refresh() {
+	entry, _ := m.selectedCapture()
+	if entry.path != m.payloadCapture {
+		m.payloadCapture = entry.path
+		m.payloadOffset = 0
+	}
 	m.rebuildCaptureItems()
 	m.rebuildRecipeItems()
 	m.rebuildActionItems()
@@ -1919,6 +1973,7 @@ func (m *routeModel) loadAttachment() tea.Cmd {
 		return nil
 	}
 	m.attachmentPath, m.attachmentProps, m.attachmentError = attachment.path, nil, ""
+	m.attachmentOffset = 0
 	m.attachmentLoaded++
 	return loadFileProperties(attachment.path, m.attachmentLoaded)
 }
@@ -1982,44 +2037,67 @@ const routeDetailKeyWidth = 8
 func (m routeModel) actionListHeight() int { return max(1, m.middleHeight()-2-routeDetailHeight) }
 func (m routeModel) recipeListHeight() int { return max(1, m.middleHeight()-2-routeDetailHeight) }
 
-// routeAttachmentsHeight is what the Capture's own files take from the bottom
-// of the two middle columns: a legend, its border, and rows enough to read a
-// file's details beside its name.
-const routeAttachmentsHeight = 10
+// bottomHeight gives Payload and Attachments one third of the workspace,
+// retaining ten rows on shorter terminals so their contents remain usable.
+func (m routeModel) bottomHeight() int { return max(10, m.height/3) }
 
-// middleHeight is what RECIPES and ACTIONS are left with above the attachments.
+// middleHeight is what RECIPES and ACTIONS retain above Payload and Attachments.
 // The pane takes its room from those two columns alone, the way the Capture
 // Root takes its room from the column above it: the outer two columns still
 // run the height of the workspace.
-func (m routeModel) middleHeight() int { return max(6, m.height-routeAttachmentsHeight) }
+func (m routeModel) middleHeight() int { return max(6, m.height-m.bottomHeight()) }
 
-// attachmentsPane is what the Capture holds: its files on the left and the
-// details of the one under the cursor on the right. It spans both middle
-// columns because neither half is worth a column of its own — a list of two
-// filenames, and a dozen short rows — and because they are one question asked
-// in two parts. The details are the ones Scan shows for a file, read by the
-// same inspection, so a reader moving between the tabs is told the same things
-// about the same file.
+const routeAttachmentListHeight = 2
+
+func (m routeModel) attachmentDetailHeight() int {
+	return m.bottomHeight() - 2 - routeAttachmentListHeight - 2
+}
+
+// The two bottom panes keep the Capture's data beside its files.
 func (m routeModel) attachmentsPane(width int) string {
 	focused := m.fields.Current() == routeAttachmentsField
 	inner := max(1, width-4)
-	listWidth := max(12, inner/3)
-	detailWidth := max(8, inner-listWidth-columnGutter)
-	height := max(1, routeAttachmentsHeight-2)
-
 	attachments := m.attachments
-	attachments.SetSize(listWidth, height)
+	attachments.SetSize(inner, routeAttachmentListHeight)
 	list := attachments.View(focused, scanTitleStyle, scanMutedStyle)
-	switch {
-	case !m.hasSelectedCapture():
+	if !m.hasSelectedCapture() {
 		list = scanMutedStyle.Render("· Select a capture")
-	case len(m.captureAttachments()) == 0:
+	} else if len(m.captureAttachments()) == 0 {
 		list = scanMutedStyle.Render("· No attachments")
 	}
-	body := lipgloss.JoinHorizontal(lipgloss.Top,
-		fitHeight(list, height, listWidth), " ",
-		fitHeight(m.attachmentDetail(detailWidth), height, detailWidth))
-	return fieldset.ViewFocused("ATTACHMENTS", body, width, focused)
+	body := fitHeight(list, routeAttachmentListHeight, inner) + "\n\n" + divider.Anchored(inner) + "\n" + m.attachmentDetailPage(inner)
+	return fieldset.ViewFocused("ATTACHMENTS", fitHeight(body, m.bottomHeight()-2, inner), width, focused)
+}
+
+func (m routeModel) payloadLines(width int) []string {
+	entry, ok := m.selectedCapture()
+	if !ok {
+		return []string{"· Select a capture"}
+	}
+	if len(entry.index.Payload) == 0 {
+		return []string{"· No payload"}
+	}
+	data, err := json.MarshalIndent(entry.index.Payload, "", "  ")
+	if err != nil {
+		return []string{"! " + err.Error()}
+	}
+	return strings.Split(ansi.Hardwrap(string(data), max(1, width), true), "\n")
+}
+
+func (m *routeModel) scrollPayload(delta int) {
+	lines := m.payloadLines(m.columnWidths()[1] - 4)
+	m.payloadOffset = min(max(0, len(lines)-(m.bottomHeight()-2)), max(0, m.payloadOffset+delta))
+}
+
+func (m routeModel) payloadPane(width int) string {
+	inner := max(1, width-4)
+	lines := m.payloadLines(inner)
+	offset := min(m.payloadOffset, max(0, len(lines)-(m.bottomHeight()-2)))
+	legend := "PAYLOAD"
+	if len(lines) > m.bottomHeight()-2 {
+		legend += fmt.Sprintf(" %d/%d", offset+1, len(lines))
+	}
+	return fieldset.ViewFocused(legend, fitHeight(strings.Join(lines[offset:], "\n"), m.bottomHeight()-2, inner), width, m.fields.Current() == routePayloadField)
 }
 
 // attachmentDetail is the file beside its name: what the index calls it, and
@@ -2235,4 +2313,15 @@ func truncateStyled(line string, width int) string {
 		return line
 	}
 	return lipgloss.NewStyle().MaxWidth(width).Render(line)
+}
+
+func (m *routeModel) scrollAttachmentDetail(delta int) {
+	lines := strings.Split(m.attachmentDetail(max(1, m.columnWidths()[2]-4)), "\n")
+	m.attachmentOffset = min(max(0, len(lines)-m.attachmentDetailHeight()), max(0, m.attachmentOffset+delta))
+}
+
+func (m routeModel) attachmentDetailPage(width int) string {
+	lines := strings.Split(m.attachmentDetail(width), "\n")
+	offset := min(m.attachmentOffset, max(0, len(lines)-m.attachmentDetailHeight()))
+	return strings.Join(lines[offset:], "\n")
 }
