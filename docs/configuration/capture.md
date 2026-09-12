@@ -50,7 +50,7 @@ own, a vault's templates kept with the vault, say.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.recipes` | One file per Recipe, layered over the built-in Set. A missing directory is the normal state of an installation that has defined no Recipe of its own; a Recipe file that fails to load takes only itself out of the offered Set. | `<config_dir>/capture/recipes` |
+| `capture.recipes` | One file per Recipe, and the whole set — see [Recipes](#recipes) below. A missing or empty directory means Route offers nothing until `dgs capture --export-recipes` has been run; a Recipe file that fails to load takes only itself out of the Set. | `<config_dir>/capture/recipes` |
 | `capture.templates` | Templates read by filename. One replaces the compiled-in template of the same name; `daily-note.md` has no compiled-in default and must be here for a missing daily note to be created. | `<config_dir>/capture/templates` |
 
 The filenames the templates directory is read by:
@@ -60,6 +60,64 @@ The filenames the templates directory is read by:
 | `daily-entry.md` | One Capture as it is written into a daily note. | yes |
 | `location-entry.md` | One Capture as it is written into the running list of places. | yes |
 | `daily-note.md` | A day's note, when the day has none yet. | no — a missing one refuses rather than inventing a note |
+
+## Recipes
+
+A Recipe is one YAML file in the Recipe directory, named by its id:
+`work_daily.yaml` defines `work_daily`. Nothing is compiled in — the directory
+is the whole set — so a new installation starts by laying the shipped copies
+down:
+
+```bash
+dgs capture --export-recipes
+```
+
+That writes them into the configured Recipe directory and skips any file
+already there, so running it again after an upgrade adds what is new without
+touching what you have edited. From then on they are ordinary files: edit one,
+rename it, or delete it.
+
+The Actions a Recipe may name are catalogued in
+[`apps/capture/actions.md`](../apps/capture/actions.md), and
+`dgs capture --actions` prints that catalogue from the binary in front of you.
+`dgs capture --recipes` lists what actually loaded, where each Recipe came
+from, and any file that was rejected with its reason. Route lists candidates in
+the order the files sort in, which is changed by renaming them.
+
+```yaml
+# ~/.config/dgs-toolbox/capture/recipes/work_daily.yaml
+name: Work Daily
+
+match:
+  workflows: [been_here, quick_mark]
+  requires_any: [latitude, city]
+
+fields:
+  - id: project
+    label: Project
+    required: true
+
+actions:
+  - id: obsidian.daily.append
+  - id: obsidian.location.append
+    enabled: false
+```
+
+An unknown key is an error rather than an ignored line, and so is naming an
+Action this binary does not carry: a Recipe that silently does less than it
+says is worse than one that refuses to load. The full shape is in
+[`apps/capture/organizer.md`](../apps/capture/organizer.md#recipe-files).
+
+### Switching one off
+
+`enabled: false` at the top of a Recipe file takes it out of what Route offers
+without deleting it. The file stays and keeps saying what it does, the report
+lists it as `· disabled`, and removing that one line brings it back — which
+deleting the file does not.
+
+`enabled: false` on one action inside a Recipe is the smaller switch: the
+Action stays in the Recipe and is still listed in `ACTIONS`, it is simply not
+ticked when the Recipe is chosen.
 
 ## Mappings
 

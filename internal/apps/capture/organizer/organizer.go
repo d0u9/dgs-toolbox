@@ -99,18 +99,6 @@ func Parameters(ctx Context, recipe Recipe, enabled []ActionID) []ParameterState
 	return states
 }
 
-// FindRecipes returns the Recipes offered for a Capture. It narrows the
-// candidates only; it never chooses one, not even when exactly one matches.
-func FindRecipes(capture Capture) []Recipe {
-	var candidates []Recipe
-	for _, recipe := range builtinRecipes {
-		if recipe.matches(capture) {
-			candidates = append(candidates, recipe)
-		}
-	}
-	return candidates
-}
-
 // MissingFields returns the requirements the Context does not yet satisfy,
 // attributed to the Action that declared them so a caller can say which Action
 // is blocking. A requirement whose When evaluates false is skipped entirely,

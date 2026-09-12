@@ -17,6 +17,14 @@ func New() tui.App {
 			Flag:        "recipes",
 			Description: "list the recipes this binary offers and what each one needs",
 			Run:         writeRecipeReport,
+		}, {
+			Flag:        "export-recipes",
+			Description: "write the recipes this version ships into the recipe directory",
+			Run:         writeStarterRecipes,
+		}, {
+			Flag:        "actions",
+			Description: "list the actions a recipe may name, and what each one does",
+			Run:         writeActionReport,
 		}},
 		Commands: []tui.Command{{
 			ID:          "scan",

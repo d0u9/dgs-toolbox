@@ -15,13 +15,23 @@ type Match struct {
 type Recipe struct {
 	ID   RecipeID
 	Name string
-	// Source is where the Recipe came from: BuiltinSource, or the path of the
-	// file that defined it. A reader asking why a Recipe behaves as it does
-	// needs to know which one to open.
+	// Source is the path of the file that defined it. A reader asking why a
+	// Recipe behaves as it does needs to know which file to open.
 	Source  string
 	Match   Match
 	Fields  []FieldRequirement
 	Actions []ActionID
+	// Disabled takes a Recipe out of what is offered without taking it out of
+	// the Set: a file that is switched off still exists, is still listed by the
+	// report, and is turned back on by one line removed. Deleting the file is
+	// the other thing, and a reader who did that to try something has lost the
+	// Recipe.
+	Disabled bool
+	// DefaultOff are Actions the Recipe carries but does not start with. The
+	// Action is still part of the Recipe and still one keystroke away in
+	// ACTIONS; it simply is not ticked when the Recipe is chosen, for the one
+	// that is wanted now and then rather than every time.
+	DefaultOff []ActionID
 }
 
 // matches reports whether this Recipe is a candidate for the Capture.
@@ -41,13 +51,22 @@ func (r Recipe) matches(capture Capture) bool {
 	return false
 }
 
-// DefaultEnabled returns the Action set a Recipe starts with: all of them.
+// DefaultEnabled returns the Action set a Recipe starts with: all of them,
+// less the ones it declares off by default.
 func (r Recipe) DefaultEnabled() map[ActionID]bool {
 	enabled := make(map[ActionID]bool, len(r.Actions))
 	for _, id := range r.Actions {
-		enabled[id] = true
+		enabled[id] = !contains(actionNames(r.DefaultOff), string(id))
 	}
 	return enabled
+}
+
+func actionNames(ids []ActionID) []string {
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		names = append(names, string(id))
+	}
+	return names
 }
 
 // RequiredFields is the union of the enabled Actions' requirements plus the

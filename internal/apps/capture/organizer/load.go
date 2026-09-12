@@ -11,9 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// BuiltinSource labels a Recipe compiled into the binary.
-const BuiltinSource = "built-in"
-
 // Failure is one Recipe file that could not be loaded, and why. A bad file is
 // reported rather than skipped: silently dropping it would leave the author
 // believing a Recipe is in effect when it is not.
@@ -35,11 +32,11 @@ type Loaded struct {
 	Failures []Failure
 }
 
-// Load reads every Recipe file in dir and layers them over the built-in Set. A
-// missing directory is not an error: it is the normal state of an installation
-// that has not defined any Recipe.
+// Load reads every Recipe file in dir. A missing directory is not an error: it
+// is an installation that has not been given its Recipes yet, and Route says so
+// by offering none rather than by refusing to open.
 func Load(dir string) Loaded {
-	loaded := Loaded{Set: Builtin(), Dir: dir}
+	loaded := Loaded{Dir: dir}
 	if dir == "" {
 		return loaded
 	}
@@ -71,7 +68,7 @@ func Load(dir string) Loaded {
 		}
 		recipes = append(recipes, recipe)
 	}
-	loaded.Set = loaded.Set.With(recipes)
+	loaded.Set = NewSet(recipes)
 	return loaded
 }
 
@@ -105,7 +102,11 @@ func LoadFile(path string) (Recipe, error) {
 // recipeDocument is the on-disk shape. Actions are objects rather than bare
 // strings so a later "with:" can be added without rewriting existing files.
 type recipeDocument struct {
-	Name    string           `yaml:"name"`
+	Name string `yaml:"name"`
+	// Enabled is a pointer so an absent key means "on" without the file having
+	// to say so: switching a Recipe off is one line added, and switching it
+	// back on is one line removed.
+	Enabled *bool            `yaml:"enabled"`
 	Match   matchDocument    `yaml:"match"`
 	Fields  []fieldDocument  `yaml:"fields"`
 	Actions []actionDocument `yaml:"actions"`
@@ -125,6 +126,11 @@ type fieldDocument struct {
 
 type actionDocument struct {
 	ID string `yaml:"id"`
+	// Enabled says whether the Action is ticked when the Recipe is chosen. It
+	// is not whether the Action is in the Recipe: an Action that is off is
+	// still listed in ACTIONS and still one keystroke away, for the one wanted
+	// now and then rather than every time.
+	Enabled *bool `yaml:"enabled"`
 }
 
 func (d recipeDocument) recipe(path string) (Recipe, error) {
@@ -139,8 +145,9 @@ func (d recipeDocument) recipe(path string) (Recipe, error) {
 	if len(d.Actions) == 0 {
 		return Recipe{}, errors.New("a recipe with no action would organize nothing")
 	}
+	disabled := d.Enabled != nil && !*d.Enabled
 
-	recipe := Recipe{ID: id, Name: name, Source: path}
+	recipe := Recipe{ID: id, Name: name, Source: path, Disabled: disabled}
 	recipe.Match.Workflows = d.Match.Workflows
 	for _, field := range d.Match.RequiresAny {
 		recipe.Match.RequiresAny = append(recipe.Match.RequiresAny, FieldID(field))
@@ -156,6 +163,9 @@ func (d recipeDocument) recipe(path string) (Recipe, error) {
 			return Recipe{}, fmt.Errorf("unknown action %q", id)
 		}
 		recipe.Actions = append(recipe.Actions, id)
+		if action.Enabled != nil && !*action.Enabled {
+			recipe.DefaultOff = append(recipe.DefaultOff, id)
+		}
 	}
 	for _, field := range d.Fields {
 		requirement, err := field.requirement()

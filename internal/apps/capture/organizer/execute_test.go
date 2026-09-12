@@ -57,7 +57,7 @@ func vaultContext(t *testing.T, capture Capture, content string) (Context, strin
 
 func dailyPlan(t *testing.T, ctx Context) ActionPlan {
 	t.Helper()
-	recipe, ok := LookupRecipe("obsidian_daily")
+	recipe, ok := starterSet(t).Lookup("obsidian_daily")
 	if !ok {
 		t.Fatal("no daily recipe")
 	}
@@ -327,7 +327,7 @@ func TestDailyAppendRefusesWithoutAConfiguredPathOrTemplate(t *testing.T) {
 	settings := base
 	settings.DailyNote = ""
 	ctx := NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings)
-	recipe, _ := LookupRecipe("obsidian_daily")
+	recipe := starterRecipe(t, "obsidian_daily")
 	plans := Build(ctx, recipe, recipe.Actions)
 	if plans[0].Target != "" {
 		t.Fatalf("target = %q, want none without a configured path", plans[0].Target)
@@ -372,7 +372,7 @@ func TestDailyNotePathIsATemplateOverTheDate(t *testing.T) {
 	settings.DailyNote = "00 Daily Log/{{.Year}}/{{.Date}}.md"
 	ctx := NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings)
 
-	recipe, _ := LookupRecipe("obsidian_daily")
+	recipe := starterRecipe(t, "obsidian_daily")
 	plans := Build(ctx, recipe, recipe.Actions)
 	if plans[0].Target != "00 Daily Log/2026/2026-09-09.md" {
 		t.Fatalf("target = %q", plans[0].Target)
@@ -397,7 +397,7 @@ func TestCreatedNoteComesFromTheConfiguredTemplate(t *testing.T) {
 	capture.Index.Place.Country = "Australia"
 	ctx := NewContext(capture, map[FieldID]any{FieldContent: "x"}).WithSettings(settings)
 
-	recipe, _ := LookupRecipe("obsidian_daily")
+	recipe := starterRecipe(t, "obsidian_daily")
 	plans := Build(ctx, recipe, recipe.Actions)
 	Execute(ctx, plans)
 

@@ -1,0 +1,16 @@
+# The place, and a line in the day's note pointing at it. This is the usual
+# one: somewhere was worth marking, and the day is worth the note.
+name: Location + Daily
+
+match:
+  workflows: [been_here]
+  requires_any: [coordinates.latitude, place.city]
+
+fields:
+  - id: tags
+    label: Tags
+    input: multi_select
+
+actions:
+  - id: obsidian.location.append
+  - id: obsidian.daily.append

@@ -1,82 +1,53 @@
 package organizer
 
-// builtinRecipes are compiled in rather than configured: they are what Route
-// offers until a Recipe directory adds to them. been_here is the workflow the
-// model was built against; photo_note and quick_mark are here to exercise it
-// against Recipes whose Actions require different fields.
-//
-// None of them archives. Archiving takes a Capture out of reach rather than
-// writing something somewhere, so it belongs to the other end of the Capture's
-// life and to a session of its own, not to a Recipe.
-var builtinRecipes = withBuiltinSource([]Recipe{
-	{
-		ID:      "obsidian_location",
-		Name:    "Location",
-		Match:   Match{Workflows: []string{"been_here"}, RequiresAny: []FieldID{FieldLatitude, FieldCity}},
-		Actions: []ActionID{ActionLocationAppend},
-	},
-	{
-		ID:    "obsidian_location_daily",
-		Name:  "Location + Daily",
-		Match: Match{Workflows: []string{"been_here"}, RequiresAny: []FieldID{FieldLatitude, FieldCity}},
-		Fields: []FieldRequirement{
-			optional(FieldRequirement{Field: FieldTags, Label: "Tags", Input: InputMultiSelect}),
-		},
-		Actions: []ActionID{ActionLocationAppend, ActionDailyAppend},
-	},
-	{
-		ID:      "obsidian_daily",
-		Name:    "Daily",
-		Match:   Match{Workflows: []string{"been_here", "photo_note", "quick_mark"}},
-		Actions: []ActionID{ActionDailyAppend},
-	},
-	{
-		ID:      "photo_location_daily",
-		Name:    "Photo + Location",
-		Match:   Match{Workflows: []string{"photo_note"}, RequiresAny: []FieldID{FieldLatitude, FieldCity}},
-		Actions: []ActionID{ActionLocationAppend, ActionDailyAppend},
-	},
-	{
-		ID:      "apple_note",
-		Name:    "Apple Note",
-		Match:   Match{Workflows: []string{"photo_note", "quick_mark"}},
-		Actions: []ActionID{ActionAppleNoteCreate},
-	},
-	{
-		ID:      "apple_reminder",
-		Name:    "Reminder",
-		Match:   Match{Workflows: []string{"quick_mark"}},
-		Actions: []ActionID{ActionReminderCreate},
-	},
-	{
-		ID:    "apple_calendar",
-		Name:  "Calendar",
-		Match: Match{Workflows: []string{"quick_mark"}},
-		Fields: []FieldRequirement{
-			optional(FieldRequirement{Field: FieldAllDay, Label: "All day", Input: InputText}),
-		},
-		Actions: []ActionID{ActionCalendarCreate},
-	},
-})
+import (
+	"embed"
+	"io/fs"
+	"sort"
+)
 
-// withBuiltinSource labels the compiled-in Recipes so a reader can tell them
-// apart from the ones a file defined.
-func withBuiltinSource(recipes []Recipe) []Recipe {
-	for index := range recipes {
-		recipes[index].Source = BuiltinSource
-	}
-	return recipes
+// starterFiles are the Recipes this toolbox ships. They are files rather than
+// Go values, and they are not loaded: a Recipe is something a reader owns and
+// edits, so the only Recipes in effect are the ones in their Recipe directory.
+// What is compiled in is a copy to start from, written out on request.
+//
+// A definition in Go would be a second way of saying what a file already says,
+// and the two would drift — the built-ins named Actions by ids that had not
+// existed for some time, and nobody noticed, because nothing read them but the
+// compiler.
+//
+//go:embed starter/*.yaml
+var starterFiles embed.FS
+
+// StarterFile is one shipped Recipe: the filename it is written under, which
+// is its id, and its contents.
+type StarterFile struct {
+	Name string
+	Data []byte
 }
 
-// Recipes returns every known Recipe, in a stable order.
-func Recipes() []Recipe { return Builtin().All() }
-
-// LookupRecipe returns a Recipe by id.
-func LookupRecipe(id RecipeID) (Recipe, bool) {
-	for _, recipe := range builtinRecipes {
-		if recipe.ID == id {
-			return recipe, true
-		}
+// Starters are the shipped Recipes, in filename order. A caller writes them
+// into a Recipe directory; nothing here reads them back.
+func Starters() []StarterFile {
+	entries, err := fs.ReadDir(starterFiles, "starter")
+	if err != nil {
+		// The files are embedded, so a failure here is a build that went
+		// wrong rather than anything a run can do something about.
+		return nil
 	}
-	return Recipe{}, false
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+
+	starters := make([]StarterFile, 0, len(names))
+	for _, name := range names {
+		data, err := starterFiles.ReadFile("starter/" + name)
+		if err != nil {
+			continue
+		}
+		starters = append(starters, StarterFile{Name: name, Data: data})
+	}
+	return starters
 }

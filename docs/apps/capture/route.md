@@ -105,8 +105,8 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   Recipe is the user's decision, and a lone candidate is still confirmed with
   `Enter`. With no candidate it shows `· No recipe matches this capture`.
 - A pane below the list describes the candidate under the cursor: what it
-  `Runs`, what it `Asks` for beyond its Actions, its `Source` — `built-in` or
-  the filename that defined it — and last what it `Matches`, a line per
+  `Runs`, what it `Asks` for beyond its Actions, its `Source`, the
+  filename that defined it, and last what it `Matches`, a line per
   workflow. Matches goes last and takes a line each because it is the longest
   of the groups and the one a reader checks least often, and a run of names on
   one line reads as a sentence rather than as a list. It is there because
@@ -330,10 +330,10 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
 
 ## Configuration
 
-Recipes are not configured per session. They are defined by the organizer model
-in [`organizer.md`](organizer.md), and Route renders whichever candidates the
-Set returns. The Set is the built-in Recipes with the files in
-`capture.recipes` layered over them:
+Recipes are not configured per session. They are defined by files in
+`capture.recipes` — every one of them, with none compiled in — and Route
+renders whichever candidates the Set returns. `dgs capture --export-recipes`
+lays down the ones this version ships:
 
 ```json
 {
@@ -364,14 +364,16 @@ neither has to be named here; see [`tui.md`](../../tui.md). `capture.recipes`
 and `capture.templates` still take a path of their own for a directory that
 lives somewhere else.
 
+An installation whose Recipe directory is empty offers no Recipe at all, and
+Route shows an empty `RECIPES` column rather than an error.
+
 `section` is the heading a Capture is written under in a daily note, defaulting
 to `Captured{{with .Device}} - {{.}}{{end}}`; it may carry its own hashes to ask
 for a deeper level. Every key is listed in
 [`configuration/capture.md`](../../configuration/capture.md). An unset `recipes`
 means the `recipes` directory beside the configuration file.
-A missing directory is not an error; it is the normal state of an installation
-that has defined no Recipe of its own. The paths Actions write to are not
-configurable yet.
+A missing directory is not an error; it is an installation that has not been
+given its Recipes yet.
 
 Route therefore has no configuration of its own beyond the Capture root and
 index filename it shares with Scan. A Capture whose workflow matches no Recipe

@@ -52,7 +52,7 @@ const (
 // routeModel is the Route session: it organizes each scanned Capture by
 // choosing a Recipe, enabling the Actions to run, and supplying whatever those
 // Actions still need. Every domain judgement belongs to the organizer package;
-// this model calls FindRecipes, MissingFields, and Build, and draws the result.
+// this model calls Set.Find, MissingFields, and Build, and draws the result.
 // The session records the plan only: nothing is moved and no Action is run.
 //
 // The four columns are a progressive selection, each the result of the one to
@@ -140,7 +140,7 @@ type routeFieldRow struct {
 }
 
 func newRouteModel(root, indexFile string) routeModel {
-	return newRouteModelWithRecipes(root, indexFile, organizer.Builtin())
+	return newRouteModelWithRecipes(root, indexFile, organizer.Set{})
 }
 
 func newRouteModelWithRecipes(root, indexFile string, set organizer.Set) routeModel {
@@ -1424,7 +1424,7 @@ func (m *routeModel) rebuildCaptureItems() {
 }
 
 // rebuildRecipeItems refills the candidate list for the selected Capture. The
-// list changes as the Capture cursor moves, because FindRecipes narrows by
+// list changes as the Capture cursor moves, because Set.Find narrows by
 // workflow and by what the Capture already carries.
 func (m *routeModel) rebuildRecipeItems() {
 	selected := ""
@@ -1989,8 +1989,8 @@ func matchedWorkflows(recipe organizer.Recipe) []string {
 // recipeSource names the file a Recipe came from by its filename: the directory
 // is the same for every one of them and would crowd out the name.
 func recipeSource(recipe organizer.Recipe) string {
-	if recipe.Source == "" || recipe.Source == organizer.BuiltinSource {
-		return organizer.BuiltinSource
+	if recipe.Source == "" {
+		return "· unknown"
 	}
 	return filepath.Base(recipe.Source)
 }
