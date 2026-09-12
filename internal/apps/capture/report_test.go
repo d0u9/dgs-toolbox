@@ -96,3 +96,45 @@ func TestActionsDocumentNamesEveryAction(t *testing.T) {
 		}
 	}
 }
+
+// The example Recipes and templates are copied by hand into a real
+// configuration, so one that no longer loads is found here rather than by
+// whoever copied it.
+func TestExampleRecipesAndTemplatesLoad(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("no caller information")
+	}
+	root := filepath.Join(filepath.Dir(file), "..", "..", "..", "examples")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		global := config.Config{ConfigDir: filepath.Join(root, entry.Name())}
+		loaded := organizer.Load(global.CaptureRecipesDir())
+		if len(loaded.Failures) > 0 {
+			t.Errorf("examples/%s: %v", entry.Name(), loaded.Failures)
+		}
+		settings := obsidianSettings(global)
+		if settings.TemplateDir == "" {
+			continue
+		}
+		for _, name := range []string{organizer.DailyEntryTemplate, organizer.LocationEntryTemplate} {
+			if _, err := os.Stat(filepath.Join(settings.TemplateDir, name)); err != nil {
+				continue
+			}
+			if _, err := organizer.LoadTemplate(settings, name); err != nil {
+				t.Errorf("examples/%s/%s: %v", entry.Name(), name, err)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(settings.TemplateDir, organizer.DailyNoteTemplate)); err == nil {
+			if err := organizer.CheckNoteTemplate(settings); err != nil {
+				t.Errorf("examples/%s/%s: %v", entry.Name(), organizer.DailyNoteTemplate, err)
+			}
+		}
+	}
+}

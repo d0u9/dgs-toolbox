@@ -1,0 +1,10 @@
+{
+  "tui": {
+    "top_bar": {
+      "disk": false,
+      "network": false,
+      "cpu": true,
+      "time": true
+    }
+  }
+}

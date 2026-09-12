@@ -382,6 +382,19 @@ func LoadNoteTemplate(dir string) (string, error) {
 	return string(text), nil
 }
 
+// CheckNoteTemplate reports whether the daily note's template parses and
+// renders, without writing anything. A template is only exercised when a day
+// has no note yet, which can be weeks after it was edited; this answers "is
+// this file still good?" on demand.
+func CheckNoteTemplate(settings Settings) error {
+	text, err := LoadNoteTemplate(settings.TemplateDir)
+	if err != nil {
+		return err
+	}
+	_, err = renderNote(settings, DailyNoteTemplate, text, NoteData{})
+	return err
+}
+
 // renderNote fills a template read from a file. Unlike an entry, nothing is
 // pruned: a note is a document the reader will edit, and dropping lines out of
 // it because a value was unknown would leave them wondering what was removed.

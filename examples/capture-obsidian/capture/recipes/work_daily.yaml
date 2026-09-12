@@ -1,0 +1,18 @@
+# Anything marked during work hours goes into the day's note under a heading of
+# its own, tagged with the project it belongs to. The project is asked for
+# rather than read from the Capture: only the person organizing it knows.
+name: Work Daily
+
+match:
+  workflows: [been_here, quick_mark]
+
+fields:
+  - id: project
+    label: Project
+    required: true
+
+actions:
+  - id: obsidian.daily.append
+
+# Switch this off for a while without deleting it:
+# enabled: false

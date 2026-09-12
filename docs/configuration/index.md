@@ -11,6 +11,10 @@ link here; this is what a reader consults to find out *what* to write.
   in [`apps/capture/actions.md`](../apps/capture/actions.md).
 - [Photo](photo.md) — Photo Import's state file and default paths.
 
+Working files to copy from are in [`examples/`](../../examples), one folder per
+thing you might be setting up. A test loads every one of them, so an example
+that stops being valid fails the build rather than the reader.
+
 ## Where the configuration lives
 
 `dgs` reads one JSON file. It is looked for in this order, and the first answer
