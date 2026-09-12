@@ -364,8 +364,10 @@ neither has to be named here; see [`tui.md`](../../tui.md). `capture.recipes`
 and `capture.templates` still take a path of their own for a directory that
 lives somewhere else.
 
-`section` is the heading a Capture is written under in a daily note, `DGS` when
-unset; it may carry its own hashes to ask for a deeper level. An unset `recipes`
+`section` is the heading a Capture is written under in a daily note, defaulting
+to `Captured{{with .Device}} - {{.}}{{end}}`; it may carry its own hashes to ask
+for a deeper level. Every key is listed in
+[`configuration/capture.md`](../../configuration/capture.md). An unset `recipes`
 means the `recipes` directory beside the configuration file.
 A missing directory is not an error; it is the normal state of an installation
 that has defined no Recipe of its own. The paths Actions write to are not

@@ -50,6 +50,8 @@ Status bar     exactly one terminal row
 
 Top-bar telemetry belongs to the shared shell rather than individual commands. Sample cumulative system counters asynchronously with the one-second shell tick and derive per-second rates from consecutive samples. Show `--` until two valid samples exist; a failed sample must not block interaction or replace the last valid values. Disk, Network, CPU, and Time are separate fixed-width cells whose values align right inside their cell; changing digits or units must not move adjacent cells or the breadcrumb. Separate cells with a quiet `│`, for example `dgs › photo › import │ DISK R  4.0M/s W  5.0K/s │ NET ↑  2.0M/s ↓  3.0K/s │ CPU  17% │ 15:04:05`. On narrow screens, remove whole CPU, Network, and Disk cells in that order while always retaining the breadcrumb and the clock when Time is enabled; never show a partially clipped metric or let telemetry change workspace height.
 
+Every key of every part of the toolbox is listed in [`configuration/index.md`](configuration/index.md); this section says what the shell does with its own.
+
 The global configuration controls the visibility of Disk, Network, CPU, and Time independently. All four default to enabled; omitting one key preserves that default. The breadcrumb is structural and cannot be disabled. Load JSON from the operating system's user configuration directory at `dgs/config.json`, or from the path in `DGS_TOOLBOX_CONFIG` when set:
 
 ```json
