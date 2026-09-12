@@ -686,8 +686,8 @@ func TestScanRejectsTheSelectedCaptureIntoTheRejectFolder(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "keeper")); err != nil {
 		t.Fatalf("another capture was moved: %v", err)
 	}
-	if m.notice != "junk → reject" {
-		t.Fatalf("notice = %q", m.notice)
+	if m.notice.text != "junk → reject" {
+		t.Fatalf("notice = %q", m.notice.text)
 	}
 	if cmd == nil {
 		t.Fatal("the rejection did not reload the shared capture list")
@@ -716,8 +716,8 @@ func TestScanSaysWhichKeyToSetWithNoRejectFolder(t *testing.T) {
 
 	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
 	m = updated.(model)
-	if !m.noticeBad || !strings.Contains(m.notice, "capture.archive.reject") {
-		t.Fatalf("notice = %q, want the key named", m.notice)
+	if !m.notice.bad || !strings.Contains(m.notice.text, "capture.archive.reject") {
+		t.Fatalf("notice = %q, want the key named", m.notice.text)
 	}
 	if _, err := os.Stat(filepath.Join(root, "junk")); err != nil {
 		t.Fatalf("the capture should not have moved: %v", err)

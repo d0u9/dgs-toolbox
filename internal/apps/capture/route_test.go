@@ -730,7 +730,7 @@ func TestRouteRecordsOrganizedCapturesAndSortsThemBelowTheDivider(t *testing.T) 
 	reloaded, _ := m.Update(loadCaptures(root, "index.json")())
 	m = reloaded.(routeModel)
 
-	ordered, boundary := m.orderedEntries()
+	ordered, boundary := orderByOrganized(m.entries)
 	if boundary != 1 || ordered[0].name != "beta" || ordered[1].name != "alpha" {
 		t.Fatalf("ordering = %v, boundary = %d, want the organized capture last", ordered, boundary)
 	}
@@ -1741,6 +1741,24 @@ func TestRouteAttachmentsFollowTheSelectedCapture(t *testing.T) {
 	}
 }
 
+// The two sessions that list Captures name them the same way, and the switch
+// means the same thing in each.
+func TestRouteReadsCapturesByIndexOrByFolder(t *testing.T) {
+	m := loadedRoute(t, routeTestRoot(t, "aaaa-xxxxx"))
+
+	if label := m.view.Label(m.entries[0]); !strings.HasPrefix(label, "2026-09-09") {
+		t.Fatalf("index view = %q, want the timestamp", label)
+	}
+	switched, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	m = switched.(routeModel)
+	if label := m.view.Label(m.entries[0]); !strings.HasPrefix(label, "aaaa-xxxxx") {
+		t.Fatalf("folder view = %q, want the directory name", label)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "aaaa-xxxxx") {
+		t.Fatalf("the folder view is not drawn in the column:\n%s", view)
+	}
+}
+
 // An open editor owns every key it is given: x is a letter in a note, not the
 // key that opens the run dialog.
 func TestRouteEditorKeepsTheKeysTheSessionAlsoUses(t *testing.T) {
@@ -1749,14 +1767,14 @@ func TestRouteEditorKeepsTheKeysTheSessionAlsoUses(t *testing.T) {
 	m.editor.SetValue("")
 	m.editor.Focus()
 
-	for _, key := range []string{"x", "R"} {
+	for _, key := range []string{"x", "v", "R"} {
 		updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 		m = updated.(routeModel)
 		if m.running {
 			t.Fatalf("%q opened the run dialog while a field was being edited", key)
 		}
 	}
-	if got := m.editor.Value(); got != "xR" {
+	if got := m.editor.Value(); got != "xvR" {
 		t.Fatalf("the editor received %q, want every key typed into it", got)
 	}
 }

@@ -84,7 +84,9 @@ CAPTURES              CAPTURE                             ARCHIVE
   needs the other view too. Neither view drops the other fact: a row answering
   only one of the two questions would send the reader across for every Capture.
   The view belongs to the session rather than to one column, so a Capture moved
-  between columns is not renamed by arriving.
+  between columns is not renamed by arriving. Route offers the same switch on
+  its own Capture list, and the two are one implementation: a Capture is named
+  the same way in both, and `v` means the same thing in each.
 - A Capture is in exactly one of the three lists, and a move is watched leaving
   one and arriving in the other. That is the whole state of the session: there
   are no marks to keep track of, because nothing is pending.

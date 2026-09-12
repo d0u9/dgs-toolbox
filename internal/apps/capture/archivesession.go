@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"dgs-toolbox/internal/apps/capture/archive"
 	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/datafield"
@@ -95,18 +94,15 @@ type archiveModel struct {
 	reject    scrolllist.Model
 	loadError string
 	// folderError is why a destination could not be read, keyed by destination,
-	// and notice is what became of the last move. A move that fails says so
-	// where it was asked for rather than in a dialog nobody opened.
+	// and notice is what became of the last move: said where it was asked for
+	// rather than in a dialog nobody opened.
 	folderError map[archiveDestination]string
-	notice      string
-	noticeBad   bool
-	// byFolder is which of the two views the three lists are drawn in. A
-	// Capture is identified by its index — when it was taken, what produced it
-	// — because a generated folder name says nothing about what is in it. But
-	// the folder name is what every other tool on the machine calls it, so a
-	// reader comparing this screen with a Finder window, a backup, or a
-	// terminal needs the other view as well.
-	byFolder  bool
+	notice      moveNotice
+	// view is how the three lists name a Capture. It belongs to the session
+	// rather than to one column: the same Capture is named the same way
+	// wherever it is listed, or moving one between columns would look like it
+	// changed.
+	view      captureView
 	fields    datafield.Navigator
 	pendingGG bool
 	lastClick routeClick
@@ -178,7 +174,7 @@ func (m archiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.root = msg.root
 		m.rootControl.SetRoot(msg.root)
 		m.entries = nil
-		m.loadError, m.notice = "", ""
+		m.loadError, m.notice = "", moveNotice{}
 		m.rebuildItems()
 		return m, nil
 	case capturesLoadedMsg:
@@ -236,7 +232,7 @@ func (m archiveModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// The view belongs to the session rather than to one column: the same
 		// Capture is named the same way wherever it is listed, or moving one
 		// between columns would look like it changed.
-		m.byFolder = !m.byFolder
+		m.view.Toggle()
 		m.pendingGG = false
 		m.rebuildItems()
 		return m, nil
@@ -273,7 +269,7 @@ func (m archiveModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
 	if moved, cmd, handled := m.moveKey(destinationCaptures, key); handled {
 		return moved, cmd
 	}
-	m.listKey(&m.captures, key)
+	listMoveKey(&m.captures, key, &m.pendingGG, true)
 	if key == "R" {
 		return m, m.refresh()
 	}
@@ -291,7 +287,7 @@ func (m archiveModel) updateFolderList(destination archiveDestination, key strin
 	if moved, cmd, handled := m.moveKey(destination, key); handled {
 		return moved, cmd
 	}
-	m.listKey(list, key)
+	listMoveKey(list, key, &m.pendingGG, true)
 	if key == "R" {
 		return m.move(destination, destinationCaptures)
 	}
@@ -325,31 +321,6 @@ func (m archiveModel) moveKey(from archiveDestination, key string) (tea.Model, t
 	return m, nil, false
 }
 
-// listKey is the movement every list in this session shares.
-func (m *archiveModel) listKey(list *scrolllist.Model, key string) {
-	switch key {
-	case "up", "k":
-		list.Move(-1)
-	case "down", "j":
-		list.Move(1)
-	case "left", "h":
-		list.Pan(-4)
-	case "right", "l":
-		list.Pan(4)
-	case "G", "end":
-		list.Last()
-	case "g":
-		if m.pendingGG {
-			list.First()
-			m.pendingGG = false
-			return
-		}
-		m.pendingGG = true
-		return
-	}
-	m.pendingGG = false
-}
-
 // move carries the selected Capture from one place to another, now, on disk.
 // Nothing is asked first: every move can be taken back with `R`, and a session
 // whose job is going through a list should not charge a confirmation per row.
@@ -364,34 +335,24 @@ func (m archiveModel) move(from, to archiveDestination) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if to == destinationArchive && !entry.organized {
-		return m.fail("Not organized — it can be rejected, not archived"), nil
+		m.notice = failed("Not organized — it can be rejected, not archived")
+		return m, nil
 	}
 	target := m.folderFor(to)
 	if target == "" {
-		return m.fail("No " + folderName(to) + " folder configured — set " + folderKey(to)), nil
+		m.notice = unsetFolderNotice(to)
+		return m, nil
 	}
-	destination, err := archive.Move(entry.path, target)
-	if err != nil {
-		return m.fail(entry.name + ": " + err.Error()), nil
+	relocated, notice, ok := moveCaptureTo(entry, target, folderName(to))
+	m.notice = notice
+	if !ok {
+		return m, nil
 	}
-	// The Capture is the same Capture at a new path, so it is carried across
-	// rather than re-read: its index and its organizing record did not change
-	// by being moved.
-	moved := entry
-	moved.path = destination
-	moved.name = filepath.Base(destination)
 	m.remove(from, entry.path)
-	m.add(to, moved)
-	m.notice, m.noticeBad = entry.name+" → "+folderName(to), false
+	m.add(to, relocated)
 	m.rebuildItems()
-	m.listFor(to).SelectID(archiveItemID(to, moved.path))
+	m.listFor(to).SelectID(archiveItemID(to, relocated.path))
 	return m, nil
-}
-
-// fail records why a move did not happen, next to where it was asked for.
-func (m archiveModel) fail(reason string) archiveModel {
-	m.notice, m.noticeBad = reason, true
-	return m
 }
 
 func (m archiveModel) refresh() tea.Cmd {
@@ -634,11 +595,18 @@ func (m *archiveModel) rebuildItems() {
 			entries, boundary = orderByOrganized(entries)
 		}
 		for _, entry := range entries {
-			label, detail := m.rowText(entry)
+			// Only the Capture root carries the Recipe that handled a Capture:
+			// in the two destinations every row below the rule would carry one,
+			// which says nothing about which of them is which.
+			detail := m.view.Detail(entry)
+			if latest, ok := entry.record.Latest(); ok && entry.organized &&
+				destination == destinationCaptures && !m.view.byFolder {
+				detail += "  → " + latest.RecipeName
+			}
 			items = append(items, scrolllist.Item{
 				ID:     archiveItemID(destination, entry.path),
-				Label:  label,
-				Detail: detail,
+				Label:  m.view.Label(entry),
+				Detail: indentDetail(detail),
 			})
 		}
 		list.SetItems(items)
@@ -651,51 +619,6 @@ func (m *archiveModel) rebuildItems() {
 	}
 }
 
-// rowText is one row in whichever view is current. The two views swap which
-// fact leads: the index view reads as when the Capture was taken with what
-// produced it under it, and the folder view reads as the directory name with
-// the timestamp under it. Neither drops the other, because a row that answered
-// only one of the two questions would send the reader to the other view for
-// every Capture.
-func (m archiveModel) rowText(entry captureEntry) (label string, detail string) {
-	if m.byFolder {
-		detail = organizer.FormatTimestamp(entry.index.CreatedAt)
-		if detail == "" {
-			detail = routeCaptureDetail(entry)
-		}
-		return entry.name + string(filepath.Separator), indentDetail(detail)
-	}
-	detail = routeCaptureDetail(entry)
-	if latest, ok := entry.record.Latest(); ok && entry.organized {
-		detail += "  → " + latest.RecipeName
-	}
-	return routeCaptureLabel(entry), indentDetail(detail)
-}
-
-// indentDetail lines a second row up under the first, past the row number.
-func indentDetail(detail string) string {
-	if detail == "" {
-		return ""
-	}
-	return "      " + detail
-}
-
-// orderByOrganized puts the Captures still to organize first and the organized
-// ones after them, the way Route arranges the same list: only the second run
-// can be archived, and the rule says where that line is.
-func orderByOrganized(entries []captureEntry) ([]captureEntry, int) {
-	pending := make([]captureEntry, 0, len(entries))
-	done := make([]captureEntry, 0, len(entries))
-	for _, entry := range entries {
-		if entry.organized {
-			done = append(done, entry)
-			continue
-		}
-		pending = append(pending, entry)
-	}
-	return append(pending, done...), len(pending)
-}
-
 // tabOrder is what Tab walks: the three lists. The Capture Root is not in the
 // ring — it is a setting rather than a step — and Alt and the arrows still
 // reach it below CAPTURES, as they do in Route.
@@ -704,22 +627,7 @@ func (m archiveModel) tabOrder() []string {
 }
 
 func (m *archiveModel) cycleFields(forward bool) {
-	order := m.tabOrder()
-	current, found := 0, false
-	for index, id := range order {
-		if id == m.fields.Current() {
-			current, found = index, true
-		}
-	}
-	if !found {
-		m.fields.Set(order[0])
-		return
-	}
-	step := 1
-	if !forward {
-		step = -1
-	}
-	m.fields.Set(order[(current+step+len(order))%len(order)])
+	cycleFieldOrder(&m.fields, m.tabOrder(), forward)
 }
 
 func (m archiveModel) View() string {
@@ -886,22 +794,11 @@ func (m archiveModel) sittingIn() string {
 // From a destination the pair becomes the one thing that is left to do there —
 // putting the Capture back.
 func (m archiveModel) actions(width int) string {
-	buttons := m.buttons()
-	rendered := make([][]string, 0, len(buttons))
-	for _, spec := range buttons {
+	rendered := make([][]string, 0, 2)
+	for _, spec := range m.buttons() {
 		rendered = append(rendered, pageactions.Button(spec.title, spec.subtitle, spec.width, spec.primary))
 	}
-	lines := []string{strings.Repeat(" ", max(0, width))}
-	for row := 0; row < 2; row++ {
-		parts := make([]string, 0, len(rendered))
-		for _, button := range rendered {
-			parts = append(parts, button[row])
-		}
-		line := strings.Join(parts, " ")
-		indent := strings.Repeat(" ", max(0, width-lipgloss.Width(line)-1))
-		lines = append(lines, indent+line+" ")
-	}
-	return strings.Join(lines, "\n") + "\n" + strings.Repeat(" ", max(0, width))
+	return pageActionRow(width, rendered)
 }
 
 // archiveButton is one of those controls: what it says, whether it is lit, and
@@ -1033,11 +930,8 @@ func (m archiveModel) Status() tui.Status {
 // where the selected Capture sits. A move is reported here rather than in a
 // dialog: it has already happened, and `R` is how it is taken back.
 func (m archiveModel) statusValue() string {
-	if m.notice != "" {
-		if m.noticeBad {
-			return "! " + m.notice
-		}
-		return m.notice
+	if !m.notice.empty() {
+		return m.notice.status()
 	}
 	if entry, ok := m.selected(); ok {
 		return entry.path
