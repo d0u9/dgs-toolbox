@@ -1119,7 +1119,7 @@ func (m *routeModel) advanceToNextPending(organized captureEntry) {
 		if entry.path == organized.path {
 			continue
 		}
-		if len(m.recipeSet.Find(captureFor(entry))) == 0 {
+		if len(m.recipeSet.Find(captureFor(entry), m.settings)) == 0 {
 			continue
 		}
 		m.captures.SelectID("capture:" + entry.path)
@@ -1226,7 +1226,7 @@ func (m routeModel) candidates() []organizer.Recipe {
 	if !ok {
 		return nil
 	}
-	return m.recipeSet.Find(captureFor(entry))
+	return m.recipeSet.Find(captureFor(entry), m.settings)
 }
 
 func (m routeModel) focusedCandidate() (organizer.Recipe, bool) {

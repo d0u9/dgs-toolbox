@@ -4,7 +4,7 @@ name: Photo + Location
 
 match:
   workflows: [photo_note]
-  requires_any: [coordinates.latitude, place.city]
+  requires_any: [coordinates, place.city]
 
 actions:
   - id: obsidian.location.append

@@ -48,36 +48,41 @@ Execute
 A Recipe has exactly three parts: `match`, `fields`, `actions`.
 
 ```yaml
-id: obsidian_location_daily
+# obsidian_location_daily.yaml — the filename is the id
 name: Location + Daily
 
 match:
   workflows:
     - been_here
-    - photo_note
+  # At least one of these must resolve, or the Recipe is not offered: a place
+  # with neither a position nor a name has nothing to record.
+  requires_any:
+    - coordinates
+    - place.city
 
 fields:
-  - id: place.name
-    required: true
-    input: text
-  - id: content
-    required: true
-    input: multiline
   - id: tags
     required: false
     input: multi_select
 
 actions:
-  - id: obsidian.location.upsert
+  - id: obsidian.location.append
   - id: obsidian.daily.append
-  - id: capture.archive
 ```
 
 `match` does not trigger execution. It decides which Recipes are *offered* for
-a Capture, so a caller offers four candidates rather than thirty. A `been_here`
-Capture offers `Location`, `Location + Daily`, `Daily`, `Archive`; a
-`quick_mark` Capture offers `Daily`, `Reminder`, `Calendar`, `Apple Note`,
-`Archive`.
+a Capture, so a caller offers three candidates rather than thirty. `workflows`
+and `requires_any` are both conditions on the Capture as it arrived: the
+workflow must be one of those listed, and at least one of the named fields must
+resolve. A requirement may name any field, including one only a workflow file
+knows how to find — matching reads the same configuration a run does — and it
+never reads what the user has typed, because a candidate list that changed as
+they typed would move under the cursor.
+
+`coordinates` is the position itself. Latitude and longitude are the same
+question asked twice — the index carries them as one object, so neither can be
+present without the other — and a Recipe naming one of them to mean "has a
+position" reads as though the other could be missing.
 
 ## Actions declare their own requirements
 
@@ -88,15 +93,12 @@ otherwise adding a required field to an Action silently breaks every Recipe
 that forgot to sync.
 
 ```text
-obsidian.location.upsert  requires  place.name, coordinates.latitude,
-                                    coordinates.longitude
+obsidian.location.append  requires  createdAt, content
 obsidian.daily.append     requires  createdAt, content
-capture.archive           requires  —
 
-Recipe "Location + Daily", all three enabled, therefore requires
-  place.name, coordinates.latitude, coordinates.longitude,
+Recipe "Location + Daily", both enabled, therefore requires
   createdAt, content
-  + anything the Recipe itself adds (e.g. project)
+  + anything the Recipe itself adds (e.g. tags, project)
 ```
 
 ## Actions declare their effects

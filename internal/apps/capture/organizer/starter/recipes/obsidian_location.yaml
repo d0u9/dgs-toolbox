@@ -6,7 +6,7 @@ match:
   workflows: [been_here]
   # A place Capture with neither coordinates nor a place name has nothing to
   # record, so it is not offered this Recipe at all.
-  requires_any: [coordinates.latitude, place.city]
+  requires_any: [coordinates, place.city]
 
 actions:
   - id: obsidian.location.append

@@ -72,6 +72,7 @@ the event is not all day — rather than being designed around one workflow.
 | Field | Input | Where it comes from |
 | --- | --- | --- |
 | `createdAt` | text | the Capture's index |
+| `coordinates` | text | the Capture's index — the position, as one field |
 | `content` | multiline | the Capture, or typed in `FIELDS` |
 | `title` | text | typed in `FIELDS` |
 | `due_at` | datetime | typed in `FIELDS` |
@@ -79,5 +80,9 @@ the event is not all day — rather than being designed around one workflow.
 | `all_day` | text | typed in `FIELDS` |
 | `tags` | multi-select | typed in `FIELDS` |
 
-`dgs capture --recipes` lists the fields actually in use by the Recipes this
-binary offers, alongside where each Recipe came from.
+A Recipe's `match.requires_any` may name any of these too, which is how a
+Recipe says it is only worth offering for a Capture that carries something —
+`coordinates` for one that knows where it was.
+
+`dgs capture --recipes` lists the fields actually in use by the Recipes that
+loaded, alongside where each Recipe came from.

@@ -176,7 +176,7 @@ func TestALoadedRecipeIsOfferedAndCarriesItsRequirements(t *testing.T) {
 	set := Load(dir).Set
 
 	found := false
-	for _, recipe := range set.Find(beenHere()) {
+	for _, recipe := range set.Find(beenHere(), starterSettings(t)) {
 		if recipe.ID != "work_daily" {
 			continue
 		}
@@ -210,7 +210,7 @@ func TestADisabledRecipeStaysInTheSetButIsNotOffered(t *testing.T) {
 	if len(recipe.Actions) != 1 {
 		t.Fatalf("actions = %v, want the recipe to keep its definition", recipe.Actions)
 	}
-	for _, candidate := range loaded.Set.Find(beenHere()) {
+	for _, candidate := range loaded.Set.Find(beenHere(), starterSettings(t)) {
 		if candidate.ID == "work_daily" {
 			t.Fatal("a disabled recipe was still offered")
 		}
@@ -338,8 +338,57 @@ func TestShippedRecipesLoadAndMatch(t *testing.T) {
 			}
 		}
 	}
-	offered := set.Find(beenHere())
+	offered := set.Find(beenHere(), starterSettings(t))
 	if len(offered) == 0 {
 		t.Fatal("a been_here capture with a position is offered no shipped recipe")
+	}
+}
+
+// A requirement may name any field, including one only a workflow file knows
+// how to find: a condition that could only be written about the index would be
+// a second, smaller vocabulary to learn.
+func TestARequirementMayNameAFieldAWorkflowFileDescribes(t *testing.T) {
+	dir := t.TempDir()
+	writeRecipe(t, dir, "noted.yaml", `
+name: Noted
+match:
+  workflows: [quick_note]
+  requires_any: [content]
+actions:
+  - id: obsidian.daily.append
+`)
+	set := Load(dir).Set
+
+	settings := DefaultSettings()
+	settings.Sources = map[string]map[FieldID][]string{"quick_note": {FieldContent: {"payload.text"}}}
+
+	written := quickNote()
+	if len(set.Find(written, settings)) != 1 {
+		t.Fatal("a capture whose note the workflow file finds was offered nothing")
+	}
+	// The same Capture without the text it requires is not a candidate.
+	blank := quickNote()
+	blank.Index.Payload = map[string]any{"labels": []any{"errand"}}
+	if got := set.Find(blank, settings); len(got) != 0 {
+		t.Fatalf("candidates = %v, want none without the field", got)
+	}
+	// And with no workflow file at all, nothing is read from the payload, so
+	// the Recipe is not offered either.
+	if got := set.Find(written, DefaultSettings()); len(got) != 0 {
+		t.Fatalf("candidates = %v, want none when no file says where the field is", got)
+	}
+}
+
+// The position is one field. Latitude and longitude are the same question
+// asked twice, so a Recipe asking whether the Capture has a position says so.
+func TestCoordinatesIsOneField(t *testing.T) {
+	ctx := NewContext(beenHere(), nil).WithSettings(DefaultSettings())
+	if got := ctx.String(FieldCoordinates); got != "-33.7691, 151.082" {
+		t.Fatalf("coordinates = %q, want the pair", got)
+	}
+	placeless := beenHere()
+	placeless.Index.Coordinates = nil
+	if value, ok := NewContext(placeless, nil).Get(FieldCoordinates); ok {
+		t.Fatalf("coordinates = %#v, want nothing without a position", value)
 	}
 }

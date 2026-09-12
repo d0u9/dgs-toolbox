@@ -34,15 +34,18 @@ type Recipe struct {
 	DefaultOff []ActionID
 }
 
-// matches reports whether this Recipe is a candidate for the Capture.
-func (r Recipe) matches(capture Capture) bool {
-	if len(r.Match.Workflows) > 0 && !contains(r.Match.Workflows, capture.Workflow()) {
+// matches reports whether this Recipe is a candidate for the Capture. It is
+// asked of a Context rather than of a Capture so that a requirement may name
+// any field, including one a workflow file says where to find: a condition that
+// could only be written about the index would be a second, smaller vocabulary
+// to learn.
+func (r Recipe) matches(ctx Context) bool {
+	if len(r.Match.Workflows) > 0 && !contains(r.Match.Workflows, ctx.Capture.Workflow()) {
 		return false
 	}
 	if len(r.Match.RequiresAny) == 0 {
 		return true
 	}
-	ctx := NewContext(capture, nil)
 	for _, field := range r.Match.RequiresAny {
 		if _, ok := ctx.Get(field); ok {
 			return true

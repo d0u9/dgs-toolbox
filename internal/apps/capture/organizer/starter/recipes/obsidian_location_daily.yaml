@@ -4,7 +4,7 @@ name: Location + Daily
 
 match:
   workflows: [been_here]
-  requires_any: [coordinates.latitude, place.city]
+  requires_any: [coordinates, place.city]
 
 fields:
   - id: tags

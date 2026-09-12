@@ -89,7 +89,9 @@ name: Work Daily
 
 match:
   workflows: [been_here, quick_mark]
-  requires_any: [latitude, city]
+  # Offered only when at least one of these resolves. Any field may be named,
+  # including one a workflow file describes.
+  requires_any: [coordinates, place.city]
 
 fields:
   - id: project

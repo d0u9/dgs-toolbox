@@ -103,7 +103,7 @@ func TestFindNarrowsCandidates(t *testing.T) {
 	set := starterSet(t)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := set.Find(tc.capture)
+			got := set.Find(tc.capture, starterSettings(t))
 			if len(got) != len(tc.want) {
 				t.Fatalf("got %d candidates, want %d", len(got), len(tc.want))
 			}

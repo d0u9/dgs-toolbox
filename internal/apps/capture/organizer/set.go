@@ -27,10 +27,15 @@ func (s Set) Lookup(id RecipeID) (Recipe, bool) {
 // only; it never chooses one, not even when exactly one matches. A disabled
 // Recipe is not a candidate: it stays in the Set so the report can say it is
 // there and switched off, which is the answer to "where did it go?".
-func (s Set) Find(capture Capture) []Recipe {
+func (s Set) Find(capture Capture, settings Settings) []Recipe {
+	// The Context carries no enrichment: whether a Recipe is a candidate is a
+	// question about the Capture as it arrived, asked before anyone has typed
+	// anything, and an answer that changed as they typed would move the list
+	// under the cursor.
+	ctx := NewContext(capture, nil).WithSettings(settings)
 	var candidates []Recipe
 	for _, recipe := range s.recipes {
-		if !recipe.Disabled && recipe.matches(capture) {
+		if !recipe.Disabled && recipe.matches(ctx) {
 			candidates = append(candidates, recipe)
 		}
 	}
