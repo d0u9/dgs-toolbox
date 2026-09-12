@@ -17,6 +17,11 @@ import (
 // implementation so both sessions present the same control and the same
 // browsing behavior.
 type rootControl struct {
+	// legend names the control. Archive points a second one of these at where
+	// Captures go, and a control that called itself CAPTURE ROOT there would be
+	// two names for two different directories on one screen.
+	legend   string
+	pathID   string
 	root     string
 	controls form.Model
 	picking  bool
@@ -24,10 +29,18 @@ type rootControl struct {
 }
 
 func newRootControl(root string) rootControl {
+	return newLabelledRootControl("CAPTURE ROOT", rootPathID, root)
+}
+
+// newLabelledRootControl is the same control under another name, for a session
+// that browses to a second directory.
+func newLabelledRootControl(legend, pathID, root string) rootControl {
 	return rootControl{
-		root: root,
+		legend: legend,
+		pathID: pathID,
+		root:   root,
 		controls: form.New(form.Field{
-			ID: rootPathID, Kind: form.Path, Label: "Root", Value: displayPath(root),
+			ID: pathID, Kind: form.Path, Label: "Root", Value: displayPath(root),
 		}),
 	}
 }
@@ -36,7 +49,7 @@ func newRootControl(root string) rootControl {
 func (c rootControl) Root() string { return c.root }
 
 // Display is the path text shown in the control.
-func (c rootControl) Display() string { return c.controls.Value(rootPathID) }
+func (c rootControl) Display() string { return c.controls.Value(c.pathID) }
 
 // Picking reports whether the File Explorer overlay is open.
 func (c rootControl) Picking() bool { return c.picking }
@@ -44,7 +57,7 @@ func (c rootControl) Picking() bool { return c.picking }
 // SetRoot points the control at a directory without opening the explorer.
 func (c *rootControl) SetRoot(root string) {
 	c.root = root
-	c.controls.SetValue(rootPathID, displayPath(root))
+	c.controls.SetValue(c.pathID, displayPath(root))
 }
 
 // Open shows the File Explorer overlay inside a workspace of the given size.
@@ -90,13 +103,13 @@ func (c rootControl) CapturesShellKey(key string) bool {
 // Clicked reports whether a primary click at the given control-relative
 // position hit the path row.
 func (c *rootControl) Clicked(x, y int) bool {
-	id, used := c.controls.Click([]string{rootPathID}, x, y)
-	return used && id == rootPathID
+	id, used := c.controls.Click([]string{c.pathID}, x, y)
+	return used && id == c.pathID
 }
 
 // Fieldset renders the whole CAPTURE ROOT Fieldset at the given width.
 func (c rootControl) Fieldset(width int, focused bool) string {
-	return fieldset.ViewFocused("CAPTURE ROOT", c.pathView(width-4, focused), width, focused)
+	return fieldset.ViewFocused(c.legend, c.pathView(width-4, focused), width, focused)
 }
 
 func (c rootControl) pathView(width int, focused bool) string {
@@ -106,14 +119,14 @@ func (c rootControl) pathView(width int, focused bool) string {
 		marker = "› "
 		style = scanFocusedPathStyle
 	}
-	path := ansi.Truncate(c.controls.Value(rootPathID), max(1, width-2), "…")
+	path := ansi.Truncate(c.controls.Value(c.pathID), max(1, width-2), "…")
 	return style.Width(max(1, width)).MaxWidth(max(1, width)).Render(marker + path)
 }
 
 // OverlayView renders the File Explorer modal for the given workspace size.
 func (c rootControl) OverlayView(width, height int) string {
 	modalWidth, modalHeight := rootModalSize(width, height)
-	label := "FILE EXPLORER · CAPTURE ROOT"
+	label := "FILE EXPLORER · " + c.legend
 	filter := scanFilterStyle.Render(c.picker.FilterLabel())
 	headerWidth := max(1, modalWidth-4)
 	label = ansi.Truncate(label, max(1, headerWidth-lipgloss.Width(filter)-1), "…")

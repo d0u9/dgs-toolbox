@@ -3,19 +3,20 @@
 ## Confirmed scope
 
 - `Route` is the second Capture session, rendered as a `ROUTE` tab beside
-  `SCAN` in the shared top bar. Both tabs belong to one Capture command; only
-  one is visible at a time.
-- `[` and `]` move between Capture tabs, and a primary click on a tab in the
-  top bar activates it. The keys are ignored while the active session owns
+  `SCAN` in the shared top bar, with `ARCHIVE` — see [`archive.md`](archive.md)
+  — after it. The three tabs belong to one Capture command; only one is visible
+  at a time.
+- `[` and `]` move between Capture tabs, backwards and forwards, and a primary
+  click on a tab in the top bar activates it. The keys are ignored while the active session owns
   them, so the Scan file-explorer overlay and any text input keep their
   meaning. Capture does not bind `Ctrl+←`/`Ctrl+→`; macOS reserves those for
   switching Desktops. The remaining global bindings keep their
   usual meaning: `Tab`/`Shift+Tab` cycle selectable controls inside the active
   session and `Alt+Arrow`/`Alt+h j k l` move between DataFields.
-- Both sessions share one Capture root, one configured index filename, and one
-  scan result. A single load feeds Scan and Route, so `R` in either session
-  refreshes both, and choosing a new root in either session moves both to it
-  and triggers one shared reload.
+- The sessions share one Capture root, one configured index filename, and one
+  scan result. A single load feeds all three, so `R` in any session refreshes
+  them all, and choosing a new root in one moves them all to it and triggers
+  one shared reload.
 - Route purpose: organize each scanned Capture by choosing a Recipe, enabling
   the Actions to run, and supplying whatever those Actions still need. This
   session records the plan only; nothing is copied, moved, or deleted, and no

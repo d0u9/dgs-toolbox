@@ -35,6 +35,7 @@ type Config struct {
 // destinations, so it has no settings of its own.
 type Capture struct {
 	Scan     CaptureScan     `json:"scan"`
+	Archive  CaptureArchive  `json:"archive"`
 	Obsidian CaptureObsidian `json:"obsidian"`
 }
 
@@ -54,6 +55,18 @@ type CaptureObsidian struct {
 	// LocationArchive the folder a year that has rolled over is moved into.
 	LocationNote    string `json:"location_note"`
 	LocationArchive string `json:"location_archive"`
+}
+
+// CaptureArchive is where an organized Capture is put away. It is a directory
+// rather than a rule: what to keep and where to keep it is the reader's
+// filing, not something this tool derives from the Capture.
+type CaptureArchive struct {
+	Root string `json:"root"`
+	// Reject is where a Capture that is not worth keeping is set aside. A
+	// second folder rather than a deletion: what a rejected Capture was is
+	// still a question its own directory answers, and this tool does not
+	// destroy what it did not produce.
+	Reject string `json:"reject"`
 }
 
 type CaptureScan struct {
@@ -96,6 +109,15 @@ func Default() Config {
 		Scan:     CaptureScan{IndexFile: "index.json"},
 		Obsidian: CaptureObsidian{},
 	}}
+}
+
+// CaptureArchiveFolders are the two directories Archive files into: where
+// organized Captures are kept, and where the rest are set aside. Empty means
+// the session opens without that folder: Archive browses to one rather than
+// refusing, because where things are filed is decided once and then rarely
+// again.
+func (c Config) CaptureArchiveFolders() (archive, reject string) {
+	return c.Capture.Archive.Root, c.Capture.Archive.Reject
 }
 
 func (c Config) CaptureScanSettings() (root, indexFile string) {

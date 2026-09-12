@@ -519,14 +519,15 @@ func TestCaptureSessionActivatesClickedTab(t *testing.T) {
 
 func TestCaptureSessionSharesOneCaptureLoad(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	s := newSessionWithSettings(root, "index.json", starterSet(t), organizer.DefaultSettings())
+	s := newSessionWithSettings(root, "index.json", "", "", starterSet(t), organizer.DefaultSettings())
 	updated, _ := s.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	s = updated.(session)
 	updated, _ = s.Update(loadCaptures(root, "index.json")())
 	s = updated.(session)
 
-	if len(s.scan.entries) != 1 || len(s.route.entries) != 1 {
-		t.Fatalf("scan entries = %d, route entries = %d, want 1 each", len(s.scan.entries), len(s.route.entries))
+	if len(s.scan.entries) != 1 || len(s.route.entries) != 1 || len(s.archive.entries) != 1 {
+		t.Fatalf("scan = %d, route = %d, archive = %d entries, want 1 each",
+			len(s.scan.entries), len(s.route.entries), len(s.archive.entries))
 	}
 }
 

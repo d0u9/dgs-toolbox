@@ -8,7 +8,7 @@ have.
 | Folder | What it sets up |
 | --- | --- |
 | [`shell/`](shell) | The top bar: which system metrics are shown. |
-| [`capture-scan/`](capture-scan) | Capture's root and index filename — the least you need for Scan to list something. |
+| [`capture-scan/`](capture-scan) | Capture's root and index filename — the least you need for Scan to list something — plus the two folders Archive files Captures into. |
 | [`capture-obsidian/`](capture-obsidian) | Capture writing into an Obsidian vault: the daily note, the running list of places, map links, name mappings, plus Recipes, workflow descriptions and templates. |
 | [`photo-import/`](photo-import) | Photo Import's source, destination and state file. |
 
