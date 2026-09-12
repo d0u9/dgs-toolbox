@@ -3,6 +3,10 @@
     "scan": {
       "root": "~/Captures",
       "index_file": "index.json"
+    },
+    "archive": {
+      "root": "~/Capture Archive",
+      "reject": "~/Capture Rejected"
     }
   }
 }

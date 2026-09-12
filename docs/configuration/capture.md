@@ -1,8 +1,10 @@
 # Capture configuration
 
-What Scan lists and what Route's Actions write. The sessions themselves are
-described in [`apps/capture/scan.md`](../apps/capture/scan.md) and
-[`apps/capture/route.md`](../apps/capture/route.md); the Recipe and Action
+What Scan lists, what Route's Actions write, and where Archive puts a Capture
+when it is done with. The sessions themselves are
+described in [`apps/capture/scan.md`](../apps/capture/scan.md),
+[`apps/capture/route.md`](../apps/capture/route.md) and
+[`apps/capture/archive.md`](../apps/capture/archive.md); the Recipe and Action
 model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
 
 ```json
@@ -11,6 +13,10 @@ model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
     "scan": {
       "root": "~/Captures",
       "index_file": "index.json"
+    },
+    "archive": {
+      "root": "~/Capture Archive",
+      "reject": "~/Capture Rejected"
     },
     "obsidian": {
       "vault": "~/Vaults/personal",
@@ -33,6 +39,34 @@ survives the vault moving.
 | --- | --- | --- |
 | `capture.scan.root` | The directory Scan lists Captures from. It can also be chosen in the session. | empty — Scan opens with no root |
 | `capture.scan.index_file` | The filename that makes a folder a Capture. A bare filename, not a path: a configuration giving a path is refused. | `index.json` |
+
+An empty `capture.scan.root` starts at the current working directory, and
+`capture.scan.index_file` must be a filename rather than a path.
+
+## Where Captures go
+
+Archive moves a Capture out of the Capture root into one of two folders: the
+archive, for Captures that have been organized, and the reject folder, for the
+ones that are not worth keeping. Nothing is deleted — a rejected Capture is
+moved out of the way — and nothing is renamed, so a Capture reads at its
+destination exactly as it read in the root.
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `capture.archive.root` | The directory organized Captures are kept in. | empty — Archive refuses to archive and names this key |
+| `capture.archive.reject` | The directory rejected Captures are set aside in. | empty — Archive refuses to reject and names this key |
+
+Both are absolute paths, `~` expanded, and neither has to exist: the first move
+into a folder creates it. They are configuration and nothing else — unlike the
+Capture root, they cannot be chosen in the session, because where an
+installation files things is decided once and a picker for it would be a
+control used on the first run and never again. A folder left unset is not an
+error: its pane in the session says which key to write, and a move that would
+have used it is refused naming that same key.
+
+Nothing stops either folder sitting inside the Capture root, but a Capture
+filed there would be scanned again as a Capture still to handle, so they belong
+outside it.
 
 ## What sits beside the configuration file
 

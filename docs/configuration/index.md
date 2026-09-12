@@ -6,7 +6,8 @@ and what they default to. Design documents explain *why* a setting exists and
 link here; this is what a reader consults to find out *what* to write.
 
 - [The shell](shell.md) — where the configuration itself lives, and the top bar.
-- [Capture](capture.md) — the Capture root, Recipes, templates, and the vault
+- [Capture](capture.md) — the Capture root, where Captures are archived or
+  rejected, Recipes, templates, and the vault
   the Obsidian Actions write to. The Actions a Recipe may name are catalogued
   in [`apps/capture/actions.md`](../apps/capture/actions.md).
 - [Photo](photo.md) — Photo Import's state file and default paths.
@@ -68,6 +69,8 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `tui.top_bar.time` | [shell](shell.md#the-top-bar) | `true` |
 | `capture.scan.root` | [capture](capture.md#the-capture-root) | empty — Scan opens with no root |
 | `capture.scan.index_file` | [capture](capture.md#the-capture-root) | `index.json` |
+| `capture.archive.root` | [capture](capture.md#where-captures-go) | empty — Archive refuses to archive and names this key |
+| `capture.archive.reject` | [capture](capture.md#where-captures-go) | empty — Archive refuses to reject and names this key |
 | `capture.obsidian.vault` | [capture](capture.md#the-vault) | empty — the Obsidian Actions refuse to run |
 | `capture.obsidian.daily_note` | [capture](capture.md#the-daily-note) | empty — the daily Action refuses to run |
 | `capture.obsidian.section` | [capture](capture.md#the-daily-note) | `Captured{{with .Device}} - {{.}}{{end}}` |

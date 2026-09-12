@@ -1184,34 +1184,43 @@ func (m *model) rebuildCaptureItems() {
 
 func loadCaptures(root, indexFile string) tea.Cmd {
 	return func() tea.Msg {
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			return capturesLoadedMsg{root: root, err: err}
-		}
-		captures := make([]captureEntry, 0)
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			manifest := filepath.Join(root, entry.Name(), indexFile)
-			info, err := os.Lstat(manifest)
-			if err != nil || !info.Mode().IsRegular() {
-				continue
-			}
-			index, err := indexschema.ReadFile(manifest)
-			if err != nil {
-				continue
-			}
-			capturePath := filepath.Join(root, entry.Name())
-			record, organized := organizer.ReadRecord(capturePath)
-			captures = append(captures, captureEntry{
-				path: capturePath, name: entry.Name(), files: captureFiles(capturePath, indexFile, index.Attachments), index: index,
-				record: record, organized: organized,
-			})
-		}
-		sort.Slice(captures, func(i, j int) bool { return strings.ToLower(captures[i].name) < strings.ToLower(captures[j].name) })
-		return capturesLoadedMsg{root: root, captures: captures}
+		captures, err := scanCaptures(root, indexFile)
+		return capturesLoadedMsg{root: root, captures: captures, err: err}
 	}
+}
+
+// scanCaptures reads one directory of Captures. It is the whole of what makes a
+// folder a Capture — an index file that validates — and it is shared rather
+// than repeated, because Archive reads the folders it files into with the same
+// rule the Capture root is read by: a Capture is a Capture wherever it sits.
+func scanCaptures(root, indexFile string) ([]captureEntry, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	captures := make([]captureEntry, 0)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		manifest := filepath.Join(root, entry.Name(), indexFile)
+		info, err := os.Lstat(manifest)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		index, err := indexschema.ReadFile(manifest)
+		if err != nil {
+			continue
+		}
+		capturePath := filepath.Join(root, entry.Name())
+		record, organized := organizer.ReadRecord(capturePath)
+		captures = append(captures, captureEntry{
+			path: capturePath, name: entry.Name(), files: captureFiles(capturePath, indexFile, index.Attachments), index: index,
+			record: record, organized: organized,
+		})
+	}
+	sort.Slice(captures, func(i, j int) bool { return strings.ToLower(captures[i].name) < strings.ToLower(captures[j].name) })
+	return captures, nil
 }
 
 func captureFiles(capturePath, indexFile string, attachments []indexschema.Attachment) []string {

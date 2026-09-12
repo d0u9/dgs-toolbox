@@ -7,24 +7,37 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// session owns the Capture command-level tabs. Scan and Route are sibling
-// sessions sharing one Capture root; the shell renders the tab bar from Tabs().
+// session owns the Capture command-level tabs. Scan, Route and Archive are
+// sibling sessions sharing one Capture root; the shell renders the tab bar from
+// Tabs(). They are in the order a Capture passes through them: it is looked at,
+// organized, and then put away.
 type session struct {
-	scan   model
-	route  routeModel
-	active int
+	scan    model
+	route   routeModel
+	archive archiveModel
+	active  int
 }
+
+// sessionCount is how many tabs Capture has, kept in one place so a fourth one
+// is added by naming it rather than by finding every 3.
+const sessionCount = 3
 
 func newSession() session {
-	return newSessionWithSettings("", "index.json", organizer.Set{}, organizer.DefaultSettings())
+	return newSessionWithSettings("", "index.json", "", "", organizer.Set{}, organizer.DefaultSettings())
 }
 
-func newSessionWithSettings(root, indexFile string, recipes organizer.Set, settings organizer.Settings) session {
+func newSessionWithSettings(root, indexFile, archiveRoot, rejectRoot string, recipes organizer.Set, settings organizer.Settings) session {
 	scan := newModelWithSettings(root, indexFile)
-	return session{scan: scan, route: newRouteModelWithSettings(scan.root, scan.indexFile, recipes, settings)}
+	return session{
+		scan:    scan,
+		route:   newRouteModelWithSettings(scan.root, scan.indexFile, recipes, settings),
+		archive: newArchiveModel(scan.root, scan.indexFile, archiveRoot, rejectRoot),
+	}
 }
 
-func (s session) Init() tea.Cmd { return s.scan.Init() }
+// Init starts the shared Capture load and lets Archive read the two folders it
+// files into, which are its own rather than part of that shared load.
+func (s session) Init() tea.Cmd { return tea.Batch(s.scan.Init(), s.archive.Init()) }
 
 func (s session) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -36,13 +49,17 @@ func (s session) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated, cmd := s.broadcast(msg)
 		return updated, tea.Batch(cmd, loadCaptures(msg.root, s.scan.indexFile))
 	case tui.TabSelectedMsg:
-		if msg.Index >= 0 && msg.Index < 2 {
+		if msg.Index >= 0 && msg.Index < sessionCount {
 			s.active = msg.Index
 		}
 		return s, nil
 	case tea.KeyMsg:
 		if s.switchesTab(msg.String()) {
-			s.active = (s.active + 1) % 2
+			step := 1
+			if msg.String() == "[" {
+				step = sessionCount - 1
+			}
+			s.active = (s.active + step) % sessionCount
 			return s, nil
 		}
 	}
@@ -61,15 +78,21 @@ func (s session) switchesTab(key string) bool {
 	if capturer, ok := s.activeModel().(tui.ShellKeyCapturer); ok && capturer.CapturesShellKey(key) {
 		return false
 	}
-	if s.active == 1 {
+	switch s.active {
+	case 1:
 		return !s.route.rootControl.Picking()
+	case 2:
+		return !s.archive.rootControl.Picking()
 	}
 	return !s.scan.rootControl.Picking()
 }
 
 func (s session) activeModel() tea.Model {
-	if s.active == 1 {
+	switch s.active {
+	case 1:
 		return s.route
+	case 2:
+		return s.archive
 	}
 	return s.scan
 }
@@ -79,13 +102,20 @@ func (s session) broadcast(msg tea.Msg) (tea.Model, tea.Cmd) {
 	s.scan = scan.(model)
 	route, routeCmd := s.route.Update(msg)
 	s.route = route.(routeModel)
-	return s, tea.Batch(scanCmd, routeCmd)
+	archive, archiveCmd := s.archive.Update(msg)
+	s.archive = archive.(archiveModel)
+	return s, tea.Batch(scanCmd, routeCmd, archiveCmd)
 }
 
 func (s session) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if s.active == 1 {
+	switch s.active {
+	case 1:
 		updated, cmd := s.route.Update(msg)
 		s.route = updated.(routeModel)
+		return s, cmd
+	case 2:
+		updated, cmd := s.archive.Update(msg)
+		s.archive = updated.(archiveModel)
 		return s, cmd
 	}
 	updated, cmd := s.scan.Update(msg)
@@ -93,24 +123,20 @@ func (s session) updateActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return s, cmd
 }
 
-func (s session) View() string {
-	if s.active == 1 {
-		return s.route.View()
-	}
-	return s.scan.View()
-}
+func (s session) View() string { return s.activeModel().View() }
 
 func (s session) Status() tui.Status {
-	if s.active == 1 {
-		return s.route.Status()
+	if provider, ok := s.activeModel().(interface{ Status() tui.Status }); ok {
+		return provider.Status()
 	}
-	return s.scan.Status()
+	return tui.Status{}
 }
 
 func (s session) Tabs() []tui.Tab {
 	return []tui.Tab{
 		{Label: "Scan", Active: s.active == 0},
 		{Label: "Route", Active: s.active == 1},
+		{Label: "Archive", Active: s.active == 2},
 	}
 }
 

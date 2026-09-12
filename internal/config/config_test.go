@@ -83,6 +83,26 @@ func TestCaptureScanSettingsDefaultAndCanBeConfigured(t *testing.T) {
 	}
 }
 
+// The two Archive folders are configuration and nothing else — there is no
+// picker for them in the session — so the key names are the whole interface.
+func TestCaptureArchiveFoldersDefaultAndCanBeConfigured(t *testing.T) {
+	if archive, reject := (Config{}).CaptureArchiveFolders(); archive != "" || reject != "" {
+		t.Fatalf("default Archive folders = %q, %q; want neither set", archive, reject)
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"capture":{"archive":{"root":"/filed","reject":"/set-aside"}}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archive, reject := loaded.CaptureArchiveFolders(); archive != "/filed" || reject != "/set-aside" {
+		t.Fatalf("configured Archive folders = %q, %q", archive, reject)
+	}
+}
+
 func TestCaptureIndexFileRejectsPaths(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(`{"capture":{"scan":{"index_file":"metadata/index.json"}}}`), 0o600); err != nil {
