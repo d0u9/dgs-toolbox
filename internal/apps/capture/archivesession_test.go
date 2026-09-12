@@ -167,8 +167,8 @@ func TestArchiveRefusesACaptureNobodyOrganized(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(archiveRoot, "junk")); !os.IsNotExist(err) {
 		t.Fatalf("an unorganized capture was archived: %v", err)
 	}
-	if !m.noticeBad || !strings.Contains(m.notice, "Not organized") {
-		t.Fatalf("notice = %q, want it to say why", m.notice)
+	if !m.notice.bad || !strings.Contains(m.notice.text, "Not organized") {
+		t.Fatalf("notice = %q, want it to say why", m.notice.text)
 	}
 	// The same row still takes a rejection, which is the answer it does have.
 	m = press(t, m, "backspace")
@@ -183,12 +183,12 @@ func TestArchiveSaysWhichConfigurationKeyIsMissing(t *testing.T) {
 
 	m = selectCapture(t, m, destinationCaptures, "done-one")
 	m = press(t, m, "A")
-	if !strings.Contains(m.notice, "capture.archive.root") {
-		t.Fatalf("notice = %q, want the archive key named", m.notice)
+	if !strings.Contains(m.notice.text, "capture.archive.root") {
+		t.Fatalf("notice = %q, want the archive key named", m.notice.text)
 	}
 	m = press(t, m, "backspace")
-	if !strings.Contains(m.notice, "capture.archive.reject") {
-		t.Fatalf("notice = %q, want the reject key named", m.notice)
+	if !strings.Contains(m.notice.text, "capture.archive.reject") {
+		t.Fatalf("notice = %q, want the reject key named", m.notice.text)
 	}
 	if _, err := os.Stat(filepath.Join(root, "done-one")); err != nil {
 		t.Fatalf("the capture should not have moved: %v", err)
@@ -205,8 +205,8 @@ func TestArchiveReportsACaptureItCouldNotMove(t *testing.T) {
 	m = selectCapture(t, m, destinationCaptures, "done-one")
 	m = press(t, m, "A")
 
-	if !m.noticeBad || !strings.Contains(m.notice, "already archived") {
-		t.Fatalf("notice = %q, want it to say the name was taken", m.notice)
+	if !m.notice.bad || !strings.Contains(m.notice.text, "already archived") {
+		t.Fatalf("notice = %q, want it to say the name was taken", m.notice.text)
 	}
 	if _, err := os.Stat(filepath.Join(root, "done-one")); err != nil {
 		t.Fatalf("a refused capture should stay in the root: %v", err)
@@ -324,13 +324,13 @@ func TestArchiveSwitchesBetweenIndexAndFolderViews(t *testing.T) {
 	root := organizedRoot(t, []string{"aaaa-xxxxx"}, nil)
 	m := loadedArchive(t, root, filepath.Join(t.TempDir(), "Archive"), filepath.Join(t.TempDir(), "Reject"))
 
-	label, detail := m.rowText(m.entries[0])
+	label, detail := m.view.Label(m.entries[0]), m.view.Detail(m.entries[0])
 	if !strings.HasPrefix(label, "2026-09-09") || !strings.Contains(detail, "Shortcut") {
 		t.Fatalf("index view = %q / %q, want the timestamp with its source under it", label, detail)
 	}
 
 	m = press(t, m, "v")
-	label, detail = m.rowText(m.entries[0])
+	label, detail = m.view.Label(m.entries[0]), m.view.Detail(m.entries[0])
 	if !strings.HasPrefix(label, "aaaa-xxxxx") || !strings.Contains(detail, "2026-09-09") {
 		t.Fatalf("folder view = %q / %q, want the directory name with the timestamp under it", label, detail)
 	}
@@ -339,7 +339,7 @@ func TestArchiveSwitchesBetweenIndexAndFolderViews(t *testing.T) {
 	}
 
 	m = press(t, m, "v")
-	if label, _ := m.rowText(m.entries[0]); !strings.HasPrefix(label, "2026-09-09") {
+	if label := m.view.Label(m.entries[0]); !strings.HasPrefix(label, "2026-09-09") {
 		t.Fatalf("v did not switch back: %q", label)
 	}
 }

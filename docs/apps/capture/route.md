@@ -94,6 +94,12 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
         app1 · wf  → Location + Daily
   ```
 
+- `v` swaps the column between that identity and the folder name, the same
+  switch Archive offers and with the same two views: the index view leads with
+  the timestamp and carries `source.app · source.workflow` underneath, the
+  folder view leads with the directory name and carries the timestamp
+  underneath. One switch in both sessions, so a reader who has moved to folder
+  names in one is not made to move back in the other.
 - The timestamp keeps the offset written in the index rather than being
   converted to local time: whole-hour offsets drop their minutes, UTC reads as
   `Z`, and a `createdAt` that is not valid RFC 3339 is shown verbatim so a
@@ -272,8 +278,8 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   one stray press; `Backspace` and `Delete` are inert there, because a key held
   down while walking back should not fall out of the session.
 - `CAPTURES`: `↑/k` and `↓/j` move, `h/l` pan, `g g`/`G` jump to the first and
-  last Capture, `Enter` moves focus to `RECIPES`, and `u` clears the whole
-  Selection for the current Capture. Clearing is `u` alone: `Backspace` walks
+  last Capture, `Enter` moves focus to `RECIPES`, `v` swaps the view, and `u`
+  clears the whole Selection for the current Capture. Clearing is `u` alone: `Backspace` walks
   back a column everywhere else, and one key with two meanings on one screen is
   how a Selection gets cleared by accident.
 - `RECIPES`: `↑/k` and `↓/j` move, `Enter` chooses the Recipe, enables its
@@ -318,6 +324,9 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   ╰────────────────────────────────────────────────────╯
   ```
 
+- An open editor owns every key it is given: `x` is a letter in a note rather
+  than the key that opens the run dialog, and the same goes for `v` and `R`.
+  The session's keys resume when the edit is committed or abandoned.
 - `x` runs the selected Capture's plan from any DataField once a Recipe is
   chosen. No Action is implemented, so running opens a `RUN` dialog naming each
   enabled Action, the target it resolved, and the value of every field it would

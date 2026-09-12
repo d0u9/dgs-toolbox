@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"dgs-toolbox/internal/apps/capture/archive"
 	"dgs-toolbox/internal/apps/capture/indexschema"
 	"dgs-toolbox/internal/apps/capture/organizer"
 	"dgs-toolbox/internal/tui"
@@ -161,11 +160,11 @@ type model struct {
 	// throw it out at the end. The move and the folder belong to Archive —
 	// this is the same rejection, asked for one screen earlier.
 	rejectRoot string
-	// notice is what became of the last rejection, said in the status bar
-	// where it was asked for. It lasts until the next keystroke: a move is
-	// reported, not dwelt on, and Archive is where it is taken back.
-	notice    string
-	noticeBad bool
+	// notice is what became of the last rejection, said in the status bar where
+	// it was asked for, the way Archive says it. It lasts until the next
+	// keystroke: a move is reported, not dwelt on, and it is taken back rather
+	// than confirmed.
+	notice moveNotice
 	// rejected is what this session has sent away, most recent first. It is
 	// kept here so the undo is within reach of the screen the mistake was made
 	// on: a Capture rejected by accident should not need another tab to be
@@ -399,31 +398,26 @@ func (m model) rejectSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.rejectRoot == "" {
-		m.notice, m.noticeBad = "No reject folder configured — set capture.archive.reject", true
+		m.notice = unsetFolderNotice(destinationReject)
 		return m, nil
 	}
-	if _, err := archive.Move(entry.path, m.rejectRoot); err != nil {
-		m.notice, m.noticeBad = entry.name+": "+err.Error(), true
+	rejected, notice, ok := moveCaptureTo(entry, m.rejectRoot, folderName(destinationReject))
+	m.notice = notice
+	if !ok {
 		return m, nil
 	}
-	m.notice, m.noticeBad = entry.name+" → reject", false
 	delete(m.expanded, entry.path)
-	// The Capture is the same Capture at its new path, remembered so it can be
-	// walked back from here.
-	rejected := entry
-	rejected.path = archive.Destination(m.rejectRoot, entry.path)
+	// The Capture at its new path is remembered so it can be walked back from
+	// here.
 	m.rejected = append([]captureEntry{rejected}, m.rejected...)
 	m.rejectedCursor = 0
-	return m, tea.Batch(
-		loadCaptures(m.root, m.indexFile),
-		loadArchiveFolder(destinationReject, m.rejectRoot, m.indexFile),
-	)
+	return m, reloadAfterMove(m.root, m.indexFile, destinationReject, m.rejectRoot)
 }
 
 func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// The notice reports one keystroke's outcome, so the next keystroke is
 	// where it stops being the answer to "where am I?".
-	m.notice, m.noticeBad = "", false
+	m.notice = moveNotice{}
 	key := msg.String()
 	if key == "R" {
 		m.pendingGG = false
@@ -466,62 +460,38 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateCaptureList(key string) (tea.Model, tea.Cmd) {
+	// The movement keys are the ones every list in Capture answers; what is
+	// particular to this one is that moving re-aims the preview with it.
+	waiting := m.pendingGG
+	if listMoveKey(&m.captures, key, &m.pendingGG, true) {
+		if key == "g" && !waiting {
+			// The first g only waits for the second: nothing has moved, so
+			// nothing is re-read.
+			return m, nil
+		}
+		return m, m.loadSelectedPreview()
+	}
+	m.pendingGG = false
 	switch key {
-	case "up", "k":
-		m.captures.Move(-1)
-		m.pendingGG = false
-		return m, m.loadSelectedPreview()
-	case "down", "j":
-		m.captures.Move(1)
-		m.pendingGG = false
-		return m, m.loadSelectedPreview()
-	case "left", "h":
-		m.captures.Pan(-4)
-	case "right", "l":
-		m.captures.Pan(4)
 	case "o":
 		m.toggleSelectedCapture()
-		m.pendingGG = false
 		return m, m.loadSelectedPreview()
 	case "O":
 		m.collapseSelectedCapture()
-		m.pendingGG = false
 		return m, m.loadSelectedPreview()
 	case "w":
 		m.expanded = make(map[string]bool)
 		m.rebuildCaptureItems()
-		m.pendingGG = false
 		return m, m.loadSelectedPreview()
 	case " ", "space":
-		m.pendingGG = false
 		return m, m.quickLookSelected()
 	case "enter":
-		m.pendingGG = false
-		cmd := m.renderSelectedImage()
-		return m, cmd
+		return m, m.renderSelectedImage()
 	case "R":
-		m.pendingGG = false
 		return m, loadCaptures(m.root, m.indexFile)
 	case "backspace", "delete":
-		m.pendingGG = false
 		return m.rejectSelected()
-	case "G", "end":
-		m.captures.Last()
-		m.pendingGG = false
-		return m, m.loadSelectedPreview()
-	case "g":
-		if m.pendingGG {
-			m.captures.First()
-			m.pendingGG = false
-			return m, m.loadSelectedPreview()
-		}
-		m.pendingGG = true
-		return m, nil
-	default:
-		m.pendingGG = false
-		return m, nil
 	}
-	m.pendingGG = false
 	return m, nil
 }
 
@@ -840,8 +810,9 @@ func (m model) restoreRejected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	entry := visible[m.rejectedCursor]
-	if _, err := archive.Move(entry.path, m.root); err != nil {
-		m.notice, m.noticeBad = entry.name+": "+err.Error(), true
+	_, notice, ok := moveCaptureTo(entry, m.root, folderName(destinationCaptures))
+	m.notice = notice
+	if !ok {
 		return m, nil
 	}
 	remaining := make([]captureEntry, 0, len(m.rejected))
@@ -852,11 +823,7 @@ func (m model) restoreRejected() (tea.Model, tea.Cmd) {
 	}
 	m.rejected = remaining
 	m.rejectedCursor = min(max(0, len(m.rejectedVisible())-1), m.rejectedCursor)
-	m.notice, m.noticeBad = entry.name+" → captures", false
-	return m, tea.Batch(
-		loadCaptures(m.root, m.indexFile),
-		loadArchiveFolder(destinationReject, m.rejectRoot, m.indexFile),
-	)
+	return m, reloadAfterMove(m.root, m.indexFile, destinationReject, m.rejectRoot)
 }
 
 func (m model) columnRightWidth() int {
@@ -1032,11 +999,8 @@ func (m *model) selectFileInfoRow(y int) {
 }
 
 func (m model) statusValue() string {
-	if m.notice != "" {
-		if m.noticeBad {
-			return "! " + m.notice
-		}
-		return m.notice
+	if !m.notice.empty() {
+		return m.notice.status()
 	}
 	switch m.fields.Current() {
 	case rootField:

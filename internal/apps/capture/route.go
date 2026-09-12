@@ -2,7 +2,6 @@ package capture
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -108,6 +107,10 @@ type routeModel struct {
 	// Capture is deciding what to do with what it holds, and until now that
 	// could only be read one tab away in Scan: the columns above say what will
 	// be written and this says what is being written about.
+	// view is how CAPTURES names a Capture: by its index, or by the folder it
+	// is stored in. It is the same choice Archive offers, so a reader who has
+	// switched one tab to folder names is not made to switch back in the other.
+	view             captureView
 	attachments      scrolllist.Model
 	attachmentProps  []property
 	attachmentPath   string
@@ -733,7 +736,7 @@ func (m routeModel) Status() tui.Status {
 	}
 	switch m.fields.Current() {
 	case routeCapturesField:
-		return tui.Status{Left: "ROUTE", Center: center, Right: "↑/k ↓/j Move  ↵ Recipe  x Run  u Clear  R Refresh"}
+		return tui.Status{Left: "ROUTE", Center: center, Right: "↑/k ↓/j Move  ↵ Recipe  x Run  u Clear  v View  R Refresh"}
 	case routeRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: center, Right: "↵ Browse  R Refresh  tab Next  alt+hjkl Focus"}
 	case routeRecipesField:
@@ -793,7 +796,8 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// An open editor owns every key it is given: x is a letter in a note, not
-	// the key that opens the run dialog, and the same goes for the refresh.
+	// the key that opens the run dialog, and the same goes for the view switch
+	// and the refresh.
 	if m.editingNote {
 		return m.updateNote(msg)
 	}
@@ -802,6 +806,12 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key == "x" {
 		return m.run()
+	}
+	if key == "v" {
+		m.view.Toggle()
+		m.pendingGG = false
+		m.refresh()
+		return m, nil
 	}
 	if key == "R" {
 		m.pendingGG = false
@@ -841,21 +851,10 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // not the progressive selection here: the pane is below that walk rather than
 // in it, so Esc leaves it the way it came, back to the column above.
 func (m routeModel) updateAttachments(key string) (tea.Model, tea.Cmd) {
+	if listMoveKey(&m.attachments, key, &m.pendingGG, false) {
+		return m, m.loadAttachment()
+	}
 	switch key {
-	case "up", "k":
-		m.attachments.Move(-1)
-	case "down", "j":
-		m.attachments.Move(1)
-	case "G", "end":
-		m.attachments.Last()
-	case "g":
-		if m.pendingGG {
-			m.attachments.First()
-			m.pendingGG = false
-			return m, m.loadAttachment()
-		}
-		m.pendingGG = true
-		return m, nil
 	case "esc", "backspace", "delete":
 		m.fields.Set(routeActionsField)
 	}
@@ -866,26 +865,11 @@ func (m routeModel) updateAttachments(key string) (tea.Model, tea.Cmd) {
 }
 
 func (m routeModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
+	if listMoveKey(&m.captures, key, &m.pendingGG, true) {
+		m.refresh()
+		return m, m.loadAttachment()
+	}
 	switch key {
-	case "up", "k":
-		m.captures.Move(-1)
-	case "down", "j":
-		m.captures.Move(1)
-	case "left", "h":
-		m.captures.Pan(-4)
-	case "right", "l":
-		m.captures.Pan(4)
-	case "G", "end":
-		m.captures.Last()
-	case "g":
-		if m.pendingGG {
-			m.captures.First()
-			m.pendingGG = false
-			m.refresh()
-			return m, nil
-		}
-		m.pendingGG = true
-		return m, nil
 	case "enter":
 		m.fields.Set(routeRecipesField)
 	case "u":
@@ -905,22 +889,11 @@ func (m routeModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
 }
 
 func (m routeModel) updateRecipes(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "up", "k":
-		m.recipes.Move(-1)
-	case "down", "j":
-		m.recipes.Move(1)
-	case "G", "end":
-		m.recipes.Last()
-	case "g":
-		if m.pendingGG {
-			m.recipes.First()
-			m.pendingGG = false
-			m.refresh()
-			return m, nil
-		}
-		m.pendingGG = true
+	if listMoveKey(&m.recipes, key, &m.pendingGG, false) {
+		m.refresh()
 		return m, nil
+	}
+	switch key {
 	case "enter":
 		m.chooseRecipe()
 	case "esc", "backspace", "delete":
@@ -951,13 +924,11 @@ func (m *routeModel) chooseRecipe() {
 }
 
 func (m routeModel) updateActions(key string) (tea.Model, tea.Cmd) {
+	if listMoveKey(&m.actions, key, &m.pendingGG, false) {
+		m.refresh()
+		return m, nil
+	}
 	switch key {
-	case "up", "k":
-		m.actions.Move(-1)
-	case "down", "j":
-		m.actions.Move(1)
-	case "G", "end":
-		m.actions.Last()
 	case " ", "space":
 		m.toggleAction()
 	case "enter":
@@ -1192,7 +1163,7 @@ func (m *routeModel) markOrganized(path string, record organizer.Record) {
 // and have to be stepped past every time.
 func (m *routeModel) advanceToNextPending(organized captureEntry) {
 	m.rebuildCaptureItems()
-	ordered, boundary := m.orderedEntries()
+	ordered, boundary := orderByOrganized(m.entries)
 	pending := ordered[:boundary]
 
 	for _, entry := range pending {
@@ -1245,25 +1216,7 @@ func (m routeModel) tabOrder() []string {
 }
 
 func (m *routeModel) cycleFields(forward bool) {
-	order := m.tabOrder()
-	// Focus can sit in a column that has since been left behind — clearing a
-	// Selection empties ACTIONS under the cursor — so a field that is not in
-	// the order walks from the start rather than nowhere.
-	current, found := 0, false
-	for index, id := range order {
-		if id == m.fields.Current() {
-			current, found = index, true
-		}
-	}
-	if !found {
-		m.fields.Set(order[0])
-		return
-	}
-	step := 1
-	if !forward {
-		step = -1
-	}
-	m.fields.Set(order[(current+step+len(order))%len(order)])
+	cycleFieldOrder(&m.fields, m.tabOrder(), forward)
 }
 
 func (m routeModel) selectedCapture() (captureEntry, bool) {
@@ -1405,30 +1358,6 @@ func (m routeModel) readyCount() (ready int, blocked int) {
 	return ready, blocked
 }
 
-// routeCaptureLabel identifies a Capture by what organizing decisions are made
-// on—when it was taken—rather than by its directory name, which carries no
-// meaning for the operator. The folder path remains available in the status bar.
-func routeCaptureLabel(entry captureEntry) string {
-	if created := organizer.FormatTimestamp(entry.index.CreatedAt); created != "" {
-		return created
-	}
-	return entry.name + string(os.PathSeparator)
-}
-
-// routeCaptureDetail is the second row of a Route Capture: what produced the
-// Capture. Together the two rows carry more identity than one row of a quarter
-// column can hold without truncating the timestamp.
-func routeCaptureDetail(entry captureEntry) string {
-	parts := make([]string, 0, 2)
-	if app := entry.index.Source.App; app != "" {
-		parts = append(parts, app)
-	}
-	if workflow := entry.index.Source.Workflow; workflow != "" {
-		parts = append(parts, workflow)
-	}
-	return strings.Join(parts, " · ")
-}
-
 // captureMarker distinguishes the three states a Capture can be in: no Recipe
 // chosen, a Recipe whose plan is still blocked, and a plan ready to run.
 func (m routeModel) captureMarker(entry captureEntry) string {
@@ -1455,32 +1384,15 @@ func (m routeModel) captureMarker(entry captureEntry) string {
 // organized in an earlier session is recognised on load.
 func (m routeModel) organized(entry captureEntry) bool { return entry.organized }
 
-// orderedEntries puts the Captures still to handle first and the organized ones
-// after them, each run keeping the load order. The list is one field with a
-// rule through it rather than two fields, so the cursor walks from the last
-// unhandled Capture into the handled ones without leaving the column.
-func (m routeModel) orderedEntries() ([]captureEntry, int) {
-	pending := make([]captureEntry, 0, len(m.entries))
-	done := make([]captureEntry, 0, len(m.entries))
-	for _, entry := range m.entries {
-		if m.organized(entry) {
-			done = append(done, entry)
-			continue
-		}
-		pending = append(pending, entry)
-	}
-	return append(pending, done...), len(pending)
-}
-
 func (m *routeModel) rebuildCaptureItems() {
 	selected := ""
 	if item, ok := m.captures.Selected(); ok {
 		selected = item.ID
 	}
-	ordered, boundary := m.orderedEntries()
+	ordered, boundary := orderByOrganized(m.entries)
 	items := make([]scrolllist.Item, 0, len(ordered))
 	for _, entry := range ordered {
-		detail := routeCaptureDetail(entry)
+		detail := m.view.Detail(entry)
 		if latest, ok := entry.record.Latest(); entry.organized && ok {
 			// An organized Capture is labelled by its most recent pass, with a
 			// count when there has been more than one.
@@ -1493,13 +1405,10 @@ func (m *routeModel) rebuildCaptureItems() {
 				detail += "  → " + recipe.Name
 			}
 		}
-		if detail != "" {
-			detail = "  " + detail
-		}
 		items = append(items, scrolllist.Item{
 			ID:     "capture:" + entry.path,
-			Label:  m.captureMarker(entry) + routeCaptureLabel(entry),
-			Detail: detail,
+			Label:  m.captureMarker(entry) + m.view.Label(entry),
+			Detail: indentDetail(detail),
 		})
 	}
 	m.captures.SetItems(items)
@@ -1693,13 +1602,7 @@ func (m routeModel) fieldsHeight() int { return max(4, m.height-runActionsHeight
 func (m routeModel) runActions(width int) string {
 	subtitle, ready := m.runReadiness()
 	button := min(runButtonWidth, max(12, width-2))
-	indent := strings.Repeat(" ", max(0, width-button-1))
-	lines := []string{strings.Repeat(" ", max(0, width))}
-	for _, line := range pageactions.Button("Run  x", subtitle, button, ready) {
-		row := indent + line
-		lines = append(lines, row+strings.Repeat(" ", max(0, width-lipgloss.Width(row))))
-	}
-	return strings.Join(lines, "\n") + "\n" + strings.Repeat(" ", max(0, width))
+	return pageActionRow(width, [][]string{pageactions.Button("Run  x", subtitle, button, ready)})
 }
 
 // runReadiness is what the button says and whether it is lit. It is filled only
