@@ -792,14 +792,16 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if key == "x" {
-		return m.run()
-	}
+	// An open editor owns every key it is given: x is a letter in a note, not
+	// the key that opens the run dialog, and the same goes for the refresh.
 	if m.editingNote {
 		return m.updateNote(msg)
 	}
 	if m.editing {
 		return m.updateEditor(msg)
+	}
+	if key == "x" {
+		return m.run()
 	}
 	if key == "R" {
 		m.pendingGG = false
