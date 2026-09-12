@@ -38,20 +38,20 @@ var ErrNoLocationNote = errors.New("no location note is configured")
 // appendToLocationNote puts one Capture at the top of the running list, under
 // its day's marker, and moves any year that is no longer the current one into
 // the archive on the way past.
-func appendToLocationNote(ctx Context, plan ActionPlan) (skipped bool, err error) {
+func appendToLocationNote(ctx Context, plan ActionPlan) (skipped string, err error) {
 	if strings.TrimSpace(ctx.Settings.LocationNote) == "" {
-		return false, ErrNoLocationNote
+		return "", ErrNoLocationNote
 	}
 	entry, err := locationEntry(ctx)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if len(entry) == 0 {
-		return false, errors.New("nothing to record")
+		return "", errors.New("nothing to record")
 	}
 	day, err := captureDay(ctx)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
 	// A Capture from a year that has already rolled over belongs in that
@@ -65,16 +65,16 @@ func appendToLocationNote(ctx Context, plan ActionPlan) (skipped bool, err error
 	}
 	path, ok := ctx.Settings.vaultPath(target)
 	if !ok {
-		return false, ErrNoVault
+		return "", ErrNoVault
 	}
 
 	existing, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("read %s: %w", target, err)
+		return "", fmt.Errorf("read %s: %w", target, err)
 	}
 	// The note is the record of what it holds, as the daily note is.
 	if containsMark(string(existing), captureMark(ctx.Capture)) {
-		return true, nil
+		return fmt.Sprintf("this capture is already in %s, as %s", target, captureMark(ctx.Capture)), nil
 	}
 
 	content := string(existing)
@@ -86,18 +86,18 @@ func appendToLocationNote(ctx Context, plan ActionPlan) (skipped bool, err error
 	// the content already in hand.
 	if running && ctx.Settings.LocationArchive != "" {
 		if content, err = archivePastYears(ctx, content); err != nil {
-			return false, err
+			return "", err
 		}
 	}
 
 	updated := prependUnderMarker(content, locationDateMarker(ctx, day), strings.Join(entry, "\n"))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, fmt.Errorf("create the note's folder: %w", err)
+		return "", fmt.Errorf("create the note's folder: %w", err)
 	}
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
-		return false, fmt.Errorf("write %s: %w", target, err)
+		return "", fmt.Errorf("write %s: %w", target, err)
 	}
-	return false, nil
+	return "", nil
 }
 
 const yearLayout = "2006"

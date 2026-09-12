@@ -92,6 +92,11 @@ type routeModel struct {
 	// runResults is what became of the plan once it was confirmed, kept so the
 	// dialog can report a failure instead of closing over it.
 	runResults []organizer.Result
+	// runAdvance is the Capture a held-open dialog will move on from once it is
+	// closed. A run that wrote everything it planned closes on its own; one
+	// that skipped an Action stays open to say so, and the move to the next
+	// Capture waits for the reader to have read it.
+	runAdvance *captureEntry
 	// settings are where the Actions write, from the configuration.
 	settings organizer.Settings
 	// recipeSet is the Set this session offers: the built-ins with whatever the
@@ -503,12 +508,27 @@ func (m routeModel) resultSummary() string {
 		written++
 	}
 	if skipped > 0 && written == 0 {
-		return "Already written; nothing to do."
+		// The reason is the Action's own words, so the dialog and the record
+		// say the same thing rather than two summaries of it.
+		return "Nothing was written: " + skipReason(m.runResults) + ". Delete that entry to have it written again."
 	}
 	if skipped > 0 {
 		return fmt.Sprintf("Done: %d written, %d already there.", written, skipped)
 	}
 	return "Done."
+}
+
+// skipReason is why the run wrote nothing, taken from the first Action that
+// had nothing to do. The first rather than all of them: a Recipe's Actions skip
+// for the same reason — the Capture is already filed — and repeating it once
+// per Action says nothing more.
+func skipReason(results []organizer.Result) string {
+	for _, result := range results {
+		if result.Skipped && result.Reason != "" {
+			return result.Reason
+		}
+	}
+	return "this Capture is already in the note"
 }
 
 // resultMarker is how one Action's outcome is shown beside it in the dialog.
@@ -707,6 +727,15 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.commitRun()
 		case "esc", "q":
 			m.running = false
+			// A dialog held open to report a skip still owes the reader the
+			// move it deferred, so closing it does what a clean run did
+			// straight away.
+			if organized := m.runAdvance; organized != nil {
+				m.runAdvance = nil
+				m.advanceToNextPending(*organized)
+				m.fields.Set(routeCapturesField)
+				m.refresh()
+			}
 		}
 		return m, nil
 	}
@@ -996,6 +1025,7 @@ func (m routeModel) run() (tea.Model, tea.Cmd) {
 	m.runCapture = entry.name + "  ·  " + recipe.Name
 	m.runError = ""
 	m.runResults = nil
+	m.runAdvance = nil
 	m.running = true
 	m.refresh()
 	return m, nil
@@ -1031,6 +1061,16 @@ func (m routeModel) commitRun() (tea.Model, tea.Cmd) {
 	if !record.Organized() {
 		// A pass that failed part way through leaves the Capture where it is,
 		// with the dialog open on what went wrong.
+		m.refresh()
+		return m, nil
+	}
+	// An Action that found its entry already in the note wrote nothing, and a
+	// dialog that closes on its own takes that news with it. The dialog is held
+	// open instead, with the outcome beside each Action, so "already written"
+	// is something the reader is told rather than something they discover in
+	// the note later.
+	if organizer.Skipped(m.runResults) {
+		m.runAdvance = &entry
 		m.refresh()
 		return m, nil
 	}
