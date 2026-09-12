@@ -19,19 +19,6 @@ func TestMissingConfigUsesAllTopBarMetrics(t *testing.T) {
 	}
 }
 
-func TestLegacyEnvironmentVariableIsIgnored(t *testing.T) {
-	legacyPath := filepath.Join(t.TempDir(), "legacy.json")
-	t.Setenv("DGS_CONFIG", legacyPath)
-	t.Setenv(EnvPath, "")
-	path, err := Path()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path == legacyPath {
-		t.Fatalf("legacy environment variable still selected %q", path)
-	}
-}
-
 func TestPartialConfigOnlyOverridesNamedMetrics(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(`{"tui":{"top_bar":{"network":false,"time":false}}}`), 0o600); err != nil {
@@ -252,19 +239,20 @@ func TestConfigDirIsLaidOutByCommand(t *testing.T) {
 	}
 }
 
-// The XDG directory is where a configuration is kept by hand, so it is looked
-// at before the operating system's own location.
-func TestXDGConfigIsPreferredOverTheOperatingSystemLocation(t *testing.T) {
+// There is one default location, and it is in the XDG directory whether or not
+// a file is there yet: "which file am I editing?" must not have an answer that
+// depends on which files exist.
+func TestTheDefaultLocationIsTheXDGOne(t *testing.T) {
 	xdg := t.TempDir()
 	t.Setenv(EnvPath, "")
 	t.Setenv(EnvXDGConfigHome, xdg)
 
-	if err := os.MkdirAll(filepath.Join(xdg, XDGDirName), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	wanted := filepath.Join(xdg, XDGDirName, ExportFilename)
 	if got, err := Path(); err != nil || got != wanted {
 		t.Fatalf("path = %q, %v, want %q even before the file exists", got, err, wanted)
+	}
+	if err := os.MkdirAll(filepath.Join(xdg, XDGDirName), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	if err := os.WriteFile(wanted, []byte(`{"tui":{"top_bar":{"cpu":false}}}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -281,30 +269,22 @@ func TestXDGConfigIsPreferredOverTheOperatingSystemLocation(t *testing.T) {
 	}
 }
 
-// Nothing in the XDG directory falls through to the operating system's
-// location, which is where a file written there still works from. The file
-// itself is not created: it is the reader's real configuration, and a test has
-// no business writing over it.
-func TestOperatingSystemLocationFollowsTheXDGOne(t *testing.T) {
+// With no XDG_CONFIG_HOME the default is the same path under ~/.config, which
+// is what that variable means when it is unset.
+func TestTheDefaultLocationFallsBackToHomeConfig(t *testing.T) {
 	t.Setenv(EnvPath, "")
-	t.Setenv(EnvXDGConfigHome, t.TempDir())
+	t.Setenv(EnvXDGConfigHome, "")
 
-	candidates, err := Candidates()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	got, err := Path()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(filepath.Dir(candidates[0])) != XDGDirName {
-		t.Fatalf("XDG candidate = %q, want it in the toolbox's own folder", candidates[0])
-	}
-	if len(candidates) != 2 || filepath.Base(candidates[1]) != "config.json" || filepath.Base(filepath.Dir(candidates[1])) != "dgs" {
-		t.Fatalf("candidates = %q, want the XDG file then the operating system's", candidates)
-	}
-	path, err := Path()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path != candidates[0] {
-		t.Fatalf("path = %q, want the first candidate when none exists", path)
+	if want := filepath.Join(home, ".config", XDGDirName, ExportFilename); got != want {
+		t.Fatalf("path = %q, want %q", got, want)
 	}
 }
 

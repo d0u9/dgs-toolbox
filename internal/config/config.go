@@ -197,57 +197,44 @@ func (c Config) TopBarVisibility() TopBarVisibility {
 	return visibility
 }
 
-// EnvXDGConfigHome is the XDG base directory a configuration is looked for in
-// before the operating system's own location.
+// EnvXDGConfigHome is the XDG base directory the configuration is looked for
+// in.
 const EnvXDGConfigHome = "XDG_CONFIG_HOME"
 
-// Path is the configuration file this run reads. The environment variable wins
-// outright; otherwise the first candidate that exists is taken, and the first
-// candidate overall is returned when none does, so a message about a missing
-// configuration names the place to put one.
+// XDGDirName is the toolbox's own folder inside the XDG configuration
+// directory. The configuration file sits in it rather than beside it, so the
+// whole configuration — the file, the recipes, the workflows, the mappings, the
+// templates — is one folder a reader can move, copy or keep under version
+// control as a unit.
+const XDGDirName = "dgs-toolbox"
+
+// Path is the configuration file this run reads: the environment variable when
+// it is set, and otherwise the one default location. One rather than a list
+// tried in turn, because "which file am I editing?" should not be a question
+// with an answer that depends on which files exist.
 func Path() (string, error) {
 	if path := os.Getenv(EnvPath); path != "" {
 		return path, nil
 	}
-	candidates, err := Candidates()
-	if err != nil {
-		return "", err
-	}
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
-		}
-	}
-	return candidates[0], nil
+	return DefaultPath()
 }
 
-// XDGDirName is the toolbox's own folder inside the XDG configuration
-// directory. The configuration file sits in it rather than beside it, so the
-// whole configuration — the file, the recipes, the templates — is one folder a
-// reader can move, copy or keep under version control as a unit.
-const XDGDirName = "dgs-toolbox"
-
-// Candidates are the default locations, in the order they are tried. The XDG
-// directory comes first because it is where a configuration is kept by hand —
-// it is the folder the reader already has their other tools' files in, and on
-// macOS the operating system's answer is a Library path nobody edits by
-// choice. The exported filename is used there so a file copied out of
-// --export-config lands under the name it already has.
-func Candidates() ([]string, error) {
-	var candidates []string
-	if xdg := os.Getenv(EnvXDGConfigHome); xdg != "" {
-		candidates = append(candidates, filepath.Join(xdg, XDGDirName, ExportFilename))
-	} else if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".config", XDGDirName, ExportFilename))
-	}
-	directory, err := os.UserConfigDir()
-	if err != nil {
-		if len(candidates) == 0 {
-			return nil, err
+// DefaultPath is <XDG config home>/dgs-toolbox/dgs-config.json, falling back to
+// ~/.config when the variable is unset. The XDG directory rather than the
+// operating system's own: it is the folder the reader already keeps their other
+// tools' files in, and on macOS the operating system's answer is a Library path
+// nobody edits by choice. The filename is the one --export-config writes, so a
+// file copied out of it is found under the name it already has.
+func DefaultPath() (string, error) {
+	directory := os.Getenv(EnvXDGConfigHome)
+	if directory == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
 		}
-		return candidates, nil
+		directory = filepath.Join(home, ".config")
 	}
-	return append(candidates, filepath.Join(directory, "dgs", "config.json")), nil
+	return filepath.Join(directory, XDGDirName, ExportFilename), nil
 }
 
 func ExportPath(destination string) (string, error) {

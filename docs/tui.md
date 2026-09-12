@@ -52,7 +52,7 @@ Top-bar telemetry belongs to the shared shell rather than individual commands. S
 
 Every key of every part of the toolbox is listed in [`configuration/index.md`](configuration/index.md); this section says what the shell does with its own.
 
-The global configuration controls the visibility of Disk, Network, CPU, and Time independently. All four default to enabled; omitting one key preserves that default. The breadcrumb is structural and cannot be disabled. Load JSON from `$XDG_CONFIG_HOME/dgs-toolbox/dgs-config.json` (`~/.config/dgs-toolbox/dgs-config.json` when that variable is unset), falling back to the operating system's user configuration directory at `dgs/config.json`, or from the path in `DGS_TOOLBOX_CONFIG` when set:
+The global configuration controls the visibility of Disk, Network, CPU, and Time independently. All four default to enabled; omitting one key preserves that default. The breadcrumb is structural and cannot be disabled. Load JSON from `$XDG_CONFIG_HOME/dgs-toolbox/dgs-config.json` (`~/.config/dgs-toolbox/dgs-config.json` when that variable is unset), or from the path in `DGS_TOOLBOX_CONFIG` when set:
 
 ```json
 {
@@ -84,7 +84,7 @@ App-specific settings remain under their app key. `photo.import.state_file` conf
 
 Setting any value to `false` removes that entire fixed-width cell and its adjacent separator. If Disk, Network, and CPU are all disabled, the shell does not start the system-counter sampler.
 
-Run `dgs --export-config` to create `dgs-config.json` in the current working directory and print its absolute path. An optional positional path writes elsewhere: `dgs --export-config /path/to/config.json` uses that exact file, while an existing directory receives `dgs-config.json`. The command never overwrites an existing file. Export destinations are explicit and independent of `DGS_TOOLBOX_CONFIG`; the environment variable controls where `dgs` loads configuration. The exported file is an editable template: move it to `~/.config/dgs-toolbox/dgs-config.json` or the operating system's global `dgs/config.json` location, or set `DGS_TOOLBOX_CONFIG` to its path, before launching `dgs`. `dgs -c /path/to/config.json …` (or `--config`) loads that exact configuration file and takes precedence over `DGS_TOOLBOX_CONFIG`.
+Run `dgs --export-config` to create `dgs-config.json` in the current working directory and print its absolute path. An optional positional path writes elsewhere: `dgs --export-config /path/to/config.json` uses that exact file, while an existing directory receives `dgs-config.json`. The command never overwrites an existing file. Export destinations are explicit and independent of `DGS_TOOLBOX_CONFIG`; the environment variable controls where `dgs` loads configuration. The exported file is an editable template: move it to `~/.config/dgs-toolbox/dgs-config.json`, or set `DGS_TOOLBOX_CONFIG` to its path, before launching `dgs`. `dgs -c /path/to/config.json …` (or `--config`) loads that exact configuration file and takes precedence over `DGS_TOOLBOX_CONFIG`.
 
 ### The configuration directory
 
