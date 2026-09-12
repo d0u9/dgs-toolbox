@@ -1,0 +1,11 @@
+# A photo taken somewhere: the place is recorded and the day's note says what
+# was going on.
+name: Photo + Location
+
+match:
+  workflows: [photo_note]
+  requires_any: [coordinates.latitude, place.city]
+
+actions:
+  - id: obsidian.location.append
+  - id: obsidian.daily.append

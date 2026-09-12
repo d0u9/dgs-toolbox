@@ -2,6 +2,7 @@ package organizer
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -94,7 +95,7 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		ID:    ActionDailyAppend,
 		Label: "Daily note",
 		Effects: []string{
-			"Appends the Capture under the note's DGS heading as one nested entry, adding that heading when it has none",
+			"Appends the Capture under the configured section as one nested entry, adding that heading when the note has none",
 			"Creates the note from the configured template when the day has none",
 			"Writes nothing the second time: an entry carries the Capture's id and is added once",
 		},
@@ -179,6 +180,35 @@ func init() {
 		def.Run = run
 		actionDefinitions[id] = def
 	}
+}
+
+// ActionOrder is the order Actions are listed in, which is the order they were
+// added rather than alphabetical: the Obsidian ones are what the toolbox does
+// today, and sorting by id would file them under "a" and "o" among the Apple
+// ones that do nothing yet.
+var ActionOrder = []ActionID{
+	ActionDailyAppend, ActionLocationAppend,
+	ActionAppleNoteCreate, ActionReminderCreate, ActionCalendarCreate,
+}
+
+// Actions is every Action this binary carries, in ActionOrder. A caller
+// listing them reads this rather than the map, so what is documented and what
+// is offered cannot fall out of step.
+func Actions() []ActionDefinition {
+	definitions := make([]ActionDefinition, 0, len(actionDefinitions))
+	for _, id := range ActionOrder {
+		if def, ok := actionDefinitions[id]; ok {
+			definitions = append(definitions, def)
+		}
+	}
+	// An Action added to the registry and not to the order is still listed:
+	// leaving it out would make this the hand-kept list it exists to replace.
+	for id, def := range actionDefinitions {
+		if !slices.Contains(ActionOrder, id) {
+			definitions = append(definitions, def)
+		}
+	}
+	return definitions
 }
 
 // LookupAction returns the definition of an Action.

@@ -371,6 +371,14 @@ A Recipe is defined by one YAML file in the Recipe directory —
 time and each should diff on its own; YAML rather than JSON because a Recipe is
 written by hand and wants comments explaining why it exists.
 
+**Every** Recipe is a file. None is compiled in: a Recipe is composition — which
+workflows it matches, which Actions it runs, what it asks for beyond them — and
+that is the reader's to own, not the binary's to assert. What the binary carries
+is a copy to start from, written into the directory by
+`dgs capture --export-recipes` and thereafter an ordinary file like any other.
+An installation that has never run it has no Recipes, and Route says so with an
+empty `RECIPES` column rather than by pretending to offer something.
+
 ```yaml
 # Everything noted during work hours goes into the work vault's daily note,
 # tagged with the project it belongs to.
@@ -386,18 +394,29 @@ fields:
 
 actions:
   - id: obsidian.daily.append
-  - id: capture.archive
+  - id: obsidian.location.append
+    enabled: false
 ```
+
+[`actions.md`](actions.md) is the catalogue of what may be named here, and
+`dgs capture --actions` prints it from the binary in front of you.
 
 - **The filename is the id.** `work_daily.yaml` defines `work_daily`. A file
   cannot claim an id that disagrees with where it lives, and renaming the file
   is how a Recipe is renamed.
-- **A file replaces the built-in with the same id**, in place, rather than
-  patching it. A user file is the whole Recipe, so reading it tells the whole
-  story without also reading what it inherited.
-- **Actions are objects, not bare strings** (`- id: …`). They need nothing else
-  today; the shape leaves room for per-Recipe Action parameters without
-  rewriting every existing file.
+- **One file is one Recipe, whole.** There is nothing to inherit from and
+  nothing to patch, so reading the file tells the whole story. Editing a
+  shipped copy is editing the Recipe.
+- **Actions are objects, not bare strings** (`- id: …`). `enabled: false` on
+  one leaves it in the Recipe but unticked when the Recipe is chosen — still
+  listed in `ACTIONS`, still one keystroke away — for the Action wanted now and
+  then rather than every time. The shape leaves room for per-Recipe Action
+  parameters without rewriting existing files.
+- **`enabled: false` switches the whole Recipe off** without deleting it: it
+  stays in the Set, the report says it is there and switched off, and one line
+  removed brings it back. It still has to say what it does — a Recipe that
+  declares nothing organizes nothing — so switching it back on needs no memory
+  of what it was.
 - **An unknown key is an error**, not an ignored line — a misspelled key would
   otherwise change nothing and say nothing. So is naming an Action this binary
   does not have: the Recipe would silently do less than it claims.
@@ -408,7 +427,12 @@ actions:
 
 What a file configures is composition — which workflows a Recipe matches, which
 Actions it runs, what it asks for beyond them. It cannot define an Action:
-Actions are compiled in, and a Recipe references them by id.
+Actions are compiled in, and a Recipe references them by id. That is the line
+between the two: an Action is code that writes somewhere, a Recipe is an
+arrangement of Actions, and only the second is data.
+
+Candidates are listed in the order the files sort in, which is the order a
+reader can see in the directory and change by renaming.
 
 ## Executing a plan
 
@@ -623,25 +647,27 @@ not referenced. Nothing is pruned from a created note, unlike an entry, because
 a note is a document the reader will edit and a line quietly removed is one they
 will wonder about.
 
-## Built-in Recipes
+## The recipes this version ships
 
-The built-ins are always present, so Route has something to offer before any
-file exists:
+`dgs capture --export-recipes` writes these into the Recipe directory, skipping
+any file already there. They are a starting point, not a base to inherit from:
+once written, they are the reader's files.
 
-| Recipe | Workflows | Actions |
-| --- | --- | --- |
-| Location | `been_here` | location.upsert |
-| Location + Daily | `been_here` | location.upsert, daily.append |
-| Photo + Location | `photo_note` | location.upsert, daily.append |
-| Daily | `been_here`, `photo_note`, `quick_mark` | daily.append |
-| Apple Note | `photo_note`, `quick_mark` | notes.create |
-| Reminder | `quick_mark` | reminders.create |
-| Calendar | `quick_mark` | calendar.create |
+| Recipe | Id | Workflows | Actions |
+| --- | --- | --- | --- |
+| Location | `obsidian_location` | `been_here` | `obsidian.location.append` |
+| Location + Daily | `obsidian_location_daily` | `been_here` | `obsidian.location.append`, `obsidian.daily.append` |
+| Daily | `obsidian_daily` | `been_here`, `photo_note`, `quick_mark` | `obsidian.daily.append` |
+| Photo + Location | `photo_location_daily` | `photo_note` | `obsidian.location.append`, `obsidian.daily.append` |
+| Apple Note | `apple_note` | `photo_note`, `quick_mark` | `apple.notes.create` |
+| Reminder | `apple_reminder` | `quick_mark` | `apple.reminders.create` |
+| Calendar | `apple_calendar` | `quick_mark` | `apple.calendar.create` |
 
-A file in the Recipe directory is layered over this set. `Archive` matches every
-workflow, so no Capture is ever left with an empty candidate list. The two location Recipes additionally require the Capture to
-carry a location at all, so a `been_here` with neither coordinates nor place
-falls back to `Daily` and `Archive`.
+The id is the filename each is written under, without the `.yaml`. The two location
+Recipes additionally require the Capture to carry a location at all, so a
+`been_here` with neither coordinates nor place falls back to `Daily`. A Capture
+whose workflow matches nothing is not organizable yet, and Route says so with
+an empty `RECIPES` column rather than an error.
 
 The Apple Actions declare their requirements and name their targets but talk to
 no Apple API yet. They exist so the model is exercised against Actions that

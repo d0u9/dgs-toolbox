@@ -1,0 +1,9 @@
+# Declared against an Action that talks to no Apple API yet: running this
+# refuses rather than reporting a success that did not happen.
+name: Apple Note
+
+match:
+  workflows: [photo_note, quick_mark]
+
+actions:
+  - id: apple.notes.create

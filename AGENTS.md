@@ -14,6 +14,8 @@ Every setting `dgs` reads is documented in [`docs/configuration/`](docs/configur
 
 Adding a configuration file, or a key to one, is not finished until that reference says so in the same change. Update the part's document and the index table together — a key in one and not the other is worse than a key in neither, because the index is what a reader trusts to be complete. Renaming, removing, or changing the default of a key is the same change. Design documents keep explaining why a setting exists and link here for what to write, rather than repeating the list and drifting from it.
 
+Capture's Actions are the same rule in the other direction: adding one, renaming one, or changing what one writes or requires is not finished until [`docs/apps/capture/actions.md`](docs/apps/capture/actions.md) says so in the same change. It is the catalogue someone writes a Recipe against, and an Action it does not name is one they have no way to know about. A test fails when the document does not name every registered Action; it cannot check that the description is still true, so that part is on the change.
+
 ## Technology
 
 - Go

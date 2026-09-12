@@ -100,12 +100,19 @@ func TestReportFlagWritesToStdoutWithoutStartingTUI(t *testing.T) {
 	})
 	var output bytes.Buffer
 	command.SetOut(&output)
+	// The recipes are files, so an installation that has not been given them
+	// has none: they are written out first, by the flag that does that.
+	command.SetArgs([]string{"capture", "--export-recipes"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	output.Reset()
 	command.SetArgs([]string{"capture", "--recipes"})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
 	if called {
-		t.Fatal("--recipes started the TUI")
+		t.Fatal("a report flag started the TUI")
 	}
 	if !strings.Contains(output.String(), "RECIPES") || !strings.Contains(output.String(), "obsidian_location_daily") {
 		t.Fatalf("output = %q", output.String())

@@ -1,0 +1,9 @@
+# Anything at all, written into the day's note. It asks for no place, so it is
+# the fallback for a Capture that carries none.
+name: Daily
+
+match:
+  workflows: [been_here, photo_note, quick_mark]
+
+actions:
+  - id: obsidian.daily.append

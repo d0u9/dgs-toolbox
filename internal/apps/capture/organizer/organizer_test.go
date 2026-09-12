@@ -56,14 +56,17 @@ func equalFields(got []FieldID, want []FieldID) bool {
 
 func locationDaily(t *testing.T) Recipe {
 	t.Helper()
-	recipe, ok := LookupRecipe("obsidian_location_daily")
+	recipe, ok := starterSet(t).Lookup("obsidian_location_daily")
 	if !ok {
 		t.Fatal("recipe obsidian_location_daily not found")
 	}
 	return recipe
 }
 
-func TestFindRecipesNarrowsCandidates(t *testing.T) {
+// The shipped Recipes narrow to the right candidates, in the order their files
+// sort in — a directory has no order of its own, and filename order is the one
+// a reader can see and change.
+func TestFindNarrowsCandidates(t *testing.T) {
 	tests := []struct {
 		name    string
 		capture Capture
@@ -72,14 +75,14 @@ func TestFindRecipesNarrowsCandidates(t *testing.T) {
 		{
 			name:    "been_here offers the location recipes",
 			capture: beenHere(),
-			want:    []RecipeID{"obsidian_location", "obsidian_location_daily", "obsidian_daily"},
+			want:    []RecipeID{"obsidian_daily", "obsidian_location", "obsidian_location_daily"},
 		},
 		{
 			name: "quick_mark offers a different set entirely",
 			capture: Capture{Index: indexschema.Index{
 				Source: indexschema.Source{Workflow: "quick_mark"},
 			}},
-			want: []RecipeID{"obsidian_daily", "apple_note", "apple_reminder", "apple_calendar"},
+			want: []RecipeID{"apple_calendar", "apple_note", "apple_reminder", "obsidian_daily"},
 		},
 		{
 			name: "a location recipe needs a location, so been_here without one drops them",
@@ -97,9 +100,10 @@ func TestFindRecipesNarrowsCandidates(t *testing.T) {
 		},
 	}
 
+	set := starterSet(t)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := FindRecipes(tc.capture)
+			got := set.Find(tc.capture)
 			if len(got) != len(tc.want) {
 				t.Fatalf("got %d candidates, want %d", len(got), len(tc.want))
 			}

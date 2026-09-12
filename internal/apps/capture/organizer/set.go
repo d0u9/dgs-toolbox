@@ -1,15 +1,11 @@
 package organizer
 
-// Set is the Recipes available to a session: the built-in ones, plus whatever
-// was loaded from disk over them. Recipes are per-session state rather than
-// package state, so a caller with a different Recipe directory does not disturb
-// the built-in set every test reads.
+// Set is the Recipes available to a session: whatever was loaded from the
+// Recipe directory. Recipes are per-session state rather than package state, so
+// a caller with a different Recipe directory does not disturb another's.
 type Set struct {
 	recipes []Recipe
 }
-
-// Builtin is the Set a session starts from.
-func Builtin() Set { return Set{recipes: append([]Recipe(nil), builtinRecipes...)} }
 
 // NewSet builds a Set from an explicit list, for callers that construct one.
 func NewSet(recipes []Recipe) Set { return Set{recipes: append([]Recipe(nil), recipes...)} }
@@ -50,11 +46,13 @@ func (s Set) Lookup(id RecipeID) (Recipe, bool) {
 }
 
 // Find returns the Recipes offered for a Capture. It narrows the candidates
-// only; it never chooses one, not even when exactly one matches.
+// only; it never chooses one, not even when exactly one matches. A disabled
+// Recipe is not a candidate: it stays in the Set so the report can say it is
+// there and switched off, which is the answer to "where did it go?".
 func (s Set) Find(capture Capture) []Recipe {
 	var candidates []Recipe
 	for _, recipe := range s.recipes {
-		if recipe.matches(capture) {
+		if !recipe.Disabled && recipe.matches(capture) {
 			candidates = append(candidates, recipe)
 		}
 	}

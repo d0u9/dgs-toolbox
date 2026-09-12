@@ -1,0 +1,8 @@
+# Not implemented yet — see apple_note.yaml.
+name: Reminder
+
+match:
+  workflows: [quick_mark]
+
+actions:
+  - id: apple.reminders.create

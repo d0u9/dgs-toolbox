@@ -7,7 +7,8 @@ link here; this is what a reader consults to find out *what* to write.
 
 - [The shell](shell.md) — where the configuration itself lives, and the top bar.
 - [Capture](capture.md) — the Capture root, Recipes, templates, and the vault
-  the Obsidian Actions write to.
+  the Obsidian Actions write to. The Actions a Recipe may name are catalogued
+  in [`apps/capture/actions.md`](../apps/capture/actions.md).
 - [Photo](photo.md) — Photo Import's state file and default paths.
 
 ## Where the configuration lives
@@ -36,7 +37,7 @@ beside it and the lot moves, copies or goes under version control as one thing.
 ~/.config/dgs-toolbox/
   dgs-config.json
   capture/
-    recipes/
+    recipes/     # dgs capture --export-recipes writes the shipped ones here
     templates/
 ```
 

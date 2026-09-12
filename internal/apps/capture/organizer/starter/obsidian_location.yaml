@@ -1,0 +1,12 @@
+# One Capture, one line in the running list of places. Nothing goes into the
+# diary: a place worth recording is not always a day worth writing about.
+name: Location
+
+match:
+  workflows: [been_here]
+  # A place Capture with neither coordinates nor a place name has nothing to
+  # record, so it is not offered this Recipe at all.
+  requires_any: [coordinates.latitude, place.city]
+
+actions:
+  - id: obsidian.location.append

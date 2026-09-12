@@ -21,7 +21,7 @@ func locationSettings(t *testing.T, vault string) Settings {
 
 func locationPlan(t *testing.T, ctx Context) ActionPlan {
 	t.Helper()
-	recipe, ok := LookupRecipe("obsidian_location")
+	recipe, ok := starterSet(t).Lookup("obsidian_location")
 	if !ok {
 		t.Fatal("no location recipe")
 	}

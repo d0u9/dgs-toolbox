@@ -1,0 +1,12 @@
+# Not implemented yet — see apple_note.yaml.
+name: Calendar
+
+match:
+  workflows: [quick_mark]
+
+fields:
+  - id: all_day
+    label: All day
+
+actions:
+  - id: apple.calendar.create

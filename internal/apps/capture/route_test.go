@@ -38,6 +38,24 @@ func routeTestRoot(t *testing.T, names ...string) string {
 
 // routeVault is a vault with a daily note template in it, configured the way a
 // reader configures one.
+// starterSet is the Recipes this version ships, as a session has them: written
+// into a directory and loaded back. Nothing is compiled in, so a test that
+// wants a Recipe asks for the ones a reader will actually have.
+func starterSet(t *testing.T) organizer.Set {
+	t.Helper()
+	dir := t.TempDir()
+	for _, starter := range organizer.Starters() {
+		if err := os.WriteFile(filepath.Join(dir, starter.Name), starter.Data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loaded := organizer.Load(dir)
+	if len(loaded.Failures) > 0 {
+		t.Fatalf("the shipped recipes do not load: %v", loaded.Failures)
+	}
+	return loaded.Set
+}
+
 func routeVault(t *testing.T) organizer.Settings {
 	t.Helper()
 	templates := t.TempDir()
@@ -56,7 +74,7 @@ func routeVault(t *testing.T) organizer.Settings {
 func loadedRoute(t *testing.T, root string) routeModel {
 	t.Helper()
 	settings := routeVault(t)
-	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
+	m := newRouteModelWithSettings(root, "index.json", starterSet(t), settings)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	m = updated.(routeModel)
 	updated, _ = m.Update(loadCaptures(root, "index.json")())
@@ -482,7 +500,7 @@ func TestCaptureSessionActivatesClickedTab(t *testing.T) {
 
 func TestCaptureSessionSharesOneCaptureLoad(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	s := newSessionWithSettings(root, "index.json", organizer.Builtin(), organizer.DefaultSettings())
+	s := newSessionWithSettings(root, "index.json", starterSet(t), organizer.DefaultSettings())
 	updated, _ := s.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	s = updated.(session)
 	updated, _ = s.Update(loadCaptures(root, "index.json")())
@@ -837,8 +855,9 @@ func TestRouteDoubleClickActsLikeEnter(t *testing.T) {
 		t.Fatalf("focus after double-clicking a capture = %q, want %q", got, routeRecipesField)
 	}
 
-	// RECIPES: Enter chooses the recipe and moves to ACTIONS.
-	m = doubleClick(m, columnX(1), 2)
+	// RECIPES: Enter chooses the recipe and moves to ACTIONS. Row 3 is
+	// Location + Daily: candidates are listed in the order their files sort in.
+	m = doubleClick(m, columnX(1), 3)
 	if got := m.fields.Current(); got != routeActionsField {
 		t.Fatalf("focus after double-clicking a recipe = %q, want %q", got, routeActionsField)
 	}
@@ -981,7 +1000,7 @@ func TestRouteRecipeDetailDescribesTheCandidateUnderTheCursor(t *testing.T) {
 	m.refresh()
 
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"obsidian_location_daily", "Runs", "Location note", "Daily note", "Source  built-in", "Matches", "- been_here"} {
+	for _, want := range []string{"obsidian_location_daily", "Runs", "Location note", "Daily note", "Source  obsidian_location_daily.yaml", "Matches", "- been_here"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("recipe detail is missing %q:\n%s", want, view)
 		}
@@ -1138,7 +1157,7 @@ func TestRouteWritesTheEntryIntoTheVault(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
 	settings := routeVault(t)
 	vault := settings.ObsidianVault
-	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
+	m := newRouteModelWithSettings(root, "index.json", starterSet(t), settings)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	m = updated.(routeModel)
 	updated, _ = m.Update(loadCaptures(root, "index.json")())
@@ -1271,7 +1290,7 @@ func TestRouteRunHonoursAndRecordsAParameter(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
 	settings := routeVault(t)
 	vault := settings.ObsidianVault
-	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
+	m := newRouteModelWithSettings(root, "index.json", starterSet(t), settings)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	m = updated.(routeModel)
 	updated, _ = m.Update(loadCaptures(root, "index.json")())
@@ -1461,7 +1480,7 @@ func TestRouteTabFollowsWhatIsSelectable(t *testing.T) {
 func TestRouteHoldsTheDialogOpenWhenAnEntryWasAlreadyWritten(t *testing.T) {
 	root := routeTestRoot(t, "alpha", "beta")
 	settings := routeVault(t)
-	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
+	m := newRouteModelWithSettings(root, "index.json", starterSet(t), settings)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	m = updated.(routeModel)
 	updated, _ = m.Update(loadCaptures(root, "index.json")())
@@ -1533,7 +1552,7 @@ func TestRouteFoldsALongFieldValueUnderItsLabel(t *testing.T) {
 func TestRouteRecordsWhyAnActionWroteNothing(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
 	settings := routeVault(t)
-	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
+	m := newRouteModelWithSettings(root, "index.json", starterSet(t), settings)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	m = updated.(routeModel)
 	updated, _ = m.Update(loadCaptures(root, "index.json")())

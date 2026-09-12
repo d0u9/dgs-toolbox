@@ -16,7 +16,7 @@ type session struct {
 }
 
 func newSession() session {
-	return newSessionWithSettings("", "index.json", organizer.Builtin(), organizer.DefaultSettings())
+	return newSessionWithSettings("", "index.json", organizer.Set{}, organizer.DefaultSettings())
 }
 
 func newSessionWithSettings(root, indexFile string, recipes organizer.Set, settings organizer.Settings) session {
