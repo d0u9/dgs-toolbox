@@ -39,11 +39,13 @@ type ActionDefinition struct {
 	// the inputs it needs are still missing, so an unresolved target stays
 	// visible instead of being invented.
 	Target func(Context) string
-	// Run carries the Action out, reporting whether there was nothing left to
-	// do. A nil Run is an Action that has been declared but not implemented: it
-	// plans and explains itself, and refuses to run rather than silently doing
-	// nothing.
-	Run func(Context, ActionPlan) (skipped bool, err error)
+	// Run carries the Action out. It returns a reason when there was nothing
+	// left to do, and the empty string when it wrote: an Action that writes
+	// nothing owes the reader why, and "skipped" on its own is not an answer
+	// anyone can act on months later. A nil Run is an Action that has been
+	// declared but not implemented: it plans and explains itself, and refuses
+	// to run rather than silently doing nothing.
+	Run func(Context, ActionPlan) (skipped string, err error)
 }
 
 // ParameterDefinition is one knob of an Action. Default reads the configured
@@ -168,7 +170,7 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 // Action reads the registry to resolve its own parameters, and Go rejects a
 // variable whose initializer refers to a function that refers back to it.
 func init() {
-	implementations := map[ActionID]func(Context, ActionPlan) (bool, error){
+	implementations := map[ActionID]func(Context, ActionPlan) (string, error){
 		ActionDailyAppend:    appendToDailyNote,
 		ActionLocationAppend: appendToLocationNote,
 	}

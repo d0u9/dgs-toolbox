@@ -1455,6 +1455,52 @@ func TestRouteTabFollowsWhatIsSelectable(t *testing.T) {
 	}
 }
 
+// A Capture already in the note is written once, and the second run says so
+// rather than closing over it: the reader typed a note and nothing was added,
+// which they have to be told before the dialog goes away.
+func TestRouteHoldsTheDialogOpenWhenAnEntryWasAlreadyWritten(t *testing.T) {
+	root := routeTestRoot(t, "alpha", "beta")
+	settings := routeVault(t)
+	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+	m = updated.(routeModel)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(routeModel)
+
+	organize := func(m routeModel, note string) routeModel {
+		m.captures.SelectID("capture:" + filepath.Join(root, "alpha"))
+		m.refresh()
+		m = chooseRecipe(t, m, "Daily")
+		selection, _, _ := m.currentSelection()
+		selection.Set(organizer.FieldContent, note)
+		m.refresh()
+		return runAndConfirm(t, m)
+	}
+
+	m = organize(m, "the first note")
+	if m.running {
+		t.Fatal("a run that wrote everything it planned should close on its own")
+	}
+
+	m = organize(m, "a second note the note will not take")
+	if !m.running {
+		t.Fatal("a skipped action should hold the dialog open")
+	}
+	if got := m.runNote(); !strings.Contains(got, "already in Daily/2026-09-09.md") {
+		t.Fatalf("run note = %q, want it to name the note the entry is already in", got)
+	}
+
+	// Closing it does the move a clean run did straight away.
+	updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(routeModel)
+	if m.running {
+		t.Fatal("esc should close the held dialog")
+	}
+	if item, _ := m.captures.Selected(); item.ID != "capture:"+filepath.Join(root, "beta") {
+		t.Fatalf("cursor = %q, want the next capture to handle", item.ID)
+	}
+}
+
 // A value wider than the column folds under its label rather than being clipped
 // at the edge: a section written as a template is unreadable cut in half.
 func TestRouteFoldsALongFieldValueUnderItsLabel(t *testing.T) {
@@ -1481,3 +1527,41 @@ func TestRouteFoldsALongFieldValueUnderItsLabel(t *testing.T) {
 	}
 }
 
+// A run that wrote nothing says why in the record, not only in the dialog it
+// showed at the time: the reader comes back to the Capture months later and
+// asks what happened to it.
+func TestRouteRecordsWhyAnActionWroteNothing(t *testing.T) {
+	root := routeTestRoot(t, "alpha")
+	settings := routeVault(t)
+	m := newRouteModelWithSettings(root, "index.json", organizer.Builtin(), settings)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+	m = updated.(routeModel)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = updated.(routeModel)
+
+	organize := func(m routeModel, note string) routeModel {
+		m.captures.SelectID("capture:" + filepath.Join(root, "alpha"))
+		m.refresh()
+		m = chooseRecipe(t, m, "Daily")
+		selection, _, _ := m.currentSelection()
+		selection.Set(organizer.FieldContent, note)
+		m.refresh()
+		return runAndConfirm(t, m)
+	}
+	m = organize(m, "the first note")
+	m = organize(m, "a second note")
+
+	record, ok := organizer.ReadRecord(filepath.Join(root, "alpha"))
+	if !ok {
+		t.Fatal("no record was written")
+	}
+	latest, _ := record.Latest()
+	action := latest.Actions[0]
+	if !action.Skipped {
+		t.Fatalf("action = %+v, want it skipped", action)
+	}
+	if !strings.Contains(action.Reason, "already in Daily/2026-09-09.md") ||
+		!strings.Contains(action.Reason, "^dgs-alpha") {
+		t.Fatalf("reason = %q, want it to name the note and the mark it found", action.Reason)
+	}
+}

@@ -24,8 +24,11 @@ type Result struct {
 	Target   string
 	Executed bool
 	// Skipped marks an Action that had nothing left to do, which is a success
-	// with a different meaning: the entry was already in the note.
+	// with a different meaning: the entry was already in the note. Reason says
+	// which, so what did not happen explains itself rather than leaving the
+	// reader to work it out from the note.
 	Skipped bool
+	Reason  string
 	Err     error
 }
 
@@ -48,7 +51,7 @@ func Execute(ctx Context, plans []ActionPlan) []Result {
 			result.Err = ErrNotImplemented
 		default:
 			skipped, err := def.Run(ctx, plan)
-			result.Err, result.Skipped = err, skipped
+			result.Err, result.Reason, result.Skipped = err, skipped, skipped != ""
 			result.Executed = err == nil
 		}
 		results = append(results, result)
@@ -86,6 +89,19 @@ func Executed(results []Result) bool {
 	return true
 }
 
+// Skipped reports whether any Action of a run had nothing left to do. It is a
+// success, but not the one the reader asked for: they wrote a note and nothing
+// was added to it, so a caller asks in order to say so rather than closing over
+// it.
+func Skipped(results []Result) bool {
+	for _, result := range results {
+		if result.Skipped {
+			return true
+		}
+	}
+	return false
+}
+
 func missingList(missing []FieldRequirement) string {
 	names := make([]string, 0, len(missing))
 	for _, req := range missing {
@@ -97,25 +113,25 @@ func missingList(missing []FieldRequirement) string {
 // appendToDailyNote adds one entry under the note's own section, creating the
 // note and the section when they are missing. It rewrites the note from what it
 // held, so a note edited by hand keeps everything it already has.
-func appendToDailyNote(ctx Context, plan ActionPlan) (skipped bool, err error) {
+func appendToDailyNote(ctx Context, plan ActionPlan) (skipped string, err error) {
 	// The target is resolved again rather than taken from the plan, so a plan
 	// whose target could not be worked out fails with the reason it could not
 	// be — which is what the reader has to fix — instead of with a missing
 	// vault.
 	target, err := dailyNotePath(ctx)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	path, ok := ctx.Settings.vaultPath(target)
 	if !ok {
-		return false, ErrNoVault
+		return "", ErrNoVault
 	}
 	entry, err := dailyEntry(ctx)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if len(entry) == 0 {
-		return false, errors.New("nothing to append")
+		return "", errors.New("nothing to append")
 	}
 
 	existing, err := os.ReadFile(path)
@@ -123,31 +139,31 @@ func appendToDailyNote(ctx Context, plan ActionPlan) (skipped bool, err error) {
 		// The day has no note yet, so it is created from the configured
 		// template before the entry is added to it.
 		if err := createDailyNote(ctx, path); err != nil {
-			return false, err
+			return "", err
 		}
 		if existing, err = os.ReadFile(path); err != nil {
-			return false, fmt.Errorf("read %s: %w", target, err)
+			return "", fmt.Errorf("read %s: %w", target, err)
 		}
 	} else if err != nil {
-		return false, fmt.Errorf("read %s: %w", target, err)
+		return "", fmt.Errorf("read %s: %w", target, err)
 	}
 	// The note itself is the record of what was written. A Capture already
 	// present is skipped rather than added twice, and deleting the entry by
 	// hand is enough to have it written again — bookkeeping kept anywhere else
 	// could claim a line exists that no longer does.
 	if containsMark(string(existing), captureMark(ctx.Capture)) {
-		return true, nil
+		return fmt.Sprintf("this capture is already in %s, as %s", target, captureMark(ctx.Capture)), nil
 	}
 
 	section, err := sectionFor(ctx)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	updated := insertUnderSection(string(existing), section, entry)
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
-		return false, fmt.Errorf("write %s: %w", target, err)
+		return "", fmt.Errorf("write %s: %w", target, err)
 	}
-	return false, nil
+	return "", nil
 }
 
 // containsMark reports whether the note already carries this exact block

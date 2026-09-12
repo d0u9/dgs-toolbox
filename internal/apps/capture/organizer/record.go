@@ -75,8 +75,11 @@ type RecordedAction struct {
 	Target   string   `json:"target"`
 	Executed bool     `json:"executed"`
 	// Skipped marks an Action that found its work already done, which is a
-	// success with a different meaning.
-	Skipped bool `json:"skipped,omitempty"`
+	// success with a different meaning, and Reason says what it found. Both are
+	// recorded: a reader coming back to a run that wrote nothing asks why, and
+	// the note it would have written to may have been edited since.
+	Skipped bool   `json:"skipped,omitempty"`
+	Reason  string `json:"reason,omitempty"`
 	// Error is why an Action did not run, kept so a failed pass explains
 	// itself later rather than only in the session that attempted it.
 	Error string `json:"error,omitempty"`
@@ -103,7 +106,7 @@ func NewRun(recipe Recipe, selection Selection, results []Result, at time.Time) 
 			action.Error = result.Err.Error()
 		}
 		if result.Skipped {
-			action.Skipped = true
+			action.Skipped, action.Reason = true, result.Reason
 		}
 		actions = append(actions, action)
 	}
