@@ -8,6 +8,12 @@ Photo Import may perform real file operations only after the user starts Process
 
 Shared interface decisions live in [`docs/tui.md`](docs/tui.md). Read it before changing any TUI or interactive command flow. Component-specific documents are linked from that shared design, including [`docs/file-explorer.md`](docs/file-explorer.md), [`docs/parameter-controls.md`](docs/parameter-controls.md), and [`docs/data-fields.md`](docs/data-fields.md); follow the links relevant to the component being changed. App-specific designs live under `docs/apps/<app>/`, including [`docs/apps/photo/import.md`](docs/apps/photo/import.md), and must not be promoted into shared requirements. Update design documents incrementally only when a decision is confirmed, and do not fill undecided sections speculatively.
 
+## Configuration
+
+Every setting `dgs` reads is documented in [`docs/configuration/`](docs/configuration/), one document per part of the toolbox with an index at [`docs/configuration/index.md`](docs/configuration/index.md). It is a reference, not a design document: what a key is called, what it means, and what it defaults to.
+
+Adding a configuration file, or a key to one, is not finished until that reference says so in the same change. Update the part's document and the index table together — a key in one and not the other is worse than a key in neither, because the index is what a reader trusts to be complete. Renaming, removing, or changing the default of a key is the same change. Design documents keep explaining why a setting exists and link here for what to write, rather than repeating the list and drifting from it.
+
 ## Technology
 
 - Go
