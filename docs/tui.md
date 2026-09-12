@@ -313,7 +313,7 @@ Tab            Move to next field
 Shift+Tab      Move to previous field
 Enter          Edit, open, or continue
 Space          Toggle a boolean or checklist item
-Esc            Cancel the active edit; otherwise return to commands
+Esc            Cancel the active edit; otherwise leave the command, after confirming
 ?              Show contextual help
 q              Quit when not editing text
 ```
@@ -327,6 +327,8 @@ An application stage with active work may capture the shell's return and exit ke
 Consequential interruptions use the shared confirmation component in `internal/tui/confirm`. It renders a compact framed dialog with a title, message, optional detail, and two actions. The negative or safe action is focused by default. `Tab` and `Shift+Tab` switch focus, `Enter` invokes the focused action, and `Esc` always cancels. The selected button carries the visual focus treatment; keyboard hints appear once in the dialog footer and are not duplicated in the global status bar.
 
 The status bar shows only controls valid in the current state. For example, edit mode should describe how to accept or cancel the edit rather than showing form-navigation hints.
+
+Leaving a command for the picker is confirmed through the same component. Esc is also the key that walks back a column inside a command, so the one that leaves it is one keystroke from the one that does not, and leaving throws away what the session was holding—a Capture half filled in, a plan not yet run. The dialog names the command being left, `Stay` is focused by default, and answering it leaves the session exactly as it was.
 
 Every action that quits `dgs`, including `q`, Ctrl+C, picker exit, and a command-owned Quit button, routes through this shared confirmation component. Do not render a separate inline `y/n` prompt or terminate immediately. The dialog keeps the underlying workspace visible, focuses No by default, and places the right-aligned buttons in safe-to-consequential order: No on the left, Yes on the right. Tab or Shift+Tab switches actions, Enter invokes the focused action, and Esc continues. Active work may provide more specific interruption copy, but it still uses the same component and interaction contract.
 
