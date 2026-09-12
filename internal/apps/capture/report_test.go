@@ -119,6 +119,9 @@ func TestExampleRecipesAndTemplatesLoad(t *testing.T) {
 		if len(loaded.Failures) > 0 {
 			t.Errorf("examples/%s: %v", entry.Name(), loaded.Failures)
 		}
+		if workflows := organizer.LoadWorkflows(global.CaptureWorkflowsDir()); len(workflows.Failures) > 0 {
+			t.Errorf("examples/%s: %v", entry.Name(), workflows.Failures)
+		}
 		settings := obsidianSettings(global)
 		if settings.TemplateDir == "" {
 			continue

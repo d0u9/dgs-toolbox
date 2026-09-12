@@ -1,0 +1,14 @@
+# One file for a family of workflows that answer alike. A field may name
+# several keys and the first that resolves is used, so a dozen shortcuts that
+# each kept their text somewhere slightly different are one file rather than a
+# dozen.
+#
+# "*" answers for any workflow with no file of its own. A workflow that has one
+# has said where it keeps its fields, and is not read through this list.
+workflows: ["*"]
+
+fields:
+  content:
+    - payload.text
+    - payload.body
+    - payload.note

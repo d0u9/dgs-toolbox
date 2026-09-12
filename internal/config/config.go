@@ -35,13 +35,6 @@ type Config struct {
 // destinations, so it has no settings of its own.
 type Capture struct {
 	Scan CaptureScan `json:"scan"`
-	// Recipes is the directory holding one file per organizer Recipe. Empty
-	// means the "recipes" directory beside the configuration file.
-	Recipes string `json:"recipes"`
-	// Templates holds templates overriding the compiled-in ones by filename.
-	// Empty means the "templates" directory beside the configuration file,
-	// which is where recipes live too.
-	Templates string `json:"templates"`
 	// Mappings translate a value on its way into a note, by table name: what a
 	// Capture records against what this vault files it under.
 	Mappings map[string]map[string]string `json:"mappings"`
@@ -152,27 +145,21 @@ func (c Config) AppDir(app string) string {
 }
 
 // CaptureTemplatesDir is where Capture reads every template that is not
-// compiled in.
-func (c Config) CaptureTemplatesDir() string {
-	return c.captureDir(c.Capture.Templates, "templates")
-}
+// compiled in, CaptureWorkflowsDir where it reads what a workflow keeps where,
+// and CaptureRecipesDir where it reads the Recipes.
+//
+// None of the three is configurable. The layout is the answer to "where does
+// this installation keep its Capture configuration?", and a path for each
+// would make that answer three paths to go and look up. config_dir moves the
+// whole thing, and a directory that genuinely belongs elsewhere — a vault's
+// templates kept with the vault — is a symlink.
+func (c Config) CaptureTemplatesDir() string { return c.captureDir("templates") }
 
-// CaptureRecipesDir is where Capture reads user-defined Recipes. It defaults to
-// a directory beside the configuration file, so a user who has a config has a
-// place to put Recipes without configuring a second path.
-func (c Config) CaptureRecipesDir() string {
-	return c.captureDir(c.Capture.Recipes, "recipes")
-}
+func (c Config) CaptureWorkflowsDir() string { return c.captureDir("workflows") }
 
-// captureDir resolves one of Capture's directories: the configured path when
-// there is one, and otherwise its place in the layout. An explicit path is
-// still allowed, for a directory that lives somewhere of its own — a vault's
-// templates kept with the vault, say — but nothing has to be named to get the
-// usual arrangement.
-func (c Config) captureDir(configured, name string) string {
-	if configured != "" {
-		return configured
-	}
+func (c Config) CaptureRecipesDir() string { return c.captureDir("recipes") }
+
+func (c Config) captureDir(name string) string {
 	app := c.AppDir("capture")
 	if app == "" {
 		return ""

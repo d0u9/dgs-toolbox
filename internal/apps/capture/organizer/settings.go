@@ -43,6 +43,18 @@ type Settings struct {
 	// "🇦🇺_Australia". Declared rather than coded because which names a vault
 	// uses is that vault's business, and there is no end to them.
 	Mappings map[string]map[string]string
+	// Sources say where a workflow keeps a logical field, by workflow and then
+	// by field: {"quick_note": {"content": ["payload.text"]}}. A logical field
+	// is the same question — what did they write? — asked of Captures that
+	// answer it under different names, and which name a workflow uses is that
+	// workflow's business rather than something to compile in.
+	//
+	// Several paths may be given for one field and the first that resolves is
+	// used, and AnyWorkflow answers for a workflow with no entry of its own, so
+	// a dozen workflows that each keep their text somewhere slightly different
+	// are one list rather than a dozen blocks. A field with no source at all
+	// falls back to what the toolbox knows about its own workflows.
+	Sources map[string]map[FieldID][]string
 	// TemplateDir holds every template that is not compiled in, by filename:
 	// the daily note's, and any that replaces a compiled-in default. One place
 	// to look, rather than a path in the configuration for each.

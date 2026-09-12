@@ -9,7 +9,7 @@ have.
 | --- | --- |
 | [`shell/`](shell) | The top bar: which system metrics are shown. |
 | [`capture-scan/`](capture-scan) | Capture's root and index filename — the least you need for Scan to list something. |
-| [`capture-obsidian/`](capture-obsidian) | Capture writing into an Obsidian vault: the daily note, the running list of places, map links, name mappings, plus a Recipe and templates. |
+| [`capture-obsidian/`](capture-obsidian) | Capture writing into an Obsidian vault: the daily note, the running list of places, map links, name mappings, plus Recipes, workflow descriptions and templates. |
 | [`photo-import/`](photo-import) | Photo Import's source, destination and state file. |
 
 Every key is documented in [`docs/configuration/`](../docs/configuration), and
@@ -47,6 +47,7 @@ capture-obsidian/
   dgs-config.json
   capture/
     recipes/       # one YAML file per Recipe
+    workflows/     # one file per workflow: where it keeps each field
     templates/     # daily-note.md, and any compiled-in template you replace
 ```
 

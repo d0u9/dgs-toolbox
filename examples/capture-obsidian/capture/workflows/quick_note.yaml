@@ -1,0 +1,6 @@
+# The filename is the workflow, the way a Recipe's filename is its id. This one
+# keeps its text under "text" rather than the "note" the toolbox would assume,
+# and carries its own labels.
+fields:
+  content: payload.text
+  tags: payload.labels
