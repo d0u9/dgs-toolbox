@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -88,7 +89,10 @@ func (m Model) viewportSize() (int, int) {
 
 func (m Model) topBar(width int) string {
 	left := m.topBarTabs()
-	available := max(0, width-lipgloss.Width(left)-1)
+	// The metadata is fitted to what is left after the tabs, the cell of gap
+	// between them, and the one it ends with: sized to the gap alone, it wins
+	// that last cell back from the tabs and clips the one the reader is on.
+	available := max(0, width-lipgloss.Width(left)-2)
 	right := topBarMetaStyle.Render(m.topBarMetadata(available) + " ")
 	return renderStatusContent(topBarStyle, joinLeftRight(left, right, width))
 }
@@ -328,7 +332,37 @@ func (m Model) pickerStatus() Status {
 	return Status{Left: "PICKER", Center: context, Right: "↑/k ↓/j Move  ↵ Open  q Quit"}
 }
 
+// breadcrumbSeparator is the filled chevron between two crumbs. It is drawn in
+// the colour of the crumb to its right on the background of the one to its
+// left, so the trail reads as solid arrows pointing back the way it came
+// rather than as a punctuation mark between words.
+const breadcrumbSeparator = "\ue0b2"
+
+// breadcrumb is the trail to what is on screen, deepest first. It sits at the
+// right-hand end of the top bar, where a trail reading left to right would put
+// the part the reader cares about — where they are — furthest from the edge
+// they are looking at, so it runs the other way: "scan ◀ capture ◀ dgs".
 func (m Model) breadcrumb() string {
+	trail := m.breadcrumbTrail()
+	var rendered strings.Builder
+	for index, crumb := range trail {
+		if index > 0 {
+			// The chevron belongs to the boundary rather than to either crumb:
+			// its point is the colour of what follows it, so the segments
+			// interlock instead of sitting in a row of separate blocks.
+			rendered.WriteString(lipgloss.NewStyle().
+				Foreground(breadcrumbBackground(index, len(trail))).
+				Background(breadcrumbBackground(index-1, len(trail))).
+				Render(breadcrumbSeparator))
+		}
+		rendered.WriteString(breadcrumbStyle(index, len(trail)).Render(crumb))
+	}
+	return rendered.String()
+}
+
+// breadcrumbTrail is the path itself, deepest first: what is on screen, then
+// what it sits inside, ending at the shell.
+func (m Model) breadcrumbTrail() []string {
 	parts := []string{"dgs"}
 	if m.active != nil {
 		app := m.apps[m.activeApp]
@@ -341,12 +375,36 @@ func (m Model) breadcrumb() string {
 		if contributor, ok := m.active.(CommandPathContributor); ok {
 			parts = append(parts, contributor.CommandPath()...)
 		}
-		return strings.Join(parts, " › ")
+	} else {
+		if m.pickerApp >= 0 {
+			parts = append(parts, m.apps[m.pickerApp].ID)
+		}
+		parts = append(parts, "commands")
 	}
-	if m.pickerApp >= 0 {
-		parts = append(parts, m.apps[m.pickerApp].ID)
+	slices.Reverse(parts)
+	return parts
+}
+
+// breadcrumbBackground is the ground one crumb sits on: the accent for where
+// the reader is, a quieter shade for what contains it, and the bar itself for
+// the shell, so the trail fades into the bar as it goes back.
+func breadcrumbBackground(index, count int) lipgloss.TerminalColor {
+	switch {
+	case index == 0:
+		return accentColor
+	case index == count-1:
+		return barColor
+	default:
+		return inactiveTabColor
 	}
-	return strings.Join(append(parts, "commands"), " › ")
+}
+
+func breadcrumbStyle(index, count int) lipgloss.Style {
+	style := lipgloss.NewStyle().Padding(0, 1).Background(breadcrumbBackground(index, count))
+	if index == 0 {
+		return style.Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#101010"})
+	}
+	return style.Foreground(barText)
 }
 
 func joinLeftRight(left, right string, width int) string {
