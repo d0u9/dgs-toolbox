@@ -34,11 +34,8 @@ type Config struct {
 // the Recipes and Actions of the organizer model rather than through configured
 // destinations, so it has no settings of its own.
 type Capture struct {
-	Scan CaptureScan `json:"scan"`
-	// Mappings translate a value on its way into a note, by table name: what a
-	// Capture records against what this vault files it under.
-	Mappings map[string]map[string]string `json:"mappings"`
-	Obsidian CaptureObsidian              `json:"obsidian"`
+	Scan     CaptureScan     `json:"scan"`
+	Obsidian CaptureObsidian `json:"obsidian"`
 }
 
 // CaptureObsidian tells the Obsidian Actions where to write. Vault is an
@@ -57,12 +54,6 @@ type CaptureObsidian struct {
 	// LocationArchive the folder a year that has rolled over is moved into.
 	LocationNote    string `json:"location_note"`
 	LocationArchive string `json:"location_archive"`
-	// MapServices names which map links an entry carries, in order. Empty
-	// means all of them.
-	MapServices string `json:"map_services"`
-	// CoordinateChoice is the vault command a coordinate links to, which puts
-	// it on the clipboard.
-	CoordinateChoice string `json:"coordinate_choice"`
 }
 
 type CaptureScan struct {
@@ -158,6 +149,10 @@ func (c Config) CaptureTemplatesDir() string { return c.captureDir("templates") 
 func (c Config) CaptureWorkflowsDir() string { return c.captureDir("workflows") }
 
 func (c Config) CaptureRecipesDir() string { return c.captureDir("recipes") }
+
+// CaptureMappingsDir is where Capture reads the mapping tables: one file per
+// table, named after it.
+func (c Config) CaptureMappingsDir() string { return c.captureDir("mappings") }
 
 func (c Config) captureDir(name string) string {
 	app := c.AppDir("capture")

@@ -61,6 +61,7 @@ file:
   capture/
     recipes/
     workflows/
+    mappings/
     templates/
   photo/
     …

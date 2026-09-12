@@ -11,12 +11,26 @@ import (
 func locationSettings(t *testing.T, vault string) Settings {
 	t.Helper()
 	settings := testSettings(t)
+	// The day's name comes from the weekday table this version ships, the way
+	// it does for a reader who has run --init.
+	settings.Mappings = starterTables(t)
 	settings.ObsidianVault = vault
 	settings.LocationNote = "88 Inbox/06 Locations.md"
 	settings.LocationArchive = "88 Inbox/06 Locations"
-	settings.MapServices = "Apple, 高德, Google"
-	settings.CoordinateChoice = "Copy Coordinates (lng, lat)"
+	// Which services an entry carries and which vault command a coordinate
+	// links to are the template's decisions, so the test's template makes them.
+	writeLocationTemplate(t, settings.TemplateDir, `- `+"`"+`{{.Clock}} {{.Offset}}`+"`"+` · {{.Content}} {{.ID}}
+    - {{.Address}}
+    - {{.CopyLink "Copy Coordinates (lng, lat)"}}
+    - {{.MapLinks "Apple, 高德, Google"}}`)
 	return settings
+}
+
+func writeLocationTemplate(t *testing.T, dir, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, LocationEntryTemplate), []byte(body+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func locationPlan(t *testing.T, ctx Context) ActionPlan {

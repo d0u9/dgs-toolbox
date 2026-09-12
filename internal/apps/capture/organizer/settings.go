@@ -28,12 +28,6 @@ type Settings struct {
 	// empty means nothing is archived and the list grows without limit.
 	LocationNote    string
 	LocationArchive string
-	// MapServices names which map links an entry carries, by name or short
-	// name, in the order they are written. Empty means all of them.
-	MapServices string
-	// CoordinateChoice is the vault command a coordinate links to, which puts
-	// it on the clipboard. Empty means the coordinates are written unlinked.
-	CoordinateChoice string
 	// DailySection is the heading a Capture is appended under. Its own section
 	// rather than the end of the note, so what this tool writes stays
 	// distinguishable from what the reader wrote.

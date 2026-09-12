@@ -43,6 +43,7 @@ beside it and the lot moves, copies or goes under version control as one thing.
   capture/
     recipes/     # dgs capture --init writes the shipped ones here
     workflows/   # one file per workflow: where it keeps each field
+    mappings/    # one file per translation table
     templates/
 ```
 
@@ -69,14 +70,11 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `tui.top_bar.time` | [shell](shell.md#the-top-bar) | `true` |
 | `capture.scan.root` | [capture](capture.md#the-capture-root) | empty — Scan opens with no root |
 | `capture.scan.index_file` | [capture](capture.md#the-capture-root) | `index.json` |
-| `capture.mappings` | [capture](capture.md#mappings) | none |
 | `capture.obsidian.vault` | [capture](capture.md#the-vault) | empty — the Obsidian Actions refuse to run |
 | `capture.obsidian.daily_note` | [capture](capture.md#the-daily-note) | empty — the daily Action refuses to run |
 | `capture.obsidian.section` | [capture](capture.md#the-daily-note) | `Captured{{with .Device}} - {{.}}{{end}}` |
 | `capture.obsidian.location_note` | [capture](capture.md#the-location-note) | empty — the location Action refuses to run |
 | `capture.obsidian.location_archive` | [capture](capture.md#the-location-note) | empty — nothing is archived |
-| `capture.obsidian.map_services` | [capture](capture.md#map-links-and-coordinates) | empty — every service, in the order below |
-| `capture.obsidian.coordinate_choice` | [capture](capture.md#map-links-and-coordinates) | empty — coordinates are written unlinked |
 | `photo.import.state_file` | [photo](photo.md) | `.dgs-state` |
 | `photo.import.source` | [photo](photo.md) | empty — the repository's mock path |
 | `photo.import.destination` | [photo](photo.md) | empty — the repository's mock path |

@@ -635,30 +635,40 @@ inline —
 country: "{{if eq .Country "Australia"}}🇦🇺_Australia{{else}}{{.Country}}{{end}}"
 ```
 
-— but a table of them is data rather than something to bury in a template, so it
-is declared in the configuration and read by `mapped`:
+— but a table of them is data rather than something to bury in a template, so
+it is a file of its own in `<config dir>/capture/mappings`, named after the
+table. The file is the table:
 
-```json
-{
-  "capture": {
-    "mappings": {
-      "country": { "Australia": "🇦🇺_Australia", "China": "🇨🇳_中国" }
-    }
-  }
-}
+```yaml
+# country.yaml
+Australia: 🇦🇺_Australia
+China: 🇨🇳_中国
 ```
 
 ```gotemplate
 country: "{{mapped "country" .Country}}"
 ```
 
-A value the table does not mention comes back unchanged. A mapping says how some
-names are written in this vault, not which names are allowed, and dropping the
-rest would lose what the Capture actually carried.
+A value the table does not mention comes back unchanged. A mapping says how
+some names are written in this vault, not which names are allowed, and dropping
+the rest would lose what the Capture actually carried. Which table applies
+where is the template's decision, so the same value can be filed one way in the
+daily note and another in the list of places.
 
-`ContentLines` is the Capture's text one line per item, with blank lines
-dropped: a note written across several lines is several things worth reading,
-and a blank line between them is spacing rather than content.
+### Map links and coordinates
+
+Which map services a location entry carries, and which vault command a
+coordinate links to, are decisions about how that line reads, so the template
+makes them rather than the configuration:
+
+```gotemplate
+- {{.CopyLink "Copy Coordinates (lng, lat)"}}
+- {{.MapLinks "Apple, 高德, Google"}}
+```
+
+Both take what they need as an argument and both have an argument-free form —
+every service, and an unlinked position. A service name nothing matches is left
+out rather than guessed at.
 
 ### The daily note's own template
 

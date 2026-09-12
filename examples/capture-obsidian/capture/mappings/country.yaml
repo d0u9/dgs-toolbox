@@ -1,0 +1,6 @@
+# What a Capture records against what this vault files it under, asked for by
+# a template as {{mapped "country" .Country}}. A value the table does not
+# mention is written as it was.
+
+Australia: 🇦🇺_Australia
+China: 🇨🇳_中国

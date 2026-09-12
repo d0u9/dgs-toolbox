@@ -81,6 +81,7 @@ func writeStarters(out io.Writer, global config.Config) error {
 	directories := map[organizer.StarterKind]string{
 		organizer.StarterRecipes:   expandHome(global.CaptureRecipesDir()),
 		organizer.StarterWorkflows: expandHome(global.CaptureWorkflowsDir()),
+		organizer.StarterMappings:  expandHome(global.CaptureMappingsDir()),
 	}
 	written, kept := 0, 0
 	for _, kind := range organizer.StarterKinds {
@@ -284,15 +285,13 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	settings.ObsidianVault = expandHome(obsidian.Vault)
 	settings.TemplateDir = expandHome(global.CaptureTemplatesDir())
 	settings.DailyNote = obsidian.DailyNote
-	settings.Mappings = global.Capture.Mappings
+	settings.Mappings = organizer.LoadMappings(expandHome(global.CaptureMappingsDir())).Tables
 	settings.Sources = loadWorkflows(global).Sources
 	if obsidian.Section != "" {
 		settings.DailySection = obsidian.Section
 	}
 	settings.LocationNote = obsidian.LocationNote
 	settings.LocationArchive = obsidian.LocationArchive
-	settings.MapServices = obsidian.MapServices
-	settings.CoordinateChoice = obsidian.CoordinateChoice
 	return settings
 }
 

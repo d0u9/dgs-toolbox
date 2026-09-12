@@ -52,9 +52,9 @@ Puts the Capture at the top of the running list of places, under its day.
 - Writes nothing the second time, on the same terms as the daily entry.
 
 Needs `createdAt` and `content`. Configured by
-`capture.obsidian.location_note`, `capture.obsidian.location_archive`,
-`capture.obsidian.map_services` and `capture.obsidian.coordinate_choice`;
-shaped by the `location-entry.md` template.
+`capture.obsidian.location_note` and `capture.obsidian.location_archive`;
+shaped by the `location-entry.md` template, which also decides the map services
+the line carries and the vault command a coordinate links to.
 
 ## Apple actions
 
