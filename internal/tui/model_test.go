@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -80,8 +81,8 @@ func TestDirectCommandUsesSingleBreadcrumbSegment(t *testing.T) {
 		Commands: []Command{{ID: "demo", Name: "Component Demo", New: newStub("DEMO")}},
 	}}
 	m := NewModel(apps, Launch{App: "demo", Command: "demo"})
-	if got := m.breadcrumb(); got != "dgs › demo" {
-		t.Fatalf("breadcrumb = %q, want %q", got, "dgs › demo")
+	if got := m.breadcrumbTrail(); !slices.Equal(got, []string{"demo", "dgs"}) {
+		t.Fatalf("breadcrumb trail = %q, want the command then the shell", got)
 	}
 }
 
@@ -114,7 +115,7 @@ func TestCommandCanContributeTopBarTabs(t *testing.T) {
 	if !strings.HasPrefix(bar, "  SCAN   ") {
 		t.Fatalf("top bar does not show the active Scan tab at its minimum width: %q", bar)
 	}
-	if !strings.Contains(bar, "dgs › capture") {
+	if !strings.Contains(bar, "capture "+breadcrumbSeparator+" dgs") {
 		t.Fatalf("top bar is missing the Capture breadcrumb: %q", bar)
 	}
 }
@@ -124,8 +125,8 @@ func TestCommandCanContributeBreadcrumbState(t *testing.T) {
 		ID: "import", Name: "Import", New: func() CommandModel { return contextualStub{stubCommand{label: "IMPORT"}} },
 	}}}}
 	m := NewModel(apps, Launch{App: "photo", Command: "import"})
-	if got := m.breadcrumb(); got != "dgs › photo › import › scan" {
-		t.Fatalf("breadcrumb = %q", got)
+	if got := m.breadcrumbTrail(); !slices.Equal(got, []string{"scan", "import", "photo", "dgs"}) {
+		t.Fatalf("breadcrumb trail = %q, want it deepest first", got)
 	}
 }
 
@@ -143,7 +144,7 @@ func TestGlobalPickerStartsLeafAndReturns(t *testing.T) {
 	if m.active == nil || !strings.Contains(m.View(), "PHOTO ENCODE") {
 		t.Fatalf("selected command did not replace picker:\n%s", m.View())
 	}
-	if !strings.Contains(m.View(), "dgs › photo › encode") {
+	if !strings.Contains(ansi.Strip(m.View()), "encode "+breadcrumbSeparator+" photo "+breadcrumbSeparator+" dgs") {
 		t.Fatalf("active command breadcrumb missing:\n%s", m.View())
 	}
 
@@ -194,7 +195,7 @@ func TestDomainPickerIsScoped(t *testing.T) {
 			t.Fatalf("domain picker contains app index %d, want 1", choice.appIndex)
 		}
 	}
-	if !strings.Contains(m.View(), "dgs › gpx › commands") {
+	if !strings.Contains(ansi.Strip(m.View()), "commands "+breadcrumbSeparator+" gpx "+breadcrumbSeparator+" dgs") {
 		t.Fatalf("domain picker breadcrumb missing:\n%s", m.View())
 	}
 }
@@ -210,7 +211,7 @@ func TestDirectCommandEscapeReturnsToParentPickerThenConfirmsExit(t *testing.T) 
 	if cmd != nil || m.active != nil {
 		t.Fatal("first escape should return to the parent picker")
 	}
-	if !strings.Contains(m.View(), "dgs › photo › commands") {
+	if !strings.Contains(ansi.Strip(m.View()), "commands "+breadcrumbSeparator+" photo "+breadcrumbSeparator+" dgs") {
 		t.Fatalf("parent picker breadcrumb missing:\n%s", m.View())
 	}
 
@@ -325,7 +326,7 @@ func TestTopBarPlacesTabLeftAndBreadcrumbBeforeClockRight(t *testing.T) {
 	if !strings.HasPrefix(bar, " PHOTO IMPORT ") {
 		t.Fatalf("top bar tab is not left-aligned: %q", bar)
 	}
-	breadcrumb := strings.Index(bar, "dgs › photo › import")
+	breadcrumb := strings.Index(bar, "import "+breadcrumbSeparator+" photo "+breadcrumbSeparator+" dgs")
 	clock := strings.Index(bar, "09:07:05")
 	if breadcrumb < 0 || clock < 0 || breadcrumb >= clock {
 		t.Fatalf("top bar right metadata order is wrong: %q", bar)
@@ -337,7 +338,7 @@ func TestTopBarShowsLiveSystemRates(t *testing.T) {
 	m.now = time.Date(2026, time.September, 9, 9, 7, 5, 0, time.Local)
 	m.metrics = shellMetrics{ready: true, cpuPercent: 17, networkUp: 2 * 1024 * 1024, networkDown: 3 * 1024, diskRead: 4 * 1024 * 1024, diskWrite: 5 * 1024}
 	bar := ansi.Strip(m.topBar(180))
-	for _, want := range []string{"dgs › photo › import │ DISK R  4.0M/s W  5.0K/s │ NET ↑  2.0M/s ↓  3.0K/s │ CPU  17% │ 09:07:05"} {
+	for _, want := range []string{"import " + breadcrumbSeparator + " photo " + breadcrumbSeparator + " dgs  │ DISK R  4.0M/s W  5.0K/s │ NET ↑  2.0M/s ↓  3.0K/s │ CPU  17% │ 09:07:05"} {
 		if !strings.Contains(bar, want) {
 			t.Fatalf("top bar missing %q: %q", want, bar)
 		}
