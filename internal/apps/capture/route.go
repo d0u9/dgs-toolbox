@@ -311,10 +311,17 @@ func (m routeModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // isDoubleClick reports whether this press pairs with the previous one: the
 // same row of the same field, soon enough after it.
 func (m routeModel) isDoubleClick(field string, row int) bool {
-	if m.lastClick.field != field || m.lastClick.row != row {
+	return pairsWithLastClick(m.lastClick, field, row)
+}
+
+// pairsWithLastClick is the rule itself, shared by the two workspaces: a double
+// click means the same thing in Scan as it does in Route, and two copies of the
+// rule would eventually stop meaning the same thing.
+func pairsWithLastClick(last routeClick, field string, row int) bool {
+	if last.field != field || last.row != row {
 		return false
 	}
-	return !m.lastClick.at.IsZero() && time.Since(m.lastClick.at) <= doubleClickWindow
+	return !last.at.IsZero() && time.Since(last.at) <= doubleClickWindow
 }
 
 // scrollField moves the list under the pointer without changing focus, matching
