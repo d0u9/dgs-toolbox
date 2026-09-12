@@ -1,0 +1,9 @@
+{
+  "photo": {
+    "import": {
+      "state_file": ".dgs-state",
+      "source": "/Volumes/SD/DCIM",
+      "destination": "~/Pictures/Inbox"
+    }
+  }
+}

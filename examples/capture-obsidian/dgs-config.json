@@ -1,0 +1,32 @@
+{
+  "capture": {
+    "scan": {
+      "root": "~/Captures",
+      "index_file": "index.json"
+    },
+    "mappings": {
+      "country": {
+        "Australia": "🇦🇺_Australia",
+        "China": "🇨🇳_中国"
+      },
+      "weekday": {
+        "Monday": "周一",
+        "Tuesday": "周二",
+        "Wednesday": "周三",
+        "Thursday": "周四",
+        "Friday": "周五",
+        "Saturday": "周六",
+        "Sunday": "周日"
+      }
+    },
+    "obsidian": {
+      "vault": "~/Vaults/personal",
+      "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
+      "section": "Captured{{with .Device}} - {{.}}{{end}}",
+      "location_note": "88 Inbox/06 Locations.md",
+      "location_archive": "88 Inbox/06 Locations",
+      "map_services": "Apple, 高德, Google",
+      "coordinate_choice": "Copy Coordinates (lng, lat)"
+    }
+  }
+}

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 )
@@ -306,5 +307,38 @@ func TestOperatingSystemLocationFollowsTheXDGOne(t *testing.T) {
 	}
 	if path != candidates[0] {
 		t.Fatalf("path = %q, want the first candidate when none exists", path)
+	}
+}
+
+// The examples are configurations someone will copy, so a key renamed without
+// them is a file that fails on their first run and looks like their mistake.
+// Loading rejects an unknown key, which is exactly the drift worth catching.
+func TestExampleConfigurationsLoad(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("no caller information")
+	}
+	root := filepath.Join(filepath.Dir(file), "..", "..", "examples")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name(), ExportFilename)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("examples/%s holds no %s", entry.Name(), ExportFilename)
+			continue
+		}
+		if _, err := LoadPath(path); err != nil {
+			t.Errorf("examples/%s: %v", entry.Name(), err)
+		}
+		found++
+	}
+	if found == 0 {
+		t.Fatal("no example configurations were found")
 	}
 }
