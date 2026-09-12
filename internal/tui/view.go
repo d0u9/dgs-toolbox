@@ -70,6 +70,9 @@ func (m Model) View() string {
 	if m.active != nil {
 		workspace = m.active.View()
 	}
+	if m.confirmLeave {
+		workspace = overlay.Place(workspace, m.leaveDialog.View(width), width, height-2)
+	}
 	if m.confirmQuit {
 		workspace = overlay.Place(workspace, m.quitDialog.View(width), width, height-2)
 	}

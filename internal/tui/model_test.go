@@ -148,10 +148,9 @@ func TestGlobalPickerStartsLeafAndReturns(t *testing.T) {
 		t.Fatalf("active command breadcrumb missing:\n%s", m.View())
 	}
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = updated.(Model)
-	if cmd != nil || m.active != nil || !strings.Contains(m.View(), "CHOOSE A COMMAND") {
-		t.Fatalf("escape did not return to global picker:\n%s", m.View())
+	m = leaveActive(t, m)
+	if m.active != nil || !strings.Contains(m.View(), "CHOOSE A COMMAND") {
+		t.Fatalf("leaving did not return to the global picker:\n%s", m.View())
 	}
 }
 
@@ -177,7 +176,7 @@ func TestSelectingCommandCreatesFreshModel(t *testing.T) {
 	}}}}
 	m := NewModel(apps, Launch{App: "photo"})
 	m = update(t, m, "enter")
-	m = update(t, m, "esc")
+	m = leaveActive(t, m)
 	m = update(t, m, "enter")
 	if created != 2 {
 		t.Fatalf("command factory called %d times, want 2", created)
@@ -206,19 +205,18 @@ func TestDirectCommandEscapeReturnsToParentPickerThenConfirmsExit(t *testing.T) 
 		t.Fatalf("direct command did not start:\n%s", m.View())
 	}
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = updated.(Model)
-	if cmd != nil || m.active != nil {
-		t.Fatal("first escape should return to the parent picker")
+	m = leaveActive(t, m)
+	if m.active != nil {
+		t.Fatal("leaving should return to the parent picker")
 	}
 	if !strings.Contains(ansi.Strip(m.View()), "commands "+breadcrumbSeparator+" photo "+breadcrumbSeparator+" dgs") {
 		t.Fatalf("parent picker breadcrumb missing:\n%s", m.View())
 	}
 
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(Model)
 	if cmd != nil || !m.confirmQuit || !strings.Contains(m.View(), "QUIT DGS?") {
-		t.Fatal("second escape should request confirmation from the picker")
+		t.Fatal("escape from the picker should request confirmation")
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(Model)
@@ -411,6 +409,22 @@ func TestStatusCenterUsesWholeBarMidpoint(t *testing.T) {
 	}
 }
 
+// leaveActive walks the way out of a command: esc asks, and the answer is
+// given the way a reader gives it. Leaving is guarded because esc is one key
+// away from the esc that walks back a column inside a command.
+func leaveActive(t *testing.T, m Model) Model {
+	t.Helper()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if !m.confirmLeave {
+		t.Fatal("escape did not ask before leaving the command")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	return updated.(Model)
+}
+
 func update(t *testing.T, m Model, key string) Model {
 	t.Helper()
 	keyMap := map[string]tea.KeyType{
@@ -493,5 +507,40 @@ func TestClickingATabTellsTheCommandWhichTabWasSelected(t *testing.T) {
 	m = updated.(Model)
 	if got := m.active.(twoTabStub).active; got != 0 {
 		t.Fatalf("clicking SCAN selected tab %d, want 0", got)
+	}
+}
+
+// Leaving a command is guarded because esc is the same key that walks back a
+// column inside one: the dialog names the command, and staying leaves the
+// session exactly as it was.
+func TestLeavingACommandIsConfirmed(t *testing.T) {
+	m := NewModel(testApps, Launch{App: "photo", Command: "import"})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if cmd != nil || m.active == nil {
+		t.Fatal("escape left the command without asking")
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "LEAVE PHOTO IMPORT?") {
+		t.Fatalf("the dialog does not name the command:\n%s", view)
+	}
+
+	// Staying is the safe answer, and the one the cursor starts on.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.confirmLeave || m.active == nil {
+		t.Fatal("the default answer did not keep the command")
+	}
+	if !strings.Contains(m.View(), "PHOTO IMPORT") {
+		t.Fatalf("the command is not back on screen:\n%s", m.View())
+	}
+
+	// Escape answers the dialog rather than leaving as well.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.confirmLeave || m.active == nil {
+		t.Fatal("escape in the dialog should cancel it, not leave the command")
 	}
 }

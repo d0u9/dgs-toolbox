@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	dgsconfig "dgs-toolbox/internal/config"
@@ -18,15 +19,21 @@ type choice struct {
 // Model is the single shell model. It owns the picker and exactly one active
 // leaf command; replacing or leaving a command discards its model.
 type Model struct {
-	apps             []App
-	pickerApp        int
-	selected         int
-	pickerHelp       bool
-	active           CommandModel
-	activeApp        int
-	activeCommand    int
-	confirmQuit      bool
-	quitDialog       confirm.Model
+	apps          []App
+	pickerApp     int
+	selected      int
+	pickerHelp    bool
+	active        CommandModel
+	activeApp     int
+	activeCommand int
+	confirmQuit   bool
+	quitDialog    confirm.Model
+	// confirmLeave guards the way out of a command. Leaving throws away what
+	// the session was holding — a Capture half filled in, a plan not yet run —
+	// and esc is one key away from the esc that walks back a column, so it is
+	// asked about rather than done.
+	confirmLeave     bool
+	leaveDialog      confirm.Model
 	width            int
 	height           int
 	now              time.Time
@@ -169,6 +176,18 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.confirmLeave {
+		var decision confirm.Decision
+		m.leaveDialog, decision = m.leaveDialog.Update(key)
+		switch decision {
+		case confirm.Confirmed:
+			m.confirmLeave = false
+			return m.leaveCommand(), nil
+		case confirm.Cancelled:
+			m.confirmLeave = false
+		}
+		return m, nil
+	}
 	if m.active != nil {
 		if capturer, ok := m.active.(ShellKeyCapturer); ok && capturer.CapturesShellKey(key) {
 			return m.forwardToActive(msg)
@@ -180,9 +199,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key == "esc" {
 		if m.active != nil {
-			m.active = nil
-			m.activeApp = -1
-			m.activeCommand = -1
+			m.openLeaveConfirmation()
 			return m, nil
 		}
 		m.openQuitConfirmation()
@@ -228,6 +245,35 @@ func (m *Model) openQuitConfirmation() {
 		Detail:       "No active file operation will be interrupted.",
 		ConfirmLabel: "Yes", CancelLabel: "No",
 	})
+}
+
+// openLeaveConfirmation asks before going back to the picker. The command is
+// named in the question because the reader's hand is already on esc, and a
+// dialog that does not say what it is about is read as the one they expected.
+func (m *Model) openLeaveConfirmation() {
+	name := "this command"
+	if m.active != nil {
+		app := m.apps[m.activeApp]
+		name = app.Name
+		if !app.Direct {
+			name += " " + app.Commands[m.activeCommand].Name
+		}
+	}
+	m.confirmLeave = true
+	m.leaveDialog = confirm.New(confirm.Config{
+		Title:        "LEAVE " + strings.ToUpper(name) + "?",
+		Message:      "Go back to the command picker?",
+		Detail:       "Anything filled in but not yet run is lost. What has already been written stays written.",
+		ConfirmLabel: "Leave", CancelLabel: "Stay",
+	})
+}
+
+// leaveCommand drops the active command and returns to the picker.
+func (m Model) leaveCommand() Model {
+	m.active = nil
+	m.activeApp = -1
+	m.activeCommand = -1
+	return m
 }
 
 func (m Model) activate(selected choice) Model {
