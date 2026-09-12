@@ -1604,3 +1604,139 @@ func TestRouteRecordsWhyAnActionWroteNothing(t *testing.T) {
 		t.Fatalf("reason = %q, want it to name the note and the mark it found", action.Reason)
 	}
 }
+
+// attachedRoot is a Capture root whose Capture carries two real attachments,
+// one of them named by the index but missing from the directory.
+func attachedRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "aaaa-xxxxx")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	index := `{"schema":"v1","source":{"app":"Shortcut","workflow":"been_here","device":{"os":"iOS","systemVersion":"26.4.2","name":"Phone"}},` +
+		`"id":"aaaa-xxxxx","createdAt":"2026-09-09T16:34:35.556+10:00",` +
+		`"attachments":[{"kind":"note","name":"note.txt"},{"kind":"audio","name":"memo.wav"},{"kind":"photo","name":"gone.jpg"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "index.json"), []byte(index), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"note.txt": "a short note\n", "memo.wav": "RIFF....WAVE"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// readAttachment settles the pane: the details of the file under the cursor
+// are read asynchronously, the way Scan reads a file's.
+func readAttachment(t *testing.T, m routeModel) routeModel {
+	t.Helper()
+	// The model asks for a read only when the selection changes, and the load
+	// that came with the capture list has already been asked for and dropped by
+	// loadedRoute, so the request is made again from scratch.
+	m.attachmentPath = ""
+	cmd := m.loadAttachment()
+	if cmd == nil {
+		return m
+	}
+	updated, _ := m.Update(cmd())
+	return updated.(routeModel)
+}
+
+// Organizing a Capture is deciding what to do with what it holds, so Route
+// shows what it holds.
+func TestRouteListsTheCaptureAttachmentsWithTheirDetails(t *testing.T) {
+	m := readAttachment(t, loadedRoute(t, attachedRoot(t)))
+
+	attachments := m.captureAttachments()
+	if len(attachments) != 2 || attachments[0].name != "note.txt" || attachments[1].name != "memo.wav" {
+		t.Fatalf("attachments = %#v, want the two files that are really there, in manifest order", attachments)
+	}
+	view := m.View()
+	if !strings.Contains(view, "ATTACHMENTS") || !strings.Contains(view, "note.txt") {
+		t.Fatalf("the attachments pane is not on screen:\n%s", view)
+	}
+	if strings.Contains(view, "gone.jpg") {
+		t.Fatal("an attachment the index names but the directory does not hold is listed")
+	}
+	// The details are the ones Scan shows, read by the same inspection.
+	detail := m.attachmentDetail(60)
+	for _, want := range []string{"note", "text/plain", "13 B"} {
+		if !strings.Contains(detail, want) {
+			t.Fatalf("detail does not say %q:\n%s", want, detail)
+		}
+	}
+}
+
+func TestRouteAttachmentDetailFollowsTheCursor(t *testing.T) {
+	m := readAttachment(t, loadedRoute(t, attachedRoot(t)))
+	m.fields.Set(routeAttachmentsField)
+
+	moved, cmd := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = moved.(routeModel)
+	if cmd == nil {
+		t.Fatal("moving the cursor read no details")
+	}
+	if attachment, _ := m.focusedAttachment(); attachment.name != "memo.wav" {
+		t.Fatalf("cursor is on %q, want the second attachment", attachment.name)
+	}
+	updated, _ := m.Update(cmd())
+	m = updated.(routeModel)
+	if detail := m.attachmentDetail(60); !strings.Contains(detail, "memo.wav") || !strings.Contains(detail, "audio") {
+		t.Fatalf("the pane did not follow the cursor:\n%s", detail)
+	}
+
+	// A late answer for a file the cursor has already left is dropped.
+	stale := filePropertiesLoadedMsg{path: filepath.Join(m.root, "aaaa-xxxxx", "note.txt"), requestID: 1,
+		properties: []property{{name: "Name", value: "note.txt"}}}
+	updated, _ = m.Update(stale)
+	m = updated.(routeModel)
+	if detail := m.attachmentDetail(60); strings.Contains(detail, "note.txt") {
+		t.Fatalf("a stale read replaced the current attachment:\n%s", detail)
+	}
+}
+
+func TestRouteAttachmentsAreWalkedAndLeftLikeAColumn(t *testing.T) {
+	m := loadedRoute(t, attachedRoot(t))
+	if order := m.tabOrder(); order[len(order)-1] != routeAttachmentsField {
+		t.Fatalf("tab order = %v, want the attachments in the ring with no recipe chosen", order)
+	}
+	m.fields.Set(routeAttachmentsField)
+	if !m.CapturesShellKey("esc") {
+		t.Fatal("esc in the attachments falls through to the shell")
+	}
+	left, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = left.(routeModel)
+	if m.fields.Current() != routeActionsField {
+		t.Fatalf("esc left the pane to %q, want the column above it", m.fields.Current())
+	}
+}
+
+func TestRouteAttachmentsFollowTheSelectedCapture(t *testing.T) {
+	root := attachedRoot(t)
+	// A second Capture with nothing attached: the pane empties when the cursor
+	// reaches it rather than keeping the previous Capture's files.
+	bare := filepath.Join(root, "bbbb-yyyyy")
+	if err := os.Mkdir(bare, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	index := `{"schema":"v1","source":{"app":"Shortcut","workflow":"been_here","device":{"os":"iOS","systemVersion":"26.4.2","name":"Phone"}},` +
+		`"id":"bbbb-yyyyy","createdAt":"2026-09-10T16:34:35.556+10:00"}`
+	if err := os.WriteFile(filepath.Join(bare, "index.json"), []byte(index), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := loadedRoute(t, root)
+
+	if !m.captures.SelectID("capture:" + bare) {
+		t.Fatal("the second capture is not listed")
+	}
+	updated, _ := m.updateCaptures("down")
+	m = updated.(routeModel)
+	if len(m.captureAttachments()) != 0 {
+		t.Fatalf("attachments = %#v, want none for a capture with none", m.captureAttachments())
+	}
+	if !strings.Contains(m.attachmentsPane(80), "No attachments") {
+		t.Fatalf("the pane does not say the capture holds nothing:\n%s", m.attachmentsPane(80))
+	}
+}

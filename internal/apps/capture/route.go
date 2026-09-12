@@ -46,6 +46,7 @@ const (
 	routeRecipesField     = "route-recipes"
 	routeActionsField     = "route-actions"
 	routeFieldsField      = "route-fields"
+	routeAttachmentsField = "route-attachments"
 	routePropertyKeyWidth = 12
 )
 
@@ -102,10 +103,20 @@ type routeModel struct {
 	// recipeSet is the Set this session offers: the built-ins with whatever the
 	// configured Recipe directory layered over them.
 	recipeSet organizer.Set
-	fields    datafield.Navigator
-	loadError string
-	pendingGG bool
-	lastClick routeClick
+	// attachments is the Capture's own files, listed below RECIPES and ACTIONS
+	// with the details of the one under the cursor beside them. Organizing a
+	// Capture is deciding what to do with what it holds, and until now that
+	// could only be read one tab away in Scan: the columns above say what will
+	// be written and this says what is being written about.
+	attachments      scrolllist.Model
+	attachmentProps  []property
+	attachmentPath   string
+	attachmentError  string
+	attachmentLoaded uint64
+	fields           datafield.Navigator
+	loadError        string
+	pendingGG        bool
+	lastClick        routeClick
 }
 
 // routeClick remembers the previous primary click so the next one can be
@@ -162,6 +173,7 @@ func newRouteModelWithSettings(root, indexFile string, set organizer.Set, settin
 		captures:    scrolllist.New(),
 		recipes:     scrolllist.New(),
 		actions:     scrolllist.New(),
+		attachments: scrolllist.New(),
 		selections:  make(map[string]organizer.Selection),
 		recipeSet:   set,
 		settings:    settings,
@@ -173,6 +185,7 @@ func newRouteModelWithSettings(root, indexFile string, set organizer.Set, settin
 			datafield.Field{ID: routeRecipesField, Row: 0, Col: 1},
 			datafield.Field{ID: routeActionsField, Row: 0, Col: 2},
 			datafield.Field{ID: routeFieldsField, Row: 0, Col: 3},
+			datafield.Field{ID: routeAttachmentsField, Row: 1, Col: 1},
 		),
 	}
 	m.fields.Set(routeCapturesField)
@@ -192,6 +205,18 @@ func (m routeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case rootChangedMsg:
 		m.applyRoot(msg.root)
 		return m, nil
+	case filePropertiesLoadedMsg:
+		// A late answer for a file the cursor has already left is dropped:
+		// the pane belongs to the row that is selected now.
+		if msg.path != m.attachmentPath || msg.requestID != m.attachmentLoaded {
+			return m, nil
+		}
+		m.attachmentProps = msg.properties
+		m.attachmentError = ""
+		if msg.err != nil {
+			m.attachmentError = msg.err.Error()
+		}
+		return m, nil
 	case capturesLoadedMsg:
 		m.root = msg.root
 		m.loadError = ""
@@ -204,7 +229,7 @@ func (m routeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.rebuildCaptureItems()
 		m.refresh()
-		return m, nil
+		return m, m.loadAttachment()
 	}
 
 	if m.rootControl.Picking() {
@@ -304,6 +329,11 @@ func (m routeModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if double {
 			return m.beginEdit()
 		}
+	case routeAttachmentsField:
+		if !m.attachments.SelectRow(msg.Y - m.middleHeight() - 1) {
+			return m, nil
+		}
+		return m, m.loadAttachment()
 	}
 	return m, nil
 }
@@ -338,6 +368,10 @@ func (m routeModel) scrollField(hit string, down bool) (tea.Model, tea.Cmd) {
 		m.recipes.Scroll(delta)
 	case routeActionsField:
 		m.actions.Scroll(delta)
+	case routeAttachmentsField:
+		m.attachments.Scroll(delta)
+		m.refresh()
+		return m, m.loadAttachment()
 	default:
 		return m, nil
 	}
@@ -376,10 +410,11 @@ func (m routeModel) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, scanMutedStyle.Render("Resize terminal for Capture Route"))
 	}
 	widths := m.columnWidths()
+	middle := lipgloss.JoinHorizontal(lipgloss.Top, m.recipesColumn(widths[1]), " ", m.actionsColumn(widths[2]))
+	middle += "\n" + m.attachmentsPane(widths[1]+columnGutter+widths[2])
 	workspace := lipgloss.JoinHorizontal(lipgloss.Top,
 		m.leftColumn(widths[0]), " ",
-		m.recipesColumn(widths[1]), " ",
-		m.actionsColumn(widths[2]), " ",
+		middle, " ",
 		m.fieldsColumn(widths[3]))
 	if m.rootControl.Picking() {
 		return overlay.Place(workspace, m.rootControl.OverlayView(m.width, m.height), m.width, m.height)
@@ -669,7 +704,7 @@ func (m routeModel) CapturesShellKey(key string) bool {
 	switch key {
 	case "esc", "backspace", "delete":
 		switch m.fields.Current() {
-		case routeRecipesField, routeActionsField, routeFieldsField:
+		case routeRecipesField, routeActionsField, routeFieldsField, routeAttachmentsField:
 			return true
 		}
 	}
@@ -707,9 +742,20 @@ func (m routeModel) Status() tui.Status {
 		return tui.Status{Left: "ACTIONS", Center: center, Right: "↑/k ↓/j Move  space Toggle  ↵ Fields  x Run  esc/⌫ Back"}
 	case routeFieldsField:
 		return tui.Status{Left: "FIELDS", Center: center, Right: "↑/k ↓/j Move  ↵ Edit  x Run  esc/⌫ Back"}
+	case routeAttachmentsField:
+		return tui.Status{Left: "ATTACHMENTS", Center: m.attachmentStatus(), Right: "↑/k ↓/j Move  esc/⌫ Back  alt+hjkl Focus"}
 	default:
 		return tui.Status{Left: "ROUTE", Center: center, Right: "tab Next  alt+hjkl Focus"}
 	}
+}
+
+// attachmentStatus names the file under the cursor, since the pane shows its
+// name without the directory it is in.
+func (m routeModel) attachmentStatus() string {
+	if attachment, ok := m.focusedAttachment(); ok {
+		return attachment.path
+	}
+	return m.statusValue()
 }
 
 func (m routeModel) statusValue() string {
@@ -782,9 +828,39 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateActions(key)
 	case routeFieldsField:
 		return m.updateFields(key)
+	case routeAttachmentsField:
+		return m.updateAttachments(key)
 	}
 	m.pendingGG = false
 	return m, nil
+}
+
+// updateAttachments walks the Capture's own files. Enter and the back keys are
+// not the progressive selection here: the pane is below that walk rather than
+// in it, so Esc leaves it the way it came, back to the column above.
+func (m routeModel) updateAttachments(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "up", "k":
+		m.attachments.Move(-1)
+	case "down", "j":
+		m.attachments.Move(1)
+	case "G", "end":
+		m.attachments.Last()
+	case "g":
+		if m.pendingGG {
+			m.attachments.First()
+			m.pendingGG = false
+			return m, m.loadAttachment()
+		}
+		m.pendingGG = true
+		return m, nil
+	case "esc", "backspace", "delete":
+		m.fields.Set(routeActionsField)
+	}
+	m.pendingGG = false
+	cmd := m.loadAttachment()
+	m.refresh()
+	return m, cmd
 }
 
 func (m routeModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
@@ -821,7 +897,9 @@ func (m routeModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
 	}
 	m.pendingGG = false
 	m.refresh()
-	return m, nil
+	// The attachments below belong to the Capture under the cursor, so moving
+	// that cursor re-aims them.
+	return m, m.loadAttachment()
 }
 
 func (m routeModel) updateRecipes(key string) (tea.Model, tea.Cmd) {
@@ -1154,6 +1232,12 @@ func (m routeModel) tabOrder() []string {
 	}
 	if _, _, ok := m.currentSelection(); ok {
 		order = append(order, routeActionsField, routeFieldsField)
+	}
+	// The attachments are in the ring as soon as the Capture has any, whether
+	// or not a Recipe has been chosen: what a Capture holds is read before
+	// deciding what to do with it, not after.
+	if len(m.captureAttachments()) > 0 {
+		order = append(order, routeAttachmentsField)
 	}
 	return order
 }
@@ -1814,6 +1898,7 @@ func (m *routeModel) resizeComponents() {
 	m.captures.SetSize(max(1, widths[0]-4), max(1, m.captureListHeight()-2))
 	m.recipes.SetSize(max(1, widths[1]-4), max(1, m.recipeListHeight()))
 	m.actions.SetSize(max(1, widths[2]-4), max(1, m.actionListHeight()))
+	m.attachments.SetSize(max(1, (widths[1]+columnGutter+widths[2]-4)/3), max(1, routeAttachmentsHeight-2))
 	m.editor.Width = max(1, widths[3]-6)
 	m.setFieldBounds()
 	m.refresh()
@@ -1825,8 +1910,11 @@ func (m *routeModel) setFieldBounds() {
 	m.fields.SetBounds(routeCapturesField, datafield.Bounds{X: 0, Y: 0, Width: widths[0], Height: listHeight})
 	m.fields.SetBounds(routeRootField, datafield.Bounds{X: 0, Y: listHeight, Width: widths[0], Height: rootHeight})
 	x := widths[0] + columnGutter
+	m.fields.SetBounds(routeAttachmentsField, datafield.Bounds{
+		X: x, Y: m.middleHeight(), Width: widths[1] + columnGutter + widths[2], Height: routeAttachmentsHeight,
+	})
 	for i, id := range [3]string{routeRecipesField, routeActionsField, routeFieldsField} {
-		width, height := widths[i+1], m.height
+		width, height := widths[i+1], m.middleHeight()
 		if id == routeFieldsField {
 			// The action under this column is not part of the field, so a
 			// click on it is not a click into the list.
@@ -1844,6 +1932,90 @@ func (m *routeModel) refresh() {
 	m.rebuildRecipeItems()
 	m.rebuildActionItems()
 	m.rebuildFieldRows()
+	m.rebuildAttachmentItems()
+}
+
+// routeAttachment is one file of the Capture as the pane lists it: the name it
+// is stored under, and what the index says it is.
+type routeAttachment struct {
+	name string
+	kind string
+	path string
+}
+
+// captureAttachments are the Capture's own files, in manifest order. The index
+// describes them and the scan has already dropped the ones that are not there
+// or are not safe to name, so this lists what both agree on. The index file and
+// the organizer's record are left out: they are what the other columns are
+// about, not what the Capture holds.
+func (m routeModel) captureAttachments() []routeAttachment {
+	entry, ok := m.selectedCapture()
+	if !ok {
+		return nil
+	}
+	present := make(map[string]bool, len(entry.files))
+	for _, file := range entry.files {
+		present[file] = true
+	}
+	attachments := make([]routeAttachment, 0, len(entry.index.Attachments))
+	for _, attachment := range entry.index.Attachments {
+		if attachment.Name == "" || !present[attachment.Name] {
+			continue
+		}
+		attachments = append(attachments, routeAttachment{
+			name: attachment.Name,
+			kind: attachment.Kind,
+			path: filepath.Join(entry.path, attachment.Name),
+		})
+	}
+	return attachments
+}
+
+func (m *routeModel) rebuildAttachmentItems() {
+	selected := ""
+	if item, ok := m.attachments.Selected(); ok {
+		selected = item.ID
+	}
+	attachments := m.captureAttachments()
+	items := make([]scrolllist.Item, 0, len(attachments))
+	for _, attachment := range attachments {
+		items = append(items, scrolllist.Item{ID: "attachment:" + attachment.path, Label: attachment.name})
+	}
+	m.attachments.SetItems(items)
+	if selected == "" || !m.attachments.SelectID(selected) {
+		m.attachments.First()
+	}
+}
+
+func (m routeModel) focusedAttachment() (routeAttachment, bool) {
+	item, ok := m.attachments.Selected()
+	if !ok {
+		return routeAttachment{}, false
+	}
+	path := strings.TrimPrefix(item.ID, "attachment:")
+	for _, attachment := range m.captureAttachments() {
+		if attachment.path == path {
+			return attachment, true
+		}
+	}
+	return routeAttachment{}, false
+}
+
+// loadAttachment reads the details of the file under the cursor, if they are
+// not the ones already shown. Every request carries a generation, so a slow
+// read cannot overwrite what a later selection put on screen.
+func (m *routeModel) loadAttachment() tea.Cmd {
+	attachment, ok := m.focusedAttachment()
+	if !ok {
+		m.attachmentPath, m.attachmentProps, m.attachmentError = "", nil, ""
+		return nil
+	}
+	if attachment.path == m.attachmentPath {
+		return nil
+	}
+	m.attachmentPath, m.attachmentProps, m.attachmentError = attachment.path, nil, ""
+	m.attachmentLoaded++
+	return loadFileProperties(attachment.path, m.attachmentLoaded)
 }
 
 func (m routeModel) leftColumn(width int) string {
@@ -1876,7 +2048,7 @@ func (m routeModel) recipesColumn(width int) string {
 		content = scanMutedStyle.Render("· No recipe matches this capture")
 	}
 	body := fitHeight(content, m.recipeListHeight(), inner) + "\n" + m.recipeDetail(inner)
-	return fieldset.ViewFocused("RECIPES", fitHeight(body, m.height-2, inner), width, focused)
+	return fieldset.ViewFocused("RECIPES", fitHeight(body, m.middleHeight()-2, inner), width, focused)
 }
 
 func (m routeModel) actionsColumn(width int) string {
@@ -1889,7 +2061,7 @@ func (m routeModel) actionsColumn(width int) string {
 		content = scanMutedStyle.Render("· Choose a recipe")
 	}
 	body := fitHeight(content, m.actionListHeight(), inner) + "\n" + m.actionDetail(inner)
-	return fieldset.ViewFocused("ACTIONS", fitHeight(body, m.height-2, inner), width, focused)
+	return fieldset.ViewFocused("ACTIONS", fitHeight(body, m.middleHeight()-2, inner), width, focused)
 }
 
 // routeDetailHeight is fixed so a list does not resize as the cursor moves
@@ -1902,8 +2074,78 @@ const routeDetailHeight = 10
 // content rather than on the scaffolding.
 const routeDetailKeyWidth = 8
 
-func (m routeModel) actionListHeight() int { return max(1, m.height-2-routeDetailHeight) }
-func (m routeModel) recipeListHeight() int { return max(1, m.height-2-routeDetailHeight) }
+func (m routeModel) actionListHeight() int { return max(1, m.middleHeight()-2-routeDetailHeight) }
+func (m routeModel) recipeListHeight() int { return max(1, m.middleHeight()-2-routeDetailHeight) }
+
+// routeAttachmentsHeight is what the Capture's own files take from the bottom
+// of the two middle columns: a legend, its border, and rows enough to read a
+// file's details beside its name.
+const routeAttachmentsHeight = 10
+
+// middleHeight is what RECIPES and ACTIONS are left with above the attachments.
+// The pane takes its room from those two columns alone, the way the Capture
+// Root takes its room from the column above it: the outer two columns still
+// run the height of the workspace.
+func (m routeModel) middleHeight() int { return max(6, m.height-routeAttachmentsHeight) }
+
+// attachmentsPane is what the Capture holds: its files on the left and the
+// details of the one under the cursor on the right. It spans both middle
+// columns because neither half is worth a column of its own — a list of two
+// filenames, and a dozen short rows — and because they are one question asked
+// in two parts. The details are the ones Scan shows for a file, read by the
+// same inspection, so a reader moving between the tabs is told the same things
+// about the same file.
+func (m routeModel) attachmentsPane(width int) string {
+	focused := m.fields.Current() == routeAttachmentsField
+	inner := max(1, width-4)
+	listWidth := max(12, inner/3)
+	detailWidth := max(8, inner-listWidth-columnGutter)
+	height := max(1, routeAttachmentsHeight-2)
+
+	attachments := m.attachments
+	attachments.SetSize(listWidth, height)
+	list := attachments.View(focused, scanTitleStyle, scanMutedStyle)
+	switch {
+	case !m.hasSelectedCapture():
+		list = scanMutedStyle.Render("· Select a capture")
+	case len(m.captureAttachments()) == 0:
+		list = scanMutedStyle.Render("· No attachments")
+	}
+	body := lipgloss.JoinHorizontal(lipgloss.Top,
+		fitHeight(list, height, listWidth), " ",
+		fitHeight(m.attachmentDetail(detailWidth), height, detailWidth))
+	return fieldset.ViewFocused("ATTACHMENTS", body, width, focused)
+}
+
+// attachmentDetail is the file beside its name: what the index calls it, and
+// what the filesystem and the file itself say about it.
+func (m routeModel) attachmentDetail(width int) string {
+	attachment, ok := m.focusedAttachment()
+	if !ok {
+		return scanMutedStyle.Render("· Nothing to show")
+	}
+	// What the index calls the file heads the same key column its filesystem
+	// details are in, so the two read as one list rather than as a caption over
+	// a table. The details themselves are Scan's, read by the same inspection,
+	// so one file does not read as two different files in two tabs.
+	kind := attachment.kind
+	if kind == "" {
+		kind = "· unstated"
+	}
+	properties := append([]property{{name: "Kind", value: kind}}, m.attachmentProps...)
+	if m.attachmentError != "" {
+		properties = append(properties, property{name: "", value: "! " + m.attachmentError})
+	} else if len(m.attachmentProps) == 0 {
+		properties = append(properties, property{name: "", value: "· Reading…"})
+	}
+	return renderProperties(properties, width, -1, false, routePropertyKeyWidth)
+}
+
+// hasSelectedCapture reports whether a Capture is under the cursor at all.
+func (m routeModel) hasSelectedCapture() bool {
+	_, ok := m.selectedCapture()
+	return ok
+}
 
 // actionDetail describes the Action under the cursor: what it needs of this
 // Capture, and what it will do outside it. The needs are here rather than in
