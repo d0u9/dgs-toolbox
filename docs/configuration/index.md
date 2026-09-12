@@ -17,8 +17,28 @@ wins:
 
 1. `--config` / `-c <path>` on the command line.
 2. `DGS_TOOLBOX_CONFIG` in the environment.
-3. `<user configuration directory>/dgs/config.json` — on macOS,
+3. `$XDG_CONFIG_HOME/dgs-toolbox/dgs-config.json`, or
+   `~/.config/dgs-toolbox/dgs-config.json` when that variable is unset.
+4. `<user configuration directory>/dgs/config.json` — on macOS,
    `~/Library/Application Support/dgs/config.json`.
+
+The last two are tried in that order and the first that exists is used, so the
+XDG directory is where a configuration kept by hand belongs: it is the folder
+the reader's other tools already keep their files in. The name is the one
+`--export-config` writes, so a file copied out of it lands under the name it
+already has. When neither exists, the XDG path is the one named as missing.
+
+`dgs-toolbox/` is the whole configuration, not only the file: `config_dir`
+defaults to the folder the file was found in, so the recipes and templates sit
+beside it and the lot moves, copies or goes under version control as one thing.
+
+```text
+~/.config/dgs-toolbox/
+  dgs-config.json
+  capture/
+    recipes/
+    templates/
+```
 
 A file that does not exist is not an error: every setting has a default, or is
 empty and the command that needs it says so. An unknown key *is* an error —

@@ -215,15 +215,57 @@ func (c Config) TopBarVisibility() TopBarVisibility {
 	return visibility
 }
 
+// EnvXDGConfigHome is the XDG base directory a configuration is looked for in
+// before the operating system's own location.
+const EnvXDGConfigHome = "XDG_CONFIG_HOME"
+
+// Path is the configuration file this run reads. The environment variable wins
+// outright; otherwise the first candidate that exists is taken, and the first
+// candidate overall is returned when none does, so a message about a missing
+// configuration names the place to put one.
 func Path() (string, error) {
 	if path := os.Getenv(EnvPath); path != "" {
 		return path, nil
 	}
-	directory, err := os.UserConfigDir()
+	candidates, err := Candidates()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(directory, "dgs", "config.json"), nil
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return candidates[0], nil
+}
+
+// XDGDirName is the toolbox's own folder inside the XDG configuration
+// directory. The configuration file sits in it rather than beside it, so the
+// whole configuration — the file, the recipes, the templates — is one folder a
+// reader can move, copy or keep under version control as a unit.
+const XDGDirName = "dgs-toolbox"
+
+// Candidates are the default locations, in the order they are tried. The XDG
+// directory comes first because it is where a configuration is kept by hand —
+// it is the folder the reader already has their other tools' files in, and on
+// macOS the operating system's answer is a Library path nobody edits by
+// choice. The exported filename is used there so a file copied out of
+// --export-config lands under the name it already has.
+func Candidates() ([]string, error) {
+	var candidates []string
+	if xdg := os.Getenv(EnvXDGConfigHome); xdg != "" {
+		candidates = append(candidates, filepath.Join(xdg, XDGDirName, ExportFilename))
+	} else if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates, filepath.Join(home, ".config", XDGDirName, ExportFilename))
+	}
+	directory, err := os.UserConfigDir()
+	if err != nil {
+		if len(candidates) == 0 {
+			return nil, err
+		}
+		return candidates, nil
+	}
+	return append(candidates, filepath.Join(directory, "dgs", "config.json")), nil
 }
 
 func ExportPath(destination string) (string, error) {

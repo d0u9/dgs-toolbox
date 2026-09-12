@@ -20,9 +20,16 @@ what the top bar shows. The design behind it is in [`tui.md`](../tui.md).
 ## The configuration file
 
 One JSON file, found by `--config` / `-c`, then `DGS_TOOLBOX_CONFIG`, then
-`<user configuration directory>/dgs/config.json`. `--config` deliberately
-bypasses the environment variable, so a run can point at a whole configuration
-without changing the shell it was launched from.
+`$XDG_CONFIG_HOME/dgs-toolbox/dgs-config.json` (`~/.config/dgs-toolbox/dgs-config.json`
+when that variable is unset), then `<user configuration directory>/dgs/config.json`
+— on macOS `~/Library/Application Support/dgs/config.json`. Of the last two,
+the first that exists is used. `--config` deliberately bypasses the environment
+variable, so a run can point at a whole configuration without changing the
+shell it was launched from.
+
+`config_dir` defaults to the directory the file was found in, so the toolbox's
+XDG folder holds the whole configuration and not only the file:
+`~/.config/dgs-toolbox/capture/recipes`, and so on.
 
 A missing file leaves every setting at its default. An unknown key is rejected:
 the file is refused with the name of the key rather than applied in part.
@@ -31,7 +38,8 @@ the file is refused with the name of the key rather than applied in part.
 prints its absolute path. An optional positional path writes elsewhere — an
 existing directory receives `dgs-config.json`, any other path is used exactly.
 It never overwrites an existing file. The result is an editable template: move
-it to the global location, or point `DGS_TOOLBOX_CONFIG` at it.
+it to `~/.config/dgs-toolbox/dgs-config.json`, where it is found under the name
+it was written with, or point `DGS_TOOLBOX_CONFIG` at it.
 
 ## `config_dir`
 
@@ -49,6 +57,7 @@ file:
 
 ```text
 <config_dir>/
+  dgs-config.json
   capture/
     recipes/
     templates/
