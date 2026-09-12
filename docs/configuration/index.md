@@ -41,7 +41,7 @@ beside it and the lot moves, copies or goes under version control as one thing.
 ~/.config/dgs-toolbox/
   dgs-config.json
   capture/
-    recipes/     # dgs capture --export-recipes writes the shipped ones here
+    recipes/     # dgs capture --init writes the shipped ones here
     workflows/   # one file per workflow: where it keeps each field
     templates/
 ```

@@ -52,5 +52,5 @@ capture-obsidian/
 ```
 
 `capture-obsidian/` shows both. The Recipes this version ships are written into
-a directory of your own with `dgs capture --export-recipes`; the one here is an
+a directory of your own with `dgs capture --init`; the one here is an
 extra, to show what a hand-written Recipe looks like.

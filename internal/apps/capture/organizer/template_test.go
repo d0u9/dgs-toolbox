@@ -83,6 +83,7 @@ func TestLoadTemplatePrefersTheConfiguredDirectory(t *testing.T) {
 	capture.Index.Attachments = []indexschema.Attachment{{Kind: "image", Name: "street.jpg"}, {Kind: "null"}}
 	settings := DefaultSettings()
 	settings.TemplateDir = dir
+	settings.Sources = starterSources(t)
 
 	want := "- 21:31 been_here\n  - ![[street.jpg]]"
 	if got := mustEntry(t, NewContext(capture, nil).WithSettings(settings)); got != want {
@@ -114,7 +115,7 @@ func TestLoadTemplateReportsAnUnknownField(t *testing.T) {
 func TestBuiltinDailyEntryTemplateRenders(t *testing.T) {
 	capture := beenHere()
 	capture.Index.Payload = map[string]any{"note": "Coffee under the bridge"}
-	ctx := NewContext(capture, nil)
+	ctx := NewContext(capture, nil).WithSettings(starterSettings(t))
 
 	entry, err := dailyEntry(ctx)
 	if err != nil {
@@ -142,6 +143,7 @@ func TestRenderEntryKeepsLiteralLinesAndDropsEmptyPlaceholders(t *testing.T) {
 	}
 	settings := DefaultSettings()
 	settings.TemplateDir = dir
+	settings.Sources = starterSources(t)
 
 	bare := placeless()
 	bare.Index.Coordinates = nil

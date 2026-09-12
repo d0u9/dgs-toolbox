@@ -182,14 +182,13 @@ func payloadValue(value any) (any, bool) {
 	return nil, false
 }
 
-// resolve reads a logical field out of the Capture itself.
+// resolve reads a logical field out of the Capture itself. Only the fields the
+// index gives one meaning: everything in the payload is the workflow's own
+// shape, and where it keeps a field is said in that workflow's file rather than
+// guessed at here.
 func resolve(capture Capture, field FieldID) (any, bool) {
 	index := capture.Index
 	switch field {
-	case FieldContent:
-		return payloadContent(index)
-	case FieldTitle:
-		return payloadString(index, "title")
 	case FieldCreatedAt:
 		return present(index.CreatedAt)
 	case FieldCity:
@@ -241,24 +240,6 @@ func composePlaceName(place indexschema.Place) (any, bool) {
 		return nil, false
 	}
 	return strings.Join(parts, ", "), true
-}
-
-// contentKeys maps a workflow to the payload key its note text lives under.
-// The same logical field is sourced differently per workflow, which is exactly
-// why callers never name a payload key themselves.
-var contentKeys = map[string]string{
-	"been_here":  "note",
-	"photo_note": "text",
-	"quick_mark": "mark",
-}
-
-func payloadContent(index indexschema.Index) (any, bool) {
-	if key, ok := contentKeys[index.Source.Workflow]; ok {
-		if value, ok := payloadString(index, key); ok {
-			return value, true
-		}
-	}
-	return payloadString(index, "note")
 }
 
 func payloadString(index indexschema.Index, key string) (any, bool) {

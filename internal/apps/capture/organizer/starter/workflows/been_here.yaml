@@ -1,0 +1,4 @@
+# The shortcut that marks a place. Its note is whatever was typed on the way
+# past, which may be nothing at all.
+fields:
+  content: payload.note

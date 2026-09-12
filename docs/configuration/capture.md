@@ -72,13 +72,13 @@ is the whole set — so a new installation starts by laying the shipped copies
 down:
 
 ```bash
-dgs capture --export-recipes
+dgs capture --init
 ```
 
-That writes them into the configured Recipe directory and skips any file
-already there, so running it again after an upgrade adds what is new without
-touching what you have edited. From then on they are ordinary files: edit one,
-rename it, or delete it.
+That writes the Recipes and the workflow descriptions this version ships into
+the configuration, skipping any file already there, so running it again after
+an upgrade adds what is new without touching what you have edited. From then on
+they are ordinary files: edit one, rename it, or delete it.
 
 The Actions a Recipe may name are catalogued in
 [`apps/capture/actions.md`](../apps/capture/actions.md), and
@@ -188,12 +188,14 @@ chosen.
   happens not to carry the key is the ordinary case.
 - **A list of strings stays a list**, so `tags` arrives as tags rather than as
   a rendered array. A number or boolean is read as its text.
-- **A described source wins over the compiled-in one**, so a workflow can
-  correct what the toolbox assumed as well as name what it never knew. What the
-  reader typed in `FIELDS` still wins over both.
-- **A workflow with no file is read as before.** The toolbox knows its own
-  three — `been_here` keeps its note under `note`, `photo_note` under `text`,
-  `quick_mark` under `mark` — and anything else falls back to `payload.note`.
+- **What the reader typed in `FIELDS` wins over the file**, so a Capture whose
+  key held the wrong thing is still organized without editing anything.
+- **Nothing in the payload is read without a file saying where it is.** The
+  workflows this toolbox ships shortcuts for — `been_here`, `photo_note`,
+  `quick_mark` — are files like everyone else's, laid down by `dgs capture
+  --init`. An installation that has laid nothing down resolves no field from a
+  payload and asks for it in `FIELDS`; the fields the index itself gives a
+  meaning, `createdAt` and the place and the coordinates, are read as always.
 
 ## Mappings
 

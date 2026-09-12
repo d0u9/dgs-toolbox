@@ -44,7 +44,7 @@ func routeTestRoot(t *testing.T, names ...string) string {
 func starterSet(t *testing.T) organizer.Set {
 	t.Helper()
 	dir := t.TempDir()
-	for _, starter := range organizer.Starters() {
+	for _, starter := range organizer.StartersOf(organizer.StarterRecipes) {
 		if err := os.WriteFile(filepath.Join(dir, starter.Name), starter.Data, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -56,6 +56,24 @@ func starterSet(t *testing.T) organizer.Set {
 	return loaded.Set
 }
 
+// starterSources is where the workflows this version ships keep their fields,
+// loaded the way a run loads them: the compiled-in reading is a last resort
+// only, so a session in a test reads the shipped files as one on disk does.
+func starterSources(t *testing.T) map[string]map[organizer.FieldID][]string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, starter := range organizer.StartersOf(organizer.StarterWorkflows) {
+		if err := os.WriteFile(filepath.Join(dir, starter.Name), starter.Data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loaded := organizer.LoadWorkflows(dir)
+	if len(loaded.Failures) > 0 {
+		t.Fatalf("the shipped workflows do not load: %v", loaded.Failures)
+	}
+	return loaded.Sources
+}
+
 func routeVault(t *testing.T) organizer.Settings {
 	t.Helper()
 	templates := t.TempDir()
@@ -63,6 +81,7 @@ func routeVault(t *testing.T) organizer.Settings {
 		t.Fatal(err)
 	}
 	settings := organizer.DefaultSettings()
+	settings.Sources = starterSources(t)
 	settings.ObsidianVault = t.TempDir()
 	settings.DailyNote = "Daily/{{.Date}}.md"
 	settings.LocationNote = "88 Inbox/06 Locations.md"

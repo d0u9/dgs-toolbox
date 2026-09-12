@@ -26,6 +26,9 @@ func testSettings(t *testing.T) Settings {
 	}
 	settings := DefaultSettings()
 	settings.TemplateDir = dir
+	// Where a workflow keeps its fields is said in its file, including for the
+	// ones this toolbox ships, so a test reads them the way a run does.
+	settings.Sources = starterSources(t)
 	return settings
 }
 

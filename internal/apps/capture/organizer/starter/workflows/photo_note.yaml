@@ -1,0 +1,3 @@
+# A photo with a line about it.
+fields:
+  content: payload.text
