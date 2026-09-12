@@ -70,7 +70,7 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `capture.scan.root` | [capture](capture.md#the-capture-root) | empty — Scan opens with no root |
 | `capture.scan.index_file` | [capture](capture.md#the-capture-root) | `index.json` |
 | `capture.archive.root` | [capture](capture.md#where-captures-go) | empty — Archive refuses to archive and names this key |
-| `capture.archive.reject` | [capture](capture.md#where-captures-go) | empty — Archive refuses to reject and names this key |
+| `capture.archive.reject` | [capture](capture.md#where-captures-go) | empty — Scan and Archive refuse to reject and name this key |
 | `capture.obsidian.vault` | [capture](capture.md#the-vault) | empty — the Obsidian Actions refuse to run |
 | `capture.obsidian.daily_note` | [capture](capture.md#the-daily-note) | empty — the daily Action refuses to run |
 | `capture.obsidian.section` | [capture](capture.md#the-daily-note) | `Captured{{with .Device}} - {{.}}{{end}}` |

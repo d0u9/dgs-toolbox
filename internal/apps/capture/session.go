@@ -27,7 +27,7 @@ func newSession() session {
 }
 
 func newSessionWithSettings(root, indexFile, archiveRoot, rejectRoot string, recipes organizer.Set, settings organizer.Settings) session {
-	scan := newModelWithSettings(root, indexFile)
+	scan := newModelWithReject(root, indexFile, rejectRoot)
 	return session{
 		scan:    scan,
 		route:   newRouteModelWithSettings(scan.root, scan.indexFile, recipes, settings),
@@ -45,6 +45,13 @@ func (s session) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return s.broadcast(msg)
 	case capturesLoadedMsg:
 		return s.broadcast(msg)
+	case archiveFolderLoadedMsg:
+		// One of Archive's own folders, read back. It is delivered to Archive
+		// whichever tab is in front, because Scan rejects a Capture into one of
+		// them and the tab behind has to have learnt it before it is looked at.
+		updated, cmd := s.archive.Update(msg)
+		s.archive = updated.(archiveModel)
+		return s, cmd
 	case rootChangedMsg:
 		updated, cmd := s.broadcast(msg)
 		return updated, tea.Batch(cmd, loadCaptures(msg.root, s.scan.indexFile))

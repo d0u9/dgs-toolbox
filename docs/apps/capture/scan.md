@@ -72,6 +72,19 @@
   creation/modification dates. It does not repeat or flatten JSON content.
   Image files also show decoded dimensions, format, capture time,
   camera maker/model, and lens when those EXIF values exist.
+- A small `REJECTED` pane sits under `FILE INFO`: the last three Captures this
+  run of Scan sent away, most recent first, named by their folders. The folder
+  name rather than the index, because this is the undo for a mistake and what
+  the reader has to recognise is the directory that just left the list above —
+  which is what it was called there. `u` on a row puts that Capture back in the
+  Capture root. The undo belongs on the screen the mistake was made on: a
+  Capture rejected by accident should be taken back without changing tabs,
+  while the cursor is still on the row it was rejected from. Three rows because
+  it is a reach back rather than a history; the whole reject folder is
+  Archive's to show, and a Capture that has scrolled out of this pane is taken
+  back there. It is `u` rather than `R` because `R` is the Scan-wide refresh in
+  every DataField, and one letter with two meanings on one screen is how a
+  Capture gets moved by someone who meant to rescan.
 - WAV and MP3 File Info includes decoded audio duration. WAV duration is derived
   from RIFF byte rate and data length; MP3 duration comes from its decoded stream
   length and sample rate.
@@ -156,6 +169,22 @@ A Capture with no `coordinates` shows neither the GPS row nor the Apple, Google,
 and Amap links, and a Capture with no `place` shows no `Location` group, rather
 than a zero coordinate or an empty group. Embedded CR/LF line breaks are
 normalized to ` · ` so every property and the status bar remain one row.
+- With `CAPTURES` focused, `Backspace` or `Delete` rejects the Capture the
+  cursor is in — the folder row, or the Capture a file row belongs to — by
+  moving it to the reject folder Archive files into. Scan is where a Capture is
+  first looked at, so it is where an accident is first recognised: a Capture
+  created by mistake is sent away here rather than carried through Route to be
+  thrown out at the end. It is the same rejection Archive performs, asked for
+  one screen earlier, and it is taken back the same way: `R` on that Capture in
+  Archive's `REJECT` column. Nothing is asked first, for the reason Archive
+  asks nothing — the move is reversible, and a confirmation on every accidental
+  Capture costs more than the undo does. What happened is reported in the
+  status bar until the next keystroke, and a rejection with
+  `capture.archive.reject` unset moves nothing and names that key. The keys
+  stay inside the session whether or not they could do anything, so one held
+  down while walking the list cannot leave the command. Only Capture rows are
+  rejected: a Capture is filed as a whole, and an attachment is not a thing
+  that can be thrown out on its own.
 - With `CAPTURES` focused, Space opens the selected Capture directory, index,
   or attachment in macOS Quick Look. This delegates to `qlmanage -p`; Capture
   does not implement its own image rendering or require Chafa.

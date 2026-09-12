@@ -54,7 +54,7 @@ destination exactly as it read in the root.
 | Key | Meaning | Default |
 | --- | --- | --- |
 | `capture.archive.root` | The directory organized Captures are kept in. | empty — Archive refuses to archive and names this key |
-| `capture.archive.reject` | The directory rejected Captures are set aside in. | empty — Archive refuses to reject and names this key |
+| `capture.archive.reject` | The directory rejected Captures are set aside in. Scan rejects into it as well, so a Capture created by mistake is sent away the first time it is looked at. | empty — Scan and Archive refuse to reject and name this key |
 
 Both are absolute paths, `~` expanded, and neither has to exist: the first move
 into a folder creates it. They are configuration and nothing else — unlike the
