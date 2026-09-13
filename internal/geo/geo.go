@@ -35,6 +35,31 @@ func PathLength(path []LatLon) float64 {
 	return total
 }
 
+// Plane is a flat east/north frame in metres around an origin, for filters
+// that work in metres over a few kilometres. Its error grows with distance
+// from the origin: about 0.1% at 50 km.
+type Plane struct {
+	origin    LatLon
+	metresLat float64
+	metresLon float64
+}
+
+// NewPlane is the plane tangent at origin.
+func NewPlane(origin LatLon) Plane {
+	metresLat := EarthRadius * math.Pi / 180
+	return Plane{origin: origin, metresLat: metresLat, metresLon: metresLat * math.Cos(radians(origin.Lat))}
+}
+
+// XY is p's east and north offset from the origin in metres.
+func (pl Plane) XY(p LatLon) (x, y float64) {
+	return (p.Lon - pl.origin.Lon) * pl.metresLon, (p.Lat - pl.origin.Lat) * pl.metresLat
+}
+
+// LatLon is the position at an east and north offset from the origin.
+func (pl Plane) LatLon(x, y float64) LatLon {
+	return LatLon{Lat: pl.origin.Lat + y/pl.metresLat, Lon: pl.origin.Lon + x/pl.metresLon}
+}
+
 // Bounds is the smallest box holding a set of positions.
 type Bounds struct {
 	Min LatLon

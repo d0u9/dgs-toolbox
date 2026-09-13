@@ -35,3 +35,15 @@ func TestPathLength(t *testing.T) {
 		t.Fatal("a path of fewer than two positions has length")
 	}
 }
+
+func TestPlaneRoundTrip(t *testing.T) {
+	plane := NewPlane(LatLon{Lat: 30, Lon: 120})
+	p := LatLon{Lat: 30.01, Lon: 120.02}
+	x, y := plane.XY(p)
+	if math.Abs(math.Hypot(x, y)-Distance(LatLon{Lat: 30, Lon: 120}, p)) > 5 {
+		t.Fatalf("plane distance %v vs %v", math.Hypot(x, y), Distance(LatLon{Lat: 30, Lon: 120}, p))
+	}
+	if back := plane.LatLon(x, y); math.Abs(back.Lat-p.Lat) > 1e-9 || math.Abs(back.Lon-p.Lon) > 1e-9 {
+		t.Fatalf("round trip %+v", back)
+	}
+}

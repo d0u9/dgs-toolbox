@@ -110,7 +110,7 @@ export class Profile {
       ],
       series: [
         {},
-        { stroke: color, width: 1.5, fill: filled ? hexAlpha(color, 0.15) : undefined, spanGaps: false, points: { show: false } },
+        { stroke: color, width: 1.5, fill: filled ? hexAlpha(color, 0.15) : undefined, spanGaps: true, points: { show: false } },
       ],
       hooks: {
         draw: [(u) => this.shadeHidden(u)],

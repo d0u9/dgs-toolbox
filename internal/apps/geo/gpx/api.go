@@ -17,8 +17,10 @@ import (
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/geo"
+	"dgs-toolbox/internal/geo/clean"
 	"dgs-toolbox/internal/geo/gcj02"
 	"dgs-toolbox/internal/geo/gpxfile"
+	"dgs-toolbox/internal/geo/sidecar"
 	"dgs-toolbox/internal/geo/stops"
 	"dgs-toolbox/internal/geo/track"
 )
@@ -193,6 +195,23 @@ type trackJSON struct {
 	Coordinates string `json:"coordinates"`
 	// StopParams are the stay-point thresholds the stops were found with.
 	StopParams stopParamsJSON `json:"stopParams"`
+	// Removed says per point what cleaning removed it: "" when kept, or
+	// "manual", "spike", "drift", "stop". A removed point keeps its source
+	// position and time, has no elevation or speed, and adds no distance.
+	Removed []clean.Rule `json:"removed"`
+	// Original is every point's source position, present when cleaning moved
+	// any; Points then holds the moved positions.
+	Original [][2]float64 `json:"original,omitempty"`
+	Clean    cleanJSON    `json:"clean"`
+}
+
+// cleanJSON is a track's cleaning: its settings as the sidecar holds them (or
+// the defaults, all off, without one) and what they did.
+type cleanJSON struct {
+	Params  clean.Params `json:"params"`
+	Sidecar string       `json:"sidecar,omitempty"` // path of the sidecar, when there is one
+	Error   string       `json:"error,omitempty"`   // why the sidecar could not be read
+	Counts  clean.Counts `json:"counts"`
 }
 
 // partJSON is one track, route or waypoint of a file. Key names it for the
@@ -288,15 +307,24 @@ func stopParams(distance, duration string) (stops.Params, error) {
 }
 
 // analysis is one GPX file with everything the page and the TUI show of it.
+// source is every recorded point; line is what cleaning kept, at its cleaned
+// positions, and index maps each of its points back to source. Distances,
+// stats and stops are measured on line, with stop indices into line.
 type analysis struct {
-	path      string
-	name      string
-	file      *gpxfile.File
-	line      track.Line
-	distances []float64
-	stats     track.Stats
-	stops     []stops.Stop
-	params    stops.Params
+	path       string
+	name       string
+	file       *gpxfile.File
+	source     track.Line
+	cleaning   sidecar.File
+	sidecar    bool
+	sidecarErr error
+	result     clean.Result
+	line       track.Line
+	index      []int
+	distances  []float64
+	stats      track.Stats
+	stops      []stops.Stop
+	params     stops.Params
 }
 
 var errNotGPX = errors.New("not a .gpx file")
@@ -309,35 +337,47 @@ func analyse(path string, params stops.Params) (analysis, error) {
 	if err != nil {
 		return analysis{}, err
 	}
-	line := track.FromGPX(file)
+	source := track.FromGPX(file)
+	// A sidecar that cannot be read does not stop the track being shown; the
+	// page says why and shows it uncleaned.
+	cleaning, found, sidecarErr := sidecar.Load(path)
+	result := clean.Run(source, cleaning.Clean)
+	line, index := result.Kept(source)
 	distances := track.Distances(line)
 	return analysis{
 		path: path,
 		// The file name is the one the reader chose; the name inside is often a
 		// recorder's timestamp.
-		name:      strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
-		file:      file,
-		line:      line,
-		distances: distances,
-		stats:     track.Summarise(line, distances),
-		stops:     stops.Detect(line, params),
-		params:    params,
+		name:       strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
+		file:       file,
+		source:     source,
+		cleaning:   cleaning,
+		sidecar:    found,
+		sidecarErr: sidecarErr,
+		result:     result,
+		line:       line,
+		index:      index,
+		distances:  distances,
+		stats:      track.Summarise(line, distances),
+		stops:      stops.Detect(line, params),
+		params:     params,
 	}, nil
 }
 
 func trackResponse(a analysis) trackJSON {
-	line, distances, stats := a.line, a.distances, a.stats
+	line, distances, stats, source := a.line, a.distances, a.stats, a.source
 	speeds := track.Speeds(line, distances, track.DefaultSpeedWindow)
+	n := len(source)
 
 	response := trackJSON{
 		Path:      a.path,
 		Name:      a.name,
-		Points:    make([][2]float64, len(line)),
-		Segments:  make([]int, len(line)),
-		Distance:  distances,
-		Elevation: make([]*float64, len(line)),
-		Speed:     make([]*float64, len(line)),
-		Time:      make([]*int64, len(line)),
+		Points:    make([][2]float64, n),
+		Segments:  make([]int, n),
+		Distance:  make([]float64, n),
+		Elevation: make([]*float64, n),
+		Speed:     make([]*float64, n),
+		Time:      make([]*int64, n),
 		Stats: statsJSON{
 			Distance: stats.Distance,
 			Duration: stats.Duration.Seconds(),
@@ -347,30 +387,60 @@ func trackResponse(a analysis) trackJSON {
 		Coordinates: systemWGS84,
 		Stops:       make([]stopJSON, len(a.stops)),
 		StopParams:  stopParamsJSON{Distance: a.params.Distance, Duration: a.params.Duration.Seconds()},
+		Removed:     a.result.Removed,
+		Clean:       cleanJSON{Params: a.cleaning.Clean, Counts: a.result.Counts()},
+	}
+	if a.sidecar {
+		response.Clean.Sidecar = sidecar.PathFor(a.path)
+	}
+	if a.sidecarErr != nil {
+		response.Clean.Error = a.sidecarErr.Error()
+	}
+	if response.Clean.Params.Removed == nil {
+		response.Clean.Params.Removed = []int{}
 	}
 	for i, stop := range a.stops {
 		response.Stops[i] = stopJSON{
-			First:     stop.First,
-			Last:      stop.Last,
+			First:     a.index[stop.First],
+			Last:      a.index[stop.Last],
 			Center:    [2]float64{stop.Center.Lon, stop.Center.Lat},
 			Arrival:   stop.Arrival.UnixMilli(),
 			Departure: stop.Departure.UnixMilli(),
 			Duration:  stop.Duration().Seconds(),
 		}
 	}
-	for i, sample := range line {
+	// Every source point, removed ones included, so indices stay those of the file.
+	for i, sample := range source {
 		response.Stats.InChina = response.Stats.InChina || gcj02.InChina(sample.LatLon)
 		response.Points[i] = [2]float64{sample.Lon, sample.Lat}
 		response.Segments[i] = sample.Segment
-		if sample.HasElevation {
-			response.Elevation[i] = &line[i].Elevation
-		}
-		if !math.IsNaN(speeds[i]) {
-			response.Speed[i] = &speeds[i]
-		}
 		if !sample.Time.IsZero() {
 			millis := sample.Time.UnixMilli()
 			response.Time[i] = &millis
+		}
+	}
+	if response.Clean.Counts.Moved > 0 {
+		response.Original = make([][2]float64, n)
+		copy(response.Original, response.Points)
+	}
+	next := 0 // the next kept point
+	for i := range source {
+		if next < len(a.index) && a.index[next] == i {
+			k := next
+			next++
+			sample := line[k]
+			response.Points[i] = [2]float64{sample.Lon, sample.Lat}
+			response.Distance[i] = distances[k]
+			if sample.HasElevation {
+				response.Elevation[i] = &line[k].Elevation
+			}
+			if !math.IsNaN(speeds[k]) {
+				response.Speed[i] = &speeds[k]
+			}
+			continue
+		}
+		if next > 0 {
+			response.Distance[i] = distances[next-1]
 		}
 	}
 	if !stats.Start.IsZero() {
@@ -380,7 +450,7 @@ func trackResponse(a analysis) trackJSON {
 	if len(line) > 0 {
 		view = track.CoreBounds(line, track.DefaultCoreTrim)
 	}
-	response.Parts, bounds, view = parts(a, bounds, view)
+	response.Parts, bounds, view = parts(a, response.Distance, bounds, view)
 	for _, part := range response.Parts {
 		for _, point := range part.Points {
 			response.Stats.InChina = response.Stats.InChina || gcj02.InChina(geo.LatLon{Lat: point[1], Lon: point[0]})
@@ -395,7 +465,7 @@ func trackResponse(a analysis) trackJSON {
 
 // parts lists a file's tracks, routes and waypoints, growing the file's boxes
 // to hold the routes and waypoints too.
-func parts(a analysis, bounds, view geo.Bounds) ([]partJSON, geo.Bounds, geo.Bounds) {
+func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON, geo.Bounds, geo.Bounds) {
 	list := []partJSON{}
 	first := 0
 	for i, trk := range a.file.Tracks {
@@ -414,7 +484,7 @@ func parts(a analysis, bounds, view geo.Bounds) ([]partJSON, geo.Bounds, geo.Bou
 			continue
 		}
 		part.First, part.Last = first, first+count-1
-		part.Distance = a.distances[part.Last] - a.distances[part.First]
+		part.Distance = distance[part.Last] - distance[part.First]
 		part.Bounds = lonLatBox(box)
 		first += count
 		list = append(list, part)
@@ -473,6 +543,71 @@ func extend(b, by geo.Bounds) geo.Bounds {
 	return b.Extend(by.Min).Extend(by.Max)
 }
 
+// saveClean records a track's cleaning in its sidecar. Settings the body leaves
+// out keep their defaults; a cleaning that does nothing removes the sidecar.
+func (a api) saveClean(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path  string          `json:"path"`
+		Clean json.RawMessage `json:"clean"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
+		return
+	}
+	if !strings.EqualFold(filepath.Ext(body.Path), ".gpx") {
+		writeError(w, http.StatusBadRequest, errNotGPX)
+		return
+	}
+	if _, err := os.Stat(body.Path); err != nil {
+		writeError(w, statusFor(err), err)
+		return
+	}
+	params := clean.Defaults()
+	if len(body.Clean) > 0 {
+		if err := json.Unmarshal(body.Clean, &params); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("clean: %w", err))
+			return
+		}
+	}
+	if err := validClean(params); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := sidecar.Save(body.Path, sidecar.File{Clean: params}); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// validClean refuses settings no filter can run with.
+func validClean(p clean.Params) error {
+	positive := map[string]float64{
+		"spikes.maxSpeed": p.Spikes.MaxSpeed, "spikes.maxAcceleration": p.Spikes.MaxAcceleration,
+		"spikes.minJump": p.Spikes.MinJump, "drift.threshold": p.Drift.Threshold,
+		"drift.minDeviation": p.Drift.MinDeviation, "smooth.positionSigma": p.Smooth.PositionSigma,
+		"smooth.acceleration": p.Smooth.Acceleration, "smooth.maxGap": p.Smooth.MaxGap,
+		"stops.distance": p.Stops.Distance, "stops.duration": p.Stops.Duration,
+	}
+	for name, value := range positive {
+		if !(value > 0) || math.IsInf(value, 0) {
+			return fmt.Errorf("%s must be a positive number", name)
+		}
+	}
+	if !(p.Spikes.TurnAngle > 0 && p.Spikes.TurnAngle <= 180) {
+		return errors.New("spikes.turnAngle must be between 0 and 180 degrees")
+	}
+	if p.Drift.HalfWindow < 1 || p.Drift.HalfWindow > 1000 {
+		return errors.New("drift.halfWindow must be between 1 and 1000")
+	}
+	for _, i := range p.Removed {
+		if i < 0 {
+			return errors.New("removed holds a negative index")
+		}
+	}
+	return nil
+}
+
 // toGCJ02 moves a track's drawn positions onto GCJ-02 maps.
 func toGCJ02(response *trackJSON) {
 	convert := func(lonLat [2]float64) [2]float64 {
@@ -481,6 +616,9 @@ func toGCJ02(response *trackJSON) {
 	}
 	for i, point := range response.Points {
 		response.Points[i] = convert(point)
+	}
+	for i, point := range response.Original {
+		response.Original[i] = convert(point)
 	}
 	for i := range response.Stops {
 		response.Stops[i].Center = convert(response.Stops[i].Center)
