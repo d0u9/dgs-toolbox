@@ -31,8 +31,8 @@ const state = {
   tile: null, // the base map in use
   gcj: "auto", // GCJ-02 conversion: "auto" follows the base map, or "on" / "off"
   coordinates: "wgs84", // the system tracks are drawn in now
-  cleanOpen: false, // the clean panel is open for the focused track
-  cutOpen: false, // the segments panel is open instead; the two share the map's corner
+  cleanOpen: false, // edit mode: the inspector is open for the focused track
+  editTab: "changes", // the inspector's tab in edit mode: "changes", "auto" or "segments"
   compare: true, // the recording drawn under a cleaned track
   lasso: false,
   rangeTool: false, // dragging on the timeline removes a range
@@ -83,7 +83,7 @@ function save() {
       charts: state.charts,
       stopNumbers: state.stopNumbers,
       cleanOpen: state.cleanOpen,
-      cutOpen: state.cutOpen,
+      editTab: state.editTab,
       compare: state.compare,
       fillProfile: state.fill.profile,
       gcj: state.gcj,
@@ -228,13 +228,22 @@ function applyCleanPanel() {
   if (!timeline) return;
   const entry = focusedEntry();
   const open = state.cleanOpen && Boolean(entry);
-  $("clean-panel").hidden = !open;
-  $("toggle-clean").setAttribute("aria-pressed", String(state.cleanOpen));
+  const wasOpen = !$("inspector").hidden;
+  $("inspector").hidden = !open;
+  $("inspector-splitter").hidden = !open;
+  $("mode-browse").setAttribute("aria-pressed", String(!open));
+  $("mode-edit").setAttribute("aria-pressed", String(open));
+  $("mode-edit").disabled = !entry;
+  $("mode-edit").title = entry
+    ? "Edit the focused track: remove points by hand, fill along the road, clean automatically"
+    : "Focus a track in the workspace to edit it";
+  if (wasOpen !== open) map?.resize();
   if (!open) {
     setLasso(false);
     setRangeTool(false);
     setFillTool(false);
     timeline.setEditing(null);
+    applyEditTools();
     return;
   }
   cleanPanel.timeZone = $("timezone").value;
@@ -247,6 +256,87 @@ function applyCleanPanel() {
     onJoin: (index, join) => cleanPanel.setJoin(index, join),
     onRestore: (index) => cleanPanel.restoreEdit(index),
   });
+  if (cutting()) timeline.setEditing(null); // the timeline's clicks cut instead
+  applyEditTools();
+}
+
+// setMode switches between browsing and editing the focused track.
+function setMode(mode) {
+  const edit = mode === "edit" && Boolean(focusedEntry());
+  if (state.cleanOpen === edit) return;
+  state.cleanOpen = edit;
+  applyCutPanel();
+  applyCleanPanel();
+  save();
+}
+
+// cutting says whether clicks on the track and the timeline cut: in edit mode,
+// on the Segments tab.
+const cutting = () => state.cleanOpen && state.editTab === "segments" && Boolean(focusedEntry());
+
+// setEditTab switches the inspector's tab. Segments is the Cut tool, so the
+// other tools stop there.
+function setEditTab(tab) {
+  state.editTab = cleanPanel.tab = tab;
+  if (tab === "segments") {
+    setLasso(false);
+    setRangeTool(false);
+    setFillTool(false);
+  }
+  applyCleanPanel();
+  applyCutPanel();
+  save();
+}
+
+// setTool picks the edit tool in use: "select", "range", "lasso", "fill" or
+// "cut". Cut shows the Segments tab; the others leave it.
+function setTool(tool) {
+  if (tool === "cut") {
+    setEditTab("segments");
+    return;
+  }
+  if (state.editTab === "segments") setEditTab("changes");
+  if (tool === "range") setRangeTool(!state.rangeTool);
+  else if (tool === "lasso") setLasso(!state.lasso);
+  else if (tool === "fill") setFillTool(!state.fill.active);
+  else {
+    setLasso(false);
+    setRangeTool(false);
+    setFillTool(false);
+  }
+}
+
+// applyEditTools shows the tool bar in edit mode, the tool in use, and a line
+// on the map saying what a click does now.
+function applyEditTools() {
+  const open = state.cleanOpen && Boolean(focusedEntry());
+  $("map-tools").hidden = !open;
+  const tool = cutting() ? "cut" : state.rangeTool ? "range" : state.lasso ? "lasso" : state.fill.active ? "fill" : "select";
+  for (const name of ["select", "range", "lasso", "fill", "cut"]) {
+    $(`tool-${name}`).setAttribute("aria-pressed", String(open && tool === name));
+  }
+  const hint = $("map-hint");
+  const esc = "<kbd>Esc</kbd>";
+  let html = "";
+  if (open && tool === "range") {
+    html = state.rangeStart == null
+      ? `<strong>Range</strong> · click the track where the removal starts, or drag on the timeline · ${esc} to stop`
+      : `<strong>Range</strong> · now click where it ends · ${esc} forgets the start`;
+  } else if (open && tool === "cut") {
+    html = "<strong>Cut</strong> · click the track or the timeline to cut there; drag a cut on the timeline to move it, double-click it to remove it";
+  } else if (open && tool === "lasso") {
+    html = `<strong>Lasso</strong> · draw around points to remove them; hold <kbd>${format.keys.alt}</kbd> to restore · ${esc} to stop`;
+  } else if (open && tool === "fill") {
+    const { fill } = state;
+    if (fill.busy) html = "<strong>Fill along the road</strong> · asking the router…";
+    else if (fill.preview) html = `<strong>Fill along the road</strong> · the route is dashed on the map: use or discard it in the panel · ${esc} discards`;
+    else if (fill.start != null) html = `<strong>Fill along the road</strong> · now click where it ends; near a track's end the click snaps to it · ${esc} forgets the start`;
+    else html = `<strong>Fill along the road</strong> · click where the route starts, on the track or anywhere on the map · ${esc} to stop`;
+  } else if (open) {
+    html = "Tools: <kbd>R</kbd> range · <kbd>L</kbd> lasso · <kbd>F</kbd> fill along the road · <kbd>C</kbd> cut";
+  }
+  hint.innerHTML = html;
+  hint.hidden = !html;
 }
 
 // pushEdit records one removal by hand on the focused track.
@@ -267,6 +357,7 @@ function setLasso(active) {
   }
   lasso.setActive(active);
   cleanPanel.setLasso(active);
+  applyEditTools();
 }
 
 function setRangeTool(active) {
@@ -290,6 +381,7 @@ function setFill(patch) {
   if ("start" in patch) cleanOverlay.setPending(state.fill.start == null || !entry ? null : state.fill.start.position);
   if ("preview" in patch) cleanOverlay.setPreview(state.fill.preview?.display || null);
   cleanPanel.setFill(state.fill);
+  applyEditTools();
 }
 
 // setFillTool turns picking a stretch's ends on or off; turning it off forgets
@@ -404,11 +496,11 @@ async function saveAs(path) {
 }
 
 // newGPX starts an empty GPX in memory, shown in the workspace, to add
-// segments to from the Cut panel.
+// segments to from the Segments tab.
 async function newGPX() {
   const name = await promptDialog({
     title: "New GPX",
-    message: "A new, empty GPX, kept in memory until you save it. Add segments to it from the Cut panel of any track. It is lost if dgs exits before it is saved.",
+    message: "A new, empty GPX, kept in memory until you save it. Add segments to it from the Segments tab of any track, in Edit. It is lost if dgs exits before it is saved.",
     value: "New trip",
     confirm: "Create",
   });
@@ -473,6 +565,7 @@ function setRangeStart(index) {
   state.rangeStart = index;
   const entry = focusedEntry();
   cleanOverlay.setPending(index == null || !entry ? null : entry.track.points[index]);
+  applyEditTools();
 }
 
 // showRange frames the points of a removal by hand on the map.
@@ -521,9 +614,7 @@ async function reloadEntry(path) {
 
 function applyCutPanel() {
   const entry = focusedEntry();
-  const open = state.cutOpen && Boolean(entry);
-  $("cut-panel").hidden = !open;
-  $("toggle-cut").setAttribute("aria-pressed", String(state.cutOpen));
+  const open = cutting();
   if (open) {
     cutPanel.show(entry.track, { timeZone: $("timezone").value, workspace: [...state.tracks.keys()], folder: tree.root || state.config.root });
     cutOverlay.show(entry.track);
@@ -658,6 +749,7 @@ function filteredPaths() {
 }
 
 function renderTracks() {
+  if (cutPanel && cutting()) cutPanel.setWorkspace([...state.tracks.keys()]);
   const paths = filteredPaths();
   const items = paths.flatMap((path) => {
     const entry = state.tracks.get(path);
@@ -749,7 +841,7 @@ function trackRow(path, entry) {
     count("track", "track"), count("route", "route"), count("waypoint", "waypoint"),
     stops ? `${stops} stop${stops > 1 ? "s" : ""}` : "",
     track.clean.error ? "sidecar unreadable" : track.clean.sidecar ? "sidecar" : "",
-    track.draft ? `new, not saved${track.added ? "" : " — add segments from Cut"}` : track.added ? `${track.added} added, not saved` : "",
+    track.draft ? `new, not saved${track.added ? "" : " — add segments from Segments, in Edit"}` : track.added ? `${track.added} added, not saved` : "",
   ];
 
   const actions = document.createElement("span");
@@ -988,7 +1080,7 @@ function bindMap() {
       const entry = focusedEntry();
       const index = entry && entry.track.points.length ? layers.nearest(entry.track, point, 24, entry.hiddenParts) : -1;
       // In cut mode the pointer says a click cuts at the marked point.
-      map.getCanvas().style.cursor = index >= 0 ? (state.cutOpen ? "copy" : "crosshair") : state.fill.active ? "crosshair" : "";
+      map.getCanvas().style.cursor = index >= 0 ? (cutting() ? "copy" : "crosshair") : state.fill.active ? "crosshair" : "";
       inspect(index);
       profile.setIndex(index >= 0 ? index : null);
     });
@@ -1023,7 +1115,7 @@ function bindMap() {
       return;
     }
     // In cut mode, clicking the focused track cuts it at the point marked.
-    if (state.cutOpen && focused && focused.track.points.length) {
+    if (cutting() && focused.track.points.length) {
       const index = layers.nearest(focused.track, event.point, 24, focused.hiddenParts);
       if (index >= 0) {
         cutPanel.addCut(index);
@@ -1065,6 +1157,10 @@ function bindSplitters() {
   splitter({
     handle: $("profile-splitter"), target: $("profile"), invert: true, min: 180,
     max: () => document.querySelector(".workspace").clientHeight - 120, key: "profile",
+  });
+  splitter({
+    handle: $("inspector-splitter"), target: $("inspector"), axis: "x", invert: true, min: 260,
+    max: () => Math.min(640, window.innerWidth - 560), key: "inspector",
   });
   chartSplit = shareSplitter({
     handles: { y: $("chart-splitter"), x: $("chart-splitter-x") },
@@ -1215,6 +1311,7 @@ async function start() {
     onDiscardFill: () => setFill({ preview: null }),
     onRemoveFill: (index) => changeFocused((path) => api.removeFill(path, index)),
     onShowFill: showFill,
+    onTab: setEditTab,
     onCompare: (on) => {
       state.compare = on;
       const entry = focusedEntry();
@@ -1227,16 +1324,16 @@ async function start() {
   if (saved.compare === false) state.compare = false;
   if (["car", "bike", "foot"].includes(saved.fillProfile)) state.fill.profile = saved.fillProfile;
   cleanPanel.compare = state.compare;
-  $("toggle-clean").addEventListener("click", () => {
-    state.cleanOpen = !state.cleanOpen;
-    if (state.cleanOpen) state.cutOpen = false;
-    applyCutPanel();
-    applyCleanPanel();
-    save();
-  });
+  if (["changes", "auto", "segments"].includes(saved.editTab)) state.editTab = saved.editTab;
+  // Cut was a panel of its own; it is now the Segments tab.
+  if (saved.cutOpen === true) [state.cleanOpen, state.editTab] = [true, "segments"];
+  cleanPanel.tab = state.editTab;
+  $("mode-browse").addEventListener("click", () => setMode("browse"));
+  $("mode-edit").addEventListener("click", () => setMode("edit"));
+  for (const name of ["select", "range", "lasso", "fill", "cut"]) $(`tool-${name}`).addEventListener("click", () => setTool(name));
   cutOverlay = new CutOverlay(map, "cursor");
   cutPanel = new CutPanel({
-    root: $("cut-panel"),
+    root: cleanPanel.segmentsRoot,
     onCuts: (cuts, names) => changeFocused((path) => api.saveSegments(path, cuts, names)),
     onHover: (piece) => cutOverlay.highlight(focusedEntry()?.track, piece),
     onShow: (piece) => {
@@ -1244,14 +1341,6 @@ async function start() {
       if (box) fitBox(box);
     },
     onWrite: writeSegments,
-  });
-  if (saved.cutOpen === true && !state.cleanOpen) state.cutOpen = true;
-  $("toggle-cut").addEventListener("click", () => {
-    state.cutOpen = !state.cutOpen;
-    if (state.cutOpen) state.cleanOpen = false;
-    applyCleanPanel();
-    applyCutPanel();
-    save();
   });
   profile = new Profile({
     root: $("profile"),
@@ -1279,6 +1368,14 @@ async function start() {
     }
     // Undo the latest removal by hand, unless typing in a field.
     const typing = event.target.closest?.("input, select, textarea");
+    const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+    if (state.cleanOpen && !typing && plain) {
+      const tool = { r: "range", l: "lasso", f: "fill", c: "cut" }[event.key.toLowerCase()];
+      if (tool) {
+        event.preventDefault();
+        setTool(tool);
+      }
+    }
     if (state.cleanOpen && !typing && (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
       event.preventDefault();
       cleanPanel.undo();

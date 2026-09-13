@@ -13,6 +13,10 @@
 <body>
 <header class="topbar">
   <span class="brand">GPX</span>
+  <span class="modes" role="group" aria-label="Mode">
+    <button id="mode-browse" class="mode" aria-pressed="true" title="Look at the tracks in the workspace">Browse</button>
+    <button id="mode-edit" class="mode" aria-pressed="false" title="Edit the focused track: remove points by hand, fill along the road, clean automatically">Edit</button>
+  </span>
   <span class="topbar-spacer"></span>
   <label class="basemap">Time zone
     <select id="timezone"></select>
@@ -45,7 +49,7 @@
   <div id="folder-splitter" class="splitter row" role="separator" aria-orientation="horizontal"></div>
 
   <section id="panel-workspace" class="panel shown">
-    <h2><button class="panel-toggle" aria-expanded="true" aria-controls="panel-workspace" title="Collapse or expand">Workspace</button> <span id="track-count" class="count"></span> <button id="fit-all" class="text-button" hidden>Fit all</button> <button id="new-gpx" class="text-button" title="Start a new, empty GPX in memory: add segments to it from the Cut panel, then save it">New GPX</button></h2>
+    <h2><button class="panel-toggle" aria-expanded="true" aria-controls="panel-workspace" title="Collapse or expand">Workspace</button> <span id="track-count" class="count"></span> <button id="fit-all" class="text-button" hidden>Fit all</button> <button id="new-gpx" class="text-button" title="Start a new, empty GPX in memory: add segments to it from the Segments tab in Edit, then save it">New GPX</button></h2>
     <div id="track-tools" class="track-tools" hidden>
       <input id="track-filter" class="filter" type="search" placeholder="Filter by name" aria-label="Filter the workspace by name">
       <button id="show-all" class="icon-button" title="Show every listed track" aria-label="Show every listed track">◉</button>
@@ -62,8 +66,14 @@
 <main class="workspace">
   <div class="map-area">
     <div id="map" class="map"></div>
-    <aside id="clean-panel" class="clean-panel" hidden aria-label="Clean"></aside>
-    <aside id="cut-panel" class="clean-panel cut-panel" hidden aria-label="Segments"></aside>
+    <div id="map-tools" class="map-tools" role="toolbar" aria-label="Edit tools" hidden>
+      <button id="tool-select" class="map-tool" aria-pressed="true" title="Select — inspect and focus (Esc)"><span aria-hidden="true">↖</span></button>
+      <button id="tool-range" class="map-tool" aria-pressed="false" title="Range — remove the points between two clicks on the track, or drag on the timeline (R)"><span aria-hidden="true">⟷</span></button>
+      <button id="tool-lasso" class="map-tool" aria-pressed="false" title="Lasso — draw around points to remove them (L)"><span aria-hidden="true">◌</span></button>
+      <button id="tool-fill" class="map-tool" aria-pressed="false" title="Fill along the road — route between two clicks (F)"><span aria-hidden="true">⤳</span></button>
+      <button id="tool-cut" class="map-tool" aria-pressed="false" title="Cut — click the track or the timeline to cut it into segments (C)"><span aria-hidden="true">✂</span></button>
+    </div>
+    <p id="map-hint" class="map-hint" hidden></p>
   </div>
   <div id="profile-splitter" class="splitter row" role="separator" aria-orientation="horizontal" hidden></div>
   <section id="profile" class="profile" hidden>
@@ -73,8 +83,6 @@
       <span id="profile-stats" class="muted"></span>
       <span class="topbar-spacer"></span>
       <span id="profile-readout" class="readout"></span>
-      <button id="toggle-cut" class="chip" aria-pressed="false" title="Cut the focused track into segments and write them into a new or another GPX">Cut</button>
-      <button id="toggle-clean" class="chip" aria-pressed="false" title="Edit the focused track: remove points by hand, remove spikes and drift, smooth jitter">Edit</button>
       <span class="chart-toggles" role="group" aria-label="Charts">
         <button id="toggle-elevation" class="chip" aria-pressed="true" title="Show or hide the elevation chart">Elevation</button>
         <button id="toggle-speed" class="chip" aria-pressed="true" title="Show or hide the speed chart">Speed</button>
@@ -114,6 +122,11 @@
     <p id="chart-hint" class="hint">Drag to zoom · scroll to zoom · double-click to reset</p>
   </section>
 </main>
+
+<div id="inspector-splitter" class="splitter col" role="separator" aria-orientation="vertical" hidden></div>
+<aside id="inspector" class="inspector" aria-label="Edit" hidden>
+  <div id="clean-panel" class="clean-panel"></div>
+</aside>
 
 <script type="module" src="app.js"></script>
 </body>
