@@ -70,7 +70,7 @@ wins.
 The page's first function: browse a folder of GPX files and look at them on a
 map. It is the interface later milestones build on.
 
-- **Layout.** A top bar with the time zone, base map and GCJ-02 selectors; a sidebar
+- **Layout.** A top bar with the time zone selector, the Layers button and the GCJ-02 selector; a sidebar
   with the folder tree and the workspace; the map; and, under the map, the
   focused track's profile.
 - **Collapsible panels.** Folders and Workspace each fold to their header by
@@ -137,7 +137,7 @@ map. It is the interface later milestones build on.
   map to it; *Fit all* fits every shown track. Fitting frames the bulk of a
   track's points (`track.CoreBounds`), so a few stray fixes — a stale first fix
   a thousand kilometres away — do not zoom the map out to a corner.
-- **Base maps.** OpenStreetMap, Gaode (街道), Gaode Satellite (imagery with
+- **Maps.** OpenStreetMap, Gaode (街道), Gaode Satellite (imagery with
   Gaode's road and place names above it) and Esri World Imagery are built in
   and need no key, followed by the maps in `geo.gpx.tiles` and then those in
   `<config_dir>/geo/gpx/tiles.json` — `{"tiles": [...]}`, each entry as in
@@ -146,12 +146,33 @@ map. It is the interface later milestones build on.
   addresses are undocumented and could change; the rest are public services.
 - **GCJ-02.** Gaode draws in GCJ-02, so a WGS-84 track sits several hundred
   metres off it. The selector's *Auto* converts what is drawn — tracks, stops,
-  the inspected point and the stop circle — whenever the base map is a GCJ-02
+  the inspected point and the stop circle — whenever the lowest shown map is a GCJ-02
   one, and says whether it is on (and when no workspace track is in China,
   where it would change nothing). *On* and *Off* override it, for a
   configured map marked wrongly or to compare. The server converts
   (`gcj02.FromWGS84`); distances, speeds and stops are measured in WGS-84
   whatever is drawn. The choice is remembered.
+- **Layers.** The *Layers* button in the top bar opens every map — the built-in
+  and configured ones — and the contour lines as one list. Any number may be
+  shown at once, each with its own opacity, so a transparent overlay (OSM GPS
+  traces, OpenRailwayMap, contours) sits over an opaque map, or two imageries
+  blend. Dragging a row by its handle reorders the list; the top is drawn on
+  top, and everything under the tracks. The button names the lowest shown map,
+  which GCJ-02's *Auto* follows; a shown layer in the other system than the
+  tracks carries a ⚠, as it sits several hundred metres off them in China.
+  A map row's ▸ opens its saturation, contrast and brightness (−100 to +100,
+  MapLibre's raster paint; double-click a slider or *Reset* to clear): a grey,
+  lightened OpenStreetMap under the GPS traces lets the traces stand out. The
+  ▸ turns blue while a map is adjusted. The list — order, what is shown,
+  opacities and adjustments — is remembered by name.
+- **Contours** are drawn in the browser from raster elevation tiles with
+  maplibre-contour (vendored, BSD-3): thin every 10–200 m and bold every
+  50–1000 m, closer as the map zooms in, from zoom 9. `geo.gpx.dem` names the
+  tiles — `{"url": "https://…/{z}/{x}/{y}.png", "encoding": "terrarium" |
+  "mapbox", "max_zoom": 15}` — and defaults to AWS's public Terrarium tiles,
+  which need no key but can be slow or unreachable from mainland China; point
+  it at a mirror or another terrain-RGB service there. The elevation is
+  WGS-84. The lines carry no elevation labels: the map style has no glyphs.
 - **Time zone.** GPX times are UTC. Every time on the page — the start in the
   profile header, the inspected point — is shown in the time zone chosen in the
   top bar, with its UTC offset. It defaults to the browser's zone and is
@@ -161,7 +182,16 @@ map. It is the interface later milestones build on.
   on the map or the timeline, draws a thin dashed circle of radius D around
   it, so the threshold can be judged against the place. *On map*, beside the
   thresholds, hides the numbered markers from the map while the timeline keeps
-  its stop blocks for jumping to them; it is remembered. The thresholds — at
+  its stop blocks for jumping to them; it is remembered. *Snap*, beside it,
+  makes the timeline's cursor stick to a stop's arrival or departure, a cut, a
+  hidden stretch's edge or the track's ends within 10 px, holding there until
+  the pointer moves 18 px away; off, the cursor follows the pointer freely
+  while the map and charts show the nearest point. It is remembered too.
+  *Stops*, beside the timeline, turned off draws no stops on it: the bar shows
+  only the stretches with data and the empty time between them — a stretch
+  ends where the segment changes or no point came for a minute (or ten times
+  the usual interval, if longer) — and Snap sticks to those stretches' edges.
+  It is remembered. The thresholds — at
   least a time T within a distance D — are set beside the timeline and apply
   to every shown track.
 - **Timeline.** Above the charts, the focused track's clock time from first to
@@ -203,7 +233,7 @@ map. It is the interface later milestones build on.
   no narrower than one metre; double-click resets. Both charts always show the
   same range.
 - **Remembered.** The browser remembers, per browser, the folder, the
-  workspace with each track's colour and visibility, the focus, the time zone, the base map, the root,
+  workspace with each track's colour and visibility, the focus, the time zone, the layers, the root,
   the expanded folders, which sidebar panels are folded, the stop thresholds, and which charts are shown and
   how, and restores them on reload.
 

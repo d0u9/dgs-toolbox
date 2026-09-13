@@ -82,6 +82,30 @@ func TestConfigPutsOpenStreetMapFirst(t *testing.T) {
 	}
 }
 
+func TestConfigOffersTheDEM(t *testing.T) {
+	for _, c := range []struct {
+		dem  config.GeoGPXDEM
+		want string
+	}{
+		{config.GeoGPXDEM{}, config.DefaultGeoGPXDEMURL},
+		{config.GeoGPXDEM{URL: "https://dem/{z}/{x}/{y}.png", Encoding: "mapbox", MaxZoom: 12}, "https://dem/{z}/{x}/{y}.png"},
+	} {
+		server := httptest.NewServer(Handler(Settings{DEM: c.dem}))
+		var got struct {
+			DEM struct {
+				URL      string `json:"url"`
+				Encoding string `json:"encoding"`
+				MaxZoom  int    `json:"maxZoom"`
+			} `json:"dem"`
+		}
+		get(t, server, "/api/config", &got)
+		server.Close()
+		if got.DEM.URL != c.want || got.DEM.Encoding == "" || got.DEM.MaxZoom == 0 {
+			t.Fatalf("dem = %+v, want url %s", got.DEM, c.want)
+		}
+	}
+}
+
 func TestDirListsFoldersAndGPXFiles(t *testing.T) {
 	root := testdataDir(t)
 	server := httptest.NewServer(Handler(Settings{Root: root}))

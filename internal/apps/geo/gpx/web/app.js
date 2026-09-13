@@ -4,7 +4,8 @@
 
 import { api } from "./api.js";
 import * as format from "./format.js";
-import { initialStyle, setBaseMap } from "./basemap.js";
+import { MapStack } from "./basemap.js";
+import { Contours } from "./contours.js";
 import { TrackLayers } from "./tracks.js";
 import { Profile } from "./profile.js";
 import { StopMarkers } from "./stops.js";
@@ -29,7 +30,6 @@ const state = {
   tracks: new Map(), // the workspace: path -> { id, track, color, visible }
   focus: null, // path of the focused track
   nextId: 0,
-  tile: null, // the base map in use
   gcj: "auto", // GCJ-02 conversion: "auto" follows the base map, or "on" / "off"
   coordinates: "wgs84", // the system tracks are drawn in now
   cleanOpen: false, // edit mode: the inspector is open for the focused track
@@ -43,6 +43,8 @@ const state = {
   // { index, position } — index null for a place off the track — and the
   // route previewed { path, ends, route, display, distance }.
   fill: { active: false, profile: "car", start: null, preview: null, busy: false, error: null },
+  timelineStops: true, // stops on the timeline; off, only data and empty time
+  timelineSnap: true, // the timeline's cursor sticks to stops, cuts and ends
   stopNumbers: true, // numbered stop markers on the map; the timeline always has them
   stops: { distance: 50, duration: 300 }, // stay-point thresholds: metres, seconds
   collapsed: { folders: false, workspace: false }, // sidebar panels folded to their header
@@ -56,6 +58,7 @@ let waypointPopup;
 let resolveMapReady;
 const mapReady = new Promise((resolve) => (resolveMapReady = resolve));
 let cleanPanel, cleanOverlay, lasso, cutPanel, cutOverlay, planner;
+let stack;
 let map, layers, profile, tree, stopMarkers, timeline, chartSplit;
 
 // ---- persistence: a per-browser convenience, never required ----
@@ -75,7 +78,7 @@ function save() {
       root: tree.root,
       configRoot: state.config.root,
       expanded: tree.expanded(),
-      basemap: $("basemap").selectedOptions[0]?.textContent,
+      maps: stack?.toJSON(),
       timeZone: $("timezone").value,
       tracks: [...state.tracks].map(([path, entry]) => ({
         path, color: entry.color, visible: entry.visible, hiddenParts: [...entry.hiddenParts], expanded: entry.expanded,
@@ -84,6 +87,8 @@ function save() {
       stops: state.stops,
       charts: state.charts,
       stopNumbers: state.stopNumbers,
+      timelineSnap: state.timelineSnap,
+      timelineStops: state.timelineStops,
       cleanOpen: state.cleanOpen,
       editTab: state.editTab,
       routeOpen: state.routeOpen,
@@ -777,15 +782,23 @@ function wantedCoordinates() {
   if (state.gcj === "off") return "wgs84";
   // Auto follows the base map. Converting a track outside China changes
   // nothing, so no need to look at where the tracks are to decide.
-  return state.tile?.coordinates === "gcj02" ? "gcj02" : "wgs84";
+  return stack?.base()?.coordinates === "gcj02" ? "gcj02" : "wgs84";
 }
 
 function renderCoordinates() {
   const inChina = [...state.tracks.values()].some((entry) => entry.track.stats.inChina);
-  const auto = state.tile?.coordinates === "gcj02" ? "on" : "off";
+  const auto = stack?.base()?.coordinates === "gcj02" ? "on" : "off";
   const note = auto === "on" && state.tracks.size && !inChina ? ", no track in China" : "";
   $("coordinates").options[0].textContent = `Auto (${auto}${note})`;
   $("coordinates").classList.toggle("active", wantedCoordinates() === "gcj02");
+}
+
+// renderStack redraws the layer list, whose warnings follow the tracks' system.
+function renderStack() {
+  stack.coordinates = state.coordinates;
+  stack.render($("layer-list"));
+  const base = stack.base();
+  $("layers-toggle").textContent = `Layers: ${base ? base.name : "none"}`;
 }
 
 // syncCoordinates redraws the tracks when the wanted system changed, and says
@@ -795,6 +808,7 @@ async function syncCoordinates() {
   const wanted = wantedCoordinates();
   if (wanted === state.coordinates) return;
   state.coordinates = wanted;
+  renderStack();
   planner?.draw();
   await reloadTracks();
 }
@@ -1321,19 +1335,43 @@ function bindCharts(saved) {
   applyCharts();
 }
 
+// The layers popover opens under its button and closes on a click outside it.
+function bindLayersPanel() {
+  const panel = $("layers-panel");
+  const toggle = $("layers-toggle");
+  const open = (on) => {
+    panel.hidden = !on;
+    toggle.setAttribute("aria-expanded", String(on));
+  };
+  toggle.addEventListener("click", () => open(panel.hidden));
+  document.addEventListener("pointerdown", (event) => {
+    if (!panel.hidden && !panel.contains(event.target) && !toggle.contains(event.target)) open(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !panel.hidden) open(false);
+  });
+}
+
 // ---- start ----
 
 async function start() {
   const saved = load();
   state.config = await api.config();
-  const tiles = state.config.tiles;
-  const select = $("basemap");
-  select.replaceChildren(...tiles.map((tile, i) => new Option(tile.name, String(i))));
-  const savedTile = tiles.findIndex((tile) => tile.name === saved.basemap);
-  select.value = String(Math.max(0, savedTile));
-  // The choice is saved by name, so reordering the configuration keeps it.
-  const tileAt = () => tiles[Number(select.value)];
-  state.tile = tileAt();
+  stack = new MapStack(null, {
+    tiles: state.config.tiles,
+    onChange: () => {
+      save();
+      syncCoordinates();
+      renderStack();
+    },
+  });
+  if (saved.maps) stack.restore(saved.maps);
+  else {
+    // Before the stack, one base map was chosen by name and contours switched on alone.
+    const item = stack.items.find((entry) => entry.name === saved.basemap);
+    if (item) stack.items.forEach((entry) => (entry.visible = entry === item));
+    if (saved.contours === true) stack.items.find((entry) => !entry.tile).visible = true;
+  }
   if (["auto", "on", "off"].includes(saved.gcj)) state.gcj = saved.gcj;
   $("coordinates").value = state.gcj;
   state.coordinates = wantedCoordinates();
@@ -1362,7 +1400,7 @@ async function start() {
 
   map = new maplibregl.Map({
     container: "map",
-    style: initialStyle(tileAt()),
+    style: { version: 8, sources: {}, layers: [] },
     center: [120.15, 30.25],
     zoom: 9,
     attributionControl: { compact: false },
@@ -1371,6 +1409,10 @@ async function start() {
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
   await new Promise((resolve) => map.once("load", resolve));
 
+  stack.map = map;
+  stack.contours = new Contours(map, state.config.dem);
+  stack.apply();
+  renderStack();
   layers = new TrackLayers(map);
   waypointPopup = new maplibregl.Popup({ offset: 10, maxWidth: "260px" });
   cleanOverlay = new CleanOverlay(map, "cursor");
@@ -1501,6 +1543,22 @@ async function start() {
     setStopParams({ distance, duration: Math.round(minutes * 60) });
   };
   stopDistance.addEventListener("change", readStopParams);
+  if (saved.timelineStops === false) state.timelineStops = false;
+  $("timeline-stops").checked = state.timelineStops;
+  timeline.setShowStops(state.timelineStops);
+  $("timeline-stops").addEventListener("change", () => {
+    state.timelineStops = $("timeline-stops").checked;
+    timeline.setShowStops(state.timelineStops);
+    save();
+  });
+  if (saved.timelineSnap === false) state.timelineSnap = false;
+  $("timeline-snap").checked = state.timelineSnap;
+  timeline.setSnap(state.timelineSnap);
+  $("timeline-snap").addEventListener("change", () => {
+    state.timelineSnap = $("timeline-snap").checked;
+    timeline.setSnap(state.timelineSnap);
+    save();
+  });
   if (saved.stopNumbers === false) state.stopNumbers = false;
   $("stop-numbers").checked = state.stopNumbers;
   stopMarkers.setOnMap(state.stopNumbers);
@@ -1528,12 +1586,7 @@ async function start() {
     save();
   });
 
-  select.addEventListener("change", () => {
-    state.tile = tileAt();
-    setBaseMap(map, state.tile);
-    save();
-    syncCoordinates();
-  });
+  bindLayersPanel();
   $("coordinates").addEventListener("change", () => {
     state.gcj = $("coordinates").value;
     save();
