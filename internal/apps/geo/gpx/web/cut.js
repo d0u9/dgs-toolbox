@@ -63,6 +63,17 @@ export class CutPanel {
     this.render();
   }
 
+  // setWorkspace follows GPX files added to or removed from the workspace
+  // while the panel is shown.
+  setWorkspace(workspace) {
+    if (!this.track) return;
+    const others = workspace.filter((path) => path !== this.track.path);
+    if (others.join("\n") === this.workspace.join("\n")) return;
+    this.workspace = others;
+    if (!others.includes(this.addPath)) this.addPath = others[0] || "";
+    this.render();
+  }
+
   hide() {
     this.track = null;
     this.root.replaceChildren();
@@ -126,18 +137,55 @@ export class CutPanel {
     hint.textContent = "Click the track on the map, or click the timeline, to cut at that point; a dashed mark on the timeline is a stop's proposed cut. Drag a cut to move it, double-click it to remove it. Zoom the timeline with the wheel to place a cut to the second.";
     parts.push(hint);
 
-    const list = document.createElement("ul");
-    list.className = "cut-list";
-    track.pieces.forEach((piece, i) => list.append(this.row(piece, i + 1)));
-    parts.push(list);
+    parts.push(this.table());
 
     parts.push(this.writer());
     this.root.replaceChildren(...parts);
   }
 
+  // table lists the segments, one row each: chosen, number, name, time span,
+  // duration and distance.
+  table() {
+    const { track } = this;
+    const wrap = document.createElement("div");
+    wrap.className = "cut-table-wrap";
+    const table = document.createElement("table");
+    table.className = "cut-table";
+    const head = table.createTHead().insertRow();
+    const all = document.createElement("input");
+    all.type = "checkbox";
+    const chosen = track.pieces.filter((piece) => this.selected.has(piece.first)).length;
+    all.checked = chosen === track.pieces.length;
+    all.indeterminate = chosen > 0 && chosen < track.pieces.length;
+    all.title = all.checked ? "Choose none" : "Choose all";
+    all.addEventListener("change", () => {
+      this.selected = all.checked ? new Set(track.pieces.map((piece) => piece.first)) : new Set();
+      this.render();
+    });
+    const cells = [[all, "check"], ["#", "num"], ["Name", "name"], ["Time", "time"], ["Duration", "right"], ["Distance", "right"]];
+    for (const [content, className] of cells) {
+      const th = document.createElement("th");
+      th.className = className;
+      th.append(content);
+      head.append(th);
+    }
+    const body = table.createTBody();
+    track.pieces.forEach((piece, i) => body.append(this.row(piece, i + 1)));
+    wrap.append(table);
+    return wrap;
+  }
+
   row(piece, number) {
-    const li = document.createElement("li");
-    li.className = "cut-row";
+    const tr = document.createElement("tr");
+    tr.className = "cut-row";
+    tr.title = `${piece.points} points — click to show it on the map`;
+    const cell = (className, ...content) => {
+      const td = document.createElement("td");
+      td.className = className;
+      td.append(...content);
+      tr.append(td);
+      return td;
+    };
     const check = document.createElement("input");
     check.type = "checkbox";
     check.checked = this.selected.has(piece.first);
@@ -147,12 +195,12 @@ export class CutPanel {
       else this.selected.delete(piece.first);
       this.render();
     });
+    cell("check", check);
     const badge = document.createElement("span");
     badge.className = "cut-number";
     badge.textContent = String(number);
     badge.style.background = pieceColor(number - 1);
-    const body = document.createElement("span");
-    body.className = "label";
+    cell("num", badge);
     const name = document.createElement("input");
     name.className = "cut-name";
     name.value = piece.name;
@@ -160,18 +208,22 @@ export class CutPanel {
     name.title = "Name — empty uses its time span";
     name.addEventListener("change", () => this.rename(piece, name.value));
     name.addEventListener("click", (event) => event.stopPropagation());
-    const meta = document.createElement("span");
-    meta.className = "meta";
-    const duration = piece.start != null ? format.duration((piece.end - piece.start) / 1000) : "";
-    meta.textContent = [format.distance(piece.distance), duration, `${piece.points} points`].filter(Boolean).join(" · ");
-    body.append(name, meta);
-    li.append(check, badge, body);
-    li.addEventListener("mouseenter", () => this.onHover(piece));
-    li.addEventListener("mouseleave", () => this.onHover(null));
-    li.addEventListener("click", (event) => {
+    cell("name", name);
+    let time = "–";
+    if (piece.start != null) {
+      const from = format.clock(piece.start, this.timeZone, { seconds: false });
+      const to = format.clock(piece.end, this.timeZone, { seconds: false });
+      time = from.slice(0, 10) === to.slice(0, 10) ? `${from.slice(11)}–${to.slice(11)}` : `${from.slice(5)} – ${to.slice(5)}`;
+    }
+    cell("time", time);
+    cell("right", piece.start != null ? format.duration((piece.end - piece.start) / 1000) || "0m" : "–");
+    cell("right", format.distance(piece.distance));
+    tr.addEventListener("mouseenter", () => this.onHover(piece));
+    tr.addEventListener("mouseleave", () => this.onHover(null));
+    tr.addEventListener("click", (event) => {
       if (event.target !== check) this.onShow(piece);
     });
-    return li;
+    return tr;
   }
 
   writer() {
@@ -184,10 +236,10 @@ export class CutPanel {
     heading.className = "clean-filter-head";
     const title = document.createElement("strong");
     title.textContent = "Write segments";
-    heading.append(title, textButton(chosen.length === track.pieces.length ? "Choose none" : "Choose all", false, () => {
-      this.selected = chosen.length === track.pieces.length ? new Set() : new Set(track.pieces.map((piece) => piece.first));
-      this.render();
-    }));
+    const count = document.createElement("span");
+    count.className = "clean-count";
+    count.textContent = `${chosen.length} of ${track.pieces.length} chosen`;
+    heading.append(title, count);
     section.append(heading);
 
     const create = this.choice("create", "Into a new GPX");

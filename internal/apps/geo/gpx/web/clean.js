@@ -68,8 +68,13 @@ export class CleanPanel {
   // Filling along the road: onFillTool(active), onProfile(profile),
   // onUseFill() and onDiscardFill() for the previewed route, onRemoveFill(index)
   // and onShowFill(fill).
-  constructor({ root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, timeZone }) {
-    Object.assign(this, { root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill });
+  // onTab(tab) is called when the tab is switched.
+  constructor({ root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab, timeZone }) {
+    Object.assign(this, { root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab });
+    this.tab = "changes"; // "changes": removals by hand and fills; "auto": the filters; "segments": cuts
+    // segmentsRoot holds the Segments tab, drawn by the cut panel.
+    this.segmentsRoot = document.createElement("div");
+    this.segmentsRoot.className = "segments-tab";
     this.track = null;
     this.lasso = false;
     this.rangeTool = false;
@@ -145,7 +150,8 @@ export class CleanPanel {
     const head = document.createElement("div");
     head.className = "clean-head";
     const title = document.createElement("strong");
-    title.textContent = "Edit";
+    title.textContent = track.name;
+    title.title = track.name;
     const compare = checkbox("Compare with the recording", this.compare, (on) => {
       this.compare = on;
       this.onCompare(on);
@@ -153,37 +159,41 @@ export class CleanPanel {
     head.append(title, compare);
     parts.push(head);
 
-    parts.push(this.manualSection());
-    parts.push(this.fillSection());
-    const auto = document.createElement("div");
-    auto.className = "clean-subhead";
-    auto.textContent = "Automatic cleaning";
-    parts.push(auto);
-    for (const filter of FILTERS) {
-      const settings = params[filter.key];
-      const section = document.createElement("section");
-      section.className = "clean-filter" + (settings.enabled ? " enabled" : "");
-      const header = document.createElement("div");
-      header.className = "clean-filter-head";
-      const toggle = checkbox(filter.title, settings.enabled, (on) => this.edit(filter.key, "enabled", on));
-      toggle.title = filter.help;
-      const badge = document.createElement("span");
-      badge.className = "clean-count";
-      const count = counts[filter.rule];
-      if (settings.enabled && count) {
-        badge.textContent = filter.rule === "moved" ? `${count} moved` : `${count} removed`;
-        if (filter.rule !== "moved") badge.style.color = RULE_COLORS[filter.rule];
+    const autoRemoved = FILTERS.reduce((sum, filter) => sum + (params[filter.key].enabled && filter.rule !== "moved" ? counts[filter.rule] || 0 : 0), 0);
+    const tabs = document.createElement("div");
+    tabs.className = "inspector-tabs";
+    tabs.setAttribute("role", "tablist");
+    for (const [key, text, count] of [
+      ["changes", "Changes", params.edits.length + track.fills.length],
+      ["auto", "Automatic cleaning", autoRemoved],
+      ["segments", "Segments", track.pieces.length > 1 ? track.pieces.length : 0],
+    ]) {
+      const tab = document.createElement("button");
+      tab.className = "inspector-tab" + (this.tab === key ? " active" : "");
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(this.tab === key));
+      tab.textContent = text;
+      if (count) {
+        const badge = document.createElement("span");
+        badge.className = "tab-count";
+        badge.textContent = count;
+        tab.append(badge);
       }
-      header.append(toggle, badge);
-      section.append(header);
-      if (settings.enabled) {
-        const grid = document.createElement("div");
-        grid.className = "clean-fields";
-        for (const field of filter.fields) grid.append(this.field(filter.key, field, settings[field.key]));
-        section.append(grid);
-      }
-      parts.push(section);
+      tab.addEventListener("click", () => this.onTab(key));
+      tabs.append(tab);
     }
+    parts.push(tabs);
+
+    const body = document.createElement("div");
+    body.className = "inspector-body";
+    if (this.tab === "changes") {
+      body.append(this.manualSection(), this.fillSection());
+    } else if (this.tab === "auto") {
+      for (const filter of FILTERS) body.append(this.filterSection(filter));
+    } else {
+      body.append(this.segmentsRoot);
+    }
+    parts.push(body);
 
     const foot = document.createElement("p");
     foot.className = "clean-foot";
@@ -198,6 +208,37 @@ export class CleanPanel {
     }
     parts.push(foot);
     this.root.replaceChildren(...parts);
+  }
+
+  filterSection(filter) {
+    const { params, counts } = this.track.clean;
+    const settings = params[filter.key];
+    const section = document.createElement("section");
+    section.className = "clean-filter" + (settings.enabled ? " enabled" : "");
+    const header = document.createElement("div");
+    header.className = "clean-filter-head";
+    const toggle = checkbox(filter.title, settings.enabled, (on) => this.edit(filter.key, "enabled", on));
+    toggle.title = filter.help;
+    const badge = document.createElement("span");
+    badge.className = "clean-count";
+    const count = counts[filter.rule];
+    if (settings.enabled && count) {
+      badge.textContent = filter.rule === "moved" ? `${count} moved` : `${count} removed`;
+      if (filter.rule !== "moved") badge.style.color = RULE_COLORS[filter.rule];
+    }
+    header.append(toggle, badge);
+    section.append(header);
+    const help = document.createElement("p");
+    help.className = "cut-hint";
+    help.textContent = filter.help;
+    section.append(help);
+    if (settings.enabled) {
+      const grid = document.createElement("div");
+      grid.className = "clean-fields";
+      for (const field of filter.fields) grid.append(this.field(filter.key, field, settings[field.key]));
+      section.append(grid);
+    }
+    return section;
   }
 
   manualSection() {
@@ -221,33 +262,12 @@ export class CleanPanel {
     head.append(title, count, undo);
     section.append(head);
 
-    const tools = document.createElement("div");
-    tools.className = "clean-tools";
-    const tool = (text, active, title, onClick) => {
-      const button = document.createElement("button");
-      button.className = "chip" + (active ? " active" : "");
-      button.setAttribute("aria-pressed", String(active));
-      button.textContent = text;
-      button.title = title;
-      button.addEventListener("click", onClick);
-      return button;
-    };
-    tools.append(
-      tool(this.rangeTool ? "Range — Esc to stop" : "Range", this.rangeTool,
-        "Drag across the timeline, or click the start and then the end on the track, to remove the points between; the track breaks there.",
-        () => this.onRangeTool(!this.rangeTool)),
-      tool(this.lasso ? "Lasso — Esc to stop" : "Lasso", this.lasso,
-        `Draw around points on the map to remove them; they are joined across. Hold ${format.keys.alt} while drawing to restore lasso removals inside the shape.`,
-        () => this.onLasso(!this.lasso)),
-    );
-    section.append(tools);
-
-    const hint = document.createElement("p");
-    hint.className = "cut-hint";
-    hint.textContent = this.rangeTool
-      ? "Drag on the timeline, or click the track on the map at the start and then at the end."
-      : "A stop's popup on the map also has Remove this stop. Every removal is listed below, newest first.";
-    section.append(hint);
+    if (!params.edits.length) {
+      const hint = document.createElement("p");
+      hint.className = "cut-hint";
+      hint.textContent = "Nothing removed yet. Use Range or Lasso on the map's tool bar, drag on the timeline, or Remove this stop in a stop's popup.";
+      section.append(hint);
+    }
 
     if (params.edits.length) {
       const list = document.createElement("ol");
@@ -275,19 +295,16 @@ export class CleanPanel {
 
     const tools = document.createElement("div");
     tools.className = "clean-tools";
-    const pick = document.createElement("button");
-    pick.className = "chip" + (fill.active ? " active" : "");
-    pick.setAttribute("aria-pressed", String(fill.active));
-    pick.textContent = fill.active ? "Pick ends — Esc to stop" : "Pick ends";
-    pick.title = "Click where the route starts, then where it ends, to route between them along the road. Two points of the track fill the stretch between; a place off the track makes the route a track of its own. Clicks near a track's end snap to it.";
-    pick.addEventListener("click", () => this.onFillTool(!fill.active));
+    const way = document.createElement("span");
+    way.className = "muted";
+    way.textContent = "Way of travel";
     const profile = document.createElement("select");
     profile.className = "range-join";
     profile.title = "The way of travel the route follows";
     profile.append(...PROFILES.map(([value, text]) => new Option(text, value)));
     profile.value = fill.profile;
     profile.addEventListener("change", () => this.onProfile(profile.value));
-    tools.append(pick, profile);
+    tools.append(way, profile);
     section.append(tools);
 
     const hint = document.createElement("p");

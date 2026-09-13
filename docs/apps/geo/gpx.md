@@ -205,8 +205,13 @@ map. It is the interface later milestones build on.
 
 ## Cleaning
 
-The page's *Edit* chip, in the profile header, opens a panel over the map for
-the focused track: removal by hand first, then the automatic cleaning filters.
+*Edit*, in the top bar beside *Browse*, opens the inspector — a column on the
+right of the page, dragged wider or narrower — for the focused track. Its
+*Changes* tab lists removals by hand and fills along the road; *Automatic
+cleaning* holds the filters. A tool bar on the map's corner picks the tool:
+select, *Range* (`R`), *Lasso* (`L`) and *Fill along the road* (`F`); `Esc`
+leaves it. A line at the map's foot says what a click does with the tool in
+use.
 Nothing is removed until a tool is used or a filter is switched on. Settings
 are saved at once to the track's sidecar (see *The sidecar* below); the source
 GPX is never written. Filters run in this order, each seeing only what the
@@ -273,7 +278,8 @@ tunnel, a phone that lost the signal — the panel's *Fill along the road* asks 
 public OSRM router for the road instead. Nothing is filled automatically: a
 fill is made only this way, on request.
 
-- Choose the way of travel — car, bicycle or foot — and turn on *Pick ends*.
+- Choose the way of travel — car, bicycle or foot — and pick *Fill along the
+  road* on the tool bar.
   Click the track on the map where the stretch starts (it is marked), then
   where it ends. Only those two positions, as cleaning left them, are sent:
   cars to `router.project-osrm.org`, bicycles and walking to
@@ -302,23 +308,29 @@ router again.
 
 ## Segments
 
-The *Cut* chip, beside *Clean*, opens the segments panel for the focused track
-in the same corner of the map; opening one closes the other. A cut is a point
+In Edit, the inspector's *Segments* tab — or the *Cut* tool (`C`) on the map's
+tool bar, which opens it — cuts the focused track. While it is shown, clicks
+on the track and the timeline cut, and the other tools are off; picking one of
+them goes back to *Changes*. A cut is a point
 where one segment ends and the next begins; both segments hold that point, so
 nothing is lost between them. Segments are cut from what cleaning kept.
 
 - **Proposed cuts.** Every stop proposes a cut at the point recorded midway
   through it, shown on the timeline as a dashed mark. Clicking one cuts there;
   *Cut at every stop* takes them all.
-- **Editing cuts.** With the panel open, pointing at the focused track on the
+- **Editing cuts.** On the Segments tab, pointing at the focused track on the
   map marks the point a cut would fall on, and clicking cuts there; clicking
   the timeline, stop blocks included, cuts at the point under the pointer,
   while dragging it still scrubs. Cuts are yellow handles on the timeline. drag a handle to move the
   cut, double-click it to remove it. *Clear cuts* removes them all. Cuts are
   also marked on the map.
-- **Colours.** While the panel is open each segment is drawn over the track in
+- **Colours.** While the tab is shown each segment is drawn over the track in
   a colour of its own, neighbours always different, with the same colour on
-  its number in the list and as a strip along the foot of the timeline.
+  its number in the table and as a strip along the foot of the timeline.
+- **The table.** One row per segment: chosen, number, name, time span,
+  duration and distance; the header's box chooses all or none. A narrow
+  inspector leaves out the time span, which an unnamed segment's name already
+  shows; drag the inspector wider to see it.
 - **Names.** A segment is named by its time span in the page's time zone —
   `2026-09-06 09:00–09:26`, or with both dates when it crosses midnight —
   until a name is typed. A name belongs to the segment starting at its point:
@@ -343,7 +355,7 @@ nothing is lost between them. Segments are cut from what cleaning kept.
 **A new GPX.** *New GPX*, in the Workspace header, asks for a name and adds an
 empty GPX to the workspace. It is not written anywhere: it lives in the memory
 of the running `dgs`, so it survives reloading the page but not quitting `dgs`.
-Segments are added to it from any track's Cut panel, as to any workspace GPX,
+Segments are added to it from any track's Segments tab, as to any workspace GPX,
 and it can be cleaned, cut and filled the same way. Its row says *new, not
 saved* and, once it holds a track, has *Save…*, which asks for a full path —
 defaulting to `<name>.gpx` in the folder tree's root — and writes it there,
@@ -622,7 +634,7 @@ workspace stay as they are; the editing moves out of the map.
 
 Steps, each usable on its own: the mode bar and the inspector with the Edit
 panel moved into it as two tabs, and the tool bar; then Cut as the Segments
-tab.
+tab. Both done: see *Cleaning* and *Segments*.
 
 ### M6 — Plan a route
 
