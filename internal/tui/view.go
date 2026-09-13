@@ -272,11 +272,40 @@ func renderStatusBar(status Status, width int) string {
 	// track owns the flexible middle region.
 	leftWidth := min(lipgloss.Width(status.Left)+2, max(1, width/4))
 	remaining := max(0, width-leftWidth)
-	rightWidth := min(lipgloss.Width(status.Right)+2, remaining/2)
+	// Hints are ordered by immediacy, so a shortage drops whole trailing hints
+	// rather than cutting one mid-word. The center keeps a share of the row so
+	// the workflow track never vanishes behind a long hint list.
+	centerReserve := 0
+	if status.Center != "" {
+		centerReserve = min(lipgloss.Width(status.Center)+2, remaining/3)
+	}
+	right := fitHints(status.Right, max(0, remaining-centerReserve-2))
+	rightWidth := 0
+	if right != "" {
+		rightWidth = min(lipgloss.Width(right)+2, remaining)
+	}
 	centerWidth := remaining - rightWidth
 	return statusCell(statusLeftStyle, status.Left, leftWidth, lipgloss.Left) +
 		statusCenterCell(statusCenterStyle, status.Center, centerWidth, leftWidth, width) +
-		statusCell(statusRightStyle, status.Right, rightWidth, lipgloss.Right)
+		statusCell(statusRightStyle, right, rightWidth, lipgloss.Right)
+}
+
+// hintSeparator divides the independent key hints within a status row.
+const hintSeparator = "  "
+
+// fitHints keeps as many leading hints as fit in width. A single hint that is
+// wider than the space is truncated as a last resort.
+func fitHints(hints string, width int) string {
+	if lipgloss.Width(hints) <= width {
+		return hints
+	}
+	parts := strings.Split(hints, hintSeparator)
+	for count := len(parts) - 1; count > 0; count-- {
+		if fitted := strings.Join(parts[:count], hintSeparator); lipgloss.Width(fitted) <= width {
+			return fitted
+		}
+	}
+	return truncate(parts[0], width)
 }
 
 // statusCell gives every status region a small horizontal inset. At extreme
@@ -315,10 +344,13 @@ func statusCenterCell(style lipgloss.Style, text string, width, leftWidth, total
 // themselves. Without this, a styled stepper can expose the terminal's own
 // background in rectangular patches inside the status bar.
 func renderStatusContent(style lipgloss.Style, content string) string {
-	probe := style.Render("x")
+	// Probe without padding: a padded probe renders the inset as its own
+	// styled span, and replaying that span after every reset would insert a
+	// visible space for each nested style and push the row past the edge.
+	probe := style.UnsetPadding().Render("x")
 	marker := strings.Index(probe, "x")
 	if marker > 0 {
-		prefix := strings.TrimRight(probe[:marker], " ")
+		prefix := probe[:marker]
 		content = strings.ReplaceAll(content, "\x1b[0m", "\x1b[0m"+prefix)
 	}
 	return style.Render(content)
@@ -332,7 +364,7 @@ func (m Model) pickerStatus() Status {
 	if m.pickerHelp {
 		return Status{Left: "PICKER", Center: context, Right: "? Close  esc Exit  q Quit"}
 	}
-	return Status{Left: "PICKER", Center: context, Right: "↑/k ↓/j Move  ↵ Open  q Quit"}
+	return Status{Left: "PICKER", Center: context, Right: "↑↓ Move  ↵ Open  q Quit"}
 }
 
 // breadcrumbSeparator is the filled chevron between two crumbs. It is drawn in

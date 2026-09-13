@@ -341,15 +341,15 @@ func (m model) Status() tui.Status {
 		return tui.Status{Left: "BROWSE", Center: "File Explorer component", Right: m.picker.Hint()}
 	}
 	if m.confirming {
-		return tui.Status{Left: "CONFIRM", Center: "Confirmation dialog component", Right: "tab Switch  enter Select  esc Continue"}
+		return tui.Status{Left: "CONFIRM", Center: "Confirmation dialog component", Right: "tab Switch  ↵ Select  esc Continue"}
 	}
 	if m.controls.IsActive() {
 		if m.controls.CapturesText() {
 			return tui.Status{Left: "EDIT", Center: "Text input component", Right: "↵ Apply  esc Cancel"}
 		}
-		return tui.Status{Left: "SELECT", Center: "Option component", Right: "↑/k ↓/j Choose  ↵ Apply  esc Cancel"}
+		return tui.Status{Left: "SELECT", Center: "Option component", Right: "↑↓ Choose  ↵ Apply  esc Cancel"}
 	}
-	return tui.Status{Left: "DEMO", Center: m.event, Right: "click / alt+hjkl Focus  hjkl Within  n Next"}
+	return tui.Status{Left: "DEMO", Center: m.event, Right: "n Next  hjkl Within  alt+hjkl Focus"}
 }
 
 func (m model) CapturesShellKey(key string) bool {

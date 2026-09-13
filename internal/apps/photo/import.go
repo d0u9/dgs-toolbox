@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -186,6 +187,7 @@ type importModel struct {
 	progress             float64
 	scan                 scanSummary
 	scanGeneration       int
+	refreshing           bool
 	parameterFields      datafield.Navigator
 	resultFields         datafield.Navigator
 	sourceList           scrolllist.Model
@@ -253,8 +255,8 @@ func newImportModelWithSettings(stateFilename, source, destination string) tui.C
 			datafield.Field{ID: "raw-only-results", Row: 1, Col: 3},
 		),
 		resultFields: datafield.New(
-			datafield.Field{ID: "result-actions", Row: 0, Col: 0},
-			datafield.Field{ID: "result-files", Row: 0, Col: 1},
+			datafield.Field{ID: "result-files", Row: 0, Col: 0},
+			datafield.Field{ID: "result-actions", Row: 0, Col: 1},
 		),
 		sourceList:      scrolllist.New(),
 		destinationList: scrolllist.New(),
@@ -397,7 +399,22 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.progress = min(.92, m.progress+.06)
 		return m, scanTick()
 	case scanDoneMsg:
-		if msg.generation != m.scanGeneration || m.stage != scanStage {
+		if msg.generation != m.scanGeneration {
+			return m, nil
+		}
+		if m.refreshing {
+			m.refreshing = false
+			if m.stage != parameterStage {
+				return m, nil
+			}
+			previous := m.sourceExtensions()
+			m.scan = msg.summary
+			m.refreshExtensions(previous)
+			m.syncResultLists()
+			m.actionNotice = "Refreshed"
+			return m, nil
+		}
+		if m.stage != scanStage {
 			return m, nil
 		}
 		m.scan = msg.summary
@@ -483,7 +500,7 @@ func (m importModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.processingComplete() {
 			navigation.Next = &pageactions.Action{Destination: m.afterProcessingDestination()}
 		}
-		switch pageactions.Hit(navigation, leftWidth, msg.X, msg.Y-(m.height-4)) {
+		switch pageactions.Hit(navigation, leftWidth, msg.X-(m.width-leftWidth), msg.Y-(m.height-4)) {
 		case pageactions.Prev:
 			m.beginLeaveConfirmation(false)
 		case pageactions.Next:
@@ -559,11 +576,12 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	cleanupHeight := 5
 	integrityHeight := max(5, lowerHeight-cleanupHeight-5)
 	cleanupY := lowerY + integrityHeight + 1
-	m.resultFields.SetBounds("result-actions", datafield.Bounds{X: 0, Y: cleanupY, Width: leftWidth, Height: cleanupHeight})
-	m.resultFields.SetBounds("result-files", datafield.Bounds{X: leftWidth + 1, Y: lowerY, Width: rightWidth, Height: lowerHeight})
+	actionsX := rightWidth + 1
+	m.resultFields.SetBounds("result-files", datafield.Bounds{X: 0, Y: lowerY, Width: rightWidth, Height: lowerHeight})
+	m.resultFields.SetBounds("result-actions", datafield.Bounds{X: actionsX, Y: cleanupY, Width: leftWidth, Height: cleanupHeight})
 	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= m.height-4 {
 		navigation := resultPageActions()
-		switch pageactions.Hit(navigation, leftWidth, msg.X, msg.Y-(m.height-4)) {
+		switch pageactions.Hit(navigation, leftWidth, msg.X-actionsX, msg.Y-(m.height-4)) {
 		case pageactions.Prev:
 			if !m.cleanupResultState() {
 				return m, nil
@@ -591,7 +609,7 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.controls.SetFocusID(deleteStateID)
-	m.controls.Click([]string{deleteStateID}, msg.X-2, msg.Y-cleanupY-1)
+	m.controls.Click([]string{deleteStateID}, msg.X-actionsX-2, msg.Y-cleanupY-1)
 	return m, nil
 }
 
@@ -844,6 +862,9 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.stage == parameterStage && key == "r" && !m.controls.IsActive() {
+		return m.refreshScan()
+	}
 	if m.stage == parameterStage && m.parameterFields.Move(key) {
 		if m.parameterFields.Current() == "parameters" {
 			m.controls.SetFocusID(operationID)
@@ -983,6 +1004,11 @@ func (m importModel) orphanFiles(kind mediaKind) []scannedFile {
 }
 
 func (m *importModel) configureExtensions() {
+	m.controls.SetOptions(extensionsID, m.sourceExtensions(), true)
+	m.extensionsConfigured = true
+}
+
+func (m importModel) sourceExtensions() []string {
 	seen := make(map[string]struct{})
 	for _, file := range m.scan.source {
 		seen[fileExtension(file.path)] = struct{}{}
@@ -992,8 +1018,20 @@ func (m *importModel) configureExtensions() {
 		extensions = append(extensions, extension)
 	}
 	sort.Strings(extensions)
-	m.controls.SetOptions(extensionsID, extensions, true)
-	m.extensionsConfigured = true
+	return extensions
+}
+
+// refreshExtensions keeps the user's extension choices and selects only
+// extensions that did not exist before the refresh.
+func (m *importModel) refreshExtensions(previous []string) {
+	selected := m.controls.Values(extensionsID)
+	for _, extension := range m.sourceExtensions() {
+		if !slices.Contains(previous, extension) {
+			selected = append(selected, extension)
+		}
+	}
+	m.controls.SetValues(extensionsID, selected)
+	m.controls.SetOptions(extensionsID, m.sourceExtensions(), false)
 }
 
 func (m importModel) filteredSource() []scannedFile {
@@ -1302,11 +1340,24 @@ func (m *importModel) applyTransferResult(result importer.Result) {
 
 func (m importModel) startScan() (tea.Model, tea.Cmd) {
 	m.stage = scanStage
+	m.refreshing = false
 	m.scanGeneration++
 	m.progress = 0
 	generation := m.scanGeneration
 	paths := m.paths
 	return m, tea.Batch(scanCmd(generation, paths), scanTick())
+}
+
+// refreshScan re-reads both directories in place so Parameters reflects
+// changes made outside the tool without losing focus or selections.
+func (m importModel) refreshScan() (tea.Model, tea.Cmd) {
+	if m.refreshing {
+		return m, nil
+	}
+	m.scanGeneration++
+	m.refreshing = true
+	m.actionNotice = ""
+	return m, scanCmd(m.scanGeneration, m.paths)
 }
 
 func (m importModel) openPicker(field int) (tea.Model, tea.Cmd) {
@@ -1471,7 +1522,7 @@ func (m importModel) resultView() string {
 		fieldset.ViewFocused("State file", fitContentHeight(cleanup, cleanupHeight-2, leftWidth-4), leftWidth, actionsFocused),
 		pageactions.View(resultPageActions(), leftWidth),
 	)
-	view := lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, actionsPane, " ", filesPane))
+	view := lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, filesPane, " ", actionsPane))
 	if m.leaveConfirm {
 		view = overlay.Place(view, m.leaveConfirmationView(), m.width, m.height)
 	}
@@ -1660,10 +1711,10 @@ func (m importModel) processingView() string {
 		lipgloss.Left,
 		fieldset.View("Next files", fitContentHeight(m.pendingRows(leftWidth-4), leftTopHeight-2, leftWidth-4), leftWidth),
 		"",
-		fieldset.View("Recent results", fitContentHeight(m.recentRows(leftWidth-4), leftBottomHeight-2, leftWidth-4), leftWidth),
+		fieldset.View("Recent results", fitContentHeight(m.recentRows(leftWidth-4, leftBottomHeight-2), leftBottomHeight-2, leftWidth-4), leftWidth),
 		pageactions.View(navigation, leftWidth),
 	)
-	view := lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, queuePane, " ", workers))
+	view := lipgloss.JoinVertical(lipgloss.Left, header, "", lipgloss.JoinHorizontal(lipgloss.Top, workers, " ", queuePane))
 	if m.leaveConfirm {
 		view = overlay.Place(view, m.leaveConfirmationView(), m.width, m.height)
 	}
@@ -1850,11 +1901,11 @@ func shortHash(hash, fallback string) string {
 	return hash[:min(8, len(hash))]
 }
 
-func (m importModel) recentRows(width int) string {
+func (m importModel) recentRows(width, limit int) string {
 	if len(m.processing.verified) == 0 {
 		return importNoteStyle.Render("Waiting for verification")
 	}
-	start := max(0, len(m.processing.verified)-6)
+	start := max(0, len(m.processing.verified)-max(1, limit))
 	lines := make([]string, 0, len(m.processing.verified)-start)
 	for index := len(m.processing.verified) - 1; index >= start; index-- {
 		lines = append(lines, "OK  "+ansi.Truncate(filepath.Base(m.processing.verified[index].path), max(1, width-4), "..."))
@@ -2090,21 +2141,21 @@ func (m importModel) Status() tui.Status {
 		if m.leaveExits {
 			left = "CONFIRM · EXIT"
 		}
-		return m.withWorkflow(tui.Status{Left: left, Right: "tab Switch  enter Select  esc Continue"})
+		return m.withWorkflow(tui.Status{Left: left, Right: "tab Switch  ↵ Select  esc Continue"})
 	}
 	if m.stage == scanStage {
 		return m.withWorkflow(tui.Status{Left: "SCAN · READING", Right: "esc Cancel"})
 	}
 	if m.stage == processingStage {
 		left := "PROCESSING · RUNNING"
-		right := "↑↓ Workers  p Pause  q Quit"
+		right := "p Pause  ↑↓ Workers  esc Back  q Quit"
 		if m.processing.paused {
 			left = "PROCESSING · PAUSED"
-			right = "↑↓ Workers  p Resume  q Quit"
+			right = "p Resume  ↑↓ Workers  esc Back  q Quit"
 		}
 		if m.processingComplete() {
 			left = "PROCESSING · COMPLETE"
-			right = "↑↓  n Next  q Quit"
+			right = "n Next  ↑↓ Workers  esc Back  q Quit"
 		}
 		return m.withWorkflow(tui.Status{Left: left, Right: right})
 	}
@@ -2119,7 +2170,7 @@ func (m importModel) Status() tui.Status {
 		return m.withWorkflow(tui.Status{Left: left, Right: right})
 	}
 	if m.stage == resultStage {
-		return m.withWorkflow(tui.Status{Left: "RESULT · VERIFIED", Right: "alt+h/l Focus  ↑↓ Browse  r Again  q Quit"})
+		return m.withWorkflow(tui.Status{Left: "RESULT · VERIFIED", Right: "r Again  ↑↓ Browse  alt+h/l Focus  q Quit"})
 	}
 	if m.picking {
 		if m.picker.HasDialog() {
@@ -2137,18 +2188,20 @@ func (m importModel) Status() tui.Status {
 		if m.controls.CapturesText() {
 			return m.withWorkflow(tui.Status{Left: "EDIT", Right: "↵ Apply  esc Cancel"})
 		}
-		return m.withWorkflow(tui.Status{Left: "SELECT", Right: "↑/k ↓/j Choose  ↵ Apply  esc Cancel"})
+		return m.withWorkflow(tui.Status{Left: "SELECT", Right: "↑↓ Choose  ↵ Apply  esc Cancel"})
 	}
 	if m.stage == parameterStage {
-		right := "click / alt+hjkl Focus  space Preview  right-click Menu"
-		if m.actionNotice != "" {
+		left, right := "PARAMETERS", "n Next  r Refresh  space Preview  alt+hjkl Focus  esc Back"
+		if m.refreshing {
+			left = "PARAMETERS · REFRESHING"
+		} else if m.actionNotice != "" {
 			right = m.actionNotice
 		}
-		return m.withWorkflow(tui.Status{Left: "PARAMETERS", Right: right})
+		return m.withWorkflow(tui.Status{Left: left, Right: right})
 	}
 	return m.withWorkflow(tui.Status{
 		Left:  "READY",
-		Right: "arrows/hjkl  n Next  ↵ Select  ? Help",
+		Right: "↵ Select  n Next  ↑↓ Move  ? Help",
 	})
 }
 

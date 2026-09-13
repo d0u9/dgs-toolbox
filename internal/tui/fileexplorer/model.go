@@ -659,11 +659,11 @@ func (t Model) Hint() string {
 		// Delete controls are rendered beside the confirmation prompt.
 		return ""
 	case actionCreate, actionRename:
-		return "enter apply  •  esc cancel"
+		return "↵ Apply  esc Cancel"
 	case actionPath:
-		return "tab complete  •  shift+tab previous  •  enter select  •  esc cancel"
+		return "tab Complete  ↵ Select  esc Cancel  shift+tab Previous"
 	default:
-		return "- up  •  = root  •  / path  •  a new  •  d del  •  r ren  •  R reload"
+		return "- Up  / Path  a New  r Rename  d Delete  R Reload  = Root"
 	}
 }
 

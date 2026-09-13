@@ -753,19 +753,19 @@ func (m routeModel) Status() tui.Status {
 	}
 	switch m.fields.Current() {
 	case routeCapturesField:
-		return tui.Status{Left: "ROUTE", Center: center, Right: "↑/k ↓/j Move  ↵ Recipe  x Run  u Clear  v View  R Refresh"}
+		return tui.Status{Left: "ROUTE", Center: center, Right: "↑↓ Move  ↵ Recipe  x Run  u Clear  v View  R Refresh"}
 	case routeRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: center, Right: "↵ Browse  R Refresh  tab Next  alt+hjkl Focus"}
 	case routeRecipesField:
-		return tui.Status{Left: "RECIPES", Center: center, Right: "↑/k ↓/j Move  ↵ Choose  esc/⌫ Back"}
+		return tui.Status{Left: "RECIPES", Center: center, Right: "↑↓ Move  ↵ Choose  esc/⌫ Back"}
 	case routeActionsField:
-		return tui.Status{Left: "ACTIONS", Center: center, Right: "↑/k ↓/j Move  space Toggle  ↵ Fields  x Run  esc/⌫ Back"}
+		return tui.Status{Left: "ACTIONS", Center: center, Right: "↑↓ Move  space Toggle  ↵ Fields  x Run  esc/⌫ Back"}
 	case routeFieldsField:
-		return tui.Status{Left: "FIELDS", Center: center, Right: "↑/k ↓/j Move  ↵ Edit  x Run  esc/⌫ Back"}
+		return tui.Status{Left: "FIELDS", Center: center, Right: "↑↓ Move  ↵ Edit  x Run  esc/⌫ Back"}
 	case routePayloadField:
-		return tui.Status{Left: "PAYLOAD", Center: center, Right: "↑/k ↓/j Scroll  esc/⌫ Back  alt+hjkl Focus"}
+		return tui.Status{Left: "PAYLOAD", Center: center, Right: "↑↓ Scroll  esc/⌫ Back  alt+hjkl Focus"}
 	case routeAttachmentsField:
-		return tui.Status{Left: "ATTACHMENTS", Center: m.attachmentStatus(), Right: "↑/k ↓/j Move  pgup/pgdown Details  esc/⌫ Back"}
+		return tui.Status{Left: "ATTACHMENTS", Center: m.attachmentStatus(), Right: "↑↓ Move  pgup/pgdown Details  esc/⌫ Back"}
 	default:
 		return tui.Status{Left: "ROUTE", Center: center, Right: "tab Next  alt+hjkl Focus"}
 	}

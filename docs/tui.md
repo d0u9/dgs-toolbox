@@ -150,7 +150,7 @@ list, so it cannot drift from the behaviour it documents.
 
 - Left: a compact state chip. It identifies the current command stage and, when relevant, its activity state such as `PROCESSING · RUNNING` or `PROCESSING · PAUSED`.
 - Center: workflow steps when a command has a multi-step flow; otherwise a contextual summary.
-- Right: only the actions valid in the current state, in descending order of immediacy.
+- Right: only the actions valid in the current state, in descending order of immediacy. Write each hint as `key Label`, separate hints with two spaces, and use `↑↓` rather than listing vim aliases. When space runs short, trailing hints are dropped whole; a hint is never cut mid-word, and the center keeps up to a third of the row.
 - The row must never wrap.
 
 The state chip takes its natural label width plus a small inset; it must not expand to a fixed percentage of a wide terminal. Each of the three status regions has one cell of left and right padding. Position the center content against the midpoint of the entire terminal row, not the midpoint of the leftover region between the side cells. If asymmetric side content would overlap it, constrain the center content within the available gap. The right hint region is content-sized and flush to the terminal edge. At an extremely narrow width, sacrifice the inset before allowing the bar to wrap or overflow.

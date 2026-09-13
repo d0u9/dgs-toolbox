@@ -20,7 +20,7 @@ Use SHA-256 by default because it is cryptographically strong, available in the 
 - Directories places Source and Destination on separate rows inside one fieldset and uses repository mock folders by default.
 - A cancellable, read-only progress transition scans both directories before Parameters is shown.
 - Directories uses the shared centered one-column skeleton. Scan, Processing, and Result use the shared two-column landscape skeleton. Parameters uses a four-column landscape composition whose middle two columns equally divide the flexible width.
-- In the two-column screens, the left column begins at one third of the workspace and is capped at 90 cells; the right column receives the remaining space.
+- In the two-column screens, the narrow column begins at one third of the workspace and is capped at 90 cells; the wide column receives the remaining space. Scan puts the narrow column on the left. Processing and Result put it on the right, with Page Actions at its bottom, so the primary content reads first.
 - Shared DataField focus uses `Alt+h/j/k/l` and primary clicks. Child controls remain operable by keyboard and mouse.
 - Source, Destination, JPG-only, and RAW-only inventories use the shared numbered scroll-list component, including full-row selection, Vim navigation, hover-wheel scrolling, Quick Look, and a reusable right-click menu.
 - Extension filters are derived from Source, use dynamic multi-checkboxes plus `[ All ]`, and immediately filter Source and Summary while Destination remains unfiltered.
@@ -73,6 +73,8 @@ The current composition is specific to Photo Import:
 ## Scan transition
 
 After Setup, show a dedicated progress screen while recursively reading Source and Destination. The progress bar remains active during a long scan and the copy explains that no files are being changed. `Esc` cancels the UI transition and returns to Setup; a late result from that scan must be ignored.
+
+Parameters offers `r` Refresh: it re-reads both roots in place, keeps focus and extension choices, and selects only extensions that appeared since the last scan. Use it after changing either folder outside the tool.
 
 The scan collects regular-file names and counts from both roots without reading complete file contents. It uses the two-column skeleton: the left column repeats the exact Source and Destination paths selected on Directories, while the wider right column owns scan state and progress. This allows the user to verify the transfer endpoints while scanning is underway. Long paths truncate within the left column; they never wrap the screen.
 
@@ -135,7 +137,7 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 
 ## Processing screen
 
-Processing uses the shared two-column landscape skeleton and keeps vertical stacks shallow. A compact full-width header shows file progress, aggregate progress, active workers, pending files, and failures. Below it, the narrow left column is divided vertically between Next files and Recent results, with Page Actions at bottom-left. The wider right column contains the worker list so filenames, metadata, step tracks, hashes, and progress bars receive the available width.
+Processing uses the shared two-column landscape skeleton and keeps vertical stacks shallow. A compact full-width header shows file progress, aggregate progress, active workers, pending files, and failures. Below it, the narrow right column is divided vertically between Next files and Recent results, with Page Actions at bottom-right. The wider left column contains the worker list so filenames, metadata, step tracks, hashes, and progress bars receive the available width.
 
 Each Worker owns one file and exposes a distinct state: Copying, Verifying, Publishing, or Idle. Each compact worker entry includes the current filename, file size, phase progress bar, and Source/Destination hash state. It also uses a stable three-step track—`COPY → VERIFY → PUBLISH`—where completed steps use `✓`, the active step uses `●`, and forthcoming steps use `○`; this makes both completed and remaining work visible without relying only on a phase label. Render only configured workers; do not create placeholder worker cards to fill a landscape viewport. When workers exceed the visible height, keep them in one vertically scrollable list instead of laying them out side by side. Up/Down or `k/j` scrolls that list, while `g`/Home and `G`/End jump to its beginning or end. Do not display `MATCH` until independent destination verification has completed. Overall completion counts verified and published files, not merely copied bytes.
 
