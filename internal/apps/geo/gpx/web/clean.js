@@ -5,6 +5,7 @@
 // result and turns a lasso into point indices on screen.
 
 import * as format from "./format.js";
+import { waySelect } from "./route.js";
 
 const ORIGINAL = "clean-original";
 const REMOVED = "clean-removed";
@@ -16,8 +17,7 @@ const PREVIEW = "clean-fill-preview"; // a route not yet used
 // RULE_COLORS tell apart what removed a point.
 export const RULE_COLORS = { spike: "#d55e00", drift: "#e69f00", stop: "#666666", manual: "#6f4c9b", fill: "#56b4e9" };
 
-// PROFILES are the router's ways of travel.
-const PROFILES = [["car", "Car"], ["bike", "Bicycle"], ["foot", "Foot"]];
+
 
 // FILTERS describe the panel: each filter's settings, in the sidecar's names,
 // with the unit and the scale between what is typed and what is stored.
@@ -71,6 +71,7 @@ export class CleanPanel {
   // onTab(tab) is called when the tab is switched.
   constructor({ root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab, timeZone }) {
     Object.assign(this, { root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab });
+    this.ways = []; // the routers' ways of travel, from /api/config
     this.tab = "changes"; // "changes": removals by hand and fills; "auto": the filters; "segments": cuts
     // segmentsRoot holds the Segments tab, drawn by the cut panel.
     this.segmentsRoot = document.createElement("div");
@@ -298,12 +299,8 @@ export class CleanPanel {
     const way = document.createElement("span");
     way.className = "muted";
     way.textContent = "Way of travel";
-    const profile = document.createElement("select");
-    profile.className = "range-join";
+    const profile = waySelect(this.ways, fill.profile, (value) => this.onProfile(value));
     profile.title = "The way of travel the route follows";
-    profile.append(...PROFILES.map(([value, text]) => new Option(text, value)));
-    profile.value = fill.profile;
-    profile.addEventListener("change", () => this.onProfile(profile.value));
     tools.append(way, profile);
     section.append(tools);
 
@@ -314,15 +311,13 @@ export class CleanPanel {
       hint.classList.add("error");
       hint.textContent = fill.error;
     } else if (fill.preview) {
-      hint.textContent = fill.preview.ends.first != null
-        ? "The route is drawn dashed on the map. Use it to replace the points between its ends."
-        : "The route is drawn dashed on the map. Use it to add it as a new track, saved with the others into a new GPX.";
+      hint.textContent = "The route is drawn dashed on the map. Use it to replace the points between its ends.";
     } else if (fill.active) {
       hint.textContent = fill.start == null
-        ? "Click where the route starts: on the track, or anywhere on the map."
+        ? "Click the track where the stretch starts."
         : "Now click where it ends. Near a track's end, the click snaps to it.";
     }
-    else hint.textContent = "Only the two end points are sent, to the public OSRM service on OpenStreetMap. The route's points get times spread by distance and are marked as filled.";
+    else hint.textContent = "Only the two end points are sent, to the service of the way chosen: OSRM on OpenStreetMap, or Amap when a key is set. The route's points get times spread by distance and are marked as filled.";
     section.append(hint);
 
     if (fill.preview) {
@@ -333,7 +328,7 @@ export class CleanPanel {
       meta.textContent = `${format.distance(fill.preview.distance)} · ${fill.preview.route.length} points`;
       const use = document.createElement("button");
       use.className = "chip active";
-      use.textContent = fill.preview.ends.first != null ? "Use this route" : "Add as a track";
+      use.textContent = "Use this route";
       use.addEventListener("click", () => this.onUseFill());
       const discard = document.createElement("button");
       discard.className = "text-button";
@@ -361,7 +356,8 @@ export class CleanPanel {
     const name = document.createElement("span");
     name.className = "name";
     const from = track.time[fill.first], to = track.time[fill.last];
-    const way = (PROFILES.find(([value]) => value === fill.profile) || [, fill.profile])[1];
+    const found = this.ways.find((w) => w.id === fill.profile);
+    const way = found ? `${found.label} (${found.service})` : fill.profile;
     name.textContent = from != null && to != null
       ? `${way} ${format.clock(from, this.timeZone).slice(5)} – ${format.clock(to, this.timeZone).slice(11)}`
       : `${way}, points ${fill.first}–${fill.last}`;

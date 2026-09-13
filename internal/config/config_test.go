@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -354,6 +355,28 @@ func TestGeoGPXTilesAreValidated(t *testing.T) {
 		if _, err := LoadPath(path); err == nil {
 			t.Errorf("%s: loaded", name)
 		}
+	}
+}
+
+func TestGeoGPXTilesFileAddsTiles(t *testing.T) {
+	dir := t.TempDir()
+	config := Config{ConfigDir: dir, Geo: Geo{GPX: GeoGPX{Tiles: []GeoGPXTile{{Name: "inline", URL: "https://i/{z}/{x}/{y}.png"}}}}}
+	if tiles, err := config.GeoGPXTiles(); err != nil || len(tiles) != 1 {
+		t.Fatalf("without a file: %v %v", tiles, err)
+	}
+	path := filepath.Join(dir, "geo", "gpx", "tiles.json")
+	if config.GeoGPXTilesPath() != path {
+		t.Fatalf("path = %q", config.GeoGPXTilesPath())
+	}
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	os.WriteFile(path, []byte(`{"tiles":[{"name":"file","url":"https://f/{z}/{x}/{y}.png","coordinates":"gcj02"}]}`), 0o600)
+	tiles, err := config.GeoGPXTiles()
+	if err != nil || len(tiles) != 2 || tiles[1].Name != "file" || tiles[1].Coordinates != "gcj02" {
+		t.Fatalf("with a file: %v %v", tiles, err)
+	}
+	os.WriteFile(path, []byte(`{"tiles":[{"name":"bad","url":"https://f/{z}.png"}]}`), 0o600)
+	if _, err := config.GeoGPXTiles(); err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("invalid file: %v", err)
 	}
 }
 

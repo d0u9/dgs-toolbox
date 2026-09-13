@@ -24,13 +24,21 @@ type Settings struct {
 	Reveal func(path string) error
 	// Router fills a stretch along the road; nil uses the public OSRM services.
 	Router Router
+	// AmapKey, when set, offers Amap's routing beside OSRM's. Amap, when set,
+	// routes Amap's ways instead of the service, as tests do.
+	AmapKey string
+	Amap    Router
+	// tilesErr is why the configured base maps could not be read.
+	tilesErr error
 	// focus receives the page's focused track; nil uses the process's board.
 	focus *focusBoard
 }
 
-// SettingsFrom reads the server settings out of the configuration.
+// SettingsFrom reads the server settings out of the configuration. A tiles
+// file that cannot be read keeps the server from starting, saying why.
 func SettingsFrom(global config.Config) Settings {
-	return Settings{Addr: global.GeoGPXAddr(), Root: global.GeoGPXRoot(), Tiles: global.Geo.GPX.Tiles}
+	tiles, err := global.GeoGPXTiles()
+	return Settings{Addr: global.GeoGPXAddr(), Root: global.GeoGPXRoot(), Tiles: tiles, AmapKey: global.Geo.GPX.AmapKey, tilesErr: err}
 }
 
 // Handler serves the GPX web page and its API.
@@ -59,11 +67,12 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/fill/route", api.routeFill)
 	mux.HandleFunc("POST /api/fill", api.saveFill)
 	mux.HandleFunc("DELETE /api/fill", api.removeFill)
-	mux.HandleFunc("POST /api/fill/track", api.saveRouteTrack)
 	mux.HandleFunc("DELETE /api/added", api.removeAdded)
 	mux.HandleFunc("POST /api/save-as", api.saveAs)
 	mux.HandleFunc("DELETE /api/sidecar", api.discardSidecar)
 	mux.HandleFunc("POST /api/draft", api.newDraft)
+	mux.HandleFunc("POST /api/route/leg", api.routeLeg)
+	mux.HandleFunc("POST /api/route/save", api.saveRoute)
 	mux.Handle("GET /", http.FileServerFS(static))
 	return mux
 }
@@ -78,6 +87,10 @@ var (
 // the command reuses the running server; it stops when the toolbox exits.
 func Serve(settings Settings) (string, error) {
 	serverOnce.Do(func() {
+		if settings.tilesErr != nil {
+			serverErr = settings.tilesErr
+			return
+		}
 		listener, err := net.Listen("tcp", settings.Addr)
 		if err != nil {
 			serverErr = err

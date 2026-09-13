@@ -67,6 +67,12 @@ func coordinate(degrees float64) string { return strconv.FormatFloat(degrees, 'f
 // Create writes a new GPX 1.1 file holding tracks. It refuses to replace a
 // file that is already there.
 func Create(path string, name string, tracks []Track) error {
+	return CreateWith(path, name, nil, tracks)
+}
+
+// CreateWith writes a new GPX 1.1 file holding routes, then tracks, as GPX
+// orders them. It refuses to replace a file that is already there.
+func CreateWith(path string, name string, routes []Route, tracks []Track) error {
 	var b bytes.Buffer
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	b.WriteString(`<gpx version="1.1" creator="` + Creator + `" xmlns="http://www.topografix.com/GPX/1/1">` + "\n")
@@ -74,6 +80,18 @@ func Create(path string, name string, tracks []Track) error {
 		b.WriteString("  <metadata><name>")
 		_ = xml.EscapeText(&b, []byte(name))
 		b.WriteString("</name></metadata>\n")
+	}
+	for _, rte := range routes {
+		b.WriteString("  <rte>\n")
+		if rte.Name != "" {
+			b.WriteString("    <name>")
+			_ = xml.EscapeText(&b, []byte(rte.Name))
+			b.WriteString("</name>\n")
+		}
+		for _, pt := range rte.Points {
+			fmt.Fprintf(&b, "    <rtept lat=\"%s\" lon=\"%s\"></rtept>\n", coordinate(pt.Lat), coordinate(pt.Lon))
+		}
+		b.WriteString("  </rte>\n")
 	}
 	if err := EncodeTracks(&b, tracks); err != nil {
 		return err

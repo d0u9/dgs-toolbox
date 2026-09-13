@@ -91,6 +91,9 @@ type GeoGPX struct {
 	Port  int          `json:"port"`
 	Root  string       `json:"root"`
 	Tiles []GeoGPXTile `json:"tiles"`
+	// AmapKey is an Amap (高德) Web Service key: with it the page routes
+	// along Amap's roads as well as OpenStreetMap's.
+	AmapKey string `json:"amap_key"`
 }
 
 // GeoGPXTile is a base map the GPX page offers beside the built-in
@@ -104,6 +107,13 @@ type GeoGPXTile struct {
 	MaxZoom     int    `json:"max_zoom"`
 	Coordinates string `json:"coordinates"`
 }
+
+// GeoGPXTilesFile is the file, in the GPX command's corner of the config
+// directory, that lists base maps beside those in geo.gpx.tiles, so a long
+// list does not crowd the configuration file:
+//
+//	{"tiles": [{"name": "…", "url": "https://…/{z}/{x}/{y}.png", "coordinates": "gcj02"}]}
+const GeoGPXTilesFile = "tiles.json"
 
 // DefaultGeoGPXHost and DefaultGeoGPXPort keep the GPX page local and at a
 // stable URL.
@@ -249,6 +259,64 @@ func (c Config) GeoGPXAddr() string {
 
 // GeoGPXRoot is the folder the GPX browser opens at: geo.gpx.root, or the home
 // directory when it is empty. A leading ~ is the home directory.
+// GeoGPXTilesPath is <config dir>/geo/gpx/tiles.json.
+func (c Config) GeoGPXTilesPath() string {
+	app := c.AppDir("geo")
+	if app == "" {
+		return ""
+	}
+	return filepath.Join(app, "gpx", GeoGPXTilesFile)
+}
+
+// GeoGPXTiles is every configured base map: geo.gpx.tiles, then the tiles
+// file's. A missing tiles file adds none.
+func (c Config) GeoGPXTiles() ([]GeoGPXTile, error) {
+	tiles := append([]GeoGPXTile(nil), c.Geo.GPX.Tiles...)
+	path := c.GeoGPXTilesPath()
+	if path == "" {
+		return tiles, nil
+	}
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return tiles, nil
+	}
+	if err != nil {
+		return tiles, fmt.Errorf("open tiles %s: %w", path, err)
+	}
+	defer file.Close()
+	var listed struct {
+		Tiles []GeoGPXTile `json:"tiles"`
+	}
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&listed); err != nil {
+		return tiles, fmt.Errorf("decode tiles %s: %w", path, err)
+	}
+	if err := validateTiles(listed.Tiles); err != nil {
+		return tiles, fmt.Errorf("decode tiles %s: %w", path, err)
+	}
+	return append(tiles, listed.Tiles...), nil
+}
+
+// validateTiles checks each tile has a name, a URL template holding {z}, {x}
+// and {y}, and a known coordinate system.
+func validateTiles(tiles []GeoGPXTile) error {
+	for index, tile := range tiles {
+		if tile.Name == "" {
+			return fmt.Errorf("tiles[%d] has no name", index)
+		}
+		for _, placeholder := range []string{"{z}", "{x}", "{y}"} {
+			if !strings.Contains(tile.URL, placeholder) {
+				return fmt.Errorf("tiles[%d] (%s) url must contain %s", index, tile.Name, placeholder)
+			}
+		}
+		if tile.Coordinates != "" && tile.Coordinates != "wgs84" && tile.Coordinates != "gcj02" {
+			return fmt.Errorf("tiles[%d] (%s) coordinates must be wgs84 or gcj02, got %q", index, tile.Name, tile.Coordinates)
+		}
+	}
+	return nil
+}
+
 func (c Config) GeoGPXRoot() string {
 	home, _ := os.UserHomeDir()
 	root := c.Geo.GPX.Root
@@ -378,18 +446,8 @@ func LoadPath(path string) (Config, error) {
 	if filepath.Base(indexFile) != indexFile || indexFile == "." || indexFile == ".." {
 		return Config{}, fmt.Errorf("decode config %s: capture.scan.index_file must be a filename, got %q", path, indexFile)
 	}
-	for index, tile := range config.Geo.GPX.Tiles {
-		if tile.Name == "" {
-			return Config{}, fmt.Errorf("decode config %s: geo.gpx.tiles[%d] has no name", path, index)
-		}
-		for _, placeholder := range []string{"{z}", "{x}", "{y}"} {
-			if !strings.Contains(tile.URL, placeholder) {
-				return Config{}, fmt.Errorf("decode config %s: geo.gpx.tiles[%d] (%s) url must contain %s", path, index, tile.Name, placeholder)
-			}
-		}
-		if tile.Coordinates != "" && tile.Coordinates != "wgs84" && tile.Coordinates != "gcj02" {
-			return Config{}, fmt.Errorf("decode config %s: geo.gpx.tiles[%d] (%s) coordinates must be wgs84 or gcj02, got %q", path, index, tile.Name, tile.Coordinates)
-		}
+	if err := validateTiles(config.Geo.GPX.Tiles); err != nil {
+		return Config{}, fmt.Errorf("decode config %s: geo.gpx.%w", path, err)
 	}
 	config.dir = filepath.Dir(path)
 	return config, nil

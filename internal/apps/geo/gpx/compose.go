@@ -61,39 +61,6 @@ type fillRequest struct {
 	Profile     string       `json:"profile"`
 	Coordinates string       `json:"coordinates"`
 	Route       [][2]float64 `json:"route"`
-	// From and To, [lon, lat] as drawn, route between two places on the map
-	// instead of two points of a track.
-	From *[2]float64 `json:"from"`
-	To   *[2]float64 `json:"to"`
-}
-
-// ends are the positions a route request goes between, in WGS-84: the places
-// given, or else two kept points of the track.
-func (body fillRequest) ends(a analysis) (from, to geo.LatLon, err error) {
-	if body.From == nil && body.To == nil {
-		if err := fillEnds(a, body.First, body.Last); err != nil {
-			return from, to, err
-		}
-		return a.result.Positions[body.First], a.result.Positions[body.Last], nil
-	}
-	if body.From == nil || body.To == nil {
-		return from, to, errors.New("give both places, from and to")
-	}
-	place := func(p [2]float64) (geo.LatLon, error) {
-		if !(p[1] >= -90 && p[1] <= 90 && p[0] >= -180 && p[0] <= 180) {
-			return geo.LatLon{}, errors.New("a place is off the globe")
-		}
-		position := geo.LatLon{Lat: p[1], Lon: p[0]}
-		if body.Coordinates == systemGCJ02 {
-			position = gcj02.ToWGS84(position)
-		}
-		return position, nil
-	}
-	if from, err = place(*body.From); err != nil {
-		return from, to, err
-	}
-	to, err = place(*body.To)
-	return from, to, err
 }
 
 // fillEnds checks that a fill can go between two points of a track: both kept
@@ -116,17 +83,16 @@ func fillEnds(a analysis, first, last int) error {
 	return nil
 }
 
-// routeFill asks the router for the road between two points of a track, or
-// two places on the map. It sends only those two positions, as cleaning left
-// them.
+// routeFill asks the router for the road between two points of a track. It
+// sends only those two positions, as cleaning left them.
 func (a api) routeFill(w http.ResponseWriter, r *http.Request) {
 	var body fillRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
 		return
 	}
-	if _, ok := osrm.Profiles[body.Profile]; !ok {
-		writeError(w, http.StatusBadRequest, errors.New(`profile must be "car", "bike" or "foot"`))
+	if _, ok := a.wayIDs()[body.Profile]; !ok {
+		writeError(w, http.StatusBadRequest, errUnknownWay)
 		return
 	}
 	result, err := analyse(body.Path, stops.Defaults())
@@ -134,12 +100,12 @@ func (a api) routeFill(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusFor(err), err)
 		return
 	}
-	from, to, err := body.ends(result)
-	if err != nil {
+	if err := fillEnds(result, body.First, body.Last); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	route, err := a.router()(r.Context(), body.Profile, from, to)
+	from, to := result.result.Positions[body.First], result.result.Positions[body.Last]
+	route, err := a.route(r.Context(), body.Profile, from, to)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
@@ -164,8 +130,8 @@ func (a api) saveFill(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
 		return
 	}
-	if _, ok := osrm.Profiles[body.Profile]; !ok {
-		writeError(w, http.StatusBadRequest, errors.New(`profile must be "car", "bike" or "foot"`))
+	if _, ok := a.wayIDs()[body.Profile]; !ok {
+		writeError(w, http.StatusBadRequest, errUnknownWay)
 		return
 	}
 	if err := checkRoute(body.Route); err != nil {
@@ -211,36 +177,6 @@ func checkRoute(route [][2]float64) error {
 		}
 	}
 	return nil
-}
-
-// saveRouteTrack adds a route between two places on the map to a GPX as a
-// track of its own, marked as filled; like any added track it is saved into
-// a new file.
-func (a api) saveRouteTrack(w http.ResponseWriter, r *http.Request) {
-	var body fillRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
-		return
-	}
-	if _, ok := osrm.Profiles[body.Profile]; !ok {
-		writeError(w, http.StatusBadRequest, errors.New(`profile must be "car", "bike" or "foot"`))
-		return
-	}
-	if err := checkRoute(body.Route); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	trk := gpxfile.Track{Name: fmt.Sprintf("Along the road (%s)", body.Profile)}
-	seg := gpxfile.Segment{}
-	for _, p := range body.Route {
-		seg.Points = append(seg.Points, gpxfile.Point{LatLon: geo.LatLon{Lat: p[1], Lon: p[0]}, Source: compose.FilledSource})
-	}
-	trk.Segments = []gpxfile.Segment{seg}
-	if err := addTracks(body.Path, "OSRM", []gpxfile.Track{trk}); err != nil {
-		writeError(w, statusFor(err), err)
-		return
-	}
-	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // removeFill takes a fill out: its route's points go, and the recorded points
