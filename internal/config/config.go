@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const EnvPath = "DGS_TOOLBOX_CONFIG"
@@ -82,11 +83,26 @@ type Geo struct {
 	GPX GeoGPX `json:"gpx"`
 }
 
-// GeoGPX is where the GPX web server listens. Host 0.0.0.0 lets other
-// machines reach it. Empty values use the defaults.
+// GeoGPX configures the GPX command: where its web server listens, the
+// folder the browser opens at, and the base maps the page offers. Host 0.0.0.0
+// lets other machines reach the server. Empty values use the defaults.
 type GeoGPX struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
+	Host  string       `json:"host"`
+	Port  int          `json:"port"`
+	Root  string       `json:"root"`
+	Tiles []GeoGPXTile `json:"tiles"`
+}
+
+// GeoGPXTile is a base map the GPX page offers beside the built-in
+// built-in maps. URL is a raster tile template holding {z}, {x} and {y}.
+// Coordinates names the system the tiles are drawn in: "wgs84" (or empty) or
+// "gcj02", as maps published in China are.
+type GeoGPXTile struct {
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Attribution string `json:"attribution"`
+	MaxZoom     int    `json:"max_zoom"`
+	Coordinates string `json:"coordinates"`
 }
 
 // DefaultGeoGPXHost and DefaultGeoGPXPort keep the GPX page local and at a
@@ -231,6 +247,22 @@ func (c Config) GeoGPXAddr() string {
 	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
+// GeoGPXRoot is the folder the GPX browser opens at: geo.gpx.root, or the home
+// directory when it is empty. A leading ~ is the home directory.
+func (c Config) GeoGPXRoot() string {
+	home, _ := os.UserHomeDir()
+	root := c.Geo.GPX.Root
+	switch {
+	case root == "":
+		return home
+	case root == "~":
+		return home
+	case strings.HasPrefix(root, "~/"):
+		return filepath.Join(home, root[2:])
+	}
+	return root
+}
+
 func (c Config) PhotoImportPaths() (source, destination string) {
 	return c.Photo.Import.Source, c.Photo.Import.Destination
 }
@@ -345,6 +377,19 @@ func LoadPath(path string) (Config, error) {
 	_, indexFile := config.CaptureScanSettings()
 	if filepath.Base(indexFile) != indexFile || indexFile == "." || indexFile == ".." {
 		return Config{}, fmt.Errorf("decode config %s: capture.scan.index_file must be a filename, got %q", path, indexFile)
+	}
+	for index, tile := range config.Geo.GPX.Tiles {
+		if tile.Name == "" {
+			return Config{}, fmt.Errorf("decode config %s: geo.gpx.tiles[%d] has no name", path, index)
+		}
+		for _, placeholder := range []string{"{z}", "{x}", "{y}"} {
+			if !strings.Contains(tile.URL, placeholder) {
+				return Config{}, fmt.Errorf("decode config %s: geo.gpx.tiles[%d] (%s) url must contain %s", path, index, tile.Name, placeholder)
+			}
+		}
+		if tile.Coordinates != "" && tile.Coordinates != "wgs84" && tile.Coordinates != "gcj02" {
+			return Config{}, fmt.Errorf("decode config %s: geo.gpx.tiles[%d] (%s) coordinates must be wgs84 or gcj02, got %q", path, index, tile.Name, tile.Coordinates)
+		}
 	}
 	config.dir = filepath.Dir(path)
 	return config, nil

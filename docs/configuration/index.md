@@ -11,7 +11,7 @@ link here; this is what a reader consults to find out *what* to write.
   the Obsidian Actions write to. The Actions a Recipe may name are catalogued
   in [`apps/capture/actions.md`](../apps/capture/actions.md).
 - [Photo](photo.md) — Photo Import's state file and default paths.
-- [Geo](geo.md) — where the GPX web server listens.
+- [Geo](geo.md) — where the GPX web server listens, the folder it browses, and its base maps.
 
 Working files to copy from are in [`examples/`](../../examples), one folder per
 thing you might be setting up. A test loads every one of them, so an example
@@ -82,6 +82,8 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `photo.import.destination` | [photo](photo.md) | empty — the repository's mock path |
 | `geo.gpx.host` | [geo](geo.md) | `127.0.0.1` |
 | `geo.gpx.port` | [geo](geo.md) | `8765` |
+| `geo.gpx.root` | [geo](geo.md) | empty — the home directory |
+| `geo.gpx.tiles` | [geo](geo.md) | empty — the built-in maps only |
 
 ## Keeping this current
 
