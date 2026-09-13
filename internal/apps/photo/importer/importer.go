@@ -125,15 +125,16 @@ type Event struct {
 }
 
 type FileResult struct {
-	Index           int    `json:"index"`
-	Source          string `json:"source"`
-	Destination     string `json:"destination"`
-	Size            int64  `json:"size"`
-	SourceModTime   int64  `json:"source_mod_time_unix_nano,omitempty"`
-	SourceHash      string `json:"source_hash,omitempty"`
-	DestinationHash string `json:"destination_hash,omitempty"`
-	Phase           Phase  `json:"phase"`
-	Error           string `json:"error,omitempty"`
+	Index              int    `json:"index"`
+	Source             string `json:"source"`
+	Destination        string `json:"destination"`
+	PlannedDestination string `json:"planned_destination,omitempty"`
+	Size               int64  `json:"size"`
+	SourceModTime      int64  `json:"source_mod_time_unix_nano,omitempty"`
+	SourceHash         string `json:"source_hash,omitempty"`
+	DestinationHash    string `json:"destination_hash,omitempty"`
+	Phase              Phase  `json:"phase"`
+	Error              string `json:"error,omitempty"`
 }
 
 // Result carries the per-file transfer outcomes. StateError reports a failure
@@ -294,9 +295,31 @@ func loadState(path string) State {
 	return state
 }
 
+// UpdateDestinations records paths changed by verified post-processing using
+// the same atomic state-file writer as the transfer engine.
+func UpdateDestinations(path string, destinations map[string]string) error {
+	if path == "" || len(destinations) == 0 {
+		return nil
+	}
+	state, err := LoadState(path)
+	if err != nil {
+		return err
+	}
+	for index := range state.Files {
+		if destination, ok := destinations[state.Files[index].Destination]; ok {
+			if state.Files[index].PlannedDestination == "" {
+				state.Files[index].PlannedDestination = state.Files[index].Destination
+			}
+			state.Files[index].Destination = destination
+		}
+	}
+	return writeState(path, &state)
+}
+
 func resumable(ctx context.Context, state State, job Job, operation Operation) (FileResult, bool) {
 	for _, file := range state.Files {
-		if file.Phase != PhaseComplete || file.Source != job.Source || file.Destination != job.Destination || file.DestinationHash == "" {
+		matchesDestination := file.Destination == job.Destination || file.PlannedDestination == job.Destination
+		if file.Phase != PhaseComplete || file.Source != job.Source || !matchesDestination || file.DestinationHash == "" {
 			continue
 		}
 		destinationHash, destinationSize, err := hashFile(ctx, file.Destination)
@@ -463,7 +486,11 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	if err := os.Chtimes(temporary, info.ModTime(), info.ModTime()); err != nil {
 		return fail(fmt.Errorf("preserve source modification time: %w", err))
 	}
-	metadataFile, err := os.Open(temporary)
+	// Some network filesystems (notably SMB/NAS mounts) reject fsync on a
+	// read-only descriptor even when this client created and wrote the file.
+	// Reopen the verified temporary file read-write so the metadata sync uses a
+	// writable handle; do not weaken the contract by ignoring permission errors.
+	metadataFile, err := os.OpenFile(temporary, os.O_RDWR, 0)
 	if err != nil {
 		return fail(fmt.Errorf("open destination to sync metadata: %w", err))
 	}
