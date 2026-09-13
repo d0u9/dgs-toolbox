@@ -13,11 +13,13 @@ dgs demo
 dgs photo
 dgs photo import
 dgs photo encode
+dgs geo gpx
 ```
 
 - `dgs demo` opens the component gallery directly.
 - `dgs photo` opens a picker scoped to Photo commands.
 - `dgs photo import` opens Photo Import directly.
+- `dgs geo gpx` opens GPX directly; see [`apps/geo/gpx.md`](apps/geo/gpx.md).
 - Leaving Photo Import returns to a command picker so another command can be selected.
 - Only one command is active at a time.
 
@@ -145,6 +147,20 @@ command hierarchy stays generic and no app is special-cased in the CLI.
 
 A report is written from the registry it describes rather than from a hand-kept
 list, so it cannot drift from the behaviour it documents.
+
+### Command flags
+
+A leaf command may declare flags (`dgs geo gpx --port 9000`). Each flag is
+declared beside the command in the app registry and names the configuration
+setting it overrides; a value given on the command line is applied to the
+loaded configuration before the command is built. The command therefore reads
+one configuration and never learns whether a value came from the file or the
+command line, and the CLI registers flags without knowing any app. A flag left
+out keeps the configured value. An invalid value is refused before the TUI
+opens.
+
+The override lasts for the whole process: leaving the command and opening it
+again from the picker keeps the value given at launch.
 
 ### Status bar
 

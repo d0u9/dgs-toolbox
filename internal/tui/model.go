@@ -95,6 +95,16 @@ func NewModelWithGlobalConfig(apps []App, launch Launch, global dgsconfig.Config
 		return m
 	}
 	m.selected = commandIndex
+	for _, flag := range apps[appIndex].Commands[commandIndex].Flags {
+		value, ok := launch.Flags[flag.Name]
+		if !ok {
+			continue
+		}
+		if err := flag.Apply(&m.globalConfig, value); err != nil {
+			m.launchErr = fmt.Sprintf("--%s: %v", flag.Name, err)
+			return m
+		}
+	}
 	return m.activate(choice{appIndex: appIndex, commandIndex: commandIndex})
 }
 

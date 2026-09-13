@@ -2,7 +2,7 @@
 
 ## Current goal
 
-Build the Photo Import workflow for `dgs`, including its real, integrity-verified Processing engine. Keep GPX and the remaining Photo commands as demo domains.
+Build the Photo Import workflow for `dgs`, including its real, integrity-verified Processing engine. Keep the remaining Photo commands as demo domains and GPX as an empty foundation.
 
 Photo Import may perform real file operations only after the user starts Processing. Its highest-priority contract is that a destination file is not published under its final name until an independent destination readback matches the Source SHA-256 digest. Follow the confirmed algorithm and unresolved boundaries in [`docs/apps/photo/import.md`](docs/apps/photo/import.md).
 
@@ -35,9 +35,8 @@ dgs demo
 dgs photo
 dgs photo import
 dgs photo encode
-dgs gpx
-dgs gpx import
-dgs gpx inspect
+dgs geo
+dgs geo gpx
 ```
 
 A single `dgs` process has only one active leaf command at a time. It does not display or run multiple command workspaces simultaneously.
@@ -51,7 +50,7 @@ Startup behavior:
 - Leaving a command returns to the command picker so the user can choose again.
 - Starting another command creates a fresh command model; the previous command does not remain active in the background.
 
-GPX and Photo commands other than Photo Import remain mock demonstrations of this model.
+Photo commands other than Photo Import remain mock demonstrations of this model. GPX is an empty foundation: a TUI plus a local web server for map work, described in [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
 
 ## Shared TUI shell
 
@@ -68,7 +67,7 @@ The top bar has two regions:
 - Left: the current command path or picker context.
 - Right: the current local time.
 
-The workspace belongs to the picker or the active command. For command demos, show only a large identifying label such as `PHOTO IMPORT` or `GPX INSPECT`.
+The workspace belongs to the picker or the active command. For command demos, show only a large identifying label such as `PHOTO IMPORT` or `PHOTO ENCODE`.
 
 The status bar has three regions:
 
@@ -107,7 +106,7 @@ Continue to demonstrate:
 - Direct entry into a leaf command.
 - Returning from a command to the picker.
 - The shared three-region layout.
-- Photo and GPX placeholder command screens.
+- Photo placeholder command screens and the empty GPX command.
 
 Implement Photo Import Processing with bounded worker concurrency, same-directory `.dgs-part` files, SHA-256 source hashing during copy, independent destination readback, verified atomic publication, whole-file retry, and a versioned `.dgs-state` file. Keep this logic outside the TUI model and cover it with filesystem tests.
 
