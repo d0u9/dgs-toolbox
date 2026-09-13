@@ -12,12 +12,14 @@ import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { FolderTree, revealButton } from "./tree.js";
+import { confirmDialog, promptDialog } from "./dialog.js";
 import { splitter, shareSplitter } from "./splitter.js";
 
 // Okabe-Ito-derived hues: distinct under the common red/green colour-vision
 // deficiencies, with the darker variants retained for contrast on the map.
 const PALETTE = ["#0072b2", "#d55e00", "#009e73", "#cc79a7", "#e69f00", "#56b4e9", "#6f4c9b", "#882255", "#117733", "#332288"];
 const STORAGE_KEY = "dgs-gpx-browser";
+const FILL_SNAP = 40; // pixels within which a fill tool click snaps to a track's end
 
 const $ = (id) => document.getElementById(id);
 
@@ -35,6 +37,10 @@ const state = {
   lasso: false,
   rangeTool: false, // dragging on the timeline removes a range
   rangeStart: null, // with the range tool, the start clicked on the track
+  // Filling along the road: the tool is on, the profile, the start clicked
+  // { index, position } — index null for a place off the track — and the
+  // route previewed { path, ends, route, display, distance }.
+  fill: { active: false, profile: "car", start: null, preview: null, busy: false, error: null },
   stopNumbers: true, // numbered stop markers on the map; the timeline always has them
   stops: { distance: 50, duration: 300 }, // stay-point thresholds: metres, seconds
   collapsed: { folders: false, workspace: false }, // sidebar panels folded to their header
@@ -79,6 +85,7 @@ function save() {
       cleanOpen: state.cleanOpen,
       cutOpen: state.cutOpen,
       compare: state.compare,
+      fillProfile: state.fill.profile,
       gcj: state.gcj,
       collapsed: state.collapsed,
     }));
@@ -134,10 +141,24 @@ async function addTrack(path, { color, visible = true, row, restoring = false, h
   return true;
 }
 
+// redraw shows a track's new data on the map. A file that had nothing to draw
+// — a new GPX before anything is added to it — gets its layers now.
+function redraw(entry) {
+  if (!drawable(entry)) return;
+  if (!layers.ids.has(entry.id)) {
+    layers.add(entry.id, entry.track, entry.color);
+    layers.setVisible(entry.id, entry.visible);
+    layers.setHiddenParts(entry.id, entry.hiddenParts);
+    if (state.focus) layers.setFocus(state.tracks.get(state.focus)?.id);
+    return;
+  }
+  layers.update(entry.id, entry.track);
+}
+
 function removeTrack(path) {
   const entry = state.tracks.get(path);
   if (!entry) return;
-  if (drawable(entry)) layers.remove(entry.id);
+  if (layers.ids.has(entry.id)) layers.remove(entry.id);
   state.tracks.delete(path);
   if (state.focus === path) focusNextVisible();
   tree.render();
@@ -151,7 +172,7 @@ function setVisible(path, visible) {
   const entry = state.tracks.get(path);
   if (!entry || entry.visible === visible) return;
   entry.visible = visible;
-  if (drawable(entry)) layers.setVisible(entry.id, visible);
+  if (layers.ids.has(entry.id)) layers.setVisible(entry.id, visible);
   if (!visible && state.focus === path) focusNextVisible();
   else if (visible && !state.focus) setFocus(path, { fit: false });
   tree.render();
@@ -170,6 +191,7 @@ function focusNextVisible() {
 }
 
 function setFocus(path, { fit: shouldFit = true } = {}) {
+  if (state.focus !== path && cleanOverlay && (state.fill.start != null || state.fill.preview)) setFill({ start: null, preview: null, error: null });
   state.focus = path;
   $("profile-splitter").hidden = !path || !(state.charts.elevation || state.charts.speed);
   layers.setCursor(null);
@@ -182,9 +204,11 @@ function setFocus(path, { fit: shouldFit = true } = {}) {
     timeline.show(entry.track, entry.color, hidden);
     syncChartsToTimeline(timeline.view);
     cleanOverlay.show(state.compare ? entry.track : null, hidden);
+    cleanOverlay.showFills(entry.track);
     if (shouldFit) fit([entry.track]);
   } else {
     cleanOverlay.clear();
+    cleanOverlay.showFills(null);
     cleanPanel.hide();
     layers.setFocus(null);
     profile.hide();
@@ -209,10 +233,12 @@ function applyCleanPanel() {
   if (!open) {
     setLasso(false);
     setRangeTool(false);
+    setFillTool(false);
     timeline.setEditing(null);
     return;
   }
   cleanPanel.timeZone = $("timezone").value;
+  cleanPanel.fill = state.fill;
   cleanPanel.show(entry.track);
   timeline.setEditing({
     edits: entry.track.clean.params.edits,
@@ -235,7 +261,10 @@ function pushEdit(edit) {
 function setLasso(active) {
   if (state.lasso === active) return;
   state.lasso = active;
-  if (active) setRangeTool(false);
+  if (active) {
+    setRangeTool(false);
+    setFillTool(false);
+  }
   lasso.setActive(active);
   cleanPanel.setLasso(active);
 }
@@ -244,10 +273,191 @@ function setRangeTool(active) {
   if (state.rangeTool === active) return;
   state.rangeTool = active;
   setRangeStart(null);
-  if (active) setLasso(false);
+  if (active) {
+    setLasso(false);
+    setFillTool(false);
+  }
   cleanPanel.setRangeTool(active);
   applyCleanPanel();
 }
+
+// ---- filling a stretch along the road ----
+
+// setFill changes the fill tool's state and shows it in the panel and on the map.
+function setFill(patch) {
+  Object.assign(state.fill, patch);
+  const entry = focusedEntry();
+  if ("start" in patch) cleanOverlay.setPending(state.fill.start == null || !entry ? null : state.fill.start.position);
+  if ("preview" in patch) cleanOverlay.setPreview(state.fill.preview?.display || null);
+  cleanPanel.setFill(state.fill);
+}
+
+// setFillTool turns picking a stretch's ends on or off; turning it off forgets
+// a route not yet used.
+function setFillTool(active) {
+  if (state.fill.active === active && (active || (state.fill.start == null && !state.fill.preview))) return;
+  if (active) {
+    setLasso(false);
+    setRangeTool(false);
+  }
+  setFill({ active, start: null, preview: null, busy: false, error: null });
+}
+
+// fillEndAt is where a click with the fill tool lands: the end of a shown
+// track when near one, else a point of the track, else the place on the map.
+function fillEndAt(entry, event) {
+  const { track } = entry;
+  let index = -1, best = FILL_SNAP ** 2;
+  for (const part of track.parts) {
+    if (part.kind !== "track" || entry.hiddenParts.has(part.key)) continue;
+    let first = part.first, last = part.last;
+    while (first < last && track.removed[first]) first++;
+    while (last > first && track.removed[last]) last--;
+    for (const i of [first, last]) {
+      if (track.removed[i]) continue;
+      const p = map.project(track.points[i]);
+      const d = (p.x - event.point.x) ** 2 + (p.y - event.point.y) ** 2;
+      if (d <= best) [index, best] = [i, d];
+    }
+  }
+  if (index < 0) index = layers.nearest(track, event.point, 24, entry.hiddenParts);
+  if (index >= 0) return { index, position: track.points[index] };
+  return { index: null, position: [event.lngLat.lng, event.lngLat.lat] };
+}
+
+// pickFillEnd takes a place clicked: the start, then the end, after which the
+// router is asked for the road between them. Two points of the track fill
+// the stretch between; with a place off the track the route becomes a track
+// of its own.
+async function pickFillEnd(end) {
+  const entry = focusedEntry();
+  if (!entry || state.fill.busy) return;
+  const { start } = state.fill;
+  if (start == null || state.fill.preview) {
+    setFill({ start: end, preview: null, error: null });
+    return;
+  }
+  if (start.index != null && start.index === end.index) return;
+  const ends = start.index != null && end.index != null
+    ? { first: Math.min(start.index, end.index), last: Math.max(start.index, end.index) }
+    : { from: start.position, to: end.position };
+  const path = state.focus;
+  setFill({ busy: true, error: null });
+  try {
+    const answer = await api.routeFill(path, ends, state.fill.profile, state.coordinates);
+    if (state.focus !== path) return;
+    setFill({ busy: false, start: null, preview: { path, ends, ...answer } });
+  } catch (error) {
+    setFill({ busy: false, start: null, error: error.message });
+  }
+}
+
+async function useFill() {
+  const { preview, profile } = state.fill;
+  if (!preview || preview.path !== state.focus) return;
+  const { first, last } = preview.ends;
+  setFill({ busy: true });
+  await changeFocused((path) => first != null
+    ? api.saveFill(path, first, last, profile, preview.route)
+    : api.addRoute(path, profile, preview.route));
+  setFill({ busy: false, preview: null });
+}
+
+// showFill frames a filled stretch on the map.
+function showFill(fill) {
+  showRange({ kind: "range", first: fill.first, last: fill.last });
+}
+
+// ---- tracks added from other files, saved into a new GPX ----
+
+// saveAs writes a workspace GPX with the tracks added to it into a new file,
+// which takes its place in the workspace; the original goes back to its own.
+async function saveAs(path) {
+  const entry = state.tracks.get(path);
+  const dot = path.toLowerCase().lastIndexOf(".gpx");
+  const tracks = `${entry.track.added} track${entry.track.added === 1 ? "" : "s"}`;
+  const root = (tree.root || state.config.root || "").replace(/[\\/]$/, "");
+  const target = await promptDialog(entry.track.draft
+    ? {
+      title: "Save the new GPX",
+      message: `${entry.track.name} holds ${tracks}. Choose the full path to save it at; an existing file is not replaced.`,
+      value: `${root}/${entry.track.name}.gpx`,
+      confirm: "Save",
+    }
+    : {
+      title: "Save as a new GPX",
+      message: `${entry.track.name} has ${tracks} added to it. It is saved, with them, as a new file; ${basename(path)} itself is not written. An existing file is not replaced.`,
+      value: `${dot > 0 ? path.slice(0, dot) : path} merged.gpx`,
+      confirm: "Save",
+    });
+  if (!target) return;
+  try {
+    const result = await api.saveAs(path, target);
+    const { color, visible } = entry;
+    removeTrack(path);
+    await addTrack(result.path, { color, visible });
+    tree.refresh();
+    tree.showMessage(`Saved ${basename(result.path)}`);
+  } catch (error) {
+    tree.showMessage(error.message, true);
+  }
+}
+
+// newGPX starts an empty GPX in memory, shown in the workspace, to add
+// segments to from the Cut panel.
+async function newGPX() {
+  const name = await promptDialog({
+    title: "New GPX",
+    message: "A new, empty GPX, kept in memory until you save it. Add segments to it from the Cut panel of any track. It is lost if dgs exits before it is saved.",
+    value: "New trip",
+    confirm: "Create",
+  });
+  if (!name) return;
+  try {
+    const { path } = await api.newDraft(name);
+    await addTrack(path);
+  } catch (error) {
+    tree.showMessage(error.message, true);
+  }
+}
+
+// discardSidecar deletes a file's sidecar after asking, so the GPX reads as
+// recorded again.
+async function discardSidecar(path) {
+  const entry = state.tracks.get(path);
+  if (!entry) return;
+  const ok = await confirmDialog({
+    title: "Discard the sidecar?",
+    message: `Everything done to ${entry.track.name} goes: removals, filter settings, cuts, segment names, fills and tracks added to it. The GPX itself is not changed. This cannot be undone.`,
+    detail: entry.track.clean.sidecar,
+    confirm: "Discard",
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api.discardSidecar(path);
+    await reloadEntry(path);
+  } catch (error) {
+    tree.showMessage(error.message, true);
+    return;
+  }
+  if (state.focus === path) setFocus(path, { fit: false });
+  else renderTracks();
+}
+
+async function removeAdded(path, index) {
+  try {
+    await api.removeAdded(path, index);
+    await reloadEntry(path);
+  } catch (error) {
+    tree.showMessage(error.message, true);
+    return;
+  }
+  if (state.focus === path) setFocus(path, { fit: false });
+  else renderTracks();
+}
+
+const basename = (path) => path.split(/[\\/]/).pop();
 
 // removeStop removes every point of a stop by hand, joined across it.
 function removeStop(index) {
@@ -304,7 +514,7 @@ async function reloadEntry(path) {
   const entry = state.tracks.get(path);
   if (!entry) return;
   entry.track = await api.track(path, state.stops, state.coordinates);
-  if (drawable(entry)) layers.update(entry.id, entry.track);
+  redraw(entry);
 }
 
 // ---- cutting: the focused track's segments ----
@@ -315,7 +525,7 @@ function applyCutPanel() {
   $("cut-panel").hidden = !open;
   $("toggle-cut").setAttribute("aria-pressed", String(state.cutOpen));
   if (open) {
-    cutPanel.show(entry.track, { timeZone: $("timezone").value, workspace: [...state.tracks.keys()] });
+    cutPanel.show(entry.track, { timeZone: $("timezone").value, workspace: [...state.tracks.keys()], folder: tree.root || state.config.root });
     cutOverlay.show(entry.track);
     timeline.setCutting({
       cuts: entry.track.cuts,
@@ -387,7 +597,7 @@ async function reloadTracks() {
   for (const [path, entry] of state.tracks) {
     try {
       entry.track = await api.track(path, state.stops, state.coordinates);
-      if (drawable(entry)) layers.update(entry.id, entry.track);
+      redraw(entry);
     } catch (error) {
       tree.showMessage(error.message, true);
     }
@@ -427,7 +637,7 @@ async function syncCoordinates() {
 function setColor(path, color) {
   const entry = state.tracks.get(path);
   entry.color = color;
-  if (drawable(entry)) layers.setColor(entry.id, color);
+  if (layers.ids.has(entry.id)) layers.setColor(entry.id, color);
   if (state.focus === path) {
     const hidden = hiddenRanges(entry);
     profile.show(entry.track, color, hidden);
@@ -468,9 +678,10 @@ function renderTracks() {
   renderCoordinates();
 }
 
-// expandable: a file holding more than one track, or any route or waypoint,
-// lists its parts under its row.
-const expandable = (entry) => entry.track.parts.length > 1 || entry.track.parts.some((part) => part.kind !== "track");
+// expandable: a file holding more than one track, any route or waypoint, or
+// any track added from another file — even one alone, so it can be seen and
+// taken out again — lists its parts under its row.
+const expandable = (entry) => entry.track.parts.length > 1 || entry.track.parts.some((part) => part.kind !== "track" || part.added);
 
 function button(className, text, title, onClick) {
   const element = document.createElement("button");
@@ -537,11 +748,24 @@ function trackRow(path, entry) {
     track.points.length ? format.distance(track.stats.distance) : "",
     count("track", "track"), count("route", "route"), count("waypoint", "waypoint"),
     stops ? `${stops} stop${stops > 1 ? "s" : ""}` : "",
+    track.clean.error ? "sidecar unreadable" : track.clean.sidecar ? "sidecar" : "",
+    track.draft ? `new, not saved${track.added ? "" : " — add segments from Cut"}` : track.added ? `${track.added} added, not saved` : "",
   ];
 
   const actions = document.createElement("span");
   actions.className = "actions";
-  if (tree.canReveal) actions.append(revealButton(path));
+  if (track.draft) {
+    li.classList.add("changed");
+    if (track.added) actions.append(button("save-as", "Save…", "Save this new GPX to a file", () => saveAs(path)));
+  } else if (track.added) {
+    li.classList.add("changed");
+    actions.append(button("save-as", "Save as…", "Save this GPX, with the tracks added to it, as a new file", () => saveAs(path)));
+  }
+  if (track.clean.sidecar) {
+    li.classList.add("has-sidecar");
+    actions.append(button("sidecar", "Discard…", `Discard the sidecar ${track.clean.sidecar}: the GPX reads as recorded again`, () => discardSidecar(path)));
+  }
+  if (tree.canReveal && !track.draft) actions.append(revealButton(path));
   actions.append(button("remove", "×", "Remove from the workspace", () => removeTrack(path)));
 
   li.append(eye, color, label(track.name, details));
@@ -571,8 +795,18 @@ function partRow(path, entry, part) {
 
   const details = part.kind === "waypoint"
     ? [part.description, part.elevation != null ? `${Math.round(part.elevation)} m` : ""]
-    : [format.distance(part.distance), part.segments > 1 ? `${part.segments} segments` : "", part.kind === "route" ? "planned" : ""];
+    : [
+      format.distance(part.distance), part.segments > 1 ? `${part.segments} segments` : "", part.kind === "route" ? "planned" : "",
+      part.added ? `added from ${basename(part.added.from)}` : "",
+    ];
   li.append(eye, glyph, label(part.name, details));
+  if (part.added) {
+    li.classList.add("added");
+    const actions = document.createElement("span");
+    actions.className = "actions";
+    actions.append(button("remove", "×", "Take this added track out again", () => removeAdded(path, part.added.index)));
+    li.append(actions);
+  }
   li.addEventListener("click", () => showPart(path, part));
   return li;
 }
@@ -617,7 +851,7 @@ function setPartsHidden(path, keys, hidden) {
     if (hidden) entry.hiddenParts.add(key);
     else entry.hiddenParts.delete(key);
   }
-  if (drawable(entry)) layers.setHiddenParts(entry.id, entry.hiddenParts);
+  if (layers.ids.has(entry.id)) layers.setHiddenParts(entry.id, entry.hiddenParts);
   // The profile, stops and timeline mark what is hidden.
   if (state.focus === path) setFocus(path, { fit: false });
   else renderTracks();
@@ -754,7 +988,7 @@ function bindMap() {
       const entry = focusedEntry();
       const index = entry && entry.track.points.length ? layers.nearest(entry.track, point, 24, entry.hiddenParts) : -1;
       // In cut mode the pointer says a click cuts at the marked point.
-      map.getCanvas().style.cursor = index >= 0 ? (state.cutOpen ? "copy" : "crosshair") : "";
+      map.getCanvas().style.cursor = index >= 0 ? (state.cutOpen ? "copy" : "crosshair") : state.fill.active ? "crosshair" : "";
       inspect(index);
       profile.setIndex(index >= 0 ? index : null);
     });
@@ -769,6 +1003,12 @@ function bindMap() {
   map.on("click", (event) => {
     if (state.lasso) return; // a lasso ends with a click; it selects, it does not focus
     const focused = focusedEntry();
+    // With the fill tool, clicks pick a route's start, then its end: on the
+    // track, or anywhere on the map.
+    if (state.fill.active && focused) {
+      pickFillEnd(fillEndAt(focused, event));
+      return;
+    }
     // With the range tool, clicks on the track pick a range's start, then its end.
     if (state.rangeTool && focused) {
       const index = layers.nearest(focused.track, event.point, 24, focused.hiddenParts);
@@ -966,6 +1206,15 @@ async function start() {
     onLasso: setLasso,
     onRangeTool: setRangeTool,
     onShowRange: showRange,
+    onFillTool: setFillTool,
+    onProfile: (profile) => {
+      setFill({ profile, preview: null });
+      save();
+    },
+    onUseFill: useFill,
+    onDiscardFill: () => setFill({ preview: null }),
+    onRemoveFill: (index) => changeFocused((path) => api.removeFill(path, index)),
+    onShowFill: showFill,
     onCompare: (on) => {
       state.compare = on;
       const entry = focusedEntry();
@@ -976,6 +1225,7 @@ async function start() {
   lasso = new Lasso(map, { onDone: lassoDone, onCancel: () => setLasso(false) });
   if (saved.cleanOpen === true) state.cleanOpen = true;
   if (saved.compare === false) state.compare = false;
+  if (["car", "bike", "foot"].includes(saved.fillProfile)) state.fill.profile = saved.fillProfile;
   cleanPanel.compare = state.compare;
   $("toggle-clean").addEventListener("click", () => {
     state.cleanOpen = !state.cleanOpen;
@@ -1024,6 +1274,8 @@ async function start() {
     if (event.key === "Escape") {
       if (state.rangeStart != null) setRangeStart(null); // first Esc forgets a half-picked range
       else setRangeTool(false);
+      if (state.fill.start != null || state.fill.preview) setFill({ start: null, preview: null, error: null });
+      else setFillTool(false);
     }
     // Undo the latest removal by hand, unless typing in a field.
     const typing = event.target.closest?.("input, select, textarea");
@@ -1098,6 +1350,10 @@ async function start() {
     state.gcj = $("coordinates").value;
     save();
     syncCoordinates();
+  });
+  $("new-gpx").addEventListener("click", (event) => {
+    event.stopPropagation(); // the header folds the panel otherwise
+    newGPX();
   });
   $("fit-all").addEventListener("click", () => fit(visibleEntries().map((entry) => entry.track)));
   $("track-filter").addEventListener("input", renderTracks);

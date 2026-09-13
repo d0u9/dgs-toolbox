@@ -24,6 +24,7 @@ const (
 	Spike  Rule = "spike"  // spikes.Detect
 	Drift  Rule = "drift"  // hampel.Detect
 	Stop   Rule = "stop"   // collapsed into a stop's centre
+	Fill   Rule = "fill"   // replaced by a route filled in along the road
 )
 
 // Params are every filter's switch and settings, and the removals made by
@@ -155,6 +156,17 @@ type Result struct {
 	Positions []geo.LatLon // where each kept sample now is; removed ones stay put
 	Moved     []bool       // whether a kept sample's position changed
 	Breaks    []bool       // whether a kept sample starts a new segment after a broken range
+	Filled    []bool       // whether a sample was filled in along the road; nil when none was
+}
+
+// Composed says which samples of a line are not the recording's own: those a
+// fill inserted, never removed or moved by cleaning, and the recorded ones
+// each fill replaced. Spans are each fill's end samples; the line is never
+// broken between them.
+type Composed struct {
+	Filled   []bool
+	Replaced []bool
+	Spans    [][2]int
 }
 
 // Counts is how many samples each rule removed, and how many were moved.
@@ -163,6 +175,8 @@ type Counts struct {
 	Spike  int `json:"spike"`
 	Drift  int `json:"drift"`
 	Stop   int `json:"stop"`
+	Fill   int `json:"fill"`
+	Filled int `json:"filled"`
 	Moved  int `json:"moved"`
 }
 
@@ -179,6 +193,11 @@ func (r Result) Counts() Counts {
 			c.Drift++
 		case Stop:
 			c.Stop++
+		case Fill:
+			c.Fill++
+		}
+		if r.Filled != nil && r.Filled[i] {
+			c.Filled++
 		}
 		if r.Moved[i] {
 			c.Moved++
@@ -214,9 +233,14 @@ func (r Result) Kept(line track.Line) (track.Line, []int) {
 // Run cleans a line. Samples removed by hand go first, so they cannot sway a
 // filter; then spikes, drift, smoothing and stop collapse, each seeing only
 // what the ones before kept, and the smoothed positions.
-func Run(line track.Line, p Params) Result {
+func Run(line track.Line, p Params) Result { return RunComposed(line, p, Composed{}) }
+
+// RunComposed cleans a composed line: the samples fills replaced go before
+// anything else, and filled samples stay as they are.
+func RunComposed(line track.Line, p Params, c Composed) Result {
 	n := len(line)
-	result := Result{Removed: make([]Rule, n), Positions: make([]geo.LatLon, n), Moved: make([]bool, n), Breaks: make([]bool, n)}
+	result := Result{Removed: make([]Rule, n), Positions: make([]geo.LatLon, n), Moved: make([]bool, n), Breaks: make([]bool, n), Filled: c.Filled}
+	fixed := func(i int) bool { return c.Filled != nil && c.Filled[i] }
 	for i, sample := range line {
 		result.Positions[i] = sample.LatLon
 	}
@@ -229,13 +253,18 @@ func Run(line track.Line, p Params) Result {
 	}
 	remove := func(indices []int, rule Rule) {
 		for _, i := range indices {
-			if i >= 0 && i < n && result.Removed[i] == Kept {
+			if i >= 0 && i < n && result.Removed[i] == Kept && !fixed(i) {
 				result.Removed[i] = rule
 			}
 		}
 	}
 
 	p = p.Normalize()
+	for i, replaced := range c.Replaced {
+		if replaced {
+			result.Removed[i] = Fill
+		}
+	}
 	for _, edit := range p.Edits {
 		remove(edit.indices(n), Manual)
 	}
@@ -248,13 +277,13 @@ func Run(line track.Line, p Params) Result {
 	if p.Smooth.Enabled {
 		smoothed := kalman.Smooth(line, keep(), p.Smooth.Params)
 		for i := range line {
-			if result.Removed[i] == Kept && smoothed[i] != line[i].LatLon {
+			if result.Removed[i] == Kept && !fixed(i) && smoothed[i] != line[i].LatLon {
 				result.Positions[i], result.Moved[i] = smoothed[i], true
 			}
 		}
 	}
 	if p.Stops.Enabled {
-		collapseStops(line, &result, p.Stops)
+		collapseStops(line, &result, p.Stops, fixed)
 	}
 	// A broken edit breaks before the first sample kept after it, whichever
 	// rule removed the ones in between.
@@ -269,12 +298,17 @@ func Run(line track.Line, p Params) Result {
 			}
 		}
 	}
+	for _, span := range c.Spans {
+		for i := max(0, span[0]+1); i <= min(n-1, span[1]); i++ {
+			result.Breaks[i] = false
+		}
+	}
 	return result
 }
 
 // collapseStops keeps each stop's entry and exit samples and one sample at its
 // centre — the one recorded midway — and removes the rest of it.
-func collapseStops(line track.Line, result *Result, p StopsParams) {
+func collapseStops(line track.Line, result *Result, p StopsParams, fixed func(int) bool) {
 	kept, index := result.Kept(line)
 	found := stops.Detect(kept, stops.Params{Distance: p.Distance, Duration: secondsToDuration(p.Duration)})
 	for _, stop := range found {
@@ -284,6 +318,9 @@ func collapseStops(line track.Line, result *Result, p StopsParams) {
 		middle := (stop.First + stop.Last) / 2
 		for k := stop.First + 1; k < stop.Last; k++ {
 			i := index[k]
+			if fixed(i) {
+				continue
+			}
 			if k == middle {
 				result.Positions[i], result.Moved[i] = stop.Center, true
 				continue

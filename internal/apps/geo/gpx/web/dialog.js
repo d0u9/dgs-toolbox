@@ -1,6 +1,50 @@
 // A modal confirmation, for anything that changes a file the reader already
 // has. It says exactly what will change and waits for a clear yes.
 
+// promptDialog asks for one line of text, such as a file path, and resolves
+// to it, or to null when cancelled.
+export function promptDialog({ title, message, value = "", confirm = "OK", cancel = "Cancel" }) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "confirm-dialog";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    const text = document.createElement("p");
+    text.textContent = message;
+    const form = document.createElement("form");
+    form.method = "dialog";
+    const input = document.createElement("input");
+    input.className = "cut-path prompt-input";
+    input.value = value;
+    const buttons = document.createElement("div");
+    buttons.className = "confirm-buttons";
+    const no = document.createElement("button");
+    no.type = "button";
+    no.className = "text-button";
+    no.textContent = cancel;
+    const yes = document.createElement("button");
+    yes.type = "submit";
+    yes.className = "chip active";
+    yes.textContent = confirm;
+    buttons.append(no, yes);
+    form.append(input, buttons);
+    dialog.append(heading, text, form);
+    let answer = null;
+    no.addEventListener("click", () => dialog.close());
+    form.addEventListener("submit", () => {
+      if (input.value.trim()) answer = input.value.trim();
+    });
+    dialog.addEventListener("close", () => {
+      dialog.remove();
+      resolve(answer);
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    input.focus();
+    input.select();
+  });
+}
+
 // confirmDialog resolves true only when the confirm button is pressed.
 export function confirmDialog({ title, message, detail, confirm = "Continue", cancel = "Cancel", danger = false }) {
   return new Promise((resolve) => {

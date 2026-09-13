@@ -61,6 +61,9 @@ type Point struct {
 	HasHDOP       bool
 	Satellites    int
 	HasSatellites bool
+	// Source is the <src> element: where the point came from when it was not
+	// recorded, such as a route filled in along the road.
+	Source string
 }
 
 // Open reads the GPX file at path.
@@ -108,6 +111,7 @@ type xmlPoint struct {
 	Time      *string `xml:"time"`
 	HDOP      *string `xml:"hdop"`
 	Sat       *string `xml:"sat"`
+	Src       string  `xml:"src"`
 	Name      string  `xml:"name"`
 	Desc      string  `xml:"desc"`
 }
@@ -154,7 +158,7 @@ func Parse(r io.Reader) (*File, error) {
 }
 
 func (pt xmlPoint) point() Point {
-	point := Point{LatLon: geo.LatLon{Lat: pt.Lat, Lon: pt.Lon}}
+	point := Point{LatLon: geo.LatLon{Lat: pt.Lat, Lon: pt.Lon}, Source: strings.TrimSpace(pt.Src)}
 	point.Elevation, point.HasElevation = parseFloat(pt.Elevation)
 	point.HDOP, point.HasHDOP = parseFloat(pt.HDOP)
 	if pt.Sat != nil {

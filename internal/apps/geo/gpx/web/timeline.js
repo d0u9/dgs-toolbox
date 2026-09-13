@@ -5,6 +5,7 @@
 // them out.
 
 import * as format from "./format.js";
+import { pieceColor } from "./cut.js";
 import { stopTitle } from "./stops.js";
 
 export class Timeline {
@@ -546,6 +547,13 @@ export class Timeline {
     const { cuts, candidates, onAdd, onMove, onRemove } = this.cutting;
     const elements = [];
     const at = (index) => this.track.time[index];
+    // Each segment's time, as a strip in its colour along the bar's foot.
+    (this.track.pieces || []).forEach((piece, i) => {
+      if (piece.start == null) return;
+      const strip = this.block("timeline-piece", piece.start, piece.end, { background: pieceColor(i) });
+      strip.title = `Segment ${i + 1}`;
+      elements.push(strip);
+    });
     for (const index of candidates) {
       if (cuts.includes(index) || at(index) == null) continue;
       const mark = this.mark("timeline-candidate", at(index));

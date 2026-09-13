@@ -22,6 +22,8 @@ type Settings struct {
 	Tiles []config.GeoGPXTile
 	// Reveal shows a path in the file manager; nil uses desktop.Reveal.
 	Reveal func(path string) error
+	// Router fills a stretch along the road; nil uses the public OSRM services.
+	Router Router
 	// focus receives the page's focused track; nil uses the process's board.
 	focus *focusBoard
 }
@@ -54,6 +56,14 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("PUT /api/clean", api.saveClean)
 	mux.HandleFunc("PUT /api/segments", api.saveSegments)
 	mux.HandleFunc("POST /api/segments/write", api.writeSegments)
+	mux.HandleFunc("POST /api/fill/route", api.routeFill)
+	mux.HandleFunc("POST /api/fill", api.saveFill)
+	mux.HandleFunc("DELETE /api/fill", api.removeFill)
+	mux.HandleFunc("POST /api/fill/track", api.saveRouteTrack)
+	mux.HandleFunc("DELETE /api/added", api.removeAdded)
+	mux.HandleFunc("POST /api/save-as", api.saveAs)
+	mux.HandleFunc("DELETE /api/sidecar", api.discardSidecar)
+	mux.HandleFunc("POST /api/draft", api.newDraft)
 	mux.Handle("GET /", http.FileServerFS(static))
 	return mux
 }

@@ -27,6 +27,9 @@ type Sample struct {
 	HasHDOP       bool
 	Satellites    int
 	HasSatellites bool
+	// Source is where a sample came from when it was not recorded, as GPX's
+	// <src>, such as compose.FilledSource.
+	Source string
 }
 
 // Line is a track's samples in recorded order.
@@ -54,6 +57,7 @@ func FromGPX(file *gpxfile.File) Line {
 					HasHDOP:       pt.HasHDOP,
 					Satellites:    pt.Satellites,
 					HasSatellites: pt.HasSatellites,
+					Source:        pt.Source,
 				})
 			}
 			segment++
@@ -117,7 +121,7 @@ func Speeds(line Line, distances []float64, window time.Duration) []float64 {
 // Stats summarises a line.
 type Stats struct {
 	Distance float64       // metres along the line
-	Duration time.Duration // first to last timed sample, pauses included
+	Duration time.Duration // earliest to latest timed sample, pauses included
 	Ascent   float64       // metres climbed
 	Descent  float64       // metres descended
 	Start    time.Time
@@ -139,11 +143,15 @@ func Summarise(line Line, distances []float64) Stats {
 	reference, haveReference := 0.0, false
 	for _, sample := range line {
 		stats.Bounds = stats.Bounds.Extend(sample.LatLon)
+		// A file's tracks need not be in time order, as when one is added from
+		// another file: the span runs from the earliest time to the latest.
 		if !sample.Time.IsZero() {
-			if stats.Start.IsZero() {
+			if stats.Start.IsZero() || sample.Time.Before(stats.Start) {
 				stats.Start = sample.Time
 			}
-			stats.End = sample.Time
+			if sample.Time.After(stats.End) {
+				stats.End = sample.Time
+			}
 		}
 		if !sample.HasElevation {
 			continue

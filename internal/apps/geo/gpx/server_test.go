@@ -2,9 +2,11 @@ package gpx
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,7 +18,11 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/geo"
+	"dgs-toolbox/internal/geo/compose"
+	"dgs-toolbox/internal/geo/gcj02"
 	"dgs-toolbox/internal/geo/gpxfile"
+	"dgs-toolbox/internal/geo/osrm"
 )
 
 func testdataDir(t *testing.T) string {
@@ -377,20 +383,257 @@ func TestSegmentsAreCutNamedAndWritten(t *testing.T) {
 	if code, _ := write("create", created, pieces[0]); code != http.StatusConflict {
 		t.Fatalf("create over existing = %d", code)
 	}
-	if code, _ := write("append", created, pieces[1]); code != http.StatusOK {
-		t.Fatalf("append = %d", code)
+	if code, _ := write("add", created, pieces[1]); code != http.StatusOK {
+		t.Fatalf("add = %d", code)
 	}
+	// Adding leaves the file as it was, and shows the track added to it.
 	file, err := gpxfile.Open(created)
-	if err != nil || len(file.Tracks) != 3 || file.Tracks[2].Name != "Day "+fmt.Sprint(cut) {
+	if err != nil || len(file.Tracks) != 2 {
 		t.Fatalf("written file = %+v, %v", file, err)
 	}
 	if n := len(file.Tracks[0].Segments[0].Points); n != cut+1 {
 		t.Fatalf("first track has %d points, want %d", n, cut+1)
 	}
-	if code, _ := write("append", path, pieces[0]); code != http.StatusBadRequest {
-		t.Fatalf("append to source = %d", code)
+	var target trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(created), &target)
+	if len(target.Parts) != 3 || target.Parts[2].Added == nil || target.Parts[2].Added.From != path || target.Added != 1 || target.Parts[2].Name != "Day "+fmt.Sprint(cut) {
+		t.Fatalf("target parts = %+v", target.Parts)
+	}
+	if code, _ := write("add", path, pieces[0]); code != http.StatusBadRequest {
+		t.Fatalf("add to source = %d", code)
 	}
 	if code, _ := write("create", created+"x", segmentJSON{First: 1, Last: 2}); code != http.StatusBadRequest && code != http.StatusConflict {
 		t.Fatalf("unknown segment = %d", code)
+	}
+}
+
+func TestAddedTracksAreSavedAsANewFile(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	phone, watch := writeStayGPX(t), writeStayGPX(t)
+	var track trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(phone), &track)
+	n := len(track.Points)
+	if code, _ := send(t, server, http.MethodPost, "/api/segments/write", map[string]any{
+		"path": phone, "segments": []map[string]any{{"first": 0, "last": n - 1, "name": "Phone"}},
+		"target": map[string]any{"mode": "add", "path": watch},
+	}); code != http.StatusOK {
+		t.Fatalf("add = %d", code)
+	}
+	// An edit on the added track, and a cut on the file's own.
+	if code, _ := send(t, server, http.MethodPut, "/api/clean", map[string]any{
+		"path": watch, "clean": map[string]any{"edits": []map[string]any{{"kind": "range", "first": n + 2, "last": n + 4}}},
+	}); code != http.StatusOK {
+		t.Fatalf("clean = %d", code)
+	}
+	send(t, server, http.MethodPut, "/api/segments", map[string]any{"path": watch, "cuts": []int{10}})
+	before, _ := os.ReadFile(watch)
+
+	merged := filepath.Join(filepath.Dir(watch), "merged.gpx")
+	if code, result := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": watch, "target": watch}); code != http.StatusBadRequest {
+		t.Fatalf("save over itself = %d %v", code, result)
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": watch, "target": merged}); code != http.StatusOK {
+		t.Fatalf("save as = %d %v", code, result)
+	}
+	if after, _ := os.ReadFile(watch); !bytes.Equal(before, after) {
+		t.Fatal("save as wrote the original")
+	}
+	file, err := gpxfile.Open(merged)
+	if err != nil || len(file.Tracks) != 2 || file.Tracks[1].Name != "Phone" {
+		t.Fatalf("merged = %+v, %v", file, err)
+	}
+	var saved, original trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(merged), &saved)
+	get(t, server, "/api/track?path="+url.QueryEscape(watch), &original)
+	if saved.Added != 0 || saved.Clean.Counts.Manual != 3 || len(saved.Cuts) != 1 {
+		t.Fatalf("merged: added %d manual %d cuts %v", saved.Added, saved.Clean.Counts.Manual, saved.Cuts)
+	}
+	if original.Added != 0 || len(original.Points) != n || original.Clean.Counts.Manual != 0 || len(original.Cuts) != 1 {
+		t.Fatalf("original: added %d points %d manual %d", original.Added, len(original.Points), original.Clean.Counts.Manual)
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": watch, "target": merged}); code != http.StatusConflict {
+		t.Fatalf("save over an existing file = %d", code)
+	}
+}
+
+func TestFillAlongTheRoad(t *testing.T) {
+	var asked []geo.LatLon
+	router := func(_ context.Context, profile string, from, to geo.LatLon) (osrm.Route, error) {
+		asked = []geo.LatLon{from, to}
+		mid := geo.LatLon{Lat: (from.Lat + to.Lat) / 2, Lon: 120.001}
+		return osrm.Route{Points: []geo.LatLon{from, mid, to}, Distance: 300}, nil
+	}
+	server := httptest.NewServer(Handler(Settings{Router: router}))
+	defer server.Close()
+	path := writeStayGPX(t)
+	// A cut after the stretch, which must move along with the points.
+	send(t, server, http.MethodPut, "/api/segments", map[string]any{"path": path, "cuts": []int{100}})
+
+	code, preview := send(t, server, http.MethodPost, "/api/fill/route", map[string]any{"path": path, "first": 10, "last": 20, "profile": "foot"})
+	if code != http.StatusOK || len(asked) != 2 || len(preview["route"].([]any)) != 3 {
+		t.Fatalf("route = %d %v", code, preview)
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/fill/route", map[string]any{"path": path, "first": 10, "last": 20, "profile": "boat"}); code != http.StatusBadRequest {
+		t.Fatalf("unknown profile = %d", code)
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/fill", map[string]any{"path": path, "first": 10, "last": 20, "profile": "foot", "route": preview["route"]}); code != http.StatusOK {
+		t.Fatalf("fill = %d %v", code, result)
+	}
+	var track trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	if len(track.Fills) != 1 || track.Fills[0].First != 10 || track.Fills[0].Last != 23 || track.Fills[0].Points != 3 {
+		t.Fatalf("fills = %+v", track.Fills)
+	}
+	if len(track.Points) != 171 || track.Cuts[0] != 103 || track.Clean.Counts.Fill != 9 || track.Clean.Counts.Filled != 3 {
+		t.Fatalf("points %d cuts %v counts %+v", len(track.Points), track.Cuts, track.Clean.Counts)
+	}
+	if track.Removed[11] != "" || track.Removed[14] != "fill" || track.Removed[23] != "" || track.Time[12] == nil || *track.Time[12] <= *track.Time[10] {
+		t.Fatalf("removed %v", track.Removed[9:25])
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/fill/route", map[string]any{"path": path, "first": 5, "last": 15, "profile": "car"}); code != http.StatusBadRequest {
+		t.Fatalf("across a fill = %d", code)
+	}
+
+	// Written out, filled points say where they came from.
+	out := filepath.Join(t.TempDir(), "out.gpx")
+	send(t, server, http.MethodPost, "/api/segments/write", map[string]any{
+		"path": path, "segments": []map[string]any{{"first": track.Pieces[0].First, "last": track.Pieces[0].Last}},
+		"target": map[string]any{"mode": "create", "path": out},
+	})
+	if data, _ := os.ReadFile(out); !strings.Contains(string(data), "<src>"+compose.FilledSource+"</src>") {
+		t.Fatalf("written without <src>:\n%s", data)
+	}
+
+	if code, _ := send(t, server, http.MethodDelete, "/api/fill", map[string]any{"path": path, "index": 0}); code != http.StatusOK {
+		t.Fatalf("remove fill = %d", code)
+	}
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	if len(track.Fills) != 0 || len(track.Points) != 168 || track.Cuts[0] != 100 {
+		t.Fatalf("after removing: fills %v points %d cuts %v", track.Fills, len(track.Points), track.Cuts)
+	}
+}
+
+func TestDraftCollectsTracksUntilSaved(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	source := writeStayGPX(t)
+	code, created := send(t, server, http.MethodPost, "/api/draft", map[string]any{"name": "Trip"})
+	draft, _ := created["path"].(string)
+	if code != http.StatusOK || !strings.HasPrefix(draft, "draft:") || !strings.HasSuffix(draft, "/Trip.gpx") {
+		t.Fatalf("draft = %d %v", code, created)
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/draft", map[string]any{"name": " "}); code != http.StatusBadRequest {
+		t.Fatalf("unnamed draft = %d", code)
+	}
+	var empty trackJSON
+	if status := get(t, server, "/api/track?path="+url.QueryEscape(draft), &empty); status != http.StatusOK || !empty.Draft || len(empty.Points) != 0 || empty.Name != "Trip" {
+		t.Fatalf("empty draft = %d %+v", status, empty)
+	}
+	send(t, server, http.MethodPut, "/api/segments", map[string]any{"path": source, "cuts": []int{40}})
+	for _, piece := range [][2]any{{0, "Morning"}, {40, "Afternoon"}} {
+		last := 40
+		if piece[0] == 40 {
+			last = 167
+		}
+		if code, result := send(t, server, http.MethodPost, "/api/segments/write", map[string]any{
+			"path": source, "segments": []map[string]any{{"first": piece[0], "last": last, "name": piece[1]}},
+			"target": map[string]any{"mode": "add", "path": draft},
+		}); code != http.StatusOK {
+			t.Fatalf("add to draft = %d %v", code, result)
+		}
+	}
+	if code, _ := send(t, server, http.MethodPut, "/api/clean", map[string]any{
+		"path": draft, "clean": map[string]any{"edits": []map[string]any{{"kind": "range", "first": 45, "last": 47}}},
+	}); code != http.StatusOK {
+		t.Fatalf("clean draft = %d", code)
+	}
+	var filled trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(draft), &filled)
+	if len(filled.Parts) != 2 || filled.Added != 2 || filled.Clean.Counts.Manual != 3 || filled.Clean.Sidecar != "" {
+		t.Fatalf("draft parts %d added %d manual %d", len(filled.Parts), filled.Added, filled.Clean.Counts.Manual)
+	}
+
+	target := filepath.Join(t.TempDir(), "trip.gpx")
+	if code, result := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": draft, "target": target}); code != http.StatusOK {
+		t.Fatalf("save draft = %d %v", code, result)
+	}
+	file, err := gpxfile.Open(target)
+	if err != nil || len(file.Tracks) != 2 || file.Tracks[1].Name != "Afternoon" {
+		t.Fatalf("saved = %+v, %v", file, err)
+	}
+	var saved trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(target), &saved)
+	if saved.Added != 0 || saved.Clean.Counts.Manual != 3 {
+		t.Fatalf("saved: added %d manual %d", saved.Added, saved.Clean.Counts.Manual)
+	}
+	if status := get(t, server, "/api/track?path="+url.QueryEscape(draft), nil); status != http.StatusNotFound {
+		t.Fatalf("saved draft still there: %d", status)
+	}
+}
+
+func TestRouteBetweenPlacesAddsATrack(t *testing.T) {
+	var asked []geo.LatLon
+	router := func(_ context.Context, profile string, from, to geo.LatLon) (osrm.Route, error) {
+		asked = []geo.LatLon{from, to}
+		return osrm.Route{Points: []geo.LatLon{from, {Lat: from.Lat, Lon: to.Lon}, to}, Distance: 500}, nil
+	}
+	server := httptest.NewServer(Handler(Settings{Router: router}))
+	defer server.Close()
+	path := writeStayGPX(t)
+	var before trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &before)
+
+	from, to := []float64{120.01, 30.01}, []float64{120.02, 30.02}
+	code, preview := send(t, server, http.MethodPost, "/api/fill/route", map[string]any{"path": path, "from": from, "to": to, "profile": "bike"})
+	if code != http.StatusOK || asked[0].Lon != 120.01 || asked[1].Lat != 30.02 {
+		t.Fatalf("route = %d %v asked %v", code, preview, asked)
+	}
+	// Places clicked on a GCJ-02 map are sent to the router in WGS-84.
+	send(t, server, http.MethodPost, "/api/fill/route", map[string]any{"path": path, "from": from, "to": to, "profile": "bike", "coordinates": "gcj02"})
+	if back := gcj02.FromWGS84(asked[0]); math.Abs(back.Lon-120.01) > 1e-7 || math.Abs(back.Lat-30.01) > 1e-7 || asked[0].Lon == 120.01 {
+		t.Fatalf("gcj02 place asked as %v", asked[0])
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/fill/route", map[string]any{"path": path, "from": from, "profile": "bike"}); code != http.StatusBadRequest {
+		t.Fatalf("one place = %d", code)
+	}
+
+	if code, result := send(t, server, http.MethodPost, "/api/fill/track", map[string]any{"path": path, "profile": "bike", "route": preview["route"]}); code != http.StatusOK {
+		t.Fatalf("add route = %d %v", code, result)
+	}
+	var after trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &after)
+	if after.Added != 1 || len(after.Points) != len(before.Points)+3 {
+		t.Fatalf("added %d points %d", after.Added, len(after.Points))
+	}
+}
+
+func TestDiscardSidecar(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	path := writeStayGPX(t)
+	send(t, server, http.MethodPut, "/api/segments", map[string]any{"path": path, "cuts": []int{40}})
+	var track trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	if track.Clean.Sidecar == "" || len(track.Cuts) != 1 {
+		t.Fatalf("before: sidecar %q cuts %v", track.Clean.Sidecar, track.Cuts)
+	}
+	if code, _ := send(t, server, http.MethodDelete, "/api/sidecar", map[string]any{"path": path}); code != http.StatusOK {
+		t.Fatalf("discard = %d", code)
+	}
+	track = trackJSON{}
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	if track.Clean.Sidecar != "" || len(track.Cuts) != 0 {
+		t.Fatalf("after: sidecar %q cuts %v", track.Clean.Sidecar, track.Cuts)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("GPX gone: %v", err)
+	}
+	// A broken sidecar is still shown, so it can be discarded.
+	os.WriteFile(path+".dgs.json", []byte("{"), 0o644)
+	track = trackJSON{}
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	if track.Clean.Sidecar == "" || track.Clean.Error == "" {
+		t.Fatalf("broken: %+v", track.Clean)
 	}
 }

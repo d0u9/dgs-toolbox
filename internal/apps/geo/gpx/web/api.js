@@ -32,6 +32,24 @@ export const api = {
   saveSegments: (path, cuts, names) => sendJSON("PUT", "api/segments", { path, cuts, names }),
   // writeSegments writes chosen segments into a new or another GPX.
   writeSegments: (path, request) => sendJSON("POST", "api/segments/write", { path, ...request }),
+  // routeFill asks the router for the road between two points of a track,
+  // ends { first, last }, or two places on the map, ends { from, to } as
+  // [lon, lat] drawn; profile is "car", "bike" or "foot". Only the two
+  // positions leave the server.
+  routeFill: (path, ends, profile, coordinates) => postJSON("api/fill/route", { path, ...ends, profile, coordinates }),
+  // saveFill records a previewed route between the two points.
+  saveFill: (path, first, last, profile, route) => postJSON("api/fill", { path, first, last, profile, route }),
+  // addRoute adds a previewed route between two places as a track of its own.
+  addRoute: (path, profile, route) => postJSON("api/fill/track", { path, profile, route }),
+  removeFill: (path, index) => sendJSON("DELETE", "api/fill", { path, index }),
+  // removeAdded takes a track added from another file out again.
+  removeAdded: (path, index) => sendJSON("DELETE", "api/added", { path, index }),
+  // saveAs writes a GPX with the tracks added to it into a new file.
+  saveAs: (path, target) => postJSON("api/save-as", { path, target }),
+  // discardSidecar deletes a GPX's sidecar, dropping everything done to it.
+  discardSidecar: (path) => sendJSON("DELETE", "api/sidecar", { path }),
+  // newDraft starts a new, empty GPX that lives in the server's memory until saved.
+  newDraft: (name) => postJSON("api/draft", { name }),
   focus: (path, stops) => postJSON("api/focus", { path: path || "", stopDistance: stops?.distance, stopDuration: stops?.duration }),
   reveal: (path) => postJSON("api/reveal", { path }),
 };
