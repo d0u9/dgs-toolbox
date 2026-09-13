@@ -7,10 +7,12 @@ import * as format from "./format.js";
 const RANGE = "stop-range";
 
 export class StopMarkers {
-  // onSelect(index) is called when a stop's marker is clicked.
-  constructor(map, { onSelect }) {
+  // onSelect(index) is called when a stop's marker is clicked; onRemove(index)
+  // when its popup's Remove this stop is.
+  constructor(map, { onSelect, onRemove }) {
     this.map = map;
     this.onSelect = onSelect;
+    this.onRemove = onRemove;
     this.markers = [];
     this.popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true, offset: 14, maxWidth: "260px" });
     this.track = null;
@@ -78,6 +80,15 @@ export class StopMarkers {
       line.textContent = text;
       return line;
     }));
+    const remove = document.createElement("button");
+    remove.className = "text-button";
+    remove.textContent = "Remove this stop";
+    remove.title = "Remove every point of the stop by hand, joining the track across it";
+    remove.addEventListener("click", () => {
+      this.popup.remove();
+      this.onRemove(index);
+    });
+    body.append(remove);
     this.popup.setLngLat(stop.center).setDOMContent(body).addTo(this.map);
     this.popup.once("close", () => {
       if (this.open !== index) return;

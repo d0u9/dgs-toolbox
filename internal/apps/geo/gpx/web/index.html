@@ -63,6 +63,7 @@
   <div class="map-area">
     <div id="map" class="map"></div>
     <aside id="clean-panel" class="clean-panel" hidden aria-label="Clean"></aside>
+    <aside id="cut-panel" class="clean-panel cut-panel" hidden aria-label="Segments"></aside>
   </div>
   <div id="profile-splitter" class="splitter row" role="separator" aria-orientation="horizontal" hidden></div>
   <section id="profile" class="profile" hidden>
@@ -72,7 +73,8 @@
       <span id="profile-stats" class="muted"></span>
       <span class="topbar-spacer"></span>
       <span id="profile-readout" class="readout"></span>
-      <button id="toggle-clean" class="chip" aria-pressed="false" title="Clean the focused track: remove spikes and drift, smooth jitter, remove points by hand">Clean</button>
+      <button id="toggle-cut" class="chip" aria-pressed="false" title="Cut the focused track into segments and write them into a new or another GPX">Cut</button>
+      <button id="toggle-clean" class="chip" aria-pressed="false" title="Edit the focused track: remove points by hand, remove spikes and drift, smooth jitter">Edit</button>
       <span class="chart-toggles" role="group" aria-label="Charts">
         <button id="toggle-elevation" class="chip" aria-pressed="true" title="Show or hide the elevation chart">Elevation</button>
         <button id="toggle-speed" class="chip" aria-pressed="true" title="Show or hide the speed chart">Speed</button>
@@ -93,7 +95,9 @@
           <input id="stop-distance" type="number" min="5" step="5"> m
         </label>
       </div>
+      <div id="timeline-overview" class="timeline-overview inactive" title="The zoomed stretch; drag it to pan, click elsewhere to jump"></div>
       <div id="timeline-bar" class="timeline-bar"></div>
+      <div id="timeline-ticks" class="timeline-ticks"></div>
     </div>
     <div id="charts" class="charts">
       <div id="row-elevation" class="chart-row elevation">

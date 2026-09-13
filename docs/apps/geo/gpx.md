@@ -35,8 +35,10 @@ server exposes the API under `/api/`; everything else is the page.
 | `/api/health` | Answers `{"ok":true}`. |
 | `/api/config` | The base maps — built-in first, then configured — each with its coordinate system, and the folder to open at. |
 | `/api/dir?path=` | The folders and `.gpx` files of a folder. Hidden entries are left out. |
-| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points), route and waypoint — and its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
+| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; and its segments (`pieces`), saved cuts and proposed cuts. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
 | `PUT /api/clean` | Writes a track's cleaning settings, and the points removed by hand, to its sidecar. Settings left out keep their defaults; a cleaning that does nothing removes the sidecar. |
+| `PUT /api/segments` | Writes a track's cuts and segment names to its sidecar. |
+| `POST /api/segments/write` | Writes chosen segments of a track, as cleaned, one `<trk>` each: appended to another GPX, or into a new GPX it will not overwrite. The source is refused. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
 | `POST /api/reveal` | Shows a file or folder in this machine's file manager. Refused unless the request comes from this machine. `/api/config` says whether the page may offer it. |
 
@@ -153,6 +155,22 @@ map. It is the interface later milestones build on.
   it, or dragging, marks the point recorded nearest that moment on the map and
   the charts; pointing at the map or a chart marks the timeline. Clicking a
   stop opens it on the map. A file without time says so in its place.
+- **Timeline zoom.** The wheel, or a trackpad pinch, zooms the timeline about
+  the pointer, redrawn at most once a frame however fast a trackpad sends
+  events. Its
+  narrowest view is the shortest recorded time in which this track travels one
+  metre; Shift-wheel, a sideways scroll or Option-drag (Alt-drag off a Mac)
+  pans. One wheel gesture stays either a zoom or a pan throughout, even when
+  macOS changes the delta axis or omits Shift on later frames. A mouse wheel
+  counting in lines pans as far as a trackpad; double-click shows the whole
+  track again. A strip above it always keeps its layout space, so zooming does
+  not move the charts; while zoomed it marks the stretch shown — drag it to
+  pan, click beside it to jump — and the end labels gain
+  seconds, and ticks mark round times in the page's time zone, from days down
+  to seconds. The charts zoom with it: the timeline's stretch shows on them as
+  the distance those points cover, and zooming a chart shows on the timeline
+  as the time the points in its distance range span. A stop has no distance,
+  so a stretch of mostly stop shows on the charts as little more than a point.
 - **Profile.** The focused track has an elevation chart and a speed chart
   (km/h) against distance, with its distance, duration, ascent and descent. A
   file without elevation or without time says so in place of that chart.
@@ -166,8 +184,9 @@ map. It is the interface later milestones build on.
   marks the nearest point on the map and draws a marker line at the same place
   on both charts; moving along a chart marks the point on the map. A readout
   shows distance, elevation, speed and local time of that point.
-- **Zoom.** Dragging across a chart or scrolling on it zooms the distance axis;
-  double-click resets. Both charts always show the same range.
+- **Zoom.** Dragging across a chart or scrolling on it zooms the distance axis,
+  no narrower than one metre; double-click resets. Both charts always show the
+  same range.
 - **Remembered.** The browser remembers, per browser, the folder, the
   workspace with each track's colour and visibility, the focus, the time zone, the base map, the root,
   the expanded folders, which sidebar panels are folded, the stop thresholds, and which charts are shown and
@@ -175,8 +194,9 @@ map. It is the interface later milestones build on.
 
 ## Cleaning
 
-The page's *Clean* chip, in the profile header, opens a panel over the map for
-the focused track. Nothing is cleaned until a filter is switched on. Settings
+The page's *Edit* chip, in the profile header, opens a panel over the map for
+the focused track: removal by hand first, then the automatic cleaning filters.
+Nothing is removed until a tool is used or a filter is switched on. Settings
 are saved at once to the track's sidecar (see *The sidecar* below); the source
 GPX is never written. Filters run in this order, each seeing only what the
 ones before kept.
@@ -189,7 +209,7 @@ not from the filters.
 
 | Filter | Removes or moves | Settings (defaults) |
 | --- | --- | --- |
-| By hand | Points removed with the lasso. They go first, so they cannot sway a filter. | — |
+| By hand | Ranges removed on the timeline or as a stop, and points removed with the lasso. They go first, so they cannot sway a filter. | — |
 | Sudden jumps (`spikes`) | A point reached and left faster than the max speed; a point the speed rose into and fell out of faster than the max acceleration; a point the path turns back at by the turn angle, standing at least the min jump from both neighbours and further from each than they are apart; a run of up to 5 points entered and left too fast while passing straight by is not. | max speed 360 km/h, max acceleration 15 m/s², turn back 160°, min jump 30 m |
 | Speed drift (`hampel`) | A point whose speed from the previous point is above the median of its neighbours' by the threshold × scaled MAD (never less than the min spread). Only too fast counts. Each pass removes the worst in its neighbourhood and measures again, so the point after a false fix is not removed with it. Optionally stricter, down to a quarter, for fixes with HDOP above 2 or fewer than 6 satellites. | 7 neighbours each side, threshold 3, min spread 3.6 km/h, stricter for poor fixes |
 | Position jitter (`kalman`) | Moves points: a constant-velocity Kalman filter and RTS smoother over east and north, a fix counting as fix error × HDOP metres uncertain. Smoothing restarts at a segment or after a pause. | fix error 5 m, acceleration 1 m/s², restart after 60 s |
@@ -205,11 +225,71 @@ draws the recording under it as a thin dashed line with removed points as dots
 coloured by what removed them: spike red, drift orange, stop grey, by hand
 purple.
 
-**Lasso.** With *Lasso* on, dragging on the map draws a shape; the focused
-track's kept points inside it are removed by hand. Holding Alt (⌥) while
-drawing restores points removed by hand instead. Map panning is off while the
-lasso is on; Esc or the button turns it off. *Restore all removed by hand*
-clears the list. Points in hidden tracks are left alone.
+**Removing by hand.** Every removal is one edit, listed in the panel newest
+first with what it removed and when. *Undo*, or ⌘Z (Ctrl+Z off a Mac) while
+the panel is open and no field has the keyboard, takes back the latest; any
+edit's `×` restores just that one.
+
+- **Range.** With *Range* on, dragging across the timeline removes the points
+  in that stretch; zoom the timeline to place it to the second. Or click the
+  track on the map at the start — it is marked — and then at the end. The
+  track breaks there by default. The first Esc forgets a start not yet
+  finished; the next turns *Range* off.
+- **Remove this stop**, in a stop's popup on the map, removes every point of
+  the stop, joined across.
+- **Join or break.** Each removed range is hatched on the timeline and listed
+  in the panel with its time span. *Break* leaves no line and no distance
+  across it, and starts a new `<trkseg>` when written, as a pause in the
+  recording would. *Join* draws a straight line across and counts its
+  distance. Clicking a range on the timeline switches it or restores its
+  points; so do its row's selector and `×`; clicking the row frames it.
+  Removed stretches are also drawn on the map, along where they were
+  recorded, as a pale purple band with a dashed centre.
+- **Lasso.** With *Lasso* on, dragging on the map draws a shape; the focused
+track's kept points inside it are removed as one edit. Holding Option (Alt
+off a Mac) while drawing takes the points inside it out of earlier lasso
+edits instead. Lasso removals are
+always joined across. Map panning is off while the lasso is on; Esc or the
+button turns it off, and *Restore* returns them all. Points in hidden tracks
+are left alone.
+
+## Segments
+
+The *Cut* chip, beside *Clean*, opens the segments panel for the focused track
+in the same corner of the map; opening one closes the other. A cut is a point
+where one segment ends and the next begins; both segments hold that point, so
+nothing is lost between them. Segments are cut from what cleaning kept.
+
+- **Proposed cuts.** Every stop proposes a cut at the point recorded midway
+  through it, shown on the timeline as a dashed mark. Clicking one cuts there;
+  *Cut at every stop* takes them all.
+- **Editing cuts.** With the panel open, pointing at the focused track on the
+  map marks the point a cut would fall on, and clicking cuts there; clicking
+  the timeline, stop blocks included, cuts at the point under the pointer,
+  while dragging it still scrubs. Cuts are yellow handles on the timeline. drag a handle to move the
+  cut, double-click it to remove it. *Clear cuts* removes them all. Cuts are
+  also marked on the map.
+- **Names.** A segment is named by its time span in the page's time zone —
+  `2026-09-06 09:00–09:26`, or with both dates when it crosses midnight —
+  until a name is typed. A name belongs to the segment starting at its point:
+  moving that cut keeps it; removing it merges the segment into the one before,
+  and the name goes. Pointing at a segment highlights it on the map; clicking
+  it frames it.
+- **Writing.** Chosen segments (all, by default) are written as cleaned, one
+  `<trk>` each named as shown, with their points' elevation, time, HDOP and
+  satellites, a `<trkseg>` per recorded segment:
+  - **into a new GPX**, a full path defaulting to `<source> segments.gpx`
+    beside the source; an existing file is never replaced; or
+  - **appended to a GPX in the workspace**. The new tracks go after its last
+    track, route or waypoint and before a root `<extensions>`; the rest of the
+    file is kept byte for byte and replaced in one step. That track is
+    reloaded to show them. Because it changes a file the reader already has,
+    a dialog names the file and says there is no undo, and nothing is written
+    until it is confirmed.
+
+  The source GPX is never written, whichever is chosen.
+
+Cuts and names are saved to the sidecar at once.
 
 ### The sidecar
 
@@ -223,13 +303,26 @@ Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
     "drift": { "enabled": false, "halfWindow": 7, "threshold": 3, "minDeviation": 1, "quality": true },
     "smooth": { "enabled": false, "positionSigma": 5, "acceleration": 1, "maxGap": 60 },
     "stops": { "enabled": false, "distance": 50, "duration": 300 },
-    "removed": [118, 119, 120]
+    "edits": [
+      { "kind": "lasso", "points": [118, 119, 120], "join": true, "at": 1788657200000 },
+      { "kind": "range", "first": 900, "last": 1256, "join": false, "at": 1788657300000 },
+      { "kind": "stop", "first": 2100, "last": 2390, "join": true, "at": 1788657400000 }
+    ]
+  },
+  "segments": {
+    "cuts": [2339, 4159],
+    "names": [{ "start": 2339, "name": "逛西湖" }]
   }
 }
 ```
 
-Units are the SI ones the filters use: metres, seconds, m/s, m/s². `removed`
-holds point indices in file order, counting every track and segment. Settings
+Units are the SI ones the filters use: metres, seconds, m/s, m/s². An edit's
+`points` (a lasso's), `first` and `last` (a range's or stop's, both removed),
+`cuts` and a name's `start` are point indices in file order, counting every
+track and segment; `at` is when the edit was made, in Unix milliseconds. A cut
+on a point cleaning later removes moves to the next kept point. Sidecars from
+before edits kept `removed` and `ranges` lists instead; they load as edits and
+are written back as edits. Settings
 missing from a sidecar keep their defaults, so an older one still loads; one
 that cannot be read is reported in the panel and the track is shown uncleaned.
 A sidecar from a newer version is not read. It is replaced in one step, never
@@ -347,6 +440,18 @@ before and after.
 
 ### M3 — Segment, split into days, name
 
+Done, in part: see *Segments* above — cuts proposed at stops and edited on the
+timeline, named segments, and writing them into a new or another GPX.
+Deferred, not yet designed further:
+
+- Splitting into days at an overnight rest, below, and the track's local time
+  zone it needs.
+- Default names from the segment's endpoints (place names).
+- Export to a folder the user chooses, from the TUI, as the principles
+  describe.
+
+The original plan:
+
 - Every stop is a candidate cut.
 - **A day ends at an overnight rest**: a stop that overlaps the night window
   (default 00:00–06:00) and lasts at least a minimum rest (default 3 h). Without
@@ -356,12 +461,70 @@ before and after.
   is named, defaulting to its day and endpoints.
 - Export as described above.
 
-### M4 — Fill gaps from another GPX
+### M3.1 — Precise cutting and editing
 
-- A time gap or a distance jump between neighbours is marked on the timeline.
-- Open a second GPX, optionally clean it with M2, pick the part that overlaps the
-  gap, preview it on the map and splice it in. Every spliced point records the
-  file it came from.
+Done: see *Timeline zoom*, *Segments* and *Removing by hand* above.
+
+Key hints on the page name the keys of the system it runs on: ⌥ Option, ⇧
+Shift and ⌘ on a Mac; Alt, Shift and Ctrl elsewhere.
+
+A single file, edited precisely. It is also the ground M4 stands on: every
+source is cleaned on its own before it is combined.
+
+- **Timeline zoom.** The wheel zooms the timeline about the pointer; Alt-drag
+  or Shift-wheel pans; double-click resets. An overview strip above it shows
+  the zoomed range and drags to pan, while its space remains reserved when it
+  is inactive. Ticks follow the zoom, from dates and hours down to seconds. The
+  timeline and the charts zoom together, matched by the points both show, with
+  a shared minimum spatial range of one metre. Zoomed in, cuts and ranges snap
+  to single points.
+- **Cutting on the map.** In cut mode, pointing at the track marks the point a
+  cut would fall on; clicking cuts there. Shift-click on the timeline stays.
+- **Edit replaces Clean.** The panel keeps the automatic filters and gathers
+  removal by hand: the lasso; dragging a range on the timeline to remove the
+  continuous points in it; *Remove this stop* on a stop's popup and timeline
+  block. Removed ranges are marked on the timeline; clicking one offers
+  *Join*, *Break* and *Restore*.
+- **Join or break.** Each removed range chooses whether the points either side
+  of it are joined — a straight line, counted in distance — or broken, like a
+  pause in the recording: no line, no distance, and a new `<trkseg>` when
+  written. A range removed on the timeline breaks by default; points removed
+  with the lasso join, as now.
+- **Ranges in the sidecar.** Removal by hand is stored as ranges of point
+  indices, each with its join or break; the list of single indices written
+  until now still loads.
+
+### M4 — Combine sources
+
+A trip is often recorded by more than one device: a GPS left in the car while
+a watch records the hike, or a phone that loses the signal in a tunnel. M4
+builds one track from several sources by choosing, for each stretch of time,
+which source to trust. Filling a gap is the case where only one source has
+points.
+
+- **A merge project.** Combining spans several files, so it is kept in its own
+  file, not a sidecar: `<name>.dgs-merge.json`, listing its source GPX files
+  (each still cleaned by its own sidecar), which source each stretch of time
+  uses, whether the track joins or breaks where the source changes, and the
+  cuts and names of the combined track. Sources stay read-only; the result is
+  written as a new GPX, every point recording the file it came from.
+- **A lane per source.** The timeline shows one lane per source — moving,
+  stopped, gaps — against the same clock. Dragging a stretch and picking a
+  source assigns it; the map draws the combined track coloured by source.
+- **Suggested, then adjusted.** Where one source is stopped and another moves,
+  the moving one is suggested; where one has a gap, the other; where both
+  move, the better fixes (lower HDOP, less jitter). Every suggestion can be
+  changed.
+- **Clock offset.** A source's time can be shifted, by seconds or by whole
+  hours for a device set to the wrong zone, with the lanes showing how the
+  sources line up.
+- **Filling from the road.** For a stretch no source recorded well, such as a
+  tunnel, a route along the road between its ends is a source of its own: from
+  an online router (OSRM on OpenStreetMap, WGS-84, no key; it sends the two end
+  points to that service, which is still to be confirmed) or drawn by hand on
+  the map. Its points get times spread by distance and elevation interpolated,
+  are previewed before they are used, and are marked as filled. A route that
+  cannot be computed again is stored in the project as coordinates.
 
 ### Later
 

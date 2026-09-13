@@ -52,6 +52,8 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/reveal", api.reveal)
 	mux.HandleFunc("POST /api/focus", api.focus)
 	mux.HandleFunc("PUT /api/clean", api.saveClean)
+	mux.HandleFunc("PUT /api/segments", api.saveSegments)
+	mux.HandleFunc("POST /api/segments/write", api.writeSegments)
 	mux.Handle("GET /", http.FileServerFS(static))
 	return mux
 }

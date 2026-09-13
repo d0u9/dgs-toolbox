@@ -1,13 +1,18 @@
-// Cleaning the focused track: the panel of filters and their settings, the
-// before/after overlay on the map, and lasso selection for removing points by
-// hand. The server runs every filter; this module edits settings, draws the
+// Editing the focused track: the panel for removing points by hand — with the
+// lasso, as ranges on the timeline, or a whole stop — and the automatic
+// cleaning filters and their settings; the before/after overlay on the map;
+// and lasso selection. The server runs every filter; this module edits settings, draws the
 // result and turns a lasso into point indices on screen.
+
+import * as format from "./format.js";
 
 const ORIGINAL = "clean-original";
 const REMOVED = "clean-removed";
+const MANUAL = "clean-manual"; // stretches removed by hand, as a line
+const PENDING = "clean-pending"; // a range's start, picked on the track
 
 // RULE_COLORS tell apart what removed a point.
-export const RULE_COLORS = { spike: "#d0021b", drift: "#f5a623", stop: "#7b7b76", manual: "#8e44ad" };
+export const RULE_COLORS = { spike: "#d55e00", drift: "#e69f00", stop: "#666666", manual: "#6f4c9b" };
 
 // FILTERS describe the panel: each filter's settings, in the sidecar's names,
 // with the unit and the scale between what is typed and what is stored.
@@ -53,12 +58,46 @@ const FILTERS = [
 
 export class CleanPanel {
   // onChange(params) is called with the new settings after an edit;
-  // onLasso(active) when lasso mode is switched; onCompare(on) likewise.
-  constructor({ root, onChange, onLasso, onCompare }) {
-    Object.assign(this, { root, onChange, onLasso, onCompare });
+  // onLasso(active) and onRangeTool(active) when those tools are switched;
+  // onCompare(on) likewise; onShowRange(range) to frame a removed range.
+  constructor({ root, onChange, onLasso, onRangeTool, onCompare, onShowRange, timeZone }) {
+    Object.assign(this, { root, onChange, onLasso, onRangeTool, onCompare, onShowRange });
     this.track = null;
     this.lasso = false;
+    this.rangeTool = false;
     this.compare = true;
+    this.timeZone = timeZone || format.browserTimeZone();
+  }
+
+  setRangeTool(active) {
+    this.rangeTool = active;
+    this.render();
+  }
+
+  // ---- removal by hand: a list of edits, oldest first ----
+
+  // addEdit records one removal by hand; it is the next one undo takes back.
+  addEdit(edit) {
+    const params = structuredClone(this.track.clean.params);
+    params.edits.push({ ...edit, at: Date.now() });
+    this.onChange(params);
+  }
+
+  addRange(first, last, join = false) {
+    this.addEdit({ kind: "range", first, last, join });
+  }
+
+  setJoin(index, join) {
+    const params = structuredClone(this.track.clean.params);
+    params.edits[index].join = join;
+    this.onChange(params);
+  }
+
+  // restoreEdit takes back one edit, whenever it was made.
+  restoreEdit(index) {
+    const params = structuredClone(this.track.clean.params);
+    params.edits.splice(index, 1);
+    this.onChange(params);
   }
 
   show(track) {
@@ -76,6 +115,12 @@ export class CleanPanel {
     this.render();
   }
 
+  // undo takes back the latest edit.
+  undo() {
+    const { edits } = this.track?.clean.params || {};
+    if (edits?.length) this.restoreEdit(edits.length - 1);
+  }
+
   render() {
     const { track } = this;
     if (!track) return;
@@ -85,7 +130,7 @@ export class CleanPanel {
     const head = document.createElement("div");
     head.className = "clean-head";
     const title = document.createElement("strong");
-    title.textContent = "Clean";
+    title.textContent = "Edit";
     const compare = checkbox("Compare with the recording", this.compare, (on) => {
       this.compare = on;
       this.onCompare(on);
@@ -93,6 +138,11 @@ export class CleanPanel {
     head.append(title, compare);
     parts.push(head);
 
+    parts.push(this.manualSection());
+    const auto = document.createElement("div");
+    auto.className = "clean-subhead";
+    auto.textContent = "Automatic cleaning";
+    parts.push(auto);
     for (const filter of FILTERS) {
       const settings = params[filter.key];
       const section = document.createElement("section");
@@ -119,31 +169,6 @@ export class CleanPanel {
       parts.push(section);
     }
 
-    const manual = document.createElement("section");
-    manual.className = "clean-filter enabled";
-    const manualHead = document.createElement("div");
-    manualHead.className = "clean-filter-head";
-    const lasso = document.createElement("button");
-    lasso.className = "chip" + (this.lasso ? " active" : "");
-    lasso.setAttribute("aria-pressed", String(this.lasso));
-    lasso.textContent = this.lasso ? "Lasso on — Esc to stop" : "Lasso";
-    lasso.title = "Draw around points on the map to remove them. Hold Alt (⌥) while drawing to restore points removed by hand.";
-    lasso.addEventListener("click", () => this.onLasso(!this.lasso));
-    const manualCount = document.createElement("span");
-    manualCount.className = "clean-count";
-    manualCount.style.color = RULE_COLORS.manual;
-    manualCount.textContent = params.removed.length ? `${params.removed.length} removed by hand` : "";
-    manualHead.append(lasso, manualCount);
-    manual.append(manualHead);
-    if (params.removed.length) {
-      const restore = document.createElement("button");
-      restore.className = "text-button";
-      restore.textContent = "Restore all removed by hand";
-      restore.addEventListener("click", () => this.onChange({ ...params, removed: [] }));
-      manual.append(restore);
-    }
-    parts.push(manual);
-
     const foot = document.createElement("p");
     foot.className = "clean-foot";
     if (track.clean.error) {
@@ -157,6 +182,109 @@ export class CleanPanel {
     }
     parts.push(foot);
     this.root.replaceChildren(...parts);
+  }
+
+  manualSection() {
+    const { params, counts } = this.track.clean;
+    const section = document.createElement("section");
+    section.className = "clean-filter enabled";
+    const head = document.createElement("div");
+    head.className = "clean-filter-head";
+    const title = document.createElement("strong");
+    title.textContent = "Remove by hand";
+    const count = document.createElement("span");
+    count.className = "clean-count";
+    count.style.color = RULE_COLORS.manual;
+    count.textContent = counts.manual ? `${counts.manual} removed` : "";
+    const undo = document.createElement("button");
+    undo.className = "text-button";
+    undo.textContent = "Undo";
+    undo.title = `Take back the latest removal (${format.keys.undo})`;
+    undo.disabled = params.edits.length === 0;
+    undo.addEventListener("click", () => this.undo());
+    head.append(title, count, undo);
+    section.append(head);
+
+    const tools = document.createElement("div");
+    tools.className = "clean-tools";
+    const tool = (text, active, title, onClick) => {
+      const button = document.createElement("button");
+      button.className = "chip" + (active ? " active" : "");
+      button.setAttribute("aria-pressed", String(active));
+      button.textContent = text;
+      button.title = title;
+      button.addEventListener("click", onClick);
+      return button;
+    };
+    tools.append(
+      tool(this.rangeTool ? "Range — Esc to stop" : "Range", this.rangeTool,
+        "Drag across the timeline, or click the start and then the end on the track, to remove the points between; the track breaks there.",
+        () => this.onRangeTool(!this.rangeTool)),
+      tool(this.lasso ? "Lasso — Esc to stop" : "Lasso", this.lasso,
+        `Draw around points on the map to remove them; they are joined across. Hold ${format.keys.alt} while drawing to restore lasso removals inside the shape.`,
+        () => this.onLasso(!this.lasso)),
+    );
+    section.append(tools);
+
+    const hint = document.createElement("p");
+    hint.className = "cut-hint";
+    hint.textContent = this.rangeTool
+      ? "Drag on the timeline, or click the track on the map at the start and then at the end."
+      : "A stop's popup on the map also has Remove this stop. Every removal is listed below, newest first.";
+    section.append(hint);
+
+    if (params.edits.length) {
+      const list = document.createElement("ol");
+      list.className = "range-list";
+      for (let i = params.edits.length - 1; i >= 0; i--) list.append(this.editRow(params.edits[i], i));
+      section.append(list);
+    }
+    return section;
+  }
+
+  editRow(edit, index) {
+    const { track } = this;
+    const li = document.createElement("li");
+    li.className = "range-row";
+    const label = document.createElement("span");
+    label.className = "label";
+    const name = document.createElement("span");
+    name.className = "name";
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    if (edit.kind === "lasso") {
+      name.textContent = "Lasso";
+      meta.textContent = `${edit.points.length} points`;
+    } else {
+      const times = [];
+      for (let i = edit.first; i <= edit.last; i++) if (track.time[i] != null) times.push(track.time[i]);
+      const span = times.length
+        ? `${format.clock(times[0], this.timeZone).slice(5)} – ${format.clock(times[times.length - 1], this.timeZone).slice(11)}`
+        : `points ${edit.first}–${edit.last}`;
+      name.textContent = `${edit.kind === "stop" ? "Stop" : "Range"} ${span}`;
+      meta.textContent = `${edit.last - edit.first + 1} points`;
+    }
+    if (edit.at) meta.textContent += ` · removed ${format.clock(edit.at, this.timeZone).slice(11)}`;
+    label.append(name, meta);
+    label.title = "Show on the map";
+    label.addEventListener("click", () => this.onShowRange(edit));
+    li.append(label);
+    if (edit.kind !== "lasso") {
+      const join = document.createElement("select");
+      join.className = "range-join";
+      join.append(new Option("Break", "break"), new Option("Join", "join"));
+      join.value = edit.join ? "join" : "break";
+      join.title = "Break: no line and no distance across, like a pause. Join: a straight line across.";
+      join.addEventListener("change", () => this.setJoin(index, join.value === "join"));
+      li.append(join);
+    }
+    const restore = document.createElement("button");
+    restore.className = "remove";
+    restore.textContent = "×";
+    restore.title = "Restore these points";
+    restore.addEventListener("click", () => this.restoreEdit(index));
+    li.append(restore);
+    return li;
   }
 
   field(filterKey, field, value) {
@@ -207,6 +335,24 @@ export class CleanOverlay {
     this.map = map;
     map.addSource(ORIGINAL, { type: "geojson", data: empty() });
     map.addSource(REMOVED, { type: "geojson", data: empty() });
+    map.addSource(MANUAL, { type: "geojson", data: empty() });
+    map.addSource(PENDING, { type: "geojson", data: empty() });
+    // Removed stretches: a wide pale band with a dark dashed centre, readable
+    // over any base map and apart from the track's own colour.
+    map.addLayer({
+      id: `${MANUAL}-band`,
+      type: "line",
+      source: MANUAL,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": RULE_COLORS.manual, "line-width": 9, "line-opacity": 0.25 },
+    }, beforeLayer);
+    map.addLayer({
+      id: MANUAL,
+      type: "line",
+      source: MANUAL,
+      layout: { "line-join": "round" },
+      paint: { "line-color": RULE_COLORS.manual, "line-width": 2.5, "line-dasharray": [1.5, 1.2] },
+    }, beforeLayer);
     map.addLayer({
       id: ORIGINAL,
       type: "line",
@@ -224,6 +370,18 @@ export class CleanOverlay {
         "circle-stroke-width": 1,
       },
     }, beforeLayer);
+    map.addLayer({
+      id: PENDING,
+      type: "circle",
+      source: PENDING,
+      paint: { "circle-radius": 7, "circle-color": RULE_COLORS.manual, "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 },
+    });
+  }
+
+  // setPending marks a range's start picked on the track, or with null clears it.
+  setPending(position) {
+    const data = position ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: position } } : empty();
+    this.map.getSource(PENDING).setData(data);
   }
 
   // show draws a track's recording, or nothing for null or an uncleaned track.
@@ -247,6 +405,19 @@ export class CleanOverlay {
     if (current.length > 1) lines.push(current);
     this.map.getSource(ORIGINAL).setData({ type: "Feature", properties: {}, geometry: { type: "MultiLineString", coordinates: lines } });
     const features = [];
+    // Runs of points removed by hand, drawn along where they were recorded.
+    const runs = [];
+    let run = [];
+    positions.forEach((point, i) => {
+      if (track.removed[i] === "manual" && !hidden(i)) {
+        run.push(point);
+      } else {
+        if (run.length > 1) runs.push(run);
+        run = [];
+      }
+    });
+    if (run.length > 1) runs.push(run);
+    this.map.getSource(MANUAL).setData({ type: "Feature", properties: {}, geometry: { type: "MultiLineString", coordinates: runs } });
     track.removed.forEach((rule, i) => {
       if (!rule || hidden(i)) return;
       features.push({ type: "Feature", properties: { color: RULE_COLORS[rule], rule }, geometry: { type: "Point", coordinates: positions[i] } });
@@ -257,6 +428,7 @@ export class CleanOverlay {
   clear() {
     this.map.getSource(ORIGINAL).setData(empty());
     this.map.getSource(REMOVED).setData(empty());
+    this.map.getSource(MANUAL).setData(empty());
   }
 }
 

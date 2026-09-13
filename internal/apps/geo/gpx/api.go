@@ -203,6 +203,14 @@ type trackJSON struct {
 	// any; Points then holds the moved positions.
 	Original [][2]float64 `json:"original,omitempty"`
 	Clean    cleanJSON    `json:"clean"`
+	// Pieces are the segments the cuts divide what cleaning kept into, in
+	// source point indices; neighbours share the point at their cut. (Segments
+	// above are the recorder's own <trkseg>s.)
+	Pieces []segmentJSON `json:"pieces"`
+	// Cuts are the saved cuts and CutCandidates the proposed ones, one per
+	// stop, as source point indices.
+	Cuts          []int `json:"cuts"`
+	CutCandidates []int `json:"cutCandidates"`
 }
 
 // cleanJSON is a track's cleaning: its settings as the sidecar holds them (or
@@ -396,8 +404,8 @@ func trackResponse(a analysis) trackJSON {
 	if a.sidecarErr != nil {
 		response.Clean.Error = a.sidecarErr.Error()
 	}
-	if response.Clean.Params.Removed == nil {
-		response.Clean.Params.Removed = []int{}
+	if response.Clean.Params.Edits == nil {
+		response.Clean.Params.Edits = []clean.Edit{}
 	}
 	for i, stop := range a.stops {
 		response.Stops[i] = stopJSON{
@@ -419,6 +427,7 @@ func trackResponse(a analysis) trackJSON {
 			response.Time[i] = &millis
 		}
 	}
+	response.Pieces, response.Cuts, response.CutCandidates = segments(a)
 	if response.Clean.Counts.Moved > 0 {
 		response.Original = make([][2]float64, n)
 		copy(response.Original, response.Points)
@@ -430,6 +439,8 @@ func trackResponse(a analysis) trackJSON {
 			next++
 			sample := line[k]
 			response.Points[i] = [2]float64{sample.Lon, sample.Lat}
+			// The kept line's segments: a broken range starts a new one.
+			response.Segments[i] = sample.Segment
 			response.Distance[i] = distances[k]
 			if sample.HasElevation {
 				response.Elevation[i] = &line[k].Elevation
@@ -441,6 +452,9 @@ func trackResponse(a analysis) trackJSON {
 		}
 		if next > 0 {
 			response.Distance[i] = distances[next-1]
+			response.Segments[i] = line[next-1].Segment
+		} else {
+			response.Segments[i] = 0
 		}
 	}
 	if !stats.Start.IsZero() {
@@ -569,11 +583,19 @@ func (a api) saveClean(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	params = params.Normalize()
 	if err := validClean(params); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := sidecar.Save(body.Path, sidecar.File{Clean: params}); err != nil {
+	// Keep what else the sidecar records, such as the cuts.
+	file, _, err := sidecar.Load(body.Path)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err)
+		return
+	}
+	file.Clean = params
+	if err := sidecar.Save(body.Path, file); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -600,9 +622,20 @@ func validClean(p clean.Params) error {
 	if p.Drift.HalfWindow < 1 || p.Drift.HalfWindow > 1000 {
 		return errors.New("drift.halfWindow must be between 1 and 1000")
 	}
-	for _, i := range p.Removed {
-		if i < 0 {
-			return errors.New("removed holds a negative index")
+	for _, edit := range p.Edits {
+		switch edit.Kind {
+		case clean.EditLasso:
+			for _, i := range edit.Points {
+				if i < 0 {
+					return errors.New("a lasso edit holds a negative index")
+				}
+			}
+		case clean.EditRange, clean.EditStop:
+			if edit.First < 0 || edit.Last < edit.First {
+				return errors.New("a range edit needs 0 ≤ first ≤ last")
+			}
+		default:
+			return fmt.Errorf("unknown edit kind %q", edit.Kind)
 		}
 	}
 	return nil

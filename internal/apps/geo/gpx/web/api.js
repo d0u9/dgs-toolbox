@@ -28,6 +28,10 @@ export const api = {
     getJSON(`api/track?path=${encodeURIComponent(path)}&coordinates=${coordinates}` + stopQuery(stops)),
   // saveClean records a track's cleaning settings in the sidecar beside it.
   saveClean: (path, clean) => sendJSON("PUT", "api/clean", { path, clean }),
+  // saveSegments records a track's cuts and segment names in its sidecar.
+  saveSegments: (path, cuts, names) => sendJSON("PUT", "api/segments", { path, cuts, names }),
+  // writeSegments writes chosen segments into a new or another GPX.
+  writeSegments: (path, request) => sendJSON("POST", "api/segments/write", { path, ...request }),
   focus: (path, stops) => postJSON("api/focus", { path: path || "", stopDistance: stops?.distance, stopDuration: stops?.duration }),
   reveal: (path) => postJSON("api/reveal", { path }),
 };
