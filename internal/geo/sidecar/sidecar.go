@@ -1,7 +1,7 @@
 // Package sidecar reads and writes the small JSON file kept beside a source
-// GPX. It holds no track data, only what was done to the track — for now its
-// cleaning — so the source stays untouched and every change can be undone or
-// re-run with other settings.
+// GPX. It holds no track data, only what was done to the track — its cleaning
+// and where it is cut into segments — so the source stays untouched and every
+// change can be undone or re-run with other settings.
 package sidecar
 
 import (
@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"dgs-toolbox/internal/geo/clean"
+	"dgs-toolbox/internal/geo/segment"
 )
 
 // Suffix is appended to the source's file name: walk.gpx has walk.gpx.dgs.json.
@@ -22,9 +23,13 @@ const Version = 1
 
 // File is a sidecar's content.
 type File struct {
-	Version int          `json:"version"`
-	Clean   clean.Params `json:"clean"`
+	Version  int            `json:"version"`
+	Clean    clean.Params   `json:"clean"`
+	Segments segment.Params `json:"segments"`
 }
+
+// Active reports whether the file records anything.
+func (f File) Active() bool { return f.Clean.Active() || f.Segments.Active() }
 
 // PathFor is the sidecar of a source file.
 func PathFor(source string) string { return source + Suffix }
@@ -47,6 +52,7 @@ func Load(source string) (File, bool, error) {
 	if file.Version > Version {
 		return File{Version: Version, Clean: clean.Defaults()}, false, fmt.Errorf("%s: version %d is newer than this build reads", PathFor(source), file.Version)
 	}
+	file.Clean = file.Clean.Normalize()
 	return file, true, nil
 }
 
@@ -55,7 +61,7 @@ func Load(source string) (File, bool, error) {
 // every change leaves no trace beside the source.
 func Save(source string, file File) error {
 	path := PathFor(source)
-	if !file.Clean.Active() {
+	if !file.Active() {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}

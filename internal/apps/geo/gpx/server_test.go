@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/geo/gpxfile"
 )
 
 func testdataDir(t *testing.T) string {
@@ -284,7 +285,7 @@ func TestCleanIsSavedAndApplied(t *testing.T) {
 	}
 
 	quoted, _ := json.Marshal(path)
-	body := `{"path":` + string(quoted) + `,"clean":{"stops":{"enabled":true},"smooth":{"enabled":true},"removed":[0,1]}}`
+	body := `{"path":` + string(quoted) + `,"clean":{"stops":{"enabled":true},"smooth":{"enabled":true},"edits":[{"kind":"lasso","points":[0,1],"join":true}]}}`
 	if code := put(body); code != http.StatusOK {
 		t.Fatalf("PUT = %d", code)
 	}
@@ -298,6 +299,21 @@ func TestCleanIsSavedAndApplied(t *testing.T) {
 		t.Fatalf("removed points or stops wrong: speed %v distance %v stops %+v", after.Speed[0], after.Distance[1], after.Stops)
 	}
 
+	rangeBody := `{"path":` + string(quoted) + `,"clean":{"ranges":[{"first":20,"last":29},{"first":40,"last":49,"join":true}]}}`
+	if code := put(rangeBody); code != http.StatusOK {
+		t.Fatalf("PUT ranges = %d", code)
+	}
+	var ranged trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &ranged)
+	if ranged.Clean.Counts.Manual != 20 || ranged.Segments[19] == ranged.Segments[30] || ranged.Segments[39] != ranged.Segments[50] {
+		t.Fatalf("ranges: manual %d, segments %d/%d %d/%d", ranged.Clean.Counts.Manual, ranged.Segments[19], ranged.Segments[30], ranged.Segments[39], ranged.Segments[50])
+	}
+	if ranged.Distance[30] != ranged.Distance[19] {
+		t.Fatalf("a broken range added distance: %v → %v", ranged.Distance[19], ranged.Distance[30])
+	}
+	if code := put(`{"path":` + string(quoted) + `,"clean":{"ranges":[{"first":5,"last":2}]}}`); code != http.StatusBadRequest {
+		t.Fatalf("backwards range = %d", code)
+	}
 	if code := put(`{"path":` + string(quoted) + `,"clean":{"spikes":{"maxSpeed":-1}}}`); code != http.StatusBadRequest {
 		t.Fatalf("negative speed = %d", code)
 	}
@@ -306,5 +322,75 @@ func TestCleanIsSavedAndApplied(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".dgs.json"); !os.IsNotExist(err) {
 		t.Fatalf("sidecar left after clearing: %v", err)
+	}
+}
+
+func send(t *testing.T, server *httptest.Server, method, path string, body any) (int, map[string]any) {
+	t.Helper()
+	data, _ := json.Marshal(body)
+	request, _ := http.NewRequest(method, server.URL+path, bytes.NewReader(data))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var result map[string]any
+	_ = json.NewDecoder(response.Body).Decode(&result)
+	return response.StatusCode, result
+}
+
+func TestSegmentsAreCutNamedAndWritten(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	path := writeStayGPX(t)
+	var track trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	if len(track.Pieces) != 1 || len(track.CutCandidates) != 1 || len(track.Cuts) != 0 {
+		t.Fatalf("uncut: pieces %v candidates %v", track.Pieces, track.CutCandidates)
+	}
+	cut := track.CutCandidates[0]
+	if code, _ := send(t, server, http.MethodPut, "/api/segments", map[string]any{
+		"path": path, "cuts": []int{cut}, "names": []map[string]any{{"start": cut, "name": " After "}, {"start": 0, "name": " "}},
+	}); code != http.StatusOK {
+		t.Fatalf("PUT segments = %d", code)
+	}
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
+	pieces := track.Pieces
+	if len(pieces) != 2 || pieces[0].Last != cut || pieces[1].First != cut || pieces[1].Name != "After" || pieces[0].Name != "" || track.Cuts[0] != cut {
+		t.Fatalf("cut: %+v", pieces)
+	}
+
+	dir := t.TempDir()
+	created := filepath.Join(dir, "days.gpx")
+	write := func(mode, target string, which ...segmentJSON) (int, map[string]any) {
+		list := []map[string]any{}
+		for _, s := range which {
+			list = append(list, map[string]any{"first": s.First, "last": s.Last, "name": "Day " + fmt.Sprint(s.First)})
+		}
+		return send(t, server, http.MethodPost, "/api/segments/write", map[string]any{
+			"path": path, "segments": list, "target": map[string]any{"mode": mode, "path": target},
+		})
+	}
+	if code, result := write("create", created, pieces...); code != http.StatusOK || result["tracks"] != 2.0 {
+		t.Fatalf("create = %d %v", code, result)
+	}
+	if code, _ := write("create", created, pieces[0]); code != http.StatusConflict {
+		t.Fatalf("create over existing = %d", code)
+	}
+	if code, _ := write("append", created, pieces[1]); code != http.StatusOK {
+		t.Fatalf("append = %d", code)
+	}
+	file, err := gpxfile.Open(created)
+	if err != nil || len(file.Tracks) != 3 || file.Tracks[2].Name != "Day "+fmt.Sprint(cut) {
+		t.Fatalf("written file = %+v, %v", file, err)
+	}
+	if n := len(file.Tracks[0].Segments[0].Points); n != cut+1 {
+		t.Fatalf("first track has %d points, want %d", n, cut+1)
+	}
+	if code, _ := write("append", path, pieces[0]); code != http.StatusBadRequest {
+		t.Fatalf("append to source = %d", code)
+	}
+	if code, _ := write("create", created+"x", segmentJSON{First: 1, Last: 2}); code != http.StatusBadRequest && code != http.StatusConflict {
+		t.Fatalf("unknown segment = %d", code)
 	}
 }

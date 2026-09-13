@@ -37,6 +37,19 @@ export function zoneOffset(millis, timeZone) {
   return name === "GMT" ? "UTC" : name.replace("GMT", "UTC").replace(/:00$/, "").replace(/([+-])0(\d)/, "$1$2");
 }
 
+// offsetMillis is how far a time zone is ahead of UTC at a moment, in
+// milliseconds.
+export function offsetMillis(millis, timeZone) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric",
+      hour: "numeric", minute: "numeric", second: "numeric",
+    }).formatToParts(new Date(millis)).map((part) => [part.type, Number(part.value)]),
+  );
+  const local = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return local - Math.floor(millis / 1000) * 1000;
+}
+
 export const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 // timeZones lists the zones to choose from: the browser's own, UTC and a few
@@ -52,3 +65,11 @@ export function fileSize(bytes) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
+
+// isMac reports whether the page runs on a Mac, whose keys are named ⌥ ⇧ ⌘.
+export const isMac = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent);
+
+// keys are modifier names as this system's keyboard labels them.
+export const keys = isMac
+  ? { alt: "⌥ Option", shift: "⇧ Shift", mod: "⌘", undo: "⌘Z" }
+  : { alt: "Alt", shift: "Shift", mod: "Ctrl", undo: "Ctrl+Z" };

@@ -10,10 +10,13 @@ import { Profile } from "./profile.js";
 import { StopMarkers } from "./stops.js";
 import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
+import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { FolderTree, revealButton } from "./tree.js";
 import { splitter, shareSplitter } from "./splitter.js";
 
-const PALETTE = ["#e6194b", "#4363d8", "#f58231", "#911eb4", "#0a9396", "#f032e6", "#9a6324", "#3cb44b", "#000075", "#808000"];
+// Okabe-Ito-derived hues: distinct under the common red/green colour-vision
+// deficiencies, with the darker variants retained for contrast on the map.
+const PALETTE = ["#0072b2", "#d55e00", "#009e73", "#cc79a7", "#e69f00", "#56b4e9", "#6f4c9b", "#882255", "#117733", "#332288"];
 const STORAGE_KEY = "dgs-gpx-browser";
 
 const $ = (id) => document.getElementById(id);
@@ -27,8 +30,11 @@ const state = {
   gcj: "auto", // GCJ-02 conversion: "auto" follows the base map, or "on" / "off"
   coordinates: "wgs84", // the system tracks are drawn in now
   cleanOpen: false, // the clean panel is open for the focused track
+  cutOpen: false, // the segments panel is open instead; the two share the map's corner
   compare: true, // the recording drawn under a cleaned track
   lasso: false,
+  rangeTool: false, // dragging on the timeline removes a range
+  rangeStart: null, // with the range tool, the start clicked on the track
   stopNumbers: true, // numbered stop markers on the map; the timeline always has them
   stops: { distance: 50, duration: 300 }, // stay-point thresholds: metres, seconds
   collapsed: { folders: false, workspace: false }, // sidebar panels folded to their header
@@ -41,7 +47,7 @@ let waypointPopup;
 // before that, so a file clicked early waits for it.
 let resolveMapReady;
 const mapReady = new Promise((resolve) => (resolveMapReady = resolve));
-let cleanPanel, cleanOverlay, lasso;
+let cleanPanel, cleanOverlay, lasso, cutPanel, cutOverlay;
 let map, layers, profile, tree, stopMarkers, timeline, chartSplit;
 
 // ---- persistence: a per-browser convenience, never required ----
@@ -71,6 +77,7 @@ function save() {
       charts: state.charts,
       stopNumbers: state.stopNumbers,
       cleanOpen: state.cleanOpen,
+      cutOpen: state.cutOpen,
       compare: state.compare,
       gcj: state.gcj,
       collapsed: state.collapsed,
@@ -173,6 +180,7 @@ function setFocus(path, { fit: shouldFit = true } = {}) {
     profile.show(entry.track, entry.color, hidden);
     stopMarkers.show(entry.track, entry.color, hidden);
     timeline.show(entry.track, entry.color, hidden);
+    syncChartsToTimeline(timeline.view);
     cleanOverlay.show(state.compare ? entry.track : null, hidden);
     if (shouldFit) fit([entry.track]);
   } else {
@@ -184,6 +192,7 @@ function setFocus(path, { fit: shouldFit = true } = {}) {
     timeline.hide();
   }
   applyCleanPanel();
+  applyCutPanel();
   reportFocus();
   renderTracks();
   save();
@@ -192,40 +201,149 @@ function setFocus(path, { fit: shouldFit = true } = {}) {
 // ---- cleaning: the focused track's filters, compare overlay and lasso ----
 
 function applyCleanPanel() {
-  const open = state.cleanOpen && Boolean(state.focus);
+  if (!timeline) return;
+  const entry = focusedEntry();
+  const open = state.cleanOpen && Boolean(entry);
   $("clean-panel").hidden = !open;
   $("toggle-clean").setAttribute("aria-pressed", String(state.cleanOpen));
+  if (!open) {
+    setLasso(false);
+    setRangeTool(false);
+    timeline.setEditing(null);
+    return;
+  }
+  cleanPanel.timeZone = $("timezone").value;
+  cleanPanel.show(entry.track);
+  timeline.setEditing({
+    edits: entry.track.clean.params.edits,
+    rangeTool: state.rangeTool,
+    onRange: (first, last) => cleanPanel.addRange(first, last, false),
+    onJoin: (index, join) => cleanPanel.setJoin(index, join),
+    onRestore: (index) => cleanPanel.restoreEdit(index),
+  });
+}
+
+// pushEdit records one removal by hand on the focused track.
+function pushEdit(edit) {
   const entry = focusedEntry();
-  if (open && entry) cleanPanel.show(entry.track);
-  if (!open) setLasso(false);
+  if (!entry) return;
+  const params = structuredClone(entry.track.clean.params);
+  params.edits.push({ ...edit, at: Date.now() });
+  saveClean(params);
 }
 
 function setLasso(active) {
   if (state.lasso === active) return;
   state.lasso = active;
+  if (active) setRangeTool(false);
   lasso.setActive(active);
   cleanPanel.setLasso(active);
 }
 
+function setRangeTool(active) {
+  if (state.rangeTool === active) return;
+  state.rangeTool = active;
+  setRangeStart(null);
+  if (active) setLasso(false);
+  cleanPanel.setRangeTool(active);
+  applyCleanPanel();
+}
+
+// removeStop removes every point of a stop by hand, joined across it.
+function removeStop(index) {
+  const entry = focusedEntry();
+  const stop = entry?.track.stops[index];
+  if (!stop) return;
+  pushEdit({ kind: "stop", first: stop.first, last: stop.last, join: true });
+}
+
+// setRangeStart marks where a range picked on the track begins, or with null
+// forgets it.
+function setRangeStart(index) {
+  state.rangeStart = index;
+  const entry = focusedEntry();
+  cleanOverlay.setPending(index == null || !entry ? null : entry.track.points[index]);
+}
+
+// showRange frames the points of a removal by hand on the map.
+function showRange(edit) {
+  const { track } = focusedEntry();
+  const box = [[Infinity, Infinity], [-Infinity, -Infinity]];
+  const indices = edit.kind === "lasso" ? edit.points : Array.from({ length: edit.last - edit.first + 1 }, (_, k) => edit.first + k);
+  for (const i of indices) {
+    const [lon, lat] = track.points[i];
+    box[0] = [Math.min(box[0][0], lon), Math.min(box[0][1], lat)];
+    box[1] = [Math.max(box[1][0], lon), Math.max(box[1][1], lat)];
+  }
+  if (box[0][0] <= box[1][0]) fitBox(box);
+}
+
 // saveClean writes the focused track's cleaning and shows the result.
 async function saveClean(params) {
+  await changeFocused((path) => api.saveClean(path, params));
+}
+
+// changeFocused runs a change to the focused track's sidecar, then fetches the
+// track again and redraws it.
+async function changeFocused(change) {
   const path = state.focus;
   const entry = focusedEntry();
   if (!entry) return;
   try {
-    await api.saveClean(path, params);
-    entry.track = await api.track(path, state.stops, state.coordinates);
+    await change(path);
+    await reloadEntry(path);
   } catch (error) {
     tree.showMessage(error.message, true);
     return;
   }
-  if (drawable(entry)) layers.update(entry.id, entry.track);
   if (state.focus === path) setFocus(path, { fit: false });
   reportFocus();
 }
 
-// lassoDone removes the kept points inside the shape by hand, or with Alt
-// restores the hand-removed ones inside it.
+async function reloadEntry(path) {
+  const entry = state.tracks.get(path);
+  if (!entry) return;
+  entry.track = await api.track(path, state.stops, state.coordinates);
+  if (drawable(entry)) layers.update(entry.id, entry.track);
+}
+
+// ---- cutting: the focused track's segments ----
+
+function applyCutPanel() {
+  const entry = focusedEntry();
+  const open = state.cutOpen && Boolean(entry);
+  $("cut-panel").hidden = !open;
+  $("toggle-cut").setAttribute("aria-pressed", String(state.cutOpen));
+  if (open) {
+    cutPanel.show(entry.track, { timeZone: $("timezone").value, workspace: [...state.tracks.keys()] });
+    cutOverlay.show(entry.track);
+    timeline.setCutting({
+      cuts: entry.track.cuts,
+      candidates: entry.track.cutCandidates,
+      onAdd: (index) => cutPanel.addCut(index),
+      onMove: (from, to) => cutPanel.moveCut(from, to),
+      onRemove: (index) => cutPanel.removeCut(index),
+    });
+  } else {
+    cutPanel.hide();
+    cutOverlay.clear();
+    timeline.setCutting(null);
+  }
+}
+
+async function writeSegments(request) {
+  const result = await api.writeSegments(state.focus, request);
+  // A workspace track written into shows what it gained; a new file appears in the tree.
+  if (state.tracks.has(result.path)) {
+    await reloadEntry(result.path);
+    renderTracks();
+  }
+  tree.refresh();
+  return result;
+}
+
+// lassoDone removes the kept points inside the shape as one lasso edit, or
+// with Option/Alt takes the points inside it out of earlier lasso edits.
 function lassoDone(polygon, { restore }) {
   const entry = focusedEntry();
   if (!entry) return;
@@ -240,10 +358,14 @@ function lassoDone(polygon, { restore }) {
     if (insidePolygon([x, y], polygon)) inside.add(i);
   });
   if (!inside.size) return;
+  if (!restore) {
+    pushEdit({ kind: "lasso", points: [...inside].sort((a, b) => a - b), join: true });
+    return;
+  }
   const params = structuredClone(track.clean.params);
-  params.removed = restore
-    ? params.removed.filter((i) => !inside.has(i))
-    : [...new Set([...params.removed, ...inside])].sort((a, b) => a - b);
+  params.edits = params.edits
+    .map((edit) => (edit.kind === "lasso" ? { ...edit, points: edit.points.filter((i) => !inside.has(i)) } : edit))
+    .filter((edit) => edit.kind !== "lasso" || edit.points.length);
   saveClean(params);
 }
 
@@ -583,6 +705,35 @@ function inspect(index) {
   timeline.setIndex(index);
 }
 
+// ---- the timeline's time and the charts' distance, zoomed together ----
+
+// syncChartsToTimeline shows on the charts the distance a stretch of time covers.
+function syncChartsToTimeline(view) {
+  const entry = focusedEntry();
+  if (!entry) return;
+  if (!view) {
+    profile.setRange(null);
+    return;
+  }
+  const { track } = entry;
+  const first = timeline.nearest(view[0]);
+  const last = timeline.nearest(view[1]);
+  profile.setRange([track.distance[first] / 1000, track.distance[last] / 1000]);
+}
+
+// timeSpan is the [from, to] times of the kept, timed points whose distance
+// lies within [min, max] metres, or null when there are none.
+function timeSpan(track, min, max) {
+  let from = null, to = null;
+  for (let i = 0; i < track.distance.length; i++) {
+    const d = track.distance[i];
+    if (d < min || d > max || track.time[i] == null || track.removed[i]) continue;
+    if (from == null || track.time[i] < from) from = track.time[i];
+    if (to == null || track.time[i] > to) to = track.time[i];
+  }
+  return from == null ? null : [from, to];
+}
+
 // selectStop opens a stop's times; from the timeline it also brings the stop
 // into view.
 function selectStop(index, { pan = false } = {}) {
@@ -602,7 +753,8 @@ function bindMap() {
       pending = null;
       const entry = focusedEntry();
       const index = entry && entry.track.points.length ? layers.nearest(entry.track, point, 24, entry.hiddenParts) : -1;
-      map.getCanvas().style.cursor = index >= 0 ? "crosshair" : "";
+      // In cut mode the pointer says a click cuts at the marked point.
+      map.getCanvas().style.cursor = index >= 0 ? (state.cutOpen ? "copy" : "crosshair") : "";
       inspect(index);
       profile.setIndex(index >= 0 ? index : null);
     });
@@ -616,6 +768,28 @@ function bindMap() {
   // Clicking a waypoint opens it.
   map.on("click", (event) => {
     if (state.lasso) return; // a lasso ends with a click; it selects, it does not focus
+    const focused = focusedEntry();
+    // With the range tool, clicks on the track pick a range's start, then its end.
+    if (state.rangeTool && focused) {
+      const index = layers.nearest(focused.track, event.point, 24, focused.hiddenParts);
+      if (index < 0) return;
+      if (state.rangeStart == null) {
+        setRangeStart(index);
+      } else {
+        const first = Math.min(state.rangeStart, index), last = Math.max(state.rangeStart, index);
+        setRangeStart(null);
+        cleanPanel.addRange(first, last, false);
+      }
+      return;
+    }
+    // In cut mode, clicking the focused track cuts it at the point marked.
+    if (state.cutOpen && focused && focused.track.points.length) {
+      const index = layers.nearest(focused.track, event.point, 24, focused.hiddenParts);
+      if (index >= 0) {
+        cutPanel.addCut(index);
+        return;
+      }
+    }
     const box = [[event.point.x - 4, event.point.y - 4], [event.point.x + 4, event.point.y + 4]];
     const waypoint = layers.waypointLayers().length && map.queryRenderedFeatures(box, { layers: layers.waypointLayers() })[0];
     if (waypoint) {
@@ -790,6 +964,8 @@ async function start() {
     root: $("clean-panel"),
     onChange: saveClean,
     onLasso: setLasso,
+    onRangeTool: setRangeTool,
+    onShowRange: showRange,
     onCompare: (on) => {
       state.compare = on;
       const entry = focusedEntry();
@@ -803,10 +979,30 @@ async function start() {
   cleanPanel.compare = state.compare;
   $("toggle-clean").addEventListener("click", () => {
     state.cleanOpen = !state.cleanOpen;
+    if (state.cleanOpen) state.cutOpen = false;
+    applyCutPanel();
     applyCleanPanel();
     save();
   });
-  applyCleanPanel();
+  cutOverlay = new CutOverlay(map, "cursor");
+  cutPanel = new CutPanel({
+    root: $("cut-panel"),
+    onCuts: (cuts, names) => changeFocused((path) => api.saveSegments(path, cuts, names)),
+    onHover: (piece) => cutOverlay.highlight(focusedEntry()?.track, piece),
+    onShow: (piece) => {
+      const box = pieceBounds(focusedEntry().track, piece);
+      if (box) fitBox(box);
+    },
+    onWrite: writeSegments,
+  });
+  if (saved.cutOpen === true && !state.cleanOpen) state.cutOpen = true;
+  $("toggle-cut").addEventListener("click", () => {
+    state.cutOpen = !state.cutOpen;
+    if (state.cutOpen) state.cleanOpen = false;
+    applyCleanPanel();
+    applyCutPanel();
+    save();
+  });
   profile = new Profile({
     root: $("profile"),
     elevation: $("chart-elevation"),
@@ -816,20 +1012,43 @@ async function start() {
     stats: $("profile-stats"),
     readout: $("profile-readout"),
     onHover: inspect,
+    onRange: (range) => {
+      // The charts' distance range, shown as the time those points span.
+      const entry = focusedEntry();
+      if (!entry) return;
+      timeline.setView(range && timeSpan(entry.track, range[0] * 1000, range[1] * 1000));
+    },
   });
-  stopMarkers = new StopMarkers(map, { onSelect: (index) => selectStop(index) });
+  stopMarkers = new StopMarkers(map, { onSelect: (index) => selectStop(index), onRemove: removeStop });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      if (state.rangeStart != null) setRangeStart(null); // first Esc forgets a half-picked range
+      else setRangeTool(false);
+    }
+    // Undo the latest removal by hand, unless typing in a field.
+    const typing = event.target.closest?.("input, select, textarea");
+    if (state.cleanOpen && !typing && (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      cleanPanel.undo();
+    }
+  });
   timeline = new Timeline({
     root: $("timeline"),
     bar: $("timeline-bar"),
     labels: $("timeline-labels"),
+    overview: $("timeline-overview"),
+    ticks: $("timeline-ticks"),
     onScrub: (index) => {
       inspect(index);
       profile.setIndex(index);
     },
     onStop: (index) => selectStop(index, { pan: true }),
     onStopHover: (index) => stopMarkers.highlight(index),
+    onView: (view) => syncChartsToTimeline(view),
   });
   bindMap();
+  applyCleanPanel();
+  applyCutPanel();
   resolveMapReady();
 
   if (saved.stops?.distance > 0 && saved.stops?.duration > 0) state.stops = saved.stops;
@@ -860,6 +1079,8 @@ async function start() {
     profile.setTimeZone(zone);
     stopMarkers.setTimeZone(zone);
     timeline.setTimeZone(zone);
+    applyCutPanel(); // default segment names read in the zone
+    applyCleanPanel(); // so do removed ranges
   };
   setTimeZone(zoneSelect.value);
   zoneSelect.addEventListener("change", () => {

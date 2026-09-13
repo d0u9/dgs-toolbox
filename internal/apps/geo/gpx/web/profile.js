@@ -5,10 +5,14 @@
 import * as format from "./format.js";
 
 const SYNC_KEY = "gpx-profile";
+const MIN_DISTANCE_SPAN = 0.001; // km (one metre)
 
 export class Profile {
   // onHover(index | null) is called when the pointer inspects a point on a chart.
-  constructor({ root, elevation, speed, name, swatch, stats, readout, onHover }) {
+  // onRange([minKm, maxKm] | null) is called when zooming a chart changes the
+  // distance shown, null meaning all of it.
+  constructor({ root, elevation, speed, name, swatch, stats, readout, onHover, onRange }) {
+    this.onRange = onRange;
     this.root = root;
     this.containers = { elevation, speed };
     this.labels = { name, swatch, stats, readout };
@@ -16,6 +20,7 @@ export class Profile {
     this.charts = [];
     this.track = null;
     this.syncingScale = false;
+    this.setRangeTo = null; // [min, max] km last set from outside
     this.timeZone = format.browserTimeZone();
     const observer = new ResizeObserver(() => this.resize());
     observer.observe(elevation);
@@ -67,6 +72,21 @@ export class Profile {
 
   setColor(color) {
     if (this.track) this.show(this.track, color, this.hiddenRanges);
+  }
+
+  // setRange shows a distance range in km on every chart, or with null all of
+  // it, without reporting back through onRange.
+  setRange(range) {
+    for (const chart of this.charts) {
+      const data = chart.data[0];
+      const requested = range || [data[0], data[data.length - 1]];
+      const [min, max] = clampDistanceRange(requested[0], requested[1], data[0], data[data.length - 1]);
+      // uPlot commits a scale in a microtask, so its setScale hook runs after
+      // this returns. Remember the range set here to recognise that echo;
+      // reporting it would snap the timeline to recorded points mid-gesture.
+      this.setRangeTo = [min, max];
+      chart.setScale("x", { min, max });
+    }
   }
 
   // setIndex moves the chart cursor to a point chosen elsewhere (the map).
@@ -122,10 +142,17 @@ export class Profile {
         }],
         setScale: [(u, key) => {
           if (key !== "x" || this.syncingScale) return;
-          const { min, max } = u.scales.x;
+          const data = u.data[0];
+          const [min, max] = clampDistanceRange(u.scales.x.min, u.scales.x.max, data[0], data[data.length - 1]);
           this.syncingScale = true;
+          if (min !== u.scales.x.min || max !== u.scales.x.max) u.setScale("x", { min, max });
           for (const other of this.charts) if (other !== u) other.setScale("x", { min, max });
           this.syncingScale = false;
+          const echo = this.setRangeTo;
+          if (echo && Math.abs(echo[0] - min) < 1e-6 && Math.abs(echo[1] - max) < 1e-6) return;
+          this.setRangeTo = null;
+          const whole = min <= data[0] && max >= data[data.length - 1];
+          this.onRange(whole ? null : [min, max]);
         }],
         ready: [(u) => wheelZoom(u)],
       },
@@ -207,18 +234,17 @@ function wheelZoom(u) {
     const factor = event.deltaY < 0 ? 0.8 : 1.25;
     let nextMin = at - (at - min) * factor;
     let nextMax = at + (max - at) * factor;
-    if (nextMax - nextMin >= dataMax - dataMin) {
-      nextMin = dataMin;
-      nextMax = dataMax;
-    } else if (nextMin < dataMin) {
-      nextMax += dataMin - nextMin;
-      nextMin = dataMin;
-    } else if (nextMax > dataMax) {
-      nextMin -= nextMax - dataMax;
-      nextMax = dataMax;
-    }
+    [nextMin, nextMax] = clampDistanceRange(nextMin, nextMax, dataMin, dataMax);
     u.setScale("x", { min: nextMin, max: nextMax });
   }, { passive: false });
+}
+
+function clampDistanceRange(min, max, dataMin, dataMax) {
+  const full = Math.max(MIN_DISTANCE_SPAN, dataMax - dataMin);
+  const upper = Math.max(dataMax, dataMin + MIN_DISTANCE_SPAN);
+  const span = Math.min(full, Math.max(MIN_DISTANCE_SPAN, max - min));
+  const from = Math.max(dataMin, Math.min(min, upper - span));
+  return [from, from + span];
 }
 
 function hexAlpha(hex, alpha) {
