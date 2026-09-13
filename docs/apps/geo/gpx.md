@@ -33,15 +33,16 @@ server exposes the API under `/api/`; everything else is the page.
 | --- | --- |
 | `/` | The web page. |
 | `/api/health` | Answers `{"ok":true}`. |
-| `/api/config` | The base maps — built-in first, then configured — each with its coordinate system, and the folder to open at. |
+| `/api/config` | The ways of travel the routers offer (`ways`: `id`, `label`, `service`), the base maps — built-in first, then configured — each with its coordinate system, and the folder to open at. |
 | `/api/dir?path=` | The folders and `.gpx` files of a folder. Hidden entries are left out. |
 | `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; and how many tracks were added to it. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
 | `PUT /api/clean` | Writes a track's cleaning settings, and the points removed by hand, to its sidecar. Settings left out keep their defaults; a cleaning that does nothing removes the sidecar. |
 | `PUT /api/segments` | Writes a track's cuts and segment names to its sidecar. |
 | `POST /api/segments/write` | Writes chosen segments of a track, as cleaned, one `<trk>` each: added to another GPX's sidecar (mode `add`), or into a new GPX it will not overwrite (mode `create`). The source is refused. |
-| `POST /api/fill/route` | Asks the router (OSRM) for the road between two kept points of a track (`first`, `last`), or two places (`from`, `to`, `[lon, lat]` in the system given by `coordinates`), with profile `car`, `bike` or `foot`. Returns the route in WGS-84 and as drawn. Nothing is saved. |
+| `POST /api/fill/route` | Asks a router for the road between two kept points of a track, with a way of travel `/api/config` lists under `ways`. Returns the route in WGS-84 and as drawn. Nothing is saved. |
 | `POST /api/fill` | Records a route between two points in the sidecar, inserted after the first; later indices move along. |
-| `POST /api/fill/track` | Adds a route between two places to a GPX as a track of its own, recorded in the sidecar like a track added from another file. |
+| `POST /api/route/leg` | Asks the router for the road between two waypoints of a planned route, `from` and `to` as `[lon, lat]` in WGS-84, with profile `car`, `bike` or `foot`. Nothing is saved. |
+| `POST /api/route/save` | Writes a planned route into a new GPX it will not overwrite — one `<trk>` of its legs, and a `<rte>` of its waypoints when `writeRte` — and keeps the plan in the new file's sidecar. |
 | `DELETE /api/fill` | Removes a fill by its place in the list; its points go and the recorded ones come back. |
 | `DELETE /api/added` | Takes a track added from another file out of a GPX's sidecar, with the edits, cuts and fills on it. |
 | `POST /api/draft` | Starts a new, empty GPX in memory, named by `name`, and answers its path, `draft:<n>/<name>.gpx`. Every other call takes that path as it takes a file's. |
@@ -138,7 +139,10 @@ map. It is the interface later milestones build on.
   a thousand kilometres away — do not zoom the map out to a corner.
 - **Base maps.** OpenStreetMap, Gaode (街道), Gaode Satellite (imagery with
   Gaode's road and place names above it) and Esri World Imagery are built in
-  and need no key, followed by the maps in `geo.gpx.tiles`. Gaode's tile
+  and need no key, followed by the maps in `geo.gpx.tiles` and then those in
+  `<config_dir>/geo/gpx/tiles.json` — `{"tiles": [...]}`, each entry as in
+  `geo.gpx.tiles` — which keeps a long list out of the configuration file. A
+  tiles file that cannot be read keeps the server from starting, saying why. Gaode's tile
   addresses are undocumented and could change; the rest are public services.
 - **GCJ-02.** Gaode draws in GCJ-02, so a WGS-84 track sits several hundred
   metres off it. The selector's *Auto* converts what is drawn — tracks, stops,
@@ -288,23 +292,67 @@ fill is made only this way, on request.
   points between the two ends and removes the recorded points between them;
   *Discard*, Esc or picking again forgets it. A route that fails — no road,
   no network — says why in the panel.
-- Either end can also be any place on the map, off the track. Such a route
-  does not fill the track: *Add as a track* adds it to the GPX as a track of
-  its own, named *Along the road (car)* and the like, without times or
-  elevations. Like tracks added from another file, it is kept in the sidecar
-  until the GPX is saved as a new one — so an empty *New GPX* can be drawn
-  this way too. A click within 40 px of a shown track's first or last kept
-  point snaps to it, so a route starts or ends exactly where a track does.
 - Filled points get times spread by distance between the two ends' times and
   elevations interpolated the same way, and join the track across a pause in
   the recording. They are banded light blue on the map, and written with
-  `<src>dgs-toolbox: filled along the road (OSRM)</src>`.
+  `<src>dgs-toolbox: filled along the road</src>`.
 - Each fill is listed with its time span, length and points; clicking it
   frames it, `×` removes it and brings back the recorded points. A fill
   cannot cross another.
 
 The route is stored in the sidecar as coordinates, so a fill never needs the
 router again.
+
+## Routers
+
+Filling along the road and planning a route ask a router for the road
+between two points. Every way of travel names the service that routes it:
+
+- **OSRM** — car, bicycle, foot — on OpenStreetMap, from the public servers
+  (the OSRM project's for cars, FOSSGIS's for bicycles and walking). No key.
+- **Amap (高德)** — car, bicycle, e-bike, foot — with its Web Service route
+  planning (v5), on Amap's own map data, the most complete for China. Offered
+  only when `geo.gpx.amap_key` holds a Web Service key. Amap works in GCJ-02:
+  the server converts the two points before asking and the route back to
+  WGS-84 after, so what is saved is WGS-84 like the rest (the conversion is
+  good to about 1–2 m). The key stays on the server; the page never sees it,
+  and an error never repeats it.
+
+Only the two points go to the service. The selects group the ways by service.
+
+## Planning a route
+
+*Route*, in the top bar, plans a route by hand rather than from a recording:
+no track needs to be open. The inspector holds the plan; the map takes the
+clicks.
+
+- **Waypoints.** Clicking the map adds a waypoint at the end. A click within
+  40 px of the first or last point of a shown track in the workspace snaps to
+  it, so a route starts or ends where a track does. Waypoints are numbered
+  markers — the start green, the end black — dragged to move them and
+  double-clicked to remove them; a small circle midway along each leg is
+  dragged to insert a waypoint there. The inspector lists them, each with `×`,
+  and clicking one centres the map on it.
+- **Legs.** Between each two waypoints a leg goes by car, bicycle or foot —
+  asked of the public OSRM routers, which receive only its two waypoints — or
+  straight, drawn dashed. *New legs* sets the way of the next one; each leg's
+  own way changes in the list. Moving or removing a waypoint asks again only
+  for the legs beside it; a leg that fails says why and offers *Retry*. The
+  road starts where the router meets the road, so a leg joins it to its
+  waypoints in a straight line.
+- **Summary and tools.** The total length, the number of waypoints and, when
+  every leg follows the road, the router's time. *Reverse* turns the route
+  round, *Close loop* adds the start again at the end, *Clear* starts over.
+  The plan on the page is remembered by the browser until it is cleared.
+- **Saving.** *Save as GPX…* asks for the full path of a new file — an
+  existing one is never replaced — and writes one `<trk>` of the legs joined,
+  its points marked `<src>dgs-toolbox: planned route</src>`, and a `<rte>` of
+  the waypoints when *Also write the waypoints as a <rte>* is on. No times or
+  elevations are written. The file is added to the workspace, and the plan —
+  waypoints, and each leg's way and points — is kept in its sidecar as `plan`.
+- **Editing a saved route.** With a file planned here focused, the inspector
+  offers *Edit its route*: the plan loads, named after the file with ` 2`, and
+  is saved again as a new GPX.
 
 ## Segments
 
@@ -496,7 +544,7 @@ build on the data model of earlier ones.
 ### Map and coordinates
 
 - OpenStreetMap, Gaode, Gaode Satellite and Esri World Imagery are built in.
-  Further tile sources are listed in `geo.gpx.tiles`, each with a name, a URL
+  Further tile sources are listed in `geo.gpx.tiles` or the tiles file, each with a name, a URL
   template and its coordinate system; the page offers them after the built-in
   ones.
 - Data is always WGS-84, as GPX is. The **GCJ-02 selector** (done, see above) converts what is drawn —
@@ -656,8 +704,10 @@ no track to start from.
 - Times estimated from an average speed are optional; elevation needs a DEM
   source and is left for later.
 
-When it lands, routing between two places off a track (*Add as a track* in
-the fill section) moves here, and filling stays for gaps in a track.
+Done: see *Planning a route*. Routing between two places off a track moved
+here from filling, which again only fills a gap between two points of a
+track. Not yet: showing tracks faintly as a reference, estimated times and
+elevation.
 
 ### Later
 

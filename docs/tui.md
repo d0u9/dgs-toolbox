@@ -99,6 +99,9 @@ dgs is a toolbox, so that directory is laid out **by command**:
   capture/
     recipes/
     templates/
+  geo/
+    gpx/
+      tiles.json
   photo/
     …
 ```

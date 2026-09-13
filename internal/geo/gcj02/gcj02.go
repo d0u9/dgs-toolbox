@@ -43,8 +43,8 @@ func FromWGS84(p geo.LatLon) geo.LatLon {
 	return geo.LatLon{Lat: p.Lat + dLat, Lon: p.Lon + dLon}
 }
 
-// ToWGS84 is the WGS-84 position of a GCJ-02 one, such as a click on a GCJ-02
-// map, found by inverting FromWGS84 to well under a centimetre.
+// ToWGS84 is the WGS-84 position of a GCJ-02 one, found by inverting
+// FromWGS84 to well under a millimetre.
 func ToWGS84(p geo.LatLon) geo.LatLon {
 	if !InChina(p) {
 		return p

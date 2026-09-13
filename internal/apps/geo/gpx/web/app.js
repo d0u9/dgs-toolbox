@@ -12,6 +12,7 @@ import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { FolderTree, revealButton } from "./tree.js";
+import { RoutePlanner } from "./route.js";
 import { confirmDialog, promptDialog } from "./dialog.js";
 import { splitter, shareSplitter } from "./splitter.js";
 
@@ -32,6 +33,7 @@ const state = {
   gcj: "auto", // GCJ-02 conversion: "auto" follows the base map, or "on" / "off"
   coordinates: "wgs84", // the system tracks are drawn in now
   cleanOpen: false, // edit mode: the inspector is open for the focused track
+  routeOpen: false, // route mode: planning a route by hand in the inspector
   editTab: "changes", // the inspector's tab in edit mode: "changes", "auto" or "segments"
   compare: true, // the recording drawn under a cleaned track
   lasso: false,
@@ -53,7 +55,7 @@ let waypointPopup;
 // before that, so a file clicked early waits for it.
 let resolveMapReady;
 const mapReady = new Promise((resolve) => (resolveMapReady = resolve));
-let cleanPanel, cleanOverlay, lasso, cutPanel, cutOverlay;
+let cleanPanel, cleanOverlay, lasso, cutPanel, cutOverlay, planner;
 let map, layers, profile, tree, stopMarkers, timeline, chartSplit;
 
 // ---- persistence: a per-browser convenience, never required ----
@@ -84,6 +86,8 @@ function save() {
       stopNumbers: state.stopNumbers,
       cleanOpen: state.cleanOpen,
       editTab: state.editTab,
+      routeOpen: state.routeOpen,
+      route: planner?.toJSON(),
       compare: state.compare,
       fillProfile: state.fill.profile,
       gcj: state.gcj,
@@ -193,6 +197,7 @@ function focusNextVisible() {
 function setFocus(path, { fit: shouldFit = true } = {}) {
   if (state.focus !== path && cleanOverlay && (state.fill.start != null || state.fill.preview)) setFill({ start: null, preview: null, error: null });
   state.focus = path;
+  planner?.setFocused(path, path && state.tracks.get(path)?.track);
   $("profile-splitter").hidden = !path || !(state.charts.elevation || state.charts.speed);
   layers.setCursor(null);
   const entry = path && state.tracks.get(path);
@@ -227,17 +232,21 @@ function setFocus(path, { fit: shouldFit = true } = {}) {
 function applyCleanPanel() {
   if (!timeline) return;
   const entry = focusedEntry();
-  const open = state.cleanOpen && Boolean(entry);
+  const open = state.cleanOpen && Boolean(entry) && !state.routeOpen;
   const wasOpen = !$("inspector").hidden;
-  $("inspector").hidden = !open;
-  $("inspector-splitter").hidden = !open;
-  $("mode-browse").setAttribute("aria-pressed", String(!open));
+  $("inspector").hidden = !(open || state.routeOpen);
+  $("inspector-splitter").hidden = $("inspector").hidden;
+  $("clean-panel").hidden = !open;
+  $("route-panel").hidden = !state.routeOpen;
+  $("mode-browse").setAttribute("aria-pressed", String(!open && !state.routeOpen));
   $("mode-edit").setAttribute("aria-pressed", String(open));
+  $("mode-route").setAttribute("aria-pressed", String(state.routeOpen));
+  if (planner && planner.active !== state.routeOpen) planner.setActive(state.routeOpen);
   $("mode-edit").disabled = !entry;
   $("mode-edit").title = entry
     ? "Edit the focused track: remove points by hand, fill along the road, clean automatically"
     : "Focus a track in the workspace to edit it";
-  if (wasOpen !== open) map?.resize();
+  if (wasOpen === $("inspector").hidden) map?.resize();
   if (!open) {
     setLasso(false);
     setRangeTool(false);
@@ -260,11 +269,14 @@ function applyCleanPanel() {
   applyEditTools();
 }
 
-// setMode switches between browsing and editing the focused track.
+// setMode switches between browsing, editing the focused track and planning
+// a route.
 function setMode(mode) {
   const edit = mode === "edit" && Boolean(focusedEntry());
-  if (state.cleanOpen === edit) return;
+  const route = mode === "route";
+  if (state.cleanOpen === edit && state.routeOpen === route) return;
   state.cleanOpen = edit;
+  state.routeOpen = route;
   applyCutPanel();
   applyCleanPanel();
   save();
@@ -272,7 +284,7 @@ function setMode(mode) {
 
 // cutting says whether clicks on the track and the timeline cut: in edit mode,
 // on the Segments tab.
-const cutting = () => state.cleanOpen && state.editTab === "segments" && Boolean(focusedEntry());
+const cutting = () => state.cleanOpen && !state.routeOpen && state.editTab === "segments" && Boolean(focusedEntry());
 
 // setEditTab switches the inspector's tab. Segments is the Cut tool, so the
 // other tools stop there.
@@ -309,7 +321,7 @@ function setTool(tool) {
 // applyEditTools shows the tool bar in edit mode, the tool in use, and a line
 // on the map saying what a click does now.
 function applyEditTools() {
-  const open = state.cleanOpen && Boolean(focusedEntry());
+  const open = state.cleanOpen && Boolean(focusedEntry()) && !state.routeOpen;
   $("map-tools").hidden = !open;
   const tool = cutting() ? "cut" : state.rangeTool ? "range" : state.lasso ? "lasso" : state.fill.active ? "fill" : "select";
   for (const name of ["select", "range", "lasso", "fill", "cut"]) {
@@ -331,7 +343,9 @@ function applyEditTools() {
     if (fill.busy) html = "<strong>Fill along the road</strong> · asking the router…";
     else if (fill.preview) html = `<strong>Fill along the road</strong> · the route is dashed on the map: use or discard it in the panel · ${esc} discards`;
     else if (fill.start != null) html = `<strong>Fill along the road</strong> · now click where it ends; near a track's end the click snaps to it · ${esc} forgets the start`;
-    else html = `<strong>Fill along the road</strong> · click where the route starts, on the track or anywhere on the map · ${esc} to stop`;
+    else html = `<strong>Fill along the road</strong> · click the track where the stretch starts · ${esc} to stop`;
+  } else if (state.routeOpen) {
+    html = "<strong>Route</strong> · click the map to add a waypoint · drag a waypoint to move it, double-click to remove it · drag a small circle on a leg to insert one";
   } else if (open) {
     html = "Tools: <kbd>R</kbd> range · <kbd>L</kbd> lasso · <kbd>F</kbd> fill along the road · <kbd>C</kbd> cut";
   }
@@ -395,11 +409,11 @@ function setFillTool(active) {
   setFill({ active, start: null, preview: null, busy: false, error: null });
 }
 
-// fillEndAt is where a click with the fill tool lands: the end of a shown
-// track when near one, else a point of the track, else the place on the map.
-function fillEndAt(entry, event) {
+// trackEndNear is the index of the first or last kept point of a shown track
+// of entry within radius pixels of a screen point, or -1.
+function trackEndNear(entry, screenPoint, radius = FILL_SNAP) {
   const { track } = entry;
-  let index = -1, best = FILL_SNAP ** 2;
+  let index = -1, best = radius ** 2;
   for (const part of track.parts) {
     if (part.kind !== "track" || entry.hiddenParts.has(part.key)) continue;
     let first = part.first, last = part.last;
@@ -408,31 +422,46 @@ function fillEndAt(entry, event) {
     for (const i of [first, last]) {
       if (track.removed[i]) continue;
       const p = map.project(track.points[i]);
-      const d = (p.x - event.point.x) ** 2 + (p.y - event.point.y) ** 2;
+      const d = (p.x - screenPoint.x) ** 2 + (p.y - screenPoint.y) ** 2;
       if (d <= best) [index, best] = [i, d];
     }
   }
-  if (index < 0) index = layers.nearest(track, event.point, 24, entry.hiddenParts);
-  if (index >= 0) return { index, position: track.points[index] };
-  return { index: null, position: [event.lngLat.lng, event.lngLat.lat] };
+  return index;
 }
 
-// pickFillEnd takes a place clicked: the start, then the end, after which the
-// router is asked for the road between them. Two points of the track fill
-// the stretch between; with a place off the track the route becomes a track
-// of its own.
+// routePointAt is where a click in route mode puts a waypoint, [lon, lat] in
+// WGS-84: the end of a shown track in the workspace when near one, else the
+// place clicked.
+function routePointAt(event) {
+  for (const entry of visibleEntries()) {
+    const index = trackEndNear(entry, event.point);
+    if (index >= 0) return planner.fromDisplay(entry.track.points[index]);
+  }
+  return planner.fromDisplay([event.lngLat.lng, event.lngLat.lat]);
+}
+
+// fillEndAt is the point of the track a click with the fill tool picks: the
+// end of a shown track when near one, else the nearest point, or null.
+function fillEndAt(entry, event) {
+  const { track } = entry;
+  let index = trackEndNear(entry, event.point);
+  if (index < 0) index = layers.nearest(track, event.point, 24, entry.hiddenParts);
+  if (index >= 0) return { index, position: track.points[index] };
+  return null;
+}
+
+// pickFillEnd takes a point of the track clicked: the start, then the end,
+// after which the router is asked for the road between them.
 async function pickFillEnd(end) {
   const entry = focusedEntry();
-  if (!entry || state.fill.busy) return;
+  if (!end || !entry || state.fill.busy) return;
   const { start } = state.fill;
   if (start == null || state.fill.preview) {
     setFill({ start: end, preview: null, error: null });
     return;
   }
-  if (start.index != null && start.index === end.index) return;
-  const ends = start.index != null && end.index != null
-    ? { first: Math.min(start.index, end.index), last: Math.max(start.index, end.index) }
-    : { from: start.position, to: end.position };
+  if (start.index === end.index) return;
+  const ends = { first: Math.min(start.index, end.index), last: Math.max(start.index, end.index) };
   const path = state.focus;
   setFill({ busy: true, error: null });
   try {
@@ -449,15 +478,59 @@ async function useFill() {
   if (!preview || preview.path !== state.focus) return;
   const { first, last } = preview.ends;
   setFill({ busy: true });
-  await changeFocused((path) => first != null
-    ? api.saveFill(path, first, last, profile, preview.route)
-    : api.addRoute(path, profile, preview.route));
+  await changeFocused((path) => api.saveFill(path, first, last, profile, preview.route));
   setFill({ busy: false, preview: null });
 }
 
 // showFill frames a filled stretch on the map.
 function showFill(fill) {
   showRange({ kind: "range", first: fill.first, last: fill.last });
+}
+
+// ---- planning a route ----
+
+// saveRoute writes the planned route into a new GPX, chosen by path, and adds
+// it to the workspace.
+async function saveRoute() {
+  const root = (tree.root || state.config.root || "").replace(/[\\/]$/, "");
+  const folder = planner.source ? planner.source.replace(/[\\/][^\\/]*$/, "") : root;
+  const target = await promptDialog({
+    title: "Save the route",
+    message: "Choose the full path of the new GPX. An existing file is not replaced; the waypoints are kept beside it, so the route can be changed and saved again.",
+    value: `${folder}/${planner.name}.gpx`,
+    confirm: "Save",
+  });
+  if (!target) return;
+  try {
+    const { path } = await api.saveRoute({ target, name: planner.name, plan: planner.toJSON(), writeRte: planner.writeRte });
+    planner.source = path;
+    planner.message = { text: `Saved ${basename(path)}; it is in the workspace.` };
+    if (state.tracks.has(path)) await reloadEntry(path);
+    else await addTrack(path, { visible: true });
+    tree.refresh?.();
+  } catch (error) {
+    planner.message = { text: error.message, error: true };
+  }
+  planner.render();
+  save();
+}
+
+// editRoute loads the plan of a file in the workspace, to change it and save
+// it as a new GPX.
+async function editRoute({ path, name, plan }) {
+  if (planner.waypoints.length && planner.source !== path) {
+    const ok = await confirmDialog({
+      title: "Replace the route being planned?",
+      message: `The route on the map is set aside for the route of ${name}.`,
+      confirm: "Edit its route",
+    });
+    if (!ok) return;
+  }
+  planner.load({ name: `${name} 2`, way: planner.way, writeRte: planner.writeRte, source: path, waypoints: plan.waypoints, legs: plan.legs });
+  planner.message = null;
+  const box = planner.bounds();
+  if (box) fitBox(box);
+  save();
 }
 
 // ---- tracks added from other files, saved into a new GPX ----
@@ -722,6 +795,7 @@ async function syncCoordinates() {
   const wanted = wantedCoordinates();
   if (wanted === state.coordinates) return;
   state.coordinates = wanted;
+  planner?.draw();
   await reloadTracks();
 }
 
@@ -1080,7 +1154,7 @@ function bindMap() {
       const entry = focusedEntry();
       const index = entry && entry.track.points.length ? layers.nearest(entry.track, point, 24, entry.hiddenParts) : -1;
       // In cut mode the pointer says a click cuts at the marked point.
-      map.getCanvas().style.cursor = index >= 0 ? (cutting() ? "copy" : "crosshair") : state.fill.active ? "crosshair" : "";
+      map.getCanvas().style.cursor = index >= 0 ? (cutting() ? "copy" : "crosshair") : state.fill.active || state.routeOpen ? "crosshair" : "";
       inspect(index);
       profile.setIndex(index >= 0 ? index : null);
     });
@@ -1094,9 +1168,13 @@ function bindMap() {
   // Clicking a waypoint opens it.
   map.on("click", (event) => {
     if (state.lasso) return; // a lasso ends with a click; it selects, it does not focus
+    // In route mode a click adds a waypoint; clicks on the route's own markers do not.
+    if (state.routeOpen) {
+      if (!event.originalEvent.target.closest?.(".plan-marker")) planner.add(routePointAt(event));
+      return;
+    }
     const focused = focusedEntry();
-    // With the fill tool, clicks pick a route's start, then its end: on the
-    // track, or anywhere on the map.
+    // With the fill tool, clicks on the track pick a stretch's start, then its end.
     if (state.fill.active && focused) {
       pickFillEnd(fillEndAt(focused, event));
       return;
@@ -1322,7 +1400,8 @@ async function start() {
   lasso = new Lasso(map, { onDone: lassoDone, onCancel: () => setLasso(false) });
   if (saved.cleanOpen === true) state.cleanOpen = true;
   if (saved.compare === false) state.compare = false;
-  if (["car", "bike", "foot"].includes(saved.fillProfile)) state.fill.profile = saved.fillProfile;
+  cleanPanel.ways = state.config.ways || [];
+  if (cleanPanel.ways.some((way) => way.id === saved.fillProfile)) state.fill.profile = saved.fillProfile;
   cleanPanel.compare = state.compare;
   if (["changes", "auto", "segments"].includes(saved.editTab)) state.editTab = saved.editTab;
   // Cut was a panel of its own; it is now the Segments tab.
@@ -1330,6 +1409,18 @@ async function start() {
   cleanPanel.tab = state.editTab;
   $("mode-browse").addEventListener("click", () => setMode("browse"));
   $("mode-edit").addEventListener("click", () => setMode("edit"));
+  $("mode-route").addEventListener("click", () => setMode("route"));
+  planner = new RoutePlanner(map, {
+    root: $("route-panel"),
+    api,
+    gcj: () => state.coordinates === "gcj02",
+    ways: state.config.ways || [],
+    onChange: save,
+    onSave: saveRoute,
+    onEdit: editRoute,
+  });
+  planner.load(saved.route);
+  if (saved.routeOpen === true) state.routeOpen = true;
   for (const name of ["select", "range", "lasso", "fill", "cut"]) $(`tool-${name}`).addEventListener("click", () => setTool(name));
   cutOverlay = new CutOverlay(map, "cursor");
   cutPanel = new CutPanel({
@@ -1471,6 +1562,7 @@ async function start() {
   await syncCoordinates();
   const all = visibleEntries().map((entry) => entry.track);
   if (all.length) fit(all);
+  applyCleanPanel(); // route mode opens the inspector without a focused track
   state.restoring = false;
   save();
 }

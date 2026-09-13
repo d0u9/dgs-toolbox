@@ -16,6 +16,7 @@
   <span class="modes" role="group" aria-label="Mode">
     <button id="mode-browse" class="mode" aria-pressed="true" title="Look at the tracks in the workspace">Browse</button>
     <button id="mode-edit" class="mode" aria-pressed="false" title="Edit the focused track: remove points by hand, fill along the road, clean automatically">Edit</button>
+    <button id="mode-route" class="mode" aria-pressed="false" title="Plan a route by hand: waypoints on the map, legs along the road or straight">Route</button>
   </span>
   <span class="topbar-spacer"></span>
   <label class="basemap">Time zone
@@ -126,6 +127,7 @@
 <div id="inspector-splitter" class="splitter col" role="separator" aria-orientation="vertical" hidden></div>
 <aside id="inspector" class="inspector" aria-label="Edit" hidden>
   <div id="clean-panel" class="clean-panel"></div>
+  <div id="route-panel" class="clean-panel route-panel" hidden></div>
 </aside>
 
 <script type="module" src="app.js"></script>

@@ -637,3 +637,33 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .cut-hint.error { color: var(--danger); }
 .prompt-input { margin: 0 0 12px; padding: 4px 8px; font-size: 12px; }
 .timeline-piece { position: absolute; bottom: 0; height: 7px; z-index: 1; pointer-events: none; }
+
+/* Route mode: the plan's waypoints and legs */
+.clean-panel[hidden] { display: none; }
+.route-head { padding-bottom: 2px; }
+.route-name { flex: 1; min-width: 0; padding: 2px 6px; margin-left: -6px; border: 1px solid transparent; border-radius: 5px; background: transparent; font-size: 14px; font-weight: 600; }
+.route-name:hover, .route-name:focus { border-color: var(--line); background: var(--panel); }
+.route-summary { display: flex; align-items: baseline; gap: 8px; padding: 0 14px 6px; font-variant-numeric: tabular-nums; }
+.route-summary strong { font-size: 18px; }
+.route-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 6px 14px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.route-tools label { display: flex; align-items: center; gap: 4px; margin-right: auto; }
+.route-edit { margin: 8px 0; padding: 6px 8px; border-radius: 6px; background: var(--selected); }
+.route-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.route-waypoint { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.route-label { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 0; border: none; background: none; text-align: left; cursor: pointer; }
+.route-label .meta { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.route-waypoint .remove { border: none; background: none; color: var(--muted); font-size: 15px; cursor: pointer; }
+.route-waypoint .remove:hover { color: var(--danger); }
+/* A leg hangs between its two waypoints, on a line joining their numbers. */
+.route-leg { display: flex; align-items: center; gap: 8px; margin-left: 10px; padding: 3px 0 3px 18px; border-left: 2px solid #cc79a7; }
+.route-leg.busy { border-left-style: dashed; }
+.route-leg.error { border-left-color: var(--danger); }
+.route-leg .meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.route-leg.error .meta { color: var(--danger); }
+.route-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--line); }
+.plan-marker { width: 22px; height: 22px; display: grid; place-items: center; border: 2px solid #fff; border-radius: 50%; background: #cc79a7; color: #fff; font: 700 11px/1 system-ui, sans-serif; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); cursor: grab; }
+.plan-marker.start { background: #009e73; }
+.plan-marker.end { background: #1d1d1b; }
+.plan-marker.handle { width: 12px; height: 12px; border: 2px solid #cc79a7; background: #fff; box-shadow: none; opacity: .85; }
+.plan-marker.handle:hover { opacity: 1; transform: scale(1.25); }
+.plan-marker.static { flex: none; cursor: default; box-shadow: none; }

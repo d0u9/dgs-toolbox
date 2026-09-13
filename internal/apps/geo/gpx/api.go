@@ -99,7 +99,7 @@ func (a api) config(w http.ResponseWriter, r *http.Request) {
 	for _, tile := range a.settings.Tiles {
 		tiles = append(tiles, configuredMap(tile))
 	}
-	writeJSON(w, map[string]any{"root": a.settings.Root, "tiles": tiles, "canReveal": isLocal(r)})
+	writeJSON(w, map[string]any{"root": a.settings.Root, "tiles": tiles, "ways": a.ways(), "canReveal": isLocal(r)})
 }
 
 func configuredMap(tile config.GeoGPXTile) baseMap {
@@ -190,6 +190,8 @@ type trackJSON struct {
 	// each <trk> (its points are first..last of the arrays above), then each
 	// <rte> and <wpt>.
 	Parts []partJSON `json:"parts"`
+	// Plan is the route the file was written from, when it was planned here.
+	Plan *compose.Plan `json:"plan,omitempty"`
 	// Coordinates is the system positions are drawn in: "wgs84", or "gcj02"
 	// when the request asked for positions to lay over a GCJ-02 map. Only
 	// points, stop centres and bounds change; distances and speeds do not.
@@ -441,6 +443,7 @@ func trackResponse(a analysis) trackJSON {
 		Clean:       cleanJSON{Params: a.cleaning.Clean, Counts: a.result.Counts()},
 	}
 	response.Draft = isDraft(a.path)
+	response.Plan = a.cleaning.Plan
 	if (a.sidecar || a.sidecarErr != nil) && !response.Draft {
 		response.Clean.Sidecar = sidecar.PathFor(a.path)
 	}

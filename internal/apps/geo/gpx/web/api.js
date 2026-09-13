@@ -33,14 +33,11 @@ export const api = {
   // writeSegments writes chosen segments into a new or another GPX.
   writeSegments: (path, request) => sendJSON("POST", "api/segments/write", { path, ...request }),
   // routeFill asks the router for the road between two points of a track,
-  // ends { first, last }, or two places on the map, ends { from, to } as
-  // [lon, lat] drawn; profile is "car", "bike" or "foot". Only the two
+  // ends { first, last }; profile is "car", "bike" or "foot". Only the two
   // positions leave the server.
   routeFill: (path, ends, profile, coordinates) => postJSON("api/fill/route", { path, ...ends, profile, coordinates }),
   // saveFill records a previewed route between the two points.
   saveFill: (path, first, last, profile, route) => postJSON("api/fill", { path, first, last, profile, route }),
-  // addRoute adds a previewed route between two places as a track of its own.
-  addRoute: (path, profile, route) => postJSON("api/fill/track", { path, profile, route }),
   removeFill: (path, index) => sendJSON("DELETE", "api/fill", { path, index }),
   // removeAdded takes a track added from another file out again.
   removeAdded: (path, index) => sendJSON("DELETE", "api/added", { path, index }),
@@ -50,6 +47,10 @@ export const api = {
   discardSidecar: (path) => sendJSON("DELETE", "api/sidecar", { path }),
   // newDraft starts a new, empty GPX that lives in the server's memory until saved.
   newDraft: (name) => postJSON("api/draft", { name }),
+  // routeLeg asks the router for the road between two waypoints, [lon, lat] in WGS-84.
+  routeLeg: (profile, from, to) => postJSON("api/route/leg", { profile, from, to }),
+  // saveRoute writes a planned route into a new GPX, keeping the plan beside it.
+  saveRoute: (request) => postJSON("api/route/save", request),
   focus: (path, stops) => postJSON("api/focus", { path: path || "", stopDistance: stops?.distance, stopDuration: stops?.duration }),
   reveal: (path) => postJSON("api/reveal", { path }),
 };

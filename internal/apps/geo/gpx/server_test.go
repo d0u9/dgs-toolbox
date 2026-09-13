@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,7 +19,6 @@ import (
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/geo"
 	"dgs-toolbox/internal/geo/compose"
-	"dgs-toolbox/internal/geo/gcj02"
 	"dgs-toolbox/internal/geo/gpxfile"
 	"dgs-toolbox/internal/geo/osrm"
 )
@@ -572,42 +570,6 @@ func TestDraftCollectsTracksUntilSaved(t *testing.T) {
 	}
 }
 
-func TestRouteBetweenPlacesAddsATrack(t *testing.T) {
-	var asked []geo.LatLon
-	router := func(_ context.Context, profile string, from, to geo.LatLon) (osrm.Route, error) {
-		asked = []geo.LatLon{from, to}
-		return osrm.Route{Points: []geo.LatLon{from, {Lat: from.Lat, Lon: to.Lon}, to}, Distance: 500}, nil
-	}
-	server := httptest.NewServer(Handler(Settings{Router: router}))
-	defer server.Close()
-	path := writeStayGPX(t)
-	var before trackJSON
-	get(t, server, "/api/track?path="+url.QueryEscape(path), &before)
-
-	from, to := []float64{120.01, 30.01}, []float64{120.02, 30.02}
-	code, preview := send(t, server, http.MethodPost, "/api/fill/route", map[string]any{"path": path, "from": from, "to": to, "profile": "bike"})
-	if code != http.StatusOK || asked[0].Lon != 120.01 || asked[1].Lat != 30.02 {
-		t.Fatalf("route = %d %v asked %v", code, preview, asked)
-	}
-	// Places clicked on a GCJ-02 map are sent to the router in WGS-84.
-	send(t, server, http.MethodPost, "/api/fill/route", map[string]any{"path": path, "from": from, "to": to, "profile": "bike", "coordinates": "gcj02"})
-	if back := gcj02.FromWGS84(asked[0]); math.Abs(back.Lon-120.01) > 1e-7 || math.Abs(back.Lat-30.01) > 1e-7 || asked[0].Lon == 120.01 {
-		t.Fatalf("gcj02 place asked as %v", asked[0])
-	}
-	if code, _ := send(t, server, http.MethodPost, "/api/fill/route", map[string]any{"path": path, "from": from, "profile": "bike"}); code != http.StatusBadRequest {
-		t.Fatalf("one place = %d", code)
-	}
-
-	if code, result := send(t, server, http.MethodPost, "/api/fill/track", map[string]any{"path": path, "profile": "bike", "route": preview["route"]}); code != http.StatusOK {
-		t.Fatalf("add route = %d %v", code, result)
-	}
-	var after trackJSON
-	get(t, server, "/api/track?path="+url.QueryEscape(path), &after)
-	if after.Added != 1 || len(after.Points) != len(before.Points)+3 {
-		t.Fatalf("added %d points %d", after.Added, len(after.Points))
-	}
-}
-
 func TestDiscardSidecar(t *testing.T) {
 	server := httptest.NewServer(Handler(Settings{}))
 	defer server.Close()
@@ -635,5 +597,80 @@ func TestDiscardSidecar(t *testing.T) {
 	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
 	if track.Clean.Sidecar == "" || track.Clean.Error == "" {
 		t.Fatalf("broken: %+v", track.Clean)
+	}
+}
+
+func TestPlanARoute(t *testing.T) {
+	router := func(_ context.Context, profile string, from, to geo.LatLon) (osrm.Route, error) {
+		return osrm.Route{Points: []geo.LatLon{from, {Lat: from.Lat, Lon: to.Lon}, to}, Distance: 800}, nil
+	}
+	server := httptest.NewServer(Handler(Settings{Router: router}))
+	defer server.Close()
+
+	code, leg := send(t, server, http.MethodPost, "/api/route/leg", map[string]any{"profile": "foot", "from": []float64{120.1, 30.2}, "to": []float64{120.2, 30.3}})
+	if code != http.StatusOK || len(leg["route"].([]any)) != 3 {
+		t.Fatalf("leg = %d %v", code, leg)
+	}
+	plan := map[string]any{
+		"waypoints": [][]float64{{120.1, 30.2}, {120.2, 30.3}, {120.25, 30.3}},
+		"legs": []map[string]any{
+			{"way": "foot", "route": leg["route"]},
+			{"way": "line", "route": [][]float64{{120.2, 30.3}, {120.25, 30.3}}},
+		},
+	}
+	target := filepath.Join(t.TempDir(), "hike.gpx")
+	if code, result := send(t, server, http.MethodPost, "/api/route/save", map[string]any{"target": target, "name": "Hike", "plan": plan, "writeRte": true}); code != http.StatusOK {
+		t.Fatalf("save = %d %v", code, result)
+	}
+	file, err := gpxfile.Open(target)
+	if err != nil || len(file.Tracks) != 1 || len(file.Routes) != 1 || len(file.Routes[0].Points) != 3 {
+		t.Fatalf("saved = %+v, %v", file, err)
+	}
+	if n := len(file.Tracks[0].Segments[0].Points); n != 4 { // joints written once
+		t.Fatalf("track points = %d", n)
+	}
+	var track trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(target), &track)
+	if track.Plan == nil || len(track.Plan.Waypoints) != 3 || track.Plan.Legs[1].Way != "line" {
+		t.Fatalf("plan = %+v", track.Plan)
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/route/save", map[string]any{"target": target, "plan": plan}); code != http.StatusConflict {
+		t.Fatalf("save over = %d", code)
+	}
+	bad := map[string]any{"waypoints": [][]float64{{120.1, 30.2}}, "legs": []any{}}
+	if code, _ := send(t, server, http.MethodPost, "/api/route/save", map[string]any{"target": filepath.Join(t.TempDir(), "x.gpx"), "plan": bad}); code != http.StatusBadRequest {
+		t.Fatalf("one waypoint = %d", code)
+	}
+}
+
+func TestAmapWaysOnlyWithAKey(t *testing.T) {
+	plain := httptest.NewServer(Handler(Settings{Router: func(context.Context, string, geo.LatLon, geo.LatLon) (osrm.Route, error) {
+		return osrm.Route{}, fmt.Errorf("not asked")
+	}}))
+	defer plain.Close()
+	var config struct {
+		Ways []wayJSON `json:"ways"`
+	}
+	get(t, plain, "/api/config", &config)
+	if len(config.Ways) != 3 {
+		t.Fatalf("ways without a key = %v", config.Ways)
+	}
+	leg := map[string]any{"profile": "amap-foot", "from": []float64{120.1, 30.2}, "to": []float64{120.2, 30.3}}
+	if code, _ := send(t, plain, http.MethodPost, "/api/route/leg", leg); code != http.StatusBadRequest {
+		t.Fatalf("amap without a key = %d", code)
+	}
+
+	var mode string
+	withKey := httptest.NewServer(Handler(Settings{Amap: func(_ context.Context, m string, from, to geo.LatLon) (osrm.Route, error) {
+		mode = m
+		return osrm.Route{Points: []geo.LatLon{from, to}, Distance: 99}, nil
+	}}))
+	defer withKey.Close()
+	get(t, withKey, "/api/config", &config)
+	if len(config.Ways) != 7 {
+		t.Fatalf("ways with a key = %v", config.Ways)
+	}
+	if code, result := send(t, withKey, http.MethodPost, "/api/route/leg", leg); code != http.StatusOK || mode != "foot" || result["distance"].(float64) != 99 {
+		t.Fatalf("amap leg = %d %v mode %q", code, result, mode)
 	}
 }

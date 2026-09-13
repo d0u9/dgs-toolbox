@@ -19,7 +19,7 @@ import (
 )
 
 // FilledSource is the <src> of a point filled in along the road.
-const FilledSource = "dgs-toolbox: filled along the road (OSRM)"
+const FilledSource = "dgs-toolbox: filled along the road"
 
 // Fill replaces the points strictly between First and Last with a route. The
 // route's points are inserted right after First, at First+1 to
