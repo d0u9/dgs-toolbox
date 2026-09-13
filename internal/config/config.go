@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 const EnvPath = "DGS_TOOLBOX_CONFIG"
@@ -23,6 +25,7 @@ type Config struct {
 	TUI       TUI     `json:"tui"`
 	Photo     Photo   `json:"photo"`
 	Capture   Capture `json:"capture"`
+	Geo       Geo     `json:"geo"`
 	// dir is the directory the configuration was loaded from. Paths that
 	// default to sitting beside the configuration resolve against this rather
 	// than against the operating system's location, so --config points at a
@@ -74,6 +77,25 @@ type CaptureScan struct {
 	IndexFile string `json:"index_file"`
 }
 
+// Geo configures the Geo app.
+type Geo struct {
+	GPX GeoGPX `json:"gpx"`
+}
+
+// GeoGPX is where the GPX web server listens. Host 0.0.0.0 lets other
+// machines reach it. Empty values use the defaults.
+type GeoGPX struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+// DefaultGeoGPXHost and DefaultGeoGPXPort keep the GPX page local and at a
+// stable URL.
+const (
+	DefaultGeoGPXHost = "127.0.0.1"
+	DefaultGeoGPXPort = 8765
+)
+
 type Photo struct {
 	Import PhotoImport `json:"import"`
 }
@@ -108,7 +130,7 @@ func Default() Config {
 	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Capture: Capture{
 		Scan:     CaptureScan{IndexFile: "index.json"},
 		Obsidian: CaptureObsidian{},
-	}}
+	}, Geo: Geo{GPX: GeoGPX{Host: DefaultGeoGPXHost, Port: DefaultGeoGPXPort}}}
 }
 
 // CaptureArchiveFolders are the two directories Archive files into: where
@@ -195,6 +217,18 @@ func (c Config) PhotoImportStateFile() string {
 		return ".dgs-state"
 	}
 	return c.Photo.Import.StateFile
+}
+
+// GeoGPXAddr is the host:port the GPX web server listens on.
+func (c Config) GeoGPXAddr() string {
+	host, port := c.Geo.GPX.Host, c.Geo.GPX.Port
+	if host == "" {
+		host = DefaultGeoGPXHost
+	}
+	if port == 0 {
+		port = DefaultGeoGPXPort
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 func (c Config) PhotoImportPaths() (source, destination string) {

@@ -25,9 +25,9 @@ func TestCommandRoutes(t *testing.T) {
 		{name: "photo", args: []string{"photo"}, want: tui.Launch{App: "photo"}},
 		{name: "photo import", args: []string{"photo", "import"}, want: tui.Launch{App: "photo", Command: "import"}},
 		{name: "photo encode", args: []string{"photo", "encode"}, want: tui.Launch{App: "photo", Command: "encode"}},
-		{name: "gpx", args: []string{"gpx"}, want: tui.Launch{App: "gpx"}},
-		{name: "gpx import", args: []string{"gpx", "import"}, want: tui.Launch{App: "gpx", Command: "import"}},
-		{name: "gpx inspect", args: []string{"gpx", "inspect"}, want: tui.Launch{App: "gpx", Command: "inspect"}},
+		{name: "geo", args: []string{"geo"}, want: tui.Launch{App: "geo"}},
+		{name: "geo gpx", args: []string{"geo", "gpx"}, want: tui.Launch{App: "geo", Command: "gpx"}},
+		{name: "geo gpx listen", args: []string{"geo", "gpx", "--host", "0.0.0.0", "--port", "9000"}, want: tui.Launch{App: "geo", Command: "gpx", Flags: map[string]string{"host": "0.0.0.0", "port": "9000"}}},
 	}
 
 	for _, test := range tests {
@@ -130,7 +130,7 @@ func TestAppCommandStillLaunchesWhenNoReportIsRequested(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if (got != tui.Launch{App: "capture", Command: "scan"}) {
+	if !reflect.DeepEqual(got, tui.Launch{App: "capture", Command: "scan"}) {
 		t.Fatalf("launch = %#v", got)
 	}
 }

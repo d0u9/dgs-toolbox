@@ -60,11 +60,12 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 			Args:  cobra.NoArgs,
 		}
 		chosen := addReports(command, app.Reports)
+		given := addFlags(command, leaf.Flags)
 		command.RunE = func(cmd *cobra.Command, _ []string) error {
 			if report, ok := chosen(); ok {
 				return runReport(cmd, report, *configPath)
 			}
-			return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath})
+			return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath, Flags: given(cmd)})
 		}
 		return command
 	}
@@ -83,16 +84,39 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 
 	for _, leaf := range app.Commands {
 		leaf := leaf
-		command.AddCommand(&cobra.Command{
+		sub := &cobra.Command{
 			Use:   leaf.ID,
 			Short: leaf.Description,
 			Args:  cobra.NoArgs,
-			RunE: func(_ *cobra.Command, _ []string) error {
-				return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath})
-			},
-		})
+		}
+		given := addFlags(sub, leaf.Flags)
+		sub.RunE = func(cmd *cobra.Command, _ []string) error {
+			return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath, Flags: given(cmd)})
+		}
+		command.AddCommand(sub)
 	}
 	return command
+}
+
+// addFlags registers a command's flags and returns the ones given on the
+// command line, so flags left out keep the configured values.
+func addFlags(command *cobra.Command, flags []tui.Flag) func(*cobra.Command) map[string]string {
+	values := make([]string, len(flags))
+	for index, flag := range flags {
+		command.Flags().StringVar(&values[index], flag.Name, "", flag.Usage)
+	}
+	return func(cmd *cobra.Command) map[string]string {
+		var given map[string]string
+		for index, flag := range flags {
+			if cmd.Flags().Changed(flag.Name) {
+				if given == nil {
+					given = map[string]string{}
+				}
+				given[flag.Name] = values[index]
+			}
+		}
+		return given
+	}
 }
 
 // addReports turns an app's reports into flags on its command and returns the

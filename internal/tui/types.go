@@ -64,6 +64,17 @@ type Command struct {
 	Description   string
 	New           func() CommandModel
 	NewWithConfig func(config.Config) CommandModel
+	// Flags are command-line options of this command. The CLI registers them
+	// on the command's leaf, and a value given at launch is applied to the
+	// configuration before the command is built, so it wins over the file.
+	Flags []Flag
+}
+
+// Flag is a string option that overrides one configuration setting.
+type Flag struct {
+	Name  string
+	Usage string
+	Apply func(global *config.Config, value string) error
 }
 
 // Report writes something an app knows about itself to stdout instead of
@@ -97,6 +108,8 @@ type Launch struct {
 	App        string
 	Command    string
 	ConfigPath string
+	// Flags holds the command flags given on the command line, by name.
+	Flags map[string]string
 }
 
 // Runner is injected into the command tree to keep CLI tests independent of a
