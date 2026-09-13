@@ -4,10 +4,16 @@ import (
 	"testing"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/tui"
 )
 
 func TestGPXFlagsRejectBadValues(t *testing.T) {
-	flags := New().Commands[0].Flags
+	var flags []tui.Flag
+	for _, flag := range New().Commands[0].Flags {
+		if flag.Name != "dir" {
+			flags = append(flags, flag)
+		}
+	}
 	global := config.Default()
 	for _, flag := range flags {
 		if err := flag.Apply(&global, "nope"); err == nil {

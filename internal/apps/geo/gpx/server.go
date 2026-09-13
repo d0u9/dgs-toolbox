@@ -8,22 +8,49 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+
+	"dgs-toolbox/internal/config"
 )
 
 //go:embed web
 var webFiles embed.FS
 
+// Settings is what the server needs from the configuration.
+type Settings struct {
+	Addr  string
+	Root  string
+	Tiles []config.GeoGPXTile
+	// Reveal shows a path in the file manager; nil uses desktop.Reveal.
+	Reveal func(path string) error
+	// focus receives the page's focused track; nil uses the process's board.
+	focus *focusBoard
+}
+
+// SettingsFrom reads the server settings out of the configuration.
+func SettingsFrom(global config.Config) Settings {
+	return Settings{Addr: global.GeoGPXAddr(), Root: global.GeoGPXRoot(), Tiles: global.Geo.GPX.Tiles}
+}
+
 // Handler serves the GPX web page and its API.
-func Handler() http.Handler {
+func Handler(settings Settings) http.Handler {
 	static, err := fs.Sub(webFiles, "web")
 	if err != nil {
 		panic(err)
 	}
+	board := settings.focus
+	if board == nil {
+		board = focused
+	}
+	api := api{settings: settings, board: board}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true}`))
+		writeJSON(w, map[string]bool{"ok": true})
 	})
+	mux.HandleFunc("GET /api/config", api.config)
+	mux.HandleFunc("GET /api/dir", api.dir)
+	mux.HandleFunc("GET /api/track", api.track)
+	mux.HandleFunc("POST /api/reveal", api.reveal)
+	mux.HandleFunc("POST /api/focus", api.focus)
 	mux.Handle("GET /", http.FileServerFS(static))
 	return mux
 }
@@ -34,19 +61,18 @@ var (
 	serverErr  error
 )
 
-// Serve starts the web server on addr once per process and returns its URL.
-// Reopening the command reuses the running server; it stops when the toolbox
-// exits.
-func Serve(addr string) (string, error) {
+// Serve starts the web server once per process and returns its URL. Reopening
+// the command reuses the running server; it stops when the toolbox exits.
+func Serve(settings Settings) (string, error) {
 	serverOnce.Do(func() {
-		listener, err := net.Listen("tcp", addr)
+		listener, err := net.Listen("tcp", settings.Addr)
 		if err != nil {
 			serverErr = err
 			return
 		}
 		serverURL = pageURL(listener.Addr().(*net.TCPAddr))
 		go func() {
-			err := http.Serve(listener, Handler())
+			err := http.Serve(listener, Handler(settings))
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				serverErr = err
 			}

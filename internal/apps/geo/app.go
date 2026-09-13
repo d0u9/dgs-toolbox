@@ -23,12 +23,20 @@ func New() tui.App {
 				Name:        "GPX",
 				Description: "GPX tracks in the terminal and a local map page.",
 				New: func() tui.CommandModel {
-					return gpx.New(config.Default().GeoGPXAddr())
+					return gpx.New(gpx.SettingsFrom(config.Default()))
 				},
 				NewWithConfig: func(global config.Config) tui.CommandModel {
-					return gpx.New(global.GeoGPXAddr())
+					return gpx.New(gpx.SettingsFrom(global))
 				},
 				Flags: []tui.Flag{
+					{
+						Name:  "dir",
+						Usage: "folder the GPX browser opens at (default: home directory)",
+						Apply: func(global *config.Config, value string) error {
+							global.Geo.GPX.Root = value
+							return nil
+						},
+					},
 					{
 						Name:  "host",
 						Usage: "web server IP to listen on (0.0.0.0 allows other hosts)",

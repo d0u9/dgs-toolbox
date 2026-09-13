@@ -340,3 +340,30 @@ func TestExampleConfigurationsLoad(t *testing.T) {
 		t.Fatal("no example configurations were found")
 	}
 }
+
+func TestGeoGPXTilesAreValidated(t *testing.T) {
+	for name, body := range map[string]string{
+		"no name":        `{"geo":{"gpx":{"tiles":[{"url":"https://t/{z}/{x}/{y}.png"}]}}}`,
+		"no placeholder": `{"geo":{"gpx":{"tiles":[{"name":"t","url":"https://t/{z}/{x}.png"}]}}}`,
+		"coordinates":    `{"geo":{"gpx":{"tiles":[{"name":"t","url":"https://t/{z}/{x}/{y}.png","coordinates":"bd09"}]}}}`,
+	} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadPath(path); err == nil {
+			t.Errorf("%s: loaded", name)
+		}
+	}
+}
+
+func TestGeoGPXRootExpandsHome(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	if got := (Config{}).GeoGPXRoot(); got != home {
+		t.Fatalf("default root = %q", got)
+	}
+	config := Config{Geo: Geo{GPX: GeoGPX{Root: "~/tracks"}}}
+	if got := config.GeoGPXRoot(); got != filepath.Join(home, "tracks") {
+		t.Fatalf("root = %q", got)
+	}
+}

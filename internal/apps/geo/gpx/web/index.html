@@ -4,22 +4,109 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DGS · GPX</title>
-<style>
-  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
-  h1 { margin: 0; color: #7D7AFF; letter-spacing: .08em; }
-  p { color: #999; }
-</style>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="vendor/uPlot.min.css">
+<link rel="stylesheet" href="app.css">
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/uPlot.iife.min.js"></script>
 </head>
 <body>
-<main>
-  <h1>GPX</h1>
-  <p id="status">Connecting…</p>
+<header class="topbar">
+  <span class="brand">GPX</span>
+  <span class="topbar-spacer"></span>
+  <label class="basemap">Time zone
+    <select id="timezone"></select>
+  </label>
+  <label class="basemap">Base map
+    <select id="basemap"></select>
+  </label>
+  <label class="basemap" title="GPX is WGS-84; maps published in China are drawn in GCJ-02 and sit several hundred metres off unless the track is converted. Only what is drawn changes.">GCJ-02
+    <select id="coordinates">
+      <option value="auto">Auto</option>
+      <option value="on">On</option>
+      <option value="off">Off</option>
+    </select>
+  </label>
+</header>
+
+<aside class="sidebar">
+  <section id="panel-folders" class="panel folder">
+    <h2><button class="panel-toggle" aria-expanded="true" aria-controls="panel-folders" title="Collapse or expand">Folders</button></h2>
+    <div class="pathbar">
+      <button id="folder-up" class="icon-button" title="Open the parent folder" aria-label="Open the parent folder">↑</button>
+      <span id="folder-path" class="path"></span>
+      <button id="folder-home" class="icon-button" title="Back to the configured root (geo.gpx.root)" aria-label="Back to the configured root">⌂</button>
+      <button id="folder-refresh" class="icon-button" title="Refresh" aria-label="Refresh">↻</button>
+    </div>
+    <ul id="folder-list" class="list tree"></ul>
+    <p id="folder-message" class="message" hidden></p>
+  </section>
+
+  <div id="folder-splitter" class="splitter row" role="separator" aria-orientation="horizontal"></div>
+
+  <section id="panel-workspace" class="panel shown">
+    <h2><button class="panel-toggle" aria-expanded="true" aria-controls="panel-workspace" title="Collapse or expand">Workspace</button> <span id="track-count" class="count"></span> <button id="fit-all" class="text-button" hidden>Fit all</button></h2>
+    <div id="track-tools" class="track-tools" hidden>
+      <input id="track-filter" class="filter" type="search" placeholder="Filter by name" aria-label="Filter the workspace by name">
+      <button id="show-all" class="icon-button" title="Show every listed track" aria-label="Show every listed track">◉</button>
+      <button id="hide-all" class="icon-button" title="Hide every listed track" aria-label="Hide every listed track">○</button>
+    </div>
+    <ul id="track-list" class="list"></ul>
+    <p id="track-empty" class="message">Click a GPX file in the folders to add it.</p>
+    <p id="track-nomatch" class="message" hidden>No track matches the filter.</p>
+  </section>
+</aside>
+
+<div id="sidebar-splitter" class="splitter col" role="separator" aria-orientation="vertical"></div>
+
+<main class="workspace">
+  <div id="map" class="map"></div>
+  <div id="profile-splitter" class="splitter row" role="separator" aria-orientation="horizontal" hidden></div>
+  <section id="profile" class="profile" hidden>
+    <div class="profile-head">
+      <span id="profile-swatch" class="swatch"></span>
+      <strong id="profile-name"></strong>
+      <span id="profile-stats" class="muted"></span>
+      <span class="topbar-spacer"></span>
+      <span id="profile-readout" class="readout"></span>
+      <span class="chart-toggles" role="group" aria-label="Charts">
+        <button id="toggle-elevation" class="chip" aria-pressed="true" title="Show or hide the elevation chart">Elevation</button>
+        <button id="toggle-speed" class="chip" aria-pressed="true" title="Show or hide the speed chart">Speed</button>
+        <span id="layout-toggles" class="layout-toggles">
+          <button id="layout-stacked" class="chip icon" aria-pressed="true" title="Charts one above the other">☰</button>
+          <button id="layout-side" class="chip icon" aria-pressed="false" title="Charts side by side">◫</button>
+        </span>
+      </span>
+    </div>
+    <div id="timeline" class="timeline">
+      <div class="timeline-head">
+        <span id="timeline-labels" class="timeline-labels"></span>
+        <label class="stop-toggle" title="Numbered stop markers on the map. The timeline keeps its stops either way.">
+          <input id="stop-numbers" type="checkbox" checked> On map
+        </label>
+        <label class="stop-params" title="Stay-point detection: the track stays within the distance for at least the time">
+          Stops: at least <input id="stop-duration" type="number" min="1" step="1"> min within
+          <input id="stop-distance" type="number" min="5" step="5"> m
+        </label>
+      </div>
+      <div id="timeline-bar" class="timeline-bar"></div>
+    </div>
+    <div id="charts" class="charts">
+      <div id="row-elevation" class="chart-row elevation">
+        <span class="chart-label">Elevation <small>m</small></span>
+        <div id="chart-elevation" class="chart"></div>
+      </div>
+      <div id="chart-splitter" class="splitter row" role="separator" aria-orientation="horizontal"></div>
+      <div id="chart-splitter-x" class="splitter col" role="separator" aria-orientation="vertical"></div>
+      <div id="row-speed" class="chart-row speed">
+        <span class="chart-label">Speed <small>km/h</small></span>
+        <div id="chart-speed" class="chart"></div>
+      </div>
+    </div>
+    <p id="chart-hint" class="hint">Drag to zoom · scroll to zoom · double-click to reset</p>
+  </section>
 </main>
-<script>
-fetch("/api/health").then(r => r.json())
-  .then(() => { document.getElementById("status").textContent = "Server connected"; })
-  .catch(() => { document.getElementById("status").textContent = "Server unreachable"; });
-</script>
+
+<script type="module" src="app.js"></script>
 </body>
 </html>

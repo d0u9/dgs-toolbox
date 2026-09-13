@@ -2,7 +2,7 @@
 
 ## Current goal
 
-Build the Photo Import workflow for `dgs`, including its real, integrity-verified Processing engine. Keep the remaining Photo commands as demo domains and GPX as an empty foundation.
+Build the Photo Import workflow for `dgs`, including its real, integrity-verified Processing engine. Keep the remaining Photo commands as demo domains. Build GPX milestone by milestone as described in [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
 
 Photo Import may perform real file operations only after the user starts Processing. Its highest-priority contract is that a destination file is not published under its final name until an independent destination readback matches the Source SHA-256 digest. Follow the confirmed algorithm and unresolved boundaries in [`docs/apps/photo/import.md`](docs/apps/photo/import.md).
 
@@ -17,6 +17,17 @@ Adding a configuration file, or a key to one, is not finished until that referen
 [`examples/`](examples) holds a working configuration per feature, and a test loads every one of them: renaming or removing a key breaks the examples that use it, and fixing them is part of the same change rather than something a reader discovers by copying one.
 
 Capture's Actions are the same rule in the other direction: adding one, renaming one, or changing what one writes or requires is not finished until [`docs/apps/capture/actions.md`](docs/apps/capture/actions.md) says so in the same change. It is the catalogue someone writes a Recipe against, and an Action it does not name is one they have no way to know about. A test fails when the document does not name every registered Action; it cannot check that the description is still true, so that part is on the change.
+
+## Reusable algorithms
+
+This project is expected to grow, and the same computation is wanted in more than one place: speed feeds the browser today and stop detection tomorrow; stop detection feeds cleaning and day splitting; a filter written for GPX should serve the next source format. So every algorithm lives in its own package, apart from whatever shows its result:
+
+- Algorithms — parsing a format, geodesy, distance and speed series, stop detection, cleaning filters, segmentation, coordinate transforms — go in domain packages such as `internal/geo`, `internal/geo/gpxfile` and `internal/geo/track`. One concern per package, named for what it computes.
+- These packages import no TUI, HTTP, configuration or app code. They take plain values and return plain values, so a TUI command, a web handler, a report and a test can all call them.
+- Parameters an algorithm has (a window, a threshold) are arguments with a named, documented default, never constants buried in a caller.
+- Every algorithm has tests in its own package that pin its behaviour on small constructed inputs.
+- Apps and web handlers compose algorithms; they do not reimplement them. A web page draws what the server computed; it does not compute track data in JavaScript. Interaction geometry on screen (which drawn point is under the pointer) is the page's own.
+- Before writing a new computation, look for one to reuse or generalise. When an app-local helper turns out to be wanted elsewhere, move it into a shared package rather than copying it.
 
 ## Technology
 
@@ -50,7 +61,7 @@ Startup behavior:
 - Leaving a command returns to the command picker so the user can choose again.
 - Starting another command creates a fresh command model; the previous command does not remain active in the background.
 
-Photo commands other than Photo Import remain mock demonstrations of this model. GPX is an empty foundation: a TUI plus a local web server for map work, described in [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
+Photo commands other than Photo Import remain mock demonstrations of this model. GPX is a TUI plus a local web page for map work, described in [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
 
 ## Shared TUI shell
 
@@ -106,8 +117,8 @@ Continue to demonstrate:
 - Direct entry into a leaf command.
 - Returning from a command to the picker.
 - The shared three-region layout.
-- Photo placeholder command screens and the empty GPX command.
+- Photo placeholder command screens.
 
 Implement Photo Import Processing with bounded worker concurrency, same-directory `.dgs-part` files, SHA-256 source hashing during copy, independent destination readback, verified atomic publication, whole-file retry, and a versioned `.dgs-state` file. Keep this logic outside the TUI model and cover it with filesystem tests.
 
-Do not implement real Photo Encode or GPX behavior, databases, plugin loading, or speculative shared infrastructure. Do not claim stronger durability than the user-space/filesystem API boundary documented for Photo Import.
+Do not implement real Photo Encode behavior, GPX behavior beyond the confirmed milestones, databases, plugin loading, or speculative shared infrastructure. Do not claim stronger durability than the user-space/filesystem API boundary documented for Photo Import.

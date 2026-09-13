@@ -21,19 +21,169 @@ The web server starts when the command opens and stops when `dgs` exits. It
 starts once per process: leaving GPX and opening it again reuses the running
 server rather than starting a second one.
 
-The page and its assets are embedded in the binary, so the page cannot drift
-from the build that serves it. The server exposes the API under `/api/`;
-everything else is the page.
+The page, its assets and its libraries (MapLibre GL for the map, uPlot for the
+charts) are embedded in the binary: the page cannot drift from the build that
+serves it, and it loads without a CDN. Only map tiles come from the network.
+
+The server computes every track value — distance, speed, statistics — with the
+shared packages under `internal/geo`, and the page draws what it receives. The
+server exposes the API under `/api/`; everything else is the page.
 
 | Path | Purpose |
 | --- | --- |
 | `/` | The web page. |
-| `/api/health` | Answers `{"ok":true}`; the page uses it to show whether it reached the server. |
+| `/api/health` | Answers `{"ok":true}`. |
+| `/api/config` | The base maps — built-in first, then configured — each with its coordinate system, and the folder to open at. |
+| `/api/dir?path=` | The folders and `.gpx` files of a folder. Hidden entries are left out. |
+| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points), route and waypoint. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
+| `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
+| `POST /api/reveal` | Shows a file or folder in this machine's file manager. Refused unless the request comes from this machine. `/api/config` says whether the page may offer it. |
 
-## Current state
+## The TUI
 
-Both surfaces are empty foundations. The TUI shows the page's URL, or why the
-server failed to start. The page shows only whether it reached the server.
+The TUI shows the page's URL and the folder the browser opens at, or why the
+server failed to start. Below them it summarises the track focused on the page
+— its name, duration, distance and stop count — updating as the focus or the
+stop thresholds change. Several browsers share one summary: the last to report
+wins.
+
+| Key | Action |
+| --- | --- |
+| `o` | Open the page in the default browser. |
+| `esc` | Back to the command picker. |
+| `q` | Quit. |
+
+## The GPX browser
+
+The page's first function: browse a folder of GPX files and look at them on a
+map. It is the interface later milestones build on.
+
+- **Layout.** A top bar with the time zone, base map and GCJ-02 selectors; a sidebar
+  with the folder tree and the workspace; the map; and, under the map, the
+  focused track's profile.
+- **Collapsible panels.** Folders and Workspace each fold to their header by
+  clicking it. With one folded, the other takes the whole sidebar; the divider
+  between them returns when both are open, at its remembered position.
+- **Resizable.** Every boundary between panes is a drag handle: sidebar width,
+  folder tree against workspace, map against profile, and elevation chart
+  against speed chart. Sizes are remembered per browser.
+- **Folder tree.** The sidebar shows a tree rooted at `geo.gpx.root` (or
+  `--dir`), so GPX files in sibling folders can be shown together. Clicking a
+  folder expands or collapses it; a folder's contents load when it is first
+  expanded. `↑` makes the parent the root, keeping what is expanded; a
+  folder's `⤓` (on hover) makes it the root, so a deep folder is not indented
+  far; `⌂` returns to the configured root; `↻` reloads. A root the browser
+  remembers is used only while `geo.gpx.root` is unchanged: after the
+  configuration changes, the page opens at the new root. The server reads the
+  configuration when it starts, so a change takes effect after restarting
+  `dgs`. Clicking a file adds it to the workspace, shown and focused;
+  clicking a file already there shows and focuses it. A file in the workspace
+  carries its track colour: a filled dot when shown, a ring when hidden.
+- **Workspace.** The tracks picked from the tree, kept together whatever
+  folder they came from — the set later milestones edit and search. Each row
+  shows or hides its track on the map (◉ / ○) without leaving the workspace,
+  and `×` removes it. A filter box narrows the list by words in the name or
+  path; the show-all and hide-all buttons act on the tracks it lists. The
+  header counts shown against total.
+- **Show in file manager.** Folder, file and track rows have a button, on
+  hover, that reveals the item in Finder or Explorer. It appears only when the
+  page is opened on the machine running `dgs`: from another machine it would
+  open windows on a screen nobody there can see.
+- **Names.** A track is named by its file name. The name inside a GPX file is
+  often only a recorder's timestamp; the file name is the one the reader chose.
+  File names run long, so the sidebar reads a size smaller, a name wraps to two
+  lines (breaking anywhere, since names mix words, dates and CJK) before it is
+  cut, details sit on a line of their own, and row buttons appear over the
+  row's end on hover rather than reserving width. The full path is the row's
+  tooltip.
+- **What a file holds.** A GPX file may hold several tracks, planned routes
+  and waypoints. A workspace row that holds more than one track, or any route
+  or waypoint, has a disclosure (▶, at the row's end so rows start at the left
+  edge) that lists them beneath it: tracks with
+  their distance and segment count, routes (drawn dashed) with their length,
+  waypoints (drawn as dots) with their description and elevation. Each has its
+  own show/hide, and a bar above the list shows or hides them all at once, or
+  all of one kind — every track, route or waypoint; clicking one frames it on the map, and clicking a waypoint, in
+  the list or on the map, opens its name, description, elevation and time.
+  Which parts are hidden and which rows are expanded are remembered. Profile,
+  stops and timeline still cover all the file's tracks together, but hatch the
+  ranges of hidden tracks on both charts and the timeline, and a stop inside a
+  hidden track has no marker on the map.
+- **Several tracks at once.** Every shown workspace track is drawn in its own colour,
+  picked from a palette and changeable from its row. A track's recorded
+  segments are drawn apart, so a gap in the recording is not bridged by a
+  straight line.
+- **One focus.** Exactly one shown track is focused — the one later milestones
+  edit. It is drawn above the others, wider and with a casing; the others are
+  thinner and translucent. Adding a track focuses it; clicking a row, or
+  another track's line on the map, moves the focus. A hidden track cannot be
+  focused: hiding the focused track passes the focus to the first shown one,
+  and clicking a hidden row shows it. Focusing a track fits the
+  map to it; *Fit all* fits every shown track. Fitting frames the bulk of a
+  track's points (`track.CoreBounds`), so a few stray fixes — a stale first fix
+  a thousand kilometres away — do not zoom the map out to a corner.
+- **Base maps.** OpenStreetMap, Gaode (街道), Gaode Satellite (imagery with
+  Gaode's road and place names above it) and Esri World Imagery are built in
+  and need no key, followed by the maps in `geo.gpx.tiles`. Gaode's tile
+  addresses are undocumented and could change; the rest are public services.
+- **GCJ-02.** Gaode draws in GCJ-02, so a WGS-84 track sits several hundred
+  metres off it. The selector's *Auto* converts what is drawn — tracks, stops,
+  the inspected point and the stop circle — whenever the base map is a GCJ-02
+  one, and says whether it is on (and when no workspace track is in China,
+  where it would change nothing). *On* and *Off* override it, for a
+  configured map marked wrongly or to compare. The server converts
+  (`gcj02.FromWGS84`); distances, speeds and stops are measured in WGS-84
+  whatever is drawn. The choice is remembered.
+- **Time zone.** GPX times are UTC. Every time on the page — the start in the
+  profile header, the inspected point — is shown in the time zone chosen in the
+  top bar, with its UTC offset. It defaults to the browser's zone and is
+  remembered.
+- **Stops.** The focused track's stops are drawn as numbered markers.
+  Clicking one opens its arrival, departure and duration. Pointing at a stop,
+  on the map or the timeline, draws a thin dashed circle of radius D around
+  it, so the threshold can be judged against the place. *On map*, beside the
+  thresholds, hides the numbered markers from the map while the timeline keeps
+  its stop blocks for jumping to them; it is remembered. The thresholds — at
+  least a time T within a distance D — are set beside the timeline and apply
+  to every shown track.
+- **Timeline.** Above the charts, the focused track's clock time from first to
+  last point: moving periods in the track colour, stops as numbered dark
+  blocks, and hatched gaps where nothing was recorded. Moving the pointer along
+  it, or dragging, marks the point recorded nearest that moment on the map and
+  the charts; pointing at the map or a chart marks the timeline. Clicking a
+  stop opens it on the map. A file without time says so in its place.
+- **Profile.** The focused track has an elevation chart and a speed chart
+  (km/h) against distance, with its distance, duration, ascent and descent. A
+  file without elevation or without time says so in place of that chart.
+- **Charts on demand.** Toggles in the profile header show or hide each chart
+  on its own. With both hidden the profile shrinks to its header and the
+  timeline, and the map takes the space. With both shown they sit one above
+  the other or side by side, splitting the space evenly until the divider is
+  dragged; each arrangement remembers its split as a proportion, so a taller or
+  wider profile keeps both charts readable.
+- **Inspecting a point.** Moving the pointer along the focused track on the map
+  marks the nearest point on the map and draws a marker line at the same place
+  on both charts; moving along a chart marks the point on the map. A readout
+  shows distance, elevation, speed and local time of that point.
+- **Zoom.** Dragging across a chart or scrolling on it zooms the distance axis;
+  double-click resets. Both charts always show the same range.
+- **Remembered.** The browser remembers, per browser, the folder, the
+  workspace with each track's colour and visibility, the focus, the time zone, the base map, the root,
+  the expanded folders, which sidebar panels are folded, the stop thresholds, and which charts are shown and
+  how, and restores them on reload.
+
+Speed at a point is the distance travelled over the 30 seconds centred on it,
+divided by the time taken (`track.Speeds`), so GPS jitter between neighbouring
+points does not read as changes of pace. Ascent and descent ignore changes
+under 3 m.
+
+Stops are found by stay-point detection (`stops.Detect`): from an anchor point,
+the points that follow within D of it form a stay, and a stay lasting at least
+T is a stop; neighbouring stops whose centres are closer than D are merged.
+Defaults are D = 50 m, wide enough for GPS wander indoors, and T = 5 min, long
+enough that traffic lights are not stops. Points without time are skipped. A
+stop may span a pause between recorded segments: a recorder switched off at a
+hotel and on again at its door stayed there.
 
 | Key | Action |
 | --- | --- |
@@ -65,7 +215,8 @@ to another port: a URL that changes by itself is one another machine cannot
 find.
 
 The server has no authentication. Listening on `0.0.0.0` exposes the page to
-everyone on the network.
+everyone on the network — including folder names and GPX files anywhere the
+account running `dgs` can read.
 
 ## Roadmap
 
@@ -81,7 +232,7 @@ build on the data model of earlier ones.
 - **The map is on the web page; the TUI is the entry point.** The TUI chooses
   files, shows summaries, starts the server and exports. Anything that needs a
   map or a timeline is on the page.
-- **Only GPX files** are read, for now.
+- **Only GPX files** are read, for now: tracks, routes and waypoints.
 - **Export** writes one GPX file holding one `<trk>` per segment, into a folder
   the user chooses.
 - **The sidecar** is a small JSON file stored next to the source GPX. It holds
@@ -91,17 +242,19 @@ build on the data model of earlier ones.
 
 ### Map and coordinates
 
-- The page uses MapLibre GL. OpenStreetMap is built in and always available.
-  Further tile sources are listed in the configuration, each with a name and a
-  URL template; the page offers every one of them, alongside OpenStreetMap, to
-  choose from.
-- Data is always WGS-84, as GPX is. A **GCJ-02 toggle** converts what is drawn —
+- OpenStreetMap, Gaode, Gaode Satellite and Esri World Imagery are built in.
+  Further tile sources are listed in `geo.gpx.tiles`, each with a name, a URL
+  template and its coordinate system; the page offers them after the built-in
+  ones.
+- Data is always WGS-84, as GPX is. The **GCJ-02 selector** (done, see above) converts what is drawn —
   track and stops — for base maps that use China's GCJ-02 system. It changes
   display only: cleaning, segmentation and export stay WGS-84. The conversion
   is the widely published reverse-engineered one (accurate to about 1–2 m);
   points outside China are not offset.
 
 ### M1 — Open a GPX and show where you stopped
+
+Done: see *The GPX browser* above.
 
 - Parse tracks with time, position, elevation and, when present, HDOP and
   satellite count.
