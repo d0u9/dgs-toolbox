@@ -87,6 +87,16 @@ type Report struct {
 	Run         func(out io.Writer, global config.Config) error
 }
 
+// Action is a CLI-only subcommand such as `dgs photo organize <folder>`. It
+// reads answers from in and writes progress to out instead of opening the TUI.
+type Action struct {
+	ID          string
+	Usage       string
+	Description string
+	Args        int
+	Run         func(in io.Reader, out io.Writer, args []string) error
+}
+
 // App describes a command domain and its leaf commands.
 type App struct {
 	ID          string
@@ -99,6 +109,9 @@ type App struct {
 	// Reports are the app's non-interactive outputs, exposed as flags on its
 	// command.
 	Reports []Report
+	// Actions are non-interactive subcommands that take positional arguments
+	// and run in the shell. They are not listed in the TUI picker.
+	Actions []Action
 }
 
 // Launch identifies the navigation root selected by the CLI. Empty fields

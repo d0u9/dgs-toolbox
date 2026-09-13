@@ -98,3 +98,25 @@ func jpeg(t *testing.T, captured string) []byte {
 	data.Write([]byte{0xff, 0xd9})
 	return data.Bytes()
 }
+
+func TestPlanReportsExistingDatesWithoutMoving(t *testing.T) {
+	root := t.TempDir()
+	first := writePhoto(t, root, "IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	writePhoto(t, root, "IMG_0002.JPG", jpeg(t, "2026:10:11 11:12:13"))
+	writePhoto(t, root, "notes.txt", []byte("text"))
+	writePhoto(t, root, "20261011/old.JPG", []byte("old"))
+	files, err := FolderFiles(root)
+	if err != nil || len(files) != 3 {
+		t.Fatalf("files = %#v, %v", files, err)
+	}
+	plan := NewPlan(root, files)
+	if got := plan.Dates(); len(got) != 2 || got[0] != "20261010" || got[1] != "20261011" {
+		t.Fatalf("dates = %v", got)
+	}
+	if got := plan.ExistingDates(); len(got) != 1 || got[0] != "20261011" {
+		t.Fatalf("existing = %v", got)
+	}
+	if _, err := os.Stat(first); err != nil {
+		t.Fatalf("plan moved a file: %v", err)
+	}
+}

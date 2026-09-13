@@ -159,6 +159,8 @@ Post-processing receives only files that Processing reported complete after inde
 
 The destination is `<Destination>/YYYYMMDD/<filename>`. Post-processing reads the already verified destination file, not a deleted Move source. It uses same-filesystem rename and never overwrites an existing target. A missing/invalid capture time, unsupported RAW container, unsafe date directory, target conflict, or rename failure leaves that file at its published Processing path and reports a per-file failure. Non-photo files are skipped. Before moving any paired RAW, read its sidecar date so processing order cannot invalidate the metadata source.
 
+Organizing runs in two steps. It first reads every capture date without moving anything. If any planned `YYYYMMDD` folder already exists under Destination, a second dialog lists those folders and asks to `Continue` or `Skip`, so a batch never silently mixes into earlier folders. The same check backs `dgs photo organize <folder>`, which organizes the files directly inside one folder (no recursion) and asks `[y/N]` on the terminal.
+
 Successful relocations update both the in-memory transfer result and the versioned import-state file atomically. State retains the originally planned destination as well as the relocated destination, allowing whole-file resume to recognize and verify a post-processed file instead of copying it again.
 
 The screen reports each original filename, resolved date, metadata source, final path, and failure. When it reaches complete, Enter or `n` opens Result; Esc returns to the completed Processing screen for inspection.

@@ -106,6 +106,7 @@ type scanDoneMsg struct {
 
 type transferEventMsg importer.Event
 type transferDoneMsg importer.Result
+type postprocessPlannedMsg postprocess.Plan
 type postprocessDoneMsg struct {
 	result     postprocess.Result
 	stateError error
@@ -147,7 +148,9 @@ type processingState struct {
 type postprocessState struct {
 	running bool
 	skipped bool
-	result  postprocess.Result
+	// plan waits for the user to accept date folders that already exist.
+	plan   *postprocess.Plan
+	result postprocess.Result
 }
 
 var (
@@ -437,6 +440,16 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingReturn = false
 			m.stage = parameterStage
 		}
+		return m, nil
+	case postprocessPlannedMsg:
+		plan := postprocess.Plan(msg)
+		existing := plan.ExistingDates()
+		if len(existing) == 0 {
+			return m.applyPostProcessing(plan)
+		}
+		m.postprocess = postprocessState{plan: &plan}
+		m.postprocessPrompt = true
+		m.postprocessDialog = confirm.New(confirm.Config{Title: "DATE FOLDERS ALREADY EXIST", Message: "Destination already has " + strings.Join(existing, ", ") + ". Move photos into them anyway?", Detail: "Skip continues to Result without changing files.", ConfirmLabel: "Continue", CancelLabel: "Skip"})
 		return m, nil
 	case postprocessDoneMsg:
 		m.postprocess.running = false
@@ -776,10 +789,13 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			switch decision {
 			case confirm.Confirmed:
 				m.postprocessPrompt = false
+				if m.postprocess.plan != nil {
+					return m.applyPostProcessing(*m.postprocess.plan)
+				}
 				return m.runPostProcessing()
 			case confirm.Cancelled:
 				m.postprocessPrompt = false
-				m.postprocess.skipped = true
+				m.postprocess = postprocessState{skipped: true}
 				m.openResult()
 			}
 			return m, nil
@@ -1216,10 +1232,17 @@ func (m importModel) runPostProcessing() (tea.Model, tea.Cmd) {
 		}
 	}
 	root := expandHome(m.paths[destinationField])
-	statePath := filepath.Join(root, m.stateFilename)
 	m.postprocess = postprocessState{running: true}
 	return m, func() tea.Msg {
-		result := postprocess.Run(root, files)
+		return postprocessPlannedMsg(postprocess.NewPlan(root, files))
+	}
+}
+
+func (m importModel) applyPostProcessing(plan postprocess.Plan) (tea.Model, tea.Cmd) {
+	statePath := filepath.Join(plan.Root, m.stateFilename)
+	m.postprocess = postprocessState{running: true}
+	return m, func() tea.Msg {
+		result := postprocess.Apply(plan)
 		moved := make(map[string]string)
 		for _, outcome := range result.Files {
 			if outcome.Status == postprocess.Moved {

@@ -67,6 +67,7 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 			}
 			return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath, Flags: given(cmd)})
 		}
+		addActions(command, app.Actions)
 		return command
 	}
 	command := &cobra.Command{
@@ -95,7 +96,23 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 		}
 		command.AddCommand(sub)
 	}
+	addActions(command, app.Actions)
 	return command
+}
+
+// addActions registers an app's shell-only subcommands.
+func addActions(command *cobra.Command, actions []tui.Action) {
+	for _, action := range actions {
+		action := action
+		command.AddCommand(&cobra.Command{
+			Use:   action.ID + " " + action.Usage,
+			Short: action.Description,
+			Args:  cobra.ExactArgs(action.Args),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return action.Run(cmd.InOrStdin(), cmd.OutOrStdout(), args)
+			},
+		})
+	}
 }
 
 // addFlags registers a command's flags and returns the ones given on the

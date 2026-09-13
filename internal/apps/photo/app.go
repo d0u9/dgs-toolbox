@@ -35,5 +35,14 @@ func New() tui.App {
 				},
 			},
 		},
+		Actions: []tui.Action{
+			{
+				ID:          "organize",
+				Usage:       "<folder>",
+				Description: "Move photos in a folder (not subfolders) into YYYYMMDD capture-date folders.",
+				Args:        1,
+				Run:         organizeFolder,
+			},
+		},
 	}
 }
