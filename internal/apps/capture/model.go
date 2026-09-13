@@ -352,24 +352,24 @@ func (m model) Status() tui.Status {
 	case rootField:
 		return tui.Status{Left: "SCAN", Center: center, Right: "↵ Browse  R Refresh  tab Next  alt+hjkl Focus"}
 	case capturesField:
-		return tui.Status{Left: "SCAN", Center: center, Right: "↑/k ↓/j Move  o Open  O Close  w Close all  space Quick Look  ⌫ Reject  R Refresh"}
+		return tui.Status{Left: "SCAN", Center: center, Right: "↑↓ Move  o Open  O Close  w Close all  space Quick Look  ⌫ Reject  R Refresh"}
 	case centerField:
 		// The hint names only what this field can do right now: t appears for a
 		// JSON file and nowhere else, and the tree's own keys replace the
 		// scrolling ones while the tree is what is shown.
 		if m.showingJSONTree() {
-			return tui.Status{Left: "PREVIEW", Center: center, Right: "↑/k ↓/j Move  l Open  h Close  o Toggle  w Close all  t Source"}
+			return tui.Status{Left: "PREVIEW", Center: center, Right: "↑↓ Move  l Open  h Close  o Toggle  w Close all  t Source"}
 		}
 		if m.previewIsJSON && m.previewNotice == "" {
-			return tui.Status{Left: "PREVIEW", Center: center, Right: "↑/k ↓/j Scroll  h/l Pan  t Tree  R Refresh  alt+hjkl Focus"}
+			return tui.Status{Left: "PREVIEW", Center: center, Right: "↑↓ Scroll  h/l Pan  t Tree  R Refresh  alt+hjkl Focus"}
 		}
-		return tui.Status{Left: "PREVIEW", Center: center, Right: "↑/k ↓/j Scroll  h/l Pan  R Refresh  alt+hjkl Focus"}
+		return tui.Status{Left: "PREVIEW", Center: center, Right: "↑↓ Scroll  h/l Pan  R Refresh  alt+hjkl Focus"}
 	case captureInfoField:
-		return tui.Status{Left: "CAPTURE INFO", Center: center, Right: "↑/k ↓/j Scroll  alt+hjkl Focus"}
+		return tui.Status{Left: "CAPTURE INFO", Center: center, Right: "↑↓ Scroll  alt+hjkl Focus"}
 	case fileInfoField:
-		return tui.Status{Left: "FILE INFO", Center: center, Right: "↑/k ↓/j Scroll  alt+hjkl Focus"}
+		return tui.Status{Left: "FILE INFO", Center: center, Right: "↑↓ Scroll  alt+hjkl Focus"}
 	case rejectedField:
-		return tui.Status{Left: "REJECTED", Center: center, Right: "↑/k ↓/j Move  u Undo  R Refresh  alt+hjkl Focus"}
+		return tui.Status{Left: "REJECTED", Center: center, Right: "↑↓ Move  u Undo  R Refresh  alt+hjkl Focus"}
 	default:
 		return tui.Status{Left: "SCAN", Center: center, Right: "tab Next  alt+hjkl Focus"}
 	}

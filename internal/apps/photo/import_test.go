@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestPhotoAppInjectsConfiguredImportStateFilename(t *testing.T) {
@@ -861,5 +862,62 @@ func TestSidecarExceptionDataFieldsContainOnlyUnpairedFiles(t *testing.T) {
 	}
 	if !rawOK || raw.ID != "DCIM/IMG_0003.NEF" {
 		t.Fatalf("RAW-only list selected %#v, ok=%v", raw, rawOK)
+	}
+}
+
+func TestProcessingAndResultKeepSummaryColumnOnRight(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 140, 30
+	model.stage = processingStage
+	file := scannedFile{path: "one.JPG", size: 1}
+	model.processing.files = []scannedFile{file}
+	model.processing.verified = []scannedFile{file}
+	lines := strings.Split(ansi.Strip(model.View()), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Workers") && strings.Contains(line, "Next files") {
+			if strings.Index(line, "Workers") > strings.Index(line, "Next files") {
+				t.Fatalf("processing queue column is not on the right: %q", line)
+			}
+			return
+		}
+	}
+	t.Fatal("processing columns not found")
+}
+
+func TestParameterRefreshRescansInPlace(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 160, 30
+	model.stage = parameterStage
+	model.paths = [pathFieldCount]string{t.TempDir(), t.TempDir()}
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	model = updated.(importModel)
+	if cmd == nil || !model.refreshing || model.stage != parameterStage {
+		t.Fatalf("refresh did not start in place: refreshing=%v stage=%v", model.refreshing, model.stage)
+	}
+	if err := os.WriteFile(filepath.Join(model.paths[sourceField], "new.JPG"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ = model.Update(scanDoneMsg{generation: model.scanGeneration, summary: scanDirectories(model.paths)})
+	model = updated.(importModel)
+	if model.refreshing || model.stage != parameterStage || len(model.filteredSource()) != 1 {
+		t.Fatalf("refresh result: refreshing=%v stage=%v files=%d", model.refreshing, model.stage, len(model.filteredSource()))
+	}
+}
+
+func TestLeavingParametersDuringRefreshDoesNotCaptureNextScan(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.width, model.height = 160, 30
+	model.stage = parameterStage
+	model.paths = [pathFieldCount]string{t.TempDir(), t.TempDir()}
+	updated, _ := model.refreshScan()
+	model = updated.(importModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(importModel)
+	updated, _ = model.startScan()
+	model = updated.(importModel)
+	updated, _ = model.Update(scanDoneMsg{generation: model.scanGeneration, summary: scanDirectories(model.paths)})
+	model = updated.(importModel)
+	if model.stage != parameterStage || model.refreshing {
+		t.Fatalf("stage=%v refreshing=%v, want Parameters after the new scan", model.stage, model.refreshing)
 	}
 }

@@ -923,11 +923,11 @@ func (m archiveModel) Status() tui.Status {
 	case archiveRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: m.root, Right: "↵ Browse  R Refresh  tab Next"}
 	case archiveFolderField:
-		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑/k ↓/j Move  R Restore  ⌫ Reject  v View  tab Next"}
+		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  R Restore  ⌫ Reject  v View  tab Next"}
 	case rejectFolderField:
-		return tui.Status{Left: "REJECT", Center: center, Right: "↑/k ↓/j Move  R Restore  a Archive  v View  tab Next"}
+		return tui.Status{Left: "REJECT", Center: center, Right: "↑↓ Move  R Restore  a Archive  v View  tab Next"}
 	default:
-		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑/k ↓/j Move  a Archive  ⌫ Reject  v View  R Refresh"}
+		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  a Archive  ⌫ Reject  v View  R Refresh"}
 	}
 }
 

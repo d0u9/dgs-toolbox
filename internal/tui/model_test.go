@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"dgs-toolbox/internal/tui/stepper"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 type stubCommand struct {
@@ -542,5 +544,39 @@ func TestLeavingACommandIsConfirmed(t *testing.T) {
 	m = updated.(Model)
 	if m.confirmLeave || m.active == nil {
 		t.Fatal("escape in the dialog should cancel it, not leave the command")
+	}
+}
+
+// TestStatusBarFitsTerminalWidthWithStyledContent renders with a real color
+// profile: without escape sequences, style resets cannot add stray cells, and
+// a plain-text test passes while the terminal overflows.
+func TestStatusBarFitsTerminalWidthWithStyledContent(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	steps := []string{"Directories", "Parameters", "Processing", "Post-processing", "Result"}
+	hints := []string{
+		"n Next  r Refresh  space Preview  alt+hjkl Focus  esc Back",
+		"p Pause  ↑↓ Workers  esc Back  q Quit",
+		"n Next  esc Prev  q Quit",
+		"r Again  ↑↓ Browse  alt+h/l Focus  q Quit",
+	}
+	for current := range steps {
+		for _, right := range hints {
+			for width := 40; width <= 240; width += 3 {
+				status := Status{Left: "POST-PROCESSING · COMPLETE", Center: stepper.View(steps, current, width*56/100), Right: right}
+				bar := renderStatusBar(status, width)
+				if got := ansi.StringWidth(bar); got != width {
+					t.Fatalf("step %d width %d: rendered %d cells: %q", current, width, got, ansi.Strip(bar))
+				}
+				plain := ansi.Strip(bar)
+				if !strings.Contains(plain, strings.Split(right, "  ")[0]) {
+					t.Fatalf("step %d width %d: most immediate hint missing: %q", current, width, plain)
+				}
+				if strings.HasSuffix(strings.TrimSpace(plain), "…") {
+					t.Fatalf("step %d width %d: hint cut mid-word: %q", current, width, plain)
+				}
+			}
+		}
 	}
 }
