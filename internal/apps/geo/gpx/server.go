@@ -4,8 +4,10 @@ import (
 	"embed"
 	"errors"
 	"io/fs"
+	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 
@@ -76,7 +78,30 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/route/leg", api.routeLeg)
 	mux.HandleFunc("POST /api/route/save", api.saveRoute)
 	mux.Handle("GET /", http.FileServerFS(static))
-	return mux
+	return sameOrigin(mux)
+}
+
+// sameOrigin refuses a request that changes something unless the page itself
+// sent it. Another site open in the same browser can post to this server — it
+// listens on a known local port — but only a text/plain or form body, and with
+// its own Origin: requiring JSON forces a preflight the server never grants.
+func sameOrigin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			if mediaType != "application/json" {
+				writeError(w, http.StatusUnsupportedMediaType, errors.New("send JSON"))
+				return
+			}
+			if origin := r.Header.Get("Origin"); origin != "" {
+				if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
+					writeError(w, http.StatusForbidden, errors.New("requests from another site are refused"))
+					return
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 var (

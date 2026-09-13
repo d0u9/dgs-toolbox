@@ -106,6 +106,34 @@ func TestConfigOffersTheDEM(t *testing.T) {
 	}
 }
 
+func TestChangesOnlyFromThePage(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	for _, c := range []struct {
+		contentType, origin string
+		want                int
+	}{
+		{"text/plain", "", http.StatusUnsupportedMediaType},
+		{"application/json", "https://elsewhere.example", http.StatusForbidden},
+		{"application/json", server.URL, http.StatusOK},
+		{"application/json; charset=utf-8", "", http.StatusOK},
+	} {
+		request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/draft", strings.NewReader(`{"name":"walk"}`))
+		request.Header.Set("Content-Type", c.contentType)
+		if c.origin != "" {
+			request.Header.Set("Origin", c.origin)
+		}
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != c.want {
+			t.Errorf("%s from %q = %d, want %d", c.contentType, c.origin, response.StatusCode, c.want)
+		}
+	}
+}
+
 func TestDirListsFoldersAndGPXFiles(t *testing.T) {
 	root := testdataDir(t)
 	server := httptest.NewServer(Handler(Settings{Root: root}))
@@ -170,6 +198,7 @@ func TestRevealOnlyForThisMachine(t *testing.T) {
 	post := func(remote, body string) int {
 		request := httptest.NewRequest(http.MethodPost, "/api/reveal", strings.NewReader(body))
 		request.RemoteAddr = remote
+		request.Header.Set("Content-Type", "application/json")
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, request)
 		return recorder.Code
@@ -299,6 +328,7 @@ func TestCleanIsSavedAndApplied(t *testing.T) {
 	path := writeStayGPX(t)
 	put := func(body string) int {
 		request, _ := http.NewRequest(http.MethodPut, server.URL+"/api/clean", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
 		response, err := http.DefaultClient.Do(request)
 		if err != nil {
 			t.Fatal(err)
@@ -357,6 +387,7 @@ func send(t *testing.T, server *httptest.Server, method, path string, body any) 
 	t.Helper()
 	data, _ := json.Marshal(body)
 	request, _ := http.NewRequest(method, server.URL+path, bytes.NewReader(data))
+	request.Header.Set("Content-Type", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
