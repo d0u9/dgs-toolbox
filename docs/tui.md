@@ -159,7 +159,7 @@ The center and right regions share one continuous background color. Nested style
 
 A shared stepper presents the complete sequence as a stateful track: completed steps use `✓`, the current step uses `●`, and forthcoming steps use `○`, joined by `──`. The current step is bold without an underline; the state glyphs keep progress understandable without relying on color. Commands provide the labels and current index; the shell owns placement and truncation. Reuse this component for both workflow state and smaller staged operations such as `COPY → VERIFY → PUBLISH`. Photo Import is the first consumer, not the source of a mandatory workflow for every command.
 
-The status bar allocates enough central space for a short four-step workflow. On narrow terminals, truncate the stepper rather than wrapping or increasing the status bar height.
+The status bar allocates central space for a short workflow, including Photo Import's five stages. On narrow terminals, truncate the stepper rather than wrapping or increasing the status bar height.
 
 ## Global key bindings
 

@@ -144,6 +144,36 @@ func TestRunResumesVerifiedFileWithoutRewritingDestination(t *testing.T) {
 	}
 }
 
+func TestRunResumesFileRelocatedByPostProcessing(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "src.jpg")
+	planned := filepath.Join(root, "dst", "src.jpg")
+	relocated := filepath.Join(root, "dst", "20261010", "src.jpg")
+	statePath := filepath.Join(root, "dst", ".dgs-state")
+	writeFile(t, source, "photo")
+	plan := Plan{Jobs: []Job{{Source: source, Destination: planned}}, Operation: Copy, Conflict: Skip, StatePath: statePath}
+	first := Run(context.Background(), plan, nil)
+	if first.Files[0].Phase != PhaseComplete {
+		t.Fatal(first.Files[0].Error)
+	}
+	if err := os.MkdirAll(filepath.Dir(relocated), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(planned, relocated); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateDestinations(statePath, map[string]string{planned: relocated}); err != nil {
+		t.Fatal(err)
+	}
+	second := Run(context.Background(), plan, nil)
+	if second.Files[0].Phase != PhaseComplete || second.Files[0].Destination != relocated {
+		t.Fatalf("relocated resume = %#v", second.Files[0])
+	}
+	if _, err := os.Stat(planned); !os.IsNotExist(err) {
+		t.Fatalf("planned destination was recreated: %v", err)
+	}
+}
+
 func TestRunReservesDistinctKeepBothNamesAcrossWorkers(t *testing.T) {
 	root := t.TempDir()
 	first := filepath.Join(root, "card-a", "same.jpg")

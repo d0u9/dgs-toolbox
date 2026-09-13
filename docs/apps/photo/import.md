@@ -19,17 +19,18 @@ Use SHA-256 by default because it is cryptographically strong, available in the 
 - Keep two main screens: Directories first, then the scanned Parameters workspace.
 - Directories places Source and Destination on separate rows inside one fieldset and uses repository mock folders by default.
 - A cancellable, read-only progress transition scans both directories before Parameters is shown.
-- Directories uses the shared centered one-column skeleton. Scan, Parameters, Processing, and Result use the shared two-column landscape skeleton.
+- Directories uses the shared centered one-column skeleton. Scan, Processing, and Result use the shared two-column landscape skeleton. Parameters uses a four-column landscape composition whose middle two columns equally divide the flexible width.
 - In the two-column screens, the left column begins at one third of the workspace and is capped at 90 cells; the right column receives the remaining space.
 - Shared DataField focus uses `Alt+h/j/k/l` and primary clicks. Child controls remain operable by keyboard and mouse.
-- Source and Destination use the shared numbered scroll-list component, including full-row selection, Vim navigation, hover-wheel scrolling, Quick Look, and a reusable right-click menu.
+- Source, Destination, JPG-only, and RAW-only inventories use the shared numbered scroll-list component, including full-row selection, Vim navigation, hover-wheel scrolling, Quick Look, and a reusable right-click menu.
 - Extension filters are derived from Source, use dynamic multi-checkboxes plus `[ All ]`, and immediately filter Source and Summary while Destination remains unfiltered.
 - The status bar shows the complete workflow and emphasizes the current step; the top breadcrumb shows the more detailed local state.
 - Scan repeats the selected endpoints so an incorrect SD-card or storage path can be noticed before parameters are accepted.
 - Processing uses bounded whole-file workers and exposes Copy, Verify, and Publish separately. A final photo name is never visible before independent SHA-256 readback succeeds; Source modification time is applied before publication.
+- Optional Post-processing organizes verified JPG/RAW files into `YYYYMMDD` directories. It never replaces Processing verification and runs only when explicitly confirmed on the Post-processing page.
 - Every quit path uses the shared safe-default confirmation dialog. Active Processing pauses while it is open and cancels cleanly only after confirmation.
 - Result is terminal: it summarizes Source, Destination, verified published bytes, skipped files, and failures, then offers only Again or Quit—not navigation back into completed work.
-- The internal subdivisions—controls and actions in the narrow left column, detailed file or worker data in the wider right column—remain Photo Import decisions rather than shared layout rules.
+- The internal subdivisions remain Photo Import decisions rather than shared layout rules.
 
 ## Confirmed workflow
 
@@ -38,9 +39,10 @@ The status workflow is:
 1. Directories
 2. Parameters
 3. Processing
-4. Result
+4. Post-processing
+5. Result
 
-The implemented interaction includes Directories, Parameters, real integrity-verified Processing, and a landscape Result screen. A read-only Scan transition connects the first two screens. Processing performs file operations only after the user invokes Next from Parameters.
+The implemented interaction includes Directories, Parameters, real integrity-verified Processing, optional capture-date Post-processing, and a landscape Result screen. A read-only Scan transition connects the first two screens. Processing performs file operations only after the user invokes Next from Parameters.
 
 ## Setup screen
 
@@ -76,42 +78,37 @@ The scan collects regular-file names and counts from both roots without reading 
 
 ## Parameters screen
 
-After scanning, divide the entire workspace into two asymmetric panes:
+After scanning, divide the entire workspace into four columns:
 
-- Left: Parameters above Import summary in the shared one-third column, capped at 90 cells. Page Actions is anchored at the bottom-left.
-- Right: separate Source and Destination inventories in the shared two-thirds column, consuming all remaining width and ending at the terminal's right edge.
-- Keep one terminal cell between panes.
-- Below 63 total columns, replace the panes with a resize prompt instead of overflowing or breaking either fieldset.
-- Source occupies the upper half of the full-height right pane and Destination occupies the lower half. Both fieldsets keep those equal fixed heights even when either inventory is empty.
-- A strong `━━━ ▼  ▼  ▼ ━━━` directional divider between them communicates Source-to-Destination flow. Keep two cells between arrows so the direction cue remains legible instead of becoming a dense glyph cluster.
-- Each inventory displays its configured root directory before its count and relative file list. This keeps the selected SD card and destination mount visible while preserving compact, scannable relative paths below it.
-- Import summary uses the natural fixed height of its content and is anchored near the bottom-left actions.
-- Parameters starts at the top-left and expands through all space above the summary and actions.
+- First: Parameters above Import summary. Parameters keeps the existing controls and takes their natural height; Import summary fills the remaining height below it.
+- Second: the full-height Source inventory.
+- Third: the full-height Destination inventory.
+- Fourth: `JPG only · no RAW`, then `RAW only · no JPG`, then Page Actions. The two inventory DataFields equally divide the height remaining above Page Actions.
+- The first and fourth columns are supporting widths. The middle two columns freely and equally divide all remaining width after the outer columns and three one-cell gutters are reserved.
+- Page Actions keeps only its shared four-row height at bottom-right, including its breathing space and right-edge inset. It does not shorten the other three columns.
+- Below 140 total columns, replace the columns with a resize prompt instead of overflowing or wrapping structural regions.
+- Each inventory displays its root directory before its count and relative file list.
+- The JPG-only and RAW-only inventories classify scanned Source files by matching a case-insensitive filename stem within the same relative directory. This classification reads filenames only; EXIF capture-time behavior is not part of this layout change.
 
-This screen does not use the centered 100-cell configuration surface. Its two-column skeleton is shared; the content arranged inside each column is specific to Photo Import.
+This screen does not use the centered 100-cell configuration surface. Its composition is specific to Photo Import.
 
 ```text
-╭─ Parameters ─────────────╮ ╭─ Source ─────────────────────────────────────╮
-│ IMPORT                   │ │ Root  /Volumes/SD                            │
-│ Operation  (●) Copy      │ │ 24 files · 420 B                            │
-│ Extensions [x] DNG       │ │ › DCIM/100LEICA/IMG_0001.JPG                │
-│ Duplicates Skip          │ │ · DCIM/100LEICA/IMG_0002.JPG                │
-│ Parallelism 1            │ ╰──────────────────────────────────────────────╯
-╰──────────────────────────╯ ━━━━━━━━━━━━━━━ ▼  ▼  ▼ ━━━━━━━━━━━━━━━━━━━━━━━
-╭─ Import summary ─────────╮ ╭─ Destination ────────────────────────────────╮
-│ Eligible       24 files  │ │ Root  /Volumes/Photos/Import                 │
-│ Duplicates      2 files  │ │ 11 files · 260 B                            │
-│ Skipped         2 files  │ │ › Existing Album/IMG_0001.JPG               │
-│ Workers         1        │ │ · Existing Album/IMG_0002.JPG               │
-│ Will copy      22 files  │ │ · Existing Album/IMG_0999.JPG               │
-╰──────────────────────────╯ ╰──────────────────────────────────────────────╯
-
-  ← Directories            n  Processing →
+╭─ Parameters ─────╮ ╭─ Source files ────╮ ╭─ Destination files ─╮ ╭─ JPG only · no RAW ─╮
+│ Operation Copy   │ │ Root /Volumes/SD   │ │ Root /Volumes/Photos│ │ IMG_0003.JPG        │
+│ Extensions …     │ │ IMG_0001.JPG       │ │ Existing/IMG_0912…  │ ╰─────────────────────╯
+│ Duplicates Skip  │ │ IMG_0001.DNG       │ │                     │ ╭─ RAW only · no JPG ─╮
+│ Parallelism 1    │ │ …                  │ │                     │ │ IMG_0004.DNG        │
+╰──────────────────╯ │                    │ │                     │ ╰─────────────────────╯
+╭─ Import summary ╮ │                    │ │                     │   ← Prev      Next →
+│ Eligible 24     │ │                    │ │                     │   Directories Processing
+│ Will copy 22    │ │                    │ │                     │
+│ Workers 1       │ │                    │ │                     │
+╰──────────────────╯ ╰────────────────────╯ ╰─────────────────────╯
 ```
 
-The summary updates immediately when Operation, Extensions, Duplicates, or Parallelism changes. Extensions are discovered from the scanned Source inventory, normalized case-insensitively, sorted, and rendered as independent checkboxes; extensions absent from Source are not offered. All discovered extensions begin selected. A leading `[ All ]` action selects every discovered extension again, providing an explicit recovery from an empty filtered Source viewport. Right/l or Enter enters the extension subitems; Up/Down or k/j then moves through All and the extensions, Space or Enter invokes the current row, and Left/h or Esc exits the group. Duplicates opens with either Space or Enter. Changing the selection immediately filters the Source viewport and summary from the same source of truth. Destination remains complete so existing files and conflicts stay visible. Duplicate detection compares the relative path under each root case-insensitively, matching the destination layout resolved by the engine. Do not summarize a long inventory with text such as `… 8 files more`; make each inventory a navigable viewport instead. Source and Destination rows use the shared one-based line-number gutter. Within either list, `j/k` or Down/Up moves one file, `gg` moves to the first file, `G` moves to the last, and `h/l` or Left/Right pans long paths horizontally. The selected file uses `›` and the viewport follows it. A primary click selects a row and focuses its inventory. Hovering over either inventory and using the mouse wheel scrolls that inventory by three rows without changing focus. Space opens the selected file in macOS Quick Look. Right-clicking a row selects it and opens the shared context menu; Open with default app delegates to macOS `open`. `Alt+h/j/k/l` moves spatially among Source, Destination, Parameters, and Import summary. `Esc` returns to Setup. The shared `n` Next Screen shortcut starts Processing without requiring traversal through unchanged parameters.
+The summary updates immediately when Operation, Extensions, Duplicates, or Parallelism changes. Extensions are discovered from the scanned Source inventory, normalized case-insensitively, sorted, and rendered as independent checkboxes; extensions absent from Source are not offered. All discovered extensions begin selected. A leading `[ All ]` action selects every discovered extension again, providing an explicit recovery from an empty filtered Source viewport. Right/l or Enter enters the extension subitems; Up/Down or k/j then moves through All and the extensions, Space or Enter invokes the current row, and Left/h or Esc exits the group. Duplicates opens with either Space or Enter. Changing the selection immediately filters Source, the two sidecar exception inventories, and Summary from the same source of truth. Destination remains complete so existing files and conflicts stay visible. Duplicate detection compares the relative path under each root case-insensitively, matching the destination layout resolved by the engine. Do not summarize a long inventory with text such as `… 8 files more`; make each inventory a navigable viewport instead. All four inventories use the shared one-based line-number gutter. Within a focused list, `j/k` or Down/Up moves one file, `gg` moves to the first file, `G` moves to the last, and `h/l` or Left/Right pans long paths horizontally. The selected file uses `›` and the viewport follows it. A primary click selects a row and focuses its inventory. Hovering over an inventory and using the mouse wheel scrolls that inventory by three rows without changing focus. Space opens the selected file in macOS Quick Look. Right-clicking a row selects it and opens the shared context menu; Open with default app delegates to macOS `open`. `Alt+h/j/k/l` moves spatially among Parameters, Import summary, and all four inventories. `Esc` returns to Setup. The shared `n` Next Screen shortcut starts Processing without requiring traversal through unchanged parameters.
 
-The shared status-bar stepper shows `Directories › Parameters › Processing › Result`. The active stage is bold without an underline. Scan and the parameter-selection workspace both belong to Parameters.
+The shared status-bar stepper shows `Directories › Parameters › Processing › Post-processing › Result`. The active stage is bold without an underline. Scan and the parameter-selection workspace both belong to Parameters.
 
 The shell breadcrumb includes workflow state: Directories uses `dgs › photo › import › setup`; scanning and the inventory/parameter screen use `dgs › photo › import › scan`; active transfer uses `dgs › photo › import › processing`; and the terminal summary uses `dgs › photo › import › result`.
 
@@ -148,9 +145,25 @@ Processing supports 1–8 workers and defaults to 1. Each worker handles a diffe
 
 Photo Import status uses the shared three-part bar as follows: the left chip identifies `SCAN · READING`, `PROCESSING · RUNNING`, `PROCESSING · PAUSED`, `PROCESSING · COMPLETE`, or confirmation state; the center keeps the workflow track; and the right side contains only context-valid controls. A paused import replaces `p Pause` with `p Resume`; a completed import no longer advertises pause.
 
+Processing remains visible when it reaches complete so its final worker state can be inspected. Enter or `n` opens Post-processing, whose confirmation defaults to `Skip`.
+
+## Post-processing screen
+
+Post-processing receives only files that Processing reported complete after independent destination readback and publication. Its page first shows a confirmation dialog. `Skip` is the safe default and performs no metadata reads or renames before continuing to Result. Choosing `Organize by capture date` closes the dialog and applies these rules:
+
+1. A RAW with a same-directory, case-insensitive filename-stem JPG/JPEG sidecar and that JPG/JPEG both use the sidecar's EXIF capture time.
+2. A JPG/JPEG without RAW uses its own EXIF capture time.
+3. A RAW without JPG/JPEG uses capture time read directly from the RAW through the existing Go EXIF library.
+
+The destination is `<Destination>/YYYYMMDD/<filename>`. Post-processing reads the already verified destination file, not a deleted Move source. It uses same-filesystem rename and never overwrites an existing target. A missing/invalid capture time, unsupported RAW container, unsafe date directory, target conflict, or rename failure leaves that file at its published Processing path and reports a per-file failure. Non-photo files are skipped. Before moving any paired RAW, read its sidecar date so processing order cannot invalidate the metadata source.
+
+Successful relocations update both the in-memory transfer result and the versioned import-state file atomically. State retains the originally planned destination as well as the relocated destination, allowing whole-file resume to recognize and verify a post-processed file instead of copying it again.
+
+The screen reports each original filename, resolved date, metadata source, final path, and failure. When it reaches complete, Enter or `n` opens Result; Esc returns to the completed Processing screen for inspection.
+
 ## Result screen
 
-Processing remains visible when it reaches complete so its final worker state can be inspected. Enter or `n` then opens Result. Result uses a landscape summary rather than another progress surface:
+Result uses a landscape summary rather than another progress surface:
 
 ```text
 ╭─ Import result ─────────────────────────────────────────────────────────────╮
@@ -175,7 +188,7 @@ Processing remains visible when it reaches complete so its final worker state ca
   New import      › Exit dgs
 ```
 
-The full-width header answers whether the batch is trustworthy before showing detail. It repeats Source and Destination and reports the total bytes successfully verified and published; skipped and failed files do not contribute to this byte count. Below it, Result uses the shared two-column skeleton. The narrow left side separates integrity evidence from the final state-file decision and anchors Page Actions at bottom-left. The wider right column owns the complete per-file result inventory and uses the shared numbered, selectable, vertically scrollable list. Do not mix cleanup controls into the verification summary.
+The full-width header answers whether the batch is trustworthy before showing detail. It repeats Source and Destination, reports the total bytes successfully verified and published, and summarizes whether Post-processing was skipped or how many files were organized, skipped, and failed. Transfer-skipped and transfer-failed files do not contribute to the published byte count. Below it, Result uses the shared two-column skeleton. The narrow left side separates integrity evidence, post-processing outcome, and the final state-file decision. The wider right column owns the complete per-file result inventory and uses the shared numbered, selectable, vertically scrollable list; organized rows include their `YYYYMMDD` directory. Do not mix cleanup controls into the verification summary.
 
 Delete state is selected by default, matching the confirmed lifecycle decision. Its filename is configured by the global configuration key `photo.import.state_file` and defaults to `.dgs-state`. The value must be a filename rather than a path so state cannot escape the selected Destination. The file lives directly inside that root as `<Destination>/<state_file>`; it is not stored in Source or in a global application-data directory. Result renders the configured filename in its cleanup control and confirmation copy. The explanatory copy makes retaining it an audit or diagnostic choice. When deletion is selected, leaving Result through Again or a confirmed exit—including Esc, `q`, Ctrl+C, and the Quit action—must remove the state file before navigation or process termination. If removal fails, remain on Result and report the error rather than silently exiting. When deletion is not selected, every exit path retains the file. `Alt+h/l` moves between the result inventory and state-file actions; list navigation uses the shared arrow/Vim behavior, mouse wheel works while hovering the inventory, and primary click changes focus or activates a control.
 
@@ -258,7 +271,7 @@ Example status values:
 
 ```text
 Left:    READY
-Center:  Directories › Parameters › Processing › Result
+Center:  Directories › Parameters › Processing › Post-processing › Result
 Right:   arrows/hjkl  n Next  ↵ Select  ? Help
 ```
 
@@ -266,7 +279,7 @@ After the scan:
 
 ```text
 Left:    PARAMETERS
-Center:  Directories › Parameters › Processing › Result
+Center:  Directories › Parameters › Processing › Post-processing › Result
 Right:   click / alt+hjkl Focus  space Preview  right-click Menu
 ```
 

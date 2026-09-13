@@ -76,7 +76,7 @@ func TestImportStartsWithDirectoriesOnly(t *testing.T) {
 	}
 
 	status := model.Status()
-	if status.Left != "READY" || !strings.Contains(status.Center, "Directories") || !strings.Contains(status.Center, "Result") {
+	if status.Left != "READY" || !strings.Contains(status.Center, "Directories") || !strings.Contains(status.Center, "Post-processing") {
 		t.Errorf("status = %#v", status)
 	}
 }
@@ -176,6 +176,7 @@ func TestImportFormSupportsSharedControlNavigation(t *testing.T) {
 
 func TestImportControlsCanBeChanged(t *testing.T) {
 	model := newImportModel().(importModel)
+	model.width = 160
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	model.controls.SetFocusID(duplicatesID)
@@ -332,6 +333,8 @@ func TestCompletedProcessingOpensLandscapeResultPreview(t *testing.T) {
 	}
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(importModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(importModel)
 	if model.stage != resultStage || !model.controls.Checked(deleteStateID) {
 		t.Fatalf("result stage=%v delete-state=%v", model.stage, model.controls.Checked(deleteStateID))
 	}
@@ -346,6 +349,22 @@ func TestCompletedProcessingOpensLandscapeResultPreview(t *testing.T) {
 	}
 	if status := model.Status(); status.Left != "RESULT · VERIFIED" || !strings.Contains(status.Center, "● Result") {
 		t.Fatalf("result status = %#v", status)
+	}
+}
+
+func TestPostProcessingPageOffersExplicitSkip(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.stage = processingStage
+	model.processing.complete = true
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(importModel)
+	if model.stage != postprocessStage || !model.postprocessPrompt || cmd != nil || !strings.Contains(model.View(), "ORGANIZE BY CAPTURE DATE?") {
+		t.Fatalf("post-process prompt stage=%v prompt=%v cmd=%v", model.stage, model.postprocessPrompt, cmd != nil)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(importModel)
+	if model.stage != resultStage || !model.postprocess.skipped {
+		t.Fatalf("skip stage=%v skipped=%v", model.stage, model.postprocess.skipped)
 	}
 }
 
@@ -425,14 +444,14 @@ func TestResultAgainHonorsRetainStateSelection(t *testing.T) {
 
 func TestMouseClickSwitchesParameterDataFieldFocus(t *testing.T) {
 	model := newImportModel().(importModel)
-	model.width, model.height = 120, 30
+	model.width, model.height = 160, 30
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	layout := model.parameterLayout()
 
 	updated, _ := model.Update(tea.MouseMsg{
-		X:      layout.leftWidth + 2,
-		Y:      layout.sourceHeight + 2,
+		X:      layout.leftWidth + layout.middleWidth + 3,
+		Y:      2,
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -455,10 +474,10 @@ func TestMouseClickSwitchesParameterDataFieldFocus(t *testing.T) {
 
 func TestMouseClickOperatesParameterControls(t *testing.T) {
 	model := newImportModel().(importModel)
-	model.width, model.height = 120, 30
+	model.width, model.height = 160, 30
 	model.stage = parameterStage
 	updated, _ := model.Update(tea.MouseMsg{
-		X:      3 + 30,
+		X:      33,
 		Y:      2,
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
@@ -474,7 +493,7 @@ func TestMouseClickOperatesParameterControls(t *testing.T) {
 
 func TestMouseWheelScrollsHoveredListWithoutChangingFocus(t *testing.T) {
 	model := newImportModel().(importModel)
-	model.width, model.height = 120, 30
+	model.width, model.height = 160, 30
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	for i := 0; i < 40; i++ {
@@ -498,7 +517,7 @@ func TestMouseWheelScrollsHoveredListWithoutChangingFocus(t *testing.T) {
 
 func TestClickSelectsNumberedRowAndSpaceProvidesQuickLookCommand(t *testing.T) {
 	model := newImportModel().(importModel)
-	model.width, model.height = 120, 30
+	model.width, model.height = 160, 30
 	model.stage = parameterStage
 	model.scan.source = []scannedFile{{path: "first.jpg"}, {path: "second.jpg"}, {path: "third.jpg"}}
 	model.syncResultLists()
@@ -516,7 +535,7 @@ func TestClickSelectsNumberedRowAndSpaceProvidesQuickLookCommand(t *testing.T) {
 
 func TestRightClickOpensReusableContextMenuWithoutChangingFocus(t *testing.T) {
 	model := newImportModel().(importModel)
-	model.width, model.height = 120, 30
+	model.width, model.height = 160, 30
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	model.scan.source = []scannedFile{{path: "first.jpg"}, {path: "second.jpg"}}
@@ -536,6 +555,7 @@ func TestRightClickOpensReusableContextMenuWithoutChangingFocus(t *testing.T) {
 
 func TestNextShortcutStartsScanAndOpensParameterScreen(t *testing.T) {
 	model := newImportModel().(importModel)
+	model.width = 160
 	if model.controls.FocusedID() != sourceID {
 		t.Fatal("test must begin on Source")
 	}
@@ -595,10 +615,11 @@ func TestCancelledScanIgnoresLateResult(t *testing.T) {
 	}
 }
 
-func TestParameterScreenUsesAsymmetricSplitLayout(t *testing.T) {
+func TestParameterScreenUsesFourColumnLayout(t *testing.T) {
 	model := newImportModel().(importModel)
-	model.width, model.height = 120, 28
+	model.width, model.height = 160, 28
 	model.stage = parameterStage
+	model.paths = [pathFieldCount]string{"/Volumes/SD", "/Volumes/Photos/Import"}
 	model.parameterFields.Set("parameters")
 	model.scan = scanSummary{
 		source:      []scannedFile{{path: "DCIM/IMG_0001.JPG", size: 10}, {path: "DCIM/IMG_0002.DNG", size: 20}},
@@ -606,22 +627,28 @@ func TestParameterScreenUsesAsymmetricSplitLayout(t *testing.T) {
 	}
 	model.syncResultLists()
 	view := model.View()
-	for _, want := range []string{"Source", "Destination", "▼  ▼  ▼", "Parameters", "Import summary", "Eligible", "Duplicates", "Will copy", "Workers"} {
+	for _, want := range []string{"Source files", "Destination files", "JPG only · no RAW", "RAW only · no JPG", "Parameters", "Import summary", "Eligible", "Duplicates", "Will copy", "Workers"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("split view does not contain %q:\n%s", want, view)
 		}
 	}
-	if got := lipgloss.Width(view); got != 120 {
-		t.Fatalf("split view width = %d, want 120", got)
+	if got := lipgloss.Width(view); got != 160 {
+		t.Fatalf("split view width = %d, want 160", got)
 	}
 	firstLine := strings.Split(view, "\n")[0]
 	if !strings.HasSuffix(firstLine, "╮") {
 		t.Fatalf("right pane is not flush with terminal edge: %q", firstLine)
 	}
 	lines := strings.Split(view, "\n")
-	buttonLine := lines[model.height-2]
-	if !strings.Contains(buttonLine, "Directories") || !strings.Contains(buttonLine, "Processing") || strings.Index(buttonLine, "Directories") >= model.parameterLayout().leftWidth {
-		t.Fatalf("page actions are not anchored in the bottom-left pane: %q", buttonLine)
+	buttonLine := ""
+	for _, line := range lines {
+		if strings.Contains(line, "Directories") && strings.Contains(line, "Processing") {
+			buttonLine = line
+			break
+		}
+	}
+	if buttonLine == "" || strings.Index(buttonLine, "Directories") < model.parameterLayout().leftWidth+2*model.parameterLayout().middleWidth {
+		t.Fatalf("page actions are not anchored in the bottom-right pane:\n%s", view)
 	}
 	if !strings.Contains(view, "Root  "+model.paths[sourceField]) || !strings.Contains(view, "Root  "+model.paths[destinationField]) {
 		t.Fatal("source and destination roots are not visible above their relative file lists")
@@ -632,7 +659,7 @@ func TestAltNavigationMovesBetweenParameterDataFields(t *testing.T) {
 	model := newImportModel().(importModel)
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
-	tests := []struct{ key, want string }{{"alt+l", "source-results"}, {"alt+j", "destination-results"}, {"alt+h", "summary"}, {"alt+k", "parameters"}}
+	tests := []struct{ key, want string }{{"alt+l", "source-results"}, {"alt+l", "destination-results"}, {"alt+l", "jpeg-only-results"}, {"alt+j", "raw-only-results"}, {"alt+h", "destination-results"}, {"alt+h", "source-results"}, {"alt+h", "parameters"}, {"alt+j", "summary"}}
 	for _, test := range tests {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(test.key[len(test.key)-1])}, Alt: true})
 		model = updated.(importModel)
@@ -644,7 +671,7 @@ func TestAltNavigationMovesBetweenParameterDataFields(t *testing.T) {
 
 func TestResultListsUseVimNavigationInsteadOfMoreText(t *testing.T) {
 	model := newImportModel().(importModel)
-	model.width, model.height = 100, 20
+	model.width, model.height = 160, 20
 	model.stage = parameterStage
 	for index := range 20 {
 		model.scan.source = append(model.scan.source, scannedFile{path: fmt.Sprintf("deep/path/with/many/nested/directories/file-%02d-with-an-extraordinarily-long-name.jpg", index)})
@@ -725,7 +752,7 @@ func TestParameterScreenRequestsMinimumWidthWithoutOverflow(t *testing.T) {
 	model.width, model.height = 60, 22
 	model.stage = parameterStage
 	view := model.View()
-	if !strings.Contains(view, "at least 63 columns") {
+	if !strings.Contains(view, "at least 140 columns") {
 		t.Fatalf("narrow view does not explain its minimum width:\n%s", view)
 	}
 	if got := lipgloss.Width(view); got != 60 {
@@ -795,5 +822,44 @@ func TestBuildJobsMirrorsSourceHierarchy(t *testing.T) {
 			t.Fatalf("two jobs share destination %q", job.Destination)
 		}
 		seen[job.Destination] = struct{}{}
+	}
+}
+
+func TestClassifySidecarsUsesDirectoryAndStem(t *testing.T) {
+	files := []scannedFile{
+		{path: "DCIM/IMG_0001.JPG"},
+		{path: "DCIM/IMG_0001.DNG"},
+		{path: "DCIM/IMG_0002.JPG"},
+		{path: "DCIM/IMG_0003.NEF"},
+		{path: "OTHER/IMG_0003.JPG"},
+	}
+	classifySidecars(files)
+	if !files[0].hasSidecar || !files[1].hasSidecar {
+		t.Fatal("matching JPG and RAW were not paired")
+	}
+	for _, index := range []int{2, 3, 4} {
+		if files[index].hasSidecar {
+			t.Fatalf("file %q was paired across a missing stem or directory", files[index].path)
+		}
+	}
+}
+
+func TestSidecarExceptionDataFieldsContainOnlyUnpairedFiles(t *testing.T) {
+	model := newImportModel().(importModel)
+	model.scan.source = []scannedFile{
+		{path: "DCIM/IMG_0001.JPG"},
+		{path: "DCIM/IMG_0001.DNG"},
+		{path: "DCIM/IMG_0002.JPG"},
+		{path: "DCIM/IMG_0003.NEF"},
+	}
+	classifySidecars(model.scan.source)
+	model.syncResultLists()
+	jpeg, jpegOK := model.jpegOnlyList.Selected()
+	raw, rawOK := model.rawOnlyList.Selected()
+	if !jpegOK || jpeg.ID != "DCIM/IMG_0002.JPG" {
+		t.Fatalf("JPG-only list selected %#v, ok=%v", jpeg, jpegOK)
+	}
+	if !rawOK || raw.ID != "DCIM/IMG_0003.NEF" {
+		t.Fatalf("RAW-only list selected %#v, ok=%v", raw, rawOK)
 	}
 }

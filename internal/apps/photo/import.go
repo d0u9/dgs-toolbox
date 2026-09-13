@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/apps/photo/importer"
+	"dgs-toolbox/internal/apps/photo/postprocess"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/confirm"
 	"dgs-toolbox/internal/tui/contextmenu"
@@ -51,6 +52,10 @@ var (
 	parameterIDs = []string{operationID, extensionsID, duplicatesID, parallelID}
 )
 
+const (
+	postprocessOrganize = "Organize by capture date"
+)
+
 type importStage int
 
 const (
@@ -58,14 +63,25 @@ const (
 	scanStage
 	parameterStage
 	processingStage
+	postprocessStage
 	resultStage
 )
 
 type scannedFile struct {
-	side string
-	path string
-	size int64
+	side       string
+	path       string
+	size       int64
+	mediaKind  mediaKind
+	hasSidecar bool
 }
+
+type mediaKind int
+
+const (
+	mediaOther mediaKind = iota
+	mediaJPEG
+	mediaRAW
+)
 
 type scanSummary struct {
 	source      []scannedFile
@@ -89,6 +105,10 @@ type scanDoneMsg struct {
 
 type transferEventMsg importer.Event
 type transferDoneMsg importer.Result
+type postprocessDoneMsg struct {
+	result     postprocess.Result
+	stateError error
+}
 
 type workerPhase int
 
@@ -121,6 +141,12 @@ type processingState struct {
 	paused       bool
 	complete     bool
 	workerOffset int
+}
+
+type postprocessState struct {
+	running bool
+	skipped bool
+	result  postprocess.Result
 }
 
 var (
@@ -164,6 +190,8 @@ type importModel struct {
 	resultFields         datafield.Navigator
 	sourceList           scrolllist.Model
 	destinationList      scrolllist.Model
+	jpegOnlyList         scrolllist.Model
+	rawOnlyList          scrolllist.Model
 	resultList           scrolllist.Model
 	menu                 contextmenu.Model
 	menuTarget           string
@@ -171,6 +199,9 @@ type importModel struct {
 	actionNotice         string
 	extensionsConfigured bool
 	processing           processingState
+	postprocess          postprocessState
+	postprocessPrompt    bool
+	postprocessDialog    confirm.Model
 	leaveConfirm         bool
 	leaveExits           bool
 	leaveWasPaused       bool
@@ -217,7 +248,9 @@ func newImportModelWithSettings(stateFilename, source, destination string) tui.C
 			datafield.Field{ID: "parameters", Row: 0, Col: 0},
 			datafield.Field{ID: "summary", Row: 1, Col: 0},
 			datafield.Field{ID: "source-results", Row: 0, Col: 1},
-			datafield.Field{ID: "destination-results", Row: 1, Col: 1},
+			datafield.Field{ID: "destination-results", Row: 0, Col: 2},
+			datafield.Field{ID: "jpeg-only-results", Row: 0, Col: 3},
+			datafield.Field{ID: "raw-only-results", Row: 1, Col: 3},
 		),
 		resultFields: datafield.New(
 			datafield.Field{ID: "result-actions", Row: 0, Col: 0},
@@ -225,6 +258,8 @@ func newImportModelWithSettings(stateFilename, source, destination string) tui.C
 		),
 		sourceList:      scrolllist.New(),
 		destinationList: scrolllist.New(),
+		jpegOnlyList:    scrolllist.New(),
+		rawOnlyList:     scrolllist.New(),
 		resultList:      scrolllist.New(),
 		menu:            contextmenu.New(contextmenu.Item{ID: "open", Label: "Open with default app"}),
 		width:           80, height: 22,
@@ -288,7 +323,60 @@ func scanDirectories(paths [pathFieldCount]string) scanSummary {
 	}
 	scanRoot("SRC", paths[sourceField], &summary.source)
 	scanRoot("DST", paths[destinationField], &summary.destination)
+	classifySidecars(summary.source)
 	return summary
+}
+
+var rawExtensions = map[string]struct{}{
+	"3FR": {}, "ARW": {}, "CR2": {}, "CR3": {}, "DNG": {}, "ERF": {},
+	"IIQ": {}, "KDC": {}, "MEF": {}, "MOS": {}, "MRW": {}, "NEF": {},
+	"NRW": {}, "ORF": {}, "PEF": {}, "RAF": {}, "RAW": {}, "RW2": {},
+	"RWL": {}, "SR2": {}, "SRF": {},
+}
+
+func photoKind(path string) mediaKind {
+	extension := fileExtension(path)
+	if extension == "JPG" || extension == "JPEG" {
+		return mediaJPEG
+	}
+	if _, ok := rawExtensions[extension]; ok {
+		return mediaRAW
+	}
+	return mediaOther
+}
+
+func pairKey(path string) string {
+	directory := filepath.ToSlash(filepath.Dir(filepath.FromSlash(path)))
+	name := filepath.Base(filepath.FromSlash(path))
+	extension := filepath.Ext(name)
+	return strings.ToLower(filepath.ToSlash(filepath.Join(directory, name[:len(name)-len(extension)])))
+}
+
+// classifySidecars is filename-only inventory work. EXIF inspection and
+// capture-date destination planning are deliberately outside the current UI
+// change.
+func classifySidecars(files []scannedFile) {
+	jpegByStem := make(map[string]int)
+	rawByStem := make(map[string][]int)
+	for index := range files {
+		files[index].mediaKind = photoKind(files[index].path)
+		if files[index].mediaKind == mediaJPEG {
+			jpegByStem[pairKey(files[index].path)] = index
+		} else if files[index].mediaKind == mediaRAW {
+			key := pairKey(files[index].path)
+			rawByStem[key] = append(rawByStem[key], index)
+		}
+	}
+	for key, rawIndices := range rawByStem {
+		jpegIndex, ok := jpegByStem[key]
+		if !ok {
+			continue
+		}
+		files[jpegIndex].hasSidecar = true
+		for _, rawIndex := range rawIndices {
+			files[rawIndex].hasSidecar = true
+		}
+	}
 }
 
 func (m importModel) Init() tea.Cmd { return nil }
@@ -333,6 +421,27 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stage = parameterStage
 		}
 		return m, nil
+	case postprocessDoneMsg:
+		m.postprocess.running = false
+		m.postprocess.result = msg.result
+		moved := make(map[string]string)
+		for _, outcome := range msg.result.Files {
+			if outcome.Status == postprocess.Moved {
+				moved[outcome.Original] = outcome.Final
+			}
+		}
+		for index := range m.processing.results {
+			if destination, ok := moved[m.processing.results[index].Destination]; ok {
+				if m.processing.results[index].PlannedDestination == "" {
+					m.processing.results[index].PlannedDestination = m.processing.results[index].Destination
+				}
+				m.processing.results[index].Destination = destination
+			}
+		}
+		if msg.stateError != nil {
+			m.actionNotice = "Post-processing completed, but state update failed: " + msg.stateError.Error()
+		}
+		return m, nil
 	case tea.MouseMsg:
 		return m.updateMouse(msg)
 	case tea.KeyMsg:
@@ -372,17 +481,27 @@ func (m importModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		leftWidth, _ := landscapeColumnWidths(m.width)
 		navigation := pageactions.Config{Prev: &pageactions.Action{Destination: "Parameters"}}
 		if m.processingComplete() {
-			navigation.Next = &pageactions.Action{Destination: "Result"}
+			navigation.Next = &pageactions.Action{Destination: m.afterProcessingDestination()}
 		}
 		switch pageactions.Hit(navigation, leftWidth, msg.X, msg.Y-(m.height-4)) {
 		case pageactions.Prev:
 			m.beginLeaveConfirmation(false)
 		case pageactions.Next:
+			return m.startPostProcessing()
+		}
+		return m, nil
+	}
+	if m.stage == postprocessStage && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= m.height-4 && !m.postprocess.running {
+		navigation := pageactions.Config{Prev: &pageactions.Action{Destination: "Processing"}, Next: &pageactions.Action{Destination: "Result"}}
+		switch pageactions.Hit(navigation, m.width, msg.X, msg.Y-(m.height-4)) {
+		case pageactions.Prev:
+			m.stage = processingStage
+		case pageactions.Next:
 			m.openResult()
 		}
 		return m, nil
 	}
-	if m.stage != parameterStage || m.width < 63 {
+	if m.stage != parameterStage || m.width < 140 {
 		return m, nil
 	}
 	m.registerParameterBounds()
@@ -508,7 +627,8 @@ func (m importModel) clickParameters(x, y int) (tea.Model, tea.Cmd) {
 			Prev: &pageactions.Action{Destination: "Directories"},
 			Next: &pageactions.Action{Destination: "Processing"},
 		}
-		switch pageactions.Hit(navigation, layout.leftWidth, x, y-(m.height-4)) {
+		trailingX := layout.leftWidth + 2*layout.middleWidth + 3
+		switch pageactions.Hit(navigation, layout.trailingWidth, x-trailingX, y-(m.height-4)) {
 		case pageactions.Prev:
 			m.stage = setupStage
 			m.controls.SetFocusID(destinationID)
@@ -524,19 +644,30 @@ func (m *importModel) registerParameterBounds() {
 	layout := m.parameterLayout()
 	m.parameterFields.SetBounds("parameters", datafield.Bounds{X: 0, Y: 0, Width: layout.leftWidth, Height: layout.parameterHeight})
 	m.parameterFields.SetBounds("summary", datafield.Bounds{X: 0, Y: layout.parameterHeight + 1, Width: layout.leftWidth, Height: layout.summaryHeight})
-	m.parameterFields.SetBounds("source-results", datafield.Bounds{X: layout.leftWidth + 1, Y: 0, Width: layout.rightWidth, Height: layout.sourceHeight})
-	m.parameterFields.SetBounds("destination-results", datafield.Bounds{X: layout.leftWidth + 1, Y: layout.sourceHeight + 1, Width: layout.rightWidth, Height: layout.destinationHeight})
+	sourceX := layout.leftWidth + 1
+	destinationX := sourceX + layout.middleWidth + 1
+	trailingX := destinationX + layout.middleWidth + 1
+	m.parameterFields.SetBounds("source-results", datafield.Bounds{X: sourceX, Y: 0, Width: layout.middleWidth, Height: m.height})
+	m.parameterFields.SetBounds("destination-results", datafield.Bounds{X: destinationX, Y: 0, Width: layout.middleWidth, Height: m.height})
+	m.parameterFields.SetBounds("jpeg-only-results", datafield.Bounds{X: trailingX, Y: 0, Width: layout.trailingWidth, Height: layout.exceptionHeight})
+	m.parameterFields.SetBounds("raw-only-results", datafield.Bounds{X: trailingX, Y: layout.exceptionHeight + 1, Width: layout.trailingWidth, Height: layout.exceptionHeight})
 }
 
 func (m *importModel) scrollResultList(id string, delta int) {
 	layout := m.parameterLayout()
 	switch id {
 	case "source-results":
-		m.sourceList.SetSize(max(1, layout.rightWidth-4), max(1, layout.sourceHeight-4))
+		m.sourceList.SetSize(max(1, layout.middleWidth-4), max(1, m.height-4))
 		m.sourceList.Scroll(delta)
 	case "destination-results":
-		m.destinationList.SetSize(max(1, layout.rightWidth-4), max(1, layout.destinationHeight-4))
+		m.destinationList.SetSize(max(1, layout.middleWidth-4), max(1, m.height-4))
 		m.destinationList.Scroll(delta)
+	case "jpeg-only-results":
+		m.jpegOnlyList.SetSize(max(1, layout.trailingWidth-4), max(1, layout.exceptionHeight-4))
+		m.jpegOnlyList.Scroll(delta)
+	case "raw-only-results":
+		m.rawOnlyList.SetSize(max(1, layout.trailingWidth-4), max(1, layout.exceptionHeight-4))
+		m.rawOnlyList.Scroll(delta)
 	}
 }
 
@@ -615,8 +746,36 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.processing.workerOffset = max(0, len(m.processing.workers)-1)
 		case "enter", form.PrimaryActionKey:
 			if m.processingComplete() {
+				return m.startPostProcessing()
+			}
+		}
+		return m, nil
+	}
+	if m.stage == postprocessStage {
+		if m.postprocessPrompt {
+			var decision confirm.Decision
+			m.postprocessDialog, decision = m.postprocessDialog.Update(key)
+			switch decision {
+			case confirm.Confirmed:
+				m.postprocessPrompt = false
+				return m.runPostProcessing()
+			case confirm.Cancelled:
+				m.postprocessPrompt = false
+				m.postprocess.skipped = true
 				m.openResult()
 			}
+			return m, nil
+		}
+		if m.postprocess.running {
+			return m, nil
+		}
+		switch key {
+		case "enter", form.PrimaryActionKey:
+			m.openResult()
+		case "esc":
+			m.stage = processingStage
+		case "q", "ctrl+c":
+			m.beginLeaveConfirmation(true)
 		}
 		return m, nil
 	}
@@ -738,7 +897,7 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m importModel) listFocused() bool {
 	current := m.parameterFields.Current()
-	return current == "source-results" || current == "destination-results"
+	return current == "source-results" || current == "destination-results" || current == "jpeg-only-results" || current == "raw-only-results"
 }
 
 func (m *importModel) updateListNavigation(key string) bool {
@@ -774,11 +933,6 @@ func (m *importModel) updateListNavigation(key string) bool {
 	return true
 }
 
-func (m importModel) resultListWidth() int {
-	_, rightWidth := landscapeColumnWidths(m.width)
-	return max(1, rightWidth-4)
-}
-
 func (m *importModel) activeResultList() *scrolllist.Model {
 	if m.parameterFields.Current() == "source-results" {
 		return &m.sourceList
@@ -786,16 +940,22 @@ func (m *importModel) activeResultList() *scrolllist.Model {
 	if m.parameterFields.Current() == "destination-results" {
 		return &m.destinationList
 	}
+	if m.parameterFields.Current() == "jpeg-only-results" {
+		return &m.jpegOnlyList
+	}
+	if m.parameterFields.Current() == "raw-only-results" {
+		return &m.rawOnlyList
+	}
 	return nil
 }
 
 func (m *importModel) sizeResultList(list *scrolllist.Model, id string) {
 	layout := m.parameterLayout()
-	height := layout.sourceHeight
-	if id == "destination-results" {
-		height = layout.destinationHeight
+	width, height := layout.middleWidth, m.height
+	if id == "jpeg-only-results" || id == "raw-only-results" {
+		width, height = layout.trailingWidth, layout.exceptionHeight
 	}
-	list.SetSize(max(1, layout.rightWidth-4), max(1, height-4))
+	list.SetSize(max(1, width-4), max(1, height-4))
 }
 
 func (m *importModel) syncResultLists() {
@@ -808,6 +968,18 @@ func (m *importModel) syncResultLists() {
 	}
 	m.sourceList.SetItems(toItems(m.filteredSource()))
 	m.destinationList.SetItems(toItems(m.scan.destination))
+	m.jpegOnlyList.SetItems(toItems(m.orphanFiles(mediaJPEG)))
+	m.rawOnlyList.SetItems(toItems(m.orphanFiles(mediaRAW)))
+}
+
+func (m importModel) orphanFiles(kind mediaKind) []scannedFile {
+	files := make([]scannedFile, 0)
+	for _, file := range m.filteredSource() {
+		if file.mediaKind == kind && !file.hasSidecar {
+			files = append(files, file)
+		}
+	}
+	return files
 }
 
 func (m *importModel) configureExtensions() {
@@ -857,7 +1029,13 @@ func (m *importModel) selectHoveredResult(id string, mouseY int) bool {
 		return m.sourceList.SelectRow(mouseY - 3)
 	case "destination-results":
 		m.sizeResultList(&m.destinationList, id)
-		return m.destinationList.SelectRow(mouseY - layout.sourceHeight - 4)
+		return m.destinationList.SelectRow(mouseY - 3)
+	case "jpeg-only-results":
+		m.sizeResultList(&m.jpegOnlyList, id)
+		return m.jpegOnlyList.SelectRow(mouseY - 3)
+	case "raw-only-results":
+		m.sizeResultList(&m.rawOnlyList, id)
+		return m.rawOnlyList.SelectRow(mouseY - layout.exceptionHeight - 4)
 	default:
 		return false
 	}
@@ -867,6 +1045,10 @@ func (m importModel) selectedPath(target string) (string, bool) {
 	list, root := m.sourceList, m.paths[sourceField]
 	if target == "destination-results" {
 		list, root = m.destinationList, m.paths[destinationField]
+	} else if target == "jpeg-only-results" {
+		list = m.jpegOnlyList
+	} else if target == "raw-only-results" {
+		list = m.rawOnlyList
 	}
 	item, ok := list.Selected()
 	if !ok {
@@ -980,10 +1162,47 @@ func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 	return m, waitTransferUpdate(updates)
 }
 
+func (m importModel) startPostProcessing() (tea.Model, tea.Cmd) {
+	m.actionNotice = ""
+	m.stage = postprocessStage
+	m.postprocessPrompt = true
+	m.postprocessDialog = confirm.New(confirm.Config{Title: "ORGANIZE BY CAPTURE DATE?", Message: "Move verified JPG and RAW files into YYYYMMDD folders?", Detail: "Skip continues to Result without changing files.", ConfirmLabel: "Organize", CancelLabel: "Skip"})
+	return m, nil
+}
+
+func (m importModel) runPostProcessing() (tea.Model, tea.Cmd) {
+	files := make([]postprocess.File, 0, len(m.processing.results))
+	for _, result := range m.processing.results {
+		if result.Phase == importer.PhaseComplete {
+			files = append(files, postprocess.File{Source: result.Source, Path: result.Destination})
+		}
+	}
+	root := expandHome(m.paths[destinationField])
+	statePath := filepath.Join(root, m.stateFilename)
+	m.postprocess = postprocessState{running: true}
+	return m, func() tea.Msg {
+		result := postprocess.Run(root, files)
+		moved := make(map[string]string)
+		for _, outcome := range result.Files {
+			if outcome.Status == postprocess.Moved {
+				moved[outcome.Original] = outcome.Final
+			}
+		}
+		return postprocessDoneMsg{result: result, stateError: importer.UpdateDestinations(statePath, moved)}
+	}
+}
+
 func (m *importModel) openResult() {
+	organized := make(map[string]postprocess.Outcome)
+	for _, outcome := range m.postprocess.result.Files {
+		organized[outcome.Final] = outcome
+	}
 	items := make([]scrolllist.Item, 0, len(m.processing.results))
 	for _, result := range m.processing.results {
 		label := fmt.Sprintf("✓  %s  ·  %s  ·  SHA-256 MATCH", filepath.Base(result.Destination), formatBytes(result.Size))
+		if outcome, ok := organized[result.Destination]; ok && outcome.Status == postprocess.Moved {
+			label = fmt.Sprintf("✓  %s/%s  ·  %s  ·  SHA-256 MATCH", outcome.Date, filepath.Base(result.Destination), formatBytes(result.Size))
+		}
 		if result.Phase == importer.PhaseSkipped {
 			label = fmt.Sprintf("–  %s  ·  skipped", filepath.Base(result.Destination))
 		}
@@ -1160,6 +1379,9 @@ func (m importModel) View() string {
 	if m.stage == resultStage {
 		return m.resultView()
 	}
+	if m.stage == postprocessStage {
+		return m.postprocessView()
+	}
 	if m.stage == processingStage {
 		return m.processingView()
 	}
@@ -1230,6 +1452,9 @@ func (m importModel) resultView() string {
 		fmt.Sprintf("Verified      %d files", len(m.processing.verified)),
 		fmt.Sprintf("Skipped       %d files", m.processing.skipped),
 		fmt.Sprintf("Failed        %d files", m.processing.failed),
+		"",
+		importSectionStyle.Render("POST-PROCESSING"),
+		m.postprocessSummary(),
 	}, "\n")
 	actions := m.controls.ViewFocusedWidth([]string{deleteStateID}, actionsFocused, leftWidth-4)
 	cleanupNote := importNoteStyle.Render("Delete is the default. Retain state only for audit or diagnosis.")
@@ -1250,7 +1475,71 @@ func (m importModel) resultView() string {
 	if m.leaveConfirm {
 		view = overlay.Place(view, m.leaveConfirmationView(), m.width, m.height)
 	}
+	if m.postprocessPrompt {
+		view = overlay.Place(view, m.postprocessDialog.View(m.width), m.width, m.height)
+	}
 	return view
+}
+
+func (m importModel) postprocessView() string {
+	state := "COMPLETE"
+	note := m.postprocessSummary()
+	if m.postprocess.running {
+		state, note = "RUNNING", "Reading capture dates and organizing verified files…"
+	}
+	header := fieldset.View("Post-processing", strings.Join([]string{
+		state + "  ·  ORGANIZE BY CAPTURE DATE",
+		"Only files already verified and published by Processing are eligible.",
+		note,
+	}, "\n"), m.width)
+	lines := make([]string, 0, len(m.postprocess.result.Files))
+	for index, outcome := range m.postprocess.result.Files {
+		mark := "–"
+		text := filepath.Base(outcome.Original) + " · skipped"
+		if outcome.Status == postprocess.Moved {
+			mark, text = "✓", filepath.Base(outcome.Original)+" → "+outcome.Date+"/ · "+outcome.DateSource
+		} else if outcome.Status == postprocess.Failed {
+			mark, text = "!", filepath.Base(outcome.Original)+" · "+outcome.Error
+		}
+		lines = append(lines, fmt.Sprintf("%3d %s %s", index+1, mark, text))
+	}
+	if len(lines) == 0 {
+		lines = append(lines, importNoteStyle.Render("No post-processing file results"))
+	}
+	bodyHeight := max(3, m.height-lipgloss.Height(header)-5)
+	body := fieldset.View("Organization results", fitContentHeight(strings.Join(lines, "\n"), bodyHeight-2, m.width-4), m.width)
+	view := lipgloss.JoinVertical(lipgloss.Left, header, "", body)
+	if !m.postprocess.running {
+		view = overlay.PlaceAt(view, pageactions.View(pageactions.Config{
+			Prev: &pageactions.Action{Destination: "Processing"},
+			Next: &pageactions.Action{Destination: "Result"},
+		}, m.width), 0, max(0, m.height-4), m.width, m.height)
+	}
+	if m.postprocessPrompt {
+		view = overlay.Place(view, m.postprocessDialog.View(m.width), m.width, m.height)
+	}
+	if m.leaveConfirm {
+		view = overlay.Place(view, m.leaveConfirmationView(), m.width, m.height)
+	}
+	return view
+}
+
+func (m importModel) postprocessSummary() string {
+	if m.postprocess.skipped {
+		return "Skipped by parameter choice"
+	}
+	moved, failed, skipped := 0, 0, 0
+	for _, outcome := range m.postprocess.result.Files {
+		switch outcome.Status {
+		case postprocess.Moved:
+			moved++
+		case postprocess.Failed:
+			failed++
+		case postprocess.Skipped:
+			skipped++
+		}
+	}
+	return fmt.Sprintf("Organized %d   Skipped %d   Failed %d", moved, skipped, failed)
 }
 
 func (m importModel) scanView() string {
@@ -1318,6 +1607,7 @@ func (m importModel) resultHeaderContent() string {
 		"Destination  " + m.paths[destinationField],
 		fmt.Sprintf("%d/%d files passed Source and Destination SHA-256 comparison", len(m.processing.verified), len(m.processing.files)),
 		fmt.Sprintf("Published %s   Skipped %d   Failed %d", formatBytes(m.publishedBytes()), m.processing.skipped, m.processing.failed),
+		"Post-process " + m.postprocessSummary(),
 	}, "\n")
 }
 
@@ -1364,7 +1654,7 @@ func (m importModel) processingView() string {
 	leftBottomHeight := max(4, lowerHeight-leftTopHeight-5)
 	navigation := pageactions.Config{Prev: &pageactions.Action{Destination: "Parameters"}}
 	if m.processingComplete() {
-		navigation.Next = &pageactions.Action{Destination: "Result"}
+		navigation.Next = &pageactions.Action{Destination: m.afterProcessingDestination()}
 	}
 	queuePane := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -1378,6 +1668,10 @@ func (m importModel) processingView() string {
 		view = overlay.Place(view, m.leaveConfirmationView(), m.width, m.height)
 	}
 	return view
+}
+
+func (m importModel) afterProcessingDestination() string {
+	return "Post-processing"
 }
 
 func (m importModel) processingPercent() int {
@@ -1622,34 +1916,42 @@ func (m importModel) setupView() string {
 }
 
 func (m importModel) parameterView() string {
-	if m.width < 63 {
+	if m.width < 140 {
 		content := lipgloss.JoinVertical(
 			lipgloss.Left,
 			importStepStyle.Render("PARAMETERS  ·  PHOTO IMPORT"),
 			importHeadingStyle.Render("More width required"),
-			importNoteStyle.Render(ansi.Truncate("Widen the terminal to at least 63 columns for the scan and parameter panes.", max(1, m.width-4), "…")),
+			importNoteStyle.Render(ansi.Truncate("Widen the terminal to at least 140 columns for the four parameter columns.", max(1, m.width-4), "…")),
 		)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 	}
 	layout := m.parameterLayout()
-	rightWidth, leftWidth := layout.rightWidth, layout.leftWidth
+	leftWidth, middleWidth, trailingWidth := layout.leftWidth, layout.middleWidth, layout.trailingWidth
 	sourceFocused := m.parameterFields.Current() == "source-results"
 	destinationFocused := m.parameterFields.Current() == "destination-results"
 	parametersFocused := m.parameterFields.Current() == "parameters"
 	summaryFocused := m.parameterFields.Current() == "summary"
-	sourceHeight, destinationHeight := layout.sourceHeight, layout.destinationHeight
-	sourceList, destinationList := m.sourceList, m.destinationList
-	sourceList.SetSize(rightWidth-4, max(1, sourceHeight-4))
-	destinationList.SetSize(rightWidth-4, max(1, destinationHeight-4))
-	sourceContent := directoryRootLine(m.paths[sourceField], rightWidth-4) + "\n" + importNoteStyle.Render(inventorySummary(m.filteredSource())) + "\n" + sourceList.View(sourceFocused, importSectionStyle, importNoteStyle)
-	destinationContent := directoryRootLine(m.paths[destinationField], rightWidth-4) + "\n" + importNoteStyle.Render(inventorySummary(m.scan.destination)) + "\n" + destinationList.View(destinationFocused, importSectionStyle, importNoteStyle)
-	sourceContent = fitContentHeight(sourceContent, sourceHeight-2, rightWidth-4)
-	destinationContent = fitContentHeight(destinationContent, destinationHeight-2, rightWidth-4)
-	filesPane := lipgloss.JoinVertical(
-		lipgloss.Left,
-		fieldset.ViewFocused("Source", sourceContent, rightWidth, sourceFocused),
-		resultFlowDivider(rightWidth),
-		fieldset.ViewFocused("Destination", destinationContent, rightWidth, destinationFocused),
+	jpegFocused := m.parameterFields.Current() == "jpeg-only-results"
+	rawFocused := m.parameterFields.Current() == "raw-only-results"
+	sourceList, destinationList, jpegList, rawList := m.sourceList, m.destinationList, m.jpegOnlyList, m.rawOnlyList
+	sourceList.SetSize(middleWidth-4, max(1, m.height-4))
+	destinationList.SetSize(middleWidth-4, max(1, m.height-4))
+	jpegList.SetSize(trailingWidth-4, max(1, layout.exceptionHeight-4))
+	rawList.SetSize(trailingWidth-4, max(1, layout.exceptionHeight-4))
+	inventory := func(legend, root string, files []scannedFile, list scrolllist.Model, focused bool, width, height int) string {
+		content := directoryRootLine(root, width-4) + "\n" + importNoteStyle.Render(inventorySummary(files)) + "\n" + list.View(focused, importSectionStyle, importNoteStyle)
+		return fieldset.ViewFocused(legend, fitContentHeight(content, height-2, width-4), width, focused)
+	}
+	sourcePane := inventory("Source files", m.paths[sourceField], m.filteredSource(), sourceList, sourceFocused, middleWidth, m.height)
+	destinationPane := inventory("Destination files", m.paths[destinationField], m.scan.destination, destinationList, destinationFocused, middleWidth, m.height)
+	exceptionPane := lipgloss.JoinVertical(lipgloss.Left,
+		inventory("JPG only · no RAW", m.paths[sourceField], m.orphanFiles(mediaJPEG), jpegList, jpegFocused, trailingWidth, layout.exceptionHeight),
+		"",
+		inventory("RAW only · no JPG", m.paths[sourceField], m.orphanFiles(mediaRAW), rawList, rawFocused, trailingWidth, layout.exceptionHeight),
+		pageactions.View(pageactions.Config{
+			Prev: &pageactions.Action{Destination: "Directories"},
+			Next: &pageactions.Action{Destination: "Processing"},
+		}, trailingWidth),
 	)
 	summaryContent := m.importSummaryView()
 	parameterHeight := layout.parameterHeight
@@ -1660,12 +1962,8 @@ func (m importModel) parameterView() string {
 		fieldset.ViewFocused("Parameters", parameterContent, leftWidth, parametersFocused),
 		"",
 		fieldset.ViewFocused("Import summary", summaryContent, leftWidth, summaryFocused),
-		pageactions.View(pageactions.Config{
-			Prev: &pageactions.Action{Destination: "Directories"},
-			Next: &pageactions.Action{Destination: "Processing"},
-		}, leftWidth),
 	)
-	view := lipgloss.JoinHorizontal(lipgloss.Top, controlsPane, " ", filesPane)
+	view := lipgloss.JoinHorizontal(lipgloss.Top, controlsPane, " ", sourcePane, " ", destinationPane, " ", exceptionPane)
 	if m.menu.IsOpen() {
 		x, y := m.menu.Position()
 		view = overlay.PlaceAt(view, m.menu.View(), x, y, m.width, m.height)
@@ -1674,21 +1972,25 @@ func (m importModel) parameterView() string {
 }
 
 type parameterLayout struct {
-	leftWidth, rightWidth           int
-	sourceHeight, destinationHeight int
-	parameterHeight, summaryHeight  int
+	leftWidth, middleWidth, trailingWidth int
+	parameterHeight, summaryHeight        int
+	exceptionHeight                       int
 }
 
 func (m importModel) parameterLayout() parameterLayout {
-	leftWidth, rightWidth := landscapeColumnWidths(m.width)
-	sourceHeight := max(3, (m.height-1)/2)
-	destinationHeight := max(3, m.height-1-sourceHeight)
-	summaryHeight := lipgloss.Height(m.importSummaryView()) + 2
-	parameterHeight := max(3, m.height-summaryHeight-5)
+	usable := max(4, m.width-3)
+	leftWidth := min(40, max(36, usable/5))
+	trailingWidth := min(40, max(36, usable/5))
+	middleWidth := max(1, (usable-leftWidth-trailingWidth)/2)
+	leftWidth += usable - leftWidth - trailingWidth - 2*middleWidth
+	parameterHeight := min(max(10, lipgloss.Height(m.parametersView(leftWidth-4, false))+2), max(3, m.height-4))
+	summaryHeight := max(3, m.height-parameterHeight-1)
+	actionsHeight := 4
+	exceptionHeight := max(3, (m.height-actionsHeight-1)/2)
 	return parameterLayout{
-		leftWidth: leftWidth, rightWidth: rightWidth,
-		sourceHeight: sourceHeight, destinationHeight: destinationHeight,
+		leftWidth: leftWidth, middleWidth: middleWidth, trailingWidth: trailingWidth,
 		parameterHeight: parameterHeight, summaryHeight: summaryHeight,
+		exceptionHeight: exceptionHeight,
 	}
 }
 
@@ -1700,14 +2002,6 @@ func landscapeColumnWidths(width int) (int, int) {
 
 func directoryRootLine(path string, width int) string {
 	return importNoteStyle.Render(ansi.Truncate("Root  "+path, max(1, width), "…"))
-}
-
-func resultFlowDivider(width int) string {
-	width = max(9, width)
-	arrows := " ▼  ▼  ▼ "
-	left := (width - lipgloss.Width(arrows)) / 2
-	right := width - left - lipgloss.Width(arrows)
-	return importSectionStyle.Render(strings.Repeat("━", left) + arrows + strings.Repeat("━", right))
 }
 
 func (m importModel) importSummaryView() string {
@@ -1803,19 +2097,29 @@ func (m importModel) Status() tui.Status {
 	}
 	if m.stage == processingStage {
 		left := "PROCESSING · RUNNING"
-		right := "↑↓ Workers  p Pause  esc Back  q Quit"
+		right := "↑↓ Workers  p Pause  q Quit"
 		if m.processing.paused {
 			left = "PROCESSING · PAUSED"
-			right = "↑/↓ Workers  p Resume  esc Back  q Quit"
+			right = "↑↓ Workers  p Resume  q Quit"
 		}
 		if m.processingComplete() {
 			left = "PROCESSING · COMPLETE"
-			right = "↑↓ Workers  n Next  esc Prev  q Quit"
+			right = "↑↓  n Next  q Quit"
+		}
+		return m.withWorkflow(tui.Status{Left: left, Right: right})
+	}
+	if m.stage == postprocessStage {
+		left := "POST-PROCESSING · COMPLETE"
+		right := "n Next  esc Prev  q Quit"
+		if m.postprocess.running {
+			left, right = "POST-PROCESSING · RUNNING", ""
+		} else if m.postprocess.skipped {
+			left = "POST-PROCESSING · SKIPPED"
 		}
 		return m.withWorkflow(tui.Status{Left: left, Right: right})
 	}
 	if m.stage == resultStage {
-		return m.withWorkflow(tui.Status{Left: "RESULT · VERIFIED", Right: "alt+h/l Focus  ↑↓ Browse  space Toggle  r Again  esc/q Quit"})
+		return m.withWorkflow(tui.Status{Left: "RESULT · VERIFIED", Right: "alt+h/l Focus  ↑↓ Browse  r Again  q Quit"})
 	}
 	if m.picking {
 		if m.picker.HasDialog() {
@@ -1855,10 +2159,12 @@ func (m importModel) withWorkflow(status tui.Status) tui.Status {
 		current = 1
 	case processingStage:
 		current = 2
-	case resultStage:
+	case postprocessStage:
 		current = 3
+	case resultStage:
+		current = 4
 	}
-	status.Center = stepper.View([]string{"Directories", "Parameters", "Processing", "Result"}, current, max(1, m.width*48/100))
+	status.Center = stepper.View([]string{"Directories", "Parameters", "Processing", "Post-processing", "Result"}, current, max(1, m.width*56/100))
 	return status
 }
 
@@ -1869,7 +2175,7 @@ func scanStatus(summary scanSummary) string {
 // CapturesShellKey keeps Esc inside the temporary picker so it cancels the
 // picker instead of leaving Photo Import.
 func (m importModel) CapturesShellKey(key string) bool {
-	if m.leaveConfirm || m.stage == processingStage {
+	if m.leaveConfirm || m.stage == processingStage || m.stage == postprocessStage {
 		return key == "esc" || key == "q" || key == "ctrl+c"
 	}
 	if m.stage == resultStage {
@@ -1893,6 +2199,8 @@ func (m importModel) CommandPath() []string {
 		return []string{"scan"}
 	case processingStage:
 		return []string{"processing"}
+	case postprocessStage:
+		return []string{"post-processing"}
 	case resultStage:
 		return []string{"result"}
 	default:
