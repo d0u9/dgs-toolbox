@@ -263,3 +263,48 @@ func TestTrackListsParts(t *testing.T) {
 		t.Fatalf("hotel = %+v", got.Parts[3])
 	}
 }
+
+func TestCleanIsSavedAndApplied(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	path := writeStayGPX(t)
+	put := func(body string) int {
+		request, _ := http.NewRequest(http.MethodPut, server.URL+"/api/clean", strings.NewReader(body))
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		return response.StatusCode
+	}
+	var before trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &before)
+	if before.Clean.Sidecar != "" || before.Clean.Params.Spikes.MaxSpeed != 100 || len(before.Removed) != len(before.Points) {
+		t.Fatalf("uncleaned = %+v", before.Clean)
+	}
+
+	quoted, _ := json.Marshal(path)
+	body := `{"path":` + string(quoted) + `,"clean":{"stops":{"enabled":true},"smooth":{"enabled":true},"removed":[0,1]}}`
+	if code := put(body); code != http.StatusOK {
+		t.Fatalf("PUT = %d", code)
+	}
+	var after trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &after)
+	c := after.Clean
+	if c.Sidecar == "" || c.Counts.Manual != 2 || c.Counts.Stop == 0 || c.Counts.Moved == 0 || after.Removed[0] != "manual" || len(after.Original) != len(after.Points) {
+		t.Fatalf("cleaned = %+v", c)
+	}
+	if after.Speed[0] != nil || after.Distance[1] != 0 || len(after.Stops) != 1 || after.Removed[after.Stops[0].First] != "" {
+		t.Fatalf("removed points or stops wrong: speed %v distance %v stops %+v", after.Speed[0], after.Distance[1], after.Stops)
+	}
+
+	if code := put(`{"path":` + string(quoted) + `,"clean":{"spikes":{"maxSpeed":-1}}}`); code != http.StatusBadRequest {
+		t.Fatalf("negative speed = %d", code)
+	}
+	if code := put(`{"path":` + string(quoted) + `,"clean":{}}`); code != http.StatusOK {
+		t.Fatalf("clearing = %d", code)
+	}
+	if _, err := os.Stat(path + ".dgs.json"); !os.IsNotExist(err) {
+		t.Fatalf("sidecar left after clearing: %v", err)
+	}
+}

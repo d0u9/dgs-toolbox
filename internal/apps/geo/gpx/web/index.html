@@ -60,7 +60,10 @@
 <div id="sidebar-splitter" class="splitter col" role="separator" aria-orientation="vertical"></div>
 
 <main class="workspace">
-  <div id="map" class="map"></div>
+  <div class="map-area">
+    <div id="map" class="map"></div>
+    <aside id="clean-panel" class="clean-panel" hidden aria-label="Clean"></aside>
+  </div>
   <div id="profile-splitter" class="splitter row" role="separator" aria-orientation="horizontal" hidden></div>
   <section id="profile" class="profile" hidden>
     <div class="profile-head">
@@ -69,6 +72,7 @@
       <span id="profile-stats" class="muted"></span>
       <span class="topbar-spacer"></span>
       <span id="profile-readout" class="readout"></span>
+      <button id="toggle-clean" class="chip" aria-pressed="false" title="Clean the focused track: remove spikes and drift, smooth jitter, remove points by hand">Clean</button>
       <span class="chart-toggles" role="group" aria-label="Charts">
         <button id="toggle-elevation" class="chip" aria-pressed="true" title="Show or hide the elevation chart">Elevation</button>
         <button id="toggle-speed" class="chip" aria-pressed="true" title="Show or hide the speed chart">Speed</button>

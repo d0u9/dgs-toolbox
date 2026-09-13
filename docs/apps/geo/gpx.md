@@ -35,7 +35,8 @@ server exposes the API under `/api/`; everything else is the page.
 | `/api/health` | Answers `{"ok":true}`. |
 | `/api/config` | The base maps — built-in first, then configured — each with its coordinate system, and the folder to open at. |
 | `/api/dir?path=` | The folders and `.gpx` files of a folder. Hidden entries are left out. |
-| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points), route and waypoint. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
+| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points), route and waypoint — and its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
+| `PUT /api/clean` | Writes a track's cleaning settings, and the points removed by hand, to its sidecar. Settings left out keep their defaults; a cleaning that does nothing removes the sidecar. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
 | `POST /api/reveal` | Shows a file or folder in this machine's file manager. Refused unless the request comes from this machine. `/api/config` says whether the page may offer it. |
 
@@ -172,6 +173,69 @@ map. It is the interface later milestones build on.
   the expanded folders, which sidebar panels are folded, the stop thresholds, and which charts are shown and
   how, and restores them on reload.
 
+## Cleaning
+
+The page's *Clean* chip, in the profile header, opens a panel over the map for
+the focused track. Nothing is cleaned until a filter is switched on. Settings
+are saved at once to the track's sidecar (see *The sidecar* below); the source
+GPX is never written. Filters run in this order, each seeing only what the
+ones before kept.
+
+Cleaning applies to the whole file: every `<trk>` of it, joined in file order,
+under one set of settings in one sidecar. Routes and waypoints are not cleaned.
+Spikes, drift and smoothing stay within a recorded segment; a stop may span
+two. Hiding a track in the file's list hides it from the map and the lasso,
+not from the filters.
+
+| Filter | Removes or moves | Settings (defaults) |
+| --- | --- | --- |
+| By hand | Points removed with the lasso. They go first, so they cannot sway a filter. | — |
+| Sudden jumps (`spikes`) | A point reached and left faster than the max speed; a point the speed rose into and fell out of faster than the max acceleration; a point the path turns back at by the turn angle, standing at least the min jump from both neighbours and further from each than they are apart; a run of up to 5 points entered and left too fast while passing straight by is not. | max speed 360 km/h, max acceleration 15 m/s², turn back 160°, min jump 30 m |
+| Speed drift (`hampel`) | A point whose speed from the previous point is above the median of its neighbours' by the threshold × scaled MAD (never less than the min spread). Only too fast counts. Each pass removes the worst in its neighbourhood and measures again, so the point after a false fix is not removed with it. Optionally stricter, down to a quarter, for fixes with HDOP above 2 or fewer than 6 satellites. | 7 neighbours each side, threshold 3, min spread 3.6 km/h, stricter for poor fixes |
+| Position jitter (`kalman`) | Moves points: a constant-velocity Kalman filter and RTS smoother over east and north, a fix counting as fix error × HDOP metres uncertain. Smoothing restarts at a segment or after a pause. | fix error 5 m, acceleration 1 m/s², restart after 60 s |
+| Scribbles in stops | Inside each stop found on what is left, keeps the points where it was entered and left and the one recorded midway, moved to the stop's centre, and removes the rest. | within 50 m, at least 5 min |
+
+A max speed of 360 km/h removes a flight; raise it for tracks recorded in the
+air.
+
+Distances, speeds, statistics, stops, the profile and the TUI summary are all
+measured on what cleaning kept, at its moved positions. The track's line skips
+removed points. *Compare with the recording*, on by default and remembered,
+draws the recording under it as a thin dashed line with removed points as dots
+coloured by what removed them: spike red, drift orange, stop grey, by hand
+purple.
+
+**Lasso.** With *Lasso* on, dragging on the map draws a shape; the focused
+track's kept points inside it are removed by hand. Holding Alt (⌥) while
+drawing restores points removed by hand instead. Map panning is off while the
+lasso is on; Esc or the button turns it off. *Restore all removed by hand*
+clears the list. Points in hidden tracks are left alone.
+
+### The sidecar
+
+Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
+
+```json
+{
+  "version": 1,
+  "clean": {
+    "spikes": { "enabled": true, "maxSpeed": 100, "maxAcceleration": 15, "turnAngle": 160, "minJump": 30 },
+    "drift": { "enabled": false, "halfWindow": 7, "threshold": 3, "minDeviation": 1, "quality": true },
+    "smooth": { "enabled": false, "positionSigma": 5, "acceleration": 1, "maxGap": 60 },
+    "stops": { "enabled": false, "distance": 50, "duration": 300 },
+    "removed": [118, 119, 120]
+  }
+}
+```
+
+Units are the SI ones the filters use: metres, seconds, m/s, m/s². `removed`
+holds point indices in file order, counting every track and segment. Settings
+missing from a sidecar keep their defaults, so an older one still loads; one
+that cannot be read is reported in the panel and the track is shown uncleaned.
+A sidecar from a newer version is not read. It is replaced in one step, never
+left half written. Editing the source GPX afterwards can shift the indices of
+points removed by hand.
+
 Speed at a point is the distance travelled over the 30 seconds centred on it,
 divided by the time taken (`track.Speeds`), so GPS jitter between neighbouring
 points does not read as changes of pace. Ascent and descent ignore changes
@@ -267,6 +331,8 @@ Done: see *The GPX browser* above.
 - The TUI shows duration, distance and stop count.
 
 ### M2 — Clean
+
+Done: see *Cleaning* above.
 
 Filters run in order. Each can be toggled and tuned, and the page compares
 before and after.

@@ -146,9 +146,9 @@ export class TrackLayers {
   }
 
   // nearest finds the index of the track point closest to a screen point,
-  // within radius pixels, or -1, skipping points of hidden tracks. Points are
-  // first filtered by the geographic box around the pointer so a long track
-  // does not project every point.
+  // within radius pixels, or -1, skipping points of hidden tracks and points
+  // cleaning removed. Points are first filtered by the geographic box around
+  // the pointer so a long track does not project every point.
   nearest(track, screenPoint, radius = 24, hiddenParts = new Set()) {
     const { map } = this;
     const corners = [
@@ -163,7 +163,7 @@ export class TrackLayers {
     for (let i = 0; i < points.length; i++) {
       const [lon, lat] = points[i];
       if (lon < west || lon > east || lat < south || lat > north) continue;
-      if (skipped.some((part) => i >= part.first && i <= part.last)) continue;
+      if (track.removed[i] || skipped.some((part) => i >= part.first && i <= part.last)) continue;
       const p = map.project(points[i]);
       const d = (p.x - screenPoint.x) ** 2 + (p.y - screenPoint.y) ** 2;
       if (d <= bestDistance) {
@@ -195,12 +195,16 @@ function geometry(track) {
     if (part.kind === "track") {
       const lines = [];
       let current = [];
+      // Points cleaning removed are left out; the line joins what was kept.
+      let previous = -1;
       for (let i = part.first; i <= part.last; i++) {
-        if (i > part.first && track.segments[i] !== track.segments[i - 1]) {
+        if (track.removed[i]) continue;
+        if (previous >= 0 && track.segments[i] !== track.segments[previous]) {
           lines.push(current);
           current = [];
         }
         current.push(track.points[i]);
+        previous = i;
       }
       if (current.length) lines.push(current);
       features.push({ type: "Feature", properties, geometry: { type: "MultiLineString", coordinates: lines } });

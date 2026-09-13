@@ -9,7 +9,11 @@ async function getJSON(url) {
 }
 
 async function postJSON(url, body) {
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return sendJSON("POST", url, body);
+}
+
+async function sendJSON(method, url, body) {
+  const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || `${response.status} ${response.statusText}`);
   return result;
@@ -22,6 +26,8 @@ export const api = {
   // coordinates is "wgs84" or "gcj02", the system the positions are drawn in.
   track: (path, stops, coordinates = "wgs84") =>
     getJSON(`api/track?path=${encodeURIComponent(path)}&coordinates=${coordinates}` + stopQuery(stops)),
+  // saveClean records a track's cleaning settings in the sidecar beside it.
+  saveClean: (path, clean) => sendJSON("PUT", "api/clean", { path, clean }),
   focus: (path, stops) => postJSON("api/focus", { path: path || "", stopDistance: stops?.distance, stopDuration: stops?.duration }),
   reveal: (path) => postJSON("api/reveal", { path }),
 };

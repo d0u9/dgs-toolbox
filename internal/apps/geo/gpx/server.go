@@ -51,6 +51,7 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("GET /api/track", api.track)
 	mux.HandleFunc("POST /api/reveal", api.reveal)
 	mux.HandleFunc("POST /api/focus", api.focus)
+	mux.HandleFunc("PUT /api/clean", api.saveClean)
 	mux.Handle("GET /", http.FileServerFS(static))
 	return mux
 }

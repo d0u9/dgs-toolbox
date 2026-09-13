@@ -9,6 +9,7 @@ import { TrackLayers } from "./tracks.js";
 import { Profile } from "./profile.js";
 import { StopMarkers } from "./stops.js";
 import { Timeline } from "./timeline.js";
+import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { FolderTree, revealButton } from "./tree.js";
 import { splitter, shareSplitter } from "./splitter.js";
 
@@ -25,6 +26,9 @@ const state = {
   tile: null, // the base map in use
   gcj: "auto", // GCJ-02 conversion: "auto" follows the base map, or "on" / "off"
   coordinates: "wgs84", // the system tracks are drawn in now
+  cleanOpen: false, // the clean panel is open for the focused track
+  compare: true, // the recording drawn under a cleaned track
+  lasso: false,
   stopNumbers: true, // numbered stop markers on the map; the timeline always has them
   stops: { distance: 50, duration: 300 }, // stay-point thresholds: metres, seconds
   collapsed: { folders: false, workspace: false }, // sidebar panels folded to their header
@@ -37,6 +41,7 @@ let waypointPopup;
 // before that, so a file clicked early waits for it.
 let resolveMapReady;
 const mapReady = new Promise((resolve) => (resolveMapReady = resolve));
+let cleanPanel, cleanOverlay, lasso;
 let map, layers, profile, tree, stopMarkers, timeline, chartSplit;
 
 // ---- persistence: a per-browser convenience, never required ----
@@ -65,6 +70,8 @@ function save() {
       stops: state.stops,
       charts: state.charts,
       stopNumbers: state.stopNumbers,
+      cleanOpen: state.cleanOpen,
+      compare: state.compare,
       gcj: state.gcj,
       collapsed: state.collapsed,
     }));
@@ -166,16 +173,78 @@ function setFocus(path, { fit: shouldFit = true } = {}) {
     profile.show(entry.track, entry.color, hidden);
     stopMarkers.show(entry.track, entry.color, hidden);
     timeline.show(entry.track, entry.color, hidden);
+    cleanOverlay.show(state.compare ? entry.track : null, hidden);
     if (shouldFit) fit([entry.track]);
   } else {
+    cleanOverlay.clear();
+    cleanPanel.hide();
     layers.setFocus(null);
     profile.hide();
     stopMarkers.clear();
     timeline.hide();
   }
+  applyCleanPanel();
   reportFocus();
   renderTracks();
   save();
+}
+
+// ---- cleaning: the focused track's filters, compare overlay and lasso ----
+
+function applyCleanPanel() {
+  const open = state.cleanOpen && Boolean(state.focus);
+  $("clean-panel").hidden = !open;
+  $("toggle-clean").setAttribute("aria-pressed", String(state.cleanOpen));
+  const entry = focusedEntry();
+  if (open && entry) cleanPanel.show(entry.track);
+  if (!open) setLasso(false);
+}
+
+function setLasso(active) {
+  if (state.lasso === active) return;
+  state.lasso = active;
+  lasso.setActive(active);
+  cleanPanel.setLasso(active);
+}
+
+// saveClean writes the focused track's cleaning and shows the result.
+async function saveClean(params) {
+  const path = state.focus;
+  const entry = focusedEntry();
+  if (!entry) return;
+  try {
+    await api.saveClean(path, params);
+    entry.track = await api.track(path, state.stops, state.coordinates);
+  } catch (error) {
+    tree.showMessage(error.message, true);
+    return;
+  }
+  if (drawable(entry)) layers.update(entry.id, entry.track);
+  if (state.focus === path) setFocus(path, { fit: false });
+  reportFocus();
+}
+
+// lassoDone removes the kept points inside the shape by hand, or with Alt
+// restores the hand-removed ones inside it.
+function lassoDone(polygon, { restore }) {
+  const entry = focusedEntry();
+  if (!entry) return;
+  const { track } = entry;
+  const hidden = hiddenRanges(entry);
+  const inside = new Set();
+  track.points.forEach((point, i) => {
+    if (hidden.some(([first, last]) => i >= first && i <= last)) return;
+    const wanted = restore ? track.removed[i] === "manual" : !track.removed[i];
+    if (!wanted) return;
+    const { x, y } = map.project(point);
+    if (insidePolygon([x, y], polygon)) inside.add(i);
+  });
+  if (!inside.size) return;
+  const params = structuredClone(track.clean.params);
+  params.removed = restore
+    ? params.removed.filter((i) => !inside.has(i))
+    : [...new Set([...params.removed, ...inside])].sort((a, b) => a - b);
+  saveClean(params);
 }
 
 // reportFocus tells the TUI which track to summarise. The page works without it.
@@ -546,6 +615,7 @@ function bindMap() {
   // Clicking another track's line focuses it.
   // Clicking a waypoint opens it.
   map.on("click", (event) => {
+    if (state.lasso) return; // a lasso ends with a click; it selects, it does not focus
     const box = [[event.point.x - 4, event.point.y - 4], [event.point.x + 4, event.point.y + 4]];
     const waypoint = layers.waypointLayers().length && map.queryRenderedFeatures(box, { layers: layers.waypointLayers() })[0];
     if (waypoint) {
@@ -715,6 +785,28 @@ async function start() {
 
   layers = new TrackLayers(map);
   waypointPopup = new maplibregl.Popup({ offset: 10, maxWidth: "260px" });
+  cleanOverlay = new CleanOverlay(map, "cursor");
+  cleanPanel = new CleanPanel({
+    root: $("clean-panel"),
+    onChange: saveClean,
+    onLasso: setLasso,
+    onCompare: (on) => {
+      state.compare = on;
+      const entry = focusedEntry();
+      cleanOverlay.show(on && entry ? entry.track : null, entry ? hiddenRanges(entry) : []);
+      save();
+    },
+  });
+  lasso = new Lasso(map, { onDone: lassoDone, onCancel: () => setLasso(false) });
+  if (saved.cleanOpen === true) state.cleanOpen = true;
+  if (saved.compare === false) state.compare = false;
+  cleanPanel.compare = state.compare;
+  $("toggle-clean").addEventListener("click", () => {
+    state.cleanOpen = !state.cleanOpen;
+    applyCleanPanel();
+    save();
+  });
+  applyCleanPanel();
   profile = new Profile({
     root: $("profile"),
     elevation: $("chart-elevation"),

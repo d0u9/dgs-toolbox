@@ -36,7 +36,8 @@ export class Timeline {
     this.track = track;
     this.color = color;
     this.hiddenRanges = hiddenRanges;
-    this.timed = track.time.map((t, i) => (t == null ? -1 : i)).filter((i) => i >= 0)
+    // Points cleaning removed are not scrubbed to.
+    this.timed = track.time.map((t, i) => (t == null || track.removed[i] ? -1 : i)).filter((i) => i >= 0)
       .sort((a, b) => track.time[a] - track.time[b]);
     this.render();
   }
