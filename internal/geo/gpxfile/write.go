@@ -20,7 +20,7 @@ const Creator = "dgs-toolbox"
 
 // EncodeTracks writes tracks as <trk> elements, each segment a <trkseg>. Only
 // what a Point holds is written: position, and elevation, time, satellites and
-// HDOP when present.
+// HDOP when present, and the source of a point that was not recorded.
 func EncodeTracks(w io.Writer, tracks []Track) error {
 	var b bytes.Buffer
 	for _, trk := range tracks {
@@ -39,6 +39,11 @@ func EncodeTracks(w io.Writer, tracks []Track) error {
 				}
 				if !pt.Time.IsZero() {
 					fmt.Fprintf(&b, "<time>%s</time>", pt.Time.UTC().Format(time.RFC3339Nano))
+				}
+				if pt.Source != "" {
+					b.WriteString("<src>")
+					_ = xml.EscapeText(&b, []byte(pt.Source))
+					b.WriteString("</src>")
 				}
 				if pt.HasSatellites {
 					fmt.Fprintf(&b, "<sat>%d</sat>", pt.Satellites)

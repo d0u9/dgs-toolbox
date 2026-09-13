@@ -1,7 +1,9 @@
 // Package sidecar reads and writes the small JSON file kept beside a source
 // GPX. It holds no track data, only what was done to the track — its cleaning
 // and where it is cut into segments — so the source stays untouched and every
-// change can be undone or re-run with other settings.
+// change can be undone or re-run with other settings. Two things it holds are
+// track data, since they cannot be found again: tracks added from other files
+// until they are saved into a new GPX, and routes filled in along the road.
 package sidecar
 
 import (
@@ -12,6 +14,7 @@ import (
 	"path/filepath"
 
 	"dgs-toolbox/internal/geo/clean"
+	"dgs-toolbox/internal/geo/compose"
 	"dgs-toolbox/internal/geo/segment"
 )
 
@@ -26,10 +29,117 @@ type File struct {
 	Version  int            `json:"version"`
 	Clean    clean.Params   `json:"clean"`
 	Segments segment.Params `json:"segments"`
+	// Fills are stretches filled in along the road; Added are tracks brought
+	// from other files, not yet saved into a GPX.
+	Fills []compose.Fill  `json:"fills,omitempty"`
+	Added []compose.Added `json:"added,omitempty"`
 }
 
 // Active reports whether the file records anything.
-func (f File) Active() bool { return f.Clean.Active() || f.Segments.Active() }
+func (f File) Active() bool {
+	return f.Clean.Active() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0
+}
+
+// Insert shifts every point index after after by count, for count points
+// inserted there.
+func (f *File) Insert(after, count int) {
+	f.remap(func(i int) (int, bool) {
+		if i > after {
+			return i + count, true
+		}
+		return i, true
+	})
+}
+
+// Delete forgets the points first to last: what points at them only is
+// dropped, and every later index moves down.
+func (f *File) Delete(first, last int) {
+	n := last - first + 1
+	f.remap(func(i int) (int, bool) {
+		switch {
+		case i < first:
+			return i, true
+		case i > last:
+			return i - n, true
+		}
+		return 0, false
+	})
+}
+
+// remap moves every point index the file records. move says where an index
+// goes, or false when its point is gone: a lasso loses that point, a range or
+// stop shrinks to what is left of it, and a cut, a name or a fill whose end is
+// gone goes too.
+func (f *File) remap(move func(int) (int, bool)) {
+	f.Clean = f.Clean.Normalize()
+	edits := f.Clean.Edits[:0]
+	for _, edit := range f.Clean.Edits {
+		if edit.Kind == clean.EditLasso {
+			points := []int{}
+			for _, i := range edit.Points {
+				if moved, ok := move(i); ok {
+					points = append(points, moved)
+				}
+			}
+			if len(points) > 0 {
+				edit.Points = points
+				edits = append(edits, edit)
+			}
+			continue
+		}
+		first, last, kept := -1, -1, false
+		for i := edit.First; i <= edit.Last; i++ {
+			if moved, ok := move(i); ok {
+				if !kept {
+					first, kept = moved, true
+				}
+				last = moved
+			}
+		}
+		if kept {
+			edit.First, edit.Last = first, last
+			edits = append(edits, edit)
+		}
+	}
+	f.Clean.Edits = edits
+	if len(edits) == 0 {
+		f.Clean.Edits = nil
+	}
+
+	var cuts []int
+	for _, cut := range f.Segments.Cuts {
+		if moved, ok := move(cut); ok {
+			cuts = append(cuts, moved)
+		}
+	}
+	f.Segments.Cuts = cuts
+	var names []segment.Name
+	for _, name := range f.Segments.Names {
+		if moved, ok := move(name.Start); ok {
+			name.Start = moved
+			names = append(names, name)
+		}
+	}
+	f.Segments.Names = names
+
+	var fills []compose.Fill
+	for _, fill := range f.Fills {
+		first, okFirst := move(fill.First)
+		last, okLast := move(fill.Last)
+		// A fill keeps its route only while every point of it is still there.
+		inserted := true
+		for i := fill.First + 1; i <= fill.First+len(fill.Route); i++ {
+			if moved, ok := move(i); !ok || moved != first+i-fill.First {
+				inserted = false
+			}
+		}
+		if okFirst && okLast && inserted {
+			fill.First, fill.Last = first, last
+			fills = append(fills, fill)
+		}
+	}
+	f.Fills = fills
+}
 
 // PathFor is the sidecar of a source file.
 func PathFor(source string) string { return source + Suffix }

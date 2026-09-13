@@ -9,10 +9,15 @@ import * as format from "./format.js";
 const ORIGINAL = "clean-original";
 const REMOVED = "clean-removed";
 const MANUAL = "clean-manual"; // stretches removed by hand, as a line
-const PENDING = "clean-pending"; // a range's start, picked on the track
+const PENDING = "clean-pending"; // a range's or fill's start, picked on the track
+const FILLED = "clean-filled"; // stretches filled in along the road
+const PREVIEW = "clean-fill-preview"; // a route not yet used
 
 // RULE_COLORS tell apart what removed a point.
-export const RULE_COLORS = { spike: "#d55e00", drift: "#e69f00", stop: "#666666", manual: "#6f4c9b" };
+export const RULE_COLORS = { spike: "#d55e00", drift: "#e69f00", stop: "#666666", manual: "#6f4c9b", fill: "#56b4e9" };
+
+// PROFILES are the router's ways of travel.
+const PROFILES = [["car", "Car"], ["bike", "Bicycle"], ["foot", "Foot"]];
 
 // FILTERS describe the panel: each filter's settings, in the sidecar's names,
 // with the unit and the scale between what is typed and what is stored.
@@ -60,17 +65,27 @@ export class CleanPanel {
   // onChange(params) is called with the new settings after an edit;
   // onLasso(active) and onRangeTool(active) when those tools are switched;
   // onCompare(on) likewise; onShowRange(range) to frame a removed range.
-  constructor({ root, onChange, onLasso, onRangeTool, onCompare, onShowRange, timeZone }) {
-    Object.assign(this, { root, onChange, onLasso, onRangeTool, onCompare, onShowRange });
+  // Filling along the road: onFillTool(active), onProfile(profile),
+  // onUseFill() and onDiscardFill() for the previewed route, onRemoveFill(index)
+  // and onShowFill(fill).
+  constructor({ root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, timeZone }) {
+    Object.assign(this, { root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill });
     this.track = null;
     this.lasso = false;
     this.rangeTool = false;
+    // fill is the fill tool's state: { active, profile, start, preview, busy, error }.
+    this.fill = { active: false, profile: "car", start: null, preview: null, busy: false, error: null };
     this.compare = true;
     this.timeZone = timeZone || format.browserTimeZone();
   }
 
   setRangeTool(active) {
     this.rangeTool = active;
+    this.render();
+  }
+
+  setFill(fill) {
+    this.fill = fill;
     this.render();
   }
 
@@ -139,6 +154,7 @@ export class CleanPanel {
     parts.push(head);
 
     parts.push(this.manualSection());
+    parts.push(this.fillSection());
     const auto = document.createElement("div");
     auto.className = "clean-subhead";
     auto.textContent = "Automatic cleaning";
@@ -242,6 +258,112 @@ export class CleanPanel {
     return section;
   }
 
+  fillSection() {
+    const { track, fill } = this;
+    const section = document.createElement("section");
+    section.className = "clean-filter enabled";
+    const head = document.createElement("div");
+    head.className = "clean-filter-head";
+    const title = document.createElement("strong");
+    title.textContent = "Fill along the road";
+    const count = document.createElement("span");
+    count.className = "clean-count";
+    count.style.color = RULE_COLORS.fill;
+    count.textContent = track.fills.length ? `${track.fills.length} filled` : "";
+    head.append(title, count);
+    section.append(head);
+
+    const tools = document.createElement("div");
+    tools.className = "clean-tools";
+    const pick = document.createElement("button");
+    pick.className = "chip" + (fill.active ? " active" : "");
+    pick.setAttribute("aria-pressed", String(fill.active));
+    pick.textContent = fill.active ? "Pick ends — Esc to stop" : "Pick ends";
+    pick.title = "Click where the route starts, then where it ends, to route between them along the road. Two points of the track fill the stretch between; a place off the track makes the route a track of its own. Clicks near a track's end snap to it.";
+    pick.addEventListener("click", () => this.onFillTool(!fill.active));
+    const profile = document.createElement("select");
+    profile.className = "range-join";
+    profile.title = "The way of travel the route follows";
+    profile.append(...PROFILES.map(([value, text]) => new Option(text, value)));
+    profile.value = fill.profile;
+    profile.addEventListener("change", () => this.onProfile(profile.value));
+    tools.append(pick, profile);
+    section.append(tools);
+
+    const hint = document.createElement("p");
+    hint.className = "cut-hint";
+    if (fill.busy) hint.textContent = "Asking the router…";
+    else if (fill.error) {
+      hint.classList.add("error");
+      hint.textContent = fill.error;
+    } else if (fill.preview) {
+      hint.textContent = fill.preview.ends.first != null
+        ? "The route is drawn dashed on the map. Use it to replace the points between its ends."
+        : "The route is drawn dashed on the map. Use it to add it as a new track, saved with the others into a new GPX.";
+    } else if (fill.active) {
+      hint.textContent = fill.start == null
+        ? "Click where the route starts: on the track, or anywhere on the map."
+        : "Now click where it ends. Near a track's end, the click snaps to it.";
+    }
+    else hint.textContent = "Only the two end points are sent, to the public OSRM service on OpenStreetMap. The route's points get times spread by distance and are marked as filled.";
+    section.append(hint);
+
+    if (fill.preview) {
+      const box = document.createElement("div");
+      box.className = "fill-preview";
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = `${format.distance(fill.preview.distance)} · ${fill.preview.route.length} points`;
+      const use = document.createElement("button");
+      use.className = "chip active";
+      use.textContent = fill.preview.ends.first != null ? "Use this route" : "Add as a track";
+      use.addEventListener("click", () => this.onUseFill());
+      const discard = document.createElement("button");
+      discard.className = "text-button";
+      discard.textContent = "Discard";
+      discard.addEventListener("click", () => this.onDiscardFill());
+      box.append(meta, discard, use);
+      section.append(box);
+    }
+
+    if (track.fills.length) {
+      const list = document.createElement("ol");
+      list.className = "range-list";
+      for (let i = track.fills.length - 1; i >= 0; i--) list.append(this.fillRow(track.fills[i], i));
+      section.append(list);
+    }
+    return section;
+  }
+
+  fillRow(fill, index) {
+    const { track } = this;
+    const li = document.createElement("li");
+    li.className = "range-row";
+    const label = document.createElement("span");
+    label.className = "label";
+    const name = document.createElement("span");
+    name.className = "name";
+    const from = track.time[fill.first], to = track.time[fill.last];
+    const way = (PROFILES.find(([value]) => value === fill.profile) || [, fill.profile])[1];
+    name.textContent = from != null && to != null
+      ? `${way} ${format.clock(from, this.timeZone).slice(5)} – ${format.clock(to, this.timeZone).slice(11)}`
+      : `${way}, points ${fill.first}–${fill.last}`;
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = `${format.distance(fill.distance)} · ${fill.points} points filled`;
+    if (fill.at) meta.textContent += ` · ${format.clock(fill.at, this.timeZone).slice(11)}`;
+    label.append(name, meta);
+    label.title = "Show on the map";
+    label.addEventListener("click", () => this.onShowFill(fill));
+    const remove = document.createElement("button");
+    remove.className = "remove";
+    remove.textContent = "×";
+    remove.title = "Remove this fill and bring back the recorded points";
+    remove.addEventListener("click", () => this.onRemoveFill(index));
+    li.append(label, remove);
+    return li;
+  }
+
   editRow(edit, index) {
     const { track } = this;
     const li = document.createElement("li");
@@ -337,6 +459,16 @@ export class CleanOverlay {
     map.addSource(REMOVED, { type: "geojson", data: empty() });
     map.addSource(MANUAL, { type: "geojson", data: empty() });
     map.addSource(PENDING, { type: "geojson", data: empty() });
+    map.addSource(FILLED, { type: "geojson", data: empty() });
+    map.addSource(PREVIEW, { type: "geojson", data: empty() });
+    // Filled stretches: a light band under the track's own line.
+    map.addLayer({
+      id: FILLED,
+      type: "line",
+      source: FILLED,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": RULE_COLORS.fill, "line-width": 10, "line-opacity": 0.45 },
+    }, beforeLayer);
     // Removed stretches: a wide pale band with a dark dashed centre, readable
     // over any base map and apart from the track's own colour.
     map.addLayer({
@@ -371,11 +503,43 @@ export class CleanOverlay {
       },
     }, beforeLayer);
     map.addLayer({
+      id: `${PREVIEW}-casing`,
+      type: "line",
+      source: PREVIEW,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#ffffff", "line-width": 6 },
+    });
+    map.addLayer({
+      id: PREVIEW,
+      type: "line",
+      source: PREVIEW,
+      layout: { "line-join": "round" },
+      paint: { "line-color": "#0072b2", "line-width": 3, "line-dasharray": [2, 1.2] },
+    });
+    map.addLayer({
       id: PENDING,
       type: "circle",
       source: PENDING,
       paint: { "circle-radius": 7, "circle-color": RULE_COLORS.manual, "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 },
     });
+  }
+
+  // setPreview draws a route not yet used, or with null clears it.
+  setPreview(points) {
+    const data = points ? { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: points } } : empty();
+    this.map.getSource(PREVIEW).setData(data);
+  }
+
+  // showFills bands the stretches of a track filled in along the road, from
+  // the point before each route to the point after it.
+  showFills(track) {
+    const lines = (track?.fills || []).map((fill) => {
+      const line = [track.points[fill.first]];
+      for (let i = fill.first + 1; i <= fill.first + fill.points; i++) line.push(track.points[i]);
+      line.push(track.points[fill.last]);
+      return line;
+    });
+    this.map.getSource(FILLED).setData({ type: "Feature", properties: {}, geometry: { type: "MultiLineString", coordinates: lines } });
   }
 
   // setPending marks a range's start picked on the track, or with null clears it.

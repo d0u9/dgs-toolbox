@@ -18,6 +18,7 @@ import (
 	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/geo"
 	"dgs-toolbox/internal/geo/clean"
+	"dgs-toolbox/internal/geo/compose"
 	"dgs-toolbox/internal/geo/gcj02"
 	"dgs-toolbox/internal/geo/gpxfile"
 	"dgs-toolbox/internal/geo/sidecar"
@@ -211,6 +212,24 @@ type trackJSON struct {
 	// stop, as source point indices.
 	Cuts          []int `json:"cuts"`
 	CutCandidates []int `json:"cutCandidates"`
+	// Fills are the stretches filled in along the road: each route's points
+	// are first+1 to first+points; the recorded points after them up to last
+	// are removed as "fill".
+	Fills []fillJSON `json:"fills"`
+	// Added counts the tracks added from other files, not yet saved into a GPX.
+	Added int `json:"added"`
+	// Draft is set for a new GPX not yet saved: it lives in memory only.
+	Draft bool `json:"draft,omitempty"`
+}
+
+// fillJSON is one fill as the page lists it.
+type fillJSON struct {
+	First    int     `json:"first"`
+	Last     int     `json:"last"`
+	Points   int     `json:"points"`
+	Profile  string  `json:"profile"`
+	Distance float64 `json:"distance"` // metres along the route, from first to last
+	At       int64   `json:"at,omitempty"`
 }
 
 // cleanJSON is a track's cleaning: its settings as the sidecar holds them (or
@@ -237,6 +256,14 @@ type partJSON struct {
 	Elevation   *float64      `json:"elevation,omitempty"`
 	Time        *int64        `json:"time,omitempty"`
 	Bounds      [2][2]float64 `json:"bounds"`
+	// Added is set on a track added from another file: its place among the
+	// added tracks, and the file it came from.
+	Added *addedJSON `json:"added,omitempty"`
+}
+
+type addedJSON struct {
+	Index int    `json:"index"`
+	From  string `json:"from"`
 }
 
 type stopJSON struct {
@@ -319,9 +346,12 @@ func stopParams(distance, duration string) (stops.Params, error) {
 // positions, and index maps each of its points back to source. Distances,
 // stats and stops are measured on line, with stop indices into line.
 type analysis struct {
-	path       string
-	name       string
+	path string
+	name string
+	// file holds the file's own tracks followed by the added ones; own counts
+	// the file's own.
 	file       *gpxfile.File
+	own        int
 	source     track.Line
 	cleaning   sidecar.File
 	sidecar    bool
@@ -341,15 +371,26 @@ func analyse(path string, params stops.Params) (analysis, error) {
 	if !strings.EqualFold(filepath.Ext(path), ".gpx") {
 		return analysis{}, errNotGPX
 	}
-	file, err := gpxfile.Open(path)
+	file, err := openGPX(path)
 	if err != nil {
 		return analysis{}, err
 	}
-	source := track.FromGPX(file)
 	// A sidecar that cannot be read does not stop the track being shown; the
 	// page says why and shows it uncleaned.
-	cleaning, found, sidecarErr := sidecar.Load(path)
-	result := clean.Run(source, cleaning.Clean)
+	cleaning, found, sidecarErr := loadSidecar(path)
+	composed, err := compose.Build(file, cleaning.Added, cleaning.Fills)
+	if err != nil {
+		cleaning, found, sidecarErr = sidecar.File{Version: sidecar.Version, Clean: clean.Defaults()}, false, fmt.Errorf("%s: %w", sidecar.PathFor(path), err)
+		composed, _ = compose.Build(file, nil, nil)
+	}
+	source := composed.Line
+	spans := make([][2]int, len(cleaning.Fills))
+	for i, fill := range cleaning.Fills {
+		spans[i] = [2]int{fill.First, fill.Last}
+	}
+	result := clean.RunComposed(source, cleaning.Clean, clean.Composed{Filled: composed.Filled, Replaced: composed.Replaced, Spans: spans})
+	withAdded := *file
+	withAdded.Tracks = append(append([]gpxfile.Track{}, file.Tracks...), addedTracks(cleaning.Added)...)
 	line, index := result.Kept(source)
 	distances := track.Distances(line)
 	return analysis{
@@ -357,7 +398,8 @@ func analyse(path string, params stops.Params) (analysis, error) {
 		// The file name is the one the reader chose; the name inside is often a
 		// recorder's timestamp.
 		name:       strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
-		file:       file,
+		file:       &withAdded,
+		own:        len(file.Tracks),
 		source:     source,
 		cleaning:   cleaning,
 		sidecar:    found,
@@ -398,7 +440,8 @@ func trackResponse(a analysis) trackJSON {
 		Removed:     a.result.Removed,
 		Clean:       cleanJSON{Params: a.cleaning.Clean, Counts: a.result.Counts()},
 	}
-	if a.sidecar {
+	response.Draft = isDraft(a.path)
+	if (a.sidecar || a.sidecarErr != nil) && !response.Draft {
 		response.Clean.Sidecar = sidecar.PathFor(a.path)
 	}
 	if a.sidecarErr != nil {
@@ -428,6 +471,7 @@ func trackResponse(a analysis) trackJSON {
 		}
 	}
 	response.Pieces, response.Cuts, response.CutCandidates = segments(a)
+	response.Fills, response.Added = fills(a, distances), len(a.cleaning.Added)
 	if response.Clean.Counts.Moved > 0 {
 		response.Original = make([][2]float64, n)
 		copy(response.Original, response.Points)
@@ -481,26 +525,33 @@ func trackResponse(a analysis) trackJSON {
 // to hold the routes and waypoints too.
 func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON, geo.Bounds, geo.Bounds) {
 	list := []partJSON{}
-	first := 0
 	for i, trk := range a.file.Tracks {
 		part := partJSON{Key: fmt.Sprintf("t%d", i), Kind: "track", Name: orNumbered(trk.Name, "Track", i)}
-		box, count := geo.Empty(), 0
+		if i >= a.own {
+			part.Added = &addedJSON{Index: i - a.own, From: a.cleaning.Added[i-a.own].From}
+		}
 		for _, seg := range trk.Segments {
 			if len(seg.Points) > 0 {
 				part.Segments++
 			}
-			for _, pt := range seg.Points {
-				box = box.Extend(pt.LatLon)
-				count++
+		}
+		// The track's points in the composed line, fills included.
+		first, last, box := -1, -1, geo.Empty()
+		for k, sample := range a.source {
+			if sample.Track == i {
+				if first < 0 {
+					first = k
+				}
+				last = k
+				box = box.Extend(sample.LatLon)
 			}
 		}
-		if count == 0 {
+		if first < 0 {
 			continue
 		}
-		part.First, part.Last = first, first+count-1
+		part.First, part.Last = first, last
 		part.Distance = distance[part.Last] - distance[part.First]
 		part.Bounds = lonLatBox(box)
-		first += count
 		list = append(list, part)
 	}
 	for i, rte := range a.file.Routes {
@@ -568,11 +619,7 @@ func (a api) saveClean(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
 		return
 	}
-	if !strings.EqualFold(filepath.Ext(body.Path), ".gpx") {
-		writeError(w, http.StatusBadRequest, errNotGPX)
-		return
-	}
-	if _, err := os.Stat(body.Path); err != nil {
+	if err := checkGPX(body.Path); err != nil {
 		writeError(w, statusFor(err), err)
 		return
 	}
@@ -589,13 +636,13 @@ func (a api) saveClean(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Keep what else the sidecar records, such as the cuts.
-	file, _, err := sidecar.Load(body.Path)
+	file, _, err := loadSidecar(body.Path)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err)
 		return
 	}
 	file.Clean = params
-	if err := sidecar.Save(body.Path, file); err != nil {
+	if err := saveSidecar(body.Path, file); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}

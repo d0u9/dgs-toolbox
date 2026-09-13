@@ -1,13 +1,21 @@
 // Cutting the focused track into segments: the panel listing them with their
-// names, and writing chosen segments into another GPX or a new one; and the
+// names, and writing chosen segments into a new GPX, or adding them to another
+// GPX in the workspace; and the
 // map overlay marking cuts and the segment pointed at. The server finds the
 // segments and writes the files; this module edits cuts and names.
 
 import * as format from "./format.js";
-import { confirmDialog } from "./dialog.js";
 
 const SEGMENT = "cut-segment";
 const CUTS = "cut-points";
+const PIECES = "cut-pieces";
+
+// PIECE_COLORS tell neighbouring segments apart: Okabe-Ito hues, in an order
+// where each differs strongly from the one before it.
+const PIECE_COLORS = ["#e69f00", "#009e73", "#cc79a7", "#0072b2", "#d55e00", "#56b4e9", "#f0e442", "#6f4c9b"];
+
+// pieceColor is the colour of the segment at a place in the list.
+export const pieceColor = (position) => PIECE_COLORS[position % PIECE_COLORS.length];
 
 // defaultName names a segment by its time span in a time zone, or by its
 // number when it has no time.
@@ -20,20 +28,21 @@ export function defaultName(piece, number, timeZone) {
 
 export class CutPanel {
   // onCuts(cuts, names) saves cuts and names; onHover(piece | null) and
-  // onShow(piece) point at a segment; onWrite(request) writes segments and
-  // resolves to the server's answer.
+  // onShow(piece) point at a segment; onWrite(request) writes or adds segments
+  // and resolves to the server's answer.
   constructor({ root, onCuts, onHover, onShow, onWrite }) {
     Object.assign(this, { root, onCuts, onHover, onShow, onWrite });
     this.track = null;
     this.selected = new Set(); // first point index of the chosen segments
     this.mode = "create";
-    this.appendPath = "";
+    this.addPath = "";
     this.message = null;
     this.timeZone = format.browserTimeZone();
-    this.workspace = []; // other GPX paths in the workspace, for appending
+    this.workspace = []; // other GPX paths in the workspace, to add segments to
   }
 
-  show(track, { timeZone, workspace }) {
+  // folder is where a new file from a track not yet on disk goes by default.
+  show(track, { timeZone, workspace, folder }) {
     const changed = !this.track || this.track.path !== track.path;
     this.track = track;
     this.timeZone = timeZone;
@@ -41,7 +50,7 @@ export class CutPanel {
     if (changed) {
       this.selected = new Set(track.pieces.map((piece) => piece.first));
       this.message = null;
-      this.createPath = defaultCreatePath(track.path);
+      this.createPath = defaultCreatePath(track, folder);
     } else {
       // Segments that still exist stay chosen; new ones are chosen too.
       const known = this.known || new Set();
@@ -50,7 +59,7 @@ export class CutPanel {
       for (const first of this.selected) if (!firsts.has(first)) this.selected.delete(first);
     }
     this.known = new Set(track.pieces.map((piece) => piece.first));
-    if (!this.workspace.includes(this.appendPath)) this.appendPath = this.workspace[0] || "";
+    if (!this.workspace.includes(this.addPath)) this.addPath = this.workspace[0] || "";
     this.render();
   }
 
@@ -141,6 +150,7 @@ export class CutPanel {
     const badge = document.createElement("span");
     badge.className = "cut-number";
     badge.textContent = String(number);
+    badge.style.background = pieceColor(number - 1);
     const body = document.createElement("span");
     body.className = "label";
     const name = document.createElement("input");
@@ -188,38 +198,28 @@ export class CutPanel {
     createPath.addEventListener("input", () => (this.createPath = createPath.value));
     createPath.addEventListener("focus", () => this.setMode("create", false));
 
-    const append = this.choice("append", "Appended to a GPX in the workspace");
-    const appendPath = document.createElement("select");
-    appendPath.className = "cut-path";
-    appendPath.disabled = this.workspace.length === 0;
-    appendPath.append(...(this.workspace.length
+    const add = this.choice("add", "Added to a GPX in the workspace, each its own track");
+    const addPath = document.createElement("select");
+    addPath.className = "cut-path";
+    addPath.disabled = this.workspace.length === 0;
+    addPath.append(...(this.workspace.length
       ? this.workspace.map((path) => new Option(basename(path), path))
       : [new Option("No other GPX in the workspace", "")]));
-    appendPath.value = this.appendPath;
-    appendPath.title = this.appendPath;
-    appendPath.addEventListener("change", () => {
-      this.appendPath = appendPath.value;
-      this.setMode("append");
+    addPath.value = this.addPath;
+    addPath.title = this.addPath;
+    addPath.addEventListener("change", () => {
+      this.addPath = addPath.value;
+      this.setMode("add");
     });
-    if (!this.workspace.length) append.querySelector("input").disabled = true;
+    if (!this.workspace.length) add.querySelector("input").disabled = true;
 
     const go = document.createElement("button");
     go.className = "chip active cut-go";
-    go.textContent = `Write ${chosen.length} segment${chosen.length === 1 ? "" : "s"}`;
-    const target = this.mode === "append" ? this.appendPath : this.createPath.trim();
+    const plural = chosen.length === 1 ? "" : "s";
+    go.textContent = this.mode === "add" ? `Add ${chosen.length} segment${plural}` : `Write ${chosen.length} segment${plural}`;
+    const target = this.mode === "add" ? this.addPath : this.createPath.trim();
     go.disabled = chosen.length === 0 || !target;
     go.addEventListener("click", async () => {
-      // Appending changes a GPX file the reader has: say so and wait for a yes.
-      if (this.mode === "append") {
-        const yes = await confirmDialog({
-          title: "Change this GPX file?",
-          message: `${chosen.length} track${chosen.length === 1 ? "" : "s"} will be added to the end of this file. The file is rewritten on disk; what it already holds is kept, but there is no undo.`,
-          detail: target,
-          confirm: "Append and save",
-          danger: true,
-        });
-        if (!yes) return;
-      }
       go.disabled = true;
       this.message = { text: "Writing…" };
       const segments = chosen.map((piece) => ({
@@ -229,14 +229,19 @@ export class CutPanel {
       }));
       try {
         const result = await this.onWrite({ segments, target: { mode: this.mode, path: target } });
-        this.message = { text: `${this.mode === "append" ? "Appended" : "Wrote"} ${result.tracks} track${result.tracks === 1 ? "" : "s"} to ${basename(result.path)}` };
+        const tracks = `${result.tracks} track${result.tracks === 1 ? "" : "s"}`;
+        this.message = {
+          text: this.mode === "add"
+            ? `Added ${tracks} to ${basename(result.path)}. Save it as a new GPX from its row in the workspace.`
+            : `Wrote ${tracks} to ${basename(result.path)}`,
+        };
       } catch (error) {
         this.message = { text: error.message, error: true };
       }
       this.render();
     });
 
-    section.append(create, createPath, append, appendPath, go);
+    section.append(create, createPath, add, addPath, go);
     if (this.message) {
       const note = document.createElement("p");
       note.className = "clean-foot" + (this.message.error ? " error" : "");
@@ -245,7 +250,7 @@ export class CutPanel {
     }
     const foot = document.createElement("p");
     foot.className = "clean-foot";
-    foot.textContent = "Each segment becomes one <trk>, as cleaned. The source GPX is never written.";
+    foot.textContent = "Each segment becomes one <trk>, as cleaned. No GPX already on disk is written: a GPX segments are added to is saved as a new file.";
     section.append(foot);
     return section;
   }
@@ -274,8 +279,18 @@ export class CutPanel {
 export class CutOverlay {
   constructor(map, beforeLayer) {
     this.map = map;
+    this.beforeLayer = beforeLayer;
     map.addSource(SEGMENT, { type: "geojson", data: empty() });
     map.addSource(CUTS, { type: "geojson", data: empty() });
+    map.addSource(PIECES, { type: "geojson", data: empty() });
+    // Segments in their colours, drawn over the focused track while cutting.
+    map.addLayer({
+      id: PIECES,
+      type: "line",
+      source: PIECES,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": ["get", "color"], "line-width": 5 },
+    }, beforeLayer);
     map.addLayer({
       id: SEGMENT,
       type: "line",
@@ -298,6 +313,14 @@ export class CutOverlay {
     }
     const features = track.cuts.map((cut) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: track.points[cut] } }));
     this.map.getSource(CUTS).setData({ type: "FeatureCollection", features });
+    const pieces = track.pieces.map((piece, i) => ({
+      type: "Feature",
+      properties: { color: pieceColor(i) },
+      geometry: { type: "MultiLineString", coordinates: keptLines(track, piece) },
+    }));
+    this.map.getSource(PIECES).setData({ type: "FeatureCollection", features: pieces });
+    // Above the track lines, which move up when focused; below cuts and the cursor.
+    for (const layer of [PIECES, SEGMENT, CUTS, this.beforeLayer]) if (this.map.getLayer(layer)) this.map.moveLayer(layer);
   }
 
   highlight(track, piece) {
@@ -313,7 +336,25 @@ export class CutOverlay {
   clear() {
     this.map.getSource(SEGMENT).setData(empty());
     this.map.getSource(CUTS).setData(empty());
+    this.map.getSource(PIECES).setData(empty());
   }
+}
+
+// keptLines are a segment's kept points, apart where the recording breaks.
+function keptLines(track, piece) {
+  const lines = [];
+  let current = [], previous = -1;
+  for (let i = piece.first; i <= piece.last; i++) {
+    if (track.removed[i]) continue;
+    if (previous >= 0 && track.segments[i] !== track.segments[previous]) {
+      if (current.length > 1) lines.push(current);
+      current = [];
+    }
+    current.push(track.points[i]);
+    previous = i;
+  }
+  if (current.length > 1) lines.push(current);
+  return lines;
 }
 
 // pieceBounds is the [[west, south], [east, north]] box of a segment's kept points.
@@ -328,7 +369,9 @@ export function pieceBounds(track, piece) {
   return west <= east ? [[west, south], [east, north]] : null;
 }
 
-function defaultCreatePath(source) {
+function defaultCreatePath(track, folder = "") {
+  if (track.draft) return `${folder.replace(/[\\/]$/, "")}/${track.name} segments.gpx`;
+  const source = track.path;
   const dot = source.toLowerCase().lastIndexOf(".gpx");
   return `${dot > 0 ? source.slice(0, dot) : source} segments.gpx`;
 }

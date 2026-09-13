@@ -35,10 +35,18 @@ server exposes the API under `/api/`; everything else is the page.
 | `/api/health` | Answers `{"ok":true}`. |
 | `/api/config` | The base maps — built-in first, then configured — each with its coordinate system, and the folder to open at. |
 | `/api/dir?path=` | The folders and `.gpx` files of a folder. Hidden entries are left out. |
-| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; and its segments (`pieces`), saved cuts and proposed cuts. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
+| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; and how many tracks were added to it. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
 | `PUT /api/clean` | Writes a track's cleaning settings, and the points removed by hand, to its sidecar. Settings left out keep their defaults; a cleaning that does nothing removes the sidecar. |
 | `PUT /api/segments` | Writes a track's cuts and segment names to its sidecar. |
-| `POST /api/segments/write` | Writes chosen segments of a track, as cleaned, one `<trk>` each: appended to another GPX, or into a new GPX it will not overwrite. The source is refused. |
+| `POST /api/segments/write` | Writes chosen segments of a track, as cleaned, one `<trk>` each: added to another GPX's sidecar (mode `add`), or into a new GPX it will not overwrite (mode `create`). The source is refused. |
+| `POST /api/fill/route` | Asks the router (OSRM) for the road between two kept points of a track (`first`, `last`), or two places (`from`, `to`, `[lon, lat]` in the system given by `coordinates`), with profile `car`, `bike` or `foot`. Returns the route in WGS-84 and as drawn. Nothing is saved. |
+| `POST /api/fill` | Records a route between two points in the sidecar, inserted after the first; later indices move along. |
+| `POST /api/fill/track` | Adds a route between two places to a GPX as a track of its own, recorded in the sidecar like a track added from another file. |
+| `DELETE /api/fill` | Removes a fill by its place in the list; its points go and the recorded ones come back. |
+| `DELETE /api/added` | Takes a track added from another file out of a GPX's sidecar, with the edits, cuts and fills on it. |
+| `POST /api/draft` | Starts a new, empty GPX in memory, named by `name`, and answers its path, `draft:<n>/<name>.gpx`. Every other call takes that path as it takes a file's. |
+| `DELETE /api/sidecar` | Deletes a GPX file's sidecar; the GPX is not touched. |
+| `POST /api/save-as` | Writes a GPX with the tracks added to it into a new file it will not overwrite; the new file's sidecar takes the work, and the original's loses the added tracks. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
 | `POST /api/reveal` | Shows a file or folder in this machine's file manager. Refused unless the request comes from this machine. `/api/config` says whether the page may offer it. |
 
@@ -88,6 +96,9 @@ map. It is the interface later milestones build on.
   and `×` removes it. A filter box narrows the list by words in the name or
   path; the show-all and hide-all buttons act on the tracks it lists. The
   header counts shown against total.
+  A file with a sidecar says *sidecar* in its row (*sidecar unreadable* when it
+  cannot be read); *Discard…*, on hover, deletes the sidecar after asking, and
+  the file reads as recorded again.
 - **Show in file manager.** Folder, file and track rows have a button, on
   hover, that reveals the item in Finder or Explorer. It appears only when the
   page is opened on the machine running `dgs`: from another machine it would
@@ -100,8 +111,8 @@ map. It is the interface later milestones build on.
   row's end on hover rather than reserving width. The full path is the row's
   tooltip.
 - **What a file holds.** A GPX file may hold several tracks, planned routes
-  and waypoints. A workspace row that holds more than one track, or any route
-  or waypoint, has a disclosure (▶, at the row's end so rows start at the left
+  and waypoints. A workspace row that holds more than one track, any route
+  or waypoint, or any track added from another file, has a disclosure (▶, at the row's end so rows start at the left
   edge) that lists them beneath it: tracks with
   their distance and segment count, routes (drawn dashed) with their length,
   waypoints (drawn as dots) with their description and elevation. Each has its
@@ -215,6 +226,10 @@ not from the filters.
 | Position jitter (`kalman`) | Moves points: a constant-velocity Kalman filter and RTS smoother over east and north, a fix counting as fix error × HDOP metres uncertain. Smoothing restarts at a segment or after a pause. | fix error 5 m, acceleration 1 m/s², restart after 60 s |
 | Scribbles in stops | Inside each stop found on what is left, keeps the points where it was entered and left and the one recorded midway, moved to the stop's centre, and removes the rest. | within 50 m, at least 5 min |
 
+Points filled in along the road (below) are never removed or moved by a
+filter, and the recorded points a fill replaces are removed before any of
+them, coloured light blue.
+
 A max speed of 360 km/h removes a flight; raise it for tracks recorded in the
 air.
 
@@ -253,6 +268,38 @@ always joined across. Map panning is off while the lasso is on; Esc or the
 button turns it off, and *Restore* returns them all. Points in hidden tracks
 are left alone.
 
+**Filling along the road.** For a stretch recorded badly or not at all — a
+tunnel, a phone that lost the signal — the panel's *Fill along the road* asks a
+public OSRM router for the road instead. Nothing is filled automatically: a
+fill is made only this way, on request.
+
+- Choose the way of travel — car, bicycle or foot — and turn on *Pick ends*.
+  Click the track on the map where the stretch starts (it is marked), then
+  where it ends. Only those two positions, as cleaning left them, are sent:
+  cars to `router.project-osrm.org`, bicycles and walking to
+  `routing.openstreetmap.de`. The profile is remembered.
+- The route is drawn dashed with its length. *Use this route* inserts its
+  points between the two ends and removes the recorded points between them;
+  *Discard*, Esc or picking again forgets it. A route that fails — no road,
+  no network — says why in the panel.
+- Either end can also be any place on the map, off the track. Such a route
+  does not fill the track: *Add as a track* adds it to the GPX as a track of
+  its own, named *Along the road (car)* and the like, without times or
+  elevations. Like tracks added from another file, it is kept in the sidecar
+  until the GPX is saved as a new one — so an empty *New GPX* can be drawn
+  this way too. A click within 40 px of a shown track's first or last kept
+  point snaps to it, so a route starts or ends exactly where a track does.
+- Filled points get times spread by distance between the two ends' times and
+  elevations interpolated the same way, and join the track across a pause in
+  the recording. They are banded light blue on the map, and written with
+  `<src>dgs-toolbox: filled along the road (OSRM)</src>`.
+- Each fill is listed with its time span, length and points; clicking it
+  frames it, `×` removes it and brings back the recorded points. A fill
+  cannot cross another.
+
+The route is stored in the sidecar as coordinates, so a fill never needs the
+router again.
+
 ## Segments
 
 The *Cut* chip, beside *Clean*, opens the segments panel for the focused track
@@ -269,6 +316,9 @@ nothing is lost between them. Segments are cut from what cleaning kept.
   while dragging it still scrubs. Cuts are yellow handles on the timeline. drag a handle to move the
   cut, double-click it to remove it. *Clear cuts* removes them all. Cuts are
   also marked on the map.
+- **Colours.** While the panel is open each segment is drawn over the track in
+  a colour of its own, neighbours always different, with the same colour on
+  its number in the list and as a strip along the foot of the timeline.
 - **Names.** A segment is named by its time span in the page's time zone —
   `2026-09-06 09:00–09:26`, or with both dates when it crosses midnight —
   until a name is typed. A name belongs to the segment starting at its point:
@@ -280,14 +330,33 @@ nothing is lost between them. Segments are cut from what cleaning kept.
   satellites, a `<trkseg>` per recorded segment:
   - **into a new GPX**, a full path defaulting to `<source> segments.gpx`
     beside the source; an existing file is never replaced; or
-  - **appended to a GPX in the workspace**. The new tracks go after its last
-    track, route or waypoint and before a root `<extensions>`; the rest of the
-    file is kept byte for byte and replaced in one step. That track is
-    reloaded to show them. Because it changes a file the reader already has,
-    a dialog names the file and says there is no undo, and nothing is written
-    until it is confirmed.
+  - **added to a GPX in the workspace**, each segment its own track, after
+    that file's tracks. This is how part of one recording is moved into
+    another file. The GPX on disk is not written: the added tracks are kept in
+    its sidecar, as points, and it shows them at once — listed under it as
+    *added from* their file, each with `×` to take it out again, and its row
+    marked *added, not saved*. They can be cleaned, cut and filled like the
+    file's own.
 
-  The source GPX is never written, whichever is chosen.
+  No GPX already on disk is written, whichever is chosen.
+
+**A new GPX.** *New GPX*, in the Workspace header, asks for a name and adds an
+empty GPX to the workspace. It is not written anywhere: it lives in the memory
+of the running `dgs`, so it survives reloading the page but not quitting `dgs`.
+Segments are added to it from any track's Cut panel, as to any workspace GPX,
+and it can be cleaned, cut and filled the same way. Its row says *new, not
+saved* and, once it holds a track, has *Save…*, which asks for a full path —
+defaulting to `<name>.gpx` in the folder tree's root — and writes it there,
+never replacing an existing file. The saved file then takes its place.
+
+**Saving as a new GPX.** A workspace GPX with tracks added to it has *Save
+as…* on its row. It asks for a full path, defaulting to `<name> merged.gpx`
+beside it, and never replaces an existing file. The new file is the original
+byte for byte with the added tracks after its own tracks, before a root
+`<extensions>`; its sidecar takes over the cleaning, cuts and fills, which
+still point at the same points. The new file takes the original's place in
+the workspace, and the original goes back to its own tracks: the added tracks,
+and what was done to them, leave its sidecar.
 
 Cuts and names are saved to the sidecar at once.
 
@@ -312,14 +381,28 @@ Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
   "segments": {
     "cuts": [2339, 4159],
     "names": [{ "start": 2339, "name": "逛西湖" }]
-  }
+  },
+  "fills": [
+    { "first": 3000, "last": 3140, "profile": "car", "route": [[120.1501, 30.2502], [120.1512, 30.2515]], "at": 1788657500000 }
+  ],
+  "added": [
+    { "name": "Phone, tunnel", "from": "/trips/phone.gpx", "at": 1788657600000,
+      "segments": [[{ "lon": 120.16, "lat": 30.26, "ele": 12.5, "time": 1788650000000 }]] }
+  ]
 }
 ```
 
 Units are the SI ones the filters use: metres, seconds, m/s, m/s². An edit's
 `points` (a lasso's), `first` and `last` (a range's or stop's, both removed),
-`cuts` and a name's `start` are point indices in file order, counting every
-track and segment; `at` is when the edit was made, in Unix milliseconds. A cut
+`cuts`, a name's `start` and a fill's `first` and `last` are point indices in
+file order, counting every track and segment, then the added tracks, with every
+fill's route counted where it is inserted; `at` is when the edit was made, in
+Unix milliseconds. A fill's route (`[lon, lat]`, WGS-84) takes the indices
+right after `first`; the recorded points after it up to `last` are the ones it
+replaces. Inserting a fill, or removing a fill or an added track, moves every
+later index; what pointed only at points that went goes with them. Unlike the
+rest of the sidecar, fills and added tracks hold track data, since neither can
+be found again from the source. A cut
 on a point cleaning later removes moves to the next kept point. Sidecars from
 before edits kept `removed` and `ranges` lists instead; they load as edits and
 are written back as edits. Settings
@@ -382,10 +465,11 @@ build on the data model of earlier ones.
 
 ### Principles
 
-- **Sources are read-only.** Cleaning, cutting and gap filling are recorded in a
-  sidecar file beside the source GPX and applied on top of the source, so every change can be undone
-  or re-run with other parameters. Every point knows which rule removed it and
-  which file it came from.
+- **Sources are read-only.** Cleaning, cutting, gap filling and tracks added
+  from other files are recorded in a sidecar file beside the source GPX and
+  applied on top of the source, so every change can be undone or re-run with
+  other parameters. A GPX changed by added tracks is saved as a new file.
+  Every point knows which rule removed it.
 - **The map is on the web page; the TUI is the entry point.** The TUI chooses
   files, shows summaries, starts the server and exports. Anything that needs a
   map or a timeline is on the page.
@@ -393,9 +477,9 @@ build on the data model of earlier ones.
 - **Export** writes one GPX file holding one `<trk>` per segment, into a folder
   the user chooses.
 - **The sidecar** is a small JSON file stored next to the source GPX. It holds
-  no track data, only what was done: cleaning parameters, points removed by
-  hand, cuts, segment names and gap fills. Opening a GPX that has one resumes
-  the work.
+  what was done: cleaning parameters, points removed by hand, cuts, segment
+  names and gap fills — and, until saved, tracks added from other files.
+  Opening a GPX that has one resumes the work.
 
 ### Map and coordinates
 
@@ -496,35 +580,72 @@ source is cleaned on its own before it is combined.
 
 ### M4 — Combine sources
 
+Done: see *Filling along the road* and *Segments* above.
+
 A trip is often recorded by more than one device: a GPS left in the car while
 a watch records the hike, or a phone that loses the signal in a tunnel. M4
-builds one track from several sources by choosing, for each stretch of time,
-which source to trust. Filling a gap is the case where only one source has
-points.
+combines them by hand, not by rules:
 
-- **A merge project.** Combining spans several files, so it is kept in its own
-  file, not a sidecar: `<name>.dgs-merge.json`, listing its source GPX files
-  (each still cleaned by its own sidecar), which source each stretch of time
-  uses, whether the track joins or breaks where the source changes, and the
-  cuts and names of the combined track. Sources stay read-only; the result is
-  written as a new GPX, every point recording the file it came from.
-- **A lane per source.** The timeline shows one lane per source — moving,
-  stopped, gaps — against the same clock. Dragging a stretch and picking a
-  source assigns it; the map draws the combined track coloured by source.
-- **Suggested, then adjusted.** Where one source is stopped and another moves,
-  the moving one is suggested; where one has a gap, the other; where both
-  move, the better fixes (lower HDOP, less jitter). Every suggestion can be
-  changed.
-- **Clock offset.** A source's time can be shifted, by seconds or by whole
-  hours for a device set to the wrong zone, with the lanes showing how the
-  sources line up.
-- **Filling from the road.** For a stretch no source recorded well, such as a
-  tunnel, a route along the road between its ends is a source of its own: from
-  an online router (OSRM on OpenStreetMap, WGS-84, no key; it sends the two end
-  points to that service, which is still to be confirmed) or drawn by hand on
-  the map. Its points get times spread by distance and elevation interpolated,
-  are previewed before they are used, and are marked as filled. A route that
-  cannot be computed again is stored in the project as coordinates.
+- **Moving a stretch between files.** Cut the stretch out of one file's track,
+  and add it to another GPX in the workspace, as a track of its own. The
+  receiving file is changed only in its sidecar, and saved as a new GPX.
+- **Filling from the road, on request.** Between two points picked on a track,
+  a route from a public OSRM router (OpenStreetMap, WGS-84, no key; only the
+  two end points are sent) replaces what was recorded. Its points get times
+  spread by distance and elevation interpolated, are previewed before they are
+  used, marked as filled and stored as coordinates.
+
+Dropped from the earlier plan, as combining stays a choice made by hand: a
+merge project file, a timeline lane per source, suggesting which source to
+trust. Deferred: shifting a source's clock. Routes drawn by hand come back as
+M6.
+
+### M5 — Room to edit
+
+Edit and Cut are small panels floating over the map's corner: removals, the
+filters and fills scroll in one narrow column, the tools are scattered chips,
+and the two panels hide each other. The map, the timeline, the charts and the
+workspace stay as they are; the editing moves out of the map.
+
+- **Modes.** The top bar switches between *Browse*, *Edit* and *Route* (M6).
+- **Inspector.** A column on the right, 300 px wide by default and dragged
+  wider, replaces the floating panels. In Edit it has three tabs:
+  - *Changes*: removals by hand and fills in one list, newest first; a row
+    frames its points on the map and the timeline.
+  - *Automatic cleaning*: the filters and their settings.
+  - *Segments*: Cut as a table — name, time, distance, chosen — with writing
+    into a new GPX or adding to another below it. Switching tabs keeps the
+    tool in use.
+- **Tool bar.** On the map's corner: select, range, lasso, cut, fill along the
+  road, each with a key. The one in use is highlighted, and a line along the
+  map's foot says what a click does and how to leave it.
+
+Steps, each usable on its own: the mode bar and the inspector with the Edit
+panel moved into it as two tabs, and the tool bar; then Cut as the Segments
+tab.
+
+### M6 — Plan a route
+
+A route drawn from nothing, not from a recording: a document of its own, with
+no track to start from.
+
+- Clicking the map adds a waypoint; waypoints are dragged to move them, and a
+  handle on a leg inserts one. A click near the end of a track shown in the
+  workspace snaps to it.
+- Each leg between two waypoints follows the road — car, bicycle or foot,
+  asked of OSRM — or is a straight line. Moving a waypoint asks again only for
+  the legs either side of it.
+- The inspector lists the waypoints with each leg's way and length, the total
+  length, reverse and close the loop.
+- Kept as a draft in memory, as a new GPX is now; saved as a new GPX with a
+  `<trk>`, and optionally a `<rte>` of the waypoints. The waypoints and legs are
+  kept in the sidecar, so the route opens to be changed again.
+- Tracks in the workspace can be shown faintly as a reference to draw along.
+- Times estimated from an average speed are optional; elevation needs a DEM
+  source and is left for later.
+
+When it lands, routing between two places off a track (*Add as a track* in
+the fill section) moves here, and filling stays for gaps in a track.
 
 ### Later
 

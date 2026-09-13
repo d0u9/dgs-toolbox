@@ -41,8 +41,8 @@ export class Profile {
 
     const x = track.distance.map((m) => m / 1000);
     const speed = track.speed.map((v) => (v == null ? null : format.kmh(v)));
-    this.addChart(this.containers.elevation, x, track.elevation, color, true, "No elevation in this file");
-    this.addChart(this.containers.speed, x, speed, color, false, "No time in this file, so no speed");
+    this.addChart(this.containers.elevation, x, track.elevation, color, true, "No elevation in this file", (v) => `${Math.round(v)} m`);
+    this.addChart(this.containers.speed, x, speed, color, false, "No time in this file, so no speed", (v) => `${v.toFixed(1)} km/h`);
   }
 
   setTimeZone(timeZone) {
@@ -105,7 +105,8 @@ export class Profile {
     this.showReadout(index);
   }
 
-  addChart(container, x, y, color, filled, emptyText) {
+  // formatValue(y) is the text shown beside the cursor point.
+  addChart(container, x, y, color, filled, emptyText, formatValue) {
     container.replaceChildren();
     if (!y.some((v) => v != null)) {
       const empty = document.createElement("div");
@@ -135,6 +136,7 @@ export class Profile {
       hooks: {
         draw: [(u) => this.shadeHidden(u)],
         setCursor: [(u) => {
+          placeValue(u, formatValue);
           if (this.fromOutside) return;
           const index = u.cursor.idx;
           this.showReadout(index);
@@ -221,6 +223,32 @@ export class Profile {
     this.charts = [];
     for (const container of Object.values(this.containers)) container.replaceChildren();
   }
+}
+
+// placeValue labels the cursor point with its value, on the side of the point
+// with more room.
+function placeValue(u, formatValue) {
+  let label = u.over.querySelector(".cursor-value");
+  if (!label) {
+    label = document.createElement("div");
+    label.className = "cursor-value";
+    u.over.append(label);
+  }
+  const index = u.cursor.idx;
+  const value = index == null ? null : u.data[1][index];
+  const left = u.cursor.left;
+  if (value == null || left == null || left < 0) {
+    label.hidden = true;
+    return;
+  }
+  const top = u.valToPos(value, "y");
+  label.textContent = formatValue(value);
+  label.hidden = false;
+  const width = u.over.clientWidth;
+  const height = u.over.clientHeight;
+  label.style.left = left > width / 2 ? "" : `${left + 8}px`;
+  label.style.right = left > width / 2 ? `${width - left + 8}px` : "";
+  label.style.top = `${Math.min(Math.max(top - 20, 0), height - 18)}px`;
 }
 
 // wheelZoom zooms the distance axis around the pointer; the setScale hook

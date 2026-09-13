@@ -405,6 +405,20 @@ button, select, input { font: inherit; color: inherit; }
   pointer-events: none;
 }
 .chart { flex: 1; min-width: 0; min-height: 0; }
+.chart .cursor-value {
+  position: absolute;
+  z-index: 3;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.chart .cursor-value[hidden] { display: none; }
 .chart .empty {
   height: 100%;
   display: grid;
@@ -591,3 +605,16 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .confirm-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .confirm-buttons .chip { padding: 4px 14px; font-size: 12px; }
 .chip.active.danger { background: var(--danger); border-color: var(--danger); }
+/* A workspace GPX with tracks added to it, not yet saved as a new file. */
+.track-row.changed .name::after { content: " •"; color: var(--accent); }
+.actions .sidecar { flex: none; padding: 0 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--muted); font-size: 10px; white-space: nowrap; cursor: pointer; }
+.actions .sidecar:hover { border-color: var(--danger); color: var(--danger); }
+.actions .save-as { flex: none; padding: 0 6px; border: 1px solid var(--accent); border-radius: 5px; background: var(--panel); color: var(--accent); font-size: 11px; white-space: nowrap; cursor: pointer; }
+.part-row.added .glyph { font-weight: 700; }
+.part-row .actions .remove { border: none; background: none; color: var(--muted); font-size: 15px; cursor: pointer; }
+.part-row .actions .remove:hover { color: var(--danger); }
+.fill-preview { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.fill-preview .meta { flex: 1; color: var(--muted); font-size: 11px; }
+.cut-hint.error { color: var(--danger); }
+.prompt-input { margin: 0 0 12px; padding: 4px 8px; font-size: 12px; }
+.timeline-piece { position: absolute; bottom: 0; height: 5px; z-index: 1; pointer-events: none; }

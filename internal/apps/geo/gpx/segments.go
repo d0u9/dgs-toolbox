@@ -12,7 +12,6 @@ import (
 
 	"dgs-toolbox/internal/geo/gpxfile"
 	"dgs-toolbox/internal/geo/segment"
-	"dgs-toolbox/internal/geo/sidecar"
 	"dgs-toolbox/internal/geo/stops"
 )
 
@@ -92,11 +91,11 @@ func (a api) saveSegments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
 		return
 	}
-	if err := existingGPX(body.Path); err != nil {
+	if err := checkGPX(body.Path); err != nil {
 		writeError(w, statusFor(err), err)
 		return
 	}
-	file, _, err := sidecar.Load(body.Path)
+	file, _, err := loadSidecar(body.Path)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err)
 		return
@@ -114,7 +113,7 @@ func (a api) saveSegments(w http.ResponseWriter, r *http.Request) {
 	if len(file.Segments.Names) == 0 {
 		file.Segments.Names = nil
 	}
-	if err := sidecar.Save(body.Path, file); err != nil {
+	if err := saveSidecar(body.Path, file); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -122,8 +121,9 @@ func (a api) saveSegments(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeSegments writes chosen segments of a track, as they are after
-// cleaning, one <trk> each: appended to another GPX file, or into a new one.
-// The source is never written.
+// cleaning, one <trk> each: added to another GPX file — recorded in its
+// sidecar until that file is saved as a new one — or into a new file. No
+// existing GPX is written.
 func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path     string `json:"path"`
@@ -133,7 +133,7 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 			Name  string `json:"name"`
 		} `json:"segments"`
 		Target struct {
-			Mode string `json:"mode"` // "append" or "create"
+			Mode string `json:"mode"` // "add" or "create"
 			Path string `json:"path"`
 		} `json:"target"`
 	}
@@ -146,11 +146,17 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target, err := filepath.Abs(body.Target.Path)
+	if isDraft(body.Target.Path) && body.Target.Mode == "add" {
+		target = body.Target.Path
+	}
 	if err != nil || !strings.EqualFold(filepath.Ext(target), ".gpx") {
 		writeError(w, http.StatusBadRequest, errors.New("the target must be a .gpx file"))
 		return
 	}
-	source, _ := filepath.Abs(body.Path)
+	source := body.Path
+	if !isDraft(source) {
+		source, _ = filepath.Abs(body.Path)
+	}
 	if sameFile(source, target) {
 		writeError(w, http.StatusBadRequest, errors.New("the source GPX is never written; choose another file"))
 		return
@@ -176,8 +182,8 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 		tracks = append(tracks, result.trackOf(wanted.First, wanted.Last, strings.TrimSpace(wanted.Name)))
 	}
 	switch body.Target.Mode {
-	case "append":
-		err = gpxfile.Append(target, tracks)
+	case "add":
+		err = addTracks(target, source, tracks)
 	case "create":
 		if _, statErr := os.Stat(filepath.Dir(target)); statErr != nil {
 			writeError(w, statusFor(statErr), fmt.Errorf("folder %s: %w", filepath.Dir(target), statErr))
@@ -185,7 +191,7 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 		}
 		err = gpxfile.Create(target, strings.TrimSuffix(filepath.Base(target), filepath.Ext(target)), tracks)
 	default:
-		writeError(w, http.StatusBadRequest, errors.New(`target mode must be "append" or "create"`))
+		writeError(w, http.StatusBadRequest, errors.New(`target mode must be "add" or "create"`))
 		return
 	}
 	switch {
@@ -199,7 +205,8 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 }
 
 // trackOf is the kept points of source points first to last as a GPX track,
-// at their cleaned positions, a <trkseg> per recorded segment.
+// at their cleaned positions, a <trkseg> per recorded segment. Filled points
+// keep their <src>.
 func (a analysis) trackOf(first, last int, name string) gpxfile.Track {
 	trk := gpxfile.Track{Name: name}
 	current := -1
@@ -219,17 +226,10 @@ func (a analysis) trackOf(first, last int, name string) gpxfile.Track {
 			HasHDOP:       sample.HasHDOP,
 			Satellites:    sample.Satellites,
 			HasSatellites: sample.HasSatellites,
+			Source:        sample.Source,
 		})
 	}
 	return trk
-}
-
-func existingGPX(path string) error {
-	if !strings.EqualFold(filepath.Ext(path), ".gpx") {
-		return errNotGPX
-	}
-	_, err := os.Stat(path)
-	return err
 }
 
 func sameFile(a, b string) bool {

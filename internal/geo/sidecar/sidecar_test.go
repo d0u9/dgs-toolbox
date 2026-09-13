@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"dgs-toolbox/internal/geo/clean"
+	"dgs-toolbox/internal/geo/compose"
 	"dgs-toolbox/internal/geo/segment"
 )
 
@@ -91,5 +92,40 @@ func TestOldRemovalsLoadAsEdits(t *testing.T) {
 	file, _, err := Load(source)
 	if err != nil || len(file.Clean.Edits) != 2 || file.Clean.Removed != nil || file.Clean.Edits[1].Last != 20 {
 		t.Fatalf("loaded %+v, %v", file.Clean.Edits, err)
+	}
+}
+
+func TestInsertAndDeleteShiftIndices(t *testing.T) {
+	file := File{Clean: clean.Defaults()}
+	file.Clean.Edits = []clean.Edit{
+		{Kind: clean.EditLasso, Points: []int{2, 8, 20}, Join: true},
+		{Kind: clean.EditRange, First: 9, Last: 12},
+		{Kind: clean.EditStop, First: 30, Last: 40, Join: true},
+	}
+	file.Segments = segment.Params{Cuts: []int{5, 25}, Names: []segment.Name{{Start: 25, Name: "Lake"}}}
+	file.Fills = []compose.Fill{{First: 50, Last: 53, Route: [][2]float64{{1, 1}, {1, 2}}}}
+
+	file.Insert(4, 3) // three points after index 4
+	edits := file.Clean.Edits
+	if edits[0].Points[0] != 2 || edits[0].Points[1] != 11 || edits[1].First != 12 || edits[2].Last != 43 {
+		t.Fatalf("edits after insert %+v", edits)
+	}
+	if file.Segments.Cuts[0] != 8 || file.Segments.Names[0].Start != 28 || file.Fills[0].First != 53 {
+		t.Fatalf("after insert %+v", file)
+	}
+
+	file.Delete(10, 13) // takes the range's first two points and a lasso point
+	edits = file.Clean.Edits
+	if len(edits[0].Points) != 2 || edits[0].Points[1] != 19 || edits[1].First != 10 || edits[1].Last != 11 {
+		t.Fatalf("edits after delete %+v", edits)
+	}
+
+	file.Delete(50, 50) // a point of the fill's route: the fill goes
+	if len(file.Fills) != 0 {
+		t.Fatalf("fills %+v", file.Fills)
+	}
+	file.Delete(20, 30) // the named cut
+	if len(file.Segments.Cuts) != 1 || len(file.Segments.Names) != 0 {
+		t.Fatalf("segments %+v", file.Segments)
 	}
 }
