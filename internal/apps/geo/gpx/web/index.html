@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="app.css">
 <script src="vendor/maplibre-gl.js"></script>
 <script src="vendor/uPlot.iife.min.js"></script>
+<script src="vendor/maplibre-contour.min.js"></script>
 </head>
 <body>
 <header class="topbar">
@@ -22,9 +23,13 @@
   <label class="basemap">Time zone
     <select id="timezone"></select>
   </label>
-  <label class="basemap">Base map
-    <select id="basemap"></select>
-  </label>
+  <span class="layers">
+    <button id="layers-toggle" class="layers-toggle" aria-expanded="false" aria-controls="layers-panel" title="Maps and overlays: show several, drag to reorder, set each one's opacity">Layers</button>
+    <div id="layers-panel" class="layers-panel" hidden>
+      <p class="layers-hint">Top of the list is drawn on top. Drag ⋮⋮ to reorder.</p>
+      <ul id="layer-list" class="layer-list"></ul>
+    </div>
+  </span>
   <label class="basemap" title="GPX is WGS-84; maps published in China are drawn in GCJ-02 and sit several hundred metres off unless the track is converted. Only what is drawn changes.">GCJ-02
     <select id="coordinates">
       <option value="auto">Auto</option>
@@ -96,6 +101,12 @@
     <div id="timeline" class="timeline">
       <div class="timeline-head">
         <span id="timeline-labels" class="timeline-labels"></span>
+        <label class="stop-toggle" title="Stops and moving periods on the timeline; off, it shows only where there is data and the empty time between">
+          <input id="timeline-stops" type="checkbox" checked> Stops
+        </label>
+        <label class="stop-toggle" title="Snap the cursor to stops, data edges, cuts, hidden stretches and the track's ends; off, it follows the pointer">
+          <input id="timeline-snap" type="checkbox" checked> Snap
+        </label>
         <label class="stop-toggle" title="Numbered stop markers on the map. The timeline keeps its stops either way.">
           <input id="stop-numbers" type="checkbox" checked> On map
         </label>

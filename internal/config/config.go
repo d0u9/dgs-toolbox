@@ -94,6 +94,40 @@ type GeoGPX struct {
 	// AmapKey is an Amap (高德) Web Service key: with it the page routes
 	// along Amap's roads as well as OpenStreetMap's.
 	AmapKey string `json:"amap_key"`
+	// DEM is the elevation tiles the page draws contour lines from.
+	DEM GeoGPXDEM `json:"dem"`
+}
+
+// GeoGPXDEM is a raster elevation tile source: URL is a template holding {z},
+// {x} and {y}, Encoding is "terrarium" or "mapbox" (terrain-RGB). Empty values
+// use AWS's public Terrarium tiles, which need no key.
+type GeoGPXDEM struct {
+	URL      string `json:"url"`
+	Encoding string `json:"encoding"`
+	MaxZoom  int    `json:"max_zoom"`
+}
+
+// Default DEM tiles: Mapzen's Terrarium tiles on AWS Open Data.
+const (
+	DefaultGeoGPXDEMURL      = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+	DefaultGeoGPXDEMEncoding = "terrarium"
+	DefaultGeoGPXDEMMaxZoom  = 15
+)
+
+// GeoGPXDEMSource is geo.gpx.dem with its defaults filled in. A custom URL
+// without an encoding is taken as Terrarium, as the default is.
+func (c Config) GeoGPXDEMSource() GeoGPXDEM {
+	dem := c.Geo.GPX.DEM
+	if dem.URL == "" {
+		dem.URL = DefaultGeoGPXDEMURL
+	}
+	if dem.Encoding == "" {
+		dem.Encoding = DefaultGeoGPXDEMEncoding
+	}
+	if dem.MaxZoom == 0 {
+		dem.MaxZoom = DefaultGeoGPXDEMMaxZoom
+	}
+	return dem
 }
 
 // GeoGPXTile is a base map the GPX page offers beside the built-in

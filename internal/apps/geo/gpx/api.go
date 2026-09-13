@@ -99,7 +99,14 @@ func (a api) config(w http.ResponseWriter, r *http.Request) {
 	for _, tile := range a.settings.Tiles {
 		tiles = append(tiles, configuredMap(tile))
 	}
-	writeJSON(w, map[string]any{"root": a.settings.Root, "tiles": tiles, "ways": a.ways(), "canReveal": isLocal(r)})
+	dem := a.settings.DEM
+	if dem.URL == "" {
+		dem = config.Config{}.GeoGPXDEMSource()
+	}
+	writeJSON(w, map[string]any{
+		"root": a.settings.Root, "tiles": tiles, "ways": a.ways(), "canReveal": isLocal(r),
+		"dem": map[string]any{"url": dem.URL, "encoding": dem.Encoding, "maxZoom": dem.MaxZoom},
+	})
 }
 
 func configuredMap(tile config.GeoGPXTile) baseMap {

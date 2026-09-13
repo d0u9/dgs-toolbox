@@ -28,6 +28,9 @@ export class Timeline {
     this.cursor.className = "timeline-cursor";
     this.cursor.hidden = true;
     this.pointerX = null;
+    this.showStops = true; // off, the bar shows only where there is data and where not
+    this.snap = true; // the cursor sticks to stops, cuts and ends; else follows the pointer
+    this.stuck = null; // the point index the cursor is stuck to while snapping
     this.wheelMode = null;
     this.wheelAnchor = null; // zoom only; pan never has a pointer anchor
     this.panSpan = null;
@@ -78,6 +81,7 @@ export class Timeline {
     bar.addEventListener("pointerleave", (event) => {
       if (event.buttons) return; // still dragging: pointer capture keeps the scrub
       this.pointerX = null;
+      this.stuck = null;
       this.setIndex(null);
       this.onScrub(null);
     });
@@ -90,6 +94,7 @@ export class Timeline {
     this.color = color;
     this.hiddenRanges = hiddenRanges;
     // Points cleaning removed are not scrubbed to.
+    this.stuck = null; // an index into the previous track means nothing here
     this.timed = track.time.map((t, i) => (t == null || track.removed[i] ? -1 : i)).filter((i) => i >= 0)
       .sort((a, b) => track.time[a] - track.time[b]);
     this.full = this.timed.length < 2 ? null : [track.time[this.timed[0]], track.time[this.timed[this.timed.length - 1]]];
@@ -129,26 +134,34 @@ export class Timeline {
     const [start, end] = this.range;
     const blocks = [];
 
-    // A moving block per recorded segment: from its first to its last timed point.
-    const spans = new Map();
-    for (const i of this.timed) {
-      const span = spans.get(track.segments[i]) || [Infinity, -Infinity];
-      spans.set(track.segments[i], [Math.min(span[0], track.time[i]), Math.max(span[1], track.time[i])]);
-    }
-    for (const [from, to] of spans.values()) {
-      blocks.push(this.block("timeline-moving", from, to, { background: this.color }));
-    }
-    track.stops.forEach((stop, i) => {
-      const block = this.block("timeline-stop", stop.arrival, stop.departure);
-      block.textContent = String(i + 1);
-      block.title = stopTitle(i, stop, this.timeZone);
-      block.addEventListener("click", () => {
-        if (!this.cutting) this.onStop(i); // while cutting, a click cuts instead
+    if (this.showStops) {
+      // A moving block per recorded segment: from its first to its last timed point.
+      const spans = new Map();
+      for (const i of this.timed) {
+        const span = spans.get(track.segments[i]) || [Infinity, -Infinity];
+        spans.set(track.segments[i], [Math.min(span[0], track.time[i]), Math.max(span[1], track.time[i])]);
+      }
+      for (const [from, to] of spans.values()) {
+        blocks.push(this.block("timeline-moving", from, to, { background: this.color }));
+      }
+      track.stops.forEach((stop, i) => {
+        const block = this.block("timeline-stop", stop.arrival, stop.departure);
+        block.textContent = String(i + 1);
+        block.title = stopTitle(i, stop, this.timeZone);
+        block.addEventListener("click", () => {
+          if (!this.cutting) this.onStop(i); // while cutting, a click cuts instead
+        });
+        block.addEventListener("mouseenter", () => this.onStopHover(i));
+        block.addEventListener("mouseleave", () => this.onStopHover(null));
+        blocks.push(block);
       });
-      block.addEventListener("mouseenter", () => this.onStopHover(i));
-      block.addEventListener("mouseleave", () => this.onStopHover(null));
-      blocks.push(block);
-    });
+    } else {
+      for (const [from, to] of this.dataSpans()) {
+        const block = this.block("timeline-moving", from, to, { background: this.color });
+        block.title = `Data ${format.clock(from, this.timeZone, { seconds: true })} – ${format.clock(to, this.timeZone, { seconds: true })}`;
+        blocks.push(block);
+      }
+    }
     for (const [first, last] of this.hiddenRanges || []) {
       const times = track.time.slice(first, last + 1).filter((t) => t != null);
       if (!times.length) continue;
@@ -170,11 +183,49 @@ export class Timeline {
     startLabel.textContent = format.clock(start, this.timeZone, { seconds: zoomed });
     const legend = document.createElement("span");
     legend.className = "timeline-legend";
-    const count = track.stops.length === 1 ? "1 stop" : `${track.stops.length} stops`;
-    legend.textContent = `${count} · ${format.duration(stopped(track) / 1000) || "0m"} stopped`;
+    if (this.showStops) {
+      const count = track.stops.length === 1 ? "1 stop" : `${track.stops.length} stops`;
+      legend.textContent = `${count} · ${format.duration(stopped(track) / 1000) || "0m"} stopped`;
+    } else {
+      const spans = this.dataSpans();
+      const empty = this.full[1] - this.full[0] - spans.reduce((sum, [from, to]) => sum + (to - from), 0);
+      const count = spans.length === 1 ? "1 stretch" : `${spans.length} stretches`;
+      legend.textContent = `${count} of data · ${format.duration(empty / 1000) || "0m"} empty`;
+    }
     const endLabel = document.createElement("span");
     endLabel.textContent = format.clock(end, this.timeZone, { seconds: zoomed });
     this.labels.replaceChildren(startLabel, legend, endLabel);
+  }
+
+  // setShowStops shows stops and moving periods, or with false only the
+  // stretches with data and the empty time between them.
+  setShowStops(show) {
+    this.showStops = show;
+    this.stuck = null;
+    if (!show) this.onStopHover(null);
+    if (this.track) this.render();
+  }
+
+  // dataSpans are [from, to] times where points were recorded: a new stretch
+  // starts wherever a segment changes or no point came for DATA_GAP, or ten
+  // times the usual interval if longer.
+  dataSpans() {
+    const { track, timed } = this;
+    const intervals = [];
+    for (let k = 1; k < timed.length; k++) intervals.push(track.time[timed[k]] - track.time[timed[k - 1]]);
+    const usual = intervals.length ? [...intervals].sort((a, b) => a - b)[intervals.length >> 1] : 0;
+    const gap = Math.max(DATA_GAP, usual * 10);
+    const spans = [];
+    let from = track.time[timed[0]];
+    for (let k = 1; k < timed.length; k++) {
+      const a = timed[k - 1], b = timed[k];
+      if (intervals[k - 1] > gap || track.segments[a] !== track.segments[b]) {
+        spans.push([from, track.time[a]]);
+        from = track.time[b];
+      }
+    }
+    spans.push([from, track.time[timed[timed.length - 1]]]);
+    return spans;
   }
 
   block(className, from, to, style = {}) {
@@ -609,13 +660,45 @@ export class Timeline {
     return `${((time - start) / (end - start)) * 100}%`;
   }
 
+  // setSnap turns the cursor's stickiness on or off.
+  setSnap(snap) {
+    this.snap = snap;
+    this.stuck = null;
+  }
+
   // indexAt is the point recorded nearest the moment at a screen x, or null.
+  // Snapping, a stop's arrival or departure, a cut, a hidden stretch's edge or
+  // the track's end within SNAP_GRAB pixels wins, and holds until the pointer
+  // is SNAP_RELEASE pixels away.
   indexAt(clientX) {
     if (!this.track || this.timed.length < 2) return null;
     const rect = this.bar.getBoundingClientRect();
-    const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const x = Math.max(rect.left, Math.min(rect.right, clientX));
     const [start, end] = this.range;
-    return this.nearest(start + fraction * (end - start));
+    const toX = (index) => rect.left + ((this.track.time[index] - start) / (end - start)) * rect.width;
+    const index = this.nearest(start + ((x - rect.left) / rect.width) * (end - start));
+    if (!this.snap) return index;
+    if (this.stuck != null && Math.abs(toX(this.stuck) - clientX) <= SNAP_RELEASE) return this.stuck;
+    this.stuck = null;
+    let best = null, bestDistance = SNAP_GRAB;
+    for (const target of this.snapTargets()) {
+      const distance = Math.abs(toX(target) - clientX);
+      if (distance <= bestDistance) [best, bestDistance] = [target, distance];
+    }
+    if (best == null) return index;
+    this.stuck = best;
+    return best;
+  }
+
+  // snapTargets are the point indices the cursor sticks to.
+  snapTargets() {
+    const { track, timed } = this;
+    const targets = [timed[0], timed[timed.length - 1]];
+    if (this.showStops) for (const stop of track.stops) targets.push(this.nearest(stop.arrival), this.nearest(stop.departure));
+    else for (const [from, to] of this.dataSpans()) targets.push(this.nearest(from), this.nearest(to));
+    for (const [first, last] of this.hiddenRanges || []) targets.push(first, last);
+    if (this.cutting) targets.push(...this.cutting.cuts, ...this.cutting.candidates);
+    return targets.filter((i) => i != null && track.time[i] != null && !track.removed[i]);
   }
 
   // scrub finds the point recorded nearest the moment under the pointer.
@@ -623,8 +706,14 @@ export class Timeline {
     if (!this.track || this.timed.length < 2) return;
     if (event.type === "pointermove" && event.buttons === 0 && event.pointerType !== "mouse") return;
     const index = this.indexAt(event.clientX);
-    this.setIndex(index);
     this.onScrub(index);
+    this.setIndex(index);
+    if (this.snap || index == null) return;
+    // Not snapping, the cursor stays under the pointer between points.
+    const rect = this.bar.getBoundingClientRect();
+    const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    this.cursor.hidden = false;
+    this.cursor.style.left = `${fraction * 100}%`;
   }
 
   nearest(millis) {
@@ -656,6 +745,9 @@ const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+const DATA_GAP = 60 * 1000; // milliseconds without a point that count as empty time
+const SNAP_GRAB = 10; // pixels within which the snapping cursor sticks to a target
+const SNAP_RELEASE = 18; // pixels the pointer must move away to free it
 const MIN_DISTANCE = 1; // metres; shared spatial floor with the profile charts
 const TICK_STEPS = [
   SECOND, 2 * SECOND, 5 * SECOND, 10 * SECOND, 15 * SECOND, 30 * SECOND,
