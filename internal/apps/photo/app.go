@@ -1,6 +1,7 @@
 package photo
 
 import (
+	"dgs-toolbox/internal/apps/photo/postprocess"
 	"dgs-toolbox/internal/apps/placeholder"
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
@@ -39,9 +40,16 @@ func New() tui.App {
 			{
 				ID:          "organize",
 				Usage:       "<folder>",
-				Description: "Move photos in a folder (not subfolders) into YYYYMMDD capture-date folders.",
+				Description: "Move photos in a folder into capture-date folders (YYYYMMDD by default).",
 				Args:        1,
-				Run:         organizeFolder,
+				Flags: []tui.ActionFlag{
+					{Name: "yes", Shorthand: "y", Bool: true, Usage: "move into date folders that already exist without asking"},
+					{Name: "dry-run", Shorthand: "n", Bool: true, Usage: "show where each photo would go without moving anything"},
+					{Name: "recursive", Shorthand: "r", Bool: true, Usage: "also organize photos in subfolders (hidden folders are skipped)"},
+					{Name: "format", Default: postprocess.DefaultLayout, Usage: "date folder format from YYYY, MM, DD, - _ . and / (e.g. YYYY/MM/DD)"},
+					{Name: "dest", Usage: "create date folders under this directory instead of <folder>"},
+				},
+				Run: organizeFolder,
 			},
 		},
 	}

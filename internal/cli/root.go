@@ -104,14 +104,26 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 func addActions(command *cobra.Command, actions []tui.Action) {
 	for _, action := range actions {
 		action := action
-		command.AddCommand(&cobra.Command{
+		sub := &cobra.Command{
 			Use:   action.ID + " " + action.Usage,
 			Short: action.Description,
 			Args:  cobra.ExactArgs(action.Args),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return action.Run(cmd.InOrStdin(), cmd.OutOrStdout(), args)
+				flags := make(map[string]string, len(action.Flags))
+				for _, flag := range action.Flags {
+					flags[flag.Name] = cmd.Flags().Lookup(flag.Name).Value.String()
+				}
+				return action.Run(cmd.InOrStdin(), cmd.OutOrStdout(), args, flags)
 			},
-		})
+		}
+		for _, flag := range action.Flags {
+			if flag.Bool {
+				sub.Flags().BoolP(flag.Name, flag.Shorthand, flag.Default == "true", flag.Usage)
+			} else {
+				sub.Flags().StringP(flag.Name, flag.Shorthand, flag.Default, flag.Usage)
+			}
+		}
+		command.AddCommand(sub)
 	}
 }
 
