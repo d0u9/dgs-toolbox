@@ -26,7 +26,7 @@ install:
 	@echo "installed $(BASHCOMPDIR)/$(BIN)"
 	@case ":$$PATH:" in *":$(BINDIR):"*) ;; *) echo "note: $(BINDIR) is not on your PATH";; esac
 	@echo "note: zsh caches completions; to use the new ones now, run"
-	@echo "        rm -f ~/.cache/zsh/zcompdump-* ~/.zcompdump*"
+	@echo "        rm -f ~/.cache/zsh/zcompdump-*(N) ~/.zcompdump*(N)"
 	@echo "      and open a new terminal"
 
 uninstall:
