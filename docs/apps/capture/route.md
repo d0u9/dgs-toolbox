@@ -188,6 +188,13 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   stays editable, so a composed place name can be replaced. It uses the same
   fixed 12-cell key column as Capture Info so values never shift as the cursor
   changes.
+- When an enabled Action writes the Capture's position — the location note, a
+  reminder at a place — `RESOLVED` ends with a `Map` row: `Apple · Google ·
+  高德`, each linked to the position the Actions will write, which is the
+  payload's when the workflow sources it. A pair of numbers says nothing about
+  whether it is the right street, and this is the last look before it is
+  written somewhere. `Enter` on the row, or `o` anywhere in the session, opens
+  it in Apple Maps; with no position in use `o` says so instead.
 - Below both, a pinned `PARAMETERS` group says how the enabled Actions behave
   rather than what they need: `daily.append · Section`, and whatever a later
   Action declares. Every parameter is listed whether or not it has been changed
@@ -339,6 +346,14 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   names the Action that stopped it, and leaves the Capture above the rule. Each
   Action's marker becomes its outcome: `✓` ran, `·` had nothing left to do, `✗`
   failed.
+- `f` flags the selected Capture as wrong, from any DataField, and `f` again
+  takes the flag back. It is a mark rather than a move: the reader is in the
+  middle of organizing, and where a Capture goes is Archive's decision. The
+  mark is written into the Capture's `organize.json` at once — a flag is not a
+  run, so it does not count as organized — so Archive sees it in this session
+  or a later one. A flagged row carries `⚑` in place of its readiness marker.
+  Taking the flag back from a Capture nobody organized removes the record it
+  was the only thing in.
 - `R` refreshes the Capture list from any DataField.
 - Every column is reachable with the pointer as well as the keyboard. A primary
   click selects a row and focuses its Fieldset, and the wheel scrolls the list

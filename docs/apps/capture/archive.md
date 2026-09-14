@@ -88,8 +88,16 @@ CAPTURES              CAPTURE                             ARCHIVE
   its own Capture list, and the two are one implementation: a Capture is named
   the same way in both, and `v` means the same thing in each.
 - A Capture is in exactly one of the three lists, and a move is watched leaving
-  one and arriving in the other. That is the whole state of the session: there
-  are no marks to keep track of, because nothing is pending.
+  one and arriving in the other. That is the whole state of the session: it
+  keeps no marks of its own, because nothing is pending.
+- A Capture flagged as wrong in Route — see [`route.md`](route.md) — carries
+  `⚑` and leads its group in `CAPTURES`, and the centre pane says when it was
+  flagged. It is the one decision already made, waiting on a keystroke. It is
+  refused the archive, as one nobody organized is, and its `Archive` control
+  reads `Flagged`: keeping it would file a mistake with the Captures that were
+  handled. `Backspace` rejects it; unflagging it in Route is how it is archived
+  after all. The flag travels with the directory, so it still shows in
+  `REJECT`.
 - The centre `CAPTURE` pane follows whichever list has focus, so it is always
   about the row the next keystroke would move: what the Capture is, which of
   the three folders it is sitting in, and its organizing runs most recent

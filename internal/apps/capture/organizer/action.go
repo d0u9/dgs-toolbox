@@ -48,6 +48,11 @@ type ActionDefinition struct {
 	// declared but not implemented: it plans and explains itself, and refuses
 	// to run rather than silently doing nothing.
 	Run func(Context, ActionPlan) (skipped string, err error)
+	// UsesPosition says the Action writes the Capture's position somewhere,
+	// whether or not it names coordinates as a requirement: the location note
+	// draws it from a template. A caller offers a map for the position when an
+	// enabled Action uses it, since that is when a wrong one does harm.
+	UsesPosition bool
 }
 
 // ParameterDefinition is one knob of an Action. Default reads the configured
@@ -79,8 +84,9 @@ func (p ActionPlan) Ready() bool { return len(p.Missing) == 0 }
 
 var actionDefinitions = map[ActionID]ActionDefinition{
 	ActionLocationAppend: {
-		ID:    ActionLocationAppend,
-		Label: "Location note",
+		ID:           ActionLocationAppend,
+		Label:        "Location note",
+		UsesPosition: true,
 		Effects: []string{
 			"Adds the Capture to the top of the running list of places, under its day",
 			"Moves any year that has rolled over into the archive as it goes",
@@ -151,8 +157,9 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 	// names an Action without setting its parameters, so a switch would have to
 	// be flipped by hand every time.
 	ActionReminderAtPlace: {
-		ID:    ActionReminderAtPlace,
-		Label: "Reminder at place",
+		ID:           ActionReminderAtPlace,
+		Label:        "Reminder at place",
+		UsesPosition: true,
 		Effects: []string{
 			"Creates a reminder in Apple Reminders that fires on arriving at, or leaving, the Capture's position",
 			"Writes nothing the second time: the reminder's notes carry the Capture's id, and a list already holding it is left alone",
@@ -273,6 +280,17 @@ func Actions() []ActionDefinition {
 		}
 	}
 	return definitions
+}
+
+// UsesPosition reports whether any of the enabled Actions of a Recipe writes
+// the Capture's position.
+func UsesPosition(recipe Recipe, enabled []ActionID) bool {
+	for _, id := range recipe.Actions {
+		if def, ok := actionDefinitions[id]; ok && def.UsesPosition && slices.Contains(enabled, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // LookupAction returns the definition of an Action.

@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // captureView is how a Capture is named in a list. A Capture is identified by
@@ -83,13 +84,31 @@ func routeCaptureDetail(entry captureEntry) string {
 	return strings.Join(parts, " · ")
 }
 
-// indentDetail lines a row's second line up under the first, past the number
-// the list draws in front of it.
-func indentDetail(detail string) string {
+// indentDetail starts a row's second line where the first line's text starts,
+// past whatever marker sits in front of it — Route's readiness marker, or the
+// flag — so the source lines up under the timestamp rather than stepping in
+// from it. The list itself already indents past the number.
+func indentDetail(detail, label string) string {
+	return indentDetailBy(detail, markerWidth(label))
+}
+
+// markerWidth is how many cells of a label come before its text: a readiness
+// or flag marker and the space after it, or nothing.
+func markerWidth(label string) int {
+	plain := ansi.Strip(label)
+	for _, marker := range []string{"○ ", "◐ ", "● ", "⚑ "} {
+		if strings.HasPrefix(plain, marker) {
+			return lipgloss.Width(marker)
+		}
+	}
+	return 0
+}
+
+func indentDetailBy(detail string, cells int) string {
 	if detail == "" {
 		return ""
 	}
-	return "      " + detail
+	return strings.Repeat(" ", cells) + detail
 }
 
 // orderByOrganized puts the Captures still to organize first and the ones
@@ -258,3 +277,30 @@ func pageActionRow(width int, buttons [][]string) string {
 func reloadAfterMove(root, indexFile string, destination archiveDestination, folder string) tea.Cmd {
 	return tea.Batch(loadCaptures(root, indexFile), loadArchiveFolder(destination, folder, indexFile))
 }
+
+// flaggedFirst moves the Captures marked wrong to the front, keeping the order
+// within each half.
+func flaggedFirst(entries []captureEntry) []captureEntry {
+	ordered := make([]captureEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.record.Flagged() {
+			ordered = append(ordered, entry)
+		}
+	}
+	for _, entry := range entries {
+		if !entry.record.Flagged() {
+			ordered = append(ordered, entry)
+		}
+	}
+	return ordered
+}
+
+// flagMarker is how a Capture flagged in Route is marked in a list: the flag in
+// bold red, where the other markers are quiet. It resets only what it set —
+// weight and colour — rather than every attribute, so a selected row keeps its
+// background past the icon.
+const flagMarker = "\x1b[1;31m⚑\x1b[22;39m "
+
+// flagDetail is the word said beside it on the row's second line, so the mark
+// still reads where a terminal's font has no flag to draw.
+const flagDetail = "  · FLAGGED"
