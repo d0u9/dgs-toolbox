@@ -36,6 +36,12 @@ This project is expected to grow, and the same computation is wanted in more tha
 - Bubble Tea
 - Bubbles and Lip Gloss only when useful
 
+## One binary
+
+`dgs` is the only executable the toolbox installs, and this is a hard requirement: copying that one file to another machine must be enough to run it. Do not add a helper binary, sidecar, or script that has to sit beside `dgs` or on `PATH`, and do not propose one as an option.
+
+When a feature needs something Go cannot reach directly, compile it into `dgs`. Apple Reminders, for example, reach EventKit through cgo under a `darwin && cgo` build tag. Other platforms, and builds with `CGO_ENABLED=0`, get a fallback that refuses with a clear reason. If a feature cannot be built this way, ask before designing around it.
+
 ## Command model
 
 Commands are hierarchical:
