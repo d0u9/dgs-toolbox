@@ -21,8 +21,11 @@ var mapProviders = []struct {
 	short string
 	build func(latitude, longitude, label string) string
 }{
+	// The unified Maps URL's /place shows the coordinate as a place card with
+	// a pin; /frame and the older ll parameter only move the map there, which
+	// leaves nothing on it saying where the point is.
 	{"Apple 地图", "Apple", func(latitude, longitude, label string) string {
-		return "https://maps.apple.com/?ll=" + latitude + "," + longitude + query("q", label)
+		return "https://maps.apple.com/place?coordinate=" + latitude + "," + longitude + query("name", label)
 	}},
 	{"高德地图", "高德", func(latitude, longitude, label string) string {
 		return "https://uri.amap.com/marker?position=" + longitude + "," + latitude +
