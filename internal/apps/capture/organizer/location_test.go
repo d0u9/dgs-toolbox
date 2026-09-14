@@ -75,7 +75,7 @@ func TestLocationEntryFollowsTheVaultsShape(t *testing.T) {
 		"- `21:31:22 +10` · 在家调试 ^dgs-20260909213122900-4620",
 		"    - Australia, NSW, Sydney, Epping",
 		"    - [(-33.76910, 151.08200)](obsidian://quickadd?choice=Copy%20Coordinates%20(lng%2C%20lat)&value-coordinates=-33.76910%2C%20151.08200)",
-		"    - [Apple](https://maps.apple.com/?ll=-33.76910,151.08200&q=Epping) · " +
+		"    - [Apple](https://maps.apple.com/place?coordinate=-33.76910,151.08200&name=Epping) · " +
 			"[高德](https://uri.amap.com/marker?position=151.08200,-33.76910&coordinate=wgs84&name=Epping) · " +
 			"[Google](https://www.google.com/maps/search/?api=1&query=-33.76910,151.08200)",
 	}
