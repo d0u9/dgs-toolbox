@@ -61,11 +61,12 @@ the line carries and the vault command a coordinate links to.
 
 ## Reminders
 
-Both reminder Actions write to Apple Reminders through `dgs-reminders`, a small
-EventKit helper `make install` builds next to `dgs` on macOS. The Reminders
-scripting dictionary has no location alarm, which is why it is a helper rather
-than AppleScript. The first run asks for access to Reminders; elsewhere, or
-without the helper, the Action refuses with the reason.
+Both reminder Actions write to Apple Reminders through EventKit, which `dgs`
+links on macOS with cgo, so there is nothing to install beside it. The
+Reminders scripting dictionary has no location alarm, which is why it is
+EventKit rather than AppleScript. The first run asks for access to Reminders;
+on another system, or in a build with `CGO_ENABLED=0`, the Action refuses with
+the reason.
 
 Shared by both:
 

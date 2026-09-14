@@ -3,22 +3,21 @@ DATADIR    ?= $(HOME)/.local/share
 ZSHCOMPDIR ?= $(DATADIR)/zsh/site-functions
 BASHCOMPDIR ?= $(DATADIR)/bash-completion/completions
 BIN        := dgs
-HELPER     := dgs-reminders
 
-.PHONY: install uninstall reminders
+.PHONY: install uninstall
 
-# dgs-reminders is the EventKit helper behind apple.reminders.create. It needs
-# only the Command Line Tools; on anything but macOS it is not built.
-reminders:
-	@mkdir -p bin
-	swiftc -O -swift-version 5 helpers/reminders/main.swift -o bin/$(HELPER) \
-		-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker helpers/reminders/Info.plist
-	codesign --force --sign - --identifier dev.dgs-toolbox.reminders bin/$(HELPER)
+# On macOS dgs links EventKit through cgo for the reminder Actions, and carries
+# an Info.plist so Reminders can say who is asking. It needs only the Command
+# Line Tools; elsewhere, or with CGO_ENABLED=0, the reminder Actions refuse.
+DARWIN_LDFLAGS := -linkmode=external -extldflags "-sectcreate __TEXT __info_plist $(CURDIR)/internal/desktop/reminders/Info.plist"
 
 install:
 	@mkdir -p "$(BINDIR)" "$(ZSHCOMPDIR)" "$(BASHCOMPDIR)"
-	go build -o "$(BINDIR)/$(BIN)" ./cmd/dgs
-	@if [ "$$(uname)" = Darwin ]; then $(MAKE) reminders && install -m 755 bin/$(HELPER) "$(BINDIR)/$(HELPER)" && echo "installed $(BINDIR)/$(HELPER)"; fi
+	@if [ "$$(uname)" = Darwin ]; then \
+		go build -ldflags '$(DARWIN_LDFLAGS)' -o "$(BINDIR)/$(BIN)" ./cmd/dgs && \
+		codesign --force --sign - --identifier dev.dgs-toolbox.dgs "$(BINDIR)/$(BIN)"; \
+	else go build -o "$(BINDIR)/$(BIN)" ./cmd/dgs; fi
+	@rm -f "$(BINDIR)/dgs-reminders" # the helper reminders needed before they moved into dgs
 	"$(BINDIR)/$(BIN)" completion zsh > "$(ZSHCOMPDIR)/_$(BIN)"
 	"$(BINDIR)/$(BIN)" completion bash > "$(BASHCOMPDIR)/$(BIN)"
 	@echo "installed $(BINDIR)/$(BIN)"
@@ -30,7 +29,7 @@ install:
 	@echo "      and open a new terminal"
 
 uninstall:
-	@for f in "$(BINDIR)/$(BIN)" "$(BINDIR)/$(HELPER)" "$(ZSHCOMPDIR)/_$(BIN)" "$(BASHCOMPDIR)/$(BIN)"; do \
+	@for f in "$(BINDIR)/$(BIN)" "$(ZSHCOMPDIR)/_$(BIN)" "$(BASHCOMPDIR)/$(BIN)"; do \
 		if [ -e "$$f" ]; then rm -f "$$f" && echo "removed $$f"; \
 		else echo "$$f is not installed"; fi; \
 	done

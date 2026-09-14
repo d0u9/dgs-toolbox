@@ -129,7 +129,7 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 	// The Apple note and calendar Actions exist so the model can be exercised
 	// against more than one workflow. Each declares its requirements and names
 	// its target; neither talks to an Apple API yet. The reminder Actions below
-	// do, through the dgs-reminders helper.
+	// do, through EventKit.
 	ActionAppleNoteCreate: {
 		ID:      ActionAppleNoteCreate,
 		Label:   "Apple note",

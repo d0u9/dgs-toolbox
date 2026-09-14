@@ -351,8 +351,8 @@ places.
 ## Reminders
 
 How the reminder Actions write when a run does not say otherwise. Both are
-parameters too, so one run can change either in `FIELDS`. The Actions and the
-`dgs-reminders` helper they need are described in
+parameters too, so one run can change either in `FIELDS`. The Actions, and
+what they need to reach Reminders, are described in
 [`apps/capture/actions.md`](../apps/capture/actions.md#reminders).
 
 | Key | Meaning | Default |
