@@ -73,6 +73,11 @@ func (c Context) Parameter(action ActionID, name string) string {
 // Get returns the value of a logical field and whether it resolved at all.
 // User enrichment wins over the Capture's own data.
 func (c Context) Get(field FieldID) (any, bool) {
+	// The position fields have one resolver, so latitude, longitude and the
+	// pair cannot be read from three different places.
+	if isPositionField(field) {
+		return c.positionField(field)
+	}
 	if value, ok := c.Enrichment[field]; ok && !isEmpty(value) {
 		return value, true
 	}
@@ -81,10 +86,10 @@ func (c Context) Get(field FieldID) (any, bool) {
 	if value, ok := sourced(c.Settings, c.Capture, field); ok {
 		return value, true
 	}
-	if value, ok := resolve(c.Capture, field); ok {
+	if value, ok := c.resolve(field); ok {
 		return value, true
 	}
-	return derive(c.Capture, field)
+	return c.derive(field)
 }
 
 // String returns a resolved field as a string, empty when it does not resolve.
@@ -108,10 +113,7 @@ func sourced(settings Settings, capture Capture, field FieldID) (any, bool) {
 	// that have none. The specific wins whole rather than per path: a workflow
 	// that says where it keeps a field has said it, and falling through to a
 	// general list afterwards would read a key it did not name.
-	paths, ok := settings.Sources[capture.Workflow()][field]
-	if !ok {
-		paths = settings.Sources[AnyWorkflow][field]
-	}
+	paths, _ := Context{Capture: capture, Settings: settings}.sourcePaths(field)
 	for _, source := range paths {
 		if value, ok := valueOf(settings, capture.Index, strings.TrimSpace(source)); ok {
 			return value, true
@@ -126,7 +128,11 @@ func valueOf(settings Settings, index indexschema.Index, source string) (any, bo
 	if IsTemplateSource(source) {
 		return composed(settings, index, source)
 	}
-	return valueAt(index, source)
+	value, ok := payloadAt(index, source)
+	if !ok {
+		return nil, false
+	}
+	return payloadValue(value)
 }
 
 // IsTemplateSource reports whether a source composes a value rather than
@@ -189,10 +195,11 @@ const AnyWorkflow = "*"
 // PayloadRoot is the one thing a source path may start from.
 const PayloadRoot = "payload"
 
-// valueAt walks a dotted path into the payload. A path that does not resolve is
-// not an error here: the field is simply still missing, and the reader is asked
-// for it the way any other missing field is.
-func valueAt(index indexschema.Index, path string) (any, bool) {
+// payloadAt walks a dotted path into the payload and returns what is there as
+// JSON decoded it. A path that does not resolve is not an error here: the field
+// is simply still missing, and the reader is asked for it the way any other
+// missing field is.
+func payloadAt(index indexschema.Index, path string) (any, bool) {
 	segments := strings.Split(path, ".")
 	if len(segments) < 2 || segments[0] != PayloadRoot {
 		return nil, false
@@ -208,7 +215,7 @@ func valueAt(index indexschema.Index, path string) (any, bool) {
 			return nil, false
 		}
 	}
-	return payloadValue(current)
+	return current, current != nil
 }
 
 // payloadValue turns what JSON decoded into what a field is. A list of strings
@@ -249,32 +256,19 @@ func payloadValue(value any) (any, bool) {
 // index gives one meaning: everything in the payload is the workflow's own
 // shape, and where it keeps a field is said in that workflow's file rather than
 // guessed at here.
-func resolve(capture Capture, field FieldID) (any, bool) {
-	index := capture.Index
+//
+// The place is read through c.place, which is empty once the position has come
+// from somewhere else: the index's city is where the phone was.
+func (c Context) resolve(field FieldID) (any, bool) {
 	switch field {
 	case FieldCreatedAt:
-		return present(index.CreatedAt)
+		return present(c.Capture.Index.CreatedAt)
 	case FieldCity:
-		return present(index.CapturePlace().City)
+		return present(c.place().City)
 	case FieldRegion:
-		return present(index.CapturePlace().Region)
+		return present(c.place().Region)
 	case FieldCountry:
-		return present(index.CapturePlace().Country)
-	case FieldCoordinates:
-		if index.Coordinates == nil {
-			return nil, false
-		}
-		return fmt.Sprintf("%v, %v", index.Coordinates.Latitude, index.Coordinates.Longitude), true
-	case FieldLatitude:
-		if index.Coordinates == nil {
-			return nil, false
-		}
-		return index.Coordinates.Latitude, true
-	case FieldLongitude:
-		if index.Coordinates == nil {
-			return nil, false
-		}
-		return index.Coordinates.Longitude, true
+		return present(c.place().Country)
 	}
 	return nil, false
 }
@@ -282,11 +276,11 @@ func resolve(capture Capture, field FieldID) (any, bool) {
 // derive computes a field the Capture does not carry outright. A derived value
 // is a starting point rather than the Capture's own data, so FromCapture
 // reports false for it and the user may replace it.
-func derive(capture Capture, field FieldID) (any, bool) {
+func (c Context) derive(field FieldID) (any, bool) {
 	if field != FieldPlaceName {
 		return nil, false
 	}
-	return composePlaceName(capture.Index.CapturePlace())
+	return composePlaceName(c.place())
 }
 
 // composePlaceName names a place from its structured parts, because the index
@@ -333,6 +327,10 @@ func present(value string) (any, bool) {
 // enrichment or a derived starting point. Such a value is not the user's to
 // edit; a derived one is.
 func (c Context) FromCapture(field FieldID) bool {
-	_, ok := resolve(c.Capture, field)
+	if isPositionField(field) {
+		position, ok := c.Position()
+		return ok && !position.Sourced
+	}
+	_, ok := c.resolve(field)
 	return ok
 }

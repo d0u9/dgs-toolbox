@@ -140,6 +140,12 @@ func LoadWorkflowFile(path string) (workflows []string, fields map[FieldID][]str
 		if len(paths) == 0 {
 			return nil, nil, fmt.Errorf("field %q names no payload key", field)
 		}
+		// Latitude and longitude are halves of the position rather than fields
+		// of their own: sourcing one of them could put it on a different point
+		// than the other. The position is sourced whole, as coordinates.
+		if id := FieldID(field); id == FieldLatitude || id == FieldLongitude {
+			return nil, nil, fmt.Errorf("field %q is half of the position; source %q instead, as \"lat, lng\" or an object with latitude and longitude", field, FieldCoordinates)
+		}
 		for _, source := range paths {
 			if IsTemplateSource(source) {
 				// A template is checked here rather than when it is rendered:
