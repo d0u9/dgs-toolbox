@@ -226,7 +226,22 @@ fields:
 
 The payload is the data, so `.title` is `payload.title` and `.meta.heading`
 reaches into it. The functions every other template in this toolbox has —
-`join`, `trim`, `default`, `indent`, `mapped` — are here too.
+`join`, `trim`, `default`, `indent`, `mapped`, `firstLine`, `afterFirstLine` —
+are here too.
+
+The other way round, one text meaning a title and a body is split with
+`firstLine`, the first line with anything on it, and `afterFirstLine`,
+everything after that line. Blank lines at either end are dropped; blank lines
+inside the body are kept.
+
+```yaml
+fields:
+  title: "{{with .text}}{{firstLine .}}{{end}}"
+  content: "{{with .text}}{{afterFirstLine .}}{{end}}"
+```
+
+A text with nothing after its first line has no `content`, rather than an empty
+one.
 
 A piece that is not always there is guarded with `{{with}}`, which writes
 nothing when the key is absent. A key named without a guard, on a Capture that

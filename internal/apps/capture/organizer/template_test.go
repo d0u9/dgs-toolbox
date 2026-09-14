@@ -213,3 +213,52 @@ func TestMappedTranslatesAValueThroughATable(t *testing.T) {
 		t.Errorf("inline = %q", got)
 	}
 }
+
+func TestSplitFirstLine(t *testing.T) {
+	tests := []struct{ text, first, rest string }{
+		{"Bondi Icebergs\n日出时去\n\n拍照", "Bondi Icebergs", "日出时去\n\n拍照"},
+		{"\n\n  Title  \n\n\nbody\n\n", "Title", "body"},
+		{"only a title\n", "only a title", ""},
+		{"a\r\nb", "a", "b"},
+		{"\n \n", "", ""},
+		{"", "", ""},
+	}
+	for _, tc := range tests {
+		if got := firstLine(tc.text); got != tc.first {
+			t.Errorf("firstLine(%q) = %q, want %q", tc.text, got, tc.first)
+		}
+		if got := afterFirstLine(tc.text); got != tc.rest {
+			t.Errorf("afterFirstLine(%q) = %q, want %q", tc.text, got, tc.rest)
+		}
+	}
+}
+
+// A workflow asking for one text gets a title and a body out of it, and a
+// Capture with nothing after the title has no content rather than an empty one.
+func TestTitleAndBodyFromOneText(t *testing.T) {
+	settings := DefaultSettings()
+	settings.Sources = map[string]map[FieldID][]string{"been_here": {
+		FieldTitle:   {"{{with .text}}{{firstLine .}}{{end}}"},
+		FieldContent: {"{{with .text}}{{afterFirstLine .}}{{end}}"},
+	}}
+	capture := beenHere()
+	capture.Index.Payload = map[string]any{"text": "\n\nBuy tea\nthe green one\n\nat the corner\n\n"}
+	ctx := NewContext(capture, nil).WithSettings(settings)
+	if got := ctx.String(FieldTitle); got != "Buy tea" {
+		t.Errorf("title = %q", got)
+	}
+	if got := ctx.String(FieldContent); got != "the green one\n\nat the corner" {
+		t.Errorf("content = %q", got)
+	}
+
+	capture.Index.Payload = map[string]any{"text": "Buy tea\n"}
+	ctx = NewContext(capture, nil).WithSettings(settings)
+	if _, ok := ctx.Get(FieldContent); ok {
+		t.Error("content resolved from a text with no body")
+	}
+	capture.Index.Payload = map[string]any{}
+	ctx = NewContext(capture, nil).WithSettings(settings)
+	if _, ok := ctx.Get(FieldTitle); ok {
+		t.Error("title resolved from a capture with no text")
+	}
+}

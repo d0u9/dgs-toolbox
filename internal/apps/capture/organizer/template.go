@@ -113,9 +113,13 @@ func templateFuncs(settings Settings) template.FuncMap {
 			pad := strings.Repeat(" ", spaces)
 			return strings.ReplaceAll(value, "\n", "\n"+pad)
 		},
-		"join":    strings.Join,
-		"trim":    strings.TrimSpace,
-		"default": func(fallback, value string) string { return orDefault(value, fallback) },
+		"join": strings.Join,
+		"trim": strings.TrimSpace,
+		// firstLine and afterFirstLine split a text into a title and a body,
+		// for a workflow that asks for one text and means both.
+		"firstLine":      firstLine,
+		"afterFirstLine": afterFirstLine,
+		"default":        func(fallback, value string) string { return orDefault(value, fallback) },
 		// mapped translates a value through a named table. A value the table
 		// does not mention comes back as it was: a mapping says how some names
 		// are written in this vault, not which names are allowed, and dropping
@@ -503,4 +507,37 @@ func locationEntry(ctx Context) ([]string, error) {
 		return nil, err
 	}
 	return renderEntry(parsed, data)
+}
+
+// firstLine is the first line of a text that has anything on it, trimmed:
+// blank lines before it are spacing rather than a title.
+func firstLine(text string) string {
+	title, _ := splitFirstLine(text)
+	return title
+}
+
+// afterFirstLine is everything after that line, with the blank lines at either
+// end removed and the blank lines inside kept, since they separate paragraphs.
+func afterFirstLine(text string) string {
+	_, body := splitFirstLine(text)
+	return body
+}
+
+func splitFirstLine(text string) (first, rest string) {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	start := 0
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	if start == len(lines) {
+		return "", ""
+	}
+	body := lines[start+1:]
+	for len(body) > 0 && strings.TrimSpace(body[0]) == "" {
+		body = body[1:]
+	}
+	for len(body) > 0 && strings.TrimSpace(body[len(body)-1]) == "" {
+		body = body[:len(body)-1]
+	}
+	return strings.TrimSpace(lines[start]), strings.Join(body, "\n")
 }
