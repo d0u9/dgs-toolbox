@@ -649,7 +649,8 @@ misspelled field fails when the template is parsed: `When`, `Date`, `Time`,
 template decides the order and the punctuation between them — and a Capture with
 no position has neither, so a line naming both is dropped rather than written as
 half a position. `indent`,
-`join`, `trim`, `default` and `mapped` are available as functions.
+`join`, `trim`, `default`, `mapped`, `firstLine` and `afterFirstLine` are
+available as functions.
 
 ### Translating a value
 
