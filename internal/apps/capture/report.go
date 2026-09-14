@@ -292,6 +292,9 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	}
 	settings.LocationNote = obsidian.LocationNote
 	settings.LocationArchive = obsidian.LocationArchive
+	reminders := global.CaptureReminders()
+	settings.ReminderList = reminders.List
+	settings.ReminderRadius = reminders.Radius
 	return settings
 }
 

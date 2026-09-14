@@ -1,0 +1,14 @@
+{
+  "capture": {
+    "scan": {
+      "root": "~/Captures",
+      "index_file": "index.json"
+    },
+    "apple": {
+      "reminders": {
+        "list": "Places",
+        "radius": 200
+      }
+    }
+  }
+}

@@ -7,8 +7,8 @@ link here; this is what a reader consults to find out *what* to write.
 
 - [The shell](shell.md) — where the configuration itself lives, and the top bar.
 - [Capture](capture.md) — the Capture root, where Captures are archived or
-  rejected, Recipes, templates, and the vault
-  the Obsidian Actions write to. The Actions a Recipe may name are catalogued
+  rejected, Recipes, templates, the vault
+  the Obsidian Actions write to, and how reminders are written. The Actions a Recipe may name are catalogued
   in [`apps/capture/actions.md`](../apps/capture/actions.md).
 - [Photo](photo.md) — Photo Import's state file and default paths.
 - [Geo](geo.md) — where the GPX web server listens, the folder it browses, and its base maps.
@@ -77,6 +77,8 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `capture.obsidian.section` | [capture](capture.md#the-daily-note) | `Captured{{with .Device}} - {{.}}{{end}}` |
 | `capture.obsidian.location_note` | [capture](capture.md#the-location-note) | empty — the location Action refuses to run |
 | `capture.obsidian.location_archive` | [capture](capture.md#the-location-note) | empty — nothing is archived |
+| `capture.apple.reminders.list` | [capture](capture.md#reminders) | empty — Reminders' own default list |
+| `capture.apple.reminders.radius` | [capture](capture.md#reminders) | `150` |
 | `photo.import.state_file` | [photo](photo.md) | `.dgs-state` |
 | `photo.import.source` | [photo](photo.md) | empty — the repository's mock path |
 | `photo.import.destination` | [photo](photo.md) | empty — the repository's mock path |

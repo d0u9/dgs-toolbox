@@ -45,7 +45,7 @@ func TestRecipeReportCoversTheWholeRegistry(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(report, "RECIPES  7") {
+	if !strings.Contains(report, "RECIPES  8") {
 		t.Errorf("report does not count the recipes:\n%s", report)
 	}
 	if !strings.Contains(report, "obsidian_daily.yaml") {

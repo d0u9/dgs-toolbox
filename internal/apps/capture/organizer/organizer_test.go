@@ -75,7 +75,7 @@ func TestFindNarrowsCandidates(t *testing.T) {
 		{
 			name:    "been_here offers the location recipes",
 			capture: beenHere(),
-			want:    []RecipeID{"obsidian_daily", "obsidian_location", "obsidian_location_daily"},
+			want:    []RecipeID{"apple_reminder_place", "obsidian_daily", "obsidian_location", "obsidian_location_daily"},
 		},
 		{
 			name: "quick_mark offers a different set entirely",

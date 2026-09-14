@@ -1,0 +1,9 @@
+# A shortcut that saves a place to go to, picked on a map, rather than where
+# the phone is. The index's coordinates are where it was saved from, so the
+# position is sourced from the payload — whole, never as latitude and longitude
+# separately — and the index's altitude and place are set aside with it.
+fields:
+  title: payload.name
+  content: payload.note
+  # {"lat": 31.2304, "lng": 121.4737}; "31.2304, 121.4737" works too. WGS-84.
+  coordinates: payload.place

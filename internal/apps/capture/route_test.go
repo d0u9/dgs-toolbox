@@ -875,9 +875,9 @@ func TestRouteDoubleClickActsLikeEnter(t *testing.T) {
 		t.Fatalf("focus after double-clicking a capture = %q, want %q", got, routeRecipesField)
 	}
 
-	// RECIPES: Enter chooses the recipe and moves to ACTIONS. Row 3 is
+	// RECIPES: Enter chooses the recipe and moves to ACTIONS. Row 4 is
 	// Location + Daily: candidates are listed in the order their files sort in.
-	m = doubleClick(m, columnX(1), 3)
+	m = doubleClick(m, columnX(1), 4)
 	if got := m.fields.Current(); got != routeActionsField {
 		t.Fatalf("focus after double-clicking a recipe = %q, want %q", got, routeActionsField)
 	}
