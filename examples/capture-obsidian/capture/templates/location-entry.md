@@ -1,4 +1,4 @@
-- `{{.Clock}} {{.Offset}}` · {{.Content}} {{.ID}}
+- `{{.Clock}} {{.Offset}}`{{with .Content}} · {{.}}{{end}} {{.ID}}
     - {{.Address}}
     - {{.CopyLink "Copy Coordinates (lng, lat)"}}
     - {{.MapLinks "Apple, 高德, Google"}}

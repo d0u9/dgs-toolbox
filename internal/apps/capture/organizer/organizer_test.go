@@ -165,9 +165,17 @@ func TestContentIsSourcedPerWorkflow(t *testing.T) {
 	}
 }
 
+// undated is a been_here Capture that does not say when it was taken, which
+// both Obsidian Actions need and nothing else can answer. The note cannot stand
+// in for this: an entry is written whether or not anything was typed.
+func undated(capture Capture) Capture {
+	capture.Index.CreatedAt = ""
+	return capture
+}
+
 func TestMissingFieldsFollowsTheEnabledSet(t *testing.T) {
 	recipe := locationDaily(t)
-	capture := beenHere()
+	capture := undated(beenHere())
 
 	tests := []struct {
 		name       string
@@ -176,15 +184,22 @@ func TestMissingFieldsFollowsTheEnabledSet(t *testing.T) {
 		want       []FieldID
 	}{
 		{
-			name:    "all actions enabled asks for the note the capture has no text for",
+			name:    "all actions enabled asks for the time the capture does not carry",
 			enabled: []ActionID{ActionLocationAppend, ActionDailyAppend},
 			// Both Actions want it; it is reported once per Action that does.
-			want: []FieldID{FieldContent, FieldContent},
+			want: []FieldID{FieldCreatedAt, FieldCreatedAt},
 		},
 		{
-			name:    "the location note wants the note too, so disabling the daily one keeps it",
+			name:    "the location note wants the time too, so disabling the daily one keeps it",
 			enabled: []ActionID{ActionLocationAppend},
-			want:    []FieldID{FieldContent},
+			want:    []FieldID{FieldCreatedAt},
+		},
+		{
+			name:    "the note is optional, so a capture with no text is not held up by it",
+			enabled: []ActionID{ActionLocationAppend, ActionDailyAppend},
+			// Supplying the time leaves nothing: the missing note does not block.
+			enrichment: map[FieldID]any{FieldCreatedAt: "2026-09-09T21:31:22+10:00"},
+			want:       nil,
 		},
 
 		{
@@ -193,9 +208,9 @@ func TestMissingFieldsFollowsTheEnabledSet(t *testing.T) {
 			want:    nil,
 		},
 		{
-			name:       "enrichment satisfies the note",
+			name:       "enrichment satisfies the time",
 			enabled:    []ActionID{ActionLocationAppend, ActionDailyAppend},
-			enrichment: map[FieldID]any{FieldPlaceName: "Epping Station", FieldContent: "晚上再来看看"},
+			enrichment: map[FieldID]any{FieldPlaceName: "Epping Station", FieldCreatedAt: "2026-09-09T21:31:22+10:00", FieldContent: "晚上再来看看"},
 			want:       nil,
 		},
 	}
@@ -247,15 +262,15 @@ func TestAPlaceNameIsComposedFromTheStructuredParts(t *testing.T) {
 
 func TestMissingFieldsAreAttributedToTheirAction(t *testing.T) {
 	recipe := locationDaily(t)
-	ctx := NewContext(placeless(), nil)
+	ctx := NewContext(undated(placeless()), nil)
 	missing := MissingFields(ctx, recipe, recipe.Actions)
 
-	// The note is wanted by both, so it is reported once for each of them and
+	// The time is wanted by both, so it is reported once for each of them and
 	// each report names the Action that asked.
 	seen := map[ActionID]bool{}
 	for _, req := range missing {
-		if req.Field != FieldContent {
-			t.Errorf("%s is missing, want only the note", req.Field)
+		if req.Field != FieldCreatedAt {
+			t.Errorf("%s is missing, want only the time", req.Field)
 		}
 		seen[req.Action] = true
 	}
@@ -344,7 +359,7 @@ func TestBuildProducesThePlanFromTheWorkedExample(t *testing.T) {
 
 func TestBuildKeepsBlockedActionsVisible(t *testing.T) {
 	recipe := locationDaily(t)
-	ctx := NewContext(placeless(), nil)
+	ctx := NewContext(undated(placeless()), nil)
 
 	plans := Build(ctx, recipe, recipe.Actions)
 	if len(plans) != 2 {
@@ -357,7 +372,7 @@ func TestBuildKeepsBlockedActionsVisible(t *testing.T) {
 		t.Errorf("daily target = %q, want none until a path is configured", plans[1].Target)
 	}
 	if plans[1].Ready() {
-		t.Error("daily plan should be blocked by the missing note")
+		t.Error("daily plan should be blocked by the missing time")
 	}
 
 }

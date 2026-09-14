@@ -499,9 +499,6 @@ func mapLinksLine(ctx Context, latitude, longitude, services string) string {
 // locationEntry is what one Capture becomes in the running list of places.
 func locationEntry(ctx Context) ([]string, error) {
 	data := entryData(ctx)
-	if data.Content == "" {
-		return nil, nil
-	}
 	parsed, err := LoadTemplate(ctx.Settings, LocationEntryTemplate)
 	if err != nil {
 		return nil, err

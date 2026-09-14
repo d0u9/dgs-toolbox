@@ -92,9 +92,11 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 			"Moves any year that has rolled over into the archive as it goes",
 			"Writes nothing the second time: an entry carries the Capture's id and is added once",
 		},
+		// The note is optional: a place is worth recording whether or not
+		// anything was written about it.
 		Required: []FieldRequirement{
 			{Field: FieldCreatedAt, Label: "Created", Required: true, Input: InputText},
-			multiline(FieldContent, "Note"),
+			optional(multiline(FieldContent, "Note")),
 		},
 		Target: func(ctx Context) string { return ctx.Settings.LocationNote },
 	},
@@ -108,7 +110,7 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		},
 		Required: []FieldRequirement{
 			{Field: FieldCreatedAt, Label: "Created", Required: true, Input: InputText},
-			multiline(FieldContent, "Note"),
+			optional(multiline(FieldContent, "Note")),
 		},
 		Parameters: []ParameterDefinition{{
 			Name:    ParameterSection,

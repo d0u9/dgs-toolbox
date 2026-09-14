@@ -49,9 +49,11 @@ func TestDailyEntryDropsLinesWithNothingOnThem(t *testing.T) {
 	if got := mustEntry(t, templated(t, bare)); got != want {
 		t.Fatalf("entry =\n%s\nwant\n%s", got, want)
 	}
-	// Without content there is nothing worth writing at all.
-	if entry, err := dailyEntry(templated(t, beenHere())); err != nil || entry != nil {
-		t.Fatalf("entry = %q, err = %v, want nothing for a capture with no content", entry, err)
+	// Without content the entry is still written, less the lines its text
+	// would have filled — the Content heading included.
+	want = "- 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620\n  - -33.76910, 151.08200\n  - address: NSW, Epping"
+	if got := mustEntry(t, templated(t, beenHere())); got != want {
+		t.Fatalf("entry =\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -260,5 +262,39 @@ func TestTitleAndBodyFromOneText(t *testing.T) {
 	ctx = NewContext(capture, nil).WithSettings(settings)
 	if _, ok := ctx.Get(FieldTitle); ok {
 		t.Error("title resolved from a capture with no text")
+	}
+}
+
+// The compiled-in templates write an entry for a Capture nobody wrote anything
+// about without leaving the text's heading or separator behind.
+func TestBuiltinEntriesWithoutContent(t *testing.T) {
+	ctx := NewContext(beenHere(), nil)
+	for name, want := range map[string]string{
+		DailyEntryTemplate: "- Date: 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620\n" +
+			"    - Coordinates: -33.76910, 151.08200, 0m\n" +
+			"    - Address: NSW, Epping",
+		LocationEntryTemplate: "- `21:31:22 +10` ^dgs-20260909213122900-4620",
+	} {
+		parsed, err := LoadTemplate(ctx.Settings, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines, err := renderEntry(parsed, entryData(ctx))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Join(lines, "\n")
+		if name == LocationEntryTemplate {
+			got = lines[0]
+		}
+		if got != want {
+			t.Errorf("%s =\n%s\nwant\n%s", name, got, want)
+		}
+	}
+	ctx = NewContext(beenHere(), map[FieldID]any{FieldContent: "tea"})
+	parsed, _ := LoadTemplate(ctx.Settings, LocationEntryTemplate)
+	lines, _ := renderEntry(parsed, entryData(ctx))
+	if lines[0] != "- `21:31:22 +10` · tea ^dgs-20260909213122900-4620" {
+		t.Errorf("location entry with content = %q", lines[0])
 	}
 }

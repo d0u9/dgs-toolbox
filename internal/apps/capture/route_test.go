@@ -162,50 +162,46 @@ func chooseRecipe(t *testing.T, m routeModel, name string) routeModel {
 
 func TestRouteMarksBlockedActionsAndClearsThemOnceFilled(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	// A reminder at a place needs a title the Capture does not carry.
+	m := chooseRecipe(t, loadedRoute(t, root), "Reminder Here")
 
 	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "[x] ○ Location note") {
-		t.Fatalf("location action should be enabled and blocked:\n%s", view)
-	}
-	// The location note's path does not depend on anything the Capture is
-	// missing, so it is shown even while the Action is blocked.
-	if !strings.Contains(view, "88 Inbox/06 Locations.md") {
-		t.Fatalf("the target the action would write to is not shown:\n%s", view)
+	if !strings.Contains(view, "[x] ○ Reminder at place") {
+		t.Fatalf("reminder action should be enabled and blocked:\n%s", view)
 	}
 
 	// FIELDS lists the union across enabled actions, split by state: what
 	// already has a value, then what is still missing.
 	resolved, missing := splitFieldRows(m)
-	if !equalFieldIDs(resolved, []organizer.FieldID{organizer.FieldCreatedAt}) {
+	if !equalFieldIDs(resolved, []organizer.FieldID{organizer.FieldCoordinates}) {
 		t.Fatalf("resolved = %v", fieldRowIDs(resolved))
 	}
 	// What is still to supply comes first.
 	if !m.fieldRows[0].missing {
 		t.Fatalf("the first row is %q, want a missing field", m.fieldRows[0].requirement.Field)
 	}
-	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldContent, organizer.FieldTags}) {
+	if !equalFieldIDs(missing, []organizer.FieldID{organizer.FieldTitle}) {
 		t.Fatalf("missing = %v", fieldRowIDs(missing))
 	}
 	if resolved[0].editable {
-		t.Fatal("createdAt comes from the capture and must not be editable")
+		t.Fatal("the position comes from the capture and must not be editable")
 	}
 
 	selection, recipe, ok := m.currentSelection()
 	if !ok {
 		t.Fatal("no selection")
 	}
-	selection.Set(organizer.FieldContent, "晚上再来看看")
+	selection.Set(organizer.FieldTitle, "晚上再来看看")
 	m.refresh()
 
 	if !organizer.Ready(mustContext(t, m), recipe, selection.EnabledActions(recipe)) {
-		t.Fatal("capture should be ready once the note is supplied")
+		t.Fatal("capture should be ready once the title is supplied")
 	}
 	view = ansi.Strip(m.View())
-	if !strings.Contains(view, "[x] ● Location note") {
-		t.Fatalf("location action should be ready:\n%s", view)
+	if !strings.Contains(view, "[x] ● Reminder at place") {
+		t.Fatalf("reminder action should be ready:\n%s", view)
 	}
-	if !strings.Contains(view, "88 Inbox/06 Locations.md") {
+	if !strings.Contains(view, "晚上再来看看 · arrive") {
 		t.Fatalf("plan should show the resolved target:\n%s", view)
 	}
 }
@@ -301,28 +297,61 @@ func mustContext(t *testing.T, m routeModel) organizer.Context {
 // A disabled Action leaves the plan and takes its requirements with it.
 func TestRouteToggleDropsAnActionAndItsRequirements(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
+	// Two Actions that both need a title the Capture does not carry.
+	set := recipeSetOf(t, "remind_twice.yaml", `name: Remind Twice
+match:
+  workflows: [been_here]
+actions:
+  - id: apple.reminders.at_place
+  - id: apple.reminders.create
+`)
+	m := newRouteModelWithSettings(root, "index.json", set, routeVault(t))
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+	m = updated.(routeModel)
+	updated, _ = m.Update(loadCaptures(root, "index.json")())
+	m = chooseRecipe(t, updated.(routeModel), "Remind Twice")
 
 	selection, recipe, _ := m.currentSelection()
 	before := organizer.MissingFields(mustContext(t, m), recipe, selection.EnabledActions(recipe))
-	// Both Actions want the note, so it is reported once for each of them.
-	if len(before) != 2 {
-		t.Fatalf("missing before = %v, want the note for each action", fieldIDsOf(before))
+	// Both Actions want the title, so it is reported once for each of them.
+	titles := 0
+	for _, req := range before {
+		if req.Field == organizer.FieldTitle {
+			titles++
+		}
+	}
+	if titles != 2 {
+		t.Fatalf("missing before = %v, want the title for each action", fieldIDsOf(before))
 	}
 
-	m.actions.SelectID("action:" + string(organizer.ActionDailyAppend))
-	updated, _ := m.updateActions(" ")
+	m.actions.SelectID("action:" + string(organizer.ActionReminderCreate))
+	updated, _ = m.updateActions(" ")
 	m = updated.(routeModel)
 
 	selection, recipe, _ = m.currentSelection()
 	after := organizer.MissingFields(mustContext(t, m), recipe, selection.EnabledActions(recipe))
-	if len(after) != 1 || after[0].Action != organizer.ActionLocationAppend {
-		t.Fatalf("missing after disabling the daily note = %v", after)
+	if len(after) != 1 || after[0].Action != organizer.ActionReminderAtPlace {
+		t.Fatalf("missing after disabling the timed reminder = %v", after)
 	}
 	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "[ ]   Daily note") {
+	if !strings.Contains(view, "[ ]   Reminder") {
 		t.Fatalf("disabled action should render unchecked and without markers:\n%s", view)
 	}
+}
+
+// recipeSetOf loads one Recipe written for the test, for behaviour none of the
+// shipped Recipes happens to show.
+func recipeSetOf(t *testing.T, name, body string) organizer.Set {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded := organizer.Load(dir)
+	if len(loaded.Failures) > 0 {
+		t.Fatalf("recipe does not load: %v", loaded.Failures)
+	}
+	return loaded.Set
 }
 
 func TestRouteEditingAFieldRecordsEnrichment(t *testing.T) {
@@ -666,7 +695,7 @@ func TestRouteRunShowsThePlanWithoutExecutingIt(t *testing.T) {
 // plan could actually run.
 func TestRouteRunRecordsNothingWhenBlocked(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
-	m := chooseRecipe(t, loadedRoute(t, root), "Daily")
+	m := chooseRecipe(t, loadedRoute(t, root), "Reminder Here")
 
 	updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	m = updated.(routeModel)
@@ -993,7 +1022,7 @@ func TestRouteActionDetailNamesNeedsAndEffects(t *testing.T) {
 	m.refresh()
 
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"obsidian.location.append", "Note*", "Effects", "running list of places"} {
+	for _, want := range []string{"obsidian.location.append", "Note ", "Effects", "running list of places"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("action detail is missing %q:\n%s", want, view)
 		}
@@ -1002,7 +1031,7 @@ func TestRouteActionDetailNamesNeedsAndEffects(t *testing.T) {
 	m.actions.SelectID("action:" + string(organizer.ActionDailyAppend))
 	m.refresh()
 	view = ansi.Strip(m.View())
-	for _, want := range []string{"obsidian.daily.append", "Note*     · missing", "Appends the Capture"} {
+	for _, want := range []string{"obsidian.daily.append", "· missing", "Appends the Capture"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("action detail is missing %q:\n%s", want, view)
 		}
@@ -1044,7 +1073,7 @@ func TestRouteFieldsHighlightMatchesTheOtherLists(t *testing.T) {
 	m = updated.(routeModel)
 	m = focusField(t, m, organizer.FieldContent)
 
-	// "Note*" also appears in the ACTIONS detail pane, so the lines are read
+	// "Note" also appears in the ACTIONS detail pane, so the lines are read
 	// from the FIELDS column alone.
 	widths := m.columnWidths()
 	start := widths[0] + widths[1] + widths[2] + 3*columnGutter
@@ -1053,7 +1082,7 @@ func TestRouteFieldsHighlightMatchesTheOtherLists(t *testing.T) {
 	for _, line := range strings.Split(m.View(), "\n") {
 		column := ansi.Cut(line, start, start+widths[3])
 		switch {
-		case strings.Contains(ansi.Strip(column), "Note*"):
+		case strings.Contains(ansi.Strip(column), "Note "):
 			selected = column
 		case strings.Contains(ansi.Strip(column), "Created*"):
 			unselected = column
@@ -1411,16 +1440,16 @@ func TestRouteRunButtonIsQuietUntilThePlanCanRun(t *testing.T) {
 		t.Fatalf("readiness = %q %v before a recipe is chosen", subtitle, ready)
 	}
 
-	m = chooseRecipe(t, m, "Daily")
+	m = chooseRecipe(t, m, "Reminder Here")
 	subtitle, ready := m.runReadiness()
-	if ready || !strings.Contains(subtitle, "Missing Note") {
+	if ready || !strings.Contains(subtitle, "Missing Title") {
 		t.Fatalf("readiness = %q %v with a field still missing", subtitle, ready)
 	}
 
 	selection, _, _ := m.currentSelection()
-	selection.Set(organizer.FieldContent, "note")
+	selection.Set(organizer.FieldTitle, "a title")
 	m.refresh()
-	if subtitle, ready = m.runReadiness(); !ready || subtitle != "Daily" {
+	if subtitle, ready = m.runReadiness(); !ready || subtitle != "Reminder Here" {
 		t.Fatalf("readiness = %q %v once nothing is missing", subtitle, ready)
 	}
 

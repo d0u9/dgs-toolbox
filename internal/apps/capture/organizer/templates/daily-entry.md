@@ -1,7 +1,9 @@
 - Date: {{.When}} {{.ID}}
+{{- with .ContentLines}}
     - Content:
-    {{- range .ContentLines}}
+    {{- range .}}
         - {{.}}
     {{- end}}
+{{- end}}
     - Coordinates: {{.Latitude}}, {{.Longitude}}{{with .Altitude}}, {{.}}{{end}}
     - Address: {{.Address}}
