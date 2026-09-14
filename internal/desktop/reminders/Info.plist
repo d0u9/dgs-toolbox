@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>dev.dgs-toolbox.reminders</string>
+	<string>dev.dgs-toolbox.dgs</string>
 	<key>CFBundleName</key>
-	<string>dgs-reminders</string>
+	<string>dgs</string>
 	<key>NSRemindersUsageDescription</key>
 	<string>dgs creates reminders from the Captures you organize.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>

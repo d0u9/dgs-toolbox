@@ -25,21 +25,20 @@ const (
 // the next street over does not.
 const DefaultReminderRadius = 150
 
-// reminderClient creates reminders. It is a variable so a test replaces the
-// helper rather than writing into the reader's Reminders.
+// reminderClient creates reminders. It is a variable so a test replaces
+// EventKit rather than writing into the reader's Reminders.
 var reminderClient = func() (reminderCreator, error) {
-	helper, err := reminders.FindHelper()
-	if err != nil {
-		return nil, err
+	if !reminders.Available() {
+		return nil, reminders.ErrUnavailable
 	}
-	return reminders.Client{Helper: helper}, nil
+	return reminders.Client{}, nil
 }
 
 type reminderCreator interface {
 	Create(context.Context, reminders.Request) (reminders.Result, error)
 }
 
-// reminderTimeout bounds one helper run. The first run waits on the reader
+// reminderTimeout bounds one EventKit call. The first run waits on the reader
 // answering the permission prompt, so it is generous.
 const reminderTimeout = 2 * time.Minute
 
@@ -111,7 +110,7 @@ func sendReminder(request reminders.Request) (string, error) {
 // it.
 var dueLayouts = []string{"2006-01-02 15:04", "2006-01-02T15:04", "2006-01-02"}
 
-// parseDue returns the due time as RFC 3339, which is what the helper takes.
+// parseDue returns the due time as RFC 3339, which is what EventKit is handed.
 func parseDue(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if due, err := time.Parse(time.RFC3339, value); err == nil {

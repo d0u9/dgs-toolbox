@@ -21,7 +21,7 @@ func (f *fakeReminders) Create(_ context.Context, request reminders.Request) (re
 	return f.result, f.err
 }
 
-// withReminders stands a fake in for the helper, so no test writes into the
+// withReminders stands a fake in for EventKit, so no test writes into the
 // reader's Reminders.
 func withReminders(t *testing.T, fake *fakeReminders) {
 	t.Helper()
@@ -181,8 +181,8 @@ func TestReminderSkippedAndFailed(t *testing.T) {
 		t.Errorf("result = %+v", result)
 	}
 
-	reminderClient = func() (reminderCreator, error) { return nil, reminders.ErrNoHelper }
-	if result := runAction(ctx, ActionReminderAtPlace); !errors.Is(result.Err, reminders.ErrNoHelper) {
+	reminderClient = func() (reminderCreator, error) { return nil, reminders.ErrUnavailable }
+	if result := runAction(ctx, ActionReminderAtPlace); !errors.Is(result.Err, reminders.ErrUnavailable) {
 		t.Errorf("err = %v", result.Err)
 	}
 }
