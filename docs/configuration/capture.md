@@ -24,6 +24,12 @@ model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
       "section": "Captured{{with .Device}} - {{.}}{{end}}",
       "location_note": "88 Inbox/06 Locations.md",
       "location_archive": "88 Inbox/06 Locations"
+    },
+    "apple": {
+      "reminders": {
+        "list": "Places",
+        "radius": 200
+      }
     }
   }
 }
@@ -255,6 +261,30 @@ be listed together, and the first that resolves answers.
   payload and asks for it in `FIELDS`; the fields the index itself gives a
   meaning, `createdAt` and the place and the coordinates, are read as always.
 
+### A position kept in the payload
+
+A workflow whose Capture is about somewhere other than where the phone was
+sources `coordinates`, whole:
+
+```yaml
+fields:
+  coordinates: payload.place          # "lat, lng", or {latitude, longitude} / {lat, lng}
+  # coordinates: "{{.y}}, {{.x}}"     # or put together from two keys
+```
+
+- **The position is one field.** `coordinates.latitude` and
+  `coordinates.longitude` cannot be sourced on their own — the file is refused,
+  naming the field — so the two halves can never come from different points.
+  The location note, its map links and any Action reading the position all
+  read this one answer.
+- **A sourced position does not fall back to the index.** When the key is
+  missing or is not a position — halves that are not numbers, or off the globe —
+  the Capture has no position and Route asks for one in `FIELDS`.
+- **The index's altitude and place are then left out**: `Altitude`, `Address`,
+  `Place`, the map pin's label, and `place.*` fields describe where the phone
+  was. Source `place.name` or the others too when the note should carry them.
+- **Coordinates are WGS-84**, as the index's are. Nothing is converted.
+
 ## Mappings
 
 What a Capture records and what a vault files it under are not always the same
@@ -302,6 +332,18 @@ places.
 | --- | --- | --- |
 | `capture.obsidian.location_note` | The running list of places, newest first, relative to the vault. | empty — the location Action refuses to run |
 | `capture.obsidian.location_archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — nothing is archived and the list grows without limit |
+
+## Reminders
+
+How the reminder Actions write when a run does not say otherwise. Both are
+parameters too, so one run can change either in `FIELDS`. The Actions and the
+`dgs-reminders` helper they need are described in
+[`apps/capture/actions.md`](../apps/capture/actions.md#reminders).
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `capture.apple.reminders.list` | The title of the Reminders list a reminder is written into. A list that does not exist, or a title two lists share, refuses rather than writing somewhere else. | empty — Reminders' own default list |
+| `capture.apple.reminders.radius` | How close counts as arriving at, or leaving, a reminder's place, in metres. | `150` |
 
 ## Map links and coordinates
 

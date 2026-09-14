@@ -16,13 +16,14 @@ and the note says what shipped instead.
 - **`datetime` and `multi_select` input controls.** `FIELDS` renders `text`
   inline and `multiline` in an overlay; the other two input types have no
   control yet, so a requirement carrying one can be seen but not filled. The
-  Recipes that need them — Reminder and Calendar — therefore stay blocked and
-  cannot be run. They were built anyway, to keep the organizer model honest
+  Recipes that need them — Reminder and Calendar — therefore stay blocked
+  unless a workflow file sources the field; Reminder Here needs neither and
+  runs. They were built anyway, to keep the organizer model honest
   against Actions whose requirements differ from Obsidian's, and are excluded
   from the first pass on purpose.
-- **The remaining Action implementations.** `obsidian.daily.append` writes; the
-  rest declare and refuse. The Apple Actions need their APIs and the input
-  controls their fields ask for.
+- **The remaining Action implementations.** The Obsidian and reminder Actions
+  write; `apple.notes.create` and `apple.calendar.create` declare and refuse.
+  They need their APIs and the input controls their fields ask for.
 - **A note per place.** `obsidian.location.append` records places as one running
   timeline, which is what the vault it was written for keeps. A note per place —
   the earlier `obsidian.location.upsert` — is a different thing, deferred for

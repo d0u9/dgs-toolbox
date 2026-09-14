@@ -1,0 +1,10 @@
+# Remind me when I get there. The title comes from the workflow file, so a
+# place_to_visit Capture needs nothing typed.
+name: Visit Reminder
+
+match:
+  workflows: [place_to_visit]
+  requires_any: [coordinates]
+
+actions:
+  - id: apple.reminders.at_place

@@ -84,6 +84,12 @@ question asked twice — the index carries them as one object, so neither can be
 present without the other — and a Recipe naming one of them to mean "has a
 position" reads as though the other could be missing.
 
+A workflow may keep the position in its payload instead, when the Capture is
+about somewhere other than where the phone was. It is then sourced whole, never
+as separate halves, and the index's altitude and place are set aside with the
+index's position rather than describing a different point; see
+[`configuration/capture.md`](../../configuration/capture.md#a-position-kept-in-the-payload).
+
 ## Actions declare their own requirements
 
 Each Action declares what it needs, and the effective required set is the
@@ -719,6 +725,7 @@ once written, they are the reader's files.
 | Photo + Location | `photo_location_daily` | `photo_note` | `obsidian.location.append`, `obsidian.daily.append` |
 | Apple Note | `apple_note` | `photo_note`, `quick_mark` | `apple.notes.create` |
 | Reminder | `apple_reminder` | `quick_mark` | `apple.reminders.create` |
+| Reminder Here | `apple_reminder_place` | `been_here` | `apple.reminders.at_place` |
 | Calendar | `apple_calendar` | `quick_mark` | `apple.calendar.create` |
 
 The id is the filename each is written under, without the `.yaml`. The two location

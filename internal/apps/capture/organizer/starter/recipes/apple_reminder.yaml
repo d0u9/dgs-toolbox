@@ -1,4 +1,6 @@
-# Not implemented yet — see apple_note.yaml.
+# A reminder due at a time. FIELDS has no datetime control yet, so due_at comes
+# from a workflow source until it does. See apple_reminder_place.yaml for one
+# at a place.
 name: Reminder
 
 match:

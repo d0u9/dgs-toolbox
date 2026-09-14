@@ -16,6 +16,7 @@ const (
 	ActionCaptureArchive  ActionID = "capture.archive"
 	ActionAppleNoteCreate ActionID = "apple.notes.create"
 	ActionReminderCreate  ActionID = "apple.reminders.create"
+	ActionReminderAtPlace ActionID = "apple.reminders.at_place"
 	ActionCalendarCreate  ActionID = "apple.calendar.create"
 )
 
@@ -117,10 +118,10 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 			return target
 		},
 	},
-	// The Apple Actions exist so the model can be exercised against more than
-	// one workflow. Each declares its requirements and names its target; none
-	// of them talks to an Apple API yet, and that detail must not shape the
-	// model when it arrives.
+	// The Apple note and calendar Actions exist so the model can be exercised
+	// against more than one workflow. Each declares its requirements and names
+	// its target; neither talks to an Apple API yet. The reminder Actions below
+	// do, through the dgs-reminders helper.
 	ActionAppleNoteCreate: {
 		ID:      ActionAppleNoteCreate,
 		Label:   "Apple note",
@@ -132,19 +133,49 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		Target: func(ctx Context) string { return ctx.String(FieldTitle) },
 	},
 	ActionReminderCreate: {
-		ID:      ActionReminderCreate,
-		Label:   "Reminder",
-		Effects: []string{"Creates a reminder due at the given time", "Never edits an existing reminder, so running twice makes two"},
+		ID:    ActionReminderCreate,
+		Label: "Reminder",
+		Effects: []string{
+			"Creates a reminder in Apple Reminders, due at the given time, with the Capture's text as its notes",
+			"Writes nothing the second time: the reminder's notes carry the Capture's id, and a list already holding it is left alone",
+			"Never edits or deletes a reminder; deleting it is how it is created again",
+		},
 		Required: []FieldRequirement{
 			text(FieldTitle, "Title"),
 			{Field: FieldDueAt, Label: "Due", Required: true, Input: InputDateTime},
 		},
-		Target: func(ctx Context) string {
-			title, due := ctx.String(FieldTitle), ctx.String(FieldDueAt)
-			if title == "" || due == "" {
-				return ""
-			}
-			return title + " · " + due
+		Parameters: []ParameterDefinition{reminderListParameter()},
+	},
+	// A reminder at a place is its own Action rather than a switch on the timed
+	// one: what it needs is different — a position, not a time — and a Recipe
+	// names an Action without setting its parameters, so a switch would have to
+	// be flipped by hand every time.
+	ActionReminderAtPlace: {
+		ID:    ActionReminderAtPlace,
+		Label: "Reminder at place",
+		Effects: []string{
+			"Creates a reminder in Apple Reminders that fires on arriving at, or leaving, the Capture's position",
+			"Writes nothing the second time: the reminder's notes carry the Capture's id, and a list already holding it is left alone",
+			"Fires on a device that has location access for Reminders, usually the phone, once iCloud has synced it",
+		},
+		Required: []FieldRequirement{
+			text(FieldTitle, "Title"),
+			{Field: FieldCoordinates, Label: "Position", Required: true, Input: InputText},
+		},
+		Parameters: []ParameterDefinition{
+			{
+				Name:    ParameterProximity,
+				Label:   "When (arrive/leave)",
+				Input:   InputText,
+				Default: func(Settings) string { return "arrive" },
+			},
+			{
+				Name:    ParameterRadius,
+				Label:   "Radius (m)",
+				Input:   InputText,
+				Default: func(settings Settings) string { return settings.reminderRadius() },
+			},
+			reminderListParameter(),
 		},
 	},
 	ActionCalendarCreate: {
@@ -172,23 +203,56 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 // variable whose initializer refers to a function that refers back to it.
 func init() {
 	implementations := map[ActionID]func(Context, ActionPlan) (string, error){
-		ActionDailyAppend:    appendToDailyNote,
-		ActionLocationAppend: appendToLocationNote,
+		ActionDailyAppend:     appendToDailyNote,
+		ActionLocationAppend:  appendToLocationNote,
+		ActionReminderCreate:  createReminder,
+		ActionReminderAtPlace: createPlaceReminder,
 	}
 	for id, run := range implementations {
 		def := actionDefinitions[id]
 		def.Run = run
 		actionDefinitions[id] = def
 	}
+	// The reminders name their list in the target, which is a parameter, so
+	// their targets read the registry too.
+	targets := map[ActionID]func(Context) string{
+		ActionReminderCreate: func(ctx Context) string {
+			return reminderTarget(ctx, ActionReminderCreate, ctx.String(FieldDueAt))
+		},
+		ActionReminderAtPlace: func(ctx Context) string {
+			position, ok := ctx.Position()
+			if !ok {
+				return ""
+			}
+			when := fmt.Sprintf("%s %.5f, %.5f", ctx.Parameter(ActionReminderAtPlace, ParameterProximity), position.Latitude, position.Longitude)
+			return reminderTarget(ctx, ActionReminderAtPlace, when)
+		},
+	}
+	for id, target := range targets {
+		def := actionDefinitions[id]
+		def.Target = target
+		actionDefinitions[id] = def
+	}
 }
 
-// ActionOrder is the order Actions are listed in, which is the order they were
-// added rather than alphabetical: the Obsidian ones are what the toolbox does
-// today, and sorting by id would file them under "a" and "o" among the Apple
-// ones that do nothing yet.
+// ActionOrder is the order Actions are listed in: what the toolbox does first,
+// the Obsidian ones and then the reminders, and the Apple ones that do nothing
+// yet last, rather than alphabetical, which would file them among each other.
 var ActionOrder = []ActionID{
 	ActionDailyAppend, ActionLocationAppend,
-	ActionAppleNoteCreate, ActionReminderCreate, ActionCalendarCreate,
+	ActionReminderCreate, ActionReminderAtPlace,
+	ActionAppleNoteCreate, ActionCalendarCreate,
+}
+
+// reminderListParameter is the list a reminder is written into. Empty is the
+// list Reminders files new reminders in.
+func reminderListParameter() ParameterDefinition {
+	return ParameterDefinition{
+		Name:    ParameterList,
+		Label:   "List",
+		Input:   InputText,
+		Default: func(settings Settings) string { return settings.ReminderList },
+	}
 }
 
 // Actions is every Action this binary carries, in ActionOrder. A caller

@@ -1,0 +1,12 @@
+# Be reminded when you are next here: a reminder that fires on arriving at the
+# Capture's position. The title is typed in FIELDS; "when" turns it into one
+# that fires on leaving instead.
+name: Reminder Here
+
+match:
+  workflows: [been_here]
+  # A place Capture with no position has nowhere to be reminded at.
+  requires_any: [coordinates]
+
+actions:
+  - id: apple.reminders.at_place

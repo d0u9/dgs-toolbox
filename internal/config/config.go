@@ -41,6 +41,21 @@ type Capture struct {
 	Scan     CaptureScan     `json:"scan"`
 	Archive  CaptureArchive  `json:"archive"`
 	Obsidian CaptureObsidian `json:"obsidian"`
+	Apple    CaptureApple    `json:"apple"`
+}
+
+// CaptureApple configures the Actions that write into Apple's apps.
+type CaptureApple struct {
+	Reminders CaptureReminders `json:"reminders"`
+}
+
+// CaptureReminders is how the reminder Actions write when a run does not say
+// otherwise. List is a Reminders list's title; empty is Reminders' own default
+// list. Radius is how close counts as arriving for a reminder at a place, in
+// metres; zero is the organizer's default.
+type CaptureReminders struct {
+	List   string  `json:"list"`
+	Radius float64 `json:"radius"`
 }
 
 // CaptureObsidian tells the Obsidian Actions where to write. Vault is an
@@ -271,6 +286,10 @@ func (c Config) captureDir(name string) string {
 // empty rather than guessed, because writing into a directory nobody named is
 // worse than refusing to write.
 func (c Config) CaptureObsidian() CaptureObsidian { return c.Capture.Obsidian }
+
+// CaptureReminders returns the reminder settings as configured; the organizer
+// applies the defaults, as it does for Obsidian's.
+func (c Config) CaptureReminders() CaptureReminders { return c.Capture.Apple.Reminders }
 
 func (c Config) PhotoImportStateFile() string {
 	if c.Photo.Import.StateFile == "" {

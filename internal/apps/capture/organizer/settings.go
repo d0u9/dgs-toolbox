@@ -53,6 +53,12 @@ type Settings struct {
 	// the daily note's, and any that replaces a compiled-in default. One place
 	// to look, rather than a path in the configuration for each.
 	TemplateDir string
+	// ReminderList is the Reminders list the reminder Actions write into by
+	// default. Empty is the list Reminders files new reminders in.
+	ReminderList string
+	// ReminderRadius is how close counts as arriving, in metres, for a
+	// reminder at a place. Zero is DefaultReminderRadius.
+	ReminderRadius float64
 }
 
 // DefaultSettings are the values that have a sensible default. The paths do
