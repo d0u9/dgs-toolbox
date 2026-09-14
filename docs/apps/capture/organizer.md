@@ -116,11 +116,11 @@ say the same thing, and so a new Action arrives with its own explanation instead
 of needing one added somewhere else.
 
 ```text
-obsidian.location.upsert  Creates Locations/<place name>.md, or updates it in
-                          place when it exists
-obsidian.daily.append     Appends one entry to the note for the day the Capture
-                          was taken
-                          Creates that note when the day has none
+obsidian.location.append  Adds the Capture to the top of the running list of
+                          places, under its day
+                          Writes nothing the second time
+obsidian.daily.append     Appends one entry under the configured section
+                          Creates the day's note when the day has none
 ```
 
 This is what a reader needs before running a plan, and the confirmation dialog
@@ -143,9 +143,10 @@ otherwise assume the default.
 
 ## Actions are toggleable per Capture
 
-A Recipe supplies the **default** enabled set — every Action it lists. The user
-may disable individual Actions for one Capture without leaving the Recipe, so
-that Capture can skip `capture.archive` while the rest of the plan stands.
+A Recipe supplies the **default** enabled set — every Action it lists, less the
+ones it marks `enabled: false`. The user may enable or disable individual
+Actions for one Capture without leaving the Recipe, so that Capture can skip
+`obsidian.daily.append` while the location note still stands.
 
 A disabled Action contributes nothing: it is absent from the Action Plan, and
 its requirements are absent from the required set, so a field only it needed
@@ -315,9 +316,9 @@ func MissingFields(ctx Context, recipe Recipe, enabled []ActionID) []FieldRequir
 
 An **Action Definition** says what `obsidian.daily.append` *is*. An **Action
 Plan** says what it will do to *this* Capture — which file, which content.
-Preview renders the plan, and execution consumes it. No Action is implemented
-yet: each one declares its requirements and resolves its target, and running a
-plan reports what it would do rather than doing it.
+Preview renders the plan, and execution consumes it. An Action declared without
+an implementation still plans and explains itself, and refuses to run rather
+than reporting a success that did not happen.
 
 ```text
 Recipe + enabled Actions + Context → Build() → []ActionPlan
@@ -344,32 +345,55 @@ Capture:
   "source": { "workflow": "been_here" },
   "createdAt": "2026-09-09T21:31:22.900+10:00",
   "coordinates": { "latitude": -33.7691, "longitude": 151.082 },
-  "place": { "city": "Epping", "region": "NSW" }
+  "place": { "city": "Epping", "region": "NSW" },
+  "payload": {}
 }
 ```
 
-Candidates: `Location`, `Location + Daily`, `Daily`, `Archive`. Selecting
-`Location + Daily` resolves:
+With the Recipes `dgs capture --init` lays down, the candidates are `Reminder
+Here`, `Daily`, `Location` and `Location + Daily`, in the order their files
+sort in. `Photo + Location` is not among them — it matches `photo_note` only.
+
+Choosing `Location + Daily` resolves:
 
 ```text
-createdAt   ✓    place.city  ✓    place.name  ~ Epping, NSW (composed)
-latitude    ✓    region      ✓    content     ✗
-longitude   ✓
+createdAt    ✓  2026-09-09T21:31:22.900+10:00   (from the Capture)
+content      ·  nothing written                 (optional)
 ```
 
-so only `Note` is strictly missing, attributed to `obsidian.daily.append`. The
-composed place name is offered for editing rather than demanded, and renaming
-it to `Epping Station` is a choice. With all three Actions enabled, the plan is:
+Nothing required is missing, so the plan is ready as it stands. The note is
+optional for both Actions: being somewhere is worth the line whether or not
+anything was typed, and the templates leave out the lines the text would have
+filled. The position is written too, so `FIELDS` ends with a `Map` row to check
+it before running. With the configuration in
+[`configuration/capture.md`](../../configuration/capture.md), the plan is:
 
 ```text
-1. UPSERT   Obsidian/Locations/Epping Station.md
-2. APPEND   Obsidian/Daily/2026-09-09.md
-3. ARCHIVE  Capture 20260909213122900-4620
+[x] ● obsidian.location.append   88 Inbox/06 Locations.md
+[x] ● obsidian.daily.append      00 Daily Log/2026/2026-09-09.md
 ```
 
-Disabling `capture.archive` leaves the first two entries unchanged; disabling
-`obsidian.daily.append` drops entry 2 and, with it, the `content` requirement,
-so `Note` is no longer asked for.
+Disabling `obsidian.daily.append` takes entry 2 out of the plan and asks for
+nothing less, since the two Actions need the same field.
+
+Choosing `Reminder Here` instead shows a requirement that does block:
+
+```text
+title        ✗  · missing
+coordinates  ✓  -33.7691, 151.082               (from the Capture)
+```
+
+`apple.reminders.at_place` needs a title the Capture does not carry, so the
+plan waits on `Title` in `FIELDS`. Once one is typed — `Buy tea` — it reads:
+
+```text
+[x] ● apple.reminders.at_place   Buy tea · arrive -33.76910, 151.08200
+```
+
+A workflow that keeps the place in its payload — a place saved from a map
+rather than where the phone was — sources `coordinates` instead, and the
+reminder, the location note and the `Map` row all follow the payload's
+position.
 
 ## The organize record
 
@@ -394,10 +418,11 @@ than one decision. Each run records what was decided at that moment:
       "recipe": "obsidian_location_daily",
       "recipeName": "Location + Daily",
       "actions": [
-        { "action": "obsidian.location.upsert", "target": "Locations/Epping Station.md", "executed": false },
-        { "action": "obsidian.daily.append", "target": "Daily/2026-09-09.md", "executed": false }
+        { "action": "obsidian.location.append", "target": "88 Inbox/06 Locations.md", "executed": true },
+        { "action": "obsidian.daily.append", "target": "00 Daily Log/2026/2026-09-09.md", "executed": true,
+          "parameters": { "section": "## Epping" } }
       ],
-      "fields": { "place.name": "Epping Station" }
+      "fields": { "content": "晚上再来看看" }
     }
   ]
 }
