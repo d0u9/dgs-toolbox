@@ -15,8 +15,8 @@ authority on what it will actually do.
 
 | Action | Writes | Needs |
 | --- | --- | --- |
-| [`obsidian.daily.append`](#obsidiandailyappend) | the day's note in the vault | `createdAt`, `content` |
-| [`obsidian.location.append`](#obsidianlocationappend) | the running list of places | `createdAt`, `content` |
+| [`obsidian.daily.append`](#obsidiandailyappend) | the day's note in the vault | `createdAt`; `content` optional |
+| [`obsidian.location.append`](#obsidianlocationappend) | the running list of places | `createdAt`; `content` optional |
 | [`apple.reminders.create`](#applereminderscreate) | a reminder, due at a time | `title`, `due_at` |
 | [`apple.reminders.at_place`](#appleremindersat_place) | a reminder, at a place | `title`, `coordinates` |
 | [`apple.notes.create`](#apple-actions) | — not implemented | `title`, `content` |
@@ -33,7 +33,9 @@ Appends the Capture to the day's note as one nested entry.
   once, and a second run says why it wrote nothing. Deleting the entry by hand
   is how it is written again.
 
-Needs `createdAt` and `content`. Configured by `capture.obsidian.daily_note`
+Needs `createdAt`. `content` is optional: a Capture nobody wrote anything
+about is still written, and the template leaves out the lines its text would
+have filled. Configured by `capture.obsidian.daily_note`
 and `capture.obsidian.section`; shaped by the `daily-entry.md` and
 `daily-note.md` templates.
 
@@ -52,7 +54,7 @@ Puts the Capture at the top of the running list of places, under its day.
   `capture.obsidian.location_archive` as it goes.
 - Writes nothing the second time, on the same terms as the daily entry.
 
-Needs `createdAt` and `content`. Configured by
+Needs `createdAt`; `content` is optional, on the same terms. Configured by
 `capture.obsidian.location_note` and `capture.obsidian.location_archive`;
 shaped by the `location-entry.md` template, which also decides the map services
 the line carries and the vault command a coordinate links to.

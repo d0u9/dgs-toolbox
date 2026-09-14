@@ -264,14 +264,11 @@ func headingLevel(line string) int {
 }
 
 // dailyEntry is what one Capture becomes in a daily note. The shape comes from
-// the template rather than from here; this only refuses to write an entry with
-// no content, because the time and the place of a Capture nobody wrote anything
-// about is not worth a line in a diary.
+// the template rather than from here. A Capture with no text is still written:
+// being somewhere is worth the line, and the template drops the lines that
+// would have held the text.
 func dailyEntry(ctx Context) ([]string, error) {
 	data := entryData(ctx)
-	if data.Content == "" {
-		return nil, nil
-	}
 	parsed, err := LoadTemplate(ctx.Settings, DailyEntryTemplate)
 	if err != nil {
 		return nil, err
