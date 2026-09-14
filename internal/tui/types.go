@@ -94,7 +94,19 @@ type Action struct {
 	Usage       string
 	Description string
 	Args        int
-	Run         func(in io.Reader, out io.Writer, args []string) error
+	Flags       []ActionFlag
+	// Run receives every declared flag by name; a boolean flag is "true" or
+	// "false" and a string flag not given holds its Default.
+	Run func(in io.Reader, out io.Writer, args []string, flags map[string]string) error
+}
+
+// ActionFlag is an option of an Action. Bool flags take no value.
+type ActionFlag struct {
+	Name      string
+	Shorthand string
+	Usage     string
+	Bool      bool
+	Default   string
 }
 
 // App describes a command domain and its leaf commands.
