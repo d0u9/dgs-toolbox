@@ -123,8 +123,11 @@ type routeModel struct {
 	attachmentLoaded uint64
 	fields           datafield.Navigator
 	loadError        string
-	pendingGG        bool
-	lastClick        routeClick
+	// notice is what became of the last flag or map, said in the status bar
+	// where it was asked for and cleared by the next keystroke.
+	notice    moveNotice
+	pendingGG bool
+	lastClick routeClick
 }
 
 // routeClick remembers the previous primary click so the next one can be
@@ -156,6 +159,10 @@ type routeFieldRow struct {
 	action     organizer.ActionID
 	name       string
 	overridden bool
+	// mapLinks marks the row that shows where the position in use lands, as
+	// links to map services. It is reference rather than a field: Enter on it
+	// opens the map instead of an editor.
+	mapLinks bool
 }
 
 func newRouteModel(root, indexFile string) routeModel {
@@ -739,6 +746,9 @@ func (m routeModel) Status() tui.Status {
 		return tui.Status{Left: "BROWSE", Center: "CAPTURE ROOT", Right: m.rootControl.Hint()}
 	}
 	center := m.statusValue()
+	if !m.notice.empty() {
+		center = m.notice.status()
+	}
 	if m.running {
 		if m.runRunnable() && len(m.runResults) == 0 {
 			return tui.Status{Left: "RUN", Center: center, Right: "↵ Run  esc Cancel"}
@@ -753,15 +763,15 @@ func (m routeModel) Status() tui.Status {
 	}
 	switch m.fields.Current() {
 	case routeCapturesField:
-		return tui.Status{Left: "ROUTE", Center: center, Right: "↑↓ Move  ↵ Recipe  x Run  u Clear  v View  R Refresh"}
+		return tui.Status{Left: "ROUTE", Center: center, Right: "↑↓ Move  ↵ Recipe  x Run  f Flag" + m.mapHint() + "  u Clear  v View  R Refresh"}
 	case routeRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: center, Right: "↵ Browse  R Refresh  tab Next  alt+hjkl Focus"}
 	case routeRecipesField:
 		return tui.Status{Left: "RECIPES", Center: center, Right: "↑↓ Move  ↵ Choose  esc/⌫ Back"}
 	case routeActionsField:
-		return tui.Status{Left: "ACTIONS", Center: center, Right: "↑↓ Move  space Toggle  ↵ Fields  x Run  esc/⌫ Back"}
+		return tui.Status{Left: "ACTIONS", Center: center, Right: "↑↓ Move  space Toggle  ↵ Fields  x Run" + m.mapHint() + "  esc/⌫ Back"}
 	case routeFieldsField:
-		return tui.Status{Left: "FIELDS", Center: center, Right: "↑↓ Move  ↵ Edit  x Run  esc/⌫ Back"}
+		return tui.Status{Left: "FIELDS", Center: center, Right: "↑↓ Move  ↵ Edit  x Run" + m.mapHint() + "  esc/⌫ Back"}
 	case routePayloadField:
 		return tui.Status{Left: "PAYLOAD", Center: center, Right: "↑↓ Scroll  esc/⌫ Back  alt+hjkl Focus"}
 	case routeAttachmentsField:
@@ -823,8 +833,16 @@ func (m routeModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.editing {
 		return m.updateEditor(msg)
 	}
+	// The notice answered the previous keystroke; this one asks something new.
+	m.notice = moveNotice{}
 	if key == "x" {
 		return m.run()
+	}
+	if key == "o" {
+		return m.openMap(), nil
+	}
+	if key == "f" {
+		return m.toggleFlag(), nil
 	}
 	if key == "v" {
 		m.view.Toggle()
@@ -1005,6 +1023,9 @@ func (m routeModel) updateFields(key string) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		m.moveFieldCursor(1)
 	case "enter":
+		if row, ok := m.focusedFieldRow(); ok && row.mapLinks {
+			return m.openMap(), nil
+		}
 		return m.beginEdit()
 	case "esc", "backspace", "delete":
 		m.fields.Set(routeActionsField)
@@ -1409,6 +1430,11 @@ func (m routeModel) readyCount() (ready int, blocked int) {
 // captureMarker distinguishes the three states a Capture can be in: no Recipe
 // chosen, a Recipe whose plan is still blocked, and a plan ready to run.
 func (m routeModel) captureMarker(entry captureEntry) string {
+	// A Capture marked wrong says so before anything else about it: whatever
+	// its plan, it is on its way to being rejected.
+	if entry.record.Flagged() {
+		return flagMarker
+	}
 	if entry.organized {
 		return "● "
 	}
@@ -1453,10 +1479,14 @@ func (m *routeModel) rebuildCaptureItems() {
 				detail += "  → " + recipe.Name
 			}
 		}
+		if entry.record.Flagged() {
+			detail += flagDetail
+		}
+		label := m.captureMarker(entry) + m.view.Label(entry)
 		items = append(items, scrolllist.Item{
 			ID:     "capture:" + entry.path,
-			Label:  m.captureMarker(entry) + m.view.Label(entry),
-			Detail: indentDetail(detail),
+			Label:  label,
+			Detail: indentDetail(detail, label),
 		})
 	}
 	m.captures.SetItems(items)
@@ -1564,6 +1594,16 @@ func (m *routeModel) rebuildFieldRows() {
 			requirement: state.Requirement,
 			value:       state.Value,
 			editable:    !state.FromCapture,
+		})
+	}
+	// Where the position lands closes the reference: a position written to a
+	// note or a reminder is worth seeing on a map before it is, and a number
+	// pair says nothing about whether it is the right street.
+	if position, ok := m.positionInUse(); ok {
+		m.fieldRows = append(m.fieldRows, routeFieldRow{
+			requirement: organizer.FieldRequirement{Label: "Map"},
+			value:       mapLinksText(position, m.placeLabel()),
+			mapLinks:    true,
 		})
 	}
 	// The knobs come last: they are pinned below the work and the reference
@@ -1768,6 +1808,11 @@ func (m routeModel) fieldRowText(index int, row routeFieldRow, width int) []stri
 		return lines
 	}
 	if editing {
+		return []string{paint(cursor + scanMutedStyle.Render(label) + value)}
+	}
+	if row.mapLinks {
+		// Links are drawn whole rather than folded: a link cut in half opens
+		// nothing, and the short names fit a quarter column.
 		return []string{paint(cursor + scanMutedStyle.Render(label) + value)}
 	}
 

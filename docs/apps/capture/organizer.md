@@ -418,6 +418,12 @@ point of keeping the record next to the Capture. Nothing is overwritten. What
 marks a Capture handled is the presence of a run, not the presence of the file,
 and callers with room for one line show the most recent run.
 
+The record also carries a `flag` when Route marked the Capture wrong —
+`"flag": {"flaggedAt": "2026-09-14T21:00:00+10:00"}` — which Archive reads to
+reject it rather than keep it. A flag is not a run, so a Capture flagged before
+anyone organized it has a record and is still not organized; taking the flag
+back removes a record that held nothing else.
+
 ## Recipe files
 
 A Recipe is defined by one YAML file in the Recipe directory —

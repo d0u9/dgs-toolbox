@@ -339,6 +339,13 @@ func (m archiveModel) move(from, to archiveDestination) (tea.Model, tea.Cmd) {
 		m.notice = failed("Not organized — it can be rejected, not archived")
 		return m, nil
 	}
+	// A Capture flagged in Route was found wrong: keeping it would file a
+	// mistake with the Captures that were handled. Unflagging it in Route is
+	// how it is archived after all.
+	if to == destinationArchive && entry.record.Flagged() {
+		m.notice = failed("Flagged in Route — it can be rejected, not archived")
+		return m, nil
+	}
 	target := m.folderFor(to)
 	if target == "" {
 		m.notice = unsetFolderNotice(to)
@@ -600,6 +607,9 @@ func (m *archiveModel) rebuildItems() {
 		boundary := 0
 		if destination == destinationCaptures {
 			entries, boundary = orderByOrganized(entries)
+			// A Capture marked wrong in Route leads its group: it is the one
+			// decision already made, waiting on a keystroke.
+			entries = append(flaggedFirst(entries[:boundary]), flaggedFirst(entries[boundary:])...)
 		}
 		for _, entry := range entries {
 			// Only the Capture root carries the Recipe that handled a Capture:
@@ -610,10 +620,15 @@ func (m *archiveModel) rebuildItems() {
 				destination == destinationCaptures && !m.view.byFolder {
 				detail += "  → " + latest.RecipeName
 			}
+			label := m.view.Label(entry)
+			if entry.record.Flagged() {
+				label = flagMarker + label
+				detail += flagDetail
+			}
 			items = append(items, scrolllist.Item{
 				ID:     archiveItemID(destination, entry.path),
-				Label:  m.view.Label(entry),
-				Detail: indentDetail(detail),
+				Label:  label,
+				Detail: indentDetail(detail, label),
 			})
 		}
 		list.SetItems(items)
@@ -751,6 +766,9 @@ func (m archiveModel) detail(width int) string {
 		detailInline("Sitting", m.sittingIn(), width),
 		scanMutedStyle.Render("Folder") + "\n" + ansi.Hardwrap(displayPath(entry.path), max(1, width), true),
 	}
+	if flag := entry.record.Flag; flag != nil {
+		lines = append(lines, runFailedStyle.Render(truncate("⚑ Flagged "+organizer.FormatTimestamp(flag.FlaggedAt)+" — reject it", width)))
+	}
 	lines = append(lines, "", divider.Labelled("ORGANIZED", width))
 	if !entry.organized {
 		// A Capture nobody has organized can still be rejected, so the pane
@@ -838,10 +856,12 @@ func (m archiveModel) buttons() []archiveButton {
 	// that says "Archive" without its key is still a control, while one drawn
 	// past the edge of its column is not.
 	width := max(9, min(archiveButtonWidth, (widths[2]-1)/2))
-	archiveSubtitle, archiveReady := "Keep it", has && entry.organized && m.archiveRoot != ""
+	archiveSubtitle, archiveReady := "Keep it", has && entry.organized && !entry.record.Flagged() && m.archiveRoot != ""
 	switch {
 	case !has:
 		archiveSubtitle = "· none"
+	case entry.record.Flagged():
+		archiveSubtitle = "Flagged"
 	case !entry.organized:
 		archiveSubtitle = "Not organized"
 	case m.archiveRoot == "":

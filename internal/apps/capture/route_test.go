@@ -256,7 +256,7 @@ func focusField(t *testing.T, m routeModel, field organizer.FieldID) routeModel 
 func splitFieldRows(m routeModel) (resolved, missing []routeFieldRow) {
 	for _, row := range m.fieldRows {
 		switch {
-		case row.parameter:
+		case row.parameter, row.mapLinks:
 		case row.missing:
 			missing = append(missing, row)
 		default:
