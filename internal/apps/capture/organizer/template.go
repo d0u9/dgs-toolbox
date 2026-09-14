@@ -204,7 +204,7 @@ func contentLines(content string) []string {
 // envelope. The composed place *name* goes the other way, most specific first,
 // because a name is what you would call the spot.
 func address(ctx Context) string {
-	place := ctx.Capture.Index.CapturePlace()
+	place := ctx.place()
 	parts := make([]string, 0, 4)
 	for _, part := range []string{place.Country, place.Region, place.City, place.Locality} {
 		if trimmed := strings.TrimSpace(part); trimmed != "" {
@@ -218,32 +218,27 @@ func address(ctx Context) string {
 // doorway, short enough to read. A Capture with no position has neither half,
 // so a template naming both drops the line rather than writing half of one.
 func coordinate(ctx Context, field FieldID) string {
-	value, ok := ctx.Get(field)
+	position, ok := ctx.Position()
 	if !ok {
 		return ""
 	}
-	return fmt.Sprintf("%.5f", asFloat(value))
+	if field == FieldLongitude {
+		return fmt.Sprintf("%.5f", position.Longitude)
+	}
+	return fmt.Sprintf("%.5f", position.Latitude)
 }
 
 // altitude is metres above sea level, rounded: a Capture's altitude is accurate
 // to nothing like a metre, and the decimals only make the line harder to read.
-// A Capture with no coordinates has none.
+// A Capture with no coordinates has none, and neither does one whose position
+// came from somewhere other than the index: the index's altitude is where the
+// phone was.
 func altitude(ctx Context) string {
 	position := ctx.Capture.Index.Coordinates
-	if position == nil {
+	if position == nil || ctx.positionSourced() {
 		return ""
 	}
 	return fmt.Sprintf("%.0fm", position.Altitude)
-}
-
-func asFloat(value any) float64 {
-	switch number := value.(type) {
-	case float64:
-		return number
-	case float32:
-		return float64(number)
-	}
-	return 0
 }
 
 // LoadTemplate reads a template by name, preferring the configured directory
@@ -369,7 +364,7 @@ type NoteData struct {
 
 // noteData collects what a daily note's template may write for one day.
 func noteData(ctx Context, day time.Time) NoteData {
-	place := ctx.Capture.Index.CapturePlace()
+	place := ctx.place()
 	return NoteData{
 		Date:      Value(day.Format("2006-01-02")),
 		Year:      Value(day.Format("2006")),
@@ -481,7 +476,7 @@ func offsetOf(createdAt string) string {
 // most specific part of the address; the whole of it in a URL is too long to
 // read and no more accurate, since the position comes from the coordinates.
 func mapLinksLine(ctx Context, latitude, longitude, services string) string {
-	place := ctx.Capture.Index.CapturePlace()
+	place := ctx.place()
 	label := ""
 	for _, part := range []string{place.Locality, place.City, place.Region, place.Country} {
 		if trimmed := strings.TrimSpace(part); trimmed != "" {
