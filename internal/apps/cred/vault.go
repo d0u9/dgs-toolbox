@@ -792,6 +792,9 @@ func (m vaultModel) Status() tui.Status {
 	if m.prompt != nil {
 		return tui.Status{Left: "PASSPHRASE", Center: m.prompt.file.Path, Right: "↵ Open  esc Cancel"}
 	}
+	if m.edit != nil && m.edit.rekey {
+		return tui.Status{Left: "CHANGE PASSPHRASE", Center: m.edit.file.Path, Right: "tab Field  ↵ Continue  esc Cancel"}
+	}
 	if m.edit != nil {
 		return tui.Status{Left: "CHANGE RECIPIENTS", Center: m.edit.file.Path, Right: "↑↓ Move  space Check  ↵ Continue  esc Cancel"}
 	}
@@ -819,6 +822,9 @@ func (m vaultModel) Status() tui.Status {
 		center = m.summary()
 	}
 	right := "↑↓ Move  ↵ Open  e Recipients  a Add  o Folder"
+	if _, report, ok := m.selectedFile(); ok && report.Status == vault.Passphrase {
+		right = "↑↓ Move  ↵ Open  e Passphrase  a Add  o Folder"
+	}
 	if _, ok := m.selectedDir(); ok {
 		right = "↑↓ Move  ↵ Fold  a Add  o Folder  R Rescan"
 	}

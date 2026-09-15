@@ -109,3 +109,63 @@ func TestChangeRecipientsWithoutRecord(t *testing.T) {
 	}
 	_ = tea.KeyMsg{}
 }
+
+func TestChangePassphrase(t *testing.T) {
+	f := newOpenFixture(t, "0")
+	source := filepath.Join(t.TempDir(), "notes.txt")
+	writeFile(t, source, "the notes", 0o600)
+	path := filepath.Join(f.vaultDir, "notes.txt.age")
+	if _, err := seal.Seal(seal.Request{Source: source, Destination: path, Passphrase: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	m := newVaultModel()
+	m.path = f.path
+	m = runVault(t, m)
+	m = keys(t, m, "e")
+	if m.edit == nil || !m.edit.rekey || m.edit.stage != editChangePassphrase {
+		t.Fatalf("edit %+v notice %q", m.edit, m.notice)
+	}
+
+	fill := func(m vaultModel, current, next, repeat string) vaultModel {
+		for i, value := range []string{current, next, repeat} {
+			m.edit.fields[i].SetValue(value)
+		}
+		return keys(t, m, "enter")
+	}
+	m = fill(m, "old", "new", "other")
+	if !strings.Contains(m.edit.err, "do not match") {
+		t.Fatalf("mismatch: %q", m.edit.err)
+	}
+	// A wrong current passphrase is found when decrypting, and asked again.
+	m = fill(m, "s3cr3t-guess", "new", "new")
+	if m.edit.stage != editConfirm {
+		t.Fatalf("stage %d err %q", m.edit.stage, m.edit.err)
+	}
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	m = keys(t, m, "enter")
+	if m.edit == nil || m.edit.stage != editChangePassphrase || !strings.Contains(m.edit.err, "current passphrase is wrong") {
+		t.Fatalf("wrong passphrase: %+v", m.edit)
+	}
+	if strings.Contains(ansi.Strip(m.View()), "s3cr3t-guess") {
+		t.Error("the passphrase is shown")
+	}
+
+	m = fill(m, "old", "new", "new")
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	m = keys(t, m, "enter")
+	if m.edit != nil {
+		t.Fatalf("edit still open: %q", m.edit.err)
+	}
+	if !strings.Contains(m.notice, "Changed the passphrase of notes.txt.age (verified)") {
+		t.Errorf("notice %q", m.notice)
+	}
+	for passphrase, want := range map[string]bool{"old": false, "new": true} {
+		identity, _ := age.NewScryptIdentity(passphrase)
+		file, _ := os.Open(path)
+		_, err := age.Decrypt(file, identity)
+		file.Close()
+		if (err == nil) != want {
+			t.Errorf("%q opens: %v, want %v", passphrase, err == nil, want)
+		}
+	}
+}
