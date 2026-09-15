@@ -312,11 +312,8 @@ func TestPathInputCompletesOneDirectoryLevelAndRespectsFilter(t *testing.T) {
 	if got := tree.editor.Value(); got != filepath.Join(parent, "beach.jpg") {
 		t.Fatalf("file completion = %q, want beach.jpg", got)
 	}
+	// A single candidate is completed outright, so Enter goes to it.
 	tree, selected, cmd := tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if selected != "" || cmd != nil || len(tree.completions) != 0 || tree.action != actionPath {
-		t.Fatalf("first Enter did not accept the completion in path input")
-	}
-	tree, selected, cmd = tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if selected != "" || cmd == nil {
 		t.Fatalf("path input selected %q instead of returning to the tree", selected)
 	}
@@ -349,7 +346,7 @@ func TestEscapeFromPathInputPreservesTree(t *testing.T) {
 	}
 }
 
-func TestPathCompletionIsFuzzyAndCyclesBothDirections(t *testing.T) {
+func TestPathCompletionFallsBackToFuzzyAndCyclesBothDirections(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{"1-foo", "2-far", "unrelated"} {
 		if err := os.Mkdir(filepath.Join(root, name), 0o755); err != nil {
@@ -366,10 +363,14 @@ func TestPathCompletionIsFuzzyAndCyclesBothDirections(t *testing.T) {
 	if len(tree.completions) != 2 {
 		t.Fatalf("fuzzy completion returned %d candidates, want 2", len(tree.completions))
 	}
-	first := tree.editor.Value()
-	if view := tree.View(); !strings.Contains(view, "1-foo") || !strings.Contains(view, "2-far") {
-		t.Fatalf("completion popup does not show both candidates:\n%s", view)
+	if got := tree.editor.Value(); got != filepath.Join(root, "f") {
+		t.Fatalf("opening the grid changed the input to %q", got)
 	}
+	if view := tree.View(); !strings.Contains(view, "1-foo/") || !strings.Contains(view, "2-far/") || !strings.Contains(view, "2 matches") {
+		t.Fatalf("completion grid does not show both candidates:\n%s", view)
+	}
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyTab})
+	first := tree.editor.Value()
 	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyTab})
 	second := tree.editor.Value()
 	if second == first {
@@ -561,5 +562,154 @@ func TestEqualsLoadsAndExpandsOneLevel(t *testing.T) {
 	}
 	if len(tree.visible) != 2 || tree.visible[1].path != child || tree.visible[1].expanded {
 		t.Fatalf("= did not expand exactly one level: %#v", tree.visible)
+	}
+}
+
+func TestAllFilesSelectsFilesAndDirectories(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "folder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tree := New(root, 60, 12, WithFilter(AllFiles()))
+	tree, _, _ = tree.Update(tree.Init()())
+
+	// Enter chooses the focused directory rather than expanding it.
+	tree.focusPath(filepath.Join(root, "folder"))
+	if _, selected, _ := tree.Update(tea.KeyMsg{Type: tea.KeyEnter}); selected != filepath.Join(root, "folder") {
+		t.Fatalf("enter on a directory selected %q", selected)
+	}
+	// o still expands it without choosing.
+	if _, selected, _ := tree.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}}); selected != "" {
+		t.Fatalf("o selected %q", selected)
+	}
+	tree.focusPath(filepath.Join(root, "file.txt"))
+	if _, selected, _ := tree.Update(tea.KeyMsg{Type: tea.KeyEnter}); selected != filepath.Join(root, "file.txt") {
+		t.Fatalf("enter on a file selected %q", selected)
+	}
+}
+
+func TestHiddenEntriesToggle(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{".ssh", "visible"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	names := func(tree Model) string {
+		var found []string
+		for _, node := range tree.visible[1:] {
+			found = append(found, node.name)
+		}
+		return strings.Join(found, ",")
+	}
+	tree := New(root, 60, 12, WithFilter(AllFiles()))
+	tree, _, _ = tree.Update(tree.Init()())
+	if got := names(tree); got != "visible" || tree.FilterLabel() != "ALL FILES" {
+		t.Fatalf("default: %q %q", got, tree.FilterLabel())
+	}
+	tree, _, cmd := tree.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
+	tree, _, _ = tree.Update(cmd())
+	if got := names(tree); got != ".ssh,visible" || tree.FilterLabel() != "ALL FILES · HIDDEN" || !tree.ShowsHidden() {
+		t.Fatalf("after H: %q %q", got, tree.FilterLabel())
+	}
+
+	shown := New(root, 60, 12, WithFilter(Directories()), WithHidden(true))
+	shown, _, _ = shown.Update(shown.Init()())
+	if got := names(shown); got != ".ssh,visible" {
+		t.Fatalf("WithHidden: %q", got)
+	}
+}
+
+func TestPathToHiddenFileShowsHidden(t *testing.T) {
+	root := t.TempDir()
+	hidden := filepath.Join(root, ".secret")
+	if err := os.WriteFile(hidden, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tree := New(root, 60, 12, WithFilter(AllFiles()))
+	tree, _, _ = tree.Update(tree.Init()())
+	tree.editor.SetValue(hidden)
+	tree, _, err := tree.acceptPath()
+	if err != nil || !tree.ShowsHidden() {
+		t.Fatalf("accept %v, hidden %v", err, tree.ShowsHidden())
+	}
+}
+
+func TestTabCompletesCommonPrefixThenOpensGrid(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"id_ed25519", "id_ed25519.pub", "known_hosts"} {
+		if err := os.WriteFile(filepath.Join(root, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(root, "sockets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tree := New(root, 60, 16, WithFilter(AllFiles()))
+	tree, _, _ = tree.Update(tree.Init()())
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+
+	tree.editor.SetValue(filepath.Join(root, "i"))
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if got := tree.editor.Value(); got != filepath.Join(root, "id_ed25519") || len(tree.completions) != 0 {
+		t.Fatalf("common prefix: %q, grid %v", got, tree.completions)
+	}
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if len(tree.completions) != 2 {
+		t.Fatalf("second Tab did not open the grid: %v", tree.completions)
+	}
+
+	// A trailing separator lists the whole directory, directories first.
+	tree.closeCompletions()
+	tree.editor.SetValue(root + string(filepath.Separator))
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if len(tree.completions) != 4 || !strings.HasSuffix(tree.completions[0], "sockets"+string(filepath.Separator)) {
+		t.Fatalf("listing: %v", tree.completions)
+	}
+
+	// Typing narrows the open grid.
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if len(tree.completions) != 1 || !strings.HasSuffix(tree.completions[0], "known_hosts") {
+		t.Fatalf("typing did not narrow the grid: %v", tree.completions)
+	}
+
+	// Esc closes the grid and stays in path input.
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if len(tree.completions) != 0 || tree.action != actionPath {
+		t.Fatalf("esc: grid %v, action %v", tree.completions, tree.action)
+	}
+}
+
+func TestGridArrowsAndDescend(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"alpha", "beta"} {
+		if err := os.MkdirAll(filepath.Join(root, name, "inside-"+name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tree := New(root, 60, 16, WithFilter(AllFiles()))
+	tree, _, _ = tree.Update(tree.Init()())
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	tree.editor.SetValue(root + string(filepath.Separator))
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyTab})
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyRight})
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if tree.completionIndex != 1 || !strings.Contains(tree.editor.Value(), "beta") {
+		t.Fatalf("arrows: index %d, input %q", tree.completionIndex, tree.editor.Value())
+	}
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if len(tree.completions) != 1 || !strings.Contains(tree.completions[0], "inside-beta") {
+		t.Fatalf("/ did not descend: %v", tree.completions)
+	}
+	if strings.Contains(tree.editor.Value(), "//") {
+		t.Fatalf("descending doubled the separator: %q", tree.editor.Value())
+	}
+	tree, _, _ = tree.Update(tea.KeyMsg{Type: tea.KeyTab})
+	tree, selected, _ := tree.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if selected != "" || len(tree.completions) != 0 || !strings.HasSuffix(tree.editor.Value(), "inside-beta"+string(filepath.Separator)) {
+		t.Fatalf("enter accepted %q, grid %v, selected %q", tree.editor.Value(), tree.completions, selected)
 	}
 }

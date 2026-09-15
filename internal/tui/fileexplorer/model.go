@@ -72,6 +72,7 @@ type Model struct {
 	selected        int
 	viewport        viewport.Model
 	filter          Filter
+	showHidden      bool
 	action          actionMode
 	target          *directoryNode
 	editor          textinput.Model
@@ -96,10 +97,11 @@ func New(root string, width, height int, options ...Option) Model {
 		isDir:    true,
 	}
 	tree := Model{
-		id:       explorerID.Add(1),
-		root:     node,
-		viewport: viewport.New(max(1, width), max(1, height)),
-		filter:   configuration.filter,
+		id:         explorerID.Add(1),
+		root:       node,
+		viewport:   viewport.New(max(1, width), max(1, height)),
+		filter:     configuration.filter,
+		showHidden: configuration.showHidden,
 	}
 	tree.viewport.MouseWheelEnabled = false
 	tree.editor = textinput.New()
@@ -114,7 +116,7 @@ func New(root string, width, height int, options ...Option) Model {
 }
 
 func (t Model) Init() tea.Cmd {
-	return readDirectory(t.id, t.root.path, t.filter)
+	return readDirectory(t.id, t.root.path, t.filter, t.showHidden)
 }
 
 func (t Model) Update(msg tea.Msg) (Model, string, tea.Cmd) {
@@ -256,6 +258,9 @@ func (t Model) updateKey(msg tea.KeyMsg) (Model, string, tea.Cmd) {
 		t.notice = ""
 	case "R":
 		return t.reload()
+	case "H":
+		t.showHidden = !t.showHidden
+		return t.reload()
 	case "-":
 		return t.moveRootUp()
 	case "=":
@@ -300,7 +305,7 @@ func (t Model) updateMouse(msg tea.MouseMsg) (Model, string, tea.Cmd) {
 		if node.expanded && !node.loaded && !node.loading {
 			node.loading = true
 			t.refresh()
-			return t, "", readDirectory(t.id, node.path, t.filter)
+			return t, "", readDirectory(t.id, node.path, t.filter, t.showHidden)
 		}
 	}
 	t.refresh()
@@ -338,7 +343,7 @@ func (t Model) makeSelectedRoot() (Model, string, tea.Cmd) {
 	if !target.loaded && !target.loading {
 		target.loading = true
 		t.refresh()
-		return t, "", readDirectory(t.id, target.path, t.filter)
+		return t, "", readDirectory(t.id, target.path, t.filter, t.showHidden)
 	}
 	return t, "", nil
 }
@@ -364,7 +369,7 @@ func (t Model) moveRootUp() (Model, string, tea.Cmd) {
 	t.focusAfterLoad = oldRoot
 	t.notice = ""
 	t.refresh()
-	return t, "", readDirectory(t.id, parent, t.filter)
+	return t, "", readDirectory(t.id, parent, t.filter, t.showHidden)
 }
 
 func (t *Model) beginEdit(action actionMode, target *directoryNode, value string) {
@@ -378,6 +383,11 @@ func (t *Model) beginEdit(action actionMode, target *directoryNode, value string
 
 func (t Model) updateAction(msg tea.KeyMsg) (Model, string, tea.Cmd) {
 	key := msg.String()
+	// Esc closes an open candidate grid before it leaves path input.
+	if key == "esc" && t.action == actionPath && len(t.completions) > 0 {
+		t.closeCompletions()
+		return t, "", nil
+	}
 	if key == "esc" {
 		t.action = actionNone
 		t.target = nil
@@ -398,12 +408,30 @@ func (t Model) updateAction(msg tea.KeyMsg) (Model, string, tea.Cmd) {
 	}
 	if t.action == actionPath {
 		if msg.Paste {
-			t.editor.SetValue(trimPathInput(string(msg.Runes)))
-			t.editor.CursorEnd()
-			t.completions = nil
-			t.completionIndex = 0
-			t.notice = ""
+			t.setInput(trimPathInput(string(msg.Runes)))
 			return t, "", nil
+		}
+		gridOpen := len(t.completions) > 0
+		if gridOpen {
+			columns, _ := t.completionGrid()
+			switch key {
+			case "left":
+				t.moveCompletion(-1, false)
+				return t, "", nil
+			case "right":
+				t.moveCompletion(1, false)
+				return t, "", nil
+			case "up":
+				t.moveCompletion(-columns, false)
+				return t, "", nil
+			case "down":
+				t.moveCompletion(columns, false)
+				return t, "", nil
+			case "/":
+				if t.descendCompletion() {
+					return t, "", nil
+				}
+			}
 		}
 		switch key {
 		case "tab":
@@ -422,15 +450,22 @@ func (t Model) updateAction(msg tea.KeyMsg) (Model, string, tea.Cmd) {
 				return t, "", nil
 			}
 			if selected == "" && updated.action == actionNone {
-				return updated, "", readDirectory(updated.id, updated.root.path, updated.filter)
+				return updated, "", readDirectory(updated.id, updated.root.path, updated.filter, updated.showHidden)
 			}
 			return updated, selected, nil
 		}
 		var cmd tea.Cmd
+		before := t.editor.Value()
 		t.editor, cmd = t.editor.Update(msg)
-		t.completions = nil
-		t.completionIndex = 0
+		if t.editor.Value() == before {
+			return t, "", cmd
+		}
 		t.notice = ""
+		if gridOpen {
+			t.refilterCompletions()
+		} else {
+			t.closeCompletions()
+		}
 		return t, "", cmd
 	}
 	if key == "enter" {
@@ -465,7 +500,7 @@ func (t Model) reload() (Model, string, tea.Cmd) {
 	t.action = actionNone
 	t.target = nil
 	t.refresh()
-	return t, "", readDirectory(t.id, t.root.path, t.filter)
+	return t, "", readDirectory(t.id, t.root.path, t.filter, t.showHidden)
 }
 
 func (t *Model) applyOperation(msg operationMsg) {
@@ -558,7 +593,7 @@ func (t Model) expandSelected(moveToChild bool) (Model, string, tea.Cmd) {
 		if !node.loaded && !node.loading {
 			node.loading = true
 			t.refresh()
-			return t, "", readDirectory(t.id, node.path, t.filter)
+			return t, "", readDirectory(t.id, node.path, t.filter, t.showHidden)
 		}
 	} else if moveToChild && len(node.children) > 0 {
 		t.selected++
@@ -597,37 +632,99 @@ func (t Model) View() string {
 	return t.viewport.View()
 }
 
-func (t Model) pathInputView() string {
-	const maxVisibleCompletions = 5
-	start := 0
-	if t.completionIndex >= maxVisibleCompletions {
-		start = t.completionIndex - maxVisibleCompletions + 1
+// completionGrid lays the candidates out like ls: as many columns as fit, each
+// as wide as the longest name.
+func (t Model) completionGrid() (columns, cellWidth int) {
+	longest := 1
+	for _, completion := range t.completions {
+		longest = max(longest, lipgloss.Width(completionName(completion)))
 	}
-	end := min(len(t.completions), start+maxVisibleCompletions)
-	completionLines := make([]string, 0, end-start)
-	for index := start; index < end; index++ {
-		marker := "  "
-		style := rowStyle
-		if index == t.completionIndex {
-			marker = "› "
-			style = selectedStyle
+	width := max(1, t.viewport.Width)
+	cellWidth = min(width, longest+4)
+	return max(1, width/cellWidth), cellWidth
+}
+
+// completionName is how a candidate appears in the grid: its last element,
+// with a directory's trailing separator kept.
+func completionName(completion string) string {
+	separator := string(filepath.Separator)
+	name := filepath.Base(strings.TrimSuffix(completion, separator))
+	if strings.HasSuffix(completion, separator) {
+		name += separator
+	}
+	return name
+}
+
+func (t Model) pathInputView() string {
+	width := max(1, t.viewport.Width)
+	var gridLines []string
+	if len(t.completions) > 0 {
+		columns, cellWidth := t.completionGrid()
+		rows := (len(t.completions) + columns - 1) / columns
+		maxRows := max(1, t.viewport.Height/2-1)
+		top := 0
+		if t.completionIndex >= 0 {
+			top = max(0, t.completionIndex/columns-maxRows+1)
 		}
-		name := filepath.Base(strings.TrimSuffix(t.completions[index], string(filepath.Separator)))
-		completionLines = append(completionLines, style.Render(marker+name))
+		shown := min(rows-top, maxRows)
+
+		count := fmt.Sprintf("%d matches", len(t.completions))
+		if top > 0 {
+			count = "↑ " + count
+		}
+		if top+shown < rows {
+			count += " ↓"
+		}
+		listed := filepath.Dir(trimPathInput(t.editor.Value()) + "x")
+		if t.completionIndex >= 0 {
+			listed = filepath.Dir(strings.TrimSuffix(t.completions[t.completionIndex], string(filepath.Separator)))
+		}
+		// A long directory keeps its end, which is the part being completed.
+		heading := listed + string(filepath.Separator)
+		if excess := lipgloss.Width(heading) - max(1, width-lipgloss.Width(count)-1); excess > 0 {
+			heading = "…" + ansi.TruncateLeft(heading, excess+1, "")
+		}
+		gridLines = append(gridLines, mutedStyle.Render(heading)+rowStyle.Render(strings.Repeat(" ", max(1, width-lipgloss.Width(heading)-lipgloss.Width(count))))+mutedStyle.Render(count))
+
+		for row := top; row < top+shown; row++ {
+			var line strings.Builder
+			used := 0
+			for column := 0; column < columns; column++ {
+				index := row*columns + column
+				if index >= len(t.completions) {
+					break
+				}
+				name := completionName(t.completions[index])
+				cell := ansi.Truncate(name, cellWidth-3, "…")
+				style := rowStyle
+				if strings.HasSuffix(name, string(filepath.Separator)) {
+					style = disclosureStyle
+				}
+				marker := "  "
+				if index == t.completionIndex {
+					marker, style = "› ", selectedStyle
+				}
+				padding := strings.Repeat(" ", max(0, cellWidth-2-lipgloss.Width(cell)))
+				line.WriteString(style.Render(marker + cell + padding))
+				used += cellWidth
+			}
+			line.WriteString(rowStyle.Render(strings.Repeat(" ", max(0, width-used))))
+			gridLines = append(gridLines, line.String())
+		}
 	}
 	prompt := disclosureStyle.Bold(true).Render("PATH  ") + t.editor.View()
 	if t.notice != "" {
 		prompt = errorStyle.Render(t.notice+"  ") + t.editor.View()
 	}
-	panelHeight := len(completionLines) + 2
+	panelHeight := len(gridLines) + 2
 	view := t.viewport
 	view.Height = max(1, t.viewport.Height-panelHeight)
 	if t.selected >= view.YOffset+view.Height {
 		view.SetYOffset(t.selected - view.Height + 1)
 	}
-	parts := []string{view.View(), mutedStyle.Render(strings.Repeat("─", max(1, t.viewport.Width)))}
-	parts = append(parts, completionLines...)
-	parts = append(parts, rowStyle.Width(t.viewport.Width).MaxWidth(t.viewport.Width).Render(prompt))
+	parts := []string{view.View(), mutedStyle.Render(strings.Repeat("─", width))}
+	parts = append(parts, gridLines...)
+	parts = append(parts, rowStyle.Width(width).MaxWidth(width).Render(prompt))
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
@@ -661,9 +758,12 @@ func (t Model) Hint() string {
 	case actionCreate, actionRename:
 		return "↵ Apply  esc Cancel"
 	case actionPath:
-		return "tab Complete  ↵ Select  esc Cancel  shift+tab Previous"
+		if len(t.completions) > 0 {
+			return "tab/←↑↓→ Move  / Open dir  ↵ Accept  esc Close"
+		}
+		return "tab Complete  ↵ Go  esc Cancel"
 	default:
-		return "- Up  / Path  a New  r Rename  d Delete  R Reload  = Root"
+		return "- Up  / Path  a New  r Rename  d Delete  R Reload  = Root  H Hidden"
 	}
 }
 
@@ -681,12 +781,21 @@ func (t Model) SelectedPath() string {
 
 // FilterLabel returns a compact description such as DIR, JPG, PNG, or ALL FILES.
 func (t Model) FilterLabel() string {
+	if t.showHidden {
+		return t.filter.Label() + " · HIDDEN"
+	}
 	return t.filter.Label()
 }
+
+// ShowsHidden reports whether entries starting with . are shown.
+func (t Model) ShowsHidden() bool { return t.showHidden }
 
 func (t Model) selectable(node *directoryNode) bool {
 	if t.filter.kind == directoryFilter {
 		return node.isDir
+	}
+	if t.filter.kind == allFilesFilter {
+		return true
 	}
 	return !node.isDir
 }
@@ -804,7 +913,7 @@ func (t Model) find(path string) *directoryNode {
 	return visit(t.root)
 }
 
-func readDirectory(id int64, path string, filter Filter) tea.Cmd {
+func readDirectory(id int64, path string, filter Filter, showHidden bool) tea.Cmd {
 	return func() tea.Msg {
 		entries, err := os.ReadDir(path)
 		if err != nil {
@@ -812,7 +921,7 @@ func readDirectory(id int64, path string, filter Filter) tea.Cmd {
 		}
 		visible := make([]directoryEntry, 0, len(entries))
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".") {
+			if !showHidden && strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
 			directory := isDirectory(path, entry)
