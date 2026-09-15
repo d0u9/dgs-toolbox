@@ -31,6 +31,13 @@ type ShellKeyCapturer interface {
 	CapturesShellKey(key string) bool
 }
 
+// Closer lets a command let go of what it holds — plaintext in memory, say —
+// when the shell leaves it for the picker or quits. Close is called once, and
+// the model is not used afterwards.
+type Closer interface {
+	Close()
+}
+
 // CommandPathContributor lets an active command append workflow state to the
 // shell breadcrumb without taking ownership of the top bar.
 type CommandPathContributor interface {

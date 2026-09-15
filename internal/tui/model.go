@@ -180,6 +180,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitDialog, decision = m.quitDialog.Update(key)
 		switch decision {
 		case confirm.Confirmed:
+			m.closeActive()
 			return m, tea.Quit
 		case confirm.Cancelled:
 			m.confirmQuit = false
@@ -280,10 +281,18 @@ func (m *Model) openLeaveConfirmation() {
 
 // leaveCommand drops the active command and returns to the picker.
 func (m Model) leaveCommand() Model {
+	m.closeActive()
 	m.active = nil
 	m.activeApp = -1
 	m.activeCommand = -1
 	return m
+}
+
+// closeActive tells the active command it is being dropped.
+func (m Model) closeActive() {
+	if closer, ok := m.active.(Closer); ok {
+		closer.Close()
+	}
 }
 
 func (m Model) activate(selected choice) Model {
