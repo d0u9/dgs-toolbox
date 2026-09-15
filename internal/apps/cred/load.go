@@ -50,6 +50,11 @@ func loadSnapshot(path string) snapshot {
 	return snap
 }
 
+func homeDir() string {
+	home, _ := os.UserHomeDir()
+	return home
+}
+
 // tilde shortens a path under the home directory for display.
 func tilde(path string) string {
 	home, err := os.UserHomeDir()

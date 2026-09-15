@@ -29,6 +29,7 @@ func TestCommandRoutes(t *testing.T) {
 		{name: "geo gpx", args: []string{"geo", "gpx"}, want: tui.Launch{App: "geo", Command: "gpx"}},
 		{name: "cred", args: []string{"cred"}, want: tui.Launch{App: "cred"}},
 		{name: "cred keys", args: []string{"cred", "keys"}, want: tui.Launch{App: "cred", Command: "keys"}},
+		{name: "cred vault", args: []string{"cred", "vault"}, want: tui.Launch{App: "cred", Command: "vault"}},
 		{name: "geo gpx listen", args: []string{"geo", "gpx", "--host", "0.0.0.0", "--port", "9000"}, want: tui.Launch{App: "geo", Command: "gpx", Flags: map[string]string{"host": "0.0.0.0", "port": "9000"}}},
 	}
 

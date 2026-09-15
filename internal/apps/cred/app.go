@@ -21,6 +21,13 @@ func New() tui.App {
 			New: func() tui.CommandModel {
 				return newKeysModel()
 			},
+		}, {
+			ID:          "vault",
+			Name:        "Vault",
+			Description: "The age files in a folder, and which this machine can open.",
+			New: func() tui.CommandModel {
+				return newVaultModel()
+			},
 		}},
 	}
 }
