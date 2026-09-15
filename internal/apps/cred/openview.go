@@ -343,9 +343,12 @@ func (m vaultModel) updateOpenKey(key string) (tea.Model, tea.Cmd, bool) {
 			m.closeOpen()
 			return m, nil, true
 		case "enter", "l", "right", "h", "left":
-			if entry, ok := m.selectedEntry(); ok && entry.Kind == opened.KindDirectory {
+			entry, ok := m.selectedEntry()
+			if ok && entry.Kind == opened.KindDirectory {
 				open.collapsed[entry.Path] = key == "h" || key == "left" || (key == "enter" && !open.collapsed[entry.Path])
 				m.rebuildContents()
+			} else if ok && key == "enter" {
+				m.startAction()
 			}
 			return m, nil, true
 		}
@@ -587,7 +590,7 @@ func (m vaultModel) openStatus() (string, string, string) {
 	}
 	switch m.fields.Current() {
 	case contentsField:
-		return "OPEN · CONTENTS", center, "↑↓ Move  ↵ Fold  c Copy  v Show  tab Next  esc Close"
+		return "OPEN · CONTENTS", center, "↑↓ Move  ↵ Actions  c Copy  v Show  tab Next  esc Close"
 	case previewField:
 		return "OPEN · PREVIEW", center, "↑↓ Scroll  c Copy  v Show  tab Next  esc Close"
 	}

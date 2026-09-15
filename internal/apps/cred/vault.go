@@ -89,6 +89,8 @@ type vaultModel struct {
 	// before one opens.
 	open   *openFile
 	prompt *passphrasePrompt
+	// action is an Action being run on an entry of the open file.
+	action *actionFlow
 	// copy puts text on the clipboard; tests replace it.
 	copy func(string) error
 }
@@ -260,11 +262,21 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case openedMsg:
 		return m.finishOpen(msg)
+	case actionDoneMsg:
+		if m.action != nil {
+			return m.finishAction(msg)
+		}
+		return m, nil
 	case idleTickMsg:
 		return m.updateIdle(msg)
 	}
 	if m.prompt != nil {
 		return m.updatePrompt(msg)
+	}
+	if m.action != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateAction(msg)
+		}
 	}
 	if sealed, ok := msg.(sealedMsg); ok && m.add != nil {
 		return m.finishAdd(sealed)
@@ -586,6 +598,9 @@ func (m vaultModel) View() string {
 	if m.prompt != nil {
 		return overlay.Place(workspace, m.promptView(), m.width, m.height)
 	}
+	if m.action != nil {
+		return overlay.Place(workspace, m.actionView(), m.width, m.height)
+	}
 	if m.add != nil {
 		return overlay.Place(workspace, m.addView(), m.width, m.height)
 	}
@@ -732,7 +747,7 @@ func (m vaultModel) pickerView() string {
 }
 
 func (m vaultModel) CapturesShellKey(key string) bool {
-	if m.prompt != nil {
+	if m.prompt != nil || m.action != nil {
 		return key == "esc" || key == "q" || key == "backspace"
 	}
 	if m.open != nil && key == "esc" {
@@ -753,6 +768,10 @@ func (m vaultModel) CapturesShellKey(key string) bool {
 func (m vaultModel) Status() tui.Status {
 	if m.prompt != nil {
 		return tui.Status{Left: "PASSPHRASE", Center: m.prompt.file.Path, Right: "↵ Open  esc Cancel"}
+	}
+	if m.action != nil {
+		left, right := m.actionStatus()
+		return tui.Status{Left: left, Center: m.action.entry.Path, Right: right}
 	}
 	if m.open != nil && m.add == nil && !m.picking {
 		left, center, right := m.openStatus()
