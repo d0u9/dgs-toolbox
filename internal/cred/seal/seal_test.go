@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"filippo.io/age"
+	"filippo.io/age/armor"
 
 	"dgs-toolbox/internal/cred/record"
 )
@@ -200,5 +202,94 @@ func TestSealUnverified(t *testing.T) {
 	result, err := Seal(Request{Source: source, Destination: filepath.Join(dir, "file.age"), Recipients: []Recipient{{PublicKey: other.Recipient().String()}}})
 	if err != nil || result.Verified {
 		t.Errorf("result %+v, %v", result, err)
+	}
+}
+
+func TestReseal(t *testing.T) {
+	dir := t.TempDir()
+	mine, _ := age.GenerateX25519Identity()
+	removed, _ := age.GenerateX25519Identity()
+	added, _ := age.GenerateX25519Identity()
+	source := filepath.Join(dir, "secret")
+	write(t, source, "the secret", 0o600)
+	path := filepath.Join(dir, "vault", "secret.age")
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	created := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := Seal(Request{Source: source, Destination: path, Recipients: []Recipient{{PublicKey: mine.Recipient().String()}, {PublicKey: removed.Recipient().String(), Host: "old"}}, Now: created}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+
+	now := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+	result, err := Reseal(ResealRequest{
+		Path:       path,
+		Open:       []age.Identity{mine},
+		Recipients: []Recipient{{PublicKey: mine.Recipient().String(), Host: "laptop"}, {PublicKey: added.Recipient().String(), Host: "new"}},
+		Verify:     []age.Identity{mine},
+		Now:        now,
+	})
+	if err != nil || !result.Verified {
+		t.Fatalf("%+v %v", result, err)
+	}
+	after, _ := os.ReadFile(path)
+	if bytes.Equal(before, after) {
+		t.Error("file unchanged")
+	}
+	if got := decrypt(t, path, added); string(got) != "the secret" {
+		t.Errorf("added recipient reads %q", got)
+	}
+	if file, _ := os.Open(path); file != nil {
+		if _, err := age.Decrypt(file, removed); err == nil {
+			t.Error("removed recipient still opens the new file")
+		}
+		file.Close()
+	}
+	rec, _ := record.Read(result.RecordPath)
+	if !rec.Created.Equal(created) || rec.Updated == nil || !rec.Updated.Equal(now) || len(rec.Recipients) != 2 || rec.Recipients[1].Host != "new" {
+		t.Errorf("record %+v", rec)
+	}
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	if len(entries) != 2 {
+		t.Errorf("left behind: %v", entries)
+	}
+}
+
+func TestResealKeepsArmorAndRefuses(t *testing.T) {
+	dir := t.TempDir()
+	mine, _ := age.GenerateX25519Identity()
+	stranger, _ := age.GenerateX25519Identity()
+	path := filepath.Join(dir, "a.age")
+	var out bytes.Buffer
+	aw := armor.NewWriter(&out)
+	w, _ := age.Encrypt(aw, mine.Recipient())
+	w.Write([]byte("armored"))
+	w.Close()
+	aw.Close()
+	write(t, path, out.String(), 0o640)
+
+	recipients := []Recipient{{PublicKey: mine.Recipient().String()}}
+	if _, err := Reseal(ResealRequest{Path: path, Open: []age.Identity{mine}, Recipients: recipients, Verify: []age.Identity{mine}}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if !bytes.HasPrefix(data, []byte(armorIntro)) {
+		t.Error("armor not kept")
+	}
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o640 {
+		t.Errorf("mode %04o", info.Mode().Perm())
+	}
+	if rec, err := record.Read(record.PathFor(path)); err != nil || rec.Updated == nil {
+		t.Errorf("record created for an unrecorded file: %+v %v", rec, err)
+	}
+
+	before, _ := os.ReadFile(path)
+	if _, err := Reseal(ResealRequest{Path: path, Open: []age.Identity{stranger}, Recipients: recipients}); err == nil || !strings.Contains(err.Error(), "does not decrypt") {
+		t.Errorf("wrong identity: %v", err)
+	}
+	if _, err := Reseal(ResealRequest{Path: path, Open: []age.Identity{mine}, Recipients: []Recipient{{PublicKey: stranger.Recipient().String()}}, Verify: []age.Identity{mine}}); err == nil {
+		t.Error("replaced with a file this machine cannot check")
+	}
+	if after, _ := os.ReadFile(path); !bytes.Equal(before, after) {
+		t.Error("a refused reseal changed the file")
 	}
 }

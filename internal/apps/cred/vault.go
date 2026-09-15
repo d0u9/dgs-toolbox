@@ -91,6 +91,8 @@ type vaultModel struct {
 	prompt *passphrasePrompt
 	// action is an Action being run on an entry of the open file.
 	action *actionFlow
+	// edit is changing a file's recipients.
+	edit *editFlow
 	// copy puts text on the clipboard; tests replace it.
 	copy func(string) error
 }
@@ -262,6 +264,16 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case openedMsg:
 		return m.finishOpen(msg)
+	case unlockedMsg:
+		if m.edit != nil {
+			return m.finishUnlock(msg)
+		}
+		return m, nil
+	case resealedMsg:
+		if m.edit != nil {
+			return m.finishEdit(msg)
+		}
+		return m, nil
 	case actionDoneMsg:
 		if m.action != nil {
 			return m.finishAction(msg)
@@ -276,6 +288,11 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.action != nil {
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			return m.updateAction(msg)
+		}
+	}
+	if m.edit != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateEdit(msg)
 		}
 	}
 	if sealed, ok := msg.(sealedMsg); ok && m.add != nil {
@@ -371,6 +388,9 @@ func (m vaultModel) updateKey(key string) (tea.Model, tea.Cmd) {
 		return m, scan
 	case "a":
 		cmd := m.startAdd()
+		return m, cmd
+	case "e":
+		cmd := m.startEdit()
 		return m, cmd
 	case "o":
 		start := m.root
@@ -601,6 +621,9 @@ func (m vaultModel) View() string {
 	if m.action != nil {
 		return overlay.Place(workspace, m.actionView(), m.width, m.height)
 	}
+	if m.edit != nil {
+		return overlay.Place(workspace, m.editView(), m.width, m.height)
+	}
 	if m.add != nil {
 		return overlay.Place(workspace, m.addView(), m.width, m.height)
 	}
@@ -747,7 +770,7 @@ func (m vaultModel) pickerView() string {
 }
 
 func (m vaultModel) CapturesShellKey(key string) bool {
-	if m.prompt != nil || m.action != nil {
+	if m.prompt != nil || m.action != nil || m.edit != nil {
 		return key == "esc" || key == "q" || key == "backspace"
 	}
 	if m.open != nil && key == "esc" {
@@ -768,6 +791,9 @@ func (m vaultModel) CapturesShellKey(key string) bool {
 func (m vaultModel) Status() tui.Status {
 	if m.prompt != nil {
 		return tui.Status{Left: "PASSPHRASE", Center: m.prompt.file.Path, Right: "↵ Open  esc Cancel"}
+	}
+	if m.edit != nil {
+		return tui.Status{Left: "CHANGE RECIPIENTS", Center: m.edit.file.Path, Right: "↑↓ Move  space Check  ↵ Continue  esc Cancel"}
 	}
 	if m.action != nil {
 		left, right := m.actionStatus()
@@ -792,7 +818,7 @@ func (m vaultModel) Status() tui.Status {
 	if center == "" {
 		center = m.summary()
 	}
-	right := "↑↓ Move  a Add  o Folder  R Rescan"
+	right := "↑↓ Move  ↵ Open  e Recipients  a Add  o Folder"
 	if _, ok := m.selectedDir(); ok {
 		right = "↑↓ Move  ↵ Fold  a Add  o Folder  R Rescan"
 	}

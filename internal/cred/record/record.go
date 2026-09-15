@@ -28,8 +28,11 @@ const ArchiveTarGz = "tar.gz"
 
 // Record is the content of a record file.
 type Record struct {
-	Version    int         `json:"version"`
-	Created    time.Time   `json:"created"`
+	Version int       `json:"version"`
+	Created time.Time `json:"created"`
+	// Updated is when the recipients were last changed; nil for a file never
+	// changed since it was added.
+	Updated    *time.Time  `json:"updated,omitempty"`
 	Archive    string      `json:"archive,omitempty"`
 	Recipients []Recipient `json:"recipients"`
 }
@@ -104,6 +107,35 @@ func Create(path string, r Record) error {
 		return err
 	}
 	return nil
+}
+
+// Replace writes a record whether or not one exists, through a temporary file
+// renamed into place.
+func Replace(path string, r Record) error {
+	r.Version = Version
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.dgs-part")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temp.Name())
+	if _, err = temp.Write(data); err == nil {
+		err = temp.Sync()
+	}
+	if closeErr := temp.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Chmod(temp.Name(), 0o644)
+	}
+	if err == nil {
+		err = os.Rename(temp.Name(), path)
+	}
+	return err
 }
 
 // Usage is which files in a vault were encrypted to a key, by their records.
