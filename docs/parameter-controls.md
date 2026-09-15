@@ -77,10 +77,10 @@ The shared control vocabulary includes:
   Strategy        (●) First   ( ) Second    Radio
   Extensions      [x] JPG                    Multi-checkbox
                   [ ] DNG
-  [ Action ]                                Local button
+     Action                                 Local button (filled)
 ```
 
-Use the same `›` focus marker and accent color as the rest of the TUI. The focused control receives a restrained full-row background highlight, including its marker, label, and value; this makes the current row immediately scannable without adding another border. Keep labels aligned where a label/value structure applies. The fieldset is the grouping boundary; do not wrap every control in its own border. Bracketed buttons are reserved for local actions inside a form; workflow transitions use the shared Page Actions component described below.
+Use the same `›` focus marker and accent color as the rest of the TUI. The focused control receives a restrained full-row background highlight, including its marker, label, and value; this makes the current row immediately scannable without adding another border. Keep labels aligned where a label/value structure applies. The fieldset is the grouping boundary; do not wrap every control in its own border. Local actions inside a form, and the two actions of the confirmation dialog, are one-row filled buttons rendered by `pageactions.Inline`: a quiet fill, or the accent fill with bold text and the `›` marker when focused, both the same width. Workflow transitions use the two-row Page Actions component described below.
 
 ### Page Actions
 
@@ -106,7 +106,7 @@ Shift+Tab / Up / Left / k / h     Move to the previous control
 Enter / Space                     Open a focused Option
 ```
 
-Navigation wraps at the beginning and end. `Enter` opens File Explorer for paths, opens an option menu, begins text editing, advances a radio choice, or activates a button according to the focused control. `Space` toggles a checkbox. Left/Right or h/l changes a focused radio choice. An open option menu uses Up/Down and Enter; `Esc` cancels it. Text editing uses Enter to apply and `Esc` to restore the previous value.
+Navigation wraps at the beginning and end. `Enter` opens File Explorer for paths, opens an option menu, begins text editing, advances a radio choice, or activates a button according to the focused control. `Space` toggles a checkbox. Left/Right or h/l changes a focused radio choice. An open option menu uses Up/Down and Enter; `Esc` cancels it. Text editing uses Enter to apply and `Esc` to restore the previous value. While editing, the cursor moves with Left/Right, Home/End or `Ctrl+A`/`Ctrl+E`, and by word with `Alt+Left`/`Alt+Right`; `Backspace`/`Delete`, `Ctrl+W` (word before), `Ctrl+U` (to the start) and `Ctrl+K` (to the end) delete. Typing and pasting insert at the cursor. Pasting into a focused Text field appends the pasted text, starting an edit when none is open; line breaks and trailing spaces are dropped.
 
 While editing text, printable keys—including `q` and the Vim navigation letters—belong to the editor instead of form navigation.
 

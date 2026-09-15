@@ -319,7 +319,7 @@ The form ends with one primary action using the same focus marker:
 › Continue
 ```
 
-Local form actions may use the shared bracketed button presentation. Transitions between workflow pages use the shared two-row Page Actions component, which names both the direction and destination; see [`parameter-controls.md`](parameter-controls.md).
+Local form actions use the shared one-row filled button. Transitions between workflow pages use the shared two-row Page Actions component, which names both the direction and destination; see [`parameter-controls.md`](parameter-controls.md).
 
 ## Form keyboard behavior
 
@@ -343,13 +343,17 @@ An application stage with active work may capture the shell's return and exit ke
 
 ### Confirmation dialog
 
-Consequential interruptions use the shared confirmation component in `internal/tui/confirm`. It renders a compact framed dialog with a title, message, optional detail, and two actions. The message and detail wrap within the dialog rather than being cut off. The negative or safe action is focused by default. `Tab` and `Shift+Tab` switch focus, `Enter` invokes the focused action, and `Esc` always cancels. The selected button carries the visual focus treatment; keyboard hints appear once in the dialog footer and are not duplicated in the global status bar.
+Consequential interruptions use the shared confirmation component in `internal/tui/confirm`. It renders a compact framed dialog with a title, message, optional detail, and two actions. The message and detail wrap within the dialog rather than being cut off. The negative or safe action is focused by default. `Tab` and `Shift+Tab` switch focus, `Enter` invokes the focused action, and `Esc` always cancels. Its buttons are the shared one-row filled buttons, and the selected one carries the accent fill; keyboard hints appear once in the dialog footer and are not duplicated in the global status bar.
 
 The status bar shows only controls valid in the current state. For example, edit mode should describe how to accept or cancel the edit rather than showing form-navigation hints.
 
 Leaving a command for the picker is confirmed through the same component. Esc is also the key that walks back a column inside a command, so the one that leaves it is one keystroke from the one that does not, and leaving throws away what the session was holding—a Capture half filled in, a plan not yet run. The dialog names the command being left, `Stay` is focused by default, and answering it leaves the session exactly as it was.
 
 Every action that quits `dgs`, including `q`, Ctrl+C, picker exit, and a command-owned Quit button, routes through this shared confirmation component. Do not render a separate inline `y/n` prompt or terminate immediately. The dialog keeps the underlying workspace visible, focuses No by default, and places the right-aligned buttons in safe-to-consequential order: No on the left, Yes on the right. Tab or Shift+Tab switches actions, Enter invokes the focused action, and Esc continues. Active work may provide more specific interruption copy, but it still uses the same component and interaction contract.
+
+### Dialogs and overlays
+
+Every dialog and overlay ends with one footer row: its key hints on the left in the quiet colour, and its buttons at the bottom-right, safe action before consequential one, rendered by `pageactions.Footer` with the shared one-row filled buttons. A step of a flow inside an overlay puts its forward button there too, rather than among its fields, so the way on is always in the same place. Content is never cut off to make room: a row that cannot fit its text uses a second line.
 
 ### Page actions
 

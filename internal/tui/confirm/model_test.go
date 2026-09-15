@@ -35,7 +35,7 @@ func TestEscAlwaysCancelsAndViewIsBounded(t *testing.T) {
 		t.Fatalf("esc decision = %v, want Cancelled", decision)
 	}
 	view := dialog.View(50)
-	if lipgloss.Width(view) > 50 || !strings.Contains(view, "Tab switch") || !strings.Contains(view, "[ No ]") {
+	if lipgloss.Width(view) > 50 || !strings.Contains(view, "Tab switch") || !strings.Contains(view, " No ") {
 		t.Fatalf("unexpected dialog:\n%s", view)
 	}
 }
@@ -45,15 +45,15 @@ func TestButtonsAreRightAlignedWithSafeActionOnLeft(t *testing.T) {
 	lines := strings.Split(ansi.Strip(dialog.View(50)), "\n")
 	var buttons string
 	for _, line := range lines {
-		if strings.Contains(line, "[ No ]") {
+		if strings.Contains(line, "› No") {
 			buttons = line
 			break
 		}
 	}
-	if buttons == "" || strings.Index(buttons, "[ No ]") > strings.Index(buttons, "[ Yes ]") {
+	if buttons == "" || strings.Index(buttons, "No") > strings.Index(buttons, "Yes") {
 		t.Fatalf("buttons are not ordered No then Yes: %q", buttons)
 	}
-	if !strings.HasSuffix(strings.TrimRight(buttons, " │"), "[ Yes ]") {
+	if !strings.HasSuffix(strings.TrimRight(buttons, " │"), "Yes") {
 		t.Fatalf("buttons are not right aligned: %q", buttons)
 	}
 }

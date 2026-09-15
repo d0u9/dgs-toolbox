@@ -4,6 +4,8 @@ package confirm
 import (
 	"strings"
 
+	"dgs-toolbox/internal/tui/pageactions"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -36,11 +38,9 @@ var (
 	panel  = lipgloss.AdaptiveColor{Light: "#EAF4F4", Dark: "#243447"}
 	muted  = lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#94A3B8"}
 
-	frameStyle          = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(accent).Background(panel)
-	titleStyle          = lipgloss.NewStyle().Bold(true).Foreground(accent)
-	noteStyle           = lipgloss.NewStyle().Foreground(muted)
-	selectedButtonStyle = lipgloss.NewStyle().Bold(true).Foreground(panel).Background(accent).Padding(0, 1)
-	buttonStyle         = lipgloss.NewStyle().Padding(0, 1)
+	frameStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(accent).Background(panel)
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(accent)
+	noteStyle  = lipgloss.NewStyle().Foreground(muted)
 )
 
 func New(config Config) Model {
@@ -77,12 +77,8 @@ func (m Model) CancelChosen() bool { return m.cancelChosen }
 func (m Model) View(width int) string {
 	outerWidth := max(24, min(66, width-4))
 	innerWidth := max(1, outerWidth-4)
-	confirm, cancel := buttonStyle.Render("[ "+m.config.ConfirmLabel+" ]"), buttonStyle.Render("[ "+m.config.CancelLabel+" ]")
-	if m.cancelChosen {
-		cancel = selectedButtonStyle.Render("[ " + m.config.CancelLabel + " ]")
-	} else {
-		confirm = selectedButtonStyle.Render("[ " + m.config.ConfirmLabel + " ]")
-	}
+	confirm := pageactions.Inline(m.config.ConfirmLabel, !m.cancelChosen)
+	cancel := pageactions.Inline(m.config.CancelLabel, m.cancelChosen)
 	// The message and detail wrap rather than truncate: what a dialog asks
 	// about is exactly what must not be cut off.
 	content := []string{
@@ -96,8 +92,7 @@ func (m Model) View(width int) string {
 	content = append(content,
 		"",
 		noteStyle.Render(strings.Repeat("─", innerWidth)),
-		lipgloss.NewStyle().Width(innerWidth).Align(lipgloss.Right).Render(cancel+"  "+confirm),
-		noteStyle.Render("Tab switch  ·  Enter select  ·  Esc continue"),
+		pageactions.Footer(innerWidth, "Tab switch · Enter select · Esc continue", cancel, confirm),
 	)
 	return frameStyle.Width(outerWidth - 2).Render(strings.Join(content, "\n"))
 }
