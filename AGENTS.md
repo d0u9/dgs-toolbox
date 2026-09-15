@@ -2,7 +2,7 @@
 
 ## Current goal
 
-Build the Photo Import workflow for `dgs`, including its real, integrity-verified Processing engine. Keep the remaining Photo commands as demo domains. Build GPX milestone by milestone as described in [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
+Build the Photo Import workflow for `dgs`, including its real, integrity-verified Processing engine. Keep the remaining Photo commands as demo domains. Build GPX milestone by milestone as described in [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md). Build `dgs cred` — age identities, recipients and the encrypted vault — as described in [`docs/apps/cred/`](docs/apps/cred/); decrypted content stays in memory unless an Action the user confirms writes it, and a vault file is replaced only after the new one decrypts back to the same SHA-256.
 
 Photo Import may perform real file operations only after the user starts Processing. Its highest-priority contract is that a destination file is not published under its final name until an independent destination readback matches the Source SHA-256 digest. Follow the confirmed algorithm and unresolved boundaries in [`docs/apps/photo/import.md`](docs/apps/photo/import.md).
 
@@ -15,6 +15,8 @@ Every setting `dgs` reads is documented in [`docs/configuration/`](docs/configur
 Adding a configuration file, or a key to one, is not finished until that reference says so in the same change. Update the part's document and the index table together — a key in one and not the other is worse than a key in neither, because the index is what a reader trusts to be complete. Renaming, removing, or changing the default of a key is the same change. Design documents keep explaining why a setting exists and link here for what to write, rather than repeating the list and drifting from it.
 
 [`examples/`](examples) holds a working configuration per feature, and a test loads every one of them: renaming or removing a key breaks the examples that use it, and fixing them is part of the same change rather than something a reader discovers by copying one.
+
+`dgs cred`'s Actions follow the same rule: adding one, renaming one, or changing what it writes is not finished until [`docs/apps/cred/actions.md`](docs/apps/cred/actions.md) says so, and a test fails when it does not name every registered Action.
 
 Capture's Actions are the same rule in the other direction: adding one, renaming one, or changing what one writes or requires is not finished until [`docs/apps/capture/actions.md`](docs/apps/capture/actions.md) says so in the same change. It is the catalogue someone writes a Recipe against, and an Action it does not name is one they have no way to know about. A test fails when the document does not name every registered Action; it cannot check that the description is still true, so that part is on the change.
 
@@ -54,6 +56,9 @@ dgs photo import
 dgs photo encode
 dgs geo
 dgs geo gpx
+dgs cred
+dgs cred keys
+dgs cred vault
 ```
 
 A single `dgs` process has only one active leaf command at a time. It does not display or run multiple command workspaces simultaneously.

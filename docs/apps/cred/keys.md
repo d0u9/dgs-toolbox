@@ -325,14 +325,10 @@ incomplete.
 3. **A3 — Keys page.** The read-only page above, inside the `dgs cred` command.
 4. **A5 — Creating keys.** Writing identity files and adding keys to hosts,
    in their packages; then the three actions on the page.
-5. **A4 — Unlocking protected identities.** Deferred until browsing or
-   decrypting needs a passphrase, which is where the questions below get a
-   concrete answer.
-
-## Not decided
-
-- How a passphrase is asked for, and how long an unlocked identity stays
-  unlocked.
+5. **A4 — Unlocking protected identities.** Built with the vault's C2: a
+   passphrase is asked for in a masked field when a file needs it, unlocks the
+   identity for that one file or recipient change, and is not kept. See
+   [`vault.md`](vault.md#decrypting).
 
 ## Deferred
 
