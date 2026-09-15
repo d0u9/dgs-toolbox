@@ -43,8 +43,18 @@ Rules:
 - A symbolic link to a directory is not followed.
 - A private key file readable by anyone other than its owner (wider than
   `0600`) is used, with a warning.
+- A file reached through two configured directories, or through a link, is read
+  once, and shown under its real path.
+- A file that cannot be read is reported with its path.
 - A passphrase-protected key is listed and marked as protected. Unlocking it is
-  a later milestone.
+  a later milestone. An OpenSSH key keeps its public key outside the
+  encryption, so a protected one is still matched against recipients; a legacy
+  encrypted PEM key does not, and is matched only once unlocked.
+- A private key age cannot decrypt with — ECDSA, an RSA key shorter than 2048
+  bits — is listed as unsupported with the reason. So is a post-quantum age
+  identity.
+- In an age key file, a line that is neither a key, a comment nor blank is
+  listed as invalid, since age refuses such a file.
 - An age plugin identity (`AGE-PLUGIN-…`) is recognised and listed as
   unsupported, neither used nor silently ignored. Plugins work by running an
   external program, which `dgs` does not do.
@@ -168,6 +178,7 @@ A public key can be copied, and shown in full with its fingerprint.
    TUI code, tested on constructed folders.
 2. **A2 — Identities.** Discover and parse identities in the configured
    directories, derive their public keys, match them against recipients.
+   `internal/cred/identities`.
 3. **A3 — Keys page.** The read-only page above, inside the `dgs cred` command.
 4. **A4 — Unlocking protected identities.**
 
