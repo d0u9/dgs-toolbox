@@ -247,7 +247,7 @@ func TestCommandQuitRequestUsesSharedConfirmation(t *testing.T) {
 	if cmd != nil || !m.confirmQuit || !m.quitDialog.CancelChosen() {
 		t.Fatalf("request quit: cmd=%v confirm=%v cancel-focused=%v", cmd != nil, m.confirmQuit, m.quitDialog.CancelChosen())
 	}
-	if view := m.View(); !strings.Contains(view, "Tab switch") || !strings.Contains(view, "[ No ]") {
+	if view := m.View(); !strings.Contains(view, "Tab switch") || !strings.Contains(view, "› No") {
 		t.Fatalf("shared quit dialog missing:\n%s", view)
 	}
 }
