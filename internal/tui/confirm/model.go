@@ -83,13 +83,15 @@ func (m Model) View(width int) string {
 	} else {
 		confirm = selectedButtonStyle.Render("[ " + m.config.ConfirmLabel + " ]")
 	}
+	// The message and detail wrap rather than truncate: what a dialog asks
+	// about is exactly what must not be cut off.
 	content := []string{
 		titleStyle.Render(ansi.Truncate(m.config.Title, innerWidth, "…")),
 		"",
-		ansi.Truncate(m.config.Message, innerWidth, "…"),
+		ansi.Wrap(m.config.Message, innerWidth, ""),
 	}
 	if m.config.Detail != "" {
-		content = append(content, noteStyle.Render(ansi.Truncate(m.config.Detail, innerWidth, "…")))
+		content = append(content, noteStyle.Render(ansi.Wrap(m.config.Detail, innerWidth, "")))
 	}
 	content = append(content,
 		"",
