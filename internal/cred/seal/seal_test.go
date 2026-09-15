@@ -293,3 +293,73 @@ func TestResealKeepsArmorAndRefuses(t *testing.T) {
 		t.Error("a refused reseal changed the file")
 	}
 }
+
+func TestSealPassphrase(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "notes.txt")
+	write(t, source, "secret notes", 0o600)
+	destination := filepath.Join(dir, "notes.txt.age")
+	result, err := Seal(Request{Source: source, Destination: destination, Passphrase: "correct horse"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Verified {
+		t.Error("a passphrase file is checked with the passphrase")
+	}
+	identity, _ := age.NewScryptIdentity("correct horse")
+	if got := decrypt(t, destination, identity); string(got) != "secret notes" {
+		t.Errorf("decrypted %q", got)
+	}
+	rec, err := record.Read(record.PathFor(destination))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Encryption != record.EncryptionPassphrase || len(rec.Recipients) != 0 {
+		t.Errorf("record %+v", rec)
+	}
+
+	mine, _ := age.GenerateX25519Identity()
+	_, err = Seal(Request{Source: source, Destination: filepath.Join(dir, "both.age"), Passphrase: "p",
+		Recipients: []Recipient{{PublicKey: mine.Recipient().String()}}})
+	if err == nil {
+		t.Error("a passphrase with recipients was accepted")
+	}
+}
+
+func TestResealPassphrase(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "notes.txt")
+	write(t, source, "secret notes", 0o600)
+	path := filepath.Join(dir, "notes.txt.age")
+	if _, err := Seal(Request{Source: source, Destination: path, Passphrase: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	wrong, _ := age.NewScryptIdentity("wrong")
+	if _, err := Reseal(ResealRequest{Path: path, Open: []age.Identity{wrong}, Passphrase: "new"}); err == nil {
+		t.Fatal("the wrong passphrase re-encrypted the file")
+	}
+	old, _ := age.NewScryptIdentity("old")
+	result, err := Reseal(ResealRequest{Path: path, Open: []age.Identity{old}, Passphrase: "new"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Verified {
+		t.Error("not checked with the new passphrase")
+	}
+	file, _ := os.Open(path)
+	defer file.Close()
+	if _, err := age.Decrypt(file, old); err == nil {
+		t.Error("the old passphrase still opens the file")
+	}
+	fresh, _ := age.NewScryptIdentity("new")
+	if got := decrypt(t, path, fresh); string(got) != "secret notes" {
+		t.Errorf("decrypted %q", got)
+	}
+	rec, err := record.Read(record.PathFor(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Encryption != record.EncryptionPassphrase || rec.Updated == nil || len(rec.Recipients) != 0 {
+		t.Errorf("record %+v", rec)
+	}
+}

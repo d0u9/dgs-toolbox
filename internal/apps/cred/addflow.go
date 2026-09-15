@@ -27,6 +27,7 @@ type addStage int
 const (
 	addSource addStage = iota
 	addRecipients
+	addPassphrase
 	addName
 	addDirectory
 	addConfirm
@@ -44,6 +45,12 @@ type addFlow struct {
 
 	picker fileexplorer.Model
 	choose *recipientPicker
+
+	// withPassphrase encrypts with the passphrase typed twice instead of to
+	// the checked keys.
+	withPassphrase bool
+	passphrase     [2]textinput.Model
+	onRepeat       bool
 
 	name        textinput.Model
 	onDirectory bool
@@ -125,6 +132,8 @@ func (m vaultModel) updateAdd(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch flow.stage {
 	case addRecipients:
 		return m.updateAddRecipients(key.String())
+	case addPassphrase:
+		return m.updateAddPassphrase(key)
 	case addName:
 		return m.updateAddName(key)
 	case addConfirm:
@@ -155,27 +164,96 @@ func (m vaultModel) updateAddRecipients(key string) (tea.Model, tea.Cmd) {
 	case "esc":
 		flow.stage = addSource
 		return m, nil
+	case "p":
+		flow.err = ""
+		for i := range flow.passphrase {
+			input := textinput.New()
+			input.Prompt = ""
+			input.EchoMode = textinput.EchoPassword
+			input.EchoCharacter = '•'
+			flow.passphrase[i] = input
+		}
+		flow.passphrase[0].Focus()
+		flow.onRepeat = false
+		flow.stage = addPassphrase
+		return m, textinput.Blink
 	case "enter":
 		switch {
 		case m.snap.folder.Errors():
 			flow.err = "The recipient folder has errors; fix them in dgs cred keys first."
 		case len(m.chosenRecipients()) == 0:
-			flow.err = "Check at least one key."
+			flow.err = "Check at least one key, or press p for a passphrase."
 		default:
-			flow.err = ""
-			flow.name = textinput.New()
-			flow.name.SetValue(seal.DestinationName(flow.source, flow.folder))
-			flow.name.CharLimit = 255
-			flow.name.Focus()
-			flow.name.CursorEnd()
-			flow.onDirectory = false
-			flow.stage = addName
-			return m, textinput.Blink
+			flow.withPassphrase = false
+			return m, flow.toName()
 		}
 		return m, nil
 	}
 	flow.choose.update(key)
 	return m, nil
+}
+
+func (flow *addFlow) toName() tea.Cmd {
+	flow.err = ""
+	flow.name = textinput.New()
+	flow.name.SetValue(seal.DestinationName(flow.source, flow.folder))
+	flow.name.CharLimit = 255
+	flow.name.Focus()
+	flow.name.CursorEnd()
+	flow.onDirectory = false
+	flow.stage = addName
+	return textinput.Blink
+}
+
+func (m vaultModel) updateAddPassphrase(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	flow := m.add
+	switch key.String() {
+	case "esc":
+		flow.withPassphrase = false
+		flow.passphrase = [2]textinput.Model{}
+		flow.err = ""
+		flow.stage = addRecipients
+		return m, nil
+	case "tab", "shift+tab", "up", "down":
+		flow.focusRepeat(!flow.onRepeat)
+		return m, nil
+	case "enter":
+		first, repeat := flow.passphrase[0].Value(), flow.passphrase[1].Value()
+		switch {
+		case first == "":
+			flow.err = "Type a passphrase."
+			flow.focusRepeat(false)
+		case !flow.onRepeat && repeat == "":
+			flow.err = ""
+			flow.focusRepeat(true)
+		case first != repeat:
+			flow.err = "The passphrases do not match."
+			flow.passphrase[1].SetValue("")
+			flow.focusRepeat(true)
+		default:
+			flow.withPassphrase = true
+			return m, flow.toName()
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	i := 0
+	if flow.onRepeat {
+		i = 1
+	}
+	flow.passphrase[i], cmd = flow.passphrase[i].Update(key)
+	return m, cmd
+}
+
+func (flow *addFlow) focusRepeat(repeat bool) {
+	flow.onRepeat = repeat
+	if repeat {
+		flow.passphrase[0].Blur()
+		flow.passphrase[1].Focus()
+	} else {
+		flow.passphrase[1].Blur()
+		flow.passphrase[0].Focus()
+	}
 }
 
 // chosenRecipients are the keys checked in the add flow.
@@ -186,6 +264,9 @@ func (m vaultModel) updateAddName(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc":
 		flow.stage = addRecipients
+		if flow.withPassphrase {
+			flow.stage = addPassphrase
+		}
 		return m, nil
 	case "tab", "shift+tab", "up", "down":
 		flow.onDirectory = !flow.onDirectory
@@ -240,6 +321,14 @@ func (m vaultModel) checkDestination() error {
 	return nil
 }
 
+// addEncryption says what the file is encrypted with.
+func (m vaultModel) addEncryption() string {
+	if m.add.withPassphrase {
+		return "with a passphrase"
+	}
+	return plural(len(m.chosenRecipients()), "recipient")
+}
+
 func (m vaultModel) mineChosen() bool { return m.add.choose.mine() }
 
 func (m vaultModel) confirmConfig() confirm.Config {
@@ -252,7 +341,10 @@ func (m vaultModel) confirmConfig() confirm.Config {
 		kind = "folder"
 	}
 	detail := "For " + strings.Join(names, ", ") + "."
-	if !m.mineChosen() {
+	switch {
+	case m.add.withPassphrase:
+		detail = "With a passphrase. It cannot be opened without it, and dgs cannot recover a forgotten one."
+	case !m.mineChosen():
 		detail = "No checked key belongs to this machine: the file cannot be opened or checked here. " + detail
 	}
 	// The dialog gives each a line, so name the source by its name and the
@@ -271,7 +363,15 @@ func (m vaultModel) confirmConfig() confirm.Config {
 }
 
 func (m vaultModel) runSeal() tea.Cmd {
-	request := seal.Request{Source: m.add.source, Destination: m.destination(), Recipients: m.chosenRecipients()}
+	request := seal.Request{Source: m.add.source, Destination: m.destination()}
+	if m.add.withPassphrase {
+		request.Passphrase = m.add.passphrase[0].Value()
+		return func() tea.Msg {
+			result, err := seal.Seal(request)
+			return sealedMsg{result: result, source: request.Source, err: err}
+		}
+	}
+	request.Recipients = m.chosenRecipients()
 	snap := m.snap
 	return func() tea.Msg {
 		for _, identity := range snap.scan.Identities {
@@ -327,6 +427,16 @@ func (m vaultModel) addView() string {
 	case addRecipients:
 		lines = append(lines, titleStyle.Render(title+" · RECIPIENTS"), mutedStyle.Render(ansi.Truncate(tilde(flow.source), inner, "…")), "")
 		lines = append(lines, flow.choose.view(inner, h-9))
+	case addPassphrase:
+		lines = append(lines, titleStyle.Render(title+" · PASSPHRASE"), mutedStyle.Render(ansi.Truncate(tilde(flow.source), inner, "…")), "")
+		for i, label := range []string{"Passphrase", "Repeat"} {
+			marker := "  "
+			if flow.onRepeat == (i == 1) {
+				marker = "› "
+			}
+			lines = append(lines, marker+mutedStyle.Render(fmt.Sprintf("%-12s", label))+flow.passphrase[i].View())
+		}
+		lines = append(lines, "", mutedStyle.Render("Instead of keys. Anyone with the passphrase can open the file; nobody without it can."))
 	case addName, addConfirm, addRunning:
 		lines = append(lines, titleStyle.Render(title+" · NAME"), mutedStyle.Render(ansi.Truncate(tilde(flow.source), inner, "…")), "")
 		nameMarker, dirMarker := "› ", "  "
@@ -337,7 +447,7 @@ func (m vaultModel) addView() string {
 			nameMarker+mutedStyle.Render(fmt.Sprintf("%-10s", "Name"))+flow.name.View(),
 			dirMarker+mutedStyle.Render(fmt.Sprintf("%-10s", "Directory"))+ansi.Truncate(tilde(flow.directory), max(1, inner-12), "…"),
 			"",
-			mutedStyle.Render(plural(len(m.chosenRecipients()), "recipient")),
+			mutedStyle.Render(m.addEncryption()),
 		)
 		if flow.stage == addRunning {
 			lines = append(lines, "", titleStyle.Render("Encrypting and checking…"))
@@ -349,7 +459,9 @@ func (m vaultModel) addView() string {
 	}
 	switch flow.stage {
 	case addRecipients:
-		return modalBox(lines, pageactions.Footer(inner, fmt.Sprintf("space Check · esc Back · %s checked", plural(len(m.chosenRecipients()), "key")), pageactions.Inline("Continue", true)), w, h)
+		return modalBox(lines, pageactions.Footer(inner, fmt.Sprintf("space Check · p Passphrase · esc Back · %s checked", plural(len(m.chosenRecipients()), "key")), pageactions.Inline("Continue", true)), w, h)
+	case addPassphrase:
+		return modalBox(lines, pageactions.Footer(inner, "tab Field · esc Back", pageactions.Inline("Continue", true)), w, h)
 	case addName:
 		return modalBox(lines, pageactions.Footer(inner, "tab Field · esc Back", pageactions.Inline("Continue", !flow.onDirectory)), w, h)
 	}
@@ -381,7 +493,9 @@ func (m vaultModel) addStatus() (string, string) {
 	case addDirectory:
 		return "ADD · DIRECTORY", m.add.picker.Hint()
 	case addRecipients:
-		return "ADD · RECIPIENTS", "↑↓ Move  space Check  ↵ Continue  esc Back"
+		return "ADD · RECIPIENTS", "↑↓ Move  space Check  p Passphrase  ↵ Continue  esc Back"
+	case addPassphrase:
+		return "ADD · PASSPHRASE", "tab Field  ↵ Continue  esc Back"
 	case addName:
 		return "ADD · NAME", "tab Field  ↵ Continue  esc Back"
 	case addConfirm:
