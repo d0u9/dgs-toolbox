@@ -57,12 +57,16 @@ The caller configures what may be selected:
 ```text
 DIR          Directories only
 JPG, PNG     Files with the listed extensions
-ALL FILES    Any regular file
+ALL FILES    Any file or directory
 ```
 
 Show this compact label at the upper right of the Explorer.
 
-In `DIR` mode, hide files. In a file mode, keep directories visible for navigation, show only matching files, and allow only matching files to be selected. Extension matching is case-insensitive.
+In `DIR` mode, hide files. In an extension mode, keep directories visible for navigation, show only matching files, and allow only matching files to be selected. Extension matching is case-insensitive. In `ALL FILES` mode, show every file and directory and allow either to be selected; the caller tells which it received from the filesystem.
+
+## Hidden entries
+
+Entries whose name starts with `.` are hidden by default. `H` toggles them, reloading the tree, and while they are shown the filter label carries `· HIDDEN`, for example `ALL FILES · HIDDEN`. A caller may open the Explorer with hidden entries already shown. Navigating to a hidden path with `/` shows hidden entries, since the path would otherwise not appear. Path completion keeps its own rule and offers hidden entries only for a fragment starting with `.`.
 
 Callers choose the appropriate filter. Command-specific filter choices belong in that command's design document.
 
@@ -80,10 +84,12 @@ O              Collapse and focus the focused node's parent
 w              Collapse every directory already present in the tree
 -              Move the Explorer root up one directory
 =              Make the focused directory the Explorer root
-Enter          Choose the focused item when valid for the active filter
+Enter          Choose the focused item when valid for the active filter; on a
+               directory that is not selectable, expand it instead
 Primary click  Focus a row and toggle a directory open or closed
 Double-click   Choose the focused item when valid for the active filter
 Space          Preview the focused file
+H              Show or hide hidden entries
 Esc            Cancel and return to the calling screen
 ?              Show contextual help
 ```
@@ -119,18 +125,30 @@ While editing a name, printable keys—including `q` and the Vim navigation lett
 
 `/` opens an initially empty, shell-like path input at the bottom without replacing the tree. Support absolute paths, paths relative to the focused directory, and `~`.
 
+Completion behaves like a shell's. `Tab` with no candidate grid open:
+
+- completes a single candidate outright;
+- completes several candidates to their common prefix, as bash does — `~/.ssh/id<Tab>` becomes `~/.ssh/id_ed25519` when both `id_ed25519` and `id_ed25519.pub` exist;
+- when that adds nothing, or the input ends in a separator, opens the **candidate grid** without changing the input.
+
+The grid sits immediately above the input and lays candidates out like `ls`: as many columns as fit, each as wide as the longest name. Directories come first and end in a separator, drawn in the disclosure colour so they are distinguishable without it. A heading names the directory being listed — keeping its end when it must be shortened — and how many candidates match, with `↑`/`↓` when the grid scrolls. The grid takes at most half the Explorer's height.
+
+With the grid open:
+
 ```text
-Tab            Complete or select the next candidate
-Shift+Tab      Select the previous candidate
-Enter          Accept the highlighted completion; with no list open, navigate the tree to the path
-Esc            Cancel and return to the unchanged tree
+Tab / Shift+Tab   Highlight the next or previous candidate, wrapping
+Arrow keys        Move the highlight within the grid
+/                 On a highlighted directory, enter it and list its contents
+Typing            Narrow the grid to what now matches
+Enter             Keep the highlighted candidate in the input and close the grid
+Esc               Close the grid, staying in path input
 ```
 
-Completion reads only the directory containing the current path fragment; it never recursively scans the filesystem. Match the final fragment fuzzily and case-insensitively. For example, `/tmp/f<Tab>` may offer both `/tmp/1-foo/` and `/tmp/2-far/`.
+The highlighted candidate is shown in the input as it moves. With no grid open, `Enter` navigates the tree to the path and `Esc` leaves path input.
 
-Show up to five matching candidates immediately above the input. Further `Tab` presses move forward and `Shift+Tab` moves backward. Append a path separator to directory completions. Show hidden entries only when the fragment begins with `.`. File candidates must obey the active filter.
+Completion reads only the directory containing the current path fragment; it never recursively scans the filesystem. The final fragment is matched by prefix, ignoring case; only when nothing matches by prefix is it matched fuzzily, so `/tmp/f<Tab>` still offers `/tmp/1-foo/` and `/tmp/2-far/` when no entry starts with `f`. Show hidden entries only when the fragment begins with `.`. File candidates must obey the active filter.
 
-When the final fragment is empty, `Tab` offers every visible entry in that directory which satisfies the active filter. While candidates are visible, `Enter` accepts the highlighted completion and remains in path input. A subsequent `Enter` returns to the tree at that location. Path input never confirms the caller's final value: `Enter` or double-click in the tree performs the final selection. This keeps file operations available after direct navigation.
+Path input never confirms the caller's final value: `Enter` or double-click in the tree performs the final selection. This keeps file operations available after direct navigation.
 
 Regular-file rows show a human-readable size in a right-aligned column. Directory rows reserve that area for navigation rather than reporting filesystem-specific directory entry sizes.
 
