@@ -14,12 +14,14 @@ dgs photo
 dgs photo import
 dgs photo encode
 dgs geo gpx
+dgs cred vault
 ```
 
 - `dgs demo` opens the component gallery directly.
 - `dgs photo` opens a picker scoped to Photo commands.
 - `dgs photo import` opens Photo Import directly.
 - `dgs geo gpx` opens GPX directly; see [`apps/geo/gpx.md`](apps/geo/gpx.md).
+- `dgs cred vault` opens the vault directly; `dgs cred` is a picker of Keys and Vault; see [`apps/cred/`](apps/cred/).
 - Leaving Photo Import returns to a command picker so another command can be selected.
 - Only one command is active at a time.
 
