@@ -25,6 +25,19 @@ type Credentials struct {
 	// Vault is the folder of age files the vault page opens at; empty means
 	// none.
 	Vault string `json:"vault"`
+	// NewIdentityDir is where generated and imported identities are written.
+	NewIdentityDir string `json:"new_identity_dir"`
+}
+
+// DefaultNewIdentityDir is <XDG config home>/age, the directory age's own tools
+// look in.
+func DefaultNewIdentityDir() string {
+	directory := os.Getenv(EnvXDGConfigHome)
+	if directory == "" {
+		home, _ := os.UserHomeDir()
+		directory = filepath.Join(home, ".config")
+	}
+	return filepath.Join(directory, "age")
 }
 
 // CredentialsPath is <XDG config home>/dgs-toolbox/credentials.json.
@@ -42,7 +55,7 @@ func CredentialsPath() (string, error) {
 func LoadCredentials(path string) (credentials Credentials, found bool, err error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Credentials{}, false, nil
+		return Credentials{NewIdentityDir: DefaultNewIdentityDir()}, false, nil
 	}
 	if err != nil {
 		return Credentials{}, false, fmt.Errorf("open %s: %w", path, err)
@@ -76,6 +89,15 @@ func LoadCredentials(path string) (credentials Credentials, found bool, err erro
 			return Credentials{}, true, fmt.Errorf("decode %s: vault: %w", path, err)
 		}
 		credentials.Vault = expanded
+	}
+	if credentials.NewIdentityDir == "" {
+		credentials.NewIdentityDir = DefaultNewIdentityDir()
+	} else {
+		expanded, err := ExpandPath(credentials.NewIdentityDir, os.LookupEnv, home)
+		if err != nil {
+			return Credentials{}, true, fmt.Errorf("decode %s: new_identity_dir: %w", path, err)
+		}
+		credentials.NewIdentityDir = expanded
 	}
 	return credentials, true, nil
 }

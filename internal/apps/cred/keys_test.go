@@ -9,7 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"dgs-toolbox/internal/cred/keygen"
+	"dgs-toolbox/internal/cred/recipients"
+	"dgs-toolbox/internal/cred/record"
 	"dgs-toolbox/internal/tui"
 
 	"filippo.io/age"
@@ -218,4 +222,339 @@ func TestTooSmall(t *testing.T) {
 	if !strings.Contains(view(updated.(keysModel)), "Resize terminal") {
 		t.Error("no resize prompt")
 	}
+}
+
+func keyPress(t *testing.T, m keysModel, keys ...string) keysModel {
+	t.Helper()
+	for _, key := range keys {
+		var msg tea.KeyMsg
+		switch key {
+		case "enter":
+			msg = tea.KeyMsg{Type: tea.KeyEnter}
+		case "tab":
+			msg = tea.KeyMsg{Type: tea.KeyTab}
+		case "esc":
+			msg = tea.KeyMsg{Type: tea.KeyEsc}
+		case "down":
+			msg = tea.KeyMsg{Type: tea.KeyDown}
+		default:
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+		}
+		updated, cmd := m.Update(msg)
+		m = updated.(keysModel)
+		for i := 0; cmd != nil && i < 5; i++ {
+			next := cmd()
+			if next == nil {
+				break
+			}
+			updated, cmd = m.Update(next)
+			m = updated.(keysModel)
+		}
+	}
+	return m
+}
+
+func typeInto(t *testing.T, m keysModel, text string) keysModel {
+	t.Helper()
+	for _, r := range text {
+		m = keyPress(t, m, string(r))
+	}
+	return m
+}
+
+func TestGenerateAndRegister(t *testing.T) {
+	root := t.TempDir()
+	_, edPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	block, err := ssh.MarshalPrivateKey(edPrivate, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "ssh", "id_ed25519"), string(pem.EncodeToMemory(block)), 0o600)
+	ageDir := filepath.Join(root, "age")
+	folder := filepath.Join(root, "recipients")
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "credentials.json")
+	writeFile(t, path, `{"identities":["`+filepath.Join(root, "ssh")+`","`+ageDir+`"],"recipients":"`+folder+`","new_identity_dir":"`+ageDir+`"}`, 0o600)
+
+	m := loadedModel(t, path)
+
+	// Generate: the form opens editing Host.
+	m = keyPress(t, m, "n")
+	if m.keyFlow == nil || !m.keyFlow.form.IsActive() {
+		t.Fatalf("n did not open the form editing the host")
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("laptop\n"), Paste: true})
+	m = updated.(keysModel)
+	m = keyPress(t, m, "enter")
+	if got := m.keyFlow.form.Value(fileFieldID); got != "laptop"+IdentitySuffix {
+		t.Errorf("file default %q", got)
+	}
+	// Enter goes File → Description → the button. The description starts
+	// empty and is required.
+	m = keyPress(t, m, "enter")
+	if got := m.keyFlow.form.Value(descriptionFieldID); got != "" {
+		t.Errorf("description default %q", got)
+	}
+	m = keyPress(t, m, "enter", "enter")
+	if m.keyFlow.stage != keyForm || !strings.Contains(m.keyFlow.err, "Description is required") {
+		t.Fatalf("empty description: stage %d err %q", m.keyFlow.stage, m.keyFlow.err)
+	}
+	m = keyPress(t, m, "up", "enter")
+	m = typeInto(t, m, "Main laptop key")
+	m = keyPress(t, m, "enter", "enter")
+	if m.keyFlow.stage != keyConfirm {
+		t.Fatalf("stage %d err %q", m.keyFlow.stage, m.keyFlow.err)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "GENERATE KEY") || !strings.Contains(view, "laptop, a new host") {
+		t.Errorf("confirm:\n%s", view)
+	}
+	m = keyPress(t, m, "tab", "enter")
+	if m.keyFlow != nil {
+		t.Fatalf("flow open: stage %d err %q", m.keyFlow.stage, m.keyFlow.err)
+	}
+	if !strings.Contains(m.notice, "registered it under laptop") {
+		t.Errorf("notice %q", m.notice)
+	}
+	if info, err := os.Stat(filepath.Join(ageDir, "laptop"+IdentitySuffix)); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("identity file: %v", err)
+	}
+	if summary := m.summary(); summary != "2 identities · 1 unregistered" {
+		t.Errorf("after generate: %q", summary)
+	}
+
+	// Register the SSH key, which sorts after age/; the host starts as laptop.
+	m = keyPress(t, m, "j")
+	if identity, _ := m.selectedIdentity(); identity.Kind != "ssh-ed25519" {
+		t.Fatalf("selected %+v", identity)
+	}
+	m = keyPress(t, m, "r")
+	if m.keyFlow == nil || m.keyFlow.form.Value(hostFieldID) != "laptop" {
+		t.Fatalf("register flow: %+v", m.keyFlow)
+	}
+	m = keyPress(t, m, "enter")
+	m = typeInto(t, m, "SSH")
+	m = keyPress(t, m, "enter", "enter", "tab", "enter")
+	if m.keyFlow != nil {
+		t.Fatalf("register flow open: err %q", m.keyFlow.err)
+	}
+	if summary := m.summary(); summary != "2 identities" {
+		t.Errorf("after register: %q", summary)
+	}
+	host, ok := m.snap.folder.Host("laptop")
+	today := time.Now().Format("2006-01-02")
+	if !ok || len(host.Keys) != 2 {
+		t.Fatalf("host %+v", host)
+	}
+	generated, registered := host.Keys[0].Meta, host.Keys[1].Meta
+	if generated.Description != "Main laptop key" || generated.Origin != "generated" || generated.Added != today || !strings.HasSuffix(generated.PrivateKey, "laptop"+IdentitySuffix) {
+		t.Errorf("generated meta %+v", generated)
+	}
+	if registered.Description != "SSH" || registered.Origin != "registered" || !strings.HasSuffix(registered.PrivateKey, "id_ed25519") {
+		t.Errorf("registered meta %+v", registered)
+	}
+
+	// Generating again starts from the host this machine belongs to, and the
+	// same file is refused in the form.
+	m = keyPress(t, m, "n")
+	if m.keyFlow.form.Value(hostFieldID) != "laptop" {
+		t.Errorf("host prefill %q", m.keyFlow.form.Value(hostFieldID))
+	}
+	m = keyPress(t, m, "enter", "enter")
+	m = typeInto(t, m, "again")
+	m = keyPress(t, m, "enter", "enter")
+	if m.keyFlow == nil || !strings.Contains(m.keyFlow.err, "already exists") {
+		t.Fatalf("duplicate: %+v", m.keyFlow)
+	}
+	m = keyPress(t, m, "esc")
+	if m.keyFlow != nil {
+		t.Error("esc did not close the form")
+	}
+}
+
+func TestDeleteAndUnregister(t *testing.T) {
+	root := t.TempDir()
+	ageDir := filepath.Join(root, "age")
+	written, err := keygen.Generate(ageDir, "laptop"+IdentitySuffix, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, edPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	block, _ := ssh.MarshalPrivateKey(edPrivate, "")
+	writeFile(t, filepath.Join(root, "ssh", "id_ed25519"), string(pem.EncodeToMemory(block)), 0o600)
+	sshPublic := string(ssh.MarshalAuthorizedKey(mustSigner(t, edPrivate).PublicKey()))
+
+	folder := filepath.Join(root, "recipients")
+	os.MkdirAll(folder, 0o755)
+	if _, err := recipients.AddKey(folder, "laptop", written.PublicKeys[0], recipients.Meta{Description: "age key"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recipients.AddKey(folder, "laptop", sshPublic, recipients.Meta{Description: "ssh key"}); err != nil {
+		t.Fatal(err)
+	}
+	vaultDir := filepath.Join(root, "vault")
+	os.MkdirAll(vaultDir, 0o755)
+	if err := record.Create(filepath.Join(vaultDir, "only.age.json"), record.Record{Recipients: []record.Recipient{{PublicKey: written.PublicKeys[0]}}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "credentials.json")
+	writeFile(t, path, `{"identities":["`+ageDir+`","`+filepath.Join(root, "ssh")+`"],"recipients":"`+folder+`","vault":"`+vaultDir+`","new_identity_dir":"`+ageDir+`"}`, 0o600)
+
+	m := loadedModel(t, path)
+	trashDir := filepath.Join(root, "trash")
+	os.MkdirAll(trashDir, 0o755)
+	m.trash = func(p string) (string, error) {
+		to := filepath.Join(trashDir, filepath.Base(p))
+		return to, os.Rename(p, to)
+	}
+
+	// The age key is dgs's own: deleted, and its public key removed.
+	m = keyPress(t, m, "d")
+	if m.deleteFlow == nil || m.deleteFlow.path == "" {
+		t.Fatalf("delete flow %+v notice %q", m.deleteFlow, m.notice)
+	}
+	dialog := m.usageNote(m.deleteFlow.publicKey, true)
+	for _, want := range []string{"1 file in the vault is encrypted only to it", "cannot be opened again: only.age."} {
+		if !strings.Contains(dialog, want) {
+			t.Errorf("usage note lacks %q: %s", want, dialog)
+		}
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "DELETE KEY") {
+		t.Errorf("dialog not shown:\n%s", view)
+	}
+	m = keyPress(t, m, "tab", "enter")
+	if _, err := os.Stat(written.Path); err == nil {
+		t.Error("identity file still in place")
+	}
+	if _, err := os.Stat(filepath.Join(trashDir, "laptop"+IdentitySuffix)); err != nil {
+		t.Error("identity file not in the trash")
+	}
+	if host, _ := m.snap.folder.Host("laptop"); len(host.Keys) != 1 || host.Keys[0].Description != "ssh key" {
+		t.Errorf("host after delete %+v", host)
+	}
+
+	// The SSH key is not dgs's: only unregistered, the file kept.
+	m = keyPress(t, m, "d")
+	if m.deleteFlow == nil || m.deleteFlow.path != "" || !strings.Contains(ansi.Strip(m.View()), "UNREGISTER KEY") {
+		t.Fatalf("unregister flow %+v", m.deleteFlow)
+	}
+	m = keyPress(t, m, "esc")
+	if m.deleteFlow != nil {
+		t.Fatal("esc did not cancel")
+	}
+	m = keyPress(t, m, "d", "tab", "enter")
+	if _, err := os.Stat(filepath.Join(root, "ssh", "id_ed25519")); err != nil {
+		t.Error("ssh key file was removed")
+	}
+	if host, _ := m.snap.folder.Host("laptop"); len(host.Keys) != 0 {
+		t.Errorf("host after unregister %+v", host)
+	}
+}
+
+func mustSigner(t *testing.T, key any) ssh.Signer {
+	t.Helper()
+	signer, err := ssh.NewSignerFromKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signer
+}
+
+func TestAddPublicKey(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, "recipients")
+	os.MkdirAll(folder, 0o755)
+	path := filepath.Join(root, "credentials.json")
+	writeFile(t, path, `{"recipients":"`+folder+`"}`, 0o600)
+	_, edPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(mustSigner(t, edPrivate).PublicKey()))) + " root@vps"
+
+	m := keyPress(t, loadedModel(t, path), "]")
+	m = keyPress(t, m, "a")
+	if m.keyFlow == nil || m.keyFlow.action != actionAdd {
+		t.Fatalf("a did not open the add form: notice %q", m.notice)
+	}
+	paste := func(text string) {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
+		m = updated.(keysModel)
+	}
+	paste("us-lax-digitalocean-linux-01")
+	m = keyPress(t, m, "enter")
+	paste(line + "\n")
+	m = keyPress(t, m, "enter")
+	m = typeInto(t, m, "DigitalOcean droplet")
+	m = keyPress(t, m, "enter", "enter")
+	if m.keyFlow.stage != keyConfirm {
+		t.Fatalf("stage %d err %q", m.keyFlow.stage, m.keyFlow.err)
+	}
+	m = keyPress(t, m, "tab", "enter")
+	if m.keyFlow != nil {
+		t.Fatalf("flow open: %q", m.keyFlow.err)
+	}
+	host, ok := m.snap.folder.Host("us-lax-digitalocean-linux-01")
+	if !ok || len(host.Keys) != 1 || host.Keys[0].Type != recipients.TypeED25519 || host.Keys[0].Comment != "root@vps" || host.Keys[0].Origin != "added" || host.Keys[0].Description != "DigitalOcean droplet" {
+		t.Errorf("host %+v", host)
+	}
+
+	// The same key again is refused in the form, and a bad key is explained.
+	m = keyPress(t, m, "a")
+	m = keyPress(t, m, "enter")
+	paste(line)
+	m = keyPress(t, m, "enter")
+	m = typeInto(t, m, "x")
+	m = keyPress(t, m, "enter", "enter")
+	if m.keyFlow == nil || !strings.Contains(m.keyFlow.err, "already listed under us-lax-digitalocean-linux-01") {
+		t.Fatalf("duplicate: %+v", m.keyFlow)
+	}
+}
+
+func TestDeleteHost(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, "recipients")
+	vaultDir := filepath.Join(root, "vault")
+	os.MkdirAll(vaultDir, 0o755)
+	nasKey, vpsKey := newAgeRecipient(t), newAgeRecipient(t)
+	writeFile(t, filepath.Join(folder, "hosts", "nas.json"), `{"keys":[{"public_key":"`+nasKey+`","description":"a"}]}`, 0o644)
+	writeFile(t, filepath.Join(folder, "hosts", "vps.json"), `{"keys":[{"public_key":"`+vpsKey+`","description":"b"}]}`, 0o644)
+	writeFile(t, filepath.Join(folder, "groups", "g-all.json"), `{"hosts":["nas","vps"]}`, 0o644)
+	if err := record.Create(filepath.Join(vaultDir, "nas-only.age.json"), record.Record{Recipients: []record.Recipient{{PublicKey: nasKey}}}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "credentials.json")
+	writeFile(t, path, `{"recipients":"`+folder+`","vault":"`+vaultDir+`"}`, 0o600)
+
+	m := keyPress(t, loadedModel(t, path), "]")
+	trashDir := filepath.Join(root, "trash")
+	os.MkdirAll(trashDir, 0o755)
+	m.trash = func(p string) (string, error) {
+		to := filepath.Join(trashDir, filepath.Base(p))
+		return to, os.Rename(p, to)
+	}
+	m = keyPress(t, m, "d")
+	if m.deleteFlow == nil || m.deleteFlow.host != "nas" {
+		t.Fatalf("delete host flow %+v", m.deleteFlow)
+	}
+	if note := m.usageNoteAny([]string{nasKey}); !strings.Contains(note, "nas-only.age") {
+		t.Errorf("usage %q", note)
+	}
+	m = keyPress(t, m, "tab", "enter")
+	if _, err := os.Stat(filepath.Join(trashDir, "nas.json")); err != nil {
+		t.Error("host file not in the trash")
+	}
+	if _, ok := m.snap.folder.Host("nas"); ok || len(m.snap.folder.Problems) != 0 {
+		t.Errorf("after delete: %+v %+v", m.snap.folder.Hosts, m.snap.folder.Problems)
+	}
+	if len(m.snap.folder.Groups) != 1 || strings.Join(m.snap.folder.Groups[0].Hosts, ",") != "vps" {
+		t.Errorf("groups %+v", m.snap.folder.Groups)
+	}
+}
+
+func newAgeRecipient(t *testing.T) string {
+	t.Helper()
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identity.Recipient().String()
 }

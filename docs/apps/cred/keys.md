@@ -96,7 +96,10 @@ the name; it is not repeated inside the file.
     },
     {
       "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI...",
-      "description": "SSH host key"
+      "description": "SSH host key",
+      "origin": "added",
+      "added": "2026-09-15",
+      "comment": "root@nas"
     }
   ]
 }
@@ -114,6 +117,16 @@ the name; it is not repeated inside the file.
 - The same public key twice in one host is an error.
 - `description` is required and must not be blank: a key is never shown as
   only a string of characters.
+- `origin`, `added`, `private_key` and `comment` are optional. `dgs` fills them
+  in when it adds a key, so that `description` is left for what only its owner
+  knows:
+  - `origin` — how the key came to be listed: `generated`, `imported`,
+    `registered` or `added`; anything else is an error.
+  - `added` — the date it was listed, `YYYY-MM-DD`; another format is an error.
+  - `private_key` — where the private key lives on its own host, when `dgs`
+    knows: the identity file it wrote or registered.
+  - `comment` — the comment an SSH public key line carried, often `user@host`.
+    The key itself is written without it.
 - An SSH key's SHA256 fingerprint, as `ssh-keygen -l` shows it, is computed by
   `dgs` for display, not stored. An age key is short enough to show whole and has
   no fingerprint.
@@ -196,6 +209,111 @@ from disk. Copying uses the terminal's OSC 52 clipboard sequence, so no external
 program runs and it also works over SSH; a terminal without OSC 52 support
 copies nothing.
 
+## Creating and registering keys
+
+The keys page is read-only apart from these actions, all of which write only
+after the shared confirmation dialog. Everything else in the recipient folder is
+still edited by hand.
+
+| Key | Where | Action |
+| --- | --- | --- |
+| `n` | Identities | **Generate** a new age X25519 identity and register its public key. |
+| `i` | Identities | **Import** an age identity file from elsewhere and register its keys. |
+| `r` | Identities | **Register** the unregistered identity under the cursor, where it is. |
+| `d` | Identities | **Delete** the identity under the cursor, or only unregister it; see below. |
+| `d` | a host's keys | **Unregister** the key under the cursor. |
+| `d` | Hosts | **Delete** the host under the cursor, with all its public keys; see below. |
+| `a` | Hosts | **Add** a public key from another machine — a cloud server that never runs `dgs` — to a host. |
+
+### Where a new identity goes
+
+Generated and imported identities are written to `new_identity_dir` in
+`credentials.json`, `~/.config/age` by default. The directory is created with
+mode `0700` when missing, and each identity file is written `0600`. When that
+directory is not among `identities`, the confirmation says so, since the new
+key would not be found again until it is added; `dgs` does not edit
+`credentials.json` itself.
+
+- A generated file has the layout `age-keygen` writes: `# created:` and
+  `# public key:` comments above the `AGE-SECRET-KEY-1…` line.
+- An imported file must be an age identity file with at least one usable key;
+  its content is copied as it is. Importing SSH private keys is not offered —
+  they belong in `~/.ssh`.
+- An existing file is never replaced: writing goes to a temporary file in the
+  same directory, which is synced, parsed back, and linked to the final name.
+- Identities are not passphrase-protected. The result reminds that the private
+  key exists only on this machine, so a file encrypted to it alone is lost with
+  it.
+
+### The form
+
+A form in an overlay, then the confirmation. It is filled in one pass: the first
+field opens already being edited, and `Enter` — or `Tab` and the arrows — keeps
+what was typed and goes on to edit the next field, until the button at the
+bottom-right is reached; `Enter` there continues. `Esc` while editing undoes that
+field's edit, and otherwise goes back. Pasting into a field works as typing does.
+
+- **Host** — required, asked every time. It starts empty, or with the host this
+  machine's identities already belong to when there is exactly one, and the
+  existing hosts are listed beneath it. It follows the name rules above; a name
+  matching an existing host, ignoring case, adds to that host.
+- **File** — for generate and import, the identity file name, `<host>.agekey` by
+  default. Not `.txt`, which reads like a note that is safe to delete.
+- **Description** — required, and starts empty: it is for what only the owner
+  knows. What `dgs` knows is recorded in the key's other fields instead —
+  `origin`, `added`, `private_key` and `comment` — and shown under the key on the
+  Hosts tab.
+
+### Adding a public key
+
+For a machine that never runs `dgs`, its public key is pasted in. The form asks
+for the host (the host under the cursor to start with), the public key — an
+`age1…` recipient or an `ssh-ed25519` / `ssh-rsa` line — and the description. It is recorded with
+origin `added`, the date, and an SSH line's comment. The key
+is checked when continuing, and one already listed under any host is refused.
+
+### Registering
+
+The public key is added to `hosts/<host>.json`, created when missing. Refused:
+
+- the host file has an error, since rewriting it would lose what could not be read;
+- the key is already listed, under this host or another.
+
+The host file is rewritten through a temporary file and renamed into place,
+keeping its other keys and all their fields in order. Keys are written in
+canonical form; an SSH key's comment moves to its `comment` field when `dgs`
+adds the key.
+
+### Deleting
+
+`d` on an identity deletes both halves when the identity is `dgs`'s own — an age
+key in `new_identity_dir`, alone in its file. The file is moved to the trash
+(`~/.Trash` on macOS, the freedesktop.org trash elsewhere), not removed, and the
+public key is taken out of every host listing it. A trash on another volume is
+refused rather than copied to.
+
+Any other identity — an SSH key in `~/.ssh`, an age key elsewhere or sharing its
+file with other keys — is only unregistered: its public key is removed and the
+private key file is left alone, since it may have uses `dgs` does not know about.
+An identity that is neither `dgs`'s own nor registered cannot be deleted here.
+
+`d` on a key in a host's key list unregisters that key only.
+
+`d` on a host in the Hosts list deletes the host: its file, with every public key
+in it, goes to the trash, and it is taken out of every group naming it — the group
+files are rewritten from disk, so members that did not resolve are kept. It
+leaves the groups first, so a failure there leaves the host file in place. Private
+keys on this machine for the host's keys are not deleted, and the confirmation
+says so when there are any.
+
+A host left with no keys keeps its file, which then warns that it has none.
+
+The confirmation, focused on **Keep**, reads the vault's recipient records and
+says how many files are encrypted to the key, and names those encrypted only to
+it, which cannot be opened again once the private key is gone. Files without a
+record are not known about, and an unreadable record is said to make the answer
+incomplete.
+
 ## Milestones
 
 1. **A1 — Recipient folder.** Load `credentials.json`, and load hosts and
@@ -205,7 +323,9 @@ copies nothing.
    directories, derive their public keys, match them against recipients.
    `internal/cred/identities`.
 3. **A3 — Keys page.** The read-only page above, inside the `dgs cred` command.
-4. **A4 — Unlocking protected identities.** Deferred until browsing or
+4. **A5 — Creating keys.** Writing identity files and adding keys to hosts,
+   in their packages; then the three actions on the page.
+5. **A4 — Unlocking protected identities.** Deferred until browsing or
    decrypting needs a passphrase, which is where the questions below get a
    concrete answer.
 
