@@ -143,6 +143,7 @@ Beside each file, `<name>.age.json`:
 {
   "version": 1,
   "created": "2026-09-15T14:00:00+10:00",
+  "updated": "2026-10-02T09:30:00+10:00",
   "archive": "tar.gz",
   "recipients": [
     {
@@ -155,10 +156,45 @@ Beside each file, `<name>.age.json`:
 ```
 
 - `archive` is `tar.gz` for a folder and absent for a file.
+- `updated` is when the recipients were last changed, absent until they are.
 - A recipient is its public key; `host` and `description` are what the recipient
   folder called it when the file was written, kept for reading, not matched on.
 - The record is plaintext and names hosts.
 - The vault list shows only `.age` files, so records are not listed.
+
+## Changing recipients (E3)
+
+`e` on a file in the vault list changes the keys it is encrypted to.
+
+- A **decryptable** file starts straight away; one that **needs a passphrase**
+  asks for the passphrase of its protected SSH identity first, unlocked for this
+  change only. A **passphrase** file has no recipients to change, and other
+  statuses cannot be decrypted, so both are refused.
+- The checklist is the one adding uses. It starts with the keys the file's
+  record lists checked, and lists recorded keys the recipient folder no longer
+  has under **not in the recipient folder**, checked, so that they can be
+  removed. A file without a record starts with this machine's keys checked, and
+  says that what it was encrypted to before is not known.
+- Continuing is refused while the recipient folder has errors, with nothing
+  checked, or when the checked keys are the ones recorded.
+- The confirmation names the keys added and removed. Whenever a key is removed,
+  or the file had no record, it says that a removed key can still open any copy
+  of the old version — its own, git history, a backup — and that a secret it
+  holds should be changed too. With no key of this machine checked it says the
+  file cannot be opened or checked here afterwards.
+
+Re-encrypting:
+
+1. The file is decrypted into memory, up to 64 MiB.
+2. It is encrypted again, with a new file key, to a `.dgs-part` beside it, in the
+   same format — armored stays armored — and synced.
+3. The part is decrypted back with this machine's identities and compared by
+   SHA-256.
+4. It is renamed over the file, keeping the file's mode. This is the one place
+   the vault replaces a file, and only once the check has passed. No copy of the
+   old version is kept: it is exactly what a removed key can still open.
+5. The record is rewritten through a temporary file: `created` and `archive`
+   kept, `updated` set, `recipients` replaced. A file without a record gains one.
 
 ## Opening a file (C)
 
@@ -276,4 +312,6 @@ optionally a `Host` block — added with `a`. `ssh.install` puts each key in
 10. **D1 — Actions.** Writing files safely, SSH configuration, the agent, in
     their packages.
 11. **D2 — Actions on the page.** The menu, forms and confirmation.
+12. **E3a — Re-encrypting.** Decrypt, encrypt again, verify, replace, record.
+13. **E3b — Changing recipients from the page.** The flow above.
 
