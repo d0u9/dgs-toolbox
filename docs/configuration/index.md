@@ -91,6 +91,7 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `identities` (`credentials.json`) | [cred](cred.md) | empty — no identities |
 | `recipients` (`credentials.json`) | [cred](cred.md) | empty — no recipients |
 | `new_identity_dir` (`credentials.json`) | [cred](cred.md) | `~/.config/age` |
+| `close_after` (`credentials.json`) | [cred](cred.md) | `5m` |
 | `vault` (`credentials.json`) | [cred](cred.md) | empty — the page asks for a folder |
 
 ## Keeping this current

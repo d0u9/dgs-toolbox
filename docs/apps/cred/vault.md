@@ -162,21 +162,82 @@ Beside each file, `<name>.age.json`:
 
 ## Opening a file (C)
 
-Designed and agreed in outline; detailed when it is built.
+### Decrypting
 
-- `Enter` on a decryptable file decrypts it into memory. The page moves to a
-  three-column, trailing-wide layout: the vault dimmed on the left, the
-  decrypted **contents** in the centre, and a **preview** with the Actions for
-  the selected entry on the right. The breadcrumb names the open file.
-- A single file is one entry. A zip or tar archive is expanded into a tree.
-- Text is previewed; a binary shows its type, size and hash.
-- Only one file is open at a time; opening another closes the first.
-- `Esc` closes the file and discards its plaintext. So does a period without
-  input, five minutes by default and configurable.
-- A passphrase-encrypted file, or one needing a protected identity, asks for the
-  passphrase when it is opened. The passphrase is used once and not kept.
-- Plaintext is held in process memory. `dgs` cannot guarantee it is never
-  swapped to disk or that every copy is overwritten, and does not claim to.
+`Enter` on a file in the vault list opens it:
+
+- A **decryptable** file is decrypted with the identity that opens it.
+- A **passphrase** file asks for its passphrase.
+- A file that **needs a passphrase** asks for the passphrase of the protected SSH
+  identity its header names, unlocks that identity for this one file, and
+  decrypts with it.
+- Other statuses do not open, and say why.
+
+The passphrase is typed into a masked field in an overlay. A wrong one says so
+and asks again; `Esc` gives up. It is used once and not kept: the next file asks
+again, and the unlocked identity is discarded when the file has been decrypted.
+
+Decryption stops at 64 MiB of plaintext, the limit a file can be added with.
+
+### What is inside
+
+The plaintext is recognised by content, not by name:
+
+- **gzip-compressed tar**, **tar** or **zip** is expanded into a tree of entries,
+  one level only: an archive inside it is an entry like any other file.
+- Anything else is a single entry named after the file without `.age`.
+
+An archive's expanded size is bounded by the same 64 MiB, so a small archive
+cannot unpack into more than a file could hold. An archive entry whose name is
+absolute or climbs out with `..`, or which is a symbolic link, hard link or
+device, is listed and marked `!`; it has no content, and Actions that write
+refuse it.
+
+Each file entry is recognised as one of: **SSH private key**, **SSH public
+key**, **age identity**, **text** (valid UTF-8 without NUL bytes), or **other**.
+Directories are entries too.
+
+### Layout
+
+Opening moves the page to three columns, trailing-wide:
+
+- **VAULT** — the vault list, dimmed, with the open file marked.
+- **CONTENTS** — the entries, as a tree for an archive.
+- **PREVIEW** — the selected entry: its path, type, size, mode and SHA-256, then
+  its content, scrollable. Text is shown with long lines wrapped. An SSH private
+  key or age identity is shown masked — its type and, where it has one, its
+  public key and fingerprint — until `v` shows its content; `v` again hides it.
+  Other content is described, not shown.
+
+Above the entries, when the file has a recipient record, PREVIEW's first view of
+the file names the hosts and keys it was encrypted to; without a record only the
+header's view from browsing is shown.
+
+`c` copies the selected entry to the clipboard through OSC 52, when it is text
+or an SSH public key of at most 64 KiB — terminals cap what OSC 52 carries.
+Private keys are never copied, since the clipboard is readable by other
+programs and outlives `dgs`; the status bar says that what was copied stays on
+the clipboard until replaced.
+
+`Tab`, `Shift+Tab` and `Alt+←/→` move between the three columns. The breadcrumb
+names the open file.
+
+### Closing
+
+The open file is closed, and its plaintext discarded, when:
+
+- `Esc` is pressed in any of the three columns;
+- another file is opened from VAULT;
+- the page is left;
+- nothing is pressed or clicked for `close_after`, five minutes by default; see
+  [`configuration/cred.md`](../../configuration/cred.md). The status bar says
+  that it closed and why.
+
+Only one file is open at a time. Closing overwrites the plaintext buffers `dgs`
+holds with zeros before dropping them. That is as far as a process can go:
+`dgs` cannot guarantee the plaintext was never swapped to disk, or that no other
+copy — made by the Go runtime, or shown on the terminal and kept in its
+scrollback — survives, and does not claim to.
 
 ## Actions (D)
 
@@ -215,7 +276,8 @@ Initial Actions:
 5. **E2a — Sealing.** Archive, encrypt, verify and publish, with filesystem
    tests.
 6. **E2b — Adding from the page.** The flow above.
+7. **C1 — Opening.** Decrypt into memory, expand archives, recognise entries, bound
+   sizes, clear on close. A package of its own.
+8. **C2 — Passphrases.** Passphrase files and protected SSH identities.
+9. **C3 — The opened page.** Three columns, preview and masking, idle close.
 
-## Not decided
-
-- Whether reading, in C, also expands zip archives made elsewhere.
