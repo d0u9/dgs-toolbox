@@ -6,6 +6,7 @@ package seal
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -20,6 +21,7 @@ import (
 
 	"filippo.io/age"
 	"filippo.io/age/agessh"
+	"filippo.io/age/armor"
 
 	"dgs-toolbox/internal/cred/record"
 )
@@ -248,16 +250,29 @@ func Archive(folder string, maxSize int64) ([]byte, error) {
 }
 
 func writePart(part string, plaintext []byte, recipients []age.Recipient) error {
+	return writePartFormat(part, plaintext, recipients, false)
+}
+
+func writePartFormat(part string, plaintext []byte, recipients []age.Recipient, armored bool) error {
 	file, err := os.OpenFile(part, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return err
 	}
-	encrypted, err := age.Encrypt(file, recipients...)
+	var dst io.Writer = file
+	var armorWriter io.WriteCloser
+	if armored {
+		armorWriter = armor.NewWriter(file)
+		dst = armorWriter
+	}
+	encrypted, err := age.Encrypt(dst, recipients...)
 	if err == nil {
 		_, err = encrypted.Write(plaintext)
 	}
 	if err == nil {
 		err = encrypted.Close()
+	}
+	if err == nil && armorWriter != nil {
+		err = armorWriter.Close()
 	}
 	if err == nil {
 		err = file.Sync()
@@ -276,7 +291,7 @@ func verify(part string, want [32]byte, identities []age.Identity) error {
 		return err
 	}
 	defer file.Close()
-	decrypted, err := age.Decrypt(file, identities...)
+	decrypted, err := age.Decrypt(armoredOrNot(file), identities...)
 	if err != nil {
 		return fmt.Errorf("the written file does not decrypt with this machine's identities: %w", err)
 	}
@@ -297,4 +312,109 @@ func syncDir(dir string) {
 		handle.Sync()
 		handle.Close()
 	}
+}
+
+const armorIntro = "-----BEGIN AGE ENCRYPTED FILE-----"
+
+// armoredOrNot reads an age file in either format.
+func armoredOrNot(src io.Reader) io.Reader {
+	buffered := bufio.NewReader(src)
+	if peek, _ := buffered.Peek(len(armorIntro)); bytes.Equal(peek, []byte(armorIntro)) {
+		return armor.NewReader(buffered)
+	}
+	return buffered
+}
+
+// ResealRequest changes the recipients of a file already in the vault.
+type ResealRequest struct {
+	// Path is the age file, replaced once the new one has been checked.
+	Path string
+	// Open are identities that decrypt the file as it is.
+	Open       []age.Identity
+	Recipients []Recipient
+	// Verify are this machine's identities, used to decrypt the new file back.
+	// With none, it replaces the old one unverified.
+	Verify  []age.Identity
+	MaxSize int64
+	Now     time.Time
+}
+
+// Reseal decrypts the file, encrypts it again to the new recipients with a new
+// file key, checks the result by decrypting it back, and replaces the file and
+// its record. The format, binary or armored, is kept. Nothing is kept of the old
+// version: a copy of it is exactly what a removed recipient can still open.
+func Reseal(request ResealRequest) (Result, error) {
+	if request.MaxSize <= 0 {
+		request.MaxSize = DefaultMaxSize
+	}
+	if request.Now.IsZero() {
+		request.Now = time.Now()
+	}
+	if len(request.Recipients) == 0 {
+		return Result{}, errors.New("no recipients")
+	}
+	recipients := make([]age.Recipient, 0, len(request.Recipients))
+	for _, r := range request.Recipients {
+		parsed, err := parseRecipient(r.PublicKey)
+		if err != nil {
+			return Result{}, fmt.Errorf("recipient %s: %w", r.PublicKey, err)
+		}
+		recipients = append(recipients, parsed)
+	}
+	original, err := os.ReadFile(request.Path)
+	if err != nil {
+		return Result{}, err
+	}
+	armored := bytes.HasPrefix(original, []byte(armorIntro))
+	decrypted, err := age.Decrypt(armoredOrNot(bytes.NewReader(original)), request.Open...)
+	if err != nil {
+		return Result{}, fmt.Errorf("the file does not decrypt: %w", err)
+	}
+	plaintext, err := io.ReadAll(io.LimitReader(decrypted, request.MaxSize+1))
+	defer clear(plaintext)
+	if err != nil {
+		return Result{}, fmt.Errorf("the file does not decrypt: %w", err)
+	}
+	if int64(len(plaintext)) > request.MaxSize {
+		return Result{}, fmt.Errorf("%s is larger than %d MiB", request.Path, request.MaxSize>>20)
+	}
+
+	result := Result{Path: request.Path, RecordPath: record.PathFor(request.Path), PlaintextSize: int64(len(plaintext)), SHA256: sha256.Sum256(plaintext)}
+	part := request.Path + PartSuffix
+	if err := writePartFormat(part, plaintext, recipients, armored); err != nil {
+		os.Remove(part)
+		return Result{}, err
+	}
+	defer os.Remove(part)
+	if len(request.Verify) > 0 {
+		if err := verify(part, result.SHA256, request.Verify); err != nil {
+			return Result{}, err
+		}
+		result.Verified = true
+	}
+	if info, err := os.Stat(request.Path); err == nil {
+		os.Chmod(part, info.Mode().Perm())
+	}
+	if err := os.Rename(part, request.Path); err != nil {
+		return Result{}, err
+	}
+	syncDir(filepath.Dir(request.Path))
+
+	rec, err := record.Read(result.RecordPath)
+	if err != nil {
+		rec = record.Record{Created: request.Now}
+		if bytes.HasPrefix(plaintext, []byte{0x1f, 0x8b}) {
+			rec.Archive = record.ArchiveTarGz
+		}
+	}
+	now := request.Now
+	rec.Updated = &now
+	rec.Recipients = make([]record.Recipient, len(request.Recipients))
+	for i, r := range request.Recipients {
+		rec.Recipients[i] = record.Recipient{PublicKey: r.PublicKey, Host: r.Host, Description: r.Description}
+	}
+	if err := record.Replace(result.RecordPath, rec); err != nil {
+		return result, fmt.Errorf("%s was re-encrypted, but its record was not updated: %w", request.Path, err)
+	}
+	return result, nil
 }

@@ -15,7 +15,6 @@ import (
 	"dgs-toolbox/internal/tui/confirm"
 	"dgs-toolbox/internal/tui/fileexplorer"
 	"dgs-toolbox/internal/tui/pageactions"
-	"dgs-toolbox/internal/tui/scrolllist"
 
 	"filippo.io/age"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -34,21 +33,6 @@ const (
 	addRunning
 )
 
-type rowKind int
-
-const (
-	rowGroup rowKind = iota
-	rowHost
-	rowKey
-)
-
-type recipientRow struct {
-	kind  rowKind
-	group recipients.Group
-	host  recipients.Host
-	key   recipients.Key
-}
-
 // addFlow is adding a file or folder to the vault, from choosing the source to
 // the result. It lives on the vault page as an overlay.
 type addFlow struct {
@@ -58,10 +42,8 @@ type addFlow struct {
 	source    string
 	folder    bool
 
-	picker  fileexplorer.Model
-	rows    []recipientRow
-	list    scrolllist.Model
-	checked map[string]bool
+	picker fileexplorer.Model
+	choose *recipientPicker
 
 	name        textinput.Model
 	onDirectory bool
@@ -92,7 +74,7 @@ func (m *vaultModel) startAdd() tea.Cmd {
 	} else if file, _, ok := m.selectedFile(); ok {
 		directory = filepath.Join(m.root, filepath.FromSlash(path.Dir(file.Path)))
 	}
-	flow := &addFlow{stage: addSource, directory: directory, checked: map[string]bool{}}
+	flow := &addFlow{stage: addSource, directory: directory}
 	flow.picker = pickerFor(homeDir(), m.width, m.height, fileexplorer.AllFiles())
 	m.add = flow
 	return flow.picker.Init()
@@ -131,7 +113,7 @@ func (m vaultModel) updateAdd(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		flow.err = ""
-		m.buildRecipientRows()
+		flow.choose = newRecipientPicker(m.snap.folder, m.snap.held, nil, nil)
 		flow.stage = addRecipients
 		return m, cmd
 	}
@@ -159,97 +141,6 @@ func (m vaultModel) updateAdd(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *vaultModel) buildRecipientRows() {
-	flow := m.add
-	flow.rows = nil
-	for _, group := range m.snap.folder.Groups {
-		flow.rows = append(flow.rows, recipientRow{kind: rowGroup, group: group})
-	}
-	for _, host := range m.snap.folder.Hosts {
-		flow.rows = append(flow.rows, recipientRow{kind: rowHost, host: host})
-		for _, key := range host.Keys {
-			flow.rows = append(flow.rows, recipientRow{kind: rowKey, host: host, key: key})
-			if m.snap.held[key.Key] {
-				flow.checked[key.Key] = true
-			}
-		}
-	}
-	flow.list = scrolllist.New()
-	m.refreshRecipientItems()
-}
-
-// rowKeys are the public keys a row stands for.
-func (m vaultModel) rowKeys(row recipientRow) []string {
-	switch row.kind {
-	case rowKey:
-		return []string{row.key.Key}
-	case rowHost:
-		keys := make([]string, len(row.host.Keys))
-		for i, key := range row.host.Keys {
-			keys[i] = key.Key
-		}
-		return keys
-	}
-	var keys []string
-	for _, name := range row.group.Hosts {
-		if host, ok := m.snap.folder.Host(name); ok {
-			for _, key := range host.Keys {
-				keys = append(keys, key.Key)
-			}
-		}
-	}
-	return keys
-}
-
-func (m vaultModel) checkbox(row recipientRow) string {
-	keys := m.rowKeys(row)
-	count := 0
-	for _, key := range keys {
-		if m.add.checked[key] {
-			count++
-		}
-	}
-	switch {
-	case len(keys) > 0 && count == len(keys):
-		return "[x]"
-	case count > 0:
-		return "[-]"
-	}
-	return "[ ]"
-}
-
-func (m *vaultModel) refreshRecipientItems() {
-	flow := m.add
-	items := make([]scrolllist.Item, len(flow.rows))
-	groups := 0
-	for i, row := range flow.rows {
-		box := m.checkbox(row)
-		// Two rows each, so a long description is not cut off by the key.
-		var label, detail string
-		switch row.kind {
-		case rowGroup:
-			groups++
-			label = fmt.Sprintf("%s %s", box, row.group.Name)
-			detail = "    " + plural(len(row.group.Hosts), "host")
-		case rowHost:
-			label = fmt.Sprintf("%s %s", box, row.host.Name)
-			detail = "    " + plural(len(row.host.Keys), "key")
-			if len(row.host.Keys) == 0 {
-				detail = "    no keys; nothing to check"
-			}
-		case rowKey:
-			label = fmt.Sprintf("    %s %s", box, row.key.Description)
-			detail = "        " + shortKey(row.key.PublicKey)
-			if m.snap.held[row.key.Key] {
-				detail += "  ● this machine"
-			}
-		}
-		items[i] = scrolllist.Item{ID: fmt.Sprint(i), Label: label, Detail: detail}
-	}
-	flow.list.SetItems(items)
-	flow.list.SetDivider(groups, "HOSTS")
-}
-
 func shortKey(key recipients.PublicKey) string {
 	text := keyText(key)
 	if len(text) > 24 {
@@ -263,16 +154,6 @@ func (m vaultModel) updateAddRecipients(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		flow.stage = addSource
-		return m, nil
-	case " ", "space", "x":
-		if index := flow.list.Cursor(); index < len(flow.rows) {
-			keys := m.rowKeys(flow.rows[index])
-			all := m.checkbox(flow.rows[index]) == "[x]"
-			for _, k := range keys {
-				flow.checked[k] = !all
-			}
-			m.refreshRecipientItems()
-		}
 		return m, nil
 	case "enter":
 		switch {
@@ -293,23 +174,12 @@ func (m vaultModel) updateAddRecipients(key string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	var pending bool
-	moveKey(&flow.list, key, &pending)
+	flow.choose.update(key)
 	return m, nil
 }
 
-// chosenRecipients are the checked keys, in the order the folder lists them.
-func (m vaultModel) chosenRecipients() []seal.Recipient {
-	var chosen []seal.Recipient
-	for _, host := range m.snap.folder.Hosts {
-		for _, key := range host.Keys {
-			if m.add.checked[key.Key] {
-				chosen = append(chosen, seal.Recipient{PublicKey: key.Key, Host: host.Name, Description: key.Description})
-			}
-		}
-	}
-	return chosen
-}
+// chosenRecipients are the keys checked in the add flow.
+func (m vaultModel) chosenRecipients() []seal.Recipient { return m.add.choose.chosen() }
 
 func (m vaultModel) updateAddName(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	flow := m.add
@@ -370,14 +240,7 @@ func (m vaultModel) checkDestination() error {
 	return nil
 }
 
-func (m vaultModel) mineChosen() bool {
-	for _, r := range m.chosenRecipients() {
-		if m.snap.held[r.PublicKey] {
-			return true
-		}
-	}
-	return false
-}
+func (m vaultModel) mineChosen() bool { return m.add.choose.mine() }
 
 func (m vaultModel) confirmConfig() confirm.Config {
 	var names []string
@@ -463,13 +326,7 @@ func (m vaultModel) addView() string {
 		lines = append(lines, titleStyle.Render(title+" · "+heading), mutedStyle.Render(selected), "", flow.picker.View(), mutedStyle.Render(flow.picker.Hint()))
 	case addRecipients:
 		lines = append(lines, titleStyle.Render(title+" · RECIPIENTS"), mutedStyle.Render(ansi.Truncate(tilde(flow.source), inner, "…")), "")
-		if len(flow.rows) == 0 {
-			lines = append(lines, mutedStyle.Render("· The recipient folder has no hosts."))
-		} else {
-			list := flow.list
-			list.SetSize(inner, max(1, h-9))
-			lines = append(lines, list.View(true, titleStyle, mutedStyle))
-		}
+		lines = append(lines, flow.choose.view(inner, h-9))
 	case addName, addConfirm, addRunning:
 		lines = append(lines, titleStyle.Render(title+" · NAME"), mutedStyle.Render(ansi.Truncate(tilde(flow.source), inner, "…")), "")
 		nameMarker, dirMarker := "› ", "  "
