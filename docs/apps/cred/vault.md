@@ -241,30 +241,23 @@ scrollback — survives, and does not claim to.
 
 ## Actions (D)
 
-Designed and agreed in outline; catalogued in their own document when built.
+Actions are catalogued, field by field, in [`actions.md`](actions.md). For now
+they cover key files and text: SSH private keys, SSH public keys, age identities
+and text. Binary files and directories have none yet. Adding a public key to
+`authorized_keys` is deliberately not offered: it grants login to whoever holds
+the private key.
 
-- Each entry is recognised by content — SSH private key, SSH public key, age
-  identity, text, other file, directory — and each Action declares the kinds it
-  applies to.
+- `Enter` on a file entry in CONTENTS opens a menu of the Actions for its kind.
 - An Action runs in three steps: a form for its parameters, the shared
-  confirmation dialog saying exactly what will be written where, then the
-  result in the status bar.
-- Actions are the only way plaintext leaves memory — to disk, to ssh-agent, to
-  the clipboard — and each says where it puts it.
-- Writing a file goes through a `.part` file, read back and checked against the
-  hash, then renamed into place.
-- An SSH private key is never copied to the clipboard; other text may be.
+  confirmation dialog naming every path it writes, then the result in the
+  status bar.
+- Actions, with `c`, are the only way plaintext leaves memory, and each says
+  where it puts it.
 
-Initial Actions:
-
-| Kind | Actions |
-| --- | --- |
-| SSH private key | Install to `~/.ssh`, add to ssh-agent, save to folder |
-| SSH public key | Install to `~/.ssh`, copy, save to folder |
-| age identity | Save to folder |
-| Text | Copy, save to folder |
-| Other file | Save to folder |
-| Directory | Save to folder |
+Several SSH login keys are kept one folder per server — the key, its `.pub` and
+optionally a `Host` block — added with `a`. `ssh.install` puts each key in
+`~/.ssh/keys/` with its own `Host` entry in `~/.ssh/config.d/`, using
+`IdentitiesOnly` so that SSH offers only the right key.
 
 ## Milestones
 
@@ -280,4 +273,7 @@ Initial Actions:
    sizes, clear on close. A package of its own.
 8. **C2 — Passphrases.** Passphrase files and protected SSH identities.
 9. **C3 — The opened page.** Three columns, preview and masking, idle close.
+10. **D1 — Actions.** Writing files safely, SSH configuration, the agent, in
+    their packages.
+11. **D2 — Actions on the page.** The menu, forms and confirmation.
 
