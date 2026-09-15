@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rsa"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -324,4 +325,41 @@ func Open(identity Identity) (age.Identity, error) {
 		}
 	}
 	return nil, fmt.Errorf("%s has no line %d", identity.Path, identity.Line)
+}
+
+// ErrWrongPassphrase is returned when a passphrase does not unlock a key.
+var ErrWrongPassphrase = errors.New("wrong passphrase")
+
+// Unlock opens a passphrase-protected SSH identity with passphrase, for use
+// straight away; nothing unlocked is kept here.
+func Unlock(identity Identity, passphrase []byte) (age.Identity, error) {
+	if identity.Status != Protected || identity.Line != 0 {
+		return nil, fmt.Errorf("%s is not a passphrase-protected SSH key", identity.Path)
+	}
+	data, err := os.ReadFile(identity.Path)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(data)
+	raw, err := ssh.ParseRawPrivateKeyWithPassphrase(data, passphrase)
+	if errors.Is(err, x509.IncorrectPasswordError) {
+		return nil, ErrWrongPassphrase
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch key := raw.(type) {
+	case *ed25519.PrivateKey:
+		return agessh.NewEd25519Identity(*key)
+	case ed25519.PrivateKey:
+		return agessh.NewEd25519Identity(key)
+	case *rsa.PrivateKey:
+		return agessh.NewRSAIdentity(key)
+	}
+	return nil, fmt.Errorf("age cannot decrypt with %T keys", raw)
+}
+
+// PassphraseIdentity is the identity of a file encrypted with age -p.
+func PassphraseIdentity(passphrase string) (age.Identity, error) {
+	return age.NewScryptIdentity(passphrase)
 }

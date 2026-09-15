@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -284,5 +285,35 @@ func TestOpen(t *testing.T) {
 	}
 	if _, err := Open(Identity{Status: Protected}); err == nil {
 		t.Error("opened a protected identity")
+	}
+}
+
+func TestUnlock(t *testing.T) {
+	dir := t.TempDir()
+	_, private, _ := ed25519.GenerateKey(rand.Reader)
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "id"), pem.EncodeToMemory(block), 0o600)
+	scan := Discover([]string{dir}, Options{})
+	if len(scan.Identities) != 1 || scan.Identities[0].Status != Protected {
+		t.Fatalf("scan %+v", scan)
+	}
+	locked := scan.Identities[0]
+	if _, err := Unlock(locked, []byte("nope")); !errors.Is(err, ErrWrongPassphrase) {
+		t.Errorf("wrong passphrase: %v", err)
+	}
+	opened, err := Unlock(locked, []byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipient, _ := agessh.ParseRecipient(locked.Public.Key)
+	var out strings.Builder
+	w, _ := age.Encrypt(&out, recipient)
+	w.Write([]byte("x"))
+	w.Close()
+	if _, err := age.Decrypt(strings.NewReader(out.String()), opened); err != nil {
+		t.Errorf("unlocked identity does not decrypt: %v", err)
 	}
 }

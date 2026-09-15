@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // CredentialsFilename is dgs cred's own settings file. It is kept apart from
@@ -27,6 +28,21 @@ type Credentials struct {
 	Vault string `json:"vault"`
 	// NewIdentityDir is where generated and imported identities are written.
 	NewIdentityDir string `json:"new_identity_dir"`
+	// CloseAfter is the idle time before an opened file is closed, as a Go
+	// duration; empty means DefaultCloseAfter and "0" never.
+	CloseAfter string `json:"close_after"`
+}
+
+// DefaultCloseAfter is how long an opened file stays open without input.
+const DefaultCloseAfter = 5 * time.Minute
+
+// IdleClose is CloseAfter as a duration; zero means never.
+func (c Credentials) IdleClose() time.Duration {
+	if c.CloseAfter == "" {
+		return DefaultCloseAfter
+	}
+	d, _ := time.ParseDuration(c.CloseAfter)
+	return d
 }
 
 // DefaultNewIdentityDir is <XDG config home>/age, the directory age's own tools
@@ -89,6 +105,11 @@ func LoadCredentials(path string) (credentials Credentials, found bool, err erro
 			return Credentials{}, true, fmt.Errorf("decode %s: vault: %w", path, err)
 		}
 		credentials.Vault = expanded
+	}
+	if credentials.CloseAfter != "" && credentials.CloseAfter != "0" {
+		if d, err := time.ParseDuration(credentials.CloseAfter); err != nil || d < 0 {
+			return Credentials{}, true, fmt.Errorf("decode %s: close_after %q is not a duration such as 5m", path, credentials.CloseAfter)
+		}
 	}
 	if credentials.NewIdentityDir == "" {
 		credentials.NewIdentityDir = DefaultNewIdentityDir()
