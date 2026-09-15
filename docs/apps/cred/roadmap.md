@@ -22,5 +22,7 @@ stands. The designs are in [`keys.md`](keys.md), [`vault.md`](vault.md) and
   re-encrypt each with `seal.Reseal`, reporting those that fail.
 - **Actions for binary files and directories**, such as saving a folder out of
   an archive.
+- **Publishing without hard links**, for a vault on exFAT or a network share: see
+  [`vault.md`](vault.md#limitations).
 - **Recipient trust confirmation**, **editing groups from the page**, and the
   other items deferred in [`keys.md`](keys.md#deferred).

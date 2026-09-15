@@ -295,6 +295,28 @@ optionally a `Host` block — added with `a`. `ssh.install` puts each key in
 `~/.ssh/keys/` with its own `Host` entry in `~/.ssh/config.d/`, using
 `IdentitiesOnly` so that SSH offers only the right key.
 
+## Limitations
+
+These are known and not handled.
+
+- **Filesystems without hard links.** A new file — a vault file, its record, an
+  identity, an Action's output — is published by linking a checked temporary
+  file to its name, because a link fails where the name is already taken and a
+  rename would silently replace it. exFAT and FAT32 (most USB sticks and SD
+  cards), and many SMB or FUSE mounts, have no hard links, so there those writes
+  fail with "operation not supported". Nothing is damaged: the temporary file is
+  removed and existing files are untouched. Reading, opening, and changing a
+  file's recipients, which renames over the file on purpose, are not affected.
+  Keep the vault, and the folders Actions save to, on a filesystem with hard
+  links, such as APFS, ext4, btrfs or xfs.
+- **Copying needs OSC 52.** `c` asks the terminal to set the clipboard with the
+  OSC 52 sequence. iTerm2, kitty, WezTerm and Ghostty support it; macOS's
+  Terminal does not, and copies nothing. Inside tmux it needs
+  `set -g set-clipboard on`. A terminal may also drop a sequence longer than it
+  accepts, which is why copying is limited to 64 KiB.
+- **Leftover part files.** A `.dgs-part` file left by a crash mid-write is not
+  cleaned up. The vault list ignores it, and it can be deleted by hand.
+
 ## Milestones
 
 1. **B1 — Vault scan.** List the age files in a folder by the rules above.
