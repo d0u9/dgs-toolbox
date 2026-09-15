@@ -327,13 +327,25 @@ func TestExampleConfigurationsLoad(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
+		// A folder holds dgs-config.json, credentials.json, or both.
+		held := false
 		path := filepath.Join(root, entry.Name(), ExportFilename)
-		if _, err := os.Stat(path); err != nil {
-			t.Errorf("examples/%s holds no %s", entry.Name(), ExportFilename)
-			continue
+		if _, err := os.Stat(path); err == nil {
+			held = true
+			if _, err := LoadPath(path); err != nil {
+				t.Errorf("examples/%s: %v", entry.Name(), err)
+			}
 		}
-		if _, err := LoadPath(path); err != nil {
-			t.Errorf("examples/%s: %v", entry.Name(), err)
+		path = filepath.Join(root, entry.Name(), CredentialsFilename)
+		if _, err := os.Stat(path); err == nil {
+			held = true
+			if _, _, err := LoadCredentials(path); err != nil {
+				t.Errorf("examples/%s: %v", entry.Name(), err)
+			}
+		}
+		if !held {
+			t.Errorf("examples/%s holds neither %s nor %s", entry.Name(), ExportFilename, CredentialsFilename)
+			continue
 		}
 		found++
 	}
