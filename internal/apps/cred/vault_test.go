@@ -256,3 +256,66 @@ func TestAddFlow(t *testing.T) {
 		t.Errorf("esc did not walk out of the flow: stage %d", m.add.stage)
 	}
 }
+
+func TestAddFlowPassphrase(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, "recipients")
+	writeFile(t, filepath.Join(folder, "hosts", "laptop.json"), `{"keys":[]}`, 0o644)
+	vaultDir := filepath.Join(root, "vault")
+	if err := os.MkdirAll(vaultDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "src", "notes.txt")
+	writeFile(t, source, "secret notes", 0o600)
+	path := filepath.Join(root, "credentials.json")
+	writeFile(t, path, `{"recipients":"`+folder+`","vault":"`+vaultDir+`"}`, 0o600)
+
+	m := newVaultModel()
+	m.path = path
+	m = runVault(t, m)
+	m = typeText(t, m, "a")
+	m = typeText(t, m, "/")
+	m = typeText(t, m, source)
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.add == nil || m.add.stage != addRecipients {
+		t.Fatalf("add flow: %+v", m.add)
+	}
+	m = typeText(t, m, "p")
+	if m.add.stage != addPassphrase {
+		t.Fatalf("stage %d", m.add.stage)
+	}
+	m = typeText(t, m, "correct horse")
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = typeText(t, m, "wrong")
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.add.stage != addPassphrase || !strings.Contains(m.add.err, "do not match") {
+		t.Fatalf("mismatch accepted: stage %d err %q", m.add.stage, m.add.err)
+	}
+	if view := ansi.Strip(m.View()); strings.Contains(view, "correct horse") {
+		t.Error("the passphrase is shown")
+	}
+	m = typeText(t, m, "correct horse")
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.add.stage != addName || m.addEncryption() != "with a passphrase" {
+		t.Fatalf("name stage %d err %q", m.add.stage, m.add.err)
+	}
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.add != nil {
+		t.Fatalf("flow still open: stage %d err %q", m.add.stage, m.add.err)
+	}
+	if !strings.Contains(m.notice, "Added notes.txt.age (verified)") {
+		t.Errorf("notice %q", m.notice)
+	}
+	identity, _ := age.NewScryptIdentity("correct horse")
+	file, err := os.Open(filepath.Join(vaultDir, "notes.txt.age"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := age.Decrypt(file, identity); err != nil {
+		t.Error(err)
+	}
+}

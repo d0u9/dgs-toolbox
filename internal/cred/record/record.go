@@ -28,14 +28,20 @@ const Version = 1
 // ArchiveTarGz marks a file holding a gzip-compressed tar of a folder.
 const ArchiveTarGz = "tar.gz"
 
+// EncryptionPassphrase marks a file encrypted with a passphrase.
+const EncryptionPassphrase = "passphrase"
+
 // Record is the content of a record file.
 type Record struct {
 	Version int       `json:"version"`
 	Created time.Time `json:"created"`
 	// Updated is when the recipients were last changed; nil for a file never
 	// changed since it was added.
-	Updated    *time.Time  `json:"updated,omitempty"`
-	Archive    string      `json:"archive,omitempty"`
+	Updated *time.Time `json:"updated,omitempty"`
+	Archive string     `json:"archive,omitempty"`
+	// Encryption is EncryptionPassphrase for a file encrypted with a
+	// passphrase, which then has no recipients; absent otherwise.
+	Encryption string      `json:"encryption,omitempty"`
 	Recipients []Recipient `json:"recipients"`
 }
 
