@@ -56,7 +56,7 @@ func TestLoadCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := `{"identities":["~/.ssh","/opt/keys"],"recipients":"$CRED_TEST_ROOT/recipients"}`
+	body := `{"identities":["~/.ssh","/opt/keys"],"recipients":"$CRED_TEST_ROOT/recipients","vault":"~/vault"}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +67,9 @@ func TestLoadCredentials(t *testing.T) {
 	if strings.Join(credentials.Identities, ",") != filepath.Join(home, ".ssh")+",/opt/keys" {
 		t.Errorf("identities %q", credentials.Identities)
 	}
+	if credentials.Vault != filepath.Join(home, "vault") {
+		t.Errorf("vault %q", credentials.Vault)
+	}
 	if credentials.Recipients != "/srv/conf/recipients" {
 		t.Errorf("recipients %q", credentials.Recipients)
 	}
@@ -74,6 +77,7 @@ func TestLoadCredentials(t *testing.T) {
 	for body, fragment := range map[string]string{
 		`{"identity_dirs":[]}`:           "unknown field",
 		`{"recipients":"relative"}`:      "recipients",
+		`{"vault":"relative"}`:           "vault",
 		`{"identities":["$CRED_UNSET"]}`: "identities[0]",
 		`{} {}`:                          "content after",
 	} {

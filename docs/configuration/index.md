@@ -13,7 +13,7 @@ link here; this is what a reader consults to find out *what* to write.
 - [Photo](photo.md) — Photo Import's state file and default paths.
 - [Geo](geo.md) — where the GPX web server listens, the folder it browses, and its base maps.
 - [Credentials](cred.md) — `credentials.json`, a file of its own: where
-  identities are searched for and where the recipient folder is.
+  identities are searched for, where the recipient folder is, and the vault.
 
 Working files to copy from are in [`examples/`](../../examples), one folder per
 thing you might be setting up. A test loads every one of them, so an example
@@ -90,6 +90,7 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `geo.gpx.tiles` | [geo](geo.md) | empty — the built-in maps only |
 | `identities` (`credentials.json`) | [cred](cred.md) | empty — no identities |
 | `recipients` (`credentials.json`) | [cred](cred.md) | empty — no recipients |
+| `vault` (`credentials.json`) | [cred](cred.md) | empty — the page asks for a folder |
 
 ## Keeping this current
 
