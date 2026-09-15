@@ -343,7 +343,7 @@ An application stage with active work may capture the shell's return and exit ke
 
 ### Confirmation dialog
 
-Consequential interruptions use the shared confirmation component in `internal/tui/confirm`. It renders a compact framed dialog with a title, message, optional detail, and two actions. The negative or safe action is focused by default. `Tab` and `Shift+Tab` switch focus, `Enter` invokes the focused action, and `Esc` always cancels. The selected button carries the visual focus treatment; keyboard hints appear once in the dialog footer and are not duplicated in the global status bar.
+Consequential interruptions use the shared confirmation component in `internal/tui/confirm`. It renders a compact framed dialog with a title, message, optional detail, and two actions. The message and detail wrap within the dialog rather than being cut off. The negative or safe action is focused by default. `Tab` and `Shift+Tab` switch focus, `Enter` invokes the focused action, and `Esc` always cancels. The selected button carries the visual focus treatment; keyboard hints appear once in the dialog footer and are not duplicated in the global status bar.
 
 The status bar shows only controls valid in the current state. For example, edit mode should describe how to accept or cancel the edit rather than showing form-navigation hints.
 
