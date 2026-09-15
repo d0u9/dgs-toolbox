@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestExpandPath(t *testing.T) {
@@ -82,6 +83,7 @@ func TestLoadCredentials(t *testing.T) {
 		`{"recipients":"relative"}`:      "recipients",
 		`{"vault":"relative"}`:           "vault",
 		`{"new_identity_dir":"rel"}`:     "new_identity_dir",
+		`{"close_after":"soon"}`:         "close_after",
 		`{"identities":["$CRED_UNSET"]}`: "identities[0]",
 		`{} {}`:                          "content after",
 	} {
@@ -98,5 +100,13 @@ func TestLoadCredentials(t *testing.T) {
 	}
 	if credentials, found, err := LoadCredentials(path); err != nil || !found || len(credentials.Identities) != 0 || credentials.Recipients != "" || credentials.NewIdentityDir != DefaultNewIdentityDir() {
 		t.Errorf("empty file: %+v %v %v", credentials, found, err)
+	}
+}
+
+func TestIdleClose(t *testing.T) {
+	for value, want := range map[string]time.Duration{"": DefaultCloseAfter, "0": 0, "90s": 90 * time.Second} {
+		if got := (Credentials{CloseAfter: value}).IdleClose(); got != want {
+			t.Errorf("%q: %v, want %v", value, got, want)
+		}
 	}
 }

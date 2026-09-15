@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"dgs-toolbox/internal/cred/identities"
 	"dgs-toolbox/internal/cred/vault"
@@ -84,13 +85,24 @@ type vaultModel struct {
 	picker  fileexplorer.Model
 	// add is the add flow while it is open.
 	add *addFlow
+	// open is the file decrypted into memory; prompt asks for a passphrase
+	// before one opens.
+	open   *openFile
+	prompt *passphrasePrompt
+	// copy puts text on the clipboard; tests replace it.
+	copy func(string) error
 }
 
 func newVaultModel() vaultModel {
 	return vaultModel{
 		list:      scrolllist.New(),
 		collapsed: map[string]bool{},
-		fields:    datafield.New(datafield.Field{ID: listField, Row: 0, Col: 0}),
+		copy:      copyOSC52,
+		fields: datafield.New(
+			datafield.Field{ID: listField, Row: 0, Col: 0},
+			datafield.Field{ID: contentsField, Row: 0, Col: 1},
+			datafield.Field{ID: previewField, Row: 0, Col: 2},
+		),
 	}
 }
 
@@ -238,6 +250,22 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitInspected(msg.generation, m.results)
 	}
 
+	switch msg := msg.(type) {
+	case copiedMsg:
+		if msg.err != nil {
+			m.notice = "! Copy failed: " + msg.err.Error()
+		} else {
+			m.notice = "Copied " + msg.what
+		}
+		return m, nil
+	case openedMsg:
+		return m.finishOpen(msg)
+	case idleTickMsg:
+		return m.updateIdle(msg)
+	}
+	if m.prompt != nil {
+		return m.updatePrompt(msg)
+	}
 	if sealed, ok := msg.(sealedMsg); ok && m.add != nil {
 		return m.finishAdd(sealed)
 	}
@@ -249,9 +277,57 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.open != nil {
+			m.notice = ""
+			if msg.String() == "esc" {
+				m.closeOpen()
+				return m, nil
+			}
+			if updated, cmd, used := m.updateOpenKey(msg.String()); used {
+				return updated, cmd
+			}
+		}
 		return m.updateKey(msg.String())
 	case tea.MouseMsg:
+		if m.open != nil {
+			return m.updateOpenMouse(msg)
+		}
 		return m.updateMouse(msg)
+	}
+	return m, nil
+}
+
+func (m vaultModel) updateOpenMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	m.open.lastInput = time.Now()
+	hit := m.fields.HitAt(msg.X, msg.Y)
+	if hit == "" || msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	switch msg.Button {
+	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
+		delta := 3
+		if msg.Button == tea.MouseButtonWheelUp {
+			delta = -3
+		}
+		switch hit {
+		case listField:
+			m.list.Scroll(delta)
+		case contentsField:
+			m.open.list.Scroll(delta)
+		case previewField:
+			m.open.scroll = max(0, m.open.scroll+delta)
+		}
+	case tea.MouseButtonLeft:
+		m.fields.FocusAt(msg.X, msg.Y)
+		switch hit {
+		case listField:
+			m.list.SelectRow(msg.Y - 1)
+		case contentsField:
+			_, center, _ := m.openColumns()
+			if m.open.list.SelectRow(msg.Y - 1 - len(m.contentsHeader(center-4))) {
+				m.open.scroll, m.open.reveal = 0, false
+			}
+		}
 	}
 	return m, nil
 }
@@ -267,6 +343,7 @@ func (m vaultModel) updatePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	m.picking = false
+	m.closeOpen()
 	m.collapsed = map[string]bool{}
 	m.list = scrolllist.New()
 	m.layout()
@@ -304,7 +381,8 @@ func (m vaultModel) updateKey(key string) (tea.Model, tea.Cmd) {
 		}
 		if key == "enter" {
 			if _, _, ok := m.selectedFile(); ok {
-				m.notice = "Opening a file is not built yet"
+				cmd := m.startOpen()
+				return m, cmd
 			}
 		}
 		return m, nil
@@ -386,7 +464,12 @@ func (m *vaultModel) rebuild() {
 			}
 		}
 		for _, index := range n.files {
-			label := indent + statusMark(m.reports[index].Status) + " " + path.Base(m.listing.Files[index].Path)
+			mark := statusMark(m.reports[index].Status)
+			// The open file is marked where a narrow column still shows it.
+			if m.open != nil && m.open.file.Path == m.listing.Files[index].Path {
+				mark = "●"
+			}
+			label := indent + mark + " " + path.Base(m.listing.Files[index].Path)
 			items = append(items, scrolllist.Item{ID: "file:" + strconv.Itoa(index), Label: label})
 		}
 	}
@@ -478,6 +561,10 @@ func (m *vaultModel) layout() {
 	if m.tooSmall() {
 		return
 	}
+	if m.open != nil {
+		m.layoutOpen()
+		return
+	}
 	left, _ := m.columns()
 	m.list.SetSize(max(1, left-4), max(1, m.height-2))
 	m.fields.SetBounds(listField, datafield.Bounds{X: 0, Y: 0, Width: left, Height: m.height})
@@ -493,6 +580,12 @@ func (m vaultModel) View() string {
 	}
 	left, right := m.columns()
 	workspace := lipgloss.JoinHorizontal(lipgloss.Top, m.leftColumn(left), " ", m.rightColumn(right))
+	if m.open != nil {
+		workspace = m.openView()
+	}
+	if m.prompt != nil {
+		return overlay.Place(workspace, m.promptView(), m.width, m.height)
+	}
 	if m.add != nil {
 		return overlay.Place(workspace, m.addView(), m.width, m.height)
 	}
@@ -530,7 +623,7 @@ func (m vaultModel) leftColumn(width int) string {
 	if m.root != "" {
 		legend += " · " + tilde(m.root)
 	}
-	return fieldset.ViewFocused(legend, fit(content, m.height-2, inner), width, true)
+	return fieldset.ViewFocused(legend, fit(content, m.height-2, inner), width, m.fields.Current() == listField)
 }
 
 func (m vaultModel) rightColumn(width int) string {
@@ -639,6 +732,12 @@ func (m vaultModel) pickerView() string {
 }
 
 func (m vaultModel) CapturesShellKey(key string) bool {
+	if m.prompt != nil {
+		return key == "esc" || key == "q" || key == "backspace"
+	}
+	if m.open != nil && key == "esc" {
+		return true
+	}
 	if m.add != nil {
 		switch m.add.stage {
 		case addSource, addDirectory:
@@ -652,6 +751,13 @@ func (m vaultModel) CapturesShellKey(key string) bool {
 }
 
 func (m vaultModel) Status() tui.Status {
+	if m.prompt != nil {
+		return tui.Status{Left: "PASSPHRASE", Center: m.prompt.file.Path, Right: "↵ Open  esc Cancel"}
+	}
+	if m.open != nil && m.add == nil && !m.picking {
+		left, center, right := m.openStatus()
+		return tui.Status{Left: left, Center: center, Right: right}
+	}
 	if m.add != nil {
 		left, right := m.addStatus()
 		return tui.Status{Left: left, Center: tilde(m.add.directory), Right: right}
