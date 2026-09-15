@@ -5,6 +5,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"dgs-toolbox/internal/tui/pageactions"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -45,6 +52,9 @@ type Model struct {
 	original    string
 	choice      int
 	multiChoice int
+	// editor edits the active Text field, so the cursor moves and the usual
+	// line-editing keys work.
+	editor textinput.Model
 }
 
 var (
@@ -254,10 +264,97 @@ func (m *Model) HandleInteraction(key string) bool {
 	return false
 }
 
+// Paste puts pasted text into the focused Text field, starting an edit when
+// none is open. Line breaks and other control characters are dropped, so a
+// pasted line does not carry its newline into the value. It reports whether the
+// paste was used.
+func (m *Model) Paste(text string) bool {
+	field, ok := m.focusedField()
+	if !ok || field.Kind != Text {
+		return false
+	}
+	if m.activeID == "" {
+		m.begin(field)
+	}
+	cleaned := []rune(strings.TrimRight(strings.Map(func(r rune) rune {
+		if r < ' ' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, text), " "))
+	value := []rune(m.editor.Value())
+	position := m.editor.Position()
+	joined := string(value[:position]) + string(cleaned) + string(value[position:])
+	m.editor.SetValue(joined)
+	m.editor.SetCursor(position + len(cleaned))
+	m.fields[m.focus].Value = m.editor.Value()
+	return true
+}
+
 func (m *Model) begin(field Field) {
 	m.activeID = field.ID
 	m.original = field.Value
 	m.choice = optionIndex(field.Options, field.Value)
+	if field.Kind == Text {
+		m.editor = newEditor(field.Value)
+	}
+}
+
+func newEditor(value string) textinput.Model {
+	editor := textinput.New()
+	editor.Prompt = ""
+	editor.Cursor.SetMode(cursor.CursorStatic)
+	editor.Cursor.Style = focusStyle
+	// Ctrl+V would run a clipboard program; a terminal paste arrives as a
+	// paste instead.
+	editor.KeyMap.Paste = key.NewBinding(key.WithDisabled())
+	editor.SetValue(value)
+	editor.CursorEnd()
+	editor.Focus()
+	return editor
+}
+
+// editorKeys are the named keys a Text field's editor understands, as the key
+// strings HandleInteraction receives.
+var editorKeys = map[string]tea.KeyMsg{
+	"left":          {Type: tea.KeyLeft},
+	"right":         {Type: tea.KeyRight},
+	"home":          {Type: tea.KeyHome},
+	"end":           {Type: tea.KeyEnd},
+	"backspace":     {Type: tea.KeyBackspace},
+	"delete":        {Type: tea.KeyDelete},
+	"ctrl+a":        {Type: tea.KeyCtrlA},
+	"ctrl+b":        {Type: tea.KeyCtrlB},
+	"ctrl+d":        {Type: tea.KeyCtrlD},
+	"ctrl+e":        {Type: tea.KeyCtrlE},
+	"ctrl+f":        {Type: tea.KeyCtrlF},
+	"ctrl+h":        {Type: tea.KeyCtrlH},
+	"ctrl+k":        {Type: tea.KeyCtrlK},
+	"ctrl+u":        {Type: tea.KeyCtrlU},
+	"ctrl+w":        {Type: tea.KeyCtrlW},
+	"ctrl+left":     {Type: tea.KeyCtrlLeft},
+	"ctrl+right":    {Type: tea.KeyCtrlRight},
+	"alt+left":      {Type: tea.KeyLeft, Alt: true},
+	"alt+right":     {Type: tea.KeyRight, Alt: true},
+	"alt+backspace": {Type: tea.KeyBackspace, Alt: true},
+	"alt+delete":    {Type: tea.KeyDelete, Alt: true},
+	"alt+b":         {Type: tea.KeyRunes, Runes: []rune{'b'}, Alt: true},
+	"alt+f":         {Type: tea.KeyRunes, Runes: []rune{'f'}, Alt: true},
+	"alt+d":         {Type: tea.KeyRunes, Runes: []rune{'d'}, Alt: true},
+	"space":         {Type: tea.KeyRunes, Runes: []rune{' '}},
+}
+
+// editText applies one key to the active Text field's editor.
+func (m *Model) editText(key string) {
+	msg, ok := editorKeys[key]
+	if !ok {
+		if utf8.RuneCountInString(key) != 1 {
+			return
+		}
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+	}
+	m.editor, _ = m.editor.Update(msg)
+	m.fields[m.focus].Value = m.editor.Value()
 }
 
 func (m *Model) beginMulti(field Field) {
@@ -320,21 +417,7 @@ func (m *Model) handleActive(field Field, key string) bool {
 	if field.Kind != Text {
 		return true
 	}
-	switch key {
-	case "backspace":
-		value := []rune(field.Value)
-		if len(value) > 0 {
-			m.fields[m.focus].Value = string(value[:len(value)-1])
-		}
-		return true
-	case "space", " ":
-		m.fields[m.focus].Value += " "
-		return true
-	}
-	if utf8.RuneCountInString(key) == 1 {
-		m.fields[m.focus].Value += key
-		return true
-	}
+	m.editText(key)
 	return true
 }
 
@@ -447,13 +530,13 @@ func (m Model) render(field Field, focused bool, width int) string {
 		}
 		return strings.Join(rows, "\n")
 	case Button:
-		return highlightRow(marker+style.Render("[ "+field.Label+" ]"), focused, width)
+		return "  " + pageactions.Inline(field.Label, focused)
 	case Number:
 		value = "[ - ]  " + field.Value + "  [ + ]"
 	default:
 		value = field.Value
 		if field.Kind == Text && m.activeID == field.ID {
-			value += focusStyle.Render("█")
+			value = m.editor.View()
 		}
 	}
 	return highlightRow(marker+labelStyle.Render(field.Label)+style.Render(value), focused, width)

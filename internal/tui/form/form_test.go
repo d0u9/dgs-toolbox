@@ -22,7 +22,7 @@ func TestNavigationAndControlRendering(t *testing.T) {
 		t.Fatalf("wrapped focus = %q, want option", model.FocusedID())
 	}
 	view := model.View([]string{"option", "check", "text", "radio", "button"})
-	for _, expected := range []string{"Keep", "[x] Checkbox", "Demo", "(●) Copy", "( ) Move", "[ Continue ]"} {
+	for _, expected := range []string{"Keep", "[x] Checkbox", "Demo", "(●) Copy", "( ) Move", "Continue"} {
 		if !strings.Contains(view, expected) {
 			t.Fatalf("form view does not contain %q:\n%s", expected, view)
 		}
@@ -158,5 +158,49 @@ func TestNumberControlIsBounded(t *testing.T) {
 	model.HandleInteraction("left")
 	if got := model.IntValue("workers"); got != 2 {
 		t.Fatalf("workers=%d", got)
+	}
+}
+
+func TestPasteIntoText(t *testing.T) {
+	m := New(Field{ID: "name", Kind: Text, Label: "Name", Value: "a-"}, Field{ID: "on", Kind: Checkbox, Label: "On"})
+	if !m.Paste("mobile-mbp2018-mac-01 \n") || m.Value("name") != "a-mobile-mbp2018-mac-01" || !m.CapturesText() {
+		t.Fatalf("paste: %q active %v", m.Value("name"), m.CapturesText())
+	}
+	m.HandleInteraction("enter")
+	m.UpdateNavigation("down")
+	if m.Paste("x") {
+		t.Error("pasted into a checkbox")
+	}
+}
+
+func TestTextEditingMovesTheCursor(t *testing.T) {
+	m := New(Field{ID: "host", Kind: Text, Label: "Host", Value: "mbp-mac"})
+	m.HandleInteraction("enter")
+	for _, key := range []string{"left", "left", "left", "2", "0", "1", "8", "ctrl+a", "x", "ctrl+e", "!"} {
+		m.HandleInteraction(key)
+	}
+	if got := m.Value("host"); got != "xmbp-2018mac!" {
+		t.Fatalf("value %q", got)
+	}
+	m.HandleInteraction("ctrl+a")
+	m.HandleInteraction("ctrl+k")
+	if got := m.Value("host"); got != "" {
+		t.Fatalf("ctrl+k left %q", got)
+	}
+	for _, key := range []string{"a", "space", "b", "alt+backspace"} {
+		m.HandleInteraction(key)
+	}
+	if got := m.Value("host"); got != "a " {
+		t.Fatalf("word delete left %q", got)
+	}
+	// Paste goes in at the cursor, and Esc restores the value before editing.
+	m.HandleInteraction("ctrl+a")
+	m.Paste("pre")
+	if got := m.Value("host"); got != "prea " {
+		t.Fatalf("paste at cursor %q", got)
+	}
+	m.HandleInteraction("esc")
+	if got := m.Value("host"); got != "mbp-mac" {
+		t.Fatalf("esc restored %q", got)
 	}
 }

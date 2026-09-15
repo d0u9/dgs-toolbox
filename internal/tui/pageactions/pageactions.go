@@ -32,9 +32,37 @@ var (
 	secondaryPanel = lipgloss.AdaptiveColor{Light: "#EEF2F4", Dark: "#303747"}
 	primaryStyle   = lipgloss.NewStyle().Bold(true).Foreground(panel).Background(accent)
 	secondaryStyle = lipgloss.NewStyle().Foreground(muted).Background(secondaryPanel)
+	// inlineStyle is an unfocused inline button. It needs more contrast than a
+	// page action's quiet fill, because it sits on a dialog's own panel colour,
+	// which that fill all but matches.
+	inlineStyle = lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#0F172A", Dark: "#F8FAFC"}).
+			Background(lipgloss.AdaptiveColor{Light: "#CBD5E1", Dark: "#475569"})
 )
 
 type geometry struct{ start, prevWidth, nextWidth, gap int }
+
+// Inline renders the one-row filled button used for a local action: a quiet
+// fill, or the accent fill with the › marker when focused. Both states take the
+// same width, so moving focus does not shift what is beside the button.
+func Inline(label string, focused bool) string {
+	if focused {
+		return primaryStyle.Render("  › " + label + "   ")
+	}
+	return inlineStyle.Render("    " + label + "   ")
+}
+
+// Footer is the bottom row of a dialog or overlay: the key hints on the left,
+// quiet, and the buttons on the right, so every dialog ends the same way. Hints
+// are shortened before buttons are.
+func Footer(width int, hints string, buttons ...string) string {
+	right := strings.Join(buttons, "  ")
+	room := max(0, width-lipgloss.Width(right)-2)
+	hints = ansi.Truncate(hints, room, "…")
+	left := lipgloss.NewStyle().Foreground(muted).Render(hints)
+	gap := max(1, width-lipgloss.Width(hints)-lipgloss.Width(right))
+	return left + strings.Repeat(" ", gap) + right
+}
 
 // View renders two-line navigation buttons after one row of breathing space.
 // Solid fills distinguish page actions from bordered data fields.
