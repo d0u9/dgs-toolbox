@@ -160,16 +160,41 @@ A **warning** leaves the file loaded:
 
 ## The keys page
 
-`dgs cred keys` is read-only. It lists:
+`dgs cred keys` is read-only. `dgs cred` opens a picker, since more commands
+will join it.
 
-- **Identities** — the file, its type, its derived public key, whether it is
-  passphrase-protected or unsupported, the host it matches, and any read error
-  or warning.
-- **Hosts** — each host with its keys: description, key type, shortened public
-  key and fingerprint, and whether this machine holds the matching identity.
-- **Groups** — each group with its hosts.
+It has three tabs — **IDENTITIES**, **HOSTS**, **GROUPS** — switched with `[`
+and `]` or a click. Each uses the two-column, leading-narrow skeleton: a list on
+the left, the selected entry on the right.
 
-A public key can be copied, and shown in full with its fingerprint.
+- **Identities** — each identity as a two-row item: its path (with `~`, and
+  `:line` for an age key), then its type, status and the host it matches or
+  *unregistered*. The right shows the path, type, status and reason, matching
+  host and key description, warnings, the full public key and an SSH key's
+  fingerprint. An unregistered identity says to add its public key to
+  `hosts/<name>.json`.
+- **Hosts** — each host, marked `!` when it has warnings. The right shows the
+  file, the groups it belongs to, its warnings, and its keys as a list: the
+  description, then the type and shortened key or fingerprint, marked when this
+  machine holds the identity. The full public key of the key under the cursor is
+  shown below. The key list is its own data field, reached with `Tab` or
+  `Alt+→`.
+- **Groups** — each group; the right shows the file, its hosts with their key
+  counts, and its warnings.
+
+A problem that belongs to no loaded entry — a file left out with an error, a
+subdirectory, an identity directory that does not exist, a file that cannot be
+read — is listed under a **PROBLEMS** divider at the end of the list in the tab
+it concerns, and selecting it shows the problem.
+
+When `credentials.json` does not exist, or names no recipient folder, the lists
+say so and name where the file is looked for.
+
+Keys: `↑↓`/`j k` move, `gg`/`G` jump, `c` copies the selected public key — an
+identity's, or the key under the cursor in a host — and `R` reloads everything
+from disk. Copying uses the terminal's OSC 52 clipboard sequence, so no external
+program runs and it also works over SSH; a terminal without OSC 52 support
+copies nothing.
 
 ## Milestones
 
