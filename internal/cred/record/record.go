@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"dgs-toolbox/internal/cred/publish"
 )
 
 // Suffix is appended to the age file's name.
@@ -79,29 +81,8 @@ func Create(path string, r Record) error {
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.dgs-part")
-	if err != nil {
-		return err
-	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tempPath, 0o644); err != nil {
-		return err
-	}
-	if err := os.Link(tempPath, path); err != nil {
-		if errors.Is(err, os.ErrExist) {
+	if err := publish.Create(path, append(data, '\n'), 0o644, 0o755); err != nil {
+		if errors.Is(err, publish.ErrExists) {
 			return fmt.Errorf("record %s already exists", path)
 		}
 		return err
@@ -117,25 +98,7 @@ func Replace(path string, r Record) error {
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.dgs-part")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
-	if _, err = temp.Write(data); err == nil {
-		err = temp.Sync()
-	}
-	if closeErr := temp.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Chmod(temp.Name(), 0o644)
-	}
-	if err == nil {
-		err = os.Rename(temp.Name(), path)
-	}
-	return err
+	return publish.Replace(path, append(data, '\n'), 0o644)
 }
 
 // Usage is which files in a vault were encrypted to a key, by their records.

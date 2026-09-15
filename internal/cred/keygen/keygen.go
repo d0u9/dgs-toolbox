@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"filippo.io/age"
 
 	"dgs-toolbox/internal/cred/identities"
+	"dgs-toolbox/internal/cred/publish"
 )
 
 // Written is an identity file that now exists.
@@ -64,53 +64,8 @@ func write(dir, name string, content []byte) (Written, error) {
 		return Written{}, err
 	}
 	path := filepath.Join(dir, name)
-	if _, err := os.Lstat(path); err == nil {
-		return Written{}, fmt.Errorf("%s already exists", path)
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := publish.Create(path, content, 0o600, 0o700); err != nil {
 		return Written{}, err
-	}
-	temp, err := os.CreateTemp(dir, "."+name+".*.dgs-part")
-	if err != nil {
-		return Written{}, err
-	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
-		return Written{}, err
-	}
-	if _, err := temp.Write(content); err == nil {
-		err = temp.Sync()
-	}
-	if closeErr := temp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return Written{}, err
-	}
-	// Parse back what reached the disk, not what was meant to.
-	back, err := os.ReadFile(tempPath)
-	if err != nil {
-		return Written{}, err
-	}
-	again, err := check(back)
-	clear(back)
-	if err != nil {
-		return Written{}, fmt.Errorf("the written file does not read back: %w", err)
-	}
-	if strings.Join(again, ",") != strings.Join(found, ",") {
-		return Written{}, errors.New("the written file reads back different keys")
-	}
-	if err := os.Link(tempPath, path); err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return Written{}, fmt.Errorf("%s already exists", path)
-		}
-		return Written{}, err
-	}
-	if handle, err := os.Open(dir); err == nil {
-		handle.Sync()
-		handle.Close()
 	}
 	return Written{Path: path, PublicKeys: found}, nil
 }
