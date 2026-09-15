@@ -50,6 +50,9 @@ type Request struct {
 	// Destination is the .age file to create.
 	Destination string
 	Recipients  []Recipient
+	// Passphrase encrypts with a passphrase instead of to Recipients; the two
+	// cannot be combined. The result is always checked with the passphrase.
+	Passphrase string
 	// Verify are this machine's identities, used to decrypt the result back.
 	// With none, the result is published unverified.
 	Verify []age.Identity
@@ -88,8 +91,12 @@ func Seal(request Request) (Result, error) {
 	if request.Now.IsZero() {
 		request.Now = time.Now()
 	}
-	if len(request.Recipients) == 0 {
-		return Result{}, errors.New("no recipients")
+	recipients, verifyWith, err := encryptTo(request.Recipients, request.Passphrase)
+	if err != nil {
+		return Result{}, err
+	}
+	if verifyWith != nil {
+		request.Verify = verifyWith
 	}
 	result := Result{Path: request.Destination, RecordPath: record.PathFor(request.Destination)}
 	for _, path := range []string{result.Path, result.RecordPath} {
@@ -98,14 +105,6 @@ func Seal(request Request) (Result, error) {
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return Result{}, err
 		}
-	}
-	recipients := make([]age.Recipient, 0, len(request.Recipients))
-	for _, r := range request.Recipients {
-		parsed, err := parseRecipient(r.PublicKey)
-		if err != nil {
-			return Result{}, fmt.Errorf("recipient %s: %w", r.PublicKey, err)
-		}
-		recipients = append(recipients, parsed)
 	}
 
 	info, err := os.Lstat(request.Source)
@@ -150,17 +149,56 @@ func Seal(request Request) (Result, error) {
 	}
 	syncDir(filepath.Dir(request.Destination))
 
-	rec := record.Record{Created: request.Now, Recipients: make([]record.Recipient, len(request.Recipients))}
+	rec := record.Record{Created: request.Now}
 	if result.Archived {
 		rec.Archive = record.ArchiveTarGz
 	}
-	for i, r := range request.Recipients {
-		rec.Recipients[i] = record.Recipient{PublicKey: r.PublicKey, Host: r.Host, Description: r.Description}
-	}
+	setEncryption(&rec, request.Recipients, request.Passphrase)
 	if err := record.Create(result.RecordPath, rec); err != nil {
 		return result, fmt.Errorf("%s was published, but its record was not written: %w", request.Destination, err)
 	}
 	return result, nil
+}
+
+// encryptTo parses the recipients, or makes the passphrase's recipient and the
+// identity that checks it; age does not combine the two.
+func encryptTo(keys []Recipient, passphrase string) ([]age.Recipient, []age.Identity, error) {
+	switch {
+	case passphrase != "" && len(keys) > 0:
+		return nil, nil, errors.New("a passphrase cannot be combined with recipients")
+	case passphrase != "":
+		scrypt, err := age.NewScryptRecipient(passphrase)
+		if err != nil {
+			return nil, nil, err
+		}
+		identity, err := age.NewScryptIdentity(passphrase)
+		if err != nil {
+			return nil, nil, err
+		}
+		return []age.Recipient{scrypt}, []age.Identity{identity}, nil
+	case len(keys) == 0:
+		return nil, nil, errors.New("no recipients")
+	}
+	recipients := make([]age.Recipient, 0, len(keys))
+	for _, r := range keys {
+		parsed, err := parseRecipient(r.PublicKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("recipient %s: %w", r.PublicKey, err)
+		}
+		recipients = append(recipients, parsed)
+	}
+	return recipients, nil, nil
+}
+
+func setEncryption(rec *record.Record, keys []Recipient, passphrase string) {
+	rec.Encryption = ""
+	if passphrase != "" {
+		rec.Encryption = record.EncryptionPassphrase
+	}
+	rec.Recipients = make([]record.Recipient, len(keys))
+	for i, r := range keys {
+		rec.Recipients[i] = record.Recipient{PublicKey: r.PublicKey, Host: r.Host, Description: r.Description}
+	}
 }
 
 func parseRecipient(key string) (age.Recipient, error) {
@@ -293,7 +331,7 @@ func verify(part string, want [32]byte, identities []age.Identity) error {
 	defer file.Close()
 	decrypted, err := age.Decrypt(armoredOrNot(file), identities...)
 	if err != nil {
-		return fmt.Errorf("the written file does not decrypt with this machine's identities: %w", err)
+		return fmt.Errorf("the written file does not decrypt back: %w", err)
 	}
 	hash := sha256.New()
 	if _, err := io.Copy(hash, decrypted); err != nil {
@@ -332,6 +370,9 @@ type ResealRequest struct {
 	// Open are identities that decrypt the file as it is.
 	Open       []age.Identity
 	Recipients []Recipient
+	// Passphrase encrypts the new file with a passphrase instead of to
+	// Recipients, and checks it with that passphrase.
+	Passphrase string
 	// Verify are this machine's identities, used to decrypt the new file back.
 	// With none, it replaces the old one unverified.
 	Verify  []age.Identity
@@ -339,7 +380,8 @@ type ResealRequest struct {
 	Now     time.Time
 }
 
-// Reseal decrypts the file, encrypts it again to the new recipients with a new
+// Reseal decrypts the file, encrypts it again to the new recipients, or with a
+// new passphrase, with a new
 // file key, checks the result by decrypting it back, and replaces the file and
 // its record. The format, binary or armored, is kept. Nothing is kept of the old
 // version: a copy of it is exactly what a removed recipient can still open.
@@ -350,16 +392,12 @@ func Reseal(request ResealRequest) (Result, error) {
 	if request.Now.IsZero() {
 		request.Now = time.Now()
 	}
-	if len(request.Recipients) == 0 {
-		return Result{}, errors.New("no recipients")
+	recipients, verifyWith, err := encryptTo(request.Recipients, request.Passphrase)
+	if err != nil {
+		return Result{}, err
 	}
-	recipients := make([]age.Recipient, 0, len(request.Recipients))
-	for _, r := range request.Recipients {
-		parsed, err := parseRecipient(r.PublicKey)
-		if err != nil {
-			return Result{}, fmt.Errorf("recipient %s: %w", r.PublicKey, err)
-		}
-		recipients = append(recipients, parsed)
+	if verifyWith != nil {
+		request.Verify = verifyWith
 	}
 	original, err := os.ReadFile(request.Path)
 	if err != nil {
@@ -409,10 +447,7 @@ func Reseal(request ResealRequest) (Result, error) {
 	}
 	now := request.Now
 	rec.Updated = &now
-	rec.Recipients = make([]record.Recipient, len(request.Recipients))
-	for i, r := range request.Recipients {
-		rec.Recipients[i] = record.Recipient{PublicKey: r.PublicKey, Host: r.Host, Description: r.Description}
-	}
+	setEncryption(&rec, request.Recipients, request.Passphrase)
 	if err := record.Replace(result.RecordPath, rec); err != nil {
 		return result, fmt.Errorf("%s was re-encrypted, but its record was not updated: %w", request.Path, err)
 	}

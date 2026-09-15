@@ -93,6 +93,10 @@ recipients of a file already there is E3 and not part of this.
    be unchecked on its own; a group or host shows `[x]`, `[-]` or `[ ]` for all,
    some or none of its keys. The keys this machine holds an identity for start
    checked.
+   - `p` opens **Passphrase** instead: the passphrase and a repeat of it, in
+     masked fields; an empty one or a mismatch is refused. age does not combine
+     a passphrase with recipients, so the checked keys are not used. `Esc`
+     returns to the checklist and forgets what was typed.
 4. **Name.** The file name, editable, and the directory, changeable with the File
    Explorer.
 5. **Confirm.** The shared confirmation dialog names the source, the file to be
@@ -101,8 +105,8 @@ recipients of a file already there is E3 and not part of this.
 
 Refused before confirming:
 
-- no recipient is checked;
-- the recipient folder has errors, since a host could be silently missing from a
+- no recipient is checked and no passphrase was given;
+- the recipient folder has errors, when encrypting to recipients, since a host could be silently missing from a
   group;
 - the file to be written, or its record, already exists — replacing a file is E3;
 - the plaintext is larger than 64 MiB, the limit a file can later be opened
@@ -110,6 +114,10 @@ Refused before confirming:
 
 When no checked key belongs to this machine, the confirmation says the file
 cannot be opened or checked here, and the result is published unverified.
+
+With a passphrase the confirmation says the file cannot be opened without it and
+that a forgotten one cannot be recovered. The result is always checked, with the
+passphrase.
 
 ### What is written
 
@@ -127,7 +135,8 @@ cannot be opened or checked here, and the result is published unverified.
 1. The plaintext is read into memory and its SHA-256 taken.
 2. It is encrypted to a `<name>.age.dgs-part` file created beside the
    destination, which must not already exist, and synced.
-3. The part file is decrypted back with this machine's identities and its
+3. The part file is decrypted back with this machine's identities, or the
+   passphrase, and its
    SHA-256 compared; a mismatch removes it and fails.
 4. It is linked to the destination name, which fails rather than replace a file
    that appeared meanwhile, and the part name removed.
@@ -156,6 +165,8 @@ Beside each file, `<name>.age.json`:
 ```
 
 - `archive` is `tar.gz` for a folder and absent for a file.
+- `encryption` is `passphrase` for a file encrypted with a passphrase, whose
+  `recipients` is then empty, and absent otherwise.
 - `updated` is when the recipients were last changed, absent until they are.
 - A recipient is its public key; `host` and `description` are what the recipient
   folder called it when the file was written, kept for reading, not matched on.
