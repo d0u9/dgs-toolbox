@@ -91,7 +91,10 @@ func TestVaultPage(t *testing.T) {
 	}
 	m = vaultKeys(t, m, "enter", "G")
 	text = stripVault(m)
-	for _, want := range []string{"✓ decryptable", "Opens", "age.txt:1", "X25519 ×1"} {
+	if _, report, ok := m.selectedFile(); !ok || !strings.HasSuffix(report.OpenedBy, "age.txt:1") {
+		t.Errorf("top.age opened by %q", report.OpenedBy)
+	}
+	for _, want := range []string{"✓ decryptable", "Opens", "X25519 ×1"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("top.age detail lacks %q:\n%s", want, text)
 		}

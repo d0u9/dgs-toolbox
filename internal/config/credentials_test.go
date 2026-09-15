@@ -67,6 +67,9 @@ func TestLoadCredentials(t *testing.T) {
 	if strings.Join(credentials.Identities, ",") != filepath.Join(home, ".ssh")+",/opt/keys" {
 		t.Errorf("identities %q", credentials.Identities)
 	}
+	if credentials.NewIdentityDir != DefaultNewIdentityDir() {
+		t.Errorf("new identity dir %q", credentials.NewIdentityDir)
+	}
 	if credentials.Vault != filepath.Join(home, "vault") {
 		t.Errorf("vault %q", credentials.Vault)
 	}
@@ -78,6 +81,7 @@ func TestLoadCredentials(t *testing.T) {
 		`{"identity_dirs":[]}`:           "unknown field",
 		`{"recipients":"relative"}`:      "recipients",
 		`{"vault":"relative"}`:           "vault",
+		`{"new_identity_dir":"rel"}`:     "new_identity_dir",
 		`{"identities":["$CRED_UNSET"]}`: "identities[0]",
 		`{} {}`:                          "content after",
 	} {
@@ -92,7 +96,7 @@ func TestLoadCredentials(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if credentials, found, err := LoadCredentials(path); err != nil || !found || len(credentials.Identities) != 0 || credentials.Recipients != "" {
+	if credentials, found, err := LoadCredentials(path); err != nil || !found || len(credentials.Identities) != 0 || credentials.Recipients != "" || credentials.NewIdentityDir != DefaultNewIdentityDir() {
 		t.Errorf("empty file: %+v %v %v", credentials, found, err)
 	}
 }

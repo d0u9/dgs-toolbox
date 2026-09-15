@@ -8,7 +8,8 @@
 {
   "identities": ["~/.age", "~/.ssh"],
   "recipients": "$DOT_CONF_DIR/recipients",
-  "vault": "~/Credentials/vault"
+  "vault": "~/Credentials/vault",
+  "new_identity_dir": "~/.config/age"
 }
 ```
 
@@ -16,6 +17,7 @@
 | --- | --- | --- |
 | `identities` | Directories searched recursively for private keys on this machine. Files are recognised by content; files over 128 KiB are skipped. A directory that does not exist is reported and skipped, so one file can be shared by machines that do not all have every directory. | empty — no identities |
 | `recipients` | The folder holding `hosts/` and `groups/`. | empty — no recipients |
+| `new_identity_dir` | Where generated and imported age identities are written. It should also be listed in `identities`. | `$XDG_CONFIG_HOME/age`, or `~/.config/age` |
 | `vault` | The folder of age files `dgs cred vault` opens at. It can be switched on the page. | empty — the page asks for a folder |
 
 ## Paths

@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -27,10 +28,35 @@ const (
 	GroupPrefix = "g-"
 )
 
+// Meta is what a host file records about a key besides the key itself. Only
+// the description is written by hand; the rest is filled in by dgs when it adds
+// the key, and may be absent from a file written by hand.
+type Meta struct {
+	Description string `json:"description"`
+	// Origin is how the key came to be listed: generated, imported, registered
+	// or added.
+	Origin string `json:"origin,omitempty"`
+	// Added is the date it was listed, as YYYY-MM-DD.
+	Added string `json:"added,omitempty"`
+	// PrivateKey is where the private key lives on its own host, as that host
+	// would write it, when dgs knows.
+	PrivateKey string `json:"private_key,omitempty"`
+	// Comment is the comment an SSH public key line carried, often user@host.
+	Comment string `json:"comment,omitempty"`
+}
+
+// Origins a key may record.
+const (
+	OriginGenerated  = "generated"
+	OriginImported   = "imported"
+	OriginRegistered = "registered"
+	OriginAdded      = "added"
+)
+
 // Key is one public key of a host.
 type Key struct {
 	PublicKey
-	Description string
+	Meta
 }
 
 // Host is a machine and the keys it can decrypt with.
@@ -111,8 +137,8 @@ type hostFile struct {
 }
 
 type keyFile struct {
-	PublicKey   string `json:"public_key"`
-	Description string `json:"description"`
+	PublicKey string `json:"public_key"`
+	Meta
 }
 
 type groupFile struct {
@@ -275,6 +301,11 @@ func (l *loader) host(path, name string) (Host, bool) {
 			ok = false
 			continue
 		}
+		if err := checkMeta(entry.Meta); err != nil {
+			l.report(Error, path, "key %d: %v", i+1, err)
+			ok = false
+			continue
+		}
 		if strings.TrimSpace(entry.Description) == "" {
 			l.report(Error, path, "key %d: description is required", i+1)
 			ok = false
@@ -286,7 +317,9 @@ func (l *loader) host(path, name string) (Host, bool) {
 			continue
 		}
 		seen[key.Key] = i + 1
-		host.Keys = append(host.Keys, Key{PublicKey: key, Description: strings.TrimSpace(entry.Description)})
+		meta := entry.Meta
+		meta.Description = strings.TrimSpace(meta.Description)
+		host.Keys = append(host.Keys, Key{PublicKey: key, Meta: meta})
 	}
 	if !ok {
 		return Host{}, false
@@ -365,4 +398,18 @@ func shorten(key string) string {
 		return key
 	}
 	return key[:12] + "…" + key[len(key)-8:]
+}
+
+func checkMeta(meta Meta) error {
+	switch meta.Origin {
+	case "", OriginGenerated, OriginImported, OriginRegistered, OriginAdded:
+	default:
+		return fmt.Errorf("origin %q is not one of generated, imported, registered, added", meta.Origin)
+	}
+	if meta.Added != "" {
+		if _, err := time.Parse("2006-01-02", meta.Added); err != nil {
+			return fmt.Errorf("added %q is not a YYYY-MM-DD date", meta.Added)
+		}
+	}
+	return nil
 }

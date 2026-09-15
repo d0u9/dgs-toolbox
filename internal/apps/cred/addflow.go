@@ -14,6 +14,7 @@ import (
 	"dgs-toolbox/internal/cred/seal"
 	"dgs-toolbox/internal/tui/confirm"
 	"dgs-toolbox/internal/tui/fileexplorer"
+	"dgs-toolbox/internal/tui/pageactions"
 	"dgs-toolbox/internal/tui/scrolllist"
 
 	"filippo.io/age"
@@ -223,20 +224,27 @@ func (m *vaultModel) refreshRecipientItems() {
 	groups := 0
 	for i, row := range flow.rows {
 		box := m.checkbox(row)
-		var label string
+		// Two rows each, so a long description is not cut off by the key.
+		var label, detail string
 		switch row.kind {
 		case rowGroup:
 			groups++
-			label = fmt.Sprintf("%s %s  %s", box, row.group.Name, mutedStyle.Render(plural(len(row.group.Hosts), "host")))
+			label = fmt.Sprintf("%s %s", box, row.group.Name)
+			detail = "    " + plural(len(row.group.Hosts), "host")
 		case rowHost:
 			label = fmt.Sprintf("%s %s", box, row.host.Name)
+			detail = "    " + plural(len(row.host.Keys), "key")
+			if len(row.host.Keys) == 0 {
+				detail = "    no keys; nothing to check"
+			}
 		case rowKey:
-			label = fmt.Sprintf("    %s %s  %s", box, row.key.Description, mutedStyle.Render(shortKey(row.key.PublicKey)))
+			label = fmt.Sprintf("    %s %s", box, row.key.Description)
+			detail = "        " + shortKey(row.key.PublicKey)
 			if m.snap.held[row.key.Key] {
-				label += "  ● this machine"
+				detail += "  ● this machine"
 			}
 		}
-		items[i] = scrolllist.Item{ID: fmt.Sprint(i), Label: label}
+		items[i] = scrolllist.Item{ID: fmt.Sprint(i), Label: label, Detail: detail}
 	}
 	flow.list.SetItems(items)
 	flow.list.SetDivider(groups, "HOSTS")
@@ -459,7 +467,7 @@ func (m vaultModel) addView() string {
 			lines = append(lines, mutedStyle.Render("· The recipient folder has no hosts."))
 		} else {
 			list := flow.list
-			list.SetSize(inner, max(1, h-8))
+			list.SetSize(inner, max(1, h-9))
 			lines = append(lines, list.View(true, titleStyle, mutedStyle))
 		}
 	case addName, addConfirm, addRunning:
@@ -482,9 +490,30 @@ func (m vaultModel) addView() string {
 		lines = append(lines, "")
 		lines = append(lines, wrapped(warnStyle.Render("! "+flow.err), inner)...)
 	}
+	switch flow.stage {
+	case addRecipients:
+		return modalBox(lines, pageactions.Footer(inner, fmt.Sprintf("space Check · esc Back · %s checked", plural(len(m.chosenRecipients()), "key")), pageactions.Inline("Continue", true)), w, h)
+	case addName:
+		return modalBox(lines, pageactions.Footer(inner, "tab Field · esc Back", pageactions.Inline("Continue", !flow.onDirectory)), w, h)
+	}
 	if flow.stage == addConfirm {
 		return flow.dialog.View(min(88, m.width-4))
 	}
+	return modalStyle.Width(w - 2).Height(h - 2).MaxWidth(w).MaxHeight(h).Render(strings.Join(lines, "\n"))
+}
+
+// modalBox draws an overlay with its footer on the last row.
+func modalBox(lines []string, footer string, w, h int) string {
+	rows := max(1, h-2)
+	// An entry may itself hold several rows, such as a rendered form.
+	lines = strings.Split(strings.Join(lines, "\n"), "\n")
+	if len(lines) > rows-1 {
+		lines = lines[:rows-1]
+	}
+	for len(lines) < rows-1 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, footer)
 	return modalStyle.Width(w - 2).Height(h - 2).MaxWidth(w).MaxHeight(h).Render(strings.Join(lines, "\n"))
 }
 

@@ -56,3 +56,51 @@ func TestReadRefuses(t *testing.T) {
 		}
 	}
 }
+
+func TestUsing(t *testing.T) {
+	vault := t.TempDir()
+	create := func(path string, keys ...string) {
+		full := filepath.Join(vault, path)
+		os.MkdirAll(filepath.Dir(full), 0o755)
+		var recipients []Recipient
+		for _, key := range keys {
+			recipients = append(recipients, Recipient{PublicKey: key})
+		}
+		if err := Create(PathFor(full), Record{Recipients: recipients}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	create("only.age", "age1me")
+	create("servers/shared.age", "age1me", "age1nas")
+	create("other.age", "age1nas")
+	create(".git/hidden.age", "age1me")
+	os.WriteFile(filepath.Join(vault, "broken.age.json"), []byte("{"), 0o644)
+
+	usage, err := Using(vault, "age1me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(usage.Files, ",") != "only.age,servers/shared.age" || strings.Join(usage.Only, ",") != "only.age" || strings.Join(usage.Unreadable, ",") != "broken.age" {
+		t.Errorf("usage %+v", usage)
+	}
+}
+
+func TestUsingAny(t *testing.T) {
+	vault := t.TempDir()
+	for name, keys := range map[string][]string{"both.age": {"age1a", "age1b"}, "mixed.age": {"age1a", "age1c"}, "none.age": {"age1c"}} {
+		var recipients []Recipient
+		for _, key := range keys {
+			recipients = append(recipients, Recipient{PublicKey: key})
+		}
+		if err := Create(PathFor(filepath.Join(vault, name)), Record{Recipients: recipients}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	usage, err := UsingAny(vault, []string{"age1a", "age1b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(usage.Files, ",") != "both.age,mixed.age" || strings.Join(usage.Only, ",") != "both.age" {
+		t.Errorf("usage %+v", usage)
+	}
+}

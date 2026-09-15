@@ -223,8 +223,8 @@ func TestMatches(t *testing.T) {
 	found := Parse([]byte(identity.String()))[0]
 	public := found.Public
 	folder := recipients.Folder{Hosts: []recipients.Host{
-		{Name: "nas", Keys: []recipients.Key{{PublicKey: public, Description: "main"}}},
-		{Name: "copy", Keys: []recipients.Key{{PublicKey: public, Description: "same"}}},
+		{Name: "nas", Keys: []recipients.Key{{PublicKey: public, Meta: recipients.Meta{Description: "main"}}}},
+		{Name: "copy", Keys: []recipients.Key{{PublicKey: public, Meta: recipients.Meta{Description: "same"}}}},
 		{Name: "other"},
 	}}
 	matches := Matches(found, folder)

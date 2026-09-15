@@ -90,6 +90,7 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `geo.gpx.tiles` | [geo](geo.md) | empty — the built-in maps only |
 | `identities` (`credentials.json`) | [cred](cred.md) | empty — no identities |
 | `recipients` (`credentials.json`) | [cred](cred.md) | empty — no recipients |
+| `new_identity_dir` (`credentials.json`) | [cred](cred.md) | `~/.config/age` |
 | `vault` (`credentials.json`) | [cred](cred.md) | empty — the page asks for a folder |
 
 ## Keeping this current
