@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"filippo.io/age"
+	"filippo.io/age/agessh"
 	"golang.org/x/crypto/ssh"
 
 	"dgs-toolbox/internal/cred/recipients"
@@ -300,4 +301,27 @@ func Matches(identity Identity, folder recipients.Folder) []Match {
 		}
 	}
 	return matches
+}
+
+// Open reads a usable identity back from its file as an age identity, ready to
+// decrypt with. It is read again rather than kept from Discover, so the
+// private key is held only while it is being used.
+func Open(identity Identity) (age.Identity, error) {
+	if identity.Status != Usable {
+		return nil, fmt.Errorf("%s identity cannot be opened", identity.Status)
+	}
+	data, err := os.ReadFile(identity.Path)
+	if err != nil {
+		return nil, err
+	}
+	if identity.Line == 0 {
+		return agessh.ParseIdentity(data)
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for number := 1; scanner.Scan(); number++ {
+		if number == identity.Line {
+			return age.ParseX25519Identity(strings.TrimSpace(scanner.Text()))
+		}
+	}
+	return nil, fmt.Errorf("%s has no line %d", identity.Path, identity.Line)
 }
