@@ -82,6 +82,8 @@ type vaultModel struct {
 
 	picking bool
 	picker  fileexplorer.Model
+	// add is the add flow while it is open.
+	add *addFlow
 }
 
 func newVaultModel() vaultModel {
@@ -236,6 +238,12 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitInspected(msg.generation, m.results)
 	}
 
+	if sealed, ok := msg.(sealedMsg); ok && m.add != nil {
+		return m.finishAdd(sealed)
+	}
+	if m.add != nil {
+		return m.updateAdd(msg)
+	}
 	if m.picking {
 		return m.updatePicker(msg)
 	}
@@ -272,6 +280,9 @@ func (m vaultModel) updateKey(key string) (tea.Model, tea.Cmd) {
 	case "R":
 		scan := m.scan(m.root)
 		return m, scan
+	case "a":
+		cmd := m.startAdd()
+		return m, cmd
 	case "o":
 		start := m.root
 		if start == "" {
@@ -482,6 +493,9 @@ func (m vaultModel) View() string {
 	}
 	left, right := m.columns()
 	workspace := lipgloss.JoinHorizontal(lipgloss.Top, m.leftColumn(left), " ", m.rightColumn(right))
+	if m.add != nil {
+		return overlay.Place(workspace, m.addView(), m.width, m.height)
+	}
 	if m.picking {
 		return overlay.Place(workspace, m.pickerView(), m.width, m.height)
 	}
@@ -625,10 +639,23 @@ func (m vaultModel) pickerView() string {
 }
 
 func (m vaultModel) CapturesShellKey(key string) bool {
+	if m.add != nil {
+		switch m.add.stage {
+		case addSource, addDirectory:
+			return key == "esc" || (key == "q" && m.add.picker.CapturesText())
+		case addName:
+			return key == "esc" || key == "q" || key == "backspace"
+		}
+		return key == "esc" || key == "q"
+	}
 	return m.picking && (key == "esc" || (key == "q" && m.picker.CapturesText()))
 }
 
 func (m vaultModel) Status() tui.Status {
+	if m.add != nil {
+		left, right := m.addStatus()
+		return tui.Status{Left: left, Center: tilde(m.add.directory), Right: right}
+	}
 	if m.picking {
 		return tui.Status{Left: "BROWSE", Center: "VAULT FOLDER", Right: m.picker.Hint()}
 	}
@@ -640,9 +667,9 @@ func (m vaultModel) Status() tui.Status {
 	if center == "" {
 		center = m.summary()
 	}
-	right := "↑↓ Move  o Folder  R Rescan"
+	right := "↑↓ Move  a Add  o Folder  R Rescan"
 	if _, ok := m.selectedDir(); ok {
-		right = "↑↓ Move  ↵ Fold  o Folder  R Rescan"
+		right = "↑↓ Move  ↵ Fold  a Add  o Folder  R Rescan"
 	}
 	return tui.Status{Left: left, Center: center, Right: right}
 }
