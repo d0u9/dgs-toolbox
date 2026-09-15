@@ -179,8 +179,9 @@ Beside each file, `<name>.age.json`:
 
 - A **decryptable** file starts straight away; one that **needs a passphrase**
   asks for the passphrase of its protected SSH identity first, unlocked for this
-  change only. A **passphrase** file has no recipients to change, and other
-  statuses cannot be decrypted, so both are refused.
+  change only. A **passphrase** file has no recipients: `e` changes its
+  passphrase instead, below. Other statuses cannot be decrypted and are
+  refused.
 - The checklist is the one adding uses. It starts with the keys the file's
   record lists checked, and lists recorded keys the recipient folder no longer
   has under **not in the recipient folder**, checked, so that they can be
@@ -206,6 +207,21 @@ Re-encrypting:
    old version is kept: it is exactly what a removed key can still open.
 5. The record is rewritten through a temporary file: `created` and `archive`
    kept, `updated` set, `recipients` replaced. A file without a record gains one.
+
+## Changing a passphrase
+
+`e` on a **passphrase** file changes its passphrase.
+
+- Three masked fields: the current passphrase, the new one and a repeat. An
+  empty field, a repeat that does not match, or a new passphrase equal to the
+  current one is refused.
+- The current passphrase is checked by decrypting, after confirming; a wrong
+  one returns to the fields and says so.
+- The confirmation says that the old passphrase can still open any copy of the
+  old version, and that a secret it holds should be changed too.
+- The file is re-encrypted as above, with the new passphrase instead of
+  recipients, and always checked with it. The record keeps `encryption:
+  passphrase` and sets `updated`.
 
 ## Opening a file (C)
 

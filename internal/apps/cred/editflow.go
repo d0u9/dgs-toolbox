@@ -25,15 +25,24 @@ type editStage int
 const (
 	editPassphrase editStage = iota
 	editRecipients
+	// editChangePassphrase asks for the current passphrase of a passphrase
+	// file and the new one, twice.
+	editChangePassphrase
 	editConfirm
 	editRunning
 )
 
-// editFlow is changing the recipients of a file already in the vault.
+// editFlow is changing the recipients of a file already in the vault, or the
+// passphrase of a file encrypted with one.
 type editFlow struct {
 	stage editStage
-	file  vault.File
-	path  string
+	// rekey is changing a passphrase; fields are the current, new and repeated
+	// passphrases and field the one focused.
+	rekey  bool
+	fields [3]textinput.Model
+	field  int
+	file   vault.File
+	path   string
 	// identity is the protected identity the file needs, and unlocked what its
 	// passphrase opened; both nil for a file this machine opens as it is.
 	identity *identities.Identity
@@ -86,8 +95,17 @@ func (m *vaultModel) startEdit() tea.Cmd {
 		flow.input.EchoCharacter = '•'
 		flow.input.Focus()
 	case vault.Passphrase:
-		m.notice = "! A file encrypted with a passphrase has no recipients to change"
-		return nil
+		flow.rekey = true
+		flow.stage = editChangePassphrase
+		for i := range flow.fields {
+			flow.fields[i] = textinput.New()
+			flow.fields[i].Prompt = ""
+			flow.fields[i].EchoMode = textinput.EchoPassword
+			flow.fields[i].EchoCharacter = '•'
+		}
+		flow.fields[0].Focus()
+		m.edit = flow
+		return textinput.Blink
 	case vault.Unchecked:
 		m.notice = "Still checking this file"
 		return nil
@@ -158,6 +176,8 @@ func (m vaultModel) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 			flow.input, cmd = flow.input.Update(key)
 			return m, cmd
 		}
+	case editChangePassphrase:
+		return m.updateChangePassphrase(key)
 	case editRecipients:
 		switch key.String() {
 		case "esc":
@@ -173,12 +193,70 @@ func (m vaultModel) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch decision {
 		case confirm.Cancelled:
 			flow.stage = editRecipients
+			if flow.rekey {
+				flow.stage = editChangePassphrase
+			}
 		case confirm.Confirmed:
 			flow.stage = editRunning
 			return m, m.runEdit()
 		}
 	}
 	return m, nil
+}
+
+func (m vaultModel) updateChangePassphrase(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	flow := m.edit
+	switch key.String() {
+	case "esc":
+		m.edit = nil
+		return m, nil
+	case "tab", "down":
+		flow.focusField((flow.field + 1) % len(flow.fields))
+		return m, nil
+	case "shift+tab", "up":
+		flow.focusField((flow.field + len(flow.fields) - 1) % len(flow.fields))
+		return m, nil
+	case "enter":
+		current, next, repeat := flow.fields[0].Value(), flow.fields[1].Value(), flow.fields[2].Value()
+		switch {
+		case current == "":
+			flow.err = "Type the current passphrase."
+			flow.focusField(0)
+		case next == "":
+			flow.err = ""
+			flow.focusField(1)
+		case flow.field < 2 && repeat == "":
+			flow.err = ""
+			flow.focusField(2)
+		case next != repeat:
+			flow.err = "The new passphrases do not match."
+			flow.fields[2].SetValue("")
+			flow.focusField(2)
+		case next == current:
+			flow.err = "The new passphrase is the current one."
+			flow.focusField(1)
+		default:
+			flow.err = ""
+			flow.dialog = confirm.New(confirm.Config{
+				Title:        "CHANGE PASSPHRASE",
+				Message:      fmt.Sprintf("Re-encrypt %s with the new passphrase?", path.Base(flow.file.Path)),
+				Detail:       "The old passphrase can still open any copy of the old version — git history, a backup. If it holds a secret, change the secret too.",
+				ConfirmLabel: "Re-encrypt",
+				CancelLabel:  "Back",
+			})
+			flow.stage = editConfirm
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	flow.fields[flow.field], cmd = flow.fields[flow.field].Update(key)
+	return m, cmd
+}
+
+func (flow *editFlow) focusField(field int) {
+	flow.fields[flow.field].Blur()
+	flow.field = field
+	flow.fields[field].Focus()
 }
 
 func (m vaultModel) finishUnlock(msg unlockedMsg) (tea.Model, tea.Cmd) {
@@ -271,6 +349,19 @@ func (m vaultModel) confirmEdit() (tea.Model, tea.Cmd) {
 
 func (m vaultModel) runEdit() tea.Cmd {
 	flow := m.edit
+	if flow.rekey {
+		current, next := flow.fields[0].Value(), flow.fields[1].Value()
+		request := seal.ResealRequest{Path: flow.path, Passphrase: next}
+		return func() tea.Msg {
+			identity, err := age.NewScryptIdentity(current)
+			if err != nil {
+				return resealedMsg{err: err}
+			}
+			request.Open = []age.Identity{identity}
+			result, err := seal.Reseal(request)
+			return resealedMsg{result: result, err: err}
+		}
+	}
 	request := seal.ResealRequest{Path: flow.path, Recipients: flow.choose.chosen()}
 	unlocked, snap := flow.unlocked, m.snap
 	return func() tea.Msg {
@@ -292,18 +383,31 @@ func (m vaultModel) runEdit() tea.Cmd {
 }
 
 func (m vaultModel) finishEdit(msg resealedMsg) (tea.Model, tea.Cmd) {
+	flow := m.edit
 	if msg.err != nil {
-		m.edit.stage = editRecipients
-		m.edit.err = msg.err.Error()
+		flow.stage = editRecipients
+		flow.err = msg.err.Error()
+		if flow.rekey {
+			flow.stage = editChangePassphrase
+			var noMatch *age.NoIdentityMatchError
+			if errors.As(msg.err, &noMatch) {
+				flow.err = "The current passphrase is wrong."
+				flow.fields[0].SetValue("")
+				flow.focusField(0)
+			}
+		}
 		return m, nil
 	}
-	name := path.Base(m.edit.file.Path)
+	name := path.Base(flow.file.Path)
 	m.edit = nil
 	state := "verified"
 	if !msg.result.Verified {
 		state = "unverified"
 	}
 	m.notice = fmt.Sprintf("Re-encrypted %s for %s (%s)", name, plural(msg.count, "key"), state)
+	if flow.rekey {
+		m.notice = fmt.Sprintf("Changed the passphrase of %s (%s)", name, state)
+	}
 	scan := m.scan(m.root)
 	return m, scan
 }
@@ -317,8 +421,21 @@ func (m vaultModel) editView() string {
 	inner := max(1, w-4)
 	lines := []string{titleStyle.Render("CHANGE RECIPIENTS · " + strings.ToUpper(path.Base(flow.file.Path)))}
 	var footer string
-	switch flow.stage {
-	case editPassphrase:
+	switch {
+	case flow.rekey:
+		lines = []string{titleStyle.Render("CHANGE PASSPHRASE · " + strings.ToUpper(path.Base(flow.file.Path))), ""}
+		for i, label := range []string{"Current", "New", "Repeat"} {
+			marker := "  "
+			if flow.field == i {
+				marker = "› "
+			}
+			lines = append(lines, marker+mutedStyle.Render(fmt.Sprintf("%-10s", label))+flow.fields[i].View())
+		}
+		if flow.stage == editRunning {
+			lines = append(lines, "", titleStyle.Render("Re-encrypting and checking…"))
+		}
+		footer = pageactions.Footer(inner, "tab Field · esc Cancel", pageactions.Inline("Continue", true))
+	case flow.stage == editPassphrase:
 		lines = append(lines, "")
 		lines = append(lines, wrapped(fmt.Sprintf("%s is encrypted to %s, which is protected. Its passphrase unlocks it to re-encrypt this file.", path.Base(flow.file.Path), identityLabelFull(*flow.identity)), inner)...)
 		lines = append(lines, "", "› "+flow.input.View())

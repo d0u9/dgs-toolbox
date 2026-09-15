@@ -12,7 +12,7 @@ stands. The designs are in [`keys.md`](keys.md), [`vault.md`](vault.md) and
 | C | Opening a file into memory, with passphrases | built |
 | D | Actions for key files and text | built |
 | E2 | Adding a file or folder, to recipients or with a passphrase | built |
-| E3 | Changing a file's recipients | built |
+| E3 | Changing a file's recipients, or its passphrase | built |
 | E4 | Removing or replacing a host across every file | not started |
 
 ## Deferred
