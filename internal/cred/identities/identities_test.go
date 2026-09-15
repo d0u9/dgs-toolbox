@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"filippo.io/age"
+	"filippo.io/age/agessh"
 	"golang.org/x/crypto/ssh"
 
 	"dgs-toolbox/internal/cred/recipients"
@@ -236,5 +237,52 @@ func TestMatches(t *testing.T) {
 	stranger, _ := age.GenerateX25519Identity()
 	if Matches(Parse([]byte(stranger.String()))[0], folder) != nil {
 		t.Error("unregistered identity matched")
+	}
+}
+
+func TestOpen(t *testing.T) {
+	dir := t.TempDir()
+	first, _ := age.GenerateX25519Identity()
+	second, _ := age.GenerateX25519Identity()
+	_, edPrivate, _ := ed25519.GenerateKey(rand.Reader)
+	block, err := ssh.MarshalPrivateKey(edPrivate, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "keys.txt"), []byte("# comment\n"+first.String()+"\n"+second.String()+"\n"), 0o600)
+	write(t, filepath.Join(dir, "id"), pem.EncodeToMemory(block), 0o600)
+
+	scan := Discover([]string{dir}, Options{})
+	if len(scan.Identities) != 3 {
+		t.Fatalf("identities %+v", scan.Identities)
+	}
+	for _, found := range scan.Identities {
+		opened, err := Open(found)
+		if err != nil {
+			t.Fatalf("%s:%d: %v", found.Path, found.Line, err)
+		}
+		// The opened identity decrypts what its derived public key encrypts to.
+		var recipient age.Recipient
+		if found.Line > 0 {
+			recipient, err = age.ParseX25519Recipient(found.Public.Key)
+		} else {
+			recipient, err = agessh.ParseRecipient(found.Public.Key)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out strings.Builder
+		w, err := age.Encrypt(&out, recipient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write([]byte("x"))
+		w.Close()
+		if _, err := age.Decrypt(strings.NewReader(out.String()), opened); err != nil {
+			t.Errorf("%s:%d does not decrypt for its own key: %v", found.Path, found.Line, err)
+		}
+	}
+	if _, err := Open(Identity{Status: Protected}); err == nil {
+		t.Error("opened a protected identity")
 	}
 }
