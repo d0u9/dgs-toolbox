@@ -12,6 +12,8 @@ link here; this is what a reader consults to find out *what* to write.
   in [`apps/capture/actions.md`](../apps/capture/actions.md).
 - [Photo](photo.md) — Photo Import's state file and default paths.
 - [Geo](geo.md) — where the GPX web server listens, the folder it browses, and its base maps.
+- [Credentials](cred.md) — `credentials.json`, a file of its own: where
+  identities are searched for and where the recipient folder is.
 
 Working files to copy from are in [`examples/`](../../examples), one folder per
 thing you might be setting up. A test loads every one of them, so an example
@@ -86,6 +88,8 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `geo.gpx.port` | [geo](geo.md) | `8765` |
 | `geo.gpx.root` | [geo](geo.md) | empty — the home directory |
 | `geo.gpx.tiles` | [geo](geo.md) | empty — the built-in maps only |
+| `identities` (`credentials.json`) | [cred](cred.md) | empty — no identities |
+| `recipients` (`credentials.json`) | [cred](cred.md) | empty — no recipients |
 
 ## Keeping this current
 
