@@ -3,7 +3,16 @@ name: Release
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing version tag to publish (for example, v0.1.0)
+        required: true
+        type: string
+
+env:
+  RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
 permissions:
   contents: read
@@ -15,6 +24,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_VERSION }}
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -40,6 +51,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_VERSION }}
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -56,7 +69,11 @@ jobs:
           suffix=""
           if [[ "$GOOS" == "windows" ]]; then suffix=".exe"; fi
           mkdir -p package
-          go build -trimpath -o "package/dgs${suffix}" ./cmd/dgs
+          commit="$(git rev-parse --short=12 HEAD)"
+          built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -trimpath \
+            -ldflags "-X dgs-toolbox/internal/buildinfo.Version=${RELEASE_VERSION} -X dgs-toolbox/internal/buildinfo.Commit=${commit} -X dgs-toolbox/internal/buildinfo.Date=${built}" \
+            -o "package/dgs${suffix}" ./cmd/dgs
       - name: Package
         shell: bash
         env:
@@ -64,7 +81,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
-          archive="dgs_${GITHUB_REF_NAME}_${GOOS}_${GOARCH}"
+          archive="dgs_${RELEASE_VERSION}_${GOOS}_${GOARCH}"
           if [[ "$GOOS" == "windows" ]]; then
             (cd package && zip -9 "../${archive}.zip" dgs.exe)
           else
@@ -92,6 +109,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_VERSION }}
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -105,8 +124,10 @@ jobs:
           set -euo pipefail
           test "$(go env GOARCH)" = "$EXPECTED_GOARCH"
           mkdir -p package
+          commit="$(git rev-parse --short=12 HEAD)"
+          built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           go build -trimpath \
-            -ldflags '-linkmode=external -extldflags "-sectcreate __TEXT __info_plist ./internal/desktop/reminders/Info.plist"' \
+            -ldflags "-X dgs-toolbox/internal/buildinfo.Version=${RELEASE_VERSION} -X dgs-toolbox/internal/buildinfo.Commit=${commit} -X dgs-toolbox/internal/buildinfo.Date=${built} -linkmode=external -extldflags '-sectcreate __TEXT __info_plist ./internal/desktop/reminders/Info.plist'" \
             -o package/dgs ./cmd/dgs
           codesign --force --sign - --identifier dev.dgs-toolbox.dgs package/dgs
       - name: Package
@@ -115,7 +136,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
-          tar -C package -czf "dgs_${GITHUB_REF_NAME}_darwin_${GOARCH}.tar.gz" dgs
+          tar -C package -czf "dgs_${RELEASE_VERSION}_darwin_${GOARCH}.tar.gz" dgs
       - name: Upload archive
         uses: actions/upload-artifact@v4
         with:
@@ -145,8 +166,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          gh release create "$RELEASE_VERSION" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --title "$GITHUB_REF_NAME" \
+            --title "$RELEASE_VERSION" \
             --generate-notes

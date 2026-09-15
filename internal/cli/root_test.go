@@ -51,6 +51,26 @@ func TestCommandRoutes(t *testing.T) {
 	}
 }
 
+func TestVersionFlagDoesNotStartTUI(t *testing.T) {
+	called := false
+	command := NewRootCommand(apps.All(), func(tui.Launch) error {
+		called = true
+		return nil
+	})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetArgs([]string{"--version"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("version started the TUI")
+	}
+	if got := output.String(); !strings.Contains(got, "dgs version dev") {
+		t.Fatalf("output = %q", got)
+	}
+}
+
 func TestExportConfigFlagWritesDefaultsWithoutStartingTUI(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dgs", "config.json")
 	t.Setenv(config.EnvPath, path)
