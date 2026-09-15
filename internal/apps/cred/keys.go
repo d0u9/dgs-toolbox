@@ -9,9 +9,11 @@ import (
 
 	"dgs-toolbox/internal/cred/identities"
 	"dgs-toolbox/internal/cred/recipients"
+	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/datafield"
 	"dgs-toolbox/internal/tui/fieldset"
+	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/scrolllist"
 
 	"github.com/aymanbagabas/go-osc52/v2"
@@ -37,7 +39,7 @@ const (
 	labelWidth = 9
 	// fullKeyRows is what the Hosts key pane keeps under its list for the
 	// selected key written out whole.
-	fullKeyRows = 4
+	fullKeyRows = 8
 )
 
 var (
@@ -83,12 +85,19 @@ type keysModel struct {
 	pendingGG bool
 	notice    string
 	copy      func(string) error
+	// keyFlow is generating, importing or registering a key while it is open.
+	keyFlow *keyFlow
+	// deleteFlow is the confirmation in front of a delete while it is open.
+	deleteFlow *deleteFlow
+	// trash moves a deleted identity file aside; tests replace it.
+	trash func(string) (string, error)
 }
 
 func newKeysModel() keysModel {
 	return keysModel{
 		fields: datafield.New(datafield.Field{ID: listField, Row: 0, Col: 0}, datafield.Field{ID: keysField, Row: 0, Col: 1}),
 		copy:   copyOSC52,
+		trash:  desktop.Trash,
 		keys:   scrolllist.New(),
 		lists:  [tabCount]scrolllist.Model{scrolllist.New(), scrolllist.New(), scrolllist.New()},
 	}
@@ -126,6 +135,26 @@ func (m keysModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = "Copied " + msg.what
 		}
 		return m, nil
+	case keyDoneMsg:
+		if m.keyFlow != nil {
+			return m.finishKeyFlow(msg)
+		}
+		return m, nil
+	case deletedMsg:
+		return m.finishDelete(msg)
+	}
+	if m.deleteFlow != nil {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			return m.updateDelete(key.String())
+		}
+		return m, nil
+	}
+	if m.keyFlow != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateKeyFlow(msg)
+		}
+	}
+	switch msg := msg.(type) {
 	case tui.TabSelectedMsg:
 		if msg.Index >= 0 && msg.Index < tabCount {
 			m.setTab(msg.Index)
@@ -160,6 +189,22 @@ func (m keysModel) updateKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.reload()
 	case "c":
 		return m, m.copySelected()
+	case "d":
+		m.startDelete()
+		return m, nil
+	case "a":
+		if m.tab != tabHosts || m.fields.Current() != listField {
+			return m, nil
+		}
+		cmd := m.startKeyFlow(actionAdd)
+		return m, cmd
+	case "n", "i", "r":
+		if m.tab != tabIdentities {
+			return m, nil
+		}
+		action := map[string]keyAction{"n": actionGenerate, "i": actionImport, "r": actionRegister}[key]
+		cmd := m.startKeyFlow(action)
+		return m, cmd
 	case "tab", "shift+tab":
 		if m.tab == tabHosts {
 			if m.fields.Current() == listField {
@@ -557,7 +602,28 @@ func (m keysModel) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, mutedStyle.Render("Resize terminal for Credentials Keys"))
 	}
 	left, right := m.columns()
-	return lipgloss.JoinHorizontal(lipgloss.Top, m.leftColumn(left), " ", m.rightColumn(right))
+	workspace := lipgloss.JoinHorizontal(lipgloss.Top, m.leftColumn(left), " ", m.rightColumn(right))
+	if m.keyFlow != nil {
+		return overlay.Place(workspace, m.keyFlowView(), m.width, m.height)
+	}
+	if m.deleteFlow != nil {
+		return overlay.Place(workspace, m.deleteFlow.dialog.View(min(88, m.width-4)), m.width, m.height)
+	}
+	return workspace
+}
+
+// CapturesShellKey keeps Esc, q and Backspace inside an open key form.
+func (m keysModel) CapturesShellKey(key string) bool {
+	if m.deleteFlow != nil {
+		return key == "esc" || key == "q"
+	}
+	if m.keyFlow == nil {
+		return false
+	}
+	if m.keyFlow.stage == keySource {
+		return key == "esc" || (key == "q" && m.keyFlow.picker.CapturesText())
+	}
+	return key == "esc" || key == "q" || key == "backspace"
 }
 
 func (m keysModel) leftColumn(width int) string {
@@ -613,6 +679,7 @@ func (m keysModel) keysPane(width, height int) string {
 	listRows := max(1, height-2-fullKeyRows-1)
 	lines := []string{fit(m.keys.View(focused, titleStyle, mutedStyle), listRows, inner), ""}
 	if key, ok := m.selectedKey(); ok {
+		lines = append(lines, keyMetaLines(key.Meta, inner)...)
 		lines = append(lines, wrapped(mutedStyle.Render(key.Key), inner)...)
 	}
 	return fieldset.ViewFocused("KEYS", fit(strings.Join(lines, "\n"), height-2, inner), width, focused)
@@ -669,6 +736,9 @@ func (m keysModel) groupDetail(group recipients.Group, width int) []string {
 }
 
 func (m keysModel) Status() tui.Status {
+	if m.keyFlow != nil {
+		return m.keyFlowStatus()
+	}
 	left := [tabCount]string{"IDENTITIES", "HOSTS", "GROUPS"}[m.tab]
 	if !m.loaded {
 		return tui.Status{Left: "LOADING"}
@@ -681,12 +751,16 @@ func (m keysModel) Status() tui.Status {
 	switch {
 	case m.tab == tabHosts && m.fields.Current() == keysField:
 		left = "KEYS"
-		right = "↑↓ Move  c Copy  tab Hosts"
+		right = "↑↓ Move  c Copy  d Unregister  tab Hosts"
 	case m.tab == tabHosts:
-		right = "↑↓ Move  tab Keys  [ ] Tab  R Reload"
+		right = "↑↓ Move  a Add key  d Delete  tab Keys"
 	case m.tab == tabIdentities:
+		right = "↑↓ Move  n New  i Import  [ ] Tab"
 		if identity, ok := m.selectedIdentity(); ok && identity.Public.Key != "" {
-			right = "↑↓ Move  c Copy  [ ] Tab  R Reload"
+			right = "↑↓ Move  c Copy  d Delete  n New  i Import"
+			if len(identities.Matches(identity, m.snap.folder)) == 0 {
+				right = "↑↓ Move  r Register  c Copy  d Delete  n New"
+			}
 		}
 	}
 	return tui.Status{Left: left, Center: center, Right: right}
@@ -738,6 +812,17 @@ func (m keysModel) Tabs() []tui.Tab {
 		{Label: "Hosts", Active: m.tab == tabHosts},
 		{Label: "Groups", Active: m.tab == tabGroups},
 	}
+}
+
+// keyMetaLines shows what dgs recorded about a key, the fields present only.
+func keyMetaLines(meta recipients.Meta, width int) []string {
+	var lines []string
+	for _, field := range [][2]string{{"Origin", meta.Origin}, {"Added", meta.Added}, {"Private", meta.PrivateKey}, {"Comment", meta.Comment}} {
+		if field[1] != "" {
+			lines = append(lines, wrapped(property(field[0], field[1]), width)...)
+		}
+	}
+	return lines
 }
 
 func property(name, value string) string {

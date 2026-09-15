@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -101,4 +104,71 @@ func Create(path string, r Record) error {
 		return err
 	}
 	return nil
+}
+
+// Usage is which files in a vault were encrypted to a key, by their records.
+type Usage struct {
+	// Files are the age files whose record lists the key, relative to the
+	// vault; Only are those listing no other key.
+	Files []string
+	Only  []string
+	// Unreadable are records that could not be read, so the answer may be
+	// incomplete.
+	Unreadable []string
+}
+
+// Using reads every record under vault, skipping hidden entries as the vault
+// listing does, and reports the files encrypted to publicKey. Files without a
+// record are not known about.
+func Using(vault, publicKey string) (Usage, error) {
+	return UsingAny(vault, []string{publicKey})
+}
+
+// UsingAny is Using for a set of keys, such as every key of a host: Files list
+// any of them, and Only list no key outside the set.
+func UsingAny(vault string, publicKeys []string) (Usage, error) {
+	set := map[string]bool{}
+	for _, key := range publicKeys {
+		set[key] = true
+	}
+	var usage Usage
+	err := filepath.WalkDir(vault, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path != vault && strings.HasPrefix(entry.Name(), ".") {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".age"+Suffix) {
+			return nil
+		}
+		rel, _ := filepath.Rel(vault, strings.TrimSuffix(path, Suffix))
+		rel = filepath.ToSlash(rel)
+		r, err := Read(path)
+		if err != nil {
+			usage.Unreadable = append(usage.Unreadable, rel)
+			return nil
+		}
+		matched, outside := false, false
+		for _, recipient := range r.Recipients {
+			if set[recipient.PublicKey] {
+				matched = true
+			} else {
+				outside = true
+			}
+		}
+		if matched {
+			usage.Files = append(usage.Files, rel)
+			if !outside {
+				usage.Only = append(usage.Only, rel)
+			}
+		}
+		return nil
+	})
+	sort.Strings(usage.Files)
+	sort.Strings(usage.Only)
+	return usage, err
 }
