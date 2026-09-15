@@ -76,6 +76,90 @@ selected file: its path, size and modification time, status and the identity
 that opens it, the recipient stanzas in its header by kind and count, and the
 SSH hints above.
 
+## Adding a file or folder (E2)
+
+Built before opening files, so the vault has something in it. Changing the
+recipients of a file already there is E3 and not part of this.
+
+### The flow
+
+1. `a` on the vault page. The new file goes into the directory under the cursor,
+   or the directory of the file under it; the last step can change that.
+2. **Source.** The File Explorer in `ALL FILES` mode, so a file or a folder can be
+   chosen, opening at the home directory with hidden entries hidden (`H` shows
+   them).
+3. **Recipients.** A checklist of groups, then hosts with their keys beneath
+   them. Checking a group or a host checks every key under it, and a key can then
+   be unchecked on its own; a group or host shows `[x]`, `[-]` or `[ ]` for all,
+   some or none of its keys. The keys this machine holds an identity for start
+   checked.
+4. **Name.** The file name, editable, and the directory, changeable with the File
+   Explorer.
+5. **Confirm.** The shared confirmation dialog names the source, the file to be
+   written and every recipient.
+6. The result is reported in the status bar and the vault is scanned again.
+
+Refused before confirming:
+
+- no recipient is checked;
+- the recipient folder has errors, since a host could be silently missing from a
+  group;
+- the file to be written, or its record, already exists — replacing a file is E3;
+- the plaintext is larger than 64 MiB, the limit a file can later be opened
+  with.
+
+When no checked key belongs to this machine, the confirmation says the file
+cannot be opened or checked here, and the result is published unverified.
+
+### What is written
+
+- A file is encrypted as it is, to `<name>.age`.
+- A folder is archived as gzip-compressed tar, to `<name>.tar.gz.age`. The archive
+  holds the folder by its name, every entry within it including hidden ones,
+  with their permission bits. A symbolic link or any other non-regular entry
+  refuses the folder rather than archiving something unexpected.
+- The output is binary age, not armored.
+- The source is not touched. The result reminds that its plaintext is still
+  where it was.
+
+### Publication
+
+1. The plaintext is read into memory and its SHA-256 taken.
+2. It is encrypted to a `<name>.age.dgs-part` file created beside the
+   destination, which must not already exist, and synced.
+3. The part file is decrypted back with this machine's identities and its
+   SHA-256 compared; a mismatch removes it and fails.
+4. It is linked to the destination name, which fails rather than replace a file
+   that appeared meanwhile, and the part name removed.
+5. The recipient record is written.
+
+The plaintext buffer is overwritten when done, as far as the process can.
+
+### The recipient record
+
+Beside each file, `<name>.age.json`:
+
+```json
+{
+  "version": 1,
+  "created": "2026-09-15T14:00:00+10:00",
+  "archive": "tar.gz",
+  "recipients": [
+    {
+      "public_key": "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p",
+      "host": "au-syd-macmini2018-linux-01",
+      "description": "Main age key"
+    }
+  ]
+}
+```
+
+- `archive` is `tar.gz` for a folder and absent for a file.
+- A recipient is its public key; `host` and `description` are what the recipient
+  folder called it when the file was written, kept for reading, not matched on.
+- The record is plaintext and names hosts.
+- The vault list shows only `.age` files, so records are not listed.
+
 ## Opening a file (C)
 
 Designed and agreed in outline; detailed when it is built.
@@ -127,8 +211,11 @@ Initial Actions:
 2. **B2 — Header inspection.** Read a header, list its stanzas, try identities,
    match SSH tags, and give the status.
 3. **B3 — Vault page.** The browsing page, with scanning in the background.
+4. **E1 — Recipient record.** Read and write the record.
+5. **E2a — Sealing.** Archive, encrypt, verify and publish, with filesystem
+   tests.
+6. **E2b — Adding from the page.** The flow above.
 
 ## Not decided
 
-- Whether the archive format written when encrypting a folder is zip or tar;
-  reading expands both.
+- Whether reading, in C, also expands zip archives made elsewhere.
