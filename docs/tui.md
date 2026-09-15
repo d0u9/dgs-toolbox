@@ -151,6 +151,13 @@ command hierarchy stays generic and no app is special-cased in the CLI.
 A report is written from the registry it describes rather than from a hand-kept
 list, so it cannot drift from the behaviour it documents.
 
+### Closing a command
+
+A command holding something it must let go of — decrypted plaintext, say —
+implements `Close()`. The shell calls it when it leaves the command for the
+picker and when it quits, and uses the model no more after that. Commands with
+nothing to let go of do not implement it.
+
 ### Command flags
 
 A leaf command may declare flags (`dgs geo gpx --port 9000`). Each flag is
