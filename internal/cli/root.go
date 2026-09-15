@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"dgs-toolbox/internal/buildinfo"
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 
@@ -18,6 +19,7 @@ func NewRootCommand(apps []tui.App, run tui.Runner) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "dgs",
 		Short:         "A small workflow toolbox",
+		Version:       buildinfo.String(),
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args: func(command *cobra.Command, args []string) error {
