@@ -22,6 +22,9 @@ type Credentials struct {
 	Identities []string `json:"identities"`
 	// Recipients is the recipient folder; empty means none.
 	Recipients string `json:"recipients"`
+	// Vault is the folder of age files the vault page opens at; empty means
+	// none.
+	Vault string `json:"vault"`
 }
 
 // CredentialsPath is <XDG config home>/dgs-toolbox/credentials.json.
@@ -66,6 +69,13 @@ func LoadCredentials(path string) (credentials Credentials, found bool, err erro
 			return Credentials{}, true, fmt.Errorf("decode %s: recipients: %w", path, err)
 		}
 		credentials.Recipients = expanded
+	}
+	if credentials.Vault != "" {
+		expanded, err := ExpandPath(credentials.Vault, os.LookupEnv, home)
+		if err != nil {
+			return Credentials{}, true, fmt.Errorf("decode %s: vault: %w", path, err)
+		}
+		credentials.Vault = expanded
 	}
 	return credentials, true, nil
 }
