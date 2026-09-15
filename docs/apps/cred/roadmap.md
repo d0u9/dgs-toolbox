@@ -4,6 +4,8 @@ The parts of `dgs cred` after [keys](keys.md), in the order they build on each
 other. Each is designed in its own document when it is reached; what is written
 here is only the shape agreed so far.
 
+B, C and D are designed in [`vault.md`](vault.md).
+
 - **B — Browsing.** List every `.age` file under an opened folder as a tree, and
   mark each as decryptable, not decryptable, needing a passphrase, or damaged, by
   trying local identities against the header only.

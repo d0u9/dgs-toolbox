@@ -205,7 +205,9 @@ copies nothing.
    directories, derive their public keys, match them against recipients.
    `internal/cred/identities`.
 3. **A3 — Keys page.** The read-only page above, inside the `dgs cred` command.
-4. **A4 — Unlocking protected identities.**
+4. **A4 — Unlocking protected identities.** Deferred until browsing or
+   decrypting needs a passphrase, which is where the questions below get a
+   concrete answer.
 
 ## Not decided
 
