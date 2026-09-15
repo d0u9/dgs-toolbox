@@ -40,43 +40,130 @@ func expandInputHome(path string) string {
 	return filepath.Join(home, strings.TrimPrefix(path, "~/"))
 }
 
+// completePath answers Tab and Shift+Tab. With no candidate grid open, a
+// single candidate is completed outright and several are completed to their
+// common prefix, as bash does; when that adds nothing, the grid opens without
+// changing the input. With the grid open, Tab and Shift+Tab move through it.
 func (t *Model) completePath(reverse bool) {
-	if len(t.completions) == 0 {
-		matches, err := t.pathCompletions(t.editor.Value())
-		if err != nil {
-			t.notice = err.Error()
-			return
-		}
-		t.completions = matches
+	if len(t.completions) > 0 {
 		if reverse {
-			t.completionIndex = len(matches) - 1
+			t.moveCompletion(-1, true)
+		} else {
+			t.moveCompletion(1, true)
 		}
-	} else if reverse {
-		t.completionIndex = (t.completionIndex - 1 + len(t.completions)) % len(t.completions)
-	} else {
-		t.completionIndex = (t.completionIndex + 1) % len(t.completions)
+		return
 	}
-	if len(t.completions) == 0 {
+	matches, err := t.pathCompletions(t.editor.Value())
+	if err != nil {
+		t.notice = err.Error()
+		return
+	}
+	switch len(matches) {
+	case 0:
 		t.notice = "no completions"
+		return
+	case 1:
+		t.setInput(matches[0])
+		return
+	}
+	current := trimPathInput(t.editor.Value())
+	if common := commonPrefix(matches); len(common) > len(current) && strings.HasPrefix(strings.ToLower(common), strings.ToLower(current)) {
+		t.setInput(common)
 		return
 	}
 	t.notice = ""
-	t.editor.SetValue(t.completions[t.completionIndex])
+	t.completions = matches
+	t.completionIndex = -1
+}
+
+// moveCompletion moves the highlight by delta candidates, wrapping when wrap is
+// set, and shows the highlighted candidate in the input.
+func (t *Model) moveCompletion(delta int, wrap bool) {
+	count := len(t.completions)
+	if count == 0 {
+		return
+	}
+	next := t.completionIndex + delta
+	switch {
+	case t.completionIndex < 0 && delta > 0:
+		next = 0
+	case t.completionIndex < 0:
+		next = count - 1
+	case wrap:
+		next = (next%count + count) % count
+	case next < 0 || next >= count:
+		return
+	}
+	t.completionIndex = next
+	t.editor.SetValue(t.completions[next])
 	t.editor.CursorEnd()
 }
 
-func (t *Model) acceptCompletion() bool {
-	if len(t.completions) == 0 {
+// refilterCompletions lists again for what is now typed, keeping the grid open
+// while anything still matches.
+func (t *Model) refilterCompletions() {
+	matches, err := t.pathCompletions(t.editor.Value())
+	if err != nil || len(matches) == 0 {
+		t.closeCompletions()
+		t.notice = "no completions"
+		return
+	}
+	t.completions = matches
+	t.completionIndex = -1
+}
+
+// descendCompletion enters the highlighted directory and lists its contents.
+func (t *Model) descendCompletion() bool {
+	if t.completionIndex < 0 || !strings.HasSuffix(t.completions[t.completionIndex], string(filepath.Separator)) {
 		return false
 	}
 	t.editor.SetValue(t.completions[t.completionIndex])
 	t.editor.CursorEnd()
+	t.refilterCompletions()
+	return true
+}
+
+func (t *Model) setInput(value string) {
+	t.editor.SetValue(value)
+	t.editor.CursorEnd()
+	t.closeCompletions()
+	t.notice = ""
+}
+
+func (t *Model) closeCompletions() {
 	t.completions = nil
 	t.completionIndex = 0
+}
+
+// acceptCompletion closes an open grid, keeping the highlighted candidate in
+// the input. It reports whether there was a grid to close.
+func (t *Model) acceptCompletion() bool {
+	if len(t.completions) == 0 {
+		return false
+	}
+	if t.completionIndex >= 0 {
+		t.editor.SetValue(t.completions[t.completionIndex])
+		t.editor.CursorEnd()
+	}
+	t.closeCompletions()
 	t.notice = ""
 	return true
 }
 
+func commonPrefix(values []string) string {
+	prefix := values[0]
+	for _, value := range values[1:] {
+		for !strings.HasPrefix(value, prefix) {
+			prefix = prefix[:len(prefix)-1]
+		}
+	}
+	return prefix
+}
+
+// pathCompletions lists the entries of the directory the input names that
+// match its last fragment: by prefix, ignoring case, and fuzzily only when
+// nothing matches by prefix. Directories come first, each ending in a
+// separator.
 func (t Model) pathCompletions(value string) ([]string, error) {
 	value = trimPathInput(value)
 	expanded := expandInputHome(value)
@@ -91,7 +178,15 @@ func (t Model) pathCompletions(value string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	matches := make([]string, 0)
+	type candidate struct {
+		completed string
+		name      string
+		dir       bool
+		score     int
+		prefixed  bool
+	}
+	var candidates []candidate
+	anyPrefixed := false
 	for _, entry := range entries {
 		score, matched := completionScore(prefix, entry.Name())
 		if !matched {
@@ -112,36 +207,38 @@ func (t Model) pathCompletions(value string) ([]string, error) {
 			home, _ := os.UserHomeDir()
 			completed = "~" + strings.TrimPrefix(completed, home)
 		}
-		matches = append(matches, completed+completionScoreSeparator+fmt.Sprint(score))
+		prefixed := strings.HasPrefix(strings.ToLower(entry.Name()), strings.ToLower(prefix))
+		anyPrefixed = anyPrefixed || prefixed
+		candidates = append(candidates, candidate{completed: completed, name: entry.Name(), dir: directoryEntry, score: score, prefixed: prefixed})
 	}
-	sort.Slice(matches, func(i, j int) bool {
-		leftPath, leftScore := splitScoredCompletion(matches[i])
-		rightPath, rightScore := splitScoredCompletion(matches[j])
-		if leftScore != rightScore {
-			return leftScore > rightScore
+	if anyPrefixed {
+		kept := candidates[:0]
+		for _, c := range candidates {
+			if c.prefixed {
+				kept = append(kept, c)
+			}
 		}
-		return strings.ToLower(leftPath) < strings.ToLower(rightPath)
+		candidates = kept
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left, right := candidates[i], candidates[j]
+		if left.dir != right.dir {
+			return left.dir
+		}
+		if !anyPrefixed && left.score != right.score {
+			return left.score > right.score
+		}
+		return strings.ToLower(left.name) < strings.ToLower(right.name)
 	})
-	for index := range matches {
-		matches[index], _ = splitScoredCompletion(matches[index])
+	matches := make([]string, len(candidates))
+	for i, c := range candidates {
+		matches[i] = c.completed
 	}
 	return matches, nil
 }
 
 func trimPathInput(value string) string {
 	return strings.TrimRightFunc(value, unicode.IsSpace)
-}
-
-const completionScoreSeparator = "\x00"
-
-func splitScoredCompletion(value string) (string, int) {
-	parts := strings.SplitN(value, completionScoreSeparator, 2)
-	if len(parts) != 2 {
-		return value, 0
-	}
-	var score int
-	_, _ = fmt.Sscan(parts[1], &score)
-	return parts[0], score
 }
 
 func completionScore(query, candidate string) (int, bool) {
@@ -185,6 +282,11 @@ func (t Model) acceptPath() (Model, string, error) {
 	}
 	if t.filter.kind == directoryFilter || !t.filter.includesFile(filepath.Base(path)) {
 		return t, "", fmt.Errorf("path does not match %s", t.filter.Label())
+	}
+	// A hidden file would not appear in its parent, so reaching one by path
+	// shows hidden entries.
+	if strings.HasPrefix(filepath.Base(path), ".") {
+		t.showHidden = true
 	}
 	parent := filepath.Dir(path)
 	t.id = explorerID.Add(1)

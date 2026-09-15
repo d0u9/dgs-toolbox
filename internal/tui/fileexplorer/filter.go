@@ -42,7 +42,8 @@ func Extensions(extensions ...string) Filter {
 	return Filter{kind: extensionFilter, extensions: cleaned}
 }
 
-// AllFiles returns a filter that shows and selects every regular file.
+// AllFiles returns a filter that shows every file and directory and selects
+// either.
 func AllFiles() Filter {
 	return Filter{kind: allFilesFilter}
 }
@@ -80,11 +81,19 @@ func (f Filter) includesFile(name string) bool {
 }
 
 type config struct {
-	filter Filter
+	filter     Filter
+	showHidden bool
 }
 
 // Option configures a File Explorer model.
 type Option func(*config)
+
+// WithHidden opens the explorer with entries starting with . shown.
+func WithHidden(show bool) Option {
+	return func(config *config) {
+		config.showHidden = show
+	}
+}
 
 // WithFilter sets the entries displayed and selectable by the explorer.
 func WithFilter(filter Filter) Option {
