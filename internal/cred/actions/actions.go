@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ const (
 	SSHConfig  ID = "ssh.config"
 	AgeInstall ID = "age.install"
 	FileSave   ID = "file.save"
+	DirSave    ID = "dir.save"
 )
 
 // Action is one registered Action.
@@ -53,7 +55,8 @@ func All() []Action {
 		{ID: SSHAgent, Label: "Add to ssh-agent", Kinds: []opened.Kind{opened.KindSSHPrivate}},
 		{ID: SSHConfig, Label: "Install as SSH configuration", Kinds: []opened.Kind{opened.KindText}},
 		{ID: AgeInstall, Label: "Install as an age identity", Kinds: []opened.Kind{opened.KindAgeKey}},
-		{ID: FileSave, Label: "Save to a folder", Kinds: []opened.Kind{opened.KindSSHPrivate, opened.KindSSHPublic, opened.KindAgeKey, opened.KindText}},
+		{ID: FileSave, Label: "Save to a folder", Kinds: []opened.Kind{opened.KindSSHPrivate, opened.KindSSHPublic, opened.KindAgeKey, opened.KindText, opened.KindOther}},
+		{ID: DirSave, Label: "Save the folder to a folder", Kinds: []opened.Kind{opened.KindDirectory}},
 	}
 }
 
@@ -89,6 +92,12 @@ func (e Env) Expand(p string) string {
 
 func (e Env) sshDir() string { return filepath.Join(e.Home, ".ssh") }
 
+// Dir is one directory a plan creates.
+type Dir struct {
+	Path string
+	Perm fs.FileMode
+}
+
 // Write is one file a plan creates.
 type Write struct {
 	Path    string
@@ -100,10 +109,15 @@ type Write struct {
 // Plan is what an Action will do, worked out and checked before anything is
 // written.
 type Plan struct {
+	// Dirs are created, in order, before any file is written, so a directory
+	// an archive lists but puts nothing in still arrives.
+	Dirs   []Dir
 	Writes []Write
 	// Kept are existing files the Action would otherwise write, found to hold
 	// the same content already.
 	Kept []string
+	// Skipped names entries dir.save leaves out, each with why.
+	Skipped []string
 	// IncludeIn is the SSH configuration file to gain the config.d Include as
 	// its first line; empty for none.
 	IncludeIn string
@@ -115,6 +129,16 @@ func (p Plan) Apply() error {
 	for _, w := range p.Writes {
 		if _, err := os.Lstat(w.Path); err == nil {
 			return fmt.Errorf("%s %w", w.Path, publish.ErrExists)
+		}
+	}
+	for _, d := range p.Dirs {
+		if err := os.MkdirAll(d.Path, d.Perm); err != nil {
+			return err
+		}
+		// MkdirAll leaves an existing directory's mode alone, and honours the
+		// umask for one it creates; say what the mode must be either way.
+		if err := os.Chmod(d.Path, d.Perm); err != nil {
+			return err
 		}
 	}
 	for _, w := range p.Writes {
@@ -292,6 +316,100 @@ func PlanSave(entry opened.Entry, dir, name string, env Env) (Plan, error) {
 		perm = 0o600
 	}
 	return Plan{Writes: []Write{{Path: target, Data: append([]byte(nil), entry.Data...), Perm: perm, DirPerm: 0o755}}}, nil
+}
+
+// RootPath is the Path of the entry that stands for the whole archive, the
+// parent of every top-level name in it.
+const RootPath = "."
+
+// Under reports whether an entry's path is root itself or inside it. RootPath
+// holds everything.
+func Under(entryPath, root string) bool {
+	return root == RootPath || entryPath == root || strings.HasPrefix(entryPath, root+"/")
+}
+
+// PlanDirSave saves the directory root of an opened file, and everything under
+// it, into dir/name. entries are the opened file's entries, in any order.
+//
+// Unsafe entries are not written; they are named in the plan's Skipped so the
+// caller can say what is missing. Directories holding sensitive content
+// anywhere below them are 0700, the rest keep the mode the archive gave them.
+func PlanDirSave(entries []opened.Entry, root, dir, name string, env Env) (Plan, error) {
+	if err := checkName(name); err != nil {
+		return Plan{}, err
+	}
+	target := filepath.Join(env.Expand(dir), name)
+	if err := refuseExisting(target); err != nil {
+		return Plan{}, err
+	}
+
+	// A directory is 0700 when anything sensitive lives below it, so the
+	// private keys inside a saved folder are not readable by other users.
+	secret := map[string]bool{}
+	for _, entry := range entries {
+		if !entry.Kind.Sensitive() || !Under(entry.Path, root) {
+			continue
+		}
+		for dir := path.Dir(entry.Path); ; dir = path.Dir(dir) {
+			secret[dir] = true
+			if dir == RootPath || dir == "/" || !Under(dir, root) {
+				break
+			}
+		}
+	}
+	dirPerm := func(p string, mode fs.FileMode) fs.FileMode {
+		if secret[p] {
+			return 0o700
+		}
+		if perm := mode.Perm(); perm != 0 {
+			return perm
+		}
+		return 0o755
+	}
+
+	plan := Plan{Dirs: []Dir{{Path: target, Perm: dirPerm(root, fs.FileMode(0))}}}
+	var found bool
+	for _, entry := range entries {
+		if entry.Path == root {
+			found = true
+			plan.Dirs[0].Perm = dirPerm(root, entry.Mode)
+		}
+		if entry.Path == root || !Under(entry.Path, root) {
+			continue
+		}
+		relative := entry.Path
+		if root != RootPath {
+			relative = strings.TrimPrefix(entry.Path, root+"/")
+		}
+		into := filepath.Join(target, filepath.FromSlash(relative))
+		switch entry.Kind {
+		case opened.KindUnsafe:
+			plan.Skipped = append(plan.Skipped, entry.Path+" ("+entry.Unsafe+")")
+		case opened.KindDirectory:
+			plan.Dirs = append(plan.Dirs, Dir{Path: into, Perm: dirPerm(entry.Path, entry.Mode)})
+		default:
+			perm := entry.Mode.Perm()
+			if entry.Kind.Sensitive() || perm == 0 {
+				perm = 0o600
+			}
+			plan.Writes = append(plan.Writes, Write{
+				Path:    into,
+				Data:    append([]byte(nil), entry.Data...),
+				Perm:    perm,
+				DirPerm: dirPerm(path.Dir(entry.Path), fs.FileMode(0)),
+			})
+		}
+	}
+	if root != RootPath && !found {
+		return Plan{}, fmt.Errorf("%s is not a directory of this file", root)
+	}
+	if len(plan.Writes) == 0 && len(plan.Dirs) == 1 && len(plan.Skipped) == 0 {
+		return Plan{}, fmt.Errorf("%s holds nothing to save", root)
+	}
+	// Parents before what they hold, so a directory's own mode is not decided
+	// by a file written into it first.
+	sort.SliceStable(plan.Dirs, func(i, j int) bool { return plan.Dirs[i].Path < plan.Dirs[j].Path })
+	return plan, nil
 }
 
 func checkName(name string) error {

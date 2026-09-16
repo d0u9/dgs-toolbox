@@ -48,8 +48,14 @@ func TestFor(t *testing.T) {
 	if strings.Join(ids, ",") != "ssh.install,ssh.agent,file.save" {
 		t.Errorf("ssh private %v", ids)
 	}
-	if len(For(opened.KindOther)) != 0 || len(For(opened.KindDirectory)) != 0 || len(For(opened.KindUnsafe)) != 0 {
-		t.Error("actions offered for binary, directories or unsafe entries")
+	if got := For(opened.KindOther); len(got) != 1 || got[0].ID != FileSave {
+		t.Errorf("binary %v", got)
+	}
+	if got := For(opened.KindDirectory); len(got) != 1 || got[0].ID != DirSave {
+		t.Errorf("directory %v", got)
+	}
+	if len(For(opened.KindUnsafe)) != 0 {
+		t.Error("actions offered for unsafe entries")
 	}
 }
 
@@ -171,8 +177,20 @@ func TestSSHConfigAgeAndSave(t *testing.T) {
 	if _, err := PlanSave(text, "~/out", "config", env); err == nil {
 		t.Error("save over an existing file planned")
 	}
-	if _, err := PlanSave(opened.Entry{Path: "b", Kind: opened.KindOther, Data: []byte{0}}, "~/out", "b", env); err == nil {
-		t.Error("binary save planned")
+	// A binary file is saved with the mode the archive gave it.
+	binary := opened.Entry{Path: "b", Kind: opened.KindOther, Data: []byte{0, 1, 2}, Mode: 0o644}
+	plan, err = PlanSave(binary, "~/out", "b", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if saved, _ := os.ReadFile(filepath.Join(home, "out", "b")); len(saved) != 3 {
+		t.Errorf("saved binary %v", saved)
+	}
+	if _, err := PlanSave(opened.Entry{Path: "d", Kind: opened.KindDirectory}, "~/out", "d", env); err == nil {
+		t.Error("a directory was planned as a single file")
 	}
 }
 
@@ -191,5 +209,95 @@ func TestApplyWritesNothingWhenAPathAppears(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".ssh", "keys", "s")); err == nil {
 		t.Error("key written although the plan was refused")
+	}
+}
+
+// dirEntries is a small archive: a folder with a key, a note, an empty
+// sub-folder and an entry that is not extracted.
+func dirEntries(t *testing.T) []opened.Entry {
+	t.Helper()
+	key, _ := sshEntry(t)
+	return []opened.Entry{
+		{Path: "server1", Kind: opened.KindDirectory, Mode: os.ModeDir | 0o755},
+		{Path: "server1/empty", Kind: opened.KindDirectory, Mode: os.ModeDir | 0o755},
+		{Path: "server1/notes.txt", Kind: opened.KindText, Data: []byte("Host server1\n"), Mode: 0o644},
+		{Path: "server1/link", Kind: opened.KindUnsafe, Unsafe: "link to /etc/passwd"},
+		key,
+		{Path: "other.txt", Kind: opened.KindText, Data: []byte("elsewhere\n"), Mode: 0o644},
+	}
+}
+
+func TestPlanDirSaveWritesTheSubtree(t *testing.T) {
+	entries := dirEntries(t)
+	home := t.TempDir()
+	plan, err := PlanDirSave(entries, "server1", home, "saved", Env{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Skipped) != 1 || !strings.Contains(plan.Skipped[0], "server1/link") {
+		t.Errorf("skipped %v", plan.Skipped)
+	}
+	if err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(home, "saved")
+	// The sibling outside the folder is not written, and the empty folder is.
+	if _, err := os.Lstat(filepath.Join(home, "saved", "other.txt")); err == nil {
+		t.Error("wrote an entry from outside the folder")
+	}
+	for path, want := range map[string]os.FileMode{
+		root:                             0o700, // holds a private key
+		filepath.Join(root, "empty"):     0o755,
+		filepath.Join(root, "server1"):   0o600,
+		filepath.Join(root, "notes.txt"): 0o644,
+	} {
+		info, err := os.Lstat(path)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if info.Mode().Perm() != want {
+			t.Errorf("%s mode %v, want %v", path, info.Mode().Perm(), want)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(root, "link")); err == nil {
+		t.Error("wrote the unsafe entry")
+	}
+	// Nothing is replaced: the same plan a second time refuses.
+	if _, err := PlanDirSave(entries, "server1", home, "saved", Env{Home: home}); err == nil {
+		t.Error("saving over an existing folder was allowed")
+	} else if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error %v", err)
+	}
+}
+
+func TestPlanDirSaveWholeFile(t *testing.T) {
+	home := t.TempDir()
+	plan, err := PlanDirSave(dirEntries(t), RootPath, home, "all", Env{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"other.txt", "server1/notes.txt", "server1/server1", "server1/empty"} {
+		if _, err := os.Lstat(filepath.Join(home, "all", filepath.FromSlash(name))); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// The folder holding the key is 0700; the one above it holds a plain file
+	// too but still shelters the key, so it is 0700 as well.
+	info, _ := os.Lstat(filepath.Join(home, "all", "server1"))
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("server1 mode %v", info.Mode().Perm())
+	}
+}
+
+func TestPlanDirSaveRefusesAnUnknownFolder(t *testing.T) {
+	home := t.TempDir()
+	if _, err := PlanDirSave(dirEntries(t), "nowhere", home, "saved", Env{Home: home}); err == nil {
+		t.Error("planned a folder the file does not have")
+	}
+	if _, err := PlanDirSave(dirEntries(t), "server1", home, "a/b", Env{Home: home}); err == nil {
+		t.Error("planned a name that is a path")
 	}
 }

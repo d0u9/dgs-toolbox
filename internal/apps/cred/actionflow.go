@@ -101,7 +101,7 @@ func (m vaultModel) visibleIDs() []string {
 // startAction opens the menu of Actions for the selected entry.
 func (m *vaultModel) startAction() {
 	entry, ok := m.selectedEntry()
-	if !ok || entry.Kind == opened.KindDirectory {
+	if !ok {
 		return
 	}
 	choices := actions.For(entry.Kind)
@@ -118,6 +118,14 @@ func (m *vaultModel) startAction() {
 	m.action = flow
 }
 
+// entryLabel names an entry for a heading; the synthetic root is the file.
+func (m vaultModel) entryLabel(entry opened.Entry) string {
+	if entry.Path == actions.RootPath && m.open != nil {
+		return m.open.opened.Name + "/"
+	}
+	return path.Base(entry.Path)
+}
+
 func baseWithoutExt(name string) string {
 	base := path.Base(name)
 	if ext := path.Ext(base); ext != "" && ext != base {
@@ -130,6 +138,9 @@ func (m *vaultModel) chooseAction(action actions.Action) tea.Cmd {
 	flow := m.action
 	flow.action, flow.err = action, ""
 	name := path.Base(flow.entry.Path)
+	if flow.entry.Path == actions.RootPath {
+		name = m.open.opened.Name
+	}
 	var fields []form.Field
 	switch action.ID {
 	case actions.SSHInstall:
@@ -157,7 +168,7 @@ func (m *vaultModel) chooseAction(action actions.Action) tea.Cmd {
 		}
 	case actions.AgeInstall:
 		fields = []form.Field{{ID: fieldName, Kind: form.Text, Label: "File", Value: name}}
-	case actions.FileSave:
+	case actions.FileSave, actions.DirSave:
 		fields = []form.Field{
 			{ID: fieldFolder, Kind: form.Path, Label: "Folder", Value: "~"},
 			{ID: fieldName, Kind: form.Text, Label: "Name", Value: name},
@@ -343,6 +354,8 @@ func (m vaultModel) planAction() (tea.Model, tea.Cmd) {
 		plan, err = actions.PlanAgeInstall(flow.entry, m.value(fieldName), env)
 	case actions.FileSave:
 		plan, err = actions.PlanSave(flow.entry, m.value(fieldFolder), m.value(fieldName), env)
+	case actions.DirSave:
+		plan, err = actions.PlanDirSave(m.open.opened.Entries, flow.entry.Path, m.value(fieldFolder), m.value(fieldName), env)
 	case actions.SSHAgent:
 		lifetime, parseErr := time.ParseDuration(m.value(fieldLifetime))
 		if m.value(fieldLifetime) == "0" {
@@ -369,7 +382,16 @@ func (m vaultModel) planAction() (tea.Model, tea.Cmd) {
 		flow.err = err.Error()
 		return m, nil
 	}
-	if flow.action.ID != actions.SSHAgent {
+	if flow.action.ID == actions.DirSave {
+		target := tilde(plan.Dirs[0].Path)
+		config.Message = fmt.Sprintf("Write %s and %s into %s?",
+			plural(len(plan.Writes), "file"), plural(len(plan.Dirs)-1, "folder"), target)
+		var notes []string
+		if len(plan.Skipped) > 0 {
+			notes = append(notes, "Not written: "+strings.Join(plan.Skipped, ", ")+".")
+		}
+		config.Detail = strings.Join(notes, " ")
+	} else if flow.action.ID != actions.SSHAgent {
 		var paths []string
 		for _, w := range plan.Writes {
 			paths = append(paths, tilde(w.Path))
@@ -419,6 +441,12 @@ func (m vaultModel) runAction() tea.Cmd {
 			paths = append(paths, tilde(w.Path))
 		}
 		summary := "Wrote " + strings.Join(paths, ", ")
+		if id == actions.DirSave {
+			summary = fmt.Sprintf("Wrote %s into %s", plural(len(plan.Writes), "file"), tilde(plan.Dirs[0].Path))
+			if len(plan.Skipped) > 0 {
+				summary += fmt.Sprintf(" · skipped %d unsafe", len(plan.Skipped))
+			}
+		}
 		if id == actions.SSHInstall && writeHost {
 			summary += " · ssh " + alias
 		}
@@ -444,7 +472,7 @@ func (m vaultModel) actionView() string {
 	}
 	w, h := pickerSize(m.width, m.height)
 	inner := max(1, w-4)
-	title := "ACTIONS · " + strings.ToUpper(path.Base(flow.entry.Path))
+	title := "ACTIONS · " + strings.ToUpper(m.entryLabel(flow.entry))
 	var lines []string
 	switch flow.stage {
 	case actionFolder:
@@ -459,7 +487,7 @@ func (m vaultModel) actionView() string {
 		lines = append(lines, list.View(true, titleStyle, mutedStyle))
 		return modalBox(lines, pageactions.Footer(inner, "↑↓ Move · esc Back", pageactions.Inline("Choose", true)), w, h)
 	}
-	lines = append(lines, titleStyle.Render(strings.ToUpper(flow.action.Label)), mutedStyle.Render(flow.entry.Path+" · "+string(flow.entry.Kind)), "")
+	lines = append(lines, titleStyle.Render(strings.ToUpper(flow.action.Label)), mutedStyle.Render(m.entryLabel(flow.entry)+" · "+string(flow.entry.Kind)), "")
 	visible := m.visibleIDs()
 	lines = append(lines, flow.form.ViewFocusedWidth(visible[:len(visible)-1], true, inner))
 	if flow.action.ID == actions.SSHInstall {

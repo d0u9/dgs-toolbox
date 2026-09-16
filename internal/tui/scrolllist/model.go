@@ -264,3 +264,11 @@ func (m *Model) ensureVisible() {
 	m.clamp()
 }
 func (m *Model) clamp() { m.top = min(max(0, len(m.items)-m.visibleItems()), max(0, m.top)) }
+
+// ItemAt is the item at index, or false past the end.
+func (m Model) ItemAt(index int) (Item, bool) {
+	if index < 0 || index >= len(m.items) {
+		return Item{}, false
+	}
+	return m.items[index], true
+}

@@ -265,7 +265,11 @@ Directories are entries too.
 Opening moves the page to three columns, trailing-wide:
 
 - **VAULT** — the vault list, dimmed, with the open file marked.
-- **CONTENTS** — the entries, as a tree for an archive.
+- **CONTENTS** — the entries, as a tree for an archive. Its top row stands for
+  the whole file, so an archive can be saved in one Action rather than a
+  top-level folder at a time. Folding uses the File Explorer's keys: `l` and `→`
+  open a folder, `h` and `←` close it or go to the folder holding it, `o`
+  toggles it, and `O` closes the folder holding it and goes there.
 - **PREVIEW** — the selected entry: its path, type, size, mode and SHA-256, then
   its content, scrollable. Text is shown with long lines wrapped. An SSH private
   key or age identity is shown masked — its type and, where it has one, its
@@ -310,7 +314,9 @@ and text. Binary files and directories have none yet. Adding a public key to
 `authorized_keys` is deliberately not offered: it grants login to whoever holds
 the private key.
 
-- `Enter` on a file entry in CONTENTS opens a menu of the Actions for its kind.
+- `Enter` on an entry in CONTENTS opens a menu of the Actions for its kind, a
+  folder included: `dir.save` writes it and everything under it to a chosen
+  folder.
 - An Action runs in three steps: a form for its parameters, the shared
   confirmation dialog naming every path it writes, then the result in the
   status bar.
