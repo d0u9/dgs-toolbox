@@ -5,7 +5,7 @@ What can be done with an entry of an opened vault file — see
 leaves memory, so each says exactly where it puts it. A test checks that this
 document names every Action `dgs` registers.
 
-`Enter` on a file entry in CONTENTS lists the Actions for its kind. Choosing one
+`Enter` on an entry in CONTENTS lists the Actions for its kind. Choosing one
 opens its form; continuing shows the shared confirmation dialog naming every path
 to be written; confirming runs it and reports in the status bar.
 
@@ -15,9 +15,11 @@ to be written; confirming runs it and reports in the status bar.
 | [`ssh.agent`](#sshagent) | SSH private key | in the running ssh-agent |
 | [`ssh.config`](#sshconfig) | text | in `~/.ssh/config.d/` |
 | [`age.install`](#ageinstall) | age identity | in `new_identity_dir` |
-| [`file.save`](#filesave) | SSH private key, SSH public key, age identity, text | in a chosen folder |
+| [`file.save`](#filesave) | SSH private key, SSH public key, age identity, text, other | in a chosen folder |
+| [`dir.save`](#dirsave) | directory | in a chosen folder, as a folder of its own |
 
-Other kinds — binary files, directories, unsafe entries — have no Actions yet.
+Unsafe entries — an absolute or climbing name, a link, a device — have no
+Actions, and `dir.save` leaves them out of the folder it writes.
 
 ## Rules every Action follows
 
@@ -128,3 +130,28 @@ Saves the entry to a folder.
 
 A private key or age identity is written `0600`; anything else keeps the mode
 it had in the archive, or `0600` for a single file.
+
+## `dir.save`
+
+Saves a directory of an opened archive, and everything under it, to a folder.
+The top row of CONTENTS stands for the whole file, so the same Action saves an
+archive in one go.
+
+| Field | Default | |
+| --- | --- | --- |
+| Folder | the home directory | Chosen with the File Explorer. |
+| Name | the directory's name, or the vault file's name for the whole file | The folder written inside Folder. |
+
+Writes `<folder>/<name>/`, then every file and directory below the chosen one
+under it, keeping the archive's structure. The whole thing is planned first, so
+an existing `<folder>/<name>` refuses the Action before anything is written.
+
+- A file keeps the mode it had in the archive; a private key or age identity is
+  `0600` whatever the archive said.
+- A directory is `0700` when a private key or age identity lives anywhere below
+  it, so the keys inside a saved folder are not left readable by other users of
+  the machine. Any other directory keeps the archive's mode, or `0755`.
+- A directory the archive lists but puts nothing in is created too.
+- Unsafe entries are not written. The confirmation dialog names each one, and
+  the status bar says how many were skipped, so a folder that arrives
+  incomplete says so.

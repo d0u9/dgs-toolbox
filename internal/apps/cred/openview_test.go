@@ -88,14 +88,15 @@ func TestOpenArchiveAndMask(t *testing.T) {
 		t.Errorf("breadcrumb %v", path)
 	}
 	screen := ansi.Strip(m.View())
-	for _, want := range []string{"CONTENTS", "For laptop · Main", "▾ nas-keys/", "⚿ id_ed25519", "● nas-keys.tar.gz.age"} {
+	for _, want := range []string{"CONTENTS", "For laptop · Main", "▾ nas-keys.tar.gz/", "▾ nas-keys/", "⚿ id_ed25519", "● nas-keys.tar.gz.age"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("open view lacks %q:\n%s", want, screen)
 		}
 	}
 
-	// The private key is masked until v.
-	m = vaultKeys(t, m, "j")
+	// The private key is masked until v. The first row is the whole archive,
+	// the second the folder inside it.
+	m = vaultKeys(t, m, "j", "j")
 	screen = ansi.Strip(m.View())
 	if !strings.Contains(screen, "Content hidden") || strings.Contains(screen, "BEGIN OPENSSH") || !strings.Contains(screen, "ssh-ed25519") {
 		t.Errorf("masked preview:\n%s", screen)
