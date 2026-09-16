@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path"
 	"path/filepath"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"dgs-toolbox/internal/cred/actions"
 	"dgs-toolbox/internal/cred/identities"
 	"dgs-toolbox/internal/cred/opened"
 	"dgs-toolbox/internal/cred/record"
@@ -253,6 +255,9 @@ func (m *vaultModel) rebuildContents() {
 	}
 	var items []scrolllist.Item
 	hidden := func(p string) bool {
+		if open.collapsed[actions.RootPath] {
+			return true
+		}
 		for dir := path.Dir(p); dir != "." && dir != "/"; dir = path.Dir(dir) {
 			if open.collapsed[dir] {
 				return true
@@ -260,11 +265,23 @@ func (m *vaultModel) rebuildContents() {
 		}
 		return false
 	}
+	// An archive gets a row standing for the whole of it, so it can be saved in
+	// one Action rather than a top-level directory at a time.
+	indent := 0
+	if root, ok := m.rootEntry(); ok {
+		marker := "▾ "
+		if open.collapsed[actions.RootPath] {
+			marker = "▸ "
+		}
+		_ = root
+		items = append(items, scrolllist.Item{ID: rootItemID, Label: marker + open.opened.Name + "/"})
+		indent = 1
+	}
 	for i, entry := range open.opened.Entries {
 		if hidden(entry.Path) {
 			continue
 		}
-		depth := strings.Count(entry.Path, "/")
+		depth := strings.Count(entry.Path, "/") + indent
 		indent := strings.Repeat("  ", depth)
 		name := path.Base(entry.Path)
 		var label string
@@ -292,6 +309,88 @@ func (m *vaultModel) rebuildContents() {
 	}
 }
 
+// rootItemID is the CONTENTS row standing for the whole archive.
+const rootItemID = "root"
+
+// rootEntry is the directory entry that stands for the whole archive: it is in
+// no archive, so it is made here, named after the vault file. A single file has
+// none.
+func (m vaultModel) rootEntry() (opened.Entry, bool) {
+	if m.open == nil || m.open.opened.Archive == opened.ArchiveNone {
+		return opened.Entry{}, false
+	}
+	return opened.Entry{Path: actions.RootPath, Kind: opened.KindDirectory, Mode: fs.ModeDir | 0o755}, true
+}
+
+// moveOverEntry is CONTENTS folding, with the File Explorer's keys: l opens a
+// directory, o toggles it, h closes it or goes to its parent, and O closes the
+// parent and goes there.
+func (m *vaultModel) moveOverEntry(key string) {
+	entry, ok := m.selectedEntry()
+	if !ok {
+		return
+	}
+	open := m.open
+	isDir := entry.Kind == opened.KindDirectory
+	switch key {
+	case "l", "right":
+		if isDir {
+			open.collapsed[entry.Path] = false
+		}
+	case "o":
+		if isDir {
+			open.collapsed[entry.Path] = !open.collapsed[entry.Path]
+		}
+	case "h", "left":
+		if isDir && !open.collapsed[entry.Path] {
+			open.collapsed[entry.Path] = true
+			break
+		}
+		m.selectParent(entry.Path)
+	case "O":
+		parent := m.parentOf(entry.Path)
+		if parent == "" {
+			return
+		}
+		open.collapsed[parent] = true
+		m.selectParent(entry.Path)
+	}
+	m.rebuildContents()
+	open.scroll, open.reveal = 0, false
+}
+
+// parentOf is the path of the entry holding p, or empty for the topmost row.
+func (m vaultModel) parentOf(p string) string {
+	if p == actions.RootPath {
+		return ""
+	}
+	parent := path.Dir(p)
+	if parent == "." || parent == "/" {
+		if _, ok := m.rootEntry(); ok {
+			return actions.RootPath
+		}
+		return ""
+	}
+	return parent
+}
+
+func (m *vaultModel) selectParent(p string) {
+	parent := m.parentOf(p)
+	if parent == "" {
+		return
+	}
+	if parent == actions.RootPath {
+		m.open.list.SelectID(rootItemID)
+		return
+	}
+	for i, entry := range m.open.opened.Entries {
+		if entry.Path == parent {
+			m.open.list.SelectID(strconv.Itoa(i))
+			return
+		}
+	}
+}
+
 func (m vaultModel) selectedEntry() (opened.Entry, bool) {
 	if m.open == nil {
 		return opened.Entry{}, false
@@ -299,6 +398,9 @@ func (m vaultModel) selectedEntry() (opened.Entry, bool) {
 	item, ok := m.open.list.Selected()
 	if !ok {
 		return opened.Entry{}, false
+	}
+	if item.ID == rootItemID {
+		return m.rootEntry()
 	}
 	index, err := strconv.Atoi(item.ID)
 	if err != nil || index >= len(m.open.opened.Entries) {
@@ -342,14 +444,11 @@ func (m vaultModel) updateOpenKey(key string) (tea.Model, tea.Cmd, bool) {
 		case "esc":
 			m.closeOpen()
 			return m, nil, true
-		case "enter", "l", "right", "h", "left":
-			entry, ok := m.selectedEntry()
-			if ok && entry.Kind == opened.KindDirectory {
-				open.collapsed[entry.Path] = key == "h" || key == "left" || (key == "enter" && !open.collapsed[entry.Path])
-				m.rebuildContents()
-			} else if ok && key == "enter" {
-				m.startAction()
-			}
+		case "enter":
+			m.startAction()
+			return m, nil, true
+		case "l", "right", "h", "left", "o", "O":
+			m.moveOverEntry(key)
 			return m, nil, true
 		}
 		before := open.list.Cursor()
@@ -483,7 +582,12 @@ func (m vaultModel) previewColumn(width int) string {
 	if !ok {
 		return fieldset.ViewFocused("PREVIEW", fit("", m.height-2, inner), width, focused)
 	}
-	lines := wrapped(property("Path", entry.Path), inner)
+	shown, named := entry.Path, path.Base(entry.Path)
+	if shown == actions.RootPath {
+		named = m.open.opened.Name
+		shown = named + "/ · the whole file"
+	}
+	lines := wrapped(property("Path", shown), inner)
 	lines = append(lines, property("Type", string(entry.Kind)))
 	if entry.Kind != opened.KindDirectory && entry.Kind != opened.KindUnsafe {
 		lines = append(lines,
@@ -498,7 +602,7 @@ func (m vaultModel) previewColumn(width int) string {
 	room := max(1, m.height-2-len(lines))
 	end := min(len(body), scroll+room)
 	lines = append(lines, body[scroll:end]...)
-	legend := "PREVIEW · " + strings.ToUpper(path.Base(entry.Path))
+	legend := "PREVIEW · " + strings.ToUpper(named)
 	if len(body) > room {
 		legend += fmt.Sprintf(" · %d–%d of %d", scroll+1, end, len(body))
 	}
@@ -590,7 +694,7 @@ func (m vaultModel) openStatus() (string, string, string) {
 	}
 	switch m.fields.Current() {
 	case contentsField:
-		return "OPEN · CONTENTS", center, "↑↓ Move  ↵ Actions  c Copy  v Show  tab Next  esc Close"
+		return "OPEN · CONTENTS", center, "↑↓ Move  o Fold  ↵ Actions  c Copy  v Show  tab Next  esc Close"
 	case previewField:
 		return "OPEN · PREVIEW", center, "↑↓ Scroll  c Copy  v Show  tab Next  esc Close"
 	}
@@ -613,6 +717,18 @@ func (m vaultModel) entryPaths() []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+// contentRowsForTest is the labels CONTENTS shows now, folding included.
+func (m vaultModel) contentRowsForTest() []string {
+	var rows []string
+	for i := 0; ; i++ {
+		item, ok := m.open.list.ItemAt(i)
+		if !ok {
+			return rows
+		}
+		rows = append(rows, item.Label)
+	}
 }
 
 // startOpenForTest runs the open command for the file under the cursor.

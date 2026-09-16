@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"dgs-toolbox/internal/cred/actions"
 	"dgs-toolbox/internal/cred/seal"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,8 +41,8 @@ func openServerFolder(t *testing.T) (vaultModel, string) {
 	if m.open == nil {
 		t.Fatalf("not opened: %q", m.notice)
 	}
-	// Entries: server1/, server1/notes.txt, server1/server1.
-	m = vaultKeys(t, m, "j", "j")
+	// Rows: the whole file, server1/, server1/notes.txt, server1/server1.
+	m = vaultKeys(t, m, "j", "j", "j")
 	if entry, _ := m.selectedEntry(); entry.Path != "server1/server1" {
 		t.Fatalf("selected %q", entry.Path)
 	}
@@ -240,5 +241,85 @@ func TestInstallSSHKeyElsewhere(t *testing.T) {
 	conf, _ := os.ReadFile(filepath.Join(home, ".ssh", "config.d", "server1.conf"))
 	if !strings.Contains(string(conf), "IdentityFile ~/Secrets/ssh/server1") {
 		t.Errorf("conf %q", conf)
+	}
+}
+
+// The top row of CONTENTS stands for the whole file, and dir.save writes it and
+// everything under it to a folder.
+func TestSaveWholeFileAsAFolder(t *testing.T) {
+	m, home := openServerFolder(t)
+	m = vaultKeys(t, m, "k", "k", "k")
+	entry, _ := m.selectedEntry()
+	if entry.Path != actions.RootPath {
+		t.Fatalf("selected %q", entry.Path)
+	}
+	m = keys(t, m, "enter")
+	if len(m.action.choices) != 1 || m.action.choices[0].ID != actions.DirSave {
+		t.Fatalf("folder choices %+v", m.action.choices)
+	}
+	m = keys(t, m, "enter")
+	if got := m.action.form.Value(fieldName); got != "server1.tar.gz" {
+		t.Fatalf("name %q", got)
+	}
+	// Folder starts at ~ and is not a text field, so down moves past it.
+	m = keys(t, m, "down", "down", "enter")
+	if m.action.stage != actionConfirm {
+		t.Fatalf("stage %d err %q", m.action.stage, m.action.err)
+	}
+	m = keys(t, m, "tab", "enter")
+	if m.action != nil {
+		t.Fatalf("still running: err %q", m.action.err)
+	}
+	root := filepath.Join(home, "server1.tar.gz")
+	if data, err := os.ReadFile(filepath.Join(root, "server1", "notes.txt")); err != nil || string(data) != "Host server1\n" {
+		t.Errorf("saved %q %v, notice %q", data, err, m.notice)
+	}
+	info, err := os.Lstat(filepath.Join(root, "server1", "server1"))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("saved key %v %v", info, err)
+	}
+	// Nothing is replaced: running it again over the same folder refuses.
+	m = keys(t, m, "enter", "enter")
+	m = keys(t, m, "down", "down", "enter")
+	if m.action.stage != actionForm || !strings.Contains(m.action.err, "already exists") {
+		t.Errorf("stage %d err %q", m.action.stage, m.action.err)
+	}
+}
+
+// A folder inside the archive is saved on its own, under its own name.
+func TestSaveOneFolderFromVault(t *testing.T) {
+	m, home := openServerFolder(t)
+	m = vaultKeys(t, m, "k", "k")
+	entry, _ := m.selectedEntry()
+	if entry.Path != "server1" {
+		t.Fatalf("selected %q", entry.Path)
+	}
+	m = keys(t, m, "enter", "enter")
+	m = keys(t, m, "down", "down", "enter", "tab", "enter")
+	if _, err := os.Lstat(filepath.Join(home, "server1", "notes.txt")); err != nil {
+		t.Errorf("saved folder: %v, notice %q", err, m.notice)
+	}
+}
+
+// o folds a directory and O folds the one holding it, as in the File Explorer.
+func TestContentsFolding(t *testing.T) {
+	m, _ := openServerFolder(t)
+	rows := func() int { return len(m.contentRowsForTest()) }
+	if rows() != 4 {
+		t.Fatalf("rows %d", rows())
+	}
+	m = vaultKeys(t, m, "k", "k", "o")
+	if rows() != 2 {
+		t.Errorf("o did not fold server1: %d rows", rows())
+	}
+	m = vaultKeys(t, m, "o")
+	if rows() != 4 {
+		t.Errorf("o did not unfold server1: %d rows", rows())
+	}
+	// O from the key folds server1 and moves to it.
+	m = vaultKeys(t, m, "j", "j", "O")
+	entry, _ := m.selectedEntry()
+	if rows() != 2 || entry.Path != "server1" {
+		t.Errorf("O: %d rows, selected %q", rows(), entry.Path)
 	}
 }
