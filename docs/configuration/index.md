@@ -12,6 +12,8 @@ link here; this is what a reader consults to find out *what* to write.
   in [`apps/capture/actions.md`](../apps/capture/actions.md).
 - [Photo](photo.md) — Photo Import's state file and default paths.
 - [Geo](geo.md) — where the GPX web server listens, the folder it browses, and its base maps.
+- [Conf](conf.md) — the generator root `dgs conf export` reads, its secrets
+  directory, and where the destination form opens.
 - [Credentials](cred.md) — `credentials.json`, a file of its own: where
   identities are searched for, where the recipient folder is, and the vault.
 
@@ -88,6 +90,9 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `geo.gpx.port` | [geo](geo.md) | `8765` |
 | `geo.gpx.root` | [geo](geo.md) | empty — the home directory |
 | `geo.gpx.tiles` | [geo](geo.md) | empty — the built-in maps only |
+| `conf.root` | [conf](conf.md) | empty — the page opens with no root and asks for one |
+| `conf.secrets` | [conf](conf.md) | empty — a service naming a secrets file refuses to render |
+| `conf.export.dir` | [conf](conf.md) | empty — the home directory |
 | `identities` (`credentials.json`) | [cred](cred.md) | empty — no identities |
 | `recipients` (`credentials.json`) | [cred](cred.md) | empty — no recipients |
 | `new_identity_dir` (`credentials.json`) | [cred](cred.md) | `~/.config/age` |

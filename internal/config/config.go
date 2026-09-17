@@ -27,6 +27,7 @@ type Config struct {
 	Photo     Photo   `json:"photo"`
 	Capture   Capture `json:"capture"`
 	Geo       Geo     `json:"geo"`
+	Conf      Conf    `json:"conf"`
 	// dir is the directory the configuration was loaded from. Paths that
 	// default to sitting beside the configuration resolve against this rather
 	// than against the operating system's location, so --config points at a
@@ -170,6 +171,26 @@ const (
 	DefaultGeoGPXHost = "127.0.0.1"
 	DefaultGeoGPXPort = 8765
 )
+
+// Conf configures dgs conf export: where the generator root and its secrets
+// are, and where the destination form opens. See
+// docs/apps/conf/export.md#configuration.
+type Conf struct {
+	// Root is the directory holding one subdirectory per service. Empty means
+	// the page opens with no root and asks for one.
+	Root string `json:"root"`
+	// Secrets is the directory a manifest's secrets file is named relative
+	// to. Empty means a service naming a secrets file refuses to render.
+	Secrets string     `json:"secrets"`
+	Export  ConfExport `json:"export"`
+}
+
+// ConfExport is where dgs conf export's destination form opens.
+type ConfExport struct {
+	// Dir is where the destination form opens, for a folder or an archive.
+	// Empty means the home directory.
+	Dir string `json:"dir"`
+}
 
 type Photo struct {
 	Import PhotoImport `json:"import"`
@@ -388,6 +409,21 @@ func (c Config) PhotoImportPaths() (source, destination string) {
 	return c.Photo.Import.Source, c.Photo.Import.Destination
 }
 
+// ConfRoot and ConfSecrets are conf.root and conf.secrets, already expanded by
+// LoadPath. Both are empty until configured.
+func (c Config) ConfRoot() string    { return c.Conf.Root }
+func (c Config) ConfSecrets() string { return c.Conf.Secrets }
+
+// ConfExportDir is where the destination form opens: conf.export.dir, or the
+// home directory when it is empty.
+func (c Config) ConfExportDir() string {
+	if c.Conf.Export.Dir != "" {
+		return c.Conf.Export.Dir
+	}
+	home, _ := os.UserHomeDir()
+	return home
+}
+
 func DefaultTopBarVisibility() TopBarVisibility {
 	return TopBarVisibility{Disk: true, Network: true, CPU: true, Time: true}
 }
@@ -501,6 +537,28 @@ func LoadPath(path string) (Config, error) {
 	}
 	if err := validateTiles(config.Geo.GPX.Tiles); err != nil {
 		return Config{}, fmt.Errorf("decode config %s: geo.gpx.%w", path, err)
+	}
+	home, _ := os.UserHomeDir()
+	if config.Conf.Root != "" {
+		expanded, err := ExpandPath(config.Conf.Root, os.LookupEnv, home)
+		if err != nil {
+			return Config{}, fmt.Errorf("decode config %s: conf.root: %w", path, err)
+		}
+		config.Conf.Root = expanded
+	}
+	if config.Conf.Secrets != "" {
+		expanded, err := ExpandPath(config.Conf.Secrets, os.LookupEnv, home)
+		if err != nil {
+			return Config{}, fmt.Errorf("decode config %s: conf.secrets: %w", path, err)
+		}
+		config.Conf.Secrets = expanded
+	}
+	if config.Conf.Export.Dir != "" {
+		expanded, err := ExpandPath(config.Conf.Export.Dir, os.LookupEnv, home)
+		if err != nil {
+			return Config{}, fmt.Errorf("decode config %s: conf.export.dir: %w", path, err)
+		}
+		config.Conf.Export.Dir = expanded
 	}
 	config.dir = filepath.Dir(path)
 	return config, nil
