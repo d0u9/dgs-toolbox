@@ -31,13 +31,16 @@ var (
 // with the tri-state checklist behaviour
 // docs/apps/cred/vault.md#the-flow's recipient checklist already uses.
 type Model struct {
-	rootPath string
-	loadErr  error
+	rootPath   string
+	secretsDir string
+	loadErr    error
 
+	confRoot *confgen.Root
 	services []*serviceNode
 	rows     []row
 	checked  map[string]bool
 	list     scrolllist.Model
+	preview  *previewState
 
 	width, height int
 	pendingG      bool
@@ -46,8 +49,10 @@ type Model struct {
 // New loads rootPath and builds the tree. An empty rootPath, or one that
 // fails to load, is not fatal: the page says so and waits, since where the
 // generator root is configured (conf.root) is the reader's own decision.
-func newModel(rootPath string) Model {
-	m := Model{rootPath: rootPath, checked: map[string]bool{}, list: scrolllist.New()}
+// secretsDir is conf.secrets, read only when a preview's service names a
+// secrets file.
+func newModel(rootPath, secretsDir string) Model {
+	m := Model{rootPath: rootPath, secretsDir: secretsDir, checked: map[string]bool{}, list: scrolllist.New()}
 	if rootPath == "" {
 		return m
 	}
@@ -56,6 +61,7 @@ func newModel(rootPath string) Model {
 		m.loadErr = err
 		return m
 	}
+	m.confRoot = root
 	m.services = buildTree(root)
 	m.refresh()
 	return m
@@ -72,10 +78,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.rows) == 0 {
 			return m, nil
 		}
+		if m.preview != nil {
+			m.handlePreviewKey(msg.String())
+			return m, nil
+		}
 		m.handleKey(msg.String())
 		return m, nil
 	}
 	return m, nil
+}
+
+// CapturesShellKey keeps Esc closing the preview instead of leaving the
+// command for the picker, the same way an open dialog elsewhere in the
+// toolbox holds onto it.
+func (m Model) CapturesShellKey(key string) bool {
+	return m.preview != nil && key == "esc"
 }
 
 func (m *Model) handleKey(key string) {
@@ -100,6 +117,8 @@ func (m *Model) handleKey(key string) {
 		}
 	case " ", "space", "x":
 		m.toggle()
+	case "enter":
+		m.openPreview()
 	case "right", "l":
 		if node := m.expandable(); node != nil {
 			*node = true
@@ -210,6 +229,9 @@ func (m *Model) toggle() {
 }
 
 func (m Model) View() string {
+	if m.preview != nil {
+		return m.previewView()
+	}
 	if m.rootPath == "" {
 		return m.centered(titleStyle.Render("dgs conf export") + "\n\n" +
 			mutedStyle.Render("no generator root configured — set conf.root"))
@@ -232,6 +254,17 @@ func (m Model) centered(content string) string {
 }
 
 func (m Model) Status() tui.Status {
+	if m.preview != nil {
+		if m.preview.err != nil {
+			return tui.Status{Left: "PREVIEW · ERROR", Center: m.preview.target, Right: "esc Close"}
+		}
+		shown := min(len(m.preview.lines), m.preview.scroll+max(1, m.height-2))
+		return tui.Status{
+			Left:   "PREVIEW",
+			Center: fmt.Sprintf("%s · line %d–%d of %d", m.preview.target, m.preview.scroll+1, shown, len(m.preview.lines)),
+			Right:  "↑↓ Scroll  esc Close",
+		}
+	}
 	if m.rootPath == "" || m.loadErr != nil {
 		return tui.Status{Left: "EXPORT", Center: "no generator root", Right: "esc Back  q Quit"}
 	}
@@ -239,7 +272,7 @@ func (m Model) Status() tui.Status {
 	return tui.Status{
 		Left:   "EXPORT",
 		Center: fmt.Sprintf("%d/%d targets checked", selected, total),
-		Right:  "↑↓ Move  space Check  ←/→ Fold  esc Back",
+		Right:  "↑↓ Move  space Check  ↵ Preview  ←/→ Fold  esc Back",
 	}
 }
 

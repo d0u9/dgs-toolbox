@@ -58,7 +58,7 @@ func pressKey(m Model, kt tea.KeyType) Model {
 }
 
 func TestNewModel_NoRootConfigured(t *testing.T) {
-	m := newModel("")
+	m := newModel("", "")
 	view := m.View()
 	if !strings.Contains(view, "no generator root configured") {
 		t.Fatalf("View() = %q, want the no-root message", view)
@@ -70,7 +70,7 @@ func TestNewModel_NoRootConfigured(t *testing.T) {
 }
 
 func TestNewModel_LoadErrorIsShown(t *testing.T) {
-	m := newModel(filepath.Join(t.TempDir(), "does-not-exist"))
+	m := newModel(filepath.Join(t.TempDir(), "does-not-exist"), "")
 	if m.loadErr == nil {
 		t.Fatal("loadErr = nil, want an error for a missing root")
 	}
@@ -80,7 +80,7 @@ func TestNewModel_LoadErrorIsShown(t *testing.T) {
 }
 
 func TestNewModel_BuildsRowsForServicesRolesAndInstances(t *testing.T) {
-	m := newModel(buildRoot(t))
+	m := newModel(buildRoot(t), "")
 	m.width, m.height = 80, 24
 
 	var ids []string
@@ -106,7 +106,7 @@ func TestNewModel_BuildsRowsForServicesRolesAndInstances(t *testing.T) {
 }
 
 func TestModel_BrokenInstanceCannotBeChecked(t *testing.T) {
-	m := newModel(buildRoot(t))
+	m := newModel(buildRoot(t), "")
 	m.width, m.height = 80, 24
 	if !m.list.SelectID("inst:hysteria2/server/bad") {
 		t.Fatal("SelectID: row not found")
@@ -122,7 +122,7 @@ func TestModel_BrokenInstanceCannotBeChecked(t *testing.T) {
 }
 
 func TestModel_CheckingAnInstancePropagatesUpAndCountsIt(t *testing.T) {
-	m := newModel(buildRoot(t))
+	m := newModel(buildRoot(t), "")
 	m.width, m.height = 80, 24
 	m.list.SelectID("inst:hysteria2/server/us-sfo")
 	m = press(m, " ")
@@ -151,7 +151,7 @@ func TestModel_CheckingAnInstancePropagatesUpAndCountsIt(t *testing.T) {
 }
 
 func TestModel_CheckingRoleChecksEveryCheckableInstanceUnderIt(t *testing.T) {
-	m := newModel(buildRoot(t))
+	m := newModel(buildRoot(t), "")
 	m.width, m.height = 80, 24
 	m.list.SelectID("role:hysteria2/server")
 	m = press(m, " ")
@@ -181,7 +181,7 @@ func TestModel_CheckingRoleChecksEveryCheckableInstanceUnderIt(t *testing.T) {
 }
 
 func TestModel_FoldingHidesChildrenWithoutLosingChecks(t *testing.T) {
-	m := newModel(buildRoot(t))
+	m := newModel(buildRoot(t), "")
 	m.width, m.height = 80, 24
 	m.list.SelectID("inst:hysteria2/server/us-sfo")
 	m = press(m, " ")
@@ -211,7 +211,7 @@ func TestModel_FoldingHidesChildrenWithoutLosingChecks(t *testing.T) {
 }
 
 func TestModel_LeftOnLeafMovesToParent(t *testing.T) {
-	m := newModel(buildRoot(t))
+	m := newModel(buildRoot(t), "")
 	m.width, m.height = 80, 24
 	m.list.SelectID("inst:hysteria2/server/us-sfo")
 	m = pressKey(m, tea.KeyLeft)

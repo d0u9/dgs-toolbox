@@ -17,10 +17,10 @@ func New() tui.App {
 				Name:        "Export",
 				Description: "Render service configuration from templates and export it.",
 				New: func() tui.CommandModel {
-					return newModel("")
+					return newModel("", "")
 				},
 				NewWithConfig: func(global config.Config) tui.CommandModel {
-					return newModel(global.ConfRoot())
+					return newModel(global.ConfRoot(), global.ConfSecrets())
 				},
 				Flags: []tui.Flag{
 					{
@@ -28,6 +28,14 @@ func New() tui.App {
 						Usage: "generator root, one subdirectory per service (default: conf.root)",
 						Apply: func(global *config.Config, value string) error {
 							global.Conf.Root = value
+							return nil
+						},
+					},
+					{
+						Name:  "secrets",
+						Usage: "directory a manifest's secrets file is named relative to (default: conf.secrets)",
+						Apply: func(global *config.Config, value string) error {
+							global.Conf.Secrets = value
 							return nil
 						},
 					},
