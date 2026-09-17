@@ -2,6 +2,7 @@ package apps
 
 import (
 	"dgs-toolbox/internal/apps/capture"
+	"dgs-toolbox/internal/apps/conf"
 	"dgs-toolbox/internal/apps/cred"
 	"dgs-toolbox/internal/apps/demo"
 	"dgs-toolbox/internal/apps/geo"
@@ -11,5 +12,5 @@ import (
 
 // All returns the complete toolbox app registry in display order.
 func All() []tui.App {
-	return []tui.App{demo.New(), capture.New(), photo.New(), geo.New(), cred.New()}
+	return []tui.App{demo.New(), capture.New(), photo.New(), geo.New(), cred.New(), conf.New()}
 }
