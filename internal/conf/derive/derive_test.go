@@ -84,7 +84,7 @@ func workedManifests() map[string]confgen.Manifest {
 			"client": {Auth: confgen.AuthNone},
 		}},
 		"microbin": {Roles: map[string]confgen.Role{
-			"server": {Auth: confgen.AuthShared}, // reached from a browser: no ReachedBy.
+			"server": {Auth: confgen.AuthNone}, // reached from a browser: no ReachedBy.
 		}},
 	}
 }

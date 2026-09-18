@@ -116,13 +116,14 @@ keys off any particular spelling, `server` included. The two lists are in
 | --- | --- |
 | `secret` | The shape of a generated credential for this service: `kind` and its size. Omitted, a printable random string. |
 | `roles` | One entry per kind of instance the service generates. The key is the role name, and also the directory its defaults file is in. |
-| `roles.<role>.auth` | Whether the role's inbound side authenticates: `per-principal`, `shared` or `none`. See [inventory](inventory.md#how-a-service-says-what-it-needs). |
+| `roles.<role>.auth` | Whether the role's inbound side authenticates each principal separately: `per-principal` or `none`. A role's own credentials are `own`'s business, not this key's. See [inventory](inventory.md#how-a-service-says-what-it-needs). |
 | `roles.<role>.reached_by` | The role a client derives as, to reach this one. Omitted, a route entering this role renders nothing for the person granted it — see [what is derived](inventory.md#what-is-derived). |
 | `roles.<role>.template` | The template rendered for the role, relative to the service directory. |
 | `roles.<role>.defaults` | How the role's defaults apply: `document` or `element`. See below. |
 | `roles.<role>.output` | The name the rendered file is written under — the name the service expects where it runs, such as `config.json` or `server.env`. |
 | `roles.<role>.rotation` | `disruptive` when this role's template cannot emit two accounts for one principal, so rotating it drops the connection instead of overlapping old and new. Omitted, it can. See [rotation](inventory.md#rotation). |
-| `roles.<role>.combine_own` | The name of one of this role's own secrets that every principal reaching it also needs, alongside its own. Omitted, a principal needs nothing beyond its own secret. See [a shared identity alongside a principal's own](inventory.md#a-shared-identity-alongside-a-principals-own). |
+| `roles.<role>.own` | The names of this role's own secrets — credentials belonging to the instance rather than to anything reaching it, one `<instance>/own/<name>` file each. It is the only place they are named, so `secret sync` generates what is listed and reports what is not. See [a role's own secrets](inventory.md#a-roles-own-secrets). |
+| `roles.<role>.combine_own` | One name from `own` that every principal reaching this role also needs, alongside its own. It marks a name rather than declaring one, so it must appear in `own`. Omitted, a principal needs nothing beyond its own secret. See [a shared identity alongside a principal's own](inventory.md#a-shared-identity-alongside-a-principals-own). |
 
 The role name is the directory name and the defaults file is always
 `defaults.yaml` in it, so neither is declared. That is the naming unification
@@ -476,9 +477,15 @@ after expansion.
   opens a TUI today, and reports are read-only, so an invocation that writes
   files is outside the current command model. That is the part still open, and
   it needs a decision in [`tui.md`](../../tui.md) rather than a flag added here.
+
+  It is open only for the command line now.
   [`dgs conf secret show`/`edit`](inventory.md#viewing-and-editing-several-at-once)
-  wait on the same decision — spawning `$EDITOR` is the same kind of
-  side-effecting invocation, and neither should invent its own answer to it.
+  no longer waits on it: [`inspect.md`](inspect.md#editing-a-secret) settles that
+  half by keeping the write inside a leaf command's page, behind the same
+  confirmation dialog every other write in `dgs` uses, rather than adding a
+  side-effecting Cobra subcommand. An export writing from its own page is the
+  same shape; what stays undecided is an invocation that writes without opening
+  one.
 
 The per-instance `.sh` files are not among these: they are deleted with the
 directory rename, not kept working alongside the manifest.
@@ -491,9 +498,9 @@ directory rename, not kept working alongside the manifest.
   often enough that doing it by hand every time is the wrong end state, and it is
   what makes the renderer testable without driving a TUI. The page prints the
   equivalent command line after an export, so the second export is one line
-  rather than the same tree walked again. What is still open is how a
-  file-writing invocation fits the command model; see
-  [Open questions](#open-questions).
+  rather than the same tree walked again. What is still open is how an
+  invocation that writes files without opening a page fits the command model;
+  see [Open questions](#open-questions).
 - **Encrypted archives.** `--encrypt-to <host|group>`, writing `.zip.age`
   through `internal/cred/seal` and the recipient folder, so an export can be
   handed over without the plaintext leaving the vault's model. Deferred to keep

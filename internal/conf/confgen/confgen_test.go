@@ -3,6 +3,7 @@ package confgen
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -105,7 +106,7 @@ roles:
     template: templates/server.env.tmpl
     defaults: document
     output: server.env
-    auth: shared
+    auth: none
     typo_field: oops
 `)
 	// A second, valid service, so one broken manifest does not abort discovery.
@@ -193,5 +194,33 @@ roles:
 	}
 	if byName["bad-shape"].Broken == "" {
 		t.Fatal("bad-shape.Broken = empty, want not-a-mapping error")
+	}
+}
+
+// TestLoad_UnknownAuthIsBroken covers a role declaring an auth value that is
+// neither per-principal nor none — `shared`, which this design once had.
+// Without the check it would read as "not per-principal" and generate
+// nothing, which is exactly what `none` says on purpose, so the manifest
+// would be wrong and silent.
+func TestLoad_UnknownAuthIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), `
+roles:
+  server:
+    auth: shared
+    template: templates/server.env.tmpl
+    defaults: document
+    output: server.env
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.Services) != 1 {
+		t.Fatalf("Services = %d, want 1", len(got.Services))
+	}
+	if !strings.Contains(got.Services[0].Broken, `auth "shared"`) {
+		t.Fatalf("Broken = %q, want it to name the unknown auth", got.Services[0].Broken)
 	}
 }

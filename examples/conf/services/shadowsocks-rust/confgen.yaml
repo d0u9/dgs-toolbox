@@ -6,6 +6,8 @@ roles:
   server:
     auth: per-principal
     reached_by: ss-rust
+    own: [psk]
+    combine_own: psk
     template: templates/server.json.tmpl
     defaults: element
     output: config.json
