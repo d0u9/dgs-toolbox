@@ -61,9 +61,6 @@ type InspectData = loaded
 
 func newInspectModel(rootPath, secretsDir string) InspectModel {
 	m := InspectModel{rootPath: rootPath, secretsDir: secretsDir, list: scrolllist.New()}
-	// The Nodes index is a tree: depth is drawn into the label, so a number
-	// counting visible rows adds nothing and moves when a fold does.
-	m.list.HideNumbers(true)
 	if rootPath == "" {
 		return m
 	}
@@ -218,8 +215,10 @@ func (m *InspectModel) setTab(tab int) {
 	m.tab = tab
 	if tab == tabUsers {
 		m.list.SetItems(m.userItems)
+		m.list.HideNumbers(false)
 	} else {
 		m.list.SetItems(m.nodeItems)
+		m.list.HideNumbers(true)
 	}
 	m.list.First()
 	m.detailScroll = 0
@@ -625,11 +624,34 @@ func renderUserDetail(l InspectData, id string) (string, error) {
 		return "", fmt.Errorf("user %q not found", id)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "username: %s\n", u.UsernameOr(id))
+
+	// The username is what the services see, and defaults to the user's own
+	// identifier — see docs/apps/conf/inventory.md#users. Printing it when
+	// the two are equal says nothing; printing it when they differ is the
+	// whole point of the field.
+	if name := u.UsernameOr(id); name != id {
+		fmt.Fprintf(&b, "username: %s\n", name)
+	}
+	if u.ClientRole != "" {
+		fmt.Fprintf(&b, "client_role: %s\n", u.ClientRole)
+	}
+
+	// What each granted route reaches, so a route name means something
+	// here: the entry hop is where this person's traffic goes in.
+	fmt.Fprintln(&b, "\naccess:")
+	for _, name := range u.Access {
+		r, ok := l.inv.Routes[name]
+		if !ok || len(r.Hops) == 0 {
+			fmt.Fprintf(&b, "  %-12s (no such route)\n", name)
+			continue
+		}
+		fmt.Fprintf(&b, "  %-12s enters %s\n", name, r.Hops[0])
+	}
+
 	if u.Devices == inventory.DevicesUnmanaged {
-		fmt.Fprintln(&b, "devices: unmanaged — one credential, no node")
+		fmt.Fprintln(&b, "\ndevices: unmanaged — one credential per route, no node file")
+		writeUserInstances(&b, l, id, "", u.Access, "  ")
 	} else {
-		fmt.Fprintln(&b, "devices: managed")
 		var owned []string
 		for _, n := range l.inv.Nodes {
 			if n.Owner == id {
@@ -637,26 +659,83 @@ func renderUserDetail(l InspectData, id string) (string, error) {
 			}
 		}
 		sort.Strings(owned)
-		if len(owned) > 0 {
-			fmt.Fprintf(&b, "  %s\n", strings.Join(owned, ", "))
+		fmt.Fprintf(&b, "\ndevices: managed — %s, one credential each\n", plural(len(owned), "device"))
+		for _, node := range owned {
+			fmt.Fprintf(&b, "  %s\n", node)
+			writeUserInstances(&b, l, "", node, u.Access, "    ")
 		}
 	}
-	if u.ClientRole != "" {
-		fmt.Fprintf(&b, "client_role: %s\n", u.ClientRole)
-	}
-	fmt.Fprintf(&b, "access: %s\n", strings.Join(u.Access, ", "))
 
-	var derivedIDs []string
-	for _, ci := range l.derived.ClientInstances {
-		if ci.User == id || (ci.Node != "" && nodeOwner(l.inv, ci.Node) == id) {
-			derivedIDs = append(derivedIDs, ci.ID)
+	// Every credential this person holds, by path. The account name is what
+	// the server's own table calls them, which is the user's username for
+	// an unmanaged user and "<node>-<route>"'s device for a managed one.
+	var lines []string
+	for _, g := range l.derived.Grants {
+		switch {
+		case g.Principal.Kind == derive.PrincipalUser && g.Principal.ID == id:
+		case g.Principal.Kind == derive.PrincipalNode && nodeOwner(l.inv, g.Principal.ID) == id:
+		default:
+			continue
 		}
+		path := secretstore.Path{Instance: g.Instance, Port: g.Port, Kind: string(g.Principal.Kind), Name: g.Principal.ID}
+		lines = append(lines, fmt.Sprintf("  %-44s %s", path.String(), g.Principal.Name))
 	}
-	sort.Strings(derivedIDs)
-	if len(derivedIDs) > 0 {
-		fmt.Fprintf(&b, "\nderived instances: %s\n", strings.Join(derivedIDs, ", "))
+	sort.Strings(lines)
+	if len(lines) > 0 {
+		fmt.Fprintf(&b, "\ngrants (%s, values not shown):\n", plural(len(lines), "credential"))
+		fmt.Fprintln(&b, strings.Join(lines, "\n"))
 	}
 	return b.String(), nil
+}
+
+// writeUserInstances lists what each granted route derives for one unmanaged
+// user or one managed device — one line per route, whether or not it derives
+// anything. A route whose entry role declares no reached_by renders no client
+// file, and the person still holds a credential for it: listing only the
+// instances that exist would make the two cases look like one route missing.
+// See docs/apps/conf/inventory.md#what-is-derived.
+func writeUserInstances(b *strings.Builder, l InspectData, user, node string, access []string, indent string) {
+	for _, route := range access {
+		var found *derive.ClientInstance
+		for i := range l.derived.ClientInstances {
+			ci := &l.derived.ClientInstances[i]
+			if ci.Route != route {
+				continue
+			}
+			if (user != "" && ci.User == user) || (node != "" && ci.Node == node) {
+				found = ci
+			}
+		}
+		if found != nil {
+			fmt.Fprintf(b, "%s%-12s %-28s %s / %s\n", indent, route, found.ID, found.Service, found.Role)
+			continue
+		}
+		fmt.Fprintf(b, "%s%-12s %-28s %s\n", indent, route, "—", noClientReason(l, route))
+	}
+}
+
+// noClientReason says why a granted route derives no client instance, which
+// is a fact about the service it enters rather than something missing here.
+func noClientReason(l InspectData, route string) string {
+	r, ok := l.inv.Routes[route]
+	if !ok || len(r.Hops) == 0 {
+		return "(no such route)"
+	}
+	hop, err := derive.ParseHop(r.Hops[0])
+	if err != nil {
+		return "(unreadable entry hop)"
+	}
+	for _, n := range l.inv.Nodes {
+		for _, inst := range n.Instances {
+			if inst.ID != hop.Instance {
+				continue
+			}
+			if l.manifests[inst.Service].Roles[inst.Role].ReachedBy == "" {
+				return fmt.Sprintf("no client file (%s/%s declares no reached_by)", inst.Service, inst.Role)
+			}
+		}
+	}
+	return "no client file"
 }
 
 func nodeOwner(inv *inventory.Root, nodeID string) string {
