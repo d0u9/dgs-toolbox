@@ -314,3 +314,23 @@ func TestValidate_RecentPreviousIsNotAnIssue(t *testing.T) {
 		t.Fatalf("Validate = %v, want no stale-.previous issue for a six-day-old file", messages(got))
 	}
 }
+
+// TestValidate_CombineOwnNotInOwnList covers a combine_own naming a secret
+// the role's own list does not hold: sync would neither generate that file
+// nor report it, so every client deriving from the role renders without the
+// shared identity it needs.
+func TestValidate_CombineOwnNotInOwnList(t *testing.T) {
+	inv := validInventory()
+	manifests := validManifests()
+	manifests["shadowsocks-rust"].Roles["server"] = confgen.Role{Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust", CombineOwn: "psk"}
+	got := Validate(inv, manifests, derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `combine_own "psk" is not in this role's own list`) {
+		t.Fatalf("Validate = %v, want a combine_own outside the own list issue", messages(got))
+	}
+
+	manifests["shadowsocks-rust"].Roles["server"] = confgen.Role{Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust", CombineOwn: "psk", Own: []string{"psk"}}
+	got = Validate(inv, manifests, derived(t, inv, manifests), nil)
+	if containsSubstring(got, "combine_own") {
+		t.Fatalf("Validate = %v, want no combine_own issue once psk is listed", messages(got))
+	}
+}

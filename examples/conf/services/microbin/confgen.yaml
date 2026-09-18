@@ -4,7 +4,8 @@ secret:
 
 roles:
   server:
-    auth: shared
+    auth: none
+    own: [auth_password]
     template: templates/server.env.tmpl
     defaults: document
     output: server.env

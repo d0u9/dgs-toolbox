@@ -147,7 +147,8 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 	}
 
 	// Rule 2: instance.service names a service; instance.role names one of
-	// its roles; a reached_by names another role of the same service.
+	// its roles; a reached_by names another role of the same service; a
+	// combine_own names one of that role's own secrets.
 	var realIDs []string
 	for id := range realInstances {
 		realIDs = append(realIDs, id)
@@ -168,6 +169,21 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 		if role.ReachedBy != "" {
 			if _, ok := manifest.Roles[role.ReachedBy]; !ok {
 				add("service %q role %q: reached_by %q is not a role of this service", r.inst.Service, r.inst.Role, role.ReachedBy)
+			}
+		}
+		if role.CombineOwn != "" {
+			listed := false
+			for _, name := range role.Own {
+				if name == role.CombineOwn {
+					listed = true
+					break
+				}
+			}
+			if !listed {
+				// The own list is the one place a role's own secrets are
+				// named, so a combine_own outside it names a file sync
+				// neither generates nor reports.
+				add("service %q role %q: combine_own %q is not in this role's own list %v", r.inst.Service, r.inst.Role, role.CombineOwn, role.Own)
 			}
 		}
 	}

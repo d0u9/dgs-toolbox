@@ -40,7 +40,7 @@ func fixture(t *testing.T) (*inventory.Root, *derive.Model) {
 			"server":  {Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust"},
 			"ss-rust": {Auth: confgen.AuthNone},
 		}},
-		"microbin": {Roles: map[string]confgen.Role{"server": {Auth: confgen.AuthShared}}},
+		"microbin": {Roles: map[string]confgen.Role{"server": {Auth: confgen.AuthNone}}},
 	}
 	model, err := derive.Derive(inv, manifests)
 	if err != nil {

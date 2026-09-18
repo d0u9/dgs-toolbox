@@ -5,13 +5,13 @@
 //
 // The rules are in docs/apps/conf/inventory.md#secrets.
 //
-// Scope: this package computes implied paths only for a role whose auth is
-// confgen.AuthPerPrincipal, where the (principal, port) pairs derive.Derive
-// already computed pin down the whole set. A role's `shared` own secrets are
-// named by its template, not by anything the inventory states, so this
-// package does not invent expected names for them — files already under an
-// instance's own/ directory are read and preserved, never reported
-// orphaned, until a later milestone gives them a computable identity too.
+// Two things imply a path. A role whose auth is confgen.AuthPerPrincipal
+// implies one per (principal, port) pair derive.Derive already computed. A
+// role's own list implies one <instance>/own/<name> per name, for every
+// instance of that role. Together they are the whole set, so a file under an
+// own/ directory that no name in the list accounts for is reported orphaned
+// like any other — it is a credential a template may still read and sync
+// will never regenerate.
 package secretstore
 
 import (
@@ -57,9 +57,9 @@ func (p Path) String() string {
 
 // ImpliedPaths computes every secret path a derivation implies: one file per
 // (principal, port) grant for a role whose auth is per-principal, plus one
-// <instance>/own/<name> file for every real instance whose role declares
-// combine_own. See the package doc for what it deliberately leaves out
-// beyond that.
+// <instance>/own/<name> file for every name in its role's own list. A role's
+// combine_own names one of those, so it implies nothing on its own. See the
+// package doc for what it deliberately leaves out beyond that.
 func ImpliedPaths(inv *inventory.Root, manifests map[string]confgen.Manifest, model *derive.Model) []Path {
 	roleOf := map[string]confgen.Role{} // instance ID -> its role
 	for _, n := range inv.Nodes {
@@ -94,8 +94,8 @@ func ImpliedPaths(inv *inventory.Root, manifests map[string]confgen.Manifest, mo
 		add(Path{Instance: g.Instance, Port: g.Port, Kind: string(g.Principal.Kind), Name: g.Principal.ID})
 	}
 	for id, role := range roleOf {
-		if role.CombineOwn != "" {
-			add(Path{Instance: id, Port: OwnPort, Name: role.CombineOwn})
+		for _, name := range role.Own {
+			add(Path{Instance: id, Port: OwnPort, Name: name})
 		}
 	}
 
@@ -156,15 +156,6 @@ func Sync(root string, implied []Path) (Result, error) {
 		if strings.HasSuffix(rel, PreviousSuffix) {
 			continue // a rotation's previous value, not an implied path itself.
 		}
-		if isOwnPath(rel) && !impliedSet[rel] {
-			// Most own/ names are not computed here; see the package doc.
-			// A combine_own-implied one is treated normally below when it is
-			// still implied. When it is not — the role dropped combine_own,
-			// say — this cannot tell that apart from an own/ path nothing
-			// ever computed an identity for, so it is left alone the same
-			// way, rather than guessed at.
-			continue
-		}
 		if !impliedSet[rel] {
 			res.Orphaned = append(res.Orphaned, parsePath(rel))
 		}
@@ -174,13 +165,14 @@ func Sync(root string, implied []Path) (Result, error) {
 	return res, nil
 }
 
-func isOwnPath(rel string) bool {
-	parts := strings.Split(filepath.ToSlash(rel), "/")
-	return len(parts) >= 2 && parts[1] == OwnPort
-}
-
 func parsePath(rel string) Path {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
+	// An own secret is three segments, <instance>/own/<name>, since it
+	// belongs to the instance rather than to a principal on one of its
+	// ports. Everything else is four.
+	if len(parts) == 3 && parts[1] == OwnPort {
+		return Path{Instance: parts[0], Port: OwnPort, Name: parts[2]}
+	}
 	if len(parts) != 4 {
 		return Path{Instance: rel}
 	}
