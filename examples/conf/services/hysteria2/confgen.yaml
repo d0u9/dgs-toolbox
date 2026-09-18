@@ -1,0 +1,16 @@
+secret:
+  kind: base64
+  bytes: 32
+
+roles:
+  server:
+    auth: per-principal
+    reached_by: link
+    template: templates/server.yaml.tmpl
+    defaults: document
+    output: config.yaml
+  link:
+    auth: none
+    template: templates/link.tmpl
+    defaults: element
+    output: share.txt

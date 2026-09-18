@@ -1,0 +1,18 @@
+listen: {{ .listen }}
+
+tls:
+  cert: /etc/hysteria/tls/fullchain.pem
+  key: /etc/hysteria/tls/privkey.pem
+
+auth:
+  type: userpass
+  userpass:
+    {{- range principals "main" }}
+    {{ .Name }}: {{ toJSON .Secret }}
+    {{- end }}
+
+masquerade:
+  type: proxy
+  proxy:
+    url: https://example.org/
+    rewriteHost: true

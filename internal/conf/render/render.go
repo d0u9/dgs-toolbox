@@ -1,7 +1,8 @@
-// Package render turns one target into rendered bytes: a role's defaults, an
-// instance's values, a service's secrets and the target itself, run through a
-// template. It knows nothing of the TUI or the filesystem layout — Input
-// carries everything it needs as bytes and strings.
+// Package render turns one target into rendered bytes: a role's defaults,
+// the render context docs/apps/conf/inventory.md#the-render-context pins,
+// and the target itself, run through a template. It knows nothing of the
+// TUI or the filesystem layout — Input carries everything it needs as
+// already-decoded values and bytes.
 //
 // The rules are in docs/apps/conf/export.md#rendering.
 package render
@@ -30,7 +31,19 @@ func (t Target) String() string {
 	return t.Service + "/" + t.Role + "/" + t.Instance
 }
 
-// Input is everything one target renders from.
+// Principal is one account a per-principal port grants, with its secret —
+// what docs/apps/conf/inventory.md#the-render-context's principals
+// datasource holds per entry.
+type Principal struct {
+	Name   string
+	Secret string
+}
+
+// Input is one target's render context, plus the template it renders. Every
+// field but Template, Defaults and DefaultsKind corresponds to one of
+// docs/apps/conf/inventory.md#the-render-context's datasources; node,
+// instance, upstream, own and target are read-only template functions
+// returning them.
 type Input struct {
 	Target Target
 
@@ -41,23 +54,32 @@ type Input struct {
 	// defaults.
 	Defaults []byte
 	// DefaultsKind is confgen.DefaultsDocument or confgen.DefaultsElement,
-	// and decides how Defaults and Values combine. See
+	// and decides how Defaults and Instance combine. See
 	// docs/apps/conf/export.md#two-kinds-of-defaults.
 	DefaultsKind string
 
-	// Values is the instance's own values.yaml content.
-	Values []byte
-
-	// Secrets is the service's secrets file content: a YAML list of entries,
-	// each holding a "servers" list among whatever else it carries. Nil or
-	// empty means the service has none, and the secret function refuses.
-	Secrets []byte
+	// Instance is the render context's instance datasource: id, service,
+	// role, ports, bind. It is also what Defaults merges with or hands to
+	// the template, replacing what used to be a separate values file.
+	Instance map[string]any
+	// Node is the node this instance runs on: id, networks. Nil for an
+	// unmanaged user's derived instance, who has no node.
+	Node map[string]any
+	// Upstream is the next hop, resolved: address, port and secret. Nil for
+	// a terminal instance.
+	Upstream map[string]any
+	// Principals is every port with auth: per-principal, each to the
+	// accounts and secrets of everything holding a grant on it.
+	Principals map[string][]Principal
+	// Own is the instance's own secrets, by name — what the secret template
+	// function reads from.
+	Own map[string]string
 }
 
 // Render runs Template over Input and returns the rendered bytes. Every
-// error — a YAML that will not parse, a template that will not parse or
-// execute, a missing secret — is wrapped with Input.Target so a failure
-// among many targets names which one it was.
+// error — a template that will not parse or execute, a missing secret — is
+// wrapped with Input.Target so a failure among many targets names which one
+// it was.
 func Render(in Input) ([]byte, error) {
 	out, err := render(in)
 	if err != nil {
@@ -67,38 +89,33 @@ func Render(in Input) ([]byte, error) {
 }
 
 func render(in Input) ([]byte, error) {
-	values, err := decodeMapping(in.Values, "values")
-	if err != nil {
-		return nil, err
-	}
-
 	defaults, err := decodeMapping(in.Defaults, "defaults")
 	if err != nil {
 		return nil, err
 	}
 
-	secrets, err := decodeSecrets(in.Secrets)
-	if err != nil {
-		return nil, err
+	instance := in.Instance
+	if instance == nil {
+		instance = map[string]any{}
 	}
 
 	var root map[string]any
 	switch in.DefaultsKind {
 	case confgen.DefaultsDocument:
 		// The instance's own values win over the whole document.
-		root = mergeInto(values, defaults)
+		root = mergeInto(instance, defaults)
 	case confgen.DefaultsElement:
 		// The defaults are one entry of a list, and it is for the template to
 		// apply to each entry of whichever list that is — see the open
-		// question in docs/apps/conf/export.md#open-questions. The instance's
-		// values reach the template unmerged, and defaults() hands over the
-		// raw defaults.
-		root = values
+		// question in docs/apps/conf/export.md#open-questions. The instance
+		// reaches the template unmerged, and defaults() hands over the raw
+		// defaults.
+		root = instance
 	default:
 		return nil, fmt.Errorf("unknown defaults kind %q", in.DefaultsKind)
 	}
 
-	tmpl, err := template.New(in.Target.String()).Funcs(funcs(defaults, secrets, in.Target)).Parse(in.Template)
+	tmpl, err := template.New(in.Target.String()).Funcs(funcs(defaults, in)).Parse(in.Template)
 	if err != nil {
 		return nil, fmt.Errorf("parsing template: %w", err)
 	}
@@ -124,17 +141,4 @@ func decodeMapping(data []byte, what string) (map[string]any, error) {
 		return nil, fmt.Errorf("%s: not a mapping", what)
 	}
 	return m, nil
-}
-
-// decodeSecrets parses YAML that must be a list of mappings, or nothing when
-// data is empty.
-func decodeSecrets(data []byte) ([]map[string]any, error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-	var list []map[string]any
-	if err := yaml.Unmarshal(data, &list); err != nil {
-		return nil, fmt.Errorf("parsing secrets: %w", err)
-	}
-	return list, nil
 }

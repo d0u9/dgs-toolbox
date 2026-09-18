@@ -1,5 +1,5 @@
-// Package target lists the targets a generator root holds and matches
-// selectors against them.
+// Package target lists the targets an inventory and its derivation hold,
+// and matches selectors against them. A target is one instance.
 //
 // The rules are in docs/apps/conf/export.md#targets-and-selectors.
 package target
@@ -10,152 +10,258 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/confgen"
+	"dgs-toolbox/internal/conf/derive"
+	"dgs-toolbox/internal/conf/inventory"
 )
 
-// Target is one <service>/<role>/<instance>.
+// Target is one instance, real or derived, with the fields a selector
+// matches against.
 type Target struct {
-	Service  string
-	Role     string
+	// Node is the owning node's ID, empty for an unmanaged user's derived
+	// instance.
+	Node string
+	// User is the node's owner, or the unmanaged user's own key. Empty for
+	// an instance on a node with no owner.
+	User    string
+	Service string
+	Role    string
+	// Instance is the target's identifier — a bare selector term matches
+	// this field.
 	Instance string
-}
-
-// String is service/role/instance, the form a selector and --targets write.
-func (t Target) String() string {
-	return t.Service + "/" + t.Role + "/" + t.Instance
-}
-
-// Status is one target as List finds it: either ready to render, or broken
-// with the reason, carried over from the service's manifest or the
-// instance's own file.
-type Status struct {
-	Target Target
+	// Routes is every route this instance takes part in: the routes it is
+	// any hop of, or, for a derived instance, the one route it was derived
+	// for.
+	Routes []string
+	// Broken is the node file's parse error, carried over so a selector can
+	// still name a broken node's instances and a report can say why they
+	// cannot render. Empty for a derived instance — a broken node grants no
+	// routes, so it derives nothing to be broken.
 	Broken string
 }
 
-// List is every target a discovered root holds, sorted by service, role and
-// instance. A service whose manifest is broken contributes no targets, since
-// it declares no roles; an instance that is itself broken still becomes a
-// target, so a selector can name it and a report can say why it cannot
-// render.
-func List(root *confgen.Root) []Status {
-	var statuses []Status
-	for _, svc := range root.Services {
-		for _, role := range svc.Roles {
-			for _, inst := range role.Instances {
-				statuses = append(statuses, Status{
-					Target: Target{Service: svc.Name, Role: role.Name, Instance: inst.Name},
-					Broken: inst.Broken,
-				})
-			}
+// String is node/instance, the identifying pair --targets and an error name
+// a target by.
+func (t Target) String() string {
+	node := t.Node
+	if node == "" {
+		node = t.User
+	}
+	return node + "/" + t.Instance
+}
+
+// List is every target an inventory and its derivation hold, sorted by
+// node, then instance. A broken node contributes one target naming the node
+// and carrying its parse error, since a node file that will not parse names
+// no instances to list individually.
+func List(inv *inventory.Root, model *derive.Model) []Target {
+	owner := map[string]string{}
+	for _, n := range inv.Nodes {
+		if n.Broken == "" {
+			owner[n.ID] = n.Owner
 		}
 	}
-	sort.Slice(statuses, func(i, j int) bool {
-		a, b := statuses[i].Target, statuses[j].Target
-		if a.Service != b.Service {
-			return a.Service < b.Service
+
+	var out []Target
+	for _, n := range inv.Nodes {
+		if n.Broken != "" {
+			// A broken node's own id never parsed; its file path is the only
+			// identifying thing left to group and report it by.
+			out = append(out, Target{Node: valueOr(n.ID, n.Path), Broken: n.Broken})
+			continue
 		}
-		if a.Role != b.Role {
-			return a.Role < b.Role
+		for _, inst := range n.Instances {
+			if inst.Service == "" && inst.Role == "" {
+				continue // an override, not a target of its own — the derived instance it pins is.
+			}
+			out = append(out, Target{
+				Node:     n.ID,
+				User:     n.Owner,
+				Service:  inst.Service,
+				Role:     inst.Role,
+				Instance: inst.ID,
+				Routes:   routesContaining(inv, inst.ID),
+			})
+		}
+	}
+	for _, ci := range model.ClientInstances {
+		out = append(out, Target{
+			Node:     ci.Node,
+			User:     valueOr(ci.User, owner[ci.Node]),
+			Service:  ci.Service,
+			Role:     ci.Role,
+			Instance: ci.ID,
+			Routes:   []string{ci.Route},
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Node != b.Node {
+			return a.Node < b.Node
 		}
 		return a.Instance < b.Instance
 	})
-	return statuses
+	return out
 }
 
-// Match returns every target a selector matches, sorted the same way List
-// sorts. A selector matching nothing is an error naming the selector, not an
-// empty result — see docs/apps/conf/export.md#targets-and-selectors.
+func valueOr(v, fallback string) string {
+	if v != "" {
+		return v
+	}
+	return fallback
+}
+
+// routesContaining is every route naming instance as any of its hops.
+func routesContaining(inv *inventory.Root, instance string) []string {
+	var routes []string
+	for name, route := range inv.Routes {
+		for _, raw := range route.Hops {
+			hop, err := derive.ParseHop(raw)
+			if err == nil && hop.Instance == instance {
+				routes = append(routes, name)
+				break
+			}
+		}
+	}
+	sort.Strings(routes)
+	return routes
+}
+
+// NodeGroup is List's targets grouped by node, the form --targets reports
+// them in.
+type NodeGroup struct {
+	// Node is the node ID, or the unmanaged user's key when Targets have no
+	// node.
+	Node    string
+	Targets []Target
+}
+
+// GroupByNode groups targets by Target.Node, falling back to Target.User for
+// an unmanaged user's targets, sorted by that key and then as targets
+// already are.
+func GroupByNode(targets []Target) []NodeGroup {
+	index := map[string]int{}
+	var groups []NodeGroup
+	for _, t := range targets {
+		key := t.Node
+		if key == "" {
+			key = t.User
+		}
+		i, ok := index[key]
+		if !ok {
+			i = len(groups)
+			index[key] = i
+			groups = append(groups, NodeGroup{Node: key})
+		}
+		groups[i].Targets = append(groups[i].Targets, t)
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Node < groups[j].Node })
+	return groups
+}
+
+// Term is one parsed selector term: field:value, or a bare value, which is
+// an instance term.
+type Term struct {
+	Field string
+	Value string
+}
+
+// fields a selector term may name.
+const (
+	FieldNode     = "node"
+	FieldUser     = "user"
+	FieldService  = "service"
+	FieldRole     = "role"
+	FieldInstance = "instance"
+	FieldRoute    = "route"
+)
+
+var validFields = map[string]bool{
+	FieldNode: true, FieldUser: true, FieldService: true,
+	FieldRole: true, FieldInstance: true, FieldRoute: true,
+}
+
+// ParseSelector splits a selector into its space-separated terms. A term
+// with no "field:" prefix is a FieldInstance term.
+func ParseSelector(selector string) ([]Term, error) {
+	fields := strings.Fields(selector)
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("empty selector")
+	}
+	terms := make([]Term, 0, len(fields))
+	for _, f := range fields {
+		field, value, ok := strings.Cut(f, ":")
+		if !ok {
+			field, value = FieldInstance, f
+		}
+		if !validFields[field] {
+			return nil, fmt.Errorf("selector term %q: unknown field %q", f, field)
+		}
+		if value == "" {
+			return nil, fmt.Errorf("selector term %q: empty value", f)
+		}
+		terms = append(terms, Term{Field: field, Value: value})
+	}
+	return terms, nil
+}
+
+// Match returns every target every term of a selector matches — all terms
+// must match, and a value may contain "*". A selector matching nothing is
+// an error naming the selector, not an empty result.
 func Match(selector string, targets []Target) ([]Target, error) {
-	m, err := compile(selector)
+	terms, err := ParseSelector(selector)
 	if err != nil {
 		return nil, fmt.Errorf("selector %q: %w", selector, err)
 	}
+
 	var matched []Target
 	for _, t := range targets {
-		if m.matches(t) {
+		if matchesAll(t, terms) {
 			matched = append(matched, t)
 		}
 	}
 	if len(matched) == 0 {
 		return nil, fmt.Errorf("selector %q matches nothing", selector)
 	}
-	sort.Slice(matched, func(i, j int) bool {
-		a, b := matched[i], matched[j]
-		if a.Service != b.Service {
-			return a.Service < b.Service
-		}
-		if a.Role != b.Role {
-			return a.Role < b.Role
-		}
-		return a.Instance < b.Instance
-	})
 	return matched, nil
 }
 
-// matcher is a compiled selector: literal segments, each matched with `*`
-// glob within its own position, and where "**" sits — -1 when the selector
-// has none.
-type matcher struct {
-	segments []string
-	starStar int
-}
-
-func compile(selector string) (matcher, error) {
-	if selector == "" {
-		return matcher{}, fmt.Errorf("empty selector")
-	}
-	segments := strings.Split(selector, "/")
-	starStar := -1
-	for i, seg := range segments {
-		if seg == "" {
-			return matcher{}, fmt.Errorf("empty segment")
-		}
-		if seg == "**" {
-			if starStar != -1 {
-				return matcher{}, fmt.Errorf("more than one **")
-			}
-			starStar = i
-		}
-	}
-	return matcher{segments: segments, starStar: starStar}, nil
-}
-
-// matches checks t's three segments against m. Without "**", the selector
-// must have exactly three segments, matched positionally. With "**", it
-// consumes however many of t's segments are left over once the literal
-// segments before and after it are accounted for.
-func (m matcher) matches(t Target) bool {
-	parts := []string{t.Service, t.Role, t.Instance}
-
-	if m.starStar == -1 {
-		if len(m.segments) != len(parts) {
-			return false
-		}
-		for i, seg := range m.segments {
-			if ok, _ := filepath.Match(seg, parts[i]); !ok {
-				return false
-			}
-		}
-		return true
-	}
-
-	before := m.segments[:m.starStar]
-	after := m.segments[m.starStar+1:]
-	consumed := len(before) + len(after)
-	if consumed > len(parts) {
-		return false
-	}
-	for i, seg := range before {
-		if ok, _ := filepath.Match(seg, parts[i]); !ok {
-			return false
-		}
-	}
-	tailStart := len(parts) - len(after)
-	for i, seg := range after {
-		if ok, _ := filepath.Match(seg, parts[tailStart+i]); !ok {
+func matchesAll(t Target, terms []Term) bool {
+	for _, term := range terms {
+		if !matchesOne(t, term) {
 			return false
 		}
 	}
 	return true
+}
+
+func matchesOne(t Target, term Term) bool {
+	switch term.Field {
+	case FieldNode:
+		return globMatch(term.Value, t.Node)
+	case FieldUser:
+		return globMatch(term.Value, t.User)
+	case FieldService:
+		return globMatch(term.Value, t.Service)
+	case FieldRole:
+		return globMatch(term.Value, t.Role)
+	case FieldInstance:
+		return globMatch(term.Value, t.Instance)
+	case FieldRoute:
+		for _, r := range t.Routes {
+			if globMatch(term.Value, r) {
+				return true
+			}
+		}
+		return false
+	default:
+		// Unreachable: ParseSelector rejects any field not in validFields
+		// before a Term reaches Match, so this never runs.
+		return false
+	}
+}
+
+func globMatch(pattern, value string) bool {
+	ok, _ := filepath.Match(pattern, value)
+	return ok
 }
