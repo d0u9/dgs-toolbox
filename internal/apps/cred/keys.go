@@ -15,11 +15,11 @@ import (
 	"dgs-toolbox/internal/tui/fieldset"
 	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/scrolllist"
+	"dgs-toolbox/internal/tui/text"
 
 	"github.com/aymanbagabas/go-osc52/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -836,27 +836,10 @@ func orNone(value string) string {
 	return value
 }
 
-func plural(count int, noun string) string {
-	if count == 1 {
-		return "1 " + noun
-	}
-	if strings.HasSuffix(noun, "ty") {
-		return fmt.Sprintf("%d %sies", count, strings.TrimSuffix(noun, "y"))
-	}
-	return fmt.Sprintf("%d %ss", count, noun)
-}
+func plural(count int, noun string) string { return text.Plural(count, noun) }
 
 // wrapped breaks text into lines of width cells, breaking inside words when it
 // has to, since a public key has no spaces to break at.
-func wrapped(text string, width int) []string {
-	return strings.Split(ansi.Wrap(text, max(1, width), ""), "\n")
-}
+func wrapped(s string, width int) []string { return text.Wrapped(s, width) }
 
-func fit(content string, height, width int) string {
-	lines := strings.Split(content, "\n")
-	lines = lines[:min(len(lines), max(1, height))]
-	for len(lines) < max(1, height) {
-		lines = append(lines, strings.Repeat(" ", max(1, width)))
-	}
-	return strings.Join(lines, "\n")
-}
+func fit(content string, height, width int) string { return text.Fit(content, height, width) }
