@@ -1,0 +1,10 @@
+secret:
+  kind: printable
+  bytes: 24
+
+roles:
+  server:
+    auth: shared
+    template: templates/server.env.tmpl
+    defaults: document
+    output: server.env

@@ -12,7 +12,7 @@ have.
 | [`capture-obsidian/`](capture-obsidian) | Capture writing into an Obsidian vault: the daily note, the running list of places, map links, name mappings, plus Recipes, workflow descriptions and templates. |
 | [`capture-reminders/`](capture-reminders) | Reminders at a place: the list and radius, a workflow keeping its position in the payload, and a Recipe that reminds you on arriving. |
 | [`photo-import/`](photo-import) | Photo Import's source, destination and state file. |
-| [`conf/`](conf) | `dgs conf export`'s generator root, secrets directory and export destination. |
+| [`conf/`](conf) | `dgs conf export`'s config keys, plus a complete generator root — `services/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml` — matching [`docs/apps/conf/inventory.md`](../docs/apps/conf/inventory.md)'s worked example. |
 | [`cred/`](cred) | `dgs cred`'s `credentials.json`, and a recipient folder with two hosts and a group. Unlike the others it holds no `dgs-config.json`. |
 
 Every key is documented in [`docs/configuration/`](../docs/configuration), and
