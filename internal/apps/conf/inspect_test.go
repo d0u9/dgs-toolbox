@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"dgs-toolbox/internal/tui"
+	"dgs-toolbox/internal/tui/scrolllist"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -27,6 +28,7 @@ roles:
     output: config.json
     auth: per-principal
     reached_by: ss-rust
+    own: [psk]
     combine_own: psk
   ss-rust:
     template: templates/client.json.tmpl
@@ -288,10 +290,153 @@ func TestInspect_ViewRendersBothColumns(t *testing.T) {
 	m.list.SelectID("inst:ss-srv")
 
 	view := m.View()
-	if !strings.Contains(view, "INDEX") {
-		t.Fatalf("View() = %q, want the left column's fieldset legend", view)
+	if !strings.Contains(view, "NODES") {
+		t.Fatalf("View() = %q, want the left column's fieldset legend naming the active tab", view)
 	}
 	if !strings.Contains(view, "ss-srv") {
 		t.Fatalf("View() = %q, want the selected instance's detail on the right", view)
 	}
+}
+
+// TestInspect_UnmanagedUserRowOpensTheUserView covers the Nodes index's one
+// entry that is not a node. An unmanaged user has no node file, and appears
+// there only because the instances derived for them have nowhere else to
+// sit; a row asking for a node detail under that name asked for a file that
+// does not exist, and showed an error where every other row showed content.
+func TestInspect_UnmanagedUserRowOpensTheUserView(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 80, 24
+
+	var row *scrolllist.Item
+	for i := range m.nodeItems {
+		if strings.HasSuffix(m.nodeItems[i].ID, ":yak") {
+			row = &m.nodeItems[i]
+		}
+	}
+	if row == nil {
+		t.Fatal("the Nodes index has no entry for the unmanaged user yak")
+	}
+	if row.ID != "user:yak" {
+		t.Fatalf("row ID = %q, want user:yak — an unmanaged user is not a node", row.ID)
+	}
+	if !strings.Contains(row.Detail, "unmanaged user") {
+		t.Fatalf("row detail = %q, want it to say what this entry is", row.Detail)
+	}
+
+	kind, body := selectDetail(t, m, "user:yak")
+	if kind != "user" {
+		t.Fatalf("kind = %q, want user", kind)
+	}
+	if !strings.Contains(body, "unmanaged") {
+		t.Fatalf("detail = %q, want the user view", body)
+	}
+}
+
+// TestInspect_NodeDetailListsDerivedInstances covers a client node, whose
+// instances are all derived: the authored entries on it are overrides with
+// no service or role of their own, so listing only those printed an
+// "instances:" heading with nothing under it.
+func TestInspect_NodeDetailListsDerivedInstances(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 80, 24
+	_, body := selectDetail(t, m, "node:laptop")
+
+	if !strings.Contains(body, "laptop-sfo") {
+		t.Fatalf("node detail = %q, want the instance derived for it listed", body)
+	}
+	if !strings.Contains(body, "(derived)") {
+		t.Fatalf("node detail = %q, want a derived instance marked as one", body)
+	}
+}
+
+// TestInspect_NodesIndexDrawsInstancesOnBranches covers the Nodes index
+// reading as a tree. The list component numbers every visible row the same
+// way, so a node and its instances are equals to it; the branch characters
+// are the only thing carrying depth, and the detail line under an instance
+// has to continue the trunk or the run comes apart.
+func TestInspect_NodesIndexDrawsInstancesOnBranches(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+
+	var node, instance *scrolllist.Item
+	for i := range m.nodeItems {
+		switch m.nodeItems[i].ID {
+		case "node:srv":
+			node = &m.nodeItems[i]
+		case "inst:ss-srv":
+			instance = &m.nodeItems[i]
+		}
+	}
+	if node == nil || instance == nil {
+		t.Fatalf("index = %+v, want a node row and its instance row", m.nodeItems)
+	}
+	if !strings.HasPrefix(node.Label, "▾ ") {
+		t.Fatalf("node label = %q, want an open disclosure marker", node.Label)
+	}
+	if !strings.Contains(instance.Label, branchLast) && !strings.Contains(instance.Label, branchMid) {
+		t.Fatalf("instance label = %q, want it hung off a branch", instance.Label)
+	}
+}
+
+// TestInspect_FoldingHidesAndShowsInstances covers the disclosure marker
+// doing something. It was drawn as a static "▸" with no key bound to it, so
+// it said a node could be folded and nothing folded it.
+func TestInspect_FoldingHidesAndShowsInstances(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.list.SelectID("node:srv")
+
+	folded := pressInspect(t, m, "h")
+	if indexHas(folded.nodeItems, "inst:ss-srv") {
+		t.Fatalf("index = %+v, want srv's instances hidden once folded", folded.nodeItems)
+	}
+	if !strings.HasPrefix(itemByID(t, folded.nodeItems, "node:srv").Label, "▸ ") {
+		t.Fatal("a folded node still shows an open disclosure marker")
+	}
+
+	reopened := pressInspect(t, folded, "l")
+	if !indexHas(reopened.nodeItems, "inst:ss-srv") {
+		t.Fatalf("index = %+v, want srv's instances back once unfolded", reopened.nodeItems)
+	}
+
+	all := pressInspect(t, reopened, "w")
+	for _, it := range all.nodeItems {
+		if strings.HasPrefix(it.ID, "inst:") {
+			t.Fatalf("index = %+v, want w to fold every node", all.nodeItems)
+		}
+	}
+}
+
+// TestInspect_FoldingLeftFromAnInstanceGoesToItsNode covers h on a row with
+// nothing to fold, which is how the File Explorer's keys leave a child.
+func TestInspect_FoldingLeftFromAnInstanceGoesToItsNode(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.list.SelectID("inst:ss-srv")
+
+	up := pressInspect(t, m, "h")
+	item, ok := up.list.Selected()
+	if !ok || item.ID != "node:srv" {
+		t.Fatalf("selected = %+v, want the node holding ss-srv", item)
+	}
+}
+
+func indexHas(items []scrolllist.Item, id string) bool {
+	for _, it := range items {
+		if it.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func itemByID(t *testing.T, items []scrolllist.Item, id string) scrolllist.Item {
+	t.Helper()
+	for _, it := range items {
+		if it.ID == id {
+			return it
+		}
+	}
+	t.Fatalf("index has no %q", id)
+	return scrolllist.Item{}
 }

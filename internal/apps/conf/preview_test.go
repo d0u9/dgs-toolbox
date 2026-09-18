@@ -54,6 +54,7 @@ roles:
     output: config.json
     auth: per-principal
     reached_by: ss-rust
+    own: [psk]
     combine_own: psk
   ss-rust:
     template: templates/client.json.tmpl
