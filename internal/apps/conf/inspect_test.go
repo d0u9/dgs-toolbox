@@ -440,3 +440,70 @@ func itemByID(t *testing.T, items []scrolllist.Item, id string) scrolllist.Item 
 	t.Fatalf("index has no %q", id)
 	return scrolllist.Item{}
 }
+
+// TestInspect_UserDetailNamesEveryGrantedRoute covers a route that derives
+// no client instance. hysteria2's server role declares no reached_by, so a
+// person granted a route into it holds a credential and gets no file; the
+// view listed only the instances that exist, which made the route look
+// missing rather than answered.
+func TestInspect_UserDetailNamesEveryGrantedRoute(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	_, body := selectDetail(t, m, "user:yak")
+
+	if !strings.Contains(body, "enters ss-srv:main") {
+		t.Fatalf("user detail = %q, want each granted route's entry hop", body)
+	}
+	if !strings.Contains(body, "yak-sfo") {
+		t.Fatalf("user detail = %q, want the instance derived for the route", body)
+	}
+	if !strings.Contains(body, "ss-srv/main/user/yak") {
+		t.Fatalf("user detail = %q, want the credential this person holds, by path", body)
+	}
+	if strings.Contains(body, "username: yak") {
+		t.Fatal("user detail printed a username equal to the identifier, which says nothing")
+	}
+}
+
+// TestInspect_UserDetailListsDevicesWithWhatEachDerives covers a managed
+// user: docs/apps/conf/inspect.md asks for their devices and the instance
+// each derives, which means the two together rather than a device list and
+// a separate instance list the reader has to join by hand.
+func TestInspect_UserDetailListsDevicesWithWhatEachDerives(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	_, body := selectDetail(t, m, "user:doug")
+
+	device := strings.Index(body, "laptop")
+	instance := strings.Index(body, "laptop-sfo")
+	if device < 0 || instance < 0 || instance < device {
+		t.Fatalf("user detail = %q, want the device and then what it derives", body)
+	}
+	if !strings.Contains(body, "doug-laptop") {
+		t.Fatalf("user detail = %q, want the account name the server sees", body)
+	}
+}
+
+// TestInspect_UsersIndexKeepsItsNumbers covers the two indexes wanting
+// opposite answers: the Nodes index is a tree and hides them, while the
+// Users index is a flat collection where a number is what makes a row easy
+// to point at.
+func TestInspect_UsersIndexKeepsItsNumbers(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+
+	if strings.Contains(m.View(), " 1 ▾") == false && strings.Contains(m.View(), "▾") == false {
+		t.Fatal("the Nodes index lost its disclosure markers")
+	}
+	if m.list.LabelOffset() != 2 {
+		t.Fatalf("Nodes LabelOffset = %d, want no number column", m.list.LabelOffset())
+	}
+
+	m.setTab(tabUsers)
+	if m.list.LabelOffset() == 2 {
+		t.Fatal("the Users index lost its numbers, which a flat list keeps")
+	}
+	if !strings.Contains(m.View(), "1 ") {
+		t.Fatalf("View() = %q, want numbered rows on the Users index", m.View())
+	}
+}
