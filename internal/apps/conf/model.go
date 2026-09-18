@@ -1,6 +1,6 @@
 // Package conf implements dgs conf export's tree: discovering a generator
-// root and letting the reader check the targets to render. Rendering and
-// exporting are later milestones of docs/apps/conf/export.md; this package
+// root's inventory and letting the reader check the targets to render.
+// Exporting is a later milestone of docs/apps/conf/export.md; this package
 // is the page's selection surface.
 package conf
 
@@ -8,6 +8,9 @@ import (
 	"fmt"
 
 	"dgs-toolbox/internal/conf/confgen"
+	"dgs-toolbox/internal/conf/derive"
+	"dgs-toolbox/internal/conf/inventory"
+	"dgs-toolbox/internal/conf/target"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/scrolllist"
 
@@ -27,20 +30,23 @@ var (
 	)
 )
 
-// Model is dgs conf export's tree: services holding roles holding instances,
-// with the tri-state checklist behaviour
+// Model is dgs conf export's tree: nodes (and unmanaged users) holding
+// instances, with the tri-state checklist behaviour
 // docs/apps/cred/vault.md#the-flow's recipient checklist already uses.
 type Model struct {
 	rootPath   string
 	secretsDir string
 	loadErr    error
 
-	confRoot *confgen.Root
-	services []*serviceNode
-	rows     []row
-	checked  map[string]bool
-	list     scrolllist.Model
-	preview  *previewState
+	invRoot     *inventory.Root
+	manifests   map[string]confgen.Manifest
+	serviceDirs map[string]string
+	derived     *derive.Model
+	nodes       []*nodeGroup
+	rows        []row
+	checked     map[string]bool
+	list        scrolllist.Model
+	preview     *previewState
 
 	width, height int
 	pendingG      bool
@@ -49,20 +55,25 @@ type Model struct {
 // New loads rootPath and builds the tree. An empty rootPath, or one that
 // fails to load, is not fatal: the page says so and waits, since where the
 // generator root is configured (conf.root) is the reader's own decision.
-// secretsDir is conf.secrets, read only when a preview's service names a
-// secrets file.
+// secretsDir is conf.secrets, read only when a preview needs an instance's
+// own secrets or a principal's.
 func newModel(rootPath, secretsDir string) Model {
 	m := Model{rootPath: rootPath, secretsDir: secretsDir, checked: map[string]bool{}, list: scrolllist.New()}
 	if rootPath == "" {
 		return m
 	}
-	root, err := confgen.Load(rootPath)
+
+	l, err := load(rootPath)
 	if err != nil {
 		m.loadErr = err
 		return m
 	}
-	m.confRoot = root
-	m.services = buildTree(root)
+	m.invRoot = l.inv
+	m.manifests = l.manifests
+	m.serviceDirs = l.serviceDirs
+	m.derived = l.derived
+
+	m.nodes = buildTree(target.List(l.inv, l.derived))
 	m.refresh()
 	return m
 }
@@ -137,11 +148,8 @@ func (m *Model) handleKey(key string) {
 			m.toParent()
 		}
 	case "w":
-		for _, s := range m.services {
-			s.expanded = false
-			for _, r := range s.roles {
-				r.expanded = false
-			}
+		for _, n := range m.nodes {
+			n.expanded = false
 		}
 		m.refresh()
 		m.list.First()
@@ -149,55 +157,34 @@ func (m *Model) handleKey(key string) {
 }
 
 // expandable returns the expanded flag of the row under the cursor, when it
-// is a service or a role; nil otherwise.
+// is a node; nil otherwise.
 func (m Model) expandable() *bool {
 	item, ok := m.list.Selected()
 	if !ok {
 		return nil
 	}
 	for i := range m.rows {
-		if m.rows[i].id == item.ID {
-			switch {
-			case m.rows[i].role != nil:
-				return &m.rows[i].role.expanded
-			case m.rows[i].service != nil:
-				return &m.rows[i].service.expanded
-			}
+		if m.rows[i].id == item.ID && m.rows[i].node != nil {
+			return &m.rows[i].node.expanded
 		}
 	}
 	return nil
 }
 
-// toParent moves the cursor to the row's parent: a role to its service, an
-// instance to its role.
+// toParent moves the cursor from an instance row to its node row.
 func (m *Model) toParent() {
 	item, ok := m.list.Selected()
 	if !ok {
 		return
 	}
 	// The row's own id names its parent by convention (see refresh):
-	// "role:<service>/<role>" or "inst:<service>/<role>/<instance>".
-	switch {
-	case len(item.ID) > 5 && item.ID[:5] == "inst:":
-		target := item.ID[5:]
-		if i := lastSlash(target); i >= 0 {
-			m.list.SelectID("role:" + target[:i])
-		}
-	case len(item.ID) > 5 && item.ID[:5] == "role:":
+	// "inst:<node>/<instance>".
+	if len(item.ID) > 5 && item.ID[:5] == "inst:" {
 		rest := item.ID[5:]
-		if i := firstSlash(rest); i >= 0 {
-			m.list.SelectID("svc:" + rest[:i])
+		if i := lastSlash(rest); i >= 0 {
+			m.list.SelectID("node:" + rest[:i])
 		}
 	}
-}
-
-func firstSlash(s string) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '/' {
-			return i
-		}
-	}
-	return -1
 }
 
 func lastSlash(s string) int {
@@ -240,9 +227,9 @@ func (m Model) View() string {
 		return m.centered(titleStyle.Render("dgs conf export") + "\n\n" +
 			brokenStyle.Render(m.loadErr.Error()))
 	}
-	if len(m.services) == 0 {
+	if len(m.nodes) == 0 {
 		return m.centered(titleStyle.Render("dgs conf export") + "\n\n" +
-			mutedStyle.Render("no service holds a "+confgen.ManifestFilename))
+			mutedStyle.Render("no node or unmanaged user holds a target"))
 	}
 	list := m.list
 	list.SetSize(m.width, max(1, m.height))
@@ -277,8 +264,8 @@ func (m Model) Status() tui.Status {
 }
 
 func (m Model) counts() (total, selected int) {
-	for _, s := range m.services {
-		for _, k := range checkableKeys(s) {
+	for _, n := range m.nodes {
+		for _, k := range checkableKeys(n) {
 			total++
 			if m.checked[k] {
 				selected++
