@@ -1,0 +1,7 @@
+listen: {{ .listen }}
+bind: {{ (instance).bind }}
+
+auth:
+  {{- range principals "proxy" }}
+  {{ .Name }}: {{ toJSON .Secret }}
+  {{- end }}

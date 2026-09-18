@@ -1,0 +1,8 @@
+users:
+  doug:
+    access: [jp, sfo, home-sfo, bin]
+
+  friend-a:
+    username: yak
+    devices: unmanaged
+    access: [jp, sfo]

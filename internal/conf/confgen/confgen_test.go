@@ -19,24 +19,28 @@ func writeFile(t *testing.T, path, content string) {
 func TestLoad_DiscoversServiceRolesAndInstances(t *testing.T) {
 	root := t.TempDir()
 
-	writeFile(t, filepath.Join(root, "hysteria2", ManifestFilename), `
-secrets: hysteria2.yaml
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", ManifestFilename), `
+secret:
+  kind: base64
+  bytes: 32
 roles:
   server:
     template: templates/server.json.tmpl
     defaults: element
     output: config.json
+    auth: per-principal
   client:
     template: templates/client.json.tmpl
     defaults: document
     output: config.json
+    auth: none
 `)
-	writeFile(t, filepath.Join(root, "hysteria2", "server", "defaults.yaml"), "listen: :443\n")
-	writeFile(t, filepath.Join(root, "hysteria2", "server", "us-sfo-dgo-linux-01.yaml"), "server: sfo\n")
-	writeFile(t, filepath.Join(root, "hysteria2", "server", "jp-tyo-dgo-linux-01.yaml"), "server: tyo\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "defaults.yaml"), "listen: :443\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "us-sfo-dgo-linux-01.yaml"), "server: sfo\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "jp-tyo-dgo-linux-01.yaml"), "server: tyo\n")
 
 	// A scratch folder without a manifest is skipped.
-	writeFile(t, filepath.Join(root, "scratch", "notes.yaml"), "todo: yes\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "scratch", "notes.yaml"), "todo: yes\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -53,8 +57,8 @@ roles:
 	if svc.Broken != "" {
 		t.Fatalf("Broken = %q, want empty", svc.Broken)
 	}
-	if svc.Manifest.Secrets != "hysteria2.yaml" {
-		t.Fatalf("Secrets = %q", svc.Manifest.Secrets)
+	if svc.Manifest.Secret.Kind != "base64" || svc.Manifest.Secret.Bytes != 32 {
+		t.Fatalf("Secret = %+v", svc.Manifest.Secret)
 	}
 	if len(svc.Roles) != 2 {
 		t.Fatalf("Roles = %d, want 2", len(svc.Roles))
@@ -66,6 +70,9 @@ roles:
 	}
 	if server.Role.Defaults != DefaultsElement {
 		t.Fatalf("Defaults = %q, want %q", server.Role.Defaults, DefaultsElement)
+	}
+	if server.Role.Auth != AuthPerPrincipal {
+		t.Fatalf("Auth = %q, want %q", server.Role.Auth, AuthPerPrincipal)
 	}
 	if len(server.Instances) != 2 {
 		t.Fatalf("Instances = %d, want 2 (defaults.yaml excluded): %+v", len(server.Instances), server.Instances)
@@ -92,25 +99,28 @@ func TestLoad_BrokenManifestIsReportedNotFatal(t *testing.T) {
 	root := t.TempDir()
 
 	// Unknown key in the manifest.
-	writeFile(t, filepath.Join(root, "microbin", ManifestFilename), `
-secrets: microbin.yaml
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), `
 roles:
   server:
     template: templates/server.env.tmpl
     defaults: document
     output: server.env
+    auth: shared
     typo_field: oops
 `)
 	// A second, valid service, so one broken manifest does not abort discovery.
-	writeFile(t, filepath.Join(root, "shadowsocks-rust", ManifestFilename), `
-secrets: shadowsocks-rust.yaml
+	writeFile(t, filepath.Join(root, ServicesDir, "shadowsocks-rust", ManifestFilename), `
+secret:
+  kind: base64
+  bytes: 32
 roles:
   server:
     template: templates/server.json.tmpl
     defaults: element
     output: config.json
+    auth: per-principal
 `)
-	writeFile(t, filepath.Join(root, "shadowsocks-rust", "server", "us-sfo-dgo-linux-01.yaml"), "servers: []\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "shadowsocks-rust", "server", "us-sfo-dgo-linux-01.yaml"), "servers: []\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -143,19 +153,22 @@ roles:
 func TestLoad_BrokenInstanceIsListedWithParseError(t *testing.T) {
 	root := t.TempDir()
 
-	writeFile(t, filepath.Join(root, "hysteria2", ManifestFilename), `
-secrets: hysteria2.yaml
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", ManifestFilename), `
+secret:
+  kind: base64
+  bytes: 32
 roles:
   server:
     template: templates/server.json.tmpl
     defaults: element
     output: config.json
+    auth: per-principal
 `)
-	writeFile(t, filepath.Join(root, "hysteria2", "server", "good.yaml"), "server: sfo\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "good.yaml"), "server: sfo\n")
 	// Invalid YAML.
-	writeFile(t, filepath.Join(root, "hysteria2", "server", "bad-syntax.yaml"), "server: [unterminated\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "bad-syntax.yaml"), "server: [unterminated\n")
 	// Valid YAML, but not a mapping.
-	writeFile(t, filepath.Join(root, "hysteria2", "server", "bad-shape.yaml"), "- one\n- two\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "bad-shape.yaml"), "- one\n- two\n")
 
 	got, err := Load(root)
 	if err != nil {

@@ -14,8 +14,8 @@
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `conf.root` | The directory holding one subdirectory per service. | empty — the page opens with no root and asks for one |
-| `conf.secrets` | The directory a manifest's `secrets` file is named relative to. | empty — a service naming a secrets file refuses to render |
+| `conf.root` | The directory holding `services/` and the inventory files. | empty — the page opens with no root and asks for one |
+| `conf.secrets` | The root of the secrets tree, one file per credential. | empty — an instance needing a secret refuses to render |
 | `conf.export.dir` | Where the destination form opens, for a folder or an archive. | empty — the home directory |
 
 Paths follow the same rules as [`cred`](cred.md#paths): a leading `~` is the

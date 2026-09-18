@@ -1,7 +1,7 @@
-// Package confgen reads a generator root: one directory per service, each
-// declaring how its instances render. It only discovers what is there — the
-// manifests, the roles, the instances and which of them are broken. It does
-// not render anything.
+// Package confgen reads a generator root's services/ directory: one
+// subdirectory per service, each declaring how its roles render. It only
+// discovers what is there — the manifests, the roles, the instances and
+// which of them are broken. It does not render anything.
 //
 // The rules are in docs/apps/conf/export.md.
 package confgen
@@ -16,9 +16,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ManifestFilename names the file that marks a subdirectory of the root as a
-// service, and declares that service's roles.
+// ServicesDir is the generator root's subdirectory holding one directory per
+// service.
+const ServicesDir = "services"
+
+// ManifestFilename names the file that marks a subdirectory of ServicesDir
+// as a service, and declares that service's roles.
 const ManifestFilename = "confgen.yaml"
+
+// Auth values a role declares. See docs/apps/conf/inventory.md#how-a-service-says-what-it-needs.
+const (
+	AuthPerPrincipal = "per-principal"
+	AuthShared       = "shared"
+	AuthNone         = "none"
+)
 
 // DefaultsFilename is the defaults file inside every role directory.
 const DefaultsFilename = "defaults.yaml"
@@ -40,13 +51,46 @@ type Role struct {
 	Defaults string `yaml:"defaults"`
 	// Output is the name the rendered file is written under.
 	Output string `yaml:"output"`
+	// Auth is AuthPerPrincipal, AuthShared or AuthNone: what this role's
+	// inbound side authenticates, and so what secrets it generates.
+	Auth string `yaml:"auth"`
+	// ReachedBy is the role a client derives as, to reach this one. Empty
+	// means a route entering this role derives no client instance for it.
+	ReachedBy string `yaml:"reached_by"`
+	// Rotation is RotationDisruptive when this role's template cannot emit
+	// two accounts for one principal, or empty otherwise. Rotating a
+	// disruptive role says up front that the connection will drop, rather
+	// than rendering a `.previous` account it has no room for. See
+	// docs/apps/conf/inventory.md#rotation.
+	Rotation string `yaml:"rotation"`
+	// CombineOwn names one of this role's own secrets that every client
+	// reaching it also needs — a protocol identity shared by every
+	// principal, such as a Shadowsocks 2022 server PSK combined with each
+	// user's own. Empty means clients need nothing beyond their own
+	// principal secret. See
+	// docs/apps/conf/inventory.md#a-shared-identity-alongside-a-principals-own.
+	CombineOwn string `yaml:"combine_own"`
+}
+
+// RotationDisruptive is the Role.Rotation value meaning: this role's
+// template cannot render two accounts for one principal, so rotating it
+// drops the connection instead of overlapping old and new.
+const RotationDisruptive = "disruptive"
+
+// Secret is a manifest's secret block: the shape of the one value this
+// service's roles draw on, generated when no value exists yet.
+type Secret struct {
+	// Kind is the value's format, such as "base64". A service that does not
+	// declare a Secret gets a printable random string.
+	Kind string `yaml:"kind"`
+	// Bytes is the value's length before encoding.
+	Bytes int `yaml:"bytes"`
 }
 
 // Manifest is a service's confgen.yaml.
 type Manifest struct {
-	// Secrets is the secrets file this service draws on, named relative to
-	// conf.secrets.
-	Secrets string `yaml:"secrets"`
+	// Secret is the shape of this service's generated secret values.
+	Secret Secret `yaml:"secret"`
 	// Roles is one entry per kind of instance the service generates, keyed
 	// by role name.
 	Roles map[string]Role `yaml:"roles"`
@@ -91,18 +135,28 @@ type Service struct {
 
 // Root is a discovered generator root.
 type Root struct {
-	// Services is every subdirectory holding a confgen.yaml, sorted by name.
+	// Services is every subdirectory of ServicesDir holding a confgen.yaml,
+	// sorted by name.
 	Services []Service
 }
 
-// Load discovers a generator root: every subdirectory holding a
-// confgen.yaml is a service, and is read whether or not it parses cleanly. A
-// subdirectory without a confgen.yaml — a README, a scratch folder, a
-// service still being written — is skipped rather than half-read.
+// Load discovers a generator root's services/ directory: every subdirectory
+// holding a confgen.yaml is a service, and is read whether or not it parses
+// cleanly. A subdirectory without a confgen.yaml — a README, a scratch
+// folder, a service still being written — is skipped rather than half-read.
+// A root with no services/ directory yet is an empty Root, not an error.
 func Load(root string) (*Root, error) {
-	entries, err := os.ReadDir(root)
-	if err != nil {
+	if _, err := os.Stat(root); err != nil {
 		return nil, fmt.Errorf("confgen: reading root: %w", err)
+	}
+
+	servicesDir := filepath.Join(root, ServicesDir)
+	entries, err := os.ReadDir(servicesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &Root{}, nil
+		}
+		return nil, fmt.Errorf("confgen: reading %s: %w", servicesDir, err)
 	}
 
 	var services []Service
@@ -111,13 +165,13 @@ func Load(root string) (*Root, error) {
 			continue
 		}
 		name := entry.Name()
-		dir := filepath.Join(root, name)
+		dir := filepath.Join(servicesDir, name)
 		manifestPath := filepath.Join(dir, ManifestFilename)
 		if _, err := os.Stat(manifestPath); err != nil {
 			continue
 		}
 
-		svc := Service{Name: name, Dir: name}
+		svc := Service{Name: name, Dir: filepath.Join(ServicesDir, name)}
 
 		manifest, err := loadManifest(manifestPath)
 		if err != nil {

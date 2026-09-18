@@ -1,0 +1,15 @@
+{
+  "server": "::",
+  "server_port": {{ (instance).ports.main }},
+  "method": "2022-blake3-aes-256-gcm",
+  "password": {{ toJSON (secret "psk") }},
+  "mode": "tcp_and_udp",
+  "users": [
+    {{- $first := true }}
+    {{- range principals "main" }}
+    {{- if not $first }},{{ end }}
+    { "name": {{ toJSON .Name }}, "password": {{ toJSON .Secret }} }
+    {{- $first = false }}
+    {{- end }}
+  ]
+}

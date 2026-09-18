@@ -1,0 +1,12 @@
+routes:
+  jp:
+    hops: [hy2-tyo01:main]
+
+  sfo:
+    hops: [ss-sfo01:main]
+
+  home-sfo:
+    hops: [http-home:proxy, ss-home:local, ss-sfo01:alt]
+
+  bin:
+    hops: [bin-sfo01:web]

@@ -1,8 +1,8 @@
 # Configuration: Export
 
-`dgs conf export` renders service configuration files from templates, per-instance
-values and secrets, and writes a chosen set of them to a folder or a zip
-archive.
+`dgs conf export` renders service configuration files from templates, the
+[inventory](inventory.md) and secrets, and writes a chosen set of them to a
+folder or a zip archive.
 
 It is the generator side of what [`dgs cred`](../cred/vault.md) protects: the
 templates and the values are in version control, the secrets they draw on are
@@ -32,8 +32,8 @@ adding an instance means copying a script and editing it.
 
 Three things follow, and this page addresses each:
 
-- **Per-instance boilerplate.** An instance should be a values file and nothing
-  else.
+- **Per-instance boilerplate.** An instance should be a few lines of values and
+  nothing else.
 - **Per-service difference.** Services differ in ways that matter — see
   [defaults](#two-kinds-of-defaults) — so the differences become a declaration
   read by one renderer rather than a script per instance.
@@ -53,41 +53,85 @@ finds a cleaner shape should take it and rename what it must.
 
 ### The generator root
 
-One directory holding one subdirectory per service, named by `conf.root`; see
-[configuration](#configuration). A subdirectory is a service when it holds a
-`confgen.yaml`, so a `README`, a scratch folder or a service still being written
-is skipped rather than half-read.
+`conf.root` holds the services and the inventory:
+
+```text
+~/confgen/
+├── services/<service>/       confgen.yaml, templates, defaults
+├── nodes/*.yaml
+├── users.yaml
+├── routes.yaml
+└── networks.yaml
+```
+
+A subdirectory of `services/` is a service when it holds a `confgen.yaml`, so a
+`README`, a scratch folder or a service still being written is skipped rather
+than half-read.
+
+The four files beside it are the inventory: the machines, the people, and the
+chains between them. [`inventory.md`](inventory.md) describes them, and this page
+assumes them.
 
 ### The service manifest
 
-`<service>/confgen.yaml` declares what the renderer cannot infer:
+`services/<service>/confgen.yaml` declares what the renderer cannot infer:
 
 ```yaml
-secrets: shadowsocks-rust.yaml
+secret:
+  kind: base64
+  bytes: 32
 
 roles:
   server:
+    auth: per-principal
+    reached_by: ss-rust
     template: templates/server.json.tmpl
     defaults: element
     output: config.json
-  client:
-    template: templates/client.json.tmpl
+  ss-rust:
+    auth: none
+    template: templates/ss-rust.json.tmpl
     defaults: element
     output: config.json
+  shadowrocket:
+    auth: none
+    template: templates/shadowrocket.conf.tmpl
+    output: shadowrocket.conf
+  link:
+    auth: none
+    template: templates/link.tmpl
+    output: share.txt
 ```
+
+Client roles are named after the client program rather than after `client`,
+because the program is what decides the file: see
+[which role a client derives as](inventory.md#which-role-a-client-derives-as).
+
+The keys in the table below are fixed. Every name around them — the service, the
+roles, the templates, the output files — is this manifest author's, and no rule
+keys off any particular spelling, `server` included. The two lists are in
+[fixed names and example names](inventory.md#fixed-names-and-example-names).
 
 | Key | Meaning |
 | --- | --- |
-| `secrets` | The secrets file this service draws on, named relative to `conf.secrets`. |
-| `roles` | One entry per kind of instance the service generates. The key is the role name, and also the directory its value files are in. |
+| `secret` | The shape of a generated credential for this service: `kind` and its size. Omitted, a printable random string. |
+| `roles` | One entry per kind of instance the service generates. The key is the role name, and also the directory its defaults file is in. |
+| `roles.<role>.auth` | Whether the role's inbound side authenticates: `per-principal`, `shared` or `none`. See [inventory](inventory.md#how-a-service-says-what-it-needs). |
+| `roles.<role>.reached_by` | The role a client derives as, to reach this one. Omitted, a route entering this role renders nothing for the person granted it — see [what is derived](inventory.md#what-is-derived). |
 | `roles.<role>.template` | The template rendered for the role, relative to the service directory. |
 | `roles.<role>.defaults` | How the role's defaults apply: `document` or `element`. See below. |
 | `roles.<role>.output` | The name the rendered file is written under — the name the service expects where it runs, such as `config.json` or `server.env`. |
+| `roles.<role>.rotation` | `disruptive` when this role's template cannot emit two accounts for one principal, so rotating it drops the connection instead of overlapping old and new. Omitted, it can. See [rotation](inventory.md#rotation). |
+| `roles.<role>.combine_own` | The name of one of this role's own secrets that every principal reaching it also needs, alongside its own. Omitted, a principal needs nothing beyond its own secret. See [a shared identity alongside a principal's own](inventory.md#a-shared-identity-alongside-a-principals-own). |
 
 The role name is the directory name and the defaults file is always
 `defaults.yaml` in it, so neither is declared. That is the naming unification
 above spent on making the manifest shorter rather than on describing four
 spellings.
+
+There is no `secrets` key naming a file. Which credentials a service draws on is
+derived from the inventory, and where each one lives is derived from what it
+opens; see [Secrets](inventory.md#secrets).
 
 Roles are a map rather than the two fixed names `server` and `client` so that a
 service wanting a third — a relay, a bridge, a second client profile — declares
@@ -121,31 +165,33 @@ misspelled key cannot leave a setting quietly at its default.
 
 ### Instances
 
-Every `*.yaml` in a role's directory other than `defaults.yaml` is an instance,
-named by its file name without the extension. Nothing registers it: adding an
-instance is adding a file, and the next run lists it.
+An instance is an entry in a node file's `instances` list, or one derived from a
+user's access — see
+[What is derived](inventory.md#what-is-derived). Nothing registers it: adding an
+instance is adding a few lines to the node it runs on, and the next run lists
+it.
 
-A file that is not valid YAML, or that is not a mapping, is listed as **broken**
-with the parse error, rather than omitted — an instance that silently stops
-appearing is worse than one that appears with a reason it cannot be rendered.
+A node file that is not valid YAML, or an instance entry that is not a mapping,
+is listed as **broken** with the parse error, rather than omitted — an instance
+that silently stops appearing is worse than one that appears with a reason it
+cannot be rendered.
 
-### An instance is not a machine
+### An instance is one file on one machine
 
 One machine may hold several instances of one role: two Hysteria2 services, or
 several Shadowsocks clients reaching different servers. An instance is one
-rendered configuration file, and the machine it ends up on is not something the
-generator knows.
+rendered configuration file, and the node it belongs to is the file it is
+written in.
 
-Two things follow, and they are the whole reason this is written down:
+Two things follow:
 
-- **The secrets lookup key is a field in the values, never the file name.** It
-  is what it is today — Hysteria2's `server`, Shadowsocks' per-entry
-  `secret_server` — and the renderer does not replace it with the instance name.
-  A Shadowsocks client's `servers` list carries one key per entry, so there is
-  no single name for the file to supply anyway.
+- **No values file names a secret.** Which credential a rendered file carries
+  follows from what it connects to and who it connects as, both of which the
+  inventory states. A key typed into a values file and matched by hand against a
+  server is the thing this replaces.
 - **The instance name is free.** It is an identifier for the reader, not a host
-  name the renderer parses. Names that say what the instance is for read best;
-  nothing checks them.
+  name the renderer parses. It must be unique across the inventory, because hops
+  name instances with nothing to qualify them; beyond that nothing checks it.
 
 ### Output names do not vary
 
@@ -158,21 +204,28 @@ would mean editing a service unit to match every time.
 
 ### Targets and selectors
 
-The unit of everything below is a target, written `<service>/<role>/<instance>`:
+The unit of everything below is a target, and a target is one instance.
+
+A selector is one or more `<field>:<value>` terms, separated by spaces, all of
+which must match. A value may contain `*`:
 
 ```text
-hysteria2/server/us-sfo-dgo-linux-01
-shadowsocks-rust/client/us-sfo-dgo-linux-01
+node:host-a                     everything that machine runs
+node:macbook                    everything for one device
+user:doug                       everything every device of one person needs
+service:hysteria2 role:server   the server side of one service
+route:home-sfo                  every instance along one chain
+instance:ss-sfo01                 one
+node:us-sfo-*                   a machine name with a wildcard
 ```
 
-A selector is a target with `*` matching within one segment and `**` matching
-the rest:
+A bare word with no field is an instance name.
 
-```text
-hysteria2/**                    every role and instance of one service
-*/server/us-sfo-*               the server side of one machine, across services
-**/us-sfo-dgo-linux-01          every instance of that name, whatever its role
-```
+The selector reads fields rather than a `<service>/<role>/<instance>` path
+because the machine is a field. A path glob could only pick out one machine's
+instances when the machine's name had been written into each instance's name,
+and `user:` and `route:` could not be expressed at all — while those two are the
+exports performed most often, one per person and one per chain.
 
 A selector matching no target is an error naming the selector, not an empty
 export.
@@ -187,19 +240,22 @@ selector will match, without rendering anything.
 A target renders from four inputs:
 
 1. the role's `defaults.yaml`,
-2. the instance's values file, applied over the defaults at the level the role
+2. the instance's own values, applied over the defaults at the level the role
    declares,
-3. the service's secrets file,
+3. what the inventory derives for it — the node, the resolved upstream, the
+   principals holding a grant on each port, and the secrets those imply,
 4. the target itself — its service, role and instance names, as a datasource
    named `target`.
 
-The fourth is available to templates and used by none of them today. It is not
-a replacement for the secrets lookup key: as
-[above](#an-instance-is-not-a-machine), that key stays in the values, because an
-instance is not a machine and one file may carry several keys. It is a separate
-datasource rather than a key merged into the values so that the values stay
-exactly what the service's own configuration says, with nothing reserved inside
-them.
+The third is the whole of [`inventory.md`](inventory.md) arriving as data, and
+its shape is pinned there as
+[the render context](inventory.md#the-render-context): it is the contract
+between the inventory and every template, so changing it is a breaking change.
+
+The context is a set of datasources rather than one deep-merged mapping so that
+the values stay exactly what the service's own configuration says, with nothing
+reserved inside them, and so a template that fails can be told which level it
+was reading.
 
 Secrets are read at render time and held only as long as the render. They are
 not written anywhere except the output the export publishes.
@@ -248,13 +304,15 @@ they are flat:
 | `append`, `slice`, `dict` | Building a list or a map in a template. |
 | `toYAML`, `toJSON` | `yaml.Marshal` and `json.Marshal`, which `dgs` already has. |
 | `required` | The value, or an error naming what is missing. |
-| `secret` | The secrets entry for a lookup key. |
+| `secret` | The instance's own secret of a given name. |
 
 `secret` is new, and replaces the loop every template currently opens with: each
 walks the whole secrets file with `coll.Has` to find the entry whose `servers`
-list holds its key. The renderer holds the secrets, so it does the lookup, and a
-key that matches nothing is an error naming the key rather than an empty
-`dict` that fails further down.
+list holds its key. That loop goes away entirely. A per-principal credential
+arrives in the context already matched to the principal that holds it, and
+`secret` is left for an instance's own secrets — a TLS key, an administrative
+password — named rather than searched for. A name that matches nothing is an
+error naming it rather than an empty `dict` that fails further down.
 
 `merge`'s behaviour is pinned by tests rather than by a dependency, the
 list-replaces-list rule above especially: element-level defaults exist precisely
@@ -272,31 +330,31 @@ missing and where it was looked for.
 
 ### Selecting
 
-One tree, services holding roles holding instances, with the tri-state checklist
-behaviour the recipient checklist in [`cred/vault.md`](../cred/vault.md#the-flow)
-already uses: `Space` toggles the item under the cursor, checking a service or a
-role checks every instance under it, an instance can then be unchecked on its
-own, and a parent shows `[x]`, `[-]` or `[ ]` for all, some or none of its
-children.
+One tree, nodes holding instances, with the tri-state checklist behaviour the
+recipient checklist in [`cred/vault.md`](../cred/vault.md#the-flow) already
+uses: `Space` toggles the item under the cursor, checking a node checks every
+instance on it, an instance can then be unchecked on its own, and a parent shows
+`[x]`, `[-]` or `[ ]` for all, some or none of its children.
 
 ```text
-[x] hysteria2
-    [x] server
-        [x] us-sfo-dgo-linux-01
-        [ ] jp-tyo-dgo-linux-01
-    [ ] client
-[ ] microbin
-[x] shadowsocks-rust
-    [x] server
-        [x] us-sfo-dgo-linux-01
-    [x] client
-        [x] us-sfo-dgo-linux-01
+[x] us-sfo-dgo-linux-01
+    [x] ss-sfo01          shadowsocks-rust / server
+    [x] hy2-sfo01         hysteria2 / server
+    [ ] bin-sfo01         microbin / server
+[ ] jp-tyo-dgo-linux-01
+[x] macbook
+    [x] macbook-jp      hysteria2 / sing-box
+    [x] macbook-sfo     shadowsocks-rust / ss-rust
 ```
 
-One tree rather than a service picker followed by a page per service: the same
-host usually wants a server here and a client there, and a flow that visits each
-service in turn to collect them makes the common export the long one. Folding
-uses the File Explorer's keys, as the vault contents tree does.
+Nodes rather than services at the top level, because a node is what an export is
+for: the files a machine needs, or the files a person's device needs. A machine
+usually wants a server of one service and a client of another, and a tree that
+visits each service in turn to collect them makes the common export the long
+one. Folding uses the File Explorer's keys, as the vault contents tree does.
+
+Unmanaged users appear as their own top-level entries, holding the instances
+derived for them, since they have no node.
 
 A **broken** instance cannot be checked, and says why on the row.
 
@@ -327,20 +385,34 @@ destination, then the confirmation dialog, then the result in the status bar.
 
 ## What is written
 
-Every target becomes its own directory, whether or not it is the only one:
+Every target becomes its own directory, under the node it belongs to, whether or
+not it is the only one:
 
 ```text
 us-sfo-dgo-linux-01/
-├── hysteria2/server/us-sfo-dgo-linux-01/config.yaml
-├── microbin/server/us-sfo-dgo-linux-01/server.env
-└── shadowsocks-rust/client/us-sfo-dgo-linux-01/config.json
+├── hysteria2/server/hy2-sfo01/config.yaml
+├── microbin/server/bin-sfo01/server.env
+└── shadowsocks-rust/server/ss-sfo01/config.json
+
+macbook/
+├── hysteria2/sing-box/macbook-jp/config.json
+└── shadowsocks-rust/ss-rust/macbook-sfo/config.json
 ```
 
-The layout is the selector, so the archive says where each file came from and
-what it is for without a note beside it, and two instances of one role cannot
-collide. The instance directory is kept in the single-target case too: a layout
-that changes shape with the number of targets is one a script reading it has to
-handle twice.
+An unmanaged user's bundle is named for the user rather than a node, since there
+is no node:
+
+```text
+friend-a/
+├── hysteria2/link/friend-a-jp/share.txt
+└── shadowsocks-rust/link/friend-a-sfo/share.txt
+```
+
+The layout says which machine each file is for, where it came from and what it
+is, without a note beside it, and two instances of one role cannot collide. Both
+the node directory and the instance directory are kept in the single-target case
+too: a layout that changes shape with the number of targets is one a script
+reading it has to handle twice.
 
 An export renders every target first, and publishes only once all of them have
 rendered. A failure anywhere reports the target and the error and writes
@@ -356,10 +428,12 @@ an export cannot silently replace a folder or an archive that is already there.
 Everything an export writes is plaintext. It is the same material the vault
 holds encrypted, in the form a server reads it.
 
-- The generator root's secrets are kept out of version control by name
-  (`*secrets*/`). An export destination is not covered by that rule, so
-  `conf.export.dir` defaults outside any repository, and a destination inside
-  one is a warning on the confirmation dialog naming the repository.
+- The secrets tree is a root of its own, outside `conf.root` and so outside the
+  repository the inventory lives in; a directory that is not under the
+  repository cannot be committed by accident, which a `.gitignore` entry only
+  promises. An export destination is not covered by that, so `conf.export.dir`
+  defaults outside any repository, and a destination inside one is a warning on
+  the confirmation dialog naming the repository.
 - The confirmation dialog names every file to be written and says that the
   result is plaintext.
 - A plain `.zip` sent to someone is the secret in transit. The recipients and
@@ -381,8 +455,8 @@ its own, and are not yet a reference.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `conf.root` | The directory holding one subdirectory per service. | empty — the page opens with no root and asks for one |
-| `conf.secrets` | The directory a manifest's `secrets` file is named relative to. | empty — a service naming a secrets file refuses to render |
+| `conf.root` | The directory holding `services/` and the inventory. | empty — the page opens with no root and asks for one |
+| `conf.secrets` | The root of the secrets tree. | empty — an instance needing a secret refuses to render |
 | `conf.export.dir` | Where the destination form opens, for a folder or an archive. | empty — the home directory |
 
 Paths follow the rules in
@@ -402,6 +476,9 @@ after expansion.
   opens a TUI today, and reports are read-only, so an invocation that writes
   files is outside the current command model. That is the part still open, and
   it needs a decision in [`tui.md`](../../tui.md) rather than a flag added here.
+  [`dgs conf secret show`/`edit`](inventory.md#viewing-and-editing-several-at-once)
+  wait on the same decision — spawning `$EDITOR` is the same kind of
+  side-effecting invocation, and neither should invent its own answer to it.
 
 The per-instance `.sh` files are not among these: they are deleted with the
 directory rename, not kept working alongside the manifest.
@@ -444,3 +521,12 @@ directory rename, not kept working alongside the manifest.
 6. **Export.** The destination form, the confirmation dialog, render-all-then-publish,
    folder and zip.
 7. **Encrypted archives.** As deferred above.
+
+The first of these were built before the inventory existed, against a target
+that was a path and a secret that was a lookup key in a values file. The list
+above is left as the record of that, and the work that revisits it is
+[`inventory.md`](inventory.md#milestones), which covers both pages: discovery
+gains the node files, rendering takes the render context in place of the
+per-service secrets file, and selectors match fields in place of path segments.
+The page, the preview and the export keep their shape; what changes under them
+is the tree's top level, from services to nodes.

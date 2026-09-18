@@ -1,0 +1,11 @@
+id: jp-tyo-dgo-linux-01
+
+networks:
+  internet: 203.0.113.20
+
+instances:
+  - id: hy2-tyo01
+    service: hysteria2
+    role: server
+    ports:
+      main: 443

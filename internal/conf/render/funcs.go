@@ -8,10 +8,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// funcs builds the template.FuncMap: the ten functions
-// docs/apps/conf/export.md#the-template-language names, plus target, which
-// close over this render's defaults, secrets and target.
-func funcs(defaults map[string]any, secrets []map[string]any, target Target) map[string]any {
+// funcs builds the template.FuncMap: the function set
+// docs/apps/conf/export.md#the-template-language names, closing over
+// defaults and the render context in's other fields carry.
+func funcs(defaults map[string]any, in Input) map[string]any {
 	return map[string]any{
 		"merge":    mergeFunc,
 		"omit":     omitFunc,
@@ -23,13 +23,19 @@ func funcs(defaults map[string]any, secrets []map[string]any, target Target) map
 		"toYAML":   toYAMLFunc,
 		"toJSON":   toJSONFunc,
 		"required": requiredFunc,
-		"secret":   secretFunc(secrets),
+		"secret":   secretFunc(in.Own),
 		"defaults": func() map[string]any { return defaults },
+		"node":     func() map[string]any { return in.Node },
+		"instance": func() map[string]any { return in.Instance },
+		"upstream": func() map[string]any { return in.Upstream },
+		"principals": func(port string) []Principal {
+			return in.Principals[port]
+		},
 		"target": func() map[string]string {
 			return map[string]string{
-				"service":  target.Service,
-				"role":     target.Role,
-				"instance": target.Instance,
+				"service":  in.Target.Service,
+				"role":     in.Target.Role,
+				"instance": in.Target.Instance,
 			}
 		},
 	}
@@ -182,23 +188,17 @@ func requiredFunc(value any, name string) (any, error) {
 	return value, nil
 }
 
-// secretFunc returns the secrets entry whose "servers" list holds key, the
-// lookup used by every existing template today — see
-// docs/apps/conf/export.md#the-template-language. A key matching nothing is
-// an error naming it, rather than an empty map that fails further down.
-func secretFunc(secrets []map[string]any) func(key string) (map[string]any, error) {
-	return func(key string) (map[string]any, error) {
-		if len(secrets) == 0 {
-			return nil, fmt.Errorf("secret: no secrets configured, looking for %q", key)
+// secretFunc returns the instance's own secret named name — a TLS key, an
+// administrative password — from own, the render context's own datasource.
+// See docs/apps/conf/export.md#the-template-language. A name matching
+// nothing is an error naming it, rather than an empty value that fails
+// further down.
+func secretFunc(own map[string]string) func(name string) (string, error) {
+	return func(name string) (string, error) {
+		v, ok := own[name]
+		if !ok {
+			return "", fmt.Errorf("secret: no own secret named %q", name)
 		}
-		for _, entry := range secrets {
-			servers, _ := entry["servers"].([]any)
-			for _, s := range servers {
-				if fmt.Sprint(s) == key {
-					return entry, nil
-				}
-			}
-		}
-		return nil, fmt.Errorf("secret: no entry's servers list holds %q", key)
+		return v, nil
 	}
 }

@@ -1,0 +1,24 @@
+id: us-sfo-dgo-linux-01
+
+networks:
+  internet: 203.0.113.10
+
+instances:
+  - id: ss-sfo01
+    service: shadowsocks-rust
+    role: server
+    ports:
+      main: 38250
+      alt: 49217
+
+  - id: hy2-sfo01
+    service: hysteria2
+    role: server
+    ports:
+      main: 443
+
+  - id: bin-sfo01
+    service: microbin
+    role: server
+    ports:
+      web: 8080

@@ -7,13 +7,13 @@ import (
 	"dgs-toolbox/internal/conf/confgen"
 )
 
-func TestRender_DocumentDefaults_ValuesWinOverDefaults(t *testing.T) {
+func TestRender_DocumentDefaults_InstanceWinsOverDefaults(t *testing.T) {
 	out, err := Render(Input{
 		Target:       Target{Service: "hysteria2", Role: "server", Instance: "us-sfo"},
 		Template:     "listen: {{ .listen }}\nlog: {{ .log }}\n",
 		Defaults:     []byte("listen: :443\nlog: warn\n"),
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("listen: :8443\n"),
+		Instance:     map[string]any{"listen": ":8443"},
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -24,7 +24,7 @@ func TestRender_DocumentDefaults_ValuesWinOverDefaults(t *testing.T) {
 	}
 }
 
-func TestRender_ElementDefaults_ValuesReachTemplateUnmerged(t *testing.T) {
+func TestRender_ElementDefaults_InstanceReachesTemplateUnmerged(t *testing.T) {
 	// The template does its own element-level merge, as the existing
 	// Shadowsocks templates do.
 	out, err := Render(Input{
@@ -32,7 +32,7 @@ func TestRender_ElementDefaults_ValuesReachTemplateUnmerged(t *testing.T) {
 		Template:     `{{ $d := index (defaults).servers 0 }}{{ $s := merge (index .servers 0) $d }}{{ $s.port }}/{{ $s.timeout }}`,
 		Defaults:     []byte("servers:\n  - timeout: 60\n    port: 8388\n"),
 		DefaultsKind: confgen.DefaultsElement,
-		Values:       []byte("servers:\n  - port: 9000\n"),
+		Instance:     map[string]any{"servers": []any{map[string]any{"port": 9000}}},
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -42,18 +42,12 @@ func TestRender_ElementDefaults_ValuesReachTemplateUnmerged(t *testing.T) {
 	}
 }
 
-func TestRender_Secret_FindsEntryByServersList(t *testing.T) {
+func TestRender_Secret_ReadsOwnByName(t *testing.T) {
 	out, err := Render(Input{
 		Target:       Target{Service: "shadowsocks-rust", Role: "server", Instance: "us-sfo"},
-		Template:     `{{ $e := secret "sfo-1" }}{{ $e.password }}`,
+		Template:     `{{ secret "auth_password" }}`,
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("secret_server: sfo-1\n"),
-		Secrets: []byte(`
-- servers: [sfo-1, sfo-2]
-  password: hunter2
-- servers: [tyo-1]
-  password: other
-`),
+		Own:          map[string]string{"auth_password": "hunter2"},
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -63,13 +57,12 @@ func TestRender_Secret_FindsEntryByServersList(t *testing.T) {
 	}
 }
 
-func TestRender_Secret_MissingKeyNamesIt(t *testing.T) {
+func TestRender_Secret_MissingNameNamesIt(t *testing.T) {
 	_, err := Render(Input{
 		Target:       Target{Service: "svc", Role: "server", Instance: "inst"},
 		Template:     `{{ secret "does-not-exist" }}`,
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("k: v\n"),
-		Secrets:      []byte("- servers: [other]\n  password: x\n"),
+		Own:          map[string]string{"other": "x"},
 	})
 	if err == nil {
 		t.Fatal("Render: want error for missing secret")
@@ -82,12 +75,47 @@ func TestRender_Secret_MissingKeyNamesIt(t *testing.T) {
 	}
 }
 
+func TestRender_NodeInstanceUpstreamAndPrincipals(t *testing.T) {
+	out, err := Render(Input{
+		Target:       Target{Service: "shadowsocks-rust", Role: "server", Instance: "ss-sfo01"},
+		Template:     `{{ (node).id }} {{ (instance).id }} {{ (upstream).address }}:{{ (upstream).port }} {{ range principals "main" }}{{ .Name }}={{ .Secret }} {{ end }}`,
+		DefaultsKind: confgen.DefaultsDocument,
+		Instance:     map[string]any{"id": "ss-sfo01"},
+		Node:         map[string]any{"id": "us-sfo-dgo-linux-01"},
+		Upstream:     map[string]any{"address": "203.0.113.1", "port": 443},
+		Principals: map[string][]Principal{
+			"main": {{Name: "doug-macbook", Secret: "abc"}, {Name: "yak", Secret: "xyz"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	want := "us-sfo-dgo-linux-01 ss-sfo01 203.0.113.1:443 doug-macbook=abc yak=xyz "
+	if string(out) != want {
+		t.Fatalf("out = %q, want %q", out, want)
+	}
+}
+
+func TestRender_UpstreamNilForATerminalInstance(t *testing.T) {
+	out, err := Render(Input{
+		Target:       Target{Service: "microbin", Role: "server", Instance: "bin-sfo01"},
+		Template:     `{{ if upstream }}has upstream{{ else }}terminal{{ end }}`,
+		DefaultsKind: confgen.DefaultsDocument,
+	})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if string(out) != "terminal" {
+		t.Fatalf("out = %q, want terminal", out)
+	}
+}
+
 func TestRender_Required_MissingNamesWhatAndWhere(t *testing.T) {
 	_, err := Render(Input{
 		Target:       Target{Service: "microbin", Role: "server", Instance: "us-sfo"},
 		Template:     `{{ required .auth_password "microbin auth password" }}`,
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("other: 1\n"),
+		Instance:     map[string]any{"other": 1},
 	})
 	if err == nil {
 		t.Fatal("Render: want error for missing required value")
@@ -102,7 +130,6 @@ func TestRender_TargetFunction(t *testing.T) {
 		Target:       Target{Service: "hysteria2", Role: "server", Instance: "us-sfo"},
 		Template:     `{{ (target).service }}/{{ (target).role }}/{{ (target).instance }}`,
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("k: v\n"),
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -117,7 +144,6 @@ func TestRender_MergeFirstArgumentWins(t *testing.T) {
 		Target:       Target{Service: "s", Role: "r", Instance: "i"},
 		Template:     `{{ $m := merge (dict "a" 1) (dict "a" 2 "b" 3) }}{{ $m.a }}-{{ $m.b }}`,
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("k: v\n"),
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -132,7 +158,6 @@ func TestRender_MergeListsReplaceRatherThanCombine(t *testing.T) {
 		Target:       Target{Service: "s", Role: "r", Instance: "i"},
 		Template:     `{{ $m := merge (dict "xs" (slice 1 2)) (dict "xs" (slice 9 8 7)) }}{{ len $m.xs }}`,
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("k: v\n"),
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -147,7 +172,7 @@ func TestRender_OmitAndPick(t *testing.T) {
 		Target:       Target{Service: "s", Role: "r", Instance: "i"},
 		Template:     `{{ $m := omit . "b" }}{{ has $m "a" }}-{{ has $m "b" }}`,
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("a: 1\nb: 2\n"),
+		Instance:     map[string]any{"a": 1, "b": 2},
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -162,7 +187,6 @@ func TestRender_ToYAMLAndToJSON(t *testing.T) {
 		Target:       Target{Service: "s", Role: "r", Instance: "i"},
 		Template:     `{{ toJSON (dict "a" 1) }}|{{ toYAML (dict "a" 1) }}`,
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("k: v\n"),
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -172,15 +196,15 @@ func TestRender_ToYAMLAndToJSON(t *testing.T) {
 	}
 }
 
-func TestRender_BrokenValuesNamesTargetAndReason(t *testing.T) {
+func TestRender_BrokenDefaultsNamesTargetAndReason(t *testing.T) {
 	_, err := Render(Input{
 		Target:       Target{Service: "hysteria2", Role: "server", Instance: "broken-one"},
 		Template:     `{{ . }}`,
+		Defaults:     []byte("not: [valid"),
 		DefaultsKind: confgen.DefaultsDocument,
-		Values:       []byte("not: [valid"),
 	})
 	if err == nil {
-		t.Fatal("Render: want error for unparsable values")
+		t.Fatal("Render: want error for unparsable defaults")
 	}
 	if !strings.Contains(err.Error(), "hysteria2/server/broken-one") {
 		t.Fatalf("error = %q, want it to name the target", err)
@@ -192,7 +216,6 @@ func TestRender_UnknownDefaultsKindErrors(t *testing.T) {
 		Target:       Target{Service: "s", Role: "r", Instance: "i"},
 		Template:     `{{ . }}`,
 		DefaultsKind: "bogus",
-		Values:       []byte("k: v\n"),
 	})
 	if err == nil {
 		t.Fatal("Render: want error for unknown defaults kind")
