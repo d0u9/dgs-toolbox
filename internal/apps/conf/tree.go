@@ -3,58 +3,55 @@ package conf
 import (
 	"fmt"
 
-	"dgs-toolbox/internal/conf/confgen"
+	"dgs-toolbox/internal/conf/target"
 	"dgs-toolbox/internal/tui/scrolllist"
+	"dgs-toolbox/internal/tui/text"
 )
 
-// instanceNode is one instance under a role.
+// instanceNode is one instance under a node or an unmanaged user.
 type instanceNode struct {
 	name   string
+	detail string // "service / role"
 	broken string
 }
 
-// roleNode is one role under a service, holding the instances found for it.
-type roleNode struct {
+// nodeGroup is one top-level tree entry: a node, or an unmanaged user
+// holding the instances derived for them. broken is a node file's own parse
+// error, if any; a broken node has no instances to hold.
+type nodeGroup struct {
 	name      string
+	broken    string
 	expanded  bool
 	instances []*instanceNode
 }
 
-// serviceNode is one service, holding its roles. broken is the manifest's
-// parse error, if any; a broken service has no roles to hold.
-type serviceNode struct {
-	name     string
-	broken   string
-	expanded bool
-	roles    []*roleNode
-}
-
-// buildTree turns a discovered root into the tree the page walks, sorted the
-// way confgen.Load already sorted it.
-func buildTree(root *confgen.Root) []*serviceNode {
-	services := make([]*serviceNode, 0, len(root.Services))
-	for _, svc := range root.Services {
-		s := &serviceNode{name: svc.Name, broken: svc.Broken, expanded: true}
-		for _, role := range svc.Roles {
-			r := &roleNode{name: role.Name, expanded: true}
-			for _, inst := range role.Instances {
-				r.instances = append(r.instances, &instanceNode{name: inst.Name, broken: inst.Broken})
+// buildTree turns target.List's result into the tree the page walks: nodes
+// (and unmanaged users, who have none) at the top level, their instances
+// under them.
+func buildTree(targets []target.Target) []*nodeGroup {
+	var nodes []*nodeGroup
+	for _, g := range target.GroupByNode(targets) {
+		n := &nodeGroup{name: g.Node, expanded: true}
+		for _, t := range g.Targets {
+			if t.Instance == "" {
+				// The one synthetic target a broken node file contributes —
+				// see target.List.
+				n.broken = t.Broken
+				continue
 			}
-			s.roles = append(s.roles, r)
+			n.instances = append(n.instances, &instanceNode{
+				name:   t.Instance,
+				detail: t.Service + " / " + t.Role,
+				broken: t.Broken,
+			})
 		}
-		services = append(services, s)
+		nodes = append(nodes, n)
 	}
-	return services
+	return nodes
 }
 
-// target is service/role/instance, as docs/apps/conf/export.md#targets-and-selectors
-// writes it.
-func target(service, role, instance string) string {
-	return fmt.Sprintf("%s/%s/%s", service, role, instance)
-}
-
-// row is one visible line of the tree: a service, a role or an instance,
-// with what Space would check under it.
+// row is one visible line of the tree: a node/user or an instance, with what
+// Space would check under it.
 type row struct {
 	id       string
 	label    string
@@ -62,26 +59,17 @@ type row struct {
 	checkbox string // empty for a row that cannot be checked
 	keys     []string
 
-	service *serviceNode
-	role    *roleNode
+	node *nodeGroup
 }
 
-// checkableKeys is every checkable instance target under a service or a
-// role. A broken instance is excluded: it cannot be checked, so it never
-// contributes to a parent's tri-state box or to the checked count.
-func checkableKeys(s *serviceNode) []string {
+// checkableKeys is every checkable instance under a node. A broken instance
+// is excluded: it cannot be checked, so it never contributes to the node's
+// tri-state box or to the checked count.
+func checkableKeys(n *nodeGroup) []string {
 	var keys []string
-	for _, r := range s.roles {
-		keys = append(keys, roleKeys(s.name, r)...)
-	}
-	return keys
-}
-
-func roleKeys(serviceName string, r *roleNode) []string {
-	var keys []string
-	for _, inst := range r.instances {
+	for _, inst := range n.instances {
 		if inst.broken == "" {
-			keys = append(keys, target(serviceName, r.name, inst.name))
+			keys = append(keys, inst.name)
 		}
 	}
 	return keys
@@ -112,19 +100,13 @@ func checkboxFor(keys []string, checked map[string]bool) string {
 // feeds them to the list.
 func (m *Model) refresh() {
 	m.rows = nil
-	for _, s := range m.services {
-		m.rows = append(m.rows, m.serviceRow(s))
-		if s.broken != "" || !s.expanded {
+	for _, n := range m.nodes {
+		m.rows = append(m.rows, m.nodeRow(n))
+		if n.broken != "" || !n.expanded {
 			continue
 		}
-		for _, r := range s.roles {
-			m.rows = append(m.rows, m.roleRow(s, r))
-			if !r.expanded {
-				continue
-			}
-			for _, inst := range r.instances {
-				m.rows = append(m.rows, m.instanceRow(s, r, inst))
-			}
+		for _, inst := range n.instances {
+			m.rows = append(m.rows, m.instanceRow(n, inst))
 		}
 	}
 	items := make([]scrolllist.Item, len(m.rows))
@@ -134,66 +116,52 @@ func (m *Model) refresh() {
 	m.list.SetItems(items)
 }
 
-func (m Model) serviceRow(s *serviceNode) row {
-	arrow := foldArrow(s.expanded, len(s.roles) > 0 && s.broken == "")
-	if s.broken != "" {
+func (m Model) nodeRow(n *nodeGroup) row {
+	arrow := foldArrow(n.expanded, len(n.instances) > 0 && n.broken == "")
+	if n.broken != "" {
 		return row{
-			id:      "svc:" + s.name,
-			label:   fmt.Sprintf("%s %s", arrow, s.name),
-			detail:  "    broken: " + s.broken,
-			service: s,
+			id:     "node:" + n.name,
+			label:  fmt.Sprintf("%s %s", arrow, n.name),
+			detail: "    broken: " + n.broken,
+			node:   n,
 		}
 	}
-	keys := checkableKeys(s)
+	keys := checkableKeys(n)
 	box := checkboxFor(keys, m.checked)
 	return row{
-		id:       "svc:" + s.name,
-		label:    fmt.Sprintf("%s %s %s", arrow, box, s.name),
+		id:       "node:" + n.name,
+		label:    fmt.Sprintf("%s %s %s", arrow, box, n.name),
 		detail:   "    " + plural(len(keys), "target"),
 		checkbox: box,
 		keys:     keys,
-		service:  s,
+		node:     n,
 	}
 }
 
-func (m Model) roleRow(s *serviceNode, r *roleNode) row {
-	arrow := foldArrow(r.expanded, len(r.instances) > 0)
-	keys := roleKeys(s.name, r)
-	box := checkboxFor(keys, m.checked)
-	return row{
-		id:       "role:" + s.name + "/" + r.name,
-		label:    fmt.Sprintf("    %s %s %s", arrow, box, r.name),
-		detail:   "        " + plural(len(keys), "target"),
-		checkbox: box,
-		keys:     keys,
-		role:     r,
-	}
-}
-
-func (m Model) instanceRow(s *serviceNode, r *roleNode, inst *instanceNode) row {
-	id := "inst:" + target(s.name, r.name, inst.name)
+func (m Model) instanceRow(n *nodeGroup, inst *instanceNode) row {
+	id := "inst:" + n.name + "/" + inst.name
 	if inst.broken != "" {
 		return row{
 			id:     id,
-			label:  "        [!] " + inst.name,
-			detail: "            broken: " + inst.broken,
+			label:  "    [!] " + inst.name,
+			detail: "        broken: " + inst.broken,
 		}
 	}
-	key := target(s.name, r.name, inst.name)
 	box := "[ ]"
-	if m.checked[key] {
+	if m.checked[inst.name] {
 		box = "[x]"
 	}
 	return row{
 		id:       id,
-		label:    "        " + box + " " + inst.name,
+		label:    "    " + box + " " + inst.name,
+		detail:   "        " + inst.detail,
 		checkbox: box,
-		keys:     []string{key},
+		keys:     []string{inst.name},
 	}
 }
 
-// foldArrow is the disclosure marker for a service or role row: "▾" open,
-// "▸" closed, or a space when it holds nothing to fold.
+// foldArrow is the disclosure marker for a node row: "▾" open, "▸" closed, or
+// a space when it holds nothing to fold.
 func foldArrow(expanded, foldable bool) string {
 	if !foldable {
 		return " "
@@ -204,9 +172,4 @@ func foldArrow(expanded, foldable bool) string {
 	return "▸"
 }
 
-func plural(count int, noun string) string {
-	if count == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%d %ss", count, noun)
-}
+func plural(count int, noun string) string { return text.Plural(count, noun) }
