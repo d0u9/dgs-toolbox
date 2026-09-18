@@ -33,6 +33,12 @@ type Model struct {
 	// is never selectable and never shifts the numbering.
 	divider      int
 	dividerLabel string
+	// hideNumbers drops the line-number column. A list whose rows carry
+	// their own structure — a tree, where depth is drawn into the label —
+	// gets nothing from a number that counts visible rows rather than
+	// items, and folding renumbers everything under the cursor. See
+	// docs/scroll-lists.md#line-numbers.
+	hideNumbers bool
 }
 
 var selectedRowStyle = lipgloss.NewStyle().Bold(true).
@@ -138,7 +144,7 @@ func (m Model) visibleItems() int {
 
 func (m *Model) Pan(delta int) {
 	maxPan := 0
-	labelWidth := max(1, m.width-m.numberWidth()-3)
+	labelWidth := max(1, m.width-m.LabelOffset())
 	for _, item := range m.items {
 		maxPan = max(maxPan, lipgloss.Width(item.Label)-labelWidth)
 		maxPan = max(maxPan, lipgloss.Width(item.Detail)-labelWidth)
@@ -184,10 +190,10 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 		return muted.Render("· No items")
 	}
 	numberWidth := m.numberWidth()
-	labelWidth := max(1, m.width-numberWidth-3)
+	labelWidth := max(1, m.width-m.LabelOffset())
 	end := min(len(m.items), m.top+m.visibleItems())
 	lines := make([]string, 0, m.height)
-	detailIndent := strings.Repeat(" ", min(m.width, numberWidth+3))
+	detailIndent := strings.Repeat(" ", min(m.width, m.LabelOffset()))
 	for index := m.top; index < end; index++ {
 		if m.hasDivider() && index == m.divider && index > m.top {
 			lines = append(lines, dividerRow(m.dividerLabel, m.width))
@@ -197,13 +203,16 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 		if selected {
 			marker = "› "
 		}
-		numberText := fmt.Sprintf("%*d", numberWidth, index+1)
-		number := muted.Render(numberText)
-		if selected {
-			number = numberText
-		}
 		label := ansi.Cut(m.items[index].Label, m.horizontal, m.horizontal+labelWidth)
-		row := marker + number + " " + label
+		row := marker + label
+		if !m.hideNumbers {
+			numberText := fmt.Sprintf("%*d", numberWidth, index+1)
+			number := muted.Render(numberText)
+			if selected {
+				number = numberText
+			}
+			row = marker + number + " " + label
+		}
 		if index == m.top && m.top > 0 {
 			row = overflowMarkedRow(row, m.width, "↑ more")
 		}
@@ -251,9 +260,24 @@ func overflowMarkedRow(row string, width int, marker string) string {
 // LabelOffset is how many cells precede an item's label: the cursor marker,
 // the number, and the space after it. A caller that wants to know which part of
 // a row was clicked needs it, because the numbering width depends on the list.
-func (m Model) LabelOffset() int { return 3 + m.numberWidth() }
+func (m Model) LabelOffset() int {
+	if m.hideNumbers {
+		return 2 // the cursor marker alone.
+	}
+	return 3 + m.numberWidth()
+}
 
-func (m Model) numberWidth() int { return len(fmt.Sprintf("%d", max(1, len(m.items)))) }
+func (m Model) numberWidth() int {
+	if m.hideNumbers {
+		return 0
+	}
+	return len(fmt.Sprintf("%d", max(1, len(m.items))))
+}
+
+// HideNumbers drops the line-number column, for a list whose rows already
+// carry their own structure. It is off by default: a plain collection is
+// easier to talk about with numbers than without.
+func (m *Model) HideNumbers(hide bool) { m.hideNumbers = hide }
 func (m *Model) ensureVisible() {
 	if m.cursor < m.top {
 		m.top = m.cursor

@@ -19,7 +19,13 @@ type instanceNode struct {
 // holding the instances derived for them. broken is a node file's own parse
 // error, if any; a broken node has no instances to hold.
 type nodeGroup struct {
-	name      string
+	name string
+	// user is set when this entry is an unmanaged user rather than a node.
+	// They hold instances the same way and group the same way, but nothing
+	// else about them is a node's: there is no node file, no networks, and
+	// no node detail to show. See
+	// docs/apps/conf/inventory.md#managed-and-unmanaged-devices.
+	user      bool
 	broken    string
 	expanded  bool
 	instances []*instanceNode
@@ -33,6 +39,12 @@ func buildTree(targets []target.Target) []*nodeGroup {
 	for _, g := range target.GroupByNode(targets) {
 		n := &nodeGroup{name: g.Node, expanded: true}
 		for _, t := range g.Targets {
+			// GroupByNode keys an unmanaged user's targets by the user,
+			// since they have no node; a target with no node is how the
+			// group says which of the two it is.
+			if t.Node == "" && t.User != "" {
+				n.user = true
+			}
 			if t.Instance == "" {
 				// The one synthetic target a broken node file contributes —
 				// see target.List.

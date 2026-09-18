@@ -89,3 +89,38 @@ func TestDividerSplitsTheListWithoutBecomingSelectable(t *testing.T) {
 		t.Fatal("a rule at the start of the list should be dropped")
 	}
 }
+
+// TestHideNumbers covers a list that draws its own structure. The number
+// column has to go entirely — not be blanked — so the label starts right
+// after the cursor marker and a detail line lines up under it.
+func TestHideNumbers(t *testing.T) {
+	m := New()
+	m.SetSize(30, 6)
+	m.SetItems([]Item{
+		{ID: "a", Label: "▾ node", Detail: "  2 instances"},
+		{ID: "b", Label: "  └─ inst", Detail: "        service / role"},
+	})
+
+	withNumbers := m.View(true, lipgloss.NewStyle(), lipgloss.NewStyle())
+	if !strings.Contains(withNumbers, "1 ▾ node") {
+		t.Fatalf("View() = %q, want numbered rows by default", withNumbers)
+	}
+	if m.LabelOffset() != 4 {
+		t.Fatalf("LabelOffset() = %d, want marker plus a one-digit number and its gap", m.LabelOffset())
+	}
+
+	m.HideNumbers(true)
+	got := m.View(true, lipgloss.NewStyle(), lipgloss.NewStyle())
+	if strings.Contains(got, "1 ▾") || strings.Contains(got, "2   └─") {
+		t.Fatalf("View() = %q, want no line numbers", got)
+	}
+	if !strings.Contains(got, "› ▾ node") {
+		t.Fatalf("View() = %q, want the label right after the cursor marker", got)
+	}
+	if !strings.Contains(got, "\n    └─ inst") {
+		t.Fatalf("View() = %q, want an unselected row indented by the marker alone", got)
+	}
+	if m.LabelOffset() != 2 {
+		t.Fatalf("LabelOffset() = %d, want the cursor marker alone", m.LabelOffset())
+	}
+}

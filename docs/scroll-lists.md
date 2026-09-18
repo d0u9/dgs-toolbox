@@ -6,6 +6,17 @@
 
 Rows use one-based, right-aligned line numbers. The width grows with the collection (`1`–`9`, `10`–`99`, and so on), keeping labels vertically aligned. The selected row uses both the shared accent marker and a restrained full-row background highlight when its containing data field is focused.
 
+### Line numbers
+
+`HideNumbers(true)` drops the number column, and `LabelOffset` shrinks with it
+so a row's own controls stay where the app puts them. Use it only for a list
+whose rows already carry their own structure: a tree draws depth into the
+label, numbers every visible row rather than every node, and renumbers
+everything below a fold as it opens and closes, so the column competes with the
+structure instead of locating anything. `dgs conf inspect`'s Nodes index is the
+current example. A plain collection keeps its numbers — they are what makes a
+row easy to point at.
+
 An item may carry an optional second line. When any item in a list has one,
 every item occupies two rows: the label, then a muted detail row indented to
 the label column. Two-row mode keeps rows uniform so the cursor never changes

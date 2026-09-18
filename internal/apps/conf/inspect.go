@@ -61,6 +61,9 @@ type InspectData = loaded
 
 func newInspectModel(rootPath, secretsDir string) InspectModel {
 	m := InspectModel{rootPath: rootPath, secretsDir: secretsDir, list: scrolllist.New()}
+	// The Nodes index is a tree: depth is drawn into the label, so a number
+	// counting visible rows adds nothing and moves when a fold does.
+	m.list.HideNumbers(true)
 	if rootPath == "" {
 		return m
 	}
@@ -78,27 +81,124 @@ func newInspectModel(rootPath, secretsDir string) InspectModel {
 	}
 	sort.Strings(m.users)
 
-	m.nodeItems = nodeTabItems(m.nodes)
 	m.userItems = userTabItems(m.l.inv, m.users)
+	m.refresh()
 	m.setTab(tabNodes)
 	return m
 }
 
+// refresh rebuilds the Nodes index from the tree's current fold state and
+// feeds it back to the list, keeping the cursor on whatever it was on when
+// that row is still visible.
+func (m *InspectModel) refresh() {
+	selected := ""
+	if item, ok := m.list.Selected(); ok {
+		selected = item.ID
+	}
+	m.nodeItems = nodeTabItems(m.nodes)
+	if m.tab == tabNodes {
+		m.list.SetItems(m.nodeItems)
+		if selected != "" {
+			m.list.SelectID(selected)
+		}
+	}
+}
+
+// foldable returns the fold state of the row under the cursor when it is a
+// node or unmanaged user holding instances, and nil otherwise.
+func (m *InspectModel) foldable() *bool {
+	if m.tab != tabNodes {
+		return nil
+	}
+	item, ok := m.list.Selected()
+	if !ok {
+		return nil
+	}
+	_, name, _ := strings.Cut(item.ID, ":")
+	for _, n := range m.nodes {
+		if n.name == name && n.broken == "" && len(n.instances) > 0 {
+			return &n.expanded
+		}
+	}
+	return nil
+}
+
+// toParent moves the cursor from an instance row up to the node holding it,
+// which is what h does when there is nothing left to fold.
+func (m *InspectModel) toParent() {
+	item, ok := m.list.Selected()
+	if !ok {
+		return
+	}
+	kind, name, _ := strings.Cut(item.ID, ":")
+	if kind != "inst" {
+		return
+	}
+	for _, n := range m.nodes {
+		for _, inst := range n.instances {
+			if inst.name != name {
+				continue
+			}
+			id := "node:" + n.name
+			if n.user {
+				id = "user:" + n.name
+			}
+			m.list.SelectID(id)
+			m.detailScroll = 0
+			return
+		}
+	}
+}
+
+// Tree drawing for the Nodes index. The list component gives every visible
+// row the same one-based number, so depth has to come from the label: an
+// instance hangs off its node on a branch, and its detail line continues the
+// trunk past it. Without them a node and its instances read as one flat run
+// of equals, which is what they are to the list and is not what they are.
+const (
+	branchMid   = "├─ "
+	branchLast  = "└─ "
+	trunk       = "│  "
+	trunkClosed = "   "
+)
+
+// nodeTabItems is the Nodes index: one row per node, each followed by the
+// instances on it while it is expanded. An unmanaged user has no node file
+// and appears here only because the instances derived for them have nowhere
+// else to sit, so its row reads as a user and opens the user view — asking
+// for a node detail under that name is asking for a file that does not
+// exist.
 func nodeTabItems(nodes []*nodeGroup) []scrolllist.Item {
 	var items []scrolllist.Item
 	for _, n := range nodes {
-		label := "▸ " + n.name
+		kind, what := "node", ""
+		if n.user {
+			kind, what = "user", "unmanaged user, "
+		}
+		foldable := n.broken == "" && len(n.instances) > 0
+		label := foldArrow(n.expanded, foldable) + " " + n.name
 		if n.broken != "" {
-			items = append(items, scrolllist.Item{ID: "node:" + n.name, Label: label, Detail: "broken: " + n.broken})
+			items = append(items, scrolllist.Item{ID: kind + ":" + n.name, Label: label, Detail: "  broken: " + n.broken})
 			continue
 		}
-		items = append(items, scrolllist.Item{ID: "node:" + n.name, Label: label, Detail: plural(len(n.instances), "instance")})
-		for _, inst := range n.instances {
+		items = append(items, scrolllist.Item{ID: kind + ":" + n.name, Label: label, Detail: "  " + what + plural(len(n.instances), "instance")})
+		if !n.expanded {
+			continue
+		}
+		for i, inst := range n.instances {
+			branch, cont := branchMid, trunk
+			if i == len(n.instances)-1 {
+				branch, cont = branchLast, trunkClosed
+			}
 			d := inst.detail
 			if inst.broken != "" {
 				d = "broken: " + inst.broken
 			}
-			items = append(items, scrolllist.Item{ID: "inst:" + inst.name, Label: "    " + inst.name, Detail: d})
+			items = append(items, scrolllist.Item{
+				ID:     "inst:" + inst.name,
+				Label:  "  " + branch + inst.name,
+				Detail: "  " + cont + "   " + d,
+			})
 		}
 	}
 	return items
@@ -182,6 +282,33 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailScroll += max(1, (m.height-2)/2)
 		case "ctrl+u", "pgup":
 			m.detailScroll = max(0, m.detailScroll-max(1, (m.height-2)/2))
+		// The fold keys are the File Explorer's, the same ones the export
+		// tree uses: docs/apps/conf/inspect.md#layout says folding follows
+		// that component rather than inventing its own.
+		case "right", "l":
+			if fold := m.foldable(); fold != nil {
+				*fold = true
+				m.refresh()
+			}
+		case "o":
+			if fold := m.foldable(); fold != nil {
+				*fold = !*fold
+				m.refresh()
+			}
+		case "left", "h":
+			if fold := m.foldable(); fold != nil && *fold {
+				*fold = false
+				m.refresh()
+			} else {
+				m.toParent()
+			}
+		case "w":
+			for _, n := range m.nodes {
+				n.expanded = false
+			}
+			m.refresh()
+			m.list.First()
+			m.detailScroll = 0
 		}
 		return m, nil
 	}
@@ -224,7 +351,11 @@ func (m InspectModel) View() string {
 
 	list := m.list
 	list.SetSize(left-4, height)
-	leftBox := fieldset.ViewFocused("INDEX", text.Fit(list.View(true, titleStyle, mutedStyle), height, left-4), left, true)
+	indexTitle := "NODES"
+	if m.tab == tabUsers {
+		indexTitle = "USERS"
+	}
+	leftBox := fieldset.ViewFocused(indexTitle, text.Fit(list.View(true, titleStyle, mutedStyle), height, left-4), left, true)
 
 	_, id, body, err := m.currentDetail()
 	if err != nil {
@@ -270,7 +401,11 @@ func (m InspectModel) Status() tui.Status {
 	if id != "" {
 		center = kind + ": " + id
 	}
-	return tui.Status{Left: "INSPECT", Center: center, Right: "[/] Tab  ↑↓ Move  ctrl+d/u Scroll detail"}
+	right := "[/] Tab  ↑↓ Move  ctrl+d/u Scroll"
+	if m.tab == tabNodes {
+		right = "[/] Tab  ↑↓ Move  h/l Fold  w Fold all"
+	}
+	return tui.Status{Left: "INSPECT", Center: center, Right: right}
 }
 
 // renderDetail is the whole of milestone 2's three text views. It reads only
@@ -331,13 +466,28 @@ func renderNodeDetail(l InspectData, id string) (string, error) {
 	if n.ClientRole != "" {
 		fmt.Fprintf(&b, "client_role: %s\n", n.ClientRole)
 	}
-	if len(n.Instances) > 0 {
+	// Everything that runs here, authored and derived alike. An authored
+	// entry with no service is an override of a derived instance, not an
+	// instance of its own, so it is listed once, from the derivation that
+	// gives it its service and role.
+	type row struct{ id, detail string }
+	var rows []row
+	for _, inst := range n.Instances {
+		if inst.Service == "" && inst.Role == "" {
+			continue
+		}
+		rows = append(rows, row{inst.ID, inst.Service + " / " + inst.Role})
+	}
+	for _, ci := range l.derived.ClientInstances {
+		if ci.Node == id {
+			rows = append(rows, row{ci.ID, ci.Service + " / " + ci.Role + "  (derived)"})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].id < rows[j].id })
+	if len(rows) > 0 {
 		fmt.Fprintln(&b, "\ninstances:")
-		for _, inst := range n.Instances {
-			if inst.Service == "" && inst.Role == "" {
-				continue
-			}
-			fmt.Fprintf(&b, "  %s (%s / %s)\n", inst.ID, inst.Service, inst.Role)
+		for _, r := range rows {
+			fmt.Fprintf(&b, "  %-24s %s\n", r.id, r.detail)
 		}
 	}
 	return b.String(), nil
@@ -384,7 +534,19 @@ func textInstanceDetail(l InspectData, id, service, role, node, user string, por
 		}
 	}
 	if len(values) > 0 {
-		fmt.Fprintln(&b, "values: (template's own — see docs/apps/conf/inventory.md#an-instances-own-values)")
+		// The service's own parameters, opaque to dgs — see
+		// docs/apps/conf/inventory.md#an-instances-own-values. They are
+		// printed as written, since naming a key without its value says
+		// nothing a reader could not get from the node file.
+		var names []string
+		for name := range values {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		fmt.Fprintln(&b, "values:")
+		for _, name := range names {
+			fmt.Fprintf(&b, "  %s: %v\n", name, values[name])
+		}
 	}
 
 	var routes []string
@@ -397,27 +559,46 @@ func textInstanceDetail(l InspectData, id, service, role, node, user string, por
 	}
 	sort.Strings(routes)
 	if len(routes) > 0 {
-		fmt.Fprintf(&b, "\nroutes: %s\n", strings.Join(routes, ", "))
+		fmt.Fprintf(&b, "\nhop of: %s\n", strings.Join(routes, ", "))
+	}
+	for _, ci := range l.derived.ClientInstances {
+		if ci.ID == id {
+			// A derived client enters a route rather than being a hop of
+			// one, so the scan above never finds it.
+			fmt.Fprintf(&b, "\nderived for route: %s\n", ci.Route)
+		}
 	}
 
-	auth, combineOwn := roleOf(l.manifests, service, role)
-	if len(ports) > 0 && auth == confgen.AuthPerPrincipal {
-		fmt.Fprintln(&b, "\nsecrets (structure only — Enter on a port to reveal, once milestone 3 lands):")
+	// Every secret this instance holds, by path and never by value: one per
+	// principal on a per-principal port, plus the role's own list. The paths
+	// are the real ones docs/apps/conf/inventory.md#secrets derives, so a
+	// reader can go straight to the file.
+	r := l.manifests[service].Roles[role]
+	var secretLines []string
+	if r.Auth == confgen.AuthPerPrincipal {
 		var names []string
 		for name := range ports {
 			names = append(names, name)
 		}
 		sort.Strings(names)
 		for _, port := range names {
-			var principalNames []string
 			for _, p := range l.derived.Principals(id, port) {
-				principalNames = append(principalNames, p.Name)
+				path := secretstore.Path{Instance: id, Port: port, Kind: string(p.Kind), Name: p.ID}
+				secretLines = append(secretLines, fmt.Sprintf("  %-48s %s", path.String(), p.Name))
 			}
-			fmt.Fprintf(&b, "  %s: %s\n", secretstore.Path{Instance: id, Port: port, Kind: "*", Name: "*"}.String(), strings.Join(principalNames, ", "))
 		}
-		if combineOwn != "" {
-			fmt.Fprintf(&b, "  %s\n", secretstore.Path{Instance: id, Port: secretstore.OwnPort, Name: combineOwn}.String())
+	}
+	for _, name := range r.Own {
+		path := secretstore.Path{Instance: id, Port: secretstore.OwnPort, Name: name}
+		note := "own"
+		if name == r.CombineOwn {
+			note = "own, combined into every client"
 		}
+		secretLines = append(secretLines, fmt.Sprintf("  %-48s %s", path.String(), note))
+	}
+	if len(secretLines) > 0 {
+		fmt.Fprintf(&b, "\nsecrets (%s, values not shown):\n", plural(len(secretLines), "file"))
+		fmt.Fprintln(&b, strings.Join(secretLines, "\n"))
 	}
 
 	var upstream *derive.Edge
@@ -436,12 +617,6 @@ func textInstanceDetail(l InspectData, id, service, role, node, user string, por
 	}
 
 	return b.String(), nil
-}
-
-// roleOf looks up a service's role declaration.
-func roleOf(manifests map[string]confgen.Manifest, service, role string) (auth, combineOwn string) {
-	r := manifests[service].Roles[role]
-	return r.Auth, r.CombineOwn
 }
 
 func renderUserDetail(l InspectData, id string) (string, error) {
