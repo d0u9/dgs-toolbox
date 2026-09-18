@@ -168,12 +168,13 @@ func TestSync_RenameProducesTheHint(t *testing.T) {
 	}
 }
 
-// TestImpliedPaths_CombineOwn covers a role declaring combine_own: the
-// instance's own secret of that name is implied once, regardless of how
-// many ports or grants the instance has.
-func TestImpliedPaths_CombineOwn(t *testing.T) {
+// TestImpliedPaths_Own covers a role's own list: each name is implied once
+// per instance of that role, regardless of how many ports or grants the
+// instance has.
+func TestImpliedPaths_Own(t *testing.T) {
 	inv, manifests := testInventory()
 	role := manifests["shadowsocks-rust"].Roles["server"]
+	role.Own = []string{"psk"}
 	role.CombineOwn = "psk"
 	manifests["shadowsocks-rust"].Roles["server"] = role
 	model := mustDerive(t, inv, manifests)
@@ -196,13 +197,13 @@ func TestImpliedPaths_CombineOwn(t *testing.T) {
 	}
 }
 
-// TestSync_CombineOwnGeneratedAndNotOrphaned pins the two directions
-// combine_own must get right: Generate can create the file Sync reports
-// missing, and once it exists Sync does not report it orphaned even though
-// own/ paths are skipped in general.
-func TestSync_CombineOwnGeneratedAndNotOrphaned(t *testing.T) {
+// TestSync_OwnGeneratedAndNotOrphaned pins the two directions a listed own
+// secret must get right: Generate can create the file Sync reports missing,
+// and once it exists Sync does not report it orphaned.
+func TestSync_OwnGeneratedAndNotOrphaned(t *testing.T) {
 	inv, manifests := testInventory()
 	role := manifests["shadowsocks-rust"].Roles["server"]
+	role.Own = []string{"psk"}
 	role.CombineOwn = "psk"
 	manifests["shadowsocks-rust"].Roles["server"] = role
 	model := mustDerive(t, inv, manifests)
@@ -236,16 +237,15 @@ func TestSync_CombineOwnGeneratedAndNotOrphaned(t *testing.T) {
 	}
 }
 
-// TestSync_CombineOwnNotOrphanedOnceNoLongerImplied documents a real limit:
-// dropping combine_own from a role leaves its own/ file on disk with no
-// implied path pointing at it, but Sync cannot tell that apart from an
-// ordinary own/ file it never computed an identity for in the first place —
-// both are just "an own/ path nothing currently implies". It is left alone
-// like any other, rather than guessed at.
-func TestSync_CombineOwnNotOrphanedOnceNoLongerImplied(t *testing.T) {
+// TestSync_OwnDroppedFromListIsOrphaned covers a name leaving a role's own
+// list. The file stays on disk — Sync never deletes — and is reported, which
+// is the whole point of the list being the single place own secrets are
+// named: without it, a credential nothing generates any more is
+// indistinguishable from one nothing ever generated.
+func TestSync_OwnDroppedFromListIsOrphaned(t *testing.T) {
 	inv, manifests := testInventory()
 	role := manifests["shadowsocks-rust"].Roles["server"]
-	role.CombineOwn = "psk"
+	role.Own = []string{"psk"}
 	manifests["shadowsocks-rust"].Roles["server"] = role
 	model := mustDerive(t, inv, manifests)
 	implied := ImpliedPaths(inv, manifests, model)
@@ -255,7 +255,7 @@ func TestSync_CombineOwnNotOrphanedOnceNoLongerImplied(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	role.CombineOwn = ""
+	role.Own = nil
 	manifests["shadowsocks-rust"].Roles["server"] = role
 	model2 := mustDerive(t, inv, manifests)
 	implied2 := ImpliedPaths(inv, manifests, model2)
@@ -264,12 +264,19 @@ func TestSync_CombineOwnNotOrphanedOnceNoLongerImplied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if len(res.Orphaned) != 0 {
-		t.Fatalf("Sync.Orphaned = %+v, want none — own/ paths are not tracked historically", res.Orphaned)
+	if len(res.Orphaned) != 1 || res.Orphaned[0].String() != filepath.Join("ss-srv", "own", "psk") {
+		t.Fatalf("Sync.Orphaned = %+v, want ss-srv/own/psk", res.Orphaned)
+	}
+	if _, err := os.Stat(filepath.Join(root, "ss-srv", "own", "psk")); err != nil {
+		t.Fatalf("Sync deleted the orphaned file: %v", err)
 	}
 }
 
-func TestSync_OwnPathsAreNeverOrphaned(t *testing.T) {
+// TestSync_UnlistedOwnPathIsOrphaned covers an own/ file no role's own list
+// accounts for. A template may still read it, and Sync will never regenerate
+// it, so reporting it is what tells a reader either to list the name or to
+// remove the file.
+func TestSync_UnlistedOwnPathIsOrphaned(t *testing.T) {
 	inv, manifests := testInventory()
 	model := mustDerive(t, inv, manifests)
 	implied := ImpliedPaths(inv, manifests, model)
@@ -278,7 +285,7 @@ func TestSync_OwnPathsAreNeverOrphaned(t *testing.T) {
 	if err := Generate(root, implied, inv, manifests); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	ownPath := filepath.Join(root, "ss-srv", OwnPort, "instance", "auth_password")
+	ownPath := filepath.Join(root, "ss-srv", OwnPort, "auth_password")
 	if err := os.MkdirAll(filepath.Dir(ownPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -290,8 +297,8 @@ func TestSync_OwnPathsAreNeverOrphaned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if len(res.Orphaned) != 0 {
-		t.Fatalf("Sync = %+v, want the own/ file never reported orphaned", res)
+	if len(res.Orphaned) != 1 || res.Orphaned[0].String() != filepath.Join("ss-srv", "own", "auth_password") {
+		t.Fatalf("Sync.Orphaned = %+v, want ss-srv/own/auth_password", res.Orphaned)
 	}
 }
 

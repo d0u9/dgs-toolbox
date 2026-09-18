@@ -124,7 +124,7 @@ func TestRealWorld_ShadowsocksServerCombinesOwnAcrossTwoPorts(t *testing.T) {
 		"shadowsocks-rust": {
 			Secret: confgen.Secret{Kind: "base64", Bytes: 32},
 			Roles: map[string]confgen.Role{
-				"server":  {Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust", CombineOwn: "psk", Rotation: confgen.RotationDisruptive},
+				"server":  {Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust", Own: []string{"psk"}, CombineOwn: "psk", Rotation: confgen.RotationDisruptive},
 				"ss-rust": {Auth: confgen.AuthNone},
 			},
 		},

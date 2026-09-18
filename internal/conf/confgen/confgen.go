@@ -27,7 +27,6 @@ const ManifestFilename = "confgen.yaml"
 // Auth values a role declares. See docs/apps/conf/inventory.md#how-a-service-says-what-it-needs.
 const (
 	AuthPerPrincipal = "per-principal"
-	AuthShared       = "shared"
 	AuthNone         = "none"
 )
 
@@ -51,8 +50,10 @@ type Role struct {
 	Defaults string `yaml:"defaults"`
 	// Output is the name the rendered file is written under.
 	Output string `yaml:"output"`
-	// Auth is AuthPerPrincipal, AuthShared or AuthNone: what this role's
-	// inbound side authenticates, and so what secrets it generates.
+	// Auth is AuthPerPrincipal or AuthNone: whether this role's inbound
+	// side authenticates each principal separately, and so whether a grant
+	// on one of its ports implies a secret. A role's own credentials are
+	// independent of it; see Own.
 	Auth string `yaml:"auth"`
 	// ReachedBy is the role a client derives as, to reach this one. Empty
 	// means a route entering this role derives no client instance for it.
@@ -70,6 +71,15 @@ type Role struct {
 	// principal secret. See
 	// docs/apps/conf/inventory.md#a-shared-identity-alongside-a-principals-own.
 	CombineOwn string `yaml:"combine_own"`
+	// Own names this role's own secrets: credentials belonging to the
+	// instance rather than to anything reaching it, such as an
+	// administrative password. They are what `secret sync` generates under
+	// <instance>/own/, and a name absent from this list is one sync neither
+	// generates nor reports. A value that has to be edited after it is
+	// generated does not belong here — it is configuration, and belongs in
+	// the role's defaults.yaml. See
+	// docs/apps/conf/inventory.md#a-roles-own-secrets.
+	Own []string `yaml:"own"`
 }
 
 // RotationDisruptive is the Role.Rotation value meaning: this role's
@@ -218,6 +228,16 @@ func loadManifest(path string) (*Manifest, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&m); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	// An unrecognised auth would otherwise read as "not per-principal" and
+	// silently generate nothing, which is what a role meaning none says
+	// deliberately.
+	for name, role := range m.Roles {
+		switch role.Auth {
+		case AuthPerPrincipal, AuthNone, "":
+		default:
+			return nil, fmt.Errorf("parsing %s: role %q: auth %q is not %q or %q", path, name, role.Auth, AuthPerPrincipal, AuthNone)
+		}
 	}
 	return &m, nil
 }
