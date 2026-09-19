@@ -1,13 +1,10 @@
 package conf
 
 import (
-	"fmt"
 	"sort"
 
 	"dgs-toolbox/internal/conf/inventory"
-
 	"dgs-toolbox/internal/conf/target"
-	"dgs-toolbox/internal/tui/scrolllist"
 	"dgs-toolbox/internal/tui/text"
 )
 
@@ -122,16 +119,6 @@ func groupTree(nodes []*nodeGroup, isUser func(string) bool, previous []*groupRo
 	return out
 }
 
-// displayName is what this entry is called on screen: its group and name for
-// an unmanaged user, whose `default` alone would not say whose it is, and
-// the plain name otherwise.
-func (n *nodeGroup) displayName() string {
-	if n.user && n.group != "" {
-		return n.group + "/" + n.name
-	}
-	return n.name
-}
-
 // buildTree turns target.List's result into the tree the page walks: nodes
 // (and unmanaged users, who have none) at the top level, their instances
 // under them.
@@ -175,116 +162,6 @@ func buildTree(targets []target.Target) []*nodeGroup {
 		nodes = append(nodes, n)
 	}
 	return nodes
-}
-
-// row is one visible line of the tree: a node/user or an instance, with what
-// Space would check under it.
-type row struct {
-	id       string
-	label    string
-	detail   string
-	checkbox string // empty for a row that cannot be checked
-	keys     []string
-
-	node *nodeGroup
-}
-
-// checkableKeys is every checkable instance under a node. A broken instance
-// is excluded: it cannot be checked, so it never contributes to the node's
-// tri-state box or to the checked count.
-func checkableKeys(n *nodeGroup) []string {
-	var keys []string
-	for _, inst := range n.instances {
-		if inst.broken == "" {
-			keys = append(keys, inst.name)
-		}
-	}
-	return keys
-}
-
-// checkboxFor is "[x]", "[-]" or "[ ]" for all, some or none of keys checked.
-// No keys at all is drawn as "[ ]": there is nothing to check, not everything.
-func checkboxFor(keys []string, checked map[string]bool) string {
-	if len(keys) == 0 {
-		return "[ ]"
-	}
-	count := 0
-	for _, k := range keys {
-		if checked[k] {
-			count++
-		}
-	}
-	switch {
-	case count == len(keys):
-		return "[x]"
-	case count > 0:
-		return "[-]"
-	}
-	return "[ ]"
-}
-
-// refresh rebuilds rows from the tree's current expand and check state, and
-// feeds them to the list.
-func (m *Model) refresh() {
-	m.rows = nil
-	for _, n := range m.nodes {
-		m.rows = append(m.rows, m.nodeRow(n))
-		if n.broken != "" || !n.expanded {
-			continue
-		}
-		for _, inst := range n.instances {
-			m.rows = append(m.rows, m.instanceRow(n, inst))
-		}
-	}
-	items := make([]scrolllist.Item, len(m.rows))
-	for i, r := range m.rows {
-		items[i] = scrolllist.Item{ID: r.id, Label: r.label, Detail: r.detail}
-	}
-	m.list.SetItems(items)
-}
-
-func (m Model) nodeRow(n *nodeGroup) row {
-	arrow := foldArrow(n.expanded, len(n.instances) > 0 && n.broken == "")
-	if n.broken != "" {
-		return row{
-			id:     "node:" + n.key,
-			label:  fmt.Sprintf("%s %s", arrow, n.displayName()),
-			detail: "    broken: " + n.broken,
-			node:   n,
-		}
-	}
-	keys := checkableKeys(n)
-	box := checkboxFor(keys, m.checked)
-	return row{
-		id:       "node:" + n.key,
-		label:    fmt.Sprintf("%s %s %s", arrow, box, n.displayName()),
-		detail:   "    " + plural(len(keys), "target"),
-		checkbox: box,
-		keys:     keys,
-		node:     n,
-	}
-}
-
-func (m Model) instanceRow(n *nodeGroup, inst *instanceNode) row {
-	id := "inst:" + n.key + "/" + inst.name
-	if inst.broken != "" {
-		return row{
-			id:     id,
-			label:  "    [!] " + inst.name,
-			detail: "        broken: " + inst.broken,
-		}
-	}
-	box := "[ ]"
-	if m.checked[inst.name] {
-		box = "[x]"
-	}
-	return row{
-		id:       id,
-		label:    "    " + box + " " + inst.name,
-		detail:   "        " + inst.detail,
-		checkbox: box,
-		keys:     []string{inst.name},
-	}
 }
 
 // foldArrow is the disclosure marker for a node row: "▾" open, "▸" closed, or
