@@ -157,7 +157,7 @@ Beside each file, `<name>.age.json`:
   "recipients": [
     {
       "public_key": "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p",
-      "host": "au-syd-macmini2018-linux-01",
+      "host": "server-linux-01",
       "description": "Main age key"
     }
   ]

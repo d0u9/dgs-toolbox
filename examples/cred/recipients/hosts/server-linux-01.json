@@ -1,0 +1,12 @@
+{
+  "keys": [
+    {
+      "public_key": "age10xcf5tvylnp65mcmh7h5uhgrzkht2txyp4aun4majqchgr6ssgrq8ahz97",
+      "description": "Main age key"
+    },
+    {
+      "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMv/zuacuXdhqK6uzTDhL4Ktmpzt56sfn+iHSiKkm5n root@example",
+      "description": "SSH host key, /etc/ssh/ssh_host_ed25519_key"
+    }
+  ]
+}

@@ -69,8 +69,8 @@ to the recipient folder.
 ```text
 <recipient folder>/
   hosts/
-    au-syd-macmini2018-linux-01.json
-    mobile-mbp2018-mac-01.json
+    server-linux-01.json
+    laptop-mac-01.json
   groups/
     g-servers.json
 ```
@@ -136,7 +136,7 @@ the name; it is not repeated inside the file.
 
 ```json
 {
-  "hosts": ["au-syd-macmini2018-linux-01", "mobile-mbp2018-mac-01"]
+  "hosts": ["server-linux-01", "laptop-mac-01"]
 }
 ```
 
