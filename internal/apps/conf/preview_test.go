@@ -441,3 +441,97 @@ func renderPreview(t *testing.T, root, secretsDir, instance string) rendered {
 	}
 	return rendered{lines: strings.Split(strings.TrimRight(string(out), "\n"), "\n")}
 }
+
+// buildPublishedEdgesRoot has one published web port and three instances
+// dialing it: one on the same node, one across a private network, and one
+// that shares nothing with it but the universal network.
+func buildPublishedEdgesRoot(t *testing.T) (root, secretsDir string) {
+	t.Helper()
+	root = t.TempDir()
+	writeFile(t, filepath.Join(root, "services", "fwd", "confgen.yaml"), `
+template: templates/fwd.tmpl
+defaults: document
+output: fwd.txt
+auth: none
+`)
+	writeFile(t, filepath.Join(root, "services", "fwd", "templates", "fwd.tmpl"),
+		"{{ or (upstream).published (upstream).address }}")
+	writeFile(t, filepath.Join(root, "services", "fwd", "defaults.yaml"), "{}\n")
+	writeFile(t, filepath.Join(root, "services", "web", "confgen.yaml"), `
+template: templates/web.tmpl
+defaults: document
+output: web.txt
+auth: none
+`)
+	writeFile(t, filepath.Join(root, "services", "web", "templates", "web.tmpl"), "web\n")
+	writeFile(t, filepath.Join(root, "services", "web", "defaults.yaml"), "{}\n")
+
+	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
+id: srv
+networks:
+  internet: 203.0.113.10
+  home: 192.168.1.10
+instances:
+  - id: web
+    service: web
+    ports:
+      web: {port: 8443, published: web.example.com}
+  - id: fwd-local
+    service: fwd
+    ports:
+      in: 1081
+`)
+	writeFile(t, filepath.Join(root, "nodes", "lan.yaml"), `
+id: lan
+networks:
+  home: 192.168.1.20
+instances:
+  - id: fwd-lan
+    service: fwd
+    ports:
+      in: 1081
+`)
+	writeFile(t, filepath.Join(root, "nodes", "far.yaml"), `
+id: far
+networks:
+  internet: 198.51.100.7
+instances:
+  - id: fwd-far
+    service: fwd
+    ports:
+      in: 1081
+`)
+	writeFile(t, filepath.Join(root, "routes.yaml"), `
+routes:
+  local:
+    hops: [fwd-local:in, web:web]
+  lan:
+    hops: [fwd-lan:in, web:web]
+  far:
+    hops: [fwd-far:in, web:web]
+`)
+	writeFile(t, filepath.Join(root, "networks.yaml"), `
+networks: [home, internet]
+universal: internet
+`)
+	writeFile(t, filepath.Join(root, "users.yaml"), "users: {}\n")
+	return root, t.TempDir()
+}
+
+// (upstream).published is given only on an edge resolved on the universal
+// network, where the name is taken to resolve. A same-node or private-network
+// edge keeps the address it was given, so `or published address` falls back
+// to loopback or the LAN address rather than sending the client out to the
+// public name.
+func TestPreview_UpstreamPublishedOnlyOnTheUniversalNetwork(t *testing.T) {
+	root, secretsDir := buildPublishedEdgesRoot(t)
+	for instance, want := range map[string]string{
+		"fwd-local": "127.0.0.1",
+		"fwd-lan":   "192.168.1.10",
+		"fwd-far":   "web.example.com",
+	} {
+		if got := previewOf(t, root, secretsDir, instance); got != want {
+			t.Errorf("%s = %q, want %q", instance, got, want)
+		}
+	}
+}

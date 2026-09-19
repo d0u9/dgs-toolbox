@@ -325,6 +325,23 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 	}
 
 	out := map[string]any{"address": edge.Address, "port": edge.Port, "secret": secret, "account": account}
+	// The name the hop's port answers to, when it has one. A client that
+	// dials a service by its own name — ss.example.com for one program,
+	// hy2.example.com for another on the same node — reads it here; the
+	// address stays the node's, for a template that wants that instead.
+	//
+	// Only for an edge resolved on the universal network, which is where a
+	// name is taken to resolve. An edge on loopback or a private network
+	// was given the address that network needs, and a template writing
+	// `or published address` must fall back to it rather than send a LAN
+	// client out to a public name.
+	published := ""
+	if edge.Network != "" && edge.Network == m.l.inv.Universal {
+		published = m.publishedAt(edge.To.Instance, edge.To.Port)
+	}
+	if published != "" {
+		out["published"] = published
+	}
 	// A secret belongs to the instance it is filed under. It crosses to
 	// another only because the program dialling says it needs it, so the
 	// question asked here is what this target declared, not what the hop it

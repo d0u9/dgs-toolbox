@@ -578,12 +578,57 @@ func TestValidate_FanOutDownstreamWithoutPublished(t *testing.T) {
 	}
 }
 
-// Rule 18: one hostname, one port, wherever the two are written.
-func TestValidate_PublishedNameDeclaredTwice(t *testing.T) {
+// Rule 18: a proxy tells its downstreams apart by name alone, so two ports
+// behind it cannot share one.
+func TestValidate_PublishedNameSharedBehindAProxy(t *testing.T) {
 	inv, manifests := fanOutInventory()
 	inv.Nodes[0].Instances[3].Ports["web"] = inventory.Port{Number: 8080, Published: "vault.example.com"}
 	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
-	if !containsSubstring(got, `published name "vault.example.com" is declared by bin:web, vault:web`) {
+	if !containsSubstring(got, `published name "vault.example.com" is declared by bin:web and vault:web, and a proxy in front of one cannot tell them apart`) {
+		t.Fatalf("Validate = %v, want a duplicate-published issue", messages(got))
+	}
+}
+
+// Rule 18: two ports no proxy fronts may share a name, as two services on one
+// machine share its DNS name, as long as their number or transport differs.
+func TestValidate_PublishedNameSharedOnDifferentPorts(t *testing.T) {
+	inv, manifests := fanOutInventory()
+	inv.Routes = map[string]inventory.Route{}
+	inv.Nodes[0].Instances[2].Ports["web"] = inventory.Port{Number: 8222, Published: "host.example.com"}
+	inv.Nodes[0].Instances[3].Ports["web"] = inventory.Port{Number: 8222, Protocol: inventory.ProtocolUDP, Published: "host.example.com"}
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if containsSubstring(got, `published name "host.example.com"`) {
+		t.Fatalf("Validate = %v, want no duplicate-published issue", messages(got))
+	}
+}
+
+// Rule 18: a name resolves to one machine, so ports on two nodes cannot share
+// it even on different numbers — a client of the second would dial the first.
+func TestValidate_PublishedNameSharedAcrossNodes(t *testing.T) {
+	inv, manifests := fanOutInventory()
+	inv.Routes = map[string]inventory.Route{}
+	bin := inv.Nodes[0].Instances[3]
+	inv.Nodes[0].Instances = inv.Nodes[0].Instances[:3]
+	bin.Ports = inventory.Ports{"web": {Number: 443, Protocol: inventory.ProtocolUDP, Published: "host.example.com"}}
+	inv.Nodes[0].Instances[2].Ports["web"] = inventory.Port{Number: 8222, Published: "host.example.com"}
+	other := inv.Nodes[0]
+	other.ID, other.Instances = "other", []inventory.Instance{bin}
+	inv.Nodes = append(inv.Nodes, other)
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `published name "host.example.com" is declared by bin:web on other and vault:web on `+inv.Nodes[0].ID+`, and one name reaches one machine`) {
+		t.Fatalf("Validate = %v, want a duplicate-published issue", messages(got))
+	}
+}
+
+// Rule 18: on one number and transport, nobody dialing the name can tell the
+// two ports apart.
+func TestValidate_PublishedNameSharedOnOnePort(t *testing.T) {
+	inv, manifests := fanOutInventory()
+	inv.Routes = map[string]inventory.Route{}
+	inv.Nodes[0].Instances[2].Ports["web"] = inventory.Port{Number: 8222, Published: "host.example.com"}
+	inv.Nodes[0].Instances[3].Ports["web"] = inventory.Port{Number: 8222, Published: "host.example.com"}
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `published name "host.example.com" is declared by bin:web and vault:web, both on 8222/tcp`) {
 		t.Fatalf("Validate = %v, want a duplicate-published issue", messages(got))
 	}
 }

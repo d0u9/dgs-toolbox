@@ -100,13 +100,13 @@ func TestDerive_AddressResolution(t *testing.T) {
 	}
 
 	// Same node: home-sfo's http-home -> ss-home edge, both on home-server.
-	if e := edgeTo("home-sfo", "ss-home", "local"); e.Address != "127.0.0.1" || e.Port != 1080 {
+	if e := edgeTo("home-sfo", "ss-home", "local"); e.Address != "127.0.0.1" || e.Network != "" || e.Port != 1080 {
 		t.Fatalf("http-home->ss-home = %+v, want 127.0.0.1:1080", e)
 	}
 
 	// Different nodes sharing a network: doug's phone and macbook (both
 	// `home`) reaching home-server's http-home (also `home`), for home-sfo.
-	if e := edgeTo("home-sfo", "http-home", "proxy"); e.Address != "192.168.1.10" || e.Port != 8118 {
+	if e := edgeTo("home-sfo", "http-home", "proxy"); e.Address != "192.168.1.10" || e.Network != "home" || e.Port != 8118 {
 		t.Fatalf("phone/macbook->http-home = %+v, want 192.168.1.10:8118", e)
 	}
 }
