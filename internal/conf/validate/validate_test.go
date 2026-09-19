@@ -632,3 +632,59 @@ func TestValidate_PublishedNameSharedOnOnePort(t *testing.T) {
 		t.Fatalf("Validate = %v, want a duplicate-published issue", messages(got))
 	}
 }
+
+func TestValidate_Profiles(t *testing.T) {
+	manifests := validManifests()
+	cases := []struct {
+		name string
+		edit func(n *inventory.Node)
+		want string
+	}{
+		{"export beside profiles", func(n *inventory.Node) {
+			n.Export = "ss-json"
+			n.Profiles = map[string]inventory.Profile{"singbox": {}}
+		}, `node "laptop": export and profiles are not written together`},
+		{"export nobody offers", func(n *inventory.Node) {
+			n.Profiles = map[string]inventory.Profile{"singbox": {Export: "nonesuch"}}
+		}, `node "laptop": profile "singbox": export "nonesuch" is not one of the ways ssserver is written out`},
+		{"export none", func(n *inventory.Node) {
+			n.Profiles = map[string]inventory.Profile{"off": {Export: inventory.ExportNone}}
+		}, `profile "off": export none writes nothing`},
+		{"route the credential does not open", func(n *inventory.Node) {
+			n.Profiles = map[string]inventory.Profile{"browser": {Access: []string{"chain"}}}
+		}, `profile "browser": access names route "chain", which this device's credential does not open; it opens sfo`},
+		{"slash in the name", func(n *inventory.Node) {
+			n.Profiles = map[string]inventory.Profile{"a/b": {}}
+		}, `profile "a/b": a profile name ends a file name`},
+		{"no owner", func(n *inventory.Node) {
+			n.Owner = ""
+			n.Profiles = map[string]inventory.Profile{"singbox": {}}
+		}, `node "laptop": profiles belong to a device`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			inv := validInventory()
+			inv.Nodes[2].Instances = nil
+			c.edit(&inv.Nodes[2])
+			got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+			if !containsSubstring(got, c.want) {
+				t.Fatalf("Validate = %v, want %q", messages(got), c.want)
+			}
+		})
+	}
+}
+
+func TestValidate_ProfilesAreClean(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[2].Instances = []inventory.Instance{
+		{ID: "laptop-sfo-ssserver-ss-json-browser", Values: map[string]any{"local_port": 7890}},
+	}
+	inv.Nodes[2].Profiles = map[string]inventory.Profile{
+		"singbox": {Export: "ss-json", Values: map[string]any{"local_port": 2080}},
+		"browser": {Access: []string{"sfo"}},
+	}
+	manifests := validManifests()
+	if got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil); len(got) != 0 {
+		t.Fatalf("Validate = %v, want no issues", messages(got))
+	}
+}
