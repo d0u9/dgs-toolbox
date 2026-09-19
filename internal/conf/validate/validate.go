@@ -534,10 +534,25 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		}
 	}
 
-	// Rule 18: no two ports declare the same published name. Two services
-	// answering to one hostname is a broken deployment wherever it is
-	// written, so this does not wait for both to turn up behind one proxy.
-	type publishedAt struct{ instance, port string }
+	// Rule 18: two ports declaring the same published name must not be
+	// mistaken for each other. A name is a DNS name, and two services on one
+	// machine answering to it on different ports — Shadowsocks on 38250/tcp
+	// and Hysteria2 on 443/udp — is an ordinary deployment: a client dialing
+	// the name also dials the number. It is broken in three cases. A name
+	// resolves to one machine, so ports on two nodes cannot both be reached
+	// at it. A reverse proxy tells its downstreams apart by name alone, so a
+	// name shared by a port it fronts matches two site blocks. And two ports
+	// on one number and transport cannot be told apart by anyone dialing it.
+	fronted := map[string]bool{}
+	for _, ds := range downstreamsOf {
+		for _, d := range ds {
+			fronted[d.hop.Instance+":"+d.hop.Port] = true
+		}
+	}
+	type publishedAt struct {
+		node, instance, port, endpoint string
+		fronted                        bool
+	}
 	byName := map[string][]publishedAt{}
 	for _, id := range realIDs {
 		var portNames []string
@@ -547,7 +562,12 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		sort.Strings(portNames)
 		for _, name := range portNames {
 			if published := publishedOf[id][name]; published != "" {
-				byName[published] = append(byName[published], publishedAt{instance: id, port: name})
+				p := realInstances[id].inst.Ports[name]
+				byName[published] = append(byName[published], publishedAt{
+					node: realInstances[id].nodeID, instance: id, port: name,
+					endpoint: fmt.Sprintf("%d/%s", p.Number, p.ProtocolOr()),
+					fronted:  fronted[id+":"+name],
+				})
 			}
 		}
 	}
@@ -558,14 +578,22 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	sort.Strings(publishedNames)
 	for _, name := range publishedNames {
 		at := byName[name]
-		if len(at) < 2 {
-			continue
+		for i := 0; i < len(at); i++ {
+			for j := i + 1; j < len(at); j++ {
+				a, b := at[i], at[j]
+				switch {
+				case a.node != b.node:
+					add("published name %q is declared by %s:%s on %s and %s:%s on %s, and one name reaches one machine",
+						name, a.instance, a.port, a.node, b.instance, b.port, b.node)
+				case a.fronted || b.fronted:
+					add("published name %q is declared by %s:%s and %s:%s, and a proxy in front of one cannot tell them apart",
+						name, a.instance, a.port, b.instance, b.port)
+				case a.endpoint == b.endpoint:
+					add("published name %q is declared by %s:%s and %s:%s, both on %s",
+						name, a.instance, a.port, b.instance, b.port, a.endpoint)
+				}
+			}
 		}
-		var where []string
-		for _, a := range at {
-			where = append(where, a.instance+":"+a.port)
-		}
-		add("published name %q is declared by %s", name, strings.Join(where, ", "))
 	}
 
 	// Rule 19: a target declaring it needs its upstream's shared secrets

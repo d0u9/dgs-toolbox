@@ -5,7 +5,7 @@
 */ -}}
 {{- $base := index (defaults).servers 0 -}}
 {{- $server := merge (dict
-      "server" (upstream).address
+      "server" (or (upstream).published (upstream).address)
       "server_port" (upstream).port
       "password" (printf "%s:%s" (join ":" (upstream).shared) (upstream).secret)) $base -}}
 {{ toJSON (dict

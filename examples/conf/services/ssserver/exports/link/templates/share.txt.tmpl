@@ -8,4 +8,4 @@
 */ -}}
 {{- $method := (index (defaults).servers 0).method -}}
 {{- $userinfo := printf "%s:%s:%s" $method (join ":" (upstream).shared) (upstream).secret -}}
-ss://{{ b64 $userinfo }}@{{ (upstream).address }}:{{ (upstream).port }}#{{ (target).instance }}
+ss://{{ b64 $userinfo }}@{{ or (upstream).published (upstream).address }}:{{ (upstream).port }}#{{ (target).instance }}

@@ -119,6 +119,9 @@ type Edge struct {
 	// Address is the address the From side dials, per
 	// docs/apps/conf/inventory.md#networks-and-how-an-address-is-chosen.
 	Address string
+	// Network is the network Address is on, or empty when the two ends share
+	// a node and Address is loopback.
+	Network string
 	// Port is the numeric port the To hop's instance names for To.Port.
 	Port int
 }
@@ -301,7 +304,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 					}
 					m.ExportInstances = append(m.ExportInstances, ci)
 
-					address, err := resolveAddress(n, entry.node, inv.Networks, inv.Universal)
+					address, network, err := resolveAddress(n, entry.node, inv.Networks, inv.Universal)
 					if err != nil {
 						return nil, fmt.Errorf("derive: route %q for %s: %w", routeName, nodeID, err)
 					}
@@ -310,6 +313,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 						FromInstance: derivedID,
 						To:           entryHop,
 						Address:      address,
+						Network:      network,
 						Port:         entry.inst.Ports[entryHop.Port].Number,
 					})
 				}
@@ -342,7 +346,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 					// A file not tied to a device is documented as reachable
 					// only on the universal network — resolve as if dialing
 					// from a node that reaches nothing else.
-					address, err := resolveAddress(inventory.Node{}, entry.node, inv.Networks, inv.Universal)
+					address, network, err := resolveAddress(inventory.Node{}, entry.node, inv.Networks, inv.Universal)
 					if err != nil {
 						return nil, fmt.Errorf("derive: route %q for %s: %w", routeName, key, err)
 					}
@@ -351,6 +355,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 						FromInstance: id,
 						To:           entryHop,
 						Address:      address,
+						Network:      network,
 						Port:         entry.inst.Ports[entryHop.Port].Number,
 					})
 				}
@@ -388,12 +393,12 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 			if !ok {
 				return nil, fmt.Errorf("derive: route %q: %s has no port %q", routeName, hops[i+1].Instance, hops[i+1].Port)
 			}
-			address, err := resolveAddress(from.node, to.node, inv.Networks, inv.Universal)
+			address, network, err := resolveAddress(from.node, to.node, inv.Networks, inv.Universal)
 			if err != nil {
 				return nil, fmt.Errorf("derive: route %q: %w", routeName, err)
 			}
 
-			m.Edges = append(m.Edges, Edge{Route: routeName, From: hops[i], To: hops[i+1], Address: address, Port: port.Number})
+			m.Edges = append(m.Edges, Edge{Route: routeName, From: hops[i], To: hops[i+1], Address: address, Network: network, Port: port.Number})
 			m.Grants = append(m.Grants, Grant{
 				Principal: Principal{
 					Kind: PrincipalInstance, ID: hops[i].Instance, Name: hops[i].Instance,
@@ -441,10 +446,11 @@ func dedupeGrants(grants []Grant) []Grant {
 // only the downstream needs to be reachable — so a node behind NAT with no
 // address anywhere can still dial out. universal is networks.yaml's
 // `universal` key: the one network every node reaches without saying so, or
-// empty if none is.
-func resolveAddress(from, to inventory.Node, networkPref []string, universal string) (string, error) {
+// empty if none is. The network the address was found on is returned with
+// it, empty for loopback.
+func resolveAddress(from, to inventory.Node, networkPref []string, universal string) (address, network string, err error) {
 	if from.ID == to.ID {
-		return "127.0.0.1", nil
+		return "127.0.0.1", "", nil
 	}
 
 	pref := networkPref
@@ -460,9 +466,9 @@ func resolveAddress(from, to inventory.Node, networkPref []string, universal str
 		if !reaches(from, network, universal) {
 			continue
 		}
-		return addr, nil
+		return addr, network, nil
 	}
-	return "", fmt.Errorf("%s and %s share no reachable network (%s reaches %s, %s reaches %s)",
+	return "", "", fmt.Errorf("%s and %s share no reachable network (%s reaches %s, %s reaches %s)",
 		from.ID, to.ID, from.ID, strings.Join(reachSet(from, pref, universal), ", "), to.ID, strings.Join(reachSet(to, pref, universal), ", "))
 }
 
