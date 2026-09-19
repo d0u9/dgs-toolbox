@@ -7,7 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"dgs-toolbox/internal/tui"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func selectedLabel(t *testing.T, m InspectModel) string {
@@ -256,5 +259,32 @@ func TestInspectExport_DestinationFromFileExplorer(t *testing.T) {
 	}
 	if got := m.export.form.Value(fieldDest); got != dest {
 		t.Fatalf("destination = %q, want %q", got, dest)
+	}
+}
+
+func TestInspectExport_TabClickIgnoredWhileOpen(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.list.SelectID("node:srv")
+	m = pressInspect(t, m, "x")
+	next, _ := m.Update(tui.TabSelectedMsg{Index: tabUsers})
+	if m = next.(InspectModel); m.tab != tabNodes {
+		t.Fatal("a tab click switched the page behind an open export")
+	}
+}
+
+func TestInspectExport_PickerFollowsResize(t *testing.T) {
+	m := newInspectModel(buildExportableRoot(t))
+	m.width, m.height = 120, 40
+	m.list.SelectID("node:srv")
+	m = pressInspect(t, m, "x")
+	m.export.form.SetFocusID(fieldDest)
+	m, _ = pressKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	m = next.(InspectModel)
+	w, _ := m.pickerSize()
+	for _, line := range strings.Split(m.export.picker.View(), "\n") {
+		if lipgloss.Width(line) > w-2 {
+			t.Fatalf("picker line %d wide after resize to %d: %q", lipgloss.Width(line), w, line)
+		}
 	}
 }

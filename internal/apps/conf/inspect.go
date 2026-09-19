@@ -680,6 +680,10 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		if m.export != nil && m.export.picking {
+			w, h := m.pickerSize()
+			m.export.picker.SetSize(w-2, h-6)
+		}
 		return m, nil
 	case graphOpenedMsg:
 		m.graphErr = msg.err
@@ -691,6 +695,11 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.finishCopy(msg)
 		return m, nil
 	case tui.TabSelectedMsg:
+		// An open export is about the tab it started on; a click on another
+		// tab behind it would change the page it is drawn over.
+		if m.export != nil {
+			return m, nil
+		}
 		if msg.Index >= 0 && msg.Index < tabCount {
 			m.setTab(msg.Index)
 		}
