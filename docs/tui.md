@@ -114,6 +114,8 @@ A command asks for its own corner rather than for a path of its own in the confi
 
 The active command owns the workspace. The shell supplies the available width and height after reserving the top and bottom rows.
 
+#### Shared column skeletons
+
 The primary target is a landscape, normally maximized terminal. Choose one of four shared column skeletons before composing command-specific Fieldsets and DataFields:
 
 | Skeleton | Variant | Width allocation | Wide-screen cap |
