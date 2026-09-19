@@ -124,3 +124,45 @@ func TestHideNumbers(t *testing.T) {
 		t.Fatalf("LabelOffset() = %d, want the cursor marker alone", m.LabelOffset())
 	}
 }
+
+// TestInlineDetail covers a detail drawn beside its label rather than under
+// it. A tree's details are short qualifiers — a role and a machine, a count
+// — and a row each halves how much of the tree is on screen while the muted
+// colour already tells them from the labels.
+func TestInlineDetail(t *testing.T) {
+	m := New()
+	m.SetSize(40, 6)
+	m.SetItems([]Item{
+		{ID: "a", Label: "▾ node", Detail: "2 instances"},
+		{ID: "b", Label: "  └─ inst", Detail: "service / role"},
+	})
+
+	stacked := m.View(true, lipgloss.NewStyle(), lipgloss.NewStyle())
+	if strings.Count(stacked, "\n") < 3 {
+		t.Fatalf("View() = %q, want two rows per item by default", stacked)
+	}
+
+	m.InlineDetail(true)
+	got := m.View(true, lipgloss.NewStyle(), lipgloss.NewStyle())
+	lines := strings.Split(got, "\n")
+	if !strings.Contains(lines[0], "▾ node") || !strings.Contains(lines[0], "2 instances") {
+		t.Fatalf("first row = %q, want the label and its detail together", lines[0])
+	}
+	if !strings.Contains(lines[1], "└─ inst") || !strings.Contains(lines[1], "service / role") {
+		t.Fatalf("second row = %q, want the next item, not the first item's detail", lines[1])
+	}
+
+	// The details line up, so the column reads down as well as across.
+	if strings.Index(lines[0], "2 instances") != strings.Index(lines[1], "service / role") {
+		t.Fatalf("details start in different columns:\n%q\n%q", lines[0], lines[1])
+	}
+
+	// Selection still moves by item, and either half of a row is that item.
+	m.Move(1)
+	if m.Cursor() != 1 {
+		t.Fatalf("Cursor() = %d, want the second item", m.Cursor())
+	}
+	if !m.SelectRow(0) || m.Cursor() != 0 {
+		t.Fatalf("SelectRow(0) did not select the first item: cursor %d", m.Cursor())
+	}
+}
