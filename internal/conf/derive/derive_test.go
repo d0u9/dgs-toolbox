@@ -477,15 +477,6 @@ func TestDerive_SecondCredentialIsItsOwnPrincipal(t *testing.T) {
 	}
 }
 
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
 // A credential is an account because the person declares it. One their
 // devices name is carried by those devices; one none of them names is
 // carried by the person, who uses it on whatever machine is at hand. Both

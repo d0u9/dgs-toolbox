@@ -1426,10 +1426,6 @@ func expandHome(path string) string {
 	return filepath.Join(home, strings.TrimPrefix(path, "~/"))
 }
 
-func blankContent(width, height int) string {
-	return strings.TrimSuffix(strings.Repeat(strings.Repeat(" ", max(1, width))+"\n", max(1, height)), "\n")
-}
-
 func fitHeight(content string, height, width int) string {
 	lines := strings.Split(content, "\n")
 	lines = lines[:min(len(lines), max(1, height))]

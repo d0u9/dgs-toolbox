@@ -312,13 +312,6 @@ func TestDailyAppendWritesAfterASubheadingInsideItsSection(t *testing.T) {
 	}
 }
 
-func firstNoteLine(note string) string {
-	if index := strings.IndexByte(note, '\n'); index >= 0 {
-		return note[:index]
-	}
-	return note
-}
-
 // Nothing is discovered: what is not configured is an error rather than a
 // guess, because guessing wrongly writes a Capture into a file nobody was
 // looking at.

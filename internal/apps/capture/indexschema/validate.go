@@ -93,26 +93,6 @@ func ReadFile(path string) (Index, error) {
 	return index, nil
 }
 
-// ReadAttachments validates a Capture index and returns its attachment
-// references in manifest order.
-func ReadAttachments(path string) ([]Attachment, error) {
-	index, err := ReadFile(path)
-	return index.Attachments, err
-}
-
-// ValidateFile validates one Capture index against the v1 contract.
-func ValidateFile(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open index: %w", err)
-	}
-	defer file.Close()
-	if err := Validate(file); err != nil {
-		return fmt.Errorf("validate index: %w", err)
-	}
-	return nil
-}
-
 // Validate validates a single JSON document against the Capture index v1
 // schema recorded in docs/apps/capture/index-v1.schema.json.
 func Validate(reader io.Reader) error {
