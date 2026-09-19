@@ -35,6 +35,11 @@ runs on this machine, and what does this person receive — and a tree mixing
 them answered neither cleanly, since the row standing in for a person had to
 call itself a node and contradict itself in the same breath.
 
+A file rendered for a person is drawn by its route, with its service and
+export beside it: `sfo-01-ss  ssserver link`. Its full name repeats the
+device or credential the row already hangs under, and in a tree three levels
+deep it did not fit. The full name stays the detail pane's title.
+
 Under Users a device and a credential sit at one level, because they answer
 one question: which of a person's identities this file was rendered for. A
 person with device files shows those; one without shows the credentials
@@ -336,6 +341,18 @@ Rules carried over unchanged from the design:
 - A key removed in the editor is left alone; deleting a credential is
   `secret sync`'s decision, not an edit session's.
 - A key added that names no path the inventory implies is refused.
+
+## Marking and exporting
+
+The Nodes and Users tabs are also where the TUI exports from:
+
+- `Space` marks a row and everything under it.
+- `a` marks the whole tab, or clears every mark.
+- `x` exports what is marked, or the row under the cursor when nothing is.
+
+Marks are one set shared by both tabs. The rules, the form and what is
+written are in [`export.md`](export.md#the-page). Services and Secrets carry
+no checkboxes.
 
 ## What is not here
 

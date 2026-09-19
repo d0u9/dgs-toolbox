@@ -18,6 +18,7 @@ import (
 	"dgs-toolbox/internal/cred/opened"
 	"dgs-toolbox/internal/cred/record"
 	"dgs-toolbox/internal/cred/vault"
+	"dgs-toolbox/internal/tui/clipboard"
 	"dgs-toolbox/internal/tui/datafield"
 	"dgs-toolbox/internal/tui/fieldset"
 	"dgs-toolbox/internal/tui/pageactions"
@@ -477,10 +478,6 @@ func (m vaultModel) updateOpenKey(key string) (tea.Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-// maxCopySize bounds what is copied: terminals cap the OSC 52 sequence, and
-// several drop anything much larger without a word.
-const maxCopySize = 64 << 10
-
 // copyEntry copies the selected entry's text to the clipboard. Private keys are
 // never copied: the clipboard is readable by every program and outlives dgs.
 func (m *vaultModel) copyEntry() tea.Cmd {
@@ -494,8 +491,8 @@ func (m *vaultModel) copyEntry() tea.Cmd {
 	case entry.Kind != opened.KindText && entry.Kind != opened.KindSSHPublic:
 		m.notice = "! Only text is copied; this is " + string(entry.Kind)
 		return nil
-	case entry.Size > maxCopySize:
-		m.notice = fmt.Sprintf("! %s is larger than %s, more than a terminal clipboard takes", path.Base(entry.Path), humanSize(maxCopySize))
+	case entry.Size > clipboard.MaxSize:
+		m.notice = fmt.Sprintf("! %s is larger than %s, more than a terminal clipboard takes", path.Base(entry.Path), humanSize(clipboard.MaxSize))
 		return nil
 	}
 	text, copyText, name := string(entry.Data), m.copy, path.Base(entry.Path)

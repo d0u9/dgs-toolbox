@@ -15,7 +15,9 @@ import (
 	"dgs-toolbox/internal/conf/secretstore"
 	"dgs-toolbox/internal/conf/target"
 	"dgs-toolbox/internal/tui"
+	"dgs-toolbox/internal/tui/clipboard"
 	"dgs-toolbox/internal/tui/fieldset"
+	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/scrolllist"
 	"dgs-toolbox/internal/tui/text"
 
@@ -58,6 +60,22 @@ type InspectModel struct {
 	secretItems  []scrolllist.Item
 	list         scrolllist.Model
 
+	// nodeRowInstances and userRowInstances run beside nodeItems and
+	// userItems: the instances each row stands for, which is what marking
+	// that row marks. See docs/apps/conf/export.md#the-page.
+	nodeRowInstances [][]string
+	userRowInstances [][]string
+	// marked is the instances marked for export, by name. It is one set for
+	// both tabs, so a node marked on Nodes shows marked on Users too.
+	marked map[string]bool
+	// exportDir is where the export form opens: conf.export.dir.
+	exportDir string
+	export    *exportFlow
+	// notice is the outcome of the last export, shown in the status bar.
+	notice string
+	// copy puts text on the clipboard; tests replace it.
+	copy func(string) error
+
 	detailScroll int
 
 	// graphErr is why the graph page could not be opened, shown in the
@@ -73,7 +91,7 @@ type InspectModel struct {
 type InspectData = loaded
 
 func newInspectModel(rootPath, secretsDir string) InspectModel {
-	m := InspectModel{rootPath: rootPath, secretsDir: secretsDir, list: scrolllist.New()}
+	m := InspectModel{rootPath: rootPath, secretsDir: secretsDir, list: scrolllist.New(), marked: map[string]bool{}, copy: clipboard.Copy}
 	// Every index here is rows of "this thing, and a short qualifier": a
 	// role and a machine, a count, a state. Beside the label they read as
 	// one row per thing; under it they halve how much of a tree fits.
@@ -98,7 +116,7 @@ func newInspectModel(rootPath, secretsDir string) InspectModel {
 	sort.Strings(m.users)
 
 	m.userGroups = userTree(m.nodes, m.l.inv, nil)
-	m.userItems = userTabItems(m.userGroups)
+	m.userItems, m.userRowInstances = userTabItems(m.userGroups)
 	m.services = buildServiceGroups(m.l)
 	m.secrets = buildSecrets(m.l, secretsDir)
 	m.refresh()
@@ -320,16 +338,16 @@ func (m *InspectModel) refresh() {
 		selected = item.ID
 	}
 	m.nodeGroups = groupTree(m.nodes, m.l.inv.IsUser, m.nodeGroups)
-	m.nodeItems = nodeTabItems(m.nodeGroups)
+	m.nodeItems, m.nodeRowInstances = nodeTabItems(m.nodeGroups)
 	m.userGroups = userTree(m.nodes, m.l.inv, m.userGroups)
-	m.userItems = userTabItems(m.userGroups)
+	m.userItems, m.userRowInstances = userTabItems(m.userGroups)
 	m.serviceItems = serviceTabItems(m.services)
 	m.secretItems = secretTabItems(m.secrets.groups)
 	switch m.tab {
 	case tabNodes:
-		m.list.SetItems(m.nodeItems)
+		m.list.SetItems(m.markedItems(m.nodeItems, m.nodeRowInstances))
 	case tabUsers:
-		m.list.SetItems(m.userItems)
+		m.list.SetItems(m.markedItems(m.userItems, m.userRowInstances))
 	case tabServices:
 		m.list.SetItems(m.serviceItems)
 	case tabSecrets:
@@ -467,8 +485,9 @@ const (
 // and what runs on each. Only machines — what is rendered for a person with
 // no device file has no node file behind it and belongs on the Users tab,
 // which answers the other question.
-func nodeTabItems(groups []*groupRow) []scrolllist.Item {
+func nodeTabItems(groups []*groupRow) ([]scrolllist.Item, [][]string) {
 	var items []scrolllist.Item
+	var rows [][]string
 	for _, g := range groups {
 		nodes := realNodes(g.nodes)
 		if len(nodes) == 0 {
@@ -485,34 +504,50 @@ func nodeTabItems(groups []*groupRow) []scrolllist.Item {
 				Label:  foldArrow(g.expanded, true) + " " + g.name,
 				Detail: what + fieldSeparator + plural(len(nodes), "node"),
 			})
+			rows = append(rows, instancesOf(nodes))
 			if !g.expanded {
 				continue
 			}
 			indent = "  "
 		}
-		items = append(items, treeRows(nodes, indent, "instance")...)
+		more, moreRows := treeRows(nodes, indent, "instance")
+		items, rows = append(items, more...), append(rows, moreRows...)
 	}
-	return items
+	return items, rows
 }
 
 // userTabItems is the Users index: one row per person, the devices and
 // credentials their files hang off, and the files themselves. A device and a
 // credential sit at one level because they answer one question — which of a
 // person's identities this file was rendered for.
-func userTabItems(groups []*groupRow) []scrolllist.Item {
+func userTabItems(groups []*groupRow) ([]scrolllist.Item, [][]string) {
 	var items []scrolllist.Item
+	var rows [][]string
 	for _, g := range groups {
 		items = append(items, scrolllist.Item{
 			ID:     "user:" + g.name,
 			Label:  foldArrow(g.expanded, len(g.nodes) > 0) + " " + g.name,
 			Detail: plural(len(g.nodes), holderWord(g.nodes)),
 		})
+		rows = append(rows, instancesOf(g.nodes))
 		if !g.expanded {
 			continue
 		}
-		items = append(items, treeRows(g.nodes, "  ", "file")...)
+		more, moreRows := treeRows(g.nodes, "  ", "file")
+		items, rows = append(items, more...), append(rows, moreRows...)
 	}
-	return items
+	return items, rows
+}
+
+// instancesOf is every instance held by nodes, in tree order.
+func instancesOf(nodes []*nodeGroup) []string {
+	var out []string
+	for _, n := range nodes {
+		for _, inst := range n.instances {
+			out = append(out, inst.name)
+		}
+	}
+	return out
 }
 
 // fillNodeGroups copies each node's group and owner off the inventory, which
@@ -560,9 +595,11 @@ func holderWord(nodes []*nodeGroup) string {
 }
 
 // treeRows is the two levels under a group: each holder, and the instances
-// under it while it is expanded.
-func treeRows(nodes []*nodeGroup, indent, unit string) []scrolllist.Item {
+// under it while it is expanded. Beside each row it returns the instances
+// that row stands for.
+func treeRows(nodes []*nodeGroup, indent, unit string) ([]scrolllist.Item, [][]string) {
 	var items []scrolllist.Item
+	var rows [][]string
 	for _, n := range nodes {
 		kind, what := "node", ""
 		if n.user {
@@ -577,9 +614,11 @@ func treeRows(nodes []*nodeGroup, indent, unit string) []scrolllist.Item {
 		label := indent + foldArrow(n.expanded, foldable) + " " + n.name
 		if n.broken != "" {
 			items = append(items, scrolllist.Item{ID: kind + ":" + n.key, Label: label, Detail: "broken: " + n.broken})
+			rows = append(rows, nil)
 			continue
 		}
 		items = append(items, scrolllist.Item{ID: kind + ":" + n.key, Label: label, Detail: what + plural(len(n.instances), unit)})
+		rows = append(rows, instancesOf([]*nodeGroup{n}))
 		if !n.expanded {
 			continue
 		}
@@ -594,12 +633,13 @@ func treeRows(nodes []*nodeGroup, indent, unit string) []scrolllist.Item {
 			}
 			items = append(items, scrolllist.Item{
 				ID:     "inst:" + inst.name,
-				Label:  indent + "  " + branch + inst.name,
+				Label:  indent + "  " + branch + inst.label,
 				Detail: d,
 			})
+			rows = append(rows, []string{inst.name})
 		}
 	}
-	return items
+	return items, rows
 }
 
 // setTab switches the index to tab, resetting the cursor and any detail
@@ -608,7 +648,7 @@ func (m *InspectModel) setTab(tab int) {
 	m.tab = tab
 	switch tab {
 	case tabUsers:
-		m.list.SetItems(m.userItems)
+		m.list.SetItems(m.markedItems(m.userItems, m.userRowInstances))
 		m.list.HideNumbers(true)
 	case tabServices:
 		m.list.SetItems(m.serviceItems)
@@ -617,7 +657,7 @@ func (m *InspectModel) setTab(tab int) {
 		m.list.SetItems(m.secretItems)
 		m.list.HideNumbers(true)
 	default:
-		m.list.SetItems(m.nodeItems)
+		m.list.SetItems(m.markedItems(m.nodeItems, m.nodeRowInstances))
 		m.list.HideNumbers(true)
 	}
 	m.list.First()
@@ -644,12 +684,21 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case graphOpenedMsg:
 		m.graphErr = msg.err
 		return m, nil
+	case exportDoneMsg:
+		m.finishExport(msg)
+		return m, nil
+	case exportCopiedMsg:
+		m.finishCopy(msg)
+		return m, nil
 	case tui.TabSelectedMsg:
 		if msg.Index >= 0 && msg.Index < tabCount {
 			m.setTab(msg.Index)
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.export != nil {
+			return m.updateExport(msg)
+		}
 		switch msg.String() {
 		case "[":
 			m.setTab((m.tab + tabCount - 1) % tabCount)
@@ -701,6 +750,12 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.toParent()
 			}
+		case " ":
+			m.toggleMark()
+		case "a":
+			m.toggleMarkAll()
+		case "x":
+			m.startExport()
 		case "t":
 			// t for topology. g is the first row and w folds everything,
 			// both from the File Explorer's keys, so the graph takes the
@@ -731,7 +786,7 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	return m, nil
+	return m.updateExportMsg(msg)
 }
 
 // currentDetail renders whatever the index's cursor is on. It is computed on
@@ -801,13 +856,26 @@ func (m InspectModel) View() string {
 	if err != nil {
 		body = brokenStyle.Render(err.Error())
 	}
-	lines := text.Wrapped(body, right-4)
+	lines := text.Hanging(body, right-4)
 	scroll := min(m.detailScroll, max(0, len(lines)-height))
 	end := min(len(lines), scroll+height)
 	visible := strings.Join(lines[scroll:end], "\n")
 	rightBox := fieldset.View(orNone(id, "nothing selected"), text.Fit(visible, height, right-4), right)
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftBox, " ", rightBox)
+	page := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, " ", rightBox)
+	if m.export != nil {
+		return overlay.Place(page, m.exportView(), m.width, m.height)
+	}
+	return page
+}
+
+// CapturesShellKey keeps Esc and q inside an open export, where Esc steps
+// back and q may be typed into the destination.
+func (m InspectModel) CapturesShellKey(key string) bool {
+	if m.export != nil && m.export.picking {
+		return key == "esc" || (key == "q" && m.export.picker.CapturesText())
+	}
+	return m.export != nil && (key == "esc" || key == "q")
 }
 
 // columns is the "Two columns, leading narrow" skeleton docs/tui.md#shared-column-skeletons
@@ -845,9 +913,28 @@ func (m InspectModel) Status() tui.Status {
 	case tabSecrets:
 		center = m.secrets.secretsStatus()
 	}
-	right := "[/] Tab  ↑↓ Move  g Graph"
-	if m.tab != tabUsers {
-		right = "[/] Tab  h/l Fold  w Fold all  t Graph"
+	right := "[/] Tab  h/l Fold  w Fold all  t Graph"
+	switch m.tab {
+	case tabNodes, tabUsers:
+		right = "[/] Tab  Space Mark  a All  x Export  t Graph"
+		if n := m.markedCount(); n > 0 {
+			center += " · " + plural(n, "instance") + " marked"
+		}
+	}
+	if m.export != nil {
+		switch {
+		case m.export.picking:
+			right = "Enter Choose  Esc Back"
+		case m.export.stage == exportConfirm:
+			right = "Tab Switch  Enter Select  Esc Back"
+		case m.export.stage == exportShow:
+			right = "Tab Next file  ↑↓ Scroll  c Copy  Esc Back"
+		default:
+			right = "n Next  Esc Cancel"
+		}
+	}
+	if m.notice != "" {
+		center = m.notice
 	}
 	if m.graphErr != nil {
 		right = "graph: " + m.graphErr.Error()

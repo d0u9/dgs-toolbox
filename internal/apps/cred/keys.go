@@ -2,7 +2,6 @@ package cred
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -11,13 +10,13 @@ import (
 	"dgs-toolbox/internal/cred/recipients"
 	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/tui"
+	"dgs-toolbox/internal/tui/clipboard"
 	"dgs-toolbox/internal/tui/datafield"
 	"dgs-toolbox/internal/tui/fieldset"
 	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/scrolllist"
 	"dgs-toolbox/internal/tui/text"
 
-	"github.com/aymanbagabas/go-osc52/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -96,19 +95,11 @@ type keysModel struct {
 func newKeysModel() keysModel {
 	return keysModel{
 		fields: datafield.New(datafield.Field{ID: listField, Row: 0, Col: 0}, datafield.Field{ID: keysField, Row: 0, Col: 1}),
-		copy:   copyOSC52,
+		copy:   clipboard.Copy,
 		trash:  desktop.Trash,
 		keys:   scrolllist.New(),
 		lists:  [tabCount]scrolllist.Model{scrolllist.New(), scrolllist.New(), scrolllist.New()},
 	}
-}
-
-// copyOSC52 asks the terminal to put text on the clipboard. It is written to
-// stderr, which is the same terminal, so it does not interleave with the frames
-// Bubble Tea writes to stdout.
-func copyOSC52(text string) error {
-	_, err := osc52.New(text).WriteTo(os.Stderr)
-	return err
 }
 
 func (m keysModel) Init() tea.Cmd { return m.reload() }
