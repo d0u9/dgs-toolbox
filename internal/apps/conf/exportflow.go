@@ -30,6 +30,7 @@ import (
 const (
 	fieldFormat    = "format"
 	fieldDest      = "dest"
+	fieldZipName   = "zip-name"
 	fieldOverwrite = "overwrite"
 
 	formatShow   = "Show"
@@ -50,6 +51,9 @@ const (
 func (f *exportFlow) visibleFields() []string {
 	if f.form.Value(fieldFormat) == formatShow {
 		return []string{fieldFormat}
+	}
+	if f.form.Value(fieldFormat) == formatZip {
+		return []string{fieldFormat, fieldDest, fieldZipName, fieldOverwrite}
 	}
 	return []string{fieldFormat, fieldDest, fieldOverwrite}
 }
@@ -249,6 +253,7 @@ func (m *InspectModel) startExport() {
 		form: form.New(
 			form.Field{ID: fieldFormat, Kind: form.Radio, Label: "Format", Options: formats, Value: format},
 			form.Field{ID: fieldDest, Kind: form.Path, Label: "Destination", Value: m.exportDir},
+			form.Field{ID: fieldZipName, Kind: form.Text, Label: "ZIP file name", Value: defaultZipName},
 			form.Field{ID: fieldOverwrite, Kind: form.Checkbox, Label: "Replace files already there"},
 		),
 	}
@@ -364,7 +369,7 @@ func (m InspectModel) openPicker() tea.Cmd {
 		start = expandHome(m.exportDir)
 	}
 	w, h := m.pickerSize()
-	flow.picker = fileexplorer.New(start, w-2, h-6, fileexplorer.WithFilter(fileexplorer.Directories()))
+	flow.picker = fileexplorer.New(start, w-4, h-6, fileexplorer.WithFilter(fileexplorer.Directories()))
 	flow.picking = true
 	return flow.picker.Init()
 }
@@ -451,7 +456,15 @@ func (m *InspectModel) planExport() {
 	}
 	flow.zip = flow.form.Value(fieldFormat) == formatZip
 	flow.overwrite = flow.form.Checked(fieldOverwrite)
-	flow.where = exportDestination(expandHome(dest), flow.zip)
+	flow.where = expandHome(dest)
+	if flow.zip {
+		name, err := zipFileName(flow.form.Value(fieldZipName))
+		if err != nil {
+			flow.err = err
+			return
+		}
+		flow.where = exportDestination(flow.where, name)
+	}
 
 	files, err := m.renderer().renderAll(flow.instances)
 	if err != nil {
@@ -525,13 +538,27 @@ func exportPlan(files []exportFile, existing []string, zip bool) string {
 	return strings.Join(lines, "\n")
 }
 
-// exportDestination is where an export goes: the destination itself for a
-// folder, and for a zip either the .zip it names or defaultZipName inside it.
-func exportDestination(dest string, zip bool) string {
-	if zip && !strings.EqualFold(filepath.Ext(dest), ".zip") {
-		return filepath.Join(dest, defaultZipName)
+func zipFileName(value string) (string, error) {
+	name := strings.TrimSpace(value)
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("give a ZIP file name without a directory path")
 	}
-	return dest
+	if !strings.EqualFold(filepath.Ext(name), ".zip") {
+		name += ".zip"
+	}
+	return name, nil
+}
+
+// exportDestination accepts an existing .zip destination while letting the
+// form's file name replace its base name.
+func exportDestination(dest, name string) string {
+	if strings.EqualFold(filepath.Ext(dest), ".zip") {
+		if name == defaultZipName {
+			return dest
+		}
+		return filepath.Join(filepath.Dir(dest), name)
+	}
+	return filepath.Join(dest, name)
 }
 
 func expandHome(path string) string {
@@ -603,7 +630,7 @@ func (m InspectModel) exportView() string {
 	case flow.form.Value(fieldFormat) == formatShow:
 		lines = append(lines, mutedStyle.Render("Show puts "+flow.owner+"'s files on screen to read or copy; nothing is written"))
 	default:
-		lines = append(lines, mutedStyle.Render("Enter on Destination chooses a directory · Zip writes "+defaultZipName+" there"))
+		lines = append(lines, mutedStyle.Render("Enter on Destination chooses a directory · Zip uses the file name above"))
 	}
 	return exportFrame.Width(width - 2).Render(strings.Join(lines, "\n"))
 }
@@ -624,7 +651,7 @@ func (m InspectModel) pickerView() string {
 		mutedStyle.Render(ansi.Truncate(selected, inner, "…")),
 		"",
 		flow.picker.View(),
-		mutedStyle.Render(flow.picker.Hint()),
+		mutedStyle.Render(ansi.Truncate(flow.picker.Hint(), inner, "…")),
 	}, "\n")
 	return exportFrame.Width(w - 2).MaxHeight(h).Render(body)
 }
