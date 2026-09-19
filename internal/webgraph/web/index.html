@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graph</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <h1 id="title">Graph</h1>
+  <div class="controls">
+    <span id="counts" class="counts"></span>
+    <button id="view" type="button">View: network</button>
+    <button id="detail" type="button">Detail: auto</button>
+    <button id="relayout" type="button">Re-layout</button>
+    <button id="fit" type="button">Fit</button>
+    <button id="reload" type="button">Reload</button>
+  </div>
+</header>
+<main>
+  <div id="graph"></div>
+  <aside id="key" hidden></aside>
+</main>
+<div id="error" hidden></div>
+<script src="vendor/cytoscape.min.js"></script>
+<script src="vendor/layout-base.min.js"></script>
+<script src="vendor/cose-base.min.js"></script>
+<script src="vendor/cytoscape-fcose.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
