@@ -3,9 +3,11 @@ package conf
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"dgs-toolbox/internal/conf/confgen"
 	"dgs-toolbox/internal/cred/publish"
@@ -51,10 +53,28 @@ func (m renderer) renderAll(instances []string) ([]exportFile, error) {
 		if err != nil {
 			return nil, err
 		}
+		if strings.EqualFold(filepath.Ext(output), ".json") {
+			out = indentJSON(out)
+		}
 		path := filepath.Join(t.Node, kind, instance, output)
 		files = append(files, exportFile{Path: path, Bytes: out})
 	}
 	return files, nil
+}
+
+// indentJSON lays out a rendered .json file two spaces per level, keeping
+// the keys in the order the template wrote them. A template renders JSON as
+// it is easiest to write, not to read, and an export is read by a person
+// before it is pasted anywhere. Output that does not parse is left as it is:
+// the file is still what the template produced, and the server reading it
+// reports the error.
+func indentJSON(data []byte) []byte {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, bytes.TrimSpace(data), "", "  "); err != nil {
+		return data
+	}
+	buf.WriteByte('\n')
+	return buf.Bytes()
 }
 
 // ExportFolder renders every checked instance and publishes each as its own
