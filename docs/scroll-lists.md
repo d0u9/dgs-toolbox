@@ -26,6 +26,23 @@ moves the `↓ more` marker to the detail row, which is the item's last rendered
 line. Use it when one row cannot hold an item's identity at the column width
 the screen allocates; Capture Route is the current example.
 
+### Inline details
+
+`InlineDetail(true)` puts the detail beside the label instead of under it,
+muted and in a column starting after the longest label, so the details line
+up. The item stays one row, so the viewport holds twice as many.
+
+Use it when the detail is a short qualifier rather than a second identity: a
+role and a machine, a count, a state. The colour already tells it from the
+label, and a row each is a row spent on a phrase. `dgs conf inspect`'s
+indexes are the current example — they are trees, where a row per qualifier
+halves how much of the tree is on screen.
+
+The label column is capped at two thirds of the width so one long label
+cannot leave the details nothing to be drawn in. A label past the cap keeps
+its whole text and takes the gap instead: truncating the name of a thing is
+worse than losing the alignment of what qualifies it.
+
 ## Divider
 
 `SetDivider(index, label)` draws the shared anchored divider above the item at
