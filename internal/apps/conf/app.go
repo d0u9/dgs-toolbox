@@ -5,7 +5,7 @@ import (
 	"dgs-toolbox/internal/tui"
 )
 
-// New returns the Conf app definition: the inspect page.
+// New returns the Conf app definition: the inspect page and the two reports.
 func New() tui.App {
 	return tui.App{
 		ID:          "conf",
@@ -14,6 +14,15 @@ func New() tui.App {
 		// One command, so `dgs conf` opens it rather than a picker holding a
 		// single entry.
 		Direct: true,
+		Reports: []tui.Report{{
+			Flag:        "check",
+			Description: "report every problem in the inventory, the manifests and the secrets store, without opening the TUI",
+			Run:         writeCheckReport,
+		}, {
+			Flag:        "targets",
+			Description: "list every target the generator root holds, grouped by node",
+			Run:         writeTargetReport,
+		}},
 		Commands: []tui.Command{
 			{
 				ID:          "inspect",
