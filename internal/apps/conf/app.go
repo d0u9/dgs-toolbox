@@ -5,15 +5,16 @@ import (
 	"dgs-toolbox/internal/tui"
 )
 
-// New returns the Conf app definition: the inspect page, its actions and the
-// two reports.
+// New returns the Conf app definition: the inspect page, the export action
+// and the two reports.
 func New() tui.App {
 	return tui.App{
 		ID:          "conf",
 		Name:        "Conf",
 		Description: "Configuration generation",
 		// One command, so `dgs conf` opens it rather than a picker holding a
-		// single entry.
+		// single entry. Exporting is `dgs conf export` on the command line
+		// and x inside the page; see docs/apps/conf/export.md.
 		Direct: true,
 		Reports: []tui.Report{{
 			Flag:        "check",
@@ -34,6 +35,19 @@ func New() tui.App {
 				{Name: "gitignore", Bool: true, Usage: "write a .gitignore into the secrets root as well"},
 			},
 			RunWithConfig: initAction,
+		}, {
+			ID:          "export",
+			Usage:       "<selector>...",
+			Description: "Render the targets a selector matches and write them to a folder or a zip.",
+			MinArgs:     1,
+			Flags: []tui.ActionFlag{
+				{Name: "to", Usage: "write the bundle into this directory, or - for stdout (default: conf.export.dir)"},
+				{Name: "format", Usage: "with --to -, write every file as one yaml document instead of one file's bytes"},
+				{Name: "zip", Usage: "write the bundle into this .zip instead of a directory"},
+				{Name: "overwrite", Bool: true, Usage: "replace files the destination already holds"},
+				{Name: "yes", Shorthand: "y", Bool: true, Usage: "write without asking; everything written is plaintext"},
+			},
+			RunWithConfig: exportAction,
 		}},
 		Commands: []tui.Command{
 			{
