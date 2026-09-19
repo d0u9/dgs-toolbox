@@ -1,6 +1,0 @@
-roles:
-  server:
-    auth: per-principal
-    template: templates/server.yaml.tmpl
-    defaults: document
-    output: config.yaml

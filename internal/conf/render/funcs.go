@@ -1,9 +1,11 @@
 package render
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,7 +25,9 @@ func funcs(defaults map[string]any, in Input) map[string]any {
 		"toYAML":   toYAMLFunc,
 		"toJSON":   toJSONFunc,
 		"required": requiredFunc,
-		"secret":   secretFunc(in.Own),
+		"b64":      b64Func,
+		"join":     joinFunc,
+		"secret":   secretFunc(in.Self),
 		"defaults": func() map[string]any { return defaults },
 		"node":     func() map[string]any { return in.Node },
 		"instance": func() map[string]any { return in.Instance },
@@ -31,10 +35,11 @@ func funcs(defaults map[string]any, in Input) map[string]any {
 		"principals": func(port string) []Principal {
 			return in.Principals[port]
 		},
+		"downstreams": func() []Downstream { return in.Downstreams },
+		"published":   func(port string) string { return in.Published[port] },
 		"target": func() map[string]string {
 			return map[string]string{
 				"service":  in.Target.Service,
-				"role":     in.Target.Role,
 				"instance": in.Target.Instance,
 			}
 		},
@@ -188,17 +193,71 @@ func requiredFunc(value any, name string) (any, error) {
 	return value, nil
 }
 
-// secretFunc returns the instance's own secret named name — a TLS key, an
-// administrative password — from own, the render context's own datasource.
-// See docs/apps/conf/export.md#the-template-language. A name matching
-// nothing is an error naming it, rather than an empty value that fails
-// further down.
-func secretFunc(own map[string]string) func(name string) (string, error) {
-	return func(name string) (string, error) {
-		v, ok := own[name]
+// secretFunc returns one of the instance's own secrets — a TLS key, an
+// administrative password, one PSK of several — from the render context's
+// self datasource. Further arguments narrow it: a key for a `set` name, a
+// field for a name with fields, both for a name with both. Given fewer
+// arguments than the name has levels, it returns the map of what is under
+// it, so a template can range over a set. A name or key matching nothing is
+// an error naming it, rather than an empty value that fails further down.
+// See docs/apps/conf/export.md#the-template-language.
+func secretFunc(self map[string]any) func(name string, more ...string) (any, error) {
+	return func(name string, more ...string) (any, error) {
+		at, ok := self[name]
 		if !ok {
-			return "", fmt.Errorf("secret: no own secret named %q", name)
+			return nil, fmt.Errorf("secret: no own secret named %q", name)
 		}
-		return v, nil
+		walked := []string{name}
+		for _, segment := range more {
+			m, ok := at.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("secret: %s is one value and takes no %q", strings.Join(walked, "."), segment)
+			}
+			at, ok = m[segment]
+			if !ok {
+				return nil, fmt.Errorf("secret: %s has nothing named %q", strings.Join(walked, "."), segment)
+			}
+			walked = append(walked, segment)
+		}
+		return at, nil
 	}
+}
+
+// joinFunc concatenates values with a separator, which is how the protocols
+// that take more than one credential take them: a Shadowsocks 2022 password
+// is the server's PSK and the user's own, joined by a colon, and a relay
+// chain is longer still.
+func joinFunc(sep string, values any) (string, error) {
+	switch v := values.(type) {
+	case []string:
+		return strings.Join(v, sep), nil
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return "", fmt.Errorf("join: want strings, got %T", item)
+			}
+			parts = append(parts, s)
+		}
+		return strings.Join(parts, sep), nil
+	case string:
+		return v, nil
+	case nil:
+		return "", nil
+	}
+	return "", fmt.Errorf("join: want a list of strings, got %T", values)
+}
+
+// b64Func encodes a string the way a share URI carries credentials:
+// base64url without padding, which is what SIP002's `ss://` userinfo is and
+// what every client that reads one expects. Standard base64 with padding
+// would need percent-escaping in a URL, and the unpadded URL alphabet needs
+// neither.
+func b64Func(value any) (string, error) {
+	s, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("b64: want a string, got %T", value)
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(s)), nil
 }

@@ -42,7 +42,28 @@ type instRef struct {
 // instance definition: docs/apps/conf/inventory.md says "service and role
 // may not be written in an override", so an instance naming neither is one.
 func isOverride(inst inventory.Instance) bool {
-	return inst.Service == "" && inst.Role == ""
+	return inst.Service == ""
+}
+
+// credentialsCarriedThemselves returns the credentials this person keeps that
+// none of their devices names. Their files are written for the person rather
+// than for a device, and are dialed from a machine this inventory does not
+// model. Someone with no device file at all is this case for every credential
+// they keep.
+func credentialsCarriedThemselves(inv *inventory.Root, key string, user inventory.User) []string {
+	named := map[string]bool{}
+	for _, n := range inv.Nodes {
+		if n.Broken == "" && n.Owner == key {
+			named[n.CredentialOr()] = true
+		}
+	}
+	var out []string
+	for _, credential := range user.CredentialNames() {
+		if !named[credential] {
+			out = append(out, credential)
+		}
+	}
+	return out
 }
 
 func containsString(list []string, s string) bool {
@@ -60,7 +81,7 @@ func containsString(list []string, s string) bool {
 // both, and every .previous file's modification time — keyed by the path
 // of the secret it is the previous value of, exactly what
 // secretstore.PreviousModTimes returns — for rule 16. previous may be nil.
-func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model *derive.Model, previous map[string]time.Time) []Issue {
+func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, exports map[string]confgen.Export, model *derive.Model, previous map[string]time.Time) []Issue {
 	var issues []Issue
 	add := func(format string, args ...any) {
 		issues = append(issues, Issue{fmt.Sprintf(format, args...)})
@@ -92,7 +113,7 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 	realInstances := map[string]instRef{}
 	var realDupes []string
 	overridesByNode := map[string][]inventory.Instance{}
-	portByInstance := map[string]map[string]int{}
+	portByInstance := map[string]inventory.Ports{}
 	for _, n := range inv.Nodes {
 		if n.Broken != "" {
 			continue
@@ -123,8 +144,8 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 	// A derived ID matching an authored override on the same node is the
 	// intended pin, not a collision; matching a real instance, or another
 	// derived instance, is.
-	derivedByID := map[string][]derive.ClientInstance{}
-	for _, ci := range model.ClientInstances {
+	derivedByID := map[string][]derive.ExportInstance{}
+	for _, ci := range model.ExportInstances {
 		derivedByID[ci.ID] = append(derivedByID[ci.ID], ci)
 	}
 	var derivedIDs []string
@@ -148,7 +169,7 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 
 	// Rule 2: instance.service names a service; instance.role names one of
 	// its roles; a reached_by names another role of the same service; a
-	// combine_own names one of that role's own secrets.
+	// shared names one of that role's own secrets.
 	var realIDs []string
 	for id := range realInstances {
 		realIDs = append(realIDs, id)
@@ -161,54 +182,111 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 			add("instance %q: service %q is not defined", id, r.inst.Service)
 			continue
 		}
-		role, ok := manifest.Roles[r.inst.Role]
-		if !ok {
-			add("instance %q: service %q has no role %q", id, r.inst.Service, r.inst.Role)
-			continue
-		}
-		if role.ReachedBy != "" {
-			if _, ok := manifest.Roles[role.ReachedBy]; !ok {
-				add("service %q role %q: reached_by %q is not a role of this service", r.inst.Service, r.inst.Role, role.ReachedBy)
+		role := manifest
+		// An instance's `self` declares the keys of the service's `set`
+		// secrets. A name outside the service's declarations, or a key on
+		// a name that is not a set, would be a credential sync generates
+		// and nothing reads.
+		for name := range r.inst.Self {
+			decl, ok := role.Self[name]
+			if !ok {
+				add("instance %q: self %q is not one of %q's own secrets, which are %s",
+					id, name, r.inst.Service, strings.Join(role.Self.Names(), ", "))
+				continue
+			}
+			if !decl.Set && len(r.inst.Self[name]) > 0 {
+				add("instance %q: self %q takes no keys, since %q does not declare it a set",
+					id, name, r.inst.Service)
 			}
 		}
-		if role.CombineOwn != "" {
-			listed := false
-			for _, name := range role.Own {
-				if name == role.CombineOwn {
-					listed = true
-					break
+		// A port hands out the instance's own secrets by name, and a set
+		// secret by <name>.<key>. A reference to something else is a value
+		// the client never receives, and nothing in the rendered file says
+		// it was meant to be there.
+		for portName, port := range r.inst.Ports {
+			for _, ref := range port.Self {
+				sel := inventory.ParseSelfRef(ref)
+				decl, ok := role.Self[sel.Name]
+				if !ok {
+					add("instance %q: port %q hands out %q, which is not one of %q's own secrets, which are %s",
+						id, portName, sel.Name, r.inst.Service, strings.Join(role.Self.Names(), ", "))
+					continue
+				}
+				switch {
+				case decl.Set && sel.Key == "":
+					add("instance %q: port %q hands out %q, which is a set: name one of its keys, as %s.<key>",
+						id, portName, sel.Name, sel.Name)
+				case !decl.Set && sel.Key != "":
+					add("instance %q: port %q hands out %q, but %q is one value and takes no key",
+						id, portName, ref, sel.Name)
 				}
 			}
-			if !listed {
-				// The own list is the one place a role's own secrets are
-				// named, so a combine_own outside it names a file sync
-				// neither generates nor reports.
-				add("service %q role %q: combine_own %q is not in this role's own list %v", r.inst.Service, r.inst.Role, role.CombineOwn, role.Own)
+		}
+		// A service's exports are the directories under its own exports/,
+		// so one that is listed and missing cannot happen. What can is a
+		// directory holding a manifest that renders nothing.
+		for _, name := range role.Exports {
+			export, ok := exports[confgen.ExportKey(r.inst.Service, name)]
+			if !ok {
+				continue // its manifest is broken, which confgen reports itself.
+			}
+			if export.Template == "" {
+				add("service %q: export %q declares no template, so it writes nothing", r.inst.Service, name)
 			}
 		}
 	}
 
-	// Rule 3: a client_role, on a node or on an unmanaged user, names a role
-	// held by every service its granted routes derive a client for, or is
-	// "none".
-	servicesByNode := map[string]map[string]bool{}
-	servicesByUser := map[string]map[string]bool{}
-	for _, ci := range model.ClientInstances {
-		switch {
-		case ci.Node != "":
-			if servicesByNode[ci.Node] == nil {
-				servicesByNode[ci.Node] = map[string]bool{}
+	// Rule 3: a `client`, on a node or on a person with no device file,
+	// narrows to one of the forms the services its granted routes enter
+	// offer, or is "none". The services reached are the routes' entry hops,
+	// not what was derived — a `client` naming nothing they offer derives
+	// nothing at all, which is the case this exists to name.
+	servicesReached := map[string]map[string]bool{}
+	reach := func(who, service string) {
+		if servicesReached[who] == nil {
+			servicesReached[who] = map[string]bool{}
+		}
+		servicesReached[who][service] = true
+	}
+	for _, key := range userKeys {
+		for _, routeName := range inv.Users[key].Access {
+			route, ok := inv.Routes[routeName]
+			if !ok || len(route.Hops) == 0 {
+				continue
 			}
-			servicesByNode[ci.Node][ci.Service] = true
-		case ci.User != "":
-			if servicesByUser[ci.User] == nil {
-				servicesByUser[ci.User] = map[string]bool{}
+			hop, err := derive.ParseHop(route.Hops[0])
+			if err != nil {
+				continue
 			}
-			servicesByUser[ci.User][ci.Service] = true
+			entry, ok := realInstances[hop.Instance]
+			if !ok {
+				continue
+			}
+			// A credential narrowed to fewer routes does not reach what
+			// those other routes enter, and neither does the device
+			// carrying it.
+			for _, credential := range inv.Users[key].CredentialNames() {
+				if inv.Users[key].OpensRoute(credential, routeName) {
+					reach(key, entry.inst.Service)
+					break
+				}
+			}
+			for _, nodeID := range nodeIDsInOrder {
+				n := nodeByID[nodeID]
+				if n.Owner == key && inv.Users[key].OpensRoute(n.CredentialOr(), routeName) {
+					reach(nodeID, entry.inst.Service)
+				}
+			}
 		}
 	}
-	checkClientRole := func(subject, clientRole string, services map[string]bool) {
-		if clientRole == "" || clientRole == inventory.ClientRoleNone {
+	// An `export` narrows to one of the ways the services this device
+	// reaches offer. It names a directory under one of those services'
+	// exports/, and the same name under two services is the point: a device
+	// saying "link" takes each service's own link. Naming one none of them
+	// offers writes nothing at all, silently, which is the failure this
+	// reports.
+	checkExport := func(subject, export string, services map[string]bool) {
+		if export == "" || export == inventory.ExportNone {
 			return
 		}
 		var names []string
@@ -217,27 +295,22 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 		}
 		sort.Strings(names)
 		for _, service := range names {
-			manifest := manifests[service] // rule 2 already reports a missing service.
-			if _, ok := manifest.Roles[clientRole]; !ok {
-				var roles []string
-				for r := range manifest.Roles {
-					roles = append(roles, r)
-				}
-				sort.Strings(roles)
-				add("%s: client_role %q is not a role of %q, which has %s", subject, clientRole, service, strings.Join(roles, ", "))
+			if containsString(manifests[service].Exports, export) {
+				return
 			}
+		}
+		if len(names) > 0 {
+			add("%s: export %q is not one of the ways %s is written out", subject, export, strings.Join(names, ", "))
 		}
 	}
 	for _, nodeID := range nodeIDsInOrder {
-		n := nodeByID[nodeID]
-		checkClientRole(fmt.Sprintf("node %q", nodeID), n.ClientRole, servicesByNode[nodeID])
+		checkExport(fmt.Sprintf("node %q", nodeID), nodeByID[nodeID].Export, servicesReached[nodeID])
 	}
 	for _, key := range userKeys {
-		u := inv.Users[key]
-		if u.Devices != inventory.DevicesUnmanaged {
-			continue
-		}
-		checkClientRole(fmt.Sprintf("user %q", key), u.ClientRole, servicesByUser[key])
+		// A person's own `export` narrows the files they carry themselves,
+		// which anyone may have: it is the credentials no device of theirs
+		// names, not a property of having no devices at all.
+		checkExport(fmt.Sprintf("user %q", key), inv.Users[key].Export, servicesReached[key])
 	}
 
 	// Rule 4 and 9: every hop names an existing instance and existing port
@@ -272,18 +345,45 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 		}
 	}
 
-	// Rule 5: no port named "own".
+	// Rule 5: no port named "self".
 	for _, id := range realIDs {
-		if _, ok := realInstances[id].inst.Ports["own"]; ok {
-			add("instance %q: port \"own\" is reserved", id)
+		if _, ok := realInstances[id].inst.Ports["self"]; ok {
+			add("instance %q: port \"self\" is reserved", id)
 		}
 	}
 
 	// Rule 6: every route in an access list exists; every owner exists.
 	for _, key := range userKeys {
-		for _, routeName := range inv.Users[key].Access {
+		user := inv.Users[key]
+		for _, routeName := range user.Access {
 			if _, ok := inv.Routes[routeName]; !ok {
 				add("user %q: access names route %q, which does not exist", key, routeName)
+			}
+		}
+		// A credential chooses among the routes the person already holds.
+		// One naming a route they do not have would grant access from the
+		// wrong place: access is the person's, and narrowing is all a
+		// credential does with it.
+		for _, credential := range user.CredentialNames() {
+			for _, routeName := range user.Credentials[credential].Access {
+				if !containsString(user.Access, routeName) {
+					add("user %q: credential %q names route %q, which is not one of their routes, which are %s",
+						key, credential, routeName, strings.Join(user.Access, ", "))
+				}
+			}
+		}
+		// `devices: none` asserts this inventory holds no node file for this
+		// person. A node file owned by them contradicts it, and the two say
+		// opposite things about whether a missing device is deliberate.
+		if inv.Users[key].Devices == inventory.DevicesNone {
+			var owned []string
+			for _, nodeID := range nodeIDsInOrder {
+				if nodeByID[nodeID].Owner == key {
+					owned = append(owned, nodeID)
+				}
+			}
+			if len(owned) > 0 {
+				add("user %q: devices: none says this inventory holds no node file for them, but %s is theirs", key, strings.Join(owned, ", "))
 			}
 		}
 	}
@@ -294,6 +394,22 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 		}
 		if _, ok := inv.Users[owner]; !ok {
 			add("node %q: owner %q is not a user", nodeID, owner)
+		}
+		// A device names one of its owner's credentials. Naming one they
+		// do not keep would file its secret under a name nothing else
+		// refers to, and the device would authenticate as somebody who
+		// does not exist.
+		n := nodeByID[nodeID]
+		if owner == "" {
+			continue
+		}
+		if _, ok := inv.Users[owner]; !ok {
+			continue // already reported above.
+		}
+		credential := n.CredentialOr()
+		if !containsString(inv.Users[owner].CredentialNames(), credential) {
+			add("node %q: credential %q is not one of %q's credentials, which are %s",
+				nodeID, credential, owner, strings.Join(inv.Users[owner].CredentialNames(), ", "))
 		}
 	}
 
@@ -328,12 +444,43 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 		}
 	}
 
+	// fansOut reports whether an instance's service declares that one of
+	// its instances is the entrance for several routes. It is the only
+	// thing that relaxes rule 8, and it is read from the service rather
+	// than the instance so that a proxy does not become a fan-out by
+	// accident of how many routes happen to name it.
+	fansOut := func(instance string) bool {
+		r, ok := realInstances[instance]
+		if !ok {
+			return false
+		}
+		m, ok := manifests[r.inst.Service]
+		if !ok {
+			return false
+		}
+		return m.FansOut()
+	}
+
 	// Rule 8: a non-terminal hop has the same successor in every route
-	// through it.
+	// through it, unless its service declares `downstreams: many`. A proxy
+	// picks its upstream by the name the request arrived at, and every
+	// route through it names exactly one, so the fan-out is written down
+	// here and resolved before anything runs. Rule-based routing is the
+	// other thing — an upstream chosen per request from a rule set this
+	// inventory does not hold — and it stays unsupported, so the error
+	// separates the two rather than sending a reader to look for a rule
+	// set they did not write.
 	type successor struct {
 		next, route string
 	}
 	successors := map[string]successor{}
+	// downstreamsOf is every hop that follows a fan-out instance, by route,
+	// which rules 17 and 18 below then check the published names of.
+	type downstream struct {
+		route string
+		hop   derive.Hop
+	}
+	downstreamsOf := map[string][]downstream{}
 	for _, routeName := range routeNames {
 		hops := inv.Routes[routeName].Hops
 		for i := 0; i+1 < len(hops); i++ {
@@ -341,9 +488,17 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 			if err != nil {
 				continue // rule 4 already reported this hop.
 			}
+			if fansOut(cur.Instance) {
+				next, err := derive.ParseHop(hops[i+1])
+				if err != nil {
+					continue // rule 4 again.
+				}
+				downstreamsOf[cur.Instance] = append(downstreamsOf[cur.Instance], downstream{route: routeName, hop: next})
+				continue
+			}
 			if prev, ok := successors[cur.Instance]; ok {
 				if prev.next != hops[i+1] {
-					add("instance %q has different successors in routes %q and %q — rule-based routing is not supported",
+					add("instance %q has different successors in routes %q and %q — rule-based routing is not supported; a service that is one entrance for several routes declares downstreams: many",
 						cur.Instance, prev.route, routeName)
 				}
 				continue
@@ -352,17 +507,165 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 		}
 	}
 
-	// Rule 12: an unmanaged user's granted routes enter on the universal
-	// network. With no universal network declared, there is nothing an
-	// unmanaged user could ever reach, which is rule 3 or the author's
-	// problem, not this check's to invent an answer for.
+	// publishedOf is every port's published name, for rules 17 and 18.
+	publishedOf := map[string]map[string]string{}
+	for _, id := range realIDs {
+		names := map[string]string{}
+		for name, p := range realInstances[id].inst.Ports {
+			names[name] = p.Published
+		}
+		publishedOf[id] = names
+	}
+
+	// Rule 17: every port a fan-out instance reaches declares `published`.
+	// Without it the proxy has nothing to tell one downstream from another,
+	// and it would render a site block with no name to match on.
+	var fanOutIDs []string
+	for id := range downstreamsOf {
+		fanOutIDs = append(fanOutIDs, id)
+	}
+	sort.Strings(fanOutIDs)
+	for _, id := range fanOutIDs {
+		for _, d := range downstreamsOf[id] {
+			if publishedOf[d.hop.Instance][d.hop.Port] == "" {
+				add("instance %q reaches %s:%s in route %q, which declares no published name to tell it apart from the other downstreams",
+					id, d.hop.Instance, d.hop.Port, d.route)
+			}
+		}
+	}
+
+	// Rule 18: no two ports declare the same published name. Two services
+	// answering to one hostname is a broken deployment wherever it is
+	// written, so this does not wait for both to turn up behind one proxy.
+	type publishedAt struct{ instance, port string }
+	byName := map[string][]publishedAt{}
+	for _, id := range realIDs {
+		var portNames []string
+		for name := range publishedOf[id] {
+			portNames = append(portNames, name)
+		}
+		sort.Strings(portNames)
+		for _, name := range portNames {
+			if published := publishedOf[id][name]; published != "" {
+				byName[published] = append(byName[published], publishedAt{instance: id, port: name})
+			}
+		}
+	}
+	var publishedNames []string
+	for name := range byName {
+		publishedNames = append(publishedNames, name)
+	}
+	sort.Strings(publishedNames)
+	for _, name := range publishedNames {
+		at := byName[name]
+		if len(at) < 2 {
+			continue
+		}
+		var where []string
+		for _, a := range at {
+			where = append(where, a.instance+":"+a.port)
+		}
+		add("published name %q is declared by %s", name, strings.Join(where, ", "))
+	}
+
+	// Rule 19: a target declaring it needs its upstream's shared secrets
+	// reaches a port that hands some out. The declaration is the consumer's,
+	// so nothing about the port it dials makes it true; asking a port that
+	// hands out nothing renders an empty list, and a credential half built
+	// from it authenticates nothing. The failure is worth naming here
+	// because the rendered file looks complete.
+	portSelf := map[string]map[string][]string{}
+	for _, n := range inv.Nodes {
+		if n.Broken != "" {
+			continue
+		}
+		for _, inst := range n.Instances {
+			ports := map[string][]string{}
+			for name, p := range inst.Ports {
+				ports[name] = p.Self
+			}
+			portSelf[inst.ID] = ports
+		}
+	}
+	exportInstanceByID := map[string]derive.ExportInstance{}
+	for _, ei := range model.ExportInstances {
+		exportInstanceByID[ei.ID] = ei
+	}
+	type sharedNeed struct{ from, to, port string }
+	var needs []sharedNeed
+	seenNeed := map[sharedNeed]bool{}
+	for _, e := range model.Edges {
+		from := e.FromInstance
+		if from == "" {
+			from = e.From.Instance
+		}
+		var wants confgen.UpstreamDecls
+		switch {
+		case e.FromInstance != "":
+			ei, ok := exportInstanceByID[e.FromInstance]
+			if !ok {
+				continue
+			}
+			wants = exports[confgen.ExportKey(ei.Service, ei.Export)].Upstream
+		default:
+			inst, ok := realInstances[e.From.Instance]
+			if !ok {
+				continue
+			}
+			wants = manifests[inst.inst.Service].Upstream
+		}
+		if !wants.Wants(confgen.UpstreamShared) {
+			continue
+		}
+		if len(portSelf[e.To.Instance][e.To.Port]) > 0 {
+			continue
+		}
+		n := sharedNeed{from: from, to: e.To.Instance, port: e.To.Port}
+		if seenNeed[n] {
+			continue
+		}
+		seenNeed[n] = true
+		needs = append(needs, n)
+	}
+	sort.Slice(needs, func(i, j int) bool {
+		if needs[i].from != needs[j].from {
+			return needs[i].from < needs[j].from
+		}
+		if needs[i].to != needs[j].to {
+			return needs[i].to < needs[j].to
+		}
+		return needs[i].port < needs[j].port
+	})
+	for _, n := range needs {
+		add("instance %q needs the shared secrets of %s:%s, which hands out none",
+			n.from, n.to, n.port)
+	}
+
+	// Rule 12: the routes granted to a credential its owner carries
+	// themselves enter on the universal network. Such a file is dialed from
+	// whatever machine is at hand, which this inventory does not model, so
+	// the universal network is all it can be assumed to reach. With no
+	// universal network declared there is nothing it could ever reach, which
+	// is rule 3 or the author's problem, not this check's to invent an
+	// answer for.
 	if inv.Universal != "" {
 		for _, key := range userKeys {
 			user := inv.Users[key]
-			if user.Devices != inventory.DevicesUnmanaged {
+			carried := credentialsCarriedThemselves(inv, key, user)
+			if len(carried) == 0 {
 				continue
 			}
 			for _, routeName := range user.Access {
+				opened := false
+				for _, credential := range carried {
+					if user.OpensRoute(credential, routeName) {
+						opened = true
+						break
+					}
+				}
+				if !opened {
+					continue
+				}
 				route, ok := inv.Routes[routeName]
 				if !ok || len(route.Hops) == 0 {
 					continue // rule 6 already reported the missing route.
@@ -377,7 +680,7 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 				}
 				node := nodeByID[r.nodeID]
 				if _, ok := node.Networks[inv.Universal]; !ok {
-					add("user %q (unmanaged): route %q enters %q, which has no address on the universal network %q", key, routeName, hop.Instance, inv.Universal)
+					add("user %q: route %q enters %q, which has no address on the universal network %q, and they carry a credential no device of theirs names", key, routeName, hop.Instance, inv.Universal)
 				}
 			}
 		}
@@ -420,8 +723,9 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 	// port. Protocol is not modelled yet, so this checks address and port
 	// only — a stricter check than the rule asks for, never a looser one.
 	type bound struct {
-		bind string
-		port int
+		bind     string
+		port     int
+		protocol string
 	}
 	for _, nodeID := range nodeIDsInOrder {
 		seen := map[bound][]string{}
@@ -430,8 +734,8 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 				continue // a client's own local listeners, not reachable from outside.
 			}
 			bind := inst.Bind
-			for portName, portNum := range inst.Ports {
-				b := bound{bind: bind, port: portNum}
+			for portName, port := range inst.Ports {
+				b := bound{bind: bind, port: port.Number, protocol: port.ProtocolOr()}
 				seen[b] = append(seen[b], fmt.Sprintf("%s:%s", inst.ID, portName))
 			}
 		}
@@ -443,13 +747,16 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 			if bounds[i].bind != bounds[j].bind {
 				return bounds[i].bind < bounds[j].bind
 			}
-			return bounds[i].port < bounds[j].port
+			if bounds[i].port != bounds[j].port {
+				return bounds[i].port < bounds[j].port
+			}
+			return bounds[i].protocol < bounds[j].protocol
 		})
 		for _, b := range bounds {
 			names := seen[b]
 			if len(names) > 1 {
 				sort.Strings(names)
-				add("node %q: %s bind the same address and port (%s:%d)", nodeID, strings.Join(names, ", "), b.bind, b.port)
+				add("node %q: %s bind the same address, port and protocol (%s:%d/%s)", nodeID, strings.Join(names, ", "), b.bind, b.port, b.protocol)
 			}
 		}
 	}
@@ -465,7 +772,9 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, model 
 	for _, path := range previousPaths {
 		age := time.Since(previous[path])
 		if age > sevenDays {
-			add("%s.previous: %s old, over the seven-day limit — finish the rotation or delete it", path, age.Round(time.Hour))
+			// Days, not a duration: "15014h0m0s" is a number a reader
+			// has to divide before it means anything.
+			add("%s.previous: %d days old, over the seven-day limit — finish the rotation or delete it", path, int(age.Hours()/24))
 		}
 	}
 

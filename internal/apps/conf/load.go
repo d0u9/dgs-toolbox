@@ -12,6 +12,8 @@ import (
 type loaded struct {
 	inv         *inventory.Root
 	manifests   map[string]confgen.Manifest
+	exports     map[string]confgen.Export
+	exportDirs  map[string]string
 	serviceDirs map[string]string
 	derived     *derive.Model
 }
@@ -40,6 +42,20 @@ func load(rootPath string) (loaded, error) {
 	}
 	l.manifests = manifests
 	l.serviceDirs = serviceDirs
+
+	// An export is keyed by the service it writes out as well as its own
+	// name: two services may both offer a "link", and they are two exports
+	// rendering two different upstreams. See confgen.ExportKey.
+	exports := map[string]confgen.Export{}
+	exportDirs := map[string]string{}
+	for _, def := range confRoot.Exports {
+		if def.Broken == "" {
+			exports[confgen.ExportKey(def.Service, def.Name)] = def.Export
+			exportDirs[confgen.ExportKey(def.Service, def.Name)] = def.Dir
+		}
+	}
+	l.exports = exports
+	l.exportDirs = exportDirs
 
 	model, err := derive.Derive(inv, manifests)
 	if err != nil {

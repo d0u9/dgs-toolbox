@@ -1,2 +1,12 @@
-networks: [home, internet]
+# The networks nodes belong to, most preferred first. When two nodes share
+# more than one, the address comes from the first of these they both reach.
+#
+# `universal` names the one every node reaches without saying so. Leave it
+# out and nothing is implicit: every node then states what it reaches.
+#
+# Neither name is known to dgs. These are this inventory's own.
+
+networks:
+  - internet
+
 universal: internet

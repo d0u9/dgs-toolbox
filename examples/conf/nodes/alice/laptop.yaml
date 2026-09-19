@@ -1,0 +1,14 @@
+# A device.
+#
+# A device says only where it can dial out, never how others find it: nothing
+# connects to a laptop. It dials on the universal network (internet), which is
+# implicit, so it does not even write `reaches`.
+#
+# `credential` names which of its owner's credentials it uses. Unwritten means
+# `default`, and two devices naming the same one share a password.
+
+id: laptop
+
+# This laptop keeps a credential of its own rather than sharing the default:
+# losing it revokes this one value, and the other devices are untouched.
+credential: laptop

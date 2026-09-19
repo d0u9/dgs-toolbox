@@ -22,9 +22,15 @@ type Target struct {
 	Node string
 	// User is the node's owner, or the unmanaged user's own key. Empty for
 	// an instance on a node with no owner.
-	User    string
+	User string
+	// Service is the program at stake: what an authored instance deploys,
+	// and, for a derived one, whose credential the file carries. Export is
+	// how that file is written, and is set only on a derived one — it is
+	// what tells something a machine runs apart from something a person is
+	// handed. An export's name is unique only within its service, so the
+	// two travel together.
 	Service string
-	Role    string
+	Export  string
 	// Instance is the target's identifier — a bare selector term matches
 	// this field.
 	Instance string
@@ -70,25 +76,24 @@ func List(inv *inventory.Root, model *derive.Model) []Target {
 			continue
 		}
 		for _, inst := range n.Instances {
-			if inst.Service == "" && inst.Role == "" {
+			if inst.Service == "" {
 				continue // an override, not a target of its own — the derived instance it pins is.
 			}
 			out = append(out, Target{
 				Node:     n.ID,
 				User:     n.Owner,
 				Service:  inst.Service,
-				Role:     inst.Role,
 				Instance: inst.ID,
 				Routes:   routesContaining(inv, inst.ID),
 			})
 		}
 	}
-	for _, ci := range model.ClientInstances {
+	for _, ci := range model.ExportInstances {
 		out = append(out, Target{
 			Node:     ci.Node,
 			User:     valueOr(ci.User, owner[ci.Node]),
 			Service:  ci.Service,
-			Role:     ci.Role,
+			Export:   ci.Export,
 			Instance: ci.ID,
 			Routes:   []string{ci.Route},
 		})
@@ -171,14 +176,14 @@ const (
 	FieldNode     = "node"
 	FieldUser     = "user"
 	FieldService  = "service"
-	FieldRole     = "role"
+	FieldExport   = "export"
 	FieldInstance = "instance"
 	FieldRoute    = "route"
 )
 
 var validFields = map[string]bool{
-	FieldNode: true, FieldUser: true, FieldService: true,
-	FieldRole: true, FieldInstance: true, FieldRoute: true,
+	FieldNode: true, FieldUser: true, FieldService: true, FieldExport: true,
+	FieldInstance: true, FieldRoute: true,
 }
 
 // ParseSelector splits a selector into its space-separated terms. A term
@@ -226,9 +231,30 @@ func Match(selector string, targets []Target) ([]Target, error) {
 	return matched, nil
 }
 
+// matchesAll is the selector's semantics: terms naming one field are
+// alternatives, and different fields narrow each other. It is what makes
+// `service:ss-link service:sslocal` mean "either form" rather than the
+// impossible "both at once" — and so what makes a shell's own
+// `service:{ss-link,sslocal}`, which expands to exactly that, do what it
+// looks like it does.
 func matchesAll(t Target, terms []Term) bool {
+	byField := map[string][]Term{}
+	var order []string
 	for _, term := range terms {
-		if !matchesOne(t, term) {
+		if _, seen := byField[term.Field]; !seen {
+			order = append(order, term.Field)
+		}
+		byField[term.Field] = append(byField[term.Field], term)
+	}
+	for _, field := range order {
+		any := false
+		for _, term := range byField[field] {
+			if matchesOne(t, term) {
+				any = true
+				break
+			}
+		}
+		if !any {
 			return false
 		}
 	}
@@ -242,9 +268,16 @@ func matchesOne(t Target, term Term) bool {
 	case FieldUser:
 		return globMatch(term.Value, t.User)
 	case FieldService:
+		// A derived target carries the service whose credential it hands
+		// over, because its export's name means nothing without it. It is
+		// still not that service: `service:` picks what machines run, and
+		// `export:` picks what people are handed.
+		if t.Export != "" {
+			return false
+		}
 		return globMatch(term.Value, t.Service)
-	case FieldRole:
-		return globMatch(term.Value, t.Role)
+	case FieldExport:
+		return globMatch(term.Value, t.Export)
 	case FieldInstance:
 		return globMatch(term.Value, t.Instance)
 	case FieldRoute:
