@@ -69,7 +69,7 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 			}
 			return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath, Flags: given(cmd)})
 		}
-		addActions(command, app.Actions)
+		addActions(command, app.Actions, configPath)
 		return command
 	}
 	command := &cobra.Command{
@@ -98,22 +98,29 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 		}
 		command.AddCommand(sub)
 	}
-	addActions(command, app.Actions)
+	addActions(command, app.Actions, configPath)
 	return command
 }
 
 // addActions registers an app's shell-only subcommands.
-func addActions(command *cobra.Command, actions []tui.Action) {
+func addActions(command *cobra.Command, actions []tui.Action, configPath *string) {
 	for _, action := range actions {
 		action := action
 		sub := &cobra.Command{
 			Use:   action.ID + " " + action.Usage,
 			Short: action.Description,
-			Args:  cobra.ExactArgs(action.Args),
+			Args:  actionArgs(action),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				flags := make(map[string]string, len(action.Flags))
 				for _, flag := range action.Flags {
 					flags[flag.Name] = cmd.Flags().Lookup(flag.Name).Value.String()
+				}
+				if action.RunWithConfig != nil {
+					global, err := loadConfig(*configPath)
+					if err != nil {
+						return err
+					}
+					return action.RunWithConfig(cmd.InOrStdin(), cmd.OutOrStdout(), args, flags, global)
 				}
 				return action.Run(cmd.InOrStdin(), cmd.OutOrStdout(), args, flags)
 			},
@@ -127,6 +134,20 @@ func addActions(command *cobra.Command, actions []tui.Action) {
 		}
 		command.AddCommand(sub)
 	}
+}
+
+// actionArgs is how many positional arguments an action takes: exactly
+// Args; at least MinArgs when it accepts a variable number, since a selector
+// is one or more terms; or between the two when it also has a ceiling, since
+// a directory that defaults to a configured one is none or one.
+func actionArgs(action tui.Action) cobra.PositionalArgs {
+	switch {
+	case action.MaxArgs > 0:
+		return cobra.RangeArgs(action.MinArgs, action.MaxArgs)
+	case action.MinArgs > 0:
+		return cobra.MinimumNArgs(action.MinArgs)
+	}
+	return cobra.ExactArgs(action.Args)
 }
 
 // addFlags registers a command's flags and returns the ones given on the
