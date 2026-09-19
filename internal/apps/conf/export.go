@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"dgs-toolbox/internal/conf/confgen"
 	"dgs-toolbox/internal/cred/publish"
@@ -17,20 +16,6 @@ import (
 type exportFile struct {
 	Path  string
 	Bytes []byte
-}
-
-// CheckedInstances is every instance currently checked, sorted.
-func (m Model) CheckedInstances() []string {
-	var out []string
-	for _, n := range m.nodes {
-		for _, inst := range n.instances {
-			if inst.broken == "" && m.checked[inst.name] {
-				out = append(out, inst.name)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 // renderAll renders every instance, in order, stopping at the first failure:
