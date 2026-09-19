@@ -355,38 +355,43 @@ missing and where it was looked for.
 
 ## The page
 
-`dgs conf export` opens on the target tree.
+Exporting from the TUI happens on the inspect page's Nodes and Users tabs,
+per [`inspect.md`](inspect.md#marking-and-exporting). No separate page is
+needed: those two tabs are already the target tree, one by machine and one
+by person, so a page of its own would draw the same tree again.
 
 ### Selecting
 
-One tree, nodes holding instances, with the tri-state checklist behaviour the
-recipient checklist in [`cred/vault.md`](../cred/vault.md#the-flow) already
-uses: `Space` toggles the item under the cursor, checking a node checks every
-instance on it, an instance can then be unchecked on its own, and a parent shows
-`[x]`, `[-]` or `[ ]` for all, some or none of its children.
+Every row on Nodes and Users carries a checkbox, and marking follows the
+tri-state behaviour the recipient checklist in
+[`cred/vault.md`](../cred/vault.md#the-flow) uses:
+
+- `Space` marks the row under the cursor and every instance under it: a group,
+  a node, a person, a device or credential, or one instance. Pressing it again
+  on a fully marked row unmarks the row.
+- An instance can then be unmarked on its own. A parent shows `[x]`, `[-]` or
+  `[ ]` when all, some or none of its instances are marked.
+- `a` marks every instance on the tab, or clears every mark when the tab is
+  already fully marked.
 
 ```text
-[x] us-sfo-dgo-linux-01
-    [x] ss-sfo01                  ssserver
-    [x] hy2-sfo01                 hysteria2
-    [ ] bin-sfo01                 microbin
-[ ] jp-tyo-dgo-linux-01
-[x] macbook
-    [x] macbook-jp-hysteria2-link      link
-    [x] macbook-sfo-ssserver-json      json
-    [ ] macbook-sfo-ssserver-link      link
+▾ [-] us-sfo-dgo-linux-01
+  ├─ [x] ss-sfo01                ssserver
+  └─ [ ] bin-sfo01               microbin
+▾ [x] doug
+  ▸ [x] macbook                  doug's device, 2 files
 ```
 
-Nodes rather than services at the top level, because a node is what an export is
-for: the files a machine needs, or the files a person's device needs. A machine
-usually wants a server of one service and a client of another, and a tree that
-visits each service in turn to collect them makes the common export the long
-one. Folding uses the File Explorer's keys, as the vault contents tree does.
+The box sits beside the name, after the row's indent, branch and fold marker,
+so it keeps the tree's depth.
 
-Unmanaged users appear as their own top-level entries, holding the instances
-derived for them, since they have no node.
+What is marked is one set of instances, not one per tab. A device marked
+under its node on Nodes shows marked under its owner on Users, since they are
+the same entry seen from two directions. So nodes and people can be mixed in
+one export. The status bar's centre counts the marked instances.
 
-A **broken** instance cannot be checked, and says why on the row.
+Folded rows keep their mark. A broken target can be marked, and the export
+refuses it by name, the same way the command line does.
 
 ### Previewing
 
@@ -406,12 +411,40 @@ scrollback. The preview says so, for the same reason opening a vault file does.
 
 ### Exporting
 
-`e` exports what is checked. The steps are the shared ones: a form for the
-destination, then the confirmation dialog, then the result in the status bar.
+`x` exports every marked instance. With nothing marked, it exports what the
+row under the cursor stands for: one node, one person, one device, or one
+instance. On Services, an instance row exports that one deployment. So
+exporting a single thing needs no marking.
 
-- **Folder.** A directory, chosen with the File Explorer, defaulting to
-  `conf.export.dir`.
-- **Archive.** A `.zip`, named and placed the same way.
+The steps are the shared ones: a form, then the confirmation dialog, then the
+result in the status bar.
+
+- **Format.** Folder or Zip, and Show when every file is for one person.
+- **Destination.** A directory chosen with the File Explorer: `Enter` on the
+  row opens it, starting at `conf.export.dir`. Zip writes `conf-export.zip`
+  in that directory.
+- **Replace files already there.** Off by default. When it is off and a file
+  would be replaced, the form says so and does not go on. This matches the
+  command line's `--overwrite`.
+
+`n` renders every target before anything is written. The confirmation then
+lists each file and marks those it `(overwrites)`, the same plan the command
+line prints. A successful export clears the marks.
+
+### Showing one person's files
+
+When every selected file is for one person, Show comes first in the form, and
+it is the default. A person's files are the ones pasted into a client, and a
+share link is shorter to copy than to write to disk and open again.
+
+Show writes nothing. `n` renders the files and puts them on screen one at a
+time. `Tab` moves to the next file and `↑` `↓` scroll. `c` copies the file on
+screen to the clipboard through the terminal (OSC 52), up to the 64 KiB a
+terminal clipboard takes. The view says the text is plaintext with every
+credential in it, and that it stays in the terminal's scrollback.
+
+Show is not offered for a server's files, or for files of more than one
+person. Those go to a folder or an archive.
 
 ## What is written
 
@@ -604,15 +637,6 @@ directory rename, not kept working alongside the manifest.
 
 ## Deferred
 
-- **Exporting from the command line.** Decided, deferred, and not to be dropped:
-  the TUI ships first, and a selector plus a destination on the command line
-  follows it. The same export is repeated — the same hosts, for the same person —
-  often enough that doing it by hand every time is the wrong end state, and it is
-  what makes the renderer testable without driving a TUI. The page prints the
-  equivalent command line after an export, so the second export is one line
-  rather than the same tree walked again. What is still open is how an
-  invocation that writes files without opening a page fits the command model;
-  see [Open questions](#open-questions).
 - **Encrypted archives.** `--encrypt-to <host|group>`, writing `.zip.age`
   through `internal/cred/seal` and the recipient folder, so an export can be
   handed over without the plaintext leaving the vault's model. Deferred to keep
@@ -635,10 +659,11 @@ directory rename, not kept working alongside the manifest.
    TUI: the function set above, the two kinds of defaults, the secrets lookup,
    and render errors that name their target.
 3. **Selectors.** Matching, and the `--targets` report.
-4. **The page.** The tree, tri-state selection, the status bar's counts.
+4. **The page.** Tri-state marking on the inspect page's Nodes and Users tabs,
+   and the marked count in the status bar. Built.
 5. **Preview.** `Enter` on an instance, with errors shown as they come back.
-6. **Export.** The destination form, the confirmation dialog, render-all-then-publish,
-   folder and zip.
+6. **Export.** `x` on the inspect page: the form, the confirmation dialog,
+   render-all-then-publish, folder and zip. Built.
 7. **Encrypted archives.** As deferred above.
 
 The first of these were built before the inventory existed, against a target

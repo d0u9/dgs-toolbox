@@ -1,6 +1,6 @@
 // This file is `dgs conf export`: the command-line half of exporting. The
-// TUI half lives on the inspect page, where the selection is whatever the
-// cursor is on; here it is a selector, which is what makes an export
+// TUI half lives on the inspect page (exportflow.go), where the selection is
+// what is marked, or the row under the cursor; here it is a selector, which is what makes an export
 // repeatable. See docs/apps/conf/export.md#exporting-from-the-command-line.
 package conf
 
