@@ -43,6 +43,10 @@ cannot leave the details nothing to be drawn in. A label past the cap keeps
 its whole text and takes the gap instead: truncating the name of a thing is
 worse than losing the alignment of what qualifies it.
 
+A detail wider than the room left ends in `…` rather than mid-word, and one
+with fewer than four cells to be drawn in is left out: a cut word such as
+`1 creden` reads as a mistake, and the detail pane still says it in full.
+
 ## Divider
 
 `SetDivider(index, label)` draws the shared anchored divider above the item at

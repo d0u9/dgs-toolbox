@@ -14,6 +14,7 @@ import (
 	"dgs-toolbox/internal/cred/identities"
 	"dgs-toolbox/internal/cred/vault"
 	"dgs-toolbox/internal/tui"
+	"dgs-toolbox/internal/tui/clipboard"
 	"dgs-toolbox/internal/tui/datafield"
 	"dgs-toolbox/internal/tui/fieldset"
 	"dgs-toolbox/internal/tui/fileexplorer"
@@ -101,7 +102,7 @@ func newVaultModel() vaultModel {
 	return vaultModel{
 		list:      scrolllist.New(),
 		collapsed: map[string]bool{},
-		copy:      copyOSC52,
+		copy:      clipboard.Copy,
 		fields: datafield.New(
 			datafield.Field{ID: listField, Row: 0, Col: 0},
 			datafield.Field{ID: contentsField, Row: 0, Col: 1},

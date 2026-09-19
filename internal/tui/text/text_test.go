@@ -1,6 +1,9 @@
 package text
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPlural(t *testing.T) {
 	cases := []struct {
@@ -52,5 +55,25 @@ func TestFit_TruncatesLongContentToHeight(t *testing.T) {
 	want := "one\ntwo"
 	if got != want {
 		t.Fatalf("Fit = %q, want %q", got, want)
+	}
+}
+
+func TestHanging_TabularRowContinuesUnderItsLastColumn(t *testing.T) {
+	got := Hanging("  a  —  no client file for this", 20)
+	want := []string{"  a  —  no client", "        file for", "        this"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("Hanging = %q, want %q", got, want)
+	}
+}
+
+func TestHanging_ProseContinuesUnderItsIndent(t *testing.T) {
+	got := Hanging("  one two three four", 10)
+	for _, row := range got[1:] {
+		if !strings.HasPrefix(row, "  ") {
+			t.Fatalf("Hanging = %q, want every row under the indent", got)
+		}
+	}
+	if got := Hanging("short", 10); len(got) != 1 || got[0] != "short" {
+		t.Fatalf("Hanging(short) = %q", got)
 	}
 }

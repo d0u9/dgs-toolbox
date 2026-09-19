@@ -10,7 +10,13 @@ import (
 
 // instanceNode is one instance under a node or an unmanaged user.
 type instanceNode struct {
-	name   string
+	name string
+	// label is what the tree draws. A file rendered for a person is named
+	// for the device or credential, the route, the service and the export,
+	// and the tree already says the first by where the row hangs, so the
+	// row is the route and the detail says the rest. The full name is still
+	// the row's ID and the detail pane's title.
+	label  string
 	detail string // "service / role"
 	broken string
 }
@@ -149,12 +155,16 @@ func buildTree(targets []target.Target) []*nodeGroup {
 			// A deployment says the program it runs; a file written for a
 			// person says the way it was written, which is what tells two
 			// of them for one route apart.
-			detail := t.Service
+			label, detail := t.Instance, t.Service
 			if t.Export != "" {
-				detail = t.Export
+				detail = t.Service + " " + t.Export
+				if len(t.Routes) == 1 {
+					label = t.Routes[0]
+				}
 			}
 			n.instances = append(n.instances, &instanceNode{
 				name:   t.Instance,
+				label:  label,
 				detail: detail,
 				broken: t.Broken,
 			})

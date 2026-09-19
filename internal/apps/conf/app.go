@@ -68,7 +68,9 @@ func New() tui.App {
 					return newInspectModel("", "")
 				},
 				NewWithConfig: func(global config.Config) tui.CommandModel {
-					return newInspectModel(global.ConfRoot(), global.ConfSecrets())
+					m := newInspectModel(global.ConfRoot(), global.ConfSecrets())
+					m.exportDir = global.ConfExportDir()
+					return m
 				},
 				Flags: []tui.Flag{
 					{

@@ -7,6 +7,7 @@ import (
 	"dgs-toolbox/internal/cred/record"
 	"dgs-toolbox/internal/cred/seal"
 	"dgs-toolbox/internal/tui/scrolllist"
+	"dgs-toolbox/internal/tui/tristate"
 )
 
 type rowKind int
@@ -94,19 +95,7 @@ func (p *recipientPicker) rowKeys(row recipientRow) []string {
 
 func (p *recipientPicker) checkbox(row recipientRow) string {
 	keys := p.rowKeys(row)
-	count := 0
-	for _, key := range keys {
-		if p.checked[key] {
-			count++
-		}
-	}
-	switch {
-	case len(keys) > 0 && count == len(keys):
-		return "[x]"
-	case count > 0:
-		return "[-]"
-	}
-	return "[ ]"
+	return tristate.Box(len(keys), tristate.Count(keys, p.checked))
 }
 
 func (p *recipientPicker) refresh() {
