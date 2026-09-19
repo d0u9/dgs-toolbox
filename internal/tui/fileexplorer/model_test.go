@@ -9,7 +9,25 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
+
+func TestDirectoryRowBackgroundOnlyOnFocus(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(profile)
+	row := renderDirectoryNode(&directoryNode{name: "Applications", depth: 1, isDir: true}, false, 40)
+	if strings.Contains(row, "48;") {
+		t.Fatal("ordinary directory row still paints a background")
+	}
+	if !strings.Contains(row, "Applications") || lipgloss.Width(row) != 40 {
+		t.Fatalf("directory row does not fit: %q", row)
+	}
+	selected := renderDirectoryNode(&directoryNode{name: "Applications", depth: 1, isDir: true}, true, 40)
+	if !strings.Contains(selected, "48;") {
+		t.Fatal("focused directory row lost its highlight")
+	}
+}
 
 func TestDirectoryTreeExpandsLazilyAndKeepsContext(t *testing.T) {
 	root := t.TempDir()
