@@ -304,18 +304,6 @@ func composePlaceName(place indexschema.Place) (any, bool) {
 	return strings.Join(parts, ", "), true
 }
 
-func payloadString(index indexschema.Index, key string) (any, bool) {
-	value, ok := index.Payload[key]
-	if !ok {
-		return nil, false
-	}
-	s, ok := value.(string)
-	if !ok || strings.TrimSpace(s) == "" {
-		return nil, false
-	}
-	return s, true
-}
-
 func present(value string) (any, bool) {
 	if strings.TrimSpace(value) == "" {
 		return nil, false

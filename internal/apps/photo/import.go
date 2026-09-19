@@ -2244,10 +2244,6 @@ func (m importModel) withWorkflow(status tui.Status) tui.Status {
 	return status
 }
 
-func scanStatus(summary scanSummary) string {
-	return fmt.Sprintf("%d source · %d destination", len(summary.source), len(summary.destination))
-}
-
 // CapturesShellKey keeps Esc inside the temporary picker so it cancels the
 // picker instead of leaving Photo Import.
 func (m importModel) CapturesShellKey(key string) bool {

@@ -153,20 +153,6 @@ func (m *Model) Principals(instance, port string) []Principal {
 	return out
 }
 
-// groupOf is the group a device's principals belong to: the directory its
-// file sits in, the owner it names when it sits directly in nodes/, and its
-// own ID when it has neither — a node grouped with nothing is a group of one
-// rather than a special case.
-func groupOf(n inventory.Node) string {
-	switch {
-	case n.Group != "":
-		return n.Group
-	case n.Owner != "":
-		return n.Owner
-	}
-	return n.ID
-}
-
 // narrowExports is the ways a credential is actually written out: every one
 // the service names, or the single one a device asks for. A device asking for
 // an export the service does not offer gets nothing rather than a file its
