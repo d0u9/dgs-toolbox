@@ -1453,11 +1453,6 @@ func (m routeModel) captureMarker(entry captureEntry) string {
 	return "◐ "
 }
 
-// organized reports whether the Capture carries an organizing record. The
-// record is read with the Capture rather than by this session, so a Capture
-// organized in an earlier session is recognised on load.
-func (m routeModel) organized(entry captureEntry) bool { return entry.organized }
-
 func (m *routeModel) rebuildCaptureItems() {
 	selected := ""
 	if item, ok := m.captures.Selected(); ok {
