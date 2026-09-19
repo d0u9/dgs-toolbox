@@ -24,8 +24,11 @@ instances:
   - id: ss-sfo01
     service: ssserver
     ports:
+      # `published` is the name clients dial for this port. Exports write it
+      # instead of the node's address, so each service can have its own.
       users:
         port: 38250
+        published: ss.example.net
         self: [psk.users]
       relays:
         port: 52146
@@ -40,6 +43,7 @@ instances:
     ports:
       users:
         port: 443
+        published: hy2.example.net
         # QUIC, so UDP. Writing it is what tells this apart from Caddy on
         # 443/tcp below: two transports are two real listeners, and ports
         # collide only when address, number and transport all agree.

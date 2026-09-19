@@ -144,3 +144,24 @@ func TestExamples_MicrobinAdminIsNotBasicAuth(t *testing.T) {
 		}
 	}
 }
+
+// TestExamples_ExportsDialThePortsPublishedName pins
+// docs/apps/conf/inventory.md#the-name-a-port-is-published-at from the client
+// side: two services on one node answer to names of their own, and each
+// export writes its service's name rather than the node's address.
+func TestExamples_ExportsDialThePortsPublishedName(t *testing.T) {
+	files := renderExamples(t)
+	for suffix, want := range map[string]string{
+		"laptop-sfo-01-ss-ssserver-link/share.txt":   "@ss.example.net:38250#",
+		"laptop-sfo-01-ss-ssserver-json/config.json": `"server": "ss.example.net"`,
+		"phone-sfo-01-hy2-hysteria2-link/share.txt":  "@hy2.example.net:443/",
+	} {
+		got := exampleFile(t, files, suffix)
+		if !strings.Contains(got, want) {
+			t.Errorf("%s does not carry %q:\n%s", suffix, want, got)
+		}
+		if strings.Contains(got, "sfo1.example.net") {
+			t.Errorf("%s still carries the node's address:\n%s", suffix, got)
+		}
+	}
+}

@@ -554,14 +554,36 @@ reads an account table with `principals "<port>"`. A proxy reads the names of
 the ports it fronts from [`downstreams`](#the-render-context) instead, because
 those belong to other instances.
 
+A client reads the name of the port it dials as `(upstream).published`. The
+services on a node can answer to a name other than the node's — one shared, or
+one each — while the node keeps its own address in `networks`, and an exported
+link or configuration writes the service's name rather than the node's.
+`(upstream).address` is still the node's address chosen by the rule above, so
+which of the two a file carries is the template's choice, usually
+`or (upstream).published (upstream).address`.
+
+The name is given only on an edge resolved on the `universal` network, which is
+where a name is taken to resolve. An edge between two ends on one node, or one
+resolved on a private network such as `home`, was chosen an address that
+network needs — loopback, a LAN address — and a public name would send the
+client out and back in, or nowhere. On those edges `(upstream).published` is
+absent, and `or (upstream).published (upstream).address` falls back to the
+address the rule chose. An inventory with no `universal` network gives no
+names this way.
+
 `published` stands on its own. A service reached from a browser on its own
 address, with no proxy anywhere, still has a name it answers to and still has to
 render it into its own configuration. It is a property of the port, which is why
 a port is where it is written.
 
-**One name per port**, and distinct across the whole inventory: two ports
-answering to one hostname is a broken deployment wherever it is written, so the
-check does not wait for both to turn up behind one proxy.
+**One name per port.** Two ports may share a name — it is a DNS name, and two
+services on one machine answering to it on different ports, Shadowsocks on
+38250/tcp and Hysteria2 on 443/udp, is an ordinary deployment, since a client
+dialing the name dials the number too. Sharing is broken in three cases, and
+the check reports each wherever it is written: ports on two nodes, because a
+name reaches one machine; a port a proxy fronts, because the proxy tells its
+downstreams apart by name alone; and two ports on one number and transport,
+because nobody dialing the name can tell them apart.
 
 ### An instance's own values
 
@@ -1615,7 +1637,9 @@ instance:    id, service, ports (each with its number — the transport is the
              model's, not a template's — the name it is published at, when it
              has one, and the self values it hands out, in the order written),
              bind, and the instance's own values
-upstream:    the next hop, resolved: address, port, the account name this
+upstream:    the next hop, resolved: address, port, the name that hop's port
+             is published at when it has one and the edge resolved on the
+             universal network, the account name this
              instance connects as, and its secret; plus, for a target whose
              manifest declares it needs them, that hop's port's self values
              as shared, an ordered list — absent for a terminal instance,
@@ -1686,7 +1710,9 @@ failing can be told which level it was reading.
 17. Every port a `downstreams: many` instance reaches declares `published`.
     Without it the proxy has nothing to tell one downstream from another, and
     the error names the instance and the route.
-18. No two ports declare the same `published` name. The error names both.
+18. Two ports declaring the same `published` name are on one node, neither is
+    fronted by a `downstreams: many` instance, and they differ in number or
+    transport. The error names both.
 19. A target declaring `upstream: shared` reaches a port whose `self` list
     hands something out. The declaration is the consumer's, so nothing about
     the port it dials makes it true, and a port handing out none renders an
