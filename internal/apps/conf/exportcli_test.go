@@ -2,7 +2,6 @@ package conf
 
 import (
 	"bytes"
-	"dgs-toolbox/internal/config"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,12 +232,4 @@ func TestExport_StdoutFlagsRefuseTheWrongDestination(t *testing.T) {
 			}
 		})
 	}
-}
-
-// configFor is a configuration naming root and secretsDir, and nothing else.
-func configFor(root, secretsDir string) config.Config {
-	var c config.Config
-	c.Conf.Root = root
-	c.Conf.Secrets = secretsDir
-	return c
 }
