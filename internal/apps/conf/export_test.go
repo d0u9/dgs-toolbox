@@ -199,3 +199,14 @@ func exportAll(t *testing.T, root, secretsDir string) (renderer, []string) {
 	sort.Strings(instances)
 	return renderer{l: l, rootPath: root, secretsDir: secretsDir}, instances
 }
+
+func TestIndentJSON(t *testing.T) {
+	got := string(indentJSON([]byte(`{"b":1,"a":[1,2]}`)))
+	want := "{\n  \"b\": 1,\n  \"a\": [\n    1,\n    2\n  ]\n}\n"
+	if got != want {
+		t.Fatalf("indentJSON = %q, want %q", got, want)
+	}
+	if got := string(indentJSON([]byte("not json"))); got != "not json" {
+		t.Fatalf("indentJSON(invalid) = %q, want it unchanged", got)
+	}
+}

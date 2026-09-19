@@ -448,6 +448,12 @@ person. Those go to a folder or an archive.
 
 ## What is written
 
+A file whose output name ends in `.json` is indented two spaces per level,
+keeping its keys in the order the template wrote them. This applies to the
+page, Show and the command line alike. A template writes JSON the way that is
+easiest to template; an export is read by a person first. Output that does not
+parse is written unchanged, so the server that reads it reports the error.
+
 Every target becomes its own directory, under the node it belongs to, whether or
 not it is the only one:
 
