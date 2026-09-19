@@ -39,6 +39,13 @@ type Model struct {
 	// items, and folding renumbers everything under the cursor. See
 	// docs/scroll-lists.md#line-numbers.
 	hideNumbers bool
+	// inlineDetail puts an item's Detail on the same row as its Label,
+	// dimmed and in a column of its own, instead of on a second row. A
+	// detail that is a short qualifier — a role and a machine, a count —
+	// costs a whole row per item in two-row mode and halves how much of a
+	// tree is on screen, while the colour already tells it from the label.
+	// See docs/scroll-lists.md#inline-details.
+	inlineDetail bool
 }
 
 var selectedRowStyle = lipgloss.NewStyle().Bold(true).
@@ -125,14 +132,39 @@ func (m *Model) Last() {
 	m.ensureVisible()
 }
 
-// rowsPerItem is 2 once any item carries a Detail line, and 1 otherwise.
+// rowsPerItem is 2 once any item carries a Detail line, and 1 otherwise or
+// when details are drawn inline.
 func (m Model) rowsPerItem() int {
+	if m.inlineDetail {
+		return 1
+	}
 	for _, item := range m.items {
 		if item.Detail != "" {
 			return 2
 		}
 	}
 	return 1
+}
+
+// InlineDetail draws each item's Detail beside its Label rather than under
+// it. It is off by default: a detail that is a sentence needs its own row,
+// and only a short qualifier reads well in a column beside the label.
+func (m *Model) InlineDetail(inline bool) { m.inlineDetail = inline }
+
+// detailColumn is how wide the label column is when details are inline: the
+// longest label, so every detail starts in the same column. It is capped so
+// that one long label cannot leave the details with nothing to be drawn in;
+// a label past the cap keeps its full text and takes the gap instead, since
+// truncating the name of the thing is worse than losing the alignment of
+// what qualifies it.
+func (m Model) detailColumn(labelWidth int) int {
+	widest := 0
+	for _, item := range m.items {
+		if w := ansi.StringWidth(item.Label); w > widest {
+			widest = w
+		}
+	}
+	return min(widest+2, max(1, labelWidth*2/3))
 }
 
 // visibleItems is how many items fit in the current height. The rule costs one
@@ -204,6 +236,16 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 			marker = "› "
 		}
 		label := ansi.Cut(m.items[index].Label, m.horizontal, m.horizontal+labelWidth)
+		if m.inlineDetail && m.items[index].Detail != "" {
+			column := m.detailColumn(labelWidth)
+			detail := ansi.Cut(m.items[index].Detail, 0, max(1, labelWidth-column))
+			padded := label + strings.Repeat(" ", max(1, column-ansi.StringWidth(label)))
+			if selected {
+				label = padded + detail
+			} else {
+				label = padded + muted.Render(detail)
+			}
+		}
 		row := marker + label
 		if !m.hideNumbers {
 			numberText := fmt.Sprintf("%*d", numberWidth, index+1)
