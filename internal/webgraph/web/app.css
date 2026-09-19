@@ -1,0 +1,84 @@
+:root {
+  color-scheme: light dark;
+  --bg: #fbfbfa;
+  --fg: #1f2421;
+  --muted: #6b7280;
+  --line: #d8dad6;
+  --panel: #ffffff;
+  --group: #eef1ef;
+  --group-line: #c6cbc6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14181a;
+    --fg: #e6e9e7;
+    --muted: #b4bdbf;
+    --line: #566268;
+    --panel: #1b2124;
+    --group: #1f262a;
+    --group-line: #5b676e;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+h1 { font-size: 1rem; font-weight: 600; margin: 0; }
+
+.controls { margin-left: auto; display: flex; align-items: baseline; gap: 0.5rem; }
+.counts { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 0.5rem; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+}
+button:hover { background: var(--group); }
+
+main { flex: 1; display: flex; min-height: 0; }
+#graph { flex: 1; min-width: 0; }
+
+aside {
+  width: 15rem;
+  padding: 1rem;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  overflow-y: auto;
+}
+aside h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 0.5rem; }
+aside dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 0.5rem; align-items: baseline; }
+aside dt { display: flex; align-items: center; gap: 0.4rem; }
+aside dd { margin: 0; color: var(--muted); }
+.swatch { width: 0.7rem; height: 0.7rem; border-radius: 50%; display: inline-block; }
+
+#error {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  color: #b3261e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+@media (prefers-color-scheme: dark) { #error { color: #f2b8b5; } }
