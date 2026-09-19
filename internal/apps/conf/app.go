@@ -48,6 +48,16 @@ func New() tui.App {
 				{Name: "yes", Shorthand: "y", Bool: true, Usage: "write without asking; everything written is plaintext"},
 			},
 			RunWithConfig: exportAction,
+		}, {
+			ID:          "secret",
+			Usage:       "sync",
+			Description: "Generate the credentials the inventory implies and are not on disk yet.",
+			MinArgs:     1,
+			MaxArgs:     1,
+			Flags: []tui.ActionFlag{
+				{Name: "yes", Shorthand: "y", Bool: true, Usage: "generate without asking"},
+			},
+			RunWithConfig: secretAction,
 		}},
 		Commands: []tui.Command{
 			{
