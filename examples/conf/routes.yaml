@@ -1,12 +1,32 @@
+# Routes: one chain each, from where traffic enters to where it leaves,
+# written as an ordered list of hops. A hop is `<instance>:<port>`, and each
+# adjacent pair is one edge whose address dgs works out from the two nodes.
+#
+# A route's name is what a person sees when they pick a line in their client,
+# so keep the machine out of it — a route may enter one server today and its
+# replacement tomorrow.
+#
+# A one-hop route is an ordinary route. Reaching a service directly is not a
+# special form.
+
 routes:
-  jp:
-    hops: [hy2-tyo01:main]
+  # The protocol is in the name because this server offers both, so picking
+  # one is the choice being offered: a network that blocks Shadowsocks still
+  # leaves Hysteria2. A server offering one protocol would not write it.
+  sfo-01-ss:
+    hops: [ss-sfo01:users]
 
-  sfo:
-    hops: [ss-sfo01:main]
+  # The relay port of the same program: a separate account table from `users`.
+  sfo-01-ssrelay:
+    hops: [ss-sfo01:relays]
 
-  home-sfo:
-    hops: [http-home:proxy, ss-home:local, ss-sfo01:alt]
+  sfo-01-hy2:
+    hops: [hy2-sfo01:users]
 
-  bin:
-    hops: [bin-sfo01:web]
+  # A service reached from a browser shares the name table with the proxy
+  # lines: a person picks from one list and does not care which kind it is.
+  # Two hops, because a reverse proxy is in front — adding a service behind
+  # that proxy is adding a route like this one, and the proxy's configuration
+  # follows without anyone copying a port number.
+  paste:
+    hops: [caddy-sfo01:https, microbin-sfo01:web]

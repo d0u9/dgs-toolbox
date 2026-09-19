@@ -1,5 +1,5 @@
 // Package derive computes everything docs/apps/conf/inventory.md says is
-// derived, never written by hand: client instances, edges between hops with
+// derived, never written by hand: export instances, edges between hops with
 // their resolved addresses, grants and per-port principal tables. It is a
 // pure function of an already-parsed inventory and the service manifests
 // its routes' entry hops name — it touches no filesystem itself.
@@ -37,8 +37,11 @@ func ParseHop(s string) (Hop, error) {
 type PrincipalKind string
 
 const (
-	PrincipalNode     PrincipalKind = "node"
-	PrincipalUser     PrincipalKind = "user"
+	// PrincipalUser is one of a person's credentials. It is not a device:
+	// how many credentials someone keeps is theirs to decide, and two of
+	// their devices naming one credential hold one secret between them.
+	PrincipalUser PrincipalKind = "user"
+	// PrincipalInstance is an instance relaying through a hop.
 	PrincipalInstance PrincipalKind = "instance"
 )
 
@@ -46,12 +49,21 @@ const (
 // unmanaged user, or an upstream instance relaying for a non-terminal hop.
 type Principal struct {
 	Kind PrincipalKind
-	// ID identifies the principal for deduplication: a node ID, a user's map
-	// key, or an instance ID.
+	// ID identifies the principal for deduplication: a node ID (with its
+	// profile appended, when the device has profiles), a user's map key, or
+	// an instance ID.
 	ID string
 	// Name is the account name a server-side render sees, per
 	// docs/apps/conf/inventory.md#managed-and-unmanaged-devices.
 	Name string
+	// Group is whose this principal is: the node group for a device or for
+	// an instance relaying through, the user's own key for an unmanaged
+	// user. Slot is what it is called inside that group: the device, the
+	// relaying instance, or inventory.DefaultCredential for an unmanaged user,
+	// who has no device file. Together they are the credential's place in
+	// the secrets tree, and they are a pair for every kind of principal.
+	Group string
+	Slot  string
 }
 
 // Grant is one credential a principal needs for one port of one instance.
@@ -61,36 +73,45 @@ type Grant struct {
 	Port      string
 }
 
-// ClientInstance is one derived client instance: a managed user's device, or
-// an unmanaged user, reaching a route's entry hop.
-type ClientInstance struct {
-	// ID is "<node>-<route>" for a managed device, "<username>-<route>" for
-	// an unmanaged user.
+// ExportInstance is one file written out for a person: one credential of
+// theirs, one route, one way of writing it. It is not a deployment — nothing
+// runs a share URI, and the program that reads a JSON configuration runs on a
+// machine this inventory does not model.
+type ExportInstance struct {
+	// ID is "<node>-<route>-<service>-<export>" for a device, and
+	// "<username>-<credential>-<route>-<service>-<export>" for a person with
+	// no device file. The service is in the name because an export's name is
+	// unique only within its service: two services each offering a "link"
+	// would otherwise write one file over the other.
 	ID string
 	// Node is the owning node's ID, empty for an unmanaged user (who has no
 	// node file). User is the owning unmanaged user's map key, empty for a
 	// managed device. Exactly one of the two is set.
-	Node    string
-	User    string
+	Node string
+	User string
+	// Export is how this file is written: one of the ways the entry hop's
+	// service offers, narrowed by the device's `export` when it names one.
+	// Service is that entry hop's service, which is what decides which
+	// export directory the name refers to.
 	Service string
-	// Role is the entry hop role's ReachedBy, or the node's client_role when
-	// it names one — never the entry hop's own role.
-	Role  string
-	Route string
+	Export  string
+	Route   string
+	// Credential is the owner's credential this instance authenticates
+	// with. Two devices may name the same one.
+	Credential string
 	// Ports, Bind and Values come from an authored override with the same
 	// ID, on the same node, if one exists — a derived instance has none of
 	// them by default. See docs/apps/conf/inventory.md#what-is-derived.
-	Ports  map[string]int
+	Ports  inventory.Ports
 	Bind   string
 	Values map[string]any
 }
 
 // Edge is one resolved hop-to-hop connection: either between two adjacent
-// hops of a route, or from a derived client instance to the route's entry
-// hop.
+// hops of a route, or from an export instance to the route's entry hop.
 type Edge struct {
 	Route string
-	// From is the empty Hop for the edge out of a derived client instance;
+	// From is the empty Hop for the edge out of an export instance;
 	// FromInstance names it instead.
 	From         Hop
 	FromInstance string
@@ -104,9 +125,11 @@ type Edge struct {
 
 // Model is everything Derive computes.
 type Model struct {
-	ClientInstances []ClientInstance
+	ExportInstances []ExportInstance
 	Edges           []Edge
-	Grants          []Grant
+	// Grants holds one entry per (principal, instance, port). Two routes
+	// entering one port do not make two credentials; see dedupeGrants.
+	Grants []Grant
 }
 
 // Principals returns the Grants' principals for one instance's port, sorted
@@ -130,12 +153,45 @@ func (m *Model) Principals(instance, port string) []Principal {
 	return out
 }
 
+// groupOf is the group a device's principals belong to: the directory its
+// file sits in, the owner it names when it sits directly in nodes/, and its
+// own ID when it has neither — a node grouped with nothing is a group of one
+// rather than a special case.
+func groupOf(n inventory.Node) string {
+	switch {
+	case n.Group != "":
+		return n.Group
+	case n.Owner != "":
+		return n.Owner
+	}
+	return n.ID
+}
+
+// narrowExports is the ways a credential is actually written out: every one
+// the service names, or the single one a device asks for. A device asking for
+// an export the service does not offer gets nothing rather than a file its
+// program cannot read; validate reports it by name.
+func narrowExports(exports []string, want string) []string {
+	switch {
+	case len(exports) == 0, want == inventory.ExportNone:
+		return nil
+	case want == "":
+		return exports
+	}
+	for _, e := range exports {
+		if e == want {
+			return []string{e}
+		}
+	}
+	return nil
+}
+
 type instanceRef struct {
 	node inventory.Node
 	inst inventory.Instance
 }
 
-// Derive computes client instances, edges and grants from an inventory
+// Derive computes export instances, edges and grants from an inventory
 // already loaded by inventory.Load, and the service manifests its routes'
 // entry hops name, keyed by service name. Only non-broken nodes are
 // considered; a broken node's instances are invisible to Derive, the same
@@ -185,106 +241,133 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 			if !ok {
 				continue
 			}
-			entryRole, ok := manifest.Roles[entry.inst.Role]
-			if !ok {
-				continue
-			}
-			// A role with no ReachedBy derives no client instance — MicroBin
-			// is reached from a browser — but the grant and its secret still
-			// exist; only the rendered file does not.
-			reachedBy := entryRole.ReachedBy
+			// A service with no Exports produces no file for anyone —
+			// MicroBin is reached from a browser — but the grant and its
+			// secret still exist; only the written files do not.
+			exports := manifest.Exports
 
 			username := user.UsernameOr(key)
 
-			if user.Devices == inventory.DevicesUnmanaged {
-				principal := Principal{Kind: PrincipalUser, ID: key, Name: username}
-				m.Grants = append(m.Grants, Grant{Principal: principal, Instance: entryHop.Instance, Port: entryHop.Port})
-				// An unmanaged user has no node, so its own client_role
-				// substitutes for the node's, in the same precedence over
-				// reached_by.
-				role := reachedBy
-				if user.ClientRole != "" {
-					if user.ClientRole == inventory.ClientRoleNone {
-						role = ""
-					} else {
-						role = user.ClientRole
-					}
-				}
-				if role == "" {
+			// A credential is an account because the person declares it,
+			// not because a device happens to name it: how many passwords
+			// someone keeps is theirs to decide, and a device chooses among
+			// them rather than bringing them into being. So every declared
+			// credential is a grant on this route's entry port.
+			for _, credential := range user.CredentialNames() {
+				// A credential may open fewer routes than the person holds:
+				// a laptop's password is revocable on its own, and being
+				// able to take it off one line without taking it off the
+				// rest is why someone keeps a second one at all.
+				if !user.OpensRoute(credential, routeName) {
 					continue
 				}
-				m.ClientInstances = append(m.ClientInstances, ClientInstance{
-					ID:      username + "-" + routeName,
-					User:    key,
-					Service: entry.inst.Service,
-					Role:    role,
-					Route:   routeName,
-				})
-				// An unmanaged user has no node, but is documented as
-				// reachable only on the universal network — resolve as if
-				// dialing from a node that reaches nothing else.
-				address, err := resolveAddress(inventory.Node{}, entry.node, inv.Networks, inv.Universal)
-				if err != nil {
-					return nil, fmt.Errorf("derive: route %q for %s: %w", routeName, key, err)
+				principal := Principal{
+					Kind: PrincipalUser, ID: key + "/" + credential,
+					Name:  user.Account(key, credential),
+					Group: key, Slot: credential,
 				}
-				m.Edges = append(m.Edges, Edge{
-					Route:        routeName,
-					FromInstance: username + "-" + routeName,
-					To:           entryHop,
-					Address:      address,
-					Port:         entry.inst.Ports[entryHop.Port],
-				})
-				continue
+				m.Grants = append(m.Grants, Grant{Principal: principal, Instance: entryHop.Instance, Port: entryHop.Port})
 			}
 
 			var ownedNodeIDs []string
+			usedByADevice := map[string]bool{}
 			for id, n := range nodes {
 				if n.Owner == key {
 					ownedNodeIDs = append(ownedNodeIDs, id)
+					usedByADevice[n.CredentialOr()] = true
 				}
 			}
 			sort.Strings(ownedNodeIDs)
+
 			for _, nodeID := range ownedNodeIDs {
 				n := nodes[nodeID]
-				principal := Principal{Kind: PrincipalNode, ID: nodeID, Name: username + "-" + nodeID}
-				m.Grants = append(m.Grants, Grant{Principal: principal, Instance: entryHop.Instance, Port: entryHop.Port})
-
-				// docs/apps/conf/inventory.md#which-role-a-client-derives-as:
-				// the node's client_role wins over the role's own
-				// reached_by; client_role: none derives nothing regardless
-				// of reached_by.
-				role := reachedBy
-				if n.ClientRole != "" {
-					if n.ClientRole == inventory.ClientRoleNone {
-						role = ""
-					} else {
-						role = n.ClientRole
-					}
-				}
-				if role == "" {
+				// A device carries one credential and nothing else, so a
+				// route that credential does not open is a route this device
+				// cannot take, however the person's own access reads.
+				if !user.OpensRoute(n.CredentialOr(), routeName) {
 					continue
 				}
-				derivedID := nodeID + "-" + routeName
-				ci := ClientInstance{ID: derivedID, Node: nodeID, Service: entry.inst.Service, Role: role, Route: routeName}
-				for _, override := range n.Instances {
-					if override.ID == derivedID {
-						ci.Ports, ci.Bind, ci.Values = override.Ports, override.Bind, override.Values
-						break
-					}
-				}
-				m.ClientInstances = append(m.ClientInstances, ci)
+				// The device does not hold a credential of its own: it
+				// names one of its owner's, and two devices naming the
+				// same one are one principal with one secret between them.
+				credential := n.CredentialOr()
 
-				address, err := resolveAddress(n, entry.node, inv.Networks, inv.Universal)
-				if err != nil {
-					return nil, fmt.Errorf("derive: route %q for %s: %w", routeName, nodeID, err)
+				// docs/apps/conf/inventory.md#which-export-a-person-receives:
+				// the service names every way it may be written out, and the
+				// node's `export` narrows to one of them; export: none
+				// narrows to nothing. A service naming none writes no file,
+				// and `export` does not bring one back.
+				//
+				// One file per device per route per export: two devices
+				// sharing a credential still each need their own, because
+				// their local ports differ.
+				for _, export := range narrowExports(exports, n.Export) {
+					derivedID := nodeID + "-" + routeName + "-" + entry.inst.Service + "-" + export
+					ci := ExportInstance{
+						ID: derivedID, Node: nodeID, Credential: credential,
+						Service: entry.inst.Service, Export: export, Route: routeName,
+					}
+					for _, override := range n.Instances {
+						if override.ID == derivedID {
+							ci.Ports, ci.Bind, ci.Values = override.Ports, override.Bind, override.Values
+							break
+						}
+					}
+					m.ExportInstances = append(m.ExportInstances, ci)
+
+					address, err := resolveAddress(n, entry.node, inv.Networks, inv.Universal)
+					if err != nil {
+						return nil, fmt.Errorf("derive: route %q for %s: %w", routeName, nodeID, err)
+					}
+					m.Edges = append(m.Edges, Edge{
+						Route:        routeName,
+						FromInstance: derivedID,
+						To:           entryHop,
+						Address:      address,
+						Port:         entry.inst.Ports[entryHop.Port].Number,
+					})
 				}
-				m.Edges = append(m.Edges, Edge{
-					Route:        routeName,
-					FromInstance: nodeID + "-" + routeName,
-					To:           entryHop,
-					Address:      address,
-					Port:         entry.inst.Ports[entryHop.Port],
-				})
+			}
+
+			// A credential no device names is one the person carries
+			// themselves — the laptop at hand, a machine this inventory does
+			// not model — so its file is written for the person rather than
+			// for a device. Someone with no device file at all is this case
+			// for every credential they keep, which is why it needs no rule
+			// of its own. With no node to carry an `export`, the person's
+			// own narrows in a device's place.
+			for _, credential := range user.CredentialNames() {
+				if usedByADevice[credential] {
+					continue
+				}
+				if !user.OpensRoute(credential, routeName) {
+					continue
+				}
+				for _, export := range narrowExports(exports, user.Export) {
+					id := username + "-" + credential + "-" + routeName + "-" + entry.inst.Service + "-" + export
+					m.ExportInstances = append(m.ExportInstances, ExportInstance{
+						ID:         id,
+						User:       key,
+						Credential: credential,
+						Service:    entry.inst.Service,
+						Export:     export,
+						Route:      routeName,
+					})
+					// A file not tied to a device is documented as reachable
+					// only on the universal network — resolve as if dialing
+					// from a node that reaches nothing else.
+					address, err := resolveAddress(inventory.Node{}, entry.node, inv.Networks, inv.Universal)
+					if err != nil {
+						return nil, fmt.Errorf("derive: route %q for %s: %w", routeName, key, err)
+					}
+					m.Edges = append(m.Edges, Edge{
+						Route:        routeName,
+						FromInstance: id,
+						To:           entryHop,
+						Address:      address,
+						Port:         entry.inst.Ports[entryHop.Port].Number,
+					})
+				}
 			}
 		}
 	}
@@ -324,16 +407,45 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 				return nil, fmt.Errorf("derive: route %q: %w", routeName, err)
 			}
 
-			m.Edges = append(m.Edges, Edge{Route: routeName, From: hops[i], To: hops[i+1], Address: address, Port: port})
+			m.Edges = append(m.Edges, Edge{Route: routeName, From: hops[i], To: hops[i+1], Address: address, Port: port.Number})
 			m.Grants = append(m.Grants, Grant{
-				Principal: Principal{Kind: PrincipalInstance, ID: hops[i].Instance, Name: hops[i].Instance},
-				Instance:  hops[i+1].Instance,
-				Port:      hops[i+1].Port,
+				Principal: Principal{
+					Kind: PrincipalInstance, ID: hops[i].Instance, Name: hops[i].Instance,
+					// A relaying instance is its own group: what connects
+					// is the instance, not the machine under it and not
+					// whoever hosts that machine. It holds one identity
+					// there, so the slot is the same DefaultDevice an
+					// unmanaged user takes.
+					Group: hops[i].Instance, Slot: inventory.DefaultCredential,
+				},
+				Instance: hops[i+1].Instance,
+				Port:     hops[i+1].Port,
 			})
 		}
 	}
 
+	m.Grants = dedupeGrants(m.Grants)
 	return m, nil
+}
+
+// dedupeGrants keeps one grant per (principal, instance, port), which is
+// what docs/apps/conf/inventory.md#what-is-derived states a grant is: one
+// credential for one party to reach one port. Two routes entering the same
+// port produce the pair twice — the person picks one route or the other and
+// connects with the same credential either way — and a caller counting the
+// list would otherwise report one credential as two.
+func dedupeGrants(grants []Grant) []Grant {
+	seen := map[[4]string]bool{}
+	out := grants[:0]
+	for _, g := range grants {
+		key := [4]string{string(g.Principal.Kind), g.Principal.ID, g.Instance, g.Port}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, g)
+	}
+	return out
 }
 
 // resolveAddress is docs/apps/conf/inventory.md's address rule: the same

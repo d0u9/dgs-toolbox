@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,30 +12,30 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// buildInspectRoot is a generator root with one server node (two ports, one
-// per-principal), one managed client device, one unmanaged user, and a
-// broken node — enough to exercise all four views' text.
+// buildInspectRoot is a generator root with one server node whose instance
+// listens on two named ports, one managed client device, one unmanaged
+// user, and a broken node — enough to exercise every view's text. The
+// second port has no route into it on purpose: an instance's ports are its
+// own, and one nothing reaches yet is a listener with an empty account
+// table rather than a mistake.
 func buildInspectRoot(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "services", "shadowsocks-rust", "confgen.yaml"), `
+	writeFile(t, filepath.Join(dir, "services", "ssserver", "confgen.yaml"), `
 secret:
   kind: base64
   bytes: 32
-roles:
-  server:
-    template: templates/server.json.tmpl
-    defaults: element
-    output: config.json
-    auth: per-principal
-    reached_by: ss-rust
-    own: [psk]
-    combine_own: psk
-  ss-rust:
-    template: templates/client.json.tmpl
-    defaults: element
-    output: config.json
-    auth: none
+template: templates/config.json.tmpl
+defaults: element
+output: config.json
+auth: per-principal
+self:
+  psk: {set: true}
+`)
+	writeFile(t, filepath.Join(dir, "services", "ssserver", "exports", "ss-json", "confgen.yaml"), `
+template: templates/config.json.tmpl
+defaults: element
+output: config.json
 `)
 	writeFile(t, filepath.Join(dir, "nodes", "srv.yaml"), `
 id: srv
@@ -42,10 +43,10 @@ networks:
   internet: 203.0.113.10
 instances:
   - id: ss-srv
-    service: shadowsocks-rust
-    role: server
+    service: ssserver
     ports:
-      main: 38250
+      main: {port: 38250, self: [psk.main]}
+      alt: {port: 49217, self: [psk.alt]}
 `)
 	writeFile(t, filepath.Join(dir, "nodes", "laptop.yaml"), `
 id: laptop
@@ -57,7 +58,7 @@ users:
   doug:
     access: [sfo]
   yak:
-    devices: unmanaged
+    devices: none
     access: [sfo]
 `)
 	writeFile(t, filepath.Join(dir, "routes.yaml"), `
@@ -98,7 +99,7 @@ func TestInspect_IndexListsNodesInstancesAndUsers(t *testing.T) {
 
 	var ids []string
 	for _, n := range m.nodes {
-		ids = append(ids, "node:"+n.name)
+		ids = append(ids, "node:"+n.key)
 		for _, inst := range n.instances {
 			ids = append(ids, "inst:"+inst.name)
 		}
@@ -109,12 +110,12 @@ func TestInspect_IndexListsNodesInstancesAndUsers(t *testing.T) {
 
 	want := map[string]bool{
 		"node:srv": true, "inst:ss-srv": true,
-		"node:laptop": true, "inst:laptop-sfo": true,
+		"node:laptop": true, "inst:laptop-sfo-ssserver-ss-json": true,
 		"node:nodes/bad.yaml": true,
 		// yak is unmanaged, so it appears twice: once as buildTree's
 		// pseudo-node holding its derived instance (matching export's own
 		// tree, on the Nodes tab), and once on the Users tab.
-		"node:yak": true, "inst:yak-sfo": true,
+		"node:yak": true, "inst:yak-default-sfo-ssserver-ss-json": true,
 		"user:doug": true, "user:yak": true,
 	}
 	if len(ids) != len(want) {
@@ -135,6 +136,9 @@ func selectDetail(t *testing.T, m InspectModel, id string) (kind, body string) {
 	if strings.HasPrefix(id, "user:") {
 		m.setTab(tabUsers)
 	}
+	if strings.HasPrefix(id, "service:") {
+		m.setTab(tabServices)
+	}
 	if !m.list.SelectID(id) {
 		t.Fatalf("SelectID(%q): row not found", id)
 	}
@@ -142,7 +146,7 @@ func selectDetail(t *testing.T, m InspectModel, id string) (kind, body string) {
 	if err != nil {
 		t.Fatalf("currentDetail(%q): %v", id, err)
 	}
-	if "node:"+gotID != id && "inst:"+gotID != id && "user:"+gotID != id {
+	if kind+":"+gotID != id {
 		t.Fatalf("currentDetail id = %q, want it to match selection %q", gotID, id)
 	}
 	return kind, body
@@ -172,8 +176,8 @@ func TestInspect_InstanceDetailShowsRouteAndSecretStructure(t *testing.T) {
 	if kind != "inst" {
 		t.Fatalf("kind = %q, want inst", kind)
 	}
-	if !strings.Contains(body, "shadowsocks-rust") || !strings.Contains(body, "server") {
-		t.Fatalf("instance detail = %q, want service and role", body)
+	if !strings.Contains(body, "ssserver") || !strings.Contains(body, "server") {
+		t.Fatalf("instance detail = %q, want the service", body)
 	}
 	if !strings.Contains(body, "sfo") {
 		t.Fatalf("instance detail = %q, want the route it is a hop of", body)
@@ -181,20 +185,20 @@ func TestInspect_InstanceDetailShowsRouteAndSecretStructure(t *testing.T) {
 	if !strings.Contains(body, "ss-srv/main/") {
 		t.Fatalf("instance detail = %q, want its secret path structure, no value", body)
 	}
-	if !strings.Contains(body, "ss-srv/own/psk") {
-		t.Fatalf("instance detail = %q, want the combine_own path listed", body)
+	if !strings.Contains(body, "ss-srv/self/psk") {
+		t.Fatalf("instance detail = %q, want the shared path listed", body)
 	}
 	if strings.Contains(body, "-----BEGIN") {
 		t.Fatal("instance detail leaked something that looks like a secret value")
 	}
 }
 
-func TestInspect_DerivedClientInstanceDetailShowsUpstream(t *testing.T) {
+func TestInspect_DerivedExportInstanceDetailShowsUpstream(t *testing.T) {
 	m := newInspectModel(buildInspectRoot(t), "")
 	m.width, m.height = 80, 24
-	_, body := selectDetail(t, m, "inst:laptop-sfo")
+	_, body := selectDetail(t, m, "inst:laptop-sfo-ssserver-ss-json")
 
-	if !strings.Contains(body, "upstream: ss-srv:main") {
+	if !strings.Contains(body, "upstream ss-srv:main") {
 		t.Fatalf("instance detail = %q, want its upstream", body)
 	}
 }
@@ -207,10 +211,10 @@ func TestInspect_ManagedUserDetailShowsDevicesAndDerived(t *testing.T) {
 	if kind != "user" {
 		t.Fatalf("kind = %q, want user", kind)
 	}
-	if !strings.Contains(body, "managed") || !strings.Contains(body, "laptop") {
-		t.Fatalf("user detail = %q, want managed and the owned node", body)
+	if !strings.Contains(body, "1 device") || !strings.Contains(body, "laptop") {
+		t.Fatalf("user detail = %q, want the device count and the owned node", body)
 	}
-	if !strings.Contains(body, "laptop-sfo") {
+	if !strings.Contains(body, "laptop-sfo-ssserver-ss-json") {
 		t.Fatalf("user detail = %q, want the derived instance", body)
 	}
 }
@@ -220,10 +224,10 @@ func TestInspect_UnmanagedUserDetail(t *testing.T) {
 	m.width, m.height = 80, 24
 	_, body := selectDetail(t, m, "user:yak")
 
-	if !strings.Contains(body, "unmanaged") {
-		t.Fatalf("user detail = %q, want unmanaged", body)
+	if !strings.Contains(body, "no node file") || !strings.Contains(body, "carries default") {
+		t.Fatalf("user detail = %q, want the absent node file and the carried credential", body)
 	}
-	if !strings.Contains(body, "yak-sfo") {
+	if !strings.Contains(body, "yak-default-sfo-ssserver-ss-json") {
 		t.Fatalf("user detail = %q, want yak's derived instance", body)
 	}
 }
@@ -239,11 +243,12 @@ func TestInspect_BrokenNodeDetailShowsParseError(t *testing.T) {
 }
 
 func TestInspect_TabsStartOnNodesAndBracketsCycle(t *testing.T) {
-	m := newInspectModel(buildInspectRoot(t), "")
+	root, secrets := buildInspectRoot(t), buildSecretsDir(t)
+	m := newInspectModel(root, secrets)
 	m.width, m.height = 80, 24
 
 	tabs := m.Tabs()
-	if len(tabs) != 2 || tabs[0].Label != "Nodes" || !tabs[0].Active || tabs[1].Active {
+	if len(tabs) != tabCount || tabs[0].Label != "Nodes" || !tabs[0].Active || tabs[1].Active {
 		t.Fatalf("Tabs() = %+v, want Nodes active first", tabs)
 	}
 	if _, ok := m.list.Selected(); !ok {
@@ -260,10 +265,32 @@ func TestInspect_TabsStartOnNodesAndBracketsCycle(t *testing.T) {
 		t.Fatalf("selected row after switching to Users = %+v, want a user: row", item)
 	}
 
-	m = pressInspect(t, m, "[")
+	m = pressInspect(t, m, "]")
 	tabs = m.Tabs()
-	if !tabs[0].Active {
-		t.Fatal("] then [ did not return to Nodes")
+	if !tabs[tabServices].Active {
+		t.Fatalf("Tabs() after ]] = %+v, want Services active", tabs)
+	}
+	item, ok = m.list.Selected()
+	if !ok || !strings.HasPrefix(item.ID, "service:") {
+		t.Fatalf("selected row after switching to Services = %+v, want a service: row", item)
+	}
+
+	m = pressInspect(t, m, "]")
+	if !m.Tabs()[tabSecrets].Active {
+		t.Fatalf("Tabs() after ]]] = %+v, want Secrets active", m.Tabs())
+	}
+	item, ok = m.list.Selected()
+	if !ok || !strings.HasPrefix(item.ID, "secret") {
+		t.Fatalf("selected row after switching to Secrets = %+v, want a secret row", item)
+	}
+
+	m = pressInspect(t, m, "]")
+	if !m.Tabs()[tabNodes].Active {
+		t.Fatal("] past the last tab did not wrap round to Nodes")
+	}
+	m = pressInspect(t, m, "[")
+	if !m.Tabs()[tabSecrets].Active {
+		t.Fatal("[ from Nodes did not wrap round to Secrets")
 	}
 }
 
@@ -298,36 +325,44 @@ func TestInspect_ViewRendersBothColumns(t *testing.T) {
 	}
 }
 
-// TestInspect_UnmanagedUserRowOpensTheUserView covers the Nodes index's one
-// entry that is not a node. An unmanaged user has no node file, and appears
-// there only because the instances derived for them have nowhere else to
-// sit; a row asking for a node detail under that name asked for a file that
-// does not exist, and showed an error where every other row showed content.
-func TestInspect_UnmanagedUserRowOpensTheUserView(t *testing.T) {
+// TestInspect_NodesHoldsOnlyMachines covers the split between the two trees.
+// The Nodes index is machines: a person with no device file has no node file
+// behind them, so nothing of theirs appears there. What is rendered for them
+// is on the Users index, which answers the other question.
+func TestInspect_NodesHoldsOnlyMachines(t *testing.T) {
 	m := newInspectModel(buildInspectRoot(t), "")
 	m.width, m.height = 80, 24
 
+	for _, it := range m.nodeItems {
+		if strings.HasSuffix(it.ID, ":yak") {
+			t.Fatalf("the Nodes index holds %q, and yak has no node file", it.ID)
+		}
+		if strings.Contains(it.Detail, "credential") {
+			t.Fatalf("Nodes row %q reads %q, and a machine is not a credential", it.ID, it.Detail)
+		}
+	}
+
 	var row *scrolllist.Item
-	for i := range m.nodeItems {
-		if strings.HasSuffix(m.nodeItems[i].ID, ":yak") {
-			row = &m.nodeItems[i]
+	for i := range m.userItems {
+		if m.userItems[i].ID == "user:yak" {
+			row = &m.userItems[i]
 		}
 	}
 	if row == nil {
-		t.Fatal("the Nodes index has no entry for the unmanaged user yak")
+		t.Fatal("the Users index has no entry for yak")
 	}
-	if row.ID != "user:yak" {
-		t.Fatalf("row ID = %q, want user:yak — an unmanaged user is not a node", row.ID)
+	if !strings.Contains(row.Detail, "credential") {
+		t.Fatalf("row detail = %q, want what their files hang off", row.Detail)
 	}
-	if !strings.Contains(row.Detail, "unmanaged user") {
-		t.Fatalf("row detail = %q, want it to say what this entry is", row.Detail)
+	if strings.Contains(row.Detail, "node") {
+		t.Fatalf("row detail = %q, want no mention of a node for someone with no node file", row.Detail)
 	}
 
 	kind, body := selectDetail(t, m, "user:yak")
 	if kind != "user" {
 		t.Fatalf("kind = %q, want user", kind)
 	}
-	if !strings.Contains(body, "unmanaged") {
+	if !strings.Contains(body, "no node file") {
 		t.Fatalf("detail = %q, want the user view", body)
 	}
 }
@@ -341,7 +376,7 @@ func TestInspect_NodeDetailListsDerivedInstances(t *testing.T) {
 	m.width, m.height = 80, 24
 	_, body := selectDetail(t, m, "node:laptop")
 
-	if !strings.Contains(body, "laptop-sfo") {
+	if !strings.Contains(body, "laptop-sfo-ssserver-ss-json") {
 		t.Fatalf("node detail = %q, want the instance derived for it listed", body)
 	}
 	if !strings.Contains(body, "(derived)") {
@@ -454,10 +489,10 @@ func TestInspect_UserDetailNamesEveryGrantedRoute(t *testing.T) {
 	if !strings.Contains(body, "enters ss-srv:main") {
 		t.Fatalf("user detail = %q, want each granted route's entry hop", body)
 	}
-	if !strings.Contains(body, "yak-sfo") {
+	if !strings.Contains(body, "yak-default-sfo-ssserver-ss-json") {
 		t.Fatalf("user detail = %q, want the instance derived for the route", body)
 	}
-	if !strings.Contains(body, "ss-srv/main/user/yak") {
+	if !strings.Contains(body, "ss-srv/main/yak/default") {
 		t.Fatalf("user detail = %q, want the credential this person holds, by path", body)
 	}
 	if strings.Contains(body, "username: yak") {
@@ -475,11 +510,11 @@ func TestInspect_UserDetailListsDevicesWithWhatEachDerives(t *testing.T) {
 	_, body := selectDetail(t, m, "user:doug")
 
 	device := strings.Index(body, "laptop")
-	instance := strings.Index(body, "laptop-sfo")
+	instance := strings.Index(body, "laptop-sfo-ssserver-ss-json")
 	if device < 0 || instance < 0 || instance < device {
 		t.Fatalf("user detail = %q, want the device and then what it derives", body)
 	}
-	if !strings.Contains(body, "doug-laptop") {
+	if !strings.Contains(body, "doug-default") {
 		t.Fatalf("user detail = %q, want the account name the server sees", body)
 	}
 }
@@ -488,7 +523,7 @@ func TestInspect_UserDetailListsDevicesWithWhatEachDerives(t *testing.T) {
 // opposite answers: the Nodes index is a tree and hides them, while the
 // Users index is a flat collection where a number is what makes a row easy
 // to point at.
-func TestInspect_UsersIndexKeepsItsNumbers(t *testing.T) {
+func TestInspect_BothTreesHideTheirNumbers(t *testing.T) {
 	m := newInspectModel(buildInspectRoot(t), "")
 	m.width, m.height = 100, 24
 
@@ -499,11 +534,275 @@ func TestInspect_UsersIndexKeepsItsNumbers(t *testing.T) {
 		t.Fatalf("Nodes LabelOffset = %d, want no number column", m.list.LabelOffset())
 	}
 
+	// The Users index is a tree too now, so it hides its numbers the same
+	// way. See docs/scroll-lists.md#line-numbers.
 	m.setTab(tabUsers)
-	if m.list.LabelOffset() == 2 {
-		t.Fatal("the Users index lost its numbers, which a flat list keeps")
+	if m.list.LabelOffset() != 2 {
+		t.Fatalf("Users LabelOffset = %d, want no number column on a tree", m.list.LabelOffset())
 	}
-	if !strings.Contains(m.View(), "1 ") {
-		t.Fatalf("View() = %q, want numbered rows on the Users index", m.View())
+}
+
+// TestInspect_ServicesIndexIsDeployedInstancesAndTheirPorts covers what
+// the Services index is for: where a service runs. A derived client
+// instance is a file handed to a person, not a deployment, and it belongs
+// under that person in the Users tab — listing it here made one Shadowsocks
+// server serving five people look like six instances of the service.
+func TestInspect_ServicesIndexIsDeployedInstancesAndTheirPorts(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.setTab(tabServices)
+
+	if indexHas(m.serviceItems, "inst:yak-default-sfo-ssserver-ss-json") {
+		t.Fatalf("index = %+v, want no client file among the deployments", m.serviceItems)
+	}
+	if !indexHas(m.serviceItems, "inst:ss-srv") {
+		t.Fatalf("index = %+v, want the deployed instance", m.serviceItems)
+	}
+
+	row := itemByID(t, m.serviceItems, "service:ssserver")
+	if !strings.Contains(row.Detail, "1 instance") || !strings.Contains(row.Detail, "2 ports") {
+		t.Fatalf("service row = %q, want one deployment and its ports counted", row.Detail)
+	}
+	if !strings.Contains(row.Detail, "file") {
+		t.Fatalf("service row = %q, want the files for people counted separately", row.Detail)
+	}
+}
+
+// TestInspect_ServicesIndexGoesDownToPorts covers the third level. A port
+// is where an account table lives: two ports of one process are two
+// independent sets of credentials, and an index stopping at the instance
+// cannot show which people are on which.
+func TestInspect_ServicesIndexGoesDownToPorts(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.setTab(tabServices)
+
+	main := itemByID(t, m.serviceItems, "port:ss-srv/main")
+	if !strings.Contains(main.Detail, "38250") {
+		t.Fatalf("port row = %q, want the number it listens on", main.Detail)
+	}
+	if !strings.Contains(main.Detail, "yak-default") || !strings.Contains(main.Detail, "doug-default") {
+		t.Fatalf("port row = %q, want the account names on this port", main.Detail)
+	}
+
+	alt := itemByID(t, m.serviceItems, "port:ss-srv/alt")
+	if !strings.Contains(alt.Detail, "nobody yet") {
+		t.Fatalf("port row = %q, want a port nothing reaches to say so", alt.Detail)
+	}
+}
+
+// TestInspect_PortDetailIsItsOwnAccountTable covers a port view. The
+// credentials on one port say nothing about the port beside it, so the
+// view is per port rather than per instance.
+func TestInspect_PortDetailIsItsOwnAccountTable(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.setTab(tabServices)
+	_, body := selectDetail(t, m, "port:ss-srv/main")
+
+	for _, want := range []string{"38250", "ss-srv", "srv", "sfo", "yak-default", "ss-srv/main/yak/default"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("port detail = %q, want it to name %q", body, want)
+		}
+	}
+	if strings.Contains(body, "ss-srv/alt") {
+		t.Fatal("the port view showed another port's credentials")
+	}
+
+	_, empty := selectDetail(t, m, "port:ss-srv/alt")
+	if !strings.Contains(empty, "nobody holds a grant") {
+		t.Fatalf("port detail = %q, want a port nothing reaches to say so", empty)
+	}
+}
+
+// TestInspect_ServiceDetailShowsManifestAndDeployment covers the service
+// view holding the half of the manifest no other view has room for — a
+// role's template, output name and own secrets — beside where each role is
+// deployed, or how many files it renders when it is a client role.
+func TestInspect_ServiceDetailShowsManifestAndDeployment(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.setTab(tabServices)
+	_, body := selectDetail(t, m, "service:ssserver")
+
+	for _, want := range []string{
+		"per-principal",
+		"written out as ss-json",
+		"templates/config.json.tmpl",
+		"config.json",
+		"psk",
+		"ss-srv on srv",
+		"38250",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("service detail = %q, want it to name %q", body, want)
+		}
+	}
+}
+
+// TestInspect_ServicesIndexFolds covers the Services index folding the same
+// way the Nodes index does — it is the same shape, so it takes the same
+// keys rather than a second set.
+func TestInspect_ServicesIndexFolds(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.setTab(tabServices)
+	m.list.SelectID("service:ssserver")
+
+	folded := pressInspect(t, m, "h")
+	if indexHas(folded.serviceItems, "inst:ss-srv") {
+		t.Fatalf("index = %+v, want the service's instances hidden once folded", folded.serviceItems)
+	}
+	reopened := pressInspect(t, folded, "l")
+	if !indexHas(reopened.serviceItems, "inst:ss-srv") {
+		t.Fatalf("index = %+v, want them back once unfolded", reopened.serviceItems)
+	}
+}
+
+// TestInspect_LeftFromAPortGoesToItsInstance covers h on the third level.
+// The Services tree is one deeper than the Nodes tree, so leaving a child
+// has one more step than it used to.
+func TestInspect_LeftFromAPortGoesToItsInstance(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.setTab(tabServices)
+	m.list.SelectID("port:ss-srv/main")
+
+	up := pressInspect(t, m, "h")
+	item, ok := up.list.Selected()
+	if !ok || item.ID != "inst:ss-srv" {
+		t.Fatalf("selected = %+v, want the instance listening on that port", item)
+	}
+
+	up = pressInspect(t, up, "h")
+	item, ok = up.list.Selected()
+	if !ok || item.ID != "service:ssserver" {
+		t.Fatalf("selected = %+v, want the service holding that instance", item)
+	}
+}
+
+// buildSecretsDir is a secrets store for buildInspectRoot's inventory, with
+// one of each state the Secrets tab distinguishes: a credential in step, one
+// the inventory implies and the store does not hold, one the store holds and
+// nothing implies, and one mid-rotation.
+func buildSecretsDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	write := func(rel, value string) {
+		t.Helper()
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("ss-srv/main/yak/default", "in-step")
+	write("ss-srv/main/yak/default.previous", "rotating")
+	write("ss-srv/self/psk", "in-step")
+	write("ss-srv/main/user/nobody", "orphan")
+	// ss-srv/main/doug/default is deliberately absent: it is what the
+	// inventory implies and the store does not hold.
+	return dir
+}
+
+// TestInspect_SecretsTabComparesBothDirections covers the Secrets tab's
+// reason to exist. Every other view reads the inventory alone; this one
+// reads the store too, and the two ways they can disagree are each silent
+// everywhere else — a path with no file renders nothing, and a file nothing
+// implies is a credential sync will never regenerate.
+func TestInspect_SecretsTabComparesBothDirections(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), buildSecretsDir(t))
+	m.width, m.height = 100, 24
+	m.setTab(tabSecrets)
+
+	if m.secrets.loadErr != nil {
+		t.Fatalf("buildSecrets: %v", m.secrets.loadErr)
+	}
+	if m.secrets.present == 0 || m.secrets.missing == 0 || m.secrets.orphaned == 0 {
+		t.Fatalf("counts = present %d, missing %d, orphaned %d — want one of each",
+			m.secrets.present, m.secrets.missing, m.secrets.orphaned)
+	}
+
+	missing := itemByID(t, m.secretItems, "secret:ss-srv/main/doug/default")
+	if !strings.Contains(missing.Detail, "missing") {
+		t.Fatalf("row = %q, want a path the store does not hold to say so", missing.Detail)
+	}
+	orphaned := itemByID(t, m.secretItems, "secret:ss-srv/main/user/nobody")
+	if !strings.Contains(orphaned.Detail, "orphaned") {
+		t.Fatalf("row = %q, want a file nothing implies to say so", orphaned.Detail)
+	}
+	rotating := itemByID(t, m.secretItems, "secret:ss-srv/main/yak/default")
+	if !strings.Contains(rotating.Detail, ".previous") {
+		t.Fatalf("row = %q, want the rotation leftover named", rotating.Detail)
+	}
+
+	status := m.Status().Center
+	if !strings.Contains(status, "missing") || !strings.Contains(status, "orphaned") {
+		t.Fatalf("status = %q, want what is out of step", status)
+	}
+}
+
+// TestInspect_SecretDetailNeverReadsTheValue covers the one thing this view
+// must not do. Revealing a credential is its own milestone; a view that
+// printed values on the way past would put every one of them in the
+// terminal's scrollback.
+func TestInspect_SecretDetailNeverReadsTheValue(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), buildSecretsDir(t))
+	m.width, m.height = 100, 24
+	m.setTab(tabSecrets)
+
+	body, err := renderSecretDetail(m.secrets, m.l, "ss-srv/main/yak/default")
+	if err != nil {
+		t.Fatalf("renderSecretDetail: %v", err)
+	}
+	if strings.Contains(body, "in-step") || strings.Contains(body, "rotating") {
+		t.Fatalf("secret detail = %q, want no value in it", body)
+	}
+	if !strings.Contains(body, "ss-srv/main/yak/default") {
+		t.Fatalf("secret detail = %q, want the path it is addressed by", body)
+	}
+	if !strings.Contains(body, "yak-default") {
+		t.Fatalf("secret detail = %q, want the account it belongs to", body)
+	}
+}
+
+// TestInspect_SecretsTabWithoutAStore covers conf.secrets left unset. The
+// inventory still implies every path; there is simply nothing to compare
+// against, and saying so beats an empty tree.
+func TestInspect_SecretsTabWithoutAStore(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.setTab(tabSecrets)
+
+	if m.secrets.loadErr == nil {
+		t.Fatal("buildSecrets accepted an unset conf.secrets")
+	}
+	if !strings.Contains(m.View(), "conf.secrets is not configured") {
+		t.Fatalf("View() = %q, want it to name what is unset", m.View())
+	}
+}
+
+// TestInspect_ServicesIndexHoldsOnlyPrograms covers the split between the two
+// directories. A service is a program a node deploys; a way of handing a
+// credential to a person is an export, and nothing runs one, so it is not in
+// this index. The service names the ways it is written out instead.
+func TestInspect_ServicesIndexHoldsOnlyPrograms(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+
+	for _, it := range m.serviceItems {
+		if it.ID == "service:ss-json" {
+			t.Fatal("the Services index holds ss-json, which nothing deploys")
+		}
+	}
+
+	_, body := selectDetail(t, m, "service:ssserver")
+	if !strings.Contains(body, "written out as ss-json") {
+		t.Fatalf("service detail = %q, want the ways it is written out", body)
+	}
+	if !strings.Contains(body, "written out for people") {
+		t.Fatalf("service detail = %q, want how many files that produced", body)
 	}
 }

@@ -44,8 +44,8 @@ users:
     access: [sfo]
   friend-a:
     username: yak
-    devices: unmanaged
-    client_role: link
+    devices: none
+    export: link
     access: [sfo]
 `)
 	writeFile(t, filepath.Join(root, RoutesFilename), `
@@ -95,7 +95,7 @@ universal: internet
 	if inst.ID != "ss-sfo01" || inst.Service != "shadowsocks-rust" || inst.Role != "server" {
 		t.Fatalf("inst = %+v", inst)
 	}
-	if inst.Ports["main"] != 38250 || inst.Ports["alt"] != 49217 {
+	if inst.Ports["main"].Number != 38250 || inst.Ports["alt"].Number != 49217 {
 		t.Fatalf("inst.Ports = %+v", inst.Ports)
 	}
 
@@ -105,8 +105,8 @@ universal: internet
 	if len(got.Users) != 2 {
 		t.Fatalf("Users = %d, want 2: %+v", len(got.Users), got.Users)
 	}
-	if got.Users["friend-a"].Devices != DevicesUnmanaged {
-		t.Fatalf("friend-a.Devices = %q, want %q", got.Users["friend-a"].Devices, DevicesUnmanaged)
+	if got.Users["friend-a"].Devices != DevicesNone {
+		t.Fatalf("friend-a.Devices = %q, want %q", got.Users["friend-a"].Devices, DevicesNone)
 	}
 	if got.Users["doug"].Devices != "" {
 		t.Fatalf("doug.Devices = %q, want empty (managed is the default)", got.Users["doug"].Devices)
@@ -117,8 +117,8 @@ universal: internet
 	if got.Users["friend-a"].UsernameOr("friend-a") != "yak" {
 		t.Fatalf(`friend-a.UsernameOr("friend-a") = %q, want "yak"`, got.Users["friend-a"].UsernameOr("friend-a"))
 	}
-	if got.Users["friend-a"].ClientRole != "link" {
-		t.Fatalf("friend-a.ClientRole = %q, want %q", got.Users["friend-a"].ClientRole, "link")
+	if got.Users["friend-a"].Export != "link" {
+		t.Fatalf("friend-a.Export = %q, want %q", got.Users["friend-a"].Export, "link")
 	}
 
 	if got.RoutesBroken != "" {

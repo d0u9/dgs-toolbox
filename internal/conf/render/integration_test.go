@@ -23,7 +23,7 @@ func TestEndToEnd_OneTargetRenders(t *testing.T) {
 				ID:       "srv",
 				Networks: inventory.Networks{"internet": "203.0.113.10"},
 				Instances: []inventory.Instance{
-					{ID: "ss-srv", Service: "shadowsocks-rust", Role: "server", Ports: map[string]int{"main": 38250}},
+					{ID: "ss-srv", Service: "ssserver", Ports: inventory.PortsOf(map[string]int{"main": 38250})},
 				},
 			},
 			{ID: "laptop", Owner: "doug"},
@@ -34,13 +34,13 @@ func TestEndToEnd_OneTargetRenders(t *testing.T) {
 		Universal: "internet",
 	}
 	manifests := map[string]confgen.Manifest{
-		"shadowsocks-rust": {
-			Secret: confgen.Secret{Kind: "base64", Bytes: 32},
-			Roles: map[string]confgen.Role{
-				"server":  {Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust"},
-				"ss-rust": {Auth: confgen.AuthNone},
-			},
+		"ssserver": {
+			Secret:   confgen.Secret{Kind: "base64", Bytes: 32},
+			Auth:     confgen.AuthPerPrincipal,
+			Exports:  []string{"ss-json"},
+			Template: "t",
 		},
+		"ss-json": {Auth: confgen.AuthNone, Template: "t"},
 	}
 
 	model, err := derive.Derive(inv, manifests)
@@ -55,14 +55,14 @@ func TestEndToEnd_OneTargetRenders(t *testing.T) {
 	}
 
 	// Render the server side, ss-srv/main: one principal, doug's laptop.
-	target := render.Target{Service: "shadowsocks-rust", Role: "server", Instance: "ss-srv"}
+	target := render.Target{Service: "ssserver", Instance: "ss-srv"}
 	srvNode := inv.Nodes[0]
 	srvInst := srvNode.Instances[0]
 
 	var principals []render.Principal
 	for _, p := range model.Principals("ss-srv", "main") {
 		value, err := secretstore.ReadValue(secretsRoot, secretstore.Path{
-			Instance: "ss-srv", Port: "main", Kind: string(p.Kind), Name: p.ID,
+			Instance: "ss-srv", Port: "main", Group: p.Group, Name: p.Slot,
 		})
 		if err != nil {
 			t.Fatalf("ReadValue: %v", err)
@@ -74,27 +74,27 @@ func TestEndToEnd_OneTargetRenders(t *testing.T) {
 		Target:       target,
 		Template:     `{{ (node).id }}/{{ (instance).id }}: {{ range principals "main" }}{{ .Name }} {{ end }}`,
 		DefaultsKind: confgen.DefaultsDocument,
-		Instance:     map[string]any{"id": srvInst.ID, "service": srvInst.Service, "role": srvInst.Role},
+		Instance:     map[string]any{"id": srvInst.ID, "service": srvInst.Service},
 		Node:         map[string]any{"id": srvNode.ID},
 		Principals:   map[string][]render.Principal{"main": principals},
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	if !strings.HasPrefix(string(out), "srv/ss-srv: doug-laptop") {
-		t.Fatalf("out = %q, want it to start with srv/ss-srv: doug-laptop", out)
+	if !strings.HasPrefix(string(out), "srv/ss-srv: doug-default") {
+		t.Fatalf("out = %q, want it to start with srv/ss-srv: doug-default", out)
 	}
 	if len(principals) != 1 || principals[0].Secret == "" {
 		t.Fatalf("principals = %+v, want one principal with a non-empty secret", principals)
 	}
 
-	// Render the derived client side too: laptop-sfo, whose upstream is
+	// Render the derived client side too: laptop-sfo-ssserver-ss-json, whose upstream is
 	// ss-srv:main, resolved to srv's internet address.
 	var upstream map[string]any
 	for _, e := range model.Edges {
-		if e.FromInstance == "laptop-sfo" {
+		if e.FromInstance == "laptop-sfo-ssserver-ss-json" {
 			upstreamSecret, err := secretstore.ReadValue(secretsRoot, secretstore.Path{
-				Instance: "ss-srv", Port: "main", Kind: "node", Name: "laptop",
+				Instance: "ss-srv", Port: "main", Group: "doug", Name: "default",
 			})
 			if err != nil {
 				t.Fatalf("ReadValue: %v", err)
@@ -103,11 +103,11 @@ func TestEndToEnd_OneTargetRenders(t *testing.T) {
 		}
 	}
 	if upstream == nil {
-		t.Fatal("no edge found from laptop-sfo")
+		t.Fatal("no edge found from laptop-sfo-ssserver-ss-json")
 	}
 
 	clientOut, err := render.Render(render.Input{
-		Target:       render.Target{Service: "shadowsocks-rust", Role: "ss-rust", Instance: "laptop-sfo"},
+		Target:       render.Target{Service: "ss-json", Instance: "laptop-sfo-ssserver-ss-json"},
 		Template:     `{{ (upstream).address }}:{{ (upstream).port }}`,
 		DefaultsKind: confgen.DefaultsDocument,
 		Upstream:     upstream,

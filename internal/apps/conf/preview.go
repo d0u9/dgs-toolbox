@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"dgs-toolbox/internal/conf/confgen"
@@ -11,6 +12,7 @@ import (
 	"dgs-toolbox/internal/conf/inventory"
 	"dgs-toolbox/internal/conf/render"
 	"dgs-toolbox/internal/conf/secretstore"
+	"dgs-toolbox/internal/conf/target"
 )
 
 // previewState holds one target's rendered output, or the error rendering it
@@ -27,29 +29,53 @@ type previewState struct {
 // its template and role defaults from the service directory, and its render
 // context — node, instance, upstream, principals and own — from the
 // inventory's derivation and conf.secrets.
-func (m Model) renderTarget(instance string) ([]byte, error) {
+func (m renderer) renderTarget(instance string) ([]byte, error) {
 	t, err := m.findTarget(instance)
 	if err != nil {
 		return nil, err
 	}
 
-	manifest, ok := m.manifests[t.Service]
-	if !ok {
-		return nil, fmt.Errorf("%s: service %q is not defined", instance, t.Service)
+	// A target is either a deployment, rendered from its service, or a file
+	// written out for a person, rendered from its export. The two live in
+	// different directories and have different manifests; everything below
+	// this point is the same for both.
+	var template, defaults, output, dir string
+	// What this target needs from its upstream is the consumer's own
+	// declaration: a service and an export each say it for themselves.
+	var wants confgen.UpstreamDecls
+	var fansOut bool
+	switch {
+	case t.Export != "":
+		export, ok := m.l.exports[confgen.ExportKey(t.Service, t.Export)]
+		if !ok {
+			return nil, fmt.Errorf("%s: export %q is not defined", instance, t.Export)
+		}
+		if export.Template == "" {
+			return nil, fmt.Errorf("%s: export %q writes nothing", instance, t.Export)
+		}
+		template, defaults, output, wants = export.Template, export.Defaults, export.Output, export.Upstream
+		dir = filepath.Join(m.rootPath, m.l.exportDirs[confgen.ExportKey(t.Service, t.Export)])
+	default:
+		manifest, ok := m.l.manifests[t.Service]
+		if !ok {
+			return nil, fmt.Errorf("%s: service %q is not defined", instance, t.Service)
+		}
+		if manifest.Template == "" {
+			return nil, fmt.Errorf("%s: service %q renders nothing", instance, t.Service)
+		}
+		template, defaults, output, wants = manifest.Template, manifest.Defaults, manifest.Output, manifest.Upstream
+		fansOut = manifest.FansOut()
+		dir = filepath.Join(m.rootPath, m.l.serviceDirs[t.Service])
 	}
-	role, ok := manifest.Roles[t.Role]
-	if !ok {
-		return nil, fmt.Errorf("%s: service %q has no role %q", instance, t.Service, t.Role)
-	}
-	serviceDir := filepath.Join(m.rootPath, m.serviceDirs[t.Service])
+	_ = output
 
-	templatePath := filepath.Join(serviceDir, role.Template)
+	templatePath := filepath.Join(dir, template)
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading template %s: %w", templatePath, err)
 	}
 
-	defaultsPath := filepath.Join(serviceDir, t.Role, confgen.DefaultsFilename)
+	defaultsPath := filepath.Join(dir, confgen.DefaultsFilename)
 	defaultsBytes, err := os.ReadFile(defaultsPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("reading defaults %s: %w", defaultsPath, err)
@@ -57,9 +83,9 @@ func (m Model) renderTarget(instance string) ([]byte, error) {
 
 	instanceMap, nodeMap := m.instanceAndNode(instance, t.Node)
 
-	var own map[string]string
+	var own map[string]any
 	if m.secretsDir != "" {
-		own, err = secretstore.ReadOwn(m.secretsDir, instance)
+		own, err = secretstore.ReadSelf(m.secretsDir, instance)
 		if err != nil {
 			return nil, err
 		}
@@ -70,37 +96,49 @@ func (m Model) renderTarget(instance string) ([]byte, error) {
 		return nil, err
 	}
 
-	upstream, err := m.upstreamFor(instance)
-	if err != nil {
-		return nil, err
+	// A fan-out instance has one successor per route, so there is no single
+	// upstream to resolve: picking one of them would be arbitrary, and the
+	// template reads downstreams instead.
+	var upstream map[string]any
+	downstreams := m.downstreamsFor(instance, fansOut)
+	if !fansOut {
+		upstream, err = m.upstreamFor(instance, wants)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return render.Render(render.Input{
-		Target:       render.Target{Service: t.Service, Role: t.Role, Instance: instance},
+		Target:       render.Target{Service: t.Service, Instance: instance},
 		Template:     string(templateBytes),
 		Defaults:     defaultsBytes,
-		DefaultsKind: role.Defaults,
+		DefaultsKind: defaults,
 		Instance:     instanceMap,
 		Node:         nodeMap,
 		Upstream:     upstream,
+		Downstreams:  downstreams,
+		Published:    m.publishedFor(instance),
 		Principals:   principals,
-		Own:          own,
+		Self:         own,
 	})
 }
 
 // findTarget locates instance among the tree's targets.
-func (m Model) findTarget(instance string) (targetRef, error) {
-	for _, n := range m.nodes {
-		for _, inst := range n.instances {
-			if inst.name != instance {
-				continue
-			}
-			if inst.broken != "" {
-				return targetRef{}, fmt.Errorf("%s: %s", instance, inst.broken)
-			}
-			service, role, _ := strings.Cut(inst.detail, " / ")
-			return targetRef{Node: n.name, Service: service, Role: role}, nil
+func (m renderer) findTarget(instance string) (targetRef, error) {
+	for _, t := range target.List(m.l.inv, m.l.derived) {
+		if t.Instance != instance {
+			continue
 		}
+		if t.Broken != "" {
+			return targetRef{}, fmt.Errorf("%s: %s", instance, t.Broken)
+		}
+		// An unmanaged user has no node, and their bundle is named for
+		// them instead — see docs/apps/conf/export.md#what-is-written.
+		node := t.Node
+		if node == "" {
+			node = t.User
+		}
+		return targetRef{Node: node, Service: t.Service, Export: t.Export}, nil
 	}
 	return targetRef{}, fmt.Errorf("%s: not found", instance)
 }
@@ -108,13 +146,13 @@ func (m Model) findTarget(instance string) (targetRef, error) {
 type targetRef struct {
 	Node    string
 	Service string
-	Role    string
+	Export  string
 }
 
 // instanceAndNode builds the instance and node datasources for instance,
 // whether it is a real, authored instance or one derive.Derive produced.
-func (m Model) instanceAndNode(instance, nodeID string) (instanceMap, nodeMap map[string]any) {
-	for _, n := range m.invRoot.Nodes {
+func (m renderer) instanceAndNode(instance, nodeID string) (instanceMap, nodeMap map[string]any) {
+	for _, n := range m.l.inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
@@ -124,19 +162,19 @@ func (m Model) instanceAndNode(instance, nodeID string) (instanceMap, nodeMap ma
 			}
 		}
 	}
-	for _, ci := range m.derived.ClientInstances {
+	for _, ci := range m.l.derived.ExportInstances {
 		if ci.ID != instance {
 			continue
 		}
-		instanceMap = map[string]any{"id": ci.ID, "service": ci.Service, "role": ci.Role, "bind": ci.Bind}
+		instanceMap = map[string]any{"id": ci.ID, "export": ci.Export, "bind": ci.Bind}
 		if len(ci.Ports) > 0 {
-			instanceMap["ports"] = ci.Ports
+			instanceMap["ports"] = ci.Ports.Numbers()
 		}
 		if len(ci.Values) > 0 {
 			instanceMap["values"] = ci.Values
 		}
 		if ci.Node != "" {
-			for _, n := range m.invRoot.Nodes {
+			for _, n := range m.l.inv.Nodes {
 				if n.ID == ci.Node && n.Broken == "" {
 					nodeMap = nodeValues(n)
 				}
@@ -148,9 +186,12 @@ func (m Model) instanceAndNode(instance, nodeID string) (instanceMap, nodeMap ma
 }
 
 func instanceValues(inst inventory.Instance) map[string]any {
-	v := map[string]any{"id": inst.ID, "service": inst.Service, "role": inst.Role, "bind": inst.Bind}
+	v := map[string]any{"id": inst.ID, "service": inst.Service, "bind": inst.Bind}
 	if len(inst.Ports) > 0 {
-		v["ports"] = inst.Ports
+		// A template asks what an instance listens on, not how: the
+		// transport belongs to the model, and a role that needs it reads
+		// it from its own defaults.
+		v["ports"] = inst.Ports.Numbers()
 	}
 	if len(inst.Values) > 0 {
 		v["values"] = inst.Values
@@ -168,9 +209,9 @@ func nodeValues(n inventory.Node) map[string]any {
 
 // principalsFor reads every per-principal port's accounts and secrets for
 // instance.
-func (m Model) principalsFor(instance string) (map[string][]render.Principal, error) {
-	var ports map[string]int
-	for _, n := range m.invRoot.Nodes {
+func (m renderer) principalsFor(instance string) (map[string][]render.Principal, error) {
+	var ports inventory.Ports
+	for _, n := range m.l.inv.Nodes {
 		for _, inst := range n.Instances {
 			if inst.ID == instance {
 				ports = inst.Ports
@@ -185,16 +226,29 @@ func (m Model) principalsFor(instance string) (map[string][]render.Principal, er
 	// declares rotation: disruptive — then a .previous value never becomes
 	// a second account. See docs/apps/conf/inventory.md#rotation.
 	rotatesInPlace := true
+	// A service whose inbound side does not authenticate has no account
+	// table and no credential under any of its ports: a grant on one of
+	// them implies nothing. Grants still exist — they are who may reach
+	// here, which is a separate fact from who holds a secret — so this
+	// mirrors the same filter secretstore.ImpliedPaths applies, rather than
+	// asking the secrets tree for files nothing ever generates. A web
+	// service behind a reverse proxy is the case: the proxy holds a grant
+	// on its port and no credential for it.
+	authenticates := false
 	if t, err := m.findTarget(instance); err == nil {
-		if role, ok := m.manifests[t.Service].Roles[t.Role]; ok {
+		if role, ok := m.l.manifests[t.Service]; ok {
 			rotatesInPlace = role.Rotation != confgen.RotationDisruptive
+			authenticates = role.Auth == confgen.AuthPerPrincipal
 		}
+	}
+	if !authenticates {
+		return nil, nil
 	}
 
 	out := map[string][]render.Principal{}
 	for port := range ports {
-		for _, p := range m.derived.Principals(instance, port) {
-			path := secretstore.Path{Instance: instance, Port: port, Kind: string(p.Kind), Name: p.ID}
+		for _, p := range m.l.derived.Principals(instance, port) {
+			path := secretstore.Path{Instance: instance, Port: port, Group: p.Group, Name: p.Slot}
 			principal := render.Principal{Name: p.Name}
 			if m.secretsDir != "" {
 				v, err := secretstore.ReadValue(m.secretsDir, path)
@@ -221,11 +275,13 @@ func (m Model) principalsFor(instance string) (map[string][]render.Principal, er
 }
 
 // upstreamFor resolves instance's own upstream, the one edge derive.Derive
-// found leaving it, or nil for a terminal instance.
-func (m Model) upstreamFor(instance string) (map[string]any, error) {
+// found leaving it, or nil for a terminal instance. wants is what the target
+// being rendered declared it needs from that hop; anything it did not ask for
+// is not read and does not reach its template.
+func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map[string]any, error) {
 	var edge *derive.Edge
-	for i := range m.derived.Edges {
-		e := &m.derived.Edges[i]
+	for i := range m.l.derived.Edges {
+		e := &m.l.derived.Edges[i]
 		if e.FromInstance == instance || e.From.Instance == instance {
 			edge = e
 			break
@@ -235,19 +291,30 @@ func (m Model) upstreamFor(instance string) (map[string]any, error) {
 		return nil, nil
 	}
 
-	var kind, id string
+	var group, slot string
 	if e := edge; e.FromInstance != "" {
-		// A derived client instance's principal is a node or a user,
-		// whichever produced it — found the same way secretstore paths are.
-		kind, id = principalFor(m, instance)
+		// A derived client instance's principal is a device or an unmanaged
+		// user — found the same way secretstore paths are.
+		group, slot = principalFor(m, instance)
 	} else {
-		kind, id = string(derive.PrincipalInstance), instance
+		// A relaying instance is its own group, holding one identity there.
+		group, slot = instance, inventory.DefaultCredential
+	}
+
+	// A hop into a service whose inbound side does not authenticate has no
+	// credential to read: a grant on one of its ports implies nothing, and
+	// there is no file under it. Asking anyway is how a reverse proxy in
+	// front of a web service used to fail — it dials a port that
+	// authenticates nobody.
+	var authenticates bool
+	if to := m.instanceByID(edge.To.Instance); to != nil {
+		authenticates = m.l.manifests[to.Service].Auth == confgen.AuthPerPrincipal
 	}
 
 	var secret string
-	if m.secretsDir != "" && kind != "" {
+	if m.secretsDir != "" && slot != "" && authenticates {
 		v, err := secretstore.ReadValue(m.secretsDir, secretstore.Path{
-			Instance: edge.To.Instance, Port: edge.To.Port, Kind: kind, Name: id,
+			Instance: edge.To.Instance, Port: edge.To.Port, Group: group, Name: slot,
 		})
 		if err != nil {
 			return nil, err
@@ -255,53 +322,112 @@ func (m Model) upstreamFor(instance string) (map[string]any, error) {
 		secret = v
 	}
 
-	out := map[string]any{"address": edge.Address, "port": edge.Port, "secret": secret}
-	if combineOwn := destinationCombineOwn(m, edge.To.Instance); combineOwn != "" && m.secretsDir != "" {
-		own, err := secretstore.ReadOwn(m.secretsDir, edge.To.Instance)
+	// The account name the upstream's own table calls this principal. A
+	// protocol whose client sends a user name as well as a secret —
+	// Hysteria2's userpass, a share URI's userinfo — needs the name the
+	// server will match, not the path segment the secret is filed under.
+	account := slot
+	for _, g := range m.l.derived.Grants {
+		if g.Instance == edge.To.Instance && g.Port == edge.To.Port &&
+			g.Principal.Group == group && g.Principal.Slot == slot {
+			account = g.Principal.Name
+			break
+		}
+	}
+
+	out := map[string]any{"address": edge.Address, "port": edge.Port, "secret": secret, "account": account}
+	// A secret belongs to the instance it is filed under. It crosses to
+	// another only because the program dialling says it needs it, so the
+	// question asked here is what this target declared, not what the hop it
+	// reaches happens to publish. A reverse proxy in front of a web service
+	// declares nothing and is handed nothing.
+	if wants.Wants(confgen.UpstreamShared) && m.secretsDir != "" {
+		handed := destinationSelf(m, edge.To.Instance, edge.To.Port)
+		own, err := secretstore.ReadSelf(m.secretsDir, edge.To.Instance)
 		if err != nil {
 			return nil, err
 		}
-		v, ok := own[combineOwn]
-		if !ok {
-			return nil, fmt.Errorf("%s: missing own secret %q that %s/%s combines with each principal's own",
-				edge.To.Instance, combineOwn, edge.To.Instance, edge.To.Port)
+		// In the order the port writes them: the protocols that take more
+		// than one take them as a sequence, and a different order
+		// authenticates nothing.
+		values := make([]string, 0, len(handed))
+		for _, ref := range handed {
+			v, ok := lookupSelf(own, inventory.ParseSelfRef(ref))
+			if !ok {
+				return nil, fmt.Errorf("%s: %s needs the shared secrets of %s:%s, and %q is missing",
+					edge.To.Instance, instance, edge.To.Instance, edge.To.Port, ref)
+			}
+			values = append(values, v)
 		}
-		out["own"] = v
+		out["shared"] = values
 	}
 	return out, nil
 }
 
-// destinationCombineOwn is instance's role's combine_own, or empty when it
-// has none — the own secret every client reaching instance also needs
-// alongside its own principal secret. See
-// docs/apps/conf/inventory.md#a-shared-identity-alongside-a-principals-own.
-func destinationCombineOwn(m Model, instance string) string {
-	for _, n := range m.invRoot.Nodes {
+// destinationSelf is what instance's port hands to everything granted on
+// it, in the order it writes them, or nil when it hands out nothing. See
+// docs/apps/conf/inventory.md#a-secret-several-people-hold.
+func destinationSelf(m renderer, instance, port string) []string {
+	for _, n := range m.l.inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
 		for _, inst := range n.Instances {
 			if inst.ID == instance {
-				return m.manifests[inst.Service].Roles[inst.Role].CombineOwn
+				return inst.Ports[port].Self
 			}
 		}
 	}
-	return ""
+	return nil
+}
+
+// lookupSelf reads one reference out of the nested self datasource. A
+// reference never names a field: half a credential is not a thing to hand
+// over, so a name with fields is not found here.
+func lookupSelf(self map[string]any, ref inventory.SelfRef) (string, bool) {
+	switch v := self[ref.Name].(type) {
+	case string:
+		return v, ref.Key == ""
+	case map[string]any:
+		if ref.Key == "" {
+			return "", false
+		}
+		s, ok := v[ref.Key].(string)
+		return s, ok
+	}
+	return "", false
 }
 
 // principalFor finds the principal kind and identifier a derived client
 // instance grants as, on its own entry edge.
-func principalFor(m Model, instance string) (kind, id string) {
-	for _, ci := range m.derived.ClientInstances {
+func principalFor(m renderer, instance string) (group, slot string) {
+	for _, ci := range m.l.derived.ExportInstances {
 		if ci.ID != instance {
 			continue
 		}
-		if ci.Node != "" {
-			return string(derive.PrincipalNode), ci.Node
+		if ci.Node == "" {
+			return ci.User, ci.Credential
 		}
-		return string(derive.PrincipalUser), ci.User
+		for _, n := range m.l.inv.Nodes {
+			if n.ID == ci.Node && n.Broken == "" {
+				return n.Owner, ci.Credential
+			}
+		}
+		return "", ""
 	}
 	return "", ""
+}
+
+// groupOfNode answers the first segment below a port for a device: the
+// directory its file sits in, the owner it names, or its own ID.
+func (m renderer) groupOfNode(n inventory.Node) string {
+	switch {
+	case n.Group != "":
+		return n.Group
+	case n.Owner != "":
+		return n.Owner
+	}
+	return n.ID
 }
 
 // openPreview renders the row under the cursor, when it is a checkable
@@ -323,7 +449,7 @@ func (m *Model) openPreview() {
 	}
 	instance := r.keys[0]
 
-	out, err := m.renderTarget(instance)
+	out, err := m.renderer().renderTarget(instance)
 	p := &previewState{target: instance, err: err}
 	if err == nil {
 		p.lines = strings.Split(strings.TrimRight(string(out), "\n"), "\n")
@@ -374,4 +500,87 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// renderer is everything rendering one target needs and nothing else: the
+// loaded inventory, the root its templates sit under, and the secrets store.
+// It is deliberately not a TUI model — the same rendering serves the export
+// page, the inspect page and `dgs conf export` on the command line, and only
+// one of those has a cursor.
+type renderer struct {
+	l          loaded
+	rootPath   string
+	secretsDir string
+}
+
+// downstreamsFor is the hop that follows this instance in each route through
+// it, resolved: what a reverse proxy renders one site block from. It is empty
+// unless the service declared that it fans out, so a template that asks and
+// was not meant to renders nothing rather than another instance's business.
+//
+// Ordered by route name, so a rendered file does not change because a route
+// was added above another.
+func (m renderer) downstreamsFor(instance string, fansOut bool) []render.Downstream {
+	if !fansOut {
+		return nil
+	}
+	var out []render.Downstream
+	for _, e := range m.l.derived.Edges {
+		if e.From.Instance != instance {
+			continue
+		}
+		out = append(out, render.Downstream{
+			Route:     e.Route,
+			Instance:  e.To.Instance,
+			Port:      e.To.Port,
+			Published: m.publishedAt(e.To.Instance, e.To.Port),
+			Address:   e.Address,
+			Number:    e.Port,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Route < out[j].Route })
+	return out
+}
+
+// publishedFor is this instance's own ports' published names. The service
+// behind a proxy renders the same string the proxy matches on — Vaultwarden's
+// DOMAIN is the case it exists for — so both sides read one value.
+func (m renderer) publishedFor(instance string) map[string]string {
+	inst := m.instanceByID(instance)
+	if inst == nil {
+		return nil
+	}
+	out := map[string]string{}
+	for name, p := range inst.Ports {
+		if p.Published != "" {
+			out[name] = p.Published
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// publishedAt is one port's published name, or empty. Rule 17 has already
+// reported a fan-out downstream that has none, so rendering an empty match
+// here does not hide anything.
+func (m renderer) publishedAt(instance, port string) string {
+	inst := m.instanceByID(instance)
+	if inst == nil {
+		return ""
+	}
+	return inst.Ports[port].Published
+}
+
+// instanceByID finds a real instance in the inventory.
+func (m renderer) instanceByID(instance string) *inventory.Instance {
+	for _, n := range m.l.inv.Nodes {
+		for i := range n.Instances {
+			if n.Instances[i].ID == instance {
+				return &n.Instances[i]
+			}
+		}
+	}
+	return nil
 }

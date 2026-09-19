@@ -21,26 +21,24 @@ func fixture(t *testing.T) (*inventory.Root, *derive.Model) {
 				ID:       "srv",
 				Networks: inventory.Networks{"internet": "203.0.113.10"},
 				Instances: []inventory.Instance{
-					{ID: "ss-srv", Service: "shadowsocks-rust", Role: "server", Ports: map[string]int{"main": 38250}},
-					{ID: "bin-srv", Service: "microbin", Role: "server", Ports: map[string]int{"web": 8080}},
+					{ID: "ss-srv", Service: "ssserver", Ports: inventory.PortsOf(map[string]int{"main": 38250})},
+					{ID: "bin-srv", Service: "microbin", Ports: inventory.PortsOf(map[string]int{"web": 8080})},
 				},
 			},
 			{ID: "laptop", Owner: "doug"},
 		},
 		Users: map[string]inventory.User{
 			"doug": {Access: []string{"sfo"}},
-			"yak":  {Devices: inventory.DevicesUnmanaged, Access: []string{"sfo"}},
+			"yak":  {Devices: inventory.DevicesNone, Access: []string{"sfo"}},
 		},
 		Routes:    map[string]inventory.Route{"sfo": {Hops: []string{"ss-srv:main"}}},
 		Networks:  []string{"internet"},
 		Universal: "internet",
 	}
 	manifests := map[string]confgen.Manifest{
-		"shadowsocks-rust": {Roles: map[string]confgen.Role{
-			"server":  {Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust"},
-			"ss-rust": {Auth: confgen.AuthNone},
-		}},
-		"microbin": {Roles: map[string]confgen.Role{"server": {Auth: confgen.AuthNone}}},
+		"ssserver": {Auth: confgen.AuthPerPrincipal, Exports: []string{"ss-json"}, Template: "t"},
+		"ss-json":  {Auth: confgen.AuthNone, Template: "t"},
+		"microbin": {Auth: confgen.AuthNone, Template: "t"},
 	}
 	model, err := derive.Derive(inv, manifests)
 	if err != nil {
@@ -88,22 +86,22 @@ func TestBuild_ShapesCoverRealAndDerivedInstances(t *testing.T) {
 		t.Fatalf("bin-srv shape = %+v", bin)
 	}
 
-	client, ok := byID["laptop-sfo"]
-	if !ok || client.Container != "laptop" || client.Owner != "doug" || client.Role != "ss-rust" {
-		t.Fatalf("laptop-sfo shape = %+v, want container laptop, owner doug, role ss-rust", client)
+	client, ok := byID["laptop-sfo-ssserver-ss-json"]
+	if !ok || client.Container != "laptop" || client.Owner != "doug" || client.Service != "ss-json" {
+		t.Fatalf("laptop-sfo-ssserver-ss-json shape = %+v, want container laptop, owner doug, service sslocal", client)
 	}
 
 	// yak is unmanaged: its derived instance belongs to no container, and is
 	// owned by yak itself.
-	unmanaged, ok := byID["yak-sfo"]
+	unmanaged, ok := byID["yak-default-sfo-ssserver-ss-json"]
 	if !ok {
-		t.Fatal("yak-sfo shape not found")
+		t.Fatal("yak-default-sfo-ssserver-ss-json shape not found")
 	}
 	if unmanaged.Container != "" {
-		t.Fatalf("yak-sfo.Container = %q, want empty (an unmanaged user's shape has no container)", unmanaged.Container)
+		t.Fatalf("yak-default-sfo-ssserver-ss-json.Container = %q, want empty (an unmanaged user's shape has no container)", unmanaged.Container)
 	}
 	if unmanaged.Owner != "yak" {
-		t.Fatalf("yak-sfo.Owner = %q, want yak", unmanaged.Owner)
+		t.Fatalf("yak-default-sfo-ssserver-ss-json.Owner = %q, want yak", unmanaged.Owner)
 	}
 }
 
@@ -118,7 +116,7 @@ func TestBuild_EdgesFollowDeriveModel(t *testing.T) {
 		}
 	}
 	if len(toSrv) != 2 {
-		t.Fatalf("edges into ss-srv = %+v, want 2 (laptop-sfo and yak-sfo)", toSrv)
+		t.Fatalf("edges into ss-srv = %+v, want 2 (laptop-sfo-ssserver-ss-json and yak-default-sfo-ssserver-ss-json)", toSrv)
 	}
 	froms := map[string]bool{}
 	for _, e := range toSrv {
@@ -127,15 +125,15 @@ func TestBuild_EdgesFollowDeriveModel(t *testing.T) {
 			t.Fatalf("edge %+v has the wrong route", e)
 		}
 	}
-	if !froms["laptop-sfo"] || !froms["yak-sfo"] {
-		t.Fatalf("edges into ss-srv = %+v, want from laptop-sfo and yak-sfo", toSrv)
+	if !froms["laptop-sfo-ssserver-ss-json"] || !froms["yak-default-sfo-ssserver-ss-json"] {
+		t.Fatalf("edges into ss-srv = %+v, want from laptop-sfo-ssserver-ss-json and yak-default-sfo-ssserver-ss-json", toSrv)
 	}
 }
 
 func TestBuild_BrokenNodeContributesNoShapes(t *testing.T) {
 	inv, model := fixture(t)
 	inv.Nodes = append(inv.Nodes, inventory.Node{ID: "broken.yaml", Broken: "bad yaml", Instances: []inventory.Instance{
-		{ID: "ghost", Service: "shadowsocks-rust", Role: "server"},
+		{ID: "ghost", Service: "ssserver"},
 	}})
 	g := Build(inv, model)
 	for _, s := range g.Shapes {

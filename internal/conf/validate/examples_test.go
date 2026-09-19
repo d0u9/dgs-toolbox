@@ -54,6 +54,14 @@ func TestExampleInventoryLoadsDerivesAndValidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("confgen.Load: %v", err)
 	}
+	exportDefs := map[string]confgen.Export{}
+	for _, def := range confRoot.Exports {
+		if def.Broken != "" {
+			t.Errorf("export %s: %s", def.Name, def.Broken)
+			continue
+		}
+		exportDefs[def.Name] = def.Export
+	}
 	manifests := map[string]confgen.Manifest{}
 	for _, svc := range confRoot.Services {
 		if svc.Broken != "" {
@@ -70,11 +78,11 @@ func TestExampleInventoryLoadsDerivesAndValidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("derive.Derive: %v", err)
 	}
-	if len(model.ClientInstances) == 0 {
+	if len(model.ExportInstances) == 0 {
 		t.Fatal("nothing derived — the example's routes and access grant nothing")
 	}
 
-	issues := Validate(inv, manifests, model, nil)
+	issues := Validate(inv, manifests, exportDefs, model, nil)
 	for _, issue := range issues {
 		t.Errorf("validate: %s", issue.Message)
 	}

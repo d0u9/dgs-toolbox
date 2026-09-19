@@ -30,12 +30,10 @@ func buildRoot(t *testing.T) string {
 secret:
   kind: base64
   bytes: 32
-roles:
-  server:
-    template: templates/server.yaml.tmpl
-    defaults: element
-    output: config.yaml
-    auth: per-principal
+template: templates/server.yaml.tmpl
+defaults: element
+output: config.yaml
+auth: per-principal
 `)
 	writeFile(t, filepath.Join(dir, "nodes", "srv.yaml"), `
 id: srv
@@ -44,12 +42,10 @@ networks:
 instances:
   - id: us-sfo
     service: hysteria2
-    role: server
     ports:
       main: 443
   - id: jp-tyo
     service: hysteria2
-    role: server
     ports:
       main: 443
 `)
@@ -230,17 +226,14 @@ func TestModel_FoldingHidesChildrenWithoutLosingChecks(t *testing.T) {
 func TestNewModel_UnmanagedUserIsATopLevelEntry(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "services", "hysteria2", "confgen.yaml"), `
-roles:
-  server:
-    template: templates/server.yaml.tmpl
-    defaults: document
-    output: config.yaml
-    auth: per-principal
-    reached_by: link
-  link:
-    template: templates/link.tmpl
-    output: share.txt
-    auth: none
+template: templates/server.yaml.tmpl
+defaults: document
+output: config.yaml
+auth: per-principal
+`)
+	writeFile(t, filepath.Join(dir, "services", "hysteria2", "exports", "link", "confgen.yaml"), `
+template: templates/link.tmpl
+output: share.txt
 `)
 	writeFile(t, filepath.Join(dir, "nodes", "srv.yaml"), `
 id: srv
@@ -249,7 +242,6 @@ networks:
 instances:
   - id: hy2-srv
     service: hysteria2
-    role: server
     ports:
       main: 443
 `)
@@ -257,7 +249,7 @@ instances:
 users:
   friend-a:
     username: yak
-    devices: unmanaged
+    devices: none
     access: [jp]
 `)
 	writeFile(t, filepath.Join(dir, "routes.yaml"), `
@@ -277,7 +269,7 @@ universal: internet
 	for _, r := range m.rows {
 		ids = append(ids, r.id)
 	}
-	want := []string{"node:friend-a", "inst:friend-a/yak-jp", "node:srv", "inst:srv/hy2-srv"}
+	want := []string{"node:friend-a", "inst:friend-a/yak-default-jp-hysteria2-link", "node:srv", "inst:srv/hy2-srv"}
 	if len(ids) != len(want) {
 		t.Fatalf("rows = %v, want %v", ids, want)
 	}

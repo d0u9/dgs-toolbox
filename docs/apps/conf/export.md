@@ -23,7 +23,7 @@ value file per instance:
 │       ├── us-sfo-dgo-linux-01.yaml
 │       └── us-sfo-dgo-linux-01.sh
 ├── microbin/
-└── shadowsocks-rust/
+└── ssserver/
 ```
 
 Every instance has a `.sh` beside its values that calls the renderer with the
@@ -74,71 +74,71 @@ assumes them.
 
 ### The service manifest
 
-`services/<service>/confgen.yaml` declares what the renderer cannot infer:
+`services/<service>/confgen.yaml` declares what the renderer cannot infer. A
+service is one program, so a manifest describes one template, one output name
+and one inbound contract:
 
 ```yaml
+# services/ssserver/confgen.yaml
 secret:
   kind: base64
   bytes: 32
 
-roles:
-  server:
-    auth: per-principal
-    reached_by: ss-rust
-    template: templates/server.json.tmpl
-    defaults: element
-    output: config.json
-  ss-rust:
-    auth: none
-    template: templates/ss-rust.json.tmpl
-    defaults: element
-    output: config.json
-  shadowrocket:
-    auth: none
-    template: templates/shadowrocket.conf.tmpl
-    output: shadowrocket.conf
-  link:
-    auth: none
-    template: templates/link.tmpl
-    output: share.txt
+auth: per-principal
+self:
+  psk: {set: true}
+template: templates/config.json.tmpl
+defaults: element
+output: config.json
 ```
 
-Client roles are named after the client program rather than after `client`,
-because the program is what decides the file: see
-[which role a client derives as](inventory.md#which-role-a-client-derives-as).
+```yaml
+# services/ssserver/exports/link/confgen.yaml
+template: templates/share.txt.tmpl
+defaults: element
+output: share.txt
+upstream:
+  shared: {}
+```
 
-The keys in the table below are fixed. Every name around them — the service, the
-roles, the templates, the output files — is this manifest author's, and no rule
-keys off any particular spelling, `server` included. The two lists are in
+`ssserver` and `sslocal` are two services rather than two forms of one: they
+read configurations with nothing in common. An **export** is not a service at
+all — nothing runs a QR code — so it lives in its service's own `exports/` and
+its manifest has a template, a defaults kind, an output name, and
+`upstream` when the credential it writes is partly the server's.
+The directories a service holds are the ways it offers; nothing lists them a
+second time. See
+[which export a person receives](inventory.md#which-export-a-person-receives).
+
+The keys in the table below are fixed. Every name around them — the services,
+the templates, the output files — is this manifest author's, and no rule keys
+off any particular spelling. The two lists are in
 [fixed names and example names](inventory.md#fixed-names-and-example-names).
 
 | Key | Meaning |
 | --- | --- |
 | `secret` | The shape of a generated credential for this service: `kind` and its size. Omitted, a printable random string. |
-| `roles` | One entry per kind of instance the service generates. The key is the role name, and also the directory its defaults file is in. |
-| `roles.<role>.auth` | Whether the role's inbound side authenticates each principal separately: `per-principal` or `none`. A role's own credentials are `own`'s business, not this key's. See [inventory](inventory.md#how-a-service-says-what-it-needs). |
-| `roles.<role>.reached_by` | The role a client derives as, to reach this one. Omitted, a route entering this role renders nothing for the person granted it — see [what is derived](inventory.md#what-is-derived). |
-| `roles.<role>.template` | The template rendered for the role, relative to the service directory. |
-| `roles.<role>.defaults` | How the role's defaults apply: `document` or `element`. See below. |
-| `roles.<role>.output` | The name the rendered file is written under — the name the service expects where it runs, such as `config.json` or `server.env`. |
-| `roles.<role>.rotation` | `disruptive` when this role's template cannot emit two accounts for one principal, so rotating it drops the connection instead of overlapping old and new. Omitted, it can. See [rotation](inventory.md#rotation). |
-| `roles.<role>.own` | The names of this role's own secrets — credentials belonging to the instance rather than to anything reaching it, one `<instance>/own/<name>` file each. It is the only place they are named, so `secret sync` generates what is listed and reports what is not. See [a role's own secrets](inventory.md#a-roles-own-secrets). |
-| `roles.<role>.combine_own` | One name from `own` that every principal reaching this role also needs, alongside its own. It marks a name rather than declaring one, so it must appear in `own`. Omitted, a principal needs nothing beyond its own secret. See [a shared identity alongside a principal's own](inventory.md#a-shared-identity-alongside-a-principals-own). |
+| `auth` | Whether this service's inbound side authenticates each principal separately: `per-principal` or `none`. Its own credentials are `self`'s business, not this key's. See [inventory](inventory.md#how-a-service-says-what-it-needs). |
+| `template` | The template rendered for this service, relative to the service directory. |
+| `defaults` | How `defaults.yaml` applies: `document` or `element`. See below. |
+| `output` | The name the rendered file is written under — the name the program expects where it runs, such as `config.json` or `server.env`. |
+| `rotation` | `disruptive` when this service's template cannot emit two accounts for one principal, so rotating it drops the connection instead of overlapping old and new. Omitted, it can. See [rotation](inventory.md#rotation). |
+| `self` | This service's own secrets — credentials belonging to the instance rather than to anything reaching it — declared by name, each with its shape (`kind`, `bytes`), and optionally `set: true` for a family of values whose keys an instance declares, or `fields` for a credential made of several generated parts. One file per leaf, under `<instance>/self/`. It is the only place they are named, so `secret sync` generates what is declared and reports what is not. See [a service's own secrets](inventory.md#a-services-own-secrets). |
+| `downstreams` | `many` when one instance of this service is the entrance for several routes — a reverse proxy in front of many web services — or omitted for the ordinary `one`. It is the only thing that relaxes the rule that a non-terminal hop has the same successor in every route through it, and it says nothing about credentials: a proxy forwards and does not authenticate, so declaring it hands the service nothing. See [a service that fans out](inventory.md#a-service-that-fans-out). |
+| `upstream` | What this service needs from the hop it dials, beyond the address, port and account every template is given, declared by name. The one name today is `shared`: the secrets that hop's port hands to everything granted on it, in the port's own order. A secret crosses from one instance to another because the program dialling declares it needs it, never because the one listening publishes it, so a service that writes nothing here is handed nothing. An export takes the same key for the same reason. A name `dgs` does not understand is an error. See [what a service needs from its upstream](inventory.md#what-a-service-needs-from-its-upstream). |
 
-The role name is the directory name and the defaults file is always
-`defaults.yaml` in it, so neither is declared. That is the naming unification
-above spent on making the manifest shorter rather than on describing four
-spellings.
+The defaults file is always `defaults.yaml` in the service directory, so it is
+not declared.
 
 There is no `secrets` key naming a file. Which credentials a service draws on is
 derived from the inventory, and where each one lives is derived from what it
 opens; see [Secrets](inventory.md#secrets).
 
-Roles are a map rather than the two fixed names `server` and `client` so that a
-service wanting a third — a relay, a bridge, a second client profile — declares
-one instead of waiting for the renderer to grow a case for it. A role is not a
-kind of machine: it is a set of instances sharing a template, a defaults file
-and an output name, and the name is a label on that set.
+Services are directories rather than two fixed names `server` and `client` so
+that a protocol wanting a third — a relay, a bridge, a second client program —
+gets one by adding a directory rather than by waiting for the renderer to grow
+a case for it. Exports are directories for the same reason: a QR code is one
+more directory, not a new case in the renderer.
 
 ### Two kinds of defaults
 
@@ -146,9 +146,14 @@ and an output name, and the name is a label on that set.
 drifted.
 
 - **`document`** — the defaults are a whole configuration, and an instance's
-  values are merged over them. Hysteria2 and MicroBin work this way: `listen`,
-  the TLS paths and the MicroBin environment block are the baseline, and an
-  instance overrides keys of it.
+  `values` are merged over them, key by key, the instance winning. Hysteria2
+  and MicroBin work this way: the TLS paths, the masquerade target and the
+  MicroBin environment block are the baseline, and an instance overrides keys
+  of it. What merges is `values` alone: `id`, `service`, `bind` and `ports`
+  are dgs's own, are reached through the `instance` function, and are not keys
+  of the document. So the dot a template reads is the service's settings and
+  nothing else, and `values` is the one place a node file writes them. See
+  [an instance's own values](inventory.md#an-instances-own-values).
 - **`element`** — the defaults are one entry of a list, and apply to *every*
   entry of that list in an instance. Shadowsocks works this way: an instance's
   `servers` is a list of services on different ports, and each one starts from
@@ -179,7 +184,7 @@ cannot be rendered.
 
 ### An instance is one file on one machine
 
-One machine may hold several instances of one role: two Hysteria2 services, or
+One machine may hold several instances of one service: two Hysteria2 servers, or
 several Shadowsocks clients reaching different servers. An instance is one
 rendered configuration file, and the node it belongs to is the file it is
 written in.
@@ -196,7 +201,7 @@ Two things follow:
 
 ### Output names do not vary
 
-A role's `output` is one name for every instance of it, because the service
+A service's `output` is one name for every instance of it, because the program
 reading it expects one name wherever it runs. Two clients reaching different
 servers both render to `config.json`, and are told apart by the directory the
 export puts them in, not by the file name. Copying the right one to the right
@@ -207,22 +212,34 @@ would mean editing a service unit to match every time.
 
 The unit of everything below is a target, and a target is one instance.
 
-A selector is one or more `<field>:<value>` terms, separated by spaces, all of
-which must match. A value may contain `*`:
+A selector is one or more `<field>:<value>` terms, separated by spaces. **Terms
+naming one field are alternatives, and different fields narrow each other.** A
+value may contain `*`:
 
 ```text
-node:host-a                     everything that machine runs
-node:macbook                    everything for one device
-user:doug                       everything every device of one person needs
-service:hysteria2 role:server   the server side of one service
-route:home-sfo                  every instance along one chain
-instance:ss-sfo01                 one
-node:us-sfo-*                   a machine name with a wildcard
+node:host-a                          everything that machine runs
+user:doug                            everything every device of one person needs
+service:hysteria2                    one service
+route:home-sfo                       every instance along one chain
+instance:ss-sfo01                    one
+node:us-sfo-*                        a machine name with a wildcard
+user:jane export:link                one person, one way
+export:link export:json              either way, whoever holds it
 ```
 
 A bare word with no field is an instance name.
 
-The selector reads fields rather than a `<service>/<role>/<instance>` path
+Alternatives within a field are what make picking several ways of handing one
+credential over possible — a Shadowsocks server is written out as a share URI
+and as a `config.json` alike, and a hand-over sometimes wants one, sometimes
+both. It is also what makes a shell's own brace expansion do what it looks like
+it does, since `export:{link,json}` expands to exactly those two terms:
+
+```bash
+dgs conf export user:jane export:{link,json}
+```
+
+The selector reads fields rather than a `<service>/<instance>` path
 because the machine is a field. A path glob could only pick out one machine's
 instances when the machine's name had been written into each instance's name,
 and `user:` and `route:` could not be expressed at all — while those two are the
@@ -240,13 +257,13 @@ selector will match, without rendering anything.
 
 A target renders from four inputs:
 
-1. the role's `defaults.yaml`,
-2. the instance's own values, applied over the defaults at the level the role
-   declares,
+1. the service's `defaults.yaml`,
+2. the instance's own values, applied over the defaults at the level the
+   service declares,
 3. what the inventory derives for it — the node, the resolved upstream, the
    principals holding a grant on each port, and the secrets those imply,
-4. the target itself — its service, role and instance names, as a datasource
-   named `target`.
+4. the target itself — its service and instance names, as a datasource named
+   `target`.
 
 The third is the whole of [`inventory.md`](inventory.md) arriving as data, and
 its shape is pinned there as
@@ -305,7 +322,18 @@ they are flat:
 | `append`, `slice`, `dict` | Building a list or a map in a template. |
 | `toYAML`, `toJSON` | `yaml.Marshal` and `json.Marshal`, which `dgs` already has. |
 | `required` | The value, or an error naming what is missing. |
-| `secret` | The instance's own secret of a given name. |
+| `b64` | base64url without padding, which is what a share URI's userinfo is. |
+| `join` | Values joined by a separator, which is how the protocols taking more than one credential take them: a Shadowsocks 2022 password is the server's PSK and the user's own, joined by a colon — `join ":" (upstream).shared` beside `(upstream).secret`, for a manifest that declared it needs them. |
+| `secret` | The instance's own secret of a given name, narrowed by further arguments: a key for a `set` name, a field for a name with `fields`, both for a name with both. Given fewer arguments than the name has levels, it returns the map of what is under it. |
+
+| `published` | The name one of this instance's own ports answers to, by port name, or empty. A service behind a reverse proxy renders the same string the proxy matches its site block on — `DOMAIN=https://{{ published "web" }}` — so the two cannot disagree. See [the name a port is published at](inventory.md#the-name-a-port-is-published-at). |
+
+Beside them, one accessor per datasource — `defaults`, `node`, `instance`,
+`upstream`, `downstreams`, `principals` and `target` — which is how a template reads
+[the render context](inventory.md#the-render-context). They are functions
+rather than fields of one value so that a template naming a level that does
+not exist for it, an `upstream` on a terminal instance, fails where it is
+written.
 
 `secret` is new, and replaces the loop every template currently opens with: each
 walks the whole secrets file with `coll.Has` to find the entry whose `servers`
@@ -322,7 +350,7 @@ because of it.
 The cost this accepts is error messages. `text/template`'s own are poor —
 `executing at <.foo>: nil pointer evaluating interface {}.foo` says nothing
 about which instance failed — so every render error is wrapped with its service,
-role and instance before it reaches the page, and `required` says what was
+service and instance before it reaches the page, and `required` says what was
 missing and where it was looked for.
 
 ## The page
@@ -339,13 +367,14 @@ instance on it, an instance can then be unchecked on its own, and a parent shows
 
 ```text
 [x] us-sfo-dgo-linux-01
-    [x] ss-sfo01          shadowsocks-rust / server
-    [x] hy2-sfo01         hysteria2 / server
-    [ ] bin-sfo01         microbin / server
+    [x] ss-sfo01                  ssserver
+    [x] hy2-sfo01                 hysteria2
+    [ ] bin-sfo01                 microbin
 [ ] jp-tyo-dgo-linux-01
 [x] macbook
-    [x] macbook-jp      hysteria2 / sing-box
-    [x] macbook-sfo     shadowsocks-rust / ss-rust
+    [x] macbook-jp-hysteria2-link      link
+    [x] macbook-sfo-ssserver-json      json
+    [ ] macbook-sfo-ssserver-link      link
 ```
 
 Nodes rather than services at the top level, because a node is what an export is
@@ -391,26 +420,34 @@ not it is the only one:
 
 ```text
 us-sfo-dgo-linux-01/
-├── hysteria2/server/hy2-sfo01/config.yaml
-├── microbin/server/bin-sfo01/server.env
-└── shadowsocks-rust/server/ss-sfo01/config.json
+├── hysteria2/hy2-sfo01/config.yaml
+├── microbin/bin-sfo01/server.env
+└── ssserver/ss-sfo01/config.json
 
 macbook/
-├── hysteria2/sing-box/macbook-jp/config.json
-└── shadowsocks-rust/ss-rust/macbook-sfo/config.json
+├── hysteria2-link/macbook-jp-hysteria2-link/share.txt
+├── ssserver-link/macbook-sfo-ssserver-link/share.txt
+└── ssserver-json/macbook-sfo-ssserver-json/config.json
 ```
 
-An unmanaged user's bundle is named for the user rather than a node, since there
-is no node:
+A deployment is filed under the service it runs; a file written for a person,
+under the service and the way it was written. Both halves are needed, since an
+export's name is unique only within its service and two services each offering
+a `link` would otherwise share a directory. A device gets one directory per way
+the services it reaches offer, unless it narrows with its own `export`.
+
+The bundle of someone with no device file is named for the person rather than a
+node, since there is none, and holds one directory per credential they keep:
 
 ```text
 friend-a/
-├── hysteria2/link/friend-a-jp/share.txt
-└── shadowsocks-rust/link/friend-a-sfo/share.txt
+├── hysteria2-link/yak-default-jp-hysteria2-link/share.txt
+├── ssserver-link/yak-default-sfo-ssserver-link/share.txt
+└── ssserver-json/yak-default-sfo-ssserver-json/config.json
 ```
 
 The layout says which machine each file is for, where it came from and what it
-is, without a note beside it, and two instances of one role cannot collide. Both
+is, without a note beside it, and two instances of one service cannot collide. Both
 the node directory and the instance directory are kept in the single-target case
 too: a layout that changes shape with the number of targets is one a script
 reading it has to handle twice.
@@ -423,6 +460,72 @@ ruling out, since what is missing from it is not visible in it.
 Publication is the toolbox's existing one: a checked temporary file linked to
 its final name, as [`cred/vault.md`](../cred/vault.md#publication) describes, so
 an export cannot silently replace a folder or an archive that is already there.
+
+Exporting the same selection twice is the normal case, though — a machine's
+configuration changes and is sent again — so a destination already holding
+these files is a question, not a failure. The plan names every file and marks
+the ones already on disk, and the confirmation asks about replacing them; a
+replaced file is written through the same temporary file, renamed over the old
+one, so a reader sees either the old file or the new one. Answering no writes
+nothing at all, including the files that were not in the way: a bundle written
+half from this export and half from the last one is not a thing anyone asked
+for.
+
+`--yes` answers that question only when nothing is in the way. Replacing a file
+from a script is `--overwrite`, because `--yes` means "do not ask me what I
+already told you" and not "whatever is there, discard it".
+
+### Writing to stdout
+
+`--to -` writes to stdout instead of into a directory. The one command wanted
+most often is a share URI on its way to a clipboard or a QR encoder, and a
+directory holding one file, made to be read once and deleted, is a detour
+through the disk that the credential did not need to take.
+
+```bash
+dgs conf export user:jane export:link --to - | pbcopy
+```
+
+**Stdout carries the rendered bytes and nothing else.** The plan and the
+plaintext warning go to stderr, so a program reading the pipe reads the file a
+directory would have held, byte for byte, whatever its format.
+
+**One file, or an error.** `--to -` with a selector matching several files
+fails, naming each of them. Two rendered files concatenated are no longer
+either of them — a `config.json` following a `share.txt` parses as neither —
+and separators that made them readable to a person would take the pipe away
+from every program. The error names what matched, because narrowing the
+selector is what the caller does next.
+
+`--format yaml` is the other half: every file on one stream, each keeping the
+path it would have had in a bundle.
+
+```yaml
+files:
+  - path: jane/ssserver-link/jane-default-sfo-01-ssserver-link/share.txt
+    content: |
+      ss://...
+  - path: doug/ssserver-json/doug-default-sfo-01-ssserver-json/config.json
+    content: |
+      {"server": "..."}
+```
+
+It is a document rather than a concatenation: `yq -r '.files[0].content'` hands
+back the file, and nothing is lost by the file next to it. A rendered file that
+is not valid UTF-8 cannot be a YAML scalar, so it carries `encoding: base64`
+and says how to read itself back rather than being written out mangled.
+
+The two are separate spellings because they answer different questions. `--to
+-` alone is "give me this file"; `--format yaml` is "give me these files and
+their names". One flag meaning both would make the shape of the output depend
+on how many targets a selector happened to match, which is the thing a script
+cannot handle.
+
+`--format` needs `--to -`; against a directory it is an error, since a bundle
+already carries paths in its layout. `--overwrite` against `--to -` is an error
+too: it replaces files a destination already holds, and stdout holds none.
+Neither `--yes` nor the confirmation applies, because nothing is replaced and
+nothing is left behind — the pipe is the answer.
 
 ## Secrets leaving the machine
 
@@ -472,6 +575,15 @@ after expansion.
   template to merge as the Shadowsocks templates do today. The first makes the
   templates shorter and the manifest's `defaults: element` meaningful to the
   renderer; the second keeps the renderer from knowing which key holds the list.
+- **What `(unmanaged user)` labels.** `--targets` groups by node and falls back
+  to the user's key for targets with no node, marking those groups
+  `(unmanaged user)`. The group is right — a credential no device names has no
+  machine to sit under — but the words read as a statement about the person,
+  and a person with a node file and a person-carried credential appears twice,
+  once under their device and once under their own key with that label. A
+  reader asks whether `doug` is managed or not, which is not the question the
+  line answers. Whether to reword it, to say what the group is instead of what
+  the person is, or to leave the grouping and the wording alone, is open.
 - **How a command-line export fits the command model.** The TUI comes first and
   the command line follows it — see [Deferred](#deferred) — but a leaf command
   opens a TUI today, and reports are read-only, so an invocation that writes

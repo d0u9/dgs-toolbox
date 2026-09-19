@@ -17,13 +17,16 @@ import (
 type Container struct {
 	ID    string
 	Owner string
+	// Group is the directory this node's file sits in under nodes/: the
+	// person whose devices these are, or whoever the machines belong to.
+	// Empty for a file directly in nodes/.
+	Group string
 }
 
 // Shape is one instance, real or derived — one node of the graph.
 type Shape struct {
 	Instance string
 	Service  string
-	Role     string
 	// Container is the node this shape runs on, or empty for an unmanaged
 	// user's derived instance, which has none.
 	Container string
@@ -35,9 +38,13 @@ type Shape struct {
 
 // Edge is one resolved connection between two shapes.
 type Edge struct {
-	Route   string
-	From    string
-	To      string
+	Route string
+	From  string
+	To    string
+	// ToPort is the port name on the To instance this edge lands on: a port
+	// is what a grant is written against, so a picture or a report naming
+	// only the instance loses which one was reached.
+	ToPort  string
 	Address string
 	Port    int
 }
@@ -62,31 +69,29 @@ func Build(inv *inventory.Root, model *derive.Model) *Graph {
 			continue
 		}
 		owner[n.ID] = n.Owner
-		g.Containers = append(g.Containers, Container{ID: n.ID, Owner: n.Owner})
+		g.Containers = append(g.Containers, Container{ID: n.ID, Owner: n.Owner, Group: n.Group})
 
 		for _, inst := range n.Instances {
-			if inst.Service == "" && inst.Role == "" {
+			if inst.Service == "" {
 				continue // an override, not a shape of its own — see target.List.
 			}
 			g.Shapes = append(g.Shapes, Shape{
 				Instance:  inst.ID,
 				Service:   inst.Service,
-				Role:      inst.Role,
 				Container: n.ID,
 				Owner:     n.Owner,
 			})
 		}
 	}
 
-	for _, ci := range model.ClientInstances {
+	for _, ci := range model.ExportInstances {
 		shapeOwner := ci.User
 		if shapeOwner == "" {
 			shapeOwner = owner[ci.Node]
 		}
 		g.Shapes = append(g.Shapes, Shape{
 			Instance:  ci.ID,
-			Service:   ci.Service,
-			Role:      ci.Role,
+			Service:   ci.Export,
 			Container: ci.Node,
 			Owner:     shapeOwner,
 		})
@@ -101,6 +106,7 @@ func Build(inv *inventory.Root, model *derive.Model) *Graph {
 			Route:   e.Route,
 			From:    from,
 			To:      e.To.Instance,
+			ToPort:  e.To.Port,
 			Address: e.Address,
 			Port:    e.Port,
 		})

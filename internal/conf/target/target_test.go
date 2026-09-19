@@ -20,14 +20,14 @@ func fixture(t *testing.T) (*inventory.Root, *derive.Model) {
 				ID:       "srv",
 				Networks: inventory.Networks{"internet": "203.0.113.10"},
 				Instances: []inventory.Instance{
-					{ID: "ss-srv", Service: "shadowsocks-rust", Role: "server", Ports: map[string]int{"main": 38250}},
+					{ID: "ss-srv", Service: "ssserver", Ports: inventory.PortsOf(map[string]int{"main": 38250})},
 				},
 			},
 			{
 				ID:       "relay",
 				Networks: inventory.Networks{"internet": "203.0.113.20"},
 				Instances: []inventory.Instance{
-					{ID: "ss-relay", Service: "shadowsocks-rust", Role: "server", Ports: map[string]int{"main": 40000}},
+					{ID: "ss-relay", Service: "ssserver", Ports: inventory.PortsOf(map[string]int{"main": 40000})},
 				},
 			},
 			{ID: "laptop", Owner: "doug"},
@@ -35,7 +35,7 @@ func fixture(t *testing.T) (*inventory.Root, *derive.Model) {
 		},
 		Users: map[string]inventory.User{
 			"doug": {Access: []string{"sfo"}},
-			"yak":  {Devices: inventory.DevicesUnmanaged, Access: []string{"sfo"}},
+			"yak":  {Devices: inventory.DevicesNone, Access: []string{"sfo"}},
 		},
 		Routes: map[string]inventory.Route{
 			"sfo":   {Hops: []string{"ss-srv:main"}},
@@ -45,10 +45,8 @@ func fixture(t *testing.T) (*inventory.Root, *derive.Model) {
 		Universal: "internet",
 	}
 	manifests := map[string]confgen.Manifest{
-		"shadowsocks-rust": {Roles: map[string]confgen.Role{
-			"server":  {Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust"},
-			"ss-rust": {Auth: confgen.AuthNone},
-		}},
+		"ssserver": {Auth: confgen.AuthPerPrincipal, Exports: []string{"ss-json"}, Template: "t"},
+		"ss-json":  {Auth: confgen.AuthNone, Template: "t"},
 	}
 	model, err := derive.Derive(inv, manifests)
 	if err != nil {
@@ -77,7 +75,7 @@ func TestList_RealAndDerivedInstances(t *testing.T) {
 		}
 	}
 	got := instanceNames(clean)
-	want := []string{"laptop-sfo", "ss-relay", "ss-srv", "yak-sfo"}
+	want := []string{"laptop-sfo-ssserver-ss-json", "ss-relay", "ss-srv", "yak-default-sfo-ssserver-ss-json"}
 	sort.Strings(want)
 	if len(got) != len(want) {
 		t.Fatalf("List instances = %v, want %v", got, want)
@@ -120,24 +118,24 @@ func TestList_FieldsOnRealAndDerivedTargets(t *testing.T) {
 	}
 
 	srv := byInstance["ss-srv"]
-	if srv.Node != "srv" || srv.Service != "shadowsocks-rust" || srv.Role != "server" {
+	if srv.Node != "srv" || srv.Service != "ssserver" {
 		t.Fatalf("ss-srv = %+v", srv)
 	}
 	if len(srv.Routes) != 2 { // both sfo (entry) and chain (a later hop).
 		t.Fatalf("ss-srv.Routes = %v, want 2 routes", srv.Routes)
 	}
 
-	client := byInstance["laptop-sfo"]
-	if client.Node != "laptop" || client.User != "doug" || client.Role != "ss-rust" {
-		t.Fatalf("laptop-sfo = %+v", client)
+	client := byInstance["laptop-sfo-ssserver-ss-json"]
+	if client.Node != "laptop" || client.User != "doug" || client.Export != "ss-json" {
+		t.Fatalf("laptop-sfo-ssserver-ss-json = %+v", client)
 	}
 	if len(client.Routes) != 1 || client.Routes[0] != "sfo" {
-		t.Fatalf("laptop-sfo.Routes = %v, want [sfo]", client.Routes)
+		t.Fatalf("laptop-sfo-ssserver-ss-json.Routes = %v, want [sfo]", client.Routes)
 	}
 
-	unmanaged := byInstance["yak-sfo"]
+	unmanaged := byInstance["yak-default-sfo-ssserver-ss-json"]
 	if unmanaged.Node != "" || unmanaged.User != "yak" {
-		t.Fatalf("yak-sfo = %+v, want no node and User yak", unmanaged)
+		t.Fatalf("yak-default-sfo-ssserver-ss-json = %+v, want no node and User yak", unmanaged)
 	}
 }
 
@@ -168,8 +166,8 @@ func TestMatch_ByEachField(t *testing.T) {
 		want     []string
 	}{
 		{"node:srv", []string{"ss-srv"}},
-		{"user:doug", []string{"laptop-sfo"}},
-		{"service:shadowsocks-rust role:server", []string{"ss-relay", "ss-srv"}},
+		{"user:doug", []string{"laptop-sfo-ssserver-ss-json"}},
+		{"service:ssserver", []string{"ss-relay", "ss-srv"}},
 		{"route:chain", []string{"ss-relay", "ss-srv"}},
 		{"instance:ss-srv", []string{"ss-srv"}},
 		{"ss-srv", []string{"ss-srv"}}, // bare word is an instance term.
@@ -224,8 +222,8 @@ func TestMatch_DocumentedExamples(t *testing.T) {
 				ID:       "us-sfo-dgo-linux-01",
 				Networks: inventory.Networks{"internet": "203.0.113.10"},
 				Instances: []inventory.Instance{
-					{ID: "ss-sfo01", Service: "shadowsocks-rust", Role: "server", Ports: map[string]int{"main": 38250}},
-					{ID: "hy2-sfo01", Service: "hysteria2", Role: "server", Ports: map[string]int{"main": 443}},
+					{ID: "ss-sfo01", Service: "ssserver", Ports: inventory.PortsOf(map[string]int{"main": 38250})},
+					{ID: "hy2-sfo01", Service: "hysteria2", Ports: inventory.PortsOf(map[string]int{"main": 443})},
 				},
 			},
 			{ID: "macbook", Owner: "doug"},
@@ -241,14 +239,10 @@ func TestMatch_DocumentedExamples(t *testing.T) {
 		Universal: "internet",
 	}
 	manifests := map[string]confgen.Manifest{
-		"shadowsocks-rust": {Roles: map[string]confgen.Role{
-			"server":  {Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust"},
-			"ss-rust": {Auth: confgen.AuthNone},
-		}},
-		"hysteria2": {Roles: map[string]confgen.Role{
-			"server":   {Auth: confgen.AuthPerPrincipal, ReachedBy: "sing-box"},
-			"sing-box": {Auth: confgen.AuthNone},
-		}},
+		"ssserver":  {Auth: confgen.AuthPerPrincipal, Exports: []string{"ss-json"}, Template: "t"},
+		"ss-json":   {Auth: confgen.AuthNone, Template: "t"},
+		"hysteria2": {Auth: confgen.AuthPerPrincipal, Exports: []string{"sing-box"}, Template: "t"},
+		"sing-box":  {Auth: confgen.AuthNone, Template: "t"},
 	}
 	model, err := derive.Derive(inv, manifests)
 	if err != nil {
@@ -261,10 +255,10 @@ func TestMatch_DocumentedExamples(t *testing.T) {
 		want     []string
 	}{
 		{"node:us-sfo-dgo-linux-01", []string{"ss-sfo01", "hy2-sfo01"}},
-		{"node:macbook", []string{"macbook-jp", "macbook-sfo"}},
-		{"user:doug", []string{"macbook-jp", "macbook-sfo"}},
-		{"service:hysteria2 role:server", []string{"hy2-sfo01"}},
-		{"route:jp", []string{"hy2-sfo01", "macbook-jp"}},
+		{"node:macbook", []string{"macbook-jp-hysteria2-sing-box", "macbook-sfo-ssserver-ss-json"}},
+		{"user:doug", []string{"macbook-jp-hysteria2-sing-box", "macbook-sfo-ssserver-ss-json"}},
+		{"service:hysteria2", []string{"hy2-sfo01"}},
+		{"route:jp", []string{"hy2-sfo01", "macbook-jp-hysteria2-sing-box"}},
 		{"instance:ss-sfo01", []string{"ss-sfo01"}},
 		{"node:us-sfo-*", []string{"ss-sfo01", "hy2-sfo01"}},
 	}

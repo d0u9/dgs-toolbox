@@ -17,28 +17,43 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-func TestLoad_DiscoversServiceRolesAndInstances(t *testing.T) {
+func TestLoad_DiscoversOneManifestPerService(t *testing.T) {
 	root := t.TempDir()
 
+	// A service is one program: hysteria2's server and the client that
+	// reaches it are two directories, not two roles of one.
 	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", ManifestFilename), `
 secret:
   kind: base64
   bytes: 32
-roles:
-  server:
-    template: templates/server.json.tmpl
-    defaults: element
-    output: config.json
-    auth: per-principal
-  client:
-    template: templates/client.json.tmpl
-    defaults: document
-    output: config.json
-    auth: none
+template: templates/server.yaml.tmpl
+defaults: element
+output: config.yaml
+auth: per-principal
 `)
-	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "defaults.yaml"), "listen: :443\n")
-	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "us-sfo-dgo-linux-01.yaml"), "server: sfo\n")
-	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "jp-tyo-dgo-linux-01.yaml"), "server: tyo\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", DefaultsFilename), "listen: :443\n")
+
+	// An export sits inside the service it writes out, and the directories
+	// that exist are the list: nothing in the manifest repeats them.
+	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", ExportsDir, "link", ManifestFilename), `
+template: templates/link.tmpl
+defaults: document
+output: share.txt
+`)
+
+	// A second service offering a form under the same name. The two are two
+	// exports, which is why service and name travel together.
+	writeFile(t, filepath.Join(root, ServicesDir, "ssserver", ManifestFilename), `
+template: templates/config.json.tmpl
+defaults: element
+output: config.json
+auth: per-principal
+`)
+	writeFile(t, filepath.Join(root, ServicesDir, "ssserver", ExportsDir, "link", ManifestFilename), `
+template: templates/link.tmpl
+defaults: element
+output: share.txt
+`)
 
 	// A scratch folder without a manifest is skipped.
 	writeFile(t, filepath.Join(root, ServicesDir, "scratch", "notes.yaml"), "todo: yes\n")
@@ -48,51 +63,51 @@ roles:
 		t.Fatalf("Load: %v", err)
 	}
 
-	if len(got.Services) != 1 {
-		t.Fatalf("Services = %d, want 1 (scratch should be skipped): %+v", len(got.Services), got.Services)
-	}
-	svc := got.Services[0]
-	if svc.Name != "hysteria2" {
-		t.Fatalf("Name = %q, want hysteria2", svc.Name)
-	}
-	if svc.Broken != "" {
-		t.Fatalf("Broken = %q, want empty", svc.Broken)
-	}
-	if svc.Manifest.Secret.Kind != "base64" || svc.Manifest.Secret.Bytes != 32 {
-		t.Fatalf("Secret = %+v", svc.Manifest.Secret)
-	}
-	if len(svc.Roles) != 2 {
-		t.Fatalf("Roles = %d, want 2", len(svc.Roles))
+	if len(got.Services) != 2 {
+		t.Fatalf("Services = %d, want 2 (scratch should be skipped): %+v", len(got.Services), got.Services)
 	}
 
-	server := svc.Roles[1] // sorted: client, server
-	if server.Name != "server" {
-		t.Fatalf("Roles[1].Name = %q, want server", server.Name)
+	byName := map[string]Service{}
+	for _, svc := range got.Services {
+		if svc.Broken != "" {
+			t.Fatalf("%s Broken = %q, want empty", svc.Name, svc.Broken)
+		}
+		byName[svc.Name] = svc
 	}
-	if server.Role.Defaults != DefaultsElement {
-		t.Fatalf("Defaults = %q, want %q", server.Role.Defaults, DefaultsElement)
+
+	server := byName["hysteria2"].Manifest
+	if server.Secret.Kind != "base64" || server.Secret.Bytes != 32 {
+		t.Fatalf("Secret = %+v", server.Secret)
 	}
-	if server.Role.Auth != AuthPerPrincipal {
-		t.Fatalf("Auth = %q, want %q", server.Role.Auth, AuthPerPrincipal)
+	if server.Defaults != DefaultsElement {
+		t.Fatalf("Defaults = %q, want %q", server.Defaults, DefaultsElement)
 	}
-	if len(server.Instances) != 2 {
-		t.Fatalf("Instances = %d, want 2 (defaults.yaml excluded): %+v", len(server.Instances), server.Instances)
+	if server.Auth != AuthPerPrincipal {
+		t.Fatalf("Auth = %q, want %q", server.Auth, AuthPerPrincipal)
 	}
-	if server.Instances[0].Name != "jp-tyo-dgo-linux-01" || server.Instances[1].Name != "us-sfo-dgo-linux-01" {
-		t.Fatalf("Instances = %+v, want sorted by name", server.Instances)
+	if len(server.Exports) != 1 || server.Exports[0] != "link" {
+		t.Fatalf("Exports = %v, want the ways this service is written out", server.Exports)
 	}
-	for _, inst := range server.Instances {
-		if inst.Broken != "" {
-			t.Fatalf("Instance %q Broken = %q, want empty", inst.Name, inst.Broken)
+
+	if len(got.Exports) != 2 {
+		t.Fatalf("Exports = %+v, want one per service offering a link", got.Exports)
+	}
+	for _, def := range got.Exports {
+		if def.Broken != "" {
+			t.Fatalf("%s/%s Broken = %q, want empty", def.Service, def.Name, def.Broken)
+		}
+		if def.Name != "link" {
+			t.Fatalf("Exports names = %+v, want both called link", got.Exports)
+		}
+		if def.Export.Output != "share.txt" {
+			t.Fatalf("%s/%s Output = %q", def.Service, def.Name, def.Export.Output)
 		}
 	}
-
-	client := svc.Roles[0]
-	if client.Name != "client" {
-		t.Fatalf("Roles[0].Name = %q, want client", client.Name)
+	if got.Exports[0].Service != "hysteria2" || got.Exports[1].Service != "ssserver" {
+		t.Fatalf("Exports services = %q, %q, want them sorted by service", got.Exports[0].Service, got.Exports[1].Service)
 	}
-	if len(client.Instances) != 0 {
-		t.Fatalf("client Instances = %d, want 0 (role directory absent)", len(client.Instances))
+	if got.Exports[0].Dir != filepath.Join(ServicesDir, "hysteria2", ExportsDir, "link") {
+		t.Fatalf("Dir = %q, want the export's own directory under its service", got.Exports[0].Dir)
 	}
 }
 
@@ -114,14 +129,11 @@ roles:
 secret:
   kind: base64
   bytes: 32
-roles:
-  server:
-    template: templates/server.json.tmpl
-    defaults: element
-    output: config.json
-    auth: per-principal
+template: templates/config.json.tmpl
+defaults: element
+output: config.json
+auth: per-principal
 `)
-	writeFile(t, filepath.Join(root, ServicesDir, "shadowsocks-rust", "server", "us-sfo-dgo-linux-01.yaml"), "servers: []\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -138,62 +150,16 @@ roles:
 	if microbin.Broken == "" {
 		t.Fatal("Broken = empty, want unknown-field error")
 	}
-	if len(microbin.Roles) != 0 {
-		t.Fatalf("Roles = %d, want 0 for a broken manifest", len(microbin.Roles))
+	if microbin.Manifest.Template != "" {
+		t.Fatalf("Manifest = %+v, want nothing parsed out of a broken manifest", microbin.Manifest)
 	}
 
 	ss := got.Services[1]
 	if ss.Broken != "" {
 		t.Fatalf("shadowsocks-rust Broken = %q, want empty", ss.Broken)
 	}
-	if len(ss.Roles) != 1 || len(ss.Roles[0].Instances) != 1 {
-		t.Fatalf("shadowsocks-rust Roles = %+v", ss.Roles)
-	}
-}
-
-func TestLoad_BrokenInstanceIsListedWithParseError(t *testing.T) {
-	root := t.TempDir()
-
-	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", ManifestFilename), `
-secret:
-  kind: base64
-  bytes: 32
-roles:
-  server:
-    template: templates/server.json.tmpl
-    defaults: element
-    output: config.json
-    auth: per-principal
-`)
-	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "good.yaml"), "server: sfo\n")
-	// Invalid YAML.
-	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "bad-syntax.yaml"), "server: [unterminated\n")
-	// Valid YAML, but not a mapping.
-	writeFile(t, filepath.Join(root, ServicesDir, "hysteria2", "server", "bad-shape.yaml"), "- one\n- two\n")
-
-	got, err := Load(root)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	svc := got.Services[0]
-	instances := svc.Roles[0].Instances
-	byName := map[string]Instance{}
-	for _, inst := range instances {
-		byName[inst.Name] = inst
-	}
-
-	if len(instances) != 3 {
-		t.Fatalf("Instances = %d, want 3 (broken instances still listed): %+v", len(instances), instances)
-	}
-	if byName["good"].Broken != "" {
-		t.Fatalf("good.Broken = %q, want empty", byName["good"].Broken)
-	}
-	if byName["bad-syntax"].Broken == "" {
-		t.Fatal("bad-syntax.Broken = empty, want parse error")
-	}
-	if byName["bad-shape"].Broken == "" {
-		t.Fatal("bad-shape.Broken = empty, want not-a-mapping error")
+	if ss.Manifest.Template == "" {
+		t.Fatalf("shadowsocks-rust Manifest = %+v, want a parsed one beside the broken service", ss.Manifest)
 	}
 }
 
@@ -205,12 +171,10 @@ roles:
 func TestLoad_UnknownAuthIsBroken(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), `
-roles:
-  server:
-    auth: shared
-    template: templates/server.env.tmpl
-    defaults: document
-    output: server.env
+auth: shared
+template: templates/server.env.tmpl
+defaults: document
+output: server.env
 `)
 
 	got, err := Load(root)
@@ -222,5 +186,111 @@ roles:
 	}
 	if !strings.Contains(got.Services[0].Broken, `auth "shared"`) {
 		t.Fatalf("Broken = %q, want it to name the unknown auth", got.Services[0].Broken)
+	}
+}
+
+// TestLoad_UnknownUpstreamNameIsBroken covers a name dgs does not
+// understand. Skipping it would leave a template asking for a credential
+// that is simply absent, and a file that renders and then fails to
+// authenticate is harder to diagnose than a manifest that will not load.
+func TestLoad_UnknownUpstreamNameIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "sslocal", ManifestFilename), `
+auth: none
+upstream:
+  fingerprint: {}
+template: templates/config.json.tmpl
+defaults: element
+output: config.json
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.Services) != 1 {
+		t.Fatalf("Services = %d, want 1", len(got.Services))
+	}
+	if !strings.Contains(got.Services[0].Broken, `upstream "fingerprint"`) {
+		t.Fatalf("Broken = %q, want it to name the unknown upstream", got.Services[0].Broken)
+	}
+}
+
+// TestLoad_UpstreamSharedIsRead is the accepted spelling, on a service and
+// on an export alike: an export carries a credential a person uses, so a
+// protocol whose credential is half the server's needs it as much as the
+// client program does.
+func TestLoad_UpstreamSharedIsRead(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "ssserver", ManifestFilename), `
+auth: per-principal
+template: templates/config.json.tmpl
+defaults: element
+output: config.json
+`)
+	writeFile(t, filepath.Join(root, ServicesDir, "ssserver", ExportsDir, "link", ManifestFilename), `
+template: templates/share.txt.tmpl
+defaults: element
+output: share.txt
+upstream:
+  shared: {}
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.Exports) != 1 {
+		t.Fatalf("Exports = %d, want 1", len(got.Exports))
+	}
+	if !got.Exports[0].Export.Upstream.Wants(UpstreamShared) {
+		t.Fatalf("Upstream = %v, want it to want %q", got.Exports[0].Export.Upstream, UpstreamShared)
+	}
+}
+
+// A service says once that one of its instances is the entrance for several
+// routes; anything but the two values is a typo that would quietly reinstate
+// the single-upstream rule.
+func TestLoad_Downstreams(t *testing.T) {
+	fansOut := func(t *testing.T, name, manifest string) bool {
+		t.Helper()
+		root := t.TempDir()
+		writeFile(t, filepath.Join(root, ServicesDir, name, ManifestFilename), manifest)
+		got, err := Load(root)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		for _, svc := range got.Services {
+			if svc.Name == name {
+				return svc.Manifest.FansOut()
+			}
+		}
+		t.Fatalf("Load did not find service %q", name)
+		return false
+	}
+
+	if !fansOut(t, "caddy", "auth: none\ndownstreams: many\ntemplate: t\noutput: Caddyfile\n") {
+		t.Fatalf("FansOut = false, want true")
+	}
+	if fansOut(t, "plain", "auth: none\ntemplate: t\noutput: c\n") {
+		t.Fatalf("FansOut = true for a service that declares nothing, want false")
+	}
+
+	// A value that is neither is recorded as a broken manifest rather than
+	// read as "not many", which would quietly reinstate the single-upstream
+	// rule on a service written to fan out.
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "typo", ManifestFilename), "auth: none\ndownstreams: many-ish\ntemplate: t\noutput: c\n")
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, svc := range got.Services {
+		if svc.Name != "typo" {
+			continue
+		}
+		if !strings.Contains(svc.Broken, `downstreams "many-ish"`) {
+			t.Fatalf("Broken = %q, want it to name the bad value", svc.Broken)
+		}
 	}
 }

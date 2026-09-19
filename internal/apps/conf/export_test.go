@@ -20,26 +20,23 @@ func buildExportableRoot(t *testing.T) (root, secretsDir string) {
 	root, secretsDir = buildRenderableRoot(t)
 
 	writeFile(t, filepath.Join(root, "services", "hysteria2", "confgen.yaml"), `
-roles:
-  server:
-    template: templates/server.yaml.tmpl
-    defaults: document
-    output: config.yaml
-    auth: per-principal
-    reached_by: link
-  link:
-    template: templates/link.tmpl
-    defaults: element
-    output: share.txt
-    auth: none
+template: templates/server.yaml.tmpl
+defaults: document
+output: config.yaml
+auth: per-principal
 `)
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "templates", "link.tmpl"),
+	writeFile(t, filepath.Join(root, "services", "hysteria2", "exports", "link", "confgen.yaml"), `
+template: templates/link.tmpl
+defaults: element
+output: share.txt
+`)
+	writeFile(t, filepath.Join(root, "services", "hysteria2", "exports", "link", "templates", "link.tmpl"),
 		"hysteria2://{{ (upstream).address }}:{{ (upstream).port }}\n")
 	writeFile(t, filepath.Join(root, "users.yaml"), `
 users:
   friend-a:
     username: yak
-    devices: unmanaged
+    devices: none
     access: [sfo]
 `)
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
@@ -82,13 +79,13 @@ func TestExportFolder_WritesUnderEachNodeAndUnmanagedUserDirectory(t *testing.T)
 
 	instances := m.CheckedInstancesOrAll(t)
 	dest := t.TempDir()
-	if err := m.ExportFolder(instances, dest); err != nil {
+	if err := m.renderer().ExportFolder(instances, dest, false); err != nil {
 		t.Fatalf("ExportFolder: %v", err)
 	}
 
 	want := []string{
-		filepath.Join(dest, "srv", "hysteria2", "server", "us-sfo", "config.yaml"),
-		filepath.Join(dest, "friend-a", "hysteria2", "link", "yak-sfo", "share.txt"),
+		filepath.Join(dest, "srv", "hysteria2", "us-sfo", "config.yaml"),
+		filepath.Join(dest, "friend-a", "hysteria2-link", "yak-default-sfo-hysteria2-link", "share.txt"),
 	}
 	for _, p := range want {
 		if _, err := os.Stat(p); err != nil {
@@ -107,17 +104,17 @@ func TestExportFolder_WritesUnderEachNodeAndUnmanagedUserDirectory(t *testing.T)
 
 func TestExportFolder_RenderFailureWritesNothing(t *testing.T) {
 	root, secretsDir := buildExportableRoot(t)
-	// Break the server template so rendering us-sfo fails, after yak-sfo
+	// Break the server template so rendering us-sfo fails, after yak-default-sfo-hysteria2-link
 	// would already have rendered if instances were processed in the other
 	// order — CheckedInstancesOrAll sorts, so us-sfo (the broken one) comes
-	// first and yak-sfo must still not be written.
+	// first and yak-default-sfo-hysteria2-link must still not be written.
 	writeFile(t, filepath.Join(root, "services", "hysteria2", "templates", "server.yaml.tmpl"),
 		"{{ required .nonexistent \"required field\" }}")
 	m := newModel(root, secretsDir)
 
 	instances := m.CheckedInstancesOrAll(t)
 	dest := t.TempDir()
-	if err := m.ExportFolder(instances, dest); err == nil {
+	if err := m.renderer().ExportFolder(instances, dest, false); err == nil {
 		t.Fatal("ExportFolder: want an error, the template is broken")
 	}
 
@@ -133,10 +130,10 @@ func TestExportFolder_RefusesAnExistingFile(t *testing.T) {
 	instances := m.CheckedInstancesOrAll(t)
 
 	dest := t.TempDir()
-	if err := m.ExportFolder(instances, dest); err != nil {
+	if err := m.renderer().ExportFolder(instances, dest, false); err != nil {
 		t.Fatalf("ExportFolder: %v", err)
 	}
-	if err := m.ExportFolder(instances, dest); err == nil {
+	if err := m.renderer().ExportFolder(instances, dest, false); err == nil {
 		t.Fatal("ExportFolder: want an error exporting into a destination that already holds these files")
 	}
 }
@@ -147,7 +144,7 @@ func TestExportZip_WritesOneArchiveWithBothEntries(t *testing.T) {
 	instances := m.CheckedInstancesOrAll(t)
 
 	zipPath := filepath.Join(t.TempDir(), "export.zip")
-	if err := m.ExportZip(instances, zipPath); err != nil {
+	if err := m.renderer().ExportZip(instances, zipPath, false); err != nil {
 		t.Fatalf("ExportZip: %v", err)
 	}
 
@@ -162,8 +159,8 @@ func TestExportZip_WritesOneArchiveWithBothEntries(t *testing.T) {
 		names[f.Name] = true
 	}
 	for _, want := range []string{
-		"srv/hysteria2/server/us-sfo/config.yaml",
-		"friend-a/hysteria2/link/yak-sfo/share.txt",
+		"srv/hysteria2/us-sfo/config.yaml",
+		"friend-a/hysteria2-link/yak-default-sfo-hysteria2-link/share.txt",
 	} {
 		if !names[want] {
 			t.Fatalf("zip entries = %v, want %q among them", names, want)
@@ -179,7 +176,7 @@ func TestExportZip_RenderFailureWritesNothing(t *testing.T) {
 	instances := m.CheckedInstancesOrAll(t)
 
 	zipPath := filepath.Join(t.TempDir(), "export.zip")
-	if err := m.ExportZip(instances, zipPath); err == nil {
+	if err := m.renderer().ExportZip(instances, zipPath, false); err == nil {
 		t.Fatal("ExportZip: want an error, the template is broken")
 	}
 	if _, err := os.Stat(zipPath); err == nil {

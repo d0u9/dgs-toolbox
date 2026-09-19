@@ -1,9 +1,0 @@
-id: phone
-owner: doug
-reaches: [home]
-
-instances:
-  - id: phone-sfo
-    ports:
-      socks: 10080
-      http: 18080

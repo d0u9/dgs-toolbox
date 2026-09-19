@@ -2,7 +2,7 @@ package render_test
 
 // This exercises the exact template text migrated into
 // ~/.dot/conf/05-confgen/services/shadowsocks-rust — the multi-port,
-// combine_own case docs/apps/conf/inventory.md#a-shared-identity-alongside-a-principals-own
+// shared case docs/apps/conf/inventory.md#a-shared-identity-alongside-a-principals-own
 // describes, rendered against fixture data shaped like that inventory rather
 // than a minimal one. It is a regression test for the migration, not a
 // generic feature test — see internal/conf/render/integration_test.go for
@@ -28,7 +28,7 @@ const ssServerTemplate = `{{- define "port" -}}
 {{- range $p := principals $port.name -}}
   {{- $userList = append $userList (dict "name" $p.Name "password" $p.Secret) -}}
 {{- end -}}
-{{- merge (dict "server_port" $port.number "password" (secret "psk") "users" $userList) (defaults) | toJSON -}}
+{{- merge (dict "server_port" $port.number "password" (secret "psk" $port.name) "users" $userList) (defaults) | toJSON -}}
 {{- end -}}
 {
   "servers": [
@@ -54,7 +54,7 @@ fast_open: true
 users: []
 `
 
-const ssClientTemplate = `{{- $password := printf "%s:%s" (upstream).own (upstream).secret -}}
+const ssClientTemplate = `{{- $password := printf "%s:%s" (join ":" (upstream).shared) (upstream).secret -}}
 {{- $server := merge (dict "server" (upstream).address "server_port" (upstream).port "password" $password) (defaults) -}}
 {{- $ports := dict -}}
 {{- if has (instance) "ports" -}}
@@ -101,17 +101,19 @@ func TestRealWorld_ShadowsocksServerCombinesOwnAcrossTwoPorts(t *testing.T) {
 				ID:       "us-sfo-dgo-linux-01",
 				Networks: inventory.Networks{"internet": "203.0.113.10"},
 				Instances: []inventory.Instance{
-					{ID: "ss-sfo01", Service: "shadowsocks-rust", Role: "server",
-						Ports: map[string]int{"main": 38250, "relay": 52146}},
+					{ID: "ss-sfo01", Service: "ssserver", Ports: inventory.Ports{
+						"main":  {Number: 38250, Self: []string{"psk.main"}},
+						"relay": {Number: 52146, Self: []string{"psk.relay"}},
+					}},
 				},
 			},
 			{ID: "macbook", Owner: "doug"},
 		},
 		Users: map[string]inventory.User{
 			"doug":            {Access: []string{"sfo"}},
-			"jane":            {Devices: inventory.DevicesUnmanaged, Access: []string{"sfo"}},
-			"cn-relay":        {Devices: inventory.DevicesUnmanaged, Access: []string{"sfo-relay"}},
-			"default-account": {Username: "default", Devices: inventory.DevicesUnmanaged, Access: []string{"sfo"}},
+			"jane":            {Devices: inventory.DevicesNone, Access: []string{"sfo"}},
+			"cn-relay":        {Devices: inventory.DevicesNone, Access: []string{"sfo-relay"}},
+			"default-account": {Username: "default", Devices: inventory.DevicesNone, Access: []string{"sfo"}},
 		},
 		Routes: map[string]inventory.Route{
 			"sfo":       {Hops: []string{"ss-sfo01:main"}},
@@ -121,13 +123,15 @@ func TestRealWorld_ShadowsocksServerCombinesOwnAcrossTwoPorts(t *testing.T) {
 		Universal: "internet",
 	}
 	manifests := map[string]confgen.Manifest{
-		"shadowsocks-rust": {
-			Secret: confgen.Secret{Kind: "base64", Bytes: 32},
-			Roles: map[string]confgen.Role{
-				"server":  {Auth: confgen.AuthPerPrincipal, ReachedBy: "ss-rust", Own: []string{"psk"}, CombineOwn: "psk", Rotation: confgen.RotationDisruptive},
-				"ss-rust": {Auth: confgen.AuthNone},
-			},
+		"ssserver": {
+			Secret:   confgen.Secret{Kind: "base64", Bytes: 32},
+			Auth:     confgen.AuthPerPrincipal,
+			Exports:  []string{"ss-json"},
+			Self:     confgen.SelfDecls{"psk": {Set: true}},
+			Rotation: confgen.RotationDisruptive,
+			Template: "t",
 		},
+		"ss-json": {Auth: confgen.AuthNone, Template: "t"},
 	}
 
 	model, err := derive.Derive(inv, manifests)
@@ -141,29 +145,46 @@ func TestRealWorld_ShadowsocksServerCombinesOwnAcrossTwoPorts(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
+	ownVal, err := secretstore.ReadSelf(secretsRoot, "ss-sfo01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// psk is a set: one value per port, and a port hands out its own.
+	psk := func(key string) string {
+		values, ok := ownVal["psk"].(map[string]any)
+		if !ok {
+			t.Fatalf("self psk = %#v, want a map of keys", ownVal["psk"])
+		}
+		v, ok := values[key].(string)
+		if !ok {
+			t.Fatalf("self psk has no %q: %#v", key, values)
+		}
+		return v
+	}
+
 	renderPort := func(port string) map[string]any {
 		var principals []render.Principal
 		for _, p := range model.Principals("ss-sfo01", port) {
 			v, err := secretstore.ReadValue(secretsRoot, secretstore.Path{
-				Instance: "ss-sfo01", Port: port, Kind: string(p.Kind), Name: p.ID,
+				Instance: "ss-sfo01", Port: port, Group: p.Group, Name: p.Slot,
 			})
 			if err != nil {
 				t.Fatalf("ReadValue: %v", err)
 			}
 			principals = append(principals, render.Principal{Name: p.Name, Secret: v})
 		}
-		own, err := secretstore.ReadOwn(secretsRoot, "ss-sfo01")
+		own, err := secretstore.ReadSelf(secretsRoot, "ss-sfo01")
 		if err != nil {
-			t.Fatalf("ReadOwn: %v", err)
+			t.Fatalf("ReadSelf: %v", err)
 		}
 		out, err := render.Render(render.Input{
-			Target:       render.Target{Service: "shadowsocks-rust", Role: "server", Instance: "ss-sfo01"},
+			Target:       render.Target{Service: "ssserver", Instance: "ss-sfo01"},
 			Template:     ssServerTemplate,
 			Defaults:     []byte(ssServerDefaults),
 			DefaultsKind: confgen.DefaultsElement,
-			Instance:     map[string]any{"id": "ss-sfo01", "service": "shadowsocks-rust", "role": "server", "ports": map[string]int{"main": 38250, "relay": 52146}},
+			Instance:     map[string]any{"id": "ss-sfo01", "service": "ssserver", "ports": map[string]int{"main": 38250, "relay": 52146}},
 			Principals:   map[string][]render.Principal{port: principals},
-			Own:          own,
+			Self:         own,
 		})
 		if err != nil {
 			t.Fatalf("Render(%s): %v", port, err)
@@ -181,18 +202,26 @@ func TestRealWorld_ShadowsocksServerCombinesOwnAcrossTwoPorts(t *testing.T) {
 		t.Fatalf("main servers = %#v, want 2 entries (main and relay port both rendered per port call)", main["servers"])
 	}
 	// This call rendered only the "main" port's principals: exactly one
-	// entry should carry a non-empty "users" list, and both entries must
-	// share the same server-wide password, since combine_own is per
-	// instance, not per port.
-	firstPassword := servers[0].(map[string]any)["password"]
+	// entry carries a non-empty "users" list. Each entry carries its own
+	// port's PSK, since the set has one value per port — what reaches one
+	// port cannot open the other.
+	seenPasswords := map[string]bool{}
 	for i, s := range servers {
 		entry := s.(map[string]any)
-		if entry["password"] != firstPassword {
-			t.Fatalf("entry %d password = %v, want %v (own/psk shared across ports)", i, entry["password"], firstPassword)
+		password, ok := entry["password"].(string)
+		if !ok || password == "" {
+			t.Fatalf("entry %d password = %v, want its port's own psk", i, entry["password"])
 		}
+		if seenPasswords[password] {
+			t.Fatalf("entry %d password = %v, want a different psk per port", i, password)
+		}
+		seenPasswords[password] = true
 		if entry["method"] != "2022-blake3-aes-256-gcm" {
 			t.Fatalf("entry %d missing defaults merge: %+v", i, entry)
 		}
+	}
+	if servers[0].(map[string]any)["password"] != psk("main") {
+		t.Fatalf("main entry password = %v, want the main port's psk", servers[0].(map[string]any)["password"])
 	}
 	usersOnMain := servers[0].(map[string]any)["users"].([]any)
 	if len(usersOnMain) != 3 {
@@ -202,7 +231,7 @@ func TestRealWorld_ShadowsocksServerCombinesOwnAcrossTwoPorts(t *testing.T) {
 	for _, u := range usersOnMain {
 		names[u.(map[string]any)["name"].(string)] = true
 	}
-	for _, want := range []string{"doug-macbook", "jane", "default"} {
+	for _, want := range []string{"doug-default", "jane-default", "default-default"} {
 		if !names[want] {
 			t.Fatalf("main port users = %v, missing %q", usersOnMain, want)
 		}
@@ -211,30 +240,26 @@ func TestRealWorld_ShadowsocksServerCombinesOwnAcrossTwoPorts(t *testing.T) {
 	// Now the client side: doug's macbook connecting to ss-sfo01:main.
 	var edge *derive.Edge
 	for i := range model.Edges {
-		if model.Edges[i].FromInstance == "macbook-sfo" {
+		if model.Edges[i].FromInstance == "macbook-sfo-ssserver-ss-json" {
 			edge = &model.Edges[i]
 		}
 	}
 	if edge == nil {
-		t.Fatal("no edge for macbook-sfo")
-	}
-	ownVal, err := secretstore.ReadOwn(secretsRoot, "ss-sfo01")
-	if err != nil {
-		t.Fatal(err)
+		t.Fatal("no edge for macbook-sfo-ssserver-ss-json")
 	}
 	principalSecret, err := secretstore.ReadValue(secretsRoot, secretstore.Path{
-		Instance: "ss-sfo01", Port: "main", Kind: "node", Name: "macbook",
+		Instance: "ss-sfo01", Port: "main", Group: "doug", Name: "default",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	clientOut, err := render.Render(render.Input{
-		Target:       render.Target{Service: "shadowsocks-rust", Role: "ss-rust", Instance: "macbook-sfo"},
+		Target:       render.Target{Service: "ss-json", Instance: "macbook-sfo-ssserver-ss-json"},
 		Template:     ssClientTemplate,
 		Defaults:     []byte(ssClientDefaults),
 		DefaultsKind: confgen.DefaultsElement,
-		Instance:     map[string]any{"id": "macbook-sfo", "service": "shadowsocks-rust", "role": "ss-rust"},
-		Upstream:     map[string]any{"address": edge.Address, "port": edge.Port, "secret": principalSecret, "own": ownVal["psk"]},
+		Instance:     map[string]any{"id": "macbook-sfo-ssserver-ss-json", "service": "ss-json"},
+		Upstream:     map[string]any{"address": edge.Address, "port": edge.Port, "secret": principalSecret, "shared": []string{psk("main")}},
 	})
 	if err != nil {
 		t.Fatalf("Render(client): %v", err)
@@ -249,7 +274,7 @@ func TestRealWorld_ShadowsocksServerCombinesOwnAcrossTwoPorts(t *testing.T) {
 	if len(clientDoc.Servers) != 1 {
 		t.Fatalf("client servers = %+v, want 1", clientDoc.Servers)
 	}
-	wantPassword := ownVal["psk"] + ":" + principalSecret
+	wantPassword := psk("main") + ":" + principalSecret
 	if clientDoc.Servers[0]["password"] != wantPassword {
 		t.Fatalf("client password = %v, want own:principal = %q", clientDoc.Servers[0]["password"], wantPassword)
 	}
@@ -259,12 +284,12 @@ func TestRealWorld_ShadowsocksServerCombinesOwnAcrossTwoPorts(t *testing.T) {
 
 	// phone overrides ports: socks/http both named explicitly.
 	phoneOut, err := render.Render(render.Input{
-		Target:       render.Target{Service: "shadowsocks-rust", Role: "ss-rust", Instance: "phone-sfo"},
+		Target:       render.Target{Service: "ss-json", Instance: "phone-sfo-ssserver-ss-json"},
 		Template:     ssClientTemplate,
 		Defaults:     []byte(ssClientDefaults),
 		DefaultsKind: confgen.DefaultsElement,
-		Instance:     map[string]any{"id": "phone-sfo", "ports": map[string]int{"socks": 10080, "http": 18080}},
-		Upstream:     map[string]any{"address": edge.Address, "port": edge.Port, "secret": principalSecret, "own": ownVal["psk"]},
+		Instance:     map[string]any{"id": "phone-sfo-ssserver-ss-json", "ports": map[string]int{"socks": 10080, "http": 18080}},
+		Upstream:     map[string]any{"address": edge.Address, "port": edge.Port, "secret": principalSecret, "shared": []string{psk("main")}},
 	})
 	if err != nil {
 		t.Fatalf("Render(phone client): %v", err)
@@ -316,18 +341,18 @@ masquerade:
 
 func TestRealWorld_Hysteria2ServerListensAndAuthenticates(t *testing.T) {
 	instance := map[string]any{
-		"id": "hy2-sfo01", "service": "hysteria2", "role": "server",
+		"id": "hy2-sfo01", "service": "hysteria2",
 		"ports": map[string]int{"main": 443},
 	}
 	out, err := render.Render(render.Input{
-		Target:       render.Target{Service: "hysteria2", Role: "server", Instance: "hy2-sfo01"},
+		Target:       render.Target{Service: "hysteria2", Instance: "hy2-sfo01"},
 		Template:     hy2ServerTemplate,
 		Defaults:     []byte(hy2ServerDefaults),
 		DefaultsKind: confgen.DefaultsDocument,
 		Instance:     instance,
 		Principals: map[string][]render.Principal{
 			"main": {
-				{Name: "doug-macbook", Secret: "secret-doug"},
+				{Name: "doug-default", Secret: "secret-doug"},
 				{Name: "jane", Secret: "secret-jane"},
 			},
 		},
@@ -350,7 +375,7 @@ func TestRealWorld_Hysteria2ServerListensAndAuthenticates(t *testing.T) {
 		t.Fatalf("auth = %#v, want a mapping", doc["auth"])
 	}
 	userpass, ok := auth["userpass"].(map[string]any)
-	if !ok || userpass["doug-macbook"] != "secret-doug" || userpass["jane"] != "secret-jane" {
+	if !ok || userpass["doug-default"] != "secret-doug" || userpass["jane"] != "secret-jane" {
 		t.Fatalf("auth.userpass = %#v", auth["userpass"])
 	}
 	masquerade, ok := doc["masquerade"].(map[string]any)
@@ -401,7 +426,7 @@ MICROBIN_DATA_DIR: /var/lib/microbin
 
 func TestRealWorld_MicroBinServerEmitsOwnSecretsWhenEnabled(t *testing.T) {
 	instance := map[string]any{
-		"id": "bin-sfo01", "service": "microbin", "role": "server",
+		"id": "bin-sfo01", "service": "microbin",
 		"bind": "127.0.0.1", "ports": map[string]int{"main": 8080},
 		"values": map[string]any{
 			"public_path":    "https://clip.matrix-au.org/",
@@ -409,7 +434,7 @@ func TestRealWorld_MicroBinServerEmitsOwnSecretsWhenEnabled(t *testing.T) {
 			"upload_enabled": true,
 		},
 	}
-	own := map[string]string{
+	own := map[string]any{
 		"auth_username":   "clip",
 		"auth_password":   "auth-pw",
 		"admin_username":  "admin",
@@ -417,12 +442,12 @@ func TestRealWorld_MicroBinServerEmitsOwnSecretsWhenEnabled(t *testing.T) {
 		"upload_password": "upload-pw",
 	}
 	out, err := render.Render(render.Input{
-		Target:       render.Target{Service: "microbin", Role: "server", Instance: "bin-sfo01"},
+		Target:       render.Target{Service: "microbin", Instance: "bin-sfo01"},
 		Template:     microbinServerTemplate,
 		Defaults:     []byte(microbinServerDefaults),
 		DefaultsKind: confgen.DefaultsDocument,
 		Instance:     instance,
-		Own:          own,
+		Self:         own,
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -451,11 +476,11 @@ func TestRealWorld_MicroBinServerEmitsOwnSecretsWhenEnabled(t *testing.T) {
 // hazard already found and fixed for the Shadowsocks client above.
 func TestRealWorld_MicroBinServerSkipsOwnSecretsWhenDisabled(t *testing.T) {
 	instance := map[string]any{
-		"id": "bin-test", "service": "microbin", "role": "server",
+		"id": "bin-test", "service": "microbin",
 		"bind": "0.0.0.0", "ports": map[string]int{"main": 8080},
 	}
 	out, err := render.Render(render.Input{
-		Target:       render.Target{Service: "microbin", Role: "server", Instance: "bin-test"},
+		Target:       render.Target{Service: "microbin", Instance: "bin-test"},
 		Template:     microbinServerTemplate,
 		Defaults:     []byte(microbinServerDefaults),
 		DefaultsKind: confgen.DefaultsDocument,

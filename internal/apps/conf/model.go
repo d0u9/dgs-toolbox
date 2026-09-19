@@ -41,6 +41,8 @@ type Model struct {
 	invRoot     *inventory.Root
 	manifests   map[string]confgen.Manifest
 	serviceDirs map[string]string
+	exports     map[string]confgen.Export
+	exportDirs  map[string]string
 	derived     *derive.Model
 	nodes       []*nodeGroup
 	rows        []row
@@ -71,6 +73,8 @@ func newModel(rootPath, secretsDir string) Model {
 	m.invRoot = l.inv
 	m.manifests = l.manifests
 	m.serviceDirs = l.serviceDirs
+	m.exports = l.exports
+	m.exportDirs = l.exportDirs
 	m.derived = l.derived
 
 	m.nodes = buildTree(target.List(l.inv, l.derived))
@@ -280,4 +284,21 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// renderer is the export page's own rendering, with nothing of the page in
+// it — the same one `dgs conf export` uses from the command line.
+func (m Model) renderer() renderer {
+	return renderer{
+		l: loaded{
+			inv:         m.invRoot,
+			manifests:   m.manifests,
+			serviceDirs: m.serviceDirs,
+			exports:     m.exports,
+			exportDirs:  m.exportDirs,
+			derived:     m.derived,
+		},
+		rootPath:   m.rootPath,
+		secretsDir: m.secretsDir,
+	}
 }
