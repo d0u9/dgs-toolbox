@@ -11,6 +11,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func selectedLabel(t *testing.T, m InspectModel) string {
@@ -164,6 +166,51 @@ func TestInspectExport_ZipIntoDirectory(t *testing.T) {
 	}
 }
 
+func TestInspectExport_CustomZipName(t *testing.T) {
+	dest := t.TempDir()
+	m := newInspectModel(buildExportableRoot(t))
+	m.list.SelectID("node:srv")
+	m = pressInspect(t, m, "x")
+	m.export.form.SetValue(fieldFormat, formatZip)
+	if got := m.export.visibleFields(); len(got) != 4 || got[2] != fieldZipName {
+		t.Fatalf("Zip fields = %v", got)
+	}
+	m.export.form.SetValue(fieldDest, dest)
+	m.export.form.SetValue(fieldZipName, "server-config")
+	m = pressInspect(t, m, "n")
+	want := filepath.Join(dest, "server-config.zip")
+	if m.export.stage != exportConfirm || m.export.where != want {
+		t.Fatalf("confirmation = %v at %q, want %q: %v", m.export.stage, m.export.where, want, m.export.err)
+	}
+	m, _ = pressKey(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	m, cmd := pressKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := m.Update(cmd())
+	m = next.(InspectModel)
+	if _, err := zip.OpenReader(want); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInspectExport_RejectsZipPathAsName(t *testing.T) {
+	m := newInspectModel(buildExportableRoot(t))
+	m.list.SelectID("node:srv")
+	m = pressInspect(t, m, "x")
+	m.export.form.SetValue(fieldFormat, formatZip)
+	m.export.form.SetValue(fieldDest, t.TempDir())
+	m.export.form.SetValue(fieldZipName, "other/archive.zip")
+	m = pressInspect(t, m, "n")
+	if m.export.stage != exportForm || m.export.err == nil {
+		t.Fatal("a ZIP name containing a path reached confirmation")
+	}
+}
+
+func TestExportDestinationKeepsExplicitZipPath(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "existing-name.zip")
+	if got := exportDestination(dest, defaultZipName); got != dest {
+		t.Fatalf("destination = %q, want %q", got, dest)
+	}
+}
+
 func TestInspectExport_RefusesToOverwriteUnasked(t *testing.T) {
 	dest := t.TempDir()
 	runInspectExport(t, formatFolder, dest)
@@ -283,8 +330,63 @@ func TestInspectExport_PickerFollowsResize(t *testing.T) {
 	m = next.(InspectModel)
 	w, _ := m.pickerSize()
 	for _, line := range strings.Split(m.export.picker.View(), "\n") {
-		if lipgloss.Width(line) > w-2 {
+		if lipgloss.Width(line) > w-4 {
 			t.Fatalf("picker line %d wide after resize to %d: %q", lipgloss.Width(line), w, line)
 		}
+	}
+}
+
+func TestInspectExport_PickerDirectoryRowsStayOnOneLine(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(profile)
+	dest := t.TempDir()
+	for _, name := range []string{"Applications", "DaVinci Resolve Media"} {
+		if err := os.Mkdir(filepath.Join(dest, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := newInspectModel(buildExportableRoot(t))
+	m.width, m.height = 100, 30
+	m.list.SelectID("node:srv")
+	m = pressInspect(t, m, "x")
+	m.export.form.SetValue(fieldDest, dest)
+	m.export.form.SetFocusID(fieldDest)
+	var cmd tea.Cmd
+	m, cmd = pressKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	msg := cmd()
+	next, _ := m.Update(msg)
+	m = next.(InspectModel)
+	view := ansi.Strip(m.pickerView())
+	for _, name := range []string{"Applications", "DaVinci Resolve Media"} {
+		found := false
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, "▸ "+name) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("directory %q was split across rows:\n%s", name, view)
+		}
+	}
+}
+
+func TestInspectExport_PickerFrameFitsNarrowTerminal(t *testing.T) {
+	m := newInspectModel(buildExportableRoot(t))
+	m.width, m.height = 60, 20
+	m.list.SelectID("node:srv")
+	m = pressInspect(t, m, "x")
+	m.export.form.SetFocusID(fieldDest)
+	m, _ = pressKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	w, h := m.pickerSize()
+	view := m.pickerView()
+	if got := lipgloss.Width(view); got != w {
+		t.Fatalf("picker width = %d, want %d", got, w)
+	}
+	if got := lipgloss.Height(view); got != h {
+		t.Fatalf("picker height = %d, want %d", got, h)
+	}
+	if !strings.Contains(strings.Split(view, "\n")[h-1], "╯") {
+		t.Fatal("picker bottom border was clipped")
 	}
 }
