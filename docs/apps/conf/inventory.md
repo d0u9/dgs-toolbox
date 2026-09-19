@@ -176,7 +176,7 @@ Node files sit one level down, in a directory naming whose machines these are:
 ```text
 nodes/
 ├── digitalocean/u-node-group-10-01.yaml
-├── digitalocean/a-node-group-04-01.yaml
+├── digitalocean/mn-uln-dgo-linux-01.yaml
 ├── home/server.yaml
 ├── home/nas.yaml
 └── alex/phone.yaml

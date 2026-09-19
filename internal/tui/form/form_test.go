@@ -163,7 +163,7 @@ func TestNumberControlIsBounded(t *testing.T) {
 
 func TestPasteIntoText(t *testing.T) {
 	m := New(Field{ID: "name", Kind: Text, Label: "Name", Value: "a-"}, Field{ID: "on", Kind: Checkbox, Label: "On"})
-	if !m.Paste("mobile-mbp2018-mac-01 \n") || m.Value("name") != "a-mobile-mbp2018-mac-01" || !m.CapturesText() {
+	if !m.Paste("laptop-mac-01 \n") || m.Value("name") != "a-laptop-mac-01" || !m.CapturesText() {
 		t.Fatalf("paste: %q active %v", m.Value("name"), m.CapturesText())
 	}
 	m.HandleInteraction("enter")

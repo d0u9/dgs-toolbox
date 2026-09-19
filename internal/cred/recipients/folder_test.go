@@ -161,25 +161,25 @@ func TestParsePublicKeyRefusesECDSA(t *testing.T) {
 func TestLoadsHostsAndGroups(t *testing.T) {
 	root := t.TempDir()
 	a, b := ageKey(t), ed25519Key(t)
-	write(t, root, "hosts/a-node-group-04-03.json", hostJSON([2]string{a, " Main age key "}, [2]string{b + " root@nas", "SSH host key"}))
+	write(t, root, "hosts/i-node-group-05-01.json", hostJSON([2]string{a, " Main age key "}, [2]string{b + " root@nas", "SSH host key"}))
 	write(t, root, "hosts/laptop.json", hostJSON([2]string{ageKey(t), "Main"}))
-	write(t, root, "groups/g-servers.json", `{"hosts":["A-NODE-GROUP-04-03","laptop"]}`)
+	write(t, root, "groups/g-servers.json", `{"hosts":["I-NODE-GROUP-05-01","laptop"]}`)
 
 	folder := load(t, root)
 	if len(folder.Problems) != 0 {
 		t.Fatalf("problems: %q", problems(folder))
 	}
-	if len(folder.Hosts) != 2 || folder.Hosts[0].Name != "a-node-group-04-03" || folder.Hosts[1].Name != "laptop" {
+	if len(folder.Hosts) != 2 || folder.Hosts[0].Name != "i-node-group-05-01" || folder.Hosts[1].Name != "laptop" {
 		t.Fatalf("hosts: %+v", folder.Hosts)
 	}
 	nas := folder.Hosts[0]
 	if len(nas.Keys) != 2 || nas.Keys[0].Description != "Main age key" || nas.Keys[1].Key != b {
 		t.Errorf("nas keys: %+v", nas.Keys)
 	}
-	if filepath.ToSlash(nas.File) != "hosts/a-node-group-04-03.json" {
+	if filepath.ToSlash(nas.File) != "hosts/i-node-group-05-01.json" {
 		t.Errorf("file %q", nas.File)
 	}
-	if len(folder.Groups) != 1 || strings.Join(folder.Groups[0].Hosts, ",") != "a-node-group-04-03,laptop" {
+	if len(folder.Groups) != 1 || strings.Join(folder.Groups[0].Hosts, ",") != "i-node-group-05-01,laptop" {
 		t.Errorf("groups: %+v", folder.Groups)
 	}
 	if folder.Errors() {
