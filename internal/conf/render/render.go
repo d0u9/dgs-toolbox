@@ -21,14 +21,13 @@ import (
 // "target" template function.
 type Target struct {
 	Service  string
-	Role     string
 	Instance string
 }
 
 // String is service/role/instance, as docs/apps/conf/export.md#targets-and-selectors
 // writes it.
 func (t Target) String() string {
-	return t.Service + "/" + t.Role + "/" + t.Instance
+	return t.Service + "/" + t.Instance
 }
 
 // Principal is one account a per-principal port grants, with its secret —
@@ -37,6 +36,29 @@ func (t Target) String() string {
 type Principal struct {
 	Name   string
 	Secret string
+}
+
+// Downstream is one hop that follows a fan-out instance: the far end of one
+// route through it, resolved the same way an upstream is. A reverse proxy
+// renders one site block per Downstream, matching on Published and
+// forwarding to Address and Port.
+type Downstream struct {
+	// Route is the route this hop belongs to. Downstreams are ordered by
+	// it, so a rendered file does not change because a route was added
+	// above another.
+	Route string
+	// Instance and Port name the hop, for a template that wants to label
+	// what it forwards to.
+	Instance string
+	Port     string
+	// Published is the name the request arrived at: what tells this
+	// downstream from the others sharing the entrance.
+	Published string
+	// Address is the far end, chosen the way every other edge is: loopback
+	// when the two ends share a node, otherwise the downstream's address on
+	// the first network in preference order that the proxy reaches.
+	Address string
+	Number  int
 }
 
 // Input is one target's render context, plus the template it renders. Every
@@ -65,15 +87,36 @@ type Input struct {
 	// Node is the node this instance runs on: id, networks. Nil for an
 	// unmanaged user's derived instance, who has no node.
 	Node map[string]any
-	// Upstream is the next hop, resolved: address, port and secret. Nil for
-	// a terminal instance.
+	// Upstream is the next hop, resolved: address, port, the account name
+	// this instance connects as, and its secret. When this target's own
+	// manifest declares it needs them, it also holds the secrets that hop's
+	// port hands to everything granted on it, in that port's order, as
+	// shared. A value crosses between instances because the program dialling
+	// says it needs it, never because the one listening publishes it, so
+	// shared is absent from every target that did not ask. Nil for a
+	// terminal instance.
 	Upstream map[string]any
+	// Downstreams is the render context's downstreams datasource: for an
+	// instance whose service declares downstreams: many, the hop that
+	// follows it in each route through it, resolved. Empty for every other
+	// instance, so a template that asks and was not meant to fan out
+	// renders nothing rather than something wrong.
+	Downstreams []Downstream
+	// Published is this instance's own ports' published names, by port. A
+	// service behind a proxy renders the same string the proxy matches on —
+	// Vaultwarden's DOMAIN is the case it exists for — so the name has to
+	// reach both, and a port without one is absent. It is its own field
+	// rather than a key inside Instance's ports so that a template reads it
+	// the way it reads an account table, with published "<port>".
+	Published map[string]string
 	// Principals is every port with auth: per-principal, each to the
 	// accounts and secrets of everything holding a grant on it.
 	Principals map[string][]Principal
-	// Own is the instance's own secrets, by name — what the secret template
+	// Self is the instance's own secrets, mirroring the tree under
+	// <instance>/self/: a string where the name is one file, a map where it
+	// is a set, a record of fields, or both. It is what the secret template
 	// function reads from.
-	Own map[string]string
+	Self map[string]any
 }
 
 // Render runs Template over Input and returns the rendered bytes. Every
@@ -102,8 +145,15 @@ func render(in Input) ([]byte, error) {
 	var root map[string]any
 	switch in.DefaultsKind {
 	case confgen.DefaultsDocument:
-		// The instance's own values win over the whole document.
-		root = mergeInto(instance, defaults)
+		// The instance's own values win over the whole document. It is
+		// values that merge, not the instance map: an instance's other keys
+		// are what dgs itself needs — id, service, bind, ports — and are
+		// reached through the instance function, so merging them would put
+		// them in the document under names a service never declared, and
+		// would leave the keys a service does declare unreachable, because
+		// values is the only place a node file may write them.
+		values, _ := instance["values"].(map[string]any)
+		root = mergeInto(values, defaults)
 	case confgen.DefaultsElement:
 		// The defaults are one entry of a list, and it is for the template to
 		// apply to each entry of whichever list that is — see the open

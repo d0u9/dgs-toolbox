@@ -1,5 +1,9 @@
 // Package secretstore reads and writes conf.secrets: one credential, one
-// file, at <instance>/<port>/<kind>/<name>. It computes which paths an
+// file, at <instance>/<port>/<group>/<name>. The group is whose the
+// credential is — a person, or whoever hosts a relaying machine — and the
+// name is which of their identities holds it, so every credential under a
+// port is a <group>/<name> pair and a reader sees whose is whose without
+// knowing what kind of principal each one is. It computes which paths an
 // inventory's derivation implies, compares that against what is on disk,
 // generates what is missing, and never deletes what sync no longer implies.
 //
@@ -31,9 +35,9 @@ import (
 	"dgs-toolbox/internal/conf/inventory"
 )
 
-// OwnPort is the reserved port segment an instance's own secrets sit under,
+// SelfPort is the reserved port segment an instance's own secrets sit under,
 // rather than under one of its listening ports.
-const OwnPort = "own"
+const SelfPort = "self"
 
 // PreviousSuffix names a secret's previous value during a rotation.
 const PreviousSuffix = ".previous"
@@ -42,39 +46,56 @@ const PreviousSuffix = ".previous"
 // generated for a service that declares no confgen.Secret shape.
 const randomPrintableLength = 32
 
-// Path is one credential's identity: <instance>/<port>/<kind>/<name>.
+// Path is one credential's identity: <instance>/<port>/<group>/<name> for a
+// principal's, and <instance>/self/<name>[/<key>][/<field>] for one of the
+// instance's own.
 type Path struct {
 	Instance string
 	Port     string
-	Kind     string
-	Name     string
+	// Group is whose the credential is, and Name which of their identities
+	// holds it. An instance's own secret sits under SelfPort with no group.
+	Group string
+	Name  string
+	// Key is which of a `set` secret's values this is, and Field which part
+	// of a credential made of several. Both are empty for a principal's
+	// credential and for a single self secret. See
+	// docs/apps/conf/inventory.md#a-services-own-secrets.
+	Key   string
+	Field string
 }
 
 // String is the path relative to conf.secrets.
 func (p Path) String() string {
-	return filepath.Join(p.Instance, p.Port, p.Kind, p.Name)
+	return filepath.Join(p.Instance, p.Port, p.Group, p.Name, p.Key, p.Field)
 }
 
 // ImpliedPaths computes every secret path a derivation implies: one file per
 // (principal, port) grant for a role whose auth is per-principal, plus one
 // <instance>/own/<name> file for every name in its role's own list. A role's
-// combine_own names one of those, so it implies nothing on its own. See the
+// shared names one of those, so it implies nothing on its own. See the
 // package doc for what it deliberately leaves out beyond that.
 func ImpliedPaths(inv *inventory.Root, manifests map[string]confgen.Manifest, model *derive.Model) []Path {
-	roleOf := map[string]confgen.Role{} // instance ID -> its role
+	roleOf := map[string]confgen.Manifest{}    // instance ID -> its service's manifest
+	namesOf := map[string][]string{}           // instance ID -> the own secrets it holds
+	keysOf := map[string]map[string][]string{} // instance ID -> set secret -> its keys
 	for _, n := range inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
 		for _, inst := range n.Instances {
-			if inst.Service == "" && inst.Role == "" {
+			if inst.Service == "" {
 				continue // an override, not a real instance.
 			}
-			role, ok := manifests[inst.Service].Roles[inst.Role]
+			manifest, ok := manifests[inst.Service]
 			if !ok {
 				continue
 			}
-			roleOf[inst.ID] = role
+			roleOf[inst.ID] = manifest
+			// Which of its service's own secrets an instance holds, and
+			// which keys each set has, are both the instance's. See
+			// inventory.Instance.SelfNames and SelfKeys.
+			namesOf[inst.ID] = inst.SelfNames(manifest.Self.Names())
+			keysOf[inst.ID] = inst.SelfKeys()
 		}
 	}
 
@@ -91,11 +112,31 @@ func ImpliedPaths(inv *inventory.Root, manifests map[string]confgen.Manifest, mo
 		if roleOf[g.Instance].Auth != confgen.AuthPerPrincipal {
 			continue
 		}
-		add(Path{Instance: g.Instance, Port: g.Port, Kind: string(g.Principal.Kind), Name: g.Principal.ID})
+		add(Path{Instance: g.Instance, Port: g.Port, Group: g.Principal.Group, Name: g.Principal.Slot})
 	}
-	for id, role := range roleOf {
-		for _, name := range role.Own {
-			add(Path{Instance: id, Port: OwnPort, Name: name})
+	for id, manifest := range roleOf {
+		for _, name := range namesOf[id] {
+			decl := manifest.Self[name]
+			leaves := func(key string) {
+				fields := decl.FieldNames()
+				if len(fields) == 0 {
+					add(Path{Instance: id, Port: SelfPort, Name: name, Key: key})
+					return
+				}
+				for _, field := range fields {
+					add(Path{Instance: id, Port: SelfPort, Name: name, Key: key, Field: field})
+				}
+			}
+			if !decl.Set {
+				leaves("")
+				continue
+			}
+			// A set with no key declared anywhere implies nothing: the
+			// instance holds none of them yet, which is a thing to say
+			// rather than a thing to guess a name for.
+			for _, key := range keysOf[id][name] {
+				leaves(key)
+			}
 		}
 	}
 
@@ -103,16 +144,38 @@ func ImpliedPaths(inv *inventory.Root, manifests map[string]confgen.Manifest, mo
 	return out
 }
 
-// secretOf returns the confgen.Secret shape an instance's service declares.
-func secretOf(inv *inventory.Root, manifests map[string]confgen.Manifest, instance string) confgen.Secret {
+// shapeOf returns the shape one path's value takes, and whether dgs
+// generates it at all. A principal's credential takes the service's own
+// Secret block; one of an instance's own takes its declaration's, falling
+// back to the service's, and a field takes the field's. A confgen.KindOpaque
+// shape is never generated: see confgen.KindOpaque.
+func shapeOf(inv *inventory.Root, manifests map[string]confgen.Manifest, p Path) (confgen.Secret, bool) {
+	var manifest confgen.Manifest
+	found := false
 	for _, n := range inv.Nodes {
 		for _, inst := range n.Instances {
-			if inst.ID == instance {
-				return manifests[inst.Service].Secret
+			if inst.ID == p.Instance {
+				manifest, found = manifests[inst.Service], true
 			}
 		}
 	}
-	return confgen.Secret{}
+	if !found || p.Port != SelfPort {
+		return manifest.Secret, manifest.Secret.Kind != confgen.KindOpaque
+	}
+	decl, ok := manifest.Self[p.Name]
+	if !ok {
+		return manifest.Secret, manifest.Secret.Kind != confgen.KindOpaque
+	}
+	shape := decl.Secret
+	if p.Field != "" {
+		if field, ok := decl.Fields[p.Field]; ok {
+			shape = field
+		}
+	}
+	if shape.Kind == "" && shape.Bytes == 0 {
+		shape = manifest.Secret
+	}
+	return shape, shape.Kind != confgen.KindOpaque
 }
 
 // Result is what Sync found comparing implied paths against a secrets root.
@@ -167,16 +230,23 @@ func Sync(root string, implied []Path) (Result, error) {
 
 func parsePath(rel string) Path {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
-	// An own secret is three segments, <instance>/own/<name>, since it
-	// belongs to the instance rather than to a principal on one of its
-	// ports. Everything else is four.
-	if len(parts) == 3 && parts[1] == OwnPort {
-		return Path{Instance: parts[0], Port: OwnPort, Name: parts[2]}
+	// An instance's own secret is <instance>/self/<name>, and one or two
+	// segments deeper when the name is a set, a record of fields, or both.
+	// Everything else is a principal's, and is always four.
+	if len(parts) >= 3 && parts[1] == SelfPort {
+		p := Path{Instance: parts[0], Port: SelfPort, Name: parts[2]}
+		if len(parts) > 3 {
+			p.Key = parts[3]
+		}
+		if len(parts) > 4 {
+			p.Field = strings.Join(parts[4:], "/")
+		}
+		return p
 	}
 	if len(parts) != 4 {
 		return Path{Instance: rel}
 	}
-	return Path{Instance: parts[0], Port: parts[1], Kind: parts[2], Name: parts[3]}
+	return Path{Instance: parts[0], Port: parts[1], Group: parts[2], Name: parts[3]}
 }
 
 // walk returns every regular file under root, as paths relative to root
@@ -197,7 +267,11 @@ func walk(root string) (map[string]bool, error) {
 		if err != nil {
 			return err
 		}
-		out[filepath.ToSlash(rel)] = true
+		rel = filepath.ToSlash(rel)
+		if !isCredentialFile(rel) {
+			return nil
+		}
+		out[rel] = true
 		return nil
 	})
 	if err != nil && !os.IsNotExist(err) {
@@ -206,17 +280,65 @@ func walk(root string) (map[string]bool, error) {
 	return out, nil
 }
 
+// isCredentialFile reports whether a path under the secrets root could be a
+// credential at all. Two things never are, and reporting them as orphaned
+// would be noise nobody can act on:
+//
+//   - A file at the root. Every credential sits under an instance, so a file
+//     beside the instance directories — a README saying what this tree is —
+//     is not one.
+//   - A dotfile, anywhere. A .gitignore, a .DS_Store and an editor's swap
+//     file are the tool's or the operating system's, not this store's.
+//
+// Anything deeper that no path implies is still reported, because a stray
+// file inside an instance directory is a credential nothing generates and
+// nothing will regenerate.
+func isCredentialFile(rel string) bool {
+	if !strings.Contains(rel, "/") {
+		return false
+	}
+	for _, segment := range strings.Split(rel, "/") {
+		if strings.HasPrefix(segment, ".") {
+			return false
+		}
+	}
+	return true
+}
+
+// Generated splits missing into the paths Generate would write and the ones
+// it would leave alone: a confgen.KindOpaque shape is a private key or a
+// vendor's keyfile, which nothing here can invent. Both are returned in the
+// order given, so a caller can say what it is about to write before writing
+// it, and name the rest as still missing.
+func Generated(inv *inventory.Root, manifests map[string]confgen.Manifest, missing []Path) (generated, opaque []Path) {
+	for _, p := range missing {
+		if _, ok := shapeOf(inv, manifests, p); ok {
+			generated = append(generated, p)
+		} else {
+			opaque = append(opaque, p)
+		}
+	}
+	return generated, opaque
+}
+
 // Generate writes a fresh value for every path in missing, taking the shape
 // its instance's service declares — base64 of Secret.Bytes, or a printable
 // random string when the service declares no Secret. It refuses to
 // overwrite a file that already exists.
 func Generate(root string, missing []Path, inv *inventory.Root, manifests map[string]confgen.Manifest) error {
 	for _, p := range missing {
+		shape, generated := shapeOf(inv, manifests, p)
+		if !generated {
+			// An opaque value is one nothing but a certificate authority
+			// or a vendor can produce. Its path stays missing, which is
+			// the report someone acts on.
+			continue
+		}
 		full := filepath.Join(root, p.String())
 		if _, err := os.Stat(full); err == nil {
 			return fmt.Errorf("secretstore: %s already exists, refusing to overwrite", full)
 		}
-		value, err := generateValue(secretOf(inv, manifests, p.Instance))
+		value, err := generateValue(shape)
 		if err != nil {
 			return err
 		}
@@ -317,11 +439,15 @@ func walkWithInfo(root string) (map[string]fs.FileInfo, error) {
 		if err != nil {
 			return err
 		}
+		rel = filepath.ToSlash(rel)
+		if !isCredentialFile(rel) {
+			return nil
+		}
 		info, err := d.Info()
 		if err != nil {
 			return err
 		}
-		out[filepath.ToSlash(rel)] = info
+		out[rel] = info
 		return nil
 	})
 	if err != nil && !os.IsNotExist(err) {
@@ -330,14 +456,14 @@ func walkWithInfo(root string) (map[string]fs.FileInfo, error) {
 	return out, nil
 }
 
-// ReadOwn reads every file directly under <instance>/own/ — an instance's
-// own secrets, by name, docs/apps/conf/inventory.md#the-render-context's own
-// datasource. A name nested under a further directory (the shape this
-// package does not compute paths for; see the package doc) is read too, the
-// last path element becoming its name.
-func ReadOwn(root, instance string) (map[string]string, error) {
-	dir := filepath.Join(root, instance, OwnPort)
-	own := map[string]string{}
+// ReadSelf reads everything under <instance>/self/ — the instance's own
+// secrets, docs/apps/conf/inventory.md#the-render-context's self datasource.
+// The result mirrors the tree: a name is a string when it is one file, and a
+// map when it is a set, a record of fields, or both. So self.psk.main and
+// self.account.main.password read the way their paths are written.
+func ReadSelf(root, instance string) (map[string]any, error) {
+	dir := filepath.Join(root, instance, SelfPort)
+	self := map[string]any{}
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if path == dir && os.IsNotExist(err) {
@@ -348,17 +474,39 @@ func ReadOwn(root, instance string) (map[string]string, error) {
 		if d.IsDir() {
 			return nil
 		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		own[d.Name()] = strings.TrimSuffix(string(data), "\n")
+		put(self, strings.Split(filepath.ToSlash(rel), "/"), strings.TrimSuffix(string(data), "\n"))
 		return nil
 	})
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("secretstore: reading %s: %w", dir, err)
 	}
-	return own, nil
+	return self, nil
+}
+
+// put writes value at segments in a nested map, creating the maps it needs.
+// A value already at a shorter path loses to the deeper one: a stray file
+// where a directory belongs should not hide the credentials under it.
+func put(into map[string]any, segments []string, value string) {
+	if len(segments) == 1 {
+		if _, ok := into[segments[0]].(map[string]any); !ok {
+			into[segments[0]] = value
+		}
+		return
+	}
+	next, ok := into[segments[0]].(map[string]any)
+	if !ok {
+		next = map[string]any{}
+		into[segments[0]] = next
+	}
+	put(next, segments[1:], value)
 }
 
 // Mv moves a secret path (a node, instance or the whole tree under one

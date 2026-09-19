@@ -1,7 +1,19 @@
-// Package confgen reads a generator root's services/ directory: one
-// subdirectory per service, each declaring how its roles render. It only
-// discovers what is there — the manifests, the roles, the instances and
-// which of them are broken. It does not render anything.
+// Package confgen reads a generator root's services/ and exports/
+// directories.
+//
+// A service is one program: `ssserver` and `sslocal` are two services, not
+// two forms of one, and each is something a node deploys. An export is a way
+// of handing a credential to a person — a share URI, a JSON configuration, a
+// QR code — and is deployed nowhere, since nothing runs a QR code.
+//
+// The two are separate because they are separate kinds of thing, and because
+// the same program is sometimes both a deployment and the consumer of an
+// export: `sslocal` relays on a home server and also reads the JSON handed to
+// a laptop. Which of the two a file is follows from the directory it is in,
+// not from the program that happens to read it.
+//
+// It only discovers what is there, and which manifests are broken. It does
+// not render anything.
 //
 // The rules are in docs/apps/conf/export.md.
 package confgen
@@ -17,78 +29,49 @@ import (
 )
 
 // ServicesDir is the generator root's subdirectory holding one directory per
-// service.
-const ServicesDir = "services"
+// program a node deploys. ExportsDir sits inside one of those, and holds one
+// directory per way that service's credential is handed to a person: an
+// export renders one service's material and nothing else, so it belongs to
+// that service rather than beside it. See
+// docs/apps/conf/inventory.md#which-export-a-person-receives.
+const (
+	ServicesDir = "services"
+	ExportsDir  = "exports"
+)
 
 // ManifestFilename names the file that marks a subdirectory of ServicesDir
-// as a service, and declares that service's roles.
+// as a service, and declares how it renders.
 const ManifestFilename = "confgen.yaml"
 
-// Auth values a role declares. See docs/apps/conf/inventory.md#how-a-service-says-what-it-needs.
+// Auth values a service declares. See docs/apps/conf/inventory.md#how-a-service-says-what-it-needs.
 const (
 	AuthPerPrincipal = "per-principal"
 	AuthNone         = "none"
 )
 
-// DefaultsFilename is the defaults file inside every role directory.
+// DefaultsFilename is the defaults file inside every service directory.
 const DefaultsFilename = "defaults.yaml"
 
-// DefaultsDocument and DefaultsElement are the two values roles.<role>.defaults
-// may take. See docs/apps/conf/export.md#two-kinds-of-defaults.
+// RotationDisruptive is the one value `rotation` may take: this service's
+// template cannot emit two accounts for one principal, so rotating a
+// credential drops the connection rather than overlapping.
+const RotationDisruptive = "disruptive"
+
+// DownstreamsOne and DownstreamsMany are the two values `downstreams` may
+// take: whether an instance of this service dials one upstream, the same in
+// every route through it, or one per route. DownstreamsOne is the default and
+// is not written. See docs/apps/conf/inventory.md#a-service-that-fans-out.
+const (
+	DownstreamsOne  = "one"
+	DownstreamsMany = "many"
+)
+
+// DefaultsDocument and DefaultsElement are the two values `defaults` may take. See docs/apps/conf/export.md#two-kinds-of-defaults.
 const (
 	DefaultsDocument = "document"
 	DefaultsElement  = "element"
 )
 
-// Role is one entry of a manifest's roles map. The map key, not stored here,
-// is both the role's name and the directory its value files are in.
-type Role struct {
-	// Template is the template rendered for this role, relative to the
-	// service directory.
-	Template string `yaml:"template"`
-	// Defaults is DefaultsDocument or DefaultsElement.
-	Defaults string `yaml:"defaults"`
-	// Output is the name the rendered file is written under.
-	Output string `yaml:"output"`
-	// Auth is AuthPerPrincipal or AuthNone: whether this role's inbound
-	// side authenticates each principal separately, and so whether a grant
-	// on one of its ports implies a secret. A role's own credentials are
-	// independent of it; see Own.
-	Auth string `yaml:"auth"`
-	// ReachedBy is the role a client derives as, to reach this one. Empty
-	// means a route entering this role derives no client instance for it.
-	ReachedBy string `yaml:"reached_by"`
-	// Rotation is RotationDisruptive when this role's template cannot emit
-	// two accounts for one principal, or empty otherwise. Rotating a
-	// disruptive role says up front that the connection will drop, rather
-	// than rendering a `.previous` account it has no room for. See
-	// docs/apps/conf/inventory.md#rotation.
-	Rotation string `yaml:"rotation"`
-	// CombineOwn names one of this role's own secrets that every client
-	// reaching it also needs — a protocol identity shared by every
-	// principal, such as a Shadowsocks 2022 server PSK combined with each
-	// user's own. Empty means clients need nothing beyond their own
-	// principal secret. See
-	// docs/apps/conf/inventory.md#a-shared-identity-alongside-a-principals-own.
-	CombineOwn string `yaml:"combine_own"`
-	// Own names this role's own secrets: credentials belonging to the
-	// instance rather than to anything reaching it, such as an
-	// administrative password. They are what `secret sync` generates under
-	// <instance>/own/, and a name absent from this list is one sync neither
-	// generates nor reports. A value that has to be edited after it is
-	// generated does not belong here — it is configuration, and belongs in
-	// the role's defaults.yaml. See
-	// docs/apps/conf/inventory.md#a-roles-own-secrets.
-	Own []string `yaml:"own"`
-}
-
-// RotationDisruptive is the Role.Rotation value meaning: this role's
-// template cannot render two accounts for one principal, so rotating it
-// drops the connection instead of overlapping old and new.
-const RotationDisruptive = "disruptive"
-
-// Secret is a manifest's secret block: the shape of the one value this
-// service's roles draw on, generated when no value exists yet.
 type Secret struct {
 	// Kind is the value's format, such as "base64". A service that does not
 	// declare a Secret gets a printable random string.
@@ -97,33 +80,181 @@ type Secret struct {
 	Bytes int `yaml:"bytes"`
 }
 
-// Manifest is a service's confgen.yaml.
+// Manifest is a service's confgen.yaml: everything about how one program
+// renders, and what reaching it implies.
 type Manifest struct {
-	// Secret is the shape of this service's generated secret values.
+	// Secret is the shape of this service's generated secret values. The
+	// format is the protocol's: Shadowsocks 2022 needs base64 of exactly the
+	// key size, not an arbitrary password.
 	Secret Secret `yaml:"secret"`
-	// Roles is one entry per kind of instance the service generates, keyed
-	// by role name.
-	Roles map[string]Role `yaml:"roles"`
+	// Template is the template rendered for this service, relative to the
+	// service directory.
+	Template string `yaml:"template"`
+	// Defaults is DefaultsDocument or DefaultsElement, and decides how
+	// defaults.yaml combines with the instance.
+	Defaults string `yaml:"defaults"`
+	// Output is the name the rendered file is written under. Every instance
+	// of the service uses it, because the program reading it expects the
+	// same name on every machine.
+	Output string `yaml:"output"`
+	// Auth is AuthPerPrincipal or AuthNone: whether this service's inbound
+	// side authenticates each principal separately, and so whether a grant
+	// on one of its ports implies a secret. Its own credentials are
+	// independent of it; see Self.
+	Auth string `yaml:"auth"`
+	// Rotation is RotationDisruptive when this service's template cannot
+	// emit two accounts for one principal, or empty otherwise. See
+	// docs/apps/conf/inventory.md#rotation.
+	Rotation string `yaml:"rotation"`
+	// Exports names every way a credential to reach this service may be
+	// handed to a person: a share URI, a JSON configuration, a QR code.
+	// Every one of them is rendered, so a bundle holds them all and a
+	// selector narrows to the ones a hand-over needs. Empty means reaching
+	// this service produces no file for anyone — MicroBin is reached from a
+	// browser — and a device's `export` does not bring one back: it chooses
+	// among these, never whether any exists. See
+	// docs/apps/conf/inventory.md#which-export-a-person-receives.
+	//
+	// It is not written in confgen.yaml: Load fills it from the service's
+	// own ExportsDir, so the directories that exist are the list, and the
+	// two cannot disagree.
+	Exports []string `yaml:"-"`
+	// Self declares this service's own secrets: credentials belonging to
+	// the instance rather than to anything reaching it, such as an
+	// administrative password or a server PSK. They are what `secret sync`
+	// generates under <instance>/self/, and a name absent from it is one
+	// sync neither generates nor reports. A value that has to be edited
+	// after it is generated does not belong here — it is configuration, and
+	// belongs in defaults.yaml. Which of them a principal receives is a
+	// port's business, not this one's; see inventory.Port.Self. See
+	// docs/apps/conf/inventory.md#a-services-own-secrets.
+	Self SelfDecls `yaml:"self"`
+	// Upstream declares what this service needs from the hop it connects
+	// to, beyond the address, port and account every template is given.
+	// Reading it is the consumer's business: a value crosses from one
+	// instance to another because the program that dials says it needs it,
+	// never because the program that listens happens to publish it. See
+	// docs/apps/conf/inventory.md#what-a-service-needs-from-its-upstream.
+	Upstream UpstreamDecls `yaml:"upstream"`
+	// Downstreams is DownstreamsMany when one instance of this service is
+	// the entrance for several routes — a reverse proxy in front of many
+	// web services — or empty for the ordinary case of one upstream. It is
+	// the only thing that relaxes the rule that a non-terminal hop has the
+	// same successor in every route through it, and it is a statement about
+	// shape rather than about credentials: a proxy forwards, it does not
+	// authenticate, so declaring this hands it nothing. See
+	// docs/apps/conf/inventory.md#a-service-that-fans-out.
+	Downstreams string `yaml:"downstreams"`
 }
 
-// Instance is one *.yaml file found in a role's directory, other than
-// defaults.yaml.
-type Instance struct {
-	// Name is the file name without its extension.
-	Name string
-	// Path is the file's path, relative to the generator root.
-	Path string
-	// Broken is the parse error if the file is not valid YAML or not a
-	// mapping, and empty otherwise.
-	Broken string
+// FansOut reports whether an instance of this service may dial a different
+// upstream in each route through it. The receiver is a value so that a
+// manifest read straight out of a map — the zero one for a service that is
+// not there, which does not fan out — answers without being copied first.
+func (m Manifest) FansOut() bool { return m.Downstreams == DownstreamsMany }
+
+// UpstreamShared is the one UpstreamDecls name dgs understands today: the
+// secrets the upstream port hands to everything granted on it, in the order
+// that port writes them. Shadowsocks 2022 is the case it exists for — the
+// password a client sends is the server's PSK and the client's own, joined —
+// and a protocol taking them in another order authenticates nothing.
+const UpstreamShared = "shared"
+
+// UpstreamDecl is one thing a service needs from its upstream. It carries no
+// options yet: the name alone says what is wanted, and an empty declaration
+// is how a manifest asks for it. Options belong inside it when one is needed,
+// so growing this does not change the shape of the key.
+type UpstreamDecl struct{}
+
+// UpstreamDecls is a service or export manifest's `upstream` mapping: name to
+// declaration, mirroring SelfDecls. A name dgs does not understand is an
+// error rather than something skipped, because silently dropping a credential
+// a program needs renders a file that looks right and does not authenticate.
+type UpstreamDecls map[string]UpstreamDecl
+
+// Names is the declared names, sorted, so a caller walking them produces the
+// same order every time.
+func (d UpstreamDecls) Names() []string {
+	out := make([]string, 0, len(d))
+	for name := range d {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
-// RoleInstances is one role of a service, with the instances found in its
-// directory.
-type RoleInstances struct {
-	Name      string
-	Role      Role
-	Instances []Instance
+// Wants reports whether these declarations name what.
+func (d UpstreamDecls) Wants(what string) bool {
+	_, ok := d[what]
+	return ok
+}
+
+// KindOpaque is the one Secret.Kind dgs never generates: a private key, a
+// certificate chain, a vendor's keyfile. Its path is implied like any
+// other, so sync reports it missing until someone writes it, and sync never
+// invents a value nothing but a certificate authority can produce.
+const KindOpaque = "opaque"
+
+// SelfDecl is one of a service's own secrets: its shape, and whether it is
+// one value, a family of values, a record of fields, or both.
+type SelfDecl struct {
+	// Secret is this name's shape, where it differs from the service's own
+	// Secret block. Kind KindOpaque means a value dgs never generates.
+	Secret `yaml:",inline"`
+	// Set is true when the name is a family of values whose keys each
+	// instance declares: one file per key, <instance>/self/<name>/<key>.
+	// Two ports of one program handing out different PSKs is what this is
+	// for. See docs/apps/conf/inventory.md#a-secret-several-people-hold.
+	Set bool `yaml:"set"`
+	// Fields is one credential made of several generated parts, each with
+	// its own shape — a uuid beside a password — one file each. With Set,
+	// the files are <instance>/self/<name>/<key>/<field>.
+	Fields map[string]Secret `yaml:"fields"`
+}
+
+// SelfDecls is a service manifest's `self` mapping: name to declaration. An
+// empty declaration is one generated value in the service's own shape.
+type SelfDecls map[string]SelfDecl
+
+// Names is the declared names, sorted, so a caller walking them produces
+// the same order every time.
+func (d SelfDecls) Names() []string {
+	out := make([]string, 0, len(d))
+	for name := range d {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// FieldNames is the fields of one name, sorted, or nil when the name is a
+// single value.
+func (d SelfDecl) FieldNames() []string {
+	out := make([]string, 0, len(d.Fields))
+	for name := range d.Fields {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Export is an exports/<name>/confgen.yaml: how one credential is written out
+// for a person. It is a rendering and nothing else — no ports, since nothing
+// listens; no auth, since nothing connects to a file; no secrets of its own,
+// since what it carries belongs to the service it reaches.
+type Export struct {
+	// Template is the template rendered, relative to the export directory.
+	Template string `yaml:"template"`
+	// Defaults is DefaultsDocument or DefaultsElement.
+	Defaults string `yaml:"defaults"`
+	// Output is the name the written file takes.
+	Output string `yaml:"output"`
+	// Upstream is what this export needs from the hop it writes out, read
+	// exactly as a service's is. An export carries a credential a person
+	// uses, so a protocol whose credential is made of the server's value
+	// and the person's own needs both here too — the share URI is as
+	// unusable without it as the client configuration would be.
+	Upstream UpstreamDecls `yaml:"upstream"`
 }
 
 // Service is one subdirectory of the generator root that holds a
@@ -135,12 +266,33 @@ type Service struct {
 	Dir string
 	// Manifest is the parsed confgen.yaml, valid only when Broken is empty.
 	Manifest Manifest
-	// Roles is the service's roles, each with the instances found for it,
-	// sorted by role name. Empty when Broken is not.
-	Roles []RoleInstances
 	// Broken is the manifest's parse error if confgen.yaml is not valid YAML,
 	// not a mapping, or holds an unknown key, and empty otherwise.
 	Broken string
+}
+
+// ExportDef is one subdirectory of a service's ExportsDir that holds a
+// confgen.yaml.
+type ExportDef struct {
+	// Service is the service this export writes out. An export renders one
+	// service's upstream and nothing else, so the pair is its identity: two
+	// services may both offer a "link", and they are two exports.
+	Service string
+	// Name is the subdirectory's name.
+	Name string
+	// Dir is the subdirectory's path, relative to the generator root.
+	Dir string
+	// Export is the parsed confgen.yaml, valid only when Broken is empty.
+	Export Export
+	// Broken is the manifest's parse error, and empty otherwise.
+	Broken string
+}
+
+// ExportKey is how an export is keyed where service and name must travel
+// together: "<service>/<name>". Two services may each offer a "link", and
+// the name alone would collide.
+func ExportKey(service, name string) string {
+	return service + "/" + name
 }
 
 // Root is a discovered generator root.
@@ -148,73 +300,130 @@ type Root struct {
 	// Services is every subdirectory of ServicesDir holding a confgen.yaml,
 	// sorted by name.
 	Services []Service
+	// Exports is every subdirectory of every service's ExportsDir holding
+	// one, sorted by service and then by name.
+	Exports []ExportDef
 }
 
-// Load discovers a generator root's services/ directory: every subdirectory
-// holding a confgen.yaml is a service, and is read whether or not it parses
-// cleanly. A subdirectory without a confgen.yaml — a README, a scratch
-// folder, a service still being written — is skipped rather than half-read.
-// A root with no services/ directory yet is an empty Root, not an error.
+// Load discovers a generator root's services/, and inside each service its
+// exports/: every subdirectory holding a confgen.yaml is one, and is read
+// whether or not it parses cleanly. A subdirectory without a confgen.yaml —
+// a README, a scratch folder, one still being written — is skipped rather
+// than half-read. A root with no services/ yet is an empty Root, not an
+// error.
 func Load(root string) (*Root, error) {
 	if _, err := os.Stat(root); err != nil {
 		return nil, fmt.Errorf("confgen: reading root: %w", err)
 	}
 
-	servicesDir := filepath.Join(root, ServicesDir)
-	entries, err := os.ReadDir(servicesDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &Root{}, nil
+	out := &Root{}
+
+	if err := eachManifest(root, ServicesDir, func(name, dir, path string) error {
+		svc := Service{Name: name, Dir: dir}
+		manifest, err := loadManifest(path)
+		if err != nil {
+			svc.Broken = err.Error()
+		} else {
+			svc.Manifest = *manifest
 		}
-		return nil, fmt.Errorf("confgen: reading %s: %w", servicesDir, err)
+
+		// A service's exports are the directories it holds, not a list it
+		// repeats: a list could name a directory that is not there, or miss
+		// one that is, and a reader would have no way to tell which is the
+		// truth. A broken service still has its exports read — the reason
+		// it is broken may be the very thing being fixed.
+		if err := eachManifest(root, filepath.Join(ServicesDir, name, ExportsDir), func(exportName, exportDir, exportPath string) error {
+			def := ExportDef{Service: name, Name: exportName, Dir: exportDir}
+			export, err := loadExport(exportPath)
+			if err != nil {
+				def.Broken = err.Error()
+			} else {
+				def.Export = *export
+			}
+			out.Exports = append(out.Exports, def)
+			svc.Manifest.Exports = append(svc.Manifest.Exports, exportName)
+			return nil
+		}); err != nil {
+			return err
+		}
+		sort.Strings(svc.Manifest.Exports)
+
+		out.Services = append(out.Services, svc)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
-	var services []Service
+	sort.Slice(out.Services, func(i, j int) bool { return out.Services[i].Name < out.Services[j].Name })
+	sort.Slice(out.Exports, func(i, j int) bool {
+		if out.Exports[i].Service != out.Exports[j].Service {
+			return out.Exports[i].Service < out.Exports[j].Service
+		}
+		return out.Exports[i].Name < out.Exports[j].Name
+	})
+	return out, nil
+}
+
+// eachManifest calls fn for every subdirectory of root/which that holds a
+// ManifestFilename, with the subdirectory's name, its path relative to the
+// root, and the manifest's full path. A missing directory yields nothing.
+func eachManifest(root, which string, fn func(name, dir, path string) error) error {
+	parent := filepath.Join(root, which)
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("confgen: reading %s: %w", parent, err)
+	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		dir := filepath.Join(servicesDir, name)
-		manifestPath := filepath.Join(dir, ManifestFilename)
-		if _, err := os.Stat(manifestPath); err != nil {
+		path := filepath.Join(parent, name, ManifestFilename)
+		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-
-		svc := Service{Name: name, Dir: filepath.Join(ServicesDir, name)}
-
-		manifest, err := loadManifest(manifestPath)
-		if err != nil {
-			svc.Broken = err.Error()
-			services = append(services, svc)
-			continue
+		if err := fn(name, filepath.Join(which, name), path); err != nil {
+			return err
 		}
-		svc.Manifest = *manifest
-
-		roleNames := make([]string, 0, len(manifest.Roles))
-		for roleName := range manifest.Roles {
-			roleNames = append(roleNames, roleName)
-		}
-		sort.Strings(roleNames)
-
-		for _, roleName := range roleNames {
-			role := manifest.Roles[roleName]
-			instances, err := loadInstances(root, dir, roleName)
-			if err != nil {
-				return nil, err
-			}
-			svc.Roles = append(svc.Roles, RoleInstances{
-				Name:      roleName,
-				Role:      role,
-				Instances: instances,
-			})
-		}
-
-		services = append(services, svc)
 	}
+	return nil
+}
 
-	sort.Slice(services, func(i, j int) bool { return services[i].Name < services[j].Name })
-	return &Root{Services: services}, nil
+// loadExport parses one services/<service>/exports/<name>/confgen.yaml. Unknown keys are an
+// error rather than a silent default, so `auth` or `ports` written on an
+// export — which renders a file and listens on nothing — is reported instead
+// of ignored.
+func loadExport(path string) (*Export, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	var e Export
+	dec := yaml.NewDecoder(strings.NewReader(string(data)))
+	dec.KnownFields(true)
+	if err := dec.Decode(&e); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	if err := checkUpstream(path, e.Upstream); err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// checkUpstream rejects a name dgs does not understand. Skipping one would
+// leave a template asking for a credential that is simply absent, and a
+// configuration that renders and then fails to authenticate is worse to
+// diagnose than a manifest that will not load.
+func checkUpstream(path string, d UpstreamDecls) error {
+	for _, name := range d.Names() {
+		if name != UpstreamShared {
+			return fmt.Errorf("parsing %s: upstream %q is not %q", path, name, UpstreamShared)
+		}
+	}
+	return nil
 }
 
 func loadManifest(path string) (*Manifest, error) {
@@ -230,71 +439,23 @@ func loadManifest(path string) (*Manifest, error) {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	// An unrecognised auth would otherwise read as "not per-principal" and
-	// silently generate nothing, which is what a role meaning none says
+	// silently generate nothing, which is what a service meaning none says
 	// deliberately.
-	for name, role := range m.Roles {
-		switch role.Auth {
-		case AuthPerPrincipal, AuthNone, "":
-		default:
-			return nil, fmt.Errorf("parsing %s: role %q: auth %q is not %q or %q", path, name, role.Auth, AuthPerPrincipal, AuthNone)
-		}
+	switch m.Auth {
+	case AuthPerPrincipal, AuthNone, "":
+	default:
+		return nil, fmt.Errorf("parsing %s: auth %q is not %q or %q", path, m.Auth, AuthPerPrincipal, AuthNone)
+	}
+	// An unrecognised downstreams would read as "not many" and quietly
+	// reinstate the single-upstream rule on a service written to fan out,
+	// so the error names the two values rather than letting a typo decide.
+	switch m.Downstreams {
+	case DownstreamsOne, DownstreamsMany, "":
+	default:
+		return nil, fmt.Errorf("parsing %s: downstreams %q is not %q or %q", path, m.Downstreams, DownstreamsOne, DownstreamsMany)
+	}
+	if err := checkUpstream(path, m.Upstream); err != nil {
+		return nil, err
 	}
 	return &m, nil
-}
-
-// loadInstances lists every *.yaml in <serviceDir>/<roleName> other than
-// defaults.yaml, sorted by name. A role directory that does not exist yields
-// no instances rather than an error, since a role may be declared before any
-// instance of it exists.
-func loadInstances(root, serviceDir, roleName string) ([]Instance, error) {
-	roleDir := filepath.Join(serviceDir, roleName)
-	entries, err := os.ReadDir(roleDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("confgen: reading %s: %w", roleDir, err)
-	}
-
-	var instances []Instance
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		fileName := entry.Name()
-		if filepath.Ext(fileName) != ".yaml" {
-			continue
-		}
-		if fileName == DefaultsFilename {
-			continue
-		}
-
-		path := filepath.Join(roleDir, fileName)
-		relPath, err := filepath.Rel(root, path)
-		if err != nil {
-			relPath = path
-		}
-		inst := Instance{
-			Name: strings.TrimSuffix(fileName, ".yaml"),
-			Path: relPath,
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			inst.Broken = err.Error()
-			instances = append(instances, inst)
-			continue
-		}
-		var probe map[string]any
-		if err := yaml.Unmarshal(data, &probe); err != nil {
-			inst.Broken = err.Error()
-		} else if probe == nil {
-			inst.Broken = fmt.Sprintf("%s: not a mapping", path)
-		}
-
-		instances = append(instances, inst)
-	}
-
-	sort.Slice(instances, func(i, j int) bool { return instances[i].Name < instances[j].Name })
-	return instances, nil
 }
