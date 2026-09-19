@@ -76,7 +76,8 @@ data.
 | What | The names |
 | --- | --- |
 | Files | `services/`, `services/<service>/exports/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml`, `confgen.yaml`, `defaults.yaml` |
-| Node keys | `id`, `networks`, `reaches`, `owner`, `export`, `credential`, `instances` |
+| Node keys | `id`, `networks`, `reaches`, `owner`, `export`, `profiles`, `credential`, `instances` |
+| Profile keys | `export`, `values`, `access` |
 | Instance keys | `id`, `service`, `ports`, `process`, `bind`, `self`, `values` |
 | Port keys | `port`, `protocol`, `self`, when a port is written as a mapping rather than a bare number |
 | User keys | `username`, `devices`, `export`, `credentials`, `access` |
@@ -90,7 +91,7 @@ data.
 | Reserved words | `self`, as a port name and as a secrets path segment |
 | Defaulted names | `default`, the credential a person has when they declare none and a device uses when it names none |
 | Secrets path segments | `self`, and the `.previous` suffix |
-| Selector fields | `node`, `user`, `service`, `export`, `instance`, `route` |
+| Selector fields | `node`, `user`, `service`, `export`, `profile`, `instance`, `route` |
 | The loopback address | `127.0.0.1`, for two hops on one node |
 
 **An example.** Every one of these is a name the inventory's author chose, and
@@ -950,7 +951,9 @@ file named `<node>-<route>-<service>-<export>`; a credential no device of
 theirs names produces `<username>-<credential>-<route>-<service>-<export>`,
 one per such credential, because the person carries it themselves. The service
 is in the name because an export's name is unique only within its service. Its
-values come from its own export's defaults.
+values come from its own export's defaults. A device with
+[profiles](#a-device-with-several-profiles) produces one file per profile
+instead, named `<node>-<route>-<service>-<export>-<profile>`.
 
 It is not a deployment. Nothing runs a share URI, and the program that reads a
 JSON configuration runs on a machine this inventory does not model.
@@ -1071,6 +1074,68 @@ So the resolution is:
 An `export` naming something none of the services this device reaches offers is
 an error listing the services it does reach. It does **not** fall back to the
 full list: the failure would then happen on the device rather than here.
+
+### A device with several profiles
+
+One device may run several programs that each want the same credential
+written differently: sing-box and a browser's SOCKS listener on one laptop,
+each on its own local port. `export` cannot say that — it picks one way for
+the whole device — so a device may declare **profiles**, the uses it is put
+to, by name:
+
+```yaml
+# nodes/doug/macbook.yaml
+id: doug-macbook
+profiles:
+  singbox:
+    export: singbox        # a format of its own: its own template
+  browser:
+    export: json
+    values:
+      local_port: 1080     # the same format, one value changed
+    access: [sfo]
+```
+
+A device with profiles is written out **once per profile**, and each profile
+narrows in the device's place: its `export` chooses among the ways the
+services it reaches offer, exactly as a device's `export` does, and unwritten
+takes every one. The file name gains the profile —
+`doug-macbook-sfo-ssserver-json-browser`. A device without profiles is
+written out once, as before.
+
+**Two ways to make a profile different, and both are meant.**
+
+- **A different format is a different export.** When the program reads a
+  different file altogether — sing-box's configuration is not sslocal's
+  `config.json` — the difference is a template, and a template lives in the
+  service's `exports/<name>/` with its own `defaults.yaml`. The profile only
+  names it. Every device with the same use names the same export, and the
+  settings are written once.
+- **The same format with a value changed is `values`.** A second listener on
+  another port is not a second format, and copying a template to change one
+  number is the copying this page exists to remove. `values` reach the
+  template as the file's own values, as an authored override's do.
+
+An instance authored on the device with a profile's file name still pins it,
+and its `values` win over the profile's key by key. The profile says what the
+use needs; the override is the exception for one route.
+
+`access` narrows a profile to some of the routes the device's credential
+opens, as a credential's `access` narrows its owner's. Unwritten, every one.
+
+**Profiles are files, not accounts.** Every profile carries the device's one
+credential, so the server's table holds one row for the device however many
+profiles it has, and revoking the device revokes all of them. A use that must
+be revocable on its own is a separate credential, and a credential is chosen
+by a device, not by a profile.
+
+A device with profiles does not also write `export`: each profile says its
+own, and a device-wide one beside them would be read by nothing. A profile
+with `export: none` is an error rather than a way of switching one off — a
+profile writing nothing is a profile to delete. Profiles belong to devices; a
+node nobody owns runs services and has nothing written out for it.
+
+`dgs conf export node:doug-macbook profile:singbox` hands over one use.
 
 ### When the client program is unknown
 
@@ -1658,6 +1723,12 @@ self:        the instance's own secrets, by name: a value, a map of fields, a
 target:      service and instance names
 ```
 
+An export instance's `instance` carries its `export` and, for one of a
+device's [profiles](#a-device-with-several-profiles), its `profile`, beside
+the values a profile or an override gives it. A service whose defaults apply
+per `element` reaches those values unmerged, as `(instance).values`, and it
+is for its template to lay them over `defaults`.
+
 The context is structured rather than one deep-merged mapping so that a key
 present at two levels cannot silently overwrite another, and so a template
 failing can be told which level it was reading.
@@ -1718,6 +1789,11 @@ failing can be told which level it was reading.
     the port it dials makes it true, and a port handing out none renders an
     empty list into a credential built half from it — a file that looks
     complete and authenticates nothing.
+20. A device with `profiles` has an owner and writes no `export` of its own.
+    Each profile's name holds no slash or space, since it ends a file name;
+    its `export` is one of the ways the services it reaches offer, and not
+    `none`; its `access` names only routes the device's credential opens, and
+    the error lists those.
 
 ## Boundaries
 

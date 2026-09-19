@@ -640,3 +640,59 @@ func TestDerive_CredentialNarrowedToFewerRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestDerive_ProfilesWriteADeviceOutOncePerProfile(t *testing.T) {
+	inv := worked()
+	for i := range inv.Nodes {
+		if inv.Nodes[i].ID != "macbook" {
+			continue
+		}
+		inv.Nodes[i].Profiles = map[string]inventory.Profile{
+			"singbox": {Export: "ss-json", Values: map[string]any{"local_port": 2080}},
+			"browser": {Values: map[string]any{"local_port": 1080, "mode": "tcp_only"}, Access: []string{"sfo", "jp"}},
+		}
+		inv.Nodes[i].Instances = []inventory.Instance{
+			{ID: "macbook-sfo-ssserver-ss-json-browser", Values: map[string]any{"local_port": 7890}},
+		}
+	}
+
+	m, err := Derive(inv, workedManifests())
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+
+	byID := map[string]ExportInstance{}
+	var ids []string
+	for _, ci := range m.ExportInstances {
+		if ci.Node == "macbook" {
+			byID[ci.ID] = ci
+			ids = append(ids, ci.ID)
+		}
+	}
+	sort.Strings(ids)
+	// singbox narrows to ss-json, which only ssserver offers; browser takes
+	// every way but only the two routes its access names.
+	want := []string{
+		"macbook-jp-hysteria2-hy2-client-browser",
+		"macbook-sfo-ssserver-ss-json-browser",
+		"macbook-sfo-ssserver-ss-json-singbox",
+	}
+	if !equal(ids, want) {
+		t.Fatalf("macbook export instances = %v, want %v", ids, want)
+	}
+
+	singbox := byID["macbook-sfo-ssserver-ss-json-singbox"]
+	if singbox.Profile != "singbox" || singbox.Values["local_port"] != 2080 || singbox.Credential != "default" {
+		t.Fatalf("singbox = %+v, want profile singbox, local_port 2080, the device's credential", singbox)
+	}
+	// The override pins one key and leaves the profile's others in place.
+	browser := byID["macbook-sfo-ssserver-ss-json-browser"]
+	if browser.Values["local_port"] != 7890 || browser.Values["mode"] != "tcp_only" {
+		t.Fatalf("browser.Values = %+v, want the override's local_port over the profile's mode", browser.Values)
+	}
+
+	// Profiles are files, not accounts: the device still holds one grant.
+	if got := principalNames(m.Principals("ss-sfo01", "main")); !equal(got, []string{"doug-default", "yak-default"}) {
+		t.Fatalf("ss-sfo01:main principals = %v, want one account for doug however many profiles", got)
+	}
+}

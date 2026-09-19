@@ -225,9 +225,15 @@ instance:ss-sfo01                    one
 node:us-sfo-*                        a machine name with a wildcard
 user:jane export:link                one person, one way
 export:link export:json              either way, whoever holds it
+node:laptop profile:singbox          one use of one device
 ```
 
 A bare word with no field is an instance name.
+
+`profile:` picks among the files a device with
+[profiles](inventory.md#a-device-with-several-profiles) is written out as, and
+matches nothing else: a machine's instances, a device without profiles and a
+file a person carries have no profile.
 
 Alternatives within a field are what make picking several ways of handing one
 credential over possible — a Shadowsocks server is written out as a share URI

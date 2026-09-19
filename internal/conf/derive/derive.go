@@ -49,9 +49,8 @@ const (
 // unmanaged user, or an upstream instance relaying for a non-terminal hop.
 type Principal struct {
 	Kind PrincipalKind
-	// ID identifies the principal for deduplication: a node ID (with its
-	// profile appended, when the device has profiles), a user's map key, or
-	// an instance ID.
+	// ID identifies the principal for deduplication: "<user>/<credential>"
+	// for a person's credential, or an instance ID.
 	ID string
 	// Name is the account name a server-side render sees, per
 	// docs/apps/conf/inventory.md#managed-and-unmanaged-devices.
@@ -78,7 +77,9 @@ type Grant struct {
 // runs a share URI, and the program that reads a JSON configuration runs on a
 // machine this inventory does not model.
 type ExportInstance struct {
-	// ID is "<node>-<route>-<service>-<export>" for a device, and
+	// ID is "<node>-<route>-<service>-<export>" for a device,
+	// "<node>-<route>-<service>-<export>-<profile>" for one of a device's
+	// profiles, and
 	// "<username>-<credential>-<route>-<service>-<export>" for a person with
 	// no device file. The service is in the name because an export's name is
 	// unique only within its service: two services each offering a "link"
@@ -99,9 +100,14 @@ type ExportInstance struct {
 	// Credential is the owner's credential this instance authenticates
 	// with. Two devices may name the same one.
 	Credential string
+	// Profile is the device profile this file was written out for, empty
+	// for a device with none and for a file a person carries.
+	Profile string
 	// Ports, Bind and Values come from an authored override with the same
 	// ID, on the same node, if one exists — a derived instance has none of
-	// them by default. See docs/apps/conf/inventory.md#what-is-derived.
+	// them by default. Values start from the profile's own, and an
+	// override's win over them key by key. See
+	// docs/apps/conf/inventory.md#what-is-derived.
 	Ports  inventory.Ports
 	Bind   string
 	Values map[string]any
@@ -173,6 +179,45 @@ func narrowExports(exports []string, want string) []string {
 		}
 	}
 	return nil
+}
+
+// use is one way a device is written out: the device itself, or one of its
+// profiles.
+type use struct {
+	profile string
+	export  string
+	values  map[string]any
+	access  []string
+}
+
+// usesOf is the device itself when it declares no profiles, and each of its
+// profiles, in name order, when it does.
+func usesOf(n inventory.Node) []use {
+	if len(n.Profiles) == 0 {
+		return []use{{export: n.Export}}
+	}
+	out := make([]use, 0, len(n.Profiles))
+	for _, name := range n.ProfileNames() {
+		p := n.Profiles[name]
+		out = append(out, use{profile: name, export: p.Export, values: p.Values, access: p.Access})
+	}
+	return out
+}
+
+// overlay is base with every top-level key of over written onto it, over
+// winning. Neither argument is modified.
+func overlay(over, base map[string]any) map[string]any {
+	if len(base) == 0 {
+		return over
+	}
+	out := make(map[string]any, len(base)+len(over))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range over {
+		out[k] = v
+	}
+	return out
 }
 
 type instanceRef struct {
@@ -290,32 +335,45 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 				// One file per device per route per export: two devices
 				// sharing a credential still each need their own, because
 				// their local ports differ.
-				for _, export := range narrowExports(exports, n.Export) {
-					derivedID := nodeID + "-" + routeName + "-" + entry.inst.Service + "-" + export
-					ci := ExportInstance{
-						ID: derivedID, Node: nodeID, Credential: credential,
-						Service: entry.inst.Service, Export: export, Route: routeName,
+				//
+				// A device with profiles is written out once per profile
+				// instead, each profile narrowing in the device's place.
+				for _, use := range usesOf(n) {
+					if len(use.access) > 0 && !containsString(use.access, routeName) {
+						continue
 					}
-					for _, override := range n.Instances {
-						if override.ID == derivedID {
-							ci.Ports, ci.Bind, ci.Values = override.Ports, override.Bind, override.Values
-							break
+					for _, export := range narrowExports(exports, use.export) {
+						derivedID := nodeID + "-" + routeName + "-" + entry.inst.Service + "-" + export
+						if use.profile != "" {
+							derivedID += "-" + use.profile
 						}
-					}
-					m.ExportInstances = append(m.ExportInstances, ci)
+						ci := ExportInstance{
+							ID: derivedID, Node: nodeID, Credential: credential,
+							Service: entry.inst.Service, Export: export, Route: routeName,
+							Profile: use.profile, Values: use.values,
+						}
+						for _, override := range n.Instances {
+							if override.ID == derivedID {
+								ci.Ports, ci.Bind = override.Ports, override.Bind
+								ci.Values = overlay(override.Values, use.values)
+								break
+							}
+						}
+						m.ExportInstances = append(m.ExportInstances, ci)
 
-					address, network, err := resolveAddress(n, entry.node, inv.Networks, inv.Universal)
-					if err != nil {
-						return nil, fmt.Errorf("derive: route %q for %s: %w", routeName, nodeID, err)
+						address, network, err := resolveAddress(n, entry.node, inv.Networks, inv.Universal)
+						if err != nil {
+							return nil, fmt.Errorf("derive: route %q for %s: %w", routeName, nodeID, err)
+						}
+						m.Edges = append(m.Edges, Edge{
+							Route:        routeName,
+							FromInstance: derivedID,
+							To:           entryHop,
+							Address:      address,
+							Network:      network,
+							Port:         entry.inst.Ports[entryHop.Port].Number,
+						})
 					}
-					m.Edges = append(m.Edges, Edge{
-						Route:        routeName,
-						FromInstance: derivedID,
-						To:           entryHop,
-						Address:      address,
-						Network:      network,
-						Port:         entry.inst.Ports[entryHop.Port].Number,
-					})
 				}
 			}
 
