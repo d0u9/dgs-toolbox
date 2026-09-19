@@ -2,134 +2,127 @@
 
 ## Current goal
 
-Build the Photo Import workflow for `dgs`, including its real, integrity-verified Processing engine. Keep the remaining Photo commands as demo domains. Build GPX milestone by milestone as described in [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md). Build `dgs cred` — age identities, recipients and the encrypted vault — as described in [`docs/apps/cred/`](docs/apps/cred/); decrypted content stays in memory unless an Action the user confirms writes it, and a vault file is replaced only after the new one decrypts back to the same SHA-256.
+- **Photo Import** — the real, integrity-verified Processing engine. Real file
+  operations only after the user starts Processing. Highest-priority contract: a
+  destination file is not published under its final name until an independent
+  destination readback matches the Source SHA-256 digest. Follow
+  [`docs/apps/photo/import.md`](docs/apps/photo/import.md). Other Photo commands
+  stay demos.
+- **GPX** — milestone by milestone per [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
+- **`dgs cred`** — age identities, recipients, encrypted vault, per
+  [`docs/apps/cred/`](docs/apps/cred/). Decrypted content stays in memory unless
+  an Action the user confirms writes it. A vault file is replaced only after the
+  new one decrypts back to the same SHA-256.
 
-Photo Import may perform real file operations only after the user starts Processing. Its highest-priority contract is that a destination file is not published under its final name until an independent destination readback matches the Source SHA-256 digest. Follow the confirmed algorithm and unresolved boundaries in [`docs/apps/photo/import.md`](docs/apps/photo/import.md).
+## Documents
 
-Shared interface decisions live in [`docs/tui.md`](docs/tui.md). Read it before changing any TUI or interactive command flow. Component-specific documents are linked from that shared design, including [`docs/file-explorer.md`](docs/file-explorer.md), [`docs/parameter-controls.md`](docs/parameter-controls.md), and [`docs/data-fields.md`](docs/data-fields.md); follow the links relevant to the component being changed. App-specific designs live under `docs/apps/<app>/`, including [`docs/apps/photo/import.md`](docs/apps/photo/import.md), and must not be promoted into shared requirements. Update design documents incrementally only when a decision is confirmed, and do not fill undecided sections speculatively.
+- [`docs/tui.md`](docs/tui.md) holds shared interface decisions. Read it before
+  changing any TUI or interactive flow, and follow its links to the component
+  being changed — [`file-explorer.md`](docs/file-explorer.md),
+  [`parameter-controls.md`](docs/parameter-controls.md),
+  [`data-fields.md`](docs/data-fields.md).
+- App designs live under `docs/apps/<app>/` and must not be promoted into shared
+  requirements.
+- Update a design document only when a decision is confirmed. Never fill an
+  undecided section speculatively.
 
-## Configuration
+## Configuration and catalogues
 
-Every setting `dgs` reads is documented in [`docs/configuration/`](docs/configuration/), one document per part of the toolbox with an index at [`docs/configuration/index.md`](docs/configuration/index.md). It is a reference, not a design document: what a key is called, what it means, and what it defaults to.
+Every setting `dgs` reads is documented in
+[`docs/configuration/`](docs/configuration/), one document per part, indexed by
+[`index.md`](docs/configuration/index.md). It is a reference — name, meaning,
+default — not a design document; designs explain why a setting exists and link
+here.
 
-Adding a configuration file, or a key to one, is not finished until that reference says so in the same change. Update the part's document and the index table together — a key in one and not the other is worse than a key in neither, because the index is what a reader trusts to be complete. Renaming, removing, or changing the default of a key is the same change. Design documents keep explaining why a setting exists and link here for what to write, rather than repeating the list and drifting from it.
+Adding, renaming, removing a key, or changing its default, is not finished until
+the part's document **and** the index table say so in the same change. A key in
+one and not the other is worse than a key in neither: the index is what a reader
+trusts to be complete.
 
-[`examples/`](examples) holds a working configuration per feature, and a test loads every one of them: renaming or removing a key breaks the examples that use it, and fixing them is part of the same change rather than something a reader discovers by copying one.
+[`examples/`](examples) holds a working configuration per feature and a test
+loads every one. Fixing examples a key change breaks is part of that change.
 
-`dgs cred`'s Actions follow the same rule: adding one, renaming one, or changing what it writes is not finished until [`docs/apps/cred/actions.md`](docs/apps/cred/actions.md) says so, and a test fails when it does not name every registered Action.
+The same rule covers two catalogues, each pinned by a test that fails when the
+document does not name every registered Action:
 
-Capture's Actions are the same rule in the other direction: adding one, renaming one, or changing what one writes or requires is not finished until [`docs/apps/capture/actions.md`](docs/apps/capture/actions.md) says so in the same change. It is the catalogue someone writes a Recipe against, and an Action it does not name is one they have no way to know about. A test fails when the document does not name every registered Action; it cannot check that the description is still true, so that part is on the change.
+- `dgs cred` Actions — [`docs/apps/cred/actions.md`](docs/apps/cred/actions.md).
+- Capture Actions — [`docs/apps/capture/actions.md`](docs/apps/capture/actions.md).
+  It is what someone writes a Recipe against. The test cannot check that a
+  description is still true; that part is on the change.
 
 ## Reusable algorithms
 
-This project is expected to grow, and the same computation is wanted in more than one place: speed feeds the browser today and stop detection tomorrow; stop detection feeds cleaning and day splitting; a filter written for GPX should serve the next source format. So every algorithm lives in its own package, apart from whatever shows its result:
+The same computation is wanted in more than one place, so every algorithm lives
+in its own package, apart from whatever shows its result:
 
-- Algorithms — parsing a format, geodesy, distance and speed series, stop detection, cleaning filters, segmentation, coordinate transforms — go in domain packages such as `internal/geo`, `internal/geo/gpxfile` and `internal/geo/track`. One concern per package, named for what it computes.
-- These packages import no TUI, HTTP, configuration or app code. They take plain values and return plain values, so a TUI command, a web handler, a report and a test can all call them.
-- Parameters an algorithm has (a window, a threshold) are arguments with a named, documented default, never constants buried in a caller.
-- Every algorithm has tests in its own package that pin its behaviour on small constructed inputs.
-- Apps and web handlers compose algorithms; they do not reimplement them. A web page draws what the server computed; it does not compute track data in JavaScript. Interaction geometry on screen (which drawn point is under the pointer) is the page's own.
-- Before writing a new computation, look for one to reuse or generalise. When an app-local helper turns out to be wanted elsewhere, move it into a shared package rather than copying it.
+- Domain packages such as `internal/geo`, `internal/geo/gpxfile`,
+  `internal/geo/track` — one concern per package, named for what it computes.
+- They import no TUI, HTTP, configuration or app code: plain values in, plain
+  values out, so a command, a web handler, a report and a test can all call them.
+- Parameters (a window, a threshold) are arguments with a named, documented
+  default, never constants in a caller.
+- Each has tests in its own package pinning behaviour on small constructed inputs.
+- Apps and web handlers compose algorithms, never reimplement them. A web page
+  draws what the server computed; only on-screen interaction geometry is its own.
+- Look for an algorithm to reuse or generalise before writing one. Move an
+  app-local helper into a shared package rather than copying it.
 
 ## Technology
 
-- Go
-- Cobra
-- Bubble Tea
-- Bubbles and Lip Gloss only when useful
+Go, Cobra, Bubble Tea. Bubbles and Lip Gloss only when useful.
 
 ## One binary
 
-`dgs` is the only executable the toolbox installs, and this is a hard requirement: copying that one file to another machine must be enough to run it. Do not add a helper binary, sidecar, or script that has to sit beside `dgs` or on `PATH`, and do not propose one as an option.
+`dgs` is the only executable installed, and this is hard: copying that one file
+to another machine must be enough to run it. No helper binary, sidecar or script
+beside `dgs` or on `PATH` — not as an option either.
 
-When a feature needs something Go cannot reach directly, compile it into `dgs`. Apple Reminders, for example, reach EventKit through cgo under a `darwin && cgo` build tag. Other platforms, and builds with `CGO_ENABLED=0`, get a fallback that refuses with a clear reason. If a feature cannot be built this way, ask before designing around it.
+Compile in what Go cannot reach directly. Apple Reminders, for example, reach
+EventKit through cgo under a `darwin && cgo` tag; other platforms and
+`CGO_ENABLED=0` get a fallback that refuses with a clear reason. If a feature
+cannot be built this way, ask before designing around it.
 
 ## Command model
 
-Commands are hierarchical:
+Commands are hierarchical: `dgs`, then `demo`, `capture`, `photo` (`import`,
+`encode`), `geo` (`gpx`), `cred` (`keys`, `vault`), `conf`.
 
-```text
-dgs
-dgs demo
-dgs photo
-dgs photo import
-dgs photo encode
-dgs geo
-dgs geo gpx
-dgs cred
-dgs cred keys
-dgs cred vault
-```
+One `dgs` process has exactly one active leaf command. It never runs or displays
+two command workspaces at once.
 
-A single `dgs` process has only one active leaf command at a time. It does not display or run multiple command workspaces simultaneously.
-
-Startup behavior:
-
-- A direct root leaf such as `dgs demo` opens its TUI directly.
-- A leaf command such as `dgs photo import` opens its TUI directly.
-- An incomplete command such as `dgs` or `dgs photo` opens a command picker scoped to the available choices.
-- Selecting a command replaces the picker with that command's TUI.
-- Leaving a command returns to the command picker so the user can choose again.
-- Starting another command creates a fresh command model; the previous command does not remain active in the background.
-
-Photo commands other than Photo Import remain mock demonstrations of this model. GPX is a TUI plus a local web page for map work, described in [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
+- A leaf — `dgs demo`, `dgs photo import` — opens its TUI directly.
+- An incomplete command — `dgs`, `dgs photo` — opens a picker scoped to the
+  choices available; selecting replaces the picker with that command's TUI.
+- Leaving a command returns to the picker. Starting another builds a fresh
+  model; the previous command does not stay alive in the background.
+- `Esc` at a command's root returns to the picker; `Esc` in the picker exits.
 
 ## Shared TUI shell
 
-Every picker and command screen uses three vertical regions:
+Three vertical regions: a top bar of exactly one row, the workspace, a status bar
+of exactly one row. Both bars stay one row — on narrow terminals shorten or omit
+content, never wrap.
 
-```text
-Top bar        exactly one terminal row
-Workspace      all remaining rows
-Status bar     exactly one terminal row
-```
+- Top bar: left, the command path or picker context; right, local time.
+- Status bar: left, state; center, contextual summary; right, key hints.
+- Workspace: the picker's or the active command's. A demo shows only a large
+  label such as `PHOTO IMPORT`.
 
-The top bar has two regions:
+The shell owns the single top-level Bubble Tea program, command selection,
+picker/command switching, both bars, window sizing and command lifecycle. A leaf
+command owns its workspace model and rendering, the status values and key hints
+it contributes, and its internal interaction. Leaf commands expose Bubble Tea
+models and never create a nested `tea.Program`.
 
-- Left: the current command path or picker context.
-- Right: the current local time.
+## Scope
 
-The workspace belongs to the picker or the active command. For command demos, show only a large identifying label such as `PHOTO IMPORT` or `PHOTO ENCODE`.
+Implement Photo Import Processing with bounded worker concurrency, same-directory
+`.dgs-part` files, SHA-256 source hashing during copy, independent destination
+readback, verified atomic publication, whole-file retry, and a versioned
+`.dgs-state` file. Keep it outside the TUI model and cover it with filesystem
+tests.
 
-The status bar has three regions:
-
-- Left: command or application state.
-- Center: contextual summary.
-- Right: contextual key hints.
-
-The top and bottom bars must remain one row. On narrow terminals, shorten or omit content instead of wrapping.
-
-## Shell and command boundary
-
-The shell owns:
-
-- The single top-level Bubble Tea program.
-- Command selection.
-- Switching between the picker and one active command.
-- The top bar and status bar layout.
-- Window sizing and command lifecycle.
-
-Each leaf command owns:
-
-- Its workspace model and rendering.
-- The status values and key hints it contributes.
-- Its internal interaction.
-
-Leaf commands expose Bubble Tea models/components and do not create nested `tea.Program` instances.
-
-At a command's root, `Esc` returns to the command picker. In the picker, `Esc` exits. More detailed navigation and cancellation behavior will be designed later.
-
-## Implementation scope
-
-Continue to demonstrate:
-
-- The Cobra command hierarchy.
-- Global and domain-scoped command pickers.
-- Direct entry into a leaf command.
-- Returning from a command to the picker.
-- The shared three-region layout.
-- Photo placeholder command screens.
-
-Implement Photo Import Processing with bounded worker concurrency, same-directory `.dgs-part` files, SHA-256 source hashing during copy, independent destination readback, verified atomic publication, whole-file retry, and a versioned `.dgs-state` file. Keep this logic outside the TUI model and cover it with filesystem tests.
-
-Do not implement real Photo Encode behavior, GPX behavior beyond the confirmed milestones, databases, plugin loading, or speculative shared infrastructure. Do not claim stronger durability than the user-space/filesystem API boundary documented for Photo Import.
+Do not implement real Photo Encode behavior, GPX beyond the confirmed milestones,
+databases, plugin loading, or speculative shared infrastructure. Do not claim
+stronger durability than the user-space/filesystem API boundary documented for
+Photo Import.
