@@ -288,3 +288,21 @@ func TestMatch_UnknownFieldIsAnError(t *testing.T) {
 		t.Fatal("Match: want an error for an unknown field")
 	}
 }
+
+func TestMatch_ProfileNarrowsToOneUseOfADevice(t *testing.T) {
+	inv, _ := fixture(t)
+	inv.Nodes[2].Profiles = map[string]inventory.Profile{"singbox": {}, "browser": {}}
+	model, err := derive.Derive(inv, map[string]confgen.Manifest{
+		"ssserver": {Auth: confgen.AuthPerPrincipal, Exports: []string{"ss-json"}, Template: "t"},
+	})
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+	matched, err := Match("node:laptop profile:singbox", List(inv, model))
+	if err != nil {
+		t.Fatalf("Match: %v", err)
+	}
+	if got := instanceNames(matched); len(got) != 1 || got[0] != "laptop-sfo-ssserver-ss-json-singbox" || matched[0].Profile != "singbox" {
+		t.Fatalf("Match = %v, want the singbox file alone", got)
+	}
+}

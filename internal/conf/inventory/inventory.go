@@ -293,8 +293,15 @@ type Node struct {
 	// services it reaches offer, or ExportNone to write nothing at all.
 	// Empty takes every way they offer. See
 	// docs/apps/conf/inventory.md#which-export-a-person-receives.
-	Export    string     `yaml:"export"`
-	Instances []Instance `yaml:"instances"`
+	Export string `yaml:"export"`
+	// Profiles are the uses this device is put to, by name — "singbox",
+	// "browser" — each written out as its own set of files. A device with
+	// none is written out once, as Export says; a device with profiles is
+	// written out once per profile, and each profile's Export takes the
+	// device's place. The two are not written together. See
+	// docs/apps/conf/inventory.md#a-device-with-several-profiles.
+	Profiles  map[string]Profile `yaml:"profiles"`
+	Instances []Instance         `yaml:"instances"`
 	// Credential names which of its owner's credentials this device uses.
 	// Empty means DefaultCredential. Two devices naming the same one hold
 	// the same secret — one password across a laptop and a phone is a thing
@@ -309,6 +316,32 @@ type Node struct {
 	// mapping, and empty otherwise. Fields above are valid only when this is
 	// empty.
 	Broken string `yaml:"-"`
+}
+
+// Profile is one use a device is put to. All of a device's profiles carry
+// the device's one credential: they are several files, not several accounts.
+type Profile struct {
+	// Export narrows this profile's files to one of the ways the services it
+	// reaches offer, exactly as a device's own `export` does. Empty takes
+	// every way they offer.
+	Export string `yaml:"export"`
+	// Values are handed to the template as the instance's own values, as an
+	// authored override's are. An override pinning one of this profile's
+	// files wins over them key by key.
+	Values map[string]any `yaml:"values"`
+	// Access narrows this profile to some of the routes the device's
+	// credential opens. Empty takes every one of them.
+	Access []string `yaml:"access"`
+}
+
+// ProfileNames is n's profile names, sorted.
+func (n Node) ProfileNames() []string {
+	names := make([]string, 0, len(n.Profiles))
+	for name := range n.Profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // CredentialOr is the credential this device uses, defaulting to

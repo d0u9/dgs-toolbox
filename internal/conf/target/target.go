@@ -31,6 +31,9 @@ type Target struct {
 	// two travel together.
 	Service string
 	Export  string
+	// Profile is the device profile a derived target was written out for,
+	// empty for everything else.
+	Profile string
 	// Instance is the target's identifier — a bare selector term matches
 	// this field.
 	Instance string
@@ -94,6 +97,7 @@ func List(inv *inventory.Root, model *derive.Model) []Target {
 			User:     valueOr(ci.User, owner[ci.Node]),
 			Service:  ci.Service,
 			Export:   ci.Export,
+			Profile:  ci.Profile,
 			Instance: ci.ID,
 			Routes:   []string{ci.Route},
 		})
@@ -177,13 +181,14 @@ const (
 	FieldUser     = "user"
 	FieldService  = "service"
 	FieldExport   = "export"
+	FieldProfile  = "profile"
 	FieldInstance = "instance"
 	FieldRoute    = "route"
 )
 
 var validFields = map[string]bool{
 	FieldNode: true, FieldUser: true, FieldService: true, FieldExport: true,
-	FieldInstance: true, FieldRoute: true,
+	FieldProfile: true, FieldInstance: true, FieldRoute: true,
 }
 
 // ParseSelector splits a selector into its space-separated terms. A term
@@ -278,6 +283,8 @@ func matchesOne(t Target, term Term) bool {
 		return globMatch(term.Value, t.Service)
 	case FieldExport:
 		return globMatch(term.Value, t.Export)
+	case FieldProfile:
+		return globMatch(term.Value, t.Profile)
 	case FieldInstance:
 		return globMatch(term.Value, t.Instance)
 	case FieldRoute:

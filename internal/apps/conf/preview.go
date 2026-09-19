@@ -159,6 +159,9 @@ func (m renderer) instanceAndNode(instance, nodeID string) (instanceMap, nodeMap
 		if len(ci.Ports) > 0 {
 			instanceMap["ports"] = ci.Ports.Numbers()
 		}
+		if ci.Profile != "" {
+			instanceMap["profile"] = ci.Profile
+		}
 		if len(ci.Values) > 0 {
 			instanceMap["values"] = ci.Values
 		}

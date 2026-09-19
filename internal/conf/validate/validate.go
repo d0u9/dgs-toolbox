@@ -304,7 +304,54 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		}
 	}
 	for _, nodeID := range nodeIDsInOrder {
-		checkExport(fmt.Sprintf("node %q", nodeID), nodeByID[nodeID].Export, servicesReached[nodeID])
+		n := nodeByID[nodeID]
+		checkExport(fmt.Sprintf("node %q", nodeID), n.Export, servicesReached[nodeID])
+		if len(n.Profiles) == 0 {
+			continue
+		}
+		// A device with profiles is written out once per profile, and each
+		// profile's own `export` takes the device's place. One written
+		// beside them would be read by nothing.
+		if n.Export != "" {
+			add("node %q: export and profiles are not written together; give each profile its own export", nodeID)
+		}
+		// Profiles are ways a device is written out. A node nobody owns is
+		// a machine running services, and nothing is written out for it.
+		if n.Owner == "" {
+			add("node %q: profiles belong to a device, and this node has no owner", nodeID)
+			continue
+		}
+		owner, ownerKnown := inv.Users[n.Owner]
+		for _, name := range n.ProfileNames() {
+			p := n.Profiles[name]
+			subject := fmt.Sprintf("node %q: profile %q", nodeID, name)
+			// The name ends a file name, so it cannot hold a path separator.
+			if name == "" || strings.ContainsAny(name, "/\\ \t") {
+				add("%s: a profile name ends a file name, so it cannot be empty or hold a slash or a space", subject)
+			}
+			if p.Export == inventory.ExportNone {
+				add("%s: export none writes nothing; remove the profile instead", subject)
+			} else {
+				checkExport(subject, p.Export, servicesReached[nodeID])
+			}
+			// A profile chooses among the routes the device's credential
+			// opens, as a credential chooses among its owner's.
+			if !ownerKnown {
+				continue
+			}
+			var opens []string
+			for _, routeName := range owner.Access {
+				if owner.OpensRoute(n.CredentialOr(), routeName) {
+					opens = append(opens, routeName)
+				}
+			}
+			for _, routeName := range p.Access {
+				if !containsString(opens, routeName) {
+					add("%s: access names route %q, which this device's credential does not open; it opens %s",
+						subject, routeName, strings.Join(opens, ", "))
+				}
+			}
+		}
 	}
 	for _, key := range userKeys {
 		// A person's own `export` narrows the files they carry themselves,
