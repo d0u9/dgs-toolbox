@@ -101,10 +101,22 @@ type Action struct {
 	Usage       string
 	Description string
 	Args        int
-	Flags       []ActionFlag
+	// MinArgs, when set, accepts that many positional arguments or more,
+	// in place of Args' exact count. A selector is one or more terms.
+	MinArgs int
+	// MaxArgs, when set, caps MinArgs' open end. A directory that defaults
+	// to a configured one is none or one, and a second would be a typo
+	// worth reporting rather than ignoring.
+	MaxArgs int
+	Flags   []ActionFlag
 	// Run receives every declared flag by name; a boolean flag is "true" or
 	// "false" and a string flag not given holds its Default.
 	Run func(in io.Reader, out io.Writer, args []string, flags map[string]string) error
+	// RunWithConfig is Run for an action that reads the toolbox's own
+	// configuration — a generator root, a destination directory — the same
+	// way Command.NewWithConfig is New for a command that does. An action
+	// declaring it is called through it, and Run is not consulted.
+	RunWithConfig func(in io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error
 }
 
 // ActionFlag is an option of an Action. Bool flags take no value.
