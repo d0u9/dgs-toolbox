@@ -111,7 +111,7 @@ func TestSSHInstall(t *testing.T) {
 	}
 
 	// A different key already in the .pub refuses.
-	os.WriteFile(filepath.Join(home, ".ssh", "keys", "server3.pub"), []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGK03FOmAmtKfe0bcskMOsZfg/vkZZn+XoSZu15AZlVV x\n"), 0o644)
+	os.WriteFile(filepath.Join(home, ".ssh", "keys", "server3.pub"), []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMv/zuacuXdhqK6uzTDhL4Ktmpzt56sfn+iHSiKkm5n x\n"), 0o644)
 	if _, err := PlanSSHInstall(entry, SSHInstallOptions{Name: "server3", WriteHost: true, Host: sshconfig.Host{HostName: "h"}}, env); err == nil || !strings.Contains(err.Error(), "different key") {
 		t.Errorf("different pub: %v", err)
 	}
