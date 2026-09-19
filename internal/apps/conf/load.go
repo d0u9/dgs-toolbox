@@ -7,8 +7,8 @@ import (
 )
 
 // loaded is the bootstrap every dgs conf command starts from: the inventory,
-// the service manifests, and their derivation. export's tree and inspect's
-// four views both read the same one.
+// the service manifests, and their derivation. Inspect's views, the reports
+// and export all read the same one.
 type loaded struct {
 	inv         *inventory.Root
 	manifests   map[string]confgen.Manifest

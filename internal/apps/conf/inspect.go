@@ -634,14 +634,6 @@ func (m InspectModel) Tabs() []tui.Tab {
 	}
 }
 
-func userSummary(u inventory.User) string {
-	kind := "managed"
-	if u.Devices == inventory.DevicesNone {
-		kind = "none"
-	}
-	return kind + ", access: " + strings.Join(u.Access, ", ")
-}
-
 func (m InspectModel) Init() tea.Cmd { return nil }
 
 func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -1051,16 +1043,8 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	return b.String(), nil
 }
 
-// sortedKeys and sortedAnyKeys keep map iteration out of the views, which
+// sortedAnyKeys keeps map iteration out of the views, which
 // would otherwise reorder a detail pane between two redraws of the same row.
-func sortedKeys(m map[string]int) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
 
 func sortedAnyKeys(m map[string]any) []string {
 	out := make([]string, 0, len(m))
@@ -1226,15 +1210,6 @@ func nodeByID(inv *inventory.Root, id string) inventory.Node {
 		}
 	}
 	return inventory.Node{}
-}
-
-func nodeOwner(inv *inventory.Root, nodeID string) string {
-	for _, n := range inv.Nodes {
-		if n.ID == nodeID {
-			return n.Owner
-		}
-	}
-	return ""
 }
 
 // renderServiceDetail is the service view: what the manifest declares, role

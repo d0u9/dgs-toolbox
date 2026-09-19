@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"dgs-toolbox/internal/conf/confgen"
 	"dgs-toolbox/internal/conf/derive"
@@ -14,16 +13,6 @@ import (
 	"dgs-toolbox/internal/conf/secretstore"
 	"dgs-toolbox/internal/conf/target"
 )
-
-// previewState holds one target's rendered output, or the error rendering it
-// produced, without writing anything. See
-// docs/apps/conf/export.md#previewing.
-type previewState struct {
-	target string
-	lines  []string
-	err    error
-	scroll int
-}
 
 // renderTarget runs the same rendering the export performs for one target:
 // its template and role defaults from the service directory, and its render
@@ -418,95 +407,11 @@ func principalFor(m renderer, instance string) (group, slot string) {
 	return "", ""
 }
 
-// groupOfNode answers the first segment below a port for a device: the
-// directory its file sits in, the owner it names, or its own ID.
-func (m renderer) groupOfNode(n inventory.Node) string {
-	switch {
-	case n.Group != "":
-		return n.Group
-	case n.Owner != "":
-		return n.Owner
-	}
-	return n.ID
-}
-
-// openPreview renders the row under the cursor, when it is a checkable
-// instance, and opens the preview.
-func (m *Model) openPreview() {
-	item, ok := m.list.Selected()
-	if !ok {
-		return
-	}
-	var r row
-	for _, cand := range m.rows {
-		if cand.id == item.ID {
-			r = cand
-			break
-		}
-	}
-	if r.node != nil || r.checkbox == "" {
-		return // not a checkable instance row
-	}
-	instance := r.keys[0]
-
-	out, err := m.renderer().renderTarget(instance)
-	p := &previewState{target: instance, err: err}
-	if err == nil {
-		p.lines = strings.Split(strings.TrimRight(string(out), "\n"), "\n")
-	}
-	m.preview = p
-}
-
-func (m *Model) closePreview() { m.preview = nil }
-
-// handlePreviewKey handles a key while the preview is open. It always
-// reports the key as consumed: the preview owns every key until Esc.
-func (m *Model) handlePreviewKey(key string) {
-	switch key {
-	case "esc":
-		m.closePreview()
-	case "down", "j":
-		m.preview.scroll++
-	case "up", "k":
-		m.preview.scroll = max(0, m.preview.scroll-1)
-	case "pgdown", "ctrl+d":
-		m.preview.scroll += max(1, m.height/2)
-	case "pgup", "ctrl+u":
-		m.preview.scroll = max(0, m.preview.scroll-max(1, m.height/2))
-	case "g", "home":
-		m.preview.scroll = 0
-	case "G", "end":
-		m.preview.scroll = max(0, len(m.preview.lines)-1)
-	}
-}
-
-func (m Model) previewView() string {
-	if m.preview.err != nil {
-		return m.centered(titleStyle.Render(m.preview.target) + "\n\n" + brokenStyle.Render(m.preview.err.Error()))
-	}
-
-	room := max(1, m.height-2)
-	scroll := min(m.preview.scroll, max(0, len(m.preview.lines)-1))
-	end := min(len(m.preview.lines), scroll+room)
-	body := strings.Join(m.preview.lines[scroll:end], "\n")
-
-	header := titleStyle.Render(m.preview.target)
-	warning := mutedStyle.Render("plaintext — stays in your terminal's scrollback")
-	return header + "\n" + warning + "\n\n" + body
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // renderer is everything rendering one target needs and nothing else: the
 // loaded inventory, the root its templates sit under, and the secrets store.
-// It is deliberately not a TUI model — the same rendering serves the export
-// page, the inspect page and `dgs conf export` on the command line, and only
-// one of those has a cursor.
+// It is deliberately not a TUI model — the same rendering serves the inspect
+// page and `dgs conf export` on the command line, and only one of those has a
+// cursor.
 type renderer struct {
 	l          loaded
 	rootPath   string

@@ -4,8 +4,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // buildRenderableRoot is buildRoot plus the template and defaults files a
@@ -101,20 +99,11 @@ func TestPreview_UpstreamCombinesOwnWithThePrincipalsSecret(t *testing.T) {
 	root, secretsDir := buildSharedRoot(t)
 	writeFile(t, filepath.Join(secretsDir, "ss-srv", "self", "psk", "main"), "server-psk")
 
-	m := newModel(root, secretsDir)
-	m.width, m.height = 80, 24
-	m.list.SelectID("inst:laptop/laptop-sfo-ssserver-ss-json")
-
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-
-	if m.preview == nil {
-		t.Fatal("preview did not open")
+	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
 	}
-	if m.preview.err != nil {
-		t.Fatalf("preview error: %v", m.preview.err)
-	}
-	got := strings.Join(m.preview.lines, "\n")
+	got := strings.Join(p.lines, "\n")
 	want := "password: server-psk:user-psk"
 	if got != want {
 		t.Fatalf("preview = %q, want %q", got, want)
@@ -129,21 +118,12 @@ func TestPreview_UpstreamMissingSharedNamesIt(t *testing.T) {
 	root, secretsDir := buildSharedRoot(t)
 	// own/psk deliberately not written.
 
-	m := newModel(root, secretsDir)
-	m.width, m.height = 80, 24
-	m.list.SelectID("inst:laptop/laptop-sfo-ssserver-ss-json")
-
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-
-	if m.preview == nil {
-		t.Fatal("preview did not open")
-	}
-	if m.preview.err == nil {
+	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
+	if p.err == nil {
 		t.Fatal("preview.err = nil, want an error naming the missing own secret")
 	}
-	if !strings.Contains(m.preview.err.Error(), "psk") {
-		t.Fatalf("preview.err = %v, want it to name \"psk\"", m.preview.err)
+	if !strings.Contains(p.err.Error(), "psk") {
+		t.Fatalf("preview.err = %v, want it to name \"psk\"", p.err)
 	}
 }
 
@@ -165,20 +145,11 @@ defaults: element
 output: config.json
 `)
 
-	m := newModel(root, secretsDir)
-	m.width, m.height = 80, 24
-	m.list.SelectID("inst:laptop/laptop-sfo-ssserver-ss-json")
-
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-
-	if m.preview == nil {
-		t.Fatal("preview did not open")
+	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
 	}
-	if m.preview.err != nil {
-		t.Fatalf("preview error: %v", m.preview.err)
-	}
-	got := strings.Join(m.preview.lines, "\n")
+	got := strings.Join(p.lines, "\n")
 	if strings.Contains(got, "server-psk") {
 		t.Fatalf("preview = %q, want it to hold no secret of the hop it dials", got)
 	}
@@ -189,47 +160,14 @@ output: config.json
 
 func TestPreview_RendersTheSameWayExportWould(t *testing.T) {
 	root, secretsDir := buildRenderableRoot(t)
-	m := newModel(root, secretsDir)
-	m.width, m.height = 80, 24
-	m.list.SelectID("inst:srv/us-sfo")
-
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-
-	if m.preview == nil {
-		t.Fatal("preview did not open")
+	p := renderPreview(t, root, secretsDir, "us-sfo")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
 	}
-	if m.preview.err != nil {
-		t.Fatalf("preview error: %v", m.preview.err)
-	}
-	got := strings.Join(m.preview.lines, "\n")
+	got := strings.Join(p.lines, "\n")
 	want := "listen: :443 on srv"
 	if got != want {
 		t.Fatalf("preview = %q, want %q", got, want)
-	}
-}
-
-func TestPreview_EscClosesAndReturnsToTheTree(t *testing.T) {
-	root, secretsDir := buildRenderableRoot(t)
-	m := newModel(root, secretsDir)
-	m.width, m.height = 80, 24
-	m.list.SelectID("inst:srv/us-sfo")
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-	if m.preview == nil {
-		t.Fatal("preview did not open")
-	}
-	if !m.CapturesShellKey("esc") {
-		t.Fatal("CapturesShellKey(esc) = false while previewing, want true")
-	}
-
-	m2, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
-	m = m2.(Model)
-	if m.preview != nil {
-		t.Fatal("esc did not close the preview")
-	}
-	if m.CapturesShellKey("esc") {
-		t.Fatal("CapturesShellKey(esc) = true once the preview is closed")
 	}
 }
 
@@ -270,19 +208,11 @@ owner: doug
 	writeFile(t, current, "new-secret")
 	writeFile(t, current+".previous", "old-secret")
 
-	m := newModel(root, secretsDir)
-	m.width, m.height = 80, 24
-	m.list.SelectID("inst:srv/ss-srv")
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-
-	if m.preview == nil {
-		t.Fatal("preview did not open")
+	p := renderPreview(t, root, secretsDir, "ss-srv")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
 	}
-	if m.preview.err != nil {
-		t.Fatalf("preview error: %v", m.preview.err)
-	}
-	got := strings.Join(m.preview.lines, "\n")
+	got := strings.Join(p.lines, "\n")
 	want := "doug-default=new-secret doug-default=old-secret "
 	if got != want {
 		t.Fatalf("preview = %q, want %q", got, want)
@@ -326,34 +256,14 @@ owner: doug
 	writeFile(t, current, "new-secret")
 	writeFile(t, current+".previous", "old-secret")
 
-	m := newModel(root, secretsDir)
-	m.width, m.height = 80, 24
-	m.list.SelectID("inst:srv/ss-srv")
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-
-	if m.preview == nil {
-		t.Fatal("preview did not open")
+	p := renderPreview(t, root, secretsDir, "ss-srv")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
 	}
-	if m.preview.err != nil {
-		t.Fatalf("preview error: %v", m.preview.err)
-	}
-	got := strings.Join(m.preview.lines, "\n")
+	got := strings.Join(p.lines, "\n")
 	want := "doug-default=new-secret "
 	if got != want {
 		t.Fatalf("preview = %q, want %q (disruptive: no previous account)", got, want)
-	}
-}
-
-func TestPreview_BrokenNodeCannotBePreviewed(t *testing.T) {
-	m := newModel(buildRoot(t), "")
-	m.width, m.height = 80, 24
-	m.list.SelectID("node:nodes/bad.yaml")
-
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-	if m.preview != nil {
-		t.Fatal("previewing a broken node opened a preview")
 	}
 }
 
@@ -420,22 +330,13 @@ universal: internet
 	return root, t.TempDir()
 }
 
-func previewOf(t *testing.T, root, secretsDir, id string) string {
+func previewOf(t *testing.T, root, secretsDir, instance string) string {
 	t.Helper()
-	m := newModel(root, secretsDir)
-	m.width, m.height = 80, 24
-	m.list.SelectID(id)
-
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-
-	if m.preview == nil {
-		t.Fatal("preview did not open")
+	p := renderPreview(t, root, secretsDir, instance)
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
 	}
-	if m.preview.err != nil {
-		t.Fatalf("preview error: %v", m.preview.err)
-	}
-	return strings.Join(m.preview.lines, "\n")
+	return strings.Join(p.lines, "\n")
 }
 
 // A fan-out instance renders one entry per route through it, ordered by
@@ -443,7 +344,7 @@ func previewOf(t *testing.T, root, secretsDir, id string) string {
 // is — loopback here, since the two ends share a node.
 func TestPreview_FanOutRendersEveryDownstream(t *testing.T) {
 	root, secretsDir := buildFanOutRoot(t)
-	got := previewOf(t, root, secretsDir, "inst:srv/proxy")
+	got := previewOf(t, root, secretsDir, "proxy")
 	want := "clip.example.com -> 127.0.0.1:8080\nvault.example.com -> 127.0.0.1:8222"
 	if got != want {
 		t.Fatalf("preview = %q, want %q", got, want)
@@ -455,7 +356,7 @@ func TestPreview_FanOutRendersEveryDownstream(t *testing.T) {
 // block in front of it.
 func TestPreview_PublishedReachesTheServiceBehind(t *testing.T) {
 	root, secretsDir := buildFanOutRoot(t)
-	got := previewOf(t, root, secretsDir, "inst:srv/vault")
+	got := previewOf(t, root, secretsDir, "vault")
 	want := "DOMAIN=https://vault.example.com"
 	if got != want {
 		t.Fatalf("preview = %q, want %q", got, want)
@@ -503,19 +404,11 @@ instances:
 // values is the only place a node file may write a service's own settings.
 func TestPreview_InstanceValuesOverrideDocumentDefaults(t *testing.T) {
 	root, secretsDir := buildValuesRoot(t)
-	m := newModel(root, secretsDir)
-	m.width, m.height = 80, 24
-	m.list.SelectID("inst:srv/us-sfo")
-
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(Model)
-	if m.preview == nil {
-		t.Fatal("preview did not open")
+	p := renderPreview(t, root, secretsDir, "us-sfo")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
 	}
-	if m.preview.err != nil {
-		t.Fatalf("preview error: %v", m.preview.err)
-	}
-	got := strings.Join(m.preview.lines, "\n")
+	got := strings.Join(p.lines, "\n")
 	want := strings.Join([]string{
 		// The instance's value wins,
 		"masquerade: https://www.example.com/",
@@ -527,4 +420,24 @@ func TestPreview_InstanceValuesOverrideDocumentDefaults(t *testing.T) {
 	if got != want {
 		t.Fatalf("preview = %q, want %q", got, want)
 	}
+}
+
+type rendered struct {
+	lines []string
+	err   error
+}
+
+// renderPreview renders one instance the way export and inspect do.
+func renderPreview(t *testing.T, root, secretsDir, instance string) rendered {
+	t.Helper()
+	l, err := load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := renderer{l: l, rootPath: root, secretsDir: secretsDir}
+	out, err := r.renderTarget(instance)
+	if err != nil {
+		return rendered{err: err}
+	}
+	return rendered{lines: strings.Split(strings.TrimRight(string(out), "\n"), "\n")}
 }

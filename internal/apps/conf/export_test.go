@@ -4,12 +4,14 @@ import (
 	"archive/zip"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"dgs-toolbox/internal/conf/confgen"
 	"dgs-toolbox/internal/conf/derive"
 	"dgs-toolbox/internal/conf/inventory"
 	"dgs-toolbox/internal/conf/secretstore"
+	"dgs-toolbox/internal/conf/target"
 )
 
 // buildExportableRoot is buildRenderableRoot plus a second, unmanaged-user
@@ -75,11 +77,9 @@ universal: internet
 
 func TestExportFolder_WritesUnderEachNodeAndUnmanagedUserDirectory(t *testing.T) {
 	root, secretsDir := buildExportableRoot(t)
-	m := newModel(root, secretsDir)
-
-	instances := m.CheckedInstancesOrAll(t)
+	r, instances := exportAll(t, root, secretsDir)
 	dest := t.TempDir()
-	if err := m.renderer().ExportFolder(instances, dest, false); err != nil {
+	if err := r.ExportFolder(instances, dest, false); err != nil {
 		t.Fatalf("ExportFolder: %v", err)
 	}
 
@@ -106,15 +106,13 @@ func TestExportFolder_RenderFailureWritesNothing(t *testing.T) {
 	root, secretsDir := buildExportableRoot(t)
 	// Break the server template so rendering us-sfo fails, after yak-default-sfo-hysteria2-link
 	// would already have rendered if instances were processed in the other
-	// order — CheckedInstancesOrAll sorts, so us-sfo (the broken one) comes
+	// order — exportAll sorts, so us-sfo (the broken one) comes
 	// first and yak-default-sfo-hysteria2-link must still not be written.
 	writeFile(t, filepath.Join(root, "services", "hysteria2", "templates", "server.yaml.tmpl"),
 		"{{ required .nonexistent \"required field\" }}")
-	m := newModel(root, secretsDir)
-
-	instances := m.CheckedInstancesOrAll(t)
+	r, instances := exportAll(t, root, secretsDir)
 	dest := t.TempDir()
-	if err := m.renderer().ExportFolder(instances, dest, false); err == nil {
+	if err := r.ExportFolder(instances, dest, false); err == nil {
 		t.Fatal("ExportFolder: want an error, the template is broken")
 	}
 
@@ -126,25 +124,23 @@ func TestExportFolder_RenderFailureWritesNothing(t *testing.T) {
 
 func TestExportFolder_RefusesAnExistingFile(t *testing.T) {
 	root, secretsDir := buildExportableRoot(t)
-	m := newModel(root, secretsDir)
-	instances := m.CheckedInstancesOrAll(t)
+	r, instances := exportAll(t, root, secretsDir)
 
 	dest := t.TempDir()
-	if err := m.renderer().ExportFolder(instances, dest, false); err != nil {
+	if err := r.ExportFolder(instances, dest, false); err != nil {
 		t.Fatalf("ExportFolder: %v", err)
 	}
-	if err := m.renderer().ExportFolder(instances, dest, false); err == nil {
+	if err := r.ExportFolder(instances, dest, false); err == nil {
 		t.Fatal("ExportFolder: want an error exporting into a destination that already holds these files")
 	}
 }
 
 func TestExportZip_WritesOneArchiveWithBothEntries(t *testing.T) {
 	root, secretsDir := buildExportableRoot(t)
-	m := newModel(root, secretsDir)
-	instances := m.CheckedInstancesOrAll(t)
+	r, instances := exportAll(t, root, secretsDir)
 
 	zipPath := filepath.Join(t.TempDir(), "export.zip")
-	if err := m.renderer().ExportZip(instances, zipPath, false); err != nil {
+	if err := r.ExportZip(instances, zipPath, false); err != nil {
 		t.Fatalf("ExportZip: %v", err)
 	}
 
@@ -172,11 +168,10 @@ func TestExportZip_RenderFailureWritesNothing(t *testing.T) {
 	root, secretsDir := buildExportableRoot(t)
 	writeFile(t, filepath.Join(root, "services", "hysteria2", "templates", "server.yaml.tmpl"),
 		"{{ required .nonexistent \"required field\" }}")
-	m := newModel(root, secretsDir)
-	instances := m.CheckedInstancesOrAll(t)
+	r, instances := exportAll(t, root, secretsDir)
 
 	zipPath := filepath.Join(t.TempDir(), "export.zip")
-	if err := m.renderer().ExportZip(instances, zipPath, false); err == nil {
+	if err := r.ExportZip(instances, zipPath, false); err == nil {
 		t.Fatal("ExportZip: want an error, the template is broken")
 	}
 	if _, err := os.Stat(zipPath); err == nil {
@@ -184,17 +179,23 @@ func TestExportZip_RenderFailureWritesNothing(t *testing.T) {
 	}
 }
 
-// CheckedInstancesOrAll checks every checkable instance first — the export
-// tests care about what gets exported, not about exercising the tri-state
-// checklist, which model_test.go already covers.
-func (m Model) CheckedInstancesOrAll(t *testing.T) []string {
+// exportAll loads root and returns its renderer with every instance that is
+// not broken, sorted — the export tests care about what gets exported, not
+// about how the instances were chosen.
+func exportAll(t *testing.T, root, secretsDir string) (renderer, []string) {
 	t.Helper()
-	for _, n := range m.nodes {
+	l, err := load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var instances []string
+	for _, n := range buildTree(target.List(l.inv, l.derived)) {
 		for _, inst := range n.instances {
 			if inst.broken == "" {
-				m.checked[inst.name] = true
+				instances = append(instances, inst.name)
 			}
 		}
 	}
-	return m.CheckedInstances()
+	sort.Strings(instances)
+	return renderer{l: l, rootPath: root, secretsDir: secretsDir}, instances
 }
