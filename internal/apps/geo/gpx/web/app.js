@@ -14,7 +14,7 @@ import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { FolderTree, revealButton } from "./tree.js";
 import { RoutePlanner } from "./route.js";
-import { confirmDialog, promptDialog } from "./dialog.js";
+import { confirmDialog, promptDialog, saveDialog } from "./dialog.js";
 import { splitter, shareSplitter } from "./splitter.js";
 
 // Okabe-Ito-derived hues: distinct under the common red/green colour-vision
@@ -499,10 +499,13 @@ function showFill(fill) {
 async function saveRoute() {
   const root = (tree.root || state.config.root || "").replace(/[\\/]$/, "");
   const folder = planner.source ? planner.source.replace(/[\\/][^\\/]*$/, "") : root;
-  const target = await promptDialog({
+  const target = await saveDialog({
     title: "Save the route",
-    message: "Choose the full path of the new GPX. An existing file is not replaced; the waypoints are kept beside it, so the route can be changed and saved again.",
-    value: `${folder}/${planner.name}.gpx`,
+    message: "Choose the folder of the new GPX and name it. An existing file is not replaced; the waypoints are kept beside it, so the route can be changed and saved again.",
+    folder,
+    fallback: state.config.root || "",
+    places: state.config.places || [],
+    name: `${planner.name}.gpx`,
     confirm: "Save",
   });
   if (!target) return;
@@ -540,32 +543,39 @@ async function editRoute({ path, name, plan }) {
 
 // ---- tracks added from other files, saved into a new GPX ----
 
-// saveAs writes a workspace GPX with the tracks added to it into a new file,
-// which takes its place in the workspace; the original goes back to its own.
+// saveAs writes the workspace GPX as it is currently edited into a new file.
 async function saveAs(path) {
   const entry = state.tracks.get(path);
   const dot = path.toLowerCase().lastIndexOf(".gpx");
   const tracks = `${entry.track.added} track${entry.track.added === 1 ? "" : "s"}`;
   const root = (tree.root || state.config.root || "").replace(/[\\/]$/, "");
-  const target = await promptDialog(entry.track.draft
+  const target = await saveDialog(entry.track.draft
     ? {
       title: "Save the new GPX",
-      message: `${entry.track.name} holds ${tracks}. Choose the full path to save it at; an existing file is not replaced.`,
-      value: `${root}/${entry.track.name}.gpx`,
+      message: `${entry.track.name} holds ${tracks}, saved as they are being edited. Choose the folder to save it in and name it; an existing file is not replaced.`,
+      folder: root,
+      fallback: state.config.root || "",
+      places: state.config.places || [],
+      name: `${entry.track.name}.gpx`,
       confirm: "Save",
     }
     : {
       title: "Save as a new GPX",
-      message: `${entry.track.name} has ${tracks} added to it. It is saved, with them, as a new file; ${basename(path)} itself is not written. An existing file is not replaced.`,
-      value: `${dot > 0 ? path.slice(0, dot) : path} merged.gpx`,
+      message: `${entry.track.name} is saved as a new file, as it is being edited: the points cleaning kept, the stretches filled in, ${tracks} added to it, and the names given here. ${basename(path)} itself is not written, and an existing file is not replaced.`,
+      folder: path.replace(/[\\/][^\\/]*$/, "") || root,
+      fallback: state.config.root || "",
+      places: state.config.places || [],
+      name: `${basename(dot > 0 ? path.slice(0, dot) : path)} edited.gpx`,
       confirm: "Save",
     });
   if (!target) return;
   try {
     const result = await api.saveAs(path, target);
-    const { color, visible } = entry;
+    const { color, visible, expanded } = entry;
     removeTrack(path);
-    await addTrack(result.path, { color, visible });
+    // The saved file takes the original's place, open as it was: its tracks
+    // stay listed, to show one at a time and to rename.
+    await addTrack(result.path, { color, visible, expanded });
     tree.refresh();
     tree.showMessage(`Saved ${basename(result.path)}`);
   } catch (error) {
@@ -694,7 +704,7 @@ function applyCutPanel() {
   const entry = focusedEntry();
   const open = cutting();
   if (open) {
-    cutPanel.show(entry.track, { timeZone: $("timezone").value, workspace: [...state.tracks.keys()], folder: tree.root || state.config.root });
+    cutPanel.show(entry.track, { timeZone: $("timezone").value, workspace: [...state.tracks.keys()], folder: tree.root || state.config.root, home: state.config.root || "", places: state.config.places || [] });
     cutOverlay.show(entry.track);
     timeline.setCutting({
       cuts: entry.track.cuts,
@@ -714,8 +724,13 @@ async function writeSegments(request) {
   const result = await api.writeSegments(state.focus, request);
   // A workspace track written into shows what it gained; a new file appears in the tree.
   if (state.tracks.has(result.path)) {
+    const entry = state.tracks.get(result.path);
     await reloadEntry(result.path);
+    // A GPX that gained a track opens to list what it now holds, so the
+    // tracks added to it are there to see, hide and rename at once.
+    if (expandable(entry)) entry.expanded = true;
     renderTracks();
+    save();
   }
   tree.refresh();
   return result;
@@ -843,7 +858,8 @@ function renderTracks() {
     const entry = state.tracks.get(path);
     const rows = [trackRow(path, entry)];
     if (entry.expanded && expandable(entry)) {
-      rows.push(partsToolbar(path, entry));
+      // One part shows and hides from its own row; the toolbar is for several.
+      if (entry.track.parts.length > 1) rows.push(partsToolbar(path, entry));
       for (const part of entry.track.parts) rows.push(partRow(path, entry, part));
     }
     return rows;
@@ -858,10 +874,10 @@ function renderTracks() {
   renderCoordinates();
 }
 
-// expandable: a file holding more than one track, any route or waypoint, or
-// any track added from another file — even one alone, so it can be seen and
-// taken out again — lists its parts under its row.
-const expandable = (entry) => entry.track.parts.length > 1 || entry.track.parts.some((part) => part.kind !== "track" || part.added);
+// expandable: every file that holds anything lists its parts under its row —
+// a file of one track too, so that track can be shown on its own, framed and
+// renamed, whoever recorded it.
+const expandable = (entry) => entry.track.parts.length > 0;
 
 function button(className, text, title, onClick) {
   const element = document.createElement("button");
@@ -937,9 +953,13 @@ function trackRow(path, entry) {
   if (track.draft) {
     li.classList.add("changed");
     if (track.added) actions.append(button("save-as", "Save…", "Save this new GPX to a file", () => saveAs(path)));
-  } else if (track.added) {
-    li.classList.add("changed");
-    actions.append(button("save-as", "Save as…", "Save this GPX, with the tracks added to it, as a new file", () => saveAs(path)));
+  } else {
+    // Anything done to a file — cleaning, fills, cuts, names, added tracks —
+    // is kept beside it, so it can be written into a new GPX at any time.
+    if (track.added) li.classList.add("changed");
+    if (track.added || track.clean.sidecar) {
+      actions.append(button("save-as", "Save as…", "Save this GPX as a new file, as it is being edited", () => saveAs(path)));
+    }
   }
   if (track.clean.sidecar) {
     li.classList.add("has-sidecar");
@@ -980,15 +1000,43 @@ function partRow(path, entry, part) {
       part.added ? `added from ${basename(part.added.from)}` : "",
     ];
   li.append(eye, glyph, label(part.name, details));
+  const actions = document.createElement("span");
+  actions.className = "actions";
+  actions.append(button("row-action", "✎", "Rename this part", () => renamePart(path, entry, part)));
   if (part.added) {
     li.classList.add("added");
-    const actions = document.createElement("span");
-    actions.className = "actions";
     actions.append(button("remove", "×", "Take this added track out again", () => removeAdded(path, part.added.index)));
-    li.append(actions);
   }
+  li.append(actions);
   li.addEventListener("click", () => showPart(path, part));
   return li;
+}
+
+// renamePart names one track, route or waypoint. A GPX dgs wrote is renamed
+// in the file itself; a recording keeps its new name in the sidecar beside it,
+// so the recorded file stays as it was.
+async function renamePart(path, entry, part) {
+  const inFile = entry.track.ours && part.kind === "track" && !entry.track.draft && !part.added;
+  const name = await promptDialog({
+    title: `Rename ${part.name}`,
+    message: inFile
+      ? "The name is written into the GPX itself, which dgs wrote."
+      : "The name is kept beside the GPX, in its sidecar; the recorded file is not written.",
+    value: part.name,
+    confirm: "Rename",
+  });
+  if (!name) return;
+  try {
+    await api.renamePart(path, part.key, name);
+    await reloadEntry(path);
+    // The new name is in the workspace rows, and in the inspector of the
+    // focused file, at once: neither is redrawn by reloading alone.
+    renderTracks();
+    if (state.focus === path) setFocus(path, { fit: false });
+    tree.showMessage(`Renamed to ${name}`);
+  } catch (error) {
+    tree.showMessage(error.message, true);
+  }
 }
 
 // partsToolbar shows or hides every part of a file at once, or every part of

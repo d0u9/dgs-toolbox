@@ -658,11 +658,47 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .actions .save-as { flex: none; padding: 0 6px; border: 1px solid var(--accent); border-radius: 5px; background: var(--panel); color: var(--accent); font-size: 11px; white-space: nowrap; cursor: pointer; }
 .part-row.added .glyph { font-weight: 700; }
 .part-row .actions .remove { border: none; background: none; color: var(--muted); font-size: 15px; cursor: pointer; }
+.part-row .actions .row-action { border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; }
+.part-row .actions .row-action:hover { color: var(--accent); }
 .part-row .actions .remove:hover { color: var(--danger); }
 .fill-preview { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .fill-preview .meta { flex: 1; color: var(--muted); font-size: 11px; }
 .cut-hint.error { color: var(--danger); }
 .prompt-input { margin: 0 0 12px; padding: 4px 8px; font-size: 12px; }
+
+/* Choosing where to write a new file: the folder is browsed, not typed. */
+.save-dialog { width: 560px; max-width: 92vw; }
+.save-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.save-bar .text-button { flex: none; padding: 0 6px; }
+.save-where { flex: 1; min-width: 0; padding: 3px 6px; border-radius: 5px; background: var(--bg); font-size: 11px; overflow-wrap: anywhere; }
+.save-body { display: flex; gap: 8px; margin-bottom: 8px; }
+.save-places { flex: none; width: 128px; list-style: none; height: 190px; margin: 0; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); overflow-y: auto; }
+.save-places[hidden] { display: none; }
+.save-place { display: block; width: 100%; padding: 3px 6px; border: none; border-radius: 4px; background: none; color: var(--text); font-size: 12px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.save-place:hover { background: var(--selected); }
+.save-place.here { background: var(--selected); font-weight: 600; }
+.save-listing { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); overflow: hidden; }
+.save-header { display: flex; border-bottom: 1px solid var(--line); background: var(--panel); }
+.save-heading { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border: none; border-right: 1px solid var(--line); background: none; color: var(--muted); font-size: 11px; text-align: left; cursor: pointer; }
+.save-heading:last-child { border-right: none; }
+.save-heading:hover { color: var(--accent); }
+.save-marker { color: var(--accent); font-size: 10px; }
+.save-list { flex: 1; min-width: 0; list-style: none; height: 190px; margin: 0; padding: 4px; overflow-y: auto; }
+.save-folder, .save-file, .save-heading { display: flex; }
+.save-cell-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.save-cell-modified { flex: none; width: 118px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.save-cell-size { flex: none; width: 64px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.save-heading.save-cell-name { flex: 1; min-width: 0; }
+.save-heading.save-cell-modified { flex: none; width: 130px; }
+.save-heading.save-cell-size { flex: none; width: 76px; }
+.save-list li { margin: 0; }
+.save-folder, .save-file { width: 100%; gap: 6px; padding: 3px 6px; border: none; border-radius: 4px; background: none; color: var(--text); font-size: 12px; text-align: left; cursor: pointer; }
+.save-folder .save-cell-name::before { content: "▸ "; color: var(--accent); }
+.save-file .save-cell-name { color: var(--muted); }
+.save-folder:hover, .save-file:hover { background: var(--selected); }
+.save-empty { padding: 3px 6px; color: var(--muted); font-size: 12px; }
+.save-problem { color: var(--danger); }
+.cut-browse { margin: 0 0 6px; padding: 0; font-size: 11px; }
 .timeline-piece { position: absolute; bottom: 0; height: 7px; z-index: 1; pointer-events: none; }
 
 /* Route mode: the plan's waypoints and legs */

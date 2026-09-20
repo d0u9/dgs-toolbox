@@ -33,6 +33,10 @@ type File struct {
 	// from other files, not yet saved into a GPX.
 	Fills []compose.Fill  `json:"fills,omitempty"`
 	Added []compose.Added `json:"added,omitempty"`
+	// Names renames the parts of a file this program did not write, keyed as
+	// the page keys them: "t0" for the first <trk>, "r0", "w0". A file dgs
+	// wrote is renamed in the file itself, so it holds no names here.
+	Names map[string]string `json:"names,omitempty"`
 	// Plan is the route a GPX was written from, when it was planned by hand,
 	// so it opens to be changed again.
 	Plan *compose.Plan `json:"plan,omitempty"`
@@ -40,7 +44,7 @@ type File struct {
 
 // Active reports whether the file records anything.
 func (f File) Active() bool {
-	return f.Clean.Active() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || f.Plan != nil
+	return f.Clean.Active() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || len(f.Names) > 0 || f.Plan != nil
 }
 
 // Insert shifts every point index after after by count, for count points
