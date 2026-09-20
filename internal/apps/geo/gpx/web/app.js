@@ -445,6 +445,29 @@ function routePointAt(event) {
   return planner.fromDisplay([event.lngLat.lng, event.lngLat.lat]);
 }
 
+async function addWaypointAt(event) {
+  // A new GPX not yet saved takes a waypoint too: it is kept with the draft
+  // until the draft is written.
+  const targets = [...state.tracks].filter(([path, entry]) => entry.track.ours || entry.track.draft)
+    .map(([path, entry]) => ({ path, name: entry.track.name }));
+  if (!targets.length) {
+    tree.showMessage("Open a GPX created by dgs, or start a new one, before adding a waypoint; other recordings are never overwritten.", true);
+    return;
+  }
+  const [lon, lat] = planner.fromDisplay([event.lngLat.lng, event.lngLat.lat]);
+  const answer = await waypointDialog(targets, [lon, lat]);
+  if (!answer) return;
+  try {
+    await api.addWaypoint(answer.path, answer.name, answer.description, lon, lat);
+    await reloadEntry(answer.path);
+    renderTracks();
+    if (state.focus === answer.path) setFocus(answer.path, { fit: false });
+    tree.showMessage(`Added ${answer.name}`);
+  } catch (error) {
+    tree.showMessage(error.message, true);
+  }
+}
+
 // fillEndAt is the point of the track a click with the fill tool picks: the
 // end of a shown track when near one, else the nearest point, or null.
 function fillEndAt(entry, event) {
@@ -560,8 +583,8 @@ async function saveAs(path) {
       confirm: "Save",
     }
     : {
-      title: "Save as a new GPX",
-      message: `${entry.track.name} is saved as a new file, as it is being edited: the points cleaning kept, the stretches filled in, ${tracks} added to it, and the names given here. ${basename(path)} itself is not written, and an existing file is not replaced.`,
+      title: "Save as standalone GPX",
+      message: `${entry.track.name} is saved as a new self-contained GPX: edited points, fills, added tracks, names, cuts and route plan. No sidecar is needed. ${basename(path)} itself is not written, and an existing file is not replaced.`,
       folder: path.replace(/[\\/][^\\/]*$/, "") || root,
       fallback: state.config.root || "",
       places: state.config.places || [],
@@ -601,15 +624,15 @@ async function newGPX() {
   }
 }
 
-// discardSidecar deletes a file's sidecar after asking, so the GPX reads as
-// recorded again.
+// discardSidecar clears either a companion sidecar or embedded dgs edit state.
 async function discardSidecar(path) {
   const entry = state.tracks.get(path);
   if (!entry) return;
+  const embedded = entry.track.clean.embedded;
   const ok = await confirmDialog({
-    title: "Discard the sidecar?",
-    message: `Everything done to ${entry.track.name} goes: removals, filter settings, cuts, segment names, fills and tracks added to it. The GPX itself is not changed. This cannot be undone.`,
-    detail: entry.track.clean.sidecar,
+    title: embedded ? "Discard embedded edits?" : "Discard the sidecar?",
+    message: `Everything done to ${entry.track.name} goes: removals, filter settings, cuts, segment names, fills and tracks added to it. ${embedded ? "The dgs extension in the GPX is removed; its tracks and waypoints remain." : "The GPX itself is not changed."} This cannot be undone.`,
+    detail: embedded ? path : entry.track.clean.sidecar,
     confirm: "Discard",
     danger: true,
   });
@@ -944,7 +967,7 @@ function trackRow(path, entry) {
     track.points.length ? format.distance(track.stats.distance) : "",
     count("track", "track"), count("route", "route"), count("waypoint", "waypoint"),
     stops ? `${stops} stop${stops > 1 ? "s" : ""}` : "",
-    track.clean.error ? "sidecar unreadable" : track.clean.sidecar ? "sidecar" : "",
+    track.clean.error ? "dgs state unreadable" : track.clean.sidecar ? "sidecar" : track.clean.embedded ? "embedded edits" : "",
     track.draft ? `new, not saved${track.added ? "" : " — add segments from Segments, in Edit"}` : track.added ? `${track.added} added, not saved` : "",
   ];
 

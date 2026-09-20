@@ -36,19 +36,19 @@ server exposes the API under `/api/`; everything else is the page.
 | `/api/config` | The ways of travel the routers offer (`ways`: `id`, `label`, `service`), the base maps — built-in first, then configured — each with its coordinate system, the folder to open at, and `places`: the folders the save dialog lists down its side, each `name` and `path`. |
 | `/api/dir?path=` | The folders and `.gpx` files of a folder, each with the time it was last written, and a file with its size. Hidden entries are left out. |
 | `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; how many tracks were added to it, and `ours` when `dgs` wrote the file. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
-| `PUT /api/clean` | Writes a track's cleaning settings, and the points removed by hand, to its sidecar. Settings left out keep their defaults; a cleaning that does nothing removes the sidecar. |
-| `PUT /api/segments` | Writes a track's cuts and segment names to its sidecar. |
+| `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
+| `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
 | `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`. A GPX `dgs` wrote is renamed in the file itself; a track added here is renamed in the sidecar holding it; any other file keeps the new name in its sidecar under `names` and is not written. |
 | `POST /api/segments/write` | Writes chosen segments of a track, as cleaned, one `<trk>` each: added to another GPX's sidecar (mode `add`), or into a new GPX it will not overwrite (mode `create`). The source is refused. |
 | `POST /api/fill/route` | Asks a router for the road between two kept points of a track, with a way of travel `/api/config` lists under `ways`. Returns the route in WGS-84 and as drawn. Nothing is saved. |
-| `POST /api/fill` | Records a route between two points in the sidecar, inserted after the first; later indices move along. |
+| `POST /api/fill` | Records a route between two points in the companion sidecar or embedded dgs state, inserted after the first; later indices move along. |
 | `POST /api/route/leg` | Asks the router for the road between two waypoints of a planned route, `from` and `to` as `[lon, lat]` in WGS-84, with profile `car`, `bike` or `foot`. Nothing is saved. |
-| `POST /api/route/save` | Writes a planned route into a new GPX it will not overwrite — one `<trk>` of its legs, and a `<rte>` of its waypoints when `writeRte` — and keeps the plan in the new file's sidecar. |
+| `POST /api/route/save` | Writes a planned route into a new GPX it will not overwrite — one `<trk>` of its legs, and a `<rte>` of its waypoints when `writeRte` — and keeps the editable plan in the GPX extension. |
 | `DELETE /api/fill` | Removes a fill by its place in the list; its points go and the recorded ones come back. |
 | `DELETE /api/added` | Takes a track added from another file out of a GPX's sidecar, with the edits, cuts and fills on it. |
 | `POST /api/draft` | Starts a new, empty GPX in memory, named by `name`, and answers its path, `draft:<n>/<name>.gpx`. Every other call takes that path as it takes a file's. |
-| `DELETE /api/sidecar` | Deletes a GPX file's sidecar; the GPX is not touched. |
-| `POST /api/save-as` | Writes the current edited tracks into a new GPX it will not overwrite: only points kept by cleaning, at their edited positions, including fills and added tracks. Cuts are remapped into the new file's sidecar. |
+| `DELETE /api/sidecar` | Discards companion sidecar or embedded dgs edit state. The recorded tracks and standalone waypoints remain. |
+| `POST /api/save-as` | Writes the current edited tracks into a new GPX it will not overwrite: only points kept by cleaning, at their edited positions, including fills and added tracks. Cuts and editable plans are embedded in the new file; no sidecar is needed. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
 | `POST /api/reveal` | Shows a file or folder in this machine's file manager. Refused unless the request comes from this machine. `/api/config` says whether the page may offer it. |
 
@@ -476,10 +476,16 @@ never replacing an existing file. The saved file then takes its place.
 row. It opens the save dialog beside the file, named `<name> edited.gpx`, and
 never replaces an existing file. The new GPX holds a snapshot of its tracks:
 only the points cleaning kept, at their edited positions, including fills and
-tracks added from other files. The saved cuts are remapped to those points in
-the new file's sidecar. The original GPX is not written.
+tracks added from other files. Saved cuts and editable route plans are
+embedded in the new file, which has `creator="dgs-toolbox"` and needs no
+sidecar. The original GPX is not written.
 
-Cuts and names are saved to the sidecar at once.
+**Embedded edit state.** New dgs GPX files identify themselves with the
+standard root `creator` attribute. Subsequent edits are stored directly in
+their GPX `<extensions>` as dgs state rather than in a new companion file.
+Save as… merges an external GPX and its sidecar into a new standalone dgs GPX.
+The extension is not encryption or
+authentication: it is readable by dgs and ignored by ordinary GPX readers.
 
 ### The sidecar
 

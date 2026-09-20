@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,7 +16,7 @@ import (
 // ErrExists is returned by Create when the file is already there.
 var ErrExists = errors.New("file already exists")
 
-// Creator is written as the creator of new files.
+// Creator identifies GPX files written by dgs and eligible for in-place edits.
 const Creator = "dgs-toolbox"
 
 // EncodeTracks writes tracks as <trk> elements, each segment a <trkseg>. Only
@@ -239,6 +240,50 @@ func RenameTrack(path string, index int, name string) error {
 // ErrNotOurs is returned when a file this program did not write would be
 // changed in place.
 var ErrNotOurs = errors.New("the file was not written by " + Creator)
+
+// AddWaypoint inserts one standalone <wpt> into a dgs-created GPX, preserving
+// its tracks, routes and embedded state byte for byte.
+func AddWaypoint(path string, waypoint Waypoint) error {
+	if math.IsNaN(waypoint.Lat) || math.IsNaN(waypoint.Lon) || math.Abs(waypoint.Lat) > 90 || math.Abs(waypoint.Lon) > 180 {
+		return errors.New("waypoint coordinates are outside the globe")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	file, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	if !file.IsOurs() {
+		return fmt.Errorf("%s: %w", path, ErrNotOurs)
+	}
+	end := bytes.LastIndex(data, []byte("</gpx>"))
+	if end < 0 {
+		return errors.New("GPX root is not closed")
+	}
+	for _, tag := range [][]byte{[]byte("<rte>"), []byte("<trk>"), []byte("<extensions>")} {
+		if at := bytes.Index(data, tag); at >= 0 && at < end {
+			end = at
+		}
+	}
+	var b bytes.Buffer
+	b.Write(data[:end])
+	fmt.Fprintf(&b, "  <wpt lat=\"%s\" lon=\"%s\">", coordinate(waypoint.Lat), coordinate(waypoint.Lon))
+	if waypoint.Name != "" {
+		b.WriteString("<name>")
+		_ = xml.EscapeText(&b, []byte(waypoint.Name))
+		b.WriteString("</name>")
+	}
+	if waypoint.Description != "" {
+		b.WriteString("<desc>")
+		_ = xml.EscapeText(&b, []byte(waypoint.Description))
+		b.WriteString("</desc>")
+	}
+	b.WriteString("</wpt>\n")
+	b.Write(data[end:])
+	return replaceFile(path, b.Bytes())
+}
 
 // trackSpan returns the byte range of the index-th <trk> element, from its
 // opening angle bracket to the end of its </trk>.
