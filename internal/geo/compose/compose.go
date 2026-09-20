@@ -223,3 +223,23 @@ func addedTracks(added []Added) []gpxfile.Track {
 	}
 	return tracks
 }
+
+// Waypoint is a standalone point added to a new GPX not yet on disk. A file
+// already written keeps its waypoints in the GPX itself; a draft has nowhere
+// else to hold them until it is saved.
+type Waypoint struct {
+	Lon         float64 `json:"lon"`
+	Lat         float64 `json:"lat"`
+	Name        string  `json:"name"`
+	Description string  `json:"desc,omitempty"`
+	At          int64   `json:"at,omitempty"` // Unix milliseconds it was added
+}
+
+// Point is the waypoint as a GPX waypoint.
+func (w Waypoint) Point() gpxfile.Waypoint {
+	return gpxfile.Waypoint{
+		Point:       gpxfile.Point{LatLon: geo.LatLon{Lat: w.Lat, Lon: w.Lon}},
+		Name:        w.Name,
+		Description: w.Description,
+	}
+}

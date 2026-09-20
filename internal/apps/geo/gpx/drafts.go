@@ -85,10 +85,15 @@ func checkGPX(path string) error {
 // openGPX reads a GPX file, or a draft's empty one.
 func openGPX(path string) (*gpxfile.File, error) {
 	if isDraft(path) {
-		if _, ok := drafts.get(path); !ok {
+		draft, ok := drafts.get(path)
+		if !ok {
 			return nil, errNoDraft
 		}
-		return &gpxfile.File{Name: draftName(path)}, nil
+		file := &gpxfile.File{Name: draftName(path)}
+		for _, waypoint := range draft.Waypoints {
+			file.Waypoints = append(file.Waypoints, waypoint.Point())
+		}
+		return file, nil
 	}
 	return gpxfile.Open(path)
 }

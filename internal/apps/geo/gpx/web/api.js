@@ -30,6 +30,7 @@ export const api = {
   saveClean: (path, clean) => sendJSON("PUT", "api/clean", { path, clean }),
   // renamePart names one <trk>, <rte> or <wpt> of a file, keyed "t0", "r0", "w0".
   renamePart: (path, key, name) => sendJSON("PUT", "api/part-name", { path, key, name }),
+  addWaypoint: (path, name, description, lon, lat) => postJSON("api/waypoint", { path, name, description, lon, lat }),
   // saveSegments records a track's cuts and segment names in its sidecar.
   saveSegments: (path, cuts, names) => sendJSON("PUT", "api/segments", { path, cuts, names }),
   // writeSegments writes chosen segments into a new or another GPX.
