@@ -131,7 +131,11 @@ func groupTree(nodes []*nodeGroup, isUser func(string) bool, previous []*groupRo
 func buildTree(targets []target.Target) []*nodeGroup {
 	var nodes []*nodeGroup
 	for _, g := range target.GroupByNode(targets) {
-		n := &nodeGroup{name: g.Node, key: g.Node, expanded: true}
+		// A holder starts closed. An index opens on whose machines these are
+		// and which machines they are — one level under each group — and what
+		// runs on a machine is the answer to a question about that machine,
+		// asked by opening it.
+		n := &nodeGroup{name: g.Node, key: g.Node}
 		for _, t := range g.Targets {
 			// GroupByNode keys an unmanaged user's targets by the user,
 			// since they have no node; a target with no node is how the

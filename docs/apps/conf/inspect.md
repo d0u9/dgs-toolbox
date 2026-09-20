@@ -45,6 +45,16 @@ one question: which of a person's identities this file was rendered for. A
 person with device files shows those; one without shows the credentials
 themselves.
 
+**An index opens folded one level above its files.** A group and the holders
+under it are shown — whose machines these are and which machines they are on
+Nodes, a person and their devices and credentials on Users — and what hangs
+off a holder is not. That level is the answer to "which machines" and "whose
+identities", which is the question an index is opened with; what a machine
+runs, or what was rendered for one identity, is the next question and is
+asked by opening that row with `l`. An inventory of any size opened as a wall
+of instances otherwise, and the rows someone came for scrolled off before
+they could read them.
+
 Nodes and Services are the same set of instances indexed from opposite ends.
 A node answers "what runs on this machine", which is what an export is for; a
 service answers "where is this deployed", which otherwise means reading every

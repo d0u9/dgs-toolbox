@@ -139,6 +139,9 @@ func selectDetail(t *testing.T, m InspectModel, id string) (kind, body string) {
 	if strings.HasPrefix(id, "service:") {
 		m.setTab(tabServices)
 	}
+	if strings.HasPrefix(id, "inst:") {
+		m = openHolders(m)
+	}
 	if !m.list.SelectID(id) {
 		t.Fatalf("SelectID(%q): row not found", id)
 	}
@@ -312,7 +315,7 @@ func pressInspect(t *testing.T, m InspectModel, key string) InspectModel {
 }
 
 func TestInspect_ViewRendersBothColumns(t *testing.T) {
-	m := newInspectModel(buildInspectRoot(t), "")
+	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	m.width, m.height = 100, 24
 	m.list.SelectID("inst:ss-srv")
 
@@ -390,7 +393,7 @@ func TestInspect_NodeDetailListsDerivedInstances(t *testing.T) {
 // are the only thing carrying depth, and the detail line under an instance
 // has to continue the trunk or the run comes apart.
 func TestInspect_NodesIndexDrawsInstancesOnBranches(t *testing.T) {
-	m := newInspectModel(buildInspectRoot(t), "")
+	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	m.width, m.height = 100, 24
 
 	var node, instance *scrolllist.Item
@@ -444,8 +447,68 @@ func TestInspect_FoldingHidesAndShowsInstances(t *testing.T) {
 
 // TestInspect_FoldingLeftFromAnInstanceGoesToItsNode covers h on a row with
 // nothing to fold, which is how the File Explorer's keys leave a child.
-func TestInspect_FoldingLeftFromAnInstanceGoesToItsNode(t *testing.T) {
+// TestInspect_HoldersStartFolded covers the fold state an index opens on:
+// the groups and the holders under them, and nothing below. What runs on a
+// machine is a question about that machine, asked by opening it, and an
+// inventory of any size opened as a wall of instances otherwise.
+func TestInspect_HoldersStartFolded(t *testing.T) {
 	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+
+	srv := itemByID(t, m.nodeItems, "node:srv")
+	if !strings.HasPrefix(srv.Label, "▸ ") {
+		t.Fatalf("node label = %q, want a closed disclosure marker", srv.Label)
+	}
+	if indexHas(m.nodeItems, "inst:ss-srv") {
+		t.Fatalf("index = %+v, want no instance row under a folded node", m.nodeItems)
+	}
+
+	// A person stays open one level: their devices and credentials are the
+	// answer to "who is this person", the files under each are not.
+	m.setTab(tabUsers)
+	doug := itemByID(t, m.userItems, "user:doug")
+	if !strings.HasPrefix(doug.Label, "▾ ") {
+		t.Fatalf("user label = %q, want an open disclosure marker", doug.Label)
+	}
+	if !indexHas(m.userItems, "node:laptop") {
+		t.Fatalf("index = %+v, want doug's device row", m.userItems)
+	}
+	if indexHas(m.userItems, "inst:laptop-sfo-ssserver-ss-json") {
+		t.Fatalf("index = %+v, want no file row under a folded device", m.userItems)
+	}
+}
+
+// TestInspect_FoldingACredentialLeavesItsPersonOpen covers a row keyed the
+// same as the row above it. An unmanaged user's group row and the credential
+// row under it are both that person, so both were keyed "user:<name>" and
+// `o` on the credential folded the person away.
+func TestInspect_FoldingACredentialLeavesItsPersonOpen(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.setTab(tabUsers)
+	if !m.list.SelectID("cred:yak") {
+		t.Fatalf("index = %+v, want yak's credential row", m.userItems)
+	}
+
+	m = pressInspect(t, m, "o")
+	if !indexHas(m.userItems, "cred:yak") {
+		t.Fatalf("index = %+v, want yak's credential still shown", m.userItems)
+	}
+	if got := itemByID(t, m.userItems, "user:yak"); !strings.HasPrefix(got.Label, "▾ ") {
+		t.Fatalf("user label = %q, want yak still open", got.Label)
+	}
+	if !indexHas(m.userItems, "inst:yak-default-sfo-ssserver-ss-json") {
+		t.Fatalf("index = %+v, want the credential's files shown", m.userItems)
+	}
+
+	m = pressInspect(t, m, "o")
+	if indexHas(m.userItems, "inst:yak-default-sfo-ssserver-ss-json") {
+		t.Fatalf("index = %+v, want the files folded away again", m.userItems)
+	}
+}
+
+func TestInspect_FoldingLeftFromAnInstanceGoesToItsNode(t *testing.T) {
+	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	m.width, m.height = 100, 24
 	m.list.SelectID("inst:ss-srv")
 
@@ -524,7 +587,7 @@ func TestInspect_UserDetailListsDevicesWithWhatEachDerives(t *testing.T) {
 // Users index is a flat collection where a number is what makes a row easy
 // to point at.
 func TestInspect_BothTreesHideTheirNumbers(t *testing.T) {
-	m := newInspectModel(buildInspectRoot(t), "")
+	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	m.width, m.height = 100, 24
 
 	if strings.Contains(m.View(), " 1 ▾") == false && strings.Contains(m.View(), "▾") == false {

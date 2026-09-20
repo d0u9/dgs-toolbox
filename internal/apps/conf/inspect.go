@@ -460,7 +460,7 @@ func (m *InspectModel) toParent() {
 			}
 			id := "node:" + n.name
 			if n.user {
-				id = "user:" + n.name
+				id = "cred:" + n.key
 			}
 			m.list.SelectID(id)
 			m.detailScroll = 0
@@ -601,9 +601,13 @@ func treeRows(nodes []*nodeGroup, indent, unit string) ([]scrolllist.Item, [][]s
 	var items []scrolllist.Item
 	var rows [][]string
 	for _, n := range nodes {
+		// An unmanaged user's holder row is the person's own credential, and
+		// its detail is the person — but it is not the group row above it,
+		// which is that same person. Two rows keyed "user:doug" made folding
+		// one fold the other, so the holder row is keyed by what it draws.
 		kind, what := "node", ""
 		if n.user {
-			kind, what = "user", "credential, "
+			kind, what = "cred", "credential, "
 		} else if n.owner != "" {
 			// Whose device this is, said on the row itself: a phone named
 			// `phone` says nothing on its own, and the group header scrolls
@@ -960,7 +964,9 @@ func renderDetail(l InspectData, kind, id string) (string, error) {
 		return renderNodeDetail(l, id)
 	case "inst":
 		return renderInstanceDetail(l, id)
-	case "user":
+	case "user", "cred":
+		// An unmanaged user's credential row stands for the person: there is
+		// no file behind it, and the person is what it has to say.
 		return renderUserDetail(l, id)
 	case "service":
 		return renderServiceDetail(l, id)
