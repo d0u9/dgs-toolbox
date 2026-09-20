@@ -247,10 +247,11 @@ type fillJSON struct {
 // cleanJSON is a track's cleaning: its settings as the sidecar holds them (or
 // the defaults, all off, without one) and what they did.
 type cleanJSON struct {
-	Params  clean.Params `json:"params"`
-	Sidecar string       `json:"sidecar,omitempty"` // path of the sidecar, when there is one
-	Error   string       `json:"error,omitempty"`   // why the sidecar could not be read
-	Counts  clean.Counts `json:"counts"`
+	Params   clean.Params `json:"params"`
+	Sidecar  string       `json:"sidecar,omitempty"` // path of the sidecar, when there is one
+	Embedded bool         `json:"embedded,omitempty"`
+	Error    string       `json:"error,omitempty"` // why the sidecar could not be read
+	Counts   clean.Counts `json:"counts"`
 }
 
 // partJSON is one track, route or waypoint of a file. Key names it for the
@@ -456,7 +457,11 @@ func trackResponse(a analysis) trackJSON {
 	response.Ours = a.file.IsOurs()
 	response.Plan = a.cleaning.Plan
 	if (a.sidecar || a.sidecarErr != nil) && !response.Draft {
-		response.Clean.Sidecar = sidecar.PathFor(a.path)
+		if _, err := os.Stat(sidecar.PathFor(a.path)); err == nil || a.sidecarErr != nil {
+			response.Clean.Sidecar = sidecar.PathFor(a.path)
+		} else {
+			response.Clean.Embedded = true
+		}
 	}
 	if a.sidecarErr != nil {
 		response.Clean.Error = a.sidecarErr.Error()

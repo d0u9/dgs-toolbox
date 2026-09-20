@@ -102,6 +102,24 @@ func loadSidecar(path string) (sidecar.File, bool, error) {
 		}
 		return file, true, nil
 	}
+	if parsed, err := gpxfile.Open(path); err == nil && parsed.IsOurs() {
+		data, found, err := gpxfile.ReadState(path)
+		if err != nil {
+			return sidecar.File{}, false, err
+		}
+		if found {
+			var file sidecar.File
+			if err := json.Unmarshal(data, &file); err != nil {
+				return sidecar.File{}, false, err
+			}
+			if file.Version > sidecar.Version {
+				return sidecar.File{}, false, fmt.Errorf("embedded state version %d is newer than this build reads", file.Version)
+			}
+			file.Clean = file.Clean.Normalize()
+			return file, true, nil
+		}
+		return sidecar.File{Version: sidecar.Version, Clean: clean.Defaults()}, false, nil
+	}
 	return sidecar.Load(path)
 }
 
@@ -109,7 +127,19 @@ func saveSidecar(path string, file sidecar.File) error {
 	if isDraft(path) {
 		return drafts.set(path, file)
 	}
-	return sidecar.Save(path, file)
+	parsed, err := gpxfile.Open(path)
+	if err != nil || !parsed.IsOurs() {
+		return sidecar.Save(path, file)
+	}
+	if !file.Active() {
+		return gpxfile.WriteState(path, nil)
+	}
+	file.Version = sidecar.Version
+	data, err := json.Marshal(file)
+	if err != nil {
+		return err
+	}
+	return gpxfile.WriteState(path, data)
 }
 
 func draftName(path string) string {
@@ -133,6 +163,16 @@ func (a api) discardSidecar(w http.ResponseWriter, r *http.Request) {
 	if err := checkGPX(body.Path); err != nil {
 		writeError(w, statusFor(err), err)
 		return
+	}
+	if _, err := os.Stat(sidecar.PathFor(body.Path)); errors.Is(err, os.ErrNotExist) {
+		if parsed, err := gpxfile.Open(body.Path); err == nil && parsed.IsOurs() {
+			if err := gpxfile.WriteState(body.Path, nil); err != nil {
+				writeError(w, statusFor(err), err)
+				return
+			}
+			writeJSON(w, map[string]bool{"ok": true})
+			return
+		}
 	}
 	if err := os.Remove(sidecar.PathFor(body.Path)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		writeError(w, statusFor(err), err)
