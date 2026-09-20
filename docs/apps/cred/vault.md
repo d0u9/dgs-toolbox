@@ -223,6 +223,102 @@ Re-encrypting:
   recipients, and always checked with it. The record keeps `encryption:
   passphrase` and sets `updated`.
 
+## Deleting a file (E5)
+
+`d` on a file in the vault list moves it out of the vault.
+
+- The file goes to **the trash**, not away: `~/.Trash` on macOS, the
+  freedesktop.org trash elsewhere, the same way `dgs cred keys` deletes an
+  identity. A vault file is often the only copy of what is inside it, and the
+  one mistake this page can make that nothing else undoes is worth a step
+  backwards.
+- Its recipient record `<name>.age.json` goes with it, in the same move. The
+  record is plaintext, names hosts, and describes a file that is no longer
+  there.
+- The confirmation names both paths and says that the vault is the only copy
+  unless the folder is in git or a backup.
+- A folder row is refused: files are deleted one by one, so that what goes is
+  what was read on screen.
+- A file open in memory is refused too, with a note to close it first — moving
+  it while its contents are on screen leaves a page describing a file that is
+  not there.
+- Deleting does not re-encrypt anything. A key that could open the file still
+  opens any copy of it that a backup or git history holds.
+
+The status bar says what moved and where. The folder is scanned again
+afterwards, so the list is what is on disk.
+
+## Publishing to git (E6)
+
+`p` publishes the folder the vault is in: `git add -A`, `git commit`, `git
+push`, in one flow, so that a change made here reaches the other machines
+without leaving the page.
+
+- It runs **the `git` on `PATH`** — the user's own. Their identity, signing
+  key, credential helper and hooks are what a commit from this machine is
+  expected to carry, and a commit written any other way would be subtly
+  different from the same command in a terminal. `dgs` is still one binary: it
+  carries no git, and says so when there is none.
+- Refused, before anything is typed, when git is not installed, when the vault
+  folder is not inside a working tree, or when `HEAD` is detached — there is no
+  branch to push and a commit there is easy to lose.
+- With nothing to commit and nothing the remote lacks it says so and asks
+  nothing.
+- The **commit message** is asked for, with a default naming what moved: the
+  file's name for one change, a count for several. With nothing to commit —
+  only a commit that was never pushed — no message is asked for.
+- The **confirmation** names the steps, the branch, where the push goes, and
+  the paths that are staged. It says plainly that everything changed under the
+  working tree is staged, not only the vault folder, since the repository may
+  hold more than the vault. It warns when the remote is ahead, because the push
+  may then be rejected, and when there is no remote at all, in which case the
+  commit is made and nothing is pushed.
+- The push sets the upstream when the branch has none, so the next one needs no
+  argument. Nothing is forced and nothing is pulled: a rejected push is
+  reported as git reported it, and is resolved in a terminal.
+- The status bar says what was committed, as how many files and the short
+  hash, and whether it was pushed.
+
+The steps live in [`internal/gitrepo`](../../../internal/gitrepo), which reads a
+working tree and publishes it as plain values, with no TUI of its own.
+
+## Updating from git (E7)
+
+`f` brings in what another machine published: `git fetch`, then a
+fast-forward of the branch the vault folder is on.
+
+- **Fetching runs first, always.** It touches only `.git`, never the working
+  tree, so it is safe whatever is in the folder, and what it finds is what the
+  dialog is then about.
+- **Only a fast-forward is offered.** The vault holds encrypted files, and a
+  conflict in one cannot be resolved by anyone — not in this TUI, not in an
+  editor. An update that could leave the working tree half-merged is therefore
+  not one this page makes.
+- After fetching, the page says which case it is:
+
+  | State | What happens |
+  | --- | --- |
+  | level with the upstream | says so, asks nothing |
+  | only ahead | says so, and that `p` publishes |
+  | only behind | the confirmation below |
+  | **diverged** — both sides moved | refused, naming both counts, to be merged or rebased in a terminal |
+  | no remote, or no upstream | says which |
+
+- The **confirmation** names the branch, the upstream, how many commits arrive,
+  their subjects, and the paths they change — the part that matters for a
+  vault. It says that only a fast-forward is made: nothing here is merged,
+  rebased or stashed.
+- A local change to a file the update would bring is git's own refusal, with
+  git's reason: `merge --ff-only` stops before writing, and the local file is
+  left as it is. Commit it with `p`, or move it aside, then update.
+- The folder is scanned again afterwards, since what is on disk has changed.
+- Nothing is fetched on its own. A network request happens when `f` is pressed
+  and at no other time.
+
+`git pull` is not used. It merges or rebases according to the user's
+configuration, and which of the two a credentials vault gets should not depend
+on a setting somewhere else.
+
 ## Opening a file (C)
 
 ### Decrypting
@@ -369,4 +465,8 @@ These are known and not handled.
 11. **D2 — Actions on the page.** The menu, forms and confirmation.
 12. **E3a — Re-encrypting.** Decrypt, encrypt again, verify, replace, record.
 13. **E3b — Changing recipients from the page.** The flow above.
+14. **E5 — Deleting.** `d`, to the trash, with the record.
+15. **E6 — Publishing to git.** `p`: add, commit and push through the git on
+    `PATH`, with `internal/gitrepo` holding the steps.
+16. **E7 — Updating from git.** `f`: fetch, then a fast-forward only.
 

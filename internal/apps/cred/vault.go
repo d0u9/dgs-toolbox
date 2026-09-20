@@ -13,6 +13,8 @@ import (
 
 	"dgs-toolbox/internal/cred/identities"
 	"dgs-toolbox/internal/cred/vault"
+	"dgs-toolbox/internal/desktop"
+	"dgs-toolbox/internal/gitrepo"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/clipboard"
 	"dgs-toolbox/internal/tui/datafield"
@@ -94,6 +96,16 @@ type vaultModel struct {
 	action *actionFlow
 	// edit is changing a file's recipients.
 	edit *editFlow
+	// del is deleting a file from the vault, and git is publishing the folder
+	// it is in.
+	del *vaultDeleteFlow
+	git *gitFlow
+	// update is fetching and fast-forwarding the folder the vault is in.
+	update *updateFlow
+	// trash moves a deleted file aside and gitRunner runs git; tests replace
+	// both.
+	trash     func(string) (string, error)
+	gitRunner gitrepo.Runner
 	// copy puts text on the clipboard; tests replace it.
 	copy func(string) error
 }
@@ -103,6 +115,7 @@ func newVaultModel() vaultModel {
 		list:      scrolllist.New(),
 		collapsed: map[string]bool{},
 		copy:      clipboard.Copy,
+		trash:     desktop.Trash,
 		fields: datafield.New(
 			datafield.Field{ID: listField, Row: 0, Col: 0},
 			datafield.Field{ID: contentsField, Row: 0, Col: 1},
@@ -280,6 +293,25 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.finishAction(msg)
 		}
 		return m, nil
+	case vaultDeletedMsg:
+		if m.del != nil {
+			return m.finishDelete(msg)
+		}
+		return m, nil
+	case gitStatusMsg:
+		return m.finishGitStatus(msg)
+	case gitFetchedMsg:
+		return m.finishFetch(msg)
+	case gitUpdatedMsg:
+		if m.update != nil {
+			return m.finishUpdate(msg)
+		}
+		return m, nil
+	case gitPublishedMsg:
+		if m.git != nil {
+			return m.finishGit(msg)
+		}
+		return m, nil
 	case idleTickMsg:
 		return m.updateIdle(msg)
 	}
@@ -294,6 +326,21 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.edit != nil {
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			return m.updateEdit(msg)
+		}
+	}
+	if m.del != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateDelete(msg)
+		}
+	}
+	if m.git != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateGit(msg)
+		}
+	}
+	if m.update != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateUpdate(msg)
 		}
 	}
 	if sealed, ok := msg.(sealedMsg); ok && m.add != nil {
@@ -392,6 +439,15 @@ func (m vaultModel) updateKey(key string) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case "e":
 		cmd := m.startEdit()
+		return m, cmd
+	case "d":
+		cmd := m.startVaultDelete()
+		return m, cmd
+	case "p":
+		cmd := m.startGit()
+		return m, cmd
+	case "f":
+		cmd := m.startUpdate()
 		return m, cmd
 	case "o":
 		start := m.root
@@ -625,6 +681,15 @@ func (m vaultModel) View() string {
 	if m.edit != nil {
 		return overlay.Place(workspace, m.editView(), m.width, m.height)
 	}
+	if m.del != nil {
+		return overlay.Place(workspace, m.deleteView(), m.width, m.height)
+	}
+	if m.git != nil {
+		return overlay.Place(workspace, m.gitView(), m.width, m.height)
+	}
+	if m.update != nil {
+		return overlay.Place(workspace, m.updateView(), m.width, m.height)
+	}
 	if m.add != nil {
 		return overlay.Place(workspace, m.addView(), m.width, m.height)
 	}
@@ -799,6 +864,17 @@ func (m vaultModel) Status() tui.Status {
 	if m.edit != nil {
 		return tui.Status{Left: "CHANGE RECIPIENTS", Center: m.edit.file.Path, Right: "↑↓ Move  space Check  ↵ Continue  esc Cancel"}
 	}
+	if m.del != nil {
+		return tui.Status{Left: "DELETE", Center: m.del.name, Right: "←→ Choose  ↵ Confirm  esc Cancel"}
+	}
+	if m.git != nil {
+		left, right := m.gitStatus()
+		return tui.Status{Left: left, Center: tilde(m.root), Right: right}
+	}
+	if m.update != nil {
+		left, right := m.updateStatus()
+		return tui.Status{Left: left, Center: tilde(m.root), Right: right}
+	}
 	if m.action != nil {
 		left, right := m.actionStatus()
 		return tui.Status{Left: left, Center: m.action.entry.Path, Right: right}
@@ -822,12 +898,12 @@ func (m vaultModel) Status() tui.Status {
 	if center == "" {
 		center = m.summary()
 	}
-	right := "↑↓ Move  ↵ Open  e Recipients  a Add  o Folder"
+	right := "↑↓ Move  ↵ Open  e Recipients  d Delete  a Add  f Update  p Publish"
 	if _, report, ok := m.selectedFile(); ok && report.Status == vault.Passphrase {
-		right = "↑↓ Move  ↵ Open  e Passphrase  a Add  o Folder"
+		right = "↑↓ Move  ↵ Open  e Passphrase  d Delete  a Add  f Update  p Publish"
 	}
 	if _, ok := m.selectedDir(); ok {
-		right = "↑↓ Move  ↵ Fold  a Add  o Folder  R Rescan"
+		right = "↑↓ Move  ↵ Fold  a Add  f Update  p Publish  o Folder"
 	}
 	return tui.Status{Left: left, Center: center, Right: right}
 }

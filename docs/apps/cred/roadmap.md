@@ -14,6 +14,9 @@ stands. The designs are in [`keys.md`](keys.md), [`vault.md`](vault.md) and
 | E2 | Adding a file or folder, to recipients or with a passphrase | built |
 | E3 | Changing a file's recipients, or its passphrase | built |
 | E4 | Removing or replacing a host across every file | not started |
+| E5 | Deleting a file from the vault, to the trash, with its record | built |
+| E6 | Publishing the vault folder with git: add, commit, push | built |
+| E7 | Updating the vault folder with git: fetch, fast-forward only | built |
 
 ## Deferred
 
