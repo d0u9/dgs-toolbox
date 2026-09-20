@@ -342,9 +342,11 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 		Segments: movedCuts(result),
 		Plan:     file.Plan,
 	}
-	if err := sidecar.Save(target, saved); err != nil {
+	// Newly created dgs files keep their remaining edit state inside GPX.
+	saveErr := saveSidecar(target, saved)
+	if saveErr != nil {
 		os.Remove(target)
-		writeError(w, http.StatusInternalServerError, err)
+		writeError(w, http.StatusInternalServerError, saveErr)
 		return
 	}
 	// A saved draft is done with; the original goes back to its own tracks,
