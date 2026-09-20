@@ -33,11 +33,12 @@ server exposes the API under `/api/`; everything else is the page.
 | --- | --- |
 | `/` | The web page. |
 | `/api/health` | Answers `{"ok":true}`. |
-| `/api/config` | The ways of travel the routers offer (`ways`: `id`, `label`, `service`), the base maps — built-in first, then configured — each with its coordinate system, and the folder to open at. |
-| `/api/dir?path=` | The folders and `.gpx` files of a folder. Hidden entries are left out. |
-| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; and how many tracks were added to it. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
+| `/api/config` | The ways of travel the routers offer (`ways`: `id`, `label`, `service`), the base maps — built-in first, then configured — each with its coordinate system, the folder to open at, and `places`: the folders the save dialog lists down its side, each `name` and `path`. |
+| `/api/dir?path=` | The folders and `.gpx` files of a folder, each with the time it was last written, and a file with its size. Hidden entries are left out. |
+| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; how many tracks were added to it, and `ours` when `dgs` wrote the file. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
 | `PUT /api/clean` | Writes a track's cleaning settings, and the points removed by hand, to its sidecar. Settings left out keep their defaults; a cleaning that does nothing removes the sidecar. |
 | `PUT /api/segments` | Writes a track's cuts and segment names to its sidecar. |
+| `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`. A GPX `dgs` wrote is renamed in the file itself; a track added here is renamed in the sidecar holding it; any other file keeps the new name in its sidecar under `names` and is not written. |
 | `POST /api/segments/write` | Writes chosen segments of a track, as cleaned, one `<trk>` each: added to another GPX's sidecar (mode `add`), or into a new GPX it will not overwrite (mode `create`). The source is refused. |
 | `POST /api/fill/route` | Asks a router for the road between two kept points of a track, with a way of travel `/api/config` lists under `ways`. Returns the route in WGS-84 and as drawn. Nothing is saved. |
 | `POST /api/fill` | Records a route between two points in the sidecar, inserted after the first; later indices move along. |
@@ -47,7 +48,7 @@ server exposes the API under `/api/`; everything else is the page.
 | `DELETE /api/added` | Takes a track added from another file out of a GPX's sidecar, with the edits, cuts and fills on it. |
 | `POST /api/draft` | Starts a new, empty GPX in memory, named by `name`, and answers its path, `draft:<n>/<name>.gpx`. Every other call takes that path as it takes a file's. |
 | `DELETE /api/sidecar` | Deletes a GPX file's sidecar; the GPX is not touched. |
-| `POST /api/save-as` | Writes a GPX with the tracks added to it into a new file it will not overwrite; the new file's sidecar takes the work, and the original's loses the added tracks. |
+| `POST /api/save-as` | Writes the current edited tracks into a new GPX it will not overwrite: only points kept by cleaning, at their edited positions, including fills and added tracks. Cuts are remapped into the new file's sidecar. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
 | `POST /api/reveal` | Shows a file or folder in this machine's file manager. Refused unless the request comes from this machine. `/api/config` says whether the page may offer it. |
 
@@ -104,6 +105,25 @@ map. It is the interface later milestones build on.
   hover, that reveals the item in Finder or Explorer. It appears only when the
   page is opened on the machine running `dgs`: from another machine it would
   open windows on a screen nobody there can see.
+- **Choosing where to save.** Everything that writes a new file — a planned
+  route, a new GPX, *Save as…*, and *Browse…* on the Segments tab — opens one
+  save dialog instead of a typed path: the folder it opens at, `↑` to the
+  folder above, its folders to step into and its GPX files listed to take a
+  name from, and one field for the file name. `.gpx` is added when it is left
+  off. Down its side are the usual places, as a file manager lists them: the
+  folder `dgs` opened at when it is not the home directory, *Home*, the
+  folders under it a GPX is likely to be in — Desktop, Documents, Downloads,
+  Pictures, Movies — and, on macOS, each mounted volume, so an external disk
+  is one click away. Only folders that are there are listed, and the one being
+  browsed is marked. The listing has the three columns a file manager has —
+  *Name*, *Date Modified*, *Size* — and clicking a heading sorts by it,
+  clicking it again turns the order round, marked `^` or `v`; a name sorts the
+  way it reads, so `2` comes before `10`, and a date or a size opens newest
+  and largest first. Folders stay above files, and the choice is kept for the
+  next save. It opens at the folder the file belongs to — the folder tree's, or the
+  one beside the file being saved — and falls back to the folder `dgs` opened
+  at, `geo.gpx.root` or the home directory, when that folder is gone. The full path it returns is what the server is asked to write, and an
+  existing file is still never replaced.
 - **Names.** A track is named by its file name. The name inside a GPX file is
   often only a recorder's timestamp; the file name is the one the reader chose.
   File names run long, so the sidebar reads a size smaller, a name wraps to two
@@ -112,9 +132,12 @@ map. It is the interface later milestones build on.
   row's end on hover rather than reserving width. The full path is the row's
   tooltip.
 - **What a file holds.** A GPX file may hold several tracks, planned routes
-  and waypoints. A workspace row that holds more than one track, any route
-  or waypoint, or any track added from another file, has a disclosure (▶, at the row's end so rows start at the left
-  edge) that lists them beneath it: tracks with
+  and waypoints. Every workspace row that holds anything has a disclosure (▶,
+  at the row's end so rows start at the left edge) that lists them beneath it
+  — a file of one track too, so that track can be shown on its own, framed and
+  renamed, whoever recorded it. The bar that shows or hides them all appears
+  only when there is more than one; a single part shows and hides from its own
+  row. The list holds: tracks with
   their distance and segment count, routes (drawn dashed) with their length,
   waypoints (drawn as dots) with their description and elevation. Each has its
   own show/hide, and a bar above the list shows or hides them all at once, or
@@ -124,6 +147,14 @@ map. It is the interface later milestones build on.
   stops and timeline still cover all the file's tracks together, but hatch the
   ranges of hidden tracks on both charts and the timeline, and a stop inside a
   hidden track has no marker on the map.
+- **Renaming a part.** Every part row has `✎`, on hover, which asks for a new
+  name for that `<trk>`, `<rte>` or `<wpt>`. Where the name is kept follows
+  who wrote the file: a GPX `dgs` wrote is renamed in the file itself, and a
+  track added here is renamed where it is held, in the sidecar, so it carries
+  that name into the GPX it is written to. Any other file — a recording — is
+  never written: its new names go in its sidecar under `names`, keyed `t0`,
+  `r0`, `w0`, and the page shows them in place of the file's own. The dialog
+  says which of the two is happening before the name is typed.
 - **Several tracks at once.** Every shown workspace track is drawn in its own colour,
   picked from a palette and changeable from its row. A track's recorded
   segments are drawn apart, so a gap in the recording is not bridged by a
@@ -374,7 +405,7 @@ clicks.
   every leg follows the road, the router's time. *Reverse* turns the route
   round, *Close loop* adds the start again at the end, *Clear* starts over.
   The plan on the page is remembered by the browser until it is cleared.
-- **Saving.** *Save as GPX…* asks for the full path of a new file — an
+- **Saving.** *Save as GPX…* opens the save dialog for a new file — an
   existing one is never replaced — and writes one `<trk>` of the legs joined,
   its points marked `<src>dgs-toolbox: planned route</src>`, and a `<rte>` of
   the waypoints when *Also write the waypoints as a <rte>* is on. No times or
@@ -418,11 +449,13 @@ nothing is lost between them. Segments are cut from what cleaning kept.
 - **Writing.** Chosen segments (all, by default) are written as cleaned, one
   `<trk>` each named as shown, with their points' elevation, time, HDOP and
   satellites, a `<trkseg>` per recorded segment:
-  - **into a new GPX**, a full path defaulting to `<source> segments.gpx`
-    beside the source; an existing file is never replaced; or
+  - **into a new GPX**, a path defaulting to `<source> segments.gpx` beside
+    the source, which *Browse…* opens the save dialog for; an existing file is
+    never replaced; or
   - **added to a GPX in the workspace**, each segment its own track, after
     that file's tracks. This is how part of one recording is moved into
-    another file. The GPX on disk is not written: the added tracks are kept in
+    another file. The GPX that gained a track opens in the workspace to list
+    what it now holds. The GPX on disk is not written: the added tracks are kept in
     its sidecar, as points, and it shows them at once — listed under it as
     *added from* their file, each with `×` to take it out again, and its row
     marked *added, not saved*. They can be cleaned, cut and filled like the
@@ -435,18 +468,16 @@ empty GPX to the workspace. It is not written anywhere: it lives in the memory
 of the running `dgs`, so it survives reloading the page but not quitting `dgs`.
 Segments are added to it from any track's Segments tab, as to any workspace GPX,
 and it can be cleaned, cut and filled the same way. Its row says *new, not
-saved* and, once it holds a track, has *Save…*, which asks for a full path —
-defaulting to `<name>.gpx` in the folder tree's root — and writes it there,
+saved* and, once it holds a track, has *Save…*, which opens the save dialog —
+at the folder tree's root, named `<name>.gpx` — and writes it there,
 never replacing an existing file. The saved file then takes its place.
 
-**Saving as a new GPX.** A workspace GPX with tracks added to it has *Save
-as…* on its row. It asks for a full path, defaulting to `<name> merged.gpx`
-beside it, and never replaces an existing file. The new file is the original
-byte for byte with the added tracks after its own tracks, before a root
-`<extensions>`; its sidecar takes over the cleaning, cuts and fills, which
-still point at the same points. The new file takes the original's place in
-the workspace, and the original goes back to its own tracks: the added tracks,
-and what was done to them, leave its sidecar.
+**Saving as a new GPX.** A workspace GPX with edits has *Save as…* on its
+row. It opens the save dialog beside the file, named `<name> edited.gpx`, and
+never replaces an existing file. The new GPX holds a snapshot of its tracks:
+only the points cleaning kept, at their edited positions, including fills and
+tracks added from other files. The saved cuts are remapped to those points in
+the new file's sidecar. The original GPX is not written.
 
 Cuts and names are saved to the sidecar at once.
 
@@ -475,6 +506,7 @@ Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
   "fills": [
     { "first": 3000, "last": 3140, "profile": "car", "route": [[120.1501, 30.2502], [120.1512, 30.2515]], "at": 1788657500000 }
   ],
+  "names": { "t1": "Evening ride" },
   "added": [
     { "name": "Phone, tunnel", "from": "/trips/phone.gpx", "at": 1788657600000,
       "segments": [[{ "lon": 120.16, "lat": 30.26, "ele": 12.5, "time": 1788650000000 }]] }

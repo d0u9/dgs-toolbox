@@ -74,3 +74,54 @@ func TestAppendKeepsTheRestOfTheFile(t *testing.T) {
 		t.Fatal("appended to a file that is not GPX")
 	}
 }
+
+func TestRenameTrackOnlyTouchesTheName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trip.gpx")
+	if err := Create(path, "Trip", append(sampleTracks(), Track{Segments: []Segment{{Points: []Point{
+		{LatLon: geo.LatLon{Lat: 31, Lon: 121}},
+	}}}})); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	if err := RenameTrack(path, 0, "Day one <two>"); err != nil {
+		t.Fatal(err)
+	}
+	// The second track has no <name>: renaming it opens one.
+	if err := RenameTrack(path, 1, "Day two"); err != nil {
+		t.Fatal(err)
+	}
+	file, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Tracks[0].Name != "Day one <two>" || file.Tracks[1].Name != "Day two" {
+		t.Fatalf("names = %q, %q", file.Tracks[0].Name, file.Tracks[1].Name)
+	}
+	if len(file.Tracks[0].Segments[0].Points) != 2 || file.Name != "Trip" {
+		t.Fatalf("the rest of the file changed: %+v", file)
+	}
+	after, _ := os.ReadFile(path)
+	if strings.Contains(string(after), "Day 1 <&>") {
+		t.Fatal("the old name is still in the file")
+	}
+	if strings.Count(string(after), "<trkpt") != strings.Count(string(before), "<trkpt") {
+		t.Fatal("points changed")
+	}
+	if err := RenameTrack(path, 5, "no such track"); err == nil {
+		t.Fatal("renamed a track that is not there")
+	}
+}
+
+func TestRenameTrackRefusesAFileWeDidNotWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "recorded.gpx")
+	if err := os.WriteFile(path, []byte(sample), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RenameTrack(path, 0, "Mine"); !errors.Is(err, ErrNotOurs) {
+		t.Fatalf("RenameTrack = %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != sample {
+		t.Fatal("the recording was written")
+	}
+}

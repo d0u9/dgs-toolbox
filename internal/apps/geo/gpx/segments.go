@@ -166,6 +166,10 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusFor(err), err)
 		return
 	}
+	if result.sidecarErr != nil {
+		writeError(w, http.StatusUnprocessableEntity, result.sidecarErr)
+		return
+	}
 	list, _, _ := segments(result)
 	var tracks []gpxfile.Track
 	for _, wanted := range body.Segments {
@@ -209,6 +213,9 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 // keep their <src>.
 func (a analysis) trackOf(first, last int, name string) gpxfile.Track {
 	trk := gpxfile.Track{Name: name}
+	if len(a.line) == 0 {
+		return trk
+	}
 	current := -1
 	for k := a.keptAt(first); k < len(a.line) && a.index[k] <= last; k++ {
 		sample := a.line[k]

@@ -18,7 +18,9 @@ import (
 // File is a parsed GPX document: its recorded tracks, its planned routes and
 // its standalone waypoints, each in file order.
 type File struct {
-	Name      string
+	Name string
+	// Creator is the creator attribute of <gpx>: which program wrote the file.
+	Creator   string
 	Tracks    []Track
 	Routes    []Route
 	Waypoints []Waypoint
@@ -81,6 +83,7 @@ func Open(path string) (*File, error) {
 }
 
 type xmlGPX struct {
+	Creator  string `xml:"creator,attr"`
 	Metadata struct {
 		Name string `xml:"name"`
 	} `xml:"metadata"`
@@ -125,7 +128,7 @@ func Parse(r io.Reader) (*File, error) {
 	if err := decoder.Decode(&doc); err != nil {
 		return nil, fmt.Errorf("parse GPX: %w", err)
 	}
-	file := &File{Name: strings.TrimSpace(doc.Metadata.Name)}
+	file := &File{Name: strings.TrimSpace(doc.Metadata.Name), Creator: strings.TrimSpace(doc.Creator)}
 	if file.Name == "" {
 		file.Name = strings.TrimSpace(doc.Name)
 	}
