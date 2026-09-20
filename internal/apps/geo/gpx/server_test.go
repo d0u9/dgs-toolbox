@@ -21,6 +21,7 @@ import (
 	"dgs-toolbox/internal/geo/compose"
 	"dgs-toolbox/internal/geo/gpxfile"
 	"dgs-toolbox/internal/geo/osrm"
+	"dgs-toolbox/internal/geo/sidecar"
 )
 
 func testdataDir(t *testing.T) string {
@@ -499,8 +500,13 @@ func TestAddedTracksAreSavedAsANewFile(t *testing.T) {
 	var saved, original trackJSON
 	get(t, server, "/api/track?path="+url.QueryEscape(merged), &saved)
 	get(t, server, "/api/track?path="+url.QueryEscape(watch), &original)
-	if saved.Added != 0 || saved.Clean.Counts.Manual != 3 || len(saved.Cuts) != 1 {
-		t.Fatalf("merged: added %d manual %d cuts %v", saved.Added, saved.Clean.Counts.Manual, saved.Cuts)
+	// The new file holds the edited track: the three removed points are not in
+	// it, nothing is left to clean, and the cut is where that point now is.
+	if saved.Added != 0 || saved.Clean.Counts.Manual != 0 || len(saved.Points) != 2*n-3 {
+		t.Fatalf("merged: added %d manual %d points %d", saved.Added, saved.Clean.Counts.Manual, len(saved.Points))
+	}
+	if len(saved.Cuts) != 1 || saved.Cuts[0] != 10 {
+		t.Fatalf("merged cuts = %v", saved.Cuts)
 	}
 	if original.Added != 0 || len(original.Points) != n || original.Clean.Counts.Manual != 0 || len(original.Cuts) != 1 {
 		t.Fatalf("original: added %d points %d manual %d", original.Added, len(original.Points), original.Clean.Counts.Manual)
@@ -615,10 +621,15 @@ func TestDraftCollectsTracksUntilSaved(t *testing.T) {
 	if err != nil || len(file.Tracks) != 2 || file.Tracks[1].Name != "Afternoon" {
 		t.Fatalf("saved = %+v, %v", file, err)
 	}
+	// What was saved is what was on screen: the three points removed by hand
+	// are gone from the file, and nothing is left for a sidecar to hold.
 	var saved trackJSON
 	get(t, server, "/api/track?path="+url.QueryEscape(target), &saved)
-	if saved.Added != 0 || saved.Clean.Counts.Manual != 3 {
-		t.Fatalf("saved: added %d manual %d", saved.Added, saved.Clean.Counts.Manual)
+	if saved.Added != 0 || saved.Clean.Counts.Manual != 0 || len(saved.Points) != len(filled.Points)-3 {
+		t.Fatalf("saved: added %d manual %d points %d of %d", saved.Added, saved.Clean.Counts.Manual, len(saved.Points), len(filled.Points))
+	}
+	if _, err := os.Stat(sidecar.PathFor(target)); err == nil {
+		t.Fatal("a sidecar was written beside the saved file")
 	}
 	if status := get(t, server, "/api/track?path="+url.QueryEscape(draft), nil); status != http.StatusNotFound {
 		t.Fatalf("saved draft still there: %d", status)
@@ -729,3 +740,259 @@ func TestAmapWaysOnlyWithAKey(t *testing.T) {
 		t.Fatalf("amap leg = %d %v mode %q", code, result, mode)
 	}
 }
+
+func TestRenamePartWritesOurFileAndOthersSidecar(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+
+	// A recording from somewhere else: the name goes into the sidecar and the
+	// GPX itself is not written.
+	recorded := filepath.Join(testdataDir(t), "2026-09-hangzhou", "day-out-tracks-route-waypoints.gpx")
+	before, err := os.ReadFile(recorded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied := filepath.Join(t.TempDir(), "day-out.gpx")
+	if err := os.WriteFile(copied, before, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := send(t, server, http.MethodPut, "/api/part-name", map[string]any{
+		"path": copied, "key": "t1", "name": " Evening ride ",
+	}); code != http.StatusOK {
+		t.Fatalf("PUT part-name = %d", code)
+	}
+	var got trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(copied), &got)
+	if got.Parts[1].Name != "Evening ride" || got.Ours {
+		t.Fatalf("renamed part = %+v, ours %v", got.Parts[1], got.Ours)
+	}
+	if after, _ := os.ReadFile(copied); !bytes.Equal(after, before) {
+		t.Fatal("the recording was written")
+	}
+
+	// A GPX dgs wrote: the name goes into the file, not the sidecar.
+	ours := filepath.Join(t.TempDir(), "ours.gpx")
+	if err := gpxfile.Create(ours, "Trip", []gpxfile.Track{{Name: "One", Segments: []gpxfile.Segment{{Points: []gpxfile.Point{
+		{LatLon: geo.LatLon{Lat: 30.1, Lon: 120.1}},
+		{LatLon: geo.LatLon{Lat: 30.2, Lon: 120.2}},
+	}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := send(t, server, http.MethodPut, "/api/part-name", map[string]any{
+		"path": ours, "key": "t0", "name": "Two",
+	}); code != http.StatusOK {
+		t.Fatalf("PUT part-name on our file = %d", code)
+	}
+	file, err := gpxfile.Open(ours)
+	if err != nil || file.Tracks[0].Name != "Two" {
+		t.Fatalf("our file = %+v, %v", file, err)
+	}
+	if _, err := os.Stat(sidecar.PathFor(ours)); err == nil {
+		t.Fatal("a sidecar was written beside our own file")
+	}
+	get(t, server, "/api/track?path="+url.QueryEscape(ours), &got)
+	if !got.Ours || got.Parts[0].Name != "Two" {
+		t.Fatalf("our track = %+v, ours %v", got.Parts[0], got.Ours)
+	}
+
+	if code, _ := send(t, server, http.MethodPut, "/api/part-name", map[string]any{
+		"path": ours, "key": "t7", "name": "No such track",
+	}); code != http.StatusNotFound {
+		t.Fatalf("PUT part-name for a missing part = %d", code)
+	}
+}
+
+func TestConfigListsPlacesToSaveIn(t *testing.T) {
+	root := t.TempDir()
+	server := httptest.NewServer(Handler(Settings{Root: root}))
+	defer server.Close()
+	var got struct {
+		Places []place `json:"places"`
+	}
+	get(t, server, "/api/config", &got)
+	if len(got.Places) < 2 || got.Places[0].Path != root || got.Places[0].Name != filepath.Base(root) {
+		t.Fatalf("places = %+v", got.Places)
+	}
+	home, _ := os.UserHomeDir()
+	seen := map[string]bool{}
+	for _, spot := range got.Places {
+		if seen[spot.Path] {
+			t.Fatalf("%s listed twice", spot.Path)
+		}
+		seen[spot.Path] = true
+		if info, err := os.Stat(spot.Path); err != nil || !info.IsDir() {
+			t.Fatalf("%s is not a folder", spot.Path)
+		}
+	}
+	if !seen[home] {
+		t.Fatalf("the home directory is not offered: %+v", got.Places)
+	}
+	// The browser's root is the home directory: it is offered once, as Home.
+	var atHome struct {
+		Places []place `json:"places"`
+	}
+	homeServer := httptest.NewServer(Handler(Settings{Root: home}))
+	defer homeServer.Close()
+	get(t, homeServer, "/api/config", &atHome)
+	if atHome.Places[0].Name != "Home" || atHome.Places[0].Path != home {
+		t.Fatalf("places at home = %+v", atHome.Places)
+	}
+}
+
+func TestDirCarriesTimesAndSizes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "day one"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "walk.gpx"), []byte(`<gpx version="1.1"><trk></trk></gpx>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(Handler(Settings{Root: root}))
+	defer server.Close()
+	var got struct {
+		Dirs  []dirEntry `json:"dirs"`
+		Files []dirEntry `json:"files"`
+	}
+	get(t, server, "/api/dir?path="+url.QueryEscape(root), &got)
+	if len(got.Dirs) != 1 || got.Dirs[0].Modified.IsZero() || got.Dirs[0].Size != 0 {
+		t.Fatalf("folder = %+v", got.Dirs)
+	}
+	if len(got.Files) != 1 || got.Files[0].Modified.IsZero() || got.Files[0].Size == 0 {
+		t.Fatalf("file = %+v", got.Files)
+	}
+}
+
+func TestSaveAsWritesTheEditedTrack(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	source := filepath.Join(t.TempDir(), "recorded.gpx")
+	if err := os.WriteFile(source, []byte(sampleWithParts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Remove the second of the first track's three points by hand.
+	if code, _ := send(t, server, http.MethodPut, "/api/clean", map[string]any{
+		"path": source, "clean": map[string]any{"edits": []map[string]any{{"kind": "range", "first": 1, "last": 1}}},
+	}); code != http.StatusOK {
+		t.Fatalf("clean = %d", code)
+	}
+	if code, _ := send(t, server, http.MethodPut, "/api/part-name", map[string]any{
+		"path": source, "key": "t0", "name": "Walk home",
+	}); code != http.StatusOK {
+		t.Fatalf("rename = %d", code)
+	}
+	target := filepath.Join(t.TempDir(), "edited.gpx")
+	if code, result := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": source, "target": target}); code != http.StatusOK {
+		t.Fatalf("save as = %d %v", code, result)
+	}
+	written, err := gpxfile.Open(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The point taken out is not in the file; the route, the waypoint and the
+	// new name are.
+	points := 0
+	for _, seg := range written.Tracks[0].Segments {
+		points += len(seg.Points)
+	}
+	if len(written.Tracks) != 1 || points != 2 || written.Tracks[0].Name != "Walk home" {
+		t.Fatalf("written tracks = %+v (%d points)", written.Tracks, points)
+	}
+	if len(written.Routes) != 1 || len(written.Waypoints) != 1 || written.Waypoints[0].Name != "Hotel" {
+		t.Fatalf("routes %+v waypoints %+v", written.Routes, written.Waypoints)
+	}
+	if !written.IsOurs() {
+		t.Fatalf("creator = %q", written.Creator)
+	}
+	// The recording itself is untouched, and still reads as it was recorded.
+	recorded, err := gpxfile.Open(source)
+	if err != nil || len(recorded.Tracks[0].Segments[0].Points) != 3 || recorded.Tracks[0].Name != "Morning" {
+		t.Fatalf("recorded = %+v, %v", recorded, err)
+	}
+}
+
+func TestCutExportUsesCurrentCleaningSnapshot(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	source := filepath.Join(t.TempDir(), "recorded.gpx")
+	points := []gpxfile.Point{
+		{LatLon: geo.LatLon{Lat: 30, Lon: 120}},
+		{LatLon: geo.LatLon{Lat: 30, Lon: 120.0001}},
+		{LatLon: geo.LatLon{Lat: 31, Lon: 121}}, // out-and-back spike
+		{LatLon: geo.LatLon{Lat: 30, Lon: 120.0002}},
+		{LatLon: geo.LatLon{Lat: 30, Lon: 120.0003}},
+		{LatLon: geo.LatLon{Lat: 30, Lon: 120.0004}},
+	}
+	if err := gpxfile.Create(source, "Recorded", []gpxfile.Track{{Name: "Walk", Segments: []gpxfile.Segment{{Points: points}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if code, result := send(t, server, http.MethodPut, "/api/clean", map[string]any{
+		"path": source, "clean": map[string]any{
+			"spikes": map[string]any{"enabled": true},
+			"edits":  []map[string]any{{"kind": "range", "first": 4, "last": 4}},
+		},
+	}); code != http.StatusOK {
+		t.Fatalf("clean = %d %v", code, result)
+	}
+	var shown trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(source), &shown)
+	if shown.Clean.Counts.Spike != 1 || shown.Clean.Counts.Manual != 1 || len(shown.Pieces) != 1 {
+		t.Fatalf("cleaned counts = %+v, pieces = %+v", shown.Clean.Counts, shown.Pieces)
+	}
+	target := filepath.Join(t.TempDir(), "cut.gpx")
+	if code, result := send(t, server, http.MethodPost, "/api/segments/write", map[string]any{
+		"path":     source,
+		"segments": []map[string]any{{"first": shown.Pieces[0].First, "last": shown.Pieces[0].Last, "name": "Cut"}},
+		"target":   map[string]any{"mode": "create", "path": target},
+	}); code != http.StatusOK {
+		t.Fatalf("export = %d %v", code, result)
+	}
+	written, err := gpxfile.Open(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []gpxfile.Point
+	for _, seg := range written.Tracks[0].Segments {
+		got = append(got, seg.Points...)
+	}
+	if len(got) != 4 || got[0].Lon != points[0].Lon || got[1].Lon != points[1].Lon || got[2].Lon != points[3].Lon || got[3].Lon != points[5].Lon {
+		t.Fatalf("exported points = %+v", got)
+	}
+}
+
+func TestSaveAsWhenEveryPointIsRemoved(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	source := filepath.Join(t.TempDir(), "recorded.gpx")
+	if err := gpxfile.Create(source, "Recorded", []gpxfile.Track{{Name: "Walk", Segments: []gpxfile.Segment{{Points: []gpxfile.Point{
+		{LatLon: geo.LatLon{Lat: 30, Lon: 120}},
+		{LatLon: geo.LatLon{Lat: 30.1, Lon: 120.1}},
+	}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if code, result := send(t, server, http.MethodPut, "/api/clean", map[string]any{
+		"path": source, "clean": map[string]any{"edits": []map[string]any{{"kind": "range", "first": 0, "last": 1}}},
+	}); code != http.StatusOK {
+		t.Fatalf("clean = %d %v", code, result)
+	}
+	target := filepath.Join(t.TempDir(), "empty.gpx")
+	if code, result := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": source, "target": target}); code != http.StatusOK {
+		t.Fatalf("save as = %d %v", code, result)
+	}
+	written, err := gpxfile.Open(target)
+	if err != nil || len(written.Tracks) != 0 {
+		t.Fatalf("saved tracks = %+v, %v", written, err)
+	}
+}
+
+const sampleWithParts = `<?xml version="1.0"?>
+<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>Morning</name>
+    <trkseg>
+      <trkpt lat="30.25" lon="120.15"><ele>12.5</ele><time>2026-09-01T01:00:00Z</time></trkpt>
+      <trkpt lat="30.26" lon="120.16"><ele>13</ele><time>2026-09-01T01:05:00Z</time></trkpt>
+      <trkpt lat="30.27" lon="120.17"><ele>14</ele><time>2026-09-01T01:10:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+  <rte><name>Plan</name><rtept lat="30.1" lon="120.1"/><rtept lat="30.2" lon="120.2"/></rte>
+  <wpt lat="30.3" lon="120.3"><ele>5</ele><name>Hotel</name><desc>Night one</desc></wpt>
+</gpx>`

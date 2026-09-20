@@ -5,6 +5,7 @@
 // segments and writes the files; this module edits cuts and names.
 
 import * as format from "./format.js";
+import { saveDialog } from "./dialog.js";
 
 const SEGMENT = "cut-segment";
 const CUTS = "cut-points";
@@ -41,12 +42,15 @@ export class CutPanel {
     this.workspace = []; // other GPX paths in the workspace, to add segments to
   }
 
-  // folder is where a new file from a track not yet on disk goes by default.
-  show(track, { timeZone, workspace, folder }) {
+  // folder is where a new file from a track not yet on disk goes by default;
+  // home is where the save dialog falls back to when that folder is gone.
+  show(track, { timeZone, workspace, folder, home = "", places = [] }) {
     const changed = !this.track || this.track.path !== track.path;
     this.track = track;
     this.timeZone = timeZone;
     this.workspace = workspace.filter((path) => path !== track.path);
+    this.home = home;
+    this.places = places;
     if (changed) {
       this.selected = new Set(track.pieces.map((piece) => piece.first));
       this.message = null;
@@ -249,6 +253,26 @@ export class CutPanel {
     createPath.title = "Full path of the new file; an existing file is not replaced";
     createPath.addEventListener("input", () => (this.createPath = createPath.value));
     createPath.addEventListener("focus", () => this.setMode("create", false));
+    const browse = document.createElement("button");
+    browse.type = "button";
+    browse.className = "text-button cut-browse";
+    browse.textContent = "Browse…";
+    browse.title = "Choose the folder and name of the new file";
+    browse.addEventListener("click", async () => {
+      const chosenPath = await saveDialog({
+        title: "Write the segments into a new GPX",
+        message: "Choose the folder of the new GPX and name it. An existing file is not replaced.",
+        folder: this.createPath.replace(/[\\/][^\\/]*$/, ""),
+        fallback: this.home || "",
+        places: this.places || [],
+        name: basename(this.createPath) || "segments.gpx",
+        confirm: "Choose",
+      });
+      if (!chosenPath) return;
+      this.createPath = chosenPath;
+      this.setMode("create", false);
+      this.render();
+    });
 
     const add = this.choice("add", "Added to a GPX in the workspace, each its own track");
     const addPath = document.createElement("select");
@@ -293,7 +317,7 @@ export class CutPanel {
       this.render();
     });
 
-    section.append(create, createPath, add, addPath, go);
+    section.append(create, createPath, browse, add, addPath, go);
     if (this.message) {
       const note = document.createElement("p");
       note.className = "clean-foot" + (this.message.error ? " error" : "");

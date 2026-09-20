@@ -1,7 +1,6 @@
 package gpx
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,6 +18,7 @@ import (
 	"dgs-toolbox/internal/geo/gcj02"
 	"dgs-toolbox/internal/geo/gpxfile"
 	"dgs-toolbox/internal/geo/osrm"
+	"dgs-toolbox/internal/geo/segment"
 	"dgs-toolbox/internal/geo/sidecar"
 	"dgs-toolbox/internal/geo/stops"
 )
@@ -279,10 +279,8 @@ func trackRange(a analysis, index int) (first, last int, ok bool) {
 	return first, last, first >= 0
 }
 
-// saveAs writes a GPX file with the tracks added to it into a new file: the
-// file as it is, byte for byte, with the added tracks after its own. The new
-// file's sidecar takes over the cleaning, cuts and fills; the original loses
-// the added tracks and whatever was done to them, and is not written.
+// saveAs writes the current edited points, including added tracks, to a new
+// GPX. The source file is not written.
 func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path   string `json:"path"`
@@ -318,20 +316,16 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fmt.Errorf("%s: %w", sidecar.PathFor(target), gpxfile.ErrExists))
 		return
 	}
-	// A draft is written as a new file holding its tracks; a file on disk is
-	// copied byte for byte and its added tracks appended.
-	var data []byte
-	if isDraft(body.Path) {
-		var encoded bytes.Buffer
-		encoded.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-		encoded.WriteString(`<gpx version="1.1" creator="` + gpxfile.Creator + `" xmlns="http://www.topografix.com/GPX/1/1">` + "\n")
-		encoded.WriteString("</gpx>\n")
-		data = encoded.Bytes()
-	} else if data, err = os.ReadFile(body.Path); err != nil {
-		writeError(w, statusFor(err), err)
+	// The new file holds the track as it is being edited: the points cleaning
+	// kept, at the positions it gave them, the stretches filled in along the
+	// road, and the tracks added from other files — each <trk> named as the
+	// page names it. The file's routes and waypoints come with it unchanged.
+	if _, err := os.Stat(filepath.Dir(target)); err != nil {
+		writeError(w, statusFor(err), fmt.Errorf("folder %s: %w", filepath.Dir(target), err))
 		return
 	}
-	if err := writeNew(target, data); err != nil {
+	file := result.cleaning
+	if err := gpxfile.CreateAll(target, result.name, result.file.Waypoints, result.file.Routes, editedTracks(result)); err != nil {
 		if errors.Is(err, gpxfile.ErrExists) {
 			writeError(w, http.StatusConflict, err)
 		} else {
@@ -339,16 +333,15 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	file := result.cleaning
-	if len(file.Added) > 0 {
-		if err := gpxfile.Append(target, addedTracks(file.Added)); err != nil {
-			os.Remove(target)
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+	// Cleaning, fills and added tracks are in the file itself now, so the new
+	// sidecar keeps only what still says something about it: the cuts, moved
+	// to where those points are in the file written, and a route's plan.
+	saved := sidecar.File{
+		Version:  sidecar.Version,
+		Clean:    clean.Defaults(),
+		Segments: movedCuts(result),
+		Plan:     file.Plan,
 	}
-	saved := file
-	saved.Added = nil
 	if err := sidecar.Save(target, saved); err != nil {
 		os.Remove(target)
 		writeError(w, http.StatusInternalServerError, err)
@@ -371,22 +364,41 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "path": target})
 }
 
-// writeNew writes data into a file that must not exist yet.
-func writeNew(path string, data []byte) error {
-	if _, err := os.Stat(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("folder %s: %w", filepath.Dir(path), err)
+// editedTracks is every track of a file as the page shows it: the points
+// cleaning kept, at the positions it gave them, fills included, one <trk> per
+// track — the file's own first, then the tracks added from other files. Each
+// is named as the page names it, so a renamed track keeps its name in the
+// file written.
+func editedTracks(a analysis) []gpxfile.Track {
+	tracks := []gpxfile.Track{}
+	for i, trk := range a.file.Tracks {
+		first, last, ok := trackRange(a, i)
+		if !ok {
+			continue // every point of it was removed
+		}
+		name := trk.Name
+		if renamed, given := a.cleaning.Names[fmt.Sprintf("t%d", i)]; given {
+			name = renamed
+		}
+		written := a.trackOf(first, last, name)
+		if len(written.Segments) > 0 {
+			tracks = append(tracks, written)
+		}
 	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if errors.Is(err, os.ErrExist) {
-		return fmt.Errorf("%s: %w", path, gpxfile.ErrExists)
+	return tracks
+}
+
+// movedCuts are the file's cuts where they fall in the file written: the
+// points removed by cleaning are not in it, so a cut moves to the first kept
+// point at or after it. Segment names move with the cut they belong to.
+func movedCuts(a analysis) segment.Params {
+	moved := segment.Params{}
+	for _, cut := range a.cleaning.Segments.Cuts {
+		moved.Cuts = append(moved.Cuts, a.keptAt(cut))
 	}
-	if err != nil {
-		return err
+	moved.Cuts = segment.Clean(moved.Cuts, len(a.line))
+	for _, name := range a.cleaning.Segments.Names {
+		moved.Names = append(moved.Names, segment.Name{Start: a.keptAt(name.Start), Name: name.Name})
 	}
-	if _, err := file.Write(data); err != nil {
-		file.Close()
-		os.Remove(path)
-		return err
-	}
-	return file.Close()
+	return moved
 }

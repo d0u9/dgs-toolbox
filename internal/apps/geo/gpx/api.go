@@ -104,7 +104,7 @@ func (a api) config(w http.ResponseWriter, r *http.Request) {
 		dem = config.Config{}.GeoGPXDEMSource()
 	}
 	writeJSON(w, map[string]any{
-		"root": a.settings.Root, "tiles": tiles, "ways": a.ways(), "canReveal": isLocal(r),
+		"root": a.settings.Root, "places": places(a.settings.Root), "tiles": tiles, "ways": a.ways(), "canReveal": isLocal(r),
 		"dem": map[string]any{"url": dem.URL, "encoding": dem.Encoding, "maxZoom": dem.MaxZoom},
 	})
 }
@@ -163,7 +163,7 @@ func (a api) dir(w http.ResponseWriter, r *http.Request) {
 		}
 		switch {
 		case info.IsDir():
-			dirs = append(dirs, dirEntry{Name: name, Path: full})
+			dirs = append(dirs, dirEntry{Name: name, Path: full, Modified: info.ModTime()})
 		case strings.EqualFold(filepath.Ext(name), ".gpx"):
 			files = append(files, dirEntry{Name: name, Path: full, Size: info.Size(), Modified: info.ModTime()})
 		}
@@ -229,6 +229,9 @@ type trackJSON struct {
 	Added int `json:"added"`
 	// Draft is set for a new GPX not yet saved: it lives in memory only.
 	Draft bool `json:"draft,omitempty"`
+	// Ours is set for a GPX this program wrote: its parts are renamed in the
+	// file itself. A file from a recorder keeps its names in the sidecar.
+	Ours bool `json:"ours,omitempty"`
 }
 
 // fillJSON is one fill as the page lists it.
@@ -450,6 +453,7 @@ func trackResponse(a analysis) trackJSON {
 		Clean:       cleanJSON{Params: a.cleaning.Clean, Counts: a.result.Counts()},
 	}
 	response.Draft = isDraft(a.path)
+	response.Ours = a.file.IsOurs()
 	response.Plan = a.cleaning.Plan
 	if (a.sidecar || a.sidecarErr != nil) && !response.Draft {
 		response.Clean.Sidecar = sidecar.PathFor(a.path)
@@ -536,7 +540,7 @@ func trackResponse(a analysis) trackJSON {
 func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON, geo.Bounds, geo.Bounds) {
 	list := []partJSON{}
 	for i, trk := range a.file.Tracks {
-		part := partJSON{Key: fmt.Sprintf("t%d", i), Kind: "track", Name: orNumbered(trk.Name, "Track", i)}
+		part := partJSON{Key: fmt.Sprintf("t%d", i), Kind: "track", Name: named(a, fmt.Sprintf("t%d", i), trk.Name, "Track", i)}
 		if i >= a.own {
 			part.Added = &addedJSON{Index: i - a.own, From: a.cleaning.Added[i-a.own].From}
 		}
@@ -565,7 +569,7 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 		list = append(list, part)
 	}
 	for i, rte := range a.file.Routes {
-		part := partJSON{Key: fmt.Sprintf("r%d", i), Kind: "route", Name: orNumbered(rte.Name, "Route", i)}
+		part := partJSON{Key: fmt.Sprintf("r%d", i), Kind: "route", Name: named(a, fmt.Sprintf("r%d", i), rte.Name, "Route", i)}
 		path, box := make([]geo.LatLon, len(rte.Points)), geo.Empty()
 		for j, pt := range rte.Points {
 			path[j] = pt.LatLon
@@ -584,7 +588,7 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 		part := partJSON{
 			Key:         fmt.Sprintf("w%d", i),
 			Kind:        "waypoint",
-			Name:        orNumbered(wpt.Name, "Waypoint", i),
+			Name:        named(a, fmt.Sprintf("w%d", i), wpt.Name, "Waypoint", i),
 			Description: wpt.Description,
 			Points:      [][2]float64{{wpt.Lon, wpt.Lat}},
 		}
@@ -602,6 +606,15 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 		list = append(list, part)
 	}
 	return list, bounds, view
+}
+
+// named is a part's name as the page shows it: the name the sidecar gives it,
+// else the file's own, else the kind and its number.
+func named(a analysis, key, name, kind string, index int) string {
+	if renamed, ok := a.cleaning.Names[key]; ok {
+		return orNumbered(renamed, kind, index)
+	}
+	return orNumbered(name, kind, index)
 }
 
 func orNumbered(name, kind string, index int) string {
