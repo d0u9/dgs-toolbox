@@ -152,6 +152,7 @@ Beside each file, `<name>.age.json`:
 {
   "version": 1,
   "created": "2026-09-15T14:00:00+10:00",
+  "comment": "Production deploy key",
   "updated": "2026-10-02T09:30:00+10:00",
   "archive": "tar.gz",
   "recipients": [
@@ -168,6 +169,9 @@ Beside each file, `<name>.age.json`:
 - `encryption` is `passphrase` for a file encrypted with a passphrase, whose
   `recipients` is then empty, and absent otherwise.
 - `updated` is when the recipients were last changed, absent until they are.
+- `comment` is an optional plaintext explanation of what the encrypted file is
+  for. It can be changed with `m` on the selected vault file; changing it does
+  not decrypt or re-encrypt the file.
 - A recipient is its public key; `host` and `description` are what the recipient
   folder called it when the file was written, kept for reading, not matched on.
 - The record is plaintext and names hosts.
@@ -469,4 +473,3 @@ These are known and not handled.
 15. **E6 — Publishing to git.** `p`: add, commit and push through the git on
     `PATH`, with `internal/gitrepo` holding the steps.
 16. **E7 — Updating from git.** `f`: fetch, then a fast-forward only.
-

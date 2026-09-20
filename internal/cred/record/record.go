@@ -35,6 +35,9 @@ const EncryptionPassphrase = "passphrase"
 type Record struct {
 	Version int       `json:"version"`
 	Created time.Time `json:"created"`
+	// Comment is the owner's plaintext explanation of what the encrypted file
+	// is for. It is absent until they add one.
+	Comment string `json:"comment,omitempty"`
 	// Updated is when the recipients were last changed; nil for a file never
 	// changed since it was added.
 	Updated *time.Time `json:"updated,omitempty"`
