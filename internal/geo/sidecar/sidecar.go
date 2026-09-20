@@ -33,6 +33,10 @@ type File struct {
 	// from other files, not yet saved into a GPX.
 	Fills []compose.Fill  `json:"fills,omitempty"`
 	Added []compose.Added `json:"added,omitempty"`
+	// Waypoints are standalone points added to a new GPX not yet on disk. A
+	// file on disk written by this program takes a waypoint into the GPX
+	// itself, so it holds none here.
+	Waypoints []compose.Waypoint `json:"waypoints,omitempty"`
 	// Names renames the parts of a file this program did not write, keyed as
 	// the page keys them: "t0" for the first <trk>, "r0", "w0". A file dgs
 	// wrote is renamed in the file itself, so it holds no names here.
@@ -44,7 +48,7 @@ type File struct {
 
 // Active reports whether the file records anything.
 func (f File) Active() bool {
-	return f.Clean.Active() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || len(f.Names) > 0 || f.Plan != nil
+	return f.Clean.Active() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || len(f.Waypoints) > 0 || len(f.Names) > 0 || f.Plan != nil
 }
 
 // Insert shifts every point index after after by count, for count points

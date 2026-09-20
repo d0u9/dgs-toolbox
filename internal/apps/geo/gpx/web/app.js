@@ -14,7 +14,7 @@ import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { FolderTree, revealButton } from "./tree.js";
 import { RoutePlanner } from "./route.js";
-import { confirmDialog, promptDialog, saveDialog } from "./dialog.js";
+import { confirmDialog, promptDialog, saveDialog, waypointDialog } from "./dialog.js";
 import { splitter, shareSplitter } from "./splitter.js";
 
 // Okabe-Ito-derived hues: distinct under the common red/green colour-vision
@@ -37,6 +37,7 @@ const state = {
   editTab: "changes", // the inspector's tab in edit mode: "changes", "auto" or "segments"
   compare: true, // the recording drawn under a cleaned track
   lasso: false,
+  waypointTool: false,
   rangeTool: false, // dragging on the timeline removes a range
   rangeStart: null, // with the range tool, the start clicked on the track
   // Filling along the road: the tool is on, the profile, the start clicked
@@ -253,6 +254,7 @@ function applyCleanPanel() {
     : "Focus a track in the workspace to edit it";
   if (wasOpen === $("inspector").hidden) map?.resize();
   if (!open) {
+    state.waypointTool = false;
     setLasso(false);
     setRangeTool(false);
     setFillTool(false);
@@ -296,6 +298,7 @@ const cutting = () => state.cleanOpen && !state.routeOpen && state.editTab === "
 function setEditTab(tab) {
   state.editTab = cleanPanel.tab = tab;
   if (tab === "segments") {
+    state.waypointTool = false;
     setLasso(false);
     setRangeTool(false);
     setFillTool(false);
@@ -313,6 +316,7 @@ function setTool(tool) {
     return;
   }
   if (state.editTab === "segments") setEditTab("changes");
+  state.waypointTool = tool === "waypoint" ? !state.waypointTool : false;
   if (tool === "range") setRangeTool(!state.rangeTool);
   else if (tool === "lasso") setLasso(!state.lasso);
   else if (tool === "fill") setFillTool(!state.fill.active);
@@ -321,6 +325,7 @@ function setTool(tool) {
     setRangeTool(false);
     setFillTool(false);
   }
+  applyEditTools();
 }
 
 // applyEditTools shows the tool bar in edit mode, the tool in use, and a line
@@ -328,8 +333,8 @@ function setTool(tool) {
 function applyEditTools() {
   const open = state.cleanOpen && Boolean(focusedEntry()) && !state.routeOpen;
   $("map-tools").hidden = !open;
-  const tool = cutting() ? "cut" : state.rangeTool ? "range" : state.lasso ? "lasso" : state.fill.active ? "fill" : "select";
-  for (const name of ["select", "range", "lasso", "fill", "cut"]) {
+  const tool = cutting() ? "cut" : state.waypointTool ? "waypoint" : state.rangeTool ? "range" : state.lasso ? "lasso" : state.fill.active ? "fill" : "select";
+  for (const name of ["select", "range", "lasso", "fill", "cut", "waypoint"]) {
     $(`tool-${name}`).setAttribute("aria-pressed", String(open && tool === name));
   }
   const hint = $("map-hint");
@@ -339,6 +344,8 @@ function applyEditTools() {
     html = state.rangeStart == null
       ? `<strong>Range</strong> · click the track where the removal starts, or drag on the timeline · ${esc} to stop`
       : `<strong>Range</strong> · now click where it ends · ${esc} forgets the start`;
+  } else if (open && tool === "waypoint") {
+    html = `<strong>Waypoint</strong> · click the map, then choose a dgs-created GPX and name the point · ${esc} to stop`;
   } else if (open && tool === "cut") {
     html = "<strong>Cut</strong> · click the track or the timeline to cut there; drag a cut on the timeline to move it, double-click it to remove it";
   } else if (open && tool === "lasso") {
@@ -352,7 +359,7 @@ function applyEditTools() {
   } else if (state.routeOpen) {
     html = "<strong>Route</strong> · click the map to add a waypoint · drag a waypoint to move it, double-click to remove it · drag a small circle on a leg to insert one";
   } else if (open) {
-    html = "Tools: <kbd>R</kbd> range · <kbd>L</kbd> lasso · <kbd>F</kbd> fill along the road · <kbd>C</kbd> cut";
+    html = "Tools: <kbd>R</kbd> range · <kbd>L</kbd> lasso · <kbd>F</kbd> fill along the road · <kbd>C</kbd> cut · ⚑ waypoint";
   }
   hint.innerHTML = html;
   hint.hidden = !html;
@@ -980,14 +987,15 @@ function trackRow(path, entry) {
     // Anything done to a file — cleaning, fills, cuts, names, added tracks —
     // is kept beside it, so it can be written into a new GPX at any time.
     if (track.added) li.classList.add("changed");
-    if (track.added || track.clean.sidecar) {
-      actions.append(button("save-as", "Save as…", "Save this GPX as a new file, as it is being edited", () => saveAs(path)));
+    if (track.added || track.clean.sidecar || track.clean.embedded) {
+      actions.append(button("save-as", "Save as…", "Save the edited GPX and dgs state as one standalone file", () => saveAs(path)));
     }
   }
   if (track.clean.sidecar) {
     li.classList.add("has-sidecar");
     actions.append(button("sidecar", "Discard…", `Discard the sidecar ${track.clean.sidecar}: the GPX reads as recorded again`, () => discardSidecar(path)));
   }
+  if (track.clean.embedded) actions.append(button("sidecar", "Discard…", "Discard dgs edits embedded in this GPX", () => discardSidecar(path)));
   if (tree.canReveal && !track.draft) actions.append(revealButton(path));
   actions.append(button("remove", "×", "Remove from the workspace", () => removeTrack(path)));
 
@@ -1256,6 +1264,10 @@ function bindMap() {
     // In route mode a click adds a waypoint; clicks on the route's own markers do not.
     if (state.routeOpen) {
       if (!event.originalEvent.target.closest?.(".plan-marker")) planner.add(routePointAt(event));
+      return;
+    }
+    if (state.cleanOpen && state.waypointTool) {
+      addWaypointAt(event);
       return;
     }
     const focused = focusedEntry();
@@ -1534,7 +1546,7 @@ async function start() {
   });
   planner.load(saved.route);
   if (saved.routeOpen === true) state.routeOpen = true;
-  for (const name of ["select", "range", "lasso", "fill", "cut"]) $(`tool-${name}`).addEventListener("click", () => setTool(name));
+  for (const name of ["select", "range", "lasso", "fill", "cut", "waypoint"]) $(`tool-${name}`).addEventListener("click", () => setTool(name));
   cutOverlay = new CutOverlay(map, "cursor");
   cutPanel = new CutPanel({
     root: cleanPanel.segmentsRoot,
@@ -1565,6 +1577,7 @@ async function start() {
   stopMarkers = new StopMarkers(map, { onSelect: (index) => selectStop(index), onRemove: removeStop });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      if (state.waypointTool) { state.waypointTool = false; applyEditTools(); }
       if (state.rangeStart != null) setRangeStart(null); // first Esc forgets a half-picked range
       else setRangeTool(false);
       if (state.fill.start != null || state.fill.preview) setFill({ start: null, preview: null, error: null });

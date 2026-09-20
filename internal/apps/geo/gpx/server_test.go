@@ -984,6 +984,53 @@ func TestSaveAsWhenEveryPointIsRemoved(t *testing.T) {
 	}
 }
 
+func TestWaypointAndStandaloneExport(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	source := filepath.Join(t.TempDir(), "recorded.gpx")
+	if err := os.WriteFile(source, []byte(sampleWithParts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/waypoint", map[string]any{"path": source, "name": "No", "lat": 30.4, "lon": 120.4}); code == http.StatusOK {
+		t.Fatal("foreign GPX was changed")
+	}
+	if code, result := send(t, server, http.MethodPut, "/api/segments", map[string]any{"path": source, "cuts": []int{1}}); code != http.StatusOK {
+		t.Fatalf("cuts = %d %v", code, result)
+	}
+	target := filepath.Join(t.TempDir(), "standalone.gpx")
+	if code, result := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": source, "target": target}); code != http.StatusOK {
+		t.Fatalf("save = %d %v", code, result)
+	}
+	if _, err := os.Stat(sidecar.PathFor(target)); !os.IsNotExist(err) {
+		t.Fatalf("standalone sidecar: %v", err)
+	}
+	state, found, err := gpxfile.ReadState(target)
+	if err != nil || !found || !bytes.Contains(state, []byte(`"cuts":[1]`)) {
+		t.Fatalf("embedded state = %s, %v, %v", state, found, err)
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/waypoint", map[string]any{"path": target, "name": "View & rest", "description": "At the top", "lat": 30.4, "lon": 120.4}); code != http.StatusOK {
+		t.Fatalf("waypoint = %d %v", code, result)
+	}
+	written, err := gpxfile.Open(target)
+	if err != nil || len(written.Waypoints) != 2 || written.Waypoints[1].Name != "View & rest" {
+		t.Fatalf("waypoints = %+v, %v", written, err)
+	}
+	state, found, err = gpxfile.ReadState(target)
+	if err != nil || !found || !bytes.Contains(state, []byte(`"cuts":[1]`)) {
+		t.Fatalf("state after waypoint = %s, %v, %v", state, found, err)
+	}
+	if code, result := send(t, server, http.MethodPut, "/api/segments", map[string]any{"path": target, "cuts": []int{2}}); code != http.StatusOK {
+		t.Fatalf("embedded cut = %d %v", code, result)
+	}
+	state, found, err = gpxfile.ReadState(target)
+	if err != nil || !found || !bytes.Contains(state, []byte(`"cuts":[2]`)) {
+		t.Fatalf("edited embedded state = %s, %v, %v", state, found, err)
+	}
+	if _, err := os.Stat(sidecar.PathFor(target)); !os.IsNotExist(err) {
+		t.Fatalf("edit created a sidecar: %v", err)
+	}
+}
+
 const sampleWithParts = `<?xml version="1.0"?>
 <gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
   <trk><name>Morning</name>
@@ -996,3 +1043,40 @@ const sampleWithParts = `<?xml version="1.0"?>
   <rte><name>Plan</name><rtept lat="30.1" lon="120.1"/><rtept lat="30.2" lon="120.2"/></rte>
   <wpt lat="30.3" lon="120.3"><ele>5</ele><name>Hotel</name><desc>Night one</desc></wpt>
 </gpx>`
+
+// A new GPX takes waypoints before it is on disk: they stay with the draft
+// and are written into the file it is saved as.
+func TestDraftKeepsWaypointsUntilSaved(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	code, created := send(t, server, http.MethodPost, "/api/draft", map[string]any{"name": "Trip"})
+	draft, _ := created["path"].(string)
+	if code != http.StatusOK || draft == "" {
+		t.Fatalf("draft = %d %v", code, created)
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/waypoint", map[string]any{"path": draft, "name": "Hotel", "description": "Night one", "lat": 30.4, "lon": 120.4}); code != http.StatusOK {
+		t.Fatalf("waypoint = %d %v", code, result)
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/waypoint", map[string]any{"path": draft, "name": "Off the globe", "lat": 130.0, "lon": 120.4}); code != http.StatusBadRequest {
+		t.Fatalf("waypoint off the globe = %d", code)
+	}
+	var shown trackJSON
+	if status := get(t, server, "/api/track?path="+url.QueryEscape(draft), &shown); status != http.StatusOK {
+		t.Fatalf("draft = %d", status)
+	}
+	if len(shown.Parts) != 1 || shown.Parts[0].Kind != "waypoint" || shown.Parts[0].Name != "Hotel" {
+		t.Fatalf("draft parts = %+v", shown.Parts)
+	}
+	target := filepath.Join(t.TempDir(), "trip.gpx")
+	if code, result := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": draft, "target": target}); code != http.StatusOK {
+		t.Fatalf("save draft = %d %v", code, result)
+	}
+	file, err := gpxfile.Open(target)
+	if err != nil || len(file.Waypoints) != 1 || file.Waypoints[0].Name != "Hotel" || file.Waypoints[0].Description != "Night one" {
+		t.Fatalf("saved = %+v, %v", file, err)
+	}
+	// The draft is gone with the save, so the point is not offered twice.
+	if code, _ := send(t, server, http.MethodPost, "/api/waypoint", map[string]any{"path": draft, "name": "Later", "lat": 30.5, "lon": 120.5}); code == http.StatusOK {
+		t.Fatal("saved draft still takes waypoints")
+	}
+}
