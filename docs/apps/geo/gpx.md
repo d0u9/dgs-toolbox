@@ -432,7 +432,8 @@ nothing is lost between them. Segments are cut from what cleaning kept.
   map marks the point a cut would fall on, and clicking cuts there; clicking
   the timeline, stop blocks included, cuts at the point under the pointer,
   while dragging it still scrubs. Cuts are yellow handles on the timeline. drag a handle to move the
-  cut, double-click it to remove it. *Clear cuts* removes them all. Cuts are
+  cut, double-click it to remove it, or use × beside the segment that starts at
+  that cut. The first segment has no cut before it. *Clear cuts* removes them all. Cuts are
   also marked on the map.
 - **Colours.** While the tab is shown each segment is drawn over the track in
   a colour of its own, neighbours always different, with the same colour on

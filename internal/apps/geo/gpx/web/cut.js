@@ -97,6 +97,7 @@ export class CutPanel {
   }
 
   removeCut(index) {
+    if (!this.track.cuts.includes(index)) return;
     const cuts = this.track.cuts.filter((cut) => cut !== index);
     // The segment starting at the cut joins the one before; its name goes.
     this.onCuts(cuts, this.names().filter((name) => name.start !== index));
@@ -138,7 +139,7 @@ export class CutPanel {
 
     const hint = document.createElement("p");
     hint.className = "cut-hint";
-    hint.textContent = "Click the track on the map, or click the timeline, to cut at that point; a dashed mark on the timeline is a stop's proposed cut. Drag a cut to move it, double-click it to remove it. Zoom the timeline with the wheel to place a cut to the second.";
+    hint.textContent = "Click the track or timeline to cut there. Remove one cut with × beside the segment it starts; drag a timeline cut to move it. Clear cuts removes them all. Zoom the timeline with the wheel for finer placement.";
     parts.push(hint);
 
     parts.push(this.table());
@@ -166,7 +167,7 @@ export class CutPanel {
       this.selected = all.checked ? new Set(track.pieces.map((piece) => piece.first)) : new Set();
       this.render();
     });
-    const cells = [[all, "check"], ["#", "num"], ["Name", "name"], ["Time", "time"], ["Duration", "right"], ["Distance", "right"]];
+    const cells = [[all, "check"], ["#", "num"], ["Name", "name"], ["Time", "time"], ["Duration", "right"], ["Distance", "right"], ["", "remove"]];
     for (const [content, className] of cells) {
       const th = document.createElement("th");
       th.className = className;
@@ -222,6 +223,20 @@ export class CutPanel {
     cell("time", time);
     cell("right", piece.start != null ? format.duration((piece.end - piece.start) / 1000) || "0m" : "–");
     cell("right", format.distance(piece.distance));
+    const remove = cell("remove");
+    if (number > 1 && this.track.cuts.includes(piece.first)) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cut-remove icon-button";
+      button.textContent = "×";
+      button.title = `Remove cut before segment ${number}`;
+      button.setAttribute("aria-label", button.title);
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.removeCut(piece.first);
+      });
+      remove.append(button);
+    }
     tr.addEventListener("mouseenter", () => this.onHover(piece));
     tr.addEventListener("mouseleave", () => this.onHover(null));
     tr.addEventListener("click", (event) => {

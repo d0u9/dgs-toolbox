@@ -336,6 +336,8 @@ button, select, input { font: inherit; color: inherit; }
 .cut-table .num { width: 1%; }
 .cut-table .name { width: 100%; min-width: 90px; }
 .cut-table .right { text-align: right; }
+.cut-table .remove { width: 1%; text-align: right; }
+.cut-table .cut-remove { width: 22px; height: 22px; font-size: 18px; line-height: 1; }
 .cut-table .time { color: var(--muted); }
 /* A narrow inspector drops the time column: an unnamed segment's placeholder
    already reads as its time span. */
