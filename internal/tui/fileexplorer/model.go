@@ -26,14 +26,13 @@ var (
 	disclosureColor = lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"}
 	selectedText    = lipgloss.AdaptiveColor{Light: "#134E4A", Dark: "#ECFEFF"}
 	selectedBG      = lipgloss.AdaptiveColor{Light: "#CCFBF1", Dark: "#334155"}
-	surfaceColor    = lipgloss.AdaptiveColor{Light: "#EAF4F4", Dark: "#243447"}
 	errorColor      = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#FCA5A5"}
 
-	rowStyle        = lipgloss.NewStyle().Foreground(textColor).Background(surfaceColor)
-	disclosureStyle = lipgloss.NewStyle().Foreground(disclosureColor).Background(surfaceColor)
+	rowStyle        = lipgloss.NewStyle().Foreground(textColor)
+	disclosureStyle = lipgloss.NewStyle().Foreground(disclosureColor)
 	selectedStyle   = lipgloss.NewStyle().Bold(true).Foreground(selectedText).Background(selectedBG)
-	errorStyle      = lipgloss.NewStyle().Foreground(errorColor).Background(surfaceColor)
-	mutedStyle      = lipgloss.NewStyle().Foreground(mutedColor).Background(surfaceColor)
+	errorStyle      = lipgloss.NewStyle().Foreground(errorColor)
+	mutedStyle      = lipgloss.NewStyle().Foreground(mutedColor)
 )
 
 type directoryNode struct {
@@ -860,20 +859,29 @@ func renderDirectoryNode(node *directoryNode, selected bool, width int) string {
 		marker = "› "
 		style = selectedStyle
 	}
-	iconText := disclosureStyle.Render(icon)
-	if selected {
-		// Keep the selected row as one continuous styled span so ANSI resets in
-		// nested icon styles cannot punch holes in the highlight background.
-		iconText = icon
-	}
-	if node.loading {
-		iconText = mutedStyle.Render(icon)
-	}
-	line := marker + strings.Repeat("  ", node.depth) + iconText + " " + node.name
+	prefix := marker + strings.Repeat("  ", node.depth)
+	suffix := " " + node.name
 	if node.err != nil {
-		line += "  " + errorStyle.Render(fmt.Sprintf("(%v)", node.err))
+		suffix += fmt.Sprintf("  (%v)", node.err)
 	}
-	return style.Width(width).MaxWidth(width).Render(line)
+	line := ansi.Truncate(prefix+icon+suffix, width, "…")
+	line += strings.Repeat(" ", max(0, width-lipgloss.Width(line)))
+	if selected {
+		return style.Render(line)
+	}
+	if node.err != nil {
+		return errorStyle.Render(line)
+	}
+	if lipgloss.Width(prefix+icon) > width {
+		return rowStyle.Render(line)
+	}
+	iconStyle := disclosureStyle
+	if node.loading {
+		iconStyle = mutedStyle
+	}
+	iconStart := len(prefix)
+	iconEnd := iconStart + len(icon)
+	return rowStyle.Render(line[:iconStart]) + iconStyle.Render(line[iconStart:iconEnd]) + rowStyle.Render(line[iconEnd:])
 }
 
 func renderSizedRow(style lipgloss.Style, label, size string, width int) string {
