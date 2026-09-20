@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"dgs-toolbox/internal/cred/record"
 	"dgs-toolbox/internal/gitrepo"
 
 	"filippo.io/age"
@@ -28,6 +29,100 @@ func vaultWith(t *testing.T, root string) vaultModel {
 	m := newVaultModel()
 	m.path = path
 	return runVault(t, m)
+}
+
+func TestVaultComment_EditsOnlyTheRecipientRecord(t *testing.T) {
+	root := t.TempDir()
+	m := vaultWith(t, root)
+	m.list.SelectID("file:0")
+	before, err := os.ReadFile(filepath.Join(root, "vault", "top.age"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	if m.comment == nil {
+		t.Fatal("m did not open the comment editor")
+	}
+	m = typeText(t, m, "Production deploy key")
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.comment == nil || !m.comment.confirming {
+		t.Fatal("enter did not ask before writing the record")
+	}
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.comment != nil {
+		t.Fatal("comment editor stayed open after saving")
+	}
+	after, err := os.ReadFile(filepath.Join(root, "vault", "top.age"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("editing the comment changed the encrypted file")
+	}
+	rec, err := record.Read(filepath.Join(root, "vault", "top.age.json"))
+	if err != nil || rec.Comment != "Production deploy key" {
+		t.Fatalf("record = %+v, %v", rec, err)
+	}
+	if view := stripVault(m); !strings.Contains(view, "Production deploy key") {
+		t.Fatalf("detail did not show comment:\n%s", view)
+	}
+}
+
+func TestVaultComment_PreservesRecordChangesMadeWhileEditing(t *testing.T) {
+	root := t.TempDir()
+	m := vaultWith(t, root)
+	m.list.SelectID("file:0")
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = typeText(t, m, "Production deploy key")
+
+	recordPath := filepath.Join(root, "vault", "top.age.json")
+	rec, err := record.Read(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.Recipients = []record.Recipient{{PublicKey: "age1new", Host: "server"}}
+	if err := record.Replace(recordPath, rec); err != nil {
+		t.Fatal(err)
+	}
+
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	rec, err = record.Read(recordPath)
+	if err != nil || rec.Comment != "Production deploy key" || len(rec.Recipients) != 1 || rec.Recipients[0].Host != "server" {
+		t.Fatalf("record after comment save = %+v, %v", rec, err)
+	}
+}
+
+func TestVaultComment_ReportsConcurrentCommentChange(t *testing.T) {
+	root := t.TempDir()
+	m := vaultWith(t, root)
+	m.list.SelectID("file:0")
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = typeText(t, m, "Production deploy key")
+
+	recordPath := filepath.Join(root, "vault", "top.age.json")
+	rec, err := record.Read(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.Comment = "Changed elsewhere"
+	if err := record.Replace(recordPath, rec); err != nil {
+		t.Fatal(err)
+	}
+
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.comment == nil || m.comment.confirming || !strings.Contains(stripVault(m), "comment changed while editing") {
+		t.Fatal("concurrent comment change was not shown in the editor")
+	}
+	rec, err = record.Read(recordPath)
+	if err != nil || rec.Comment != "Changed elsewhere" {
+		t.Fatalf("concurrent comment was overwritten: %+v, %v", rec, err)
+	}
 }
 
 func TestVaultDelete_MovesTheFileAndItsRecordToTheTrash(t *testing.T) {
