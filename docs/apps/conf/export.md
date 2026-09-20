@@ -427,8 +427,10 @@ result in the status bar.
 
 - **Format.** Folder or Zip, and Show when every file is for one person.
 - **Destination.** A directory chosen with the File Explorer: `Enter` on the
-  row opens it, starting at `conf.export.dir`. Zip writes `conf-export.zip`
-  in that directory.
+  row opens it, starting at `conf.export.dir`.
+- **ZIP file name.** Shown only for Zip, initially `conf-export.zip`. The name
+  may be changed before confirmation; `.zip` is added when omitted. It must be
+  a file name, not a path. The confirmation shows the final archive path.
 - **Replace files already there.** Off by default. When it is off and a file
   would be replaced, the form says so and does not go on. This matches the
   command line's `--overwrite`.

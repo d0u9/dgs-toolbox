@@ -46,7 +46,7 @@ The three tree markers have distinct meanings:
 
 An empty loaded directory may use `·`, a loading directory `…`, and a directory that could not be read `!`. Focus and disclosure state must remain understandable without color.
 
-Use an adaptive blue-gray panel instead of a black popup. Teal identifies focus and disclosure, normal paths use high-contrast neutral text, and loading or error states use quiet or semantic colors. Preserve the hierarchy in light and dark terminals.
+Use the calling panel's background for the Explorer rather than painting a separate block behind its rows. Teal identifies disclosure, the focused row has its own highlight, normal paths use high-contrast neutral text, and loading or error states use quiet or semantic colors. Preserve the hierarchy in light and dark terminals.
 
 Use separators instead of adding a rectangle around every internal area. Temporary inputs and confirmations appear at the bottom without replacing the visible tree.
 

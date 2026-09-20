@@ -682,7 +682,7 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		if m.export != nil && m.export.picking {
 			w, h := m.pickerSize()
-			m.export.picker.SetSize(w-2, h-6)
+			m.export.picker.SetSize(w-4, h-6)
 		}
 		return m, nil
 	case graphOpenedMsg:
