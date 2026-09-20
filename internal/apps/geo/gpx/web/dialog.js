@@ -4,6 +4,57 @@
 import { api } from "./api.js";
 import * as format from "./format.js";
 
+// waypointDialog asks for the destination and details before writing a point.
+export function waypointDialog(entries, coordinates) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "confirm-dialog";
+    const heading = document.createElement("h3");
+    heading.textContent = "Add waypoint";
+    const place = document.createElement("p");
+    place.textContent = `${coordinates[1].toFixed(6)}, ${coordinates[0].toFixed(6)} (WGS-84)`;
+    const form = document.createElement("form");
+    form.method = "dialog";
+    const target = document.createElement("select");
+    target.className = "cut-path prompt-input";
+    for (const entry of entries) {
+      const option = document.createElement("option");
+      option.value = entry.path;
+      option.textContent = `${entry.name} — ${entry.path}`;
+      target.append(option);
+    }
+    const name = document.createElement("input");
+    name.className = "cut-path prompt-input";
+    name.placeholder = "Waypoint name";
+    name.required = true;
+    const description = document.createElement("input");
+    description.className = "cut-path prompt-input";
+    description.placeholder = "Description (optional)";
+    const buttons = document.createElement("div");
+    buttons.className = "confirm-buttons";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "text-button";
+    cancel.textContent = "Cancel";
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.className = "chip active";
+    save.textContent = "Add";
+    buttons.append(cancel, save);
+    form.append(target, name, description, buttons);
+    dialog.append(heading, place, form);
+    let answer = null;
+    cancel.addEventListener("click", () => dialog.close());
+    form.addEventListener("submit", () => {
+      if (name.value.trim()) answer = { path: target.value, name: name.value.trim(), description: description.value.trim() };
+    });
+    dialog.addEventListener("close", () => { dialog.remove(); resolve(answer); });
+    document.body.append(dialog);
+    dialog.showModal();
+    name.focus();
+  });
+}
+
 // promptDialog asks for one line of text, such as a file path, and resolves
 // to it, or to null when cancelled.
 export function promptDialog({ title, message, value = "", confirm = "OK", cancel = "Cancel" }) {

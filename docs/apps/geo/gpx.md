@@ -39,6 +39,7 @@ server exposes the API under `/api/`; everything else is the page.
 | `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
 | `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
 | `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`. A GPX `dgs` wrote is renamed in the file itself; a track added here is renamed in the sidecar holding it; any other file keeps the new name in its sidecar under `names` and is not written. |
+| `POST /api/waypoint` | Adds a named standalone `<wpt>` at WGS-84 `lat`, `lon` to an existing dgs-created GPX, or to a new GPX not yet saved, which keeps it until it is written. Files from other creators are refused. |
 | `POST /api/segments/write` | Writes chosen segments of a track, as cleaned, one `<trk>` each: added to another GPX's sidecar (mode `add`), or into a new GPX it will not overwrite (mode `create`). The source is refused. |
 | `POST /api/fill/route` | Asks a router for the road between two kept points of a track, with a way of travel `/api/config` lists under `ways`. Returns the route in WGS-84 and as drawn. Nothing is saved. |
 | `POST /api/fill` | Records a route between two points in the companion sidecar or embedded dgs state, inserted after the first; later indices move along. |
@@ -479,6 +480,17 @@ only the points cleaning kept, at their edited positions, including fills and
 tracks added from other files. Saved cuts and editable route plans are
 embedded in the new file, which has `creator="dgs-toolbox"` and needs no
 sidecar. The original GPX is not written.
+
+**Adding a standalone waypoint.** In Edit, choose ⚑ and click the map. The
+tool needs no focused track — it writes into a GPX the dialog asks for — so it
+stays available when the other tools, which work on the focused track, are
+not. The dialog asks for a name, optional description, and destination among
+the open GPX files created by dgs and the new GPX files not yet saved. A file
+from another creator is never changed in place; save it as a new dgs GPX
+first. A new GPX is not on disk yet, so its waypoints are kept with it in
+memory, under `waypoints` in what it holds instead of a sidecar, and are
+written into the file it is saved as. The coordinate is WGS-84 even when a
+GCJ-02 map is displayed. This is a `<wpt>`, not a route-planning waypoint.
 
 **Embedded edit state.** New dgs GPX files identify themselves with the
 standard root `creator` attribute. Subsequent edits are stored directly in

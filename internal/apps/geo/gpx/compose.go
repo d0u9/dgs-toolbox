@@ -325,7 +325,19 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	file := result.cleaning
-	if err := gpxfile.CreateAll(target, result.name, result.file.Waypoints, result.file.Routes, editedTracks(result)); err != nil {
+	waypoints := append([]gpxfile.Waypoint(nil), result.file.Waypoints...)
+	routes := append([]gpxfile.Route(nil), result.file.Routes...)
+	for i := range waypoints {
+		if name, ok := file.Names[fmt.Sprintf("w%d", i)]; ok {
+			waypoints[i].Name = name
+		}
+	}
+	for i := range routes {
+		if name, ok := file.Names[fmt.Sprintf("r%d", i)]; ok {
+			routes[i].Name = name
+		}
+	}
+	if err := gpxfile.CreateAll(target, result.name, waypoints, routes, editedTracks(result)); err != nil {
 		if errors.Is(err, gpxfile.ErrExists) {
 			writeError(w, http.StatusConflict, err)
 		} else {
