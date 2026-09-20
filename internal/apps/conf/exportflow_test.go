@@ -31,7 +31,7 @@ func pressKey(t *testing.T, m InspectModel, msg tea.KeyMsg) (InspectModel, tea.C
 }
 
 func TestInspectMark_NodeMarksEveryInstance(t *testing.T) {
-	m := newInspectModel(buildInspectRoot(t), "")
+	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	if !m.list.SelectID("node:srv") {
 		t.Fatal("no srv row")
 	}
@@ -98,7 +98,7 @@ func TestInspectMark_AllTogglesTheTab(t *testing.T) {
 }
 
 func TestInspectMark_BoxFollowsTheIndent(t *testing.T) {
-	m := newInspectModel(buildInspectRoot(t), "")
+	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	m.list.SelectID("inst:ss-srv")
 	if got := selectedLabel(t, m); !strings.Contains(got, "─ [ ] ss-srv") {
 		t.Fatalf("instance label = %q, want the box after its branch", got)
@@ -106,7 +106,7 @@ func TestInspectMark_BoxFollowsTheIndent(t *testing.T) {
 }
 
 func TestInspectExport_NoMarksTakesTheCursorRow(t *testing.T) {
-	m := newInspectModel(buildInspectRoot(t), "")
+	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	m.list.SelectID("inst:ss-srv")
 	if got := m.exportSelection(); len(got) != 1 || got[0] != "ss-srv" {
 		t.Fatalf("exportSelection = %v, want [ss-srv]", got)
