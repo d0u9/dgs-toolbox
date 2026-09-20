@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/cred/identities"
+	"dgs-toolbox/internal/cred/record"
 	"dgs-toolbox/internal/cred/vault"
 	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/gitrepo"
@@ -96,6 +97,8 @@ type vaultModel struct {
 	action *actionFlow
 	// edit is changing a file's recipients.
 	edit *editFlow
+	// comment is editing the owner-supplied explanation in a file's record.
+	comment *commentFlow
 	// del is deleting a file from the vault, and git is publishing the folder
 	// it is in.
 	del *vaultDeleteFlow
@@ -288,6 +291,11 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.finishEdit(msg)
 		}
 		return m, nil
+	case commentSavedMsg:
+		if m.comment != nil {
+			return m.finishComment(msg)
+		}
+		return m, nil
 	case actionDoneMsg:
 		if m.action != nil {
 			return m.finishAction(msg)
@@ -326,6 +334,11 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.edit != nil {
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			return m.updateEdit(msg)
+		}
+	}
+	if m.comment != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateComment(msg)
 		}
 	}
 	if m.del != nil {
@@ -439,6 +452,9 @@ func (m vaultModel) updateKey(key string) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case "e":
 		cmd := m.startEdit()
+		return m, cmd
+	case "m":
+		cmd := m.startComment()
 		return m, cmd
 	case "d":
 		cmd := m.startVaultDelete()
@@ -681,6 +697,9 @@ func (m vaultModel) View() string {
 	if m.edit != nil {
 		return overlay.Place(workspace, m.editView(), m.width, m.height)
 	}
+	if m.comment != nil {
+		return overlay.Place(workspace, m.commentView(), m.width, m.height)
+	}
 	if m.del != nil {
 		return overlay.Place(workspace, m.deleteView(), m.width, m.height)
 	}
@@ -777,6 +796,10 @@ func (m vaultModel) fileDetail(file vault.File, report vault.Report, width int) 
 		status = "· checking…"
 	}
 	lines = append(lines, "", property("Status", status))
+	if rec, err := record.Read(record.PathFor(filepath.Join(m.root, filepath.FromSlash(file.Path)))); err == nil && rec.Comment != "" {
+		lines = append(lines, "")
+		lines = append(lines, wrapped(property("Comment", rec.Comment), width)...)
+	}
 	switch {
 	case report.OpenedBy != "":
 		lines = append(lines, wrapped(property("Opens", report.OpenedBy), width)...)
@@ -836,7 +859,7 @@ func (m vaultModel) pickerView() string {
 }
 
 func (m vaultModel) CapturesShellKey(key string) bool {
-	if m.prompt != nil || m.action != nil || m.edit != nil {
+	if m.prompt != nil || m.action != nil || m.edit != nil || m.comment != nil {
 		return key == "esc" || key == "q" || key == "backspace"
 	}
 	if m.open != nil && key == "esc" {
@@ -863,6 +886,9 @@ func (m vaultModel) Status() tui.Status {
 	}
 	if m.edit != nil {
 		return tui.Status{Left: "CHANGE RECIPIENTS", Center: m.edit.file.Path, Right: "↑↓ Move  space Check  ↵ Continue  esc Cancel"}
+	}
+	if m.comment != nil {
+		return tui.Status{Left: "EDIT COMMENT", Center: m.comment.file.Path, Right: "↵ Continue  esc Cancel"}
 	}
 	if m.del != nil {
 		return tui.Status{Left: "DELETE", Center: m.del.name, Right: "←→ Choose  ↵ Confirm  esc Cancel"}
@@ -898,9 +924,9 @@ func (m vaultModel) Status() tui.Status {
 	if center == "" {
 		center = m.summary()
 	}
-	right := "↑↓ Move  ↵ Open  e Recipients  d Delete  a Add  f Update  p Publish"
+	right := "↑↓ Move  ↵ Open  e Recipients  m Comment  d Delete  a Add  f Update  p Publish"
 	if _, report, ok := m.selectedFile(); ok && report.Status == vault.Passphrase {
-		right = "↑↓ Move  ↵ Open  e Passphrase  d Delete  a Add  f Update  p Publish"
+		right = "↑↓ Move  ↵ Open  e Passphrase  m Comment  d Delete  a Add  f Update  p Publish"
 	}
 	if _, ok := m.selectedDir(); ok {
 		right = "↑↓ Move  ↵ Fold  a Add  f Update  p Publish  o Folder"

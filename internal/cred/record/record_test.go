@@ -14,7 +14,7 @@ func TestCreateAndRead(t *testing.T) {
 		t.Fatalf("path %s", path)
 	}
 	created := time.Date(2026, 9, 15, 14, 0, 0, 0, time.FixedZone("AEST", 10*3600))
-	want := Record{Created: created, Archive: ArchiveTarGz, Recipients: []Recipient{{PublicKey: "age1abc", Host: "nas", Description: "Main"}}}
+	want := Record{Created: created, Comment: "Production deploy key", Archive: ArchiveTarGz, Recipients: []Recipient{{PublicKey: "age1abc", Host: "nas", Description: "Main"}}}
 	if err := Create(path, want); err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestCreateAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != Version || !got.Created.Equal(created) || got.Archive != ArchiveTarGz || len(got.Recipients) != 1 || got.Recipients[0] != want.Recipients[0] {
+	if got.Version != Version || !got.Created.Equal(created) || got.Comment != want.Comment || got.Archive != ArchiveTarGz || len(got.Recipients) != 1 || got.Recipients[0] != want.Recipients[0] {
 		t.Errorf("read %+v", got)
 	}
 	data, _ := os.ReadFile(path)
