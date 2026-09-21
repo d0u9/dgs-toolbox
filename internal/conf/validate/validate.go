@@ -66,6 +66,20 @@ func credentialsCarriedThemselves(inv *inventory.Root, key string, user inventor
 	return out
 }
 
+// deployKeys is an instance's deploy mapping's own keys, sorted, so an
+// inventory with two problems reports them in the same order every time.
+// Only the top level is read: what a key's value holds belongs to the
+// deployment tool, and guessing at a nested `ports` would report a
+// service's own legitimate configuration.
+func deployKeys(deploy map[string]any) []string {
+	out := make([]string, 0, len(deploy))
+	for key := range deploy {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func containsString(list []string, s string) bool {
 	for _, v := range list {
 		if v == s {
@@ -409,6 +423,39 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		default:
 			add("instance %q: runtime %q is not %q, %q or %q",
 				id, runtime, inventory.RuntimeHost, inventory.RuntimeDocker, inventory.RuntimePodman)
+		}
+	}
+
+	// Rules 24 and 25: what an instance's `deploy` may say, and where it
+	// may say it. A host process renders no deployment file, and neither
+	// does an instance of a service that declares no deploy/ — in both
+	// cases the mapping would be read by nothing. What it may not hold is
+	// a port mapping or a secret: the first is derived from `ports` and
+	// the resolved edges, the second stays in the configuration file
+	// beside it, and a second spelling of either is the thing the second
+	// file exists to remove.
+	for _, id := range realIDs {
+		inst := realInstances[id].inst
+		if inst.Deploy == nil {
+			continue
+		}
+		if !manifests[inst.Service].Deploys {
+			add("instance %q writes deploy values, and service %q holds no %s/ directory to render them",
+				id, inst.Service, confgen.DeployDir)
+		}
+		if !inst.Containerised() {
+			add("instance %q writes deploy values and runs as a %s process, which renders no deployment file",
+				id, inventory.RuntimeHost)
+		}
+		for _, key := range deployKeys(inst.Deploy) {
+			switch key {
+			case "port", "ports":
+				add("instance %q: deploy %q: a port mapping is derived from ports and from the edges into it, and writing one here is the second truth the deployment file removes",
+					id, key)
+			case "secret", "secrets":
+				add("instance %q: deploy %q: a deployment file carries no credential — it names the rendered configuration beside it",
+					id, key)
+			}
 		}
 	}
 

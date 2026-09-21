@@ -820,3 +820,63 @@ func TestValidate_KnownRuntimeIsNotAnIssue(t *testing.T) {
 		}
 	}
 }
+
+// TestValidate_DeployWithoutADeployDirectory is rule 24: the values would
+// be read by nothing, since the service renders one file.
+func TestValidate_DeployWithoutADeployDirectory(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[0].Instances[0].Runtime = inventory.RuntimeDocker
+	inv.Nodes[0].Instances[0].Deploy = map[string]any{"image": "example:1"}
+	manifests := validManifests()
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `holds no deploy/ directory`) {
+		t.Fatalf("Validate = %v, want a missing-deploy-directory issue", messages(got))
+	}
+}
+
+// TestValidate_DeployOnAHostProcess is the other half of rule 24: a
+// deployment file is a container's, and a host process renders none.
+func TestValidate_DeployOnAHostProcess(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[0].Instances[0].Deploy = map[string]any{"image": "example:1"}
+	manifests := validManifests()
+	manifests["ssserver"] = confgen.Manifest{Auth: confgen.AuthPerPrincipal, Exports: []string{"ss-json"}, Template: "t", Deploys: true}
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `runs as a host process`) {
+		t.Fatalf("Validate = %v, want a host-process issue", messages(got))
+	}
+}
+
+// TestValidate_DeployWritingPortsOrSecrets is rule 25: both are the second
+// spelling the deployment file exists to remove, and the error names the
+// key that carries it.
+func TestValidate_DeployWritingPortsOrSecrets(t *testing.T) {
+	for key, want := range map[string]string{
+		"ports":   "a port mapping is derived",
+		"secrets": "carries no credential",
+	} {
+		inv := validInventory()
+		inv.Nodes[0].Instances[0].Runtime = inventory.RuntimeDocker
+		inv.Nodes[0].Instances[0].Deploy = map[string]any{"image": "example:1", key: "whatever"}
+		manifests := validManifests()
+		manifests["ssserver"] = confgen.Manifest{Auth: confgen.AuthPerPrincipal, Exports: []string{"ss-json"}, Template: "t", Deploys: true}
+		got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+		if !containsSubstring(got, want) {
+			t.Fatalf("Validate with deploy %q = %v, want %q", key, messages(got), want)
+		}
+	}
+}
+
+// TestValidate_DeployOnAContainerOfAServiceThatDeploysIsFine keeps the
+// rules from reporting the case they exist to allow.
+func TestValidate_DeployOnAContainerOfAServiceThatDeploysIsFine(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[0].Instances[0].Runtime = inventory.RuntimeDocker
+	inv.Nodes[0].Instances[0].Deploy = map[string]any{"image": "example:1", "restart": "unless-stopped"}
+	manifests := validManifests()
+	manifests["ssserver"] = confgen.Manifest{Auth: confgen.AuthPerPrincipal, Exports: []string{"ss-json"}, Template: "t", Deploys: true}
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if len(got) != 0 {
+		t.Fatalf("Validate = %v, want none", messages(got))
+	}
+}

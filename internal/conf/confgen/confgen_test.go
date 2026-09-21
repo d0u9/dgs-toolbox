@@ -341,3 +341,80 @@ output: config.toml
 		t.Fatalf("Broken = %q, want the contradiction named", got.Services[0].Broken)
 	}
 }
+
+// TestLoad_DeployDirectoryIsReadAndIsNotAnExport pins what declares a
+// deployment file: the directory being there. It is not an export, so it is
+// not in the service's export list and nobody can select it by name.
+func TestLoad_DeployDirectoryIsReadAndIsNotAnExport(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), `
+template: templates/server.env.tmpl
+defaults: document
+output: server.env
+auth: none
+`)
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", DeployDir, ManifestFilename), `
+template: templates/compose.yaml.tmpl
+defaults: document
+output: compose.yaml
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.Services) != 1 {
+		t.Fatalf("Load = %d services, want 1", len(got.Services))
+	}
+	svc := got.Services[0]
+	if svc.DeployBroken != "" {
+		t.Fatalf("deploy: %s", svc.DeployBroken)
+	}
+	if svc.Deploy == nil {
+		t.Fatal("Load read no deploy manifest")
+	}
+	if svc.Deploy.Output != "compose.yaml" || svc.Deploy.Template != "templates/compose.yaml.tmpl" {
+		t.Fatalf("deploy = %+v, want the compose template and output", *svc.Deploy)
+	}
+	if !svc.Manifest.Deploys {
+		t.Fatal("Deploys = false, want true for a service holding a deploy directory")
+	}
+	if len(svc.Manifest.Exports) != 0 || len(got.Exports) != 0 {
+		t.Fatalf("deploy was read as an export: exports = %v", svc.Manifest.Exports)
+	}
+}
+
+// TestLoad_ServiceWithoutADeployDirectoryHasNone is the ordinary case, and
+// the one rule 24 reads.
+func TestLoad_ServiceWithoutADeployDirectoryHasNone(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), "template: t\noutput: server.env\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Services[0].Deploy != nil || got.Services[0].Manifest.Deploys {
+		t.Fatalf("Load = %+v, want no deploy half", got.Services[0])
+	}
+}
+
+// TestLoad_BrokenDeployManifestIsReportedNotFatal: an unknown key there is
+// reported like any other, rather than leaving a setting at a default
+// nobody wrote.
+func TestLoad_BrokenDeployManifestIsReportedNotFatal(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), "template: t\noutput: server.env\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", DeployDir, ManifestFilename), "template: t\nauth: none\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Services[0].DeployBroken == "" {
+		t.Fatal("DeployBroken is empty, want the unknown-key error")
+	}
+	if !strings.Contains(got.Services[0].DeployBroken, "auth") {
+		t.Fatalf("DeployBroken = %q, want it to name the key", got.Services[0].DeployBroken)
+	}
+}

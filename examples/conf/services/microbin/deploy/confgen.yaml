@@ -1,0 +1,14 @@
+# The second file: what starts MicroBin, beside the file that says how it
+# behaves. The directory is what declares it — a service holding none renders
+# one file — so the service's own confgen.yaml grows no key.
+#
+# It is not an export. An export is derived from a person's access and carries
+# their credential; this belongs to an instance written in a node file, is
+# rendered because that instance's `runtime` is a container runtime, and holds
+# no credential at all.
+#
+# The keys are an export's, and so is the rendering: a template, a defaults
+# kind, an output name.
+template: templates/compose.yaml.tmpl
+defaults: document
+output: compose.yaml

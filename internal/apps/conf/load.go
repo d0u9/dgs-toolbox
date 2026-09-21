@@ -15,7 +15,11 @@ type loaded struct {
 	exports     map[string]confgen.Export
 	exportDirs  map[string]string
 	serviceDirs map[string]string
-	derived     *derive.Model
+	// deploys and deployDirs hold the deployment half of the services that
+	// declare one, keyed by service name. Most services declare none.
+	deploys    map[string]confgen.Deploy
+	deployDirs map[string]string
+	derived    *derive.Model
 }
 
 // load reads rootPath's inventory and services/, and derives from both.
@@ -34,14 +38,22 @@ func load(rootPath string) (loaded, error) {
 	}
 	manifests := map[string]confgen.Manifest{}
 	serviceDirs := map[string]string{}
+	deploys := map[string]confgen.Deploy{}
+	deployDirs := map[string]string{}
 	for _, svc := range confRoot.Services {
 		if svc.Broken == "" {
 			manifests[svc.Name] = svc.Manifest
 			serviceDirs[svc.Name] = svc.Dir
 		}
+		if svc.Deploy != nil && svc.DeployBroken == "" {
+			deploys[svc.Name] = *svc.Deploy
+			deployDirs[svc.Name] = svc.DeployDir
+		}
 	}
 	l.manifests = manifests
 	l.serviceDirs = serviceDirs
+	l.deploys = deploys
+	l.deployDirs = deployDirs
 
 	// An export is keyed by the service it writes out as well as its own
 	// name: two services may both offer a "link", and they are two exports

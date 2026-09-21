@@ -37,6 +37,7 @@ func funcs(defaults map[string]any, in Input) map[string]any {
 		},
 		"downstreams": func() []Downstream { return in.Downstreams },
 		"published":   func(port string) string { return in.Published[port] },
+		"mapping":     func(port string) Mapping { return in.Mapping[port] },
 		"target": func() map[string]string {
 			return map[string]string{
 				"service":  in.Target.Service,
