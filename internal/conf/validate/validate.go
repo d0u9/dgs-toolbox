@@ -692,6 +692,11 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		if !wants.Wants(confgen.UpstreamShared) {
 			continue
 		}
+		// A declaration that says the hop may hand over nothing is not the
+		// mistake this rule looks for. See confgen.UpstreamDecl.Optional.
+		if wants[confgen.UpstreamShared].Optional {
+			continue
+		}
 		if len(portSelf[e.To.Instance][e.To.Port]) > 0 {
 			continue
 		}

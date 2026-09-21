@@ -158,6 +158,81 @@ output: config.json
 	}
 }
 
+// TestPreview_UpstreamValuesReachTheClientThatDeclaredThem pins
+// docs/apps/conf/inventory.md#what-a-service-needs-from-its-upstream for
+// `values`: a parameter the two ends have to agree on is written on the
+// instance that listens, and the client's file is rendered from there rather
+// than from a second copy of it.
+func TestPreview_UpstreamValuesReachTheClientThatDeclaredThem(t *testing.T) {
+	root, secretsDir := buildSharedRoot(t)
+	writeFile(t, filepath.Join(root, "services", "ssserver", "exports", "ss-json", "confgen.yaml"), `
+template: templates/client.json.tmpl
+defaults: element
+output: config.json
+upstream:
+  values: {}
+`)
+	writeFile(t, filepath.Join(root, "services", "ssserver", "exports", "ss-json", "templates", "client.json.tmpl"),
+		"hop: {{ (upstream).values.port_hopping }}\n")
+	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
+id: srv
+networks:
+  internet: 203.0.113.10
+instances:
+  - id: ss-srv
+    service: ssserver
+    ports:
+      main: {port: 38250, self: [psk.main]}
+    values:
+      port_hopping: "20000-25000"
+`)
+
+	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
+	}
+	got := strings.Join(p.lines, "\n")
+	if want := "hop: 20000-25000"; got != want {
+		t.Fatalf("preview = %q, want %q", got, want)
+	}
+}
+
+// TestPreview_UpstreamValuesOnlyReachWhatDeclaredIt is the same rule `shared`
+// has: the hop's values cross to another instance because the program
+// dialling declared it needs them, never because the instance listening holds
+// them.
+func TestPreview_UpstreamValuesOnlyReachWhatDeclaredIt(t *testing.T) {
+	root, secretsDir := buildSharedRoot(t)
+	writeFile(t, filepath.Join(root, "services", "ssserver", "exports", "ss-json", "confgen.yaml"), `
+template: templates/client.json.tmpl
+defaults: element
+output: config.json
+`)
+	writeFile(t, filepath.Join(root, "services", "ssserver", "exports", "ss-json", "templates", "client.json.tmpl"),
+		"hop: {{ (upstream).values.port_hopping }}\n")
+	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
+id: srv
+networks:
+  internet: 203.0.113.10
+instances:
+  - id: ss-srv
+    service: ssserver
+    ports:
+      main: {port: 38250, self: [psk.main]}
+    values:
+      port_hopping: "20000-25000"
+`)
+
+	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
+	}
+	got := strings.Join(p.lines, "\n")
+	if strings.Contains(got, "20000-25000") {
+		t.Fatalf("preview = %q, want it to hold no value of the hop it dials", got)
+	}
+}
+
 func TestPreview_RendersTheSameWayExportWould(t *testing.T) {
 	root, secretsDir := buildRenderableRoot(t)
 	p := renderPreview(t, root, secretsDir, "us-sfo")

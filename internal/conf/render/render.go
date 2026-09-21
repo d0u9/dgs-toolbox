@@ -91,10 +91,11 @@ type Input struct {
 	// this instance connects as, and its secret. When this target's own
 	// manifest declares it needs them, it also holds the secrets that hop's
 	// port hands to everything granted on it, in that port's order, as
-	// shared. A value crosses between instances because the program dialling
-	// says it needs it, never because the one listening publishes it, so
-	// shared is absent from every target that did not ask. Nil for a
-	// terminal instance.
+	// shared, and that hop's instance's own values as values. A value
+	// crosses between instances because the program dialling says it needs
+	// it, never because the one listening publishes it, so each of the two
+	// is absent from every target that did not ask. Nil for a terminal
+	// instance.
 	Upstream map[string]any
 	// Downstreams is the render context's downstreams datasource: for an
 	// instance whose service declares downstreams: many, the hop that
