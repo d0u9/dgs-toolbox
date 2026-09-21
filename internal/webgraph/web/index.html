@@ -4,25 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Graph</title>
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<header>
+<header class="topbar">
   <h1 id="title">Graph</h1>
   <div class="controls">
-    <span id="counts" class="counts"></span>
-    <button id="view" type="button">View: network</button>
-    <button id="detail" type="button">Detail: auto</button>
-    <button id="relayout" type="button">Re-layout</button>
-    <button id="fit" type="button">Fit</button>
-    <button id="reload" type="button">Reload</button>
+    <span id="counts" class="counts numeric muted"></span>
+    <button id="view" class="button" type="button">View: network</button>
+    <button id="detail" class="button" type="button">Detail: auto</button>
+    <button id="relayout" class="button" type="button">Re-layout</button>
+    <button id="fit" class="button" type="button">Fit</button>
+    <button id="reload" class="button" type="button">Reload</button>
   </div>
 </header>
 <main>
   <div id="graph"></div>
   <aside id="key" hidden></aside>
 </main>
-<div id="error" hidden></div>
+<div id="error" class="error-banner" hidden></div>
 <script src="vendor/cytoscape.min.js"></script>
 <script src="vendor/layout-base.min.js"></script>
 <script src="vendor/cose-base.min.js"></script>

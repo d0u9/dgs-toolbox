@@ -1,0 +1,151 @@
+/* The controls shared by every dgs page. A page uses these classes as they
+   are; it restyles one only where its own work needs a difference. */
+
+button, select, input, textarea { font: inherit; color: inherit; }
+
+/* The default control: a hairline box on paper that fills under the
+   pointer. .icon-button is its square form, .text-button its compact one. */
+.button, .icon-button, .text-button {
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.button { height: var(--control-height); padding: 0 var(--space-sm); }
+.icon-button { width: 26px; height: var(--control-height-sm); padding: 0; }
+.text-button {
+  padding: 1px var(--control-pad-x);
+  font-size: var(--font-size-xs);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.button:hover, .icon-button:hover, .text-button:hover { background: var(--hover); }
+.button:disabled, .icon-button:disabled, .text-button:disabled { opacity: .4; cursor: default; }
+
+/* The accent form of the default control, for the one action a view is
+   about. */
+.button.primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.button.primary:hover { background: var(--primary-bright); border-color: var(--primary-bright); }
+.button.primary:active { background: var(--primary-deep); border-color: var(--primary-deep); }
+
+/* A pill that holds a setting rather than starting an action. */
+.chip {
+  padding: 1px var(--control-pad-x);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  color: var(--graphite);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.chip.icon { padding: 1px 6px; }
+.chip:hover { background: var(--hover); }
+.chip[aria-pressed="true"] { background: var(--selected); border-color: var(--primary); color: var(--primary); }
+.chip.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.chip.active.danger { background: var(--error); border-color: var(--error); }
+
+/* Text and number fields, and the select beside them. */
+.field, input[type="text"], input[type="number"], input[type="search"], select {
+  padding: 2px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  font-size: var(--font-size-sm);
+}
+select.active { border-color: var(--primary); color: var(--primary); }
+
+:where(.button, .icon-button, .text-button, .chip, .field):focus-visible,
+input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* A list of rows: a name that runs out in an ellipsis, metadata after it,
+   the whole row highlighted under the pointer. */
+.list { list-style: none; margin: 0; padding: 0 6px var(--space-xs); overflow-y: auto; min-height: 0; }
+.list li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--row-pad-y) var(--row-pad-x);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  user-select: none;
+}
+.list li:hover { background: var(--hover); }
+.list .name { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.list .meta { color: var(--graphite); font-size: var(--font-size-xs); white-space: nowrap; }
+.list .glyph { flex: none; width: 14px; text-align: center; color: var(--graphite); }
+
+/* A round colour mark in front of a row or a legend line. */
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; vertical-align: middle; }
+
+/* The drag handle between two panes: a hairline that takes the accent under
+   the pointer, with a wider invisible grab area. */
+.splitter { flex: none; position: relative; background: var(--hairline); touch-action: none; z-index: 5; }
+.splitter.row { height: 1px; cursor: row-resize; }
+.splitter.col { width: 1px; cursor: col-resize; }
+.splitter::after { content: ""; position: absolute; }
+.splitter.row::after { left: 0; right: 0; top: -4px; bottom: -4px; }
+.splitter.col::after { top: 0; bottom: 0; left: -4px; right: -4px; }
+.splitter:hover, .splitter.dragging { background: var(--primary); }
+.splitter.row:hover, .splitter.row.dragging,
+.splitter.col:hover, .splitter.col.dragging { box-shadow: 0 0 0 1px var(--primary); }
+.splitter[hidden] { display: none; }
+body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select: none; }
+body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select: none; }
+
+/* A dialog asking before something on disk changes. */
+.dialog {
+  max-width: 440px;
+  padding: 18px var(--space-lg) 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--lift-modal);
+  font-size: var(--font-size-ui);
+}
+.dialog::backdrop { background: rgba(26, 26, 26, .35); }
+.dialog h3 { margin: 0 0 var(--space-xs); font-size: 15px; }
+.dialog p { margin: 0 0 var(--space-xs); line-height: 1.45; }
+.dialog-detail {
+  display: block;
+  margin: 0 0 var(--space-sm);
+  padding: 6px var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--cloud);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+.dialog-buttons { display: flex; justify-content: flex-end; gap: var(--space-xs); }
+.dialog-buttons .chip { padding: var(--space-xxs) 14px; font-size: var(--font-size-sm); }
+
+/* A menu that opens over the page. */
+.menu {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-xxs);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--lift-soft);
+}
+.menu[hidden] { display: none; }
+.menu button {
+  padding: var(--space-xxs) 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menu button:hover { background: var(--hover); }
