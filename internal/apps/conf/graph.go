@@ -116,13 +116,13 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 	// collapse is for a box that stands for a machine rather than a process
 	// on one: an unmanaged user's device has no node file to be a container,
 	// so its box is made here and shuts like a machine's does.
-	addProcess := func(nodeID, procID, label string, collapse bool) {
+	addProcess := func(nodeID, procID, label, detail string, collapse bool) {
 		if seenProcess[procID] {
 			return
 		}
 		seenProcess[procID] = true
 		g.Groups = append(g.Groups, webgraph.Group{
-			ID: procID, Label: label, Parent: nodeID, Kind: kindProcess, Collapse: collapse,
+			ID: procID, Label: label, Detail: detail, Parent: nodeID, Kind: kindProcess, Collapse: collapse,
 		})
 	}
 
@@ -156,7 +156,7 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 					// with — the same name the secrets tree files it
 					// under.
 					box = ci.User + "/" + inventory.DefaultCredential
-					addProcess(groupBox(ci.User), box, inventory.DefaultCredential, true)
+					addProcess(groupBox(ci.User), box, inventory.DefaultCredential, "", true)
 					addGroup(ci.User)
 				}
 			}
@@ -172,7 +172,18 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 			continue
 		}
 
-		addProcess(sh.Container, procID, procLabel, false)
+		// A containerised process carries what delivers it: the process box
+		// is one running program, which is the boundary a container draws
+		// too, so the fact sits there once instead of on each port inside
+		// it. It says how to read the bind under it, and it is what the
+		// inventory states rather than anything dgs observed — no port
+		// mapping was read. See
+		// docs/apps/conf/inventory.md#what-runs-the-process.
+		runtime := ""
+		if ok && inst.Containerised() {
+			runtime = inst.RuntimeOr()
+		}
+		addProcess(sh.Container, procID, procLabel, runtime, false)
 		source[sh.Instance] = procID
 		for _, port := range sortedPortNames(ports) {
 			g.Nodes = append(g.Nodes, webgraph.Node{

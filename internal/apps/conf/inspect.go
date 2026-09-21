@@ -1062,7 +1062,15 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	if user != "" {
 		where = field("for", user+" (unmanaged)")
 	}
-	line(&b, fields(service, where))
+	// What delivers the process, written only when it is not a host one.
+	// It is here for the same reason the graph badges it: it says how to
+	// read the bind under it — see
+	// docs/apps/conf/inventory.md#what-runs-the-process.
+	runtime := ""
+	if inst.Containerised() {
+		runtime = inst.RuntimeOr()
+	}
+	line(&b, fields(service, where, field("runs in", runtime)))
 
 	var portParts []string
 	for _, name := range sortedPortNames(ports) {
