@@ -96,7 +96,8 @@ revisiting; it is not, yet.
   ones marked as such, since a client node's instances are all derived and
   listing only the authored ones leaves the heading empty; for a client
   node, its owner.
-- **Instance** — its service, ports and its own values; the node it
+- **Instance** — its service, ports and its own values; what runs it, when
+  that is not a host process; the node it
   runs on; every route it is a hop of, and for a derived client, the route it
   was derived for, which is not the same relation; every secret it holds, by
   path and by who holds it, never by value; its upstream, if it has one.
@@ -183,6 +184,15 @@ resolved connection from the model
 [`inventory.md`](inventory.md#what-is-derived) computes as
 `derive.Model.Edges`. A line carries the account crossing it, because the port
 it lands on says the rest.
+
+**A containerised process carries a badge on its box.** The process box is
+one running program, which is the boundary a container draws too, so the fact
+sits there once instead of on each port inside it. What it tells the reader is
+how to read the `bind` under it: `0.0.0.0` in a container is the container's
+interfaces, not an open listener — see
+[what runs the process](inventory.md#what-runs-the-process). It is what the
+inventory says, not something `dgs` observed: no port mapping was read, and a
+badge is never a claim that a port is or is not reachable.
 
 **A line out of a reverse proxy carries the name that route arrived at**
 instead — the `published` of the port it lands on. Every line out of a

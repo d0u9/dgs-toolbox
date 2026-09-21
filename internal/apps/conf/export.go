@@ -58,6 +58,22 @@ func (m renderer) renderAll(instances []string) ([]exportFile, error) {
 		}
 		path := filepath.Join(t.Node, kind, instance, output)
 		files = append(files, exportFile{Path: path, Bytes: out})
+
+		// A containerised instance of a service that declares a deploy/
+		// writes a second file beside the first: what starts the program,
+		// next to how the program behaves. Both are rendered from one
+		// `ports` field, which is what makes the port mapping in it derived
+		// rather than maintained by hand.
+		deploy, deployOutput, err := m.deployFor(instance)
+		if err != nil {
+			return nil, err
+		}
+		if deploy != nil {
+			if deployOutput == "" {
+				return nil, fmt.Errorf("%s: service %q deploys nothing: its deploy/confgen.yaml names no output", instance, t.Service)
+			}
+			files = append(files, exportFile{Path: filepath.Join(t.Node, kind, instance, deployOutput), Bytes: deploy})
+		}
 	}
 	return files, nil
 }

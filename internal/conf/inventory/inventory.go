@@ -95,6 +95,15 @@ type Instance struct {
 	// dgs does not read it; a template reads it by name. See
 	// docs/apps/conf/inventory.md#an-instances-own-values.
 	Values map[string]any `yaml:"values"`
+	// Deploy is what starting this instance needs beyond the model: an
+	// image, volumes, a restart policy. dgs reads no key of it, exactly as
+	// it reads no key of Values; the service's deploy template does. It is
+	// a second mapping rather than a corner of Values because the two have
+	// different readers — Values configures the program, Deploy starts it.
+	// Ports are not in it, and neither are secrets: the mapping is derived,
+	// and the credential stays in the configuration file beside it. See
+	// docs/apps/conf/inventory.md#what-a-container-needs-beyond-the-model.
+	Deploy map[string]any `yaml:"deploy"`
 }
 
 // RuntimeOr is what delivers this process, RuntimeHost when the instance

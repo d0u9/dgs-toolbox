@@ -39,6 +39,14 @@ const (
 	ExportsDir  = "exports"
 )
 
+// DeployDir is the subdirectory of a service that declares how an instance
+// of it is started, rather than how the program behaves: a second template,
+// rendered for a containerised instance beside the configuration. The
+// directory is what declares it, the way an export's is, so the service's
+// own manifest grows no key. A service holding none renders one file. See
+// docs/apps/conf/export.md#a-second-file-what-deploys-it.
+const DeployDir = "deploy"
+
 // ManifestFilename names the file that marks a subdirectory of ServicesDir
 // as a service, and declares how it renders.
 const ManifestFilename = "confgen.yaml"
@@ -131,6 +139,13 @@ type Manifest struct {
 	// own ExportsDir, so the directories that exist are the list, and the
 	// two cannot disagree.
 	Exports []string `yaml:"-"`
+	// Deploys is true when this service holds a DeployDir, and so renders a
+	// second file for each of its containerised instances. Like Exports, it
+	// is not written in confgen.yaml: Load fills it from the directory that
+	// is there, so the two cannot disagree. It is what rule 24 reads, since
+	// an instance writing `deploy` values for a service that deploys
+	// nothing has written a mapping nothing renders.
+	Deploys bool `yaml:"-"`
 	// Self declares this service's own secrets: credentials belonging to
 	// the instance rather than to anything reaching it, such as an
 	// administrative password or a server PSK. They are what `secret sync`
@@ -324,6 +339,25 @@ type Export struct {
 	Upstream UpstreamDecls `yaml:"upstream"`
 }
 
+// Deploy is a service's deploy/confgen.yaml: how an instance of it is
+// started. It has an export's shape — a template, a defaults kind, an output
+// name — and for the same reason: the renderer, the defaults merge and the
+// target are the existing ones. It is not an export, and the difference is
+// who selects it and what it carries. An export is derived from a person's
+// access and carries their credential; this belongs to an instance written
+// in a node file, is rendered because that instance runs in a container, and
+// holds no credential at all. See
+// docs/apps/conf/export.md#a-second-file-what-deploys-it.
+type Deploy struct {
+	// Template is the template rendered, relative to the deploy directory.
+	Template string `yaml:"template"`
+	// Defaults is DefaultsDocument or DefaultsElement.
+	Defaults string `yaml:"defaults"`
+	// Output is the name the rendered file is written under, beside the
+	// service's own.
+	Output string `yaml:"output"`
+}
+
 // Service is one subdirectory of the generator root that holds a
 // confgen.yaml.
 type Service struct {
@@ -336,6 +370,13 @@ type Service struct {
 	// Broken is the manifest's parse error if confgen.yaml is not valid YAML,
 	// not a mapping, or holds an unknown key, and empty otherwise.
 	Broken string
+	// Deploy is the parsed DeployDir/confgen.yaml, or nil for a service
+	// that holds no such directory — which is most of them. DeployDir is
+	// its path relative to the generator root, and DeployBroken its parse
+	// error, valid the same way Broken is.
+	Deploy       *Deploy
+	DeployDir    string
+	DeployBroken string
 }
 
 // ExportDef is one subdirectory of a service's ExportsDir that holds a
@@ -415,6 +456,23 @@ func Load(root string) (*Root, error) {
 		}
 		sort.Strings(svc.Manifest.Exports)
 
+		// The deployment half, when the service declares one. It is read
+		// beside the exports rather than among them: an export's name is
+		// something a person's device may ask for, and `deploy` is a fixed
+		// name nobody selects.
+		deployDir := filepath.Join(ServicesDir, name, DeployDir)
+		deployPath := filepath.Join(root, deployDir, ManifestFilename)
+		if _, err := os.Stat(deployPath); err == nil {
+			svc.DeployDir = deployDir
+			svc.Manifest.Deploys = true
+			deploy, err := loadDeploy(deployPath)
+			if err != nil {
+				svc.DeployBroken = err.Error()
+			} else {
+				svc.Deploy = deploy
+			}
+		}
+
 		out.Services = append(out.Services, svc)
 		return nil
 	}); err != nil {
@@ -492,6 +550,24 @@ func checkUpstream(path string, d UpstreamDecls) error {
 		}
 	}
 	return nil
+}
+
+// loadDeploy parses one services/<service>/deploy/confgen.yaml. Unknown
+// keys are an error, as everywhere else: a deployment file renders and
+// listens on nothing, so `auth` or `ports` written here is reported rather
+// than ignored.
+func loadDeploy(path string) (*Deploy, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	var d Deploy
+	dec := yaml.NewDecoder(strings.NewReader(string(data)))
+	dec.KnownFields(true)
+	if err := dec.Decode(&d); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &d, nil
 }
 
 func loadManifest(path string) (*Manifest, error) {
