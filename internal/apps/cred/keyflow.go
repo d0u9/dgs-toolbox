@@ -115,12 +115,19 @@ func (m *keysModel) startKeyFlow(action keyAction) tea.Cmd {
 			host = selected.Name
 		}
 	}
-	fields := []form.Field{{ID: hostFieldID, Kind: form.Text, Label: "Host", Value: host}}
+	var hostNames []string
+	for _, listed := range m.snap.folder.Hosts {
+		hostNames = append(hostNames, listed.Name)
+	}
+	// The host is typed, or chosen from the hosts already listed.
+	fields := []form.Field{{ID: hostFieldID, Kind: form.Combo, Label: "Host", Value: host, Options: hostNames}}
 	switch action {
 	case actionGenerate, actionImport:
 		fields = append(fields, form.Field{ID: fileFieldID, Kind: form.Text, Label: "File"})
 	case actionAdd:
-		fields = append(fields, form.Field{ID: publicKeyFieldID, Kind: form.Text, Label: "Public key"})
+		// A public key is long, so it wraps inside the form instead of
+		// overflowing its width.
+		fields = append(fields, form.Field{ID: publicKeyFieldID, Kind: form.TextArea, Label: "Public key"})
 	}
 	fields = append(fields,
 		form.Field{ID: descriptionFieldID, Kind: form.Text, Label: "Description"},
@@ -257,6 +264,13 @@ func (m keysModel) updateKeyFlow(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m keysModel) updateKeyForm(key string) (tea.Model, tea.Cmd) {
 	flow := m.keyFlow
+	if flow.form.IsListing() {
+		flow.form.HandleInteraction(key)
+		if !flow.form.IsActive() {
+			m.followHost()
+		}
+		return m, nil
+	}
 	if flow.form.IsActive() {
 		// Enter, Tab and the arrows keep the edit and go on to the next or
 		// previous field, editing it too, so the form is filled in one pass.
@@ -488,12 +502,8 @@ func (m keysModel) keyFlowView() string {
 		}
 		ids := m.fieldIDs()
 		lines = append(lines, "", flow.form.ViewFocusedWidth(ids[:len(ids)-1], true, inner), "")
-		var hosts []string
-		for _, host := range m.snap.folder.Hosts {
-			hosts = append(hosts, host.Name)
-		}
-		if len(hosts) > 0 {
-			lines = append(lines, wrapped(mutedStyle.Render("Existing hosts: "+strings.Join(hosts, ", ")), inner)...)
+		if len(m.snap.folder.Hosts) > 0 {
+			lines = append(lines, mutedStyle.Render("Type a host name, or press space on Host to choose an existing one."))
 		} else {
 			lines = append(lines, mutedStyle.Render("No hosts yet; the host is created."))
 		}
@@ -509,8 +519,13 @@ func (m keysModel) keyFlowView() string {
 		return modalStyle.Width(w - 2).Height(h - 2).MaxWidth(w).MaxHeight(h).Render(strings.Join(lines, "\n"))
 	}
 	hints := "↑↓ Field · ↵ Edit · esc Back"
-	if flow.form.IsActive() {
+	switch {
+	case flow.form.IsListing():
+		hints = "↑↓ Host · ↵ Choose · esc Back"
+	case flow.form.IsActive():
 		hints = "Type to edit · ↵ Next field · esc Undo"
+	case flow.form.FocusedID() == hostFieldID && len(m.snap.folder.Hosts) > 0:
+		hints = "↑↓ Field · ↵ Edit · space Hosts · esc Back"
 	}
 	button := pageactions.Inline(flow.action.verb(), flow.form.FocusedID() == continueFieldID)
 	return modalBox(lines, pageactions.Footer(inner, hints, button), w, h)
@@ -523,6 +538,9 @@ func (m keysModel) keyFlowStatus() tui.Status {
 	case keySource:
 		return tui.Status{Left: left, Center: "IDENTITY FILE", Right: flow.picker.Hint()}
 	case keyForm:
+		if flow.form.IsListing() {
+			return tui.Status{Left: left, Center: "SELECT", Right: "↑↓ Host  ↵ Choose  esc Back"}
+		}
 		if flow.form.IsActive() {
 			return tui.Status{Left: left, Right: "↵ Apply  esc Cancel"}
 		}
