@@ -233,6 +233,112 @@ instances:
 	}
 }
 
+// TestPreview_ForwardedRouteDialsTheRelayAndAuthenticatesAtTheExit pins
+// docs/apps/conf/inventory.md#a-service-that-forwards: a client's file is
+// built from both ends of a forwarded chain — the relay's address and port,
+// the exit's account, secret and shared secrets — and `exit` carries what
+// belongs to the far end and cannot be taken from the near one, such as the
+// name a certificate was issued for.
+func TestPreview_ForwardedRouteDialsTheRelayAndAuthenticatesAtTheExit(t *testing.T) {
+	root, secretsDir := buildSharedRoot(t)
+	writeFile(t, filepath.Join(secretsDir, "ss-srv", "self", "psk", "main"), "server-psk")
+	writeFile(t, filepath.Join(root, "services", "realm", "confgen.yaml"), `
+template: templates/config.toml.tmpl
+defaults: document
+output: config.toml
+auth: none
+forwards: true
+`)
+	writeFile(t, filepath.Join(root, "services", "realm", "templates", "config.toml.tmpl"), "{}\n")
+	writeFile(t, filepath.Join(root, "services", "realm", "defaults.yaml"), "{}\n")
+	writeFile(t, filepath.Join(root, "services", "ssserver", "exports", "ss-json", "templates", "client.json.tmpl"),
+		"server: {{ or (upstream).published (upstream).address }}:{{ (upstream).port }}\n"+
+			"sni: {{ (upstream).exit.published }}\n"+
+			"password: {{ join \":\" (upstream).shared }}:{{ (upstream).secret }}\n")
+	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
+id: srv
+networks:
+  internet: 203.0.113.10
+instances:
+  - id: ss-srv
+    service: ssserver
+    ports:
+      main: {port: 38250, published: exit.example.com, self: [psk.main]}
+`)
+	writeFile(t, filepath.Join(root, "nodes", "relay.yaml"), `
+id: relay
+networks:
+  internet: 203.0.113.20
+instances:
+  - id: fwd-relay
+    service: realm
+    ports:
+      ss: {port: 40000, published: relay.example.net}
+`)
+	writeFile(t, filepath.Join(root, "routes.yaml"), `
+routes:
+  sfo:
+    hops: [fwd-relay:ss, ss-srv:main]
+`)
+
+	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
+	}
+	got := strings.Join(p.lines, "\n")
+	want := "server: relay.example.net:40000\n" +
+		"sni: exit.example.com\n" +
+		"password: server-psk:user-psk"
+	if got != want {
+		t.Fatalf("preview = %q, want %q", got, want)
+	}
+}
+
+// TestPreview_AForwarderReadsAnAddressAndNoCredential is the relay's own
+// side of the same rule: it dials a port that authenticates every principal
+// separately and still holds no account there, because nothing granted it
+// one. Reading a secret for it would fail on a file that does not exist.
+func TestPreview_AForwarderReadsAnAddressAndNoCredential(t *testing.T) {
+	root, secretsDir := buildSharedRoot(t)
+	writeFile(t, filepath.Join(secretsDir, "ss-srv", "self", "psk", "main"), "server-psk")
+	writeFile(t, filepath.Join(root, "services", "realm", "confgen.yaml"), `
+template: templates/config.toml.tmpl
+defaults: document
+output: config.toml
+auth: none
+forwards: true
+`)
+	writeFile(t, filepath.Join(root, "services", "realm", "defaults.yaml"), "{}\n")
+	writeFile(t, filepath.Join(root, "services", "realm", "templates", "config.toml.tmpl"),
+		"remote = {{ printf \"%s:%v\" (upstream).address (upstream).port | toJSON }}\n"+
+			"secret = {{ toJSON (upstream).secret }}\n")
+	writeFile(t, filepath.Join(root, "nodes", "relay.yaml"), `
+id: relay
+networks:
+  internet: 203.0.113.20
+instances:
+  - id: fwd-relay
+    service: realm
+    ports:
+      ss: {port: 40000}
+`)
+	writeFile(t, filepath.Join(root, "routes.yaml"), `
+routes:
+  sfo:
+    hops: [fwd-relay:ss, ss-srv:main]
+`)
+
+	p := renderPreview(t, root, secretsDir, "fwd-relay")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
+	}
+	got := strings.Join(p.lines, "\n")
+	want := "remote = \"203.0.113.10:38250\"\nsecret = \"\""
+	if got != want {
+		t.Fatalf("preview = %q, want %q", got, want)
+	}
+}
+
 func TestPreview_RendersTheSameWayExportWould(t *testing.T) {
 	root, secretsDir := buildRenderableRoot(t)
 	p := renderPreview(t, root, secretsDir, "us-sfo")

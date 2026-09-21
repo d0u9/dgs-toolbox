@@ -136,6 +136,17 @@ type Manifest struct {
 	// never because the program that listens happens to publish it. See
 	// docs/apps/conf/inventory.md#what-a-service-needs-from-its-upstream.
 	Upstream UpstreamDecls `yaml:"upstream"`
+	// Forwards is true when an instance of this service terminates nothing:
+	// it moves bytes from one of its ports to the hop that follows it and
+	// reads none of them. A relay in front of a server in another country is
+	// this, and it is a different thing from a reverse proxy, which
+	// terminates one connection and opens another. What it changes is where
+	// a client's credential comes from: the client dials this instance's
+	// address and authenticates against the hop behind it, so nothing here
+	// holds an account, and a route entering here is written out as the
+	// service that ends it. See
+	// docs/apps/conf/inventory.md#a-service-that-forwards.
+	Forwards bool `yaml:"forwards"`
 	// Downstreams is DownstreamsMany when one instance of this service is
 	// the entrance for several routes — a reverse proxy in front of many
 	// web services — or empty for the ordinary case of one upstream. It is
@@ -146,6 +157,11 @@ type Manifest struct {
 	// docs/apps/conf/inventory.md#a-service-that-fans-out.
 	Downstreams string `yaml:"downstreams"`
 }
+
+// Terminates reports whether an instance of this service is the end of what
+// a client connects to, which every service but a forwarder is. The receiver
+// is a value for the same reason FansOut's is.
+func (m Manifest) Terminates() bool { return !m.Forwards }
 
 // FansOut reports whether an instance of this service may dial a different
 // upstream in each route through it. The receiver is a value so that a
@@ -478,6 +494,17 @@ func loadManifest(path string) (*Manifest, error) {
 	case DownstreamsOne, DownstreamsMany, "":
 	default:
 		return nil, fmt.Errorf("parsing %s: downstreams %q is not %q or %q", path, m.Downstreams, DownstreamsOne, DownstreamsMany)
+	}
+	// A service that terminates nothing authenticates nobody: there is no
+	// connection to it to authenticate, only bytes passing through. Written
+	// together, the two say a thing that cannot happen, and the account
+	// table it implies would be rendered into a file no program reads.
+	if m.Forwards && m.Auth == AuthPerPrincipal {
+		return nil, fmt.Errorf("parsing %s: forwards and auth %q: a service that terminates nothing authenticates nobody",
+			path, AuthPerPrincipal)
+	}
+	if m.Forwards && len(m.Self) > 0 {
+		return nil, fmt.Errorf("parsing %s: forwards and self: a service that terminates nothing holds no credential", path)
 	}
 	if err := checkUpstream(path, m.Upstream); err != nil {
 		return nil, err

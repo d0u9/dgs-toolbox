@@ -509,6 +509,27 @@ func TestValidate_UpstreamSharedFromAPortThatHandsOutNothing(t *testing.T) {
 	}
 }
 
+// TestValidate_RouteEndingOnAForwarderIsReported covers rule 21. A relay
+// terminates nothing, so a route ending on one ends nowhere: the client
+// granted it would be handed an address and no account, because the account
+// belongs to the hop that ends the chain and there is none.
+func TestValidate_RouteEndingOnAForwarderIsReported(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[1].Instances[0].Service = "realm"
+	manifests := validManifests()
+	manifests["realm"] = confgen.Manifest{Auth: confgen.AuthNone, Forwards: true, Template: "t"}
+	inv.Routes["dead"] = inventory.Route{Hops: []string{"ss-relay:main"}}
+
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `route "dead" ends on "ss-relay", which forwards`) {
+		t.Fatalf("Validate = %v, want the route that terminates nowhere named", messages(got))
+	}
+	// The chain through the same relay ends on a server and is ordinary.
+	if containsSubstring(got, `route "chain" ends on`) {
+		t.Fatalf("Validate = %v, want nothing said about a relay with a hop after it", messages(got))
+	}
+}
+
 // TestValidate_UpstreamSharedOptionalFromAPortThatHandsOutNothing covers the
 // declaration that says the hop may hand over nothing. One program is
 // configured both ways on different machines — a Hysteria2 instance that

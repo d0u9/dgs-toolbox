@@ -696,3 +696,104 @@ func TestDerive_ProfilesWriteADeviceOutOncePerProfile(t *testing.T) {
 		t.Fatalf("ss-sfo01:main principals = %v, want one account for doug however many profiles", got)
 	}
 }
+
+// TestDerive_ForwarderIsDialedAndTheHopBehindItIsAuthenticatedAgainst pins
+// docs/apps/conf/inventory.md#a-service-that-forwards. A relay terminates
+// nothing, so a route entering one is written out as the service that ends
+// it, the grant belongs to that service's port, and the edge carries both
+// ends: what the client dials and what it authenticates against.
+func TestDerive_ForwarderIsDialedAndTheHopBehindItIsAuthenticatedAgainst(t *testing.T) {
+	inv := worked()
+	inv.Nodes[1].Instances = append(inv.Nodes[1].Instances, inventory.Instance{
+		ID: "fwd-tyo01", Service: "realm", Ports: inventory.PortsOf(map[string]int{"ss": 40000}),
+	})
+	inv.Routes["sfo-via-tyo"] = inventory.Route{Hops: []string{"fwd-tyo01:ss", "ss-sfo01:alt"}}
+	user := inv.Users["friend-a"]
+	user.Access = []string{"sfo-via-tyo"}
+	inv.Users["friend-a"] = user
+
+	manifests := workedManifests()
+	manifests["realm"] = confgen.Manifest{Auth: confgen.AuthNone, Forwards: true, Template: "t"}
+
+	m, err := Derive(inv, manifests)
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+
+	// The file is the terminating service's, not the relay's: nobody
+	// imports a share URI for a program that reads nothing.
+	var found *ExportInstance
+	for i := range m.ExportInstances {
+		if m.ExportInstances[i].Route == "sfo-via-tyo" {
+			found = &m.ExportInstances[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("no export instance for the forwarded route")
+	}
+	if found.Service != "ssserver" {
+		t.Fatalf("export instance service = %q, want the service that terminates the chain", found.Service)
+	}
+
+	// The edge dials the relay and names the hop the credential is at.
+	var edge *Edge
+	for i := range m.Edges {
+		if m.Edges[i].FromInstance == found.ID {
+			edge = &m.Edges[i]
+			break
+		}
+	}
+	if edge == nil {
+		t.Fatal("no edge out of the export instance")
+	}
+	if edge.To.Instance != "fwd-tyo01" || edge.Port != 40000 {
+		t.Fatalf("edge dials %s:%d, want the relay's own port", edge.To.Instance, edge.Port)
+	}
+	if edge.Terminal.Instance != "ss-sfo01" || edge.Terminal.Port != "alt" {
+		t.Fatalf("edge terminal = %s:%s, want ss-sfo01:alt", edge.Terminal.Instance, edge.Terminal.Port)
+	}
+
+	// The grant is on the terminating port. Nothing is granted on the
+	// relay: it holds no account table to put anyone in.
+	if got := m.Principals("ss-sfo01", "alt"); len(got) == 0 {
+		t.Fatal("nobody granted on the port that terminates the chain")
+	}
+	if got := m.Principals("fwd-tyo01", "ss"); len(got) != 0 {
+		t.Fatalf("Principals(fwd-tyo01, ss) = %v, want none on a relay", got)
+	}
+}
+
+// TestDerive_AForwarderRelayingOnwardHoldsNoCredential is the same rule for a
+// relay in the middle of a chain: the instance before it holds the grant, and
+// that grant is on the hop the chain ends at.
+func TestDerive_AForwarderRelayingOnwardHoldsNoCredential(t *testing.T) {
+	inv := worked()
+	inv.Nodes[2].Instances = append(inv.Nodes[2].Instances, inventory.Instance{
+		ID: "fwd-home", Service: "realm", Ports: inventory.PortsOf(map[string]int{"ss": 40000}),
+	})
+	inv.Routes["home-sfo"] = inventory.Route{
+		Hops: []string{"http-home:proxy", "ss-home:local", "fwd-home:ss", "ss-sfo01:alt"},
+	}
+	manifests := workedManifests()
+	manifests["realm"] = confgen.Manifest{Auth: confgen.AuthNone, Forwards: true, Template: "t"}
+
+	m, err := Derive(inv, manifests)
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+	for _, g := range m.Grants {
+		if g.Principal.ID == "fwd-home" {
+			t.Fatalf("grant %+v: a relay holds no credential", g)
+		}
+	}
+	var relaying bool
+	for _, p := range m.Principals("ss-sfo01", "alt") {
+		if p.Kind == PrincipalInstance && p.ID == "ss-home" {
+			relaying = true
+		}
+	}
+	if !relaying {
+		t.Fatal("ss-home is not granted on ss-sfo01:alt, so nothing it relays through the forwarder authenticates")
+	}
+}
