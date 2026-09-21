@@ -57,3 +57,33 @@ func TestButtonsAreRightAlignedWithSafeActionOnLeft(t *testing.T) {
 		t.Fatalf("buttons are not right aligned: %q", buttons)
 	}
 }
+
+func TestViewSizeFitsTheTerminal(t *testing.T) {
+	dialog := New(Config{
+		Title:        "DELETE",
+		Message:      strings.Repeat("a long message that wraps over several rows. ", 8),
+		Detail:       strings.Repeat("a long detail that wraps too. ", 8),
+		ConfirmLabel: "Delete",
+		CancelLabel:  "Keep",
+	})
+	if height := lipgloss.Height(dialog.View(60)); height < 12 {
+		t.Fatalf("unbounded height %d", height)
+	}
+	for _, room := range []int{10, 14, 20} {
+		view := dialog.ViewSize(60, room)
+		if height := lipgloss.Height(view); height > room {
+			t.Errorf("height %d in %d rows", height, room)
+		}
+		lines := strings.Split(ansi.Strip(view), "\n")
+		last := lines[len(lines)-1]
+		if !strings.Contains(last, "╰") {
+			t.Errorf("no bottom border in %d rows: %q", room, last)
+		}
+		if !strings.Contains(ansi.Strip(view), "Delete") || !strings.Contains(ansi.Strip(view), "Keep") {
+			t.Errorf("buttons cut in %d rows:\n%s", room, ansi.Strip(view))
+		}
+		if !strings.Contains(ansi.Strip(view), "…") {
+			t.Errorf("no cut marker in %d rows", room)
+		}
+	}
+}

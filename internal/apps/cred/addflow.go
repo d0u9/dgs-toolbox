@@ -466,7 +466,7 @@ func (m vaultModel) addView() string {
 		return modalBox(lines, pageactions.Footer(inner, "tab Field · esc Back", pageactions.Inline("Continue", !flow.onDirectory)), w, h)
 	}
 	if flow.stage == addConfirm {
-		return flow.dialog.View(min(88, m.width-4))
+		return flow.dialog.ViewSize(min(88, m.width-4), m.height)
 	}
 	return modalStyle.Width(w - 2).Height(h - 2).MaxWidth(w).MaxHeight(h).Render(strings.Join(lines, "\n"))
 }

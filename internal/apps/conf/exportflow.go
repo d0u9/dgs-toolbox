@@ -611,7 +611,7 @@ func (m InspectModel) exportView() string {
 	case flow.picking:
 		return m.pickerView()
 	case flow.stage == exportConfirm:
-		return flow.dialog.View(min(88, m.width-4))
+		return flow.dialog.ViewSize(min(88, m.width-4), m.height)
 	case flow.stage == exportShow:
 		return m.showView()
 	}
