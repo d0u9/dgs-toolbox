@@ -277,24 +277,39 @@ things only the model can resolve:
 ```yaml
 node:         as elsewhere: id, networks
 instance:     as elsewhere, plus runtime and deploy
-mapping:      per port, the address the container runtime binds on the host
+mapping:      per port, the addresses the container runtime binds on the host
               and the number, which is the port's own number. A template reads
-              one as `mapping "<port>"`, the way it reads `published "<port>"`
+              one as `mapping "<port>"`, the way it reads `published "<port>"`,
+              and writes one published port per address
 downstreams:  as elsewhere, for a service declaring downstreams: many
 ```
 
 `mapping` is the whole point of the file, and it is derived, never written:
 
-- A port entered only by hops from its own node publishes on `127.0.0.1`. A
+- A port entered by hops from its own node publishes on `127.0.0.1`. A
   reverse proxy's backend is this case, and a backend published on every
   interface because someone typed it is what the derivation removes.
 - A port entered from another node publishes on this node's address on the
   network that edge resolved, when that address is a literal one, and on
   `0.0.0.0` when it is a name — a container runtime binds addresses, and a
   node writing `internet: example.net` has not given it one.
-- A port no edge enters — one reached from a browser — publishes the same way
-  as the second case: it is reached from outside, and nothing in the inventory
-  says from where.
+- A port no edge enters — one reached from a browser, or by a resolver's
+  clients, which this inventory does not model — publishes the same way as
+  the second case, on every network this node answers on: it is reached from
+  outside, and nothing here says from where. A node with no address anywhere
+  publishes on `0.0.0.0`, since there is no interface to name and publishing
+  nothing renders a container nobody can reach.
+
+**It is a list, because the two above are not exclusive and neither is one
+network.** A port a proxy beside it dials and another machine dials is
+reached at loopback *and* at this node's address, and publishing one of the
+two leaves the other end dialling a number nothing published. A machine with
+a port on each of two segments answers on both, and one address would leave
+the second segment with nothing listening. The addresses come in the
+inventory's [preference order](inventory.md#networks-and-how-an-address-is-chosen),
+loopback first, so a rendered file does not change because a network was
+added above another — and `0.0.0.0` among them takes the whole port, since it
+already covers every interface and a second bind on one of them would fail.
 
 The number is the port's number on both sides of the mapping. There is no other
 number to choose from: the program's own configuration is rendered from the same
@@ -445,7 +460,7 @@ they are flat:
 | `join` | Values joined by a separator, which is how the protocols taking more than one credential take them: a Shadowsocks 2022 password is the server's PSK and the user's own, joined by a colon — `join ":" (upstream).shared` beside `(upstream).secret`, for a manifest that declared it needs them. |
 | `secret` | The instance's own secret of a given name, narrowed by further arguments: a key for a `set` name, a field for a name with `fields`, both for a name with both. Given fewer arguments than the name has levels, it returns the map of what is under it. |
 
-| `mapping` | Where a container runtime publishes one of this instance's ports on the machine it runs on: `.Address` and `.Number`. Both are derived, and it is read only in a [deploy template](#a-second-file-what-deploys-it) — every other render is handed none. |
+| `mapping` | Where a container runtime publishes one of this instance's ports on the machine it runs on: `.Addresses`, one per network it is reached over, and `.Number`. Both are derived, and it is read only in a [deploy template](#a-second-file-what-deploys-it) — every other render is handed none. |
 | `published` | The name one of this instance's own ports answers to, by port name, or empty. A service behind a reverse proxy renders the same string the proxy matches its site block on — `DOMAIN=https://{{ published "web" }}` — so the two cannot disagree. See [the name a port is published at](inventory.md#the-name-a-port-is-published-at). |
 
 Beside them, one accessor per datasource — `defaults`, `node`, `instance`,

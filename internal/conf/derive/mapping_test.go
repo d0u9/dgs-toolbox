@@ -78,8 +78,27 @@ func mappingsOf(t *testing.T, inv *inventory.Root, instance string) map[string]M
 // mapping by hand gets wrong.
 func TestMappings_PortEnteredOnlyFromItsOwnNodePublishesOnLoopback(t *testing.T) {
 	got := mappingsOf(t, mappingInventory("203.0.113.10"), "bin-sfo01")
-	if want := (Mapping{Address: "127.0.0.1", Number: 8080}); got["web"] != want {
-		t.Fatalf("bin-sfo01 web = %+v, want %+v", got["web"], want)
+	wantMapping(t, got, "web", 8080, "127.0.0.1")
+}
+
+// wantMapping is one port's whole mapping: the addresses it publishes on, in
+// order, and the number, which is the port's own on both sides.
+func wantMapping(t *testing.T, got map[string]Mapping, port string, number int, addresses ...string) {
+	t.Helper()
+	m, ok := got[port]
+	if !ok {
+		t.Fatalf("port %q has no mapping; got %+v", port, got)
+	}
+	if m.Number != number {
+		t.Fatalf("port %q maps number %d, want %d", port, m.Number, number)
+	}
+	if len(m.Addresses) != len(addresses) {
+		t.Fatalf("port %q publishes on %v, want %v", port, m.Addresses, addresses)
+	}
+	for i, want := range addresses {
+		if m.Addresses[i] != want {
+			t.Fatalf("port %q publishes on %v, want %v", port, m.Addresses, addresses)
+		}
 	}
 }
 
@@ -87,9 +106,7 @@ func TestMappings_PortEnteredOnlyFromItsOwnNodePublishesOnLoopback(t *testing.T)
 // the second case, with the address the edge resolved on.
 func TestMappings_PortEnteredFromAnotherNodePublishesOnThisNodesAddress(t *testing.T) {
 	got := mappingsOf(t, mappingInventory("203.0.113.10"), "ss-sfo01")
-	if want := (Mapping{Address: "203.0.113.10", Number: 38250}); got["main"] != want {
-		t.Fatalf("ss-sfo01 main = %+v, want %+v", got["main"], want)
-	}
+	wantMapping(t, got, "main", 38250, "203.0.113.10")
 }
 
 // TestMappings_ANameIsNotAnAddressToBind is the same case with a node
@@ -97,9 +114,7 @@ func TestMappings_PortEnteredFromAnotherNodePublishesOnThisNodesAddress(t *testi
 // naming itself sfo1.example.net has not given it one.
 func TestMappings_ANameIsNotAnAddressToBind(t *testing.T) {
 	got := mappingsOf(t, mappingInventory("sfo1.example.net"), "ss-sfo01")
-	if want := (Mapping{Address: "0.0.0.0", Number: 38250}); got["main"] != want {
-		t.Fatalf("ss-sfo01 main = %+v, want %+v", got["main"], want)
-	}
+	wantMapping(t, got, "main", 38250, "0.0.0.0")
 }
 
 // TestMappings_PortNoEdgeEntersPublishesLikeOneEnteredFromElsewhere is the
@@ -108,13 +123,9 @@ func TestMappings_ANameIsNotAnAddressToBind(t *testing.T) {
 // outside is.
 func TestMappings_PortNoEdgeEntersPublishesLikeOneEnteredFromElsewhere(t *testing.T) {
 	got := mappingsOf(t, mappingInventory("203.0.113.10"), "caddy-sfo01")
-	if want := (Mapping{Address: "203.0.113.10", Number: 443}); got["https"] != want {
-		t.Fatalf("caddy-sfo01 https = %+v, want %+v", got["https"], want)
-	}
+	wantMapping(t, got, "https", 443, "203.0.113.10")
 	got = mappingsOf(t, mappingInventory("sfo1.example.net"), "caddy-sfo01")
-	if want := (Mapping{Address: "0.0.0.0", Number: 443}); got["https"] != want {
-		t.Fatalf("caddy-sfo01 https = %+v, want %+v", got["https"], want)
-	}
+	wantMapping(t, got, "https", 443, "0.0.0.0")
 }
 
 // TestMappings_ANodeWithNoAddressAtAllPublishesOnEveryInterface: there is
@@ -126,9 +137,7 @@ func TestMappings_ANodeWithNoAddressAtAllPublishesOnEveryInterface(t *testing.T)
 	inv.Routes = map[string]inventory.Route{"paste": {Hops: []string{"caddy-sfo01:https", "bin-sfo01:web"}}}
 	inv.Users = map[string]inventory.User{"doug": {Username: "doug", Access: []string{"paste"}}}
 	got := mappingsOf(t, inv, "caddy-sfo01")
-	if want := (Mapping{Address: "0.0.0.0", Number: 443}); got["https"] != want {
-		t.Fatalf("caddy-sfo01 https = %+v, want %+v", got["https"], want)
-	}
+	wantMapping(t, got, "https", 443, "0.0.0.0")
 }
 
 // TestMappings_UnknownInstanceHasNone keeps a caller from having to check
@@ -137,4 +146,60 @@ func TestMappings_UnknownInstanceHasNone(t *testing.T) {
 	if got := mappingsOf(t, mappingInventory("203.0.113.10"), "nonesuch"); len(got) != 0 {
 		t.Fatalf("Mappings(nonesuch) = %v, want none", got)
 	}
+}
+
+// twoSegmentInventory is one machine on two networks, which is a second
+// physical port and a second subnet. Nothing enters its DNS port — the
+// clients that dial a resolver are not in this inventory — so it is the
+// case that decides what a port reached from outside publishes on when the
+// node is on more than one network.
+func twoSegmentInventory() *inventory.Root {
+	return &inventory.Root{
+		Nodes: []inventory.Node{
+			{
+				ID:       "home01",
+				Networks: inventory.Networks{"home": "10.10.10.10", "lab": "192.168.50.10"},
+				Instances: []inventory.Instance{
+					{ID: "adguard-home01", Service: "microbin", Runtime: inventory.RuntimeDocker,
+						Ports: inventory.PortsOf(map[string]int{"dns": 53})},
+				},
+			},
+		},
+		Networks: []string{"home", "lab", "internet"},
+	}
+}
+
+// TestMappings_ANodeOnTwoNetworksPublishesOnBoth: a machine with a port on
+// each of two segments serves both, and one address would leave the second
+// one with nothing listening. The order is the inventory's preference
+// order, so a rendered file does not change because a network was added
+// above another.
+func TestMappings_ANodeOnTwoNetworksPublishesOnBoth(t *testing.T) {
+	got := mappingsOf(t, twoSegmentInventory(), "adguard-home01")
+	wantMapping(t, got, "dns", 53, "10.10.10.10", "192.168.50.10")
+}
+
+// TestMappings_ANameAmongAddressesTakesTheWholePort: 0.0.0.0 already covers
+// every interface, so listing it beside a literal address would publish the
+// same port twice and the second bind would fail.
+func TestMappings_ANameAmongAddressesTakesTheWholePort(t *testing.T) {
+	inv := twoSegmentInventory()
+	inv.Nodes[0].Networks["lab"] = "home01.lab.example"
+	got := mappingsOf(t, inv, "adguard-home01")
+	wantMapping(t, got, "dns", 53, "0.0.0.0")
+}
+
+// TestMappings_EnteredFromBothItsOwnNodeAndAnotherPublishesOnBoth is the
+// case one address gets wrong in the other direction. A same-node hop
+// resolves to 127.0.0.1, so a port reached by a local proxy and by another
+// machine needs loopback as well as the address that machine dials — with
+// only the second, the proxy beside it dials a number nothing published.
+func TestMappings_EnteredFromBothItsOwnNodeAndAnotherPublishesOnBoth(t *testing.T) {
+	inv := mappingInventory("203.0.113.10")
+	// A second route reaching the same port from the proxy on its own node,
+	// beside the relay on hkg1 that already enters it.
+	inv.Routes["local-ss"] = inventory.Route{Hops: []string{"caddy-sfo01:https", "ss-sfo01:main"}}
+	inv.Users["doug"] = inventory.User{Username: "doug", Access: []string{"paste", "hkg-sfo", "local-ss"}}
+	got := mappingsOf(t, inv, "ss-sfo01")
+	wantMapping(t, got, "main", 38250, "127.0.0.1", "203.0.113.10")
 }

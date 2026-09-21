@@ -729,11 +729,14 @@ mapping rather than a corner of `values` because the two have different readers
 both would be one more place a rename has to be chased.
 
 **Ports are not in it.** The mapping a container publishes is derived from
-`ports` and from the edges the model already resolves: a port only its own node
+`ports` and from the edges the model already resolves: a port its own node
 enters publishes on loopback, and one entered from elsewhere publishes on this
-node's address. That derivation is the reason the second file is worth
-generating at all, so writing a port here would give back the second truth it
-removes. See [what deploys it](export.md#a-second-file-what-deploys-it).
+node's address on the network that edge resolved. Both at once is an ordinary
+port, and so is a node on two networks, so a port publishes on as many
+addresses as it is reached over. That derivation is the reason the second file
+is worth generating at all, so writing a port here would give back the second
+truth it removes. See
+[what deploys it](export.md#a-second-file-what-deploys-it).
 
 **Secrets are not in it either.** The deploy file names the rendered
 configuration beside it; the credential stays in that file, and nothing about

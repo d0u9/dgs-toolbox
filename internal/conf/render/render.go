@@ -70,13 +70,19 @@ type Downstream struct {
 }
 
 // Mapping is where a container runtime publishes one of this instance's
-// ports on the machine it runs on: the address it binds, and the number,
+// ports on the machine it runs on: the addresses it binds, and the number,
 // which is the port's own on both sides. A deploy template reads one as
-// `mapping "<port>"`. It is derived from the model and never written; see
+// `mapping "<port>"` and writes one published port per address. It is
+// derived from the model and never written; see
 // docs/apps/conf/export.md#a-second-file-what-deploys-it.
 type Mapping struct {
-	Address string
-	Number  int
+	// Addresses is every address this port is published at, in the
+	// inventory's network preference order. It is a list because a machine
+	// on two networks serves both, and a port reached from its own node
+	// and from another needs loopback beside the address that other
+	// machine dials.
+	Addresses []string
+	Number    int
 }
 
 // Input is one target's render context, plus the template it renders. Every
