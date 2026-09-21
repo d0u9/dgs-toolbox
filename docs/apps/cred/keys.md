@@ -262,9 +262,10 @@ bottom-right is reached; `Enter` there continues. `Esc` while editing undoes tha
 field's edit, and otherwise goes back. Pasting into a field works as typing does.
 
 - **Host** — required, asked every time. It starts empty, or with the host this
-  machine's identities already belong to when there is exactly one, and the
-  existing hosts are listed beneath it. It follows the name rules above; a name
-  matching an existing host, ignoring case, adds to that host.
+  machine's identities already belong to when there is exactly one. It is a
+  combo: a new name is typed, and `Space` opens the hosts that already exist to
+  choose one. It follows the name rules above; a name matching an existing host,
+  ignoring case, adds to that host.
 - **File** — for generate and import, the identity file name, `<host>.agekey` by
   default. Not `.txt`, which reads like a note that is safe to delete.
 - **Description** — required, and starts empty: it is for what only the owner
@@ -275,8 +276,10 @@ field's edit, and otherwise goes back. Pasting into a field works as typing does
 ### Adding a public key
 
 For a machine that never runs `dgs`, its public key is pasted in. The form asks
-for the host (the host under the cursor to start with), the public key — an
-`age1…` recipient or an `ssh-ed25519` / `ssh-rsa` line — and the description. It is recorded with
+for the host (the host under the cursor to start with, and choosable from the
+existing hosts), the public key — an `age1…` recipient or an `ssh-ed25519` /
+`ssh-rsa` line — and the description. The public key is a text area: it is
+longer than the form is wide, so it wraps over as many rows as it needs. It is recorded with
 origin `added`, the date, and an SSH line's comment. The key
 is checked when continuing, and one already listed under any host is refused.
 
