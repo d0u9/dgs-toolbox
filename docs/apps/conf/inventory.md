@@ -1403,6 +1403,24 @@ upstream:
 | Name | What it holds |
 | --- | --- |
 | `shared` | The secrets the upstream port hands to everything granted on it, in the order that port writes them |
+| `values` | The upstream instance's own values, as that instance wrote them |
+
+A declaration is empty, or carries `optional: true`:
+
+```yaml
+upstream:
+  shared: {optional: true}
+  values: {}
+```
+
+`optional` says the hop may hand over nothing. Without it, declaring `shared`
+against a port that hands out none is an error, which catches the ordinary
+mistake: a client unable to authenticate without the server's half of a
+password, dialling a port that was never given one. It is written where one
+program is configured both ways on different machines — a Hysteria2 instance
+that obfuscates its handshake hands out an obfuscation password, and one that
+does not hands out nothing and is still reachable. The template then renders
+what it was given, which for an optional name may be an empty list.
 
 Shadowsocks 2022 is the case it exists for. The password a client sends is
 the server's PSK for that port and the client's own, joined, so `sslocal`
@@ -1425,8 +1443,18 @@ needs to connect. They coincide only while the person and the next hop are the
 same party, which is exactly what a proxy in front of a service stops being
 true.
 
-An export declares it the same way and for the same reason: the share URI a
-person imports carries the same two-part password its client configuration
+`values` is the same rule applied to configuration rather than credentials.
+Some of what a server is configured with is not the server's business alone:
+a Hysteria2 instance that obfuscates its handshake is unreachable by a client
+that does not obfuscate it the same way, and the range a client hops ports
+over is a fact about the machine it dials. Written on the instance that
+listens, it reaches the client's file from there, so the two cannot drift
+apart the way two copies of one number do. Credentials never arrive this way —
+they are `shared`, read from the secrets store — so declaring `values` hands
+over no secret, whatever the instance holds.
+
+An export declares either the same way and for the same reason: the share URI
+a person imports carries the same two-part password its client configuration
 would, and is as unusable without the server's half.
 
 A name `dgs` does not understand is an error rather than something skipped.
@@ -1707,8 +1735,9 @@ upstream:    the next hop, resolved: address, port, the name that hop's port
              universal network, the account name this
              instance connects as, and its secret; plus, for a target whose
              manifest declares it needs them, that hop's port's self values
-             as shared, an ordered list — absent for a terminal instance,
-             and shared absent from every target that did not declare it.
+             as shared, an ordered list, and that hop's instance's own values
+             as values — absent for a terminal instance, and each of shared
+             and values absent from every target that did not declare it.
              See what a service needs from its upstream
 downstreams: for an instance whose service declares downstreams: many, the hop
              that follows it in each route through it, resolved: address, port,
@@ -1784,11 +1813,13 @@ failing can be told which level it was reading.
 18. Two ports declaring the same `published` name are on one node, neither is
     fronted by a `downstreams: many` instance, and they differ in number or
     transport. The error names both.
-19. A target declaring `upstream: shared` reaches a port whose `self` list
-    hands something out. The declaration is the consumer's, so nothing about
-    the port it dials makes it true, and a port handing out none renders an
-    empty list into a credential built half from it — a file that looks
-    complete and authenticates nothing.
+19. A target declaring `upstream: shared`, without `optional: true` on that
+    declaration, reaches a port whose `self` list hands something out. The
+    declaration is the consumer's, so nothing about the port it dials makes
+    it true, and a port handing out none renders an empty list into a
+    credential built half from it — a file that looks complete and
+    authenticates nothing. `optional` is how a service configured both ways
+    on different machines says the hop may hand over nothing.
 20. A device with `profiles` has an owner and writes no `export` of its own.
     Each profile's name holds no slash or space, since it ends a file name;
     its `export` is one of the ways the services it reaches offer, and not

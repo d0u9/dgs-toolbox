@@ -160,11 +160,35 @@ func (m Manifest) FansOut() bool { return m.Downstreams == DownstreamsMany }
 // and a protocol taking them in another order authenticates nothing.
 const UpstreamShared = "shared"
 
-// UpstreamDecl is one thing a service needs from its upstream. It carries no
-// options yet: the name alone says what is wanted, and an empty declaration
-// is how a manifest asks for it. Options belong inside it when one is needed,
-// so growing this does not change the shape of the key.
-type UpstreamDecl struct{}
+// UpstreamValues is the UpstreamDecls name for the upstream instance's own
+// values: the parameters the program that listens was configured with, which
+// the program that dials has to match. Hysteria2 is the case it exists for —
+// obfuscation is a choice made per machine, and a client that does not
+// obfuscate the same way never completes a handshake — and a port-hopping
+// range is the same shape of fact: it belongs to the server that is reached,
+// and the only place it can be written once is that instance.
+//
+// Values are configuration, never credentials: a secret reaches a template
+// through UpstreamShared, which is read from the secrets store rather than
+// from the inventory.
+const UpstreamValues = "values"
+
+// UpstreamDecl is one thing a service needs from its upstream. An empty
+// declaration is how a manifest asks for it, and the one option says the hop
+// may hand over nothing.
+type UpstreamDecl struct {
+	// Optional says a hop handing this over is not required to. Without it,
+	// a target declaring `shared` against a port that hands out none is an
+	// error, which is what catches the ordinary mistake: a client that
+	// cannot authenticate without the server's half of a password, dialling
+	// a port that was never given one. It is written where the same program
+	// is configured both ways on different machines — a Hysteria2 instance
+	// that obfuscates its handshake hands the client an obfuscation
+	// password, and one that does not hands nothing and is still reachable.
+	// A template then renders what it was given, which for an optional name
+	// may be an empty list.
+	Optional bool `yaml:"optional"`
+}
 
 // UpstreamDecls is a service or export manifest's `upstream` mapping: name to
 // declaration, mirroring SelfDecls. A name dgs does not understand is an
@@ -419,8 +443,9 @@ func loadExport(path string) (*Export, error) {
 // diagnose than a manifest that will not load.
 func checkUpstream(path string, d UpstreamDecls) error {
 	for _, name := range d.Names() {
-		if name != UpstreamShared {
-			return fmt.Errorf("parsing %s: upstream %q is not %q", path, name, UpstreamShared)
+		if name != UpstreamShared && name != UpstreamValues {
+			return fmt.Errorf("parsing %s: upstream %q is not %q or %q",
+				path, name, UpstreamShared, UpstreamValues)
 		}
 	}
 	return nil

@@ -370,6 +370,19 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 		}
 		out["shared"] = values
 	}
+	// The hop's own values, for a target that declared it needs them. A
+	// parameter the two ends have to agree on — a Hysteria2 obfuscation
+	// mode, the range a client hops ports over — is written on the instance
+	// that listens, and reaching it here is what keeps the client's file
+	// from holding a second copy of it. Nothing is filtered: these are
+	// configuration, and the secrets a client is given arrive as shared.
+	if wants.Wants(confgen.UpstreamValues) {
+		if to := m.instanceByID(edge.To.Instance); to != nil && len(to.Values) > 0 {
+			out["values"] = to.Values
+		} else {
+			out["values"] = map[string]any{}
+		}
+	}
 	return out, nil
 }
 
