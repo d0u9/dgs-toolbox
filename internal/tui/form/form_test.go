@@ -3,6 +3,8 @@ package form
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestNavigationAndControlRendering(t *testing.T) {
@@ -202,5 +204,41 @@ func TestTextEditingMovesTheCursor(t *testing.T) {
 	m.HandleInteraction("esc")
 	if got := m.Value("host"); got != "mbp-mac" {
 		t.Fatalf("esc restored %q", got)
+	}
+}
+
+func TestTextAreaWrapsValueWithinWidth(t *testing.T) {
+	long := strings.Repeat("a", 90)
+	m := New(Field{ID: "key", Kind: TextArea, Label: "Public key", Value: long})
+	m.SetFocusID("key")
+	view := m.ViewFocusedWidth([]string{"key"}, true, 40)
+	rows := strings.Split(view, "\n")
+	if len(rows) < 4 {
+		t.Fatalf("rows = %d, want the value wrapped over several rows", len(rows))
+	}
+	for _, row := range rows {
+		if lipgloss.Width(row) > 40 {
+			t.Fatalf("row width %d exceeds 40: %q", lipgloss.Width(row), row)
+		}
+	}
+}
+
+func TestComboChoosesAnExistingValue(t *testing.T) {
+	m := New(Field{ID: "host", Kind: Combo, Label: "Host", Options: []string{"alpha", "beta"}})
+	m.SetFocusID("host")
+	if !m.HandleInteraction(" ") || !m.IsListing() {
+		t.Fatal("space must open the known values")
+	}
+	m.HandleInteraction("down")
+	m.HandleInteraction("enter")
+	if m.IsListing() || m.IsActive() || m.Value("host") != "beta" {
+		t.Fatalf("value = %q listing %v active %v", m.Value("host"), m.IsListing(), m.IsActive())
+	}
+	if !m.HandleInteraction("enter") || !m.CapturesText() {
+		t.Fatal("enter must still type a new value")
+	}
+	m.HandleInteraction("x")
+	if m.Value("host") != "betax" {
+		t.Fatalf("typed value = %q", m.Value("host"))
 	}
 }

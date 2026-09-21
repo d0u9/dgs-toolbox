@@ -77,6 +77,9 @@ The shared control vocabulary includes:
   Strategy        (●) First   ( ) Second    Radio
   Extensions      [x] JPG                    Multi-checkbox
                   [ ] DNG
+  Public key      ssh-ed25519 AAAAC3Nza…     Text area
+                  …C1lZDI1NTE5AAAAIExample
+  Host            laptop  ▾                  Combo
      Action                                 Local button (filled)
 ```
 
@@ -119,6 +122,8 @@ Only one control may be focused or actively editing at a time. Opening a selecto
 - Option: `Enter` or `Space` opens an inline list; Up/Down changes the highlighted candidate; `Enter` applies it; `Esc` restores the previous value.
 - Checkbox: `Space` or `Enter` toggles immediately.
 - Text: `Enter` begins inline editing and shows a cursor; `Enter` applies; `Esc` restores the previous value.
+- Text area: the same single-line value and the same editing keys as Text, shown wrapped over as many rows as its width needs, with continuation rows indented under the value column. Use it where a value is routinely longer than the form is wide — a public key, a long identifier — so the value stays inside the form instead of overflowing it. The value itself holds no line breaks; wrapping is presentation only.
+- Combo: a Text field that also offers the values already known. `Enter` types a new value as Text does. `Space` opens the known values as an inline list, marked by a `▾` after the value; Up/Down changes the highlighted candidate, `Enter` applies it, and `Esc` closes the list keeping the typed value. Use it where a value is usually one that already exists but a new one must stay possible.
 - Radio: Left/Right or h/l changes the selection; `Space` and `Enter` advance it.
 - Multi-checkbox: options are supplied by the owning command and each renders on its own aligned row. It may expose a leading `[ All ]` bulk action. From the parent row, Right/l or Enter enters the subitems. Inside, Up/Down or k/j moves vertically, Space or Enter invokes the current action or checkbox, and Left/h or Esc returns to the parent form. A mouse click invokes the clicked row and enters that group. Internal multi-checkbox position is independent from an Option menu's candidate cursor; clicking another control closes an open Option without applying its unconfirmed candidate.
 - Button: `Enter` activates it; the owning command defines the result.
