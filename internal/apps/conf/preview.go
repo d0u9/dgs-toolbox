@@ -624,7 +624,7 @@ func (m renderer) deployFor(instance string) (data []byte, output string, err er
 
 	mapping := map[string]render.Mapping{}
 	for port, hm := range m.l.derived.Mappings(m.l.inv, instance) {
-		mapping[port] = render.Mapping{Address: hm.Address, Number: hm.Number}
+		mapping[port] = render.Mapping{Addresses: hm.Addresses, Number: hm.Number}
 	}
 
 	var nodeMap map[string]any
