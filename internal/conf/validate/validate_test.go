@@ -509,6 +509,26 @@ func TestValidate_UpstreamSharedFromAPortThatHandsOutNothing(t *testing.T) {
 	}
 }
 
+// TestValidate_UpstreamSharedOptionalFromAPortThatHandsOutNothing covers the
+// declaration that says the hop may hand over nothing. One program is
+// configured both ways on different machines — a Hysteria2 instance that
+// obfuscates its handshake hands out an obfuscation password, and one that
+// does not hands out nothing and is still reachable — so the unmet need this
+// rule reports is not a mistake there.
+func TestValidate_UpstreamSharedOptionalFromAPortThatHandsOutNothing(t *testing.T) {
+	inv := validInventory()
+	manifests := validManifests()
+	ss := manifests["ssserver"]
+	ss.Self = confgen.SelfDecls{"psk": {Set: true}}
+	ss.Upstream = confgen.UpstreamDecls{confgen.UpstreamShared: {Optional: true}}
+	manifests["ssserver"] = ss
+
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if containsSubstring(got, "needs the shared secrets") {
+		t.Fatalf("Validate = %v, want nothing owed for an optional declaration", messages(got))
+	}
+}
+
 // TestValidate_UpstreamSharedUndeclaredIsNotAnIssue is the other half: a
 // service that never asked is not owed anything, however little the hop it
 // dials hands out. A reverse proxy in front of a web service is this case.
