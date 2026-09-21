@@ -415,7 +415,7 @@ func (m vaultModel) finishEdit(msg resealedMsg) (tea.Model, tea.Cmd) {
 func (m vaultModel) editView() string {
 	flow := m.edit
 	if flow.stage == editConfirm {
-		return flow.dialog.View(min(96, m.width-4))
+		return flow.dialog.ViewSize(min(96, m.width-4), m.height)
 	}
 	w, h := pickerSize(m.width, m.height)
 	inner := max(1, w-4)

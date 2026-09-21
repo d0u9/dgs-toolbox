@@ -466,7 +466,7 @@ func (m keysModel) finishKeyFlow(msg keyDoneMsg) (tea.Model, tea.Cmd) {
 func (m keysModel) keyFlowView() string {
 	flow := m.keyFlow
 	if flow.stage == keyConfirm {
-		return flow.dialog.View(min(88, m.width-4))
+		return flow.dialog.ViewSize(min(88, m.width-4), m.height)
 	}
 	w, h := pickerSize(m.width, m.height)
 	inner := max(1, w-4)

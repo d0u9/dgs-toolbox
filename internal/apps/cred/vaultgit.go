@@ -292,7 +292,7 @@ func publishedNotice(result gitrepo.Result) string {
 func (m vaultModel) gitView() string {
 	flow := m.git
 	if flow.stage == gitConfirm {
-		return flow.dialog.View(min(96, m.width-4))
+		return flow.dialog.ViewSize(min(96, m.width-4), m.height)
 	}
 	w, h := pickerSize(m.width, m.height)
 	inner := max(1, w-4)
