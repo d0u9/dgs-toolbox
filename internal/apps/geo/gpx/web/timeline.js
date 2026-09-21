@@ -50,7 +50,7 @@ export class Timeline {
     this.cutting = null;
     this.editing = null;
     this.menu = document.createElement("div");
-    this.menu.className = "range-menu";
+    this.menu.className = "menu";
     this.menu.hidden = true;
     root.append(this.menu);
     document.addEventListener("pointerdown", (event) => {

@@ -1,0 +1,78 @@
+/* The design tokens every page dgs serves draws from, named for what they
+   mean rather than what they look like. Values come from docs/web.md: the
+   semantic layer is the document's palette, radius and spacing scale; the
+   density layer is the tool-page scale that document's "Tool density"
+   section defines, because a workspace packs controls the marketing scale
+   would space apart. A page adds a token of its own only for something no
+   other page has. */
+:root {
+  /* Brand and accent */
+  --primary: #024ad8;
+  --primary-bright: #296ef9;
+  --primary-deep: #0e3191;
+  --primary-soft: #c9e0fc;
+  --on-primary: #ffffff;
+
+  /* Surfaces */
+  --canvas: #ffffff;
+  --paper: #ffffff;
+  --cloud: #f7f7f7;
+  --fog: #e8e8e8;
+  --steel: #c2c2c2;
+  --hairline: #e8e8e8;
+  --hairline-strong: #c2c2c2;
+
+  /* Ink */
+  --ink: #1a1a1a;
+  --ink-soft: #292929;
+  --charcoal: #3d3d3d;
+  --graphite: #636363;
+  --on-ink: #ffffff;
+
+  /* Semantic */
+  --error: #b3262b;
+  --error-deep: #5a1313;
+
+  /* Interaction surfaces, derived from the surface scale */
+  --hover: var(--cloud);
+  --selected: var(--primary-soft);
+
+  /* Radius */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  /* Spacing */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+
+  /* Elevation */
+  --lift-soft: 0 2px 8px rgba(26, 26, 26, .08);
+  --lift-modal: 0 8px 24px rgba(26, 26, 26, .12);
+
+  /* Type */
+  --font-sans: Manrope, system-ui, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Density: the tool scale. A page never hard-codes these sizes. */
+  --font-size-ui: 13px;
+  --font-size-sm: 12px;
+  --font-size-xs: 11px;
+  --font-size-title: 14px;
+  --line-height-ui: 1.4;
+  --control-height: 26px;
+  --control-height-sm: 24px;
+  --control-pad-x: 8px;
+  --row-pad-y: 4px;
+  --row-pad-x: 8px;
+  --bar-height: 40px;
+  --gap-row: 6px;
+}
