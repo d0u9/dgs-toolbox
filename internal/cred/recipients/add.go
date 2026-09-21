@@ -56,9 +56,10 @@ func AddKey(root, host, publicKey string, meta Meta) (string, error) {
 	}
 
 	name := host
+	comment := ""
 	var entries []keyFile
 	if existing, ok := folder.Host(host); ok {
-		name = existing.Name
+		name, comment = existing.Name, existing.Comment
 		for _, listed := range existing.Keys {
 			entries = append(entries, keyFile{PublicKey: listed.Key, Meta: listed.Meta})
 		}
@@ -75,7 +76,7 @@ func AddKey(root, host, publicKey string, meta Meta) (string, error) {
 	// comment field instead.
 	entries = append(entries, keyFile{PublicKey: key.Key, Meta: meta})
 
-	if err := writeHost(root, name, entries); err != nil {
+	if err := writeHost(root, name, comment, entries); err != nil {
 		return "", err
 	}
 	return filepath.Join(HostsDir, name+FileSuffix), nil
@@ -116,7 +117,7 @@ func RemoveKey(root, publicKey string) ([]string, error) {
 		if !found {
 			continue
 		}
-		if err := writeHost(root, host.Name, entries); err != nil {
+		if err := writeHost(root, host.Name, host.Comment, entries); err != nil {
 			return changed, err
 		}
 		changed = append(changed, host.File)
@@ -125,11 +126,38 @@ func RemoveKey(root, publicKey string) ([]string, error) {
 }
 
 // writeHost replaces a host file through a temporary file renamed into place.
-func writeHost(root, name string, entries []keyFile) error {
+func writeHost(root, name, comment string, entries []keyFile) error {
 	if entries == nil {
 		entries = []keyFile{}
 	}
-	return writeJSON(filepath.Join(root, HostsDir), name, hostFile{Keys: entries})
+	return writeJSON(filepath.Join(root, HostsDir), name, hostFile{Comment: comment, Keys: entries})
+}
+
+// SetComment writes a host's comment, the owner's note about the machine. An
+// empty comment removes the field. It refuses a host that did not load, since
+// rewriting a file with an error would lose what could not be read. It returns
+// the host file, relative to root.
+func SetComment(root, host, comment string) (string, error) {
+	folder, err := Load(root)
+	if err != nil {
+		return "", err
+	}
+	existing, ok := folder.Host(host)
+	if !ok {
+		return "", fmt.Errorf("%s is not a loaded host", host)
+	}
+	comment = strings.TrimSpace(comment)
+	if comment == existing.Comment {
+		return "", errors.New("the comment is unchanged")
+	}
+	entries := make([]keyFile, len(existing.Keys))
+	for i, listed := range existing.Keys {
+		entries[i] = keyFile{PublicKey: listed.Key, Meta: listed.Meta}
+	}
+	if err := writeHost(root, existing.Name, comment, entries); err != nil {
+		return "", err
+	}
+	return existing.File, nil
 }
 
 // writeJSON writes dir/name.json through a temporary file renamed into place.
@@ -190,6 +218,89 @@ func RemoveFromGroups(root, host string) ([]string, error) {
 			continue
 		}
 		if err := writeJSON(filepath.Join(root, GroupsDir), group.Name, groupFile{Hosts: kept}); err != nil {
+			return changed, err
+		}
+		changed = append(changed, group.File)
+	}
+	return changed, nil
+}
+
+// RenameHost gives a host a new name: its file becomes <new>.json and every
+// group naming it names the new name. The keys and their fields are untouched,
+// so the file is renamed rather than rewritten. It refuses a name already taken
+// by another host, including one whose file has an error, since the two would
+// then be the same name. Changing only the case of a name is allowed. It
+// returns the new host file and the group files changed, both relative to root.
+func RenameHost(root, oldName, newName string) (string, []string, error) {
+	if err := CheckHostName(newName); err != nil {
+		return "", nil, err
+	}
+	folder, err := Load(root)
+	if err != nil {
+		return "", nil, err
+	}
+	host, ok := folder.Host(oldName)
+	if !ok {
+		return "", nil, fmt.Errorf("%s is not a loaded host", oldName)
+	}
+	if host.Name == newName {
+		return "", nil, fmt.Errorf("%s is already its name", newName)
+	}
+	sameName := strings.EqualFold(host.Name, newName)
+	if !sameName {
+		if existing, ok := folder.Host(newName); ok {
+			return "", nil, fmt.Errorf("%s is already a host, in %s", existing.Name, existing.File)
+		}
+		for _, problem := range folder.Problems {
+			base := strings.TrimSuffix(filepath.Base(problem.File), FileSuffix)
+			if problem.Severity == Error && filepath.Dir(problem.File) == HostsDir && strings.EqualFold(base, newName) {
+				return "", nil, fmt.Errorf("%s already exists, with an error: %s", problem.File, problem.Message)
+			}
+		}
+	}
+	from := filepath.Join(root, host.File)
+	to := filepath.Join(root, HostsDir, newName+FileSuffix)
+	// A name that differs only in case is the same file on a case-insensitive
+	// filesystem, so the check is skipped there rather than refusing itself.
+	if !sameName {
+		if _, err := os.Lstat(to); err == nil {
+			return "", nil, fmt.Errorf("%s already exists", filepath.Join(HostsDir, newName+FileSuffix))
+		}
+	}
+	if err := os.Rename(from, to); err != nil {
+		return "", nil, err
+	}
+	newFile := filepath.Join(HostsDir, newName+FileSuffix)
+	changed, err := renameInGroups(root, folder, oldName, newName)
+	return newFile, changed, err
+}
+
+// renameInGroups renames a member in every group naming it, ignoring case. As
+// in RemoveFromGroups, each group is rewritten from its file, so members that
+// did not resolve are kept.
+func renameInGroups(root string, folder Folder, oldName, newName string) ([]string, error) {
+	var changed []string
+	for _, group := range folder.Groups {
+		data, err := os.ReadFile(filepath.Join(root, group.File))
+		if err != nil {
+			return changed, err
+		}
+		var file groupFile
+		if err := json.Unmarshal(data, &file); err != nil {
+			return changed, fmt.Errorf("%s: %w", group.File, err)
+		}
+		found := false
+		members := make([]string, len(file.Hosts))
+		for i, member := range file.Hosts {
+			if strings.EqualFold(member, oldName) {
+				member, found = newName, true
+			}
+			members[i] = member
+		}
+		if !found {
+			continue
+		}
+		if err := writeJSON(filepath.Join(root, GroupsDir), group.Name, groupFile{Hosts: members}); err != nil {
 			return changed, err
 		}
 		changed = append(changed, group.File)

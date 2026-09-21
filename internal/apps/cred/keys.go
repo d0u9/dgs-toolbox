@@ -88,6 +88,13 @@ type keysModel struct {
 	keyFlow *keyFlow
 	// deleteFlow is the confirmation in front of a delete while it is open.
 	deleteFlow *deleteFlow
+	// renameFlow is renaming a host while it is open.
+	renameFlow *renameFlow
+	// hostComment is editing a host's comment while it is open.
+	hostComment *hostCommentFlow
+	// selectHost is a host name the next rebuild puts the cursor on, since the
+	// list IDs are positions and a renamed host sorts elsewhere.
+	selectHost string
 	// trash moves a deleted identity file aside; tests replace it.
 	trash func(string) (string, error)
 }
@@ -133,6 +140,16 @@ func (m keysModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case deletedMsg:
 		return m.finishDelete(msg)
+	case renamedMsg:
+		if m.renameFlow != nil {
+			return m.finishRename(msg)
+		}
+		return m, nil
+	case hostCommentSavedMsg:
+		if m.hostComment != nil {
+			return m.finishHostComment(msg)
+		}
+		return m, nil
 	}
 	if m.deleteFlow != nil {
 		if key, ok := msg.(tea.KeyMsg); ok {
@@ -143,6 +160,16 @@ func (m keysModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.keyFlow != nil {
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			return m.updateKeyFlow(msg)
+		}
+	}
+	if m.renameFlow != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateRenameFlow(msg)
+		}
+	}
+	if m.hostComment != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateHostComment(msg)
 		}
 	}
 	switch msg := msg.(type) {
@@ -189,7 +216,20 @@ func (m keysModel) updateKey(key string) (tea.Model, tea.Cmd) {
 		}
 		cmd := m.startKeyFlow(actionAdd)
 		return m, cmd
+	case "m":
+		if m.tab != tabHosts || m.fields.Current() != listField {
+			return m, nil
+		}
+		m.startHostComment()
+		return m, nil
 	case "n", "i", "r":
+		// r renames on the Hosts tab and registers on the Identities tab.
+		if key == "r" && m.tab == tabHosts {
+			if m.fields.Current() == listField {
+				m.startRename()
+			}
+			return m, nil
+		}
 		if m.tab != tabIdentities {
 			return m, nil
 		}
@@ -405,6 +445,14 @@ func (m *keysModel) rebuild() {
 	for tab := range m.lists {
 		m.lists[tab].SelectID(previous[tab])
 	}
+	if m.selectHost != "" {
+		for i, host := range snap.folder.Hosts {
+			if host.Name == m.selectHost {
+				m.lists[tabHosts].SelectID("host:" + strconv.Itoa(i))
+			}
+		}
+		m.selectHost = ""
+	}
 	m.keysHost = ""
 	m.syncKeys()
 	m.layout()
@@ -559,6 +607,11 @@ func (m keysModel) hostHeader(width int) []string {
 		}
 	}
 	lines := []string{property("File", filepath.ToSlash(host.File)), property("Groups", orNone(strings.Join(groups, ", ")))}
+	if host.Comment != "" {
+		lines = append(lines, wrapped(property("Comment", host.Comment), width)...)
+	} else {
+		lines = append(lines, property("Comment", mutedStyle.Render("none; m adds one")))
+	}
 	for _, p := range m.warningsFor(host.File) {
 		lines = append(lines, wrapped(warnStyle.Render("! "+p.Message), width)...)
 	}
@@ -598,7 +651,13 @@ func (m keysModel) View() string {
 		return overlay.Place(workspace, m.keyFlowView(), m.width, m.height)
 	}
 	if m.deleteFlow != nil {
-		return overlay.Place(workspace, m.deleteFlow.dialog.View(min(88, m.width-4)), m.width, m.height)
+		return overlay.Place(workspace, m.deleteFlow.dialog.ViewSize(min(88, m.width-4), m.height), m.width, m.height)
+	}
+	if m.renameFlow != nil {
+		return overlay.Place(workspace, m.renameFlowView(), m.width, m.height)
+	}
+	if m.hostComment != nil {
+		return overlay.Place(workspace, m.hostCommentView(), m.width, m.height)
 	}
 	return workspace
 }
@@ -607,6 +666,9 @@ func (m keysModel) View() string {
 func (m keysModel) CapturesShellKey(key string) bool {
 	if m.deleteFlow != nil {
 		return key == "esc" || key == "q"
+	}
+	if m.renameFlow != nil || m.hostComment != nil {
+		return key == "esc" || key == "q" || key == "backspace"
 	}
 	if m.keyFlow == nil {
 		return false
@@ -730,6 +792,12 @@ func (m keysModel) Status() tui.Status {
 	if m.keyFlow != nil {
 		return m.keyFlowStatus()
 	}
+	if m.renameFlow != nil {
+		return m.renameFlowStatus()
+	}
+	if m.hostComment != nil {
+		return m.hostCommentStatus()
+	}
 	left := [tabCount]string{"IDENTITIES", "HOSTS", "GROUPS"}[m.tab]
 	if !m.loaded {
 		return tui.Status{Left: "LOADING"}
@@ -744,7 +812,7 @@ func (m keysModel) Status() tui.Status {
 		left = "KEYS"
 		right = "↑↓ Move  c Copy  d Unregister  tab Hosts"
 	case m.tab == tabHosts:
-		right = "↑↓ Move  a Add key  d Delete  tab Keys"
+		right = "↑↓ Move  a Add  r Rename  m Comment  d Delete  tab Keys"
 	case m.tab == tabIdentities:
 		right = "↑↓ Move  n New  i Import  [ ] Tab"
 		if identity, ok := m.selectedIdentity(); ok && identity.Public.Key != "" {
