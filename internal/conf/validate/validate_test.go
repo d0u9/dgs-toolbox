@@ -530,6 +530,41 @@ func TestValidate_RouteEndingOnAForwarderIsReported(t *testing.T) {
 	}
 }
 
+// TestValidate_PortDispatchKeepsOneSuccessorPerPort covers rule 22.
+// `downstreams: many` lifts rule 8 for the instance as a whole; an instance
+// that tells its routes apart by the port they arrived on still has one next
+// hop per port, and two routes disagreeing about it would render two
+// endpoints listening on one port and going to different places.
+func TestValidate_PortDispatchKeepsOneSuccessorPerPort(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[1].Instances[0].Service = "realm"
+	inv.Nodes[1].Instances[0].Ports = inventory.PortsOf(map[string]int{"main": 40000, "other": 40001})
+	manifests := validManifests()
+	manifests["realm"] = confgen.Manifest{
+		Auth: confgen.AuthNone, Forwards: true, Template: "t",
+		Downstreams: confgen.DownstreamsMany, Dispatch: confgen.DispatchPort,
+	}
+	inv.Routes["chain"] = inventory.Route{Hops: []string{"ss-relay:main", "ss-srv:alt"}}
+	inv.Routes["clash"] = inventory.Route{Hops: []string{"ss-relay:main", "ss-srv:main"}}
+
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `its port "main" has different successors in routes`) {
+		t.Fatalf("Validate = %v, want one port's two successors named", messages(got))
+	}
+	// A downstream of a port-dispatching instance needs no published name:
+	// what tells the routes apart is the port they arrived on.
+	if containsSubstring(got, "declares no published name") {
+		t.Fatalf("Validate = %v, want no published name asked of a relay's downstream", messages(got))
+	}
+
+	// The same relay with one route per port is ordinary.
+	inv.Routes["clash"] = inventory.Route{Hops: []string{"ss-relay:other", "ss-srv:main"}}
+	got = Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if containsSubstring(got, "different successors") {
+		t.Fatalf("Validate = %v, want nothing reported for one successor per port", messages(got))
+	}
+}
+
 // TestValidate_UpstreamSharedOptionalFromAPortThatHandsOutNothing covers the
 // declaration that says the hop may hand over nothing. One program is
 // configured both ways on different machines — a Hysteria2 instance that
@@ -727,5 +762,34 @@ func TestValidate_ProfilesAreClean(t *testing.T) {
 	manifests := validManifests()
 	if got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil); len(got) != 0 {
 		t.Fatalf("Validate = %v, want no issues", messages(got))
+	}
+}
+
+// TestValidate_PortDispatchFrontsNoName covers rule 18's other half. A relay
+// picks its next hop by the port a connection arrived on and matches no name,
+// so two ports behind one relay sharing a published name is the ordinary case
+// of one machine answering to one name on two numbers — not the ambiguity a
+// reverse proxy would have.
+func TestValidate_PortDispatchFrontsNoName(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[1].Instances[0].Service = "realm"
+	inv.Nodes[1].Instances[0].Ports = inventory.PortsOf(map[string]int{"main": 40000, "other": 40001})
+	srv := &inv.Nodes[0].Instances[0]
+	for _, name := range []string{"main", "alt"} {
+		p := srv.Ports[name]
+		p.Published = "exit.example.net"
+		srv.Ports[name] = p
+	}
+	manifests := validManifests()
+	manifests["realm"] = confgen.Manifest{
+		Auth: confgen.AuthNone, Forwards: true, Template: "t",
+		Downstreams: confgen.DownstreamsMany, Dispatch: confgen.DispatchPort,
+	}
+	inv.Routes["chain"] = inventory.Route{Hops: []string{"ss-relay:main", "ss-srv:alt"}}
+	inv.Routes["second"] = inventory.Route{Hops: []string{"ss-relay:other", "ss-srv:main"}}
+
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if containsSubstring(got, "cannot tell them apart") {
+		t.Fatalf("Validate = %v, want no name ambiguity behind a relay", messages(got))
 	}
 }

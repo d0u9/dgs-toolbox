@@ -1529,7 +1529,28 @@ output: Caddyfile
 | `downstreams` | What an instance of this service may dial |
 | --- | --- |
 | `one` | One upstream, the same in every route through it. The default, and not written |
-| `many` | One upstream per route through it, told apart by the `published` name of the port each route reaches |
+| `many` | One upstream per route through it, told apart the way `dispatch` says |
+
+**How the routes are told apart** is `dispatch`, which is read only beside
+`downstreams: many` and defaults to `name`:
+
+| `dispatch` | What distinguishes one route from another |
+| --- | --- |
+| `name` | The `published` name of the port each route reaches. A reverse proxy picks its upstream by the name the request arrived at, so every downstream needs one — [rule 17](#validation). The default, and not written |
+| `port` | The port of this instance each route arrived on. A relay listens once per route and sends what arrives there onward, so a published name downstream means nothing and is not asked for |
+
+The two are different machines, not two spellings. A proxy has one listening
+port and many names behind it; a relay has one port per next hop and no names
+at all. Which one a service is decides both what `dgs` requires of it and what
+its template is handed: a `downstream` carries the name the route arrived at
+and the port it arrived on, and a template reads whichever of the two its
+program dispatches on.
+
+`many` relaxes [rule 8](#one-upstream-per-instance) for the instance as a
+whole, and `dispatch: port` puts it back one level down:
+[rule 22](#validation) holds one successor per port, because a port listens
+for one next hop and two routes disagreeing about it would render two
+endpoints on one number going to different places.
 
 `many` is the only thing that relaxes
 [rule 8](#one-upstream-per-instance), so a service that has not asked for it
@@ -1794,9 +1815,10 @@ upstream:    the next hop, resolved: address, port, the name that hop's port
              See what a service needs from its upstream
 downstreams: for an instance whose service declares downstreams: many, the hop
              that follows it in each route through it, resolved: address, port,
-             and the published name that route arrived at. Ordered by route
-             name, so a rendered file does not change because a route was
-             added above another. Absent for every other instance
+             the published name that route arrived at, and the port of this
+             instance it arrived on, as entry and its number. Ordered by
+             route name, so a rendered file does not change because a route
+             was added above another. Absent for every other instance
 principals:  for a port with auth: per-principal, the account name and secret of
              everything holding a grant on it
 self:        the instance's own secrets, by name: a value, a map of fields, a
@@ -1860,12 +1882,14 @@ failing can be told which level it was reading.
 15. Every secret the inventory implies exists, and every file in the secrets
     tree is implied by it. Both directions are reported; neither is fixed here.
 16. No `.previous` file is older than seven days.
-17. Every port a `downstreams: many` instance reaches declares `published`.
+17. Every port a `downstreams: many` instance dispatching by `name` reaches
+    declares `published`.
     Without it the proxy has nothing to tell one downstream from another, and
     the error names the instance and the route.
 18. Two ports declaring the same `published` name are on one node, neither is
-    fronted by a `downstreams: many` instance, and they differ in number or
-    transport. The error names both.
+    fronted by a `downstreams: many` instance dispatching by `name`, and they
+    differ in number or transport. The error names both. A relay dispatching
+    by `port` matches no name, so it fronts nothing in this sense.
 19. A target declaring `upstream: shared`, without `optional: true` on that
     declaration, reaches a port whose `self` list hands something out. The
     declaration is the consumer's, so nothing about the port it dials makes
@@ -1882,6 +1906,10 @@ failing can be told which level it was reading.
     route terminates nowhere: the last hop reads nothing it is given and has
     nowhere to pass it, and the person granted it would be handed an address
     with no account, since the account belongs to the hop that ends the chain.
+22. Two routes entering the same port of an instance that dispatches by
+    `port` have the same successor. A port listens for one next hop, and
+    `downstreams: many` lifting rule 8 for the instance does not lift it for
+    the port.
 
 ## Boundaries
 

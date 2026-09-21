@@ -30,6 +30,9 @@ routes:
   hkg-sfo-01-ss:
     hops: [fwd-hkg01:ss, ss-sfo01:users]
 
+  hkg-sfo-01-hy2:
+    hops: [fwd-hkg01:hy2, hy2-sfo01:users]
+
   # A service reached from a browser shares the name table with the proxy
   # lines: a person picks from one list and does not care which kind it is.
   # Two hops, because a reverse proxy is in front — adding a service behind
