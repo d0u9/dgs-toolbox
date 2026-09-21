@@ -91,13 +91,21 @@ instances:
       # The root an HTTP request that matched no site name falls back to.
       default_root: /srv/www/placeholder/current
 
-  # MicroBin. It listens on loopback only, with the proxy in front. A port's
+  # MicroBin. It runs in a container, with the proxy in front. A port's
   # `published` is the name this service answers to — the proxy matches its
   # site block on it, and MicroBin writes the same string into
   # MICROBIN_PUBLIC_PATH, so the name is written once and read twice.
+  #
+  # `runtime` says what delivers the process, and dgs branches on none of it:
+  # it is here so that the `bind` below reads correctly. Inside a container
+  # 0.0.0.0 is the container's own interfaces, not an open listener — what
+  # may actually arrive is the publish address of the port mapping, and this
+  # port is entered only from this machine's Caddy, so that address is
+  # loopback.
   - id: microbin-sfo01
     service: microbin
-    bind: 127.0.0.1
+    runtime: docker
+    bind: "0.0.0.0"
     ports:
       # A port's `self` is "this key goes to whoever is granted this port",
       # and a downstream configuration reads it as `(upstream).self`.

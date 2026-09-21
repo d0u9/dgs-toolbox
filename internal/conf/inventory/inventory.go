@@ -47,6 +47,18 @@ const DefaultCredential = "default"
 // device, regardless of what the services it reaches offer.
 const ExportNone = "none"
 
+// Runtime values an instance's `runtime` may take: what delivers the
+// process. RuntimeHost is the default and is not written. dgs branches on
+// none of them and no template reads them — the key exists to fix what
+// `bind` means, since 0.0.0.0 inside a container is the container's own
+// interfaces and not an open listener. See
+// docs/apps/conf/inventory.md#what-runs-the-process.
+const (
+	RuntimeHost   = "host"
+	RuntimeDocker = "docker"
+	RuntimePodman = "podman"
+)
+
 // Networks is a node's `networks` key: a mapping of network name to this
 // node's address on it. It says where others can reach this node.
 type Networks map[string]string
@@ -59,6 +71,10 @@ type Instance struct {
 	Role    string `yaml:"role"`
 	Bind    string `yaml:"bind"`
 	Ports   Ports  `yaml:"ports"`
+	// Runtime says what delivers this process: RuntimeHost, RuntimeDocker
+	// or RuntimePodman. Empty means RuntimeHost. Nothing reads the value
+	// beyond validate checking it is one of the three; see the constants.
+	Runtime string `yaml:"runtime"`
 	// Self says which of its service's own secrets this instance holds,
 	// and the keys of each one that is a set. Unwritten means every name
 	// the service declares, which is the ordinary case; written, it is the
@@ -80,6 +96,21 @@ type Instance struct {
 	// docs/apps/conf/inventory.md#an-instances-own-values.
 	Values map[string]any `yaml:"values"`
 }
+
+// RuntimeOr is what delivers this process, RuntimeHost when the instance
+// says nothing.
+func (i Instance) RuntimeOr() string {
+	if i.Runtime == "" {
+		return RuntimeHost
+	}
+	return i.Runtime
+}
+
+// Containerised reports whether this instance's process runs in a
+// container, which is every runtime but RuntimeHost. It is what decides
+// whether `bind` is a host's interfaces or a container's, and so what the
+// graph badges and what a deployment file is rendered for.
+func (i Instance) Containerised() bool { return i.RuntimeOr() != RuntimeHost }
 
 // IsUser reports whether a name is a user key, which is how a node group
 // tells a person's devices from whoever hosts the machines.
