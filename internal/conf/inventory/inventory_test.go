@@ -269,3 +269,27 @@ func TestLoad_BrokenTopLevelFileIsReported(t *testing.T) {
 		t.Fatal("NetworksBroken = empty, want an error")
 	}
 }
+
+// TestInstanceRuntime pins the default and what counts as containerised:
+// an instance saying nothing is a host process, and every other runtime
+// draws the boundary that changes what `bind` means.
+func TestInstanceRuntime(t *testing.T) {
+	for _, tc := range []struct {
+		runtime       string
+		want          string
+		containerised bool
+	}{
+		{"", RuntimeHost, false},
+		{RuntimeHost, RuntimeHost, false},
+		{RuntimeDocker, RuntimeDocker, true},
+		{RuntimePodman, RuntimePodman, true},
+	} {
+		inst := Instance{ID: "x", Runtime: tc.runtime}
+		if got := inst.RuntimeOr(); got != tc.want {
+			t.Errorf("Instance{Runtime: %q}.RuntimeOr() = %q, want %q", tc.runtime, got, tc.want)
+		}
+		if got := inst.Containerised(); got != tc.containerised {
+			t.Errorf("Instance{Runtime: %q}.Containerised() = %v, want %v", tc.runtime, got, tc.containerised)
+		}
+	}
+}
