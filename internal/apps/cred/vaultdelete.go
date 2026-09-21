@@ -137,5 +137,5 @@ func baseNames(paths []string) []string {
 }
 
 func (m vaultModel) deleteView() string {
-	return m.del.dialog.View(min(96, m.width-4))
+	return m.del.dialog.ViewSize(min(96, m.width-4), m.height)
 }

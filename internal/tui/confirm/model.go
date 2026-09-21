@@ -72,9 +72,14 @@ func (m Model) Update(key string) (Model, Decision) {
 
 func (m Model) CancelChosen() bool { return m.cancelChosen }
 
-// View renders an intentionally compact dialog. The focus cue lives on the
-// selected button, leaving the key hint quiet and readable.
-func (m Model) View(width int) string {
+// View renders an intentionally compact dialog, as tall as its text needs.
+func (m Model) View(width int) string { return m.ViewSize(width, 0) }
+
+// ViewSize renders the dialog within height rows, which is the terminal's:
+// what does not fit is cut from the message, since a dialog taller than the
+// screen would lose its buttons and its frame off the bottom. A height of 0 is
+// unbounded.
+func (m Model) ViewSize(width, height int) string {
 	outerWidth := max(24, min(66, width-4))
 	innerWidth := max(1, outerWidth-4)
 	confirm := pageactions.Inline(m.config.ConfirmLabel, !m.cancelChosen)
@@ -89,12 +94,32 @@ func (m Model) View(width int) string {
 	if m.config.Detail != "" {
 		content = append(content, noteStyle.Render(ansi.Wrap(m.config.Detail, innerWidth, "")))
 	}
-	content = append(content,
+	tail := []string{
 		"",
 		noteStyle.Render(strings.Repeat("─", innerWidth)),
 		pageactions.Footer(innerWidth, "Tab switch · Enter select · Esc continue", cancel, confirm),
-	)
-	return frameStyle.Width(outerWidth - 2).Render(strings.Join(content, "\n"))
+	}
+	content = fit(content, tail, height)
+	return frameStyle.Width(outerWidth - 2).Render(strings.Join(append(content, tail...), "\n"))
+}
+
+// fit cuts the head so that head, tail and the frame's two rows are at most
+// height rows. The title and one row of the message are always kept, and a cut
+// ends in an ellipsis of its own, so nothing looks complete when it is not.
+func fit(head, tail []string, height int) []string {
+	if height <= 0 {
+		return head
+	}
+	rows := strings.Split(strings.Join(head, "\n"), "\n")
+	room := height - 2 - len(tail)
+	if len(rows) <= room {
+		return rows
+	}
+	keep := max(3, room-1)
+	if keep >= len(rows) {
+		return rows
+	}
+	return append(rows[:keep], noteStyle.Render("…"))
 }
 
 func max(a, b int) int {

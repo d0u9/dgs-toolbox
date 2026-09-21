@@ -191,7 +191,7 @@ func (m vaultModel) finishUpdate(msg gitUpdatedMsg) (tea.Model, tea.Cmd) {
 func (m vaultModel) updateView() string {
 	flow := m.update
 	if flow.stage == updateConfirm {
-		return flow.dialog.View(min(96, m.width-4))
+		return flow.dialog.ViewSize(min(96, m.width-4), m.height)
 	}
 	w, h := pickerSize(m.width, m.height)
 	inner := max(1, w-4)

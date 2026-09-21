@@ -468,7 +468,7 @@ func (m vaultModel) finishAction(msg actionDoneMsg) (tea.Model, tea.Cmd) {
 func (m vaultModel) actionView() string {
 	flow := m.action
 	if flow.stage == actionConfirm {
-		return flow.dialog.View(min(96, m.width-4))
+		return flow.dialog.ViewSize(min(96, m.width-4), m.height)
 	}
 	w, h := pickerSize(m.width, m.height)
 	inner := max(1, w-4)
