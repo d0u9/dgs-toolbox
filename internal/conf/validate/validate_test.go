@@ -793,3 +793,30 @@ func TestValidate_PortDispatchFrontsNoName(t *testing.T) {
 		t.Fatalf("Validate = %v, want no name ambiguity behind a relay", messages(got))
 	}
 }
+
+// TestValidate_UnknownRuntime is rule 23: `runtime` is one of the three
+// words. Nothing else in dgs reads the value, so a misspelling would be
+// silent everywhere if this did not report it.
+func TestValidate_UnknownRuntime(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[0].Instances[0].Runtime = "dokcer"
+	manifests := validManifests()
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `runtime "dokcer" is not "host", "docker" or "podman"`) {
+		t.Fatalf("Validate = %v, want an unknown-runtime issue", messages(got))
+	}
+}
+
+// TestValidate_KnownRuntimeIsNotAnIssue pins the other side: each of the
+// three is accepted, and an instance saying nothing is a host process.
+func TestValidate_KnownRuntimeIsNotAnIssue(t *testing.T) {
+	for _, runtime := range []string{"", inventory.RuntimeHost, inventory.RuntimeDocker, inventory.RuntimePodman} {
+		inv := validInventory()
+		inv.Nodes[0].Instances[0].Runtime = runtime
+		manifests := validManifests()
+		got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+		if len(got) != 0 {
+			t.Fatalf("Validate with runtime %q = %v, want none", runtime, messages(got))
+		}
+	}
+}

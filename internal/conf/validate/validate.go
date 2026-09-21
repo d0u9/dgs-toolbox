@@ -399,6 +399,19 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		}
 	}
 
+	// Rule 23: an instance's runtime, when written, names one of the three
+	// values. Nothing else reads it — no branch, no template — so a
+	// misspelling is silent everywhere but here, and the error lists the
+	// three rather than leaving a reader to guess which word was meant.
+	for _, id := range realIDs {
+		switch runtime := realInstances[id].inst.Runtime; runtime {
+		case "", inventory.RuntimeHost, inventory.RuntimeDocker, inventory.RuntimePodman:
+		default:
+			add("instance %q: runtime %q is not %q, %q or %q",
+				id, runtime, inventory.RuntimeHost, inventory.RuntimeDocker, inventory.RuntimePodman)
+		}
+	}
+
 	// Rule 6: every route in an access list exists; every owner exists.
 	for _, key := range userKeys {
 		user := inv.Users[key]
