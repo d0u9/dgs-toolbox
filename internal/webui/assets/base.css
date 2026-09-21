@@ -1,0 +1,65 @@
+/* The page frame every dgs page shares: the reset, the document's type, and
+   the full-height shell of a top bar over a work area. Anything a page draws
+   inside that area is its own. */
+
+* { box-sizing: border-box; }
+
+html { color-scheme: light; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  background: var(--cloud);
+  color: var(--ink);
+  font: var(--font-size-ui) / var(--line-height-ui) var(--font-sans);
+}
+
+/* The bar across the top of the page: the name on the left, controls after
+   it, all on paper with a hairline under. */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  height: var(--bar-height);
+  padding: 0 14px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--hairline);
+}
+.topbar-spacer { flex: 1; }
+.brand {
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--primary);
+}
+
+/* A heading over a panel of rows: small, tracked, muted. */
+.panel-head {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 10px 14px 6px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.muted { color: var(--graphite); }
+.numeric { font-variant-numeric: tabular-nums; }
+
+/* A line of prose under a control, and the same line when it reports a
+   failure. */
+.message { margin: var(--space-xxs) 14px; color: var(--graphite); }
+.message.error { color: var(--error); }
+
+/* What went wrong on the server, shown as it came back. */
+.error-banner {
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--hairline);
+  background: var(--paper);
+  color: var(--error);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+.error-banner[hidden] { display: none; }

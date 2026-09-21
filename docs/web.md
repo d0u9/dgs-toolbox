@@ -152,6 +152,20 @@ spacing:
   xxl: 32px
   section: 80px
 
+density:
+  font-size-ui: 13px
+  font-size-sm: 12px
+  font-size-xs: 11px
+  font-size-title: 14px
+  line-height-ui: 1.4
+  control-height: 26px
+  control-height-sm: 24px
+  control-pad-x: 8px
+  row-pad-y: 4px
+  row-pad-x: 8px
+  bar-height: 40px
+  gap-row: 6px
+
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
@@ -329,6 +343,26 @@ This is the shared visual design language for every web page `dgs` serves — th
 GPX map page and any page added later. It is a reference for tokens, components
 and layout rules; per-app page behaviour stays in `docs/apps/<app>/`.
 
+## The shared module
+
+The tokens, page frame and controls below live in one place: `internal/webui`,
+embedded in the binary and mounted by every server that serves a page, under
+`/ui/`. A page links `/ui/tokens.css`, `/ui/base.css` and `/ui/controls.css`,
+then adds a stylesheet of its own for what only it draws — the graph canvas,
+the map workspace.
+
+Two rules keep the module worth having:
+
+- A page never re-declares a shared token and never hard-codes a value a token
+  carries. A test walks every stylesheet `dgs` serves and fails on a `var(--x)`
+  that `tokens.css` does not declare and the page does not declare itself.
+- A page declares a token of its own only for something no other page has —
+  the purple the GPX page marks hand-removed points with. When a second page
+  wants it, it moves into `tokens.css`.
+
+Every page `dgs` serves is light only. The system has one surface vocabulary,
+and a second set of values for a dark one is not part of it.
+
 ## Overview
 
 HP reads like a long-running consumer-electronics catalog crossed with an enterprise-software product page. The whole system sits on **pure white** (`{colors.canvas}` — `#ffffff`) with thin gray panels (`{colors.cloud}` / `{colors.fog}`) for alternating section bands. There is one chromatic action color — **HP Electric Blue** (`{colors.primary}` — `#024ad8`) — and one ink color (`{colors.ink}` — `#1a1a1a`); together they do ninety percent of the work. Type is a single family across every surface: **Forma DJR Micro**, HP's bespoke geometric grotesque, set at weight 500 for headlines and 400 for body — clean, neutral, slightly mechanical.
@@ -444,6 +478,39 @@ The 80px section gap is the universal rhythm constant — it appears between eve
 ### Whitespace Philosophy
 
 Whitespace is **commercial-clean** — generous around hero photography, tight around catalog spec rows. Product cards leave breathing room above and below the photo (≥32px) so the laptop or printer reads as a hero shot rather than a thumbnail. The fine-print disclaimer regions (legal, footnote rows) tighten line-height to 1.3 and shrink type to 11–12px so the bulk of fine print stays compact.
+
+## Tool Density
+
+The scale above is the marketing scale — a 44px CTA, 16px body, an 80px band
+between sections. The pages `dgs` serves are not that. They are workspaces: a
+file tree, a map, a timeline, a graph and its key, all on screen at once,
+where a row costs vertical space the reader needs for the work.
+
+So the system has two layers. The **semantic layer** — colour, radius,
+elevation, type family — is the one above, and every page uses it unchanged.
+The **density layer** replaces size only, and only on these pages:
+
+| Token | Value | Replaces |
+|---|---|---|
+| `--font-size-ui` | 13px | `{typography.body-md}` as the default body size |
+| `--font-size-sm` | 12px | secondary rows, fields, table cells |
+| `--font-size-xs` | 11px | metadata, panel headings, captions |
+| `--font-size-title` | 14px | a page or panel title |
+| `--line-height-ui` | 1.4 | body line-height |
+| `--control-height` | 26px | the 44px button height |
+| `--control-height-sm` | 24px | icon buttons and compact fields |
+| `--bar-height` | 40px | the top bar's row |
+| `--row-pad-y` / `--row-pad-x` | 4px / 8px | the 24px card padding, for a list row |
+| `--gap-row` | 6px | the gap between rows in a list |
+
+What does not change: the palette, the radius scale (buttons at
+`{rounded.md}`, containers at `{rounded.lg}` and `{rounded.xl}`), the
+elevation levels, and the rule that `{colors.primary}` stays scarce. A dense
+page earns its density by giving up size, not by giving up the language.
+
+Touch targets are the documented exception the other way: these pages are
+driven by a pointer on a desktop, so the 44×44px minimum applies to a page
+built for touch, not to the workspace chrome.
 
 ## Elevation & Depth
 

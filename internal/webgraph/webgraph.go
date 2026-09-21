@@ -19,6 +19,8 @@ import (
 	"net"
 	"net/http"
 	"sync"
+
+	"dgs-toolbox/internal/webui"
 )
 
 //go:embed web
@@ -106,6 +108,7 @@ func Handler(load Load) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(g)
 	})
+	webui.Mount(mux)
 	mux.Handle("GET /", http.FileServerFS(static))
 	return mux
 }

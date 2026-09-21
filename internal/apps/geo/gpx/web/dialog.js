@@ -8,7 +8,7 @@ import * as format from "./format.js";
 export function waypointDialog(entries, coordinates) {
   return new Promise((resolve) => {
     const dialog = document.createElement("dialog");
-    dialog.className = "confirm-dialog";
+    dialog.className = "dialog";
     const heading = document.createElement("h3");
     heading.textContent = "Add waypoint";
     const place = document.createElement("p");
@@ -31,7 +31,7 @@ export function waypointDialog(entries, coordinates) {
     description.className = "cut-path prompt-input";
     description.placeholder = "Description (optional)";
     const buttons = document.createElement("div");
-    buttons.className = "confirm-buttons";
+    buttons.className = "dialog-buttons";
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.className = "text-button";
@@ -60,7 +60,7 @@ export function waypointDialog(entries, coordinates) {
 export function promptDialog({ title, message, value = "", confirm = "OK", cancel = "Cancel" }) {
   return new Promise((resolve) => {
     const dialog = document.createElement("dialog");
-    dialog.className = "confirm-dialog";
+    dialog.className = "dialog";
     const heading = document.createElement("h3");
     heading.textContent = title;
     const text = document.createElement("p");
@@ -71,7 +71,7 @@ export function promptDialog({ title, message, value = "", confirm = "OK", cance
     input.className = "cut-path prompt-input";
     input.value = value;
     const buttons = document.createElement("div");
-    buttons.className = "confirm-buttons";
+    buttons.className = "dialog-buttons";
     const no = document.createElement("button");
     no.type = "button";
     no.className = "text-button";
@@ -103,7 +103,7 @@ export function promptDialog({ title, message, value = "", confirm = "OK", cance
 export function confirmDialog({ title, message, detail, confirm = "Continue", cancel = "Cancel", danger = false }) {
   return new Promise((resolve) => {
     const dialog = document.createElement("dialog");
-    dialog.className = "confirm-dialog";
+    dialog.className = "dialog";
     const heading = document.createElement("h3");
     heading.textContent = title;
     const text = document.createElement("p");
@@ -111,12 +111,12 @@ export function confirmDialog({ title, message, detail, confirm = "Continue", ca
     dialog.append(heading, text);
     if (detail) {
       const code = document.createElement("code");
-      code.className = "confirm-detail";
+      code.className = "dialog-detail";
       code.textContent = detail;
       dialog.append(code);
     }
     const buttons = document.createElement("div");
-    buttons.className = "confirm-buttons";
+    buttons.className = "dialog-buttons";
     const no = document.createElement("button");
     no.className = "text-button";
     no.textContent = cancel;
@@ -157,7 +157,7 @@ export function saveDialog({ title, message, folder, fallback = "", places = [],
   return new Promise((resolve) => {
     const separator = folder.includes("\\") && !folder.includes("/") ? "\\" : "/";
     const dialog = document.createElement("dialog");
-    dialog.className = "confirm-dialog save-dialog";
+    dialog.className = "dialog save-dialog";
     const heading = document.createElement("h3");
     heading.textContent = title;
     const text = document.createElement("p");
@@ -219,7 +219,7 @@ export function saveDialog({ title, message, folder, fallback = "", places = [],
     input.className = "cut-path prompt-input";
     input.value = name;
     const buttons = document.createElement("div");
-    buttons.className = "confirm-buttons";
+    buttons.className = "dialog-buttons";
     const no = document.createElement("button");
     no.type = "button";
     no.className = "text-button";

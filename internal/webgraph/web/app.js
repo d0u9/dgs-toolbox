@@ -2,14 +2,10 @@
 // what is being drawn comes from the API — this file knows about groups,
 // nodes, edges and kinds, and nothing about what any of them mean.
 
-// theme reads the page's own colours, since a canvas cannot use a CSS
-// variable. It is read once per draw, so a redraw after the system switches
-// between light and dark picks the new one up.
+// theme is what the drawing paints with, since a canvas cannot read a CSS
+// variable. The values match the shared tokens of /ui/tokens.css.
 function theme() {
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  return dark
-    ? { groupFill: "#ffffff", groupFillOpacity: 0.07, groupLine: "#7a8792", groupText: "#c2cbcf", edgeText: "#ccd4d8", edgeTextBg: "#14181a", selected: "#e6e9e7" }
-    : { groupFill: "#000000", groupFillOpacity: 0.035, groupLine: "#c6cbc6", groupText: "#6b7280", edgeText: "#6b7280", edgeTextBg: "#fbfbfa", selected: "#111827" };
+  return { groupFill: "#000000", groupFillOpacity: 0.035, groupLine: "#c2c2c2", groupText: "#636363", edgeText: "#636363", edgeTextBg: "#f7f7f7", selected: "#1a1a1a" };
 }
 
 // The Okabe-Ito qualitative palette, which stays distinguishable under
@@ -27,14 +23,8 @@ const palette = [
   "#F0E442", // yellow
 ];
 
-// The near-black of the palette disappears on a dark page, so that one slot
-// is swapped for a near-white there. Every other Okabe-Ito hue carries
-// enough contrast against both backgrounds to stay as it is.
-const darkSwaps = { "#3A3A3A": "#E3E6E4" };
 function paletteAt(i) {
-  const hex = palette[i % palette.length];
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  return dark ? darkSwaps[hex] || hex : hex;
+  return palette[i % palette.length];
 }
 
 // Colour is never the only difference. A kind also gets a line style and a
@@ -64,7 +54,7 @@ function indexFor(kind) {
 }
 
 function colourFor(kind) {
-  if (!kind) return "#6b7280";
+  if (!kind) return "#636363";
   return paletteAt(indexFor(kind));
 }
 
@@ -78,16 +68,14 @@ function textOn(hex) {
     return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
   });
   const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return luminance > 0.45 ? "#111827" : "#ffffff";
+  return luminance > 0.45 ? "#1a1a1a" : "#ffffff";
 }
 
 // A line is a thin thing, and the palette's paler hues — the yellow above
 // all — are chosen to work as a filled swatch rather than as one. So a line
-// takes a darker version of its kind's colour on a pale page, and the colour
-// itself on a dark one, where it already stands out.
+// takes a darker version of its kind's colour.
 function lineColourFor(kind) {
   const hex = colourFor(kind);
-  if (window.matchMedia("(prefers-color-scheme: dark)").matches) return hex;
   const n = parseInt(hex.slice(1), 16);
   const darker = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
     .map((c) => Math.round(c * 0.72).toString(16).padStart(2, "0"))
@@ -990,14 +978,4 @@ document.getElementById("fit").addEventListener("click", () => cy && cy.fit(unde
 document.getElementById("relayout").addEventListener("click", runLayout);
 document.getElementById("detail").addEventListener("click", cycleDetail);
 document.getElementById("view").addEventListener("click", cycleView);
-// Redraw when the system theme changes, so the canvas follows the page.
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  if (!cy) return;
-  cy.style(styleSheet());
-  // A fresh stylesheet drops the classes' effect for one frame; re-applying
-  // the level puts the picture back at the detail it was showing.
-  const level = shownLevel;
-  shownLevel = null;
-  applyLevel(level || levelNow());
-});
 load();

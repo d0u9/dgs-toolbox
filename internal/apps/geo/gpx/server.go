@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/webui"
 )
 
 //go:embed web
@@ -79,6 +80,7 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/draft", api.newDraft)
 	mux.HandleFunc("POST /api/route/leg", api.routeLeg)
 	mux.HandleFunc("POST /api/route/save", api.saveRoute)
+	webui.Mount(mux)
 	mux.Handle("GET /", http.FileServerFS(static))
 	return sameOrigin(mux)
 }
