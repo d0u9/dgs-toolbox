@@ -21,6 +21,8 @@
   being changed — [`file-explorer.md`](docs/file-explorer.md),
   [`parameter-controls.md`](docs/parameter-controls.md),
   [`data-fields.md`](docs/data-fields.md).
+- [`docs/web.md`](docs/web.md) holds the shared visual design language for every
+  web page `dgs` serves. Read it before changing any served page or template.
 - App designs live under `docs/apps/<app>/` and must not be promoted into shared
   requirements.
 - Update a design document only when a decision is confirmed. Never fill an
