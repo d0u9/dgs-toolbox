@@ -227,6 +227,34 @@ Re-encrypting:
   recipients, and always checked with it. The record keeps `encryption:
   passphrase` and sets `updated`.
 
+## Renaming and moving a file (E8)
+
+`r` on a file renames it and moves it to another folder of the same vault. Both
+are one operation, since both are a rename of the file and of its record.
+
+- A form with two fields: the **Name**, which starts as the file's name, and
+  the **Folder**, relative to the vault's own folder, which starts as the one
+  the file is in. An empty folder is the vault's own folder, and the folders
+  the vault already has are listed beneath the form.
+- The name follows the listing rules: a single name, ending in `.age`, not
+  starting with a dot, so that a renamed file is still a file the vault lists.
+  A folder with a hidden part is refused for the same reason.
+- A folder that does not exist yet is created, `0755`, and the confirmation
+  says so. A path leaving the vault is refused rather than cleaned away.
+- The recipient record `<name>.age.json` moves in the same operation, under the
+  new name: a record beside a file of another name is not that file's record.
+  When the file moves and its record does not, the result says exactly that.
+- A destination that exists, as a file or as a record, is refused rather than
+  replaced. A name differing only in case is a rename of the same file.
+- Nothing is decrypted or re-encrypted: the file opens afterwards exactly as it
+  did, for the same keys.
+- A folder row is refused, as when deleting: files are moved one by one. A file
+  open in memory is refused with a note to close it first.
+- Git is not run. The move reaches the other machines with the next `p`.
+
+The cursor follows the file to its new place, since the tree sorts it
+elsewhere. The folder is scanned again afterwards.
+
 ## Deleting a file (E5)
 
 `d` on a file in the vault list moves it out of the vault.
@@ -473,3 +501,5 @@ These are known and not handled.
 15. **E6 — Publishing to git.** `p`: add, commit and push through the git on
     `PATH`, with `internal/gitrepo` holding the steps.
 16. **E7 — Updating from git.** `f`: fetch, then a fast-forward only.
+17. **E8 — Renaming and moving.** `r`, with `internal/cred/vaultmove` holding
+    the rules and the file operations.
