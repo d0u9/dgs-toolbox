@@ -89,6 +89,7 @@ the name; it is not repeated inside the file.
 
 ```json
 {
+  "comment": "the black box under the desk",
   "keys": [
     {
       "public_key": "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p",
@@ -107,6 +108,11 @@ the name; it is not repeated inside the file.
 
 - The top level is an object, so a host can gain fields without the file
   changing shape.
+- `comment` is optional: the owner's note about the machine — whose it is,
+  where it stands — which a host name does not say. It is plaintext in a folder
+  that is shared, so it holds no secret. `dgs` never writes it by itself; it is
+  edited on the keys page or by hand, and is kept as it is when a key is added,
+  removed or the host is renamed.
 - `public_key` is an age X25519 recipient (`age1…`), or an `ssh-ed25519` or
   `ssh-rsa` public key. A trailing comment on an SSH key is not part of the key.
   An RSA key shorter than 2048 bits is an error. Other SSH key types, which age
@@ -187,7 +193,7 @@ the left, the selected entry on the right.
   fingerprint. An unregistered identity says to add its public key to
   `hosts/<name>.json`.
 - **Hosts** — each host, marked `!` when it has warnings. The right shows the
-  file, the groups it belongs to, its warnings, and its keys as a list: the
+  file, the groups it belongs to, its comment or that it has none, its warnings, and its keys as a list: the
   description, then the type and shortened key or fingerprint, marked when this
   machine holds the identity. The full public key of the key under the cursor is
   shown below. The key list is its own data field, reached with `Tab` or
@@ -224,6 +230,8 @@ still edited by hand.
 | `d` | a host's keys | **Unregister** the key under the cursor. |
 | `d` | Hosts | **Delete** the host under the cursor, with all its public keys; see below. |
 | `a` | Hosts | **Add** a public key from another machine — a cloud server that never runs `dgs` — to a host. |
+| `r` | Hosts | **Rename** the host under the cursor; see below. |
+| `m` | Hosts | **Comment**: write, change or remove the host's note. |
 
 ### Where a new identity goes
 
@@ -283,6 +291,29 @@ The host file is rewritten through a temporary file and renamed into place,
 keeping its other keys and all their fields in order. Keys are written in
 canonical form; an SSH key's comment moves to its `comment` field when `dgs`
 adds the key.
+
+### Renaming
+
+`r` on a host asks for a new name in a one-field form, then confirms. The name
+follows the host name rules above. A name another host already has is refused:
+keys are not merged here. A name that differs only in case is a rename, since
+that is what the host is called on the keys page.
+
+The host file is renamed, not rewritten, so every key and every field it
+carries stays as it is. Its public keys do not change, so files already
+encrypted to the host can still be opened. Every group naming the host is
+rewritten to the new name; as when a host is deleted, each group is rewritten
+from its file, so members that did not resolve are kept. Nothing records the
+old name, so anything outside the recipient folder that names the host is
+changed by hand.
+
+### The comment
+
+`m` on a host opens one field holding its comment, and `Enter` confirms. An
+empty comment removes the field. Only the comment changes: the keys and every
+field they carry stay as they are, since the file is rewritten from what was
+loaded. A host whose file has an error is not loaded, so it cannot be commented
+until the file is fixed.
 
 ### Deleting
 

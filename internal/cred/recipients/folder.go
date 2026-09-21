@@ -62,6 +62,8 @@ type Key struct {
 // Host is a machine and the keys it can decrypt with.
 type Host struct {
 	Name string
+	// Comment is the owner's note about the machine, empty when there is none.
+	Comment string
 	// File is the host file, relative to the folder.
 	File string
 	Keys []Key
@@ -133,7 +135,10 @@ func (f Folder) Host(name string) (Host, bool) {
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9._-]*$`)
 
 type hostFile struct {
-	Keys []keyFile `json:"keys"`
+	// Comment is the owner's note about the machine: whose it is, where it
+	// stands. A host is otherwise only a name.
+	Comment string    `json:"comment,omitempty"`
+	Keys    []keyFile `json:"keys"`
 }
 
 type keyFile struct {
@@ -291,7 +296,7 @@ func (l *loader) host(path, name string) (Host, bool) {
 	if !l.decode(path, &file) {
 		return Host{}, false
 	}
-	host := Host{Name: name, File: path}
+	host := Host{Name: name, File: path, Comment: strings.TrimSpace(file.Comment)}
 	seen := map[string]int{}
 	ok := true
 	for i, entry := range file.Keys {

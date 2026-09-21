@@ -235,6 +235,8 @@ func keyPress(t *testing.T, m keysModel, keys ...string) keysModel {
 			msg = tea.KeyMsg{Type: tea.KeyTab}
 		case "esc":
 			msg = tea.KeyMsg{Type: tea.KeyEsc}
+		case "backspace":
+			msg = tea.KeyMsg{Type: tea.KeyBackspace}
 		case "down":
 			msg = tea.KeyMsg{Type: tea.KeyDown}
 		default:
@@ -557,4 +559,94 @@ func newAgeRecipient(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return identity.Recipient().String()
+}
+
+func TestRenameHost(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, "recipients")
+	key := newAgeRecipient(t)
+	writeFile(t, filepath.Join(folder, "hosts", "nas.json"), `{"keys":[{"public_key":"`+key+`","description":"a"}]}`, 0o644)
+	writeFile(t, filepath.Join(folder, "hosts", "vps.json"), `{"keys":[{"public_key":"`+newAgeRecipient(t)+`","description":"b"}]}`, 0o644)
+	writeFile(t, filepath.Join(folder, "groups", "g-all.json"), `{"hosts":["NAS","vps"]}`, 0o644)
+	path := filepath.Join(root, "credentials.json")
+	writeFile(t, path, `{"recipients":"`+folder+`"}`, 0o600)
+
+	m := keyPress(t, loadedModel(t, path), "]")
+	m = keyPress(t, m, "r")
+	if m.renameFlow == nil || m.renameFlow.host != "nas" || !m.renameFlow.form.IsActive() {
+		t.Fatalf("r did not open the rename form: %+v", m.renameFlow)
+	}
+	if got := m.renameFlow.form.Value(nameFieldID); got != "nas" {
+		t.Errorf("name starts as %q", got)
+	}
+	// A name another host already has is refused.
+	m = keyPress(t, m, "backspace", "backspace", "backspace")
+	m = typeInto(t, m, "vps")
+	m = keyPress(t, m, "enter", "enter")
+	if m.renameFlow.stage != keyForm || !strings.Contains(m.renameFlow.err, "vps is already a host") {
+		t.Fatalf("duplicate: stage %d err %q", m.renameFlow.stage, m.renameFlow.err)
+	}
+	m = keyPress(t, m, "up", "enter", "backspace", "backspace", "backspace")
+	m = typeInto(t, m, "nas-01")
+	m = keyPress(t, m, "enter", "enter")
+	if m.renameFlow.stage != keyConfirm {
+		t.Fatalf("stage %d err %q", m.renameFlow.stage, m.renameFlow.err)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "RENAME HOST") || !strings.Contains(view, "hosts/nas-01.json") || !strings.Contains(view, "g-all") {
+		t.Errorf("confirm:\n%s", view)
+	}
+	m = keyPress(t, m, "tab", "enter")
+	if m.renameFlow != nil {
+		t.Fatalf("flow open: stage %d err %q", m.renameFlow.stage, m.renameFlow.err)
+	}
+	if !strings.Contains(m.notice, "Renamed nas to nas-01") || !strings.Contains(m.notice, "g-all.json") {
+		t.Errorf("notice %q", m.notice)
+	}
+	host, ok := m.snap.folder.Host("nas-01")
+	if !ok || len(host.Keys) != 1 || host.Keys[0].Key != key {
+		t.Fatalf("host %+v", host)
+	}
+	if _, ok := m.snap.folder.Host("nas"); ok {
+		t.Error("old name still loads")
+	}
+	if len(m.snap.folder.Groups) != 1 || strings.Join(m.snap.folder.Groups[0].Hosts, ",") != "nas-01,vps" {
+		t.Errorf("groups %+v", m.snap.folder.Groups)
+	}
+	// The cursor follows the renamed host, which now sorts first.
+	if selected, _ := m.selectedHost(); selected.Name != "nas-01" {
+		t.Errorf("selected %+v", selected)
+	}
+}
+
+func TestHostComment(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, "recipients")
+	writeFile(t, filepath.Join(folder, "hosts", "nas.json"), `{"keys":[{"public_key":"`+newAgeRecipient(t)+`","description":"a"}]}`, 0o644)
+	path := filepath.Join(root, "credentials.json")
+	writeFile(t, path, `{"recipients":"`+folder+`"}`, 0o600)
+
+	m := keyPress(t, loadedModel(t, path), "]")
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "none; m adds one") {
+		t.Errorf("hosts view:\n%s", view)
+	}
+	m = keyPress(t, m, "m")
+	if m.hostComment == nil || m.hostComment.host.Name != "nas" {
+		t.Fatalf("m did not open the comment: %+v", m.hostComment)
+	}
+	m = typeInto(t, m, "under the desk")
+	m = keyPress(t, m, "enter")
+	if !m.hostComment.confirming {
+		t.Fatal("no confirmation")
+	}
+	m = keyPress(t, m, "tab", "enter")
+	if m.hostComment != nil {
+		t.Fatalf("flow open: %+v", m.hostComment)
+	}
+	host, _ := m.snap.folder.Host("nas")
+	if host.Comment != "under the desk" || len(host.Keys) != 1 {
+		t.Fatalf("host %+v", host)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "under the desk") {
+		t.Errorf("hosts view:\n%s", view)
+	}
 }
