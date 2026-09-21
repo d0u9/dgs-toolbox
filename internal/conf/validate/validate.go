@@ -557,6 +557,7 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	// which rules 17 and 18 below then check the published names of.
 	type downstream struct {
 		route string
+		entry string
 		hop   derive.Hop
 	}
 	downstreamsOf := map[string][]downstream{}
@@ -572,7 +573,7 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 				if err != nil {
 					continue // rule 4 again.
 				}
-				downstreamsOf[cur.Instance] = append(downstreamsOf[cur.Instance], downstream{route: routeName, hop: next})
+				downstreamsOf[cur.Instance] = append(downstreamsOf[cur.Instance], downstream{route: routeName, entry: cur.Port, hop: next})
 				continue
 			}
 			if prev, ok := successors[cur.Instance]; ok {
@@ -596,19 +597,61 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		publishedOf[id] = names
 	}
 
-	// Rule 17: every port a fan-out instance reaches declares `published`.
-	// Without it the proxy has nothing to tell one downstream from another,
-	// and it would render a site block with no name to match on.
+	// dispatchesBy is how a fan-out instance tells its routes apart, which
+	// decides which of the two rules below applies to it.
+	dispatchesBy := func(instance string) string {
+		r, ok := realInstances[instance]
+		if !ok {
+			return confgen.DispatchName
+		}
+		return manifests[r.inst.Service].DispatchesBy()
+	}
+
 	var fanOutIDs []string
 	for id := range downstreamsOf {
 		fanOutIDs = append(fanOutIDs, id)
 	}
 	sort.Strings(fanOutIDs)
+
+	// Rule 17: every port a fan-out instance dispatching by name reaches
+	// declares `published`. Without it the proxy has nothing to tell one
+	// downstream from another, and it would render a site block with no name
+	// to match on. An instance dispatching by port needs no such name: what
+	// tells its routes apart is which of its own ports they arrived on.
 	for _, id := range fanOutIDs {
+		if dispatchesBy(id) != confgen.DispatchName {
+			continue
+		}
 		for _, d := range downstreamsOf[id] {
 			if publishedOf[d.hop.Instance][d.hop.Port] == "" {
 				add("instance %q reaches %s:%s in route %q, which declares no published name to tell it apart from the other downstreams",
 					id, d.hop.Instance, d.hop.Port, d.route)
+			}
+		}
+	}
+
+	// Rule 22: two routes entering the same port of an instance that
+	// dispatches by port have the same successor. `downstreams: many` lifts
+	// rule 8 for the instance as a whole, and this puts it back one level
+	// down, where such a service actually decides: a relay has one next hop
+	// per listening port, and two routes disagreeing about it would render
+	// two endpoints on one port going to different places.
+	for _, id := range fanOutIDs {
+		if dispatchesBy(id) != confgen.DispatchPort {
+			continue
+		}
+		type seen struct{ route, next string }
+		byEntry := map[string]seen{}
+		for _, d := range downstreamsOf[id] {
+			next := d.hop.Instance + ":" + d.hop.Port
+			prev, ok := byEntry[d.entry]
+			if !ok {
+				byEntry[d.entry] = seen{route: d.route, next: next}
+				continue
+			}
+			if prev.next != next {
+				add("instance %q dispatches by port, and its port %q has different successors in routes %q and %q: a port listens for one next hop",
+					id, d.entry, prev.route, d.route)
 			}
 		}
 	}
@@ -622,8 +665,16 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	// at it. A reverse proxy tells its downstreams apart by name alone, so a
 	// name shared by a port it fronts matches two site blocks. And two ports
 	// on one number and transport cannot be told apart by anyone dialing it.
+	// Only a fan-out that dispatches by name fronts anything in the sense
+	// this rule means. A relay picks its next hop by the port a connection
+	// arrived on and matches no name at all, so two ports behind one relay
+	// sharing a published name is the ordinary case of one machine answering
+	// to one name on two numbers.
 	fronted := map[string]bool{}
-	for _, ds := range downstreamsOf {
+	for id, ds := range downstreamsOf {
+		if dispatchesBy(id) != confgen.DispatchName {
+			continue
+		}
 		for _, d := range ds {
 			fronted[d.hop.Instance+":"+d.hop.Port] = true
 		}

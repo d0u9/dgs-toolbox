@@ -294,3 +294,50 @@ func TestLoad_Downstreams(t *testing.T) {
 		}
 	}
 }
+
+// TestLoad_DispatchWithoutFanOutIsBroken covers `dispatch` written on a
+// service with one successor. It answers "which of this instance's several
+// routes is this", so a service that has one route through each instance has
+// nothing for it to tell apart, and writing it is a fan-out someone meant to
+// declare and did not.
+func TestLoad_DispatchWithoutFanOutIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "realm", ManifestFilename), `
+auth: none
+forwards: true
+dispatch: port
+template: templates/config.toml.tmpl
+defaults: document
+output: config.toml
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(got.Services[0].Broken, "downstreams: many") {
+		t.Fatalf("Broken = %q, want it to name the missing fan-out", got.Services[0].Broken)
+	}
+}
+
+// TestLoad_ForwardsWithPerPrincipalAuthIsBroken covers a manifest saying two
+// things that cannot both be true: a program that reads nothing it is given
+// cannot authenticate anyone.
+func TestLoad_ForwardsWithPerPrincipalAuthIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "realm", ManifestFilename), `
+auth: per-principal
+forwards: true
+template: templates/config.toml.tmpl
+defaults: document
+output: config.toml
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(got.Services[0].Broken, "authenticates nobody") {
+		t.Fatalf("Broken = %q, want the contradiction named", got.Services[0].Broken)
+	}
+}
