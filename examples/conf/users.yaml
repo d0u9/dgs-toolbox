@@ -39,7 +39,7 @@ users:
   bob:
     devices: none
     export: link
-    access: [sfo-01-ss, sfo-01-hy2]
+    access: [sfo-01-ss, sfo-01-hy2, hkg-sfo-01-ss]
 
   guest:
     devices: none

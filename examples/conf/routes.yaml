@@ -23,6 +23,13 @@ routes:
   sfo-01-hy2:
     hops: [hy2-sfo01:users]
 
+  # The same exit, reached through a relay that terminates nothing. Two hops,
+  # and the account is the one at the end: a person holding this line and the
+  # line above uses one password and dials two different addresses. The name
+  # carries both ends, because a person picking it is choosing both.
+  hkg-sfo-01-ss:
+    hops: [fwd-hkg01:ss, ss-sfo01:users]
+
   # A service reached from a browser shares the name table with the proxy
   # lines: a person picks from one list and does not care which kind it is.
   # Two hops, because a reverse proxy is in front — adding a service behind

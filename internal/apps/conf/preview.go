@@ -283,6 +283,15 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 		return nil, nil
 	}
 
+	// An instance whose own service forwards holds no credential at the hop
+	// it dials: derive granted it none, and there is no file under it. It
+	// reads an address and a port and moves bytes between them. See
+	// docs/apps/conf/inventory.md#a-service-that-forwards.
+	relaying := false
+	if inst := m.instanceByID(instance); inst != nil {
+		relaying = m.l.manifests[inst.Service].Forwards
+	}
+
 	var group, slot string
 	if e := edge; e.FromInstance != "" {
 		// A derived client instance's principal is a device or an unmanaged
@@ -293,20 +302,30 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 		group, slot = instance, inventory.DefaultCredential
 	}
 
+	// Where the credential comes from. It is the hop this instance dials for
+	// every ordinary edge, and the hop behind it when that one forwards: a
+	// relay terminates nothing, so a client dials one machine and
+	// authenticates against another. derive resolved which, and reading
+	// Terminal here is the whole of the difference.
+	creds := edge.Terminal
+	if creds.Instance == "" {
+		creds = edge.To
+	}
+
 	// A hop into a service whose inbound side does not authenticate has no
 	// credential to read: a grant on one of its ports implies nothing, and
 	// there is no file under it. Asking anyway is how a reverse proxy in
 	// front of a web service used to fail — it dials a port that
 	// authenticates nobody.
 	var authenticates bool
-	if to := m.instanceByID(edge.To.Instance); to != nil {
+	if to := m.instanceByID(creds.Instance); to != nil && !relaying {
 		authenticates = m.l.manifests[to.Service].Auth == confgen.AuthPerPrincipal
 	}
 
 	var secret string
 	if m.secretsDir != "" && slot != "" && authenticates {
 		v, err := secretstore.ReadValue(m.secretsDir, secretstore.Path{
-			Instance: edge.To.Instance, Port: edge.To.Port, Group: group, Name: slot,
+			Instance: creds.Instance, Port: creds.Port, Group: group, Name: slot,
 		})
 		if err != nil {
 			return nil, err
@@ -320,7 +339,7 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 	// server will match, not the path segment the secret is filed under.
 	account := slot
 	for _, g := range m.l.derived.Grants {
-		if g.Instance == edge.To.Instance && g.Port == edge.To.Port &&
+		if g.Instance == creds.Instance && g.Port == creds.Port &&
 			g.Principal.Group == group && g.Principal.Slot == slot {
 			account = g.Principal.Name
 			break
@@ -350,9 +369,9 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 	// question asked here is what this target declared, not what the hop it
 	// reaches happens to publish. A reverse proxy in front of a web service
 	// declares nothing and is handed nothing.
-	if wants.Wants(confgen.UpstreamShared) && m.secretsDir != "" {
-		handed := destinationSelf(m, edge.To.Instance, edge.To.Port)
-		own, err := secretstore.ReadSelf(m.secretsDir, edge.To.Instance)
+	if wants.Wants(confgen.UpstreamShared) && m.secretsDir != "" && !relaying {
+		handed := destinationSelf(m, creds.Instance, creds.Port)
+		own, err := secretstore.ReadSelf(m.secretsDir, creds.Instance)
 		if err != nil {
 			return nil, err
 		}
@@ -364,7 +383,7 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 			v, ok := lookupSelf(own, inventory.ParseSelfRef(ref))
 			if !ok {
 				return nil, fmt.Errorf("%s: %s needs the shared secrets of %s:%s, and %q is missing",
-					edge.To.Instance, instance, edge.To.Instance, edge.To.Port, ref)
+					creds.Instance, instance, creds.Instance, creds.Port, ref)
 			}
 			values = append(values, v)
 		}
@@ -377,11 +396,27 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 	// from holding a second copy of it. Nothing is filtered: these are
 	// configuration, and the secrets a client is given arrive as shared.
 	if wants.Wants(confgen.UpstreamValues) {
-		if to := m.instanceByID(edge.To.Instance); to != nil && len(to.Values) > 0 {
+		if to := m.instanceByID(creds.Instance); to != nil && len(to.Values) > 0 {
 			out["values"] = to.Values
 		} else {
 			out["values"] = map[string]any{}
 		}
+	}
+	// A forwarded chain has two ends, and a client's file needs both: it
+	// dials the relay's address and port, and everything else about the
+	// connection — the name on the certificate it must ask for, the name
+	// the protocol is published under — belongs to the hop that terminates
+	// it. Only written when the two differ, so a template can tell a
+	// forwarded route from an ordinary one by asking whether it is there.
+	if creds.Instance != edge.To.Instance {
+		exit := map[string]any{"instance": creds.Instance, "port": creds.Port}
+		if to := m.instanceByID(creds.Instance); to != nil {
+			exit["number"] = to.Ports[creds.Port].Number
+			if p := to.Ports[creds.Port].Published; p != "" {
+				exit["published"] = p
+			}
+		}
+		out["exit"] = exit
 	}
 	return out, nil
 }
