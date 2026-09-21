@@ -19,14 +19,21 @@ const PublishEverywhere = "0.0.0.0"
 const PublishLoopback = "127.0.0.1"
 
 // Mapping is where an instance's port is reached on the machine the process
-// runs on: the address a container runtime publishes it at, and the number,
-// which is the port's own. There is no second number to choose from — the
-// program's own configuration is rendered from the same field, so a mapping
-// changing it would point at a listener that does not exist. See
-// docs/apps/conf/export.md#a-second-file-what-deploys-it.
+// runs on: the addresses a container runtime publishes it at, and the
+// number, which is the port's own. There is no second number to choose
+// from — the program's own configuration is rendered from the same field,
+// so a mapping changing it would point at a listener that does not exist.
+// See docs/apps/conf/export.md#a-second-file-what-deploys-it.
 type Mapping struct {
-	Address string
-	Number  int
+	// Addresses is every address this port is published at, in the
+	// inventory's network preference order, with loopback first when it is
+	// among them. It is a list because one port may be reached over more
+	// than one network: a machine with a port on each of two segments
+	// serves both, and a port reached by a proxy on its own node and by
+	// another machine needs loopback as well as the address that machine
+	// dials. It is never empty.
+	Addresses []string
+	Number    int
 }
 
 // Mappings is the host mapping of each of one instance's ports, by port
@@ -83,8 +90,13 @@ func (m *Model) Mappings(inv *inventory.Root, instance string) map[string]Mappin
 
 	out := make(map[string]Mapping, len(inst.Ports))
 	for name, port := range inst.Ports {
-		entered, fromElsewhere := false, false
-		network := ""
+		// Which networks this port is entered over, and whether anything
+		// on its own node enters it. The two are independent: a port a
+		// local proxy dials and another machine dials is reached at
+		// loopback and at this node's address, and publishing only one of
+		// them leaves the other end dialling a number nothing published.
+		local, entered := false, false
+		networks := map[string]bool{}
 		for _, e := range m.Edges {
 			if e.To.Instance != instance || e.To.Port != name {
 				continue
@@ -95,27 +107,66 @@ func (m *Model) Mappings(inv *inventory.Root, instance string) map[string]Mappin
 				from = e.FromInstance
 			}
 			if nodeOf[from] == node.ID {
+				local = true
 				continue
 			}
-			// The first network in preference order any edge from another
-			// node resolved on, which is the one this node is reached at.
-			if !fromElsewhere || preferredBefore(inv, e.Network, network) {
-				network, fromElsewhere = e.Network, true
-			}
+			networks[e.Network] = true
 		}
 
-		address := PublishLoopback
-		switch {
-		case entered && !fromElsewhere:
-		case fromElsewhere:
-			address = bindable(node.Networks[network])
-		default:
-			// Nothing entered it, so no edge chose a network: the node's
-			// own preference order picks one, as an edge into it would
-			// have.
-			address = bindable(firstAddress(inv, node))
+		var addresses []string
+		if local {
+			addresses = append(addresses, PublishLoopback)
 		}
-		out[name] = Mapping{Address: address, Number: port.Number}
+		switch {
+		case len(networks) > 0:
+			for _, network := range networkOrder(inv) {
+				if networks[network] {
+					addresses = append(addresses, bindable(node.Networks[network]))
+				}
+			}
+		case !entered:
+			// Nothing entered it, so no edge chose a network: it is
+			// reached from outside and the inventory does not say from
+			// where, which every network this node answers on satisfies.
+			for _, network := range networkOrder(inv) {
+				if address, ok := node.Networks[network]; ok {
+					addresses = append(addresses, bindable(address))
+				}
+			}
+			if len(addresses) == 0 {
+				// A node written at no address at all, reached from
+				// outside: there is no interface to name, and publishing
+				// nothing would render a container nobody can reach.
+				addresses = append(addresses, PublishEverywhere)
+			}
+		}
+		out[name] = Mapping{Addresses: collapse(addresses), Number: port.Number}
+	}
+	return out
+}
+
+// collapse is the addresses a port actually binds: PublishEverywhere alone
+// when it is among them, since it already covers every interface and a
+// second bind on one of them would fail; the list deduplicated and in the
+// order given otherwise; and PublishLoopback alone when there is nothing
+// else, which is a port only its own node enters — and a port nothing
+// enters on a node with no address anywhere, where there is no interface
+// this derivation can name.
+func collapse(addresses []string) []string {
+	out := make([]string, 0, len(addresses))
+	seen := map[string]bool{}
+	for _, address := range addresses {
+		if address == PublishEverywhere {
+			return []string{PublishEverywhere}
+		}
+		if seen[address] {
+			continue
+		}
+		seen[address] = true
+		out = append(out, address)
+	}
+	if len(out) == 0 {
+		return []string{PublishLoopback}
 	}
 	return out
 }
@@ -129,25 +180,6 @@ func bindable(address string) string {
 	return address
 }
 
-// firstAddress is the node's address on the first network it has one on, in
-// the inventory's preference order, or empty when it has none anywhere.
-func firstAddress(inv *inventory.Root, node inventory.Node) string {
-	for _, network := range networkOrder(inv) {
-		if address, ok := node.Networks[network]; ok {
-			return address
-		}
-	}
-	return ""
-}
-
-// preferredBefore reports whether network a comes before b in the
-// inventory's preference order. An unnamed network comes last, as the
-// universal one appended to the order does.
-func preferredBefore(inv *inventory.Root, a, b string) bool {
-	order := networkOrder(inv)
-	return indexOf(order, a) < indexOf(order, b)
-}
-
 // networkOrder is networks.yaml's order with the universal network after
 // it, which is how resolveAddress reads it too.
 func networkOrder(inv *inventory.Root) []string {
@@ -156,15 +188,4 @@ func networkOrder(inv *inventory.Root) []string {
 		order = append(append([]string{}, order...), inv.Universal)
 	}
 	return order
-}
-
-// indexOf is a network's place in the preference order, or one past its end
-// for a name that is not in it.
-func indexOf(order []string, network string) int {
-	for i, n := range order {
-		if n == network {
-			return i
-		}
-	}
-	return len(order)
 }
