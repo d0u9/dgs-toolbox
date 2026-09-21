@@ -29,6 +29,13 @@ const (
 	Button
 	MultiCheckbox
 	Number
+	// TextArea is a Text field whose one-line value is shown wrapped over as
+	// many rows as it needs, so a long value such as a public key stays inside
+	// the form instead of overflowing its width.
+	TextArea
+	// Combo is a Text field that also offers a list of known values: Enter
+	// types a new one, Space chooses an existing one.
+	Combo
 )
 
 type Field struct {
@@ -52,18 +59,21 @@ type Model struct {
 	original    string
 	choice      int
 	multiChoice int
+	// listing is set while a Combo shows its known values.
+	listing bool
 	// editor edits the active Text field, so the cursor moves and the usual
 	// line-editing keys work.
 	editor textinput.Model
 }
 
 var (
-	accent     = lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"}
-	muted      = lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#94A3B8"}
-	focusStyle = lipgloss.NewStyle().Bold(true).Foreground(accent)
-	mutedStyle = lipgloss.NewStyle().Foreground(muted)
-	labelStyle = lipgloss.NewStyle().Foreground(muted).Width(16)
-	rowStyle   = lipgloss.NewStyle().Bold(true).Foreground(accent).Background(
+	accent      = lipgloss.AdaptiveColor{Light: "#0F766E", Dark: "#5EEAD4"}
+	muted       = lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#94A3B8"}
+	focusStyle  = lipgloss.NewStyle().Bold(true).Foreground(accent)
+	mutedStyle  = lipgloss.NewStyle().Foreground(muted)
+	labelStyle  = lipgloss.NewStyle().Foreground(muted).Width(16)
+	cursorStyle = lipgloss.NewStyle().Reverse(true)
+	rowStyle    = lipgloss.NewStyle().Bold(true).Foreground(accent).Background(
 		lipgloss.AdaptiveColor{Light: "#DDF3F0", Dark: "#173F3B"},
 	)
 )
@@ -206,8 +216,16 @@ func (m *Model) SetValue(id, value string) {
 
 func (m Model) CapturesText() bool {
 	field, ok := m.focusedField()
-	return ok && m.activeID == field.ID && field.Kind == Text
+	return ok && m.activeID == field.ID && !m.listing && isTextKind(field.Kind)
 }
+
+func isTextKind(kind Kind) bool {
+	return kind == Text || kind == TextArea || kind == Combo
+}
+
+// IsListing reports whether a Combo's value list is open, so its owner leaves
+// every key to the control.
+func (m Model) IsListing() bool { return m.listing }
 
 func (m Model) IsActive() bool { return m.activeID != "" }
 
@@ -232,9 +250,18 @@ func (m *Model) HandleInteraction(key string) bool {
 			m.begin(field)
 			return true
 		}
-	case Text:
+	case Text, TextArea:
 		if key == "enter" {
 			m.begin(field)
+			return true
+		}
+	case Combo:
+		if key == "enter" {
+			m.begin(field)
+			return true
+		}
+		if key == " " && len(field.Options) > 0 {
+			m.beginList(field)
 			return true
 		}
 	case Radio:
@@ -270,10 +297,11 @@ func (m *Model) HandleInteraction(key string) bool {
 // paste was used.
 func (m *Model) Paste(text string) bool {
 	field, ok := m.focusedField()
-	if !ok || field.Kind != Text {
+	if !ok || !isTextKind(field.Kind) {
 		return false
 	}
-	if m.activeID == "" {
+	if m.activeID == "" || m.listing {
+		m.listing = false
 		m.begin(field)
 	}
 	cleaned := []rune(strings.TrimRight(strings.Map(func(r rune) rune {
@@ -295,9 +323,18 @@ func (m *Model) begin(field Field) {
 	m.activeID = field.ID
 	m.original = field.Value
 	m.choice = optionIndex(field.Options, field.Value)
-	if field.Kind == Text {
+	m.listing = false
+	if isTextKind(field.Kind) {
 		m.editor = newEditor(field.Value)
 	}
+}
+
+// beginList opens a Combo's known values without discarding its typed value.
+func (m *Model) beginList(field Field) {
+	m.activeID = field.ID
+	m.original = field.Value
+	m.choice = optionIndex(field.Options, field.Value)
+	m.listing = true
 }
 
 func newEditor(value string) textinput.Model {
@@ -367,6 +404,22 @@ func (m *Model) beginMulti(field Field) {
 }
 
 func (m *Model) handleActive(field Field, key string) bool {
+	if m.listing {
+		switch key {
+		case "esc":
+			m.activeID, m.listing = "", false
+		case "enter", " ":
+			if m.choice < len(field.Options) {
+				m.fields[m.focus].Value = field.Options[m.choice]
+			}
+			m.activeID, m.listing = "", false
+		case "up", "k", "shift+tab":
+			m.choice = (m.choice - 1 + len(field.Options)) % len(field.Options)
+		case "down", "j", "tab":
+			m.choice = (m.choice + 1) % len(field.Options)
+		}
+		return true
+	}
 	if field.Kind == MultiCheckbox {
 		minimum := 0
 		if field.SelectAll {
@@ -414,7 +467,7 @@ func (m *Model) handleActive(field Field, key string) bool {
 		}
 		return true
 	}
-	if field.Kind != Text {
+	if !isTextKind(field.Kind) {
 		return true
 	}
 	m.editText(key)
@@ -529,6 +582,31 @@ func (m Model) render(field Field, focused bool, width int) string {
 			return highlightRow(marker+labelStyle.Render(field.Label)+mutedStyle.Render("No values"), focused, width)
 		}
 		return strings.Join(rows, "\n")
+	case TextArea:
+		rows := m.textAreaRows(field, focused, width)
+		for index := range rows {
+			rows[index] = highlightRow(rows[index], focused, width)
+		}
+		return strings.Join(rows, "\n")
+	case Combo:
+		value = field.Value
+		if m.activeID == field.ID && !m.listing {
+			value = m.editor.View()
+		} else if len(field.Options) > 0 {
+			value += "  ▾"
+		}
+		if m.listing && m.activeID == field.ID {
+			rows := []string{marker + labelStyle.Render(field.Label) + style.Render(value)}
+			for index, option := range field.Options {
+				choiceMarker := "    "
+				if index == m.choice {
+					choiceMarker = focusStyle.Render("  › ")
+				}
+				rows = append(rows, choiceMarker+style.Render(option))
+			}
+			rows[0] = highlightRow(rows[0], focused, width)
+			return strings.Join(rows, "\n")
+		}
 	case Button:
 		return "  " + pageactions.Inline(field.Label, focused)
 	case Number:
@@ -540,6 +618,67 @@ func (m Model) render(field Field, focused bool, width int) string {
 		}
 	}
 	return highlightRow(marker+labelStyle.Render(field.Label)+style.Render(value), focused, width)
+}
+
+// labelWidth is the cell width every label column is rendered in.
+const labelWidth = 16
+
+// textAreaRows lays a one-line value out over as many rows as its width needs.
+// The first row carries the label; continuation rows are indented under the
+// value column.
+func (m Model) textAreaRows(field Field, focused bool, width int) []string {
+	marker := "  "
+	style := lipgloss.NewStyle()
+	if focused {
+		marker = "› "
+		style = focusStyle
+	}
+	indent := len(marker) + labelWidth
+	inner := width - indent
+	if width <= 0 {
+		inner = 60
+	}
+	if inner < 8 {
+		inner = 8
+	}
+	value := []rune(field.Value)
+	cursor := -1
+	if m.activeID == field.ID {
+		value = []rune(m.editor.Value())
+		cursor = m.editor.Position()
+	}
+	chunks := chunkRunes(value, inner)
+	rows := make([]string, 0, len(chunks))
+	for index, chunk := range chunks {
+		text := string(chunk)
+		if cursor >= 0 {
+			start := index * inner
+			if cursor >= start && cursor < start+len(chunk) {
+				at := cursor - start
+				text = string(chunk[:at]) + cursorStyle.Render(string(chunk[at])) + string(chunk[at+1:])
+			} else if cursor == len(value) && index == len(chunks)-1 {
+				text += cursorStyle.Render(" ")
+			}
+		}
+		prefix := strings.Repeat(" ", indent)
+		if index == 0 {
+			prefix = marker + labelStyle.Render(field.Label)
+		}
+		rows = append(rows, prefix+style.Render(text))
+	}
+	return rows
+}
+
+func chunkRunes(value []rune, size int) [][]rune {
+	if len(value) == 0 {
+		return [][]rune{{}}
+	}
+	var chunks [][]rune
+	for start := 0; start < len(value); start += size {
+		end := min(start+size, len(value))
+		chunks = append(chunks, value[start:end])
+	}
+	return chunks
 }
 
 func highlightRow(row string, focused bool, width int) string {
@@ -569,6 +708,12 @@ func (m *Model) Click(ids []string, x, y int) (string, bool) {
 		if m.activeID == id && field.Kind == Option {
 			height += len(field.Options)
 		}
+		if m.activeID == id && field.Kind == Combo && m.listing {
+			height += len(field.Options)
+		}
+		if field.Kind == TextArea {
+			height = len(m.textAreaRows(field, false, 0))
+		}
 		if field.Kind == MultiCheckbox {
 			height = max(1, len(field.Options)+boolInt(field.SelectAll))
 		}
@@ -584,18 +729,18 @@ func (m *Model) Click(ids []string, x, y int) (string, bool) {
 			m.activeID = ""
 		}
 		m.focus = fieldIndex
-		if field.Kind == Option && m.activeID == id && y > row {
+		if (field.Kind == Option || (field.Kind == Combo && m.listing)) && m.activeID == id && y > row {
 			choice := y - row - 1
 			if choice < len(field.Options) {
 				m.fields[fieldIndex].Value = field.Options[choice]
-				m.activeID = ""
+				m.activeID, m.listing = "", false
 				return id, true
 			}
 		}
 		switch field.Kind {
 		case Checkbox:
 			m.fields[fieldIndex].Checked = !field.Checked
-		case Option, Text:
+		case Option, Text, TextArea, Combo:
 			m.begin(field)
 		case Radio:
 			start := 18
