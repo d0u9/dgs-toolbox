@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -159,6 +160,60 @@ func TestBuildGraph_OrdinaryEdgesStillCarryThePrincipal(t *testing.T) {
 	for _, e := range buildGraph(m.l, "test").Edges {
 		if strings.Contains(e.Label, ".") && strings.Contains(e.Label, "example") {
 			t.Fatalf("edge %s -> %s carries %q, want a principal", e.From, e.To, e.Label)
+		}
+	}
+}
+
+// TestBuildGraph_AContainerisedProcessIsBadged: the badge sits on the
+// process box, not on the ports inside it. A container boundary and one
+// running program are the same line, and repeating it per port would state
+// one fact several times. What it tells a reader is how to read the bind
+// under it — see docs/apps/conf/inspect.md#the-connectivity-graph.
+func TestBuildGraph_AContainerisedProcessIsBadged(t *testing.T) {
+	root := buildInspectRoot(t)
+	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
+id: srv
+networks:
+  internet: 203.0.113.10
+instances:
+  - id: ss-srv
+    service: ssserver
+    runtime: docker
+    ports:
+      main: {port: 38250, self: [psk.main]}
+      alt: {port: 49217, self: [psk.alt]}
+`)
+	m := newInspectModel(root, "")
+	g := buildGraph(m.l, "test")
+
+	found := false
+	for _, grp := range g.Groups {
+		if grp.ID != "ss-srv" {
+			continue
+		}
+		found = true
+		if grp.Detail != "docker" {
+			t.Fatalf("process ss-srv is badged %q, want %q", grp.Detail, "docker")
+		}
+	}
+	if !found {
+		t.Fatalf("groups = %+v, want the process box", g.Groups)
+	}
+	for _, n := range g.Nodes {
+		if strings.Contains(n.Detail, "docker") {
+			t.Errorf("%s carries the badge, which belongs to the process box", n.ID)
+		}
+	}
+}
+
+// TestBuildGraph_AHostProcessIsNotBadged is the default, and the reason the
+// badge means anything: most processes carry none.
+func TestBuildGraph_AHostProcessIsNotBadged(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	g := buildGraph(m.l, "test")
+	for _, grp := range g.Groups {
+		if grp.ID == "ss-srv" && grp.Detail != "" {
+			t.Fatalf("process ss-srv is badged %q, want nothing for a host process", grp.Detail)
 		}
 	}
 }
