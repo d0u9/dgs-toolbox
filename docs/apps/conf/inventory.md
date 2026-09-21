@@ -1463,6 +1463,55 @@ complete and does not authenticate, which is the worst of the ways this can
 fail. Growing the list is adding a name — an upstream's certificate
 fingerprint, its SNI — not changing the shape of the key.
 
+### A service that forwards
+
+Some machines terminate nothing. A relay in front of a server in another
+country takes the bytes arriving on one of its ports and hands them to the hop
+that follows it, unchanged and unread. A service whose instances do that says
+so:
+
+```yaml
+# services/realm/confgen.yaml
+
+auth: none
+forwards: true
+```
+
+It is not a reverse proxy. A proxy terminates one connection and opens
+another, which is why it authenticates nobody and still needs a site name to
+match on. A forwarder does not have the two connections: it has one stream of
+bytes with a machine at each end, and the protocol inside them is not its
+business.
+
+What it changes is where a client's credential comes from. The client dials
+the relay's address and port, and authenticates against the hop behind it, so
+a route entering a forwarder is written out as the service that *ends* it, in
+that service's own export form. The grant is on the terminating port, and the
+relay holds nothing: no account table, no secret of its own, nothing to
+rotate. `forwards` with `auth: per-principal`, or with `self`, is a manifest
+that will not load — a program that reads nothing it is given cannot
+authenticate anyone, and saying both is saying a thing that cannot happen.
+
+A forwarded chain therefore has two ends, and a client's file is built from
+both:
+
+| What | Which end it comes from |
+| --- | --- |
+| address, port, the name the port is published at | the relay: it is what the client dials |
+| account, secret, `shared`, `values` | the hop that terminates the chain |
+
+A template reaching the far end reads `(upstream).exit`, which holds that
+hop's instance, port, number and published name. It is written only when the
+two ends differ, so a template can tell a forwarded route from an ordinary one
+by asking whether it is there. The case it exists for is TLS: a relay in
+Nanjing in front of a server in San Francisco is dialed at the Nanjing name,
+and the certificate is still the San Francisco one, so the client must ask for
+that name and not the one it dialed.
+
+**`dgs` renders the relay's configuration and nothing else.** Whether the
+bytes reach it — a firewall rule, a port range redirected into it — is the
+operator's, the same way deployment is.
+
 ### A service that fans out
 
 A service that is one entrance in front of many says so once:
@@ -1738,6 +1787,10 @@ upstream:    the next hop, resolved: address, port, the name that hop's port
              as shared, an ordered list, and that hop's instance's own values
              as values — absent for a terminal instance, and each of shared
              and values absent from every target that did not declare it.
+             For a hop that forwards, address and port are the relay's, the
+             credential is the terminating hop's, and exit names that hop:
+             its instance, port, number and published name.
+             See a service that forwards
              See what a service needs from its upstream
 downstreams: for an instance whose service declares downstreams: many, the hop
              that follows it in each route through it, resolved: address, port,
@@ -1825,6 +1878,10 @@ failing can be told which level it was reading.
     its `export` is one of the ways the services it reaches offer, and not
     `none`; its `access` names only routes the device's credential opens, and
     the error lists those.
+21. A route does not end on an instance whose service `forwards`. Such a
+    route terminates nowhere: the last hop reads nothing it is given and has
+    nowhere to pass it, and the person granted it would be handed an address
+    with no account, since the account belongs to the hop that ends the chain.
 
 ## Boundaries
 

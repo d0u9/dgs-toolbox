@@ -508,6 +508,38 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		return m.FansOut()
 	}
 
+	// forwards reports whether an instance's service moves bytes through
+	// without terminating them. Like fansOut, it is read from the service:
+	// an instance does not become a relay by accident of where it sits in a
+	// route.
+	forwards := func(instance string) bool {
+		r, ok := realInstances[instance]
+		if !ok {
+			return false
+		}
+		return manifests[r.inst.Service].Forwards
+	}
+
+	// Rule 21: a route does not end on an instance that forwards. Such a
+	// route terminates nowhere: the last hop reads nothing it is given and
+	// has nowhere to pass it, and the client granted it would be handed a
+	// file with an address and no account, since the account belongs to the
+	// hop that ends the chain and there is none.
+	for _, routeName := range routeNames {
+		hops := inv.Routes[routeName].Hops
+		if len(hops) == 0 {
+			continue
+		}
+		last, err := derive.ParseHop(hops[len(hops)-1])
+		if err != nil {
+			continue // rule 4 already reported this hop.
+		}
+		if forwards(last.Instance) {
+			add("route %q ends on %q, which forwards: a relay terminates nothing, so the route needs a hop after it",
+				routeName, last.Instance)
+		}
+	}
+
 	// Rule 8: a non-terminal hop has the same successor in every route
 	// through it, unless its service declares `downstreams: many`. A proxy
 	// picks its upstream by the name the request arrived at, and every
@@ -697,10 +729,18 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		if wants[confgen.UpstreamShared].Optional {
 			continue
 		}
-		if len(portSelf[e.To.Instance][e.To.Port]) > 0 {
+		// The port that hands the secrets out is the one the credential is
+		// at, which is the hop behind a relay rather than the relay itself:
+		// a forwarder holds nothing to hand over. See
+		// docs/apps/conf/inventory.md#a-service-that-forwards.
+		to := e.Terminal
+		if to.Instance == "" {
+			to = e.To
+		}
+		if len(portSelf[to.Instance][to.Port]) > 0 {
 			continue
 		}
-		n := sharedNeed{from: from, to: e.To.Instance, port: e.To.Port}
+		n := sharedNeed{from: from, to: to.Instance, port: to.Port}
 		if seenNeed[n] {
 			continue
 		}

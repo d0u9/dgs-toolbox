@@ -130,6 +130,13 @@ type Edge struct {
 	Network string
 	// Port is the numeric port the To hop's instance names for To.Port.
 	Port int
+	// Terminal is the hop whose credential the From side authenticates
+	// against, which is To for every ordinary edge. They differ when To
+	// forwards: a relay terminates nothing, so what a client dials and what
+	// it authenticates against are two different machines, and the file it
+	// is given is built from both. See
+	// docs/apps/conf/inventory.md#a-service-that-forwards.
+	Terminal Hop
 }
 
 // Model is everything Derive computes.
@@ -220,6 +227,33 @@ func overlay(over, base map[string]any) map[string]any {
 	return out
 }
 
+// terminalHopFrom walks forward from a hop over every instance whose service
+// forwards, and answers the first one that terminates: the hop whose account
+// table a client reaching this one authenticates against. A chain that
+// forwards to its end answers the last hop it walked — nothing terminates it,
+// which validate reports as the mistake it is, and deriving something here
+// keeps that report reachable.
+func terminalHopFrom(hops []Hop, i int, instances map[string]instanceRef, manifests map[string]confgen.Manifest) Hop {
+	for i+1 < len(hops) {
+		inst, ok := instances[hops[i].Instance]
+		if !ok || manifests[inst.inst.Service].Terminates() {
+			return hops[i]
+		}
+		i++
+	}
+	return hops[i]
+}
+
+// forwards reports whether an instance's service moves bytes through without
+// terminating them.
+func forwards(instance string, instances map[string]instanceRef, manifests map[string]confgen.Manifest) bool {
+	inst, ok := instances[instance]
+	if !ok {
+		return false
+	}
+	return manifests[inst.inst.Service].Forwards
+}
+
 type instanceRef struct {
 	node inventory.Node
 	inst inventory.Instance
@@ -263,15 +297,30 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 			if !ok || len(route.Hops) == 0 {
 				continue
 			}
-			entryHop, err := ParseHop(route.Hops[0])
-			if err != nil {
-				return nil, fmt.Errorf("derive: route %q: %w", routeName, err)
+			routeHops := make([]Hop, 0, len(route.Hops))
+			for _, raw := range route.Hops {
+				hop, err := ParseHop(raw)
+				if err != nil {
+					return nil, fmt.Errorf("derive: route %q: %w", routeName, err)
+				}
+				routeHops = append(routeHops, hop)
 			}
+			entryHop := routeHops[0]
 			entry, ok := instances[entryHop.Instance]
 			if !ok {
 				continue
 			}
-			manifest, ok := manifests[entry.inst.Service]
+			// What the client dials is the entry hop; what it authenticates
+			// against is the first hop that terminates anything. A relay in
+			// front of a server is the two being different machines, and
+			// the file this person is given is written for the service that
+			// ends the chain, in the format that service offers.
+			terminalHop := terminalHopFrom(routeHops, 0, instances, manifests)
+			terminal, ok := instances[terminalHop.Instance]
+			if !ok {
+				continue
+			}
+			manifest, ok := manifests[terminal.inst.Service]
 			if !ok {
 				continue
 			}
@@ -300,7 +349,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 					Name:  user.Account(key, credential),
 					Group: key, Slot: credential,
 				}
-				m.Grants = append(m.Grants, Grant{Principal: principal, Instance: entryHop.Instance, Port: entryHop.Port})
+				m.Grants = append(m.Grants, Grant{Principal: principal, Instance: terminalHop.Instance, Port: terminalHop.Port})
 			}
 
 			var ownedNodeIDs []string
@@ -343,13 +392,13 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 						continue
 					}
 					for _, export := range narrowExports(exports, use.export) {
-						derivedID := nodeID + "-" + routeName + "-" + entry.inst.Service + "-" + export
+						derivedID := nodeID + "-" + routeName + "-" + terminal.inst.Service + "-" + export
 						if use.profile != "" {
 							derivedID += "-" + use.profile
 						}
 						ci := ExportInstance{
 							ID: derivedID, Node: nodeID, Credential: credential,
-							Service: entry.inst.Service, Export: export, Route: routeName,
+							Service: terminal.inst.Service, Export: export, Route: routeName,
 							Profile: use.profile, Values: use.values,
 						}
 						for _, override := range n.Instances {
@@ -369,6 +418,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 							Route:        routeName,
 							FromInstance: derivedID,
 							To:           entryHop,
+							Terminal:     terminalHop,
 							Address:      address,
 							Network:      network,
 							Port:         entry.inst.Ports[entryHop.Port].Number,
@@ -392,12 +442,12 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 					continue
 				}
 				for _, export := range narrowExports(exports, user.Export) {
-					id := username + "-" + credential + "-" + routeName + "-" + entry.inst.Service + "-" + export
+					id := username + "-" + credential + "-" + routeName + "-" + terminal.inst.Service + "-" + export
 					m.ExportInstances = append(m.ExportInstances, ExportInstance{
 						ID:         id,
 						User:       key,
 						Credential: credential,
-						Service:    entry.inst.Service,
+						Service:    terminal.inst.Service,
 						Export:     export,
 						Route:      routeName,
 					})
@@ -412,6 +462,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 						Route:        routeName,
 						FromInstance: id,
 						To:           entryHop,
+						Terminal:     terminalHop,
 						Address:      address,
 						Network:      network,
 						Port:         entry.inst.Ports[entryHop.Port].Number,
@@ -456,7 +507,18 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 				return nil, fmt.Errorf("derive: route %q: %w", routeName, err)
 			}
 
-			m.Edges = append(m.Edges, Edge{Route: routeName, From: hops[i], To: hops[i+1], Address: address, Network: network, Port: port.Number})
+			terminal := terminalHopFrom(hops, i+1, instances, manifests)
+			m.Edges = append(m.Edges, Edge{
+				Route: routeName, From: hops[i], To: hops[i+1], Terminal: terminal,
+				Address: address, Network: network, Port: port.Number,
+			})
+			// A forwarder holds no credential: it never reads what passes
+			// through it, so there is nothing for it to authenticate with.
+			// The grant belongs to whatever dials into it, against the hop
+			// that terminates the chain.
+			if forwards(hops[i].Instance, instances, manifests) {
+				continue
+			}
 			m.Grants = append(m.Grants, Grant{
 				Principal: Principal{
 					Kind: PrincipalInstance, ID: hops[i].Instance, Name: hops[i].Instance,
@@ -467,8 +529,8 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 					// unmanaged user takes.
 					Group: hops[i].Instance, Slot: inventory.DefaultCredential,
 				},
-				Instance: hops[i+1].Instance,
-				Port:     hops[i+1].Port,
+				Instance: terminal.Instance,
+				Port:     terminal.Port,
 			})
 		}
 	}

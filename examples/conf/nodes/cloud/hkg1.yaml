@@ -1,0 +1,25 @@
+# A relay.
+#
+# It runs one program that terminates nothing: bytes arriving on its port are
+# handed to the server in the other city, unchanged and unread. So it holds no
+# account table — the people who dial it authenticate against that server, and
+# their share links carry this machine's name with that server's password.
+#
+# What puts traffic on this port, and any firewall in front of it, is the
+# operator's: dgs renders the relay's configuration and stops there.
+
+id: hkg1
+
+networks:
+  internet: hkg1.example.net
+
+instances:
+
+  - id: fwd-hkg01
+    service: realm
+    ports:
+      # `published` is the name clients dial. The account they use is not
+      # this machine's, but the address they write down is.
+      ss:
+        port: 38250
+        published: relay.example.net
