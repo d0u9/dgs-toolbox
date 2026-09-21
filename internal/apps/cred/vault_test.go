@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"dgs-toolbox/internal/cred/record"
+
 	"filippo.io/age"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -318,4 +320,99 @@ func TestAddFlowPassphrase(t *testing.T) {
 	if _, err := age.Decrypt(file, identity); err != nil {
 		t.Error(err)
 	}
+}
+
+func TestVaultMove(t *testing.T) {
+	root := t.TempDir()
+	mine, _ := age.GenerateX25519Identity()
+	writeFile(t, filepath.Join(root, "keys", "age.txt"), mine.String()+"\n", 0o600)
+	vaultDir := filepath.Join(root, "vault")
+	ageFile(t, filepath.Join(vaultDir, "top.age"), mine.Recipient())
+	if err := record.Create(filepath.Join(vaultDir, "top.age.json"), record.Record{Recipients: []record.Recipient{{PublicKey: mine.Recipient().String()}}}); err != nil {
+		t.Fatal(err)
+	}
+	ageFile(t, filepath.Join(vaultDir, "servers", "nas.age"), mine.Recipient())
+	path := filepath.Join(root, "credentials.json")
+	writeFile(t, path, `{"identities":["`+filepath.Join(root, "keys")+`"],"vault":"`+vaultDir+`"}`, 0o600)
+
+	m := newVaultModel()
+	m.path = path
+	m = runVault(t, m)
+	// The cursor starts on servers/, so move down to servers/nas.age.
+	m = vaultKeys(t, m, "j")
+	if file, _, ok := m.selectedFile(); !ok || file.Path != "servers/nas.age" {
+		t.Fatalf("selected %+v", file)
+	}
+	m = vaultKeys(t, m, "r")
+	if m.move == nil || m.move.from != "servers/nas.age" {
+		t.Fatalf("r did not open the move form: %+v", m.move)
+	}
+	if got := m.move.form.Value(vaultNameFieldID); got != "nas.age" {
+		t.Errorf("name %q folder %q", got, m.move.form.Value(vaultFolderFieldID))
+	}
+	// A name the vault would not list is refused.
+	m = vaultMoveType(t, m, "nas.txt")
+	m = vaultKeys(t, m, "enter", "enter", "enter")
+	if m.move.stage != keyForm || !strings.Contains(m.move.err, "must end in .age") {
+		t.Fatalf("suffix: stage %d err %q", m.move.stage, m.move.err)
+	}
+	// Rename it and move it to a folder that does not exist yet.
+	m = vaultKeys(t, m, "up", "up", "enter")
+	m = vaultMoveType(t, m, "nas-01.age")
+	m = vaultKeys(t, m, "enter")
+	m = vaultMoveType(t, m, "servers/eu")
+	m = vaultKeys(t, m, "enter", "enter")
+	if m.move.stage != keyConfirm {
+		t.Fatalf("stage %d err %q", m.move.stage, m.move.err)
+	}
+	if view := stripVault(m); !strings.Contains(view, "servers/eu/nas-01.age") || !strings.Contains(view, "is created") {
+		t.Errorf("confirm:\n%s", view)
+	}
+	m = vaultKeys(t, m, "tab", "enter")
+	m = deliver(t, m, m.runMove())
+	if m.move != nil {
+		t.Fatalf("flow open: %+v", m.move)
+	}
+	if _, err := os.Stat(filepath.Join(vaultDir, "servers", "eu", "nas-01.age")); err != nil {
+		t.Fatalf("moved file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(vaultDir, "servers", "nas.age")); err == nil {
+		t.Error("source still there")
+	}
+	if !strings.Contains(m.notice, "servers/eu/nas-01.age") {
+		t.Errorf("notice %q", m.notice)
+	}
+
+	// Renaming carries the record along.
+	m = vaultKeys(t, m, "G")
+	if file, _, ok := m.selectedFile(); !ok || file.Path != "top.age" {
+		t.Fatalf("selected %+v", file)
+	}
+	m = vaultKeys(t, m, "r")
+	m = vaultMoveType(t, m, "keep.age")
+	m = vaultKeys(t, m, "enter", "enter", "enter")
+	m = vaultKeys(t, m, "tab", "enter")
+	m = deliver(t, m, m.runMove())
+	for _, name := range []string{"keep.age", "keep.age.json"} {
+		if _, err := os.Stat(filepath.Join(vaultDir, name)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(vaultDir, "top.age.json")); err == nil {
+		t.Error("record left behind")
+	}
+}
+
+// vaultMoveType clears the field being edited and types text into it.
+func vaultMoveType(t *testing.T, m vaultModel, text string) vaultModel {
+	t.Helper()
+	for i := 0; i < 64; i++ {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		m = updated.(vaultModel)
+	}
+	for _, r := range text {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(vaultModel)
+	}
+	return m
 }

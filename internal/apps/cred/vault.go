@@ -99,6 +99,11 @@ type vaultModel struct {
 	edit *editFlow
 	// comment is editing the owner-supplied explanation in a file's record.
 	comment *commentFlow
+	// move is renaming a file or moving it to another folder of the vault.
+	move *moveFlow
+	// selectPath is a file the next rebuild puts the cursor on, since the list
+	// IDs are positions and a moved file sorts elsewhere.
+	selectPath string
 	// del is deleting a file from the vault, and git is publishing the folder
 	// it is in.
 	del *vaultDeleteFlow
@@ -306,6 +311,11 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.finishDelete(msg)
 		}
 		return m, nil
+	case movedMsg:
+		if m.move != nil {
+			return m.finishMove(msg)
+		}
+		return m, nil
 	case gitStatusMsg:
 		return m.finishGitStatus(msg)
 	case gitFetchedMsg:
@@ -344,6 +354,11 @@ func (m vaultModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.del != nil {
 		if _, ok := msg.(tea.WindowSizeMsg); !ok {
 			return m.updateDelete(msg)
+		}
+	}
+	if m.move != nil {
+		if _, ok := msg.(tea.WindowSizeMsg); !ok {
+			return m.updateMove(msg)
 		}
 	}
 	if m.git != nil {
@@ -459,6 +474,9 @@ func (m vaultModel) updateKey(key string) (tea.Model, tea.Cmd) {
 	case "d":
 		cmd := m.startVaultDelete()
 		return m, cmd
+	case "r":
+		m.startMove()
+		return m, nil
 	case "p":
 		cmd := m.startGit()
 		return m, cmd
@@ -585,6 +603,14 @@ func (m *vaultModel) rebuild() {
 	}
 	m.list.SetItems(items)
 	m.list.SetDivider(entries, "PROBLEMS")
+	if m.selectPath != "" {
+		for index, file := range m.listing.Files {
+			if file.Path == m.selectPath {
+				previous = "file:" + strconv.Itoa(index)
+			}
+		}
+		m.selectPath = ""
+	}
 	if previous != "" {
 		m.list.SelectID(previous)
 	}
@@ -702,6 +728,9 @@ func (m vaultModel) View() string {
 	}
 	if m.del != nil {
 		return overlay.Place(workspace, m.deleteView(), m.width, m.height)
+	}
+	if m.move != nil {
+		return overlay.Place(workspace, m.moveView(), m.width, m.height)
 	}
 	if m.git != nil {
 		return overlay.Place(workspace, m.gitView(), m.width, m.height)
@@ -859,7 +888,7 @@ func (m vaultModel) pickerView() string {
 }
 
 func (m vaultModel) CapturesShellKey(key string) bool {
-	if m.prompt != nil || m.action != nil || m.edit != nil || m.comment != nil {
+	if m.prompt != nil || m.action != nil || m.edit != nil || m.comment != nil || m.move != nil {
 		return key == "esc" || key == "q" || key == "backspace"
 	}
 	if m.open != nil && key == "esc" {
@@ -893,6 +922,9 @@ func (m vaultModel) Status() tui.Status {
 	if m.del != nil {
 		return tui.Status{Left: "DELETE", Center: m.del.name, Right: "←→ Choose  ↵ Confirm  esc Cancel"}
 	}
+	if m.move != nil {
+		return m.moveStatus()
+	}
 	if m.git != nil {
 		left, right := m.gitStatus()
 		return tui.Status{Left: left, Center: tilde(m.root), Right: right}
@@ -924,9 +956,9 @@ func (m vaultModel) Status() tui.Status {
 	if center == "" {
 		center = m.summary()
 	}
-	right := "↑↓ Move  ↵ Open  e Recipients  m Comment  d Delete  a Add  f Update  p Publish"
+	right := "↑↓ Move  ↵ Open  e Recipients  m Comment  r Rename  d Delete  a Add  p Publish"
 	if _, report, ok := m.selectedFile(); ok && report.Status == vault.Passphrase {
-		right = "↑↓ Move  ↵ Open  e Passphrase  m Comment  d Delete  a Add  f Update  p Publish"
+		right = "↑↓ Move  ↵ Open  e Passphrase  m Comment  r Rename  d Delete  a Add  p Publish"
 	}
 	if _, ok := m.selectedDir(); ok {
 		right = "↑↓ Move  ↵ Fold  a Add  f Update  p Publish  o Folder"
