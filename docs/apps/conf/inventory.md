@@ -75,10 +75,10 @@ data.
 
 | What | The names |
 | --- | --- |
-| Files | `services/`, `services/<service>/exports/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml`, `confgen.yaml`, `defaults.yaml` |
+| Files | `services/`, `services/<service>/exports/`, `services/<service>/deploy/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml`, `confgen.yaml`, `defaults.yaml` |
 | Node keys | `id`, `networks`, `reaches`, `owner`, `export`, `profiles`, `credential`, `instances` |
 | Profile keys | `export`, `values`, `access` |
-| Instance keys | `id`, `service`, `ports`, `process`, `bind`, `self`, `values` |
+| Instance keys | `id`, `service`, `ports`, `process`, `runtime`, `bind`, `self`, `values`, `deploy` |
 | Port keys | `port`, `protocol`, `self`, when a port is written as a mapping rather than a bare number |
 | User keys | `username`, `devices`, `export`, `credentials`, `access` |
 | Credential keys | `note`, `access` |
@@ -616,7 +616,7 @@ unmerged, and the template does the merging it wants. Either way a template
 also reads it by name, as `(instance).values`. See
 [two kinds of defaults](export.md#two-kinds-of-defaults).
 
-**Only `values` merges.** `id`, `service`, `bind` and `ports` are dgs's own and
+**Only `values` merges.** `id`, `service`, `runtime`, `deploy`, `bind` and `ports` are dgs's own and
 stay out of the document: they are read through the instance function, so a
 service's settings have one place a node file may write them, and a document
 never grows a key no service declared.
@@ -635,6 +635,115 @@ being the clear case: two MicroBin instances cannot share one.
 
 An authored override on a client node carries `values` the same way it carries
 `ports` and `bind`; see [what is derived](#what-is-derived).
+
+### What runs the process
+
+`runtime` says what the process is delivered by, and it is one of `host`,
+`docker` or `podman`:
+
+```yaml
+  - id: bin-home01
+    service: microbin
+    runtime: docker
+    bind: "0.0.0.0"
+    ports:
+      web: 8080
+```
+
+`host` is the default and is not written. `dgs` knows nothing about any of
+these names beyond the name: nothing branches on it, no template reads it —
+it is not in [the render context](#the-render-context) — and no rendered byte
+changes when it does.
+
+**It earns its place by fixing what `bind` means.** Inside a container `bind`
+is the container's own interfaces, and `0.0.0.0` there is not the open
+listener the same string is on a host: what may actually arrive is decided by
+the publish address of a port mapping, in a file this inventory does not read.
+A reader who does not know a process is containerised sees `bind: "0.0.0.0"`
+here and `bind: 127.0.0.1` on another node and draws the wrong conclusion
+about both. One word on the instance, and neither line is ambiguous. It is
+written on the instance rather than on each port because a container is one
+running program, which is the same boundary [`process`](#ports) already draws.
+
+**`ports` is the number reached from outside the container**, always, because
+that is the number every edge dials and every proxy writes. A container's
+internal number, when it differs, lives with the deployment tool that
+publishes it and nowhere here — two numbers in this file would be two truths, and the one the
+model needs is the outer one.
+
+That makes a one-to-one mapping the convention, and rule
+[14](#validation) is why: two instances on one node may not bind the same
+address, port and transport, and a same-node hop resolves to `127.0.0.1` and
+the downstream port. A container publishing `8080` at some other host number
+leaves the inventory describing a listener that is not there, and the
+collision check reading numbers that never meet. Publishing `127.0.0.1:8080`
+for a service behind a proxy, and the node's own address for one the network
+may reach, keeps both true — and a containerised proxy reaching its
+downstreams at `127.0.0.1` has to be on the host's network namespace for that
+address to mean the same thing at both ends.
+
+A service declaring a [deploy template](export.md#a-second-file-what-deploys-it)
+takes the convention out of a reader's hands: the mapping is rendered from the
+same `ports` field the program's own configuration is rendered from, so the two
+cannot disagree. For a service that declares none, the paragraphs above are a
+convention and nothing more.
+
+**No check confirms the rest.** `runtime` is an assertion copied from the
+delivery side, the way `networks` is an assertion about where a node answers:
+`dgs` has not seen the deployment files, the image or the mapping, and a mapping
+edited afterwards leaves this file unchanged and wrong. This is the same
+boundary [Deployment is not here](#boundaries) already draws, and `runtime`
+does not cross it — it names no image, no project, no volume and no host
+number. It says only that the `bind` above it is a container's.
+
+The [connectivity graph](inspect.md#the-connectivity-graph) badges a process
+box for it, which is the whole of what it is for.
+
+### What a container needs beyond the model
+
+`runtime` says a process runs in a container. It does not say which image, which
+volumes or which restart policy, and those are what a deployment file is mostly
+made of. They go in `deploy`:
+
+```yaml
+  - id: microbin-home01-01
+    service: microbin
+    runtime: docker
+    bind: "0.0.0.0"
+    ports:
+      web:
+        port: 8080
+        published: clip.home.lan
+    deploy:
+      image: danielszabo99/microbin:2.0.4
+      restart: unless-stopped
+      volumes:
+        - microbin-data:/var/lib/microbin/data_dir
+```
+
+`deploy` is opaque, exactly as [`values`](#an-instances-own-values) is: `dgs`
+parses it as YAML, knows no key in it, and hands it to the service's
+[deploy template](export.md#a-second-file-what-deploys-it). It is a second
+mapping rather than a corner of `values` because the two have different readers
+— `values` configures the program, `deploy` starts it — and a key that reached
+both would be one more place a rename has to be chased.
+
+**Ports are not in it.** The mapping a container publishes is derived from
+`ports` and from the edges the model already resolves: a port only its own node
+enters publishes on loopback, and one entered from elsewhere publishes on this
+node's address. That derivation is the reason the second file is worth
+generating at all, so writing a port here would give back the second truth it
+removes. See [what deploys it](export.md#a-second-file-what-deploys-it).
+
+**Secrets are not in it either.** The deploy file names the rendered
+configuration beside it; the credential stays in that file, and nothing about
+rotation changes.
+
+A service holding no `deploy/` directory renders one file, and an instance of it
+writing `deploy` is an error rather than a mapping nothing reads. What every
+instance of a service deploys with — its image, most of all — belongs in
+`deploy/defaults.yaml`, and an instance's `deploy` lays over it key by key, the
+way `values` lays over `defaults.yaml`.
 
 ## Users
 
@@ -1827,6 +1936,10 @@ self:        the instance's own secrets, by name: a value, a map of fields, a
 target:      service and instance names
 ```
 
+A deploy template is given this context with `mapping` added and `principals`,
+`self` and `upstream` withheld — it starts a program and holds no credential.
+See [what deploys it](export.md#a-second-file-what-deploys-it).
+
 An export instance's `instance` carries its `export` and, for one of a
 device's [profiles](#a-device-with-several-profiles), its `profile`, beside
 the values a profile or an override gives it. A service whose defaults apply
@@ -1910,6 +2023,15 @@ failing can be told which level it was reading.
     `port` have the same successor. A port listens for one next hop, and
     `downstreams: many` lifting rule 8 for the instance does not lift it for
     the port.
+23. An instance's `runtime`, when written, is `host`, `docker` or `podman`.
+    The error lists the three: a misspelling is silent everywhere else, since
+    nothing reads the value.
+24. An instance writing `deploy` names a service holding a `deploy/` directory,
+    and its `runtime` is not `host`. A container's deployment file is what the
+    key is for, and a host process writing one renders nothing.
+25. No `deploy` mapping writes a port mapping or a secret. Both are derived or
+    live in the rendered configuration, and a second spelling of either is the
+    thing the second file exists to remove. The error names the key.
 
 ## Boundaries
 
@@ -1940,7 +2062,23 @@ failing can be told which level it was reading.
 - **Deployment** is not here. An export writes files; copying them to a machine
   and restarting the service is a different problem, with different failure
   modes, and putting it behind the same command would make a transfer look like
-  a render.
+  a render. A service's [deploy template](export.md#a-second-file-what-deploys-it)
+  does not cross this: it renders the file a deployment tool reads, the same way
+  `config.json` is the file a server reads, and `dgs` runs no container runtime
+  and reads nothing back from one.
+- **A group of containers started together** — a Compose project, a Pod — is not
+  modelled. Each instance renders its own deployment file and stands alone, and
+  the three things such a group provides are things this model does not use: its
+  internal DNS, because a hop on one node resolves to `127.0.0.1` and never to a
+  container name; its shared network, because the instance that dials its
+  neighbours is on the host's namespace for that address to mean one thing at
+  both ends; and its ordering, because a proxy started before its backend
+  answers 502 and then recovers. What a group would buy is starting one
+  machine's services with one command, which belongs to whatever reads these
+  files. The grouping to add first, if one is ever needed, is the Pod's rather
+  than the project's — a set of instances sharing a network namespace, which is
+  what the address rule assumes — and the case that calls for it is a second
+  instance on one node dialling a neighbour, or two services wanting one number.
 - **A separate access-grant entity** is not needed. It would exist to hold
   credentials for clients outside the inventory, and a credential no device
   names answers that case without a new kind of file: it is an account and a
@@ -2055,7 +2193,30 @@ A complete inventory under `examples/conf/`, loaded by the test that loads every
 example. Until this exists, nothing has checked that the configuration on this
 page can actually be written.
 
+### 12. Containers: `runtime` and `deploy/`
+
+The `runtime` key, its badge on the graph's process boxes, and the second
+rendered file. In order: read and validate `runtime` (rule 23) with no
+behaviour behind it; derive each port's host mapping from `ports` and the
+resolved edges; read `services/<service>/deploy/` as a second manifest and
+render its template per containerised instance, with rules 24 and 25; badge the
+process box. The derivation is the part worth testing first — loopback for a
+port only its own node enters, this node's literal address for one entered from
+elsewhere, `0.0.0.0` when that address is a name — since the rest is the
+existing renderer pointed at a second template.
+
+The examples come with the code, not before it: `examples/conf` is loaded by a
+test that rejects a key no loader reads, so `runtime`, an instance's `deploy`
+and a service's `deploy/` arrive there in this milestone's own commits.
+
+Open before it starts: `mapping "<port>"` sits one letter from
+`published "<port>"` in a template, and a better name for one of the two would
+be worth having.
+
 ### Two cautions
+
+**Milestone 12 stands alone.** It changes no existing rendered byte and nothing
+before it depends on it, so it can be done whenever, or dropped.
 
 **Milestones 2 to 6 are one stretch.** Stopping among them leaves two ideas of
 what an instance is in the tree at once. If the work has to be split, 7 and 8

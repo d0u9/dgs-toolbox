@@ -1,0 +1,6 @@
+# What every instance of this service deploys with. An instance's `deploy`
+# lays over this key by key, exactly as `values` lays over the service's own
+# defaults.yaml — the image tag is the clear case for writing one here and
+# overriding it on a machine that has not been updated yet.
+image: danielszabo99/microbin:2.0.4
+restart: unless-stopped

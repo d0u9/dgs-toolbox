@@ -1,0 +1,30 @@
+{{- /*
+  A Compose file for one instance, standing alone: no project, no shared
+  network, no ordering. Each instance renders its own.
+
+  The port mapping is the reason this file is generated at all. `mapping`
+  gives the address the container runtime publishes this port at and the
+  number, both derived — the address from the edges into the port, the number
+  from the same `ports` field MICROBIN_PORT is rendered from, so the two
+  cannot disagree.
+
+  No credential is here. `env_file` names the configuration rendered beside
+  this file, and every password stays in it, so rotating one touches one
+  file.
+*/ -}}
+{{- $web := mapping "web" -}}
+services:
+  {{ (instance).id }}:
+    image: {{ $.image }}
+    container_name: {{ (instance).id }}
+    restart: {{ $.restart }}
+    env_file:
+      - server.env
+    ports:
+      - "{{ $web.Address }}:{{ $web.Number }}:{{ $web.Number }}"
+{{- with $.volumes }}
+    volumes:
+{{- range . }}
+      - {{ . }}
+{{- end }}
+{{- end }}

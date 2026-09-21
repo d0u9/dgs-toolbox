@@ -76,7 +76,8 @@ assumes them.
 
 `services/<service>/confgen.yaml` declares what the renderer cannot infer. A
 service is one program, so a manifest describes one template, one output name
-and one inbound contract:
+and one inbound contract. A service that runs in a container holds a second
+template beside it, in [`deploy/`](#a-second-file-what-deploys-it):
 
 ```yaml
 # services/ssserver/confgen.yaml
@@ -210,6 +211,116 @@ export puts them in, not by the file name. Copying the right one to the right
 machine is done by hand and deliberately so: a name that varied per instance
 would mean editing a service unit to match every time.
 
+### A second file: what deploys it
+
+A service's configuration says how the program behaves. Something else says how
+the program is started, and under a container runtime that second file repeats
+the ports — the same numbers, in another spelling, maintained by hand. Two
+truths, and the model's own [one-to-one rule](inventory.md#what-runs-the-process)
+is only a convention until one of them is generated.
+
+So a service directory may hold a `deploy/`, laid out the way an export is and
+with the same manifest keys:
+
+```text
+services/microbin/
+├── confgen.yaml
+├── defaults.yaml
+├── templates/server.env.tmpl
+└── deploy/
+    ├── confgen.yaml          template, defaults, output
+    ├── defaults.yaml         what every instance of this service deploys with
+    └── templates/compose.yaml.tmpl
+```
+
+```yaml
+# services/microbin/deploy/confgen.yaml
+template: templates/compose.yaml.tmpl
+defaults: document
+output: compose.yaml
+```
+
+The directory is what declares it, the way `exports/<name>/` declares a way a
+service offers, so the service's own manifest grows no key. `deploy` is a fixed
+name and the only one read there; a service holding no `deploy/` renders one
+file, and an instance of it writing `deploy` values is an error.
+
+**It is not an export**, and the difference is who selects it and who reads it.
+An export is derived from a person's access, one file per route they hold, it
+carries their credential, and a node or a user names it with `export:`. A deploy
+file belongs to an instance written in a node file, is rendered because that
+instance's `runtime` is a container runtime, holds no credential, and nobody
+selects it. Putting it under `exports/` would put one name in two selection
+rules: `export: compose` would pass [rule 3](inventory.md#validation), whose
+error message lists the ways a person's services offer, and a reader would be
+told a lie about why their file is missing.
+
+What it does share is the shape — a template, a defaults kind, an output name —
+so the renderer, the defaults merge and the target are the existing ones.
+`deploy/defaults.yaml` carries what every instance of the service deploys with,
+an image and its tag being the clear case, and an instance's `deploy` mapping
+lays over it key by key, exactly as `values` lays over `defaults.yaml`.
+
+It is the same renderer, the same target, the same directory. A target that
+renders both writes two files:
+
+```text
+au-home01-gen8-linux-01/
+└── microbin/microbin-home01-01/
+    ├── server.env
+    └── compose.yaml
+```
+
+**What the deploy template is given** is the instance's own view, plus the two
+things only the model can resolve:
+
+```yaml
+node:         as elsewhere: id, networks
+instance:     as elsewhere, plus runtime and deploy
+mapping:      per port, the address the container runtime binds on the host
+              and the number, which is the port's own number. A template reads
+              one as `mapping "<port>"`, the way it reads `published "<port>"`
+downstreams:  as elsewhere, for a service declaring downstreams: many
+```
+
+`mapping` is the whole point of the file, and it is derived, never written:
+
+- A port entered only by hops from its own node publishes on `127.0.0.1`. A
+  reverse proxy's backend is this case, and a backend published on every
+  interface because someone typed it is what the derivation removes.
+- A port entered from another node publishes on this node's address on the
+  network that edge resolved, when that address is a literal one, and on
+  `0.0.0.0` when it is a name — a container runtime binds addresses, and a
+  node writing `internet: example.net` has not given it one.
+- A port no edge enters — one reached from a browser — publishes the same way
+  as the second case: it is reached from outside, and nothing in the inventory
+  says from where.
+
+The number is the port's number on both sides of the mapping. There is no other
+number to choose from: the program's own configuration is rendered from the same
+field, so a mapping that changed it would point at a listener that does not
+exist. The [one-to-one rule](inventory.md#what-runs-the-process) stops being a
+convention here, because both spellings now come from one field.
+
+**A deploy file carries no secret.** The credential the instance holds is in the
+file beside it, and the deploy template references that file by its `output`
+name — `env_file`, a mount, an argument. A rendered `docker-compose.yml` with a
+password inlined would put one in a file people paste into chat, and would make
+two files that must be rotated together out of one.
+
+**`dgs` still does not deploy.** It renders a second file and stops: it opens no
+connection to any machine, runs no container runtime, copies nothing anywhere,
+and reads nothing back. Rendering is local and offline, and a rendered file
+carrying plaintext credentials is a reason to keep it that way: what leaves this
+machine, and how, stays the operator's decision and their transport. What is
+in that file beyond ports and mounts — the image and its tag, volumes, restart
+policy, health checks — is the instance's `deploy` values, which `dgs` treats
+the way it treats [`values`](inventory.md#an-instances-own-values): as opaque
+YAML it hands to a template. [Deployment is not
+here](inventory.md#boundaries) is unchanged. Generating the file that a
+deployment tool consumes is not deploying, in the same way that rendering
+`config.json` has never been running the server.
+
 ### Targets and selectors
 
 The unit of everything below is a target, and a target is one instance.
@@ -334,6 +445,7 @@ they are flat:
 | `join` | Values joined by a separator, which is how the protocols taking more than one credential take them: a Shadowsocks 2022 password is the server's PSK and the user's own, joined by a colon — `join ":" (upstream).shared` beside `(upstream).secret`, for a manifest that declared it needs them. |
 | `secret` | The instance's own secret of a given name, narrowed by further arguments: a key for a `set` name, a field for a name with `fields`, both for a name with both. Given fewer arguments than the name has levels, it returns the map of what is under it. |
 
+| `mapping` | Where a container runtime publishes one of this instance's ports on the machine it runs on: `.Address` and `.Number`. Both are derived, and it is read only in a [deploy template](#a-second-file-what-deploys-it) — every other render is handed none. |
 | `published` | The name one of this instance's own ports answers to, by port name, or empty. A service behind a reverse proxy renders the same string the proxy matches its site block on — `DOMAIN=https://{{ published "web" }}` — so the two cannot disagree. See [the name a port is published at](inventory.md#the-name-a-port-is-published-at). |
 
 Beside them, one accessor per datasource — `defaults`, `node`, `instance`,

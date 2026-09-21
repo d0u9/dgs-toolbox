@@ -69,6 +69,16 @@ type Downstream struct {
 	Number  int
 }
 
+// Mapping is where a container runtime publishes one of this instance's
+// ports on the machine it runs on: the address it binds, and the number,
+// which is the port's own on both sides. A deploy template reads one as
+// `mapping "<port>"`. It is derived from the model and never written; see
+// docs/apps/conf/export.md#a-second-file-what-deploys-it.
+type Mapping struct {
+	Address string
+	Number  int
+}
+
 // Input is one target's render context, plus the template it renders. Every
 // field but Template, Defaults and DefaultsKind corresponds to one of
 // docs/apps/conf/inventory.md#the-render-context's datasources; node,
@@ -121,6 +131,18 @@ type Input struct {
 	// Principals is every port with auth: per-principal, each to the
 	// accounts and secrets of everything holding a grant on it.
 	Principals map[string][]Principal
+	// Overlay is what lays over Defaults for a document render, when it is
+	// not the instance's own values: a deploy template merges the
+	// instance's `deploy` mapping instead, key by key, exactly as values
+	// lays over the service's own defaults. Nil means values, which is
+	// every other render — so an empty, non-nil map is how a deploy render
+	// of an instance that writes no `deploy` says the defaults stand alone.
+	Overlay map[string]any
+	// Mapping is this instance's ports' host mappings, by port. It is what
+	// a deploy template is rendered for, and it is absent from every other
+	// render: a configuration file describes what the program listens on
+	// inside its own namespace, which is what Instance already says.
+	Mapping map[string]Mapping
 	// Self is the instance's own secrets, mirroring the tree under
 	// <instance>/self/: a string where the name is one file, a map where it
 	// is a set, a record of fields, or both. It is what the secret template
@@ -162,6 +184,9 @@ func render(in Input) ([]byte, error) {
 		// would leave the keys a service does declare unreachable, because
 		// values is the only place a node file may write them.
 		values, _ := instance["values"].(map[string]any)
+		if in.Overlay != nil {
+			values = in.Overlay
+		}
 		root = mergeInto(values, defaults)
 	case confgen.DefaultsElement:
 		// The defaults are one entry of a list, and it is for the template to

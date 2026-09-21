@@ -181,3 +181,49 @@ func TestExamples_ProfilesListenWhereTheirValuesSay(t *testing.T) {
 		}
 	}
 }
+
+// TestExamples_ContainerisedInstanceRendersItsDeploymentFile is the second
+// file, end to end: the example MicroBin runs in a container, so it renders
+// a compose.yaml beside its server.env. The port mapping in it is derived —
+// the port is entered only by the Caddy on its own machine, so it publishes
+// on loopback — and the number is the same one the configuration was
+// rendered from.
+func TestExamples_ContainerisedInstanceRendersItsDeploymentFile(t *testing.T) {
+	files := renderExamples(t)
+	got := exampleFile(t, files, "microbin-sfo01/compose.yaml")
+
+	for _, want := range []string{
+		`- "127.0.0.1:8080:8080"`,
+		"image: danielszabo99/microbin:2.0.4",        // the service's deployment defaults
+		"- microbin-data:/var/lib/microbin/data_dir", // the instance's own deploy values
+		"- server.env",                               // the credential stays in the file beside it
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered compose.yaml has no %q:\n%s", want, got)
+		}
+	}
+	// The deployment file carries no credential: what MicroBin's own
+	// configuration holds does not cross into it.
+	env := exampleFile(t, files, "microbin-sfo01/server.env")
+	for _, line := range strings.Split(env, "\n") {
+		name, value, ok := strings.Cut(line, "=")
+		if !ok || !strings.HasSuffix(name, "PASSWORD") || value == "" {
+			continue
+		}
+		if strings.Contains(got, value) {
+			t.Errorf("rendered compose.yaml carries %s from server.env", name)
+		}
+	}
+}
+
+// TestExamples_AHostProcessRendersOneFile is the other side of it: every
+// other example instance runs on the host, and nothing renders a second file
+// for it.
+func TestExamples_AHostProcessRendersOneFile(t *testing.T) {
+	files := renderExamples(t)
+	for path := range files {
+		if strings.HasSuffix(path, "compose.yaml") && !strings.Contains(path, "microbin-sfo01") {
+			t.Errorf("%s rendered a deployment file for a host process", path)
+		}
+	}
+}
