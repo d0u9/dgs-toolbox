@@ -134,9 +134,19 @@ func checkSecrets(l InspectData, secretsDir string) ([]string, error) {
 		return nil, err
 	}
 
+	// A path whose shape is opaque is one nothing here invents — a private
+	// key, a certificate chain, a bcrypt hash. Sending someone to `secret
+	// sync` for it is sending them to a command that will list it and write
+	// nothing, so the two are reported apart, as `secret sync` itself
+	// already reports them.
+	generated, opaque := secretstore.Generated(l.inv, l.manifests, res.Missing)
+
 	var out []string
-	for _, p := range res.Missing {
+	for _, p := range generated {
 		out = append(out, fmt.Sprintf("secret missing: %s — run secret sync to generate it", p.String()))
+	}
+	for _, p := range opaque {
+		out = append(out, fmt.Sprintf("secret missing: %s — an opaque value, which nothing generates: write the file yourself", p.String()))
 	}
 	for _, p := range res.Orphaned {
 		out = append(out, fmt.Sprintf("secret orphaned: %s — nothing implies it; sync never deletes", p.String()))

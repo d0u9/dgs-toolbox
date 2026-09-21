@@ -177,3 +177,43 @@ func writeImplied(t *testing.T, root, secrets string) error {
 	}
 	return nil
 }
+
+// TestCheckReport_AnOpaqueSecretIsNotSyncsToGenerate: a value nothing here
+// invents — a private key, a certificate chain, a bcrypt hash — stays
+// missing whatever `secret sync` does, so the report must not send someone
+// to a command that will list it and write nothing.
+func TestCheckReport_AnOpaqueSecretIsNotSyncsToGenerate(t *testing.T) {
+	root, secrets := buildInspectRoot(t), t.TempDir()
+	manifest := filepath.Join(root, "services", "ssserver", "confgen.yaml")
+	body, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second own secret beside psk, this one opaque.
+	if err := os.WriteFile(manifest, []byte(strings.Replace(string(body),
+		"  psk: {set: true}\n",
+		"  psk: {set: true}\n  tls_key: {kind: opaque}\n", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeImplied(t, root, secrets); err != nil {
+		t.Fatal(err)
+	}
+	// writeImplied writes every implied path, opaque or not. Take the
+	// opaque one back out: what it stands for is a value only a person can
+	// put there, and the report about it is this test's subject.
+	if err := os.Remove(filepath.Join(secrets, "ss-srv", "self", "tls_key")); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := writeCheckReport(&out, checkConfig(root, secrets)); err == nil {
+		t.Fatalf("report = %q, want a missing secret to count as a problem", out.String())
+	}
+	report := out.String()
+	if !strings.Contains(report, "secret missing: ss-srv/self/tls_key — an opaque value, which nothing generates: write the file yourself") {
+		t.Fatalf("report = %q, want the opaque path reported as one nobody generates", report)
+	}
+	if strings.Contains(report, "tls_key — run secret sync") {
+		t.Fatalf("report = %q, want it not to send someone to sync for an opaque value", report)
+	}
+}
