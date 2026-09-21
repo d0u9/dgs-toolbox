@@ -9,6 +9,13 @@
 auth: none
 forwards: true
 
+# One process, one port per next hop. `downstreams: many` because the routes
+# through it do not share one, and `dispatch: port` because what tells them
+# apart is which port they arrived on — a relay has no names behind it, the
+# way a reverse proxy does.
+downstreams: many
+dispatch: port
+
 template: templates/config.toml.tmpl
 defaults: document
 output: config.toml

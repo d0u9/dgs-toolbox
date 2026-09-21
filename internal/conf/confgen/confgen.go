@@ -66,6 +66,18 @@ const (
 	DownstreamsMany = "many"
 )
 
+// DispatchName and DispatchPort are the two ways an instance that is the
+// entrance for several routes tells them apart. DispatchName is the default
+// and is not written: a reverse proxy picks its upstream by the name the
+// request arrived at, which is why every downstream of one needs a published
+// name. DispatchPort is the other: a relay listens on one port per route and
+// sends what arrives there to that route's next hop, so the port is what
+// distinguishes them and a published name downstream means nothing.
+const (
+	DispatchName = "name"
+	DispatchPort = "port"
+)
+
 // DefaultsDocument and DefaultsElement are the two values `defaults` may take. See docs/apps/conf/export.md#two-kinds-of-defaults.
 const (
 	DefaultsDocument = "document"
@@ -147,6 +159,12 @@ type Manifest struct {
 	// service that ends it. See
 	// docs/apps/conf/inventory.md#a-service-that-forwards.
 	Forwards bool `yaml:"forwards"`
+	// Dispatch is DispatchName or DispatchPort: how an instance that is the
+	// entrance for several routes tells one from another. It is read only
+	// for a service declaring Downstreams: DownstreamsMany, and writing it
+	// without that is an error, since an instance with one successor
+	// distinguishes nothing.
+	Dispatch string `yaml:"dispatch"`
 	// Downstreams is DownstreamsMany when one instance of this service is
 	// the entrance for several routes — a reverse proxy in front of many
 	// web services — or empty for the ordinary case of one upstream. It is
@@ -168,6 +186,15 @@ func (m Manifest) Terminates() bool { return !m.Forwards }
 // manifest read straight out of a map — the zero one for a service that is
 // not there, which does not fan out — answers without being copied first.
 func (m Manifest) FansOut() bool { return m.Downstreams == DownstreamsMany }
+
+// DispatchesBy is how a fan-out instance of this service tells its routes
+// apart, DispatchName when the manifest leaves it out.
+func (m Manifest) DispatchesBy() string {
+	if m.Dispatch == "" {
+		return DispatchName
+	}
+	return m.Dispatch
+}
 
 // UpstreamShared is the one UpstreamDecls name dgs understands today: the
 // secrets the upstream port hands to everything granted on it, in the order
@@ -505,6 +532,20 @@ func loadManifest(path string) (*Manifest, error) {
 	}
 	if m.Forwards && len(m.Self) > 0 {
 		return nil, fmt.Errorf("parsing %s: forwards and self: a service that terminates nothing holds no credential", path)
+	}
+	// An unrecognised dispatch would read as "by name" and quietly put a
+	// relay's downstreams behind a published name none of them has.
+	switch m.Dispatch {
+	case DispatchName, DispatchPort, "":
+	default:
+		return nil, fmt.Errorf("parsing %s: dispatch %q is not %q or %q", path, m.Dispatch, DispatchName, DispatchPort)
+	}
+	// Dispatch answers "which of this instance's several routes is this",
+	// so it says nothing about a service that has one successor. Written
+	// there, it is a fan-out someone meant to declare and did not.
+	if m.Dispatch != "" && !m.FansOut() {
+		return nil, fmt.Errorf("parsing %s: dispatch %q without downstreams: %s, so there is nothing to tell apart",
+			path, m.Dispatch, DownstreamsMany)
 	}
 	if err := checkUpstream(path, m.Upstream); err != nil {
 		return nil, err

@@ -502,14 +502,19 @@ func (m renderer) downstreamsFor(instance string, fansOut bool) []render.Downstr
 		if e.From.Instance != instance {
 			continue
 		}
-		out = append(out, render.Downstream{
+		d := render.Downstream{
 			Route:     e.Route,
 			Instance:  e.To.Instance,
 			Port:      e.To.Port,
 			Published: m.publishedAt(e.To.Instance, e.To.Port),
 			Address:   e.Address,
 			Number:    e.Port,
-		})
+			Entry:     e.From.Port,
+		}
+		if from := m.instanceByID(instance); from != nil {
+			d.EntryNumber = from.Ports[e.From.Port].Number
+		}
+		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Route < out[j].Route })
 	return out

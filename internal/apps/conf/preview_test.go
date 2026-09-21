@@ -339,6 +339,69 @@ routes:
 	}
 }
 
+// TestPreview_DownstreamsCarryThePortTheRouteArrivedOn pins the entry side
+// of the downstreams datasource. An instance that dispatches by port writes
+// one endpoint per route — listening on the port that route came in on,
+// sending to that route's next hop — so both ends of the pair have to reach
+// the template.
+func TestPreview_DownstreamsCarryThePortTheRouteArrivedOn(t *testing.T) {
+	root, secretsDir := buildSharedRoot(t)
+	writeFile(t, filepath.Join(secretsDir, "ss-srv", "self", "psk", "main"), "server-psk")
+	writeFile(t, filepath.Join(root, "services", "realm", "confgen.yaml"), `
+template: templates/config.toml.tmpl
+defaults: document
+output: config.toml
+auth: none
+forwards: true
+downstreams: many
+dispatch: port
+`)
+	writeFile(t, filepath.Join(root, "services", "realm", "defaults.yaml"), "{}\n")
+	writeFile(t, filepath.Join(root, "services", "realm", "templates", "config.toml.tmpl"),
+		"{{ range (downstreams) }}{{ .Entry }} {{ .EntryNumber }} -> {{ .Address }}:{{ .Number }}\n{{ end }}")
+	writeFile(t, filepath.Join(root, "nodes", "relay.yaml"), `
+id: relay
+networks:
+  internet: 203.0.113.20
+instances:
+  - id: fwd-relay
+    service: realm
+    ports:
+      ss: 40000
+      alt: 40001
+`)
+	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
+id: srv
+networks:
+  internet: 203.0.113.10
+instances:
+  - id: ss-srv
+    service: ssserver
+    ports:
+      main: {port: 38250, self: [psk.main]}
+      other: {port: 38251, self: [psk.main]}
+`)
+	writeFile(t, filepath.Join(root, "routes.yaml"), `
+routes:
+  sfo:
+    hops: [fwd-relay:ss, ss-srv:main]
+  sfo-alt:
+    hops: [fwd-relay:alt, ss-srv:other]
+`)
+
+	p := renderPreview(t, root, secretsDir, "fwd-relay")
+	if p.err != nil {
+		t.Fatalf("preview error: %v", p.err)
+	}
+	got := strings.Join(p.lines, "\n")
+	// Ordered by route name, so a rendered file does not change because a
+	// route was added above another: "sfo" before "sfo-alt".
+	want := "ss 40000 -> 203.0.113.10:38250\nalt 40001 -> 203.0.113.10:38251"
+	if got != want {
+		t.Fatalf("preview = %q, want %q", got, want)
+	}
+}
+
 func TestPreview_RendersTheSameWayExportWould(t *testing.T) {
 	root, secretsDir := buildRenderableRoot(t)
 	p := renderPreview(t, root, secretsDir, "us-sfo")

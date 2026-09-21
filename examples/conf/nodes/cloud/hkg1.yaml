@@ -15,6 +15,8 @@ networks:
 
 instances:
 
+  # One process, one port per line it relays. Which port a connection arrives
+  # on is what decides where it goes, so the ports are the routes' own.
   - id: fwd-hkg01
     service: realm
     ports:
@@ -23,3 +25,7 @@ instances:
       ss:
         port: 38250
         published: relay.example.net
+      hy2:
+        port: 443
+        published: relay.example.net
+        protocol: udp

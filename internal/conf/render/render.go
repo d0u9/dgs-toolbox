@@ -52,8 +52,16 @@ type Downstream struct {
 	Instance string
 	Port     string
 	// Published is the name the request arrived at: what tells this
-	// downstream from the others sharing the entrance.
+	// downstream from the others sharing the entrance, for an instance that
+	// dispatches by name.
 	Published string
+	// Entry and EntryNumber are the port of this instance that the route
+	// came in on: its name, and the number it listens on. They are what
+	// tells one downstream from another for an instance that dispatches by
+	// port — a relay writes the pair as one endpoint, listening on Entry
+	// and sending to Address.
+	Entry       string
+	EntryNumber int
 	// Address is the far end, chosen the way every other edge is: loopback
 	// when the two ends share a node, otherwise the downstream's address on
 	// the first network in preference order that the proxy reaches.
