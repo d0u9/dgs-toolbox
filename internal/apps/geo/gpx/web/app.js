@@ -14,7 +14,8 @@ import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { FolderTree, revealButton } from "./tree.js";
 import { RoutePlanner } from "./route.js";
-import { confirmDialog, promptDialog, saveDialog, waypointDialog } from "./dialog.js";
+import { confirmDialog, promptDialog, waypointDialog } from "./dialog.js";
+import { openFile, saveFile } from "/ui/filedialog.js";
 import { splitter, shareSplitter } from "./splitter.js";
 
 // Okabe-Ito-derived hues: distinct under the common red/green colour-vision
@@ -24,6 +25,9 @@ const STORAGE_KEY = "dgs-gpx-browser";
 const FILL_SNAP = 40; // pixels within which a fill tool click snaps to a track's end
 
 const $ = (id) => document.getElementById(id);
+
+// What every dialog of this page filters by, opening and saving alike.
+const GPX_FILTERS = [{ label: "GPX files", extensions: [".gpx"] }, { label: "All files", extensions: [] }];
 
 const state = {
   config: null,
@@ -522,6 +526,27 @@ function showFill(fill) {
   showRange({ kind: "range", first: fill.first, last: fill.last });
 }
 
+// ---- opening files ----
+
+// openFiles browses for GPX files anywhere on this machine and puts every
+// chosen one in the workspace. The folder tree stays what it is: the dialog
+// reaches files outside it without moving the reader's root.
+async function openFiles() {
+  const folder = tree.root || state.config.root || "";
+  const chosen = await openFile({
+    title: "Open GPX",
+    message: "Choose one or more GPX files. They are added to the workspace; nothing on disk changes.",
+    folder,
+    fallbacks: [state.config.root || "", ""],
+    filters: GPX_FILTERS,
+    multiple: true,
+    places: state.config.places || null,
+  });
+  if (!chosen || !chosen.length) return;
+  for (const path of chosen) await addTrack(path, { visible: true });
+  save();
+}
+
 // ---- planning a route ----
 
 // saveRoute writes the planned route into a new GPX, chosen by path, and adds
@@ -529,14 +554,17 @@ function showFill(fill) {
 async function saveRoute() {
   const root = (tree.root || state.config.root || "").replace(/[\\/]$/, "");
   const folder = planner.source ? planner.source.replace(/[\\/][^\\/]*$/, "") : root;
-  const target = await saveDialog({
+  const target = await saveFile({
     title: "Save the route",
     message: "Choose the folder of the new GPX and name it. An existing file is not replaced; the waypoints are kept beside it, so the route can be changed and saved again.",
     folder,
-    fallback: state.config.root || "",
-    places: state.config.places || [],
+    fallbacks: [state.config.root || "", ""],
+    filters: GPX_FILTERS,
+    places: state.config.places || null,
     name: `${planner.name}.gpx`,
-    confirm: "Save",
+    // The server writes a new file and refuses to write over one, so the
+    // dialog refuses a name that is taken rather than offering to replace it.
+    replace: false,
   });
   if (!target) return;
   try {
@@ -579,24 +607,26 @@ async function saveAs(path) {
   const dot = path.toLowerCase().lastIndexOf(".gpx");
   const tracks = `${entry.track.added} track${entry.track.added === 1 ? "" : "s"}`;
   const root = (tree.root || state.config.root || "").replace(/[\\/]$/, "");
-  const target = await saveDialog(entry.track.draft
+  const common = {
+    fallbacks: [state.config.root || "", ""],
+    filters: GPX_FILTERS,
+    places: state.config.places || null,
+    replace: false, // the server writes a new file and never writes over one
+  };
+  const target = await saveFile(entry.track.draft
     ? {
+      ...common,
       title: "Save the new GPX",
       message: `${entry.track.name} holds ${tracks}, saved as they are being edited. Choose the folder to save it in and name it; an existing file is not replaced.`,
       folder: root,
-      fallback: state.config.root || "",
-      places: state.config.places || [],
       name: `${entry.track.name}.gpx`,
-      confirm: "Save",
     }
     : {
+      ...common,
       title: "Save as standalone GPX",
       message: `${entry.track.name} is saved as a new self-contained GPX: edited points, fills, added tracks, names, cuts and route plan. No sidecar is needed. ${basename(path)} itself is not written, and an existing file is not replaced.`,
       folder: path.replace(/[\\/][^\\/]*$/, "") || root,
-      fallback: state.config.root || "",
-      places: state.config.places || [],
       name: `${basename(dot > 0 ? path.slice(0, dot) : path)} edited.gpx`,
-      confirm: "Save",
     });
   if (!target) return;
   try {
@@ -1473,6 +1503,7 @@ async function start() {
     onChange: save,
   });
   tree.canReveal = state.config.canReveal;
+  $("folder-open").addEventListener("click", openFiles);
   // A remembered root holds only while geo.gpx.root is what it was when it was
   // remembered: changing the configuration opens the new root.
   const rootStillApplies = saved.root && saved.configRoot === state.config.root;

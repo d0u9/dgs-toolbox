@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/filebrowse"
 	"dgs-toolbox/internal/geo"
 	"dgs-toolbox/internal/geo/compose"
 	"dgs-toolbox/internal/geo/gpxfile"
@@ -140,10 +141,10 @@ func TestDirListsFoldersAndGPXFiles(t *testing.T) {
 	server := httptest.NewServer(Handler(Settings{Root: root}))
 	defer server.Close()
 	var got struct {
-		Path   string     `json:"path"`
-		Parent string     `json:"parent"`
-		Dirs   []dirEntry `json:"dirs"`
-		Files  []dirEntry `json:"files"`
+		Path   string             `json:"path"`
+		Parent string             `json:"parent"`
+		Dirs   []filebrowse.Entry `json:"dirs"`
+		Files  []filebrowse.Entry `json:"files"`
 	}
 	if status := get(t, server, "/api/dir", &got); status != http.StatusOK {
 		t.Fatalf("status %d", status)
@@ -807,7 +808,7 @@ func TestConfigListsPlacesToSaveIn(t *testing.T) {
 	server := httptest.NewServer(Handler(Settings{Root: root}))
 	defer server.Close()
 	var got struct {
-		Places []place `json:"places"`
+		Places []filebrowse.Place `json:"places"`
 	}
 	get(t, server, "/api/config", &got)
 	if len(got.Places) < 2 || got.Places[0].Path != root || got.Places[0].Name != filepath.Base(root) {
@@ -829,7 +830,7 @@ func TestConfigListsPlacesToSaveIn(t *testing.T) {
 	}
 	// The browser's root is the home directory: it is offered once, as Home.
 	var atHome struct {
-		Places []place `json:"places"`
+		Places []filebrowse.Place `json:"places"`
 	}
 	homeServer := httptest.NewServer(Handler(Settings{Root: home}))
 	defer homeServer.Close()
@@ -850,8 +851,8 @@ func TestDirCarriesTimesAndSizes(t *testing.T) {
 	server := httptest.NewServer(Handler(Settings{Root: root}))
 	defer server.Close()
 	var got struct {
-		Dirs  []dirEntry `json:"dirs"`
-		Files []dirEntry `json:"files"`
+		Dirs  []filebrowse.Entry `json:"dirs"`
+		Files []filebrowse.Entry `json:"files"`
 	}
 	get(t, server, "/api/dir?path="+url.QueryEscape(root), &got)
 	if len(got.Dirs) != 1 || got.Dirs[0].Modified.IsZero() || got.Dirs[0].Size != 0 {

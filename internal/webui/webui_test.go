@@ -15,7 +15,7 @@ import (
 
 // The files a page links. A page that links one of these by name breaks if
 // the file is renamed, so the names are pinned here.
-var shared = []string{"fonts.css", "tokens.css", "base.css", "controls.css"}
+var shared = []string{"fonts.css", "tokens.css", "base.css", "controls.css", "filedialog.css"}
 
 func TestAssetsHoldTheSharedFiles(t *testing.T) {
 	for _, name := range shared {
@@ -39,6 +39,39 @@ func TestFontsAreEmbedded(t *testing.T) {
 		}
 		if len(b) == 0 {
 			t.Fatalf("%s is empty", name)
+		}
+	}
+}
+
+// The shared scripts, pinned for the same reason: a page imports them by
+// name.
+var sharedScripts = []string{"filedialog.js"}
+
+func TestAssetsHoldTheSharedScripts(t *testing.T) {
+	for _, name := range sharedScripts {
+		b, err := fs.ReadFile(webui.Assets(), name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if len(b) == 0 {
+			t.Fatalf("%s is empty", name)
+		}
+	}
+}
+
+func TestHandlerServesScripts(t *testing.T) {
+	mux := http.NewServeMux()
+	webui.Mount(mux)
+
+	for _, name := range sharedScripts {
+		req := httptest.NewRequest(http.MethodGet, webui.Prefix+name, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s%s: status %d", webui.Prefix, name, rec.Code)
+		}
+		if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "javascript") {
+			t.Fatalf("GET %s%s: content type %q", webui.Prefix, name, got)
 		}
 	}
 }

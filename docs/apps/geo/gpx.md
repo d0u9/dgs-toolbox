@@ -34,7 +34,9 @@ server exposes the API under `/api/`; everything else is the page.
 | `/` | The web page. |
 | `/api/health` | Answers `{"ok":true}`. |
 | `/api/config` | The ways of travel the routers offer (`ways`: `id`, `label`, `service`), the base maps — built-in first, then configured — each with its coordinate system, the folder to open at, and `places`: the folders the save dialog lists down its side, each `name` and `path`. |
-| `/api/dir?path=` | The folders and `.gpx` files of a folder, each with the time it was last written, and a file with its size. Hidden entries are left out. |
+| `/api/dir?path=` | The folders and `.gpx` files of a folder, each with the time it was last written, and a file with its size, for the page's folder tree. Hidden entries are left out. |
+| `/ui/files/dir?path=&ext=&hidden=` | The shared file dialog's listing, mounted by `internal/webfile` rather than this app: one folder's folders and files, narrowed to the suffixes `ext` repeats. Documented in [`docs/web.md`](../../web.md). |
+| `/ui/files/places` | The folders the shared file dialog lists down its side. |
 | `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; how many tracks were added to it, and `ours` when `dgs` wrote the file. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
 | `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
 | `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
@@ -106,25 +108,22 @@ map. It is the interface later milestones build on.
   hover, that reveals the item in Finder or Explorer. It appears only when the
   page is opened on the machine running `dgs`: from another machine it would
   open windows on a screen nobody there can see.
+- **Opening files.** *Open…* in the Folders bar opens the shared file dialog
+  ([`docs/web.md`](../../web.md)), so a GPX outside the tree's root can be
+  added without moving the root: several files at once, filtered to `GPX
+  files` or `All files`. Each chosen file is added to the workspace, shown;
+  one already there is shown and focused instead. Nothing on disk changes.
 - **Choosing where to save.** Everything that writes a new file — a planned
-  route, a new GPX, *Save as…*, and *Browse…* on the Segments tab — opens one
-  save dialog instead of a typed path: the folder it opens at, `↑` to the
-  folder above, its folders to step into and its GPX files listed to take a
-  name from, and one field for the file name. `.gpx` is added when it is left
-  off. Down its side are the usual places, as a file manager lists them: the
-  folder `dgs` opened at when it is not the home directory, *Home*, the
-  folders under it a GPX is likely to be in — Desktop, Documents, Downloads,
-  Pictures, Movies — and, on macOS, each mounted volume, so an external disk
-  is one click away. Only folders that are there are listed, and the one being
-  browsed is marked. The listing has the three columns a file manager has —
-  *Name*, *Date Modified*, *Size* — and clicking a heading sorts by it,
-  clicking it again turns the order round, marked `^` or `v`; a name sorts the
-  way it reads, so `2` comes before `10`, and a date or a size opens newest
-  and largest first. Folders stay above files, and the choice is kept for the
-  next save. It opens at the folder the file belongs to — the folder tree's, or the
-  one beside the file being saved — and falls back to the folder `dgs` opened
-  at, `geo.gpx.root` or the home directory, when that folder is gone. The full path it returns is what the server is asked to write, and an
-  existing file is still never replaced.
+  route, a new GPX, *Save as…*, and *Browse…* on the Segments tab — opens the
+  shared file dialog's save mode ([`docs/web.md`](../../web.md)) instead of a
+  typed path: the same browser as *Open*, with a name field, *New Folder*, and
+  F2 to rename. `.gpx` is added when it is left off. It opens at the folder the
+  file belongs to — the folder tree's, or the one beside the file being saved —
+  and falls back to the folder `dgs` opened at, `geo.gpx.root` or the home
+  directory, when that folder is gone. The server writes a new file and never
+  writes over one, so the dialog refuses a name that is already taken rather
+  than offering to replace it. The full path it returns is what the server is
+  asked to write.
 - **Names.** A track is named by its file name. The name inside a GPX file is
   often only a recorder's timestamp; the file name is the one the reader chose.
   File names run long, so the sidebar reads a size smaller, a name wraps to two

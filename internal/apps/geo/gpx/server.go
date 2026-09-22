@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/webfile"
 	"dgs-toolbox/internal/webui"
 )
 
@@ -81,6 +82,7 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/route/leg", api.routeLeg)
 	mux.HandleFunc("POST /api/route/save", api.saveRoute)
 	webui.Mount(mux)
+	webfile.Mount(mux, webfile.Options{Root: settings.Root, Writable: true})
 	mux.Handle("GET /", http.FileServerFS(static))
 	return sameOrigin(mux)
 }
