@@ -1,0 +1,30 @@
+{
+  "box": {
+    "root": "~/Documents/Box",
+    "inbox": "~/Scans/inbox",
+    "marker": ".dgs-box",
+    "state_file": ".dgs-box-state",
+    "cache_dir": "",
+    "index_file": "index.json",
+    "workers": 4,
+    "currency": "AUD",
+    "timezone": "Australia/Sydney",
+    "web": {
+      "port": 8766
+    },
+    "thumbnail": {
+      "size": 300
+    },
+    "preview": {
+      "size": 1600,
+      "keep": 30
+    },
+    "trash": {
+      "dir": "trash",
+      "keep": 90
+    },
+    "lifetimes": {
+      "receipt": 3650
+    }
+  }
+}

@@ -27,6 +27,7 @@ type Config struct {
 	Photo     Photo   `json:"photo"`
 	Capture   Capture `json:"capture"`
 	Geo       Geo     `json:"geo"`
+	Box       Box     `json:"box"`
 	Conf      Conf    `json:"conf"`
 	// dir is the directory the configuration was loaded from. Paths that
 	// default to sitting beside the configuration resolve against this rather
@@ -226,7 +227,8 @@ func Default() Config {
 	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Capture: Capture{
 		Scan:     CaptureScan{IndexFile: "index.json"},
 		Obsidian: CaptureObsidian{},
-	}, Geo: Geo{GPX: GeoGPX{Host: DefaultGeoGPXHost, Port: DefaultGeoGPXPort}}}
+	}, Geo: Geo{GPX: GeoGPX{Host: DefaultGeoGPXHost, Port: DefaultGeoGPXPort}},
+		Box: defaultBox()}
 }
 
 // CaptureArchiveFolders are the two directories Archive files into: where
@@ -539,6 +541,9 @@ func LoadPath(path string) (Config, error) {
 		return Config{}, fmt.Errorf("decode config %s: geo.gpx.%w", path, err)
 	}
 	home, _ := os.UserHomeDir()
+	if err := validateBox(&config.Box, home); err != nil {
+		return Config{}, fmt.Errorf("decode config %s: %w", path, err)
+	}
 	if config.Conf.Root != "" {
 		expanded, err := ExpandPath(config.Conf.Root, os.LookupEnv, home)
 		if err != nil {
