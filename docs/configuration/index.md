@@ -93,7 +93,6 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `conf.root` | [conf](conf.md) | empty — the page opens with no root and asks for one |
 | `conf.secrets` | [conf](conf.md) | empty — an instance needing a secret refuses to render |
 | `conf.export.dir` | [conf](conf.md) | empty — the home directory |
-| `instances[].principal` | [conf](conf.md) | empty — the instance dials as itself |
 | `identities` (`credentials.json`) | [cred](cred.md) | empty — no identities |
 | `recipients` (`credentials.json`) | [cred](cred.md) | empty — no recipients |
 | `new_identity_dir` (`credentials.json`) | [cred](cred.md) | `~/.config/age` |
