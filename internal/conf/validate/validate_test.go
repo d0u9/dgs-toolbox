@@ -914,8 +914,41 @@ func TestValidate_PrincipalMustHoldTheRoute(t *testing.T) {
 	inv, manifests := principalInventory()
 	inv.Users["repeater"] = inventory.User{Devices: inventory.DevicesNone}
 	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
-	if !containsSubstring(got, `instance "ss-relay": principal "repeater" has no access to route "chain"`) {
+	if !containsSubstring(got, `instance "ss-relay": principal "repeater"'s "default" credential has no access to route "chain"`) {
 		t.Fatalf("Validate = %v, want unauthorised principal", messages(got))
+	}
+}
+
+// The credential an instance carries is the principal's `default`, so a person
+// holding the route under another credential is not the question: what matters
+// is whether that one credential opens it.
+func TestValidate_PrincipalDefaultCredentialMustNotNarrowAwayTheRoute(t *testing.T) {
+	inv, manifests := principalInventory()
+	inv.Users["repeater"] = inventory.User{
+		Devices: inventory.DevicesNone,
+		Access:  []string{"chain", "sfo"},
+		Credentials: map[string]inventory.Credential{
+			"default": {Access: []string{"sfo"}},
+		},
+	}
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `instance "ss-relay": principal "repeater"'s "default" credential has no access to route "chain"`) {
+		t.Fatalf("Validate = %v, want the narrowed default credential reported", messages(got))
+	}
+}
+
+// A person who declares credentials and keeps no `default` has nothing for the
+// instance to carry, however wide their own access is.
+func TestValidate_PrincipalMustKeepADefaultCredential(t *testing.T) {
+	inv, manifests := principalInventory()
+	inv.Users["repeater"] = inventory.User{
+		Devices:     inventory.DevicesNone,
+		Access:      []string{"chain"},
+		Credentials: map[string]inventory.Credential{"relay": {}},
+	}
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `instance "ss-relay": principal "repeater"'s "default" credential has no access to route "chain"`) {
+		t.Fatalf("Validate = %v, want the missing default credential reported", messages(got))
 	}
 }
 
