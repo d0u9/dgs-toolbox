@@ -349,13 +349,36 @@ type Export struct {
 // holds no credential at all. See
 // docs/apps/conf/export.md#a-second-file-what-deploys-it.
 type Deploy struct {
+	// Defaults is DefaultsDocument or DefaultsElement, and applies to
+	// every file: one deploy/defaults.yaml is merged once and handed to
+	// each template, so the compose file and the script that installs it
+	// cannot disagree about what the instance deploys with.
+	Defaults string `yaml:"defaults"`
+	// Files is what this deployment writes, in the order written. A
+	// container needs more than the file its runtime reads: the rendered
+	// configuration has to be in place before the runtime starts, and the
+	// step that puts it there is a second artefact of the same render
+	// rather than something maintained by hand.
+	Files []DeployFile `yaml:"files"`
+}
+
+// DeployFile is one artefact of a deployment: a template and the name it is
+// written under. Both are the deploy directory's own, and the defaults kind
+// is the deployment's, since one defaults.yaml serves every file.
+type DeployFile struct {
 	// Template is the template rendered, relative to the deploy directory.
 	Template string `yaml:"template"`
-	// Defaults is DefaultsDocument or DefaultsElement.
-	Defaults string `yaml:"defaults"`
 	// Output is the name the rendered file is written under, beside the
 	// service's own.
 	Output string `yaml:"output"`
+}
+
+// Executable reports whether this file is written with the execute bit. It
+// is derived from the output name rather than declared: a deployment writes
+// a script because the name says .sh, and a key saying so a second time is
+// the kind of second truth this directory exists to remove.
+func (f DeployFile) Executable() bool {
+	return strings.EqualFold(filepath.Ext(f.Output), ".sh")
 }
 
 // Service is one subdirectory of the generator root that holds a
@@ -566,6 +589,28 @@ func loadDeploy(path string) (*Deploy, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&d); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	// A deployment that writes nothing is a directory that exists for no
+	// reason, and it would otherwise be reported at render time, once per
+	// instance, rather than here where the file is.
+	if len(d.Files) == 0 {
+		return nil, fmt.Errorf("parsing %s: files is empty: a deployment writes at least one file", path)
+	}
+	seen := map[string]bool{}
+	for i, f := range d.Files {
+		if f.Template == "" {
+			return nil, fmt.Errorf("parsing %s: files[%d] names no template", path, i)
+		}
+		if f.Output == "" {
+			return nil, fmt.Errorf("parsing %s: files[%d] names no output", path, i)
+		}
+		// Two files under one name would leave the second overwriting
+		// the first in a folder and duplicating an entry in a zip, and
+		// which of the two survived would depend on the writer.
+		if seen[f.Output] {
+			return nil, fmt.Errorf("parsing %s: files[%d]: output %q is written twice", path, i, f.Output)
+		}
+		seen[f.Output] = true
 	}
 	return &d, nil
 }

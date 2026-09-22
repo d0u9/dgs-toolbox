@@ -18,6 +18,21 @@ import (
 type exportFile struct {
 	Path  string
 	Bytes []byte
+	// Executable is set for a file whose name says it is run rather than
+	// read — a deployment's install script. It is derived from the output
+	// name, so a template author writes no mode.
+	Executable bool
+}
+
+// fileMode is the mode a rendered file is published under. A rendered
+// configuration carries credentials, so 0600 stays the rule; a script
+// carries none and is written to be run, so it gets the owner's execute bit
+// and nothing more.
+func (f exportFile) fileMode() os.FileMode {
+	if f.Executable {
+		return 0o700
+	}
+	return 0o600
 }
 
 // renderAll renders every instance, in order, stopping at the first failure:
@@ -64,15 +79,16 @@ func (m renderer) renderAll(instances []string) ([]exportFile, error) {
 		// next to how the program behaves. Both are rendered from one
 		// `ports` field, which is what makes the port mapping in it derived
 		// rather than maintained by hand.
-		deploy, deployOutput, err := m.deployFor(instance)
+		deploy, err := m.deployFor(instance)
 		if err != nil {
 			return nil, err
 		}
-		if deploy != nil {
-			if deployOutput == "" {
-				return nil, fmt.Errorf("%s: service %q deploys nothing: its deploy/confgen.yaml names no output", instance, t.Service)
-			}
-			files = append(files, exportFile{Path: filepath.Join(t.Node, kind, instance, deployOutput), Bytes: deploy})
+		for _, d := range deploy {
+			files = append(files, exportFile{
+				Path:       filepath.Join(t.Node, kind, instance, d.Output),
+				Bytes:      d.Bytes,
+				Executable: d.Executable,
+			})
 		}
 	}
 	return files, nil
@@ -104,7 +120,7 @@ func (m renderer) ExportFolder(instances []string, destDir string, overwrite boo
 		return err
 	}
 	for _, f := range files {
-		if err := writeExport(filepath.Join(destDir, f.Path), f.Bytes, overwrite); err != nil {
+		if err := writeExport(filepath.Join(destDir, f.Path), f.Bytes, f.fileMode(), overwrite); err != nil {
 			return err
 		}
 	}
@@ -114,14 +130,14 @@ func (m renderer) ExportFolder(instances []string, destDir string, overwrite boo
 // writeExport publishes one export file. Overwriting is publish.Replace: the
 // same temporary file in the same directory, renamed over the old one, so a
 // reader sees either the old file or the new one and never a partial file.
-func writeExport(path string, data []byte, overwrite bool) error {
+func writeExport(path string, data []byte, mode os.FileMode, overwrite bool) error {
 	if !overwrite {
-		return publish.Create(path, data, 0o600, 0o700)
+		return publish.Create(path, data, mode, 0o700)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return publish.Replace(path, data, 0o600)
+	return publish.Replace(path, data, mode)
 }
 
 // existingOf is every path of a rendered export that is already on disk,
@@ -150,7 +166,12 @@ func (m renderer) ExportZip(instances []string, zipPath string, overwrite bool) 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for _, f := range files {
-		w, err := zw.Create(filepath.ToSlash(f.Path))
+		// The header rather than Create, so the execute bit survives
+		// the archive: a script extracted without it is a script the
+		// person has to chmod before the deployment it belongs to runs.
+		header := &zip.FileHeader{Name: filepath.ToSlash(f.Path), Method: zip.Deflate}
+		header.SetMode(f.fileMode())
+		w, err := zw.CreateHeader(header)
 		if err != nil {
 			return fmt.Errorf("zip: %s: %w", f.Path, err)
 		}
@@ -162,5 +183,5 @@ func (m renderer) ExportZip(instances []string, zipPath string, overwrite bool) 
 		return fmt.Errorf("zip: %w", err)
 	}
 
-	return writeExport(zipPath, buf.Bytes(), overwrite)
+	return writeExport(zipPath, buf.Bytes(), 0o600, overwrite)
 }
