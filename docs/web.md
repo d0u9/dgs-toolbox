@@ -351,6 +351,71 @@ embedded in the binary and mounted by every server that serves a page, under
 then adds a stylesheet of its own for what only it draws — the graph canvas,
 the map workspace.
 
+The module also carries the one interaction no page should write twice: the
+**file dialog**. A page links `/ui/filedialog.css`, imports `openFile` or
+`saveFile` from `/ui/filedialog.js`, and mounts the endpoints
+`internal/webfile` serves under `/ui/files/` — `dir`, one folder's folders and
+files, and `places`, the list down the dialog's side. A page that saves mounts
+them with `Writable`, which adds the three a save needs: `taken`, whether a
+name is already there and what of; `folder`, one new folder; and `rename`. A
+page that only opens leaves `Writable` off, and then nothing the dialog can
+reach changes anything on disk. The computation behind all of them is
+`internal/filebrowse`, so a TUI file view lists a folder with the same code.
+
+The dialog is what a reader already knows from Finder and Explorer:
+
+- Places down the side — the folder `dgs` opened at when it is not the home
+  directory, *Home*, the folders under it a document is likely to be in, and,
+  on macOS, each mounted volume. Only folders that are there are listed, and
+  the one being browsed is marked.
+- One size, whatever is in the folder: a share of the window — 68% of its
+  width, 72% of its height, within a floor and a ceiling — not a size the
+  contents decide. A folder of three files and a folder of three hundred draw
+  the same dialog. Everything inside gives way to it: the rows that do not fit
+  scroll, a long message from the page scrolls after a few lines, and a deep
+  path is cut to one line rather than wrapping. The dialog is never taller
+  than the window, because a dialog whose top is off the screen cannot be
+  cancelled.
+- The corner **drags it to another size**, and that size is kept for the next
+  dialog, as the sort order and the hidden-file toggle are. A reader who wants
+  a taller listing says so once.
+- A bar over the listing: `↑` to the folder above, the full path, and `↻`.
+- Three columns — *Name*, *Date Modified*, *Size*. Clicking a heading sorts by
+  it, clicking it again turns the order round, marked `^` or `v`. A name sorts
+  the way it reads, so `2` comes before `10`. Folders stay above files, and
+  the choice is kept for the next dialog.
+- A **filter** over the file types, named by the page: `GPX files`, `All
+  files`. Folders are listed whatever the filter, because the dialog browses
+  through them. Beside it, a *Hidden files* toggle, also kept between dialogs.
+- Keys as a file manager answers them: the arrows move the selection, Right
+  steps into a folder, Left or Backspace goes up, typing jumps to the row whose
+  name starts that way, Enter confirms, Esc cancels. Double-clicking a folder
+  opens it; double-clicking a file confirms.
+- One action button, and Cancel. Opening answers one path, or several when the
+  page asks for several — Shift extends the selection, Cmd or Ctrl adds one
+  row. Saving answers the folder being browsed and the name that was typed.
+  The dialog only chooses a path: writing it stays the server's work.
+
+Saving adds what a save dialog has and an open dialog does not:
+
+- A **name field** under the listing. Clicking a file puts its name there, so
+  writing over a file is picking it. A name is one entry of the folder being
+  browsed: a name holding `/` or `\` is refused rather than followed.
+- The **filter's extension** is added when the name was typed without one, and
+  changing the filter changes the extension with it — the name stays, the type
+  follows the choice.
+- **New Folder** in the bar. The name is typed on a row of its own at the top
+  of the listing, where the folder will be. A name already taken is refused:
+  nothing is replaced or merged.
+- **F2** renames the one row that is selected, in place. It stays in its
+  folder, and a name already taken is refused, so renaming never replaces
+  anything. Enter commits, Esc gives up without cancelling the dialog.
+- A name that is **already a file** is confirmed — *Replace the file?* — before
+  it is answered. A name that is already a **folder** is refused outright: a
+  save never replaces a folder. A page whose server will not write over a file
+  turns the confirmation off, and then a name already taken is refused too: the
+  dialog never answers a path the write would be refused for.
+
 Two rules keep the module worth having:
 
 - A page never re-declares a shared token and never hard-codes a value a token

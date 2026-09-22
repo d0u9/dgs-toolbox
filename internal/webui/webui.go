@@ -30,9 +30,17 @@ func Assets() fs.FS {
 	return sub
 }
 
-// Handler serves the shared files under Prefix.
+// Handler serves the shared files under Prefix. The files are embedded, so
+// they carry no modification time a browser could revalidate against: a page
+// would keep a stylesheet from an older dgs until its cache was cleared by
+// hand. Asking for revalidation on every request costs nothing — the server
+// is on this machine — and a new dgs draws with its own files.
 func Handler() http.Handler {
-	return http.StripPrefix(Prefix, http.FileServerFS(Assets()))
+	files := http.StripPrefix(Prefix, http.FileServerFS(Assets()))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		files.ServeHTTP(w, r)
+	})
 }
 
 // Mount registers the shared files on a page's own mux.

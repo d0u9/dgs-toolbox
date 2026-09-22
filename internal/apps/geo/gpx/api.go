@@ -9,13 +9,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/desktop"
+	"dgs-toolbox/internal/filebrowse"
 	"dgs-toolbox/internal/geo"
 	"dgs-toolbox/internal/geo/clean"
 	"dgs-toolbox/internal/geo/compose"
@@ -104,7 +104,7 @@ func (a api) config(w http.ResponseWriter, r *http.Request) {
 		dem = config.Config{}.GeoGPXDEMSource()
 	}
 	writeJSON(w, map[string]any{
-		"root": a.settings.Root, "places": places(a.settings.Root), "tiles": tiles, "ways": a.ways(), "canReveal": isLocal(r),
+		"root": a.settings.Root, "places": filebrowse.Places(a.settings.Root), "tiles": tiles, "ways": a.ways(), "canReveal": isLocal(r),
 		"dem": map[string]any{"url": dem.URL, "encoding": dem.Encoding, "maxZoom": dem.MaxZoom},
 	})
 }
@@ -126,58 +126,21 @@ func configuredMap(tile config.GeoGPXTile) baseMap {
 	return m
 }
 
-type dirEntry struct {
-	Name     string    `json:"name"`
-	Path     string    `json:"path"`
-	Size     int64     `json:"size,omitempty"`
-	Modified time.Time `json:"modified,omitzero"`
-}
-
-// dir lists the folders and GPX files of one folder. Hidden entries are left
-// out; everything that is not a folder or a .gpx file is too.
+// dir lists the folders and GPX files of one folder, for the page's folder
+// tree. The dialog the page opens files and saves them through reads the
+// shared endpoints internal/webfile mounts instead; both list a folder with
+// the same code.
 func (a api) dir(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		path = a.settings.Root
 	}
-	path, err := filepath.Abs(path)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	entries, err := os.ReadDir(path)
+	listing, err := filebrowse.List(path, filebrowse.Options{Extensions: []string{".gpx"}})
 	if err != nil {
 		writeError(w, statusFor(err), err)
 		return
 	}
-	dirs, files := []dirEntry{}, []dirEntry{}
-	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		full := filepath.Join(path, name)
-		info, err := os.Stat(full) // follows symlinks, so a linked folder is a folder
-		if err != nil {
-			continue
-		}
-		switch {
-		case info.IsDir():
-			dirs = append(dirs, dirEntry{Name: name, Path: full, Modified: info.ModTime()})
-		case strings.EqualFold(filepath.Ext(name), ".gpx"):
-			files = append(files, dirEntry{Name: name, Path: full, Size: info.Size(), Modified: info.ModTime()})
-		}
-	}
-	byName := func(entries []dirEntry) {
-		sort.Slice(entries, func(i, j int) bool { return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name) })
-	}
-	byName(dirs)
-	byName(files)
-	parent := filepath.Dir(path)
-	if parent == path {
-		parent = ""
-	}
-	writeJSON(w, map[string]any{"path": path, "parent": parent, "dirs": dirs, "files": files})
+	writeJSON(w, listing)
 }
 
 // trackJSON is a track as the page draws it: parallel arrays, one entry per
