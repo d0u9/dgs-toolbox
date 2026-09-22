@@ -5,7 +5,7 @@
 // segments and writes the files; this module edits cuts and names.
 
 import * as format from "./format.js";
-import { saveDialog } from "./dialog.js";
+import { saveFile } from "/ui/filedialog.js";
 
 const SEGMENT = "cut-segment";
 const CUTS = "cut-points";
@@ -274,14 +274,16 @@ export class CutPanel {
     browse.textContent = "Browse…";
     browse.title = "Choose the folder and name of the new file";
     browse.addEventListener("click", async () => {
-      const chosenPath = await saveDialog({
+      const chosenPath = await saveFile({
         title: "Write the segments into a new GPX",
         message: "Choose the folder of the new GPX and name it. An existing file is not replaced.",
         folder: this.createPath.replace(/[\\/][^\\/]*$/, ""),
-        fallback: this.home || "",
-        places: this.places || [],
+        fallbacks: [this.home || "", ""],
+        filters: [{ label: "GPX files", extensions: [".gpx"] }, { label: "All files", extensions: [] }],
+        places: this.places || null,
         name: basename(this.createPath) || "segments.gpx",
         confirm: "Choose",
+        replace: false, // the server writes a new file and never writes over one
       });
       if (!chosenPath) return;
       this.createPath = chosenPath;

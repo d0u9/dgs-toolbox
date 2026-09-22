@@ -1,0 +1,184 @@
+/* The shared file dialog: places down the side, a listing in columns, and a
+   foot holding the type filter and the two buttons. It draws only from
+   tokens.css and the controls of controls.css, so it looks the same on every
+   page dgs serves. */
+
+/* The dialog is a share of the window, not a size its contents decide: a
+   fixed height and width, so a folder of three files and a folder of three
+   hundred draw the same dialog and neither can push the foot off the screen.
+   Everything inside gives way to it — the listing takes what is left over.
+   The corner drags it to another size, and that size is kept for the next
+   dialog. */
+.file-dialog {
+  width: 68vw;
+  height: 72vh;
+  min-width: 420px;
+  min-height: 320px;
+  max-width: 96vw;
+  max-height: 88vh;
+  resize: both;
+  overflow: hidden;
+}
+/* Only when it is open: a bare display would override the display:none a
+   closed dialog gets from the browser, and it would be on the page. */
+.file-dialog[open] { display: flex; }
+.file-form { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+/* What a page says over the browser. It is the page's text, so its length is
+   not the dialog's to know: past a few lines it scrolls rather than growing. */
+.file-message { flex: none; max-height: 6em; overflow-y: auto; }
+
+/* Where we are, the folder above, and refresh. */
+.file-bar { flex: none; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.file-where {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--cloud);
+  font-size: var(--font-size-xs);
+  /* One line, whatever the path: a deep folder must not add a row to the
+     bar and move the listing down. The end is cut, because the folder the
+     reader is in reads from the left. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The browser is one fixed size: a folder of three files and a folder of
+   three hundred draw the same dialog, and the rows that do not fit scroll.
+   On a short window it gives way to the viewport rather than overflowing it. */
+/* The listing is what is left after the bar, the message and the foot: it
+   never decides the dialog's height. */
+.file-body {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The places: home, the folders under it, the mounted disks. */
+.file-places {
+  flex: none;
+  width: 140px;
+  height: 100%;
+  margin: 0;
+  padding: var(--space-xxs);
+  list-style: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--cloud);
+  overflow-y: auto;
+}
+.file-places[hidden] { display: none; }
+.file-place {
+  display: block;
+  width: 100%;
+  padding: var(--row-pad-y) 6px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--ink);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.file-place:hover { background: var(--hover); }
+.file-place.here { background: var(--selected); font-weight: 600; }
+
+/* The folder being browsed: sortable headings over the rows. */
+.file-listing {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  overflow: hidden;
+}
+.file-header { display: flex; border-bottom: 1px solid var(--hairline); background: var(--cloud); }
+.file-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xxs);
+  padding: var(--row-pad-y) 6px;
+  border: none;
+  border-right: 1px solid var(--hairline);
+  background: none;
+  color: var(--graphite);
+  font-size: var(--font-size-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.file-heading:last-child { border-right: none; }
+.file-heading:hover { color: var(--primary); }
+.file-marker { color: var(--primary); font-size: 10px; }
+
+.file-list {
+  flex: 1;
+  min-width: 0;
+  min-height: 0; /* without this the rows push the list past its size */
+  margin: 0;
+  padding: var(--space-xxs);
+  list-style: none;
+  overflow-y: auto;
+}
+.file-list:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.file-row {
+  display: flex;
+  gap: 6px;
+  padding: var(--row-pad-y) 6px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  cursor: default;
+  user-select: none;
+}
+.file-row:hover { background: var(--hover); }
+.file-row.chosen { background: var(--selected); }
+.file-folder .file-cell-name::before { content: "▸ "; color: var(--primary); }
+.file-file .file-cell-name { color: var(--charcoal); }
+
+.file-cell-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-cell-modified { flex: none; width: 118px; color: var(--graphite); }
+.file-cell-size { flex: none; width: 64px; color: var(--graphite); text-align: right; }
+.file-heading.file-cell-name { flex: 1; min-width: 0; }
+.file-heading.file-cell-modified { flex: none; width: 130px; }
+.file-heading.file-cell-size { flex: none; width: 76px; }
+
+.file-empty { padding: var(--row-pad-y) 6px; color: var(--graphite); font-size: var(--font-size-sm); }
+.file-problem { flex: none; margin: 0 0 var(--space-xs); color: var(--error); }
+
+/* The foot: the name field when saving, the type filter, the hidden-file
+   toggle, then Cancel and the one action. */
+.file-foot { flex: none; display: flex; align-items: center; gap: var(--space-xs); flex-wrap: wrap; }
+/* The name is typed, so it keeps a readable width: on a narrow dialog the
+   foot wraps and it takes a row of its own rather than shrinking away. */
+.file-name { flex: 1 1 220px; min-width: 220px; }
+.file-filter { flex: none; max-width: 200px; }
+.file-hidden { flex: none; display: flex; align-items: center; gap: var(--space-xxs); color: var(--graphite); font-size: var(--font-size-xs); }
+.file-foot .dialog-buttons { flex: 1; }
+
+/* Making a folder, and renaming what is there: only a page that saves gets
+   these, so the bar is the same two icons wherever a page only opens. */
+.file-new-folder { flex: none; white-space: nowrap; }
+.file-rename {
+  width: 100%;
+  padding: 0 4px;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+
+/* Asked over the dialog when a save names a file that is already there. */
+.file-replace { width: 380px; max-width: 92vw; }
+
+.file-title { flex: none; }

@@ -48,6 +48,9 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .chip[aria-pressed="true"] { background: var(--selected); border-color: var(--primary); color: var(--primary); }
 .chip.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .chip.active.danger { background: var(--error); border-color: var(--error); }
+.chip:disabled { opacity: .4; cursor: default; }
+.chip:disabled:hover { background: var(--paper); }
+.chip.active:disabled:hover { background: var(--primary); }
 
 /* Text and number fields, and the select beside them. */
 .field, input[type="text"], input[type="number"], input[type="search"], select {
