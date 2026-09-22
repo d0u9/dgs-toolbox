@@ -219,8 +219,7 @@ the ports — the same numbers, in another spelling, maintained by hand. Two
 truths, and the model's own [one-to-one rule](inventory.md#what-runs-the-process)
 is only a convention until one of them is generated.
 
-So a service directory may hold a `deploy/`, laid out the way an export is and
-with the same manifest keys:
+So a service directory may hold a `deploy/`, laid out the way an export is:
 
 ```text
 services/microbin/
@@ -228,22 +227,58 @@ services/microbin/
 ├── defaults.yaml
 ├── templates/server.env.tmpl
 └── deploy/
-    ├── confgen.yaml          template, defaults, output
+    ├── confgen.yaml          defaults, and one entry per file written
     ├── defaults.yaml         what every instance of this service deploys with
-    └── templates/compose.yaml.tmpl
+    └── templates/
+        ├── compose.yaml.tmpl
+        └── install.sh.tmpl
 ```
 
 ```yaml
 # services/microbin/deploy/confgen.yaml
-template: templates/compose.yaml.tmpl
 defaults: document
-output: compose.yaml
+files:
+  - template: templates/compose.yaml.tmpl
+    output: compose.yaml
+  - template: templates/install.sh.tmpl
+    output: install.sh
 ```
+
+A deployment writes **more than the file its runtime reads**, and the second
+file is why `files` is a list rather than one template and one output. The
+compose file says what to start; it does not put the rendered configuration
+where the runtime expects it, and until something does, the export is two
+files and a paragraph someone follows by hand on every machine — which
+directory, which order, what starts it afterwards. That paragraph is a
+template like any other, rendered from the same view, so it says the instance's
+own port, path and image rather than a placeholder a reader fills in.
+
+Each entry is a template and an output name. `defaults` is the deployment's
+rather than the entry's: one `deploy/defaults.yaml` is merged once and handed
+to every file, so a script and the compose file beside it cannot disagree about
+what the instance deploys with. Two entries writing one output name is an
+error — the second would overwrite the first in a folder and duplicate an entry
+in a zip, and which survived would depend on the writer. A `deploy/` writing no
+file at all is an error where the manifest is, rather than once per instance at
+render time.
+
+**An output ending in `.sh` is written with the execute bit**, in a folder and
+in a zip alike. Nothing declares it: the name is the declaration, and a `mode`
+key saying it a second time is the kind of second truth this directory exists
+to remove. Every other rendered file keeps `0600`, because it may carry a
+credential and this one does not.
+
+**Where the script puts things is an ordinary deploy value.** The destination
+path is a property of the machine, not something `dgs` derives, so it lays over
+`deploy/defaults.yaml` exactly as `image` and `restart` do, and an instance on a
+host that keeps its services elsewhere overrides it. `dgs` deriving an install
+path would be `dgs` holding an opinion about the filesystem of a machine it
+never opens a connection to.
 
 The directory is what declares it, the way `exports/<name>/` declares a way a
 service offers, so the service's own manifest grows no key. `deploy` is a fixed
-name and the only one read there; a service holding no `deploy/` renders one
-file, and an instance of it writing `deploy` values is an error.
+name and the only one read there; a service holding no `deploy/` renders its
+configuration alone, and an instance of it writing `deploy` values is an error.
 
 **It is not an export**, and the difference is who selects it and who reads it.
 An export is derived from a person's access, one file per route they hold, it
@@ -255,24 +290,27 @@ rules: `export: compose` would pass [rule 3](inventory.md#validation), whose
 error message lists the ways a person's services offer, and a reader would be
 told a lie about why their file is missing.
 
-What it does share is the shape — a template, a defaults kind, an output name —
-so the renderer, the defaults merge and the target are the existing ones.
+What it does share is the shape — templates, a defaults kind, output names — so
+the renderer, the defaults merge and the target are the existing ones.
 `deploy/defaults.yaml` carries what every instance of the service deploys with,
 an image and its tag being the clear case, and an instance's `deploy` mapping
 lays over it key by key, exactly as `values` lays over `defaults.yaml`.
 
 It is the same renderer, the same target, the same directory. A target that
-renders both writes two files:
+renders a deployment writes its configuration and every file of that
+deployment side by side:
 
 ```text
 au-home01-gen8-linux-01/
 └── microbin/microbin-home01-01/
     ├── server.env
-    └── compose.yaml
+    ├── compose.yaml
+    └── install.sh
 ```
 
-**What the deploy template is given** is the instance's own view, plus the two
-things only the model can resolve:
+**What a deploy template is given** — every file of the deployment is rendered
+from one view — is the instance's own, plus the two things only the model can
+resolve:
 
 ```yaml
 node:         as elsewhere: id, networks
@@ -317,13 +355,13 @@ field, so a mapping that changed it would point at a listener that does not
 exist. The [one-to-one rule](inventory.md#what-runs-the-process) stops being a
 convention here, because both spellings now come from one field.
 
-**A deploy file carries no secret.** The credential the instance holds is in the
-file beside it, and the deploy template references that file by its `output`
-name — `env_file`, a mount, an argument. A rendered `docker-compose.yml` with a
+**A deploy file carries no secret**, script included. The credential the
+instance holds is in the file beside it, and a deploy template references that
+file by its `output` name — `env_file`, a mount, an argument. A rendered `docker-compose.yml` with a
 password inlined would put one in a file people paste into chat, and would make
 two files that must be rotated together out of one.
 
-**`dgs` still does not deploy.** It renders a second file and stops: it opens no
+**`dgs` still does not deploy.** It renders these files and stops: it opens no
 connection to any machine, runs no container runtime, copies nothing anywhere,
 and reads nothing back. Rendering is local and offline, and a rendered file
 carrying plaintext credentials is a reason to keep it that way: what leaves this

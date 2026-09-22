@@ -563,48 +563,56 @@ func (m renderer) instanceByID(instance string) *inventory.Instance {
 	return nil
 }
 
-// deployFor is the second file a containerised instance renders: the one a
-// deployment tool reads, from the service's deploy/ directory. It returns
-// nothing at all for an instance that renders only its configuration — a
-// host process, a file written out for a person, or an instance of a
-// service holding no deploy/ — so a caller asks without checking first.
+// deployArtefact is one file a deployment writes: the rendered bytes, the
+// name they are written under, and whether the name says it is a script.
+type deployArtefact struct {
+	Output     string
+	Bytes      []byte
+	Executable bool
+}
+
+// deployFor is what a containerised instance writes beside its
+// configuration: the file a deployment tool reads, and whatever else has to
+// be in place before that tool runs — the step that puts the rendered
+// configuration where the runtime expects it being the case this exists for.
+// It returns nothing at all for an instance that renders only its
+// configuration — a host process, a file written out for a person, or an
+// instance of a service holding no deploy/ — so a caller asks without
+// checking first.
 //
-// What it is given is the instance's own view plus the two things only the
-// model can resolve: the host mapping of each port, and the downstreams of
-// a service that fans out. No secret reaches it: the credential is in the
-// file beside it, and the deploy template names that file rather than
-// repeating what is in it. See
+// Every file of one deployment is rendered from one view: the instance's
+// own, plus the two things only the model can resolve — the host mapping of
+// each port, and the downstreams of a service that fans out — and one
+// merged deploy/defaults.yaml, so a script and the compose file beside it
+// cannot disagree about what the instance deploys with. No secret reaches
+// any of them: the credential is in the file beside them, and a deploy
+// template names that file rather than repeating what is in it. See
 // docs/apps/conf/export.md#a-second-file-what-deploys-it.
-func (m renderer) deployFor(instance string) (data []byte, output string, err error) {
+func (m renderer) deployFor(instance string) ([]deployArtefact, error) {
 	t, err := m.findTarget(instance)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if t.Export != "" {
-		return nil, "", nil
+		return nil, nil
 	}
 	inst := m.instanceByID(instance)
 	if inst == nil || !inst.Containerised() {
-		return nil, "", nil
+		return nil, nil
 	}
 	deploy, ok := m.l.deploys[t.Service]
 	if !ok {
-		return nil, "", nil
+		return nil, nil
 	}
-	if deploy.Template == "" {
-		return nil, "", fmt.Errorf("%s: service %q deploys nothing: its deploy/confgen.yaml names no template", instance, t.Service)
+	if len(deploy.Files) == 0 {
+		return nil, fmt.Errorf("%s: service %q deploys nothing: its deploy/confgen.yaml names no file", instance, t.Service)
 	}
 
 	dir := filepath.Join(m.rootPath, m.l.deployDirs[t.Service])
-	templatePath := filepath.Join(dir, deploy.Template)
-	templateBytes, err := os.ReadFile(templatePath)
-	if err != nil {
-		return nil, "", fmt.Errorf("reading template %s: %w", templatePath, err)
-	}
 	defaultsPath := filepath.Join(dir, confgen.DefaultsFilename)
 	defaultsBytes, err := os.ReadFile(defaultsPath)
 	if err != nil && !os.IsNotExist(err) {
-		return nil, "", fmt.Errorf("reading defaults %s: %w", defaultsPath, err)
+		return nil, fmt.Errorf("reading defaults %s: %w", defaultsPath, err)
 	}
 
 	// The instance as every other render sees it, plus what only a
@@ -634,20 +642,29 @@ func (m renderer) deployFor(instance string) (data []byte, output string, err er
 		}
 	}
 
-	out, err := render.Render(render.Input{
-		Target:       render.Target{Service: t.Service, Instance: instance},
-		Template:     string(templateBytes),
-		Defaults:     defaultsBytes,
-		DefaultsKind: deploy.Defaults,
-		Instance:     instanceMap,
-		Overlay:      overlay,
-		Node:         nodeMap,
-		Downstreams:  m.downstreamsFor(instance, m.l.manifests[t.Service].FansOut()),
-		Published:    m.publishedFor(instance),
-		Mapping:      mapping,
-	})
-	if err != nil {
-		return nil, "", err
+	out := make([]deployArtefact, 0, len(deploy.Files))
+	for _, file := range deploy.Files {
+		templatePath := filepath.Join(dir, file.Template)
+		templateBytes, err := os.ReadFile(templatePath)
+		if err != nil {
+			return nil, fmt.Errorf("reading template %s: %w", templatePath, err)
+		}
+		rendered, err := render.Render(render.Input{
+			Target:       render.Target{Service: t.Service, Instance: instance},
+			Template:     string(templateBytes),
+			Defaults:     defaultsBytes,
+			DefaultsKind: deploy.Defaults,
+			Instance:     instanceMap,
+			Overlay:      overlay,
+			Node:         nodeMap,
+			Downstreams:  m.downstreamsFor(instance, m.l.manifests[t.Service].FansOut()),
+			Published:    m.publishedFor(instance),
+			Mapping:      mapping,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, deployArtefact{Output: file.Output, Bytes: rendered, Executable: file.Executable()})
 	}
-	return out, deploy.Output, nil
+	return out, nil
 }

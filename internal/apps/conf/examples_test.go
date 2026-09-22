@@ -227,3 +227,64 @@ func TestExamples_AHostProcessRendersOneFile(t *testing.T) {
 		}
 	}
 }
+
+// TestExamples_DeploymentWritesTheScriptThatPutsItInPlace is the rest of a
+// deployment: the compose file says what to start, and the script beside it
+// puts the rendered configuration where the runtime expects it and starts
+// it. Both come from one render, so the script reaches the same deploy
+// values as the compose file, and it is written executable because its
+// output name ends in .sh — nothing declares a mode.
+func TestExamples_DeploymentWritesTheScriptThatPutsItInPlace(t *testing.T) {
+	root, secretsDir := examplesRoot(t)
+	dest := t.TempDir()
+
+	var out bytes.Buffer
+	if err := exportAction(strings.NewReader(""), &out, []string{"*"}, map[string]string{"to": dest, "yes": "true"}, configFor(root, secretsDir)); err != nil {
+		t.Fatalf("export: %v\n%s", err, out.String())
+	}
+
+	var script, compose string
+	for _, path := range filesUnder(t, dest) {
+		switch {
+		case strings.HasSuffix(path, "microbin-sfo01/install.sh"):
+			script = path
+		case strings.HasSuffix(path, "microbin-sfo01/compose.yaml"):
+			compose = path
+		}
+	}
+	if script == "" {
+		t.Fatal("the containerised instance rendered no install script")
+	}
+
+	info, err := os.Stat(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("install.sh is mode %v, want the owner's execute bit", info.Mode().Perm())
+	}
+	// A rendered configuration carries credentials and keeps 0600: the
+	// execute bit follows the name, not every file of the export.
+	other, err := os.Stat(compose)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.Mode().Perm() != 0o600 {
+		t.Errorf("compose.yaml is mode %v, want 0600", other.Mode().Perm())
+	}
+
+	data, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"#!/bin/sh",
+		"/srv/microbin-sfo01",  // the deploy value the script places under
+		"docker compose up -d", // and the one that starts it
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("install.sh has no %q:\n%s", want, got)
+		}
+	}
+}
