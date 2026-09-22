@@ -1362,11 +1362,17 @@ func renderServiceDetail(l InspectData, id string) (string, error) {
 		field("rotation", rotation),
 	))
 
-	render := r.Template
+	// One line per file the service writes. A service reading two files
+	// shows both: which template produced which name is the question a
+	// reader of this report has, and one line naming the first would answer
+	// it wrongly rather than partially.
+	suffix := ""
 	if r.Defaults != "" {
-		render += " (" + r.Defaults + " defaults)"
+		suffix = " (" + r.Defaults + " defaults)"
 	}
-	line(&b, "  "+fields(field("renders", render), field("as", r.Output)))
+	for _, file := range r.Renders() {
+		line(&b, "  "+fields(field("renders", file.Template+suffix), field("as", file.Output)))
+	}
 
 	if len(r.Self) > 0 {
 		var described []string

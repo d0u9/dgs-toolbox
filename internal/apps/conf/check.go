@@ -50,7 +50,11 @@ func writeCheckReport(out io.Writer, global config.Config) error {
 	// a consequence rather than a fault of its own.
 	problems = append(problems, brokenFiles(l.inv)...)
 	for name, manifest := range l.manifests {
-		if manifest.Template == "" {
+		// A service that renders nothing is a directory nothing deploys.
+		// Renders is what the two forms of the declaration meet in, so a
+		// service writing several files is not reported for lacking the
+		// one-file form's `template`.
+		if len(manifest.Renders()) == 0 {
 			problems = append(problems, fmt.Sprintf("service %s: no role declared", name))
 		}
 	}

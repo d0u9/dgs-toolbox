@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dgs-toolbox/internal/conf/confgen"
 	"dgs-toolbox/internal/cred/publish"
 )
 
@@ -50,29 +49,25 @@ func (m renderer) renderAll(instances []string) ([]exportFile, error) {
 		// an export's name is unique only within its service and two of them
 		// would otherwise share a directory. Both sit under the node or the
 		// person the bundle is for.
-		kind, output := t.Service, ""
+		kind := t.Service
 		if t.Export != "" {
-			export, ok := m.l.exports[confgen.ExportKey(t.Service, t.Export)]
-			if !ok {
-				return nil, fmt.Errorf("%s: export %q is not defined", instance, t.Export)
-			}
-			kind, output = t.Service+"-"+t.Export, export.Output
-		} else {
-			manifest, ok := m.l.manifests[t.Service]
-			if !ok {
-				return nil, fmt.Errorf("%s: service %q is not defined", instance, t.Service)
-			}
-			output = manifest.Output
+			kind = t.Service + "-" + t.Export
 		}
-		out, err := m.renderTarget(instance)
+		rendered, err := m.renderTarget(instance)
 		if err != nil {
 			return nil, err
 		}
-		if strings.EqualFold(filepath.Ext(output), ".json") {
-			out = indentJSON(out)
+		for _, a := range rendered {
+			bytes := a.Bytes
+			if strings.EqualFold(filepath.Ext(a.Output), ".json") {
+				bytes = indentJSON(bytes)
+			}
+			files = append(files, exportFile{
+				Path:       filepath.Join(t.Node, kind, instance, a.Output),
+				Bytes:      bytes,
+				Executable: a.Executable,
+			})
 		}
-		path := filepath.Join(t.Node, kind, instance, output)
-		files = append(files, exportFile{Path: path, Bytes: out})
 
 		// A containerised instance of a service that declares a deploy/
 		// writes a second file beside the first: what starts the program,

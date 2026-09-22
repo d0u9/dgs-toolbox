@@ -218,11 +218,22 @@ func TestExamples_ContainerisedInstanceRendersItsDeploymentFile(t *testing.T) {
 
 // TestExamples_AHostProcessRendersOneFile is the other side of it: every
 // other example instance runs on the host, and nothing renders a second file
-// for it.
+// for it. The containerised ones are named, so adding a container to the
+// examples without meaning to still fails here.
 func TestExamples_AHostProcessRendersOneFile(t *testing.T) {
+	containerised := []string{"microbin-sfo01", "samba-nas"}
 	files := renderExamples(t)
 	for path := range files {
-		if strings.HasSuffix(path, "compose.yaml") && !strings.Contains(path, "microbin-sfo01") {
+		if !strings.HasSuffix(path, "compose.yaml") {
+			continue
+		}
+		deployed := false
+		for _, instance := range containerised {
+			if strings.Contains(path, instance) {
+				deployed = true
+			}
+		}
+		if !deployed {
 			t.Errorf("%s rendered a deployment file for a host process", path)
 		}
 	}
@@ -285,6 +296,64 @@ func TestExamples_DeploymentWritesTheScriptThatPutsItInPlace(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("install.sh has no %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestExamples_ServiceWritingSeveralFilesRendersEachOne is the multi-file
+// service end to end: Samba reads its configuration, its account table and
+// its name map, and all three come out of one render of one instance. A
+// program reading three files is one service, so the accounts a share names
+// and the accounts the table holds are written from the same facts in one
+// pass and cannot disagree.
+func TestExamples_ServiceWritingSeveralFilesRendersEachOne(t *testing.T) {
+	files := renderExamples(t)
+
+	conf := exampleFile(t, files, "samba-nas/smb.conf")
+	table := exampleFile(t, files, "samba-nas/smbpasswd")
+	usermap := exampleFile(t, files, "samba-nas/usermap")
+
+	// The account the share admits is the account the table holds, and the
+	// map resolves it to the person who owns the home directory.
+	for _, want := range []string{"valid users = alice-default", "path = /mnt/vault/00-vault"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("rendered smb.conf has no %q:\n%s", want, conf)
+		}
+	}
+	if !strings.HasPrefix(table, "alice-default:3001:") {
+		t.Errorf("rendered smbpasswd does not open with the account and its uid:\n%s", table)
+	}
+	if want := "alice = alice-default\n"; !strings.Contains(usermap, want) {
+		t.Errorf("rendered usermap has no %q:\n%s", want, usermap)
+	}
+
+	// A home directory belongs to a person, not to a credential. Samba's
+	// own [homes] resolves it per user, and %S is the POSIX account the
+	// username map above resolved the login name to.
+	if !strings.Contains(conf, "path = /mnt/vault/11-home/%S\n") {
+		t.Errorf("rendered smb.conf has no [homes] directory:\n%s", conf)
+	}
+}
+
+// TestExamples_TheAccountTableHoldsNoPlaintext is why the table is rendered
+// at all rather than the passwords being written into the deployment: what
+// reaches the file server is the NT hash, which is what the protocol proves
+// knowledge of, and the plaintext stays in the secret store on the machine
+// that hands it to a person.
+func TestExamples_TheAccountTableHoldsNoPlaintext(t *testing.T) {
+	_, secretsDir := examplesRoot(t)
+	secret, err := os.ReadFile(filepath.Join(secretsDir, "samba-nas", "smb", "alice", "default"))
+	if err != nil {
+		t.Fatalf("reading alice's credential: %v", err)
+	}
+	if len(secret) == 0 {
+		t.Fatal("alice's credential is empty, so this test would pass for the wrong reason")
+	}
+
+	files := renderExamples(t)
+	for _, name := range []string{"samba-nas/smb.conf", "samba-nas/smbpasswd", "samba-nas/usermap", "samba-nas/users.txt", "samba-nas/compose.yaml"} {
+		if strings.Contains(exampleFile(t, files, name), string(secret)) {
+			t.Errorf("%s carries the plaintext credential", name)
 		}
 	}
 }

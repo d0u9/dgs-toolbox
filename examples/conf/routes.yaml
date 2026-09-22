@@ -41,3 +41,8 @@ routes:
   # follows without anyone copying a port number.
   paste:
     hops: [caddy-sfo01:https, microbin-sfo01:web]
+
+  # The file server, reached over the house network only. One hop: reaching a
+  # service directly is an ordinary route, not a special form.
+  files:
+    hops: [samba-nas:smb]

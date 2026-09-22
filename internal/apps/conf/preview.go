@@ -15,10 +15,15 @@ import (
 )
 
 // renderTarget runs the same rendering the export performs for one target:
-// its template and role defaults from the service directory, and its render
+// its templates and role defaults from the service directory, and its render
 // context — node, instance, upstream, principals and own — from the
 // inventory's derivation and conf.secrets.
-func (m renderer) renderTarget(instance string) ([]byte, error) {
+//
+// It returns one artefact per file the service declares. A program reading
+// two files is still one service, and both are rendered from one defaults
+// file and one context, so an account table and the configuration naming it
+// cannot disagree about what the instance is.
+func (m renderer) renderTarget(instance string) ([]artefact, error) {
 	t, err := m.findTarget(instance)
 	if err != nil {
 		return nil, err
@@ -28,7 +33,8 @@ func (m renderer) renderTarget(instance string) ([]byte, error) {
 	// written out for a person, rendered from its export. The two live in
 	// different directories and have different manifests; everything below
 	// this point is the same for both.
-	var template, defaults, output, dir string
+	var defaults, dir string
+	var files []confgen.File
 	// What this target needs from its upstream is the consumer's own
 	// declaration: a service and an export each say it for themselves.
 	var wants confgen.UpstreamDecls
@@ -42,26 +48,23 @@ func (m renderer) renderTarget(instance string) ([]byte, error) {
 		if export.Template == "" {
 			return nil, fmt.Errorf("%s: export %q writes nothing", instance, t.Export)
 		}
-		template, defaults, output, wants = export.Template, export.Defaults, export.Output, export.Upstream
+		// An export is one file by construction: it is one way of handing
+		// one credential over, and a second file would be a second way.
+		files = []confgen.File{{Template: export.Template, Output: export.Output}}
+		defaults, wants = export.Defaults, export.Upstream
 		dir = filepath.Join(m.rootPath, m.l.exportDirs[confgen.ExportKey(t.Service, t.Export)])
 	default:
 		manifest, ok := m.l.manifests[t.Service]
 		if !ok {
 			return nil, fmt.Errorf("%s: service %q is not defined", instance, t.Service)
 		}
-		if manifest.Template == "" {
+		files = manifest.Renders()
+		if len(files) == 0 {
 			return nil, fmt.Errorf("%s: service %q renders nothing", instance, t.Service)
 		}
-		template, defaults, output, wants = manifest.Template, manifest.Defaults, manifest.Output, manifest.Upstream
+		defaults, wants = manifest.Defaults, manifest.Upstream
 		fansOut = manifest.FansOut()
 		dir = filepath.Join(m.rootPath, m.l.serviceDirs[t.Service])
-	}
-	_ = output
-
-	templatePath := filepath.Join(dir, template)
-	templateBytes, err := os.ReadFile(templatePath)
-	if err != nil {
-		return nil, fmt.Errorf("reading template %s: %w", templatePath, err)
 	}
 
 	defaultsPath := filepath.Join(dir, confgen.DefaultsFilename)
@@ -97,19 +100,32 @@ func (m renderer) renderTarget(instance string) ([]byte, error) {
 		}
 	}
 
-	return render.Render(render.Input{
-		Target:       render.Target{Service: t.Service, Instance: instance},
-		Template:     string(templateBytes),
-		Defaults:     defaultsBytes,
-		DefaultsKind: defaults,
-		Instance:     instanceMap,
-		Node:         nodeMap,
-		Upstream:     upstream,
-		Downstreams:  downstreams,
-		Published:    m.publishedFor(instance),
-		Principals:   principals,
-		Self:         own,
-	})
+	out := make([]artefact, 0, len(files))
+	for _, file := range files {
+		templatePath := filepath.Join(dir, file.Template)
+		templateBytes, err := os.ReadFile(templatePath)
+		if err != nil {
+			return nil, fmt.Errorf("reading template %s: %w", templatePath, err)
+		}
+		rendered, err := render.Render(render.Input{
+			Target:       render.Target{Service: t.Service, Instance: instance},
+			Template:     string(templateBytes),
+			Defaults:     defaultsBytes,
+			DefaultsKind: defaults,
+			Instance:     instanceMap,
+			Node:         nodeMap,
+			Upstream:     upstream,
+			Downstreams:  downstreams,
+			Published:    m.publishedFor(instance),
+			Principals:   principals,
+			Self:         own,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, artefact{Output: file.Output, Bytes: rendered, Executable: file.Executable()})
+	}
+	return out, nil
 }
 
 // findTarget locates instance among the tree's targets.
@@ -242,6 +258,13 @@ func (m renderer) principalsFor(instance string) (map[string][]render.Principal,
 		for _, p := range m.l.derived.Principals(instance, port) {
 			path := secretstore.Path{Instance: instance, Port: port, Group: p.Group, Name: p.Slot}
 			principal := render.Principal{Name: p.Name}
+			// Only a person has a person's two halves. An instance
+			// relaying through is its own principal and belongs to
+			// nobody, so a template grouping by User skips it rather
+			// than filing it under a person who does not exist.
+			if p.Kind == derive.PrincipalUser {
+				principal.User, principal.Credential = p.Group, p.Slot
+			}
 			if m.secretsDir != "" {
 				v, err := secretstore.ReadValue(m.secretsDir, path)
 				if err != nil {
@@ -258,7 +281,11 @@ func (m renderer) principalsFor(instance string) (map[string][]render.Principal,
 				if v, ok, err := secretstore.ReadPrevious(m.secretsDir, path); err != nil {
 					return nil, err
 				} else if ok {
-					out[port] = append(out[port], render.Principal{Name: p.Name, Secret: v})
+					previous := render.Principal{Name: p.Name, Secret: v}
+					if p.Kind == derive.PrincipalUser {
+						previous.User, previous.Credential = p.Group, p.Slot
+					}
+					out[port] = append(out[port], previous)
 				}
 			}
 		}
@@ -576,13 +603,19 @@ func (m renderer) instanceByID(instance string) *inventory.Instance {
 	return nil
 }
 
-// deployArtefact is one file a deployment writes: the rendered bytes, the
-// name they are written under, and whether the name says it is a script.
-type deployArtefact struct {
+// artefact is one file a render writes: the rendered bytes, the name they
+// are written under, and whether the name says it is a script. A service, an
+// export and a deployment all produce these, so what publishes them does not
+// have to know which of the three it is holding.
+type artefact struct {
 	Output     string
 	Bytes      []byte
 	Executable bool
 }
+
+// deployArtefact is what a deployment's render returns. It is artefact: the
+// two were one thing as soon as a service could write several files too.
+type deployArtefact = artefact
 
 // deployFor is what a containerised instance writes beside its
 // configuration: the file a deployment tool reads, and whatever else has to

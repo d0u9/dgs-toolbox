@@ -671,6 +671,27 @@ type rendered struct {
 	err   error
 }
 
+// renderPreviewFiles renders one instance and returns each file the service
+// declares, by its output name — what a service writing more than one file
+// is read with.
+func renderPreviewFiles(t *testing.T, root, secretsDir, instance string) (map[string]string, error) {
+	t.Helper()
+	l, err := load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := renderer{l: l, rootPath: root, secretsDir: secretsDir}
+	out, err := r.renderTarget(instance)
+	if err != nil {
+		return nil, err
+	}
+	files := map[string]string{}
+	for _, a := range out {
+		files[a.Output] = string(a.Bytes)
+	}
+	return files, nil
+}
+
 // renderPreview renders one instance the way export and inspect do.
 func renderPreview(t *testing.T, root, secretsDir, instance string) rendered {
 	t.Helper()
@@ -683,7 +704,9 @@ func renderPreview(t *testing.T, root, secretsDir, instance string) rendered {
 	if err != nil {
 		return rendered{err: err}
 	}
-	return rendered{lines: strings.Split(strings.TrimRight(string(out), "\n"), "\n")}
+	// Every service here renders one file; a multi-file one is read with
+	// renderPreviewFiles, which keeps the outputs apart by name.
+	return rendered{lines: strings.Split(strings.TrimRight(string(out[0].Bytes), "\n"), "\n")}
 }
 
 // buildPublishedEdgesRoot has one published web port and three instances
@@ -776,6 +799,105 @@ func TestPreview_UpstreamPublishedOnlyOnTheUniversalNetwork(t *testing.T) {
 	} {
 		if got := previewOf(t, root, secretsDir, instance); got != want {
 			t.Errorf("%s = %q, want %q", instance, got, want)
+		}
+	}
+}
+
+// buildTwoFileRoot is a service that reads two files: a configuration and
+// the account table beside it. Samba is the case it exists for — the
+// passwords are not in smb.conf, they are NT hashes in a second file — and
+// both render from one context, so the accounts the configuration names and
+// the accounts the table holds cannot disagree.
+func buildTwoFileRoot(t *testing.T) (root, secretsDir string) {
+	t.Helper()
+	root = t.TempDir()
+	writeFile(t, filepath.Join(root, "services", "samba", "confgen.yaml"), `
+auth: per-principal
+defaults: document
+files:
+  - {template: templates/smb.conf.tmpl, output: smb.conf}
+  - {template: templates/smbpasswd.tmpl, output: smbpasswd}
+`)
+	writeFile(t, filepath.Join(root, "services", "samba", "templates", "smb.conf.tmpl"),
+		"[vault]\n    valid users = {{ range principals \"smb\" }}{{ .Name }}{{ end }}\n"+
+			"    home = /home/{{ range principals \"smb\" }}{{ .User }}{{ end }}\n")
+	// The uid is the account's where Samba runs, so it comes from the
+	// instance: which numbers a machine's accounts have is that machine's
+	// fact, not this service's.
+	writeFile(t, filepath.Join(root, "services", "samba", "templates", "smbpasswd.tmpl"),
+		"{{ range principals \"smb\" }}{{ smbpasswd .Name (index (defaults).uids .User) .Secret }}\n{{ end }}")
+	// The uid is keyed by the person, not by the credential: two of
+	// doug's credentials are two accounts into one POSIX user.
+	writeFile(t, filepath.Join(root, "services", "samba", "defaults.yaml"), "uids:\n  doug: 3001\n")
+	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
+id: srv
+networks:
+  internet: 203.0.113.10
+instances:
+  - id: samba-srv
+    service: samba
+    ports:
+      smb: 445
+`)
+	writeFile(t, filepath.Join(root, "users.yaml"), `
+users:
+  doug:
+    devices: none
+    access: [files]
+`)
+	writeFile(t, filepath.Join(root, "routes.yaml"), `
+routes:
+  files:
+    hops: [samba-srv:smb]
+`)
+	writeFile(t, filepath.Join(root, "networks.yaml"), `
+networks: [internet]
+universal: internet
+`)
+
+	secretsDir = t.TempDir()
+	writeFile(t, filepath.Join(secretsDir, "samba-srv", "smb", "doug", "default"), "password")
+	return root, secretsDir
+}
+
+// TestPreview_ServiceWritingTwoFilesRendersBoth: one instance, two outputs,
+// each from the template declared for it.
+func TestPreview_ServiceWritingTwoFilesRendersBoth(t *testing.T) {
+	root, secretsDir := buildTwoFileRoot(t)
+
+	files, err := renderPreviewFiles(t, root, secretsDir, "samba-srv")
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("rendered %d files, want 2: %v", len(files), files)
+	}
+	if got, want := files["smb.conf"], "[vault]\n    valid users = doug-default\n    home = /home/doug\n"; got != want {
+		t.Fatalf("smb.conf = %q, want %q", got, want)
+	}
+	// The NT hash of "password", which every other implementation of it
+	// produces for the same input.
+	want := "doug-default:3001:" + strings.Repeat("X", 32) +
+		":8846F7EAEE8FB117AD06BDD830B7586C:[U          ]:LCT-00000000:\n"
+	if got := files["smbpasswd"]; got != want {
+		t.Fatalf("smbpasswd = %q, want %q", got, want)
+	}
+}
+
+// TestPreview_AccountTableHoldsNoPlaintext is the point of rendering a
+// second file rather than putting accounts in a deployment's environment:
+// the password is on the machine that hands it to a person, and the machine
+// running Samba holds only what the protocol proves knowledge of.
+func TestPreview_AccountTableHoldsNoPlaintext(t *testing.T) {
+	root, secretsDir := buildTwoFileRoot(t)
+
+	files, err := renderPreviewFiles(t, root, secretsDir, "samba-srv")
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	for name, body := range files {
+		if strings.Contains(body, "password:") || strings.Contains(body, "= password") {
+			t.Fatalf("%s holds the plaintext secret: %q", name, body)
 		}
 	}
 }
