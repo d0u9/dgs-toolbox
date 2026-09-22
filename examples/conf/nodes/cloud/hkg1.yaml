@@ -15,6 +15,16 @@ networks:
 
 instances:
 
+  # A loopback-only SOCKS listener for programs on this machine. It dials
+  # San Francisco as the already-authorised `repeater` principal; the node
+  # file carries no key material.
+  - id: sslocal-hkg01
+    service: sslocal
+    principal: repeater
+    bind: 127.0.0.1
+    ports:
+      socks: 1080
+
   # One process, one port per line it relays. Which port a connection arrives
   # on is what decides where it goes, so the ports are the routes' own.
   - id: fwd-hkg01

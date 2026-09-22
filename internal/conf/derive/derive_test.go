@@ -797,3 +797,34 @@ func TestDerive_AForwarderRelayingOnwardHoldsNoCredential(t *testing.T) {
 		t.Fatal("ss-home is not granted on ss-sfo01:alt, so nothing it relays through the forwarder authenticates")
 	}
 }
+
+func TestDerive_PrincipalMakesInstanceDialAsUser(t *testing.T) {
+	inv := worked()
+	for ni := range inv.Nodes {
+		for ii := range inv.Nodes[ni].Instances {
+			if inv.Nodes[ni].Instances[ii].ID == "ss-home" {
+				inv.Nodes[ni].Instances[ii].Principal = "repeater"
+			}
+		}
+	}
+	inv.Users["repeater"] = inventory.User{Devices: inventory.DevicesNone, Export: inventory.ExportNone, Access: []string{"home-sfo"}}
+
+	m, err := Derive(inv, workedManifests())
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+	var got *Grant
+	for i := range m.Grants {
+		g := &m.Grants[i]
+		if g.Instance == "ss-sfo01" && g.Port == "alt" && g.Principal.Group == "repeater" {
+			got = g
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("no grant for repeater on ss-sfo01:alt")
+	}
+	if got.Principal.Kind != PrincipalUser || got.Principal.Slot != inventory.DefaultCredential || got.Principal.Name != "repeater-default" {
+		t.Fatalf("principal = %+v, want repeater's default user credential", got.Principal)
+	}
+}
