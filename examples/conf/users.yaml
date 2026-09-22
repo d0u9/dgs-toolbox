@@ -16,7 +16,7 @@
 
 users:
   alice:
-    access: [sfo-01-ss, sfo-01-hy2]
+    access: [sfo-01-ss, sfo-01-hy2, files]
     credentials:
       default:
         note: The phone, and anything else without a credential of its own.
@@ -25,6 +25,8 @@ users:
       # neither the phone nor the Hysteria2 line is touched.
       laptop:
         note: alice's laptop, so it can be cut off on its own
+        # The file server admits one credential per person, so the shares are
+        # on the default one and not on this.
         access: [sfo-01-ss]
 
   # A service instance dials as this principal. It is not a device, and the

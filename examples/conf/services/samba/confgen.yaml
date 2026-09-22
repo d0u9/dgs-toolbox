@@ -1,0 +1,45 @@
+# Samba. A file server on the house network, and the case a service writing
+# more than one file exists for.
+#
+# Samba does not keep passwords in smb.conf. It keeps NT hashes in an account
+# table, and it maps the name a client logs in with to a POSIX account through
+# a third file. Those are three halves of one configuration, not three
+# services: they are read by one program, they describe one set of accounts,
+# and splitting them into separate services would put one truth behind three
+# manifests that could disagree.
+#
+# So the service declares `files` instead of `template` and `output`. Every
+# one renders from this directory's defaults.yaml and one render context, so
+# the share that names an account, the table that holds it and the map that
+# resolves it are written from the same facts in one pass.
+secret:
+  kind: printable
+  bytes: 24
+
+# per-principal: one credential per principal reaching the port, and an
+# account table rendered from them. That is what makes the smbpasswd file
+# derived rather than typed.
+auth: per-principal
+
+# This template cannot emit two accounts for one principal: smbpasswd is keyed
+# by account name, and a second entry under the same name is the same account
+# written twice. Rotating drops the connection.
+rotation: disruptive
+
+files:
+  # How the program behaves, and which accounts each share admits.
+  - template: templates/smb.conf.tmpl
+    output: smb.conf
+  # The accounts themselves, as NT hashes. The plaintext is in the secret
+  # store, on the machine that hands it to a person; the machine running Samba
+  # holds only what the protocol proves knowledge of.
+  - template: templates/smbpasswd.tmpl
+    output: smbpasswd
+  # An account name is `<person>-<credential>`, because a credential is what is
+  # revocable. A POSIX account is one per person. This maps the first onto the
+  # second, which is what lets one person keep two credentials without keeping
+  # two home directories.
+  - template: templates/usermap.tmpl
+    output: usermap
+
+defaults: document

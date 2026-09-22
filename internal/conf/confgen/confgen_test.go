@@ -471,3 +471,91 @@ func TestLoad_DeployManifestWritingNoFileIsBroken(t *testing.T) {
 		t.Fatalf("DeployBroken = %q, want it to say no file is written", got.Services[0].DeployBroken)
 	}
 }
+
+// TestLoad_ServiceWritingSeveralFiles: a program reading two files is one
+// service. Samba's account table is not a second program — it is the other
+// half of the same configuration, and a service of its own would put two
+// halves of one truth behind two manifests.
+func TestLoad_ServiceWritingSeveralFiles(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "samba", ManifestFilename), `
+auth: per-principal
+defaults: document
+files:
+  - {template: templates/smb.conf.tmpl, output: smb.conf}
+  - {template: templates/smbpasswd.tmpl, output: smbpasswd}
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Services[0].Broken != "" {
+		t.Fatalf("Broken = %q, want a service writing two files to load", got.Services[0].Broken)
+	}
+	renders := got.Services[0].Manifest.Renders()
+	if len(renders) != 2 {
+		t.Fatalf("Renders() returned %d files, want 2", len(renders))
+	}
+	if renders[0].Output != "smb.conf" || renders[1].Output != "smbpasswd" {
+		t.Fatalf("Renders() = %v, want the declared order", renders)
+	}
+}
+
+// TestLoad_OneFileServiceRendersThroughTheSameList: the one-file form is
+// the same declaration written shorter, so nothing downstream has to ask
+// which of the two a manifest used.
+func TestLoad_OneFileServiceRendersThroughTheSameList(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), "template: t.tmpl\noutput: server.env\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	renders := got.Services[0].Manifest.Renders()
+	if len(renders) != 1 || renders[0].Template != "t.tmpl" || renders[0].Output != "server.env" {
+		t.Fatalf("Renders() = %v, want the one declared file", renders)
+	}
+}
+
+// TestLoad_ServiceWritingBothFormsIsBroken: files and template say the same
+// thing, so a manifest writing both leaves which one renders up to whoever
+// reads the code.
+func TestLoad_ServiceWritingBothFormsIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "samba", ManifestFilename), `
+template: templates/smb.conf.tmpl
+output: smb.conf
+files:
+  - {template: templates/smbpasswd.tmpl, output: smbpasswd}
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(got.Services[0].Broken, "files") {
+		t.Fatalf("Broken = %q, want it to name the two forms", got.Services[0].Broken)
+	}
+}
+
+// TestLoad_ServiceWritingOneOutputTwiceIsBroken: the second file would
+// overwrite the first in a folder and duplicate an entry in a zip, and
+// which survived would depend on the writer.
+func TestLoad_ServiceWritingOneOutputTwiceIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "samba", ManifestFilename), `
+files:
+  - {template: a.tmpl, output: smb.conf}
+  - {template: b.tmpl, output: smb.conf}
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(got.Services[0].Broken, "smb.conf") {
+		t.Fatalf("Broken = %q, want it to name the output written twice", got.Services[0].Broken)
+	}
+}

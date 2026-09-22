@@ -6,7 +6,10 @@
 #
 # Neither name is known to dgs. These are this inventory's own.
 
+# `home` comes first: a device on the house network reaches the file server
+# over it rather than going out and back.
 networks:
+  - home
   - internet
 
 universal: internet

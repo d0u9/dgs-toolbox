@@ -1,0 +1,10 @@
+{{- /*
+  Samba's username map: the POSIX account on the left, the names clients log
+  in with on the right.
+
+  It exists because the two are counted differently. A credential is what is
+  revocable, so an account is one per credential; a home directory belongs to
+  a person, so a POSIX account is one per person.
+*/ -}}
+{{ range $g := grantees "smb" }}{{ $g.User }} = {{ join " " $g.Accounts }}
+{{ end }}

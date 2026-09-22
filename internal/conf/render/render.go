@@ -36,6 +36,31 @@ func (t Target) String() string {
 type Principal struct {
 	Name   string
 	Secret string
+	// User is the person this credential belongs to, and Credential which
+	// of theirs it is — the two halves Name is built from. A template
+	// rendering something per person rather than per credential reads
+	// User: a home directory belongs to whoever owns it, and two of their
+	// credentials are two ways into one directory rather than two
+	// directories. Both are empty for a principal that is not a person's,
+	// such as an instance relaying through.
+	User       string
+	Credential string
+}
+
+// Grantee is one person holding grants on a port, with every account name
+// their credentials produce there. It is the principals datasource grouped
+// by holder: a service rendering something per person rather than per
+// credential — a home directory, an entry in a name map — needs the group,
+// and computing it in a template means building a set by hand.
+//
+// Principals that belong to nobody, such as an instance relaying through,
+// are not grantees and are absent.
+type Grantee struct {
+	// User is the person, as users.yaml keys them.
+	User string
+	// Accounts is their account names on this port, in the order the
+	// principals datasource holds them.
+	Accounts []string
 }
 
 // Downstream is one hop that follows a fan-out instance: the far end of one

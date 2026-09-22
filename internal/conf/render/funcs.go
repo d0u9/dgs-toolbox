@@ -4,10 +4,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"dgs-toolbox/internal/smbpasswd"
 )
 
 // funcs builds the template.FuncMap: the function set
@@ -27,13 +31,23 @@ func funcs(defaults map[string]any, in Input) map[string]any {
 		"required": requiredFunc,
 		"b64":      b64Func,
 		"join":     joinFunc,
-		"secret":   secretFunc(in.Self),
-		"defaults": func() map[string]any { return defaults },
-		"node":     func() map[string]any { return in.Node },
-		"instance": func() map[string]any { return in.Instance },
-		"upstream": func() map[string]any { return in.Upstream },
+		// Samba stores the NT hash of a password rather than the password,
+		// so an account table can be rendered without putting a plaintext
+		// credential in a deployed file. The line's layout is positional
+		// and unforgiving, which is why smbpasswd writes the whole entry
+		// rather than leaving a template to place six colons correctly.
+		"nthash":    smbpasswd.NTHash,
+		"smbpasswd": smbpasswdFunc,
+		"secret":    secretFunc(in.Self),
+		"defaults":  func() map[string]any { return defaults },
+		"node":      func() map[string]any { return in.Node },
+		"instance":  func() map[string]any { return in.Instance },
+		"upstream":  func() map[string]any { return in.Upstream },
 		"principals": func(port string) []Principal {
 			return in.Principals[port]
+		},
+		"grantees": func(port string) []Grantee {
+			return grantees(in.Principals[port])
 		},
 		"downstreams": func() []Downstream { return in.Downstreams },
 		"published":   func(port string) string { return in.Published[port] },
@@ -261,4 +275,65 @@ func b64Func(value any) (string, error) {
 		return "", fmt.Errorf("b64: want a string, got %T", value)
 	}
 	return base64.RawURLEncoding.EncodeToString([]byte(s)), nil
+}
+
+// smbpasswdFunc implements smbpasswd: one line of a Samba account table for
+// a principal, holding the NT hash of their secret and never the secret.
+// The uid is the account's where Samba runs — an entry whose uid belongs to
+// no POSIX account is one smbd refuses to authenticate — and it comes from
+// the instance, since which numbers a machine's accounts have is that
+// machine's fact and not this service's.
+func smbpasswdFunc(name string, uid any, password string) (string, error) {
+	n, err := toInt(uid)
+	if err != nil {
+		return "", fmt.Errorf("smbpasswd %q: uid: %w", name, err)
+	}
+	return smbpasswd.Entry(name, n, password), nil
+}
+
+// toInt reads a uid from a template argument. YAML gives an int, a template
+// literal may give any numeric kind, and a values file quoting the number
+// gives a string: all three name one uid, and refusing two of them would be
+// an error about how the number was written rather than about what it says.
+func toInt(v any) (int, error) {
+	switch n := v.(type) {
+	case int:
+		return n, nil
+	case int64:
+		return int(n), nil
+	case float64:
+		if n != math.Trunc(n) {
+			return 0, fmt.Errorf("%v is not a whole number", v)
+		}
+		return int(n), nil
+	case string:
+		i, err := strconv.Atoi(n)
+		if err != nil {
+			return 0, fmt.Errorf("%q is not a number", n)
+		}
+		return i, nil
+	default:
+		return 0, fmt.Errorf("%v is not a number, got %T", v, v)
+	}
+}
+
+// grantees groups a port's principals by the person holding them, in the
+// order that person's first credential appears, so a rendered file does not
+// reorder because a credential was added.
+func grantees(principals []Principal) []Grantee {
+	var out []Grantee
+	at := map[string]int{}
+	for _, p := range principals {
+		if p.User == "" {
+			continue
+		}
+		i, ok := at[p.User]
+		if !ok {
+			at[p.User] = len(out)
+			out = append(out, Grantee{User: p.User, Accounts: []string{p.Name}})
+			continue
+		}
+		out[i].Accounts = append(out[i].Accounts, p.Name)
+	}
+	return out
 }
