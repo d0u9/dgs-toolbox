@@ -1,0 +1,20 @@
+#!/bin/sh
+# Put the rendered files where the runtime expects them, then start it.
+#
+# Written by dgs for {{ (target).instance }}. Editing it here is editing a
+# file that is replaced by the next render.
+set -eu
+
+here=$(cd "$(dirname "$0")" && pwd)
+config={{ .paths.host_config }}
+
+# 0700: the account table beside smb.conf holds NT hashes, and knowing one is
+# equivalent to knowing the password.
+mkdir -p "$config"
+chmod 0700 "$config"
+
+for file in smb.conf smbpasswd usermap groups.txt users.txt; do
+    install -m 0600 "$here/$file" "$config/$file"
+done
+
+docker compose -f "$here/compose.yaml" up -d

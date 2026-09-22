@@ -75,9 +75,11 @@ assumes them.
 ### The service manifest
 
 `services/<service>/confgen.yaml` declares what the renderer cannot infer. A
-service is one program, so a manifest describes one template, one output name
-and one inbound contract. A service that runs in a container holds a second
-template beside it, in [`deploy/`](#a-second-file-what-deploys-it):
+service is one program, so a manifest describes one inbound contract and the
+files that program reads — one template and one output name for most of them,
+a [`files` list](#a-service-that-reads-more-than-one-file) for a program that
+reads several. A service that runs in a container holds a second template
+beside it, in [`deploy/`](#a-second-file-what-deploys-it):
 
 ```yaml
 # services/ssserver/confgen.yaml
@@ -120,7 +122,8 @@ off any particular spelling. The two lists are in
 | --- | --- |
 | `secret` | The shape of a generated credential for this service: `kind` and its size. Omitted, a printable random string. |
 | `auth` | Whether this service's inbound side authenticates each principal separately: `per-principal` or `none`. Its own credentials are `self`'s business, not this key's. See [inventory](inventory.md#how-a-service-says-what-it-needs). |
-| `template` | The template rendered for this service, relative to the service directory. |
+| `template` | The template rendered for this service, relative to the service directory. The one-file form, written with `output`. |
+| `files` | What this service writes when one file is not enough: a list of `template` and `output` pairs, in the order written. A manifest declares this or `template` and `output`, never both. See [a service that reads more than one file](#a-service-that-reads-more-than-one-file). |
 | `defaults` | How `defaults.yaml` applies: `document` or `element`. See below. |
 | `output` | The name the rendered file is written under — the name the program expects where it runs, such as `config.json` or `server.env`. |
 | `rotation` | `disruptive` when this service's template cannot emit two accounts for one principal, so rotating it drops the connection instead of overlapping old and new. Omitted, it can. See [rotation](inventory.md#rotation). |
@@ -142,6 +145,52 @@ that a protocol wanting a third — a relay, a bridge, a second client program �
 gets one by adding a directory rather than by waiting for the renderer to grow
 a case for it. Exports are directories for the same reason: a QR code is one
 more directory, not a new case in the renderer.
+
+### A service that reads more than one file
+
+Most programs read one configuration file. Some read several, and the several
+are one configuration: Samba keeps passwords nowhere near `smb.conf` — they are
+NT hashes in an account table, and the name a client logs in with is resolved
+to a POSIX account through a third file.
+
+Those are not three services. They are read by one program, they describe one
+set of accounts, and a service each would put one truth behind three manifests
+that could disagree — a share admitting an account the table does not hold
+renders cleanly and authenticates nobody.
+
+So a manifest may write `files` in place of `template` and `output`:
+
+```yaml
+# services/samba/confgen.yaml
+auth: per-principal
+defaults: document
+files:
+  - template: templates/smb.conf.tmpl
+    output: smb.conf
+  - template: templates/smbpasswd.tmpl
+    output: smbpasswd
+  - template: templates/usermap.tmpl
+    output: usermap
+```
+
+Every file renders from one `defaults.yaml` and one render context, in the
+order declared, so what one names and what another holds come from the same
+facts in one pass. The rules are the deployment's, for the same reasons:
+writing one output name twice is an error where the manifest is rather than
+once per instance at render time, and an output ending in `.sh` is written
+with the execute bit.
+
+Writing `files` together with `template` or `output` is an error: the two say
+the same thing, and a manifest holding both leaves which one renders up to
+whoever reads the code.
+
+**An account is per credential; a POSIX account is per person.** This is what
+the third file exists for, and it is a property of the model rather than of
+Samba: a credential is what is revocable, so the account name a server sees is
+`<person>-<credential>`, while the account owning files is the person's. The
+map resolves one onto the other, which is what
+[`grantees`](inventory.md#the-render-context) renders — each person once, with
+every account name their credentials produce.
 
 ### Two kinds of defaults
 
@@ -496,13 +545,15 @@ they are flat:
 | `required` | The value, or an error naming what is missing. |
 | `b64` | base64url without padding, which is what a share URI's userinfo is. |
 | `join` | Values joined by a separator, which is how the protocols taking more than one credential take them: a Shadowsocks 2022 password is the server's PSK and the user's own, joined by a colon — `join ":" (upstream).shared` beside `(upstream).secret`, for a manifest that declared it needs them. |
+| `nthash` | The NT hash of a password: the MD4 digest of its UTF-16 little-endian encoding, which is the value SMB proves knowledge of. It is not a password hash and nothing treats it as one — it is unsalted, and knowing it is knowing the password — so a file holding one is as sensitive as the password it stands for. |
+| `smbpasswd` | One line of a Samba account table, from an account name, the POSIX uid it maps to, and the credential. It writes the whole line rather than leaving a template to place six colons correctly, and it writes the hash, so a deployed account table holds no plaintext. |
 | `secret` | The instance's own secret of a given name, narrowed by further arguments: a key for a `set` name, a field for a name with `fields`, both for a name with both. Given fewer arguments than the name has levels, it returns the map of what is under it. |
 
 | `mapping` | Where a container runtime publishes one of this instance's ports on the machine it runs on: `.Addresses`, one per network it is reached over, and `.Number`. Both are derived, and it is read only in a [deploy template](#a-second-file-what-deploys-it) — every other render is handed none. |
 | `published` | The name one of this instance's own ports answers to, by port name, or empty. A service behind a reverse proxy renders the same string the proxy matches its site block on — `DOMAIN=https://{{ published "web" }}` — so the two cannot disagree. See [the name a port is published at](inventory.md#the-name-a-port-is-published-at). |
 
 Beside them, one accessor per datasource — `defaults`, `node`, `instance`,
-`upstream`, `downstreams`, `principals` and `target` — which is how a template reads
+`upstream`, `downstreams`, `principals`, `grantees` and `target` — which is how a template reads
 [the render context](inventory.md#the-render-context). They are functions
 rather than fields of one value so that a template naming a level that does
 not exist for it, an `upstream` on a terminal instance, fails where it is

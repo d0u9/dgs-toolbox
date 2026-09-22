@@ -1965,7 +1965,17 @@ downstreams: for an instance whose service declares downstreams: many, the hop
              route name, so a rendered file does not change because a route
              was added above another. Absent for every other instance
 principals:  for a port with auth: per-principal, the account name and secret of
-             everything holding a grant on it
+             everything holding a grant on it, each with the person whose
+             credential it is and which of theirs it is — empty for a
+             principal belonging to nobody, such as an instance relaying
+             through
+grantees:    the same port's principals grouped by the person holding them:
+             each person once, with every account name their credentials
+             produce there, in the order the first of them appears. An
+             account is per credential, because a credential is what is
+             revocable; anything belonging to a person rather than to a
+             credential — a home directory, an entry in a name map — is
+             rendered per grantee. Principals belonging to nobody are absent
 self:        the instance's own secrets, by name: a value, a map of fields, a
              map of keys, or a map of keys of maps of fields, as the service
              declares

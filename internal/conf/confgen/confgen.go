@@ -108,8 +108,18 @@ type Manifest struct {
 	// key size, not an arbitrary password.
 	Secret Secret `yaml:"secret"`
 	// Template is the template rendered for this service, relative to the
-	// service directory.
+	// service directory. It is the one-file form, written with Output; a
+	// service reading more than one file writes Files instead, and writing
+	// both is an error.
 	Template string `yaml:"template"`
+	// Files is what this service writes when one file is not enough, in the
+	// order written. A program is one service however many files it reads:
+	// Samba's account table is not a second program, it is the other half
+	// of the same configuration, and splitting it into a service of its own
+	// would put two halves of one truth behind two manifests. Every file
+	// renders from the same defaults and the same context, so the account
+	// table and the configuration naming it cannot disagree.
+	Files []File `yaml:"files"`
 	// Defaults is DefaultsDocument or DefaultsElement, and decides how
 	// defaults.yaml combines with the instance.
 	Defaults string `yaml:"defaults"`
@@ -195,6 +205,19 @@ type Manifest struct {
 // a client connects to, which every service but a forwarder is. The receiver
 // is a value for the same reason FansOut's is.
 func (m Manifest) Terminates() bool { return !m.Forwards }
+
+// Renders is every file an instance of this service writes, in the order
+// written. It is the one place the two forms of the declaration meet, so
+// nothing downstream has to ask which one a manifest used.
+func (m Manifest) Renders() []File {
+	if len(m.Files) > 0 {
+		return m.Files
+	}
+	if m.Template == "" {
+		return nil
+	}
+	return []File{{Template: m.Template, Output: m.Output}}
+}
 
 // FansOut reports whether an instance of this service may dial a different
 // upstream in each route through it. The receiver is a value so that a
@@ -362,14 +385,17 @@ type Deploy struct {
 	Files []DeployFile `yaml:"files"`
 }
 
-// DeployFile is one artefact of a deployment: a template and the name it is
-// written under. Both are the deploy directory's own, and the defaults kind
-// is the deployment's, since one defaults.yaml serves every file.
-type DeployFile struct {
-	// Template is the template rendered, relative to the deploy directory.
+// File is one artefact of a render: a template and the name it is written
+// under, both relative to the directory that declares them. A service uses
+// it for the same reason a deployment does — one program may read more than
+// one file, and Samba's account table beside its smb.conf is not a second
+// service.
+type File struct {
+	// Template is the template rendered, relative to the declaring
+	// directory.
 	Template string `yaml:"template"`
 	// Output is the name the rendered file is written under, beside the
-	// service's own.
+	// others of the same render.
 	Output string `yaml:"output"`
 }
 
@@ -377,9 +403,14 @@ type DeployFile struct {
 // is derived from the output name rather than declared: a deployment writes
 // a script because the name says .sh, and a key saying so a second time is
 // the kind of second truth this directory exists to remove.
-func (f DeployFile) Executable() bool {
+func (f File) Executable() bool {
 	return strings.EqualFold(filepath.Ext(f.Output), ".sh")
 }
+
+// DeployFile is what a deployment's files list holds. It is File: the two
+// were one thing as soon as a service could write several files too, and a
+// separate type would have been the same fields under a second name.
+type DeployFile = File
 
 // Service is one subdirectory of the generator root that holds a
 // confgen.yaml.
@@ -596,23 +627,32 @@ func loadDeploy(path string) (*Deploy, error) {
 	if len(d.Files) == 0 {
 		return nil, fmt.Errorf("parsing %s: files is empty: a deployment writes at least one file", path)
 	}
+	if err := checkFiles(path, d.Files); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// checkFiles rejects a files list that names no template, no output, or one
+// output twice. Two files under one name would leave the second overwriting
+// the first in a folder and duplicating an entry in a zip, and which of the
+// two survived would depend on the writer. Every check is where the manifest
+// is rather than once per instance at render time.
+func checkFiles(path string, files []File) error {
 	seen := map[string]bool{}
-	for i, f := range d.Files {
+	for i, f := range files {
 		if f.Template == "" {
-			return nil, fmt.Errorf("parsing %s: files[%d] names no template", path, i)
+			return fmt.Errorf("parsing %s: files[%d] names no template", path, i)
 		}
 		if f.Output == "" {
-			return nil, fmt.Errorf("parsing %s: files[%d] names no output", path, i)
+			return fmt.Errorf("parsing %s: files[%d] names no output", path, i)
 		}
-		// Two files under one name would leave the second overwriting
-		// the first in a folder and duplicating an entry in a zip, and
-		// which of the two survived would depend on the writer.
 		if seen[f.Output] {
-			return nil, fmt.Errorf("parsing %s: files[%d]: output %q is written twice", path, i, f.Output)
+			return fmt.Errorf("parsing %s: files[%d]: output %q is written twice", path, i, f.Output)
 		}
 		seen[f.Output] = true
 	}
-	return &d, nil
+	return nil
 }
 
 func loadManifest(path string) (*Manifest, error) {
@@ -667,6 +707,15 @@ func loadManifest(path string) (*Manifest, error) {
 	if m.Dispatch != "" && !m.FansOut() {
 		return nil, fmt.Errorf("parsing %s: dispatch %q without downstreams: %s, so there is nothing to tell apart",
 			path, m.Dispatch, DownstreamsMany)
+	}
+	// The two forms of the declaration say the same thing, so a manifest
+	// writing both leaves which one renders up to the reader of the code.
+	// One file is template and output; more than one is files.
+	if len(m.Files) > 0 && (m.Template != "" || m.Output != "") {
+		return nil, fmt.Errorf("parsing %s: files together with template or output: a service declares one or the other", path)
+	}
+	if err := checkFiles(path, m.Files); err != nil {
+		return nil, err
 	}
 	if err := checkUpstream(path, m.Upstream); err != nil {
 		return nil, err
