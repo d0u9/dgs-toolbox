@@ -301,9 +301,17 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 		// An authored instance normally owns its upstream identity. A
 		// principal binding makes it carry that user's default identity
 		// instead; derive has already made the same choice for the grant.
+		//
+		// A principal naming nobody falls back to the instance's own
+		// identity, which is the fallback derive takes too: validate
+		// reports the name, and the two must agree on the path until it
+		// is fixed, or the check report shows a credential missing from
+		// somewhere it was never going to be written.
 		group, slot = instance, inventory.DefaultCredential
 		if inst := m.instanceByID(instance); inst != nil && inst.Principal != "" {
-			group = inst.Principal
+			if _, ok := m.l.inv.Users[inst.Principal]; ok {
+				group = inst.Principal
+			}
 		}
 	}
 

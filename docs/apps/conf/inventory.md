@@ -430,9 +430,11 @@ whose credential the instance carries when it dials its upstream.
       socks: 1080
 ```
 
-This does not grant access. The named user must already hold every route the
-instance enters; `users.yaml` remains the one grant table and therefore the
-audit of who gained or lost access. The service must declare `upstream`, since
+This does not grant access. The named user's `default` credential must already
+open every route the instance enters; `users.yaml` remains the one grant table
+and therefore the audit of who gained or lost access. It is always that one
+credential: an instance carries a program's identity, and a program has one,
+so there is nothing here to choose between. The service must declare `upstream`, since
 otherwise no rendered file would consume the selected credential. Without
 `principal`, an instance continues to dial as itself.
 
@@ -2066,10 +2068,13 @@ failing can be told which level it was reading.
 25. No `deploy` mapping writes a port mapping or a secret. Both are derived or
     live in the rendered configuration, and a second spelling of either is the
     thing the second file exists to remove. The error names the key.
-26. An instance's `principal`, when written, names a user who has access to
-    every route the instance enters, and the instance's service declares an
-    `upstream` value that consumes the credential. The errors name the instance,
-    principal and, for a missing grant, route.
+26. An instance's `principal`, when written, names a user whose `default`
+    credential opens every route the instance enters, and the instance's
+    service declares an `upstream` value that consumes the credential. The
+    credential is the one the instance carries, so a person holding the route
+    under a different credential, or keeping none called `default`, does not
+    satisfy this. The errors name the instance, principal and, for a missing
+    grant, route.
 
 ## Boundaries
 

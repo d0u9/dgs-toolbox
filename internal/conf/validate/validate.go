@@ -256,6 +256,11 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	// A principal selects whose credential an instance carries; it never
 	// grants the selected user access. The user and every route this instance
 	// enters must therefore already be present in users.yaml.
+	principalRouteNames := make([]string, 0, len(inv.Routes))
+	for routeName := range inv.Routes {
+		principalRouteNames = append(principalRouteNames, routeName)
+	}
+	sort.Strings(principalRouteNames)
 	for _, id := range realIDs {
 		r := realInstances[id]
 		if r.inst.Principal == "" {
@@ -266,12 +271,7 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 			add("instance %q: principal %q is not a user", id, r.inst.Principal)
 			continue
 		}
-		routeNames := make([]string, 0, len(inv.Routes))
-		for routeName := range inv.Routes {
-			routeNames = append(routeNames, routeName)
-		}
-		sort.Strings(routeNames)
-		for _, routeName := range routeNames {
+		for _, routeName := range principalRouteNames {
 			route := inv.Routes[routeName]
 			if len(route.Hops) < 2 {
 				continue
@@ -287,8 +287,14 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 			if !enters {
 				continue
 			}
-			if !containsString(user.Access, routeName) {
-				add("instance %q: principal %q has no access to route %q", id, r.inst.Principal, routeName)
+			// The credential derive hands this instance is the
+			// principal's DefaultCredential, so the question is whether
+			// that one credential opens the route — not whether the person
+			// holds it under some other credential that narrows away from
+			// it, and not whether they keep a `default` at all.
+			if !user.OpensRoute(inventory.DefaultCredential, routeName) {
+				add("instance %q: principal %q's %q credential has no access to route %q",
+					id, r.inst.Principal, inventory.DefaultCredential, routeName)
 			}
 		}
 	}
