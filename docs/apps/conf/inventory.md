@@ -723,7 +723,9 @@ made of. They go in `deploy`:
 
 `deploy` is opaque, exactly as [`values`](#an-instances-own-values) is: `dgs`
 parses it as YAML, knows no key in it, and hands it to the service's
-[deploy template](export.md#a-second-file-what-deploys-it). It is a second
+[deploy templates](export.md#a-second-file-what-deploys-it) — the compose file
+and the script that puts the configuration in place read the same mapping. It is
+a second
 mapping rather than a corner of `values` because the two have different readers
 — `values` configures the program, `deploy` starts it — and a key that reached
 both would be one more place a rename has to be chased.
@@ -742,8 +744,8 @@ truth it removes. See
 configuration beside it; the credential stays in that file, and nothing about
 rotation changes.
 
-A service holding no `deploy/` directory renders one file, and an instance of it
-writing `deploy` is an error rather than a mapping nothing reads. What every
+A service holding no `deploy/` directory renders its configuration alone, and an
+instance of it writing `deploy` is an error rather than a mapping nothing reads. What every
 instance of a service deploys with — its image, most of all — belongs in
 `deploy/defaults.yaml`, and an instance's `deploy` lays over it key by key, the
 way `values` lays over `defaults.yaml`.

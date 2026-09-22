@@ -354,9 +354,12 @@ output: server.env
 auth: none
 `)
 	writeFile(t, filepath.Join(root, ServicesDir, "microbin", DeployDir, ManifestFilename), `
-template: templates/compose.yaml.tmpl
 defaults: document
-output: compose.yaml
+files:
+  - template: templates/compose.yaml.tmpl
+    output: compose.yaml
+  - template: templates/install.sh.tmpl
+    output: install.sh
 `)
 
 	got, err := Load(root)
@@ -373,8 +376,20 @@ output: compose.yaml
 	if svc.Deploy == nil {
 		t.Fatal("Load read no deploy manifest")
 	}
-	if svc.Deploy.Output != "compose.yaml" || svc.Deploy.Template != "templates/compose.yaml.tmpl" {
-		t.Fatalf("deploy = %+v, want the compose template and output", *svc.Deploy)
+	if len(svc.Deploy.Files) != 2 {
+		t.Fatalf("deploy = %+v, want both files", *svc.Deploy)
+	}
+	if svc.Deploy.Files[0].Output != "compose.yaml" || svc.Deploy.Files[0].Template != "templates/compose.yaml.tmpl" {
+		t.Fatalf("deploy files[0] = %+v, want the compose template and output", svc.Deploy.Files[0])
+	}
+	// A deployment writes the file its runtime reads and whatever puts
+	// that file in place, in the order written, and the name is what says
+	// which of the two is run rather than read.
+	if svc.Deploy.Files[1].Output != "install.sh" || !svc.Deploy.Files[1].Executable() {
+		t.Fatalf("deploy files[1] = %+v, want an executable install.sh", svc.Deploy.Files[1])
+	}
+	if svc.Deploy.Files[0].Executable() {
+		t.Fatal("compose.yaml is executable, want only a .sh output to be")
 	}
 	if !svc.Manifest.Deploys {
 		t.Fatal("Deploys = false, want true for a service holding a deploy directory")
@@ -405,7 +420,7 @@ func TestLoad_ServiceWithoutADeployDirectoryHasNone(t *testing.T) {
 func TestLoad_BrokenDeployManifestIsReportedNotFatal(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), "template: t\noutput: server.env\n")
-	writeFile(t, filepath.Join(root, ServicesDir, "microbin", DeployDir, ManifestFilename), "template: t\nauth: none\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", DeployDir, ManifestFilename), "files:\n  - {template: t, output: o}\nauth: none\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -416,5 +431,43 @@ func TestLoad_BrokenDeployManifestIsReportedNotFatal(t *testing.T) {
 	}
 	if !strings.Contains(got.Services[0].DeployBroken, "auth") {
 		t.Fatalf("DeployBroken = %q, want it to name the key", got.Services[0].DeployBroken)
+	}
+}
+
+// TestLoad_DeployManifestWritingOneOutputTwiceIsBroken: the second file
+// would overwrite the first in a folder and duplicate an entry in a zip, and
+// which survived would depend on the writer rather than on the manifest.
+func TestLoad_DeployManifestWritingOneOutputTwiceIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), "template: t\noutput: server.env\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", DeployDir, ManifestFilename), `
+files:
+  - {template: a.tmpl, output: compose.yaml}
+  - {template: b.tmpl, output: compose.yaml}
+`)
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(got.Services[0].DeployBroken, "compose.yaml") {
+		t.Fatalf("DeployBroken = %q, want it to name the output written twice", got.Services[0].DeployBroken)
+	}
+}
+
+// TestLoad_DeployManifestWritingNoFileIsBroken: a deployment that writes
+// nothing is reported where the file is, rather than once per instance at
+// render time.
+func TestLoad_DeployManifestWritingNoFileIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename), "template: t\noutput: server.env\n")
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", DeployDir, ManifestFilename), "defaults: document\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(got.Services[0].DeployBroken, "files") {
+		t.Fatalf("DeployBroken = %q, want it to say no file is written", got.Services[0].DeployBroken)
 	}
 }
