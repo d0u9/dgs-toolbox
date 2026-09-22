@@ -71,6 +71,11 @@ type Instance struct {
 	Role    string `yaml:"role"`
 	Bind    string `yaml:"bind"`
 	Ports   Ports  `yaml:"ports"`
+	// Principal names the user whose credential this instance carries when
+	// it dials its upstream. Empty means the instance carries its own. It
+	// grants no access: validate requires the named user already to hold
+	// every route the instance enters.
+	Principal string `yaml:"principal"`
 	// Runtime says what delivers this process: RuntimeHost, RuntimeDocker
 	// or RuntimePodman. Empty means RuntimeHost. Nothing reads the value
 	// beyond validate checking it is one of the three; see the constants.

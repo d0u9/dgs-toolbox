@@ -416,6 +416,31 @@ came from. What is enforced is that instance identifiers are unique, so the cost
 of getting a name wrong is an error that names both instances, not a
 configuration that renders two things over each other.
 
+### Dialling an upstream as a principal
+
+An instance may name an optional `principal`: a user key from `users.yaml`
+whose credential the instance carries when it dials its upstream.
+
+```yaml
+  - id: sslocal-nkg01-01
+    service: sslocal
+    principal: cn-repeater
+    bind: 127.0.0.1
+    ports:
+      socks: 1080
+```
+
+This does not grant access. The named user must already hold every route the
+instance enters; `users.yaml` remains the one grant table and therefore the
+audit of who gained or lost access. The service must declare `upstream`, since
+otherwise no rendered file would consume the selected credential. Without
+`principal`, an instance continues to dial as itself.
+
+This is separate from a device's `credential`: that key chooses which of a
+person's credentials a device carries, while `principal` chooses which person
+a service instance dials as. A server hosting a client process is not made that
+person's device.
+
 ### Ports
 
 **Every port an instance listens on is named**, including the only one:
@@ -1372,7 +1397,11 @@ it. Sorting by the kind of holder instead — a `node/` beside a `user/` — dra
 a distinction a reader of the tree never needs, and leaves `node/phone` unable
 to say whose phone it is. Grouping by the holder answers that. A relaying
 instance is its own group: what connects is the instance, not the machine under
-it and not whoever hosts that machine.
+it and not whoever hosts that machine. When the connecting instance declares
+`principal`, the named user is the group instead; for example an instance
+dialling as `cn-repeater` reads
+`ss-sfo01/relays/cn-repeater/default`. This changes whose credential the
+instance carries, not who is granted the route.
 
 `self` is the exception, and sits at the instance level rather than under a
 port: an instance's own secrets belong to the instance, and which of its
@@ -2037,6 +2066,10 @@ failing can be told which level it was reading.
 25. No `deploy` mapping writes a port mapping or a secret. Both are derived or
     live in the rendered configuration, and a second spelling of either is the
     thing the second file exists to remove. The error names the key.
+26. An instance's `principal`, when written, names a user who has access to
+    every route the instance enters, and the instance's service declares an
+    `upstream` value that consumes the credential. The errors name the instance,
+    principal and, for a missing grant, route.
 
 ## Boundaries
 

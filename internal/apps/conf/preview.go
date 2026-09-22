@@ -298,8 +298,13 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 		// user — found the same way secretstore paths are.
 		group, slot = principalFor(m, instance)
 	} else {
-		// A relaying instance is its own group, holding one identity there.
+		// An authored instance normally owns its upstream identity. A
+		// principal binding makes it carry that user's default identity
+		// instead; derive has already made the same choice for the grant.
 		group, slot = instance, inventory.DefaultCredential
+		if inst := m.instanceByID(instance); inst != nil && inst.Principal != "" {
+			group = inst.Principal
+		}
 	}
 
 	// Where the credential comes from. It is the hop this instance dials for

@@ -27,11 +27,11 @@ users:
         note: alice's laptop, so it can be cut off on its own
         access: [sfo-01-ss]
 
-  # A relay in front of the same server: one route, one credential, no device
-  # file — the machine running it is not in this inventory.
+  # A service instance dials as this principal. It is not a device, and the
+  # access here remains the grant: `principal` on the instance grants nothing.
   repeater:
     devices: none
-    access: [sfo-01-ssrelay]
+    access: [hkg-local-sfo-01-ss]
 
   # Two people this inventory deliberately holds no node file for. The
   # credential belongs to the person; what is handed over is a share URI,
