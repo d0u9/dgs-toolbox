@@ -8,6 +8,12 @@
   destination readback matches the Source SHA-256 digest. Follow
   [`docs/apps/photo/import.md`](docs/apps/photo/import.md). Other Photo commands
   stay demos.
+- **`dgs box`** — a Box of scanned paper: intake from a temporary folder,
+  deduplication, per-scan YAML sidecars as the only metadata truth, and a
+  discardable local index, per [`docs/apps/box/`](docs/apps/box/). Paths encode
+  only the intake date, so reclassifying never moves a file. Publication
+  follows Photo Import's readback contract. Nothing is deleted: discarding
+  moves a file into the Box's trash.
 - **GPX** — milestone by milestone per [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
 - **`dgs cred`** — age identities, recipients, encrypted vault, per
   [`docs/apps/cred/`](docs/apps/cred/). Decrypted content stays in memory unless
@@ -87,7 +93,8 @@ cannot be built this way, ask before designing around it.
 ## Command model
 
 Commands are hierarchical: `dgs`, then `demo`, `capture`, `photo` (`import`,
-`encode`), `geo` (`gpx`), `cred` (`keys`, `vault`), `conf`.
+`encode`), `geo` (`gpx`), `box` (`init`, `import`, `view`, `index`, `verify`,
+`dedupe`), `cred` (`keys`, `vault`), `conf`.
 
 One `dgs` process has exactly one active leaf command. It never runs or displays
 two command workspaces at once.
@@ -125,6 +132,15 @@ readback, verified atomic publication, whole-file retry, and a versioned
 tests.
 
 Do not implement real Photo Encode behavior, GPX beyond the confirmed milestones,
-databases, plugin loading, or speculative shared infrastructure. Do not claim
-stronger durability than the user-space/filesystem API boundary documented for
-Photo Import.
+plugin loading, or speculative shared infrastructure. Do not claim stronger
+durability than the user-space/filesystem API boundary documented for Photo
+Import or for `dgs box`.
+
+`dgs box` may keep a discardable local index. Metadata truth is always the
+per-scan sidecar in the Box, the index must be reproducible from sidecars
+alone — a test rebuilds one and compares — and it lives outside the Box, on
+the local machine. It carries no migration code: a version it does not
+recognise is rebuilt, never upgraded. No other app introduces a database, and
+`box` does not introduce SQLite while the in-memory index holds; the
+conditions for revisiting that are named in
+[`docs/apps/box/index.md`](docs/apps/box/index.md).
