@@ -520,23 +520,37 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 				continue
 			}
 			m.Grants = append(m.Grants, Grant{
-				Principal: Principal{
-					Kind: PrincipalInstance, ID: hops[i].Instance, Name: hops[i].Instance,
-					// A relaying instance is its own group: what connects
-					// is the instance, not the machine under it and not
-					// whoever hosts that machine. It holds one identity
-					// there, so the slot is the same DefaultDevice an
-					// unmanaged user takes.
-					Group: hops[i].Instance, Slot: inventory.DefaultCredential,
-				},
-				Instance: terminal.Instance,
-				Port:     terminal.Port,
+				Principal: upstreamPrincipal(inv, from.inst),
+				Instance:  terminal.Instance,
+				Port:      terminal.Port,
 			})
 		}
 	}
 
 	m.Grants = dedupeGrants(m.Grants)
 	return m, nil
+}
+
+// upstreamPrincipal is the account an authored instance uses at its next
+// terminating hop. Ordinarily the instance owns that account. A principal
+// binding instead selects an already-authorised user's default credential;
+// validation reports an unknown or unauthorised name, while this safe fallback
+// keeps derivation available so the full check report can still be produced.
+func upstreamPrincipal(inv *inventory.Root, inst inventory.Instance) Principal {
+	if inst.Principal != "" {
+		if user, ok := inv.Users[inst.Principal]; ok {
+			return Principal{
+				Kind:  PrincipalUser,
+				ID:    inst.Principal + "/" + inventory.DefaultCredential,
+				Name:  user.Account(inst.Principal, inventory.DefaultCredential),
+				Group: inst.Principal, Slot: inventory.DefaultCredential,
+			}
+		}
+	}
+	return Principal{
+		Kind: PrincipalInstance, ID: inst.ID, Name: inst.ID,
+		Group: inst.ID, Slot: inventory.DefaultCredential,
+	}
 }
 
 // dedupeGrants keeps one grant per (principal, instance, port), which is

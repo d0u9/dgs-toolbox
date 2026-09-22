@@ -880,3 +880,52 @@ func TestValidate_DeployOnAContainerOfAServiceThatDeploysIsFine(t *testing.T) {
 		t.Fatalf("Validate = %v, want none", messages(got))
 	}
 }
+
+func principalInventory() (*inventory.Root, map[string]confgen.Manifest) {
+	inv := validInventory()
+	inv.Nodes[1].Instances[0].Principal = "repeater"
+	inv.Users["repeater"] = inventory.User{Devices: inventory.DevicesNone, Access: []string{"chain"}}
+	manifests := validManifests()
+	manifests["ssserver"] = confgen.Manifest{
+		Auth: confgen.AuthPerPrincipal, Exports: []string{"ss-json"}, Template: "t",
+		Upstream: confgen.UpstreamDecls{confgen.UpstreamValues: {}},
+	}
+	return inv, manifests
+}
+
+func TestValidate_PrincipalIsKnownAuthorisedAndConsumed(t *testing.T) {
+	inv, manifests := principalInventory()
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if len(got) != 0 {
+		t.Fatalf("Validate = %v, want none", messages(got))
+	}
+}
+
+func TestValidate_PrincipalMustNameAUser(t *testing.T) {
+	inv, manifests := principalInventory()
+	inv.Nodes[1].Instances[0].Principal = "nobody"
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `instance "ss-relay": principal "nobody" is not a user`) {
+		t.Fatalf("Validate = %v, want unknown principal", messages(got))
+	}
+}
+
+func TestValidate_PrincipalMustHoldTheRoute(t *testing.T) {
+	inv, manifests := principalInventory()
+	inv.Users["repeater"] = inventory.User{Devices: inventory.DevicesNone}
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `instance "ss-relay": principal "repeater" has no access to route "chain"`) {
+		t.Fatalf("Validate = %v, want unauthorised principal", messages(got))
+	}
+}
+
+func TestValidate_PrincipalNeedsAnUpstreamConsumer(t *testing.T) {
+	inv, manifests := principalInventory()
+	manifest := manifests["ssserver"]
+	manifest.Upstream = nil
+	manifests["ssserver"] = manifest
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `instance "ss-relay": principal "repeater" is unused because service "ssserver" declares no upstream`) {
+		t.Fatalf("Validate = %v, want unused principal", messages(got))
+	}
+}

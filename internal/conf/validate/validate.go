@@ -248,6 +248,49 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 				add("service %q: export %q declares no template, so it writes nothing", r.inst.Service, name)
 			}
 		}
+		if r.inst.Principal != "" && len(role.Upstream) == 0 {
+			add("instance %q: principal %q is unused because service %q declares no upstream", id, r.inst.Principal, r.inst.Service)
+		}
+	}
+
+	// A principal selects whose credential an instance carries; it never
+	// grants the selected user access. The user and every route this instance
+	// enters must therefore already be present in users.yaml.
+	for _, id := range realIDs {
+		r := realInstances[id]
+		if r.inst.Principal == "" {
+			continue
+		}
+		user, ok := inv.Users[r.inst.Principal]
+		if !ok {
+			add("instance %q: principal %q is not a user", id, r.inst.Principal)
+			continue
+		}
+		routeNames := make([]string, 0, len(inv.Routes))
+		for routeName := range inv.Routes {
+			routeNames = append(routeNames, routeName)
+		}
+		sort.Strings(routeNames)
+		for _, routeName := range routeNames {
+			route := inv.Routes[routeName]
+			if len(route.Hops) < 2 {
+				continue
+			}
+			enters := false
+			for _, raw := range route.Hops[:len(route.Hops)-1] {
+				hop, err := derive.ParseHop(raw)
+				if err == nil && hop.Instance == id {
+					enters = true
+					break
+				}
+			}
+			if !enters {
+				continue
+			}
+			if !containsString(user.Access, routeName) {
+				add("instance %q: principal %q has no access to route %q", id, r.inst.Principal, routeName)
+			}
+		}
 	}
 
 	// Rule 3: a `client`, on a node or on a person with no device file,

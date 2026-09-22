@@ -16,9 +16,10 @@ routes:
   sfo-01-ss:
     hops: [ss-sfo01:users]
 
-  # The relay port of the same program: a separate account table from `users`.
-  sfo-01-ssrelay:
-    hops: [ss-sfo01:relays]
+  # A program on the relay machine dials the separate `relays` account table.
+  # Its principal in that node file says whose authorised credential it uses.
+  hkg-local-sfo-01-ss:
+    hops: [sslocal-hkg01:socks, ss-sfo01:relays]
 
   sfo-01-hy2:
     hops: [hy2-sfo01:users]
