@@ -141,7 +141,7 @@ func sampleFiled() []Scan {
 			ScannedAt: "2020-05-05T14:00:00+10:00", IngestedAt: "2020-05-05T14:30:00+10:00",
 			Colour: "mono", DPI: 300,
 			Type: "contract", Reviewed: true, Description: "Lease — Erskineville",
-			EventDate: "2020-05-01", EventZone: "Australia/Sydney", Group: "8f2a1c",
+			EventDate: "2020-05-01", EventZone: "Australia/Sydney",
 		},
 		{
 			Digest: "99aabbcc", Filename: "scan-0012-99aabbcc.pdf", Kind: "pdf",
@@ -149,7 +149,7 @@ func sampleFiled() []Scan {
 			ScannedAt: "2020-05-05T14:03:00+10:00", IngestedAt: "2020-05-05T14:30:02+10:00",
 			Colour: "mono", DPI: 300,
 			Type: "contract", Reviewed: true, Description: "Lease — Erskineville (pages 5–6)",
-			EventDate: "2020-05-01", EventZone: "Australia/Sydney", Group: "8f2a1c",
+			EventDate: "2020-05-01", EventZone: "Australia/Sydney",
 		},
 		{
 			Digest: "aabbccdd", Filename: "scan-0013-aabbccdd.pdf", Kind: "pdf",

@@ -43,7 +43,6 @@ type Scan struct {
 	// Total is the amount as money.Amount.String writes it — "AUD 123.50" —
 	// or empty when the document has none. Empty is not zero.
 	Total string `json:"total"`
-	Group string `json:"group"`
 
 	NeedsSplit bool `json:"needsSplit"`
 	// Documents is where a split scan's documents begin and end, and what
@@ -95,7 +94,6 @@ type Edit struct {
 	ExpiryCleared *bool     `json:"expiryCleared"`
 	Total         *string   `json:"total"`
 	Tags          *[]string `json:"tags"`
-	Group         *string   `json:"group"`
 	Reviewed      *bool     `json:"reviewed"`
 	// Documents replaces the whole split: a split is edited as one list, and
 	// merging two lists of overlapping ranges has no answer anyone expects.
@@ -519,9 +517,6 @@ func applyEdit(scan Scan, edit Edit, defaultCurrency string) (Scan, error) {
 	}
 	if edit.Tags != nil {
 		scan.Tags = normalizeTags(*edit.Tags)
-	}
-	if edit.Group != nil {
-		scan.Group = strings.TrimSpace(*edit.Group)
 	}
 	if edit.Reviewed != nil {
 		scan.Reviewed = *edit.Reviewed

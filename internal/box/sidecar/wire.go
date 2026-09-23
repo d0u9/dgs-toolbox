@@ -48,8 +48,7 @@ type wire struct {
 	Producer      string    `yaml:"producer,omitempty"`
 	ScanCreatedAt Timestamp `yaml:"scan_created_at,omitempty"`
 
-	Group      string `yaml:"group,omitempty"`
-	NeedsSplit bool   `yaml:"needs_split,omitempty"`
+	NeedsSplit bool `yaml:"needs_split,omitempty"`
 
 	Documents    []wireDocument `yaml:"documents,omitempty"`
 	IgnoredPages string         `yaml:"ignored_pages,omitempty"`
@@ -94,7 +93,6 @@ func Encode(file File) ([]byte, error) {
 		PageSize:         file.PageSize,
 		Producer:         file.Producer,
 		ScanCreatedAt:    file.ScanCreatedAt,
-		Group:            file.Group,
 		NeedsSplit:       file.NeedsSplit,
 		TrashedAt:        file.TrashedAt,
 		TrashedFrom:      file.TrashedFrom,
@@ -186,7 +184,6 @@ func Decode(data []byte, name string) (File, error) {
 		PageSize:         in.PageSize,
 		Producer:         in.Producer,
 		ScanCreatedAt:    in.ScanCreatedAt,
-		Group:            in.Group,
 		NeedsSplit:       in.NeedsSplit,
 		TrashedAt:        in.TrashedAt,
 		TrashedFrom:      in.TrashedFrom,

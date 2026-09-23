@@ -100,11 +100,9 @@ type File struct {
 	Producer      string
 	ScanCreatedAt Timestamp
 
-	// Group is set when several files are one document. NeedsSplit marks the
-	// other direction — one file holding several documents — before anyone
-	// has said where the documents begin and end, and keeps the inbox
-	// drainable when that is not worth doing at intake.
-	Group      string
+	// NeedsSplit marks one file holding several documents before anyone has
+	// said where the documents begin and end, and keeps the inbox drainable
+	// when that is not worth doing at intake.
 	NeedsSplit bool
 
 	// Documents is the other direction said in full: which pages of this one
