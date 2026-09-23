@@ -363,3 +363,77 @@ func TestResealPassphrase(t *testing.T) {
 		t.Errorf("record %+v", rec)
 	}
 }
+
+// TestArchiveSkipsJunk pins that the default patterns leave out what an
+// operating system and git write, keep the dotfiles a folder is added for,
+// and that an empty list archives everything.
+func TestArchiveSkipsJunk(t *testing.T) {
+	dir := t.TempDir()
+	folder := filepath.Join(dir, "nas-keys")
+	write(t, filepath.Join(folder, "id_ed25519"), "key", 0o600)
+	write(t, filepath.Join(folder, ".env"), "TOKEN=1", 0o600)
+	write(t, filepath.Join(folder, ".DS_Store"), "junk", 0o644)
+	write(t, filepath.Join(folder, "._id_ed25519"), "junk", 0o644)
+	write(t, filepath.Join(folder, "thumbs.db"), "junk", 0o644)
+	write(t, filepath.Join(folder, "desktop.ini"), "junk", 0o644)
+	write(t, filepath.Join(folder, ".git", "config"), "junk", 0o644)
+	write(t, filepath.Join(folder, "sub", ".DS_Store"), "junk", 0o644)
+
+	names, err := Count(folder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 6 {
+		t.Errorf("counted %v", names)
+	}
+
+	data, skipped, err := Archive(folder, DefaultMaxSize, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skipped != 6 {
+		t.Errorf("skipped %d", skipped)
+	}
+	entries := archiveNames(t, data)
+	for _, name := range []string{"nas-keys/id_ed25519", "nas-keys/.env", "nas-keys/sub/"} {
+		if !entries[name] {
+			t.Errorf("archive lacks %s: %v", name, entries)
+		}
+	}
+	for _, name := range []string{"nas-keys/.DS_Store", "nas-keys/._id_ed25519", "nas-keys/thumbs.db", "nas-keys/desktop.ini", "nas-keys/.git/", "nas-keys/.git/config", "nas-keys/sub/.DS_Store"} {
+		if entries[name] {
+			t.Errorf("archive holds %s", name)
+		}
+	}
+
+	data, skipped, err = Archive(folder, DefaultMaxSize, []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skipped != 0 {
+		t.Errorf("skipped %d with no patterns", skipped)
+	}
+	if entries = archiveNames(t, data); !entries["nas-keys/.DS_Store"] {
+		t.Errorf("empty patterns skipped something: %v", entries)
+	}
+}
+
+func archiveNames(t *testing.T, data []byte) map[string]bool {
+	t.Helper()
+	gz, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	tr := tar.NewReader(gz)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			return names
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		names[header.Name] = true
+	}
+}

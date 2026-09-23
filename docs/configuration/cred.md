@@ -10,7 +10,8 @@
   "recipients": "$DOT_CONF_DIR/recipients",
   "vault": "~/Credentials/vault",
   "new_identity_dir": "~/.config/age",
-  "close_after": "5m"
+  "close_after": "5m",
+  "archive_skip": [".DS_Store", "._*", "Thumbs.db", ".git"]
 }
 ```
 
@@ -21,6 +22,28 @@
 | `new_identity_dir` | Where generated and imported age identities are written. It should also be listed in `identities`. | `$XDG_CONFIG_HOME/age`, or `~/.config/age` |
 | `close_after` | How long an opened vault file stays open with no key pressed or click made before its plaintext is discarded, as a Go duration such as `90s` or `5m`. `0` never closes it. | `5m` |
 | `vault` | The folder of age files `dgs cred vault` opens at. It can be switched on the page. | empty — the page asks for a folder |
+| `archive_skip` | File name patterns left out when a folder is added to the vault, matched against each entry's own name, case insensitively, with `*` and `?` as in a shell. A matching directory is not walked. Giving the key replaces the built-in list rather than adding to it; `[]` archives every entry. | the built-in list below |
+
+## `archive_skip`
+
+A folder added to the vault is archived as gzip-compressed tar. Its dotfiles
+are kept — `.ssh` and `.env` are what a folder is added for — but what an
+operating system, a file manager or git writes beside the files is not a
+credential, and it changes the archive every time the folder is added again.
+The built-in list is:
+
+```
+.DS_Store  ._*  .AppleDouble  .LSOverride  .Spotlight-V100  .Trashes
+.fseventsd  .TemporaryItems  .DocumentRevisions-V100  .apdisk  Icon\r
+Thumbs.db  Thumbs.db:encryptable  ehthumbs.db  ehthumbs_vista.db
+desktop.ini  $RECYCLE.BIN  *.stackdump
+.directory  .Trash-*
+.git
+```
+
+`.gitignore` and `.gitattributes` are not in it: they are the folder's own
+content, not git's bookkeeping. The confirmation before encrypting names what
+will be left out, so nothing goes missing without a word.
 
 ## Paths
 
