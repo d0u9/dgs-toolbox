@@ -87,6 +87,21 @@ was never described.
 
 The detail of a PDF has the same page view as intake: a strip of every page
 under the scan, shown and hidden with **Pages**, the picked page drawn large.
+A scan [split](import.md#splitting-one-pdf) into documents carries a badge
+with their count, and its splits are corrected here the way they were made at
+intake: the same strip, `Space` to mark, `x` to ignore, `:` to type them all,
+`-` to remove one, and the detail's fields describing whichever split is
+picked. **Save** rewrites the sidecar; the file does not move.
+
+### Unfiling
+
+A scan filed wrongly as a whole — the wrong pages together, the wrong file —
+can be taken back to intake with **Unfile**, offered only while the inbox file
+it came from is still there. Nothing is deleted: the Box's copy goes to the
+trash with the reason `unfiled to be filed again`, and the scan is waiting at
+intake again with everything its sidecar said as its draft. Duplicate
+detection passes over a trashed copy with that reason, so the scan comes back
+as a scan and not as something already thrown away.
 
 ### Sorting
 

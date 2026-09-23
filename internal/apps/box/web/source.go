@@ -45,9 +45,18 @@ type Scan struct {
 	Total string `json:"total"`
 	Group string `json:"group"`
 
-	NeedsSplit  bool `json:"needsSplit"`
-	NeedsRender bool `json:"needsRender"`
-	Incomplete  bool `json:"incomplete"`
+	NeedsSplit bool `json:"needsSplit"`
+	// Documents is where a split scan's documents begin and end, and what
+	// each adds to the file's own fields. Empty is one document, the whole
+	// file. Unassigned is computed: pages in no document and not ignored.
+	Documents    []SplitDocument `json:"documents"`
+	IgnoredPages string          `json:"ignoredPages"`
+	Unassigned   string          `json:"unassigned"`
+	NeedsRender  bool            `json:"needsRender"`
+	// Unfilable marks a filed scan whose inbox file is still there, so it can
+	// be taken back to intake and filed again.
+	Unfilable  bool `json:"unfilable"`
+	Incomplete bool `json:"incomplete"`
 	// DuplicateOf is the digest this scan repeats, and Trashed says the match
 	// is something already thrown away — so the same judgement is not made a
 	// second time.
@@ -88,6 +97,10 @@ type Edit struct {
 	Tags          *[]string `json:"tags"`
 	Group         *string   `json:"group"`
 	Reviewed      *bool     `json:"reviewed"`
+	// Documents replaces the whole split: a split is edited as one list, and
+	// merging two lists of overlapping ranges has no answer anyone expects.
+	Documents    *[]SplitDocument `json:"documents"`
+	IgnoredPages *string          `json:"ignoredPages"`
 }
 
 // Source is whatever holds the scans. It is the whole boundary between the
@@ -131,9 +144,30 @@ type Source interface {
 	// Verify reads every byte of every file and reports what no longer matches
 	// its recorded digest. It repairs nothing.
 	Verify(ctx context.Context) ([]Exception, error)
+	// Rejected is what was turned away at intake. Nothing was moved or
+	// deleted — the file is still in the inbox — so each can be taken back.
+	Rejected() []RejectedScan
+	// Restore puts a rejected scan back in the inbox's list, to be decided
+	// again. It is named by digest, never by path.
+	Restore(digest string) error
+	// RejectedFile is a rejected scan's bytes as they sit in the inbox, so it
+	// can be looked at again before deciding whether to restore it.
+	RejectedFile(digest string) (body []byte, filename, mediaType string, err error)
+	// Unfile takes a filed scan back to intake: its Box copy goes to the trash
+	// and it is waiting again, with what its sidecar said as the draft.
+	Unfile(digest string) error
 	// Sample reports whether this Source is made up, so the pages can say so
 	// rather than letting someone describe scans that do not exist.
 	Sample() bool
+}
+
+// RejectedScan is one scan turned away at intake.
+type RejectedScan struct {
+	Digest   string `json:"digest"`
+	Filename string `json:"filename"`
+	Reason   string `json:"reason"`
+	// At is when it was rejected, RFC 3339.
+	At string `json:"at"`
 }
 
 // BatchResult is what a batch did. Failures are per record rather than for the
@@ -179,6 +213,7 @@ func decorate(scan Scan, today box.Date) Scan {
 		scan.Expiry = ""
 	}
 	scan.State = lifecycle.StateOn(subject, today).String()
+	scan.Unassigned = unassigned(scan)
 	return scan
 }
 
@@ -193,6 +228,7 @@ type Sample struct {
 	currency string
 	pending  []Scan
 	filed    []Scan
+	rejected []rejectedSample
 }
 
 // NewSample builds the stand-in Box. currency is box.currency, so an amount
@@ -225,6 +261,7 @@ func (s *Sample) Scans() []Scan {
 	today := box.Today(nil)
 	for index := range filed {
 		filed[index] = decorate(filed[index], today)
+		filed[index].Unfilable = true
 	}
 	sort.SliceStable(filed, func(i, j int) bool {
 		left, right := sortKey(filed[i]), sortKey(filed[j])
@@ -316,11 +353,76 @@ func (s *Sample) Trash(digest, reason string) error {
 		s.filed = append(s.filed[:index], s.filed[index+1:]...)
 		return nil
 	}
-	if _, index, found := find(s.pending, digest); found {
+	if scan, index, found := find(s.pending, digest); found {
 		s.pending = append(s.pending[:index], s.pending[index+1:]...)
+		s.rejected = append(s.rejected, rejectedSample{scan: scan, reason: reason, at: time.Now()})
 		return nil
 	}
 	return fmt.Errorf("no scan %q", digest)
+}
+
+type rejectedSample struct {
+	scan   Scan
+	reason string
+	at     time.Time
+}
+
+// Rejected is what the sample turned away, newest first.
+func (s *Sample) Rejected() []RejectedScan {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	out := make([]RejectedScan, 0, len(s.rejected))
+	for i := len(s.rejected) - 1; i >= 0; i-- {
+		item := s.rejected[i]
+		out = append(out, RejectedScan{
+			Digest: item.scan.Digest, Filename: item.scan.Filename,
+			Reason: item.reason, At: item.at.Format(time.RFC3339),
+		})
+	}
+	return out
+}
+
+// Unfile puts a filed sample scan back in the inbox as it was described.
+func (s *Sample) Unfile(digest string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	scan, index, found := find(s.filed, digest)
+	if !found {
+		return fmt.Errorf("no scan %q", digest)
+	}
+	s.filed = append(s.filed[:index], s.filed[index+1:]...)
+	s.pending = append(s.pending, scan)
+	sort.SliceStable(s.pending, func(a, b int) bool { return s.pending[a].ScannedAt < s.pending[b].ScannedAt })
+	return nil
+}
+
+// RejectedFile has no file to give: a sample scan is only a picture, so the
+// picture is what is shown.
+func (s *Sample) RejectedFile(digest string) ([]byte, string, string, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	for _, item := range s.rejected {
+		if item.scan.Digest == digest {
+			return samplePage(item.scan, "preview", 1), item.scan.Filename, "image/svg+xml", nil
+		}
+	}
+	return nil, "", "", fmt.Errorf("no rejected scan %q", digest)
+}
+
+// Restore puts a rejected sample scan back where it was in scan-time order.
+func (s *Sample) Restore(digest string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	for i, item := range s.rejected {
+		if item.scan.Digest != digest {
+			continue
+		}
+		s.rejected = append(s.rejected[:i], s.rejected[i+1:]...)
+		s.pending = append(s.pending, item.scan)
+		sort.SliceStable(s.pending, func(a, b int) bool { return s.pending[a].ScannedAt < s.pending[b].ScannedAt })
+		return nil
+	}
+	return fmt.Errorf("no rejected scan %q", digest)
 }
 
 func (s *Sample) Image(digest, size string, page int) ([]byte, string, error) {
@@ -423,6 +525,13 @@ func applyEdit(scan Scan, edit Edit, defaultCurrency string) (Scan, error) {
 	}
 	if edit.Reviewed != nil {
 		scan.Reviewed = *edit.Reviewed
+	}
+	scan, err := applySplit(scan, edit.Documents, edit.IgnoredPages, defaultCurrency)
+	if err != nil {
+		return Scan{}, err
+	}
+	if err := checkSplit(scan); err != nil {
+		return Scan{}, err
 	}
 	return scan, nil
 }

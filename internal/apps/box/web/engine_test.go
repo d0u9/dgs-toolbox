@@ -534,3 +534,80 @@ func TestVanishedCandidatesAreForgotten(t *testing.T) {
 		t.Errorf("a record was kept for a file that is gone:\n%s", state)
 	}
 }
+
+// A scan rejected by mistake is still in the inbox and comes back whole.
+func TestARejectedScanCanBeRestored(t *testing.T) {
+	engine, _, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0001.pdf", threePages(t))
+	engine.Rescan()
+	digest := engine.Pending()[0].Digest
+	if err := engine.Trash(digest, "rejected at intake"); err != nil {
+		t.Fatal(err)
+	}
+	if len(engine.Pending()) != 0 {
+		t.Fatal("still pending after reject")
+	}
+	rejected := engine.Rejected()
+	if len(rejected) != 1 || rejected[0].Digest != digest || rejected[0].Filename != "Scan_0001.pdf" {
+		t.Fatalf("rejected: %+v", rejected)
+	}
+	body, name, mediaType, err := engine.RejectedFile(digest)
+	if err != nil || name != "Scan_0001.pdf" || mediaType != "application/pdf" || len(body) == 0 {
+		t.Fatalf("rejected file: %d bytes, %q, %q, %v", len(body), name, mediaType, err)
+	}
+	if err := engine.Restore(digest); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := engine.RejectedFile(digest); err == nil {
+		t.Error("gave the file of a scan no longer rejected")
+	}
+	if pending := engine.Pending(); len(pending) != 1 || pending[0].Digest != digest {
+		t.Fatalf("pending after restore: %+v", pending)
+	}
+	if len(engine.Rejected()) != 0 {
+		t.Error("still listed as rejected")
+	}
+	if err := engine.Restore(digest); err == nil {
+		t.Error("restored a scan that was not rejected")
+	}
+}
+
+// A scan filed wrongly as a whole goes back to intake with what it was
+// described as, and is not mistaken for something thrown away.
+func TestAFiledScanCanBeUnfiled(t *testing.T) {
+	engine, root, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0001.pdf", threePages(t))
+	engine.Rescan()
+	digest := engine.Pending()[0].Digest
+	description := "wrong one"
+	if _, err := engine.File(digest, boxweb.Edit{Description: &description}); err != nil {
+		t.Fatal(err)
+	}
+	scans := engine.Scans()
+	if len(scans) != 1 || !scans[0].Unfilable {
+		t.Fatalf("filed: %+v", scans)
+	}
+	if err := engine.Unfile(digest); err != nil {
+		t.Fatal(err)
+	}
+	if len(engine.Scans()) != 0 {
+		t.Error("still in the Box after unfiling")
+	}
+	pending := engine.Pending()
+	if len(pending) != 1 || pending[0].Description != "wrong one" {
+		t.Fatalf("pending: %+v", pending)
+	}
+	if pending[0].DuplicateOf != "" || pending[0].TrashedAt != "" {
+		t.Errorf("unfiled scan flagged as a duplicate: %+v", pending[0])
+	}
+	if _, err := os.Stat(filepath.Join(root, "trash")); err != nil {
+		t.Errorf("no trash: %v", err)
+	}
+	// And it files again.
+	if _, err := engine.File(digest, boxweb.Edit{}); err != nil {
+		t.Fatalf("file again: %v", err)
+	}
+	if err := engine.Unfile("sha256:nothing"); err == nil {
+		t.Error("unfiled a scan that is not there")
+	}
+}

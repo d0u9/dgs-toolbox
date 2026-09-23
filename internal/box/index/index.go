@@ -42,7 +42,7 @@ import (
 
 // Version is the cache schema this build writes. A cache carrying any other
 // number is rebuilt.
-const Version = 1
+const Version = 2
 
 // Name is the cache file, inside this Box's cache directory.
 const Name = "index.json"

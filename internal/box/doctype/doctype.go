@@ -75,7 +75,7 @@ const Unsorted = "unsorted"
 // utility first, then keepsake, then the two that describe an absence.
 var catalogue = []Type{
 	{Name: "ticket", Label: "Ticket stub", Nature: Utility, Lifetime: Days(0), Key: 't'},
-	{Name: "travel", Label: "Travel", Nature: Utility, Lifetime: Days(90), Key: 'v'},
+	{Name: "travel", Label: "Travel", Nature: Utility, Lifetime: Days(90), Key: 'a'},
 	{Name: "receipt", Label: "Receipt", Nature: Utility, Lifetime: Days(7 * year), Key: 'r'},
 	{Name: "statement", Label: "Statement", Nature: Utility, Lifetime: Days(7 * year), Key: 's'},
 	{Name: "insurance", Label: "Insurance", Nature: Utility, Lifetime: Days(year), ExpiryExpected: true, Key: 'i'},
@@ -83,7 +83,7 @@ var catalogue = []Type{
 	{Name: "contract", Label: "Contract", Nature: Utility, Key: 'c'},
 	{Name: "identity", Label: "Identity document", Nature: Utility, ExpiryExpected: true, Key: 'd'},
 	{Name: "medical", Label: "Medical", Nature: Utility, Key: 'm'},
-	{Name: "letter", Label: "Letter", Nature: Keepsake, Key: 'w'},
+	{Name: "letter", Label: "Letter", Nature: Keepsake, Key: 'l'},
 	{Name: "ephemera", Label: "Ephemera", Nature: Keepsake, Key: 'e'},
 	{Name: "object", Label: "Object", Nature: Keepsake, Key: 'o'},
 	{Name: "other", Label: "Other", Nature: Keepsake, Key: 'z'},

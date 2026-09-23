@@ -10,11 +10,13 @@
 
 const PAGES_OPEN_KEY = 'dgs.box.pages.open';
 
+// The strip is open unless the person closed it: most scans worth a second
+// look have more than one page, and a closed strip hides that they do.
 function readPagesOpen() {
   try {
-    return localStorage.getItem(PAGES_OPEN_KEY) === '1';
+    return localStorage.getItem(PAGES_OPEN_KEY) !== '0';
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -28,7 +30,10 @@ function writePagesOpen(open) {
 
 // pageView wires one strip. ids names its elements: strip (an <ol>), toggle
 // (a button), image (the large <img>) and label (where "page 2 of 5" goes).
-function pageView(ids) {
+// decorate, when given, is called with each strip item and its page number
+// after every redraw, so a page can mark pages without owning the strip.
+// turned, when given, is told the new page whenever the person turns to one.
+function pageView(ids, decorate, turned) {
   const strip = document.getElementById(ids.strip);
   const toggle = document.getElementById(ids.toggle);
   const image = document.getElementById(ids.image);
@@ -42,6 +47,7 @@ function pageView(ids) {
   function drawLarge() {
     const scan = view.scan;
     image.src = api.image(scan.digest, 'preview', view.page);
+    preload(scan);
     image.alt = scan.pages > 1 ? `${scan.filename}, page ${view.page}` : scan.filename;
     label.textContent = applies(scan) && scan.pages > 1 ? `page ${view.page} of ${scan.pages}` : '';
     for (const item of strip.children) {
@@ -49,6 +55,21 @@ function pageView(ids) {
       item.classList.toggle('page-current', current);
       if (current) item.setAttribute('aria-current', 'page');
       else item.removeAttribute('aria-current');
+      if (decorate) decorate(item, Number(item.dataset.page));
+    }
+  }
+
+  // preload asks for the pages either side of the one shown, so the next
+  // turn finds its picture already drawn and in the browser's cache.
+  const preloaded = [];
+  function preload(scan) {
+    preloaded.length = 0;
+    if (!applies(scan)) return;
+    for (const page of [view.page + 1, view.page - 1, view.page + 2]) {
+      if (page < 1 || page > scan.pages) continue;
+      const picture = new Image();
+      picture.src = api.image(scan.digest, 'preview', page);
+      preloaded.push(picture);
     }
   }
 
@@ -88,6 +109,7 @@ function pageView(ids) {
     const next = Math.min(Math.max(1, page), last);
     if (next === view.page) return;
     view.page = next;
+    if (turned) turned(next);
     drawLarge();
     strip.querySelector('.page-current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
@@ -98,6 +120,15 @@ function pageView(ids) {
     if (!applies(view.scan)) return;
     view.open = !view.open;
     writePagesOpen(view.open);
+    drawStrip();
+    drawLarge();
+  }
+
+  // open shows the strip without remembering it as the person's choice: a
+  // split needs the pages, and closing them again is still one key.
+  function open() {
+    if (!applies(view.scan) || view.open) return;
+    view.open = true;
     drawStrip();
     drawLarge();
   }
@@ -123,7 +154,12 @@ function pageView(ids) {
       drawLarge();
     },
     toggle: togglePages,
+    open,
     step: (delta) => go(view.page + delta),
+    go,
+    page: () => view.page,
     applies: () => applies(view.scan),
+    // redraw reapplies decorate without reloading a picture.
+    redraw: () => view.scan && drawLarge(),
   };
 }

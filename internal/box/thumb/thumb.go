@@ -110,13 +110,28 @@ func RenderPage(info scanmeta.Info, page int) (Pair, error) {
 	return both(source)
 }
 
+// RenderPicture makes both sizes from one page's rendered picture, as
+// scanmeta.Pages.Page returns it.
+func RenderPicture(rendered []byte) (Pair, error) {
+	source, _, err := image.Decode(bytes.NewReader(rendered))
+	if err != nil {
+		return Pair{}, fmt.Errorf("decode page: %w", err)
+	}
+	return both(source)
+}
+
 // both encodes one decoded picture at both sizes.
+//
+// The grid thumbnail is drawn from the preview, not from the scan: a scan is
+// several thousand pixels a side, and scaling it twice is most of the cost of
+// drawing a page.
 func both(source image.Image) (Pair, error) {
-	grid, err := encode(fit(source, GridSize))
+	large := fitWith(source, PreviewSize, draw.ApproxBiLinear)
+	preview, err := encode(large)
 	if err != nil {
 		return Pair{}, err
 	}
-	preview, err := encode(fit(source, PreviewSize))
+	grid, err := encode(scaleTo(large, source.Bounds(), GridSize, draw.CatmullRom))
 	if err != nil {
 		return Pair{}, err
 	}
@@ -152,15 +167,30 @@ func pagePicture(info scanmeta.Info, page int) (image.Image, error) {
 // scan produces a blurred picture of exactly the same information and a file
 // several times the size, which is the wrong answer twice.
 func fit(source image.Image, size int) image.Image {
+	return fitWith(source, size, draw.CatmullRom)
+}
+
+// fitWith is fit with the scaler named. The preview takes the cheaper
+// ApproxBiLinear: it shrinks a scan by two or three times, where the cheap
+// filter still reads cleanly, and it is several times faster than CatmullRom
+// on a picture that size.
+func fitWith(source image.Image, size int, scaler draw.Scaler) image.Image {
+	return scaleTo(source, source.Bounds(), size, scaler)
+}
+
+// scaleTo draws source at the size shape would fit into, so a picture drawn
+// from an already shrunk copy keeps the original's proportions exactly.
+func scaleTo(source image.Image, shape image.Rectangle, size int, scaler draw.Scaler) image.Image {
 	bounds := source.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
+	width, height := shape.Dx(), shape.Dy()
 	if width <= 0 || height <= 0 {
 		return source
 	}
 	if width <= size && height <= size {
-		return source
-	}
-	if width >= height {
+		if shape == bounds {
+			return source
+		}
+	} else if width >= height {
 		height = height * size / width
 		width = size
 	} else {
@@ -174,10 +204,10 @@ func fit(source image.Image, size int) image.Image {
 		height = 1
 	}
 	target := image.NewRGBA(image.Rect(0, 0, width, height))
-	// CatmullRom rather than a nearest-neighbour or bilinear scale: a page of
-	// text shrunk by a factor of five aliases badly enough with the cheap
-	// filters that a person cannot tell one letter from another in a grid.
-	draw.CatmullRom.Scale(target, target.Bounds(), source, bounds, draw.Over, nil)
+	// The grid keeps CatmullRom: a page of text shrunk by a factor of five
+	// aliases badly enough with the cheap filters that a person cannot tell
+	// one letter from another in a grid.
+	scaler.Scale(target, target.Bounds(), source, bounds, draw.Over, nil)
 	return target
 }
 
