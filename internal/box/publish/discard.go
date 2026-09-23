@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,16 +47,16 @@ func Discard(request DiscardRequest) (DiscardResult, error) {
 	// Bucketing by the discard date matches how emptying works — "clear out
 	// what I threw away before June". Bucketing by the original date would mean
 	// walking the whole tree to do it.
-	directory := filepath.Join(request.Root, TrashDirectory, request.DiscardDate.String())
+	directory, err := freeTrashDirectory(
+		filepath.Join(request.Root, TrashDirectory, request.DiscardDate.String()),
+		filepath.Base(request.Path), request.Digest, request.ShortLength())
+	if err != nil {
+		return DiscardResult{}, err
+	}
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return DiscardResult{}, err
 	}
 	destination := filepath.Join(directory, filepath.Base(request.Path))
-	if _, err := os.Lstat(destination); err == nil {
-		return DiscardResult{}, fmt.Errorf("%s already in the trash", destination)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return DiscardResult{}, err
-	}
 	if err := os.Rename(request.Path, destination); err != nil {
 		return DiscardResult{}, fmt.Errorf("move to trash: %w", err)
 	}
@@ -93,6 +94,34 @@ func Discard(request DiscardRequest) (DiscardResult, error) {
 		return DiscardResult{}, fmt.Errorf("discarded %s but could not append to the log: %w", request.Path, err)
 	}
 	return DiscardResult{Path: destination, SidecarPath: trashSidecar}, nil
+}
+
+// freeTrashDirectory is the day's trash directory, or a numbered one inside it
+// when the day already holds this file or its sidecar. The same scan filed,
+// unfiled, filed again and unfiled again in one day is the ordinary way that
+// happens: both copies and both sidecars are kept, because the first sidecar
+// is the only record of what the scan was called before.
+func freeTrashDirectory(day, name, digest string, prefix int) (string, error) {
+	for n := 1; ; n++ {
+		directory := day
+		if n > 1 {
+			directory = filepath.Join(day, strconv.Itoa(n))
+		}
+		taken := false
+		for _, path := range []string{
+			filepath.Join(directory, name),
+			sidecar.PathFor(directory, digest, prefix),
+		} {
+			if _, err := os.Lstat(path); err == nil {
+				taken = true
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return "", err
+			}
+		}
+		if !taken {
+			return directory, nil
+		}
+	}
 }
 
 // DiscardRequest is one scan to throw away.
