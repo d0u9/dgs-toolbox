@@ -20,6 +20,13 @@ global:
   printcap name: /dev/null
   logging: stdout
   log level: 1
+  # Samba advertises DFS by default, so macOS asks for a referral for
+  # \<address> before opening a share. smbd checks that address against its
+  # own interfaces — and in a container those are Docker's, not the address
+  # the client dialled, which reaches it through a port mapping. It answers
+  # "not ours", and Finder gives up with "There was a problem connecting".
+  # Nothing here uses DFS, so it is not advertised.
+  host msdfs: "no"
 
 # One entry of the share list, applied to every share. These are the lines
 # that were copied into every section of a hand-written smb.conf, and copying
