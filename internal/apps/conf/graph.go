@@ -333,14 +333,25 @@ func principalOn(l InspectData, e topology.Edge) string {
 		if ci.ID != e.From {
 			continue
 		}
+		// The name is the service's to choose, the way derive chose it for
+		// the account table: a service naming accounts by person drops the
+		// credential, and a label that kept it would name an account the
+		// server does not have.
+		byPerson := l.manifests[ci.Service].NamesAccountsByPerson()
+		name := func(u inventory.User, key string) string {
+			if byPerson {
+				return u.UsernameOr(key)
+			}
+			return u.Account(key, ci.Credential)
+		}
 		if ci.User != "" {
-			return l.inv.Users[ci.User].Account(ci.User, ci.Credential)
+			return name(l.inv.Users[ci.User], ci.User)
 		}
 		for _, n := range l.inv.Nodes {
 			if n.ID != ci.Node || n.Broken != "" {
 				continue
 			}
-			return l.inv.Users[n.Owner].Account(n.Owner, ci.Credential)
+			return name(l.inv.Users[n.Owner], n.Owner)
 		}
 		return ci.ID
 	}

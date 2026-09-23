@@ -32,8 +32,12 @@ instances:
       # from reads the same lines, so the file server cannot end up with an
       # account table naming a uid no account has.
       accounts:
-        group:
+        # The account shared files are written as, through `force user` and
+        # `force group`: a user and a group of the same name. Both have to exist in
+        # the container, so both are created from here.
+        owner:
           name: trident
+          uid: 1000
           gid: 1000
         uids:
           alice: 3001

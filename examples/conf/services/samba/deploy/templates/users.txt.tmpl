@@ -8,5 +8,12 @@
 # One entry per person, never one per credential: two of someone's credentials
 # are two ways into one home directory.
 {{- $accounts := (instance).values.accounts }}
-{{ range $person, $uid := $accounts.uids }}{{ $person }}::{{ $uid }}:{{ $accounts.group.name }}
+{{- /*
+  The owner first: the account every shared file is written as, through
+  `force user`. It logs in as nobody and holds no password, but it has to
+  exist — a `force user` naming an account the container does not have
+  refuses every connection to that share.
+*/}}
+{{ $accounts.owner.name }}::{{ $accounts.owner.uid }}:{{ $accounts.owner.name }}
+{{ range $person, $uid := $accounts.uids }}{{ $person }}::{{ $uid }}:{{ $accounts.owner.name }}
 {{ end }}

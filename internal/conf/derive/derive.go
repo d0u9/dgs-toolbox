@@ -346,7 +346,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 				}
 				principal := Principal{
 					Kind: PrincipalUser, ID: key + "/" + credential,
-					Name:  user.Account(key, credential),
+					Name:  accountName(user, key, credential, manifest),
 					Group: key, Slot: credential,
 				}
 				m.Grants = append(m.Grants, Grant{Principal: principal, Instance: terminalHop.Instance, Port: terminalHop.Port})
@@ -520,7 +520,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 				continue
 			}
 			m.Grants = append(m.Grants, Grant{
-				Principal: upstreamPrincipal(inv, from.inst),
+				Principal: upstreamPrincipal(inv, from.inst, manifests[instances[terminal.Instance].inst.Service]),
 				Instance:  terminal.Instance,
 				Port:      terminal.Port,
 			})
@@ -536,13 +536,13 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 // binding instead selects an already-authorised user's default credential;
 // validation reports an unknown or unauthorised name, while this safe fallback
 // keeps derivation available so the full check report can still be produced.
-func upstreamPrincipal(inv *inventory.Root, inst inventory.Instance) Principal {
+func upstreamPrincipal(inv *inventory.Root, inst inventory.Instance, terminal confgen.Manifest) Principal {
 	if inst.Principal != "" {
 		if user, ok := inv.Users[inst.Principal]; ok {
 			return Principal{
 				Kind:  PrincipalUser,
 				ID:    inst.Principal + "/" + inventory.DefaultCredential,
-				Name:  user.Account(inst.Principal, inventory.DefaultCredential),
+				Name:  accountName(user, inst.Principal, inventory.DefaultCredential, terminal),
 				Group: inst.Principal, Slot: inventory.DefaultCredential,
 			}
 		}
@@ -636,4 +636,17 @@ func containsString(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// accountName is what the service a grant terminates at calls this
+// credential's account. It is the service's to say because it is the
+// service's account table: most name one account per credential, and one
+// whose accounts are POSIX users names them after the person. Which secret
+// the account holds does not change with it — the path is the credential's
+// either way.
+func accountName(user inventory.User, key, credential string, terminal confgen.Manifest) string {
+	if terminal.NamesAccountsByPerson() {
+		return user.UsernameOr(key)
+	}
+	return user.Account(key, credential)
 }

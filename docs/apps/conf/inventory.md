@@ -886,6 +886,14 @@ second appears. `default` is a name like any other — it is written out in
 account names, in secret paths and in the picture — and it is simply the one
 you get without choosing.
 
+The one exception is the service's to declare, not the person's: a service
+whose accounts are POSIX users — Samba — writes
+[`accounts: person`](export.md#the-account-name), and every account it holds is
+the username alone. That is a whole service choosing, never the first
+credential going bare, so nothing is renamed when a second credential appears;
+a second one on that port is instead an error, since it would be a second
+account under the same name.
+
 **Keeping one credential per device is still available**, by declaring one per
 device and naming them. That is the safer default in the sense that losing a
 machine costs one deletion, and it is not the model's business to insist on it:
@@ -2036,7 +2044,9 @@ failing can be told which level it was reading.
 12. The granted routes of a user who keeps a credential no device of theirs
     names enter on the `universal` network — that file is dialed from a machine
     this inventory does not model.
-13. Account names rendered for one port are distinct.
+13. Account names rendered for one port are distinct. On a service naming
+    accounts by person, this is what two of one person's credentials on the
+    same port fail.
 14. Two instances on one node do not bind the same address, port and protocol.
 15. Every secret the inventory implies exists, and every file in the secrets
     tree is implied by it. Both directions are reported; neither is fixed here.

@@ -301,35 +301,34 @@ func TestExamples_DeploymentWritesTheScriptThatPutsItInPlace(t *testing.T) {
 }
 
 // TestExamples_ServiceWritingSeveralFilesRendersEachOne is the multi-file
-// service end to end: Samba reads its configuration, its account table and
-// its name map, and all three come out of one render of one instance. A
-// program reading three files is one service, so the accounts a share names
-// and the accounts the table holds are written from the same facts in one
-// pass and cannot disagree.
+// service end to end: Samba reads its configuration and its account table,
+// and both come out of one render of one instance. A program reading two
+// files is one service, so the accounts a share names and the accounts the
+// table holds are written from the same facts in one pass and cannot
+// disagree.
 func TestExamples_ServiceWritingSeveralFilesRendersEachOne(t *testing.T) {
 	files := renderExamples(t)
 
 	conf := exampleFile(t, files, "samba-nas/smb.conf")
 	table := exampleFile(t, files, "samba-nas/smbpasswd")
-	usermap := exampleFile(t, files, "samba-nas/usermap")
 
-	// The account the share admits is the account the table holds, and the
-	// map resolves it to the person who owns the home directory.
-	for _, want := range []string{"valid users = alice-default", "path = /mnt/vault/00-vault"} {
+	// The service names accounts by person, so the account the share
+	// admits, the one the table holds and the POSIX user that owns the
+	// files are one name.
+	for _, want := range []string{"valid users = alice\n", "path = /mnt/vault/00-vault"} {
 		if !strings.Contains(conf, want) {
 			t.Errorf("rendered smb.conf has no %q:\n%s", want, conf)
 		}
 	}
-	if !strings.HasPrefix(table, "alice-default:3001:") {
+	if !strings.HasPrefix(table, "alice:3001:") {
 		t.Errorf("rendered smbpasswd does not open with the account and its uid:\n%s", table)
 	}
-	if want := "alice = alice-default\n"; !strings.Contains(usermap, want) {
-		t.Errorf("rendered usermap has no %q:\n%s", want, usermap)
+	if strings.Contains(conf+table, "alice-default") {
+		t.Errorf("an account carries the credential's name though the service names accounts by person")
 	}
 
-	// A home directory belongs to a person, not to a credential. Samba's
-	// own [homes] resolves it per user, and %S is the POSIX account the
-	// username map above resolved the login name to.
+	// A home directory belongs to a person. Samba's own [homes] resolves
+	// it per user, and %S is the name they logged in with.
 	if !strings.Contains(conf, "path = /mnt/vault/11-home/%S\n") {
 		t.Errorf("rendered smb.conf has no [homes] directory:\n%s", conf)
 	}
@@ -351,7 +350,7 @@ func TestExamples_TheAccountTableHoldsNoPlaintext(t *testing.T) {
 	}
 
 	files := renderExamples(t)
-	for _, name := range []string{"samba-nas/smb.conf", "samba-nas/smbpasswd", "samba-nas/usermap", "samba-nas/users.txt", "samba-nas/compose.yaml"} {
+	for _, name := range []string{"samba-nas/smb.conf", "samba-nas/smbpasswd", "samba-nas/users.txt", "samba-nas/compose.yaml"} {
 		if strings.Contains(exampleFile(t, files, name), string(secret)) {
 			t.Errorf("%s carries the plaintext credential", name)
 		}
