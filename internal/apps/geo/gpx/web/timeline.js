@@ -229,7 +229,7 @@ export class Timeline {
   // updateAxis builds the map from time to axis position. Compressing, every
   // stop (while stops are shown) and every stretch without data longer than a
   // fold takes FOLD_PIXELS of the whole track's width; hiding empty time, a
-  // stretch without data takes none. The rest keeps its scale.
+  // stretch without data outside any stop takes none. The rest keeps its scale.
   updateAxis() {
     const width = this.bar.clientWidth || 600;
     const key = `${this.compress}|${this.hideEmpty}|${this.showStops}|${width}`;
@@ -240,7 +240,9 @@ export class Timeline {
     const intervals = []; // [from, to, empty]
     const spans = this.dataSpans();
     for (let k = 1; k < spans.length; k++) intervals.push([spans[k - 1][1], spans[k][0], true]);
-    if (this.compress && this.showStops) for (const stop of this.track.stops) intervals.push([stop.arrival, stop.departure, false]);
+    // A stop is never hidden as empty time, even when nothing was recorded
+    // during it: it keeps its time to scale, or Compress's width.
+    if (this.showStops) for (const stop of this.track.stops) intervals.push([stop.arrival, stop.departure, false]);
     intervals.sort((a, b) => a[0] - b[0]);
     const merged = [];
     for (const [from, to, empty] of intervals) {
@@ -251,7 +253,7 @@ export class Timeline {
       } else if (to > from) merged.push([from, to, empty]);
     }
     const hidden = merged.filter(([, , empty]) => empty && this.hideEmpty);
-    let narrow = this.compress ? merged.filter(([, , empty]) => !(empty && this.hideEmpty)) : [];
+    let narrow = merged.filter(([, , empty]) => (empty ? this.compress && !this.hideEmpty : this.compress));
     const total = this.full[1] - this.full[0];
     const length = (list) => list.reduce((sum, [from, to]) => sum + (to - from), 0);
     // Narrow folds together take at most half the bar; a fold of size f makes

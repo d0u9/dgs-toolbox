@@ -430,7 +430,8 @@ map. It is the interface later milestones build on.
   edges and labelled with the times at both ends, so moving time takes the
   bar; the overview, zoom and pan follow the same axis. It is remembered and
   starts off. Axis › *No empty* leaves empty stretches out entirely: each shows as
-  a dashed line with the times on either side, while stops keep their width
+  a dashed line with the times on either side, while stops — even one with
+  nothing recorded during it — keep their width
   (or Compress's). It is remembered and starts on. The thresholds — at
   least a time T within a distance D — are set beside the timeline and apply
   to every shown track.
