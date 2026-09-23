@@ -1,0 +1,40 @@
+/* The shared context menu. It draws only from tokens.css, so a right click
+   opens the same menu on every page dgs serves. */
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 160px;
+  padding: var(--space-xxs) 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: var(--lift-modal);
+  font-size: var(--font-size-ui);
+  line-height: var(--line-height-ui);
+}
+
+/* A rule between sections, never above the first one: the rule is what says
+   the commands on either side of it do different kinds of thing. */
+.menu-section + .menu-section {
+  margin-top: var(--space-xxs);
+  padding-top: var(--space-xxs);
+  border-top: 1px solid var(--hairline);
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--row-pad-y) var(--space-sm);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible:not(:disabled) { background: var(--hover); outline: none; }
+.menu-item.danger { color: var(--error); }
+.menu-item:disabled { color: var(--steel); cursor: default; }
