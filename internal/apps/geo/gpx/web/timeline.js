@@ -29,6 +29,10 @@ export class Timeline {
     this.cursor.hidden = true;
     this.pointerX = null;
     this.showStops = true; // off, the bar shows only where there is data and where not
+    this.compress = false; // stops and empty time drawn FOLD_PIXELS wide instead of to scale
+    this.hideEmpty = false; // empty time drawn with no width
+    this.axis = null; // with compress, the piecewise-linear map from time to axis position
+    this.axisKey = null;
     this.snap = true; // the cursor sticks to stops, cuts and ends; else follows the pointer
     this.stuck = null; // the point index the cursor is stuck to while snapping
     this.wheelMode = null;
@@ -99,6 +103,7 @@ export class Timeline {
       .sort((a, b) => track.time[a] - track.time[b]);
     this.full = this.timed.length < 2 ? null : [track.time[this.timed[0]], track.time[this.timed[this.timed.length - 1]]];
     this.minSpan = this.full ? this.computeMinimumSpan() : 1;
+    this.axisKey = null;
     this.render();
   }
 
@@ -130,10 +135,16 @@ export class Timeline {
       return;
     }
     this.root.classList.remove("untimed");
+    this.updateAxis();
     this.range = this.clampView(this.view) || this.full;
     const [start, end] = this.range;
     const blocks = [];
 
+    for (const [from, to, width] of this.axis?.folds || []) {
+      const fold = this.block("timeline-fold" + (width ? "" : " empty"), from, to);
+      fold.title = `${format.clock(from, this.timeZone, { seconds: true })} – ${format.clock(to, this.timeZone, { seconds: true })} · ${format.duration((to - from) / 1000)} ${width ? "compressed" : "empty, hidden"}`;
+      blocks.push(fold);
+    }
     if (this.showStops) {
       // A moving block per recorded segment: from its first to its last timed point.
       const spans = new Map();
@@ -197,6 +208,108 @@ export class Timeline {
     this.labels.replaceChildren(startLabel, legend, endLabel);
   }
 
+  // setCompress draws stops and empty time narrow, so only moving time keeps
+  // its scale, or with false draws all time to scale.
+  setCompress(compress) {
+    this.compress = compress;
+    this.stuck = null;
+    this.axisKey = null;
+    if (this.track) this.render();
+  }
+
+  // setHideEmpty draws empty time with no width at all, only a dashed line
+  // with the times on either side, or with false as Compress says.
+  setHideEmpty(hide) {
+    this.hideEmpty = hide;
+    this.stuck = null;
+    this.axisKey = null;
+    if (this.track) this.render();
+  }
+
+  // updateAxis builds the map from time to axis position. Compressing, every
+  // stop (while stops are shown) and every stretch without data longer than a
+  // fold takes FOLD_PIXELS of the whole track's width; hiding empty time, a
+  // stretch without data takes none. The rest keeps its scale.
+  updateAxis() {
+    const width = this.bar.clientWidth || 600;
+    const key = `${this.compress}|${this.hideEmpty}|${this.showStops}|${width}`;
+    if (key === this.axisKey) return;
+    this.axisKey = key;
+    this.axis = null;
+    if (!(this.compress || this.hideEmpty) || !this.full) return;
+    const intervals = []; // [from, to, empty]
+    const spans = this.dataSpans();
+    for (let k = 1; k < spans.length; k++) intervals.push([spans[k - 1][1], spans[k][0], true]);
+    if (this.compress && this.showStops) for (const stop of this.track.stops) intervals.push([stop.arrival, stop.departure, false]);
+    intervals.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const [from, to, empty] of intervals) {
+      const last = merged[merged.length - 1];
+      if (last && from <= last[1]) {
+        last[1] = Math.max(last[1], to);
+        last[2] = last[2] && empty;
+      } else if (to > from) merged.push([from, to, empty]);
+    }
+    const hidden = merged.filter(([, , empty]) => empty && this.hideEmpty);
+    let narrow = this.compress ? merged.filter(([, , empty]) => !(empty && this.hideEmpty)) : [];
+    const total = this.full[1] - this.full[0];
+    const length = (list) => list.reduce((sum, [from, to]) => sum + (to - from), 0);
+    // Narrow folds together take at most half the bar; a fold of size f makes
+    // pixels / width = f / (kept + n f).
+    let pixels = 0, size = 0;
+    const sizeFor = (list) => {
+      pixels = Math.max(2, Math.min(FOLD_PIXELS, (width / 2) / Math.max(1, list.length)));
+      const kept = total - length(hidden) - length(list);
+      return kept > 0 ? (pixels * kept) / (width - pixels * list.length) : total / Math.max(1, list.length);
+    };
+    if (narrow.length) {
+      size = sizeFor(narrow);
+      narrow = narrow.filter(([from, to]) => to - from > size);
+      if (narrow.length) size = sizeFor(narrow);
+    }
+    const folds = [...hidden.map(([from, to]) => [from, to, 0]), ...narrow.map(([from, to]) => [from, to, size])]
+      .sort((a, b) => a[0] - b[0]);
+    if (!folds.length) return;
+    const times = [this.full[0]], positions = [0];
+    let at = 0, previous = this.full[0];
+    for (const [from, to, width] of folds) {
+      at += from - previous;
+      times.push(from, to);
+      positions.push(at, at + width);
+      at += width;
+      previous = to;
+    }
+    times.push(this.full[1]);
+    positions.push(at + this.full[1] - previous);
+    this.axis = { folds, times, positions };
+  }
+
+  // toAxis is a time's position along the axis; fromAxis its inverse. Without
+  // compression both are the time itself; beyond the track they keep scale.
+  toAxis(time) {
+    return this.axis ? interpolate(this.axis.times, this.axis.positions, time) : time;
+  }
+
+  fromAxis(position) {
+    return this.axis ? interpolate(this.axis.positions, this.axis.times, position) : position;
+  }
+
+  // fraction is where a time falls across the view, 0 at its start, 1 at its end.
+  fraction(time) {
+    const from = this.toAxis(this.range[0]), to = this.toAxis(this.range[1]);
+    return (this.toAxis(time) - from) / (to - from);
+  }
+
+  timeAt(fraction) {
+    const from = this.toAxis(this.range[0]), to = this.toAxis(this.range[1]);
+    return this.fromAxis(from + fraction * (to - from));
+  }
+
+  // axisView turns [from, to] axis positions into a view in time.
+  axisView(from, to) {
+    return [this.fromAxis(from), this.fromAxis(to)];
+  }
+
   // setShowStops shows stops and moving periods, or with false only the
   // stretches with data and the empty time between them.
   setShowStops(show) {
@@ -229,11 +342,11 @@ export class Timeline {
   }
 
   block(className, from, to, style = {}) {
-    const [start, end] = this.range;
     const element = document.createElement("div");
     element.className = className;
-    element.style.left = `${((from - start) / (end - start)) * 100}%`;
-    element.style.width = `${((to - from) / (end - start)) * 100}%`;
+    const left = this.fraction(from);
+    element.style.left = `${left * 100}%`;
+    element.style.width = `${(this.fraction(to) - left) * 100}%`;
     Object.assign(element.style, style);
     return element;
   }
@@ -248,12 +361,14 @@ export class Timeline {
   // when it covers the whole track.
   clampView(view) {
     if (!view || !this.full) return null;
-    const [fullStart, fullEnd] = this.full;
-    const span = Math.min(fullEnd - fullStart, Math.max(this.minSpan, view[1] - view[0]));
-    const from = Math.max(fullStart, Math.min(view[0], fullEnd - span));
+    // Compressed, the view keeps its width along the axis rather than in time.
+    const fullStart = this.toAxis(this.full[0]), fullEnd = this.toAxis(this.full[1]);
+    const start = this.toAxis(view[0]), end = this.toAxis(view[1]);
+    const span = Math.min(fullEnd - fullStart, Math.max(this.minSpan, end - start));
+    const from = Math.max(fullStart, Math.min(start, fullEnd - span));
     const to = from + span;
     if (to >= fullEnd && from <= fullStart) return null;
-    return [from, to];
+    return this.axisView(from, to);
   }
 
   // setView shows a stretch of time, or with null the whole track. It does not
@@ -288,7 +403,7 @@ export class Timeline {
     bar.addEventListener("wheel", (event) => {
       if (!this.full) return;
       event.preventDefault();
-      const [from, to] = this.range;
+      const from = this.toAxis(this.range[0]), to = this.toAxis(this.range[1]);
       const span = to - from;
       const rect = bar.getBoundingClientRect();
       // A mouse wheel may count in lines or pages rather than pixels.
@@ -319,7 +434,7 @@ export class Timeline {
         }
         const lockedSpan = this.panSpan;
         const shift = (pan / rect.width) * lockedSpan;
-        this.changeView([from + shift, from + shift + lockedSpan]);
+        this.changeView(this.axisView(from + shift, from + shift + lockedSpan));
         this.keepWheelGesture();
         return;
       }
@@ -335,9 +450,9 @@ export class Timeline {
       // deriving the anchor anew after every render allows rounding and event
       // coordinate noise to make the content sway under a stationary cursor.
       if (!this.wheelAnchor || Math.abs(this.wheelAnchor.clientX - clientX) > 2) {
-        this.wheelAnchor = { clientX, fraction, time: from + fraction * span };
+        this.wheelAnchor = { clientX, fraction, time: this.fromAxis(from + fraction * span) };
       }
-      const anchor = this.wheelAnchor;
+      const anchor = { ...this.wheelAnchor, time: this.toAxis(this.wheelAnchor.time) };
       // Trackpads send a stream of small deltas while mouse wheels tend to send
       // fewer large ones. An exponential scale makes both continuous and keeps
       // the time under the pointer stationary.
@@ -351,10 +466,10 @@ export class Timeline {
         ? Math.exp(Math.max(-10, Math.min(10, dy)) * 0.01)
         : Math.exp(Math.max(-60, Math.min(60, dy)) * 0.001);
       const nextSpan = span * factor;
-      this.changeView([
+      this.changeView(this.axisView(
         anchor.time - anchor.fraction * nextSpan,
         anchor.time + (1 - anchor.fraction) * nextSpan,
-      ]);
+      ));
       this.keepWheelGesture();
     }, { passive: false });
 
@@ -368,7 +483,7 @@ export class Timeline {
       event.preventDefault();
       event.stopPropagation();
       const startX = event.clientX;
-      const startRange = [...this.range];
+      const startRange = this.range.map((t) => this.toAxis(t));
       try {
         element.setPointerCapture(event.pointerId);
       } catch {
@@ -376,7 +491,7 @@ export class Timeline {
       }
       const move = (e) => {
         const shift = (e.clientX - startX) * perPixel();
-        this.changeView([startRange[0] + shift, startRange[1] + shift]);
+        this.changeView(this.axisView(startRange[0] + shift, startRange[1] + shift));
       };
       const up = () => {
         element.removeEventListener("pointermove", move);
@@ -390,20 +505,21 @@ export class Timeline {
     // Alt-drag on the bar moves the time under the pointer with it.
     bar.addEventListener("pointerdown", (event) => {
       if (!event.altKey || !this.full) return;
-      drag(bar, () => -(this.range[1] - this.range[0]) / bar.getBoundingClientRect().width)(event);
+      drag(bar, () => -(this.toAxis(this.range[1]) - this.toAxis(this.range[0])) / bar.getBoundingClientRect().width)(event);
     });
     // Dragging the overview's window moves it across the whole track.
     this.window.addEventListener("pointerdown", (event) => {
       if (!this.full) return;
-      drag(this.window, () => (this.full[1] - this.full[0]) / overview.getBoundingClientRect().width)(event);
+      drag(this.window, () => (this.toAxis(this.full[1]) - this.toAxis(this.full[0])) / overview.getBoundingClientRect().width)(event);
     });
     // Clicking the overview outside the window centres the view there.
     overview.addEventListener("pointerdown", (event) => {
       if (event.target !== overview || !this.full) return;
       const rect = overview.getBoundingClientRect();
-      const at = this.full[0] + ((event.clientX - rect.left) / rect.width) * (this.full[1] - this.full[0]);
-      const half = (this.range[1] - this.range[0]) / 2;
-      this.changeView([at - half, at + half]);
+      const fullStart = this.toAxis(this.full[0]), fullEnd = this.toAxis(this.full[1]);
+      const at = fullStart + ((event.clientX - rect.left) / rect.width) * (fullEnd - fullStart);
+      const half = (this.toAxis(this.range[1]) - this.toAxis(this.range[0])) / 2;
+      this.changeView(this.axisView(at - half, at + half));
     });
   }
 
@@ -445,35 +561,67 @@ export class Timeline {
     const zoomed = this.isZoomed();
     this.overview.classList.toggle("inactive", !zoomed);
     if (!zoomed) return;
-    const [fullStart, fullEnd] = this.full;
+    const fullStart = this.toAxis(this.full[0]), fullEnd = this.toAxis(this.full[1]);
     const span = fullEnd - fullStart;
-    this.window.style.left = `${((this.range[0] - fullStart) / span) * 100}%`;
-    this.window.style.width = `${Math.max(0.5, ((this.range[1] - this.range[0]) / span) * 100)}%`;
+    const from = this.toAxis(this.range[0]), to = this.toAxis(this.range[1]);
+    this.window.style.left = `${((from - fullStart) / span) * 100}%`;
+    this.window.style.width = `${Math.max(0.5, ((to - from) / span) * 100)}%`;
   }
 
   // renderTicks marks round times in the page's time zone across the view.
+  // Compressed, each fold is labelled with the times at its two ends first,
+  // round times fill the stretches kept to scale, and a label that would
+  // overlap one already placed is left out.
   renderTicks() {
     const [from, to] = this.range;
     const width = this.bar.clientWidth || 600;
-    const wanted = (to - from) / Math.max(2, width / 90); // about one tick per 90 px
+    const along = this.toAxis(to) - this.toAxis(from);
+    const wanted = along / Math.max(2, width / 90); // about one tick per 90 px
     const step = TICK_STEPS.find((s) => s >= wanted) || TICK_STEPS[TICK_STEPS.length - 1];
-    // Round in local time: shift by the zone's offset, round, shift back.
-    const offset = format.offsetMillis(from, this.timeZone);
-    const first = Math.ceil((from + offset) / step) * step - offset;
     const withSeconds = step < MINUTE;
+    const placed = []; // [left, right] pixels taken by labels
     const labels = [];
-    // Ticks too near an end would be cut off; the end labels above say those times.
-    const margin = (to - from) * 0.03;
-    for (let t = first; t <= to && labels.length < 60; t += step) {
-      if (t < from + margin || t > to - margin) continue;
+    const fits = (left, right) => left >= 0 && right <= width && placed.every(([a, b]) => right + 6 <= a || left >= b + 6);
+    // align: 0.5 centres the label on its time; 1 ends it there; 0 starts it there.
+    const add = (t, text, align) => {
+      const x = this.fraction(t) * width;
+      const size = text.length * 7;
+      const left = x - size * align;
+      if (!fits(left, left + size)) return;
+      placed.push([left, left + size]);
       const tick = document.createElement("span");
       tick.className = "timeline-tick";
       tick.style.left = this.percent(t);
-      const clock = format.clock(t, this.timeZone, { seconds: withSeconds });
-      const time = clock.slice(11);
-      // A day's first tick, or every tick a day or more apart, shows the date.
-      tick.textContent = step >= DAY || time.startsWith("00:00") ? clock.slice(5, 10) : time;
+      tick.style.transform = `translateX(${-align * 100}%)`;
+      tick.textContent = text;
       labels.push(tick);
+    };
+    const short = (t, seconds) => format.clock(t, this.timeZone, { seconds }).slice(11);
+    const folds = (this.axis?.folds || []).filter(([a, b]) => b > from && a < to);
+    for (const [a, b] of folds) {
+      if (a > from) add(a, short(a, withSeconds), 1);
+      if (b < to) add(b, short(b, withSeconds), 0);
+    }
+    // Round in local time: shift by the zone's offset, round, shift back.
+    // Ticks too near an end would be cut off; the end labels above say those times.
+    const margin = (to - from) * 0.03;
+    const stretches = [];
+    let at = from;
+    for (const [a, b] of folds) {
+      if (a > at) stretches.push([at, a]);
+      at = Math.max(at, b);
+    }
+    if (at < to) stretches.push([at, to]);
+    for (const [a, b] of stretches) {
+      const offset = format.offsetMillis(a, this.timeZone);
+      const first = Math.ceil((a + offset) / step) * step - offset;
+      for (let t = first, n = 0; t <= b && n < 60; t += step, n++) {
+        if (!this.axis && (t < from + margin || t > to - margin)) continue;
+        const clock = format.clock(t, this.timeZone, { seconds: withSeconds });
+        const time = clock.slice(11);
+        // A day's first tick, or every tick a day or more apart, shows the date.
+        add(t, step >= DAY || time.startsWith("00:00") ? clock.slice(5, 10) : time, 0.5);
+      }
     }
     this.ticks.replaceChildren(...labels);
   }
@@ -656,8 +804,7 @@ export class Timeline {
   }
 
   percent(time) {
-    const [start, end] = this.range;
-    return `${((time - start) / (end - start)) * 100}%`;
+    return `${this.fraction(time) * 100}%`;
   }
 
   // setSnap turns the cursor's stickiness on or off.
@@ -674,9 +821,8 @@ export class Timeline {
     if (!this.track || this.timed.length < 2) return null;
     const rect = this.bar.getBoundingClientRect();
     const x = Math.max(rect.left, Math.min(rect.right, clientX));
-    const [start, end] = this.range;
-    const toX = (index) => rect.left + ((this.track.time[index] - start) / (end - start)) * rect.width;
-    const index = this.nearest(start + ((x - rect.left) / rect.width) * (end - start));
+    const toX = (index) => rect.left + this.fraction(this.track.time[index]) * rect.width;
+    const index = this.nearest(this.timeAt((x - rect.left) / rect.width));
     if (!this.snap) return index;
     if (this.stuck != null && Math.abs(toX(this.stuck) - clientX) <= SNAP_RELEASE) return this.stuck;
     this.stuck = null;
@@ -737,7 +883,7 @@ export class Timeline {
     }
     const [start, end] = this.range;
     this.cursor.hidden = time < start || time > end;
-    this.cursor.style.left = `${((time - start) / (end - start)) * 100}%`;
+    this.cursor.style.left = this.percent(time);
   }
 }
 
@@ -746,6 +892,7 @@ const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const DATA_GAP = 60 * 1000; // milliseconds without a point that count as empty time
+const FOLD_PIXELS = 24; // width of a compressed stop or empty stretch across the whole track
 const SNAP_GRAB = 10; // pixels within which the snapping cursor sticks to a target
 const SNAP_RELEASE = 18; // pixels the pointer must move away to free it
 const MIN_DISTANCE = 1; // metres; shared spatial floor with the profile charts
@@ -757,4 +904,20 @@ const TICK_STEPS = [
 
 function stopped(track) {
   return track.stops.reduce((sum, stop) => sum + (stop.departure - stop.arrival), 0);
+}
+
+// interpolate maps x through the piecewise-linear function with knots xs → ys,
+// both ascending; outside the knots it continues at a slope of one.
+function interpolate(xs, ys, x) {
+  const last = xs.length - 1;
+  if (x <= xs[0]) return ys[0] + (x - xs[0]);
+  if (x >= xs[last]) return ys[last] + (x - xs[last]);
+  let low = 0, high = last;
+  while (high - low > 1) {
+    const mid = (low + high) >> 1;
+    if (xs[mid] <= x) low = mid;
+    else high = mid;
+  }
+  const span = xs[high] - xs[low];
+  return span > 0 ? ys[low] + ((x - xs[low]) / span) * (ys[high] - ys[low]) : ys[low];
 }

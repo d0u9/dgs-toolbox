@@ -443,6 +443,8 @@ body {
 .timeline-labels { flex: 1 1 280px; display: flex; justify-content: space-between; gap: 8px; min-width: 0; font-variant-numeric: tabular-nums; }
 .timeline-legend { color: var(--ink); }
 .timeline.untimed .timeline-labels { visibility: hidden; }
+.timeline-group { display: flex; align-items: center; gap: 8px; padding-left: 10px; border-left: 1px solid var(--hairline); }
+.timeline-group-name { color: var(--steel); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 .stop-toggle { display: flex; align-items: center; gap: 3px; cursor: pointer; }
 .stop-toggle input { margin: 0; }
 .stop-marker.off-map { display: none; }
@@ -467,6 +469,9 @@ body {
   user-select: none;
 }
 .timeline-moving { position: absolute; top: 0; bottom: 0; opacity: .75; }
+/* A compressed stop or empty stretch: dashed edges mark time not to scale. */
+.timeline-fold { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--graphite); border-right: 1px dashed var(--graphite); box-sizing: border-box; }
+.timeline-fold.empty { width: 0 !important; border-left: 2px dashed var(--graphite); border-right: none; margin-left: -1px; z-index: 1; }
 .timeline-stop {
   position: absolute;
   top: 0;
