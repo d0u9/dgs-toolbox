@@ -129,3 +129,37 @@ func TestInsertAndDeleteShiftIndices(t *testing.T) {
 		t.Fatalf("segments %+v", file.Segments)
 	}
 }
+
+// Two tracks of ten points, then one of five, put in the order 2, 0, 1: the
+// edits on each track's points go with it, and a range spanning the first
+// two tracks parts where they are put apart.
+func TestReorderMovesEditsWithTheirPoints(t *testing.T) {
+	file := File{Clean: clean.Defaults()}
+	file.Clean.Edits = []clean.Edit{
+		{Kind: clean.EditLasso, Points: []int{1, 21}},
+		{Kind: clean.EditRange, First: 8, Last: 11},
+	}
+	file.Segments = segment.Params{Cuts: []int{15}, Names: []segment.Name{{Start: 15, Name: "Lake"}}}
+	file.Fills = []compose.Fill{{First: 3, Last: 6, Route: [][2]float64{{1, 1}, {1, 2}}}}
+
+	file.Reorder([][2]int{{20, 24}, {0, 9}, {10, 19}})
+
+	edits := file.Clean.Edits
+	if len(edits[0].Points) != 2 || edits[0].Points[0] != 6 || edits[0].Points[1] != 1 {
+		t.Fatalf("lasso %+v", edits[0])
+	}
+	// 8–9 of the first track now at 13–14, 10–11 of the second at 15–16:
+	// they follow one another, so the range stays whole.
+	if len(edits) != 2 || edits[1].First != 13 || edits[1].Last != 16 {
+		t.Fatalf("range %+v", edits)
+	}
+	if file.Segments.Cuts[0] != 20 || file.Segments.Names[0].Start != 20 || file.Fills[0].First != 8 || file.Fills[0].Last != 11 {
+		t.Fatalf("after reorder %+v %+v", file.Segments, file.Fills)
+	}
+
+	file.Reorder([][2]int{{15, 24}, {5, 14}, {0, 4}}) // the first two tracks swap
+	edits = file.Clean.Edits
+	if len(edits) != 3 || edits[1].First != 18 || edits[1].Last != 19 || edits[2].First != 0 || edits[2].Last != 1 {
+		t.Fatalf("split range %+v", edits)
+	}
+}

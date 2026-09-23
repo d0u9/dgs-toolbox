@@ -10,7 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+
+	"dgs-toolbox/internal/geo"
 )
 
 // ErrExists is returned by Create when the file is already there.
@@ -190,21 +193,21 @@ func (f *File) IsOurs() bool { return f != nil && f.Creator == Creator }
 // A file created by something else is refused, so a recording is never
 // rewritten.
 func RenameTrack(path string, index int, name string) error {
-	data, err := os.ReadFile(path)
+	return RenamePart(path, PartTrack, index, name)
+}
+
+// RenamePart replaces the <name> of the index-th <trk>, <rte> or <wpt> of a
+// file written by this program, keeping every other byte. A file created by
+// something else is refused.
+func RenamePart(path string, part Part, index int, name string) error {
+	data, parsed, err := readOurs(path)
 	if err != nil {
 		return err
 	}
-	parsed, err := Parse(bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+	if index < 0 || index >= parsed.count(part) {
+		return fmt.Errorf("%s: no %s %d", path, part, index)
 	}
-	if !parsed.IsOurs() {
-		return fmt.Errorf("%s: %w", path, ErrNotOurs)
-	}
-	if index < 0 || index >= len(parsed.Tracks) {
-		return fmt.Errorf("%s: no track %d", path, index)
-	}
-	start, end, err := trackSpan(data, index)
+	start, end, err := partSpan(data, part, index)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
@@ -216,10 +219,10 @@ func RenameTrack(path string, index int, name string) error {
 	b.Write(data[:start])
 	textFrom, textTo := elementSpan(data[start:end], "name")
 	if textFrom < 0 {
-		// The track has no <name>: it opens one right after the <trk> tag.
+		// The part has no <name>: it opens one right after its own tag.
 		tag := bytes.IndexByte(data[start:end], '>')
 		if tag < 0 {
-			return fmt.Errorf("%s: track %d is not closed", path, index)
+			return fmt.Errorf("%s: %s %d is not closed", path, part, index)
 		}
 		b.Write(data[start : start+tag+1])
 		if name != "" {
@@ -270,6 +273,12 @@ func AddWaypoint(path string, waypoint Waypoint) error {
 	var b bytes.Buffer
 	b.Write(data[:end])
 	fmt.Fprintf(&b, "  <wpt lat=\"%s\" lon=\"%s\">", coordinate(waypoint.Lat), coordinate(waypoint.Lon))
+	if waypoint.HasElevation {
+		fmt.Fprintf(&b, "<ele>%s</ele>", strconv.FormatFloat(waypoint.Elevation, 'f', -1, 64))
+	}
+	if !waypoint.Time.IsZero() {
+		b.WriteString("<time>" + waypoint.Time.UTC().Format(time.RFC3339) + "</time>")
+	}
 	if waypoint.Name != "" {
 		b.WriteString("<name>")
 		_ = xml.EscapeText(&b, []byte(waypoint.Name))
@@ -285,40 +294,16 @@ func AddWaypoint(path string, waypoint Waypoint) error {
 	return replaceFile(path, b.Bytes())
 }
 
-// trackSpan returns the byte range of the index-th <trk> element, from its
-// opening angle bracket to the end of its </trk>.
-func trackSpan(data []byte, index int) (int, int, error) {
-	at, seen := 0, 0
-	for {
-		next := bytes.Index(data[at:], []byte("<trk"))
-		if next < 0 {
-			return 0, 0, fmt.Errorf("no track %d", index)
-		}
-		start := at + next
-		after := data[start+4:]
-		at = start + 4
-		if len(after) == 0 || (after[0] != '>' && after[0] != ' ' && after[0] != '\t' && after[0] != '\n' && after[0] != '\r') {
-			continue // <trkseg> or <trkpt>
-		}
-		if seen != index {
-			seen++
-			continue
-		}
-		stop := bytes.Index(data[start:], []byte("</trk>"))
-		if stop < 0 {
-			return 0, 0, fmt.Errorf("track %d is not closed", index)
-		}
-		return start, start + stop + len("</trk>"), nil
-	}
-}
-
 // elementSpan finds the text of the first <tag> of element, before any nested
 // <trkseg>. It returns the offsets its text starts and ends at, or -1 when the
 // element has no such child.
 func elementSpan(element []byte, tag string) (int, int) {
-	limit := bytes.Index(element, []byte("<trkseg"))
-	if limit < 0 {
-		limit = len(element)
+	limit := len(element)
+	// A name inside a point of the element is not the element's own.
+	for _, nested := range []string{"<trkseg", "<trkpt", "<rtept"} {
+		if at := bytes.Index(element, []byte(nested)); at >= 0 && at < limit {
+			limit = at
+		}
 	}
 	from := bytes.Index(element[:limit], []byte("<"+tag+">"))
 	if from < 0 {
@@ -355,4 +340,268 @@ func replaceFile(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(temp.Name(), path)
+}
+
+// Part names the three kinds of element a file holds one after another.
+type Part string
+
+const (
+	PartTrack    Part = "trk"
+	PartRoute    Part = "rte"
+	PartWaypoint Part = "wpt"
+)
+
+// RemovePart takes the index-th <trk>, <rte> or <wpt> out of a file written
+// by this program, keeping every other byte, and replaces the file in one
+// step. A file created by something else is refused, so a recording is never
+// rewritten.
+func RemovePart(path string, part Part, index int) error {
+	data, parsed, err := readOurs(path)
+	if err != nil {
+		return err
+	}
+	if index < 0 || index >= parsed.count(part) {
+		return fmt.Errorf("%s: no %s %d", path, part, index)
+	}
+	start, end, err := partSpan(data, part, index)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	// The line the element sits on goes with it, so no blank line is left.
+	for start > 0 && (data[start-1] == ' ' || data[start-1] == '\t') {
+		start--
+	}
+	if end < len(data) && data[end] == '\n' {
+		end++
+	}
+	var b bytes.Buffer
+	b.Write(data[:start])
+	b.Write(data[end:])
+	return replaceFile(path, b.Bytes())
+}
+
+// MoveWaypoint puts the index-th <wpt> of a file written by this program at
+// another position, keeping everything else it holds. A file created by
+// something else is refused.
+func MoveWaypoint(path string, index int, position geo.LatLon) error {
+	if math.IsNaN(position.Lat) || math.IsNaN(position.Lon) || math.Abs(position.Lat) > 90 || math.Abs(position.Lon) > 180 {
+		return errors.New("waypoint coordinates are outside the globe")
+	}
+	data, parsed, err := readOurs(path)
+	if err != nil {
+		return err
+	}
+	if index < 0 || index >= len(parsed.Waypoints) {
+		return fmt.Errorf("%s: no waypoint %d", path, index)
+	}
+	start, end, err := partSpan(data, PartWaypoint, index)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	open := bytes.IndexByte(data[start:end], '>')
+	if open < 0 {
+		return fmt.Errorf("%s: waypoint %d is not closed", path, index)
+	}
+	tag := string(data[start : start+open+1])
+	for attribute, value := range map[string]string{"lat": coordinate(position.Lat), "lon": coordinate(position.Lon)} {
+		replaced, err := setAttribute(tag, attribute, value)
+		if err != nil {
+			return fmt.Errorf("%s: waypoint %d: %w", path, index, err)
+		}
+		tag = replaced
+	}
+	var b bytes.Buffer
+	b.Write(data[:start])
+	b.WriteString(tag)
+	b.Write(data[start+open+1:])
+	return replaceFile(path, b.Bytes())
+}
+
+// AddRoute inserts one <rte> into a file written by this program, before its
+// tracks, as GPX orders a document. A file created by something else is
+// refused.
+func AddRoute(path string, route Route) error {
+	data, _, err := readOurs(path)
+	if err != nil {
+		return err
+	}
+	end := bytes.LastIndex(data, []byte("</gpx>"))
+	if end < 0 {
+		return fmt.Errorf("%s: no closing </gpx>", path)
+	}
+	for _, tag := range [][]byte{[]byte("<trk>"), []byte("<trk "), []byte("<extensions>")} {
+		if at := bytes.Index(data, tag); at >= 0 && at < end {
+			end = at
+		}
+	}
+	for end > 0 && (data[end-1] == ' ' || data[end-1] == '\t') {
+		end--
+	}
+	var b bytes.Buffer
+	b.Write(data[:end])
+	b.WriteString("  <rte>\n")
+	if route.Name != "" {
+		b.WriteString("    <name>")
+		_ = xml.EscapeText(&b, []byte(route.Name))
+		b.WriteString("</name>\n")
+	}
+	for _, pt := range route.Points {
+		fmt.Fprintf(&b, "    <rtept lat=\"%s\" lon=\"%s\"></rtept>\n", coordinate(pt.Lat), coordinate(pt.Lon))
+	}
+	b.WriteString("  </rte>\n")
+	b.Write(data[end:])
+	return replaceFile(path, b.Bytes())
+}
+
+// readOurs reads a GPX this program wrote, refusing any other file so a
+// recording is never rewritten.
+func readOurs(path string) ([]byte, *File, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if !parsed.IsOurs() {
+		return nil, nil, fmt.Errorf("%s: %w", path, ErrNotOurs)
+	}
+	return data, parsed, nil
+}
+
+func (f *File) count(part Part) int {
+	switch part {
+	case PartTrack:
+		return len(f.Tracks)
+	case PartRoute:
+		return len(f.Routes)
+	}
+	return len(f.Waypoints)
+}
+
+// setAttribute replaces the value of one attribute of an opening tag.
+func setAttribute(tag, name, value string) (string, error) {
+	at := strings.Index(tag, " "+name+"=")
+	if at < 0 {
+		return "", fmt.Errorf("no %s attribute", name)
+	}
+	quote := at + len(name) + 2
+	if quote >= len(tag) || (tag[quote] != '"' && tag[quote] != '\'') {
+		return "", fmt.Errorf("the %s attribute is not quoted", name)
+	}
+	end := strings.IndexByte(tag[quote+1:], tag[quote])
+	if end < 0 {
+		return "", fmt.Errorf("the %s attribute is not closed", name)
+	}
+	return tag[:quote+1] + value + tag[quote+1+end:], nil
+}
+
+// partSpan returns the byte range of the index-th <trk>, <rte> or <wpt>
+// element, from its opening angle bracket to the end of its closing tag. The
+// elements nested inside them — <trkseg>, <trkpt>, <rtept> — start with the
+// same letters and are passed over.
+func partSpan(data []byte, part Part, index int) (int, int, error) {
+	open, seen := []byte("<"+string(part)), 0
+	at := 0
+	for {
+		next := bytes.Index(data[at:], open)
+		if next < 0 {
+			return 0, 0, fmt.Errorf("no %s %d", part, index)
+		}
+		start := at + next
+		after := data[start+len(open):]
+		at = start + len(open)
+		if len(after) == 0 || (after[0] != '>' && after[0] != '/' && after[0] != ' ' && after[0] != '\t' && after[0] != '\n' && after[0] != '\r') {
+			continue // <trkseg>, <trkpt> or <rtept>
+		}
+		if seen != index {
+			seen++
+			continue
+		}
+		tag := bytes.IndexByte(data[start:], '>')
+		if tag < 0 {
+			return 0, 0, fmt.Errorf("%s %d is not closed", part, index)
+		}
+		// An element written as <wpt … /> holds nothing and ends with its tag.
+		if data[start+tag-1] == '/' {
+			return start, start + tag + 1, nil
+		}
+		stop := bytes.Index(data[start:], []byte("</"+string(part)+">"))
+		if stop < 0 {
+			return 0, 0, fmt.Errorf("%s %d is not closed", part, index)
+		}
+		return start, start + stop + len("</"+string(part)+">"), nil
+	}
+}
+
+// ReorderParts puts the <trk>, <rte> or <wpt> elements of a file written by
+// this program in another order, keeping every byte of each element. order is
+// the current index of the element that goes first, then second, and so on,
+// so it names every element of that kind exactly once. A file created by
+// something else is refused, so a recording is never rewritten.
+//
+// Only whitespace may separate the elements: anything else between them — a
+// comment, an extension — belongs to a place in the file this cannot keep, so
+// the file is left as it is.
+func ReorderParts(path string, part Part, order []int) error {
+	data, parsed, err := readOurs(path)
+	if err != nil {
+		return err
+	}
+	count := parsed.count(part)
+	if len(order) != count {
+		return fmt.Errorf("%s: %d %s in the file, %d in the order", path, count, part, len(order))
+	}
+	seen := make([]bool, count)
+	for _, index := range order {
+		if index < 0 || index >= count || seen[index] {
+			return fmt.Errorf("%s: the order does not name every %s once", path, part)
+		}
+		seen[index] = true
+	}
+	// The elements as they are on disk, each with the indentation before it.
+	type span struct{ start, end int }
+	spans := make([]span, count)
+	for i := range spans {
+		start, end, err := partSpan(data, part, i)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		for start > 0 && (data[start-1] == ' ' || data[start-1] == '\t') {
+			start--
+		}
+		spans[i] = span{start, end}
+	}
+	if count < 2 {
+		return nil
+	}
+	for i := 1; i < count; i++ {
+		if spans[i].start < spans[i-1].end {
+			return fmt.Errorf("%s: the %s elements overlap", path, part)
+		}
+		if between := bytes.TrimSpace(data[spans[i-1].end:spans[i].start]); len(between) > 0 {
+			return fmt.Errorf("%s: something sits between the %s elements; they are left as they are", path, part)
+		}
+	}
+	same := true
+	for i, index := range order {
+		if i != index {
+			same = false
+			break
+		}
+	}
+	if same {
+		return nil
+	}
+	var b bytes.Buffer
+	b.Write(data[:spans[0].start])
+	for i, index := range order {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.Write(data[spans[index].start:spans[index].end])
+	}
+	b.Write(data[spans[count-1].end:])
+	return replaceFile(path, b.Bytes())
 }
