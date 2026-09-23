@@ -13,6 +13,7 @@ import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { revealButton } from "./reveal.js";
+import { CHEVRON, DIAMOND, DIAMOND_OPEN } from "./icons.js";
 import { RoutePlanner } from "./route.js";
 import { chooseDialog, confirmDialog, promptDialog, waypointDialog } from "./dialog.js";
 import { openFile, saveFile } from "/ui/filedialog.js";
@@ -1241,7 +1242,7 @@ function trackRow(path, entry) {
 
   // The disclosure sits at the row's end, so rows start flush at the left.
   const disclosure = expandable(entry)
-    && button("disclosure", "▶", entry.expanded ? "Collapse" : "List its tracks, routes and waypoints", () => {
+    && iconButton("disclosure", CHEVRON, entry.expanded ? "Collapse" : "List its tracks, routes and waypoints", () => {
       entry.expanded = !entry.expanded;
       renderTracks();
       save();
@@ -1367,7 +1368,7 @@ function trackRow(path, entry) {
 function oursMark(track) {
   const mark = document.createElement("span");
   mark.className = "ours-mark" + (track.ours ? " ours" : "");
-  mark.textContent = track.ours ? "◆" : "◇";
+  mark.innerHTML = track.ours ? DIAMOND : DIAMOND_OPEN;
   const title = track.draft
     ? "A new GPX, not saved yet; dgs writes it"
     : track.ours
