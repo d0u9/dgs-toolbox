@@ -21,7 +21,6 @@ async function sendJSON(method, url, body) {
 
 export const api = {
   config: () => getJSON("api/config"),
-  dir: (path) => getJSON("api/dir" + (path ? `?path=${encodeURIComponent(path)}` : "")),
   // stops is { distance: metres, duration: seconds }, the stay-point thresholds.
   // coordinates is "wgs84" or "gcj02", the system the positions are drawn in.
   track: (path, stops, coordinates = "wgs84") =>
@@ -42,10 +41,28 @@ export const api = {
   // saveFill records a previewed route between the two points.
   saveFill: (path, first, last, profile, route) => postJSON("api/fill", { path, first, last, profile, route }),
   removeFill: (path, index) => sendJSON("DELETE", "api/fill", { path, index }),
-  // removeAdded takes a track added from another file out again.
-  removeAdded: (path, index) => sendJSON("DELETE", "api/added", { path, index }),
+  // orderParts puts a file's tracks, routes or waypoints in another order,
+  // keys in the order wanted; kind is "track", "route" or "waypoint".
+  orderParts: (path, kind, keys) => sendJSON("PUT", "api/part-order", { path, kind, keys }),
+  // deletePart takes one <trk>, <rte> or <wpt> out of a file: out of the GPX
+  // itself when dgs wrote it, and out of what is held beside it otherwise.
+  deletePart: (path, key) => sendJSON("DELETE", "api/part", { path, key }),
+  // copyPart copies one part into another GPX dgs wrote, and takes it out of
+  // this one when move is true.
+  copyPart: (path, key, target, move = false) => postJSON("api/part/copy", { path, key, target, move }),
+  // moveWaypoint puts a waypoint somewhere else, [lon, lat] in WGS-84.
+  moveWaypoint: (path, key, lon, lat) => sendJSON("PUT", "api/waypoint", { path, key, lon, lat }),
   // saveAs writes a GPX with the tracks added to it into a new file.
   saveAs: (path, target) => postJSON("api/save-as", { path, target }),
+  // saveFiles writes files' unsaved edits where they belong: into the sidecar
+  // beside a recording, or into the GPX itself when dgs wrote it. An empty
+  // list saves every file holding unsaved edits.
+  saveFiles: (paths = []) => postJSON("api/save", { paths }),
+  // revertFiles drops unsaved edits, so the files read as they are on disk
+  // again. An empty list reverts every file holding unsaved edits.
+  revertFiles: (paths = []) => sendJSON("DELETE", "api/pending", { paths }),
+  // unsaved lists the files holding edits that are not on disk yet.
+  unsaved: () => getJSON("api/unsaved"),
   // discardSidecar deletes a GPX's sidecar, dropping everything done to it.
   discardSidecar: (path) => sendJSON("DELETE", "api/sidecar", { path }),
   // newDraft starts a new, empty GPX that lives in the server's memory until saved.

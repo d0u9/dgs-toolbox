@@ -12,6 +12,7 @@ export class TrackLayers {
     this.hidden = new Set(); // files hidden as a whole
     this.hiddenParts = new Map(); // file id -> keys of hidden parts
     this.focused = null;
+    this.hover = null; // the waypoint under the pointer, { id, key }
     map.addSource(CURSOR, { type: "geojson", data: emptyCollection() });
     map.addLayer({
       id: CURSOR,
@@ -38,7 +39,9 @@ export class TrackLayers {
 
   add(id, track, color) {
     const { map } = this;
-    map.addSource(sourceId(id), { type: "geojson", data: geometry(track) });
+    // promoteId makes a part's key its feature id, so a waypoint under the
+    // pointer is marked by feature state rather than redrawn.
+    map.addSource(sourceId(id), { type: "geojson", data: geometry(track), promoteId: "part" });
     const kind = (name) => ["==", ["get", "kind"], name];
     map.addLayer({
       id: casingId(id),
@@ -46,7 +49,7 @@ export class TrackLayers {
       source: sourceId(id),
       filter: kind("track"),
       layout: { "line-join": "round", "line-cap": "round", visibility: "none" },
-      paint: { "line-color": "#ffffff", "line-width": 8 },
+      paint: { "line-color": "#ffffff", "line-width": 5.5 },
     }, CURSOR);
     map.addLayer({
       id: routeId(id),
@@ -55,7 +58,7 @@ export class TrackLayers {
       filter: kind("route"),
       metadata: { track: id },
       layout: { "line-join": "round" },
-      paint: { "line-color": color, "line-width": 2, "line-opacity": 0.8, "line-dasharray": [2, 1.5] },
+      paint: { "line-color": color, "line-width": 1.4, "line-opacity": 0.8, "line-dasharray": [2, 1.5] },
     }, CURSOR);
     map.addLayer({
       id: lineId(id),
@@ -64,7 +67,7 @@ export class TrackLayers {
       filter: kind("track"),
       metadata: { track: id },
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": color, "line-width": 3, "line-opacity": 0.8 },
+      paint: { "line-color": color, "line-width": 2, "line-opacity": 0.8 },
     }, CURSOR);
     map.addLayer({
       id: waypointId(id),
@@ -72,7 +75,14 @@ export class TrackLayers {
       source: sourceId(id),
       filter: kind("waypoint"),
       metadata: { track: id },
-      paint: { "circle-radius": 5, "circle-color": "#ffffff", "circle-stroke-color": color, "circle-stroke-width": 2.5 },
+      paint: {
+        // A waypoint under the pointer grows a little and thickens its ring:
+        // enough to answer the pointer, not enough to move the map's reading.
+        "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 7, 5],
+        "circle-color": "#ffffff",
+        "circle-stroke-color": color,
+        "circle-stroke-width": ["case", ["boolean", ["feature-state", "hover"], false], 3.5, 2.5],
+      },
     }, CURSOR);
     this.ids.add(id);
   }
@@ -90,6 +100,21 @@ export class TrackLayers {
     this.hidden.delete(id);
     this.hiddenParts.delete(id);
     if (this.focused === id) this.focused = null;
+    if (this.hover?.id === id) this.hover = null;
+  }
+
+  // setHover marks one waypoint as the one under the pointer, or clears the
+  // mark with a null key. Only one waypoint is marked at a time.
+  setHover(id, key) {
+    if (this.hover && (this.hover.id !== id || this.hover.key !== key)) {
+      if (this.map.getSource(sourceId(this.hover.id))) {
+        this.map.setFeatureState({ source: sourceId(this.hover.id), id: this.hover.key }, { hover: false });
+      }
+      this.hover = null;
+    }
+    if (key == null || id == null || !this.ids.has(id)) return;
+    this.map.setFeatureState({ source: sourceId(id), id: key }, { hover: true });
+    this.hover = { id, key };
   }
 
   setColor(id, color) {
@@ -129,7 +154,7 @@ export class TrackLayers {
     for (const other of this.ids) {
       const focused = other === id;
       this.applyVisibility(other);
-      map.setPaintProperty(lineId(other), "line-width", focused ? 4.5 : 3);
+      map.setPaintProperty(lineId(other), "line-width", focused ? 3 : 2);
       map.setPaintProperty(lineId(other), "line-opacity", focused ? 1 : 0.55);
       map.setPaintProperty(routeId(other), "line-opacity", focused ? 0.9 : 0.5);
     }

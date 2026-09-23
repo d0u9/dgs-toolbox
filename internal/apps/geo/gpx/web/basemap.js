@@ -5,6 +5,8 @@
 // above an opaque map. All of it is drawn under the tracks.
 
 const PREFIX = "map-";
+import { SortGap, makeGhost } from "./drag.js";
+
 export const CONTOURS = "Contours";
 
 // Adjustments a raster layer takes, each from -1 to 1 with 0 unchanged.
@@ -29,6 +31,22 @@ function rasterPaint(item) {
   };
 }
 
+// A vector style is a whole style document — sources, layers, glyphs and
+// sprite — not a tile template. Its sources and layers are put into the map
+// under the tracks, under this map's own prefix, so the page keeps its style
+// and the tracks keep their place above. Its glyphs and sprite are the map's:
+// showing two vector styles at once leaves the topmost one's labels.
+const styles = new Map(); // url -> the style document, once fetched
+
+async function loadStyle(url) {
+  if (!styles.has(url)) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    styles.set(url, await response.json());
+  }
+  return styles.get(url);
+}
+
 function source(urls, tile) {
   return { type: "raster", tiles: urls, tileSize: 256, maxzoom: tile.maxZoom, attribution: tile.attribution || "" };
 }
@@ -44,9 +62,16 @@ export class MapStack {
     // Top of the list is drawn on top.
     this.items = [
       { name: CONTOURS, coordinates: "wgs84", visible: false, opacity: 1 },
-      ...tiles.map((tile, i) => ({ name: tile.name, tile, id: PREFIX + i, coordinates: tile.coordinates, visible: i === 0, opacity: 1, adjust: { ...NEUTRAL } })),
+      // Raster maps take the raster adjustments; a vector style does not,
+      // so its row carries no ▸.
+      ...tiles.map((tile, i) => ({
+        name: tile.name, tile, id: PREFIX + i, coordinates: tile.coordinates,
+        visible: i === 0, opacity: 1, ...(tile.style ? {} : { adjust: { ...NEUTRAL } }),
+      })),
     ];
     this.expanded = new Set(); // names of rows showing their adjustments
+    this.drawnStyles = new Map(); // name -> { sources, layers } of a vector style drawn now
+    this.styleBases = new Map(); // "layer/property" -> the opacity the style wrote
   }
 
   // restore applies a saved stack: [{name, visible, opacity}], top first.
@@ -70,6 +95,14 @@ export class MapStack {
       restored.push(item);
     }
     this.items = [...restored, ...byName.values()];
+    // A saved stack can name a map the configuration no longer offers — one
+    // taken out of the built-in list, or removed from the tiles file. Its row
+    // is simply gone; but if it was the only map shown, nothing would be
+    // drawn and every row would read as off, so the first map takes over.
+    if (!this.items.some((item) => item.visible && item.tile)) {
+      const first = this.items.find((item) => item.tile);
+      if (first) first.visible = true;
+    }
   }
 
   toJSON() {
@@ -97,6 +130,10 @@ export class MapStack {
         for (const id of this.contours.layerIds()) this.map.moveLayer(id, firstOther);
         continue;
       }
+      if (item.tile.style) {
+        this.applyStyle(item, firstOther);
+        continue;
+      }
       const ids = [item.id, `${item.id}-overlay`];
       if (!item.visible) {
         for (const id of ids) {
@@ -120,6 +157,100 @@ export class MapStack {
         this.map.moveLayer(id, firstOther);
       }
     }
+  }
+
+  // applyStyle draws a vector style's own layers under the tracks, or takes
+  // them out again. The style is fetched once and kept, so switching back to
+  // it costs nothing.
+  applyStyle(item, under) {
+    const drawn = this.drawnStyles.get(item.name);
+    if (!item.visible) {
+      if (!drawn) return;
+      for (const id of drawn.layers) {
+        if (this.map.getLayer(id)) this.map.removeLayer(id);
+      }
+      for (const id of drawn.sources) {
+        if (this.map.getSource(id)) this.map.removeSource(id);
+      }
+      this.drawnStyles.delete(item.name);
+      return;
+    }
+    if (drawn) {
+      // Already drawn: keep it under the tracks and at the opacity asked for.
+      for (const id of drawn.layers) {
+        if (this.map.getLayer(id)) this.map.moveLayer(id, under);
+      }
+      this.styleOpacity(item, drawn.layers);
+      return;
+    }
+    // The fetch settles later; the stack is applied again when it does, so
+    // the style lands wherever the list has put it by then.
+    loadStyle(item.tile.style).then((style) => {
+      if (!item.visible || this.drawnStyles.has(item.name)) return;
+      const prefix = `${item.id}-`;
+      const sources = [];
+      for (const [name, definition] of Object.entries(style.sources || {})) {
+        const id = prefix + name;
+        if (!this.map.getSource(id)) this.map.addSource(id, definition);
+        sources.push(id);
+      }
+      if (style.glyphs) this.map.setGlyphs(style.glyphs);
+      if (style.sprite && typeof style.sprite === "string") this.map.setSprite(style.sprite);
+      const layers = [];
+      const firstOther = this.map.getStyle().layers.find((layer) => !this.owns(layer.id))?.id;
+      for (const layer of style.layers || []) {
+        // The background layer comes too: it is the style's own paper, and
+        // covering what is under it is what an opaque map does.
+        const drawnLayer = { ...layer, id: prefix + layer.id };
+        if (layer.source) drawnLayer.source = prefix + layer.source;
+        this.map.addLayer(drawnLayer, firstOther);
+        layers.push(drawnLayer.id);
+      }
+      this.drawnStyles.set(item.name, { sources, layers });
+      this.styleOpacity(item, layers);
+    }).catch(() => {
+      // A style that cannot be fetched draws nothing; the row stays, so it
+      // can be tried again by hiding and showing it.
+    });
+  }
+
+  // styleOpacity fades a vector style as a whole. Only a layer whose opacity
+  // is a plain number is faded; one carrying an expression is left as its
+  // author wrote it.
+  styleOpacity(item, layers) {
+    const properties = {
+      background: ["background-opacity"], fill: ["fill-opacity"], line: ["line-opacity"],
+      symbol: ["text-opacity", "icon-opacity"],
+      circle: ["circle-opacity", "circle-stroke-opacity"], "fill-extrusion": ["fill-extrusion-opacity"],
+      raster: ["raster-opacity"], hillshade: ["hillshade-exaggeration"],
+    };
+    for (const id of layers) {
+      const layer = this.map.getLayer(id);
+      if (!layer) continue;
+      for (const property of properties[layer.type] || []) {
+        const base = this.styleBase(id, property);
+        if (base == null) continue;
+        this.map.setPaintProperty(id, property, base * item.opacity);
+      }
+    }
+  }
+
+  // styleBase is a layer's opacity as the style wrote it, remembered the
+  // first time it is faded so fading twice does not compound.
+  styleBase(id, property) {
+    const key = `${id}/${property}`;
+    if (!this.styleBases.has(key)) {
+      let value = 1;
+      try {
+        const written = this.map.getPaintProperty(id, property);
+        if (typeof written === "number") value = written;
+        else if (written !== undefined) value = null; // an expression: left alone
+      } catch {
+        value = null;
+      }
+      this.styleBases.set(key, value);
+    }
+    return this.styleBases.get(key);
   }
 
   owns(id) {
@@ -248,32 +379,27 @@ export class MapStack {
     return box;
   }
 
-  // drag moves a row by its handle: a line shows where it will land.
+  // drag moves a row by its handle: the rows it passes slide aside to open
+  // the gap it would land in, as in the workspace.
   drag(event, from) {
     event.preventDefault();
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
     const rows = [...this.root.children];
-    rows[from].classList.add("dragging");
+    const gap = new SortGap(rows, [rows[from]]);
+    const ghost = makeGhost(rows[from], event.clientX, event.clientY);
     let to = from;
-    const mark = () => {
-      rows.forEach((row) => row.classList.remove("drop-above", "drop-below"));
-      if (to === from || to === from + 1) return;
-      if (to < rows.length) rows[to].classList.add("drop-above");
-      else rows[rows.length - 1].classList.add("drop-below");
-    };
     const move = (e) => {
-      to = rows.findIndex((row) => {
-        const box = row.getBoundingClientRect();
-        return e.clientY < box.top + box.height / 2;
-      });
-      if (to < 0) to = rows.length;
-      mark();
+      ghost.follow(e.clientX, e.clientY);
+      to = gap.slot(e.clientY);
+      gap.open(to);
     };
     const end = () => {
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
       handle.removeEventListener("pointercancel", end);
+      ghost.remove();
+      gap.close();
       const target = to > from ? to - 1 : to;
       if (target === from) return this.render(this.root);
       this.change(() => {
