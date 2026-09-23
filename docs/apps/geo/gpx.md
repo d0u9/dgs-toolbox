@@ -473,7 +473,8 @@ map. It is the interface later milestones build on.
 - **Zoom.** Dragging across a chart or scrolling on it zooms the distance axis,
   no narrower than one metre; double-click resets. Both charts always show the
   same range. *Fit* (⤢) in the profile header puts the whole track back
-  across both charts and the timeline.
+  across both charts and the timeline, and frames on the map the points the
+  timeline shows: kept, in shown tracks, without the file's routes and waypoints.
 - **Folding a panel away.** Each panel carries the button that hides it — the
   workspace `‹`, the charts `▾`, the edit panel `›` — and the map then carries
   a small tab at that edge to bring it back, so nothing is hidden without a
