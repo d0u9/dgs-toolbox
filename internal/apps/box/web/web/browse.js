@@ -279,7 +279,7 @@ function card(scan) {
   if (!scan.typeKnown) badges.push(`<span class="badge badge-warn">unknown type</span>`);
   if (scan.state === 'dead') badges.push('<span class="badge badge-dead">dead</span>');
   if (!scan.documents?.length && scan.needsSplit) badges.push('<span class="badge">split</span>');
-  badges.push(badgeHTML(handling(scan, state.scans)));
+  badges.push(badgeHTML(handling(scan)));
   item.innerHTML =
     `<img class="card-thumb" loading="lazy" src="${api.image(scan.digest, 'thumb')}" alt="">` +
     `<div class="card-body">` +
@@ -340,7 +340,6 @@ function wireMarked() {
     if (!digests.length) return;
     const edit = {};
     if (el('marked-type').value) edit.type = el('marked-type').value;
-    if (el('marked-group').value.trim()) edit.group = el('marked-group').value.trim();
     if (el('marked-tags').value.trim()) {
       edit.tags = el('marked-tags')
         .value.split(',')

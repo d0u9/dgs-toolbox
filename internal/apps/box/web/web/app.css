@@ -434,9 +434,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .queue-time:empty { display: none; }
 .queue-marks { display: flex; flex-wrap: wrap; gap: 2px; }
 .queue-marks:empty { display: none; }
-/* Members of one group share a coloured edge, so they read as one document
-   down the list. */
-.badge-group { background: hsl(var(--group-hue) 60% 88%); color: hsl(var(--group-hue) 60% 25%); }
 /* A run is tinted; the scan the cursor is on stays the strong one, so the
    order of these two rules is the point. */
 .queue-run, .queue-run:hover { background: var(--selected); }
@@ -444,7 +441,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .queue-current, .queue-current:hover { background: var(--primary); box-shadow: none; }
 .queue-current .queue-name, .queue-current:hover .queue-name { color: var(--on-primary); font-weight: 600; }
 .queue-current .queue-time { color: var(--primary-soft); }
-.queue-item.queue-grouped { box-shadow: inset 4px 0 0 hsl(var(--group-hue) 60% 50%); }
 
 /* ---- Browse ---------------------------------------------------------- */
 

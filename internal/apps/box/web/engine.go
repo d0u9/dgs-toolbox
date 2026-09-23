@@ -1004,7 +1004,6 @@ func scanFromDraft(draft sidecar.File) Scan {
 		EventZone:     draft.EventZone,
 		ExpiresAt:     draft.ExpiresAt.String(),
 		ExpiryCleared: draft.ExpiryCleared,
-		Group:         draft.Group,
 		NeedsSplit:    draft.NeedsSplit,
 	}
 	scan.Documents, scan.IgnoredPages = splitFromRecord(draft)
@@ -1111,7 +1110,6 @@ func scanFromEntry(entry index.Entry) Scan {
 		EventZone:     record.EventZone,
 		ExpiresAt:     record.ExpiresAt.String(),
 		ExpiryCleared: record.ExpiryCleared,
-		Group:         record.Group,
 		NeedsSplit:    record.NeedsSplit,
 		TrashedAt:     string(record.TrashedAt),
 		IngestedAt:    string(record.IngestedAt),
@@ -1136,7 +1134,6 @@ func recordFromScan(record sidecar.File, scan Scan) (sidecar.File, error) {
 	record.Tags = scan.Tags
 	record.EventZone = scan.EventZone
 	record.ExpiryCleared = scan.ExpiryCleared
-	record.Group = scan.Group
 	record.NeedsSplit = scan.NeedsSplit
 	documents, ignored, err := splitToRecord(scan)
 	if err != nil {
@@ -1192,7 +1189,6 @@ func changes(before, after Scan) []boxlog.Entry {
 	add("event_tz", before.EventZone, after.EventZone)
 	add("expires_at", before.ExpiresAt, after.ExpiresAt)
 	add("total", before.Total, after.Total)
-	add("group", before.Group, after.Group)
 	add("tags", strings.Join(before.Tags, ","), strings.Join(after.Tags, ","))
 	add("reviewed", boolText(before.Reviewed), boolText(after.Reviewed))
 	add("documents", splitText(before.Documents), splitText(after.Documents))
