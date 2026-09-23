@@ -1976,11 +1976,23 @@ function inspect(index) {
 
 // syncChartsToTimeline shows on the charts the distance a stretch of time covers.
 // fitCharts shows the whole of the focused track again: both charts and the
-// timeline drop whatever stretch was zoomed into.
+// timeline drop whatever stretch was zoomed into, and the map frames it.
 function fitCharts() {
-  if (!state.focus) return;
+  const entry = focusedEntry();
+  if (!entry) return;
   timeline.setView(null);
   profile.setRange(null);
+  // Frame the line the timeline shows: its kept points, not the file's
+  // routes, waypoints or hidden tracks, which would pull the frame aside.
+  const { track } = entry;
+  const hidden = hiddenRanges(entry);
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  track.points.forEach(([lon, lat], i) => {
+    if (track.removed[i] || hidden.some(([first, last]) => i >= first && i <= last)) return;
+    w = Math.min(w, lon); s = Math.min(s, lat); e = Math.max(e, lon); n = Math.max(n, lat);
+  });
+  if (w <= e) fitBox([[w, s], [e, n]]);
+  else fit([track]);
 }
 
 function syncChartsToTimeline(view) {
