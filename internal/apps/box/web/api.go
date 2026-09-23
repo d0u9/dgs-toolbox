@@ -46,6 +46,7 @@ func (a api) config(w http.ResponseWriter, _ *http.Request) {
 type typeOption struct {
 	Name     string `json:"name"`
 	Label    string `json:"label"`
+	Covers   string `json:"covers"`
 	Key      string `json:"key"`
 	Nature   string `json:"nature"`
 	Lifetime *int   `json:"lifetime"`
@@ -60,6 +61,7 @@ func (a api) types(w http.ResponseWriter, _ *http.Request) {
 		options = append(options, typeOption{
 			Name:           entry.Name,
 			Label:          entry.Label,
+			Covers:         entry.Covers,
 			Key:            string(entry.Key),
 			Nature:         entry.Nature.String(),
 			Lifetime:       entry.Lifetime,

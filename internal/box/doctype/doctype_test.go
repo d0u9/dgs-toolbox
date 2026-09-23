@@ -93,3 +93,13 @@ func TestTypesDocumentNamesEveryType(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryTypeSaysWhatItCovers keeps the intake page's hover text from going
+// blank for a newly registered type.
+func TestEveryTypeSaysWhatItCovers(t *testing.T) {
+	for _, entry := range All() {
+		if entry.Covers == "" {
+			t.Errorf("type %q has no Covers text", entry.Name)
+		}
+	}
+}

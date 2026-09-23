@@ -98,3 +98,51 @@ function zoneOf(stamp) {
   const match = stamp.match(/([+-]\d{2}:\d{2}|Z)$/);
   return match ? match[1] : '';
 }
+
+// handling is what has been done to a scan beyond giving it a type — bound to
+// others, split, pages ignored, kept for good — as badges both lists draw the
+// same way. peers is every other scan the page knows of, to name a group's
+// members on hover.
+function handling(scan, peers) {
+  const out = [];
+  if (scan.group) {
+    const names = peers
+      .filter((peer) => peer !== scan && peer.digest !== scan.digest && peer.group === scan.group)
+      .map((peer) => peer.filename);
+    out.push({
+      text: `group ${scan.group.slice(0, 4)}${names.length ? ` +${names.length}` : ''}`,
+      title: names.length ? `Same document as ${names.join(', ')}` : `Group ${scan.group}`,
+      hue: groupHue(scan.group),
+    });
+  }
+  const documents = scan.documents ?? [];
+  if (documents.length) {
+    out.push({
+      text: `${documents.length} split${documents.length === 1 ? '' : 's'}`,
+      title: `Split into p ${documents.map((document) => document.pages).join(' · p ')}`,
+    });
+  }
+  if (scan.ignoredPages) out.push({ text: `p ${scan.ignoredPages} ignored`, title: 'Pages left out of every split' });
+  if (scan.expiryCleared) out.push({ text: 'kept', title: 'Kept for good — no expiry' });
+  return out;
+}
+
+// groupHue gives each group its own colour, so the members of one line up by
+// eye in a list without reading the id.
+function groupHue(group) {
+  let hash = 0;
+  for (const char of group) hash = (hash * 31 + char.charCodeAt(0)) % 360;
+  return hash;
+}
+
+// badgeHTML draws handling's badges; the text is the page's own, so only the
+// hover title needs escaping.
+function badgeHTML(badges) {
+  return badges
+    .map((badge) => {
+      const style = badge.hue === undefined ? '' : ` style="--group-hue:${badge.hue}"`;
+      const title = badge.title.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      return `<span class="badge${badge.hue === undefined ? '' : ' badge-group'}"${style} title="${title}">${badge.text}</span>`;
+    })
+    .join('');
+}

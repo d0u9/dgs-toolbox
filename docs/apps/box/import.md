@@ -159,7 +159,9 @@ Three keys exist beyond the fields:
   it, for a document scanned in several passes. It costs one keystroke while the
   parts are on screen together and is close to unreconstructable later, which
   is why the field is collected in the first version even though the group
-  browser is not built.
+  browser is not built. Both scans are given the group, so the bond is
+  recorded on each side; pressing it again on a bound scan lets it go. The desk
+  names the other scans in the group rather than showing the group id.
 - **`reject`** turns the scan away with a reason, for a failed scan or
   something not wanted. Nothing is in the Box yet, so nothing is moved or
   deleted: the file stays in the inbox and only its record in the state

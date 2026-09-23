@@ -226,7 +226,10 @@ function splitter(host) {
   }
 
   function markOrClose() {
-    if (!applies()) return;
+    if (!applies()) {
+      host.say('Splitting is for a PDF of more than one page; this scan has nothing to split.');
+      return;
+    }
     const current = host.pages.page();
     if (view.mark === null) {
       view.mark = current;
@@ -255,7 +258,10 @@ function splitter(host) {
   }
 
   function ignore() {
-    if (!applies()) return;
+    if (!applies()) {
+      host.say('Splitting is for a PDF of more than one page; this scan has nothing to split.');
+      return;
+    }
     const current = host.pages.page();
     const from = view.mark === null ? current : Math.min(view.mark, current);
     const to = view.mark === null ? current : Math.max(view.mark, current);
@@ -283,9 +289,14 @@ function splitter(host) {
 
   function remove() {
     const list = documents();
-    if (!list.length) return;
+    if (!list.length) {
+      host.say(applies() ? 'No split to remove yet — Space starts one, : types them.' : 'This scan has no splits.');
+      return;
+    }
     const draft = own();
+    const gone = list[view.selected];
     draft.documents.splice(view.selected, 1);
+    host.say(`Removed the split of p ${gone.pages}.`);
     view.selected = Math.max(0, Math.min(view.selected, draft.documents.length - 1));
     // Pages are ignored only beside splits: with none left the file is one
     // document again, every page of it.
@@ -294,7 +305,10 @@ function splitter(host) {
   }
 
   function openText() {
-    if (!applies()) return;
+    if (!applies()) {
+      host.say('Splitting is for a PDF of more than one page; this scan has nothing to split.');
+      return;
+    }
     const form = el('split-text-form');
     const input = el('split-text');
     const parts = documents().map((document) => document.pages);
@@ -304,6 +318,7 @@ function splitter(host) {
     form.hidden = false;
     input.focus();
     input.select();
+    host.say('Type the splits, then Enter. Esc leaves them as they were.');
   }
 
   function wireText() {

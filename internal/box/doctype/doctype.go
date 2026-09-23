@@ -38,6 +38,9 @@ type Type struct {
 	Name string
 	// Label is what a person reads on screen.
 	Label string
+	// Covers says what belongs under this type, in the words of
+	// docs/apps/box/types.md; the intake page shows it on hover.
+	Covers string
 	// Nature is why this kind of thing is kept.
 	Nature Nature
 	// Lifetime is how many days after the event date a scan of this type stops
@@ -74,20 +77,20 @@ const Unsorted = "unsorted"
 // catalogue is every registered type, in the order the intake page offers them:
 // utility first, then keepsake, then the two that describe an absence.
 var catalogue = []Type{
-	{Name: "ticket", Label: "Ticket stub", Nature: Utility, Lifetime: Days(0), Key: 't'},
-	{Name: "travel", Label: "Travel", Nature: Utility, Lifetime: Days(90), Key: 'a'},
-	{Name: "receipt", Label: "Receipt", Nature: Utility, Lifetime: Days(7 * year), Key: 'r'},
-	{Name: "statement", Label: "Statement", Nature: Utility, Lifetime: Days(7 * year), Key: 's'},
-	{Name: "insurance", Label: "Insurance", Nature: Utility, Lifetime: Days(year), ExpiryExpected: true, Key: 'i'},
-	{Name: "invite", Label: "Invitation", Nature: Utility, Lifetime: Days(0), Key: 'n'},
-	{Name: "contract", Label: "Contract", Nature: Utility, Key: 'c'},
-	{Name: "identity", Label: "Identity document", Nature: Utility, ExpiryExpected: true, Key: 'd'},
-	{Name: "medical", Label: "Medical", Nature: Utility, Key: 'm'},
-	{Name: "letter", Label: "Letter", Nature: Keepsake, Key: 'l'},
-	{Name: "ephemera", Label: "Ephemera", Nature: Keepsake, Key: 'e'},
-	{Name: "object", Label: "Object", Nature: Keepsake, Key: 'o'},
-	{Name: "other", Label: "Other", Nature: Keepsake, Key: 'z'},
-	{Name: Unsorted, Label: "Unsorted", Nature: Keepsake, Key: 'u'},
+	{Name: "ticket", Label: "Ticket stub", Covers: "Ticket stubs: cinema, concerts, local transport", Nature: Utility, Lifetime: Days(0), Key: 't'},
+	{Name: "travel", Label: "Travel", Covers: "Flights, boarding passes, hotel confirmations, car hire", Nature: Utility, Lifetime: Days(90), Key: 'a'},
+	{Name: "receipt", Label: "Receipt", Covers: "Receipts and invoices", Nature: Utility, Lifetime: Days(7 * year), Key: 'r'},
+	{Name: "statement", Label: "Statement", Covers: "Bills and account statements", Nature: Utility, Lifetime: Days(7 * year), Key: 's'},
+	{Name: "insurance", Label: "Insurance", Covers: "Policies, certificates of cover", Nature: Utility, Lifetime: Days(year), ExpiryExpected: true, Key: 'i'},
+	{Name: "invite", Label: "Invitation", Covers: "Invitations", Nature: Utility, Lifetime: Days(0), Key: 'n'},
+	{Name: "contract", Label: "Contract", Covers: "Contracts and agreements", Nature: Utility, Key: 'c'},
+	{Name: "identity", Label: "Identity document", Covers: "Identity documents, visas, licences", Nature: Utility, ExpiryExpected: true, Key: 'd'},
+	{Name: "medical", Label: "Medical", Covers: "Prescriptions, results, medical receipts", Nature: Utility, Key: 'm'},
+	{Name: "letter", Label: "Letter", Covers: "Correspondence worth keeping", Nature: Keepsake, Key: 'l'},
+	{Name: "ephemera", Label: "Ephemera", Covers: "Printed matter kept for its own sake: leaflets, brochures, an advertisement, a programme", Nature: Keepsake, Key: 'e'},
+	{Name: "object", Label: "Object", Covers: "A scan of a small object rather than of a document", Nature: Keepsake, Key: 'o'},
+	{Name: "other", Label: "Other", Covers: "Anything real that no type above fits", Nature: Keepsake, Key: 'z'},
+	{Name: Unsorted, Label: "Unsorted", Covers: "Not yet decided", Nature: Keepsake, Key: 'u'},
 }
 
 // All is the catalogue in the order intake offers it.
