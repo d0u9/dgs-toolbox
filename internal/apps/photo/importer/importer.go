@@ -13,8 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
+
+	"dgs-toolbox/internal/verifiedcopy"
 )
 
 const StateVersion = 1
@@ -352,18 +353,18 @@ func hashFile(ctx context.Context, path string) (string, int64, error) {
 	return hex.EncodeToString(digest.Sum(nil)), written, nil
 }
 
+// transfer copies one file into the destination tree.
+//
+// The integrity contract — copy, read the destination back independently, and
+// publish under the final name only when the two digests agree — is
+// internal/verifiedcopy, which dgs box uses for the same guarantee. What is
+// left here is what belongs to Photo Import and to nothing else: the conflict
+// policy, Move, the pause controller and the progress events the TUI draws.
 func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (FileResult, Event) {
 	job := plan.Jobs[index]
 	base := Event{Index: index, Source: job.Source, Destination: job.Destination}
 	result := FileResult{Index: index, Source: job.Source, Destination: job.Destination}
-	// partial names the exclusively created .dgs-part file once it belongs to
-	// this transfer, so every failure path discards it instead of leaving an
-	// unverifiable remnant in the destination directory.
-	var partial string
 	fail := func(err error) (FileResult, Event) {
-		if partial != "" {
-			_ = os.Remove(partial)
-		}
 		result.Phase, result.Error = PhaseFailed, err.Error()
 		base.Phase, base.Err = PhaseFailed, err
 		return result, base
@@ -391,130 +392,38 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fail(fmt.Errorf("destination metadata: %w", err))
 	}
-	if err := os.MkdirAll(filepath.Dir(job.Destination), 0o755); err != nil {
-		return fail(fmt.Errorf("create destination directory: %w", err))
-	}
-	temporary := filepath.Join(filepath.Dir(job.Destination), "."+filepath.Base(job.Destination)+".dgs-part")
-	if temporaryInfo, temporaryErr := os.Lstat(temporary); temporaryErr == nil {
-		if !temporaryInfo.Mode().IsRegular() {
-			return fail(fmt.Errorf("temporary path is not a regular file: %s", temporary))
-		}
-		if err := os.Remove(temporary); err != nil {
-			return fail(fmt.Errorf("remove stale temporary file: %w", err))
-		}
-	} else if !errors.Is(temporaryErr, os.ErrNotExist) {
-		return fail(fmt.Errorf("temporary metadata: %w", temporaryErr))
-	}
-	source, err := os.Open(job.Source)
-	if err != nil {
-		return fail(fmt.Errorf("open source: %w", err))
-	}
-	defer source.Close()
-	destination, err := os.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fail(fmt.Errorf("open destination temporary file: %w", err))
-	}
-	partial = temporary
-	sourceDigest := sha256.New()
-	buffer := make([]byte, 1024*1024)
-	var copied int64
-	emit(ctx, events, withProgress(base, PhaseCopying, 0))
-	for {
-		if err := plan.Controller.wait(ctx); err != nil {
-			destination.Close()
-			return fail(err)
-		}
-		read, readErr := source.Read(buffer)
-		if read > 0 {
-			chunk := buffer[:read]
-			if _, err := destination.Write(chunk); err != nil {
-				destination.Close()
-				return fail(fmt.Errorf("write destination: %w", err))
+
+	copied, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{
+		Source:      job.Source,
+		Destination: job.Destination,
+		// A photograph's modification time is part of what was imported, so it
+		// is applied before the file is published and never after.
+		PreserveModTime: true,
+		Progress: func(phase verifiedcopy.Phase, done, total int64) {
+			event := base
+			event.Total = total
+			switch phase {
+			case verifiedcopy.PhaseCopying:
+				emit(ctx, events, withProgress(event, PhaseCopying, done))
+			case verifiedcopy.PhaseVerifying:
+				emit(ctx, events, withProgress(event, PhaseVerifying, done))
+			case verifiedcopy.PhasePublished:
+				emit(ctx, events, withProgress(event, PhasePublishing, done))
 			}
-			_, _ = sourceDigest.Write(chunk)
-			copied += int64(read)
-			emit(ctx, events, withProgress(base, PhaseCopying, copied))
-		}
-		if errors.Is(readErr, io.EOF) {
-			break
-		}
-		if readErr != nil {
-			destination.Close()
-			return fail(fmt.Errorf("read source: %w", readErr))
-		}
-	}
-	if err := destination.Sync(); err != nil {
-		destination.Close()
-		return fail(fmt.Errorf("sync destination: %w", err))
-	}
-	if err := destination.Close(); err != nil {
-		return fail(fmt.Errorf("close destination: %w", err))
-	}
-	after, err := os.Lstat(job.Source)
-	if err != nil {
-		return fail(fmt.Errorf("source metadata after copy: %w", err))
-	}
-	if !os.SameFile(info, after) || after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
-		return fail(errors.New("source changed during copy"))
-	}
-	result.SourceHash = hex.EncodeToString(sourceDigest.Sum(nil))
-	base.SourceHash = result.SourceHash
-	emit(ctx, events, withProgress(base, PhaseVerifying, 0))
-	verify, err := os.Open(temporary)
-	if err != nil {
-		return fail(fmt.Errorf("open destination for verification: %w", err))
-	}
-	destinationDigest := sha256.New()
-	verified, err := copyWithControl(ctx, plan.Controller, destinationDigest, verify, buffer, func(bytes int64) {
-		event := withProgress(base, PhaseVerifying, bytes)
-		event.SourceHash = result.SourceHash
-		emit(ctx, events, event)
+		},
+		// Pausing is the same wait the copy already had, now asked for between
+		// blocks of both passes rather than written into each loop.
+		Wait: func(ctx context.Context) error { return plan.Controller.wait(ctx) },
 	})
-	closeErr := verify.Close()
 	if err != nil {
-		return fail(fmt.Errorf("read destination for verification: %w", err))
+		return fail(err)
 	}
-	if closeErr != nil {
-		return fail(fmt.Errorf("close destination verification: %w", closeErr))
-	}
-	result.DestinationHash = hex.EncodeToString(destinationDigest.Sum(nil))
-	if verified != info.Size() || result.DestinationHash != result.SourceHash {
-		return fail(errors.New("source and destination SHA-256 mismatch"))
-	}
-	// Apply source timestamps while the file still has its unpublished temporary
-	// name, so the final name never denotes a file with incomplete metadata.
-	if err := os.Chtimes(temporary, info.ModTime(), info.ModTime()); err != nil {
-		return fail(fmt.Errorf("preserve source modification time: %w", err))
-	}
-	// Some network filesystems (notably SMB/NAS mounts) reject fsync on a
-	// read-only descriptor even when this client created and wrote the file.
-	// Reopen the verified temporary file read-write so the metadata sync uses a
-	// writable handle; do not weaken the contract by ignoring permission errors.
-	metadataFile, err := os.OpenFile(temporary, os.O_RDWR, 0)
-	if err != nil {
-		return fail(fmt.Errorf("open destination to sync metadata: %w", err))
-	}
-	if err := metadataFile.Sync(); err != nil {
-		metadataFile.Close()
-		return fail(fmt.Errorf("sync destination metadata: %w", err))
-	}
-	if err := metadataFile.Close(); err != nil {
-		return fail(fmt.Errorf("close destination metadata: %w", err))
-	}
-	base.SourceHash, base.DestinationHash = result.SourceHash, result.DestinationHash
-	emit(ctx, events, withProgress(base, PhasePublishing, info.Size()))
-	if _, err := os.Lstat(job.Destination); err == nil {
-		return fail(errors.New("destination appeared before publish"))
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fail(fmt.Errorf("destination metadata before publish: %w", err))
-	}
-	if err := os.Rename(temporary, job.Destination); err != nil {
-		return fail(fmt.Errorf("publish destination: %w", err))
-	}
-	partial = ""
-	if err := syncDirectory(filepath.Dir(job.Destination)); err != nil {
-		return fail(fmt.Errorf("sync destination directory: %w", err))
-	}
+	// The two passes agreed, or Copy would not have returned: that is what the
+	// one digest means, and both fields carry it so a state file written before
+	// this change still reads the same way.
+	result.SourceHash, result.DestinationHash = copied.Digest, copied.Digest
+	base.SourceHash, base.DestinationHash = copied.Digest, copied.Digest
+
 	if plan.Operation == Move {
 		emit(ctx, events, withProgress(base, PhaseDeletingSource, info.Size()))
 		if err := os.Remove(job.Source); err != nil {
@@ -539,14 +448,13 @@ func emit(ctx context.Context, events chan<- Event, event Event) {
 	}
 }
 
+// copyWithContext reads a whole file through dst, stopping when the context
+// is cancelled. It is what the resume check hashes with; the transfer itself
+// hashes inside internal/verifiedcopy.
 func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader, buffer []byte, progress func(int64)) (int64, error) {
-	return copyWithControl(ctx, nil, dst, src, buffer, progress)
-}
-
-func copyWithControl(ctx context.Context, controller *Controller, dst io.Writer, src io.Reader, buffer []byte, progress func(int64)) (int64, error) {
 	var total int64
 	for {
-		if err := controller.wait(ctx); err != nil {
+		if err := ctx.Err(); err != nil {
 			return total, err
 		}
 		read, readErr := src.Read(buffer)
@@ -607,17 +515,5 @@ func writeState(path string, state *State) error {
 	if err := os.Rename(temporary, path); err != nil {
 		return err
 	}
-	return syncDirectory(filepath.Dir(path))
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	if err := directory.Sync(); err != nil && !errors.Is(err, syscall.EINVAL) && !errors.Is(err, syscall.ENOTSUP) {
-		return err
-	}
-	return nil
+	return verifiedcopy.SyncDirectory(filepath.Dir(path))
 }

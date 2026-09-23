@@ -51,7 +51,8 @@ between them they catch a truncated file, a bad copy and a damaged old backup.
 
 A file failing either is listed as `incomplete` and not taken in. It is never
 silently skipped: a skip that is not reported means believing the inbox is
-empty when it is not.
+empty when it is not. The page says so in its own area beside the inbox — what
+was held back and why — rather than leaving it to a log nobody opens.
 
 There is deliberately no wait for the modification time to settle. Scanning
 finishes before the tool is run, so a partially written file is not a case that
@@ -71,7 +72,9 @@ Two digests per file, both compared against the whole Box — including
 
 Duplicates are collapsed into one group and dealt with in a single action
 rather than presented one at a time. A match against the trash says when that
-file was thrown away, so the same judgement is not made twice.
+file was thrown away, so the same judgement is not made twice. On the page that
+is one line — how many of the waiting scans the Box already holds, and how many
+of those are in its trash — and one button that rejects all of them.
 
 This pass is worth having on its own and is also `dgs box dedupe`: it needs no
 input, cannot classify anything wrongly, and reduces the pile immediately. It
@@ -121,7 +124,7 @@ nobody finishes, so batch assignment is not a convenience — it is the only way
 the tool gets used twice. Individual attention is for the handful that are
 worth it.
 
-## The page takes four fields
+## The page takes five fields
 
 Deliberately four. Every further field multiplies by the number of scans and is
 paid for in sessions that are never finished.
@@ -132,13 +135,15 @@ paid for in sessions that are never finished.
 | Event date | the date on the document, with its zone |
 | Description | one line, free text |
 | Total | optional, skippable |
+| Tags | comma-separated keywords; shared across a selected run |
 
-Everything else — the other party, the expiry, tags, splitting, grouping beyond
+Everything else — the other party, the expiry, splitting, grouping beyond
 one key — is filled in [`view`](view.md), on the few scans that need it.
 
 **The page is operated entirely from the keyboard.** No action requires the
 mouse. One scan or one batch fills the screen, a single key sets the type, two
-fields take the date and the description, and `Enter` moves on. It is a
+fields take the date and the description, optional tags classify across types,
+and `Enter` moves on. It is a
 terminal interface that happens to be rendered in a browser, because this is
 several hundred repetitions and a hand leaving the keyboard is a real cost. The
 [browsing page](view.md) is the opposite and uses the mouse normally.
@@ -156,6 +161,20 @@ Three keys exist beyond the fields:
 - **`reject`** sends the scan straight to the trash with a reason, for a failed
   scan or something not wanted. It uses the same mechanism as discarding after
   filing.
+
+### Looking at every page
+
+A PDF shows its first page. A page view, opened with `p` and kept open or
+closed across scans, puts a strip of one thumbnail per page beside it; `←` and
+`→` turn the page drawn large. Pages are drawn when the strip asks for them,
+not during the read of the inbox: a fifty-page document is fifty pictures
+nobody may look at. A page past the first of a scan not yet filed is drawn
+from the inbox file each time and never cached, because the cache belongs to
+the Box and a rejected scan must leave nothing of itself behind.
+
+The inbox column is as wide as it is dragged, from 220 px up to half the
+window, and remembered per browser. Its rows are set at 14 px on 1.5 — the
+design language's `caption-md` — because they are read for a whole sitting.
 
 ### The amount is one field
 
@@ -187,7 +206,7 @@ For each accepted scan:
 3. Only if the digests match, link it to its final name, which fails rather
    than replace a file that appeared in the meantime.
 4. Write the sidecar.
-5. Append one line to the log.
+5. Append one line to `dgs-box-log.jsonl` at the Box root.
 
 A failure at any step retries the whole file rather than resuming part of it. A
 partial copy is never published and never left under a name that looks final.
@@ -209,9 +228,15 @@ Closing the tool and coming back continues where it stopped. The same pattern,
 and the same reasoning, as Photo Import's
 [`.dgs-state`](../photo/import.md).
 
-Work happens through bounded workers — `box.workers` — because the destination
-is a network filesystem where a handful of concurrent whole-file copies is
-faster than one, and unbounded copies are slower than both.
+Work happens through bounded workers — `box.workers` — because both ends are
+usually network filesystems where a handful of concurrent whole-file reads is
+faster than one, and unbounded reads are slower than both. Reading the inbox is
+what this buys most: every candidate that is not already settled is a whole
+file pulled across, and that is the wait at the start of a sitting.
+
+Filing is still one scan at a time. It copies bytes, each copy is verified
+against its own digest before it is published, and a failure has to stop that
+scan rather than the two hundred behind it.
 
 ## The existing archive
 

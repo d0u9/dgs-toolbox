@@ -1,0 +1,536 @@
+package web_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	boxweb "dgs-toolbox/internal/apps/box/web"
+	"dgs-toolbox/internal/box"
+	"dgs-toolbox/internal/box/boxlog"
+	"dgs-toolbox/internal/box/sidecar"
+	"dgs-toolbox/internal/box/thumbcache"
+)
+
+// engineBox builds a real Box and inbox on disk and opens the engine over them.
+func engineBox(t *testing.T) (*boxweb.Engine, string, string) {
+	t.Helper()
+	root := t.TempDir()
+	if err := box.WriteMarker(root, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	inbox := t.TempDir()
+	settings := boxweb.Settings{
+		Root:     root,
+		Inbox:    inbox,
+		CacheDir: t.TempDir(),
+		Currency: "AUD",
+	}
+	engine, err := boxweb.NewEngine(settings)
+	if err != nil {
+		t.Fatalf("open engine: %v", err)
+	}
+	return engine, root, inbox
+}
+
+func putScan(t *testing.T, inbox, name string, body []byte) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(inbox, name), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The banner exists so nobody describes scans that do not exist. A real Box
+// must never present itself as a sample, or the other way round.
+func TestARealBoxIsNotASample(t *testing.T) {
+	engine, _, _ := engineBox(t)
+	if engine.Sample() {
+		t.Fatal("a real Box called itself a sample")
+	}
+	if !boxweb.NewSample("AUD").Sample() {
+		t.Fatal("the stand-in did not say it was one")
+	}
+}
+
+// A root with no marker is refused rather than turned into a Box, and the
+// server falls back to the stand-in instead of failing to start.
+func TestARootWithNoMarkerIsRefused(t *testing.T) {
+	settings := boxweb.Settings{Root: t.TempDir(), CacheDir: t.TempDir()}
+	if _, err := boxweb.NewEngine(settings); err == nil {
+		t.Fatal("a directory that is not a Box was opened as one")
+	}
+	if source := boxweb.OpenSource(settings); !source.Sample() {
+		t.Error("the fallback did not say it was a sample")
+	}
+	entries, _ := os.ReadDir(settings.Root)
+	if len(entries) != 0 {
+		t.Errorf("something was written into a directory that is not a Box: %v", entries)
+	}
+}
+
+func TestPendingReadsTheInbox(t *testing.T) {
+	engine, _, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0012.pdf", []byte("a boarding pass"))
+	putScan(t, inbox, "Scan_0013.pdf", []byte("a power bill"))
+	engine.Rescan()
+
+	pending := engine.Pending()
+	if len(pending) != 2 {
+		t.Fatalf("got %d pending, want 2", len(pending))
+	}
+	for _, scan := range pending {
+		if scan.Digest == "" {
+			t.Errorf("a pending scan has no digest: %+v", scan)
+		}
+		if scan.Filename == "" {
+			t.Errorf("a pending scan has no filename: %+v", scan)
+		}
+	}
+}
+
+// Two files in one inbox holding the same bytes are one decision, not two.
+func TestPendingCollapsesDuplicatesInTheInbox(t *testing.T) {
+	engine, _, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0012.pdf", []byte("the same page"))
+	putScan(t, inbox, "Scan_0012 copy.pdf", []byte("the same page"))
+	engine.Rescan()
+	if got := len(engine.Pending()); got != 1 {
+		t.Fatalf("got %d pending, want 1", got)
+	}
+}
+
+func TestFilePublishesAndTheScanAppears(t *testing.T) {
+	engine, root, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0012.pdf", []byte("a boarding pass"))
+	engine.Rescan()
+	pending := engine.Pending()
+	if len(pending) != 1 {
+		t.Fatalf("got %d pending", len(pending))
+	}
+
+	travel := "travel"
+	description := "Haneda to Sydney"
+	filed, err := engine.File(pending[0].Digest, boxweb.Edit{Type: &travel, Description: &description})
+	if err != nil {
+		t.Fatalf("file: %v", err)
+	}
+	if filed.Type != "travel" || filed.Description != "Haneda to Sydney" {
+		t.Errorf("what was typed was lost: %+v", filed)
+	}
+	if len(engine.Pending()) != 0 {
+		t.Error("the scan is still pending after being filed")
+	}
+	scans := engine.Scans()
+	if len(scans) != 1 || scans[0].Digest != filed.Digest {
+		t.Fatalf("the Box does not hold it: %+v", scans)
+	}
+	// It is really on disk, under the intake date, with its sidecar beside it.
+	day := filepath.Join(root, time.Now().Format("2006"), time.Now().Format("2006-01-02"))
+	entries, err := os.ReadDir(day)
+	if err != nil {
+		t.Fatalf("read %s: %v", day, err)
+	}
+	var scanFiles, sidecars int
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) == ".pdf" {
+			scanFiles++
+		}
+		if len(entry.Name()) > len(sidecar.Suffix) && entry.Name()[len(entry.Name())-len(sidecar.Suffix):] == sidecar.Suffix {
+			sidecars++
+		}
+	}
+	if scanFiles != 1 || sidecars != 1 {
+		t.Errorf("on disk: %d scans and %d sidecars", scanFiles, sidecars)
+	}
+	// The source in the inbox is not deleted: emptying a temporary folder is
+	// its owner's decision.
+	if _, err := os.Lstat(filepath.Join(inbox, "Scan_0012.pdf")); err != nil {
+		t.Errorf("the inbox was emptied: %v", err)
+	}
+	// And it was logged.
+	entriesLog, err := boxlog.Read(boxlog.PathFor(root))
+	if err != nil || len(entriesLog) != 1 || entriesLog[0].Action != boxlog.ActionImport {
+		t.Errorf("import log: %+v %v", entriesLog, err)
+	}
+}
+
+// unsorted is always a legal outcome: intake never blocks on a decision, which
+// is what makes an inbox drainable.
+func TestFilingWithNoTypeIsUnsorted(t *testing.T) {
+	engine, _, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0099.pdf", []byte("something nobody can name yet"))
+	engine.Rescan()
+	filed, err := engine.File(engine.Pending()[0].Digest, boxweb.Edit{})
+	if err != nil {
+		t.Fatalf("file: %v", err)
+	}
+	if filed.Type != "unsorted" {
+		t.Errorf("type: got %q want unsorted", filed.Type)
+	}
+}
+
+// Correcting a classification is one sidecar rewrite and one log line. The file
+// does not move and the digest stays valid.
+func TestApplyRewritesTheSidecarAndLogsIt(t *testing.T) {
+	engine, root, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0013.pdf", []byte("a power bill"))
+	engine.Rescan()
+	receipt := "receipt"
+	filed, err := engine.File(engine.Pending()[0].Digest, boxweb.Edit{Type: &receipt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadDir(filepath.Join(root, time.Now().Format("2006"), time.Now().Format("2006-01-02")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	invoice := "statement"
+	updated, err := engine.Apply(boxweb.Edit{Digest: filed.Digest, Type: &invoice})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if updated.Type != "statement" {
+		t.Errorf("type: got %q", updated.Type)
+	}
+	// Changing the type un-reviews it: a guess and a confirmation must stay
+	// distinguishable.
+	if updated.Reviewed {
+		t.Error("a reclassified scan is still marked reviewed")
+	}
+	// Nothing moved.
+	after, err := os.ReadDir(filepath.Join(root, time.Now().Format("2006"), time.Now().Format("2006-01-02")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != len(after) {
+		t.Errorf("the directory changed shape: %d then %d entries", len(before), len(after))
+	}
+	// The change survives a reopen, because it is in the sidecar and not only
+	// in memory.
+	reopened, err := boxweb.NewEngine(boxweb.Settings{Root: root, CacheDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scans := reopened.Scans()
+	if len(scans) != 1 || scans[0].Type != "statement" {
+		t.Errorf("after reopening: %+v", scans)
+	}
+	// And the log says what moved, from what, to what.
+	logged, err := boxlog.Read(boxlog.PathFor(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, entry := range logged {
+		if entry.Action == boxlog.ActionEdit && entry.Field == "type" && entry.From == "receipt" && entry.To == "statement" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the edit was not logged usefully: %+v", logged)
+	}
+}
+
+// A type this build does not register is refused on the way in.
+func TestUnknownTypeIsRefused(t *testing.T) {
+	engine, _, inbox := engineBox(t)
+	putScan(t, inbox, "Scan.pdf", []byte("x"))
+	engine.Rescan()
+	nonsense := "not-a-real-type"
+	if _, err := engine.File(engine.Pending()[0].Digest, boxweb.Edit{Type: &nonsense}); err == nil {
+		t.Fatal("an unknown type was accepted")
+	}
+}
+
+// Nothing is deleted: discarding moves the file into the trash, where it stays
+// known so the same judgement is not asked for twice.
+func TestTrashMovesAndKeeps(t *testing.T) {
+	engine, root, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0044.pdf", []byte("a leaflet"))
+	engine.Rescan()
+	filed, err := engine.File(engine.Pending()[0].Digest, boxweb.Edit{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Trash(filed.Digest, "a duplicate"); err != nil {
+		t.Fatalf("trash: %v", err)
+	}
+	if got := len(engine.Scans()); got != 0 {
+		t.Errorf("the Box still lists %d scans", got)
+	}
+	// The bytes are in trash/, not gone.
+	trashed := filepath.Join(root, "trash", time.Now().Format("2006-01-02"))
+	entries, err := os.ReadDir(trashed)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("nothing in the trash: %v %v", entries, err)
+	}
+	// And putting the same file back in the inbox is recognised, with when it
+	// was thrown away, rather than asked about again.
+	engine.Rescan()
+	pending := engine.Pending()
+	if len(pending) != 1 {
+		t.Fatalf("got %d pending", len(pending))
+	}
+	if pending[0].DuplicateOf == "" {
+		t.Error("the scan was not recognised as one already seen")
+	}
+	if pending[0].TrashedAt == "" {
+		t.Error("nothing said it had been thrown away")
+	}
+}
+
+// A scan already filed and put back in the inbox is a duplicate, not a second
+// document.
+func TestAFiledScanIsRecognisedInTheInbox(t *testing.T) {
+	engine, _, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0012.pdf", []byte("a boarding pass"))
+	engine.Rescan()
+	if _, err := engine.File(engine.Pending()[0].Digest, boxweb.Edit{}); err != nil {
+		t.Fatal(err)
+	}
+	putScan(t, inbox, "Scan_0012 again.pdf", []byte("a boarding pass"))
+	engine.Rescan()
+	pending := engine.Pending()
+	if len(pending) != 1 {
+		t.Fatalf("got %d pending", len(pending))
+	}
+	if pending[0].DuplicateOf == "" {
+		t.Error("a scan already in the Box was not recognised")
+	}
+}
+
+// The pictures land in the cache, outside the Box.
+func TestPicturesAreCachedOutsideTheBox(t *testing.T) {
+	root := t.TempDir()
+	if err := box.WriteMarker(root, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	inbox := t.TempDir()
+	cacheDir := t.TempDir()
+	engine, err := boxweb.NewEngine(boxweb.Settings{Root: root, Inbox: inbox, CacheDir: cacheDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A file with no picture in it is filed all the same and simply has none:
+	// an inbox that cannot be drained is worse than a Box with a missing
+	// thumbnail.
+	putScan(t, inbox, "Scan_0001.pdf", []byte("no picture in here"))
+	engine.Rescan()
+	pending := engine.Pending()
+	if len(pending) != 1 {
+		t.Fatalf("got %d pending", len(pending))
+	}
+	if !pending[0].NeedsRender {
+		t.Error("a file with no picture was not marked needs-render")
+	}
+	filed, err := engine.File(pending[0].Digest, boxweb.Edit{})
+	if err != nil {
+		t.Fatalf("file: %v", err)
+	}
+	if _, _, err := engine.Image(filed.Digest, thumbcache.SizeGrid, 1); err == nil {
+		t.Error("a picture was produced for a scan that has none")
+	}
+	// Whatever the cache holds, it holds it outside the Box.
+	if _, err := os.Lstat(filepath.Join(root, "index.json")); err == nil {
+		t.Error("the cache was written into the Box")
+	}
+}
+
+// Every field in the cache comes from the Box, so throwing it away changes
+// nothing a page can see.
+func TestThrowingTheCacheAwayChangesNothing(t *testing.T) {
+	engine, root, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0012.pdf", []byte("a boarding pass"))
+	putScan(t, inbox, "Scan_0013.pdf", []byte("a power bill"))
+	engine.Rescan()
+	for _, scan := range engine.Pending() {
+		if _, err := engine.File(scan.Digest, boxweb.Edit{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := engine.Scans()
+
+	fresh, err := boxweb.NewEngine(boxweb.Settings{Root: root, CacheDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := fresh.Scans()
+	if len(before) != len(after) {
+		t.Fatalf("%d scans before, %d after the cache was thrown away", len(before), len(after))
+	}
+	for i := range before {
+		if before[i].Digest != after[i].Digest || before[i].Type != after[i].Type {
+			t.Errorf("scan %d differs: %+v vs %+v", i, before[i], after[i])
+		}
+	}
+}
+
+// A hundred scans are not sorted in one sitting.
+func TestResumingSkipsWhatWasAlreadyDecided(t *testing.T) {
+	root := t.TempDir()
+	if err := box.WriteMarker(root, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	inbox := t.TempDir()
+	settings := boxweb.Settings{Root: root, Inbox: inbox, CacheDir: t.TempDir()}
+	engine, err := boxweb.NewEngine(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putScan(t, inbox, "Scan_0012.pdf", []byte("a boarding pass"))
+	putScan(t, inbox, "Scan_0013.pdf", []byte("a power bill"))
+	putScan(t, inbox, "Scan_0014.pdf", []byte("a leaflet"))
+	engine.Rescan()
+	pending := engine.Pending()
+	if len(pending) != 3 {
+		t.Fatalf("got %d pending", len(pending))
+	}
+	// One filed, one rejected, one left alone.
+	if _, err := engine.File(pending[0].Digest, boxweb.Edit{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Trash(pending[1].Digest, "not wanted"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Closing the tool and coming back is a fresh engine over the same folders.
+	again, err := boxweb.NewEngine(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining := again.Pending()
+	if len(remaining) != 1 {
+		t.Fatalf("got %d pending after coming back, want 1: %+v", len(remaining), remaining)
+	}
+	if remaining[0].Digest != pending[2].Digest {
+		t.Errorf("the wrong scan came back: %+v", remaining[0])
+	}
+	// The state is in the inbox, not in the Box.
+	if _, err := os.Lstat(filepath.Join(inbox, "dgs-box-state.json")); err != nil {
+		t.Errorf("no state file in the inbox: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "dgs-box-state.json")); err == nil {
+		t.Error("the state was written into the Box")
+	}
+}
+
+// Closing the tool halfway through describing something must not throw away
+// what was typed.
+func TestADraftSurvivesComingBack(t *testing.T) {
+	root := t.TempDir()
+	if err := box.WriteMarker(root, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	inbox := t.TempDir()
+	settings := boxweb.Settings{Root: root, Inbox: inbox, CacheDir: t.TempDir()}
+	engine, err := boxweb.NewEngine(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putScan(t, inbox, "Scan_0012.pdf", []byte("a boarding pass"))
+	engine.Rescan()
+	pending := engine.Pending()
+	travel := "travel"
+	description := "Haneda to Sydney"
+	if _, err := engine.Apply(boxweb.Edit{Digest: pending[0].Digest, Type: &travel, Description: &description}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	// Nothing was written into the Box: it is not in the Box yet.
+	if entries, _ := os.ReadDir(filepath.Join(root, time.Now().Format("2006"))); len(entries) != 0 {
+		t.Errorf("a scan that was only described landed in the Box: %v", entries)
+	}
+
+	again, err := boxweb.NewEngine(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed := again.Pending()
+	if len(resumed) != 1 {
+		t.Fatalf("got %d pending", len(resumed))
+	}
+	if resumed[0].Type != "travel" || resumed[0].Description != "Haneda to Sydney" {
+		t.Errorf("the draft was lost: %+v", resumed[0])
+	}
+}
+
+// A file that changed since it was decided is not the file that was decided.
+func TestAChangedFileIsOfferedAgain(t *testing.T) {
+	root := t.TempDir()
+	if err := box.WriteMarker(root, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	inbox := t.TempDir()
+	settings := boxweb.Settings{Root: root, Inbox: inbox, CacheDir: t.TempDir()}
+	engine, err := boxweb.NewEngine(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putScan(t, inbox, "Scan_0012.pdf", []byte("the first version"))
+	engine.Rescan()
+	if err := engine.Trash(engine.Pending()[0].Digest, "not wanted"); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(engine.Pending()); got != 0 {
+		t.Fatalf("got %d pending after rejecting", got)
+	}
+	// Rescanned at the same path, with different bytes.
+	putScan(t, inbox, "Scan_0012.pdf", []byte("a completely different scan this time"))
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(filepath.Join(inbox, "Scan_0012.pdf"), future, future); err != nil {
+		t.Fatal(err)
+	}
+	engine.Rescan()
+	if got := len(engine.Pending()); got != 1 {
+		t.Errorf("a changed file was not offered again: %d pending", got)
+	}
+}
+
+// Truncated files, bad copies and damaged old backups are reported, never
+// silently skipped: a skip nobody is told about means believing the inbox is
+// empty when it is not.
+func TestIncompleteFilesAreReportedNotSkipped(t *testing.T) {
+	engine, _, inbox := engineBox(t)
+	// A PDF header with nothing behind it: exactly what a truncated copy looks
+	// like.
+	putScan(t, inbox, "Scan_0012.pdf", []byte("%PDF-1.7\nand then the copy stopped"))
+	putScan(t, inbox, "Scan_0013.pdf", []byte("a perfectly ordinary image is not a PDF"))
+	engine.Rescan()
+
+	if got := len(engine.Pending()); got != 1 {
+		t.Errorf("a truncated file was offered for filing: %d pending", got)
+	}
+	incomplete := engine.Incomplete()
+	if len(incomplete) != 1 {
+		t.Fatalf("incomplete: %+v", incomplete)
+	}
+	if incomplete[0].Detail == "" {
+		t.Error("nothing said what was wrong with it")
+	}
+	if !strings.Contains(incomplete[0].Path, "Scan_0012") {
+		t.Errorf("the wrong file was reported: %+v", incomplete[0])
+	}
+}
+
+// A file the owner moved out of the inbox describes nothing any more.
+func TestVanishedCandidatesAreForgotten(t *testing.T) {
+	engine, _, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0012.pdf", []byte("a boarding pass"))
+	engine.Rescan()
+	if err := engine.Trash(engine.Pending()[0].Digest, "not wanted"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(inbox, "Scan_0012.pdf")); err != nil {
+		t.Fatal(err)
+	}
+	engine.Rescan()
+	state, err := os.ReadFile(filepath.Join(inbox, "dgs-box-state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(state), "Scan_0012.pdf") {
+		t.Errorf("a record was kept for a file that is gone:\n%s", state)
+	}
+}
