@@ -11,6 +11,7 @@ import (
 
 	"dgs-toolbox/internal/box"
 	"dgs-toolbox/internal/box/money"
+	"dgs-toolbox/internal/box/pagerange"
 )
 
 // wire is the sidecar exactly as it appears on disk. It exists so the File a
@@ -50,9 +51,25 @@ type wire struct {
 	Group      string `yaml:"group,omitempty"`
 	NeedsSplit bool   `yaml:"needs_split,omitempty"`
 
+	Documents    []wireDocument `yaml:"documents,omitempty"`
+	IgnoredPages string         `yaml:"ignored_pages,omitempty"`
+
 	TrashedAt   Timestamp `yaml:"trashed_at,omitempty"`
 	TrashedFrom string    `yaml:"trashed_from,omitempty"`
 	Reason      string    `yaml:"reason,omitempty"`
+}
+
+// wireDocument is one entry of documents. Pages are the text a person types —
+// "1-3,6" — rather than a list of numbers, so a hand edit reads like the page.
+type wireDocument struct {
+	Pages       string   `yaml:"pages"`
+	Type        string   `yaml:"type,omitempty"`
+	Description string   `yaml:"description,omitempty"`
+	Tags        []string `yaml:"tags,omitempty"`
+	EventDate   string   `yaml:"event_date,omitempty"`
+	EventZone   string   `yaml:"event_tz,omitempty"`
+	TotalMinor  *int64   `yaml:"total_minor,omitempty"`
+	Currency    string   `yaml:"currency,omitempty"`
 }
 
 // Encode writes file as the bytes of a sidecar.
@@ -94,6 +111,29 @@ func Encode(file File) ([]byte, error) {
 		minor := file.Total.Minor
 		out.TotalMinor = &minor
 		out.Currency = file.Total.Currency
+	}
+	out.IgnoredPages = pagerange.Format(file.IgnoredPages)
+	for _, document := range file.Documents {
+		entry := wireDocument{
+			Pages:       pagerange.Format(document.Pages),
+			Type:        document.Type,
+			Description: document.Description,
+			Tags:        document.Tags,
+			EventDate:   document.EventDate.String(),
+			EventZone:   document.EventZone,
+		}
+		if entry.Pages == "" {
+			return nil, errors.New("a document names no pages")
+		}
+		if document.Total.Currency != "" {
+			if !document.Total.Valid() {
+				return nil, money.UnknownCurrencyError{Code: document.Total.Currency}
+			}
+			minor := document.Total.Minor
+			entry.TotalMinor = &minor
+			entry.Currency = document.Total.Currency
+		}
+		out.Documents = append(out.Documents, entry)
 	}
 	data, err := yaml.Marshal(out)
 	if err != nil {
@@ -156,6 +196,34 @@ func Decode(data []byte, name string) (File, error) {
 	if file.EventDate, err = readDate(in.EventDate, name, "event_date"); err != nil {
 		return File{}, err
 	}
+	if file.IgnoredPages, err = pagerange.Parse(in.IgnoredPages); err != nil {
+		return File{}, fmt.Errorf("%s: ignored_pages: %w", name, err)
+	}
+	for position, entry := range in.Documents {
+		field := fmt.Sprintf("documents[%d]", position)
+		document := Document{
+			Type: entry.Type, Description: entry.Description, Tags: entry.Tags,
+			EventZone: strings.TrimSpace(entry.EventZone),
+		}
+		if document.EventZone != "" {
+			if _, err := box.LoadZone(document.EventZone); err != nil {
+				return File{}, fmt.Errorf("%s: %s.event_tz: %w", name, field, err)
+			}
+		}
+		if document.Pages, err = pagerange.Parse(entry.Pages); err != nil {
+			return File{}, fmt.Errorf("%s: %s.pages: %w", name, field, err)
+		}
+		if len(document.Pages) == 0 {
+			return File{}, fmt.Errorf("%s: %s names no pages", name, field)
+		}
+		if document.EventDate, err = readDate(entry.EventDate, name, field+".event_date"); err != nil {
+			return File{}, err
+		}
+		if document.Total, err = readAmount(entry.TotalMinor, entry.Currency, name+": "+field); err != nil {
+			return File{}, err
+		}
+		file.Documents = append(file.Documents, document)
+	}
 	if file.ExpiresAt, err = readDate(in.ExpiresAt, name, "expires_at"); err != nil {
 		return File{}, err
 	}
@@ -170,19 +238,26 @@ func Decode(data []byte, name string) (File, error) {
 	// An amount needs both halves. A number with no currency has no scale and a
 	// currency with no number is not an amount, and guessing either one writes a
 	// figure nobody entered.
-	switch {
-	case in.TotalMinor != nil && in.Currency == "":
-		return File{}, fmt.Errorf("%s: total_minor without currency", name)
-	case in.TotalMinor == nil && in.Currency != "":
-		return File{}, fmt.Errorf("%s: currency without total_minor", name)
-	case in.TotalMinor != nil:
-		amount := money.Amount{Minor: *in.TotalMinor, Currency: strings.ToUpper(strings.TrimSpace(in.Currency))}
-		if !amount.Valid() {
-			return File{}, fmt.Errorf("%s: %w", name, money.UnknownCurrencyError{Code: amount.Currency})
-		}
-		file.Total = amount
+	if file.Total, err = readAmount(in.TotalMinor, in.Currency, name); err != nil {
+		return File{}, err
 	}
 	return file, nil
+}
+
+func readAmount(minor *int64, currency, name string) (money.Amount, error) {
+	switch {
+	case minor != nil && currency == "":
+		return money.Amount{}, fmt.Errorf("%s: total_minor without currency", name)
+	case minor == nil && currency != "":
+		return money.Amount{}, fmt.Errorf("%s: currency without total_minor", name)
+	case minor != nil:
+		amount := money.Amount{Minor: *minor, Currency: strings.ToUpper(strings.TrimSpace(currency))}
+		if !amount.Valid() {
+			return money.Amount{}, fmt.Errorf("%s: %w", name, money.UnknownCurrencyError{Code: amount.Currency})
+		}
+		return amount, nil
+	}
+	return money.Amount{}, nil
 }
 
 func readDate(text, name, field string) (box.Date, error) {

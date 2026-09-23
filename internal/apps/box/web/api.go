@@ -3,11 +3,13 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net/http"
 	"strconv"
 
 	"dgs-toolbox/internal/box/doctype"
 	"dgs-toolbox/internal/box/money"
+	"dgs-toolbox/internal/zonesearch"
 )
 
 type api struct {
@@ -182,7 +184,9 @@ func (a api) image(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", mediaType)
-	w.Header().Set("Cache-Control", "no-store")
+	// A digest names the bytes, so a page of it never changes: the browser
+	// may keep it, and turning back to a page costs no request.
+	w.Header().Set("Cache-Control", "private, max-age=3600")
 	_, _ = w.Write(body)
 }
 
@@ -206,6 +210,70 @@ func (a api) incomplete(w http.ResponseWriter, _ *http.Request) {
 		held = []Exception{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"incomplete": held, "count": len(held)})
+}
+
+func (a api) rejected(w http.ResponseWriter, _ *http.Request) {
+	found := a.settings.Source.Rejected()
+	if found == nil {
+		found = []RejectedScan{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rejected": found, "count": len(found)})
+}
+
+// rejectedFile answers with a rejected scan's own file, shown inline so the
+// browser opens it in its own viewer.
+func (a api) rejectedFile(w http.ResponseWriter, r *http.Request) {
+	body, name, mediaType, err := a.settings.Source.RejectedFile(r.URL.Query().Get("digest"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", mediaType)
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": name}))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(body)
+}
+
+func (a api) restore(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Digest string `json:"digest"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := a.settings.Source.Restore(body.Digest); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (a api) unfile(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Digest string `json:"digest"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := a.settings.Source.Unfile(body.Digest); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// zones answers the zone field's search: "syd", "aus", "chi".
+func (a api) zones(w http.ResponseWriter, r *http.Request) {
+	found := zonesearch.Search(r.URL.Query().Get("q"), 0)
+	if found == nil {
+		found = []zonesearch.Zone{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"zones": found})
 }
 
 // batchRequest is one edit and the scans to give it to.

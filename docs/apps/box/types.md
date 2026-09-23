@@ -27,7 +27,7 @@ lifetime or has none.
 | Type | Key | What it covers | Default lifetime |
 | --- | --- | --- | --- |
 | `ticket` | `t` | Ticket stubs: cinema, concerts, local transport | the event date |
-| `travel` | `v` | Flights, boarding passes, hotel confirmations, car hire | the event date + 90 days |
+| `travel` | `a` | Flights, boarding passes, hotel confirmations, car hire | the event date + 90 days |
 | `receipt` | `r` | Receipts and invoices | the event date + 7 years |
 | `statement` | `s` | Bills and account statements | the event date + 7 years |
 | `insurance` | `i` | Policies, certificates of cover | the event date + 1 year |
@@ -57,10 +57,11 @@ worth having until the real one is entered.
 
 Each type answers to one keystroke on the intake page, which is what makes a
 few hundred scans in a row possible. The keys are a mnemonic where one is free
-and arbitrary where it is not — `v` for travel and `n` for an invitation
-because `t` and `i` are taken. Tests refuse duplicate keys and keys reserved by
-the intake key map, case-insensitively, so a new type picks a free one rather
-than quietly stealing an established reflex.
+and arbitrary where it is not — `a` for travel (air) and `n` for an invitation
+because `t` and `i` are taken. A test refuses duplicate keys, and the intake
+page refuses to start when a type key collides with one of its own commands,
+case-insensitively, so a new type picks a free one rather than quietly stealing
+an established reflex.
 
 ## Keepsake
 
@@ -68,7 +69,7 @@ Nothing here expires.
 
 | Type | Key | What it covers | Default lifetime |
 | --- | --- | --- | --- |
-| `letter` | `w` | Correspondence worth keeping | none |
+| `letter` | `l` | Correspondence worth keeping | none |
 | `ephemera` | `e` | Printed matter kept for its own sake: leaflets, brochures, an advertisement, a programme | none |
 | `object` | `o` | A scan of a small object rather than of a document | none |
 

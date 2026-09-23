@@ -25,7 +25,11 @@
 
 <main class="intake-main">
   <aside class="queue" aria-label="Inbox">
-    <h2 class="desk-heading">Inbox</h2>
+    <div class="queue-tabs desk-heading" role="tablist">
+      <button type="button" role="tab" id="tab-inbox" class="queue-tab" aria-selected="true" aria-controls="inbox-panel">Inbox</button>
+      <button type="button" role="tab" id="tab-rejected" class="queue-tab" aria-selected="false" aria-controls="rejected">Rejected (<span id="rejected-count">0</span>)</button>
+    </div>
+    <div id="inbox-panel" role="tabpanel" aria-labelledby="tab-inbox">
     <div id="duplicates" class="notice" hidden>
       <p id="duplicates-text"></p>
       <button type="button" id="duplicates-reject" class="text-button">Reject all of them</button>
@@ -35,6 +39,12 @@
       <h2 class="desk-heading">Held back (<span id="held-back-count">0</span>)</h2>
       <p class="exceptions-note">Read and not taken in. Nothing was copied, and nothing was deleted.</p>
       <ul id="held-back-list" class="exception-list"></ul>
+    </section>
+    </div>
+    <section id="rejected" role="tabpanel" aria-labelledby="tab-rejected" hidden>
+      <p class="rejected-note">Still in the inbox, untouched. Click one to look at it; Restore puts it back in the list.</p>
+      <p id="rejected-empty" class="rejected-empty">Nothing rejected.</p>
+      <ul id="rejected-list" class="rejected-list"></ul>
     </section>
   </aside>
 
@@ -50,6 +60,7 @@
       <ol id="page-strip" class="page-strip" aria-label="Pages" hidden></ol>
       <div class="sheet-frame">
         <img id="page-image" alt="" src="">
+        <p id="mark-banner" class="mark-banner" role="status" hidden></p>
         <p id="page-empty" class="sheet-empty" hidden>The inbox is empty.</p>
       </div>
     </div>
@@ -59,11 +70,28 @@
 
   <section class="desk" aria-label="Describe">
     <div class="desk-body">
-    <p class="progress"><span id="progress-text">—</span></p>
+    <p class="progress"><span id="progress-text">—</span> <span id="save-state" class="save-state"></span></p>
 
     <div id="batch" class="batch" hidden>
       <strong id="batch-count">1</strong> selected — one type will be given to all of them.
       <button type="button" id="batch-clear" class="text-button">clear</button>
+    </div>
+
+    <div id="split-head" class="split-head" hidden>
+      <div class="split-row">
+        <span class="split-label">Split</span>
+        <span id="split-title" class="split-title"></span>
+        <span id="split-chips" class="split-chips"></span>
+        <button type="button" id="split-remove" class="text-button split-remove" hidden>Remove this split <kbd>-</kbd></button>
+      </div>
+      <p id="split-notes" class="split-notes"></p>
+      <p id="split-confirm" class="split-confirm" hidden></p>
+      <form id="split-text-form" class="split-text" hidden>
+        <label class="fieldrow wide">
+          <span class="fieldrow-label">Splits — <code>1-3, 2-5, 6</code>; <code>!7-10</code> ignores</span>
+          <input id="split-text" type="text" spellcheck="false" autocomplete="off">
+        </label>
+      </form>
     </div>
 
     <h2 class="desk-heading">Type</h2>
@@ -75,9 +103,10 @@
         <span class="fieldrow-label">Event date</span>
         <input id="event-date" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" spellcheck="false">
       </label>
-      <label class="fieldrow">
+      <label class="fieldrow zone-field">
         <span class="fieldrow-label">Zone</span>
-        <input id="event-zone" type="text" placeholder="Australia/Sydney" spellcheck="false">
+        <input id="event-zone" type="text" placeholder="syd, aus, chi…" spellcheck="false" aria-controls="zone-options">
+        <ul id="zone-options" class="zone-options" role="listbox" aria-label="Zones" hidden></ul>
       </label>
       <label class="fieldrow wide">
         <span class="fieldrow-label">Description</span>
@@ -104,6 +133,9 @@
 
 <script src="api.js"></script>
 <script src="pages.js"></script>
+<script src="split.js"></script>
+<script src="zone.js"></script>
+<script src="zoom.js"></script>
 <script src="intake.js"></script>
 </body>
 </html>

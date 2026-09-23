@@ -24,6 +24,7 @@ import (
 	"dgs-toolbox/internal/box"
 	"dgs-toolbox/internal/box/lifecycle"
 	"dgs-toolbox/internal/box/money"
+	"dgs-toolbox/internal/box/pagerange"
 )
 
 // Suffix is what a sidecar's name ends in. It carries no leading dot: a Box
@@ -100,10 +101,20 @@ type File struct {
 	ScanCreatedAt Timestamp
 
 	// Group is set when several files are one document. NeedsSplit marks the
-	// other direction — one file holding several documents — and is an escape
-	// hatch that keeps the inbox drainable while splitting is not implemented.
+	// other direction — one file holding several documents — before anyone
+	// has said where the documents begin and end, and keeps the inbox
+	// drainable when that is not worth doing at intake.
 	Group      string
 	NeedsSplit bool
+
+	// Documents is the other direction said in full: which pages of this one
+	// file are which document. The file itself is never cut. Empty means the
+	// whole file is one document, which is almost every scan. IgnoredPages are
+	// pages that are deliberately no document — a blank, a separator sheet —
+	// so that a page nobody put anywhere can be told apart from one that was
+	// forgotten. Inheritance is internal/box/docsplit's.
+	Documents    []Document
+	IgnoredPages []pagerange.Range
 
 	// Trash is set only on a sidecar that travelled into trash/ with its file.
 	// Nothing in a Box is deleted, so a discarded scan keeps its metadata and
@@ -111,6 +122,21 @@ type File struct {
 	TrashedAt   Timestamp
 	TrashedFrom string
 	Reason      string
+}
+
+// Document is one document inside a split file. Its fields only add to the
+// file's: a field the file already has is the document's too and cannot be
+// set again here, and Tags are added to the file's tags, never removed from
+// them. The file-level fields are what the whole batch shares — where it came
+// from, when it was scanned — and a document says what is its own.
+type Document struct {
+	Pages       []pagerange.Range
+	Type        string
+	Description string
+	Tags        []string
+	EventDate   box.Date
+	EventZone   string
+	Total       money.Amount
 }
 
 // Timestamp is an instant written as RFC 3339 with the offset it was read at,

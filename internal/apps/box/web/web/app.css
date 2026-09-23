@@ -166,6 +166,18 @@ body.resizing { cursor: col-resize; user-select: none; }
   border-radius: var(--radius-xl);
 }
 .sheet-frame img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* Wheel zoom and drag pan (zoom.js). */
+.sheet-frame, .detail-frame { overflow: hidden; }
+.sheet-frame img, .detail-frame img { transform-origin: 0 0; user-select: none; }
+.sheet-frame.zoomed, .detail-frame.zoomed { cursor: grab; }
+.sheet-frame.panning, .detail-frame.panning { cursor: grabbing; }
+/* A white scan on the white frame has no visible edge; outline the sheet
+   itself so its bounds show whatever the paper colour. */
+.sheet-frame img,
+.detail-frame img,
+.page-item img {
+  box-shadow: 0 0 0 1px var(--hairline-strong), 0 1px 4px rgba(0, 0, 0, 0.18);
+}
 .sheet-empty { color: var(--graphite); }
 
 .facts {
@@ -322,6 +334,73 @@ body.resizing { cursor: col-resize; user-select: none; }
   padding: var(--space-xs) var(--row-pad-x) var(--space-xxs);
   background: var(--cloud);
 }
+.queue-tabs { display: flex; gap: var(--space-sm); }
+.queue-tab {
+  padding: 0 0 3px;
+  font-size: var(--font-size-sm);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--graphite);
+  cursor: pointer;
+}
+.queue-tab:hover { color: var(--ink); }
+.queue-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--primary); }
+#inbox-panel[hidden], #rejected[hidden] { display: none; }
+
+/* Rejected: one row per file, the file itself on the left to open, Restore
+   on the right where the eye ends the row. */
+.rejected-note { margin: 0 var(--row-pad-x) var(--space-xs); font-size: var(--font-size-sm); line-height: 1.5; color: var(--graphite); }
+.rejected-empty { margin: var(--space-md) var(--row-pad-x); font-size: var(--font-size-ui); color: var(--graphite); }
+.rejected-empty[hidden] { display: none; }
+.rejected-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-xxs); }
+.rejected-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xxs) var(--space-xxs) var(--space-xxs) 0;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+}
+.rejected-item:hover { border-color: var(--hairline-strong); }
+.rejected-view {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: var(--row-pad-y) var(--row-pad-x);
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+.rejected-view:hover { background: var(--hover); }
+.rejected-view:hover .rejected-name { text-decoration: underline; }
+.rejected-name {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-ui);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rejected-detail { font-size: var(--font-size-sm); color: var(--graphite); }
+.rejected-restore {
+  flex: none;
+  padding: 4px var(--space-sm);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--primary);
+  background: none;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.rejected-restore:hover { background: var(--primary); color: var(--on-primary); }
 .queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
 /* The time is the fixed column and the name runs after it, so a few hundred
    rows read as two columns rather than as ragged text. */
@@ -330,21 +409,15 @@ body.resizing { cursor: col-resize; user-select: none; }
    dense controls around it. */
 .queue-item {
   display: grid;
-  grid-template-columns: 5.5ch 1fr;
-  align-items: baseline;
-  gap: var(--space-xs);
-  padding: 5px var(--row-pad-x);
+  gap: 1px;
+  padding: 6px var(--row-pad-x);
   border-radius: var(--radius-md);
   cursor: pointer;
-  line-height: 1.5;
+  line-height: 1.4;
 }
-.queue-item:hover { background: var(--hover); }
-.queue-time {
-  color: var(--graphite);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-  font-variant-numeric: tabular-nums;
-}
+/* The column is already --hover's colour, so hovering lifts the row onto
+   paper with an outline instead. */
+.queue-item:hover { background: var(--paper); box-shadow: inset 0 0 0 1px var(--hairline-strong); }
 .queue-name {
   overflow: hidden;
   white-space: nowrap;
@@ -352,12 +425,19 @@ body.resizing { cursor: col-resize; user-select: none; }
   font-size: 14px;
   color: var(--ink-soft);
 }
+.queue-item:hover .queue-name { color: var(--ink); }
+.queue-time {
+  color: var(--graphite);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.queue-time:empty { display: none; }
 /* A run is tinted; the scan the cursor is on stays the strong one, so the
    order of these two rules is the point. */
-.queue-run { background: var(--selected); }
+.queue-run, .queue-run:hover { background: var(--selected); }
 .queue-run .queue-name { color: var(--ink); }
-.queue-current { background: var(--primary); }
-.queue-current .queue-name { color: var(--on-primary); font-weight: 600; }
+.queue-current, .queue-current:hover { background: var(--primary); box-shadow: none; }
+.queue-current .queue-name, .queue-current:hover .queue-name { color: var(--on-primary); font-weight: 600; }
 .queue-current .queue-time { color: var(--primary-soft); }
 
 /* ---- Browse ---------------------------------------------------------- */
@@ -498,7 +578,10 @@ body.resizing { cursor: col-resize; user-select: none; }
   border-radius: var(--radius-pill);
   background: var(--ink-soft);
   color: var(--on-ink);
+  /* A light ring keeps the number legible on dark scans too. */
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 1px 3px rgba(0, 0, 0, 0.5);
   font-size: var(--font-size-xs);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .page-current .page-number { background: var(--primary); color: var(--on-primary); }
@@ -594,3 +677,178 @@ body.resizing { cursor: col-resize; user-select: none; }
   color: var(--graphite);
 }
 .trash-line[hidden] { display: none; }
+
+/* ---- Split (intake) ---------------------------------------------------- */
+
+/* One colour per document, from the design language's palette. The number on
+   the chip is what identifies a document; the colour only helps the eye
+   follow a range along the strip. */
+:root {
+  /* Blue is kept for the mark being made, so no split is drawn in it. */
+  --doc-0: #356373;
+  --doc-1: #ff5050;
+  --doc-2: #5a1313;
+  --doc-3: #7fadbe;
+  --doc-4: #b3262b;
+  --doc-5: var(--charcoal);
+}
+.doc-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  color: var(--on-primary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.doc-0 { background: var(--doc-0); }
+.doc-1 { background: var(--doc-1); }
+.doc-2 { background: var(--doc-2); }
+.doc-3 { background: var(--doc-3); }
+.doc-4 { background: var(--doc-4); }
+.doc-5 { background: var(--doc-5); }
+.doc-chip.doc-selected { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3px var(--ink); }
+
+.page-docs {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.page-item.page-ignored img { opacity: .25; }
+.page-item.page-ignored::after {
+  content: "ignored";
+  position: absolute;
+  font-size: var(--font-size-xs);
+  color: var(--graphite);
+}
+.splitting .page-item.page-free { border-style: dashed; border-color: var(--graphite); }
+.page-item.page-mark { background: var(--primary-soft); border-color: var(--primary); }
+
+/* The line above the desk that says which pages the fields describe. Each
+   split is described as a PDF of its own, with the desk's usual fields. */
+.split-head {
+  margin: 0 0 var(--space-xs);
+  padding: var(--row-pad-y) var(--row-pad-x);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.split-row { display: flex; align-items: center; gap: var(--space-xs); flex-wrap: wrap; }
+.split-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--primary-deep);
+}
+.split-title { font-size: var(--font-size-ui); font-variant-numeric: tabular-nums; color: var(--ink); }
+.split-chips { display: flex; gap: 4px; margin-left: auto; }
+.split-chips .doc-chip { border: 0; cursor: pointer; }
+.split-notes { margin: var(--space-xxs) 0 0; font-size: var(--font-size-sm); color: var(--charcoal); }
+.split-notes:empty { display: none; }
+.split-warn { color: var(--error); }
+.split-confirm { margin: var(--space-xxs) 0 0; font-size: var(--font-size-sm); color: var(--error); font-weight: 600; }
+.split-text { margin-top: var(--space-xs); }
+.split-text code { font-family: var(--font-mono); }
+
+/* A mark in progress is shown on the page being looked at: a Space that
+   leaves no trace is a mode nobody knows they are in. */
+.sheet-frame { position: relative; }
+.mark-banner {
+  position: absolute;
+  left: var(--space-xs);
+  right: var(--space-xs);
+  top: var(--space-xs);
+  margin: 0;
+  padding: var(--row-pad-y) var(--row-pad-x);
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--font-size-ui);
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.split-head.split-marking { background: var(--primary); border-color: var(--primary-deep); }
+.split-head.split-marking .split-label,
+.split-head.split-marking .split-title,
+.split-head.split-marking .split-notes { color: var(--on-primary); }
+.split-remove { margin-left: var(--space-xs); }
+
+.save-state { margin-left: var(--space-xs); font-size: var(--font-size-xs); color: var(--graphite); }
+
+/* Marking and splits, drawn to be seen at a glance down the strip. */
+.page-item.page-mark {
+  background: var(--primary-soft);
+  border: 3px solid var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.page-item.page-mark img { opacity: .55; }
+.page-item.page-mark::before {
+  content: "\2713";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--primary);
+  z-index: 1;
+}
+.page-item.page-in-split { border-width: 3px; border-style: solid; }
+.page-doc-0 { border-color: var(--doc-0); }
+.page-doc-1 { border-color: var(--doc-1); }
+.page-doc-2 { border-color: var(--doc-2); }
+.page-doc-3 { border-color: var(--doc-3); }
+.page-doc-4 { border-color: var(--doc-4); }
+.page-doc-5 { border-color: var(--doc-5); }
+.page-item.page-in-split:not(.page-in-selected) img { opacity: .8; }
+.page-item.page-in-selected { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
+.page-item.page-current.page-in-selected { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--primary); }
+.page-docs .doc-chip {
+  min-width: 22px;
+  height: 22px;
+  font-size: var(--font-size-ui);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(26, 26, 26, .3);
+}
+
+/* The zone field's search list, under the field and over what follows. */
+.zone-field { position: relative; }
+.zone-options {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  right: 0;
+  width: max(100%, 280px);
+  max-width: calc(100vw - 32px);
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 2px 0 0;
+  padding: var(--space-xxs) 0;
+  list-style: none;
+  background: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--lift-modal);
+}
+.zone-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 var(--space-xs);
+  padding: var(--row-pad-y) var(--row-pad-x);
+  cursor: pointer;
+}
+.zone-option:hover { background: var(--hover); }
+.zone-option.zone-active { background: var(--selected); }
+.zone-city { font-size: var(--font-size-ui); font-weight: 600; color: var(--ink); }
+.zone-where { font-size: var(--font-size-sm); color: var(--charcoal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zone-name { grid-column: 1 / -1; font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--graphite); }

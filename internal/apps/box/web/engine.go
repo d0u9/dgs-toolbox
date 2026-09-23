@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"mime"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"dgs-toolbox/internal/box"
 	"dgs-toolbox/internal/box/boxlog"
 	"dgs-toolbox/internal/box/dedupe"
+	"dgs-toolbox/internal/box/digest"
 	"dgs-toolbox/internal/box/index"
 	"dgs-toolbox/internal/box/intakestate"
 	"dgs-toolbox/internal/box/money"
@@ -53,6 +55,8 @@ type Engine struct {
 	cache    index.Index
 	orphan   []index.Orphan
 	thumbs   thumbcache.Store
+	// pages is the document being paged through; it has its own lock.
+	pages pageMemo
 
 	// pending is the inbox as the last scan of it saw it. It is built once,
 	// because building it reads every candidate's bytes, and rebuilt only when
@@ -144,12 +148,15 @@ func (e *Engine) Scans() []Scan {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 	today := box.Today(nil)
+	fromInbox := e.fromInboxLocked()
 	scans := make([]Scan, 0, len(e.cache.Entries))
 	for _, entry := range e.cache.Entries {
 		if entry.InTrash {
 			continue
 		}
-		scans = append(scans, decorate(scanFromEntry(entry), today))
+		scan := decorate(scanFromEntry(entry), today)
+		_, scan.Unfilable = fromInbox[entry.File.Digest]
+		scans = append(scans, scan)
 	}
 	sort.SliceStable(scans, func(i, j int) bool {
 		left, right := sortKey(scans[i]), sortKey(scans[j])
@@ -215,6 +222,11 @@ type match struct {
 func (e *Engine) duplicatesLocked() map[string]match {
 	known := make(map[string]match, len(e.cache.Entries)*2)
 	for _, entry := range e.cache.Entries {
+		// A scan unfiled to be filed again is not a judgement already made:
+		// its copy in the trash is how it was taken back, not a rejection.
+		if entry.InTrash && entry.File.Reason == UnfiledReason {
+			continue
+		}
 		found := match{digest: entry.File.Digest}
 		if entry.InTrash {
 			found.trashedAt = string(entry.File.TrashedAt)
@@ -259,7 +271,11 @@ func (e *Engine) Apply(edit Edit) (Scan, error) {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 	if position, found := e.pendingIndexLocked(edit.Digest); found {
-		updated, err := applyEdit(e.pending[position].edit, edit, e.currency)
+		// The page count is the file's, not the draft's, and a split is
+		// checked against it.
+		base := e.pending[position].edit
+		base.Pages = e.pending[position].info.Pages
+		updated, err := applyEdit(base, edit, e.currency)
 		if err != nil {
 			return Scan{}, err
 		}
@@ -315,7 +331,9 @@ func (e *Engine) File(digest string, edit Edit) (Scan, error) {
 	}
 	entry := e.pending[position]
 	edit.Digest = digest
-	described, err := applyEdit(entry.edit, edit, e.currency)
+	base := entry.edit
+	base.Pages = entry.info.Pages
+	described, err := applyEdit(base, edit, e.currency)
 	if err != nil {
 		return Scan{}, err
 	}
@@ -375,10 +393,131 @@ func (e *Engine) File(digest string, edit Edit) (Scan, error) {
 	return decorate(scanFromEntry(newEntry), box.Today(nil)), nil
 }
 
+// UnfiledReason is the reason a scan taken back out of the Box is discarded
+// with. Duplicate detection passes over a trashed copy carrying it, so the
+// scan comes back to intake as a scan and not as something thrown away.
+const UnfiledReason = "unfiled to be filed again"
+
+// fromInboxLocked is every digest published from the configured inbox whose
+// file is still there, which is what can be unfiled.
+func (e *Engine) fromInboxLocked() map[string]intakestate.Record {
+	if !e.scanned && e.inbox != "" {
+		e.state = e.loadStateLocked()
+	}
+	out := map[string]intakestate.Record{}
+	for _, record := range e.state.Records {
+		if record.State == intakestate.Published && record.Digest != "" {
+			out[record.Digest] = record
+		}
+	}
+	return out
+}
+
+// Unfile takes a filed scan back to intake, for a scan filed wrongly as a
+// whole. Nothing is deleted: the Box's copy goes to the trash, as any discard
+// does, and the scan returns to the inbox's list with everything its sidecar
+// said as the draft, to be corrected and filed again. It needs the inbox file
+// the scan came from: the Box's copy is not moved back out.
+func (e *Engine) Unfile(digest string) error {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	record, found := e.fromInboxLocked()[digest]
+	if !found {
+		return fmt.Errorf("%s did not come from this inbox, or its file is gone from it: correct it here instead", digest)
+	}
+	position, found := e.entryIndexLocked(digest)
+	if !found {
+		return fmt.Errorf("no scan %q", digest)
+	}
+	draft := e.cache.Entries[position].File
+	if err := e.trashLocked(digest, UnfiledReason); err != nil {
+		return err
+	}
+	record.State, record.PublishedPath, record.At = intakestate.Classified, "", ""
+	record.Draft = &draft
+	e.state.Set(record, time.Now())
+	e.saveStateLocked()
+	e.rescanLocked()
+	return nil
+}
+
+// Rejected lists what was turned away at intake and is still in the inbox,
+// newest first. A rejected file whose owner has since removed it is gone from
+// the state too, so everything here can be restored.
+func (e *Engine) Rejected() []RejectedScan {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	if !e.scanned {
+		e.rescanLocked()
+	}
+	var found []RejectedScan
+	for _, record := range e.state.Records {
+		if record.State != intakestate.Rejected {
+			continue
+		}
+		found = append(found, RejectedScan{
+			Digest: record.Digest, Filename: filepath.Base(filepath.FromSlash(record.Path)),
+			Reason: record.Reason, At: record.At,
+		})
+	}
+	sort.SliceStable(found, func(i, j int) bool { return found[i].At > found[j].At })
+	return found
+}
+
+// RejectedFile reads a rejected scan from the inbox. The file is named by the
+// state's record, and its bytes must still hash to the digest the record was
+// made for: a file replaced under the same name is not the one rejected.
+func (e *Engine) RejectedFile(want string) ([]byte, string, string, error) {
+	e.mutex.Lock()
+	var relative string
+	for _, record := range e.state.Records {
+		if record.Digest == want && record.State == intakestate.Rejected {
+			relative = record.Path
+		}
+	}
+	inbox := e.inbox
+	e.mutex.Unlock()
+	if relative == "" {
+		return nil, "", "", fmt.Errorf("no rejected scan %q", want)
+	}
+	body, err := os.ReadFile(filepath.Join(inbox, filepath.FromSlash(relative)))
+	if err != nil {
+		return nil, "", "", err
+	}
+	if digest.Whole(body) != want {
+		return nil, "", "", fmt.Errorf("%s has changed since it was rejected", relative)
+	}
+	name := filepath.Base(filepath.FromSlash(relative))
+	return body, name, mime.TypeByExtension(strings.ToLower(filepath.Ext(name))), nil
+}
+
+// Restore takes back a rejection. Rejecting touched nothing but the inbox's
+// state, so neither does this: the record goes back to pending and the inbox
+// is read again, which brings the scan back into the list.
+func (e *Engine) Restore(digest string) error {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	for _, record := range e.state.Records {
+		if record.Digest != digest || record.State != intakestate.Rejected {
+			continue
+		}
+		record.State, record.Reason, record.At = intakestate.Pending, "", ""
+		e.state.Set(record, time.Now())
+		e.saveStateLocked()
+		e.rescanLocked()
+		return nil
+	}
+	return fmt.Errorf("no rejected scan %q", digest)
+}
+
 // Trash moves a filed scan into the Box's trash. Nothing is deleted.
 func (e *Engine) Trash(digest, reason string) error {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
+	return e.trashLocked(digest, reason)
+}
+
+func (e *Engine) trashLocked(digest, reason string) error {
 	// A pending scan is not in the Box, so rejecting one is a decision about
 	// the inbox and touches nothing. The source file stays where its owner put
 	// it; emptying a temporary folder is their call, not this tool's.
@@ -434,8 +573,12 @@ func (e *Engine) Image(digest, size string, page int) ([]byte, string, error) {
 	if page < 1 {
 		page = 1
 	}
+	// The lock covers only deciding where the picture comes from. Reading a
+	// scan and drawing a page take long enough that holding it would queue
+	// every thumbnail in the strip behind the page being turned to.
 	e.mutex.Lock()
-	defer e.mutex.Unlock()
+	var path string
+	pending := false
 	if position, found := e.pendingIndexLocked(digest); found {
 		entry := e.pending[position]
 		if page == 1 {
@@ -443,58 +586,158 @@ func (e *Engine) Image(digest, size string, page int) ([]byte, string, error) {
 			if size == thumbcache.SizePreview {
 				picture = entry.thumbs.Preview
 			}
+			e.mutex.Unlock()
 			if len(picture) == 0 {
 				return nil, "", fmt.Errorf("%s has no picture: %s", digest, entry.renderError)
 			}
 			return picture, thumbcache.MediaType, nil
 		}
 		if page > entry.info.Pages {
+			e.mutex.Unlock()
 			return nil, "", fmt.Errorf("%s has no page %d", digest, page)
 		}
-		// A page past the first of something not yet in the Box is not cached:
-		// the cache belongs to the Box, and a scan that is rejected must not
-		// leave pictures of itself behind.
-		pair, err := drawPage(entry.path, page)
-		if err != nil {
-			return nil, "", fmt.Errorf("%s page %d: %w", digest, page, err)
+		path, pending = entry.path, true
+	} else {
+		if data, err := e.thumbs.LoadPage(digest, size, page); err == nil {
+			e.mutex.Unlock()
+			return data, thumbcache.MediaType, nil
+		} else if !errors.Is(err, thumbcache.ErrNotStored) {
+			e.mutex.Unlock()
+			return nil, "", err
 		}
-		return pick(pair, size), thumbcache.MediaType, nil
+		position, found := e.entryIndexLocked(digest)
+		if !found {
+			e.mutex.Unlock()
+			return nil, "", fmt.Errorf("no scan %q", digest)
+		}
+		entry := e.cache.Entries[position]
+		if entry.ScanPath == "" {
+			e.mutex.Unlock()
+			return nil, "", fmt.Errorf("%s has no file to draw from", digest)
+		}
+		path = filepath.Join(e.root, entry.ScanPath)
 	}
-	if data, err := e.thumbs.LoadPage(digest, size, page); err == nil {
-		return data, thumbcache.MediaType, nil
-	} else if !errors.Is(err, thumbcache.ErrNotStored) {
-		return nil, "", err
+	thumbs := e.thumbs
+	e.mutex.Unlock()
+
+	// A page past the first of something not yet in the Box is not saved to
+	// the cache: the cache belongs to the Box, and a scan that is rejected
+	// must not leave pictures of itself behind. It is still kept in memory
+	// with the rest of the document being looked at.
+	var save func(int, thumb.Pair)
+	if !pending {
+		save = func(page int, pair thumb.Pair) {
+			if page > 1 {
+				_ = thumbs.SavePage(digest, page, pair)
+			}
+		}
 	}
-	position, found := e.entryIndexLocked(digest)
-	if !found {
-		return nil, "", fmt.Errorf("no scan %q", digest)
-	}
-	entry := e.cache.Entries[position]
-	if entry.ScanPath == "" {
-		return nil, "", fmt.Errorf("%s has no file to draw from", digest)
-	}
-	// Drawing it again means reading the scan over the network once. That is
-	// the price of a discarded cache, and it is why the cache exists.
-	result, err := scanread.ReadFile(filepath.Join(e.root, entry.ScanPath))
-	if err != nil {
-		return nil, "", err
-	}
-	if page == 1 {
+	// The first page of a filed scan missing from the cache is drawn the way
+	// the inbox read drew it, so the grid's picture does not change: it falls
+	// back to a scan's only picture when page one has none.
+	if page == 1 && !pending {
+		result, err := scanread.ReadFile(path)
+		if err != nil {
+			return nil, "", err
+		}
 		if result.NeedsRender {
 			return nil, "", fmt.Errorf("%s has no picture: %s", digest, result.RenderError)
 		}
-		_ = e.thumbs.Save(entry.File.Digest, result.Thumbs)
+		_ = thumbs.Save(digest, result.Thumbs)
 		return pick(result.Thumbs, size), thumbcache.MediaType, nil
 	}
-	if page > result.Info.Pages {
-		return nil, "", fmt.Errorf("%s has no page %d", digest, page)
-	}
-	pair, err := thumb.RenderPage(result.Info, page)
+	pair, err := e.pages.draw(digest, path, page, save)
 	if err != nil {
 		return nil, "", fmt.Errorf("%s page %d: %w", digest, page, err)
 	}
-	_ = e.thumbs.SavePage(entry.File.Digest, page, pair)
 	return pick(pair, size), thumbcache.MediaType, nil
+}
+
+// pageMemo holds the one document being paged through, parsed once, and every
+// page of it drawn so far. Turning a page otherwise reads the whole scan again,
+// over a network filesystem, and decodes every picture in it, for one page.
+//
+// One document, because a person looks at one at a time; the next scan asked
+// for replaces it, so memory stays bounded by the largest scan.
+//
+// Once a document is open, the rest of its pages are drawn in the background,
+// nearest the one asked for first, so turning finds them ready. A filed scan's
+// pages are saved to the cache as they are drawn; a pending one's are not.
+type pageMemo struct {
+	mutex  sync.Mutex
+	digest string
+	pages  *scanmeta.Pages
+	drawn  map[int]thumb.Pair
+	// save stores a drawn page, or is nil for a scan not yet in the Box.
+	save func(page int, pair thumb.Pair)
+}
+
+// draw returns one page of the scan at path, opening the scan only when it is
+// not the document already held.
+func (m *pageMemo) draw(digest, path string, page int, save func(int, thumb.Pair)) (thumb.Pair, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.digest != digest {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return thumb.Pair{}, err
+		}
+		if scanmeta.LooksLikePDF(data) && !scanmeta.Complete(data) {
+			return thumb.Pair{}, errors.New("the file does not end with %EOF, so it is truncated or was copied badly")
+		}
+		pages, err := scanmeta.OpenPages(data)
+		if err != nil {
+			return thumb.Pair{}, err
+		}
+		m.digest, m.pages, m.drawn, m.save = digest, pages, map[int]thumb.Pair{}, save
+		go m.drawRest(digest, page)
+	}
+	return m.drawLocked(page)
+}
+
+func (m *pageMemo) drawLocked(page int) (thumb.Pair, error) {
+	if pair, found := m.drawn[page]; found {
+		return pair, nil
+	}
+	picture, err := m.pages.Page(page)
+	if err != nil {
+		return thumb.Pair{}, err
+	}
+	pair, err := thumb.RenderPicture(picture.Rendered)
+	if err != nil {
+		return thumb.Pair{}, err
+	}
+	m.drawn[page] = pair
+	if m.save != nil {
+		m.save(page, pair)
+	}
+	return pair, nil
+}
+
+// drawRest draws every page of digest outward from start, one page per hold
+// of the lock so a page asked for is never kept waiting behind the whole
+// document. It stops as soon as another document replaces this one.
+func (m *pageMemo) drawRest(digest string, start int) {
+	m.mutex.Lock()
+	count := 0
+	if m.digest == digest {
+		count = m.pages.Count()
+	}
+	m.mutex.Unlock()
+	for distance := 1; distance < count; distance++ {
+		for _, page := range []int{start + distance, start - distance} {
+			if page < 1 || page > count {
+				continue
+			}
+			m.mutex.Lock()
+			if m.digest != digest {
+				m.mutex.Unlock()
+				return
+			}
+			_, _ = m.drawLocked(page)
+			m.mutex.Unlock()
+		}
+	}
 }
 
 // cacheSize turns the name a page asks for into the cache's own.
@@ -510,18 +753,6 @@ func pick(pair thumb.Pair, size string) []byte {
 		return pair.Preview
 	}
 	return pair.Grid
-}
-
-// drawPage reads a scan from disk and draws one of its pages.
-func drawPage(path string, page int) (thumb.Pair, error) {
-	result, err := scanread.ReadFile(path)
-	if err != nil {
-		return thumb.Pair{}, err
-	}
-	if result.Incomplete {
-		return thumb.Pair{}, errors.New(result.IncompleteReason)
-	}
-	return thumb.RenderPage(result.Info, page)
 }
 
 // Rescan reads the inbox again.
@@ -776,6 +1007,7 @@ func scanFromDraft(draft sidecar.File) Scan {
 		Group:         draft.Group,
 		NeedsSplit:    draft.NeedsSplit,
 	}
+	scan.Documents, scan.IgnoredPages = splitFromRecord(draft)
 	if draft.Total.Valid() {
 		scan.Total = draft.Total.String()
 	}
@@ -884,6 +1116,7 @@ func scanFromEntry(entry index.Entry) Scan {
 		TrashedAt:     string(record.TrashedAt),
 		IngestedAt:    string(record.IngestedAt),
 	}
+	scan.Documents, scan.IgnoredPages = splitFromRecord(record)
 	if scan.Filename == "." || scan.Filename == string(filepath.Separator) {
 		scan.Filename = record.OriginalFilename
 	}
@@ -905,6 +1138,11 @@ func recordFromScan(record sidecar.File, scan Scan) (sidecar.File, error) {
 	record.ExpiryCleared = scan.ExpiryCleared
 	record.Group = scan.Group
 	record.NeedsSplit = scan.NeedsSplit
+	documents, ignored, err := splitToRecord(scan)
+	if err != nil {
+		return sidecar.File{}, err
+	}
+	record.Documents, record.IgnoredPages = documents, ignored
 
 	eventDate, err := parseOptionalDate(scan.EventDate)
 	if err != nil {
@@ -957,6 +1195,8 @@ func changes(before, after Scan) []boxlog.Entry {
 	add("group", before.Group, after.Group)
 	add("tags", strings.Join(before.Tags, ","), strings.Join(after.Tags, ","))
 	add("reviewed", boolText(before.Reviewed), boolText(after.Reviewed))
+	add("documents", splitText(before.Documents), splitText(after.Documents))
+	add("ignored_pages", before.IgnoredPages, after.IgnoredPages)
 	return entries
 }
 
