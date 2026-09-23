@@ -13,7 +13,7 @@ config={{ .paths.host_config }}
 mkdir -p "$config"
 chmod 0700 "$config"
 
-for file in smb.conf smbpasswd usermap groups.txt users.txt; do
+for file in smb.conf smbpasswd groups.txt users.txt; do
     install -m 0600 "$here/$file" "$config/$file"
 done
 
