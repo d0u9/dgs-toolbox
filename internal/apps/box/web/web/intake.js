@@ -38,6 +38,7 @@ const split = splitter({
   scan: () => current(),
   draft: () => state.draft,
   showError,
+  say,
   changed: () => {
     draw();
     saveSoon();
@@ -226,6 +227,7 @@ function drawTypes() {
     item.dataset.name = type.name;
     item.className = `type type-${type.nature}`;
     item.setAttribute('role', 'option');
+    item.title = `${type.covers} — ${lifetimeSentence(type)}`;
     item.innerHTML =
       `<kbd>${type.key}</kbd>` +
       `<span class="type-text">` +
@@ -244,6 +246,20 @@ function lifetimeText(type) {
   if (type.lifetime === 0) return 'event day';
   if (type.lifetime % 365 === 0) return `+${type.lifetime / 365}y`;
   return `+${type.lifetime}d`;
+}
+
+// lifetimeSentence is the hover text's long form of lifetimeText.
+function lifetimeSentence(type) {
+  if (type.expiryExpected && (type.lifetime === null || type.lifetime === undefined)) {
+    return 'no default expiry; enter the date printed on it';
+  }
+  if (type.lifetime === null || type.lifetime === undefined) return 'kept for good, no expiry';
+  if (type.lifetime === 0) return 'expires on the event date';
+  if (type.lifetime % 365 === 0) {
+    const years = type.lifetime / 365;
+    return `expires ${years} year${years === 1 ? '' : 's'} after the event date`;
+  }
+  return `expires ${type.lifetime} days after the event date`;
 }
 
 function draw() {
@@ -327,7 +343,13 @@ function flags(scan) {
     out.push({ kind: 'note', text: `${documents.length} split${documents.length === 1 ? '' : 's'}` });
   } else if (scan.needsSplit) out.push({ kind: 'note', text: 'several documents — filed whole' });
   if (scan.needsRender) out.push({ kind: 'note', text: 'no image to extract' });
-  if (scan.group) out.push({ kind: 'note', text: `group ${scan.group}` });
+  // The draft's group first: g sets it before any save reaches the scan.
+  const group = state.draft.group ?? scan.group;
+  if (group) {
+    const others = groupMembers(group).filter((member) => member !== scan);
+    const names = others.map((member) => member.filename).join(', ');
+    out.push({ kind: 'note', text: names ? `same document as ${names}` : `group ${group}` });
+  }
   return out;
 }
 
@@ -395,7 +417,20 @@ function drawQueue() {
     time.textContent = scan.scannedAt
       ? `Scanned ${localDate(scan.scannedAt)} ${localTime(scan.scannedAt)}`
       : '';
-    item.append(name, time);
+    // The scan on the desk shows its draft, so a g or a split is seen here
+    // before the save lands.
+    const shown = index === state.cursor ? { ...scan, ...state.draft } : scan;
+    const peers = state.pending.map((peer, at) => (at === state.cursor ? shown : peer));
+    const typeName = shown.type && shown.type !== 'unsorted' ? shown.type : '';
+    const marks = document.createElement('span');
+    marks.className = 'queue-marks';
+    marks.innerHTML =
+      (typeName ? `<span class="badge">${typeName}</span>` : '') + badgeHTML(handling(shown, peers));
+    if (shown.group) {
+      item.classList.add('queue-grouped');
+      item.style.setProperty('--group-hue', groupHue(shown.group));
+    }
+    item.append(name, time, marks);
     item.addEventListener('click', () => {
       state.cursor = index;
       state.anchor = null;
@@ -604,12 +639,59 @@ async function rejectCurrent() {
 
 // sameAsPrevious binds this scan to the one before it: a contract scanned in
 // three passes, bound while the parts are still on screen together.
-function sameAsPrevious() {
+//
+// The previous scan is given the group too, so both sides name it: without
+// that the one before carries nothing and the bond is only one-way. Pressing
+// g again on a scan already bound lets it go.
+async function sameAsPrevious() {
+  const scan = current();
   const previous = state.pending[state.cursor - 1];
-  if (!previous) return;
-  state.draft.group = previous.group || previous.digest.slice(0, 6);
+  if (!scan) return;
+  if (!previous) {
+    say('g binds a scan to the one above it; this is the first in the list.');
+    return;
+  }
+  const group = previous.group || previous.digest.slice(0, 6);
+  if ((state.draft.group ?? scan.group) === group) {
+    state.draft.group = '';
+    say(`No longer the same document as ${previous.filename}.`);
+    draw();
+    saveSoon();
+    return;
+  }
+  state.draft.group = group;
+  if (!previous.group) {
+    try {
+      await api.patch({ digest: previous.digest, group });
+      previous.group = group;
+    } catch (err) {
+      showError(err);
+    }
+  }
+  const count = groupMembers(group).length + (groupMembers(group).includes(scan) ? 0 : 1);
+  say(`Same document as ${previous.filename} — ${count} scans bound together. g again undoes.`);
   draw();
   saveSoon();
+}
+
+// groupMembers is every scan still in the inbox that belongs to group,
+// counting the desk's unsaved draft for the scan on it.
+function groupMembers(group) {
+  return state.pending.filter((candidate) =>
+    (candidate === current() ? state.draft.group ?? candidate.group : candidate.group) === group);
+}
+
+// say puts a short line on the desk for a key whose effect is otherwise easy
+// to miss. It clears itself; the next say replaces it.
+const NOTICE = { timer: null };
+function say(text) {
+  const line = el('notice');
+  line.textContent = text;
+  line.hidden = false;
+  clearTimeout(NOTICE.timer);
+  NOTICE.timer = setTimeout(() => {
+    line.hidden = true;
+  }, 5000);
 }
 
 function wireBatch() {
@@ -765,6 +847,9 @@ const KEYS = {
     ' ': () => split.markOrClose(),
     x: () => split.ignore(),
     ':': () => split.openText(),
+    // The full-width colon, so a Chinese or Japanese input method in its
+    // own mode still opens the splits.
+    '\uff1a': () => split.openText(),
     '-': () => split.remove(),
     k: () => toggleKeep(),
     g: () => sameAsPrevious(),
@@ -788,6 +873,9 @@ function assertTypeKeysAreFree() {
 
 function toggleKeep() {
   state.draft.expiryCleared = !state.draft.expiryCleared;
+  say(state.draft.expiryCleared
+    ? 'Kept for good — no expiry. k again goes back to the type default.'
+    : 'Expiry back to the type default.');
   drawExpiry();
   saveSoon();
 }

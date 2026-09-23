@@ -26,13 +26,13 @@
 <main class="intake-main">
   <aside class="queue" aria-label="Inbox">
     <div class="queue-tabs desk-heading" role="tablist">
-      <button type="button" role="tab" id="tab-inbox" class="queue-tab" aria-selected="true" aria-controls="inbox-panel">Inbox</button>
-      <button type="button" role="tab" id="tab-rejected" class="queue-tab" aria-selected="false" aria-controls="rejected">Rejected (<span id="rejected-count">0</span>)</button>
+      <button type="button" role="tab" id="tab-inbox" title="Scans still to describe" class="queue-tab" aria-selected="true" aria-controls="inbox-panel">Inbox</button>
+      <button type="button" role="tab" id="tab-rejected" title="Scans set aside; still in the inbox folder, untouched" class="queue-tab" aria-selected="false" aria-controls="rejected">Rejected (<span id="rejected-count">0</span>)</button>
     </div>
     <div id="inbox-panel" role="tabpanel" aria-labelledby="tab-inbox">
     <div id="duplicates" class="notice" hidden>
       <p id="duplicates-text"></p>
-      <button type="button" id="duplicates-reject" class="text-button">Reject all of them</button>
+      <button type="button" id="duplicates-reject" title="Reject every scan already in the Box; nothing is deleted" class="text-button">Reject all of them</button>
     </div>
     <ol id="queue-list" class="queue-list"></ol>
     <section id="held-back" class="held-back" hidden>
@@ -53,7 +53,7 @@
 
   <section class="sheet" aria-label="Scan">
     <div class="sheet-tools">
-      <button type="button" id="pages-toggle" class="text-button" aria-pressed="false" hidden>Pages <kbd>p</kbd></button>
+      <button type="button" id="pages-toggle" title="Show or hide the page strip (p)" class="text-button" aria-pressed="false" hidden>Pages <kbd>p</kbd></button>
       <span id="page-label" class="page-label"></span>
     </div>
     <div class="sheet-body">
@@ -71,10 +71,11 @@
   <section class="desk" aria-label="Describe">
     <div class="desk-body">
     <p class="progress"><span id="progress-text">—</span> <span id="save-state" class="save-state"></span></p>
+    <p id="notice" class="notice-line" role="status" hidden></p>
 
     <div id="batch" class="batch" hidden>
       <strong id="batch-count">1</strong> selected — one type will be given to all of them.
-      <button type="button" id="batch-clear" class="text-button">clear</button>
+      <button type="button" id="batch-clear" title="Drop the selection and go back to one scan" class="text-button">clear</button>
     </div>
 
     <div id="split-head" class="split-head" hidden>
@@ -82,7 +83,7 @@
         <span class="split-label">Split</span>
         <span id="split-title" class="split-title"></span>
         <span id="split-chips" class="split-chips"></span>
-        <button type="button" id="split-remove" class="text-button split-remove" hidden>Remove this split <kbd>-</kbd></button>
+        <button type="button" id="split-remove" title="Remove the selected split; its pages go back to unsplit (-)" class="text-button split-remove" hidden>Remove this split <kbd>-</kbd></button>
       </div>
       <p id="split-notes" class="split-notes"></p>
       <p id="split-confirm" class="split-confirm" hidden></p>

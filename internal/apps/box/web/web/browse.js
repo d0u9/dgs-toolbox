@@ -278,9 +278,8 @@ function card(scan) {
   if (!scan.reviewed) badges.push('<span class="badge badge-guess">guess</span>');
   if (!scan.typeKnown) badges.push(`<span class="badge badge-warn">unknown type</span>`);
   if (scan.state === 'dead') badges.push('<span class="badge badge-dead">dead</span>');
-  if (scan.documents?.length) badges.push(`<span class="badge">${scan.documents.length} docs</span>`);
-  else if (scan.needsSplit) badges.push('<span class="badge">split</span>');
-  if (scan.group) badges.push(`<span class="badge">group</span>`);
+  if (!scan.documents?.length && scan.needsSplit) badges.push('<span class="badge">split</span>');
+  badges.push(badgeHTML(handling(scan, state.scans)));
   item.innerHTML =
     `<img class="card-thumb" loading="lazy" src="${api.image(scan.digest, 'thumb')}" alt="">` +
     `<div class="card-body">` +
