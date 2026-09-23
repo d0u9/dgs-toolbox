@@ -33,13 +33,18 @@ const NoLMHash = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 // padded to the width Samba writes, inside brackets.
 const AccountFlags = "[U          ]"
 
-// NoChangeTime is the last-change-time field of an entry whose change time
-// is not tracked. A rendered file is reproducible — the same inventory and
-// the same secrets produce the same bytes — so the current time cannot go
-// in it: every render would differ from the last, and a diff would stop
-// saying whether anything changed. Samba reads the field and does not
-// require it to be meaningful.
-const NoChangeTime = "LCT-00000000"
+// ChangeTime is the last-change-time field every entry carries: a fixed
+// moment, 2020-01-01T00:00:00Z. A rendered file is reproducible — the same
+// inventory and the same secrets produce the same bytes — so the current
+// time cannot go in it: every render would differ from the last, and a diff
+// would stop saying whether anything changed.
+//
+// It must not be zero. Samba reads a password last set at time zero as one
+// an administrator has flagged to be changed at next logon, whatever the
+// account's other flags say, and refuses the logon with "password must
+// change" — which a client cannot satisfy, since the password is this
+// generator's to set. Any fixed moment in the past avoids that.
+const ChangeTime = "LCT-5E0BE100"
 
 // NTHash is the NT hash of password, as the 32 lowercase hexadecimal
 // characters an smbpasswd entry holds.
@@ -63,8 +68,8 @@ func NTHash(password string) string {
 //	name:uid:LM:NT:[flags]:LCT-xxxxxxxx:
 //
 // The LM hash is always absent, the flags are always an ordinary enabled
-// account, and the change time is always unset, because those are the only
-// values this generator has any business writing. The uid must be the one
+// account, and the change time is always ChangeTime, because those are the
+// only values this generator has any business writing. The uid must be the one
 // the account has where Samba runs: the entry names a POSIX account, and an
 // entry whose uid belongs to nobody is one smbd refuses to authenticate.
 func Entry(name string, uid int, password string) string {
@@ -74,7 +79,7 @@ func Entry(name string, uid int, password string) string {
 		NoLMHash,
 		strings.ToUpper(NTHash(password)),
 		AccountFlags,
-		NoChangeTime,
+		ChangeTime,
 		"",
 	}, ":")
 }
