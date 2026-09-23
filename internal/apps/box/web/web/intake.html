@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body class="intake">
@@ -70,9 +71,6 @@
 
   <section class="desk" aria-label="Describe">
     <div class="desk-body">
-    <p class="progress"><span id="progress-text">—</span> <span id="save-state" class="save-state"></span></p>
-    <p id="notice" class="notice-line" role="status" hidden></p>
-
     <div id="batch" class="batch" hidden>
       <strong id="batch-count">1</strong> selected — one type will be given to all of them.
       <button type="button" id="batch-clear" title="Drop the selection and go back to one scan" class="text-button">clear</button>
@@ -117,14 +115,13 @@
         <span class="fieldrow-label">Total <span class="fieldrow-hint" id="currency-hint"></span></span>
         <input id="total" type="text" placeholder="123.50 or USD 45" spellcheck="false">
       </label>
-      <label class="fieldrow wide">
-        <span class="fieldrow-label">Tags</span>
-        <input id="tags" type="text" placeholder="travel, japan, tax" spellcheck="false">
-      </label>
+      <div class="fieldrow wide">
+        <span class="fieldrow-label" id="tags-label">Tags</span>
+        <div id="tags" data-label="Tags"></div>
+      </div>
     </form>
 
     <p id="expiry-line" class="expiry-line"></p>
-    <p id="error" class="error" hidden></p>
     </div>
 
     <ul id="keys" class="keys" aria-label="Keys"></ul>
@@ -132,10 +129,12 @@
 
 </main>
 
+<script src="status.js"></script>
 <script src="api.js"></script>
 <script src="pages.js"></script>
 <script src="split.js"></script>
 <script src="zone.js"></script>
+<script src="tags.js"></script>
 <script src="zoom.js"></script>
 <script src="intake.js"></script>
 </body>

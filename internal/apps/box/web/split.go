@@ -11,6 +11,7 @@ import (
 	"dgs-toolbox/internal/box/money"
 	"dgs-toolbox/internal/box/pagerange"
 	"dgs-toolbox/internal/box/sidecar"
+	"dgs-toolbox/internal/box/tag"
 )
 
 // SplitDocument is one document inside a split scan, as the pages see it:
@@ -51,7 +52,7 @@ func applySplit(scan Scan, documents *[]SplitDocument, ignored *string, defaultC
 			Pages:       pagerange.Format(ranges),
 			Type:        strings.TrimSpace(document.Type),
 			Description: strings.TrimSpace(document.Description),
-			Tags:        normalizeTags(document.Tags),
+			Tags:        tag.List(document.Tags),
 		}
 		if clean.Type != "" {
 			if _, known := doctype.Lookup(clean.Type); !known {

@@ -7,7 +7,6 @@
 package box
 
 import (
-	"fmt"
 	"strings"
 
 	boxweb "dgs-toolbox/internal/apps/box/web"
@@ -35,32 +34,19 @@ type servedMsg struct {
 	err error
 }
 
-// Page is which of the two pages a command opens. They share one server and
-// one Box; they are separate commands because their risk differs — intake
-// copies, verifies and publishes bytes, and browse never writes a scan at all.
-type Page string
-
-const (
-	// Intake is dgs box import: describing new scans from the inbox.
-	Intake Page = "intake"
-	// Browse is dgs box view: looking through a Box and correcting it.
-	Browse Page = "view"
-)
-
-// Model is one box command: it starts the pages, says where they are, and
-// shows what this Box is.
+// Model is dgs box: it starts the pages, says where they are, and shows what
+// this Box is.
 type Model struct {
 	settings boxweb.Settings
-	page     Page
 	url      string
 	err      error
 	width    int
 	height   int
 }
 
-// NewModel builds the command model for one page.
-func NewModel(settings boxweb.Settings, page Page) Model {
-	return Model{settings: settings, page: page, width: 80, height: 22}
+// NewModel builds the command model.
+func NewModel(settings boxweb.Settings) Model {
+	return Model{settings: settings, width: 80, height: 22}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -84,24 +70,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// pageURL is the address of this command's page.
-func (m Model) pageURL() string {
-	if m.url == "" {
-		return ""
-	}
-	switch m.page {
-	case Intake:
-		return m.url + "intake/"
-	default:
-		return m.url + "browse/"
-	}
-}
+// pageURL is the address to open. The server's root lands on browse, which
+// links to intake and, when there are any, the exceptions.
+func (m Model) pageURL() string { return m.url }
 
 func (m Model) View() string {
-	heading := "BOX · INTAKE"
-	if m.page == Browse {
-		heading = "BOX · BROWSE"
-	}
+	heading := "BOX"
 	lines := []string{}
 	switch {
 	case m.err != nil:
@@ -112,9 +86,7 @@ func (m Model) View() string {
 		lines = append(lines, hintStyle.Render("Page    ")+m.pageURL())
 	}
 	lines = append(lines, hintStyle.Render("Box     ")+orAsk(m.settings.Root, "not set — box.root"))
-	if m.page == Intake {
-		lines = append(lines, hintStyle.Render("Inbox   ")+orAsk(m.settings.Inbox, "not set — box.inbox"))
-	}
+	lines = append(lines, hintStyle.Render("Inbox   ")+orAsk(m.settings.Inbox, "not set — box.inbox"))
 	if m.settings.Currency != "" {
 		lines = append(lines, hintStyle.Render("Amounts ")+m.settings.Currency+hintStyle.Render(" unless the amount names another"))
 	} else {
@@ -125,13 +97,9 @@ func (m Model) View() string {
 		lines = append(lines, "", hintStyle.Render(
 			"No Box: the page opens on made-up scans and says so. Nothing is written to disk.",
 		))
-	} else if m.page == Intake {
-		lines = append(lines, "", hintStyle.Render(
-			"Filing copies a scan into the Box and publishes it only after reading it back.",
-		))
 	} else {
 		lines = append(lines, "", hintStyle.Render(
-			"Browsing writes sidecars and never a scan. Nothing is ever deleted.",
+			"Filing publishes a scan only after reading it back. Nothing is ever deleted.",
 		))
 	}
 	content := titleStyle.Render(heading) + "\n\n" + strings.Join(lines, "\n")
@@ -146,10 +114,6 @@ func orAsk(value, fallback string) string {
 }
 
 func (m Model) Status() tui.Status {
-	center := "Intake"
-	if m.page == Browse {
-		center = "Browse"
-	}
 	state := "STARTING"
 	if m.url != "" {
 		state = "SERVING"
@@ -159,7 +123,7 @@ func (m Model) Status() tui.Status {
 	}
 	return tui.Status{
 		Left:   state,
-		Center: fmt.Sprintf("Box · %s", center),
+		Center: "Box",
 		Right:  "o Open page  esc Back  q Quit",
 	}
 }

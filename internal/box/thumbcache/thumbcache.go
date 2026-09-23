@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"dgs-toolbox/internal/box"
@@ -201,6 +202,39 @@ func (s Store) Sweep(keep int, now time.Time) (int, error) {
 	})
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return dropped, err
+	}
+	return dropped, nil
+}
+
+// Drop removes every picture stored for a scan: its grid thumbnail, its
+// preview and every page drawn past the first. It reports how many files
+// went. A picture that was never stored is not an error — dropping is how a
+// broken picture is made to be drawn again, and nothing there means nothing to
+// drop.
+func (s Store) Drop(fullDigest string) (int, error) {
+	short := digest.Short(fullDigest, 0)
+	if len(short) < 2 {
+		return 0, fmt.Errorf("digest %q is too short to hold a picture", fullDigest)
+	}
+	prefix := digest.Short(fullDigest, 8) + "-"
+	dropped := 0
+	for _, tree := range []string{"thumbs", "previews"} {
+		entries, err := os.ReadDir(filepath.Join(s.Directory, tree, short[:2]))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return dropped, err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) || !strings.HasSuffix(entry.Name(), ".jpg") {
+				continue
+			}
+			if err := os.Remove(filepath.Join(s.Directory, tree, short[:2], entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return dropped, err
+			}
+			dropped++
+		}
 	}
 	return dropped, nil
 }

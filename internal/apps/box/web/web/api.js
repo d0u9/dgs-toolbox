@@ -2,6 +2,10 @@
 // digest; none of them names a path, because a path in a request is a path out
 // of the Box.
 
+// pictureVersion changes when pictures are redrawn. The server lets the browser
+// keep a picture for an hour, so a redrawn one is asked for under a new URL.
+let pictureVersion = 0;
+
 async function ask(path, options) {
   const response = await fetch(path, options);
   const body = await response.json().catch(() => ({}));
@@ -14,6 +18,7 @@ async function ask(path, options) {
 const api = {
   config: () => ask('/api/config'),
   types: () => ask('/api/types'),
+  tags: () => ask('/api/tags'),
   intake: () => ask('/api/intake'),
   scans: () => ask('/api/scans'),
   exceptions: () => ask('/api/exceptions'),
@@ -51,6 +56,12 @@ const api = {
   incomplete: () => ask('/api/incomplete'),
   rejected: () => ask('/api/rejected'),
   rejectedFile: (digest) => `/api/rejected/file?digest=${encodeURIComponent(digest)}`,
+  reveal: (digest) =>
+    ask('/api/reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ digest }),
+    }),
   unfile: (digest) =>
     ask('/api/unfile', {
       method: 'POST',
@@ -72,11 +83,23 @@ const api = {
   // Verify reads every byte in the Box, so it is a POST and never something a
   // page reload starts.
   verify: () => ask('/api/verify', { method: 'POST' }),
+  // redraw drops a filed scan's stored pictures and draws them again; with no
+  // digest it redraws every filed scan, which reads every file.
+  redraw: async (digest) => {
+    const body = await ask('/api/redraw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ digest: digest || '' }),
+    });
+    pictureVersion = Date.now();
+    return body;
+  },
   // page counts from 1 and is left off for the first page, which is the picture
   // every scan has.
   image: (digest, size, page) =>
     `/api/image?digest=${encodeURIComponent(digest)}&size=${size}` +
-    (page && page > 1 ? `&page=${page}` : ''),
+    (page && page > 1 ? `&page=${page}` : '') +
+    (pictureVersion ? `&v=${pictureVersion}` : ''),
 };
 
 // localDate reads a scan's own timestamp in the offset it was recorded with,

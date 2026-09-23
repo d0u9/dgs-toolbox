@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DGS · Box</title>
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="check">
+<div id="sample-banner" class="banner" hidden>
+  <strong>Sample scans.</strong> No Box is configured, so these are made up: nothing here is a real file, and no edit reaches a disk.
+</div>
+
+<header class="topbar">
+  <span class="brand">BOX</span>
+  <span class="page-name">Exceptions</span>
+  <span class="topbar-spacer"></span>
+  <span id="paths" class="paths"></span>
+  <a class="topbar-link" href="/browse/">← Browse</a>
+</header>
+
+<main class="check-main">
+  <div class="check-column">
+    <p class="check-lead">
+      What the Box cannot explain about its own tree — usually something done to it by hand.
+      Nothing here is repaired on its own.
+    </p>
+
+    <p id="check-clear" class="check-clear" hidden>Every scan has its sidecar and every sidecar its scan.</p>
+
+    <section id="group-adopt" class="check-group" hidden>
+      <h2 class="check-title">Scans with no sidecar <span class="check-count"></span></h2>
+      <p class="check-what">
+        A file in the tree that nothing describes: put there by hand, or its sidecar was lost.
+        <strong>Adopt</strong> describes it where it lies. It is not copied and not moved;
+        only its name gains the digest prefix that pairs it with its sidecar.
+      </p>
+      <ul class="check-list"></ul>
+    </section>
+
+    <section id="group-mismatch" class="check-group check-danger" hidden>
+      <h2 class="check-title">Bytes that changed <span class="check-count"></span></h2>
+      <p class="check-what">
+        The file no longer matches the digest recorded when it was taken in. This may be the first sign of bit rot.
+        Nothing was rewritten: compare it with a backup before doing anything.
+      </p>
+      <ul class="check-list"></ul>
+    </section>
+
+    <section id="group-orphan" class="check-group" hidden>
+      <h2 class="check-title">Sidecars with no scan <span class="check-count"></span></h2>
+      <p class="check-what">
+        A description whose file is gone: moved or removed by hand. Reported only, because it may have been on purpose.
+        Put the file back, or move the sidecar into <code>trash/</code> yourself.
+      </p>
+      <ul class="check-list"></ul>
+    </section>
+
+    <section id="group-other" class="check-group" hidden>
+      <h2 class="check-title">Other <span class="check-count"></span></h2>
+      <ul class="check-list"></ul>
+    </section>
+
+    <section class="check-group check-verify">
+      <h2 class="check-title">Redraw every thumbnail</h2>
+      <p class="check-what">
+        Throws away every stored picture and draws each scan's thumbnail again from its file. Reads every file in the Box.
+        Only the local cache changes; the Box is not written to.
+      </p>
+      <div class="check-verify-row">
+        <button type="button" id="redraw" class="button">Redraw all</button>
+        <span id="redraw-note" class="check-note"></span>
+      </div>
+    </section>
+
+    <section class="check-group check-verify">
+      <h2 class="check-title">Verify every byte</h2>
+      <p class="check-what">
+        Reads every file in the Box and compares it with its recorded digest — tens of gigabytes over a network filesystem.
+        A mismatch appears above, with both digests, and is never corrected.
+      </p>
+      <div class="check-verify-row">
+        <button type="button" id="verify" class="button">Verify now</button>
+        <span id="verify-note" class="check-note"></span>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script src="status.js"></script>
+<script src="api.js"></script>
+<script src="check.js"></script>
+</body>
+</html>

@@ -59,11 +59,14 @@ func TestInitAction_RefusesWithoutARoot(t *testing.T) {
 	}
 }
 
-// TestOnlyTheInteractivePairAreCommands pins the split: import and view open a
-// workspace because that is what they are for, and the four that write nothing
-// into the Box and ask nothing report to stdout instead.
-func TestOnlyTheInteractivePairAreCommands(t *testing.T) {
+// TestBoxIsOneDirectCommand pins the split: `dgs box` itself starts the pages,
+// where everything interactive happens, and the four that write nothing into
+// the Box and ask nothing report to stdout instead.
+func TestBoxIsOneDirectCommand(t *testing.T) {
 	app := New()
+	if !app.Direct {
+		t.Error("box is not Direct: `dgs box` would open a picker")
+	}
 
 	var commands, actions []string
 	for _, cmd := range app.Commands {
@@ -73,7 +76,7 @@ func TestOnlyTheInteractivePairAreCommands(t *testing.T) {
 		actions = append(actions, action.ID)
 	}
 
-	wantCommands := []string{"import", "view"}
+	wantCommands := []string{"box"}
 	wantActions := []string{"init", "index", "verify", "dedupe"}
 	if !slices.Equal(commands, wantCommands) {
 		t.Errorf("commands = %v, want %v", commands, wantCommands)
