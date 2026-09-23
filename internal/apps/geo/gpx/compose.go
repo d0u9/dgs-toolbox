@@ -229,42 +229,6 @@ func addTracks(target, from string, tracks []gpxfile.Track) error {
 	return saveSidecar(target, file)
 }
 
-// removeAdded takes one added track out of a GPX file, with every edit,
-// cut and fill on its points.
-func (a api) removeAdded(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Path  string `json:"path"`
-		Index int    `json:"index"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
-		return
-	}
-	result, err := analyse(body.Path, stops.Defaults())
-	if err != nil {
-		writeError(w, statusFor(err), err)
-		return
-	}
-	if result.sidecarErr != nil {
-		writeError(w, http.StatusUnprocessableEntity, result.sidecarErr)
-		return
-	}
-	file := result.cleaning
-	if body.Index < 0 || body.Index >= len(file.Added) {
-		writeError(w, http.StatusConflict, errors.New("no such added track; reload the page"))
-		return
-	}
-	if first, last, ok := trackRange(result, result.own+body.Index); ok {
-		file.Delete(first, last)
-	}
-	file.Added = append(file.Added[:body.Index:body.Index], file.Added[body.Index+1:]...)
-	if err := saveSidecar(body.Path, file); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeJSON(w, map[string]bool{"ok": true})
-}
-
 // trackRange is the composed indices of one track's points.
 func trackRange(a analysis, index int) (first, last int, ok bool) {
 	first, last = -1, -1
@@ -325,19 +289,7 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	file := result.cleaning
-	waypoints := append([]gpxfile.Waypoint(nil), result.file.Waypoints...)
-	routes := append([]gpxfile.Route(nil), result.file.Routes...)
-	for i := range waypoints {
-		if name, ok := file.Names[fmt.Sprintf("w%d", i)]; ok {
-			waypoints[i].Name = name
-		}
-	}
-	for i := range routes {
-		if name, ok := file.Names[fmt.Sprintf("r%d", i)]; ok {
-			routes[i].Name = name
-		}
-	}
-	if err := gpxfile.CreateAll(target, result.name, waypoints, routes, editedTracks(result)); err != nil {
+	if err := composeInto(target, result); err != nil {
 		if errors.Is(err, gpxfile.ErrExists) {
 			writeError(w, http.StatusConflict, err)
 		} else {
@@ -355,27 +307,59 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 		Plan:     file.Plan,
 	}
 	// Newly created dgs files keep their remaining edit state inside GPX.
-	saveErr := saveSidecar(target, saved)
+	saveErr := writeSidecarNow(target, saved)
 	if saveErr != nil {
 		os.Remove(target)
 		writeError(w, http.StatusInternalServerError, saveErr)
 		return
 	}
-	// A saved draft is done with; the original goes back to its own tracks,
-	// as the added ones come last.
+	// A saved draft is done with; the original goes back to its own tracks.
+	// The added ones may be anywhere among them, so each goes with its
+	// points, the last first so an earlier range still names its points.
 	if isDraft(body.Path) {
 		drafts.remove(body.Path)
 	} else if len(file.Added) > 0 {
-		if first, _, ok := trackRange(result, result.own); ok {
-			file.Delete(first, len(result.source)-1)
+		for i := len(result.keys.Tracks) - 1; i >= 0; i-- {
+			at, err := locate(result, result.keys.Tracks[i])
+			if err != nil || at.held < 0 {
+				continue
+			}
+			if first, last, ok := trackRange(result, i); ok {
+				file.Delete(first, last)
+			}
 		}
 		file.Added = nil
-		if err := saveSidecar(body.Path, file); err != nil {
+		file.Order = withoutAdded(file.Order, result.layout.Tracks)
+		// The added tracks are in the file just written, so the source no
+		// longer holds them. This is part of the save the user asked for, so
+		// it is written now rather than held back.
+		if err := writeSidecarNow(body.Path, file); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		pending.drop(body.Path)
 	}
 	writeJSON(w, map[string]any{"ok": true, "path": target})
+}
+
+// composeInto writes the file as the page shows it — the edited points, the
+// tracks added from other files, and the waypoints and routes under the names
+// the page gives them — into a file that is not there yet.
+func composeInto(target string, result analysis) error {
+	file := result.cleaning
+	waypoints := append([]gpxfile.Waypoint(nil), result.file.Waypoints...)
+	routes := append([]gpxfile.Route(nil), result.file.Routes...)
+	for i := range waypoints {
+		if name, ok := file.Names[result.keys.Waypoints[i]]; ok {
+			waypoints[i].Name = name
+		}
+	}
+	for i := range routes {
+		if name, ok := file.Names[result.keys.Routes[i]]; ok {
+			routes[i].Name = name
+		}
+	}
+	return gpxfile.CreateAll(target, result.name, waypoints, routes, editedTracks(result))
 }
 
 // editedTracks is every track of a file as the page shows it: the points
@@ -385,21 +369,27 @@ func (a api) saveAs(w http.ResponseWriter, r *http.Request) {
 // file written.
 func editedTracks(a analysis) []gpxfile.Track {
 	tracks := []gpxfile.Track{}
-	for i, trk := range a.file.Tracks {
-		first, last, ok := trackRange(a, i)
-		if !ok {
-			continue // every point of it was removed
-		}
-		name := trk.Name
-		if renamed, given := a.cleaning.Names[fmt.Sprintf("t%d", i)]; given {
-			name = renamed
-		}
-		written := a.trackOf(first, last, name)
-		if len(written.Segments) > 0 {
+	for i := range a.file.Tracks {
+		if written, ok := editedTrack(a, i); ok {
 			tracks = append(tracks, written)
 		}
 	}
 	return tracks
+}
+
+// editedTrack is one of them, by its place in the file as the page shows it.
+// It answers false when cleaning left the track no points.
+func editedTrack(a analysis, index int) (gpxfile.Track, bool) {
+	first, last, ok := trackRange(a, index)
+	if !ok {
+		return gpxfile.Track{}, false // every point of it was removed
+	}
+	name := a.file.Tracks[index].Name
+	if renamed, given := a.cleaning.Names[a.keys.Tracks[index]]; given {
+		name = renamed
+	}
+	written := a.trackOf(first, last, name)
+	return written, len(written.Segments) > 0
 }
 
 // movedCuts are the file's cuts where they fall in the file written: the

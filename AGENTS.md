@@ -15,6 +15,9 @@
   follows Photo Import's readback contract. Nothing is deleted: discarding
   moves a file into the Box's trash.
 - **GPX** — milestone by milestone per [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
+  Iron rule: a GPX `dgs` did not write is never written to. Its edits live in
+  the sidecar beside it; anything wanting them inside a GPX writes a new file.
+  A recording cannot be recorded again, a sidecar can be entered again.
 - **`dgs cred`** — age identities, recipients, encrypted vault, per
   [`docs/apps/cred/`](docs/apps/cred/). Decrypted content stays in memory unless
   an Action the user confirms writes it. A vault file is replaced only after the

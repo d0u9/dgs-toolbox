@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/filebrowse"
 	"dgs-toolbox/internal/geo"
+	"dgs-toolbox/internal/geo/clean"
 	"dgs-toolbox/internal/geo/compose"
 	"dgs-toolbox/internal/geo/gpxfile"
 	"dgs-toolbox/internal/geo/osrm"
@@ -133,27 +135,6 @@ func TestChangesOnlyFromThePage(t *testing.T) {
 		if response.StatusCode != c.want {
 			t.Errorf("%s from %q = %d, want %d", c.contentType, c.origin, response.StatusCode, c.want)
 		}
-	}
-}
-
-func TestDirListsFoldersAndGPXFiles(t *testing.T) {
-	root := testdataDir(t)
-	server := httptest.NewServer(Handler(Settings{Root: root}))
-	defer server.Close()
-	var got struct {
-		Path   string             `json:"path"`
-		Parent string             `json:"parent"`
-		Dirs   []filebrowse.Entry `json:"dirs"`
-		Files  []filebrowse.Entry `json:"files"`
-	}
-	if status := get(t, server, "/api/dir", &got); status != http.StatusOK {
-		t.Fatalf("status %d", status)
-	}
-	if len(got.Dirs) != 1 || got.Dirs[0].Name != "2026-09-hangzhou" || len(got.Files) != 1 || got.Files[0].Name != "planned-no-time.gpx" {
-		t.Fatalf("dir = %+v", got)
-	}
-	if status := get(t, server, "/api/dir?path="+url.QueryEscape(filepath.Join(root, "missing")), nil); status != http.StatusNotFound {
-		t.Fatalf("missing dir status %d", status)
 	}
 }
 
@@ -351,7 +332,18 @@ func TestCleanIsSavedAndApplied(t *testing.T) {
 	}
 	var after trackJSON
 	get(t, server, "/api/track?path="+url.QueryEscape(path), &after)
+	if !after.Unsaved || after.Clean.Sidecar != "" {
+		t.Fatalf("an edit reached disk before it was saved: unsaved %v sidecar %q", after.Unsaved, after.Clean.Sidecar)
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/save", map[string]any{"path": path}); code != http.StatusOK {
+		t.Fatalf("save = %d", code)
+	}
+	after = trackJSON{}
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &after)
 	c := after.Clean
+	if after.Unsaved {
+		t.Fatal("still unsaved after save")
+	}
 	if c.Sidecar == "" || c.Counts.Manual != 2 || c.Counts.Stop == 0 || c.Counts.Moved == 0 || after.Removed[0] != "manual" || len(after.Original) != len(after.Points) {
 		t.Fatalf("cleaned = %+v", c)
 	}
@@ -379,6 +371,11 @@ func TestCleanIsSavedAndApplied(t *testing.T) {
 	}
 	if code := put(`{"path":` + string(quoted) + `,"clean":{}}`); code != http.StatusOK {
 		t.Fatalf("clearing = %d", code)
+	}
+	// Clearing the cleaning is an edit like any other: the sidecar goes when
+	// it is saved, not before.
+	if code, _ := send(t, server, http.MethodPost, "/api/save", map[string]any{"path": path}); code != http.StatusOK {
+		t.Fatalf("save after clearing = %d", code)
 	}
 	if _, err := os.Stat(path + ".dgs.json"); !os.IsNotExist(err) {
 		t.Fatalf("sidecar left after clearing: %v", err)
@@ -642,6 +639,7 @@ func TestDiscardSidecar(t *testing.T) {
 	defer server.Close()
 	path := writeStayGPX(t)
 	send(t, server, http.MethodPut, "/api/segments", map[string]any{"path": path, "cuts": []int{40}})
+	send(t, server, http.MethodPost, "/api/save", map[string]any{"path": path})
 	var track trackJSON
 	get(t, server, "/api/track?path="+url.QueryEscape(path), &track)
 	if track.Clean.Sidecar == "" || len(track.Cuts) != 1 {
@@ -784,6 +782,14 @@ func TestRenamePartWritesOurFileAndOthersSidecar(t *testing.T) {
 	}); code != http.StatusOK {
 		t.Fatalf("PUT part-name on our file = %d", code)
 	}
+	// The name is held until it is saved, as every edit is, and saving writes
+	// it into the GPX dgs wrote.
+	if before, err := gpxfile.Open(ours); err != nil || before.Tracks[0].Name != "One" {
+		t.Fatalf("our file before saving = %+v, %v", before, err)
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/save", map[string]any{"path": ours}); code != http.StatusOK {
+		t.Fatalf("save = %d %v", code, result)
+	}
 	file, err := gpxfile.Open(ours)
 	if err != nil || file.Tracks[0].Name != "Two" {
 		t.Fatalf("our file = %+v, %v", file, err)
@@ -837,29 +843,6 @@ func TestConfigListsPlacesToSaveIn(t *testing.T) {
 	get(t, homeServer, "/api/config", &atHome)
 	if atHome.Places[0].Name != "Home" || atHome.Places[0].Path != home {
 		t.Fatalf("places at home = %+v", atHome.Places)
-	}
-}
-
-func TestDirCarriesTimesAndSizes(t *testing.T) {
-	root := t.TempDir()
-	if err := os.Mkdir(filepath.Join(root, "day one"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "walk.gpx"), []byte(`<gpx version="1.1"><trk></trk></gpx>`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(Handler(Settings{Root: root}))
-	defer server.Close()
-	var got struct {
-		Dirs  []filebrowse.Entry `json:"dirs"`
-		Files []filebrowse.Entry `json:"files"`
-	}
-	get(t, server, "/api/dir?path="+url.QueryEscape(root), &got)
-	if len(got.Dirs) != 1 || got.Dirs[0].Modified.IsZero() || got.Dirs[0].Size != 0 {
-		t.Fatalf("folder = %+v", got.Dirs)
-	}
-	if len(got.Files) != 1 || got.Files[0].Modified.IsZero() || got.Files[0].Size == 0 {
-		t.Fatalf("file = %+v", got.Files)
 	}
 }
 
@@ -1012,10 +995,14 @@ func TestWaypointAndStandaloneExport(t *testing.T) {
 	if code, result := send(t, server, http.MethodPost, "/api/waypoint", map[string]any{"path": target, "name": "View & rest", "description": "At the top", "lat": 30.4, "lon": 120.4}); code != http.StatusOK {
 		t.Fatalf("waypoint = %d %v", code, result)
 	}
+	if code, result := send(t, server, http.MethodPost, "/api/save", map[string]any{"path": target}); code != http.StatusOK {
+		t.Fatalf("save the waypoint = %d %v", code, result)
+	}
 	written, err := gpxfile.Open(target)
 	if err != nil || len(written.Waypoints) != 2 || written.Waypoints[1].Name != "View & rest" {
 		t.Fatalf("waypoints = %+v, %v", written, err)
 	}
+	send(t, server, http.MethodPost, "/api/save", map[string]any{"path": target})
 	state, found, err = gpxfile.ReadState(target)
 	if err != nil || !found || !bytes.Contains(state, []byte(`"cuts":[1]`)) {
 		t.Fatalf("state after waypoint = %s, %v, %v", state, found, err)
@@ -1023,6 +1010,7 @@ func TestWaypointAndStandaloneExport(t *testing.T) {
 	if code, result := send(t, server, http.MethodPut, "/api/segments", map[string]any{"path": target, "cuts": []int{2}}); code != http.StatusOK {
 		t.Fatalf("embedded cut = %d %v", code, result)
 	}
+	send(t, server, http.MethodPost, "/api/save", map[string]any{"path": target})
 	state, found, err = gpxfile.ReadState(target)
 	if err != nil || !found || !bytes.Contains(state, []byte(`"cuts":[2]`)) {
 		t.Fatalf("edited embedded state = %s, %v, %v", state, found, err)
@@ -1079,5 +1067,448 @@ func TestDraftKeepsWaypointsUntilSaved(t *testing.T) {
 	// The draft is gone with the save, so the point is not offered twice.
 	if code, _ := send(t, server, http.MethodPost, "/api/waypoint", map[string]any{"path": draft, "name": "Later", "lat": 30.5, "lon": 120.5}); code == http.StatusOK {
 		t.Fatal("saved draft still takes waypoints")
+	}
+}
+
+// The iron rule of docs/apps/geo/gpx.md: a GPX dgs did not write is never
+// written to. Every endpoint that changes anything is called against one
+// recording, in turn, and the recording's bytes have to come out the same —
+// whatever each call answers. A new endpoint that writes into a recording
+// fails here.
+func TestARecordingIsNeverWritten(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	folder := t.TempDir()
+	source := filepath.Join(folder, "recorded.gpx")
+	if err := os.WriteFile(source, []byte(sampleWithParts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(folder, "written.gpx")
+
+	calls := []struct {
+		name   string
+		method string
+		path   string
+		body   map[string]any
+	}{
+		{"clean", http.MethodPut, "/api/clean", map[string]any{
+			"path": source, "clean": map[string]any{"edits": []map[string]any{{"kind": "range", "first": 1, "last": 1}}},
+		}},
+		{"segments", http.MethodPut, "/api/segments", map[string]any{"path": source, "cuts": []int{1}}},
+		{"part-name", http.MethodPut, "/api/part-name", map[string]any{"path": source, "key": "t0", "name": "Walk home"}},
+		{"waypoint", http.MethodPost, "/api/waypoint", map[string]any{"path": source, "name": "Here", "lat": 30.4, "lon": 120.4}},
+		{"fill", http.MethodPost, "/api/fill", map[string]any{
+			"path": source, "first": 0, "last": 2, "profile": "foot", "route": [][]float64{{120.0, 30.0}, {120.1, 30.1}},
+		}},
+		{"remove fill", http.MethodDelete, "/api/fill", map[string]any{"path": source, "index": 0}},
+		{"delete part", http.MethodDelete, "/api/part", map[string]any{"path": source, "key": "t0"}},
+		{"move waypoint", http.MethodPut, "/api/waypoint", map[string]any{"path": source, "key": "w0", "lat": 30.4, "lon": 120.4}},
+		{"part-order", http.MethodPut, "/api/part-order", map[string]any{"path": source, "kind": "waypoint", "keys": []string{"w0"}}},
+		{"copy part", http.MethodPost, "/api/part/copy", map[string]any{"path": source, "key": "t0", "target": target}},
+		{"move part out", http.MethodPost, "/api/part/copy", map[string]any{"path": source, "key": "t0", "target": target, "move": true}},
+		{"segments/write", http.MethodPost, "/api/segments/write", map[string]any{
+			"path": source, "target": target, "pieces": []int{0}, "mode": "single",
+		}},
+		{"save-as", http.MethodPost, "/api/save-as", map[string]any{"path": source, "target": filepath.Join(folder, "copy.gpx")}},
+		{"sidecar", http.MethodDelete, "/api/sidecar", map[string]any{"path": source}},
+		{"save", http.MethodPost, "/api/save", map[string]any{"path": source}},
+		{"pending", http.MethodDelete, "/api/pending", map[string]any{"path": source}},
+	}
+	for _, call := range calls {
+		if code, body := send(t, server, call.method, call.path, call.body); code >= 500 {
+			t.Fatalf("%s = %d %s", call.name, code, body)
+		}
+		after, err := os.ReadFile(source)
+		if err != nil {
+			t.Fatalf("%s: the recording is gone: %v", call.name, err)
+		}
+		if !bytes.Equal(after, before) {
+			t.Fatalf("%s wrote the recording", call.name)
+		}
+	}
+
+	// Writing a new file never writes over one that is there, either: the
+	// rule protects any file the user already has, not only a recording.
+	if code, _ := send(t, server, http.MethodPost, "/api/save-as", map[string]any{"path": source, "target": source}); code == http.StatusOK {
+		t.Fatal("save-as wrote over its own source")
+	}
+	if _, err := os.Stat(target); err == nil {
+		if code, _ := send(t, server, http.MethodPost, "/api/segments/write", map[string]any{
+			"path": source, "target": target, "pieces": []int{0}, "mode": "single",
+		}); code == http.StatusOK {
+			t.Fatal("segments/write replaced a file that was already there")
+		}
+	}
+}
+
+// Every endpoint that changes anything has to be in TestARecordingIsNeverWritten:
+// the rule is only pinned for the calls the test makes, so a new writing
+// endpoint is listed here, or it is not written at all.
+func TestEveryWritingEndpointIsPinned(t *testing.T) {
+	routes, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests, err := os.ReadFile("server_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reading is GET; anything else can write.
+	for _, m := range regexp.MustCompile(`HandleFunc\("(POST|PUT|DELETE|PATCH) (/api/[a-z/-]+)"`).FindAllStringSubmatch(string(routes), -1) {
+		path := m[2]
+		switch path {
+		case "/api/reveal", "/api/focus", "/api/draft", "/api/route/leg", "/api/fill/route", "/api/route/save":
+			continue // these write nothing to a file the user already has
+		}
+		if !strings.Contains(string(tests), `"`+path+`"`) {
+			t.Fatalf("%s writes but TestARecordingIsNeverWritten does not call it", path)
+		}
+	}
+}
+
+// ourGPX writes a GPX dgs wrote, holding two tracks, a route and a waypoint.
+func ourGPX(t *testing.T, path string) {
+	t.Helper()
+	tracks := []gpxfile.Track{
+		{Name: "One", Segments: []gpxfile.Segment{{Points: []gpxfile.Point{
+			{LatLon: geo.LatLon{Lat: 30.1, Lon: 120.1}},
+			{LatLon: geo.LatLon{Lat: 30.2, Lon: 120.2}},
+		}}}},
+		{Name: "Two", Segments: []gpxfile.Segment{{Points: []gpxfile.Point{
+			{LatLon: geo.LatLon{Lat: 31.1, Lon: 121.1}},
+			{LatLon: geo.LatLon{Lat: 31.2, Lon: 121.2}},
+		}}}},
+	}
+	routes := []gpxfile.Route{{Name: "Plan", Points: []gpxfile.Point{
+		{LatLon: geo.LatLon{Lat: 30.1, Lon: 120.1}},
+		{LatLon: geo.LatLon{Lat: 30.3, Lon: 120.3}},
+	}}}
+	waypoints := []gpxfile.Waypoint{{Point: gpxfile.Point{LatLon: geo.LatLon{Lat: 30.5, Lon: 120.5}}, Name: "Hotel"}}
+	if err := gpxfile.CreateAll(path, "Trip", waypoints, routes, tracks); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func partNames(track trackJSON, kind string) []string {
+	names := []string{}
+	for _, part := range track.Parts {
+		if part.Kind == kind {
+			names = append(names, part.Name)
+		}
+	}
+	return names
+}
+
+// A part of a GPX dgs wrote is taken out of the file itself — but only when
+// the edit is saved, like every other edit, so it can be taken back.
+func TestDeletingAPartOfOurGPXWaitsForTheSave(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	ours := filepath.Join(t.TempDir(), "ours.gpx")
+	ourGPX(t, ours)
+	before, err := os.ReadFile(ours)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"t0", "r0", "w0"} {
+		if code, result := send(t, server, http.MethodDelete, "/api/part", map[string]any{"path": ours, "key": key}); code != http.StatusOK {
+			t.Fatalf("delete %s = %d %v", key, code, result)
+		}
+	}
+	var shown trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(ours), &shown)
+	if got := partNames(shown, "track"); len(got) != 1 || got[0] != "Two" {
+		t.Fatalf("tracks left = %v", got)
+	}
+	if len(partNames(shown, "route")) != 0 || len(partNames(shown, "waypoint")) != 0 {
+		t.Fatalf("parts left = %+v", shown.Parts)
+	}
+	// The track left keeps the key it had, so a name given to it still names it.
+	if shown.Parts[0].Key != "t1" {
+		t.Fatalf("key of the track left = %q", shown.Parts[0].Key)
+	}
+	if !shown.Unsaved {
+		t.Fatal("the deletion is not held as an unsaved edit")
+	}
+	if after, _ := os.ReadFile(ours); !bytes.Equal(after, before) {
+		t.Fatal("the GPX was written before the edit was saved")
+	}
+
+	// Reverting puts every part back.
+	if code, _ := send(t, server, http.MethodDelete, "/api/pending", map[string]any{"path": ours}); code != http.StatusOK {
+		t.Fatal("revert")
+	}
+	get(t, server, "/api/track?path="+url.QueryEscape(ours), &shown)
+	if len(partNames(shown, "track")) != 2 || len(partNames(shown, "waypoint")) != 1 {
+		t.Fatalf("parts after reverting = %+v", shown.Parts)
+	}
+
+	// Deleting again and saving takes them out of the file.
+	for _, key := range []string{"t0", "r0", "w0"} {
+		send(t, server, http.MethodDelete, "/api/part", map[string]any{"path": ours, "key": key})
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/save", map[string]any{"path": ours}); code != http.StatusOK {
+		t.Fatalf("save = %d %v", code, result)
+	}
+	file, err := gpxfile.Open(ours)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Tracks) != 1 || file.Tracks[0].Name != "Two" || len(file.Routes) != 0 || len(file.Waypoints) != 0 {
+		t.Fatalf("saved file = %+v", file)
+	}
+	// The track left is the file's first now, and is keyed as such again.
+	get(t, server, "/api/track?path="+url.QueryEscape(ours), &shown)
+	if shown.Parts[0].Key != "t0" || shown.Parts[0].Name != "Two" {
+		t.Fatalf("part after saving = %+v", shown.Parts[0])
+	}
+}
+
+// A recording is never written, so nothing is taken out of it.
+func TestARecordingKeepsItsParts(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	source := filepath.Join(t.TempDir(), "recorded.gpx")
+	if err := os.WriteFile(source, []byte(sampleWithParts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"t0", "r0", "w0"} {
+		if code, _ := send(t, server, http.MethodDelete, "/api/part", map[string]any{"path": source, "key": key}); code != http.StatusUnprocessableEntity {
+			t.Fatalf("delete %s from a recording = %d", key, code)
+		}
+	}
+	if code, _ := send(t, server, http.MethodPut, "/api/waypoint", map[string]any{"path": source, "key": "w0", "lat": 30.9, "lon": 120.9}); code != http.StatusUnprocessableEntity {
+		t.Fatal("a recorded waypoint was moved")
+	}
+}
+
+// A waypoint pinned in the wrong place is moved, and the move reaches the GPX
+// when the edit is saved.
+func TestAWaypointOfOurGPXIsMoved(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	ours := filepath.Join(t.TempDir(), "ours.gpx")
+	ourGPX(t, ours)
+	if code, result := send(t, server, http.MethodPut, "/api/waypoint", map[string]any{"path": ours, "key": "w0", "lat": 30.6, "lon": 120.7}); code != http.StatusOK {
+		t.Fatalf("move = %d %v", code, result)
+	}
+	var shown trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(ours), &shown)
+	if at := shown.Parts[len(shown.Parts)-1].Points[0]; at != [2]float64{120.7, 30.6} {
+		t.Fatalf("waypoint drawn at %v", at)
+	}
+	if file, _ := gpxfile.Open(ours); file.Waypoints[0].Lat != 30.5 {
+		t.Fatal("the GPX was written before the edit was saved")
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/save", map[string]any{"path": ours}); code != http.StatusOK {
+		t.Fatalf("save = %d %v", code, result)
+	}
+	file, err := gpxfile.Open(ours)
+	if err != nil || len(file.Waypoints) != 1 || file.Waypoints[0].Lat != 30.6 || file.Waypoints[0].Lon != 120.7 || file.Waypoints[0].Name != "Hotel" {
+		t.Fatalf("saved waypoint = %+v, %v", file.Waypoints, err)
+	}
+	if code, _ := send(t, server, http.MethodPut, "/api/waypoint", map[string]any{"path": ours, "key": "w0", "lon": -999.0, "lat": 0}); code != http.StatusBadRequest {
+		t.Fatalf("a position off the globe = %d", code)
+	}
+	if code, _ := send(t, server, http.MethodPut, "/api/waypoint", map[string]any{"path": ours, "key": "t0", "lat": 30.1, "lon": 120.1}); code != http.StatusBadRequest {
+		t.Fatal("a track was moved as a waypoint")
+	}
+}
+
+// A part is copied into another GPX dgs wrote, and moved out of one it wrote.
+// Only a GPX dgs wrote is copied into: a recording is never written.
+func TestCopyingAndMovingAPartBetweenFiles(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	folder := t.TempDir()
+	ours, target := filepath.Join(folder, "ours.gpx"), filepath.Join(folder, "target.gpx")
+	ourGPX(t, ours)
+	if err := gpxfile.Create(target, "Target", []gpxfile.Track{{Name: "Kept", Segments: []gpxfile.Segment{{Points: []gpxfile.Point{
+		{LatLon: geo.LatLon{Lat: 32.1, Lon: 122.1}},
+		{LatLon: geo.LatLon{Lat: 32.2, Lon: 122.2}},
+	}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	recording := filepath.Join(folder, "recorded.gpx")
+	if err := os.WriteFile(recording, []byte(sampleWithParts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A recording is not written into.
+	if code, _ := send(t, server, http.MethodPost, "/api/part/copy", map[string]any{"path": ours, "key": "t0", "target": recording}); code != http.StatusUnprocessableEntity {
+		t.Fatal("a recording was copied into")
+	}
+	// A recording's parts are copied out of it, but never moved out.
+	if code, result := send(t, server, http.MethodPost, "/api/part/copy", map[string]any{"path": recording, "key": "t0", "target": target}); code != http.StatusOK {
+		t.Fatalf("copy from a recording = %d %v", code, result)
+	}
+	if code, _ := send(t, server, http.MethodPost, "/api/part/copy", map[string]any{"path": recording, "key": "w0", "target": target, "move": true}); code != http.StatusUnprocessableEntity {
+		t.Fatal("a part was moved out of a recording")
+	}
+
+	// Each kind is moved out of the GPX dgs wrote into the other.
+	for _, key := range []string{"t0", "r0", "w0"} {
+		if code, result := send(t, server, http.MethodPost, "/api/part/copy", map[string]any{"path": ours, "key": key, "target": target, "move": true}); code != http.StatusOK {
+			t.Fatalf("move %s = %d %v", key, code, result)
+		}
+	}
+	var shown trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(ours), &shown)
+	if len(shown.Parts) != 1 || shown.Parts[0].Name != "Two" {
+		t.Fatalf("what is left of the source = %+v", shown.Parts)
+	}
+	get(t, server, "/api/track?path="+url.QueryEscape(target), &shown)
+	if got := partNames(shown, "track"); len(got) != 3 || got[0] != "Kept" || got[2] != "One" {
+		t.Fatalf("tracks of the target = %v", got)
+	}
+	if got := partNames(shown, "waypoint"); len(got) != 1 || got[0] != "Hotel" {
+		t.Fatalf("waypoints of the target = %v", got)
+	}
+
+	// Saving both files writes the parts into the target and out of the source.
+	for _, path := range []string{ours, target} {
+		if code, result := send(t, server, http.MethodPost, "/api/save", map[string]any{"path": path}); code != http.StatusOK {
+			t.Fatalf("save %s = %d %v", path, code, result)
+		}
+	}
+	source, err := gpxfile.Open(ours)
+	if err != nil || len(source.Tracks) != 1 || len(source.Routes) != 0 || len(source.Waypoints) != 0 {
+		t.Fatalf("source after saving = %+v, %v", source, err)
+	}
+	written, err := gpxfile.Open(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(written.Tracks) != 3 || written.Tracks[2].Name != "One" || len(written.Routes) != 1 || written.Routes[0].Name != "Plan" {
+		t.Fatalf("target after saving = %+v", written)
+	}
+	if len(written.Waypoints) != 1 || written.Waypoints[0].Name != "Hotel" || written.Waypoints[0].Lat != 30.5 {
+		t.Fatalf("waypoints after saving = %+v", written.Waypoints)
+	}
+	// A part is not copied onto itself.
+	if code, _ := send(t, server, http.MethodPost, "/api/part/copy", map[string]any{"path": target, "key": "t0", "target": target}); code != http.StatusBadRequest {
+		t.Fatal("a part was copied into its own file")
+	}
+}
+
+// Reordering is an edit like any other: the page sees the new order at once,
+// and it goes into the GPX itself when the file is saved.
+func TestReorderingWaypointsWaitsForTheSave(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	ours := filepath.Join(t.TempDir(), "ours.gpx")
+	ourGPX(t, ours)
+	for _, name := range []string{"Station", "Summit"} {
+		if code, result := send(t, server, http.MethodPost, "/api/waypoint", map[string]any{
+			"path": ours, "name": name, "lat": 30.6, "lon": 120.6,
+		}); code != http.StatusOK {
+			t.Fatalf("add %s = %d %v", name, code, result)
+		}
+	}
+	// Written into the file, the added waypoints follow the one it holds.
+	if code, result := send(t, server, http.MethodPut, "/api/part-order", map[string]any{
+		"path": ours, "kind": "waypoint", "keys": []string{"w2", "w0", "w1"},
+	}); code != http.StatusOK {
+		t.Fatalf("order = %d %v", code, result)
+	}
+	var shown trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(ours), &shown)
+	if got := partNames(shown, "waypoint"); strings.Join(got, ",") != "Summit,Hotel,Station" {
+		t.Fatalf("shown order = %v", got)
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/save", map[string]any{"paths": []string{ours}}); code != http.StatusOK {
+		t.Fatalf("save = %d %v", code, result)
+	}
+	file, err := gpxfile.Open(ours)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, wpt := range file.Waypoints {
+		names = append(names, wpt.Name)
+	}
+	if strings.Join(names, ",") != "Summit,Hotel,Station" {
+		t.Fatalf("order in the GPX = %v", names)
+	}
+	// The order is in the file now, so nothing of it is kept beside it.
+	held, _, err := sidecar.Load(ours)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held.Order) != 0 {
+		t.Fatalf("order still held beside the file: %v", held.Order)
+	}
+}
+
+// A recording is never written, so its parts keep the order they were
+// recorded in.
+func TestARecordingKeepsItsPartOrder(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	source := filepath.Join(t.TempDir(), "recorded.gpx")
+	if err := os.WriteFile(source, []byte(sampleWithParts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, result := send(t, server, http.MethodPut, "/api/part-order", map[string]any{
+		"path": source, "kind": "waypoint", "keys": []string{"w0"},
+	})
+	if code != http.StatusUnprocessableEntity {
+		t.Fatalf("order on a recording = %d %v", code, result)
+	}
+}
+
+// Tracks are put in order as routes and waypoints are, and the edits on a
+// track's points go with it: before the save, where the page lays the points,
+// and after it, where the file holds them.
+func TestReorderingTracksMovesTheirEdits(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	ours := filepath.Join(t.TempDir(), "ours.gpx")
+	ourGPX(t, ours) // One: points 0–1, Two: points 2–3
+	if code, result := send(t, server, http.MethodPut, "/api/clean", map[string]any{
+		"path": ours, "clean": map[string]any{"edits": []map[string]any{{"kind": "lasso", "points": []int{3}}}},
+	}); code != http.StatusOK {
+		t.Fatalf("clean = %d %v", code, result)
+	}
+	if code, result := send(t, server, http.MethodPut, "/api/part-order", map[string]any{
+		"path": ours, "kind": "track", "keys": []string{"t1", "t0"},
+	}); code != http.StatusOK {
+		t.Fatalf("order = %d %v", code, result)
+	}
+	var shown trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(ours), &shown)
+	if got := partNames(shown, "track"); strings.Join(got, ",") != "Two,One" {
+		t.Fatalf("shown order = %v", got)
+	}
+	// Two's last point, removed, is now the second point laid.
+	if shown.Points[0][1] != 31.1 || shown.Points[2][1] != 30.1 {
+		t.Fatalf("points = %v", shown.Points)
+	}
+	edits := func() []clean.Edit {
+		held, _, err := loadSidecar(ours)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return held.Clean.Edits
+	}
+	if got := edits(); len(got) != 1 || len(got[0].Points) != 1 || got[0].Points[0] != 1 {
+		t.Fatalf("edits after the order = %+v", got)
+	}
+	if code, result := send(t, server, http.MethodPost, "/api/save", map[string]any{"paths": []string{ours}}); code != http.StatusOK {
+		t.Fatalf("save = %d %v", code, result)
+	}
+	file, err := gpxfile.Open(ours)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Tracks) != 2 || file.Tracks[0].Name != "Two" || file.Tracks[1].Name != "One" {
+		t.Fatalf("tracks in the GPX = %+v", file.Tracks)
+	}
+	if got := edits(); len(got) != 1 || got[0].Points[0] != 1 {
+		t.Fatalf("edits after the save = %+v", got)
 	}
 }

@@ -30,8 +30,11 @@ import (
 // with any {s} already expanded; Overlay, when present, is drawn above the
 // tiles, as road names above satellite imagery.
 type baseMap struct {
-	Name        string   `json:"name"`
-	URLs        []string `json:"urls"`
+	Name string `json:"name"`
+	// URLs are raster tile templates; Style, instead, is a whole vector style
+	// the page draws under the tracks. A map has one or the other.
+	URLs        []string `json:"urls,omitempty"`
+	Style       string   `json:"style,omitempty"`
 	Overlay     []string `json:"overlay,omitempty"`
 	Attribution string   `json:"attribution"`
 	MaxZoom     int      `json:"maxZoom"`
@@ -51,6 +54,15 @@ var builtInMaps = []baseMap{
 		URLs:        []string{"https://tile.openstreetmap.org/{z}/{x}/{y}.png"},
 		Attribution: "© OpenStreetMap contributors",
 		MaxZoom:     19,
+		Coordinates: systemWGS84,
+	},
+	{
+		// A vector style rather than raster tiles: dark blue-grey, with roads
+		// that still read under a coloured track.
+		Name:        "OpenFreeMap Fiord",
+		Style:       "https://tiles.openfreemap.org/styles/fiord",
+		Attribution: "© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors",
+		MaxZoom:     20,
 		Coordinates: systemWGS84,
 	},
 	{
@@ -126,23 +138,6 @@ func configuredMap(tile config.GeoGPXTile) baseMap {
 	return m
 }
 
-// dir lists the folders and GPX files of one folder, for the page's folder
-// tree. The dialog the page opens files and saves them through reads the
-// shared endpoints internal/webfile mounts instead; both list a folder with
-// the same code.
-func (a api) dir(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
-	if path == "" {
-		path = a.settings.Root
-	}
-	listing, err := filebrowse.List(path, filebrowse.Options{Extensions: []string{".gpx"}})
-	if err != nil {
-		writeError(w, statusFor(err), err)
-		return
-	}
-	writeJSON(w, listing)
-}
-
 // trackJSON is a track as the page draws it: parallel arrays, one entry per
 // point, so a long track stays compact. Missing values are null.
 type trackJSON struct {
@@ -195,6 +190,9 @@ type trackJSON struct {
 	// Ours is set for a GPX this program wrote: its parts are renamed in the
 	// file itself. A file from a recorder keeps its names in the sidecar.
 	Ours bool `json:"ours,omitempty"`
+
+	// Unsaved is set while edits are held in this process and not on disk.
+	Unsaved bool `json:"unsaved,omitempty"`
 }
 
 // fillJSON is one fill as the page lists it.
@@ -324,10 +322,17 @@ func stopParams(distance, duration string) (stops.Params, error) {
 type analysis struct {
 	path string
 	name string
-	// file holds the file's own tracks followed by the added ones; own counts
-	// the file's own.
-	file       *gpxfile.File
-	own        int
+	// file holds the file's own tracks followed by the added ones, and the
+	// routes and waypoints the file holds followed by the ones copied into it
+	// and not written yet, the tracks in the order the page gave. Parts
+	// deleted but not saved are already out of it.
+	file *gpxfile.File
+	// keys name each part of file as the page keys them, so a key stays the
+	// same while another part is deleted: a part of the file on disk is keyed
+	// by its place there, and one carried in the sidecar by its place after
+	// them. layout counts what the file on disk holds.
+	keys       partKeys
+	layout     partCounts
 	source     track.Line
 	cleaning   sidecar.File
 	sidecar    bool
@@ -347,17 +352,27 @@ func analyse(path string, params stops.Params) (analysis, error) {
 	if !strings.EqualFold(filepath.Ext(path), ".gpx") {
 		return analysis{}, errNotGPX
 	}
-	file, err := openGPX(path)
+	onDisk, err := openGPX(path)
 	if err != nil {
 		return analysis{}, err
 	}
 	// A sidecar that cannot be read does not stop the track being shown; the
 	// page says why and shows it uncleaned.
 	cleaning, found, sidecarErr := loadSidecar(path)
-	composed, err := compose.Build(file, cleaning.Added, cleaning.Fills)
+	file, keys, layout := laid(onDisk, cleaning)
+	// The tracks added here follow the file's own, and then every track is
+	// put in the order the page gave: the points are laid in that order, so
+	// the point indices the sidecar keeps count them so.
+	withAdded := *file
+	withAdded.Tracks = append(append([]gpxfile.Track{}, file.Tracks...), addedTracks(cleaning.Added)...)
+	for i := range cleaning.Added {
+		keys.Tracks = append(keys.Tracks, fmt.Sprintf("t%d", layout.Tracks+i))
+	}
+	withAdded.Tracks, keys.Tracks = ordered(cleaning.Order["t"], withAdded.Tracks, keys.Tracks)
+	composed, err := compose.Build(&withAdded, nil, cleaning.Fills)
 	if err != nil {
 		cleaning, found, sidecarErr = sidecar.File{Version: sidecar.Version, Clean: clean.Defaults()}, false, fmt.Errorf("%s: %w", sidecar.PathFor(path), err)
-		composed, _ = compose.Build(file, nil, nil)
+		composed, _ = compose.Build(&withAdded, nil, nil)
 	}
 	source := composed.Line
 	spans := make([][2]int, len(cleaning.Fills))
@@ -365,8 +380,6 @@ func analyse(path string, params stops.Params) (analysis, error) {
 		spans[i] = [2]int{fill.First, fill.Last}
 	}
 	result := clean.RunComposed(source, cleaning.Clean, clean.Composed{Filled: composed.Filled, Replaced: composed.Replaced, Spans: spans})
-	withAdded := *file
-	withAdded.Tracks = append(append([]gpxfile.Track{}, file.Tracks...), addedTracks(cleaning.Added)...)
 	line, index := result.Kept(source)
 	distances := track.Distances(line)
 	return analysis{
@@ -375,7 +388,8 @@ func analyse(path string, params stops.Params) (analysis, error) {
 		// recorder's timestamp.
 		name:       strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
 		file:       &withAdded,
-		own:        len(file.Tracks),
+		keys:       keys,
+		layout:     layout,
 		source:     source,
 		cleaning:   cleaning,
 		sidecar:    found,
@@ -419,11 +433,17 @@ func trackResponse(a analysis) trackJSON {
 	response.Draft = isDraft(a.path)
 	response.Ours = a.file.IsOurs()
 	response.Plan = a.cleaning.Plan
-	if (a.sidecar || a.sidecarErr != nil) && !response.Draft {
+	// What is on disk, and what is only in this process. Edits are held until
+	// they are saved, so a file can have unsaved edits and no sidecar yet, or
+	// a sidecar from an earlier save and unsaved edits over it.
+	response.Unsaved = pending.has(a.path) && !response.Draft
+	if !response.Draft {
 		if _, err := os.Stat(sidecar.PathFor(a.path)); err == nil || a.sidecarErr != nil {
 			response.Clean.Sidecar = sidecar.PathFor(a.path)
-		} else {
-			response.Clean.Embedded = true
+		} else if response.Ours {
+			if _, found, err := gpxfile.ReadState(a.path); err == nil && found {
+				response.Clean.Embedded = true
+			}
 		}
 	}
 	if a.sidecarErr != nil {
@@ -508,9 +528,10 @@ func trackResponse(a analysis) trackJSON {
 func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON, geo.Bounds, geo.Bounds) {
 	list := []partJSON{}
 	for i, trk := range a.file.Tracks {
-		part := partJSON{Key: fmt.Sprintf("t%d", i), Kind: "track", Name: named(a, fmt.Sprintf("t%d", i), trk.Name, "Track", i)}
-		if i >= a.own {
-			part.Added = &addedJSON{Index: i - a.own, From: a.cleaning.Added[i-a.own].From}
+		key := a.keys.Tracks[i]
+		part := partJSON{Key: key, Kind: "track", Name: named(a, key, trk.Name, "Track", nameIndex(key))}
+		if at, err := locate(a, key); err == nil && at.held >= 0 {
+			part.Added = &addedJSON{Index: at.held, From: a.cleaning.Added[at.held].From}
 		}
 		for _, seg := range trk.Segments {
 			if len(seg.Points) > 0 {
@@ -537,7 +558,11 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 		list = append(list, part)
 	}
 	for i, rte := range a.file.Routes {
-		part := partJSON{Key: fmt.Sprintf("r%d", i), Kind: "route", Name: named(a, fmt.Sprintf("r%d", i), rte.Name, "Route", i)}
+		key := a.keys.Routes[i]
+		part := partJSON{Key: key, Kind: "route", Name: named(a, key, rte.Name, "Route", nameIndex(key))}
+		if copied := nameIndex(key) - a.layout.Routes; copied >= 0 && copied < len(a.cleaning.Routes) {
+			part.Added = &addedJSON{Index: copied, From: a.cleaning.Routes[copied].From}
+		}
 		path, box := make([]geo.LatLon, len(rte.Points)), geo.Empty()
 		for j, pt := range rte.Points {
 			path[j] = pt.LatLon
@@ -553,12 +578,18 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 		list = append(list, part)
 	}
 	for i, wpt := range a.file.Waypoints {
+		key := a.keys.Waypoints[i]
 		part := partJSON{
-			Key:         fmt.Sprintf("w%d", i),
+			Key:         key,
 			Kind:        "waypoint",
-			Name:        named(a, fmt.Sprintf("w%d", i), wpt.Name, "Waypoint", i),
+			Name:        named(a, key, wpt.Name, "Waypoint", nameIndex(key)),
 			Description: wpt.Description,
 			Points:      [][2]float64{{wpt.Lon, wpt.Lat}},
+		}
+		if copied := nameIndex(key) - a.layout.Waypoints; copied >= 0 && copied < len(a.cleaning.Waypoints) {
+			if from := a.cleaning.Waypoints[copied].From; from != "" {
+				part.Added = &addedJSON{Index: copied, From: from}
+			}
 		}
 		if wpt.HasElevation {
 			elevation := wpt.Elevation
@@ -772,6 +803,8 @@ func statusFor(err error) int {
 	switch {
 	case errors.Is(err, errNotGPX):
 		return http.StatusBadRequest
+	case errors.Is(err, errNoSuchPart):
+		return http.StatusNotFound
 	case errors.Is(err, os.ErrNotExist):
 		return http.StatusNotFound
 	case errors.Is(err, os.ErrPermission):
