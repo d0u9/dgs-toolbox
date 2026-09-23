@@ -103,6 +103,9 @@ One `dgs` process has exactly one active leaf command. It never runs or displays
 two command workspaces at once.
 
 - A leaf — `dgs demo`, `dgs photo import` — opens its TUI directly.
+- A CLI action — `dgs conf init`, `dgs box init` — takes positional arguments,
+  writes to stdout and returns without opening a TUI. Actions are declared in
+  the app registry and are not listed in the picker.
 - An incomplete command — `dgs`, `dgs photo` — opens a picker scoped to the
   choices available; selecting replaces the picker with that command's TUI.
 - Leaving a command returns to the picker. Starting another builds a fresh

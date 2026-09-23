@@ -3,10 +3,11 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func writeBoxConfig(t *testing.T, body string) string {
+func writeConfig(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), ExportFilename)
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -15,94 +16,187 @@ func writeBoxConfig(t *testing.T, body string) string {
 	return path
 }
 
-// TestLoadPath_BoxDefaults pins the defaults docs/configuration/box.md
-// documents: a file naming no box key still reads as a usable Box setting.
-func TestLoadPath_BoxDefaults(t *testing.T) {
-	config, err := LoadPath(writeBoxConfig(t, `{}`))
+func TestBoxDefaultsWhenNothingIsConfigured(t *testing.T) {
+	config, err := LoadPath(writeConfig(t, `{}`))
 	if err != nil {
-		t.Fatalf("load: %v", err)
+		t.Fatalf("LoadPath: %v", err)
 	}
-	box := config.BoxSettings()
-	if box.Marker != DefaultBoxMarker || box.StateFile != DefaultBoxStateFile {
-		t.Errorf("marker %q state file %q", box.Marker, box.StateFile)
+	if got := config.BoxMarker(); got != DefaultBoxMarker {
+		t.Errorf("BoxMarker = %q, want %q", got, DefaultBoxMarker)
 	}
-	if box.IndexFile != DefaultBoxIndexFile || box.Workers != DefaultBoxWorkers {
-		t.Errorf("index file %q workers %d", box.IndexFile, box.Workers)
+	if got := config.BoxStateFile(); got != DefaultBoxStateFile {
+		t.Errorf("BoxStateFile = %q, want %q", got, DefaultBoxStateFile)
 	}
-	if box.Web.Port != DefaultBoxWebPort || box.Thumbnail.Size != DefaultBoxThumbnail {
-		t.Errorf("port %d thumbnail %d", box.Web.Port, box.Thumbnail.Size)
+	if got := config.BoxWorkers(); got != DefaultBoxWorkers {
+		t.Errorf("BoxWorkers = %d, want %d", got, DefaultBoxWorkers)
 	}
-	if box.Preview.Size != DefaultBoxPreviewSize || *box.Preview.Keep != DefaultBoxPreviewKeep {
-		t.Errorf("preview %d keep %d", box.Preview.Size, *box.Preview.Keep)
+	if got := config.BoxWebAddr(); got != "127.0.0.1:8766" {
+		t.Errorf("BoxWebAddr = %q, want 127.0.0.1:8766", got)
 	}
-	if box.Trash.Dir != DefaultBoxTrashDir || *box.Trash.Keep != DefaultBoxTrashKeep {
-		t.Errorf("trash %q keep %d", box.Trash.Dir, *box.Trash.Keep)
+	if got := config.BoxPreviewKeepDays(); got != DefaultBoxPreviewKeepDays {
+		t.Errorf("BoxPreviewKeepDays = %d, want %d", got, DefaultBoxPreviewKeepDays)
 	}
-	kept, err := LoadPath(writeBoxConfig(t, `{"box":{"preview":{"keep":0},"trash":{"keep":0}}}`))
-	if err != nil {
-		t.Fatalf("load: %v", err)
+	if got := config.BoxTrashKeepDays(); got != DefaultBoxTrashKeepDays {
+		t.Errorf("BoxTrashKeepDays = %d, want %d", got, DefaultBoxTrashKeepDays)
 	}
-	box = kept.BoxSettings()
-	if *box.Preview.Keep != 0 || *box.Trash.Keep != 0 {
-		t.Errorf("an explicit 0 was replaced by a default")
+	if got := config.BoxCurrency(); got != "" {
+		t.Errorf("BoxCurrency = %q, want empty so every amount names its own", got)
+	}
+	if got := config.BoxRoot(); got != "" {
+		t.Errorf("BoxRoot = %q, want empty so the command asks", got)
 	}
 }
 
-// TestLoadPath_BoxExpandsPaths checks a leading ~ is the home directory, so a
-// caller never expands one itself.
-func TestLoadPath_BoxExpandsPaths(t *testing.T) {
-	home, err := os.UserHomeDir()
+func TestBoxNeverListensBeyondLoopback(t *testing.T) {
+	// There is no host key on purpose: a Box holds identity and medical
+	// documents, so reaching it from another machine is a design with access
+	// control rather than a setting.
+	config, err := LoadPath(writeConfig(t, `{"box": {"web": {"port": 9000}}}`))
 	if err != nil {
-		t.Skip("no home directory")
+		t.Fatalf("LoadPath: %v", err)
 	}
-	config, err := LoadPath(writeBoxConfig(t, `{"box":{"root":"~/Box","inbox":"~/Scans"}}`))
-	if err != nil {
-		t.Fatalf("load: %v", err)
+	if got := config.BoxWebAddr(); got != "127.0.0.1:9000" {
+		t.Errorf("BoxWebAddr = %q, want 127.0.0.1:9000", got)
 	}
-	if want := filepath.Join(home, "Box"); config.Box.Root != want {
-		t.Errorf("root %q, want %q", config.Box.Root, want)
-	}
-	if want := filepath.Join(home, "Scans"); config.Box.Inbox != want {
-		t.Errorf("inbox %q, want %q", config.Box.Inbox, want)
+	if _, err := LoadPath(writeConfig(t, `{"box": {"web": {"host": "0.0.0.0"}}}`)); err == nil {
+		t.Error("a host key was accepted; box.web has only a port")
 	}
 }
 
-// TestLoadPath_BoxRefuses covers each refusal box.md states, because a setting
-// that cannot mean what it says is worse silently accepted than reported.
-func TestLoadPath_BoxRefuses(t *testing.T) {
-	for name, body := range map[string]string{
-		"marker path":      `{"box":{"marker":"a/.dgs-box"}}`,
-		"state file path":  `{"box":{"state_file":"a/.dgs-box-state"}}`,
-		"index file path":  `{"box":{"index_file":"a/index.json"}}`,
-		"trash path":       `{"box":{"trash":{"dir":"a/trash"}}}`,
-		"negative workers": `{"box":{"workers":-1}}`,
-		"timezone offset":  `{"box":{"timezone":"+10:00"}}`,
-		"unknown zone":     `{"box":{"timezone":"Mars/Olympus"}}`,
-		"currency":         `{"box":{"currency":"aud"}}`,
-		"negative keep":    `{"box":{"trash":{"keep":-1}}}`,
-		"lifetime":         `{"box":{"lifetimes":{"receipt":-1}}}`,
-		"unknown key":      `{"box":{"nope":1}}`,
+func TestBoxKeepDaysTellZeroApartFromUnset(t *testing.T) {
+	// Zero is a meaningful answer for both — keep previews forever, advise
+	// nothing about the trash — so an unset key cannot be spelled as zero.
+	config, err := LoadPath(writeConfig(t, `{"box": {"preview": {"keep": 0}, "trash": {"keep": 0}}}`))
+	if err != nil {
+		t.Fatalf("LoadPath: %v", err)
+	}
+	if got := config.BoxPreviewKeepDays(); got != 0 {
+		t.Errorf("BoxPreviewKeepDays = %d, want 0 to mean forever", got)
+	}
+	if got := config.BoxTrashKeepDays(); got != 0 {
+		t.Errorf("BoxTrashKeepDays = %d, want 0 to mean no advice", got)
+	}
+}
+
+func TestBoxRefusesWhatWouldBeWrongLater(t *testing.T) {
+	for _, test := range []struct{ name, body, wants string }{
+		{"a currency with unknown decimals", `{"box": {"currency": "ZZZ"}}`, "box.currency"},
+		{"a path where a filename belongs", `{"box": {"marker": "meta/dgs-box.yaml"}}`, "box.marker"},
+		{"a path in the state filename", `{"box": {"state_file": "../state.json"}}`, "box.state_file"},
+		{"an offset instead of a zone", `{"box": {"timezone": "+10:00"}}`, "box.timezone"},
+		{"a zone that is not one", `{"box": {"timezone": "Middle/Earth"}}`, "box.timezone"},
+		{"negative workers", `{"box": {"workers": -1}}`, "box.workers"},
+		{"negative preview days", `{"box": {"preview": {"keep": -1}}}`, "box.preview.keep"},
+		{"negative trash days", `{"box": {"trash": {"keep": -5}}}`, "box.trash.keep"},
+		{"a key that does not exist", `{"box": {"lifetimes": {"receipt": 3650}}}`, "lifetimes"},
 	} {
-		if _, err := LoadPath(writeBoxConfig(t, body)); err == nil {
-			t.Errorf("%s: loaded without an error", name)
+		_, err := LoadPath(writeConfig(t, test.body))
+		if err == nil {
+			t.Errorf("%s: accepted %s", test.name, test.body)
+			continue
+		}
+		if !strings.Contains(err.Error(), test.wants) {
+			t.Errorf("%s: error %q does not name %q", test.name, err, test.wants)
 		}
 	}
 }
 
-// TestBoxLifetime pins that an unnamed type is reported as unnamed rather than
-// as a zero lifetime, which would make it permanent.
-func TestBoxLifetime(t *testing.T) {
-	config, err := LoadPath(writeBoxConfig(t, `{"box":{"lifetimes":{"receipt":3650,"warranty":0}}}`))
+func TestBoxAcceptsACurrencyWithoutTwoDecimals(t *testing.T) {
+	for _, code := range []string{"AUD", "aud", " JPY ", "KWD"} {
+		config, err := LoadPath(writeConfig(t, `{"box": {"currency": "`+code+`"}}`))
+		if err != nil {
+			t.Errorf("LoadPath with currency %q: %v", code, err)
+			continue
+		}
+		if got := config.BoxCurrency(); got != strings.ToUpper(strings.TrimSpace(code)) {
+			t.Errorf("BoxCurrency = %q for %q", got, code)
+		}
+	}
+}
+
+func TestBoxZone(t *testing.T) {
+	config, err := LoadPath(writeConfig(t, `{"box": {"timezone": "Asia/Tokyo"}}`))
 	if err != nil {
-		t.Fatalf("load: %v", err)
+		t.Fatalf("LoadPath: %v", err)
 	}
-	if days, ok := config.BoxLifetime("receipt"); !ok || days != 3650 {
-		t.Errorf("receipt %d %v", days, ok)
+	zone, err := config.BoxZone()
+	if err != nil {
+		t.Fatalf("BoxZone: %v", err)
 	}
-	if days, ok := config.BoxLifetime("warranty"); !ok || days != 0 {
-		t.Errorf("warranty %d %v", days, ok)
+	if zone.String() != "Asia/Tokyo" {
+		t.Errorf("BoxZone = %q, want Asia/Tokyo", zone)
 	}
-	if _, ok := config.BoxLifetime("passport"); ok {
-		t.Errorf("passport is named")
+	empty, err := LoadPath(writeConfig(t, `{}`))
+	if err != nil {
+		t.Fatalf("LoadPath: %v", err)
+	}
+	if zone, err := empty.BoxZone(); err != nil || zone == nil {
+		t.Errorf("BoxZone with nothing configured = %v, %v; want the machine's zone", zone, err)
+	}
+}
+
+func TestBoxPathsAreExpanded(t *testing.T) {
+	t.Setenv("BOX_TEST_ROOT", "/Volumes/nas/Box")
+	config, err := LoadPath(writeConfig(t, `{"box": {"root": "$BOX_TEST_ROOT", "inbox": "~/Scans/inbox"}}`))
+	if err != nil {
+		t.Fatalf("LoadPath: %v", err)
+	}
+	if got := config.BoxRoot(); got != "/Volumes/nas/Box" {
+		t.Errorf("BoxRoot = %q, want the expanded value", got)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory to expand against")
+	}
+	if got, want := config.BoxInbox(), filepath.Join(home, "Scans", "inbox"); got != want {
+		t.Errorf("BoxInbox = %q, want %q", got, want)
+	}
+}
+
+func TestBoxCacheDirIsOutsideTheBoxAndPerBox(t *testing.T) {
+	config, err := LoadPath(writeConfig(t, `{"box": {"root": "/Volumes/nas/Box", "cache_dir": "/tmp/box-cache"}}`))
+	if err != nil {
+		t.Fatalf("LoadPath: %v", err)
+	}
+	first, err := config.BoxCacheDir("/Volumes/nas/Box")
+	if err != nil {
+		t.Fatalf("BoxCacheDir: %v", err)
+	}
+	if !strings.HasPrefix(first, "/tmp/box-cache/") {
+		t.Errorf("BoxCacheDir = %q, want it under the configured cache directory", first)
+	}
+	if strings.HasPrefix(first, "/Volumes/nas/Box") {
+		t.Errorf("BoxCacheDir = %q, but a cache must never live inside the Box", first)
+	}
+	// A trailing separator is the same Box, and a different Box is a different
+	// cache.
+	same, err := config.BoxCacheDir("/Volumes/nas/Box/")
+	if err != nil {
+		t.Fatalf("BoxCacheDir: %v", err)
+	}
+	if same != first {
+		t.Errorf("BoxCacheDir differs for the same root written two ways: %q and %q", first, same)
+	}
+	other, err := config.BoxCacheDir("/Volumes/nas/Other")
+	if err != nil {
+		t.Fatalf("BoxCacheDir: %v", err)
+	}
+	if other == first {
+		t.Error("two Boxes share one cache directory")
+	}
+}
+
+func TestBoxDefaultConfigIsTheDocumentedOne(t *testing.T) {
+	defaults := Default()
+	if defaults.Box.Marker != DefaultBoxMarker || defaults.Box.StateFile != DefaultBoxStateFile {
+		t.Errorf("Default() box filenames = %q, %q", defaults.Box.Marker, defaults.Box.StateFile)
+	}
+	if defaults.Box.Currency != "" {
+		t.Errorf("Default() box.currency = %q, want empty: an exported default should not guess a country", defaults.Box.Currency)
+	}
+	for _, name := range []string{defaults.Box.Marker, defaults.Box.StateFile} {
+		if strings.HasPrefix(name, ".") {
+			t.Errorf("%q is a hidden file; nothing a person needs in a Box is hidden", name)
+		}
 	}
 }

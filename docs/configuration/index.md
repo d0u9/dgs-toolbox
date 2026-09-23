@@ -92,20 +92,15 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `photo.import.destination` | [photo](photo.md) | empty — the repository's mock path |
 | `box.root` | [box](box.md) | empty — the command asks for a folder |
 | `box.inbox` | [box](box.md) | empty — Import opens with no inbox |
-| `box.marker` | [box](box.md) | `.dgs-box` |
-| `box.state_file` | [box](box.md) | `.dgs-box-state` |
+| `box.marker` | [box](box.md) | `dgs-box.yaml` |
+| `box.state_file` | [box](box.md) | `dgs-box-state.json` |
 | `box.cache_dir` | [box](box.md) | empty — the user cache directory |
-| `box.index_file` | [box](box.md) | `index.json` |
 | `box.workers` | [box](box.md) | `4` |
 | `box.currency` | [box](box.md) | empty — every amount names its currency |
 | `box.timezone` | [box](box.md) | empty — the machine's zone |
 | `box.web.port` | [box](box.md) | `8766` |
-| `box.thumbnail.size` | [box](box.md) | `300` |
-| `box.preview.size` | [box](box.md) | `1600` |
 | `box.preview.keep` | [box](box.md) | `30` |
-| `box.trash.dir` | [box](box.md) | `trash` |
 | `box.trash.keep` | [box](box.md) | `90` |
-| `box.lifetimes` | [box](box.md) | empty — the [catalogue](../apps/box/types.md)'s defaults |
 | `geo.gpx.host` | [geo](geo.md) | `127.0.0.1` |
 | `geo.gpx.port` | [geo](geo.md) | `8765` |
 | `geo.gpx.root` | [geo](geo.md) | empty — the home directory |

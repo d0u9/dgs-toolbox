@@ -27,6 +27,7 @@ Use SHA-256 by default because it is cryptographically strong, available in the 
 - The status bar shows the complete workflow and emphasizes the current step; the top breadcrumb shows the more detailed local state.
 - Scan repeats the selected endpoints so an incorrect SD-card or storage path can be noticed before parameters are accepted.
 - Processing uses bounded whole-file workers and exposes Copy, Verify, and Publish separately. A final photo name is never visible before independent SHA-256 readback succeeds; Source modification time is applied before publication.
+- The copy, readback and verified publication themselves are `internal/verifiedcopy`, shared with `dgs box`. The importer keeps what is Photo Import's own: the conflict policy, Move, the pause controller, and the progress events the pages draw. One mechanism means one place where the integrity contract can be read and tested.
 - Optional Post-processing organizes verified JPG/RAW files into `YYYYMMDD` directories. It never replaces Processing verification and runs only when explicitly confirmed on the Post-processing page.
 - Every quit path uses the shared safe-default confirmation dialog. Active Processing pauses while it is open and cancels cleanly only after confirmation.
 - Result is terminal: it summarizes Source, Destination, verified published bytes, skipped files, and failures, then offers only Again or Quit—not navigation back into completed work.
