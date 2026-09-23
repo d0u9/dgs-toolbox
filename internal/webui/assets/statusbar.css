@@ -1,0 +1,43 @@
+/* The status bar along the bottom of a page: exactly one row, on paper with a
+   hairline over it. State on the left, the message in the middle, hints on the
+   right. It is thinner than the top bar and set in the smallest size the page
+   uses — it carries text and nothing to click, and a browser draws fine enough
+   that it stays readable while the page keeps the height. It is also held
+   further in from the sides than the top bar: a browser window is rounded at
+   the bottom, and text at the very edge of the last row is cut by the corner.
+   Nothing here wraps: a long message is cut and kept in its title. */
+/* Three regions, as in the TUI: the state, the middle, the hints. The middle
+   is a column of its own between them, so what it says stays centred on the
+   row whatever the two ends hold. */
+.statusbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-sm);
+  height: var(--status-height);
+  padding: 0 var(--space-lg);
+  background: var(--paper);
+  border-top: 1px solid var(--hairline);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  color: var(--graphite);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.statusbar > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status-state { justify-self: start; letter-spacing: .04em; text-transform: uppercase; }
+.status-message strong { font-weight: 600; color: var(--ink); }
+.status-message kbd {
+  padding: 0 4px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: var(--cloud);
+  font: inherit;
+  color: var(--charcoal);
+}
+.status-message { justify-self: center; max-width: 100%; text-align: center; color: var(--ink-soft); }
+.status-message.error { color: var(--error); }
+.status-hints { justify-self: end; font-variant-numeric: tabular-nums; }

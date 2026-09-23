@@ -327,6 +327,11 @@ function dialog({
     // a file, or a folder when the dialog asks for one.
     const selectable = (entry) => Boolean(entry) && (pickFolders ? entry.kind === "folder" : entry.kind === "file");
 
+    // pickedPaths are the marked rows the dialog may answer with. A folder is
+    // marked to step into it and to rename it, so a dialog asking for files
+    // never answers one: the mark is where the reader is, not what is chosen.
+    const pickedPaths = () => rows.filter((entry) => chosen.has(entry.path) && selectable(entry)).map((entry) => entry.path);
+
     // render sorts the listing and draws it; draw only repaints the marks,
     // so moving the selection does not rebuild the rows.
     const render = () => {
@@ -353,7 +358,7 @@ function dialog({
       for (const item of list.children) {
         if (item.dataset.path) item.classList.toggle("chosen", chosen.has(item.dataset.path));
       }
-      const ready = saving ? Boolean(input.value.trim()) : [...chosen].some((path) => path);
+      const ready = saving ? Boolean(input.value.trim()) : pickedPaths().length > 0;
       yes.disabled = !ready && !(pickFolders && here);
     };
 
@@ -534,7 +539,7 @@ function dialog({
         if (!(await replaces(full))) return;
         answer = `${here.replace(/[\\/]$/, "")}${separator}${full}`;
       } else {
-        const picked = [...chosen];
+        const picked = pickedPaths();
         if (!picked.length) {
           if (pickFolders && here) answer = multiple ? [here] : here;
           else return;

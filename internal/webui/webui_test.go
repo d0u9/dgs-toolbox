@@ -15,7 +15,7 @@ import (
 
 // The files a page links. A page that links one of these by name breaks if
 // the file is renamed, so the names are pinned here.
-var shared = []string{"fonts.css", "tokens.css", "base.css", "controls.css", "filedialog.css"}
+var shared = []string{"fonts.css", "tokens.css", "base.css", "controls.css", "filedialog.css", "menu.css", "statusbar.css"}
 
 func TestAssetsHoldTheSharedFiles(t *testing.T) {
 	for _, name := range shared {
@@ -45,7 +45,7 @@ func TestFontsAreEmbedded(t *testing.T) {
 
 // The shared scripts, pinned for the same reason: a page imports them by
 // name.
-var sharedScripts = []string{"filedialog.js"}
+var sharedScripts = []string{"filedialog.js", "menu.js", "statusbar.js"}
 
 func TestAssetsHoldTheSharedScripts(t *testing.T) {
 	for _, name := range sharedScripts {
