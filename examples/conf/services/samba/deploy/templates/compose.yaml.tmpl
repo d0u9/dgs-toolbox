@@ -23,5 +23,9 @@ services:
       - type: bind
         source: {{ $v.source }}
         target: {{ $v.target }}
+{{- with $v.propagation }}
+        bind:
+          propagation: {{ . }}
+{{- end }}
 {{- end }}
 {{- if $deploy }}{{ end }}

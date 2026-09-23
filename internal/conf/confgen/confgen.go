@@ -86,6 +86,20 @@ const (
 	DispatchPort = "port"
 )
 
+// AccountsCredential and AccountsPerson are the two values `accounts` may
+// take: what the account name a server sees is built from. AccountsCredential
+// is the default and is not written — `<person>-<credential>`, because a
+// credential is what is revocable and one person may hold two on one port.
+// AccountsPerson is the person alone, for a service whose account is a POSIX
+// user: Samba maps the name a client logs in with onto one, and a suffix there
+// is a second name for the same account. It trades the second credential away:
+// a person granted two on one port renders two accounts under one name, which
+// validation reports. See docs/apps/conf/export.md#the-account-name.
+const (
+	AccountsCredential = "credential"
+	AccountsPerson     = "person"
+)
+
 // DefaultsDocument and DefaultsElement are the two values `defaults` may take. See docs/apps/conf/export.md#two-kinds-of-defaults.
 const (
 	DefaultsDocument = "document"
@@ -132,6 +146,12 @@ type Manifest struct {
 	// on one of its ports implies a secret. Its own credentials are
 	// independent of it; see Self.
 	Auth string `yaml:"auth"`
+	// Accounts is AccountsPerson when the account name a server sees is
+	// the person alone, or empty for the ordinary `<person>-<credential>`.
+	// It says nothing about which secret an account holds — that is still
+	// one per credential, under the same path — only what the account is
+	// called. See AccountsPerson.
+	Accounts string `yaml:"accounts"`
 	// Rotation is RotationDisruptive when this service's template cannot
 	// emit two accounts for one principal, or empty otherwise. See
 	// docs/apps/conf/inventory.md#rotation.
@@ -218,6 +238,10 @@ func (m Manifest) Renders() []File {
 	}
 	return []File{{Template: m.Template, Output: m.Output}}
 }
+
+// NamesAccountsByPerson reports whether the account name a server sees is
+// the person alone rather than the person and their credential.
+func (m Manifest) NamesAccountsByPerson() bool { return m.Accounts == AccountsPerson }
 
 // FansOut reports whether an instance of this service may dial a different
 // upstream in each route through it. The receiver is a value so that a
@@ -674,6 +698,20 @@ func loadManifest(path string) (*Manifest, error) {
 	case AuthPerPrincipal, AuthNone, "":
 	default:
 		return nil, fmt.Errorf("parsing %s: auth %q is not %q or %q", path, m.Auth, AuthPerPrincipal, AuthNone)
+	}
+	// An unrecognised accounts would read as the default and quietly give a
+	// service written to name accounts by person a suffix nobody expected.
+	switch m.Accounts {
+	case AccountsCredential, AccountsPerson, "":
+	default:
+		return nil, fmt.Errorf("parsing %s: accounts %q is not %q or %q", path, m.Accounts, AccountsCredential, AccountsPerson)
+	}
+	// An account name exists only where there is an account table: a
+	// service that authenticates nobody names nothing, and the key there is
+	// a setting someone meant for a service that does.
+	if m.Accounts != "" && m.Auth != AuthPerPrincipal {
+		return nil, fmt.Errorf("parsing %s: accounts %q without auth %q: this service holds no account to name",
+			path, m.Accounts, AuthPerPrincipal)
 	}
 	// An unrecognised downstreams would read as "not many" and quietly
 	// reinstate the single-upstream rule on a service written to fan out,

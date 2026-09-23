@@ -7,8 +7,8 @@ image: ghcr.io/example/samba:latest
 restart: unless-stopped
 
 # Where the rendered files are put on the machine, and where the container
-# reads them. The left side is the host; the right side is what `passdb
-# backend` and `username map` name in smb.conf.
+# reads them. The left side is the host; the right side is where the
+# entrypoint reads the configuration and the accounts from.
 paths:
   host_config: /srv/docker/samba/config
   container_config: /config
