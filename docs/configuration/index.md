@@ -118,6 +118,7 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `new_identity_dir` (`credentials.json`) | [cred](cred.md) | `~/.config/age` |
 | `close_after` (`credentials.json`) | [cred](cred.md) | `5m` |
 | `vault` (`credentials.json`) | [cred](cred.md) | empty — the page asks for a folder |
+| `archive_skip` (`credentials.json`) | [cred](cred.md) | the built-in list of operating system, file manager and git junk |
 
 ## Keeping this current
 

@@ -127,7 +127,7 @@ func TestOpenSealedFolder(t *testing.T) {
 		os.WriteFile(full, content, mode)
 		os.Chmod(full, mode)
 	}
-	archive, err := seal.Archive(folder, 1<<20)
+	archive, _, err := seal.Archive(folder, 1<<20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

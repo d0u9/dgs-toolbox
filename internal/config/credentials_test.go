@@ -110,3 +110,30 @@ func TestIdleClose(t *testing.T) {
 		}
 	}
 }
+
+// TestArchiveSkip pins the three states of the key: absent means the seal
+// package's own default, a list replaces it, and [] skips nothing.
+func TestArchiveSkip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, CredentialsFilename)
+	load := func(body string) Credentials {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		credentials, _, err := LoadCredentials(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return credentials
+	}
+	if skip := load(`{}`).Skip(); skip != nil {
+		t.Errorf("absent key: %v", skip)
+	}
+	if skip := load(`{"archive_skip":[".DS_Store","*.tmp"]}`).Skip(); strings.Join(skip, ",") != ".DS_Store,*.tmp" {
+		t.Errorf("list: %v", skip)
+	}
+	if skip := load(`{"archive_skip":[]}`).Skip(); skip == nil || len(skip) != 0 {
+		t.Errorf("empty list: %v", skip)
+	}
+}

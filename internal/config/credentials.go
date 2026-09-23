@@ -28,9 +28,26 @@ type Credentials struct {
 	Vault string `json:"vault"`
 	// NewIdentityDir is where generated and imported identities are written.
 	NewIdentityDir string `json:"new_identity_dir"`
+	// ArchiveSkip are the file name patterns left out when a folder is added
+	// to the vault. Absent means seal.DefaultSkip; an empty list skips
+	// nothing.
+	ArchiveSkip *[]string `json:"archive_skip"`
 	// CloseAfter is the idle time before an opened file is closed, as a Go
 	// duration; empty means DefaultCloseAfter and "0" never.
 	CloseAfter string `json:"close_after"`
+}
+
+// Skip is ArchiveSkip as the seal package takes it: nil for the default list,
+// and an empty non-nil slice when the file asks for no skipping at all.
+func (c Credentials) Skip() []string {
+	if c.ArchiveSkip == nil {
+		return nil
+	}
+	skip := *c.ArchiveSkip
+	if skip == nil {
+		skip = []string{}
+	}
+	return skip
 }
 
 // DefaultCloseAfter is how long an opened file stays open without input.
