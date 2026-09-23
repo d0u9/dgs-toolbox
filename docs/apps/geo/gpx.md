@@ -414,18 +414,24 @@ map. It is the interface later milestones build on.
 - **Stops.** The focused track's stops are drawn as numbered markers.
   Clicking one opens its arrival, departure and duration. Pointing at a stop,
   on the map or the timeline, draws a thin dashed circle of radius D around
-  it, so the threshold can be judged against the place. *On map*, beside the
+  it, so the threshold can be judged against the place. Stops › *Map*, beside the
   thresholds, hides the numbered markers from the map while the timeline keeps
-  its stop blocks for jumping to them; it is remembered. *Snap*, beside it,
+  its stop blocks for jumping to them; it is remembered. Cursor › *Snap*
   makes the timeline's cursor stick to a stop's arrival or departure, a cut, a
   hidden stretch's edge or the track's ends within 10 px, holding there until
   the pointer moves 18 px away; off, the cursor follows the pointer freely
   while the map and charts show the nearest point. It is remembered too.
-  *Stops*, beside the timeline, turned off draws no stops on it: the bar shows
+  Stops › *Timeline* turned off draws no stops on it: the bar shows
   only the stretches with data and the empty time between them — a stretch
   ends where the segment changes or no point came for a minute (or ten times
   the usual interval, if longer) — and Snap sticks to those stretches' edges.
-  It is remembered. The thresholds — at
+  It is remembered. Axis › *Compress* draws every stop (while Stops › Timeline is on) and every
+  empty stretch at a fixed 24 px of the whole track's width, dashed at its
+  edges and labelled with the times at both ends, so moving time takes the
+  bar; the overview, zoom and pan follow the same axis. It is remembered and
+  starts off. Axis › *No empty* leaves empty stretches out entirely: each shows as
+  a dashed line with the times on either side, while stops keep their width
+  (or Compress's). It is remembered and starts on. The thresholds — at
   least a time T within a distance D — are set beside the timeline and apply
   to every shown track.
 - **Timeline.** Above the charts, the focused track's clock time from first to
