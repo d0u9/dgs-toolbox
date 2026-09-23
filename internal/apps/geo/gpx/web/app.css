@@ -540,7 +540,8 @@ body {
   background: none;
   color: var(--ink);
   font-size: 11px;
-  line-height: 22px;
+  display: grid;
+  place-items: center;
   cursor: pointer;
   transition: transform .12s;
 }
@@ -681,7 +682,10 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
    what is done to it inside itself, any other file in a sidecar beside it. */
 .ours-mark {
   flex: none;
-  padding: 0 2px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
   color: var(--steel);
   cursor: default;
 }
@@ -692,6 +696,12 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 
 /* The eye sits on the text baseline of its row, whatever the row's font. */
 .eye svg, .icon-button svg { display: block; margin: 0 auto; }
+/* Every icon in a file row takes the same 22px square, so they line up. */
+.track-row .actions { gap: 0; }
+.track-row .actions > .eye, .track-row .actions > .row-action { width: 22px; height: 22px; padding: 0; display: grid; place-items: center; border-radius: 5px; color: var(--graphite); }
+.track-row .actions > .eye { color: var(--primary); }
+.track-row.hidden-track .actions > .eye { color: var(--graphite); }
+.track-row .actions > .eye:hover, .track-row .actions > .row-action:hover { background: rgba(0, 0, 0, .06); }
 
 /* Rows picked out for a command that acts on several files. The focused row
    is drawn differently again: focus is what the map draws, the selection is
