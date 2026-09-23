@@ -142,6 +142,26 @@ func NewEngine(settings Settings) (*Engine, error) {
 // Sample reports that this is a Box rather than a stand-in.
 func (e *Engine) Sample() bool { return false }
 
+// Locate is the absolute path of a filed scan's file in the Box. A scan only
+// in the trash is found there, because a duplicate of something discarded is
+// answered by looking at what was discarded.
+func (e *Engine) Locate(digest string) (string, error) {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	position, found := e.entryIndexLocked(digest)
+	if !found {
+		position, found = e.trashIndexLocked(digest)
+	}
+	if !found {
+		return "", fmt.Errorf("no scan %q", digest)
+	}
+	entry := e.cache.Entries[position]
+	if entry.ScanPath == "" {
+		return "", fmt.Errorf("%s has no file in the Box", digest)
+	}
+	return filepath.Join(e.root, entry.ScanPath), nil
+}
+
 // Scans is everything filed in the Box, newest first, with the trash left out:
 // the trash takes part in deduplication but is not something to browse.
 func (e *Engine) Scans() []Scan {
@@ -195,11 +215,9 @@ func (e *Engine) Pending() []Scan {
 		scan.NeedsRender = entry.needsRender
 		scan.Colour, scan.DPI = pictureFacts(entry.info)
 		if match, found := known[entry.digest]; found {
-			scan.DuplicateOf = match.digest
-			scan.TrashedAt = match.trashedAt
+			scan.DuplicateOf, scan.DuplicatePath, scan.TrashedAt = match.digest, match.path, match.trashedAt
 		} else if match, found := known[entry.imageDigest]; found && entry.imageDigest != "" {
-			scan.DuplicateOf = match.digest
-			scan.TrashedAt = match.trashedAt
+			scan.DuplicateOf, scan.DuplicatePath, scan.TrashedAt = match.digest, match.path, match.trashedAt
 		}
 		scans = append(scans, decorate(scan, today))
 	}
@@ -207,9 +225,11 @@ func (e *Engine) Pending() []Scan {
 	return scans
 }
 
-// match is a digest already in the Box and, when it was discarded, when.
+// match is a digest already in the Box, where its file is relative to the Box
+// root, and, when it was discarded, when.
 type match struct {
 	digest    string
+	path      string
 	trashedAt string
 }
 
@@ -227,7 +247,7 @@ func (e *Engine) duplicatesLocked() map[string]match {
 		if entry.InTrash && entry.File.Reason == UnfiledReason {
 			continue
 		}
-		found := match{digest: entry.File.Digest}
+		found := match{digest: entry.File.Digest, path: entry.ScanPath}
 		if entry.InTrash {
 			found.trashedAt = string(entry.File.TrashedAt)
 		}
@@ -672,6 +692,16 @@ type pageMemo struct {
 	save func(page int, pair thumb.Pair)
 }
 
+// forget lets go of digest if it is the document held, so its pages are read
+// again from the file rather than from memory.
+func (m *pageMemo) forget(digest string) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.digest == digest {
+		m.digest, m.pages, m.drawn = "", nil, nil
+	}
+}
+
 // draw returns one page of the scan at path, opening the scan only when it is
 // not the document already held.
 func (m *pageMemo) draw(digest, path string, page int, save func(int, thumb.Pair)) (thumb.Pair, error) {
@@ -1050,6 +1080,17 @@ func (e *Engine) rememberDraftLocked(position int, described Scan) {
 func (e *Engine) pendingIndexLocked(digest string) (int, bool) {
 	for position, entry := range e.pending {
 		if entry.digest == digest {
+			return position, true
+		}
+	}
+	return 0, false
+}
+
+// trashIndexLocked finds the newest trash entry for a digest.
+func (e *Engine) trashIndexLocked(digest string) (int, bool) {
+	for position := len(e.cache.Entries) - 1; position >= 0; position-- {
+		entry := e.cache.Entries[position]
+		if entry.File.Digest == digest && entry.InTrash && entry.ScanPath != "" {
 			return position, true
 		}
 	}

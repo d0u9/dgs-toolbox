@@ -44,8 +44,16 @@ function pageView(ids, decorate, turned) {
   // there is nothing to turn.
   const applies = (scan) => !!scan && scan.kind === 'pdf' && scan.pages >= 1;
 
+  // A page with no embedded picture — a vector or text PDF — cannot be drawn:
+  // the tool extracts pictures and has no PDF rasteriser. The frame says so
+  // instead of showing a broken image with its alt text spilling out.
+  const frame = image.parentElement;
+  image.addEventListener('load', () => frame.classList.remove('no-picture'));
+  image.addEventListener('error', () => frame.classList.add('no-picture'));
+
   function drawLarge() {
     const scan = view.scan;
+    frame.classList.remove('no-picture');
     image.src = api.image(scan.digest, 'preview', view.page);
     preload(scan);
     image.alt = scan.pages > 1 ? `${scan.filename}, page ${view.page}` : scan.filename;

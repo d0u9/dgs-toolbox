@@ -34,6 +34,6 @@ func initAction(_ io.Reader, out io.Writer, args []string, _ map[string]string, 
 
 	fmt.Fprintf(out, "wrote  %s\n", filepath.Join(root, marker))
 	fmt.Fprintf(out, "wrote  %s\n", boxlog.PathFor(root))
-	fmt.Fprintf(out, "\n%s is a Box now. Nothing else in it was touched.\nTake scans in with `dgs box import`.\n", root)
+	fmt.Fprintf(out, "\n%s is a Box now. Nothing else in it was touched.\nTake scans in with `dgs box`.\n", root)
 	return nil
 }

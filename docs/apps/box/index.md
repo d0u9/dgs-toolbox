@@ -420,8 +420,7 @@ Confirmed for the first version:
 | Command | |
 | --- | --- |
 | `dgs box init [<dir>]` | writes `dgs-box.yaml` at a root; a CLI action, not a TUI command |
-| `dgs box import` | [intake](import.md): dedupe, metadata, thumbnails, verified publication, resumable |
-| `dgs box view` | [browse and correct](view.md), expiry, trash, the exceptions area |
+| `dgs box` | starts the local pages, which link to each other: [intake](import.md) (dedupe, metadata, thumbnails, verified publication, resumable) and [browse and correct](view.md) (expiry, trash, the exceptions area). One command rather than two: everything happens on the pages, so the terminal has nothing to choose between |
 | `dgs box index [<dir>]` | rebuild the cache from sidecars; a CLI action |
 | `dgs box verify [<dir>]` | re-hash and report mismatches; a CLI action, and the only one that fails |
 | `dgs box dedupe [<dir>]` | the duplicate pass on its own, with no filing; a CLI action |

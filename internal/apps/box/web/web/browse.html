@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body class="browse">
@@ -18,58 +19,77 @@
 <header class="topbar">
   <span class="brand">BOX</span>
   <span class="page-name">Browse</span>
+  <span id="reader-crumb" class="page-crumb" hidden></span>
   <span class="topbar-spacer"></span>
   <span id="paths" class="paths"></span>
+  <a id="check-link" class="topbar-link topbar-alert" href="/check/" hidden>Exceptions <span id="check-count" class="topbar-count"></span></a>
   <a class="topbar-link" href="/intake/">Intake →</a>
 </header>
 
 <nav class="filters" aria-label="Filters">
-  <label class="filter">Year
-    <select id="filter-year"><option value="">any</option></select>
-  </label>
-  <label class="filter">Type
-    <select id="filter-type"><option value="">any</option></select>
-  </label>
-  <label class="filter">State
-    <select id="filter-state">
-      <option value="">any</option>
-      <option value="current">current</option>
-      <option value="dead">dead</option>
-      <option value="permanent">permanent</option>
-      <option value="undated">undated</option>
-    </select>
-  </label>
-  <label class="filter">Checked
-    <select id="filter-reviewed">
-      <option value="">any</option>
-      <option value="yes">confirmed</option>
-      <option value="no">still a guess</option>
-    </select>
-  </label>
-  <label class="filter">Currency
-    <select id="filter-currency"><option value="">any</option></select>
-  </label>
-  <label class="filter">Producer
-    <select id="filter-producer"><option value="">any</option></select>
-  </label>
-  <label class="filter">Deferred
-    <select id="filter-deferred">
-      <option value="">any</option>
-      <option value="needsSplit">several documents</option>
-      <option value="needsRender">no image</option>
-      <option value="unknownType">unknown type</option>
-      <option value="noExpiry">expiry missing</option>
-    </select>
-  </label>
-  <span class="filter-spacer"></span>
-  <span id="count" class="count"></span>
-  <button type="button" id="filters-clear" class="text-button">clear</button>
+  <fieldset class="filter-group" aria-label="Document">
+    <label class="filter"><span>Type</span>
+      <select id="filter-type"><option value="">any</option></select>
+    </label>
+    <label class="filter"><span>Year</span>
+      <select id="filter-year"><option value="">any</option></select>
+    </label>
+    <label class="filter"><span>Producer</span>
+      <select id="filter-producer"><option value="">any</option></select>
+    </label>
+    <label class="filter"><span>Currency</span>
+      <select id="filter-currency"><option value="">any</option></select>
+    </label>
+  </fieldset>
+  <fieldset class="filter-group" aria-label="Status">
+    <label class="filter"><span>State</span>
+      <select id="filter-state">
+        <option value="">any</option>
+        <option value="current">current</option>
+        <option value="dead">dead</option>
+        <option value="permanent">permanent</option>
+        <option value="undated">undated</option>
+      </select>
+    </label>
+    <label class="filter"><span>Checked</span>
+      <select id="filter-reviewed">
+        <option value="">any</option>
+        <option value="yes">confirmed</option>
+        <option value="no">still a guess</option>
+      </select>
+    </label>
+    <label class="filter"><span>Deferred</span>
+      <select id="filter-deferred">
+        <option value="">any</option>
+        <option value="needsSplit">several documents</option>
+        <option value="needsRender">no image</option>
+        <option value="unknownType">unknown type</option>
+        <option value="noExpiry">expiry missing</option>
+      </select>
+    </label>
+  </fieldset>
+  <fieldset class="filter-group" aria-label="Tags">
+    <div class="filter filter-tags"><span id="filter-tags-label">Tags</span>
+      <div id="filter-tags" data-label="Filter by tags"></div>
+      <button type="button" id="tag-strip-toggle" class="text-button" aria-controls="tag-strip" aria-expanded="false"
+        title="Every tag in what is shown, with how many carry it">all tags</button>
+    </div>
+  </fieldset>
+  <fieldset class="filter-group" aria-label="View">
+    <label class="filter filter-check" title="Show each split of a scan as its own card, with its own type, date and amount">
+      <input id="view-splits" type="checkbox"><span>Splits as documents</span>
+    </label>
+  </fieldset>
+  <div class="filter-result">
+    <span id="count" class="count"></span>
+    <button type="button" id="filters-clear" class="text-button" hidden>Clear filters</button>
+  </div>
 </nav>
+<div id="tag-strip" class="tag-strip" hidden aria-label="Tags in what is shown"></div>
 
 <main class="browse-main">
+  <div class="browse-left">
   <section class="grid-pane" aria-label="Scans">
-    <p id="totals" class="totals"></p>
-    <p id="trash-line" class="trash-line" hidden></p>
 
     <div id="marked" class="batch" hidden>
       <p><strong id="marked-count">0</strong> marked — one change, one log line each.</p>
@@ -77,9 +97,9 @@
         <label class="fieldrow"><span class="fieldrow-label">Type</span>
           <select id="marked-type"><option value="">leave</option></select>
         </label>
-        <label class="fieldrow"><span class="fieldrow-label">Tags</span>
-          <input id="marked-tags" type="text" placeholder="leave" spellcheck="false">
-        </label>
+        <div class="fieldrow"><span class="fieldrow-label">Add tags</span>
+          <div id="marked-tags" data-label="Add tags to every marked scan"></div>
+        </div>
         <label class="fieldrow check"><input id="marked-reviewed" type="checkbox">
           <span class="fieldrow-label">Mark the type confirmed</span>
         </label>
@@ -90,7 +110,6 @@
         <button type="button" id="marked-trash" class="text-button">Move all to trash</button>
         <button type="button" id="marked-clear" class="text-button">clear</button>
       </div>
-      <p id="marked-result" class="detail-note" hidden></p>
       <p class="detail-note">
         A description and an amount belong to one document, so a batch sets only what many documents share.
         Shift-click a card to mark it.
@@ -100,30 +119,45 @@
     <p id="grid-empty" class="grid-empty" hidden>Nothing matches these filters.</p>
   </section>
 
+  </div>
+
+  <div id="detail-resize" class="detail-resize" role="separator" aria-orientation="vertical"
+       aria-label="Details width" tabindex="0" title="Drag to widen the details; double-click to reset"></div>
+
   <aside class="detail" aria-label="Details">
     <p id="detail-empty" class="detail-empty">Pick a scan.</p>
-    <div id="detail" hidden>
-      <div class="detail-frame">
-        <img id="detail-image" alt="" src="">
-        <p id="mark-banner" class="mark-banner" role="status" hidden></p>
-      </div>
-      <div class="detail-tools">
-        <button type="button" id="detail-pages-toggle" class="text-button" aria-pressed="false" hidden>Pages</button>
-        <span id="detail-page-label" class="page-label"></span>
-      </div>
-      <ol id="detail-page-strip" class="page-strip" aria-label="Pages" hidden></ol>
-      <div id="split-tools" class="detail-actions split-tools" hidden>
-        <button type="button" id="split-mark" class="button">Mark split <kbd>Space</kbd></button>
-        <button type="button" id="split-ignore" class="text-button">Ignore page <kbd>x</kbd></button>
-        <button type="button" id="split-type" class="text-button">Type splits <kbd>:</kbd></button>
-      </div>
-      <p id="detail-facts" class="facts"></p>
+    <div id="detail" class="detail-body" hidden>
+      <section class="detail-section" aria-label="Scan">
+        <div class="detail-frame">
+          <img id="detail-image" alt="" src="">
+          <p id="mark-banner" class="mark-banner" role="status" hidden></p>
+        </div>
+        <div class="detail-tools">
+          <button type="button" id="detail-pages-toggle" class="button" aria-pressed="false" hidden>Pages</button>
+          <button type="button" id="detail-read" class="button" title="Read every page, or only the picked split's (Enter)">Read <kbd>Enter</kbd></button>
+          <span id="detail-page-label" class="page-label"></span>
+        </div>
+        <ol id="detail-page-strip" class="page-strip" aria-label="Pages" hidden></ol>
+        <div id="split-tools" class="detail-buttons split-tools" hidden>
+          <button type="button" id="split-mark" class="button">Mark split <kbd>Space</kbd></button>
+          <button type="button" id="split-ignore" class="button">Ignore page <kbd>x</kbd></button>
+          <button type="button" id="split-type" class="button">Type splits <kbd>:</kbd></button>
+        </div>
+      </section>
+
+      <section class="detail-section" aria-label="File">
+        <h3 class="detail-heading">File</h3>
+        <dl id="detail-facts" class="fact-list"></dl>
+      </section>
+
       <div id="split-head" class="split-head" hidden>
         <div class="split-row">
           <span class="split-label">Split</span>
           <span id="split-title" class="split-title"></span>
+        </div>
+        <div class="split-row">
           <span id="split-chips" class="split-chips"></span>
-          <button type="button" id="split-remove" class="text-button split-remove" hidden>Remove this split <kbd>-</kbd></button>
+          <button type="button" id="split-remove" class="button split-remove" hidden>Remove this split <kbd>-</kbd></button>
         </div>
         <p id="split-notes" class="split-notes"></p>
         <p id="split-confirm" class="split-confirm" hidden></p>
@@ -134,70 +168,87 @@
           </label>
         </form>
       </div>
-      <form id="detail-form" autocomplete="off">
-        <label class="fieldrow wide"><span class="fieldrow-label">Type</span>
-          <select id="detail-type"></select>
-        </label>
-        <label class="fieldrow wide"><span class="fieldrow-label">Description</span>
-          <input id="detail-description" type="text">
-        </label>
-        <label class="fieldrow"><span class="fieldrow-label">Event date</span>
-          <input id="detail-event-date" type="text" placeholder="YYYY-MM-DD" spellcheck="false">
-        </label>
-        <label class="fieldrow zone-field"><span class="fieldrow-label">Zone</span>
-          <input id="detail-event-zone" type="text" placeholder="syd, aus, chi…" spellcheck="false" aria-controls="detail-zone-options">
-          <ul id="detail-zone-options" class="zone-options" role="listbox" aria-label="Zones" hidden></ul>
-        </label>
-        <label class="fieldrow"><span class="fieldrow-label">Expires</span>
-          <input id="detail-expires" type="text" placeholder="YYYY-MM-DD" spellcheck="false">
-        </label>
-        <label class="fieldrow"><span class="fieldrow-label">Total</span>
-          <input id="detail-total" type="text" spellcheck="false">
-        </label>
-        <label class="fieldrow wide"><span class="fieldrow-label">Tags</span>
-          <input id="detail-tags" type="text" placeholder="comma separated">
-        </label>
-        <p id="detail-expiry" class="expiry-line"></p>
-        <p id="detail-error" class="error" hidden></p>
-        <div class="detail-actions">
+
+      <section class="detail-section" aria-label="Document">
+        <h3 class="detail-heading">Document</h3>
+        <form id="detail-form" autocomplete="off">
+          <label class="fieldrow wide"><span class="fieldrow-label">Type</span>
+            <select id="detail-type"></select>
+          </label>
+          <label class="fieldrow wide"><span class="fieldrow-label">Description</span>
+            <input id="detail-description" type="text">
+          </label>
+          <label class="fieldrow"><span class="fieldrow-label">Event date</span>
+            <input id="detail-event-date" type="text" placeholder="YYYY-MM-DD" spellcheck="false">
+          </label>
+          <label class="fieldrow zone-field"><span class="fieldrow-label">Zone</span>
+            <input id="detail-event-zone" type="text" placeholder="syd, aus, chi…" spellcheck="false" aria-controls="detail-zone-options">
+            <ul id="detail-zone-options" class="zone-options" role="listbox" aria-label="Zones" hidden></ul>
+          </label>
+          <label class="fieldrow"><span class="fieldrow-label">Expires</span>
+            <input id="detail-expires" type="text" placeholder="YYYY-MM-DD" spellcheck="false">
+          </label>
+          <label class="fieldrow"><span class="fieldrow-label">Total</span>
+            <input id="detail-total" type="text" spellcheck="false">
+          </label>
+          <div class="fieldrow wide"><span class="fieldrow-label">Tags</span>
+            <div id="detail-tags" data-label="Tags"></div>
+          </div>
+          <p id="detail-expiry" class="expiry-line wide"></p>
+        </form>
+        <div class="detail-buttons">
           <button type="button" id="detail-save" class="button primary">Save</button>
           <button type="button" id="detail-confirm" class="button">Confirm type</button>
           <button type="button" id="detail-keep" class="button">Keep for good</button>
-          <button type="button" id="detail-unfile" class="text-button" hidden>Unfile — back to intake</button>
-          <button type="button" id="detail-trash" class="text-button">Move to trash</button>
         </div>
         <p class="detail-note">
           Saving rewrites this scan's sidecar and appends one line to the log. The file does not move and its digest stays valid.
         </p>
-      </form>
+      </section>
+
+      <section class="detail-section" aria-label="Remove">
+        <div class="detail-buttons">
+          <button type="button" id="detail-redraw" class="button" title="Draw this scan's thumbnail and page pictures again from its file">Redraw thumbnail</button>
+          <button type="button" id="detail-unfile" class="button" hidden>Unfile — back to intake</button>
+          <button type="button" id="detail-trash" class="button danger">Move to trash</button>
+        </div>
+      </section>
     </div>
   </aside>
 </main>
 
-<section class="exceptions" aria-label="Exceptions">
-  <h2 class="desk-heading">Exceptions</h2>
-  <p class="exceptions-note">What cannot be explained about the tree. Nothing here is repaired on its own.</p>
-  <p class="exceptions-note">
-    Adopt takes a scan in where it lies, as
-    <label class="inline-field">
-      <select id="adopt-type"><option value="">unsorted</option></select>
-    </label>
-    — no copy, no move.
-  </p>
-  <ul id="exceptions" class="exception-list"></ul>
-  <p id="exceptions-empty" class="exceptions-note" hidden>Everything pairs up.</p>
-  <p class="exceptions-note">
-    <button type="button" id="verify" class="button">Verify every byte</button>
-    <span id="verify-note"></span>
-    Reading the whole Box is tens of gigabytes over a network filesystem. A mismatch is reported with both digests and never corrected.
-  </p>
+
+
+<section id="reader" class="reader" aria-label="Reader" hidden>
+  <div class="reader-bar">
+    <button type="button" id="reader-close" class="button" title="Back to the grid (Esc)">← Browse <kbd>Esc</kbd></button>
+    <span id="reader-title" class="reader-title"></span>
+    <span id="reader-page" class="page-label"></span>
+    <span class="reader-tools">
+      <button type="button" id="reader-out" class="button" title="Smaller (- or ⌘/Ctrl + wheel)">−</button>
+      <button type="button" id="reader-fit" class="button" aria-pressed="false" title="Pages as wide as the window (w or 0)">Width</button>
+      <button type="button" id="reader-whole" class="button" aria-pressed="false" title="A whole page in the window (p)">Page</button>
+      <button type="button" id="reader-in" class="button" title="Larger (+ or ⌘/Ctrl + wheel)">+</button>
+    </span>
+  </div>
+  <div id="reader-body" class="reader-body">
+    <ol id="reader-rail" class="page-strip reader-rail" aria-label="Pages"></ol>
+    <div id="reader-resize" class="detail-resize reader-resize" role="separator" aria-orientation="vertical"
+         aria-label="Pages width" tabindex="0" title="Drag to widen the pages; double-click to reset"></div>
+    <div id="reader-scroll" class="reader-scroll" tabindex="-1">
+      <div id="reader-column" class="reader-column"></div>
+    </div>
+  </div>
 </section>
 
+<script src="status.js"></script>
 <script src="api.js"></script>
 <script src="pages.js"></script>
 <script src="split.js"></script>
 <script src="zone.js"></script>
+<script src="tags.js"></script>
 <script src="zoom.js"></script>
+<script src="reader.js"></script>
 <script src="browse.js"></script>
 </body>
 </html>

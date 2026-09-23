@@ -96,8 +96,8 @@ cannot be built this way, ask before designing around it.
 ## Command model
 
 Commands are hierarchical: `dgs`, then `demo`, `capture`, `photo` (`import`,
-`encode`), `geo` (`gpx`), `box` (`init`, `import`, `view`, `index`, `verify`,
-`dedupe`), `cred` (`keys`, `vault`), `conf`.
+`encode`), `geo` (`gpx`), `box` (actions
+`init`, `index`, `verify`, `dedupe`), `cred` (`keys`, `vault`), `conf`.
 
 One `dgs` process has exactly one active leaf command. It never runs or displays
 two command workspaces at once.

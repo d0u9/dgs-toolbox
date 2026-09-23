@@ -309,6 +309,11 @@ func (s *Sample) TrashSummary() TrashSummary {
 	return TrashSummary{}
 }
 
+// Redraw has no files to draw from.
+func (s *Sample) Redraw(context.Context, string) (RedrawResult, error) {
+	return RedrawResult{}, fmt.Errorf("these scans are made up: there are no pictures to redraw")
+}
+
 // Verify has nothing to read, so it finds nothing. It does not pretend the
 // bytes were checked.
 func (s *Sample) Verify(context.Context) ([]Exception, error) {

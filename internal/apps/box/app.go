@@ -9,22 +9,18 @@ import (
 	"dgs-toolbox/internal/tui"
 )
 
-// New returns the Box app definition: two commands and four actions. Import
-// and view are the interactive pair — a workspace is what they are for — and
-// they are separate because their risk differs. Import copies, verifies and
-// publishes bytes; view writes sidecars and never a scan. One entry point for
-// both would force the careful ceremony onto the part meant to be used
-// casually. The four actions write nothing into the Box and ask nothing once
-// they start, so they report to stdout instead of opening a workspace.
+// New returns the Box app definition: `dgs box` itself and four actions. The
+// command starts the local pages; intake, browse and the exceptions all live
+// there and link to each other, so the terminal has nothing to choose between.
+// The four actions write nothing into the Box and ask nothing once they start,
+// so they report to stdout instead of opening a workspace.
 func New() tui.App {
 	return tui.App{
 		ID:          "box",
 		Name:        "Box",
 		Description: "Scanned paper: take it in, look through it",
-		Commands: []tui.Command{
-			command("import", "Import", "Take new scans from the inbox into the Box.", Intake),
-			command("view", "View", "Look through the Box and correct what is in it.", Browse),
-		},
+		Direct:      true,
+		Commands:    []tui.Command{command()},
 		Actions: []tui.Action{{
 			ID:            "init",
 			Usage:         "[<dir>]",
@@ -56,23 +52,23 @@ func New() tui.App {
 	}
 }
 
-// command builds one box command.
-func command(id, name, description string, work Page) tui.Command {
+// command builds the one box command.
+func command() tui.Command {
 	build := func(global config.Config) tui.CommandModel {
-		return NewModel(boxweb.SettingsFrom(global), work)
+		return NewModel(boxweb.SettingsFrom(global))
 	}
 	return tui.Command{
-		ID:            id,
-		Name:          name,
-		Description:   description,
+		ID:            "box",
+		Name:          "Box",
+		Description:   "Start the local pages for the Box.",
 		New:           func() tui.CommandModel { return build(config.Default()) },
 		NewWithConfig: build,
-		Flags:         flags(work),
+		Flags:         flags(),
 	}
 }
 
-func flags(work Page) []tui.Flag {
-	all := []tui.Flag{
+func flags() []tui.Flag {
+	return []tui.Flag{
 		{
 			Name:  "root",
 			Usage: "the Box to work in (default: box.root)",
@@ -93,18 +89,15 @@ func flags(work Page) []tui.Flag {
 				return nil
 			},
 		},
-	}
-	if work != Intake {
-		return all
-	}
-	// Only import reads an inbox, and a second source is given here rather
-	// than written into the configuration file.
-	return append(all, tui.Flag{
-		Name:  "inbox",
-		Usage: "folder to take new scans from (default: box.inbox)",
-		Apply: func(global *config.Config, value string) error {
-			global.Box.Inbox = value
-			return nil
+		{
+			// A second source is given here rather than written into the
+			// configuration file.
+			Name:  "inbox",
+			Usage: "folder to take new scans from (default: box.inbox)",
+			Apply: func(global *config.Config, value string) error {
+				global.Box.Inbox = value
+				return nil
+			},
 		},
-	})
+	}
 }

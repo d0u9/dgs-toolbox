@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"dgs-toolbox/internal/box/doctype"
+	"dgs-toolbox/internal/box/tag"
 )
 
 func server(t *testing.T) *httptest.Server {
@@ -52,11 +53,12 @@ func send(t *testing.T, srv *httptest.Server, method, path, body string) (int, s
 	return response.StatusCode, string(out)
 }
 
-func TestBothPagesAreServed(t *testing.T) {
+func TestThePagesAreServed(t *testing.T) {
 	srv := server(t)
 	for path, want := range map[string]string{
 		"/intake/": "Intake",
 		"/browse/": "Browse",
+		"/check/":  "Exceptions",
 	} {
 		response, err := srv.Client().Get(srv.URL + path)
 		if err != nil {
@@ -425,6 +427,62 @@ func TestBatchEditIsOneRequest(t *testing.T) {
 	}
 	if len(result.Failed) != 1 {
 		t.Errorf("the failure was not reported on its own: %+v", result.Failed)
+	}
+}
+
+func TestTagsAreCountedAcrossTheBox(t *testing.T) {
+	srv := server(t)
+	var body struct {
+		Tags []tag.Use `json:"tags"`
+	}
+	get(t, srv, "/api/tags", &body)
+	counts := map[string]int{}
+	for _, use := range body.Tags {
+		counts[use.Name] = use.Count
+	}
+	if counts["japan-2019"] < 2 || counts["keep"] < 1 {
+		t.Fatalf("tags = %+v, want the sample's japan-2019 and keep", body.Tags)
+	}
+	if body.Tags[0].Name != "japan-2019" {
+		t.Errorf("most used first: %+v", body.Tags)
+	}
+}
+
+func TestABatchAddsTagsWithoutRemovingAny(t *testing.T) {
+	srv := server(t)
+	var body struct {
+		Scans []Scan `json:"scans"`
+	}
+	get(t, srv, "/api/scans", &body)
+	var target Scan
+	for _, scan := range body.Scans {
+		if len(scan.Tags) > 0 && len(scan.Documents) == 0 {
+			target = scan
+			break
+		}
+	}
+	if target.Digest == "" {
+		t.Fatal("no tagged sample scan to add to")
+	}
+	payload, err := json.Marshal(map[string]any{
+		"digests": []string{target.Digest},
+		"edit":    map[string]any{"addTags": []string{"Tax Return", target.Tags[0]}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, out := send(t, srv, http.MethodPatch, "/api/scans", string(payload)); status != http.StatusOK {
+		t.Fatalf("PATCH /api/scans: %d %s", status, out)
+	}
+	get(t, srv, "/api/scans", &body)
+	for _, scan := range body.Scans {
+		if scan.Digest != target.Digest {
+			continue
+		}
+		want := strings.Join(append(append([]string{}, target.Tags...), "tax-return"), ",")
+		if got := strings.Join(scan.Tags, ","); got != want {
+			t.Errorf("tags = %q, want %q", got, want)
+		}
 	}
 }
 
