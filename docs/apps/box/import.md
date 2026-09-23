@@ -138,7 +138,7 @@ paid for in sessions that are never finished.
 | Total | optional, skippable |
 | Tags | comma-separated keywords; shared across a selected run |
 
-Everything else — the other party, the expiry, grouping beyond one key — is
+Everything else — the other party, the expiry — is
 filled in [`view`](view.md), on the few scans that need it. Splitting is the
 exception: it is done here, while the pages are on screen.
 
@@ -150,18 +150,11 @@ terminal interface that happens to be rendered in a browser, because this is
 several hundred repetitions and a hand leaving the keyboard is a real cost. The
 [browsing page](view.md) is the opposite and uses the mouse normally.
 
-Three keys exist beyond the fields:
+Two keys exist beyond the fields:
 
 - **`keep`** clears the expiry, making the scan permanent. This is how a
   concert ticket worth keeping escapes `ticket`'s same-day default without
   needing a type of its own.
-- **`same as previous`** puts this scan in the same `group` as the one before
-  it, for a document scanned in several passes. It costs one keystroke while the
-  parts are on screen together and is close to unreconstructable later, which
-  is why the field is collected in the first version even though the group
-  browser is not built. Both scans are given the group, so the bond is
-  recorded on each side; pressing it again on a bound scan lets it go. The desk
-  names the other scans in the group rather than showing the group id.
 - **`reject`** turns the scan away with a reason, for a failed scan or
   something not wanted. Nothing is in the Box yet, so nothing is moved or
   deleted: the file stays in the inbox and only its record in the state

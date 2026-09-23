@@ -174,7 +174,6 @@ page_size: A4
 producer: "ScanSnap Manager"
 scan_created_at: 2019-03-11T20:30:00+09:00
 
-group: 8f2a1c                   # set when several files are one document
 needs_split: false              # one file, several documents, not yet split
 documents:                      # absent: the whole file is one document
   - pages: 1-3
@@ -428,15 +427,14 @@ be stranded in the inbox:
 | Not yet | What happens instead |
 | --- | --- |
 | Exporting one document of a split as its own PDF | the split is recorded in the sidecar; the file stays whole |
-| The group browser | the `group` field **is** recorded at intake; only the interface waits |
 | OCR | nothing |
 | Full-text search | filters only: year, type, amount range, `reviewed`, current/dead |
 | Remote or phone access | the server binds a loopback address |
 | A generated tree of links for Finder | none; `view` is the view |
 | Several inboxes | one configured default, overridable per run |
 
-`group` is the one exception to leaving things out, and for a specific reason: a
-contract scanned in three passes because the feeder jammed costs one keystroke
-to bind while the three files are on screen together, and is close to
-unreconstructable six months later. Collecting the data early is cheap
-insurance; the interface is not.
+Binding several files as one document — a contract scanned in three passes —
+is not recorded at all. A `group` field was tried and removed: each part is
+still its own scan with its own sidecar and fields, so the bond added a
+keystroke at intake and little afterwards. A sidecar carrying `group` is now
+refused as an unknown key.

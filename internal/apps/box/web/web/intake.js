@@ -343,13 +343,6 @@ function flags(scan) {
     out.push({ kind: 'note', text: `${documents.length} split${documents.length === 1 ? '' : 's'}` });
   } else if (scan.needsSplit) out.push({ kind: 'note', text: 'several documents — filed whole' });
   if (scan.needsRender) out.push({ kind: 'note', text: 'no image to extract' });
-  // The draft's group first: g sets it before any save reaches the scan.
-  const group = state.draft.group ?? scan.group;
-  if (group) {
-    const others = groupMembers(group).filter((member) => member !== scan);
-    const names = others.map((member) => member.filename).join(', ');
-    out.push({ kind: 'note', text: names ? `same document as ${names}` : `group ${group}` });
-  }
   return out;
 }
 
@@ -417,19 +410,14 @@ function drawQueue() {
     time.textContent = scan.scannedAt
       ? `Scanned ${localDate(scan.scannedAt)} ${localTime(scan.scannedAt)}`
       : '';
-    // The scan on the desk shows its draft, so a g or a split is seen here
-    // before the save lands.
+    // The scan on the desk shows its draft, so a split is seen here before
+    // the save lands.
     const shown = index === state.cursor ? { ...scan, ...state.draft } : scan;
-    const peers = state.pending.map((peer, at) => (at === state.cursor ? shown : peer));
     const typeName = shown.type && shown.type !== 'unsorted' ? shown.type : '';
     const marks = document.createElement('span');
     marks.className = 'queue-marks';
     marks.innerHTML =
-      (typeName ? `<span class="badge">${typeName}</span>` : '') + badgeHTML(handling(shown, peers));
-    if (shown.group) {
-      item.classList.add('queue-grouped');
-      item.style.setProperty('--group-hue', groupHue(shown.group));
-    }
+      (typeName ? `<span class="badge">${typeName}</span>` : '') + badgeHTML(handling(shown));
     item.append(name, time, marks);
     item.addEventListener('click', () => {
       state.cursor = index;
@@ -531,7 +519,6 @@ function describe(scan) {
       total: '',
       tags: [],
       expiryCleared: state.draft.expiryCleared ?? false,
-      group: state.draft.group ?? '',
       documents: documents.map((document) => ({
         ...document,
         eventZone: document.eventZone || (document.eventDate ? state.config.zone || '' : ''),
@@ -548,7 +535,6 @@ function describe(scan) {
     total: el('total').value,
     tags: parseTags(el('tags').value),
     expiryCleared: state.draft.expiryCleared ?? false,
-    group: state.draft.group ?? '',
     ...(state.draft.documents ? { documents: [], ignoredPages: '' } : {}),
   };
 }
@@ -582,7 +568,7 @@ async function saveNow() {
     const scan = state.pending.find((candidate) => candidate.digest === edit.digest);
     if (scan) {
       for (const name of ['type', 'description', 'eventDate', 'eventZone', 'total', 'tags',
-        'expiryCleared', 'group', 'documents', 'ignoredPages']) {
+        'expiryCleared', 'documents', 'ignoredPages']) {
         scan[name] = saved[name];
       }
     }
@@ -635,50 +621,6 @@ async function rejectCurrent() {
   }
   await reload(from);
   await drawRejected();
-}
-
-// sameAsPrevious binds this scan to the one before it: a contract scanned in
-// three passes, bound while the parts are still on screen together.
-//
-// The previous scan is given the group too, so both sides name it: without
-// that the one before carries nothing and the bond is only one-way. Pressing
-// g again on a scan already bound lets it go.
-async function sameAsPrevious() {
-  const scan = current();
-  const previous = state.pending[state.cursor - 1];
-  if (!scan) return;
-  if (!previous) {
-    say('g binds a scan to the one above it; this is the first in the list.');
-    return;
-  }
-  const group = previous.group || previous.digest.slice(0, 6);
-  if ((state.draft.group ?? scan.group) === group) {
-    state.draft.group = '';
-    say(`No longer the same document as ${previous.filename}.`);
-    draw();
-    saveSoon();
-    return;
-  }
-  state.draft.group = group;
-  if (!previous.group) {
-    try {
-      await api.patch({ digest: previous.digest, group });
-      previous.group = group;
-    } catch (err) {
-      showError(err);
-    }
-  }
-  const count = groupMembers(group).length + (groupMembers(group).includes(scan) ? 0 : 1);
-  say(`Same document as ${previous.filename} — ${count} scans bound together. g again undoes.`);
-  draw();
-  saveSoon();
-}
-
-// groupMembers is every scan still in the inbox that belongs to group,
-// counting the desk's unsaved draft for the scan on it.
-function groupMembers(group) {
-  return state.pending.filter((candidate) =>
-    (candidate === current() ? state.draft.group ?? candidate.group : candidate.group) === group);
 }
 
 // say puts a short line on the desk for a key whose effect is otherwise easy
@@ -821,7 +763,6 @@ const KEYS = {
   hints: [
     [['Enter'], 'file and next'],
     [['k'], 'keep for good'],
-    [['g'], 'same document'],
     [['Backspace'], 'reject'],
     [['\u2193', '\u2191'], 'move'],
     [['p'], 'pages'],
@@ -852,7 +793,6 @@ const KEYS = {
     '\uff1a': () => split.openText(),
     '-': () => split.remove(),
     k: () => toggleKeep(),
-    g: () => sameAsPrevious(),
   },
 };
 

@@ -47,7 +47,7 @@ hundred records wrong at once. The log is what makes that recoverable, and
 therefore what makes batch editing safe enough to offer.
 
 Cards are marked with Shift-click and the batch is one request. It sets only
-what many documents share — the type, the group, tags, and whether the type is
+what many documents share — the type, tags, and whether the type is
 confirmed — because a description and an amount belong to one document. A
 record the batch refuses is reported on its own and does not undo the ones that
 were written: a batch is a convenience over a list of edits, not a transaction.

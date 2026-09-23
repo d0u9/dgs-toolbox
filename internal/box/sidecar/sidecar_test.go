@@ -35,7 +35,6 @@ func full() sidecar.File {
 		PageSize:         "A4",
 		Producer:         "ScanSnap Manager",
 		ScanCreatedAt:    "2019-03-11T20:30:00+09:00",
-		Group:            "8f2a1c",
 	}
 }
 
@@ -66,9 +65,6 @@ func TestRoundTripKeepsEveryField(t *testing.T) {
 	}
 	if got.Pages != want.Pages || got.PageSize != want.PageSize || got.Producer != want.Producer || got.ScanCreatedAt != want.ScanCreatedAt {
 		t.Errorf("derived fields: got %+v", got)
-	}
-	if got.Group != want.Group {
-		t.Errorf("group: got %q", got.Group)
 	}
 }
 
