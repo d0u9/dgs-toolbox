@@ -828,3 +828,81 @@ func TestDerive_PrincipalMakesInstanceDialAsUser(t *testing.T) {
 		t.Fatalf("principal = %+v, want repeater's default user credential", got.Principal)
 	}
 }
+
+// fileServer is one Samba instance reached directly, with the manifest
+// naming its accounts as given.
+func fileServer(accounts string, users map[string]inventory.User) (*inventory.Root, map[string]confgen.Manifest) {
+	inv := &inventory.Root{
+		Nodes: []inventory.Node{{
+			ID:       "nas",
+			Networks: inventory.Networks{"home": "10.0.0.10"},
+			Instances: []inventory.Instance{
+				{ID: "samba-nas", Service: "samba", Ports: inventory.PortsOf(map[string]int{"smb": 445})},
+			},
+		}},
+		Users:    users,
+		Routes:   map[string]inventory.Route{"files": {Hops: []string{"samba-nas:smb"}}},
+		Networks: []string{"home"},
+	}
+	manifests := map[string]confgen.Manifest{
+		"samba": {Auth: confgen.AuthPerPrincipal, Accounts: accounts},
+	}
+	return inv, manifests
+}
+
+func accountNames(t *testing.T, inv *inventory.Root, manifests map[string]confgen.Manifest) []string {
+	t.Helper()
+	m, err := Derive(inv, manifests)
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+	var names []string
+	for _, p := range m.Principals("samba-nas", "smb") {
+		names = append(names, p.Name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// TestDerive_AccountNamedByCredential is the ordinary name: the person and
+// the credential, because a credential is what is revocable.
+func TestDerive_AccountNamedByCredential(t *testing.T) {
+	inv, manifests := fileServer("", map[string]inventory.User{
+		"jane": {Devices: inventory.DevicesNone, Access: []string{"files"}},
+	})
+	if got := accountNames(t, inv, manifests); len(got) != 1 || got[0] != "jane-default" {
+		t.Fatalf("accounts = %v, want [jane-default]", got)
+	}
+}
+
+// TestDerive_AccountNamedByPerson: a service whose accounts are POSIX users
+// names them after the person, and honours a username the same way the
+// ordinary name does.
+func TestDerive_AccountNamedByPerson(t *testing.T) {
+	inv, manifests := fileServer(confgen.AccountsPerson, map[string]inventory.User{
+		"jane": {Devices: inventory.DevicesNone, Access: []string{"files"}},
+		"bob":  {Username: "robert", Devices: inventory.DevicesNone, Access: []string{"files"}},
+	})
+	got := accountNames(t, inv, manifests)
+	if len(got) != 2 || got[0] != "jane" || got[1] != "robert" {
+		t.Fatalf("accounts = %v, want [jane robert]", got)
+	}
+}
+
+// TestDerive_AccountNamedByPersonKeepsTheCredentialsSecret: the name drops
+// the credential, the secret does not. Which file holds the value is still
+// the credential's, so switching a service to person names regenerates
+// nothing.
+func TestDerive_AccountNamedByPersonKeepsTheCredentialsSecret(t *testing.T) {
+	inv, manifests := fileServer(confgen.AccountsPerson, map[string]inventory.User{
+		"jane": {Devices: inventory.DevicesNone, Access: []string{"files"}},
+	})
+	m, err := Derive(inv, manifests)
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+	p := m.Principals("samba-nas", "smb")
+	if len(p) != 1 || p[0].Group != "jane" || p[0].Slot != "default" {
+		t.Fatalf("principal = %+v, want jane's default credential", p)
+	}
+}

@@ -9,9 +9,8 @@
   is what revoking looks like.
 
   [homes] is Samba's own: one section per user, resolved when they connect,
-  and `%S` is the POSIX account the username map resolved them to. So a home
-  directory is named after the person even though the name they logged in
-  with is their credential's.
+  and `%S` is the name they logged in with — the person's, because this
+  service names accounts by person.
 */ -}}
 [global]
 {{- range $key, $value := .global }}
