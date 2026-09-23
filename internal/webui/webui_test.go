@@ -32,7 +32,7 @@ func TestAssetsHoldTheSharedFiles(t *testing.T) {
 // The faces fonts.css names ship with the binary, so a page draws the same
 // on a machine with no network.
 func TestFontsAreEmbedded(t *testing.T) {
-	for _, name := range []string{"fonts/manrope-latin.woff2", "fonts/manrope-latin-ext.woff2", "fonts/LICENSE-manrope.txt"} {
+	for _, name := range []string{"fonts/inter-latin.woff2", "fonts/inter-latin-ext.woff2", "fonts/LICENSE-inter.txt"} {
 		b, err := fs.ReadFile(webui.Assets(), name)
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)

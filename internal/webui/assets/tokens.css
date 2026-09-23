@@ -63,7 +63,7 @@
   --lift-modal: 0 8px 24px rgba(26, 26, 26, .12);
 
   /* Type */
-  --font-sans: Manrope, system-ui, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  --font-sans: Inter, system-ui, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Density: the tool scale. A page never hard-codes these sizes. */
