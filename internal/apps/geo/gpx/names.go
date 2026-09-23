@@ -1,19 +1,17 @@
-// Renaming a part of a GPX. A file dgs wrote is renamed in the file itself;
-// a recording from somewhere else is never written, so its new names are kept
-// in the sidecar beside it. A track added here, and every track of a draft,
-// carries its name in the sidecar until the file is saved.
+// Renaming a part of a GPX. Every name is held beside the file until the edit
+// is saved; saving writes it where it belongs — into a GPX dgs wrote, and into
+// the sidecar of a recording, which is never written. A track added here, and
+// every track of a draft, carries its name into the GPX it is written to.
 
 package gpx
 
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"dgs-toolbox/internal/geo/gpxfile"
 	"dgs-toolbox/internal/geo/stops"
 )
 
@@ -29,8 +27,7 @@ func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
 		return
 	}
-	kind, index, err := partKey(body.Key)
-	if err != nil {
+	if _, _, err := partKey(body.Key); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -48,29 +45,24 @@ func (a api) renamePart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, result.sidecarErr)
 		return
 	}
-	if !partExists(result, kind, index) {
-		writeError(w, http.StatusNotFound, fmt.Errorf("%s: no such part", body.Key))
+	at, err := locate(result, body.Key)
+	if err != nil {
+		writeError(w, statusFor(err), err)
 		return
 	}
+	// Every name is kept beside the file until the edit is saved. Saving puts
+	// it where it belongs: into a GPX dgs wrote, and into the sidecar of a
+	// recording, which is never written.
 	file := result.cleaning
-	switch {
-	// A track added here is not in the file yet: it is named in the sidecar
-	// that holds it, and takes that name into the GPX it is written to.
-	case kind == 't' && index >= result.own:
-		file.Added[index-result.own].Name = name
-	// A file dgs wrote may be renamed in place; nothing else is written.
-	case kind == 't' && result.file.IsOurs() && !isDraft(body.Path):
-		if err := gpxfile.RenameTrack(body.Path, index, name); err != nil {
-			writeError(w, statusFor(err), err)
-			return
-		}
-		delete(file.Names, body.Key)
-	default:
-		if file.Names == nil {
-			file.Names = map[string]string{}
-		}
-		file.Names[body.Key] = name
+	if at.kind == 't' && at.held >= 0 {
+		// A track added here is not in a GPX yet: it carries its name where it
+		// is held, into the GPX it is written to.
+		file.Added[at.held].Name = name
 	}
+	if file.Names == nil {
+		file.Names = map[string]string{}
+	}
+	file.Names[body.Key] = name
 	if len(file.Names) == 0 {
 		file.Names = nil
 	}
@@ -92,14 +84,4 @@ func partKey(key string) (byte, int, error) {
 		return 0, 0, invalid
 	}
 	return key[0], index, nil
-}
-
-func partExists(a analysis, kind byte, index int) bool {
-	switch kind {
-	case 't':
-		return index < len(a.file.Tracks)
-	case 'r':
-		return index < len(a.file.Routes)
-	}
-	return index < len(a.file.Waypoints)
 }

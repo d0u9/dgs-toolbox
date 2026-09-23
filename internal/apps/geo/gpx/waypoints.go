@@ -3,12 +3,12 @@ package gpx
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"strings"
 	"time"
 
-	"dgs-toolbox/internal/geo"
 	"dgs-toolbox/internal/geo/compose"
 	"dgs-toolbox/internal/geo/gpxfile"
 )
@@ -35,28 +35,31 @@ func (a api) addWaypoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name, description := strings.TrimSpace(body.Name), strings.TrimSpace(body.Description)
-	// A new GPX is not on disk yet, so its waypoints stay in the draft until
-	// it is saved; a file this program wrote takes the point into the GPX.
-	if isDraft(body.Path) {
-		draft, ok := drafts.get(body.Path)
-		if !ok {
-			writeError(w, statusFor(errNoDraft), errNoDraft)
-			return
-		}
-		if math.IsNaN(body.Lat) || math.IsNaN(body.Lon) || math.Abs(body.Lat) > 90 || math.Abs(body.Lon) > 180 {
-			writeError(w, http.StatusBadRequest, errors.New("waypoint coordinates are outside the globe"))
-			return
-		}
-		draft.Waypoints = append(draft.Waypoints, compose.Waypoint{Lon: body.Lon, Lat: body.Lat, Name: name, Description: description, At: time.Now().UnixMilli()})
-		if err := drafts.set(body.Path, draft); err != nil {
+	if math.IsNaN(body.Lat) || math.IsNaN(body.Lon) || math.Abs(body.Lat) > 90 || math.Abs(body.Lon) > 180 {
+		writeError(w, http.StatusBadRequest, errors.New("waypoint coordinates are outside the globe"))
+		return
+	}
+	// Only a GPX dgs wrote takes a waypoint: a recording is never written.
+	if !isDraft(body.Path) {
+		file, err := openGPX(body.Path)
+		if err != nil {
 			writeError(w, statusFor(err), err)
 			return
 		}
-		writeJSON(w, map[string]bool{"ok": true})
+		if !file.IsOurs() {
+			writeError(w, http.StatusUnprocessableEntity, fmt.Errorf("%s: %w", body.Path, gpxfile.ErrNotOurs))
+			return
+		}
+	}
+	// The point is held beside the file, as every edit is, and goes into the
+	// GPX when the edit is saved.
+	held, _, err := loadSidecar(body.Path)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err)
 		return
 	}
-	point := gpxfile.Waypoint{Point: gpxfile.Point{LatLon: geo.LatLon{Lat: body.Lat, Lon: body.Lon}}, Name: name, Description: description}
-	if err := gpxfile.AddWaypoint(body.Path, point); err != nil {
+	held.Waypoints = append(held.Waypoints, compose.Waypoint{Lon: body.Lon, Lat: body.Lat, Name: name, Description: description, At: time.Now().UnixMilli()})
+	if err := saveSidecar(body.Path, held); err != nil {
 		writeError(w, statusFor(err), err)
 		return
 	}

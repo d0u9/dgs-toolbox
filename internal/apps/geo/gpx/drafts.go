@@ -85,21 +85,22 @@ func checkGPX(path string) error {
 // openGPX reads a GPX file, or a draft's empty one.
 func openGPX(path string) (*gpxfile.File, error) {
 	if isDraft(path) {
-		draft, ok := drafts.get(path)
-		if !ok {
+		if _, ok := drafts.get(path); !ok {
 			return nil, errNoDraft
 		}
-		file := &gpxfile.File{Name: draftName(path)}
-		for _, waypoint := range draft.Waypoints {
-			file.Waypoints = append(file.Waypoints, waypoint.Point())
-		}
-		return file, nil
+		// A draft has nothing on disk: the waypoints and routes held for it
+		// are laid over it as they are over any other file.
+		return &gpxfile.File{Name: draftName(path)}, nil
 	}
 	return gpxfile.Open(path)
 }
 
 // loadSidecar reads what was done to a GPX: its sidecar, or a draft's record.
 func loadSidecar(path string) (sidecar.File, bool, error) {
+	// Edits not saved yet are what the file reads as, over what is on disk.
+	if file, ok := pending.get(path); ok {
+		return file, true, nil
+	}
 	if isDraft(path) {
 		file, ok := drafts.get(path)
 		if !ok {
@@ -128,13 +129,37 @@ func loadSidecar(path string) (sidecar.File, bool, error) {
 	return sidecar.Load(path)
 }
 
+// saveSidecar records what was done to a GPX. Nothing reaches disk here: the
+// edits are held in memory until they are saved, as pending.go describes. A
+// draft has no disk of its own, so it keeps its own record as before.
 func saveSidecar(path string, file sidecar.File) error {
+	if isDraft(path) {
+		return drafts.set(path, file)
+	}
+	if err := checkGPX(path); err != nil {
+		return err
+	}
+	pending.set(path, file)
+	return nil
+}
+
+// writeSidecarNow writes what was done to a GPX where it belongs: into the
+// GPX itself when dgs wrote it, and into the sidecar beside it otherwise.
+// Only saving calls this, and the file it writes for a GPX dgs did not write
+// is the sidecar, never the recording.
+func writeSidecarNow(path string, file sidecar.File) error {
 	if isDraft(path) {
 		return drafts.set(path, file)
 	}
 	parsed, err := gpxfile.Open(path)
 	if err != nil || !parsed.IsOurs() {
 		return sidecar.Save(path, file)
+	}
+	// A GPX dgs wrote is ours to write: what was done to its parts goes into
+	// the file itself rather than staying beside it.
+	file, err = writeParts(path, parsed, file)
+	if err != nil {
+		return err
 	}
 	if !file.Active() {
 		return gpxfile.WriteState(path, nil)
@@ -169,6 +194,8 @@ func (a api) discardSidecar(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusFor(err), err)
 		return
 	}
+	// Everything done to the file goes, saved or not.
+	pending.drop(body.Path)
 	if _, err := os.Stat(sidecar.PathFor(body.Path)); errors.Is(err, os.ErrNotExist) {
 		if parsed, err := gpxfile.Open(body.Path); err == nil && parsed.IsOurs() {
 			if err := gpxfile.WriteState(body.Path, nil); err != nil {

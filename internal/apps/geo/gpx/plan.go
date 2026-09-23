@@ -98,7 +98,7 @@ func (a api) saveRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	plan := body.Plan
-	if err := saveSidecar(target, sidecar.File{Version: sidecar.Version, Clean: clean.Defaults(), Plan: &plan}); err != nil {
+	if err := writeSidecarNow(target, sidecar.File{Version: sidecar.Version, Clean: clean.Defaults(), Plan: &plan}); err != nil {
 		os.Remove(target)
 		writeError(w, http.StatusInternalServerError, err)
 		return
