@@ -701,12 +701,20 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 
 /* The eye sits on the text baseline of its row, whatever the row's font. */
 .eye svg, .icon-button svg { display: block; margin: 0 auto; }
-/* Every icon in a file row takes the same 22px square, so they line up. */
+/* A file row's icons sit as one bordered strip: same size squares, touching,
+   sharing their borders. */
 .track-row .actions { gap: 0; }
-.track-row .actions > .eye, .track-row .actions > .row-action { width: 22px; height: 22px; padding: 0; display: grid; place-items: center; border-radius: 5px; color: var(--graphite); }
-.track-row .actions > .eye { color: var(--primary); }
+.track-row .actions > .eye, .track-row .actions > .row-action, .track-row .actions > .order, .track-row .actions > .ours-mark {
+  width: 20px; height: 20px; padding: 0; margin: 0 0 0 -1px; display: grid; place-items: center;
+  border: 1px solid var(--hairline); border-radius: 0; background: var(--paper); color: var(--graphite);
+}
+.track-row .actions > :first-child { margin-left: 0; border-radius: 4px 0 0 4px; }
+.track-row .actions > :last-child { border-radius: 0 4px 4px 0; }
+.track-row .actions > .ours-mark { color: var(--steel); }
+.track-row .actions > .ours-mark.ours, .track-row .actions > .eye { color: var(--primary); }
 .track-row.hidden-track .actions > .eye { color: var(--graphite); }
-.track-row .actions > .eye:hover, .track-row .actions > .row-action:hover { background: rgba(0, 0, 0, .06); }
+.track-row .actions > button:hover:not(:disabled) { background: #ececea; position: relative; z-index: 1; }
+.track-row .actions > .order:disabled { opacity: 1; color: var(--hairline); cursor: default; }
 
 /* Rows picked out for a command that acts on several files. The focused row
    is drawn differently again: focus is what the map draws, the selection is
@@ -734,6 +742,7 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .sort-row { transition: transform .16s cubic-bezier(.2, .8, .2, 1); }
 .sort-row.sort-held { opacity: 0 !important; pointer-events: none; }
 /* A route's or waypoint's arrows, putting it one place up or down in its GPX. */
-.actions button.order { padding: 0 3px; border: none; background: none; font-size: 9px; color: var(--graphite); cursor: pointer; }
+.actions button.order { width: 16px; height: 22px; padding: 0; display: grid; place-items: center; border: none; border-radius: 5px; background: none; color: var(--graphite); cursor: pointer; }
+.actions button.order:hover:not(:disabled) { background: rgba(0, 0, 0, .06); }
 .actions button.order:hover:not(:disabled) { color: var(--primary); }
 .actions button.order:disabled { opacity: .25; cursor: default; }

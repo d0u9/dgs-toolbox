@@ -13,7 +13,7 @@ import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { revealButton } from "./reveal.js";
-import { CHEVRON, DIAMOND, DIAMOND_OPEN } from "./icons.js";
+import { CHEVRON, DIAMOND, DIAMOND_OPEN, DOWN, UP } from "./icons.js";
 import { RoutePlanner } from "./route.js";
 import { chooseDialog, confirmDialog, promptDialog, waypointDialog } from "./dialog.js";
 import { openFile, saveFile } from "/ui/filedialog.js";
@@ -1289,6 +1289,17 @@ function trackRow(path, entry) {
   actions.className = "actions";
   if (track.draft || track.added) li.classList.add("changed");
   if (track.clean.sidecar) li.classList.add("has-sidecar");
+  // Besides dragging, files move a step at a time among the rows listed.
+  const listed = filteredPaths();
+  const at = listed.indexOf(path);
+  if (listed.length > 1) {
+    const all = [...state.tracks.keys()];
+    const up = iconButton("order", UP, "Move this file up", () => reorderFiles(path, listed[at - 1]));
+    const down = iconButton("order", DOWN, "Move this file down", () => reorderFiles(path, all[all.indexOf(listed[at + 1]) + 1] ?? null));
+    up.disabled = at <= 0;
+    down.disabled = at >= listed.length - 1;
+    actions.append(up, down);
+  }
   actions.append(oursMark(track));
   if (state.config.canReveal && !track.draft) actions.append(revealButton(path));
   actions.append(eye);
@@ -1447,8 +1458,8 @@ function partRow(path, entry, part) {
   if (ours && kin.length > 1) {
     const keys = kin;
     const at = keys.indexOf(part.key);
-    const up = button("order", "▲", `Move this ${part.kind} up`, () => reorderParts({ kind: part.kind, path, key: part.key }, keys[at - 1]));
-    const down = button("order", "▼", `Move this ${part.kind} down`, () => reorderParts({ kind: part.kind, path, key: part.key }, keys[at + 2] ?? null));
+    const up = iconButton("order", UP, `Move this ${part.kind} up`, () => reorderParts({ kind: part.kind, path, key: part.key }, keys[at - 1]));
+    const down = iconButton("order", DOWN, `Move this ${part.kind} down`, () => reorderParts({ kind: part.kind, path, key: part.key }, keys[at + 2] ?? null));
     up.disabled = at <= 0;
     down.disabled = at >= keys.length - 1;
     actions.append(up, down);
