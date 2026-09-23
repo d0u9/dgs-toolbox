@@ -126,6 +126,7 @@ off any particular spelling. The two lists are in
 | `files` | What this service writes when one file is not enough: a list of `template` and `output` pairs, in the order written. A manifest declares this or `template` and `output`, never both. See [a service that reads more than one file](#a-service-that-reads-more-than-one-file). |
 | `defaults` | How `defaults.yaml` applies: `document` or `element`. See below. |
 | `output` | The name the rendered file is written under — the name the program expects where it runs, such as `config.json` or `server.env`. |
+| `accounts` | `person` when the account name a server sees is the person's username alone, rather than `<username>-<credential>`. Written only beside `auth: per-principal`. See [the account name](#the-account-name). |
 | `rotation` | `disruptive` when this service's template cannot emit two accounts for one principal, so rotating it drops the connection instead of overlapping old and new. Omitted, it can. See [rotation](inventory.md#rotation). |
 | `self` | This service's own secrets — credentials belonging to the instance rather than to anything reaching it — declared by name, each with its shape (`kind`, `bytes`), and optionally `set: true` for a family of values whose keys an instance declares, or `fields` for a credential made of several generated parts. One file per leaf, under `<instance>/self/`. It is the only place they are named, so `secret sync` generates what is declared and reports what is not. See [a service's own secrets](inventory.md#a-services-own-secrets). |
 | `forwards` | `true` when an instance of this service terminates nothing: it moves the bytes of one of its ports to the hop that follows it and reads none of them. A client entering here dials this instance and authenticates against the hop behind it, so the route is written out as the service that ends it, and this one holds no account and no secret. Written with `auth: per-principal` or with `self`, the manifest does not load. See [a service that forwards](inventory.md#a-service-that-forwards). |
@@ -150,11 +151,10 @@ more directory, not a new case in the renderer.
 
 Most programs read one configuration file. Some read several, and the several
 are one configuration: Samba keeps passwords nowhere near `smb.conf` — they are
-NT hashes in an account table, and the name a client logs in with is resolved
-to a POSIX account through a third file.
+NT hashes in an account table beside it.
 
-Those are not three services. They are read by one program, they describe one
-set of accounts, and a service each would put one truth behind three manifests
+Those are not two services. They are read by one program, they describe one
+set of accounts, and a service each would put one truth behind two manifests
 that could disagree — a share admitting an account the table does not hold
 renders cleanly and authenticates nobody.
 
@@ -163,14 +163,13 @@ So a manifest may write `files` in place of `template` and `output`:
 ```yaml
 # services/samba/confgen.yaml
 auth: per-principal
+accounts: person
 defaults: document
 files:
   - template: templates/smb.conf.tmpl
     output: smb.conf
   - template: templates/smbpasswd.tmpl
     output: smbpasswd
-  - template: templates/usermap.tmpl
-    output: usermap
 ```
 
 Every file renders from one `defaults.yaml` and one render context, in the
@@ -184,13 +183,27 @@ Writing `files` together with `template` or `output` is an error: the two say
 the same thing, and a manifest holding both leaves which one renders up to
 whoever reads the code.
 
-**An account is per credential; a POSIX account is per person.** This is what
-the third file exists for, and it is a property of the model rather than of
-Samba: a credential is what is revocable, so the account name a server sees is
-`<person>-<credential>`, while the account owning files is the person's. The
-map resolves one onto the other, which is what
-[`grantees`](inventory.md#the-render-context) renders — each person once, with
-every account name their credentials produce.
+### The account name
+
+An account name is ordinarily `<username>-<credential>`, because a credential is
+what is revocable and one person may hold two on one port; see
+[credentials belong to the person](inventory.md#credentials-belong-to-the-person). A service whose accounts are POSIX
+users writes `accounts: person`, and the name is the username alone.
+
+Samba is the case. The name a client logs in with is the POSIX user that owns
+their files, and `[homes]` resolves a home directory from it, so a suffix there
+is a second name for the same account — one that either needs a username map
+beside `smb.conf` to undo, or names every home directory after a credential.
+
+It is the service's choice rather than a person's, and it changes the name
+only. The secret is still the credential's, under the same path, so switching a
+service to it regenerates nothing. What it gives up is a second credential per
+person on that service's ports: two would be two accounts under one name, and
+[rule 13](inventory.md#validation) reports it where the grant is written.
+
+A template grouping by person rather than by account still has
+[`grantees`](inventory.md#the-render-context), for a service that keeps the
+ordinary name.
 
 ### Two kinds of defaults
 

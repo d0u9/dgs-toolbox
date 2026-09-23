@@ -4,9 +4,6 @@
 # The [global] section, rendered key by key in the order Samba reads them as
 # names rather than in the order they are written here.
 #
-# `username map` is the deployed path of the map rendered beside this file,
-# which is the one place the two know about each other.
-#
 # There is no `passdb backend`: the rendered account table is in smbpasswd
 # format and is imported into Samba's own passdb when the container starts,
 # so smbd keeps its default backend and never writes to the read-only
@@ -23,7 +20,6 @@ global:
   printcap name: /dev/null
   logging: stdout
   log level: 1
-  username map: /config/usermap
 
 # One entry of the share list, applied to every share. These are the lines
 # that were copied into every section of a hand-written smb.conf, and copying
@@ -48,8 +44,8 @@ share_defaults:
 # users.txt did not. Every instance states it.
 
 # Samba's own [homes]: one section resolved per user when they connect. `%S`
-# is the POSIX account the username map resolved them to, so the directory is
-# named after the person rather than after the credential they logged in with.
+# is the name they logged in with, which is the person's, since this service
+# names accounts by person.
 homes:
   root: /mnt/vault/11-home
   settings:
