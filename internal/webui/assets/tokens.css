@@ -36,6 +36,10 @@
   /* Interaction surfaces, derived from the surface scale */
   --hover: var(--cloud);
   --selected: var(--primary-soft);
+  /* A selected row under the pointer. Hover has to stay visible on a
+     selected row without taking the selection's colour off it, so it is the
+     selected colour a step deeper rather than the hover grey. */
+  --selected-hover: #b3d4fb;
 
   /* Radius */
   --radius-xs: 2px;
@@ -74,5 +78,6 @@
   --row-pad-y: 4px;
   --row-pad-x: 8px;
   --bar-height: 40px;
+  --status-height: 22px;
   --gap-row: 6px;
 }

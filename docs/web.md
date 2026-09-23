@@ -164,6 +164,7 @@ density:
   row-pad-y: 4px
   row-pad-x: 8px
   bar-height: 40px
+  status-height: 22px
   gap-row: 6px
 
 components:
@@ -362,6 +363,54 @@ page that only opens leaves `Writable` off, and then nothing the dialog can
 reach changes anything on disk. The computation behind all of them is
 `internal/filebrowse`, so a TUI file view lists a folder with the same code.
 
+It also carries the **status bar**: the one row along the bottom of a page
+where every piece of news lands. A page links `/ui/statusbar.css`, imports
+`/ui/statusbar.js`, calls `mount()` once and then `show`, `showError`,
+`setState`, `setSummary`, `setHints` and `clear`. It is the web half of the
+TUI shell's status bar and carries the same three regions — state on the left,
+the middle, hints on the right — so a reader looks in one place whichever face
+of `dgs` they are using. The three are grid columns, and the middle is its own
+column between the two ends, so what it says stays centred on the row whatever
+the ends hold.
+
+Two things want that middle, and it holds one line at a time. `setSummary`
+writes the standing line: what the page is showing, or what the tool in hand
+does now, such as what a click on the map would do. It is the one part that
+may carry `<strong>` and `<kbd>`, because a key is named as a key. `show`
+writes the news over it. News wins while it is the newest thing the reader has
+been told; the summary comes back when the news is cleared, or when the
+summary itself changes, because a summary changing means the reader has just
+done something else. Like the top bar it is exactly one row and never
+wraps: a message longer than the row is cut with an ellipsis and kept whole in
+its title.
+
+It is thinner than the top bar — `--status-height`, not `--bar-height` — and
+set in `--font-size-xs`. A terminal cannot draw a row shorter than a character
+cell; a browser can, and the bar holds text and nothing to click, so it gives
+the height back to the page. The state on the left is set in small capitals,
+which reads as a label rather than as news and tells the two apart at a
+glance. Its two ends are held further in from the sides than the top bar's,
+because a browser window is rounded at the bottom and text at the very edge of
+the last row is cut by the corner.
+
+What belongs there is a one-off event: what was saved, renamed or refused. The
+lasting state of one thing — a track whose sidecar would not read, a route leg
+that would not route — stays beside that thing, where it can carry its own
+*Retry*. A message is not taken away after a while, because the reader may
+have been looking elsewhere when it arrived; the next message replaces it.
+
+It also carries the **context menu**: the small list of commands a right click
+opens on the thing under the pointer. A page links `/ui/menu.css`, imports
+`openMenu` from `/ui/menu.js`, and calls it with the `contextmenu` event and a
+list of sections. A section is a list of items — a label, a title, what to do,
+and whether the item is disabled or destructive — and sections are drawn with
+a rule between them, so commands of one kind sit together. An empty section is
+left out, so a page builds its sections from what is there without counting
+first. Only one menu is open at a time; it closes on a choice, on a click
+elsewhere, on `Esc`, on scroll and on resize, and it flips back inside the
+window near an edge. A menu offers nothing that is not also reachable without
+it: it is a shortcut to the row's own actions, never the only way to one.
+
 The dialog is what a reader already knows from Finder and Explorer:
 
 - Places down the side — the folder `dgs` opened at when it is not the home
@@ -391,8 +440,10 @@ The dialog is what a reader already knows from Finder and Explorer:
   steps into a folder, Left or Backspace goes up, typing jumps to the row whose
   name starts that way, Enter confirms, Esc cancels. Double-clicking a folder
   opens it; double-clicking a file confirms.
-- One action button, and Cancel. Opening answers one path, or several when the
-  page asks for several — Shift extends the selection, Cmd or Ctrl adds one
+- One action button, and Cancel. Clicking a folder marks where the reader is,
+  to step into or rename; it is never what an open answers, so the button stays
+  off until a file is marked, unless the page asked for a folder. Opening
+  answers one path, or several when the page asks for several — Shift extends the selection, Cmd or Ctrl adds one
   row. Saving answers the folder being browsed and the name that was typed.
   The dialog only chooses a path: writing it stays the server's work.
 
@@ -565,6 +616,7 @@ The **density layer** replaces size only, and only on these pages:
 | `--control-height` | 26px | the 44px button height |
 | `--control-height-sm` | 24px | icon buttons and compact fields |
 | `--bar-height` | 40px | the top bar's row |
+| `--status-height` | 22px | the status bar's row, thinner: text only, nothing to click |
 | `--row-pad-y` / `--row-pad-x` | 4px / 8px | the 24px card padding, for a list row |
 | `--gap-row` | 6px | the gap between rows in a list |
 
@@ -576,6 +628,24 @@ page earns its density by giving up size, not by giving up the language.
 Touch targets are the documented exception the other way: these pages are
 driven by a pointer on a desktop, so the 44×44px minimum applies to a page
 built for touch, not to the workspace chrome.
+
+## Rows: hover, selection, focus
+
+A list row can be under the pointer, picked out for a command, and the one
+being looked at, all at once, so the three are drawn as three different
+things and none of them hides another:
+
+| State | Treatment | Token |
+|---|---|---|
+| Hover | The row's background goes to the lightest gray. | `--hover` |
+| Selected | The row's background goes to soft blue. | `--selected` |
+| Selected and hovered | The same blue a step deeper — never the hover gray, which would take the selection off the row under the pointer. | `--selected-hover` |
+| Focused | A band down the row's left, in the colour of the thing itself where the thing has one — the track's colour on the GPX page — widened, over the lightest gray, with the name in ink. A second wash of blue would say the same as the selection and read as one state; a band and a colour say a different thing. Where the thing's colour can be changed, that band is the colour control itself, so the colour is set where it is shown and the row needs no swatch beside the name. | the thing's own colour, `--primary` where it has none |
+
+The trap is specificity, not colour: `.list li:hover` is more specific than a
+single state class, so a rule written as `.row.selected` alone loses to it and
+the selection disappears under the pointer. A selected row states its hover
+itself.
 
 ## Elevation & Depth
 
