@@ -56,6 +56,9 @@ type addFlow struct {
 	passphrase     [2]textinput.Model
 	onRepeat       bool
 
+	// replace is set when the destination, or its record, already exists and
+	// the confirmation asks to overwrite it.
+	replace     bool
 	name        textinput.Model
 	onDirectory bool
 	dialog      confirm.Model
@@ -63,9 +66,10 @@ type addFlow struct {
 }
 
 type sealedMsg struct {
-	result seal.Result
-	source string
-	err    error
+	result   seal.Result
+	source   string
+	replaced bool
+	err      error
 }
 
 func pickerFor(start string, width, height int, filter fileexplorer.Filter) fileexplorer.Model {
@@ -294,10 +298,12 @@ func (m vaultModel) updateAddName(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			flow.stage = addDirectory
 			return m, flow.picker.Init()
 		}
-		if err := m.checkDestination(); err != nil {
+		exists, err := m.checkDestination()
+		if err != nil {
 			flow.err = err.Error()
 			return m, nil
 		}
+		flow.replace = exists
 		flow.err = ""
 		flow.dialog = confirm.New(m.confirmConfig())
 		flow.stage = addConfirm
@@ -315,22 +321,29 @@ func (m vaultModel) destination() string {
 	return filepath.Join(m.add.directory, strings.TrimSpace(m.add.name.Value()))
 }
 
-func (m vaultModel) checkDestination() error {
+// checkDestination refuses an unusable name and says whether the file, or its
+// record, is already there: that is asked on the confirmation, not refused.
+func (m vaultModel) checkDestination() (exists bool, err error) {
 	name := strings.TrimSpace(m.add.name.Value())
 	switch {
 	case name == "" || name == "." || name == ".." || strings.ContainsRune(name, filepath.Separator):
-		return errors.New("The name must be a single file name.")
+		return false, errors.New("The name must be a single file name.")
 	case !strings.HasSuffix(name, ".age"):
-		return errors.New("The name must end in .age, or the vault will not list it.")
+		return false, errors.New("The name must end in .age, or the vault will not list it.")
 	case strings.HasPrefix(name, "."):
-		return errors.New("The name must not start with a dot, or the vault will not list it.")
+		return false, errors.New("The name must not start with a dot, or the vault will not list it.")
 	}
 	for _, p := range []string{m.destination(), record.PathFor(m.destination())} {
-		if _, err := os.Lstat(p); err == nil {
-			return fmt.Errorf("%s already exists.", tilde(p))
+		info, err := os.Lstat(p)
+		if err != nil {
+			continue
 		}
+		if !info.Mode().IsRegular() {
+			return false, fmt.Errorf("%s is there and is not a regular file.", tilde(p))
+		}
+		exists = true
 	}
-	return nil
+	return exists, nil
 }
 
 // addEncryption says what the file is encrypted with.
@@ -372,22 +385,28 @@ func (m vaultModel) confirmConfig() confirm.Config {
 	if rel, err := filepath.Rel(m.root, m.destination()); err == nil && !strings.HasPrefix(rel, "..") {
 		destination = filepath.ToSlash(rel)
 	}
+	title, message, label := "ADD TO VAULT", fmt.Sprintf("Encrypt the %s %s to %s?", kind, filepath.Base(m.add.source), destination), "Encrypt"
+	if m.add.replace {
+		title, label = "REPLACE IN VAULT", "Replace"
+		message = fmt.Sprintf("Encrypt the %s %s over %s?", kind, filepath.Base(m.add.source), destination)
+		detail = "That file is already in the vault. What it holds now is lost, and nothing of the old version is kept. " + detail
+	}
 	return confirm.Config{
-		Title:        "ADD TO VAULT",
-		Message:      fmt.Sprintf("Encrypt the %s %s to %s?", kind, filepath.Base(m.add.source), destination),
+		Title:        title,
+		Message:      message,
 		Detail:       detail,
-		ConfirmLabel: "Encrypt",
+		ConfirmLabel: label,
 		CancelLabel:  "Back",
 	}
 }
 
 func (m vaultModel) runSeal() tea.Cmd {
-	request := seal.Request{Source: m.add.source, Destination: m.destination(), Skip: m.snap.settings.Skip()}
+	request := seal.Request{Source: m.add.source, Destination: m.destination(), Skip: m.snap.settings.Skip(), Replace: m.add.replace}
 	if m.add.withPassphrase {
 		request.Passphrase = m.add.passphrase[0].Value()
 		return func() tea.Msg {
 			result, err := seal.Seal(request)
-			return sealedMsg{result: result, source: request.Source, err: err}
+			return sealedMsg{result: result, source: request.Source, replaced: request.Replace, err: err}
 		}
 	}
 	request.Recipients = m.chosenRecipients()
@@ -402,7 +421,7 @@ func (m vaultModel) runSeal() tea.Cmd {
 			}
 		}
 		result, err := seal.Seal(request)
-		return sealedMsg{result: result, source: request.Source, err: err}
+		return sealedMsg{result: result, source: request.Source, replaced: request.Replace, err: err}
 	}
 }
 
@@ -421,7 +440,11 @@ func (m vaultModel) finishAdd(msg sealedMsg) (tea.Model, tea.Cmd) {
 	if !msg.result.Verified {
 		state = "unverified"
 	}
-	m.notice = fmt.Sprintf("Added %s (%s) · the plaintext is still at %s", filepath.ToSlash(rel), state, tilde(msg.source))
+	added := "Added"
+	if msg.replaced {
+		added = "Replaced"
+	}
+	m.notice = fmt.Sprintf(added+" %s (%s) · the plaintext is still at %s", filepath.ToSlash(rel), state, tilde(msg.source))
 	scan := m.scan(m.root)
 	return m, scan
 }
