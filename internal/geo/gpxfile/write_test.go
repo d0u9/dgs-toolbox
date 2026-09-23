@@ -125,3 +125,39 @@ func TestRenameTrackRefusesAFileWeDidNotWrite(t *testing.T) {
 		t.Fatal("the recording was written")
 	}
 }
+
+func TestReorderParts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "trip.gpx")
+	waypoints := []Waypoint{
+		{Point: Point{LatLon: geo.LatLon{Lat: 1, Lon: 1}}, Name: "One"},
+		{Point: Point{LatLon: geo.LatLon{Lat: 2, Lon: 2}}, Name: "Two"},
+		{Point: Point{LatLon: geo.LatLon{Lat: 3, Lon: 3}}, Name: "Three"},
+	}
+	if err := CreateAll(path, "trip", waypoints, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReorderParts(path, PartWaypoint, []int{2, 0, 1}); err != nil {
+		t.Fatal(err)
+	}
+	read, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, wpt := range read.Waypoints {
+		names = append(names, wpt.Name)
+	}
+	if got := strings.Join(names, ","); got != "Three,One,Two" {
+		t.Fatalf("order after reorder: %s", got)
+	}
+	if read.Waypoints[0].Lat != 3 {
+		t.Fatalf("the element did not travel with its name: %v", read.Waypoints[0])
+	}
+	if err := ReorderParts(path, PartWaypoint, []int{0, 0, 1}); err == nil {
+		t.Fatal("an order naming a waypoint twice is refused")
+	}
+	if err := ReorderParts(path, PartWaypoint, []int{0, 1}); err == nil {
+		t.Fatal("an order shorter than the file is refused")
+	}
+}
