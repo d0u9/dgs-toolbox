@@ -28,7 +28,6 @@ export class RoutePlanner {
     this.legs = []; // { way, route, distance, duration, status: "ok" | "busy" | "error", error }
     this.source = null; // the workspace file the plan was loaded from
     this.focused = null; // { path, name, plan } of the focused file, when it holds a plan
-    this.message = null;
     this.active = false;
     this.markers = [];
     this.handles = [];
@@ -71,7 +70,6 @@ export class RoutePlanner {
 
   // add puts a waypoint at the end, [lon, lat] in WGS-84.
   add(point) {
-    this.message = null;
     this.waypoints.push(point);
     if (this.waypoints.length > 1) {
       this.legs.push(this.newLeg(this.way));
@@ -134,7 +132,6 @@ export class RoutePlanner {
     this.waypoints = [];
     this.legs = [];
     this.source = null;
-    this.message = null;
     this.changed();
   }
 
@@ -393,12 +390,6 @@ export class RoutePlanner {
     saveButton.title = this.ready ? "Write the route into a new GPX file" : "Two waypoints or more, every leg routed";
     saveButton.addEventListener("click", () => this.onSave());
     foot.append(rte, saveButton);
-    if (this.message) {
-      const note = document.createElement("p");
-      note.className = "clean-foot" + (this.message.error ? " error" : "");
-      note.textContent = this.message.text;
-      foot.append(note);
-    }
     parts.push(foot);
     this.root.replaceChildren(...parts);
   }

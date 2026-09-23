@@ -64,13 +64,13 @@ const FILTERS = [
 export class CleanPanel {
   // onChange(params) is called with the new settings after an edit;
   // onLasso(active) and onRangeTool(active) when those tools are switched;
-  // onCompare(on) likewise; onShowRange(range) to frame a removed range.
+  // onShowRange(range) to frame a removed range.
   // Filling along the road: onFillTool(active), onProfile(profile),
   // onUseFill() and onDiscardFill() for the previewed route, onRemoveFill(index)
   // and onShowFill(fill).
   // onTab(tab) is called when the tab is switched.
-  constructor({ root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab, timeZone }) {
-    Object.assign(this, { root, onChange, onLasso, onRangeTool, onCompare, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab });
+  constructor({ root, onChange, onLasso, onRangeTool, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab, timeZone }) {
+    Object.assign(this, { root, onChange, onLasso, onRangeTool, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab });
     this.ways = []; // the routers' ways of travel, from /api/config
     this.tab = "changes"; // "changes": removals by hand and fills; "auto": the filters; "segments": cuts
     // segmentsRoot holds the Segments tab, drawn by the cut panel.
@@ -153,11 +153,7 @@ export class CleanPanel {
     const title = document.createElement("strong");
     title.textContent = track.name;
     title.title = track.name;
-    const compare = checkbox("Compare with the recording", this.compare, (on) => {
-      this.compare = on;
-      this.onCompare(on);
-    });
-    head.append(title, compare);
+    head.append(title);
     parts.push(head);
 
     const autoRemoved = FILTERS.reduce((sum, filter) => sum + (params[filter.key].enabled && filter.rule !== "moved" ? counts[filter.rule] || 0 : 0), 0);

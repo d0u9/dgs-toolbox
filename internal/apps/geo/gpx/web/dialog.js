@@ -97,6 +97,50 @@ export function promptDialog({ title, message, value = "", confirm = "OK", cance
   });
 }
 
+// chooseDialog asks which of a list is meant — the GPX a part is copied into,
+// say — and resolves to its value, or to null when cancelled.
+export function chooseDialog({ title, message, options, confirm = "OK", cancel = "Cancel" }) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "dialog";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    const text = document.createElement("p");
+    text.textContent = message;
+    const form = document.createElement("form");
+    form.method = "dialog";
+    const choice = document.createElement("select");
+    choice.className = "cut-path prompt-input";
+    for (const option of options) {
+      const item = document.createElement("option");
+      item.value = option.value;
+      item.textContent = option.label;
+      item.title = option.title || option.value;
+      choice.append(item);
+    }
+    const buttons = document.createElement("div");
+    buttons.className = "dialog-buttons";
+    const no = document.createElement("button");
+    no.type = "button";
+    no.className = "text-button";
+    no.textContent = cancel;
+    const yes = document.createElement("button");
+    yes.type = "submit";
+    yes.className = "chip active";
+    yes.textContent = confirm;
+    buttons.append(no, yes);
+    form.append(choice, buttons);
+    dialog.append(heading, text, form);
+    let answer = null;
+    no.addEventListener("click", () => dialog.close());
+    form.addEventListener("submit", () => { answer = choice.value || null; });
+    dialog.addEventListener("close", () => { dialog.remove(); resolve(answer); });
+    document.body.append(dialog);
+    dialog.showModal();
+    choice.focus();
+  });
+}
+
 // confirmDialog resolves true only when the confirm button is pressed.
 export function confirmDialog({ title, message, detail, confirm = "Continue", cancel = "Cancel", danger = false }) {
   return new Promise((resolve) => {

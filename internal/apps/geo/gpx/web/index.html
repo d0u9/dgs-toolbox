@@ -11,6 +11,8 @@
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/filedialog.css">
+<link rel="stylesheet" href="/ui/menu.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="app.css">
 <script src="vendor/maplibre-gl.js"></script>
 <script src="vendor/uPlot.iife.min.js"></script>
@@ -33,6 +35,16 @@
     <div id="layers-panel" class="layers-panel" hidden>
       <p class="layers-hint">Top of the list is drawn on top. Drag ⋮⋮ to reorder.</p>
       <ul id="layer-list" class="layer-list"></ul>
+      <div class="layer-terrain">
+        <label class="layer-name" title="Read the elevation tiles as terrain: the map tilts and the ground rises under the tracks">
+          <input id="terrain-toggle" type="checkbox">
+          <span>3D relief</span>
+        </label>
+        <label class="layer-exaggeration" title="Vertical stretch: 1 is true to the ground">
+          <input id="terrain-exaggeration" type="range" min="1" max="8" step="0.5" value="2.5">
+          <output id="terrain-exaggeration-value">2.5×</output>
+        </label>
+      </div>
     </div>
   </span>
   <label class="basemap" title="GPX is WGS-84; maps published in China are drawn in GCJ-02 and sit several hundred metres off unless the track is converted. Only what is drawn changes.">GCJ-02
@@ -45,30 +57,23 @@
 </header>
 
 <aside class="sidebar">
-  <section id="panel-folders" class="panel folder">
-    <h2><button class="panel-toggle" aria-expanded="true" aria-controls="panel-folders" title="Collapse or expand">Folders</button></h2>
-    <div class="pathbar">
-      <button id="folder-up" class="icon-button" title="Open the parent folder" aria-label="Open the parent folder">↑</button>
-      <span id="folder-path" class="path"></span>
-      <button id="folder-home" class="icon-button" title="Back to the configured root (geo.gpx.root)" aria-label="Back to the configured root">⌂</button>
-      <button id="folder-refresh" class="icon-button" title="Refresh" aria-label="Refresh">↻</button>
-      <button id="folder-open" class="text-button" title="Open GPX files from anywhere on this machine, browsing as Finder does">Open…</button>
-    </div>
-    <ul id="folder-list" class="list tree"></ul>
-    <p id="folder-message" class="message" hidden></p>
-  </section>
-
-  <div id="folder-splitter" class="splitter row" role="separator" aria-orientation="horizontal"></div>
-
   <section id="panel-workspace" class="panel shown">
-    <h2><button class="panel-toggle" aria-expanded="true" aria-controls="panel-workspace" title="Collapse or expand">Workspace</button> <span id="track-count" class="count"></span> <button id="fit-all" class="text-button" hidden>Fit all</button> <button id="new-gpx" class="text-button" title="Start a new, empty GPX in memory: add segments to it from the Segments tab in Edit, then save it">New GPX</button></h2>
+    <h2>
+      <span class="panel-title">Workspace</span> <span id="track-count" class="count"></span>
+      <span class="panel-actions">
+        <button id="save-all" class="text-button" hidden>Save</button>
+        <button id="fit-all" class="text-button" hidden>Fit all</button>
+        <button id="open-gpx" class="text-button" title="Add GPX files to the workspace, browsing as Finder does">Open…</button>
+        <button id="new-gpx" class="text-button" title="Start a new, empty GPX in memory: add segments to it from the Segments tab in Edit, then save it">New GPX</button>
+        <button id="hide-workspace" class="panel-hide" title="Hide the workspace (W)" aria-label="Hide the workspace">‹</button>
+      </span>
+    </h2>
     <div id="track-tools" class="track-tools" hidden>
       <input id="track-filter" class="filter" type="search" placeholder="Filter by name" aria-label="Filter the workspace by name">
-      <button id="show-all" class="icon-button" title="Show every listed track" aria-label="Show every listed track">◉</button>
-      <button id="hide-all" class="icon-button" title="Hide every listed track" aria-label="Hide every listed track">○</button>
+      <button id="toggle-all" class="icon-button"></button>
     </div>
     <ul id="track-list" class="list"></ul>
-    <p id="track-empty" class="message">Click a GPX file in the folders to add it.</p>
+    <p id="track-empty" class="message">Use Open… to add GPX files to the workspace.</p>
     <p id="track-nomatch" class="message" hidden>No track matches the filter.</p>
   </section>
 </aside>
@@ -78,6 +83,11 @@
 <main class="workspace">
   <div class="map-area">
     <div id="map" class="map"></div>
+    <button id="terrain-3d" class="map-button terrain" title="3D relief — tilt the map and raise the ground (D)" aria-pressed="false"><span aria-hidden="true">3D</span></button>
+    <button id="map-only" class="map-button" title="Map only — hide the panels around it (M)" aria-pressed="false"><span aria-hidden="true">⛶</span></button>
+    <button id="show-workspace" class="panel-show left" hidden title="Show the workspace (W)" aria-label="Show the workspace">›</button>
+    <button id="show-inspector" class="panel-show right" hidden title="Show the edit panel (I)" aria-label="Show the edit panel">‹</button>
+    <button id="show-profile" class="panel-show bottom" hidden title="Show the charts (E)" aria-label="Show the charts">▴</button>
     <div id="map-tools" class="map-tools" role="toolbar" aria-label="Edit tools" hidden>
       <button id="tool-select" class="map-tool" aria-pressed="true" title="Select — inspect and focus (Esc)"><span aria-hidden="true">↖</span></button>
       <button id="tool-range" class="map-tool" aria-pressed="false" title="Range — remove the points between two clicks on the track, or drag on the timeline (R)"><span aria-hidden="true">⟷</span></button>
@@ -85,8 +95,9 @@
       <button id="tool-fill" class="map-tool" aria-pressed="false" title="Fill along the road — route between two clicks (F)"><span aria-hidden="true">⤳</span></button>
       <button id="tool-cut" class="map-tool" aria-pressed="false" title="Cut — click the track or the timeline to cut it into segments (C)"><span aria-hidden="true">✂</span></button>
       <button id="tool-waypoint" class="map-tool" aria-pressed="false" title="Waypoint — click the map and choose a GPX to add a named point"><span aria-hidden="true">⚑</span></button>
+      <span class="map-tools-gap" role="separator" aria-orientation="horizontal"></span>
+      <button id="tool-compare" class="map-tool" aria-pressed="true" title="Compare with the recording — draw the untouched recording under the cleaned track"><span aria-hidden="true">◍</span></button>
     </div>
-    <p id="map-hint" class="map-hint" hidden></p>
   </div>
   <div id="profile-splitter" class="splitter row" role="separator" aria-orientation="horizontal" hidden></div>
   <section id="profile" class="profile" hidden>
@@ -103,6 +114,8 @@
           <button id="layout-stacked" class="chip icon" aria-pressed="true" title="Charts one above the other">☰</button>
           <button id="layout-side" class="chip icon" aria-pressed="false" title="Charts side by side">◫</button>
         </span>
+        <button id="chart-fit" class="chip icon" title="Fit — the whole track across the charts and the timeline">⤢</button>
+        <button id="hide-profile" class="panel-hide" title="Hide the charts (E)" aria-label="Hide the charts">▾</button>
       </span>
     </div>
     <div id="timeline" class="timeline">
@@ -144,6 +157,7 @@
 
 <div id="inspector-splitter" class="splitter col" role="separator" aria-orientation="vertical" hidden></div>
 <aside id="inspector" class="inspector" aria-label="Edit" hidden>
+  <button id="hide-inspector" class="panel-hide inspector-hide" title="Hide this panel (I)" aria-label="Hide this panel">›</button>
   <div id="clean-panel" class="clean-panel"></div>
   <div id="route-panel" class="clean-panel route-panel" hidden></div>
 </aside>

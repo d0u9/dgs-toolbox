@@ -8,6 +8,35 @@ This document owns decisions specific to `dgs geo gpx`. Read
 GPX is the first command of the Geo app. Nothing here is a requirement for other
 apps or commands.
 
+## The iron rule
+
+**A GPX dgs did not write is never written to.** Everything done to such a file
+— cleaning, fills, cuts, names, added tracks, route plans — is kept in the
+sidecar beside it. The recording itself keeps the bytes it was recorded with,
+for as long as it is on disk.
+
+This holds whatever the user asks for, and it has no exception for a command
+that would be convenient:
+
+- No command rewrites a recording in place, not to convert it, not to tidy it,
+  not to migrate its sidecar into it.
+- No command deletes or replaces a recording. Discarding a sidecar deletes the
+  sidecar only.
+- Anything that wants the edits inside a GPX writes a **new** file and leaves
+  the source alone: the server creates a file that is not there and never
+  writes over one.
+- A GPX dgs wrote — its `creator` is this program — is ours to write: its
+  names go into the file and its state into the file's `<extensions>`. That is
+  the only kind of file dgs writes into.
+
+The reason is that a recording cannot be made again. A sidecar can: every
+setting in it can be entered a second time. So the file that cannot be
+recovered is the one nothing may touch, and the cost of the rule — a copy on
+disk rather than a file converted in place — is paid every time without asking.
+
+`TestARecordingIsNeverWritten` pins it: every endpoint that changes anything
+runs against a recording, and the recording's bytes have to come out the same.
+
 ## Two surfaces
 
 Much map work — panning, zooming, drawing on a track — cannot be done in a
@@ -34,24 +63,29 @@ server exposes the API under `/api/`; everything else is the page.
 | `/` | The web page. |
 | `/api/health` | Answers `{"ok":true}`. |
 | `/api/config` | The ways of travel the routers offer (`ways`: `id`, `label`, `service`), the base maps — built-in first, then configured — each with its coordinate system, the folder to open at, and `places`: the folders the save dialog lists down its side, each `name` and `path`. |
-| `/api/dir?path=` | The folders and `.gpx` files of a folder, each with the time it was last written, and a file with its size, for the page's folder tree. Hidden entries are left out. |
 | `/ui/files/dir?path=&ext=&hidden=` | The shared file dialog's listing, mounted by `internal/webfile` rather than this app: one folder's folders and files, narrowed to the suffixes `ext` repeats. Documented in [`docs/web.md`](../../web.md). |
 | `/ui/files/places` | The folders the shared file dialog lists down its side. |
 | `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; how many tracks were added to it, and `ours` when `dgs` wrote the file. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
 | `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
 | `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
-| `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`. A GPX `dgs` wrote is renamed in the file itself; a track added here is renamed in the sidecar holding it; any other file keeps the new name in its sidecar under `names` and is not written. |
-| `POST /api/waypoint` | Adds a named standalone `<wpt>` at WGS-84 `lat`, `lon` to an existing dgs-created GPX, or to a new GPX not yet saved, which keeps it until it is written. Files from other creators are refused. |
+| `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. |
+| `POST /api/waypoint` | Adds a named standalone `<wpt>` at WGS-84 `lat`, `lon` to an existing dgs-created GPX, or to a new GPX not yet saved. It is held under `waypoints` until the edit is saved. Files from other creators are refused. |
+| `PUT /api/waypoint` | Puts the waypoint `key` names at WGS-84 `lat`, `lon`, for a pin dropped in the wrong place. Held under `moved` until the edit is saved. Only a GPX `dgs` wrote, or one carried beside a file, is moved; a recorded waypoint is refused. |
+| `PUT /api/part-order` | Puts a file's tracks, routes or waypoints in the order `keys` gives, `kind` being `track`, `route` or `waypoint`; the keys are every key of that kind, as the page lists them. Held under `order` until the edit is saved, which puts the elements in that order inside the GPX. Only a GPX `dgs` wrote, or a new one not saved yet, is reordered; a recording is refused. A track's points go with it, so every point index the edits keep is moved to where its point now lies. |
+| `DELETE /api/part` | Takes the `<trk>`, `<rte>` or `<wpt>` `key` names out of a file: out of what is held beside the file at once, and out of a GPX `dgs` wrote when the edit is saved, recorded under `deleted`. A track goes with the edits, cuts and fills on its points. Any other file is refused. |
+| `POST /api/part/copy` | Copies the part `key` names into the GPX `target` names, as the page shows it, and takes it out of this file when `move`. Only a GPX `dgs` wrote, or a new one not yet saved, is copied into; only a file `dgs` wrote is moved out of. |
 | `POST /api/segments/write` | Writes chosen segments of a track, as cleaned, one `<trk>` each: added to another GPX's sidecar (mode `add`), or into a new GPX it will not overwrite (mode `create`). The source is refused. |
 | `POST /api/fill/route` | Asks a router for the road between two kept points of a track, with a way of travel `/api/config` lists under `ways`. Returns the route in WGS-84 and as drawn. Nothing is saved. |
 | `POST /api/fill` | Records a route between two points in the companion sidecar or embedded dgs state, inserted after the first; later indices move along. |
 | `POST /api/route/leg` | Asks the router for the road between two waypoints of a planned route, `from` and `to` as `[lon, lat]` in WGS-84, with profile `car`, `bike` or `foot`. Nothing is saved. |
 | `POST /api/route/save` | Writes a planned route into a new GPX it will not overwrite — one `<trk>` of its legs, and a `<rte>` of its waypoints when `writeRte` — and keeps the editable plan in the GPX extension. |
 | `DELETE /api/fill` | Removes a fill by its place in the list; its points go and the recorded ones come back. |
-| `DELETE /api/added` | Takes a track added from another file out of a GPX's sidecar, with the edits, cuts and fills on it. |
 | `POST /api/draft` | Starts a new, empty GPX in memory, named by `name`, and answers its path, `draft:<n>/<name>.gpx`. Every other call takes that path as it takes a file's. |
 | `DELETE /api/sidecar` | Discards companion sidecar or embedded dgs edit state. The recorded tracks and standalone waypoints remain. |
 | `POST /api/save-as` | Writes the current edited tracks into a new GPX it will not overwrite: only points kept by cleaning, at their edited positions, including fills and added tracks. Cuts and editable plans are embedded in the new file; no sidecar is needed. |
+| `GET /api/unsaved` | The files holding edits that are not on disk, so a reloaded page shows the same marks again. |
+| `POST /api/save` | Writes the unsaved edits of the paths given — or of every file holding any, when none is given — each where it belongs: the sidecar beside a recording, the file itself for a GPX `dgs` wrote. Answers what was saved. |
+| `DELETE /api/pending` | Drops unsaved edits, so the files read as they are on disk again. A new GPX has nothing on disk to go back to and is refused. |
 | `POST /api/focus` | The page reports its focused track and stop thresholds, so the TUI can summarise it. An empty path clears it. |
 | `POST /api/reveal` | Shows a file or folder in this machine's file manager. Refused unless the request comes from this machine. `/api/config` says whether the page may offer it. |
 
@@ -75,50 +109,126 @@ The page's first function: browse a folder of GPX files and look at them on a
 map. It is the interface later milestones build on.
 
 - **Layout.** A top bar with the time zone selector, the Layers button and the GCJ-02 selector; a sidebar
-  with the folder tree and the workspace; the map; and, under the map, the
+  with the workspace; the map; and, under the map, the
   focused track's profile.
-- **Collapsible panels.** Folders and Workspace each fold to their header by
-  clicking it. With one folded, the other takes the whole sidebar; the divider
-  between them returns when both are open, at its remembered position.
 - **Resizable.** Every boundary between panes is a drag handle: sidebar width,
-  folder tree against workspace, map against profile, and elevation chart
-  against speed chart. Sizes are remembered per browser.
-- **Folder tree.** The sidebar shows a tree rooted at `geo.gpx.root` (or
-  `--dir`), so GPX files in sibling folders can be shown together. Clicking a
-  folder expands or collapses it; a folder's contents load when it is first
-  expanded. `↑` makes the parent the root, keeping what is expanded; a
-  folder's `⤓` (on hover) makes it the root, so a deep folder is not indented
-  far; `⌂` returns to the configured root; `↻` reloads. A root the browser
-  remembers is used only while `geo.gpx.root` is unchanged: after the
-  configuration changes, the page opens at the new root. The server reads the
-  configuration when it starts, so a change takes effect after restarting
-  `dgs`. Clicking a file adds it to the workspace, shown and focused;
-  clicking a file already there shows and focuses it. A file in the workspace
-  carries its track colour: a filled dot when shown, a ring when hidden.
-- **Workspace.** The tracks picked from the tree, kept together whatever
-  folder they came from — the set later milestones edit and search. Each row
-  shows or hides its track on the map (◉ / ○) without leaving the workspace,
-  and `×` removes it. A filter box narrows the list by words in the name or
-  path; the show-all and hide-all buttons act on the tracks it lists. The
-  header counts shown against total.
-  A file with a sidecar says *sidecar* in its row (*sidecar unreadable* when it
-  cannot be read); *Discard…*, on hover, deletes the sidecar after asking, and
-  the file reads as recorded again.
-- **Show in file manager.** Folder, file and track rows have a button, on
-  hover, that reveals the item in Finder or Explorer. It appears only when the
+  map against profile, and elevation chart against speed chart. Sizes are
+  remembered per browser.
+- **No folder view.** The page never lists folders of its own: the file dialog
+  is the one place folders are browsed, so the whole sidebar is the workspace.
+  The folder the dialogs open at starts at `geo.gpx.root` (or `--dir`) and
+  becomes the folder of the last file opened. A folder the browser remembers is
+  used only while `geo.gpx.root` is unchanged: after the configuration changes,
+  the dialog opens at the new root. The server reads the configuration when it
+  starts, so a change takes effect after restarting `dgs`.
+- **Workspace.** The tracks opened, kept together whatever
+  folder they came from — the set later milestones edit and search. A row
+  carries only what is looked at or reached for all the time: the eye, the
+  reveal button and the mark saying who wrote the file. Everything done to a
+  file is in its context menu. A filter box narrows the list by words in the
+  name or path; the eye beside it acts on the tracks it lists.
+  The header counts shown against total. A file with a sidecar says *sidecar*
+  in its row (*sidecar unreadable* when it cannot be read).
+- **The eye.** Showing and hiding are one state, so one control carries it:
+  an open eye where the track is drawn, an eye struck through where it is not.
+  It is the same control on a file's row, on one of its tracks, routes or
+  waypoints, over the tracks the filter lists, and over a file's tracks,
+  routes or waypoints as a group: while any of them is shown it hides them,
+  and once none is it shows them.
+- **Who wrote the file.** Beside the eye, a mark says whether dgs wrote this
+  GPX — filled for a file dgs wrote, hollow for any other. It decides where a
+  later edit goes: inside the file itself, or into a sidecar beside it.
+- **Editing is not saving.** Nothing an edit does reaches the disk until it
+  is saved. What was done to a file — cleaning, removals, cuts, names, fills,
+  added tracks, parts deleted or copied in, a waypoint moved, a route's plan —
+  is held in the `dgs` process serving this
+  page, over what the file's sidecar says, so the page reads as if it were
+  saved while the disk still holds the recording as it was. A file holding
+  such edits carries a dot after its name and reads *edited, not saved*; its
+  menu offers **Save**, which writes them where they belong — the sidecar
+  beside a recording, the file itself for a GPX `dgs` wrote — and **Revert**,
+  which drops them after asking. The workspace header carries a **Save**
+  button while any file is edited, which saves every one of them. Several
+  picked files save and revert together.
+
+  The cost is stated where it is paid: unsaved edits live in one `dgs` process
+  and one page. They go when `dgs` stops. What is bought is that an edit can
+  be taken back whole at any point, and that a half-finished edit never
+  reaches the disk.
+- **Closing an edited file.** *Close* asks first when the file holds unsaved
+  edits, or when it is a new GPX never saved — closing is the one way edits
+  go without being seen again, because the file is not reopened with them.
+  Nothing on disk changes either way.
+- **Leaving the page.** Reloading or closing the tab asks first, while the
+  workspace holds anything. A reload throws away what only the page holds —
+  the tools open, the route being planned, the timeline's view — and starts
+  the workspace again from what was saved, so the question is there to stop a
+  reflex `Cmd-R` from leaving the screen and the disk saying different things.
+- **Picking several files.** Rows are picked out as a file manager picks
+  them: a plain click picks one, `Cmd`/`Ctrl` adds or takes one away, `Shift`
+  reaches from the row last picked to this one over the rows the filter lists,
+  and `Esc` clears the lot. Picking rows is not looking at one — only a plain
+  click moves the map and the profile to a file, so the focused row and the
+  picked rows are drawn differently and mean different things.
+- **The context menu.** A right click on a file's row offers *Save* and
+  *Revert* for what is edited but not on disk, then *Save as…* and
+  *Convert to a dgs GPX…*, then discarding its sidecar or its embedded edits,
+  then *Close*, which takes it out of the workspace and changes nothing on
+  disk. A right click on one of its tracks, routes or waypoints offers
+  *Rename…*, then *Copy to…* and *Move to…*, then *Move on the map…* for a
+  waypoint, then *Delete*; **What is done to one part** says what each of them
+  reaches. A right click
+  on a row outside the picked rows picks that row first, as a file manager
+  does; on one of several picked rows, the menu offers what can be done to
+  each of them without naming a file — saving, reverting, showing, hiding and
+  closing them.
+  Saving and converting name a new file one at a time, so they stay on a
+  single row's menu. The menu
+  itself is the shared one of [`docs/web.md`](../../web.md); it offers nothing
+  that is not also reachable another way.
+- **Convert to a dgs GPX.** A recording keeps what is done to it in a sidecar
+  because the recorded file is not ours to write. *Convert to a dgs GPX…*
+  copies it into a new GPX dgs writes instead: the points as the page shows
+  them, the names given here, and the cuts and route plans inside the copy, so
+  the copy needs no sidecar and later edits go into the file itself. The copy
+  is named and placed in the shared save dialog, the recording is not written,
+  and an existing file is never replaced. The copy takes the recording's place
+  in the workspace, open as it was; the recording stays on disk. A file dgs
+  already wrote has nothing to convert. This is *Save as…* under the name of
+  what it is for, and it writes the same file.
+- **Show in file manager.** A track row has a button, on hover, that reveals
+  the file in Finder or Explorer. It appears only when the
   page is opened on the machine running `dgs`: from another machine it would
   open windows on a screen nobody there can see.
-- **Opening files.** *Open…* in the Folders bar opens the shared file dialog
-  ([`docs/web.md`](../../web.md)), so a GPX outside the tree's root can be
-  added without moving the root: several files at once, filtered to `GPX
-  files` or `All files`. Each chosen file is added to the workspace, shown;
-  one already there is shown and focused instead. Nothing on disk changes.
+- **Dropping files.** GPX files dragged from Finder or Explorer onto the
+  sidebar are opened in the workspace, as *Open…* opens them. The browser
+  hands over no path for a dropped file, but the file manager puts the files'
+  URLs on the drag and those carry the path — so, like the rest of opening by
+  path, this works only when the page is opened on the machine the files are
+  on. Anything dropped that is not a GPX on this machine is refused with a
+  line in the sidebar.
+
+  Which browser the page is opened in decides whether dropping works at all.
+  Safari and Firefox put the file URLs on a Finder or Explorer drag, so the
+  path is there to read. Chrome and the browsers built on it put only the
+  files themselves and withhold where they came from, and a page cannot ask;
+  there, dropping says so and names *Open…*, which reaches the same files by
+  path. This is a limit of the browser, not something the page can work
+  around — which is why *Open…* is the way that always works and dropping is
+  the shortcut.
+- **Opening files.** *Open…* in the Workspace header opens the shared file
+  dialog ([`docs/web.md`](../../web.md)), which reaches a GPX anywhere on the
+  machine: several files at once. Only GPX files are listed and only a file can
+  be answered — a folder is stepped into, never chosen — so `GPX files` is the
+  one filter. Each chosen file is added to the workspace, shown; one already
+  there is shown and focused instead. Nothing on disk changes. The folder they
+  came from is where the next dialog opens.
 - **Choosing where to save.** Everything that writes a new file — a planned
-  route, a new GPX, *Save as…*, and *Browse…* on the Segments tab — opens the
+  route, a new GPX, *Save as…*, and *Save as a new GPX…* on the Segments tab — opens the
   shared file dialog's save mode ([`docs/web.md`](../../web.md)) instead of a
   typed path: the same browser as *Open*, with a name field, *New Folder*, and
   F2 to rename. `.gpx` is added when it is left off. It opens at the folder the
-  file belongs to — the folder tree's, or the one beside the file being saved —
+  file belongs to — the last folder opened from, or the one beside the file being saved —
   and falls back to the folder `dgs` opened at, `geo.gpx.root` or the home
   directory, when that folder is gone. The server writes a new file and never
   writes over one, so the dialog refuses a name that is already taken rather
@@ -148,13 +258,73 @@ map. It is the interface later milestones build on.
   ranges of hidden tracks on both charts and the timeline, and a stop inside a
   hidden track has no marker on the map.
 - **Renaming a part.** Every part row has `✎`, on hover, which asks for a new
-  name for that `<trk>`, `<rte>` or `<wpt>`. Where the name is kept follows
-  who wrote the file: a GPX `dgs` wrote is renamed in the file itself, and a
-  track added here is renamed where it is held, in the sidecar, so it carries
-  that name into the GPX it is written to. Any other file — a recording — is
-  never written: its new names go in its sidecar under `names`, keyed `t0`,
-  `r0`, `w0`, and the page shows them in place of the file's own. The dialog
-  says which of the two is happening before the name is typed.
+  name for that `<trk>`, `<rte>` or `<wpt>`. The name is held beside the file
+  under `names`, keyed `t0`, `r0`, `w0`, until the edit is saved; saving puts
+  it where it belongs, which follows who wrote the file: into a GPX `dgs`
+  wrote, and into the sidecar of any other file, which is never written. A
+  track added here carries its name into the GPX it is written to. The dialog
+  says which of the two will happen before the name is typed.
+- **What is done to one part.** Renaming is not all a part row's context menu
+  offers:
+
+  - *Delete* takes that `<trk>`, `<rte>` or `<wpt>` out. What is carried
+    beside the file — a track added from another GPX, a part copied in — goes
+    as it came. A part the GPX itself holds goes out of the file when the edit
+    is saved, and *Revert* puts it back until then, so the menu asks first.
+    Only a GPX `dgs` wrote is taken out of: a recording keeps every part it
+    was recorded with, and the menu says so where it is greyed out.
+  - *Copy to…* and *Move to…* ask for another GPX of the workspace and put the
+    part in it, as the page shows the part: a track with the points cleaning
+    kept, at their edited positions, fills included. Only a GPX `dgs` wrote,
+    or a new one not saved yet, is copied into, so nothing is written into a
+    recording; a recording's own parts are copied out of it freely, and moved
+    out of nothing. *Move* is a copy and a delete, and each file holds its
+    half of the change until it is saved.
+  - *Move on the map…* is for a waypoint pinned in the wrong place. The
+    waypoint becomes a pin that is dragged to where it belongs; `Esc` leaves
+    it where it was. Where it is dropped is read in the system the map draws
+    in and kept in WGS-84. Only a waypoint of a GPX `dgs` wrote, or one
+    carried beside a file, is moved: a recorded waypoint is where it was
+    recorded.
+
+- **A waypoint on the map.** The pointer over a waypoint grows it a little and
+  thickens its ring, so a dot answers the pointer before it is clicked; a
+  click opens what the list's click opens. A right click on it offers what the
+  waypoint alone takes — *Rename…*, *Move to a new position…* and *Delete* —
+  the same commands as its row, greyed out for the same reasons. Elsewhere on
+  the map the right click is the map's own.
+
+- **Dragging rows.** There is no drag handle, because a row carries its own
+  controls. With a mouse, pressing a row and moving it a few pixels takes hold
+  of it; with a finger or pen, the press must first hold still briefly, since
+  moving at once is a scroll. Until then the press is a click like any other.
+  A copy of the held row follows the pointer, and the rows it passes slide
+  aside to open the gap it would land in; the map list sorts the same way. `Esc`
+  during a drag leaves everything as it was. Where it lands says what it does:
+
+  - A **file** over another file lists the workspace in that order. The order
+    is the page's own — no file is written — and is remembered with the
+    session.
+  - A **part** dropped inside its own file does nothing. A track, route or
+    waypoint is put in order among those of its kind by the ▲ and ▼ on its
+    row, one place per click. The order is held beside the file, keyed as the
+    names are, and goes into the GPX itself when the file is saved. Only a
+    GPX `dgs` wrote, or a new one not saved yet, shows the arrows, and only
+    on a kind it holds more than one of; a recording keeps the order it was
+    recorded in. A track's points go with it, and so do the edits on them:
+    the cleaning, cuts and fills are kept by point index, so every index is
+    moved to where its point now lies, and a removed stretch that spanned two
+    tracks put apart parts in two.
+  - A **part** over another file is moved into that GPX, or copied into it
+    while `Ctrl` or `Cmd` is held. It is the same work as *Move to…* and
+    *Copy to…*, under the same rule: nothing is written into a recording, and
+    nothing is taken out of one. A drop that would do either is refused, marks
+    the row red, and says why in the status bar.
+
+  A part keeps its key while another part is deleted — the second `<trk>` of a
+  file stays `t1` when the first goes — so a name or an edit given to it still
+  names it. The keys are counted afresh once the deletion is written and the
+  file on disk holds one part fewer.
 - **Several tracks at once.** Every shown workspace track is drawn in its own colour,
   picked from a palette and changeable from its row. A track's recorded
   segments are drawn apart, so a gap in the recording is not bridged by a
@@ -168,9 +338,10 @@ map. It is the interface later milestones build on.
   map to it; *Fit all* fits every shown track. Fitting frames the bulk of a
   track's points (`track.CoreBounds`), so a few stray fixes — a stale first fix
   a thousand kilometres away — do not zoom the map out to a corner.
-- **Maps.** OpenStreetMap, Gaode (街道), Gaode Satellite (imagery with
-  Gaode's road and place names above it) and Esri World Imagery are built in
-  and need no key, followed by the maps in `geo.gpx.tiles` and then those in
+- **Maps.** OpenStreetMap, OpenFreeMap Fiord (a dark blue-grey vector style,
+  whose roads still read under a coloured track), Gaode (街道), Gaode Satellite
+  (imagery with Gaode's road and place names above it) and Esri World Imagery
+  are built in and need no key, followed by the maps in `geo.gpx.tiles` and then those in
   `<config_dir>/geo/gpx/tiles.json` — `{"tiles": [...]}`, each entry as in
   `geo.gpx.tiles` — which keeps a long list out of the configuration file. A
   tiles file that cannot be read keeps the server from starting, saying why. Gaode's tile
@@ -183,6 +354,11 @@ map. It is the interface later milestones build on.
   configured map marked wrongly or to compare. The server converts
   (`gcj02.FromWGS84`); distances, speeds and stops are measured in WGS-84
   whatever is drawn. The choice is remembered.
+- **Credits.** The map's attribution is folded into the ⓘ in its corner, so
+  the map itself has the page; the pointer on it, or a click, opens it. The
+  fold is a stylesheet rule rather than script: MapLibre opens the credits
+  again on every attribution change, and answering that in script would mean
+  writing to the element the map is writing to.
 - **Layers.** The *Layers* button in the top bar opens every map — the built-in
   and configured ones — and the contour lines as one list. Any number may be
   shown at once, each with its own opacity, so a transparent overlay (OSM GPS
@@ -191,11 +367,24 @@ map. It is the interface later milestones build on.
   top, and everything under the tracks. The button names the lowest shown map,
   which GCJ-02's *Auto* follows; a shown layer in the other system than the
   tracks carries a ⚠, as it sits several hundred metres off them in China.
+  A **vector style** — OpenFreeMap Fiord — is a map like any other in the
+  list: its own sources and layers are put under the tracks, under that map's
+  prefix, so the page keeps its own style and the tracks keep their place
+  above. Its opacity fades every layer of it that carries a plain opacity; a
+  layer whose opacity is an expression is left as its author wrote it. It
+  carries no saturation, contrast or brightness — those are raster paint — so
+  its row has no ▸. The map has one set of glyphs and one sprite, so showing
+  two vector styles at once leaves the labels of the one drawn last. A style
+  that cannot be fetched draws nothing and keeps its row, to be tried again by
+  hiding and showing it.
   A map row's ▸ opens its saturation, contrast and brightness (−100 to +100,
   MapLibre's raster paint; double-click a slider or *Reset* to clear): a grey,
   lightened OpenStreetMap under the GPS traces lets the traces stand out. The
   ▸ turns blue while a map is adjusted. The list — order, what is shown,
-  opacities and adjustments — is remembered by name.
+  opacities and adjustments — is remembered by name. A remembered map the
+  configuration no longer offers is simply gone from the list; if it was the
+  only one shown, the first map takes over, so the list never reads as all
+  off with nothing drawn.
 - **Contours** are drawn in the browser from raster elevation tiles with
   maplibre-contour (vendored, BSD-3): thin every 10–200 m and bold every
   50–1000 m, closer as the map zooms in, from zoom 9. `geo.gpx.dem` names the
@@ -204,6 +393,20 @@ map. It is the interface later milestones build on.
   which need no key but can be slow or unreachable from mainland China; point
   it at a mirror or another terrain-RGB service there. The elevation is
   WGS-84. The lines carry no elevation labels: the map style has no glyphs.
+- **3D relief.** **3D** over the map, `D`, or the switch at the foot of the
+  *Layers* panel reads the same
+  elevation tiles as terrain, so the map tilts to 60° and the ground rises
+  under the tracks. It comes with a hillshade drawn from the same tiles, under
+  the tracks — terrain alone tilts the ground but barely shows it, since a
+  slope is read by the way it is lit — and the map may then be tilted by hand
+  to 80°. The vertical stretch starts at 2.5× — real scale reads flat at the
+  zooms a walk is looked at — and the slider beside the switch takes it from
+  1× to 8×, the shading following it. Terrain tiles are asked for no deeper
+  than zoom 12, where the public Terrarium tiles thin out; a deeper view
+  stretches that one, which reads better than the flat ground a missing tile
+  would give. Only the drawing changes: a position, a distance and a speed are
+  what they were. Turning it off levels the map again. The stretch is
+  remembered; whether the relief is on is not, so the page opens flat.
 - **Time zone.** GPX times are UTC. Every time on the page — the start in the
   profile header, the inspected point — is shown in the time zone chosen in the
   top bar, with its UTC offset. It defaults to the browser's zone and is
@@ -252,8 +455,8 @@ map. It is the interface later milestones build on.
   file without elevation or without time says so in place of that chart.
 - **Charts on demand.** Toggles in the profile header show or hide each chart
   on its own. With both hidden the profile shrinks to its header and the
-  timeline, and the map takes the space. With both shown they sit one above
-  the other or side by side, splitting the space evenly until the divider is
+  timeline, and the map takes the space. With both shown they sit side by side
+  by default, or one above the other, splitting the space evenly until the divider is
   dragged; each arrangement remembers its split as a proportion, so a taller or
   wider profile keeps both charts readable.
 - **Inspecting a point.** Moving the pointer along the focused track on the map
@@ -262,11 +465,21 @@ map. It is the interface later milestones build on.
   shows distance, elevation, speed and local time of that point.
 - **Zoom.** Dragging across a chart or scrolling on it zooms the distance axis,
   no narrower than one metre; double-click resets. Both charts always show the
-  same range.
-- **Remembered.** The browser remembers, per browser, the folder, the
-  workspace with each track's colour and visibility, the focus, the time zone, the layers, the root,
-  the expanded folders, which sidebar panels are folded, the stop thresholds, and which charts are shown and
-  how, and restores them on reload.
+  same range. *Fit* (⤢) in the profile header puts the whole track back
+  across both charts and the timeline.
+- **Folding a panel away.** Each panel carries the button that hides it — the
+  workspace `‹`, the charts `▾`, the edit panel `›` — and the map then carries
+  a small tab at that edge to bring it back, so nothing is hidden without a
+  way back in the same place. `W`, `E` and `I` do the same from the keyboard.
+  ⛶ over the map, or `M`, is **map only**: every panel folds away at once, and
+  pressing it again puts back the ones that were open. A folded panel is
+  remembered. The charts' tab is there whenever they are folded; the edit
+  panel's appears in Edit and Route, the modes that have one.
+- **Remembered.** The browser remembers, per browser, the folder the dialogs
+  open at, the workspace with each track's colour and visibility, the focus, the
+  time zone, the layers, the pane sizes, the folded panels, the stop
+  thresholds, and which charts
+  are shown and how, and restores them on reload.
 
 ## Cleaning
 
@@ -275,7 +488,8 @@ right of the page, dragged wider or narrower — for the focused track. Its
 *Changes* tab lists removals by hand and fills along the road; *Automatic
 cleaning* holds the filters. A tool bar on the map's corner picks the tool:
 select, *Range* (`R`), *Lasso* (`L`) and *Fill along the road* (`F`); `Esc`
-leaves it. A line at the map's foot says what a click does with the tool in
+leaves it. Under a divider it carries *Compare with the recording*, a toggle
+rather than a tool, so the inspector's header holds only the track's name. A line at the map's foot says what a click does with the tool in
 use.
 Nothing is removed until a tool is used or a filter is switched on. Settings
 are saved at once to the track's sidecar (see *The sidecar* below); the source
@@ -305,8 +519,8 @@ air.
 
 Distances, speeds, statistics, stops, the profile and the TUI summary are all
 measured on what cleaning kept, at its moved positions. The track's line skips
-removed points. *Compare with the recording*, on by default and remembered,
-draws the recording under it as a thin dashed line with removed points as dots
+removed points. *Compare with the recording*, on the map's tool bar, on by
+default and remembered, draws the recording under it as a thin dashed line with removed points as dots
 coloured by what removed them: spike red, drift orange, stop grey, by hand
 purple.
 
@@ -437,30 +651,36 @@ nothing is lost between them. Segments are cut from what cleaning kept.
 - **Colours.** While the tab is shown each segment is drawn over the track in
   a colour of its own, neighbours always different, with the same colour on
   its number in the table and as a strip along the foot of the timeline.
-- **The table.** One row per segment: chosen, number, name, time span,
-  duration and distance; the header's box chooses all or none. A narrow
-  inspector leaves out the time span, which an unnamed segment's name already
-  shows; drag the inspector wider to see it.
+- **The list.** One row per segment, two lines: its box, colour and number
+  with its name, then its time span, duration and distance under them. A bar
+  over the list chooses all or none and says how many are chosen. Nothing is
+  laid out in columns, so a narrow inspector hides nothing.
 - **Names.** A segment is named by its time span in the page's time zone —
   `2026-09-06 09:00–09:26`, or with both dates when it crosses midnight —
   until a name is typed. A name belongs to the segment starting at its point:
   moving that cut keeps it; removing it merges the segment into the one before,
   and the name goes. Pointing at a segment highlights it on the map; clicking
   it frames it.
-- **Writing.** Chosen segments (all, by default) are written as cleaned, one
+- **Actions.** Everything done to the segments is in one section under the
+  table: *Cut*, holding *Cut at every stop* and *Clear cuts* with the number
+  of cuts, then *Save segments to*, holding the targets with the number of
+  segments chosen.
+- **Saving.** Chosen segments (all, by default) are written as cleaned, one
   `<trk>` each named as shown, with their points' elevation, time, HDOP and
-  satellites, a `<trkseg>` per recorded segment:
-  - **into a new GPX**, a path defaulting to `<source> segments.gpx` beside
-    the source, which *Browse…* opens the save dialog for; an existing file is
-    never replaced; or
-  - **added to a GPX in the workspace**, each segment its own track, after
-    that file's tracks. This is how part of one recording is moved into
-    another file. The GPX that gained a track opens in the workspace to list
-    what it now holds. The GPX on disk is not written: the added tracks are kept in
-    its sidecar, as points, and it shows them at once — listed under it as
-    *added from* their file, each with `×` to take it out again, and its row
-    marked *added, not saved*. They can be cleaned, cut and filled like the
-    file's own.
+  satellites, a `<trkseg>` per recorded segment. A target is always a GPX
+  `dgs` manages — one in the workspace, or one it creates:
+  - **a GPX in the workspace**, picked from the list beside *Add n segments*,
+    each segment its own track after that file's tracks. This is how part of
+    one recording is moved into another file. The GPX that gained a track
+    opens in the workspace to list what it now holds. The GPX on disk is not
+    written: the added tracks are kept in its sidecar, as points, and it shows
+    them at once — listed under it as *added from* their file, each with `×`
+    to take it out again, and its row marked *added, not saved*. They can be
+    cleaned, cut and filled like the file's own; or
+  - **a new GPX**, named in the save dialog *Save as a new GPX…* opens, with
+    `<source> segments.gpx` beside the source offered; an existing file is
+    never replaced. The file written joins the workspace, shown, so its
+    segments are there to see at once.
 
   No GPX already on disk is written, whichever is chosen.
 
@@ -470,7 +690,7 @@ of the running `dgs`, so it survives reloading the page but not quitting `dgs`.
 Segments are added to it from any track's Segments tab, as to any workspace GPX,
 and it can be cleaned, cut and filled the same way. Its row says *new, not
 saved* and, once it holds a track, has *Save…*, which opens the save dialog —
-at the folder tree's root, named `<name>.gpx` — and writes it there,
+at the last folder opened from, named `<name>.gpx` — and writes it there,
 never replacing an existing file. The saved file then takes its place.
 
 **Saving as a new GPX.** A workspace GPX with edits has *Save as…* on its
@@ -525,6 +745,7 @@ Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
     { "first": 3000, "last": 3140, "profile": "car", "route": [[120.1501, 30.2502], [120.1512, 30.2515]], "at": 1788657500000 }
   ],
   "names": { "t1": "Evening ride" },
+  "order": { "w": ["w2", "w0", "w1"] },
   "added": [
     { "name": "Phone, tunnel", "from": "/trips/phone.gpx", "at": 1788657600000,
       "segments": [[{ "lon": 120.16, "lat": 30.26, "ele": 12.5, "time": 1788650000000 }]] }
@@ -540,7 +761,13 @@ fill's route counted where it is inserted; `at` is when the edit was made, in
 Unix milliseconds. A fill's route (`[lon, lat]`, WGS-84) takes the indices
 right after `first`; the recorded points after it up to `last` are the ones it
 replaces. Inserting a fill, or removing a fill or an added track, moves every
-later index; what pointed only at points that went goes with them. Unlike the
+later index; what pointed only at points that went goes with them. `order` is the parts of one kind — `t` for tracks, `r` for routes, `w` for waypoints — in the
+order the page put them, keyed as `names` is. It is taken into the GPX itself
+when the file is saved, so only a GPX `dgs` wrote, or a new one not saved yet,
+holds one. The indices above count the tracks in that order — the file's
+own tracks and the added ones together — so putting tracks in another order
+moves every index with its point, and saving writes the tracks in that order,
+where the indices still find them. Unlike the
 rest of the sidecar, fills and added tracks hold track data, since neither can
 be found again from the source. A cut
 on a point cleaning later removes moves to the next kept point. Sidecars from
@@ -623,7 +850,8 @@ build on the data model of earlier ones.
 
 ### Map and coordinates
 
-- OpenStreetMap, Gaode, Gaode Satellite and Esri World Imagery are built in.
+- OpenStreetMap, OpenFreeMap Fiord, Gaode, Gaode Satellite and Esri World
+  Imagery are built in.
   Further tile sources are listed in `geo.gpx.tiles` or the tiles file, each with a name, a URL
   template and its coordinate system; the page offers them after the built-in
   ones.

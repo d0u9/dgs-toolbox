@@ -1,11 +1,12 @@
 // Cutting the focused track into segments: the panel listing them with their
-// names, and writing chosen segments into a new GPX, or adding them to another
-// GPX in the workspace; and the
-// map overlay marking cuts and the segment pointed at. The server finds the
-// segments and writes the files; this module edits cuts and names.
+// names, saving the chosen ones into a GPX open in the workspace or into a new
+// GPX named in the save dialog; and the map overlay marking cuts and the
+// segment pointed at. The server finds the segments and writes the files; this
+// module edits cuts and names.
 
 import * as format from "./format.js";
 import { saveFile } from "/ui/filedialog.js";
+import * as status from "/ui/statusbar.js";
 
 const SEGMENT = "cut-segment";
 const CUTS = "cut-points";
@@ -35,27 +36,44 @@ export class CutPanel {
     Object.assign(this, { root, onCuts, onHover, onShow, onWrite });
     this.track = null;
     this.selected = new Set(); // first point index of the chosen segments
-    this.mode = "create";
     this.addPath = "";
-    this.message = null;
     this.timeZone = format.browserTimeZone();
     this.workspace = []; // other GPX paths in the workspace, to add segments to
+    // Chosen segments per GPX path, so leaving a track and coming back keeps
+    // the choice: path -> { selected, known, createPath }.
+    this.choices = new Map();
+  }
+
+  // remember keeps the shown track's choice, for when it is shown again.
+  remember() {
+    if (!this.track) return;
+    this.choices.set(this.track.path, {
+      selected: new Set(this.selected),
+      known: new Set(this.known || []),
+      createPath: this.createPath,
+    });
   }
 
   // folder is where a new file from a track not yet on disk goes by default;
   // home is where the save dialog falls back to when that folder is gone.
   show(track, { timeZone, workspace, folder, home = "", places = [] }) {
     const changed = !this.track || this.track.path !== track.path;
+    if (changed) this.remember();
     this.track = track;
     this.timeZone = timeZone;
     this.workspace = workspace.filter((path) => path !== track.path);
     this.home = home;
     this.places = places;
-    if (changed) {
+    const kept = changed ? this.choices.get(track.path) : null;
+    if (changed && !kept) {
       this.selected = new Set(track.pieces.map((piece) => piece.first));
-      this.message = null;
       this.createPath = defaultCreatePath(track, folder);
     } else {
+      if (kept) {
+        this.selected = kept.selected;
+        this.known = kept.known;
+        this.createPath = kept.createPath || defaultCreatePath(track, folder);
+      }
       // Segments that still exist stay chosen; new ones are chosen too.
       const known = this.known || new Set();
       for (const piece of track.pieces) if (!known.has(piece.first)) this.selected.add(piece.first);
@@ -79,6 +97,7 @@ export class CutPanel {
   }
 
   hide() {
+    this.remember();
     this.track = null;
     this.root.replaceChildren();
   }
@@ -125,74 +144,63 @@ export class CutPanel {
     head.className = "clean-head";
     const title = document.createElement("strong");
     title.textContent = `Segments (${track.pieces.length})`;
-    const tools = document.createElement("span");
-    tools.className = "cut-tools";
-    const candidates = track.cutCandidates.filter((cut) => !track.cuts.includes(cut));
-    tools.append(
-      textButton("Cut at every stop", candidates.length === 0, () => {
-        this.onCuts([...new Set([...track.cuts, ...track.cutCandidates])].sort((a, b) => a - b), this.names());
-      }),
-      textButton("Clear cuts", track.cuts.length === 0, () => this.onCuts([], this.names().filter((name) => name.start === 0))),
-    );
-    head.append(title, tools);
+    head.append(title);
     parts.push(head);
 
     const hint = document.createElement("p");
     hint.className = "cut-hint";
-    hint.textContent = "Click the track or timeline to cut there. Remove one cut with × beside the segment it starts; drag a timeline cut to move it. Clear cuts removes them all. Zoom the timeline with the wheel for finer placement.";
+    hint.textContent = "Click the track or timeline to cut there.";
+    hint.title = "Remove one cut with × beside the segment it starts; drag a timeline cut to move it. Clear cuts removes them all. Zoom the timeline with the wheel for finer placement.";
     parts.push(hint);
 
-    parts.push(this.table());
+    parts.push(this.list());
 
-    parts.push(this.writer());
+    parts.push(this.actions());
     this.root.replaceChildren(...parts);
   }
 
-  // table lists the segments, one row each: chosen, number, name, time span,
-  // duration and distance.
-  table() {
+  // list shows the segments as rows of two lines: chosen, colour, number and
+  // name, then its time span, duration and distance. Everything is stacked, so
+  // a narrow inspector never hides a column.
+  list() {
     const { track } = this;
     const wrap = document.createElement("div");
-    wrap.className = "cut-table-wrap";
-    const table = document.createElement("table");
-    table.className = "cut-table";
-    const head = table.createTHead().insertRow();
+    wrap.className = "cut-list";
+    const bar = document.createElement("div");
+    bar.className = "cut-list-bar";
     const all = document.createElement("input");
     all.type = "checkbox";
+    all.className = "cut-check";
     const chosen = track.pieces.filter((piece) => this.selected.has(piece.first)).length;
     all.checked = chosen === track.pieces.length;
     all.indeterminate = chosen > 0 && chosen < track.pieces.length;
-    all.title = all.checked ? "Choose none" : "Choose all";
+    all.id = "cut-all";
     all.addEventListener("change", () => {
       this.selected = all.checked ? new Set(track.pieces.map((piece) => piece.first)) : new Set();
       this.render();
     });
-    const cells = [[all, "check"], ["#", "num"], ["Name", "name"], ["Time", "time"], ["Duration", "right"], ["Distance", "right"], ["", "remove"]];
-    for (const [content, className] of cells) {
-      const th = document.createElement("th");
-      th.className = className;
-      th.append(content);
-      head.append(th);
-    }
-    const body = table.createTBody();
-    track.pieces.forEach((piece, i) => body.append(this.row(piece, i + 1)));
-    wrap.append(table);
+    const label = document.createElement("label");
+    label.htmlFor = "cut-all";
+    label.textContent = all.checked ? "Choose none" : "Choose all";
+    const count = document.createElement("span");
+    count.className = "clean-count";
+    count.textContent = `${chosen} of ${track.pieces.length} chosen`;
+    bar.append(all, label, count);
+    wrap.append(bar);
+    track.pieces.forEach((piece, i) => wrap.append(this.row(piece, i + 1)));
     return wrap;
   }
 
   row(piece, number) {
-    const tr = document.createElement("tr");
-    tr.className = "cut-row";
-    tr.title = `${piece.points} points — click to show it on the map`;
-    const cell = (className, ...content) => {
-      const td = document.createElement("td");
-      td.className = className;
-      td.append(...content);
-      tr.append(td);
-      return td;
-    };
+    const item = document.createElement("div");
+    item.className = "cut-row";
+    item.title = `${piece.points} points — click to show it on the map`;
+
+    const top = document.createElement("div");
+    top.className = "cut-row-top";
     const check = document.createElement("input");
     check.type = "checkbox";
+    check.className = "cut-check";
     check.checked = this.selected.has(piece.first);
     check.title = "Write this segment";
     check.addEventListener("change", () => {
@@ -200,12 +208,10 @@ export class CutPanel {
       else this.selected.delete(piece.first);
       this.render();
     });
-    cell("check", check);
     const badge = document.createElement("span");
     badge.className = "cut-number";
     badge.textContent = String(number);
     badge.style.background = pieceColor(number - 1);
-    cell("num", badge);
     const name = document.createElement("input");
     name.className = "cut-name";
     name.value = piece.name;
@@ -213,17 +219,7 @@ export class CutPanel {
     name.title = "Name — empty uses its time span";
     name.addEventListener("change", () => this.rename(piece, name.value));
     name.addEventListener("click", (event) => event.stopPropagation());
-    cell("name", name);
-    let time = "–";
-    if (piece.start != null) {
-      const from = format.clock(piece.start, this.timeZone, { seconds: false });
-      const to = format.clock(piece.end, this.timeZone, { seconds: false });
-      time = from.slice(0, 10) === to.slice(0, 10) ? `${from.slice(11)}–${to.slice(11)}` : `${from.slice(5)} – ${to.slice(5)}`;
-    }
-    cell("time", time);
-    cell("right", piece.start != null ? format.duration((piece.end - piece.start) / 1000) || "0m" : "–");
-    cell("right", format.distance(piece.distance));
-    const remove = cell("remove");
+    top.append(check, badge, name);
     if (number > 1 && this.track.cuts.includes(piece.first)) {
       const button = document.createElement("button");
       button.type = "button";
@@ -235,63 +231,75 @@ export class CutPanel {
         event.stopPropagation();
         this.removeCut(piece.first);
       });
-      remove.append(button);
+      top.append(button);
     }
-    tr.addEventListener("mouseenter", () => this.onHover(piece));
-    tr.addEventListener("mouseleave", () => this.onHover(null));
-    tr.addEventListener("click", (event) => {
+    item.append(top);
+
+    const meta = document.createElement("div");
+    meta.className = "cut-row-meta";
+    const facts = [];
+    if (piece.start != null) {
+      const from = format.clock(piece.start, this.timeZone, { seconds: false });
+      const to = format.clock(piece.end, this.timeZone, { seconds: false });
+      facts.push(from.slice(0, 10) === to.slice(0, 10) ? `${from.slice(11)}–${to.slice(11)}` : `${from.slice(5)} – ${to.slice(5)}`);
+      facts.push(format.duration((piece.end - piece.start) / 1000) || "0m");
+    }
+    facts.push(format.distance(piece.distance));
+    meta.textContent = facts.join(" · ");
+    item.append(meta);
+
+    item.addEventListener("mouseenter", () => this.onHover(piece));
+    item.addEventListener("mouseleave", () => this.onHover(null));
+    item.addEventListener("click", (event) => {
       if (event.target !== check) this.onShow(piece);
     });
-    return tr;
+    return item;
   }
 
-  writer() {
+  // actions holds everything done to the segments: cutting them, and writing
+  // the chosen ones out.
+  actions() {
     const { track } = this;
     const section = document.createElement("section");
-    section.className = "clean-filter enabled cut-writer";
+    section.className = "clean-filter enabled cut-actions";
     const chosen = track.pieces.filter((piece) => this.selected.has(piece.first));
 
+    const cutHead = document.createElement("div");
+    cutHead.className = "clean-filter-head";
+    const cutTitle = document.createElement("strong");
+    cutTitle.textContent = "Cut";
+    const cutCount = document.createElement("span");
+    cutCount.className = "clean-count";
+    cutCount.textContent = `${track.cuts.length} cut${track.cuts.length === 1 ? "" : "s"}`;
+    cutHead.append(cutTitle, cutCount);
+    const candidates = track.cutCandidates.filter((cut) => !track.cuts.includes(cut));
+    const cutTools = document.createElement("div");
+    cutTools.className = "cut-tools";
+    cutTools.append(
+      textButton("Cut at every stop", candidates.length === 0, () => {
+        this.onCuts([...new Set([...track.cuts, ...track.cutCandidates])].sort((a, b) => a - b), this.names());
+      }),
+      textButton("Clear cuts", track.cuts.length === 0, () => this.onCuts([], this.names().filter((name) => name.start === 0))),
+    );
+    section.append(cutHead, cutTools);
+
     const heading = document.createElement("div");
-    heading.className = "clean-filter-head";
+    heading.className = "clean-filter-head cut-group";
     const title = document.createElement("strong");
-    title.textContent = "Write segments";
-    const count = document.createElement("span");
-    count.className = "clean-count";
-    count.textContent = `${chosen.length} of ${track.pieces.length} chosen`;
-    heading.append(title, count);
+    title.textContent = "Save segments to";
+    heading.append(title);
     section.append(heading);
 
-    const create = this.choice("create", "Into a new GPX");
-    const createPath = document.createElement("input");
-    createPath.className = "cut-path";
-    createPath.value = this.createPath;
-    createPath.title = "Full path of the new file; an existing file is not replaced";
-    createPath.addEventListener("input", () => (this.createPath = createPath.value));
-    createPath.addEventListener("focus", () => this.setMode("create", false));
-    const browse = document.createElement("button");
-    browse.type = "button";
-    browse.className = "text-button cut-browse";
-    browse.textContent = "Browse…";
-    browse.title = "Choose the folder and name of the new file";
-    browse.addEventListener("click", async () => {
-      const chosenPath = await saveFile({
-        title: "Write the segments into a new GPX",
-        message: "Choose the folder of the new GPX and name it. An existing file is not replaced.",
-        folder: this.createPath.replace(/[\\/][^\\/]*$/, ""),
-        fallbacks: [this.home || "", ""],
-        filters: [{ label: "GPX files", extensions: [".gpx"] }, { label: "All files", extensions: [] }],
-        places: this.places || null,
-        name: basename(this.createPath) || "segments.gpx",
-        confirm: "Choose",
-        replace: false, // the server writes a new file and never writes over one
-      });
-      if (!chosenPath) return;
-      this.createPath = chosenPath;
-      this.setMode("create", false);
-      this.render();
-    });
+    const plural = chosen.length === 1 ? "" : "s";
+    const segments = () => chosen.map((piece) => ({
+      first: piece.first,
+      last: piece.last,
+      name: piece.name || defaultName(piece, track.pieces.indexOf(piece) + 1, this.timeZone),
+    }));
 
-    const add = this.choice("add", "Added to a GPX in the workspace, each its own track");
+    // A GPX open in the workspace: the segments become tracks in its sidecar.
+    const row = document.createElement("div");
+    row.className = "cut-target";
     const addPath = document.createElement("select");
     addPath.className = "cut-path";
     addPath.disabled = this.workspace.length === 0;
@@ -302,45 +310,44 @@ export class CutPanel {
     addPath.title = this.addPath;
     addPath.addEventListener("change", () => {
       this.addPath = addPath.value;
-      this.setMode("add");
+      addPath.title = this.addPath;
     });
-    if (!this.workspace.length) add.querySelector("input").disabled = true;
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "button primary cut-go";
+    add.textContent = `Add ${chosen.length} segment${plural}`;
+    add.title = "Add the chosen segments to that GPX, each its own track";
+    add.disabled = chosen.length === 0 || !this.addPath;
+    add.addEventListener("click", () => this.write(segments(), { mode: "add", path: this.addPath }, add));
+    // The select keeps the row to itself: a path is what the reader has to
+    // read in full, and the button that acts on it goes under it.
+    row.append(addPath);
+    section.append(row, add);
 
-    const go = document.createElement("button");
-    go.className = "chip active cut-go";
-    const plural = chosen.length === 1 ? "" : "s";
-    go.textContent = this.mode === "add" ? `Add ${chosen.length} segment${plural}` : `Write ${chosen.length} segment${plural}`;
-    const target = this.mode === "add" ? this.addPath : this.createPath.trim();
-    go.disabled = chosen.length === 0 || !target;
-    go.addEventListener("click", async () => {
-      go.disabled = true;
-      this.message = { text: "Writing…" };
-      const segments = chosen.map((piece) => ({
-        first: piece.first,
-        last: piece.last,
-        name: piece.name || defaultName(piece, track.pieces.indexOf(piece) + 1, this.timeZone),
-      }));
-      try {
-        const result = await this.onWrite({ segments, target: { mode: this.mode, path: target } });
-        const tracks = `${result.tracks} track${result.tracks === 1 ? "" : "s"}`;
-        this.message = {
-          text: this.mode === "add"
-            ? `Added ${tracks} to ${basename(result.path)}. Save it as a new GPX from its row in the workspace.`
-            : `Wrote ${tracks} to ${basename(result.path)}`,
-        };
-      } catch (error) {
-        this.message = { text: error.message, error: true };
-      }
-      this.render();
+    // Or a GPX that does not exist yet, named in the save dialog.
+    const saveAs = document.createElement("button");
+    saveAs.type = "button";
+    saveAs.className = "button cut-save-as";
+    saveAs.textContent = `Save as a new GPX…`;
+    saveAs.title = "Choose the folder and name of a new GPX holding the chosen segments";
+    saveAs.disabled = chosen.length === 0;
+    saveAs.addEventListener("click", async () => {
+      const target = await saveFile({
+        title: "Save the segments as a new GPX",
+        message: "Choose the folder of the new GPX and name it. An existing file is not replaced.",
+        folder: this.createPath.replace(/[\\/][^\\/]*$/, ""),
+        fallbacks: [this.home || "", ""],
+        filters: [{ label: "GPX files", extensions: [".gpx"] }],
+        places: this.places || null,
+        name: basename(this.createPath) || "segments.gpx",
+        replace: false, // the server writes a new file and never writes over one
+      });
+      if (!target) return;
+      this.createPath = target;
+      await this.write(segments(), { mode: "create", path: target }, saveAs);
     });
+    section.append(saveAs);
 
-    section.append(create, createPath, browse, add, addPath, go);
-    if (this.message) {
-      const note = document.createElement("p");
-      note.className = "clean-foot" + (this.message.error ? " error" : "");
-      note.textContent = this.message.text;
-      section.append(note);
-    }
     const foot = document.createElement("p");
     foot.className = "clean-foot";
     foot.textContent = "Each segment becomes one <trk>, as cleaned. No GPX already on disk is written: a GPX segments are added to is saved as a new file.";
@@ -348,22 +355,20 @@ export class CutPanel {
     return section;
   }
 
-  choice(mode, text) {
-    const label = document.createElement("label");
-    label.className = "clean-check cut-choice";
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = "cut-mode";
-    input.checked = this.mode === mode;
-    input.addEventListener("change", () => this.setMode(mode));
-    label.append(input, document.createTextNode(` ${text}`));
-    return label;
-  }
-
-  setMode(mode, rerender = true) {
-    if (this.mode === mode) return;
-    this.mode = mode;
-    if (rerender) this.render();
+  // write sends the chosen segments to their target and says what happened.
+  async write(segments, target, button) {
+    button.disabled = true;
+    status.show(target.mode === "add" ? "Adding…" : "Writing…");
+    try {
+      const result = await this.onWrite({ segments, target });
+      const tracks = `${result.tracks} track${result.tracks === 1 ? "" : "s"}`;
+      status.show(target.mode === "add"
+        ? `Added ${tracks} to ${basename(result.path)}. Save it as a new GPX from its row in the workspace.`
+        : `Wrote ${tracks} to ${basename(result.path)}`);
+    } catch (error) {
+      status.showError(error.message);
+    }
+    this.render();
   }
 }
 
@@ -471,7 +476,8 @@ function defaultCreatePath(track, folder = "") {
 
 function textButton(text, disabled, onClick) {
   const button = document.createElement("button");
-  button.className = "text-button";
+  button.type = "button";
+  button.className = "button";
   button.textContent = text;
   button.disabled = disabled;
   button.addEventListener("click", onClick);
