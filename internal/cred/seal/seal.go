@@ -58,6 +58,9 @@ type Request struct {
 	Verify []age.Identity
 	// MaxSize bounds the plaintext; 0 means DefaultMaxSize.
 	MaxSize int64
+	// Skip are file name patterns not archived when Source is a folder; nil
+	// means DefaultSkip.
+	Skip []string
 	// Now stamps the record; zero means time.Now.
 	Now time.Time
 }
@@ -67,6 +70,8 @@ type Result struct {
 	Path       string
 	RecordPath string
 	Archived   bool
+	// Skipped counts the entries Skip left out of the archive.
+	Skipped int
 	// PlaintextSize and SHA256 describe the plaintext sealed.
 	PlaintextSize int64
 	SHA256        [32]byte
@@ -114,7 +119,7 @@ func Seal(request Request) (Result, error) {
 	var plaintext []byte
 	switch {
 	case info.IsDir():
-		plaintext, err = Archive(request.Source, request.MaxSize)
+		plaintext, result.Skipped, err = Archive(request.Source, request.MaxSize, request.Skip)
 		result.Archived = true
 	case info.Mode().IsRegular():
 		plaintext, err = readLimited(request.Source, request.MaxSize)
@@ -225,12 +230,81 @@ func readLimited(path string, maxSize int64) ([]byte, error) {
 	return data, nil
 }
 
+// DefaultSkip are the file name patterns Archive leaves out when a caller
+// gives none: what an operating system, a file manager or git writes beside
+// the files, which nobody means to put in a vault. A dotfile is not junk by
+// itself — .ssh and .env are what a folder is added for — so only these names
+// are skipped, and the caller can replace the list.
+var DefaultSkip = []string{
+	// macOS
+	".DS_Store", "._*", ".AppleDouble", ".LSOverride", ".Spotlight-V100",
+	".Trashes", ".fseventsd", ".TemporaryItems", ".DocumentRevisions-V100",
+	".apdisk", "Icon\r",
+	// Windows
+	"Thumbs.db", "Thumbs.db:encryptable", "ehthumbs.db", "ehthumbs_vista.db",
+	"desktop.ini", "$RECYCLE.BIN", "*.stackdump",
+	// Linux desktops
+	".directory", ".Trash-*",
+	// git
+	".git",
+}
+
+// skipped reports whether the entry name matches one of the patterns, case
+// insensitively: Windows writes Thumbs.db and thumbs.db for the same thing.
+// An invalid pattern matches nothing rather than failing the archive.
+func skipped(name string, patterns []string) bool {
+	lower := strings.ToLower(name)
+	for _, pattern := range patterns {
+		if ok, err := filepath.Match(strings.ToLower(pattern), lower); ok && err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// Count returns how many entries in the folder the patterns leave out, so a
+// caller can say what will not be archived before archiving it. A skipped
+// directory counts as one, and its contents are not walked.
+func Count(folder string, patterns []string) (names []string, err error) {
+	if patterns == nil {
+		patterns = DefaultSkip
+	}
+	folder = filepath.Clean(folder)
+	err = filepath.WalkDir(folder, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == folder || !skipped(entry.Name(), patterns) {
+			return nil
+		}
+		rel, err := filepath.Rel(folder, path)
+		if err != nil {
+			return err
+		}
+		names = append(names, filepath.ToSlash(rel))
+		if entry.IsDir() {
+			return fs.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
 // Archive returns a gzip-compressed tar of the folder, under the folder's own
-// name, with every entry including hidden ones and their permission bits. A
-// symbolic link or other non-regular entry refuses the folder.
-func Archive(folder string, maxSize int64) ([]byte, error) {
+// name, with every entry including hidden ones and their permission bits, and
+// the number of entries the patterns left out. A nil patterns means
+// DefaultSkip; an empty one skips nothing. A symbolic link or other
+// non-regular entry refuses the folder.
+func Archive(folder string, maxSize int64, patterns []string) ([]byte, int, error) {
+	if patterns == nil {
+		patterns = DefaultSkip
+	}
 	folder = filepath.Clean(folder)
 	base := filepath.Base(folder)
+	var skips int
 	var buffer bytes.Buffer
 	gz := gzip.NewWriter(&buffer)
 	tw := tar.NewWriter(gz)
@@ -238,6 +312,13 @@ func Archive(folder string, maxSize int64) ([]byte, error) {
 	err := filepath.WalkDir(folder, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if path != folder && skipped(entry.Name(), patterns) {
+			skips++
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		rel, err := filepath.Rel(folder, path)
 		if err != nil {
@@ -278,13 +359,13 @@ func Archive(folder string, maxSize int64) ([]byte, error) {
 	}
 	if err != nil {
 		clear(buffer.Bytes())
-		return nil, err
+		return nil, 0, err
 	}
 	if int64(buffer.Len()) > maxSize {
 		clear(buffer.Bytes())
-		return nil, fmt.Errorf("%s archived is larger than %d MiB", folder, maxSize>>20)
+		return nil, 0, fmt.Errorf("%s archived is larger than %d MiB", folder, maxSize>>20)
 	}
-	return buffer.Bytes(), nil
+	return buffer.Bytes(), skips, nil
 }
 
 func writePart(part string, plaintext []byte, recipients []age.Recipient) error {

@@ -42,6 +42,10 @@ type addFlow struct {
 	directory string
 	source    string
 	folder    bool
+	// skipped are the entries of a folder source the skip patterns leave out
+	// of the archive, named on the confirmation so nothing goes missing
+	// silently.
+	skipped []string
 
 	picker fileexplorer.Model
 	choose *recipientPicker
@@ -114,10 +118,18 @@ func (m vaultModel) updateAdd(msg tea.Msg) (tea.Model, tea.Cmd) {
 			flow.err = err.Error()
 			return m, cmd
 		}
-		flow.source, flow.folder = selected, info.IsDir()
+		flow.source, flow.folder, flow.skipped = selected, info.IsDir(), nil
 		if !flow.folder && info.Size() > seal.DefaultMaxSize {
 			flow.err = fmt.Sprintf("%s is larger than %d MiB", tilde(selected), seal.DefaultMaxSize>>20)
 			return m, cmd
+		}
+		if flow.folder {
+			names, err := seal.Count(selected, m.snap.settings.Skip())
+			if err != nil {
+				flow.err = err.Error()
+				return m, cmd
+			}
+			flow.skipped = names
 		}
 		flow.err = ""
 		flow.choose = newRecipientPicker(m.snap.folder, m.snap.held, nil, nil)
@@ -347,6 +359,13 @@ func (m vaultModel) confirmConfig() confirm.Config {
 	case !m.mineChosen():
 		detail = "No checked key belongs to this machine: the file cannot be opened or checked here. " + detail
 	}
+	if n := len(m.add.skipped); n > 0 {
+		detail += " Not archived: " + strings.Join(m.add.skipped[:min(n, 3)], ", ")
+		if n > 3 {
+			detail += fmt.Sprintf(" and %d more", n-3)
+		}
+		detail += "."
+	}
 	// The dialog gives each a line, so name the source by its name and the
 	// destination within the vault; the full source path was on every step.
 	destination := tilde(m.destination())
@@ -363,7 +382,7 @@ func (m vaultModel) confirmConfig() confirm.Config {
 }
 
 func (m vaultModel) runSeal() tea.Cmd {
-	request := seal.Request{Source: m.add.source, Destination: m.destination()}
+	request := seal.Request{Source: m.add.source, Destination: m.destination(), Skip: m.snap.settings.Skip()}
 	if m.add.withPassphrase {
 		request.Passphrase = m.add.passphrase[0].Value()
 		return func() tea.Msg {

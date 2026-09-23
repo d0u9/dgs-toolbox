@@ -100,7 +100,8 @@ recipients of a file already there is E3 and not part of this.
 4. **Name.** The file name, editable, and the directory, changeable with the File
    Explorer.
 5. **Confirm.** The shared confirmation dialog names the source, the file to be
-   written and every recipient.
+   written, every recipient, and the entries `archive_skip` leaves out of a
+   folder's archive.
 6. The result is reported in the status bar and the vault is scanned again.
 
 Refused before confirming:
@@ -126,6 +127,14 @@ passphrase.
   holds the folder by its name, every entry within it including hidden ones,
   with their permission bits. A symbolic link or any other non-regular entry
   refuses the folder rather than archiving something unexpected.
+  - Junk is left out: the names in `archive_skip` in `credentials.json`, which
+    default to what macOS, Windows, Linux file managers and git write beside
+    the files — `.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.git` and the
+    rest of the list in
+    [`configuration/cred.md`](../../configuration/cred.md). A matching
+    directory is not walked. Dotfiles are not junk by themselves: `.ssh` and
+    `.env` are archived. The confirmation names what is left out, and `[]` in
+    `archive_skip` archives everything.
 - The output is binary age, not armored.
 - The source is not touched. The result reminds that its plaintext is still
   where it was.
