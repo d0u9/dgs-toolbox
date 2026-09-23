@@ -33,14 +33,30 @@ type File struct {
 	// from other files, not yet saved into a GPX.
 	Fills []compose.Fill  `json:"fills,omitempty"`
 	Added []compose.Added `json:"added,omitempty"`
-	// Waypoints are standalone points added to a new GPX not yet on disk. A
-	// file on disk written by this program takes a waypoint into the GPX
-	// itself, so it holds none here.
+	// Waypoints are standalone points added to a GPX this program wrote, or
+	// to a new one not yet on disk, and not yet written into it.
 	Waypoints []compose.Waypoint `json:"waypoints,omitempty"`
+	// Routes are routes copied from other files, not yet written into the GPX.
+	Routes []compose.Route `json:"routes,omitempty"`
+	// Deleted are the parts of the GPX itself that are taken out, keyed as the
+	// page keys them — "t0", "r0", "w0" — counting the file on disk. Only a
+	// GPX this program wrote is deleted from: the parts go out of the file
+	// when the edit is saved. A recording is never written, so it holds none.
+	Deleted []string `json:"deleted,omitempty"`
+	// Moved are waypoints put somewhere else, keyed as Deleted is, each
+	// [lon, lat] in WGS-84. Only a GPX this program wrote holds any.
+	Moved map[string][2]float64 `json:"moved,omitempty"`
 	// Names renames the parts of a file this program did not write, keyed as
 	// the page keys them: "t0" for the first <trk>, "r0", "w0". A file dgs
 	// wrote is renamed in the file itself, so it holds no names here.
 	Names map[string]string `json:"names,omitempty"`
+	// Order puts the parts of one kind in another order than the file has
+	// them, keyed "r" for routes and "w" for waypoints, each holding every
+	// key of that kind — "w2", "w0", "w1" — in the order wanted. Tracks keep
+	// the file's order: the edits on their points are kept by point index,
+	// which the file's own order gives. The order is taken into the GPX when
+	// the file is saved, so only a GPX this program wrote holds one.
+	Order map[string][]string `json:"order,omitempty"`
 	// Plan is the route a GPX was written from, when it was planned by hand,
 	// so it opens to be changed again.
 	Plan *compose.Plan `json:"plan,omitempty"`
@@ -48,7 +64,8 @@ type File struct {
 
 // Active reports whether the file records anything.
 func (f File) Active() bool {
-	return f.Clean.Active() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || len(f.Waypoints) > 0 || len(f.Names) > 0 || f.Plan != nil
+	return f.Clean.Active() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || len(f.Waypoints) > 0 ||
+		len(f.Routes) > 0 || len(f.Deleted) > 0 || len(f.Moved) > 0 || len(f.Names) > 0 || len(f.Order) > 0 || f.Plan != nil
 }
 
 // Insert shifts every point index after after by count, for count points
@@ -59,7 +76,7 @@ func (f *File) Insert(after, count int) {
 			return i + count, true
 		}
 		return i, true
-	})
+	}, false)
 }
 
 // Delete forgets the points first to last: what points at them only is
@@ -74,14 +91,46 @@ func (f *File) Delete(first, last int) {
 			return i - n, true
 		}
 		return 0, false
-	})
+	}, false)
+}
+
+// Reorder puts runs of points in another order, for tracks put in another
+// order in their file. runs are the runs' first and last indices as they are
+// now, listed in the order they go in; together they are to cover the points
+// from the first run's start, which they are laid from. An index in no run
+// keeps its place. A range that spanned two runs splits where they part, and
+// a fill whose route no longer lies between its ends goes.
+func (f *File) Reorder(runs [][2]int) {
+	if len(runs) == 0 {
+		return
+	}
+	start := runs[0][0]
+	for _, run := range runs {
+		start = min(start, run[0])
+	}
+	type moved struct{ first, last, to int }
+	var at []moved
+	next := start
+	for _, run := range runs {
+		at = append(at, moved{run[0], run[1], next})
+		next += run[1] - run[0] + 1
+	}
+	f.remap(func(i int) (int, bool) {
+		for _, run := range at {
+			if i >= run.first && i <= run.last {
+				return run.to + i - run.first, true
+			}
+		}
+		return i, true
+	}, true)
 }
 
 // remap moves every point index the file records. move says where an index
 // goes, or false when its point is gone: a lasso loses that point, a range or
 // stop shrinks to what is left of it, and a cut, a name or a fill whose end is
-// gone goes too.
-func (f *File) remap(move func(int) (int, bool)) {
+// gone goes too. split parts a range whose points no longer follow one
+// another; without it a range spans from its first point to its last.
+func (f *File) remap(move func(int) (int, bool), split bool) {
 	f.Clean = f.Clean.Normalize()
 	edits := f.Clean.Edits[:0]
 	for _, edit := range f.Clean.Edits {
@@ -98,14 +147,24 @@ func (f *File) remap(move func(int) (int, bool)) {
 			}
 			continue
 		}
+		// What is left of the range. Inserted points inside it join it; with
+		// split, points it spanned that were put apart part it into runs.
 		first, last, kept := -1, -1, false
 		for i := edit.First; i <= edit.Last; i++ {
-			if moved, ok := move(i); ok {
-				if !kept {
-					first, kept = moved, true
-				}
-				last = moved
+			moved, ok := move(i)
+			if !ok {
+				continue
 			}
+			if split && kept && moved != last+1 {
+				run := edit
+				run.First, run.Last = first, last
+				edits = append(edits, run)
+				kept = false
+			}
+			if !kept {
+				first, kept = moved, true
+			}
+			last = moved
 		}
 		if kept {
 			edit.First, edit.Last = first, last

@@ -233,13 +233,66 @@ type Waypoint struct {
 	Name        string  `json:"name"`
 	Description string  `json:"desc,omitempty"`
 	At          int64   `json:"at,omitempty"` // Unix milliseconds it was added
+	// Elevation and Time are what the waypoint was copied with; a point
+	// placed by hand has neither.
+	Elevation *float64 `json:"ele,omitempty"`
+	Time      *int64   `json:"time,omitempty"` // Unix milliseconds
+	// From is the file the waypoint was copied from; empty when it was placed
+	// by hand.
+	From string `json:"from,omitempty"`
 }
 
 // Point is the waypoint as a GPX waypoint.
 func (w Waypoint) Point() gpxfile.Waypoint {
-	return gpxfile.Waypoint{
+	point := gpxfile.Waypoint{
 		Point:       gpxfile.Point{LatLon: geo.LatLon{Lat: w.Lat, Lon: w.Lon}},
 		Name:        w.Name,
 		Description: w.Description,
 	}
+	if w.Elevation != nil {
+		point.Elevation, point.HasElevation = *w.Elevation, true
+	}
+	if w.Time != nil {
+		point.Time = time.UnixMilli(*w.Time).UTC()
+	}
+	return point
+}
+
+// WaypointFrom turns a GPX waypoint into one carried in a sidecar.
+func WaypointFrom(wpt gpxfile.Waypoint, from string, at int64) Waypoint {
+	waypoint := Waypoint{Lon: wpt.Lon, Lat: wpt.Lat, Name: wpt.Name, Description: wpt.Description, At: at, From: from}
+	if wpt.HasElevation {
+		waypoint.Elevation = ptr(wpt.Elevation)
+	}
+	if !wpt.Time.IsZero() {
+		waypoint.Time = ptr(wpt.Time.UnixMilli())
+	}
+	return waypoint
+}
+
+// Route is a planned route brought from another GPX file. Added routes follow
+// the file's own routes, in the order added.
+type Route struct {
+	Name   string       `json:"name"`
+	From   string       `json:"from"` // the file it was taken from
+	At     int64        `json:"at,omitempty"`
+	Points [][2]float64 `json:"points"` // [lon, lat]
+}
+
+// Route is the added route as a GPX route.
+func (r Route) Route() gpxfile.Route {
+	rte := gpxfile.Route{Name: r.Name}
+	for _, pt := range r.Points {
+		rte.Points = append(rte.Points, gpxfile.Point{LatLon: geo.LatLon{Lat: pt[1], Lon: pt[0]}})
+	}
+	return rte
+}
+
+// RouteFrom turns a GPX route into an added route.
+func RouteFrom(rte gpxfile.Route, from string, at int64) Route {
+	route := Route{Name: rte.Name, From: from, At: at}
+	for _, pt := range rte.Points {
+		route.Points = append(route.Points, [2]float64{pt.Lon, pt.Lat})
+	}
+	return route
 }
