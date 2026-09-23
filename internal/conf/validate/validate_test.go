@@ -962,3 +962,40 @@ func TestValidate_PrincipalNeedsAnUpstreamConsumer(t *testing.T) {
 		t.Fatalf("Validate = %v, want unused principal", messages(got))
 	}
 }
+
+// TestValidate_TwoCredentialsOnAPersonNamedPort is what naming accounts by
+// person trades away: two of one person's credentials on the port render two
+// accounts under one name. Rule 13 reports it here, where the grant is
+// written, rather than leaving an account table with a line that silently
+// overwrites the one before it.
+func TestValidate_TwoCredentialsOnAPersonNamedPort(t *testing.T) {
+	inv := &inventory.Root{
+		Nodes: []inventory.Node{{
+			ID:       "nas",
+			Networks: inventory.Networks{"internet": "nas.example.net"},
+			Instances: []inventory.Instance{
+				{ID: "samba-nas", Service: "samba", Ports: inventory.PortsOf(map[string]int{"smb": 445})},
+			},
+		}},
+		Users: map[string]inventory.User{
+			"jane": {
+				Devices: inventory.DevicesNone,
+				Access:  []string{"files"},
+				Credentials: map[string]inventory.Credential{
+					"default": {},
+					"laptop":  {},
+				},
+			},
+		},
+		Routes:    map[string]inventory.Route{"files": {Hops: []string{"samba-nas:smb"}}},
+		Networks:  []string{"internet"},
+		Universal: "internet",
+	}
+	manifests := map[string]confgen.Manifest{
+		"samba": {Auth: confgen.AuthPerPrincipal, Accounts: confgen.AccountsPerson, Template: "t", Output: "smb.conf"},
+	}
+	got := Validate(inv, manifests, nil, derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `account "jane" is rendered by more than one principal`) {
+		t.Fatalf("issues = %v, want rule 13 to report jane's two credentials", messages(got))
+	}
+}

@@ -54,13 +54,13 @@ func TestNTHashIsStable(t *testing.T) {
 }
 
 // TestEntry pins the line layout: six colons, an uppercase NT hash, no LM
-// hash, and no change time. Samba parses by position, so a field in the
+// hash, and the fixed change time. Samba parses by position, so a field in the
 // wrong place is a file smbd rejects at startup.
 func TestEntry(t *testing.T) {
 	got := smbpasswd.Entry("doug", 3001, "password")
 	want := "doug:3001:" + smbpasswd.NoLMHash +
 		":8846F7EAEE8FB117AD06BDD830B7586C:" + smbpasswd.AccountFlags +
-		":" + smbpasswd.NoChangeTime + ":"
+		":" + smbpasswd.ChangeTime + ":"
 	if got != want {
 		t.Fatalf("Entry() = %q, want %q", got, want)
 	}
@@ -75,5 +75,19 @@ func TestEntry(t *testing.T) {
 func TestEntryHasNoPassword(t *testing.T) {
 	if strings.Contains(smbpasswd.Entry("doug", 3001, "hunter2"), "hunter2") {
 		t.Fatal("Entry() wrote the plaintext password")
+	}
+}
+
+// TestChangeTimeIsNotZero: Samba reads a password last set at time zero as
+// one that must be changed at next logon, and refuses every logon with it.
+// A client cannot satisfy that, so an entry carrying it is an account nobody
+// can use.
+func TestChangeTimeIsNotZero(t *testing.T) {
+	hex := strings.TrimPrefix(smbpasswd.ChangeTime, "LCT-")
+	if strings.Trim(hex, "0") == "" {
+		t.Fatalf("ChangeTime = %q: a zero change time makes Samba demand a password change", smbpasswd.ChangeTime)
+	}
+	if len(hex) != 8 {
+		t.Fatalf("ChangeTime = %q: Samba writes eight hex digits", smbpasswd.ChangeTime)
 	}
 }

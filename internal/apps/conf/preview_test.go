@@ -878,7 +878,7 @@ func TestPreview_ServiceWritingTwoFilesRendersBoth(t *testing.T) {
 	// The NT hash of "password", which every other implementation of it
 	// produces for the same input.
 	want := "doug-default:3001:" + strings.Repeat("X", 32) +
-		":8846F7EAEE8FB117AD06BDD830B7586C:[U          ]:LCT-00000000:\n"
+		":8846F7EAEE8FB117AD06BDD830B7586C:[U          ]:LCT-5E0BE100:\n"
 	if got := files["smbpasswd"]; got != want {
 		t.Fatalf("smbpasswd = %q, want %q", got, want)
 	}

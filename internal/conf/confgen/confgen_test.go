@@ -559,3 +559,54 @@ files:
 		t.Fatalf("Broken = %q, want it to name the output written twice", got.Services[0].Broken)
 	}
 }
+
+// TestLoad_AccountsByPersonIsRead: the one value besides the default loads,
+// and says what the account is called.
+func TestLoad_AccountsByPersonIsRead(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "samba", ManifestFilename),
+		"auth: per-principal\naccounts: person\ntemplate: t\noutput: smb.conf\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Services[0].Broken != "" {
+		t.Fatalf("Broken = %q", got.Services[0].Broken)
+	}
+	if !got.Services[0].Manifest.NamesAccountsByPerson() {
+		t.Fatal("NamesAccountsByPerson() = false, want true")
+	}
+}
+
+// TestLoad_UnknownAccountsIsBroken: a misspelling would otherwise read as
+// the default and give accounts a suffix nobody expected.
+func TestLoad_UnknownAccountsIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "samba", ManifestFilename),
+		"auth: per-principal\naccounts: people\ntemplate: t\noutput: smb.conf\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(got.Services[0].Broken, "people") {
+		t.Fatalf("Broken = %q, want it to name the value", got.Services[0].Broken)
+	}
+}
+
+// TestLoad_AccountsWithoutAnAccountTableIsBroken: a service authenticating
+// nobody has no account to name.
+func TestLoad_AccountsWithoutAnAccountTableIsBroken(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ServicesDir, "microbin", ManifestFilename),
+		"auth: none\naccounts: person\ntemplate: t\noutput: server.env\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(got.Services[0].Broken, "accounts") {
+		t.Fatalf("Broken = %q, want it to say there is no account to name", got.Services[0].Broken)
+	}
+}
