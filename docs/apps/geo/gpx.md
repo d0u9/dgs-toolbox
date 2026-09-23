@@ -304,7 +304,8 @@ map. It is the interface later milestones build on.
 
   - A **file** over another file lists the workspace in that order. The order
     is the page's own — no file is written — and is remembered with the
-    session.
+    session. The up and down arrows on a file's row move it one step among
+    the rows listed, for the same order without dragging.
   - A **part** dropped inside its own file does nothing. A track, route or
     waypoint is put in order among those of its kind by the ▲ and ▼ on its
     row, one place per click. The order is held beside the file, keyed as the

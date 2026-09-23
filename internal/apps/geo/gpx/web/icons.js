@@ -8,3 +8,5 @@ export const DIAMOND = svg(`<path d="M8 2.5 13.5 8 8 13.5 2.5 8z"/>`, "currentCo
 export const DIAMOND_OPEN = svg(`<path d="M8 2.5 13.5 8 8 13.5 2.5 8z"/>`);
 export const FOLDER = svg(`<path d="M2 4.5v7.5h12V6H8L6.5 4.5z"/>`);
 export const CHEVRON = svg(`<path d="M6 3.5 10.5 8 6 12.5"/>`);
+export const UP = svg(`<path d="M4 10 8 6 12 10"/>`);
+export const DOWN = svg(`<path d="M4 6 8 10 12 6"/>`);
