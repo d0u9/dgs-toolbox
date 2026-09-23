@@ -175,8 +175,20 @@ producer: "ScanSnap Manager"
 scan_created_at: 2019-03-11T20:30:00+09:00
 
 group: 8f2a1c                   # set when several files are one document
-needs_split: false
+needs_split: false              # one file, several documents, not yet split
+documents:                      # absent: the whole file is one document
+  - pages: 1-3
+    type: statement             # only what the file leaves empty
+    description: "bank, June"
+    event_date: 2024-06-30
+    event_tz: Australia/Sydney
+    tags: [bank]                # added to the file's tags
+  - pages: 2-5,9
+ignored_pages: 6-8              # in no document on purpose
 ```
+
+A split is described in [`import.md`](import.md#splitting-one-pdf). The file is
+never cut, and a document can only add to the file's fields.
 
 YAML because it is the format a human edits by hand, and a sidecar is the one
 thing in a Box that is meant to survive the tool. `grep -r insurance` over the
@@ -415,7 +427,7 @@ be stranded in the inbox:
 
 | Not yet | What happens instead |
 | --- | --- |
-| Splitting a PDF holding several documents | `needs_split` is set and the file is filed normally |
+| Exporting one document of a split as its own PDF | the split is recorded in the sidecar; the file stays whole |
 | The group browser | the `group` field **is** recorded at intake; only the interface waits |
 | OCR | nothing |
 | Full-text search | filters only: year, type, amount range, `reviewed`, current/dead |

@@ -49,6 +49,20 @@ const api = {
     }),
   trashSummary: () => ask('/api/trash'),
   incomplete: () => ask('/api/incomplete'),
+  rejected: () => ask('/api/rejected'),
+  rejectedFile: (digest) => `/api/rejected/file?digest=${encodeURIComponent(digest)}`,
+  unfile: (digest) =>
+    ask('/api/unfile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ digest }),
+    }),
+  restore: (digest) =>
+    ask('/api/rejected/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ digest }),
+    }),
   adopt: (path, edit) =>
     ask('/api/adopt', {
       method: 'POST',

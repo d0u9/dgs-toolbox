@@ -18,7 +18,8 @@ not a blocked one: the scan is filed as `unsorted` with one keystroke and
 decided later in [`view`](view.md), where there is time.
 
 Every deferral in the first version works this way. A PDF holding five
-unrelated receipts is marked `needs_split` and filed. A page whose image cannot
+unrelated receipts can be [split](#splitting-one-pdf) on the spot, or marked
+`needs_split` and filed when that is not worth doing now. A page whose image cannot
 be extracted is marked `needs-render` and filed without a thumbnail. Nothing
 waits in the inbox for a feature.
 
@@ -137,8 +138,9 @@ paid for in sessions that are never finished.
 | Total | optional, skippable |
 | Tags | comma-separated keywords; shared across a selected run |
 
-Everything else — the other party, the expiry, splitting, grouping beyond
-one key — is filled in [`view`](view.md), on the few scans that need it.
+Everything else — the other party, the expiry, grouping beyond one key — is
+filled in [`view`](view.md), on the few scans that need it. Splitting is the
+exception: it is done here, while the pages are on screen.
 
 **The page is operated entirely from the keyboard.** No action requires the
 mouse. One scan or one batch fills the screen, a single key sets the type, two
@@ -158,14 +160,27 @@ Three keys exist beyond the fields:
   parts are on screen together and is close to unreconstructable later, which
   is why the field is collected in the first version even though the group
   browser is not built.
-- **`reject`** sends the scan straight to the trash with a reason, for a failed
-  scan or something not wanted. It uses the same mechanism as discarding after
-  filing.
+- **`reject`** turns the scan away with a reason, for a failed scan or
+  something not wanted. Nothing is in the Box yet, so nothing is moved or
+  deleted: the file stays in the inbox and only its record in the state
+  becomes `rejected`. The inbox column has an Inbox tab and a Rejected tab; Rejected lists what was turned away, and
+  **Restore** puts one back in the list to be decided again — a Backspace
+  pressed by mistake is one click to undo.
+
+### The zone is searched, not typed
+
+An IANA name is not something anyone types from memory. A few letters in the
+zone field list the zones they could mean — by city (`syd`), by country
+(`aus` is every zone in Australia, and Austria's), by region or by country
+code — and `↑` `↓` and `Enter` pick one. What is typed is a search; only a
+picked zone, or a whole name left in the field, is kept. The catalogue is
+tzdb's own `zone.tab` and `iso3166.tab`, compiled in, and the search is
+[`internal/zonesearch`](../../../internal/zonesearch/zonesearch.go).
 
 ### Looking at every page
 
-A PDF shows its first page. A page view, opened with `p` and kept open or
-closed across scans, puts a strip of one thumbnail per page beside it; `←` and
+A PDF shows its first page. A page view — open unless the person has closed
+it with `p`, and kept open or closed across scans — puts a strip of one thumbnail per page beside it; `←` and
 `→` turn the page drawn large. Pages are drawn when the strip asks for them,
 not during the read of the inbox: a fifty-page document is fifty pictures
 nobody may look at. A page past the first of a scan not yet filed is drawn
@@ -175,6 +190,90 @@ the Box and a rejected scan must leave nothing of itself behind.
 The inbox column is as wide as it is dragged, from 220 px up to half the
 window, and remembered per browser. Its rows are set at 14 px on 1.5 — the
 design language's `caption-md` — because they are read for a whole sitting.
+
+### Splitting one PDF
+
+A PDF often holds several documents: a bank statement, then the letter that
+came with it, then two receipts. The file is **never cut**. The sidecar records
+which pages are which document, so the bytes and the digest stay what arrived,
+and a split made wrongly is corrected by editing text rather than by digging a
+file out of the trash.
+
+```yaml
+type: unsorted
+pages: 10
+documents:
+  - pages: 1-3
+    type: statement
+    description: "bank, June"
+    event_date: 2024-06-30
+    event_tz: Australia/Sydney
+  - pages: 2-5
+    type: receipt
+    total_minor: 1250
+    currency: AUD
+  - pages: "6"
+    type: medical
+    tags: [dentist]
+ignored_pages: 7-10
+```
+
+Ranges may overlap. A covering letter that belongs to two documents is a real
+case, and a page in two ranges is simply in both.
+
+A page in no document is either **ignored** — a blank, a separator sheet — or
+forgotten. `ignored_pages` says which, so a forgotten page is a warning rather
+than something that silently drops out of every filter. A page cannot be both
+ignored and in a document.
+
+A PDF is often a pile scanned together in no particular order, so **each
+split is described as a PDF of its own**: the same type keys and the same
+fields the desk always has — event date, zone, description, total, tags. A
+line above the desk says which split the fields are describing, as
+`Split 2 of 3 · p 4-5`. Once a scan has splits, the file itself is filed as
+`unsorted` with nothing else said about it; nobody cares what the whole pile
+is. A dated split with no zone of its own is read in `box.zone`.
+
+**Inheritance only adds.** The sidecar still lets a file carry fields every
+document shares, for a sidecar edited by hand. A document may set a field the
+file leaves empty — type, event date, zone, description, total — and it may
+add tags, but it cannot replace or remove anything the file says: two answers
+to one question in one sidecar is the metadata nobody can trust. The file's
+type counts as unset while it is `unsorted`, which is what unsorted means.
+
+Recording a split clears `needs_split`: saying where the documents are is what
+it was waiting for.
+
+There is no separate mode. On a PDF of more than one page:
+
+| Key | |
+| --- | --- |
+| `←` `→` | turn the page; the desk follows to the split that page is in |
+| `Space` | mark where a split starts; again where it ends, and turn to the next page |
+| `↑` `↓` while marking | move along the pages — the strip runs top to bottom — instead of to another scan |
+| `x` | ignore the page, or the marked range |
+| `:` | type every split at once — `1-3, 2-5, 6, !7-10`, where `!` ignores |
+| `-` | remove the split on the desk, also a button beside it; its pages are not touched |
+| a type key, the fields | describe the split on the desk |
+| `Enter` | file the scan with all its splits |
+| `Esc` | let go of a mark, then of everything unsaved |
+
+While a split is being marked, a bar across the page says so — which pages,
+Space to end, Esc to cancel — and the line above the desk turns solid. A mode
+entered by one keystroke must never be one nobody can see they are in.
+
+Every page in the strip is framed in its split's colour and shows the numbers
+of the splits it belongs to; the pages of the split on the desk are outlined
+as well. The numbers above the desk pick one. Blue is kept for the mark being
+made — tinted pages with a tick — so no split is drawn in it. `Enter` with pages in no split stops once and
+names them; a second `Enter` ignores them and files. The split is filed with
+the scan, like every other field. Nothing is written into the Box before
+that; until then the split is a [draft](#resuming).
+
+`keep` and `same as previous` still belong to the file as a whole.
+
+Exporting one document as a PDF of its own is not built. When it is, the result
+goes outside the Box: it is a copy made on request, not a second truth.
 
 ### The amount is one field
 
@@ -224,7 +323,12 @@ A hundred scans are not sorted in one sitting. State lives in
 pending | classified | published | duplicate | incomplete | rejected
 ```
 
-Closing the tool and coming back continues where it stopped. The same pattern,
+Closing the tool and coming back continues where it stopped. What has been
+typed about a `classified` scan — its fields, its splits — is saved as a draft
+half a second after the last keystroke, and again as the tab closes, so
+reloading the page halfway through a long PDF loses nothing. The line under
+the progress says whether the draft is saved. A draft lives only in the
+inbox's state, never in the Box: nothing there is filed yet. The same pattern,
 and the same reasoning, as Photo Import's
 [`.dgs-state`](../photo/import.md).
 

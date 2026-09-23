@@ -4,12 +4,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"dgs-toolbox/internal/box"
 	"dgs-toolbox/internal/box/lifecycle"
 	"dgs-toolbox/internal/box/money"
+	"dgs-toolbox/internal/box/pagerange"
 	"dgs-toolbox/internal/box/sidecar"
 )
 
@@ -215,5 +217,39 @@ func TestLoadMissingIsNotFound(t *testing.T) {
 	_, err := sidecar.Load(filepath.Join(t.TempDir(), "nothing.dgs-doc.yaml"))
 	if !errors.Is(err, sidecar.ErrNotFound) {
 		t.Fatalf("got %v, want ErrNotFound", err)
+	}
+}
+
+func TestDocumentsRoundTripAsPageText(t *testing.T) {
+	want := full()
+	want.Pages = 10
+	want.Documents = []sidecar.Document{
+		{Pages: []pagerange.Range{{From: 1, To: 3}}, Type: "statement", Tags: []string{"bank"},
+			Description: "June", EventDate: box.Date{Year: 2024, Month: 6, Day: 30}, EventZone: "Australia/Sydney"},
+		{Pages: []pagerange.Range{{From: 2, To: 5}, {From: 9, To: 9}}, Total: money.Amount{Minor: 500, Currency: "JPY"}},
+	}
+	want.IgnoredPages = []pagerange.Range{{From: 7, To: 8}}
+	data, err := sidecar.Encode(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{`pages: 1-3`, `pages: 2-5,9`, `ignored_pages: 7-8`} {
+		if !strings.Contains(string(data), line) {
+			t.Errorf("sidecar lacks %q:\n%s", line, data)
+		}
+	}
+	got, err := sidecar.Decode(data, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Documents, want.Documents) || !reflect.DeepEqual(got.IgnoredPages, want.IgnoredPages) {
+		t.Errorf("got %+v / %v", got.Documents, got.IgnoredPages)
+	}
+}
+
+func TestDocumentWithoutPagesIsRefused(t *testing.T) {
+	data := []byte("version: 1\ndigest: sha256:ab\nsize: 1\nkind: pdf\noriginal_filename: x\ntype: unsorted\nreviewed: false\ndocuments:\n  - type: receipt\n")
+	if _, err := sidecar.Decode(data, "test"); err == nil {
+		t.Fatal("accepted a document with no pages")
 	}
 }

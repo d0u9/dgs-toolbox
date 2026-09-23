@@ -13,6 +13,10 @@ const state = {
   scans: [],
   totals: [],
   selected: null,
+  // shown is the scan the detail was last filled from, and draft is what
+  // has been changed about its splits and not yet saved.
+  shown: null,
+  draft: {},
   // marked is the set of digests a batch would be given to. Batch editing is
   // necessary — three hundred scans one at a time is an hour nobody finishes —
   // and it is also the only way to get three hundred records wrong at once,
@@ -22,12 +26,84 @@ const state = {
 
 const el = (id) => document.getElementById(id);
 
-const pages = pageView({
-  strip: 'detail-page-strip',
-  toggle: 'detail-pages-toggle',
-  image: 'detail-image',
-  label: 'detail-page-label',
+const pages = pageView(
+  {
+    strip: 'detail-page-strip',
+    toggle: 'detail-pages-toggle',
+    image: 'detail-image',
+    label: 'detail-page-label',
+  },
+  (item, page) => split.decorate(item, page),
+  (page) => {
+    const before = split.active();
+    split.follow(page);
+    if (split.active() !== before) drawFields();
+    else split.drawHead();
+  },
+);
+
+// A filed scan's splits are corrected here the way they were made at intake:
+// the same strip, the same Space marking, and the detail's own fields
+// describing whichever split is picked. Only the sidecar changes.
+const split = splitter({
+  pages,
+  scan: () => selected(),
+  draft: () => state.draft,
+  showError,
+  again: 'Save again',
+  changed: () => drawFields(),
 });
+
+const zones = zonePicker(el('detail-event-zone'), el('detail-zone-options'), (name) => {
+  const document = split.editable();
+  if (document) document.eventZone = name;
+});
+
+// DETAIL maps the detail's inputs to the names a scan and a split share.
+const DETAIL = {
+  'detail-type': 'type',
+  'detail-description': 'description',
+  'detail-event-date': 'eventDate',
+  'detail-event-zone': 'eventZone',
+  'detail-total': 'total',
+  'detail-tags': 'tags',
+};
+
+function splitTags(text) {
+  return text
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+// drawFields fills the detail from what it is describing: the picked split,
+// or the scan itself. The scan's own values are only put back when another
+// scan is opened or a save has landed, so typing is never overwritten.
+function drawFields(fromScan) {
+  const scan = selected();
+  if (!scan) return;
+  split.drawHead();
+  el('split-tools').hidden = !split.applies();
+  const document = split.active();
+  el('detail-expires').disabled = Boolean(document);
+  if (document) {
+    el('detail-type').value = document.type || 'unsorted';
+    el('detail-description').value = document.description || '';
+    el('detail-event-date').value = document.eventDate || '';
+    el('detail-event-zone').value = document.eventZone || state.config.zone || '';
+    el('detail-total').value = document.total || '';
+    el('detail-tags').value = (document.tags || []).join(', ');
+    return;
+  }
+  if (!fromScan) return;
+  el('detail-type').value = scan.type;
+  el('detail-description').value = scan.description || '';
+  el('detail-event-date').value = scan.eventDate || '';
+  el('detail-event-zone').value = scan.eventZone || '';
+  el('detail-expires').value = scan.expiresAt || '';
+  el('detail-total').value = scan.total || '';
+  el('detail-tags').value = (scan.tags || []).join(', ');
+}
 
 async function start() {
   state.config = await api.config();
@@ -202,7 +278,8 @@ function card(scan) {
   if (!scan.reviewed) badges.push('<span class="badge badge-guess">guess</span>');
   if (!scan.typeKnown) badges.push(`<span class="badge badge-warn">unknown type</span>`);
   if (scan.state === 'dead') badges.push('<span class="badge badge-dead">dead</span>');
-  if (scan.needsSplit) badges.push('<span class="badge">split</span>');
+  if (scan.documents?.length) badges.push(`<span class="badge">${scan.documents.length} docs</span>`);
+  else if (scan.needsSplit) badges.push('<span class="badge">split</span>');
   if (scan.group) badges.push(`<span class="badge">group</span>`);
   item.innerHTML =
     `<img class="card-thumb" loading="lazy" src="${api.image(scan.digest, 'thumb')}" alt="">` +
@@ -310,8 +387,15 @@ function drawDetail() {
   const scan = selected();
   el('detail').hidden = !scan;
   el('detail-empty').hidden = Boolean(scan);
+  const fresh = state.shown !== (scan?.digest ?? null);
+  if (fresh) {
+    state.shown = scan?.digest ?? null;
+    state.draft = {};
+    split.reset();
+  }
   pages.show(scan);
   if (!scan) return;
+  el('detail-unfile').hidden = !scan.unfilable;
   el('detail-facts').textContent = [
     scan.filename,
     scan.pages === 1 ? '1 page' : `${scan.pages} pages`,
@@ -328,13 +412,8 @@ function drawDetail() {
     // rewritten to something else.
     el('detail-type').append(new Option(`${scan.type} (unknown here)`, scan.type));
   }
-  el('detail-type').value = scan.type;
-  el('detail-description').value = scan.description || '';
-  el('detail-event-date').value = scan.eventDate || '';
-  el('detail-event-zone').value = scan.eventZone || '';
-  el('detail-expires').value = scan.expiresAt || '';
-  el('detail-total').value = scan.total || '';
-  el('detail-tags').value = (scan.tags || []).join(', ');
+  if (fresh) drawFields(true);
+  else drawFields();
   const expiry = scan.expiry
     ? `Expires ${scan.expiry} — ${scan.state}.`
     : scan.expiryCleared
@@ -353,12 +432,29 @@ function showError(err) {
 async function save(extra = {}) {
   const scan = selected();
   if (!scan) return;
-  const tags = el('detail-tags')
-    .value.split(',')
-    .map((tag) => tag.trim())
-    .filter(Boolean);
-  try {
-    await api.patch({
+  const documents = state.draft.documents ?? scan.documents ?? [];
+  // Pages in no split stop a save once, as they stop filing at intake.
+  if (documents.length && !split.readyToFile()) return;
+  let edit;
+  if (documents.length) {
+    // Each split carries its own fields; the file says only what it is.
+    edit = {
+      digest: scan.digest,
+      type: 'unsorted',
+      description: '',
+      eventDate: '',
+      eventZone: '',
+      total: '',
+      tags: [],
+      documents: documents.map((document) => ({
+        ...document,
+        eventZone: document.eventZone || (document.eventDate ? state.config.zone || '' : ''),
+      })),
+      ignoredPages: state.draft.ignoredPages ?? scan.ignoredPages ?? '',
+      ...extra,
+    };
+  } else {
+    edit = {
       digest: scan.digest,
       type: el('detail-type').value,
       description: el('detail-description').value,
@@ -366,17 +462,77 @@ async function save(extra = {}) {
       eventZone: el('detail-event-zone').value,
       expiresAt: el('detail-expires').value,
       total: el('detail-total').value,
-      tags,
+      tags: splitTags(el('detail-tags').value),
+      ...(state.draft.documents ? { documents: [], ignoredPages: '' } : {}),
       ...extra,
-    });
+    };
+  }
+  try {
+    await api.patch(edit);
   } catch (err) {
     showError(err);
     return;
   }
+  // What was saved is what the detail shows next.
+  state.shown = null;
   await reload();
 }
 
 function wireDetail() {
+  // A field typed into while a split is picked describes that split.
+  for (const [id, name] of Object.entries(DETAIL)) {
+    const input = el(id);
+    input.addEventListener(input.tagName === 'SELECT' ? 'change' : 'input', () => {
+      const document = split.editable();
+      if (!document || id === 'detail-event-zone') return;
+      document[name] = name === 'tags' ? splitTags(input.value) : input.value;
+    });
+  }
+  el('detail-event-zone').addEventListener('change', () => {
+    const document = split.editable();
+    if (document) document.eventZone = el('detail-event-zone').value.trim();
+  });
+  el('detail-event-zone').addEventListener('keydown', (event) => zones.key(event));
+  el('split-mark').addEventListener('click', () => split.markOrClose());
+  el('split-ignore').addEventListener('click', () => split.ignore());
+  el('split-type').addEventListener('click', () => split.openText());
+  // The split keys work whenever the detail is open and nothing is being
+  // typed; browsing is otherwise done with the mouse.
+  document.addEventListener('keydown', (event) => {
+    if (!selected() || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+    const actions = {
+      ' ': () => split.markOrClose(),
+      x: () => split.ignore(),
+      ':': () => split.openText(),
+      '-': () => split.remove(),
+      ArrowLeft: () => pages.step(-1),
+      ArrowRight: () => pages.step(1),
+      ArrowUp: () => pages.step(-1),
+      ArrowDown: () => pages.step(1),
+      Escape: () => split.cancel(),
+    };
+    const action = actions[event.key];
+    if (!action || (event.key !== 'Escape' && !split.applies())) return;
+    event.preventDefault();
+    action();
+  });
+  el('detail-unfile').addEventListener('click', async () => {
+    const scan = selected();
+    if (!scan) return;
+    // Nothing is deleted: the Box's copy goes to the trash, and the inbox
+    // file it came from is waiting at intake again with this description.
+    if (!window.confirm(`Take "${scan.description || scan.filename}" back to intake? Its copy in the Box moves to the trash; the inbox file is described again as it is now.`)) return;
+    try {
+      await api.unfile(scan.digest);
+    } catch (err) {
+      showError(err);
+      return;
+    }
+    state.selected = null;
+    await reload();
+    await drawTrash();
+  });
   el('detail-save').addEventListener('click', () => save());
   el('detail-confirm').addEventListener('click', () => save({ reviewed: true }));
   el('detail-keep').addEventListener('click', () => save({ expiryCleared: true, expiresAt: '' }));

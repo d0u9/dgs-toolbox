@@ -16,12 +16,62 @@ const state = {
 
 const el = (id) => document.getElementById(id);
 
-const pages = pageView({
-  strip: 'page-strip',
-  toggle: 'pages-toggle',
-  image: 'page-image',
-  label: 'page-label',
+const pages = pageView(
+  {
+    strip: 'page-strip',
+    toggle: 'pages-toggle',
+    image: 'page-image',
+    label: 'page-label',
+  },
+  (item, page) => split.decorate(item, page),
+  // Turning to a page picks the split it is in, so the desk follows the eye.
+  (page) => {
+    const before = split.active();
+    split.follow(page);
+    if (split.active() !== before) drawDesk();
+    else split.drawHead();
+  },
+);
+
+const split = splitter({
+  pages,
+  scan: () => current(),
+  draft: () => state.draft,
+  showError,
+  changed: () => {
+    draw();
+    saveSoon();
+  },
 });
+
+// FIELDS maps the desk's inputs to the names a scan and a split share.
+const FIELDS = {
+  'event-date': 'eventDate',
+  'event-zone': 'eventZone',
+  description: 'description',
+  total: 'total',
+  tags: 'tags',
+};
+
+// value reads one field of whatever the desk is describing: the split that
+// is picked, or the scan as a whole. A split is described as if it were a PDF
+// of its own, so it never shows the scan's values.
+function value(name) {
+  const document = split.active();
+  if (document) {
+    if (name === 'eventZone') return document.eventZone || state.config.zone || '';
+    return document[name] ?? (name === 'tags' ? [] : '');
+  }
+  const scan = current();
+  if (name === 'eventZone') return state.draft.eventZone ?? scan?.eventZone ?? state.config.zone ?? '';
+  return state.draft[name] ?? scan?.[name] ?? (name === 'tags' ? [] : '');
+}
+
+function setValue(name, text) {
+  const document = split.editable();
+  const target = document ?? state.draft;
+  target[name] = name === 'tags' ? parseTags(text) : text;
+}
 
 async function start() {
   state.config = await api.config();
@@ -43,6 +93,75 @@ async function start() {
   wireBatch();
   wireDuplicates();
   await drawHeldBack();
+  await drawRejected();
+}
+
+// showQueueTab switches the sidebar between the inbox and what was rejected.
+// Rejected is rarely wanted, so it waits behind a tab instead of taking room
+// under the queue.
+function showQueueTab(name) {
+  el('tab-inbox').setAttribute('aria-selected', String(name === 'inbox'));
+  el('tab-rejected').setAttribute('aria-selected', String(name === 'rejected'));
+  el('inbox-panel').hidden = name !== 'inbox';
+  el('rejected').hidden = name !== 'rejected';
+}
+
+// drawRejected lists what was turned away, so a Backspace pressed by mistake
+// is one click to undo. Rejecting never touched the file, so restoring cannot
+// lose anything either.
+async function drawRejected() {
+  let body;
+  try {
+    body = await api.rejected();
+  } catch (err) {
+    showError(err);
+    return;
+  }
+  el('rejected-empty').hidden = body.count !== 0;
+  el('rejected-count').textContent = String(body.count);
+  const list = el('rejected-list');
+  list.innerHTML = '';
+  for (const item of body.rejected) {
+    const entry = document.createElement('li');
+    entry.className = 'rejected-item';
+    // The file opens in the browser's own viewer: every page of it, as it is
+    // in the inbox, without putting it back in the list first.
+    const view = document.createElement('a');
+    view.className = 'rejected-view';
+    view.href = api.rejectedFile(item.digest);
+    view.target = '_blank';
+    view.rel = 'noopener';
+    view.title = `Open ${item.filename}`;
+    const name = document.createElement('span');
+    name.className = 'rejected-name';
+    name.textContent = item.filename;
+    const detail = document.createElement('span');
+    detail.className = 'rejected-detail';
+    detail.textContent = [item.reason, localDate(item.at)].filter(Boolean).join(' · ');
+    view.append(name, detail);
+    const restore = document.createElement('button');
+    restore.type = 'button';
+    restore.className = 'rejected-restore';
+    restore.textContent = 'Restore';
+    restore.title = 'Put it back in the inbox list';
+    restore.addEventListener('click', async () => {
+      try {
+        await api.restore(item.digest);
+      } catch (err) {
+        showError(err);
+        return;
+      }
+      await reload();
+      const back = state.pending.findIndex((scan) => scan.digest === item.digest);
+      if (back >= 0) {
+        state.cursor = back;
+        draw();
+      }
+      await drawRejected();
+    });
+    entry.append(view, restore);
+    list.append(entry);
+  }
 }
 
 // drawHeldBack reports what was read and not taken in: truncated files, bad
@@ -147,22 +266,35 @@ function draw() {
     el(id).disabled = batch;
   }
 
+  // Another scan on the desk starts with no mark and its first split.
+  if (state.shown !== scan?.digest) {
+    state.shown = scan?.digest;
+    split.reset();
+    el('save-state').textContent = '';
+  }
   pages.show(scan);
   if (!empty) {
     el('facts').textContent = facts(scan).join(' · ');
     el('flags').innerHTML = flags(scan)
       .map((flag) => `<span class="flag flag-${flag.kind}">${flag.text}</span>`)
       .join('');
-    el('event-date').value = state.draft.eventDate ?? scan.eventDate ?? '';
-    el('event-zone').value =
-      state.draft.eventZone ?? scan.eventZone ?? state.config.zone ?? '';
-    el('description').value = state.draft.description ?? scan.description ?? '';
-    el('total').value = state.draft.total ?? scan.total ?? '';
-    el('tags').value = (state.draft.tags ?? scan.tags ?? []).join(', ');
+  }
+  drawDesk();
+  drawQueue();
+}
+
+// drawDesk fills the fields from whatever they describe, and says above them
+// which pages that is.
+function drawDesk() {
+  split.drawHead();
+  if (current()) {
+    for (const [id, name] of Object.entries(FIELDS)) {
+      const shown = value(name);
+      el(id).value = name === 'tags' ? shown.join(', ') : shown;
+    }
   }
   markType();
   drawExpiry();
-  drawQueue();
 }
 
 // facts are what the file says about itself, which is everything the tool
@@ -190,14 +322,18 @@ function flags(scan) {
     });
   else if (scan.duplicateOf)
     out.push({ kind: 'warn', text: `duplicate of ${scan.duplicateOf}` });
-  if (scan.needsSplit) out.push({ kind: 'note', text: 'several documents — filed whole' });
+  const documents = state.draft.documents ?? scan.documents ?? [];
+  if (documents.length) {
+    out.push({ kind: 'note', text: `${documents.length} split${documents.length === 1 ? '' : 's'}` });
+  } else if (scan.needsSplit) out.push({ kind: 'note', text: 'several documents — filed whole' });
   if (scan.needsRender) out.push({ kind: 'note', text: 'no image to extract' });
   if (scan.group) out.push({ kind: 'note', text: `group ${scan.group}` });
   return out;
 }
 
 function markType() {
-  const chosen = state.draft.type ?? current()?.type;
+  const document = split.active();
+  const chosen = document ? document.type : state.draft.type ?? current()?.type;
   for (const item of el('types').children) {
     item.classList.toggle('type-chosen', item.dataset.name === chosen);
   }
@@ -212,9 +348,10 @@ function drawExpiry() {
     el('expiry-line').textContent = '';
     return;
   }
-  const name = state.draft.type ?? scan.type;
+  const document = split.active();
+  const name = document ? document.type : state.draft.type ?? scan.type;
   const type = state.types.find((candidate) => candidate.name === name);
-  if (state.draft.expiryCleared) {
+  if (!document && state.draft.expiryCleared) {
     el('expiry-line').textContent = 'Kept for good — no expiry.';
     return;
   }
@@ -248,9 +385,17 @@ function drawQueue() {
     item.className = 'queue-item';
     if (index === state.cursor) item.classList.add('queue-current');
     if (run.has(scan.digest) && run.size > 1) item.classList.add('queue-run');
-    item.innerHTML =
-      `<span class="queue-time">${localTime(scan.scannedAt)}</span>` +
-      `<span class="queue-name">${scan.filename}</span>`;
+    // The name gets the whole width; when it was scanned sits under it.
+    const name = document.createElement('span');
+    name.className = 'queue-name';
+    name.textContent = scan.filename;
+    name.title = scan.filename;
+    const time = document.createElement('span');
+    time.className = 'queue-time';
+    time.textContent = scan.scannedAt
+      ? `Scanned ${localDate(scan.scannedAt)} ${localTime(scan.scannedAt)}`
+      : '';
+    item.append(name, time);
     item.addEventListener('click', () => {
       state.cursor = index;
       state.anchor = null;
@@ -282,6 +427,9 @@ function drawDuplicates() {
 }
 
 function wireDuplicates() {
+  for (const name of ['inbox', 'rejected']) {
+    el('tab-' + name).addEventListener('click', () => showQueueTab(name));
+  }
   el('duplicates-reject').addEventListener('click', async () => {
     const found = duplicates();
     if (!found.length) return;
@@ -296,11 +444,15 @@ function wireDuplicates() {
       return;
     }
     await reload(from);
+    await drawRejected();
   });
 }
 
 function chooseType(name) {
-  state.draft.type = name;
+  const document = split.editable();
+  if (document) document.type = name;
+  else state.draft.type = name;
+  saveSoon();
   markType();
   drawExpiry();
 }
@@ -327,11 +479,93 @@ function showError(err) {
   line.textContent = err.message || String(err);
 }
 
+// describe is everything said about one scan on the desk, as one edit: what
+// filing sends, and what a draft saves.
+function describe(scan) {
+  const documents = state.draft.documents ?? scan.documents ?? [];
+  if (documents.length) {
+    // Each split is its own document with its own fields, so the file itself
+    // says nothing beyond what it is. A split with a date and no zone is read
+    // in the configured one, as the desk showed it.
+    return {
+      digest: scan.digest,
+      type: 'unsorted',
+      description: '',
+      eventDate: '',
+      eventZone: '',
+      total: '',
+      tags: [],
+      expiryCleared: state.draft.expiryCleared ?? false,
+      group: state.draft.group ?? '',
+      documents: documents.map((document) => ({
+        ...document,
+        eventZone: document.eventZone || (document.eventDate ? state.config.zone || '' : ''),
+      })),
+      ignoredPages: state.draft.ignoredPages ?? scan.ignoredPages ?? '',
+    };
+  }
+  return {
+    digest: scan.digest,
+    type: state.draft.type ?? scan.type,
+    description: el('description').value,
+    eventDate: el('event-date').value,
+    eventZone: el('event-zone').value,
+    total: el('total').value,
+    tags: parseTags(el('tags').value),
+    expiryCleared: state.draft.expiryCleared ?? false,
+    group: state.draft.group ?? '',
+    ...(state.draft.documents ? { documents: [], ignoredPages: '' } : {}),
+  };
+}
+
+// saveSoon keeps what has been typed about a scan without filing it. The
+// server holds it in the inbox's state file — never in the Box — so a reload
+// or a closed tab halfway through a long PDF loses nothing. The edit is taken
+// now, while the scan is still on the desk, and sent a moment later so a
+// burst of keystrokes is one write.
+const SAVE = { timer: null, edit: null };
+
+function saveSoon() {
+  const scan = current();
+  if (!scan || selection().length > 1 || !Object.keys(state.draft).length) return;
+  if (SAVE.edit && SAVE.edit.digest !== scan.digest) saveNow();
+  SAVE.edit = describe(scan);
+  el('save-state').textContent = 'unsaved';
+  clearTimeout(SAVE.timer);
+  SAVE.timer = setTimeout(saveNow, 500);
+}
+
+async function saveNow() {
+  clearTimeout(SAVE.timer);
+  const edit = SAVE.edit;
+  SAVE.edit = null;
+  if (!edit) return;
+  try {
+    const saved = await api.patch(edit);
+    // The inbox list keeps what was saved, so coming back to this scan shows
+    // it even though the desk's own draft is gone by then.
+    const scan = state.pending.find((candidate) => candidate.digest === edit.digest);
+    if (scan) {
+      for (const name of ['type', 'description', 'eventDate', 'eventZone', 'total', 'tags',
+        'expiryCleared', 'group', 'documents', 'ignoredPages']) {
+        scan[name] = saved[name];
+      }
+    }
+    if (!SAVE.edit) el('save-state').textContent = 'draft saved';
+  } catch (err) {
+    // A half-typed date is refused; the draft is simply saved on the next
+    // keystroke that makes it whole.
+    el('save-state').textContent = `not saved: ${err.message || err}`;
+  }
+}
+
 // fileCurrent takes the selection into the Box. A run gets one type and shared
 // tags; a date, total and description still belong to one document.
 async function fileCurrent() {
   const run = selection();
   if (!run.length) return;
+  // Pages in no split stop filing once, so a forgotten page is a decision.
+  if (run.length === 1 && !split.readyToFile()) return;
   const from = state.anchor === null ? state.cursor : Math.min(state.anchor, state.cursor);
   const type = state.draft.type ?? current().type;
   const tags = parseTags(el('tags').value);
@@ -345,17 +579,7 @@ async function fileCurrent() {
         await api.file({ digest: scan.digest, type, tags });
       }
     } else {
-      await api.file({
-        digest: run[0].digest,
-        type,
-        description: el('description').value,
-        eventDate: el('event-date').value,
-        eventZone: el('event-zone').value,
-        total: el('total').value,
-        tags,
-        expiryCleared: state.draft.expiryCleared ?? false,
-        group: state.draft.group ?? '',
-      });
+      await api.file(describe(run[0]));
     }
   } catch (err) {
     showError(err);
@@ -375,6 +599,7 @@ async function rejectCurrent() {
     return;
   }
   await reload(from);
+  await drawRejected();
 }
 
 // sameAsPrevious binds this scan to the one before it: a contract scanned in
@@ -384,6 +609,7 @@ function sameAsPrevious() {
   if (!previous) return;
   state.draft.group = previous.group || previous.digest.slice(0, 6);
   draw();
+  saveSoon();
 }
 
 function wireBatch() {
@@ -393,16 +619,27 @@ function wireBatch() {
   });
 }
 
+const zones = zonePicker(el('event-zone'), el('zone-options'), (name) => {
+  setValue('eventZone', name);
+  saveSoon();
+});
+
 function wireFields() {
+  el('event-zone').addEventListener('change', () => {
+    setValue('eventZone', el('event-zone').value.trim());
+    saveSoon();
+  });
   for (const id of ['event-date', 'event-zone', 'description', 'total', 'tags']) {
     el(id).addEventListener('input', () => {
-      if (id === 'tags') state.draft.tags = parseTags(el(id).value);
-      else state.draft[
-        { 'event-date': 'eventDate', 'event-zone': 'eventZone', description: 'description', total: 'total' }[id]
-      ] = el(id).value;
+      // Letters typed into the zone are a search, not a zone: only a picked
+      // one, or what is left when the field is let go, is kept.
+      if (id === 'event-zone') return;
+      setValue(FIELDS[id], el(id).value);
       drawExpiry();
+      saveSoon();
     });
     el(id).addEventListener('keydown', (event) => {
+      if (id === 'event-zone' && zones.key(event)) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         el(id).blur();
@@ -506,19 +743,29 @@ const KEYS = {
     [['Backspace'], 'reject'],
     [['\u2193', '\u2191'], 'move'],
     [['p'], 'pages'],
+    [['Space'], 'split pages'],
+    [['x'], 'ignore page'],
+    [[':'], 'type splits'],
+    [['-'], 'remove split'],
     [['\u2190', '\u2192'], 'turn page'],
     [['Shift', '\u2193'], 'select a run'],
     [['Tab'], 'fields'],
     [['Esc'], 'back to keys'],
   ],
   bindings: {
-    ArrowDown: (event) => move(1, event.shiftKey),
-    ArrowUp: (event) => move(-1, event.shiftKey),
+    // While a split is being marked the arrows move along its pages — the
+    // strip runs top to bottom — rather than off to another scan.
+    ArrowDown: (event) => (split.marking() ? pages.step(1) : move(1, event.shiftKey)),
+    ArrowUp: (event) => (split.marking() ? pages.step(-1) : move(-1, event.shiftKey)),
     Backspace: () => rejectCurrent(),
     ArrowLeft: () => pages.step(-1),
     ArrowRight: () => pages.step(1),
     Tab: () => el('event-date').focus(),
     p: () => pages.toggle(),
+    ' ': () => split.markOrClose(),
+    x: () => split.ignore(),
+    ':': () => split.openText(),
+    '-': () => split.remove(),
     k: () => toggleKeep(),
     g: () => sameAsPrevious(),
   },
@@ -542,6 +789,7 @@ function assertTypeKeysAreFree() {
 function toggleKeep() {
   state.draft.expiryCleared = !state.draft.expiryCleared;
   drawExpiry();
+  saveSoon();
 }
 
 // drawKeys writes the strip along the floor of the desk from the key map, so
@@ -571,6 +819,8 @@ function wireKeys() {
       return;
     }
     if (event.key === 'Escape') {
+      // Esc first lets go of a mark being made, then of everything unsaved.
+      if (split.cancel()) return;
       state.anchor = null;
       state.draft = {};
       draw();
@@ -592,5 +842,16 @@ function wireKeys() {
     }
   });
 }
+
+// A tab closed within the half second a save waits still keeps its draft.
+window.addEventListener('pagehide', () => {
+  if (!SAVE.edit) return;
+  fetch('/api/scan', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(SAVE.edit),
+    keepalive: true,
+  });
+});
 
 start().catch((err) => showError(err));

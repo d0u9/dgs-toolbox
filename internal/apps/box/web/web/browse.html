@@ -106,13 +106,37 @@
   <aside class="detail" aria-label="Details">
     <p id="detail-empty" class="detail-empty">Pick a scan.</p>
     <div id="detail" hidden>
-      <div class="detail-frame"><img id="detail-image" alt="" src=""></div>
+      <div class="detail-frame">
+        <img id="detail-image" alt="" src="">
+        <p id="mark-banner" class="mark-banner" role="status" hidden></p>
+      </div>
       <div class="detail-tools">
         <button type="button" id="detail-pages-toggle" class="text-button" aria-pressed="false" hidden>Pages</button>
         <span id="detail-page-label" class="page-label"></span>
       </div>
       <ol id="detail-page-strip" class="page-strip" aria-label="Pages" hidden></ol>
+      <div id="split-tools" class="detail-actions split-tools" hidden>
+        <button type="button" id="split-mark" class="button">Mark split <kbd>Space</kbd></button>
+        <button type="button" id="split-ignore" class="text-button">Ignore page <kbd>x</kbd></button>
+        <button type="button" id="split-type" class="text-button">Type splits <kbd>:</kbd></button>
+      </div>
       <p id="detail-facts" class="facts"></p>
+      <div id="split-head" class="split-head" hidden>
+        <div class="split-row">
+          <span class="split-label">Split</span>
+          <span id="split-title" class="split-title"></span>
+          <span id="split-chips" class="split-chips"></span>
+          <button type="button" id="split-remove" class="text-button split-remove" hidden>Remove this split <kbd>-</kbd></button>
+        </div>
+        <p id="split-notes" class="split-notes"></p>
+        <p id="split-confirm" class="split-confirm" hidden></p>
+        <form id="split-text-form" class="split-text" hidden>
+          <label class="fieldrow wide">
+            <span class="fieldrow-label">Splits — <code>1-3, 2-5, 6</code>; <code>!7-10</code> ignores</span>
+            <input id="split-text" type="text" spellcheck="false" autocomplete="off">
+          </label>
+        </form>
+      </div>
       <form id="detail-form" autocomplete="off">
         <label class="fieldrow wide"><span class="fieldrow-label">Type</span>
           <select id="detail-type"></select>
@@ -123,8 +147,9 @@
         <label class="fieldrow"><span class="fieldrow-label">Event date</span>
           <input id="detail-event-date" type="text" placeholder="YYYY-MM-DD" spellcheck="false">
         </label>
-        <label class="fieldrow"><span class="fieldrow-label">Zone</span>
-          <input id="detail-event-zone" type="text" spellcheck="false">
+        <label class="fieldrow zone-field"><span class="fieldrow-label">Zone</span>
+          <input id="detail-event-zone" type="text" placeholder="syd, aus, chi…" spellcheck="false" aria-controls="detail-zone-options">
+          <ul id="detail-zone-options" class="zone-options" role="listbox" aria-label="Zones" hidden></ul>
         </label>
         <label class="fieldrow"><span class="fieldrow-label">Expires</span>
           <input id="detail-expires" type="text" placeholder="YYYY-MM-DD" spellcheck="false">
@@ -141,6 +166,7 @@
           <button type="button" id="detail-save" class="button primary">Save</button>
           <button type="button" id="detail-confirm" class="button">Confirm type</button>
           <button type="button" id="detail-keep" class="button">Keep for good</button>
+          <button type="button" id="detail-unfile" class="text-button" hidden>Unfile — back to intake</button>
           <button type="button" id="detail-trash" class="text-button">Move to trash</button>
         </div>
         <p class="detail-note">
@@ -172,6 +198,9 @@
 
 <script src="api.js"></script>
 <script src="pages.js"></script>
+<script src="split.js"></script>
+<script src="zone.js"></script>
+<script src="zoom.js"></script>
 <script src="browse.js"></script>
 </body>
 </html>

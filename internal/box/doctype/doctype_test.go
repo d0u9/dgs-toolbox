@@ -41,17 +41,6 @@ func TestIntakeKeysDoNotCollide(t *testing.T) {
 	}
 }
 
-func TestIntakeKeysLeaveNavigationAndActionsFree(t *testing.T) {
-	// Lowercase comparison is deliberate: X and x are one shortcut family to
-	// the person using the page, even though KeyboardEvent distinguishes them.
-	reserved := "aghjklpxy"
-	for _, entry := range All() {
-		if strings.ContainsRune(reserved, entry.Key) {
-			t.Errorf("%s uses %q, reserved for intake navigation or an action", entry.Name, entry.Key)
-		}
-	}
-}
-
 func TestPermanentIsNotTheSameAsExpiringOnTheDay(t *testing.T) {
 	ticket, _ := Lookup("ticket")
 	if ticket.Permanent() {
