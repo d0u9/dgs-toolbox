@@ -437,3 +437,71 @@ func archiveNames(t *testing.T, data []byte) map[string]bool {
 		names[header.Name] = true
 	}
 }
+
+func TestSealReplace(t *testing.T) {
+	dir := t.TempDir()
+	mine, _ := age.GenerateX25519Identity()
+	other, _ := age.GenerateX25519Identity()
+	source := filepath.Join(dir, "src", "id_ed25519")
+	write(t, source, "first", 0o600)
+	vault := filepath.Join(dir, "vault")
+	if err := os.Mkdir(vault, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(vault, "id_ed25519.age")
+
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	first, err := Seal(Request{
+		Source:      source,
+		Destination: destination,
+		Recipients:  []Recipient{{PublicKey: mine.Recipient().String(), Host: "laptop", Description: "Main"}},
+		Verify:      []age.Identity{mine},
+		Now:         created,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	write(t, source, "second", 0o600)
+	later := created.Add(24 * time.Hour)
+	result, err := Seal(Request{
+		Source:      source,
+		Destination: destination,
+		Recipients:  []Recipient{{PublicKey: other.Recipient().String(), Host: "nas", Description: "Main"}},
+		Verify:      []age.Identity{other},
+		Replace:     true,
+		Now:         later,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Verified {
+		t.Errorf("result %+v", result)
+	}
+	if got := decrypt(t, destination, other); string(got) != "second" {
+		t.Errorf("decrypted %q", got)
+	}
+	sealed, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := age.Decrypt(bytes.NewReader(sealed), mine); err == nil {
+		t.Error("the old recipient still opens the file")
+	}
+	rec, err := record.Read(result.RecordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rec.Created.Equal(created) || rec.Updated == nil || !rec.Updated.Equal(later) {
+		t.Errorf("record stamps %+v", rec)
+	}
+	if len(rec.Recipients) != 1 || rec.Recipients[0].Host != "nas" {
+		t.Errorf("record recipients %+v", rec.Recipients)
+	}
+	if entries, _ := os.ReadDir(vault); len(entries) != 2 {
+		t.Errorf("vault holds %v", entries)
+	}
+	if first.Path != result.Path {
+		t.Errorf("path changed: %q to %q", first.Path, result.Path)
+	}
+}

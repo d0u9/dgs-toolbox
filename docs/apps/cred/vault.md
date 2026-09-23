@@ -102,6 +102,11 @@ recipients of a file already there is E3 and not part of this.
 5. **Confirm.** The shared confirmation dialog names the source, the file to be
    written, every recipient, and the entries `archive_skip` leaves out of a
    folder's archive.
+   - When that name, or its record, is already in the vault, the dialog asks to
+     replace it instead: it is titled `REPLACE IN VAULT`, its action is
+     `Replace`, and it says what the file holds now is lost and that nothing of
+     the old version is kept. Cancelling returns to the name, where another one
+     can be typed.
 6. The result is reported in the status bar and the vault is scanned again.
 
 Refused before confirming:
@@ -109,7 +114,8 @@ Refused before confirming:
 - no recipient is checked and no passphrase was given;
 - the recipient folder has errors, when encrypting to recipients, since a host could be silently missing from a
   group;
-- the file to be written, or its record, already exists — replacing a file is E3;
+- the name is there and is not a regular file, such as a directory or a symbolic
+  link;
 - the plaintext is larger than 64 MiB, the limit a file can later be opened
   with.
 
@@ -150,6 +156,12 @@ passphrase.
 4. It is linked to the destination name, which fails rather than replace a file
    that appeared meanwhile, and the part name removed.
 5. The recipient record is written.
+
+When the confirmation was a replacement, step 4 renames the checked part over
+the destination instead, keeping its permission bits, and step 5 replaces the
+record: `created` and `comment` are kept from the old record, `updated` is set,
+`recipients` are the new ones. Nothing of the old version is kept — a copy of it
+is exactly what a removed recipient can still open.
 
 The plaintext buffer is overwritten when done, as far as the process can.
 
