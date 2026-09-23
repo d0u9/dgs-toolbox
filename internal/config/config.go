@@ -25,9 +25,9 @@ type Config struct {
 	ConfigDir string  `json:"config_dir"`
 	TUI       TUI     `json:"tui"`
 	Photo     Photo   `json:"photo"`
+	Box       Box     `json:"box"`
 	Capture   Capture `json:"capture"`
 	Geo       Geo     `json:"geo"`
-	Box       Box     `json:"box"`
 	Conf      Conf    `json:"conf"`
 	// dir is the directory the configuration was loaded from. Paths that
 	// default to sitting beside the configuration resolve against this rather
@@ -220,15 +220,21 @@ type TopBarVisibility struct {
 
 func boolPointer(value bool) *bool { return &value }
 
+func intPointer(value int) *int { return &value }
+
 func Default() Config {
 	return Config{TUI: TUI{TopBar: TopBar{
 		Disk: boolPointer(true), Network: boolPointer(true),
 		CPU: boolPointer(true), Time: boolPointer(true),
-	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Capture: Capture{
+	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Box: Box{
+		Marker: DefaultBoxMarker, StateFile: DefaultBoxStateFile,
+		Workers: DefaultBoxWorkers, Web: BoxWeb{Port: DefaultBoxWebPort},
+		Preview: BoxPreview{Keep: intPointer(DefaultBoxPreviewKeepDays)},
+		Trash:   BoxTrash{Keep: intPointer(DefaultBoxTrashKeepDays)},
+	}, Capture: Capture{
 		Scan:     CaptureScan{IndexFile: "index.json"},
 		Obsidian: CaptureObsidian{},
-	}, Geo: Geo{GPX: GeoGPX{Host: DefaultGeoGPXHost, Port: DefaultGeoGPXPort}},
-		Box: defaultBox()}
+	}, Geo: Geo{GPX: GeoGPX{Host: DefaultGeoGPXHost, Port: DefaultGeoGPXPort}}}
 }
 
 // CaptureArchiveFolders are the two directories Archive files into: where
@@ -540,9 +546,29 @@ func LoadPath(path string) (Config, error) {
 	if err := validateTiles(config.Geo.GPX.Tiles); err != nil {
 		return Config{}, fmt.Errorf("decode config %s: geo.gpx.%w", path, err)
 	}
+	if err := validateBox(config.Box, path); err != nil {
+		return Config{}, err
+	}
+	if err := validateBoxZone(config.Box, path); err != nil {
+		return Config{}, err
+	}
 	home, _ := os.UserHomeDir()
-	if err := validateBox(&config.Box, home); err != nil {
-		return Config{}, fmt.Errorf("decode config %s: %w", path, err)
+	for _, field := range []struct {
+		key   string
+		value *string
+	}{
+		{"box.root", &config.Box.Root},
+		{"box.inbox", &config.Box.Inbox},
+		{"box.cache_dir", &config.Box.CacheDir},
+	} {
+		if *field.value == "" {
+			continue
+		}
+		expanded, err := ExpandPath(*field.value, os.LookupEnv, home)
+		if err != nil {
+			return Config{}, fmt.Errorf("decode config %s: %s: %w", path, field.key, err)
+		}
+		*field.value = expanded
 	}
 	if config.Conf.Root != "" {
 		expanded, err := ExpandPath(config.Conf.Root, os.LookupEnv, home)

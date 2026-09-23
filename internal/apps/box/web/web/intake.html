@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DGS · Box intake</title>
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="intake">
+<div id="sample-banner" class="banner" hidden>
+  <strong>Sample scans.</strong> No Box is configured, so these are made up: nothing here is a real file, and nothing is written to disk.
+</div>
+
+<header class="topbar">
+  <span class="brand">BOX</span>
+  <span class="page-name">Intake</span>
+  <span class="topbar-spacer"></span>
+  <span id="paths" class="paths"></span>
+  <a class="topbar-link" href="/browse/">Browse →</a>
+</header>
+
+<main class="intake-main">
+  <aside class="queue" aria-label="Inbox">
+    <h2 class="desk-heading">Inbox</h2>
+    <div id="duplicates" class="notice" hidden>
+      <p id="duplicates-text"></p>
+      <button type="button" id="duplicates-reject" class="text-button">Reject all of them</button>
+    </div>
+    <ol id="queue-list" class="queue-list"></ol>
+    <section id="held-back" class="held-back" hidden>
+      <h2 class="desk-heading">Held back (<span id="held-back-count">0</span>)</h2>
+      <p class="exceptions-note">Read and not taken in. Nothing was copied, and nothing was deleted.</p>
+      <ul id="held-back-list" class="exception-list"></ul>
+    </section>
+  </aside>
+
+  <div id="queue-resize" class="queue-resize" role="separator" aria-orientation="vertical"
+       aria-label="Inbox width" tabindex="0" title="Drag to widen the inbox; double-click to reset"></div>
+
+  <section class="sheet" aria-label="Scan">
+    <div class="sheet-tools">
+      <button type="button" id="pages-toggle" class="text-button" aria-pressed="false" hidden>Pages <kbd>p</kbd></button>
+      <span id="page-label" class="page-label"></span>
+    </div>
+    <div class="sheet-body">
+      <ol id="page-strip" class="page-strip" aria-label="Pages" hidden></ol>
+      <div class="sheet-frame">
+        <img id="page-image" alt="" src="">
+        <p id="page-empty" class="sheet-empty" hidden>The inbox is empty.</p>
+      </div>
+    </div>
+    <p id="facts" class="facts"></p>
+    <p id="flags" class="flags"></p>
+  </section>
+
+  <section class="desk" aria-label="Describe">
+    <div class="desk-body">
+    <p class="progress"><span id="progress-text">—</span></p>
+
+    <div id="batch" class="batch" hidden>
+      <strong id="batch-count">1</strong> selected — one type will be given to all of them.
+      <button type="button" id="batch-clear" class="text-button">clear</button>
+    </div>
+
+    <h2 class="desk-heading">Type</h2>
+    <div id="types" class="types" role="listbox" aria-label="Type"></div>
+
+    <h2 class="desk-heading">Details</h2>
+    <form id="fields" autocomplete="off">
+      <label class="fieldrow">
+        <span class="fieldrow-label">Event date</span>
+        <input id="event-date" type="text" inputmode="numeric" placeholder="YYYY-MM-DD" spellcheck="false">
+      </label>
+      <label class="fieldrow">
+        <span class="fieldrow-label">Zone</span>
+        <input id="event-zone" type="text" placeholder="Australia/Sydney" spellcheck="false">
+      </label>
+      <label class="fieldrow wide">
+        <span class="fieldrow-label">Description</span>
+        <input id="description" type="text" placeholder="one line">
+      </label>
+      <label class="fieldrow">
+        <span class="fieldrow-label">Total <span class="fieldrow-hint" id="currency-hint"></span></span>
+        <input id="total" type="text" placeholder="123.50 or USD 45" spellcheck="false">
+      </label>
+      <label class="fieldrow wide">
+        <span class="fieldrow-label">Tags</span>
+        <input id="tags" type="text" placeholder="travel, japan, tax" spellcheck="false">
+      </label>
+    </form>
+
+    <p id="expiry-line" class="expiry-line"></p>
+    <p id="error" class="error" hidden></p>
+    </div>
+
+    <ul id="keys" class="keys" aria-label="Keys"></ul>
+  </section>
+
+</main>
+
+<script src="api.js"></script>
+<script src="pages.js"></script>
+<script src="intake.js"></script>
+</body>
+</html>

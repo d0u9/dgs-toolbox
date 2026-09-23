@@ -24,33 +24,53 @@ lifetime or has none.
 
 ## Utility
 
-| Type | What it covers | Default lifetime |
-| --- | --- | --- |
-| `ticket` | Ticket stubs: cinema, concerts, local transport | the event date |
-| `travel` | Flights, boarding passes, hotel confirmations, car hire | the event date + 90 days |
-| `receipt` | Receipts and invoices | the event date + 7 years |
-| `statement` | Bills and account statements | the event date + 7 years |
-| `insurance` | Policies, certificates of cover | the event date + 1 year |
-| `contract` | Contracts and agreements | none |
-| `identity` | Identity documents, visas, licences | none — enter the expiry by hand |
-| `medical` | Prescriptions, results, medical receipts | none |
+| Type | Key | What it covers | Default lifetime |
+| --- | --- | --- | --- |
+| `ticket` | `t` | Ticket stubs: cinema, concerts, local transport | the event date |
+| `travel` | `v` | Flights, boarding passes, hotel confirmations, car hire | the event date + 90 days |
+| `receipt` | `r` | Receipts and invoices | the event date + 7 years |
+| `statement` | `s` | Bills and account statements | the event date + 7 years |
+| `insurance` | `i` | Policies, certificates of cover | the event date + 1 year |
+| `invite` | `n` | Invitations | the event date |
+| `contract` | `c` | Contracts and agreements | none |
+| `identity` | `d` | Identity documents, visas, licences | none — enter the expiry by hand |
+| `medical` | `m` | Prescriptions, results, medical receipts | none |
 
-Seven years is the span tax records are normally kept for; it is a default, and
-`box.lifetimes` overrides it for a reader whose jurisdiction says otherwise.
+Seven years is the span tax records are normally kept for. It is not
+configurable: a lifetime is part of what a type is, so changing one is a change
+to this table and to the code that registers it, in the same commit. An expiry
+that matters on one scan is entered on that scan, which always wins over the
+default.
+
+"The event date" and "none" are different answers, not two spellings of one.
+A ticket stub expires on the day of the event; a contract has no end to compute
+at all. Both are permanent only in the sense that neither needs arithmetic
+afterwards.
 
 `identity` has no default on purpose. A passport's expiry is printed on it and
 is the whole point of recording it, so a guessed date would be worse than an
-empty field that `view` can list as missing.
+empty field that `view` can list as missing. `insurance` has a default *and*
+expects a date on the document, for the same reason: the default is a guess
+worth having until the real one is entered.
+
+## The key column
+
+Each type answers to one keystroke on the intake page, which is what makes a
+few hundred scans in a row possible. The keys are a mnemonic where one is free
+and arbitrary where it is not — `v` for travel and `n` for an invitation
+because `t` and `i` are taken. Tests refuse duplicate keys and keys reserved by
+the intake key map, case-insensitively, so a new type picks a free one rather
+than quietly stealing an established reflex.
 
 ## Keepsake
 
 Nothing here expires.
 
-| Type | What it covers | Default lifetime |
-| --- | --- | --- |
-| `letter` | Correspondence worth keeping | none |
-| `ephemera` | Printed matter kept for its own sake: leaflets, brochures, an advertisement, a programme | none |
-| `object` | A scan of a small object rather than of a document | none |
+| Type | Key | What it covers | Default lifetime |
+| --- | --- | --- | --- |
+| `letter` | `w` | Correspondence worth keeping | none |
+| `ephemera` | `e` | Printed matter kept for its own sake: leaflets, brochures, an advertisement, a programme | none |
+| `object` | `o` | A scan of a small object rather than of a document | none |
 
 `ephemera` is the collectors' term for short-lived printed matter and covers
 leaflets, brochures and advertisements in one type on purpose. Nobody looks for
@@ -64,10 +84,10 @@ than presenting a column of empty ones.
 
 ## The rest
 
-| Type | What it covers | Default lifetime |
-| --- | --- | --- |
-| `other` | Anything real that no type above fits | none |
-| `unsorted` | Not yet decided | none |
+| Type | Key | What it covers | Default lifetime |
+| --- | --- | --- | --- |
+| `other` | `z` | Anything real that no type above fits | none |
+| `unsorted` | `u` | Not yet decided | none |
 
 `unsorted` is a **state**, not a kind of document, and it is what makes the
 inbox drainable: a scan nobody can classify in the two seconds available is

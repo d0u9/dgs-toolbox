@@ -60,7 +60,8 @@ away and rebuilt from it.
 
 ```text
 <root>/
-  .dgs-box                       the marker proving this is a Box
+  dgs-box.yaml                   the marker proving this is a Box
+  dgs-box-log.jsonl              every intake and every edit, appended
   2026/
     2026-09-22/                  the day the file was taken in
       scan-0012-a1b2c3d4.pdf
@@ -110,14 +111,37 @@ than none. Normalisation then only matters for display and comparison, where
 the rule is to normalise both sides to NFC and to keep the bytes as they are on
 disk. The stem as it arrived is recorded in the sidecar as well.
 
+### Nothing a person needs is hidden
+
+None of the files `box` writes into a Box or an inbox begins with a dot:
+`dgs-box.yaml`, `dgs-box-log.jsonl`, the sidecars, and `dgs-box-state.json` in
+the inbox. Finder hides dotfiles, and a Box whose metadata is invisible looks
+like a folder of PDFs with nothing beside them — which is the opposite of the
+point, since the sidecar is meant to outlive the tool.
+
+The one exception is `.dgs-part`, the temporary name a file is copied under
+before it is verified. It exists for seconds, it is not something anyone should
+open, and Photo Import already writes that name for the same mechanism.
+
 ### The marker file
 
-Every command refuses to write anything unless `.dgs-box` exists at the root,
-and never creates it as a side effect — `dgs box init` is the only thing that
-writes it. On macOS, writing to a path under an unmounted `/Volumes/...` mount
-point silently creates a local directory instead, so without this check a
-missing NAS produces a second, empty, plausible-looking Box on the local disk
-and nothing says so for weeks.
+Every command refuses to write anything unless `dgs-box.yaml` exists at the
+root, and never creates it as a side effect — `dgs box init` is the only thing
+that writes it. Writing that file is the whole of `init`, so it opens no
+workspace: it is one of the four [CLI actions](#first-version),
+`dgs box init [<dir>]`, and a keystroke in front of it would stand between a
+script and the only command that can create the Box every other command
+requires.
+
+On macOS, writing to a path under an unmounted `/Volumes/...` mount point
+silently creates a local directory instead, so without this check a missing NAS
+produces a second, empty, plausible-looking Box on the local disk and nothing
+says so for weeks.
+
+The file holds the Box's format version and when it was created, rather than
+being empty. An empty marker can only answer whether this is a Box; one with
+contents can also answer which version made it, which is what a later format
+change needs.
 
 ## Metadata: the sidecar is the truth
 
@@ -140,6 +164,7 @@ tags: [japan-2019]
 event_date: 2019-03-11
 event_tz: Asia/Tokyo
 expires_at: 2019-06-09          # empty means the type's default applies
+expiry_cleared: false           # true when an expiry was emptied on purpose
 
 total_minor: 12350              # absent, not zero, when there is no amount
 currency: AUD
@@ -159,6 +184,18 @@ tree is a supported way to find something.
 
 The sidecar travels with the file, including into `trash/`, where it gains
 `trashed_at`, `trashed_from` and `reason`.
+
+`expiry_cleared` is how an emptied expiry is told apart from one never filled
+in. Both leave `expires_at` blank, and without the flag the type's default
+lifetime would come back on the next read, which is the opposite of what
+emptying the field was meant to say.
+
+A key this build does not know is **refused, not dropped**. A sidecar is edited
+by hand and is the only copy of what it holds, so reading one, changing a field
+and writing it back must never be the step that silently loses a line someone
+typed; a mistyped key is reported instead. A file from a newer format says so in
+its `version`, which is read first so that it — not one unknown key — is what
+gets reported.
 
 ### Dates always carry a zone
 
@@ -247,6 +284,7 @@ tree keeps the tree's meaning simple — everything in the Box is truth.
   index.json
   thumbs/a1/a1b2c3d4-300.jpg
   previews/a1/a1b2c3d4-1600.jpg
+  previews/a1/a1b2c3d4-p2-300.jpg
 ```
 
 Rules the cache obeys:
@@ -260,11 +298,15 @@ Rules the cache obeys:
   discardable cache is code that can only be wrong.
 - **A lost write costs nothing.** No WAL, no transactions, no careful fsync.
   The file is rewritten whole into a temporary file in the same directory and
-  renamed.
+  renamed. It is rewritten after every change rather than on the way out: a
+  process closed by its window being shut never reaches a way out, and a cache
+  written once makes every start pay for a refresh it does not need.
 - **Staleness is per entry**, on `(relative path, size, mtime)`. A startup walk
   reads the directory listing only, never file contents, and re-reads just the
   sidecars whose triple changed. Entries in the cache with no file on disk are
-  reported as orphans rather than dropped.
+  reported as orphans rather than dropped. A file whose name carries no digest
+  prefix cannot pair with any sidecar, so it is reported too — see
+  [adopt](view.md#the-exceptions-area) — rather than passed over.
 
 ### Rebuilding is not verifying
 
@@ -288,7 +330,12 @@ top of the pyramid left off:
 
 - **300 px thumbnail** for grids. A few KB; never expires.
 - **1600 px preview** for looking at one scan. Dropped after
-  `box.preview.keep` without use.
+  `box.preview.keep` without use. The sweep runs when a Box is opened, which is
+  often enough for something whose only cost is disk.
+- **Pages past the first**, at both sizes, for the page view of a multi-page
+  PDF. Drawn when a page is first looked at, never during `import`, and kept
+  under `previews/` whatever their size, so they expire with the previews: a
+  long document read once must not leave pictures that are never swept.
 - **No 1:1 preview.** Reading the original means opening the PDF in the system
   viewer. Writing a zooming document viewer is not this tool's job.
 
@@ -332,16 +379,36 @@ to empty.
 
 ## First version
 
+Two of the six open a workspace. Import and view are what a Box is looked
+after with: a person chooses, corrects and decides, and there is something to
+watch while bytes are copied.
+
+The other four report and return. None of them writes anything into the Box —
+init writes the marker, index saves the cache, which lives outside the Box, and
+verify and dedupe write nothing at all — and none of them asks anything once it
+starts. Nothing is repaired: an orphan, a mismatch and a duplicate are all
+reported and left alone, because guessing which side is wrong is how a tool
+destroys what it was asked to look after. A report with nothing to decide is
+stdout's shape, and a keystroke in front of it keeps the slow one out of a
+scheduled run.
+
+They stay four rather than one because their costs differ by three orders of
+magnitude: index and dedupe read sidecars, verify reads every byte in the Box.
+Verify prints each file as it reads it, since a run that said nothing for an
+hour could not be told from a hung one, and `--quiet` reduces it to the result.
+It is also the one action that exits non-zero, when the Box no longer holds
+what it says it holds — the finding a schedule must not see as success.
+
 Confirmed for the first version:
 
 | Command | |
 | --- | --- |
-| `dgs box init` | writes `.dgs-box` at a root |
+| `dgs box init [<dir>]` | writes `dgs-box.yaml` at a root; a CLI action, not a TUI command |
 | `dgs box import` | [intake](import.md): dedupe, metadata, thumbnails, verified publication, resumable |
 | `dgs box view` | [browse and correct](view.md), expiry, trash, the exceptions area |
-| `dgs box index` | rebuild the cache from sidecars |
-| `dgs box verify` | re-hash and report mismatches |
-| `dgs box dedupe` | the duplicate pass on its own, with no filing |
+| `dgs box index [<dir>]` | rebuild the cache from sidecars; a CLI action |
+| `dgs box verify [<dir>]` | re-hash and report mismatches; a CLI action, and the only one that fails |
+| `dgs box dedupe [<dir>]` | the duplicate pass on its own, with no filing; a CLI action |
 
 Deliberately not in the first version, each with a way through so nothing can
 be stranded in the inbox:

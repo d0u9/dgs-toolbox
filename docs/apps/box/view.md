@@ -38,13 +38,23 @@ record from an intake guess.
 
 ## Changes are appended, not overwritten
 
-Every edit appends a line to the log at the Box root: what changed, from what,
-to what, when. The log is never rewritten.
+Every edit appends a line to `dgs-box-log.jsonl` at the Box root: what changed,
+from what, to what, when. The log is never rewritten.
 
 Batch editing is necessary — see [the case for
 it](import.md#order) — and a batch edit is also the only way to get three
 hundred records wrong at once. The log is what makes that recoverable, and
 therefore what makes batch editing safe enough to offer.
+
+Cards are marked with Shift-click and the batch is one request. It sets only
+what many documents share — the type, the group, tags, and whether the type is
+confirmed — because a description and an amount belong to one document. A
+record the batch refuses is reported on its own and does not undo the ones that
+were written: a batch is a convenience over a list of edits, not a transaction.
+
+The trash is shown as advice: how much is in it, how old the oldest is, and how
+much of it is older than `box.trash.keep`. Nothing is ever removed for it.
+Emptying `trash/` stays something done by hand.
 
 ## Browsing, not searching
 
@@ -72,6 +82,11 @@ actually known:
 `Producer`, page count and page size are worth having as filters precisely
 because they cost nothing and exist for every scan, including everything that
 was never described.
+
+### Pages
+
+The detail of a PDF has the same page view as intake: a strip of every page
+under the scan, shown and hidden with **Pages**, the picked page drawn large.
 
 ### Sorting
 
@@ -140,7 +155,22 @@ error. It runs the same metadata and thumbnail work as
 [`import`](import.md#metadata-and-thumbnails-in-one-read) without copying
 anything.
 
+The file stays in its own directory, because that directory records an intake
+date adopting does not get to rewrite. One thing about it does change: a
+sidecar is paired with its scan by the digest prefix both names carry, so a
+file that arrived without one is renamed **inside that same directory** to gain
+it. Without that, the sidecar written for it would be an orphan the moment it
+was saved. A file that already carries the right prefix is not touched at all.
+
+A file whose name carries no digest at all is still reported. Pairing skips it,
+and a file the tool passed over silently would be a file nobody is ever told
+about — which is the same failure as an unreported skip at intake.
+
 Nothing here is repaired automatically.
+
+Verify is offered here as well as from `dgs box verify`, behind a button that
+says what it costs: it reads every byte of every file, which is tens of
+gigabytes over a network filesystem. What it finds joins the exceptions.
 
 ### A mismatch is never "corrected"
 

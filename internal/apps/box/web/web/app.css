@@ -1,0 +1,596 @@
+/* What only the Box pages need. Everything shared — the palette, the type
+   scale, the controls — comes from /ui/, so a token is never restated here.
+   Only two things are page-specific: a sheet of paper wants to be looked at,
+   and the intake page has to be operable without the mouse. */
+
+body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+.banner {
+  flex: none;
+  padding: var(--row-pad-y) var(--space-md);
+  background: var(--primary-soft);
+  color: var(--primary-deep);
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--primary);
+}
+.banner[hidden] { display: none; }
+
+.page-name { color: var(--graphite); font-size: var(--font-size-sm); }
+.paths {
+  color: var(--graphite);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 50ch;
+}
+.topbar-link {
+  color: var(--primary);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+  margin-left: var(--space-md);
+}
+.topbar-link:hover { text-decoration: underline; }
+
+.desk-heading {
+  margin: var(--space-sm) 0 var(--space-xxs);
+  font-size: var(--font-size-xs);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--graphite);
+  font-weight: 500;
+}
+
+/* Fields. The label sits above its control so a column of them scans
+   vertically, which is how they are filled in. */
+.fieldrow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fieldrow-label {
+  font-size: var(--font-size-xs);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+.fieldrow-hint { color: var(--steel); }
+.fieldrow input, .fieldrow select {
+  width: 100%;
+  height: var(--control-height);
+  padding: 0 var(--control-pad-x);
+  background: var(--paper);
+  border-color: var(--hairline-strong);
+  font-size: var(--font-size-ui);
+}
+.fieldrow input::placeholder { color: var(--steel); }
+.fieldrow input:hover { border-color: var(--graphite); }
+.fieldrow input:focus { border-color: var(--primary); }
+/* A date and an amount are read digit by digit, so they are set in the mono
+   face and in figures of one width. */
+#event-date, #total { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.fieldrow.wide { grid-column: 1 / -1; }
+
+/* A run takes one type and nothing else: a date and a description belong to
+   one document, so those fields step back rather than lie. */
+#fields.run-selected .fieldrow { opacity: .45; }
+
+#fields, #detail-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-row) var(--space-sm);
+}
+
+.expiry-line {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--charcoal);
+}
+.error { margin: var(--space-xs) 0 0; color: var(--error); font-size: var(--font-size-sm); }
+.error[hidden] { display: none; }
+
+/* ---- Intake ---------------------------------------------------------- */
+
+.intake-main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  /* The inbox first: it is the queue being drained, so it reads on the left
+     where a list is looked for, and the scan and the desk follow the order
+     the hands work in. */
+  grid-template-columns: var(--queue-width, 280px) 6px minmax(320px, 1fr) minmax(330px, 380px);
+}
+
+/* The inbox is as wide as the person drags it. The script keeps the width
+   between its minimum and half the window; the handle is only the grip. */
+.queue-resize {
+  cursor: col-resize;
+  background: var(--cloud);
+  border-right: 1px solid var(--hairline);
+  touch-action: none;
+}
+.queue-resize:hover, .queue-resize:focus-visible, body.resizing .queue-resize {
+  background: var(--primary-soft);
+  border-right-color: var(--primary);
+  outline: none;
+}
+/* While dragging, the pointer stays a resize cursor over the scan and text
+   does not get selected as it passes. */
+body.resizing { cursor: col-resize; user-select: none; }
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--space-xs);
+  background: var(--cloud);
+  border-right: 1px solid var(--hairline);
+  overflow: hidden;
+}
+/* The scan is the subject of the page, so it gets the frame and the room. */
+/* The page view: a toolbar row, then the strip of pages beside the scan. */
+.sheet-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 24px;
+  padding: 0 var(--space-xxs) var(--space-xxs);
+}
+.sheet-tools .text-button[aria-pressed="true"] { color: var(--primary); font-weight: 600; }
+.sheet-tools kbd { margin-left: 4px; }
+.page-label {
+  font-size: var(--font-size-sm);
+  color: var(--graphite);
+  font-variant-numeric: tabular-nums;
+}
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--space-xs);
+}
+.sheet-body .page-strip {
+  flex: none;
+  width: 104px;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.sheet-frame {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xs);
+  background: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-xl);
+}
+.sheet-frame img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.sheet-empty { color: var(--graphite); }
+
+.facts {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--graphite);
+  font-family: var(--font-mono);
+}
+.flags { margin: var(--space-xxs) 0 0; display: flex; flex-wrap: wrap; gap: var(--space-xxs); }
+.flag {
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--hairline-strong);
+}
+.flag-stop { background: var(--error); border-color: var(--error); color: var(--on-ink); }
+.flag-warn { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-deep); }
+.flag-note { background: var(--fog); color: var(--charcoal); }
+
+.desk {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+/* Everything that is read and filled in scrolls; the keys do not, because a
+   key list that scrolls out of sight is a key list nobody learns. */
+.desk-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-xs) var(--space-sm); }
+.progress { margin: 0; font-size: var(--font-size-title); }
+.batch {
+  margin: var(--space-xs) 0 0;
+  padding: var(--row-pad-y) var(--row-pad-x);
+  background: var(--selected);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+.batch[hidden] { display: none; }
+
+/* One keystroke per type, so the key is the control and the row is not a
+   list row but a target: a grid of chips, each carrying the key, the name and
+   what the type does to the expiry. Three lines of size do the reading —
+   the key largest, the name next, the lifetime smallest — so the eye lands on
+   the key it is about to press. */
+.types {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 2px;
+}
+.type {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: var(--space-xxs);
+  padding: 2px var(--space-xxs);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.type:hover { border-color: var(--primary); background: var(--hover); }
+.type:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.type-text { display: grid; min-width: 0; }
+.type kbd {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-ui);
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  background: var(--cloud);
+}
+.type-label {
+  font-size: var(--font-size-ui);
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.type-life {
+  color: var(--graphite);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* A keepsake never expires, so its chip is quieter: it asks for less. */
+.type-keepsake .type-life { color: var(--steel); }
+.type-chosen, .type-chosen:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+.type-chosen .type-life { color: var(--primary-soft); }
+.type-chosen kbd { background: var(--primary-deep); color: var(--on-primary); border-color: var(--primary-deep); }
+
+.keys {
+  flex: none;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: var(--space-xxs) var(--space-sm);
+  border-top: 1px solid var(--hairline);
+  background: var(--cloud);
+  font-size: var(--font-size-sm);
+  color: var(--charcoal);
+}
+/* The map in use is switched from the strip itself, because that is where the
+   question is asked. */
+.keys li { display: flex; align-items: center; gap: var(--space-xxs); min-width: 0; }
+.keys span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--graphite); }
+.keys kbd {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  color: var(--charcoal);
+  border: 1px solid var(--hairline-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-xs) var(--space-xs);
+  background: var(--cloud);
+  border-right: 1px solid var(--hairline);
+}
+/* The heading stays put while the queue runs under it: a column of file names
+   with nothing above them stops saying which column it is. */
+.queue > .desk-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 var(--space-xxs);
+  padding: var(--space-xs) var(--row-pad-x) var(--space-xxs);
+  background: var(--cloud);
+}
+.queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+/* The time is the fixed column and the name runs after it, so a few hundred
+   rows read as two columns rather than as ragged text. */
+/* The inbox is read row by row for a whole sitting, so it is set at the
+   design language's caption-md — 14px on 1.5 — rather than the 12px of the
+   dense controls around it. */
+.queue-item {
+  display: grid;
+  grid-template-columns: 5.5ch 1fr;
+  align-items: baseline;
+  gap: var(--space-xs);
+  padding: 5px var(--row-pad-x);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  line-height: 1.5;
+}
+.queue-item:hover { background: var(--hover); }
+.queue-time {
+  color: var(--graphite);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.queue-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+/* A run is tinted; the scan the cursor is on stays the strong one, so the
+   order of these two rules is the point. */
+.queue-run { background: var(--selected); }
+.queue-run .queue-name { color: var(--ink); }
+.queue-current { background: var(--primary); }
+.queue-current .queue-name { color: var(--on-primary); font-weight: 600; }
+.queue-current .queue-time { color: var(--primary-soft); }
+
+/* ---- Browse ---------------------------------------------------------- */
+
+.filters {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-md);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--cloud);
+  overflow-x: auto;
+}
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--graphite);
+}
+.filter-spacer { flex: 1; }
+.count { font-size: var(--font-size-sm); color: var(--charcoal); white-space: nowrap; }
+
+.browse-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr minmax(320px, 400px); }
+.grid-pane { padding: var(--space-md); overflow-y: auto; min-width: 0; }
+
+.totals { margin: 0 0 var(--space-sm); display: flex; flex-wrap: wrap; gap: var(--space-md); font-size: var(--font-size-sm); }
+.total { font-variant-numeric: tabular-nums; }
+.total-count { color: var(--graphite); font-size: var(--font-size-xs); }
+
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-md);
+}
+.card {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  overflow: hidden;
+  cursor: pointer;
+}
+.card:hover { box-shadow: var(--lift-soft); }
+.card-selected { border-color: var(--primary); box-shadow: var(--lift-soft); }
+.card-thumb {
+  display: block;
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  object-position: top;
+  background: var(--cloud);
+  border-bottom: 1px solid var(--hairline);
+}
+.card-body { padding: var(--space-xs); }
+.card-title {
+  margin: 0;
+  font-size: var(--font-size-ui);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-meta { margin: 2px 0 0; font-size: var(--font-size-xs); color: var(--graphite); }
+/* Sorted by the scan date rather than an event date: said on the card,
+   because a list ordered by two meanings looks like one that is wrong. */
+.card-fallback { color: var(--steel); }
+.card-badges { margin: var(--space-xxs) 0 0; display: flex; flex-wrap: wrap; gap: 2px; }
+.badge {
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  background: var(--fog);
+  color: var(--charcoal);
+}
+.badge-guess { background: var(--primary-soft); color: var(--primary-deep); }
+.badge-warn { background: var(--primary-soft); color: var(--primary-deep); }
+.badge-dead { background: var(--error); color: var(--on-ink); }
+.state-dead .card-thumb { opacity: .55; }
+.grid-empty { color: var(--graphite); }
+
+.detail { padding: var(--space-md); overflow-y: auto; border-left: 1px solid var(--hairline); background: var(--cloud); }
+.detail-empty { color: var(--graphite); }
+.detail-frame {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-sm);
+  background: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-xl);
+  margin-bottom: var(--space-xs);
+}
+.detail-frame img { max-width: 100%; max-height: 280px; object-fit: contain; }
+.detail-tools { display: flex; align-items: center; gap: var(--space-sm); margin-top: var(--space-xxs); }
+.detail-tools .text-button[aria-pressed="true"] { color: var(--primary); font-weight: 600; }
+/* In the narrow detail column the strip runs under the scan instead. */
+.detail .page-strip {
+  flex-direction: row;
+  overflow-x: auto;
+  margin-top: var(--space-xxs);
+  padding-bottom: var(--space-xxs);
+}
+.detail .page-item { flex: none; width: 72px; }
+
+/* ---- Page strip (both pages) ------------------------------------------ */
+
+.page-strip {
+  display: flex;
+  gap: var(--space-xs);
+  list-style: none;
+  margin: 0;
+  padding: 2px;
+}
+.page-strip[hidden] { display: none; }
+.page-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1.414;
+  background: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  overflow: hidden;
+}
+.page-item:hover { border-color: var(--graphite); }
+.page-item img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.page-item.page-current { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
+.page-item.page-missing img { display: none; }
+.page-number {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-soft);
+  color: var(--on-ink);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.page-current .page-number { background: var(--primary); color: var(--on-primary); }
+.detail-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
+.detail-note { grid-column: 1 / -1; margin: 0; font-size: var(--font-size-xs); color: var(--graphite); }
+
+/* Exceptions live in their own band, never mixed into the list above:
+   exceptions in a daily list are exceptions nobody reads after three days. */
+.exceptions {
+  flex: none;
+  max-height: 26vh;
+  overflow-y: auto;
+  padding: var(--space-xs) var(--space-md) var(--space-md);
+  border-top: 1px solid var(--hairline-strong);
+  background: var(--paper);
+}
+.exceptions .desk-heading { margin-top: var(--space-xs); }
+.exceptions-note { margin: 0 0 var(--space-xs); font-size: var(--font-size-xs); color: var(--graphite); }
+.exception-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-xxs); }
+.exception {
+  display: grid;
+  grid-template-columns: 150px minmax(200px, 1fr) 2fr auto;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--row-pad-y) var(--row-pad-x);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+.exception-kind { font-weight: 500; }
+.exception-path { font-family: var(--font-mono); font-size: var(--font-size-xs); overflow: hidden; text-overflow: ellipsis; }
+.exception-detail { color: var(--graphite); font-size: var(--font-size-xs); }
+/* A mismatch is the dangerous one: it may be the first sign of bit rot, and
+   nothing has been rewritten. */
+.exception-digest-mismatch { border-color: var(--error); }
+.exception-digest-mismatch .exception-kind { color: var(--error); }
+
+@media (max-width: 1100px) {
+  .intake-main { grid-template-columns: 1fr 1fr; }
+  .queue, .queue-resize { display: none; }
+  .browse-main { grid-template-columns: 1fr; }
+  .detail { border-left: none; border-top: 1px solid var(--hairline); }
+}
+
+/* ---- What was held back, and what is already in the Box --------------- */
+
+/* A skip nobody is told about means believing the inbox is empty when it is
+   not, so both of these sit in the inbox column rather than in a log. */
+.notice {
+  margin: 0 0 var(--space-xs);
+  padding: var(--row-pad-y) var(--row-pad-x);
+  background: var(--fog);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+.notice[hidden] { display: none; }
+.notice p { margin: 0 0 var(--space-xxs); }
+.held-back { margin-top: var(--space-sm); }
+/* The inbox column is too narrow for the four-column exception row, so here
+   the same record stacks instead of being cut off. */
+.queue .exception {
+  display: block;
+  padding: var(--row-pad-y) var(--row-pad-x);
+  font-size: var(--font-size-ui);
+  line-height: 1.5;
+}
+.queue .notice { font-size: var(--font-size-ui); line-height: 1.5; }
+.queue .exceptions-note { font-size: var(--font-size-sm); line-height: 1.5; }
+.queue .exception-path { white-space: nowrap; }
+.queue .exception-detail { display: block; }
+.held-back[hidden] { display: none; }
+.exception-incomplete .exception-kind { color: var(--error); }
+
+/* ---- Batch editing ---------------------------------------------------- */
+
+/* Marked cards are what a batch would touch. The outline is heavier than the
+   selection's, because a batch is also the only way to get three hundred
+   records wrong at once. */
+.card-marked { outline: 2px solid var(--primary); outline-offset: -2px; }
+.batch-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--gap-row) var(--space-sm);
+  margin: var(--space-xs) 0;
+}
+.fieldrow.check { flex-direction: row; align-items: center; gap: var(--space-xxs); }
+.inline-field select { font-size: var(--font-size-sm); }
+
+/* The trash is advice and nothing else: box never removes a file. */
+.trash-line {
+  margin: var(--space-xxs) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--graphite);
+}
+.trash-line[hidden] { display: none; }
