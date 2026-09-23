@@ -66,6 +66,8 @@ const state = {
   fill: { active: false, profile: "car", start: null, preview: null, busy: false, error: null },
   timelineStops: true, // stops on the timeline; off, only data and empty time
   timelineSnap: true, // the timeline's cursor sticks to stops, cuts and ends
+  timelineCompress: false, // stops and empty time drawn narrow on the timeline
+  timelineHideEmpty: true, // empty time left out of the timeline
   stopNumbers: true, // numbered stop markers on the map; the timeline always has them
   stops: { distance: 50, duration: 300 }, // stay-point thresholds: metres, seconds
   charts: { elevation: true, speed: true, layout: "side" }, // layout: "stacked" | "side"
@@ -117,6 +119,8 @@ function save() {
       hiddenPanels: state.hidden,
       stopNumbers: state.stopNumbers,
       timelineSnap: state.timelineSnap,
+      timelineCompress: state.timelineCompress,
+      timelineHideEmpty: state.timelineHideEmpty,
       timelineStops: state.timelineStops,
       cleanOpen: state.cleanOpen,
       editTab: state.editTab,
@@ -2624,6 +2628,22 @@ async function start() {
   $("timeline-snap").addEventListener("change", () => {
     state.timelineSnap = $("timeline-snap").checked;
     timeline.setSnap(state.timelineSnap);
+    save();
+  });
+  if (saved.timelineCompress === true) state.timelineCompress = true;
+  $("timeline-compress").checked = state.timelineCompress;
+  timeline.setCompress(state.timelineCompress);
+  $("timeline-compress").addEventListener("change", () => {
+    state.timelineCompress = $("timeline-compress").checked;
+    timeline.setCompress(state.timelineCompress);
+    save();
+  });
+  if (saved.timelineHideEmpty === false) state.timelineHideEmpty = false;
+  $("timeline-hide-empty").checked = state.timelineHideEmpty;
+  timeline.setHideEmpty(state.timelineHideEmpty);
+  $("timeline-hide-empty").addEventListener("change", () => {
+    state.timelineHideEmpty = $("timeline-hide-empty").checked;
+    timeline.setHideEmpty(state.timelineHideEmpty);
     save();
   });
   if (saved.stopNumbers === false) state.stopNumbers = false;

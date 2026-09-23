@@ -121,19 +121,34 @@
     <div id="timeline" class="timeline">
       <div class="timeline-head">
         <span id="timeline-labels" class="timeline-labels"></span>
-        <label class="stop-toggle" title="Stops and moving periods on the timeline; off, it shows only where there is data and the empty time between">
-          <input id="timeline-stops" type="checkbox" checked> Stops
-        </label>
-        <label class="stop-toggle" title="Snap the cursor to stops, data edges, cuts, hidden stretches and the track's ends; off, it follows the pointer">
-          <input id="timeline-snap" type="checkbox" checked> Snap
-        </label>
-        <label class="stop-toggle" title="Numbered stop markers on the map. The timeline keeps its stops either way.">
-          <input id="stop-numbers" type="checkbox" checked> On map
-        </label>
-        <label class="stop-params" title="Stay-point detection: the track stays within the distance for at least the time">
-          Stops: at least <input id="stop-duration" type="number" min="1" step="1"> min within
-          <input id="stop-distance" type="number" min="5" step="5"> m
-        </label>
+        <span class="timeline-group" role="group" aria-label="Stops">
+          <span class="timeline-group-name">Stops</span>
+          <label class="stop-toggle" title="Stops and moving periods on the timeline; off, it shows only where there is data and the empty time between">
+            <input id="timeline-stops" type="checkbox" checked> Timeline
+          </label>
+          <label class="stop-toggle" title="Numbered stop markers on the map. The timeline keeps its stops either way.">
+            <input id="stop-numbers" type="checkbox" checked> Map
+          </label>
+          <label class="stop-params" title="Stay-point detection: the track stays within the distance for at least the time">
+            ≥ <input id="stop-duration" type="number" min="1" step="1"> min within
+            <input id="stop-distance" type="number" min="5" step="5"> m
+          </label>
+        </span>
+        <span class="timeline-group" role="group" aria-label="Time axis">
+          <span class="timeline-group-name">Axis</span>
+          <label class="stop-toggle" title="Leave empty time out of the timeline: a dashed line with the times on either side marks where it was">
+            <input id="timeline-hide-empty" type="checkbox" checked> No empty
+          </label>
+          <label class="stop-toggle" title="Draw stops and empty time narrow, just wide enough to show the times at both ends, so moving time takes the timeline">
+            <input id="timeline-compress" type="checkbox"> Compress
+          </label>
+        </span>
+        <span class="timeline-group" role="group" aria-label="Cursor">
+          <span class="timeline-group-name">Cursor</span>
+          <label class="stop-toggle" title="Snap the cursor to stops, data edges, cuts, hidden stretches and the track's ends; off, it follows the pointer">
+            <input id="timeline-snap" type="checkbox" checked> Snap
+          </label>
+        </span>
       </div>
       <div id="timeline-overview" class="timeline-overview inactive" title="The zoomed stretch; drag it to pan, click elsewhere to jump"></div>
       <div id="timeline-bar" class="timeline-bar"></div>
