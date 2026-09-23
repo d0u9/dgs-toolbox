@@ -399,6 +399,11 @@ downstreams:  as elsewhere, for a service declaring downstreams: many
   outside, and nothing here says from where. A node with no address anywhere
   publishes on `0.0.0.0`, since there is no interface to name and publishing
   nothing renders a container nobody can reach.
+- A port some route starts at is reached from outside too, whatever else
+  enters it, and publishes the same way. A web interface behind a proxy on
+  its own node, kept reachable directly as a way in when the proxy is down,
+  is this case: loopback for the proxy, this node's address for the route
+  starting at it.
 
 **It is a list, because the two above are not exclusive and neither is one
 network.** A port a proxy beside it dials and another machine dials is

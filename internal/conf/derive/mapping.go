@@ -117,23 +117,28 @@ func (m *Model) Mappings(inv *inventory.Root, instance string) map[string]Mappin
 		if local {
 			addresses = append(addresses, PublishLoopback)
 		}
-		switch {
-		case len(networks) > 0:
-			for _, network := range networkOrder(inv) {
-				if networks[network] {
-					addresses = append(addresses, bindable(node.Networks[network]))
-				}
+		for _, network := range networkOrder(inv) {
+			if networks[network] {
+				addresses = append(addresses, bindable(node.Networks[network]))
 			}
-		case !entered:
-			// Nothing entered it, so no edge chose a network: it is
-			// reached from outside and the inventory does not say from
-			// where, which every network this node answers on satisfies.
+		}
+		// A route starting at this port is entered from outside, whatever
+		// else enters it: a web interface behind a proxy beside it, kept
+		// reachable directly as well, is dialled at loopback by the proxy
+		// and at this node's address by a browser the route leaves
+		// unmodelled.
+		if !entered || isEntrance(inv, instance, name) {
+			// No edge chose a network for the way in from outside, and
+			// the inventory does not say from where, which every network
+			// this node answers on satisfies.
+			outside := 0
 			for _, network := range networkOrder(inv) {
 				if address, ok := node.Networks[network]; ok {
 					addresses = append(addresses, bindable(address))
+					outside++
 				}
 			}
-			if len(addresses) == 0 {
+			if outside == 0 {
 				// A node written at no address at all, reached from
 				// outside: there is no interface to name, and publishing
 				// nothing would render a container nobody can reach.
@@ -188,4 +193,17 @@ func networkOrder(inv *inventory.Root) []string {
 		order = append(append([]string{}, order...), inv.Universal)
 	}
 	return order
+}
+
+// isEntrance is whether some route's first hop is this instance's port: a
+// route entered from outside at it, by something the inventory does not
+// model.
+func isEntrance(inv *inventory.Root, instance, port string) bool {
+	want := instance + ":" + port
+	for _, r := range inv.Routes {
+		if len(r.Hops) > 0 && r.Hops[0] == want {
+			return true
+		}
+	}
+	return false
 }

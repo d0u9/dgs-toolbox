@@ -203,3 +203,15 @@ func TestMappings_EnteredFromBothItsOwnNodeAndAnotherPublishesOnBoth(t *testing.
 	got := mappingsOf(t, inv, "ss-sfo01")
 	wantMapping(t, got, "main", 38250, "127.0.0.1", "203.0.113.10")
 }
+
+// TestMappings_ARouteStartingAtAProxiedPortStillPublishesOnThisNodesAddress
+// is a backend behind the proxy on its own node that a second route also
+// enters directly — a web interface kept reachable without the proxy, as a
+// way in when the proxy is down. The proxy's edge alone would publish it on
+// loopback only, and the direct route would dial a number nothing published.
+func TestMappings_ARouteStartingAtAProxiedPortStillPublishesOnThisNodesAddress(t *testing.T) {
+	inv := mappingInventory("203.0.113.10")
+	inv.Routes["paste-direct"] = inventory.Route{Hops: []string{"bin-sfo01:web"}}
+	got := mappingsOf(t, inv, "bin-sfo01")
+	wantMapping(t, got, "web", 8080, "127.0.0.1", "203.0.113.10")
+}
