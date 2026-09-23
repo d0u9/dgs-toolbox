@@ -1,6 +1,6 @@
 # Box: view
 
-`dgs box view` browses a Box and corrects what is in it. It also owns the
+The browse page of `dgs box` browses a Box and corrects what is in it. It also owns the
 exceptions area, where anything the tool cannot explain about the tree is
 shown.
 
@@ -49,6 +49,8 @@ therefore what makes batch editing safe enough to offer.
 Cards are marked with Shift-click and the batch is one request. It sets only
 what many documents share — the type, tags, and whether the type is
 confirmed — because a description and an amount belong to one document. A
+batch only adds tags: one list typed for three hundred scans never replaces
+what each of them already carries. A
 record the batch refuses is reported on its own and does not undo the ones that
 were written: a batch is a convenience over a list of edits, not a transaction.
 
@@ -74,7 +76,7 @@ actually known:
 | Current / dead / permanent | [computed](index.md#lifecycle) |
 | `reviewed` | whether a human confirmed the type |
 | Amount range | within one currency |
-| Tags | free-form |
+| Tags | free-form; every tag chosen must be carried ([tags](#tags)) |
 | Producer | which scanner made it |
 | Pages | one page, several pages |
 | `needs_split`, `needs-render`, unknown type | deferred work |
@@ -82,6 +84,41 @@ actually known:
 `Producer`, page count and page size are worth having as filters precisely
 because they cost nothing and exist for every scan, including everything that
 was never described.
+
+**Splits as documents** is a switch beside the filters, off by default. Off,
+the grid shows one card per scan. On, a split scan becomes one card per split,
+each with that split's own type, description, date, amount and first page, and
+the filters and currency totals read those values. A split's card opens the
+scan at that split. The switch is a way of looking, not a filter: clearing the
+filters leaves it, and the browser remembers it.
+
+A card's picture carries a folder button, shown on hover, that reveals the
+scan's file in the file manager of the machine serving the page, selected in
+its folder. The sample Box has no files and shows no button.
+
+### Tags
+
+Tags are free-form, and free-form drifts: `Japan`, `japan 2019` and
+`japan-2019` are three tags to a filter. So a tag has one spelling — lower
+case, spaces joined by a hyphen — applied when it is typed and again when it is
+saved, and the spelling the Box already uses is the one offered first.
+`GET /api/tags` is every tag in the Box with how many scans carry it; a scan
+counts once, whether the file or one of its splits says it.
+
+Everywhere a tag is typed — intake, the detail, a batch — each tag is a
+bubble. Typing offers existing tags that start with, then contain, the text,
+most used first. `Enter` or `Tab` takes the highlighted one, `,` takes the text
+as typed, a first `Backspace` on an empty field picks the last bubble and a
+second removes it. A tag no scan has yet is drawn dashed, so a near twin is
+seen before it is saved. Renaming or merging tags is not done here.
+
+The **Tags** filter takes only tags that exist. Several tags narrow with each
+other: a card is shown when it carries every one. Beside each suggestion is
+how many of the cards shown carry it. **All tags** opens a strip under the
+filters of every tag in what is shown, most carried first, each a switch; the
+strip stays open or closed as it was left. A tag on a card is the same switch.
+The chosen tags are in the address, `?tag=japan-2019&tag=keep`, so a view by
+tag is a bookmark.
 
 ### Pages
 
@@ -92,6 +129,39 @@ with their count, and its splits are corrected here the way they were made at
 intake: the same strip, `Space` to mark, `x` to ignore, `:` to type them all,
 `-` to remove one, and the detail's fields describing whichever split is
 picked. **Save** rewrites the sidecar; the file does not move.
+
+### Reading
+
+**Read** (`Enter`, or a double-click on a card) opens the picked card in a
+reader: every page down one scrolling column, a strip of pages beside it, the
+way a PDF viewer shows a document. It only reads — splits are marked in the
+details, where the fields they describe are.
+
+The reader is part of Browse, not a page of its own. It takes the place of the
+filters and the grid and nothing else: the top bar keeps saying Browse, with
+what is being read after it, and the status bar keeps its row, showing the page
+and the reader's keys. **← Browse** or `Esc` puts the grid back, scrolled where
+it was. The strip of pages is dragged wider or narrower at its edge, and the
+width is remembered.
+
+A split's card is read as its own document: only its pages, numbered within
+it, with the page of the scan named beside the number. A scan's card reads the
+whole scan. What is on screen is what the split will be taken to be, and a
+split that looks wrong is corrected from the scan's card.
+
+A page is drawn only while it is near the window, and one scrolled far away
+gives its picture up again, so a long scan never holds every page decoded at
+once. Each page's place is held from the start at the shape of a sheet of
+paper, so the scrollbar is right before anything has loaded. The pictures are
+the same 1600 px previews the details show, from the same cache.
+
+`j`/`k` or the arrow keys turn a page, `g`/`G` go to the first and last,
+`+`/`-` or `⌘`/`Ctrl` with the wheel size the pages — the wheel about the
+cursor — and `Esc` closes. Two sizes follow the window: **Width** (`w` or
+`0`) makes pages as wide as it, for reading small print down a page; **Page**
+(`p`) makes each page exactly as tall as it, so a whole page is seen at once
+and every turn lands on one, each page keeping its own shape. The size is
+remembered by the browser.
 
 ### Unfiling
 
@@ -158,6 +228,12 @@ they are different enough to need different answers. They live in their own
 area, not mixed into the browsing list — exceptions mixed into a daily list are
 exceptions nobody reads after the third day.
 
+That area is its own page, `/check/`, not a band on browse. Exceptions are
+rare, so browse shows only a link in its top bar with their count, and shows
+nothing at all when there are none. The page groups them by kind; each group
+says in one paragraph what it means and what to do, then lists the files,
+name first and directory after.
+
 | What | What it means | What is offered |
 | --- | --- | --- |
 | A scan with no sidecar | put there by hand, or a lost sidecar | **adopt**: describe it in place, no move |
@@ -183,9 +259,17 @@ about — which is the same failure as an unreported skip at intake.
 
 Nothing here is repaired automatically.
 
-Verify is offered here as well as from `dgs box verify`, behind a button that
+Verify is offered on that page as well as from `dgs box verify`, behind a button that
 says what it costs: it reads every byte of every file, which is tens of
 gigabytes over a network filesystem. What it finds joins the exceptions.
+
+Thumbnails are a local cache, so a broken one is mended by drawing it again
+rather than reported. Browse's detail panel has *Redraw thumbnail* for one
+scan; the check page has *Redraw all*, which reads every file like verify
+does. Both drop the scan's stored pictures and draw page one again from the
+file (`POST /api/redraw`, an empty digest meaning every filed scan). Only the
+cache changes; the Box is never written to. A scan with no picture in it is
+listed as one that could not be redrawn.
 
 ### A mismatch is never "corrected"
 

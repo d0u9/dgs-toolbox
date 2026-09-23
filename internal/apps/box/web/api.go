@@ -9,6 +9,8 @@ import (
 
 	"dgs-toolbox/internal/box/doctype"
 	"dgs-toolbox/internal/box/money"
+	"dgs-toolbox/internal/box/tag"
+	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/zonesearch"
 )
 
@@ -69,6 +71,22 @@ func (a api) types(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"types": options, "unsorted": doctype.Unsorted})
+}
+
+// tags is every tag the Box already uses and how many scans carry it, so the
+// pages can offer the spelling that exists instead of inventing a near twin.
+// A scan counts once for a tag, whether the file or one of its splits says it.
+func (a api) tags(w http.ResponseWriter, _ *http.Request) {
+	scans := a.settings.Source.Scans()
+	records := make([][]string, 0, len(scans))
+	for _, scan := range scans {
+		record := append([]string{}, scan.Tags...)
+		for _, document := range scan.Documents {
+			record = append(record, document.Tags...)
+		}
+		records = append(records, record)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tags": tag.Count(records)})
 }
 
 func (a api) intake(w http.ResponseWriter, _ *http.Request) {
@@ -269,6 +287,29 @@ func (a api) unfile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// reveal shows a filed scan in the file manager of the machine serving the
+// page, selected in its folder. The page is local, so that is the machine in
+// front of the person clicking.
+func (a api) reveal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Digest string `json:"digest"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	path, err := a.settings.Source.Locate(body.Digest)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if err := desktop.Reveal(path); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // zones answers the zone field's search: "syd", "aus", "chi".
 func (a api) zones(w http.ResponseWriter, r *http.Request) {
 	found := zonesearch.Search(r.URL.Query().Get("q"), 0)
@@ -353,6 +394,26 @@ func (a api) adopt(w http.ResponseWriter, r *http.Request) {
 // verify reads every byte in the Box. It is a POST because it costs tens of
 // gigabytes over a network filesystem, which is not something a page reload
 // should start.
+// redraw mends broken thumbnails: one scan when the body names a digest, every
+// filed scan when it does not.
+func (a api) redraw(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Digest string `json:"digest"`
+	}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	result, err := a.settings.Source.Redraw(r.Context(), body.Digest)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (a api) verify(w http.ResponseWriter, r *http.Request) {
 	found, err := a.settings.Source.Verify(r.Context())
 	if err != nil {

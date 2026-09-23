@@ -12,6 +12,8 @@ const state = {
   // from one sitting is given one type and, optionally, the same tags at once.
   anchor: null,
   draft: {},
+  // tags is what the Box already uses, offered as a tag is typed.
+  tags: [],
 };
 
 const el = (id) => document.getElementById(id);
@@ -51,8 +53,19 @@ const FIELDS = {
   'event-zone': 'eventZone',
   description: 'description',
   total: 'total',
-  tags: 'tags',
 };
+
+// The tags field is bubbles, not text, so it is kept apart from FIELDS and
+// read and written through its own calls.
+const tags = tagField(el('tags'), {
+  known: () => state.tags,
+  placeholder: 'travel, japan, tax',
+  onChange: (list) => {
+    const document = split.editable();
+    (document ?? state.draft).tags = list;
+    saveSoon();
+  },
+});
 
 // value reads one field of whatever the desk is describing: the split that
 // is picked, or the scan as a whole. A split is described as if it were a PDF
@@ -71,7 +84,7 @@ function value(name) {
 function setValue(name, text) {
   const document = split.editable();
   const target = document ?? state.draft;
-  target[name] = name === 'tags' ? parseTags(text) : text;
+  target[name] = text;
 }
 
 async function start() {
@@ -88,6 +101,7 @@ async function start() {
   assertTypeKeysAreFree();
   wireQueueResize();
   drawTypes();
+  await loadTags();
   await reload();
   wireKeys();
   wireFields();
@@ -267,9 +281,10 @@ function draw() {
   const empty = !scan;
   el('page-empty').hidden = !empty;
   el('page-image').hidden = empty;
-  el('progress-text').textContent = empty
+  state.progress = empty
     ? 'The inbox is empty. Nothing is waiting.'
     : `${state.cursor + 1} of ${state.pending.length} waiting`;
+  drawProgress();
   drawDuplicates();
   const run = selection();
   const batch = run.length > 1;
@@ -286,14 +301,31 @@ function draw() {
   if (state.shown !== scan?.digest) {
     state.shown = scan?.digest;
     split.reset();
-    el('save-state').textContent = '';
+    setSaveState('');
   }
   pages.show(scan);
   if (!empty) {
     el('facts').textContent = facts(scan).join(' · ');
-    el('flags').innerHTML = flags(scan)
-      .map((flag) => `<span class="flag flag-${flag.kind}">${flag.text}</span>`)
+    const shown = flags(scan);
+    el('flags').innerHTML = shown
+      .map(
+        (flag, index) =>
+          `<span class="flag flag-${flag.kind}"${flag.title ? ` title="${escapeHTML(flag.title)}"` : ''}>${escapeHTML(flag.text)}` +
+          (flag.reveal && !state.config?.sample
+            ? ` <button type="button" class="flag-reveal" data-flag="${index}" title="Show the copy already in the Box in Finder">Show</button>`
+            : '') +
+          `</span>`,
+      )
       .join('');
+    for (const button of el('flags').querySelectorAll('.flag-reveal')) {
+      button.addEventListener('click', async () => {
+        try {
+          await api.reveal(shown[Number(button.dataset.flag)].reveal);
+        } catch (err) {
+          statusBar.showError(err.message);
+        }
+      });
+    }
   }
   drawDesk();
   drawQueue();
@@ -306,8 +338,9 @@ function drawDesk() {
   if (current()) {
     for (const [id, name] of Object.entries(FIELDS)) {
       const shown = value(name);
-      el(id).value = name === 'tags' ? shown.join(', ') : shown;
+      el(id).value = shown;
     }
+    tags.set(value('tags'));
   }
   markType();
   drawExpiry();
@@ -334,10 +367,17 @@ function flags(scan) {
   if (scan.duplicateOf && scan.trashedAt)
     out.push({
       kind: 'warn',
-      text: `already thrown away on ${localDate(scan.trashedAt)}`,
+      text: `already thrown away on ${localDate(scan.trashedAt)}${scan.duplicatePath ? ` — ${scan.duplicatePath}` : ''}`,
+      title: scan.duplicateOf,
+      reveal: scan.duplicateOf,
     });
   else if (scan.duplicateOf)
-    out.push({ kind: 'warn', text: `duplicate of ${scan.duplicateOf}` });
+    out.push({
+      kind: 'warn',
+      text: `duplicate of ${scan.duplicatePath || scan.duplicateOf}`,
+      title: scan.duplicateOf,
+      reveal: scan.duplicateOf,
+    });
   const documents = state.draft.documents ?? scan.documents ?? [];
   if (documents.length) {
     out.push({ kind: 'note', text: `${documents.length} split${documents.length === 1 ? '' : 's'}` });
@@ -491,15 +531,9 @@ function move(step, extend) {
   draw();
 }
 
+// showError puts an error in the status bar, or takes the last one away.
 function showError(err) {
-  const line = el('error');
-  if (!err) {
-    line.hidden = true;
-    line.textContent = '';
-    return;
-  }
-  line.hidden = false;
-  line.textContent = err.message || String(err);
+  statusBar.error(err);
 }
 
 // describe is everything said about one scan on the desk, as one edit: what
@@ -533,7 +567,7 @@ function describe(scan) {
     eventDate: el('event-date').value,
     eventZone: el('event-zone').value,
     total: el('total').value,
-    tags: parseTags(el('tags').value),
+    tags: tags.get(),
     expiryCleared: state.draft.expiryCleared ?? false,
     ...(state.draft.documents ? { documents: [], ignoredPages: '' } : {}),
   };
@@ -546,12 +580,24 @@ function describe(scan) {
 // burst of keystrokes is one write.
 const SAVE = { timer: null, edit: null };
 
+// The position in the inbox and whether the draft is saved live in the status
+// bar's state, so the desk keeps its room for describing.
+function drawProgress() {
+  const saved = state.saveState ? ` · ${state.saveState}` : '';
+  statusBar.setState(`${state.progress || ''}${saved}`);
+}
+
+function setSaveState(text) {
+  state.saveState = text;
+  drawProgress();
+}
+
 function saveSoon() {
   const scan = current();
   if (!scan || selection().length > 1 || !Object.keys(state.draft).length) return;
   if (SAVE.edit && SAVE.edit.digest !== scan.digest) saveNow();
   SAVE.edit = describe(scan);
-  el('save-state').textContent = 'unsaved';
+  setSaveState('unsaved');
   clearTimeout(SAVE.timer);
   SAVE.timer = setTimeout(saveNow, 500);
 }
@@ -572,11 +618,13 @@ async function saveNow() {
         scan[name] = saved[name];
       }
     }
-    if (!SAVE.edit) el('save-state').textContent = 'draft saved';
+    if (!SAVE.edit) setSaveState('draft saved');
+    statusBar.error(null);
   } catch (err) {
     // A half-typed date is refused; the draft is simply saved on the next
     // keystroke that makes it whole.
-    el('save-state').textContent = `not saved: ${err.message || err}`;
+    setSaveState('not saved');
+    statusBar.showError(`Not saved: ${err.message || err}`);
   }
 }
 
@@ -589,7 +637,7 @@ async function fileCurrent() {
   if (run.length === 1 && !split.readyToFile()) return;
   const from = state.anchor === null ? state.cursor : Math.min(state.anchor, state.cursor);
   const type = state.draft.type ?? current().type;
-  const tags = parseTags(el('tags').value);
+  const shared = tags.get();
   showError(null);
   try {
     if (run.length > 1) {
@@ -597,7 +645,7 @@ async function fileCurrent() {
       // verified against its own digest before it is published, and a failure
       // must stop that scan rather than the other two hundred.
       for (const scan of run) {
-        await api.file({ digest: scan.digest, type, tags });
+        await api.file({ digest: scan.digest, type, tags: shared });
       }
     } else {
       await api.file(describe(run[0]));
@@ -606,7 +654,19 @@ async function fileCurrent() {
     showError(err);
     return;
   }
+  await loadTags();
   await reload(from);
+}
+
+// loadTags asks what the Box's tags are now. Without them the field still
+// takes tags; it only cannot offer any.
+async function loadTags() {
+  try {
+    state.tags = (await api.tags()).tags;
+  } catch {
+    state.tags = [];
+  }
+  tags.redraw();
 }
 
 async function rejectCurrent() {
@@ -623,17 +683,10 @@ async function rejectCurrent() {
   await drawRejected();
 }
 
-// say puts a short line on the desk for a key whose effect is otherwise easy
-// to miss. It clears itself; the next say replaces it.
-const NOTICE = { timer: null };
+// say puts a short line in the status bar for a key whose effect is otherwise
+// easy to miss. The next piece of news replaces it.
 function say(text) {
-  const line = el('notice');
-  line.textContent = text;
-  line.hidden = false;
-  clearTimeout(NOTICE.timer);
-  NOTICE.timer = setTimeout(() => {
-    line.hidden = true;
-  }, 5000);
+  statusBar.show(text);
 }
 
 function wireBatch() {
@@ -653,7 +706,7 @@ function wireFields() {
     setValue('eventZone', el('event-zone').value.trim());
     saveSoon();
   });
-  for (const id of ['event-date', 'event-zone', 'description', 'total', 'tags']) {
+  for (const id of ['event-date', 'event-zone', 'description', 'total']) {
     el(id).addEventListener('input', () => {
       // Letters typed into the zone are a search, not a zone: only a picked
       // one, or what is left when the field is let go, is kept.
@@ -668,24 +721,16 @@ function wireFields() {
         event.preventDefault();
         el(id).blur();
       }
-      if (event.key === 'Enter') {
+      // Enter in a field only leaves it: filing is a second Enter, so the
+      // reflex of confirming what was typed never files a scan half-described.
+      // Enter that commits an input method's composition (pinyin, kana) is the
+      // input method's, not ours.
+      if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) {
         event.preventDefault();
-        fileCurrent();
+        el(id).blur();
       }
     });
   }
-}
-
-function parseTags(value) {
-  const seen = new Set();
-  return value
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter((tag) => {
-      if (!tag || seen.has(tag)) return false;
-      seen.add(tag);
-      return true;
-    });
 }
 
 // The inbox column is as wide as the person drags it, and no narrower than a
@@ -883,3 +928,11 @@ window.addEventListener('pagehide', () => {
 });
 
 start().catch((err) => showError(err));
+
+function escapeHTML(text) {
+  return String(text)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}

@@ -246,3 +246,52 @@ func (e *Engine) Verify(ctx context.Context) ([]Exception, error) {
 func (e *Engine) persist() {
 	_ = e.Save()
 }
+
+// Redraw drops a filed scan's stored pictures and draws the first page again
+// from its file, the way intake drew it; later pages are drawn again when
+// they are next looked at. An empty digest redraws every filed scan, which
+// reads every file, so the lock is held only to decide what to read.
+func (e *Engine) Redraw(ctx context.Context, digest string) (RedrawResult, error) {
+	type target struct{ digest, path string }
+	e.mutex.Lock()
+	var targets []target
+	for _, entry := range e.cache.Entries {
+		if entry.InTrash || entry.ScanPath == "" {
+			continue
+		}
+		if digest != "" && entry.File.Digest != digest {
+			continue
+		}
+		targets = append(targets, target{entry.File.Digest, filepath.Join(e.root, entry.ScanPath)})
+	}
+	thumbs := e.thumbs
+	e.mutex.Unlock()
+	if digest != "" && len(targets) == 0 {
+		return RedrawResult{}, fmt.Errorf("no filed scan %q", digest)
+	}
+
+	result := RedrawResult{Failed: []Exception{}}
+	for _, item := range targets {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		e.pages.forget(item.digest)
+		if _, err := thumbs.Drop(item.digest); err != nil {
+			result.Failed = append(result.Failed, Exception{Kind: "redraw", Path: item.path, Detail: err.Error()})
+			continue
+		}
+		read, err := scanread.ReadFile(item.path)
+		if err == nil && read.NeedsRender {
+			err = fmt.Errorf("no picture: %s", read.RenderError)
+		}
+		if err == nil {
+			err = thumbs.Save(item.digest, read.Thumbs)
+		}
+		if err != nil {
+			result.Failed = append(result.Failed, Exception{Kind: "redraw", Path: item.path, Detail: err.Error()})
+			continue
+		}
+		result.Redrawn++
+	}
+	return result, nil
+}

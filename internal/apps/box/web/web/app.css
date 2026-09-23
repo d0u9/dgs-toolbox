@@ -4,6 +4,24 @@
    and the intake page has to be operable without the mouse. */
 
 body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+/* The shared status bar is the last row and keeps its height. */
+.statusbar { flex: none; }
+
+/* What browse puts in the bar's two ends: the trash on the left, the amounts
+   on the right. Each is one group read the same way — a label in the bar's
+   small capitals, then the figure in ink and weight, then a quiet note — so
+   the eye finds the numbers first. Every piece shares the row's size; weight
+   and colour alone set them apart, and figures are tabular so they do not
+   shift as they change. */
+.status-state, .status-hints { display: flex; align-items: baseline; gap: var(--space-xs); min-width: 0; }
+.status-state { text-transform: none; letter-spacing: 0; }
+.statusbar .sb-label { text-transform: uppercase; letter-spacing: .06em; color: var(--graphite); }
+.statusbar .sb-figure { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.statusbar .sb-note { color: var(--graphite); }
+.statusbar .sb-warn { color: var(--error); }
+.statusbar .sb-code { color: var(--graphite); letter-spacing: .04em; margin-right: 3px; }
+.statusbar .sb-total { display: inline-flex; align-items: baseline; gap: 3px; }
+.statusbar .sb-total + .sb-total { margin-left: var(--space-sm); padding-left: var(--space-sm); border-left: 1px solid var(--hairline); }
 
 .banner {
   flex: none;
@@ -32,24 +50,24 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
   margin-left: var(--space-md);
 }
 .topbar-link:hover { text-decoration: underline; }
+/* Shown only when the Box has exceptions, so its colour is the news. */
+.topbar-alert { color: var(--error); font-weight: 600; }
+.topbar-alert[hidden] { display: none; }
+.topbar-count { font-variant-numeric: tabular-nums; }
 
 .desk-heading {
   margin: var(--space-sm) 0 var(--space-xxs);
-  font-size: var(--font-size-xs);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--graphite);
-  font-weight: 500;
+  font-size: var(--font-size-ui);
+  color: var(--charcoal);
+  font-weight: 600;
 }
 
 /* Fields. The label sits above its control so a column of them scans
    vertically, which is how they are filled in. */
 .fieldrow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .fieldrow-label {
-  font-size: var(--font-size-xs);
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--graphite);
+  font-size: var(--font-size-sm);
+  color: var(--charcoal);
 }
 .fieldrow-hint { color: var(--steel); }
 .fieldrow input, .fieldrow select {
@@ -83,8 +101,6 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
   font-size: var(--font-size-sm);
   color: var(--charcoal);
 }
-.error { margin: var(--space-xs) 0 0; color: var(--error); font-size: var(--font-size-sm); }
-.error[hidden] { display: none; }
 
 /* ---- Intake ---------------------------------------------------------- */
 
@@ -196,6 +212,16 @@ body.resizing { cursor: col-resize; user-select: none; }
 .flag-stop { background: var(--error); border-color: var(--error); color: var(--on-ink); }
 .flag-warn { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-deep); }
 .flag-note { background: var(--fog); color: var(--charcoal); }
+.flag-reveal {
+  margin-left: var(--space-xxs);
+  padding: 0 var(--space-xxs);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 
 .desk {
   display: flex;
@@ -206,7 +232,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* Everything that is read and filled in scrolls; the keys do not, because a
    key list that scrolls out of sight is a key list nobody learns. */
 .desk-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-xs) var(--space-sm); }
-.progress { margin: 0; font-size: var(--font-size-title); }
 .batch {
   margin: var(--space-xs) 0 0;
   padding: var(--row-pad-y) var(--row-pad-x);
@@ -267,12 +292,12 @@ body.resizing { cursor: col-resize; user-select: none; }
   text-overflow: ellipsis;
 }
 .type-life {
-  color: var(--graphite);
-  font-size: var(--font-size-xs);
+  color: var(--charcoal);
+  font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
 }
 /* A keepsake never expires, so its chip is quieter: it asks for less. */
-.type-keepsake .type-life { color: var(--steel); }
+.type-keepsake .type-life { color: var(--graphite); }
 .type-chosen, .type-chosen:hover {
   background: var(--primary);
   border-color: var(--primary);
@@ -447,29 +472,62 @@ body.resizing { cursor: col-resize; user-select: none; }
 .filters {
   flex: none;
   display: flex;
-  align-items: flex-end;
-  gap: var(--space-sm);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs) var(--space-lg);
   padding: var(--space-xs) var(--space-md);
   border-bottom: 1px solid var(--hairline);
   background: var(--cloud);
-  overflow-x: auto;
 }
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs) var(--space-sm);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+/* Groups are told apart by a rule, not a heading. */
+.filter-group + .filter-group {
+  padding-left: var(--space-lg);
+  border-left: 1px solid var(--hairline);
+}
+.filter-check { cursor: pointer; }
+.filter-check input { margin: 0; accent-color: var(--primary); }
+.card-pages { flex: none; font-variant-numeric: tabular-nums; color: var(--steel); }
 .filter {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: var(--font-size-xs);
-  color: var(--graphite);
+  align-items: center;
+  gap: var(--space-xs);
+  height: 30px;
+  font-size: var(--font-size-ui);
+  line-height: 1;
+  color: var(--charcoal);
 }
-.filter-spacer { flex: 1; }
-.count { font-size: var(--font-size-sm); color: var(--charcoal); white-space: nowrap; }
+.filter > span { font-weight: 600; }
+.filter select { font-size: var(--font-size-ui); height: 26px; margin: 0; }
+.filter-active select { border-color: var(--primary); background: var(--selected); }
+.filter-result { display: flex; align-items: center; gap: var(--space-sm); }
+.count { font-size: var(--font-size-ui); color: var(--charcoal); white-space: nowrap; }
 
-.browse-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr minmax(320px, 400px); }
+.browse-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(420px, 1fr) 6px var(--detail-width, 380px); }
+/* The left column holds the scans; the details run the full height beside it. */
+.browse-left { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.browse-left .grid-pane { flex: 1; }
+.detail-resize {
+  cursor: col-resize;
+  background: var(--cloud);
+  border-left: 1px solid var(--hairline);
+  touch-action: none;
+}
+.detail-resize:hover, .detail-resize:focus-visible, body.resizing .detail-resize {
+  background: var(--primary-soft);
+  border-left-color: var(--primary);
+  outline: none;
+}
 .grid-pane { padding: var(--space-md); overflow-y: auto; min-width: 0; }
 
-.totals { margin: 0 0 var(--space-sm); display: flex; flex-wrap: wrap; gap: var(--space-md); font-size: var(--font-size-sm); }
-.total { font-variant-numeric: tabular-nums; }
-.total-count { color: var(--graphite); font-size: var(--font-size-xs); }
 
 .grid {
   list-style: none;
@@ -480,6 +538,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   gap: var(--space-md);
 }
 .card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
   background: var(--paper);
@@ -488,8 +549,34 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .card:hover { box-shadow: var(--lift-soft); }
 .card-selected { border-color: var(--primary); box-shadow: var(--lift-soft); }
+.card-thumb-wrap { position: relative; flex: none; }
+/* Show in Finder: on the picture's corner, visible when the card is pointed at
+   or the button has focus, so a grid of cards stays quiet. */
+.card-reveal {
+  position: absolute;
+  top: var(--space-xxs);
+  right: var(--space-xxs);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--charcoal);
+  box-shadow: var(--lift-soft);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s;
+}
+.card:hover .card-reveal, .card-reveal:focus-visible { opacity: 1; }
+.card-reveal:hover { color: var(--primary-deep); border-color: var(--primary); }
+.card-reveal svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; }
+@media (hover: none) { .card-reveal { opacity: 1; } }
 .card-thumb {
   display: block;
+  flex: none;
   width: 100%;
   height: 150px;
   object-fit: cover;
@@ -497,23 +584,59 @@ body.resizing { cursor: col-resize; user-select: none; }
   background: var(--cloud);
   border-bottom: 1px solid var(--hairline);
 }
-.card-body { padding: var(--space-xs); }
-.card-title {
-  margin: 0;
-  font-size: var(--font-size-ui);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+/* Fixed rows, each present even when empty, so neighbouring cards line up. */
+.card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-xs);
 }
-.card-meta { margin: 2px 0 0; font-size: var(--font-size-xs); color: var(--graphite); }
+.card-body > p { margin: 0; min-width: 0; }
+/* A long filename is one unbroken word: break it anywhere, keep two lines. */
+.card-title {
+  font-size: var(--font-size-ui);
+  font-weight: 600;
+  line-height: 1.3;
+  min-height: 2.6em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.card-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: var(--font-size-xs);
+  color: var(--graphite);
+}
+.card-type { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.card-date { flex: none; font-variant-numeric: tabular-nums; }
 /* Sorted by the scan date rather than an event date: said on the card,
    because a list ordered by two meanings looks like one that is wrong. */
-.card-fallback { color: var(--steel); }
-.card-badges { margin: var(--space-xxs) 0 0; display: flex; flex-wrap: wrap; gap: 2px; }
+.card-fallback { color: var(--steel); font-style: italic; }
+.card-total {
+  min-height: 1.4em;
+  text-align: right;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-badges { margin-top: auto !important; padding-top: var(--space-xxs); display: flex; flex-wrap: wrap; gap: 2px; }
 .badge {
   padding: 0 5px;
   border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
+  line-height: 1.5;
+  white-space: nowrap;
   background: var(--fog);
   color: var(--charcoal);
 }
@@ -523,20 +646,101 @@ body.resizing { cursor: col-resize; user-select: none; }
 .state-dead .card-thumb { opacity: .55; }
 .grid-empty { color: var(--graphite); }
 
-.detail { padding: var(--space-md); overflow-y: auto; border-left: 1px solid var(--hairline); background: var(--cloud); }
+.detail { padding: var(--space-md); overflow-y: auto; overflow-x: hidden; min-width: 0; background: var(--cloud); container-type: inline-size; }
 .detail-empty { color: var(--graphite); }
+/* The details read top to bottom in sections: the scan, the file it is, the
+   document it describes, and last, removing it. Each section is one card. */
+.detail-body { display: flex; flex-direction: column; gap: var(--space-sm); }
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+  padding: var(--space-sm);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg, 8px);
+}
+.detail-heading {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
 .detail-frame {
   display: flex;
   justify-content: center;
-  padding: var(--space-sm);
-  background: var(--paper);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-xl);
-  margin-bottom: var(--space-xs);
+  padding: var(--space-xs);
+  background: var(--cloud);
+  border-radius: var(--radius-md);
 }
 .detail-frame img { max-width: 100%; max-height: 280px; object-fit: contain; }
-.detail-tools { display: flex; align-items: center; gap: var(--space-sm); margin-top: var(--space-xxs); }
-.detail-tools .text-button[aria-pressed="true"] { color: var(--primary); font-weight: 600; }
+.detail-tools { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; }
+.detail-tools .button { flex: none; white-space: nowrap; }
+.detail-tools kbd { margin-left: 4px; }
+.detail-tools .page-label { margin-left: auto; white-space: nowrap; }
+
+/* A scan or page with no embedded picture: say so in place of a broken image. */
+.detail-frame.no-picture img,
+.card-thumb-wrap.no-picture img { display: none; }
+.detail-frame.no-picture::after,
+.card-thumb-wrap.no-picture::after {
+  content: "No picture in this page";
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  width: 100%;
+  color: var(--graphite);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+.detail .button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); background: var(--selected); }
+
+/* Every button in the details is the same control at the same height, in a
+   grid of equal cells, so a row lines up whatever its labels say. */
+.detail-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-xs);
+}
+.detail-buttons .button, .split-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xxs);
+  height: var(--control-height);
+  padding: 0 var(--space-xs);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.detail-buttons .button[hidden] { display: none; }
+.detail kbd { font-size: var(--font-size-xs); color: var(--graphite); }
+.detail .button.danger { color: var(--error); }
+.detail .button.danger:hover { border-color: var(--error); }
+
+.fact-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-xxs) var(--space-sm);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.fact-list dt { color: var(--graphite); }
+.fact-list dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.fact-list dd:last-child { font-family: var(--font-mono); font-size: var(--font-size-xs); }
+
+.detail #detail-form .expiry-line { margin: 0; }
+.expiry-line.wide { grid-column: 1 / -1; }
+/* Too narrow for two fields side by side: one column. */
+@container (max-width: 330px) {
+  .detail #detail-form { grid-template-columns: 1fr; }
+}
+
 /* In the narrow detail column the strip runs under the scan instead. */
 .detail .page-strip {
   flex-direction: row;
@@ -590,17 +794,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .detail-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
 .detail-note { grid-column: 1 / -1; margin: 0; font-size: var(--font-size-xs); color: var(--graphite); }
 
-/* Exceptions live in their own band, never mixed into the list above:
-   exceptions in a daily list are exceptions nobody reads after three days. */
-.exceptions {
-  flex: none;
-  max-height: 26vh;
-  overflow-y: auto;
-  padding: var(--space-xs) var(--space-md) var(--space-md);
-  border-top: 1px solid var(--hairline-strong);
-  background: var(--paper);
-}
-.exceptions .desk-heading { margin-top: var(--space-xs); }
+/* The held-back list on intake. The Box's exceptions have their own page,
+   /check/, never a band on browse: exceptions shown every day are exceptions
+   nobody reads after three days. */
 .exceptions-note { margin: 0 0 var(--space-xs); font-size: var(--font-size-xs); color: var(--graphite); }
 .exception-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-xxs); }
 .exception {
@@ -625,7 +821,8 @@ body.resizing { cursor: col-resize; user-select: none; }
   .intake-main { grid-template-columns: 1fr 1fr; }
   .queue, .queue-resize { display: none; }
   .browse-main { grid-template-columns: 1fr; }
-  .detail { border-left: none; border-top: 1px solid var(--hairline); }
+  .detail-resize { display: none; }
+  .detail { border-top: 1px solid var(--hairline); }
 }
 
 /* ---- What was held back, and what is already in the Box --------------- */
@@ -672,13 +869,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .fieldrow.check { flex-direction: row; align-items: center; gap: var(--space-xxs); }
 .inline-field select { font-size: var(--font-size-sm); }
 
-/* The trash is advice and nothing else: box never removes a file. */
-.trash-line {
-  margin: var(--space-xxs) 0 0;
-  font-size: var(--font-size-xs);
-  color: var(--graphite);
-}
-.trash-line[hidden] { display: none; }
 
 /* ---- Split (intake) ---------------------------------------------------- */
 
@@ -751,7 +941,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   color: var(--primary-deep);
 }
 .split-title { font-size: var(--font-size-ui); font-variant-numeric: tabular-nums; color: var(--ink); }
-.split-chips { display: flex; gap: 4px; margin-left: auto; }
+.split-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .split-chips .doc-chip { border: 0; cursor: pointer; }
 .split-notes { margin: var(--space-xxs) 0 0; font-size: var(--font-size-sm); color: var(--charcoal); }
 .split-notes:empty { display: none; }
@@ -782,16 +972,8 @@ body.resizing { cursor: col-resize; user-select: none; }
 .split-head.split-marking .split-label,
 .split-head.split-marking .split-title,
 .split-head.split-marking .split-notes { color: var(--on-primary); }
-.split-remove { margin-left: var(--space-xs); }
+.split-remove { margin-left: auto; }
 
-.notice-line {
-  margin: var(--space-xs) 0 0;
-  padding: var(--row-pad-y) var(--row-pad-x);
-  background: var(--primary-soft);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-}
-.save-state { margin-left: var(--space-xs); font-size: var(--font-size-xs); color: var(--graphite); }
 
 /* Marking and splits, drawn to be seen at a glance down the strip. */
 .page-item.page-mark {
@@ -861,3 +1043,306 @@ body.resizing { cursor: col-resize; user-select: none; }
 .zone-city { font-size: var(--font-size-ui); font-weight: 600; color: var(--ink); }
 .zone-where { font-size: var(--font-size-sm); color: var(--charcoal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .zone-name { grid-column: 1 / -1; font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--graphite); }
+
+/* ---- Reader ------------------------------------------------------------ */
+
+/* The reader takes the place of the filters and the grid, and nothing else:
+   the top bar says where it is and the status bar keeps its row, so reading is
+   visibly a part of Browse. The grid stays underneath, scrolled where it was. */
+.reader {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--reader-top, 0);
+  bottom: var(--reader-bottom, 0);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+}
+.reader[hidden] { display: none; }
+.page-crumb { color: var(--ink); font-size: var(--font-size-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page-crumb::before { content: "›"; margin-right: var(--space-xs); color: var(--graphite); }
+.reader-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-md);
+  background: var(--cloud);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.reader-bar .button { height: var(--control-height); padding: 0 var(--space-xs); }
+.reader-bar kbd { font-size: var(--font-size-xs); color: var(--graphite); }
+.reader-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.reader-bar .page-label { color: var(--graphite); font-variant-numeric: tabular-nums; }
+.reader-tools { display: flex; gap: var(--space-xxs); margin-left: auto; }
+.reader-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--rail-width, 180px) 6px minmax(0, 1fr);
+}
+.reader-rail {
+  flex-direction: column;
+  overflow-y: auto;
+  padding: var(--space-sm);
+  gap: var(--space-sm);
+  background: var(--paper);
+}
+.reader-rail .page-item { flex: none; }
+/* Browse hides its own handle on a narrow window; the reader's stays. */
+.reader-resize { display: block; }
+.reader-scroll { overflow: auto; outline: none; background: var(--cloud); }
+.reader-column {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-md);
+  margin: 0 auto;
+  padding: var(--space-md);
+}
+.reader-column.reader-fit { max-width: 1100px; }
+/* A whole page: each sheet as tall as the window, as wide as its own shape
+   makes it, and a turn lands a page exactly in view. */
+.reader-column.reader-whole { align-items: center; }
+.reader-whole .reader-sheet { width: auto; height: var(--whole-height, 80vh); max-width: 100%; scroll-margin-top: var(--space-md); }
+.reader-bar .button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); background: var(--selected); }
+.reader-sheet {
+  position: relative;
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.reader-sheet img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.reader-sheet:not(.reader-drawn) img { visibility: hidden; }
+.reader-sheet.page-missing::after {
+  content: "No picture of this page";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--graphite);
+  font-size: var(--font-size-sm);
+}
+@media (max-width: 640px) {
+  .reader-body { grid-template-columns: minmax(0, 1fr); }
+  .reader-rail, .reader-resize { display: none; }
+  .reader-column { padding: var(--space-xs); }
+}
+
+/* ---- Exceptions page ---------------------------------------------------- */
+
+/* One readable column. Each kind is its own card: a title that says what it
+   is, one paragraph that says what it means and what to do, then the files.
+   Text is at reading size; mono is kept for directories only. */
+.check-main { flex: 1; min-height: 0; overflow-y: auto; background: var(--cloud); }
+.check-column {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-md) var(--space-xxl);
+  display: grid;
+  gap: var(--space-lg);
+}
+.check-lead, .check-clear { margin: 0; font-size: var(--font-size-ui); line-height: 1.6; color: var(--charcoal); }
+.check-clear { color: var(--ink); font-weight: 600; }
+.check-clear[hidden], .check-group[hidden] { display: none; }
+.check-group {
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg) var(--space-xl);
+}
+.check-title { margin: 0 0 var(--space-xs); font-size: var(--font-size-title); font-weight: 600; color: var(--ink); }
+.check-count { margin-left: var(--space-xs); color: var(--graphite); font-weight: 500; font-variant-numeric: tabular-nums; }
+.check-what { margin: 0 0 var(--space-md); font-size: var(--font-size-ui); line-height: 1.6; color: var(--charcoal); max-width: 68ch; }
+.check-list { list-style: none; margin: 0; padding: 0; }
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--hairline);
+}
+.check-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.check-name { font-size: var(--font-size-ui); font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.check-dir { font-family: var(--font-mono); font-size: var(--font-size-sm); color: var(--graphite); overflow-wrap: anywhere; }
+.check-detail { font-size: var(--font-size-ui); line-height: 1.5; color: var(--charcoal); overflow-wrap: anywhere; }
+.check-actions { flex: none; display: flex; align-items: center; gap: var(--space-xs); }
+.check-actions select { height: var(--control-height); margin: 0; }
+/* A mismatch is the dangerous one: it may be the first sign of bit rot. */
+.check-danger { border-color: var(--error); }
+.check-danger .check-title { color: var(--error); }
+.check-verify-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-sm); }
+.check-note { font-size: var(--font-size-ui); color: var(--charcoal); }
+@media (max-width: 640px) {
+  .check-group { padding: var(--space-md); }
+  .check-row { flex-direction: column; align-items: stretch; }
+}
+
+/* ---- Tags -------------------------------------------------------------- */
+
+/* The tag field looks like a text field and holds bubbles: each tag is one
+   thing, added whole and removed whole. The field grows a row when the tags
+   do not fit one, so no tag is ever cut off. */
+.tag-field {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  min-height: var(--control-height);
+  padding: 2px 3px;
+  background: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  cursor: text;
+}
+.tag-field:hover { border-color: var(--graphite); }
+.tag-field.tag-focus { border-color: var(--primary); }
+.tag-field.tag-disabled { background: var(--cloud); cursor: default; }
+.tag-bubbles { display: contents; }
+.fieldrow .tag-field .tag-input,
+.tag-field .tag-input {
+  flex: 1 0 60px;
+  width: auto;
+  min-width: 60px;
+  height: 20px;
+  margin: 0;
+  padding: 0 var(--space-xxs);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--font-size-ui);
+}
+.tag-input::placeholder { color: var(--steel); }
+.tag-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  max-width: 100%;
+  height: 20px;
+  padding: 0 1px 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--primary-deep);
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  white-space: nowrap;
+}
+.tag-bubble > span { overflow: hidden; text-overflow: ellipsis; }
+/* A tag the Box has never used is drawn open, so a near twin of an existing
+   one is seen before it is saved. */
+.tag-bubble.tag-new { background: var(--paper); border: 1px dashed var(--primary); }
+/* The first Backspace picks the last bubble; the second removes it. */
+.tag-bubble.tag-armed { background: var(--primary); color: var(--on-primary); }
+.tag-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: .6;
+}
+.tag-remove:hover { opacity: 1; background: rgba(14, 49, 145, .12); }
+.tag-armed .tag-remove:hover { background: rgba(255, 255, 255, .2); }
+.tag-remove:disabled { display: none; }
+.tag-options {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: -1px;
+  width: max(100%, 220px);
+  max-width: calc(100vw - 32px);
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 2px 0 0;
+  padding: var(--space-xxs) 0;
+  list-style: none;
+  background: var(--paper);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--lift-modal);
+  cursor: default;
+}
+.tag-option {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--row-pad-y) var(--row-pad-x);
+  font-size: var(--font-size-ui);
+  color: var(--ink);
+  cursor: pointer;
+}
+.tag-option:hover { background: var(--hover); }
+.tag-option.tag-active { background: var(--selected); }
+.tag-option-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-option-count { flex: none; font-size: var(--font-size-xs); color: var(--graphite); font-variant-numeric: tabular-nums; }
+
+/* In the filter bar the field sits on the bar's line and grows sideways. */
+.filter-tags { height: auto; min-height: 30px; }
+.filter-tags .tag-field { width: 240px; }
+.filter-tags.filter-active .tag-field { border-color: var(--primary); }
+
+/* The strip is every tag in what is shown, a row of switches under the filters. */
+.tag-strip {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+  max-height: 88px;
+  overflow-y: auto;
+  padding: var(--space-xs) var(--space-md);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--canvas);
+}
+.tag-strip[hidden] { display: none; }
+.tag-strip-empty { font-size: var(--font-size-sm); color: var(--graphite); }
+.tag-facet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  color: var(--charcoal);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.tag-facet:hover { border-color: var(--graphite); }
+.tag-facet-count { font-size: var(--font-size-xs); color: var(--graphite); font-variant-numeric: tabular-nums; }
+.tag-facet-on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.tag-facet-on .tag-facet-count { color: var(--primary-soft); }
+
+/* A tag on a card is a switch for the filter. */
+.badge-tag {
+  margin: 0;
+  border: 1px solid var(--hairline-strong);
+  background: var(--paper);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.badge-tag:hover { border-color: var(--primary); color: var(--primary-deep); }
+.badge-tag-on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }

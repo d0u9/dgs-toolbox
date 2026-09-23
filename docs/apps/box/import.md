@@ -1,6 +1,6 @@
 # Box: import
 
-`dgs box import` takes new scans from a temporary folder into a Box. It is the
+The intake page of `dgs box` takes new scans from a temporary folder into a Box. It is the
 only `box` command that performs real file operations, and it follows the
 integrity contract in [`index.md`](index.md#the-integrity-contract).
 
@@ -136,7 +136,7 @@ paid for in sessions that are never finished.
 | Event date | the date on the document, with its zone |
 | Description | one line, free text |
 | Total | optional, skippable |
-| Tags | comma-separated keywords; shared across a selected run |
+| Tags | bubbles, offered from the tags the Box already uses; shared across a selected run — see [tags](view.md#tags) |
 
 Everything else — the other party, the expiry — is
 filled in [`view`](view.md), on the few scans that need it. Splitting is the
@@ -145,7 +145,8 @@ exception: it is done here, while the pages are on screen.
 **The page is operated entirely from the keyboard.** No action requires the
 mouse. One scan or one batch fills the screen, a single key sets the type, two
 fields take the date and the description, optional tags classify across types,
-and `Enter` moves on. It is a
+and `Enter` moves on. `Enter` inside a field only leaves the field, so
+confirming what was typed never files the scan; the next `Enter` files it. It is a
 terminal interface that happens to be rendered in a browser, because this is
 several hundred repetitions and a hand leaving the keyboard is a real cost. The
 [browsing page](view.md) is the opposite and uses the mouse normally.

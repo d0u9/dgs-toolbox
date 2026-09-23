@@ -1,6 +1,10 @@
 package web_test
 
 import (
+	"bytes"
+	"context"
+	"image"
+	"image/jpeg"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +15,7 @@ import (
 	"dgs-toolbox/internal/box"
 	"dgs-toolbox/internal/box/boxlog"
 	"dgs-toolbox/internal/box/sidecar"
+	"dgs-toolbox/internal/box/thumb"
 	"dgs-toolbox/internal/box/thumbcache"
 )
 
@@ -280,6 +285,9 @@ func TestTrashMovesAndKeeps(t *testing.T) {
 	if pending[0].TrashedAt == "" {
 		t.Error("nothing said it had been thrown away")
 	}
+	if path, err := engine.Locate(pending[0].DuplicateOf); err != nil || !strings.Contains(filepath.ToSlash(path), "/trash/") {
+		t.Errorf("the discarded copy cannot be found: %q %v", path, err)
+	}
 }
 
 // A scan already filed and put back in the inbox is a duplicate, not a second
@@ -299,6 +307,59 @@ func TestAFiledScanIsRecognisedInTheInbox(t *testing.T) {
 	}
 	if pending[0].DuplicateOf == "" {
 		t.Error("a scan already in the Box was not recognised")
+	}
+	// Where the copy already filed is, so it can be found without a search.
+	located, _ := engine.Locate(pending[0].DuplicateOf)
+	if pending[0].DuplicatePath == "" || !strings.HasSuffix(located, filepath.FromSlash(pending[0].DuplicatePath)) {
+		t.Errorf("duplicate path %q, filed at %q", pending[0].DuplicatePath, located)
+	}
+	if _, err := engine.Locate(pending[0].DuplicateOf); err != nil {
+		t.Errorf("the match cannot be revealed: %v", err)
+	}
+}
+
+// Redrawing drops a broken picture and draws it again from the file.
+func TestRedrawMendsABrokenThumbnail(t *testing.T) {
+	root := t.TempDir()
+	if err := box.WriteMarker(root, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	inbox := t.TempDir()
+	cacheDir := t.TempDir()
+	engine, err := boxweb.NewEngine(boxweb.Settings{Root: root, Inbox: inbox, CacheDir: cacheDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var picture bytes.Buffer
+	if err := jpeg.Encode(&picture, image.NewGray(image.Rect(0, 0, 40, 60)), nil); err != nil {
+		t.Fatal(err)
+	}
+	putScan(t, inbox, "Scan_0001.jpg", picture.Bytes())
+	engine.Rescan()
+	filed, err := engine.File(engine.Pending()[0].Digest, boxweb.Edit{})
+	if err != nil {
+		t.Fatalf("file: %v", err)
+	}
+	store := thumbcache.New(cacheDir, root)
+	if err := store.Save(filed.Digest, thumb.Pair{Grid: []byte("broken"), Preview: []byte("broken")}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.Redraw(context.Background(), filed.Digest)
+	if err != nil || result.Redrawn != 1 || len(result.Failed) != 0 {
+		t.Fatalf("redraw: %+v %v", result, err)
+	}
+	got, _, err := engine.Image(filed.Digest, thumbcache.SizeGrid, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := jpeg.Decode(bytes.NewReader(got)); err != nil {
+		t.Errorf("the thumbnail is still broken: %v", err)
+	}
+	if _, err := engine.Redraw(context.Background(), "sha256:nothere"); err == nil {
+		t.Error("redrawing a scan that is not filed was not refused")
+	}
+	if all, err := engine.Redraw(context.Background(), ""); err != nil || all.Redrawn != 1 {
+		t.Errorf("redraw all: %+v %v", all, err)
 	}
 }
 

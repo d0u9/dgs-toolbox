@@ -12,6 +12,7 @@ import (
 	"dgs-toolbox/internal/box/doctype"
 	"dgs-toolbox/internal/box/lifecycle"
 	"dgs-toolbox/internal/box/money"
+	"dgs-toolbox/internal/box/tag"
 )
 
 // Scan is one scan as the pages see it. Digest identifies it everywhere: the
@@ -60,8 +61,11 @@ type Scan struct {
 	// is something already thrown away — so the same judgement is not made a
 	// second time.
 	DuplicateOf string `json:"duplicateOf"`
-	TrashedAt   string `json:"trashedAt"`
-	IngestedAt  string `json:"ingestedAt"`
+	// DuplicatePath is where the match's file is, relative to the Box root,
+	// so the copy already filed can be found without searching for it.
+	DuplicatePath string `json:"duplicatePath"`
+	TrashedAt     string `json:"trashedAt"`
+	IngestedAt    string `json:"ingestedAt"`
 
 	// Expiry and State are computed, never stored. They are sent so the page
 	// does not reimplement the rule.
@@ -94,7 +98,11 @@ type Edit struct {
 	ExpiryCleared *bool     `json:"expiryCleared"`
 	Total         *string   `json:"total"`
 	Tags          *[]string `json:"tags"`
-	Reviewed      *bool     `json:"reviewed"`
+	// AddTags joins the scan's tags and removes none. It is what a batch
+	// sends: one list typed for three hundred scans must not replace what
+	// each of them already carries.
+	AddTags  []string `json:"addTags"`
+	Reviewed *bool    `json:"reviewed"`
 	// Documents replaces the whole split: a split is edited as one list, and
 	// merging two lists of overlapping ranges has no answer anyone expects.
 	Documents    *[]SplitDocument `json:"documents"`
@@ -154,9 +162,23 @@ type Source interface {
 	// Unfile takes a filed scan back to intake: its Box copy goes to the trash
 	// and it is waiting again, with what its sidecar said as the draft.
 	Unfile(digest string) error
+	// Locate is where a filed scan's file is on this machine, so the page can
+	// ask for it to be shown in the file manager. It names nothing pending.
+	Locate(digest string) (string, error)
+	// Redraw drops the stored pictures of a filed scan and draws them again
+	// from its file; an empty digest redraws every filed scan. It is how a
+	// broken thumbnail is mended: the cache is the only thing touched.
+	Redraw(ctx context.Context, digest string) (RedrawResult, error)
 	// Sample reports whether this Source is made up, so the pages can say so
 	// rather than letting someone describe scans that do not exist.
 	Sample() bool
+}
+
+// RedrawResult is what a redraw did: how many scans were drawn again, and
+// which could not be, with why.
+type RedrawResult struct {
+	Redrawn int         `json:"redrawn"`
+	Failed  []Exception `json:"failed"`
 }
 
 // RejectedScan is one scan turned away at intake.
@@ -236,6 +258,11 @@ func NewSample(currency string) *Sample {
 }
 
 func (s *Sample) Sample() bool { return true }
+
+// Locate refuses: a sample scan has no file.
+func (s *Sample) Locate(digest string) (string, error) {
+	return "", fmt.Errorf("%s is a sample scan and has no file", digest)
+}
 
 func (s *Sample) Pending() []Scan {
 	s.mutex.Lock()
@@ -516,7 +543,10 @@ func applyEdit(scan Scan, edit Edit, defaultCurrency string) (Scan, error) {
 		}
 	}
 	if edit.Tags != nil {
-		scan.Tags = normalizeTags(*edit.Tags)
+		scan.Tags = tag.List(*edit.Tags)
+	}
+	if len(edit.AddTags) > 0 {
+		scan.Tags = tag.List(append(append([]string{}, scan.Tags...), edit.AddTags...))
 	}
 	if edit.Reviewed != nil {
 		scan.Reviewed = *edit.Reviewed
@@ -529,21 +559,4 @@ func applyEdit(scan Scan, edit Edit, defaultCurrency string) (Scan, error) {
 		return Scan{}, err
 	}
 	return scan, nil
-}
-
-func normalizeTags(tags []string) []string {
-	seen := make(map[string]struct{}, len(tags))
-	normalized := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		tag = strings.TrimSpace(tag)
-		if tag == "" {
-			continue
-		}
-		if _, duplicate := seen[tag]; duplicate {
-			continue
-		}
-		seen[tag] = struct{}{}
-		normalized = append(normalized, tag)
-	}
-	return normalized
 }

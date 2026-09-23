@@ -193,3 +193,37 @@ func TestSaveAndLoadAPage(t *testing.T) {
 		t.Errorf("page 3 answered for page 1: %v", err)
 	}
 }
+
+// Dropping a scan takes every picture of it, every page, and nothing of a
+// neighbour that shares its shard.
+func TestDropTakesEveryPictureOfOneScan(t *testing.T) {
+	store := thumbcache.New(t.TempDir(), "/Volumes/nas/Box")
+	neighbour := "sha256:a1ffffffffffffff"
+	pair := thumb.Pair{Grid: []byte("g"), Preview: []byte("p")}
+	for _, page := range []int{1, 2, 3} {
+		if err := store.SavePage(testDigest, page, pair); err != nil {
+			t.Fatalf("save page %d: %v", page, err)
+		}
+	}
+	if err := store.Save(neighbour, pair); err != nil {
+		t.Fatalf("save neighbour: %v", err)
+	}
+	dropped, err := store.Drop(testDigest)
+	if err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	if dropped != 6 {
+		t.Errorf("dropped %d files, want 6", dropped)
+	}
+	for _, page := range []int{1, 2, 3} {
+		if _, err := store.LoadPage(testDigest, thumbcache.SizeGrid, page); !errors.Is(err, thumbcache.ErrNotStored) {
+			t.Errorf("page %d still stored: %v", page, err)
+		}
+	}
+	if _, err := store.Load(neighbour, thumbcache.SizeGrid); err != nil {
+		t.Errorf("neighbour went too: %v", err)
+	}
+	if again, err := store.Drop(testDigest); err != nil || again != 0 {
+		t.Errorf("second drop: %d, %v", again, err)
+	}
+}

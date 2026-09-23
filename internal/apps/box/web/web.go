@@ -82,7 +82,7 @@ func SettingsFrom(global config.Config) Settings {
 	return settings
 }
 
-// Handler serves both pages and their API.
+// Handler serves the pages and their API.
 func Handler(settings Settings) http.Handler {
 	static, err := fs.Sub(webFiles, "web")
 	if err != nil {
@@ -98,6 +98,7 @@ func Handler(settings Settings) http.Handler {
 	})
 	mux.HandleFunc("GET /api/config", api.config)
 	mux.HandleFunc("GET /api/types", api.types)
+	mux.HandleFunc("GET /api/tags", api.tags)
 	mux.HandleFunc("GET /api/intake", api.intake)
 	mux.HandleFunc("POST /api/intake/file", api.file)
 	mux.HandleFunc("GET /api/scans", api.scans)
@@ -112,8 +113,10 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/rejected/restore", api.restore)
 	mux.HandleFunc("GET /api/zones", api.zones)
 	mux.HandleFunc("POST /api/unfile", api.unfile)
+	mux.HandleFunc("POST /api/reveal", api.reveal)
 	mux.HandleFunc("POST /api/adopt", api.adopt)
 	mux.HandleFunc("POST /api/verify", api.verify)
+	mux.HandleFunc("POST /api/redraw", api.redraw)
 	mux.HandleFunc("GET /api/exceptions", api.exceptions)
 	mux.HandleFunc("GET /api/image", api.image)
 	// The page never asks for a file by path. It asks by the digest that
@@ -124,6 +127,8 @@ func Handler(settings Settings) http.Handler {
 	mux.Handle("GET /intake/", http.StripPrefix("/intake/", pageHandler(static, "intake.html")))
 	mux.Handle("GET /browse", http.RedirectHandler("/browse/", http.StatusFound))
 	mux.Handle("GET /browse/", http.StripPrefix("/browse/", pageHandler(static, "browse.html")))
+	mux.Handle("GET /check", http.RedirectHandler("/check/", http.StatusFound))
+	mux.Handle("GET /check/", http.StripPrefix("/check/", pageHandler(static, "check.html")))
 	mux.Handle("GET /", http.RedirectHandler("/browse/", http.StatusFound))
 	return mux
 }
