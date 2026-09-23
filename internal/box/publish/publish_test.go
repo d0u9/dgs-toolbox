@@ -279,6 +279,40 @@ func TestDiscardMovesIntoTheTrash(t *testing.T) {
 	}
 }
 
+// The same scan filed, unfiled, filed again and unfiled again on one day
+// meets its own earlier copy in the trash. Both are kept, the second one
+// beside the first in a numbered directory.
+func TestDiscardTwiceInOneDayKeepsBoth(t *testing.T) {
+	root := newBox(t)
+	source, want := scan(t, filepath.Join(t.TempDir(), "inbox"), "Scan_0045.pdf", []byte("a ticket"))
+	day := box.Date{Year: 2026, Month: 9, Day: 23}
+	var paths []string
+	for _, kind := range []string{"object", "ticket"} {
+		published, err := publish.Publish(context.Background(), publish.Request{
+			Root: root, Source: source, IntakeDate: intake, Digest: want,
+			Sidecar: sidecar.File{Kind: sidecar.KindPDF, Type: kind},
+		})
+		if err != nil {
+			t.Fatalf("publish %s: %v", kind, err)
+		}
+		discarded, err := publish.Discard(publish.DiscardRequest{
+			Root: root, Path: published.Path, Digest: want, Prefix: len(published.ShortDigest),
+			DiscardDate: day, Reason: "unfiled", Now: time.Date(2026, 9, 23, 9, 0, 0, 0, time.UTC),
+		})
+		if err != nil {
+			t.Fatalf("discard %s: %v", kind, err)
+		}
+		record, err := sidecar.Load(discarded.SidecarPath)
+		if err != nil || record.Type != kind {
+			t.Fatalf("sidecar for %s: %+v %v", kind, record, err)
+		}
+		paths = append(paths, filepath.ToSlash(discarded.Path))
+	}
+	if !strings.Contains(paths[0], "/trash/2026-09-23/Scan") || !strings.Contains(paths[1], "/trash/2026-09-23/2/Scan") {
+		t.Errorf("trash paths: %q", paths)
+	}
+}
+
 func TestDiscardRefusesAFileOutsideTheBox(t *testing.T) {
 	root := newBox(t)
 	outside, want := scan(t, filepath.Join(t.TempDir(), "elsewhere"), "Scan.pdf", []byte("x"))

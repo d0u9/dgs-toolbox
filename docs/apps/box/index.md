@@ -372,6 +372,11 @@ Bucketing by the discard date matches how emptying works — "clear out what I
 threw away before June" — where bucketing by the original date would mean
 walking the whole tree.
 
+The same scan can reach one day's trash twice — filed, unfiled, filed again
+and unfiled again. The second copy goes into a numbered directory inside the
+day, `trash/<date>/2/`, rather than replacing the first: the earlier sidecar is
+the only record of what the scan was called before.
+
 `trash/` is inside the Box root so the move is a same-volume rename: atomic,
 instant, no copy and no readback. Emptying it is a manual act, done in Finder or
 a shell; `box` never removes a file. With no NAS snapshots behind it, the trash
