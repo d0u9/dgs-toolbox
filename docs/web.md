@@ -569,6 +569,8 @@ Forma DJR Micro is proprietary (Commercial Type / Mark Caneso). Closest open-sou
 - **Manrope** at weights 400 / 500 / 600 / 700 — closer in proportion, gentler curves; use directly with no metric adjustment
 - **Roboto** at weights 400 / 500 / 700 — flatter character; use as last-resort fallback
 
+`dgs` uses **Inter**, embedded in the binary. Manrope was tried first and read too thin at the 11–13px UI sizes the pages use; Inter's larger x-height and tabular figures hold up there.
+
 When swapping, set body line-height to 1.4 and display line-height to 1.0 explicitly — the Forma DJR Micro line-height numbers are tight, and most substitutes default looser.
 
 ## Layout

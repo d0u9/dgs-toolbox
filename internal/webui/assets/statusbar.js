@@ -33,9 +33,10 @@ export function mount(parent = document.body) {
 }
 
 // setState writes the left part: what the page is doing or showing now, such
-// as the mode it is in. It is not news and never clears itself.
-export function setState(text) {
-  write("state", text);
+// as the mode it is in. It is not news and never clears itself. With html set
+// the text is markup the page built itself, never anything a user typed.
+export function setState(text, { html = false } = {}) {
+  write("state", text, html);
 }
 
 // The middle holds one line at a time, and two things want it: the summary of
@@ -89,16 +90,17 @@ export function clear() {
 }
 
 // setHints writes the right part: the keys or the reading that belong to what
-// is on screen now.
-export function setHints(text) {
-  write("hints", text);
+// is on screen now. html is as for setState.
+export function setHints(text, { html = false } = {}) {
+  write("hints", text, html);
 }
 
-function write(part, text) {
+function write(part, text, html = false) {
   if (!bar) return null;
   const span = bar.querySelector(`.status-${part}`);
-  span.textContent = text || "";
-  if (text) span.title = text;
+  if (html) span.innerHTML = text || "";
+  else span.textContent = text || "";
+  if (text) span.title = span.textContent;
   else span.removeAttribute("title");
   return span;
 }
