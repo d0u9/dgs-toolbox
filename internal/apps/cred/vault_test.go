@@ -240,7 +240,7 @@ func TestAddFlow(t *testing.T) {
 		t.Errorf("rescan does not show the new file:\n%s", text)
 	}
 
-	// Adding the same again is refused at the name.
+	// Adding the same again asks to replace what is there.
 	m = typeText(t, m, "a")
 	m = typeText(t, m, "/")
 	m = typeText(t, m, source)
@@ -248,8 +248,16 @@ func TestAddFlow(t *testing.T) {
 	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.add == nil || m.add.stage != addName || !strings.Contains(m.add.err, "already exists") {
-		t.Fatalf("duplicate: %+v", m.add)
+	if m.add == nil || m.add.stage != addConfirm || !m.add.replace {
+		t.Fatalf("duplicate: stage %d replace %v err %q", m.add.stage, m.add.replace, m.add.err)
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "REPLACE IN VAULT") || !strings.Contains(view, "already in the vault") {
+		t.Errorf("replace confirmation:\n%s", view)
+	}
+	// Cancel returns to the name; replacing is tested in the seal package.
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.add == nil || m.add.stage != addName {
+		t.Fatalf("cancel: %+v", m.add.stage)
 	}
 	m = send(t, m, tea.KeyMsg{Type: tea.KeyEsc})
 	m = send(t, m, tea.KeyMsg{Type: tea.KeyEsc})

@@ -61,6 +61,10 @@ type Request struct {
 	// Skip are file name patterns not archived when Source is a folder; nil
 	// means DefaultSkip.
 	Skip []string
+	// Replace allows Destination and its record to exist: the checked result
+	// takes their place instead of the add being refused. The record keeps its
+	// created stamp and gains an updated one.
+	Replace bool
 	// Now stamps the record; zero means time.Now.
 	Now time.Time
 }
@@ -106,6 +110,9 @@ func Seal(request Request) (Result, error) {
 	result := Result{Path: request.Destination, RecordPath: record.PathFor(request.Destination)}
 	for _, path := range []string{result.Path, result.RecordPath} {
 		if _, err := os.Lstat(path); err == nil {
+			if request.Replace {
+				continue
+			}
 			return Result{}, fmt.Errorf("%s already exists", path)
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return Result{}, err
@@ -146,7 +153,14 @@ func Seal(request Request) (Result, error) {
 		}
 		result.Verified = true
 	}
-	if err := os.Link(part, request.Destination); err != nil {
+	if request.Replace {
+		if info, err := os.Stat(request.Destination); err == nil {
+			os.Chmod(part, info.Mode().Perm())
+		}
+		if err := os.Rename(part, request.Destination); err != nil {
+			return Result{}, err
+		}
+	} else if err := os.Link(part, request.Destination); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return Result{}, fmt.Errorf("%s appeared while it was being written", request.Destination)
 		}
@@ -158,8 +172,17 @@ func Seal(request Request) (Result, error) {
 	if result.Archived {
 		rec.Archive = record.ArchiveTarGz
 	}
+	write := record.Create
+	if request.Replace {
+		write = record.Replace
+		if old, err := record.Read(result.RecordPath); err == nil {
+			rec.Created, rec.Comment = old.Created, old.Comment
+			now := request.Now
+			rec.Updated = &now
+		}
+	}
 	setEncryption(&rec, request.Recipients, request.Passphrase)
-	if err := record.Create(result.RecordPath, rec); err != nil {
+	if err := write(result.RecordPath, rec); err != nil {
 		return result, fmt.Errorf("%s was published, but its record was not written: %w", request.Destination, err)
 	}
 	return result, nil
