@@ -37,6 +37,8 @@ type Waypoint struct {
 	Point
 	Name        string
 	Description string
+	// CaptureID identifies a Capture waypoint in a dgs GPX extension.
+	CaptureID string
 }
 
 // Track is one <trk>; its segments are the pieces the recorder kept apart,
@@ -117,6 +119,7 @@ type xmlPoint struct {
 	Src       string  `xml:"src"`
 	Name      string  `xml:"name"`
 	Desc      string  `xml:"desc"`
+	CaptureID string  `xml:"extensions>captureId"`
 }
 
 // Parse reads a GPX document. A point with an unreadable time or elevation is
@@ -155,6 +158,7 @@ func Parse(r io.Reader) (*File, error) {
 			Point:       wpt.point(),
 			Name:        strings.TrimSpace(wpt.Name),
 			Description: strings.TrimSpace(wpt.Desc),
+			CaptureID:   strings.TrimSpace(wpt.CaptureID),
 		})
 	}
 	return file, nil

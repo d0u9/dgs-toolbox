@@ -18,6 +18,7 @@ const (
 	ActionReminderCreate  ActionID = "apple.reminders.create"
 	ActionReminderAtPlace ActionID = "apple.reminders.at_place"
 	ActionCalendarCreate  ActionID = "apple.calendar.create"
+	ActionGPXAppend       ActionID = "gpx.daily.append"
 )
 
 // ActionDefinition says what an Action is: its label, what it requires, and how
@@ -83,6 +84,16 @@ type ActionPlan struct {
 func (p ActionPlan) Ready() bool { return len(p.Missing) == 0 }
 
 var actionDefinitions = map[ActionID]ActionDefinition{
+	ActionGPXAppend: {
+		ID: ActionGPXAppend, Label: "Daily GPX waypoint", UsesPosition: true,
+		Effects: []string{"Adds the Capture's position as a timed waypoint to the day's Capture GPX", "Writes nothing when that GPX already contains this Capture's id", "Refuses to modify a GPX not written by dgs"},
+		Required: []FieldRequirement{
+			{Field: FieldCreatedAt, Label: "Created", Required: true, Input: InputText},
+			{Field: FieldCoordinates, Label: "Position", Required: true, Input: InputText},
+			optional(multiline(FieldContent, "Note")),
+		},
+		Target: dailyGPXPath,
+	},
 	ActionLocationAppend: {
 		ID:           ActionLocationAppend,
 		Label:        "Location note",
@@ -216,6 +227,7 @@ func init() {
 		ActionLocationAppend:  appendToLocationNote,
 		ActionReminderCreate:  createReminder,
 		ActionReminderAtPlace: createPlaceReminder,
+		ActionGPXAppend:       appendToDailyGPX,
 	}
 	for id, run := range implementations {
 		def := actionDefinitions[id]
@@ -249,6 +261,7 @@ func init() {
 // yet last, rather than alphabetical, which would file them among each other.
 var ActionOrder = []ActionID{
 	ActionDailyAppend, ActionLocationAppend,
+	ActionGPXAppend,
 	ActionReminderCreate, ActionReminderAtPlace,
 	ActionAppleNoteCreate, ActionCalendarCreate,
 }

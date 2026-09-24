@@ -44,6 +44,12 @@ type Capture struct {
 	Archive  CaptureArchive  `json:"archive"`
 	Obsidian CaptureObsidian `json:"obsidian"`
 	Apple    CaptureApple    `json:"apple"`
+	GPX      CaptureGPX      `json:"gpx"`
+}
+
+// CaptureGPX names the directory for daily Capture waypoint files.
+type CaptureGPX struct {
+	Directory string `json:"directory"`
 }
 
 // CaptureApple configures the Actions that write into Apple's apps.
