@@ -66,7 +66,11 @@ type File struct {
 	Size             int64
 	Kind             Kind
 	OriginalFilename string    // the stem as it arrived, bytes unchanged
-	IngestedAt       Timestamp // a real instant, stored with the offset it was read at
+	IngestedAt       Timestamp // a real instant, written in UTC; older sidecars carry a local offset
+	// EditedAt is when dgs last changed what the sidecar says, empty for one
+	// never edited since it was filed. It is a key rather than the file's
+	// modification time because copying a Box to another disk rewrites that.
+	EditedAt Timestamp
 
 	// Type is a doctype name. Reviewed is false while it is still the guess
 	// intake made, and true once a human has confirmed it in view: without the

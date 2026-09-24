@@ -1,11 +1,15 @@
 package web
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"mime"
 	"net/http"
 	"strconv"
+	"time"
 
 	"dgs-toolbox/internal/box/doctype"
 	"dgs-toolbox/internal/box/money"
@@ -204,10 +208,14 @@ func (a api) image(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", mediaType)
-	// A digest names the bytes, so a page of it never changes: the browser
-	// may keep it, and turning back to a page costs no request.
-	w.Header().Set("Cache-Control", "private, max-age=3600")
-	_, _ = w.Write(body)
+	// A digest names the file's bytes, not the picture drawn from them: a
+	// better drawing — a page turned as its /Rotate says — changes the picture
+	// under the same address. So the browser keeps it but asks each time, and
+	// an unchanged picture is answered with 304 and no body.
+	sum := sha256.Sum256(body)
+	w.Header().Set("ETag", `"`+hex.EncodeToString(sum[:12])+`"`)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(body))
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

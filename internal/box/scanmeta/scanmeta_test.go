@@ -210,3 +210,11 @@ func TestPDFCreationDateIsRFC3339(t *testing.T) {
 		t.Error("no producer, which is what separates a Box into scanner eras")
 	}
 }
+
+func TestNormalRotation(t *testing.T) {
+	for in, want := range map[int]int{0: 0, 90: 90, 180: 180, 270: 270, 360: 0, 450: 90, -90: 270, 45: 0} {
+		if got := scanmeta.NormalRotation(in); got != want {
+			t.Errorf("NormalRotation(%d) = %d, want %d", in, got, want)
+		}
+	}
+}

@@ -29,6 +29,7 @@ type wire struct {
 	Kind             string    `yaml:"kind"`
 	OriginalFilename string    `yaml:"original_filename"`
 	IngestedAt       Timestamp `yaml:"ingested_at,omitempty"`
+	EditedAt         Timestamp `yaml:"edited_at,omitempty"`
 
 	Type        string   `yaml:"type"`
 	Reviewed    bool     `yaml:"reviewed"`
@@ -81,6 +82,7 @@ func Encode(file File) ([]byte, error) {
 		Kind:             string(file.Kind),
 		OriginalFilename: file.OriginalFilename,
 		IngestedAt:       file.IngestedAt,
+		EditedAt:         file.EditedAt,
 		Type:             file.Type,
 		Reviewed:         file.Reviewed,
 		Description:      file.Description,
@@ -174,6 +176,7 @@ func Decode(data []byte, name string) (File, error) {
 		Kind:             Kind(in.Kind),
 		OriginalFilename: in.OriginalFilename,
 		IngestedAt:       in.IngestedAt,
+		EditedAt:         in.EditedAt,
 		Type:             in.Type,
 		Reviewed:         in.Reviewed,
 		Description:      in.Description,
@@ -190,7 +193,7 @@ func Decode(data []byte, name string) (File, error) {
 		Reason:           in.Reason,
 	}
 	var err error
-	if file.EventDate, err = readDate(in.EventDate, name, "event_date"); err != nil {
+	if file.EventDate, err = readEventDate(in.EventDate, name, "event_date"); err != nil {
 		return File{}, err
 	}
 	if file.IgnoredPages, err = pagerange.Parse(in.IgnoredPages); err != nil {
@@ -213,7 +216,7 @@ func Decode(data []byte, name string) (File, error) {
 		if len(document.Pages) == 0 {
 			return File{}, fmt.Errorf("%s: %s names no pages", name, field)
 		}
-		if document.EventDate, err = readDate(entry.EventDate, name, field+".event_date"); err != nil {
+		if document.EventDate, err = readEventDate(entry.EventDate, name, field+".event_date"); err != nil {
 			return File{}, err
 		}
 		if document.Total, err = readAmount(entry.TotalMinor, entry.Currency, name+": "+field); err != nil {
@@ -262,6 +265,19 @@ func readDate(text, name, field string) (box.Date, error) {
 		return box.Date{}, nil
 	}
 	date, err := box.ParseDate(text)
+	if err != nil {
+		return box.Date{}, fmt.Errorf("%s: %s: %w", name, field, err)
+	}
+	return date, nil
+}
+
+// readEventDate is readDate for the one field that may be known only to the
+// month or the year.
+func readEventDate(text, name, field string) (box.Date, error) {
+	if strings.TrimSpace(text) == "" {
+		return box.Date{}, nil
+	}
+	date, err := box.ParseEventDate(text)
 	if err != nil {
 		return box.Date{}, fmt.Errorf("%s: %s: %w", name, field, err)
 	}

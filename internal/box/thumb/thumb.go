@@ -89,7 +89,7 @@ func firstPicture(info scanmeta.Info) (image.Image, error) {
 	if decodeErr != nil {
 		return nil, fmt.Errorf("decode page %d: %w", only.Page, decodeErr)
 	}
-	return decoded, nil
+	return turning{decoded, only.Rotate}, nil
 }
 
 // RenderPage makes both sizes from one named page, counting from 1.
@@ -110,14 +110,51 @@ func RenderPage(info scanmeta.Info, page int) (Pair, error) {
 	return both(source)
 }
 
-// RenderPicture makes both sizes from one page's rendered picture, as
-// scanmeta.Pages.Page returns it.
-func RenderPicture(rendered []byte) (Pair, error) {
-	source, _, err := image.Decode(bytes.NewReader(rendered))
+// RenderPicture makes both sizes from one page's picture, as
+// scanmeta.Pages.Page returns it, turned as its page says.
+func RenderPicture(picture scanmeta.Image) (Pair, error) {
+	source, _, err := image.Decode(bytes.NewReader(picture.Rendered))
 	if err != nil {
 		return Pair{}, fmt.Errorf("decode page: %w", err)
 	}
-	return both(source)
+	return both(turning{source, picture.Rotate})
+}
+
+// turning is a decoded picture with the turn its page asks for, carried to
+// both so the turn is made on the small picture.
+type turning struct {
+	image.Image
+	degrees int
+}
+
+// Turn rotates source clockwise by degrees, which is 0, 90, 180 or 270: a
+// page's /Rotate, so the picture is drawn the way a PDF reader shows the page.
+// Anything else returns source unchanged.
+func Turn(source image.Image, degrees int) image.Image {
+	if degrees != 90 && degrees != 180 && degrees != 270 {
+		return source
+	}
+	bounds := source.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	shape := image.Rect(0, 0, width, height)
+	if degrees != 180 {
+		shape = image.Rect(0, 0, height, width)
+	}
+	turned := image.NewRGBA(shape)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			colour := source.At(bounds.Min.X+x, bounds.Min.Y+y)
+			switch degrees {
+			case 90:
+				turned.Set(height-1-y, x, colour)
+			case 180:
+				turned.Set(width-1-x, height-1-y, colour)
+			case 270:
+				turned.Set(y, width-1-x, colour)
+			}
+		}
+	}
+	return turned
 }
 
 // both encodes one decoded picture at both sizes.
@@ -126,12 +163,22 @@ func RenderPicture(rendered []byte) (Pair, error) {
 // several thousand pixels a side, and scaling it twice is most of the cost of
 // drawing a page.
 func both(source image.Image) (Pair, error) {
-	large := fitWith(source, PreviewSize, draw.ApproxBiLinear)
+	// A page's turn is applied to the preview, not the scan: turning is a pixel
+	// at a time, and the preview has a tenth of the scan's pixels.
+	degrees := 0
+	if turn, ok := source.(turning); ok {
+		source, degrees = turn.Image, turn.degrees
+	}
+	large := Turn(fitWith(source, PreviewSize, draw.ApproxBiLinear), degrees)
+	shape := source.Bounds()
+	if degrees == 90 || degrees == 270 {
+		shape = image.Rect(0, 0, shape.Dy(), shape.Dx())
+	}
 	preview, err := encode(large)
 	if err != nil {
 		return Pair{}, err
 	}
-	grid, err := encode(scaleTo(large, source.Bounds(), GridSize, draw.CatmullRom))
+	grid, err := encode(scaleTo(large, shape, GridSize, draw.CatmullRom))
 	if err != nil {
 		return Pair{}, err
 	}
@@ -156,7 +203,7 @@ func pagePicture(info scanmeta.Info, page int) (image.Image, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode page %d: %w", page, err)
 		}
-		return decoded, nil
+		return turning{decoded, candidate.Rotate}, nil
 	}
 	return nil, ErrNoImage
 }

@@ -199,7 +199,7 @@ func TestVerifyReportsAMismatchAndRewritesNothing(t *testing.T) {
 		t.Fatalf("a Box nobody touched: %+v %v", found, err)
 	}
 
-	day := filepath.Join(root, time.Now().Format("2006"), time.Now().Format("2006-01-02"))
+	day := filepath.Join(root, time.Now().Format("2006"), time.Now().Format("01"))
 	entries, err := os.ReadDir(day)
 	if err != nil {
 		t.Fatal(err)

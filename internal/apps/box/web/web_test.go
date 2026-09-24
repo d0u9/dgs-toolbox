@@ -508,3 +508,28 @@ func TestTheStandInRefusesWhatWouldNeedRealBytes(t *testing.T) {
 		t.Errorf("made-up bytes were verified: %d", status)
 	}
 }
+
+// A picture is revalidated, not kept blind: a redrawn picture under the same
+// digest must reach the page, and an unchanged one costs a 304.
+func TestImageIsRevalidated(t *testing.T) {
+	srv := server(t)
+	first, err := srv.Client().Get(srv.URL + "/api/image?digest=33cc44dd&size=preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Body.Close()
+	tag := first.Header.Get("ETag")
+	if tag == "" || first.Header.Get("Cache-Control") != "private, no-cache" {
+		t.Fatalf("headers: %v", first.Header)
+	}
+	request, _ := http.NewRequest("GET", srv.URL+"/api/image?digest=33cc44dd&size=preview", nil)
+	request.Header.Set("If-None-Match", tag)
+	again, err := srv.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again.Body.Close()
+	if again.StatusCode != http.StatusNotModified {
+		t.Errorf("unchanged picture answered %d", again.StatusCode)
+	}
+}

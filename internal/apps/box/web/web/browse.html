@@ -27,12 +27,20 @@
 </header>
 
 <nav class="filters" aria-label="Filters">
+  <fieldset class="filter-group" aria-label="Search">
+    <label class="filter filter-search"><span>Search</span>
+      <input id="filter-text" type="search" placeholder="words in descriptions" spellcheck="false" autocomplete="off">
+    </label>
+  </fieldset>
   <fieldset class="filter-group" aria-label="Document">
     <label class="filter"><span>Type</span>
       <select id="filter-type"><option value="">any</option></select>
     </label>
     <label class="filter"><span>Year</span>
       <select id="filter-year"><option value="">any</option></select>
+    </label>
+    <label class="filter" title="The zone the event date is read in"><span>Zone</span>
+      <select id="filter-zone"><option value="">any</option></select>
     </label>
     <label class="filter"><span>Producer</span>
       <select id="filter-producer"><option value="">any</option></select>
@@ -76,6 +84,31 @@
     </div>
   </fieldset>
   <fieldset class="filter-group" aria-label="View">
+    <label class="filter"><span>Show</span>
+      <select id="view-layout">
+        <option value="grid">cards</option>
+        <option value="list">list</option>
+      </select>
+    </label>
+    <label class="filter"><span>Sort</span>
+      <select id="view-sort">
+        <option value="event">event date</option>
+        <option value="added">date added</option>
+        <option value="edited">last edited</option>
+        <option value="title">description</option>
+        <option value="type">type</option>
+        <option value="total">amount</option>
+        <option value="producer">producer</option>
+        <option value="pages">pages</option>
+        <option value="state">state</option>
+      </select>
+    </label>
+    <label class="filter"><span>Order</span>
+      <select id="view-direction">
+        <option value="desc">descending</option>
+        <option value="asc">ascending</option>
+      </select>
+    </label>
     <label class="filter filter-check" title="Show each split of a scan as its own card, with its own type, date and amount">
       <input id="view-splits" type="checkbox"><span>Splits as documents</span>
     </label>
@@ -116,6 +149,22 @@
       </p>
     </div>
     <ul id="grid" class="grid"></ul>
+    <table id="list" class="list" hidden>
+      <thead><tr>
+        <th scope="col" class="list-thumb-col" aria-label="Picture"></th>
+        <th scope="col" data-sort="title">Description</th>
+        <th scope="col" data-sort="type">Type</th>
+        <th scope="col" data-sort="event">Date</th>
+        <th scope="col" data-sort="total" class="list-num">Amount</th>
+        <th scope="col" data-sort="producer">Producer</th>
+        <th scope="col" data-sort="pages" class="list-num">Pages</th>
+        <th scope="col" data-sort="state">State</th>
+        <th scope="col">Tags</th>
+        <th scope="col" data-sort="added">Added</th>
+        <th scope="col" data-sort="edited">Edited</th>
+      </tr></thead>
+      <tbody id="list-body"></tbody>
+    </table>
     <p id="grid-empty" class="grid-empty" hidden>Nothing matches these filters.</p>
   </section>
 
@@ -245,6 +294,8 @@
 <script src="api.js"></script>
 <script src="pages.js"></script>
 <script src="split.js"></script>
+<script src="field.js"></script>
+<script src="date.js"></script>
 <script src="zone.js"></script>
 <script src="tags.js"></script>
 <script src="zoom.js"></script>

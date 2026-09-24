@@ -86,6 +86,7 @@ var catalogue = []Type{
 	{Name: "contract", Label: "Contract", Covers: "Contracts and agreements", Nature: Utility, Key: 'c'},
 	{Name: "identity", Label: "Identity document", Covers: "Identity documents, visas, licences", Nature: Utility, ExpiryExpected: true, Key: 'd'},
 	{Name: "medical", Label: "Medical", Covers: "Prescriptions, results, medical receipts", Nature: Utility, Key: 'm'},
+	{Name: "manual", Label: "Manual", Covers: "Instruction manuals and user guides for things owned", Nature: Utility, Key: 'h'},
 	{Name: "letter", Label: "Letter", Covers: "Correspondence worth keeping", Nature: Keepsake, Key: 'l'},
 	{Name: "ephemera", Label: "Ephemera", Covers: "Printed matter kept for its own sake: leaflets, brochures, an advertisement, a programme", Nature: Keepsake, Key: 'e'},
 	{Name: "object", Label: "Object", Covers: "A scan of a small object rather than of a document", Nature: Keepsake, Key: 'o'},

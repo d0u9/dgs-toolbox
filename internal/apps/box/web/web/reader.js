@@ -267,6 +267,8 @@ function readerOf() {
     if (section.hidden) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.target === handle) return;
+    // Typing in the details beside the pages is typing, not reading.
+    if (event.target.closest?.('input, textarea, select, [contenteditable], .detail')) return;
     const actions = {
       j: () => go(view.current + 1),
       k: () => go(view.current - 1),
