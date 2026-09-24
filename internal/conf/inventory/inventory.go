@@ -108,6 +108,11 @@ type Instance struct {
 	// and the credential stays in the configuration file beside it. See
 	// docs/apps/conf/inventory.md#what-a-container-needs-beyond-the-model.
 	Deploy map[string]any `yaml:"deploy"`
+
+	// Path is the file this instance was written in, relative to the
+	// generator root: its node file, or its own file in the node's instance
+	// directory. Set by Load, not part of the YAML.
+	Path string `yaml:"-"`
 }
 
 // RuntimeOr is what delivers this process, RuntimeHost when the instance
@@ -602,12 +607,15 @@ func loadNodes(root string) ([]Node, error) {
 		}
 		instanceDir, err := decodeNode(data, &node)
 		node.Path = relPath
+		for i := range node.Instances {
+			node.Instances[i].Path = relPath
+		}
 		if group == "" && instanceDir != "" {
 			rootInstanceDirs[instanceDir] = true
 		}
 		if err == nil && instanceDir != "" {
 			var instances []Instance
-			instances, err = loadInstanceDir(filepath.Join(filepath.Dir(path), instanceDir))
+			instances, err = loadInstanceDir(root, filepath.Join(filepath.Dir(path), instanceDir))
 			if err == nil {
 				node.Instances = instances
 			}
@@ -701,7 +709,7 @@ func decodeNode(data []byte, node *Node) (string, error) {
 	return dirName, nil
 }
 
-func loadInstanceDir(dir string) ([]Instance, error) {
+func loadInstanceDir(root, dir string) ([]Instance, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("reading instance directory %s: %w", dir, err)
@@ -719,6 +727,10 @@ func loadInstanceDir(dir string) ([]Instance, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading instance file %s: %w", path, err)
 		}
+		relPath, err := filepath.Rel(root, path)
+		if err != nil {
+			relPath = path
+		}
 		var doc yaml.Node
 		if err := yaml.Unmarshal(data, &doc); err != nil {
 			return nil, fmt.Errorf("instance file %s: %w", path, err)
@@ -732,11 +744,15 @@ func loadInstanceDir(dir string) ([]Instance, error) {
 			if err := decodeStrict(data, &instance); err != nil {
 				return nil, fmt.Errorf("instance file %s: %w", path, err)
 			}
+			instance.Path = relPath
 			instances = append(instances, instance)
 		case yaml.SequenceNode:
 			var group []Instance
 			if err := decodeStrict(data, &group); err != nil {
 				return nil, fmt.Errorf("instance file %s: %w", path, err)
+			}
+			for i := range group {
+				group[i].Path = relPath
 			}
 			instances = append(instances, group...)
 		default:
