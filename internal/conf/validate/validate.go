@@ -928,13 +928,19 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 			n.from, n.to, n.port)
 	}
 
-	// Rule 12: the routes granted to a credential its owner carries
-	// themselves enter on the universal network. Such a file is dialed from
-	// whatever machine is at hand, which this inventory does not model, so
-	// the universal network is all it can be assumed to reach. With no
-	// universal network declared there is nothing it could ever reach, which
-	// is rule 3 or the author's problem, not this check's to invent an
-	// answer for.
+	// Rule 12: a person carrying a credential can use it on the universal
+	// network and on networks explicitly listed by that credential. Without
+	// reaches, the old universal-only assumption still applies.
+	for _, key := range userKeys {
+		user := inv.Users[key]
+		for _, credential := range user.CredentialNames() {
+			for _, network := range user.Credentials[credential].Reaches {
+				if !containsString(inv.Networks, network) {
+					add("user %q: credential %q reaches unknown network %q", key, credential, network)
+				}
+			}
+		}
+	}
 	if inv.Universal != "" {
 		for _, key := range userKeys {
 			user := inv.Users[key]
@@ -966,8 +972,19 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 					continue // rule 4 already reported the missing instance.
 				}
 				node := nodeByID[r.nodeID]
-				if _, ok := node.Networks[inv.Universal]; !ok {
-					add("user %q: route %q enters %q, which has no address on the universal network %q, and they carry a credential no device of theirs names", key, routeName, hop.Instance, inv.Universal)
+				reachable := false
+				for _, credential := range carried {
+					if !user.OpensRoute(credential, routeName) {
+						continue
+					}
+					for network := range node.Networks {
+						if network == inv.Universal || containsString(user.Credentials[credential].Reaches, network) {
+							reachable = true
+						}
+					}
+				}
+				if !reachable {
+					add("user %q: route %q enters %q, which has no address on a network reachable by their carried credential", key, routeName, hop.Instance)
 				}
 			}
 		}

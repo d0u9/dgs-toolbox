@@ -433,6 +433,9 @@ type User struct {
 type Credential struct {
 	// Note says where this credential is used — free text dgs never reads.
 	Note string `yaml:"note"`
+	// Reaches names additional networks where the person can use a credential
+	// without a modeled device. The universal network remains implicit.
+	Reaches []string `yaml:"reaches"`
 	// Access narrows this credential to some of the person's routes. Empty
 	// takes every route they are granted, which is what a credential means
 	// without one. It may name only routes the person holds: access is

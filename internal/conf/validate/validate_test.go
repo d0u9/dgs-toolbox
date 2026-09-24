@@ -240,8 +240,33 @@ func TestValidate_CarriedCredentialRouteNotEnteringOnInternet(t *testing.T) {
 	// it directly rather than through a Derive that would never get here.
 	manifests := validManifests()
 	got := Validate(inv, manifests, validExports(), &derive.Model{}, nil)
-	if !containsSubstring(got, `user "yak": route "sfo" enters "ss-srv", which has no address on the universal network`) {
+	if !containsSubstring(got, `user "yak": route "sfo" enters "ss-srv", which has no address on a network reachable by their carried credential`) {
 		t.Fatalf("Validate = %v, want a carried-credential-not-on-internet issue", messages(got))
+	}
+}
+
+func TestValidate_CarriedCredentialReachesPrivateNetwork(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[0].Networks = inventory.Networks{"home": "192.168.1.5"}
+	inv.Users["yak"] = inventory.User{
+		Devices: inventory.DevicesNone, Access: []string{"sfo"},
+		Credentials: map[string]inventory.Credential{"default": {Reaches: []string{"home"}}},
+	}
+	got := Validate(inv, validManifests(), validExports(), &derive.Model{}, nil)
+	if containsSubstring(got, `user "yak": route "sfo" enters "ss-srv"`) {
+		t.Fatalf("Validate = %v, want home reachability accepted", messages(got))
+	}
+}
+
+func TestValidate_CredentialReachesUnknownNetwork(t *testing.T) {
+	inv := validInventory()
+	inv.Users["yak"] = inventory.User{
+		Devices: inventory.DevicesNone, Access: []string{"sfo"},
+		Credentials: map[string]inventory.Credential{"default": {Reaches: []string{"unknown"}}},
+	}
+	got := Validate(inv, validManifests(), validExports(), derived(t, inv, validManifests()), nil)
+	if !containsSubstring(got, `user "yak": credential "default" reaches unknown network "unknown"`) {
+		t.Fatalf("Validate = %v, want unknown network issue", messages(got))
 	}
 }
 
