@@ -907,10 +907,10 @@ the second one named for the person, since there is no device to name it for.
 A file the person carries is dialed from a machine this inventory does not
 model. The `universal` network is implicit; the credential may also declare
 `reaches: [home]` when the person uses it on an unmodeled device in that
-network. A route whose entry has no address on any of those networks is an error.
-This declaration checks reachability; carried client-file address resolution
-still uses the `universal` network. It fits services such as Samba where the
-person enters the server address themselves and no client file is rendered.
+network. A route whose entry has no address on any of those networks is an
+error, and a rendered client file dials the entry on the first of those
+networks, in `networks.yaml` order, where it has an address. With no
+`universal` network declared, `reaches` is all such a credential has.
 
 The alternative would be a credential that exists in `users.yaml` and nowhere
 else: no account, no secret, no file, and nothing saying why. Declaring one is
