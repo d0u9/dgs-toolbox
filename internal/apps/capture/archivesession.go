@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -103,10 +104,12 @@ type archiveModel struct {
 	// rather than to one column: the same Capture is named the same way
 	// wherever it is listed, or moving one between columns would look like it
 	// changed.
-	view      captureView
-	fields    datafield.Navigator
-	pendingGG bool
-	lastClick routeClick
+	view         captureView
+	fields       datafield.Navigator
+	pendingGG    bool
+	lastClick    routeClick
+	detailOffset int
+	detailSource archiveDestination
 }
 
 func newArchiveModel(root, indexFile, archiveRoot, rejectRoot string) archiveModel {
@@ -229,6 +232,17 @@ func (m archiveModel) applyFolder(msg archiveFolderLoadedMsg) archiveModel {
 
 func (m archiveModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if key == "o" {
+		return m.openArchiveMap(), nil
+	}
+	if key == "shift+up" || key == "shift+down" {
+		delta := 3
+		if key == "shift+up" {
+			delta = -3
+		}
+		m.scrollDetail(delta)
+		return m, nil
+	}
 	if key == "v" {
 		// The view belongs to the session rather than to one column: the same
 		// Capture is named the same way wherever it is listed, or moving one
@@ -238,9 +252,13 @@ func (m archiveModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rebuildItems()
 		return m, nil
 	}
+	previousDestination := m.focusedDestination()
 	if m.fields.Move(key) || key == "tab" || key == "shift+tab" {
 		if key == "tab" || key == "shift+tab" {
 			m.cycleFields(key == "tab")
+		}
+		if m.fields.Current() == archiveDetailField {
+			m.detailSource = previousDestination
 		}
 		m.pendingGG = false
 		return m, nil
@@ -271,6 +289,9 @@ func (m archiveModel) updateCaptures(key string) (tea.Model, tea.Cmd) {
 		return moved, cmd
 	}
 	listMoveKey(&m.captures, key, &m.pendingGG, true)
+	if key == "up" || key == "down" || key == "j" || key == "k" || key == "g" || key == "G" {
+		m.detailOffset = 0
+	}
 	if key == "R" {
 		return m, m.refresh()
 	}
@@ -289,6 +310,9 @@ func (m archiveModel) updateFolderList(destination archiveDestination, key strin
 		return moved, cmd
 	}
 	listMoveKey(list, key, &m.pendingGG, true)
+	if key == "up" || key == "down" || key == "j" || key == "k" || key == "g" || key == "G" {
+		m.detailOffset = 0
+	}
 	if key == "R" {
 		return m.move(destination, destinationCaptures)
 	}
@@ -384,13 +408,19 @@ func (m archiveModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		if list, ok := m.listForField(hit); ok {
 			list.Scroll(delta)
+		} else if hit == archiveDetailField {
+			m.scrollDetail(delta)
 		}
 		return m, nil
 	}
 	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
 		return m, nil
 	}
+	previousDestination := m.focusedDestination()
 	m.fields.FocusAt(msg.X, msg.Y)
+	if hit == archiveDetailField {
+		m.detailSource = previousDestination
+	}
 	m.pendingGG = false
 	double := pairsWithLastClick(m.lastClick, hit, msg.Y)
 	m.lastClick = routeClick{field: hit, row: msg.Y, at: time.Now()}
@@ -418,6 +448,7 @@ func (m archiveModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !list.SelectRow(row) {
 		return m, nil
 	}
+	m.detailOffset = 0
 	if double {
 		// A double click does what the column's own key does: file it away from
 		// CAPTURES, and return it from a destination. A move is a change on
@@ -464,6 +495,8 @@ func (m archiveModel) focusedDestination() archiveDestination {
 		return destinationArchive
 	case rejectFolderField:
 		return destinationReject
+	case archiveDetailField:
+		return m.detailSource
 	}
 	return destinationCaptures
 }
@@ -704,7 +737,14 @@ func (m archiveModel) leftColumn(width int) string {
 func (m archiveModel) centerColumn(width int) string {
 	focused := m.fields.Current() == archiveDetailField
 	inner := max(1, width-4)
-	return fieldset.ViewFocused("CAPTURE", fitHeight(m.detail(inner), m.height-2, inner), width, focused)
+	lines := strings.Split(m.detail(inner), "\n")
+	offset := min(m.detailOffset, max(0, len(lines)-(m.height-2)))
+	return fieldset.ViewFocused("CAPTURE", fitHeight(strings.Join(lines[offset:], "\n"), m.height-2, inner), width, focused)
+}
+
+func (m *archiveModel) scrollDetail(delta int) {
+	lines := strings.Split(m.detail(max(1, m.columnWidths()[1]-4)), "\n")
+	m.detailOffset = min(max(0, len(lines)-(m.height-2)), max(0, m.detailOffset+delta))
 }
 
 // rightColumn is the two destinations, one above the other, with the controls
@@ -766,8 +806,21 @@ func (m archiveModel) detail(width int) string {
 		detailInline("Sitting", m.sittingIn(), width),
 		scanMutedStyle.Render("Folder") + "\n" + ansi.Hardwrap(displayPath(entry.path), max(1, width), true),
 	}
+	if position, ok := archivePosition(entry); ok {
+		links := mapLinks(position, "", "Apple")
+		if len(links) > 0 {
+			label := fmt.Sprintf("%.6f, %.6f  ·  Open map (o)", position.Latitude, position.Longitude)
+			lines = append(lines, scanMutedStyle.Render("Position")+"  "+ansi.SetHyperlink(links[0].URL)+label+ansi.ResetHyperlink())
+		}
+	}
 	if flag := entry.record.Flag; flag != nil {
 		lines = append(lines, runFailedStyle.Render(truncate("⚑ Flagged "+organizer.FormatTimestamp(flag.FlaggedAt)+" — reject it", width)))
+	}
+	lines = append(lines, "", divider.Labelled("PAYLOAD", width))
+	if len(entry.index.Payload) == 0 {
+		lines = append(lines, scanMutedStyle.Render("· No payload"))
+	} else if data, err := json.MarshalIndent(entry.index.Payload, "", "  "); err == nil {
+		lines = append(lines, ansi.Hardwrap(string(data), max(1, width), true))
 	}
 	lines = append(lines, "", divider.Labelled("ORGANIZED", width))
 	if !entry.organized {
@@ -808,6 +861,46 @@ func (m archiveModel) sittingIn() string {
 		return "Reject"
 	}
 	return "Capture root"
+}
+
+func archivePosition(entry captureEntry) (organizer.Position, bool) {
+	coordinates := entry.index.Coordinates
+	if coordinates == nil {
+		return organizer.Position{}, false
+	}
+	return organizer.Position{Latitude: coordinates.Latitude, Longitude: coordinates.Longitude}, true
+}
+
+func (m archiveModel) openArchiveMap() archiveModel {
+	entry, ok := m.selected()
+	if !ok {
+		return m
+	}
+	position, ok := archivePosition(entry)
+	if !ok {
+		m.notice = failed("This Capture has no position")
+		return m
+	}
+	links := mapLinks(position, "", "Apple")
+	if len(links) == 0 {
+		return m
+	}
+	if err := openURL(links[0].URL); err != nil {
+		m.notice = failed("Could not open the map: " + err.Error())
+		return m
+	}
+	m.notice = moveNotice{text: fmt.Sprintf("Opened %.5f, %.5f in Apple Maps", position.Latitude, position.Longitude)}
+	return m
+}
+
+func (m archiveModel) detailHint() string {
+	hint := "  ⇧↑↓ Detail"
+	if entry, ok := m.selected(); ok {
+		if _, hasPosition := archivePosition(entry); hasPosition {
+			hint += "  o Map"
+		}
+	}
+	return hint
 }
 
 // actions are the two controls under the right column: what can be done to the
@@ -943,11 +1036,11 @@ func (m archiveModel) Status() tui.Status {
 	case archiveRootField:
 		return tui.Status{Left: "CAPTURE ROOT", Center: m.root, Right: "↵ Browse  R Refresh  tab Next"}
 	case archiveFolderField:
-		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  R Restore  ⌫ Reject  v View  tab Next"}
+		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  R Restore  ⌫ Reject  v View" + m.detailHint() + "  tab Next"}
 	case rejectFolderField:
-		return tui.Status{Left: "REJECT", Center: center, Right: "↑↓ Move  R Restore  a Archive  v View  tab Next"}
+		return tui.Status{Left: "REJECT", Center: center, Right: "↑↓ Move  R Restore  a Archive  v View" + m.detailHint() + "  tab Next"}
 	default:
-		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  a Archive  ⌫ Reject  v View  R Refresh"}
+		return tui.Status{Left: "ARCHIVE", Center: center, Right: "↑↓ Move  a Archive  ⌫ Reject  v View  R Refresh" + m.detailHint()}
 	}
 }
 
