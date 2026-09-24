@@ -81,7 +81,7 @@ data.
 | Instance keys | `id`, `service`, `ports`, `process`, `runtime`, `bind`, `self`, `values`, `deploy` |
 | Port keys | `port`, `protocol`, `self`, when a port is written as a mapping rather than a bare number |
 | User keys | `username`, `devices`, `export`, `credentials`, `access` |
-| Credential keys | `note`, `access` |
+| Credential keys | `note`, `access`, `reaches` |
 | Route keys | `hops` |
 | Network keys | `networks`, `universal` |
 | Service manifest keys | `secret`, `auth`, `template`, `defaults`, `output`, `rotation`, `self`, `upstream` |
@@ -843,8 +843,9 @@ differ.
 ### Credentials belong to the person
 
 `credentials` names this person's credentials. Each is a mapping: `note` says
-where it is used — free text `dgs` never reads — and `access` narrows it to
-some of the person's routes. A person who declares none has one, called
+where it is used — free text `dgs` never reads — `access` narrows it to
+some of the person's routes, and `reaches` lists networks where the person
+can use it without a modeled device. A person who declares none has one, called
 `default`.
 
 **The value is always a mapping, even where only the note is written.** A
@@ -904,8 +905,12 @@ Here `mbp` is carried by that laptop and `default` by the person. Both are
 accounts on the port `sfo` enters; the first renders a file for the laptop, and
 the second one named for the person, since there is no device to name it for.
 A file the person carries is dialed from a machine this inventory does not
-model, so it resolves on the `universal` network, and a route granted to
-someone in this position whose entry has no address there is an error.
+model. The `universal` network is implicit; the credential may also declare
+`reaches: [home]` when the person uses it on an unmodeled device in that
+network. A route whose entry has no address on any of those networks is an error.
+This declaration checks reachability; carried client-file address resolution
+still uses the `universal` network. It fits services such as Samba where the
+person enters the server address themselves and no client file is rendered.
 
 The alternative would be a credential that exists in `users.yaml` and nowhere
 else: no account, no secret, no file, and nothing saying why. Declaring one is
@@ -2077,8 +2082,8 @@ failing can be told which level it was reading.
 11. A route in an `access` list has an entry the granted user's devices can
     reach, on a port not bound to loopback only.
 12. The granted routes of a user who keeps a credential no device of theirs
-    names enter on the `universal` network — that file is dialed from a machine
-    this inventory does not model.
+    names enter on the `universal` network or a network in the credential's
+    `reaches`. Every named network exists in `networks.yaml`.
 13. Account names rendered for one port are distinct. On a service naming
     accounts by person, this is what two of one person's credentials on the
     same port fail.
