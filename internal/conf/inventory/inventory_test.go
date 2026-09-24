@@ -3,6 +3,7 @@ package inventory
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -186,6 +187,60 @@ instances:
 	tags, ok := values["tags"].([]any)
 	if !ok || len(tags) != 2 || tags[0] != "prod" {
 		t.Fatalf("values[tags] = %#v, want [prod sfo]", values["tags"])
+	}
+}
+
+func TestLoad_InstancesFromDirectory(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, NodesDir, "cloud", "srv.yaml"), "id: srv\ninstances:\n  directory: srv.instances\n")
+	writeFile(t, filepath.Join(root, NodesDir, "cloud", "srv.instances", "b.yaml"), "id: second\nservice: two\n")
+	writeFile(t, filepath.Join(root, NodesDir, "cloud", "srv.instances", "a.yaml"), "id: first\nservice: one\n")
+	writeFile(t, filepath.Join(root, NodesDir, "cloud", "srv.instances", "c.yaml"), "- id: third\n  service: shared\n- id: fourth\n  service: shared\n")
+	writeFile(t, filepath.Join(root, NodesDir, "cloud", "srv.instances", "README.md"), "ignored\n")
+	writeFile(t, filepath.Join(root, NodesDir, "local.yaml"), "id: local\ninstances:\n  directory: parts\n")
+	writeFile(t, filepath.Join(root, NodesDir, "parts", "local.yaml"), "id: local-instance\nservice: local\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Nodes) != 2 || got.Nodes[0].Broken != "" || got.Nodes[1].Broken != "" {
+		t.Fatalf("Nodes = %+v", got.Nodes)
+	}
+	instances := got.Nodes[0].Instances
+	if len(instances) != 4 || instances[0].ID != "first" || instances[1].ID != "second" || instances[2].ID != "third" || instances[3].ID != "fourth" {
+		t.Fatalf("Instances = %+v, want file-name order", instances)
+	}
+	if got.Nodes[1].ID != "local" || len(got.Nodes[1].Instances) != 1 || got.Nodes[1].Instances[0].ID != "local-instance" {
+		t.Fatalf("root-level node = %+v", got.Nodes[1])
+	}
+}
+
+func TestLoad_BrokenInstanceDirectoryMarksNodeBroken(t *testing.T) {
+	for _, tc := range []struct {
+		name, directory, filename, content, want string
+	}{
+		{"missing", "missing", "", "", "missing"},
+		{"bad YAML", "srv.instances", "bad.yaml", "id: [oops\n", "bad.yaml"},
+		{"unknown field", "srv.instances", "bad.yaml", "id: bad\ntypo: yes\n", "bad.yaml"},
+		{"bad list entry", "srv.instances", "bad.yaml", "- id: good\n  service: one\n- id: bad\n  typo: yes\n", "bad.yaml"},
+		{"parent path", "../outside", "", "", "instances.directory"},
+		{"unknown reference field", "srv.instances\n  typo: yes", "", "", "instances"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, filepath.Join(root, NodesDir, "srv.yaml"), "id: srv\ninstances:\n  directory: "+tc.directory+"\n")
+			if tc.filename != "" {
+				writeFile(t, filepath.Join(root, NodesDir, "srv.instances", tc.filename), tc.content)
+			}
+			got, err := Load(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Nodes) != 1 || !strings.Contains(got.Nodes[0].Broken, tc.want) || len(got.Nodes[0].Instances) != 0 {
+				t.Fatalf("Nodes = %+v, want broken node mentioning %q", got.Nodes, tc.want)
+			}
+		})
 	}
 }
 

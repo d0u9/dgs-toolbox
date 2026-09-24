@@ -58,7 +58,8 @@ finds a cleaner shape should take it and rename what it must.
 ```text
 ~/confgen/
 ├── services/<service>/       confgen.yaml, templates, defaults
-├── nodes/*.yaml
+├── nodes/<group>/*.yaml       node files
+├── nodes/<group>/*.instances/*.yaml  optional instance files
 ├── users.yaml
 ├── routes.yaml
 └── networks.yaml
@@ -236,23 +237,24 @@ misspelled key cannot leave a setting quietly at its default.
 
 ### Instances
 
-An instance is an entry in a node file's `instances` list, or one derived from a
-user's access — see
+An instance is an entry in a node file's `instances` list, a mapping or list
+entry in a file in the directory that node names under `instances.directory`,
+or one derived from a user's access — see
 [What is derived](inventory.md#what-is-derived). Nothing registers it: adding an
-instance is adding a few lines to the node it runs on, and the next run lists
-it.
+instance is adding a few lines to the node it runs on or a file to its instance
+directory, and the next run lists it.
 
-A node file that is not valid YAML, or an instance entry that is not a mapping,
-is listed as **broken** with the parse error, rather than omitted — an instance
-that silently stops appearing is worse than one that appears with a reason it
-cannot be rendered.
+A node file that is not valid YAML, or an instance entry or file that is not a
+mapping, is listed as **broken** with the parse error, rather than omitted — an
+instance that silently stops appearing is worse than one that appears with a
+reason it cannot be rendered.
 
 ### An instance is one file on one machine
 
 One machine may hold several instances of one service: two Hysteria2 servers, or
 several Shadowsocks clients reaching different servers. An instance is one
-rendered configuration file, and the node it belongs to is the file it is
-written in.
+rendered configuration file, and the node it belongs to is the node file that
+contains it or names its directory.
 
 Two things follow:
 

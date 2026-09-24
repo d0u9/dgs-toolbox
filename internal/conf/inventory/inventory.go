@@ -63,8 +63,7 @@ const (
 // node's address on it. It says where others can reach this node.
 type Networks map[string]string
 
-// Instance is one entry of a node's `instances` list: one service running on
-// that node, and one rendered configuration file.
+// Instance is one service running on a node, and one rendered configuration file.
 type Instance struct {
 	ID      string `yaml:"id"`
 	Service string `yaml:"service"`
@@ -345,8 +344,10 @@ type Node struct {
 	// written out once per profile, and each profile's Export takes the
 	// device's place. The two are not written together. See
 	// docs/apps/conf/inventory.md#a-device-with-several-profiles.
-	Profiles  map[string]Profile `yaml:"profiles"`
-	Instances []Instance         `yaml:"instances"`
+	Profiles map[string]Profile `yaml:"profiles"`
+	// Instances is what the node runs, written inline or read from the
+	// directory the node names. decodeNode fills it; see instancesRef.
+	Instances []Instance `yaml:"-"`
 	// Credential names which of its owner's credentials this device uses.
 	// Empty means DefaultCredential. Two devices naming the same one hold
 	// the same secret — one password across a laptop and a phone is a thing
@@ -585,6 +586,7 @@ func loadNodes(root string) ([]Node, error) {
 	}
 
 	var nodes []Node
+	rootInstanceDirs := map[string]bool{}
 	read := func(path, group string) {
 		relPath, err := filepath.Rel(root, path)
 		if err != nil {
@@ -598,7 +600,19 @@ func loadNodes(root string) ([]Node, error) {
 			nodes = append(nodes, node)
 			return
 		}
-		if err := decodeStrict(data, &node); err != nil {
+		instanceDir, err := decodeNode(data, &node)
+		node.Path = relPath
+		if group == "" && instanceDir != "" {
+			rootInstanceDirs[instanceDir] = true
+		}
+		if err == nil && instanceDir != "" {
+			var instances []Instance
+			instances, err = loadInstanceDir(filepath.Join(filepath.Dir(path), instanceDir))
+			if err == nil {
+				node.Instances = instances
+			}
+		}
+		if err != nil {
 			// decodeStrict may have partially populated node before failing;
 			// start clean so a broken node carries no half-parsed fields.
 			node = Node{Path: relPath, Group: group, Broken: fmt.Sprintf("%s: %s", path, err)}
@@ -607,29 +621,129 @@ func loadNodes(root string) ([]Node, error) {
 		nodes = append(nodes, node)
 	}
 	for _, entry := range entries {
-		switch {
-		case entry.IsDir():
-			// One level of grouping: nodes/<group>/<node>.yaml. A second
-			// level is not read, so a directory is a group and never a
-			// path.
-			group := entry.Name()
-			inner, err := os.ReadDir(filepath.Join(dir, group))
-			if err != nil {
-				return nil, fmt.Errorf("inventory: reading %s: %w", filepath.Join(dir, group), err)
-			}
-			for _, sub := range inner {
-				if sub.IsDir() || filepath.Ext(sub.Name()) != ".yaml" {
-					continue
-				}
-				read(filepath.Join(dir, group, sub.Name()), group)
-			}
-		case filepath.Ext(entry.Name()) == ".yaml":
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".yaml" {
 			read(filepath.Join(dir, entry.Name()), "")
+		}
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || rootInstanceDirs[entry.Name()] {
+			continue
+		}
+		// One level of grouping: nodes/<group>/<node>.yaml. A second
+		// level is not read, so a directory is a group and never a path.
+		group := entry.Name()
+		inner, err := os.ReadDir(filepath.Join(dir, group))
+		if err != nil {
+			return nil, fmt.Errorf("inventory: reading %s: %w", filepath.Join(dir, group), err)
+		}
+		for _, sub := range inner {
+			if sub.IsDir() || filepath.Ext(sub.Name()) != ".yaml" {
+				continue
+			}
+			read(filepath.Join(dir, group, sub.Name()), group)
 		}
 	}
 
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Path < nodes[j].Path })
 	return nodes, nil
+}
+
+// instancesRef is the mapping form of a node's `instances` key: the name of
+// a directory beside the node file holding instances in YAML files.
+type instancesRef struct {
+	Directory string `yaml:"directory"`
+}
+
+// nodeFile and nodeFileWithDirectory are a node file in each form of its
+// `instances` key. They are named because a strict decode error names the type.
+type nodeFile struct {
+	Node      `yaml:",inline"`
+	Instances []Instance `yaml:"instances"`
+}
+
+type nodeFileWithDirectory struct {
+	Node      `yaml:",inline"`
+	Instances instancesRef `yaml:"instances"`
+}
+
+// decodeNode decodes a node file whose `instances` key is either the inline
+// list or an instancesRef, and returns the directory the latter names. Both
+// forms are decoded strictly from the original bytes, so an error's line
+// number is the file's own. The directory is returned even when decoding
+// fails, so a broken node's instance directory is not mistaken for a group.
+func decodeNode(data []byte, node *Node) (string, error) {
+	var peek struct {
+		Instances yaml.Node `yaml:"instances"`
+	}
+	if err := yaml.Unmarshal(data, &peek); err != nil {
+		return "", err
+	}
+	if peek.Instances.Kind != yaml.MappingNode {
+		var doc nodeFile
+		if err := decodeStrict(data, &doc); err != nil {
+			return "", err
+		}
+		*node = doc.Node
+		node.Instances = doc.Instances
+		return "", nil
+	}
+	var ref instancesRef
+	_ = peek.Instances.Decode(&ref)
+	dirName := ref.Directory
+	if dirName == "" || dirName == "." || dirName == ".." || filepath.Base(dirName) != dirName {
+		return "", fmt.Errorf("instances.directory must name a directory beside the node file")
+	}
+	var doc nodeFileWithDirectory
+	if err := decodeStrict(data, &doc); err != nil {
+		return dirName, err
+	}
+	*node = doc.Node
+	return dirName, nil
+}
+
+func loadInstanceDir(dir string) ([]Instance, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("reading instance directory %s: %w", dir, err)
+	}
+	var instances []Instance
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) != ".yaml" {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		if entry.IsDir() {
+			return nil, fmt.Errorf("instance file %s is a directory", path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("reading instance file %s: %w", path, err)
+		}
+		var doc yaml.Node
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			return nil, fmt.Errorf("instance file %s: %w", path, err)
+		}
+		if len(doc.Content) == 0 {
+			return nil, fmt.Errorf("instance file %s: empty document", path)
+		}
+		switch doc.Content[0].Kind {
+		case yaml.MappingNode:
+			var instance Instance
+			if err := decodeStrict(data, &instance); err != nil {
+				return nil, fmt.Errorf("instance file %s: %w", path, err)
+			}
+			instances = append(instances, instance)
+		case yaml.SequenceNode:
+			var group []Instance
+			if err := decodeStrict(data, &group); err != nil {
+				return nil, fmt.Errorf("instance file %s: %w", path, err)
+			}
+			instances = append(instances, group...)
+		default:
+			return nil, fmt.Errorf("instance file %s: expected an instance mapping or list", path)
+		}
+	}
+	return instances, nil
 }
 
 func loadUsers(root string) (map[string]User, string, error) {
