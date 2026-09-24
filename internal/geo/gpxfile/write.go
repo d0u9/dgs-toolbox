@@ -93,24 +93,7 @@ func CreateAll(path string, name string, waypoints []Waypoint, routes []Route, t
 		b.WriteString("</name></metadata>\n")
 	}
 	for _, wpt := range waypoints {
-		fmt.Fprintf(&b, "  <wpt lat=\"%s\" lon=\"%s\">", coordinate(wpt.Lat), coordinate(wpt.Lon))
-		if wpt.HasElevation {
-			fmt.Fprintf(&b, "<ele>%s</ele>", strconv.FormatFloat(wpt.Elevation, 'f', -1, 64))
-		}
-		if !wpt.Time.IsZero() {
-			b.WriteString("<time>" + wpt.Time.UTC().Format(time.RFC3339) + "</time>")
-		}
-		if wpt.Name != "" {
-			b.WriteString("<name>")
-			_ = xml.EscapeText(&b, []byte(wpt.Name))
-			b.WriteString("</name>")
-		}
-		if wpt.Description != "" {
-			b.WriteString("<desc>")
-			_ = xml.EscapeText(&b, []byte(wpt.Description))
-			b.WriteString("</desc>")
-		}
-		b.WriteString("</wpt>\n")
+		writeWaypoint(&b, wpt)
 	}
 	for _, rte := range routes {
 		b.WriteString("  <rte>\n")
@@ -141,6 +124,32 @@ func CreateAll(path string, name string, waypoints []Waypoint, routes []Route, t
 		return err
 	}
 	return file.Close()
+}
+
+func writeWaypoint(b *bytes.Buffer, wpt Waypoint) {
+	fmt.Fprintf(b, "  <wpt lat=\"%s\" lon=\"%s\">", coordinate(wpt.Lat), coordinate(wpt.Lon))
+	if wpt.HasElevation {
+		fmt.Fprintf(b, "<ele>%s</ele>", strconv.FormatFloat(wpt.Elevation, 'f', -1, 64))
+	}
+	if !wpt.Time.IsZero() {
+		b.WriteString("<time>" + wpt.Time.UTC().Format(time.RFC3339) + "</time>")
+	}
+	if wpt.Name != "" {
+		b.WriteString("<name>")
+		_ = xml.EscapeText(b, []byte(wpt.Name))
+		b.WriteString("</name>")
+	}
+	if wpt.Description != "" {
+		b.WriteString("<desc>")
+		_ = xml.EscapeText(b, []byte(wpt.Description))
+		b.WriteString("</desc>")
+	}
+	if wpt.CaptureID != "" {
+		b.WriteString(`<extensions><dgs:captureId xmlns:dgs="urn:dgs-toolbox:capture">`)
+		_ = xml.EscapeText(b, []byte(wpt.CaptureID))
+		b.WriteString("</dgs:captureId></extensions>")
+	}
+	b.WriteString("</wpt>\n")
 }
 
 // Append adds tracks after the last element of an existing GPX file: before
@@ -265,31 +274,22 @@ func AddWaypoint(path string, waypoint Waypoint) error {
 	if end < 0 {
 		return errors.New("GPX root is not closed")
 	}
-	for _, tag := range [][]byte{[]byte("<rte>"), []byte("<trk>"), []byte("<extensions>")} {
+	for _, tag := range [][]byte{[]byte("<rte>"), []byte("<trk>")} {
 		if at := bytes.Index(data, tag); at >= 0 && at < end {
 			end = at
 		}
 	}
+	// A waypoint may have its own <extensions>; only the root extension is a
+	// boundary for adding another waypoint.
+	if ext := bytes.LastIndex(data[:end], []byte("<extensions")); ext >= 0 {
+		last := max(bytes.LastIndex(data[:end], []byte("</wpt>")), bytes.LastIndex(data[:end], []byte("</rte>")), bytes.LastIndex(data[:end], []byte("</trk>")))
+		if ext > last {
+			end = ext
+		}
+	}
 	var b bytes.Buffer
 	b.Write(data[:end])
-	fmt.Fprintf(&b, "  <wpt lat=\"%s\" lon=\"%s\">", coordinate(waypoint.Lat), coordinate(waypoint.Lon))
-	if waypoint.HasElevation {
-		fmt.Fprintf(&b, "<ele>%s</ele>", strconv.FormatFloat(waypoint.Elevation, 'f', -1, 64))
-	}
-	if !waypoint.Time.IsZero() {
-		b.WriteString("<time>" + waypoint.Time.UTC().Format(time.RFC3339) + "</time>")
-	}
-	if waypoint.Name != "" {
-		b.WriteString("<name>")
-		_ = xml.EscapeText(&b, []byte(waypoint.Name))
-		b.WriteString("</name>")
-	}
-	if waypoint.Description != "" {
-		b.WriteString("<desc>")
-		_ = xml.EscapeText(&b, []byte(waypoint.Description))
-		b.WriteString("</desc>")
-	}
-	b.WriteString("</wpt>\n")
+	writeWaypoint(&b, waypoint)
 	b.Write(data[end:])
 	return replaceFile(path, b.Bytes())
 }

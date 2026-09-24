@@ -1,0 +1,5 @@
+name: Daily GPX
+match:
+  requires_any: [coordinates]
+actions:
+  - id: gpx.daily.append
