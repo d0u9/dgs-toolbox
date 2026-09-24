@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -211,6 +212,9 @@ func TestLoad_InstancesFromDirectory(t *testing.T) {
 	if len(instances) != 4 || instances[0].ID != "first" || instances[1].ID != "second" || instances[2].ID != "third" || instances[3].ID != "fourth" {
 		t.Fatalf("Instances = %+v, want file-name order", instances)
 	}
+	if instances[2].Path != filepath.Join(NodesDir, "cloud", "srv.instances", "c.yaml") || instances[3].Path != instances[2].Path {
+		t.Fatalf("list entries must retain their source path: %+v", instances)
+	}
 	if got.Nodes[1].ID != "local" || len(got.Nodes[1].Instances) != 1 || got.Nodes[1].Instances[0].ID != "local-instance" {
 		t.Fatalf("root-level node = %+v", got.Nodes[1])
 	}
@@ -346,5 +350,67 @@ func TestInstanceRuntime(t *testing.T) {
 		if got := inst.Containerised(); got != tc.containerised {
 			t.Errorf("Instance{Runtime: %q}.Containerised() = %v, want %v", tc.runtime, got, tc.containerised)
 		}
+	}
+}
+
+func TestLoad_InstancePathIsItsOwnFile(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, NodesDir, "cloud", "srv.yaml"), "id: srv\ninstances:\n  directory: srv.instances\n")
+	writeFile(t, filepath.Join(root, NodesDir, "cloud", "srv.instances", "a.yaml"), "id: a\nservice: one\n")
+	writeFile(t, filepath.Join(root, NodesDir, "cloud", "inline.yaml"), "id: inline\ninstances:\n  - id: b\n    service: two\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"a": filepath.Join(NodesDir, "cloud", "srv.instances", "a.yaml"),
+		"b": filepath.Join(NodesDir, "cloud", "inline.yaml"),
+	}
+	for _, n := range got.Nodes {
+		if n.Broken != "" {
+			t.Fatalf("node %s broken: %s", n.Path, n.Broken)
+		}
+		for _, inst := range n.Instances {
+			if inst.Path != want[inst.ID] {
+				t.Errorf("instance %s Path = %q, want %q", inst.ID, inst.Path, want[inst.ID])
+			}
+		}
+	}
+}
+
+// A node file error must carry the line it is on in that file, in both forms
+// of `instances`.
+func TestLoad_NodeErrorKeepsFileLineNumber(t *testing.T) {
+	for _, instances := range []string{"instances:\n  directory: srv.instances\n", "instances:\n  - id: a\n    service: one\n"} {
+		root := t.TempDir()
+		writeFile(t, filepath.Join(root, NodesDir, "srv.yaml"), "id: srv\n\n\n# comment\n"+instances+"\n\ntypo: yes\n")
+		if strings.Contains(instances, "directory") {
+			writeFile(t, filepath.Join(root, NodesDir, "srv.instances", "a.yaml"), "id: a\nservice: one\n")
+		}
+		got, err := Load(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantLine := strings.Count("id: srv\n\n\n# comment\n"+instances+"\n\n", "\n") + 1
+		want := fmt.Sprintf("line %d", wantLine)
+		if len(got.Nodes) != 1 || !strings.Contains(got.Nodes[0].Broken, want) {
+			t.Fatalf("Nodes = %+v, want broken at %s", got.Nodes, want)
+		}
+	}
+}
+
+// Only a directory a root-level node names is an instance directory; any
+// other directory, whatever its name, is a group.
+func TestLoad_UnreferencedInstancesSuffixIsAGroup(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, NodesDir, "odd.instances", "n.yaml"), "id: n\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Nodes) != 1 || got.Nodes[0].ID != "n" || got.Nodes[0].Group != "odd.instances" {
+		t.Fatalf("Nodes = %+v, want node n in group odd.instances", got.Nodes)
 	}
 }
