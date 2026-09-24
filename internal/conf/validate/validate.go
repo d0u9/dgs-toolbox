@@ -929,8 +929,8 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	}
 
 	// Rule 12: a person carrying a credential can use it on the universal
-	// network and on networks explicitly listed by that credential. Without
-	// reaches, the old universal-only assumption still applies.
+	// network and on the networks that credential names in `reaches`. With
+	// neither, a route it opens can be entered from nowhere.
 	for _, key := range userKeys {
 		user := inv.Users[key]
 		for _, credential := range user.CredentialNames() {
@@ -941,51 +941,49 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 			}
 		}
 	}
-	if inv.Universal != "" {
-		for _, key := range userKeys {
-			user := inv.Users[key]
-			carried := credentialsCarriedThemselves(inv, key, user)
-			if len(carried) == 0 {
+	for _, key := range userKeys {
+		user := inv.Users[key]
+		carried := credentialsCarriedThemselves(inv, key, user)
+		if len(carried) == 0 {
+			continue
+		}
+		for _, routeName := range user.Access {
+			opened := false
+			for _, credential := range carried {
+				if user.OpensRoute(credential, routeName) {
+					opened = true
+					break
+				}
+			}
+			if !opened {
 				continue
 			}
-			for _, routeName := range user.Access {
-				opened := false
-				for _, credential := range carried {
-					if user.OpensRoute(credential, routeName) {
-						opened = true
-						break
-					}
-				}
-				if !opened {
+			route, ok := inv.Routes[routeName]
+			if !ok || len(route.Hops) == 0 {
+				continue // rule 6 already reported the missing route.
+			}
+			hop, err := derive.ParseHop(route.Hops[0])
+			if err != nil {
+				continue
+			}
+			r, ok := realInstances[hop.Instance]
+			if !ok {
+				continue // rule 4 already reported the missing instance.
+			}
+			node := nodeByID[r.nodeID]
+			reachable := false
+			for _, credential := range carried {
+				if !user.OpensRoute(credential, routeName) {
 					continue
 				}
-				route, ok := inv.Routes[routeName]
-				if !ok || len(route.Hops) == 0 {
-					continue // rule 6 already reported the missing route.
-				}
-				hop, err := derive.ParseHop(route.Hops[0])
-				if err != nil {
-					continue
-				}
-				r, ok := realInstances[hop.Instance]
-				if !ok {
-					continue // rule 4 already reported the missing instance.
-				}
-				node := nodeByID[r.nodeID]
-				reachable := false
-				for _, credential := range carried {
-					if !user.OpensRoute(credential, routeName) {
-						continue
-					}
-					for network := range node.Networks {
-						if network == inv.Universal || containsString(user.Credentials[credential].Reaches, network) {
-							reachable = true
-						}
+				for network := range node.Networks {
+					if network == inv.Universal || containsString(user.Credentials[credential].Reaches, network) {
+						reachable = true
 					}
 				}
-				if !reachable {
-					add("user %q: route %q enters %q, which has no address on a network reachable by their carried credential", key, routeName, hop.Instance)
-				}
+			}
+			if !reachable {
+				add("user %q: route %q enters %q, which has no address on a network reachable by their carried credential", key, routeName, hop.Instance)
 			}
 		}
 	}

@@ -248,13 +248,38 @@ func TestValidate_CarriedCredentialRouteNotEnteringOnInternet(t *testing.T) {
 func TestValidate_CarriedCredentialReachesPrivateNetwork(t *testing.T) {
 	inv := validInventory()
 	inv.Nodes[0].Networks = inventory.Networks{"home": "192.168.1.5"}
+	inv.Nodes[1].Reaches = []string{"home"} // relay still reaches srv for "chain".
 	inv.Users["yak"] = inventory.User{
 		Devices: inventory.DevicesNone, Access: []string{"sfo"},
 		Credentials: map[string]inventory.Credential{"default": {Reaches: []string{"home"}}},
 	}
-	got := Validate(inv, validManifests(), validExports(), &derive.Model{}, nil)
+	// Derive must resolve the carried file on home too, not only validate it.
+	model := derived(t, inv, validManifests())
+	got := Validate(inv, validManifests(), validExports(), model, nil)
 	if containsSubstring(got, `user "yak": route "sfo" enters "ss-srv"`) {
 		t.Fatalf("Validate = %v, want home reachability accepted", messages(got))
+	}
+	found := false
+	for _, e := range model.Edges {
+		if e.Route == "sfo" && strings.HasPrefix(e.FromInstance, "yak-") {
+			found = true
+			if e.Network != "home" || e.Address != "192.168.1.5" {
+				t.Fatalf("carried edge = %+v, want home 192.168.1.5", e)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("Edges = %+v, want a carried sfo edge for yak", model.Edges)
+	}
+}
+
+func TestValidate_CarriedCredentialWithoutUniversalNetwork(t *testing.T) {
+	inv := validInventory()
+	inv.Universal = ""
+	inv.Users["yak"] = inventory.User{Devices: inventory.DevicesNone, Access: []string{"sfo"}}
+	got := Validate(inv, validManifests(), validExports(), &derive.Model{}, nil)
+	if !containsSubstring(got, `user "yak": route "sfo" enters "ss-srv", which has no address on a network reachable by their carried credential`) {
+		t.Fatalf("Validate = %v, want rule 12 checked without a universal network", messages(got))
 	}
 }
 
