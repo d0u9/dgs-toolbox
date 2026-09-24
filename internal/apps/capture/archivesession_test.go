@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,39 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func TestArchiveShowsPayloadAndOpensPosition(t *testing.T) {
+	root := routeTestRoot(t, "with-payload")
+	path := filepath.Join(root, "with-payload", "index.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index map[string]any
+	if err := json.Unmarshal(data, &index); err != nil {
+		t.Fatal(err)
+	}
+	index["payload"] = map[string]any{"note": "Visible in Archive", "nested": map[string]any{"value": 42}}
+	data, err = json.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := loadedArchive(t, root, filepath.Join(t.TempDir(), "Archive"), filepath.Join(t.TempDir(), "Reject"))
+	if detail := m.detail(55); !strings.Contains(detail, "Visible in Archive") || !strings.Contains(detail, "Position") || !strings.Contains(detail, "Open map (o)") {
+		t.Fatalf("detail missing payload or map: %s", detail)
+	}
+	previous := openURL
+	var opened string
+	openURL = func(url string) error { opened = url; return nil }
+	t.Cleanup(func() { openURL = previous })
+	m = press(t, m, "o")
+	if !strings.Contains(opened, "maps.apple.com/place?coordinate=0.000000,0.000000") {
+		t.Fatalf("opened %q", opened)
+	}
+}
 
 // organizedRoot is a Capture root where some of the Captures carry a finished
 // organizing record and the rest do not. Archive lists both: only the organized
