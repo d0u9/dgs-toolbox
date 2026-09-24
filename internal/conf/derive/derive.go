@@ -451,10 +451,12 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 						Export:     export,
 						Route:      routeName,
 					})
-					// A file not tied to a device is documented as reachable
-					// only on the universal network — resolve as if dialing
-					// from a node that reaches nothing else.
-					address, network, err := resolveAddress(inventory.Node{}, entry.node, inv.Networks, inv.Universal)
+					// A file not tied to a device reaches the universal
+					// network and the networks its credential names in
+					// `reaches` — resolve as if dialing from a node that
+					// reaches only those.
+					carrier := inventory.Node{Reaches: user.Credentials[credential].Reaches}
+					address, network, err := resolveAddress(carrier, entry.node, inv.Networks, inv.Universal)
 					if err != nil {
 						return nil, fmt.Errorf("derive: route %q for %s: %w", routeName, key, err)
 					}
