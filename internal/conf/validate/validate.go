@@ -17,6 +17,7 @@ package validate
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -126,6 +127,7 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	// can name and a service manifest describes.
 	realInstances := map[string]instRef{}
 	var realDupes []string
+	realPaths := map[string][]string{}
 	overridesByNode := map[string][]inventory.Instance{}
 	portByInstance := map[string]inventory.Ports{}
 	for _, n := range inv.Nodes {
@@ -140,13 +142,18 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 			if _, dup := realInstances[inst.ID]; dup {
 				realDupes = append(realDupes, inst.ID)
 			}
+			where := inst.Path
+			if where == "" {
+				where = "node " + strconv.Quote(n.ID)
+			}
+			realPaths[inst.ID] = append(realPaths[inst.ID], where)
 			realInstances[inst.ID] = instRef{nodeID: n.ID, inst: inst}
 			portByInstance[inst.ID] = inst.Ports
 		}
 	}
 	sort.Strings(realDupes)
 	for _, id := range realDupes {
-		add("instance %q is defined more than once", id)
+		add("instance %q is defined more than once, in %s", id, strings.Join(realPaths[id], ", "))
 	}
 
 	// Rule 1: instance identifiers unique, derived ones included, and

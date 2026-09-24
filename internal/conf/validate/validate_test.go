@@ -112,7 +112,7 @@ func TestValidate_DuplicateInstanceID(t *testing.T) {
 	// directly rather than routing through a Derive that would never reach
 	// it in practice.
 	got := Validate(inv, manifests, validExports(), &derive.Model{}, nil)
-	if !containsSubstring(got, `instance "ss-srv" is defined more than once`) {
+	if !containsSubstring(got, `instance "ss-srv" is defined more than once, in node `) {
 		t.Fatalf("Validate = %v, want a duplicate-instance issue", messages(got))
 	}
 }
