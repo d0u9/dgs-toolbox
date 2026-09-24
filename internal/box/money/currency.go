@@ -1,5 +1,33 @@
 package money
 
+// currencyForCountry resolves familiar ISO 3166 country codes to the ISO
+// 4217 currency stored in sidecars. A country with no unambiguous currency
+// here is refused rather than guessed.
+func currencyForCountry(country string) string {
+	if code, ok := countryCurrencies[country]; ok {
+		return code
+	}
+	return country
+}
+
+var countryCurrencies = map[string]string{
+	"AU": "AUD", "US": "USD", "NZ": "NZD", "CA": "CAD", "GB": "GBP",
+	"JP": "JPY", "CN": "CNY", "HK": "HKD", "SG": "SGD", "TW": "TWD",
+	"KR": "KRW", "IN": "INR", "TH": "THB", "MY": "MYR", "ID": "IDR",
+	"CH": "CHF", "NO": "NOK", "SE": "SEK", "DK": "DKK", "IS": "ISK",
+	"DE": "EUR", "FR": "EUR", "IT": "EUR", "ES": "EUR", "NL": "EUR",
+	"BE": "EUR", "AT": "EUR", "IE": "EUR", "PT": "EUR", "FI": "EUR",
+	"GR": "EUR", "LU": "EUR", "EE": "EUR", "LV": "EUR", "LT": "EUR",
+	"SK": "EUR", "SI": "EUR", "CY": "EUR", "MT": "EUR", "HR": "EUR",
+	"PL": "PLN", "CZ": "CZK", "HU": "HUF", "RO": "RON", "BG": "BGN",
+	"RS": "RSD", "UA": "UAH", "TR": "TRY", "RU": "RUB", "ZA": "ZAR",
+	"AE": "AED", "SA": "SAR", "QA": "QAR", "KW": "KWD", "BH": "BHD",
+	"OM": "OMR", "JO": "JOD", "IL": "ILS", "EG": "EGP", "MA": "MAD",
+	"KE": "KES", "TZ": "TZS", "UG": "UGX", "NG": "NGN", "MX": "MXN",
+	"BR": "BRL", "AR": "ARS", "CL": "CLP", "CO": "COP", "PE": "PEN",
+	"PH": "PHP", "PK": "PKR", "BD": "BDT", "NP": "NPR", "LK": "LKR",
+}
+
 // The minor-unit exponent of every currency this build accepts, from ISO 4217.
 // Most currencies divide by a hundred; the exceptions are what this table is
 // for, because assuming two decimals stores a hundred times too little for a
@@ -19,6 +47,7 @@ var exponents = map[string]int{
 	// Two decimals.
 	"AED": 2, "ARS": 2, "AUD": 2, "AZN": 2, "BGN": 2, "BND": 2, "BRL": 2,
 	"CAD": 2, "CHF": 2, "CNY": 2, "COP": 2, "CZK": 2, "DKK": 2, "EGP": 2,
+	"BDT": 2, "NGN": 2,
 	"EUR": 2, "FJD": 2, "GBP": 2, "GEL": 2, "HKD": 2, "HUF": 2, "IDR": 2,
 	"ILS": 2, "INR": 2, "KES": 2, "KHR": 2, "KZT": 2, "LAK": 2, "LKR": 2,
 	"MAD": 2, "MNT": 2, "MOP": 2, "MXN": 2, "MYR": 2, "NOK": 2, "NPR": 2,

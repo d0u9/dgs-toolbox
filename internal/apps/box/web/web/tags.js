@@ -331,6 +331,7 @@ function tagField(host, options) {
       drawBubbles();
     },
     focus: () => input.focus(),
+    commit: () => { if (take()) suggest(); },
     // redraw is for when known() has changed, so a bubble's "new" is current.
     redraw: drawBubbles,
     input,

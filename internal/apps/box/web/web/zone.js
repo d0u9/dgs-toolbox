@@ -4,7 +4,7 @@
 // matching is the server's; this only draws the answer and moves through it.
 
 function zonePicker(input, list, picked) {
-  const view = { zones: [], index: -1, timer: null, asked: '' };
+  const view = { zones: [], index: -1, timer: null, asked: '', composing: false };
 
   function close() {
     view.zones = [];
@@ -43,14 +43,21 @@ function zonePicker(input, list, picked) {
   }
 
   function pick(index) {
-    const zone = view.zones[index];
+    pickFrom(view.zones, index);
+  }
+
+  function pickFrom(zones, index) {
+    const zone = zones[index];
     if (!zone) return;
+    clearTimeout(view.timer);
+    view.asked = zone.zone;
     input.value = zone.zone;
     close();
     picked(zone.zone);
   }
 
   async function search() {
+    if (view.composing) return;
     const query = input.value.trim();
     view.asked = query;
     if (!query) {
@@ -80,15 +87,48 @@ function zonePicker(input, list, picked) {
   input.setAttribute('aria-expanded', 'false');
   input.addEventListener('input', () => {
     clearTimeout(view.timer);
+    // Results for the previous text must never be chosen for the new text.
+    view.asked = '';
+    close();
+    if (view.composing) return;
+    view.timer = setTimeout(search, 120);
+  });
+  input.addEventListener('compositionstart', () => {
+    view.composing = true;
+    clearTimeout(view.timer);
+    view.asked = '';
+    close();
+  });
+  input.addEventListener('compositionend', () => {
+    view.composing = false;
+    clearTimeout(view.timer);
     view.timer = setTimeout(search, 120);
   });
   input.addEventListener('focus', () => input.select());
   input.addEventListener('blur', () => close());
 
   return {
+    isComposing: () => view.composing,
+    // Tab uses the current text, even if the debounced search has not run yet.
+    async commit() {
+      const query = input.value.trim();
+      if (!query || view.composing) return false;
+      let zones = view.asked === query && view.zones.length ? view.zones : null;
+      if (!zones) {
+        try {
+          zones = (await ask(`/api/zones?q=${encodeURIComponent(query)}`)).zones;
+        } catch {
+          return false;
+        }
+      }
+      if (input.value.trim() !== query || document.activeElement !== input) return false;
+      if (zones.length) pickFrom(zones, zones === view.zones ? Math.max(0, view.index) : 0);
+      return Boolean(zones.length);
+    },
     // key handles a keydown in the field while the list is open, and reports
     // whether it did — so Enter picks a zone rather than filing the scan.
     key(event) {
+      if (view.composing || event.isComposing || event.keyCode === 229) return false;
       if (list.hidden || !view.zones.length) return false;
       const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
       if (step) {
