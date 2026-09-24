@@ -292,6 +292,9 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	}
 	settings.LocationNote = obsidian.LocationNote
 	settings.LocationArchive = obsidian.LocationArchive
+	settings.ImageFolder = obsidian.Images.Folder
+	settings.ImageMaxSide = obsidian.Images.MaxSide
+	settings.ImageQuality = obsidian.Images.Quality
 	reminders := global.CaptureReminders()
 	settings.ReminderList = reminders.List
 	settings.ReminderRadius = reminders.Radius

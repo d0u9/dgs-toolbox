@@ -34,6 +34,15 @@ type Settings struct {
 	// rather than the end of the note, so what this tool writes stays
 	// distinguishable from what the reader wrote.
 	DailySection string
+	// ImageFolder is where a daily note's pictures go, relative to the note's
+	// folder, as a template over the note: "assets/{{.Note}}". Empty is
+	// DefaultImageFolder.
+	ImageFolder string
+	// ImageMaxSide is the longest side, in pixels, a picture is shrunk to on
+	// its way into the vault, and ImageQuality the JPEG quality it is encoded
+	// at, 1 to 100. Zero is imaging's default for either.
+	ImageMaxSide int
+	ImageQuality int
 	// Mappings translate a value on its way into a note, by table name:
 	// "Australia" is what a Capture records, and a vault may file it under
 	// "🇦🇺_Australia". Declared rather than coded because which names a vault

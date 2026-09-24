@@ -24,7 +24,12 @@ model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
       "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
       "section": "Captured{{with .Device}} - {{.}}{{end}}",
       "location_note": "88 Inbox/06 Locations.md",
-      "location_archive": "88 Inbox/06 Locations"
+      "location_archive": "88 Inbox/06 Locations",
+      "images": {
+        "folder": "assets/{{.Note}}",
+        "max_side": 2048,
+        "quality": 80
+      }
     },
     "apple": {
       "reminders": {
@@ -347,6 +352,18 @@ places.
 | --- | --- | --- |
 | `capture.obsidian.daily_note` | Where a day's note lives, relative to the vault, as a template over the date: `{{.Year}}`, `{{.Month}}`, `{{.Day}}`, `{{.Date}}`. | empty — the daily Action refuses to run |
 | `capture.obsidian.section` | The heading a Capture is appended under. A template over the Capture, so a heading can name the device or app the entries under it came from. It may carry its own hashes — `## Captured` asks for a second-level heading — and is otherwise a first-level one. One run can override it from the `section` parameter in `FIELDS`. | `Captured{{with .Device}} - {{.}}{{end}}` |
+
+## Pictures in the daily note
+
+How `obsidian.daily.append` writes a Capture's pictures. The Action is
+described in
+[`apps/capture/actions.md`](../apps/capture/actions.md#obsidiandailyappend).
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `capture.obsidian.images.folder` | Where a daily note's pictures go, relative to the note's own folder, as a template over the note: `{{.Note}}` is its filename without `.md`, and `{{.Date}}`, `{{.Year}}`, `{{.Month}}`, `{{.Day}}` its day. A folder that leaves the vault is refused. The default is the layout the Custom Attachment Location plugin writes as `./assets/${noteFileName}`. | `assets/{{.Note}}` |
+| `capture.obsidian.images.max_side` | The longest side, in pixels, a picture is shrunk to. A smaller picture is not enlarged. | `2048` |
+| `capture.obsidian.images.quality` | The JPEG quality a picture is re-encoded at, 1 to 100. | `80` |
 
 ## The location note
 

@@ -253,6 +253,9 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   being organized; a Capture holding nothing says `· No attachments`. A file's
   details are read asynchronously and every request carries a generation, so a
   slow read cannot replace what a later selection put on screen.
+- `Space` opens the selected file in macOS Quick Look, as it does in Scan: it
+  delegates to `qlmanage -p`, so a picture is seen at full size without Route
+  drawing it. Elsewhere it does nothing.
 - `↑/k` and `↓/j` move between files and `g g`/`G` jump to the ends. `Esc`,
   `Backspace` or `Delete` leaves the pane for `ACTIONS`, the column above it:
   the pane sits below the progressive selection rather than in it, so it is
