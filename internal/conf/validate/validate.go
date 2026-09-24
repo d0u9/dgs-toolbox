@@ -67,6 +67,27 @@ func credentialsCarriedThemselves(inv *inventory.Root, key string, user inventor
 	return out
 }
 
+// carriedNetworks is every network a user's carried credentials that open
+// routeName can dial on: the universal network, then each credential's
+// `reaches`, without repeats.
+func carriedNetworks(universal string, user inventory.User, carried []string, routeName string) []string {
+	var out []string
+	if universal != "" {
+		out = append(out, universal)
+	}
+	for _, credential := range carried {
+		if !user.OpensRoute(credential, routeName) {
+			continue
+		}
+		for _, network := range user.Credentials[credential].Reaches {
+			if !containsString(out, network) {
+				out = append(out, network)
+			}
+		}
+	}
+	return out
+}
+
 // deployKeys is an instance's deploy mapping's own keys, sorted, so an
 // inventory with two problems reports them in the same order every time.
 // Only the top level is read: what a key's value holds belongs to the
@@ -933,8 +954,13 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	// neither, a route it opens can be entered from nowhere.
 	for _, key := range userKeys {
 		user := inv.Users[key]
+		carried := credentialsCarriedThemselves(inv, key, user)
 		for _, credential := range user.CredentialNames() {
-			for _, network := range user.Credentials[credential].Reaches {
+			reaches := user.Credentials[credential].Reaches
+			if len(reaches) > 0 && !containsString(carried, credential) {
+				add("user %q: credential %q declares reaches, but a device of theirs names it, and the device's own networks apply", key, credential)
+			}
+			for _, network := range reaches {
 				if !containsString(inv.Networks, network) {
 					add("user %q: credential %q reaches unknown network %q", key, credential, network)
 				}
@@ -971,19 +997,16 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 				continue // rule 4 already reported the missing instance.
 			}
 			node := nodeByID[r.nodeID]
+			tried := carriedNetworks(inv.Universal, user, carried, routeName)
 			reachable := false
-			for _, credential := range carried {
-				if !user.OpensRoute(credential, routeName) {
-					continue
-				}
-				for network := range node.Networks {
-					if network == inv.Universal || containsString(user.Credentials[credential].Reaches, network) {
-						reachable = true
-					}
+			for _, network := range tried {
+				if _, ok := node.Networks[network]; ok {
+					reachable = true
+					break
 				}
 			}
 			if !reachable {
-				add("user %q: route %q enters %q, which has no address on a network reachable by their carried credential", key, routeName, hop.Instance)
+				add("user %q: route %q enters %q, which has no address on a network reachable by their carried credential (tried: %s)", key, routeName, hop.Instance, strings.Join(tried, ", "))
 			}
 		}
 	}

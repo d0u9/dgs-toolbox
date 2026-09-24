@@ -240,7 +240,7 @@ func TestValidate_CarriedCredentialRouteNotEnteringOnInternet(t *testing.T) {
 	// it directly rather than through a Derive that would never get here.
 	manifests := validManifests()
 	got := Validate(inv, manifests, validExports(), &derive.Model{}, nil)
-	if !containsSubstring(got, `user "yak": route "sfo" enters "ss-srv", which has no address on a network reachable by their carried credential`) {
+	if !containsSubstring(got, `user "yak": route "sfo" enters "ss-srv", which has no address on a network reachable by their carried credential (tried: internet)`) {
 		t.Fatalf("Validate = %v, want a carried-credential-not-on-internet issue", messages(got))
 	}
 }
@@ -280,6 +280,17 @@ func TestValidate_CarriedCredentialWithoutUniversalNetwork(t *testing.T) {
 	got := Validate(inv, validManifests(), validExports(), &derive.Model{}, nil)
 	if !containsSubstring(got, `user "yak": route "sfo" enters "ss-srv", which has no address on a network reachable by their carried credential`) {
 		t.Fatalf("Validate = %v, want rule 12 checked without a universal network", messages(got))
+	}
+}
+
+func TestValidate_ReachesOnCredentialADeviceNames(t *testing.T) {
+	inv := validInventory()
+	user := inv.Users["doug"]
+	user.Credentials = map[string]inventory.Credential{"default": {Reaches: []string{"home"}}}
+	inv.Users["doug"] = user
+	got := Validate(inv, validManifests(), validExports(), &derive.Model{}, nil)
+	if !containsSubstring(got, `user "doug": credential "default" declares reaches, but a device of theirs names it`) {
+		t.Fatalf("Validate = %v, want reaches on a device-named credential reported", messages(got))
 	}
 }
 

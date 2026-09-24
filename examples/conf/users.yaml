@@ -12,6 +12,9 @@
 #   export        which form their files render as, for the credentials no
 #                 device of theirs carries.
 #
+# A credential no device names may also list `reaches`: networks, beyond the
+# universal one, where the person uses it from a machine not modeled here.
+#
 # A change here is the audit: one diff says who gained or lost access.
 
 users:
@@ -47,3 +50,14 @@ users:
     devices: none
     export: link
     access: [sfo-01-ss]
+
+  # Someone in the house who types the file server's address into a laptop
+  # this inventory does not model. Nothing renders for them; `reaches` says the share is
+  # used from the home network, which is the only place the NAS answers.
+  carol:
+    devices: none
+    access: [files]
+    credentials:
+      default:
+        note: carol's own laptop, on the house network
+        reaches: [home]

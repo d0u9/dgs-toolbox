@@ -315,7 +315,7 @@ func TestExamples_ServiceWritingSeveralFilesRendersEachOne(t *testing.T) {
 	// The service names accounts by person, so the account the share
 	// admits, the one the table holds and the POSIX user that owns the
 	// files are one name.
-	for _, want := range []string{"valid users = alice\n", "path = /mnt/vault/00-vault"} {
+	for _, want := range []string{"valid users = alice carol\n", "path = /mnt/vault/00-vault"} {
 		if !strings.Contains(conf, want) {
 			t.Errorf("rendered smb.conf has no %q:\n%s", want, conf)
 		}

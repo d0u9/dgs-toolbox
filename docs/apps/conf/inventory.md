@@ -2083,7 +2083,8 @@ failing can be told which level it was reading.
     reach, on a port not bound to loopback only.
 12. The granted routes of a user who keeps a credential no device of theirs
     names enter on the `universal` network or a network in the credential's
-    `reaches`. Every named network exists in `networks.yaml`.
+    `reaches`. Every named network exists in `networks.yaml`, and only a
+    credential no device names declares `reaches`.
 13. Account names rendered for one port are distinct. On a service naming
     accounts by person, this is what two of one person's credentials on the
     same port fail.
