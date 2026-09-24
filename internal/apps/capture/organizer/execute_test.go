@@ -86,7 +86,7 @@ func TestDailyAppendCreatesTheNoteAndItsSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "---\nDate: 2026-09-09\n---\n\n# Captured\n\n" +
+	want := "---\nDate: 2026-09-09\ncapture_workflows:\n  - been_here\n---\n\n# Captured\n\n" +
 		"- 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620\n" +
 		"  - Coffee under the bridge\n" +
 		"  - -33.76910, 151.08200\n" +
@@ -178,7 +178,7 @@ func TestDailyAppendAddsTheSectionWhenTheNoteHasNone(t *testing.T) {
 
 	Execute(ctx, []ActionPlan{plan})
 	note, _ := os.ReadFile(path)
-	want := "# 今日活动\n\n1. 已有的内容\n\n# Captured\n\n" +
+	want := "---\ncapture_workflows:\n  - been_here\n---\n\n# 今日活动\n\n1. 已有的内容\n\n# Captured\n\n" +
 		"- 2026-09-09 21:31:22 +10 ^dgs-20260909213122900-4620\n" +
 		"  - the new entry\n" +
 		"  - -33.76910, 151.08200\n" +

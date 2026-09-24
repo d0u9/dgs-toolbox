@@ -12,6 +12,7 @@ temperature: ""
 dayOfTheYear: {{.DayOfYear}}
 people: []
 mood: []
+capture_workflows: []
 ---
 
 # 速记
