@@ -81,6 +81,7 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `capture.archive.root` | [capture](capture.md#where-captures-go) | empty — Archive refuses to archive and names this key |
 | `capture.archive.reject` | [capture](capture.md#where-captures-go) | empty — Scan and Archive refuse to reject and name this key |
 | `capture.obsidian.vault` | [capture](capture.md#the-vault) | empty — the Obsidian Actions refuse to run |
+| `capture.gpx.directory` | [capture](capture.md#daily-gpx) | empty — the GPX Action refuses to run |
 | `capture.obsidian.daily_note` | [capture](capture.md#the-daily-note) | empty — the daily Action refuses to run |
 | `capture.obsidian.section` | [capture](capture.md#the-daily-note) | `Captured{{with .Device}} - {{.}}{{end}}` |
 | `capture.obsidian.location_note` | [capture](capture.md#the-location-note) | empty — the location Action refuses to run |

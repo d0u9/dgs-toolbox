@@ -18,6 +18,7 @@ model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
       "root": "~/Capture Archive",
       "reject": "~/Capture Rejected"
     },
+    "gpx": {"directory": "/xxx"},
     "obsidian": {
       "vault": "~/Vaults/personal",
       "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
@@ -327,6 +328,12 @@ places.
 
 `dgs capture --init` writes the tables this version ships, currently
 `weekday.yaml`, which the location note's date marker asks for.
+
+## Daily GPX
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `capture.gpx.directory` | Directory for `YYYYMMDD.capture.gpx` files written by `gpx.daily.append`. `~` is expanded. | empty — the Action refuses to run |
 
 ## The vault
 

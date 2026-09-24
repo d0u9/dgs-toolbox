@@ -17,6 +17,7 @@ authority on what it will actually do.
 | --- | --- | --- |
 | [`obsidian.daily.append`](#obsidiandailyappend) | the day's note in the vault | `createdAt`; `content` optional |
 | [`obsidian.location.append`](#obsidianlocationappend) | the running list of places | `createdAt`; `content` optional |
+| [`gpx.daily.append`](#gpxdailyappend) | a daily GPX in the configured directory | `createdAt`, `coordinates`; `content` optional |
 | [`apple.reminders.create`](#applereminderscreate) | a reminder, due at a time | `title`, `due_at` |
 | [`apple.reminders.at_place`](#appleremindersat_place) | a reminder, at a place | `title`, `coordinates` |
 | [`apple.notes.create`](#apple-actions) | — not implemented | `title`, `content` |
@@ -58,6 +59,20 @@ Needs `createdAt`; `content` is optional, on the same terms. Configured by
 `capture.obsidian.location_note` and `capture.obsidian.location_archive`;
 shaped by the `location-entry.md` template, which also decides the map services
 the line carries and the vault command a coordinate links to.
+
+## `gpx.daily.append`
+
+Writes one timed GPX waypoint for the Capture's WGS-84 position. The file is
+`<capture.gpx.directory>/YYYYMMDD.capture.gpx`, using the date and offset
+recorded by the Capture. Captures from the same day share the file, regardless
+of workflow. The waypoint name is the resolved `content` note text, when
+present, using the same workflow mapping and enrichment as the Location Action.
+The Capture id lives in a GPX waypoint extension. A second run adds nothing if
+the id is already present, or if a waypoint already has the same coordinates
+and time at the precision stored by GPX. Only GPX files created
+by `dgs` are extended; an existing GPX from another creator is left untouched.
+The directory must be configured before running the Action. A Recipe can name
+`gpx.daily.append` and offer it only when `coordinates` resolve.
 
 ## Reminders
 

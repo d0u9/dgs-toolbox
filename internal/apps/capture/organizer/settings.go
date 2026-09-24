@@ -17,6 +17,8 @@ import (
 // Capture into a file nobody was looking at, so what is not configured is an
 // error rather than a guess.
 type Settings struct {
+	// GPXDirectory holds one GPX of Capture waypoints per day.
+	GPXDirectory string
 	// ObsidianVault is an absolute path. Empty means no vault has been
 	// configured, and the Obsidian Actions refuse to run.
 	ObsidianVault string

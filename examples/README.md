@@ -10,6 +10,7 @@ have.
 | [`shell/`](shell) | The top bar: which system metrics are shown. |
 | [`capture-scan/`](capture-scan) | Capture's root and index filename — the least you need for Scan to list something — plus the two folders Archive files Captures into. |
 | [`capture-obsidian/`](capture-obsidian) | Capture writing into an Obsidian vault: the daily note, the running list of places, map links, name mappings, plus Recipes, workflow descriptions and templates. |
+| [`capture-gpx/`](capture-gpx) | Capture positions as timed waypoints in daily GPX files. |
 | [`capture-reminders/`](capture-reminders) | Reminders at a place: the list and radius, a workflow keeping its position in the payload, and a Recipe that reminds you on arriving. |
 | [`photo-import/`](photo-import) | Photo Import's source, destination and state file. |
 | [`box/`](box) | `dgs box`'s Box root and inbox, and the currency and time zone new entries default to. |

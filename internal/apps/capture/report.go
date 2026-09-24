@@ -295,6 +295,7 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	reminders := global.CaptureReminders()
 	settings.ReminderList = reminders.List
 	settings.ReminderRadius = reminders.Radius
+	settings.GPXDirectory = expandHome(global.Capture.GPX.Directory)
 	return settings
 }
 
