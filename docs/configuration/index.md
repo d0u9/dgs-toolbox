@@ -84,6 +84,9 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `capture.gpx.directory` | [capture](capture.md#daily-gpx) | empty — the GPX Action refuses to run |
 | `capture.obsidian.daily_note` | [capture](capture.md#the-daily-note) | empty — the daily Action refuses to run |
 | `capture.obsidian.section` | [capture](capture.md#the-daily-note) | `Captured{{with .Device}} - {{.}}{{end}}` |
+| `capture.obsidian.images.folder` | [capture](capture.md#pictures-in-the-daily-note) | `assets/{{.Note}}` |
+| `capture.obsidian.images.max_side` | [capture](capture.md#pictures-in-the-daily-note) | `2048` |
+| `capture.obsidian.images.quality` | [capture](capture.md#pictures-in-the-daily-note) | `80` |
 | `capture.obsidian.location_note` | [capture](capture.md#the-location-note) | empty — the location Action refuses to run |
 | `capture.obsidian.location_archive` | [capture](capture.md#the-location-note) | empty — nothing is archived |
 | `capture.apple.reminders.list` | [capture](capture.md#reminders) | empty — Reminders' own default list |

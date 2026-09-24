@@ -82,6 +82,18 @@ type CaptureObsidian struct {
 	// LocationArchive the folder a year that has rolled over is moved into.
 	LocationNote    string `json:"location_note"`
 	LocationArchive string `json:"location_archive"`
+	// Images is how a Capture's pictures are written beside a daily note.
+	Images CaptureObsidianImages `json:"images"`
+}
+
+// CaptureObsidianImages says where a daily note's pictures go and how they are
+// re-encoded. Folder is relative to the note's folder, as a template over the
+// note; MaxSide is the longest side in pixels and Quality the JPEG quality,
+// 1 to 100. Empty or zero is the organizer's default.
+type CaptureObsidianImages struct {
+	Folder  string `json:"folder"`
+	MaxSide int    `json:"max_side"`
+	Quality int    `json:"quality"`
 }
 
 // CaptureArchive is where an organized Capture is put away. It is a directory

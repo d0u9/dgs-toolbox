@@ -115,8 +115,10 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 		ID:    ActionDailyAppend,
 		Label: "Daily note",
 		Effects: []string{
-			"Appends the Capture under the configured section as one nested entry, adding that heading when the note has none",
+			"Re-encodes the Capture's JPEG pictures, shrunk to the configured size, into the note's picture folder in the vault",
+			"Appends the Capture under the configured section as one nested entry that shows those pictures, adding that heading when the note has none",
 			"Creates the note from the configured template when the day has none",
+			"Refuses a Capture holding a picture that is not a JPEG, before anything is written",
 			"Writes nothing the second time: an entry carries the Capture's id and is added once",
 		},
 		Required: []FieldRequirement{

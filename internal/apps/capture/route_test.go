@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1739,6 +1740,20 @@ func TestRouteAttachmentsAreWalkedAndLeftLikeAColumn(t *testing.T) {
 	m = left.(routeModel)
 	if m.fields.Current() != routeActionsField {
 		t.Fatalf("esc left the pane to %q, want the column above it", m.fields.Current())
+	}
+}
+
+func TestRouteSpaceOpensTheAttachmentInQuickLook(t *testing.T) {
+	m := loadedRoute(t, attachedRoot(t))
+	m.fields.Set(routeAttachmentsField)
+	next, cmd := m.updateKey(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
+	if next.(routeModel).fields.Current() != routeAttachmentsField {
+		t.Fatal("space left the attachments")
+	}
+	// The command is not run: it would open a window. That there is one on
+	// macOS, and none elsewhere, is what the key promises.
+	if (cmd != nil) != (runtime.GOOS == "darwin") {
+		t.Fatalf("space gave command %v on %s", cmd != nil, runtime.GOOS)
 	}
 }
 

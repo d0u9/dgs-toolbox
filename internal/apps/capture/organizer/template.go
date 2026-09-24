@@ -97,6 +97,10 @@ type EntryData struct {
 	Device      Value
 	Capture     Value
 	Attachments []Attachment
+	// Images are the pictures written beside the note for this entry, by the
+	// filename the vault knows them by, for "![[{{.}}]]". Empty for an Action
+	// that writes no pictures.
+	Images []string
 }
 
 // Attachment is what a template can say about one of a Capture's files.

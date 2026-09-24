@@ -15,7 +15,7 @@ authority on what it will actually do.
 
 | Action | Writes | Needs |
 | --- | --- | --- |
-| [`obsidian.daily.append`](#obsidiandailyappend) | the day's note in the vault | `createdAt`; `content` optional |
+| [`obsidian.daily.append`](#obsidiandailyappend) | the day's note in the vault, and its pictures beside it | `createdAt`; `content` optional |
 | [`obsidian.location.append`](#obsidianlocationappend) | the running list of places | `createdAt`; `content` optional |
 | [`gpx.daily.append`](#gpxdailyappend) | a daily GPX in the configured directory | `createdAt`, `coordinates`; `content` optional |
 | [`apple.reminders.create`](#applereminderscreate) | a reminder, due at a time | `title`, `due_at` |
@@ -25,7 +25,8 @@ authority on what it will actually do.
 
 ## `obsidian.daily.append`
 
-Appends the Capture to the day's note as one nested entry.
+Appends the Capture to the day's note as one nested entry, with its pictures
+written into the vault beside the note and shown in the entry.
 
 - Adds it under the configured section, adding that heading when the note has
   none.
@@ -34,10 +35,29 @@ Appends the Capture to the day's note as one nested entry.
   once, and a second run says why it wrote nothing. Deleting the entry by hand
   is how it is written again.
 
+Pictures are the attachments of kind `image`, in any case; the others are left alone, and a
+Capture with none is only the entry.
+
+- Only JPEG. A Capture holding a picture that is anything else is refused
+  before anything is written, naming the file.
+- Each is re-encoded rather than copied: turned upright from its EXIF
+  orientation, shrunk so its longest side is at most
+  `capture.obsidian.images.max_side`, encoded at
+  `capture.obsidian.images.quality`. The result carries no EXIF — no time, no
+  place, no camera.
+- They go into `capture.obsidian.images.folder`, beside the note, as
+  `file-<the Capture's time to the millisecond>-<n>.jpg`, each published only
+  after reading it back matches, the way every file this toolbox writes is.
+- They are in place before the entry links them, one `![[file-….jpg]]` line
+  each. A picture already at its name — from a run that wrote the pictures and
+  failed before the entry — is kept rather than written again.
+- The default `daily-entry.md` shows them after the Capture's text; a replaced
+  template shows them where it names `Images`.
+
 Needs `createdAt`. `content` is optional: a Capture nobody wrote anything
 about is still written, and the template leaves out the lines its text would
-have filled. Configured by `capture.obsidian.daily_note`
-and `capture.obsidian.section`; shaped by the `daily-entry.md` and
+have filled. Configured by `capture.obsidian.daily_note`,
+`capture.obsidian.section` and `capture.obsidian.images`; shaped by the `daily-entry.md` and
 `daily-note.md` templates.
 
 **Parameters** — a per-run override, edited in `FIELDS`:

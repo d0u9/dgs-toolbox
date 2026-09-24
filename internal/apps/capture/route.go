@@ -775,7 +775,7 @@ func (m routeModel) Status() tui.Status {
 	case routePayloadField:
 		return tui.Status{Left: "PAYLOAD", Center: center, Right: "↑↓ Scroll  esc/⌫ Back  alt+hjkl Focus"}
 	case routeAttachmentsField:
-		return tui.Status{Left: "ATTACHMENTS", Center: m.attachmentStatus(), Right: "↑↓ Move  pgup/pgdown Details  esc/⌫ Back"}
+		return tui.Status{Left: "ATTACHMENTS", Center: m.attachmentStatus(), Right: "↑↓ Move  space Quick Look  pgup/pgdown Details  esc/⌫ Back"}
 	default:
 		return tui.Status{Left: "ROUTE", Center: center, Right: "tab Next  alt+hjkl Focus"}
 	}
@@ -920,6 +920,14 @@ func (m routeModel) updateAttachments(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "backspace", "delete":
 		m.fields.Set(routeActionsField)
+	case " ", "space":
+		// The same key opens a file in Quick Look as it does in Scan, so a
+		// picture can be seen at full size without leaving the session.
+		m.pendingGG = false
+		if attachment, ok := m.focusedAttachment(); ok {
+			return m, quickLook(attachment.path)
+		}
+		return m, nil
 	}
 	m.pendingGG = false
 	cmd := m.loadAttachment()

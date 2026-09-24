@@ -9,7 +9,12 @@
       "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
       "section": "Captured{{with .Device}} - {{.}}{{end}}",
       "location_note": "88 Inbox/06 Locations.md",
-      "location_archive": "88 Inbox/06 Locations"
+      "location_archive": "88 Inbox/06 Locations",
+      "images": {
+        "folder": "assets/{{.Note}}",
+        "max_side": 2048,
+        "quality": 80
+      }
     }
   }
 }

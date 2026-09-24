@@ -667,8 +667,10 @@ string, so `{{if .Place}}` and `{{range}}` behave as expected.
 The data a template may name is a declared struct rather than a map, so a
 misspelled field fails when the template is parsed: `When`, `Date`, `Time`,
 `ID`, `Content`, `ContentLines`, `Latitude`, `Longitude`, `Altitude`,
-`Address`, `Place`, `Workflow`, `App`, `Capture`, and `Attachments` (each with
-`Name` and `Kind`).
+`Address`, `Place`, `Workflow`, `App`, `Capture`, `Attachments` (each with
+`Name` and `Kind`), and `Images` — the filenames of the pictures
+`obsidian.daily.append` wrote beside the note, for `![[{{.}}]]`, and
+empty for every other template.
 
 `Latitude` and `Longitude` are separate rather than one position string, so a
 template decides the order and the punctuation between them — and a Capture with
