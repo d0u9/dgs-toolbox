@@ -104,6 +104,10 @@ CAPTURES              CAPTURE                             ARCHIVE
   first, each Action with its outcome — `✓` ran, `·` had nothing to do, `✗`
   failed — and the target it wrote. A Capture nobody has organized says so
   there, rather than showing an empty group.
+- The centre pane also shows the Capture's payload as indented JSON and its
+  recorded position. `Shift+Up`/`Shift+Down` or the wheel over the pane scroll
+  long details. A position links to Apple Maps and `o` opens it from the
+  keyboard; the map option is absent when the index has no coordinates.
 - The two controls under the right column are what can be done to the row under
   the cursor: `Archive  a` and `Reject  ⌫` from `CAPTURES`, and the single
   `Restore  R` from either destination, which is the one thing left to do
