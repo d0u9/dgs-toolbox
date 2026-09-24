@@ -24,6 +24,8 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
+	"dgs-toolbox/internal/imaging"
+
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
@@ -131,30 +133,15 @@ type turning struct {
 // page's /Rotate, so the picture is drawn the way a PDF reader shows the page.
 // Anything else returns source unchanged.
 func Turn(source image.Image, degrees int) image.Image {
-	if degrees != 90 && degrees != 180 && degrees != 270 {
-		return source
+	switch degrees {
+	case 90:
+		return imaging.Orient(source, 6)
+	case 180:
+		return imaging.Orient(source, 3)
+	case 270:
+		return imaging.Orient(source, 8)
 	}
-	bounds := source.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-	shape := image.Rect(0, 0, width, height)
-	if degrees != 180 {
-		shape = image.Rect(0, 0, height, width)
-	}
-	turned := image.NewRGBA(shape)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			colour := source.At(bounds.Min.X+x, bounds.Min.Y+y)
-			switch degrees {
-			case 90:
-				turned.Set(height-1-y, x, colour)
-			case 180:
-				turned.Set(width-1-x, height-1-y, colour)
-			case 270:
-				turned.Set(y, width-1-x, colour)
-			}
-		}
-	}
-	return turned
+	return source
 }
 
 // both encodes one decoded picture at both sizes.
@@ -227,35 +214,12 @@ func fitWith(source image.Image, size int, scaler draw.Scaler) image.Image {
 
 // scaleTo draws source at the size shape would fit into, so a picture drawn
 // from an already shrunk copy keeps the original's proportions exactly.
+//
+// The grid keeps CatmullRom: a page of text shrunk by a factor of five
+// aliases badly enough with the cheap filters that a person cannot tell one
+// letter from another in a grid.
 func scaleTo(source image.Image, shape image.Rectangle, size int, scaler draw.Scaler) image.Image {
-	bounds := source.Bounds()
-	width, height := shape.Dx(), shape.Dy()
-	if width <= 0 || height <= 0 {
-		return source
-	}
-	if width <= size && height <= size {
-		if shape == bounds {
-			return source
-		}
-	} else if width >= height {
-		height = height * size / width
-		width = size
-	} else {
-		width = width * size / height
-		height = size
-	}
-	if width < 1 {
-		width = 1
-	}
-	if height < 1 {
-		height = 1
-	}
-	target := image.NewRGBA(image.Rect(0, 0, width, height))
-	// The grid keeps CatmullRom: a page of text shrunk by a factor of five
-	// aliases badly enough with the cheap filters that a person cannot tell
-	// one letter from another in a grid.
-	scaler.Scale(target, target.Bounds(), source, bounds, draw.Over, nil)
-	return target
+	return imaging.FitShape(source, shape, size, scaler)
 }
 
 func encode(picture image.Image) ([]byte, error) {
