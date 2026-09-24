@@ -41,13 +41,14 @@ instances:
           gid: 1000
         uids:
           alice: 3001
+          carol: 3002
       # `users` names people, never accounts: which of their credentials open
       # this share follows from their access, and is not restated here.
       shares:
         vault:
           comment: Vault storage
           path: /mnt/vault/00-vault
-          users: [alice]
+          users: [alice, carol]
           settings:
             browseable: "yes"
             read only: "no"
