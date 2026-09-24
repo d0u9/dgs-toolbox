@@ -93,9 +93,7 @@ async function start() {
   el('paths').textContent = [state.config.inbox, '→', state.config.root]
     .filter(Boolean)
     .join(' ');
-  el('currency-hint').textContent = state.config.currency
-    ? `default ${state.config.currency}`
-    : 'name the currency';
+  drawCurrencyHint();
   const types = await api.types();
   state.types = types.types;
   assertTypeKeysAreFree();
@@ -109,6 +107,11 @@ async function start() {
   wireDuplicates();
   await drawHeldBack();
   await drawRejected();
+}
+
+function drawCurrencyHint() {
+  const currency = localStorage.getItem(LAST_CURRENCY) || state.config.currency;
+  el('currency-hint').textContent = currency ? `default ${currency}` : 'name the currency';
 }
 
 // showQueueTab switches the sidebar between the inbox and what was rejected.
@@ -560,6 +563,7 @@ function describe(scan) {
       expiryCleared: state.draft.expiryCleared ?? false,
       documents: documents.map((document) => ({
         ...document,
+        total: boxTotalForSave(document.total),
         eventZone: document.eventZone || (document.eventDate ? state.config.zone || '' : ''),
       })),
       ignoredPages: state.draft.ignoredPages ?? scan.ignoredPages ?? '',
@@ -571,7 +575,7 @@ function describe(scan) {
     description: el('description').value,
     eventDate: el('event-date').value,
     eventZone: el('event-zone').value,
-    total: el('total').value,
+    total: boxTotalForSave(el('total').value),
     tags: tags.get(),
     expiryCleared: state.draft.expiryCleared ?? false,
     ...(state.draft.documents ? { documents: [], ignoredPages: '' } : {}),
@@ -614,9 +618,14 @@ async function saveNow() {
   if (!edit) return;
   try {
     const saved = await api.patch(edit);
+    const scan = state.pending.find((candidate) => candidate.digest === edit.digest);
+    if (edit.total && edit.total !== scan?.total) rememberBoxTotal(saved.total);
+    (saved.documents || []).forEach((document, index) => {
+      if (edit.documents?.[index]?.total !== scan?.documents?.[index]?.total) rememberBoxTotal(document.total);
+    });
+    drawCurrencyHint();
     // The inbox list keeps what was saved, so coming back to this scan shows
     // it even though the desk's own draft is gone by then.
-    const scan = state.pending.find((candidate) => candidate.digest === edit.digest);
     if (scan) {
       for (const name of ['type', 'description', 'eventDate', 'eventZone', 'total', 'tags',
         'expiryCleared', 'documents', 'ignoredPages']) {
@@ -653,7 +662,10 @@ async function fileCurrent() {
         await api.file({ digest: scan.digest, type, tags: shared });
       }
     } else {
-      await api.file(describe(run[0]));
+      const filed = await api.file(describe(run[0]));
+      if (state.draft.total) rememberBoxTotal(filed.total);
+      for (const document of filed.documents || []) rememberBoxTotal(document.total);
+      drawCurrencyHint();
     }
   } catch (err) {
     showError(err);
@@ -732,6 +744,19 @@ function wireFields() {
       saveSoon();
     });
     el(id).addEventListener('keydown', (event) => {
+      if (id === 'event-zone' && event.key === 'Tab') {
+        if (event.isComposing || event.keyCode === 229 || zones.isComposing()) {
+          event.preventDefault();
+          return;
+        }
+        if (!event.shiftKey) {
+          event.preventDefault();
+          zones.commit().then((chosen) => {
+            if ((chosen || !el(id).value.trim()) && document.activeElement === el(id)) focusNextField(el(id));
+          });
+          return;
+        }
+      }
       if (id === 'event-zone' && zones.key(event)) return;
       if (event.key === 'Escape') {
         event.preventDefault();

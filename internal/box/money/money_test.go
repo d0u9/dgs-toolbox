@@ -17,6 +17,12 @@ func TestParseUsesTheDefaultCurrency(t *testing.T) {
 		{"-12.50", "AUD", Amount{Minor: -1250, Currency: "AUD"}},
 		{"+12.50", "AUD", Amount{Minor: 1250, Currency: "AUD"}},
 		{"USD 45", "AUD", Amount{Minor: 4500, Currency: "USD"}},
+		{"AU 45", "USD", Amount{Minor: 4500, Currency: "AUD"}},
+		{"45 au", "USD", Amount{Minor: 4500, Currency: "AUD"}},
+		{"AU45", "USD", Amount{Minor: 4500, Currency: "AUD"}},
+		{"-AU45", "USD", Amount{Minor: -4500, Currency: "AUD"}},
+		{"JP 1200", "", Amount{Minor: 1200, Currency: "JPY"}},
+		{"DE 45", "", Amount{Minor: 4500, Currency: "EUR"}},
 		{"45 USD", "AUD", Amount{Minor: 4500, Currency: "USD"}},
 		{"usd 45", "AUD", Amount{Minor: 4500, Currency: "USD"}},
 		{"USD45", "AUD", Amount{Minor: 4500, Currency: "USD"}},
@@ -36,6 +42,14 @@ func TestParseUsesTheDefaultCurrency(t *testing.T) {
 	}
 }
 
+func TestCountryAliasesResolveToSupportedCurrencies(t *testing.T) {
+	for country, currency := range countryCurrencies {
+		if !Known(currency) {
+			t.Errorf("%s resolves to unsupported currency %s", country, currency)
+		}
+	}
+}
+
 func TestParseRefusesWhatWouldBeGuesswork(t *testing.T) {
 	for _, test := range []struct{ text, fallback string }{
 		{"1,234", "AUD"},               // grouping means different things in different places
@@ -45,6 +59,7 @@ func TestParseRefusesWhatWouldBeGuesswork(t *testing.T) {
 		{"12.50 USD AUD", ""},          // two currencies
 		{"12.50", "ZZZ"},               // a currency this build does not know
 		{"ZZZ 12.50", "AUD"},           // the same, named in the text
+		{"ZZ 12.50", "AUD"},            // an unknown country code
 		{"12.50", ""},                  // no currency anywhere
 		{"9999999999999999999", "AUD"}, // beyond int64
 	} {

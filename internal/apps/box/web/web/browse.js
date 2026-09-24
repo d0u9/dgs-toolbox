@@ -912,6 +912,7 @@ async function save(extra = {}) {
       tags: [],
       documents: documents.map((document) => ({
         ...document,
+        total: boxTotalForSave(document.total),
         eventZone: document.eventZone || (document.eventDate ? state.config.zone || '' : ''),
       })),
       ignoredPages: state.draft.ignoredPages ?? scan.ignoredPages ?? '',
@@ -925,14 +926,18 @@ async function save(extra = {}) {
       eventDate: el('detail-event-date').value,
       eventZone: el('detail-event-zone').value,
       expiresAt: el('detail-expires').value,
-      total: el('detail-total').value,
+      total: boxTotalForSave(el('detail-total').value),
       tags: detailTags.get(),
       ...(state.draft.documents ? { documents: [], ignoredPages: '' } : {}),
       ...extra,
     };
   }
   try {
-    await api.patch(edit);
+    const saved = await api.patch(edit);
+    if (edit.total && edit.total !== scan.total) rememberBoxTotal(saved.total);
+    (saved.documents || []).forEach((document, index) => {
+      if (edit.documents?.[index]?.total !== scan.documents?.[index]?.total) rememberBoxTotal(document.total);
+    });
   } catch (err) {
     showError(err);
     return;
@@ -947,6 +952,50 @@ function wireDetail() {
   dateField(el('detail-event-date'), { notFuture: true, partial: true });
   dateField(el('detail-expires'));
   enterMovesOn(el('detail-event-date').closest('form'));
+  // The detail has its own short Tab ring. The page itself is the browsing
+  // position, where the document and split shortcuts work.
+  el('detail-type').tabIndex = -1;
+  const browseFocus = document.querySelector('.browse-main');
+  browseFocus.tabIndex = -1;
+  const fields = [
+    el('detail-event-date').nextElementSibling.querySelector('input'),
+    el('detail-event-zone'),
+    el('detail-description'),
+    el('detail-total'),
+    detailTags.input,
+  ];
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab' || !selected() || reader.isOpen()
+        || event.metaKey || event.ctrlKey || event.altKey) return;
+    const active = document.activeElement;
+    const index = fields.findIndex((field) => field === active
+      || (field === fields[0] && field.parentElement.contains(active)));
+    if (index < 0 && active !== document.body && active !== browseFocus) return;
+    if (event.isComposing || event.keyCode === 229 || (active === fields[1] && zones.isComposing())) {
+      // Tab belongs to the input method until its composition is committed.
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (active === fields[1] && !event.shiftKey) {
+      zones.commit().then((chosen) => {
+        if ((chosen || !active.value.trim()) && document.activeElement === active) fields[2].focus();
+      });
+      return;
+    }
+    if (active === detailTags.input && active.value.trim()) detailTags.commit();
+    const next = index < 0 ? (event.shiftKey ? fields.length - 1 : 0)
+      : index + (event.shiftKey ? -1 : 1);
+    if (next < 0 || next === fields.length) {
+      // Keep the browsing state as an explicit focus target. Blurring a field
+      // alone lets the browser continue its native Tab order on some engines.
+      browseFocus.focus();
+    } else {
+      fields[next].focus();
+      fields[next].select?.();
+    }
+  }, true);
   // A field typed into while a split is picked describes that split.
   for (const [id, name] of Object.entries(DETAIL)) {
     const input = el(id);

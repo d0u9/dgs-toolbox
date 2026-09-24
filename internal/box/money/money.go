@@ -88,6 +88,9 @@ func Parse(text, defaultCurrency string) (Amount, error) {
 	if code == "" {
 		return Amount{}, ErrNoCurrency
 	}
+	if len(code) == 2 {
+		code = currencyForCountry(code)
+	}
 	exponent, known := Exponent(code)
 	if !known {
 		return Amount{}, UnknownCurrencyError{Code: code}
@@ -106,6 +109,9 @@ func splitLeadingCode(field string) (code, rest string, found bool) {
 	if strings.HasPrefix(field, "-") || strings.HasPrefix(field, "+") {
 		sign, field = field[:1], field[1:]
 	}
+	if len(field) >= 3 && isCode(field[:2]) && !isCode(field[:3]) && (field[2] == '+' || field[2] == '-' || field[2] >= '0' && field[2] <= '9') {
+		return strings.ToUpper(field[:2]), sign + field[2:], true
+	}
 	if len(field) < 4 || !isCode(field[:3]) {
 		return "", "", false
 	}
@@ -113,7 +119,7 @@ func splitLeadingCode(field string) (code, rest string, found bool) {
 }
 
 func isCode(field string) bool {
-	if len(field) != 3 {
+	if len(field) != 2 && len(field) != 3 {
 		return false
 	}
 	for _, r := range field {
