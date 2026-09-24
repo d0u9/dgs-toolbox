@@ -10,8 +10,8 @@ rule. Taking new scans in is [`import.md`](import.md).
 ## It never writes a scan
 
 `view` reads PDFs and images and writes only sidecars, the log and its own
-cache. It can move a file into [`trash/`](index.md#deleting) and it can rewrite
-metadata; it cannot alter a scan's bytes, and it has no code path that would.
+cache. It can move a file into [`trash/`](index.md#deleting), move it to the month
+a corrected event date names, and rewrite metadata; it cannot alter a scan's bytes, and it has no code path that would.
 
 This is why it is a separate command from [`import`](import.md). The two have
 different risk: `import` copies, verifies and publishes, and needs a state
@@ -24,8 +24,9 @@ meant to be used casually.
 Today's `receipt` is next April's `invoice`. The cost of that change is one
 sidecar rewrite, one appended log line and one cache entry:
 
-- The file does not move, because [no path encodes
-  metadata](index.md#paths-encode-only-what-cannot-change).
+- The file does not move, because [only the event date is in the
+  path](index.md#paths-encode-only-the-events-month). Correcting the event
+  date to another month moves it by rename.
 - The digest stays valid, because the bytes are untouched.
 - No integrity check is triggered, because nothing was copied.
 
@@ -58,13 +59,15 @@ The trash is shown as advice: how much is in it, how old the oldest is, and how
 much of it is older than `box.trash.keep`. Nothing is ever removed for it.
 Emptying `trash/` stays something done by hand.
 
-## Browsing, not searching
+## Browsing, and searching what was typed
 
-There is no search box in the first version, because there would be nothing
-behind it. With no text layer and no OCR, the only searchable words are the
-ones typed at intake, and intake deliberately leaves much of the Box as
-`unsorted` with no description. A search field that returns nothing for most of
-the collection teaches its owner not to trust the tool.
+With no text layer and no OCR, the only searchable words are the ones typed:
+descriptions. **Search** matches those words — a card's description, its
+splits' descriptions and its filename — case- and accent-blind, every word
+typed somewhere in them, so `nikon bino` finds "Nikon 8x42 Monarch M5
+Binocular". It is a filter like the others: Clear empties it, and it is kept
+in the address as `?q=`. A scan nobody described is found by the filters, not
+by the search.
 
 Filters are the whole retrieval mechanism, and they are built on what is
 actually known:
@@ -77,6 +80,7 @@ actually known:
 | `reviewed` | whether a human confirmed the type |
 | Amount range | within one currency |
 | Tags | free-form; every tag chosen must be carried ([tags](#tags)) |
+| Zone | the zone the event date is read in, a split's own or any of a scan's; *none* for scans without one |
 | Producer | which scanner made it |
 | Pages | one page, several pages |
 | `needs_split`, `needs-render`, unknown type | deferred work |
@@ -91,6 +95,23 @@ each with that split's own type, description, date, amount and first page, and
 the filters and currency totals read those values. A split's card opens the
 scan at that split. The switch is a way of looking, not a filter: clearing the
 filters leaves it, and the browser remembers it.
+
+**Show** picks cards or a list. The list has one row per card — the same
+entries, filters and totals — with a column each for picture, description,
+type, date, amount, producer, pages, state, tags, date added and last edited.
+A click on a column heading sorts by it; a second click turns the order.
+A line at each heading's right edge drags that column's width, and a
+double-click on the line fits the column to its widest cell; the browser
+remembers the widths. Date added and last edited show date and time in the
+viewer's zone.
+
+**Sort** sits beside it: event date (the scan date where there is none, as the
+card says), date added (the sidecar's `ingested_at`), last edited (the
+sidecar's `edited_at`, or its `ingested_at` when never edited), description,
+type, amount (by currency, then by number), producer, pages or state.
+**Order** is descending or ascending; an entry with no value sorts last either
+way. Show, Sort and Order are ways of looking: clearing the filters leaves
+them, and the browser remembers them.
 
 A card's picture carries a folder button, shown on hover, that reveals the
 scan's file in the file manager of the machine serving the page, selected in
@@ -137,7 +158,11 @@ reader: every page down one scrolling column, a strip of pages beside it, the
 way a PDF viewer shows a document. It only reads — splits are marked in the
 details, where the fields they describe are.
 
-The reader is part of Browse, not a page of its own. It takes the place of the
+The reader is part of Browse, not a page of its own. Opening it is a step in the browser's
+history, so the browser's Back closes it and stays on Browse. The details
+panel moves beside the pages while reading — type, description, dates, tags,
+Save — without the scan's picture and page strip, which the reader already
+shows; closing puts it back. It takes the place of the
 filters and the grid and nothing else: the top bar keeps saying Browse, with
 what is being read after it, and the status bar keeps its row, showing the page
 and the reader's keys. **← Browse** or `Esc` puts the grid back, scrolled where
@@ -182,7 +207,7 @@ sorted by two different meanings looks like one ordering that is subtly wrong.
 Absolute instants sort; local readings display, with their zone named. The
 description takes no part in sorting: it will be written in whichever language
 suits the document, and a collation rule for that is a problem worth not having
-while the first version has no search.
+and the search only matches words, never orders them.
 
 ### Amounts are summed per currency, never combined
 

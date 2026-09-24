@@ -131,3 +131,42 @@ func mustDate(t *testing.T, text string) Date {
 	}
 	return parsed
 }
+
+func TestParseEventDateTakesAYearOrAMonth(t *testing.T) {
+	for text, want := range map[string]Date{
+		"2019":       {Year: 2019},
+		"2019-03":    {Year: 2019, Month: 3},
+		"2019-03-11": {Year: 2019, Month: 3, Day: 11},
+	} {
+		got, err := ParseEventDate(text)
+		if err != nil || got != want {
+			t.Errorf("ParseEventDate(%q) = %+v, %v; want %+v", text, got, err, want)
+		}
+		if got.String() != text {
+			t.Errorf("%q written back as %q", text, got.String())
+		}
+	}
+	for _, text := range []string{"19", "2019-13", "2019-3", "2019-02-30", "201903"} {
+		if _, err := ParseEventDate(text); err == nil {
+			t.Errorf("ParseEventDate(%q) accepted", text)
+		}
+	}
+	// Only the event date is allowed to be partial.
+	if _, err := ParseDate("2019"); err == nil {
+		t.Error("ParseDate accepted a year")
+	}
+}
+
+// A partial date counts from its last possible day, so a lifetime computed
+// from it never ends early.
+func TestPartialDateCountsFromItsLastDay(t *testing.T) {
+	if got := (Date{Year: 2019}).AddDays(0); got != (Date{Year: 2019, Month: 12, Day: 31}) {
+		t.Errorf("year: %+v", got)
+	}
+	if got := (Date{Year: 2024, Month: 2}).AddDays(1); got != (Date{Year: 2024, Month: 3, Day: 1}) {
+		t.Errorf("month: %+v", got)
+	}
+	if !(Date{Year: 2019}).Before(Date{Year: 2019, Month: 1, Day: 1}) {
+		t.Error("a year does not sort before its first day")
+	}
+}

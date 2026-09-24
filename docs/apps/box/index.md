@@ -62,8 +62,8 @@ away and rebuilt from it.
 <root>/
   dgs-box.yaml                   the marker proving this is a Box
   dgs-box-log.jsonl              every intake and every edit, appended
-  2026/
-    2026-09-22/                  the day the file was taken in
+  2019/
+    03/                          the event's year and month
       scan-0012-a1b2c3d4.pdf
       a1b2c3d4.dgs-doc.yaml
   trash/
@@ -72,20 +72,34 @@ away and rebuilt from it.
       77f0e1b9.dgs-doc.yaml
 ```
 
-### Paths encode only what cannot change
+### Paths encode only the event's month
 
-The directory a file lands in is chosen from its **intake date** and never
-changes again. Type, subject, amount and expiry are all things the owner will
-correct later — today's `receipt` is next April's `invoice` — and a tree that
-encoded any of them would turn every correction into a file move, which means a
-copy, a readback, a broken external reference and a re-upload to the NAS. With
-this layout a reclassification is one sidecar rewrite and one log line. The
-file never moves and its digest stays valid forever.
+The directory a file lands in is `<YYYY>/<MM>` of its **event date** — the
+date on the document — because a Box is looked for by when things happened:
+"the 2019 tax receipts". A file split into documents with different dates is
+placed by the latest of them, so a pile of a year's statements lands where it
+ends. A scan with no event date anywhere is placed by its intake date, read
+from `ingested_at`, so the answer never depends on when it is asked. An event
+date known only to the year puts the file in `<YYYY>` itself; placing it in a
+month would state a month nobody knows. Among a split's documents a partial
+date counts as its last day, so `2019` outranks `2019-06`.
 
-Bucketing by intake date rather than by the date on the document is the same
-decision seen from the other side: the intake date is a fact about this Box, is
-known exactly, and is never revised. It also groups a batch usefully, because
-what was scanned on one day is usually related.
+Type, subject, amount and expiry are all things the owner will correct later —
+today's `receipt` is next April's `invoice` — and none of them is in the path,
+so correcting them is one sidecar rewrite and one log line.
+
+The event date is in the path, so correcting it can move the file. A Box is one
+volume, so the move is a rename of the file and then its sidecar: atomic, no
+copy, no readback, and the digest stays valid because the bytes are untouched.
+The sidecar is saved first, so a move that fails leaves a correct description
+in the old place, and the next edit tries again. A sidecar that cannot follow
+its file puts the file back. The move is logged as `move` with both paths, and
+a month or year left empty is removed. What a move does break is an external
+reference to the old path and a NAS copy made before it; that is the price of
+finding scans by date in Finder.
+
+The file keeps its name. A longer digest prefix is taken only when the new
+directory already holds the old one.
 
 `unsorted` is a state in the sidecar, not a place. There is no `unsorted/`
 directory, because a file whose type is not yet known is otherwise a normal
@@ -154,7 +168,8 @@ digest: sha256:a1b2c3d4…
 size: 4812390
 kind: pdf                       # pdf | image
 original_filename: "Scan_0012.pdf"
-ingested_at: 2026-09-22T14:30:00+10:00
+ingested_at: 2026-09-22T04:30:00Z
+edited_at: 2026-09-22T23:12:00Z   # absent until first edited after filing
 
 type: travel
 reviewed: false                 # true once a human has confirmed the type
@@ -193,8 +208,21 @@ YAML because it is the format a human edits by hand, and a sidecar is the one
 thing in a Box that is meant to survive the tool. `grep -r insurance` over the
 tree is a supported way to find something.
 
+`ingested_at` and `edited_at` are instants written in UTC, so they compare
+across machines and zones; a page shows them in the viewer's own zone. A
+sidecar written earlier with a local offset reads the same instant.
+
+`edited_at` is written by dgs whenever an edit changes the sidecar. It is a
+key, not the file's modification time, because copying a Box to another disk
+or folder rewrites modification times and would lose the order.
+
 The sidecar travels with the file, including into `trash/`, where it gains
 `trashed_at`, `trashed_from` and `reason`.
+
+`event_date` may be known only to the year or the month — `2019` or
+`2019-03` — because "some time in 2019" is an honest answer and a made-up day
+is not. It sorts before every day inside it. Only the event date may be
+partial: `expires_at` is a day or nothing.
 
 `expiry_cleared` is how an emptied expiry is told apart from one never filled
 in. Both leave `expires_at` blank, and without the flag the type's default
@@ -261,6 +289,9 @@ expiry = expires_at, or event_date + the type's default lifetime,
 dead   = expiry is set and is before today
 ```
 
+An event date known only to the year or the month counts from its last day,
+so a computed expiry is never earlier than it would be from the real day.
+
 Nothing has to run on a schedule and no stored field can go stale. A policy
 scanned a year ago is expired because `insurance` has a one-year default
 lifetime, not because anything was recalculated.
@@ -296,7 +327,16 @@ tree keeps the tree's meaning simple — everything in the Box is truth.
   thumbs/a1/a1b2c3d4-300.jpg
   previews/a1/a1b2c3d4-1600.jpg
   previews/a1/a1b2c3d4-p2-300.jpg
+<box.cache_dir>/inbox/<hash of inbox>/<hash of inbox path>/
+  read.json   grid.jpg   preview.jpg
 ```
+
+The `inbox/` tree remembers what reading each inbox file produced — digests,
+page facts, first-page pictures — keyed by its inbox path, size and
+modification time, so opening intake again reads only files that changed
+instead of the whole inbox over the network. It is kept apart from the Box's
+pictures because a scan later rejected must not leave pictures in the Box's
+cache, and it is pruned to the files present at each read of the inbox.
 
 Rules the cache obeys:
 

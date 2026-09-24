@@ -125,6 +125,7 @@ func readPDFImages(context *model.Context) ([]Image, error) {
 		raw := append([]byte(nil), dictionary.Raw...)
 		image := Image{
 			Page:       entry.page,
+			Rotate:     pageRotation(context, entry.page),
 			Bits:       intEntry(dictionary, "BitsPerComponent"),
 			Width:      intEntry(dictionary, "Width"),
 			Height:     intEntry(dictionary, "Height"),
@@ -141,6 +142,26 @@ func readPDFImages(context *model.Context) ([]Image, error) {
 		images = append(images, image)
 	}
 	return images, nil
+}
+
+// pageRotation is a page's /Rotate, inherited from the page tree where the
+// page does not say, normalised to 0, 90, 180 or 270. A page that cannot be
+// read is taken as unturned: the picture is still worth showing.
+func pageRotation(context *model.Context, page int) int {
+	_, _, inherited, err := context.PageDict(page, false)
+	if err != nil || inherited == nil {
+		return 0
+	}
+	return NormalRotation(inherited.Rotate)
+}
+
+// NormalRotation folds any multiple of 90 degrees into 0, 90, 180 or 270, and
+// anything else to 0, which is what a PDF reader does with it.
+func NormalRotation(degrees int) int {
+	if degrees%90 != 0 {
+		return 0
+	}
+	return ((degrees % 360) + 360) % 360
 }
 
 func intEntry(dictionary *types.StreamDict, key string) int {

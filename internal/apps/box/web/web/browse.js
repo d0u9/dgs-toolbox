@@ -200,7 +200,9 @@ function fillDerivedFilters() {
   const years = new Set();
   const currencies = new Set();
   const producers = new Set();
+  const zones = new Set();
   for (const scan of state.scans) {
+    for (const zone of zonesOf(scan)) zones.add(zone);
     const year = sortDay(scan).slice(0, 4);
     if (year) years.add(year);
     if (scan.total) currencies.add(scan.total.split(' ')[0]);
@@ -209,6 +211,13 @@ function fillDerivedFilters() {
   refill('filter-year', [...years].sort().reverse());
   refill('filter-currency', [...currencies].sort());
   refill('filter-producer', [...producers].sort());
+  // "none" is kept as the last choice whatever the Box holds: a scan with no
+  // zone is one whose date was never pinned to a place.
+  const zoneSelect = el('filter-zone');
+  const noZone = zoneSelect.value === '-';
+  refill('filter-zone', [...zones].sort());
+  zoneSelect.append(new Option('none', '-'));
+  if (noZone) zoneSelect.value = '-';
 }
 
 function refill(id, values) {
@@ -226,7 +235,37 @@ function sortDay(scan) {
   return scan.eventDate || localDate(scan.scannedAt) || '';
 }
 
+// searchText is what the search reads for a card: its description, its
+// splits' descriptions and its filename, folded so case and accents do not
+// decide a match.
+function searchText(scan) {
+  const words = [scan.description, scan.filename, scan.split ? '' : (scan.documents || []).map((d) => d.description).join(' ')];
+  return fold(words.filter(Boolean).join(' '));
+}
+
+function fold(text) {
+  return text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+}
+
+// searchTerms are the words typed; a card matches when it holds every one,
+// anywhere, so "nikon bino" finds "Nikon 8x42 Monarch M5 Binocular".
+function searchTerms() {
+  return fold(el('filter-text').value).split(/\s+/).filter(Boolean);
+}
+
+// zonesOf is every zone a card stands for: a split's own, or a scan's and its
+// splits'.
+function zonesOf(entry) {
+  const zones = [entry.eventZone, ...(entry.split ? [] : (entry.documents || []).map((d) => d.eventZone))];
+  return [...new Set(zones.filter(Boolean))];
+}
+
 function matches(scan) {
+  const terms = searchTerms();
+  if (terms.length) {
+    const text = searchText(scan);
+    if (!terms.every((term) => text.includes(term))) return false;
+  }
   const year = el('filter-year').value;
   if (year && !sortDay(scan).startsWith(year)) return false;
   const type = el('filter-type').value;
@@ -238,6 +277,9 @@ function matches(scan) {
   if (reviewed === 'no' && scan.reviewed) return false;
   const currency = el('filter-currency').value;
   if (currency && (!scan.total || !scan.total.startsWith(currency))) return false;
+  const zone = el('filter-zone').value;
+  if (zone === '-' && zonesOf(scan).length) return false;
+  if (zone && zone !== '-' && !zonesOf(scan).includes(zone)) return false;
   const producer = el('filter-producer').value;
   if (producer && scan.producer !== producer) return false;
   const carried = new Set(tagsOf(scan));
@@ -282,6 +324,7 @@ function entries() {
       typeKnown: document.type ? known.has(document.type) : scan.typeKnown,
       description: document.description || '',
       eventDate: document.eventDate || '',
+      eventZone: document.eventZone || scan.eventZone || '',
       total: document.total || '',
       tags: [...(scan.tags || []), ...(document.tags || [])],
       documents: [],
@@ -290,18 +333,76 @@ function entries() {
   });
 }
 
+// sortKeys are the orders Sort offers, each a value that compares as it
+// should: dates and stamps as strings or milliseconds, text case-folded, an
+// amount by currency first and then by number, since amounts in two
+// currencies are not one scale.
+const sortKeys = {
+  event: sortDay,
+  added: (scan) => (scan.ingestedAt ? new Date(scan.ingestedAt).getTime() : ''),
+  edited: (scan) => (scan.editedAt ? new Date(scan.editedAt).getTime() : ''),
+  title: (scan) => cardTitle(scan).toLocaleLowerCase(),
+  type: (scan) => scan.type || '',
+  total: (scan) => {
+    if (!scan.total) return '';
+    const [code, value] = scan.total.split(' ');
+    return [code, Number(value)];
+  },
+  producer: (scan) => (scan.producer || '').toLocaleLowerCase(),
+  pages: (scan) => (scan.split ? pagesOf(scan.split.pages).length : scan.pages || ''),
+  state: (scan) => scan.state || '',
+};
+
+// Dates start newest first and names from A, which is what a click on a
+// column heading picks when it changes the order.
+const newestFirst = new Set(['event', 'added', 'edited', 'total', 'pages']);
+
+function compareValues(a, b) {
+  if (Array.isArray(a)) {
+    if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1;
+    return a[1] - b[1];
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// sorted orders what is shown by the chosen key and direction. Event date falls
+// back to the scan date as the card says; date added is the sidecar's
+// ingested_at; last edited is when the sidecar was last written. A scan with
+// no value sorts last either way, and ties keep the server's order.
+function sorted(scans) {
+  const key = sortKeys[el('view-sort').value] || sortDay;
+  const sign = el('view-direction').value === 'asc' ? 1 : -1;
+  return scans
+    .map((scan, position) => ({ scan, position, value: key(scan) }))
+    .sort((a, b) => {
+      const aEmpty = a.value === '' || a.value == null;
+      const bEmpty = b.value === '' || b.value == null;
+      if (aEmpty || bEmpty) return aEmpty === bEmpty ? a.position - b.position : aEmpty ? 1 : -1;
+      return sign * compareValues(a.value, b.value) || a.position - b.position;
+    })
+    .map((each) => each.scan);
+}
+
 function draw() {
   const all = entries();
-  const shown = all.filter(matches);
+  const shown = sorted(all.filter(matches));
   el('count').textContent = `${shown.length} of ${all.length}`;
   el('grid-empty').hidden = shown.length > 0;
   drawTotals(shown);
   countFacets(shown);
   drawTagStrip();
+  const list = el('view-layout').value === 'list';
   const grid = el('grid');
+  const body = el('list-body');
+  grid.hidden = list;
+  el('list').hidden = !list;
   grid.innerHTML = '';
-  for (const scan of shown) {
-    grid.append(card(scan));
+  body.innerHTML = '';
+  if (list) {
+    drawListHead();
+    for (const scan of shown) body.append(row(scan));
+  } else {
+    for (const scan of shown) grid.append(card(scan));
   }
   drawMarked();
   drawDetail();
@@ -375,14 +476,7 @@ function card(scan) {
   if (scan.state === 'dead') badges.push('<span class="badge badge-dead">dead</span>');
   if (!scan.documents?.length && scan.needsSplit) badges.push('<span class="badge">split</span>');
   if (!scan.split) badges.push(badgeHTML(handling(scan)));
-  const chosen = new Set(filterTags.get());
-  for (const tag of tagsOf(scan)) {
-    const on = chosen.has(tag);
-    badges.push(
-      `<button type="button" class="badge badge-tag${on ? ' badge-tag-on' : ''}" data-tag="${escapeText(tag)}"` +
-        ` title="${on ? 'Stop filtering by' : 'Show only cards tagged'} ${escapeText(tag)}">${escapeText(tag)}</button>`,
-    );
-  }
+  badges.push(tagButtons(scan));
   // Every card has the same rows in the same places, empty or not, so a
   // grid of them lines up: title (two lines at most, the full text on hover),
   // type and date on one row, the amount at the right, badges at the foot.
@@ -410,6 +504,14 @@ function card(scan) {
     () => item.querySelector('.card-thumb-wrap').classList.add('no-picture'),
     { once: true },
   );
+  wireEntry(item, scan, splitIndex);
+  return item;
+}
+
+// wireEntry gives a card or a list row what a click on either does: the folder
+// button shows the file, a tag filters, a click opens, a modified click marks
+// and a double-click reads.
+function wireEntry(item, scan, splitIndex) {
   item.querySelector('.card-reveal')?.addEventListener('click', async (event) => {
     // Showing the file is not opening the card.
     event.stopPropagation();
@@ -446,6 +548,157 @@ function card(scan) {
     if (event.shiftKey || event.metaKey || event.ctrlKey) return;
     read();
   });
+}
+
+// wireListColumns puts a drag line at the right edge of every list heading.
+// Dragging sets that column's width; a double-click on the line fits the
+// column to its widest cell. Once any width is set the table lays out by the
+// headings alone, so every column holds the width given to it. Widths are a
+// way of looking and the browser remembers them.
+function wireListColumns() {
+  const table = el('list');
+  const heads = [...table.querySelectorAll('thead th')];
+  const keyOf = (th, index) => th.dataset.sort || th.dataset.column || String(index);
+  let widths = {};
+  try {
+    widths = JSON.parse(localStorage.getItem('box.browse.columns') || '{}') || {};
+  } catch {}
+  const remember = () => {
+    try {
+      localStorage.setItem('box.browse.columns', JSON.stringify(widths));
+    } catch {}
+  };
+  // Fixing the layout freezes every column at the width it has now, so moving
+  // one line does not reflow the others.
+  const fix = () => {
+    if (table.classList.contains('list-fixed')) return;
+    heads.forEach((th, index) => {
+      const key = keyOf(th, index);
+      if (!widths[key]) widths[key] = th.offsetWidth;
+      th.style.width = `${widths[key]}px`;
+    });
+    table.classList.add('list-fixed');
+  };
+  const apply = (th, index, width) => {
+    widths[keyOf(th, index)] = Math.max(32, Math.round(width));
+    th.style.width = `${widths[keyOf(th, index)]}px`;
+  };
+  if (Object.keys(widths).length) {
+    heads.forEach((th, index) => {
+      const width = widths[keyOf(th, index)];
+      if (width) th.style.width = `${width}px`;
+    });
+    table.classList.add('list-fixed');
+  }
+  heads.forEach((th, index) => {
+    const grip = document.createElement('span');
+    grip.className = 'list-grip';
+    grip.title = 'Drag to change the width; double-click to fit';
+    th.append(grip);
+    // Neither dragging nor fitting is a click on the heading, which sorts.
+    grip.addEventListener('click', (event) => event.stopPropagation());
+    grip.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      fix();
+      const startX = event.clientX;
+      const startWidth = th.offsetWidth;
+      grip.setPointerCapture(event.pointerId);
+      table.classList.add('list-resizing');
+      const move = (moved) => apply(th, index, startWidth + moved.clientX - startX);
+      const end = () => {
+        grip.removeEventListener('pointermove', move);
+        table.classList.remove('list-resizing');
+        remember();
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', end, { once: true });
+      grip.addEventListener('pointercancel', end, { once: true });
+    });
+    grip.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      fix();
+      // A cell's scrollWidth is its content at full length, since cells do not
+      // wrap; the heading counts too, so its name and arrow stay whole.
+      let widest = th.scrollWidth;
+      for (const tr of table.tBodies[0].rows) {
+        const cell = tr.cells[index];
+        if (cell) widest = Math.max(widest, cell.scrollWidth);
+      }
+      apply(th, index, widest + 2);
+      remember();
+    });
+  });
+}
+
+// drawListHead says on the column heading which order the list is in.
+function drawListHead() {
+  const key = el('view-sort').value;
+  const asc = el('view-direction').value === 'asc';
+  for (const th of document.querySelectorAll('#list th[data-sort]')) {
+    const on = th.dataset.sort === key;
+    th.classList.toggle('list-sorted', on);
+    th.setAttribute('aria-sort', on ? (asc ? 'ascending' : 'descending') : 'none');
+    th.dataset.arrow = on ? (asc ? '▲' : '▼') : '';
+  }
+}
+
+function tagButtons(scan) {
+  const chosen = new Set(filterTags.get());
+  return tagsOf(scan)
+    .map((tag) => {
+      const on = chosen.has(tag);
+      return (
+        `<button type="button" class="badge badge-tag${on ? ' badge-tag-on' : ''}" data-tag="${escapeText(tag)}"` +
+        ` title="${on ? 'Stop filtering by' : 'Show only cards tagged'} ${escapeText(tag)}">${escapeText(tag)}</button>`
+      );
+    })
+    .join('');
+}
+
+// instantText shows a stored instant in the viewer's zone. The sidecar keeps
+// it in UTC; which zone reads it is a fact about the viewer, not the scan.
+function instantText(stamp) {
+  if (!stamp) return '';
+  const when = new Date(stamp);
+  if (Number.isNaN(when.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${pad(when.getHours())}:${pad(when.getMinutes())}`;
+}
+
+// row is one scan, or one split, as a line of the list: the same facts a card
+// shows, each in its own column, plus producer, pages and the two stamps.
+function row(scan) {
+  const item = document.createElement('tr');
+  item.className = `list-row state-${scan.state}`;
+  const splitIndex = scan.split?.index ?? null;
+  const picked = state.selected === scan.digest && (!scan.split || state.selectedSplit === splitIndex);
+  if (picked) item.classList.add('card-selected');
+  if (state.marked.has(scan.digest)) item.classList.add('card-marked');
+  const fellBack = !scan.eventDate;
+  const flags = [];
+  if (!scan.reviewed) flags.push('<span class="badge badge-guess">guess</span>');
+  if (!scan.typeKnown) flags.push('<span class="badge badge-warn">unknown type</span>');
+  const title = escapeText(cardTitle(scan));
+  const pagesText = scan.split ? `p ${scan.split.pages}` : scan.pages || '';
+  item.innerHTML =
+    `<td class="list-thumb-col"><div class="card-thumb-wrap"><img class="card-thumb" loading="lazy" src="${api.image(scan.digest, 'thumb', scan.split ? firstPage(scan.split.pages) : 1)}" alt=""></div></td>` +
+    `<td class="list-title" title="${title}">${title}</td>` +
+    `<td>${escapeText(scan.type)} ${flags.join('')}</td>` +
+    `<td class="list-date${fellBack ? ' card-fallback' : ''}"${fellBack ? ' title="No event date: the scan date"' : ''}>${sortDay(scan) || 'no date'}</td>` +
+    `<td class="list-num">${escapeText(scan.total || '')}</td>` +
+    `<td>${escapeText(scan.producer || '')}</td>` +
+    `<td class="list-num">${escapeText(pagesText)}</td>` +
+    `<td>${escapeText(scan.state || '')}</td>` +
+    `<td class="list-tags">${tagButtons(scan)}</td>` +
+    `<td class="list-date">${instantText(scan.ingestedAt)}</td>` +
+    `<td class="list-date">${instantText(scan.editedAt)}</td>`;
+  item.querySelector('.card-thumb').addEventListener(
+    'error',
+    () => item.querySelector('.card-thumb-wrap').classList.add('no-picture'),
+    { once: true },
+  );
+  wireEntry(item, scan, splitIndex);
   return item;
 }
 
@@ -453,21 +706,62 @@ const reader = readerOf();
 
 // read opens the reader on the selected card. A split's card is read as its
 // own document, only its pages; a scan's card reads the whole scan.
+//
+// Reading is a step in the browser's history, so Back closes the reader and
+// stays on Browse rather than leaving for whatever page came before. The
+// details go with it, beside the pages, so a date or a tag is set while the
+// document is in view; closing puts them back.
 function read() {
   const scan = selected();
   if (!scan) return;
   const document = state.selectedSplit === null ? null : scan.documents?.[state.selectedSplit];
-  if (!document?.pages) {
-    reader.open(scan, { page: pages.page() });
-    return;
+  const options = { closed: readerClosed };
+  if (document?.pages) {
+    const page = pages.page();
+    Object.assign(options, {
+      pages: document.pages,
+      page: pagesOf(document.pages).has(page) ? page : null,
+      title: `${document.description || scan.description || scan.filename} · p ${document.pages}`,
+    });
+  } else {
+    options.page = pages.page();
   }
-  const page = pages.page();
-  reader.open(scan, {
-    pages: document.pages,
-    page: pagesOf(document.pages).has(page) ? page : null,
-    title: `${document.description || scan.description || scan.filename} · p ${document.pages}`,
-  });
+  const wasOpen = reader.isOpen();
+  reader.open(scan, options);
+  lendDetail();
+  if (!wasOpen && history.state?.reader !== true) history.pushState({ reader: true }, '', window.location.href);
 }
+
+// The details are one element, moved rather than copied, so every field keeps
+// its wiring and there is one form to save.
+const detailHome = { parent: null, next: null };
+
+function lendDetail() {
+  const aside = document.querySelector('aside.detail');
+  const body = el('reader-body');
+  if (aside.parentElement === body) return;
+  detailHome.parent = aside.parentElement;
+  detailHome.next = aside.nextSibling;
+  const width = getComputedStyle(document.querySelector('.browse-main')).getPropertyValue('--detail-width');
+  if (width) body.style.setProperty('--detail-width', width);
+  body.classList.add('reader-with-detail');
+  body.append(aside);
+}
+
+function readerClosed() {
+  const aside = document.querySelector('aside.detail');
+  if (detailHome.parent && aside.parentElement !== detailHome.parent) {
+    detailHome.parent.insertBefore(aside, detailHome.next);
+  }
+  el('reader-body').classList.remove('reader-with-detail');
+  // Closed by Esc or its button rather than by Back: take the step back out
+  // of the history, so Back afterwards leaves Browse as it would have.
+  if (history.state?.reader === true) history.back();
+}
+
+window.addEventListener('popstate', () => {
+  if (reader.isOpen()) reader.close();
+});
 
 // drawMarked shows what a batch would touch and what it would do to them. The
 // batch fields are deliberately the ones that are the same for many documents:
@@ -649,6 +943,10 @@ async function save(extra = {}) {
 }
 
 function wireDetail() {
+  // An event already happened; an expiry printed on a document may be years out.
+  dateField(el('detail-event-date'), { notFuture: true, partial: true });
+  dateField(el('detail-expires'));
+  enterMovesOn(el('detail-event-date').closest('form'));
   // A field typed into while a split is picked describes that split.
   for (const [id, name] of Object.entries(DETAIL)) {
     const input = el(id);
@@ -671,6 +969,8 @@ function wireDetail() {
   // typed; browsing is otherwise done with the mouse.
   document.addEventListener('keydown', (event) => {
     if (!selected() || event.metaKey || event.ctrlKey || event.altKey) return;
+    // In the reader its own keys rule; the details beside it are for typing.
+    if (reader.isOpen()) return;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
     // Enter on a focused button presses that button; anywhere else it reads.
     if (event.key === 'Enter' && document.activeElement?.tagName !== 'BUTTON') {
@@ -755,18 +1055,76 @@ function wireFilters() {
     'filter-reviewed',
     'filter-currency',
     'filter-producer',
+    'filter-zone',
     'filter-deferred',
   ]) {
     el(id).addEventListener('change', () => filtersChanged());
   }
   wireTagStrip();
+  const text = el('filter-text');
+  try {
+    text.value = new URLSearchParams(location.search).get('q') || '';
+  } catch {}
+  text.addEventListener('input', () => filtersChanged());
+  // Esc in the search empties it before it does anything else.
+  text.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && text.value) {
+      event.stopPropagation();
+      text.value = '';
+      filtersChanged();
+    }
+  });
   // Showing splits as documents is a way of looking, not a filter: Clear
   // leaves it, and the browser remembers it.
   const splits = el('view-splits');
   try {
     splits.checked = localStorage.getItem('box.browse.splits') === '1';
   } catch {}
-  if (splits.checked) draw();
+  const sort = el('view-sort');
+  try {
+    sort.value = localStorage.getItem('box.browse.sort') || 'event';
+  } catch {}
+  if (!sort.value) sort.value = 'event';
+  sort.addEventListener('change', () => {
+    try {
+      localStorage.setItem('box.browse.sort', sort.value);
+    } catch {}
+    draw();
+  });
+  const direction = el('view-direction');
+  const layout = el('view-layout');
+  try {
+    direction.value = localStorage.getItem('box.browse.direction') || 'desc';
+    layout.value = localStorage.getItem('box.browse.layout') || 'grid';
+  } catch {}
+  if (!direction.value) direction.value = 'desc';
+  if (!layout.value) layout.value = 'grid';
+  for (const [control, name] of [[direction, 'direction'], [layout, 'layout']]) {
+    control.addEventListener('change', () => {
+      try {
+        localStorage.setItem(`box.browse.${name}`, control.value);
+      } catch {}
+      draw();
+    });
+  }
+  wireListColumns();
+  // A column heading sorts by that column; a second click turns the order.
+  for (const th of document.querySelectorAll('#list th[data-sort]')) {
+    th.addEventListener('click', () => {
+      if (sort.value === th.dataset.sort) {
+        direction.value = direction.value === 'asc' ? 'desc' : 'asc';
+      } else {
+        sort.value = th.dataset.sort;
+        direction.value = newestFirst.has(sort.value) ? 'desc' : 'asc';
+      }
+      try {
+        localStorage.setItem('box.browse.sort', sort.value);
+        localStorage.setItem('box.browse.direction', direction.value);
+      } catch {}
+      draw();
+    });
+  }
+  if (splits.checked || sort.value !== 'event' || direction.value !== 'desc' || layout.value !== 'grid') draw();
   splits.addEventListener('change', () => {
     try {
       localStorage.setItem('box.browse.splits', splits.checked ? '1' : '0');
@@ -775,8 +1133,9 @@ function wireFilters() {
     draw();
   });
   el('filters-clear').addEventListener('click', () => {
-    for (const select of document.querySelectorAll('.filters select')) select.value = '';
+    for (const select of document.querySelectorAll('.filters select:not([id^="view-"])')) select.value = '';
     filterTags.set([]);
+    el('filter-text').value = '';
     filtersChanged();
   });
 }
@@ -784,11 +1143,14 @@ function wireFilters() {
 // A filter that is narrowing the list is tinted, and Clear shows only then.
 function markActiveFilters() {
   let any = false;
-  for (const select of document.querySelectorAll('.filters select')) {
+  for (const select of document.querySelectorAll('.filters select:not([id^="view-"])')) {
     const active = select.value !== '';
     select.closest('.filter').classList.toggle('filter-active', active);
     any ||= active;
   }
+  const searched = el('filter-text').value.trim() !== '';
+  el('filter-text').closest('.filter').classList.toggle('filter-active', searched);
+  any ||= searched;
   const tagged = filterTags.get().length > 0;
   el('filter-tags').closest('.filter').classList.toggle('filter-active', tagged);
   el('filters-clear').hidden = !(any || tagged);
@@ -811,6 +1173,9 @@ function writeTagsToURL() {
   const params = new URLSearchParams(window.location.search);
   params.delete('tag');
   for (const tag of filterTags.get()) params.append('tag', tag);
+  const words = el('filter-text').value.trim();
+  if (words) params.set('q', words);
+  else params.delete('q');
   const query = params.toString();
   history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
 }

@@ -97,6 +97,8 @@ function zonePicker(input, list, picked) {
       } else if (event.key === 'Enter' || event.key === 'Tab') {
         if (event.key === 'Tab' && view.index < 0) return false;
         pick(Math.max(0, view.index));
+        // Enter that picks a zone also moves on, as Enter does in every field.
+        if (event.key === 'Enter') focusNextField(input);
       } else if (event.key === 'Escape') {
         close();
       } else {

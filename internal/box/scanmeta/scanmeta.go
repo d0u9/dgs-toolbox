@@ -78,6 +78,12 @@ type Info struct {
 // monochrome at 200 dpi went through the feeder in a batch, colour at 600 dpi
 // was placed on the glass deliberately.
 type Image struct {
+	// Rotate is the page's /Rotate, clockwise degrees: 0, 90, 180 or 270. A
+	// scanner that stores a sideways picture and turns the page to show it
+	// upright leaves the picture itself sideways, so drawing it means turning
+	// it by this much. It says nothing about the bytes and takes no part in any
+	// digest.
+	Rotate int
 	Page   int
 	Width  int
 	Height int

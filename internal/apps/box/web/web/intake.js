@@ -304,6 +304,7 @@ function draw() {
     setSaveState('');
   }
   pages.show(scan);
+  el('sheet-reveal').hidden = empty || Boolean(state.config?.sample);
   if (!empty) {
     el('facts').textContent = facts(scan).join(' · ');
     const shown = flags(scan);
@@ -424,8 +425,12 @@ function drawExpiry() {
   el('expiry-line').textContent = `Expires ${addDays(date, type.lifetime)}.`;
 }
 
+// A date known only to the year or the month counts from its last day, as the
+// server does, so the line never promises an expiry earlier than the real one.
 function addDays(iso, days) {
-  const parsed = new Date(`${iso}T00:00:00Z`);
+  const [year, month, day] = iso.split('-').map(Number);
+  const last = day || new Date(Date.UTC(year, month || 12, 0)).getUTCDate();
+  const parsed = new Date(Date.UTC(year, (month || 12) - 1, last));
   if (Number.isNaN(parsed.getTime())) return '—';
   parsed.setUTCDate(parsed.getUTCDate() + days);
   return parsed.toISOString().slice(0, 10);
@@ -702,6 +707,17 @@ const zones = zonePicker(el('event-zone'), el('zone-options'), (name) => {
 });
 
 function wireFields() {
+  el('sheet-reveal').addEventListener('click', async () => {
+    const scan = current();
+    if (!scan) return;
+    try {
+      await api.reveal(scan.digest);
+    } catch (err) {
+      statusBar.showError(err.message);
+    }
+  });
+  // An event is something that already happened, so no date after today.
+  dateField(el('event-date'), { notFuture: true, partial: true });
   el('event-zone').addEventListener('change', () => {
     setValue('eventZone', el('event-zone').value.trim());
     saveSoon();
@@ -721,13 +737,13 @@ function wireFields() {
         event.preventDefault();
         el(id).blur();
       }
-      // Enter in a field only leaves it: filing is a second Enter, so the
-      // reflex of confirming what was typed never files a scan half-described.
-      // Enter that commits an input method's composition (pinyin, kana) is the
-      // input method's, not ours.
+      // Enter in a field moves to the next one, and the last lets go: filing
+      // is a further Enter, so confirming what was typed never files a scan
+      // half-described. Enter that commits an input method's composition
+      // (pinyin, kana) is the input method's, not ours.
       if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) {
         event.preventDefault();
-        el(id).blur();
+        focusNextField(el(id));
       }
     });
   }
@@ -828,7 +844,7 @@ const KEYS = {
     Backspace: () => rejectCurrent(),
     ArrowLeft: () => pages.step(-1),
     ArrowRight: () => pages.step(1),
-    Tab: () => el('event-date').focus(),
+    Tab: () => el('fields').querySelector('.datefield-year').focus(),
     p: () => pages.toggle(),
     ' ': () => split.markOrClose(),
     x: () => split.ignore(),

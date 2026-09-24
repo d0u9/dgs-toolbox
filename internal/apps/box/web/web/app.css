@@ -83,8 +83,19 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 .fieldrow input:focus { border-color: var(--primary); }
 /* A date and an amount are read digit by digit, so they are set in the mono
    face and in figures of one width. */
-#event-date, #total { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+#total, .datefield input { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .fieldrow.wide { grid-column: 1 / -1; }
+
+/* A date is typed a part at a time: year, Enter, month, Enter, day. A part
+   that cannot be right is marked where it is and said beside the boxes. */
+.datefield { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.fieldrow .datefield input { width: auto; text-align: center; padding: 0 4px; }
+.fieldrow .datefield .datefield-year { width: 6ch; }
+.fieldrow .datefield .datefield-month,
+.fieldrow .datefield .datefield-day { width: 4ch; }
+.fieldrow .datefield input.invalid { border-color: var(--error); }
+.datefield-dash { color: var(--graphite); }
+.datefield-message { color: var(--error); font-size: var(--font-size-sm); margin-left: var(--space-xxs); }
 
 /* A run takes one type and nothing else: a date and a description belong to
    one document, so those fields step back rather than lie. */
@@ -507,6 +518,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .filter > span { font-weight: 600; }
 .filter select { font-size: var(--font-size-ui); height: 26px; margin: 0; }
+.filter-search input { font-size: var(--font-size-ui); height: 26px; margin: 0; width: 16em; box-sizing: border-box; }
 .filter-active select { border-color: var(--primary); background: var(--selected); }
 .filter-result { display: flex; align-items: center; gap: var(--space-sm); }
 .count { font-size: var(--font-size-ui); color: var(--charcoal); white-space: nowrap; }
@@ -1089,6 +1101,13 @@ body.resizing { cursor: col-resize; user-select: none; }
   display: grid;
   grid-template-columns: var(--rail-width, 180px) 6px minmax(0, 1fr);
 }
+/* Reading with the details beside the pages: the scan's own picture and page
+   strip would repeat what the reader shows, so only the fields remain. */
+.reader-body.reader-with-detail {
+  grid-template-columns: var(--rail-width, 180px) 6px minmax(0, 1fr) var(--detail-width, 380px);
+}
+.reader-body .detail { border-left: 1px solid var(--hairline); }
+.reader-body .detail-section[aria-label="Scan"] { display: none; }
 .reader-rail {
   flex-direction: column;
   overflow-y: auto;
@@ -1134,7 +1153,8 @@ body.resizing { cursor: col-resize; user-select: none; }
   font-size: var(--font-size-sm);
 }
 @media (max-width: 640px) {
-  .reader-body { grid-template-columns: minmax(0, 1fr); }
+  .reader-body, .reader-body.reader-with-detail { grid-template-columns: minmax(0, 1fr); }
+  .reader-body .detail { display: none; }
   .reader-rail, .reader-resize { display: none; }
   .reader-column { padding: var(--space-xs); }
 }
@@ -1346,3 +1366,39 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .badge-tag:hover { border-color: var(--primary); color: var(--primary-deep); }
 .badge-tag-on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+/* List view: the same entries as the cards, one row each, a column per fact. */
+.list { width: 100%; border-collapse: collapse; font-size: var(--text-sm, 13px); }
+.list th {
+  position: sticky; top: calc(-1 * var(--space-md)); z-index: 1;
+  background: var(--paper); text-align: left; font-weight: 600; white-space: nowrap;
+  padding: var(--space-xs, 4px) var(--space-sm, 8px); border-bottom: 1px solid var(--hairline);
+}
+.list th[data-sort] { cursor: pointer; user-select: none; }
+.list th[data-sort]:hover, .list th.list-sorted { color: var(--primary-deep); }
+.list th.list-sorted::after { content: " " attr(data-arrow); }
+.list td { padding: var(--space-xs, 4px) var(--space-sm, 8px); border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+.list-row { cursor: pointer; }
+.list-row:hover { background: var(--primary-soft); }
+.list-row.card-selected { background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); }
+.list-row.card-marked { outline: 2px solid var(--primary); outline-offset: -2px; }
+.list-thumb-col { width: 40px; }
+.list .card-thumb-wrap { width: 32px; height: 40px; overflow: hidden; border-radius: var(--radius-sm, 3px); }
+.list .card-thumb { width: 100%; height: 100%; object-fit: cover; }
+.list-title { max-width: 28ch; }
+.list td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-fixed { table-layout: fixed; width: max-content; min-width: 100%; }
+.list-fixed .list-title { max-width: none; }
+.list-grip {
+  position: absolute; top: 0; right: -3px; width: 7px; height: 100%;
+  cursor: col-resize; z-index: 2; touch-action: none;
+}
+.list-grip::after {
+  content: ""; position: absolute; top: 20%; bottom: 20%; left: 3px; width: 1px; background: var(--hairline);
+}
+.list-grip:hover::after, .list-resizing .list-grip:active::after { background: var(--primary); width: 2px; }
+.list-resizing, .list-resizing * { cursor: col-resize; user-select: none; }
+.list-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.list-date { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.list-tags .badge { margin-right: 2px; }
+.list-row.state-dead td { color: var(--steel); }

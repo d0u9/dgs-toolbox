@@ -243,7 +243,7 @@ func TestAVanishedFileIsReported(t *testing.T) {
 // after.
 func TestOrphansInBothDirections(t *testing.T) {
 	root := filledBox(t)
-	day := filepath.Join(root, "2026", "2026-09-22")
+	day := filepath.Join(root, "2026", "09")
 	// A scan with no sidecar.
 	if err := os.WriteFile(filepath.Join(day, "Scan_0099-deadbeef.pdf"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)

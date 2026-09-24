@@ -88,6 +88,7 @@ func (p *Pages) Page(page int) (Image, error) {
 		}
 		return Image{
 			Page:           page,
+			Rotate:         pageRotation(p.context, page),
 			Rendered:       data,
 			RenderedFormat: strings.ToLower(strings.TrimPrefix(rendered.FileType, ".")),
 		}, nil

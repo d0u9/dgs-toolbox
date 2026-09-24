@@ -90,6 +90,12 @@ PDF's `Producer` and `CreationDate`, the embedded image, and both thumbnail
 sizes. Coming back for any of it later would mean fetching the same file from
 the NAS again.
 
+A picture is drawn turned the way its page's `/Rotate` says, which is how every
+PDF reader shows it. Scanners often store a sideways picture and turn the page
+instead; drawing the picture as stored would show that page sideways. The turn
+is a matter of drawing only: the image digest is still taken over the stored
+bytes.
+
 Images — the remaining 1% — go down the same path with EXIF in place of PDF
 metadata, and keep `kind: image`. They are not converted to PDF: a conversion
 rewrites the bytes and loses the original.
@@ -145,8 +151,10 @@ exception: it is done here, while the pages are on screen.
 **The page is operated entirely from the keyboard.** No action requires the
 mouse. One scan or one batch fills the screen, a single key sets the type, two
 fields take the date and the description, optional tags classify across types,
-and `Enter` moves on. `Enter` inside a field only leaves the field, so
-confirming what was typed never files the scan; the next `Enter` files it. It is a
+and `Enter` moves on. `Enter` inside a field moves to the next field —
+date, zone, description, total, tags — and the last one lets go, so confirming
+what was typed never files the scan; the next `Enter` files it. Browse's
+detail form walks its fields the same way. It is a
 terminal interface that happens to be rendered in a browser, because this is
 several hundred repetitions and a hand leaving the keyboard is a real cost. The
 [browsing page](view.md) is the opposite and uses the mouse normally.
@@ -168,10 +176,24 @@ Two keys exist beyond the fields:
 An IANA name is not something anyone types from memory. A few letters in the
 zone field list the zones they could mean — by city (`syd`), by country
 (`aus` is every zone in Australia, and Austria's), by region or by country
-code — and `↑` `↓` and `Enter` pick one. What is typed is a search; only a
+code — and `↑` `↓` and `Enter` pick one and move on. What is typed is a search; only a
 picked zone, or a whole name left in the field, is kept. The catalogue is
 tzdb's own `zone.tab` and `iso3166.tab`, compiled in, and the search is
 [`internal/zonesearch`](../../../internal/zonesearch/zonesearch.go).
+
+### The date is typed a part at a time
+
+A date is three boxes: year, month, day. `Enter` checks the box it is
+pressed in; a part that cannot be right — a year outside 1900 to a century
+ahead, month 13, 30 February — is said beside the boxes at once and the cursor
+stays, otherwise it moves to the next part. `Enter` on the day moves on to
+the next field. An event date after today is refused, because
+an event has already happened; an expiry may be in the future. `Enter` on
+three empty boxes clears the date. An event known only to the year or the
+month is typed that far: `Enter` on the empty month or day stops the date
+there, and it is stored as `2019` or `2019-03`. An expiry is always a whole
+day. Leaving a date half typed puts back what
+was there.
 
 ### Looking at every page
 
@@ -182,6 +204,10 @@ not during the read of the inbox: a fifty-page document is fifty pictures
 nobody may look at. A page past the first of a scan not yet filed is drawn
 from the inbox file each time and never cached, because the cache belongs to
 the Box and a rejected scan must leave nothing of itself behind.
+
+**Show in Finder**, beside the page label, reveals the scan's file where it
+waits in the inbox, selected in its folder. The sample inbox has no files and
+shows no button.
 
 The inbox column is as wide as it is dragged, from 220 px up to half the
 window, and remembered per browser. Its rows are set at 14 px on 1.5 — the
@@ -295,7 +321,8 @@ guessed at in September" is a filter.
 
 For each accepted scan:
 
-1. Copy into the intake date's directory under a `.dgs-part` name in that same
+1. Copy into the directory of the event's year and month (the intake date's
+   when there is no event date) under a `.dgs-part` name in that same
    directory, hashing the source bytes during the copy.
 2. Read the destination copy back independently and hash it.
 3. Only if the digests match, link it to its final name, which fails rather

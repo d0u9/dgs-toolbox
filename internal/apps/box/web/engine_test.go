@@ -132,7 +132,7 @@ func TestFilePublishesAndTheScanAppears(t *testing.T) {
 		t.Fatalf("the Box does not hold it: %+v", scans)
 	}
 	// It is really on disk, under the intake date, with its sidecar beside it.
-	day := filepath.Join(root, time.Now().Format("2006"), time.Now().Format("2006-01-02"))
+	day := filepath.Join(root, time.Now().Format("2006"), time.Now().Format("01"))
 	entries, err := os.ReadDir(day)
 	if err != nil {
 		t.Fatalf("read %s: %v", day, err)
@@ -176,6 +176,40 @@ func TestFilingWithNoTypeIsUnsorted(t *testing.T) {
 	}
 }
 
+// An event date files the scan under that date's year and month, and the scan
+// and its sidecar move there together; the index finds them where they went.
+func TestApplyMovesAScanToItsEventMonth(t *testing.T) {
+	engine, root, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0015.pdf", []byte("an old receipt"))
+	engine.Rescan()
+	filed, err := engine.File(engine.Pending()[0].Digest, boxweb.Edit{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	date := "2019-03-11"
+	updated, err := engine.Apply(boxweb.Edit{Digest: filed.Digest, EventDate: &date})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	moved, err := os.ReadDir(filepath.Join(root, "2019", "03"))
+	if err != nil || len(moved) != 2 {
+		t.Fatalf("2019/03 holds %v (%v), want the scan and its sidecar", moved, err)
+	}
+	if updated.EventDate != date {
+		t.Errorf("event date: got %q", updated.EventDate)
+	}
+	reopened, err := boxweb.NewEngine(boxweb.Settings{Root: root, CacheDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scans := reopened.Scans(); len(scans) != 1 || scans[0].EventDate != date {
+		t.Errorf("after reopening: %+v", scans)
+	}
+	if exceptions := reopened.Exceptions(); len(exceptions) != 0 {
+		t.Errorf("exceptions after the move: %+v", exceptions)
+	}
+}
+
 // Correcting a classification is one sidecar rewrite and one log line. The file
 // does not move and the digest stays valid.
 func TestApplyRewritesTheSidecarAndLogsIt(t *testing.T) {
@@ -187,7 +221,7 @@ func TestApplyRewritesTheSidecarAndLogsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.ReadDir(filepath.Join(root, time.Now().Format("2006"), time.Now().Format("2006-01-02")))
+	before, err := os.ReadDir(filepath.Join(root, time.Now().Format("2006"), time.Now().Format("01")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,8 +239,8 @@ func TestApplyRewritesTheSidecarAndLogsIt(t *testing.T) {
 	if updated.Reviewed {
 		t.Error("a reclassified scan is still marked reviewed")
 	}
-	// Nothing moved.
-	after, err := os.ReadDir(filepath.Join(root, time.Now().Format("2006"), time.Now().Format("2006-01-02")))
+	// A type is not a date, so nothing moved.
+	after, err := os.ReadDir(filepath.Join(root, time.Now().Format("2006"), time.Now().Format("01")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -670,5 +704,50 @@ func TestAFiledScanCanBeUnfiled(t *testing.T) {
 	}
 	if err := engine.Unfile("sha256:nothing"); err == nil {
 		t.Error("unfiled a scan that is not there")
+	}
+}
+
+// A scan edited right after it is filed keeps what filing recorded: the edit
+// starts from the sidecar as written, not the draft that went into Publish.
+func TestAnEditAfterFilingKeepsWhenItWasAdded(t *testing.T) {
+	engine, root, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0013.pdf", []byte("a receipt"))
+	engine.Rescan()
+	filed, err := engine.File(engine.Pending()[0].Digest, boxweb.Edit{})
+	if err != nil {
+		t.Fatalf("file: %v", err)
+	}
+	if filed.IngestedAt == "" || filed.EditedAt == "" {
+		t.Fatalf("filed scan has no added time: %+v", filed)
+	}
+	description := "later"
+	if _, err := engine.Apply(boxweb.Edit{Digest: filed.Digest, Description: &description}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	matches, _ := filepath.Glob(filepath.Join(root, "*", "*", "*"+sidecar.Suffix))
+	if len(matches) != 1 {
+		t.Fatalf("sidecars: %v", matches)
+	}
+	record, err := sidecar.Load(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(record.IngestedAt) != filed.IngestedAt || record.OriginalFilename != "Scan_0013.pdf" {
+		t.Errorf("the edit dropped what filing wrote: ingested_at %q, original_filename %q", record.IngestedAt, record.OriginalFilename)
+	}
+}
+
+// A scan still in intake is located in the inbox, so it can be shown there.
+func TestAPendingScanIsLocatedInTheInbox(t *testing.T) {
+	engine, _, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0014.pdf", []byte("a letter"))
+	engine.Rescan()
+	pending := engine.Pending()
+	if len(pending) != 1 {
+		t.Fatalf("got %d pending", len(pending))
+	}
+	path, err := engine.Locate(pending[0].Digest)
+	if err != nil || path != filepath.Join(inbox, "Scan_0014.pdf") {
+		t.Errorf("located %q, %v", path, err)
 	}
 }
