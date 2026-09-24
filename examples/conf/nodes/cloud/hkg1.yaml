@@ -1,12 +1,12 @@
 # A relay, and a client of its own.
 #
-# The relay is the first of the two, and it terminates nothing: bytes arriving
+# The relay terminates nothing: bytes arriving
 # on its port are handed to the server in the other city, unchanged and unread.
 # It holds no account table — the people who dial it authenticate against that
 # server, and their share links carry this machine's name with that server's
 # password.
 #
-# The second is for this machine itself: a Shadowsocks client on loopback, so
+# The other instance is for this machine itself: a Shadowsocks client on loopback, so
 # that programs here leave through the same server without each of them being
 # a Shadowsocks client. That one does terminate a connection and does carry a
 # credential, which is why it names a principal. The two are not variants of
@@ -21,28 +21,4 @@ networks:
   internet: hkg1.example.net
 
 instances:
-
-  # A loopback-only SOCKS listener for programs on this machine. It dials
-  # San Francisco as the already-authorised `repeater` principal; the node
-  # file carries no key material.
-  - id: sslocal-hkg01
-    service: sslocal
-    principal: repeater
-    bind: 127.0.0.1
-    ports:
-      socks: 1080
-
-  # One process, one port per line it relays. Which port a connection arrives
-  # on is what decides where it goes, so the ports are the routes' own.
-  - id: fwd-hkg01
-    service: realm
-    ports:
-      # `published` is the name clients dial. The account they use is not
-      # this machine's, but the address they write down is.
-      ss:
-        port: 38250
-        published: relay.example.net
-      hy2:
-        port: 443
-        published: relay.example.net
-        protocol: udp
+  directory: hkg1.instances
