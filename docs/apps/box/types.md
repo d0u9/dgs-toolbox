@@ -35,6 +35,7 @@ lifetime or has none.
 | `contract` | `c` | Contracts and agreements | none |
 | `identity` | `d` | Identity documents, visas, licences | none — enter the expiry by hand |
 | `medical` | `m` | Prescriptions, results, medical receipts | none |
+| `manual` | `h` | Instruction manuals and user guides for things owned | none |
 
 Seven years is the span tax records are normally kept for. It is not
 configurable: a lifetime is part of what a type is, so changing one is a change
@@ -53,12 +54,16 @@ empty field that `view` can list as missing. `insurance` has a default *and*
 expects a date on the document, for the same reason: the default is a guess
 worth having until the real one is entered.
 
+`manual` has no lifetime because a manual is useful for as long as the thing it
+describes is owned, and no date on it says how long that is. It is a utility,
+not a keepsake: once the thing is gone the manual can be discarded by hand.
+
 ## The key column
 
 Each type answers to one keystroke on the intake page, which is what makes a
 few hundred scans in a row possible. The keys are a mnemonic where one is free
-and arbitrary where it is not — `a` for travel (air) and `n` for an invitation
-because `t` and `i` are taken. A test refuses duplicate keys, and the intake
+and arbitrary where it is not — `a` for travel (air), `n` for an invitation
+and `h` for a manual (handbook) because `t`, `i` and `m` are taken. A test refuses duplicate keys, and the intake
 page refuses to start when a type key collides with one of its own commands,
 case-insensitively, so a new type picks a free one rather than quietly stealing
 an established reflex.

@@ -14,6 +14,11 @@ import (
 // sorted. A Date is paired with a Zone when it matters which place's day it
 // was, because that is a separate fact and is stored separately.
 //
+// An event date may be known only to the month or the year: Day, or Month and
+// Day, are then 0. Such a date is written as 2019-03 or 2019, sorts before
+// every day inside it, and does arithmetic from its last day, so an expiry
+// computed from "some time in 2019" is never earlier than the real one.
+//
 // The zero Date is no date. An event nobody has dated yet has one, and
 // arithmetic on it is refused rather than answered from year zero.
 type Date struct {
@@ -24,6 +29,9 @@ type Date struct {
 
 // Zero reports whether d is no date at all.
 func (d Date) Zero() bool { return d == Date{} }
+
+// Partial reports whether d is known only to the month or the year.
+func (d Date) Partial() bool { return !d.Zero() && (d.Month == 0 || d.Day == 0) }
 
 // ParseDate reads an ISO 8601 calendar date — 2019-03-11. It refuses anything
 // else, including a date with a time or a zone on it: those are instants, which
@@ -40,20 +48,70 @@ func ParseDate(text string) (Date, error) {
 	return Date{Year: parsed.Year(), Month: int(parsed.Month()), Day: parsed.Day()}, nil
 }
 
-// String writes the date back as YYYY-MM-DD, which is what goes into a
-// sidecar. The zero Date writes as empty, so a missing date stays missing
-// rather than becoming a date in year zero.
+// ParseEventDate reads a date that may be known only to the month or the
+// year: 2019-03-11, 2019-03 or 2019. An event date is the one field where
+// "some time in 2019" is an honest answer and a made-up day is not.
+func ParseEventDate(text string) (Date, error) {
+	text = strings.TrimSpace(text)
+	for _, layout := range []struct {
+		format string
+		keep   func(time.Time) Date
+	}{
+		{"2006", func(t time.Time) Date { return Date{Year: t.Year()} }},
+		{"2006-01", func(t time.Time) Date { return Date{Year: t.Year(), Month: int(t.Month())} }},
+	} {
+		if len(text) == len(layout.format) {
+			parsed, err := time.Parse(layout.format, text)
+			if err != nil {
+				return Date{}, fmt.Errorf("read date %q: want YYYY, YYYY-MM or YYYY-MM-DD", text)
+			}
+			return layout.keep(parsed), nil
+		}
+	}
+	date, err := ParseDate(text)
+	if err != nil && text != "" {
+		return Date{}, fmt.Errorf("read date %q: want YYYY, YYYY-MM or YYYY-MM-DD", text)
+	}
+	return date, err
+}
+
+// String writes the date back as YYYY-MM-DD, or YYYY-MM or YYYY when that is
+// all that is known, which is what goes into a sidecar. The zero Date writes
+// as empty, so a missing date stays missing rather than becoming a date in
+// year zero.
 func (d Date) String() string {
-	if d.Zero() {
+	switch {
+	case d.Zero():
 		return ""
+	case d.Month == 0:
+		return fmt.Sprintf("%04d", d.Year)
+	case d.Day == 0:
+		return fmt.Sprintf("%04d-%02d", d.Year, d.Month)
 	}
 	return fmt.Sprintf("%04d-%02d-%02d", d.Year, d.Month, d.Day)
+}
+
+// Last is the last day d can be: d itself when the day is known, else the
+// last day of its month or year.
+func (d Date) Last() Date {
+	switch {
+	case d.Zero() || !d.Partial():
+		return d
+	case d.Month == 0:
+		return Date{Year: d.Year, Month: 12, Day: 31}
+	}
+	last := time.Date(d.Year, time.Month(d.Month)+1, 0, 0, 0, 0, 0, time.UTC)
+	return Date{Year: d.Year, Month: d.Month, Day: last.Day()}
 }
 
 // AddDays moves a date by whole days. It goes through the calendar rather than
 // through 24-hour arithmetic, so a lifetime crossing a daylight-saving change
 // still lands on the day it should.
+//
+// A partial date counts from its last day, so a lifetime never ends before it
+// would have from any day the date could be.
 func (d Date) AddDays(days int) Date {
+	d = d.Last()
 	if d.Zero() {
 		return Date{}
 	}

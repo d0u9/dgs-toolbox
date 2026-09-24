@@ -66,6 +66,9 @@ type Scan struct {
 	DuplicatePath string `json:"duplicatePath"`
 	TrashedAt     string `json:"trashedAt"`
 	IngestedAt    string `json:"ingestedAt"`
+	// EditedAt is the sidecar's edited_at, or IngestedAt for a scan never
+	// edited since it was filed.
+	EditedAt string `json:"editedAt,omitempty"`
 
 	// Expiry and State are computed, never stored. They are sent so the page
 	// does not reimplement the rule.
@@ -162,7 +165,7 @@ type Source interface {
 	// Unfile takes a filed scan back to intake: its Box copy goes to the trash
 	// and it is waiting again, with what its sidecar said as the draft.
 	Unfile(digest string) error
-	// Locate is where a filed scan's file is on this machine, so the page can
+	// Locate is where a filed scan, or one still in the inbox,'s file is on this machine, so the page can
 	// ask for it to be shown in the file manager. It names nothing pending.
 	Locate(digest string) (string, error)
 	// Redraw drops the stored pictures of a filed scan and draws them again
@@ -219,7 +222,7 @@ type TrashSummary struct {
 func decorate(scan Scan, today box.Date) Scan {
 	_, known := doctype.Lookup(scan.Type)
 	scan.TypeKnown = known
-	eventDate, _ := box.ParseDate(scan.EventDate)
+	eventDate, _ := box.ParseEventDate(scan.EventDate)
 	expiresAt, _ := box.ParseDate(scan.ExpiresAt)
 	subject := lifecycle.Scan{
 		Type:          scan.Type,
@@ -365,7 +368,7 @@ func (s *Sample) File(digest string, edit Edit) (Scan, error) {
 	if err != nil {
 		return Scan{}, err
 	}
-	filed.IngestedAt = time.Now().Format(time.RFC3339)
+	filed.IngestedAt = time.Now().UTC().Format(time.RFC3339)
 	s.pending = append(s.pending[:index], s.pending[index+1:]...)
 	s.filed = append(s.filed, filed)
 	return decorate(filed, box.Today(nil)), nil
@@ -497,7 +500,7 @@ func applyEdit(scan Scan, edit Edit, defaultCurrency string) (Scan, error) {
 		if trimmed := strings.TrimSpace(*edit.EventDate); trimmed == "" {
 			scan.EventDate = ""
 		} else {
-			parsed, err := box.ParseDate(trimmed)
+			parsed, err := box.ParseEventDate(trimmed)
 			if err != nil {
 				return Scan{}, err
 			}

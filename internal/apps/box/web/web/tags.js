@@ -218,7 +218,15 @@ function tagField(host, options) {
         else if (!input.value.trim()) input.blur();
         return;
       case 'Tab':
-        if (!input.value.trim()) return;
+        if (!input.value.trim()) {
+          // Tab out of an empty tag field goes on as Enter does: to the next
+          // field, or, from the last one, back to the page's keys — not to
+          // whatever the browser would focus next.
+          if (event.shiftKey) return;
+          event.preventDefault();
+          focusNextField(input);
+          return;
+        }
         event.preventDefault();
         take();
         suggest();

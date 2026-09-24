@@ -159,3 +159,54 @@ func TestFirstPageFallsBackToTheOnlyImage(t *testing.T) {
 		t.Errorf("page 1 asked for by number: got %v, want ErrNoImage", err)
 	}
 }
+
+// A page turned by /Rotate is drawn turned: a wide picture on a page turned a
+// quarter becomes tall, and its top-left corner moves to the top right.
+func TestTurnFollowsThePage(t *testing.T) {
+	source := image.NewRGBA(image.Rect(0, 0, 4, 2))
+	red := color.RGBA{R: 255, A: 255}
+	source.Set(0, 0, red)
+	cases := []struct {
+		degrees    int
+		width      int
+		height     int
+		redX, redY int
+	}{
+		{0, 4, 2, 0, 0},
+		{90, 2, 4, 1, 0},
+		{180, 4, 2, 3, 1},
+		{270, 2, 4, 0, 3},
+		{45, 4, 2, 0, 0},
+	}
+	for _, c := range cases {
+		turned := thumb.Turn(source, c.degrees)
+		if turned.Bounds().Dx() != c.width || turned.Bounds().Dy() != c.height {
+			t.Errorf("%d°: %v", c.degrees, turned.Bounds())
+			continue
+		}
+		if got := color.RGBAModel.Convert(turned.At(c.redX, c.redY)); got != red {
+			t.Errorf("%d°: corner went elsewhere, (%d,%d) is %v", c.degrees, c.redX, c.redY, got)
+		}
+	}
+}
+
+// RenderPicture draws a page turned a quarter tall, as a PDF reader shows it.
+func TestRenderPictureTurnsThePage(t *testing.T) {
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, image.NewGray(image.Rect(0, 0, 400, 200))); err != nil {
+		t.Fatal(err)
+	}
+	pair, err := thumb.RenderPicture(scanmeta.Image{Rendered: buffer.Bytes(), Rotate: 90})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{"grid": pair.Grid, "preview": pair.Preview} {
+		config, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.Width >= config.Height {
+			t.Errorf("%s is %dx%d, not tall", name, config.Width, config.Height)
+		}
+	}
+}

@@ -120,7 +120,7 @@ func (e *Engine) Adopt(path string, edit Edit) (Scan, error) {
 	record.Producer = result.Info.Producer
 	record.ScanCreatedAt = sidecar.Timestamp(result.Info.CreatedAt)
 	record.OriginalFilename = filepath.Base(full)
-	record.IngestedAt = sidecar.Timestamp(time.Now().Format(time.RFC3339))
+	record.IngestedAt = sidecar.Timestamp(time.Now().UTC().Format(time.RFC3339))
 
 	if scanPath != full {
 		if err := os.Rename(full, scanPath); err != nil {

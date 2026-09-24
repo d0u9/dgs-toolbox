@@ -39,6 +39,9 @@ const (
 	ActionDiscard Action = "discard"
 	// ActionRestore records a scan taken back out of the trash.
 	ActionRestore Action = "restore"
+	// ActionMove records a filed scan moving to the directory its dates now
+	// place it in. Path is where it went, From where it was.
+	ActionMove Action = "move"
 )
 
 // Entry is one line.

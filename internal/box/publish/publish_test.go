@@ -53,9 +53,8 @@ func TestPublishFilesByIntakeDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	// Only the intake date is in the path. Type, amount and expiry all change,
-	// so a path built from any of them would make every correction a file move.
-	if got := filepath.ToSlash(result.RelativePath); !strings.HasPrefix(got, "2026/2026-09-22/") {
+	// With no event date the intake date places it, by year and month.
+	if got := filepath.ToSlash(result.RelativePath); !strings.HasPrefix(got, "2026/09/") {
 		t.Errorf("relative path: got %q", got)
 	}
 	// The stem it arrived with comes first, so the directory still sorts the
@@ -179,7 +178,7 @@ func TestCollidingNamesExtendThePrefix(t *testing.T) {
 	inbox := filepath.Join(t.TempDir(), "inbox")
 	source, want := scan(t, inbox, "Scan_0012.pdf", []byte("a page"))
 
-	day := filepath.Join(root, "2026", "2026-09-22")
+	day := filepath.Join(root, "2026", "09")
 	if err := os.MkdirAll(day, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -211,10 +210,96 @@ func TestCollidingNamesExtendThePrefix(t *testing.T) {
 	}
 }
 
-func TestDirectoryForUsesIntakeDateOnly(t *testing.T) {
+func TestDirectoryForIsYearAndMonth(t *testing.T) {
 	got := publish.DirectoryFor(box.Date{Year: 2019, Month: 3, Day: 11})
-	if filepath.ToSlash(got) != "2019/2019-03-11" {
+	if filepath.ToSlash(got) != "2019/03" {
 		t.Errorf("got %q", got)
+	}
+	if got := publish.DirectoryFor(box.Date{Year: 2019}); filepath.ToSlash(got) != "2019" {
+		t.Errorf("a year alone: got %q", got)
+	}
+}
+
+func TestFilingDatePrefersTheLatestEventDate(t *testing.T) {
+	march := box.Date{Year: 2019, Month: 3, Day: 11}
+	june := box.Date{Year: 2019, Month: 6, Day: 1}
+	if got := publish.FilingDate(sidecar.File{}, intake); got != intake {
+		t.Errorf("no event date: got %v, want the fallback", got)
+	}
+	if got := publish.FilingDate(sidecar.File{EventDate: march}, intake); got != march {
+		t.Errorf("event date: got %v", got)
+	}
+	split := sidecar.File{Documents: []sidecar.Document{{EventDate: june}, {EventDate: march}, {}}}
+	if got := publish.FilingDate(split, intake); got != june {
+		t.Errorf("split: got %v, want the latest document", got)
+	}
+	// "Some time in 2019" can be as late as December, so it outranks June.
+	split.Documents = append(split.Documents, sidecar.Document{EventDate: box.Date{Year: 2019}})
+	if got := publish.FilingDate(split, intake); got != (box.Date{Year: 2019}) {
+		t.Errorf("split with a year: got %v", got)
+	}
+}
+
+func TestPublishFilesByEventDate(t *testing.T) {
+	root := newBox(t)
+	source, want := scan(t, filepath.Join(t.TempDir(), "inbox"), "Scan_0013.pdf", []byte("a 2019 receipt"))
+	result, err := publish.Publish(context.Background(), publish.Request{
+		Root: root, Source: source, IntakeDate: intake, Digest: want,
+		Sidecar: sidecar.File{EventDate: box.Date{Year: 2019, Month: 3, Day: 11}},
+	})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if got := filepath.ToSlash(result.RelativePath); !strings.HasPrefix(got, "2019/03/") {
+		t.Errorf("relative path: got %q", got)
+	}
+}
+
+// Changing the event date moves the scan and its sidecar together, by rename,
+// logs the move, and takes away the month it left when that is now empty.
+func TestMoveFollowsTheEventDate(t *testing.T) {
+	root := newBox(t)
+	source, want := scan(t, filepath.Join(t.TempDir(), "inbox"), "Scan_0014.pdf", []byte("a statement"))
+	published, err := publish.Publish(context.Background(), publish.Request{
+		Root: root, Source: source, IntakeDate: intake, Digest: want,
+	})
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	record, err := sidecar.Load(published.SidecarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.EventDate = box.Date{Year: 2019, Month: 3, Day: 11}
+	moved, err := publish.Move(publish.MoveRequest{Root: root, Path: published.Path, Digest: want, Record: record})
+	if err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	if !moved.Moved || filepath.Dir(moved.Path) != filepath.Join(root, "2019", "03") {
+		t.Fatalf("moved to %q", moved.Path)
+	}
+	if filepath.Base(moved.Path) != filepath.Base(published.Path) {
+		t.Errorf("the name changed: %q", moved.Path)
+	}
+	if _, err := sidecar.Load(moved.SidecarPath); err != nil {
+		t.Errorf("the sidecar did not follow: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "2026")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the empty year was left behind: %v", err)
+	}
+	entries, err := boxlog.Read(boxlog.PathFor(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := entries[len(entries)-1]
+	if last.Action != boxlog.ActionMove || !strings.HasPrefix(last.From, "2026/09/") || !strings.HasPrefix(last.Path, "2019/03/") {
+		t.Errorf("log: %+v", last)
+	}
+
+	// Already in place is not a move.
+	again, err := publish.Move(publish.MoveRequest{Root: root, Path: moved.Path, Digest: want, Record: record})
+	if err != nil || again.Moved {
+		t.Errorf("second move: %+v %v", again, err)
 	}
 }
 
@@ -266,7 +351,7 @@ func TestDiscardMovesIntoTheTrash(t *testing.T) {
 	if record.TrashedAt.Zero() || record.Reason == "" {
 		t.Errorf("the trash sidecar does not say when or why: %+v", record)
 	}
-	if !strings.Contains(record.TrashedFrom, "2026-09-22") {
+	if !strings.HasPrefix(record.TrashedFrom, "2026/09/") {
 		t.Errorf("the trash sidecar does not say where it came from: %q", record.TrashedFrom)
 	}
 	if _, err := os.Lstat(published.SidecarPath); !errors.Is(err, os.ErrNotExist) {

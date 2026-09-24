@@ -1,4 +1,5 @@
-// Package publish puts one scan into a Box.
+// Package publish puts one scan into a Box, and moves it when its dates say it
+// belongs elsewhere.
 //
 // It is the only place a Box is written to during intake, and it holds the
 // ordering that makes the result trustworthy: copy and verify first, then the
@@ -42,9 +43,8 @@ type Request struct {
 	// Source is the file in the inbox. It is read, never moved and never
 	// deleted.
 	Source string
-	// IntakeDate is the day this is being taken in, and is the only thing the
-	// destination path encodes. Type, amount and expiry all change later, so a
-	// path built from any of them would turn every correction into a file move.
+	// IntakeDate is the day this is being taken in. It places the scan only
+	// when the sidecar carries no event date; see FilingDate.
 	IntakeDate box.Date
 	// Digest is the whole-file digest from the one read, "sha256:" and hex. It
 	// is checked against what the copy computes: a mismatch means the file
@@ -76,11 +76,15 @@ type Result struct {
 	// ShortDigest is the prefix used in the names, which is longer than the
 	// default when a collision had to be broken.
 	ShortDigest string
+	// Sidecar is the record as written, with what Publish filled in: digest,
+	// size, original filename and ingested_at. A caller keeping a copy of the
+	// sidecar keeps this one, or its next save drops those fields.
+	Sidecar sidecar.File
 }
 
 // Publish copies a scan into the Box and publishes it, in this order:
 //
-//  1. Copy into the intake date's directory under a .dgs-part name in that same
+//  1. Copy into the filing date's directory under a .dgs-part name in that same
 //     directory, hashing the source bytes during the copy.
 //  2. Read the destination copy back independently and hash it.
 //  3. Only if the digests match, rename it to its final name, which fails
@@ -101,9 +105,9 @@ func Publish(ctx context.Context, request Request) (Result, error) {
 	if strings.TrimSpace(request.Digest) == "" {
 		return Result{}, errors.New("publish: no digest")
 	}
-	directory := filepath.Join(request.Root, DirectoryFor(request.IntakeDate))
+	directory := filepath.Join(request.Root, DirectoryFor(FilingDate(request.Sidecar, request.IntakeDate)))
 	if err := os.MkdirAll(directory, 0o755); err != nil {
-		return Result{}, fmt.Errorf("create intake directory: %w", err)
+		return Result{}, fmt.Errorf("create filing directory: %w", err)
 	}
 
 	stem, extension := splitName(filepath.Base(request.Source))
@@ -120,10 +124,9 @@ func Publish(ctx context.Context, request Request) (Result, error) {
 	copied, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{
 		Source:      request.Source,
 		Destination: destination,
-		// A Box does not preserve the source's modification time. A scan's date
-		// in the Box is its intake date, which is a fact about the Box, and the
-		// file's own timestamps have been overwritten by copying and syncing
-		// long before it got here.
+		// A Box does not preserve the source's modification time. A scan's
+		// dates in the Box are in its sidecar, and the file's own timestamps
+		// have been overwritten by copying and syncing long before it got here.
 		Progress: request.Progress,
 	})
 	if err != nil {
@@ -142,7 +145,7 @@ func Publish(ctx context.Context, request Request) (Result, error) {
 	record.Size = copied.Size
 	record.OriginalFilename = filepath.Base(request.Source)
 	if record.IngestedAt.Zero() {
-		record.IngestedAt = sidecar.Timestamp(clock(request).Format(time.RFC3339))
+		record.IngestedAt = sidecar.Timestamp(clock(request).UTC().Format(time.RFC3339))
 	}
 	sidecarPath := sidecar.PathFor(directory, request.Digest, len(short))
 	if err := sidecar.Save(sidecarPath, record); err != nil {
@@ -159,7 +162,7 @@ func Publish(ctx context.Context, request Request) (Result, error) {
 		relative = destination
 	}
 	entry := boxlog.Import(request.Digest, filepath.ToSlash(relative))
-	entry.At = clock(request).Format(time.RFC3339)
+	entry.At = clock(request).UTC().Format(time.RFC3339)
 	if err := boxlog.Append(boxlog.PathFor(request.Root), entry); err != nil {
 		// Same reasoning: the scan is in the Box and its metadata is beside it.
 		// A missing log line loses history, not data.
@@ -172,19 +175,50 @@ func Publish(ctx context.Context, request Request) (Result, error) {
 		Size:         copied.Size,
 		Digest:       request.Digest,
 		ShortDigest:  short,
+		Sidecar:      record,
 	}, nil
 }
 
-// DirectoryFor is the path inside a Box that a scan taken in on date belongs
-// to, relative to the root: <YYYY>/<YYYY-MM-DD>.
+// DirectoryFor is the path inside a Box that a scan filed under date belongs
+// to, relative to the root: <YYYY>/<MM>, or <YYYY> alone for a date known only
+// to the year.
 //
-// The year level exists so a directory listing of the root stays readable after
-// a decade of daily folders. Bucketing by intake date rather than by the date
-// on the document is deliberate: the intake date is a fact about this Box, is
-// known exactly, is never revised, and groups a batch usefully, because what
-// was scanned on one day is usually related.
+// A Box is looked through by when things happened — "the 2019 tax receipts" —
+// so the tree follows the date on the document. A month level keeps a year of
+// scans to directories of a readable size without a folder per day.
 func DirectoryFor(date box.Date) string {
-	return filepath.Join(fmt.Sprintf("%04d", date.Year), date.String())
+	if date.Month == 0 {
+		return fmt.Sprintf("%04d", date.Year)
+	}
+	return filepath.Join(fmt.Sprintf("%04d", date.Year), fmt.Sprintf("%02d", date.Month))
+}
+
+// FilingDate is the date that places a scan: its event date, or for a file
+// split into documents the latest event date among the file and its
+// documents, so a pile of a year's statements lands in the year it ends.
+// A scan with no event date anywhere falls back to fallback, which is the
+// day it was taken in.
+func FilingDate(record sidecar.File, fallback box.Date) box.Date {
+	latest := record.EventDate
+	for _, document := range record.Documents {
+		if latest.Zero() || document.EventDate.Last().After(latest.Last()) {
+			latest = document.EventDate
+		}
+	}
+	if latest.Zero() {
+		return fallback
+	}
+	return latest
+}
+
+// IntakeDateOf is the day a filed scan was taken in, read from its sidecar in
+// the local zone. It is the zero Date when the sidecar does not say.
+func IntakeDateOf(record sidecar.File) box.Date {
+	instant, err := time.Parse(time.RFC3339, strings.TrimSpace(string(record.IngestedAt)))
+	if err != nil {
+		return box.Date{}
+	}
+	return box.DateOf(instant, nil)
 }
 
 // freePrefix finds the shortest digest prefix, from the default length up, that

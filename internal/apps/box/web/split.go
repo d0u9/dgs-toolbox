@@ -60,7 +60,7 @@ func applySplit(scan Scan, documents *[]SplitDocument, ignored *string, defaultC
 			}
 		}
 		if trimmed := strings.TrimSpace(document.EventDate); trimmed != "" {
-			date, err := box.ParseDate(trimmed)
+			date, err := box.ParseEventDate(trimmed)
 			if err != nil {
 				return Scan{}, fmt.Errorf("%s: %w", name, err)
 			}
@@ -113,7 +113,7 @@ func splitToRecord(scan Scan) ([]sidecar.Document, []pagerange.Range, error) {
 		if document.Pages, err = pagerange.Parse(view.Pages); err != nil {
 			return nil, nil, err
 		}
-		if document.EventDate, err = parseOptionalDate(view.EventDate); err != nil {
+		if document.EventDate, err = parseOptionalEventDate(view.EventDate); err != nil {
 			return nil, nil, err
 		}
 		if strings.TrimSpace(view.Total) != "" {

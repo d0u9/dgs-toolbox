@@ -21,6 +21,7 @@ import (
 	"dgs-toolbox/internal/box/intakestate"
 	"dgs-toolbox/internal/box/money"
 	"dgs-toolbox/internal/box/publish"
+	"dgs-toolbox/internal/box/readmemo"
 	"dgs-toolbox/internal/box/scanmeta"
 	"dgs-toolbox/internal/box/scanread"
 	"dgs-toolbox/internal/box/sidecar"
@@ -55,6 +56,9 @@ type Engine struct {
 	cache    index.Index
 	orphan   []index.Orphan
 	thumbs   thumbcache.Store
+	// reads remembers what reading each inbox file produced, so a restart
+	// does not read the whole inbox over the network again.
+	reads readmemo.Store
 	// pages is the document being paged through; it has its own lock.
 	pages pageMemo
 
@@ -128,6 +132,7 @@ func NewEngine(settings Settings) (*Engine, error) {
 		orphan:     orphans,
 		cacheDir:   cacheDir,
 		thumbs:     thumbcache.New(cacheDir, root),
+		reads:      readmemo.New(cacheDir, strings.TrimSpace(settings.Inbox)),
 
 		workers:       settings.Workers,
 		trashKeepDays: settings.TrashKeepDays,
@@ -153,6 +158,10 @@ func (e *Engine) Locate(digest string) (string, error) {
 		position, found = e.trashIndexLocked(digest)
 	}
 	if !found {
+		// A scan still in intake is shown where it waits, in the inbox.
+		if pending, waiting := e.pendingIndexLocked(digest); waiting {
+			return e.pending[pending].path, nil
+		}
 		return "", fmt.Errorf("no scan %q", digest)
 	}
 	entry := e.cache.Entries[position]
@@ -283,9 +292,9 @@ func (e *Engine) Exceptions() []Exception {
 
 // Apply changes one scan's metadata.
 //
-// For a filed scan this is one sidecar rewrite and one log line: the file does
-// not move, because no path encodes metadata, and the digest stays valid,
-// because the bytes are untouched. For a pending one it changes nothing on
+// For a filed scan this is one sidecar rewrite and one log line, and a rename
+// when the event date now places the scan in another month. The digest stays
+// valid, because the bytes are untouched. For a pending one it changes nothing on
 // disk at all — there is nothing in the Box yet to change.
 func (e *Engine) Apply(edit Edit) (Scan, error) {
 	e.mutex.Lock()
@@ -321,6 +330,7 @@ func (e *Engine) Apply(edit Edit) (Scan, error) {
 	if err != nil {
 		return Scan{}, err
 	}
+	record.EditedAt = sidecar.Timestamp(time.Now().UTC().Format(time.RFC3339))
 	path := filepath.Join(e.root, entry.SidecarPath)
 	if err := sidecar.Save(path, record); err != nil {
 		return Scan{}, err
@@ -336,6 +346,29 @@ func (e *Engine) Apply(edit Edit) (Scan, error) {
 		}
 	}
 	e.cache.Entries[position].File = record
+	// A changed event date can place the scan in another month. The sidecar
+	// is saved first, so a move that fails leaves the scan described rightly
+	// where it was, and the next edit tries again.
+	if entry.ScanPath != "" && !entry.InTrash {
+		prefix := strings.TrimSuffix(filepath.Base(entry.SidecarPath), sidecar.Suffix)
+		moved, err := publish.Move(publish.MoveRequest{
+			Root:       e.root,
+			MarkerName: e.markerName,
+			Path:       filepath.Join(e.root, entry.ScanPath),
+			Digest:     entry.File.Digest,
+			Prefix:     len(prefix),
+			Record:     record,
+		})
+		if err != nil {
+			e.refreshStalenessLocked(position)
+			e.saveCacheLocked()
+			return Scan{}, fmt.Errorf("saved %s but could not move it: %w", entry.SidecarPath, err)
+		}
+		if moved.Moved {
+			e.cache.Entries[position].ScanPath = relativeTo(e.root, moved.Path)
+			e.cache.Entries[position].SidecarPath = relativeTo(e.root, moved.SidecarPath)
+		}
+	}
 	e.refreshStalenessLocked(position)
 	e.saveCacheLocked()
 	return decorate(scanFromEntry(e.cache.Entries[position]), box.Today(nil)), nil
@@ -401,13 +434,11 @@ func (e *Engine) File(digest string, edit Edit) (Scan, error) {
 	newEntry := index.Entry{
 		SidecarPath: relativeTo(e.root, result.SidecarPath),
 		ScanPath:    relativeTo(e.root, result.Path),
-		File:        record,
+		File:        result.Sidecar,
 	}
 	if err == nil {
 		newEntry.Size, newEntry.ModTime = info.Size(), info.ModTime().UnixNano()
 	}
-	newEntry.File.Digest = result.Digest
-	newEntry.File.Size = result.Size
 	e.cache.Entries = append(e.cache.Entries, newEntry)
 	e.saveCacheLocked()
 	return decorate(scanFromEntry(newEntry), box.Today(nil)), nil
@@ -733,7 +764,7 @@ func (m *pageMemo) drawLocked(page int) (thumb.Pair, error) {
 	if err != nil {
 		return thumb.Pair{}, err
 	}
-	pair, err := thumb.RenderPicture(picture.Rendered)
+	pair, err := thumb.RenderPicture(picture)
 	if err != nil {
 		return thumb.Pair{}, err
 	}
@@ -841,11 +872,12 @@ func (e *Engine) rescanLocked() {
 				return nil
 			}
 		}
-		toRead = append(toRead, candidate{path: path, relative: relative, modTime: info.ModTime().UnixNano()})
+		toRead = append(toRead, candidate{path: path, relative: relative, size: info.Size(), modTime: info.ModTime().UnixNano()})
 		return nil
 	})
 
-	candidates := readCandidates(toRead, e.workers)
+	candidates := readCandidates(toRead, e.workers, e.reads)
+	_ = e.reads.Keep(present)
 	for position := range candidates {
 		// A description typed last time and not yet filed is picked back up.
 		if record, ok := known[candidates[position].relative]; ok &&
@@ -893,7 +925,7 @@ func (e *Engine) rescanLocked() {
 //
 // A file that cannot be read is left out rather than failing the scan. One
 // unreadable file must not hide the other two hundred.
-func readCandidates(toRead []candidate, workers int) []candidate {
+func readCandidates(toRead []candidate, workers int, memo readmemo.Store) []candidate {
 	if workers < 1 {
 		workers = 1
 	}
@@ -912,9 +944,14 @@ func readCandidates(toRead []candidate, workers int) []candidate {
 			defer group.Done()
 			for position := range jobs {
 				found := toRead[position]
-				result, err := scanread.ReadFile(found.path)
-				if err != nil {
-					continue
+				result, ok := memo.Load(found.relative, found.size, found.modTime)
+				if !ok {
+					var err error
+					result, err = scanread.ReadFile(found.path)
+					if err != nil {
+						continue
+					}
+					_ = memo.Save(found.relative, found.size, found.modTime, result)
 				}
 				result.Info.Images = nil
 				found.size = result.Size
@@ -1155,6 +1192,11 @@ func scanFromEntry(entry index.Entry) Scan {
 		TrashedAt:     string(record.TrashedAt),
 		IngestedAt:    string(record.IngestedAt),
 	}
+	// Never edited since it was filed, it was last changed when it was added.
+	scan.EditedAt = string(record.EditedAt)
+	if scan.EditedAt == "" {
+		scan.EditedAt = scan.IngestedAt
+	}
 	scan.Documents, scan.IgnoredPages = splitFromRecord(record)
 	if scan.Filename == "." || scan.Filename == string(filepath.Separator) {
 		scan.Filename = record.OriginalFilename
@@ -1182,7 +1224,7 @@ func recordFromScan(record sidecar.File, scan Scan) (sidecar.File, error) {
 	}
 	record.Documents, record.IgnoredPages = documents, ignored
 
-	eventDate, err := parseOptionalDate(scan.EventDate)
+	eventDate, err := parseOptionalEventDate(scan.EventDate)
 	if err != nil {
 		return sidecar.File{}, err
 	}
@@ -1203,6 +1245,13 @@ func recordFromScan(record sidecar.File, scan Scan) (sidecar.File, error) {
 		record.Total = amount
 	}
 	return record, nil
+}
+
+func parseOptionalEventDate(text string) (box.Date, error) {
+	if strings.TrimSpace(text) == "" {
+		return box.Date{}, nil
+	}
+	return box.ParseEventDate(text)
 }
 
 func parseOptionalDate(text string) (box.Date, error) {

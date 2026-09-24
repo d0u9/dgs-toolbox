@@ -11,7 +11,8 @@
 - **`dgs box`** — a Box of scanned paper: intake from a temporary folder,
   deduplication, per-scan YAML sidecars as the only metadata truth, and a
   discardable local index, per [`docs/apps/box/`](docs/apps/box/). Paths encode
-  only the intake date, so reclassifying never moves a file. Publication
+  only the event year and month (the intake date when there is none), so a
+  changed event date moves a file by rename and nothing else does. Publication
   follows Photo Import's readback contract. Nothing is deleted: discarding
   moves a file into the Box's trash.
 - **GPX** — milestone by milestone per [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
