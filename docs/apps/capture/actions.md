@@ -31,6 +31,10 @@ written into the vault beside the note and shown in the entry.
 - Adds it under the configured section, adding that heading when the note has
   none.
 - Creates the note from `daily-note.md` when the day has none.
+- Adds the Capture's workflow (`been_here`, `photo_note`, …) to the
+  note's `capture_workflows` frontmatter list, once per workflow, so a Base can
+  find the days holding Captures. Only that key is rewritten; the rest of the
+  frontmatter stays as it was. A note without frontmatter gains one.
 - Writes nothing the second time: the entry carries the Capture's id, is added
   once, and a second run says why it wrote nothing. Deleting the entry by hand
   is how it is written again.

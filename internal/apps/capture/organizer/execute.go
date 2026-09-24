@@ -162,6 +162,9 @@ func appendEntry(ctx Context, images []string) (skipped string, err error) {
 		return "", err
 	}
 	updated := insertUnderSection(string(existing), section, entry)
+	if workflow := ctx.Capture.Workflow(); workflow != "" {
+		updated = addToListProperty(updated, WorkflowProperty, workflow)
+	}
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 		return "", fmt.Errorf("write %s: %w", target, err)
 	}

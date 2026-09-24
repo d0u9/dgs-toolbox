@@ -558,6 +558,13 @@ daily note for the day it was taken:
   which a fixed word does not. Captures from different apps therefore land under
   different headings, each grouped. A value with no placeholders is written as it
   stands.
+- **Which kinds of Capture a day holds** is a frontmatter list,
+  `capture_workflows`, gaining the Capture's workflow the first time one of that
+  workflow is written. It is there to be filtered on — a Base listing the days
+  with a `been_here` — which the entries in the body cannot be. Only that key is
+  rewritten, because the rest of the frontmatter is the reader's. A created note
+  gets it too: `daily-note.md` may declare it empty, `capture_workflows: []`, to
+  fix where it sits, and the entry then fills it.
 - The value may carry its own hashes — `## Captured` asks for a second-level
   heading — and a section then ends at the next heading of its own level or
   shallower, so a subheading inside it still belongs to it. Its own section so what this tool writes stays
