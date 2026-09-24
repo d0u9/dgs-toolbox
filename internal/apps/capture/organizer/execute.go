@@ -110,10 +110,12 @@ func missingList(missing []FieldRequirement) string {
 	return strings.Join(names, ", ")
 }
 
-// appendToDailyNote adds one entry under the note's own section, creating the
-// note and the section when they are missing. It rewrites the note from what it
-// held, so a note edited by hand keeps everything it already has.
-func appendToDailyNote(ctx Context, plan ActionPlan) (skipped string, err error) {
+// appendEntry adds one entry under the note's own section, creating the note
+// and the section when they are missing. It rewrites the note from what it
+// held, so a note edited by hand keeps everything it already has. images are
+// the pictures the entry shows, by the filename the vault knows them by; they
+// are already in place.
+func appendEntry(ctx Context, images []string) (skipped string, err error) {
 	// The target is resolved again rather than taken from the plan, so a plan
 	// whose target could not be worked out fails with the reason it could not
 	// be — which is what the reader has to fix — instead of with a missing
@@ -126,7 +128,7 @@ func appendToDailyNote(ctx Context, plan ActionPlan) (skipped string, err error)
 	if !ok {
 		return "", ErrNoVault
 	}
-	entry, err := dailyEntry(ctx)
+	entry, err := dailyEntry(ctx, images)
 	if err != nil {
 		return "", err
 	}
@@ -267,8 +269,9 @@ func headingLevel(line string) int {
 // the template rather than from here. A Capture with no text is still written:
 // being somewhere is worth the line, and the template drops the lines that
 // would have held the text.
-func dailyEntry(ctx Context) ([]string, error) {
+func dailyEntry(ctx Context, images []string) ([]string, error) {
 	data := entryData(ctx)
+	data.Images = images
 	parsed, err := LoadTemplate(ctx.Settings, DailyEntryTemplate)
 	if err != nil {
 		return nil, err

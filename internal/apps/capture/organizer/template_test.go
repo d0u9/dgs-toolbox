@@ -18,7 +18,7 @@ func templated(t *testing.T, capture Capture) Context {
 
 func mustEntry(t *testing.T, ctx Context) string {
 	t.Helper()
-	lines, err := dailyEntry(ctx)
+	lines, err := dailyEntry(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestLoadTemplateReportsAnUnknownField(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, DailyEntryTemplate), []byte("- {{.Nope}}\n"), 0o600)
 	settings := DefaultSettings()
 	settings.TemplateDir = dir
-	if _, err := dailyEntry(NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings)); err == nil {
+	if _, err := dailyEntry(NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings), nil); err == nil {
 		t.Fatal("an unknown field was accepted")
 	}
 }
@@ -119,7 +119,7 @@ func TestBuiltinDailyEntryTemplateRenders(t *testing.T) {
 	capture.Index.Payload = map[string]any{"note": "Coffee under the bridge"}
 	ctx := NewContext(capture, nil).WithSettings(starterSettings(t))
 
-	entry, err := dailyEntry(ctx)
+	entry, err := dailyEntry(ctx, nil)
 	if err != nil {
 		t.Fatalf("the shipped template does not render: %v", err)
 	}

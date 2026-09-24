@@ -1149,7 +1149,7 @@ func loadFileProperties(path string, requestID uint64) tea.Cmd {
 
 func (m model) quickLookSelected() tea.Cmd {
 	selected, ok := m.captures.Selected()
-	if !ok || runtime.GOOS != "darwin" {
+	if !ok {
 		return nil
 	}
 	path := ""
@@ -1159,7 +1159,13 @@ func (m model) quickLookSelected() tea.Cmd {
 			break
 		}
 	}
-	if path == "" {
+	return quickLook(path)
+}
+
+// quickLook opens a file or directory in macOS Quick Look. It delegates to
+// qlmanage rather than drawing anything itself, and does nothing elsewhere.
+func quickLook(path string) tea.Cmd {
+	if path == "" || runtime.GOOS != "darwin" {
 		return nil
 	}
 	return func() tea.Msg {
