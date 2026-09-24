@@ -121,7 +121,8 @@ so.
 ~/confgen/                    conf.root
 ├── services/<service>/       a program a node deploys
 │   └── exports/<export>/     a way of handing that service's credential over
-├── nodes/<group>/*.yaml      a machine, its networks, its instances
+├── nodes/<group>/*.yaml      a machine, its networks, its instances or instance directory
+├── nodes/<group>/*.instances/*.yaml  optional instance files
 ├── users.yaml                people and what they may reach
 ├── routes.yaml               chains
 └── networks.yaml             network preference order
@@ -218,11 +219,45 @@ instances:
       users: {port: 443, protocol: udp}
 ```
 
-Instances live in the node file rather than in a directory of their own. The
-question asked most often is "what runs on this machine", the unit of an export
-is a machine, and a node file answers both by being read top to bottom. A node
-carrying dozens of instances can be split into a directory later; that is a
-layout change and not a model change.
+Instances may live in the node file as above, or in a directory beside it when
+the list makes the node file hard to read. The node file remains the source of
+the machine's identity and networks:
+
+```text
+nodes/home/
+├── server.yaml
+└── server.instances/
+    ├── http-home.yaml
+    └── ss-home.yaml
+```
+
+```yaml
+# nodes/home/server.yaml
+id: home-server
+networks:
+  home: 192.168.1.10
+instances:
+  directory: server.instances
+```
+
+```yaml
+# nodes/home/server.instances/http-home.yaml
+id: http-home
+service: httpproxy
+bind: "0.0.0.0"
+ports:
+  proxy: 8118
+```
+
+The directory name is a single relative name beside the node file. Only its
+direct `*.yaml` files are read, sorted by filename. Each file contains one
+complete instance mapping, including its `id`, or a list of related instances
+(for example, two MeTube instances). List entries keep their written order.
+Other files, such as a README, are ignored. A node uses either an inline
+`instances` list or a directory reference. A missing directory or malformed
+instance file makes the node
+**broken**, with the offending path in the error, rather than silently dropping
+an instance. Instance IDs retain the same inventory-wide uniqueness rule.
 
 A machine that both serves and reaches out is not a special kind of node. The
 home server below answers requests on one instance, relays through a client

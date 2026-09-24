@@ -189,6 +189,14 @@ A device says only what it can reach, since nothing connects to a phone:
     id: doug-phone
     reaches: [home]
 
+For a node with many instances, the node may instead say:
+
+    instances:
+      directory: server.instances
+
+Each direct .yaml file in that directory defines one complete instance or a
+list of related instances.
+
 See docs/apps/conf/inventory.md#nodes.
 `
 
