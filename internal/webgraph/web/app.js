@@ -917,7 +917,7 @@ async function load() {
     return;
   }
 
-  document.title = graph.title || "Graph";
+  document.title = `${graph.title || "Graph"} · dgs`;
   document.getElementById("title").textContent = graph.title || "Graph";
   const counts = [
     `${(graph.groups || []).length} groups`,

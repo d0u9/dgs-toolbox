@@ -45,6 +45,22 @@ func TestFontsAreEmbedded(t *testing.T) {
 
 // The shared scripts, pinned for the same reason: a page imports them by
 // name.
+// The tab icons, pinned for the same reason: a page links its app's icon by
+// name.
+var sharedIcons = []string{"icons/box.svg", "icons/gpx.svg", "icons/graph.svg"}
+
+func TestAssetsHoldTheTabIcons(t *testing.T) {
+	for _, name := range sharedIcons {
+		b, err := fs.ReadFile(webui.Assets(), name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if !strings.Contains(string(b), "<svg") {
+			t.Fatalf("%s is not an SVG", name)
+		}
+	}
+}
+
 var sharedScripts = []string{"filedialog.js", "menu.js", "statusbar.js"}
 
 func TestAssetsHoldTheSharedScripts(t *testing.T) {
