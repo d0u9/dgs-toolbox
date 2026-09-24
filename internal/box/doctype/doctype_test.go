@@ -67,6 +67,9 @@ func TestLookupKeepsAnUnknownNameUnknown(t *testing.T) {
 	if _, known := Lookup("tax-notice"); known {
 		t.Error("Lookup invented a type")
 	}
+	if _, known := Lookup("invite"); known {
+		t.Error("removed invitation type is still offered")
+	}
 	if entry, known := Lookup("receipt"); !known || entry.Label == "" {
 		t.Errorf("Lookup(receipt) = %+v, %v", entry, known)
 	}

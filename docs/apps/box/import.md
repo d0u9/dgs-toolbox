@@ -299,9 +299,12 @@ goes outside the Box: it is a copy made on request, not a second truth.
 
 ### The amount is one field
 
-Typing `123.50` uses the configured default currency; typing `USD 45`
-overrides it. Two separate inputs would add a keystroke to every scan that has
-a total.
+Typing `123.50` uses the last successfully saved currency in this browser,
+falling back to the configured default. Typing `USD 45` or `US 45` overrides
+it; a two-letter country code resolves to its currency, so `AU 45` is saved as
+`AUD 45.00`. A successful amount edit remembers that currency for later bare
+amounts until another amount edit changes it. Two separate inputs would add a
+keystroke to every scan that has a total.
 
 Filling it at intake is optional on purpose: reading a total off a scan means
 deciding whether it includes tax, which is slower than everything else on the

@@ -31,7 +31,6 @@ lifetime or has none.
 | `receipt` | `r` | Receipts and invoices | the event date + 7 years |
 | `statement` | `s` | Bills and account statements | the event date + 7 years |
 | `insurance` | `i` | Policies, certificates of cover | the event date + 1 year |
-| `invite` | `n` | Invitations | the event date |
 | `contract` | `c` | Contracts and agreements | none |
 | `identity` | `d` | Identity documents, visas, licences | none — enter the expiry by hand |
 | `medical` | `m` | Prescriptions, results, medical receipts | none |
@@ -62,7 +61,7 @@ not a keepsake: once the thing is gone the manual can be discarded by hand.
 
 Each type answers to one keystroke on the intake page, which is what makes a
 few hundred scans in a row possible. The keys are a mnemonic where one is free
-and arbitrary where it is not — `a` for travel (air), `n` for an invitation
+and arbitrary where it is not — `a` for travel (air), `b` for memorabilia
 and `h` for a manual (handbook) because `t`, `i` and `m` are taken. A test refuses duplicate keys, and the intake
 page refuses to start when a type key collides with one of its own commands,
 case-insensitively, so a new type picks a free one rather than quietly stealing
@@ -75,9 +74,13 @@ Nothing here expires.
 | Type | Key | What it covers | Default lifetime |
 | --- | --- | --- | --- |
 | `letter` | `l` | Correspondence worth keeping | none |
+| `memorabilia` | `b` | Personal keepsakes: yearbooks, commemorative books, invitations and cards kept for their memories | none |
 | `ephemera` | `e` | Printed matter kept for its own sake: leaflets, brochures, an advertisement, a programme | none |
 | `object` | `o` | A scan of a small object rather than of a document | none |
 
+`memorabilia` is for something kept because it recalls a person, place or time.
+A friend's card, invitation or yearbook belongs here when the memory is the reason for
+keeping it; a letter kept for its correspondence remains `letter`.
 `ephemera` is the collectors' term for short-lived printed matter and covers
 leaflets, brochures and advertisements in one type on purpose. Nobody looks for
 something by remembering whether it was a leaflet or an advertisement, so

@@ -124,7 +124,7 @@ func sampleFiled() []Scan {
 			Pages: 1, PageSize: "A6", Producer: "ScanSnap Manager",
 			ScannedAt: "2023-11-02T20:00:00+11:00", IngestedAt: "2023-11-03T08:00:00+11:00",
 			Colour: "colour", DPI: 600,
-			Type: "invite", Reviewed: true, Description: "Wedding — Anna and Tom",
+			Type: "memorabilia", Reviewed: true, Description: "Wedding — Anna and Tom",
 			EventDate: "2023-12-16", EventZone: "Australia/Sydney",
 		},
 		{
