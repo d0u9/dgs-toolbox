@@ -2060,10 +2060,19 @@ function waypointAt(point, radius = 6) {
 
 function bindMap() {
   let pending = null;
+  // While the map pans, zooms or turns, the pointer is not pointing at
+  // anything: finding the nearest point and redrawing the charts every frame
+  // costs the frames the movement needs, most of all in 3D, where each
+  // unproject reads the terrain back from the GPU. The hover waits for the
+  // map to stop.
   map.on("mousemove", (event) => {
+    if (map.isMoving() || event.originalEvent.buttons) {
+      pending = null;
+      return;
+    }
     pending = event.point;
     requestAnimationFrame(() => {
-      if (!pending) return;
+      if (!pending || map.isMoving()) return;
       const point = pending;
       pending = null;
       const entry = focusedEntry();
@@ -2469,6 +2478,10 @@ async function start() {
     zoom: 9,
     // The credits fold into an ⓘ in the corner; a click opens them.
     attributionControl: { compact: true },
+    // Keep more tiles than the default so zooming back out, or turning the
+    // view in 3D, draws from memory instead of fetching again.
+    maxTileCacheSize: 1024,
+    refreshExpiredTiles: false,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
   map.addControl(new ViewControl(), "top-right");
