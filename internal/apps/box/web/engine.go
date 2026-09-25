@@ -441,8 +441,23 @@ func (e *Engine) File(digest string, edit Edit) (Scan, error) {
 		newEntry.Size, newEntry.ModTime = info.Size(), info.ModTime().UnixNano()
 	}
 	e.cache.Entries = append(e.cache.Entries, newEntry)
+	e.dropMissingLocked(newEntry.SidecarPath)
 	e.saveCacheLocked()
 	return decorate(scanFromEntry(newEntry), box.Today(nil)), nil
+}
+
+// dropMissingLocked forgets a report that relative is missing once a sidecar
+// has been written there again, so the page does not go on saying a file is
+// gone that is in the Box.
+func (e *Engine) dropMissingLocked(relative string) {
+	kept := e.orphan[:0]
+	for _, orphan := range e.orphan {
+		if orphan.Kind == "missing" && orphan.Path == relative {
+			continue
+		}
+		kept = append(kept, orphan)
+	}
+	e.orphan = kept
 }
 
 // UnfiledReason is the reason a scan taken back out of the Box is discarded
