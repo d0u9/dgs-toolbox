@@ -81,7 +81,13 @@ func (m Model) View() string {
 	default:
 		lines = append(lines, hintStyle.Render("Page  ")+m.url)
 	}
-	lines = append(lines, hintStyle.Render("Tree  ")+m.settings.ResolvedRoot())
+	for _, tree := range m.settings.ResolvedTrees() {
+		label := "Tree"
+		if tree.Name != "" {
+			label += " " + tree.Name
+		}
+		lines = append(lines, hintStyle.Render(label+"  ")+tree.Root)
+	}
 	lines = append(lines, "", hintStyle.Render("Import copies a PDF in after reading it back. The original is never touched."))
 	content := titleStyle.Render("DOC") + "\n\n" + strings.Join(lines, "\n")
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
