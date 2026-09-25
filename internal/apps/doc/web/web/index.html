@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<main class="work">
+  <section class="list">
+    <h2 class="panel-head">PDFs <span id="count" class="count numeric"></span></h2>
+    <input id="filter" type="search" placeholder="Filter by path" spellcheck="false" autocomplete="off">
+    <ul id="files"></ul>
+    <p id="message" class="message"></p>
+  </section>
+  <section class="preview">
+    <p id="empty" class="muted">Pick a PDF to see it.</p>
+    <iframe id="frame" title="Preview" hidden></iframe>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

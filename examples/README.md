@@ -14,6 +14,7 @@ have.
 | [`capture-reminders/`](capture-reminders) | Reminders at a place: the list and radius, a workflow keeping its position in the payload, and a Recipe that reminds you on arriving. |
 | [`photo-import/`](photo-import) | Photo Import's source, destination and state file. |
 | [`box/`](box) | `dgs box`'s Box root and inbox, and the currency and time zone new entries default to. |
+| [`doc/`](doc) | `dgs doc`'s document tree and the port its page listens on. |
 | [`conf/`](conf) | `dgs conf export`'s config keys, plus a complete generator root — `services/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml` — matching [`docs/apps/conf/inventory.md`](../docs/apps/conf/inventory.md)'s worked example. |
 | [`cred/`](cred) | `dgs cred`'s `credentials.json`, and a recipient folder with two hosts and a group. Unlike the others it holds no `dgs-config.json`. |
 

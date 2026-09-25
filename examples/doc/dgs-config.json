@@ -1,0 +1,8 @@
+{
+  "doc": {
+    "root": "/Volumes/nas/Documents",
+    "web": {
+      "port": 8767
+    }
+  }
+}
