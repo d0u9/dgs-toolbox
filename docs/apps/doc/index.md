@@ -176,6 +176,19 @@ shows for it:
   is written differently, `AU` in an older sidecar and `澳大利亚` now, are
   the same document. The table is ISO 3166-1, in `internal/doc/country`.
 
+A field of a document may be `per_revision: true`: its value belongs to each
+revision rather than to the Item. A renewed card has its own number and expiry
+and the old card keeps its own. Import asks for every field; adding a revision
+asks only for the per_revision ones, suggested from the new PDF's text. On
+Browse, picking a revision shows and edits the fields as that revision has
+them. Everything else — the page's list, a View's query — uses HEAD's. A
+layout key is the exported revision's own value, so exporting all revisions
+can name the old card and the new one differently. A distinguishing field
+names the document, so it cannot be per_revision, and a record has one PDF,
+so its fields cannot be either. A value a sidecar keeps at the Item for a key
+made per_revision later stands for every revision without its own, until that
+revision's fields are saved.
+
 A sidecar may also hold `notes`, free text the owner writes. Notes are never a
 key and never exported. An Item's history is its revisions; no other log is
 kept.
@@ -431,8 +444,10 @@ fields:
     required: true
     distinguishing: true
   - key: number
+    per_revision: true      # each revision keeps its own
     pattern: '(\d{17}[\dXx])'
   - key: expires
+    per_revision: true
     pattern: '[-－—–一~～至]\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|长期)'
   - key: issued
     type: date

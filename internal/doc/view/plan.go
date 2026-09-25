@@ -50,13 +50,15 @@ type Plan struct {
 // Complete reports whether nothing stops the plan being written.
 func (p Plan) Complete() bool { return len(p.Missing) == 0 && len(p.Clashes) == 0 }
 
-// Matches reports whether item passes every condition of query.
+// Matches reports whether item passes every condition of query, as its
+// Current revision has its fields.
 func Matches(query map[string]Values, item tree.Item) bool {
+	fields := item.CurrentFields()
 	for key, accepted := range query {
 		if len(accepted) == 0 {
 			continue
 		}
-		value := item.Fields[key]
+		value := fields[key]
 		if key == "type" {
 			value = item.Type
 		}
@@ -76,12 +78,17 @@ func Matches(query map[string]Values, item tree.Item) bool {
 
 var isoDate = regexp.MustCompile(`^(\d{4})-(\d{2})-(\d{2})`)
 
-// KeysOf is every key a layout can use for one revision of item: its fields,
-// `id`, `type`, `kind`, `revision`, `ext`, and `year`, `month` and `date`
-// when DateField holds a date.
+// KeysOf is every key a layout can use for one revision of item, counting
+// from 1: its fields as that revision has them, `id`, `type`, `kind`,
+// `revision`, `ext`, and `year`, `month` and `date` when DateField holds a
+// date.
 func KeysOf(item tree.Item, revision int) map[string]string {
 	keys := map[string]string{}
-	for k, v := range item.Fields {
+	fields := item.Fields
+	if revision >= 1 && revision <= len(item.Revisions) {
+		fields = item.FieldsAt(item.Revisions[revision-1].Digest)
+	}
+	for k, v := range fields {
 		if v != "" {
 			keys[k] = v
 		}
@@ -91,7 +98,7 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 	keys["kind"] = string(item.Kind)
 	keys["revision"] = strconv.Itoa(revision)
 	keys["ext"] = "pdf"
-	if m := isoDate.FindStringSubmatch(item.Fields[DateField]); m != nil {
+	if m := isoDate.FindStringSubmatch(fields[DateField]); m != nil {
 		keys["year"], keys["month"], keys["date"] = m[1], m[2], m[1]+"-"+m[2]+"-"+m[3]
 	}
 	return keys

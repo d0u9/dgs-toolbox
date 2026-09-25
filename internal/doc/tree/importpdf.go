@@ -77,9 +77,10 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 		_ = os.Remove(PDFPath(request.Root, id, digest))
 		return Item{}, fmt.Errorf("%s changed while it was being imported", request.Source)
 	}
+	own, perRevision := request.Template.Split(fields)
 	item := Item{
-		ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Fields: fields,
-		Revisions: []Revision{{Digest: digest, Added: request.Now.Format(time.RFC3339), Source: filepath.Base(request.Source)}},
+		ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Fields: own,
+		Revisions: []Revision{{Digest: digest, Added: request.Now.Format(time.RFC3339), Source: filepath.Base(request.Source), Fields: perRevision}},
 	}
 	if item.Kind == KindDocument {
 		item.Head = digest

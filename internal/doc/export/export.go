@@ -39,8 +39,8 @@ type Entry struct {
 	Revision int    `json:"revision"`
 	// Head is set on the revision that was the document's HEAD.
 	Head bool `json:"head,omitempty"`
-	// Fields are the Item's fields when it was exported, so the Target can
-	// be imported back into a tree.
+	// Fields are the Item's fields, as this revision has them, when it was
+	// exported, so the Target can be imported back into a tree.
 	Fields map[string]string `json:"fields"`
 }
 
@@ -257,7 +257,7 @@ func Apply(ctx context.Context, root, target, viewName string, plan Plan, items 
 	entry := func(a Action) Entry {
 		it := byID[a.Item]
 		return Entry{Path: a.Path, Digest: a.Digest, Item: a.Item, Type: it.Type, Kind: string(it.Kind),
-			Revision: a.Revision, Head: it.Kind == tree.KindDocument && it.Current() == a.Digest, Fields: it.Fields}
+			Revision: a.Revision, Head: it.Kind == tree.KindDocument && it.Current() == a.Digest, Fields: it.FieldsAt(a.Digest)}
 	}
 	var done []Entry
 	for _, a := range plan.Keep {

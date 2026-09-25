@@ -54,6 +54,7 @@ fields:
     required: true
     distinguishing: true  # type + distinguishing fields are unique (documents)
   - key: expires
+    per_revision: true    # kept with each revision (documents); asked again when one is added
     type: date            # text (default), date, select, item, country
     pattern: '(\d{4}-\d{2}-\d{2})'  # suggests a value from the PDF's text
   - key: country
