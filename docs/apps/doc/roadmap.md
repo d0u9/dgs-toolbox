@@ -14,7 +14,7 @@ step at a time as it grows. The page comes first; what it writes follows.
 | M4 | Views on the page: build a layout from keys, see the preview tree; missing-key default, clean segments, numbered duplicates | done |
 | M4a | `dgs doc verify` | done |
 | M4b | Field types (`text`, `date`, `select`, `item`), dates found in text, notes | done |
-| M4c | Suggesting a type from filed Items' text | not started |
+| M4c | Suggesting a type from filed Items' text | done |
 | M5 | Missing keys on the page: the list of what is missing, filling keys in | not started |
 | M6 | Export from the page: the plan, dry run, then writing to a folder Target; incremental, and a Target imports back | not started |
 | M7 | Merging a sub-tree created with `init`, with conflicts resolved on the page | not started |

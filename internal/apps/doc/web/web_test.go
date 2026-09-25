@@ -284,3 +284,28 @@ func TestNotes(t *testing.T) {
 		t.Fatal("notes on a missing Item")
 	}
 }
+
+func TestTypeFromFiledItems(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root, CacheDir: t.TempDir(), ReadPage: func(path string, page int) (ocr.Page, int, error) {
+		return ocr.Page{Lines: []ocr.Line{{Text: "居民身份证 姓名 住址 公民身份号码"}}}, 1, nil
+	}})
+	text := func(path string) textJSON {
+		var out textJSON
+		must(t, json.Unmarshal(do(h, "GET", "/api/text?dir="+url.QueryEscape(scans)+"&path="+path+"&page=0", "").Body.Bytes(), &out))
+		return out
+	}
+	if out := text("jane/licence.pdf"); out.Type != "" || len(out.Types) != 0 {
+		t.Fatalf("nothing filed, yet %+v", out.Types)
+	}
+	rec := do(h, "POST", "/api/import", `{"dir":`+q(scans)+`,"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"}}`)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if out := text("jane/renewed.pdf"); out.Type != "id_card" || out.Types[0].Score < 0.99 {
+		t.Fatalf("%+v", out.Types)
+	}
+	if out := text("jane/licence.pdf"); out.Type != "" {
+		t.Fatal("a filed PDF was compared with itself")
+	}
+}
