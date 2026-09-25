@@ -455,3 +455,14 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .target-folder .export-path { flex: 1; }
 .target-folder.unset { border-color: var(--error); }
 .target-flag { flex: none; font-size: var(--font-size-xs); color: var(--graphite); }
+/* Targets */
+.case-line { width: 100%; box-sizing: border-box; height: 30px; padding: 0 8px; border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--paper); font: inherit; color: inherit; }
+.case-line:disabled { opacity: .6; }
+.folder-rows { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.folder-rows .export-folder { max-width: none; }
+.folder-label { font-size: var(--font-size-sm); color: var(--graphite); }
+.result-head .button { text-decoration: none; }
+.template-sub.gone { color: var(--error); }
+.folder-rows + .layout-help { margin-top: 8px; }
+#targets .template-sub.mono { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.topbar #root { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
