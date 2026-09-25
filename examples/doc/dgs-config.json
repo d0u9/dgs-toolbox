@@ -2,6 +2,7 @@
   "doc": {
     "root": "/Volumes/nas/Documents",
     "date_order": "DMY",
+    "expiring_within_days": 90,
     "targets": {
       "icloud": "~/Library/Mobile Documents/com~apple~CloudDocs/Documents"
     },

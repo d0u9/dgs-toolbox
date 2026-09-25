@@ -56,22 +56,18 @@ type typeOption struct {
 	Key      string `json:"key"`
 	Nature   string `json:"nature"`
 	Lifetime *int   `json:"lifetime"`
-	// ExpiryExpected marks a type whose expiry is printed on the document, so
-	// the page can ask for it rather than guess.
-	ExpiryExpected bool `json:"expiryExpected"`
 }
 
 func (a api) types(w http.ResponseWriter, _ *http.Request) {
 	options := make([]typeOption, 0, len(doctype.All()))
 	for _, entry := range doctype.All() {
 		options = append(options, typeOption{
-			Name:           entry.Name,
-			Label:          entry.Label,
-			Covers:         entry.Covers,
-			Key:            string(entry.Key),
-			Nature:         entry.Nature.String(),
-			Lifetime:       entry.Lifetime,
-			ExpiryExpected: entry.ExpiryExpected,
+			Name:     entry.Name,
+			Label:    entry.Label,
+			Covers:   entry.Covers,
+			Key:      string(entry.Key),
+			Nature:   entry.Nature.String(),
+			Lifetime: entry.Lifetime,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"types": options, "unsorted": doctype.Unsorted})

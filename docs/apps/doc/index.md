@@ -45,8 +45,8 @@ or ×, closes the panel.
 
 Expiry is read from the first of `expires`, `expiry`, `expires_at`,
 `expiry_date` and `valid_until` that HEAD has, by the server
-(`internal/doc/expiry`): **expired** after its day, **expires soon** within 90
-days (`DefaultSoon`), **valid**, **no end date** for `长期`, `永久`,
+(`internal/doc/expiry`): **expired** after its day, **expires soon** within
+[`doc.expiring_within_days`](../../configuration/doc.md) days (90 by default), **valid**, **no end date** for `长期`, `永久`,
 `permanent` or `indefinite`, and nothing when there is no such field or it is
 not a date.
 
@@ -530,7 +530,18 @@ defaults:
 The file is named after its `type`. A `select` field lists its values under
 `options`. A field's `pattern` is a regular
 expression that suggests its value from the document's text (below): the
-first capture group, else the whole match. The sidecar:
+first capture group, else the whole match. A value written more than one way
+takes `patterns`, a list tried after `pattern`, in order: the first to find a
+value that fits the field suggests it, so a date field passes over a match
+that is not a date and tries the next.
+
+```yaml
+  - key: expires
+    type: date
+    patterns:
+      - '有效期限.*[-－]\s*(\d{4}\.\d{2}\.\d{2})'   # 2016.01.01-2036.01.01
+      - '(?i)expiry\W*(\d{2}/\d{2}/\d{4})'            # Expiry: 03/04/2031
+``` The sidecar:
 
 ```yaml
 id: 01J8...               # ULID
@@ -544,11 +555,6 @@ revisions:
 
 A record has exactly one revision and no `head`. `notes`, when the owner has
 written any, is one more key of the sidecar.
-
-## Open questions
-
-- **Whether box keeps `identity` and `insurance`** once doc exists — decided
-  after doc is built.
 
 ## Later
 

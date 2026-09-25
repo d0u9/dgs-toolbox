@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // Doc configures dgs doc, the manager of important documents. The design is
@@ -26,6 +27,22 @@ type Doc struct {
 	// the page shows. They belong to one machine, so they are configuration
 	// and not part of the tree.
 	Targets map[string]string `json:"targets"`
+	// ExpiringWithinDays is how many days before its expiry a document is
+	// shown as expiring soon. Zero means DefaultDocExpiringWithinDays.
+	ExpiringWithinDays int `json:"expiring_within_days"`
+}
+
+// DefaultDocExpiringWithinDays is doc.expiring_within_days when unset:
+// about three months, time enough to renew a passport or a licence.
+const DefaultDocExpiringWithinDays = 90
+
+// DocExpiringWithin is doc.expiring_within_days as a duration.
+func (c Config) DocExpiringWithin() time.Duration {
+	days := c.Doc.ExpiringWithinDays
+	if days <= 0 {
+		days = DefaultDocExpiringWithinDays
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 // DocWeb is where the doc pages listen. Only the port is configurable.

@@ -242,10 +242,6 @@ shows how much is in there and how old it is, and treats `box.trash.keep` as
 advice rather than as a timer, because with no NAS snapshots behind it the
 trash is the only undo in the system.
 
-Filling in a missing expiry is its own pass: `identity` and `insurance` are the
-types where the date is printed on the document and matters, and a filter for
-"no expiry on a type that needs one" is how that list is produced.
-
 ## The exceptions area
 
 Three things can be true of a tree that has been touched outside the tool, and
