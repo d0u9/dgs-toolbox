@@ -13,9 +13,15 @@ import (
 // verifyAction checks a tree against its sidecars and changes nothing. It
 // fails when it finds anything, so a script can tell.
 func verifyAction(_ io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {
-	root := global.DocRoot()
+	var root string
 	if len(args) > 0 {
 		root = args[0]
+	} else {
+		chosen, err := global.DocTreeNamed(flags["tree"])
+		if err != nil {
+			return err
+		}
+		root = chosen.Root
 	}
 	if root == "" {
 		wd, err := os.Getwd()

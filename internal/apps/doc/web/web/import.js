@@ -1,6 +1,6 @@
 // Import: open a folder from anywhere, see its PDFs as the tree of folders
 // they are in, and take them in one at a time. The folder is only read.
-import { $, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
+import { $, api, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { fileTree } from "/ui/filetree.js";
 
@@ -51,7 +51,7 @@ function render() {
 
 function pick(path) {
   if (path !== selected) {
-    showPreview({ dir, path }, "/api/source/file?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path));
+    showPreview({ dir, path }, api("/api/source/file?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path)));
     say($("import-message"), "");
     suggestions = {};
     typeChosen = false;
@@ -137,7 +137,7 @@ function suggest() {
 
 async function open(folder) {
   say($("list-message"), "Reading…");
-  const response = await fetch("/api/source?dir=" + encodeURIComponent(folder));
+  const response = await fetch(api("/api/source?dir=" + encodeURIComponent(folder)));
   const answer = await response.json();
   if (!response.ok) {
     say($("list-message"), answer.error || response.statusText, true);

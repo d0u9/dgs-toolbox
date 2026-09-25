@@ -30,6 +30,7 @@ func New() tui.App {
 			Description: "Check every PDF against its sidecar and digest. Changes nothing.",
 			MaxArgs:     1,
 			Flags: []tui.ActionFlag{
+				{Name: "tree", Shorthand: "t", Usage: "the tree in doc.trees to use, when there are several"},
 				{Name: "quiet", Shorthand: "q", Bool: true, Usage: "report only the result, not every file as it is read"},
 			},
 			RunWithConfig: verifyAction,
@@ -39,6 +40,7 @@ func New() tui.App {
 			Description: "Export the Views into the Targets they name: those given, or all. Checks everything first; a conflict writes nothing.",
 			MaxArgs:     64,
 			Flags: []tui.ActionFlag{
+				{Name: "tree", Shorthand: "t", Usage: "the tree in doc.trees to use, when there are several"},
 				{Name: "dry-run", Shorthand: "n", Bool: true, Usage: "plan and check, and write nothing"},
 			},
 			RunWithConfig: exportAction,
@@ -58,9 +60,10 @@ func command() tui.Command {
 		NewWithConfig: build,
 		Flags: []tui.Flag{{
 			Name:  "root",
-			Usage: "the tree to open (default: doc.root, else the working directory)",
+			Usage: "the tree to open (default: doc.root or doc.trees, else the working directory)",
 			Apply: func(global *config.Config, value string) error {
 				global.Doc.Root = value
+				global.Doc.Trees = nil
 				return nil
 			},
 		}, {

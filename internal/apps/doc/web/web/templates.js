@@ -1,6 +1,6 @@
 // Templates: each type's file, edited as written. The server parses and
 // checks it; a type Items use keeps its name and kind.
-import { $, el, loadState, post, frame, say } from "/common.js";
+import { $, api, el, loadState, post, frame, say } from "/common.js";
 import { codeEditor, highlight } from "/ui/codeedit.js";
 
 let state = {};
@@ -60,7 +60,7 @@ function open(type) {
 
 async function reload() {
   state = await loadState();
-  const answer = await (await fetch("/api/templates")).json();
+  const answer = await (await fetch(api("/api/templates"))).json();
   if (answer.error) throw new Error(answer.error);
   templates = answer.templates;
   example = answer.example;

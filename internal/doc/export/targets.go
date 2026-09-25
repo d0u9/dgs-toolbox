@@ -123,3 +123,30 @@ func label(j Job) string {
 	}
 	return filepath.Base(j.Path)
 }
+
+// Other is another tree exported from the same machine: its folder, and the
+// Targets its Views name.
+type Other struct {
+	Name    string
+	Root    string
+	Targets []string
+}
+
+// AgainstOthers adds to each plan what another tree stops: a folder inside
+// that tree or holding it, and a Target that tree's Views also export into,
+// whose manifest the two would fight over.
+func AgainstOthers(plans []JobPlan, others []Other) {
+	for i := range plans {
+		p := &plans[i]
+		for _, o := range others {
+			if within(o.Root, p.Path) || within(p.Path, o.Root) {
+				p.Problems = append(p.Problems, fmt.Sprintf("the folder %s overlaps the tree %s, %s", p.Path, o.Name, o.Root))
+			}
+			for _, t := range o.Targets {
+				if p.Name != "" && t == p.Name {
+					p.Problems = append(p.Problems, fmt.Sprintf("the tree %s's Views also export into the Target %s: give each tree Targets of its own", o.Name, t))
+				}
+			}
+		}
+	}
+}

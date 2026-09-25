@@ -1,6 +1,6 @@
 // Browse: the Items kept in the tree, their fields, revisions and HEAD.
 import { splitter } from "/ui/splitter.js";
-import { $, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, frame, say, showText, showPreview, clearPreview } from "/common.js";
+import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, frame, say, showText, showPreview, clearPreview } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -86,7 +86,7 @@ function expiryBadge(item) {
 }
 
 const headOf = (item) => item.head || (item.revisions[item.revisions.length - 1] || {}).digest;
-const thumbURL = (item) => { const d = headOf(item); return `/api/page?item=${encodeURIComponent(item.id)}&digest=${d}&n=1&size=thumb&v=${d}`; };
+const thumbURL = (item) => { const d = headOf(item); return api(`/api/page?item=${encodeURIComponent(item.id)}&digest=${d}&n=1&size=thumb&v=${d}`); };
 
 // thumb is the first page of HEAD, or the type's name where the PDF has no
 // picture of its page (one made on a computer).
@@ -157,7 +157,7 @@ async function showImage(id, digest) {
   shownPage = { id, digest, n: 1, count: 1 };
   drawPage();
   try {
-    const info = await (await fetch("/api/pages?" + new URLSearchParams({ item: id, digest }))).json();
+    const info = await (await fetch(api("/api/pages?" + new URLSearchParams({ item: id, digest })))).json();
     if (shownPage.id === id && shownPage.digest === digest) {
       shownPage.count = Math.max(1, info.count || 1);
       drawPage();
@@ -170,7 +170,7 @@ function drawPage() {
   const frame = $("detail-frame");
   frame.classList.remove("no-picture");
   frame.dataset.type = item ? item.type : "";
-  $("detail-image").src = `/api/page?item=${encodeURIComponent(id)}&digest=${digest}&n=${n}&size=page&v=${digest}`;
+  $("detail-image").src = api(`/api/page?item=${encodeURIComponent(id)}&digest=${digest}&n=${n}&size=page&v=${digest}`);
   $("page-label").textContent = n + " / " + count;
   $("page-prev").disabled = n <= 1;
   $("page-next").disabled = n >= count;
@@ -195,7 +195,7 @@ function openReader() {
   document.body.classList.add("reading");
   $("preview").hidden = false;
   showPreview({ item: selected.id, digest: selected.digest },
-    "/api/revision?item=" + encodeURIComponent(selected.id) + "&digest=" + encodeURIComponent(selected.digest));
+    api("/api/revision?item=" + encodeURIComponent(selected.id) + "&digest=" + encodeURIComponent(selected.digest)));
 }
 function hideReader() {
   document.body.classList.remove("reading");
@@ -297,7 +297,7 @@ function pick(id, digest) {
   if (!selected || selected.id !== id || selected.digest !== digest) {
     showImage(id, digest);
     showText({ item: id, digest });
-    if (!$("preview").hidden) showPreview({ item: id, digest }, "/api/revision?item=" + encodeURIComponent(id) + "&digest=" + encodeURIComponent(digest));
+    if (!$("preview").hidden) showPreview({ item: id, digest }, api("/api/revision?item=" + encodeURIComponent(id) + "&digest=" + encodeURIComponent(digest)));
   }
   if (!selected || selected.id !== id) {
     $("similar").replaceChildren();
@@ -411,7 +411,7 @@ function searchText() {
     const mine = ++searchAsked;
     const q = $("filter").value.trim();
     try {
-      const answer = await (await fetch("/api/search?q=" + encodeURIComponent(q))).json();
+      const answer = await (await fetch(api("/api/search?q=" + encodeURIComponent(q)))).json();
       if (mine !== searchAsked) return;
       textHits = new Map((answer.hits || []).map((h) => [h.id, h.snippet]));
       unread = answer.unread || 0;
@@ -437,7 +437,7 @@ $("more").onclick = async () => {
   if (!id) return;
   say($("similar-message"), "Comparing…");
   try {
-    const answer = await (await fetch("/api/similar?item=" + encodeURIComponent(id))).json();
+    const answer = await (await fetch(api("/api/similar?item=" + encodeURIComponent(id)))).json();
     if (!selected || selected.id !== id) return;
     const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
     $("similar").replaceChildren(...answer.hits.filter((h) => byId[h.id]).map((h) => el("li", {
