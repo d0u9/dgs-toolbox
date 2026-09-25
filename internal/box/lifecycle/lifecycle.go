@@ -109,22 +109,5 @@ func wantsADate(scan Scan) bool {
 		return false
 	}
 	entry, known := doctype.Lookup(scan.Type)
-	if !known {
-		return false
-	}
-	if entry.ExpiryExpected {
-		return true
-	}
-	return !entry.Permanent() && scan.EventDate.Zero()
-}
-
-// NeedsExpiry reports whether a scan is of a type whose expiry is printed on
-// the document and has not been entered. It is what produces the list worth
-// filling in by hand: a passport or a policy whose real date is on the paper.
-func NeedsExpiry(scan Scan) bool {
-	entry, known := doctype.Lookup(scan.Type)
-	if !known || !entry.ExpiryExpected {
-		return false
-	}
-	return scan.ExpiresAt.Zero() && !scan.ExpiryCleared
+	return known && !entry.Permanent() && scan.EventDate.Zero()
 }

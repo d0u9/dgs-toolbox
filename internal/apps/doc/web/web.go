@@ -45,13 +45,16 @@ type Settings struct {
 	CacheDir string
 	// DateOrder reads dates like 03/04/2026. Empty is dates.DefaultOrder.
 	DateOrder dates.Order
+	// ExpiringWithin is how long before its expiry a document counts as
+	// expiring soon. Zero is expiry.DefaultSoon.
+	ExpiringWithin time.Duration
 	// Targets are the folders a View may be exported to, by name.
 	Targets map[string]string
 }
 
 // SettingsFrom reads the server settings out of the configuration.
 func SettingsFrom(global config.Config) Settings {
-	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder(), Targets: global.Doc.Targets}
+	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder(), Targets: global.Doc.Targets, ExpiringWithin: global.DocExpiringWithin()}
 	if dir, err := global.DocCacheDir(); err == nil {
 		settings.CacheDir = dir
 	}
@@ -86,12 +89,16 @@ type stateJSON struct {
 	Items     []tree.Item     `json:"items"`
 	// Expiry is each Item's expiry as its Current revision has it, by ID.
 	Expiry map[string]expiry.Status `json:"expiry"`
+	// SoonDays is how many days before its expiry an Item counts as
+	// expiring soon, doc.expiring_within_days.
+	SoonDays int `json:"soonDays"`
 }
 
 type server struct {
 	root      string
 	now       func() time.Time
 	dateOrder dates.Order
+	soon      time.Duration
 	// store is the text cache the reader keeps, read directly to compare a
 	// PDF with the Items already filed.
 	store textcache.Store
@@ -111,6 +118,9 @@ func Handler(settings Settings) http.Handler {
 	if err != nil {
 		panic(err)
 	}
+	if settings.ExpiringWithin <= 0 {
+		settings.ExpiringWithin = expiry.DefaultSoon
+	}
 	if settings.DateOrder == "" {
 		settings.DateOrder = dates.DefaultOrder
 	}
@@ -119,7 +129,7 @@ func Handler(settings Settings) http.Handler {
 		read = ocr.RecognizePage
 	}
 	s := server{
-		root: settings.ResolvedRoot(), now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder,
+		root: settings.ResolvedRoot(), now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder, soon: settings.ExpiringWithin,
 		targets: settings.Targets, writing: &sync.Mutex{},
 		store:  textcache.Store{Dir: settings.CacheDir},
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
@@ -202,9 +212,10 @@ func (s server) state(w http.ResponseWriter, _ *http.Request) {
 		problems = append(problems, err.Error())
 	}
 	out.Expiry = map[string]expiry.Status{}
+	out.SoonDays = int(s.soon / (24 * time.Hour))
 	now := s.now()
 	for _, item := range out.Items {
-		out.Expiry[item.ID] = expiry.Of(item.CurrentFields(), now, expiry.DefaultSoon, s.dateOrder)
+		out.Expiry[item.ID] = expiry.Of(item.CurrentFields(), now, s.soon, s.dateOrder)
 	}
 	out.Error = strings.Join(problems, "; ")
 	writeJSON(w, http.StatusOK, out)

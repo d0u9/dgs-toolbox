@@ -122,6 +122,8 @@ fields:
     pattern: '(\d{17}[\dXx])'   # suggested from the recognised text
   - key: expires
     per_revision: true
-    pattern: '[-－—–一~～至]\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|长期)'   # 一 — － as recognised
+    patterns:             # tried in order; the first date found is suggested
+      - '[-－—–一~～至]\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|长期)'   # 2016.01.01-2036.01.01; 一 — － as recognised
+      - '(?i)(?:expiry|expires|date of expiry|valid until)\W*(\d{1,2}[./-]\d{1,2}[./-]\d{4})'   # Expiry: 03/04/2031
 defaults: {}
 `

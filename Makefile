@@ -10,7 +10,12 @@ COMPLETION ?=
 # On macOS dgs links EventKit through cgo for the reminder Actions, and carries
 # an Info.plist so Reminders can say who is asking. It needs only the Command
 # Line Tools; elsewhere, or with CGO_ENABLED=0, the reminder Actions refuse.
-DARWIN_LDFLAGS := -linkmode=external -extldflags "-sectcreate __TEXT __info_plist $(CURDIR)/internal/desktop/reminders/Info.plist"
+DARWIN_EXTLDFLAGS := -sectcreate __TEXT __info_plist $(CURDIR)/internal/desktop/reminders/Info.plist
+# Two cgo packages (reminders and doc's OCR) each ask for -lobjc, and the
+# linker from Xcode 15 on warns about the repeat. It is harmless; the flag
+# that quiets it is added only when the installed linker knows it, since an
+# older one would refuse it.
+NO_DUP_WARNING := -Wl,-no_warn_duplicate_libraries
 
 install-zsh: COMPLETION=zsh
 install-zsh: install
@@ -27,7 +32,10 @@ install:
 	esac
 	@mkdir -p "$(BINDIR)"
 	@if [ "$$(uname)" = Darwin ]; then \
-		go build -ldflags '$(DARWIN_LDFLAGS)' -o "$(BINDIR)/$(BIN)" ./cmd/dgs && \
+		extld='$(DARWIN_EXTLDFLAGS)'; \
+		if echo 'int main(void){return 0;}' | cc -x c - -o /dev/null $(NO_DUP_WARNING) >/dev/null 2>&1; then \
+			extld="$$extld $(NO_DUP_WARNING)"; fi; \
+		go build -ldflags "-linkmode=external -extldflags '$$extld'" -o "$(BINDIR)/$(BIN)" ./cmd/dgs && \
 		codesign --force --sign - --identifier dev.dgs-toolbox.dgs "$(BINDIR)/$(BIN)"; \
 	else go build -o "$(BINDIR)/$(BIN)" ./cmd/dgs; fi
 	@rm -f "$(BINDIR)/dgs-reminders" # the helper reminders needed before they moved into dgs

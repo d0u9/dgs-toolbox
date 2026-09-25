@@ -109,7 +109,7 @@ func sampleFiled() []Scan {
 			Pages: 6, PageSize: "A4", Producer: "Canon LiDE 400",
 			ScannedAt: "2025-06-30T15:02:00+10:00", IngestedAt: "2025-06-30T15:40:00+10:00",
 			Colour: "mono", DPI: 300,
-			Type: "insurance", Reviewed: true, Description: "Car — comprehensive",
+			Type: "receipt", Reviewed: true, Description: "Car service — 60,000 km",
 			EventDate: "2025-07-01", EventZone: "Australia/Sydney", Total: "AUD 1240.50",
 		},
 		{
@@ -117,7 +117,7 @@ func sampleFiled() []Scan {
 			Pages: 2, PageSize: "A4", Producer: "Canon LiDE 400",
 			ScannedAt: "2021-08-14T09:00:00+10:00", IngestedAt: "2021-08-14T09:20:00+10:00",
 			Colour: "colour", DPI: 600,
-			Type: "identity", Reviewed: true, Description: "Passport — main pages",
+			Type: "manual", Reviewed: true, Description: "Dishwasher — user guide",
 		},
 		{
 			Digest: "66ff7700", Filename: "scan-0009-66ff7700.pdf", Kind: "pdf",

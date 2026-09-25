@@ -213,6 +213,7 @@ $("reader-back").onclick = closeReader;
 
 function render() {
   frame(state);
+  if (state.soonDays) $("soon-option").textContent = "expires within " + state.soonDays + " days";
   drawFilters();
   const items = shownItems();
   $("count").textContent = items.length === state.items.length ? items.length + " Items" : items.length + " of " + state.items.length + " Items";

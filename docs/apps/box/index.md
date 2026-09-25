@@ -15,8 +15,8 @@ Read [`../../tui.md`](../../tui.md) before changing the TUI parts and
 
 ## What a Box is for
 
-A Box holds scans of paper: cinema tickets, boarding passes, insurance
-policies, invitations, letters, leaflets picked up while travelling. Roughly
+A Box holds scans of paper: cinema tickets, boarding passes, receipts,
+invitations, letters, leaflets picked up while travelling. Roughly
 99% are PDFs produced by a scanner; the rest are images. They arrive in a
 temporary folder, are sorted once, and are then kept — most of them forever,
 some of them only until they expire.
@@ -205,7 +205,7 @@ A split is described in [`import.md`](import.md#splitting-one-pdf). The file is
 never cut, and a document can only add to the file's fields.
 
 YAML because it is the format a human edits by hand, and a sidecar is the one
-thing in a Box that is meant to survive the tool. `grep -r insurance` over the
+thing in a Box that is meant to survive the tool. `grep -r receipt` over the
 tree is a supported way to find something.
 
 `ingested_at` and `edited_at` are instants written in UTC, so they compare
@@ -292,8 +292,8 @@ dead   = expiry is set and is before today
 An event date known only to the year or the month counts from its last day,
 so a computed expiry is never earlier than it would be from the real day.
 
-Nothing has to run on a schedule and no stored field can go stale. A policy
-scanned a year ago is expired because `insurance` has a one-year default
+Nothing has to run on a schedule and no stored field can go stale. A boarding
+pass scanned a year ago is expired because `travel` has a ninety-day default
 lifetime, not because anything was recalculated.
 
 Three states exist: current, dead, and permanent — permanent being a type with

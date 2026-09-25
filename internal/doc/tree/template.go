@@ -22,6 +22,21 @@ const (
 	KindRecord   Kind = "record"
 )
 
+// AllPatterns is Pattern, when set, then Patterns: every expression that may
+// suggest the field's value, in the order they are tried.
+func (f Field) AllPatterns() []string {
+	var out []string
+	if f.Pattern != "" {
+		out = append(out, f.Pattern)
+	}
+	for _, p := range f.Patterns {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // Field is one key a Template asks for.
 type Field struct {
 	Key            string `yaml:"key" json:"key"`
@@ -32,6 +47,10 @@ type Field struct {
 	// group when it has one, else the whole match. It only suggests; a person
 	// accepts the value by importing.
 	Pattern string `yaml:"pattern,omitempty" json:"pattern,omitempty"`
+	// Patterns are more regular expressions, for a value written more than
+	// one way. They are tried after Pattern, in order, and the first to find
+	// a value that fits the field suggests it.
+	Patterns []string `yaml:"patterns,omitempty" json:"patterns,omitempty"`
 	// Type checks the value and picks the control the page shows. Empty is
 	// FieldText.
 	Type FieldType `yaml:"type,omitempty" json:"type,omitempty"`
@@ -92,9 +111,9 @@ func (t Template) Validate() error {
 			return fmt.Errorf("type %s: key %s is listed twice", t.Type, f.Key)
 		}
 		seen[f.Key] = true
-		if f.Pattern != "" {
-			if _, err := regexp.Compile(f.Pattern); err != nil {
-				return fmt.Errorf("type %s: key %s: pattern: %w", t.Type, f.Key, err)
+		for _, p := range f.AllPatterns() {
+			if _, err := regexp.Compile(p); err != nil {
+				return fmt.Errorf("type %s: key %s: pattern %q: %w", t.Type, f.Key, p, err)
 			}
 		}
 		if f.Format != "" && f.Type != FieldCountry {

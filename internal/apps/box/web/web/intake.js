@@ -267,9 +267,6 @@ function lifetimeText(type) {
 
 // lifetimeSentence is the hover text's long form of lifetimeText.
 function lifetimeSentence(type) {
-  if (type.expiryExpected && (type.lifetime === null || type.lifetime === undefined)) {
-    return 'no default expiry; enter the date printed on it';
-  }
   if (type.lifetime === null || type.lifetime === undefined) return 'kept for good, no expiry';
   if (type.lifetime === 0) return 'expires on the event date';
   if (type.lifetime % 365 === 0) {
@@ -415,9 +412,7 @@ function drawExpiry() {
     return;
   }
   if (!type || type.lifetime === null || type.lifetime === undefined) {
-    el('expiry-line').textContent = type?.expiryExpected
-      ? 'Expiry is printed on the document — fill it in later in Browse.'
-      : 'No expiry: this is kept because you want it.';
+    el('expiry-line').textContent = 'No expiry: this is kept because you want it.';
     return;
   }
   const date = el('event-date').value.trim();
