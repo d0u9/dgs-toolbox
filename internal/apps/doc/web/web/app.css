@@ -134,3 +134,5 @@ body { display: flex; flex-direction: column; }
 .file-tree a:hover { color: var(--primary); text-decoration: underline; }
 textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-xs) 14px 0; resize: vertical; box-sizing: border-box; }
 .form-field select.suggested { background: var(--primary-soft); }
+.type-hint { margin-top: 0; font-size: var(--font-size-xs); }
+.type-hint[hidden] { display: none; }

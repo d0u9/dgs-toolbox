@@ -10,6 +10,9 @@ let files = [];
 let selected = "";
 // What the text of the picked PDF suggests, by type: { type: { key: value } }.
 let suggestions = {};
+// typeChosen is set once the reader picks a Template for this PDF; a type
+// proposed from the text never overrides that.
+let typeChosen = false;
 const closed = new Set();
 
 function remembered() {
@@ -92,8 +95,11 @@ function pick(path) {
     showPreview({ dir, path }, "/api/source/file?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path));
     say($("import-message"), "");
     suggestions = {};
+    typeChosen = false;
+    $("type-hint").hidden = true;
     showText({ dir, path }, (answer) => {
       if (selected !== path) return;
+      if (answer.types && answer.types.length) proposeType(answer);
       // An earlier page's value stands: a document says what it is first.
       for (const [type, found] of Object.entries(answer.suggestions || {})) {
         suggestions[type] = { ...found, ...(suggestions[type] || {}) };
@@ -195,7 +201,27 @@ $("open").onclick = async () => {
   if (chosen) await open(Array.isArray(chosen) ? chosen[0] : chosen);
 };
 
-$("template").onchange = drawFields;
+$("template").onchange = () => {
+  typeChosen = true;
+  drawFields();
+};
+
+// proposeType selects the Template the first page most looks like, going by
+// the Items already filed, and says why. The reader can always pick another.
+function proposeType(answer) {
+  const top = answer.types[0];
+  const hint = $("type-hint");
+  hint.hidden = false;
+  if (!answer.type) {
+    hint.textContent = "Looks most like " + top.type + " (" + Math.round(top.score * 100) + "%), too little to choose it.";
+    return;
+  }
+  hint.textContent = "Looks like " + answer.type + " (" + Math.round(top.score * 100) + "% like one already filed).";
+  if (!typeChosen && $("template").value !== answer.type && templateOf(state, answer.type)) {
+    $("template").value = answer.type;
+    drawFields();
+  }
+}
 $("into").onchange = drawFields;
 
 $("import").onsubmit = async (event) => {

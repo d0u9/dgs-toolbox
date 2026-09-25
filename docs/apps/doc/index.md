@@ -159,11 +159,14 @@ kept.
 
 ### Suggesting a type
 
-After a PDF's text is read, the page ranks the Templates by how much the text
-looks like the text of Items already filed under each: term frequencies of the
-words, compared by cosine similarity with the Items of each type, the best
-Item of a type standing for it. The top Template is preselected when its score
-passes a threshold (named, with a default, in the algorithm's package) and the
+After a PDF's first page is read, the page ranks the Templates by how much
+that page looks like the first pages of Items already filed under each: word
+counts compared by cosine similarity, the best Item of a type standing for it.
+A word is a run of letters or digits, lowercased, except digits alone, which
+differ between copies of one form; Chinese and Japanese text counts as pairs
+of adjacent characters. Only Items whose text has been read, on Import or
+Browse, take part. The top Template is preselected, unless the owner already picked one for this
+PDF, when its score passes a threshold (named, with a default, in the algorithm's package) and the
 type has at least one Item; the owner can always pick another. It learns
 nothing and stores nothing: the texts come from the rebuildable text cache.
 
