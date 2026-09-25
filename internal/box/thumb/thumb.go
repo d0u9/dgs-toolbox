@@ -122,6 +122,18 @@ func RenderPicture(picture scanmeta.Image) (Pair, error) {
 	return both(turning{source, picture.Rotate})
 }
 
+// RenderPictureAt draws one page's picture with its longest side at most
+// size, turned as its page says. It is for looking closely: a page zoomed
+// past the preview's size wants more of the scan's own pixels. A picture
+// smaller than size is drawn at its own size, never enlarged.
+func RenderPictureAt(picture scanmeta.Image, size int) ([]byte, error) {
+	source, _, err := image.Decode(bytes.NewReader(picture.Rendered))
+	if err != nil {
+		return nil, fmt.Errorf("decode page: %w", err)
+	}
+	return encode(Turn(fitWith(source, size, draw.ApproxBiLinear), picture.Rotate))
+}
+
 // turning is a decoded picture with the turn its page asks for, carried to
 // both so the turn is made on the small picture.
 type turning struct {

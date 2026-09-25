@@ -44,6 +44,13 @@ scroll into view. The browser's PDF viewer redraws a full-resolution scan on
 every scroll and stutters. A PDF whose first page is not a scan — one made on
 a computer — is shown in the viewer.
 
+Beside the pages is a strip of thumbnails, the page in view marked; one
+clicked is scrolled to. The pages zoom — the bar's buttons (fit width, fit
+page, in, out, 100%), Ctrl or ⌘ with the wheel or a trackpad pinch, and
+`+` `−` `0` — about the pointer, and the zoom is kept for the next PDF. A page
+zoomed past its picture's size is drawn again from the scan at up to 3600 px.
+Dragging a page pans it; a drag that starts on text selects the text.
+
 ### Text and suggestions
 
 The PDF's text is laid over the pictures of its pages, each line where it was
