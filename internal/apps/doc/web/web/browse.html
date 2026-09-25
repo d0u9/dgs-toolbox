@@ -27,20 +27,67 @@
   <span id="root" class="muted"></span>
 </header>
 <p id="error" class="message error" hidden></p>
+<nav class="filters" aria-label="Filters">
+  <div class="filter-group">
+    <label class="filter filter-search"><span>Search</span>
+      <input id="filter" type="search" placeholder="fields or text on the page" spellcheck="false" autocomplete="off">
+    </label>
+  </div>
+  <div class="filter-group" id="field-filters">
+    <label class="filter"><span>Type</span><select id="filter-type"><option value="">any</option></select></label>
+  </div>
+  <div class="filter-group">
+    <label class="filter" title="From the Item's expires field, as HEAD has it"><span>Expiry</span>
+      <select id="filter-expiry">
+        <option value="">any</option>
+        <option value="expired">expired</option>
+        <option value="soon">expires within 90 days</option>
+        <option value="valid">valid</option>
+        <option value="permanent">no end date</option>
+        <option value="none">no expiry field</option>
+      </select>
+    </label>
+    <label class="filter"><span>Kind</span>
+      <select id="filter-kind"><option value="">any</option><option value="document">document</option><option value="record">record</option></select>
+    </label>
+  </div>
+  <div class="filter-group">
+    <label class="filter"><span>Show</span>
+      <select id="view-layout"><option value="grid">cards</option><option value="list">list</option></select>
+    </label>
+    <label class="filter"><span>Sort</span>
+      <select id="view-sort">
+        <option value="added">date added</option>
+        <option value="expiry">expiry</option>
+        <option value="name">name</option>
+        <option value="type">type</option>
+      </select>
+    </label>
+    <label class="filter"><span>Order</span>
+      <select id="view-direction"><option value="desc">descending</option><option value="asc">ascending</option></select>
+    </label>
+  </div>
+  <div class="filter-result">
+    <span id="count" class="numeric"></span>
+    <button type="button" id="filters-clear" class="small-inline" hidden>Clear filters</button>
+  </div>
+</nav>
 <main class="work">
-  <section class="list">
-    <input id="filter" type="search" placeholder="Filter by fields or text" spellcheck="false" autocomplete="off">
-    <div class="scroll">
-      <h2 class="panel-head">Items <span id="count" class="count numeric"></span></h2>
-      <ul id="items" class="rows"></ul>
-      <p id="unread" class="message" hidden><span id="unread-count"></span>
-        <button id="read-all" class="small-inline" type="button">Read their text</button></p>
-      <p id="none" class="message" hidden>Nothing is kept yet. Take PDFs in on <a href="/import/">Import</a>.</p>
-      <p id="list-message" class="message"></p>
-    </div>
+  <section class="browse-pane" aria-label="Items">
+    <p id="unread" class="message" hidden><span id="unread-count"></span>
+      <button id="read-all" class="small-inline" type="button">Read their text</button></p>
+    <ul id="grid" class="grid"></ul>
+    <table id="table" class="items-table" hidden>
+      <thead><tr id="table-head"></tr></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+    <p id="none" class="message" hidden>Nothing is kept yet. Take PDFs in on <a href="/import/">Import</a>.</p>
+    <p id="nothing" class="message" hidden>Nothing matches these filters.</p>
+    <p id="list-message" class="message"></p>
   </section>
-  <section class="preview">
-    <p id="empty" class="muted">Pick an Item to see it.</p>
+  <div id="preview-splitter" class="splitter col" role="separator" aria-orientation="vertical" hidden></div>
+  <section id="preview" class="preview" hidden>
+    <p id="empty" class="muted" hidden>Pick an Item to see it.</p>
     <nav id="rail" class="rail" aria-label="Pages" hidden></nav>
     <div id="viewer" class="viewer" hidden>
       <div class="viewer-bar">
@@ -57,6 +104,7 @@
     <iframe id="frame" title="Preview" hidden></iframe>
   </section>
   <aside id="side" class="side" hidden>
+    <button id="close" class="tool side-close" type="button" title="Close (Esc)" aria-label="Close">×</button>
     <h2 class="panel-head" id="detail-head"></h2>
     <form id="edit">
       <div id="edit-fields"></div>
