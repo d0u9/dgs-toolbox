@@ -751,3 +751,38 @@ func TestAPendingScanIsLocatedInTheInbox(t *testing.T) {
 		t.Errorf("located %q, %v", path, err)
 	}
 }
+
+// Another folder can be opened as the inbox for the run; its subfolders are
+// how the page draws it, and a folder overlapping the Box is refused.
+func TestAnotherFolderCanBeTheInbox(t *testing.T) {
+	engine, root, inbox := engineBox(t)
+	putScan(t, inbox, "Scan_0012.pdf", []byte("a boarding pass"))
+	if got := engine.Pending(); len(got) != 1 {
+		t.Fatalf("first inbox: %d", len(got))
+	}
+	other := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(other, "2024", "trip"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	putScan(t, other, filepath.Join("2024", "trip", "a.pdf"), []byte("a ticket"))
+	putScan(t, other, "b.pdf", []byte("a receipt"))
+	if err := engine.SetInbox(other); err != nil {
+		t.Fatal(err)
+	}
+	got := engine.Pending()
+	paths := map[string]bool{}
+	for _, s := range got {
+		paths[s.InboxPath] = true
+	}
+	if engine.Inbox() != other || len(got) != 2 || !paths["2024/trip/a.pdf"] || !paths["b.pdf"] {
+		t.Fatalf("other inbox: %s %+v", engine.Inbox(), paths)
+	}
+	for _, bad := range []string{root, filepath.Join(root, "x"), filepath.Dir(root), "relative"} {
+		if filepath.IsAbs(bad) {
+			os.MkdirAll(bad, 0o755)
+		}
+		if err := engine.SetInbox(bad); err == nil {
+			t.Fatalf("%s was taken as the inbox", bad)
+		}
+	}
+}

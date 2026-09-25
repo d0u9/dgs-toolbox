@@ -34,6 +34,15 @@ Two surfaces, split by what each is good at.
   monochrome receipt has to be legible enough to read a date and a total off,
   which rules out the terminal even with image support.
 
+The inbox is drawn as its folders, with the shared file tree: folders first,
+by name, and within one folder the scans in the order they were scanned; the
+arrow keys walk it as it is drawn, and a folder shows how many scans wait in
+it. **Open folder…** above it reads another folder as the inbox for the rest
+of the run, through the shared file dialog — a card of old scans, a folder a
+phone synced. Nothing in that folder is moved or changed, its intake state is
+its own, and `box.inbox` is the inbox again next time. A folder inside the
+Box, or holding it, is refused.
+
 The server binds a loopback address and the first version has no remote access
 at all. A Box holds medical records and receipts; opening it to the
 network is a separate design with its own access control, not a configuration

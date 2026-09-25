@@ -21,10 +21,13 @@ import (
 type Scan struct {
 	Digest   string `json:"digest"`
 	Filename string `json:"filename"`
-	Kind     string `json:"kind"`
-	Pages    int    `json:"pages"`
-	PageSize string `json:"pageSize"`
-	Producer string `json:"producer"`
+	// InboxPath is where a pending scan lies in the inbox, slash-separated
+	// and relative to it, so intake can draw the inbox as its folders.
+	InboxPath string `json:"inboxPath,omitempty"`
+	Kind      string `json:"kind"`
+	Pages     int    `json:"pages"`
+	PageSize  string `json:"pageSize"`
+	Producer  string `json:"producer"`
 	// ScannedAt is the scanner's own timestamp, in RFC 3339 with the offset it
 	// was read with. Intake is ordered by it: what was scanned consecutively is
 	// related, and filename order destroys that.

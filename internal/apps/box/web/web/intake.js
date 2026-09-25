@@ -14,7 +14,33 @@ const state = {
   draft: {},
   // tags is what the Box already uses, offered as a tag is typed.
   tags: [],
+  // closed is the inbox's folders drawn shut, kept across redraws.
+  closed: new Set(),
 };
+
+// The shared file tree and file dialog are modules and this page is classic
+// scripts, so they are loaded with import() when the page starts.
+const shared = {};
+
+// treeOrder puts the scans in the order the inbox's tree draws them: folders
+// first, by name, at every level, and within one folder the order they came
+// in — scan time — so the arrow keys walk the tree as it is seen.
+function treeOrder(scans) {
+  const parts = (scan) => (scan.inboxPath || scan.filename).split('/');
+  return scans.slice().sort((x, y) => {
+    const a = parts(x);
+    const b = parts(y);
+    for (let i = 0; ; i++) {
+      const aDir = i < a.length - 1;
+      const bDir = i < b.length - 1;
+      if (aDir && !bDir) return -1;
+      if (!aDir && bDir) return 1;
+      if (!aDir && !bDir) return 0;
+      const c = a[i].localeCompare(b[i]);
+      if (c) return c;
+    }
+  });
+}
 
 const el = (id) => document.getElementById(id);
 
@@ -88,8 +114,11 @@ function setValue(name, text) {
 }
 
 async function start() {
+  [shared.tree, shared.dialog] = await Promise.all([import('/ui/filetree.js'), import('/ui/filedialog.js')]);
   state.config = await api.config();
   el('sample-banner').hidden = !state.config.sample;
+  drawInbox();
+  el('open-inbox').addEventListener('click', openInbox);
   el('paths').textContent = [state.config.inbox, '→', state.config.root]
     .filter(Boolean)
     .join(' ');
@@ -107,6 +136,43 @@ async function start() {
   wireDuplicates();
   await drawHeldBack();
   await drawRejected();
+}
+
+// drawInbox says which folder intake is reading.
+function drawInbox() {
+  const inbox = state.config.inbox || '';
+  el('inbox-path').textContent = inbox ? '\u200e' + inbox + '\u200e' : 'No inbox';
+  el('inbox-path').title = inbox;
+  el('open-inbox').disabled = state.config.sample;
+  el('paths').textContent = [inbox, '→', state.config.root].filter(Boolean).join(' ');
+}
+
+// openInbox reads another folder as the inbox for the rest of this run.
+// box.inbox is untouched: it is the inbox again next time.
+async function openInbox() {
+  const chosen = await shared.dialog.openFile({
+    title: 'Open a folder as the inbox',
+    message: 'Scans in it and in its folders are offered for intake. Nothing in it is moved or changed; box.inbox stays the inbox next time.',
+    folders: true,
+    confirm: 'Open',
+    folder: state.config.inbox || '',
+    fallbacks: [''],
+  });
+  if (!chosen) return;
+  const dir = Array.isArray(chosen) ? chosen[0] : chosen;
+  statusBar.show('Reading ' + dir + '…');
+  try {
+    const answer = await api.inbox(dir);
+    state.config.inbox = answer.inbox;
+    state.closed.clear();
+    drawInbox();
+    await reload(0);
+    await drawHeldBack();
+    await drawRejected();
+    statusBar.show('The inbox is ' + answer.inbox + ' for this run.');
+  } catch (err) {
+    showError(err);
+  }
 }
 
 function drawCurrencyHint() {
@@ -214,7 +280,7 @@ async function drawHeldBack() {
 // cursor.
 async function reload(at) {
   const body = await api.intake();
-  state.pending = body.pending;
+  state.pending = treeOrder(body.pending);
   const wanted = at ?? state.cursor;
   state.cursor = Math.min(Math.max(0, wanted), Math.max(0, state.pending.length - 1));
   state.anchor = null;
@@ -434,42 +500,47 @@ function addDays(iso, days) {
   return parsed.toISOString().slice(0, 10);
 }
 
+// drawQueue draws the inbox as its folders, with the shared file tree. A
+// row shows the scan's name, its type once given, and what it needs; when it
+// was scanned is in its title.
 function drawQueue() {
-  const list = el('queue-list');
-  list.innerHTML = '';
   const run = new Set(selection().map((scan) => scan.digest));
-  state.pending.forEach((scan, index) => {
-    const item = document.createElement('li');
-    item.className = 'queue-item';
-    if (index === state.cursor) item.classList.add('queue-current');
-    if (run.has(scan.digest) && run.size > 1) item.classList.add('queue-run');
-    // The name gets the whole width; when it was scanned sits under it.
-    const name = document.createElement('span');
-    name.className = 'queue-name';
-    name.textContent = scan.filename;
-    name.title = scan.filename;
-    const time = document.createElement('span');
-    time.className = 'queue-time';
-    time.textContent = scan.scannedAt
-      ? `Scanned ${localDate(scan.scannedAt)} ${localTime(scan.scannedAt)}`
-      : '';
-    // The scan on the desk shows its draft, so a split is seen here before
-    // the save lands.
-    const shown = index === state.cursor ? { ...scan, ...state.draft } : scan;
-    const typeName = shown.type && shown.type !== 'unsorted' ? shown.type : '';
-    const marks = document.createElement('span');
-    marks.className = 'queue-marks';
-    marks.innerHTML =
-      (typeName ? `<span class="badge">${typeName}</span>` : '') + badgeHTML(handling(shown));
-    item.append(name, time, marks);
-    item.addEventListener('click', () => {
-      state.cursor = index;
+  const files = state.pending.map((scan, index) => ({ path: scan.inboxPath || scan.filename, scan, index }));
+  const here = files[state.cursor];
+  const tree = shared.tree.fileTree(files, {
+    closed: state.closed,
+    selected: here ? here.path : '',
+    fileClass: (file) => (run.has(file.scan.digest) && run.size > 1 ? 'queue-run' : ''),
+    fileExtra: (file) => {
+      // The scan on the desk shows its draft, so a split is seen here before
+      // the save lands.
+      const shown = file.index === state.cursor ? { ...file.scan, ...state.draft } : file.scan;
+      const typeName = shown.type && shown.type !== 'unsorted' ? shown.type : '';
+      const marks = document.createElement('span');
+      marks.className = 'queue-marks';
+      marks.innerHTML = (typeName ? `<span class="badge">${typeName}</span>` : '') + badgeHTML(handling(shown));
+      return marks;
+    },
+    folderExtra: (path, under) => {
+      const count = document.createElement('span');
+      count.className = 'queue-count';
+      count.textContent = String(under.length);
+      return count;
+    },
+    onPick: (file) => {
+      state.cursor = file.index;
       state.anchor = null;
       state.draft = {};
       draw();
-    });
-    list.append(item);
+    },
   });
+  for (const row of tree.querySelectorAll('.ft-file')) {
+    const file = files.find((f) => f.path === row.title.split(' — ')[0]);
+    if (file && file.scan.scannedAt) row.title += `\nScanned ${localDate(file.scan.scannedAt)} ${localTime(file.scan.scannedAt)}`;
+  }
+  el('queue-list').replaceChildren(tree);
+  const picked = tree.querySelector('.ft-row.selected');
+  if (picked) picked.scrollIntoView({ block: 'nearest' });
 }
 
 // duplicates is every scan in the inbox the Box already holds — matched on the

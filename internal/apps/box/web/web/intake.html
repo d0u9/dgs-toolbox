@@ -13,6 +13,8 @@
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
+<link rel="stylesheet" href="/ui/filetree.css">
+<link rel="stylesheet" href="/ui/filedialog.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body class="intake">
@@ -30,6 +32,10 @@
 
 <main class="intake-main">
   <aside class="queue" aria-label="Inbox">
+    <div class="inbox-bar">
+      <span id="inbox-path" class="inbox-path"></span>
+      <button type="button" id="open-inbox" class="button small-button" title="Read another folder as the inbox for this run">Open folder…</button>
+    </div>
     <div class="queue-tabs desk-heading" role="tablist">
       <button type="button" role="tab" id="tab-inbox" title="Scans still to describe" class="queue-tab" aria-selected="true" aria-controls="inbox-panel">Inbox</button>
       <button type="button" role="tab" id="tab-rejected" title="Scans set aside; still in the inbox folder, untouched" class="queue-tab" aria-selected="false" aria-controls="rejected">Rejected (<span id="rejected-count">0</span>)</button>
@@ -39,7 +45,7 @@
       <p id="duplicates-text"></p>
       <button type="button" id="duplicates-reject" title="Reject every scan already in the Box; nothing is deleted" class="text-button">Reject all of them</button>
     </div>
-    <ol id="queue-list" class="queue-list"></ol>
+    <div id="queue-list" class="queue-list"></div>
     <section id="held-back" class="held-back" hidden>
       <h2 class="desk-heading">Held back (<span id="held-back-count">0</span>)</h2>
       <p class="exceptions-note">Read and not taken in. Nothing was copied, and nothing was deleted.</p>

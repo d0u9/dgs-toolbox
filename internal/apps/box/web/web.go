@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/webfile"
 	"dgs-toolbox/internal/webui"
 )
 
@@ -100,6 +101,7 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("GET /api/types", api.types)
 	mux.HandleFunc("GET /api/tags", api.tags)
 	mux.HandleFunc("GET /api/intake", api.intake)
+	mux.HandleFunc("POST /api/inbox", api.setInbox)
 	mux.HandleFunc("POST /api/intake/file", api.file)
 	mux.HandleFunc("GET /api/scans", api.scans)
 	mux.HandleFunc("PATCH /api/scan", api.patch)
@@ -123,6 +125,8 @@ func Handler(settings Settings) http.Handler {
 	// identifies a scan, and the server looks the path up: a request carrying a
 	// path is a path to escape the Box with.
 	webui.Mount(mux)
+	// The file dialog only picks a folder to read as the inbox.
+	webfile.Mount(mux, webfile.Options{Root: settings.Inbox})
 	mux.Handle("GET /intake", http.RedirectHandler("/intake/", http.StatusFound))
 	mux.Handle("GET /intake/", http.StripPrefix("/intake/", pageHandler(static, "intake.html")))
 	mux.Handle("GET /browse", http.RedirectHandler("/browse/", http.StatusFound))
