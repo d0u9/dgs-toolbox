@@ -15,7 +15,7 @@ link here; this is what a reader consults to find out *what* to write.
   them from, its discardable local cache, the trash, amounts and time zones,
   and per-type lifetime overrides. The types a lifetime may name are
   catalogued in [`apps/box/types.md`](../apps/box/types.md).
-- [Doc](doc.md) — the document trees `dgs doc` opens, its local cache, its export Targets, and where its page listens.
+- [Doc](doc.md) — the document trees `dgs doc` opens, its local cache, and where its page listens.
 - [Geo](geo.md) — where the GPX web server listens, the folder it browses, and its base maps.
 - [Conf](conf.md) — the generator root `dgs conf` reads, holding the services
   and the inventory, its secrets tree, and where the destination form opens.
@@ -111,7 +111,7 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `doc.cache_dir` | [doc](doc.md) | empty — the user cache directory |
 | `doc.date_order` | [doc](doc.md) | `DMY` |
 | `doc.expiring_within_days` | [doc](doc.md) | `90` |
-| `doc.targets` | [doc](doc.md) | empty — no Targets |
+| `doc.targets` | [doc](doc.md) | — no longer read; Targets are in each tree's `targets.yaml` |
 | `doc.web.port` | [doc](doc.md) | `8767` |
 | `geo.gpx.host` | [geo](geo.md) | `127.0.0.1` |
 | `geo.gpx.port` | [geo](geo.md) | `8765` |

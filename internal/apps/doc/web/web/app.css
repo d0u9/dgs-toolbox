@@ -449,3 +449,9 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .case-danger .form-field { margin: 0; }
 .case-section.export { border-top: 0; margin-top: 0; }
 .case > .message { margin: 6px 6px 0; }
+/* Where a Target goes this time, under its name in the Views list. */
+.target-folder { display: flex; align-items: center; gap: 6px; width: calc(100% - 36px); margin: 0 18px 4px; padding: 3px 8px; border: 1px dashed var(--hairline-strong); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.target-folder:hover { border-color: var(--primary); background: var(--hover); }
+.target-folder .export-path { flex: 1; }
+.target-folder.unset { border-color: var(--error); }
+.target-flag { flex: none; font-size: var(--font-size-xs); color: var(--graphite); }

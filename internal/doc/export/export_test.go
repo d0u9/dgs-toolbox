@@ -237,6 +237,10 @@ func TestJobsGroupViewsByTarget(t *testing.T) {
 	if _, problems = Jobs(views, targets, []string{"empty", "gone"}); len(problems) != 3 {
 		t.Fatalf("problems %v", problems)
 	}
+	targets["icloud"] = ""
+	if _, problems = Jobs(views, targets, []string{"icloud"}); len(problems) != 2 || !strings.Contains(problems[1], "choose a folder") {
+		t.Fatalf("no folder: %v", problems)
+	}
 }
 
 func TestPlanJobsChecksEverythingFirst(t *testing.T) {
@@ -265,19 +269,12 @@ func TestPlanJobsChecksEverythingFirst(t *testing.T) {
 }
 
 func TestAgainstOthers(t *testing.T) {
-	plans := []JobPlan{
-		{Name: "kindle", Path: "/out/kindle"},
-		{Name: "icloud", Path: "/trees/books/export"},
-		{Path: "/out/by-hand"},
-	}
-	AgainstOthers(plans, []Other{{Name: "books", Root: "/trees/books", Targets: []string{"kindle"}}})
-	if len(plans[0].Problems) != 1 || !strings.Contains(plans[0].Problems[0], "Targets of its own") {
-		t.Fatalf("shared Target: %v", plans[0].Problems)
+	plans := []JobPlan{{Name: "kindle", Path: "/out/kindle"}, {Name: "icloud", Path: "/trees/books/export"}}
+	AgainstOthers(plans, []Other{{Name: "books", Root: "/trees/books"}})
+	if len(plans[0].Problems) != 0 {
+		t.Fatalf("a folder apart: %v", plans[0].Problems)
 	}
 	if len(plans[1].Problems) != 1 || !strings.Contains(plans[1].Problems[0], "overlaps the tree books") {
 		t.Fatalf("inside another tree: %v", plans[1].Problems)
-	}
-	if len(plans[2].Problems) != 0 {
-		t.Fatalf("a folder by hand shares nothing: %v", plans[2].Problems)
 	}
 }
