@@ -28,6 +28,8 @@ type Missing struct {
 	Digest   string   `json:"digest"`
 	Revision int      `json:"revision"`
 	Keys     []string `json:"keys"`
+	// Fields are the Item fields that, filled in, supply Keys.
+	Fields []string `json:"fields"`
 }
 
 // Clash is a path more than one PDF would land on.
@@ -94,6 +96,24 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 	return keys
 }
 
+// FieldsFor is the Item fields that supply keys, in order and once each:
+// year, month and date come from DateField, every other key is a field of
+// its own name.
+func FieldsFor(keys []string) []string {
+	var fields []string
+	seen := map[string]bool{}
+	for _, k := range keys {
+		if k == "year" || k == "month" || k == "date" {
+			k = DateField
+		}
+		if !seen[k] {
+			seen[k] = true
+			fields = append(fields, k)
+		}
+	}
+	return fields
+}
+
 // Clean makes one key's value safe as part of a file name: /, \, control
 // characters and the characters Windows forbids become _, and leading and
 // trailing dots and spaces are trimmed, so a value never adds a folder or
@@ -143,7 +163,7 @@ func Build(v View, items []tree.Item) (Plan, error) {
 			keys := KeysOf(item, i+1)
 			name, lacking := render(layout, keys, v.Default)
 			if len(lacking) > 0 {
-				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Digest, Revision: i + 1, Keys: lacking})
+				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Digest, Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
 				continue
 			}
 			placed = append(placed, File{Path: name, Item: item.ID, Digest: rev.Digest, Revision: i + 1})

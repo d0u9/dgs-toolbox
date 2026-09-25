@@ -236,7 +236,10 @@ lacking a key and the paths wanted twice listed above it. Saving writes
 Export refuses to write anything while a PDF the View selects lacks a key the
 layout uses, and lists each PDF with what it is missing. The page lets the
 owner fill the key in, on one PDF or on several at once. Only PDFs the View
-selects have to have it; the rest of the type is not checked.
+selects have to have it; the rest of the type is not checked. `year`, `month`
+and `date` are filled through the date field they come from; a key no field of
+the Item's Template supplies cannot be filled, only named — the layout or the
+Template has to change.
 
 The same refusal applies when two PDFs would land on one path.
 

@@ -154,3 +154,10 @@ func TestSaveLoadDelete(t *testing.T) {
 		t.Fatal("not deleted")
 	}
 }
+
+func TestFieldsFor(t *testing.T) {
+	got := FieldsFor([]string{"year", "owner", "month", "date"})
+	if !reflect.DeepEqual(got, []string{DateField, "owner"}) {
+		t.Fatalf("FieldsFor = %v", got)
+	}
+}
