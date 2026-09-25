@@ -103,7 +103,7 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 	if raw := do(h, "GET", "/api/state", "").Body.String(); strings.Contains(raw, "null") {
 		t.Fatalf("empty tree sends null: %s", raw)
 	}
-	body := `{"dir":` + q(scans) + `,"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"}}`
+	body := `{"dir":` + q(scans) + `,"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"},"notes":"kept for records","tags":["Travel Plans","travel-plans"]}`
 	if rec := do(h, "POST", "/api/import", body); rec.Code != http.StatusOK {
 		t.Fatalf("import: %d %s", rec.Code, rec.Body.String())
 	}
@@ -111,16 +111,29 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 		t.Fatalf("second import: %d", rec.Code)
 	}
 	item := state(t, h).Items[0]
+	if item.Notes != "kept for records" {
+		t.Fatalf("notes = %q", item.Notes)
+	}
+	if len(item.Tags) != 1 || item.Tags[0] != "travel-plans" {
+		t.Fatalf("import tags = %v", item.Tags)
+	}
+	if rec := do(h, "POST", "/api/tags", `{"item":"`+item.ID+`","tags":["Visa","visa"]}`); rec.Code != http.StatusOK {
+		t.Fatalf("tags: %d %s", rec.Code, rec.Body.String())
+	}
+	item = state(t, h).Items[0]
+	if len(item.Tags) != 1 || item.Tags[0] != "visa" {
+		t.Fatalf("edited tags = %v", item.Tags)
+	}
 	files := source(t, h, scans)
 	if files[0].Item != item.ID || files[1].Item != "" {
 		t.Fatalf("marks: %+v", files)
 	}
 	first := item.Head
-	rec := do(h, "POST", "/api/revisions", `{"dir":`+q(scans)+`,"path":"jane/renewed.pdf","item":"`+item.ID+`"}`)
+	rec := do(h, "POST", "/api/revisions", `{"dir":`+q(scans)+`,"path":"jane/renewed.pdf","item":"`+item.ID+`","notes":"renewed in 2026","tags":["Current","current"]}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("add: %d %s", rec.Code, rec.Body.String())
 	}
-	if item = state(t, h).Items[0]; len(item.Revisions) != 2 || item.Head == first {
+	if item = state(t, h).Items[0]; len(item.Revisions) != 2 || item.Head == first || item.Notes != "renewed in 2026" || len(item.Tags) != 1 || item.Tags[0] != "current" {
 		t.Fatalf("after add: %+v", item)
 	}
 	if rec := do(h, "GET", "/api/revision?item="+item.ID+"&digest="+first, ""); rec.Body.String() != "%PDF-1.4 x" {
@@ -134,6 +147,38 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 	// The tree's own items folder is not offered for import.
 	if files := source(t, h, root); len(files) != 0 {
 		t.Fatalf("tree root offers %+v", files)
+	}
+	if rec := do(h, "POST", "/api/revisions/delete", `{"item":"`+item.ID+`","digest":"`+first+`"}`); rec.Code != http.StatusOK {
+		t.Fatalf("delete revision: %d %s", rec.Code, rec.Body.String())
+	}
+	if item = state(t, h).Items[0]; len(item.Revisions) != 1 || item.Head == first {
+		t.Fatalf("after delete revision: %+v", item)
+	}
+	if rec := do(h, "POST", "/api/revisions/delete", `{"item":"`+item.ID+`","digest":"`+item.Head+`"}`); rec.Code == http.StatusOK {
+		t.Fatal("deleted final revision")
+	}
+}
+
+func TestChangeTypePageAndAPI(t *testing.T) {
+	root, scans := setup(t, true)
+	write(t, filepath.Join(root, tree.TemplatesDir, "student_id.yaml"), "type: student_id\nkind: document\nfields:\n  - key: owner\n    required: true\n    distinguishing: true\n  - key: school\n    required: true\n")
+	h := Handler(Settings{Root: root})
+	if rec := do(h, "GET", "/change-type/", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Current Item") {
+		t.Fatalf("page: %d", rec.Code)
+	}
+	if rec := do(h, "POST", "/api/import", `{"dir":`+q(scans)+`,"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"}}`); rec.Code != http.StatusOK {
+		t.Fatalf("import: %d %s", rec.Code, rec.Body.String())
+	}
+	id := state(t, h).Items[0].ID
+	if rec := do(h, "POST", "/api/change-type", `{"item":"`+id+`","type":"student_id","fields":{"owner":"jane"}}`); rec.Code == http.StatusOK {
+		t.Fatal("missing field accepted")
+	}
+	if rec := do(h, "POST", "/api/change-type", `{"item":"`+id+`","type":"student_id","fields":{"owner":"jane","school":"Uni"}}`); rec.Code != http.StatusOK {
+		t.Fatalf("change: %d %s", rec.Code, rec.Body.String())
+	}
+	item := state(t, h).Items[0]
+	if item.ID != id || item.Type != "student_id" || len(item.History) != 2 || item.History[1].At == "" {
+		t.Fatalf("changed: %+v", item)
 	}
 }
 
@@ -154,7 +199,7 @@ func TestPagesAreServed(t *testing.T) {
 	if rec := do(h, "GET", "/", ""); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/browse/" {
 		t.Fatalf("/: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
-	for _, p := range []string{"/browse/", "/import/", "/common.js", "/browse.js", "/import.js", "/app.css", "/ui/filedialog.js", "/ui/files/dir"} {
+	for _, p := range []string{"/browse/", "/import/", "/common.js", "/browse.js", "/import.js", "/app.css", "/ui/tags.js", "/ui/tags.css", "/ui/filedialog.js", "/ui/files/dir"} {
 		if rec := do(h, "GET", p, ""); rec.Code != http.StatusOK {
 			t.Errorf("%s: %d", p, rec.Code)
 		}

@@ -195,7 +195,7 @@ func Handler(settings Settings) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
-	for _, page := range []string{"browse", "templates", "import", "views", "targets", "cases", "merge"} {
+	for _, page := range []string{"browse", "templates", "import", "views", "targets", "cases", "merge", "change-type"} {
 		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
 		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
 	}
@@ -218,8 +218,11 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/import", s.importPDF)
 	mux.HandleFunc("POST /api/revisions", s.addRevision)
 	mux.HandleFunc("POST /api/head", s.setHead)
+	mux.HandleFunc("POST /api/revisions/delete", s.deleteRevision)
 	mux.HandleFunc("POST /api/fields", s.setFields)
+	mux.HandleFunc("POST /api/change-type", s.changeType)
 	mux.HandleFunc("POST /api/notes", s.setNotes)
+	mux.HandleFunc("POST /api/tags", s.setTags)
 	mux.HandleFunc("POST /api/items/delete", s.deleteItem)
 	mux.HandleFunc("GET /api/templates", s.templateList)
 	mux.HandleFunc("POST /api/templates", s.templateSave)
@@ -550,6 +553,8 @@ type importJSON struct {
 	Path   string            `json:"path"`
 	Type   string            `json:"type"`
 	Fields map[string]string `json:"fields"`
+	Notes  string            `json:"notes"`
+	Tags   []string          `json:"tags"`
 }
 
 func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
@@ -572,7 +577,7 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		item, err := tree.Import(r.Context(), tree.ImportRequest{
-			Root: s.root, Source: source, Template: t, Fields: request.Fields, Now: s.now(),
+			Root: s.root, Source: source, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, Now: s.now(),
 		})
 		if err != nil {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
@@ -622,6 +627,8 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		Path   string            `json:"path"`
 		Item   string            `json:"item"`
 		Fields map[string]string `json:"fields"`
+		Notes  *string           `json:"notes"`
+		Tags   *[]string         `json:"tags"`
 	}
 	if !decode(w, r, &request) {
 		return
@@ -635,7 +642,8 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		answer(w, tree.Item{}, err)
 		return
 	}
-	item, err := tree.AddRevision(r.Context(), s.root, request.Item, source, t, request.Fields, s.now())
+	item, err := tree.AddRevisionWithMetadata(r.Context(), s.root, request.Item, source, t, request.Fields,
+		tree.RevisionMetadata{Notes: request.Notes, Tags: request.Tags}, s.now())
 	answer(w, item, err)
 }
 
@@ -669,6 +677,24 @@ func (s server) setHead(w http.ResponseWriter, r *http.Request) {
 	answer(w, item, err)
 }
 
+func (s server) deleteRevision(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item   string `json:"item"`
+		Digest string `json:"digest"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, to, err := tree.TrashRevision(s.root, request.Item, request.Digest, s.now())
+	if err != nil {
+		answer(w, tree.Item{}, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": item, "trash": to})
+}
+
 func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Item   string            `json:"item"`
@@ -687,6 +713,33 @@ func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 	answer(w, item, err)
 }
 
+func (s server) changeType(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item      string                       `json:"item"`
+		Type      string                       `json:"type"`
+		Fields    map[string]string            `json:"fields"`
+		Revisions map[string]map[string]string `json:"revisions"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	templates, err := tree.LoadTemplates(s.root)
+	if err != nil {
+		answer(w, tree.Item{}, err)
+		return
+	}
+	for _, target := range templates {
+		if target.Type == request.Type {
+			item, err := tree.ChangeType(s.root, request.Item, target, request.Fields, request.Revisions, s.now())
+			answer(w, item, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no Template for type " + request.Type})
+}
+
 func (s server) setNotes(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Item  string `json:"item"`
@@ -696,6 +749,18 @@ func (s server) setNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := tree.SetNotes(s.root, request.Item, request.Notes)
+	answer(w, item, err)
+}
+
+func (s server) setTags(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item string   `json:"item"`
+		Tags []string `json:"tags"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	item, err := tree.SetTags(s.root, request.Item, request.Tags)
 	answer(w, item, err)
 }
 

@@ -20,8 +20,8 @@ function remembered() {
     const v = localStorage.getItem(ZOOM_KEY);
     if (v === "width" || v === "page") return v;
     const n = Number(v);
-    return n >= MIN && n <= MAX ? n : "width";
-  } catch { return "width"; }
+    return n >= MIN && n <= MAX ? n : "page";
+  } catch { return "page"; }
 }
 function remember() {
   try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch { /* not kept */ }
@@ -131,9 +131,8 @@ export function show(count, pictureURL, onMissing) {
   pages.replaceChildren(...sheets);
   $("rail").replaceChildren(...thumbs);
   $("rail").hidden = count < 2;
-  pages.scrollTop = 0;
-  pages.scrollLeft = 0;
   apply();
+  pages.scrollTo(0, 0);
   watch();
   return sheets;
 }

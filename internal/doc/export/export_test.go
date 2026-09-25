@@ -104,6 +104,35 @@ func TestExportIsIncremental(t *testing.T) {
 	}
 }
 
+func TestPublishedCallbackOnlyForWrittenPDFs(t *testing.T) {
+	root, target := t.TempDir(), t.TempDir()
+	digest := stored(t, root, "A", "pdf")
+	files := []view.File{{Path: "a.pdf", Item: "A", Digest: digest, Revision: 1, View: "v"}}
+	items := []tree.Item{{ID: "A", Type: "card"}}
+	count := 0
+	run := func() {
+		plan, err := Compute(context.Background(), target, []string{"v"}, files)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = Apply(context.Background(), root, target, []string{"v"}, plan, items, nil, func(a Action) error {
+			count++
+			if a.Item != "A" || a.Digest != digest {
+				t.Fatalf("callback: %+v", a)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	run()
+	run()
+	if count != 1 {
+		t.Fatalf("published callback called %d times", count)
+	}
+}
+
 func TestExportLeavesOtherFilesAlone(t *testing.T) {
 	root, target := t.TempDir(), t.TempDir()
 	a := stored(t, root, "A", "passport")

@@ -218,7 +218,10 @@ func (s server) caseExportRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j := out.Jobs[0]
-	result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, nil)
+	result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, nil,
+		func(a export.Action) error {
+			return tree.RecordExport(s.root, a.Item, a.Digest, j.Path, a.View, s.now())
+		})
 	results := []exportResultJSON{{Path: j.Path, Result: result}}
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": j.Path + ": " + err.Error(), "results": results})

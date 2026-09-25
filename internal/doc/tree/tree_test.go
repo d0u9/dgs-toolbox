@@ -76,12 +76,20 @@ func TestImportMakesAnItemAndLeavesTheSource(t *testing.T) {
 	item, err := Import(context.Background(), ImportRequest{
 		Root: root, Source: source, Template: idCard(t, root), Now: now,
 		Fields: map[string]string{"owner": " jane ", "country": "AU", "number": ""},
+		Notes:  "  old card for records  ",
+		Tags:   []string{"Travel Plans", "travel-plans", "  visa  "},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if item.Head == "" || item.Head != item.Revisions[0].Digest || item.Fields["owner"] != "jane" {
 		t.Fatalf("item = %+v", item)
+	}
+	if item.Notes != "old card for records" {
+		t.Fatalf("notes = %q", item.Notes)
+	}
+	if strings.Join(item.Tags, ",") != "travel-plans,visa" {
+		t.Fatalf("tags = %v", item.Tags)
 	}
 	if _, ok := item.Fields["number"]; ok {
 		t.Error("empty field kept")
@@ -93,8 +101,12 @@ func TestImportMakesAnItemAndLeavesTheSource(t *testing.T) {
 		t.Fatal("source was touched")
 	}
 	items, err := LoadItems(root)
-	if err != nil || len(items) != 1 || items[0].ID != item.ID {
+	if err != nil || len(items) != 1 || items[0].ID != item.ID || items[0].Notes != item.Notes || strings.Join(items[0].Tags, ",") != strings.Join(item.Tags, ",") {
 		t.Fatalf("LoadItems = %+v, %v", items, err)
+	}
+	updated, err := SetTags(root, item.ID, []string{"Visa", "visa", "  archive "})
+	if err != nil || strings.Join(updated.Tags, ",") != "visa,archive" {
+		t.Fatalf("SetTags = %+v, %v", updated.Tags, err)
 	}
 }
 
@@ -324,6 +336,41 @@ func TestTrashMovesTheItem(t *testing.T) {
 	}
 	if _, err := Trash(root, "A", now); err == nil {
 		t.Fatal("trashed an Item that is gone")
+	}
+}
+
+func TestTrashRevisionMovesPDFAndUpdatesHead(t *testing.T) {
+	root := newTree(t)
+	item := Item{ID: "A", Type: "card", Kind: KindDocument, Head: "new", Revisions: []Revision{{Digest: "old"}, {Digest: "new"}}}
+	if err := WriteItem(root, item); err != nil {
+		t.Fatal(err)
+	}
+	for _, digest := range []string{"old", "new"} {
+		if err := os.WriteFile(PDFPath(root, "A", digest), []byte(digest), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := TrashRevision(root, "A", "missing", now); err == nil {
+		t.Fatal("missing revision accepted")
+	}
+	updated, to, err := TrashRevision(root, "A", "new", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Head != "old" || len(updated.Revisions) != 1 {
+		t.Fatalf("updated: %+v", updated)
+	}
+	if data, err := os.ReadFile(to); err != nil || string(data) != "new" {
+		t.Fatalf("trash: %q %v", data, err)
+	}
+	if _, err := os.Stat(PDFPath(root, "A", "new")); !os.IsNotExist(err) {
+		t.Fatalf("source PDF: %v", err)
+	}
+	if saved, _, err := FindItem(root, "A"); err != nil || saved.Head != "old" || len(saved.Revisions) != 1 {
+		t.Fatalf("saved: %+v %v", saved, err)
+	}
+	if _, _, err := TrashRevision(root, "A", "old", now); err == nil {
+		t.Fatal("last revision deleted")
 	}
 }
 

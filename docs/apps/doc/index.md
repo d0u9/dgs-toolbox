@@ -42,7 +42,8 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 Browse opens on the Items as cards, as box's Browse does, or as a table:
 each shows the first page of HEAD, the fields that tell the document apart
 (owner, country), the type, and where its expiry stands. A row of filters
-across the top narrows them: search (fields and the text on the page), type,
+across the top narrows them: search (fields, tags and the text on the page), type,
+a tag filter that matches every tag chosen,
 a select for every distinguishing key any Template has, expiry and kind. They
 sort by date added, expiry, name or type. The layout, sort and order are
 remembered in the browser. A thumbnail too tall or wide for its card shows
@@ -69,7 +70,10 @@ Nothing in a tree is erased. Deleting an Item on Browse, after the owner
 confirms, moves its folder — sidecar and every revision's PDF — to
 `trash/<item-id>-<time>/`. Deleting a Template moves its file to
 `trash/templates/<type>-<time>.yaml`, and is refused while any Item has its
-type. Something deleted by mistake is moved back by hand.
+type. A revision's context menu offers Make HEAD and Delete revision. Deleting
+a revision moves its PDF to `trash/<item-id>-<digest>-<time>.pdf`; when it was
+HEAD, the latest remaining revision becomes HEAD. The final revision is
+removed by deleting the Item. Something deleted by mistake is moved back by hand.
 
 ### Templates
 
@@ -92,7 +96,9 @@ a Template Items use cannot be deleted.
    as folders rather than flattened. Folders with no PDF in them are left out.
    PDFs already in the tree are marked.
 3. Picking a PDF previews it; the form beside it takes a Template and its
-   fields, and whether it is a new Item or a new revision of a document. After
+   fields. Into shows existing Items of that type as cards, alongside New item;
+   choosing an existing Item asks only for its revision fields, while New item
+   asks for the distinguishing fields. After
    an import the next PDF not yet imported is picked.
 4. The opened folder is only read. The server serves and imports only PDFs
    under it.
@@ -106,7 +112,8 @@ every scroll and stutters. A PDF whose first page is not a scan — one made on
 a computer — is shown in the viewer.
 
 Beside the pages is a strip of thumbnails, the page in view marked; one
-clicked is scrolled to. The pages zoom — the bar's buttons (fit width, fit
+clicked is scrolled to. With no saved zoom choice, a PDF opens fit to page.
+The pages zoom — the bar's buttons (fit width, fit
 page, in, out, 100%), Ctrl or ⌘ with the wheel or a trackpad pinch, and
 `+` `−` `0` — about the pointer, and the zoom is kept for the next PDF. A page
 zoomed past its picture's size is drawn again from the scan at up to 3600 px.
@@ -181,6 +188,13 @@ Adding a revision moves HEAD to it. HEAD can be moved back by hand, for a
 later import that turns out to be a rescan of an older card. What is current is
 HEAD, not the highest revision number and not a computation over dates.
 
+Browse links to a Change type page for an Item. The left column shows its
+current fields and each revision's values; the right column chooses another
+Template of the same kind and asks for its Item and revision fields. The
+change is checked and saved in one sidecar write. The Item ID, PDFs, revisions,
+HEAD, notes and tags remain. Fields absent from the target Template leave the
+current fields and remain in the previous-values snapshot in history.
+
 ### Records
 
 A record is one independent historical paper: a payslip, a bill, a statement.
@@ -227,7 +241,9 @@ A field of a document may be `per_revision: true`: its value belongs to each
 revision rather than to the Item. A renewed card has its own number and expiry
 and the old card keeps its own. Import asks for every field; adding a revision
 asks only for the per_revision ones, suggested from the new PDF's text. On
-Browse, picking a revision shows and edits the fields as that revision has
+the same form, the Item's current tags and notes can be edited and are saved
+with the new revision; they belong to the Item, not to an individual revision.
+On Browse, picking a revision shows and edits the fields as that revision has
 them. Everything else — the page's list, a View's query — uses HEAD's. A
 layout key is the exported revision's own value, so exporting all revisions
 can name the old card and the new one differently. A distinguishing field
@@ -237,8 +253,12 @@ made per_revision later stands for every revision without its own, until that
 revision's fields are saved.
 
 A sidecar may also hold `notes`, free text the owner writes. Notes are never a
-key and never exported. An Item's history is its revisions; no other log is
-kept.
+key and never exported. The Item sidecar also keeps timestamped history events
+for imports, field and metadata edits, HEAD changes, type changes, revision
+deletion and PDFs actually written by exports. Older sidecars remain readable;
+their revision `added` times appear as import history on Browse. Each event
+has an operation time. Type changes keep the previous type and fields in the
+history event.
 
 ### Suggesting a type
 
@@ -575,6 +595,7 @@ exported and the Items' fields; a Target carries no Templates or Views.
 
 ```yaml
 type: id_card
+description: Identity cards and household registers
 kind: document            # document: revisions and HEAD; record: one PDF
 fields:
   - key: owner
@@ -603,8 +624,9 @@ defaults:
   country: AU
 ```
 
-The file is named after its `type`. A `select` field lists its values under
-`options`. A field's `pattern` is a regular
+The file is named after its `type`. `description` is a short explanation shown
+on the Import card and in the Templates list; older Templates may omit it.
+A `select` field lists its allowed values under `options`. A field's `pattern` is a regular
 expression that suggests its value from the document's text (below): the
 first capture group, else the whole match. A value written more than one way
 takes `patterns`, a list tried after `pattern`, in order: the first to find a
@@ -629,8 +651,10 @@ revisions:
   - {digest: <sha256>, added: 2026-09-25T10:00:00+10:00, source: scan.pdf}
 ```
 
-A record has exactly one revision and no `head`. `notes`, when the owner has
-written any, is one more key of the sidecar.
+A record has exactly one revision and no `head`. `notes` and `tags`, when the
+owner has written any, are Item keys in the sidecar. Tags are lower case, with
+spaces joined by hyphens, and duplicates removed. Import and Browse offer
+existing tags as the owner types; Browse filters by tags in the current tree.
 
 ## Later
 

@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/tags.css">
 <link rel="stylesheet" href="/ui/filedialog.css">
 <link rel="stylesheet" href="/ui/filetree.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
@@ -62,10 +63,12 @@
   <aside id="side" class="side" hidden>
     <form id="import" hidden>
       <h2 class="panel-head">Import</h2>
-      <label class="form-field"><span>Template</span><select id="template"></select></label>
+      <div class="form-field"><span id="template-label">Template</span><div id="template" class="template-choices" role="group" aria-labelledby="template-label"></div></div>
       <p id="type-hint" class="message type-hint" hidden></p>
-      <label class="form-field" id="into-field"><span>Into</span><select id="into"></select></label>
+      <div class="form-field" id="into-field"><span id="into-label">Into</span><select id="into" hidden></select><div id="into-choices" class="into-choices" role="group" aria-labelledby="into-label"></div></div>
       <div id="fields"></div>
+      <div class="form-field" id="tags-field" hidden><span>Tags</span><div id="tags" data-label="Tags"></div></div>
+      <label class="form-field" id="notes-field" hidden><span>Notes</span><textarea id="notes" rows="3" placeholder="Optional details about this item"></textarea></label>
       <p id="import-message" class="message"></p>
       <button id="import-button" class="action" type="submit">Import</button>
       <p class="message">The PDF is copied into the tree and read back before it counts. This file stays where it is.</p>
@@ -77,6 +80,7 @@
     <p id="text-message" class="message text-status"></p>
   </aside>
 </main>
+<script src="/ui/tags.js"></script>
 <script type="module" src="/import.js"></script>
 </body>
 </html>

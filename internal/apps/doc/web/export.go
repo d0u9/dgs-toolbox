@@ -210,7 +210,10 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 	// leaves more to do next time.
 	results := []exportResultJSON{}
 	for _, j := range out.Jobs {
-		result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, nil)
+		result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, nil,
+			func(a export.Action) error {
+				return tree.RecordExport(s.root, a.Item, a.Digest, j.Path, a.View, s.now())
+			})
 		results = append(results, exportResultJSON{Name: j.Name, Path: j.Path, Result: result})
 		if err != nil {
 			writeJSON(w, http.StatusConflict, map[string]any{"error": j.Path + ": " + err.Error(), "results": results})

@@ -100,10 +100,10 @@ func source(t *testing.T, root string) Source {
 func TestMergeMatchesAndAdds(t *testing.T) {
 	full := newTree(t, passport, bill)
 	sub := newTree(t, passport, bill)
-	put(t, full, tree.Item{ID: "F1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "jane"}}, "old passport")
+	put(t, full, tree.Item{ID: "F1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "jane"}, Tags: []string{"home"}}, "old passport")
 	put(t, full, tree.Item{ID: "F2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "jane"}}, "bill 1")
 	// The sub-tree has the renewed passport, the same bill, and a new bill.
-	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "JANE"}, Notes: "renewed in Sydney"}, "new passport")
+	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "JANE"}, Notes: "renewed in Sydney", Tags: []string{"travel"}}, "new passport")
 	put(t, sub, tree.Item{ID: "S2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "jane"}}, "bill 1")
 	put(t, sub, tree.Item{ID: "S3", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom"}}, "bill 2")
 	if err := view.Save(sub, view.View{Name: "all", Selection: view.Head, Layout: "{owner}/{type}.{ext}"}); err != nil {
@@ -116,7 +116,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 		t.Fatalf("plan: %+v", p)
 	}
 	c := p.Changed[0]
-	if c.Item != "F1" || c.Head != digest("new passport") || len(c.Digests) != 1 || c.Notes != "renewed in Sydney" {
+	if c.Item != "F1" || c.Head != digest("new passport") || len(c.Digests) != 1 || c.Notes != "renewed in Sydney" || len(c.Tags) != 1 || c.Tags[0] != "travel" {
 		t.Fatalf("change: %+v", c)
 	}
 	// owner differs in case only in the match, but the fields still differ.
@@ -134,7 +134,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 		t.Fatalf("result: %+v", result)
 	}
 	f1, _, err := tree.FindItem(full, "F1")
-	if err != nil || f1.Head != digest("new passport") || len(f1.Revisions) != 2 || f1.Fields["owner"] != "jane" || f1.Notes != "renewed in Sydney" {
+	if err != nil || f1.Head != digest("new passport") || len(f1.Revisions) != 2 || f1.Fields["owner"] != "jane" || f1.Notes != "renewed in Sydney" || len(f1.Tags) != 2 || f1.Tags[0] != "home" || f1.Tags[1] != "travel" {
 		t.Fatalf("F1: %v %+v", err, f1)
 	}
 	if _, _, err := tree.FindItem(full, "S3"); err != nil {
