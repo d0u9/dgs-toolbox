@@ -172,7 +172,9 @@ nothing and stores nothing: the texts come from the rebuildable text cache.
 Dates are found in the text in the forms scans carry: `2026-09-25`,
 `2026.09.25`, `2026年9月25日`, and `25/09/2026`. A form with day and month in
 digits both ways is read in the order `doc.date_order` names (`DMY` by
-default). A date the Template lists under `ignore_dates` — a birthday on every
+default). A date field with a `pattern` keeps only a match that is a date, written
+`YYYY-MM-DD`; one with none takes the next date in the text that no earlier
+date field took. A date the Template lists under `ignore_dates` — a birthday on every
 page of a person's documents — is never suggested.
 
 A key added to Items of a type (see [Missing keys](#missing-keys)) is added to
@@ -345,12 +347,16 @@ fields:
     type: date
   - key: previous
     type: item
+  - key: status
+    type: select
+    options: [valid, expired]
 ignore_dates: [1990-01-01]  # never suggested as a date
 defaults:
   country: AU
 ```
 
-The file is named after its `type`. A field's `pattern` is a regular
+The file is named after its `type`. A `select` field lists its values under
+`options`. A field's `pattern` is a regular
 expression that suggests its value from the document's text (below): the
 first capture group, else the whole match. The sidecar:
 
@@ -364,7 +370,8 @@ revisions:
   - {digest: <sha256>, added: 2026-09-25T10:00:00+10:00, source: scan.pdf}
 ```
 
-A record has exactly one revision and no `head`.
+A record has exactly one revision and no `head`. `notes`, when the owner has
+written any, is one more key of the sidecar.
 
 ## Open questions
 
