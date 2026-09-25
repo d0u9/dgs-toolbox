@@ -101,3 +101,35 @@ func TestCountryFieldIsNormalized(t *testing.T) {
 		t.Fatalf("an unknown country was suggested: %v", got)
 	}
 }
+
+func TestPatternsAreTriedInOrder(t *testing.T) {
+	tmpl := tree.Template{Type: "card", Fields: []tree.Field{{Key: "expires", Type: tree.FieldDate, Patterns: []string{
+		`有效期限.*[-－]\s*(\d{4}\.\d{2}\.\d{2})`,
+		`(?i)expiry\W*(\d{2}/\d{2}/\d{4})`,
+		`(?i)valid until\W*(\S+)`,
+	}}}}
+	for text, want := range map[string]string{
+		card:                          "2036-01-01",
+		"Date of expiry: 03/04/2031":  "2031-04-03",
+		"Valid until: forever":        "", // no pattern finds a date
+		"valid until 12/05/2030":      "2030-05-12",
+		"Expiry: someday soon 2030\n": "",
+	} {
+		got := Matches(tmpl, text, dates.DMY)["expires"].Value
+		if got != want {
+			t.Errorf("%q: got %q, want %q", text, got, want)
+		}
+	}
+}
+
+func TestTheExampleReadsAnEnglishExpiry(t *testing.T) {
+	root := t.TempDir()
+	if err := tree.Init(root, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	templates, _ := tree.LoadTemplates(root)
+	got := All(templates, "DRIVER LICENCE\nExpiry: 03/04/2031", dates.DMY)
+	if got["id_card"]["expires"].Value != "03/04/2031" {
+		t.Fatalf("got %v", got)
+	}
+}

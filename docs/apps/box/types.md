@@ -30,9 +30,7 @@ lifetime or has none.
 | `travel` | `a` | Flights, boarding passes, hotel confirmations, car hire | the event date + 90 days |
 | `receipt` | `r` | Receipts and invoices | the event date + 7 years |
 | `statement` | `s` | Bills and account statements | the event date + 7 years |
-| `insurance` | `i` | Policies, certificates of cover | the event date + 1 year |
 | `contract` | `c` | Contracts and agreements | none |
-| `identity` | `d` | Identity documents, visas, licences | none — enter the expiry by hand |
 | `medical` | `m` | Prescriptions, results, medical receipts | none |
 | `manual` | `h` | Instruction manuals and user guides for things owned | none |
 
@@ -47,11 +45,11 @@ A ticket stub expires on the day of the event; a contract has no end to compute
 at all. Both are permanent only in the sense that neither needs arithmetic
 afterwards.
 
-`identity` has no default on purpose. A passport's expiry is printed on it and
-is the whole point of recording it, so a guessed date would be worse than an
-empty field that `view` can list as missing. `insurance` has a default *and*
-expects a date on the document, for the same reason: the default is a guess
-worth having until the real one is entered.
+Identity documents and insurance policies are not Box types: they are
+important documents, kept by [`dgs doc`](../doc/index.md) with their expiry
+entered from the document. A scan whose sidecar still says `identity` or
+`insurance` is read as it is and shown as an unknown type, with no expiry; its
+sidecar is never rewritten.
 
 `manual` has no lifetime because a manual is useful for as long as the thing it
 describes is owned, and no date on it says how long that is. It is a utility,

@@ -43,7 +43,8 @@ func Matches(t tree.Template, text string, order dates.Order) map[string]Match {
 	var found []dates.Found
 	next := 0
 	for _, f := range t.Fields {
-		if f.Pattern == "" {
+		patterns := f.AllPatterns()
+		if len(patterns) == 0 {
 			if f.Type != tree.FieldDate {
 				continue
 			}
@@ -57,42 +58,54 @@ func Matches(t tree.Template, text string, order dates.Order) map[string]Match {
 			}
 			continue
 		}
-		pattern, err := regexp.Compile(f.Pattern)
-		if err != nil {
-			continue
-		}
-		at := pattern.FindStringSubmatchIndex(text)
-		if at == nil {
-			continue
-		}
-		start, end := at[0], at[1]
-		if len(at) > 2 && at[2] >= 0 {
-			start, end = at[2], at[3]
-		}
-		raw := text[start:end]
-		value := strings.TrimSpace(raw)
-		if value == "" {
-			continue
-		}
-		start += strings.Index(raw, value)
-		end = start + len(value)
-		if f.Type == tree.FieldCountry {
-			kept, ok := country.Normalize(value, country.Format(f.Format))
-			if !ok {
-				continue
+		for _, p := range patterns {
+			if m, ok := match(f, p, text, order); ok {
+				out[f.Key] = m
+				break
 			}
-			value = kept
 		}
-		if f.Type == tree.FieldDate {
-			parsed, ok := dates.Parse(value, order)
-			if !ok {
-				continue
-			}
-			value = parsed
-		}
-		out[f.Key] = Match{Value: value, Start: start, End: end}
 	}
 	return out
+}
+
+// match is what one pattern suggests for f in text: the first capture group
+// when it has one, else the whole match, kept in the field's form. A match
+// that does not fit the field — no country, no date — is no suggestion.
+func match(f tree.Field, expression, text string, order dates.Order) (Match, bool) {
+	pattern, err := regexp.Compile(expression)
+	if err != nil {
+		return Match{}, false
+	}
+	at := pattern.FindStringSubmatchIndex(text)
+	if at == nil {
+		return Match{}, false
+	}
+	start, end := at[0], at[1]
+	if len(at) > 2 && at[2] >= 0 {
+		start, end = at[2], at[3]
+	}
+	raw := text[start:end]
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return Match{}, false
+	}
+	start += strings.Index(raw, value)
+	end = start + len(value)
+	if f.Type == tree.FieldCountry {
+		kept, ok := country.Normalize(value, country.Format(f.Format))
+		if !ok {
+			return Match{}, false
+		}
+		value = kept
+	}
+	if f.Type == tree.FieldDate {
+		parsed, ok := dates.Parse(value, order)
+		if !ok {
+			return Match{}, false
+		}
+		value = parsed
+	}
+	return Match{Value: value, Start: start, End: end}, true
 }
 
 // All is Matches for each Template, keyed by type. A type nothing matched is

@@ -47,10 +47,6 @@ type Type struct {
 	// being useful. Nil means it never does and no arithmetic is done, which is
 	// not the same as Days(0) — a ticket stub expires on the day of the event.
 	Lifetime *int
-	// ExpiryExpected marks a type whose expiry is printed on the document and is
-	// the point of recording it, such as a passport. There is no sane default to
-	// guess, so there is none; view lists the scans still missing a date instead.
-	ExpiryExpected bool
 	// Key is the single keystroke that chooses this type during intake. Every
 	// Key in the catalogue is distinct, which a test checks: a type is chosen a
 	// few hundred times in a row, so the list has to be operable without the
@@ -81,9 +77,7 @@ var catalogue = []Type{
 	{Name: "travel", Label: "Travel", Covers: "Flights, boarding passes, hotel confirmations, car hire", Nature: Utility, Lifetime: Days(90), Key: 'a'},
 	{Name: "receipt", Label: "Receipt", Covers: "Receipts and invoices", Nature: Utility, Lifetime: Days(7 * year), Key: 'r'},
 	{Name: "statement", Label: "Statement", Covers: "Bills and account statements", Nature: Utility, Lifetime: Days(7 * year), Key: 's'},
-	{Name: "insurance", Label: "Insurance", Covers: "Policies, certificates of cover", Nature: Utility, Lifetime: Days(year), ExpiryExpected: true, Key: 'i'},
 	{Name: "contract", Label: "Contract", Covers: "Contracts and agreements", Nature: Utility, Key: 'c'},
-	{Name: "identity", Label: "Identity document", Covers: "Identity documents, visas, licences", Nature: Utility, ExpiryExpected: true, Key: 'd'},
 	{Name: "medical", Label: "Medical", Covers: "Prescriptions, results, medical receipts", Nature: Utility, Key: 'm'},
 	{Name: "manual", Label: "Manual", Covers: "Instruction manuals and user guides for things owned", Nature: Utility, Key: 'h'},
 	{Name: "letter", Label: "Letter", Covers: "Correspondence worth keeping", Nature: Keepsake, Key: 'l'},

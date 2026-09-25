@@ -566,6 +566,9 @@ func LoadPath(path string) (Config, error) {
 	if err := validateTiles(config.Geo.GPX.Tiles); err != nil {
 		return Config{}, fmt.Errorf("decode config %s: geo.gpx.%w", path, err)
 	}
+	if config.Doc.ExpiringWithinDays < 0 {
+		return Config{}, fmt.Errorf("decode config %s: doc.expiring_within_days: %d is negative", path, config.Doc.ExpiringWithinDays)
+	}
 	if _, err := dates.ParseOrder(config.Doc.DateOrder); err != nil {
 		return Config{}, fmt.Errorf("decode config %s: doc.date_order: %w", path, err)
 	}

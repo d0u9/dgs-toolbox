@@ -35,7 +35,7 @@ Two surfaces, split by what each is good at.
   which rules out the terminal even with image support.
 
 The server binds a loopback address and the first version has no remote access
-at all. A Box holds identity documents and medical records; opening it to the
+at all. A Box holds medical records and receipts; opening it to the
 network is a separate design with its own access control, not a configuration
 key.
 

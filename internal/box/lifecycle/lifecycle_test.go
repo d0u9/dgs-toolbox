@@ -23,7 +23,6 @@ func TestExpiryComesFromTheTypeWhenNobodyEnteredOne(t *testing.T) {
 	}{
 		{"a ticket expires on the day", Scan{Type: "ticket", EventDate: date("2019-03-11")}, "2019-03-11", true},
 		{"travel keeps for ninety days", Scan{Type: "travel", EventDate: date("2019-03-11")}, "2019-06-09", true},
-		{"a policy keeps for a year", Scan{Type: "insurance", EventDate: date("2019-03-11")}, "2020-03-10", true},
 		{"a receipt keeps for seven years", Scan{Type: "receipt", EventDate: date("2019-03-11")}, "2026-03-09", true},
 		{"a contract has no expiry", Scan{Type: "contract", EventDate: date("2019-03-11")}, "", false},
 		{"a letter has no expiry", Scan{Type: "letter", EventDate: date("2019-03-11")}, "", false},
@@ -60,14 +59,14 @@ func TestStateOn(t *testing.T) {
 		want State
 	}{
 		{"expired years ago", Scan{Type: "ticket", EventDate: date("2019-03-11")}, Dead},
-		{"a policy from a year ago", Scan{Type: "insurance", EventDate: date("2025-01-01"), ExpiresAt: date("2026-01-01")}, Dead},
-		{"a policy still running", Scan{Type: "insurance", EventDate: date("2026-06-01")}, Current},
+		{"an entered expiry passed", Scan{Type: "contract", EventDate: date("2025-01-01"), ExpiresAt: date("2026-01-01")}, Dead},
+		{"travel still within ninety days", Scan{Type: "travel", EventDate: date("2026-08-01")}, Current},
 		{"a receipt still within seven years", Scan{Type: "receipt", EventDate: date("2024-01-01")}, Current},
 		{"a contract", Scan{Type: "contract", EventDate: date("2019-03-11")}, Permanent},
 		{"a leaflet", Scan{Type: "ephemera"}, Permanent},
 		{"not sorted yet", Scan{Type: "unsorted"}, Permanent},
-		{"a passport with no date entered", Scan{Type: "identity"}, Undated},
 		{"an undated ticket", Scan{Type: "ticket"}, Undated},
+		{"identity, a type doc took over", Scan{Type: "identity"}, Permanent},
 		{"a type this build does not know", Scan{Type: "tax-notice", EventDate: date("2019-03-11")}, Permanent},
 	} {
 		if got := StateOn(test.scan, today); got != test.want {
@@ -83,24 +82,6 @@ func TestATicketForTonightHasNotExpiredThisMorning(t *testing.T) {
 	}
 	if got := StateOn(tonight, date("2026-09-23")); got != Dead {
 		t.Errorf("a ticket for yesterday is %s, want dead", got)
-	}
-}
-
-func TestNeedsExpiryListsWhatIsPrintedOnThePaper(t *testing.T) {
-	for _, test := range []struct {
-		scan Scan
-		want bool
-	}{
-		{Scan{Type: "identity"}, true},
-		{Scan{Type: "insurance", EventDate: date("2026-06-01")}, true},
-		{Scan{Type: "identity", ExpiresAt: date("2031-01-01")}, false},
-		{Scan{Type: "identity", ExpiryCleared: true}, false},
-		{Scan{Type: "receipt"}, false},
-		{Scan{Type: "letter"}, false},
-	} {
-		if got := NeedsExpiry(test.scan); got != test.want {
-			t.Errorf("NeedsExpiry(%+v) = %v, want %v", test.scan, got, test.want)
-		}
 	}
 }
 
