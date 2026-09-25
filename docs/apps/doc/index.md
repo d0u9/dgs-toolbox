@@ -32,6 +32,7 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete. Nothing is imported here. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
 | Views `/views/` | Building layouts, previewing the tree they make, and exporting (M4–M6). |
+| Cases `/cases/` | A matter being dealt with and the Items it has needed; its export; archiving it. |
 | Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
 | Import `/import/` | Taking PDFs in. Last in the bar. |
 
@@ -398,6 +399,39 @@ to import a Target back into a repository: `dgs doc` reads the manifest and
 recreates the Items, matching existing ones as a merge does. It also
 records each Item's kind and which revision was HEAD.
 
+## Cases
+
+A Case is a matter being dealt with — renewing a passport, a lease
+application — and the Items it has needed so far. What such a matter wants is
+seldom known at the start: a photo ID first, a bill later, a payslip after
+that. So a Case grows as it goes, then is archived when it is done.
+
+- A Case refers to Items; it copies nothing. It lives in the tree as
+  `cases/<name>.yaml`, so it moves, merges and is backed up with the tree.
+  The name is the file's; the title is what the page shows.
+- An Item goes in from the Cases page, or from the Item on Browse ("Add to a
+  Case"), with a note on why it was wanted. Browse shows the Cases an Item is
+  in.
+- **Still needed** lists what was asked for that the tree does not have yet —
+  "the last three electricity bills". Once the Item is filed, it meets the
+  need and goes into the Case with the need's text as its note.
+- The Case shows each Item's expiry, as Browse does, so an ID that will not
+  last the matter out is seen early.
+- **Export** copies the Case's Items into a folder to hand over, named by the
+  Case's own layout (`{type}.{ext}` unless set, two of a type numbered). It
+  is planned and checked as a View's export is and writes `dgs-export.json`,
+  so a second export only brings the folder up to date. This takes the place
+  of the Bundle once planned.
+- **Archive** closes the Case: for each Item it records the revision that was
+  current, and nothing changes until it is reopened. An archived Case's
+  export takes those revisions, so after a passport is renewed it still
+  shows, and exports, the one handed over. Nothing is copied to do this; if a
+  recorded revision leaves the tree, the Case says so.
+- Deleting a Case moves its file into `trash/cases/`. Its Items stay.
+
+A Case belongs to one tree. In a tree of books, the same thing is a reading
+list — for a flight, for a course — which is simply never archived.
+
 ## Searching
 
 Browse's filter matches an Item by its fields and by the text read off its
@@ -489,6 +523,7 @@ exported and the Items' fields; a Target carries no Templates or Views.
   templates/
     id_card.yaml            # one Template per type
   views/                    # one View per file (M4)
+  cases/                    # one Case per file
   trash/                    # deleted Items and Templates, never erased
   items/
     <item-id>/
@@ -576,7 +611,6 @@ written any, is one more key of the sidecar.
   recording what was submitted for a visa or a claim.
 - **Clone** — a sub-tree cloned from the full tree would remember the state it
   was cloned from, so its merge could compare three sides, as git does.
-- **Bundle** — a hand-picked set of Items for one purpose, exported once.
 
 Its settings — `doc.root`, `doc.web.port` — are in
 [`configuration/doc.md`](../../configuration/doc.md).
