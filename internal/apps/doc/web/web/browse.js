@@ -1,4 +1,5 @@
 // Browse: the Items kept in the tree, their fields, revisions and HEAD.
+import { splitter } from "/ui/splitter.js";
 import { $, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, frame, say, showText, showPreview, clearPreview } from "/common.js";
 
 let state = { templates: [], items: [] };
@@ -11,27 +12,210 @@ let unread = 0;
 
 const words = () => $("filter").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
 const matches = (text) => words().every((w) => text.toLowerCase().includes(w));
+const VIEW_KEY = "dgs-doc-browse-view";
+
+// The keys that tell documents apart — owner, country — each get a filter,
+// since they are what a person looks for first.
+function filterKeys() {
+  const keys = [];
+  for (const t of state.templates) {
+    for (const f of t.fields) if (f.distinguishing && !keys.includes(f.key)) keys.push(f.key);
+  }
+  return keys;
+}
+
+// filters draws a select per filter key with the values the Items have,
+// keeping what was chosen.
+function drawFilters() {
+  const keep = (select, values) => {
+    const was = select.value;
+    select.replaceChildren(el("option", { value: "" }, "any"), ...values.map((v) => el("option", { value: v }, v)));
+    select.value = values.includes(was) ? was : "";
+  };
+  keep($("filter-type"), [...new Set(state.items.map((i) => i.type))].sort());
+  const group = $("field-filters");
+  const keys = filterKeys();
+  for (const label of [...group.querySelectorAll("label[data-key]")]) if (!keys.includes(label.dataset.key)) label.remove();
+  for (const key of keys) {
+    let select = group.querySelector(`select[data-key="${key}"]`);
+    if (!select) {
+      select = el("select", { onchange: render });
+      select.dataset.key = key;
+      const label = el("label", { className: "filter" }, el("span", {}, key[0].toUpperCase() + key.slice(1)), select);
+      label.dataset.key = key;
+      group.append(label);
+    }
+    keep(select, [...new Set(state.items.map((i) => currentFields(i)[key]).filter(Boolean))].sort());
+  }
+}
+
+function shownItems() {
+  const type = $("filter-type").value, kind = $("filter-kind").value, exp = $("filter-expiry").value;
+  const byKey = [...$("field-filters").querySelectorAll("select[data-key]")].filter((s) => s.value);
+  const items = state.items.filter((i) => {
+    const fields = currentFields(i);
+    return (!type || i.type === type) && (!kind || i.kind === kind) &&
+      (!exp || expiryOf(i).state === exp) &&
+      byKey.every((s) => fields[s.dataset.key] === s.value) &&
+      (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ")));
+  });
+  const sort = $("view-sort").value, dir = $("view-direction").value === "asc" ? 1 : -1;
+  const added = (i) => (i.revisions[i.revisions.length - 1] || {}).added || "";
+  // No expiry sorts after any date, whichever way round.
+  const exp_ = (i) => { const e = expiryOf(i); return e.date || (e.state === "permanent" ? "9999" : ""); };
+  const keyOf = { added, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i) }[sort];
+  return items.sort((x, y) => {
+    const a = keyOf(x), b = keyOf(y);
+    if (sort === "expiry" && (!a || !b)) return !a && !b ? 0 : !a ? 1 : -1;
+    return a < b ? -dir : a > b ? dir : 0;
+  });
+}
+
+const expiryOf = (item) => (state.expiry || {})[item.id] || { state: "none" };
+
+// expiryBadge says where an Item's expiry stands, coloured by how urgent.
+function expiryBadge(item) {
+  const e = expiryOf(item);
+  const text = {
+    expired: "expired " + (e.date || ""),
+    soon: e.days === 0 ? "expires today" : "expires in " + e.days + (e.days === 1 ? " day" : " days"),
+    valid: "valid to " + (e.date || ""),
+    permanent: "no end date",
+  }[e.state];
+  return text ? el("span", { className: "badge badge-" + e.state, title: e.date || "" }, text) : null;
+}
+
+const headOf = (item) => item.head || (item.revisions[item.revisions.length - 1] || {}).digest;
+const thumbURL = (item) => { const d = headOf(item); return `/api/page?item=${encodeURIComponent(item.id)}&digest=${d}&n=1&size=thumb&v=${d}`; };
+
+// thumb is the first page of HEAD, or the type's name where the PDF has no
+// picture of its page (one made on a computer).
+// noPicture remembers the pages that have no picture, so a redraw does not
+// ask for them again.
+const noPicture = new Set();
+function thumb(item) {
+  const wrap = el("div", { className: "card-thumb-wrap" });
+  const url = thumbURL(item);
+  const none = () => { noPicture.add(url); wrap.classList.add("no-picture"); wrap.dataset.type = item.type; };
+  if (noPicture.has(url)) {
+    none();
+    return wrap;
+  }
+  const img = el("img", { className: "card-thumb", loading: "lazy", alt: "", src: url });
+  img.addEventListener("error", none, { once: true });
+  img.addEventListener("load", () => { if (!img.naturalWidth) none(); }, { once: true });
+  wrap.append(img);
+  return wrap;
+}
+
+// The fields a card shows under its title: what is not already in the name.
+function details(item) {
+  const t = templateOf(state, item.type);
+  const named = new Set(t ? t.fields.filter((f) => f.distinguishing).map((f) => f.key) : []);
+  return Object.entries(currentFields(item)).filter(([k]) => !named.has(k) && !["expires", "expiry", "expires_at", "expiry_date", "valid_until"].includes(k))
+    .map(([k, v]) => k + ": " + shown(item, k, v)).join(" · ");
+}
+
+function card(item) {
+  const t = templateOf(state, item.type);
+  const named = t ? t.fields.filter((f) => f.distinguishing).map((f) => currentFields(item)[f.key]).filter(Boolean) : [];
+  const li = el("li", { className: "card state-" + expiryOf(item).state, onclick: () => open(item) },
+    thumb(item),
+    el("div", { className: "card-body" },
+      el("p", { className: "card-title", title: label(state, item) }, named.join(" · ") || item.type),
+      el("p", { className: "card-meta" }, el("span", { className: "card-type" }, item.type),
+        item.revisions.length > 1 ? el("span", { title: "Revisions" }, item.revisions.length + " revisions") : null),
+      el("p", { className: "card-details", title: details(item) }, details(item)),
+      textHits.get(item.id) ? el("p", { className: "card-snippet" }, textHits.get(item.id)) : null,
+      el("p", { className: "card-badges" }, expiryBadge(item))));
+  if (selected && selected.id === item.id) li.classList.add("card-selected");
+  return li;
+}
+
+function row(item, keys) {
+  const fields = currentFields(item);
+  const e = expiryOf(item);
+  const tr = el("tr", { className: "table-row state-" + e.state, onclick: () => open(item) },
+    el("td", { className: "table-thumb" }, thumb(item)),
+    el("td", {}, item.type),
+    ...keys.map((k) => el("td", {}, fields[k] ? shown(item, k, fields[k]) : "")),
+    el("td", {}, expiryBadge(item) || el("span", { className: "muted" }, "—")),
+    el("td", { className: "numeric" }, String(item.revisions.length)),
+    el("td", { className: "numeric" }, new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString()));
+  if (selected && selected.id === item.id) tr.classList.add("card-selected");
+  return tr;
+}
+
+function open(item) {
+  pick(item.id, headOf(item));
+}
 
 function render() {
   frame(state);
-  const items = state.items.filter((i) => textHits.has(i.id) || matches(label(state, i) + " " + Object.values(currentFields(i)).join(" ")));
-  $("count").textContent = items.length;
+  drawFilters();
+  const items = shownItems();
+  $("count").textContent = items.length === state.items.length ? items.length + " Items" : items.length + " of " + state.items.length + " Items";
   $("none").hidden = state.items.length > 0 || !state.tree;
+  $("nothing").hidden = !state.items.length || items.length > 0;
+  $("filters-clear").hidden = !filtering();
+  for (const s of document.querySelectorAll(".filters select")) s.closest(".filter").classList.toggle("filter-active", !!s.value && !s.id.startsWith("view-"));
   $("unread").hidden = !unread;
   $("unread-count").textContent = unread + (unread === 1 ? " Item's text is" : " Items' text is") + " not read yet, so searching cannot find " + (unread === 1 ? "it." : "them.");
-  $("items").replaceChildren(...items.map((item) => {
-    const li = el("li", { onclick: () => pick(item.id, item.head || item.revisions[0].digest) },
-      label(state, item),
-      item.revisions.length > 1 ? el("span", { className: "tag" }, item.revisions.length + " revisions") : null,
-      el("span", { className: "sub" }, Object.entries(currentFields(item)).map(([k, v]) => k + ": " + shown(item, k, v)).join("  ")),
-      textHits.get(item.id) ? el("span", { className: "sub snippet" }, textHits.get(item.id)) : null);
-    if (selected && selected.id === item.id) li.className = "selected";
-    return li;
-  }));
+  const list = $("view-layout").value === "list";
+  $("grid").hidden = list;
+  $("table").hidden = !list;
+  if (list) {
+    const keys = filterKeys();
+    $("table-head").replaceChildren(el("th", {}), el("th", {}, "Type"), ...keys.map((k) => el("th", {}, k)),
+      el("th", {}, "Expiry"), el("th", {}, "Revisions"), el("th", {}, "Added"));
+    $("table-body").replaceChildren(...items.map((i) => row(i, keys)));
+  } else {
+    $("grid").replaceChildren(...items.map(card));
+  }
   const item = selected && state.items.find((i) => i.id === selected.id);
   $("side").hidden = !item;
+  $("preview").hidden = !item;
+  $("preview-splitter").hidden = !item;
   if (item) detail(item);
 }
+
+const filtering = () => $("filter").value.trim() || [...document.querySelectorAll(".filters select")].some((s) => s.value && !s.id.startsWith("view-"));
+
+$("filters-clear").onclick = () => {
+  $("filter").value = "";
+  for (const s of document.querySelectorAll(".filters select")) if (!s.id.startsWith("view-")) s.value = "";
+  textHits = new Map();
+  render();
+  searchText();
+};
+for (const id of ["filter-type", "filter-expiry", "filter-kind", "view-layout", "view-sort", "view-direction"]) {
+  $(id).addEventListener("change", () => {
+    try { localStorage.setItem(VIEW_KEY, JSON.stringify({ layout: $("view-layout").value, sort: $("view-sort").value, direction: $("view-direction").value })); } catch { /* not kept */ }
+    render();
+  });
+}
+try {
+  const v = JSON.parse(localStorage.getItem(VIEW_KEY) || "{}");
+  if (v.layout) $("view-layout").value = v.layout;
+  if (v.sort) $("view-sort").value = v.sort;
+  if (v.direction) $("view-direction").value = v.direction;
+} catch { /* the defaults stand */ }
+
+// Closing the detail gives the cards the width back.
+function close() {
+  selected = null;
+  history.replaceState(null, "", location.pathname);
+  clearPreview();
+  render();
+}
+$("close").onclick = close;
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && selected && !event.target.closest("input, textarea, select")) close();
+});
+
+// The preview beside the cards is as wide as the reader drags it.
+splitter({ handle: $("preview-splitter"), target: $("preview"), axis: "x", invert: true, min: 320,
+  max: () => window.innerWidth - 560, key: "dgs-doc-size-browse-preview" });
 
 // shown is a field's value as a person reads it: a linked Item by its name.
 function shown(item, key, value) {

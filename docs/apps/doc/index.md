@@ -18,11 +18,29 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 
 | Page | What it is for |
 | --- | --- |
-| Browse `/browse/` | The Items: filter, preview, edit fields, revisions and HEAD, delete. Nothing is imported here. |
+| Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete. Nothing is imported here. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
 | Views `/views/` | Building layouts, previewing the tree they make, and exporting (M4–M6). |
 | Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
 | Import `/import/` | Taking PDFs in. Last in the bar. |
+
+### Browse
+
+Browse opens on the Items as cards, as box's Browse does, or as a table:
+each shows the first page of HEAD, the fields that tell the document apart
+(owner, country), the type, and where its expiry stands. A row of filters
+across the top narrows them: search (fields and the text on the page), type,
+a select for every distinguishing key any Template has, expiry and kind. They
+sort by date added, expiry, name or type. The layout, sort and order are
+remembered in the browser. Picking one opens its preview and details beside
+the cards; closing them (×, Esc) gives the cards the width back.
+
+Expiry is read from the first of `expires`, `expiry`, `expires_at`,
+`expiry_date` and `valid_until` that HEAD has, by the server
+(`internal/doc/expiry`): **expired** after its day, **expires soon** within 90
+days (`DefaultSoon`), **valid**, **no end date** for `长期`, `永久`,
+`permanent` or `indefinite`, and nothing when there is no such field or it is
+not a date.
 
 ### Deleting
 

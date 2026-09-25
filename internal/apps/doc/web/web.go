@@ -20,6 +20,7 @@ import (
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/doc/classify"
 	"dgs-toolbox/internal/doc/dates"
+	"dgs-toolbox/internal/doc/expiry"
 	"dgs-toolbox/internal/doc/ocr"
 	"dgs-toolbox/internal/doc/pdflist"
 	"dgs-toolbox/internal/doc/suggest"
@@ -83,6 +84,8 @@ type stateJSON struct {
 	Error     string          `json:"error,omitempty"`
 	Templates []tree.Template `json:"templates"`
 	Items     []tree.Item     `json:"items"`
+	// Expiry is each Item's expiry as its Current revision has it, by ID.
+	Expiry map[string]expiry.Status `json:"expiry"`
 }
 
 type server struct {
@@ -197,6 +200,11 @@ func (s server) state(w http.ResponseWriter, _ *http.Request) {
 		}
 	} else if !errors.Is(err, tree.ErrNotATree) {
 		problems = append(problems, err.Error())
+	}
+	out.Expiry = map[string]expiry.Status{}
+	now := s.now()
+	for _, item := range out.Items {
+		out.Expiry[item.ID] = expiry.Of(item.CurrentFields(), now, expiry.DefaultSoon, s.dateOrder)
 	}
 	out.Error = strings.Join(problems, "; ")
 	writeJSON(w, http.StatusOK, out)
