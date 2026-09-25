@@ -222,6 +222,11 @@ Template defines, such as `employer`), values derived from them (`year`,
 `month` and `date` from `issued_at`), `revision` (the revision's number,
 counting from 1, in order added) and `ext`.
 
+A key may name a country format: `{country:alpha3}` writes the Item's country
+as `CHN` however its sidecar keeps it, and likewise `:zh` (`中国`), `:en`
+(`China`) and `:alpha2` (`CN`). A value that names no country is written as it
+is. Any other format after the colon is refused.
+
 A View is one YAML file under `views/`, named after its `name`:
 
 ```yaml

@@ -161,3 +161,31 @@ func TestFieldsFor(t *testing.T) {
 		t.Fatalf("FieldsFor = %v", got)
 	}
 }
+
+func TestLayoutWritesACountryInAFormat(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "jane", "country": "中国"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom", "country": "AU"}, Revisions: []tree.Revision{{Digest: "b"}}},
+		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "sam", "country": "Atlantis"}, Revisions: []tree.Revision{{Digest: "c"}}},
+	}
+	plan, err := Build(View{Name: "v", Selection: Head, Layout: "{country:alpha3}/{owner}-{country:en}.{ext}"}, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range plan.Files {
+		got = append(got, f.Path)
+	}
+	want := []string{"AUS/tom-Australia.pdf", "Atlantis/sam-Atlantis.pdf", "CHN/jane-China.pdf"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %v", got)
+	}
+	for _, bad := range []string{"{country:iso}", "{country:}"} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("%s accepted", bad)
+		}
+	}
+	if l, _ := Parse("{country:zh}"); len(l.Keys()) != 1 || l.Keys()[0] != "country" {
+		t.Errorf("keys: %v", l.Keys())
+	}
+}
