@@ -216,6 +216,16 @@ A layout is rendered by three rules:
   Items' ID order, the second and later get `_01`, `_02` before the extension,
   so the same state always numbers the same way.
 
+### The Views page
+
+The page lists the Views on the left. The form picks the types, adds
+conditions on other keys (`owner is jane, tom`), HEAD or all revisions, and
+the layout, typed or built by clicking key chips that insert at the caret.
+Beside it the preview redraws, as the form changes, the folder tree an
+export would write, each file linked to its Item on Browse, with the PDFs
+lacking a key and the paths wanted twice listed above it. Saving writes
+`views/<name>.yaml`; renaming a View removes the old file.
+
 ### Missing keys
 
 Export refuses to write anything while a PDF the View selects lacks a key the

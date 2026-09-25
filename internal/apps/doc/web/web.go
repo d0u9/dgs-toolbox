@@ -116,6 +116,10 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/revisions", s.addRevision)
 	mux.HandleFunc("POST /api/head", s.setHead)
 	mux.HandleFunc("POST /api/fields", s.setFields)
+	mux.HandleFunc("GET /api/views", s.viewList)
+	mux.HandleFunc("POST /api/views/plan", s.viewPlan)
+	mux.HandleFunc("POST /api/views", s.viewSave)
+	mux.HandleFunc("POST /api/views/delete", s.viewDelete)
 	webui.Mount(mux)
 	// The dialog only chooses a folder to read; nothing it reaches is changed.
 	webfile.Mount(mux, webfile.Options{Root: s.root})
@@ -124,7 +128,7 @@ func Handler(settings Settings) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
-	for _, page := range []string{"browse", "import"} {
+	for _, page := range []string{"browse", "import", "views"} {
 		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
 		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
 	}

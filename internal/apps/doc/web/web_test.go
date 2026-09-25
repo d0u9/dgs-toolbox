@@ -219,3 +219,39 @@ func TestTextWhereRecognitionIsMissing(t *testing.T) {
 		t.Fatalf("out = %+v", out)
 	}
 }
+
+func TestViewsSavePlanDelete(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root})
+	body := `{"dir":` + q(scans) + `,"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"}}`
+	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	v := `{"name":"important","selection":"head","layout":"{country}/{owner}/{type}.{ext}","query":{"type":["id_card"]}}`
+	rec := do(h, "POST", "/api/views/plan", v)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"AU/jane/id_card.pdf"`) {
+		t.Fatal(rec.Body.String())
+	}
+	rec = do(h, "POST", "/api/views/plan", `{"name":"x","layout":"{number}/{type}.{ext}"}`)
+	if !strings.Contains(rec.Body.String(), `"keys":["number"]`) {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/views", `{"view":`+v+`}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	renamed := strings.Replace(v, "important", "kept", 1)
+	if rec := do(h, "POST", "/api/views", `{"view":`+renamed+`,"previous":"important"}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	var list viewsJSON
+	must(t, json.Unmarshal(do(h, "GET", "/api/views", "").Body.Bytes(), &list))
+	if len(list.Views) != 1 || list.Views[0].Name != "kept" || list.Keys[0] != "country" {
+		t.Fatalf("%+v", list)
+	}
+	if rec := do(h, "POST", "/api/views/delete", `{"name":"kept"}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/views", `{"view":{"name":"Bad","selection":"head","layout":"x"}}`); rec.Code != 400 {
+		t.Fatal("bad view saved")
+	}
+}

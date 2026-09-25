@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Views · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before saving Views in it.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <a class="topbar-link current" href="/views/">Views</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="work">
+  <section class="list">
+    <div class="scroll">
+      <h2 class="panel-head">Views <span id="count" class="count numeric"></span></h2>
+      <ul id="views" class="rows"></ul>
+    </div>
+    <button id="new" class="action" type="button">New View</button>
+  </section>
+  <section class="view-edit">
+    <form id="form" class="view-form">
+      <label class="form-field"><span>Name</span>
+        <input id="name" spellcheck="false" autocomplete="off" placeholder="important"></label>
+      <div class="form-field"><span>Types</span><div id="types" class="checks"></div></div>
+      <div class="form-field"><span>Only Items where</span>
+        <div id="conditions"></div>
+        <button id="add-condition" class="small-inline" type="button">+ condition</button>
+      </div>
+      <div class="form-field"><span>Revisions</span>
+        <div class="checks">
+          <label><input type="radio" name="selection" value="head" checked> HEAD only</label>
+          <label><input type="radio" name="selection" value="all"> All revisions</label>
+        </div>
+      </div>
+      <label class="form-field"><span>Layout</span>
+        <input id="layout" class="mono" spellcheck="false" autocomplete="off" placeholder="{country}/{owner}/{type}.{ext}"></label>
+      <div id="keys" class="key-chips"></div>
+      <div class="form-field"><span>A missing key</span>
+        <div class="checks">
+          <label><input type="checkbox" id="use-default"> writes</label>
+          <input id="default" class="short" value="none" spellcheck="false" autocomplete="off">
+          <span class="muted">instead of refusing</span>
+        </div>
+      </div>
+      <div class="form-field"><span>PDFs on one path</span>
+        <div class="checks">
+          <label><input type="checkbox" id="dedupe"> number them _01, _02 instead of refusing</label>
+        </div>
+      </div>
+      <p id="message" class="message"></p>
+      <div class="buttons">
+        <button id="save" class="action" type="submit">Save View</button>
+        <button id="delete" class="action quiet" type="button">Delete</button>
+      </div>
+    </form>
+    <div class="view-result">
+      <h2 class="panel-head">Preview <span id="summary" class="count"></span></h2>
+      <div id="problems"></div>
+      <div id="tree" class="file-tree"></div>
+    </div>
+  </section>
+</main>
+<script type="module" src="/views.js"></script>
+</body>
+</html>

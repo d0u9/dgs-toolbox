@@ -169,6 +169,11 @@ function watch() {
 // Zooming: the buttons, Ctrl or ⌘ with the wheel (a trackpad pinch arrives as
 // that), and + − 0 from the keyboard.
 const step = (factor, anchor) => setZoom(scale() * factor, anchor);
+// A page without a viewer, such as Views, imports this only through
+// common.js and wires nothing.
+if ($("pages")) wire();
+
+function wire() {
 $("zoom-in").onclick = () => step(1.25);
 $("zoom-out").onclick = () => step(0.8);
 $("zoom-level").onclick = () => setZoom(1);
@@ -210,3 +215,4 @@ $("pages").addEventListener("pointerup", endDrag);
 $("pages").addEventListener("pointercancel", endDrag);
 
 new ResizeObserver(() => { if (sheets.length && typeof zoom !== "number") apply(); }).observe($("pages"));
+}
