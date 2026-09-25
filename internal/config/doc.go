@@ -1,6 +1,7 @@
 package config
 
 import (
+	"dgs-toolbox/internal/doc/dates"
 	"fmt"
 	"net"
 	"os"
@@ -18,6 +19,9 @@ type Doc struct {
 	// CacheDir is where the discardable cache lives: the text read off PDFs,
 	// by digest. Empty is the user cache directory.
 	CacheDir string `json:"cache_dir"`
+	// DateOrder is how a date like 03/04/2026 is read: DMY or MDY. Empty is
+	// dates.DefaultOrder.
+	DateOrder string `json:"date_order"`
 }
 
 // DocWeb is where the doc pages listen. Only the port is configurable.
@@ -59,4 +63,14 @@ func (c Config) DocCacheDir() (string, error) {
 		return "", fmt.Errorf("locate the user cache directory: %w", err)
 	}
 	return filepath.Join(userCache, "dgs", "doc"), nil
+}
+
+// DocDateOrder is doc.date_order. LoadPath has refused anything else, so a
+// bad value here is only a Config built by hand, and it reads as the default.
+func (c Config) DocDateOrder() dates.Order {
+	order, err := dates.ParseOrder(c.Doc.DateOrder)
+	if err != nil {
+		return dates.DefaultOrder
+	}
+	return order
 }

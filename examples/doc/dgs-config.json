@@ -1,6 +1,7 @@
 {
   "doc": {
     "root": "/Volumes/nas/Documents",
+    "date_order": "DMY",
     "web": {
       "port": 8767
     }

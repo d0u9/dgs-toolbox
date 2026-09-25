@@ -34,6 +34,9 @@ type Item struct {
 	Fields    map[string]string `yaml:"fields" json:"fields"`
 	Head      string            `yaml:"head,omitempty" json:"head,omitempty"`
 	Revisions []Revision        `yaml:"revisions" json:"revisions"`
+	// Notes is free text the owner writes. It is never a key and never
+	// exported.
+	Notes string `yaml:"notes,omitempty" json:"notes,omitempty"`
 }
 
 // Current is the digest of the PDF that stands for the Item: HEAD for a

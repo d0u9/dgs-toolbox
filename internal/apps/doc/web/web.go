@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/doc/dates"
 	"dgs-toolbox/internal/doc/ocr"
 	"dgs-toolbox/internal/doc/pdflist"
 	"dgs-toolbox/internal/doc/suggest"
@@ -40,11 +41,13 @@ type Settings struct {
 	ReadPage textread.ReadFunc
 	// CacheDir keeps the text read, by digest. Empty keeps it nowhere.
 	CacheDir string
+	// DateOrder reads dates like 03/04/2026. Empty is dates.DefaultOrder.
+	DateOrder dates.Order
 }
 
 // SettingsFrom reads the server settings out of the configuration.
 func SettingsFrom(global config.Config) Settings {
-	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot()}
+	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder()}
 	if dir, err := global.DocCacheDir(); err == nil {
 		settings.CacheDir = dir
 	}
@@ -80,8 +83,9 @@ type stateJSON struct {
 }
 
 type server struct {
-	root string
-	now  func() time.Time
+	root      string
+	now       func() time.Time
+	dateOrder dates.Order
 	// reader reads PDFs' text through a queue and a cache: the page being
 	// looked at first, pages wanted next in advance, each page once.
 	reader *textread.Reader
@@ -95,12 +99,15 @@ func Handler(settings Settings) http.Handler {
 	if err != nil {
 		panic(err)
 	}
+	if settings.DateOrder == "" {
+		settings.DateOrder = dates.DefaultOrder
+	}
 	read := settings.ReadPage
 	if read == nil {
 		read = ocr.RecognizePage
 	}
 	s := server{
-		root: settings.ResolvedRoot(), now: time.Now, pictures: newPictures(),
+		root: settings.ResolvedRoot(), now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder,
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
 	}
 	mux := http.NewServeMux()
@@ -116,6 +123,7 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/revisions", s.addRevision)
 	mux.HandleFunc("POST /api/head", s.setHead)
 	mux.HandleFunc("POST /api/fields", s.setFields)
+	mux.HandleFunc("POST /api/notes", s.setNotes)
 	mux.HandleFunc("GET /api/views", s.viewList)
 	mux.HandleFunc("POST /api/views/plan", s.viewPlan)
 	mux.HandleFunc("POST /api/views", s.viewSave)
@@ -320,7 +328,7 @@ func (s server) text(w http.ResponseWriter, r *http.Request) {
 	out.Page, out.Count = page, count
 	if templates, err := tree.LoadTemplates(s.root); err == nil {
 		read := ocr.Result{Pages: []ocr.Page{page}}
-		for kind, found := range suggest.All(templates, read.Text()) {
+		for kind, found := range suggest.All(templates, read.Text(), s.dateOrder) {
 			out.Suggestions[kind] = map[string]suggestion{}
 			for key, m := range found {
 				at := suggestion{Value: m.Value, Page: -1, Line: -1}
@@ -523,6 +531,18 @@ func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	answer(w, item, errors.New("no Template for type "+item.Type))
+}
+
+func (s server) setNotes(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item  string `json:"item"`
+		Notes string `json:"notes"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	item, err := tree.SetNotes(s.root, request.Item, request.Notes)
+	answer(w, item, err)
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

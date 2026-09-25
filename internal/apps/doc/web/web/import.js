@@ -137,8 +137,8 @@ function drawFields() {
   $("into-field").hidden = documents.length === 0;
   const adding = into.value !== "";
   $("import-button").textContent = adding ? "Add revision" : "Import";
-  $("fields").replaceChildren(...(adding ? [] : t.fields.map((f) => inputFor(f, "", (t.defaults || {})[f.key] || ""))));
-  for (const input of $("fields").querySelectorAll("input")) {
+  $("fields").replaceChildren(...(adding ? [] : t.fields.map((f) => inputFor(f, "", (t.defaults || {})[f.key] || "", state))));
+  for (const input of $("fields").querySelectorAll(".field-input")) {
     input.addEventListener("input", () => { input.classList.remove("suggested"); showSource(null); });
     const source = () => input.classList.contains("suggested") && showSource((suggestions[$("template").value] || {})[input.name]);
     input.addEventListener("focus", source);
@@ -153,7 +153,7 @@ function drawFields() {
 // read as proposals. A field the reader typed in is never replaced.
 function suggest() {
   const found = suggestions[$("template").value] || {};
-  for (const input of $("fields").querySelectorAll("input")) {
+  for (const input of $("fields").querySelectorAll(".field-input")) {
     const value = found[input.name] && found[input.name].value;
     if (value && (input.value === "" || input.classList.contains("suggested"))) {
       input.value = value;

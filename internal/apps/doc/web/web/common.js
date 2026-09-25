@@ -38,14 +38,32 @@ export function label(state, item) {
   return item.type + (parts.length ? " · " + parts.join(" · ") : "");
 }
 
-export function inputFor(field, value, placeholder) {
+// inputFor is the control a field's type asks for: a date picker, a list of
+// options, a list of the tree's other Items, or a line of text. Every one has
+// the class field-input and the field's key as its name.
+export function inputFor(field, value, placeholder, state, self) {
+  const common = { name: field.key, className: "field-input" };
+  let control;
+  if (field.type === "select" || field.type === "item") {
+    const choices = field.type === "select"
+      ? field.options.map((o) => [o, o])
+      : (state ? state.items : []).filter((i) => i.id !== self).map((i) => [i.id, label(state, i)]);
+    const empty = placeholder && field.type === "select" ? "(" + placeholder + ")" : "";
+    control = el("select", common, el("option", { value: "" }, empty),
+      ...choices.map(([v, text]) => el("option", { value: v, selected: v === value }, text)));
+    if (value && !choices.some(([v]) => v === value)) {
+      control.append(el("option", { value, selected: true }, value));
+    }
+  } else {
+    control = el("input", { ...common, type: field.type === "date" ? "date" : "text",
+      value, placeholder, spellcheck: false, autocomplete: "off" });
+  }
   return el("label", { className: "form-field" },
-    el("span", {}, field.key, field.required ? el("span", { className: "req" }, " *") : null),
-    el("input", { name: field.key, value, placeholder, spellcheck: false, autocomplete: "off" }));
+    el("span", {}, field.key, field.required ? el("span", { className: "req" }, " *") : null), control);
 }
 
 export const fieldsOf = (container) => Object.fromEntries(
-  [...container.querySelectorAll("input")].map((input) => [input.name, input.value]));
+  [...container.querySelectorAll(".field-input")].map((input) => [input.name, input.value]));
 
 // The top bar and the banner every page has.
 export function frame(state) {
