@@ -698,9 +698,16 @@ func TestAFiledScanCanBeUnfiled(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "trash")); err != nil {
 		t.Errorf("no trash: %v", err)
 	}
+	// Moving it into the trash is not a file gone missing.
+	if exceptions := engine.Exceptions(); len(exceptions) != 0 {
+		t.Errorf("exceptions after unfiling: %+v", exceptions)
+	}
 	// And it files again.
 	if _, err := engine.File(digest, boxweb.Edit{}); err != nil {
 		t.Fatalf("file again: %v", err)
+	}
+	if exceptions := engine.Exceptions(); len(exceptions) != 0 {
+		t.Errorf("exceptions after filing again: %+v", exceptions)
 	}
 	if err := engine.Unfile("sha256:nothing"); err == nil {
 		t.Error("unfiled a scan that is not there")

@@ -316,6 +316,55 @@ func TestTheTrashIsIndexedAndMarked(t *testing.T) {
 	}
 }
 
+// A discard moves a sidecar into the trash. Refreshing afterwards finds it
+// there, and the move is not reported as a missing file.
+func TestAMoveIsNotReportedMissing(t *testing.T) {
+	root := filledBox(t)
+	cache, _, err := index.Build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	victim := cache.Entries[0]
+	if _, err := publish.Discard(publish.DiscardRequest{
+		Root:        root,
+		Path:        filepath.Join(root, victim.ScanPath),
+		Digest:      victim.File.Digest,
+		Prefix:      len(strings.TrimSuffix(filepath.Base(victim.SidecarPath), sidecar.Suffix)),
+		DiscardDate: box.Date{Year: 2026, Month: 9, Day: 24},
+		Reason:      "a duplicate",
+	}); err != nil {
+		t.Fatalf("discard: %v", err)
+	}
+	_, orphans, err := index.Refresh(root, cache)
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if len(orphans) != 0 {
+		t.Errorf("orphans after a discard: %+v", orphans)
+	}
+}
+
+// A copy the cache already knew under its own path, such as a duplicate
+// discarded earlier, does not hide the loss of another sidecar with the same
+// digest.
+func TestAKnownCopyDoesNotHideALoss(t *testing.T) {
+	root := filledBox(t)
+	cache, _, err := index.Build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lost := cache.Entries[0]
+	lost.SidecarPath = filepath.Join("trash", "gone"+sidecar.Suffix)
+	cache.Entries = append(cache.Entries, lost)
+	_, orphans, err := index.Refresh(root, cache)
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if len(orphans) != 1 || orphans[0].Kind != "missing" || orphans[0].Path != lost.SidecarPath {
+		t.Errorf("orphans = %+v, want %s missing", orphans, lost.SidecarPath)
+	}
+}
+
 // The marker and the log are the Box's own files, not scans.
 func TestBoxOwnFilesAreNotIndexed(t *testing.T) {
 	root := filledBox(t)

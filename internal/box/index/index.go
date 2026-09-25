@@ -204,7 +204,8 @@ func Build(root string) (Index, []Orphan, error) {
 // times — and reopens just the sidecars whose triple moved. An entry whose file
 // is gone is reported as an orphan and dropped from the returned cache; it is
 // not silently kept, because a cache that remembers files nobody has is a cache
-// that answers questions wrongly.
+// that answers questions wrongly. A sidecar that reappears under a new path
+// with the same digest was moved, and is not reported.
 func Refresh(root string, existing Index) (Index, []Orphan, error) {
 	root = filepath.Clean(root)
 	found, orphans, err := walk(root)
@@ -235,8 +236,19 @@ func Refresh(root string, existing Index) (Index, []Orphan, error) {
 		}
 		entries = append(entries, entry)
 	}
+	// A sidecar that appeared under a new path with the same digest was moved —
+	// into the trash, or back out of it — not lost. Reporting a move the tool
+	// made itself as a missing file tells the person something is wrong when it
+	// is not. Only new paths count: a copy the cache already knew, such as a
+	// duplicate discarded earlier, must not hide the loss of the original.
+	moved := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if _, known := previous[entry.SidecarPath]; !known && entry.File.Digest != "" {
+			moved[entry.File.Digest] = true
+		}
+	}
 	for _, entry := range existing.Entries {
-		if !seen[entry.SidecarPath] {
+		if !seen[entry.SidecarPath] && !moved[entry.File.Digest] {
 			orphans = append(orphans, Orphan{
 				Path:   entry.SidecarPath,
 				Kind:   "missing",
