@@ -259,11 +259,19 @@ func (s server) revision(w http.ResponseWriter, r *http.Request) {
 }
 
 type textJSON struct {
-	Available   bool                         `json:"available"`
-	Text        string                       `json:"text"`
-	Pages       []ocr.Page                   `json:"pages"`
-	Suggestions map[string]map[string]string `json:"suggestions"`
-	Error       string                       `json:"error,omitempty"`
+	Available   bool                             `json:"available"`
+	Pages       []ocr.Page                       `json:"pages"`
+	Suggestions map[string]map[string]suggestion `json:"suggestions"`
+	Error       string                           `json:"error,omitempty"`
+}
+
+// suggestion is a field's value from the text, and the line it was read from
+// so the page can show where; Page and Line count from 0, and Page is -1
+// when the value spans lines.
+type suggestion struct {
+	Value string `json:"value"`
+	Page  int    `json:"page"`
+	Line  int    `json:"line"`
 }
 
 // text is a PDF's recognised text, and what each Template's patterns find in
@@ -275,7 +283,7 @@ func (s server) text(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	out := textJSON{Available: ocr.Available(), Pages: []ocr.Page{}, Suggestions: map[string]map[string]string{}}
+	out := textJSON{Available: ocr.Available(), Pages: []ocr.Page{}, Suggestions: map[string]map[string]suggestion{}}
 	digest, err := tree.FileDigest(path)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
@@ -293,10 +301,21 @@ func (s server) text(w http.ResponseWriter, r *http.Request) {
 		result = read
 	}
 	out.Available = true
-	out.Pages = result.(ocr.Result).Pages
-	out.Text = result.(ocr.Result).Text()
+	read := result.(ocr.Result)
+	out.Pages = read.Pages
 	if templates, err := tree.LoadTemplates(s.root); err == nil {
-		out.Suggestions = suggest.All(templates, out.Text)
+		for kind, found := range suggest.All(templates, read.Text()) {
+			out.Suggestions[kind] = map[string]suggestion{}
+			for key, m := range found {
+				at := suggestion{Value: m.Value, Page: -1, Line: -1}
+				page, line, ok := read.Locate(m.Start)
+				endPage, endLine, endOK := read.Locate(m.End - 1)
+				if ok && endOK && page == endPage && line == endLine {
+					at.Page, at.Line = page, line
+				}
+				out.Suggestions[kind][key] = at
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

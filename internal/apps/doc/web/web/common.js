@@ -58,35 +58,81 @@ export function say(node, text, error) {
   node.textContent = text;
 }
 
-// The text read off a PDF, drawn into the panel under the side bar. Reading
-// can take a few seconds a page, so the answer is dropped when another PDF
-// was picked in the meantime.
+// The text read off a PDF is laid over the pictures of its pages, where it
+// was read: invisible until it is hovered or selected, so it can be copied
+// straight off the page. Reading can take a few seconds a page, so an answer
+// for a PDF no longer shown is dropped.
 let textAsked = 0;
+let textPages = [];
 export async function showText(query, onAnswer) {
   const asked = ++textAsked;
-  const box = $("text");
-  box.hidden = false;
+  textPages = [];
   say($("text-message"), "Reading the text…");
-  $("text-body").textContent = "";
   let answer;
   try {
     const response = await fetch("/api/text?" + new URLSearchParams(query));
     answer = await response.json();
     if (!response.ok) throw new Error(answer.error || response.statusText);
   } catch (err) {
-    answer = { error: err.message, suggestions: {} };
+    answer = { error: err.message, pages: [], suggestions: {} };
   }
   if (asked !== textAsked) return;
+  textPages = answer.pages || [];
+  const lines = textPages.reduce((n, p) => n + p.lines.length, 0);
   if (answer.error) {
     say($("text-message"), answer.error, !answer.error.includes("needs macOS"));
-  } else if (!answer.text) {
-    say($("text-message"), "No text found.");
+  } else if (!lines) {
+    say($("text-message"), "No text found on the page.");
   } else {
-    const recognised = (answer.pages || []).some((p) => p.source === "recognised");
-    say($("text-message"), recognised ? "Recognised from the page: check it against the preview." : "From the PDF's own text.");
-    $("text-body").textContent = answer.text;
+    const recognised = textPages.some((p) => p.source === "recognised");
+    say($("text-message"), (recognised ? "Text recognised on the page" : "The PDF's own text") +
+      ": select it on the page to copy it.");
   }
+  layText();
   if (onAnswer) onAnswer(answer);
+}
+
+// layText puts each page's lines over its picture. A line is sized to its box:
+// the font to its height, then stretched to its width, so a selection covers
+// the words it selects.
+function layText() {
+  for (const sheet of $("pages").querySelectorAll(".sheet")) {
+    const n = Number(sheet.dataset.page);
+    const layer = sheet.querySelector(".text-layer");
+    const page = textPages[n];
+    layer.replaceChildren(...(page ? page.lines.map((line, i) => el("span", {
+      className: "text-line", textContent: line.text,
+      style: `left:${line.box.x * 100}%;top:${line.box.y * 100}%;height:${line.box.h * 100}%`,
+    })) : []));
+    layer.querySelectorAll(".text-line").forEach((span, i) => {
+      span.dataset.line = i;
+      span.dataset.w = page.lines[i].box.w;
+    });
+    fit(sheet);
+  }
+}
+
+function fit(sheet) {
+  const width = sheet.clientWidth;
+  if (!sheet.clientHeight) return;
+  for (const span of sheet.querySelectorAll(".text-line")) {
+    span.style.transform = "";
+    span.style.fontSize = Math.max(4, span.clientHeight * 0.85) + "px";
+    const natural = span.offsetWidth;
+    if (natural > 0) span.style.transform = `scaleX(${(Number(span.dataset.w) * width) / natural})`;
+  }
+}
+
+const refit = new ResizeObserver((entries) => entries.forEach((e) => fit(e.target)));
+
+// showSource marks the line a suggested value was read from, or none.
+export function showSource(at) {
+  for (const old of $("pages").querySelectorAll(".text-line.source")) old.classList.remove("source");
+  if (!at || at.page < 0) return;
+  const span = $("pages").querySelector(`.sheet[data-page="${at.page}"] .text-line[data-line="${at.line}"]`);
+  if (!span) return;
+  span.classList.add("source");
+  span.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 // showPreview draws a PDF as pictures of its pages, which scroll smoothly,
@@ -116,6 +162,8 @@ export async function showPreview(query, viewer) {
   $("frame").removeAttribute("src");
   const pages = [];
   for (let n = 1; n <= info.count; n++) {
+    const sheet = el("div", { className: "sheet" });
+    sheet.dataset.page = n - 1;
     const img = el("img", {
       className: "page", alt: "Page " + n, loading: n <= 2 ? "eager" : "lazy", decoding: "async",
       src: "/api/page?" + new URLSearchParams({ ...query, n, v: info.digest }),
@@ -123,9 +171,15 @@ export async function showPreview(query, viewer) {
     // A page with no picture of its own answers 204, which an image reads as
     // an error: the viewer draws the whole document instead.
     img.onerror = useViewer;
-    pages.push(img);
+    img.onload = () => fit(sheet);
+    sheet.append(img, el("div", { className: "text-layer" }));
+    refit.observe(sheet);
+    pages.push(sheet);
   }
+  refit.disconnect();
+  pages.forEach((sheet) => refit.observe(sheet));
   $("pages").replaceChildren(...pages);
+  layText();
   $("pages").scrollTop = 0;
   $("pages").hidden = false;
 }

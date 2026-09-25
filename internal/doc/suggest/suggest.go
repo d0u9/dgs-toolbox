@@ -15,6 +15,23 @@ import (
 // is left out.
 func Fields(t tree.Template, text string) map[string]string {
 	out := map[string]string{}
+	for key, m := range Matches(t, text) {
+		out[key] = m.Value
+	}
+	return out
+}
+
+// Match is a value found in the text and where: Start and End are byte
+// offsets into the text, around the value itself.
+type Match struct {
+	Value string `json:"value"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+// Matches is Fields with where each value was found.
+func Matches(t tree.Template, text string) map[string]Match {
+	out := map[string]Match{}
 	for _, f := range t.Fields {
 		if f.Pattern == "" {
 			continue
@@ -23,28 +40,32 @@ func Fields(t tree.Template, text string) map[string]string {
 		if err != nil {
 			continue
 		}
-		match := pattern.FindStringSubmatch(text)
-		if match == nil {
+		at := pattern.FindStringSubmatchIndex(text)
+		if at == nil {
 			continue
 		}
-		value := match[0]
-		if len(match) > 1 {
-			value = match[1]
+		start, end := at[0], at[1]
+		if len(at) > 2 && at[2] >= 0 {
+			start, end = at[2], at[3]
 		}
-		if value = strings.TrimSpace(value); value != "" {
-			out[f.Key] = value
+		raw := text[start:end]
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
 		}
+		start += strings.Index(raw, value)
+		out[f.Key] = Match{Value: value, Start: start, End: start + len(value)}
 	}
 	return out
 }
 
-// All is Fields for each Template, keyed by type. A type nothing matched is
+// All is Matches for each Template, keyed by type. A type nothing matched is
 // left out.
-func All(templates []tree.Template, text string) map[string]map[string]string {
-	out := map[string]map[string]string{}
+func All(templates []tree.Template, text string) map[string]map[string]Match {
+	out := map[string]map[string]Match{}
 	for _, t := range templates {
-		if fields := Fields(t, text); len(fields) > 0 {
-			out[t.Type] = fields
+		if found := Matches(t, text); len(found) > 0 {
+			out[t.Type] = found
 		}
 	}
 	return out
