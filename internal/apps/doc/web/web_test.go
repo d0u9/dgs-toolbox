@@ -165,13 +165,15 @@ func TestTextAndSuggestions(t *testing.T) {
 	reads := 0
 	h := Handler(Settings{Root: root, Read: func(path string) (ocr.Result, error) {
 		reads++
-		return ocr.Result{Pages: []ocr.Page{{Text: "有效期限 2016.01.01-2036.01.01\n11010519491231002X", Source: ocr.SourceRecognised}}}, nil
+		return ocr.Result{Pages: []ocr.Page{{Source: ocr.SourceRecognised, Lines: []ocr.Line{
+			{Text: "有效期限 2016.01.01-2036.01.01"}, {Text: "11010519491231002X"}}}}}, nil
 	}})
 	target := "/api/text?dir=" + url.QueryEscape(scans) + "&path=jane/licence.pdf"
 	for range 2 {
 		var out textJSON
 		must(t, json.Unmarshal(do(h, "GET", target, "").Body.Bytes(), &out))
-		if !out.Available || out.Suggestions["id_card"]["number"] != "11010519491231002X" || out.Suggestions["id_card"]["expires"] != "2036.01.01" {
+		got := out.Suggestions["id_card"]
+		if !out.Available || got["number"] != (suggestion{"11010519491231002X", 0, 1}) || got["expires"] != (suggestion{"2036.01.01", 0, 0}) {
 			t.Fatalf("out = %+v", out)
 		}
 	}

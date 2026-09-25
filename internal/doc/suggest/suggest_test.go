@@ -44,11 +44,21 @@ func TestExampleTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	all := All(templates, card)
-	if all["id_card"]["number"] != "11010519491231002X" || all["id_card"]["expires"] != "2036.01.01" {
+	number := all["id_card"]["number"]
+	if number.Value != "11010519491231002X" || card[number.Start:number.End] != number.Value || all["id_card"]["expires"].Value != "2036.01.01" {
 		t.Fatalf("got %v", all)
 	}
 	long := All(templates, "有效期限 2020.05.05-长期")
-	if long["id_card"]["expires"] != "长期" {
+	if long["id_card"]["expires"].Value != "长期" {
 		t.Fatalf("got %v", long)
+	}
+}
+
+func TestMatchPointsAtTheTrimmedValue(t *testing.T) {
+	tpl := tree.Template{Fields: []tree.Field{{Key: "k", Pattern: `name:(\s*\w+)`}}}
+	text := "x\nname:  jane"
+	m := Matches(tpl, text)["k"]
+	if m.Value != "jane" || text[m.Start:m.End] != "jane" {
+		t.Fatalf("%+v", m)
 	}
 }
