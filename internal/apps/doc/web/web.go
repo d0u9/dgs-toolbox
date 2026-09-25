@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/doc/classify"
 	"dgs-toolbox/internal/doc/dates"
 	"dgs-toolbox/internal/doc/ocr"
 	"dgs-toolbox/internal/doc/pdflist"
@@ -86,6 +87,9 @@ type server struct {
 	root      string
 	now       func() time.Time
 	dateOrder dates.Order
+	// store is the text cache the reader keeps, read directly to compare a
+	// PDF with the Items already filed.
+	store textcache.Store
 	// reader reads PDFs' text through a queue and a cache: the page being
 	// looked at first, pages wanted next in advance, each page once.
 	reader *textread.Reader
@@ -108,6 +112,7 @@ func Handler(settings Settings) http.Handler {
 	}
 	s := server{
 		root: settings.ResolvedRoot(), now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder,
+		store:  textcache.Store{Dir: settings.CacheDir},
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
 	}
 	mux := http.NewServeMux()
@@ -287,6 +292,11 @@ type textJSON struct {
 	Count    int      `json:"count"`
 	MaxPages int      `json:"maxPages"`
 	Page     ocr.Page `json:"page"`
+	// Types ranks the Templates by how much the first page looks like the
+	// first pages of the Items filed under each, and Type is the top one when
+	// it passes the threshold. Only on page 0.
+	Types []classify.Score `json:"types,omitempty"`
+	Type  string           `json:"type,omitempty"`
 	// Suggestions are what each Template's patterns find on this page.
 	Suggestions map[string]map[string]suggestion `json:"suggestions"`
 	Error       string                           `json:"error,omitempty"`
@@ -340,12 +350,41 @@ func (s server) text(w http.ResponseWriter, r *http.Request) {
 				out.Suggestions[kind][key] = at
 			}
 		}
+		if n == 0 {
+			out.Types = s.rank(templates, digest, read.Text())
+			out.Type, _ = classify.Best(out.Types, classify.DefaultThreshold)
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 // ahead reads PDFs in an opened folder in advance, in the order given: the
 // ones the reader is likely to pick next. It answers at once.
+// rank compares a first page with the first pages of the Items filed under
+// each Template, as far as their text has been read and kept. The PDF itself,
+// when it is already filed, is left out: it would only find itself.
+func (s server) rank(templates []tree.Template, digest, text string) []classify.Score {
+	items, err := tree.LoadItems(s.root)
+	if err != nil {
+		return nil
+	}
+	known := map[string]bool{}
+	for _, t := range templates {
+		known[t.Type] = true
+	}
+	var samples []classify.Sample
+	for _, item := range items {
+		head := item.Current()
+		if !known[item.Type] || head == digest {
+			continue
+		}
+		if page, _, ok := s.store.Load(head, 0); ok {
+			samples = append(samples, classify.Sample{Type: item.Type, Text: ocr.Result{Pages: []ocr.Page{page}}.Text()})
+		}
+	}
+	return classify.Rank(samples, text)
+}
+
 func (s server) ahead(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Dir   string   `json:"dir"`
