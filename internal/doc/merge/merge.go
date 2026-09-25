@@ -98,9 +98,28 @@ func FromTarget(target string, now time.Time) (Source, error) {
 			it.Head = e.Digest
 		}
 	}
+	// Each entry has the fields its revision had. The Item keeps HEAD's, and
+	// a revision keeps what differs from them as its own.
+	byRevision := map[string]map[string]string{}
+	for _, e := range entries {
+		byRevision[e.Item+"/"+e.Digest] = e.Fields
+	}
 	for i := range items {
-		if items[i].Kind == tree.KindDocument && items[i].Head == "" {
-			items[i].Head = items[i].Current()
+		it := &items[i]
+		if it.Kind == tree.KindDocument && it.Head == "" {
+			it.Head = it.Current()
+		}
+		it.Fields = maps.Clone(byRevision[it.ID+"/"+it.Current()])
+		for r := range it.Revisions {
+			own := map[string]string{}
+			for k, v := range byRevision[it.ID+"/"+it.Revisions[r].Digest] {
+				if it.Fields[k] != v {
+					own[k] = v
+				}
+			}
+			if len(own) > 0 {
+				it.Revisions[r].Fields = own
+			}
 		}
 	}
 	return Source{Items: items, PDF: func(id, digest string) string { return paths[id+"/"+digest] }}, nil

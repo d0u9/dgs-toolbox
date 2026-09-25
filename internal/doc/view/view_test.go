@@ -189,3 +189,19 @@ func TestLayoutWritesACountryInAFormat(t *testing.T) {
 		t.Errorf("keys: %v", l.Keys())
 	}
 }
+
+func TestKeysComeFromTheirRevision(t *testing.T) {
+	item := tree.Item{ID: "A", Type: "card", Kind: tree.KindDocument, Head: "b",
+		Fields: map[string]string{"owner": "jane"},
+		Revisions: []tree.Revision{
+			{Digest: "a", Fields: map[string]string{"expires": "2020"}},
+			{Digest: "b", Fields: map[string]string{"expires": "2030"}},
+		}}
+	plan, err := Build(View{Name: "v", Selection: All, Layout: "{owner}-{expires}.{ext}"}, []tree.Item{item})
+	if err != nil || len(plan.Files) != 2 || plan.Files[0].Path != "jane-2020.pdf" || plan.Files[1].Path != "jane-2030.pdf" {
+		t.Fatalf("%v %+v", err, plan)
+	}
+	if !Matches(map[string]Values{"expires": {"2030"}}, item) || Matches(map[string]Values{"expires": {"2020"}}, item) {
+		t.Fatal("a query matches HEAD's fields")
+	}
+}

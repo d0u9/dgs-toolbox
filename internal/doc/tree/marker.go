@@ -118,8 +118,10 @@ fields:
     required: true
     distinguishing: true
   - key: number
+    per_revision: true    # a renewed card has its own; adding it asks again
     pattern: '(\d{17}[\dXx])'   # suggested from the recognised text
   - key: expires
+    per_revision: true
     pattern: '[-－—–一~～至]\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|长期)'   # 一 — － as recognised
 defaults: {}
 `

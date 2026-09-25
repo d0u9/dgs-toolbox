@@ -166,14 +166,14 @@ func TestRevisionsMoveHeadAndBack(t *testing.T) {
 	item := importOne(t, root, "old.pdf", "%PDF old", map[string]string{"owner": "jane", "country": "AU"})
 	first := item.Head
 	renewed := write(t, filepath.Join(root, "new.pdf"), "%PDF new")
-	item, err := AddRevision(context.Background(), root, item.ID, renewed, now.Add(time.Hour))
+	item, err := AddRevision(context.Background(), root, item.ID, renewed, idCard(t, root), nil, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(item.Revisions) != 2 || item.Head == first || item.Head != item.Revisions[1].Digest {
 		t.Fatalf("after adding: %+v", item)
 	}
-	if _, err := AddRevision(context.Background(), root, item.ID, renewed, now); !errors.Is(err, ErrDuplicate) {
+	if _, err := AddRevision(context.Background(), root, item.ID, renewed, idCard(t, root), nil, now); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("same PDF again: %v", err)
 	}
 	if item, err = SetHead(root, item.ID, first); err != nil || item.Head != first {
@@ -203,7 +203,7 @@ func TestRecordsHaveNoRevisions(t *testing.T) {
 		t.Fatalf("%+v %v", item, err)
 	}
 	other := write(t, filepath.Join(root, "q.pdf"), "%PDF q")
-	if _, err := AddRevision(context.Background(), root, item.ID, other, now); err == nil {
+	if _, err := AddRevision(context.Background(), root, item.ID, other, templates[1], nil, now); err == nil {
 		t.Fatal("record took a revision")
 	}
 	if _, err := SetHead(root, item.ID, item.Revisions[0].Digest); err == nil {
@@ -216,14 +216,14 @@ func TestSetFieldsKeepsDocumentsDistinct(t *testing.T) {
 	au := importOne(t, root, "au.pdf", "%PDF au", map[string]string{"owner": "jane", "country": "AU"})
 	importOne(t, root, "cn.pdf", "%PDF cn", map[string]string{"owner": "jane", "country": "CN"})
 	tpl := idCard(t, root)
-	if _, err := SetFields(root, au.ID, tpl, map[string]string{"owner": "jane", "country": "CN"}); !errors.Is(err, ErrTaken) {
+	if _, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "jane", "country": "CN"}); !errors.Is(err, ErrTaken) {
 		t.Fatalf("clash: %v", err)
 	}
-	item, err := SetFields(root, au.ID, tpl, map[string]string{"owner": "jane", "country": "AU", "number": "123"})
-	if err != nil || item.Fields["number"] != "123" {
+	item, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "jane", "country": "AU", "number": "123"})
+	if err != nil || item.CurrentFields()["number"] != "123" {
 		t.Fatalf("%+v %v", item, err)
 	}
-	if _, err := SetFields(root, au.ID, tpl, map[string]string{"owner": "jane"}); err == nil {
+	if _, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "jane"}); err == nil {
 		t.Fatal("required field dropped")
 	}
 }
@@ -283,7 +283,7 @@ func TestItemLinksAndNotes(t *testing.T) {
 	if err != nil || current.Fields["previous"] != old.ID {
 		t.Fatal(err, current)
 	}
-	if _, err := SetFields(root, current.ID, tpl, map[string]string{"owner": "ann", "previous": current.ID}); err == nil {
+	if _, err := SetFields(root, current.ID, "", tpl, map[string]string{"owner": "ann", "previous": current.ID}); err == nil {
 		t.Fatal("self link accepted")
 	}
 	noted, err := SetNotes(root, old.ID, "  expired; kept for the visa file \n")
@@ -324,5 +324,61 @@ func TestTrashMovesTheItem(t *testing.T) {
 	}
 	if _, err := Trash(root, "A", now); err == nil {
 		t.Fatal("trashed an Item that is gone")
+	}
+}
+
+func TestPerRevisionFields(t *testing.T) {
+	root := newTree(t)
+	tpl := Template{Type: "card", Kind: KindDocument, Fields: []Field{
+		{Key: "owner", Required: true, Distinguishing: true},
+		{Key: "number", Required: true, PerRevision: true},
+		{Key: "expires", PerRevision: true},
+		{Key: "note"},
+	}}
+	if err := tpl.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	old := write(t, filepath.Join(root, "old.pdf"), "%PDF old")
+	item, err := Import(context.Background(), ImportRequest{Root: root, Source: old, Template: tpl, Now: now,
+		Fields: map[string]string{"owner": "jane", "number": "111", "expires": "2020", "note": "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Fields["number"] != "" || item.Revisions[0].Fields["number"] != "111" || item.Fields["note"] != "x" {
+		t.Fatalf("import split: %+v", item)
+	}
+	renewed := write(t, filepath.Join(root, "new.pdf"), "%PDF new")
+	if _, err := AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"expires": "2030"}, now); err == nil {
+		t.Fatal("a revision without its required number was added")
+	}
+	if _, err := AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"number": "222", "owner": "tom"}, now); err == nil {
+		t.Fatal("a revision changed the Item's own field")
+	}
+	item, err = AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"number": "222", "expires": "2030"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, second := item.Revisions[0].Digest, item.Revisions[1].Digest
+	if got := item.CurrentFields(); got["number"] != "222" || got["expires"] != "2030" || got["note"] != "x" {
+		t.Fatalf("current: %v", got)
+	}
+	if got := item.FieldsAt(first); got["number"] != "111" || got["expires"] != "2020" {
+		t.Fatalf("old card: %v", got)
+	}
+	// Editing the old card changes only it.
+	item, err = SetFields(root, item.ID, first, tpl, map[string]string{"owner": "jane", "number": "110", "note": "y"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.FieldsAt(first)["number"] != "110" || item.FieldsAt(first)["expires"] != "" || item.FieldsAt(second)["number"] != "222" || item.Fields["note"] != "y" {
+		t.Fatalf("after editing the old card: %+v", item)
+	}
+	for _, bad := range []Field{{Key: "k", PerRevision: true, Distinguishing: true, Required: true}} {
+		if (Template{Type: "c", Kind: KindDocument, Fields: []Field{bad}}).Validate() == nil {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+	if (Template{Type: "r", Kind: KindRecord, Fields: []Field{{Key: "k", PerRevision: true}}}).Validate() == nil {
+		t.Error("per_revision on a record accepted")
 	}
 }

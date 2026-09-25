@@ -42,6 +42,16 @@ export const templateOf = (state, type) => state.templates.find((t) => t.type ==
 
 // An Item is named by its type and its distinguishing fields — what makes it
 // the one it is.
+// fieldsAt is an Item's fields as one revision has them: its own, with the
+// revision's per_revision values over them.
+export function fieldsAt(item, digest) {
+  const rev = (item.revisions || []).find((r) => r.digest === digest);
+  return { ...item.fields, ...((rev && rev.fields) || {}) };
+}
+
+// currentFields is fieldsAt the revision that stands for the Item.
+export const currentFields = (item) => fieldsAt(item, item.head || (item.revisions.length ? item.revisions[item.revisions.length - 1].digest : ""));
+
 export function label(state, item) {
   const t = templateOf(state, item.type);
   const keys = t ? t.fields.filter((f) => f.distinguishing).map((f) => f.key) : Object.keys(item.fields);
