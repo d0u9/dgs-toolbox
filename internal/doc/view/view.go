@@ -71,6 +71,9 @@ type View struct {
 	Default *string `yaml:"default,omitempty" json:"default,omitempty"`
 	// Dedupe is empty (refuse) or DedupeNumber.
 	Dedupe string `yaml:"dedupe,omitempty" json:"dedupe,omitempty"`
+	// Target names the configured folder the View is exported to. Views
+	// naming one Target are exported into it together.
+	Target string `yaml:"target,omitempty" json:"target,omitempty"`
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -88,6 +91,9 @@ func (v View) Validate() error {
 	}
 	if _, err := Parse(v.Layout); err != nil {
 		return fmt.Errorf("view %s: %w", v.Name, err)
+	}
+	if v.Target != "" && !namePattern.MatchString(v.Target) {
+		return fmt.Errorf("view %s: target %q: use lowercase letters, digits, _ and -", v.Name, v.Target)
 	}
 	return nil
 }

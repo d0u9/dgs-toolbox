@@ -1,7 +1,8 @@
-// Package export writes a View's plan into a Target folder and keeps it
-// up to date. The Target's manifest, dgs-export.json, records every file an
-// export wrote; only those are ever replaced or removed, and a file that no
-// longer reads back to the digest recorded for it is left alone. Files are
+// Package export writes Views' plans into a Target folder and keeps it up to
+// date. The Target's manifest, dgs-export.json, records every file an export
+// wrote and the View that placed it; only those are ever replaced or removed,
+// only by an export of that View, and a file that no longer reads back to the
+// digest recorded for it is left alone. Files are
 // published with verifiedcopy: under their final name only once read back.
 package export
 
@@ -26,8 +27,9 @@ import (
 // ManifestName is the manifest's file name at the Target root.
 const ManifestName = "dgs-export.json"
 
-// Version is the manifest format this package writes and reads.
-const Version = 1
+// Version is the manifest format this package writes. Version 1, one View
+// per Target, is still read: its files belong to that View.
+const Version = 2
 
 // Entry is one file an export wrote.
 type Entry struct {
@@ -37,6 +39,8 @@ type Entry struct {
 	Type     string `json:"type"`
 	Kind     string `json:"kind"`
 	Revision int    `json:"revision"`
+	// View is the View that placed the file.
+	View string `json:"view"`
 	// Head is set on the revision that was the document's HEAD.
 	Head bool `json:"head,omitempty"`
 	// Fields are the Item's fields, as this revision has them, when it was
@@ -46,9 +50,12 @@ type Entry struct {
 
 // Manifest is what dgs-export.json holds.
 type Manifest struct {
-	Version int     `json:"version"`
-	View    string  `json:"view"`
-	Files   []Entry `json:"files"`
+	Version int `json:"version"`
+	// Views are the Views whose files the Target holds.
+	Views []string `json:"views"`
+	Files []Entry  `json:"files"`
+	// View is version 1's one View; reading moves it onto the files.
+	View string `json:"view,omitempty"`
 }
 
 // Action is one file of a plan.
@@ -57,6 +64,7 @@ type Action struct {
 	Digest   string `json:"digest,omitempty"`
 	Item     string `json:"item,omitempty"`
 	Revision int    `json:"revision,omitempty"`
+	View     string `json:"view,omitempty"`
 	// Reason says why a file is blocked or left.
 	Reason string `json:"reason,omitempty"`
 }
@@ -121,23 +129,44 @@ func ReadManifest(target string) (Manifest, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return Manifest{}, fmt.Errorf("%s: %w", ManifestName, err)
 	}
-	if m.Version != Version {
+	switch m.Version {
+	case 1:
+		for i := range m.Files {
+			m.Files[i].View = m.View
+		}
+		if m.View != "" {
+			m.Views = []string{m.View}
+		}
+		m.Version, m.View = Version, ""
+	case Version:
+	default:
 		return Manifest{}, fmt.Errorf("%s: version %d, not %d", ManifestName, m.Version, Version)
 	}
 	return m, nil
 }
 
-// Compute is what exporting files into target would do. Every file the
-// manifest records is read and hashed, so a file changed by hand is found.
-func Compute(ctx context.Context, target string, files []view.File) (Plan, error) {
+// Compute is what exporting views' files into target would do. Every file
+// the manifest records for them is read and hashed, so a file changed by hand
+// is found. Files other Views wrote there are theirs: never removed, and a
+// wanted path one of them holds is blocked.
+func Compute(ctx context.Context, target string, views []string, files []view.File) (Plan, error) {
 	plan := Plan{Add: []Action{}, Replace: []Action{}, Remove: []Action{}, Keep: []Action{}, Left: []Action{}, Blocked: []Action{}}
 	m, err := ReadManifest(target)
 	if err != nil {
 		return plan, err
 	}
+	exporting := map[string]bool{}
+	for _, v := range views {
+		exporting[v] = true
+	}
 	owned := map[string]Entry{}
 	ownedFold := map[string]bool{}
+	others := map[string]Entry{}
 	for _, e := range m.Files {
+		if !exporting[e.View] {
+			others[strings.ToLower(e.Path)] = e
+			continue
+		}
 		owned[e.Path] = e
 		ownedFold[strings.ToLower(e.Path)] = true
 	}
@@ -147,9 +176,14 @@ func Compute(ctx context.Context, target string, files []view.File) (Plan, error
 			return plan, err
 		}
 		wanted[f.Path] = true
-		a := Action{Path: f.Path, Digest: f.Digest, Item: f.Item, Revision: f.Revision}
+		a := Action{Path: f.Path, Digest: f.Digest, Item: f.Item, Revision: f.Revision, View: f.View}
 		if !filepath.IsLocal(filepath.FromSlash(f.Path)) || f.Path == ManifestName {
 			a.Reason = "not a path inside the Target"
+			plan.Blocked = append(plan.Blocked, a)
+			continue
+		}
+		if e, ok := others[strings.ToLower(f.Path)]; ok {
+			a.Reason = "the View " + e.View + " exported a file there"
 			plan.Blocked = append(plan.Blocked, a)
 			continue
 		}
@@ -177,14 +211,14 @@ func Compute(ctx context.Context, target string, files []view.File) (Plan, error
 		}
 	}
 	for _, e := range m.Files {
-		if wanted[e.Path] {
+		if wanted[e.Path] || !exporting[e.View] {
 			continue
 		}
 		onDisk, err := digestOf(ctx, filepath.Join(target, filepath.FromSlash(e.Path)))
 		if err != nil {
 			return plan, err
 		}
-		a := Action{Path: e.Path, Digest: e.Digest, Item: e.Item, Revision: e.Revision}
+		a := Action{Path: e.Path, Digest: e.Digest, Item: e.Item, Revision: e.Revision, View: e.View}
 		switch onDisk {
 		case "":
 			// Already gone; the manifest forgets it.
@@ -237,12 +271,13 @@ func (c ctxReader) Read(p []byte) (int, error) {
 
 func readerWith(ctx context.Context, r io.Reader) io.Reader { return ctxReader{ctx, r} }
 
-// Apply carries out plan: removals first, then replacements, then new
-// files, each checked again just before it is touched. The manifest is
-// rewritten at the end with every file the Target then holds for the View,
-// and also when Apply stops early, so what was done is recorded. Progress,
-// when set, is called after each file.
-func Apply(ctx context.Context, root, target, viewName string, plan Plan, items []tree.Item, progress func(done, total int)) (Result, error) {
+// Apply carries out plan, computed for views: removals first, then
+// replacements, then new files, each checked again just before it is
+// touched. The manifest is rewritten at the end with every file the Target
+// then holds for those Views, and the other Views' entries as they were;
+// also when Apply stops early, so what was done is recorded. Progress, when
+// set, is called after each file.
+func Apply(ctx context.Context, root, target string, views []string, plan Plan, items []tree.Item, progress func(done, total int)) (Result, error) {
 	var result Result
 	if len(plan.Blocked) > 0 {
 		return result, fmt.Errorf("%d file(s) cannot be written; nothing was changed", len(plan.Blocked))
@@ -257,7 +292,7 @@ func Apply(ctx context.Context, root, target, viewName string, plan Plan, items 
 	entry := func(a Action) Entry {
 		it := byID[a.Item]
 		return Entry{Path: a.Path, Digest: a.Digest, Item: a.Item, Type: it.Type, Kind: string(it.Kind),
-			Revision: a.Revision, Head: it.Kind == tree.KindDocument && it.Current() == a.Digest, Fields: it.FieldsAt(a.Digest)}
+			Revision: a.Revision, View: a.View, Head: it.Kind == tree.KindDocument && it.Current() == a.Digest, Fields: it.FieldsAt(a.Digest)}
 	}
 	var done []Entry
 	for _, a := range plan.Keep {
@@ -270,8 +305,17 @@ func Apply(ctx context.Context, root, target, viewName string, plan Plan, items 
 	if err != nil {
 		return result, err
 	}
+	exporting := map[string]bool{}
+	for _, v := range views {
+		exporting[v] = true
+	}
 	oldByPath := map[string]Entry{}
+	var others []Entry
 	for _, e := range old.Files {
+		if !exporting[e.View] {
+			others = append(others, e)
+			continue
+		}
 		oldByPath[e.Path] = e
 	}
 	pending := map[string]Entry{}
@@ -279,12 +323,21 @@ func Apply(ctx context.Context, root, target, viewName string, plan Plan, items 
 		pending[a.Path] = oldByPath[a.Path]
 	}
 	finish := func(err error) (Result, error) {
-		files := append([]Entry{}, done...)
+		files := append(append([]Entry{}, others...), done...)
 		for _, e := range pending {
 			files = append(files, e)
 		}
 		sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-		if werr := writeManifest(target, Manifest{Version: Version, View: viewName, Files: files}); werr != nil && err == nil {
+		named := map[string]bool{}
+		held := []string{}
+		for _, e := range files {
+			if !named[e.View] {
+				named[e.View] = true
+				held = append(held, e.View)
+			}
+		}
+		sort.Strings(held)
+		if werr := writeManifest(target, Manifest{Version: Version, Views: held, Files: files}); werr != nil && err == nil {
 			err = werr
 		}
 		return result, err

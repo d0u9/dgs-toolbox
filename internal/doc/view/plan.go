@@ -2,6 +2,7 @@ package view
 
 import (
 	"dgs-toolbox/internal/doc/country"
+	"fmt"
 	"path"
 	"regexp"
 	"sort"
@@ -21,6 +22,8 @@ type File struct {
 	Digest string `json:"digest"`
 	// Revision counts from 1, in the order the Item's revisions were added.
 	Revision int `json:"revision"`
+	// View is the View that placed the file, set when Views are combined.
+	View string `json:"view,omitempty"`
 }
 
 // Missing is a selected PDF the layout cannot name, and the keys it lacks.
@@ -193,29 +196,110 @@ func Build(v View, items []tree.Item) (Plan, error) {
 				placed[i].Path = numbered(placed[i].Path, n+1)
 			}
 		}
-		groups, order = map[string][]int{}, nil
-		for i, f := range placed {
-			k := strings.ToLower(f.Path)
-			if _, ok := groups[k]; !ok {
-				order = append(order, k)
-			}
-			groups[k] = append(groups[k], i)
-		}
 	}
-	for _, k := range order {
-		members := groups[k]
-		if len(members) == 1 {
-			plan.Files = append(plan.Files, placed[members[0]])
-			continue
-		}
-		clash := Clash{Path: placed[members[0]].Path}
-		for _, i := range members {
-			clash.Files = append(clash.Files, placed[i])
-		}
-		plan.Clashes = append(plan.Clashes, clash)
-	}
+	plan.Files, plan.Clashes = separate(placed)
 	sort.Slice(plan.Files, func(i, j int) bool { return plan.Files[i].Path < plan.Files[j].Path })
 	return plan, nil
+}
+
+// separate splits files into those with a path of their own and the
+// clashes: paths more than one file wants, ignoring case, and a file where
+// another needs a folder of the same name.
+func separate(files []File) ([]File, []Clash) {
+	groups := map[string][]int{}
+	var order []string
+	for i, f := range files {
+		k := strings.ToLower(f.Path)
+		if _, ok := groups[k]; !ok {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], i)
+	}
+	ok := []File{}
+	clashes := []Clash{}
+	for _, k := range order {
+		members := groups[k]
+		// A file whose path is a folder above another file's clashes too.
+		var under []int
+		for _, other := range order {
+			if strings.HasPrefix(other, k+"/") {
+				under = append(under, groups[other]...)
+			}
+		}
+		if len(members) == 1 && len(under) == 0 {
+			ok = append(ok, files[members[0]])
+			continue
+		}
+		clash := Clash{Path: files[members[0]].Path}
+		for _, i := range append(members, under...) {
+			clash.Files = append(clash.Files, files[i])
+		}
+		clashes = append(clashes, clash)
+	}
+	// A file under a clashing folder is only reported with it.
+	blocked := map[string]bool{}
+	for _, c := range clashes {
+		for _, f := range c.Files {
+			blocked[strings.ToLower(f.Path)] = true
+		}
+	}
+	kept := ok[:0]
+	for _, f := range ok {
+		if !blocked[strings.ToLower(f.Path)] {
+			kept = append(kept, f)
+		}
+	}
+	return kept, clashes
+}
+
+// Combined is several Views planned into one Target together.
+type Combined struct {
+	// Plans are each View's own plan, by View name, their files marked with
+	// the View.
+	Plans map[string]Plan `json:"plans"`
+	// Files are every View's files that have a path of their own.
+	Files []File `json:"files"`
+	// Clashes are paths wanted by files of different Views.
+	Clashes []Clash `json:"clashes"`
+}
+
+// Complete reports whether every View is complete and no two Views want
+// one path.
+func (c Combined) Complete() bool {
+	for _, p := range c.Plans {
+		if !p.Complete() {
+			return false
+		}
+	}
+	return len(c.Clashes) == 0
+}
+
+// Combine plans views into one Target: each is built alone, then their files
+// are put together and checked against each other as Build checks one View.
+func Combine(views []View, items []tree.Item) (Combined, error) {
+	out := Combined{Plans: map[string]Plan{}, Files: []File{}, Clashes: []Clash{}}
+	var all []File
+	for _, v := range views {
+		p, err := Build(v, items)
+		if err != nil {
+			return out, fmt.Errorf("view %s: %w", v.Name, err)
+		}
+		for _, list := range [][]File{p.Files} {
+			for i := range list {
+				list[i].View = v.Name
+			}
+		}
+		for i := range p.Clashes {
+			for j := range p.Clashes[i].Files {
+				p.Clashes[i].Files[j].View = v.Name
+			}
+		}
+		out.Plans[v.Name] = p
+		all = append(all, p.Files...)
+	}
+	out.Files, out.Clashes = separate(all)
+	sort.Slice(out.Files, func(i, j int) bool { return out.Files[i].Path < out.Files[j].Path })
+	return out, nil
 }
 
 // render fills a layout from keys. It returns the keys it lacked, when there
