@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	docweb "dgs-toolbox/internal/apps/doc/web"
 	"dgs-toolbox/internal/config"
@@ -76,7 +77,10 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		return nil
 	}
 	for _, j := range plans {
-		result, err := export.Apply(context.Background(), root, j.Path, j.Views, j.Plan, items, nil)
+		result, err := export.Apply(context.Background(), root, j.Path, j.Views, j.Plan, items, nil,
+			func(a export.Action) error {
+				return tree.RecordExport(root, a.Item, a.Digest, j.Path, a.View, time.Now())
+			})
 		if err != nil {
 			return fmt.Errorf("%s: %w", j.Name, err)
 		}

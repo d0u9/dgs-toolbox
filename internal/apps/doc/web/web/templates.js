@@ -28,7 +28,7 @@ function render() {
     el("span", { className: "template-sub" }, sub));
   $("templates").replaceChildren(...templates.map((t) => {
     const fields = (state.templates || []).find((x) => x.type === t.type)?.fields.length ?? 0;
-    return row(t.type, t.kind, `${fields} field${fields === 1 ? "" : "s"} · ${t.items === 1 ? "1 Item" : t.items + " Items"}`,
+    return row(t.type, t.kind, (t.description ? t.description + " · " : "") + `${fields} field${fields === 1 ? "" : "s"} · ${t.items === 1 ? "1 Item" : t.items + " Items"}`,
       t.type === editing, () => leave() && open(t.type));
   }), ...(editing === "" ? [row("new template", "", "not saved yet", true)] : []));
   const t = templates.find((x) => x.type === editing);

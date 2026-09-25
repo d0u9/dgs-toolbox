@@ -8,10 +8,11 @@ import (
 )
 
 type templateEntry struct {
-	Type  string `json:"type"`
-	Kind  string `json:"kind"`
-	Data  string `json:"data"`
-	Items int    `json:"items"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Kind        string `json:"kind"`
+	Data        string `json:"data"`
+	Items       int    `json:"items"`
 }
 
 // templateList answers every Template as its file is written, and how many
@@ -38,7 +39,7 @@ func (s server) templateList(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
-		out = append(out, templateEntry{Type: t.Type, Kind: string(t.Kind), Data: string(data), Items: used[t.Type]})
+		out = append(out, templateEntry{Type: t.Type, Description: t.Description, Kind: string(t.Kind), Data: string(data), Items: used[t.Type]})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"templates": out, "example": tree.ExampleTemplate})
 }

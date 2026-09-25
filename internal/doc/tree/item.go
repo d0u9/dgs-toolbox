@@ -35,11 +35,30 @@ type Item struct {
 	Type      string            `yaml:"type" json:"type"`
 	Kind      Kind              `yaml:"kind" json:"kind"`
 	Fields    map[string]string `yaml:"fields" json:"fields"`
+	Tags      []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
 	Head      string            `yaml:"head,omitempty" json:"head,omitempty"`
 	Revisions []Revision        `yaml:"revisions" json:"revisions"`
 	// Notes is free text the owner writes. It is never a key and never
 	// exported.
-	Notes string `yaml:"notes,omitempty" json:"notes,omitempty"`
+	Notes   string         `yaml:"notes,omitempty" json:"notes,omitempty"`
+	History []HistoryEvent `yaml:"history,omitempty" json:"history,omitempty"`
+}
+
+// HistoryEvent records a completed operation on an Item. Older sidecars have
+// no history; their revision Added timestamps still identify past imports.
+type HistoryEvent struct {
+	At                string                       `yaml:"at" json:"at"`
+	Action            string                       `yaml:"action" json:"action"`
+	Digest            string                       `yaml:"digest,omitempty" json:"digest,omitempty"`
+	Target            string                       `yaml:"target,omitempty" json:"target,omitempty"`
+	View              string                       `yaml:"view,omitempty" json:"view,omitempty"`
+	Changes           map[string][2]string         `yaml:"changes,omitempty" json:"changes,omitempty"`
+	FromType          string                       `yaml:"from_type,omitempty" json:"from_type,omitempty"`
+	ToType            string                       `yaml:"to_type,omitempty" json:"to_type,omitempty"`
+	PreviousFields    map[string]string            `yaml:"previous_fields,omitempty" json:"previous_fields,omitempty"`
+	PreviousRevisions map[string]map[string]string `yaml:"previous_revisions,omitempty" json:"previous_revisions,omitempty"`
+	NewFields         map[string]string            `yaml:"new_fields,omitempty" json:"new_fields,omitempty"`
+	NewRevisions      map[string]map[string]string `yaml:"new_revisions,omitempty" json:"new_revisions,omitempty"`
 }
 
 // Current is the digest of the PDF that stands for the Item: HEAD for a

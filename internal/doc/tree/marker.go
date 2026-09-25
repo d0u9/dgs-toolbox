@@ -107,6 +107,7 @@ func Init(root string, now time.Time) error {
 const ExampleTemplate = `# A Template: the fields asked for when a PDF of this type is imported.
 # Copy this file to add a type; the file name is the type.
 type: id_card
+description: Identity cards and household registers
 kind: document            # document: revisions and HEAD; record: one PDF
 fields:
   - key: owner

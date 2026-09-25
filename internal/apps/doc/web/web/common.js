@@ -79,8 +79,8 @@ export function label(state, item) {
 }
 
 // inputFor is the control a field's type asks for: a date picker, a list of
-// options, a list of the tree's other Items, or a line of text. Every one has
-// the class field-input and the field's key as its name.
+// options, a list of the tree's other Items, or a line of text. Every value
+// control has the class field-input and the field's key as its name.
 export function inputFor(field, value, placeholder, state, self) {
   const common = { name: field.key, className: "field-input" };
   let control;
@@ -94,6 +94,30 @@ export function inputFor(field, value, placeholder, state, self) {
     if (value && !choices.some(([v]) => v === value)) {
       control.append(el("option", { value, selected: true }, value));
     }
+    if (field.type === "select" && choices.length > 0 && choices.length <= 5 && (!value || choices.some(([v]) => v === value))) {
+      control.hidden = true;
+      const cards = el("div", { className: "field-choice-cards", role: "group" });
+      cards.setAttribute("aria-label", field.key);
+      const cardChoices = field.required ? choices : [["", "Not set"], ...choices];
+      const buttons = cardChoices.map(([v, text]) => {
+        const button = el("button", { type: "button", className: "field-choice-card" }, text);
+        button.onclick = () => {
+          control.value = v;
+          control.dispatchEvent(new Event("input"));
+          control.dispatchEvent(new Event("change"));
+        };
+        return button;
+      });
+      const sync = () => buttons.forEach((button, i) => {
+        button.setAttribute("aria-pressed", String(control.value === cardChoices[i][0]));
+      });
+      cards.append(...buttons);
+      control.addEventListener("change", sync);
+      sync();
+      return el("div", { className: "form-field" },
+        el("span", {}, field.key, field.required ? el("span", { className: "req" }, " *") : null),
+        control, cards);
+    }
   } else {
     control = el("input", { ...common, type: field.type === "date" ? "date" : "text",
       value, placeholder: placeholder || (field.type === "country" ? "cn, CHN, China, 中国…" : ""),
@@ -106,6 +130,15 @@ export function inputFor(field, value, placeholder, state, self) {
 
 export const fieldsOf = (container) => Object.fromEntries(
   [...container.querySelectorAll(".field-input")].map((input) => [input.name, input.value]));
+
+export function tagUses(items) {
+  const counts = new Map();
+  for (const item of items || []) {
+    for (const name of new Set(item.tags || [])) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return [...counts].map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
 
 // The top bar and the banner every page has.
 export function frame(state) {
@@ -303,6 +336,9 @@ let previewAsked = 0;
 export async function showPreview(query, viewer) {
   const asked = ++previewAsked;
   $("empty").hidden = true;
+  hideViewer();
+  $("frame").hidden = true;
+  $("frame").removeAttribute("src");
   const useViewer = () => {
     if (asked !== previewAsked) return;
     hideViewer();

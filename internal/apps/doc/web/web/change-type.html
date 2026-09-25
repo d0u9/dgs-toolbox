@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Change type · dgs Doc</title>
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="topbar"><span class="brand">DOC</span><a class="topbar-link" id="back" href="/browse/">← Browse</a><span class="topbar-spacer"></span><span id="root" class="muted"></span></header>
+<div id="banner" class="banner" hidden>Not a doc tree.</div><p id="error" class="message error" hidden></p>
+<main class="change-type-page">
+  <h1>Change type</h1>
+  <p class="muted">Review the current values and fill the new Template. The Item ID, PDFs, revisions, notes and tags stay with the Item.</p>
+  <div class="change-type-columns">
+    <section class="change-type-panel"><h2>Current Item</h2><div id="original"></div></section>
+    <section class="change-type-panel"><h2>New type</h2><form id="change-form">
+      <label class="form-field"><span>Template</span><select id="target"></select></label>
+      <p id="dropped" class="message"></p>
+      <div id="target-fields"></div><div id="target-revisions"></div>
+      <p id="message" class="message"></p>
+      <button id="save" class="action" type="submit">Change type</button>
+    </form></section>
+  </div>
+</main>
+<script type="module" src="/change-type.js"></script>
+</body>
+</html>

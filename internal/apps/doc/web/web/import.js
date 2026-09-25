@@ -1,6 +1,6 @@
 // Import: open a folder from anywhere, see its PDFs as the tree of folders
 // they are in, and take them in one at a time. The folder is only read.
-import { $, api, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
+import { $, api, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, tagUses, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { fileTree } from "/ui/filetree.js";
 
@@ -11,10 +11,13 @@ let files = [];
 let selected = "";
 // What the text of the picked PDF suggests, by type: { type: { key: value } }.
 let suggestions = {};
+let selectedTemplate = "";
 // typeChosen is set once the reader picks a Template for this PDF; a type
 // proposed from the text never overrides that.
 let typeChosen = false;
 const closed = new Set();
+const tags = window.tagField($("tags"), { known: () => tagUses(state.items), placeholder: "Add tags" });
+let metadataItem = "";
 
 function remembered() {
   try { return localStorage.getItem(FOLDER_KEY) || ""; } catch { return ""; }
@@ -51,6 +54,9 @@ function render() {
 
 function pick(path) {
   if (path !== selected) {
+    $("notes").value = "";
+    tags.set([]);
+    metadataItem = "";
     showPreview({ dir, path }, api("/api/source/file?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path)));
     say($("import-message"), "");
     suggestions = {};
@@ -82,14 +88,26 @@ function readAhead(path) {
 }
 
 function drawFields() {
-  const select = $("template");
-  const current = select.value;
-  select.replaceChildren(...state.templates.map((t) => el("option", { value: t.type }, t.type + " (" + t.kind + ")")));
-  if (current && templateOf(state, current)) select.value = current;
-  const t = templateOf(state, select.value);
+  if (!templateOf(state, selectedTemplate)) selectedTemplate = state.templates[0]?.type || "";
+  $("template").replaceChildren(...state.templates.map((choice) => {
+    const button = el("button", { type: "button", title: (choice.description || choice.type) + " (" + choice.kind + ")", className: "template-choice" + (choice.type === selectedTemplate ? " selected" : "") },
+      el("strong", {}, choice.type), el("small", {}, choice.description || choice.kind));
+    button.setAttribute("aria-pressed", String(choice.type === selectedTemplate));
+    button.onclick = () => {
+      typeChosen = true;
+      if (selectedTemplate === choice.type) return;
+      selectedTemplate = choice.type;
+      drawFields();
+      $("template").querySelector(".selected")?.focus();
+    };
+    return button;
+  }));
+  const t = templateOf(state, selectedTemplate);
   $("import-button").disabled = !t;
   if (!t) {
     $("into-field").hidden = true;
+    $("tags-field").hidden = true;
+    $("notes-field").hidden = true;
     $("fields").replaceChildren(el("p", { className: "message" }, "No Templates in the tree's templates folder."));
     return;
   }
@@ -100,7 +118,31 @@ function drawFields() {
     ...documents.map((i) => el("option", { value: i.id }, "New revision of " + label(state, i))));
   if (documents.some((i) => i.id === was)) into.value = was;
   $("into-field").hidden = documents.length === 0;
+  $("into-choices").replaceChildren(...[{ id: "" }, ...documents].map((item) => {
+    const value = item.id;
+    const button = el("button", {
+      type: "button", className: "into-choice", title: value ? label(state, item) : "Create a separate Item",
+    }, el("strong", {}, value ? (item.fields?.name || label(state, item)) : "New item"),
+    el("small", {}, value ? [item.fields?.owner, item.fields?.country].filter(Boolean).join(" · ") : "Create a separate document"));
+    button.value = value;
+    button.setAttribute("aria-pressed", String(into.value === value));
+    button.onclick = () => {
+      if (into.value === value) return;
+      into.value = value;
+      drawFields();
+      [...$("into-choices").children].find((choice) => choice.value === value)?.focus();
+    };
+    return button;
+  }));
   const adding = into.value !== "";
+  if (metadataItem !== into.value) {
+    const item = state.items.find((i) => i.id === into.value);
+    $("notes").value = item?.notes || "";
+    tags.set(item?.tags || []);
+    metadataItem = into.value;
+  }
+  $("tags-field").hidden = false;
+  $("notes-field").hidden = false;
   $("import-button").textContent = adding ? "Add revision" : "Import";
   // A new revision is asked only what changes with it: the fields the
   // Template marks per_revision. The rest belong to the Item it joins.
@@ -112,7 +154,7 @@ function drawFields() {
   }
   for (const input of $("fields").querySelectorAll(".field-input")) {
     input.addEventListener("input", () => { input.classList.remove("suggested"); showSource(null); });
-    const source = () => input.classList.contains("suggested") && showSource((suggestions[$("template").value] || {})[input.name]);
+    const source = () => input.classList.contains("suggested") && showSource((suggestions[selectedTemplate] || {})[input.name]);
     input.addEventListener("focus", source);
     input.addEventListener("mouseenter", source);
     input.addEventListener("blur", () => showSource(null));
@@ -124,11 +166,12 @@ function drawFields() {
 // suggest fills the empty fields the text has a value for, marked so they
 // read as proposals. A field the reader typed in is never replaced.
 function suggest() {
-  const found = suggestions[$("template").value] || {};
+  const found = suggestions[selectedTemplate] || {};
   for (const input of $("fields").querySelectorAll(".field-input")) {
     const value = found[input.name] && found[input.name].value;
     if (value && (input.value === "" || input.classList.contains("suggested"))) {
       input.value = value;
+      input.dispatchEvent(new Event("change"));
       input.classList.add("suggested");
       input.title = "Suggested from the text. Hover to see where on the page it was read.";
     }
@@ -167,11 +210,6 @@ $("open").onclick = async () => {
   if (chosen) await open(Array.isArray(chosen) ? chosen[0] : chosen);
 };
 
-$("template").onchange = () => {
-  typeChosen = true;
-  drawFields();
-};
-
 // proposeType selects the Template the first page most looks like, going by
 // the Items already filed, and says why. The reader can always pick another.
 function proposeType(answer) {
@@ -183,22 +221,22 @@ function proposeType(answer) {
     return;
   }
   hint.textContent = "Looks like " + answer.type + " (" + Math.round(top.score * 100) + "% like one already filed).";
-  if (!typeChosen && $("template").value !== answer.type && templateOf(state, answer.type)) {
-    $("template").value = answer.type;
+  if (!typeChosen && selectedTemplate !== answer.type && templateOf(state, answer.type)) {
+    selectedTemplate = answer.type;
     drawFields();
+    $("template").querySelector(".selected")?.scrollIntoView({ block: "nearest" });
   }
 }
-$("into").onchange = drawFields;
-
 $("import").onsubmit = async (event) => {
   event.preventDefault();
+  tags.commit();
   $("import-button").disabled = true;
   say($("import-message"), "Copying and reading back…");
   try {
     if ($("into").value && !$("into-field").hidden) {
-      await post("/api/revisions", { dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")) });
+      await post("/api/revisions", { dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get() });
     } else {
-      await post("/api/import", { dir, path: selected, type: $("template").value, fields: fieldsOf($("fields")) });
+      await post("/api/import", { dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get() });
     }
     const done = selected;
     state = await loadState();

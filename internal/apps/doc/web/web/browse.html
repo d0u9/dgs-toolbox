@@ -10,6 +10,8 @@
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/menu.css">
+<link rel="stylesheet" href="/ui/tags.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="/app.css">
 </head>
@@ -39,6 +41,7 @@
   <div class="filter-group" id="field-filters">
     <label class="filter"><span>Type</span><select id="filter-type"><option value="">any</option></select></label>
   </div>
+  <div class="filter-group"><div class="filter filter-tags"><span>Tags</span><div id="filter-tags" data-label="Filter by tags"></div></div></div>
   <div class="filter-group">
     <label class="filter" title="From the Item's expires field, as HEAD has it"><span>Expiry</span>
       <select id="filter-expiry">
@@ -134,6 +137,7 @@
     <p id="text-message" class="message text-status"></p>
     <section class="detail-section">
       <h3>Fields</h3>
+      <a id="change-type" class="button" href="/change-type/">Change type…</a>
       <form id="edit">
         <div id="edit-fields"></div>
         <div class="detail-actions"><button id="save-button" class="action" type="submit">Save fields</button>
@@ -156,6 +160,14 @@
       <p id="cases-message" class="message"></p>
     </section>
     <section class="detail-section">
+      <h3>Tags</h3>
+      <form id="tags-form">
+        <div id="detail-tags" data-label="Item tags"></div>
+        <div class="detail-actions"><button class="action" type="submit">Save tags</button>
+          <p id="tags-message" class="message"></p></div>
+      </form>
+    </section>
+    <section class="detail-section">
       <h3>Notes</h3>
       <form id="notes-form">
         <textarea id="notes" class="notes" rows="3" placeholder="Only for you: never a key, never exported."></textarea>
@@ -169,6 +181,10 @@
       <ul id="similar" class="rows"></ul>
       <p id="similar-message" class="message"></p>
     </section>
+    <section class="detail-section">
+      <h3>History</h3>
+      <ul id="history" class="rows"></ul>
+    </section>
     <section class="detail-section danger-zone">
       <h3>Delete</h3>
       <p class="danger-note">Moves this Item, with every revision's PDF, into the tree's trash folder.</p>
@@ -178,6 +194,7 @@
     </div>
   </aside>
 </main>
+<script src="/ui/tags.js"></script>
 <script type="module" src="/browse.js"></script>
 </body>
 </html>

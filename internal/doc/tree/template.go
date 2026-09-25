@@ -83,10 +83,11 @@ const (
 
 // Template is one type's fields and defaults.
 type Template struct {
-	Type     string            `yaml:"type" json:"type"`
-	Kind     Kind              `yaml:"kind" json:"kind"`
-	Fields   []Field           `yaml:"fields" json:"fields"`
-	Defaults map[string]string `yaml:"defaults" json:"defaults"`
+	Type        string            `yaml:"type" json:"type"`
+	Description string            `yaml:"description,omitempty" json:"description,omitempty"`
+	Kind        Kind              `yaml:"kind" json:"kind"`
+	Fields      []Field           `yaml:"fields" json:"fields"`
+	Defaults    map[string]string `yaml:"defaults" json:"defaults"`
 	// IgnoreDates are dates, YYYY-MM-DD, never suggested for a date field: a
 	// birthday printed on every page of a person's documents.
 	IgnoreDates []string `yaml:"ignore_dates,omitempty" json:"ignore_dates,omitempty"`
