@@ -39,9 +39,11 @@ func (j JobPlan) Ready() bool {
 	return j.Combined.Complete() && len(j.Plan.Blocked) == 0 && len(j.Problems) == 0
 }
 
-// Jobs groups views by the Target each names. names picks Targets; none
-// means every Target a View names. A View naming a Target that is not
-// configured, and a Target asked for that no View names, are problems.
+// Jobs groups views by the Target each names. targets maps each of the
+// tree's Targets to the folder it goes to this time, "" when none is
+// chosen. names picks Targets; none means every Target a View names. A View
+// naming a Target the tree lacks, a Target asked for that no View names and
+// one with no folder are problems.
 func Jobs(views []view.View, targets map[string]string, names []string) ([]Job, []string) {
 	var problems []string
 	byTarget := map[string][]view.View{}
@@ -50,7 +52,7 @@ func Jobs(views []view.View, targets map[string]string, names []string) ([]Job, 
 			continue
 		}
 		if _, ok := targets[v.Target]; !ok {
-			problems = append(problems, fmt.Sprintf("the View %s names the Target %s, which doc.targets does not have", v.Name, v.Target))
+			problems = append(problems, fmt.Sprintf("the View %s names the Target %s, which the tree's targets.yaml does not have", v.Name, v.Target))
 			continue
 		}
 		byTarget[v.Target] = append(byTarget[v.Target], v)
@@ -66,9 +68,11 @@ func Jobs(views []view.View, targets map[string]string, names []string) ([]Job, 
 		path, ok := targets[name]
 		switch {
 		case !ok:
-			problems = append(problems, "no Target named "+name+" in doc.targets")
+			problems = append(problems, "no Target named "+name+" in the tree's targets.yaml")
 		case len(byTarget[name]) == 0:
 			problems = append(problems, "no View names the Target "+name)
+		case path == "":
+			problems = append(problems, "choose a folder for the Target "+name+": it has none of its own")
 		default:
 			jobs = append(jobs, Job{Name: name, Path: path, Views: byTarget[name]})
 		}
@@ -124,28 +128,20 @@ func label(j Job) string {
 	return filepath.Base(j.Path)
 }
 
-// Other is another tree exported from the same machine: its folder, and the
-// Targets its Views name.
+// Other is another tree kept on the same machine.
 type Other struct {
-	Name    string
-	Root    string
-	Targets []string
+	Name string
+	Root string
 }
 
-// AgainstOthers adds to each plan what another tree stops: a folder inside
-// that tree or holding it, and a Target that tree's Views also export into,
-// whose manifest the two would fight over.
+// AgainstOthers adds to each plan a folder inside another tree, or holding
+// one: an export there would write into that tree.
 func AgainstOthers(plans []JobPlan, others []Other) {
 	for i := range plans {
 		p := &plans[i]
 		for _, o := range others {
 			if within(o.Root, p.Path) || within(p.Path, o.Root) {
 				p.Problems = append(p.Problems, fmt.Sprintf("the folder %s overlaps the tree %s, %s", p.Path, o.Name, o.Root))
-			}
-			for _, t := range o.Targets {
-				if p.Name != "" && t == p.Name {
-					p.Problems = append(p.Problems, fmt.Sprintf("the tree %s's Views also export into the Target %s: give each tree Targets of its own", o.Name, t))
-				}
 			}
 		}
 	}

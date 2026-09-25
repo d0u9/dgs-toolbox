@@ -15,8 +15,8 @@ are kept, in every tree. `doc.trees` names them; the page switches from a menu
 in its top bar, and the tree is in the page's address (`?tree=books`), so two
 tabs can hold two trees and a reload keeps its tree. `verify` and `export` take
 `--tree <name>`. Nothing crosses between trees: an Item, a View and a Case
-belong to one. Two trees' Views may not export into one Target, and a Target
-may not lie inside any tree.
+belong to one. Each tree has its own Targets, and a Target's folder may not lie
+inside any tree.
 
 It follows `dgs box`'s shape: a TUI plus a local web page served by the same
 process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
@@ -297,9 +297,33 @@ default: none              # optional: stands in for a missing key
 target: icloud             # optional: the Target it is exported to
 ```
 
-`target` is a name from [`doc.targets`](../../configuration/doc.md), never a
-path: Views travel with the repository, and each machine says where its
-`icloud` is.
+`target` is a name from the tree's `targets.yaml`, never a path. The tree
+says where its Views go; the folder each goes to is chosen when exporting:
+
+```yaml
+icloud:
+  about: read on the phone
+  folder: ~/Library/Mobile Documents/com~apple~CloudDocs/Documents
+kindle:
+  about: books for the flight     # no folder: one is chosen every time
+```
+
+- A Target's `folder` is only its default. A leading `~` is the home folder
+  of the machine exporting, so one `targets.yaml` usually fits every Mac.
+- On the Views page each Target shows, under its name, the folder it goes to
+  this time; clicking it chooses another through the file dialog. The choice
+  is remembered in that browser, marked "this machine", and the page offers to
+  make it the Target's own folder in `targets.yaml` instead.
+- A Target with no folder of its own, and none chosen, stops the run until one
+  is chosen.
+- The Target select in a View's form lists the tree's Targets and adds a new
+  one. A Target a View still names is not removed.
+- `dgs doc export --to kindle=/Volumes/Kindle/documents` chooses a folder on
+  the command line; comma separate several.
+
+A Target belongs to its tree, so two trees each have their own `kindle`.
+Where a machine keeps a Target's folder is never configuration: the tree
+names the default and the export may choose another.
 
 A layout is rendered by three rules:
 
@@ -363,7 +387,8 @@ Target is written:
 - a wanted path held by a file the export does not own (below), including one
   another View exported into the same folder;
 - a Target inside the tree or holding it, two Targets of the run overlapping,
-  a View naming a Target this machine does not have, and a manifest that
+  a View naming a Target `targets.yaml` does not have, a Target with no
+  folder, a folder inside another tree, and a manifest that
   cannot be read.
 
 The check lists every one of them, by View and path; the export itself plans
@@ -524,6 +549,7 @@ exported and the Items' fields; a Target carries no Templates or Views.
     id_card.yaml            # one Template per type
   views/                    # one View per file (M4)
   cases/                    # one Case per file
+  targets.yaml              # where Views are exported to, by name
   trash/                    # deleted Items and Templates, never erased
   items/
     <item-id>/

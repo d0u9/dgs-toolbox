@@ -52,8 +52,6 @@ type Settings struct {
 	// ExpiringWithin is how long before its expiry a document counts as
 	// expiring soon. Zero is expiry.DefaultSoon.
 	ExpiringWithin time.Duration
-	// Targets are the folders a View may be exported to, by name.
-	Targets map[string]string
 }
 
 // Tree is one tree the page opens, by the name it switches to.
@@ -64,7 +62,7 @@ type Tree struct {
 
 // SettingsFrom reads the server settings out of the configuration.
 func SettingsFrom(global config.Config) Settings {
-	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder(), Targets: global.Doc.Targets, ExpiringWithin: global.DocExpiringWithin()}
+	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder(), ExpiringWithin: global.DocExpiringWithin()}
 	if dir, err := global.DocCacheDir(); err == nil {
 		settings.CacheDir = dir
 	}
@@ -138,7 +136,6 @@ type server struct {
 	reader *textread.Reader
 	// pictures holds pages drawn for the preview.
 	pictures *pictures
-	targets  map[string]string
 	// writing is held while an export or a merge writes, so two never overlap.
 	writing *sync.Mutex
 }
@@ -162,7 +159,7 @@ func Handler(settings Settings) http.Handler {
 	trees := settings.ResolvedTrees()
 	shared := server{
 		now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder, soon: settings.ExpiringWithin,
-		targets: settings.Targets, writing: &sync.Mutex{}, trees: trees,
+		writing: &sync.Mutex{}, trees: trees,
 		store:  textcache.Store{Dir: settings.CacheDir},
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
 	}
@@ -232,6 +229,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/views", s.viewSave)
 	mux.HandleFunc("POST /api/views/delete", s.viewDelete)
 	mux.HandleFunc("GET /api/targets", s.targetList)
+	mux.HandleFunc("POST /api/targets", s.targetSave)
 	mux.HandleFunc("POST /api/export/plan", s.exportPlan)
 	mux.HandleFunc("POST /api/export", s.exportRun)
 	mux.HandleFunc("POST /api/merge/plan", s.mergePlan)
