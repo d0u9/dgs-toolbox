@@ -36,6 +36,14 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 4. The opened folder is only read. The server serves and imports only PDFs
    under it.
 
+### Preview
+
+A scanned PDF is shown as pictures of its pages, drawn from each page's own
+embedded scan as box draws them, 1600 px on the long side, loaded as they
+scroll into view. The browser's PDF viewer redraws a full-resolution scan on
+every scroll and stutters. A PDF whose first page is not a scan — one made on
+a computer — is shown in the viewer.
+
 ### Text and suggestions
 
 Beside the preview, on both pages, is the PDF's text: its own text layer when

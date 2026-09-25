@@ -1,5 +1,5 @@
 // Browse: the Items kept in the tree, their fields, revisions and HEAD.
-import { $, el, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText } from "/common.js";
+import { $, el, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -28,12 +28,10 @@ function render() {
 
 function pick(id, digest) {
   if (!selected || selected.id !== id || selected.digest !== digest) {
-    $("frame").src = "/api/revision?item=" + encodeURIComponent(id) + "&digest=" + encodeURIComponent(digest);
+    showPreview({ item: id, digest }, "/api/revision?item=" + encodeURIComponent(id) + "&digest=" + encodeURIComponent(digest));
     showText({ item: id, digest });
   }
   selected = { id, digest };
-  $("frame").hidden = false;
-  $("empty").hidden = true;
   history.replaceState(null, "", "#" + id);
   render();
 }
