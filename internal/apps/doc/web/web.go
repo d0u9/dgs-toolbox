@@ -84,6 +84,9 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("GET /api/file", s.file)
 	mux.HandleFunc("GET /api/revision", s.revision)
 	mux.HandleFunc("POST /api/import", s.importPDF)
+	mux.HandleFunc("POST /api/revisions", s.addRevision)
+	mux.HandleFunc("POST /api/head", s.setHead)
+	mux.HandleFunc("POST /api/fields", s.setFields)
 	webui.Mount(mux)
 	files := http.FileServerFS(static)
 	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -218,19 +221,8 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	files, err := s.loose()
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	source := ""
-	for _, f := range files {
-		if f.Path == request.Path {
-			source = filepath.Join(s.root, filepath.FromSlash(f.Path))
-		}
-	}
-	if source == "" {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such PDF in the tree"})
+	source, ok := s.source(w, request.Path)
+	if !ok {
 		return
 	}
 	templates, err := tree.LoadTemplates(s.root)
@@ -253,6 +245,100 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "no Template for type " + request.Type})
+}
+
+// source is a listed loose PDF's path on disk. A path the listing does not
+// name is refused, and the response is written.
+func (s server) source(w http.ResponseWriter, path string) (string, bool) {
+	files, err := s.loose()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return "", false
+	}
+	for _, f := range files {
+		if f.Path == path {
+			return filepath.Join(s.root, filepath.FromSlash(f.Path)), true
+		}
+	}
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such PDF in the tree"})
+	return "", false
+}
+
+func decode(w http.ResponseWriter, r *http.Request, into any) bool {
+	if err := json.NewDecoder(r.Body).Decode(into); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return false
+	}
+	return true
+}
+
+func answer(w http.ResponseWriter, item tree.Item, err error) {
+	if err != nil {
+		status := http.StatusConflict
+		if errors.Is(err, tree.ErrNoItem) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+// addRevision adds a loose PDF to a document and moves HEAD to it.
+func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Path string `json:"path"`
+		Item string `json:"item"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	source, ok := s.source(w, request.Path)
+	if !ok {
+		return
+	}
+	item, err := tree.AddRevision(r.Context(), s.root, request.Item, source, s.now())
+	answer(w, item, err)
+}
+
+func (s server) setHead(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item   string `json:"item"`
+		Digest string `json:"digest"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	item, err := tree.SetHead(s.root, request.Item, request.Digest)
+	answer(w, item, err)
+}
+
+func (s server) setFields(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item   string            `json:"item"`
+		Fields map[string]string `json:"fields"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	item, _, err := tree.FindItem(s.root, request.Item)
+	if err != nil {
+		answer(w, item, err)
+		return
+	}
+	templates, err := tree.LoadTemplates(s.root)
+	if err != nil {
+		answer(w, item, err)
+		return
+	}
+	for _, t := range templates {
+		if t.Type == item.Type {
+			item, err = tree.SetFields(s.root, request.Item, t, request.Fields)
+			answer(w, item, err)
+			return
+		}
+	}
+	answer(w, item, errors.New("no Template for type "+item.Type))
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

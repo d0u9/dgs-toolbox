@@ -150,3 +150,80 @@ func TestNewIDIsAULID(t *testing.T) {
 		t.Errorf("time part = %s", a[:10])
 	}
 }
+
+func importOne(t *testing.T, root, name, content string, fields map[string]string) Item {
+	t.Helper()
+	source := write(t, filepath.Join(root, name), content)
+	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: idCard(t, root), Fields: fields, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return item
+}
+
+func TestRevisionsMoveHeadAndBack(t *testing.T) {
+	root := newTree(t)
+	item := importOne(t, root, "old.pdf", "%PDF old", map[string]string{"owner": "jane", "country": "AU"})
+	first := item.Head
+	renewed := write(t, filepath.Join(root, "new.pdf"), "%PDF new")
+	item, err := AddRevision(context.Background(), root, item.ID, renewed, now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(item.Revisions) != 2 || item.Head == first || item.Head != item.Revisions[1].Digest {
+		t.Fatalf("after adding: %+v", item)
+	}
+	if _, err := AddRevision(context.Background(), root, item.ID, renewed, now); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("same PDF again: %v", err)
+	}
+	if item, err = SetHead(root, item.ID, first); err != nil || item.Head != first {
+		t.Fatalf("SetHead: %+v %v", item, err)
+	}
+	loaded, _, _ := FindItem(root, item.ID)
+	if loaded.Head != first || len(loaded.Revisions) != 2 {
+		t.Fatalf("on disk: %+v", loaded)
+	}
+	if _, err := SetHead(root, item.ID, "nope"); err == nil {
+		t.Fatal("HEAD moved to a digest that is not a revision")
+	}
+	for _, r := range loaded.Revisions {
+		if _, err := os.Stat(PDFPath(root, item.ID, r.Digest)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestRecordsHaveNoRevisions(t *testing.T) {
+	root := newTree(t)
+	write(t, filepath.Join(root, TemplatesDir, "payslip.yaml"), "type: payslip\nkind: record\nfields:\n  - key: owner\n")
+	templates, _ := LoadTemplates(root)
+	source := write(t, filepath.Join(root, "p.pdf"), "%PDF p")
+	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: templates[1], Now: now})
+	if err != nil || item.Head != "" {
+		t.Fatalf("%+v %v", item, err)
+	}
+	other := write(t, filepath.Join(root, "q.pdf"), "%PDF q")
+	if _, err := AddRevision(context.Background(), root, item.ID, other, now); err == nil {
+		t.Fatal("record took a revision")
+	}
+	if _, err := SetHead(root, item.ID, item.Revisions[0].Digest); err == nil {
+		t.Fatal("record took a HEAD")
+	}
+}
+
+func TestSetFieldsKeepsDocumentsDistinct(t *testing.T) {
+	root := newTree(t)
+	au := importOne(t, root, "au.pdf", "%PDF au", map[string]string{"owner": "jane", "country": "AU"})
+	importOne(t, root, "cn.pdf", "%PDF cn", map[string]string{"owner": "jane", "country": "CN"})
+	tpl := idCard(t, root)
+	if _, err := SetFields(root, au.ID, tpl, map[string]string{"owner": "jane", "country": "CN"}); !errors.Is(err, ErrTaken) {
+		t.Fatalf("clash: %v", err)
+	}
+	item, err := SetFields(root, au.ID, tpl, map[string]string{"owner": "jane", "country": "AU", "number": "123"})
+	if err != nil || item.Fields["number"] != "123" {
+		t.Fatalf("%+v %v", item, err)
+	}
+	if _, err := SetFields(root, au.ID, tpl, map[string]string{"owner": "jane"}); err == nil {
+		t.Fatal("required field dropped")
+	}
+}

@@ -120,3 +120,32 @@ func TestPageIsServed(t *testing.T) {
 		}
 	}
 }
+
+func TestRevisionHeadAndFieldsThroughThePage(t *testing.T) {
+	root, _ := folder(t, true)
+	h := Handler(Settings{Root: root})
+	do(h, "POST", "/api/import", `{"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"}}`)
+	must(t, os.WriteFile(filepath.Join(root, "jane", "renewed.pdf"), []byte("%PDF renewed"), 0o644))
+	item := state(t, h).Items[0]
+	first := item.Head
+	if rec := do(h, "POST", "/api/revisions", `{"path":"jane/renewed.pdf","item":"`+item.ID+`"}`); rec.Code != http.StatusOK {
+		t.Fatalf("add: %d %s", rec.Code, rec.Body.String())
+	}
+	item = state(t, h).Items[0]
+	if len(item.Revisions) != 2 || item.Head == first {
+		t.Fatalf("after add: %+v", item)
+	}
+	if rec := do(h, "POST", "/api/head", `{"item":"`+item.ID+`","digest":"`+first+`"}`); rec.Code != http.StatusOK {
+		t.Fatalf("head: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/fields", `{"item":"`+item.ID+`","fields":{"owner":"jane","country":"CN"}}`); rec.Code != http.StatusOK {
+		t.Fatalf("fields: %d %s", rec.Code, rec.Body.String())
+	}
+	item = state(t, h).Items[0]
+	if item.Head != first || item.Fields["country"] != "CN" {
+		t.Fatalf("after head and fields: %+v", item)
+	}
+	if rec := do(h, "POST", "/api/revisions", `{"path":"../x.pdf","item":"`+item.ID+`"}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("unlisted path: %d", rec.Code)
+	}
+}
