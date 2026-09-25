@@ -18,10 +18,26 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 
 | Page | What it is for |
 | --- | --- |
-| Browse `/browse/` | The Items: filter, preview, edit fields, revisions and HEAD. Nothing is imported here. |
-| Import `/import/` | Taking PDFs in. |
-| Views `/views/` | Building layouts and previewing the tree they make (M4–M5). |
-| Export `/export/` | Plan, dry run, write (M6). |
+| Browse `/browse/` | The Items: filter, preview, edit fields, revisions and HEAD, delete. Nothing is imported here. |
+| Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
+| Views `/views/` | Building layouts, previewing the tree they make, and exporting (M4–M6). |
+| Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
+| Import `/import/` | Taking PDFs in. Last in the bar. |
+
+### Deleting
+
+Nothing in a tree is erased. Deleting an Item on Browse, after the owner
+confirms, moves its folder — sidecar and every revision's PDF — to
+`trash/<item-id>-<time>/`. Deleting a Template moves its file to
+`trash/templates/<type>-<time>.yaml`, and is refused while any Item has its
+type. Something deleted by mistake is moved back by hand.
+
+### Templates
+
+The Templates page edits a Template's file as text and saves it exactly as
+written, comments included, after it parses and validates. A type Items use
+cannot be renamed and its kind cannot change, since every sidecar names both;
+its fields can. Renaming an unused Template moves the old file to the trash.
 
 ### Import
 
@@ -371,6 +387,7 @@ exported and the Items' fields; a Target carries no Templates or Views.
   templates/
     id_card.yaml            # one Template per type
   views/                    # one View per file (M4)
+  trash/                    # deleted Items and Templates, never erased
   items/
     <item-id>/
       item.dgs-item.yaml    # the sidecar: everything known about the Item
