@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Merge · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before merging into it.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <a class="topbar-link" href="/views/">Views</a>
+  <a class="topbar-link current" href="/merge/">Merge</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="merge-work">
+  <div class="open-bar">
+    <button id="open" class="action" type="button">Open folder…</button>
+    <span id="dir" class="muted"></span>
+  </div>
+  <p class="muted merge-intro">Open a sub-tree made with <code>dgs doc init</code>, or a folder a View was exported to. Nothing is written until you merge; the folder itself is only read.</p>
+  <div id="plan"></div>
+  <p id="message" class="message"></p>
+  <div class="buttons">
+    <button id="merge" class="action" type="button" disabled>Merge</button>
+  </div>
+</main>
+<script type="module" src="/merge.js"></script>
+</body>
+</html>
