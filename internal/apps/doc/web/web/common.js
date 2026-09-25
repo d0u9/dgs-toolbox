@@ -158,6 +158,23 @@ export function planNodes(state, answer) {
   return out;
 }
 
+// A Target goes to the folder last chosen for it in this browser, else its
+// own folder from targets.yaml. The choice is per tree and per Target.
+const targetKey = (state, name) => "dgs-doc-target:" + (state.name || "") + ":" + name;
+export function targetFolder(state, t) {
+  let chosen = "";
+  try { chosen = localStorage.getItem(targetKey(state, t.name)) || ""; } catch { /* none */ }
+  return chosen || t.default || "";
+}
+// rememberTargetFolder keeps path as this browser's folder for the Target;
+// an empty path forgets it, so the Target's own folder is used again.
+export function rememberTargetFolder(state, name, path) {
+  try {
+    if (path) localStorage.setItem(targetKey(state, name), path);
+    else localStorage.removeItem(targetKey(state, name));
+  } catch { /* not kept */ }
+}
+
 export function say(node, text, error) {
   node.className = error ? "message error" : "message";
   node.textContent = text;

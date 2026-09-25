@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Targets · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/filetree.css">
+<link rel="stylesheet" href="/ui/filedialog.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before adding Targets to it.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link" href="/templates/">Templates</a>
+  <a class="topbar-link" href="/views/">Views</a>
+  <a class="topbar-link current" href="/targets/">Targets</a>
+  <a class="topbar-link" href="/cases/">Cases</a>
+  <a class="topbar-link" href="/merge/">Merge</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="work">
+  <section class="list">
+    <div class="list-head">
+      <h2>Targets <span id="count" class="count numeric"></span></h2>
+      <button id="new" class="button" type="button">+ New</button>
+    </div>
+    <div class="export-all-bar">
+      <button id="export-all" class="button" type="button" title="Check every Target's Views together, then export them">Export all Targets…</button>
+    </div>
+    <ul id="targets" class="template-list scroll"></ul>
+  </section>
+  <section class="case-main">
+    <form id="new-form" class="case-new" hidden>
+      <h2>New Target</h2>
+      <p class="muted">A place this tree's Views are exported to: the phone's iCloud folder, a Kindle, a folder shared with the family. Views name it; the folder can be changed each time you export.</p>
+      <label class="form-field"><span>Name</span><input id="new-name" class="mono" spellcheck="false" autocomplete="off" placeholder="icloud"></label>
+      <p class="layout-help">What Views write as <code>target:</code>. Lowercase letters, digits, <code>_</code> and <code>-</code>.</p>
+      <label class="form-field"><span>What it is for</span><input id="new-about" autocomplete="off" placeholder="read on the phone"></label>
+      <div class="view-actions"><button class="action" type="submit">Add Target</button><p id="new-message" class="message"></p></div>
+    </form>
+    <div id="target" class="case" hidden>
+      <div class="case-bar">
+        <div class="case-title">
+          <input id="name" class="case-title-input mono" spellcheck="false" autocomplete="off" title="Rename: every View naming it follows">
+          <code class="file-chip">targets.yaml</code>
+        </div>
+      </div>
+      <p id="message" class="message"></p>
+
+      <section class="case-section">
+        <h3>What it is for</h3>
+        <input id="about" class="case-line" autocomplete="off" placeholder="read on the phone">
+      </section>
+
+      <section class="case-section">
+        <h3>Folder</h3>
+        <div class="folder-rows">
+          <span class="folder-label">Its own</span>
+          <button id="default" class="button export-folder" type="button" title="The folder every machine starts from, kept in targets.yaml">
+            <span id="default-path" class="export-path"></span></button>
+          <button id="default-clear" class="button small-button" type="button" title="Keep no folder: one is chosen each time">Clear</button>
+          <span class="folder-label">This time</span>
+          <button id="here" class="button export-folder" type="button" title="Where an export from this browser goes">
+            <span id="here-path" class="export-path"></span></button>
+          <button id="here-clear" class="button small-button" type="button" title="Forget this browser's choice and use the Target's own folder">Use its own</button>
+        </div>
+        <p class="layout-help">Its own folder is in <code>targets.yaml</code>, for every machine; <code>~</code> is the home folder of the one exporting. A folder chosen here is remembered by this browser only.</p>
+      </section>
+
+      <section class="case-section">
+        <div class="result-head"><h3>Views</h3><span id="view-count" class="count muted"></span>
+          <span class="topbar-spacer"></span><a id="new-view" class="button small-button" href="/views/">+ New View</a></div>
+        <ul id="views" class="case-rows"></ul>
+        <div class="case-add">
+          <select id="move-view"></select>
+          <button id="move" class="button" type="button">Add</button>
+        </div>
+      </section>
+
+      <section class="case-section export">
+        <div class="result-head"><h3>Export</h3><span class="count muted">every View here, checked together</span></div>
+        <div class="export-row">
+          <button id="dry-run" class="button" type="button">Check</button>
+          <button id="run" class="action" type="button" disabled>Export</button>
+          <p id="export-message" class="message"></p>
+        </div>
+        <div id="export-plan"></div>
+      </section>
+
+      <section class="case-section detail-danger case-danger">
+        <h3>Delete</h3>
+        <p id="delete-note" class="detail-note">Removes the Target from targets.yaml. Nothing already exported is touched.</p>
+        <button id="delete" class="button danger" type="button">Delete Target…</button>
+      </section>
+    </div>
+  </section>
+</main>
+<script type="module" src="/targets.js"></script>
+</body>
+</html>

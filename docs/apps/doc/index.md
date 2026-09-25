@@ -32,6 +32,7 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete. Nothing is imported here. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
 | Views `/views/` | Building layouts, previewing the tree they make, and exporting (M4–M6). |
+| Targets `/targets/` | Where Views are exported to: add, rename and delete Targets, set their folders, move Views to them, export. |
 | Cases `/cases/` | A matter being dealt with and the Items it has needed; its export; archiving it. |
 | Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
 | Import `/import/` | Taking PDFs in. Last in the bar. |
@@ -316,8 +317,11 @@ kindle:
   make it the Target's own folder in `targets.yaml` instead.
 - A Target with no folder of its own, and none chosen, stops the run until one
   is chosen.
-- The Target select in a View's form lists the tree's Targets and adds a new
-  one. A Target a View still names is not removed.
+- The Targets page manages them: adding one, what it is for, its own folder
+  and this browser's, the Views exporting there (moving one in, taking one
+  out, starting a new one for it), exporting it or every Target, renaming —
+  every View naming it follows — and deleting one no View names. The Target
+  select in a View's form lists them and adds a new one too.
 - `dgs doc export --to kindle=/Volumes/Kindle/documents` chooses a folder on
   the command line; comma separate several.
 
