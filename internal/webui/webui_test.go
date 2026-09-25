@@ -15,7 +15,7 @@ import (
 
 // The files a page links. A page that links one of these by name breaks if
 // the file is renamed, so the names are pinned here.
-var shared = []string{"fonts.css", "tokens.css", "base.css", "controls.css", "filedialog.css", "menu.css", "statusbar.css"}
+var shared = []string{"fonts.css", "tokens.css", "base.css", "controls.css", "filedialog.css", "menu.css", "statusbar.css", "filetree.css"}
 
 func TestAssetsHoldTheSharedFiles(t *testing.T) {
 	for _, name := range shared {
@@ -61,7 +61,7 @@ func TestAssetsHoldTheTabIcons(t *testing.T) {
 	}
 }
 
-var sharedScripts = []string{"filedialog.js", "menu.js", "statusbar.js"}
+var sharedScripts = []string{"filedialog.js", "filetree.js", "menu.js", "statusbar.js"}
 
 func TestAssetsHoldTheSharedScripts(t *testing.T) {
 	for _, name := range sharedScripts {
