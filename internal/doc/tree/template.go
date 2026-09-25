@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"dgs-toolbox/internal/doc/country"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,9 @@ type Field struct {
 	Type FieldType `yaml:"type,omitempty" json:"type,omitempty"`
 	// Options are a FieldSelect's values, and only its.
 	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
+	// Format is how a FieldCountry is written, and only its: zh (the
+	// default), en, alpha2 or alpha3.
+	Format string `yaml:"format,omitempty" json:"format,omitempty"`
 }
 
 // FieldType is what a field's value is.
@@ -49,6 +53,9 @@ const (
 	FieldSelect FieldType = "select"
 	// FieldItem is another Item's ID.
 	FieldItem FieldType = "item"
+	// FieldCountry is a country, however it is typed — cn, CHN, China,
+	// 中国 — kept in the field's Format.
+	FieldCountry FieldType = "country"
 )
 
 // Template is one type's fields and defaults.
@@ -86,8 +93,14 @@ func (t Template) Validate() error {
 				return fmt.Errorf("type %s: key %s: pattern: %w", t.Type, f.Key, err)
 			}
 		}
+		if f.Format != "" && f.Type != FieldCountry {
+			return fmt.Errorf("type %s: key %s: format belongs to a country field", t.Type, f.Key)
+		}
+		if f.Format != "" && !country.Format(f.Format).Valid() {
+			return fmt.Errorf("type %s: key %s: format %q is not zh, en, alpha2 or alpha3", t.Type, f.Key, f.Format)
+		}
 		switch f.Type {
-		case "", FieldText, FieldDate, FieldItem:
+		case "", FieldText, FieldDate, FieldItem, FieldCountry:
 			if len(f.Options) > 0 {
 				return fmt.Errorf("type %s: key %s: options belong to a select field", t.Type, f.Key)
 			}
@@ -96,7 +109,7 @@ func (t Template) Validate() error {
 				return fmt.Errorf("type %s: key %s: a select field needs options", t.Type, f.Key)
 			}
 		default:
-			return fmt.Errorf("type %s: key %s: type %q is not text, date, select or item", t.Type, f.Key, f.Type)
+			return fmt.Errorf("type %s: key %s: type %q is not text, date, select, item or country", t.Type, f.Key, f.Type)
 		}
 		if f.Distinguishing && !f.Required {
 			return fmt.Errorf("type %s: key %s distinguishes documents, so it must be required", t.Type, f.Key)
@@ -106,7 +119,7 @@ func (t Template) Validate() error {
 		if !seen[key] {
 			return fmt.Errorf("type %s: default for %s, which is not a field", t.Type, key)
 		}
-		if err := t.field(key).check(value); err != nil {
+		if _, err := t.field(key).clean(value); err != nil {
 			return fmt.Errorf("type %s: default for %s: %w", t.Type, key, err)
 		}
 	}
@@ -166,28 +179,34 @@ func (t Template) field(key string) Field {
 	return Field{Key: key}
 }
 
-// check reports whether value suits the field's type. An Item field is
-// checked only for its shape here; that the Item exists is checked against
-// the tree.
-func (f Field) check(value string) error {
+// clean reports whether value suits the field's type, and answers it as it
+// is kept: a country in the field's Format. An Item field is checked only
+// for its shape here; that the Item exists is checked against the tree.
+func (f Field) clean(value string) (string, error) {
 	switch f.Type {
 	case FieldDate:
 		if !validDate(value) {
-			return fmt.Errorf("%s: %q is not a date written YYYY-MM-DD", f.Key, value)
+			return "", fmt.Errorf("%s: %q is not a date written YYYY-MM-DD", f.Key, value)
 		}
 	case FieldSelect:
 		for _, o := range f.Options {
 			if o == value {
-				return nil
+				return value, nil
 			}
 		}
-		return fmt.Errorf("%s: %q is not one of %s", f.Key, value, strings.Join(f.Options, ", "))
+		return "", fmt.Errorf("%s: %q is not one of %s", f.Key, value, strings.Join(f.Options, ", "))
 	case FieldItem:
 		if !idPattern.MatchString(value) {
-			return fmt.Errorf("%s: %q is not an Item ID", f.Key, value)
+			return "", fmt.Errorf("%s: %q is not an Item ID", f.Key, value)
 		}
+	case FieldCountry:
+		kept, ok := country.Normalize(value, country.Format(f.Format))
+		if !ok {
+			return "", fmt.Errorf("%s: %q is not a country dgs knows: try its code, such as CN or CHN", f.Key, value)
+		}
+		return kept, nil
 	}
-	return nil
+	return value, nil
 }
 
 var idPattern = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
