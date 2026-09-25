@@ -1,6 +1,6 @@
 // Import: open a folder from anywhere, see its PDFs as the tree of folders
 // they are in, and take them in one at a time. The folder is only read.
-import { $, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText } from "/common.js";
+import { $, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 
 const FOLDER_KEY = "dgs-doc-import-folder";
@@ -89,7 +89,7 @@ function render() {
 
 function pick(path) {
   if (path !== selected) {
-    $("frame").src = "/api/source/file?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path);
+    showPreview({ dir, path }, "/api/source/file?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path));
     say($("import-message"), "");
     suggestions = {};
     showText({ dir, path }, (answer) => {
@@ -99,8 +99,6 @@ function pick(path) {
     });
   }
   selected = path;
-  $("frame").hidden = false;
-  $("empty").hidden = true;
   render();
   drawFields();
 }
@@ -160,6 +158,7 @@ async function open(folder) {
     selected = "";
     closed.clear();
     $("frame").hidden = true;
+    $("pages").hidden = true;
     $("empty").hidden = false;
   }
   dir = answer.dir;

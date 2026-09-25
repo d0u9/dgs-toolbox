@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -78,6 +79,8 @@ type server struct {
 	// texts keeps what was read, by digest, for the life of the process.
 	// Reading is slow and the same PDF is looked at more than once.
 	texts *sync.Map
+	// pictures holds pages drawn for the preview.
+	pictures *pictures
 }
 
 // Handler serves the pages and their API.
@@ -86,7 +89,7 @@ func Handler(settings Settings) http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	s := server{root: settings.ResolvedRoot(), now: time.Now, read: settings.Read, texts: &sync.Map{}}
+	s := server{root: settings.ResolvedRoot(), now: time.Now, read: settings.Read, texts: &sync.Map{}, pictures: newPictures()}
 	if s.read == nil {
 		s.read = func(path string) (ocr.Result, error) { return ocr.Recognize(path, ocr.DefaultMaxPages) }
 	}
@@ -96,6 +99,8 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("GET /api/source/file", s.sourceFile)
 	mux.HandleFunc("GET /api/revision", s.revision)
 	mux.HandleFunc("GET /api/text", s.text)
+	mux.HandleFunc("GET /api/pages", s.pages)
+	mux.HandleFunc("GET /api/page", s.page)
 	mux.HandleFunc("POST /api/import", s.importPDF)
 	mux.HandleFunc("POST /api/revisions", s.addRevision)
 	mux.HandleFunc("POST /api/head", s.setHead)
@@ -265,30 +270,10 @@ type textJSON struct {
 // it. The PDF is named as a preview names it: a file under an opened folder
 // (dir, path) or a revision of an Item (item, digest).
 func (s server) text(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	var path string
-	if query.Get("item") != "" {
-		item, _, err := tree.FindItem(s.root, query.Get("item"))
-		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-			return
-		}
-		for _, rev := range item.Revisions {
-			if rev.Digest == query.Get("digest") {
-				path = tree.PDFPath(s.root, item.ID, rev.Digest)
-			}
-		}
-		if path == "" {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such revision"})
-			return
-		}
-	} else {
-		full, err := sourcePath(query.Get("dir"), query.Get("path"))
-		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-			return
-		}
-		path = full
+	path, err := s.pdfPath(r.URL.Query())
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
 	}
 	out := textJSON{Available: ocr.Available(), Pages: []ocr.Page{}, Suggestions: map[string]map[string]string{}}
 	digest, err := tree.FileDigest(path)
@@ -314,6 +299,24 @@ func (s server) text(w http.ResponseWriter, r *http.Request) {
 		out.Suggestions = suggest.All(templates, out.Text)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// pdfPath is the PDF a query names, as a preview names it: a file under an
+// opened folder (dir, path) or a revision of an Item (item, digest).
+func (s server) pdfPath(query url.Values) (string, error) {
+	if query.Get("item") == "" {
+		return sourcePath(query.Get("dir"), query.Get("path"))
+	}
+	item, _, err := tree.FindItem(s.root, query.Get("item"))
+	if err != nil {
+		return "", err
+	}
+	for _, rev := range item.Revisions {
+		if rev.Digest == query.Get("digest") {
+			return tree.PDFPath(s.root, item.ID, rev.Digest), nil
+		}
+	}
+	return "", errors.New("no such revision")
 }
 
 func servePDF(w http.ResponseWriter, r *http.Request, path string) {

@@ -88,3 +88,44 @@ export async function showText(query, onAnswer) {
   }
   if (onAnswer) onAnswer(answer);
 }
+
+// showPreview draws a PDF as pictures of its pages, which scroll smoothly,
+// and falls back to the browser's viewer when a page is not a scan. query
+// names the PDF as the API does; viewer is its URL for the viewer.
+let previewAsked = 0;
+export async function showPreview(query, viewer) {
+  const asked = ++previewAsked;
+  $("empty").hidden = true;
+  const useViewer = () => {
+    if (asked !== previewAsked) return;
+    $("pages").hidden = true;
+    $("pages").replaceChildren();
+    $("frame").src = viewer;
+    $("frame").hidden = false;
+  };
+  let info;
+  try {
+    const response = await fetch("/api/pages?" + new URLSearchParams(query));
+    info = await response.json();
+  } catch {
+    info = { count: 0 };
+  }
+  if (asked !== previewAsked) return;
+  if (!info.count) return useViewer();
+  $("frame").hidden = true;
+  $("frame").removeAttribute("src");
+  const pages = [];
+  for (let n = 1; n <= info.count; n++) {
+    const img = el("img", {
+      className: "page", alt: "Page " + n, loading: n <= 2 ? "eager" : "lazy", decoding: "async",
+      src: "/api/page?" + new URLSearchParams({ ...query, n, v: info.digest }),
+    });
+    // A page with no picture of its own answers 204, which an image reads as
+    // an error: the viewer draws the whole document instead.
+    img.onerror = useViewer;
+    pages.push(img);
+  }
+  $("pages").replaceChildren(...pages);
+  $("pages").scrollTop = 0;
+  $("pages").hidden = false;
+}
