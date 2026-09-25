@@ -140,7 +140,40 @@ machine, are configuration.
 
 A Template describes one type for import: the fields it fills in by default
 and the fields it asks for. Adding a PDF means picking a Template and answering
-only what it asks. Nothing classifies a document automatically.
+only what it asks. Nothing is filed automatically: the page may suggest a
+Template (see [Suggesting a type](#suggesting-a-type)), and the owner picks.
+
+A field has a `type`, which checks its value and chooses the control the page
+shows for it:
+
+- `text` — the default.
+- `date` — `YYYY-MM-DD`. A date field with no `pattern` is suggested from any
+  date the text holds (see [Dates in the text](#dates-in-the-text)).
+- `select` — one of the field's `options`.
+- `item` — the ID of another Item, such as a passport's previous passport. The
+  page picks it from the Items; export never follows it.
+
+A sidecar may also hold `notes`, free text the owner writes. Notes are never a
+key and never exported. An Item's history is its revisions; no other log is
+kept.
+
+### Suggesting a type
+
+After a PDF's text is read, the page ranks the Templates by how much the text
+looks like the text of Items already filed under each: term frequencies of the
+words, compared by cosine similarity with the Items of each type, the best
+Item of a type standing for it. The top Template is preselected when its score
+passes a threshold (named, with a default, in the algorithm's package) and the
+type has at least one Item; the owner can always pick another. It learns
+nothing and stores nothing: the texts come from the rebuildable text cache.
+
+### Dates in the text
+
+Dates are found in the text in the forms scans carry: `2026-09-25`,
+`2026.09.25`, `2026年9月25日`, and `25/09/2026`. A form with day and month in
+digits both ways is read in the order `doc.date_order` names (`DMY` by
+default). A date the Template lists under `ignore_dates` — a birthday on every
+page of a person's documents — is never suggested.
 
 A key added to Items of a type (see [Missing keys](#missing-keys)) is added to
 the type's Template, so later imports of that type ask for it.
@@ -158,7 +191,30 @@ A View has a query, a selection, and a layout.
 
 Keys are the Item's own fields (`owner`, `type`, `country`, and whatever its
 Template defines, such as `employer`), values derived from them (`year`,
-`month` and `date` from `issued_at`), and `ext`.
+`month` and `date` from `issued_at`), `revision` (the revision's number,
+counting from 1, in order added) and `ext`.
+
+A View is one YAML file under `views/`, named after its `name`:
+
+```yaml
+name: important
+query: {type: [id_card, passport], owner: jane}
+selection: head
+layout: '{country}/{owner}/important/{type}.{ext}'
+default: none              # optional: stands in for a missing key
+```
+
+A layout is rendered by three rules:
+
+- **Missing keys.** Without `default`, a missing key is refused (below). With
+  it, the key is written as that text instead.
+- **Clean segments.** Each key's value has `/`, `\`, control characters and
+  the characters Windows forbids replaced by `_`, and leading or trailing dots
+  and spaces trimmed, so a value never adds a folder or escapes the Target.
+- **Duplicates.** Two PDFs landing on one path is refused, unless the View
+  sets `dedupe: number`: then, in the
+  Items' ID order, the second and later get `_01`, `_02` before the extension,
+  so the same state always numbers the same way.
 
 ### Missing keys
 
@@ -182,6 +238,27 @@ matches its SHA-256.
 
 Export removes only files it wrote itself, recorded in a manifest at the
 Target root; anything else under the Target is never touched.
+
+Export is incremental: a file whose path and SHA-256 the manifest already
+records, and which still reads back to that digest, is not written again.
+
+The manifest, `dgs-export.json`, records for each file its path, digest, the
+Item's ID and revision, and the Item's fields at export time. That is enough
+to import a Target back into a repository: `dgs doc` reads the manifest and
+recreates the Items, matching existing ones as a merge does.
+
+## Verify
+
+`dgs doc verify <tree>` checks the repository against its sidecars and
+changes nothing. It reports:
+
+- a revision whose PDF is missing, or whose content no longer hashes to its
+  name;
+- a PDF under `items/` no sidecar names;
+- a sidecar that does not parse, names an unknown Template, or whose HEAD is
+  not one of its revisions.
+
+It exits non-zero when it reports anything.
 
 ## Metadata: sidecars are the truth
 
@@ -254,6 +331,11 @@ fields:
     pattern: '(\d{17}[\dXx])'
   - key: expires
     pattern: '[-至]\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|长期)'
+  - key: issued
+    type: date
+  - key: previous
+    type: item
+ignore_dates: [1990-01-01]  # never suggested as a date
 defaults:
   country: AU
 ```
@@ -282,7 +364,10 @@ A record has exactly one revision and no `head`.
 ## Later
 
 - **Searching Items by their text** on Browse, from text kept in the
-  rebuildable cache.
+  rebuildable cache, with "more like this" from the same similarity as
+  [Suggesting a type](#suggesting-a-type).
+- **Archive serial numbers and barcode separator pages**, if box wants them:
+  they concern paper, not filed documents.
 
 - **Snapshot** — an export into a new dated directory that is never updated,
   recording what was submitted for a visa or a claim.
