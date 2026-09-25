@@ -94,13 +94,26 @@ function pick(path) {
     suggestions = {};
     showText({ dir, path }, (answer) => {
       if (selected !== path) return;
-      suggestions = answer.suggestions || {};
+      // An earlier page's value stands: a document says what it is first.
+      for (const [type, found] of Object.entries(answer.suggestions || {})) {
+        suggestions[type] = { ...found, ...(suggestions[type] || {}) };
+      }
       suggest();
-    });
+    }).then(() => { if (selected === path) readAhead(path); });
   }
   selected = path;
   render();
   drawFields();
+}
+
+// readAhead has the next PDFs not yet in the tree read while this one is
+// looked at, so their text is there when they are picked.
+const AHEAD = 3;
+function readAhead(path) {
+  const order = files.map((f) => f.path);
+  const next = order.slice(order.indexOf(path) + 1)
+    .filter((p) => !files.find((f) => f.path === p).item).slice(0, AHEAD);
+  if (next.length) post("/api/ahead", { dir, paths: next }).catch(() => {});
 }
 
 function drawFields() {

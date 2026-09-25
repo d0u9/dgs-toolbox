@@ -21,6 +21,8 @@ import (
 	"dgs-toolbox/internal/doc/ocr"
 	"dgs-toolbox/internal/doc/pdflist"
 	"dgs-toolbox/internal/doc/suggest"
+	"dgs-toolbox/internal/doc/textcache"
+	"dgs-toolbox/internal/doc/textread"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/webfile"
 	"dgs-toolbox/internal/webui"
@@ -34,13 +36,19 @@ type Settings struct {
 	Addr string
 	// Root is the tree the page lists. Empty is the working directory.
 	Root string
-	// Read recognises a PDF's text. Nil uses ocr.Recognize.
-	Read func(path string) (ocr.Result, error)
+	// ReadPage recognises one page of a PDF. Nil uses ocr.RecognizePage.
+	ReadPage textread.ReadFunc
+	// CacheDir keeps the text read, by digest. Empty keeps it nowhere.
+	CacheDir string
 }
 
 // SettingsFrom reads the server settings out of the configuration.
 func SettingsFrom(global config.Config) Settings {
-	return Settings{Addr: global.DocWebAddr(), Root: global.DocRoot()}
+	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot()}
+	if dir, err := global.DocCacheDir(); err == nil {
+		settings.CacheDir = dir
+	}
+	return settings
 }
 
 // ResolvedRoot is the folder actually listed.
@@ -74,11 +82,9 @@ type stateJSON struct {
 type server struct {
 	root string
 	now  func() time.Time
-	// read is what recognises a PDF's text: ocr.Recognize, or a stand-in.
-	read func(path string) (ocr.Result, error)
-	// texts keeps what was read, by digest, for the life of the process.
-	// Reading is slow and the same PDF is looked at more than once.
-	texts *sync.Map
+	// reader reads PDFs' text through a queue and a cache: the page being
+	// looked at first, pages wanted next in advance, each page once.
+	reader *textread.Reader
 	// pictures holds pages drawn for the preview.
 	pictures *pictures
 }
@@ -89,9 +95,13 @@ func Handler(settings Settings) http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	s := server{root: settings.ResolvedRoot(), now: time.Now, read: settings.Read, texts: &sync.Map{}, pictures: newPictures()}
-	if s.read == nil {
-		s.read = func(path string) (ocr.Result, error) { return ocr.Recognize(path, ocr.DefaultMaxPages) }
+	read := settings.ReadPage
+	if read == nil {
+		read = ocr.RecognizePage
+	}
+	s := server{
+		root: settings.ResolvedRoot(), now: time.Now, pictures: newPictures(),
+		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
@@ -99,6 +109,7 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("GET /api/source/file", s.sourceFile)
 	mux.HandleFunc("GET /api/revision", s.revision)
 	mux.HandleFunc("GET /api/text", s.text)
+	mux.HandleFunc("POST /api/ahead", s.ahead)
 	mux.HandleFunc("GET /api/pages", s.pages)
 	mux.HandleFunc("GET /api/page", s.page)
 	mux.HandleFunc("POST /api/import", s.importPDF)
@@ -259,8 +270,12 @@ func (s server) revision(w http.ResponseWriter, r *http.Request) {
 }
 
 type textJSON struct {
-	Available   bool                             `json:"available"`
-	Pages       []ocr.Page                       `json:"pages"`
+	Available bool `json:"available"`
+	// Count is the PDF's pages, and MaxPages how many of them are read.
+	Count    int      `json:"count"`
+	MaxPages int      `json:"maxPages"`
+	Page     ocr.Page `json:"page"`
+	// Suggestions are what each Template's patterns find on this page.
 	Suggestions map[string]map[string]suggestion `json:"suggestions"`
 	Error       string                           `json:"error,omitempty"`
 }
@@ -274,50 +289,74 @@ type suggestion struct {
 	Line  int    `json:"line"`
 }
 
-// text is a PDF's recognised text, and what each Template's patterns find in
-// it. The PDF is named as a preview names it: a file under an opened folder
-// (dir, path) or a revision of an Item (item, digest).
+// text is one page of a PDF's text, counting from 0, and what each Template's
+// patterns find on it. The PDF is named as a preview names it.
 func (s server) text(w http.ResponseWriter, r *http.Request) {
-	path, err := s.pdfPath(r.URL.Query())
+	query := r.URL.Query()
+	path, err := s.pdfPath(query)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	out := textJSON{Available: ocr.Available(), Pages: []ocr.Page{}, Suggestions: map[string]map[string]suggestion{}}
+	n, _ := strconv.Atoi(query.Get("page"))
 	digest, err := tree.FileDigest(path)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	result, cached := s.texts.Load(digest)
-	if !cached {
-		read, err := s.read(path)
-		if err != nil {
-			out.Error = err.Error()
-			writeJSON(w, http.StatusOK, out)
-			return
-		}
-		s.texts.Store(digest, read)
-		result = read
+	out := textJSON{Available: true, MaxPages: s.reader.MaxPages(), Page: ocr.Page{Lines: []ocr.Line{}},
+		Suggestions: map[string]map[string]suggestion{}}
+	page, count, err := s.reader.Page(r.Context(), path, digest, n)
+	if err != nil {
+		out.Available = !errors.Is(err, ocr.ErrUnavailable)
+		out.Error = err.Error()
+		writeJSON(w, http.StatusOK, out)
+		return
 	}
-	out.Available = true
-	read := result.(ocr.Result)
-	out.Pages = read.Pages
+	out.Page, out.Count = page, count
 	if templates, err := tree.LoadTemplates(s.root); err == nil {
+		read := ocr.Result{Pages: []ocr.Page{page}}
 		for kind, found := range suggest.All(templates, read.Text()) {
 			out.Suggestions[kind] = map[string]suggestion{}
 			for key, m := range found {
 				at := suggestion{Value: m.Value, Page: -1, Line: -1}
-				page, line, ok := read.Locate(m.Start)
-				endPage, endLine, endOK := read.Locate(m.End - 1)
-				if ok && endOK && page == endPage && line == endLine {
-					at.Page, at.Line = page, line
+				_, line, ok := read.Locate(m.Start)
+				_, endLine, endOK := read.Locate(m.End - 1)
+				if ok && endOK && line == endLine {
+					at.Page, at.Line = n, line
 				}
 				out.Suggestions[kind][key] = at
 			}
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// ahead reads PDFs in an opened folder in advance, in the order given: the
+// ones the reader is likely to pick next. It answers at once.
+func (s server) ahead(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Dir   string   `json:"dir"`
+		Paths []string `json:"paths"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	var paths []string
+	for _, p := range request.Paths {
+		if full, err := sourcePath(request.Dir, p); err == nil {
+			paths = append(paths, full)
+		}
+	}
+	// Digesting a large scan takes a moment; nobody waits for it.
+	go func() {
+		for _, path := range paths {
+			if digest, err := tree.FileDigest(path); err == nil {
+				s.reader.Ahead(path, digest)
+			}
+		}
+	}()
+	writeJSON(w, http.StatusOK, map[string]int{"queued": len(paths)})
 }
 
 // pdfPath is the PDF a query names, as a preview names it: a file under an

@@ -64,40 +64,65 @@ export function say(node, text, error) {
 // for a PDF no longer shown is dropped.
 let textAsked = 0;
 let textPages = [];
+// showText asks for the pages one at a time, the first first, and lays each
+// on the page as it comes, so the first page's text does not wait for the
+// last. onAnswer is called with each page's suggestions, in page order.
 export async function showText(query, onAnswer) {
   const asked = ++textAsked;
   textPages = [];
-  say($("text-message"), "Reading the text…");
-  let answer;
-  try {
-    const response = await fetch("/api/text?" + new URLSearchParams(query));
-    answer = await response.json();
-    if (!response.ok) throw new Error(answer.error || response.statusText);
-  } catch (err) {
-    answer = { error: err.message, pages: [], suggestions: {} };
-  }
-  if (asked !== textAsked) return;
-  textPages = answer.pages || [];
-  const lines = textPages.reduce((n, p) => n + p.lines.length, 0);
-  if (answer.error) {
-    say($("text-message"), answer.error, !answer.error.includes("needs macOS"));
-  } else if (!lines) {
-    say($("text-message"), "No text found on the page.");
-  } else {
-    const recognised = textPages.some((p) => p.source === "recognised");
-    say($("text-message"), (recognised ? "Text recognised on the page" : "The PDF's own text") +
-      ": select it on the page to copy it.");
-  }
   layText();
-  if (onAnswer) onAnswer(answer);
+  say($("text-message"), "Reading the text…");
+  const ask = async (n) => {
+    try {
+      const response = await fetch("/api/text?" + new URLSearchParams({ ...query, page: n }));
+      const answer = await response.json();
+      if (!response.ok) throw new Error(answer.error || response.statusText);
+      return answer;
+    } catch (err) {
+      return { error: err.message };
+    }
+  };
+  const first = await ask(0);
+  if (asked !== textAsked) return;
+  if (first.error) {
+    say($("text-message"), first.error, first.available !== false);
+    return;
+  }
+  const total = Math.min(first.count, first.maxPages);
+  // The rest are asked for together, so they queue ahead of reading in
+  // advance at once rather than one after another.
+  const rest = [];
+  for (let n = 1; n < total; n++) rest.push(ask(n));
+  const answers = [first];
+  let shown = 0;
+  const show = (answer, n) => {
+    textPages[n] = answer.page;
+    layText(n);
+    if (onAnswer) onAnswer(answer);
+    shown++;
+    if (shown < total) say($("text-message"), `Reading the text: ${shown} of ${total} pages…`);
+  };
+  show(first, 0);
+  for (let i = 0; i < rest.length; i++) {
+    const answer = await rest[i];
+    if (asked !== textAsked) return;
+    if (answer.error) continue;
+    answers.push(answer);
+    show(answer, i + 1);
+  }
+  const lines = textPages.reduce((sum, p) => sum + (p ? p.lines.length : 0), 0);
+  const recognised = answers.some((a) => a.page.source === "recognised");
+  say($("text-message"), !lines ? "No text found on the page."
+    : (recognised ? "Text recognised on the page" : "The PDF's own text") + ": select it on the page to copy it.");
 }
 
 // layText puts each page's lines over its picture. A line is sized to its box:
 // the font to its height, then stretched to its width, so a selection covers
 // the words it selects.
-function layText() {
+function layText(only) {
   for (const sheet of $("pages").querySelectorAll(".sheet")) {
     const n = Number(sheet.dataset.page);
+    if (only !== undefined && n !== only) continue;
     const layer = sheet.querySelector(".text-layer");
     const page = textPages[n];
     layer.replaceChildren(...(page ? page.lines.map((line, i) => el("span", {

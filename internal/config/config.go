@@ -580,6 +580,7 @@ func LoadPath(path string) (Config, error) {
 		{"box.inbox", &config.Box.Inbox},
 		{"box.cache_dir", &config.Box.CacheDir},
 		{"doc.root", &config.Doc.Root},
+		{"doc.cache_dir", &config.Doc.CacheDir},
 	} {
 		if *field.value == "" {
 			continue

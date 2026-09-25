@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -162,18 +163,21 @@ func TestPagesAreServed(t *testing.T) {
 
 func TestTextAndSuggestions(t *testing.T) {
 	root, scans := setup(t, true)
+	var mu sync.Mutex
 	reads := 0
-	h := Handler(Settings{Root: root, Read: func(path string) (ocr.Result, error) {
+	h := Handler(Settings{Root: root, CacheDir: t.TempDir(), ReadPage: func(path string, page int) (ocr.Page, int, error) {
+		mu.Lock()
 		reads++
-		return ocr.Result{Pages: []ocr.Page{{Source: ocr.SourceRecognised, Lines: []ocr.Line{
-			{Text: "有效期限 2016.01.01-2036.01.01"}, {Text: "11010519491231002X"}}}}}, nil
+		mu.Unlock()
+		return ocr.Page{Source: ocr.SourceRecognised, Lines: []ocr.Line{
+			{Text: "有效期限 2016.01.01-2036.01.01"}, {Text: "11010519491231002X"}}}, 2, nil
 	}})
-	target := "/api/text?dir=" + url.QueryEscape(scans) + "&path=jane/licence.pdf"
+	target := "/api/text?dir=" + url.QueryEscape(scans) + "&path=jane/licence.pdf&page=1"
 	for range 2 {
 		var out textJSON
 		must(t, json.Unmarshal(do(h, "GET", target, "").Body.Bytes(), &out))
 		got := out.Suggestions["id_card"]
-		if !out.Available || got["number"] != (suggestion{"11010519491231002X", 0, 1}) || got["expires"] != (suggestion{"2036.01.01", 0, 0}) {
+		if !out.Available || out.Count != 2 || got["number"] != (suggestion{"11010519491231002X", 1, 1}) || got["expires"] != (suggestion{"2036.01.01", 1, 0}) {
 			t.Fatalf("out = %+v", out)
 		}
 	}
@@ -185,9 +189,30 @@ func TestTextAndSuggestions(t *testing.T) {
 	}
 }
 
+func TestAheadReadsInTheBackground(t *testing.T) {
+	root, scans := setup(t, true)
+	read := make(chan string, 8)
+	h := Handler(Settings{Root: root, CacheDir: t.TempDir(), ReadPage: func(path string, page int) (ocr.Page, int, error) {
+		read <- filepath.Base(path)
+		return ocr.Page{}, 1, nil
+	}})
+	rec := do(h, "POST", "/api/ahead", `{"dir":`+q(scans)+`,"paths":["jane/renewed.pdf","notes.txt","../x.pdf"]}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"queued":1`) {
+		t.Fatalf("ahead: %d %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case got := <-read:
+		if got != "renewed.pdf" {
+			t.Fatalf("read %s", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("nothing read in advance")
+	}
+}
+
 func TestTextWhereRecognitionIsMissing(t *testing.T) {
 	root, scans := setup(t, true)
-	h := Handler(Settings{Root: root, Read: func(string) (ocr.Result, error) { return ocr.Result{}, ocr.ErrUnavailable }})
+	h := Handler(Settings{Root: root, ReadPage: func(string, int) (ocr.Page, int, error) { return ocr.Page{}, 0, ocr.ErrUnavailable }})
 	var out textJSON
 	must(t, json.Unmarshal(do(h, "GET", "/api/text?dir="+url.QueryEscape(scans)+"&path=jane/licence.pdf", "").Body.Bytes(), &out))
 	if out.Error == "" || out.Available {

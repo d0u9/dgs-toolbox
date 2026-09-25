@@ -111,11 +111,29 @@ func Recognize(path string, maxPages int) (Result, error) {
 	if maxPages <= 0 {
 		maxPages = DefaultMaxPages
 	}
-	raw, err := recognize(path, maxPages)
-	if err != nil {
-		return Result{}, err
+	var result Result
+	for n := 0; n < maxPages; n++ {
+		page, count, err := RecognizePage(path, n)
+		if err != nil {
+			return Result{}, err
+		}
+		result.Pages = append(result.Pages, page)
+		if n+1 >= count {
+			break
+		}
 	}
-	return decode(raw)
+	return result, nil
+}
+
+// RecognizePage reads one page, counting from 0, and says how many pages the
+// PDF has. Reading a page at a time lets the page being looked at be read
+// first and shown as soon as it is.
+func RecognizePage(path string, page int) (Page, int, error) {
+	raw, err := recognize(path, page)
+	if err != nil {
+		return Page{}, 0, err
+	}
+	return decodePage(raw)
 }
 
 // rawLine is a line as the bridge reports it. Space "display" is Vision's:
@@ -150,30 +168,37 @@ func placed(raw rawLine) Box {
 	return top
 }
 
-// decode reads the bridge's one JSON answer: the pages, or an error.
-func decode(raw []byte) (Result, error) {
+type rawPage struct {
+	Lines  []rawLine `json:"lines"`
+	Source Source    `json:"source"`
+}
+
+func (p rawPage) page() Page {
+	page := Page{Source: p.Source, Lines: make([]Line, 0, len(p.Lines))}
+	for _, l := range p.Lines {
+		if text := strings.TrimSpace(l.Text); text != "" {
+			page.Lines = append(page.Lines, Line{Text: text, Box: placed(l)})
+		}
+	}
+	return page
+}
+
+// decodePage reads the bridge's one JSON answer: a page and the page count,
+// or an error.
+func decodePage(raw []byte) (Page, int, error) {
 	var answer struct {
-		Pages []struct {
-			Lines  []rawLine `json:"lines"`
-			Source Source    `json:"source"`
-		} `json:"pages"`
-		Error string `json:"error"`
+		Count int      `json:"count"`
+		Page  *rawPage `json:"page"`
+		Error string   `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &answer); err != nil {
-		return Result{}, fmt.Errorf("text recognition: %w", err)
+		return Page{}, 0, fmt.Errorf("text recognition: %w", err)
 	}
 	if answer.Error != "" {
-		return Result{}, errors.New(answer.Error)
+		return Page{}, 0, errors.New(answer.Error)
 	}
-	result := Result{Pages: make([]Page, 0, len(answer.Pages))}
-	for _, p := range answer.Pages {
-		page := Page{Source: p.Source, Lines: make([]Line, 0, len(p.Lines))}
-		for _, l := range p.Lines {
-			if text := strings.TrimSpace(l.Text); text != "" {
-				page.Lines = append(page.Lines, Line{Text: text, Box: placed(l)})
-			}
-		}
-		result.Pages = append(result.Pages, page)
+	if answer.Page == nil {
+		return Page{}, answer.Count, fmt.Errorf("text recognition: no such page")
 	}
-	return result, nil
+	return answer.Page.page(), answer.Count, nil
 }

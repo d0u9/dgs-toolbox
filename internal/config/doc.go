@@ -1,7 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -12,6 +15,9 @@ type Doc struct {
 	// working directory.
 	Root string `json:"root"`
 	Web  DocWeb `json:"web"`
+	// CacheDir is where the discardable cache lives: the text read off PDFs,
+	// by digest. Empty is the user cache directory.
+	CacheDir string `json:"cache_dir"`
 }
 
 // DocWeb is where the doc pages listen. Only the port is configurable.
@@ -39,4 +45,18 @@ func (c Config) DocWebAddr() string {
 		port = DefaultDocWebPort
 	}
 	return net.JoinHostPort(DefaultDocWebHost, strconv.Itoa(port))
+}
+
+// DocCacheDir is doc.cache_dir, or dgs/doc under the user cache directory. It
+// is one cache for every tree: what is kept is keyed by content, so two trees
+// holding the same PDF share its text.
+func (c Config) DocCacheDir() (string, error) {
+	if c.Doc.CacheDir != "" {
+		return c.Doc.CacheDir, nil
+	}
+	userCache, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("locate the user cache directory: %w", err)
+	}
+	return filepath.Join(userCache, "dgs", "doc"), nil
 }
