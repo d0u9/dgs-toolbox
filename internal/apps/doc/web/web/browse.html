@@ -28,10 +28,12 @@
 <p id="error" class="message error" hidden></p>
 <main class="work">
   <section class="list">
-    <input id="filter" type="search" placeholder="Filter" spellcheck="false" autocomplete="off">
+    <input id="filter" type="search" placeholder="Filter by fields or text" spellcheck="false" autocomplete="off">
     <div class="scroll">
       <h2 class="panel-head">Items <span id="count" class="count numeric"></span></h2>
       <ul id="items" class="rows"></ul>
+      <p id="unread" class="message" hidden><span id="unread-count"></span>
+        <button id="read-all" class="small-inline" type="button">Read their text</button></p>
       <p id="none" class="message" hidden>Nothing is kept yet. Take PDFs in on <a href="/import/">Import</a>.</p>
     </div>
   </section>
@@ -65,6 +67,10 @@
       <p id="notes-message" class="message"></p>
       <button class="action" type="submit">Save notes</button>
     </form>
+    <h2 class="panel-head">More like this</h2>
+    <button id="more" class="small-inline" type="button">Find similar Items</button>
+    <ul id="similar" class="rows"></ul>
+    <p id="similar-message" class="message"></p>
     <h2 class="panel-head">Revisions</h2>
     <ul id="revisions" class="rows"></ul>
     <p id="head-message" class="message"></p>

@@ -151,3 +151,4 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .merge-rows .error { color: var(--error); }
 .merge-choice { display: flex; gap: 6px; align-items: baseline; margin: 2px 0 0 4px; }
 .merge-choice pre { margin: 0; font-size: 12px; white-space: pre-wrap; }
+.snippet { font-style: italic; }

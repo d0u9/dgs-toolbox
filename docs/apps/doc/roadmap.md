@@ -18,6 +18,7 @@ step at a time as it grows. The page comes first; what it writes follows.
 | M5 | Missing keys on the page: the list of what is missing, filling keys in | done |
 | M6 | Export from the page: the plan, dry run, then writing to a folder Target; incremental | done |
 | M7 | Merging a sub-tree created with `init`, with conflicts resolved on the page; a Target imports back through the same matching | done |
+| M8 | Searching Items by their text on Browse, and "more like this" | done |
 
 The layout and formats are in [`index.md`](index.md#layout-on-disk).
 

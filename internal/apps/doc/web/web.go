@@ -144,6 +144,9 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/export", s.exportRun)
 	mux.HandleFunc("POST /api/merge/plan", s.mergePlan)
 	mux.HandleFunc("POST /api/merge", s.mergeRun)
+	mux.HandleFunc("GET /api/search", s.search)
+	mux.HandleFunc("GET /api/similar", s.similar)
+	mux.HandleFunc("POST /api/read-all", s.readAll)
 	webui.Mount(mux)
 	// The dialog only chooses a folder to read; nothing it reaches is changed.
 	webfile.Mount(mux, webfile.Options{Root: s.root})
