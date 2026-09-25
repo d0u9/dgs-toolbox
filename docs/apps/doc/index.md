@@ -57,7 +57,7 @@ pages are read.
 
 Recognising a page takes about a second, so pages are read through a queue:
 
-- one page at a time, and each is shown as soon as it is read;
+- page by page, two at once, and each is shown as soon as it is read;
 - the page being looked at first, then the rest of its PDF, ahead of anything
   read in advance;
 - while a PDF is looked at on Import, the next three not yet in the tree are
