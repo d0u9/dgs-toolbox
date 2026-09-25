@@ -1,22 +1,24 @@
-// Package web serves the dgs doc page. At M1 it lists the PDFs under the tree
-// and shows one; it writes nothing. The design is docs/apps/doc/.
+// Package web serves the dgs doc page: the loose PDFs in the tree, the Items
+// kept in it, and importing one into the other. The design is docs/apps/doc/.
 package web
 
 import (
 	"embed"
 	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/doc/pdflist"
+	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/webui"
 )
 
@@ -46,10 +48,27 @@ func (s Settings) ResolvedRoot() string {
 	return "."
 }
 
-type fileJSON struct {
+type looseJSON struct {
 	Path     string    `json:"path"`
 	Size     int64     `json:"size"`
 	Modified time.Time `json:"modified"`
+	// Item is the Item already keeping this PDF, when one does.
+	Item string `json:"item,omitempty"`
+}
+
+type stateJSON struct {
+	Root      string          `json:"root"`
+	Tree      bool            `json:"tree"`
+	Error     string          `json:"error,omitempty"`
+	Templates []tree.Template `json:"templates"`
+	Items     []tree.Item     `json:"items"`
+	Loose     []looseJSON     `json:"loose"`
+}
+
+type server struct {
+	root string
+	fsys fs.FS
+	now  func() time.Time
 }
 
 // Handler serves the page and its API.
@@ -59,54 +78,12 @@ func Handler(settings Settings) http.Handler {
 		panic(err)
 	}
 	root := settings.ResolvedRoot()
-	tree := os.DirFS(root)
+	s := server{root: root, fsys: os.DirFS(root), now: time.Now}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"root": root})
-	})
-	mux.HandleFunc("GET /api/files", func(w http.ResponseWriter, _ *http.Request) {
-		files, err := pdflist.List(tree)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		out := make([]fileJSON, 0, len(files))
-		for _, f := range files {
-			out = append(out, fileJSON{Path: f.Path, Size: f.Size, Modified: f.Modified})
-		}
-		writeJSON(w, http.StatusOK, out)
-	})
-	// A file is served only when the listing names it, so a path cannot reach
-	// outside the tree or at anything that is not a listed PDF.
-	mux.HandleFunc("GET /api/file", func(w http.ResponseWriter, r *http.Request) {
-		want := r.URL.Query().Get("path")
-		files, err := pdflist.List(tree)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		for _, f := range files {
-			if f.Path != want {
-				continue
-			}
-			file, err := tree.Open(f.Path)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusNotFound)
-				return
-			}
-			defer file.Close()
-			seeker, ok := file.(io.ReadSeeker)
-			if !ok {
-				http.Error(w, "file cannot be served", http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/pdf")
-			w.Header().Set("Cache-Control", "no-cache")
-			http.ServeContent(w, r, "", f.Modified, seeker)
-			return
-		}
-		http.Error(w, "no such PDF in the tree", http.StatusNotFound)
-	})
+	mux.HandleFunc("GET /api/state", s.state)
+	mux.HandleFunc("GET /api/file", s.file)
+	mux.HandleFunc("GET /api/revision", s.revision)
+	mux.HandleFunc("POST /api/import", s.importPDF)
 	webui.Mount(mux)
 	files := http.FileServerFS(static)
 	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +91,168 @@ func Handler(settings Settings) http.Handler {
 		files.ServeHTTP(w, r)
 	}))
 	return mux
+}
+
+// loose is every PDF outside the items folder: what import offers.
+func (s server) loose() ([]pdflist.File, error) {
+	files, err := pdflist.List(s.fsys)
+	if err != nil {
+		return nil, err
+	}
+	out := files[:0]
+	for _, f := range files {
+		if !strings.HasPrefix(f.Path, tree.ItemsDir+"/") {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
+func (s server) state(w http.ResponseWriter, _ *http.Request) {
+	out := stateJSON{Root: s.root, Templates: []tree.Template{}, Items: []tree.Item{}, Loose: []looseJSON{}}
+	var problems []string
+	if err := tree.Require(s.root); err == nil {
+		out.Tree = true
+		if out.Templates, err = tree.LoadTemplates(s.root); err != nil {
+			problems = append(problems, err.Error())
+			out.Templates = []tree.Template{}
+		}
+		if out.Items, err = tree.LoadItems(s.root); err != nil {
+			problems = append(problems, err.Error())
+		}
+		if out.Items == nil {
+			out.Items = []tree.Item{}
+		}
+	} else if !errors.Is(err, tree.ErrNotATree) {
+		problems = append(problems, err.Error())
+	}
+	kept := map[string]string{}
+	for _, item := range out.Items {
+		for _, r := range item.Revisions {
+			kept[r.Digest] = item.ID
+		}
+	}
+	files, err := s.loose()
+	if err != nil {
+		problems = append(problems, err.Error())
+	}
+	for _, f := range files {
+		entry := looseJSON{Path: f.Path, Size: f.Size, Modified: f.Modified}
+		if len(kept) > 0 {
+			if digest, err := tree.FileDigest(filepath.Join(s.root, filepath.FromSlash(f.Path))); err == nil {
+				entry.Item = kept[digest]
+			}
+		}
+		out.Loose = append(out.Loose, entry)
+	}
+	out.Error = strings.Join(problems, "; ")
+	writeJSON(w, http.StatusOK, out)
+}
+
+// file serves a loose PDF, only when the listing names it, so a path cannot
+// reach outside the tree or at anything that is not a listed PDF.
+func (s server) file(w http.ResponseWriter, r *http.Request) {
+	want := r.URL.Query().Get("path")
+	files, err := s.loose()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, f := range files {
+		if f.Path == want {
+			servePDF(w, r, filepath.Join(s.root, filepath.FromSlash(f.Path)))
+			return
+		}
+	}
+	http.Error(w, "no such PDF in the tree", http.StatusNotFound)
+}
+
+// revision serves an Item's PDF, looked up through its sidecar.
+func (s server) revision(w http.ResponseWriter, r *http.Request) {
+	id, digest := r.URL.Query().Get("item"), r.URL.Query().Get("digest")
+	items, err := tree.LoadItems(s.root)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, item := range items {
+		if item.ID != id {
+			continue
+		}
+		for _, rev := range item.Revisions {
+			if rev.Digest == digest {
+				servePDF(w, r, tree.PDFPath(s.root, item.ID, rev.Digest))
+				return
+			}
+		}
+	}
+	http.Error(w, "no such revision", http.StatusNotFound)
+}
+
+func servePDF(w http.ResponseWriter, r *http.Request, path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeContent(w, r, "", info.ModTime(), file)
+}
+
+type importJSON struct {
+	Path   string            `json:"path"`
+	Type   string            `json:"type"`
+	Fields map[string]string `json:"fields"`
+}
+
+func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
+	var request importJSON
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	files, err := s.loose()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	source := ""
+	for _, f := range files {
+		if f.Path == request.Path {
+			source = filepath.Join(s.root, filepath.FromSlash(f.Path))
+		}
+	}
+	if source == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such PDF in the tree"})
+		return
+	}
+	templates, err := tree.LoadTemplates(s.root)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	for _, t := range templates {
+		if t.Type != request.Type {
+			continue
+		}
+		item, err := tree.Import(r.Context(), tree.ImportRequest{
+			Root: s.root, Source: source, Template: t, Fields: request.Fields, Now: s.now(),
+		})
+		if err != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+		return
+	}
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "no Template for type " + request.Type})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

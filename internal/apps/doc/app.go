@@ -9,7 +9,8 @@ import (
 	"dgs-toolbox/internal/tui"
 )
 
-// New returns the Doc app definition: `dgs doc`, which starts the local page.
+// New returns the Doc app definition: `dgs doc`, which starts the local page,
+// and `dgs doc init`.
 func New() tui.App {
 	return tui.App{
 		ID:          "doc",
@@ -17,6 +18,13 @@ func New() tui.App {
 		Description: "Important documents: identity, licences, records",
 		Direct:      true,
 		Commands:    []tui.Command{command()},
+		Actions: []tui.Action{{
+			ID:            "init",
+			Usage:         "[<dir>]",
+			Description:   "Make a folder a doc tree, by writing its marker and an example Template.",
+			MaxArgs:       1,
+			RunWithConfig: initAction,
+		}},
 	}
 }
 

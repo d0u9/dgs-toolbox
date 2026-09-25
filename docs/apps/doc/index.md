@@ -144,11 +144,64 @@ the full tree:
 
 Conflicts are resolved by hand on the page before the merge completes.
 
+## Layout on disk
+
+```text
+<tree>/
+  dgs-doctree.yaml          # the marker: dgs doc init writes it, nothing else does
+  templates/
+    id_card.yaml            # one Template per type
+  views/                    # one View per file (M4)
+  items/
+    <item-id>/
+      item.dgs-item.yaml    # the sidecar: everything known about the Item
+      <sha256>.pdf          # one PDF per revision, named by its content
+```
+
+- The marker is `dgs-doctree.yaml`, not `dgs-doc.yaml`, which reads too much
+  like box's `*.dgs-doc.yaml` sidecars. It is visible, as box's is.
+- An Item's folder is named by its ID, so changing `owner` or `country` moves
+  nothing. Readable paths are what a View exports.
+- A PDF is named by its SHA-256, so the same file is stored once and merging
+  matches by digest.
+- An export writes `dgs-export.json` in the Target (M6).
+- PDFs anywhere else in the tree are loose: they are what import offers. Import
+  copies one in and leaves the original where it was.
+
+## Template format
+
+```yaml
+type: id_card
+kind: document            # document: revisions and HEAD; record: one PDF
+fields:
+  - key: owner
+    required: true
+    distinguishing: true  # type + the distinguishing fields are unique
+  - key: country
+    required: true
+    distinguishing: true
+  - key: number
+  - key: expires
+defaults:
+  country: AU
+```
+
+The file is named after its `type`. The sidecar:
+
+```yaml
+id: 01J8...               # ULID
+type: id_card
+kind: document
+fields: {owner: jane, country: AU}
+head: <sha256>            # documents only
+revisions:
+  - {digest: <sha256>, added: 2026-09-25T10:00:00+10:00, source: scan.pdf}
+```
+
+A record has exactly one revision and no `head`.
+
 ## Open questions
 
-- **File names** — the marker, sidecar and manifest names. `dgs box` already
-  uses `*.dgs-doc.yaml` for its sidecars, so doc's must differ.
-- **Template format.**
 - **Whether box keeps `identity` and `insurance`** once doc exists — decided
   after doc is built.
 
