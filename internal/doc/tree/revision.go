@@ -139,7 +139,7 @@ func taken(t Template, items []Item, fields map[string]string, except string) (I
 		return Item{}, false
 	}
 	for _, item := range items {
-		if item.ID != except && item.Kind == KindDocument && item.Type == t.Type && sameDistinguishing(t, item.Fields, fields) {
+		if item.ID != except && item.Kind == KindDocument && item.Type == t.Type && SameDistinguishing(t, item.Fields, fields) {
 			return item, true
 		}
 	}

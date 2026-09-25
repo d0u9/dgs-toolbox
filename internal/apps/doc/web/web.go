@@ -98,8 +98,8 @@ type server struct {
 	// pictures holds pages drawn for the preview.
 	pictures *pictures
 	targets  map[string]string
-	// exporting is held while an export writes, so two never share a Target.
-	exporting *sync.Mutex
+	// writing is held while an export or a merge writes, so two never overlap.
+	writing *sync.Mutex
 }
 
 // Handler serves the pages and their API.
@@ -117,7 +117,7 @@ func Handler(settings Settings) http.Handler {
 	}
 	s := server{
 		root: settings.ResolvedRoot(), now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder,
-		targets: settings.Targets, exporting: &sync.Mutex{},
+		targets: settings.Targets, writing: &sync.Mutex{},
 		store:  textcache.Store{Dir: settings.CacheDir},
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
 	}
@@ -142,6 +142,8 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("GET /api/targets", s.targetList)
 	mux.HandleFunc("POST /api/export/plan", s.exportPlan)
 	mux.HandleFunc("POST /api/export", s.exportRun)
+	mux.HandleFunc("POST /api/merge/plan", s.mergePlan)
+	mux.HandleFunc("POST /api/merge", s.mergeRun)
 	webui.Mount(mux)
 	// The dialog only chooses a folder to read; nothing it reaches is changed.
 	webfile.Mount(mux, webfile.Options{Root: s.root})
@@ -150,7 +152,7 @@ func Handler(settings Settings) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
-	for _, page := range []string{"browse", "import", "views"} {
+	for _, page := range []string{"browse", "import", "views", "merge"} {
 		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
 		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
 	}
