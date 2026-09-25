@@ -126,7 +126,7 @@ async function start() {
   const types = await api.types();
   state.types = types.types;
   assertTypeKeysAreFree();
-  wireQueueResize();
+  await wireQueueResize();
   drawTypes();
   await loadTags();
   await reload();
@@ -225,7 +225,7 @@ async function drawRejected() {
     view.append(name, detail);
     const restore = document.createElement('button');
     restore.type = 'button';
-    restore.className = 'rejected-restore';
+    restore.className = 'button small-button rejected-restore';
     restore.textContent = 'Restore';
     restore.title = 'Put it back in the inbox list';
     restore.addEventListener('click', async () => {
@@ -846,66 +846,21 @@ function wireFields() {
 // page that cannot store it simply starts at the default.
 const QUEUE_WIDTH = { key: 'dgs.box.queue.width', min: 220, fallback: 280, step: 24 };
 
-function wireQueueResize() {
+// The inbox is as wide as the person drags it, with the shared splitter;
+// double-click goes back to the default and the arrow keys move it.
+async function wireQueueResize() {
+  const { splitter: resize } = await import('/ui/splitter.js');
   const main = document.querySelector('.intake-main');
-  const handle = el('queue-resize');
-  const max = () => Math.max(QUEUE_WIDTH.min, Math.floor(main.clientWidth * 0.5));
-  const apply = (width, keep) => {
-    const clamped = Math.round(Math.min(Math.max(width, QUEUE_WIDTH.min), max()));
-    main.style.setProperty('--queue-width', `${clamped}px`);
-    handle.setAttribute('aria-valuenow', String(clamped));
-    handle.setAttribute('aria-valuemin', String(QUEUE_WIDTH.min));
-    handle.setAttribute('aria-valuemax', String(max()));
-    if (keep) {
-      try {
-        localStorage.setItem(QUEUE_WIDTH.key, String(clamped));
-      } catch {
-        // Kept for this page load only.
-      }
-    }
-    return clamped;
-  };
-  let saved = NaN;
-  try {
-    saved = Number(localStorage.getItem(QUEUE_WIDTH.key));
-  } catch {
-    // Nothing stored is the default width.
-  }
-  let width = apply(Number.isFinite(saved) && saved > 0 ? saved : QUEUE_WIDTH.fallback, false);
-
-  handle.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    handle.setPointerCapture(event.pointerId);
-    const left = main.getBoundingClientRect().left;
-    document.body.classList.add('resizing');
-    const follow = (move) => {
-      width = apply(move.clientX - left, false);
-    };
-    const finish = () => {
-      handle.removeEventListener('pointermove', follow);
-      document.body.classList.remove('resizing');
-      width = apply(width, true);
-    };
-    handle.addEventListener('pointermove', follow);
-    handle.addEventListener('pointerup', finish, { once: true });
-    handle.addEventListener('pointercancel', finish, { once: true });
-  });
-  handle.addEventListener('dblclick', () => {
-    width = apply(QUEUE_WIDTH.fallback, true);
-  });
-  // The separator can be moved without a mouse too. The page's own keys are
-  // not reached from here: a focused separator swallows its arrows.
-  handle.addEventListener('keydown', (event) => {
-    const delta = { ArrowLeft: -QUEUE_WIDTH.step, ArrowRight: QUEUE_WIDTH.step }[event.key];
-    if (!delta) return;
-    event.preventDefault();
-    event.stopPropagation();
-    width = apply(width + delta, true);
-  });
-  // A narrower window may leave the saved width over half of it.
-  window.addEventListener('resize', () => {
-    width = apply(width, false);
+  resize({
+    handle: el('queue-resize'),
+    target: document.querySelector('.queue'),
+    axis: 'x',
+    min: QUEUE_WIDTH.min,
+    max: () => Math.max(QUEUE_WIDTH.min, Math.floor(main.clientWidth * 0.5)),
+    key: QUEUE_WIDTH.key,
+    fallback: QUEUE_WIDTH.fallback,
+    step: QUEUE_WIDTH.step,
+    set: (px) => main.style.setProperty('--queue-width', `${px}px`),
   });
 }
 

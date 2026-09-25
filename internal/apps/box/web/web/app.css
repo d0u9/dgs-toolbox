@@ -133,14 +133,14 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
   border-right: 1px solid var(--hairline);
   touch-action: none;
 }
-.queue-resize:hover, .queue-resize:focus-visible, body.resizing .queue-resize {
+.queue-resize:hover, .queue-resize:focus-visible, body.resizing .queue-resize, body.resizing-x .queue-resize, .queue-resize.dragging {
   background: var(--primary-soft);
   border-right-color: var(--primary);
   outline: none;
 }
 /* While dragging, the pointer stays a resize cursor over the scan and text
    does not get selected as it passes. */
-body.resizing { cursor: col-resize; user-select: none; }
+body.resizing, body.resizing-x { cursor: col-resize; user-select: none; }
 
 .sheet {
   display: flex;
@@ -424,19 +424,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   text-overflow: ellipsis;
 }
 .rejected-detail { font-size: var(--font-size-sm); color: var(--graphite); }
-.rejected-restore {
-  flex: none;
-  padding: 4px var(--space-sm);
-  font: inherit;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  color: var(--primary);
-  background: none;
-  border: 1px solid var(--primary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.rejected-restore:hover { background: var(--primary); color: var(--on-primary); }
+.rejected-restore { flex: none; }
 /* The inbox is drawn with the shared file tree (/ui/filetree.js): its
    folders, then the scans in each, in the order they were scanned. */
 .inbox-bar { display: flex; align-items: center; gap: 8px; padding: 8px var(--row-pad-x) 6px; }
@@ -509,7 +497,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   border-left: 1px solid var(--hairline);
   touch-action: none;
 }
-.detail-resize:hover, .detail-resize:focus-visible, body.resizing .detail-resize {
+.detail-resize:hover, .detail-resize:focus-visible, body.resizing .detail-resize, body.resizing-x .detail-resize, .detail-resize.dragging {
   background: var(--primary-soft);
   border-left-color: var(--primary);
   outline: none;
@@ -708,8 +696,10 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .detail-buttons .button[hidden] { display: none; }
 .detail kbd { font-size: var(--font-size-xs); color: var(--graphite); }
-.detail .button.danger { color: var(--error); }
-.detail .button.danger:hover { border-color: var(--error); }
+/* Buttons and the danger zone are the shared ones (/ui/controls.css). */
+.detail .detail-section.danger-zone { border-color: var(--error); background: #fdf3f3; align-items: flex-start; }
+.detail .detail-section.danger-zone h3 { color: var(--error); font-size: var(--font-size-ui); }
+.marked-trash { margin-left: auto; }
 
 .fact-list {
   display: grid;
