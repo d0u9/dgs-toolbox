@@ -54,7 +54,7 @@ function open(type) {
   editor.value = saved;
   dirty();
   say($("message"), "");
-  history.replaceState(null, "", type ? "#" + type : location.pathname);
+  history.replaceState(null, "", type ? "#" + type : location.pathname + location.search);
   render();
 }
 

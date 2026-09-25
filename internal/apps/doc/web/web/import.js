@@ -45,7 +45,7 @@ function render() {
   if (file && file.item) {
     const item = state.items.find((i) => i.id === file.item);
     $("kept-link").textContent = item ? label(state, item) : file.item;
-    $("kept-link").href = "/browse/#" + file.item;
+    $("kept-link").href = api("/browse/") + "#" + file.item;
   }
 }
 

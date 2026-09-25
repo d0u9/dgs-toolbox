@@ -191,7 +191,7 @@ function openReader() {
   if (!selected) return;
   const item = state.items.find((i) => i.id === selected.id);
   $("reader-title").textContent = item ? label(state, item) : "";
-  if (!document.body.classList.contains("reading")) history.pushState({ reader: true }, "", location.hash || location.pathname);
+  if (!document.body.classList.contains("reading")) history.pushState({ reader: true }, "", location.hash || location.pathname + location.search);
   document.body.classList.add("reading");
   $("preview").hidden = false;
   showPreview({ item: selected.id, digest: selected.digest },
@@ -265,7 +265,7 @@ try {
 // Closing the detail gives the cards the width back.
 function close() {
   selected = null;
-  history.replaceState(null, "", location.pathname);
+  history.replaceState(null, "", location.pathname + location.search);
   closeReader();
   render();
 }
@@ -332,6 +332,7 @@ function detail(item) {
       }));
     $("save-button").disabled = !t;
   }
+  drawCases(item);
   if (notesOf !== item.id + "\n" + (item.notes || "")) {
     notesOf = item.id + "\n" + (item.notes || "");
     $("notes").value = item.notes || "";
@@ -374,6 +375,47 @@ $("edit").onsubmit = async (event) => {
   }
 };
 
+// The Cases an Item is in, and putting it in an open one.
+let cases = [];
+async function loadCases() {
+  try {
+    cases = (await (await fetch(api("/api/cases"))).json()).cases || [];
+  } catch {
+    cases = [];
+  }
+}
+let casesOf = "";
+function drawCases(item) {
+  const key = item.id + JSON.stringify(cases.map((c) => [c.name, c.status, c.entries.length]));
+  if (casesOf === key) return;
+  casesOf = key;
+  say($("cases-message"), "");
+  const holding = cases.filter((c) => c.entries.some((e) => e.item === item.id));
+  $("item-cases").replaceChildren(...(holding.length ? holding.map((c) => el("a", {
+    className: "chip", href: api("/cases/") + "#" + encodeURIComponent(c.name),
+    title: c.status === "archived" ? "Archived" : "Open" }, (c.status === "archived" ? "▣ " : "") + (c.title || c.name)))
+    : [el("span", { className: "muted" }, "In no Case.")]));
+  const open = cases.filter((c) => c.status === "open" && !holding.includes(c));
+  $("to-case").replaceChildren(el("option", { value: "" }, open.length ? "Add to a Case…" : "No open Case to add to"),
+    ...open.map((c) => el("option", { value: c.name }, c.title || c.name)));
+  $("to-case").disabled = $("to-case-add").disabled = $("to-case-note").disabled = !open.length;
+}
+$("to-case-add").onclick = async () => {
+  const name = $("to-case").value;
+  if (!name || !selected) return;
+  try {
+    await post("/api/cases/change", { op: "add", name, item: selected.id, note: $("to-case-note").value });
+    $("to-case-note").value = "";
+    await loadCases();
+    casesOf = "";
+    const item = state.items.find((i) => i.id === selected.id);
+    if (item) drawCases(item);
+    say($("cases-message"), "Added.");
+  } catch (err) {
+    say($("cases-message"), err.message, true);
+  }
+};
+
 $("notes-form").onsubmit = async (event) => {
   event.preventDefault();
   try {
@@ -393,7 +435,7 @@ $("delete").onclick = async () => {
   try {
     const answer = await post("/api/items/delete", { item: item.id });
     selected = null;
-    history.replaceState(null, "", location.pathname);
+    history.replaceState(null, "", location.pathname + location.search);
     await reload();
     clearPreview();
     say($("list-message"), "Deleted. It is in " + answer.trash + ".");
@@ -450,7 +492,7 @@ $("more").onclick = async () => {
 };
 
 async function reload() {
-  state = await loadState();
+  [state] = await Promise.all([loadState(), loadCases()]);
   render();
 }
 

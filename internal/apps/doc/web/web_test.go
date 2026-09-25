@@ -309,3 +309,69 @@ func TestTypeFromFiledItems(t *testing.T) {
 		t.Fatal("a filed PDF was compared with itself")
 	}
 }
+
+func TestCasesAndTheirExport(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root})
+	body := `{"dir":` + q(scans) + `,"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"}}`
+	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	id := state(t, h).Items[0].ID
+	for _, change := range []string{
+		`{"op":"new","name":"lease","title":"Lease"}`,
+		`{"op":"need","name":"lease","text":"photo ID"}`,
+		`{"op":"meet","name":"lease","need":0,"item":"` + id + `"}`,
+	} {
+		if rec := do(h, "POST", "/api/cases/change", change); rec.Code != 200 {
+			t.Fatalf("%s: %s", change, rec.Body.String())
+		}
+	}
+	if rec := do(h, "POST", "/api/cases/change", `{"op":"add","name":"lease","item":"NOPE"}`); rec.Code != 400 {
+		t.Fatal("an Item the tree lacks went in")
+	}
+	out := t.TempDir()
+	plan := do(h, "POST", "/api/cases/export/plan", `{"name":"lease","folder":`+q(out)+`}`)
+	if !strings.Contains(plan.Body.String(), `"ready":true`) || !strings.Contains(plan.Body.String(), `"id_card.pdf"`) {
+		t.Fatal(plan.Body.String())
+	}
+	if rec := do(h, "POST", "/api/cases/export", `{"name":"lease","folder":`+q(out)+`}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if data, err := os.ReadFile(filepath.Join(out, "id_card.pdf")); err != nil || string(data) != "%PDF-1.4 x" {
+		t.Fatalf("exported: %q %v", data, err)
+	}
+	if rec := do(h, "POST", "/api/cases/change", `{"op":"archive","name":"lease"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"digest":`) {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/cases/change", `{"op":"remove","name":"lease","item":"`+id+`"}`); rec.Code != 400 {
+		t.Fatal("an archived Case changed")
+	}
+	if rec := do(h, "POST", "/api/cases/change", `{"op":"delete","name":"lease"}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if matches, _ := filepath.Glob(filepath.Join(root, "trash", "cases", "lease-*.yaml")); len(matches) != 1 {
+		t.Fatal("a deleted Case is not in the trash")
+	}
+}
+
+func TestTreesAreChosenByName(t *testing.T) {
+	papers, scans := setup(t, true)
+	books, _ := setup(t, true)
+	h := Handler(Settings{Trees: []Tree{{Name: "papers", Root: papers}, {Name: "books", Root: books}}})
+	body := `{"dir":` + q(scans) + `,"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"}}`
+	if rec := do(h, "POST", "/api/import?tree=books", body); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	var s stateJSON
+	must(t, json.Unmarshal(do(h, "GET", "/api/state?tree=books", "").Body.Bytes(), &s))
+	if s.Name != "books" || len(s.Items) != 1 || len(s.Trees) != 2 {
+		t.Fatalf("books: %+v", s)
+	}
+	if first := state(t, h); first.Name != "papers" || len(first.Items) != 0 {
+		t.Fatalf("no tree named is the first: %+v", first)
+	}
+	if rec := do(h, "GET", "/api/state?tree=nope", ""); rec.Code != 404 {
+		t.Fatal("an unknown tree answered")
+	}
+}
