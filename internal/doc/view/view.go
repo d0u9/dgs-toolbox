@@ -4,6 +4,7 @@
 package view
 
 import (
+	"dgs-toolbox/internal/doc/country"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -91,10 +92,13 @@ func (v View) Validate() error {
 	return nil
 }
 
-// Part is a piece of a layout: fixed text, or a key.
+// Part is a piece of a layout: fixed text, or a key. A key written
+// {key:format} is a country written in that format — zh, en, alpha2 or
+// alpha3 — whatever form the Item keeps it in.
 type Part struct {
-	Text string `json:"text,omitempty"`
-	Key  string `json:"key,omitempty"`
+	Text   string `json:"text,omitempty"`
+	Key    string `json:"key,omitempty"`
+	Format string `json:"format,omitempty"`
 }
 
 // Layout is a parsed layout, one list of parts per path segment.
@@ -143,11 +147,14 @@ func Parse(layout string) (Layout, error) {
 			if end < 0 {
 				return nil, fmt.Errorf("layout %q: { without }", layout)
 			}
-			key := rest[:end]
+			key, format, _ := strings.Cut(rest[:end], ":")
 			if !keyPattern.MatchString(key) {
-				return nil, fmt.Errorf("layout %q: {%s} is not a key", layout, key)
+				return nil, fmt.Errorf("layout %q: {%s} is not a key", layout, rest[:end])
 			}
-			parts = append(parts, Part{Key: key})
+			if strings.Contains(rest[:end], ":") && !country.Format(format).Valid() {
+				return nil, fmt.Errorf("layout %q: {%s}: a country is written zh, en, alpha2 or alpha3", layout, rest[:end])
+			}
+			parts = append(parts, Part{Key: key, Format: format})
 			rest = rest[end+1:]
 		}
 		out = append(out, parts)

@@ -1,6 +1,7 @@
 package view
 
 import (
+	"dgs-toolbox/internal/doc/country"
 	"path"
 	"regexp"
 	"sort"
@@ -231,6 +232,11 @@ func render(layout Layout, keys map[string]string, fallback *string) (string, []
 					continue
 				}
 				value = *fallback
+			} else if part.Format != "" {
+				// A value that names no country is written as it is.
+				if kept, ok := country.Normalize(value, country.Format(part.Format)); ok {
+					value = kept
+				}
 			}
 			b.WriteString(Clean(value))
 		}
