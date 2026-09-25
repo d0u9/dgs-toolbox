@@ -22,7 +22,9 @@ Stored object  →  Item  →  View  →  Target
 - **Item** — what the owner says the document is.
 - **View** — which Items are selected, which of their revisions, and the
   relative path each one gets.
-- **Target** — a root directory the View's tree is written under.
+- **Target** — a local directory the View's tree is written under. Targets
+  are per-machine configuration. `dgs doc` writes only to the directory; getting
+  it into iCloud Drive, Google Drive or a NAS is a sync the owner does by hand.
 
 The repository's own layout carries none of the View's meaning. The same View
 can be written to several Targets — iCloud Drive, a synced Google Drive
@@ -129,9 +131,9 @@ Conflicts are resolved by hand on the page before the merge completes.
 
 ## Open questions
 
-- **Where metadata is stored.** YAML sidecars beside each PDF plus an
-  append-only log with a discardable index, as `dgs box` does, or an SQLite
-  database. Not decided.
+- **Where metadata is stored.** Not SQLite: [`AGENTS.md`](../../../AGENTS.md)
+  allows no database outside `dgs box`'s index. Whether it is YAML sidecars
+  beside each PDF plus an append-only log, as `dgs box` does, is not decided.
 - **File names** — the marker, sidecar and manifest names. `dgs box` already
   uses `*.dgs-doc.yaml` for its sidecars, so doc's must differ.
 - **Template format** and where Templates are configured.
