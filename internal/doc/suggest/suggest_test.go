@@ -54,6 +54,13 @@ func TestExampleTemplate(t *testing.T) {
 	if long["id_card"]["expires"].Value != "长期" {
 		t.Fatalf("got %v", long)
 	}
+	// Recognition often reads the dash as 一, — or －.
+	for _, dash := range []string{"一", "—", "－", " - "} {
+		got := All(templates, "有效期限 2016.01.01"+dash+"2036.01.01", dates.DMY)
+		if got["id_card"]["expires"].Value != "2036.01.01" {
+			t.Errorf("dash %q: got %v", dash, got)
+		}
+	}
 }
 
 func TestMatchPointsAtTheTrimmedValue(t *testing.T) {
