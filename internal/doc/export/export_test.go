@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dgs-toolbox/internal/doc/tree"
@@ -260,5 +261,23 @@ func TestPlanJobsChecksEverythingFirst(t *testing.T) {
 	plans, _ = PlanJobs(context.Background(), root, []Job{{Name: "google", Path: google, Views: []view.View{ids}}}, items)
 	if !plans[0].Ready() || len(plans[0].Plan.Add) != 1 || plans[0].Plan.Add[0].View != "ids" {
 		t.Fatalf("plan %+v", plans[0])
+	}
+}
+
+func TestAgainstOthers(t *testing.T) {
+	plans := []JobPlan{
+		{Name: "kindle", Path: "/out/kindle"},
+		{Name: "icloud", Path: "/trees/books/export"},
+		{Path: "/out/by-hand"},
+	}
+	AgainstOthers(plans, []Other{{Name: "books", Root: "/trees/books", Targets: []string{"kindle"}}})
+	if len(plans[0].Problems) != 1 || !strings.Contains(plans[0].Problems[0], "Targets of its own") {
+		t.Fatalf("shared Target: %v", plans[0].Problems)
+	}
+	if len(plans[1].Problems) != 1 || !strings.Contains(plans[1].Problems[0], "overlaps the tree books") {
+		t.Fatalf("inside another tree: %v", plans[1].Problems)
+	}
+	if len(plans[2].Problems) != 0 {
+		t.Fatalf("a folder by hand shares nothing: %v", plans[2].Problems)
 	}
 }

@@ -6,6 +6,18 @@ import { splitter } from "/ui/splitter.js";
 
 export const $ = (id) => document.getElementById(id);
 
+// The tree a page works on is in its address, ?tree=books, so two tabs can
+// hold two trees and a link or a reload keeps its tree. api() puts it on
+// every request; none is the first tree.
+export const treeName = new URLSearchParams(location.search).get("tree") || "";
+export function api(path) {
+  if (!treeName) return path;
+  return path + (path.includes("?") ? "&" : "?") + "tree=" + encodeURIComponent(treeName);
+}
+for (const link of document.querySelectorAll("a.topbar-link")) {
+  if (treeName) link.href = api(link.getAttribute("href"));
+}
+
 export function el(tag, props, ...children) {
   const node = Object.assign(document.createElement(tag), props || {});
   node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
@@ -25,12 +37,12 @@ if (list) {
 export const size = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB";
 
 export async function loadState() {
-  const response = await fetch("/api/state");
+  const response = await fetch(api("/api/state"));
   return response.json();
 }
 
 export async function post(url, body) {
-  const response = await fetch(url, {
+  const response = await fetch(api(url), {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   const answer = await response.json();
@@ -91,6 +103,17 @@ export const fieldsOf = (container) => Object.fromEntries(
 // The top bar and the banner every page has.
 export function frame(state) {
   $("root").textContent = state.root || "";
+  const trees = state.trees || [];
+  if (trees.length > 1 && !$("tree")) {
+    const pick = el("select", { id: "tree", className: "tree-pick", title: "The tree this page works on" },
+      ...trees.map((t) => el("option", { value: t.name, selected: t.name === state.name }, t.name)));
+    pick.onchange = () => {
+      const params = new URLSearchParams(location.search);
+      params.set("tree", pick.value);
+      location.search = params.toString();
+    };
+    $("root").before(pick);
+  }
   $("banner").hidden = state.tree !== false;
   $("error").hidden = !state.error;
   $("error").textContent = state.error || "";
@@ -117,7 +140,7 @@ export async function showText(query, onAnswer) {
   say($("text-message"), "Reading the text…");
   const ask = async (n) => {
     try {
-      const response = await fetch("/api/text?" + new URLSearchParams({ ...query, page: n }));
+      const response = await fetch(api("/api/text?" + new URLSearchParams({ ...query, page: n })));
       const answer = await response.json();
       if (!response.ok) throw new Error(answer.error || response.statusText);
       return answer;
@@ -218,7 +241,7 @@ export async function showPreview(query, viewer) {
   };
   let info;
   try {
-    const response = await fetch("/api/pages?" + new URLSearchParams(query));
+    const response = await fetch(api("/api/pages?" + new URLSearchParams(query)));
     info = await response.json();
   } catch {
     info = { count: 0 };
@@ -228,7 +251,7 @@ export async function showPreview(query, viewer) {
   $("frame").hidden = true;
   $("frame").removeAttribute("src");
   const sheets = showViewer(info.count,
-    (n, size) => "/api/page?" + new URLSearchParams({ ...query, n, size, v: info.digest }), useViewer);
+    (n, size) => api("/api/page?" + new URLSearchParams({ ...query, n, size, v: info.digest })), useViewer);
   sheets.forEach((sheet) => refit.observe(sheet));
   layText();
 }

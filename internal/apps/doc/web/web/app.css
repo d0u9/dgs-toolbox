@@ -401,3 +401,6 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .job-issues strong, .job-issues a { color: var(--ink); }
 .job details { margin-top: 6px; font-size: var(--font-size-sm); }
 .job details ul { margin: 4px 0; padding-left: 18px; }
+
+/* The tree the page works on, when doc.trees has several. */
+.tree-pick { font: inherit; font-weight: 600; margin-right: 8px; padding: 2px 6px; border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--paper); color: inherit; }

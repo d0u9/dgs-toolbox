@@ -1,6 +1,6 @@
 // Views: build a layout from keys and see, as it is typed, the tree an
 // export of it would write. The server computes the plan; this draws it.
-import { $, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
+import { $, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openFile } from "/ui/filedialog.js";
 
@@ -14,7 +14,7 @@ const blank = () => ({ name: "", query: {}, selection: "head", layout: "{owner}/
 async function load() {
   state = await loadState();
   frame(state);
-  const answer = await (await fetch("/api/views")).json();
+  const answer = await (await fetch(api("/api/views"))).json();
   views = answer.views;
   keys = answer.keys;
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
@@ -368,7 +368,7 @@ $("form").addEventListener("submit", async (event) => {
   try {
     await post("/api/views", { view: v, previous: editing });
     say($("message"), "Saved views/" + v.name + ".yaml.");
-    const answer = await (await fetch("/api/views")).json();
+    const answer = await (await fetch(api("/api/views"))).json();
     views = answer.views;
     editing = v.name;
     history.replaceState(null, "", "#" + encodeURIComponent(v.name));
@@ -401,7 +401,7 @@ let planned = null; // the request the check shown was for
 const FOLDER_KEY = "dgs-doc-export-folder";
 
 async function loadTargets() {
-  targets = await (await fetch("/api/targets")).json();
+  targets = await (await fetch(api("/api/targets"))).json();
   try { setFolder(folder || localStorage.getItem(FOLDER_KEY) || ""); } catch { setFolder(folder); }
   $("export-all").disabled = !targets.some((t) => t.views.length);
   drawTargets($("target").value);

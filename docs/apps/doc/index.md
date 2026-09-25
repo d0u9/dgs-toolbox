@@ -7,6 +7,17 @@ identity cards, insurance policies, certificates, payslips, utility bills, rent
 receipts, bank statements, tax papers. It is not [`dgs box`](../box/index.md),
 which holds low-importance scanned paper; the two stay separate commands.
 
+### Several trees
+
+One `dgs doc` can keep more than one tree — papers, and books — each a tree of
+its own, in its own folder, with its own Templates, Views and Cases. Only PDFs
+are kept, in every tree. `doc.trees` names them; the page switches from a menu
+in its top bar, and the tree is in the page's address (`?tree=books`), so two
+tabs can hold two trees and a reload keeps its tree. `verify` and `export` take
+`--tree <name>`. Nothing crosses between trees: an Item, a View and a Case
+belong to one. Two trees' Views may not export into one Target, and a Target
+may not lie inside any tree.
+
 It follows `dgs box`'s shape: a TUI plus a local web page served by the same
 process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
 [`../../web.md`](../../web.md) before changing either. The parts, in order, are
