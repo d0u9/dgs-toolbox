@@ -29,9 +29,9 @@ type Doc struct {
 	// DateOrder is how a date like 03/04/2026 is read: DMY or MDY. Empty is
 	// dates.DefaultOrder.
 	DateOrder string `json:"date_order"`
-	// Targets names the local folders a View can be exported to, by a name
-	// the page shows. They belong to one machine, so they are configuration
-	// and not part of the tree.
+	// Targets is no longer read: a tree's Targets are in its targets.yaml.
+	// It is kept so a configuration still holding it is told where they
+	// went, rather than that the key is unknown.
 	Targets map[string]string `json:"targets"`
 	// ExpiringWithinDays is how many days before its expiry a document is
 	// shown as expiring soon. Zero means DefaultDocExpiringWithinDays.

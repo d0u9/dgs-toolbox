@@ -3,10 +3,6 @@
     "trees": {
       "papers": "/Volumes/nas/Documents",
       "books": "/Volumes/nas/Books"
-    },
-    "targets": {
-      "icloud": "~/Library/Mobile Documents/com~apple~CloudDocs/Documents",
-      "kindle": "~/Books/Kindle"
     }
   }
 }

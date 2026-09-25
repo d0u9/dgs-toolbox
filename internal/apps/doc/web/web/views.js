@@ -23,25 +23,32 @@ async function load() {
   open(found || blank(), found ? found.name : "");
 }
 
-// The Views, grouped under the Target each names, each group with its own
-// Export; Views naming none come last.
+// The Views, grouped under the Target each names, each group with the folder
+// it goes to this time and its own Export; Views naming none come last.
 function list() {
   $("count").textContent = views.length;
   const row = (v) => el("li", { className: v.name === editing ? "selected" : "", onclick: () => open(v, v.name) },
     el("span", { className: "template-name" }, v.name),
     el("span", { className: "badge" }, v.selection === "all" ? "all" : "HEAD"),
     el("span", { className: "template-sub mono" }, v.layout));
-  const names = [...new Set(views.map((v) => v.target || ""))].sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
+  const names = [...new Set([...views.map((v) => v.target || ""), ...targets.map((t) => t.name)])]
+    .sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
   const groups = names.map((name) => {
     const members = views.filter((v) => (v.target || "") === name);
     const known = targets.find((t) => t.name === name);
+    const where = name && known ? folderFor(name) : "";
     return el("section", { className: "view-group-list" },
       el("div", { className: "group-head" },
-        el("span", { className: "group-name" }, name ? name : "No Target"),
-        el("span", { className: "muted" }, name && !known ? "not in doc.targets" : members.length + (members.length === 1 ? " View" : " Views")),
-        name && known ? el("button", { type: "button", className: "button small-button", textContent: "Export…",
-          title: "Check " + name + "'s Views together, then export them to " + known.path,
+        el("span", { className: "group-name", title: known && known.about ? known.about : "" }, name ? name : "No Target"),
+        el("span", { className: "muted" }, name && !known ? "not in targets.yaml" : members.length + (members.length === 1 ? " View" : " Views")),
+        name && known && members.length ? el("button", { type: "button", className: "button small-button", textContent: "Export…",
+          title: "Check " + name + "'s Views together, then export them",
           onclick: () => exportTargets({ targets: [name] }, name) }) : null),
+      name && known ? el("button", { type: "button", className: "target-folder" + (where ? "" : " unset"),
+        title: (known.about ? known.about + "\n" : "") + "Where " + name + " goes this time. Click to choose another folder.",
+        onclick: () => chooseFolder(name) },
+        el("span", { className: "export-path" + (where ? "" : " muted") }, where ? "\u200e" + where + "\u200e" : "Choose a folder…"),
+        where && where !== known.default ? el("span", { className: "target-flag" }, "this machine") : null) : null,
       el("ul", { className: "template-list" }, ...members.map(row)));
   });
   if (editing === "") groups.unshift(el("ul", { className: "template-list" }, el("li", { className: "selected" },
@@ -401,11 +408,53 @@ let planned = null; // the request the check shown was for
 const FOLDER_KEY = "dgs-doc-export-folder";
 
 async function loadTargets() {
-  targets = await (await fetch(api("/api/targets"))).json();
+  const answer = await (await fetch(api("/api/targets"))).json();
+  targets = answer.targets || [];
+  if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
   try { setFolder(folder || localStorage.getItem(FOLDER_KEY) || ""); } catch { setFolder(folder); }
   $("export-all").disabled = !targets.some((t) => t.views.length);
   drawTargets($("target").value);
   list();
+}
+
+// A Target goes to the folder last chosen for it on this machine, else its
+// own folder from targets.yaml.
+const targetKey = (name) => "dgs-doc-target:" + (state.name || "") + ":" + name;
+function folderFor(name) {
+  let chosen = "";
+  try { chosen = localStorage.getItem(targetKey(name)) || ""; } catch { /* none */ }
+  const t = targets.find((x) => x.name === name);
+  return chosen || (t ? t.default : "") || "";
+}
+const chosenFolders = () => Object.fromEntries(targets.map((t) => [t.name, folderFor(t.name)]).filter(([, f]) => f));
+
+async function chooseFolder(name) {
+  const t = targets.find((x) => x.name === name);
+  const chosen = await openFile({
+    title: "Export " + name + " to",
+    message: (t.about ? t.about + ". " : "") + "Choose the folder " + name + "'s Views are written into. An export removes only files it wrote there itself.",
+    folders: true, writable: true, confirm: "Choose",
+    folder: folderFor(name) || state.root, fallbacks: [state.root, ""],
+  });
+  if (!chosen) return;
+  const path = Array.isArray(chosen) ? chosen[0] : chosen;
+  try { localStorage.setItem(targetKey(name), path); } catch { /* not kept */ }
+  if (path !== t.default && confirm("Make " + path + " " + name + "'s own folder, in the tree's targets.yaml?\n\nOK: every machine starts from it.\nCancel: only this browser remembers it.")) {
+    await saveTargets(targets.map((x) => x.name === name ? { ...plain(x), folder: path } : plain(x)));
+  }
+  exportStale();
+  list();
+  targetNote();
+}
+
+const plain = (t) => ({ name: t.name, about: t.about || "", folder: t.folder || "" });
+async function saveTargets(list) {
+  try {
+    const answer = await post("/api/targets", { targets: list });
+    targets = answer.targets;
+  } catch (error) {
+    say($("message"), error.message, true);
+  }
 }
 
 // drawTargets fills the Target select and says where the View goes.
@@ -413,18 +462,22 @@ function drawTargets(selected) {
   const names = targets.map((t) => t.name);
   if (selected && !names.includes(selected)) names.push(selected);
   $("target").replaceChildren(el("option", { value: "" }, "None: choose a folder when exporting"),
-    ...names.map((n) => el("option", { value: n, selected: n === selected }, n)));
+    ...names.map((n) => el("option", { value: n, selected: n === selected }, n)),
+    el("option", { value: NEW_TARGET }, "+ New Target…"));
   $("target").value = selected;
   targetNote();
 }
+const NEW_TARGET = "\u0000new";
 
 function targetNote() {
   const name = $("target").value;
   const t = targets.find((x) => x.name === name);
   const others = t ? t.views.filter((v) => v !== editing) : [];
+  const where = t ? folderFor(name) : "";
   $("target-note").textContent = !name ? "Exported on its own, to a folder you pick."
-    : !t ? name + " is not in doc.targets on this machine."
-    : t.path + (others.length ? " — exported together with " + others.join(", ") + "." : " — the only View there.");
+    : !t ? name + " is not in the tree's targets.yaml."
+    : (t.about ? t.about + " — " : "") + (where || "no folder yet: one is chosen when exporting") +
+      (others.length ? " — exported together with " + others.join(", ") + "." : " — the only View there.");
   const saved = views.find((v) => v.name === editing);
   const target = saved && saved.target;
   $("export-folder-row").hidden = !!target;
@@ -432,7 +485,16 @@ function targetNote() {
   $("dry-run").textContent = target ? "Check " + target : "Check";
   $("dry-run").disabled = target ? false : !folder;
 }
-$("target").addEventListener("change", targetNote);
+$("target").addEventListener("change", async () => {
+  if ($("target").value !== NEW_TARGET) return targetNote();
+  const name = (prompt("A name for the new Target: lowercase letters, digits, _ and -.\nWhat it is for can be said next.") || "").trim();
+  if (!name) return drawTargets("");
+  const about = (prompt("What is " + name + " for? (optional)", "") || "").trim();
+  await saveTargets([...targets.map(plain), { name, about, folder: "" }]);
+  drawTargets(targets.some((t) => t.name === name) ? name : "");
+  changed();
+  if (targets.some((t) => t.name === name)) await chooseFolder(name);
+});
 
 function setFolder(path) {
   folder = path;
@@ -492,7 +554,7 @@ async function exportTargets(request, what) {
   say($("export-message"), "Checking…");
   let answer;
   try {
-    answer = await post("/api/export/plan", request);
+    answer = await post("/api/export/plan", { ...request, folders: chosenFolders() });
   } catch (error) {
     say($("export-message"), error.message, true);
     return;
@@ -521,7 +583,7 @@ async function run() {
   $("dry-run").disabled = true;
   say($("export-message"), "Exporting: checking again, then copying and reading back…");
   try {
-    const answer = await post("/api/export", request);
+    const answer = await post("/api/export", { ...request, folders: chosenFolders() });
     say($("export-message"), "Exported. " + answer.results.map((r) => (r.name || r.path) + ": " + r.result.written + " written, " +
       r.result.removed + " removed, " + r.result.kept + " unchanged").join("; ") + ".");
     $("export-plan").replaceChildren();

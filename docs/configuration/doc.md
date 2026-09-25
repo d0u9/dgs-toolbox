@@ -7,10 +7,6 @@
     "cache_dir": "",
     "date_order": "DMY",
     "expiring_within_days": 90,
-    "targets": {
-      "icloud": "~/Library/Mobile Documents/com~apple~CloudDocs/Documents",
-      "google": "~/Google Drive/Documents"
-    },
     "web": {
       "port": 8767
     }
@@ -25,7 +21,7 @@
 | `doc.cache_dir` | Where the discardable cache is kept: the text read off each PDF, by its SHA-256, so a PDF is read once. It is outside the tree and belongs to one machine; deleting it costs a re-read. A leading `~` is the home directory. | empty — `dgs/doc` under the user cache directory (`~/Library/Caches/dgs/doc` on macOS) |
 | `doc.date_order` | How a date with day and month both in digits and the year last, such as `03/04/2026`, is read when it is suggested from a PDF's text: `DMY` (3 April) or `MDY` (March 4). Case does not matter. A date whose first or second number is over 12 is read the only way it can be. | `DMY` |
 | `doc.expiring_within_days` | How many days before its expiry a document is shown as expiring soon on Browse: its badge, and the "expires within" filter. The expiry is the first of the fields `expires`, `expiry`, `expires_at`, `expiry_date`, `valid_until` the current revision has. `0` uses the default; a negative number is refused. | `90` |
-| `doc.targets` | Named local folders Views are exported to, `{"name": "folder"}`. A View names one with `target:`; every View naming a Target is exported into it together. An export writes only there, and removes only files its own manifest, `dgs-export.json`, says it wrote. A leading `~` is the home directory. A Target may not be inside a tree, nor a tree inside it, and two trees' Views may not share one. | empty — no Targets |
+| `doc.targets` | No longer read: a configuration holding it is refused, with a message saying where Targets went. Targets are in each tree's `targets.yaml`, and the folder is chosen when exporting — see [Views](../apps/doc/index.md#views). | — |
 | `doc.web.port` | The port the page listens on. It always listens on `127.0.0.1`. `0` uses the default. `--port` overrides it for one run. | `8767` |
 
 With several trees, `doc.trees` takes the place of `doc.root`:

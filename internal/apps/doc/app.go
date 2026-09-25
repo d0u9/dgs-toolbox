@@ -41,6 +41,7 @@ func New() tui.App {
 			MaxArgs:     64,
 			Flags: []tui.ActionFlag{
 				{Name: "tree", Shorthand: "t", Usage: "the tree in doc.trees to use, when there are several"},
+				{Name: "to", Usage: "a folder for a Target this time, instead of its own: <target>=<folder>, comma separated"},
 				{Name: "dry-run", Shorthand: "n", Bool: true, Usage: "plan and check, and write nothing"},
 			},
 			RunWithConfig: exportAction,

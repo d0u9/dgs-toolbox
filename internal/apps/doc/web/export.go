@@ -4,54 +4,108 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
-	"sort"
 
 	"dgs-toolbox/internal/doc/export"
+	"dgs-toolbox/internal/doc/target"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
 
 type targetJSON struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	target.Target
+	// Default is the Target's own folder on this machine, ~ made home.
+	Default string `json:"default"`
 	// Views are the Views that name this Target.
 	Views []string `json:"views"`
-	// Held are the Views whose files the Target's manifest records.
-	Held  []string `json:"held"`
-	Error string   `json:"error,omitempty"`
 }
 
+func home() string {
+	h, _ := os.UserHomeDir()
+	return h
+}
+
+// targetList is the tree's Targets, each with the Views naming it.
 func (s server) targetList(w http.ResponseWriter, _ *http.Request) {
+	out := struct {
+		Targets []targetJSON `json:"targets"`
+		Error   string       `json:"error,omitempty"`
+	}{Targets: []targetJSON{}}
+	targets, err := target.Load(s.root)
+	if err != nil {
+		out.Error = err.Error()
+	}
 	views, _ := view.Load(s.root)
-	out := []targetJSON{}
-	for name, path := range s.targets {
-		t := targetJSON{Name: name, Path: path, Views: []string{}, Held: []string{}}
+	for _, t := range targets {
+		j := targetJSON{Target: t, Views: []string{}}
+		if t.Folder != "" {
+			j.Default = target.Expand(t.Folder, home())
+		}
 		for _, v := range views {
-			if v.Target == name {
-				t.Views = append(t.Views, v.Name)
+			if v.Target == t.Name {
+				j.Views = append(j.Views, v.Name)
 			}
 		}
-		if err := export.CheckTarget(s.root, path); err != nil {
-			t.Error = err.Error()
-		} else if m, err := export.ReadManifest(path); err != nil {
-			t.Error = err.Error()
-		} else {
-			t.Held = append(t.Held, m.Views...)
-		}
-		out = append(out, t)
+		out.Targets = append(out.Targets, j)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	writeJSON(w, http.StatusOK, out)
+}
+
+// targetSave replaces the tree's Targets. A Target a View still names is
+// not removed.
+func (s server) targetSave(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Targets []target.Target `json:"targets"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	if err := tree.Require(s.root); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	kept := map[string]bool{}
+	for _, t := range request.Targets {
+		kept[t.Name] = true
+	}
+	views, _ := view.Load(s.root)
+	for _, v := range views {
+		if v.Target != "" && !kept[v.Target] {
+			if old, _ := target.Load(s.root); containsTarget(old, v.Target) {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "the View " + v.Name + " exports to " + v.Target + ": point it elsewhere first"})
+				return
+			}
+		}
+	}
+	if err := target.Save(s.root, request.Targets); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	s.targetList(w, r)
+}
+
+func containsTarget(targets []target.Target, name string) bool {
+	for _, t := range targets {
+		if t.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // exportRequest is what to export: the Targets named (every Target a View
 // names when All is set), or one View into a folder chosen by hand.
 type exportRequest struct {
 	Targets []string `json:"targets"`
-	All     bool     `json:"all"`
-	View    string   `json:"view"`
-	Folder  string   `json:"folder"`
+	// Folders are the folders chosen for Targets this time, by name. A
+	// Target without one goes to its own folder.
+	Folders map[string]string `json:"folders"`
+	All     bool              `json:"all"`
+	View    string            `json:"view"`
+	Folder  string            `json:"folder"`
 }
 
 type exportPlanJSON struct {
@@ -89,8 +143,12 @@ func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON
 		}
 		jobs = []export.Job{{Path: filepath.Clean(request.Folder), Views: []view.View{*v}}}
 	case request.All || len(request.Targets) > 0:
+		targets, err := target.Load(s.root)
+		if err != nil {
+			return out, nil, http.StatusConflict, err
+		}
 		var problems []string
-		jobs, problems = export.Jobs(views, s.targets, request.Targets)
+		jobs, problems = export.Jobs(views, target.Folders(targets, request.Folders, home()), request.Targets)
 		out.Problems = append(out.Problems, problems...)
 	default:
 		return out, nil, http.StatusBadRequest, errors.New("name a View and a folder, or Targets")
@@ -162,22 +220,14 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
 
-// Others is every tree but the one at root, with the Targets its Views
-// name. A tree whose Views cannot be read names none.
+// Others is every tree but the one at root.
 func Others(trees []Tree, root string) []export.Other {
 	var out []export.Other
 	for _, t := range trees {
 		if filepath.Clean(t.Root) == filepath.Clean(root) {
 			continue
 		}
-		o := export.Other{Name: t.Name, Root: t.Root}
-		views, _ := view.Load(t.Root)
-		for _, v := range views {
-			if v.Target != "" {
-				o.Targets = append(o.Targets, v.Target)
-			}
-		}
-		out = append(out, o)
+		out = append(out, export.Other{Name: t.Name, Root: t.Root})
 	}
 	return out
 }

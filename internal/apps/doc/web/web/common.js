@@ -104,8 +104,8 @@ export const fieldsOf = (container) => Object.fromEntries(
 export function frame(state) {
   $("root").textContent = state.root || "";
   const trees = state.trees || [];
-  if (trees.length > 1 && !$("tree")) {
-    const pick = el("select", { id: "tree", className: "tree-pick", title: "The tree this page works on" },
+  if (trees.length > 1 && !$("tree-pick")) {
+    const pick = el("select", { id: "tree-pick", className: "tree-pick", title: "The tree this page works on" },
       ...trees.map((t) => el("option", { value: t.name, selected: t.name === state.name }, t.name)));
     pick.onchange = () => {
       const params = new URLSearchParams(location.search);

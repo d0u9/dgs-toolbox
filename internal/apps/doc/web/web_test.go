@@ -375,3 +375,35 @@ func TestTreesAreChosenByName(t *testing.T) {
 		t.Fatal("an unknown tree answered")
 	}
 }
+
+func TestTargetsLiveInTheTreeAndFoldersAreChosen(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root})
+	body := `{"dir":` + q(scans) + `,"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"}}`
+	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/targets", `{"targets":[{"name":"phone","about":"read on the phone"}]}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	v := `{"name":"ids","selection":"head","layout":"{owner}.{ext}","target":"phone"}`
+	if rec := do(h, "POST", "/api/views", `{"view":`+v+`}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/export/plan", `{"targets":["phone"]}`); !strings.Contains(rec.Body.String(), "choose a folder") {
+		t.Fatalf("no folder: %s", rec.Body.String())
+	}
+	out := t.TempDir()
+	if rec := do(h, "POST", "/api/export", `{"targets":["phone"],"folders":{"phone":`+q(out)+`}}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(out, "jane.pdf")); err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(h, "POST", "/api/targets", `{"targets":[]}`); rec.Code != 409 {
+		t.Fatal("a Target a View names was removed")
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "targets.yaml")); !strings.Contains(string(data), "read on the phone") {
+		t.Fatalf("targets.yaml: %s", data)
+	}
+}

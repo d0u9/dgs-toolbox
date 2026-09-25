@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	docweb "dgs-toolbox/internal/apps/doc/web"
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/doc/export"
+	"dgs-toolbox/internal/doc/target"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
@@ -19,11 +22,11 @@ import (
 // given, or every Target a View names. The whole run is planned and checked
 // first; any conflict, missing key or problem means nothing is written.
 func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {
-	chosen, err := global.DocTreeNamed(flags["tree"])
+	named, err := global.DocTreeNamed(flags["tree"])
 	if err != nil {
 		return err
 	}
-	root := chosen.Root
+	root := named.Root
 	if root == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -39,7 +42,16 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 	if err != nil {
 		return err
 	}
-	jobs, problems := export.Jobs(views, global.Doc.Targets, args)
+	targets, err := target.Load(root)
+	if err != nil {
+		return err
+	}
+	chosen, err := parseTo(flags["to"])
+	if err != nil {
+		return err
+	}
+	home, _ := os.UserHomeDir()
+	jobs, problems := export.Jobs(views, target.Folders(targets, chosen, home), args)
 	plans, err := export.PlanJobs(context.Background(), root, jobs, items)
 	if err != nil {
 		return err
@@ -55,7 +67,7 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 	}
 	switch {
 	case len(plans) == 0 && len(problems) == 0:
-		return errors.New("no View names a Target: add target: <name> to a View")
+		return errors.New("no View names a Target: add target: <name> to a View, and the Target to targets.yaml")
 	case !ready:
 		fmt.Fprintln(out, "Nothing was written.")
 		return errors.New("the export has conflicts or missing keys")
@@ -71,6 +83,23 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		fmt.Fprintf(out, "%s: %d written, %d removed, %d unchanged.\n", j.Name, result.Written, result.Removed, result.Kept)
 	}
 	return nil
+}
+
+// parseTo reads --to: name=folder pairs, comma separated, each an absolute
+// folder for that Target this time.
+func parseTo(value string) (map[string]string, error) {
+	out := map[string]string{}
+	if strings.TrimSpace(value) == "" {
+		return out, nil
+	}
+	for _, pair := range strings.Split(value, ",") {
+		name, folder, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		if !ok || name == "" || !filepath.IsAbs(folder) {
+			return nil, fmt.Errorf("--to %q: write <target>=<absolute folder>, comma separated", pair)
+		}
+		out[name] = folder
+	}
+	return out, nil
 }
 
 // describe prints one Target's plan: what changes, then what stops it.
