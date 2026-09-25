@@ -85,8 +85,12 @@
     <p id="nothing" class="message" hidden>Nothing matches these filters.</p>
     <p id="list-message" class="message"></p>
   </section>
-  <div id="preview-splitter" class="splitter col" role="separator" aria-orientation="vertical" hidden></div>
-  <section id="preview" class="preview" hidden>
+  <section id="preview" class="preview reader" hidden>
+    <div class="reader-bar">
+      <button id="reader-back" class="button" type="button">← Back <kbd>Esc</kbd></button>
+      <strong id="reader-title"></strong>
+    </div>
+    <div class="reader-body">
     <p id="empty" class="muted" hidden>Pick an Item to see it.</p>
     <nav id="rail" class="rail" aria-label="Pages" hidden></nav>
     <div id="viewer" class="viewer" hidden>
@@ -102,33 +106,57 @@
       <div id="pages" class="pages"></div>
     </div>
     <iframe id="frame" title="Preview" hidden></iframe>
+    </div>
   </section>
-  <aside id="side" class="side" hidden>
-    <button id="close" class="tool side-close" type="button" title="Close (Esc)" aria-label="Close">×</button>
-    <h2 class="panel-head" id="detail-head"></h2>
-    <form id="edit">
-      <div id="edit-fields"></div>
-      <p id="edit-message" class="message"></p>
-      <button id="save-button" class="action" type="submit">Save fields</button>
-    </form>
-    <h2 class="panel-head">Notes</h2>
-    <form id="notes-form">
-      <textarea id="notes" class="notes" rows="4" placeholder="Only for you: never a key, never exported."></textarea>
-      <p id="notes-message" class="message"></p>
-      <button class="action" type="submit">Save notes</button>
-    </form>
-    <h2 class="panel-head">More like this</h2>
-    <button id="more" class="small-inline" type="button">Find similar Items</button>
-    <ul id="similar" class="rows"></ul>
-    <p id="similar-message" class="message"></p>
-    <h2 class="panel-head">Revisions</h2>
-    <ul id="revisions" class="rows"></ul>
-    <p id="head-message" class="message"></p>
-    <p id="text-message" class="message text-status"></p>
-    <h2 class="panel-head">Delete</h2>
-    <p class="message">Moves this Item, with every revision's PDF, into the tree's trash folder.</p>
-    <button id="delete" class="action quiet" type="button">Delete Item…</button>
-    <p id="delete-message" class="message"></p>
+  <div id="side-splitter" class="splitter col" role="separator" aria-orientation="vertical" hidden></div>
+  <aside id="side" class="side detail" hidden>
+    <header class="detail-head">
+      <h2 id="detail-head"></h2>
+      <button id="close" class="tool" type="button" title="Close (Esc)" aria-label="Close">×</button>
+    </header>
+    <section class="detail-section">
+      <button id="detail-frame" class="detail-frame" type="button" title="Open (double-click)">
+        <img id="detail-image" alt="">
+      </button>
+      <div class="detail-tools">
+        <button id="open-reader" class="button" type="button">Open</button>
+        <span id="detail-rev" class="muted"></span>
+      </div>
+      <p id="text-message" class="message text-status"></p>
+    </section>
+    <section class="detail-section">
+      <h3>Fields</h3>
+      <form id="edit">
+        <div id="edit-fields"></div>
+        <div class="detail-actions"><button id="save-button" class="action" type="submit">Save fields</button>
+          <p id="edit-message" class="message"></p></div>
+      </form>
+    </section>
+    <section class="detail-section">
+      <h3>Revisions</h3>
+      <ul id="revisions" class="rows"></ul>
+      <p id="head-message" class="message"></p>
+    </section>
+    <section class="detail-section">
+      <h3>Notes</h3>
+      <form id="notes-form">
+        <textarea id="notes" class="notes" rows="3" placeholder="Only for you: never a key, never exported."></textarea>
+        <div class="detail-actions"><button class="action" type="submit">Save notes</button>
+          <p id="notes-message" class="message"></p></div>
+      </form>
+    </section>
+    <section class="detail-section">
+      <h3>More like this</h3>
+      <button id="more" class="button" type="button">Find similar Items</button>
+      <ul id="similar" class="rows"></ul>
+      <p id="similar-message" class="message"></p>
+    </section>
+    <section class="detail-section detail-danger">
+      <h3>Delete</h3>
+      <p class="detail-note">Moves this Item, with every revision's PDF, into the tree's trash folder.</p>
+      <button id="delete" class="button danger" type="button">Delete Item…</button>
+      <p id="delete-message" class="message"></p>
+    </section>
   </aside>
 </main>
 <script type="module" src="/browse.js"></script>
