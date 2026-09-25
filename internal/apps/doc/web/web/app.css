@@ -98,3 +98,37 @@ body { display: flex; flex-direction: column; }
 .text-line.source { outline: 2px solid var(--primary); background: rgba(2, 74, 216, .12); }
 .text-status { font-size: var(--font-size-xs); }
 #frame[hidden] { display: none; }
+.view-edit { flex: 1; display: flex; min-width: 0; }
+.view-form { width: 420px; flex: none; overflow-y: auto; padding: var(--space-xs) 0; border-right: 1px solid var(--hairline); background: var(--paper); }
+.view-result { flex: 1; overflow-y: auto; min-width: 0; }
+.checks { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.checks label { display: inline-flex; align-items: center; gap: 4px; }
+.form-field .checks span, .form-field .checks label { font-size: inherit; color: var(--charcoal); }
+.form-field input.short { width: 90px; }
+.mono { font-family: var(--font-mono, ui-monospace, monospace); }
+.condition { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.condition input { flex: 1; min-width: 0; }
+.small-inline {
+  align-self: flex-start; padding: 1px 8px; font: inherit; font-size: var(--font-size-xs);
+  color: var(--primary); background: var(--paper); border: 1px solid var(--primary);
+  border-radius: var(--radius-pill); cursor: pointer;
+}
+.key-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 14px var(--space-xs); align-items: center; font-size: var(--font-size-xs); }
+.chip {
+  padding: 1px 8px; font: inherit; font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--charcoal); background: var(--fog); border: 0; border-radius: var(--radius-pill); cursor: pointer;
+}
+.chip:hover { background: var(--primary-soft); color: var(--primary); }
+.buttons { display: flex; }
+.action.quiet { color: var(--error); background: var(--paper); border: 1px solid var(--error); }
+.action[hidden] { display: none; }
+.problem { margin: var(--space-xs) 14px; padding: var(--space-xs) 12px; border-radius: var(--radius-md); background: var(--primary-soft); }
+.problem ul { margin: 4px 0 0; padding-left: 18px; }
+.message.ok { margin: var(--space-xs) 14px; color: var(--charcoal); }
+.file-tree { padding: 0 14px var(--space-md); }
+.file-tree ul { list-style: none; margin: 0; padding-left: 16px; }
+.file-tree > ul { padding-left: 0; }
+.file-tree li { padding: 2px 0; }
+.file-tree summary { cursor: pointer; font-weight: 600; color: var(--charcoal); }
+.file-tree a { color: inherit; text-decoration: none; }
+.file-tree a:hover { color: var(--primary); text-decoration: underline; }
