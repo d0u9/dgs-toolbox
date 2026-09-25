@@ -24,11 +24,12 @@ async function load() {
 
 function list() {
   $("count").textContent = views.length;
-  $("views").replaceChildren(...views.map((v) => {
-    const li = el("li", { onclick: () => open(v, v.name) }, v.name, el("span", { className: "sub mono" }, v.layout));
-    if (v.name === editing) li.className = "selected";
-    return li;
-  }));
+  $("views").replaceChildren(...views.map((v) => el("li", { className: v.name === editing ? "selected" : "", onclick: () => open(v, v.name) },
+    el("span", { className: "template-name" }, v.name),
+    el("span", { className: "badge" }, v.selection === "all" ? "all" : "HEAD"),
+    el("span", { className: "template-sub mono" }, v.layout))),
+  ...(editing === "" ? [el("li", { className: "selected" }, el("span", { className: "template-name" }, "new view"),
+    el("span", { className: "template-sub" }, "not saved yet"))] : []));
 }
 
 function open(v, name) {
@@ -46,6 +47,7 @@ function open(v, name) {
   $("default").value = $("use-default").checked ? v.default : "none";
   $("dedupe").checked = v.dedupe === "number";
   $("delete").hidden = !name;
+  closeSuggest();
   say($("message"), "");
   say($("export-message"), "");
   exportStale();
@@ -63,18 +65,113 @@ function condition(key, values) {
   return row;
 }
 
-// The keys a layout can use, as chips that insert themselves at the caret.
-function chips() {
-  // A country key also comes in each format it can be written in.
-  const countries = new Set(state.templates.flatMap((t) => t.fields.filter((f) => f.type === "country").map((f) => f.key)));
-  const all = keys.flatMap((k) => countries.has(k) ? [k, k + ":zh", k + ":en", k + ":alpha2", k + ":alpha3"] : [k]);
-  $("keys").replaceChildren(el("span", { className: "muted" }, "Insert "), ...all.map((k) => el("button", {
-    type: "button", className: "chip", textContent: k,
-    title: k.includes(":") ? "The country written " + k.split(":")[1] + ", however the Item keeps it" : "",
-    onmousedown: (event) => event.preventDefault(),
-    onclick: () => insert("{" + k + "}"),
-  })), el("button", { type: "button", className: "chip", textContent: "/", onmousedown: (e) => e.preventDefault(), onclick: () => insert("/") }));
+// What each key a layout can use writes. A Template's own field is named
+// with the types that have it.
+const BUILT_IN = {
+  type: "the Template's type, such as id_card",
+  kind: "document or record",
+  id: "the Item's ID",
+  revision: "the revision's number, from 1",
+  ext: "the extension: pdf",
+  year: "the year of issued_at",
+  month: "the month of issued_at",
+  date: "issued_at, YYYY-MM-DD",
+};
+const FORMATS = { zh: "中国", en: "China", alpha2: "CN", alpha3: "CHN" };
+
+const countryKeys = () => new Set(state.templates.flatMap((t) => t.fields.filter((f) => f.type === "country").map((f) => f.key)));
+
+function describe(key) {
+  if (BUILT_IN[key]) return BUILT_IN[key];
+  const types = state.templates.filter((t) => t.fields.some((f) => f.key === key)).map((t) => t.type);
+  return (countryKeys().has(key) ? "a country, as the Item keeps it" : "a field") + (types.length ? " of " + types.join(", ") : "");
 }
+
+// The keys as chips that insert at the caret: fields, then the ones every
+// PDF has, then each country field in each form it can be written in.
+function chips() {
+  const chip = (text, insertText, title) => el("button", {
+    type: "button", className: "chip", textContent: text, title,
+    onmousedown: (event) => event.preventDefault(),
+    onclick: () => insert(insertText),
+  });
+  const group = (name, ...children) => children.length ? el("div", { className: "key-group" },
+    el("span", { className: "key-group-name" }, name), el("div", { className: "key-chips" }, ...children)) : null;
+  const fields = keys.filter((k) => !BUILT_IN[k]);
+  const countries = [...countryKeys()];
+  $("keys").replaceChildren(...[
+    group("Fields", ...fields.map((k) => chip(k, "{" + k + "}", describe(k)))),
+    group("Every PDF", ...keys.filter((k) => BUILT_IN[k]).map((k) => chip(k, "{" + k + "}", describe(k))), chip("/", "/", "a folder")),
+    ...countries.map((k) => group(k + " as", ...Object.entries(FORMATS).map(([f, example]) =>
+      chip(":" + f, "{" + k + ":" + f + "}", `{${k}:${f}} writes ${example}`)))),
+  ].filter(Boolean));
+}
+
+// The suggestions under the layout while the caret is inside a { }: keys
+// that start with what is typed, or after a country key's colon, its forms.
+let suggestions = [];
+let active = 0;
+
+function suggest() {
+  const input = $("layout");
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const open = /\{([^{}]*)$/.exec(before);
+  if (!open || document.activeElement !== input) { closeSuggest(); return; }
+  const typed = open[1];
+  const colon = typed.indexOf(":");
+  if (colon >= 0) {
+    const key = typed.slice(0, colon);
+    const part = typed.slice(colon + 1);
+    suggestions = countryKeys().has(key)
+      ? Object.entries(FORMATS).filter(([f]) => f.startsWith(part)).map(([f, example]) => ({ text: key + ":" + f, note: "writes " + example }))
+      : [];
+  } else {
+    suggestions = keys.filter((k) => k.startsWith(typed)).flatMap((k) => [{ text: k, note: describe(k) },
+      ...(countryKeys().has(k) && typed === k ? Object.entries(FORMATS).map(([f, example]) => ({ text: k + ":" + f, note: "writes " + example })) : [])]);
+  }
+  if (!suggestions.length) { closeSuggest(); return; }
+  active = Math.min(active, suggestions.length - 1);
+  $("suggest").replaceChildren(...suggestions.map((s, i) => el("li", {
+    className: i === active ? "active" : "", role: "option",
+    onmousedown: (event) => { event.preventDefault(); accept(i); },
+  }, el("code", {}, "{" + s.text + "}"), el("span", {}, s.note))));
+  $("suggest").hidden = false;
+}
+
+function closeSuggest() {
+  suggestions = [];
+  active = 0;
+  $("suggest").hidden = true;
+}
+
+function accept(i) {
+  const input = $("layout");
+  const caret = input.selectionStart;
+  const start = input.value.lastIndexOf("{", caret - 1);
+  const after = input.value.slice(caret).replace(/^[^{}\/]*\}/, "");
+  const text = "{" + suggestions[i].text + "}";
+  input.value = input.value.slice(0, start) + text + after;
+  input.setSelectionRange(start + text.length, start + text.length);
+  closeSuggest();
+  changed();
+}
+
+$("layout").addEventListener("input", () => { active = 0; suggest(); });
+$("layout").addEventListener("click", suggest);
+$("layout").addEventListener("blur", closeSuggest);
+$("layout").addEventListener("keydown", (event) => {
+  if ($("suggest").hidden) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    active = (active + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length;
+    suggest();
+  } else if (event.key === "Enter" || event.key === "Tab") {
+    event.preventDefault();
+    accept(active);
+  } else if (event.key === "Escape") {
+    closeSuggest();
+  }
+});
 
 function insert(text) {
   const input = $("layout");
@@ -263,7 +360,7 @@ $("form").addEventListener("submit", async (event) => {
   }
 });
 $("delete").addEventListener("click", async () => {
-  if (!editing || !confirm("Delete the View " + editing + "? Its file under views/ is removed.")) return;
+  if (!editing || !confirm("Delete the View " + editing + "?\n\nIts file under views/ is removed; exports already written stay.")) return;
   try {
     await post("/api/views/delete", { name: editing });
     views = views.filter((v) => v.name !== editing);

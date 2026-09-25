@@ -65,6 +65,12 @@ written, comments included, after it parses and validates. A type Items use
 cannot be renamed and its kind cannot change, since every sidecar names both;
 its fields can. Renaming an unused Template moves the old file to the trash.
 
+The file is edited in the shared code editor: line numbers, YAML colours and
+folding. An unsaved edit is marked, Ctrl/Cmd+S saves, and leaving the Template
+asks first. Beside it a panel says what a Template can say. Deleting is in the
+same panel, apart from Save, and waits until the Template's type is typed out;
+a Template Items use cannot be deleted.
+
 ### Import
 
 1. **Open folder…** opens the shared file dialog in folder mode, at the folder
@@ -293,6 +299,9 @@ A layout is rendered by three rules:
 The page lists the Views on the left. The form picks the types, adds
 conditions on other keys (`owner is jane, tom`), HEAD or all revisions, and
 the layout, typed or built by clicking key chips that insert at the caret.
+The chips are grouped: the Templates' fields, the keys every PDF has, and each
+country field's formats. Typing `{` in the layout lists the keys with what
+each writes; after a country key's `:` it lists the formats with an example.
 Beside it the preview redraws, as the form changes, the folder tree an
 export would write, each file linked to its Item on Browse, with the PDFs
 lacking a key and the paths wanted twice listed above it. Saving writes

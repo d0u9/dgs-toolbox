@@ -1,0 +1,41 @@
+/* The code editor: a gutter of line numbers and fold marks, then the
+   coloured text drawn under a transparent textarea that takes the typing. */
+.code-edit {
+  --code-line: 20px;
+  display: flex; min-height: 0; overflow: hidden; position: relative;
+  font-family: var(--font-mono); font-size: var(--font-size-sm); line-height: var(--code-line);
+  background: var(--paper); border: 1px solid var(--hairline-strong); border-radius: var(--radius-md);
+}
+.code-edit:focus-within { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.code-gutter {
+  flex: none; min-width: 52px; padding: 10px 0; box-sizing: border-box;
+  color: var(--steel); background: var(--cloud); border-right: 1px solid var(--hairline);
+  user-select: none; text-align: right; will-change: transform;
+}
+.code-number { display: flex; justify-content: flex-end; gap: 4px; height: var(--code-line); padding: 0 4px 0 8px; font-variant-numeric: tabular-nums; }
+.code-fold { width: 12px; text-align: center; color: var(--graphite); cursor: pointer; visibility: hidden; }
+.code-edit:hover .code-fold, .code-fold.folded { visibility: visible; }
+.code-fold.folded { color: var(--primary); }
+.code-number .code-fold:hover { color: var(--primary); }
+.code-body { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+.code-shown, .code-area {
+  margin: 0; padding: 10px 12px; box-sizing: border-box;
+  font: inherit; line-height: var(--code-line); tab-size: 2; white-space: pre; letter-spacing: 0;
+}
+.code-shown { position: absolute; top: 0; left: 0; min-width: 100%; color: var(--ink); pointer-events: none; will-change: transform; }
+.code-line { height: var(--code-line); }
+.code-area {
+  position: absolute; inset: 0; width: 100%; height: 100%; resize: none; border: 0; outline: none;
+  color: transparent; background: transparent; caret-color: var(--ink); overflow: auto;
+}
+.code-area::selection { background: rgba(2, 74, 216, .22); color: transparent; }
+.code-key { color: #0e3191; }
+.code-dash { color: var(--graphite); }
+.code-comment { color: #6a737d; font-style: italic; }
+.code-string { color: #0a7a3c; }
+.code-num, .code-bool { color: #b35900; }
+.code-flow { color: #7a3fb3; }
+.code-folded {
+  margin-left: 6px; padding: 0 6px; border-radius: var(--radius-sm);
+  color: var(--graphite); background: var(--fog); font-style: normal;
+}
