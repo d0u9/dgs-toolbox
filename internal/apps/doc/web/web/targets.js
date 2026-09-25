@@ -3,12 +3,14 @@
 // deletes Targets, picks their folders, moves Views to them and exports.
 import { $, api, el, loadState, post, planNodes, frame, say, targetFolder, rememberTargetFolder } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
+import { guardByName } from "/ui/confirm.js";
 
 let state = { templates: [], items: [] };
 let targets = [];
 let views = [];
 let current = null; // the name of the Target shown
 let planned = null;
+const armDelete = guardByName($("confirm"), $("delete"), "");
 
 const plain = (t) => ({ name: t.name, about: t.about || "", folder: t.folder || "" });
 const shown = () => targets.find((t) => t.name === current);
@@ -101,7 +103,9 @@ function show(name) {
   $("here-clear").disabled = !here || here === t.default;
   $("new-view").href = api("/views/") + "#new:" + encodeURIComponent(name);
   drawViews();
-  $("delete").disabled = t.views.length > 0;
+  $("confirm-name").textContent = t.name;
+  armDelete(t.name);
+  $("confirm").disabled = t.views.length > 0;
   $("delete-note").textContent = t.views.length
     ? "Views export here: move them to another Target first."
     : "Removes the Target from targets.yaml. Nothing already exported is touched.";
@@ -204,7 +208,6 @@ $("here-clear").addEventListener("click", () => {
 });
 
 $("delete").addEventListener("click", async () => {
-  if (!confirm("Delete the Target " + current + "?\n\nIt leaves targets.yaml. Files already exported stay where they are.")) return;
   if (await save(targets.filter((t) => t.name !== current).map(plain))) {
     rememberTargetFolder(state, current, "");
     await load("");

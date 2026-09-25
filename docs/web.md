@@ -388,6 +388,9 @@ count in the numbers and come back in the value. A page links
 `/ui/codeedit.css` and calls `codeEditor` from `/ui/codeedit.js`, with what an
 edit and Ctrl/Cmd+S do.
 
+It also carries the **name guard** for dangerous actions, `/ui/confirm.js`
+(see [Buttons and dangerous actions](#buttons-and-dangerous-actions-docs-pages-are-the-reference)).
+
 It also carries the **status bar**: the one row along the bottom of a page
 where every piece of news lands. A page links `/ui/statusbar.css`, imports
 `/ui/statusbar.js`, calls `mount()` once and then `show`, `showError`,
@@ -711,6 +714,28 @@ The system maintains a clear two-tier philosophy: **buttons stay sharp** (4px, a
 ### Photography Geometry
 
 Hero photography sits in `{rounded.xl}` (16px) frames with no border. Product family thumbnails inside the laptop-grid are 1:1 (square) on a `{colors.canvas}` background, padded so the laptop is shown at ~70% of the frame. Customer-story photography uses 16:9 inside the same `{rounded.xl}` frame. There are no full-bleed circular avatars; testimonial avatars are 4px-rounded squares.
+
+## Buttons and dangerous actions: doc's pages are the reference
+
+Every page uses the same few buttons, as `/ui/controls.css` draws them; the
+`dgs doc` pages set how they look, and a page that differs is brought into
+line rather than the other way round. A page does not restyle them.
+
+| Class | For |
+| --- | --- |
+| `.action` (or `.button.primary`, the same) | The one action a view is about — Save, Import, Export. Filled blue, semibold. |
+| `.button` | Every other action: a hairline box on paper. |
+| `.small-button` | With `.button`, an action on one row of a list: Remove, Take out. |
+| `.button.danger` | Delete, discard, move to the trash: red outline, red fill under the pointer. |
+| `.chip` | A setting, not an action: a filter, a mode. |
+
+A dangerous action is never beside the ordinary ones. It lives in a
+`.danger-zone` — a red frame on a faint red ground, at the end of the panel it
+belongs to — with a red heading and a `.danger-note` saying exactly what
+happens ("moves into the trash; nothing is erased"). Where losing it would be
+more than a click to undo, the button stays disabled until the name of what it
+acts on is typed: `guardByName` from `/ui/confirm.js`. A danger zone that
+cannot act says why, in its note, instead of disappearing.
 
 ## Components
 

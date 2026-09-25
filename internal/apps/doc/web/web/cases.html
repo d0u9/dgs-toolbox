@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/filetree.css">
 <link rel="stylesheet" href="/ui/filedialog.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -104,9 +105,9 @@
         <div id="export-plan"></div>
       </section>
 
-      <section class="case-section detail-danger case-danger">
+      <section class="case-section danger-zone">
         <h3>Delete</h3>
-        <p class="detail-note">Moves the Case's file into the tree's trash. Its Items stay where they are.</p>
+        <p class="danger-note">Moves the Case's file into the tree's trash. Its Items stay where they are.</p>
         <label class="form-field"><span>Type <code id="confirm-name"></code> to delete</span>
           <input id="confirm" class="mono" spellcheck="false" autocomplete="off"></label>
         <button id="delete" class="button danger" type="button" disabled>Delete Case</button>

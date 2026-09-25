@@ -23,15 +23,48 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .button:hover, .icon-button:hover, .text-button:hover { background: var(--hover); }
 .button:disabled, .icon-button:disabled, .text-button:disabled { opacity: .4; cursor: default; }
 
-/* The accent form of the default control, for the one action a view is
-   about. */
-.button.primary {
-  border-color: var(--primary);
-  background: var(--primary);
+/* The one action a view is about: filled blue, semibold. .action and
+   .button.primary are the same button; doc's pages set the look. */
+.action, .button.primary {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: var(--control-height);
+  padding: 0 16px;
+  font-weight: 600;
   color: var(--on-primary);
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
 }
-.button.primary:hover { background: var(--primary-bright); border-color: var(--primary-bright); }
-.button.primary:active { background: var(--primary-deep); border-color: var(--primary-deep); }
+.action:hover, .button.primary:hover { background: var(--primary-bright); border-color: var(--primary-bright); }
+.action:active, .button.primary:active { background: var(--primary-deep); border-color: var(--primary-deep); }
+.action:disabled, .button.primary:disabled { background: var(--steel); border-color: var(--steel); opacity: 1; cursor: default; }
+.action[hidden], .button[hidden] { display: none; }
+
+/* A compact default control, for an action on one row of a list. */
+.small-button { height: 22px; padding: 0 8px; font-size: var(--font-size-xs); }
+
+/* An action that deletes, discards or moves to the trash: red outline, red
+   fill under the pointer, so it never reads as the ordinary next step. */
+.button.danger { color: var(--error); border-color: var(--error); background: var(--paper); }
+.button.danger:hover { background: var(--error); color: var(--on-ink); }
+.button.danger:disabled { opacity: .5; cursor: default; background: var(--paper); color: var(--error); }
+
+/* The panel a dangerous action lives in, apart from everything else: a red
+   frame on a faint red ground, its heading red. What it does is said in
+   .danger-note; where the action cannot be undone by the page, a name is
+   typed before the button wakes (guardByName in /ui/confirm.js). */
+.danger-zone {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--error);
+  border-radius: var(--radius-md);
+  background: #fdf3f3;
+}
+.danger-zone[hidden] { display: none; }
+.danger-zone h3 { margin: 0; color: var(--error); }
+.danger-note { margin: 0; font-size: var(--font-size-xs); color: var(--charcoal); }
+.danger-zone input { font-family: var(--font-mono); }
 
 /* A small square-cornered button that holds a setting rather than starting an action. */
 .chip {
