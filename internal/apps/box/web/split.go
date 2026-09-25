@@ -11,7 +11,7 @@ import (
 	"dgs-toolbox/internal/box/money"
 	"dgs-toolbox/internal/box/pagerange"
 	"dgs-toolbox/internal/box/sidecar"
-	"dgs-toolbox/internal/box/tag"
+	"dgs-toolbox/internal/tag"
 )
 
 // SplitDocument is one document inside a split scan, as the pages see it:
