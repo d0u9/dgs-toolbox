@@ -35,7 +35,19 @@
   </section>
   <section class="preview">
     <p id="empty" class="muted">Pick an Item to see it.</p>
-    <div id="pages" class="pages" hidden></div>
+    <nav id="rail" class="rail" aria-label="Pages" hidden></nav>
+    <div id="viewer" class="viewer" hidden>
+      <div class="viewer-bar">
+        <button type="button" id="zoom-out" class="tool" title="Zoom out (−)">−</button>
+        <button type="button" id="zoom-level" class="tool zoom-level" title="Actual width (0)">100%</button>
+        <button type="button" id="zoom-in" class="tool" title="Zoom in (+)">+</button>
+        <button type="button" id="fit-width" class="tool" title="Fit width">Width</button>
+        <button type="button" id="fit-page" class="tool" title="Fit page">Page</button>
+        <span class="viewer-spacer"></span>
+        <span id="page-at" class="muted numeric"></span>
+      </div>
+      <div id="pages" class="pages"></div>
+    </div>
     <iframe id="frame" title="Preview" hidden></iframe>
   </section>
   <aside id="side" class="side" hidden>

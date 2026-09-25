@@ -210,3 +210,26 @@ func TestRenderPictureTurnsThePage(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderPictureAtFitsAndTurns(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewGray(image.Rect(0, 0, 400, 200))); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		size, rotate int
+		want         image.Point
+	}{{100, 0, image.Pt(100, 50)}, {100, 90, image.Pt(50, 100)}, {1000, 0, image.Pt(400, 200)}} {
+		out, err := thumb.RenderPictureAt(scanmeta.Image{Rendered: encoded.Bytes(), Rotate: c.rotate}, c.size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := jpeg.Decode(bytes.NewReader(out))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := decoded.Bounds().Size(); got != c.want {
+			t.Errorf("size %d rotate %d: %v, want %v", c.size, c.rotate, got, c.want)
+		}
+	}
+}

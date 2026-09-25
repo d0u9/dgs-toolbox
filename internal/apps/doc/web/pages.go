@@ -34,11 +34,25 @@ type pictures struct {
 
 const maxPictures = 96
 
+// The sizes a page is drawn at, by the name a request gives.
+const (
+	// sizeThumb is the strip of pages beside the preview: thumb.GridSize.
+	sizeThumb = "thumb"
+	// sizePage is the page as first shown: thumb.PreviewSize.
+	sizePage = "page"
+	// sizeLarge is for a page zoomed past sizePage: largeSize on the long
+	// side, or the scan's own size when that is smaller.
+	sizeLarge = "large"
+)
+
+// largeSize is enough for a 300 dpi A4 scan at its own resolution.
+const largeSize = 3600
+
 func newPictures() *pictures { return &pictures{jpegs: map[string][]byte{}} }
 
-// page is the JPEG of one page, counting from 1.
-func (p *pictures) page(path, digest string, n int) ([]byte, error) {
-	key := digest + "/" + strconv.Itoa(n)
+// page is the JPEG of one page, counting from 1, at a size above.
+func (p *pictures) page(path, digest string, n int, size string) ([]byte, error) {
+	key := digest + "/" + strconv.Itoa(n) + "/" + size
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if jpeg, ok := p.jpegs[key]; ok {
@@ -59,17 +73,39 @@ func (p *pictures) page(path, digest string, n int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if size == sizeLarge {
+		large, err := thumb.RenderPictureAt(picture, largeSize)
+		if err != nil {
+			return nil, err
+		}
+		p.keep(key, large)
+		return large, nil
+	}
+	// The two smaller sizes come together, the thumbnail drawn from the page.
 	pair, err := thumb.RenderPicture(picture)
 	if err != nil {
 		return nil, err
 	}
-	p.jpegs[key] = pair.Preview
-	p.order = append(p.order, key)
+	base := digest + "/" + strconv.Itoa(n) + "/"
+	p.keep(base+sizePage, pair.Preview)
+	p.keep(base+sizeThumb, pair.Grid)
+	if size == sizeThumb {
+		return pair.Grid, nil
+	}
+	return pair.Preview, nil
+}
+
+// keep holds a drawn page, dropping the oldest past maxPictures. Callers
+// hold mu.
+func (p *pictures) keep(key string, jpeg []byte) {
+	if _, ok := p.jpegs[key]; !ok {
+		p.order = append(p.order, key)
+	}
+	p.jpegs[key] = jpeg
 	if len(p.order) > maxPictures {
 		delete(p.jpegs, p.order[0])
 		p.order = p.order[1:]
 	}
-	return pair.Preview, nil
 }
 
 // count is the PDF's number of pages.
@@ -107,7 +143,7 @@ func (s server) pages(w http.ResponseWriter, r *http.Request) {
 	// with no picture means a PDF made on a computer, which the viewer shows.
 	count, err := s.pictures.count(path, digest)
 	if err == nil {
-		_, err = s.pictures.page(path, digest, 1)
+		_, err = s.pictures.page(path, digest, 1, sizePage)
 	}
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"count": 0, "digest": digest})
@@ -135,7 +171,16 @@ func (s server) page(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	jpeg, err := s.pictures.page(path, digest, n)
+	size := query.Get("size")
+	switch size {
+	case "":
+		size = sizePage
+	case sizePage, sizeThumb, sizeLarge:
+	default:
+		http.Error(w, "size is thumb, page or large", http.StatusBadRequest)
+		return
+	}
+	jpeg, err := s.pictures.page(path, digest, n, size)
 	if err != nil {
 		if errors.Is(err, scanmeta.ErrNoPageImage) || errors.Is(err, thumb.ErrNoImage) {
 			w.WriteHeader(http.StatusNoContent)
