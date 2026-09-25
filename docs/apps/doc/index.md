@@ -107,6 +107,17 @@ matches its SHA-256.
 Export removes only files it wrote itself, recorded in a manifest at the
 Target root; anything else under the Target is never touched.
 
+## Metadata: sidecars are the truth
+
+As in [`dgs box`](../box/index.md#metadata-the-sidecar-is-the-truth), each PDF
+has a YAML sidecar beside it, and the sidecars are the only metadata truth.
+Everything else — the index the page queries, thumbnails — is a cache: it lives
+on the local machine, outside the repository, and can be deleted and rebuilt
+from the sidecars at any time. The owner edits on the page, never in YAML.
+
+A cache is not a database: [`AGENTS.md`](../../../AGENTS.md) allows none, so
+the index is held in memory and saved as a file, as `box`'s is.
+
 ## Repositories and merging
 
 A **full tree** lives at home on the NAS. A **sub-tree** is a temporary
@@ -131,9 +142,6 @@ Conflicts are resolved by hand on the page before the merge completes.
 
 ## Open questions
 
-- **Where metadata is stored.** Not SQLite: [`AGENTS.md`](../../../AGENTS.md)
-  allows no database outside `dgs box`'s index. Whether it is YAML sidecars
-  beside each PDF plus an append-only log, as `dgs box` does, is not decided.
 - **File names** — the marker, sidecar and manifest names. `dgs box` already
   uses `*.dgs-doc.yaml` for its sidecars, so doc's must differ.
 - **Template format** and where Templates are configured.
