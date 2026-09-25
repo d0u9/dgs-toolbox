@@ -295,3 +295,34 @@ func TestItemLinksAndNotes(t *testing.T) {
 		t.Fatal("notes not written")
 	}
 }
+
+func TestTrashMovesTheItem(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 25, 10, 0, 0, 0, time.UTC)
+	if err := Init(root, now); err != nil {
+		t.Fatal(err)
+	}
+	item := Item{ID: "A", Type: "id_card", Kind: KindRecord, Revisions: []Revision{{Digest: "d"}}}
+	if err := os.MkdirAll(Dir(root, "A"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(PDFPath(root, "A", "d"), []byte("pdf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteItem(root, item); err != nil {
+		t.Fatal(err)
+	}
+	to, err := Trash(root, "A", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(to, "d.pdf")); err != nil || string(data) != "pdf" {
+		t.Fatalf("trashed PDF: %v %q", err, data)
+	}
+	if items, err := LoadItems(root); err != nil || len(items) != 0 {
+		t.Fatalf("items after trash: %v %+v", err, items)
+	}
+	if _, err := Trash(root, "A", now); err == nil {
+		t.Fatal("trashed an Item that is gone")
+	}
+}

@@ -145,3 +145,9 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .merge-choice { display: flex; gap: 6px; align-items: baseline; margin: 2px 0 0 4px; }
 .merge-choice pre { margin: 0; font-size: 12px; white-space: pre-wrap; }
 .snippet { font-style: italic; }
+.template-edit { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: var(--space-md, 16px) 20px; overflow-y: auto; }
+.template-yaml { flex: 1; min-height: 320px; padding: 10px 12px; font-family: var(--font-mono); font-size: var(--font-size-sm); line-height: 1.5; border: 1px solid var(--hairline-strong); border-radius: var(--radius-md); resize: none; tab-size: 2; }
+.template-edit .buttons { display: flex; gap: var(--space-xs); }
+.template-edit .buttons .action { margin: 0; }
+.template-help { margin-top: var(--space-md, 16px); }
+.template-help pre { font-size: var(--font-size-xs); background: var(--cloud); padding: 10px 12px; border-radius: var(--radius-md); overflow-x: auto; }

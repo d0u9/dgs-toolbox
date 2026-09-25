@@ -132,13 +132,8 @@ func LoadTemplates(root string) ([]Template, error) {
 		if err != nil {
 			return nil, err
 		}
-		var t Template
-		decoder := yaml.NewDecoder(strings.NewReader(string(data)))
-		decoder.KnownFields(true)
-		if err := decoder.Decode(&t); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if err := t.Validate(); err != nil {
+		t, err := ParseTemplate(data)
+		if err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != t.Type {
@@ -148,6 +143,18 @@ func LoadTemplates(root string) ([]Template, error) {
 	}
 	sort.Slice(templates, func(i, j int) bool { return templates[i].Type < templates[j].Type })
 	return templates, nil
+}
+
+// ParseTemplate reads one Template file's content and validates it. A key the
+// Template does not know is refused, so a misspelt one is not silently lost.
+func ParseTemplate(data []byte) (Template, error) {
+	var t Template
+	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&t); err != nil {
+		return Template{}, err
+	}
+	return t, t.Validate()
 }
 
 func (t Template) field(key string) Field {

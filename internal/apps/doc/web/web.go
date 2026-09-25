@@ -135,6 +135,10 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/head", s.setHead)
 	mux.HandleFunc("POST /api/fields", s.setFields)
 	mux.HandleFunc("POST /api/notes", s.setNotes)
+	mux.HandleFunc("POST /api/items/delete", s.deleteItem)
+	mux.HandleFunc("GET /api/templates", s.templateList)
+	mux.HandleFunc("POST /api/templates", s.templateSave)
+	mux.HandleFunc("POST /api/templates/delete", s.templateDelete)
 	mux.HandleFunc("GET /api/views", s.viewList)
 	mux.HandleFunc("POST /api/views/plan", s.viewPlan)
 	mux.HandleFunc("POST /api/views", s.viewSave)
@@ -155,7 +159,7 @@ func Handler(settings Settings) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
-	for _, page := range []string{"browse", "import", "views", "merge"} {
+	for _, page := range []string{"browse", "templates", "import", "views", "merge"} {
 		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
 		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
 	}
@@ -596,6 +600,25 @@ func (s server) setNotes(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := tree.SetNotes(s.root, request.Item, request.Notes)
 	answer(w, item, err)
+}
+
+// deleteItem moves an Item's folder into the tree's trash. The page asks
+// first; nothing is erased.
+func (s server) deleteItem(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item string `json:"item"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	to, err := tree.Trash(s.root, request.Item, s.now())
+	if err != nil {
+		answer(w, tree.Item{}, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"trash": to})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

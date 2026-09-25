@@ -1,5 +1,5 @@
 // Browse: the Items kept in the tree, their fields, revisions and HEAD.
-import { $, el, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview } from "/common.js";
+import { $, el, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview, clearPreview } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -115,6 +115,23 @@ $("notes-form").onsubmit = async (event) => {
     say($("notes-message"), "Saved.");
   } catch (err) {
     say($("notes-message"), err.message, true);
+  }
+};
+
+$("delete").onclick = async () => {
+  const item = selected && state.items.find((i) => i.id === selected.id);
+  if (!item) return;
+  const n = item.revisions.length;
+  if (!confirm(`Delete ${label(state, item)}?\n\nIts ${n === 1 ? "PDF" : n + " PDFs"} and fields move into the tree's trash folder. The PDF you imported from is not touched.`)) return;
+  try {
+    const answer = await post("/api/items/delete", { item: item.id });
+    selected = null;
+    history.replaceState(null, "", location.pathname);
+    await reload();
+    clearPreview();
+    say($("list-message"), "Deleted. It is in " + answer.trash + ".");
+  } catch (err) {
+    say($("delete-message"), err.message, true);
   }
 };
 
