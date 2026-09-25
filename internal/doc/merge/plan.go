@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
+	"dgs-toolbox/internal/tag"
 	"dgs-toolbox/internal/verifiedcopy"
 )
 
@@ -31,6 +33,8 @@ type Change struct {
 	// Notes are the notes after the merge, when the Source adds to them:
 	// both sides' notes are kept.
 	Notes string `json:"notes,omitempty"`
+	// Tags add the Source's tags to the matched Item.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // Conflict kinds.
@@ -178,7 +182,12 @@ func Compute(root string, src Source) (Plan, error) {
 		if s.Notes != "" && !strings.Contains(m.Notes, s.Notes) {
 			c.Notes = strings.TrimSpace(m.Notes + "\n\n" + s.Notes)
 		}
-		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" {
+		for _, tag := range s.Tags {
+			if !slices.Contains(m.Tags, tag) {
+				c.Tags = append(c.Tags, tag)
+			}
+		}
+		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" || len(c.Tags) > 0 {
 			plan.Changed = append(plan.Changed, c)
 		} else if len(plan.Conflicts) == conflicts {
 			plan.Same++
@@ -367,6 +376,7 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		if c.Notes != "" {
 			it.Notes = c.Notes
 		}
+		it.Tags = tag.List(append(it.Tags, c.Tags...))
 	}
 	for _, c := range plan.Conflicts {
 		if chosen[c.ID] != Theirs || (c.Kind != ConflictFields && c.Kind != ConflictHead) {

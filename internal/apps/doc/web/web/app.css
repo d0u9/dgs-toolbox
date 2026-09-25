@@ -7,7 +7,7 @@ body { display: flex; flex-direction: column; }
 }
 .scroll { overflow-y: auto; flex: 1; }
 .count { margin-left: var(--space-xs); font-weight: 400; }
-#filter, .form-field input, .form-field select, textarea.notes {
+#filter, .form-field input, .form-field select, .form-field textarea, textarea.notes {
   padding: 6px 8px; font: inherit;
   border: 1px solid var(--hairline-strong); border-radius: var(--radius-md);
   background: var(--paper);
@@ -29,7 +29,45 @@ body { display: flex; flex-direction: column; }
   background: var(--paper); border-left: 1px solid var(--hairline);
 }
 .form-field { display: flex; flex-direction: column; gap: var(--space-xxs); margin: var(--space-xs) 14px; }
+.form-field[hidden] { display: none; }
 .form-field span { font-size: var(--font-size-xs); color: var(--graphite); }
+.form-field textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.template-choices {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start;
+  gap: 5px; max-height: 176px; overflow-y: auto;
+}
+.template-choice {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0;
+  padding: 5px 8px; font: inherit; line-height: 1.2; text-align: left; cursor: pointer;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+}
+.template-choice:hover { background: var(--hover); }
+.template-choice.selected { color: var(--primary); background: var(--selected); border-color: var(--primary); }
+.template-choice:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.template-choice strong { display: block; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: var(--font-size-sm); }
+.template-choice small { display: block; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--graphite); font-size: var(--font-size-xs); }
+.into-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; max-height: 190px; overflow-y: auto; }
+.into-choice {
+  min-width: 0; padding: 3px 5px; font: inherit; line-height: 1.15; text-align: left; cursor: pointer;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+}
+.into-choice:hover { background: var(--hover); }
+.into-choice[aria-pressed="true"] { color: var(--primary); background: var(--selected); border-color: var(--primary); }
+.into-choice:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.into-choice strong, .into-choice small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.into-choice strong { font-size: var(--font-size-xs); }
+.into-choice small { color: var(--graphite); font-size: 10px; }
+.field-choice-cards { display: flex; flex-wrap: wrap; gap: 5px; }
+.field-choice-card {
+  padding: 5px 9px; min-height: 28px; font: inherit; font-size: var(--font-size-sm);
+  color: var(--ink); background: var(--paper); border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md); cursor: pointer;
+}
+.field-choice-card:hover { background: var(--hover); }
+.field-choice-card[aria-pressed="true"] { color: var(--primary); background: var(--selected); border-color: var(--primary); }
+.field-choice-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .form-field .req { color: var(--error); }
 /* .action is the shared one (/ui/controls.css); here it only keeps its place. */
 .action { margin: var(--space-xs) 14px; }
@@ -67,7 +105,7 @@ body { display: flex; flex-direction: column; }
 .tool:hover { background: var(--hover); }
 .tool.on { color: var(--primary); border-color: var(--primary); }
 .zoom-level { min-width: 52px; font-variant-numeric: tabular-nums; }
-.pages { flex: 1; overflow: auto; padding: var(--space-md); cursor: grab; }
+.pages { flex: 1; overflow: auto; overflow-anchor: none; padding: var(--space-md); cursor: grab; }
 .pages.panning { cursor: grabbing; user-select: none; }
 .rail {
   width: 108px; flex: none; overflow-y: auto; padding: var(--space-xs);
@@ -196,6 +234,9 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
   border-radius: var(--radius-md); background: var(--paper);
 }
 .filter-search input { width: 16em; }
+.filter-tags { height: auto; min-height: 30px; }
+.filter-tags .tag-field { width: 190px; }
+.filter-tags.filter-active .tag-field { border-color: var(--primary); }
 .filter-active select { border-color: var(--primary); background: var(--selected); }
 .filter-result { display: flex; align-items: center; gap: var(--space-xs); margin-left: auto; font-size: var(--font-size-sm); color: var(--charcoal); }
 .filter-result .small-inline { align-self: center; }
@@ -294,6 +335,22 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .rev { display: flex; align-items: center; gap: 8px; }
 .rev-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .rev .button { flex: none; }
+.side.detail .danger-zone { box-sizing: border-box; width: 100%; padding: 12px 14px; border: 1px solid var(--error); border-radius: var(--radius-md); background: var(--error-soft, #fff8f8); }
+.side.detail .danger-zone .danger-note { margin: 0; overflow-wrap: anywhere; }
+.side.detail .danger-zone .button { margin: 0; }
+.change-type-page { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
+.change-type-page h1 { margin: 0 0 8px; font-size: 24px; }
+.change-type-page > p { margin: 0 0 20px; }
+.change-type-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.change-type-panel { min-width: 0; padding: 18px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--paper); }
+.change-type-panel h2 { margin: 0 0 12px; font-size: var(--font-size-title); }
+.change-type-panel h3 { margin: 16px 0 8px; font-size: var(--font-size-sm); }
+.change-type-value { display: flex; gap: 12px; margin: 4px 0; overflow-wrap: anywhere; }
+.change-type-value span { min-width: 110px; }
+.change-type-revision { border-top: 1px solid var(--hairline); margin-top: 14px; }
+.change-type-panel .form-field { margin-left: 0; margin-right: 0; }
+.change-type-panel .action { margin-left: 0; }
+@media (max-width: 760px) { .change-type-columns { grid-template-columns: 1fr; } }
 
 /* The reader: the picked revision in place of the cards, the detail panel
    still beside it. */

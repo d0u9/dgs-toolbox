@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"dgs-toolbox/internal/tag"
 	"dgs-toolbox/internal/verifiedcopy"
 )
 
@@ -47,6 +48,19 @@ func holder(items []Item, digest string) (Item, bool) {
 // published only after it reads back the same; the sidecar follows. A record
 // has no revisions and is refused.
 func AddRevision(ctx context.Context, root, id, source string, template Template, given map[string]string, now time.Time) (Item, error) {
+	return AddRevisionWithMetadata(ctx, root, id, source, template, given, RevisionMetadata{}, now)
+}
+
+// RevisionMetadata optionally updates the Item's notes and tags when adding a
+// revision. Nil fields preserve the values already on the Item.
+type RevisionMetadata struct {
+	Notes *string
+	Tags  *[]string
+}
+
+// AddRevisionWithMetadata adds a revision and saves any Item metadata edits in
+// the same sidecar write.
+func AddRevisionWithMetadata(ctx context.Context, root, id, source string, template Template, given map[string]string, metadata RevisionMetadata, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -84,6 +98,23 @@ func AddRevision(ctx context.Context, root, id, source string, template Template
 		Digest: digest, Added: now.Format(time.RFC3339), Source: filepath.Base(source), Fields: fields,
 	})
 	item.Head = digest
+	event := HistoryEvent{At: now.Format(time.RFC3339), Action: "import_revision", Digest: digest, Changes: map[string][2]string{}}
+	if metadata.Notes != nil {
+		if next := strings.TrimSpace(*metadata.Notes); next != item.Notes {
+			event.Changes["notes"] = [2]string{item.Notes, next}
+		}
+		item.Notes = strings.TrimSpace(*metadata.Notes)
+	}
+	if metadata.Tags != nil {
+		if next := tag.List(*metadata.Tags); strings.Join(next, ", ") != strings.Join(item.Tags, ", ") {
+			event.Changes["tags"] = [2]string{strings.Join(item.Tags, ", "), strings.Join(next, ", ")}
+		}
+		item.Tags = tag.List(*metadata.Tags)
+	}
+	if len(event.Changes) == 0 {
+		event.Changes = nil
+	}
+	item.History = append(item.History, event)
 	if err := WriteItem(root, item); err != nil {
 		return Item{}, err
 	}
@@ -105,11 +136,75 @@ func SetHead(root, id, digest string) (Item, error) {
 	}
 	for _, r := range item.Revisions {
 		if r.Digest == digest {
+			if item.Head == digest {
+				return item, nil
+			}
 			item.Head = digest
+			item.History = append(item.History, HistoryEvent{At: time.Now().Format(time.RFC3339), Action: "make_head", Digest: digest})
 			return item, WriteItem(root, item)
 		}
 	}
 	return Item{}, fmt.Errorf("%s %s has no revision %s", item.Type, item.ID, digest)
+}
+
+// TrashRevision removes one document revision and moves its PDF to trash.
+// The final revision belongs to the Item and must be deleted with Trash.
+func TrashRevision(root, id, digest string, now time.Time) (Item, string, error) {
+	if err := Require(root); err != nil {
+		return Item{}, "", err
+	}
+	item, _, err := FindItem(root, id)
+	if err != nil {
+		return Item{}, "", err
+	}
+	if item.Kind != KindDocument || len(item.Revisions) < 2 {
+		return Item{}, "", fmt.Errorf("delete the Item to remove its last revision")
+	}
+	at := -1
+	for i, r := range item.Revisions {
+		if r.Digest == digest {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return Item{}, "", fmt.Errorf("%s %s has no revision %s", item.Type, id, digest)
+	}
+	from := PDFPath(root, id, digest)
+	if err := os.MkdirAll(filepath.Join(root, TrashDir), 0o755); err != nil {
+		return Item{}, "", err
+	}
+	to := filepath.Join(root, TrashDir, id+"-"+digest+"-"+now.UTC().Format("20060102T150405Z")+".pdf")
+	if _, err := os.Lstat(to); err == nil {
+		return Item{}, "", fmt.Errorf("%s is already in the trash", to)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Item{}, "", err
+	}
+	if err := os.Rename(from, to); err != nil {
+		return Item{}, "", err
+	}
+	imported := false
+	for _, event := range item.History {
+		if (event.Action == "import" || event.Action == "import_revision") && event.Digest == digest {
+			imported = true
+			break
+		}
+	}
+	if !imported && item.Revisions[at].Added != "" {
+		item.History = append(item.History, HistoryEvent{At: item.Revisions[at].Added, Action: "import", Digest: digest})
+	}
+	item.Revisions = append(item.Revisions[:at], item.Revisions[at+1:]...)
+	if item.Head == digest {
+		item.Head = item.Revisions[len(item.Revisions)-1].Digest
+	}
+	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "delete_revision", Digest: digest})
+	if err := WriteItem(root, item); err != nil {
+		if undo := os.Rename(to, from); undo != nil {
+			return Item{}, "", fmt.Errorf("write Item: %v; restore PDF: %v", err, undo)
+		}
+		return Item{}, "", err
+	}
+	return item, to, nil
 }
 
 // SetFields replaces an Item's fields as one revision has them, checked
@@ -151,8 +246,23 @@ func SetFields(root, id, digest string, template Template, given map[string]stri
 		return Item{}, fmt.Errorf("%s %s has no revision %s", item.Type, item.ID, digest)
 	}
 	own, perRevision := template.Split(fields)
+	previous := item.FieldsAt(digest)
 	item.Fields = own
 	item.Revisions[at].Fields = perRevision
+	changes := map[string][2]string{}
+	for key, old := range previous {
+		if old != fields[key] {
+			changes[key] = [2]string{old, fields[key]}
+		}
+	}
+	for key, value := range fields {
+		if _, ok := previous[key]; !ok {
+			changes[key] = [2]string{"", value}
+		}
+	}
+	if len(changes) > 0 {
+		item.History = append(item.History, HistoryEvent{At: time.Now().Format(time.RFC3339), Action: "edit_fields", Digest: digest, Changes: changes})
+	}
 	return item, WriteItem(root, item)
 }
 
@@ -179,7 +289,28 @@ func SetNotes(root, id, notes string) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
+	old := item.Notes
 	item.Notes = strings.TrimSpace(notes)
+	if old != item.Notes {
+		item.History = append(item.History, HistoryEvent{At: time.Now().Format(time.RFC3339), Action: "edit_notes", Changes: map[string][2]string{"notes": {old, item.Notes}}})
+	}
+	return item, WriteItem(root, item)
+}
+
+// SetTags replaces an Item's tags in their canonical spelling.
+func SetTags(root, id string, tags []string) (Item, error) {
+	if err := Require(root); err != nil {
+		return Item{}, err
+	}
+	item, _, err := FindItem(root, id)
+	if err != nil {
+		return Item{}, err
+	}
+	old := strings.Join(item.Tags, ", ")
+	item.Tags = tag.List(tags)
+	if next := strings.Join(item.Tags, ", "); old != next {
+		item.History = append(item.History, HistoryEvent{At: time.Now().Format(time.RFC3339), Action: "edit_tags", Changes: map[string][2]string{"tags": {old, next}}})
+	}
 	return item, WriteItem(root, item)
 }
 

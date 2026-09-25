@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"dgs-toolbox/internal/tag"
 	"dgs-toolbox/internal/verifiedcopy"
 )
 
@@ -23,6 +24,8 @@ type ImportRequest struct {
 	Source   string
 	Template Template
 	Fields   map[string]string
+	Notes    string
+	Tags     []string
 	Now      time.Time
 }
 
@@ -80,11 +83,14 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	own, perRevision := request.Template.Split(fields)
 	item := Item{
 		ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Fields: own,
+		Notes:     strings.TrimSpace(request.Notes),
+		Tags:      tag.List(request.Tags),
 		Revisions: []Revision{{Digest: digest, Added: request.Now.Format(time.RFC3339), Source: filepath.Base(request.Source), Fields: perRevision}},
 	}
 	if item.Kind == KindDocument {
 		item.Head = digest
 	}
+	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "import", Digest: digest}}
 	if err := WriteItem(request.Root, item); err != nil {
 		return Item{}, err
 	}

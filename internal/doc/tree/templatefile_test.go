@@ -12,9 +12,12 @@ func TestSaveAndTrashTemplate(t *testing.T) {
 	if err := Init(root, now); err != nil {
 		t.Fatal(err)
 	}
-	bill := "# bills\ntype: bill\nkind: record\nfields:\n  - key: owner\n"
+	bill := "# bills\ntype: bill\ndescription: Monthly bills\nkind: record\nfields:\n  - key: owner\n"
 	if _, err := SaveTemplate(root, "", []byte(bill), now); err != nil {
 		t.Fatal(err)
+	}
+	if templates, err := LoadTemplates(root); err != nil || len(templates) != 2 || templates[0].Description != "Monthly bills" {
+		t.Fatalf("description: %+v %v", templates, err)
 	}
 	if data, _ := os.ReadFile(TemplatePath(root, "bill")); string(data) != bill {
 		t.Fatalf("written as typed: %q", data)

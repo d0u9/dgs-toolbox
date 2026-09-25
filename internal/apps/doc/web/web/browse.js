@@ -1,11 +1,17 @@
 // Browse: the Items kept in the tree, their fields, revisions and HEAD.
 import { splitter } from "/ui/splitter.js";
-import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, frame, say, showText, showPreview, clearPreview } from "/common.js";
+import { openMenu } from "/ui/menu.js";
+import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, frame, say, showText, showPreview, clearPreview } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
 let editing = "";
 let notesOf = "";
+let tagsOf = "";
+const detailTags = window.tagField($("detail-tags"), { known: () => tagUses(state.items), placeholder: "Add tags" });
+const filterTags = window.tagField($("filter-tags"), {
+  known: () => tagUses(state.items), only: true, placeholder: "any", onChange: () => render(),
+});
 // Items whose text matched the filter, by ID, with the line it matched on.
 let textHits = new Map();
 let unread = 0;
@@ -51,13 +57,15 @@ function drawFilters() {
 
 function shownItems() {
   const type = $("filter-type").value, kind = $("filter-kind").value, exp = $("filter-expiry").value;
+  const requiredTags = filterTags.get();
   const byKey = [...$("field-filters").querySelectorAll("select[data-key]")].filter((s) => s.value);
   const items = state.items.filter((i) => {
     const fields = currentFields(i);
     return (!type || i.type === type) && (!kind || i.kind === kind) &&
       (!exp || expiryOf(i).state === exp) &&
       byKey.every((s) => fields[s.dataset.key] === s.value) &&
-      (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ")));
+      requiredTags.every((tag) => (i.tags || []).includes(tag)) &&
+      (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ") + " " + (i.tags || []).join(" ")));
   });
   const sort = $("view-sort").value, dir = $("view-direction").value === "asc" ? 1 : -1;
   const added = (i) => (i.revisions[i.revisions.length - 1] || {}).added || "";
@@ -220,6 +228,7 @@ function render() {
   $("none").hidden = state.items.length > 0 || !state.tree;
   $("nothing").hidden = !state.items.length || items.length > 0;
   $("filters-clear").hidden = !filtering();
+  $("filter-tags").closest(".filter").classList.toggle("filter-active", filterTags.get().length > 0);
   for (const s of document.querySelectorAll(".filters select")) s.closest(".filter").classList.toggle("filter-active", !!s.value && !s.id.startsWith("view-"));
   $("unread").hidden = !unread;
   $("unread-count").textContent = unread + (unread === 1 ? " Item's text is" : " Items' text is") + " not read yet, so searching cannot find " + (unread === 1 ? "it." : "them.");
@@ -240,10 +249,11 @@ function render() {
   if (item) detail(item);
 }
 
-const filtering = () => $("filter").value.trim() || [...document.querySelectorAll(".filters select")].some((s) => s.value && !s.id.startsWith("view-"));
+const filtering = () => $("filter").value.trim() || filterTags.get().length || [...document.querySelectorAll(".filters select")].some((s) => s.value && !s.id.startsWith("view-"));
 
 $("filters-clear").onclick = () => {
   $("filter").value = "";
+  filterTags.set([]);
   for (const s of document.querySelectorAll(".filters select")) if (!s.id.startsWith("view-")) s.value = "";
   textHits = new Map();
   render();
@@ -310,6 +320,30 @@ function pick(id, digest) {
 
 function detail(item) {
   $("detail-head").textContent = label(state, item);
+  $("change-type").href = api("/change-type/?item=" + encodeURIComponent(item.id));
+  const history = [...(item.history || [])];
+  for (const r of item.revisions) if (!history.some((event) => event.action === "import" || event.action === "import_revision" ? event.digest === r.digest : false))
+    history.push({ at: r.added, action: "import", digest: r.digest });
+  history.sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+  $("history").replaceChildren(...history.map((event) => {
+    const title = { import: "Imported", import_revision: "Added revision", edit_fields: "Changed fields", edit_notes: "Changed notes",
+      edit_tags: "Changed tags", make_head: "Made HEAD", delete_revision: "Deleted revision", change_type: "Changed type", export: "Exported" }[event.action] || event.action;
+    const changes = Object.entries(event.changes || {}).map(([key, pair]) => `${key}: ${pair[0] || "∅"} → ${pair[1] || "∅"}`).join("; ");
+    const oldFields = event.action === "change_type" ? Object.entries(event.previous_fields || {}).map(([key, value]) => `${key}: ${value}`).join("; ") : "";
+    const newFields = event.action === "change_type" ? Object.entries(event.new_fields || {}).map(([key, value]) => `${key}: ${value}`).join("; ") : "";
+    const oldRevisions = event.action === "change_type" ? Object.entries(event.previous_revisions || {}).map(([digest, values]) =>
+      `${digest.slice(0, 8)} (${Object.entries(values || {}).map(([key, value]) => `${key}: ${value}`).join("; ")})`).join("; ") : "";
+    const newRevisions = event.action === "change_type" ? Object.entries(event.new_revisions || {}).map(([digest, values]) =>
+      `${digest.slice(0, 8)} (${Object.entries(values || {}).map(([key, value]) => `${key}: ${value}`).join("; ")})`).join("; ") : "";
+    return el("li", {}, el("strong", {}, title), el("span", { className: "sub" }, new Date(event.at).toLocaleString(),
+      event.from_type ? ` · ${event.from_type} → ${event.to_type}` : "", event.digest ? " · " + event.digest.slice(0, 8) : "",
+      event.target ? " · " + event.target : "", event.view ? " · " + event.view : ""),
+      changes ? el("span", { className: "sub", title: changes }, changes) : null,
+      oldFields ? el("span", { className: "sub", title: oldFields }, "Previous fields: " + oldFields) : null,
+      newFields ? el("span", { className: "sub", title: newFields }, "New fields: " + newFields) : null,
+      oldRevisions ? el("span", { className: "sub", title: oldRevisions }, "Previous revision fields: " + oldRevisions) : null,
+      newRevisions ? el("span", { className: "sub", title: newRevisions }, "New revision fields: " + newRevisions) : null);
+  }));
   const n = item.revisions.findIndex((r) => r.digest === selected.digest) + 1;
   $("detail-rev").textContent = item.kind === "document"
     ? "Revision " + n + " of " + item.revisions.length + (selected.digest === item.head ? " · HEAD" : "")
@@ -338,17 +372,31 @@ function detail(item) {
     $("notes").value = item.notes || "";
     say($("notes-message"), "");
   }
+  if (tagsOf !== item.id + "\n" + JSON.stringify(item.tags || [])) {
+    tagsOf = item.id + "\n" + JSON.stringify(item.tags || []);
+    detailTags.set(item.tags || []);
+    say($("tags-message"), "");
+  }
   $("revisions").replaceChildren(...item.revisions.slice().reverse().map((r) => {
     const isHead = r.digest === item.head;
-    const li = el("li", { className: "rev", onclick: () => pick(item.id, r.digest) },
+    const revisionMenu = (event) => openMenu(event, [
+      item.kind === "document" && !isHead ? [{ label: "Make HEAD", onSelect: () => makeHead(item.id, r.digest) }] : [],
+      [{ label: "Delete revision…", danger: true, disabled: item.revisions.length < 2,
+        title: item.revisions.length < 2 ? "Delete the Item to remove its last revision" : "Move this revision's PDF to trash",
+        onSelect: () => deleteRevision(item.id, r.digest) }],
+    ]);
+    const li = el("li", { className: "rev", onclick: () => pick(item.id, r.digest),
+      oncontextmenu: revisionMenu },
       el("div", { className: "rev-text" },
         el("span", {}, new Date(r.added).toLocaleDateString(), isHead ? el("span", { className: "tag" }, "HEAD") : null),
         el("span", { className: "sub", title: r.digest }, (r.source ? r.source + " · " : "") + r.digest.slice(0, 8))),
       item.kind === "document" && !isHead ? el("button", {
         className: "button", type: "button", textContent: "Make HEAD",
         onclick: (event) => { event.stopPropagation(); makeHead(item.id, r.digest); },
-      }) : null);
-    if (selected.digest === r.digest) li.className = "selected";
+      }) : null,
+      el("button", { className: "tool", type: "button", textContent: "⋯", title: "Revision actions", "aria-label": "Revision actions",
+        onclick: (event) => { event.stopPropagation(); revisionMenu(event); } }));
+    if (selected.digest === r.digest) li.classList.add("selected");
     return li;
   }));
 }
@@ -362,6 +410,23 @@ async function makeHead(id, digest) {
   } catch (err) {
     say($("head-message"), err.message, true);
   }
+}
+
+async function deleteRevision(id, digest) {
+  const item = state.items.find((i) => i.id === id);
+  if (!item || item.revisions.length < 2) return;
+  const n = item.revisions.findIndex((r) => r.digest === digest) + 1;
+  if (!confirm(`Delete revision ${n} of ${label(state, item)}?\n\nIts PDF moves into the tree's trash folder. The PDF you imported from is not touched.`)) return;
+  say($("head-message"), "");
+  try {
+    await post("/api/revisions/delete", { item: id, digest });
+    const keep = selected?.id === id && selected.digest !== digest ? selected.digest : "";
+    selected = null;
+    await reload();
+    const remaining = state.items.find((i) => i.id === id);
+    if (remaining) pick(id, keep || headOf(remaining));
+    say($("head-message"), "Revision moved to trash.");
+  } catch (err) { say($("head-message"), err.message, true); }
 }
 
 $("edit").onsubmit = async (event) => {
@@ -424,6 +489,18 @@ $("notes-form").onsubmit = async (event) => {
     say($("notes-message"), "Saved.");
   } catch (err) {
     say($("notes-message"), err.message, true);
+  }
+};
+
+$("tags-form").onsubmit = async (event) => {
+  event.preventDefault();
+  detailTags.commit();
+  try {
+    await post("/api/tags", { item: selected.id, tags: detailTags.get() });
+    await reload();
+    say($("tags-message"), "Saved.");
+  } catch (err) {
+    say($("tags-message"), err.message, true);
   }
 };
 
