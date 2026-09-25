@@ -8,8 +8,8 @@ step at a time as it grows. The page comes first; what it writes follows.
 
 | Part | What there is to try | State |
 | --- | --- | --- |
-| M1 | The page: `dgs doc` serves it, lists the PDFs in a folder and previews one. Writes nothing | not started |
-| M2 | Import on the page: pick a Template, answer its fields, see the Item. Needs M0 | not started |
+| M1 | The page: `dgs doc` serves it, lists the PDFs in a folder and previews one. Writes nothing | done |
+| M2 | Import on the page: pick a Template, answer its fields, see the Item. Needs the file names | not started |
 | M3 | Documents on the page: add a revision, see HEAD move, move it back; distinguishing fields | not started |
 | M4 | Views on the page: build a layout from keys, see the preview tree | not started |
 | M5 | Missing keys on the page: the list of what is missing, filling keys in | not started |
