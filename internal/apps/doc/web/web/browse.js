@@ -119,7 +119,7 @@ function details(item) {
 function card(item) {
   const t = templateOf(state, item.type);
   const named = t ? t.fields.filter((f) => f.distinguishing).map((f) => currentFields(item)[f.key]).filter(Boolean) : [];
-  const li = el("li", { className: "card state-" + expiryOf(item).state, onclick: () => open(item) },
+  const li = el("li", { className: "card state-" + expiryOf(item).state, onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     thumb(item),
     el("div", { className: "card-body" },
       el("p", { className: "card-title", title: label(state, item) }, named.join(" · ") || item.type),
@@ -135,7 +135,7 @@ function card(item) {
 function row(item, keys) {
   const fields = currentFields(item);
   const e = expiryOf(item);
-  const tr = el("tr", { className: "table-row state-" + e.state, onclick: () => open(item) },
+  const tr = el("tr", { className: "table-row state-" + e.state, onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     el("td", { className: "table-thumb" }, thumb(item)),
     el("td", {}, item.type),
     ...keys.map((k) => el("td", {}, fields[k] ? shown(item, k, fields[k]) : "")),
@@ -149,6 +149,36 @@ function row(item, keys) {
 function open(item) {
   pick(item.id, headOf(item));
 }
+
+// showImage puts the picked revision's first page in the detail panel, or
+// the type's name where the PDF has no picture of it.
+function showImage(id, digest) {
+  const item = state.items.find((i) => i.id === id);
+  const frame = $("detail-frame");
+  frame.classList.remove("no-picture");
+  frame.dataset.type = item ? item.type : "";
+  $("detail-image").src = `/api/page?item=${encodeURIComponent(id)}&digest=${digest}&n=1&size=page&v=${digest}`;
+}
+$("detail-image").addEventListener("error", () => $("detail-frame").classList.add("no-picture"));
+$("detail-image").addEventListener("load", () => { if (!$("detail-image").naturalWidth) $("detail-frame").classList.add("no-picture"); });
+
+// The reader shows the picked revision over the whole page; Esc or Back
+// returns to the cards.
+function openReader() {
+  if (!selected) return;
+  const item = state.items.find((i) => i.id === selected.id);
+  $("reader-title").textContent = item ? label(state, item) : "";
+  $("preview").hidden = false;
+  showPreview({ item: selected.id, digest: selected.digest },
+    "/api/revision?item=" + encodeURIComponent(selected.id) + "&digest=" + encodeURIComponent(selected.digest));
+}
+function closeReader() {
+  $("preview").hidden = true;
+  clearPreview();
+}
+$("open-reader").onclick = openReader;
+$("detail-frame").onclick = openReader;
+$("reader-back").onclick = closeReader;
 
 function render() {
   frame(state);
@@ -174,8 +204,7 @@ function render() {
   }
   const item = selected && state.items.find((i) => i.id === selected.id);
   $("side").hidden = !item;
-  $("preview").hidden = !item;
-  $("preview-splitter").hidden = !item;
+  $("side-splitter").hidden = !item;
   if (item) detail(item);
 }
 
@@ -205,17 +234,20 @@ try {
 function close() {
   selected = null;
   history.replaceState(null, "", location.pathname);
-  clearPreview();
+  closeReader();
   render();
 }
 $("close").onclick = close;
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && selected && !event.target.closest("input, textarea, select")) close();
+  if (event.key !== "Escape" || event.target.closest("input, textarea, select")) return;
+  if (!$("preview").hidden) closeReader();
+  else if (selected) close();
 });
 
-// The preview beside the cards is as wide as the reader drags it.
-splitter({ handle: $("preview-splitter"), target: $("preview"), axis: "x", invert: true, min: 320,
-  max: () => window.innerWidth - 560, key: "dgs-doc-size-browse-preview" });
+// The detail panel is as wide as the reader drags it, and never so narrow
+// that its fields do not fit.
+splitter({ handle: $("side-splitter"), target: $("side"), axis: "x", invert: true, min: 320,
+  max: () => Math.max(320, window.innerWidth - 480), key: "dgs-doc-size-browse-side" });
 
 // shown is a field's value as a person reads it: a linked Item by its name.
 function shown(item, key, value) {
@@ -227,8 +259,9 @@ function shown(item, key, value) {
 
 function pick(id, digest) {
   if (!selected || selected.id !== id || selected.digest !== digest) {
-    showPreview({ item: id, digest }, "/api/revision?item=" + encodeURIComponent(id) + "&digest=" + encodeURIComponent(digest));
+    showImage(id, digest);
     showText({ item: id, digest });
+    if (!$("preview").hidden) showPreview({ item: id, digest }, "/api/revision?item=" + encodeURIComponent(id) + "&digest=" + encodeURIComponent(digest));
   }
   if (!selected || selected.id !== id) {
     $("similar").replaceChildren();
@@ -241,6 +274,10 @@ function pick(id, digest) {
 
 function detail(item) {
   $("detail-head").textContent = label(state, item);
+  const n = item.revisions.findIndex((r) => r.digest === selected.digest) + 1;
+  $("detail-rev").textContent = item.kind === "document"
+    ? "Revision " + n + " of " + item.revisions.length + (selected.digest === item.head ? " · HEAD" : "")
+    : "Record";
   const t = templateOf(state, item.type);
   // The fields as the picked revision has them: its per_revision values are
   // its own, so picking the old card shows the old card's number.
@@ -266,14 +303,14 @@ function detail(item) {
   }
   $("revisions").replaceChildren(...item.revisions.slice().reverse().map((r) => {
     const isHead = r.digest === item.head;
-    const li = el("li", { onclick: () => pick(item.id, r.digest) },
+    const li = el("li", { className: "rev", onclick: () => pick(item.id, r.digest) },
+      el("div", { className: "rev-text" },
+        el("span", {}, new Date(r.added).toLocaleDateString(), isHead ? el("span", { className: "tag" }, "HEAD") : null),
+        el("span", { className: "sub", title: r.digest }, (r.source ? r.source + " · " : "") + r.digest.slice(0, 8))),
       item.kind === "document" && !isHead ? el("button", {
-        className: "small", type: "button", textContent: "Make HEAD",
+        className: "button", type: "button", textContent: "Make HEAD",
         onclick: (event) => { event.stopPropagation(); makeHead(item.id, r.digest); },
-      }) : null,
-      new Date(r.added).toLocaleString(),
-      isHead ? el("span", { className: "tag" }, "HEAD") : null,
-      el("span", { className: "sub" }, (r.source ? r.source + " · " : "") + r.digest.slice(0, 12)));
+      }) : null);
     if (selected.digest === r.digest) li.className = "selected";
     return li;
   }));

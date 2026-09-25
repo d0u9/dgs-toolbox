@@ -32,8 +32,13 @@ each shows the first page of HEAD, the fields that tell the document apart
 across the top narrows them: search (fields and the text on the page), type,
 a select for every distinguishing key any Template has, expiry and kind. They
 sort by date added, expiry, name or type. The layout, sort and order are
-remembered in the browser. Picking one opens its preview and details beside
-the cards; closing them (×, Esc) gives the cards the width back.
+remembered in the browser. A thumbnail too tall or wide for its card shows
+its middle. Picking one opens a detail panel beside the cards — a small
+picture of the picked revision's first page, then fields, revisions, notes,
+similar Items, and apart at the foot, delete. The panel is as wide as the
+reader drags it, never narrower than 320px. Double-clicking a card, or the
+picture, opens the revision over the whole page; Esc goes back, and Esc
+again, or ×, closes the panel.
 
 Expiry is read from the first of `expires`, `expiry`, `expires_at`,
 `expiry_date` and `valid_until` that HEAD has, by the server
