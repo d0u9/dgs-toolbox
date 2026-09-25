@@ -2,6 +2,7 @@
 // export of it would write. The server computes the plan; this draws it.
 import { $, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
+import { openFile } from "/ui/filedialog.js";
 
 let state = { templates: [], items: [] };
 let views = [];
@@ -370,20 +371,52 @@ $("delete").addEventListener("click", async () => {
   }
 });
 
-// Export: a dry run of the saved View into a configured Target, then, when
-// nothing blocks it, the export itself, which the server plans again.
+// Export: a dry run of the saved View into a folder, then, when nothing
+// blocks it, the export itself, which the server plans again. The folder is
+// chosen in the shared dialog; the configured Targets are shortcuts to theirs.
 let targets = [];
-let planned = null; // {view, target} the dry run shown was for
+let folder = ""; // the folder chosen, or "" for none yet
+let planned = null; // the request the dry run shown was for
+const FOLDER_KEY = "dgs-doc-export-folder";
 
 async function loadTargets() {
   targets = await (await fetch("/api/targets")).json();
-  const was = $("target").value;
-  $("target").replaceChildren(...targets.map((t) => el("option", { value: t.name, title: t.path },
-    t.name + (t.view ? " (last: " + t.view + ")" : ""))));
-  if (targets.some((t) => t.name === was)) $("target").value = was;
-  if (!targets.length) say($("export-message"), "No Targets: add folders under doc.targets in the configuration.");
-  $("dry-run").disabled = !targets.length;
+  if (!folder) {
+    let kept = "";
+    try { kept = localStorage.getItem(FOLDER_KEY) || ""; } catch { /* not kept */ }
+    setFolder(kept);
+  }
+  $("targets").replaceChildren(...(targets.length ? [el("span", { className: "muted" }, "Targets"),
+    ...targets.map((t) => el("button", {
+      type: "button", className: "chip" + (t.path === folder ? " on" : ""), title: t.path + (t.view ? " — last: " + t.view : "") + (t.error ? " — " + t.error : ""),
+      textContent: t.name, onclick: () => { setFolder(t.path); exportStale(); },
+    }))] : []));
 }
+
+function setFolder(path) {
+  folder = path;
+  $("folder").textContent = path ? "\u200e" + path + "\u200e" : "Choose folder…";
+  $("folder").classList.toggle("muted", !path);
+  $("choose").title = path || "Choose the folder to export to";
+  $("dry-run").disabled = !path;
+  try { if (path) localStorage.setItem(FOLDER_KEY, path); } catch { /* not kept */ }
+  $("targets").querySelectorAll(".chip").forEach((chip, i) => chip.classList.toggle("on", targets[i]?.path === path));
+}
+
+$("choose").addEventListener("click", async () => {
+  const chosen = await openFile({
+    title: "Export to",
+    message: "Choose the folder the View is written into. An export removes only files it wrote there itself.",
+    folders: true,
+    writable: true,
+    confirm: "Choose",
+    folder: folder || state.root,
+    fallbacks: [state.root, ""],
+  });
+  if (!chosen) return;
+  setFolder(Array.isArray(chosen) ? chosen[0] : chosen);
+  exportStale();
+});
 
 function exportStale() {
   planned = null;
@@ -401,12 +434,11 @@ const normal = (v) => ({ name: v.name, query: v.query || {}, selection: v.select
 async function dryRun() {
   exportStale();
   if (!saved()) { say($("export-message"), "Save the View first: an export writes the saved View.", true); return; }
-  const target = targets.find((t) => t.name === $("target").value);
-  if (target && target.error) { say($("export-message"), target.error, true); return; }
-  say($("export-message"), "Reading the Target…");
+  if (!folder) { say($("export-message"), "Choose a folder to export to first.", true); return; }
+  say($("export-message"), "Reading the folder…");
   let plan;
   try {
-    plan = await post("/api/export/plan", { view: editing, target: $("target").value });
+    plan = await post("/api/export/plan", { view: editing, folder });
   } catch (error) {
     say($("export-message"), error.message, true);
     return;
@@ -426,7 +458,7 @@ async function dryRun() {
   else if (!changes) say($("export-message"), plan.target + " is up to date.");
   else {
     say($("export-message"), changes + " change" + (changes === 1 ? "" : "s") + " to " + plan.target + ".");
-    planned = { view: editing, target: $("target").value };
+    planned = { view: editing, folder };
     $("run").disabled = false;
   }
 }
@@ -445,13 +477,12 @@ async function run() {
     say($("export-message"), error.message, true);
   } finally {
     planned = null;
-    $("dry-run").disabled = !targets.length;
+    $("dry-run").disabled = !folder;
   }
 }
 
 $("dry-run").addEventListener("click", dryRun);
 $("run").addEventListener("click", run);
-$("target").addEventListener("change", exportStale);
 $("form").addEventListener("input", exportStale);
 
 load().then(loadTargets);
