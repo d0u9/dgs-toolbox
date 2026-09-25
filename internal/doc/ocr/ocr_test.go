@@ -6,21 +6,22 @@ import (
 	"testing"
 )
 
-func TestDecode(t *testing.T) {
-	r, err := decode([]byte(`{"pages":[
-		{"source":"recognised","lines":[{"text":" A ","x":0.1,"y":0.8,"w":0.5,"h":0.1,"space":"display"},{"text":"B","x":0,"y":0,"w":1,"h":0.1,"space":"display"},{"text":"  ","x":0,"y":0,"w":0,"h":0}]},
-		{"source":"text","lines":[]},
-		{"source":"text","lines":[{"text":"C","x":0,"y":0,"w":0.2,"h":0.1,"space":"page","rotate":0}]}]}`))
-	if err != nil || len(r.Pages) != 3 || r.Text() != "A\nB\n\n\n\nC" {
-		t.Fatalf("%+v %q %v", r, r.Text(), err)
+func TestDecodePage(t *testing.T) {
+	page, count, err := decodePage([]byte(`{"count":3,"page":{"source":"recognised","lines":[
+		{"text":" A ","x":0.1,"y":0.8,"w":0.5,"h":0.1,"space":"display"},{"text":"  "},{"text":"B","space":"page","rotate":0,"w":1,"h":0.1}]}}`))
+	if err != nil || count != 3 || page.Text() != "A\nB" || page.Source != SourceRecognised {
+		t.Fatalf("%+v %d %v", page, count, err)
 	}
-	if got := r.Pages[0].Lines[0].Box; !near(got, Box{0.1, 0.1, 0.5, 0.1}) {
+	if got := page.Lines[0].Box; !near(got, Box{0.1, 0.1, 0.5, 0.1}) {
 		t.Errorf("box = %+v", got)
 	}
-	if _, err := decode([]byte(`{"error":"locked"}`)); err == nil || err.Error() != "locked" {
+	if _, count, err := decodePage([]byte(`{"count":2}`)); err == nil || count != 2 {
+		t.Fatalf("page past the end: %d %v", count, err)
+	}
+	if _, _, err := decodePage([]byte(`{"error":"locked"}`)); err == nil || err.Error() != "locked" {
 		t.Fatalf("error answer: %v", err)
 	}
-	if _, err := decode([]byte(`nope`)); err == nil {
+	if _, _, err := decodePage([]byte(`nope`)); err == nil {
 		t.Fatal("bad JSON accepted")
 	}
 }

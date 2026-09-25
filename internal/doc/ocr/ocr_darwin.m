@@ -1,8 +1,8 @@
 //go:build darwin && cgo
 
-// The PDFKit and Vision side of package ocr. The answer is one JSON object:
-// {"pages": [{"source": "text"|"recognised", "lines": [...]}]}, or
-// {"error": "..."}. A line is its text and its box as fractions of the page,
+// The PDFKit and Vision side of package ocr. One page is read per call, and
+// the answer is one JSON object: {"count": pages, "page": {"source":
+// "text"|"recognised", "lines": [...]}}, or {"error": "..."}. A line is its text and its box as fractions of the page,
 // from the bottom left: of the page as shown for recognised lines
 // ("space": "display"), of the unturned page for the text layer's ("space":
 // "page", with the page's rotation). Go turns both into one frame.
@@ -138,7 +138,7 @@ static NSArray *layer(PDFPage *page) {
     return lines;
 }
 
-char *dgs_ocr_pdf(const char *path, int maxPages) {
+char *dgs_ocr_page(const char *path, int index) {
     @autoreleasepool {
         NSURL *url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path]];
         PDFDocument *document = [[PDFDocument alloc] initWithURL:url];
@@ -148,34 +148,30 @@ char *dgs_ocr_pdf(const char *path, int maxPages) {
         if (document.isLocked) {
             return answer(@{@"error" : @"text recognition: the PDF is locked with a password"});
         }
-        NSMutableArray *pages = [NSMutableArray array];
-        NSInteger count = MIN((NSInteger)document.pageCount, (NSInteger)maxPages);
-        for (NSInteger i = 0; i < count; i++) {
-            @autoreleasepool {
-                PDFPage *page = [document pageAtIndex:i];
-                if (page == nil) {
-                    continue;
-                }
-                NSString *own = page.string;
-                NSString *trimmed = [own stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-                if (trimmed.length >= textLayerMinimum) {
-                    [pages addObject:@{@"lines" : layer(page), @"source" : @"text"}];
-                    continue;
-                }
-                CGImageRef image = render(page);
-                if (image == NULL) {
-                    return answer(@{@"error" : [NSString stringWithFormat:@"text recognition: page %ld could not be drawn", (long)i + 1]});
-                }
-                NSError *error = nil;
-                NSArray *lines = recognise(image, &error);
-                CGImageRelease(image);
-                if (lines == nil) {
-                    NSString *reason = error ? error.localizedDescription : @"unknown failure";
-                    return answer(@{@"error" : [NSString stringWithFormat:@"text recognition: page %ld: %@", (long)i + 1, reason]});
-                }
-                [pages addObject:@{@"lines" : lines, @"source" : @"recognised"}];
-            }
+        NSInteger count = (NSInteger)document.pageCount;
+        if (index < 0 || index >= count) {
+            return answer(@{@"count" : @(count)});
         }
-        return answer(@{@"pages" : pages});
+        PDFPage *page = [document pageAtIndex:index];
+        if (page == nil) {
+            return answer(@{@"count" : @(count)});
+        }
+        NSString *own = page.string;
+        NSString *trimmed = [own stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (trimmed.length >= textLayerMinimum) {
+            return answer(@{@"count" : @(count), @"page" : @{@"lines" : layer(page), @"source" : @"text"}});
+        }
+        CGImageRef image = render(page);
+        if (image == NULL) {
+            return answer(@{@"error" : [NSString stringWithFormat:@"text recognition: page %d could not be drawn", index + 1]});
+        }
+        NSError *error = nil;
+        NSArray *lines = recognise(image, &error);
+        CGImageRelease(image);
+        if (lines == nil) {
+            NSString *reason = error ? error.localizedDescription : @"unknown failure";
+            return answer(@{@"error" : [NSString stringWithFormat:@"text recognition: page %d: %@", index + 1, reason]});
+        }
+        return answer(@{@"count" : @(count), @"page" : @{@"lines" : lines, @"source" : @"recognised"}});
     }
 }
