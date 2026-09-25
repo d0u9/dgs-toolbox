@@ -10,7 +10,8 @@
 //     fileExtra,    (file) → a node or null drawn after the name
 //     folderExtra,  (path, files) → a node or null drawn after a folder name
 //     fileClass,    (file) → extra class names for the row, or ""
-//     mark,         (file) → a title for a check drawn after the name, or ""
+//     mark,         (file) → a title for a file drawn marked: its icon holds a
+//                   check and the row takes the marked colour; or ""
 //     href,         (file) → a link for the name instead of onPick
 //   });
 //
@@ -19,7 +20,7 @@
 
 const FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h4.5l1.5 1.5h6.5v8H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M1.75 6.25h12.5" stroke="currentColor" stroke-width="1.25"/></svg>';
 const FILE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 1.75h6l3.5 3.5v9h-9.5z M9.25 1.75v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>';
-const CHECK = '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="currentColor"/><path d="M5 8.2l2 2 4-4.2" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const FILE_MARKED = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 1.75h6l3.5 3.5v9h-9.5z M9.25 1.75v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M5.5 9.5l1.75 1.75 3.25-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 function nest(files) {
   const top = { dirs: new Map(), files: [] };
@@ -105,11 +106,9 @@ export function fileTree(files, options = {}) {
       if (file.path === selected) r.classList.add("selected");
       const why = mark && mark(file);
       if (why) {
-        const check = icon(CHECK);
-        check.className = "ft-mark";
-        check.title = why;
-        check.setAttribute("aria-label", why);
-        label.after(check);
+        r.classList.add("marked");
+        r.querySelector(".ft-icon").innerHTML = FILE_MARKED;
+        r.title = file.path + " — " + why;
       }
       const extra = fileExtra && fileExtra(file);
       if (extra) r.append(extra);
