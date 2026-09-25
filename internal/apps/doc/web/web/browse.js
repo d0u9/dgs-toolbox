@@ -5,20 +5,26 @@ let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
 let editing = "";
 let notesOf = "";
+// Items whose text matched the filter, by ID, with the line it matched on.
+let textHits = new Map();
+let unread = 0;
 
 const words = () => $("filter").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
 const matches = (text) => words().every((w) => text.toLowerCase().includes(w));
 
 function render() {
   frame(state);
-  const items = state.items.filter((i) => matches(label(state, i) + " " + Object.values(i.fields).join(" ")));
+  const items = state.items.filter((i) => textHits.has(i.id) || matches(label(state, i) + " " + Object.values(i.fields).join(" ")));
   $("count").textContent = items.length;
   $("none").hidden = state.items.length > 0 || !state.tree;
+  $("unread").hidden = !unread;
+  $("unread-count").textContent = unread + (unread === 1 ? " Item's text is" : " Items' text is") + " not read yet, so searching cannot find " + (unread === 1 ? "it." : "them.");
   $("items").replaceChildren(...items.map((item) => {
     const li = el("li", { onclick: () => pick(item.id, item.head || item.revisions[0].digest) },
       label(state, item),
       item.revisions.length > 1 ? el("span", { className: "tag" }, item.revisions.length + " revisions") : null,
-      el("span", { className: "sub" }, Object.entries(item.fields).map(([k, v]) => k + ": " + shown(item, k, v)).join("  ")));
+      el("span", { className: "sub" }, Object.entries(item.fields).map(([k, v]) => k + ": " + shown(item, k, v)).join("  ")),
+      textHits.get(item.id) ? el("span", { className: "sub snippet" }, textHits.get(item.id)) : null);
     if (selected && selected.id === item.id) li.className = "selected";
     return li;
   }));
@@ -39,6 +45,10 @@ function pick(id, digest) {
   if (!selected || selected.id !== id || selected.digest !== digest) {
     showPreview({ item: id, digest }, "/api/revision?item=" + encodeURIComponent(id) + "&digest=" + encodeURIComponent(digest));
     showText({ item: id, digest });
+  }
+  if (!selected || selected.id !== id) {
+    $("similar").replaceChildren();
+    say($("similar-message"), "");
   }
   selected = { id, digest };
   history.replaceState(null, "", "#" + id);
@@ -108,7 +118,52 @@ $("notes-form").onsubmit = async (event) => {
   }
 };
 
-$("filter").oninput = render;
+// searchText asks the server which Items' text holds every word typed.
+let searchTimer = 0;
+let searchAsked = 0;
+function searchText() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const mine = ++searchAsked;
+    const q = $("filter").value.trim();
+    try {
+      const answer = await (await fetch("/api/search?q=" + encodeURIComponent(q))).json();
+      if (mine !== searchAsked) return;
+      textHits = new Map((answer.hits || []).map((h) => [h.id, h.snippet]));
+      unread = answer.unread || 0;
+      render();
+    } catch { /* the filter on fields still works */ }
+  }, 200);
+}
+
+$("filter").oninput = () => { render(); searchText(); };
+
+$("read-all").onclick = async () => {
+  try {
+    const answer = await post("/api/read-all", {});
+    $("unread-count").textContent = answer.queued + " queued to be read; search again in a moment.";
+    $("read-all").hidden = true;
+  } catch (err) {
+    $("unread-count").textContent = err.message;
+  }
+};
+
+$("more").onclick = async () => {
+  const id = selected && selected.id;
+  if (!id) return;
+  say($("similar-message"), "Comparing…");
+  try {
+    const answer = await (await fetch("/api/similar?item=" + encodeURIComponent(id))).json();
+    if (!selected || selected.id !== id) return;
+    const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
+    $("similar").replaceChildren(...answer.hits.filter((h) => byId[h.id]).map((h) => el("li", {
+      onclick: () => { const it = byId[h.id]; pick(it.id, it.head || it.revisions[0].digest); },
+    }, label(state, byId[h.id]), el("span", { className: "sub" }, Math.round(h.score * 100) + "% alike"))));
+    say($("similar-message"), answer.hits.length ? "" : "Nothing alike among the Items whose text has been read.");
+  } catch (err) {
+    say($("similar-message"), err.message, true);
+  }
+};
 
 async function reload() {
   state = await loadState();
@@ -116,6 +171,7 @@ async function reload() {
 }
 
 reload().then(() => {
+  searchText();
   const wanted = state.items.find((i) => i.id === location.hash.slice(1));
   if (wanted) pick(wanted.id, wanted.head || wanted.revisions[0].digest);
 }).catch((err) => {
