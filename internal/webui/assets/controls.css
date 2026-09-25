@@ -161,7 +161,7 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   overflow-wrap: anywhere;
 }
 .dialog-buttons { display: flex; justify-content: flex-end; gap: var(--space-xs); }
-.dialog-buttons .chip { padding: var(--space-xxs) 14px; font-size: var(--font-size-sm); }
+.dialog-buttons { align-items: center; }
 
 /* A menu that opens over the page. */
 .menu {

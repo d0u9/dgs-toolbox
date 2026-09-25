@@ -249,11 +249,11 @@ function dialog({
     buttons.className = "dialog-buttons";
     const no = document.createElement("button");
     no.type = "button";
-    no.className = "text-button";
+    no.className = "button";
     no.textContent = cancel;
     const yes = document.createElement("button");
     yes.type = "submit";
-    yes.className = "chip active";
+    yes.className = "action";
     yes.textContent = confirm;
     buttons.append(no, yes);
     foot.append(filter, hidden, buttons);
@@ -706,11 +706,11 @@ function confirmReplace(name) {
     buttons.className = "dialog-buttons";
     const no = document.createElement("button");
     no.type = "button";
-    no.className = "text-button";
+    no.className = "button";
     no.textContent = "Cancel";
     const yes = document.createElement("button");
     yes.type = "button";
-    yes.className = "chip active";
+    yes.className = "action";
     yes.textContent = "Replace";
     let answer = false;
     no.addEventListener("click", () => ask.close());

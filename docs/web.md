@@ -729,6 +729,10 @@ line rather than the other way round. A page does not restyle them.
 | `.button.danger` | Delete, discard, move to the trash: red outline, red fill under the pointer. |
 | `.chip` | A setting, not an action: a filter, a mode. |
 
+A dialog ends the same way: Cancel is a `.button`, the answer an `.action`,
+or a `.button.danger` when the answer destroys something. A `.chip` is never
+an action, however blue it would look.
+
 A dangerous action is never beside the ordinary ones. It lives in a
 `.danger-zone` — a red frame on a faint red ground, at the end of the panel it
 belongs to — with a red heading and a `.danger-note` saying exactly what
