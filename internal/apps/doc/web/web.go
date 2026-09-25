@@ -37,8 +37,12 @@ var webFiles embed.FS
 // Settings is what the server needs from the configuration.
 type Settings struct {
 	Addr string
-	// Root is the tree the page lists. Empty is the working directory.
+	// Root is the tree the page lists when Trees is empty. Empty is the
+	// working directory.
 	Root string
+	// Trees are the trees the page switches between, by name, when there is
+	// more than one.
+	Trees []Tree
 	// ReadPage recognises one page of a PDF. Nil uses ocr.RecognizePage.
 	ReadPage textread.ReadFunc
 	// CacheDir keeps the text read, by digest. Empty keeps it nowhere.
@@ -52,24 +56,43 @@ type Settings struct {
 	Targets map[string]string
 }
 
+// Tree is one tree the page opens, by the name it switches to.
+type Tree struct {
+	Name string `json:"name"`
+	Root string `json:"root"`
+}
+
 // SettingsFrom reads the server settings out of the configuration.
 func SettingsFrom(global config.Config) Settings {
 	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder(), Targets: global.Doc.Targets, ExpiringWithin: global.DocExpiringWithin()}
 	if dir, err := global.DocCacheDir(); err == nil {
 		settings.CacheDir = dir
 	}
+	if len(global.Doc.Trees) > 0 {
+		for _, t := range global.DocTrees() {
+			settings.Trees = append(settings.Trees, Tree{Name: t.Name, Root: t.Root})
+		}
+	}
 	return settings
 }
 
-// ResolvedRoot is the folder actually listed.
-func (s Settings) ResolvedRoot() string {
-	if s.Root != "" {
-		return s.Root
+// ResolvedRoot is the folder actually listed: the first tree's.
+func (s Settings) ResolvedRoot() string { return s.ResolvedTrees()[0].Root }
+
+// ResolvedTrees is every tree the page opens, the first opened first: Trees,
+// or the one tree Root names.
+func (s Settings) ResolvedTrees() []Tree {
+	if len(s.Trees) > 0 {
+		return s.Trees
 	}
-	if wd, err := os.Getwd(); err == nil {
-		return wd
+	root := s.Root
+	if root == "" {
+		root = "."
+		if wd, err := os.Getwd(); err == nil {
+			root = wd
+		}
 	}
-	return "."
+	return []Tree{{Root: root}}
 }
 
 type sourceFileJSON struct {
@@ -82,7 +105,11 @@ type sourceFileJSON struct {
 }
 
 type stateJSON struct {
-	Root      string          `json:"root"`
+	Root string `json:"root"`
+	// Name is the tree's name in doc.trees, empty for doc.root.
+	Name string `json:"name"`
+	// Trees are every tree the page switches between.
+	Trees     []Tree          `json:"trees"`
 	Tree      bool            `json:"tree"`
 	Error     string          `json:"error,omitempty"`
 	Templates []tree.Template `json:"templates"`
@@ -95,7 +122,11 @@ type stateJSON struct {
 }
 
 type server struct {
-	root      string
+	root string
+	name string
+	// trees are every tree served, this one too, so an export can check its
+	// Target against the others.
+	trees     []Tree
 	now       func() time.Time
 	dateOrder dates.Order
 	soon      time.Duration
@@ -128,12 +159,56 @@ func Handler(settings Settings) http.Handler {
 	if read == nil {
 		read = ocr.RecognizePage
 	}
-	s := server{
-		root: settings.ResolvedRoot(), now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder, soon: settings.ExpiringWithin,
-		targets: settings.Targets, writing: &sync.Mutex{},
+	trees := settings.ResolvedTrees()
+	shared := server{
+		now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder, soon: settings.ExpiringWithin,
+		targets: settings.Targets, writing: &sync.Mutex{}, trees: trees,
 		store:  textcache.Store{Dir: settings.CacheDir},
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
 	}
+	// Each tree has its own API; a request names its tree by ?tree=, and
+	// one that names none is the first tree's.
+	apis := map[string]http.Handler{}
+	for _, t := range trees {
+		s := shared
+		s.root, s.name = t.Root, t.Name
+		apis[t.Name] = s.api()
+	}
+	first := trees[0].Name
+	mux := http.NewServeMux()
+	dispatch := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Query().Get("tree")
+		if name == "" {
+			name = first
+		}
+		api, ok := apis[name]
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no tree named " + name})
+			return
+		}
+		api.ServeHTTP(w, r)
+	})
+	mux.Handle("GET /api/", dispatch)
+	mux.Handle("POST /api/", dispatch)
+	webui.Mount(mux)
+	// The dialog only chooses a folder to read; nothing it reaches is changed.
+	webfile.Mount(mux, webfile.Options{Root: trees[0].Root, Writable: true})
+	files := http.FileServerFS(static)
+	serve := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		files.ServeHTTP(w, r)
+	})
+	for _, page := range []string{"browse", "templates", "import", "views", "merge"} {
+		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
+		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
+	}
+	mux.Handle("GET /{$}", http.RedirectHandler("/browse/", http.StatusFound))
+	mux.Handle("GET /", serve)
+	return mux
+}
+
+// api is one tree's API.
+func (s server) api() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/source", s.sourceList)
@@ -164,20 +239,6 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("GET /api/search", s.search)
 	mux.HandleFunc("GET /api/similar", s.similar)
 	mux.HandleFunc("POST /api/read-all", s.readAll)
-	webui.Mount(mux)
-	// The dialog only chooses a folder to read; nothing it reaches is changed.
-	webfile.Mount(mux, webfile.Options{Root: s.root, Writable: true})
-	files := http.FileServerFS(static)
-	serve := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
-		files.ServeHTTP(w, r)
-	})
-	for _, page := range []string{"browse", "templates", "import", "views", "merge"} {
-		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
-		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
-	}
-	mux.Handle("GET /{$}", http.RedirectHandler("/browse/", http.StatusFound))
-	mux.Handle("GET /", serve)
 	return mux
 }
 
@@ -194,7 +255,7 @@ func pageHandler(files http.Handler, document string) http.Handler {
 }
 
 func (s server) state(w http.ResponseWriter, _ *http.Request) {
-	out := stateJSON{Root: s.root, Templates: []tree.Template{}, Items: []tree.Item{}}
+	out := stateJSON{Root: s.root, Name: s.name, Trees: s.trees, Templates: []tree.Template{}, Items: []tree.Item{}}
 	var problems []string
 	if err := tree.Require(s.root); err == nil {
 		out.Tree = true

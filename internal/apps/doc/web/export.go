@@ -102,6 +102,7 @@ func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON
 	if out.Jobs, err = export.PlanJobs(ctx, s.root, jobs, items); err != nil {
 		return out, nil, http.StatusConflict, err
 	}
+	export.AgainstOthers(out.Jobs, Others(s.trees, s.root))
 	out.Ready = len(out.Problems) == 0 && len(out.Jobs) > 0
 	for _, j := range out.Jobs {
 		out.Ready = out.Ready && j.Ready()
@@ -159,4 +160,24 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// Others is every tree but the one at root, with the Targets its Views
+// name. A tree whose Views cannot be read names none.
+func Others(trees []Tree, root string) []export.Other {
+	var out []export.Other
+	for _, t := range trees {
+		if filepath.Clean(t.Root) == filepath.Clean(root) {
+			continue
+		}
+		o := export.Other{Name: t.Name, Root: t.Root}
+		views, _ := view.Load(t.Root)
+		for _, v := range views {
+			if v.Target != "" {
+				o.Targets = append(o.Targets, v.Target)
+			}
+		}
+		out = append(out, o)
+	}
+	return out
 }

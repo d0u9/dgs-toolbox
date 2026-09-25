@@ -598,6 +598,19 @@ func LoadPath(path string) (Config, error) {
 		}
 		*field.value = expanded
 	}
+	if len(config.Doc.Trees) > 0 && config.Doc.Root != "" {
+		return Config{}, fmt.Errorf("decode config %s: doc.root and doc.trees: set one; with several trees, name each in doc.trees", path)
+	}
+	for name, root := range config.Doc.Trees {
+		if !docName.MatchString(name) || root == "" {
+			return Config{}, fmt.Errorf("decode config %s: doc.trees: a tree needs a name of lowercase letters, digits, _ and -, and a folder", path)
+		}
+		expanded, err := ExpandPath(root, os.LookupEnv, home)
+		if err != nil {
+			return Config{}, fmt.Errorf("decode config %s: doc.trees.%s: %w", path, name, err)
+		}
+		config.Doc.Trees[name] = expanded
+	}
 	for name, target := range config.Doc.Targets {
 		if name == "" || target == "" {
 			return Config{}, fmt.Errorf("decode config %s: doc.targets: a Target needs a name and a folder", path)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 
+	docweb "dgs-toolbox/internal/apps/doc/web"
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/doc/export"
 	"dgs-toolbox/internal/doc/tree"
@@ -18,7 +19,11 @@ import (
 // given, or every Target a View names. The whole run is planned and checked
 // first; any conflict, missing key or problem means nothing is written.
 func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {
-	root := global.DocRoot()
+	chosen, err := global.DocTreeNamed(flags["tree"])
+	if err != nil {
+		return err
+	}
+	root := chosen.Root
 	if root == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -39,6 +44,7 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 	if err != nil {
 		return err
 	}
+	export.AgainstOthers(plans, docweb.Others(docweb.SettingsFrom(global).Trees, root))
 	ready := len(problems) == 0 && len(plans) > 0
 	for _, p := range problems {
 		fmt.Fprintf(out, "problem  %s\n", p)
