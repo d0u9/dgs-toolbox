@@ -51,14 +51,26 @@ read, invisible until it is hovered or selected, so it is copied straight off
 the page. It is the PDF's own text layer when it has one, else recognised from
 the rendered page. There is no separate text panel: most PDFs are never
 copied from. Recognition is PDFKit and
-the Vision framework on macOS, compiled in through cgo; elsewhere, and without
-cgo, the page says it is unavailable. The first four pages are read.
+the Vision framework on macOS at its accurate level, compiled in through cgo;
+elsewhere, and without cgo, the page says it is unavailable. The first four
+pages are read.
+
+Recognising a page takes about a second, so pages are read through a queue:
+
+- one page at a time, and each is shown as soon as it is read;
+- the page being looked at first, then the rest of its PDF, ahead of anything
+  read in advance;
+- while a PDF is looked at on Import, the next three not yet in the tree are
+  read in advance;
+- every page read is kept in the local cache (`doc.cache_dir`) by the PDF's
+  SHA-256, so it is read once per machine, and a PDF met again in another
+  folder or tree is not read again.
 
 On import, each empty field whose Template `pattern` matches the text is filled
 and marked as a suggestion; hovering or focusing it outlines the line on the
 page it was read from. A field the reader typed in is never replaced, and
-nothing is kept until the reader imports. Text is held in memory for the life
-of the process; searching Items by text, which needs it kept, comes later.
+nothing is kept until the reader imports. Searching Items by their text, from
+the same cache, comes later.
 
 Loose PDFs inside the tree are allowed; they are imported by opening the
 tree's own folder. Images are not imported.
