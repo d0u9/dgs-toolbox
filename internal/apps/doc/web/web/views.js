@@ -65,8 +65,12 @@ function condition(key, values) {
 
 // The keys a layout can use, as chips that insert themselves at the caret.
 function chips() {
-  $("keys").replaceChildren(el("span", { className: "muted" }, "Insert "), ...keys.map((k) => el("button", {
+  // A country key also comes in each format it can be written in.
+  const countries = new Set(state.templates.flatMap((t) => t.fields.filter((f) => f.type === "country").map((f) => f.key)));
+  const all = keys.flatMap((k) => countries.has(k) ? [k, k + ":zh", k + ":en", k + ":alpha2", k + ":alpha3"] : [k]);
+  $("keys").replaceChildren(el("span", { className: "muted" }, "Insert "), ...all.map((k) => el("button", {
     type: "button", className: "chip", textContent: k,
+    title: k.includes(":") ? "The country written " + k.split(":")[1] + ", however the Item keeps it" : "",
     onmousedown: (event) => event.preventDefault(),
     onclick: () => insert("{" + k + "}"),
   })), el("button", { type: "button", className: "chip", textContent: "/", onmousedown: (e) => e.preventDefault(), onclick: () => insert("/") }));
