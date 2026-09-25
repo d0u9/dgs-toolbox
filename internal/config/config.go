@@ -26,6 +26,7 @@ type Config struct {
 	TUI       TUI     `json:"tui"`
 	Photo     Photo   `json:"photo"`
 	Box       Box     `json:"box"`
+	Doc       Doc     `json:"doc"`
 	Capture   Capture `json:"capture"`
 	Geo       Geo     `json:"geo"`
 	Conf      Conf    `json:"conf"`
@@ -249,7 +250,7 @@ func Default() Config {
 		Workers: DefaultBoxWorkers, Web: BoxWeb{Port: DefaultBoxWebPort},
 		Preview: BoxPreview{Keep: intPointer(DefaultBoxPreviewKeepDays)},
 		Trash:   BoxTrash{Keep: intPointer(DefaultBoxTrashKeepDays)},
-	}, Capture: Capture{
+	}, Doc: Doc{Web: DocWeb{Port: DefaultDocWebPort}}, Capture: Capture{
 		Scan:     CaptureScan{IndexFile: "index.json"},
 		Obsidian: CaptureObsidian{},
 	}, Geo: Geo{GPX: GeoGPX{Host: DefaultGeoGPXHost, Port: DefaultGeoGPXPort}}}
@@ -578,6 +579,7 @@ func LoadPath(path string) (Config, error) {
 		{"box.root", &config.Box.Root},
 		{"box.inbox", &config.Box.Inbox},
 		{"box.cache_dir", &config.Box.CacheDir},
+		{"doc.root", &config.Doc.Root},
 	} {
 		if *field.value == "" {
 			continue

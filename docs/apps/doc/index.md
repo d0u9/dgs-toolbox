@@ -159,3 +159,6 @@ Conflicts are resolved by hand on the page before the merge completes.
 - **Clone** — a sub-tree cloned from the full tree would remember the state it
   was cloned from, so its merge could compare three sides, as git does.
 - **Bundle** — a hand-picked set of Items for one purpose, exported once.
+
+Its settings — `doc.root`, `doc.web.port` — are in
+[`configuration/doc.md`](../../configuration/doc.md).
