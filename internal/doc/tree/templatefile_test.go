@@ -62,3 +62,35 @@ func TestSaveAndTrashTemplate(t *testing.T) {
 		t.Fatalf("left: %v %+v", err, templates)
 	}
 }
+
+func TestCountryField(t *testing.T) {
+	tpl := Template{Type: "passport", Kind: KindDocument, Fields: []Field{
+		{Key: "owner", Required: true, Distinguishing: true},
+		{Key: "country", Type: FieldCountry, Format: "alpha3", Required: true, Distinguishing: true},
+	}}
+	if err := tpl.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, typed := range []string{"cn", "CHN", "china", "中国"} {
+		got, err := CleanFields(tpl, map[string]string{"owner": "jane", "country": typed})
+		if err != nil || got["country"] != "CHN" {
+			t.Errorf("%q: %v %v", typed, got, err)
+		}
+	}
+	if _, err := CleanFields(tpl, map[string]string{"owner": "jane", "country": "Atlantis"}); err == nil {
+		t.Error("Atlantis was kept")
+	}
+	// A sidecar written before the field was a country still matches.
+	if !SameDistinguishing(tpl, map[string]string{"owner": "jane", "country": "CN"}, map[string]string{"owner": "jane", "country": "中国"}) {
+		t.Error("CN and 中国 are different documents")
+	}
+	bad := tpl
+	bad.Fields = []Field{{Key: "country", Type: FieldCountry, Format: "iso"}}
+	if bad.Validate() == nil {
+		t.Error("format iso accepted")
+	}
+	bad.Fields = []Field{{Key: "owner", Format: "zh"}}
+	if bad.Validate() == nil {
+		t.Error("format on a text field accepted")
+	}
+}

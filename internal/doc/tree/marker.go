@@ -113,6 +113,8 @@ fields:
     required: true
     distinguishing: true  # type + the distinguishing fields are unique
   - key: country
+    type: country         # cn, CHN, China, 中国 are all kept as one
+    format: zh            # zh 中国, en China, alpha2 CN, alpha3 CHN
     required: true
     distinguishing: true
   - key: number

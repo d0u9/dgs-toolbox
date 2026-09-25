@@ -91,3 +91,13 @@ func TestDateFields(t *testing.T) {
 		t.Fatalf("offsets %q", text[m.Start:m.End])
 	}
 }
+
+func TestCountryFieldIsNormalized(t *testing.T) {
+	tpl := tree.Template{Fields: []tree.Field{{Key: "country", Type: tree.FieldCountry, Format: "alpha3", Pattern: `Nationality[:：]?\s*(\S+)`}}}
+	if got := Fields(tpl, "Nationality: 中华人民共和国", dates.DMY); got["country"] != "CHN" {
+		t.Fatalf("got %v", got)
+	}
+	if got := Fields(tpl, "Nationality: Atlantis", dates.DMY); len(got) != 0 {
+		t.Fatalf("an unknown country was suggested: %v", got)
+	}
+}

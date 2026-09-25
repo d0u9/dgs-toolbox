@@ -128,7 +128,7 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 	}
 	do(h, "POST", "/api/head", `{"item":"`+item.ID+`","digest":"`+first+`"}`)
 	do(h, "POST", "/api/fields", `{"item":"`+item.ID+`","fields":{"owner":"jane","country":"CN"}}`)
-	if item = state(t, h).Items[0]; item.Head != first || item.Fields["country"] != "CN" {
+	if item = state(t, h).Items[0]; item.Head != first || item.Fields["country"] != "中国" {
 		t.Fatalf("after head and fields: %+v", item)
 	}
 	// The tree's own items folder is not offered for import.
@@ -243,7 +243,7 @@ func TestViewsSavePlanDelete(t *testing.T) {
 	}
 	v := `{"name":"important","selection":"head","layout":"{country}/{owner}/{type}.{ext}","query":{"type":["id_card"]}}`
 	rec := do(h, "POST", "/api/views/plan", v)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"AU/jane/id_card.pdf"`) {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"澳大利亚/jane/id_card.pdf"`) {
 		t.Fatal(rec.Body.String())
 	}
 	rec = do(h, "POST", "/api/views/plan", `{"name":"x","layout":"{number}/{type}.{ext}"}`)
