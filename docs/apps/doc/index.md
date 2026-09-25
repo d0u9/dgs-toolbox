@@ -259,7 +259,7 @@ recreates the Items, matching existing ones as a merge does.
 
 ## Verify
 
-`dgs doc verify <tree>` checks the repository against its sidecars and
+`dgs doc verify [<tree>]` (`-q` for the result only) checks the repository against its sidecars and
 changes nothing. It reports:
 
 - a revision whose PDF is missing, or whose content no longer hashes to its
