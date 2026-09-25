@@ -102,7 +102,14 @@ function drawFields() {
   $("into-field").hidden = documents.length === 0;
   const adding = into.value !== "";
   $("import-button").textContent = adding ? "Add revision" : "Import";
-  $("fields").replaceChildren(...(adding ? [] : t.fields.map((f) => inputFor(f, "", (t.defaults || {})[f.key] || "", state))));
+  // A new revision is asked only what changes with it: the fields the
+  // Template marks per_revision. The rest belong to the Item it joins.
+  const asked = adding ? t.fields.filter((f) => f.per_revision) : t.fields;
+  $("fields").replaceChildren(...asked.map((f) => inputFor(f, "", adding ? "" : (t.defaults || {})[f.key] || "", state)));
+  if (adding && !asked.length) {
+    $("fields").append(el("p", { className: "message" }, "Nothing is asked: " + t.type +
+      " marks no field per_revision. To keep a renewed card's own number and expiry, add per_revision: true to them on the Templates page."));
+  }
   for (const input of $("fields").querySelectorAll(".field-input")) {
     input.addEventListener("input", () => { input.classList.remove("suggested"); showSource(null); });
     const source = () => input.classList.contains("suggested") && showSource((suggestions[$("template").value] || {})[input.name]);
@@ -189,7 +196,7 @@ $("import").onsubmit = async (event) => {
   say($("import-message"), "Copying and reading back…");
   try {
     if ($("into").value && !$("into-field").hidden) {
-      await post("/api/revisions", { dir, path: selected, item: $("into").value });
+      await post("/api/revisions", { dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")) });
     } else {
       await post("/api/import", { dir, path: selected, type: $("template").value, fields: fieldsOf($("fields")) });
     }

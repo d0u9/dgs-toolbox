@@ -24,6 +24,9 @@ type Revision struct {
 	// Source is the name the PDF had when it was imported, for a person
 	// wondering where it came from.
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+	// Fields are this revision's own values of the fields its Template marks
+	// per_revision: a renewed card's number and expiry.
+	Fields map[string]string `yaml:"fields,omitempty" json:"fields,omitempty"`
 }
 
 // Item is one sidecar.
@@ -50,6 +53,28 @@ func (i Item) Current() string {
 	}
 	return ""
 }
+
+// FieldsAt is the Item's fields as one revision has them: the Item's own,
+// with the revision's per_revision values over them. A value a sidecar
+// keeps at the Item for a per_revision key, from before the key was one,
+// stands for every revision that has none of its own.
+func (i Item) FieldsAt(digest string) map[string]string {
+	out := make(map[string]string, len(i.Fields))
+	for k, v := range i.Fields {
+		out[k] = v
+	}
+	for _, r := range i.Revisions {
+		if r.Digest == digest {
+			for k, v := range r.Fields {
+				out[k] = v
+			}
+		}
+	}
+	return out
+}
+
+// CurrentFields is FieldsAt the Current revision.
+func (i Item) CurrentFields() map[string]string { return i.FieldsAt(i.Current()) }
 
 // Dir is the Item's folder under root.
 func Dir(root, id string) string { return filepath.Join(root, ItemsDir, id) }

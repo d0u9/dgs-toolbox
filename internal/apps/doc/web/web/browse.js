@@ -1,5 +1,5 @@
 // Browse: the Items kept in the tree, their fields, revisions and HEAD.
-import { $, el, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview, clearPreview } from "/common.js";
+import { $, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, frame, say, showText, showPreview, clearPreview } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -14,7 +14,7 @@ const matches = (text) => words().every((w) => text.toLowerCase().includes(w));
 
 function render() {
   frame(state);
-  const items = state.items.filter((i) => textHits.has(i.id) || matches(label(state, i) + " " + Object.values(i.fields).join(" ")));
+  const items = state.items.filter((i) => textHits.has(i.id) || matches(label(state, i) + " " + Object.values(currentFields(i)).join(" ")));
   $("count").textContent = items.length;
   $("none").hidden = state.items.length > 0 || !state.tree;
   $("unread").hidden = !unread;
@@ -23,7 +23,7 @@ function render() {
     const li = el("li", { onclick: () => pick(item.id, item.head || item.revisions[0].digest) },
       label(state, item),
       item.revisions.length > 1 ? el("span", { className: "tag" }, item.revisions.length + " revisions") : null,
-      el("span", { className: "sub" }, Object.entries(item.fields).map(([k, v]) => k + ": " + shown(item, k, v)).join("  ")),
+      el("span", { className: "sub" }, Object.entries(currentFields(item)).map(([k, v]) => k + ": " + shown(item, k, v)).join("  ")),
       textHits.get(item.id) ? el("span", { className: "sub snippet" }, textHits.get(item.id)) : null);
     if (selected && selected.id === item.id) li.className = "selected";
     return li;
@@ -58,11 +58,21 @@ function pick(id, digest) {
 function detail(item) {
   $("detail-head").textContent = label(state, item);
   const t = templateOf(state, item.type);
-  if (editing !== item.id + JSON.stringify(item.fields)) {
-    editing = item.id + JSON.stringify(item.fields);
+  // The fields as the picked revision has them: its per_revision values are
+  // its own, so picking the old card shows the old card's number.
+  const fields = fieldsAt(item, selected.digest);
+  if (editing !== item.id + selected.digest + JSON.stringify(fields)) {
+    editing = item.id + selected.digest + JSON.stringify(fields);
     say($("edit-message"), "");
-    $("edit-fields").replaceChildren(el("p", { className: "kind" }, item.kind),
-      ...(t ? t.fields : Object.keys(item.fields).map((key) => ({ key }))).map((f) => inputFor(f, item.fields[f.key] || "", "", state, item.id)));
+    const perRevision = t && t.fields.some((f) => f.per_revision) && item.revisions.length > 1;
+    const n = item.revisions.findIndex((r) => r.digest === selected.digest) + 1;
+    $("edit-fields").replaceChildren(el("p", { className: "kind" }, item.kind,
+      perRevision ? " · fields marked ↻ are revision " + n + "'s own" : ""),
+      ...(t ? t.fields : Object.keys(fields).map((key) => ({ key }))).map((f) => {
+        const input = inputFor(f, fields[f.key] || "", "", state, item.id);
+        if (perRevision && f.per_revision) input.firstChild.append(el("span", { className: "muted", title: "Kept with each revision" }, " ↻"));
+        return input;
+      }));
     $("save-button").disabled = !t;
   }
   if (notesOf !== item.id + "\n" + (item.notes || "")) {
@@ -99,7 +109,7 @@ async function makeHead(id, digest) {
 $("edit").onsubmit = async (event) => {
   event.preventDefault();
   try {
-    await post("/api/fields", { item: selected.id, fields: fieldsOf($("edit-fields")) });
+    await post("/api/fields", { item: selected.id, digest: selected.digest, fields: fieldsOf($("edit-fields")) });
     await reload();
     say($("edit-message"), "Saved.");
   } catch (err) {

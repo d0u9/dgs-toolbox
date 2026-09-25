@@ -40,6 +40,10 @@ type Field struct {
 	// Format is how a FieldCountry is written, and only its: zh (the
 	// default), en, alpha2 or alpha3.
 	Format string `yaml:"format,omitempty" json:"format,omitempty"`
+	// PerRevision keeps the value with each revision of a document rather
+	// than with the Item: a renewed card has a new number and expiry, and the
+	// old card keeps its own. Adding a revision asks for these fields.
+	PerRevision bool `yaml:"per_revision,omitempty" json:"per_revision"`
 }
 
 // FieldType is what a field's value is.
@@ -111,6 +115,12 @@ func (t Template) Validate() error {
 		default:
 			return fmt.Errorf("type %s: key %s: type %q is not text, date, select, item or country", t.Type, f.Key, f.Type)
 		}
+		if f.PerRevision && t.Kind != KindDocument {
+			return fmt.Errorf("type %s: key %s: per_revision belongs to a document; a record has one PDF", t.Type, f.Key)
+		}
+		if f.PerRevision && f.Distinguishing {
+			return fmt.Errorf("type %s: key %s names the document, so it cannot change per revision", t.Type, f.Key)
+		}
 		if f.Distinguishing && !f.Required {
 			return fmt.Errorf("type %s: key %s distinguishes documents, so it must be required", t.Type, f.Key)
 		}
@@ -168,6 +178,45 @@ func ParseTemplate(data []byte) (Template, error) {
 		return Template{}, err
 	}
 	return t, t.Validate()
+}
+
+// Split divides cleaned fields into the Item's and a revision's own.
+func (t Template) Split(fields map[string]string) (item, revision map[string]string) {
+	item, revision = map[string]string{}, map[string]string{}
+	for k, v := range fields {
+		if t.field(k).PerRevision {
+			revision[k] = v
+		} else {
+			item[k] = v
+		}
+	}
+	if len(revision) == 0 {
+		revision = nil
+	}
+	return item, revision
+}
+
+// RevisionFields is CleanFields over only the per_revision fields: what a
+// new revision is asked for.
+func RevisionFields(t Template, given map[string]string) (map[string]string, error) {
+	only := t
+	only.Fields = nil
+	for _, f := range t.Fields {
+		if f.PerRevision {
+			only.Fields = append(only.Fields, f)
+		}
+	}
+	only.Defaults = nil
+	for key := range given {
+		if !only.has(key) {
+			return nil, fmt.Errorf("%s is not a per_revision field of %s", key, t.Type)
+		}
+	}
+	fields, err := CleanFields(only, given)
+	if len(fields) == 0 {
+		fields = nil
+	}
+	return fields, err
 }
 
 func (t Template) field(key string) Field {

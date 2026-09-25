@@ -1,6 +1,6 @@
 // Views: build a layout from keys and see, as it is typed, the tree an
 // export of it would write. The server computes the plan; this draws it.
-import { $, el, loadState, post, label, templateOf, inputFor, fieldsOf, frame, say } from "/common.js";
+import { $, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 
 let state = { templates: [], items: [] };
@@ -134,7 +134,8 @@ async function preview() {
     // One form per Item: its revisions share the fields that are missing.
     const byItem = new Map();
     for (const m of plan.missing) {
-      const seen = byItem.get(m.item) || { keys: new Set(), fields: new Set() };
+      const seen = byItem.get(m.item) || { keys: new Set(), fields: new Set(), digests: new Set() };
+      seen.digests.add(m.digest);
       m.keys.forEach((k) => seen.keys.add(k));
       m.fields.forEach((f) => seen.fields.add(f));
       byItem.set(m.item, seen);
@@ -174,7 +175,10 @@ function fill(id, m, link) {
     const typed = Object.fromEntries(Object.entries(fieldsOf(form)).filter(([, v]) => v !== ""));
     if (!Object.keys(typed).length) return;
     try {
-      await post("/api/fields", { item: id, fields: { ...item.fields, ...typed } });
+      // Each lacking revision gets the value: a per_revision field is its own.
+      for (const digest of m.digests) {
+        await post("/api/fields", { item: id, digest, fields: { ...fieldsAt(item, digest), ...typed } });
+      }
       state = await loadState();
       preview();
     } catch (error) {
@@ -195,7 +199,7 @@ function fillAll(byItem) {
     const item = state.items.find((i) => i.id === id);
     const t = item && templateOf(state, item.type);
     for (const f of t ? t.fields.filter((f) => m.fields.has(f.key)) : []) {
-      (wanting[f.key] ||= { field: f, items: [] }).items.push(item);
+      (wanting[f.key] ||= { field: f, items: [] }).items.push({ item, digests: m.digests });
     }
   }
   const shared = Object.values(wanting).filter((w) => w.items.length > 1);
@@ -213,8 +217,10 @@ function fillAll(byItem) {
     const value = fieldsOf(form)[pick.value];
     if (!value) return;
     try {
-      for (const item of shared.find((w) => w.field.key === pick.value).items) {
-        await post("/api/fields", { item: item.id, fields: { ...item.fields, [pick.value]: value } });
+      for (const { item, digests } of shared.find((w) => w.field.key === pick.value).items) {
+        for (const digest of digests) {
+          await post("/api/fields", { item: item.id, digest, fields: { ...fieldsAt(item, digest), [pick.value]: value } });
+        }
       }
       state = await loadState();
       preview();

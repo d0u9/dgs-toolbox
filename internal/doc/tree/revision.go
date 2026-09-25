@@ -42,10 +42,11 @@ func holder(items []Item, digest string) (Item, bool) {
 }
 
 // AddRevision copies source into a document as its newest revision and moves
-// HEAD to it — a renewed licence replaces the old one. The PDF is published
-// only after it reads back the same; the sidecar follows. A record has no
-// revisions and is refused.
-func AddRevision(ctx context.Context, root, id, source string, now time.Time) (Item, error) {
+// HEAD to it — a renewed licence replaces the old one. given holds the new
+// revision's values of the Template's per_revision fields. The PDF is
+// published only after it reads back the same; the sidecar follows. A record
+// has no revisions and is refused.
+func AddRevision(ctx context.Context, root, id, source string, template Template, given map[string]string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -55,6 +56,13 @@ func AddRevision(ctx context.Context, root, id, source string, now time.Time) (I
 	}
 	if item.Kind != KindDocument {
 		return Item{}, fmt.Errorf("%s %s is a record: records have no revisions", item.Type, item.ID)
+	}
+	if template.Type != item.Type {
+		return Item{}, fmt.Errorf("%s %s is not a %s", item.Type, item.ID, template.Type)
+	}
+	fields, err := RevisionFields(template, given)
+	if err != nil {
+		return Item{}, err
 	}
 	digest, err := FileDigest(source)
 	if err != nil {
@@ -73,7 +81,7 @@ func AddRevision(ctx context.Context, root, id, source string, now time.Time) (I
 		return Item{}, fmt.Errorf("%s changed while it was being imported", source)
 	}
 	item.Revisions = append(item.Revisions, Revision{
-		Digest: digest, Added: now.Format(time.RFC3339), Source: filepath.Base(source),
+		Digest: digest, Added: now.Format(time.RFC3339), Source: filepath.Base(source), Fields: fields,
 	})
 	item.Head = digest
 	if err := WriteItem(root, item); err != nil {
@@ -104,10 +112,12 @@ func SetHead(root, id, digest string) (Item, error) {
 	return Item{}, fmt.Errorf("%s %s has no revision %s", item.Type, item.ID, digest)
 }
 
-// SetFields replaces an Item's fields, checked against its Template as import
-// checks them: required keys present, and no other document of the type with
-// the same distinguishing fields.
-func SetFields(root, id string, template Template, given map[string]string) (Item, error) {
+// SetFields replaces an Item's fields as one revision has them, checked
+// against its Template as import checks them: required keys present, and no
+// other document of the type with the same distinguishing fields. The
+// per_revision values go to the revision with digest — "" is the Current
+// one — and the rest to the Item.
+func SetFields(root, id, digest string, template Template, given map[string]string) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -128,7 +138,21 @@ func SetFields(root, id string, template Template, given map[string]string) (Ite
 	if err := linked(template, items, fields, id); err != nil {
 		return Item{}, err
 	}
-	item.Fields = fields
+	if digest == "" {
+		digest = item.Current()
+	}
+	at := -1
+	for i, r := range item.Revisions {
+		if r.Digest == digest {
+			at = i
+		}
+	}
+	if at < 0 {
+		return Item{}, fmt.Errorf("%s %s has no revision %s", item.Type, item.ID, digest)
+	}
+	own, perRevision := template.Split(fields)
+	item.Fields = own
+	item.Revisions[at].Fields = perRevision
 	return item, WriteItem(root, item)
 }
 

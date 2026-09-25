@@ -532,12 +532,14 @@ func answer(w http.ResponseWriter, item tree.Item, err error) {
 	writeJSON(w, http.StatusOK, item)
 }
 
-// addRevision adds a loose PDF to a document and moves HEAD to it.
+// addRevision adds a loose PDF to a document, with its per_revision fields,
+// and moves HEAD to it.
 func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Dir  string `json:"dir"`
-		Path string `json:"path"`
-		Item string `json:"item"`
+		Dir    string            `json:"dir"`
+		Path   string            `json:"path"`
+		Item   string            `json:"item"`
+		Fields map[string]string `json:"fields"`
 	}
 	if !decode(w, r, &request) {
 		return
@@ -546,8 +548,31 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, err := tree.AddRevision(r.Context(), s.root, request.Item, source, s.now())
+	t, err := s.templateOfItem(request.Item)
+	if err != nil {
+		answer(w, tree.Item{}, err)
+		return
+	}
+	item, err := tree.AddRevision(r.Context(), s.root, request.Item, source, t, request.Fields, s.now())
 	answer(w, item, err)
+}
+
+// templateOfItem is the Template of the Item with id.
+func (s server) templateOfItem(id string) (tree.Template, error) {
+	item, _, err := tree.FindItem(s.root, id)
+	if err != nil {
+		return tree.Template{}, err
+	}
+	templates, err := tree.LoadTemplates(s.root)
+	if err != nil {
+		return tree.Template{}, err
+	}
+	for _, t := range templates {
+		if t.Type == item.Type {
+			return t, nil
+		}
+	}
+	return tree.Template{}, errors.New("no Template for type " + item.Type)
 }
 
 func (s server) setHead(w http.ResponseWriter, r *http.Request) {
@@ -565,29 +590,19 @@ func (s server) setHead(w http.ResponseWriter, r *http.Request) {
 func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Item   string            `json:"item"`
+		Digest string            `json:"digest"`
 		Fields map[string]string `json:"fields"`
 	}
 	if !decode(w, r, &request) {
 		return
 	}
-	item, _, err := tree.FindItem(s.root, request.Item)
+	t, err := s.templateOfItem(request.Item)
 	if err != nil {
-		answer(w, item, err)
+		answer(w, tree.Item{}, err)
 		return
 	}
-	templates, err := tree.LoadTemplates(s.root)
-	if err != nil {
-		answer(w, item, err)
-		return
-	}
-	for _, t := range templates {
-		if t.Type == item.Type {
-			item, err = tree.SetFields(s.root, request.Item, t, request.Fields)
-			answer(w, item, err)
-			return
-		}
-	}
-	answer(w, item, errors.New("no Template for type "+item.Type))
+	item, err := tree.SetFields(s.root, request.Item, request.Digest, t, request.Fields)
+	answer(w, item, err)
 }
 
 func (s server) setNotes(w http.ResponseWriter, r *http.Request) {
