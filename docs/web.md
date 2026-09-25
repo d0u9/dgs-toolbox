@@ -379,6 +379,15 @@ reader drags to resize them. A page puts a `.splitter.col` or `.splitter.row`
 beside the pane and calls `splitter` from `/ui/splitter.js` with a minimum, a
 maximum and a storage key of its own, so the size is remembered per browser.
 
+It also carries the **code editor**, for a page that edits YAML as written:
+line numbers in a gutter, keys, strings, numbers and comments in their own
+colours, and a fold mark beside each line that opens a block, which hides the
+block behind a `⋯ n lines` note. It is a plain textarea over the coloured text,
+so typing, undo and the clipboard stay the browser's own; folded lines still
+count in the numbers and come back in the value. A page links
+`/ui/codeedit.css` and calls `codeEditor` from `/ui/codeedit.js`, with what an
+edit and Ctrl/Cmd+S do.
+
 It also carries the **status bar**: the one row along the bottom of a page
 where every piece of news lands. A page links `/ui/statusbar.css`, imports
 `/ui/statusbar.js`, calls `mount()` once and then `show`, `showError`,

@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/codeedit.css">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -29,44 +30,63 @@
 <p id="error" class="message error" hidden></p>
 <main class="work">
   <section class="list">
-    <div class="open-bar">
-      <button id="new" class="action" type="button">New Template</button>
+    <div class="list-head">
+      <h2>Templates <span id="count" class="count numeric"></span></h2>
+      <button id="new" class="button" type="button">+ New</button>
     </div>
-    <div class="scroll">
-      <h2 class="panel-head">Templates <span id="count" class="count numeric"></span></h2>
-      <ul id="templates" class="rows"></ul>
-    </div>
+    <ul id="templates" class="template-list scroll"></ul>
   </section>
   <section class="template-edit">
-    <p class="muted">A Template is the fields asked for when a PDF of its type is imported. It is saved as <code id="file">templates/…</code> exactly as written here, comments included.</p>
-    <textarea id="yaml" class="template-yaml" spellcheck="false" autocomplete="off"></textarea>
-    <p id="message" class="message"></p>
-    <div class="buttons">
-      <button id="save" class="action" type="button">Save</button>
-      <button id="delete" class="action quiet" type="button">Delete…</button>
+    <div class="template-bar">
+      <div class="template-title">
+        <h2 id="title">id_card</h2>
+        <code id="file" class="file-chip">templates/id_card.yaml</code>
+        <span id="dirty" class="dirty" hidden>Unsaved</span>
+      </div>
+      <p id="message" class="message"></p>
+      <button id="save" class="action" type="button" title="Save (Ctrl+S)">Save</button>
     </div>
-    <details class="template-help">
-      <summary>What a Template can say</summary>
-      <pre>type: id_card             # the file name; lowercase, digits, _ and -
-kind: document            # document: revisions and HEAD; record: one PDF
-fields:
-  - key: owner
-    required: true
-    distinguishing: true  # type + distinguishing fields are unique (documents)
-  - key: expires
-    per_revision: true    # kept with each revision (documents); asked again when one is added
-    type: date            # text (default), date, select, item, country
-    pattern: '(\d{4}-\d{2}-\d{2})'  # suggests a value from the PDF's text
-  - key: country
-    type: country         # cn, CHN, China, 中国 are all kept as one
-    format: zh            # zh 中国 (default), en China, alpha2 CN, alpha3 CHN
-  - key: status
-    type: select
-    options: [current, expired]
-defaults: {}              # a value filled in for a new import
-ignore_dates: []          # dates never suggested, YYYY-MM-DD</pre>
-    </details>
+    <div id="yaml" class="template-yaml"></div>
   </section>
+  <aside class="side template-side">
+    <section class="detail-section">
+      <h3>About</h3>
+      <p class="about">The fields asked for when a PDF of this type is imported.</p>
+      <p class="about muted">Saved to <code id="file-again">templates/id_card.yaml</code> as written, comments and all.</p>
+    </section>
+    <section class="detail-section">
+      <h3>What a Template can say</h3>
+      <dl class="ref">
+        <dt><code>type</code></dt><dd>The file name: lowercase letters, digits, <code>_</code> and <code>-</code>.</dd>
+        <dt><code>kind</code></dt><dd><code>document</code> keeps revisions and a HEAD; <code>record</code> is one PDF.</dd>
+        <dt><code>fields</code></dt><dd>What an import asks for, in order. Each has a <code>key</code> and may say:</dd>
+      </dl>
+      <dl class="ref ref-inner">
+        <dt><code>required</code></dt><dd>An import cannot go on without it.</dd>
+        <dt><code>distinguishing</code></dt><dd>Type and these fields name one Item (documents).</dd>
+        <dt><code>per_revision</code></dt><dd>Kept with each revision and asked again when one is added.</dd>
+        <dt><code>type</code></dt><dd><code>text</code> (default), <code>date</code>, <code>select</code>, <code>item</code>, <code>country</code>.</dd>
+        <dt><code>pattern</code></dt><dd>A regular expression whose first group suggests a value from the PDF's text.</dd>
+        <dt><code>format</code></dt><dd>For a country: <code>zh</code> 中国 (default), <code>en</code> China, <code>alpha2</code> CN, <code>alpha3</code> CHN.</dd>
+        <dt><code>options</code></dt><dd>For a select: the values to pick from.</dd>
+      </dl>
+      <dl class="ref">
+        <dt><code>defaults</code></dt><dd>Values filled in for a new import.</dd>
+        <dt><code>ignore_dates</code></dt><dd>Dates never suggested, <code>YYYY-MM-DD</code>.</dd>
+      </dl>
+      <details class="template-help">
+        <summary>An example</summary>
+        <pre id="example" class="code-sample"></pre>
+      </details>
+    </section>
+    <section class="detail-section detail-danger" id="danger">
+      <h3>Delete this Template</h3>
+      <p id="delete-note" class="detail-note">Its file moves into the tree's trash folder.</p>
+      <label class="form-field"><span>Type <code id="confirm-name"></code> to confirm</span>
+        <input id="confirm" spellcheck="false" autocomplete="off"></label>
+      <button id="delete" class="button danger" type="button" disabled>Delete Template</button>
+    </section>
+  </aside>
 </main>
 <script type="module" src="/templates.js"></script>
 </body>
