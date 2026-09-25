@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/doc/ocr"
 	"dgs-toolbox/internal/doc/pdflist"
+	"dgs-toolbox/internal/doc/suggest"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/webfile"
 	"dgs-toolbox/internal/webui"
@@ -31,6 +33,8 @@ type Settings struct {
 	Addr string
 	// Root is the tree the page lists. Empty is the working directory.
 	Root string
+	// Read recognises a PDF's text. Nil uses ocr.Recognize.
+	Read func(path string) (ocr.Result, error)
 }
 
 // SettingsFrom reads the server settings out of the configuration.
@@ -69,6 +73,11 @@ type stateJSON struct {
 type server struct {
 	root string
 	now  func() time.Time
+	// read is what recognises a PDF's text: ocr.Recognize, or a stand-in.
+	read func(path string) (ocr.Result, error)
+	// texts keeps what was read, by digest, for the life of the process.
+	// Reading is slow and the same PDF is looked at more than once.
+	texts *sync.Map
 }
 
 // Handler serves the pages and their API.
@@ -77,12 +86,16 @@ func Handler(settings Settings) http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	s := server{root: settings.ResolvedRoot(), now: time.Now}
+	s := server{root: settings.ResolvedRoot(), now: time.Now, read: settings.Read, texts: &sync.Map{}}
+	if s.read == nil {
+		s.read = func(path string) (ocr.Result, error) { return ocr.Recognize(path, ocr.DefaultMaxPages) }
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/source", s.sourceList)
 	mux.HandleFunc("GET /api/source/file", s.sourceFile)
 	mux.HandleFunc("GET /api/revision", s.revision)
+	mux.HandleFunc("GET /api/text", s.text)
 	mux.HandleFunc("POST /api/import", s.importPDF)
 	mux.HandleFunc("POST /api/revisions", s.addRevision)
 	mux.HandleFunc("POST /api/head", s.setHead)
@@ -238,6 +251,69 @@ func (s server) revision(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.Error(w, "no such revision", http.StatusNotFound)
+}
+
+type textJSON struct {
+	Available   bool                         `json:"available"`
+	Text        string                       `json:"text"`
+	Pages       []ocr.Page                   `json:"pages"`
+	Suggestions map[string]map[string]string `json:"suggestions"`
+	Error       string                       `json:"error,omitempty"`
+}
+
+// text is a PDF's recognised text, and what each Template's patterns find in
+// it. The PDF is named as a preview names it: a file under an opened folder
+// (dir, path) or a revision of an Item (item, digest).
+func (s server) text(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	var path string
+	if query.Get("item") != "" {
+		item, _, err := tree.FindItem(s.root, query.Get("item"))
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		}
+		for _, rev := range item.Revisions {
+			if rev.Digest == query.Get("digest") {
+				path = tree.PDFPath(s.root, item.ID, rev.Digest)
+			}
+		}
+		if path == "" {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such revision"})
+			return
+		}
+	} else {
+		full, err := sourcePath(query.Get("dir"), query.Get("path"))
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		}
+		path = full
+	}
+	out := textJSON{Available: ocr.Available(), Pages: []ocr.Page{}, Suggestions: map[string]map[string]string{}}
+	digest, err := tree.FileDigest(path)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	result, cached := s.texts.Load(digest)
+	if !cached {
+		read, err := s.read(path)
+		if err != nil {
+			out.Error = err.Error()
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
+		s.texts.Store(digest, read)
+		result = read
+	}
+	out.Available = true
+	out.Pages = result.(ocr.Result).Pages
+	out.Text = result.(ocr.Result).Text()
+	if templates, err := tree.LoadTemplates(s.root); err == nil {
+		out.Suggestions = suggest.All(templates, out.Text)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func servePDF(w http.ResponseWriter, r *http.Request, path string) {

@@ -37,7 +37,7 @@ export function label(state, item) {
 }
 
 export function inputFor(field, value, placeholder) {
-  return el("label", { className: "field" },
+  return el("label", { className: "form-field" },
     el("span", {}, field.key, field.required ? el("span", { className: "req" }, " *") : null),
     el("input", { name: field.key, value, placeholder, spellcheck: false, autocomplete: "off" }));
 }
@@ -56,4 +56,35 @@ export function frame(state) {
 export function say(node, text, error) {
   node.className = error ? "message error" : "message";
   node.textContent = text;
+}
+
+// The text read off a PDF, drawn into the panel under the side bar. Reading
+// can take a few seconds a page, so the answer is dropped when another PDF
+// was picked in the meantime.
+let textAsked = 0;
+export async function showText(query, onAnswer) {
+  const asked = ++textAsked;
+  const box = $("text");
+  box.hidden = false;
+  say($("text-message"), "Reading the text…");
+  $("text-body").textContent = "";
+  let answer;
+  try {
+    const response = await fetch("/api/text?" + new URLSearchParams(query));
+    answer = await response.json();
+    if (!response.ok) throw new Error(answer.error || response.statusText);
+  } catch (err) {
+    answer = { error: err.message, suggestions: {} };
+  }
+  if (asked !== textAsked) return;
+  if (answer.error) {
+    say($("text-message"), answer.error, !answer.error.includes("needs macOS"));
+  } else if (!answer.text) {
+    say($("text-message"), "No text found.");
+  } else {
+    const recognised = (answer.pages || []).some((p) => p.source === "recognised");
+    say($("text-message"), recognised ? "Recognised from the page: check it against the preview." : "From the PDF's own text.");
+    $("text-body").textContent = answer.text;
+  }
+  if (onAnswer) onAnswer(answer);
 }

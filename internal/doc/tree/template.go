@@ -25,6 +25,11 @@ type Field struct {
 	Key            string `yaml:"key" json:"key"`
 	Required       bool   `yaml:"required,omitempty" json:"required"`
 	Distinguishing bool   `yaml:"distinguishing,omitempty" json:"distinguishing"`
+	// Pattern, when set, is a regular expression (Go's RE2 syntax) that finds
+	// the field's value in a document's recognised text: the first capture
+	// group when it has one, else the whole match. It only suggests; a person
+	// accepts the value by importing.
+	Pattern string `yaml:"pattern,omitempty" json:"pattern,omitempty"`
 }
 
 // Template is one type's fields and defaults.
@@ -54,6 +59,11 @@ func (t Template) Validate() error {
 			return fmt.Errorf("type %s: key %s is listed twice", t.Type, f.Key)
 		}
 		seen[f.Key] = true
+		if f.Pattern != "" {
+			if _, err := regexp.Compile(f.Pattern); err != nil {
+				return fmt.Errorf("type %s: key %s: pattern: %w", t.Type, f.Key, err)
+			}
+		}
 		if f.Distinguishing && !f.Required {
 			return fmt.Errorf("type %s: key %s distinguishes documents, so it must be required", t.Type, f.Key)
 		}
