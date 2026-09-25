@@ -60,6 +60,12 @@ such as `country`: Jane may have a Chinese and an Australian driver licence,
 which are two Items. For documents, `owner` + `type` + these fields name one
 Item and must be unique; import refuses a second Item with the same ones.
 
+## Templates and Views live in the repository
+
+Templates and Views describe the documents, so they are kept in the repository
+and travel with it when trees are merged. Only Targets, which are paths on one
+machine, are configuration.
+
 ## Templates
 
 A Template describes one type for import: the fields it fills in by default
@@ -124,14 +130,12 @@ A **full tree** lives at home on the NAS. A **sub-tree** is a temporary
 repository, usually on a laptop. Either is edited the same way; which one is
 home matters only when merging.
 
-A sub-tree is either cloned from the full tree or created with `init` on its
-own. A merge brings the sub-tree's changes into the full tree:
+A sub-tree is created with `init` on its own. Cloning one from the full tree
+is deferred (see [Later](#later)). A merge brings the sub-tree's changes into
+the full tree:
 
 - The same PDF is recognised by its SHA-256 and stored once.
-- **Cloned sub-tree** — it remembers the state it was cloned from, so a merge
-  compares three sides, as git does: a field changed on one side only is taken
-  as is; a field changed differently on both sides is a conflict.
-- **Sub-tree from `init`** — there is no common state. Items are matched to the
+- There is no common state to compare against. Items are matched to the
   full tree's by `owner` + `type` + the distinguishing fields. A matched
   document's new revision is added and HEAD moves to it; the merge lists these
   for confirmation first. A matched Item whose fields differ is a conflict. An
@@ -144,7 +148,7 @@ Conflicts are resolved by hand on the page before the merge completes.
 
 - **File names** — the marker, sidecar and manifest names. `dgs box` already
   uses `*.dgs-doc.yaml` for its sidecars, so doc's must differ.
-- **Template format** and where Templates are configured.
+- **Template format.**
 - **Whether box keeps `identity` and `insurance`** once doc exists — decided
   after doc is built.
 
@@ -152,4 +156,6 @@ Conflicts are resolved by hand on the page before the merge completes.
 
 - **Snapshot** — an export into a new dated directory that is never updated,
   recording what was submitted for a visa or a claim.
+- **Clone** — a sub-tree cloned from the full tree would remember the state it
+  was cloned from, so its merge could compare three sides, as git does.
 - **Bundle** — a hand-picked set of Items for one purpose, exported once.

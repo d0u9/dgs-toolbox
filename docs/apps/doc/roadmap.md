@@ -14,8 +14,7 @@ step at a time as it grows. The page comes first; what it writes follows.
 | M4 | Views on the page: build a layout from keys, see the preview tree | not started |
 | M5 | Missing keys on the page: the list of what is missing, filling keys in | not started |
 | M6 | Export from the page: the plan, dry run, then writing to a folder Target | not started |
-| M7 | Merging a cloned sub-tree, with conflicts resolved on the page | not started |
-| M8 | Merging a sub-tree created with `init` | not started |
+| M7 | Merging a sub-tree created with `init`, with conflicts resolved on the page | not started |
 
 Metadata is kept in sidecars with a rebuildable cache, as in `dgs box`. **The
 file names — marker, sidecar, manifest — are open.** M1 writes no files and can
@@ -25,3 +24,4 @@ be built before they are decided; M2 cannot.
 
 - **Snapshot** export.
 - **Bundles**.
+- **Clone**, and the three-way merge a cloned sub-tree allows.
