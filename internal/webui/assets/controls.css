@@ -104,11 +104,13 @@ input:focus-visible, select:focus-visible {
 body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select: none; }
 body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select: none; }
 
-/* A dialog asking before something on disk changes. */
+/* A dialog asking before something on disk changes. It floats on its shadow
+   alone (web.md's Floating Modal): a border as well draws a frame around
+   something the backdrop already sets apart. */
 .dialog {
   max-width: 440px;
   padding: 18px var(--space-lg) 14px;
-  border: 1px solid var(--hairline);
+  border: none;
   border-radius: var(--radius-lg);
   box-shadow: var(--lift-modal);
   font-size: var(--font-size-ui);
