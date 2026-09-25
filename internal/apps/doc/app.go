@@ -10,7 +10,7 @@ import (
 )
 
 // New returns the Doc app definition: `dgs doc`, which starts the local page,
-// and `dgs doc init`.
+// `dgs doc init` and `dgs doc verify`.
 func New() tui.App {
 	return tui.App{
 		ID:          "doc",
@@ -24,6 +24,15 @@ func New() tui.App {
 			Description:   "Make a folder a doc tree, by writing its marker and an example Template.",
 			MaxArgs:       1,
 			RunWithConfig: initAction,
+		}, {
+			ID:          "verify",
+			Usage:       "[<dir>]",
+			Description: "Check every PDF against its sidecar and digest. Changes nothing.",
+			MaxArgs:     1,
+			Flags: []tui.ActionFlag{
+				{Name: "quiet", Shorthand: "q", Bool: true, Usage: "report only the result, not every file as it is read"},
+			},
+			RunWithConfig: verifyAction,
 		}},
 	}
 }
