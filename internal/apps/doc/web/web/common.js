@@ -2,6 +2,7 @@
 // Item is named. The server decides everything; the pages show what it said.
 
 import { show as showViewer, hide as hideViewer } from "/viewer.js";
+import { splitter } from "/ui/splitter.js";
 
 export const $ = (id) => document.getElementById(id);
 
@@ -9,6 +10,16 @@ export function el(tag, props, ...children) {
   const node = Object.assign(document.createElement(tag), props || {});
   node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
   return node;
+}
+
+// The list down the left of every page is as wide as the reader drags it,
+// one width for all the doc pages.
+const list = document.querySelector("main.work > section.list");
+if (list) {
+  const handle = el("div", { className: "splitter col", role: "separator" });
+  handle.setAttribute("aria-orientation", "vertical");
+  list.after(handle);
+  splitter({ handle, target: list, axis: "x", min: 220, max: () => window.innerWidth - 360, key: "dgs-doc-size-list" });
 }
 
 export const size = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB";

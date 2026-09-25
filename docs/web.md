@@ -369,8 +369,14 @@ and its name in the monospace face, and a hairline down every open folder so
 depth reads at a glance. A click on a folder opens or shuts it. A page links
 `/ui/filetree.css`, imports `fileTree` from `/ui/filetree.js` and passes the
 files with what only it knows: which row is picked, what a click on a file
-does or where it links, and a short note drawn at the right of a row. The
-tree draws and reports clicks; what a row means stays with the page.
+does or where it links, a short note drawn at the right of a row, and a
+green check after the name of a file that is already taken in. The tree draws
+and reports clicks; what a row means stays with the page.
+
+It also carries the **splitter**: the hairline between two panes that the
+reader drags to resize them. A page puts a `.splitter.col` or `.splitter.row`
+beside the pane and calls `splitter` from `/ui/splitter.js` with a minimum, a
+maximum and a storage key of its own, so the size is remembered per browser.
 
 It also carries the **status bar**: the one row along the bottom of a page
 where every piece of news lands. A page links `/ui/statusbar.css`, imports

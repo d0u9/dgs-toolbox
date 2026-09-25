@@ -13,6 +13,8 @@
 .file-tree .ft-name { overflow: hidden; text-overflow: ellipsis; }
 .file-tree .ft-name a { color: inherit; text-decoration: none; }
 .file-tree .ft-name a:hover { color: var(--primary); text-decoration: underline; }
-.file-tree .ft-row > :not(.ft-icon):not(.ft-name) { margin-left: auto; font-family: var(--font-sans, inherit); font-size: var(--font-size-xs, 11px); color: var(--charcoal); }
-.file-tree .ft-row > :not(.ft-icon):not(.ft-name) ~ :not(.ft-icon):not(.ft-name) { margin-left: 6px; }
+.file-tree .ft-mark { display: inline-flex; width: 14px; height: 14px; flex: none; color: var(--success, #1f883d); }
+.file-tree .ft-mark svg { width: 14px; height: 14px; }
+.file-tree .ft-row > :not(.ft-icon):not(.ft-name):not(.ft-mark) { margin-left: auto; font-family: var(--font-sans, inherit); font-size: var(--font-size-xs, 11px); color: var(--charcoal); }
+.file-tree .ft-row > :not(.ft-icon):not(.ft-name):not(.ft-mark) ~ :not(.ft-icon):not(.ft-name):not(.ft-mark) { margin-left: 6px; }
 .file-tree .ft-row.done { color: var(--charcoal); }

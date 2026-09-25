@@ -3,7 +3,7 @@ body { display: flex; flex-direction: column; }
 .work { flex: 1; display: flex; min-height: 0; }
 .list {
   width: 340px; display: flex; flex-direction: column;
-  background: var(--paper); border-right: 1px solid var(--hairline);
+  background: var(--paper); min-width: 0;
 }
 .scroll { overflow-y: auto; flex: 1; }
 .count { margin-left: var(--space-xs); font-weight: 400; }
@@ -74,7 +74,7 @@ body { display: flex; flex-direction: column; }
 .pages.panning { cursor: grabbing; user-select: none; }
 .rail {
   width: 108px; flex: none; overflow-y: auto; padding: var(--space-xs);
-  background: var(--paper); border-right: 1px solid var(--hairline);
+  background: var(--paper); min-width: 0;
   display: flex; flex-direction: column; gap: var(--space-xs);
 }
 .thumb {

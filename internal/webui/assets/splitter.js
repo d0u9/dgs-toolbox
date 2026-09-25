@@ -1,7 +1,6 @@
-// Drag handles that resize the pane beside them. Sizes are remembered per
-// browser; the layout works without them.
-
-const PREFIX = "dgs-gpx-size-";
+// Drag handles that resize the pane beside them, for every page dgs serves.
+// Sizes are remembered per browser under key, the whole localStorage name, so
+// each page names its own; the layout works without them.
 
 // splitter makes handle resize target along axis ("y": height, "x": width).
 // invert is for a target after the handle, which grows as the handle moves
@@ -49,7 +48,7 @@ export function splitter({ handle, target, axis = "y", invert = false, min = 60,
 
 function read(key) {
   try {
-    return localStorage.getItem(PREFIX + key);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
@@ -57,7 +56,7 @@ function read(key) {
 
 function write(key, value) {
   try {
-    localStorage.setItem(PREFIX + key, String(value));
+    localStorage.setItem(key, String(value));
   } catch {
     // Storage can be unavailable; the size simply is not remembered.
   }
