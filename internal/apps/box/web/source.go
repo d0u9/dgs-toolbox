@@ -12,7 +12,7 @@ import (
 	"dgs-toolbox/internal/box/doctype"
 	"dgs-toolbox/internal/box/lifecycle"
 	"dgs-toolbox/internal/box/money"
-	"dgs-toolbox/internal/box/tag"
+	"dgs-toolbox/internal/tag"
 )
 
 // Scan is one scan as the pages see it. Digest identifies it everywhere: the

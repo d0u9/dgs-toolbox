@@ -13,8 +13,8 @@ import (
 
 	"dgs-toolbox/internal/box/doctype"
 	"dgs-toolbox/internal/box/money"
-	"dgs-toolbox/internal/box/tag"
 	"dgs-toolbox/internal/desktop"
+	"dgs-toolbox/internal/tag"
 	"dgs-toolbox/internal/zonesearch"
 )
 

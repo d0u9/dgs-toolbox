@@ -77,6 +77,7 @@ const DETAIL = {
 
 // The detail's tags describe whichever split is picked, as its other fields do.
 const detailTags = tagField(el('detail-tags'), {
+  next: focusNextField,
   known: () => state.tags,
   onChange: (list) => {
     const document = split.editable();
@@ -87,6 +88,7 @@ const detailTags = tagField(el('detail-tags'), {
 // A batch adds tags and never removes one: a list typed once for three
 // hundred scans must not replace what each of them already carries.
 const markedTags = tagField(el('marked-tags'), {
+  next: focusNextField,
   known: () => state.tags,
   placeholder: 'none',
 });
@@ -95,6 +97,7 @@ const markedTags = tagField(el('marked-tags'), {
 // is shown when it carries every tag chosen. Beside each suggestion is how many
 // of the cards now shown carry it, so a tag that would empty the grid says so.
 const filterTags = tagField(el('filter-tags'), {
+  next: focusNextField,
   known: () => state.tags.filter((use) => state.facets.has(use.name) || filterTags?.get().includes(use.name)),
   count: (name) => state.facets.get(name) ?? 0,
   only: true,

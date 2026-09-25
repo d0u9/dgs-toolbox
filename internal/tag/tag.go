@@ -1,4 +1,4 @@
-// Package tag is how a Box spells its tags and what it has already used.
+// Package tag is how dgs spells tags and counts their use.
 //
 // Tags are free-form, so the only thing that keeps them useful is that the
 // same word is spelled the same way every time. Normalize is that spelling:
