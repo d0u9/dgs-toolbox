@@ -131,7 +131,9 @@ func (t Template) has(key string) bool {
 	return false
 }
 
-func sameDistinguishing(t Template, a, b map[string]string) bool {
+// SameDistinguishing reports whether a and b agree, ignoring case, on every
+// field t marks distinguishing: whether they name the same document.
+func SameDistinguishing(t Template, a, b map[string]string) bool {
 	for _, f := range t.Fields {
 		if f.Distinguishing && !strings.EqualFold(a[f.Key], b[f.Key]) {
 			return false

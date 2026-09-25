@@ -279,7 +279,8 @@ records, and which still reads back to that digest, is not written again.
 The manifest, `dgs-export.json`, records for each file its path, digest, the
 Item's ID and revision, and the Item's fields at export time. That is enough
 to import a Target back into a repository: `dgs doc` reads the manifest and
-recreates the Items, matching existing ones as a merge does (M7).
+recreates the Items, matching existing ones as a merge does. It also
+records each Item's kind and which revision was HEAD.
 
 ## Verify
 
@@ -324,6 +325,30 @@ the full tree:
 - HEAD moved on both sides is a conflict.
 
 Conflicts are resolved by hand on the page before the merge completes.
+
+The Merge page opens the folder to merge in and only reads it. It shows what
+the merge would do — new Items, revisions added, HEADs moved, new Templates
+and Views — and each conflict with both sides, to keep this tree's or take
+theirs. The merge itself plans again from what both sides hold then, and is
+refused while a conflict has no choice.
+
+- An Item is matched first by its ID, so merging the same sub-tree again finds
+  what it brought last time and changes nothing.
+- HEAD: a side whose HEAD the other has never seen moved it. When one side
+  did, HEAD goes there. When both did and they share a revision, it is a
+  conflict; a sub-tree made on its own shares none, and HEAD moves to its new
+  revision.
+- Notes are never a conflict: notes the tree lacks are added below its own.
+- A Template or View both sides have, different, is a conflict. Only the
+  fields that differ are shown.
+- What no choice resolves stops the merge: an Item whose type has no Template
+  on either side, two Items matching one, a record holding another PDF here.
+- PDFs are copied in with the same readback as import, before the sidecar
+  naming them is written.
+
+A Target imports back the same way: the Merge page opens a folder with a
+`dgs-export.json` as it opens a sub-tree. It brings the revisions that were
+exported and the Items' fields; a Target carries no Templates or Views.
 
 ## Layout on disk
 

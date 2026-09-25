@@ -47,7 +47,7 @@ type exportPlanJSON struct {
 	Target string    `json:"target"`
 }
 
-// plan is what exporting a saved View to a named Target would do. It is
+// plan is what writing a saved View to a named Target would do. It is
 // computed afresh for the export itself, so what is written is what the
 // state is then, never a plan the page was shown earlier.
 func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON, []tree.Item, int, error) {
@@ -105,8 +105,8 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	s.exporting.Lock()
-	defer s.exporting.Unlock()
+	s.writing.Lock()
+	defer s.writing.Unlock()
 	out, items, status, err := s.plan(r.Context(), request)
 	if err != nil {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
