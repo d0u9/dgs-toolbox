@@ -156,7 +156,7 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/read-all", s.readAll)
 	webui.Mount(mux)
 	// The dialog only chooses a folder to read; nothing it reaches is changed.
-	webfile.Mount(mux, webfile.Options{Root: s.root})
+	webfile.Mount(mux, webfile.Options{Root: s.root, Writable: true})
 	files := http.FileServerFS(static)
 	serve := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
