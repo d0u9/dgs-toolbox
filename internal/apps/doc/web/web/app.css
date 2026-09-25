@@ -63,3 +63,12 @@ body { display: flex; flex-direction: column; }
 }
 .text-body:empty { display: none; }
 .form-field input.suggested { background: var(--primary-soft); }
+.pages {
+  align-self: stretch; flex: 1; overflow-y: auto; padding: var(--space-md);
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-md);
+}
+.pages .page {
+  display: block; flex: none; width: min(100%, 900px); height: auto;
+  background: var(--paper); box-shadow: var(--lift-soft);
+}
+.pages[hidden], #frame[hidden] { display: none; }
