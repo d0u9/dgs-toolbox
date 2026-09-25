@@ -17,8 +17,9 @@ step at a time as it grows. The page comes first; what it writes follows.
 | M7 | Merging a cloned sub-tree, with conflicts resolved on the page | not started |
 | M8 | Merging a sub-tree created with `init` | not started |
 
-**M0 — where metadata is stored, and the file names — is open.** M1 writes no
-metadata and can be built before it; M2 cannot.
+Metadata is kept in sidecars with a rebuildable cache, as in `dgs box`. **The
+file names — marker, sidecar, manifest — are open.** M1 writes no files and can
+be built before they are decided; M2 cannot.
 
 ## Deferred
 
