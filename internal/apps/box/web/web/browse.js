@@ -143,7 +143,7 @@ async function start() {
   wireFilters();
   wireDetail();
   wireMarked();
-  wireDetailResize();
+  await wireDetailResize();
   await drawExceptionCount();
   await drawTrash();
 }
@@ -1311,62 +1311,20 @@ start().catch((err) => showError(err));
 // is a per-browser convenience, so it lives in localStorage.
 const DETAIL_WIDTH = { key: 'dgs.box.detail.width', min: 320, fallback: 380, step: 24, leftMin: 420 };
 
-function wireDetailResize() {
+async function wireDetailResize() {
+  const { splitter: resize } = await import('/ui/splitter.js');
   const main = document.querySelector('.browse-main');
   const handle = el('detail-resize');
-  const max = () => Math.max(DETAIL_WIDTH.min, main.clientWidth - DETAIL_WIDTH.leftMin - handle.offsetWidth);
-  const apply = (width, keep) => {
-    const clamped = Math.round(Math.min(Math.max(width, DETAIL_WIDTH.min), max()));
-    main.style.setProperty('--detail-width', `${clamped}px`);
-    handle.setAttribute('aria-valuenow', String(clamped));
-    handle.setAttribute('aria-valuemin', String(DETAIL_WIDTH.min));
-    handle.setAttribute('aria-valuemax', String(max()));
-    if (keep) {
-      try {
-        localStorage.setItem(DETAIL_WIDTH.key, String(clamped));
-      } catch {
-        // Kept for this page load only.
-      }
-    }
-    return clamped;
-  };
-  let saved = NaN;
-  try {
-    saved = Number(localStorage.getItem(DETAIL_WIDTH.key));
-  } catch {
-    // Nothing stored is the default width.
-  }
-  let width = apply(Number.isFinite(saved) && saved > 0 ? saved : DETAIL_WIDTH.fallback, false);
-
-  handle.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    handle.setPointerCapture(event.pointerId);
-    const right = main.getBoundingClientRect().right;
-    document.body.classList.add('resizing');
-    const follow = (move) => {
-      width = apply(right - move.clientX, false);
-    };
-    const finish = () => {
-      handle.removeEventListener('pointermove', follow);
-      document.body.classList.remove('resizing');
-      width = apply(width, true);
-    };
-    handle.addEventListener('pointermove', follow);
-    handle.addEventListener('pointerup', finish, { once: true });
-    handle.addEventListener('pointercancel', finish, { once: true });
-  });
-  handle.addEventListener('dblclick', () => {
-    width = apply(DETAIL_WIDTH.fallback, true);
-  });
-  handle.addEventListener('keydown', (event) => {
-    const delta = { ArrowLeft: DETAIL_WIDTH.step, ArrowRight: -DETAIL_WIDTH.step }[event.key];
-    if (!delta) return;
-    event.preventDefault();
-    event.stopPropagation();
-    width = apply(width + delta, true);
-  });
-  window.addEventListener('resize', () => {
-    width = apply(width, false);
+  resize({
+    handle,
+    target: document.querySelector('.browse-main > .detail'),
+    axis: 'x',
+    invert: true,
+    min: DETAIL_WIDTH.min,
+    max: () => Math.max(DETAIL_WIDTH.min, main.clientWidth - DETAIL_WIDTH.leftMin - handle.offsetWidth),
+    key: DETAIL_WIDTH.key,
+    fallback: DETAIL_WIDTH.fallback,
+    step: DETAIL_WIDTH.step,
+    set: (px) => main.style.setProperty('--detail-width', `${px}px`),
   });
 }

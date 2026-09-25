@@ -144,8 +144,8 @@
       <div class="detail-actions">
         <button type="button" id="marked-apply" class="button primary">Apply to all</button>
         <button type="button" id="marked-all" class="button">Mark everything shown</button>
-        <button type="button" id="marked-trash" class="text-button">Move all to trash</button>
         <button type="button" id="marked-clear" class="text-button">clear</button>
+        <button type="button" id="marked-trash" class="button danger marked-trash" title="Moves every marked scan into the Box's trash; nothing is erased">Move all to trash…</button>
       </div>
       <p class="detail-note">
         A description and an amount belong to one document, so a batch sets only what many documents share.
@@ -259,12 +259,17 @@
         </p>
       </section>
 
-      <section class="detail-section" aria-label="Remove">
+      <section class="detail-section" aria-label="File">
         <div class="detail-buttons">
           <button type="button" id="detail-redraw" class="button" title="Draw this scan's thumbnail and page pictures again from its file">Redraw thumbnail</button>
           <button type="button" id="detail-unfile" class="button" hidden>Unfile — back to intake</button>
-          <button type="button" id="detail-trash" class="button danger">Move to trash</button>
         </div>
+      </section>
+
+      <section class="detail-section danger-zone" aria-label="Move to trash">
+        <h3>Move to trash</h3>
+        <p class="danger-note">Moves the file and its sidecar into the Box's trash, where it stays until someone empties it by hand. Nothing is erased.</p>
+        <button type="button" id="detail-trash" class="button danger">Move to trash…</button>
       </section>
     </div>
   </aside>
