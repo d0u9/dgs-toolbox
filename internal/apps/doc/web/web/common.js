@@ -67,7 +67,9 @@ export function inputFor(field, value, placeholder, state, self) {
     }
   } else {
     control = el("input", { ...common, type: field.type === "date" ? "date" : "text",
-      value, placeholder, spellcheck: false, autocomplete: "off" });
+      value, placeholder: placeholder || (field.type === "country" ? "cn, CHN, China, 中国…" : ""),
+      spellcheck: false, autocomplete: "off" });
+    if (field.type === "country") control.title = "Any code or name: kept as the Template's format says.";
   }
   return el("label", { className: "form-field" },
     el("span", {}, field.key, field.required ? el("span", { className: "req" }, " *") : null), control);

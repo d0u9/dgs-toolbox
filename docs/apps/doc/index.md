@@ -168,6 +168,13 @@ shows for it:
 - `select` — one of the field's `options`.
 - `item` — the ID of another Item, such as a passport's previous passport. The
   page picks it from the Items; export never follows it.
+- `country` — a country however it is typed: its ISO code (`cn`, `CHN`), its
+  English or Chinese name (`China`, `中国`) or a common alias
+  (`中华人民共和国`, `PRC`), any case. It is kept in the field's `format`:
+  `zh` (`中国`, the default), `en` (`China`), `alpha2` (`CN`) or `alpha3`
+  (`CHN`). A name dgs does not know is refused. Two documents whose country
+  is written differently, `AU` in an older sidecar and `澳大利亚` now, are
+  the same document. The table is ISO 3166-1, in `internal/doc/country`.
 
 A sidecar may also hold `notes`, free text the owner writes. Notes are never a
 key and never exported. An Item's history is its revisions; no other log is
@@ -414,12 +421,14 @@ fields:
     required: true
     distinguishing: true  # type + the distinguishing fields are unique
   - key: country
+    type: country
+    format: zh              # zh 中国, en China, alpha2 CN, alpha3 CHN
     required: true
     distinguishing: true
   - key: number
     pattern: '(\d{17}[\dXx])'
   - key: expires
-    pattern: '[-至]\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|长期)'
+    pattern: '[-－—–一~～至]\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|长期)'
   - key: issued
     type: date
   - key: previous

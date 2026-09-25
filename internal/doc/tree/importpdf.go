@@ -3,6 +3,7 @@ package tree
 import (
 	"context"
 	"crypto/sha256"
+	"dgs-toolbox/internal/doc/country"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -105,10 +106,11 @@ func CleanFields(t Template, given map[string]string) (map[string]string, error)
 			}
 			continue
 		}
-		if err := f.check(value); err != nil {
+		kept, err := f.clean(value)
+		if err != nil {
 			return nil, err
 		}
-		fields[f.Key] = value
+		fields[f.Key] = kept
 	}
 	for key := range given {
 		if !t.has(key) {
@@ -132,14 +134,27 @@ func (t Template) has(key string) bool {
 }
 
 // SameDistinguishing reports whether a and b agree, ignoring case, on every
-// field t marks distinguishing: whether they name the same document.
+// field t marks distinguishing: whether they name the same document. A
+// country agrees however either side writes it: AU and 澳大利亚 are one.
 func SameDistinguishing(t Template, a, b map[string]string) bool {
 	for _, f := range t.Fields {
-		if f.Distinguishing && !strings.EqualFold(a[f.Key], b[f.Key]) {
+		if f.Distinguishing && !sameValue(f, a[f.Key], b[f.Key]) {
 			return false
 		}
 	}
 	return true
+}
+
+func sameValue(f Field, a, b string) bool {
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	if f.Type == FieldCountry {
+		ca, okA := country.Find(a)
+		cb, okB := country.Find(b)
+		return okA && okB && ca == cb
+	}
+	return false
 }
 
 // FileDigest is a file's SHA-256 in lowercase hex.

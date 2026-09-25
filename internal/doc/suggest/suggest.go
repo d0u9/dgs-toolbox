@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"dgs-toolbox/internal/doc/country"
 	"dgs-toolbox/internal/doc/dates"
 	"dgs-toolbox/internal/doc/tree"
 )
@@ -75,6 +76,13 @@ func Matches(t tree.Template, text string, order dates.Order) map[string]Match {
 		}
 		start += strings.Index(raw, value)
 		end = start + len(value)
+		if f.Type == tree.FieldCountry {
+			kept, ok := country.Normalize(value, country.Format(f.Format))
+			if !ok {
+				continue
+			}
+			value = kept
+		}
 		if f.Type == tree.FieldDate {
 			parsed, ok := dates.Parse(value, order)
 			if !ok {
