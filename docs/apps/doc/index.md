@@ -36,6 +36,18 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 4. The opened folder is only read. The server serves and imports only PDFs
    under it.
 
+### Text and suggestions
+
+Beside the preview, on both pages, is the PDF's text: its own text layer when
+it has one, else recognised from the rendered page. Recognition is PDFKit and
+the Vision framework on macOS, compiled in through cgo; elsewhere, and without
+cgo, the page says it is unavailable. The first four pages are read.
+
+On import, each empty field whose Template `pattern` matches the text is filled
+and marked as a suggestion. A field the reader typed in is never replaced, and
+nothing is kept until the reader imports. Text is held in memory for the life
+of the process; searching Items by text, which needs it kept, comes later.
+
 Loose PDFs inside the tree are allowed; they are imported by opening the
 tree's own folder. Images are not imported.
 
@@ -208,12 +220,16 @@ fields:
     required: true
     distinguishing: true
   - key: number
+    pattern: '(\d{17}[\dXx])'
   - key: expires
+    pattern: '[-至]\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|长期)'
 defaults:
   country: AU
 ```
 
-The file is named after its `type`. The sidecar:
+The file is named after its `type`. A field's `pattern` is a regular
+expression that suggests its value from the document's text (below): the
+first capture group, else the whole match. The sidecar:
 
 ```yaml
 id: 01J8...               # ULID
@@ -233,6 +249,9 @@ A record has exactly one revision and no `head`.
   after doc is built.
 
 ## Later
+
+- **Searching Items by their text** on Browse, from text kept in the
+  rebuildable cache.
 
 - **Snapshot** — an export into a new dated directory that is never updated,
   recording what was submitted for a visa or a claim.
