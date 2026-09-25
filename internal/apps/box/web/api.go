@@ -36,14 +36,46 @@ type pageConfig struct {
 	Sample bool `json:"sample"`
 }
 
+// inboxChooser is a Source whose inbox can be changed while it runs; the
+// sample's cannot.
+type inboxChooser interface {
+	Inbox() string
+	SetInbox(dir string) error
+}
+
 func (a api) config(w http.ResponseWriter, _ *http.Request) {
+	inbox := a.settings.Inbox
+	if chooser, ok := a.settings.Source.(inboxChooser); ok {
+		inbox = chooser.Inbox()
+	}
 	writeJSON(w, http.StatusOK, pageConfig{
 		Root:     a.settings.Root,
-		Inbox:    a.settings.Inbox,
+		Inbox:    inbox,
 		Currency: a.settings.Currency,
 		Zone:     a.settings.Zone,
 		Sample:   a.settings.Source.Sample(),
 	})
+}
+
+// setInbox opens another folder as the inbox for the rest of the run.
+func (a api) setInbox(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Dir string `json:"dir"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	chooser, ok := a.settings.Source.(inboxChooser)
+	if !ok {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "the sample scans have no inbox to change: configure a Box"})
+		return
+	}
+	if err := chooser.SetInbox(request.Dir); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"inbox": chooser.Inbox()})
 }
 
 // typeOption is one entry of the catalogue as the pages need it: the name that

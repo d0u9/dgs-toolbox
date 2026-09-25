@@ -437,46 +437,22 @@ body.resizing { cursor: col-resize; user-select: none; }
   cursor: pointer;
 }
 .rejected-restore:hover { background: var(--primary); color: var(--on-primary); }
-.queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
-/* The time is the fixed column and the name runs after it, so a few hundred
-   rows read as two columns rather than as ragged text. */
-/* The inbox is read row by row for a whole sitting, so it is set at the
-   design language's caption-md — 14px on 1.5 — rather than the 12px of the
-   dense controls around it. */
-.queue-item {
-  display: grid;
-  gap: 1px;
-  padding: 6px var(--row-pad-x);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  line-height: 1.4;
+/* The inbox is drawn with the shared file tree (/ui/filetree.js): its
+   folders, then the scans in each, in the order they were scanned. */
+.inbox-bar { display: flex; align-items: center; gap: 8px; padding: 8px var(--row-pad-x) 6px; }
+.inbox-path {
+  flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  direction: rtl; text-align: left;
+  font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--graphite);
 }
-/* The column is already --hover's colour, so hovering lifts the row onto
-   paper with an outline instead. */
-.queue-item:hover { background: var(--paper); box-shadow: inset 0 0 0 1px var(--hairline-strong); }
-.queue-name {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  color: var(--ink-soft);
-}
-.queue-item:hover .queue-name { color: var(--ink); }
-.queue-time {
-  color: var(--graphite);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
-}
-.queue-time:empty { display: none; }
-.queue-marks { display: flex; flex-wrap: wrap; gap: 2px; }
+.inbox-bar .button { flex: none; }
+.queue-list { padding: 0 4px 8px; }
+.queue-list .ft-row { cursor: pointer; }
+.queue-marks { flex: none; display: flex; gap: 2px; margin-left: auto; }
 .queue-marks:empty { display: none; }
-/* A run is tinted; the scan the cursor is on stays the strong one, so the
-   order of these two rules is the point. */
-.queue-run, .queue-run:hover { background: var(--selected); }
-.queue-run .queue-name { color: var(--ink); }
-.queue-current, .queue-current:hover { background: var(--primary); box-shadow: none; }
-.queue-current .queue-name, .queue-current:hover .queue-name { color: var(--on-primary); font-weight: 600; }
-.queue-current .queue-time { color: var(--primary-soft); }
+.queue-count { margin-left: auto; font-size: var(--font-size-xs); color: var(--graphite); font-variant-numeric: tabular-nums; }
+/* A run is tinted; the scan the cursor is on is the tree's selected row. */
+.queue-list .ft-row.queue-run { background: var(--selected); }
 
 /* ---- Browse ---------------------------------------------------------- */
 
@@ -1402,3 +1378,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .list-date { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .list-tags .badge { margin-right: 2px; }
 .list-row.state-dead td { color: var(--steel); }
+.queue-list .ft-row.selected, .queue-list .ft-row.selected:hover { background: var(--primary); color: var(--on-primary); }
+.queue-list .ft-row.selected .ft-icon, .queue-list .ft-row.selected .queue-count { color: var(--on-primary); }
+.queue-list .ft-row.selected .ft-name { font-weight: 600; }

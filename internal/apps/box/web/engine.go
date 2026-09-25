@@ -216,6 +216,7 @@ func (e *Engine) Pending() []Scan {
 		scan := entry.edit
 		scan.Digest = entry.digest
 		scan.Filename = filepath.Base(entry.path)
+		scan.InboxPath = entry.relative
 		scan.Kind = string(entry.info.Kind)
 		scan.Pages = entry.info.Pages
 		scan.PageSize = entry.info.PageSize
@@ -814,6 +815,48 @@ func pick(pair thumb.Pair, size string) []byte {
 		return pair.Preview
 	}
 	return pair.Grid
+}
+
+// Inbox is the folder intake reads.
+func (e *Engine) Inbox() string {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	return e.inbox
+}
+
+// SetInbox makes another folder the inbox for the rest of this run, and
+// reads it. It is refused inside the Box, and the Box inside it: filing
+// would then move files within the Box it is filing into. Nothing is
+// written to configuration; box.inbox is still the inbox next time.
+func (e *Engine) SetInbox(dir string) error {
+	dir = filepath.Clean(strings.TrimSpace(dir))
+	if !filepath.IsAbs(dir) {
+		return errors.New("open the inbox by its full path")
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a folder", dir)
+	}
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+	if inside(e.root, dir) || inside(dir, e.root) {
+		return fmt.Errorf("%s overlaps the Box at %s: an inbox is a folder apart from it", dir, e.root)
+	}
+	e.inbox = dir
+	e.reads = readmemo.New(e.cacheDir, dir)
+	e.state = intakestate.File{}
+	e.pending = nil
+	e.rescanLocked()
+	return nil
+}
+
+// inside reports whether path is parent or lies under it.
+func inside(parent, path string) bool {
+	rel, err := filepath.Rel(parent, path)
+	return err == nil && filepath.IsLocal(rel)
 }
 
 // Rescan reads the inbox again.

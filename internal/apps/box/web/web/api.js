@@ -1,6 +1,7 @@
 // What the pages know about the server. Every call names a scan by its
-// digest; none of them names a path, because a path in a request is a path out
-// of the Box.
+// digest; none of them names a path in the Box, because a path in a request is
+// a path out of it. The one path sent is a folder to read as the inbox, which
+// the server refuses inside the Box.
 
 // pictureVersion changes when pictures are redrawn. The server lets the browser
 // keep a picture for an hour, so a redrawn one is asked for under a new URL.
@@ -20,6 +21,12 @@ const api = {
   types: () => ask('/api/types'),
   tags: () => ask('/api/tags'),
   intake: () => ask('/api/intake'),
+  inbox: (dir) =>
+    ask('/api/inbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dir }),
+    }),
   scans: () => ask('/api/scans'),
   exceptions: () => ask('/api/exceptions'),
   patch: (edit) =>
