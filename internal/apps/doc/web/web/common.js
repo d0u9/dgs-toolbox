@@ -19,7 +19,7 @@ if (list) {
   const handle = el("div", { className: "splitter col", role: "separator" });
   handle.setAttribute("aria-orientation", "vertical");
   list.after(handle);
-  splitter({ handle, target: list, axis: "x", min: 240, max: () => window.innerWidth - 360, key: "dgs-doc-size-list" });
+  splitter({ handle, target: list, axis: "x", min: 320, max: () => window.innerWidth - 360, key: "dgs-doc-size-list" });
 }
 
 export const size = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB";
