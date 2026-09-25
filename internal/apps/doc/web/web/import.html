@@ -3,37 +3,39 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Doc · dgs</title>
+<title>Doc Import · dgs</title>
 <meta name="robots" content="noindex, nofollow, noarchive">
 <link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
 <link rel="stylesheet" href="/ui/fonts.css">
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
-<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="/ui/filedialog.css">
+<link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <div id="banner" class="banner" hidden>
-  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder to import into it. Until then the page only shows the PDFs.
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before importing into it.
 </div>
 <header class="topbar">
   <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link current" href="/import/">Import</a>
   <span class="topbar-spacer"></span>
   <span id="root" class="muted"></span>
 </header>
 <p id="error" class="message error" hidden></p>
 <main class="work">
   <section class="list">
-    <input id="filter" type="search" placeholder="Filter" spellcheck="false" autocomplete="off">
-    <div class="scroll">
-      <h2 class="panel-head" id="items-head">Items <span id="items-count" class="count numeric"></span></h2>
-      <ul id="items" class="rows"></ul>
-      <h2 class="panel-head">Loose PDFs <span id="loose-count" class="count numeric"></span></h2>
-      <ul id="loose" class="rows"></ul>
-      <p id="loose-empty" class="message" hidden>No PDFs outside the tree's items.</p>
+    <div class="open-bar">
+      <button id="open" class="action" type="button">Open folder…</button>
+      <span id="counts" class="muted numeric"></span>
     </div>
+    <p id="dir" class="dir-path muted"></p>
+    <div class="scroll" id="tree"></div>
+    <p id="list-message" class="message"></p>
   </section>
   <section class="preview">
-    <p id="empty" class="muted">Pick a PDF to see it.</p>
+    <p id="empty" class="muted">Open a folder, then pick a PDF.</p>
     <iframe id="frame" title="Preview" hidden></iframe>
   </section>
   <aside id="side" class="side" hidden>
@@ -46,19 +48,12 @@
       <button id="import-button" class="action" type="submit">Import</button>
       <p class="message">The PDF is copied into the tree and read back before it counts. This file stays where it is.</p>
     </form>
-    <div id="detail" hidden>
-      <h2 class="panel-head" id="detail-head"></h2>
-      <form id="edit">
-        <div id="edit-fields"></div>
-        <p id="edit-message" class="message"></p>
-        <button id="save-button" class="action" type="submit">Save fields</button>
-      </form>
-      <h2 class="panel-head">Revisions</h2>
-      <ul id="revisions" class="rows"></ul>
-      <p id="head-message" class="message"></p>
+    <div id="kept" hidden>
+      <h2 class="panel-head">Already in the tree</h2>
+      <p class="message">Kept as <a id="kept-link" href="/browse/"></a>.</p>
     </div>
   </aside>
 </main>
-<script src="app.js"></script>
+<script type="module" src="/import.js"></script>
 </body>
 </html>

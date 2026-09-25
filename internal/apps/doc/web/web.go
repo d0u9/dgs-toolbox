@@ -1,5 +1,5 @@
-// Package web serves the dgs doc page: the loose PDFs in the tree, the Items
-// kept in it, and importing one into the other. The design is docs/apps/doc/.
+// Package web serves the dgs doc pages: browse, over the Items kept in the
+// tree, and import, over a folder of PDFs opened from anywhere. The design is docs/apps/doc/.
 package web
 
 import (
@@ -19,6 +19,7 @@ import (
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/doc/pdflist"
 	"dgs-toolbox/internal/doc/tree"
+	"dgs-toolbox/internal/webfile"
 	"dgs-toolbox/internal/webui"
 )
 
@@ -48,7 +49,8 @@ func (s Settings) ResolvedRoot() string {
 	return "."
 }
 
-type looseJSON struct {
+type sourceFileJSON struct {
+	// Path is slash-separated and relative to the opened folder.
 	Path     string    `json:"path"`
 	Size     int64     `json:"size"`
 	Modified time.Time `json:"modified"`
@@ -62,57 +64,60 @@ type stateJSON struct {
 	Error     string          `json:"error,omitempty"`
 	Templates []tree.Template `json:"templates"`
 	Items     []tree.Item     `json:"items"`
-	Loose     []looseJSON     `json:"loose"`
 }
 
 type server struct {
 	root string
-	fsys fs.FS
 	now  func() time.Time
 }
 
-// Handler serves the page and its API.
+// Handler serves the pages and their API.
 func Handler(settings Settings) http.Handler {
 	static, err := fs.Sub(webFiles, "web")
 	if err != nil {
 		panic(err)
 	}
-	root := settings.ResolvedRoot()
-	s := server{root: root, fsys: os.DirFS(root), now: time.Now}
+	s := server{root: settings.ResolvedRoot(), now: time.Now}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
-	mux.HandleFunc("GET /api/file", s.file)
+	mux.HandleFunc("GET /api/source", s.sourceList)
+	mux.HandleFunc("GET /api/source/file", s.sourceFile)
 	mux.HandleFunc("GET /api/revision", s.revision)
 	mux.HandleFunc("POST /api/import", s.importPDF)
 	mux.HandleFunc("POST /api/revisions", s.addRevision)
 	mux.HandleFunc("POST /api/head", s.setHead)
 	mux.HandleFunc("POST /api/fields", s.setFields)
 	webui.Mount(mux)
+	// The dialog only chooses a folder to read; nothing it reaches is changed.
+	webfile.Mount(mux, webfile.Options{Root: s.root})
 	files := http.FileServerFS(static)
-	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	serve := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
-	}))
+	})
+	for _, page := range []string{"browse", "import"} {
+		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
+		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
+	}
+	mux.Handle("GET /{$}", http.RedirectHandler("/browse/", http.StatusFound))
+	mux.Handle("GET /", serve)
 	return mux
 }
 
-// loose is every PDF outside the items folder: what import offers.
-func (s server) loose() ([]pdflist.File, error) {
-	files, err := pdflist.List(s.fsys)
-	if err != nil {
-		return nil, err
-	}
-	out := files[:0]
-	for _, f := range files {
-		if !strings.HasPrefix(f.Path, tree.ItemsDir+"/") {
-			out = append(out, f)
+// pageHandler answers a page's own root with its document, so a reload of
+// /import/ lands on the page rather than on a listing.
+func pageHandler(files http.Handler, document string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "" || r.URL.Path == "/" {
+			r = r.Clone(r.Context())
+			r.URL.Path = "/" + document
 		}
-	}
-	return out, nil
+		files.ServeHTTP(w, r)
+	})
 }
 
 func (s server) state(w http.ResponseWriter, _ *http.Request) {
-	out := stateJSON{Root: s.root, Templates: []tree.Template{}, Items: []tree.Item{}, Loose: []looseJSON{}}
+	out := stateJSON{Root: s.root, Templates: []tree.Template{}, Items: []tree.Item{}}
 	var problems []string
 	if err := tree.Require(s.root); err == nil {
 		out.Tree = true
@@ -129,45 +134,88 @@ func (s server) state(w http.ResponseWriter, _ *http.Request) {
 	} else if !errors.Is(err, tree.ErrNotATree) {
 		problems = append(problems, err.Error())
 	}
-	kept := map[string]string{}
-	for _, item := range out.Items {
-		for _, r := range item.Revisions {
-			kept[r.Digest] = item.ID
-		}
-	}
-	files, err := s.loose()
-	if err != nil {
-		problems = append(problems, err.Error())
-	}
-	for _, f := range files {
-		entry := looseJSON{Path: f.Path, Size: f.Size, Modified: f.Modified}
-		if len(kept) > 0 {
-			if digest, err := tree.FileDigest(filepath.Join(s.root, filepath.FromSlash(f.Path))); err == nil {
-				entry.Item = kept[digest]
-			}
-		}
-		out.Loose = append(out.Loose, entry)
-	}
 	out.Error = strings.Join(problems, "; ")
 	writeJSON(w, http.StatusOK, out)
 }
 
-// file serves a loose PDF, only when the listing names it, so a path cannot
-// reach outside the tree or at anything that is not a listed PDF.
-func (s server) file(w http.ResponseWriter, r *http.Request) {
-	want := r.URL.Query().Get("path")
-	files, err := s.loose()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+// sourceList is every PDF under an opened folder, each marked with the Item
+// already keeping it. The items folder of the tree itself is left out: those
+// PDFs are the tree's, not something to import.
+func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
+	dir := r.URL.Query().Get("dir")
+	if !filepath.IsAbs(dir) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "open a folder by its full path"})
 		return
 	}
-	for _, f := range files {
-		if f.Path == want {
-			servePDF(w, r, filepath.Join(s.root, filepath.FromSlash(f.Path)))
-			return
+	files, err := pdflist.List(os.DirFS(dir))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	items, _ := tree.LoadItems(s.root)
+	kept := map[string]string{}
+	for _, item := range items {
+		for _, r := range item.Revisions {
+			kept[r.Digest] = item.ID
 		}
 	}
-	http.Error(w, "no such PDF in the tree", http.StatusNotFound)
+	itemsDir := filepath.Join(s.root, tree.ItemsDir)
+	out := []sourceFileJSON{}
+	for _, f := range files {
+		full := filepath.Join(dir, filepath.FromSlash(f.Path))
+		if within(itemsDir, full) {
+			continue
+		}
+		entry := sourceFileJSON{Path: f.Path, Size: f.Size, Modified: f.Modified}
+		if len(kept) > 0 {
+			if digest, err := tree.FileDigest(full); err == nil {
+				entry.Item = kept[digest]
+			}
+		}
+		out = append(out, entry)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"dir": dir, "files": out})
+}
+
+func within(parent, path string) bool {
+	rel, err := filepath.Rel(parent, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// sourcePath is the file a request names: a PDF under an opened folder, by a
+// relative path that cannot climb out of it, and not hidden or linked. Only
+// what pdflist would list is accepted.
+func sourcePath(dir, path string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return "", errors.New("open a folder by its full path")
+	}
+	if !fs.ValidPath(path) || path == "." || !strings.EqualFold(filepath.Ext(path), ".pdf") {
+		return "", errors.New("not a PDF in the opened folder")
+	}
+	for _, part := range strings.Split(path, "/") {
+		if strings.HasPrefix(part, ".") {
+			return "", errors.New("not a PDF in the opened folder")
+		}
+	}
+	full := filepath.Join(dir, filepath.FromSlash(path))
+	info, err := os.Lstat(full)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("not a regular file")
+	}
+	return full, nil
+}
+
+// sourceFile serves a PDF under an opened folder for preview.
+func (s server) sourceFile(w http.ResponseWriter, r *http.Request) {
+	full, err := sourcePath(r.URL.Query().Get("dir"), r.URL.Query().Get("path"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	servePDF(w, r, full)
 }
 
 // revision serves an Item's PDF, looked up through its sidecar.
@@ -210,6 +258,7 @@ func servePDF(w http.ResponseWriter, r *http.Request, path string) {
 }
 
 type importJSON struct {
+	Dir    string            `json:"dir"`
 	Path   string            `json:"path"`
 	Type   string            `json:"type"`
 	Fields map[string]string `json:"fields"`
@@ -221,7 +270,7 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	source, ok := s.source(w, request.Path)
+	source, ok := s.source(w, request.Dir, request.Path)
 	if !ok {
 		return
 	}
@@ -247,21 +296,14 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "no Template for type " + request.Type})
 }
 
-// source is a listed loose PDF's path on disk. A path the listing does not
-// name is refused, and the response is written.
-func (s server) source(w http.ResponseWriter, path string) (string, bool) {
-	files, err := s.loose()
+// source is the PDF an import names, or false with the response written.
+func (s server) source(w http.ResponseWriter, dir, path string) (string, bool) {
+	full, err := sourcePath(dir, path)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return "", false
 	}
-	for _, f := range files {
-		if f.Path == path {
-			return filepath.Join(s.root, filepath.FromSlash(f.Path)), true
-		}
-	}
-	writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such PDF in the tree"})
-	return "", false
+	return full, true
 }
 
 func decode(w http.ResponseWriter, r *http.Request, into any) bool {
@@ -287,13 +329,14 @@ func answer(w http.ResponseWriter, item tree.Item, err error) {
 // addRevision adds a loose PDF to a document and moves HEAD to it.
 func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	var request struct {
+		Dir  string `json:"dir"`
 		Path string `json:"path"`
 		Item string `json:"item"`
 	}
 	if !decode(w, r, &request) {
 		return
 	}
-	source, ok := s.source(w, request.Path)
+	source, ok := s.source(w, request.Dir, request.Path)
 	if !ok {
 		return
 	}

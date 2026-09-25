@@ -12,6 +12,33 @@ process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
 [`../../web.md`](../../web.md) before changing either. The parts, in order, are
 in [`roadmap.md`](roadmap.md).
 
+## Pages
+
+Separate pages, linked from the top bar, as box's intake and browse are:
+
+| Page | What it is for |
+| --- | --- |
+| Browse `/browse/` | The Items: filter, preview, edit fields, revisions and HEAD. Nothing is imported here. |
+| Import `/import/` | Taking PDFs in. |
+| Views `/views/` | Building layouts and previewing the tree they make (M4–M5). |
+| Export `/export/` | Plan, dry run, write (M6). |
+
+### Import
+
+1. **Open folder…** opens the shared file dialog in folder mode, at the folder
+   opened last time.
+2. The page shows that folder's PDFs as a tree, subfolders included and kept
+   as folders rather than flattened. Folders with no PDF in them are left out.
+   PDFs already in the tree are marked.
+3. Picking a PDF previews it; the form beside it takes a Template and its
+   fields, and whether it is a new Item or a new revision of a document. After
+   an import the next PDF not yet imported is picked.
+4. The opened folder is only read. The server serves and imports only PDFs
+   under it.
+
+Loose PDFs inside the tree are allowed; they are imported by opening the
+tree's own folder. Images are not imported.
+
 ## The four layers
 
 ```text
@@ -165,8 +192,8 @@ Conflicts are resolved by hand on the page before the merge completes.
 - A PDF is named by its SHA-256, so the same file is stored once and merging
   matches by digest.
 - An export writes `dgs-export.json` in the Target (M6).
-- PDFs anywhere else in the tree are loose: they are what import offers. Import
-  copies one in and leaves the original where it was.
+- PDFs anywhere else in the tree are loose, and allowed. Import copies a PDF in
+  from wherever it is and leaves the original where it was.
 
 ## Template format
 
