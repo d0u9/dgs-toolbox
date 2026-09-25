@@ -1,8 +1,11 @@
 //go:build darwin && cgo
 
 // The PDFKit and Vision side of package ocr. The answer is one JSON object:
-// {"pages": [{"text": ..., "source": "text"|"recognised"}]}, or
-// {"error": "..."}.
+// {"pages": [{"source": "text"|"recognised", "lines": [...]}]}, or
+// {"error": "..."}. A line is its text and its box as fractions of the page,
+// from the bottom left: of the page as shown for recognised lines
+// ("space": "display"), of the unturned page for the text layer's ("space":
+// "page", with the page's rotation). Go turns both into one frame.
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 #import <PDFKit/PDFKit.h>
@@ -29,15 +32,23 @@ static char *answer(NSDictionary *object) {
     return out;
 }
 
+// render draws the page as it is shown, turned by its /Rotate.
 static CGImageRef render(PDFPage *page) {
-    CGRect bounds = [page boundsForBox:kPDFDisplayBoxMediaBox];
-    CGFloat longSide = MAX(bounds.size.width, bounds.size.height);
+    CGPDFPageRef source = page.pageRef;
+    if (source == NULL) {
+        return NULL;
+    }
+    CGRect media = CGPDFPageGetBoxRect(source, kCGPDFMediaBox);
+    int rotate = ((CGPDFPageGetRotationAngle(source) % 360) + 360) % 360;
+    CGFloat shownWidth = (rotate == 90 || rotate == 270) ? media.size.height : media.size.width;
+    CGFloat shownHeight = (rotate == 90 || rotate == 270) ? media.size.width : media.size.height;
+    CGFloat longSide = MAX(shownWidth, shownHeight);
     if (longSide <= 0) {
         return NULL;
     }
     CGFloat scale = renderLongSide / longSide;
-    size_t width = (size_t)ceil(bounds.size.width * scale);
-    size_t height = (size_t)ceil(bounds.size.height * scale);
+    size_t width = (size_t)ceil(shownWidth * scale);
+    size_t height = (size_t)ceil(shownHeight * scale);
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
     CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, 0, space,
                                                  (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
@@ -47,17 +58,22 @@ static CGImageRef render(PDFPage *page) {
     }
     CGContextSetRGBFillColor(context, 1, 1, 1, 1);
     CGContextFillRect(context, CGRectMake(0, 0, width, height));
+    // The drawing transform turns the page and fits it to a rectangle of its
+    // own size in points; it never enlarges, so the scale is applied first.
     CGContextScaleCTM(context, scale, scale);
-    CGContextTranslateCTM(context, -bounds.origin.x, -bounds.origin.y);
-    [page drawWithBox:kPDFDisplayBoxMediaBox toContext:context];
+    CGAffineTransform fit = CGPDFPageGetDrawingTransform(source, kCGPDFMediaBox,
+                                                         CGRectMake(0, 0, shownWidth, shownHeight), 0, true);
+    CGContextConcatCTM(context, fit);
+    CGContextClipToRect(context, media);
+    CGContextDrawPDFPage(context, source);
     CGImageRef image = CGBitmapContextCreateImage(context);
     CGContextRelease(context);
     return image;
 }
 
 // recognise reads a rendered page's lines, top to bottom and then left to
-// right. Vision's origin is the bottom left.
-static NSString *recognise(CGImageRef image, NSError **error) {
+// right. Vision's boxes are fractions of the image from the bottom left.
+static NSArray *recognise(CGImageRef image, NSError **error) {
     VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] init];
     request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
     request.usesLanguageCorrection = YES;
@@ -66,7 +82,7 @@ static NSString *recognise(CGImageRef image, NSError **error) {
     if (![handler performRequests:@[ request ] error:error]) {
         return nil;
     }
-    NSArray<VNRecognizedTextObservation *> *lines = [request.results
+    NSArray<VNRecognizedTextObservation *> *found = [request.results
         sortedArrayUsingComparator:^NSComparisonResult(VNRecognizedTextObservation *a, VNRecognizedTextObservation *b) {
             CGFloat ay = CGRectGetMidY(a.boundingBox), by = CGRectGetMidY(b.boundingBox);
             // Lines whose middles are within half a line of each other are one row.
@@ -77,14 +93,49 @@ static NSString *recognise(CGImageRef image, NSError **error) {
             CGFloat ax = a.boundingBox.origin.x, bx = b.boundingBox.origin.x;
             return ax < bx ? NSOrderedAscending : (ax > bx ? NSOrderedDescending : NSOrderedSame);
         }];
-    NSMutableArray<NSString *> *text = [NSMutableArray array];
-    for (VNRecognizedTextObservation *line in lines) {
+    NSMutableArray *lines = [NSMutableArray array];
+    for (VNRecognizedTextObservation *line in found) {
         VNRecognizedText *best = [[line topCandidates:1] firstObject];
-        if (best != nil) {
-            [text addObject:best.string];
+        if (best == nil) {
+            continue;
         }
+        CGRect box = line.boundingBox;
+        [lines addObject:@{
+            @"text" : best.string, @"space" : @"display",
+            @"x" : @(box.origin.x), @"y" : @(box.origin.y), @"w" : @(box.size.width), @"h" : @(box.size.height),
+        }];
     }
-    return [text componentsJoinedByString:@"\n"];
+    return lines;
+}
+
+// layer reads the page's own text line by line, each with its box as a
+// fraction of the unturned media box.
+static NSArray *layer(PDFPage *page) {
+    NSMutableArray *lines = [NSMutableArray array];
+    if (page.numberOfCharacters == 0) {
+        return lines;
+    }
+    CGRect media = [page boundsForBox:kPDFDisplayBoxMediaBox];
+    if (media.size.width <= 0 || media.size.height <= 0) {
+        return lines;
+    }
+    int rotate = (int)page.rotation;
+    PDFSelection *all = [page selectionForRange:NSMakeRange(0, page.numberOfCharacters)];
+    for (PDFSelection *line in all.selectionsByLine) {
+        NSString *text = line.string;
+        if (text.length == 0) {
+            continue;
+        }
+        CGRect box = [line boundsForPage:page];
+        [lines addObject:@{
+            @"text" : text, @"space" : @"page", @"rotate" : @(rotate),
+            @"x" : @((box.origin.x - media.origin.x) / media.size.width),
+            @"y" : @((box.origin.y - media.origin.y) / media.size.height),
+            @"w" : @(box.size.width / media.size.width),
+            @"h" : @(box.size.height / media.size.height),
+        }];
+    }
+    return lines;
 }
 
 char *dgs_ocr_pdf(const char *path, int maxPages) {
@@ -105,10 +156,10 @@ char *dgs_ocr_pdf(const char *path, int maxPages) {
                 if (page == nil) {
                     continue;
                 }
-                NSString *layer = page.string;
-                NSString *trimmed = [layer stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+                NSString *own = page.string;
+                NSString *trimmed = [own stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
                 if (trimmed.length >= textLayerMinimum) {
-                    [pages addObject:@{@"text" : layer, @"source" : @"text"}];
+                    [pages addObject:@{@"lines" : layer(page), @"source" : @"text"}];
                     continue;
                 }
                 CGImageRef image = render(page);
@@ -116,13 +167,13 @@ char *dgs_ocr_pdf(const char *path, int maxPages) {
                     return answer(@{@"error" : [NSString stringWithFormat:@"text recognition: page %ld could not be drawn", (long)i + 1]});
                 }
                 NSError *error = nil;
-                NSString *text = recognise(image, &error);
+                NSArray *lines = recognise(image, &error);
                 CGImageRelease(image);
-                if (text == nil) {
+                if (lines == nil) {
                     NSString *reason = error ? error.localizedDescription : @"unknown failure";
                     return answer(@{@"error" : [NSString stringWithFormat:@"text recognition: page %ld: %@", (long)i + 1, reason]});
                 }
-                [pages addObject:@{@"text" : text, @"source" : @"recognised"}];
+                [pages addObject:@{@"lines" : lines, @"source" : @"recognised"}];
             }
         }
         return answer(@{@"pages" : pages});

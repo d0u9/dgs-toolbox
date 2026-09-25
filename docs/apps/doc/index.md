@@ -46,13 +46,17 @@ a computer — is shown in the viewer.
 
 ### Text and suggestions
 
-Beside the preview, on both pages, is the PDF's text: its own text layer when
-it has one, else recognised from the rendered page. Recognition is PDFKit and
+The PDF's text is laid over the pictures of its pages, each line where it was
+read, invisible until it is hovered or selected, so it is copied straight off
+the page. It is the PDF's own text layer when it has one, else recognised from
+the rendered page. There is no separate text panel: most PDFs are never
+copied from. Recognition is PDFKit and
 the Vision framework on macOS, compiled in through cgo; elsewhere, and without
 cgo, the page says it is unavailable. The first four pages are read.
 
 On import, each empty field whose Template `pattern` matches the text is filled
-and marked as a suggestion. A field the reader typed in is never replaced, and
+and marked as a suggestion; hovering or focusing it outlines the line on the
+page it was read from. A field the reader typed in is never replaced, and
 nothing is kept until the reader imports. Text is held in memory for the life
 of the process; searching Items by text, which needs it kept, comes later.
 

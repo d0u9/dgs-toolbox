@@ -1,6 +1,6 @@
 // Import: open a folder from anywhere, see its PDFs as the tree of folders
 // they are in, and take them in one at a time. The folder is only read.
-import { $, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview } from "/common.js";
+import { $, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview, showSource } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 
 const FOLDER_KEY = "dgs-doc-import-folder";
@@ -126,7 +126,12 @@ function drawFields() {
   $("import-button").textContent = adding ? "Add revision" : "Import";
   $("fields").replaceChildren(...(adding ? [] : t.fields.map((f) => inputFor(f, "", (t.defaults || {})[f.key] || ""))));
   for (const input of $("fields").querySelectorAll("input")) {
-    input.addEventListener("input", () => input.classList.remove("suggested"));
+    input.addEventListener("input", () => { input.classList.remove("suggested"); showSource(null); });
+    const source = () => input.classList.contains("suggested") && showSource((suggestions[$("template").value] || {})[input.name]);
+    input.addEventListener("focus", source);
+    input.addEventListener("mouseenter", source);
+    input.addEventListener("blur", () => showSource(null));
+    input.addEventListener("mouseleave", () => document.activeElement !== input && showSource(null));
   }
   suggest();
 }
@@ -136,11 +141,11 @@ function drawFields() {
 function suggest() {
   const found = suggestions[$("template").value] || {};
   for (const input of $("fields").querySelectorAll("input")) {
-    const value = found[input.name];
+    const value = found[input.name] && found[input.name].value;
     if (value && (input.value === "" || input.classList.contains("suggested"))) {
       input.value = value;
       input.classList.add("suggested");
-      input.title = "Suggested from the text. Check it against the preview.";
+      input.title = "Suggested from the text. Hover to see where on the page it was read.";
     }
   }
 }
