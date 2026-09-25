@@ -31,11 +31,8 @@ body { display: flex; flex-direction: column; }
 .form-field { display: flex; flex-direction: column; gap: var(--space-xxs); margin: var(--space-xs) 14px; }
 .form-field span { font-size: var(--font-size-xs); color: var(--graphite); }
 .form-field .req { color: var(--error); }
-.action {
-  margin: var(--space-xs) 14px; padding: 6px 16px; font: inherit; font-weight: 600;
-  color: var(--on-primary); background: var(--primary); border: 0; border-radius: var(--radius-md); cursor: pointer;
-}
-.action:disabled { background: var(--steel); cursor: default; }
+/* .action is the shared one (/ui/controls.css); here it only keeps its place. */
+.action { margin: var(--space-xs) 14px; }
 .fields { margin: 0 14px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
 .fields dt { color: var(--graphite); }
 .fields dd { margin: 0; }
@@ -121,7 +118,6 @@ body { display: flex; flex-direction: column; }
 .chip:hover { background: var(--primary-soft); color: var(--primary); }
 .buttons { display: flex; }
 .action.quiet { color: var(--error); background: var(--paper); border: 1px solid var(--error); }
-.action[hidden] { display: none; }
 .problem { margin: var(--space-xs) 14px; padding: var(--space-xs) 12px; border-radius: var(--radius-md); background: var(--primary-soft); }
 .problem ul { margin: 4px 0 0; padding-left: 18px; }
 .message.ok { margin: var(--space-xs) 14px; color: var(--charcoal); }
@@ -172,8 +168,6 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .template-side { width: 340px; min-width: 300px; flex: none; padding: 0 16px 24px; font-size: var(--font-size-ui); }
 .template-side .detail-section:first-child { padding-top: 12px; }
 .template-side .detail-section:last-of-type { border-bottom: 0; }
-.template-side .detail-danger { border: 1px solid var(--error); }
-.template-side .detail-danger[hidden] { display: none; }
 .about { margin: 0; line-height: 1.5; }
 .about.muted { font-size: var(--font-size-xs); }
 .about code, .ref code { font-size: var(--font-size-xs); padding: 0 4px; background: var(--cloud); border-radius: var(--radius-sm); }
@@ -186,7 +180,6 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .template-side .form-field { margin: 0; }
 .template-side .form-field input { height: 28px; }
 .template-side .button { align-self: flex-start; }
-.button.danger:disabled { opacity: .5; cursor: default; background: var(--paper); color: var(--error); }
 
 /* Browse: filters along the top, cards or a table, as box's Browse. */
 .filters {
@@ -301,10 +294,6 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .rev { display: flex; align-items: center; gap: 8px; }
 .rev-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .rev .button { flex: none; }
-.detail-danger { margin-top: 18px; padding: 14px; border: 1px solid var(--error); border-radius: var(--radius-md); background: #fdf3f3; }
-.detail-danger h3 { color: var(--error); }
-.button.danger { color: var(--error); border-color: var(--error); background: var(--paper); }
-.button.danger:hover { background: var(--error); color: var(--on-ink); }
 
 /* The reader: the picked revision in place of the cards, the detail panel
    still beside it. */
@@ -387,7 +376,6 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .group-head { display: flex; align-items: center; gap: 8px; padding: 8px 18px 4px; font-size: var(--font-size-xs); }
 .group-name { font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--charcoal); }
 .group-head .muted { flex: 1; }
-.small-button { height: 22px; padding: 0 8px; font-size: var(--font-size-xs); }
 .export-row + .export-row { margin-top: 8px; }
 .export-row .message { flex: 1; margin: 0; font-size: var(--font-size-sm); }
 .export-row[hidden] { display: none; }
@@ -432,8 +420,6 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .case-add input#add-note { flex: 0 1 220px; }
 .case .notes { width: 100%; box-sizing: border-box; }
 .case-layout { flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--paper); color: inherit; }
-.case-danger { border: 1px solid var(--error); border-radius: 8px; padding: 12px 14px; margin-top: 16px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-.case-danger h3 { margin: 0; }
 .case-group { padding: 4px 0; }
 .case.archived .case-add { display: none; }
 .case .export-target { width: 52px; flex: none; }
@@ -446,7 +432,8 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .case .notes { margin: 0; }
 .case-list-title { font-family: inherit; }
 .case-meet { width: 220px; height: 26px; padding: 0 8px; border: 1px solid var(--hairline-strong); border-radius: 6px; font: inherit; font-size: var(--font-size-xs); background: var(--paper); color: inherit; }
-.case-danger .form-field { margin: 0; }
+.danger-zone .form-field { margin: 0; }
+.danger-zone { margin-top: 16px; }
 .case-section.export { border-top: 0; margin-top: 0; }
 .case > .message { margin: 6px 6px 0; }
 /* Where a Target goes this time, under its name in the Views list. */
@@ -466,3 +453,4 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .folder-rows + .layout-help { margin-top: 8px; }
 #targets .template-sub.mono { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
 .topbar #root { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.case-section.danger-zone { padding: 12px 14px; border-bottom: 1px solid var(--error); }
