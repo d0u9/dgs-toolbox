@@ -22,6 +22,10 @@ type Doc struct {
 	// DateOrder is how a date like 03/04/2026 is read: DMY or MDY. Empty is
 	// dates.DefaultOrder.
 	DateOrder string `json:"date_order"`
+	// Targets names the local folders a View can be exported to, by a name
+	// the page shows. They belong to one machine, so they are configuration
+	// and not part of the tree.
+	Targets map[string]string `json:"targets"`
 }
 
 // DocWeb is where the doc pages listen. Only the port is configurable.

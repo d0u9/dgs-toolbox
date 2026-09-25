@@ -73,6 +73,16 @@
       <h2 class="panel-head">Preview <span id="summary" class="count"></span></h2>
       <div id="problems"></div>
       <div id="tree" class="file-tree"></div>
+      <div id="export" class="export">
+        <h2 class="panel-head">Export</h2>
+        <div class="checks">
+          <label>To <select id="target"></select></label>
+          <button id="dry-run" class="small-inline" type="button">Dry run</button>
+          <button id="run" class="action" type="button" disabled>Export</button>
+        </div>
+        <p id="export-message" class="message"></p>
+        <div id="export-plan"></div>
+      </div>
     </div>
   </section>
 </main>

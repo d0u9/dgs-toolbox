@@ -16,8 +16,8 @@ step at a time as it grows. The page comes first; what it writes follows.
 | M4b | Field types (`text`, `date`, `select`, `item`), dates found in text, notes | done |
 | M4c | Suggesting a type from filed Items' text | done |
 | M5 | Missing keys on the page: the list of what is missing, filling keys in | done |
-| M6 | Export from the page: the plan, dry run, then writing to a folder Target; incremental, and a Target imports back | not started |
-| M7 | Merging a sub-tree created with `init`, with conflicts resolved on the page | not started |
+| M6 | Export from the page: the plan, dry run, then writing to a folder Target; incremental | done |
+| M7 | Merging a sub-tree created with `init`, with conflicts resolved on the page; a Target imports back through the same matching | not started |
 
 The layout and formats are in [`index.md`](index.md#layout-on-disk).
 

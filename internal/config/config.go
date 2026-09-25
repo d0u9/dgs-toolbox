@@ -595,6 +595,16 @@ func LoadPath(path string) (Config, error) {
 		}
 		*field.value = expanded
 	}
+	for name, target := range config.Doc.Targets {
+		if name == "" || target == "" {
+			return Config{}, fmt.Errorf("decode config %s: doc.targets: a Target needs a name and a folder", path)
+		}
+		expanded, err := ExpandPath(target, os.LookupEnv, home)
+		if err != nil {
+			return Config{}, fmt.Errorf("decode config %s: doc.targets.%s: %w", path, name, err)
+		}
+		config.Doc.Targets[name] = expanded
+	}
 	if config.Conf.Root != "" {
 		expanded, err := ExpandPath(config.Conf.Root, os.LookupEnv, home)
 		if err != nil {
