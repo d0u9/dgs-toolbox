@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/filetree.css">
+<link rel="stylesheet" href="/ui/filedialog.css">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -98,10 +99,13 @@
       <div id="export" class="export">
         <div class="result-head"><h3>Export</h3></div>
         <div class="export-row">
-          <label class="export-target">To <select id="target"></select></label>
+          <span class="export-target">To</span>
+          <button id="choose" class="button export-folder" type="button" title="Choose the folder to export to">
+            <span id="folder" class="export-path muted">Choose folder…</span></button>
           <button id="dry-run" class="button" type="button">Dry run</button>
           <button id="run" class="action" type="button" disabled>Export</button>
         </div>
+        <div id="targets" class="export-targets"></div>
         <p id="export-message" class="message"></p>
         <div id="export-plan"></div>
       </div>

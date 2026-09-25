@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"sort"
 
 	"dgs-toolbox/internal/doc/export"
@@ -39,6 +40,8 @@ func (s server) targetList(w http.ResponseWriter, _ *http.Request) {
 type exportRequest struct {
 	View   string `json:"view"`
 	Target string `json:"target"`
+	// Folder is a folder chosen on the page, in place of a named Target.
+	Folder string `json:"folder"`
 }
 
 type exportPlanJSON struct {
@@ -53,6 +56,12 @@ type exportPlanJSON struct {
 func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON, []tree.Item, int, error) {
 	out := exportPlanJSON{}
 	path, ok := s.targets[request.Target]
+	if request.Folder != "" {
+		if !filepath.IsAbs(request.Folder) {
+			return out, nil, http.StatusBadRequest, errors.New("the folder to export to must be an absolute path")
+		}
+		path, ok = filepath.Clean(request.Folder), true
+	}
 	if !ok {
 		return out, nil, http.StatusBadRequest, errors.New("no Target named " + request.Target + " in doc.targets")
 	}

@@ -373,3 +373,9 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .condition select { flex: none; max-width: 40%; }
 .open-bar .action, .list-head .button { flex: none; white-space: nowrap; }
 .open-bar .muted { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.export-folder { flex: 1 1 0; min-width: 0; max-width: 420px; justify-content: flex-start; overflow: hidden; }
+.export-path { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; font-family: var(--font-mono); font-size: var(--font-size-xs); }
+.export-path.muted { direction: ltr; font-family: inherit; font-size: inherit; }
+.export-targets { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; font-size: var(--font-size-xs); }
+.export-targets .muted { margin-right: 4px; }
+.chip.on { background: var(--selected); color: var(--primary); }

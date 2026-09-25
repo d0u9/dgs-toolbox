@@ -333,11 +333,13 @@ matches its SHA-256.
 Export removes only files it wrote itself, recorded in a manifest at the
 Target root; anything else under the Target is never touched.
 
-Targets are named folders in [`doc.targets`](../../configuration/doc.md). The
-Views page exports the saved View to one of them: a dry run lists what would be
+The Views page exports the saved View to a folder chosen in the shared file
+dialog, which can make a new folder there; the last one chosen is remembered.
+Targets, the named folders in [`doc.targets`](../../configuration/doc.md), are
+offered beside it as shortcuts. A dry run lists what would be
 added, replaced and removed, and the export itself plans again from the state
-at that moment. Nothing is written while the View is incomplete. A Target may
-not overlap the tree.
+at that moment. Nothing is written while the View is incomplete. A Target,
+chosen or named, may not overlap the tree.
 
 - A wanted path held by a file the manifest does not record blocks the export:
   nothing is written until the owner moves it. A file already there with the
