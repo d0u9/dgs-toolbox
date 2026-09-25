@@ -44,11 +44,13 @@ type Settings struct {
 	CacheDir string
 	// DateOrder reads dates like 03/04/2026. Empty is dates.DefaultOrder.
 	DateOrder dates.Order
+	// Targets are the folders a View may be exported to, by name.
+	Targets map[string]string
 }
 
 // SettingsFrom reads the server settings out of the configuration.
 func SettingsFrom(global config.Config) Settings {
-	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder()}
+	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder(), Targets: global.Doc.Targets}
 	if dir, err := global.DocCacheDir(); err == nil {
 		settings.CacheDir = dir
 	}
@@ -95,6 +97,9 @@ type server struct {
 	reader *textread.Reader
 	// pictures holds pages drawn for the preview.
 	pictures *pictures
+	targets  map[string]string
+	// exporting is held while an export writes, so two never share a Target.
+	exporting *sync.Mutex
 }
 
 // Handler serves the pages and their API.
@@ -112,6 +117,7 @@ func Handler(settings Settings) http.Handler {
 	}
 	s := server{
 		root: settings.ResolvedRoot(), now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder,
+		targets: settings.Targets, exporting: &sync.Mutex{},
 		store:  textcache.Store{Dir: settings.CacheDir},
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
 	}
@@ -133,6 +139,9 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/views/plan", s.viewPlan)
 	mux.HandleFunc("POST /api/views", s.viewSave)
 	mux.HandleFunc("POST /api/views/delete", s.viewDelete)
+	mux.HandleFunc("GET /api/targets", s.targetList)
+	mux.HandleFunc("POST /api/export/plan", s.exportPlan)
+	mux.HandleFunc("POST /api/export", s.exportRun)
 	webui.Mount(mux)
 	// The dialog only chooses a folder to read; nothing it reaches is changed.
 	webfile.Mount(mux, webfile.Options{Root: s.root})

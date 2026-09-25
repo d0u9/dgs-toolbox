@@ -2,6 +2,9 @@
   "doc": {
     "root": "/Volumes/nas/Documents",
     "date_order": "DMY",
+    "targets": {
+      "icloud": "~/Library/Mobile Documents/com~apple~CloudDocs/Documents"
+    },
     "web": {
       "port": 8767
     }

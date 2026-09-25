@@ -138,3 +138,8 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .type-hint[hidden] { display: none; }
 .fill-list > li { margin-bottom: var(--space-xs); }
 .fill { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; margin-top: 4px; }
+.export { margin-top: var(--space-md); border-top: 1px solid var(--hairline); padding-top: var(--space-xs); }
+.export .checks { padding: 0 14px; align-items: center; }
+.export .message, #export-plan { margin: var(--space-xs) 14px; }
+#export-plan ul { margin: 4px 0; padding-left: 18px; }
+.export .small-inline { margin: 0; }
