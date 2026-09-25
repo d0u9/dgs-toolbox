@@ -61,7 +61,7 @@ func TestAssetsHoldTheTabIcons(t *testing.T) {
 	}
 }
 
-var sharedScripts = []string{"filedialog.js", "filetree.js", "menu.js", "statusbar.js"}
+var sharedScripts = []string{"filedialog.js", "filetree.js", "menu.js", "splitter.js", "statusbar.js"}
 
 func TestAssetsHoldTheSharedScripts(t *testing.T) {
 	for _, name := range sharedScripts {
