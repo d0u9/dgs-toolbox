@@ -12,22 +12,46 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder to import into it. Until then the page only shows the PDFs.
+</div>
 <header class="topbar">
   <span class="brand">DOC</span>
   <span class="topbar-spacer"></span>
   <span id="root" class="muted"></span>
 </header>
+<p id="error" class="message error" hidden></p>
 <main class="work">
   <section class="list">
-    <h2 class="panel-head">PDFs <span id="count" class="count numeric"></span></h2>
-    <input id="filter" type="search" placeholder="Filter by path" spellcheck="false" autocomplete="off">
-    <ul id="files"></ul>
-    <p id="message" class="message"></p>
+    <input id="filter" type="search" placeholder="Filter" spellcheck="false" autocomplete="off">
+    <div class="scroll">
+      <h2 class="panel-head" id="items-head">Items <span id="items-count" class="count numeric"></span></h2>
+      <ul id="items" class="rows"></ul>
+      <h2 class="panel-head">Loose PDFs <span id="loose-count" class="count numeric"></span></h2>
+      <ul id="loose" class="rows"></ul>
+      <p id="loose-empty" class="message" hidden>No PDFs outside the tree's items.</p>
+    </div>
   </section>
   <section class="preview">
     <p id="empty" class="muted">Pick a PDF to see it.</p>
     <iframe id="frame" title="Preview" hidden></iframe>
   </section>
+  <aside id="side" class="side" hidden>
+    <form id="import" hidden>
+      <h2 class="panel-head">Import</h2>
+      <label class="field"><span>Template</span><select id="template"></select></label>
+      <div id="fields"></div>
+      <p id="import-message" class="message"></p>
+      <button id="import-button" type="submit">Import</button>
+      <p class="message">The PDF is copied into the tree and read back before it counts. This file stays where it is.</p>
+    </form>
+    <div id="detail" hidden>
+      <h2 class="panel-head" id="detail-head"></h2>
+      <dl id="detail-fields" class="fields"></dl>
+      <h2 class="panel-head">Revisions</h2>
+      <ul id="revisions" class="rows"></ul>
+    </div>
+  </aside>
 </main>
 <script src="app.js"></script>
 </body>
