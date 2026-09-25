@@ -30,7 +30,6 @@ function render() {
   $("counts").textContent = dir ? `${files.length} PDFs · ${kept} in tree` : "";
   $("tree").replaceChildren(fileTree(files, {
     closed, selected, onPick: (f) => pick(f.path),
-    fileClass: (f) => f.item ? "done" : "",
     mark: (f) => f.item ? "Imported: already in the tree" : "",
     fileExtra: (f) => el("span", {}, size(f.size) + " · " + new Date(f.modified).toLocaleDateString()),
     folderExtra: (path, under) => {
