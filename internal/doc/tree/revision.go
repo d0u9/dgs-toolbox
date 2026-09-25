@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"dgs-toolbox/internal/verifiedcopy"
@@ -124,6 +125,9 @@ func SetFields(root, id string, template Template, given map[string]string) (Ite
 	if other, ok := taken(template, items, fields, id); ok {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
 	}
+	if err := linked(template, items, fields, id); err != nil {
+		return Item{}, err
+	}
 	item.Fields = fields
 	return item, WriteItem(root, item)
 }
@@ -140,4 +144,17 @@ func taken(t Template, items []Item, fields map[string]string, except string) (I
 		}
 	}
 	return Item{}, false
+}
+
+// SetNotes replaces an Item's notes. Surrounding space is trimmed.
+func SetNotes(root, id, notes string) (Item, error) {
+	if err := Require(root); err != nil {
+		return Item{}, err
+	}
+	item, _, err := FindItem(root, id)
+	if err != nil {
+		return Item{}, err
+	}
+	item.Notes = strings.TrimSpace(notes)
+	return item, WriteItem(root, item)
 }

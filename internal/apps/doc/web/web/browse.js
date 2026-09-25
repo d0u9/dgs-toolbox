@@ -4,6 +4,7 @@ import { $, el, loadState, post, templateOf, label, inputFor, fieldsOf, frame, s
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
 let editing = "";
+let notesOf = "";
 
 const words = () => $("filter").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
 const matches = (text) => words().every((w) => text.toLowerCase().includes(w));
@@ -17,13 +18,21 @@ function render() {
     const li = el("li", { onclick: () => pick(item.id, item.head || item.revisions[0].digest) },
       label(state, item),
       item.revisions.length > 1 ? el("span", { className: "tag" }, item.revisions.length + " revisions") : null,
-      el("span", { className: "sub" }, Object.entries(item.fields).map(([k, v]) => k + ": " + v).join("  ")));
+      el("span", { className: "sub" }, Object.entries(item.fields).map(([k, v]) => k + ": " + shown(item, k, v)).join("  ")));
     if (selected && selected.id === item.id) li.className = "selected";
     return li;
   }));
   const item = selected && state.items.find((i) => i.id === selected.id);
   $("side").hidden = !item;
   if (item) detail(item);
+}
+
+// shown is a field's value as a person reads it: a linked Item by its name.
+function shown(item, key, value) {
+  const t = templateOf(state, item.type);
+  const f = t && t.fields.find((x) => x.key === key);
+  const other = f && f.type === "item" && state.items.find((i) => i.id === value);
+  return other ? label(state, other) : value;
 }
 
 function pick(id, digest) {
@@ -43,8 +52,13 @@ function detail(item) {
     editing = item.id + JSON.stringify(item.fields);
     say($("edit-message"), "");
     $("edit-fields").replaceChildren(el("p", { className: "kind" }, item.kind),
-      ...(t ? t.fields : Object.keys(item.fields).map((key) => ({ key }))).map((f) => inputFor(f, item.fields[f.key] || "", "")));
+      ...(t ? t.fields : Object.keys(item.fields).map((key) => ({ key }))).map((f) => inputFor(f, item.fields[f.key] || "", "", state, item.id)));
     $("save-button").disabled = !t;
+  }
+  if (notesOf !== item.id + "\n" + (item.notes || "")) {
+    notesOf = item.id + "\n" + (item.notes || "");
+    $("notes").value = item.notes || "";
+    say($("notes-message"), "");
   }
   $("revisions").replaceChildren(...item.revisions.slice().reverse().map((r) => {
     const isHead = r.digest === item.head;
@@ -80,6 +94,17 @@ $("edit").onsubmit = async (event) => {
     say($("edit-message"), "Saved.");
   } catch (err) {
     say($("edit-message"), err.message, true);
+  }
+};
+
+$("notes-form").onsubmit = async (event) => {
+  event.preventDefault();
+  try {
+    await post("/api/notes", { item: selected.id, notes: $("notes").value });
+    await reload();
+    say($("notes-message"), "Saved.");
+  } catch (err) {
+    say($("notes-message"), err.message, true);
   }
 };
 

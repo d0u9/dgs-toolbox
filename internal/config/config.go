@@ -2,6 +2,7 @@
 package config
 
 import (
+	"dgs-toolbox/internal/doc/dates"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -564,6 +565,9 @@ func LoadPath(path string) (Config, error) {
 	}
 	if err := validateTiles(config.Geo.GPX.Tiles); err != nil {
 		return Config{}, fmt.Errorf("decode config %s: geo.gpx.%w", path, err)
+	}
+	if _, err := dates.ParseOrder(config.Doc.DateOrder); err != nil {
+		return Config{}, fmt.Errorf("decode config %s: doc.date_order: %w", path, err)
 	}
 	if err := validateBox(config.Box, path); err != nil {
 		return Config{}, err

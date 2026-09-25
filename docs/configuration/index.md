@@ -108,6 +108,7 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `box.trash.keep` | [box](box.md) | `90` |
 | `doc.root` | [doc](doc.md) | empty — the working directory |
 | `doc.cache_dir` | [doc](doc.md) | empty — the user cache directory |
+| `doc.date_order` | [doc](doc.md) | `DMY` |
 | `doc.web.port` | [doc](doc.md) | `8767` |
 | `geo.gpx.host` | [geo](geo.md) | `127.0.0.1` |
 | `geo.gpx.port` | [geo](geo.md) | `8765` |

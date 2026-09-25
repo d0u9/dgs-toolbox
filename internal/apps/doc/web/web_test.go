@@ -192,7 +192,8 @@ func TestTextAndSuggestions(t *testing.T) {
 func TestAheadReadsInTheBackground(t *testing.T) {
 	root, scans := setup(t, true)
 	read := make(chan string, 8)
-	h := Handler(Settings{Root: root, CacheDir: t.TempDir(), ReadPage: func(path string, page int) (ocr.Page, int, error) {
+	cache := t.TempDir()
+	h := Handler(Settings{Root: root, CacheDir: cache, ReadPage: func(path string, page int) (ocr.Page, int, error) {
 		read <- filepath.Base(path)
 		return ocr.Page{}, 1, nil
 	}})
@@ -207,6 +208,19 @@ func TestAheadReadsInTheBackground(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("nothing read in advance")
+	}
+	// The worker stores the page after reading it; wait for that to finish, so
+	// the cache folder is not being written while the test removes it.
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		kept, _ := filepath.Glob(filepath.Join(cache, "*", "*", "*", "*.json"))
+		parts, _ := filepath.Glob(filepath.Join(cache, "*", "*", "*", ".page-*"))
+		if len(kept) > 0 && len(parts) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the page read in advance was never stored")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -253,5 +267,20 @@ func TestViewsSavePlanDelete(t *testing.T) {
 	}
 	if rec := do(h, "POST", "/api/views", `{"view":{"name":"Bad","selection":"head","layout":"x"}}`); rec.Code != 400 {
 		t.Fatal("bad view saved")
+	}
+}
+
+func TestNotes(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root})
+	rec := do(h, "POST", "/api/import", `{"dir":`+q(scans)+`,"path":"jane/licence.pdf","type":"id_card","fields":{"owner":"jane","country":"AU"}}`)
+	var item tree.Item
+	must(t, json.Unmarshal(rec.Body.Bytes(), &item))
+	rec = do(h, "POST", "/api/notes", `{"item":"`+item.ID+`","notes":" kept for the visa "}`)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"notes":"kept for the visa"`) {
+		t.Fatal(rec.Body.String())
+	}
+	if do(h, "POST", "/api/notes", `{"item":"NOPE","notes":"x"}`).Code != http.StatusNotFound {
+		t.Fatal("notes on a missing Item")
 	}
 }

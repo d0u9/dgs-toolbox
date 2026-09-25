@@ -227,3 +227,71 @@ func TestSetFieldsKeepsDocumentsDistinct(t *testing.T) {
 		t.Fatal("required field dropped")
 	}
 }
+
+func TestFieldTypes(t *testing.T) {
+	bad := []Template{
+		{Type: "x", Kind: KindRecord, Fields: []Field{{Key: "a", Type: "number"}}},
+		{Type: "x", Kind: KindRecord, Fields: []Field{{Key: "a", Type: FieldSelect}}},
+		{Type: "x", Kind: KindRecord, Fields: []Field{{Key: "a", Options: []string{"y"}}}},
+		{Type: "x", Kind: KindRecord, Fields: []Field{{Key: "a", Type: FieldDate}}, Defaults: map[string]string{"a": "soon"}},
+		{Type: "x", Kind: KindRecord, IgnoreDates: []string{"1990-02-30"}},
+	}
+	for i, tpl := range bad {
+		if tpl.Validate() == nil {
+			t.Errorf("bad template %d accepted", i)
+		}
+	}
+	tpl := Template{Type: "bill", Kind: KindRecord, Fields: []Field{
+		{Key: "issued_at", Type: FieldDate},
+		{Key: "currency", Type: FieldSelect, Options: []string{"AUD", "CNY"}},
+		{Key: "replaces", Type: FieldItem},
+	}}
+	if err := tpl.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, given := range []map[string]string{
+		{"issued_at": "2026-13-01"}, {"currency": "USD"}, {"replaces": "not-an-id"},
+	} {
+		if _, err := CleanFields(tpl, given); err == nil {
+			t.Errorf("%v accepted", given)
+		}
+	}
+	if _, err := CleanFields(tpl, map[string]string{"issued_at": "2026-09-25", "currency": "AUD"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestItemLinksAndNotes(t *testing.T) {
+	root := newTree(t)
+	tpl := Template{Type: "passport", Kind: KindDocument, Fields: []Field{
+		{Key: "owner", Required: true, Distinguishing: true},
+		{Key: "previous", Type: FieldItem},
+	}}
+	add := func(owner, previous string) (Item, error) {
+		source := write(t, filepath.Join(t.TempDir(), "p.pdf"), "%PDF "+owner)
+		return Import(context.Background(), ImportRequest{Root: root, Source: source, Template: tpl, Now: now,
+			Fields: map[string]string{"owner": owner, "previous": previous}})
+	}
+	old, err := add("jane", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := add("tom", "01ARZ3NDEKTSV4RRFFQ69G5FAV"); err == nil {
+		t.Fatal("link to a missing Item accepted")
+	}
+	current, err := add("ann", old.ID)
+	if err != nil || current.Fields["previous"] != old.ID {
+		t.Fatal(err, current)
+	}
+	if _, err := SetFields(root, current.ID, tpl, map[string]string{"owner": "ann", "previous": current.ID}); err == nil {
+		t.Fatal("self link accepted")
+	}
+	noted, err := SetNotes(root, old.ID, "  expired; kept for the visa file \n")
+	if err != nil || noted.Notes != "expired; kept for the visa file" {
+		t.Fatal(err, noted.Notes)
+	}
+	again, _, _ := FindItem(root, old.ID)
+	if again.Notes != noted.Notes {
+		t.Fatal("notes not written")
+	}
+}

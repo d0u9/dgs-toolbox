@@ -58,6 +58,9 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if other, ok := taken(request.Template, items, fields, ""); ok {
 		return Item{}, fmt.Errorf("%w: %s %s; add the PDF to it as a revision", ErrTaken, other.Type, other.ID)
 	}
+	if err := linked(request.Template, items, fields, ""); err != nil {
+		return Item{}, err
+	}
 	id, err := NewID(request.Now)
 	if err != nil {
 		return Item{}, err
@@ -101,6 +104,9 @@ func CleanFields(t Template, given map[string]string) (map[string]string, error)
 				missing = append(missing, f.Key)
 			}
 			continue
+		}
+		if err := f.check(value); err != nil {
+			return nil, err
 		}
 		fields[f.Key] = value
 	}
@@ -146,4 +152,29 @@ func FileDigest(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// linked checks that each item field names an Item in the tree, other than
+// the Item itself.
+func linked(t Template, items []Item, fields map[string]string, self string) error {
+	for _, f := range t.Fields {
+		value, ok := fields[f.Key]
+		if f.Type != FieldItem || !ok {
+			continue
+		}
+		if value == self {
+			return fmt.Errorf("%s: an Item cannot link to itself", f.Key)
+		}
+		found := false
+		for _, item := range items {
+			if item.ID == value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("%s: no Item %s in this tree", f.Key, value)
+		}
+	}
+	return nil
 }
