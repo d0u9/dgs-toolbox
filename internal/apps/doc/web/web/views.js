@@ -23,14 +23,30 @@ async function load() {
   open(found || blank(), found ? found.name : "");
 }
 
+// The Views, grouped under the Target each names, each group with its own
+// Export; Views naming none come last.
 function list() {
   $("count").textContent = views.length;
-  $("views").replaceChildren(...views.map((v) => el("li", { className: v.name === editing ? "selected" : "", onclick: () => open(v, v.name) },
+  const row = (v) => el("li", { className: v.name === editing ? "selected" : "", onclick: () => open(v, v.name) },
     el("span", { className: "template-name" }, v.name),
     el("span", { className: "badge" }, v.selection === "all" ? "all" : "HEAD"),
-    el("span", { className: "template-sub mono" }, v.layout))),
-  ...(editing === "" ? [el("li", { className: "selected" }, el("span", { className: "template-name" }, "new view"),
-    el("span", { className: "template-sub" }, "not saved yet"))] : []));
+    el("span", { className: "template-sub mono" }, v.layout));
+  const names = [...new Set(views.map((v) => v.target || ""))].sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
+  const groups = names.map((name) => {
+    const members = views.filter((v) => (v.target || "") === name);
+    const known = targets.find((t) => t.name === name);
+    return el("section", { className: "view-group-list" },
+      el("div", { className: "group-head" },
+        el("span", { className: "group-name" }, name ? name : "No Target"),
+        el("span", { className: "muted" }, name && !known ? "not in doc.targets" : members.length + (members.length === 1 ? " View" : " Views")),
+        name && known ? el("button", { type: "button", className: "button small-button", textContent: "Export…",
+          title: "Check " + name + "'s Views together, then export them to " + known.path,
+          onclick: () => exportTargets({ targets: [name] }, name) }) : null),
+      el("ul", { className: "template-list" }, ...members.map(row)));
+  });
+  if (editing === "") groups.unshift(el("ul", { className: "template-list" }, el("li", { className: "selected" },
+    el("span", { className: "template-name" }, "new view"), el("span", { className: "template-sub" }, "not saved yet"))));
+  $("views").replaceChildren(...groups);
 }
 
 function open(v, name) {
@@ -47,6 +63,7 @@ function open(v, name) {
   $("use-default").checked = v.default !== undefined && v.default !== null;
   $("default").value = $("use-default").checked ? v.default : "none";
   $("dedupe").checked = v.dedupe === "number";
+  drawTargets(v.target || "");
   $("delete").hidden = !name;
   closeSuggest();
   say($("message"), "");
@@ -199,6 +216,7 @@ function current() {
   };
   if ($("use-default").checked) v.default = $("default").value;
   if ($("dedupe").checked) v.dedupe = "number";
+  if ($("target").value) v.target = $("target").value;
   return v;
 }
 
@@ -355,7 +373,7 @@ $("form").addEventListener("submit", async (event) => {
     editing = v.name;
     history.replaceState(null, "", "#" + encodeURIComponent(v.name));
     $("delete").hidden = false;
-    list();
+    await loadTargets();
   } catch (error) {
     say($("message"), error.message, true);
   }
@@ -366,41 +384,63 @@ $("delete").addEventListener("click", async () => {
     await post("/api/views/delete", { name: editing });
     views = views.filter((v) => v.name !== editing);
     open(views[0] || blank(), views[0] ? views[0].name : "");
+    await loadTargets();
   } catch (error) {
     say($("message"), error.message, true);
   }
 });
 
-// Export: a dry run of the saved View into a folder, then, when nothing
-// blocks it, the export itself, which the server plans again. The folder is
-// chosen in the shared dialog; the configured Targets are shortcuts to theirs.
+// Export. A View with a Target is exported with every View naming that
+// Target, into its folder; one without is exported alone into a folder
+// chosen in the shared dialog. Either way the server checks the whole run —
+// missing keys, clashes within and between Views, files in the way, Targets
+// overlapping — and a run with any is not written.
 let targets = [];
-let folder = ""; // the folder chosen, or "" for none yet
-let planned = null; // the request the dry run shown was for
+let folder = ""; // the folder chosen for a View without a Target
+let planned = null; // the request the check shown was for
 const FOLDER_KEY = "dgs-doc-export-folder";
 
 async function loadTargets() {
   targets = await (await fetch("/api/targets")).json();
-  if (!folder) {
-    let kept = "";
-    try { kept = localStorage.getItem(FOLDER_KEY) || ""; } catch { /* not kept */ }
-    setFolder(kept);
-  }
-  $("targets").replaceChildren(...(targets.length ? [el("span", { className: "muted" }, "Targets"),
-    ...targets.map((t) => el("button", {
-      type: "button", className: "chip" + (t.path === folder ? " on" : ""), title: t.path + (t.view ? " — last: " + t.view : "") + (t.error ? " — " + t.error : ""),
-      textContent: t.name, onclick: () => { setFolder(t.path); exportStale(); },
-    }))] : []));
+  try { setFolder(folder || localStorage.getItem(FOLDER_KEY) || ""); } catch { setFolder(folder); }
+  $("export-all").disabled = !targets.some((t) => t.views.length);
+  drawTargets($("target").value);
+  list();
 }
+
+// drawTargets fills the Target select and says where the View goes.
+function drawTargets(selected) {
+  const names = targets.map((t) => t.name);
+  if (selected && !names.includes(selected)) names.push(selected);
+  $("target").replaceChildren(el("option", { value: "" }, "None: choose a folder when exporting"),
+    ...names.map((n) => el("option", { value: n, selected: n === selected }, n)));
+  $("target").value = selected;
+  targetNote();
+}
+
+function targetNote() {
+  const name = $("target").value;
+  const t = targets.find((x) => x.name === name);
+  const others = t ? t.views.filter((v) => v !== editing) : [];
+  $("target-note").textContent = !name ? "Exported on its own, to a folder you pick."
+    : !t ? name + " is not in doc.targets on this machine."
+    : t.path + (others.length ? " — exported together with " + others.join(", ") + "." : " — the only View there.");
+  const saved = views.find((v) => v.name === editing);
+  const target = saved && saved.target;
+  $("export-folder-row").hidden = !!target;
+  $("export-scope").textContent = target ? "with the Target " + target : "this View alone";
+  $("dry-run").textContent = target ? "Check " + target : "Check";
+  $("dry-run").disabled = target ? false : !folder;
+}
+$("target").addEventListener("change", targetNote);
 
 function setFolder(path) {
   folder = path;
   $("folder").textContent = path ? "\u200e" + path + "\u200e" : "Choose folder…";
   $("folder").classList.toggle("muted", !path);
   $("choose").title = path || "Choose the folder to export to";
-  $("dry-run").disabled = !path;
   try { if (path) localStorage.setItem(FOLDER_KEY, path); } catch { /* not kept */ }
-  $("targets").querySelectorAll(".chip").forEach((chip, i) => chip.classList.toggle("on", targets[i]?.path === path));
+  targetNote();
 }
 
 $("choose").addEventListener("click", async () => {
@@ -421,7 +461,9 @@ $("choose").addEventListener("click", async () => {
 function exportStale() {
   planned = null;
   $("run").disabled = true;
+  $("run").textContent = "Export";
   $("export-plan").replaceChildren();
+  say($("export-message"), "");
 }
 
 function saved() {
@@ -429,60 +471,105 @@ function saved() {
   return v && JSON.stringify(normal(v)) === JSON.stringify(normal(current()));
 }
 const normal = (v) => ({ name: v.name, query: v.query || {}, selection: v.selection || "head", layout: v.layout,
-  default: v.default ?? null, dedupe: v.dedupe || "" });
+  default: v.default ?? null, dedupe: v.dedupe || "", target: v.target || "" });
 
-async function dryRun() {
+// The Export button beside the form: the View's Target, or the View alone.
+function dryRun() {
+  if (!saved()) { exportStale(); say($("export-message"), "Save the View first: an export writes the saved Views.", true); return; }
+  const v = views.find((x) => x.name === editing);
+  if (v.target) exportTargets({ targets: [v.target] }, v.target);
+  else if (!folder) say($("export-message"), "Choose a folder to export to first.", true);
+  else exportTargets({ view: editing, folder }, "this View");
+}
+
+// exportTargets checks a run and shows it; Export writes it when nothing
+// stops it.
+async function exportTargets(request, what) {
   exportStale();
-  if (!saved()) { say($("export-message"), "Save the View first: an export writes the saved View.", true); return; }
-  if (!folder) { say($("export-message"), "Choose a folder to export to first.", true); return; }
-  say($("export-message"), "Reading the folder…");
-  let plan;
+  $("export").scrollIntoView({ block: "nearest" });
+  if (editing && !saved()) say($("export-message"), "The View in the form has unsaved changes: the saved one is checked.");
+  $("export-scope").textContent = what === "this View" ? "this View alone" : what === "all" ? "every Target" : "with the Target " + what;
+  say($("export-message"), "Checking…");
+  let answer;
   try {
-    plan = await post("/api/export/plan", { view: editing, folder });
+    answer = await post("/api/export/plan", request);
   } catch (error) {
     say($("export-message"), error.message, true);
     return;
   }
-  const incomplete = plan.view.missing.length + plan.view.clashes.length;
-  const changes = plan.add.length + plan.replace.length + plan.remove.length;
-  const section = (title, list, why) => list.length ? el("details", { open: list.length <= 20 },
-    el("summary", {}, title + " (" + list.length + ")"),
-    el("ul", {}, ...list.map((a) => el("li", { className: "mono" }, a.path, why && a.reason ? el("span", { className: "muted" }, " — " + a.reason) : "")))) : null;
-  $("export-plan").replaceChildren(...[
-    section("Blocked", plan.blocked, true), section("Add", plan.add), section("Replace", plan.replace),
-    section("Remove", plan.remove), section("Left as they are, and forgotten", plan.left, true),
-    plan.keep.length ? el("p", { className: "muted" }, plan.keep.length + " already there and unchanged") : null,
-  ].filter(Boolean));
-  if (incomplete) say($("export-message"), "The View is not complete (above); nothing can be exported yet.", true);
-  else if (plan.blocked.length) say($("export-message"), "Some paths are taken by files this export did not write; move them first.", true);
-  else if (!changes) say($("export-message"), plan.target + " is up to date.");
+  drawPlan(answer);
+  const changes = answer.jobs.reduce((n, j) => n + j.plan.add.length + j.plan.replace.length + j.plan.remove.length, 0);
+  if (!answer.ready) say($("export-message"), "Not exported: fix what is listed below first. Nothing is written until everything checks.", true);
+  else if (!changes) say($("export-message"), "Up to date: nothing to write.");
   else {
-    say($("export-message"), changes + " change" + (changes === 1 ? "" : "s") + " to " + plan.target + ".");
-    planned = { view: editing, folder };
+    say($("export-message"), "No conflicts. " + changes + " change" + (changes === 1 ? "" : "s") + " to write.");
+    planned = request;
     $("run").disabled = false;
+    $("run").textContent = "Export " + (what === "this View" ? "" : what === "all" ? "all" : what);
   }
+}
+
+// drawPlan shows each Target: its problems first, then what would change.
+function drawPlan(answer) {
+  const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
+  const name = (id) => byId[id] ? label(state, byId[id]) : id;
+  const list = (title, rows, open) => rows.length ? el("details", { open: open || rows.length <= 12 },
+    el("summary", {}, title + " (" + rows.length + ")"), el("ul", {}, ...rows)) : null;
+  const line = (...parts) => el("li", {}, ...parts);
+  const path = (p) => el("span", { className: "mono" }, p);
+  const out = [];
+  if (answer.problems.length) out.push(el("div", { className: "problem" }, el("strong", {}, "The run"),
+    el("ul", {}, ...answer.problems.map((p) => line(p)))));
+  for (const j of answer.jobs) {
+    const issues = [];
+    for (const p of j.problems) issues.push(line(p));
+    for (const [view, p] of Object.entries(j.combined.plans)) {
+      for (const m of p.missing) issues.push(line(el("strong", {}, view), ": ", el("a", { href: "/browse/#" + m.item }, name(m.item)),
+        " lacks ", path(m.keys.join(", "))));
+      for (const c of p.clashes) issues.push(line(el("strong", {}, view), ": ", path(c.path), " is wanted by " + c.files.length + " PDFs"));
+    }
+    for (const c of j.combined.clashes) issues.push(line(path(c.path), " is wanted by ",
+      ...c.files.flatMap((f, i) => [i ? " and " : "", el("strong", {}, f.view), " (", f.path === c.path ? name(f.item) : path(f.path), ")"])));
+    for (const a of j.plan.blocked) issues.push(line(path(a.path), " — " + a.reason));
+    const counts = [["add", j.plan.add], ["replace", j.plan.replace], ["remove", j.plan.remove], ["unchanged", j.plan.keep]]
+      .map(([k, l]) => l.length + " " + k).join(" · ");
+    out.push(el("section", { className: "job" + (issues.length ? " job-bad" : "") },
+      el("div", { className: "job-head" },
+        el("strong", {}, j.name || "Folder"), el("span", { className: "mono muted job-path" }, j.path),
+        el("span", { className: "badge " + (issues.length ? "badge-expired" : "badge-valid") }, issues.length ? issues.length + " to fix" : "no conflicts")),
+      el("p", { className: "muted job-views" }, j.views.join(", ") + " — " + counts),
+      issues.length ? el("ul", { className: "job-issues" }, ...issues) : null,
+      list("Add", j.plan.add.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
+      list("Replace", j.plan.replace.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
+      list("Remove", j.plan.remove.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
+      list("Left as they are, and forgotten", j.plan.left.map((a) => line(path(a.path), " — " + a.reason)))));
+  }
+  $("export-plan").replaceChildren(...out);
 }
 
 async function run() {
   if (!planned) return;
+  const request = planned;
   $("run").disabled = true;
   $("dry-run").disabled = true;
-  say($("export-message"), "Exporting: copying and reading back…");
+  say($("export-message"), "Exporting: checking again, then copying and reading back…");
   try {
-    const result = await post("/api/export", planned);
-    say($("export-message"), "Exported: " + result.written + " written, " + result.removed + " removed, " + result.kept + " unchanged.");
+    const answer = await post("/api/export", request);
+    say($("export-message"), "Exported. " + answer.results.map((r) => (r.name || r.path) + ": " + r.result.written + " written, " +
+      r.result.removed + " removed, " + r.result.kept + " unchanged").join("; ") + ".");
     $("export-plan").replaceChildren();
     await loadTargets();
   } catch (error) {
     say($("export-message"), error.message, true);
   } finally {
     planned = null;
-    $("dry-run").disabled = !folder;
+    targetNote();
   }
 }
 
 $("dry-run").addEventListener("click", dryRun);
 $("run").addEventListener("click", run);
+$("export-all").addEventListener("click", () => exportTargets({ all: true }, "all"));
 $("form").addEventListener("input", exportStale);
 
 load().then(loadTargets);
