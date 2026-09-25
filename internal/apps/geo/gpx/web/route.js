@@ -384,7 +384,7 @@ export class RoutePlanner {
     });
     rte.append(check, " Also write the waypoints as a <rte>");
     const saveButton = document.createElement("button");
-    saveButton.className = "chip active";
+    saveButton.className = "action";
     saveButton.textContent = "Save as GPX…";
     saveButton.disabled = !this.ready;
     saveButton.title = this.ready ? "Write the route into a new GPX file" : "Two waypoints or more, every leg routed";

@@ -323,11 +323,11 @@ export class CleanPanel {
       meta.className = "meta";
       meta.textContent = `${format.distance(fill.preview.distance)} · ${fill.preview.route.length} points`;
       const use = document.createElement("button");
-      use.className = "chip active";
+      use.className = "action";
       use.textContent = "Use this route";
       use.addEventListener("click", () => this.onUseFill());
       const discard = document.createElement("button");
-      discard.className = "text-button";
+      discard.className = "button";
       discard.textContent = "Discard";
       discard.addEventListener("click", () => this.onDiscardFill());
       box.append(meta, discard, use);
