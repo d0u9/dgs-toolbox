@@ -21,6 +21,7 @@
   <a class="topbar-link current" href="/browse/">Browse</a>
   <a class="topbar-link" href="/templates/">Templates</a>
   <a class="topbar-link" href="/views/">Views</a>
+  <a class="topbar-link" href="/cases/">Cases</a>
   <a class="topbar-link" href="/merge/">Merge</a>
   <a class="topbar-link" href="/import/">Import</a>
   <span class="topbar-spacer"></span>
@@ -141,6 +142,16 @@
       <h3>Revisions</h3>
       <ul id="revisions" class="rows"></ul>
       <p id="head-message" class="message"></p>
+    </section>
+    <section class="detail-section">
+      <h3>Cases</h3>
+      <div id="item-cases" class="item-cases"></div>
+      <div class="case-add">
+        <select id="to-case"></select>
+        <input id="to-case-note" autocomplete="off" placeholder="Why (optional)">
+        <button id="to-case-add" class="button" type="button">Add</button>
+      </div>
+      <p id="cases-message" class="message"></p>
     </section>
     <section class="detail-section">
       <h3>Notes</h3>

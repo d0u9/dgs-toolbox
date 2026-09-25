@@ -1,6 +1,6 @@
 // Views: build a layout from keys and see, as it is typed, the tree an
 // export of it would write. The server computes the plan; this draws it.
-import { $, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
+import { $, api, el, loadState, post, label, planNodes, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openFile } from "/ui/filedialog.js";
 
@@ -51,7 +51,7 @@ function list() {
 
 function open(v, name) {
   editing = name;
-  history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname);
+  history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
   $("name").value = v.name;
   const types = (v.query && v.query.type) || [];
   $("types").replaceChildren(...state.templates.map((t) => el("label", {},
@@ -243,7 +243,7 @@ async function preview() {
   if (mine !== asked) return;
   const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
   const name = (id) => byId[id] ? label(state, byId[id]) : id;
-  const link = (id) => el("a", { href: "/browse/#" + id }, name(id));
+  const link = (id) => el("a", { href: api("/browse/") + "#" + id }, name(id));
   $("summary").textContent = plan.files.length + (plan.files.length === 1 ? " file" : " files");
   const problems = [];
   if (plan.missing.length) {
@@ -351,7 +351,7 @@ function fillAll(byItem) {
 // drawTree nests the plan's paths into folders, folders first.
 function drawTree(files, name) {
   return fileTree(files, {
-    href: (f) => "/browse/#" + f.item,
+    href: (f) => api("/browse/") + "#" + f.item,
     fileExtra: (f) => el("span", {}, name(f.item)),
   });
 }
@@ -511,40 +511,7 @@ async function exportTargets(request, what) {
 
 // drawPlan shows each Target: its problems first, then what would change.
 function drawPlan(answer) {
-  const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
-  const name = (id) => byId[id] ? label(state, byId[id]) : id;
-  const list = (title, rows, open) => rows.length ? el("details", { open: open || rows.length <= 12 },
-    el("summary", {}, title + " (" + rows.length + ")"), el("ul", {}, ...rows)) : null;
-  const line = (...parts) => el("li", {}, ...parts);
-  const path = (p) => el("span", { className: "mono" }, p);
-  const out = [];
-  if (answer.problems.length) out.push(el("div", { className: "problem" }, el("strong", {}, "The run"),
-    el("ul", {}, ...answer.problems.map((p) => line(p)))));
-  for (const j of answer.jobs) {
-    const issues = [];
-    for (const p of j.problems) issues.push(line(p));
-    for (const [view, p] of Object.entries(j.combined.plans)) {
-      for (const m of p.missing) issues.push(line(el("strong", {}, view), ": ", el("a", { href: "/browse/#" + m.item }, name(m.item)),
-        " lacks ", path(m.keys.join(", "))));
-      for (const c of p.clashes) issues.push(line(el("strong", {}, view), ": ", path(c.path), " is wanted by " + c.files.length + " PDFs"));
-    }
-    for (const c of j.combined.clashes) issues.push(line(path(c.path), " is wanted by ",
-      ...c.files.flatMap((f, i) => [i ? " and " : "", el("strong", {}, f.view), " (", f.path === c.path ? name(f.item) : path(f.path), ")"])));
-    for (const a of j.plan.blocked) issues.push(line(path(a.path), " — " + a.reason));
-    const counts = [["add", j.plan.add], ["replace", j.plan.replace], ["remove", j.plan.remove], ["unchanged", j.plan.keep]]
-      .map(([k, l]) => l.length + " " + k).join(" · ");
-    out.push(el("section", { className: "job" + (issues.length ? " job-bad" : "") },
-      el("div", { className: "job-head" },
-        el("strong", {}, j.name || "Folder"), el("span", { className: "mono muted job-path" }, j.path),
-        el("span", { className: "badge " + (issues.length ? "badge-expired" : "badge-valid") }, issues.length ? issues.length + " to fix" : "no conflicts")),
-      el("p", { className: "muted job-views" }, j.views.join(", ") + " — " + counts),
-      issues.length ? el("ul", { className: "job-issues" }, ...issues) : null,
-      list("Add", j.plan.add.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
-      list("Replace", j.plan.replace.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
-      list("Remove", j.plan.remove.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
-      list("Left as they are, and forgotten", j.plan.left.map((a) => line(path(a.path), " — " + a.reason)))));
-  }
-  $("export-plan").replaceChildren(...out);
+  $("export-plan").replaceChildren(...planNodes(state, answer));
 }
 
 async function run() {

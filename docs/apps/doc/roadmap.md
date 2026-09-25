@@ -19,11 +19,12 @@ step at a time as it grows. The page comes first; what it writes follows.
 | M6 | Export from the page: the plan, dry run, then writing to a folder Target; incremental | done |
 | M7 | Merging a sub-tree created with `init`, with conflicts resolved on the page; a Target imports back through the same matching | done |
 | M8 | Searching Items by their text on Browse, and "more like this" | done |
+| M9 | Several trees (`doc.trees`), switched from the top bar | done |
+| M10 | Cases: Items added as a matter needs them, still-needed notes, export, archive | done |
 
 The layout and formats are in [`index.md`](index.md#layout-on-disk).
 
 ## Deferred
 
 - **Snapshot** export.
-- **Bundles**.
 - **Clone**, and the three-way merge a cloned sub-tree allows.

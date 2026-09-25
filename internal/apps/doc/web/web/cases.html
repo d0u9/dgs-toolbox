@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Cases · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/filetree.css">
+<link rel="stylesheet" href="/ui/filedialog.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before opening Cases in it.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link" href="/templates/">Templates</a>
+  <a class="topbar-link" href="/views/">Views</a>
+  <a class="topbar-link current" href="/cases/">Cases</a>
+  <a class="topbar-link" href="/merge/">Merge</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="work">
+  <section class="list">
+    <div class="list-head">
+      <h2>Cases <span id="count" class="count numeric"></span></h2>
+      <button id="new" class="button" type="button">+ New</button>
+    </div>
+    <div id="cases" class="scroll"></div>
+  </section>
+  <section class="case-main">
+    <form id="new-form" class="case-new" hidden>
+      <h2>New Case</h2>
+      <p class="muted">Something being dealt with — renewing a passport, a lease application. Put Items in as they are asked for; archive it when it is done.</p>
+      <label class="form-field"><span>Title</span><input id="new-title" autocomplete="off" placeholder="Lease in Ashfield"></label>
+      <label class="form-field"><span>Name</span><input id="new-name" class="mono" spellcheck="false" autocomplete="off" placeholder="2026-lease-ashfield"></label>
+      <p class="layout-help">The file's name, <code>cases/<span id="new-file">…</span>.yaml</code>: lowercase letters, digits, <code>_</code> and <code>-</code>.</p>
+      <div class="view-actions"><button class="action" type="submit">Open Case</button><p id="new-message" class="message"></p></div>
+    </form>
+    <div id="case" class="case" hidden>
+      <div class="case-bar">
+        <div class="case-title">
+          <input id="title" class="case-title-input" autocomplete="off" placeholder="Untitled">
+          <code id="file" class="file-chip"></code>
+          <span id="status" class="badge"></span>
+        </div>
+        <button id="archive" class="button" type="button"></button>
+      </div>
+      <p id="dates" class="muted case-dates"></p>
+      <p id="message" class="message"></p>
+
+      <section class="case-section">
+        <div class="result-head"><h3>Items</h3><span id="item-count" class="count muted"></span></div>
+        <ul id="entries" class="case-rows"></ul>
+        <form id="add-form" class="case-add">
+          <input id="add-item" list="item-options" autocomplete="off" placeholder="Find an Item by type, owner, number…">
+          <datalist id="item-options"></datalist>
+          <input id="add-note" autocomplete="off" placeholder="Why (optional)">
+          <button class="button" type="submit">Add</button>
+        </form>
+      </section>
+
+      <section class="case-section">
+        <div class="result-head"><h3>Still needed</h3><span id="need-count" class="count muted"></span></div>
+        <ul id="needs" class="case-rows"></ul>
+        <form id="need-form" class="case-add">
+          <input id="need-text" autocomplete="off" placeholder="Asked for, not in the tree yet: last 3 electricity bills">
+          <button class="button" type="submit">Add</button>
+        </form>
+      </section>
+
+      <section class="case-section">
+        <h3>Notes</h3>
+        <textarea id="notes" class="notes" rows="3" placeholder="Reference numbers, who to call, what was said."></textarea>
+      </section>
+
+      <section class="case-section export">
+        <div class="result-head"><h3>Export</h3><span class="count muted">a copy to hand over</span></div>
+        <div class="export-row">
+          <span class="export-target">Names</span>
+          <input id="layout" class="mono case-layout" spellcheck="false" autocomplete="off" placeholder="{type}.{ext}">
+        </div>
+        <div class="export-row">
+          <span class="export-target">To</span>
+          <button id="choose" class="button export-folder" type="button" title="Choose the folder to export to">
+            <span id="folder" class="export-path muted">Choose folder…</span></button>
+        </div>
+        <div class="export-row">
+          <button id="dry-run" class="button" type="button">Check</button>
+          <button id="run" class="action" type="button" disabled>Export</button>
+          <p id="export-message" class="message"></p>
+        </div>
+        <div id="export-plan"></div>
+      </section>
+
+      <section class="case-section detail-danger case-danger">
+        <h3>Delete</h3>
+        <p class="detail-note">Moves the Case's file into the tree's trash. Its Items stay where they are.</p>
+        <label class="form-field"><span>Type <code id="confirm-name"></code> to delete</span>
+          <input id="confirm" class="mono" spellcheck="false" autocomplete="off"></label>
+        <button id="delete" class="button danger" type="button" disabled>Delete Case</button>
+      </section>
+    </div>
+  </section>
+</main>
+<script type="module" src="/cases.js"></script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 // Merge: bring a sub-tree, or an export read back, into this tree. The
 // server plans; the page shows the plan, takes a choice for each conflict,
 // and asks the server to merge, which plans again before writing.
-import { $, el, loadState, post, label, frame, say } from "/common.js";
+import { $, api, el, loadState, post, label, frame, say } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 
 let state = { templates: [], items: [] };
@@ -13,7 +13,7 @@ const short = (digest) => digest ? digest.slice(0, 12) : "none";
 const fields = (f) => Object.entries(f || {}).map(([k, v]) => k + ": " + v).join("  ") || "no fields";
 const named = (id) => {
   const item = state.items.find((i) => i.id === id);
-  return item ? el("a", { href: "/browse/#" + id }, label(state, item)) : id;
+  return item ? el("a", { href: api("/browse/") + "#" + id }, label(state, item)) : id;
 };
 const revision = (id, digest) => {
   const item = state.items.find((i) => i.id === id);

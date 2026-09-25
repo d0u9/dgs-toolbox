@@ -110,13 +110,52 @@ export function frame(state) {
     pick.onchange = () => {
       const params = new URLSearchParams(location.search);
       params.set("tree", pick.value);
-      location.search = params.toString();
+      location.href = location.pathname + "?" + params.toString();
     };
     $("root").before(pick);
   }
   $("banner").hidden = state.tree !== false;
   $("error").hidden = !state.error;
   $("error").textContent = state.error || "";
+}
+
+// planNodes draws an export's plan, each Target or folder in turn: its
+// problems first, then what would change.
+export function planNodes(state, answer) {
+  const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
+  const name = (id) => byId[id] ? label(state, byId[id]) : id;
+  const list = (title, rows, open) => rows.length ? el("details", { open: open || rows.length <= 12 },
+    el("summary", {}, title + " (" + rows.length + ")"), el("ul", {}, ...rows)) : null;
+  const line = (...parts) => el("li", {}, ...parts);
+  const path = (p) => el("span", { className: "mono" }, p);
+  const out = [];
+  if (answer.problems.length) out.push(el("div", { className: "problem" }, el("strong", {}, "The run"),
+    el("ul", {}, ...answer.problems.map((p) => line(p)))));
+  for (const j of answer.jobs) {
+    const issues = [];
+    for (const p of j.problems) issues.push(line(p));
+    for (const [view, p] of Object.entries(j.combined.plans)) {
+      for (const m of p.missing) issues.push(line(el("strong", {}, view), ": ", el("a", { href: api("/browse/") + "#" + m.item }, name(m.item)),
+        " lacks ", path(m.keys.join(", "))));
+      for (const c of p.clashes) issues.push(line(el("strong", {}, view), ": ", path(c.path), " is wanted by " + c.files.length + " PDFs"));
+    }
+    for (const c of j.combined.clashes) issues.push(line(path(c.path), " is wanted by ",
+      ...c.files.flatMap((f, i) => [i ? " and " : "", el("strong", {}, f.view), " (", f.path === c.path ? name(f.item) : path(f.path), ")"])));
+    for (const a of j.plan.blocked) issues.push(line(path(a.path), " — " + a.reason));
+    const counts = [["add", j.plan.add], ["replace", j.plan.replace], ["remove", j.plan.remove], ["unchanged", j.plan.keep]]
+      .map(([k, l]) => l.length + " " + k).join(" · ");
+    out.push(el("section", { className: "job" + (issues.length ? " job-bad" : "") },
+      el("div", { className: "job-head" },
+        el("strong", {}, j.name || "Folder"), el("span", { className: "mono muted job-path" }, j.path),
+        el("span", { className: "badge " + (issues.length ? "badge-expired" : "badge-valid") }, issues.length ? issues.length + " to fix" : "no conflicts")),
+      el("p", { className: "muted job-views" }, j.views.join(", ") + " — " + counts),
+      issues.length ? el("ul", { className: "job-issues" }, ...issues) : null,
+      list("Add", j.plan.add.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
+      list("Replace", j.plan.replace.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
+      list("Remove", j.plan.remove.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
+      list("Left as they are, and forgotten", j.plan.left.map((a) => line(path(a.path), " — " + a.reason)))));
+  }
+  return out;
 }
 
 export function say(node, text, error) {
