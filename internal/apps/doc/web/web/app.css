@@ -45,3 +45,12 @@ body { display: flex; flex-direction: column; }
   border-radius: var(--radius-pill); cursor: pointer;
 }
 .kind { margin: 0 14px; color: var(--graphite); }
+.topbar-link { color: var(--graphite); text-decoration: none; padding: 4px 8px; border-radius: var(--radius-md); }
+.topbar-link:hover { background: var(--hover); }
+.topbar-link.current { color: var(--primary); font-weight: 600; }
+.open-bar { display: flex; align-items: center; gap: var(--space-xs); padding-right: 14px; }
+.dir-path { margin: 0 14px var(--space-xs); font-size: var(--font-size-xs); word-break: break-all; }
+.rows li.folder { font-weight: 600; color: var(--charcoal); }
+.caret { display: inline-block; width: 14px; color: var(--graphite); }
+.sub-inline { margin-left: var(--space-xs); font-weight: 400; font-size: var(--font-size-xs); color: var(--graphite); }
+.rows li.done { color: var(--graphite); }
