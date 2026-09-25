@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"dgs-toolbox/internal/doc/ocr"
 	"dgs-toolbox/internal/doc/tree"
 )
 
@@ -156,5 +157,38 @@ func TestPagesAreServed(t *testing.T) {
 		if rec := do(h, "GET", p, ""); rec.Code != http.StatusOK {
 			t.Errorf("%s: %d", p, rec.Code)
 		}
+	}
+}
+
+func TestTextAndSuggestions(t *testing.T) {
+	root, scans := setup(t, true)
+	reads := 0
+	h := Handler(Settings{Root: root, Read: func(path string) (ocr.Result, error) {
+		reads++
+		return ocr.Result{Pages: []ocr.Page{{Text: "有效期限 2016.01.01-2036.01.01\n11010519491231002X", Source: ocr.SourceRecognised}}}, nil
+	}})
+	target := "/api/text?dir=" + url.QueryEscape(scans) + "&path=jane/licence.pdf"
+	for range 2 {
+		var out textJSON
+		must(t, json.Unmarshal(do(h, "GET", target, "").Body.Bytes(), &out))
+		if !out.Available || out.Suggestions["id_card"]["number"] != "11010519491231002X" || out.Suggestions["id_card"]["expires"] != "2036.01.01" {
+			t.Fatalf("out = %+v", out)
+		}
+	}
+	if reads != 1 {
+		t.Fatalf("read %d times, want once", reads)
+	}
+	if rec := do(h, "GET", "/api/text?dir="+url.QueryEscape(scans)+"&path=notes.txt", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("non-PDF: %d", rec.Code)
+	}
+}
+
+func TestTextWhereRecognitionIsMissing(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root, Read: func(string) (ocr.Result, error) { return ocr.Result{}, ocr.ErrUnavailable }})
+	var out textJSON
+	must(t, json.Unmarshal(do(h, "GET", "/api/text?dir="+url.QueryEscape(scans)+"&path=jane/licence.pdf", "").Body.Bytes(), &out))
+	if out.Error == "" || out.Available {
+		t.Fatalf("out = %+v", out)
 	}
 }

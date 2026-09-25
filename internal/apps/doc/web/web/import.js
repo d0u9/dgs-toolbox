@@ -1,6 +1,6 @@
 // Import: open a folder from anywhere, see its PDFs as the tree of folders
 // they are in, and take them in one at a time. The folder is only read.
-import { $, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say } from "/common.js";
+import { $, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 
 const FOLDER_KEY = "dgs-doc-import-folder";
@@ -8,6 +8,8 @@ let state = { templates: [], items: [] };
 let dir = "";
 let files = [];
 let selected = "";
+// What the text of the picked PDF suggests, by type: { type: { key: value } }.
+let suggestions = {};
 const closed = new Set();
 
 function remembered() {
@@ -89,6 +91,12 @@ function pick(path) {
   if (path !== selected) {
     $("frame").src = "/api/source/file?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path);
     say($("import-message"), "");
+    suggestions = {};
+    showText({ dir, path }, (answer) => {
+      if (selected !== path) return;
+      suggestions = answer.suggestions || {};
+      suggest();
+    });
   }
   selected = path;
   $("frame").hidden = false;
@@ -119,6 +127,24 @@ function drawFields() {
   const adding = into.value !== "";
   $("import-button").textContent = adding ? "Add revision" : "Import";
   $("fields").replaceChildren(...(adding ? [] : t.fields.map((f) => inputFor(f, "", (t.defaults || {})[f.key] || ""))));
+  for (const input of $("fields").querySelectorAll("input")) {
+    input.addEventListener("input", () => input.classList.remove("suggested"));
+  }
+  suggest();
+}
+
+// suggest fills the empty fields the text has a value for, marked so they
+// read as proposals. A field the reader typed in is never replaced.
+function suggest() {
+  const found = suggestions[$("template").value] || {};
+  for (const input of $("fields").querySelectorAll("input")) {
+    const value = found[input.name];
+    if (value && (input.value === "" || input.classList.contains("suggested"))) {
+      input.value = value;
+      input.classList.add("suggested");
+      input.title = "Suggested from the text. Check it against the preview.";
+    }
+  }
 }
 
 async function open(folder) {

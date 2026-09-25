@@ -116,6 +116,8 @@ fields:
     required: true
     distinguishing: true
   - key: number
+    pattern: '(\d{17}[\dXx])'   # suggested from the recognised text
   - key: expires
+    pattern: '[-至]\s*(\d{4}[.\-/]\d{2}[.\-/]\d{2}|长期)'
 defaults: {}
 `

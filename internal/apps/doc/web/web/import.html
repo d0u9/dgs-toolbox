@@ -42,8 +42,8 @@
   <aside id="side" class="side" hidden>
     <form id="import" hidden>
       <h2 class="panel-head">Import</h2>
-      <label class="field"><span>Template</span><select id="template"></select></label>
-      <label class="field" id="into-field"><span>Into</span><select id="into"></select></label>
+      <label class="form-field"><span>Template</span><select id="template"></select></label>
+      <label class="form-field" id="into-field"><span>Into</span><select id="into"></select></label>
       <div id="fields"></div>
       <p id="import-message" class="message"></p>
       <button id="import-button" class="action" type="submit">Import</button>
@@ -53,6 +53,11 @@
       <h2 class="panel-head">Already in the tree</h2>
       <p class="message">Kept as <a id="kept-link" href="/browse/"></a>.</p>
     </div>
+    <section id="text" class="text" hidden>
+      <h2 class="panel-head">Text</h2>
+      <p id="text-message" class="message"></p>
+      <pre id="text-body" class="text-body"></pre>
+    </section>
   </aside>
 </main>
 <script type="module" src="/import.js"></script>
