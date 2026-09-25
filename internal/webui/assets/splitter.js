@@ -5,18 +5,35 @@
 // splitter makes handle resize target along axis ("y": height, "x": width).
 // invert is for a target after the handle, which grows as the handle moves
 // back. max is a function so it can follow the window.
-export function splitter({ handle, target, axis = "y", invert = false, min = 60, max = () => Infinity, key }) {
+//
+// fallback, when given, is the size before anything is remembered, and a
+// double-click on the handle goes back to it. step is how far an arrow key
+// moves a focused handle. set, when given, applies a size in place of the
+// target's own width or height — a grid column held in a CSS variable, say;
+// the target is still what is measured.
+export function splitter({ handle, target, axis = "y", invert = false, min = 60, max = () => Infinity, key, fallback = 0, step = 24, set = null }) {
   const property = axis === "y" ? "height" : "width";
   const clamp = (size) => Math.round(Math.max(min, Math.min(max(), size)));
-  const apply = (size) => {
-    target.style[property] = `${clamp(size)}px`;
-    target.style.flex = "none";
+  let size = 0;
+  const apply = (next) => {
+    size = clamp(next);
+    if (set) set(size);
+    else {
+      target.style[property] = `${size}px`;
+      target.style.flex = "none";
+    }
+    handle.setAttribute("aria-valuenow", String(size));
+    handle.setAttribute("aria-valuemin", String(min));
+    if (Number.isFinite(max())) handle.setAttribute("aria-valuemax", String(Math.round(max())));
   };
 
   const saved = Number(read(key));
   if (saved) apply(saved);
+  else if (fallback) apply(fallback);
+  if (!handle.hasAttribute("tabindex")) handle.tabIndex = 0;
 
   handle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
     event.preventDefault();
     handle.setPointerCapture(event.pointerId);
     handle.classList.add("dragging");
@@ -33,16 +50,36 @@ export function splitter({ handle, target, axis = "y", invert = false, min = 60,
       handle.removeEventListener("pointercancel", up);
       handle.classList.remove("dragging");
       document.body.classList.remove("resizing-y", "resizing-x");
-      write(key, Math.round(target.getBoundingClientRect()[property]));
+      write(key, size || Math.round(target.getBoundingClientRect()[property]));
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", up);
     handle.addEventListener("pointercancel", up);
   });
 
+  if (fallback) {
+    handle.addEventListener("dblclick", () => {
+      apply(fallback);
+      write(key, size);
+    });
+  }
+
+  // A focused handle moves with the arrow keys, so the mouse is not needed.
+  // The page's own keys are not reached from here: the handle takes them.
+  handle.addEventListener("keydown", (event) => {
+    const keys = axis === "y" ? { ArrowUp: -1, ArrowDown: 1 } : { ArrowLeft: -1, ArrowRight: 1 };
+    const direction = keys[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const now = size || target.getBoundingClientRect()[property];
+    apply(now + direction * step * (invert ? -1 : 1));
+    write(key, size);
+  });
+
   // Keep a remembered size inside a window that got smaller.
   window.addEventListener("resize", () => {
-    if (target.style[property]) apply(parseFloat(target.style[property]));
+    if (size) apply(size);
   });
 }
 
