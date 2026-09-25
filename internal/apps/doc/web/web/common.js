@@ -3,6 +3,13 @@
 
 import { show as showViewer, hide as hideViewer } from "/viewer.js";
 import { splitter } from "/ui/splitter.js";
+import * as statusBar from "/ui/statusbar.js";
+
+// The status bar along the bottom, as on every dgs page: the tree on the
+// left, what the page shows in the middle, and every message said anywhere
+// on the page as news over it.
+statusBar.mount();
+export { statusBar };
 
 export const $ = (id) => document.getElementById(id);
 
@@ -103,6 +110,12 @@ export const fieldsOf = (container) => Object.fromEntries(
 // The top bar and the banner every page has.
 export function frame(state) {
   $("root").textContent = state.root || "";
+  statusBar.setState(state.name ? "tree " + state.name : state.tree === false ? "not a tree" : "doc tree");
+  const items = (state.items || []).length;
+  const templates = (state.templates || []).length;
+  statusBar.setSummary(state.tree === false ? "Run <kbd>dgs doc init</kbd> on this folder first."
+    : items + (items === 1 ? " Item" : " Items") + " · " + templates + (templates === 1 ? " Template" : " Templates"));
+  if (state.error) statusBar.showError(state.error);
   const trees = state.trees || [];
   if (trees.length > 1 && !$("tree-pick")) {
     const pick = el("select", { id: "tree-pick", className: "tree-pick", title: "The tree this page works on" },
@@ -178,6 +191,7 @@ export function rememberTargetFolder(state, name, path) {
 export function say(node, text, error) {
   node.className = error ? "message error" : "message";
   node.textContent = text;
+  if (text) statusBar.show(text, { error: !!error });
 }
 
 // The text read off a PDF is laid over the pictures of its pages, where it

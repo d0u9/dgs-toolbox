@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/filetree.css">
 <link rel="stylesheet" href="/ui/filedialog.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -100,10 +101,12 @@
         <div id="export-plan"></div>
       </section>
 
-      <section class="case-section detail-danger case-danger">
+      <section class="case-section danger-zone">
         <h3>Delete</h3>
-        <p id="delete-note" class="detail-note">Removes the Target from targets.yaml. Nothing already exported is touched.</p>
-        <button id="delete" class="button danger" type="button">Delete Target…</button>
+        <p id="delete-note" class="danger-note">Removes the Target from targets.yaml. Nothing already exported is touched.</p>
+        <label class="form-field"><span>Type <code id="confirm-name"></code> to delete</span>
+          <input id="confirm" class="mono" spellcheck="false" autocomplete="off"></label>
+        <button id="delete" class="button danger" type="button" disabled>Delete Target</button>
       </section>
     </div>
   </section>

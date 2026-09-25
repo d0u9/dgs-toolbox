@@ -1,7 +1,11 @@
 // Templates: each type's file, edited as written. The server parses and
 // checks it; a type Items use keeps its name and kind.
-import { $, api, el, loadState, post, frame, say } from "/common.js";
+import { $, api, el, loadState, post, frame, say, statusBar } from "/common.js";
 import { codeEditor, highlight } from "/ui/codeedit.js";
+import { guardByName } from "/ui/confirm.js";
+
+const armDelete = guardByName($("confirm"), $("delete"), "");
+statusBar.setHints("<kbd>Ctrl</kbd>+<kbd>S</kbd> save", { html: true });
 
 let state = {};
 let templates = [];
@@ -34,9 +38,8 @@ function render() {
   $("file-again").textContent = file;
   $("danger").hidden = !t;
   $("confirm-name").textContent = t ? t.type : "";
-  $("confirm").value = "";
+  armDelete(t ? t.type : "");
   $("confirm").disabled = !!(t && t.items);
-  $("delete").disabled = true;
   $("delete-note").textContent = t && t.items
     ? `${t.items === 1 ? "1 Item uses" : t.items + " Items use"} it: delete ${t.items === 1 ? "that Item" : "them"} first.`
     : "Its file moves into the tree's trash folder; nothing is erased.";
@@ -81,9 +84,8 @@ async function save() {
 
 $("new").onclick = () => leave() && open("");
 $("save").onclick = save;
-$("confirm").oninput = () => { $("delete").disabled = $("confirm").value.trim() !== editing; };
 $("delete").onclick = async () => {
-  if (!editing || $("confirm").value.trim() !== editing) return;
+  if (!editing || $("confirm").value !== editing) return;
   try {
     const answer = await post("/api/templates/delete", { type: editing });
     await reload();

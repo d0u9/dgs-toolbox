@@ -3,6 +3,7 @@
 // the Case and asks for one change at a time.
 import { $, api, el, loadState, post, label, planNodes, frame, say } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
+import { guardByName } from "/ui/confirm.js";
 
 let state = { templates: [], items: [], expiry: {} };
 let cases = [];
@@ -10,6 +11,7 @@ let current = null; // the Case shown, as the server last answered it
 const FOLDER_KEY = "dgs-doc-case-folder";
 let folder = "";
 let planned = null;
+const armDelete = guardByName($("confirm"), $("delete"), "");
 
 const byId = () => Object.fromEntries(state.items.map((i) => [i.id, i]));
 const day = (s) => s ? new Date(s).toLocaleDateString() : "";
@@ -107,8 +109,7 @@ function show(c) {
   $("archive").title = archived ? "Open the Case again to change it" : "Done: record which revision of each Item was used, and keep it as it is";
   $("dates").textContent = "Opened " + day(c.opened) + (c.archived ? " · archived " + day(c.archived) : "");
   $("confirm-name").textContent = c.name;
-  $("confirm").value = "";
-  $("delete").disabled = true;
+  armDelete(c.name);
   say($("message"), "");
   drawEntries();
   drawNeeds();
@@ -224,7 +225,6 @@ $("archive").addEventListener("click", () => {
   if (confirm(question)) change({ op: "archive" }, "Archived.");
 });
 
-$("confirm").addEventListener("input", () => { $("delete").disabled = $("confirm").value !== current.name; });
 $("delete").addEventListener("click", async () => {
   try {
     await post("/api/cases/change", { op: "delete", name: current.name });
