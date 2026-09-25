@@ -84,6 +84,7 @@ const FIELDS = {
 // The tags field is bubbles, not text, so it is kept apart from FIELDS and
 // read and written through its own calls.
 const tags = tagField(el('tags'), {
+  next: focusNextField,
   known: () => state.tags,
   placeholder: 'travel, japan, tax',
   onChange: (list) => {

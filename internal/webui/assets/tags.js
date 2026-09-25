@@ -1,10 +1,10 @@
 // The tag field: each tag a bubble, typed into one at a time, with the tags the
-// Box already uses offered as the letters come in.
+// current tree already uses offered as the letters come in.
 //
 // Tags are free-form, and free-form drifts: "Japan", "japan 2019" and
 // "japan-2019" are three tags to a filter. So a tag is spelled one way —
-// lower case, spaces joined by a hyphen, as internal/box/tag spells it — and
-// the spelling that already exists is the one offered first. A tag the Box has
+// lower case, spaces joined by a hyphen, as internal/tag spells it — and
+// the spelling that already exists is the one offered first. A tag the tree has
 // never seen is still allowed, and its bubble is drawn dashed so it is noticed.
 //
 // Keys, in the text box:
@@ -34,7 +34,7 @@ function tagList(tags) {
 // tagField turns host, an empty element, into a tag field.
 //
 // options:
-//   known()      [{name, count}] the Box already uses, most used first
+//   known()      [{name, count}] the current tree already uses, most used first
 //   count(name)  the number drawn beside a suggestion; defaults to known's
 //   onChange(tags)
 //   placeholder
@@ -82,7 +82,7 @@ function tagField(host, options) {
       bubble.className = 'tag-bubble';
       if (!isKnown(tag)) {
         bubble.classList.add('tag-new');
-        bubble.title = 'New: no scan in the Box has this tag yet';
+        bubble.title = 'New: nothing here has this tag yet';
       }
       if (view.armed && index === view.tags.length - 1) bubble.classList.add('tag-armed');
       const name = document.createElement('span');
@@ -223,8 +223,9 @@ function tagField(host, options) {
           // field, or, from the last one, back to the page's keys — not to
           // whatever the browser would focus next.
           if (event.shiftKey) return;
+          if (!opts.next) return;
           event.preventDefault();
-          focusNextField(input);
+          opts.next(input);
           return;
         }
         event.preventDefault();
@@ -337,3 +338,4 @@ function tagField(host, options) {
     input,
   };
 }
+window.tagField = tagField;

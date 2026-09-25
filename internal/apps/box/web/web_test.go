@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"dgs-toolbox/internal/box/doctype"
-	"dgs-toolbox/internal/box/tag"
+	"dgs-toolbox/internal/tag"
 )
 
 func server(t *testing.T) *httptest.Server {
