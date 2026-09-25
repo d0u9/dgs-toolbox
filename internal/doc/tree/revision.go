@@ -158,3 +158,27 @@ func SetNotes(root, id, notes string) (Item, error) {
 	item.Notes = strings.TrimSpace(notes)
 	return item, WriteItem(root, item)
 }
+
+// TrashDir is where a deleted Item's folder goes. Nothing in the tree is
+// erased: an Item deleted by mistake is moved back by hand.
+const TrashDir = "trash"
+
+// Trash deletes an Item from the tree by moving its folder — sidecar and
+// every revision's PDF — into TrashDir, under its ID and when it was
+// deleted. It answers where the folder went.
+func Trash(root, id string, now time.Time) (string, error) {
+	if err := Require(root); err != nil {
+		return "", err
+	}
+	if _, _, err := FindItem(root, id); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Join(root, TrashDir), 0o755); err != nil {
+		return "", err
+	}
+	to := filepath.Join(root, TrashDir, id+"-"+now.UTC().Format("20060102T150405Z"))
+	if _, err := os.Lstat(to); err == nil {
+		return "", fmt.Errorf("%s is already in the trash", to)
+	}
+	return to, os.Rename(Dir(root, id), to)
+}

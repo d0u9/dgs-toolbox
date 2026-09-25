@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Templates · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before editing its Templates.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link current" href="/templates/">Templates</a>
+  <a class="topbar-link" href="/views/">Views</a>
+  <a class="topbar-link" href="/merge/">Merge</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="work">
+  <section class="list">
+    <div class="open-bar">
+      <button id="new" class="action" type="button">New Template</button>
+    </div>
+    <div class="scroll">
+      <h2 class="panel-head">Templates <span id="count" class="count numeric"></span></h2>
+      <ul id="templates" class="rows"></ul>
+    </div>
+  </section>
+  <section class="template-edit">
+    <p class="muted">A Template is the fields asked for when a PDF of its type is imported. It is saved as <code id="file">templates/…</code> exactly as written here, comments included.</p>
+    <textarea id="yaml" class="template-yaml" spellcheck="false" autocomplete="off"></textarea>
+    <p id="message" class="message"></p>
+    <div class="buttons">
+      <button id="save" class="action" type="button">Save</button>
+      <button id="delete" class="action quiet" type="button">Delete…</button>
+    </div>
+    <details class="template-help">
+      <summary>What a Template can say</summary>
+      <pre>type: id_card             # the file name; lowercase, digits, _ and -
+kind: document            # document: revisions and HEAD; record: one PDF
+fields:
+  - key: owner
+    required: true
+    distinguishing: true  # type + distinguishing fields are unique (documents)
+  - key: expires
+    type: date            # text (default), date, select, item
+    pattern: '(\d{4}-\d{2}-\d{2})'  # suggests a value from the PDF's text
+  - key: status
+    type: select
+    options: [current, expired]
+defaults: {}              # a value filled in for a new import
+ignore_dates: []          # dates never suggested, YYYY-MM-DD</pre>
+    </details>
+  </section>
+</main>
+<script type="module" src="/templates.js"></script>
+</body>
+</html>
