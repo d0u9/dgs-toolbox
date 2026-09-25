@@ -1,6 +1,8 @@
 // What both doc pages share: the tree's state, the fields form, and how an
 // Item is named. The server decides everything; the pages show what it said.
 
+import { show as showViewer, hide as hideViewer } from "/viewer.js";
+
 export const $ = (id) => document.getElementById(id);
 
 export function el(tag, props, ...children) {
@@ -169,8 +171,7 @@ export async function showPreview(query, viewer) {
   $("empty").hidden = true;
   const useViewer = () => {
     if (asked !== previewAsked) return;
-    $("pages").hidden = true;
-    $("pages").replaceChildren();
+    hideViewer();
     $("frame").src = viewer;
     $("frame").hidden = false;
   };
@@ -185,26 +186,16 @@ export async function showPreview(query, viewer) {
   if (!info.count) return useViewer();
   $("frame").hidden = true;
   $("frame").removeAttribute("src");
-  const pages = [];
-  for (let n = 1; n <= info.count; n++) {
-    const sheet = el("div", { className: "sheet" });
-    sheet.dataset.page = n - 1;
-    const img = el("img", {
-      className: "page", alt: "Page " + n, loading: n <= 2 ? "eager" : "lazy", decoding: "async",
-      src: "/api/page?" + new URLSearchParams({ ...query, n, v: info.digest }),
-    });
-    // A page with no picture of its own answers 204, which an image reads as
-    // an error: the viewer draws the whole document instead.
-    img.onerror = useViewer;
-    img.onload = () => fit(sheet);
-    sheet.append(img, el("div", { className: "text-layer" }));
-    refit.observe(sheet);
-    pages.push(sheet);
-  }
-  refit.disconnect();
-  pages.forEach((sheet) => refit.observe(sheet));
-  $("pages").replaceChildren(...pages);
+  const sheets = showViewer(info.count,
+    (n, size) => "/api/page?" + new URLSearchParams({ ...query, n, size, v: info.digest }), useViewer);
+  sheets.forEach((sheet) => refit.observe(sheet));
   layText();
-  $("pages").scrollTop = 0;
-  $("pages").hidden = false;
+}
+
+export function clearPreview() {
+  previewAsked++;
+  hideViewer();
+  $("frame").hidden = true;
+  $("frame").removeAttribute("src");
+  $("empty").hidden = false;
 }

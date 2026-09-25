@@ -63,6 +63,16 @@ func TestPagesAreDrawnAsPictures(t *testing.T) {
 			t.Errorf("page %s is %v", n, b)
 		}
 	}
+	for size, longest := range map[string]int{"thumb": 60, "large": 60, "page": 60} {
+		rec := do(h, "GET", "/api/page?"+base+"scan.pdf&n=1&size="+size, "")
+		img, err := jpeg.Decode(rec.Body)
+		if rec.Code != http.StatusOK || err != nil || img.Bounds().Dy() > longest {
+			t.Errorf("size %s: %d %v", size, rec.Code, err)
+		}
+	}
+	if rec := do(h, "GET", "/api/page?"+base+"scan.pdf&n=1&size=huge", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown size: %d", rec.Code)
+	}
 	if rec := do(h, "GET", "/api/page?"+base+"scan.pdf&n=3", ""); rec.Code == http.StatusOK {
 		t.Fatal("page 3 of 2 drawn")
 	}
