@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Browse · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before importing into it.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link current" href="/browse/">Browse</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="work">
+  <section class="list">
+    <input id="filter" type="search" placeholder="Filter" spellcheck="false" autocomplete="off">
+    <div class="scroll">
+      <h2 class="panel-head">Items <span id="count" class="count numeric"></span></h2>
+      <ul id="items" class="rows"></ul>
+      <p id="none" class="message" hidden>Nothing is kept yet. Take PDFs in on <a href="/import/">Import</a>.</p>
+    </div>
+  </section>
+  <section class="preview">
+    <p id="empty" class="muted">Pick an Item to see it.</p>
+    <iframe id="frame" title="Preview" hidden></iframe>
+  </section>
+  <aside id="side" class="side" hidden>
+    <h2 class="panel-head" id="detail-head"></h2>
+    <form id="edit">
+      <div id="edit-fields"></div>
+      <p id="edit-message" class="message"></p>
+      <button id="save-button" class="action" type="submit">Save fields</button>
+    </form>
+    <h2 class="panel-head">Revisions</h2>
+    <ul id="revisions" class="rows"></ul>
+    <p id="head-message" class="message"></p>
+  </aside>
+</main>
+<script type="module" src="/browse.js"></script>
+</body>
+</html>
