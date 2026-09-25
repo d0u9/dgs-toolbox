@@ -379,3 +379,25 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .export-targets { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; font-size: var(--font-size-xs); }
 .export-targets .muted { margin-right: 4px; }
 .chip.on { background: var(--selected); color: var(--primary); }
+
+/* Views grouped by Target, and the export check. */
+.export-all-bar { padding: 0 14px 8px; }
+.export-all-bar .button { width: 100%; justify-content: center; }
+.view-group-list { padding: 0 0 6px; }
+.group-head { display: flex; align-items: center; gap: 8px; padding: 8px 18px 4px; font-size: var(--font-size-xs); }
+.group-name { font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--charcoal); }
+.group-head .muted { flex: 1; }
+.small-button { height: 22px; padding: 0 8px; font-size: var(--font-size-xs); }
+.export-row + .export-row { margin-top: 8px; }
+.export-row .message { flex: 1; margin: 0; font-size: var(--font-size-sm); }
+.export-row[hidden] { display: none; }
+.job { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--paper); }
+.job-bad { border-color: var(--error); }
+.job-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.job-path { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--font-size-xs); }
+.job-views { margin: 4px 0 0; font-size: var(--font-size-xs); }
+.job-issues { margin: 8px 0 0; padding-left: 18px; color: var(--error); font-size: var(--font-size-sm); }
+.job-issues li { margin-bottom: 2px; }
+.job-issues strong, .job-issues a { color: var(--ink); }
+.job details { margin-top: 6px; font-size: var(--font-size-sm); }
+.job details ul { margin: 4px 0; padding-left: 18px; }

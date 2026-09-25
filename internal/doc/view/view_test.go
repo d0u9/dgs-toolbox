@@ -205,3 +205,46 @@ func TestKeysComeFromTheirRevision(t *testing.T) {
 		t.Fatal("a query matches HEAD's fields")
 	}
 }
+
+func TestCombineFindsClashesAcrossViews(t *testing.T) {
+	items := []tree.Item{
+		item("A", "id_card", map[string]string{"owner": "jane"}, "d1"),
+		item("B", "bill", map[string]string{"owner": "jane"}, "d2"),
+	}
+	ids := View{Name: "ids", Selection: Head, Layout: "{owner}/{type}.{ext}", Query: map[string]Values{"type": {"id_card"}}}
+	bills := View{Name: "bills", Selection: Head, Layout: "{owner}/id_card.{ext}", Query: map[string]Values{"type": {"bill"}}}
+	c, err := Combine([]View{ids, bills}, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Complete() || len(c.Clashes) != 1 || len(c.Files) != 0 {
+		t.Fatalf("combined %+v", c)
+	}
+	views := []string{c.Clashes[0].Files[0].View, c.Clashes[0].Files[1].View}
+	if !reflect.DeepEqual(views, []string{"ids", "bills"}) {
+		t.Fatalf("clash views %v", views)
+	}
+	bills.Layout = "{owner}/bills/{type}.{ext}"
+	c, _ = Combine([]View{ids, bills}, items)
+	if !c.Complete() || len(c.Files) != 2 || c.Files[0].View != "bills" {
+		t.Fatalf("combined %+v", c)
+	}
+}
+
+func TestAFileWhereAFolderIsWantedClashes(t *testing.T) {
+	files, clashes := separate([]File{{Path: "jane/x", Item: "A"}, {Path: "Jane/x/y.pdf", Item: "B"}, {Path: "tom.pdf", Item: "C"}})
+	if len(files) != 1 || files[0].Path != "tom.pdf" || len(clashes) != 1 || len(clashes[0].Files) != 2 {
+		t.Fatalf("files %v clashes %v", files, clashes)
+	}
+}
+
+func TestTargetIsValidated(t *testing.T) {
+	v := View{Name: "a", Selection: Head, Layout: "{owner}.{ext}", Target: "Google Drive"}
+	if v.Validate() == nil {
+		t.Fatal("a target with a space was accepted")
+	}
+	v.Target = "google"
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

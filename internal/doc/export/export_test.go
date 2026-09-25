@@ -29,12 +29,21 @@ func stored(t *testing.T, root, item, content string) string {
 
 func export(t *testing.T, root, target string, files []view.File, items []tree.Item) Plan {
 	t.Helper()
-	plan, err := Compute(context.Background(), target, files)
+	return exportAs(t, root, target, "v", files, items)
+}
+
+// exportAs exports files as the View name.
+func exportAs(t *testing.T, root, target, name string, files []view.File, items []tree.Item) Plan {
+	t.Helper()
+	for i := range files {
+		files[i].View = name
+	}
+	plan, err := Compute(context.Background(), target, []string{name}, files)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(plan.Blocked) == 0 {
-		if _, err := Apply(context.Background(), root, target, "v", plan, items, nil); err != nil {
+		if _, err := Apply(context.Background(), root, target, []string{name}, plan, items, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -108,7 +117,7 @@ func TestExportLeavesOtherFilesAlone(t *testing.T) {
 	if len(plan.Blocked) != 1 || read(t, filepath.Join(target, "b.pdf")) != "<missing>" {
 		t.Fatalf("blocked: %+v", plan)
 	}
-	if _, err := Apply(context.Background(), root, target, "v", plan, items, nil); err == nil {
+	if _, err := Apply(context.Background(), root, target, []string{"v"}, plan, items, nil); err == nil {
 		t.Fatal("Apply wrote a blocked plan")
 	}
 
@@ -163,7 +172,93 @@ func TestBadManifestRefused(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(target, ManifestName), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Compute(context.Background(), target, nil); err == nil {
+	if _, err := Compute(context.Background(), target, nil, nil); err == nil {
 		t.Fatal("a broken manifest was read")
+	}
+}
+
+func TestViewsShareATarget(t *testing.T) {
+	root, target := t.TempDir(), t.TempDir()
+	a := stored(t, root, "A", "passport")
+	b := stored(t, root, "B", "bill")
+	items := []tree.Item{{ID: "A"}, {ID: "B"}}
+	exportAs(t, root, target, "ids", []view.File{{Path: "ids/a.pdf", Item: "A", Digest: a}}, items)
+	exportAs(t, root, target, "bills", []view.File{{Path: "bills/b.pdf", Item: "B", Digest: b}}, items)
+	if read(t, filepath.Join(target, "ids/a.pdf")) != "passport" || read(t, filepath.Join(target, "bills/b.pdf")) != "bill" {
+		t.Fatal("one View's export removed the other's")
+	}
+	m, _ := ReadManifest(target)
+	if len(m.Views) != 2 || len(m.Files) != 2 {
+		t.Fatalf("manifest %+v", m)
+	}
+
+	// A path another View exported is blocked, not taken over.
+	plan := exportAs(t, root, target, "bills", []view.File{{Path: "ids/a.pdf", Item: "B", Digest: b}}, items)
+	if len(plan.Blocked) != 1 || len(plan.Remove) != 1 {
+		t.Fatalf("plan %+v", plan)
+	}
+
+	// Emptying one View removes only its own files.
+	exportAs(t, root, target, "bills", nil, items)
+	if read(t, filepath.Join(target, "ids/a.pdf")) != "passport" || read(t, filepath.Join(target, "bills/b.pdf")) != "<missing>" {
+		t.Fatal("wrong files removed")
+	}
+}
+
+func TestVersionOneManifestIsRead(t *testing.T) {
+	target := t.TempDir()
+	old := `{"version": 1, "view": "important", "files": [{"path": "a.pdf", "digest": "d", "item": "A", "type": "t", "kind": "record", "revision": 1, "fields": {}}]}`
+	if err := os.WriteFile(filepath.Join(target, ManifestName), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := ReadManifest(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version != Version || len(m.Views) != 1 || m.Views[0] != "important" || m.Files[0].View != "important" {
+		t.Fatalf("manifest %+v", m)
+	}
+}
+
+func TestJobsGroupViewsByTarget(t *testing.T) {
+	views := []view.View{
+		{Name: "ids", Target: "google"}, {Name: "bills", Target: "google"},
+		{Name: "icloud-ids", Target: "icloud"}, {Name: "loose"}, {Name: "lost", Target: "nas"},
+	}
+	targets := map[string]string{"google": "/g", "icloud": "/i", "empty": "/e"}
+	jobs, problems := Jobs(views, targets, nil)
+	if len(jobs) != 2 || jobs[0].Name != "google" || len(jobs[0].Views) != 2 || jobs[1].Name != "icloud" {
+		t.Fatalf("jobs %+v", jobs)
+	}
+	if len(problems) != 1 {
+		t.Fatalf("problems %v", problems)
+	}
+	if _, problems = Jobs(views, targets, []string{"empty", "gone"}); len(problems) != 3 {
+		t.Fatalf("problems %v", problems)
+	}
+}
+
+func TestPlanJobsChecksEverythingFirst(t *testing.T) {
+	root, out := t.TempDir(), t.TempDir()
+	a := stored(t, root, "A", "passport")
+	items := []tree.Item{{ID: "A", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "jane"},
+		Revisions: []tree.Revision{{Digest: a}}}}
+	ids := view.View{Name: "ids", Selection: view.Head, Layout: "{owner}/{type}.{ext}"}
+	same := view.View{Name: "same", Selection: view.Head, Layout: "{owner}/id_card.{ext}"}
+	google := filepath.Join(out, "google")
+	nested := filepath.Join(google, "inner")
+	plans, err := PlanJobs(context.Background(), root, []Job{
+		{Name: "google", Path: google, Views: []view.View{ids, same}},
+		{Name: "inner", Path: nested, Views: []view.View{ids}},
+	}, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plans[0].Ready() || len(plans[0].Combined.Clashes) != 1 || len(plans[0].Problems) != 1 || len(plans[1].Problems) != 1 {
+		t.Fatalf("plans %+v", plans)
+	}
+	plans, _ = PlanJobs(context.Background(), root, []Job{{Name: "google", Path: google, Views: []view.View{ids}}}, items)
+	if !plans[0].Ready() || len(plans[0].Plan.Add) != 1 || plans[0].Plan.Add[0].View != "ids" {
+		t.Fatalf("plan %+v", plans[0])
 	}
 }

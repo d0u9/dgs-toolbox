@@ -15,21 +15,29 @@ import (
 type targetJSON struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
-	// View is the View last exported there, from the Target's manifest.
-	View  string `json:"view,omitempty"`
-	Error string `json:"error,omitempty"`
+	// Views are the Views that name this Target.
+	Views []string `json:"views"`
+	// Held are the Views whose files the Target's manifest records.
+	Held  []string `json:"held"`
+	Error string   `json:"error,omitempty"`
 }
 
 func (s server) targetList(w http.ResponseWriter, _ *http.Request) {
+	views, _ := view.Load(s.root)
 	out := []targetJSON{}
 	for name, path := range s.targets {
-		t := targetJSON{Name: name, Path: path}
+		t := targetJSON{Name: name, Path: path, Views: []string{}, Held: []string{}}
+		for _, v := range views {
+			if v.Target == name {
+				t.Views = append(t.Views, v.Name)
+			}
+		}
 		if err := export.CheckTarget(s.root, path); err != nil {
 			t.Error = err.Error()
 		} else if m, err := export.ReadManifest(path); err != nil {
 			t.Error = err.Error()
 		} else {
-			t.View = m.View
+			t.Held = append(t.Held, m.Views...)
 		}
 		out = append(out, t)
 	}
@@ -37,60 +45,66 @@ func (s server) targetList(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// exportRequest is what to export: the Targets named (every Target a View
+// names when All is set), or one View into a folder chosen by hand.
 type exportRequest struct {
-	View   string `json:"view"`
-	Target string `json:"target"`
-	// Folder is a folder chosen on the page, in place of a named Target.
-	Folder string `json:"folder"`
+	Targets []string `json:"targets"`
+	All     bool     `json:"all"`
+	View    string   `json:"view"`
+	Folder  string   `json:"folder"`
 }
 
 type exportPlanJSON struct {
-	export.Plan
-	View   view.Plan `json:"view"`
-	Target string    `json:"target"`
+	Jobs []export.JobPlan `json:"jobs"`
+	// Problems stop the whole run: a View naming an unknown Target, a
+	// Target asked for that no View names.
+	Problems []string `json:"problems"`
+	// Ready is set when every Job may be written, so the run may start.
+	Ready bool `json:"ready"`
 }
 
-// plan is what writing a saved View to a named Target would do. It is
-// computed afresh for the export itself, so what is written is what the
-// state is then, never a plan the page was shown earlier.
+// plan is what the request would write, checked as a whole. It is computed
+// afresh for the export itself, so what is written is what the state is
+// then, never a plan the page was shown earlier.
 func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON, []tree.Item, int, error) {
-	out := exportPlanJSON{}
-	path, ok := s.targets[request.Target]
-	if request.Folder != "" {
-		if !filepath.IsAbs(request.Folder) {
-			return out, nil, http.StatusBadRequest, errors.New("the folder to export to must be an absolute path")
-		}
-		path, ok = filepath.Clean(request.Folder), true
-	}
-	if !ok {
-		return out, nil, http.StatusBadRequest, errors.New("no Target named " + request.Target + " in doc.targets")
-	}
-	out.Target = path
-	if err := export.CheckTarget(s.root, path); err != nil {
-		return out, nil, http.StatusConflict, err
-	}
+	out := exportPlanJSON{Jobs: []export.JobPlan{}, Problems: []string{}}
 	views, err := view.Load(s.root)
 	if err != nil {
 		return out, nil, http.StatusConflict, err
 	}
-	var v *view.View
-	for i := range views {
-		if views[i].Name == request.View {
-			v = &views[i]
+	var jobs []export.Job
+	switch {
+	case request.View != "":
+		if !filepath.IsAbs(request.Folder) {
+			return out, nil, http.StatusBadRequest, errors.New("the folder to export to must be an absolute path")
 		}
-	}
-	if v == nil {
-		return out, nil, http.StatusBadRequest, errors.New("no View named " + request.View)
+		var v *view.View
+		for i := range views {
+			if views[i].Name == request.View {
+				v = &views[i]
+			}
+		}
+		if v == nil {
+			return out, nil, http.StatusBadRequest, errors.New("no View named " + request.View)
+		}
+		jobs = []export.Job{{Path: filepath.Clean(request.Folder), Views: []view.View{*v}}}
+	case request.All || len(request.Targets) > 0:
+		var problems []string
+		jobs, problems = export.Jobs(views, s.targets, request.Targets)
+		out.Problems = append(out.Problems, problems...)
+	default:
+		return out, nil, http.StatusBadRequest, errors.New("name a View and a folder, or Targets")
 	}
 	items, err := tree.LoadItems(s.root)
 	if err != nil {
 		return out, nil, http.StatusConflict, err
 	}
-	if out.View, err = view.Build(*v, items); err != nil {
-		return out, nil, http.StatusBadRequest, err
-	}
-	if out.Plan, err = export.Compute(ctx, path, out.View.Files); err != nil {
+	if out.Jobs, err = export.PlanJobs(ctx, s.root, jobs, items); err != nil {
 		return out, nil, http.StatusConflict, err
+	}
+	out.Ready = len(out.Problems) == 0 && len(out.Jobs) > 0
+	for _, j := range out.Jobs {
+		out.Ready = out.Ready && j.Ready()
 	}
 	return out, items, http.StatusOK, nil
 }
@@ -109,6 +123,14 @@ func (s server) exportPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+type exportResultJSON struct {
+	Name   string        `json:"name"`
+	Path   string        `json:"path"`
+	Result export.Result `json:"result"`
+}
+
+// exportRun plans again and writes only when the whole run is ready: one
+// Target with a problem means no Target is written.
 func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 	var request exportRequest
 	if !decode(w, r, &request) {
@@ -121,16 +143,20 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
-	if !out.View.Complete() {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "the View is not complete: fill in missing keys and resolve clashes first"})
+	if !out.Ready {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "the export has conflicts or missing keys: nothing was written", "plan": out})
 		return
 	}
 	// The export finishes even if the page goes away: stopping midway only
 	// leaves more to do next time.
-	result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, out.Target, request.View, out.Plan, items, nil)
-	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "result": result})
-		return
+	results := []exportResultJSON{}
+	for _, j := range out.Jobs {
+		result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, nil)
+		results = append(results, exportResultJSON{Name: j.Name, Path: j.Path, Result: result})
+		if err != nil {
+			writeJSON(w, http.StatusConflict, map[string]any{"error": j.Path + ": " + err.Error(), "results": results})
+			return
+		}
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }

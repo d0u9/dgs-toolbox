@@ -144,9 +144,11 @@ Stored object  →  Item  →  View  →  Target
   are per-machine configuration. `dgs doc` writes only to the directory; getting
   it into iCloud Drive, Google Drive or a NAS is a sync the owner does by hand.
 
-The repository's own layout carries none of the View's meaning. The same View
-can be written to several Targets — iCloud Drive, a synced Google Drive
-folder, a NAS — and the repository does not change.
+The repository's own layout carries none of the View's meaning. A View names
+the one Target it is exported to, and a Target takes as many Views as it needs:
+Google Drive can hold one View for identity documents and another for bills,
+each with its own layout, while iCloud Drive holds a third that lays out the
+same identity documents another way. The repository does not change.
 
 ## Items
 
@@ -280,7 +282,12 @@ query: {type: [id_card, passport], owner: jane}
 selection: head
 layout: '{country}/{owner}/important/{type}.{ext}'
 default: none              # optional: stands in for a missing key
+target: icloud             # optional: the Target it is exported to
 ```
+
+`target` is a name from [`doc.targets`](../../configuration/doc.md), never a
+path: Views travel with the repository, and each machine says where its
+`icloud` is.
 
 A layout is rendered by three rules:
 
@@ -333,13 +340,30 @@ matches its SHA-256.
 Export removes only files it wrote itself, recorded in a manifest at the
 Target root; anything else under the Target is never touched.
 
-The Views page exports the saved View to a folder chosen in the shared file
+A Target is exported as a whole: every View naming it, planned together. A
+run is one Target, several, or every Target a View names, and it is checked
+entirely before anything is written. Any of these stops the whole run, and no
+Target is written:
+
+- a key a selected PDF lacks, in any View;
+- two PDFs wanting one path, ignoring case, within a View or between two
+  Views of a Target, and a PDF wanting a path that another needs as a folder;
+- a wanted path held by a file the export does not own (below), including one
+  another View exported into the same folder;
+- a Target inside the tree or holding it, two Targets of the run overlapping,
+  a View naming a Target this machine does not have, and a manifest that
+  cannot be read.
+
+The check lists every one of them, by View and path; the export itself plans
+and checks again from the state at that moment.
+
+The Views page lists the Views grouped by Target, each group with **Export…**,
+and **Export all Targets…** above them; a View's own form picks its Target.
+A View naming no Target is exported alone to a folder chosen in the shared file
 dialog, which can make a new folder there; the last one chosen is remembered.
-Targets, the named folders in [`doc.targets`](../../configuration/doc.md), are
-offered beside it as shortcuts. A dry run lists what would be
-added, replaced and removed, and the export itself plans again from the state
-at that moment. Nothing is written while the View is incomplete. A Target,
-chosen or named, may not overlap the tree.
+`dgs doc export [<target>...]` does the same from the command line, every
+Target when none is named; `-n` checks and writes nothing. It fails, writing
+nothing, when the check finds anything.
 
 - A wanted path held by a file the manifest does not record blocks the export:
   nothing is written until the owner moves it. A file already there with the
@@ -355,7 +379,10 @@ Export is incremental: a file whose path and SHA-256 the manifest already
 records, and which still reads back to that digest, is not written again.
 
 The manifest, `dgs-export.json`, records for each file its path, digest, the
-Item's ID and revision, and the Item's fields at export time. That is enough
+View that placed it, the Item's ID and revision, and the Item's fields at
+export time. An export of some of a Target's Views replaces and removes only
+those Views' files. A version 1 manifest, from before a Target took several
+Views, is read with its files belonging to its one View. That is enough
 to import a Target back into a repository: `dgs doc` reads the manifest and
 recreates the Items, matching existing ones as a merge does. It also
 records each Item's kind and which revision was HEAD.
@@ -374,6 +401,8 @@ search. Browse says how many Items have no text yet and can queue them all to
 be read.
 
 ## Verify
+
+`dgs doc export [<target>...]` is described under [Export](#export).
 
 `dgs doc verify [<tree>]` (`-q` for the result only) checks the repository against its sidecars and
 changes nothing. It reports:

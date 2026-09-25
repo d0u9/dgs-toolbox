@@ -10,7 +10,7 @@ import (
 )
 
 // New returns the Doc app definition: `dgs doc`, which starts the local page,
-// `dgs doc init` and `dgs doc verify`.
+// `dgs doc init`, `dgs doc verify` and `dgs doc export`.
 func New() tui.App {
 	return tui.App{
 		ID:          "doc",
@@ -33,6 +33,15 @@ func New() tui.App {
 				{Name: "quiet", Shorthand: "q", Bool: true, Usage: "report only the result, not every file as it is read"},
 			},
 			RunWithConfig: verifyAction,
+		}, {
+			ID:          "export",
+			Usage:       "[<target>...]",
+			Description: "Export the Views into the Targets they name: those given, or all. Checks everything first; a conflict writes nothing.",
+			MaxArgs:     64,
+			Flags: []tui.ActionFlag{
+				{Name: "dry-run", Shorthand: "n", Bool: true, Usage: "plan and check, and write nothing"},
+			},
+			RunWithConfig: exportAction,
 		}},
 	}
 }

@@ -35,7 +35,10 @@
       <h2>Views <span id="count" class="count numeric"></span></h2>
       <button id="new" class="button" type="button">+ New</button>
     </div>
-    <ul id="views" class="template-list scroll"></ul>
+    <div class="export-all-bar">
+      <button id="export-all" class="button" type="button" title="Check every Target's Views together, then export them">Export all Targets…</button>
+    </div>
+    <div id="views" class="scroll"></div>
   </section>
   <section class="view-edit">
     <form id="form" class="view-form">
@@ -70,6 +73,9 @@
           <p class="layout-help">Type <code>{</code> for a key. <code>{owner}</code> is a value, <code>{country:en}</code> a country in one form, <code>/</code> a folder.</p>
         </div>
         <div id="keys" class="key-groups"></div>
+        <label class="vf"><span class="vf-label">Target</span>
+          <select id="target"></select></label>
+        <p id="target-note" class="layout-help"></p>
       </div>
       <div class="view-group">
         <h3>When it does not fit</h3>
@@ -97,16 +103,17 @@
       <div id="problems"></div>
       <div id="tree"></div>
       <div id="export" class="export">
-        <div class="result-head"><h3>Export</h3></div>
-        <div class="export-row">
+        <div class="result-head"><h3>Export</h3><span id="export-scope" class="count muted"></span></div>
+        <div id="export-folder-row" class="export-row">
           <span class="export-target">To</span>
           <button id="choose" class="button export-folder" type="button" title="Choose the folder to export to">
             <span id="folder" class="export-path muted">Choose folder…</span></button>
-          <button id="dry-run" class="button" type="button">Dry run</button>
-          <button id="run" class="action" type="button" disabled>Export</button>
         </div>
-        <div id="targets" class="export-targets"></div>
-        <p id="export-message" class="message"></p>
+        <div class="export-row">
+          <button id="dry-run" class="button" type="button">Check</button>
+          <button id="run" class="action" type="button" disabled>Export</button>
+          <p id="export-message" class="message"></p>
+        </div>
         <div id="export-plan"></div>
       </div>
     </div>

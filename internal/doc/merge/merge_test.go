@@ -223,11 +223,11 @@ func TestImportBackFromTarget(t *testing.T) {
 		{Path: "jane/1.pdf", Item: "F1", Digest: digest("a"), Revision: 1},
 		{Path: "jane/2.pdf", Item: "F1", Digest: digest("b"), Revision: 2},
 	}
-	ep, err := export.Compute(context.Background(), target, files)
+	ep, err := export.Compute(context.Background(), target, []string{"all"}, files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := export.Apply(context.Background(), full, target, "all", ep, []tree.Item{it}, nil); err != nil {
+	if _, err := export.Apply(context.Background(), full, target, []string{"all"}, ep, []tree.Item{it}, nil); err != nil {
 		t.Fatal(err)
 	}
 
