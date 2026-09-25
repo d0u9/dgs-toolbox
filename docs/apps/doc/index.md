@@ -282,6 +282,19 @@ to import a Target back into a repository: `dgs doc` reads the manifest and
 recreates the Items, matching existing ones as a merge does. It also
 records each Item's kind and which revision was HEAD.
 
+## Searching
+
+Browse's filter matches an Item by its fields and by the text read off its
+current PDF: every word typed must appear, ignoring case, and a match shows the
+line around it. A word matches inside a longer one, so Chinese, written
+without spaces, matches as it is typed. "More like this" lists the Items whose
+text is most like the one picked, by the same similarity as
+[Suggesting a type](#suggesting-a-type).
+
+Only text already in the cache is searched; nothing is read to answer a
+search. Browse says how many Items have no text yet and can queue them all to
+be read.
+
 ## Verify
 
 `dgs doc verify [<tree>]` (`-q` for the result only) checks the repository against its sidecars and
@@ -427,9 +440,6 @@ written any, is one more key of the sidecar.
 
 ## Later
 
-- **Searching Items by their text** on Browse, from text kept in the
-  rebuildable cache, with "more like this" from the same similarity as
-  [Suggesting a type](#suggesting-a-type).
 - **Archive serial numbers and barcode separator pages**, if box wants them:
   they concern paper, not filed documents.
 
