@@ -136,3 +136,5 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .form-field select.suggested { background: var(--primary-soft); }
 .type-hint { margin-top: 0; font-size: var(--font-size-xs); }
 .type-hint[hidden] { display: none; }
+.fill-list > li { margin-bottom: var(--space-xs); }
+.fill { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; margin-top: 4px; }

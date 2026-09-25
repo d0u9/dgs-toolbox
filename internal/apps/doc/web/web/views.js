@@ -1,6 +1,6 @@
 // Views: build a layout from keys and see, as it is typed, the tree an
 // export of it would write. The server computes the plan; this draws it.
-import { $, el, loadState, post, label, frame, say } from "/common.js";
+import { $, el, loadState, post, label, templateOf, inputFor, fieldsOf, frame, say } from "/common.js";
 
 let state = { templates: [], items: [] };
 let views = [];
@@ -124,11 +124,18 @@ async function preview() {
   $("summary").textContent = plan.files.length + (plan.files.length === 1 ? " file" : " files");
   const problems = [];
   if (plan.missing.length) {
+    // One form per Item: its revisions share the fields that are missing.
+    const byItem = new Map();
+    for (const m of plan.missing) {
+      const seen = byItem.get(m.item) || { keys: new Set(), fields: new Set() };
+      m.keys.forEach((k) => seen.keys.add(k));
+      m.fields.forEach((f) => seen.fields.add(f));
+      byItem.set(m.item, seen);
+    }
     problems.push(el("div", { className: "problem" },
       el("strong", {}, plan.missing.length + " PDF" + (plan.missing.length === 1 ? " lacks" : "s lack") + " a key the layout uses"),
-      el("ul", {}, ...plan.missing.map((m) => el("li", {}, link(m.item),
-        m.revision > 1 || v.selection === "all" ? " · revision " + m.revision : "",
-        " — missing ", el("span", { className: "mono" }, m.keys.join(", ")))))));
+      byItem.size > 1 ? fillAll(byItem) : null,
+      el("ul", { className: "fill-list" }, ...[...byItem].map(([id, m]) => fill(id, m, link)))));
   }
   if (plan.clashes.length) {
     problems.push(el("div", { className: "problem" },
@@ -141,6 +148,75 @@ async function preview() {
   }
   $("problems").replaceChildren(...problems);
   $("tree").replaceChildren(plan.files.length ? drawTree(plan.files, name) : el("p", { className: "muted" }, "The View selects no PDFs."));
+}
+
+// fill is one Item lacking keys, with a field to type each in. A key no
+// field of its Template supplies is only named: the layout must change.
+function fill(id, m, link) {
+  const item = state.items.find((i) => i.id === id);
+  const t = item && templateOf(state, item.type);
+  const known = t ? t.fields.filter((f) => m.fields.has(f.key)) : [];
+  const unknown = [...m.fields].filter((f) => !known.some((k) => k.key === f));
+  const message = el("span", { className: "message" });
+  const form = el("form", { className: "fill" },
+    ...known.map((f) => inputFor(f, "", "", state, id)),
+    known.length ? el("button", { className: "small", type: "submit", textContent: "Save" }) : null,
+    message);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const typed = Object.fromEntries(Object.entries(fieldsOf(form)).filter(([, v]) => v !== ""));
+    if (!Object.keys(typed).length) return;
+    try {
+      await post("/api/fields", { item: id, fields: { ...item.fields, ...typed } });
+      state = await loadState();
+      preview();
+    } catch (error) {
+      say(message, error.message, true);
+    }
+  };
+  return el("li", {}, link(id), " — missing ", el("span", { className: "mono" }, [...m.keys].join(", ")),
+    unknown.length ? el("span", { className: "muted" }, " · " + (item ? item.type : "its Template") + " has no field " +
+      unknown.map((f) => f === "issued_at" ? "issued_at (year, month and date come from it)" : f).join(", ")) : null,
+    form);
+}
+
+// fillAll sets one value on every listed Item that lacks the field and whose
+// Template has it.
+function fillAll(byItem) {
+  const wanting = {};
+  for (const [id, m] of byItem) {
+    const item = state.items.find((i) => i.id === id);
+    const t = item && templateOf(state, item.type);
+    for (const f of t ? t.fields.filter((f) => m.fields.has(f.key)) : []) {
+      (wanting[f.key] ||= { field: f, items: [] }).items.push(item);
+    }
+  }
+  const shared = Object.values(wanting).filter((w) => w.items.length > 1);
+  if (!shared.length) return null;
+  const message = el("span", { className: "message" });
+  const pick = el("select", {}, ...shared.map((w) => el("option", { value: w.field.key }, w.field.key + " on " + w.items.length + " Items")));
+  const slot = el("span");
+  const draw = () => slot.replaceChildren(inputFor(shared.find((w) => w.field.key === pick.value).field, "", "", state));
+  pick.onchange = draw;
+  draw();
+  const form = el("form", { className: "fill fill-all" }, el("span", {}, "Set "), pick, slot,
+    el("button", { className: "small", type: "submit", textContent: "Set on all" }), message);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const value = fieldsOf(form)[pick.value];
+    if (!value) return;
+    try {
+      for (const item of shared.find((w) => w.field.key === pick.value).items) {
+        await post("/api/fields", { item: item.id, fields: { ...item.fields, [pick.value]: value } });
+      }
+      state = await loadState();
+      preview();
+    } catch (error) {
+      state = await loadState();
+      say(message, error.message, true);
+    }
+  };
+  return form;
 }
 
 // drawTree nests the plan's paths into folders, folders first.
