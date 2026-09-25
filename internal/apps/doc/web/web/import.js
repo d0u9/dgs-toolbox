@@ -2,6 +2,7 @@
 // they are in, and take them in one at a time. The folder is only read.
 import { $, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
+import { fileTree } from "/ui/filetree.js";
 
 const FOLDER_KEY = "dgs-doc-import-folder";
 let state = { templates: [], items: [] };
@@ -22,62 +23,20 @@ function remember(folder) {
   try { localStorage.setItem(FOLDER_KEY, folder); } catch { /* not kept */ }
 }
 
-// files as nested folders: { dirs: Map(name → node), files: [file] }.
-function nest(list) {
-  const top = { dirs: new Map(), files: [] };
-  for (const f of list) {
-    const parts = f.path.split("/");
-    let node = top;
-    for (const part of parts.slice(0, -1)) {
-      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] });
-      node = node.dirs.get(part);
-    }
-    node.files.push(f);
-  }
-  return top;
-}
-
-function counts(node) {
-  let all = node.files.length, kept = node.files.filter((f) => f.item).length;
-  for (const child of node.dirs.values()) {
-    const [a, k] = counts(child);
-    all += a;
-    kept += k;
-  }
-  return [all, kept];
-}
-
-function drawNode(node, prefix, depth) {
-  const rows = [];
-  for (const [name, child] of [...node.dirs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const path = prefix + name + "/";
-    const [all, kept] = counts(child);
-    const open = !closed.has(path);
-    rows.push(el("li", {
-      className: "folder", style: `padding-left: ${14 + depth * 16}px`,
-      onclick: () => { open ? closed.add(path) : closed.delete(path); render(); },
-    }, el("span", { className: "caret" }, open ? "▾" : "▸"), name,
-    el("span", { className: "sub-inline numeric" }, kept ? `${kept}/${all} in tree` : String(all))));
-    if (open) rows.push(...drawNode(child, path, depth + 1));
-  }
-  for (const f of node.files) {
-    const li = el("li", { className: "file", style: `padding-left: ${30 + depth * 16}px`, onclick: () => pick(f.path) },
-      f.path.slice(f.path.lastIndexOf("/") + 1),
-      f.item ? el("span", { className: "tag" }, "in tree") : null,
-      el("span", { className: "sub" }, size(f.size) + " · " + new Date(f.modified).toLocaleDateString()));
-    if (f.path === selected) li.classList.add("selected");
-    if (f.item) li.classList.add("done");
-    rows.push(li);
-  }
-  return rows;
-}
-
 function render() {
   frame(state);
   $("dir").textContent = dir;
   const kept = files.filter((f) => f.item).length;
   $("counts").textContent = dir ? `${files.length} PDFs · ${kept} in tree` : "";
-  $("tree").replaceChildren(el("ul", { className: "rows" }, ...drawNode(nest(files), "", 0)));
+  $("tree").replaceChildren(fileTree(files, {
+    closed, selected, onPick: (f) => pick(f.path),
+    fileClass: (f) => f.item ? "done" : "",
+    fileExtra: (f) => el("span", {}, (f.item ? "in tree · " : "") + size(f.size) + " · " + new Date(f.modified).toLocaleDateString()),
+    folderExtra: (path, under) => {
+      const kept = under.filter((f) => f.item).length;
+      return el("span", { className: "numeric" }, kept ? `${kept}/${under.length} in tree` : String(under.length));
+    },
+  }));
   if (dir && files.length === 0) say($("list-message"), "No PDFs in this folder or under it.");
   const file = files.find((f) => f.path === selected);
   $("side").hidden = !file;

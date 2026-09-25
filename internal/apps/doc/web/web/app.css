@@ -125,13 +125,6 @@ body { display: flex; flex-direction: column; }
 .problem { margin: var(--space-xs) 14px; padding: var(--space-xs) 12px; border-radius: var(--radius-md); background: var(--primary-soft); }
 .problem ul { margin: 4px 0 0; padding-left: 18px; }
 .message.ok { margin: var(--space-xs) 14px; color: var(--charcoal); }
-.file-tree { padding: 0 14px var(--space-md); }
-.file-tree ul { list-style: none; margin: 0; padding-left: 16px; }
-.file-tree > ul { padding-left: 0; }
-.file-tree li { padding: 2px 0; }
-.file-tree summary { cursor: pointer; font-weight: 600; color: var(--charcoal); }
-.file-tree a { color: inherit; text-decoration: none; }
-.file-tree a:hover { color: var(--primary); text-decoration: underline; }
 textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-xs) 14px 0; resize: vertical; box-sizing: border-box; }
 .form-field select.suggested { background: var(--primary-soft); }
 .type-hint { margin-top: 0; font-size: var(--font-size-xs); }
