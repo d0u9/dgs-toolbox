@@ -31,7 +31,8 @@ function render() {
   $("tree").replaceChildren(fileTree(files, {
     closed, selected, onPick: (f) => pick(f.path),
     fileClass: (f) => f.item ? "done" : "",
-    fileExtra: (f) => el("span", {}, (f.item ? "in tree · " : "") + size(f.size) + " · " + new Date(f.modified).toLocaleDateString()),
+    mark: (f) => f.item ? "Imported: already in the tree" : "",
+    fileExtra: (f) => el("span", {}, size(f.size) + " · " + new Date(f.modified).toLocaleDateString()),
     folderExtra: (path, under) => {
       const kept = under.filter((f) => f.item).length;
       return el("span", { className: "numeric" }, kept ? `${kept}/${under.length} in tree` : String(under.length));

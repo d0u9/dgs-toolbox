@@ -19,7 +19,7 @@ import { chooseDialog, confirmDialog, promptDialog, waypointDialog } from "./dia
 import { openFile, saveFile } from "/ui/filedialog.js";
 import { openMenu } from "/ui/menu.js";
 import * as status from "/ui/statusbar.js";
-import { splitter, shareSplitter } from "./splitter.js";
+import { splitter, shareSplitter } from "/ui/splitter.js";
 import { Terrain, DEFAULT_EXAGGERATION } from "./terrain.js";
 import { longPressDrag, SortGap } from "./drag.js";
 
@@ -2182,20 +2182,20 @@ function bindSplitters() {
   const sidebar = document.querySelector(".sidebar");
   splitter({
     handle: $("sidebar-splitter"), target: sidebar, axis: "x", min: 220,
-    max: () => window.innerWidth - 320, key: "sidebar",
+    max: () => window.innerWidth - 320, key: "dgs-gpx-size-sidebar",
   });
   splitter({
     handle: $("profile-splitter"), target: $("profile"), invert: true, min: 180,
-    max: () => document.querySelector(".workspace").clientHeight - 120, key: "profile",
+    max: () => document.querySelector(".workspace").clientHeight - 120, key: "dgs-gpx-size-profile",
   });
   splitter({
     handle: $("inspector-splitter"), target: $("inspector"), axis: "x", invert: true, min: 300,
-    max: () => Math.min(640, window.innerWidth - 560), key: "inspector",
+    max: () => Math.min(640, window.innerWidth - 560), key: "dgs-gpx-size-inspector",
   });
   chartSplit = shareSplitter({
     handles: { y: $("chart-splitter"), x: $("chart-splitter-x") },
     first: $("row-elevation"), second: $("row-speed"), container: $("charts"),
-    axis: () => (state.charts.layout === "side" ? "x" : "y"), min: 100, key: "chart-share",
+    axis: () => (state.charts.layout === "side" ? "x" : "y"), min: 100, key: "dgs-gpx-size-chart-share",
   });
 }
 
