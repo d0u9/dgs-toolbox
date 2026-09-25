@@ -3,7 +3,7 @@ body { display: flex; flex-direction: column; }
 .work { flex: 1; display: flex; min-height: 0; }
 .list {
   width: 340px; flex: none; display: flex; flex-direction: column;
-  background: var(--paper); min-width: 240px; overflow: hidden;
+  background: var(--paper); min-width: 320px; overflow: hidden;
 }
 .scroll { overflow-y: auto; flex: 1; }
 .count { margin-left: var(--space-xs); font-weight: 400; }
@@ -371,3 +371,5 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .view-result .export .message, .view-result #export-plan { margin: 8px 0; }
 .vf > * { min-width: 0; }
 .condition select { flex: none; max-width: 40%; }
+.open-bar .action, .list-head .button { flex: none; white-space: nowrap; }
+.open-bar .muted { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
