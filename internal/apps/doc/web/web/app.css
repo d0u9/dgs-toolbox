@@ -230,23 +230,25 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 
 /* The detail panel beside the cards: one column of sections, one gutter,
    one type scale, as box's detail panel. */
-.side.detail { width: 360px; min-width: 320px; flex: none; padding: 0 16px 24px; background: var(--paper); font-size: var(--font-size-ui); overflow-x: hidden; }
-.detail-head {
-  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
-  margin: 0 -16px; padding: 12px 16px; background: var(--paper); border-bottom: 1px solid var(--hairline);
-}
+.side.detail { width: 360px; min-width: 320px; flex: none; padding: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--paper); font-size: var(--font-size-ui); }
+.side.detail[hidden] { display: none; }
+.detail-picture { flex: none; padding: 12px 16px 10px; display: flex; flex-direction: column; gap: 8px; }
+.detail-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 10px 16px 24px; }
+.detail-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--paper); border-bottom: 1px solid var(--hairline); }
 .detail-head h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--font-size-title); font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .detail-section { padding: 14px 0; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 8px; }
 .detail-section h3 { margin: 0; font-size: var(--font-size-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--graphite); }
 .detail-frame {
-  display: grid; place-items: center; width: 100%; min-height: 120px; padding: 0; cursor: zoom-in;
+  display: grid; place-items: center; width: 100%; height: 360px; padding: 0; cursor: zoom-in;
   background: var(--cloud); border: 1px solid var(--hairline); border-radius: var(--radius-md); overflow: hidden;
 }
-.detail-frame img { display: block; width: 100%; max-height: 260px; object-fit: contain; }
+.detail-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .detail-frame.no-picture img { display: none; }
 .detail-frame.no-picture::after { content: attr(data-type); font-family: var(--font-mono); color: var(--graphite); padding: 40px 0; }
 .detail-tools { display: flex; align-items: center; gap: 8px; }
-.detail-tools .muted { margin-left: auto; font-size: var(--font-size-xs); }
+.detail-tools #detail-rev { margin-left: auto; font-size: var(--font-size-xs); }
+.detail-tools #page-label { min-width: 3.5em; text-align: center; font-size: var(--font-size-xs); }
+.detail-scroll > .message:first-child { margin-bottom: 4px; }
 .side.detail .message { margin: 0; font-size: var(--font-size-xs); }
 .side.detail .message:empty { display: none; }
 .side.detail .kind { margin: 0; font-size: var(--font-size-xs); }
@@ -268,14 +270,13 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .button.danger { color: var(--error); border-color: var(--error); background: var(--paper); }
 .button.danger:hover { background: var(--error); color: var(--on-ink); }
 
-/* The reader: one revision over the whole page. */
+/* The reader: the picked revision in place of the cards, the detail panel
+   still beside it. */
 .reader[hidden] { display: none !important; }
-.reader {
-  position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: stretch;
-  background: var(--cloud);
-}
+.reader { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; background: var(--cloud); }
 .reader-bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--paper); border-bottom: 1px solid var(--hairline); }
 .reader-body { flex: 1; min-height: 0; display: flex; align-items: stretch; justify-content: center; }
+body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, body.reading #picture-splitter { display: none; }
 .card-thumb { object-position: center; }
 .side.detail form { display: flex; flex-direction: column; gap: 10px; }
 .side.detail .kind { margin: 0 0 4px; color: var(--graphite); }

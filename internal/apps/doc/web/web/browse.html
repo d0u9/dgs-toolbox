@@ -114,16 +114,21 @@
       <h2 id="detail-head"></h2>
       <button id="close" class="tool" type="button" title="Close (Esc)" aria-label="Close">×</button>
     </header>
-    <section class="detail-section">
+    <div id="detail-picture" class="detail-picture">
       <button id="detail-frame" class="detail-frame" type="button" title="Open (double-click)">
         <img id="detail-image" alt="">
       </button>
       <div class="detail-tools">
+        <button id="page-prev" class="tool" type="button" title="Previous page" aria-label="Previous page">‹</button>
+        <span id="page-label" class="numeric muted"></span>
+        <button id="page-next" class="tool" type="button" title="Next page" aria-label="Next page">›</button>
         <button id="open-reader" class="button" type="button">Open</button>
         <span id="detail-rev" class="muted"></span>
       </div>
-      <p id="text-message" class="message text-status"></p>
-    </section>
+    </div>
+    <div id="picture-splitter" class="splitter row" role="separator" aria-orientation="horizontal"></div>
+    <div class="detail-scroll">
+    <p id="text-message" class="message text-status"></p>
     <section class="detail-section">
       <h3>Fields</h3>
       <form id="edit">
@@ -157,6 +162,7 @@
       <button id="delete" class="button danger" type="button">Delete Item…</button>
       <p id="delete-message" class="message"></p>
     </section>
+    </div>
   </aside>
 </main>
 <script type="module" src="/browse.js"></script>

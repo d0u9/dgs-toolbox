@@ -150,32 +150,63 @@ function open(item) {
   pick(item.id, headOf(item));
 }
 
-// showImage puts the picked revision's first page in the detail panel, or
-// the type's name where the PDF has no picture of it.
-function showImage(id, digest) {
+// The picture at the top of the detail panel: one page of the picked
+// revision at a time, or the type's name where the PDF has no picture of it.
+let shownPage = { id: "", digest: "", n: 1, count: 1 };
+async function showImage(id, digest) {
+  shownPage = { id, digest, n: 1, count: 1 };
+  drawPage();
+  try {
+    const info = await (await fetch("/api/pages?" + new URLSearchParams({ item: id, digest }))).json();
+    if (shownPage.id === id && shownPage.digest === digest) {
+      shownPage.count = Math.max(1, info.count || 1);
+      drawPage();
+    }
+  } catch { /* one page is shown */ }
+}
+function drawPage() {
+  const { id, digest, n, count } = shownPage;
   const item = state.items.find((i) => i.id === id);
   const frame = $("detail-frame");
   frame.classList.remove("no-picture");
   frame.dataset.type = item ? item.type : "";
-  $("detail-image").src = `/api/page?item=${encodeURIComponent(id)}&digest=${digest}&n=1&size=page&v=${digest}`;
+  $("detail-image").src = `/api/page?item=${encodeURIComponent(id)}&digest=${digest}&n=${n}&size=page&v=${digest}`;
+  $("page-label").textContent = n + " / " + count;
+  $("page-prev").disabled = n <= 1;
+  $("page-next").disabled = n >= count;
 }
+const turn = (by) => {
+  const n = Math.min(shownPage.count, Math.max(1, shownPage.n + by));
+  if (n !== shownPage.n) { shownPage.n = n; drawPage(); }
+};
+$("page-prev").onclick = () => turn(-1);
+$("page-next").onclick = () => turn(1);
 $("detail-image").addEventListener("error", () => $("detail-frame").classList.add("no-picture"));
 $("detail-image").addEventListener("load", () => { if (!$("detail-image").naturalWidth) $("detail-frame").classList.add("no-picture"); });
 
-// The reader shows the picked revision over the whole page; Esc or Back
-// returns to the cards.
+// The reader shows the picked revision in place of the cards, the detail
+// panel still beside it. It is a step in the browser's history, so Back
+// leaves the reader rather than the page.
 function openReader() {
   if (!selected) return;
   const item = state.items.find((i) => i.id === selected.id);
   $("reader-title").textContent = item ? label(state, item) : "";
+  if (!document.body.classList.contains("reading")) history.pushState({ reader: true }, "", location.hash || location.pathname);
+  document.body.classList.add("reading");
   $("preview").hidden = false;
   showPreview({ item: selected.id, digest: selected.digest },
     "/api/revision?item=" + encodeURIComponent(selected.id) + "&digest=" + encodeURIComponent(selected.digest));
 }
-function closeReader() {
+function hideReader() {
+  document.body.classList.remove("reading");
   $("preview").hidden = true;
   clearPreview();
 }
+function closeReader() {
+  if (history.state && history.state.reader) history.back();
+  else hideReader();
+}
+window.addEventListener("popstate", () => { if (document.body.classList.contains("reading")) hideReader(); });
 $("open-reader").onclick = openReader;
 $("detail-frame").onclick = openReader;
 $("reader-back").onclick = closeReader;
@@ -240,9 +271,13 @@ function close() {
 $("close").onclick = close;
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.target.closest("input, textarea, select")) return;
-  if (!$("preview").hidden) closeReader();
+  if (document.body.classList.contains("reading")) closeReader();
   else if (selected) close();
 });
+
+// The picture is as tall as the reader drags it.
+splitter({ handle: $("picture-splitter"), target: $("detail-frame"), axis: "y", min: 120,
+  max: () => Math.max(160, window.innerHeight - 280), key: "dgs-doc-size-browse-picture" });
 
 // The detail panel is as wide as the reader drags it, and never so narrow
 // that its fields do not fit.

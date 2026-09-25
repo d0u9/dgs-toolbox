@@ -33,12 +33,15 @@ across the top narrows them: search (fields and the text on the page), type,
 a select for every distinguishing key any Template has, expiry and kind. They
 sort by date added, expiry, name or type. The layout, sort and order are
 remembered in the browser. A thumbnail too tall or wide for its card shows
-its middle. Picking one opens a detail panel beside the cards — a small
-picture of the picked revision's first page, then fields, revisions, notes,
-similar Items, and apart at the foot, delete. The panel is as wide as the
-reader drags it, never narrower than 320px. Double-clicking a card, or the
-picture, opens the revision over the whole page; Esc goes back, and Esc
-again, or ×, closes the panel.
+its middle. Picking one opens a detail panel beside the cards. At its top,
+fixed while the rest scrolls, is the picked revision one page at a time (‹ ›
+turn it), as tall as the reader drags it. Below scroll the fields,
+revisions, notes, similar Items, and apart at the foot, delete. The panel is
+as wide as the reader drags it, never narrower than 320px. Double-clicking a
+card, or the picture, opens the revision in place of the cards, the panel
+still beside it without its picture. Opening it is a step in the browser's
+history: the browser's Back, Esc or ← Back return to the cards; Esc again,
+or ×, closes the panel.
 
 Expiry is read from the first of `expires`, `expiry`, `expires_at`,
 `expiry_date` and `valid_until` that HEAD has, by the server
