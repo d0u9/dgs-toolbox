@@ -33,7 +33,7 @@ body { display: flex; flex-direction: column; }
 .form-field .req { color: var(--error); }
 .action {
   margin: var(--space-xs) 14px; padding: 6px 16px; font: inherit; font-weight: 600;
-  color: var(--on-primary); background: var(--primary); border: 0; border-radius: var(--radius-pill); cursor: pointer;
+  color: var(--on-primary); background: var(--primary); border: 0; border-radius: var(--radius-md); cursor: pointer;
 }
 .action:disabled { background: var(--steel); cursor: default; }
 .fields { margin: 0 14px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
@@ -42,7 +42,7 @@ body { display: flex; flex-direction: column; }
 .small {
   float: right; padding: 1px 8px; font: inherit; font-size: var(--font-size-xs);
   color: var(--primary); background: var(--paper); border: 1px solid var(--primary);
-  border-radius: var(--radius-pill); cursor: pointer;
+  border-radius: var(--radius-md); cursor: pointer;
 }
 .kind { margin: 0 14px; color: var(--graphite); }
 .topbar-link { color: var(--graphite); text-decoration: none; padding: 4px 8px; border-radius: var(--radius-md); }
@@ -111,12 +111,12 @@ body { display: flex; flex-direction: column; }
 .small-inline {
   align-self: flex-start; padding: 1px 8px; font: inherit; font-size: var(--font-size-xs);
   color: var(--primary); background: var(--paper); border: 1px solid var(--primary);
-  border-radius: var(--radius-pill); cursor: pointer;
+  border-radius: var(--radius-md); cursor: pointer;
 }
 .key-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 14px var(--space-xs); align-items: center; font-size: var(--font-size-xs); }
 .chip {
   padding: 1px 8px; font: inherit; font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--charcoal); background: var(--fog); border: 0; border-radius: var(--radius-pill); cursor: pointer;
+  color: var(--charcoal); background: var(--fog); border: 0; border-radius: var(--radius-md); cursor: pointer;
 }
 .chip:hover { background: var(--primary-soft); color: var(--primary); }
 .buttons { display: flex; }

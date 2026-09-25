@@ -369,8 +369,9 @@ and its name in the monospace face, and a hairline down every open folder so
 depth reads at a glance. A click on a folder opens or shuts it. A page links
 `/ui/filetree.css`, imports `fileTree` from `/ui/filetree.js` and passes the
 files with what only it knows: which row is picked, what a click on a file
-does or where it links, a short note drawn at the right of a row, and a
-green check after the name of a file that is already taken in. The tree draws
+does or where it links, a short note drawn at the right of a row, and
+which files are marked — already taken in: a marked file is drawn green, its
+file icon holding a check. The tree draws
 and reports clicks; what a row means stays with the page.
 
 It also carries the **splitter**: the hairline between two panes that the

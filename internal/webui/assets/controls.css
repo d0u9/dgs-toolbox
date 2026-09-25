@@ -33,11 +33,11 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .button.primary:hover { background: var(--primary-bright); border-color: var(--primary-bright); }
 .button.primary:active { background: var(--primary-deep); border-color: var(--primary-deep); }
 
-/* A pill that holds a setting rather than starting an action. */
+/* A small square-cornered button that holds a setting rather than starting an action. */
 .chip {
   padding: 1px var(--control-pad-x);
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--paper);
   color: var(--graphite);
   font-size: var(--font-size-xs);
