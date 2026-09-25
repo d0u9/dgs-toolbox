@@ -52,16 +52,11 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	for _, item := range items {
-		for _, revision := range item.Revisions {
-			if revision.Digest == digest {
-				return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, item.Type, item.ID)
-			}
-		}
-		if request.Template.Kind == KindDocument && item.Kind == KindDocument &&
-			item.Type == request.Template.Type && sameDistinguishing(request.Template, item.Fields, fields) {
-			return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, item.Type, item.ID)
-		}
+	if other, ok := holder(items, digest); ok {
+		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
+	}
+	if other, ok := taken(request.Template, items, fields, ""); ok {
+		return Item{}, fmt.Errorf("%w: %s %s; add the PDF to it as a revision", ErrTaken, other.Type, other.ID)
 	}
 	id, err := NewID(request.Now)
 	if err != nil {

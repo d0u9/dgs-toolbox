@@ -40,16 +40,22 @@
     <form id="import" hidden>
       <h2 class="panel-head">Import</h2>
       <label class="field"><span>Template</span><select id="template"></select></label>
+      <label class="field" id="into-field"><span>Into</span><select id="into"></select></label>
       <div id="fields"></div>
       <p id="import-message" class="message"></p>
-      <button id="import-button" type="submit">Import</button>
+      <button id="import-button" class="action" type="submit">Import</button>
       <p class="message">The PDF is copied into the tree and read back before it counts. This file stays where it is.</p>
     </form>
     <div id="detail" hidden>
       <h2 class="panel-head" id="detail-head"></h2>
-      <dl id="detail-fields" class="fields"></dl>
+      <form id="edit">
+        <div id="edit-fields"></div>
+        <p id="edit-message" class="message"></p>
+        <button id="save-button" class="action" type="submit">Save fields</button>
+      </form>
       <h2 class="panel-head">Revisions</h2>
       <ul id="revisions" class="rows"></ul>
+      <p id="head-message" class="message"></p>
     </div>
   </aside>
 </main>
