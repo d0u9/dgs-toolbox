@@ -1,6 +1,6 @@
 // Views: build a layout from keys and see, as it is typed, the tree an
 // export of it would write. The server computes the plan; this draws it.
-import { $, api, el, loadState, post, label, planNodes, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
+import { $, api, el, loadState, post, label, planNodes, templateOf, inputFor, fieldsOf, fieldsAt, frame, say, targetFolder, rememberTargetFolder } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openFile } from "/ui/filedialog.js";
 
@@ -19,6 +19,8 @@ async function load() {
   keys = answer.keys;
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
   const wanted = decodeURIComponent(location.hash.slice(1));
+  // #new:<target> opens a new View going to that Target.
+  if (wanted.startsWith("new:")) return open({ ...blank(), target: wanted.slice(4) }, "");
   const found = views.find((v) => v.name === wanted) || views[0];
   open(found || blank(), found ? found.name : "");
 }
@@ -419,12 +421,9 @@ async function loadTargets() {
 
 // A Target goes to the folder last chosen for it on this machine, else its
 // own folder from targets.yaml.
-const targetKey = (name) => "dgs-doc-target:" + (state.name || "") + ":" + name;
 function folderFor(name) {
-  let chosen = "";
-  try { chosen = localStorage.getItem(targetKey(name)) || ""; } catch { /* none */ }
   const t = targets.find((x) => x.name === name);
-  return chosen || (t ? t.default : "") || "";
+  return t ? targetFolder(state, t) : "";
 }
 const chosenFolders = () => Object.fromEntries(targets.map((t) => [t.name, folderFor(t.name)]).filter(([, f]) => f));
 
@@ -438,7 +437,7 @@ async function chooseFolder(name) {
   });
   if (!chosen) return;
   const path = Array.isArray(chosen) ? chosen[0] : chosen;
-  try { localStorage.setItem(targetKey(name), path); } catch { /* not kept */ }
+  rememberTargetFolder(state, name, path);
   if (path !== t.default && confirm("Make " + path + " " + name + "'s own folder, in the tree's targets.yaml?\n\nOK: every machine starts from it.\nCancel: only this browser remembers it.")) {
     await saveTargets(targets.map((x) => x.name === name ? { ...plain(x), folder: path } : plain(x)));
   }
