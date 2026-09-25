@@ -1,6 +1,7 @@
 // Views: build a layout from keys and see, as it is typed, the tree an
 // export of it would write. The server computes the plan; this draws it.
 import { $, el, loadState, post, label, templateOf, inputFor, fieldsOf, frame, say } from "/common.js";
+import { fileTree } from "/ui/filetree.js";
 
 let state = { templates: [], items: [] };
 let views = [];
@@ -223,20 +224,10 @@ function fillAll(byItem) {
 
 // drawTree nests the plan's paths into folders, folders first.
 function drawTree(files, name) {
-  const root = { dirs: {}, files: [] };
-  for (const f of files) {
-    const parts = f.path.split("/");
-    let node = root;
-    for (const dir of parts.slice(0, -1)) node = node.dirs[dir] ||= { dirs: {}, files: [] };
-    node.files.push({ leaf: parts[parts.length - 1], file: f });
-  }
-  const draw = (node) => el("ul", {},
-    ...Object.keys(node.dirs).sort().map((d) => el("li", { className: "dir" },
-      el("details", { open: true }, el("summary", {}, d + "/"), draw(node.dirs[d])))),
-    ...node.files.map(({ leaf, file }) => el("li", { className: "file" },
-      el("a", { href: "/browse/#" + file.item, title: "Open in Browse" }, leaf),
-      el("span", { className: "sub-inline" }, name(file.item)))));
-  return draw(root);
+  return fileTree(files, {
+    href: (f) => "/browse/#" + f.item,
+    fileExtra: (f) => el("span", {}, name(f.item)),
+  });
 }
 
 $("form").addEventListener("input", changed);

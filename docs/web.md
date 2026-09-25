@@ -363,6 +363,15 @@ page that only opens leaves `Writable` off, and then nothing the dialog can
 reach changes anything on disk. The computation behind all of them is
 `internal/filebrowse`, so a TUI file view lists a folder with the same code.
 
+It also carries the **file tree**: a set of slash-separated paths drawn as
+nested folders, folders first, each row with an outline folder or file icon
+and its name in the monospace face, and a hairline down every open folder so
+depth reads at a glance. A click on a folder opens or shuts it. A page links
+`/ui/filetree.css`, imports `fileTree` from `/ui/filetree.js` and passes the
+files with what only it knows: which row is picked, what a click on a file
+does or where it links, and a short note drawn at the right of a row. The
+tree draws and reports clicks; what a row means stays with the page.
+
 It also carries the **status bar**: the one row along the bottom of a page
 where every piece of news lands. A page links `/ui/statusbar.css`, imports
 `/ui/statusbar.js`, calls `mount()` once and then `show`, `showError`,
