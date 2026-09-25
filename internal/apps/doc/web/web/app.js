@@ -85,19 +85,77 @@
     if (shown) detail(shown);
   }
 
+  let editing = "";
+
   function detail(item) {
     $("detail-head").textContent = label(item);
-    $("detail-fields").replaceChildren(
-      ...[["kind", item.kind], ...Object.entries(item.fields)].flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+    const t = template(item.type);
+    if (editing !== item.id + JSON.stringify(item.fields)) {
+      editing = item.id + JSON.stringify(item.fields);
+      $("edit-message").textContent = "";
+      $("edit-fields").replaceChildren(el("p", { className: "kind" }, item.kind),
+        ...(t ? t.fields : Object.keys(item.fields).map((key) => ({ key }))).map((f) => inputFor(f, item.fields[f.key] || "", "")));
+      $("save-button").disabled = !t;
+      $("edit").dataset.item = item.id;
+    }
     $("revisions").replaceChildren(...item.revisions.slice().reverse().map((r) => {
+      const isHead = r.digest === item.head;
       const li = el("li", { onclick: () => pick({ kind: "item", id: item.id, digest: r.digest }) },
+        item.kind === "document" && !isHead ? el("button", {
+          className: "small", type: "button", textContent: "Make HEAD",
+          onclick: (event) => { event.stopPropagation(); makeHead(item.id, r.digest); },
+        }) : null,
         new Date(r.added).toLocaleString(),
-        r.digest === item.head ? el("span", { className: "tag" }, "HEAD") : null,
+        isHead ? el("span", { className: "tag" }, "HEAD") : null,
         el("span", { className: "sub" }, (r.source ? r.source + " · " : "") + r.digest.slice(0, 12)));
       if (selected && selected.kind === "item" && selected.digest === r.digest) li.className = "selected";
       return li;
     }));
   }
+
+  function inputFor(f, value, placeholder) {
+    return el("label", { className: "field" },
+      el("span", {}, f.key, f.required ? el("span", { className: "req" }, " *") : null),
+      el("input", { name: f.key, value, placeholder, spellcheck: false, autocomplete: "off" }));
+  }
+
+  const fieldsOf = (container) => Object.fromEntries(
+    [...container.querySelectorAll("input")].map((input) => [input.name, input.value]));
+
+  async function post(url, body) {
+    const response = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const answer = await response.json();
+    if (!response.ok) throw new Error(answer.error || response.statusText);
+    return answer;
+  }
+
+  async function makeHead(id, digest) {
+    $("head-message").className = "message";
+    $("head-message").textContent = "";
+    try {
+      await post("/api/head", { item: id, digest });
+      await load();
+      pick({ kind: "item", id, digest });
+    } catch (err) {
+      $("head-message").className = "message error";
+      $("head-message").textContent = err.message;
+    }
+  }
+
+  $("edit").onsubmit = async (event) => {
+    event.preventDefault();
+    $("edit-message").className = "message";
+    try {
+      await post("/api/fields", { item: $("edit").dataset.item, fields: fieldsOf($("edit-fields")) });
+      await load();
+      $("edit-message").textContent = "Saved.";
+    } catch (err) {
+      $("edit-message").className = "message error";
+      $("edit-message").textContent = err.message;
+    }
+  };
 
   function drawFields() {
     const select = $("template");
@@ -110,27 +168,30 @@
       $("fields").replaceChildren(el("p", { className: "message" }, "No Templates in templates/."));
       return;
     }
-    $("fields").replaceChildren(...t.fields.map((f) => el("label", { className: "field" },
-      el("span", {}, f.key, f.required ? el("span", { className: "req" }, " *") : null),
-      el("input", { name: f.key, placeholder: (t.defaults || {})[f.key] || "", spellcheck: false, autocomplete: "off" }))));
+    const into = $("into");
+    const was = into.value;
+    const documents = t.kind === "document" ? state.items.filter((i) => i.type === t.type) : [];
+    into.replaceChildren(el("option", { value: "" }, "A new item"),
+      ...documents.map((i) => el("option", { value: i.id }, "New revision of " + label(i))));
+    if (documents.some((i) => i.id === was)) into.value = was;
+    $("into-field").hidden = documents.length === 0;
+    const adding = into.value !== "";
+    $("import-button").textContent = adding ? "Add revision" : "Import";
+    $("fields").replaceChildren(...(adding ? [] : t.fields.map((f) => inputFor(f, "", (t.defaults || {})[f.key] || ""))));
   }
 
   $("template").onchange = drawFields;
+  $("into").onchange = drawFields;
   $("filter").oninput = render;
   $("import").onsubmit = async (event) => {
     event.preventDefault();
-    const fields = {};
-    for (const input of $("fields").querySelectorAll("input")) fields[input.name] = input.value;
     $("import-button").disabled = true;
     $("import-message").className = "message";
     $("import-message").textContent = "Copying and reading back…";
     try {
-      const response = await fetch("/api/import", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: selected.path, type: $("template").value, fields }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || response.statusText);
+      const body = $("into").value
+        ? await post("/api/revisions", { path: selected.path, item: $("into").value })
+        : await post("/api/import", { path: selected.path, type: $("template").value, fields: fieldsOf($("fields")) });
       await load();
       pick({ kind: "item", id: body.id, digest: body.head || body.revisions[0].digest });
     } catch (err) {

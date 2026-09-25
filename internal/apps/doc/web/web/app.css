@@ -31,11 +31,17 @@ body { display: flex; flex-direction: column; }
 .field { display: flex; flex-direction: column; gap: var(--space-xxs); margin: var(--space-xs) 14px; }
 .field span { font-size: var(--font-size-xs); color: var(--graphite); }
 .field .req { color: var(--error); }
-#import-button {
+.action {
   margin: var(--space-xs) 14px; padding: 6px 16px; font: inherit; font-weight: 600;
   color: var(--on-primary); background: var(--primary); border: 0; border-radius: var(--radius-pill); cursor: pointer;
 }
-#import-button:disabled { background: var(--steel); cursor: default; }
+.action:disabled { background: var(--steel); cursor: default; }
 .fields { margin: 0 14px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
 .fields dt { color: var(--graphite); }
 .fields dd { margin: 0; }
+.small {
+  float: right; padding: 1px 8px; font: inherit; font-size: var(--font-size-xs);
+  color: var(--primary); background: var(--paper); border: 1px solid var(--primary);
+  border-radius: var(--radius-pill); cursor: pointer;
+}
+.kind { margin: 0 14px; color: var(--graphite); }
