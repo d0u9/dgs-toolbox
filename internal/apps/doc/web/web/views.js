@@ -46,6 +46,8 @@ function open(v, name) {
   $("dedupe").checked = v.dedupe === "number";
   $("delete").hidden = !name;
   say($("message"), "");
+  say($("export-message"), "");
+  exportStale();
   chips();
   list();
   changed();
@@ -270,4 +272,88 @@ $("delete").addEventListener("click", async () => {
   }
 });
 
-load();
+// Export: a dry run of the saved View into a configured Target, then, when
+// nothing blocks it, the export itself, which the server plans again.
+let targets = [];
+let planned = null; // {view, target} the dry run shown was for
+
+async function loadTargets() {
+  targets = await (await fetch("/api/targets")).json();
+  const was = $("target").value;
+  $("target").replaceChildren(...targets.map((t) => el("option", { value: t.name, title: t.path },
+    t.name + (t.view ? " (last: " + t.view + ")" : ""))));
+  if (targets.some((t) => t.name === was)) $("target").value = was;
+  if (!targets.length) say($("export-message"), "No Targets: add folders under doc.targets in the configuration.");
+  $("dry-run").disabled = !targets.length;
+}
+
+function exportStale() {
+  planned = null;
+  $("run").disabled = true;
+  $("export-plan").replaceChildren();
+}
+
+function saved() {
+  const v = views.find((x) => x.name === editing);
+  return v && JSON.stringify(normal(v)) === JSON.stringify(normal(current()));
+}
+const normal = (v) => ({ name: v.name, query: v.query || {}, selection: v.selection || "head", layout: v.layout,
+  default: v.default ?? null, dedupe: v.dedupe || "" });
+
+async function dryRun() {
+  exportStale();
+  if (!saved()) { say($("export-message"), "Save the View first: an export writes the saved View.", true); return; }
+  const target = targets.find((t) => t.name === $("target").value);
+  if (target && target.error) { say($("export-message"), target.error, true); return; }
+  say($("export-message"), "Reading the Target…");
+  let plan;
+  try {
+    plan = await post("/api/export/plan", { view: editing, target: $("target").value });
+  } catch (error) {
+    say($("export-message"), error.message, true);
+    return;
+  }
+  const incomplete = plan.view.missing.length + plan.view.clashes.length;
+  const changes = plan.add.length + plan.replace.length + plan.remove.length;
+  const section = (title, list, why) => list.length ? el("details", { open: list.length <= 20 },
+    el("summary", {}, title + " (" + list.length + ")"),
+    el("ul", {}, ...list.map((a) => el("li", { className: "mono" }, a.path, why && a.reason ? el("span", { className: "muted" }, " — " + a.reason) : "")))) : null;
+  $("export-plan").replaceChildren(...[
+    section("Blocked", plan.blocked, true), section("Add", plan.add), section("Replace", plan.replace),
+    section("Remove", plan.remove), section("Left as they are, and forgotten", plan.left, true),
+    plan.keep.length ? el("p", { className: "muted" }, plan.keep.length + " already there and unchanged") : null,
+  ].filter(Boolean));
+  if (incomplete) say($("export-message"), "The View is not complete (above); nothing can be exported yet.", true);
+  else if (plan.blocked.length) say($("export-message"), "Some paths are taken by files this export did not write; move them first.", true);
+  else if (!changes) say($("export-message"), plan.target + " is up to date.");
+  else {
+    say($("export-message"), changes + " change" + (changes === 1 ? "" : "s") + " to " + plan.target + ".");
+    planned = { view: editing, target: $("target").value };
+    $("run").disabled = false;
+  }
+}
+
+async function run() {
+  if (!planned) return;
+  $("run").disabled = true;
+  $("dry-run").disabled = true;
+  say($("export-message"), "Exporting: copying and reading back…");
+  try {
+    const result = await post("/api/export", planned);
+    say($("export-message"), "Exported: " + result.written + " written, " + result.removed + " removed, " + result.kept + " unchanged.");
+    $("export-plan").replaceChildren();
+    await loadTargets();
+  } catch (error) {
+    say($("export-message"), error.message, true);
+  } finally {
+    planned = null;
+    $("dry-run").disabled = !targets.length;
+  }
+}
+
+$("dry-run").addEventListener("click", dryRun);
+$("run").addEventListener("click", run);
+$("target").addEventListener("change", exportStale);
+$("form").addEventListener("input", exportStale);
+
+load().then(loadTargets);

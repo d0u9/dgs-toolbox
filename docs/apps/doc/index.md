@@ -257,13 +257,29 @@ matches its SHA-256.
 Export removes only files it wrote itself, recorded in a manifest at the
 Target root; anything else under the Target is never touched.
 
+Targets are named folders in [`doc.targets`](../../configuration/doc.md). The
+Views page exports the saved View to one of them: a dry run lists what would be
+added, replaced and removed, and the export itself plans again from the state
+at that moment. Nothing is written while the View is incomplete. A Target may
+not overlap the tree.
+
+- A wanted path held by a file the manifest does not record blocks the export:
+  nothing is written until the owner moves it. A file already there with the
+  wanted content is adopted instead.
+- A recorded file changed since it was exported is never replaced or removed.
+  Wanted, it blocks the export; no longer wanted, it is left where it is and
+  the manifest forgets it.
+- Folders a removal leaves empty are removed.
+- The manifest is rewritten at the end, and also when an export stops early,
+  so the next export only does what is left.
+
 Export is incremental: a file whose path and SHA-256 the manifest already
 records, and which still reads back to that digest, is not written again.
 
 The manifest, `dgs-export.json`, records for each file its path, digest, the
 Item's ID and revision, and the Item's fields at export time. That is enough
 to import a Target back into a repository: `dgs doc` reads the manifest and
-recreates the Items, matching existing ones as a merge does.
+recreates the Items, matching existing ones as a merge does (M7).
 
 ## Verify
 
