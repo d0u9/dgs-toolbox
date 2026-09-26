@@ -103,7 +103,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	put(t, full, tree.Item{ID: "F1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "jane"}, Tags: []string{"home"}}, "old passport")
 	put(t, full, tree.Item{ID: "F2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "jane"}}, "bill 1")
 	// The sub-tree has the renewed passport, the same bill, and a new bill.
-	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "JANE"}, Notes: "renewed in Sydney", Tags: []string{"travel"}, Frequent: true}, "new passport")
+	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "JANE"}, Notes: "renewed in Sydney", Tags: []string{"travel"}, Frequent: true, Retired: true, RetiredReason: "moved"}, "new passport")
 	put(t, sub, tree.Item{ID: "S2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "jane"}}, "bill 1")
 	put(t, sub, tree.Item{ID: "S3", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom"}}, "bill 2")
 	if err := view.Save(sub, view.View{Name: "all", Selection: view.Head, Layout: "{owner}/{type}.{ext}"}); err != nil {
@@ -116,7 +116,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 		t.Fatalf("plan: %+v", p)
 	}
 	c := p.Changed[0]
-	if c.Item != "F1" || c.Head != digest("new passport") || len(c.Digests) != 1 || c.Notes != "renewed in Sydney" || len(c.Tags) != 1 || c.Tags[0] != "travel" || !c.Frequent {
+	if c.Item != "F1" || c.Head != digest("new passport") || len(c.Digests) != 1 || c.Notes != "renewed in Sydney" || len(c.Tags) != 1 || c.Tags[0] != "travel" || !c.Frequent || !c.Retired || c.RetiredReason != "moved" {
 		t.Fatalf("change: %+v", c)
 	}
 	// owner differs in case only in the match, but the fields still differ.
@@ -137,10 +137,10 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	if err != nil || f1.Head != digest("new passport") || len(f1.Revisions) != 2 || f1.Fields["owner"] != "jane" || f1.Notes != "renewed in Sydney" || len(f1.Tags) != 2 || f1.Tags[0] != "home" || f1.Tags[1] != "travel" {
 		t.Fatalf("F1: %v %+v", err, f1)
 	}
-	if !f1.Frequent || len(f1.History) != 1 || f1.History[0].Action != "merge" || f1.History[0].At != now.Format(time.RFC3339) {
+	if !f1.Frequent || !f1.Retired || f1.RetiredReason != "moved" || len(f1.History) != 1 || f1.History[0].Action != "merge" || f1.History[0].At != now.Format(time.RFC3339) {
 		t.Fatalf("F1 history: %+v", f1)
 	}
-	for _, key := range []string{"revisions", "head", "notes", "tags", "frequent"} {
+	for _, key := range []string{"revisions", "head", "notes", "tags", "frequent", "retired"} {
 		if _, ok := f1.History[0].Changes[key]; !ok {
 			t.Errorf("merge event lacks %s: %+v", key, f1.History[0].Changes)
 		}

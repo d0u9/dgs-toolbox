@@ -15,8 +15,13 @@ let selectedTemplate = "";
 // typeChosen is set once the reader picks a Template for this PDF; a type
 // proposed from the text never overrides that.
 let typeChosen = false;
+// The type the first page most looks like, marked in the list.
+let suggestedType = "";
+// Past this many Templates the list gets a filter.
+const FILTER_FROM = 6;
 const closed = new Set();
 const tags = window.tagField($("tags"), { known: () => tagUses(state.items), placeholder: "Add tags" });
+const revisionTags = window.tagField($("revision-tags"), { known: () => tagUses(state.items), placeholder: "Add tags" });
 let metadataItem = "";
 
 function remembered() {
@@ -87,11 +92,20 @@ function readAhead(path) {
   if (next.length) post("/api/ahead", { dir, paths: next }).catch(() => {});
 }
 
+$("template-filter").addEventListener("input", () => drawFields());
+
 function drawFields() {
   if (!templateOf(state, selectedTemplate)) selectedTemplate = state.templates[0]?.type || "";
-  $("template").replaceChildren(...state.templates.map((choice) => {
+  // One line per Template: its type, what it is for, and a mark on the one
+  // the page suggests. A filter narrows a long list; the chosen one stays.
+  $("template-filter").hidden = state.templates.length <= FILTER_FROM;
+  const words = $("template-filter").hidden ? [] : $("template-filter").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = state.templates.filter((t) => t.type === selectedTemplate ||
+    words.every((w) => (t.type + " " + (t.description || "")).toLowerCase().includes(w)));
+  $("template").replaceChildren(...shown.map((choice) => {
     const button = el("button", { type: "button", title: (choice.description || choice.type) + " (" + choice.kind + ")", className: "template-choice" + (choice.type === selectedTemplate ? " selected" : "") },
-      el("strong", {}, choice.type), el("small", {}, choice.description || choice.kind));
+      el("strong", {}, choice.type), el("small", {}, choice.description || choice.kind),
+      choice.type === suggestedType ? el("span", { className: "template-suggested" }, "suggested") : null);
     button.setAttribute("aria-pressed", String(choice.type === selectedTemplate));
     button.onclick = () => {
       typeChosen = true;
@@ -107,6 +121,7 @@ function drawFields() {
   if (!t) {
     $("into-field").hidden = true;
     $("tags-field").hidden = true;
+    $("revision-tags-field").hidden = true;
     $("notes-field").hidden = true;
     $("fields").replaceChildren(el("p", { className: "message" }, "No Templates in the tree's templates folder."));
     return;
@@ -139,8 +154,11 @@ function drawFields() {
     const item = state.items.find((i) => i.id === into.value);
     $("notes").value = item?.notes || "";
     tags.set(item?.tags || []);
+    revisionTags.set([]);
     metadataItem = into.value;
   }
+  // A new revision can have tags of its own, beside the Item's.
+  $("revision-tags-field").hidden = !adding;
   $("tags-field").hidden = false;
   $("notes-field").hidden = false;
   $("import-button").textContent = adding ? "Add revision" : "Import";
@@ -221,6 +239,10 @@ function proposeType(answer) {
     return;
   }
   hint.textContent = "Looks like " + answer.type + " (" + Math.round(top.score * 100) + "% like one already filed).";
+  if (suggestedType !== answer.type) {
+    suggestedType = answer.type;
+    drawFields();
+  }
   if (!typeChosen && selectedTemplate !== answer.type && templateOf(state, answer.type)) {
     selectedTemplate = answer.type;
     drawFields();
@@ -234,7 +256,9 @@ $("import").onsubmit = async (event) => {
   say($("import-message"), "Copying and reading back…");
   try {
     if ($("into").value && !$("into-field").hidden) {
-      await post("/api/revisions", { dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get() });
+      revisionTags.commit();
+      await post("/api/revisions", { dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
+        revision_tags: revisionTags.get() });
     } else {
       await post("/api/import", { dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get() });
     }

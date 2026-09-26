@@ -32,21 +32,33 @@ body { display: flex; flex-direction: column; }
 .form-field[hidden] { display: none; }
 .form-field span { font-size: var(--font-size-xs); color: var(--graphite); }
 .form-field textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+/* The Templates to import with: one line each in a framed list that scrolls
+   past seven, a filter above it once there are many. The chosen one has a
+   blue bar at its edge; the one the page suggests says so. */
+.template-pick { display: flex; flex-direction: column; gap: 6px; }
+.template-filter { width: 100%; box-sizing: border-box; }
+.template-filter[hidden] { display: none; }
 .template-choices {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start;
-  gap: 5px; max-height: 176px; overflow-y: auto;
+  display: flex; flex-direction: column; max-height: calc(7 * 30px + 2px); overflow-y: auto;
+  border: 1px solid var(--hairline-strong); border-radius: var(--radius-md); background: var(--paper);
 }
 .template-choice {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0;
-  padding: 5px 8px; font: inherit; line-height: 1.2; text-align: left; cursor: pointer;
-  color: var(--ink); background: var(--paper); border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-md);
+  position: relative; flex: none; display: flex; align-items: baseline; gap: 8px; min-width: 0; height: 30px;
+  padding: 0 10px 0 12px; font: inherit; text-align: left; cursor: pointer; color: var(--ink);
+  background: none; border: 0; border-bottom: 1px solid var(--hairline); line-height: 30px;
 }
+.template-choice:last-child { border-bottom: 0; }
 .template-choice:hover { background: var(--hover); }
-.template-choice.selected { color: var(--primary); background: var(--selected); border-color: var(--primary); }
-.template-choice:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.template-choice strong { display: block; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: var(--font-size-sm); }
-.template-choice small { display: block; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--graphite); font-size: var(--font-size-xs); }
+.template-choice.selected { background: var(--selected); }
+.template-choice.selected::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 0 2px 2px 0; background: var(--primary); }
+.template-choice.selected strong { color: var(--primary); }
+.template-choice:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.template-choice strong { flex: none; max-width: 55%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: var(--font-size-sm); font-weight: 600; }
+.template-choice small { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--graphite); font-size: var(--font-size-xs); }
+.template-suggested {
+  flex: none; align-self: center; padding: 0 6px; line-height: 16px; border-radius: 8px;
+  font-size: 10px; color: var(--primary); background: var(--primary-soft, #c9e0fc);
+}
 .into-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; max-height: 190px; overflow-y: auto; }
 .into-choice {
   min-width: 0; padding: 3px 5px; font: inherit; line-height: 1.15; text-align: left; cursor: pointer;
@@ -285,6 +297,16 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .badge-soon { background: #fdf0d5; color: #8a5300; }
 .badge-valid { background: #e3f3e7; color: #1a7f37; }
 .badge-permanent { background: var(--fog); color: var(--charcoal); }
+/* Retired: no longer used, not expired. Faded, in grey, never in a warning
+   colour — nothing is wrong with it. */
+.badge-retired { background: var(--fog); color: var(--graphite); }
+.card.retired .card-thumb-wrap { opacity: .45; filter: grayscale(1); }
+.card.retired .card-body { opacity: .6; }
+.card.retired:hover .card-thumb-wrap, .card.retired:hover .card-body { opacity: 1; filter: none; }
+.table-row.retired td { color: var(--graphite); }
+.table-row.retired .table-thumb { opacity: .45; filter: grayscale(1); }
+.retire-form { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.retire-form input { width: 100%; box-sizing: border-box; }
 
 /* Fixed layout: each column is as wide as its <col> says, set by dragging
    the header's right edge; what does not fit is cut short. */
@@ -356,6 +378,10 @@ th[aria-sort="ascending"] .th-sort, th[aria-sort="descending"] .th-sort { color:
 .rev { display: flex; align-items: center; gap: 8px; }
 .rev-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .rev .button { flex: none; }
+.rev-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.tags-label { display: block; margin-bottom: 4px; font-size: var(--font-size-xs); color: var(--graphite); }
+#revision-tags-form { margin-top: 12px; }
+#revision-tags-form[hidden] { display: none; }
 .side.detail .danger-zone { box-sizing: border-box; width: 100%; }
 .side.detail .danger-zone .danger-note { overflow-wrap: anywhere; }
 .side.detail .danger-zone .button { margin: 0; }

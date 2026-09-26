@@ -129,12 +129,21 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 		t.Fatalf("marks: %+v", files)
 	}
 	first := item.Head
-	rec := do(h, "POST", "/api/revisions", `{"dir":`+q(scans)+`,"path":"jane/renewed.pdf","item":"`+item.ID+`","notes":"renewed in 2026","tags":["Current","current"]}`)
+	rec := do(h, "POST", "/api/revisions", `{"dir":`+q(scans)+`,"path":"jane/renewed.pdf","item":"`+item.ID+`","notes":"renewed in 2026","tags":["Current","current"],"revision_tags":["Reissued"]}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("add: %d %s", rec.Code, rec.Body.String())
 	}
 	if item = state(t, h).Items[0]; len(item.Revisions) != 2 || item.Head == first || item.Notes != "renewed in 2026" || len(item.Tags) != 1 || item.Tags[0] != "current" {
 		t.Fatalf("after add: %+v", item)
+	}
+	if rev := item.Revisions[1]; len(rev.Tags) != 1 || rev.Tags[0] != "reissued" || len(item.Revisions[0].Tags) != 0 {
+		t.Fatalf("revision tags: %+v", item.Revisions)
+	}
+	if rec := do(h, "POST", "/api/revision-tags", `{"item":"`+item.ID+`","digest":"`+first+`","tags":["Original"]}`); rec.Code != http.StatusOK {
+		t.Fatalf("revision tags: %d %s", rec.Code, rec.Body.String())
+	}
+	if item = state(t, h).Items[0]; len(item.Revisions[0].Tags) != 1 || item.Revisions[0].Tags[0] != "original" {
+		t.Fatalf("after revision tags: %+v", item.Revisions)
 	}
 	if rec := do(h, "GET", "/api/revision?item="+item.ID+"&digest="+first, ""); rec.Body.String() != "%PDF-1.4 x" {
 		t.Fatalf("revision: %d", rec.Code)
@@ -203,17 +212,24 @@ func TestFrequentAndLog(t *testing.T) {
 			t.Fatalf("frequent: %+v", item)
 		}
 	}
+	if rec := do(h, "POST", "/api/retired", `{"item":"`+id+`","retired":true,"reason":"left"}`); rec.Code != http.StatusOK {
+		t.Fatalf("retired: %d %s", rec.Code, rec.Body.String())
+	}
+	if item := state(t, h).Items[0]; !item.Retired || item.RetiredReason != "left" {
+		t.Fatalf("retired: %+v", item)
+	}
+	do(h, "POST", "/api/retired", `{"item":"`+id+`","retired":false}`)
 	var log struct{ Entries []tree.LogEntry }
 	if err := json.Unmarshal(do(h, "GET", "/api/history", "").Body.Bytes(), &log); err != nil {
 		t.Fatal(err)
 	}
-	if len(log.Entries) != 3 || log.Entries[0].Item != id || log.Entries[0].Event.Action != "mark_frequent" {
+	if len(log.Entries) != 5 || log.Entries[0].Item != id || log.Entries[0].Event.Action != "unretire" {
 		t.Fatalf("log: %+v", log.Entries)
 	}
 	if err := json.Unmarshal(do(h, "GET", "/api/history?item="+id, "").Body.Bytes(), &log); err != nil {
 		t.Fatal(err)
 	}
-	if len(log.Entries) != 2 || log.Entries[1].Event.Action != "import" {
+	if len(log.Entries) != 4 || log.Entries[3].Event.Action != "import" {
 		t.Fatalf("one Item's log: %+v", log.Entries)
 	}
 }
