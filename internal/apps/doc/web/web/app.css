@@ -146,7 +146,7 @@ body { display: flex; flex-direction: column; }
 .form-field input.short { width: 90px; }
 .mono { font-family: var(--font-mono, ui-monospace, monospace); }
 .condition { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.condition input { flex: 1; min-width: 0; }
+.condition input:not([type=checkbox]) { flex: 1; min-width: 0; }
 .small-inline {
   align-self: flex-start; padding: 1px 8px; font: inherit; font-size: var(--font-size-xs);
   color: var(--primary); background: var(--paper); border: 1px solid var(--primary);
@@ -408,7 +408,7 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .view-group h3, .result-head h3 { margin: 0; font-size: var(--font-size-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--graphite); }
 .vf { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; min-height: 28px; }
 .vf-label { font-size: var(--font-size-sm); color: var(--graphite); }
-.vf input:not([type=checkbox]):not([type=radio]), .vf select, .condition select, .condition input {
+.vf input:not([type=checkbox]):not([type=radio]), .vf select, .condition select, .condition input:not([type=checkbox]) {
   height: 28px; box-sizing: border-box; padding: 0 8px; font: inherit;
   border: 1px solid var(--hairline-strong); border-radius: var(--radius-md); background: var(--paper);
 }
