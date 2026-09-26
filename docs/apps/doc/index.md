@@ -134,7 +134,7 @@ owner: the owner field is one value everywhere, in a distinguishing key, a
 layout's `{owner}` and a rule's query. So the letter is imported once, as the
 owner's (the person named first), and shared with the other: Shared with, in
 the detail panel, lists the people it is shared with, from the owner field's
-options. It is kept in the sidecar as `shared_with`, sorted, never naming the
+options, or Import's Shared with for a new Item. It is kept in the sidecar as `shared_with`, sorted, never naming the
 owner, and changing it is a history event. A merge adds the Source's people
 to the matched Item's.
 

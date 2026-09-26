@@ -69,6 +69,7 @@ function pick(path) {
   if (path !== selected) {
     $("notes").value = "";
     tags.set([]);
+    $("shared").replaceChildren();
     metadataItem = "";
     showPreview({ dir, path }, api("/api/source/file?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path)));
     say($("import-message"), "");
@@ -170,6 +171,7 @@ function drawFields() {
     revisionTags.set([]);
     metadataItem = into.value;
   }
+  drawShared(t, adding);
   // Every revision can have tags of its own, beside the Item's, which are
   // shown too. A new Item's first revision also gets the Item's tags.
   $("revision-tags-field").hidden = noPDF;
@@ -277,7 +279,7 @@ $("import").onsubmit = async (event) => {
         revision_tags: revisionTags.get() });
     } else {
       const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
-        revision_tags: noPDF ? [] : (revisionTags.commit(), revisionTags.get()) });
+        revision_tags: noPDF ? [] : (revisionTags.commit(), revisionTags.get()), shared_with: sharedWith() });
       if (saved.warning) { state = await loadState(); render(); say($("import-message"), saved.warning, true); return; }
     }
     const done = selected;
@@ -299,13 +301,26 @@ $("import").onsubmit = async (event) => {
   }
 };
 
+// drawShared offers a new Item's sharing: the owner field's other options,
+// the owner chosen left out. Ticks survive a redraw.
+function drawShared(t, adding) {
+  const options = (t.fields.find((f) => f.key === "owner")?.options) || [];
+  const owner = $("fields").querySelector('[name="owner"], [data-key="owner"]')?.value || "";
+  const ticked = sharedWith();
+  const people = options.filter((p) => p !== owner);
+  $("shared-field").hidden = adding || !people.length;
+  $("shared").replaceChildren(...people.map((p) => el("label", {},
+    el("input", { type: "checkbox", value: p, checked: ticked.includes(p) }), " " + p)));
+}
+const sharedWith = () => $("shared-field").hidden ? [] : [...$("shared").querySelectorAll("input:checked")].map((i) => i.value);
+
 $("cancel-without-pdf").onclick = () => {
   noPDF = false; clearPreview(); $("empty").textContent = "Open a folder, then pick a PDF."; render();
 };
 
 $("without-pdf").onclick = () => {
   noPDF = true; selected = ""; $("into").value = ""; suggestions = {}; suggestedType = ""; typeChosen = true;
-  $("notes").value = ""; tags.set([]); revisionTags.set([]); metadataItem = "";
+  $("notes").value = ""; tags.set([]); revisionTags.set([]); $("shared").replaceChildren(); metadataItem = "";
   clearPreview(); $("type-hint").hidden = true;
   $("empty").textContent = "Enter the details now. Attach a PDF later from Browse.";
   render(); drawFields();
@@ -347,3 +362,8 @@ async function drawReplaces() {
     if (candidates.some((i) => i.id === previous)) $("replaces").value = previous;
   } catch (err) { if (request === replacesRequest) say($("import-message"), err.message, true); }
 }
+// Choosing the owner takes them out of the people it is shared with.
+$("fields").addEventListener("change", (event) => {
+  const t = templateOf(state, selectedTemplate);
+  if (t && event.target.name === "owner") drawShared(t, $("into").value !== "");
+});

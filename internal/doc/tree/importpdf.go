@@ -29,7 +29,9 @@ type ImportRequest struct {
 	// RevisionTags are the first revision's own. It starts with the Item's
 	// tags, since at first the Item is that one revision; these are added.
 	RevisionTags []string
-	Now          time.Time
+	// SharedWith are the people besides the owner the Item belongs to.
+	SharedWith []string
+	Now        time.Time
 }
 
 // ErrDuplicate is returned when the PDF is already kept in the tree.
@@ -68,6 +70,10 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if err := linked(request.Template, items, fields, ""); err != nil {
 		return Item{}, err
 	}
+	shared, err := sharedList(fields["owner"], request.SharedWith)
+	if err != nil {
+		return Item{}, err
+	}
 	id, err := NewID(request.Now)
 	if err != nil {
 		return Item{}, err
@@ -87,7 +93,7 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 		_ = os.Remove(Dir(request.Root, id))
 		return Item{}, fmt.Errorf("%s changed while it was being imported", request.Source)
 	}
-	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags)}
+	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags), SharedWith: shared}
 	ref := item.saveSnapshot(request.Template.Type, fields, digest, filepath.Base(request.Source), request.Now)
 	item.Revisions[len(item.Revisions)-1].Tags = tag.List(append(append([]string(nil), item.Tags...), request.RevisionTags...))
 	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "import", Digest: ref}}

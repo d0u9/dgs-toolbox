@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,5 +152,22 @@ func TestSupersessionOwnerIgnoresSurroundingSpace(t *testing.T) {
 	}
 	if err := tree.ValidateSupersession(root, "old", "visa", map[string]string{"owner": " alex", "country": "AU"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A new Item can be shared as it is made, never with its own owner.
+func TestCreateShared(t *testing.T) {
+	root, tpl := cardTree(t)
+	now := time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC)
+	fields := map[string]string{"owner": "alex", "country": "AU", "number": "1"}
+	if _, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: fields, SharedWith: []string{"Alex"}, Now: now}); err == nil {
+		t.Fatal("shared with its owner")
+	}
+	item, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: fields, SharedWith: []string{"emma", " ann ", "emma"}, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := tree.FindItem(root, item.ID); strings.Join(got.SharedWith, ",") != "ann,emma" {
+		t.Fatalf("shared with %v", got.SharedWith)
 	}
 }
