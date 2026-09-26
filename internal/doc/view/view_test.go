@@ -401,3 +401,18 @@ func TestAlternativesAreNumberedTogether(t *testing.T) {
 		t.Fatalf("%+v %v", layout, err)
 	}
 }
+
+// A condition names a country in any form and ignores case.
+func TestMatchesCountryInAnyForm(t *testing.T) {
+	item := tree.Item{Type: "id_card", Fields: map[string]string{"country": "中国", "owner": "Alex"}}
+	for _, query := range []map[string]Values{
+		{"country": {"CN"}}, {"country": {"CHN"}}, {"country": {"China"}}, {"owner": {"alex"}},
+	} {
+		if !Matches(query, item) {
+			t.Fatalf("%v does not match", query)
+		}
+	}
+	if Matches(map[string]Values{"country": {"AU"}}, item) {
+		t.Fatal("AU matches 中国")
+	}
+}

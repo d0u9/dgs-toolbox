@@ -619,3 +619,4 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 }
 
 .side.detail form[hidden], #replaces-field[hidden], #undo-supersession[hidden] { display: none; }
+.condition .choices { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; }
