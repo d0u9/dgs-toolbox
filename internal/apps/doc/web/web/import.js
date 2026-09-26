@@ -170,8 +170,9 @@ function drawFields() {
     revisionTags.set([]);
     metadataItem = into.value;
   }
-  // A new revision can have tags of its own, beside the Item's.
-  $("revision-tags-field").hidden = true;
+  // Every revision can have tags of its own, beside the Item's, which are
+  // shown too. A new Item's first revision also gets the Item's tags.
+  $("revision-tags-field").hidden = noPDF;
   $("tags-field").hidden = false;
   $("notes-field").hidden = false;
   $("import-button").textContent = adding ? "Add revision" : (noPDF ? "Create item" : "Import");
@@ -275,7 +276,8 @@ $("import").onsubmit = async (event) => {
       await post("/api/revisions", { no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
         revision_tags: revisionTags.get() });
     } else {
-      const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get() });
+      const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
+        revision_tags: noPDF ? [] : (revisionTags.commit(), revisionTags.get()) });
       if (saved.warning) { state = await loadState(); render(); say($("import-message"), saved.warning, true); return; }
     }
     const done = selected;

@@ -75,9 +75,10 @@ func TestImportMakesAnItemAndLeavesTheSource(t *testing.T) {
 	source := write(t, filepath.Join(root, "scan.pdf"), "%PDF emma")
 	item, err := Import(context.Background(), ImportRequest{
 		Root: root, Source: source, Template: idCard(t, root), Now: now,
-		Fields: map[string]string{"owner": " emma ", "country": "AU", "number": ""},
-		Notes:  "  old card for records  ",
-		Tags:   []string{"Travel Plans", "travel-plans", "  visa  "},
+		Fields:       map[string]string{"owner": " emma ", "country": "AU", "number": ""},
+		Notes:        "  old card for records  ",
+		Tags:         []string{"Travel Plans", "travel-plans", "  visa  "},
+		RevisionTags: []string{"Original"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -90,6 +91,9 @@ func TestImportMakesAnItemAndLeavesTheSource(t *testing.T) {
 	}
 	if strings.Join(item.Tags, ",") != "travel-plans,visa" {
 		t.Fatalf("tags = %v", item.Tags)
+	}
+	if got := strings.Join(item.Revisions[0].Tags, ","); got != "travel-plans,visa,original" {
+		t.Fatalf("first revision's tags = %q, want the Item's and its own", got)
 	}
 	if _, ok := item.Fields["number"]; ok {
 		t.Error("empty field kept")

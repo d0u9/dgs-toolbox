@@ -136,7 +136,7 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 	if item = state(t, h).Items[0]; len(item.Revisions) != 2 || item.Head == first || item.Notes != "renewed in 2026" || len(item.Tags) != 1 || item.Tags[0] != "current" {
 		t.Fatalf("after add: %+v", item)
 	}
-	if rev := item.Revisions[1]; len(rev.Tags) != 1 || rev.Tags[0] != "reissued" || len(item.Revisions[0].Tags) != 0 {
+	if rev := item.Revisions[1]; len(rev.Tags) != 1 || rev.Tags[0] != "reissued" || strings.Join(item.Revisions[0].Tags, ",") != "travel-plans" {
 		t.Fatalf("revision tags: %+v", item.Revisions)
 	}
 	if rec := do(h, "POST", "/api/revision-tags", `{"item":"`+item.ID+`","digest":"`+first+`","tags":["Original"]}`); rec.Code != http.StatusOK {

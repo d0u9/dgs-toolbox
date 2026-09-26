@@ -611,6 +611,8 @@ type importJSON struct {
 	Fields   map[string]string `json:"fields"`
 	Notes    string            `json:"notes"`
 	Tags     []string          `json:"tags"`
+	// RevisionTags are the first revision's own, beside the Item's.
+	RevisionTags []string `json:"revision_tags"`
 }
 
 func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
@@ -645,7 +647,7 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		req := tree.ImportRequest{
-			Root: s.root, Source: source, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, Now: s.now(),
+			Root: s.root, Source: source, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, Now: s.now(),
 		}
 		var item tree.Item
 		if request.NoPDF {
