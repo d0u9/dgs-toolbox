@@ -251,9 +251,11 @@ func readBack(ctx context.Context, request Request, path string, buffer []byte, 
 			return 0, "", fmt.Errorf("read destination for verification: %w", readErr)
 		}
 	}
-	if err := file.Close(); err != nil {
-		return 0, "", fmt.Errorf("close destination verification: %w", err)
-	}
+	// The digest is of the bytes already read, and a read-only handle holds
+	// nothing to flush, so an error closing it says nothing about the file.
+	// macOS SMB mounts return EBADF here after a complete read; failing the
+	// copy on it would refuse a destination that has just been verified.
+	_ = file.Close()
 	return read, hex.EncodeToString(digest.Sum(nil)), nil
 }
 
