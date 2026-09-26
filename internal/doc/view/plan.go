@@ -120,6 +120,10 @@ func FieldsFor(keys []string) []string {
 		if k == "year" || k == "month" || k == "date" {
 			k = DateField
 		}
+		if strings.HasPrefix(k, "type:") {
+			// A type's name comes from its Template, not an Item field.
+			continue
+		}
 		if !seen[k] {
 			seen[k] = true
 			fields = append(fields, k)
@@ -151,11 +155,25 @@ func Clean(value string) string {
 	return out
 }
 
+// TypeNames are each type's names by language, from its Template's names.
+type TypeNames map[string]map[string]string
+
+// NamesOf collects the TypeNames of templates.
+func NamesOf(templates []tree.Template) TypeNames {
+	out := TypeNames{}
+	for _, t := range templates {
+		if len(t.Names) > 0 {
+			out[t.Type] = t.Names
+		}
+	}
+	return out
+}
+
 // Build computes v's plan over items. Items are taken in ID order and a
 // document's revisions in the order they were added, so the same state always
 // gives the same plan, numbering included. Paths are compared ignoring case,
 // as the file systems a Target usually lives on do.
-func Build(v View, items []tree.Item) (Plan, error) {
+func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 	layout, err := Parse(v.Layout)
 	if err != nil {
 		return Plan{}, err
@@ -178,7 +196,10 @@ func Build(v View, items []tree.Item) (Plan, error) {
 				continue
 			}
 			keys := KeysOf(item, i+1)
-			name, lacking := render(layout, keys, v.Default)
+			for lang, name := range names[keys["type"]] {
+				keys["type:"+lang] = name
+			}
+			name, lacking := render(layout, keys, v.Default, v.Order)
 			if len(lacking) > 0 {
 				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
 				continue
@@ -282,11 +303,11 @@ func (c Combined) Complete() bool {
 
 // Combine plans views into one Target: each is built alone, then their files
 // are put together and checked against each other as Build checks one View.
-func Combine(views []View, items []tree.Item) (Combined, error) {
+func Combine(views []View, items []tree.Item, names TypeNames) (Combined, error) {
 	out := Combined{Plans: map[string]Plan{}, Files: []File{}, Clashes: []Clash{}}
 	var all []File
 	for _, v := range views {
-		p, err := Build(v, items)
+		p, err := Build(v, items, names)
 		if err != nil {
 			return out, fmt.Errorf("view %s: %w", v.Name, err)
 		}
@@ -309,8 +330,9 @@ func Combine(views []View, items []tree.Item) (Combined, error) {
 }
 
 // render fills a layout from keys. It returns the keys it lacked, when there
-// is no default to stand in for them.
-func render(layout Layout, keys map[string]string, fallback *string) (string, []string) {
+// is no default to stand in for them, and the numbered keys whose value is
+// not in order.
+func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string) (string, []string) {
 	var lacking []string
 	segments := make([]string, len(layout))
 	for s, parts := range layout {
@@ -320,20 +342,35 @@ func render(layout Layout, keys map[string]string, fallback *string) (string, []
 				b.WriteString(part.Text)
 				continue
 			}
-			value, ok := keys[part.Key]
+			key := part.Key
+			if key == "type" && part.Format != "" {
+				// The type's name in a language, from its Template.
+				key = "type:" + part.Format
+			}
+			value, ok := keys[key]
 			if !ok {
 				if fallback == nil {
+					if !contains(lacking, key) {
+						lacking = append(lacking, key)
+					}
+					continue
+				}
+				value = *fallback
+			} else if part.Format != "" && part.Key != "type" {
+				// A value that names no country is written as it is.
+				if kept, ok := country.Normalize(value, country.Format(part.Format)); ok {
+					value = kept
+				}
+			}
+			if part.Numbered {
+				n := place(order[part.Key], value)
+				if n == 0 {
 					if !contains(lacking, part.Key) {
 						lacking = append(lacking, part.Key)
 					}
 					continue
 				}
-				value = *fallback
-			} else if part.Format != "" {
-				// A value that names no country is written as it is.
-				if kept, ok := country.Normalize(value, country.Format(part.Format)); ok {
-					value = kept
-				}
+				b.WriteString(padTo(n, len(order[part.Key])) + "-")
 			}
 			b.WriteString(Clean(value))
 		}
@@ -352,12 +389,27 @@ func numbered(p string, n int) string {
 	return dir + strings.TrimSuffix(file, ext) + "_" + pad(n) + ext
 }
 
-func pad(n int) string {
+func pad(n int) string { return padTo(n, 0) }
+
+// padTo writes n with at least two digits, and as many as count has.
+func padTo(n, count int) string {
+	width := max(2, len(strconv.Itoa(count)))
 	s := strconv.Itoa(n)
-	if len(s) < 2 {
+	for len(s) < width {
 		s = "0" + s
 	}
 	return s
+}
+
+// place is value's position in order, counting from 1, or 0 when it is not
+// there.
+func place(order []string, value string) int {
+	for i, v := range order {
+		if sameValue(v, value) {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 func contains(list []string, s string) bool {

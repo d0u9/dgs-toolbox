@@ -60,7 +60,7 @@ func TestBuildHeadAndQuery(t *testing.T) {
 	}
 	v := View{Name: "x", Selection: Head, Layout: "{country}/{owner}/{type}.{ext}",
 		Query: map[string]Values{"type": {"id_card"}}}
-	plan, err := Build(v, items)
+	plan, err := Build(v, items, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestBuildHeadAndQuery(t *testing.T) {
 
 func TestBuildAllRevisions(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"owner": "emma"}, "d1", "d2")}
-	plan, _ := Build(View{Name: "x", Selection: All, Layout: "{owner}/{type}-{revision}.{ext}"}, items)
+	plan, _ := Build(View{Name: "x", Selection: All, Layout: "{owner}/{type}-{revision}.{ext}"}, items, nil)
 	if len(plan.Files) != 2 || plan.Files[0].Path != "emma/id_card-1.pdf" || plan.Files[1].Path != "emma/id_card-2.pdf" {
 		t.Fatalf("%+v", plan)
 	}
@@ -85,13 +85,13 @@ func TestBuildAllRevisions(t *testing.T) {
 func TestBuildMissingAndDefault(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"owner": "emma"}, "d1")}
 	v := View{Name: "x", Selection: Head, Layout: "{country}/{owner}/{year}.{ext}"}
-	plan, _ := Build(v, items)
+	plan, _ := Build(v, items, nil)
 	if len(plan.Missing) != 1 || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"country", "year"}) || len(plan.Files) != 0 {
 		t.Fatalf("%+v", plan)
 	}
 	none := "none"
 	v.Default = &none
-	plan, _ = Build(v, items)
+	plan, _ = Build(v, items, nil)
 	if !plan.Complete() || plan.Files[0].Path != "none/emma/none.pdf" {
 		t.Fatalf("%+v", plan)
 	}
@@ -99,7 +99,7 @@ func TestBuildMissingAndDefault(t *testing.T) {
 
 func TestBuildDates(t *testing.T) {
 	items := []tree.Item{item("A", "bill", map[string]string{"issued_at": "2026-09-25"}, "d1")}
-	plan, _ := Build(View{Name: "x", Selection: Head, Layout: "{year}/{month}/{date}.{ext}"}, items)
+	plan, _ := Build(View{Name: "x", Selection: Head, Layout: "{year}/{month}/{date}.{ext}"}, items, nil)
 	if plan.Files[0].Path != "2026/09/2026-09-25.pdf" {
 		t.Fatalf("%+v", plan)
 	}
@@ -112,12 +112,12 @@ func TestBuildClashAndNumbering(t *testing.T) {
 		item("C", "bill", map[string]string{"owner": "emma"}, "d3"),
 	}
 	v := View{Name: "x", Selection: Head, Layout: "{owner}/{type}.{ext}"}
-	plan, _ := Build(v, items)
+	plan, _ := Build(v, items, nil)
 	if len(plan.Clashes) != 1 || len(plan.Clashes[0].Files) != 3 || plan.Complete() {
 		t.Fatalf("case should clash: %+v", plan)
 	}
 	v.Dedupe = DedupeNumber
-	plan, _ = Build(v, items)
+	plan, _ = Build(v, items, nil)
 	var got []string
 	for _, f := range plan.Files {
 		got = append(got, f.Item+":"+f.Path)
@@ -168,7 +168,7 @@ func TestLayoutWritesACountryInAFormat(t *testing.T) {
 		{ID: "B", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom", "country": "AU"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "sam", "country": "Atlantis"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	plan, err := Build(View{Name: "v", Selection: Head, Layout: "{country:alpha3}/{owner}-{country:en}.{ext}"}, items)
+	plan, err := Build(View{Name: "v", Selection: Head, Layout: "{country:alpha3}/{owner}-{country:en}.{ext}"}, items, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestKeysComeFromTheirRevision(t *testing.T) {
 			{Digest: "a", Fields: map[string]string{"expires": "2020"}},
 			{Digest: "b", Fields: map[string]string{"expires": "2030"}},
 		}}
-	plan, err := Build(View{Name: "v", Selection: All, Layout: "{owner}-{expires}.{ext}"}, []tree.Item{item})
+	plan, err := Build(View{Name: "v", Selection: All, Layout: "{owner}-{expires}.{ext}"}, []tree.Item{item}, nil)
 	if err != nil || len(plan.Files) != 2 || plan.Files[0].Path != "emma-2020.pdf" || plan.Files[1].Path != "emma-2030.pdf" {
 		t.Fatalf("%v %+v", err, plan)
 	}
@@ -213,7 +213,7 @@ func TestCombineFindsClashesAcrossViews(t *testing.T) {
 	}
 	ids := View{Name: "ids", Selection: Head, Layout: "{owner}/{type}.{ext}", Query: map[string]Values{"type": {"id_card"}}}
 	bills := View{Name: "bills", Selection: Head, Layout: "{owner}/id_card.{ext}", Query: map[string]Values{"type": {"bill"}}}
-	c, err := Combine([]View{ids, bills}, items)
+	c, err := Combine([]View{ids, bills}, items, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestCombineFindsClashesAcrossViews(t *testing.T) {
 		t.Fatalf("clash views %v", views)
 	}
 	bills.Layout = "{owner}/bills/{type}.{ext}"
-	c, _ = Combine([]View{ids, bills}, items)
+	c, _ = Combine([]View{ids, bills}, items, nil)
 	if !c.Complete() || len(c.Files) != 2 || c.Files[0].View != "bills" {
 		t.Fatalf("combined %+v", c)
 	}
@@ -246,5 +246,75 @@ func TestTargetIsValidated(t *testing.T) {
 	v.Target = "google"
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNumberedKeysFollowTheOrder(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma", "country": "中国"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "alex", "country": "AU"}, Revisions: []tree.Revision{{Digest: "b"}}},
+		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "alex", "country": "NZ"}, Revisions: []tree.Revision{{Digest: "c"}}},
+	}
+	v := View{Name: "v", Selection: Head, Layout: "{owner#}/{country#:alpha3}/{type}.{ext}",
+		Order: map[string][]string{"owner": {"alex", "emma"}, "country": {"CHN", "Australia"}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Build(v, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range plan.Files {
+		got = append(got, f.Path)
+	}
+	if want := []string{"01-alex/02-AUS/id_card.pdf", "02-emma/01-CHN/id_card.pdf"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v", got)
+	}
+	// A value the order does not list is not numbered by guess.
+	if len(plan.Missing) != 1 || plan.Missing[0].Item != "C" || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"country"}) {
+		t.Fatalf("missing %+v", plan.Missing)
+	}
+	for _, bad := range []View{
+		{Name: "v", Selection: Head, Layout: "{owner#}.{ext}"},
+		{Name: "v", Selection: Head, Layout: "{country#}.{ext}", Order: map[string][]string{"country": {"CN", "中国"}}},
+		{Name: "v", Selection: Head, Layout: "{owner}.{ext}", Order: map[string][]string{"owner": {}}},
+	} {
+		if bad.Validate() == nil {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+}
+
+func TestPadWidensWithTheOrder(t *testing.T) {
+	if got := padTo(7, 120); got != "007" {
+		t.Fatal(got)
+	}
+	if got := padTo(7, 3); got != "07" {
+		t.Fatal(got)
+	}
+}
+
+func TestTypeIsWrittenInALanguage(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "driver_licence", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "visa", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"}, Revisions: []tree.Revision{{Digest: "b"}}},
+	}
+	names := NamesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证", "en": "Driver licence"}}})
+	plan, err := Build(View{Name: "v", Selection: Head, Layout: "{type:zh}/{type:en}-{type}.{ext}"}, items, names)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Files) != 1 || plan.Files[0].Path != "驾驶证/Driver licence-driver_licence.pdf" {
+		t.Fatalf("files %+v", plan.Files)
+	}
+	// A type whose Template names it in no language is missing that name.
+	if len(plan.Missing) != 1 || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"type:zh", "type:en"}) || len(plan.Missing[0].Fields) != 0 {
+		t.Fatalf("missing %+v", plan.Missing)
+	}
+	for _, bad := range []string{"{type:alpha3}", "{type:fr}"} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("%s accepted", bad)
+		}
 	}
 }

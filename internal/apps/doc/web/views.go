@@ -64,7 +64,12 @@ func (s server) viewPlan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	plan, err := view.Build(v, items)
+	templates, err := tree.LoadTemplates(s.root)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	plan, err := view.Build(v, items, view.NamesOf(templates))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

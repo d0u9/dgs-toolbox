@@ -93,7 +93,13 @@ type Template struct {
 	// IgnoreDates are dates, YYYY-MM-DD, never suggested for a date field: a
 	// birthday printed on every page of a person's documents.
 	IgnoreDates []string `yaml:"ignore_dates,omitempty" json:"ignore_dates,omitempty"`
+	// Names are the type's names for people, by language: zh and en. A View
+	// layout writes one with {type:zh} or {type:en}.
+	Names map[string]string `yaml:"names,omitempty" json:"names,omitempty"`
 }
+
+// NameLanguages are the languages a Template may name its type in.
+var NameLanguages = []string{"zh", "en"}
 
 // MandatoryKeys are the fields every Template requires besides its type: whose
 // document it is and which country issued it.
@@ -108,6 +114,14 @@ func (t Template) Validate() error {
 	}
 	if t.Kind != KindDocument && t.Kind != KindRecord {
 		return fmt.Errorf("type %s: kind %q is neither document nor record", t.Type, t.Kind)
+	}
+	for lang, name := range t.Names {
+		if lang != "zh" && lang != "en" {
+			return fmt.Errorf("type %s: names %s: name the type in zh or en", t.Type, lang)
+		}
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("type %s: names %s is empty", t.Type, lang)
+		}
 	}
 	seen := map[string]bool{}
 	for _, f := range t.Fields {

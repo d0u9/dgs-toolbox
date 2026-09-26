@@ -97,3 +97,17 @@ func TestCountryField(t *testing.T) {
 		t.Error("format on a text field accepted")
 	}
 }
+
+func TestTemplateNamesAreZhOrEn(t *testing.T) {
+	base := func(names map[string]string) Template {
+		return Template{Type: "visa", Kind: KindRecord, Names: names, Fields: []Field{{Key: "owner", Required: true}, {Key: "country", Type: FieldCountry, Required: true}}}
+	}
+	if err := base(map[string]string{"zh": "签证", "en": "Visa"}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []map[string]string{{"fr": "Visa"}, {"zh": " "}} {
+		if base(bad).Validate() == nil {
+			t.Errorf("%v accepted", bad)
+		}
+	}
+}

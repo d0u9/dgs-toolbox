@@ -492,6 +492,23 @@ as `CHN` however its sidecar keeps it, and likewise `:zh` (`中国`), `:en`
 (`China`) and `:alpha2` (`CN`). A value that names no country is written as it
 is. Any other format after the colon is refused.
 
+`{type:zh}` and `{type:en}` write the type's name from its Template's
+`names`, such as `驾驶证` or `Driver licence`; `{type}` stays the Template's
+file name. A Template that does not name its type in that language leaves the
+PDF missing the key `type:zh` or `type:en`, fixed in the Template, not the
+Item.
+
+A key written `{key#}` is numbered: its value is prefixed with its place in
+the View's `order` for that key, counting from `01-`, so
+`{owner#}/{country#:alpha3}` with the order below writes `01-alex/02-AUS`.
+Numbers have two digits, more when the list is longer than 99. Values in an
+order are compared as a country when both name one, so `CN`, `CHN` and `中国`
+are one entry, and otherwise ignoring case. A numbered key needs an order,
+and an order may not list one value twice. A value the order does not list
+leaves the PDF missing that key: the number is never guessed. Changing an
+order renames every folder after the moved entry at the next export. The web
+form does not edit `order`; a View saved there keeps the one in its file.
+
 A View is one YAML file under `views/`, named after its `name`:
 
 ```yaml
@@ -501,6 +518,9 @@ selection: head
 layout: '{country}/{owner}/important/{type}.{ext}'
 default: none              # optional: stands in for a missing key
 target: icloud             # optional: the Target it is exported to
+order:                     # optional: the numbering of {key#}
+  owner: [alex, emma]
+  country: [CN, AU]
 ```
 
 `target` is a name from the tree's `targets.yaml`, never a path. The tree
@@ -785,6 +805,7 @@ exported and the Items' fields; a Target carries no Templates or Views.
 ```yaml
 type: id_card
 description: Identity cards and household registers
+names: {zh: 身份证明, en: ID card}   # optional: {type:zh} and {type:en} in a layout
 kind: document            # document: revisions and HEAD; record: one PDF
 fields:
   - key: owner
