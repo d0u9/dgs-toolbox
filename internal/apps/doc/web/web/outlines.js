@@ -1,6 +1,8 @@
 // Outlines: making an Outline — its name, the folder it is exported to, and
 // its rules, each picking PDFs and naming the path each has — with the tree
-// the rules make redrawn beside the form as it changes. Looking through the
+// the rules make redrawn beside the form as it changes. A rule is the
+// tree's, not the Outline's: one already made is added as it is, and
+// editing it changes it in every Outline using it. Looking through the
 // result and exporting it is the Explore page's.
 import { $, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
@@ -9,6 +11,9 @@ import { outlineTree, unplaced } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
 let outlines = [];
+let rules = []; // every rule in the tree
+let used = {}; // the Outlines using each rule, as saved
+let origins = []; // each draft rule's saved name, or "" for one made here
 let editing = null; // the saved name of the Outline shown, or "" for a new one
 let draft = null; // the Outline as the form has it, every rule included
 let rule = 0; // the rule in the form
@@ -17,7 +22,11 @@ let grouping = null; // the server's answer for the draft
 const tree = outlineTree($("tree"), () => state, { empty: () => "Add a rule with a path to see the tree." });
 
 const newRule = (n) => ({ name: "rule-" + n, query: {}, selection: "head", layout: "{owner}/{type}.{ext}" });
-const blank = () => ({ name: "", about: "", folder: "", rules: [newRule(1)] });
+const blank = () => {
+  let n = 1;
+  while (rules.some((r) => r.name === "rule-" + n)) n++;
+  return { name: "", about: "", folder: "", rules: [newRule(n)] };
+};
 const copy = (o) => JSON.parse(JSON.stringify(o));
 const text = (o) => JSON.stringify({ name: o.name, about: o.about || "", folder: o.folder || "",
   rules: (o.rules || []).map((r) => ({ name: r.name, query: r.query || {}, selection: r.selection || "head", layout: r.layout,
@@ -62,10 +71,61 @@ function fillRule() {
 }
 
 function tabs() {
+  const others = rules.filter((r) => !origins.includes(r.name));
+  const existing = el("select", { className: "chip", title: "Add a rule another Outline uses, or one no Outline uses now",
+    onchange: () => {
+      const r = rules.find((x) => x.name === existing.value);
+      if (!r) return;
+      sync();
+      draft.rules.push(copy(r));
+      origins.push(r.name);
+      pickRule(draft.rules.length - 1);
+      changed();
+    } }, el("option", { value: "" }, "+ Existing rule…"),
+    ...others.map((r) => el("option", { value: r.name }, r.name + ((used[r.name] || []).length ? " · " + used[r.name].join(", ") : " · unused"))));
+  existing.hidden = !others.length;
+  const unused = others.filter((r) => !(used[r.name] || []).length);
   $("rules").replaceChildren(...draft.rules.map((r, i) => el("button", { type: "button", className: "chip" + (i === rule ? " on" : ""),
     textContent: r.name || "unnamed", title: r.layout, onclick: () => pickRule(i) })),
-    el("button", { type: "button", className: "chip", textContent: "+ Rule", title: "Add a rule: more PDFs in the same tree",
-      onclick: () => { sync(); let n = draft.rules.length + 1; while (draft.rules.some((r) => r.name === "rule-" + n)) n++; draft.rules.push(newRule(n)); pickRule(draft.rules.length - 1); changed(); } }));
+    el("button", { type: "button", className: "chip", textContent: "+ Rule", title: "Make a new rule: more PDFs in the same tree",
+      onclick: () => {
+        sync();
+        let n = draft.rules.length + 1;
+        while (draft.rules.some((r) => r.name === "rule-" + n) || rules.some((r) => r.name === "rule-" + n)) n++;
+        draft.rules.push(newRule(n));
+        origins.push("");
+        pickRule(draft.rules.length - 1);
+        changed();
+      } }),
+    existing,
+    ...(unused.length ? [el("select", { className: "chip", title: "Delete a rule no Outline uses",
+      onchange: (event) => dropUnused(event.target) }, el("option", { value: "" }, "Delete unused rule…"),
+      ...unused.map((r) => el("option", { value: r.name }, r.name)))] : []));
+  shared();
+}
+
+// shared says which other saved Outlines the rule shown is in: an edit
+// saved here changes it there too.
+function shared() {
+  const from = origins[rule];
+  const also = from ? (used[from] || []).filter((o) => o !== editing) : [];
+  $("rule-shared").hidden = !also.length;
+  $("rule-shared").textContent = also.length ? "Also used by " + also.join(", ") + ": saving changes it there too." : "";
+}
+
+async function dropUnused(select) {
+  const name = select.value;
+  select.value = "";
+  if (!name || !confirm("Delete the rule " + name + "? No Outline uses it; its file under rules/ is removed.")) return;
+  try {
+    await post("/api/rules/delete", { name });
+    const answer = await (await fetch(api("/api/outlines"))).json();
+    rules = answer.rules;
+    used = answer.used;
+    tabs();
+  } catch (err) {
+    say($("form-message"), err.message, true);
+  }
 }
 
 function pickRule(i) {
@@ -92,6 +152,7 @@ function open(name) {
   editing = name;
   draft = copy(outlines.find((x) => x.name === name) || blank());
   delete draft.default;
+  origins = draft.rules.map((r) => name ? r.name : "");
   rule = 0;
   $("name").value = draft.name;
   $("about").value = draft.about || "";
@@ -281,6 +342,8 @@ async function reload() {
   const answer = await (await fetch(api("/api/outlines"))).json();
   which.setup({ state, keys: answer.keys, countries: answer.countries || {}, onChange: changed });
   outlines = answer.outlines;
+  rules = answer.rules || [];
+  used = answer.used || {};
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
   return answer;
 }
@@ -290,7 +353,9 @@ $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
   sync();
   try {
-    await post("/api/outlines", { outline: draft, previous: editing || "" });
+    const fresh = draft.rules.filter((r, i) => !origins[i]).map((r) => r.name);
+    const renamed = Object.fromEntries(draft.rules.map((r, i) => [origins[i], r.name]).filter(([from, to]) => from && from !== to));
+    await post("/api/outlines", { outline: draft, previous: editing || "", fresh, renamed });
     const name = draft.name;
     await reload();
     open(name);
@@ -302,8 +367,9 @@ $("form").addEventListener("submit", async (event) => {
 $("rule-delete").onclick = () => {
   sync();
   const r = draft.rules[rule];
-  if (!r || !confirm("Remove the rule " + (r.name || "unnamed") + " from this Outline? It is gone once the Outline is saved.")) return;
+  if (!r || !confirm("Remove the rule " + (r.name || "unnamed") + " from this Outline? Other Outlines keep it; one made here and not saved is gone.")) return;
   draft.rules.splice(rule, 1);
+  origins.splice(rule, 1);
   rule = Math.max(0, rule - 1);
   fillRule();
   changed();
@@ -335,7 +401,7 @@ window.addEventListener("beforeunload", (event) => { if (editing !== null) { syn
 reload().then((answer) => {
   const wanted = decodeURIComponent(location.hash.slice(1));
   open(wanted === "new" ? "" : outlines.some((o) => o.name === wanted) ? wanted : outlines.length ? outlines[0].name : "");
-  if (answer.migrated && answer.migrated.length) say($("message"), "The tree's Views and Targets are Outlines now: " + answer.migrated.join(", ") + ". The old files are in migrated/.");
+  if (answer.migrated && answer.migrated.length) say($("message"), "Outlines brought up to date: " + answer.migrated.join(", ") + ". Their rules are under rules/; old Views and Targets, if any, are in migrated/.");
 }).catch((err) => {
   state.error = err.message;
   frame(state);

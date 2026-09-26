@@ -318,3 +318,20 @@ func TestMergeRefusesDanglingReplacement(t *testing.T) {
 		t.Fatalf("problems %v", p.Problems)
 	}
 }
+
+func TestNewOutlineChangingASharedRuleIsAConflict(t *testing.T) {
+	full := newTree(t, passport)
+	sub := newTree(t, passport)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(outline.Save(full, "", outline.Outline{Name: "phone", Rules: []view.View{{Name: "ids", Selection: view.Head, Layout: "{owner}.{ext}"}}}))
+	must(outline.Save(sub, "", outline.Outline{Name: "kindle", Rules: []view.View{{Name: "ids", Selection: view.Head, Layout: "ids/{owner}.{ext}"}}}))
+	p := plan(t, full, source(t, sub))
+	if len(p.Outlines) != 0 || len(p.Conflicts) != 1 || p.Conflicts[0].ID != "outline:kindle" {
+		t.Fatalf("plan: %+v", p)
+	}
+}
