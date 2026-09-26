@@ -54,7 +54,8 @@ type Plan struct {
 func (p Plan) Complete() bool { return len(p.Missing) == 0 && len(p.Clashes) == 0 }
 
 // Matches reports whether item passes every condition of query, as its
-// Current revision has its fields.
+// Current revision has its fields. A value matches as sameValue says: one
+// country however written, or else equal ignoring case.
 func Matches(query map[string]Values, item tree.Item) bool {
 	fields := item.CurrentFields()
 	for key, accepted := range query {
@@ -67,7 +68,7 @@ func Matches(query map[string]Values, item tree.Item) bool {
 		}
 		found := false
 		for _, want := range accepted {
-			if value == want {
+			if sameValue(value, want) {
 				found = true
 				break
 			}

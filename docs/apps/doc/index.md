@@ -475,7 +475,9 @@ the type's Template, so later imports of that type ask for it.
 
 A View has a query, a selection, and a layout.
 
-- **Query** — which Items, by their fields, such as type and owner.
+- **Query** — which Items, by their fields, such as type and owner. A value
+  matches ignoring case, and a country matches however it is written: `CN`
+  selects an Item that keeps `中国`.
 - **Selection** — `head` (a document's HEAD revision only) or `all`.
 - **Layout** — fixed text and keys, such as
   `{country}/{owner}/important/{type}.pdf`. The Target provides the root, so
@@ -579,7 +581,8 @@ A layout is rendered by three rules:
 ### The Views page
 
 The page lists the Views on the left. The form picks the types, adds
-conditions on other keys (`owner is emma, tom`), HEAD or all revisions, and
+conditions on other keys (`owner is emma, tom`), each ticking values the
+Items hold, HEAD or all revisions, and
 the layout, typed or built by clicking key chips that insert at the caret.
 The chips are grouped: the Templates' fields, the keys every PDF has, and each
 country field's formats. Typing `{` in the layout lists the keys with what

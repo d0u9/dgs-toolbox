@@ -1,6 +1,6 @@
 // Views: build a layout from keys and see, as it is typed, the tree an
 // export of it would write. The server computes the plan; this draws it.
-import { $, api, el, loadState, post, label, planNodes, templateOf, inputFor, fieldsOf, fieldsAt, frame, say, targetFolder, rememberTargetFolder } from "/common.js";
+import { $, api, el, currentFields, loadState, post, label, planNodes, templateOf, inputFor, fieldsOf, fieldsAt, frame, say, targetFolder, rememberTargetFolder } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openFile } from "/ui/filedialog.js";
 
@@ -67,7 +67,7 @@ function open(v, name) {
   $("types").replaceChildren(...state.templates.map((t) => el("label", {},
     el("input", { type: "checkbox", value: t.type, checked: types.includes(t.type), onchange: changed }), " " + t.type)));
   $("conditions").replaceChildren(...Object.entries(v.query || {})
-    .filter(([k]) => k !== "type").map(([k, values]) => condition(k, values.join(", "))));
+    .filter(([k]) => k !== "type").map(([k, values]) => condition(k, values)));
   document.querySelector(`input[name=selection][value=${v.selection || "head"}]`).checked = true;
   $("layout").value = v.layout;
   $("use-default").checked = v.default !== undefined && v.default !== null;
@@ -86,12 +86,23 @@ function open(v, name) {
   changed();
 }
 
+// condition is one query key and the values it accepts, picked from those
+// the Items hold, so a value is never typed in a form no Item uses. A saved
+// value no Item holds any more is still listed, checked.
 function condition(key, values) {
-  const pick = el("select", { onchange: changed },
+  const choices = el("span", { className: "choices" });
+  const draw = (checked) => {
+    const held = state.items.map((item) => currentFields(item)[pick.value]).filter(Boolean);
+    const all = [...new Set([...held, ...checked])].sort((a, b) => a.localeCompare(b));
+    choices.replaceChildren(...(all.length ? all.map((v) => el("label", {},
+      el("input", { type: "checkbox", value: v, checked: checked.includes(v), onchange: changed }), " " + v))
+      : [el("span", { className: "template-sub", textContent: "no Item has one" })]));
+  };
+  const pick = el("select", { onchange: () => { draw([]); changed(); } },
     ...keys.filter((k) => !["type", "revision", "ext", "id"].includes(k)).map((k) => el("option", { value: k, selected: k === key }, k)));
-  const row = el("div", { className: "condition" }, pick, " is ",
-    el("input", { value: values || "", placeholder: "emma, tom", spellcheck: false, autocomplete: "off", oninput: changed }),
+  const row = el("div", { className: "condition" }, pick, " is ", choices,
     el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); changed(); } }));
+  draw(values || []);
   return row;
 }
 
@@ -261,7 +272,7 @@ function current() {
   const types = [...$("types").querySelectorAll("input:checked")].map((i) => i.value);
   if (types.length) query.type = types;
   for (const row of $("conditions").children) {
-    const values = row.querySelector("input").value.split(",").map((s) => s.trim()).filter(Boolean);
+    const values = [...row.querySelectorAll(".choices input:checked")].map((i) => i.value);
     if (values.length) query[row.querySelector("select").value] = values;
   }
   const v = {
@@ -424,7 +435,7 @@ function drawTree(files, name) {
 
 $("form").addEventListener("input", changed);
 $("add-condition").addEventListener("click", () => {
-  $("conditions").append(condition(keys.find((k) => k === "owner") || keys[0], ""));
+  $("conditions").append(condition(keys.find((k) => k === "owner") || keys[0], []));
   changed();
 });
 $("new").addEventListener("click", () => open(blank(), ""));
