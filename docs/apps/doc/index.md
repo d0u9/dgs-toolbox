@@ -582,8 +582,9 @@ A layout is rendered by three rules:
 
 The page lists the Views on the left. The form picks the types, adds
 conditions on other keys (`owner is emma, tom`), each ticking values the
-Items hold, HEAD or all revisions, and
+Items of the chosen types hold, HEAD or all revisions, and
 the layout, typed or built by clicking key chips that insert at the caret.
+The field chips are those of the chosen types, or of every type when none is.
 The chips are grouped: the Templates' fields, the keys every PDF has, and each
 country field's formats. Typing `{` in the layout lists the keys with what
 each writes; after a country key's `:` it lists the formats with an example.
