@@ -86,6 +86,7 @@ body { display: flex; flex-direction: column; }
 .topbar-link { color: var(--graphite); text-decoration: none; padding: 4px 8px; border-radius: var(--radius-md); }
 .topbar-link:hover { background: var(--hover); }
 .topbar-link.current { color: var(--primary); font-weight: 600; }
+.topbar-sep { width: 1px; height: 16px; background: var(--line, currentColor); opacity: .35; margin: 0 6px; flex: none; }
 .open-bar { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) 14px; }
 .open-bar .action { margin: 0; }
 .dir-path { margin: 0 14px var(--space-xs); font-size: var(--font-size-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
