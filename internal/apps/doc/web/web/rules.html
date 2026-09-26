@@ -72,11 +72,11 @@
       <h3>Where they go</h3>
       <div class="vf vf-wide"><span class="vf-label">Path</span>
         <div class="layout-wrap">
-          <input id="layout" class="mono" spellcheck="false" autocomplete="off" placeholder="{country:alpha2} {make}/{plate#}/{type}.{ext}"
+          <input id="layout" class="mono" spellcheck="false" autocomplete="off" placeholder="{country:alpha2} {make}/{#}-{plate}/{type}.{ext}"
             role="combobox" aria-autocomplete="list" aria-controls="suggest">
           <ul id="suggest" class="suggest" role="listbox" hidden></ul>
         </div>
-        <p class="layout-help">Click a key to add it. <code>/</code> starts a folder; the last part names the PDF. <code>{plate#}</code> numbers as 01-, 02- in the order below.</p>
+        <p class="layout-help">Click a key to add it. <code>/</code> starts a folder; the last part names the PDF. <code>{#}</code> numbers the rest of its name as 01, 02, in the order below.</p>
       </div>
       <div id="keys" class="key-groups"></div>
       <div id="order-row" class="vf" hidden><span class="vf-label">Numbering</span>

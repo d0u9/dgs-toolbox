@@ -66,8 +66,10 @@ type View struct {
 	Default *string `yaml:"default,omitempty" json:"default,omitempty"`
 	// Dedupe is empty (refuse) or DedupeNumber.
 	Dedupe string `yaml:"dedupe,omitempty" json:"dedupe,omitempty"`
-	// Order lists, per key, the values a numbered key {key#} may have, in
-	// the order they are numbered from 01.
+	// Order lists, per numbered name, the names {#} numbers from 01, in
+	// order. A numbered name is named by what follows its {#}, as written:
+	// {#}-{name|type:zh}{-level?}.{ext} is numbered from the order named
+	// {name|type:zh}{-level?}.
 	Order map[string][]string `yaml:"order,omitempty" json:"order,omitempty"`
 }
 
@@ -105,30 +107,36 @@ func (v View) Validate() error {
 	}
 	for _, segment := range layout {
 		for _, part := range segment {
-			if part.Key == "" {
-				continue
-			}
-			if key := part.OrderKey(); part.Numbered && len(v.Order[key]) == 0 {
-				return fmt.Errorf("view %s: %s is numbered, so order needs a list for %s", v.Name, part.written(), key)
+			if part.Counter && len(v.Order[part.Of]) == 0 {
+				return fmt.Errorf("view %s: {#} numbers %s, so order needs a list for %s", v.Name, part.Of, part.Of)
 			}
 		}
 	}
 	return nil
 }
 
-// Part is a piece of a layout: fixed text, or a key. A key written
+// Part is a piece of a layout: fixed text, a key, or {#}. A key written
 // {key:format} is a country written in that format — zh, en, alpha2 or
-// alpha3 — whatever form the Item keeps it in. A key written {key#} is
-// prefixed with its value's place in the View's order, as 01-. Keys written
-// {a|b} are alternatives: the first one an Item has is written. Alternatives
-// are numbered together, {a|b}#, from one order named a|b. A part ending
-// in ? is optional and may carry text around its key, {-key?}: an Item
-// with the value gets the text and the value, one without gets nothing.
+// alpha3 — whatever form the Item keeps it in. Keys written {a|b} are
+// alternatives: the first one an Item has is written. A part ending in ?
+// is optional and may carry text around its key, {-key?}: an Item with the
+// value gets the text and the value, one without gets nothing.
+//
+// {#} writes the place, as 01, of the name the rest of its folder or file
+// name makes, in the View's order named that rest as written. The rest
+// leaves out the text straight after {#}, its separator, and a file's
+// .{ext}: in {#}-{name}{-level?}.{ext} it is {name}{-level?}, so each
+// name and level together is numbered.
 type Part struct {
-	Text     string `json:"text,omitempty"`
-	Key      string `json:"key,omitempty"`
-	Format   string `json:"format,omitempty"`
-	Numbered bool   `json:"numbered,omitempty"`
+	Text   string `json:"text,omitempty"`
+	Key    string `json:"key,omitempty"`
+	Format string `json:"format,omitempty"`
+	// Counter is {#}. Of is the rest it numbers as written, which names
+	// its order, and From and To are that rest's parts in the segment.
+	Counter bool   `json:"counter,omitempty"`
+	Of      string `json:"of,omitempty"`
+	From    int    `json:"-"`
+	To      int    `json:"-"`
 	// Or holds the alternatives after the first, tried in order.
 	Or []Part `json:"or,omitempty"`
 	// Optional parts write nothing for an Item without the key, and
@@ -157,6 +165,9 @@ func optionalParts(layout, written string) (prefix, inner, suffix string, err er
 	if inner == "" {
 		return "", "", "", fmt.Errorf("layout %q: {%s?} names no key", layout, written)
 	}
+	if strings.HasSuffix(inner, "#") {
+		return "", "", "", fmt.Errorf("layout %q: {%s?}: an optional key is not numbered", layout, written)
+	}
 	if strings.ContainsAny(prefix+suffix, "{}/:|#?") {
 		return "", "", "", fmt.Errorf("layout %q: {%s?}: the text around a key may not hold { } / : | # ?", layout, written)
 	}
@@ -168,29 +179,75 @@ func (p Part) choices() []Part {
 	return append([]Part{{Key: p.Key, Format: p.Format}}, p.Or...)
 }
 
-// OrderKey names the order a numbered part is numbered from: its key, or
-// for alternatives each written as key or key:format, joined by |.
-func (p Part) OrderKey() string {
-	if len(p.Or) == 0 {
-		return p.Key
-	}
-	var names []string
-	for _, c := range p.choices() {
-		name := c.Key
-		if c.Format != "" {
-			name += ":" + c.Format
-		}
-		names = append(names, name)
-	}
-	return strings.Join(names, "|")
+// oldNumbered finds the ways a numbered key was once written: {inner}#,
+// {key#:format} and {inner#}, all now {#}-{inner}.
+var (
+	oldAfter  = regexp.MustCompile(`\{([^{}?#]*)\}#`)
+	oldInside = regexp.MustCompile(`\{([a-z0-9_-]+)#:([a-z0-9]+)\}`)
+	oldKey    = regexp.MustCompile(`\{([^{}?#]+)#\}`)
+)
+
+// Rewrite writes a layout's numbered keys the one way they are written now,
+// {#}-{key}, and reports whether anything changed. {key#}, {a|b#}, {a|b}#
+// and {key#:format} were once written.
+func Rewrite(layout string) (string, bool) {
+	out, _ := rewrite(layout)
+	return out, out != layout
 }
 
-// written is p as a layout writes it when numbered.
-func (p Part) written() string {
-	if len(p.Or) == 0 {
-		return "{" + p.Key + "#}"
+// rewrite is Rewrite, with the order each numbered key was numbered from
+// named against the order it is numbered from now.
+func rewrite(layout string) (string, map[string]string) {
+	segments := strings.Split(layout, "/")
+	renamed := map[string]string{}
+	for i, segment := range segments {
+		segment = oldInside.ReplaceAllString(segment, "{$1:$2#}")
+		segment = oldAfter.ReplaceAllString(segment, "{$1#}")
+		m := oldKey.FindStringSubmatch(segment)
+		if m == nil || strings.Contains(segment, "{#}") {
+			segments[i] = segment
+			continue
+		}
+		old := m[1]
+		if !strings.Contains(old, "|") {
+			old, _, _ = strings.Cut(old, ":")
+		}
+		segment = strings.Replace(segment, m[0], "{#}-{"+m[1]+"}", 1)
+		segments[i] = segment
+		if parsed, err := Parse(segment); err == nil {
+			for _, part := range parsed[0] {
+				if part.Counter {
+					renamed[old] = part.Of
+				}
+			}
+		}
 	}
-	return "{" + p.OrderKey() + "}#"
+	return strings.Join(segments, "/"), renamed
+}
+
+// Upgrade is v with its layout rewritten as Rewrite does and each order
+// renamed after the numbered name it now numbers.
+func Upgrade(v View) (View, bool) {
+	layout, renamed := rewrite(v.Layout)
+	if layout == v.Layout {
+		return v, false
+	}
+	v.Layout = layout
+	if len(v.Order) > 0 {
+		order := map[string][]string{}
+		for key, values := range v.Order {
+			if _, moved := renamed[key]; !moved {
+				order[key] = values
+			}
+		}
+		for old, now := range renamed {
+			if values, ok := v.Order[old]; ok {
+				order[now] = values
+			}
+		}
+		v.Order = order
+	}
+	return v, true
 }
 
 // Layout is a parsed layout, one list of parts per path segment.
@@ -217,6 +274,7 @@ func Parse(layout string) (Layout, error) {
 			return nil, fmt.Errorf("layout %q: %s is not a folder name", layout, segment)
 		}
 		var parts []Part
+		var written []string // each part as the layout writes it
 		rest := segment
 		for rest != "" {
 			open := strings.IndexByte(rest, '{')
@@ -226,6 +284,7 @@ func Parse(layout string) (Layout, error) {
 					return nil, fmt.Errorf("layout %q: } without {", layout)
 				}
 				parts = append(parts, Part{Text: rest})
+				written = append(written, rest)
 				break
 			}
 			if closing >= 0 && closing < open {
@@ -233,6 +292,7 @@ func Parse(layout string) (Layout, error) {
 			}
 			if open > 0 {
 				parts = append(parts, Part{Text: rest[:open]})
+				written = append(written, rest[:open])
 			}
 			rest = rest[open+1:]
 			end := strings.IndexByte(rest, '}')
@@ -240,6 +300,12 @@ func Parse(layout string) (Layout, error) {
 				return nil, fmt.Errorf("layout %q: { without }", layout)
 			}
 			inner := rest[:end]
+			written = append(written, "{"+inner+"}")
+			if inner == "#" {
+				parts = append(parts, Part{Counter: true})
+				rest = rest[end+1:]
+				continue
+			}
 			optional := strings.HasSuffix(inner, "?")
 			var prefix, suffix string
 			if optional {
@@ -248,14 +314,14 @@ func Parse(layout string) (Layout, error) {
 					return nil, err
 				}
 			}
+			if strings.HasSuffix(inner, "#") {
+				return nil, fmt.Errorf("layout %q: {%s}: number the whole name with {#}, as {#}-{%s}", layout, inner, strings.TrimSuffix(inner, "#"))
+			}
 			var choices []Part
 			for _, written := range strings.Split(inner, "|") {
 				choice, err := parseKey(layout, written)
 				if err != nil {
 					return nil, err
-				}
-				if choice.Numbered && strings.Contains(inner, "|") {
-					return nil, fmt.Errorf("layout %q: {%s}: number alternatives together, as {%s}#", layout, inner, strings.ReplaceAll(inner, "#", ""))
 				}
 				choices = append(choices, choice)
 			}
@@ -263,27 +329,66 @@ func Parse(layout string) (Layout, error) {
 			part.Or = choices[1:]
 			rest = rest[end+1:]
 			if strings.HasPrefix(rest, "#") {
-				// {key}# is {key#}; {a|b}# numbers the alternatives together.
-				part.Numbered = true
-				rest = rest[1:]
+				return nil, fmt.Errorf("layout %q: {%s}#: number the whole name with {#}, as {#}-{%s}", layout, inner, inner)
 			}
 			if optional {
-				if part.Numbered {
-					return nil, fmt.Errorf("layout %q: {%s%s%s?}: an optional key is not numbered", layout, prefix, inner, suffix)
-				}
 				part.Optional, part.Prefix, part.Suffix = true, prefix, suffix
 			}
 			parts = append(parts, part)
+		}
+		if err := counted(layout, parts, written); err != nil {
+			return nil, err
 		}
 		out = append(out, parts)
 	}
 	return out, nil
 }
 
-// parseKey reads one key as written between { and }: key, key#, key:format.
+// counted finds what a segment's {#} numbers: the parts after it, less
+// the text straight after it and a trailing .{ext}. A segment has one {#}
+// at most, and it numbers at least one key.
+func counted(layout string, parts []Part, written []string) error {
+	at := -1
+	for i, p := range parts {
+		if !p.Counter {
+			continue
+		}
+		if at >= 0 {
+			return fmt.Errorf("layout %q: one {#} to a folder or file name", layout)
+		}
+		at = i
+	}
+	if at < 0 {
+		return nil
+	}
+	from, to := at+1, len(parts)
+	if from < to && parts[from].Key == "" {
+		from++
+	}
+	if to > from && parts[to-1].Key == "ext" {
+		to--
+		if to > from && parts[to-1].Text == "." {
+			to--
+		}
+	}
+	keyed := false
+	for _, p := range parts[from:to] {
+		keyed = keyed || p.Key != ""
+	}
+	if !keyed {
+		return fmt.Errorf("layout %q: {#} numbers the keys after it, and there is none", layout)
+	}
+	parts[at].From, parts[at].To = from, to
+	parts[at].Of = strings.Join(written[from:to], "")
+	return nil
+}
+
+// parseKey reads one key as written between { and }: key or key:format.
 func parseKey(layout, written string) (Part, error) {
+	if strings.Contains(written, "#") {
+		return Part{}, fmt.Errorf("layout %q: {%s}: number the whole name with {#}, as {#}-{key}", layout, written)
+	}
 	key, format, _ := strings.Cut(written, ":")
-	key, numbered := strings.CutSuffix(key, "#")
 	if !keyPattern.MatchString(key) {
 		return Part{}, fmt.Errorf("layout %q: {%s} is not a key", layout, written)
 	}
@@ -293,7 +398,7 @@ func parseKey(layout, written string) (Part, error) {
 	if strings.Contains(written, ":") && !country.Format(format).Valid() {
 		return Part{}, fmt.Errorf("layout %q: {%s}: a country is written zh, en, alpha2 or alpha3", layout, written)
 	}
-	return Part{Key: key, Format: format, Numbered: numbered}, nil
+	return Part{Key: key, Format: format}, nil
 }
 
 // Keys lists the keys a layout uses, each once, in order.

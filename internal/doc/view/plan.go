@@ -364,22 +364,27 @@ func CombineWith(views []View, fixed []File, items []tree.Item, names TypeNames)
 }
 
 // render fills a layout from keys. It returns the keys it lacked, when there
-// is no default to stand in for them, and the numbered keys whose value is
-// not in order.
+// is no default to stand in for them, and the numbered names, named
+// as their orders are, not in their order.
 func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string) (string, []string) {
 	var lacking []string
 	segments := make([]string, len(layout))
 	for s, parts := range layout {
-		var b strings.Builder
-		for _, part := range parts {
+		pieces := make([]string, len(parts))
+		counter, short := -1, len(lacking)
+		for i, part := range parts {
+			if part.Counter {
+				counter = i
+				continue
+			}
 			if part.Key == "" {
-				b.WriteString(part.Text)
+				pieces[i] = part.Text
 				continue
 			}
 			choice, value, ok := pick(part, keys)
 			if part.Optional {
 				if ok {
-					b.WriteString(part.Prefix + Clean(value) + part.Suffix)
+					pieces[i] = part.Prefix + Clean(value) + part.Suffix
 				}
 				continue
 			}
@@ -392,20 +397,18 @@ func render(layout Layout, keys map[string]string, fallback *string, order map[s
 				}
 				value = *fallback
 			}
-			if part.Numbered {
-				key := part.OrderKey()
-				n := place(order[key], value)
-				if n == 0 {
-					if !contains(lacking, key) {
-						lacking = append(lacking, key)
-					}
-					continue
-				}
-				b.WriteString(padTo(n, len(order[key])) + "-")
-			}
-			b.WriteString(Clean(value))
+			pieces[i] = Clean(value)
 		}
-		segments[s] = b.String()
+		if counter >= 0 && len(lacking) == short {
+			c := parts[counter]
+			name := strings.Join(pieces[c.From:c.To], "")
+			if n := place(order[c.Of], name); n > 0 {
+				pieces[counter] = padTo(n, len(order[c.Of]))
+			} else if !contains(lacking, c.Of) {
+				lacking = append(lacking, c.Of)
+			}
+		}
+		segments[s] = strings.Join(pieces, "")
 		if segments[s] == "" && allOptional(parts) {
 			// Only optional parts, all empty: the folder would vanish and
 			// the path change without anyone asking, so it is lacking.

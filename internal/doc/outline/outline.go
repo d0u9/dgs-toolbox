@@ -165,7 +165,10 @@ func decodeStrict(n *yaml.Node, out any) error {
 	return decoder.Decode(out)
 }
 
+// withHead fills what a rule file may leave out, and writes its layout the
+// way layouts are written now, so a rule saved before reads the same.
 func withHead(r view.View) view.View {
+	r, _ = view.Upgrade(r)
 	if r.Selection == "" {
 		r.Selection = view.Head
 	}

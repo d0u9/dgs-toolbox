@@ -29,7 +29,7 @@ func TestGroupNestsEveryRuleAndCounts(t *testing.T) {
 	}
 	o := Outline{Name: "mine", Rules: []view.View{
 		{Name: "cars", Selection: view.Head, Query: map[string]view.Values{"type": {"car"}},
-			Layout: "{country:alpha2} {make}/{plate#}/{id}.{ext}", Order: map[string][]string{"plate": {"浙AF3897", "浙AT73C7"}}},
+			Layout: "{country:alpha2} {make}/{#}-{plate}/{id}.{ext}", Order: map[string][]string{"{plate}": {"浙AF3897", "浙AT73C7"}}},
 		{Name: "ids", Selection: view.Head, Query: map[string]view.Values{"type": {"passport"}}, Layout: "ids/{owner}.{ext}"},
 	}}
 	g, err := Group(o, nil, items, nil)
@@ -244,5 +244,26 @@ func TestGroupMountsSnapshots(t *testing.T) {
 	o.Snapshots = []Mount{{Name: "visa", At: "../out"}}
 	if err := o.Validate(); err == nil {
 		t.Fatal("a Snapshot was put outside the tree")
+	}
+}
+
+// A rule numbering a key the way it once was is written the way it is now.
+func TestMigrateRewritesOldNumbering(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, RulesDir), 0o755)
+	old := "name: ids\nselection: head\nlayout: '{owner}#/{country#:alpha3}/{name|type:zh}#.{ext}'\norder:\n  owner: [alex]\n  country: [CN]\n  name|type:zh: [身份证]\n"
+	if err := os.WriteFile(filepath.Join(root, RulesDir, "ids.yaml"), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	names, err := Migrate(root)
+	if err != nil || len(names) != 1 || names[0] != "rules/ids" {
+		t.Fatalf("%v %v", names, err)
+	}
+	rules, err := LoadRules(root)
+	if err != nil || rules["ids"].Layout != "{#}-{owner}/{#}-{country:alpha3}/{#}-{name|type:zh}.{ext}" || rules["ids"].Order["{name|type:zh}"][0] != "身份证" {
+		t.Fatalf("%+v %v", rules["ids"], err)
+	}
+	if names, err := Migrate(root); err != nil || len(names) != 0 {
+		t.Fatalf("again: %v %v", names, err)
 	}
 }
