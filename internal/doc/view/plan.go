@@ -55,11 +55,12 @@ func (p Plan) Complete() bool { return len(p.Missing) == 0 && len(p.Clashes) == 
 
 // Matches reports whether item passes every condition of query, as its
 // Current revision has its fields. A value matches as sameValue says: one
-// country however written, or else equal ignoring case.
+// country however written, or else equal ignoring case. TagsKey is left
+// to MatchesTags.
 func Matches(query map[string]Values, item tree.Item) bool {
 	fields := item.CurrentFields()
 	for key, accepted := range query {
-		if len(accepted) == 0 {
+		if len(accepted) == 0 || key == TagsKey {
 			continue
 		}
 		value := fields[key]
@@ -78,6 +79,28 @@ func Matches(query map[string]Values, item tree.Item) bool {
 		}
 	}
 	return true
+}
+
+// TagsKey is the query key that selects by tag. Unlike a field it is
+// matched per revision: a revision matches when it has, among the Item's
+// tags and its own, any tag the query accepts.
+const TagsKey = "tags"
+
+// MatchesTags reports whether the revision ref of item has a tag the
+// query's TagsKey accepts, or the query names no tag.
+func MatchesTags(query map[string]Values, item tree.Item, ref string) bool {
+	accepted := query[TagsKey]
+	if len(accepted) == 0 {
+		return true
+	}
+	for _, have := range item.TagsAt(ref) {
+		for _, want := range accepted {
+			if strings.EqualFold(have, want) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 var isoDate = regexp.MustCompile(`^(\d{4})-(\d{2})-(\d{2})`)
@@ -195,6 +218,9 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 				continue
 			}
 			if v.Selection == Head && rev.Ref() != current {
+				continue
+			}
+			if !MatchesTags(v.Query, item, rev.Ref()) {
 				continue
 			}
 			keys := KeysOf(item, i+1)
