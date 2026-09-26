@@ -567,7 +567,7 @@ order:
 
 ### Rules
 
-A rule has a query, a selection, and a layout, and may select shared Items.
+A rule has a query, a selection, and a layout. It may leave PDFs out and select shared Items.
 
 - **Query** — which Items, by their fields, such as type and owner. A value
   matches ignoring case, and a country matches however it is written: `CN`
@@ -575,6 +575,15 @@ A rule has a query, a selection, and a layout, and may select shared Items.
   The key `tags` selects by tag, per revision: a revision matches when the
   Item's tags or its own include one of the values, ignoring case. An
   Item's tag holds for every revision; a revision's only for itself.
+- **Exclude** — conditions that leave a PDF out, written like the query:
+  a PDF meeting any one of them is not selected. `exclude: {tags:
+  [translation]}` leaves out every translation, however many are added
+  later; a field's value, such as `name: [DIPLOMA]`, works the same way.
+  Tags are matched per revision, as in the query.
+- **Skip** — Items left out by ID, whatever else selects them: the
+  exceptions no condition describes. The Rules page offers to leave out only
+  the Items the rule selects, and each PDF it cannot place has a Leave out
+  button. An ID naming no Item any more is shown as such, to remove.
 - **Selection** — `head` (a document's HEAD revision only) or `all`.
 - **Shared** — `shared: true` also selects an Item shared with someone the
   query's `owner` accepts, as if they were its owner (see Shared). A rule

@@ -135,6 +135,34 @@ func TestBuildShared(t *testing.T) {
 	}
 }
 
+func TestBuildExcludeAndSkip(t *testing.T) {
+	a := item("A", "diploma", map[string]string{"owner": "emma", "name": "毕业证书"}, "d1")
+	b := item("B", "diploma", map[string]string{"owner": "emma", "name": "DIPLOMA"}, "d2")
+	b.Tags = []string{"Translation"}
+	c := item("C", "diploma", map[string]string{"owner": "emma", "name": "学位证书"}, "d3", "d4")
+	c.Revisions[1].Tags = []string{"copy"}
+	d := item("D", "diploma", map[string]string{"owner": "emma", "name": "成绩单"}, "d5")
+	v := View{Name: "x", Selection: All, Layout: "{id}-{revision}.{ext}",
+		Exclude: map[string]Values{"tags": {"translation", "copy"}, "name": {"成绩单"}}, Skip: []string{"A"}}
+	plan, err := Build(v, []tree.Item{a, b, c, d}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	// A skipped Item, an Item's tag, a field and a revision's own tag each
+	// leave out what they meet, and nothing else.
+	if want := []string{"C-1.pdf"}; !reflect.DeepEqual(paths, want) || len(plan.Missing) != 0 {
+		t.Fatalf("got %v, want %v; missing %v", paths, want, plan.Missing)
+	}
+	v.Skip = []string{"A", "A"}
+	if err := v.Validate(); err == nil {
+		t.Fatal("an Item skipped twice was accepted")
+	}
+}
+
 func TestBuildMissingAndDefault(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"owner": "emma"}, "d1")}
 	v := View{Name: "x", Selection: Head, Layout: "{country}/{owner}/{year}.{ext}"}

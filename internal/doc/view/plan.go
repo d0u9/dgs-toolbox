@@ -6,6 +6,7 @@ import (
 	"maps"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -120,6 +121,30 @@ func MatchesTags(query map[string]Values, item tree.Item, ref string) bool {
 	return false
 }
 
+// Excludes reports whether revision ref of item meets any condition of
+// exclude: its field, as that revision has it, is one of a key's values,
+// or it has one of the TagsKey values among its tags.
+func Excludes(exclude map[string]Values, item tree.Item, ref string) bool {
+	fields := item.FieldsAt(ref)
+	for key, values := range exclude {
+		held := []string{fields[key]}
+		switch key {
+		case "type":
+			held = []string{item.Type}
+		case TagsKey:
+			held = item.TagsAt(ref)
+		}
+		for _, have := range held {
+			for _, want := range values {
+				if have != "" && sameValue(have, want) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 var isoDate = regexp.MustCompile(`^(\d{4})-(\d{2})-(\d{2})`)
 
 // KeysOf is every key a layout can use for one revision of item, counting
@@ -226,7 +251,7 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 	plan := Plan{Files: []File{}, Missing: []Missing{}, Clashes: []Clash{}}
 	var placed []File
 	for _, item := range sorted {
-		if !Matches(v.Query, item) && !(v.Shared && MatchesShared(v.Query, item)) {
+		if slices.Contains(v.Skip, item.ID) || !Matches(v.Query, item) && !(v.Shared && MatchesShared(v.Query, item)) {
 			continue
 		}
 		current := item.Current()
@@ -237,7 +262,7 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 			if v.Selection == Head && rev.Ref() != current {
 				continue
 			}
-			if !MatchesTags(v.Query, item, rev.Ref()) {
+			if !MatchesTags(v.Query, item, rev.Ref()) || Excludes(v.Exclude, item, rev.Ref()) {
 				continue
 			}
 			keys := KeysOf(item, i+1)

@@ -67,6 +67,18 @@
           <label><input type="radio" name="selection" value="all"> All revisions</label>
         </div>
       </div>
+      <div class="vf"><span class="vf-label">Leave out where</span>
+        <div class="vf-stack">
+          <div id="exclude"></div>
+          <button id="add-exclude" class="button" type="button" title="A PDF meeting any of these is left out: a tag such as translation, or a field's value">+ Exclusion</button>
+        </div>
+      </div>
+      <div class="vf"><span class="vf-label">Leave out Items</span>
+        <div class="vf-stack">
+          <div id="skip-list" class="checks"></div>
+          <select id="add-skip" title="Only the Items this rule selects are offered"></select>
+        </div>
+      </div>
       <div class="vf"><span class="vf-label">Shared</span>
         <div class="checks">
           <label title="An Item shared with an owner the query names is taken as theirs; its {owner} is still its own owner"><input type="checkbox" id="shared"> also Items shared with the owners chosen</label>

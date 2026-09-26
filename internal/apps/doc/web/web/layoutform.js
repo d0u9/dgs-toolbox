@@ -2,12 +2,13 @@
 // revisions, a layout built from key chips, and a Numbering list per
 // {#}. The page owns the rest of
 // its form and what a change redraws; the server computes the result.
-import { $, el, currentFields } from "/common.js";
+import { $, el, currentFields, label } from "/common.js";
 
 let state = { templates: [], items: [] };
 let keys = [];
 let countries = {}; // each country's every form: its alpha-3 code
 let orders = {}; // per numbered name, its order as typed: "alex, emma"
+let skip = []; // the IDs of the Items the rule leaves out
 let changed = () => {};
 
 // setup gives the form the tree's state, the keys a layout can use, the
@@ -25,6 +26,9 @@ export function fill(v) {
     el("input", { type: "checkbox", value: t.type, checked: types.includes(t.type), onchange: narrow }), " " + t.type)));
   $("conditions").replaceChildren(...Object.entries(v.query || {})
     .filter(([k]) => k !== "type").map(([k, values]) => condition(k, values)));
+  $("exclude").replaceChildren(...Object.entries(v.exclude || {}).map(([k, values]) => condition(k, values)));
+  skip = [...(v.skip || [])];
+  drawSkip();
   document.querySelector(`input[name=selection][value=${v.selection || "head"}]`).checked = true;
   if ($("shared")) $("shared").checked = !!v.shared;
   $("layout").value = v.layout;
@@ -43,8 +47,15 @@ export function read() {
     const values = [...row.querySelectorAll(".checks input:checked")].map((i) => i.value);
     if (values.length) query[row.querySelector("select").value] = values;
   }
+  const exclude = {};
+  for (const row of $("exclude").children) {
+    const values = [...row.querySelectorAll(".checks input:checked")].map((i) => i.value);
+    if (values.length) exclude[row.querySelector("select").value] = [...(exclude[row.querySelector("select").value] || []), ...values];
+  }
   const out = { query, selection: document.querySelector("input[name=selection]:checked").value, layout: $("layout").value.trim() };
   if ($("shared")?.checked) out.shared = true;
+  if (Object.keys(exclude).length) out.exclude = exclude;
+  if (skip.length) out.skip = [...skip];
   const order = {};
   for (const key of numberedKeys()) {
     const list = (orders[key] || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -65,6 +76,38 @@ $("add-condition").addEventListener("click", () => {
   $("conditions").append(condition(keys.find((k) => k === "owner") || keys[0], []));
   changed();
 });
+$("add-exclude").addEventListener("click", () => {
+  $("exclude").append(condition("tags", []));
+  changed();
+});
+
+// skipItem leaves an Item out of the rule, whatever else it selects.
+export function skipItem(id) {
+  if (!skip.includes(id)) skip.push(id);
+  drawSkip();
+  drawOrder();
+  changed();
+}
+
+// drawSkip lists the Items left out, each put back with ×, and offers the
+// Items the rule selects, so one is picked from those, not from the tree.
+function drawSkip() {
+  const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
+  const unskip = (id) => { skip = skip.filter((x) => x !== id); drawSkip(); drawOrder(); changed(); };
+  $("skip-list").replaceChildren(...skip.map((id) => el("span", { className: "order-chip", title: id },
+    byId[id] ? label(state, byId[id]) : id + " (no such Item)",
+    el("button", { type: "button", className: "tool", title: "Put it back", textContent: "×", onclick: () => unskip(id) }))));
+  const offered = selected().sort((a, b) => label(state, a).localeCompare(label(state, b)));
+  $("add-skip").replaceChildren(el("option", { value: "" }, offered.length ? "+ Leave out an Item…" : "The rule selects no Item"),
+    ...offered.map((i) => el("option", { value: i.id }, label(state, i))));
+  $("add-skip").disabled = !offered.length;
+}
+$("add-skip").addEventListener("change", (event) => {
+  const id = event.target.value;
+  event.target.value = "";
+  if (id) skipItem(id);
+});
+
 
 // same reports whether a and b are one value: one country however each is
 // written, or else equal ignoring case.
@@ -78,13 +121,22 @@ function chosenTypes() {
 }
 
 // selected is the Items the form's query picks: the chosen types, and each
-// condition's values when some are ticked. Tags count the Item's and any of
-// its revisions'.
+// condition's values when some are ticked, less the Items skipped and those
+// an exclusion meets at their current revision. Tags count the Item's and
+// any of its revisions'.
 function selected() {
   const types = chosenTypes();
   const conditions = [...$("conditions").children].map((row) => [row.querySelector("select").value,
     [...row.querySelectorAll(".checks input:checked")].map((i) => i.value)]).filter(([, values]) => values.length);
-  return state.items.filter((item) => types.includes(item.type) && conditions.every(([key, values]) => {
+  const exclusions = [...$("exclude").children].map((row) => [row.querySelector("select").value,
+    [...row.querySelectorAll(".checks input:checked")].map((i) => i.value)]).filter(([, values]) => values.length);
+  const excluded = (item) => exclusions.some(([key, values]) => {
+    const head = item.head || item.revisions?.[item.revisions.length - 1]?.id || item.revisions?.[item.revisions.length - 1]?.digest;
+    const held = key === "tags" ? [...(item.tags || []), ...((item.revisions || []).find((r) => (r.id || r.digest) === head)?.tags || [])]
+      : [key === "type" ? item.type : currentFields(item)[key]].filter(Boolean);
+    return held.some((h) => values.some((v) => same(h, v)));
+  });
+  return state.items.filter((item) => !skip.includes(item.id) && !excluded(item) && types.includes(item.type) && conditions.every(([key, values]) => {
     const held = key === "tags" ? [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])] : [currentFields(item)[key]].filter(Boolean);
     // A rule taking shared Items takes them for the people they are shared with.
     if (key === "owner" && $("shared")?.checked) held.push(...(item.shared_with || []));
@@ -97,6 +149,8 @@ function selected() {
 function narrow() {
   chips();
   for (const row of $("conditions").children) row.redraw();
+  for (const row of $("exclude").children) row.redraw();
+  drawSkip();
   drawOrder();
   changed();
 }
@@ -107,7 +161,7 @@ function narrow() {
 // no Item holds any more is still listed, ticked.
 function condition(key, values) {
   // What the query picks changes the numbering shown.
-  const touched = () => { drawOrder(); changed(); };
+  const touched = () => { drawOrder(); drawSkip(); changed(); };
   const choices = el("div", { className: "checks" });
   const draw = (saved) => {
     const types = chosenTypes();
