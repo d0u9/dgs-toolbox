@@ -332,7 +332,12 @@ function fillAll(byItem) {
   const message = el("span", { className: "message" });
   const pick = el("select", {}, ...shared.map((w) => el("option", { value: w.field.key }, w.field.key + " on " + w.items.length + " Items")));
   const slot = el("span");
-  const draw = () => slot.replaceChildren(inputFor(shared.find((w) => w.field.key === pick.value).field, "", "", state));
+  const draw = () => {
+    const selected = shared.find((w) => w.field.key === pick.value);
+    const types = new Set(selected.items.map(({ item }) => item.type));
+    slot.replaceChildren(inputFor(selected.field, "", "", state, undefined,
+      types.size === 1 ? [...types][0] : undefined));
+  };
   pick.onchange = draw;
   draw();
   const form = el("form", { className: "fill fill-all" }, el("span", {}, "Set "), pick, slot,

@@ -28,7 +28,10 @@ func (s server) texts() ([]search.Doc, []tree.Item, error) {
 	var docs []search.Doc
 	var unread []tree.Item
 	for _, item := range items {
-		head := item.Current()
+		head := item.CurrentDigest()
+		if head == "" {
+			continue
+		}
 		first, count, ok := s.store.Load(head, 0)
 		if !ok {
 			unread = append(unread, item)
@@ -73,7 +76,7 @@ func (s server) readAll(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	for _, item := range unread {
-		s.reader.Ahead(tree.PDFPath(s.root, item.ID, item.Current()), item.Current())
+		s.reader.Ahead(tree.PDFPath(s.root, item.ID, item.CurrentDigest()), item.CurrentDigest())
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"queued": len(unread)})
 }

@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/filedialog.css">
 <link rel="stylesheet" href="/ui/menu.css">
 <link rel="stylesheet" href="/ui/tags.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
@@ -147,23 +148,25 @@
         <span id="page-label" class="numeric muted"></span>
         <button id="page-next" class="tool" type="button" title="Next page" aria-label="Next page">›</button>
         <button id="open-reader" class="button" type="button">Open</button>
-        <span id="detail-rev" class="muted"></span>
+        <button id="attach-pdf" class="button small-button" type="button" hidden>Attach PDF…</button>
       </div>
     </div>
     <div id="picture-splitter" class="splitter row" role="separator" aria-orientation="horizontal"></div>
     <div class="detail-scroll">
+    <div class="snapshot-bar"><span id="detail-rev" class="muted"></span></div>
     <p id="text-message" class="message text-status"></p>
     <section class="detail-section">
-      <h3>Fields</h3>
-      <a id="change-type" class="button" href="/change-type/">Change type…</a>
+      <div class="detail-section-head"><h3>Fields</h3>
+      <a id="change-type" class="button small-button" href="/change-type/">Change type…</a></div>
       <form id="edit">
         <div id="edit-fields"></div>
-        <div class="detail-actions"><button id="save-button" class="action" type="submit">Save fields</button>
+        <div class="detail-actions"><button id="save-button" class="action" type="submit">Save new revision</button>
           <p id="edit-message" class="message"></p></div>
       </form>
     </section>
     <section class="detail-section">
-      <h3>Revisions</h3>
+      <div class="detail-section-head"><h3>Revisions</h3>
+      <a id="new-without-pdf" class="button small-button" title="Create a revision without a PDF" hidden>New without PDF…</a></div>
       <ul id="revisions" class="rows"></ul>
       <p id="head-message" class="message"></p>
     </section>
@@ -182,7 +185,7 @@
       <form id="tags-form">
         <span class="tags-label">Every revision</span>
         <div id="detail-tags" data-label="Item tags"></div>
-        <div class="detail-actions"><button class="action" type="submit">Save tags</button>
+        <div class="detail-actions"><button class="button" type="submit">Save tags</button>
           <p id="tags-message" class="message"></p></div>
       </form>
       <form id="revision-tags-form" hidden>
@@ -196,7 +199,7 @@
       <h3>Notes</h3>
       <form id="notes-form">
         <textarea id="notes" class="notes" rows="3" placeholder="Only for you: never a key, never exported."></textarea>
-        <div class="detail-actions"><button class="action" type="submit">Save notes</button>
+        <div class="detail-actions"><button class="button" type="submit">Save notes</button>
           <p id="notes-message" class="message"></p></div>
       </form>
     </section>
@@ -213,6 +216,9 @@
     </section>
     <section class="detail-section">
       <h3>Retire</h3>
+      <div id="supersession-links"></div>
+      <form id="supersession-form" hidden><label class="form-field"><span>Replaces</span><select id="supersession-choice"></select></label><button class="button" type="submit">Replace selected visa</button></form>
+      <button id="undo-supersession" class="button" type="button" hidden>Undo replacement</button>
       <p id="retire-note" class="danger-note"></p>
       <form id="retire-form" class="retire-form">
         <input id="retire-reason" autocomplete="off" placeholder="Why (optional): left the company, moved away…">

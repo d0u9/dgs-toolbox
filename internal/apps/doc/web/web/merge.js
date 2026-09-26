@@ -17,7 +17,7 @@ const named = (id) => {
 };
 const revision = (id, digest) => {
   const item = state.items.find((i) => i.id === id);
-  const n = item ? item.revisions.findIndex((r) => r.digest === digest) : -1;
+  const n = item ? item.revisions.findIndex((r) => (r.id || r.digest) === digest) : -1;
   return (n >= 0 ? "revision " + (n + 1) : "a revision new here") + " (" + short(digest) + ")";
 };
 
@@ -60,10 +60,10 @@ function draw() {
     section("Cannot merge", plan.problems.map((p) => el("li", { className: "error" }, p))),
     section("Conflicts — choose a side", plan.conflicts.map(conflictRow)),
     section("New Items", plan.new.map((c) => el("li", {}, c.type + " · " + fields(c.fields),
-      el("span", { className: "sub" }, c.digests.length + (c.digests.length === 1 ? " PDF" : " PDFs"))))),
+      el("span", { className: "sub" }, c.digests.length + (c.digests.length === 1 ? " revision" : " revisions"))))),
     section("Changed Items", plan.changed.map((c) => el("li", {}, named(c.item),
       el("span", { className: "sub" }, [
-        c.digests && c.digests.length ? c.digests.length + " new revision" + (c.digests.length === 1 ? "" : "s") : "",
+        c.digests && c.digests.length ? c.digests.length + " added or completed revision" + (c.digests.length === 1 ? "" : "s") : "",
         c.head ? "HEAD moves to " + short(c.head) : "",
         c.notes ? "notes added" : "",
       ].filter(Boolean).join(" · "))))),

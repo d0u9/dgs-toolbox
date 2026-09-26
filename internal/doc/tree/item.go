@@ -19,10 +19,13 @@ import (
 // SidecarName is the file in each Item's folder that holds its metadata.
 const SidecarName = "item.dgs-item.yaml"
 
-// Revision is one PDF of an Item.
+// Revision is one issue of an Item, optionally with a PDF.
 type Revision struct {
-	Digest string `yaml:"digest" json:"digest"`
-	Added  string `yaml:"added" json:"added"`
+	Snapshot bool   `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
+	Type     string `yaml:"type,omitempty" json:"type,omitempty"`
+	ID       string `yaml:"id,omitempty" json:"id,omitempty"`
+	Digest   string `yaml:"digest" json:"digest"`
+	Added    string `yaml:"added" json:"added"`
 	// Source is the name the PDF had when it was imported, for a person
 	// wondering where it came from.
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
@@ -31,6 +34,14 @@ type Revision struct {
 	Fields map[string]string `yaml:"fields,omitempty" json:"fields,omitempty"`
 	// Tags are this revision's own, beside the Item's: a reissue, a copy.
 	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+}
+
+// Ref identifies this snapshot; legacy PDF revisions use their digest.
+func (r Revision) Ref() string {
+	if r.ID != "" {
+		return r.ID
+	}
+	return r.Digest
 }
 
 // Item is one sidecar.
@@ -47,6 +58,7 @@ type Item struct {
 	// organisation the owner has left — though it has not expired. Browse
 	// shows it faded and last; exports are not affected. RetiredReason is
 	// the owner's optional note on why.
+	SupersededBy  string     `yaml:"superseded_by,omitempty" json:"superseded_by,omitempty"`
 	Retired       bool       `yaml:"retired,omitempty" json:"retired,omitempty"`
 	RetiredReason string     `yaml:"retired_reason,omitempty" json:"retired_reason,omitempty"`
 	Head          string     `yaml:"head,omitempty" json:"head,omitempty"`
@@ -74,14 +86,14 @@ type HistoryEvent struct {
 	NewRevisions      map[string]map[string]string `yaml:"new_revisions,omitempty" json:"new_revisions,omitempty"`
 }
 
-// Current is the digest of the PDF that stands for the Item: HEAD for a
-// document, the one PDF for a record.
+// Current is the revision reference that stands for the Item: HEAD for a
+// document, the one revision for a record.
 func (i Item) Current() string {
 	if i.Head != "" {
 		return i.Head
 	}
 	if len(i.Revisions) > 0 {
-		return i.Revisions[len(i.Revisions)-1].Digest
+		return i.Revisions[len(i.Revisions)-1].Ref()
 	}
 	return ""
 }
@@ -91,12 +103,21 @@ func (i Item) Current() string {
 // keeps at the Item for a per_revision key, from before the key was one,
 // stands for every revision that has none of its own.
 func (i Item) FieldsAt(digest string) map[string]string {
+	for _, r := range i.Revisions {
+		if r.Ref() == digest && r.Snapshot {
+			out := make(map[string]string, len(r.Fields))
+			for k, v := range r.Fields {
+				out[k] = v
+			}
+			return out
+		}
+	}
 	out := make(map[string]string, len(i.Fields))
 	for k, v := range i.Fields {
 		out[k] = v
 	}
 	for _, r := range i.Revisions {
-		if r.Digest == digest {
+		if r.Ref() == digest || (digest != "" && r.Digest == digest) {
 			for k, v := range r.Fields {
 				out[k] = v
 			}
@@ -220,9 +241,19 @@ func NewID(now time.Time) (string, error) {
 func (item Item) TagsAt(digest string) []string {
 	all := append([]string(nil), item.Tags...)
 	for _, r := range item.Revisions {
-		if r.Digest == digest {
+		if r.Ref() == digest || (digest != "" && r.Digest == digest) {
 			all = append(all, r.Tags...)
 		}
 	}
 	return tag.List(all)
+}
+
+// CurrentDigest returns the current attachment digest, or empty for no PDF.
+func (i Item) CurrentDigest() string {
+	for _, r := range i.Revisions {
+		if r.Ref() == i.Current() {
+			return r.Digest
+		}
+	}
+	return ""
 }

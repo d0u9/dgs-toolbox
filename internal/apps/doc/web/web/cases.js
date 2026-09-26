@@ -143,7 +143,7 @@ function drawEntries() {
   const rows = current.entries.map((e) => {
     const item = items[e.item];
     const gone = current.missing.includes(e.item);
-    const revision = item && e.digest ? item.revisions.findIndex((r) => r.digest === e.digest) + 1 : 0;
+    const revision = item && e.digest ? item.revisions.findIndex((r) => (r.id || r.digest) === e.digest) + 1 : 0;
     const sub = [e.note, "added " + day(e.added)];
     if (archived && e.digest) sub.push(revision ? "handed over: revision " + revision + (item.head && item.head !== e.digest ? " (HEAD has moved on)" : "") : "revision " + e.digest.slice(0, 8));
     return el("li", {},

@@ -60,8 +60,8 @@ func TestEveryProblem(t *testing.T) {
 	missing := importOne(t, root, "b.pdf", "tom")
 	odd := importOne(t, root, "c.pdf", "ann")
 
-	os.WriteFile(tree.PDFPath(root, changed.ID, changed.Head), []byte("altered"), 0o644)
-	os.Remove(tree.PDFPath(root, missing.ID, missing.Head))
+	os.WriteFile(tree.PDFPath(root, changed.ID, changed.CurrentDigest()), []byte("altered"), 0o644)
+	os.Remove(tree.PDFPath(root, missing.ID, missing.CurrentDigest()))
 	os.WriteFile(filepath.Join(tree.Dir(root, odd.ID), "stray.pdf"), []byte("x"), 0o644)
 	odd.Type, odd.Head = "passport", "0000"
 	if err := tree.WriteItem(root, odd); err != nil {

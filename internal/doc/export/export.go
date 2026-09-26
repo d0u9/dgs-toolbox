@@ -32,13 +32,20 @@ const ManifestName = "dgs-export.json"
 const Version = 2
 
 // Entry is one file an export wrote.
+// The optional stable-ID fields preserve identity and field ownership when a
+// formerly attachment-free revision is imported from a Target.
 type Entry struct {
-	Path     string `json:"path"`
-	Digest   string `json:"digest"`
-	Item     string `json:"item"`
-	Type     string `json:"type"`
-	Kind     string `json:"kind"`
-	Revision int    `json:"revision"`
+	Snapshot       bool              `json:"snapshot,omitempty"`
+	RevisionType   string            `json:"revision_type,omitempty"`
+	ItemFields     map[string]string `json:"item_fields,omitempty"`
+	RevisionFields map[string]string `json:"revision_fields,omitempty"`
+	RevisionID     string            `json:"revision_id,omitempty"`
+	Path           string            `json:"path"`
+	Digest         string            `json:"digest"`
+	Item           string            `json:"item"`
+	Type           string            `json:"type"`
+	Kind           string            `json:"kind"`
+	Revision       int               `json:"revision"`
 	// View is the View that placed the file.
 	View string `json:"view"`
 	// Head is set on the revision that was the document's HEAD.
@@ -292,8 +299,22 @@ func Apply(ctx context.Context, root, target string, views []string, plan Plan, 
 	}
 	entry := func(a Action) Entry {
 		it := byID[a.Item]
-		return Entry{Path: a.Path, Digest: a.Digest, Item: a.Item, Type: it.Type, Kind: string(it.Kind),
-			Revision: a.Revision, View: a.View, Head: it.Kind == tree.KindDocument && it.Current() == a.Digest, Fields: it.FieldsAt(a.Digest)}
+		var revision tree.Revision
+		if a.Revision > 0 && a.Revision <= len(it.Revisions) {
+			revision = it.Revisions[a.Revision-1]
+		} else {
+			for _, r := range it.Revisions {
+				if r.Digest == a.Digest {
+					revision = r
+					break
+				}
+			}
+		}
+		ref := revision.Ref()
+		return Entry{Snapshot: revision.Snapshot, RevisionType: revision.Type, ItemFields: it.Fields, RevisionFields: revision.Fields, RevisionID: revision.ID,
+			Path: a.Path, Digest: a.Digest, Item: a.Item, Type: it.Type, Kind: string(it.Kind), Revision: a.Revision, View: a.View,
+			Head: it.Current() == ref, Fields: it.FieldsAt(ref)}
+
 	}
 	var done []Entry
 	for _, a := range plan.Keep {
