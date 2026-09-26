@@ -116,10 +116,8 @@ func (v View) Validate() error {
 			if part.Key == "" {
 				continue
 			}
-			for _, choice := range part.choices() {
-				if choice.Numbered && len(v.Order[choice.Key]) == 0 {
-					return fmt.Errorf("view %s: {%s#} is numbered, so order needs a list for %s", v.Name, choice.Key, choice.Key)
-				}
+			if key := part.OrderKey(); part.Numbered && len(v.Order[key]) == 0 {
+				return fmt.Errorf("view %s: %s is numbered, so order needs a list for %s", v.Name, part.written(), key)
 			}
 		}
 	}
@@ -133,7 +131,8 @@ func (v View) Validate() error {
 // {key:format} is a country written in that format — zh, en, alpha2 or
 // alpha3 — whatever form the Item keeps it in. A key written {key#} is
 // prefixed with its value's place in the View's order, as 01-. Keys written
-// {a|b} are alternatives: the first one an Item has is written.
+// {a|b} are alternatives: the first one an Item has is written. Alternatives
+// are numbered together, {a|b}#, from one order named a|b.
 type Part struct {
 	Text     string `json:"text,omitempty"`
 	Key      string `json:"key,omitempty"`
@@ -145,7 +144,32 @@ type Part struct {
 
 // choices is p and its alternatives, in the order they are tried.
 func (p Part) choices() []Part {
-	return append([]Part{{Key: p.Key, Format: p.Format, Numbered: p.Numbered}}, p.Or...)
+	return append([]Part{{Key: p.Key, Format: p.Format}}, p.Or...)
+}
+
+// OrderKey names the order a numbered part is numbered from: its key, or
+// for alternatives each written as key or key:format, joined by |.
+func (p Part) OrderKey() string {
+	if len(p.Or) == 0 {
+		return p.Key
+	}
+	var names []string
+	for _, c := range p.choices() {
+		name := c.Key
+		if c.Format != "" {
+			name += ":" + c.Format
+		}
+		names = append(names, name)
+	}
+	return strings.Join(names, "|")
+}
+
+// written is p as a layout writes it when numbered.
+func (p Part) written() string {
+	if len(p.Or) == 0 {
+		return "{" + p.Key + "#}"
+	}
+	return "{" + p.OrderKey() + "}#"
 }
 
 // Layout is a parsed layout, one list of parts per path segment.
@@ -194,18 +218,27 @@ func Parse(layout string) (Layout, error) {
 			if end < 0 {
 				return nil, fmt.Errorf("layout %q: { without }", layout)
 			}
+			inner := rest[:end]
 			var choices []Part
-			for _, written := range strings.Split(rest[:end], "|") {
+			for _, written := range strings.Split(inner, "|") {
 				choice, err := parseKey(layout, written)
 				if err != nil {
 					return nil, err
+				}
+				if choice.Numbered && strings.Contains(inner, "|") {
+					return nil, fmt.Errorf("layout %q: {%s}: number alternatives together, as {%s}#", layout, inner, strings.ReplaceAll(inner, "#", ""))
 				}
 				choices = append(choices, choice)
 			}
 			part := choices[0]
 			part.Or = choices[1:]
-			parts = append(parts, part)
 			rest = rest[end+1:]
+			if strings.HasPrefix(rest, "#") {
+				// {key}# is {key#}; {a|b}# numbers the alternatives together.
+				part.Numbered = true
+				rest = rest[1:]
+			}
+			parts = append(parts, part)
 		}
 		out = append(out, parts)
 	}

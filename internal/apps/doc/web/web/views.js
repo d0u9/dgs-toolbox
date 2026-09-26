@@ -193,18 +193,36 @@ function accept(i) {
 
 $("layout").addEventListener("input", () => { active = 0; suggest(); drawOrder(); });
 
-// The keys the layout numbers, {key#} or {key#:format}, each once.
-const numberedKeys = () => [...new Set([...$("layout").value.matchAll(/[{|]([a-z0-9_-]+)#/g)].map((m) => m[1]))];
+// The orders the layout numbers from, each once: a key written {key#},
+// {key#:format} or {key}#, or alternatives written {a|b}#, named a|b.
+const numberedKeys = () => [...new Set([...$("layout").value.matchAll(/\{([^{}]*)\}(#?)/g)].flatMap(([, inner, after]) => {
+  if (inner.includes("|")) return after ? [inner] : [];
+  const [, key, hash] = /^([a-z0-9_-]+)(#?)/.exec(inner) || [];
+  return key && (hash || after) ? [key] : [];
+}))];
 
-// One row per numbered key: the values it may have, in the order they are
-// numbered from 01. A key new to the layout starts with the values Items have.
+// An Item's value for one order: the first alternative it has. A type:zh or
+// type:en is its Template's name.
+function orderValue(item, key) {
+  for (const choice of key.split("|")) {
+    const [name, format] = choice.split(":");
+    const value = name === "type"
+      ? (format ? (state.templates.find((t) => t.type === item.type)?.names || {})[format] : item.type)
+      : item.fields && item.fields[name];
+    if (value) return value;
+  }
+  return "";
+}
+
+// One row per order: the values it may have, in the order they are numbered
+// from 01. An order new to the layout starts with the values Items have.
 function drawOrder() {
   const rows = numberedKeys().map((key) => {
     if (orders[key] === undefined) {
-      orders[key] = [...new Set(state.items.map((i) => i.fields && i.fields[key]).filter(Boolean))].sort().join(", ");
+      orders[key] = [...new Set(state.items.map((i) => orderValue(i, key)).filter(Boolean))].sort().join(", ");
     }
     return el("div", { className: "condition" },
-      el("code", {}, "{" + key + "#}"),
+      el("code", {}, key.includes("|") ? "{" + key + "}#" : "{" + key + "#}"),
       el("input", { value: orders[key], placeholder: "first, second, …", spellcheck: false, autocomplete: "off",
         title: "Numbered 01, 02, … in this order. A value not listed is a missing key.",
         oninput: (event) => { orders[key] = event.target.value; } }));

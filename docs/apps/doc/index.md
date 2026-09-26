@@ -501,9 +501,12 @@ Item.
 Keys written `{a|b}` are alternatives: the first one an Item has is written,
 each with its own format or numbering. `{name|type:zh}` writes an ID card's
 name, such as `户口首页`, and a driver licence, which has no name, as `驾驶证`.
-An Item with none of them is missing the first.
+An Item with none of them is missing the first. Alternatives are numbered
+together, written `{name|type:zh}#`, from one order named `name|type:zh`
+that lists the values as written, such as `[身份证, 户口首页, 驾驶证]`, so
+they never share a number. One alternative alone may not be numbered.
 
-A key written `{key#}` is numbered: its value is prefixed with its place in
+A key written `{key#}`, or `{key}#`, is numbered: its value is prefixed with its place in
 the View's `order` for that key, counting from `01-`, so
 `{owner#}/{country#:alpha3}` with the order below writes `01-alex/02-AUS`.
 Numbers have two digits, more when the list is longer than 99. Values in an
