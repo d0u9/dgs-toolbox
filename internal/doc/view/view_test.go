@@ -157,6 +157,21 @@ func TestBuildExcludeAndSkip(t *testing.T) {
 	if want := []string{"C-1.pdf"}; !reflect.DeepEqual(paths, want) || len(plan.Missing) != 0 {
 		t.Fatalf("got %v, want %v; missing %v", paths, want, plan.Missing)
 	}
+	e := item("E", "visa", map[string]string{"owner": "emma"}, "d6")
+	e.SupersededBy = "F"
+	f := item("F", "visa", map[string]string{"owner": "emma"}, "d7")
+	g := item("G", "visa", map[string]string{"owner": "emma"}, "d8")
+	g.Retired = true
+	for status, want := range map[string][]string{"superseded": {"F-1.pdf", "G-1.pdf"}, "retired": {"F-1.pdf"}} {
+		plan, _ := Build(View{Name: "v", Selection: All, Layout: "{id}-{revision}.{ext}", Exclude: map[string]Values{"status": {status}}}, []tree.Item{e, f, g}, nil)
+		var got []string
+		for _, file := range plan.Files {
+			got = append(got, file.Path)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("exclude %s: got %v, want %v", status, got, want)
+		}
+	}
 	v.Skip = []string{"A", "A"}
 	if err := v.Validate(); err == nil {
 		t.Fatal("an Item skipped twice was accepted")

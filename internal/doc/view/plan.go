@@ -121,9 +121,28 @@ func MatchesTags(query map[string]Values, item tree.Item, ref string) bool {
 	return false
 }
 
+// StatusKey is the exclude key that leaves Items out by where they stand
+// rather than by a field: Status names the values.
+const StatusKey = "status"
+
+// Status is what item is besides its fields: `superseded` when a later
+// Item replaces it, `retired` when it is no longer used, as a superseded
+// Item also is.
+func Status(item tree.Item) []string {
+	var out []string
+	if item.SupersededBy != "" {
+		out = append(out, "superseded")
+	}
+	if item.Retired || item.SupersededBy != "" {
+		out = append(out, "retired")
+	}
+	return out
+}
+
 // Excludes reports whether revision ref of item meets any condition of
 // exclude: its field, as that revision has it, is one of a key's values,
-// or it has one of the TagsKey values among its tags.
+// it has one of the TagsKey values among its tags, or item has one of the
+// StatusKey values.
 func Excludes(exclude map[string]Values, item tree.Item, ref string) bool {
 	fields := item.FieldsAt(ref)
 	for key, values := range exclude {
@@ -133,6 +152,8 @@ func Excludes(exclude map[string]Values, item tree.Item, ref string) bool {
 			held = []string{item.Type}
 		case TagsKey:
 			held = item.TagsAt(ref)
+		case StatusKey:
+			held = Status(item)
 		}
 		for _, have := range held {
 			for _, want := range values {
