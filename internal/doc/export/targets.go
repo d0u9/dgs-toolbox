@@ -6,13 +6,14 @@ import (
 	"path/filepath"
 	"sort"
 
+	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
 
-// Job is one Target to export into, with the Views that go there.
+// Job is one folder to export into, with the rules that go there.
 type Job struct {
-	// Name is the Target's name, or empty for a folder chosen by hand.
+	// Name is the Outline's name, or empty for a folder chosen by hand.
 	Name  string
 	Path  string
 	Views []view.View
@@ -39,42 +40,46 @@ func (j JobPlan) Ready() bool {
 	return j.Combined.Complete() && len(j.Plan.Blocked) == 0 && len(j.Problems) == 0
 }
 
-// Jobs groups views by the Target each names. targets maps each of the
-// tree's Targets to the folder it goes to this time, "" when none is
-// chosen. names picks Targets; none means every Target a View names. A View
-// naming a Target the tree lacks, a Target asked for that no View names and
-// one with no folder are problems.
-func Jobs(views []view.View, targets map[string]string, names []string) ([]Job, []string) {
+// Jobs is one Job per Outline named, or, when none is, per Outline with
+// rules and a folder. Each goes to the folder chosen for it this time, else
+// its own folder with ~ made home. An Outline named that the tree lacks, or
+// that has no rule or no folder, is a problem.
+func Jobs(outlines []outline.Outline, chosen map[string]string, home string, names []string) ([]Job, []string) {
 	var problems []string
-	byTarget := map[string][]view.View{}
-	for _, v := range views {
-		if v.Target == "" {
-			continue
+	folder := func(o outline.Outline) string {
+		if f := chosen[o.Name]; f != "" {
+			return filepath.Clean(f)
 		}
-		if _, ok := targets[v.Target]; !ok {
-			problems = append(problems, fmt.Sprintf("the View %s names the Target %s, which the tree's targets.yaml does not have", v.Name, v.Target))
-			continue
+		if o.Folder != "" {
+			return filepath.Clean(outline.Expand(o.Folder, home))
 		}
-		byTarget[v.Target] = append(byTarget[v.Target], v)
+		return ""
 	}
-	if len(names) == 0 {
-		for name := range byTarget {
-			names = append(names, name)
+	byName := map[string]outline.Outline{}
+	for _, o := range outlines {
+		byName[o.Name] = o
+	}
+	all := len(names) == 0
+	if all {
+		for _, o := range outlines {
+			if len(o.Rules) > 0 && folder(o) != "" {
+				names = append(names, o.Name)
+			}
 		}
 		sort.Strings(names)
 	}
 	var jobs []Job
 	for _, name := range names {
-		path, ok := targets[name]
+		o, ok := byName[name]
 		switch {
 		case !ok:
-			problems = append(problems, "no Target named "+name+" in the tree's targets.yaml")
-		case len(byTarget[name]) == 0:
-			problems = append(problems, "no View names the Target "+name)
-		case path == "":
-			problems = append(problems, "choose a folder for the Target "+name+": it has none of its own")
+			problems = append(problems, "no Outline named "+name)
+		case len(o.Rules) == 0:
+			problems = append(problems, "the Outline "+name+" has no rule")
+		case folder(o) == "":
+			problems = append(problems, "choose a folder for the Outline "+name+": it has none of its own")
 		default:
-			jobs = append(jobs, Job{Name: name, Path: path, Views: byTarget[name]})
+			jobs = append(jobs, Job{Name: name, Path: folder(o), Views: o.Rules})
 		}
 	}
 	return jobs, problems
@@ -128,7 +133,7 @@ func PlanJobs(ctx context.Context, root string, jobs []Job, items []tree.Item) (
 
 func label(j Job) string {
 	if j.Name != "" {
-		return "the Target " + j.Name
+		return "the Outline " + j.Name
 	}
 	return filepath.Base(j.Path)
 }

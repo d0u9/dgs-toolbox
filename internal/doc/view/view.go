@@ -1,24 +1,18 @@
-// Package view is a doc tree's Views: which Items a View selects, and the
-// path each selected PDF would have in an export. It computes a plan and
-// writes nothing but View files; the rules are in docs/apps/doc/index.md.
+// Package view is one rule of an Outline: which Items it selects, and the
+// path each selected PDF has in the Outline's tree and in an export of it.
+// It computes a plan and writes nothing; Outlines keep their rules, and the
+// rules are in docs/apps/doc/index.md.
 package view
 
 import (
 	"dgs-toolbox/internal/doc/country"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
-
-// Dir is the folder under a tree's root that holds one file per View.
-const Dir = "views"
 
 // Selection is which revisions of a document a View takes.
 type Selection string
@@ -59,7 +53,8 @@ func (v Values) MarshalYAML() (any, error) {
 	return []string(v), nil
 }
 
-// View is one file under views/.
+// View is one rule of an Outline. Its name is unique within the Outline; an
+// export's manifest records it against every file the rule placed.
 type View struct {
 	Name string `yaml:"name" json:"name"`
 	// Query holds, per key, the values an Item's key may have. An Item must
@@ -71,9 +66,6 @@ type View struct {
 	Default *string `yaml:"default,omitempty" json:"default,omitempty"`
 	// Dedupe is empty (refuse) or DedupeNumber.
 	Dedupe string `yaml:"dedupe,omitempty" json:"dedupe,omitempty"`
-	// Target names the configured folder the View is exported to. Views
-	// naming one Target are exported into it together.
-	Target string `yaml:"target,omitempty" json:"target,omitempty"`
 	// Order lists, per key, the values a numbered key {key#} may have, in
 	// the order they are numbered from 01.
 	Order map[string][]string `yaml:"order,omitempty" json:"order,omitempty"`
@@ -120,9 +112,6 @@ func (v View) Validate() error {
 				return fmt.Errorf("view %s: %s is numbered, so order needs a list for %s", v.Name, part.written(), key)
 			}
 		}
-	}
-	if v.Target != "" && !namePattern.MatchString(v.Target) {
-		return fmt.Errorf("view %s: target %q: use lowercase letters, digits, _ and -", v.Name, v.Target)
 	}
 	return nil
 }
@@ -279,81 +268,6 @@ func (l Layout) Keys() []string {
 		}
 	}
 	return keys
-}
-
-// Load reads every views/*.yaml under root, sorted by name. A file whose name
-// is not its View's name is refused.
-func Load(root string) ([]View, error) {
-	paths, err := filepath.Glob(filepath.Join(root, Dir, "*.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	views := make([]View, 0, len(paths))
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		var v View
-		decoder := yaml.NewDecoder(strings.NewReader(string(data)))
-		decoder.KnownFields(true)
-		if err := decoder.Decode(&v); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if err := v.Validate(); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != v.Name {
-			return nil, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, v.Name, v.Name)
-		}
-		views = append(views, v)
-	}
-	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
-	return views, nil
-}
-
-// Save writes v to views/<name>.yaml through a temporary file and a rename.
-func Save(root string, v View) error {
-	if err := v.Validate(); err != nil {
-		return err
-	}
-	data, err := yaml.Marshal(v)
-	if err != nil {
-		return err
-	}
-	dir := filepath.Join(root, Dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(dir, ".view-*.dgs-part")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temp.Name(), filepath.Join(dir, v.Name+".yaml"))
-}
-
-// Delete removes a View's file. A View that is not there is not an error.
-func Delete(root, name string) error {
-	if !namePattern.MatchString(name) {
-		return fmt.Errorf("view %q: not a view name", name)
-	}
-	err := os.Remove(filepath.Join(root, Dir, name+".yaml"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	return err
 }
 
 // sameValue reports whether a and b are one value: one country however each

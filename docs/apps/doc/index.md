@@ -10,13 +10,13 @@ which holds low-importance scanned paper; the two stay separate commands.
 ### Several trees
 
 One `dgs doc` can keep more than one tree — papers, and books — each a tree of
-its own, in its own folder, with its own Templates, Views and Cases. Only PDFs
+its own, in its own folder, with its own Templates, Outlines and Cases. Only PDFs
 are kept, in every tree. `doc.trees` names them; the page switches from a menu
 in its top bar, and the tree is in the page's address (`?tree=books`), so two
 tabs can hold two trees and a reload keeps its tree. `verify` and `export` take
-`--tree <name>`. Nothing crosses between trees: an Item, a View and a Case
-belong to one. Each tree has its own Targets, and a Target's folder may not lie
-inside any tree.
+`--tree <name>`. Nothing crosses between trees: an Item, an Outline and a Case
+belong to one, and a folder an Outline is exported to may not lie inside any
+tree.
 
 It follows `dgs box`'s shape: a TUI plus a local web page served by the same
 process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
@@ -30,11 +30,9 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Page | What it is for |
 | --- | --- |
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete and attach or replace a PDF on a selected revision. |
-| Explore `/explore/` | An Outline's result: the Items grouped into a tree of folders, each counting the PDFs beneath it; picking a folder lists its PDFs. |
+| Explore `/explore/` | An Outline's result: its PDFs in the tree its rules make, each folder counting the PDFs beneath it; picking a folder or a PDF lists it; exporting the tree. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
-| Views `/views/` | Building layouts, previewing the tree they make, and exporting (M4–M6). |
-| Outlines `/outlines/` | Making the rules an Outline groups Items by, with its tree redrawn as they change. |
-| Targets `/targets/` | Where Views are exported to: add, rename and delete Targets, set their folders, move Views to them, export. |
+| Outlines `/outlines/` | Making an Outline: its rules and the folder it is exported to, with its tree redrawn as they change. |
 | Cases `/cases/` | A matter being dealt with and the Items it has needed; its export; archiving it. |
 | Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
 | Import `/import/` | Taking PDFs in. |
@@ -121,7 +119,7 @@ the company"). It is kept in the sidecar as `retired: true` and
 are history events. Browse still shows a retired Item, faded, in grey, with a
 "retired" badge whose hover gives the reason, and after every Item in use,
 whatever the sort. The Use filter shows only Items in use or only retired
-ones. Exports and Views are not affected. A merge retires a matched Item the
+ones. Outlines and exports are not affected. A merge retires a matched Item the
 Source has retired.
 
 "Retired" rather than "expired", which is about a date, or "archived", which
@@ -280,25 +278,31 @@ the same cache, comes later.
 Loose PDFs inside the tree are allowed; they are imported by opening the
 tree's own folder. Images are not imported.
 
-## The four layers
+## The three layers
 
 ```text
-Stored object  →  Item  →  View  →  Target
+Stored object  →  Item  →  Outline
 ```
 
 - **Stored object** — the bytes of one PDF, identified by its SHA-256.
 - **Item** — what the owner says the document is.
-- **View** — which Items are selected, which of their revisions, and the
-  relative path each one gets.
-- **Target** — a local directory the View's tree is written under. Targets
-  are per-machine configuration. `dgs doc` writes only to the directory; getting
-  it into iCloud Drive, Google Drive or a NAS is a sync the owner does by hand.
+- **Outline** — a tree of PDFs made by rules. Each rule selects Items, which
+  of their revisions, and the relative path each PDF gets; the rules' paths
+  together are the tree. It is browsed as it is, and exported into a folder:
+  `dgs doc` writes only to the folder; getting it into iCloud Drive, Google
+  Drive or a NAS is a sync the owner does by hand.
 
-The repository's own layout carries none of the View's meaning. A View names
-the one Target it is exported to, and a Target takes as many Views as it needs:
-Google Drive can hold one View for identity documents and another for bills,
-each with its own layout, while iCloud Drive holds a third that lays out the
-same identity documents another way. The repository does not change.
+The repository's own layout carries none of an Outline's meaning. One
+Outline can hold a rule for identity documents and another for bills, each
+with its own path, while a second Outline lays out the same identity
+documents another way. The repository does not change.
+
+Before Outlines, a View held one rule and named the Target, a folder, it was
+exported to. Opening a tree that still has `views/` or `targets.yaml` turns
+each Target into an Outline whose rules are the Views naming it, and each
+View naming none into an Outline of that one rule; the old files are moved
+into `migrated/`. An Outline already saved under one of those names stops
+it, with nothing written.
 
 ## Items
 
@@ -366,7 +370,7 @@ before reuse.
 
 Verify checks hashed snapshots against their stored content. It skips
 intentional missing attachments but still reports a missing or
-changed PDF when a digest is recorded. PDF Views and exports skip snapshots
+changed PDF when a digest is recorded. Outlines and exports skip snapshots
 without attachments; a HEAD without a PDF does not fall back to an older scan.
 OCR and similarity reading skip these snapshots. Export manifests retain
 each snapshot ID and its own field values even when snapshots share a PDF.
@@ -384,11 +388,11 @@ such as `country`: Emma may have a Chinese and an Australian driver licence,
 which are two Items. For documents, `owner` + `type` + these fields name one
 Item and must be unique; import refuses a second Item with the same ones.
 
-## Templates and Views live in the repository
+## Templates and Outlines live in the repository
 
-Templates and Views describe the documents, so they are kept in the repository
-and travel with it when trees are merged. Only Targets, which are paths on one
-machine, are configuration.
+Templates and Outlines describe the documents, so they are kept in the
+repository and travel with it when trees are merged. An Outline's folder is
+only a default; the folder an export writes to is chosen then.
 
 ## Templates
 
@@ -429,7 +433,7 @@ asks only for the per_revision ones, suggested from the new PDF's text. On
 the same form, the Item's current tags and notes can be edited and are saved
 with the new revision; they belong to the Item, not to an individual revision.
 On Browse, picking a revision shows its fields; saving edits creates a new
-snapshot. Everything else — the page's list, a View's query — uses HEAD's. A
+snapshot. Everything else — the page's list, a rule's query — uses HEAD's. A
 layout key is the exported revision's own value, so exporting all revisions
 can name the old card and the new one differently. A distinguishing field
 names the document, so it cannot be per_revision, and a record has one issue,
@@ -473,18 +477,54 @@ page of a person's documents — is never suggested.
 A key added to Items of a type (see [Missing keys](#missing-keys)) is added to
 the type's Template, so later imports of that type ask for it.
 
-## Views
+## Outlines
 
-A View has a query, a selection, and a layout.
+Browse filters and lists, but has no levels and no order. An Outline puts
+PDFs into a tree, the same tree whether it is looked at or exported.
+
+It is one YAML file under `outlines/`, named after its `name`, written by
+the Outlines page and never edited by hand:
+
+```yaml
+name: phone
+about: read on the phone          # optional
+folder: ~/Library/Mobile Documents/com~apple~CloudDocs/Documents   # optional
+rules:
+  - name: ids
+    query: {type: [id_card, passport], owner: emma}
+    selection: head
+    layout: '{country}/{owner}/important/{type}.{ext}'
+    default: none                 # optional: stands in for a missing key
+    order:                        # optional: the numbering of {key#}
+      owner: [alex, emma]
+      country: [CN, AU]
+  - name: cars
+    query: {type: [vehicle_registration]}
+    selection: all
+    layout: '{country:alpha2} {make}/{plate#}/{type:zh}.{ext}'
+    dedupe: number
+    order:
+      plate: [浙AF3897, 浙AT73C7]
+```
+
+- `folder` is where it is exported unless another is chosen then. A leading
+  `~` is the home folder of the machine exporting, so one file usually fits
+  every Mac. Without one, a folder is chosen every time.
+- Each rule's `name` is unique within the Outline. An export's manifest
+  records it against every file the rule placed.
+
+### Rules
+
+A rule has a query, a selection, and a layout.
 
 - **Query** — which Items, by their fields, such as type and owner. A value
   matches ignoring case, and a country matches however it is written: `CN`
   selects an Item that keeps `中国`.
 - **Selection** — `head` (a document's HEAD revision only) or `all`.
 - **Layout** — fixed text and keys, such as
-  `{country}/{owner}/important/{type}.pdf`. The Target provides the root, so
-  a layout never names iCloud or a NAS. On the web page the layout is built by
-  picking keys, with a preview of the resulting tree.
+  `{country}/{owner}/important/{type}.pdf`: the folders, then the PDF's
+  name. The export's folder provides the root, so a layout never names
+  iCloud or a NAS.
 
 Keys are the Item's own fields (`owner`, `type`, `country`, and whatever its
 Template defines, such as `employer`), values derived from them (`year`,
@@ -511,150 +551,76 @@ that lists the values as written, such as `[身份证, 户口首页, 驾驶证]`
 they never share a number. One alternative alone may not be numbered.
 
 A key written `{key#}`, or `{key}#`, is numbered: its value is prefixed with its place in
-the View's `order` for that key, counting from `01-`, so
-`{owner#}/{country#:alpha3}` with the order below writes `01-alex/02-AUS`.
+the rule's `order` for that key, counting from `01-`, so
+`{owner#}/{country#:alpha3}` with the order above writes `01-alex/02-AUS`.
 Numbers have two digits, more when the list is longer than 99. Values in an
 order are compared as a country when both name one, so `CN`, `CHN` and `中国`
 are one entry, and otherwise ignoring case. A numbered key needs an order,
 and an order may not list one value twice. A value the order does not list
 leaves the PDF missing that key: the number is never guessed. Changing an
 order renames every folder after the moved entry at the next export. On the
-Views page, each numbered key in the layout gets a Numbering list, its values
-shown with their numbers and reordered by dragging or with up and down; a key
-new to the layout starts with the values its Items have, sorted. A value the
-chosen types' Items have that the list lacks is offered below it, to add last.
-
-A View is one YAML file under `views/`, named after its `name`:
-
-```yaml
-name: important
-query: {type: [id_card, passport], owner: emma}
-selection: head
-layout: '{country}/{owner}/important/{type}.{ext}'
-default: none              # optional: stands in for a missing key
-target: icloud             # optional: the Target it is exported to
-order:                     # optional: the numbering of {key#}
-  owner: [alex, emma]
-  country: [CN, AU]
-```
-
-`target` is a name from the tree's `targets.yaml`, never a path. The tree
-says where its Views go; the folder each goes to is chosen when exporting:
-
-```yaml
-icloud:
-  about: read on the phone
-  folder: ~/Library/Mobile Documents/com~apple~CloudDocs/Documents
-kindle:
-  about: books for the flight     # no folder: one is chosen every time
-```
-
-- A Target's `folder` is only its default. A leading `~` is the home folder
-  of the machine exporting, so one `targets.yaml` usually fits every Mac.
-- On the Views page each Target shows, under its name, the folder it goes to
-  this time; clicking it chooses another through the file dialog. The choice
-  is remembered in that browser, marked "this machine", and the page offers to
-  make it the Target's own folder in `targets.yaml` instead.
-- A Target with no folder of its own, and none chosen, stops the run until one
-  is chosen.
-- The Targets page manages them: adding one, what it is for, its own folder
-  and this browser's, the Views exporting there (moving one in, taking one
-  out, starting a new one for it), exporting it or every Target, renaming —
-  every View naming it follows — and deleting one no View names. The Target
-  select in a View's form lists them and adds a new one too.
-- `dgs doc export --to kindle=/Volumes/Kindle/documents` chooses a folder on
-  the command line; comma separate several.
-
-A Target belongs to its tree, so two trees each have their own `kindle`.
-Where a machine keeps a Target's folder is never configuration: the tree
-names the default and the export may choose another.
+Outlines page, each numbered key in the layout gets a Numbering list, its
+values shown with their numbers and reordered by dragging or with up and
+down; a key new to the layout starts with the values its Items have, sorted.
+A value the chosen types' Items have that the list lacks is offered below it,
+to add last.
 
 A layout is rendered by three rules:
 
-- **Missing keys.** Without `default`, a missing key is refused (below). With
-  it, the key is written as that text instead.
+- **Missing keys.** Without `default`, a PDF lacking a key is not placed
+  (below). With it, the key is written as that text instead.
 - **Clean segments.** Each key's value has `/`, `\`, control characters and
   the characters Windows forbids replaced by `_`, and leading or trailing dots
-  and spaces trimmed, so a value never adds a folder or escapes the Target.
-- **Duplicates.** Two PDFs landing on one path is refused, unless the View
-  sets `dedupe: number`: then, in the
-  Items' ID order, the second and later get `_01`, `_02` before the extension,
-  so the same state always numbers the same way.
+  and spaces trimmed, so a value never adds a folder or escapes the export's
+  folder.
+- **Duplicates.** Two PDFs of one rule landing on one path are not placed,
+  unless the rule sets `dedupe: number`: then, in the Items' ID order, the
+  second and later get `_01`, `_02` before the extension, so the same state
+  always numbers the same way.
 
-### The Views page
+The rules of an Outline are planned together. A PDF two rules select is in
+the tree twice, once where each puts it. Two PDFs of different rules
+wanting one path, ignoring case, and a PDF wanting a path another needs as a
+folder, are not placed either.
 
-The page lists the Views on the left. The form picks the types, adds
-conditions on other keys (`owner is emma, tom`), each ticking values the
-Items of the chosen types hold, HEAD or all revisions, and
-the layout, typed or built by clicking key chips that insert at the caret.
-The field chips are those of the chosen types, or of every type when none is.
-The chips are grouped: the Templates' fields, the keys every PDF has, and each
-country field's formats. Typing `{` in the layout lists the keys with what
-each writes; after a country key's `:` it lists the formats with an example.
-Beside it the preview redraws, as the form changes, the folder tree an
-export would write, each file linked to its Item on Browse, with the PDFs
-lacking a key and the paths wanted twice listed above it. Saving writes
-`views/<name>.yaml`; renaming a View removes the old file.
+### Not placed
 
-### Missing keys
+A PDF a rule selects but cannot place — lacking a key, or wanting a path
+another PDF wants — is gathered under Not placed with the reason, never
+dropped. Export refuses to write anything while any PDF is not placed. Only
+PDFs a rule selects have to have its keys; the rest of the type is not
+checked. `year`, `month` and `date` are filled through the date field they
+come from; a key no field of the Item's Template supplies cannot be filled,
+only named — the layout or the Template has to change.
 
-Export refuses to write anything while a PDF the View selects lacks a key the
-layout uses, and lists each PDF with what it is missing. The page lets the
-owner fill the key in, on one PDF or on several at once. Only PDFs the View
-selects have to have it; the rest of the type is not checked. `year`, `month`
-and `date` are filled through the date field they come from; a key no field of
-the Item's Template supplies cannot be filled, only named — the layout or the
-Template has to change.
+### The pages
 
-The same refusal applies when two PDFs would land on one path.
+Making the rules and looking through the result are kept apart:
 
-## Outlines
-
-Browse filters and lists, but has no levels and no order. An Outline groups
-Items into a tree of folders, as a View's export would, and is only ever
-looked at: nothing is written but its own file.
-
-It is one YAML file under `outlines/`, named after its `name`, written by
-the page:
-
-```yaml
-name: vehicles
-query: {type: [vehicle_registration, vehicle_insurance]}
-selection: head            # optional: head (default) or all
-layout: '{country:alpha2} {make} {year}/{plate#}'
-order:
-  plate: [浙AF3897, 浙AT73C7]
-```
-
-- It is its own definition, not a View: an Outline may group Items in a way
-  no export does, and has no Target, default or dedupe.
-- `query`, `selection`, keys, formats, alternatives and numbering follow a
-  View's rules exactly.
-- Every segment of the layout is a folder. PDFs are never named: each is
-  listed in the folder it lands in.
-- A folder shows how many PDFs are in it and beneath it. Folders sort by
-  name, so numbered ones keep their order.
-- A PDF lacking a key the layout uses, or a numbered value its order does not
-  list, is gathered under Not placed with what it lacks, never dropped.
-
-Two pages share them. Making the rules and looking through the result are
-kept apart:
-
-- **Outlines** makes the rules. It uses the same form the Views page does for
-  which PDFs and their layout — types, conditions ticking held values,
-  revisions, levels built from key chips, and a Numbering list per numbered
-  level — with the tree redrawn beside it as the form changes. PDFs not
-  placed are listed above the tree; one whose numbered value the order lacks
-  can be numbered last from there. The file is never edited by hand.
+- **Outlines** makes them. The Outline's name, what it is for and its own
+  folder come first, then its rules as tabs, **+ Rule** adding one. The rule
+  shown is edited in a form: the types, conditions on other keys (`owner is
+  emma, tom`), each ticking values the Items of the chosen types hold, HEAD or
+  all revisions, and the layout, typed or built by clicking key chips that
+  insert at the caret. The field chips are those of the chosen types, or of
+  every type when none is, grouped: the Templates' fields, the keys every PDF
+  has, and each country field's formats. Typing `{` in the layout lists the
+  keys with what each writes; after a country key's `:` it lists the formats
+  with an example. Beside the form the tree of every rule together is redrawn
+  as it changes, with the PDFs not placed above it: a PDF lacking a field gets
+  a form to fill it, on one PDF or on several at once; a numbered value the
+  order lacks can be numbered last; a PDF of another rule opens that rule.
+  Saving writes `outlines/<name>.yaml`; renaming removes the old file.
 - **Explore** shows the result. It lists the saved Outlines and draws the
-  chosen one's tree; picking a folder lists its PDFs, and those beneath it
-  under their folder, each linked to its Item on Browse. Not placed is a row
-  of the tree. Nothing on it changes an Outline; Edit rules opens it on the
-  Outlines page.
+  chosen one's tree down to each PDF's name, every folder counting the PDFs
+  beneath it. Picking a folder lists its PDFs, and those beneath it under
+  their folder; picking a PDF shows its Item; each is linked to its Item on
+  Browse. Not placed is a row of the tree. Export sits beside it (below).
+  Nothing on it changes an Outline; Edit rules opens it on the Outlines page.
 
 ## Export
 
-Exports are deterministic: the same repository state and View produce the same
+Exports are deterministic: the same repository state and Outline produce the same
 tree. Before writing, an export computes the whole plan — add, replace,
 remove — and can show it without writing (dry run).
 
@@ -664,33 +630,32 @@ read back independently, and renamed to its final name only when the readback
 matches its SHA-256.
 
 Export removes only files it wrote itself, recorded in a manifest at the
-Target root; anything else under the Target is never touched.
+root of the folder; anything else under it is never touched.
 
-A Target is exported as a whole: every View naming it, planned together. A
-run is one Target, several, or every Target a View names, and it is checked
-entirely before anything is written. Any of these stops the whole run, and no
-Target is written:
+An Outline is exported as a whole: every rule, planned together, into the
+folder chosen for it — this browser's choice, else its own folder. A run is
+one Outline, several, or every Outline with rules and a folder, and it is
+checked entirely before anything is written. Any of these stops the whole
+run, and no Outline is written:
 
-- a key a selected PDF lacks, in any View;
-- two PDFs wanting one path, ignoring case, within a View or between two
-  Views of a Target, and a PDF wanting a path that another needs as a folder;
+- a PDF not placed, by any rule;
 - a wanted path held by a file the export does not own (below), including one
-  another View exported into the same folder;
-- a Target inside the tree or holding it, two Targets of the run overlapping,
-  a View naming a Target `targets.yaml` does not have, a Target with no
-  folder, a folder inside another tree, and a manifest that
-  cannot be read.
+  another Outline exported into the same folder;
+- a folder inside the tree or holding it, two folders of the run
+  overlapping, an Outline with no rule or no folder, a folder inside another
+  tree, and a manifest that cannot be read.
 
-The check lists every one of them, by View and path; the export itself plans
+The check lists every one of them, by rule and path; the export itself plans
 and checks again from the state at that moment.
 
-The Views page lists the Views grouped by Target, each group with **Export…**,
-and **Export all Targets…** above them; a View's own form picks its Target.
-A View naming no Target is exported alone to a folder chosen in the shared file
-dialog, which can make a new folder there; the last one chosen is remembered.
-`dgs doc export [<target>...]` does the same from the command line, every
-Target when none is named; `-n` checks and writes nothing. It fails, writing
-nothing, when the check finds anything.
+On Explore, Export shows the folder the Outline goes to; clicking it chooses
+another through the shared file dialog, which can make a new folder there,
+remembered in that browser. **Check** lists the plan and what stops it;
+**Export** writes it. `dgs doc export [<outline>...]` does the same from the
+command line, every Outline with rules and a folder when none is named;
+`--to phone=/Volumes/Kindle/documents` chooses a folder, comma separated for
+several; `-n` checks and writes nothing. It fails, writing nothing, when the
+check finds anything.
 
 - A wanted path held by a file the manifest does not record blocks the export:
   nothing is written until the owner moves it. A file already there with the
@@ -706,11 +671,11 @@ Export is incremental: a file whose path and SHA-256 the manifest already
 records, and which still reads back to that digest, is not written again.
 
 The manifest, `dgs-export.json`, records for each file its path, digest, the
-View that placed it, the Item's ID and revision, and the Item's fields at
-export time. An export of some of a Target's Views replaces and removes only
-those Views' files. A version 1 manifest, from before a Target took several
-Views, is read with its files belonging to its one View. That is enough
-to import a Target back into a repository: `dgs doc` reads the manifest and
+rule that placed it (under the key `view`, its name from before Outlines), the Item's ID and revision, and the Item's fields at
+export time. An export replaces and removes only the files of the rules it
+exports. A version 1 manifest, from when a folder took one View, is read
+with its files belonging to that one rule. That is enough
+to import an exported folder back into a repository: `dgs doc` reads the manifest and
 recreates the Items, matching existing ones as a merge does. It also
 records each Item's kind and which revision was HEAD.
 
@@ -734,7 +699,7 @@ that. So a Case grows as it goes, then is archived when it is done.
   last the matter out is seen early.
 - **Export** copies the Case's Items into a folder to hand over, named by the
   Case's own layout (`{type}.{ext}` unless set, two of a type numbered). It
-  is planned and checked as a View's export is and writes `dgs-export.json`,
+  is planned and checked as an Outline's export is and writes `dgs-export.json`,
   so a second export only brings the folder up to date. This takes the place
   of the Bundle once planned.
 - **Archive** closes the Case: for each Item it records the revision that was
@@ -808,7 +773,7 @@ Conflicts are resolved by hand on the page before the merge completes.
 
 The Merge page opens the folder to merge in and only reads it. It shows what
 the merge would do — new Items, revisions added, HEADs moved, new Templates
-and Views — and each conflict with both sides, to keep this tree's or take
+and Outlines — and each conflict with both sides, to keep this tree's or take
 theirs. The merge itself plans again from what both sides hold then, and is
 refused while a conflict has no choice.
 
@@ -823,16 +788,17 @@ refused while a conflict has no choice.
   and an Item frequent on either side is frequent after.
 - A new Item keeps the history it had in the other tree. Every Item the merge
   adds or changes gets a `merge` history event, listing what it changed.
-- A Template or View both sides have, different, is a conflict. Only the
+- A Template or Outline both sides have, different, is a conflict. A tree
+  still holding Views and Targets is read as the Outlines they become. Only the
   fields that differ are shown.
 - What no choice resolves stops the merge: an Item whose type has no Template
   on either side, two Items matching one, a record holding another PDF here.
 - PDFs are copied in with the same readback as import, before the sidecar
   naming them is written.
 
-A Target imports back the same way: the Merge page opens a folder with a
+An exported folder imports back the same way: the Merge page opens a folder with a
 `dgs-export.json` as it opens a sub-tree. It brings the revisions that were
-exported and the Items' fields; a Target carries no Templates or Views.
+exported and the Items' fields; it carries no Templates or Outlines.
 
 ## Layout on disk
 
@@ -841,10 +807,9 @@ exported and the Items' fields; a Target carries no Templates or Views.
   dgs-doctree.yaml          # the marker: dgs doc init writes it, nothing else does
   templates/
     id_card.yaml            # one Template per type
-  views/                    # one View per file (M4)
   outlines/                 # one Outline per file
   cases/                    # one Case per file
-  targets.yaml              # where Views are exported to, by name
+  migrated/                 # views/ and targets.yaml, once they became Outlines
   trash/                    # deleted Items and Templates, never erased
   items/
     <item-id>/
@@ -855,10 +820,10 @@ exported and the Items' fields; a Target carries no Templates or Views.
 - The marker is `dgs-doctree.yaml`, not `dgs-doc.yaml`, which reads too much
   like box's `*.dgs-doc.yaml` sidecars. It is visible, as box's is.
 - An Item's folder is named by its ID, so changing `owner` or `country` moves
-  nothing. Readable paths are what a View exports.
+  nothing. Readable paths are what an Outline exports.
 - A PDF is named by its SHA-256, so the same file is stored once and merging
   matches by digest.
-- An export writes `dgs-export.json` in the Target (M6).
+- An export writes `dgs-export.json` in the folder it writes to (M6).
 - PDFs anywhere else in the tree are loose, and allowed. Import copies a PDF in
   from wherever it is and leaves the original where it was.
 

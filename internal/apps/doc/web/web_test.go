@@ -335,42 +335,6 @@ func TestTextWhereRecognitionIsMissing(t *testing.T) {
 	}
 }
 
-func TestViewsSavePlanDelete(t *testing.T) {
-	root, scans := setup(t, true)
-	h := Handler(Settings{Root: root})
-	body := `{"dir":` + q(scans) + `,"path":"emma/licence.pdf","type":"id_card","fields":{"owner":"emma","country":"AU"}}`
-	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	v := `{"name":"important","selection":"head","layout":"{country}/{owner}/{type}.{ext}","query":{"type":["id_card"]}}`
-	rec := do(h, "POST", "/api/views/plan", v)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"澳大利亚/emma/id_card.pdf"`) {
-		t.Fatal(rec.Body.String())
-	}
-	rec = do(h, "POST", "/api/views/plan", `{"name":"x","layout":"{number}/{type}.{ext}"}`)
-	if !strings.Contains(rec.Body.String(), `"keys":["number"]`) {
-		t.Fatal(rec.Body.String())
-	}
-	if rec := do(h, "POST", "/api/views", `{"view":`+v+`}`); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	renamed := strings.Replace(v, "important", "kept", 1)
-	if rec := do(h, "POST", "/api/views", `{"view":`+renamed+`,"previous":"important"}`); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	var list viewsJSON
-	must(t, json.Unmarshal(do(h, "GET", "/api/views", "").Body.Bytes(), &list))
-	if len(list.Views) != 1 || list.Views[0].Name != "kept" || list.Keys[0] != "country" {
-		t.Fatalf("%+v", list)
-	}
-	if rec := do(h, "POST", "/api/views/delete", `{"name":"kept"}`); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	if rec := do(h, "POST", "/api/views", `{"view":{"name":"Bad","selection":"head","layout":"x"}}`); rec.Code != 400 {
-		t.Fatal("bad view saved")
-	}
-}
-
 func TestNotes(t *testing.T) {
 	root, scans := setup(t, true)
 	h := Handler(Settings{Root: root})
@@ -477,38 +441,6 @@ func TestTreesAreChosenByName(t *testing.T) {
 	}
 }
 
-func TestTargetsLiveInTheTreeAndFoldersAreChosen(t *testing.T) {
-	root, scans := setup(t, true)
-	h := Handler(Settings{Root: root})
-	body := `{"dir":` + q(scans) + `,"path":"emma/licence.pdf","type":"id_card","fields":{"owner":"emma","country":"AU"}}`
-	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	if rec := do(h, "POST", "/api/targets", `{"targets":[{"name":"phone","about":"read on the phone"}]}`); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	v := `{"name":"ids","selection":"head","layout":"{owner}.{ext}","target":"phone"}`
-	if rec := do(h, "POST", "/api/views", `{"view":`+v+`}`); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	if rec := do(h, "POST", "/api/export/plan", `{"targets":["phone"]}`); !strings.Contains(rec.Body.String(), "choose a folder") {
-		t.Fatalf("no folder: %s", rec.Body.String())
-	}
-	out := t.TempDir()
-	if rec := do(h, "POST", "/api/export", `{"targets":["phone"],"folders":{"phone":`+q(out)+`}}`); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	if _, err := os.Stat(filepath.Join(out, "emma.pdf")); err != nil {
-		t.Fatal(err)
-	}
-	if rec := do(h, "POST", "/api/targets", `{"targets":[]}`); rec.Code != 409 {
-		t.Fatal("a Target a View names was removed")
-	}
-	if data, _ := os.ReadFile(filepath.Join(root, "targets.yaml")); !strings.Contains(string(data), "read on the phone") {
-		t.Fatalf("targets.yaml: %s", data)
-	}
-}
-
 func TestCreateWithoutPDFAndAttach(t *testing.T) {
 	root, scans := setup(t, true)
 	h := Handler(Settings{Root: root})
@@ -555,21 +487,63 @@ func TestOutlinesGroupSaveDelete(t *testing.T) {
 	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	o := `{"name":"people","layout":"{country:alpha2}/{owner}"}`
+	o := `{"name":"people","rules":[{"name":"ids","layout":"{country:alpha2}/{owner}/{type}.{ext}"},{"name":"lost","layout":"{number}.{ext}"}]}`
 	rec := do(h, "POST", "/api/outlines/group", o)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"AU/emma","count":1`) {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"AU/emma","count":1`) ||
+		!strings.Contains(rec.Body.String(), `"path":"AU/emma/id_card.pdf"`) || !strings.Contains(rec.Body.String(), `"keys":["number"]`) {
 		t.Fatal(rec.Body.String())
 	}
 	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "GET", "/api/outlines", ""); !strings.Contains(rec.Body.String(), `"name":"people"`) {
-		t.Fatal(rec.Body.String())
+	var list outlinesJSON
+	must(t, json.Unmarshal(do(h, "GET", "/api/outlines", "").Body.Bytes(), &list))
+	if len(list.Outlines) != 1 || list.Outlines[0].Name != "people" || len(list.Outlines[0].Rules) != 2 || list.Keys[0] != "country" {
+		t.Fatalf("%+v", list)
 	}
 	if rec := do(h, "POST", "/api/outlines/delete", `{"name":"people"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/outlines", `{"outline":{"name":"x","layout":"{owner#}"}}`); rec.Code != 400 {
+	if rec := do(h, "POST", "/api/outlines", `{"outline":{"name":"x","rules":[{"name":"r","layout":"{owner#}"}]}}`); rec.Code != 400 {
 		t.Fatal("bad outline saved")
+	}
+}
+
+func TestOutlinesExportIntoTheirFolder(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root})
+	body := `{"dir":` + q(scans) + `,"path":"emma/licence.pdf","type":"id_card","fields":{"owner":"emma","country":"AU"}}`
+	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	o := `{"name":"phone","about":"read on the phone","rules":[{"name":"ids","layout":"{owner}.{ext}"}]}`
+	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/export/plan", `{"outlines":["phone"]}`); !strings.Contains(rec.Body.String(), "choose a folder") {
+		t.Fatalf("no folder: %s", rec.Body.String())
+	}
+	out := t.TempDir()
+	if rec := do(h, "POST", "/api/export", `{"outlines":["phone"],"folders":{"phone":`+q(out)+`}}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(out, "emma.pdf")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestViewsAndTargetsBecomeOutlines(t *testing.T) {
+	root, _ := setup(t, true)
+	h := Handler(Settings{Root: root})
+	must(t, os.WriteFile(filepath.Join(root, "targets.yaml"), []byte("phone:\n  folder: ~/p\n"), 0o644))
+	must(t, os.MkdirAll(filepath.Join(root, "views"), 0o755))
+	must(t, os.WriteFile(filepath.Join(root, "views", "ids.yaml"), []byte("name: ids\nselection: head\nlayout: '{owner}.{ext}'\ntarget: phone\n"), 0o644))
+	var list outlinesJSON
+	must(t, json.Unmarshal(do(h, "GET", "/api/outlines", "").Body.Bytes(), &list))
+	if len(list.Migrated) != 1 || len(list.Outlines) != 1 || list.Outlines[0].Folder != "~/p" || list.Outlines[0].Rules[0].Name != "ids" {
+		t.Fatalf("%+v", list)
+	}
+	if rec := do(h, "GET", "/views/", ""); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/outlines/" {
+		t.Fatalf("/views/: %d", rec.Code)
 	}
 }

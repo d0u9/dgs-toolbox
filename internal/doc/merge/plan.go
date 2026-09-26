@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
-	"dgs-toolbox/internal/doc/view"
 	"dgs-toolbox/internal/tag"
 	"dgs-toolbox/internal/verifiedcopy"
 )
@@ -50,7 +50,7 @@ const (
 	ConflictFields   = "fields"
 	ConflictHead     = "head"
 	ConflictTemplate = "template"
-	ConflictView     = "view"
+	ConflictOutline  = "outline"
 )
 
 // Conflict is something both sides hold differently. Ours is the tree's,
@@ -78,7 +78,7 @@ type Plan struct {
 	Changed   []Change   `json:"changed"`
 	Same      int        `json:"same"`
 	Templates []string   `json:"templates"`
-	Views     []string   `json:"views"`
+	Outlines  []string   `json:"outlines"`
 	Conflicts []Conflict `json:"conflicts"`
 	// Problems are what no choice resolves; Apply refuses a plan with any.
 	Problems []string `json:"problems"`
@@ -95,7 +95,7 @@ func hasDigest(item tree.Item, digest string) bool {
 
 // Compute is what merging src into the tree at root would do.
 func Compute(root string, src Source) (Plan, error) {
-	plan := Plan{New: []Change{}, Changed: []Change{}, Templates: []string{}, Views: []string{}, Conflicts: []Conflict{}, Problems: []string{}}
+	plan := Plan{New: []Change{}, Changed: []Change{}, Templates: []string{}, Outlines: []string{}, Conflicts: []Conflict{}, Problems: []string{}}
 	if err := tree.Require(root); err != nil {
 		return plan, err
 	}
@@ -121,22 +121,22 @@ func Compute(root string, src Source) (Plan, error) {
 			plan.Conflicts = append(plan.Conflicts, Conflict{ID: "template:" + t.Type, Kind: ConflictTemplate, Type: t.Type, Ours: mine, Theirs: t.Template})
 		}
 	}
-	views, err := view.Load(root)
+	outlines, err := outline.Load(root)
 	if err != nil {
 		return plan, err
 	}
-	for _, v := range src.Views {
-		var mine *view.View
-		for i := range views {
-			if views[i].Name == v.Name {
-				mine = &views[i]
+	for _, v := range src.Outlines {
+		var mine *outline.Outline
+		for i := range outlines {
+			if outlines[i].Name == v.Name {
+				mine = &outlines[i]
 			}
 		}
 		switch {
 		case mine == nil:
-			plan.Views = append(plan.Views, v.Name)
+			plan.Outlines = append(plan.Outlines, v.Name)
 		case !reflect.DeepEqual(*mine, v):
-			plan.Conflicts = append(plan.Conflicts, Conflict{ID: "view:" + v.Name, Kind: ConflictView, Name: v.Name, Ours: *mine, Theirs: v})
+			plan.Conflicts = append(plan.Conflicts, Conflict{ID: "outline:" + v.Name, Kind: ConflictOutline, Name: v.Name, Ours: *mine, Theirs: v})
 		}
 	}
 
@@ -325,7 +325,7 @@ type Result struct {
 	Items     int `json:"items"`
 	PDFs      int `json:"pdfs"`
 	Templates int `json:"templates"`
-	Views     int `json:"views"`
+	Outlines  int `json:"outlines"`
 }
 
 // Apply carries out plan with a choice for every Conflict. PDFs are copied
@@ -349,9 +349,9 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 	for _, t := range src.Templates {
 		srcTemplates[t.Type] = t
 	}
-	srcViews := map[string]view.View{}
-	for _, v := range src.Views {
-		srcViews[v.Name] = v
+	srcOutlines := map[string]outline.Outline{}
+	for _, v := range src.Outlines {
+		srcOutlines[v.Name] = v
 	}
 	srcItems := map[string]tree.Item{}
 	for _, it := range src.Items {
@@ -359,7 +359,7 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 	}
 
 	writeTemplates := append([]string(nil), plan.Templates...)
-	writeViews := append([]string(nil), plan.Views...)
+	writeOutlines := append([]string(nil), plan.Outlines...)
 	for _, c := range plan.Conflicts {
 		if chosen[c.ID] != Theirs {
 			continue
@@ -367,8 +367,8 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		switch c.Kind {
 		case ConflictTemplate:
 			writeTemplates = append(writeTemplates, c.Type)
-		case ConflictView:
-			writeViews = append(writeViews, c.Name)
+		case ConflictOutline:
+			writeOutlines = append(writeOutlines, c.Name)
 		}
 	}
 	for _, name := range writeTemplates {
@@ -377,11 +377,11 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		}
 		result.Templates++
 	}
-	for _, name := range writeViews {
-		if err := view.Save(root, srcViews[name]); err != nil {
+	for _, name := range writeOutlines {
+		if err := outline.Save(root, "", srcOutlines[name]); err != nil {
 			return result, err
 		}
-		result.Views++
+		result.Outlines++
 	}
 
 	for _, c := range plan.New {

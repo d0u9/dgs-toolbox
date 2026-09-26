@@ -212,7 +212,7 @@ export function frame(state) {
   $("error").textContent = state.error || "";
 }
 
-// planNodes draws an export's plan, each Target or folder in turn: its
+// planNodes draws an export's plan, each Outline in turn: its
 // problems first, then what would change.
 export function planNodes(state, answer) {
   const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
@@ -241,7 +241,7 @@ export function planNodes(state, answer) {
       el("div", { className: "job-head" },
         el("strong", {}, j.name || "Folder"), el("span", { className: "mono muted job-path" }, j.path),
         el("span", { className: "badge " + (issues.length ? "badge-expired" : "badge-valid") }, issues.length ? issues.length + " to fix" : "no conflicts")),
-      el("p", { className: "muted job-views" }, j.views.join(", ") + " — " + counts),
+      el("p", { className: "muted job-views" }, "rules " + j.views.join(", ") + " — " + counts),
       issues.length ? el("ul", { className: "job-issues" }, ...issues) : null,
       list("Add", j.plan.add.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
       list("Replace", j.plan.replace.map((a) => line(path(a.path), el("span", { className: "muted" }, " · " + a.view)))),
@@ -251,17 +251,18 @@ export function planNodes(state, answer) {
   return out;
 }
 
-// A Target goes to the folder last chosen for it in this browser, else its
-// own folder from targets.yaml. The choice is per tree and per Target.
+// An Outline is exported to the folder last chosen for it in this browser,
+// else its own folder. The choice is per tree and per Outline; the key is
+// the one Targets had, so a Target's choice holds for the Outline it became.
 const targetKey = (state, name) => "dgs-doc-target:" + (state.name || "") + ":" + name;
-export function targetFolder(state, t) {
+export function outlineFolder(state, t) {
   let chosen = "";
   try { chosen = localStorage.getItem(targetKey(state, t.name)) || ""; } catch { /* none */ }
   return chosen || t.default || "";
 }
-// rememberTargetFolder keeps path as this browser's folder for the Target;
-// an empty path forgets it, so the Target's own folder is used again.
-export function rememberTargetFolder(state, name, path) {
+// rememberOutlineFolder keeps path as this browser's folder for the
+// Outline; an empty path forgets it, so the Outline's own folder is used.
+export function rememberOutlineFolder(state, name, path) {
   try {
     if (path) localStorage.setItem(targetKey(state, name), path);
     else localStorage.removeItem(targetKey(state, name));

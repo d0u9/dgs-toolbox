@@ -14,13 +14,12 @@ import (
 	docweb "dgs-toolbox/internal/apps/doc/web"
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/doc/export"
-	"dgs-toolbox/internal/doc/target"
+	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
-	"dgs-toolbox/internal/doc/view"
 )
 
-// exportAction exports the Views into the Targets they name: the Targets
-// given, or every Target a View names. The whole run is planned and checked
+// exportAction exports Outlines into their folders: the Outlines given, or
+// every Outline with rules and a folder. The whole run is planned and checked
 // first; any conflict, missing key or problem means nothing is written.
 func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {
 	named, err := global.DocTreeNamed(flags["tree"])
@@ -35,15 +34,16 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		}
 		root = wd
 	}
-	views, err := view.Load(root)
+	if names, err := outline.Migrate(root); err != nil {
+		return err
+	} else if len(names) > 0 {
+		fmt.Fprintf(out, "Views and Targets became the Outlines %v; the old files are in %s/.\n", names, outline.MigratedDir)
+	}
+	outlines, err := outline.Load(root)
 	if err != nil {
 		return err
 	}
 	items, err := tree.LoadItems(root)
-	if err != nil {
-		return err
-	}
-	targets, err := target.Load(root)
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		return err
 	}
 	home, _ := os.UserHomeDir()
-	jobs, problems := export.Jobs(views, target.Folders(targets, chosen, home), args)
+	jobs, problems := export.Jobs(outlines, chosen, home, args)
 	plans, err := export.PlanJobs(context.Background(), root, jobs, items)
 	if err != nil {
 		return err
@@ -68,7 +68,7 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 	}
 	switch {
 	case len(plans) == 0 && len(problems) == 0:
-		return errors.New("no View names a Target: add target: <name> to a View, and the Target to targets.yaml")
+		return errors.New("no Outline has rules and a folder: give one a folder, or name it with --to <outline>=<folder>")
 	case !ready:
 		fmt.Fprintln(out, "Nothing was written.")
 		return errors.New("the export has conflicts or missing keys")
@@ -94,7 +94,7 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 }
 
 // parseTo reads --to: name=folder pairs, comma separated, each an absolute
-// folder for that Target this time.
+// folder for that Outline this time.
 func parseTo(value string) (map[string]string, error) {
 	out := map[string]string{}
 	if strings.TrimSpace(value) == "" {
@@ -103,16 +103,16 @@ func parseTo(value string) (map[string]string, error) {
 	for _, pair := range strings.Split(value, ",") {
 		name, folder, ok := strings.Cut(strings.TrimSpace(pair), "=")
 		if !ok || name == "" || !filepath.IsAbs(folder) {
-			return nil, fmt.Errorf("--to %q: write <target>=<absolute folder>, comma separated", pair)
+			return nil, fmt.Errorf("--to %q: write <outline>=<absolute folder>, comma separated", pair)
 		}
 		out[name] = folder
 	}
 	return out, nil
 }
 
-// describe prints one Target's plan: what changes, then what stops it.
+// describe prints one Outline's plan: what changes, then what stops it.
 func describe(out io.Writer, j export.JobPlan) {
-	fmt.Fprintf(out, "%s  %s  (%d View(s): %v)\n", j.Name, j.Path, len(j.Views), j.Views)
+	fmt.Fprintf(out, "%s  %s  (%d rule(s): %v)\n", j.Name, j.Path, len(j.Views), j.Views)
 	fmt.Fprintf(out, "  %d to add, %d to replace, %d to remove, %d unchanged\n",
 		len(j.Plan.Add), len(j.Plan.Replace), len(j.Plan.Remove), len(j.Plan.Keep))
 	for _, p := range j.Problems {

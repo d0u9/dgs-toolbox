@@ -197,9 +197,13 @@ func Handler(settings Settings) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
-	for _, page := range []string{"browse", "explore", "outlines", "templates", "import", "views", "targets", "cases", "merge", "change-type", "log"} {
+	for _, page := range []string{"browse", "explore", "outlines", "templates", "import", "cases", "merge", "change-type", "log"} {
 		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
 		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
+	}
+	// Views and Targets became Outlines.
+	for _, page := range []string{"views", "targets"} {
+		mux.Handle("GET /"+page+"/", http.RedirectHandler("/outlines/", http.StatusFound))
 	}
 	mux.Handle("GET /{$}", http.RedirectHandler("/browse/", http.StatusFound))
 	mux.Handle("GET /", serve)
@@ -237,16 +241,10 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("GET /api/templates", s.templateList)
 	mux.HandleFunc("POST /api/templates", s.templateSave)
 	mux.HandleFunc("POST /api/templates/delete", s.templateDelete)
-	mux.HandleFunc("GET /api/views", s.viewList)
-	mux.HandleFunc("POST /api/views/plan", s.viewPlan)
-	mux.HandleFunc("POST /api/views", s.viewSave)
-	mux.HandleFunc("POST /api/views/delete", s.viewDelete)
 	mux.HandleFunc("GET /api/outlines", s.outlineList)
 	mux.HandleFunc("POST /api/outlines/group", s.outlineGroup)
 	mux.HandleFunc("POST /api/outlines", s.outlineSave)
 	mux.HandleFunc("POST /api/outlines/delete", s.outlineDelete)
-	mux.HandleFunc("GET /api/targets", s.targetList)
-	mux.HandleFunc("POST /api/targets", s.targetSave)
 	mux.HandleFunc("POST /api/export/plan", s.exportPlan)
 	mux.HandleFunc("POST /api/export", s.exportRun)
 	mux.HandleFunc("POST /api/merge/plan", s.mergePlan)

@@ -36,12 +36,12 @@ func New() tui.App {
 			RunWithConfig: verifyAction,
 		}, {
 			ID:          "export",
-			Usage:       "[<target>...]",
-			Description: "Export the Views into the Targets they name: those given, or all. Checks everything first; a conflict writes nothing.",
+			Usage:       "[<outline>...]",
+			Description: "Export Outlines into their folders: those given, or every one with a folder. Checks everything first; a conflict writes nothing.",
 			MaxArgs:     64,
 			Flags: []tui.ActionFlag{
 				{Name: "tree", Shorthand: "t", Usage: "the tree in doc.trees to use, when there are several"},
-				{Name: "to", Usage: "a folder for a Target this time, instead of its own: <target>=<folder>, comma separated"},
+				{Name: "to", Usage: "a folder for an Outline this time, instead of its own: <outline>=<folder>, comma separated"},
 				{Name: "dry-run", Shorthand: "n", Bool: true, Usage: "plan and check, and write nothing"},
 			},
 			RunWithConfig: exportAction,

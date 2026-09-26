@@ -1,4 +1,4 @@
-// Package merge brings another tree's Items, Templates and Views into a tree:
+// Package merge brings another tree's Items, Templates and Outlines into a tree:
 // a sub-tree made with init, or a Target read back through its export
 // manifest. There is no common state to compare against, so Items are matched
 // by what they are — the same ID, the same PDF for a record, the same type
@@ -11,12 +11,13 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
 	"dgs-toolbox/internal/doc/export"
+	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
-	"dgs-toolbox/internal/doc/view"
 )
 
 // Template is a Template with the file it was read from, so a new one is
@@ -30,7 +31,7 @@ type Template struct {
 type Source struct {
 	Items     []tree.Item
 	Templates []Template
-	Views     []view.View
+	Outlines  []outline.Outline
 	// PDF is where a revision's PDF is read from.
 	PDF func(item, digest string) string
 }
@@ -56,17 +57,27 @@ func FromTree(root string) (Source, error) {
 		}
 		templates = append(templates, Template{t, data})
 	}
-	views, err := view.Load(root)
+	outlines, err := outline.Load(root)
 	if err != nil {
 		return Source{}, err
 	}
-	return Source{Items: items, Templates: templates, Views: views,
+	// A tree not opened since Outlines came still has Views and Targets.
+	legacy, err := outline.Legacy(root)
+	if err != nil {
+		return Source{}, err
+	}
+	for _, o := range legacy {
+		if !slices.ContainsFunc(outlines, func(x outline.Outline) bool { return x.Name == o.Name }) {
+			outlines = append(outlines, o)
+		}
+	}
+	return Source{Items: items, Templates: templates, Outlines: outlines,
 		PDF: func(id, digest string) string { return tree.PDFPath(root, id, digest) }}, nil
 }
 
 // FromTarget reads a Target back through its manifest: an Item for every ID
 // it records, with the revisions exported. A Target carries no Templates or
-// Views, and revisions it did not export are not in it.
+// Outlines, and revisions it did not export are not in it.
 func FromTarget(target string, now time.Time) (Source, error) {
 	m, err := export.ReadManifest(target)
 	if err != nil {
