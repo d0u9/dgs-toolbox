@@ -71,6 +71,9 @@ func AddWithoutPDF(root, id string, template Template, given map[string]string, 
 	for k, v := range fields {
 		full[k] = v
 	}
+	if other, ok := taken(template, items, full, id); ok {
+		return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
+	}
 	if item.CurrentDigest() == "" && SnapshotID(item.Type, item.CurrentFields(), "") == SnapshotID(item.Type, full, "") && (metadata.Notes == nil || strings.TrimSpace(*metadata.Notes) == item.Notes) && (metadata.Tags == nil || strings.Join(tag.List(*metadata.Tags), ",") == strings.Join(item.Tags, ",")) {
 		return item, nil
 	}
@@ -110,7 +113,7 @@ func AttachPDF(ctx context.Context, root, id, ref, source string, now time.Time)
 	for _, t := range templates {
 		if t.Type == typ {
 			if other, ok := taken(t, items, item.FieldsAt(ref), id); ok {
-				return Item{}, fmt.Errorf("%w: %s", ErrTaken, other.ID)
+				return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
 			}
 		}
 	}

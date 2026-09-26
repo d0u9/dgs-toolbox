@@ -289,3 +289,24 @@ func TestMergeReplacementRemapsSuccessor(t *testing.T) {
 		t.Fatalf("lost replacement: %+v", item)
 	}
 }
+
+// A Source Item replaced by an Item in neither tree is a problem, not a
+// dangling superseded_by written into this tree.
+func TestMergeRefusesDanglingReplacement(t *testing.T) {
+	root := newTree(t, passport)
+	id, err := tree.NewID(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := tree.Item{ID: id, Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "alex"},
+		Revisions: []tree.Revision{{Digest: digest("a"), Added: now.Format(time.RFC3339)}}, Head: digest("a"),
+		SupersededBy: "20990101-ghost"}
+	p := plan(t, root, Source{Items: []tree.Item{s}, Templates: []Template{}})
+	found := false
+	for _, problem := range p.Problems {
+		found = found || strings.Contains(problem, "neither tree")
+	}
+	if !found {
+		t.Fatalf("problems %v", p.Problems)
+	}
+}

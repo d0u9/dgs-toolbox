@@ -330,7 +330,8 @@ and the optional PDF. Editing fields, changing type, attaching a PDF or
 replacing a PDF creates a new snapshot and moves HEAD to it. Editing an older
 snapshot branches from its values; other snapshots remain intact. Saving
 unchanged content does nothing. Returning to content already kept reuses that
-snapshot and moves HEAD instead of storing a duplicate.
+snapshot and moves HEAD instead of storing a duplicate; that snapshot keeps
+its revision tags, and tags given with it are added.
 
 The revision ID is SHA-256 of a versioned, canonical JSON payload containing
 the type, nonempty fields (keys sorted), and the PDF's SHA-256 or an empty
@@ -365,7 +366,8 @@ OCR and similarity reading skip these snapshots. Export manifests retain
 each snapshot ID and its own field values even when snapshots share a PDF.
 
 Tree merge carries the snapshots and their attachment blobs. A shared snapshot
-reference with conflicting content is refused rather than overwritten.
+reference with conflicting content is refused rather than overwritten. A
+replacement link to an Item in neither tree is refused rather than dropped.
 Deleting any snapshot saves the original sidecar in trash. Its PDF moves
 to trash only when no remaining snapshot uses it; shared PDFs remain.
 

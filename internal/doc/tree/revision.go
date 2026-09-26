@@ -89,6 +89,13 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 	if other, ok := holder(items, digest); ok && other.ID != id {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
 	}
+	full, _ := template.Split(item.CurrentFields())
+	for k, v := range fields {
+		full[k] = v
+	}
+	if other, ok := taken(template, items, full, id); ok {
+		return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
+	}
 	destination := PDFPath(root, id, digest)
 	if _, ok := holder(items, digest); ok {
 		actual, err := FileDigest(destination)
@@ -108,16 +115,19 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 			return Item{}, fmt.Errorf("%s changed while it was being imported", source)
 		}
 	}
-	full, _ := template.Split(item.CurrentFields())
-	for k, v := range fields {
-		full[k] = v
-	}
 	if SnapshotID(item.Type, item.CurrentFields(), item.CurrentDigest()) == SnapshotID(template.Type, full, digest) && metadata.Notes == nil && metadata.Tags == nil && len(metadata.RevisionTags) == 0 {
 		return item, nil
 	}
+	_, reused := item.Revision(SnapshotID(template.Type, full, digest))
 	ref := item.saveSnapshot(template.Type, full, digest, filepath.Base(source), now)
+	// A snapshot returned to keeps its own tags; given ones are added to them.
 	for n := range item.Revisions {
-		if item.Revisions[n].Ref() == ref {
+		if item.Revisions[n].Ref() != ref {
+			continue
+		}
+		if reused {
+			item.Revisions[n].Tags = tag.List(append(append([]string(nil), item.Revisions[n].Tags...), metadata.RevisionTags...))
+		} else {
 			item.Revisions[n].Tags = tag.List(metadata.RevisionTags)
 		}
 	}
@@ -144,8 +154,10 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 	return item, nil
 }
 
-// SetHead points a document's HEAD at one of its revisions, which is how a
-// revision added by mistake is stepped back from. Nothing is removed.
+// SetHead points HEAD at one of an Item's revisions, which is how a revision
+// added by mistake is stepped back from. Nothing is removed. A document always
+// has HEAD; a record has one once it holds a snapshot, and a legacy record
+// without one is refused.
 func SetHead(root, id, digest string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
@@ -260,7 +272,7 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 	}
 	imported := false
 	for _, event := range item.History {
-		if (event.Action == "import" || event.Action == "import_revision" || event.Action == "create_without_pdf" || event.Action == "create_revision_without_pdf" || event.Action == "attach_pdf" || event.Action == "edit_fields" || event.Action == "change_type") && event.Digest == digest {
+		if createsRevision(event.Action) && event.Digest == digest {
 			imported = true
 			break
 		}
@@ -351,6 +363,16 @@ func SetFields(root, id, digest string, template Template, given map[string]stri
 	}
 	return item, WriteItem(root, item)
 }
+
+// revisionActions are the history actions whose Digest names the revision
+// they created. Any new action that creates a snapshot belongs here.
+var revisionActions = map[string]bool{
+	"import": true, "import_revision": true, "create_without_pdf": true,
+	"create_revision_without_pdf": true, "attach_pdf": true, "edit_fields": true,
+	"change_type": true,
+}
+
+func createsRevision(action string) bool { return revisionActions[action] }
 
 // taken is the document, other than except, that already has fields'
 // distinguishing values.
