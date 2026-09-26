@@ -57,7 +57,8 @@ func (p Plan) Complete() bool { return len(p.Missing) == 0 && len(p.Clashes) == 
 
 // Matches reports whether item passes every condition of query, as its
 // Current revision has its fields. A value matches as sameValue says: one
-// country however written, or else equal ignoring case. TagsKey is left
+// country however written, or else equal ignoring case; a key written
+// `<key> contains` takes a value holding the text instead. TagsKey is left
 // to MatchesTags.
 func Matches(query map[string]Values, item tree.Item) bool {
 	return matchesFields(query, item, item.CurrentFields())
@@ -78,25 +79,61 @@ func MatchesShared(query map[string]Values, item tree.Item) bool {
 
 func matchesFields(query map[string]Values, item tree.Item, fields map[string]string) bool {
 	for key, accepted := range query {
-		if len(accepted) == 0 || key == TagsKey {
+		if field, _ := SplitKey(key); len(accepted) == 0 || field == TagsKey {
 			continue
 		}
-		value := fields[key]
-		if key == "type" {
-			value = item.Type
-		}
-		found := false
-		for _, want := range accepted {
-			if sameValue(value, want) {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !meets(key, accepted, item, "", fields) {
 			return false
 		}
 	}
 	return true
+}
+
+// Contains is the operator a condition's key ends with to match a value
+// holding the text, ignoring case, rather than one equal to it:
+// `name contains`.
+const Contains = " contains"
+
+// SplitKey is a condition's key as the field it reads and whether it
+// matches by Contains.
+func SplitKey(key string) (string, bool) {
+	if field, ok := strings.CutSuffix(key, Contains); ok {
+		return field, true
+	}
+	return key, false
+}
+
+// meets reports whether any value key reads from revision ref of item is
+// one accepted: a field from fields, `type`, the revision's tags or the
+// Item's Status.
+func meets(key string, accepted Values, item tree.Item, ref string, fields map[string]string) bool {
+	field, contains := SplitKey(key)
+	held := []string{fields[field]}
+	switch field {
+	case "type":
+		held = []string{item.Type}
+	case TagsKey:
+		held = item.TagsAt(ref)
+	case StatusKey:
+		held = Status(item)
+	}
+	for _, have := range held {
+		for _, want := range accepted {
+			switch {
+			case contains:
+				if want = strings.TrimSpace(want); want != "" && strings.Contains(strings.ToLower(have), strings.ToLower(want)) {
+					return true
+				}
+			case field == TagsKey:
+				if strings.EqualFold(have, want) {
+					return true
+				}
+			case sameValue(have, want) && (have != "" || field == "type"):
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // TagsKey is the query key that selects by tag. Unlike a field it is
@@ -104,21 +141,18 @@ func matchesFields(query map[string]Values, item tree.Item, fields map[string]st
 // tags and its own, any tag the query accepts.
 const TagsKey = "tags"
 
-// MatchesTags reports whether the revision ref of item has a tag the
-// query's TagsKey accepts, or the query names no tag.
+// MatchesTags reports whether the revision ref of item has a tag each
+// TagsKey condition of query accepts, or the query names no tag.
 func MatchesTags(query map[string]Values, item tree.Item, ref string) bool {
-	accepted := query[TagsKey]
-	if len(accepted) == 0 {
-		return true
-	}
-	for _, have := range item.TagsAt(ref) {
-		for _, want := range accepted {
-			if strings.EqualFold(have, want) {
-				return true
-			}
+	for key, accepted := range query {
+		if field, _ := SplitKey(key); field != TagsKey || len(accepted) == 0 {
+			continue
+		}
+		if !meets(key, accepted, item, ref, nil) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // StatusKey is the exclude key that leaves Items out by where they stand
@@ -140,27 +174,13 @@ func Status(item tree.Item) []string {
 }
 
 // Excludes reports whether revision ref of item meets any condition of
-// exclude: its field, as that revision has it, is one of a key's values,
-// it has one of the TagsKey values among its tags, or item has one of the
-// StatusKey values.
+// exclude, each as meets says: its field as that revision has it, its
+// tags, or the Item's StatusKey values.
 func Excludes(exclude map[string]Values, item tree.Item, ref string) bool {
 	fields := item.FieldsAt(ref)
 	for key, values := range exclude {
-		held := []string{fields[key]}
-		switch key {
-		case "type":
-			held = []string{item.Type}
-		case TagsKey:
-			held = item.TagsAt(ref)
-		case StatusKey:
-			held = Status(item)
-		}
-		for _, have := range held {
-			for _, want := range values {
-				if have != "" && sameValue(have, want) {
-					return true
-				}
-			}
+		if meets(key, values, item, ref, fields) {
+			return true
 		}
 	}
 	return false

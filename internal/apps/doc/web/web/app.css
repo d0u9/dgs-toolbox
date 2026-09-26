@@ -632,6 +632,8 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .vf-stack .condition:first-child { border-top: none; padding-top: 0; }
 .condition-head { display: flex; align-items: center; gap: 6px; }
 .condition-head select { flex: 1; max-width: none; }
+.condition-head .condition-op { flex: none; width: auto; }
+.vf .condition .checks > input { grid-column: 1 / -1; min-width: 0; width: 100%; }
 .condition .checks { gap: 6px 16px; }
 #types.checks, .condition .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 12px; }
 #types label, .condition .checks label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

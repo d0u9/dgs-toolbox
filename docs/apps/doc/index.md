@@ -572,6 +572,11 @@ A rule has a query, a selection, and a layout. It may leave PDFs out and select 
 - **Query** — which Items, by their fields, such as type and owner. A value
   matches ignoring case, and a country matches however it is written: `CN`
   selects an Item that keeps `中国`.
+  A key written `<key> contains` matches a value holding one of the texts
+  instead, ignoring case: `name contains: [英文, English]`. The Rules page
+  offers it beside `is` on every condition, `is` picking from the values
+  Items hold and `contains` taking typed text. One key may have both
+  conditions, and both must hold.
   The key `tags` selects by tag, per revision: a revision matches when the
   Item's tags or its own include one of the values, ignoring case. An
   Item's tag holds for every revision; a revision's only for itself.

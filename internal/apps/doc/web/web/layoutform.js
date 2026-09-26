@@ -43,15 +43,13 @@ export function read() {
   const query = {};
   const types = [...$("types").querySelectorAll("input:checked")].map((i) => i.value);
   if (types.length) query.type = types;
-  for (const row of $("conditions").children) {
-    const values = [...row.querySelectorAll(".checks input:checked")].map((i) => i.value);
-    if (values.length) query[row.querySelector("select").value] = values;
-  }
-  const exclude = {};
-  for (const row of $("exclude").children) {
-    const values = [...row.querySelectorAll(".checks input:checked")].map((i) => i.value);
-    if (values.length) exclude[row.querySelector("select").value] = [...(exclude[row.querySelector("select").value] || []), ...values];
-  }
+  // Two rows of one key and operator are one condition.
+  const gather = (rows, into) => {
+    for (const [key, values] of rows) into[key] = [...new Set([...(into[key] || []), ...values])];
+    return into;
+  };
+  gather(read_("conditions"), query);
+  const exclude = gather(read_("exclude"), {});
   const out = { query, selection: document.querySelector("input[name=selection]:checked").value, layout: $("layout").value.trim() };
   if ($("shared")?.checked) out.shared = true;
   if (Object.keys(exclude).length) out.exclude = exclude;
@@ -126,24 +124,38 @@ function chosenTypes() {
 // any of its revisions'.
 function selected() {
   const types = chosenTypes();
-  const conditions = [...$("conditions").children].map((row) => [row.querySelector("select").value,
-    [...row.querySelectorAll(".checks input:checked")].map((i) => i.value)]).filter(([, values]) => values.length);
-  const exclusions = [...$("exclude").children].map((row) => [row.querySelector("select").value,
-    [...row.querySelectorAll(".checks input:checked")].map((i) => i.value)]).filter(([, values]) => values.length);
+  const conditions = read_("conditions");
+  const exclusions = read_("exclude");
   const excluded = (item) => exclusions.some(([key, values]) => {
+    const [field] = splitKey(key);
     const head = item.head || item.revisions?.[item.revisions.length - 1]?.id || item.revisions?.[item.revisions.length - 1]?.digest;
-    const held = key === "tags" ? [...(item.tags || []), ...((item.revisions || []).find((r) => (r.id || r.digest) === head)?.tags || [])]
-      : key === "status" ? [item.superseded_by ? "superseded" : "", item.retired || item.superseded_by ? "retired" : ""].filter(Boolean)
-      : [key === "type" ? item.type : currentFields(item)[key]].filter(Boolean);
-    return held.some((h) => values.some((v) => same(h, v)));
+    const held = field === "tags" ? [...(item.tags || []), ...((item.revisions || []).find((r) => (r.id || r.digest) === head)?.tags || [])]
+      : field === "status" ? [item.superseded_by ? "superseded" : "", item.retired || item.superseded_by ? "retired" : ""].filter(Boolean)
+      : [field === "type" ? item.type : currentFields(item)[field]].filter(Boolean);
+    return accepts(key, held, values);
   });
   return state.items.filter((item) => !skip.includes(item.id) && !excluded(item) && types.includes(item.type) && conditions.every(([key, values]) => {
-    const held = key === "tags" ? [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])] : [currentFields(item)[key]].filter(Boolean);
+    const [field] = splitKey(key);
+    const held = field === "tags" ? [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])] : [currentFields(item)[field]].filter(Boolean);
     // A rule taking shared Items takes them for the people they are shared with.
-    if (key === "owner" && $("shared")?.checked) held.push(...(item.shared_with || []));
-    return held.some((h) => values.some((v) => same(h, v)));
+    if (field === "owner" && $("shared")?.checked) held.push(...(item.shared_with || []));
+    return accepts(key, held, values);
   }));
 }
+
+// CONTAINS ends a condition's key that matches a value holding the text,
+// ignoring case, rather than one equal to it: "name contains".
+const CONTAINS = " contains";
+const splitKey = (key) => key.endsWith(CONTAINS) ? [key.slice(0, -CONTAINS.length), true] : [key, false];
+
+// accepts reports whether a held value meets the condition key's values.
+function accepts(key, held, values) {
+  const [, contains] = splitKey(key);
+  return held.some((h) => values.some((v) => contains ? h.toLowerCase().includes(v.toLowerCase()) : same(h, v)));
+}
+
+// read_ is the conditions in one list of rows, those with values.
+const read_ = (id) => [...$(id).children].map((row) => row.read()).filter(([, values]) => values.length);
 
 // narrow redraws what depends on the types: the field chips and each
 // condition's values, keeping only what the chosen types have.
@@ -156,16 +168,27 @@ function narrow() {
   changed();
 }
 
-// condition is one query key and the values it accepts, picked from those
-// the Items hold, so a value is never typed in a form no Item uses. A saved
-// value is ticked as the held value it is one with — CHN as 中国 — and one
-// no Item holds any more is still listed, ticked.
-// An exclusion may also name a status, which no field holds.
+// condition is one query key, how it matches, and the values it accepts.
+// "is" picks values from those the Items hold, so a value is never typed
+// in a form no Item uses; a saved value is ticked as the held value it is
+// one with — CHN as 中国 — and one no Item holds any more is still listed,
+// ticked. "contains" takes typed text, several separated by commas.
+// An exclusion may also name a status, which no field holds and which is
+// matched whole.
 function condition(key, values, exclusion = false) {
   // What the query picks changes the numbering shown.
   const touched = () => { drawOrder(); drawSkip(); changed(); };
+  const [field, contains] = splitKey(key);
   const choices = el("div", { className: "checks" });
+  const text = el("input", { className: "mono", spellcheck: false, autocomplete: "off", placeholder: "text, other text", oninput: touched,
+    title: "Matches a value holding any of these, ignoring case" });
   const draw = (saved) => {
+    op.hidden = pick.value === "status";
+    if (op.hidden) op.value = "is";
+    if (op.value === "contains") {
+      text.value = saved.join(", ");
+      return choices.replaceChildren(text);
+    }
     const types = chosenTypes();
     const chosen = state.items.filter((item) => types.includes(item.type));
     // Tags are the Items' and their revisions' own, matched per revision.
@@ -176,13 +199,19 @@ function condition(key, values, exclusion = false) {
       el("input", { type: "checkbox", value: v, checked: saved.some((s) => same(s, v)), onchange: touched }), " " + v))
       : [el("span", { className: "template-sub", textContent: "no Item has one" })]));
   };
-  const pick = el("select", { onchange: () => { draw([]); touched(); } },
-    ...[...keys.filter((k) => !["type", "revision", "ext", "id", "tags", "status"].includes(k)), "tags", ...(exclusion ? ["status"] : [])].map((k) => el("option", { value: k, selected: k === key }, k)));
+  const current = () => op.value === "contains" ? text.value.split(",").map((v) => v.trim()).filter(Boolean)
+    : [...choices.querySelectorAll("input:checked")].map((i) => i.value);
+  const pick = el("select", { onchange: () => { draw(op.value === "contains" ? current() : []); touched(); } },
+    ...[...keys.filter((k) => !["type", "revision", "ext", "id", "tags", "status"].includes(k)), "tags", ...(exclusion ? ["status"] : [])].map((k) => el("option", { value: k, selected: k === field }, k)));
+  const op = el("select", { className: "condition-op", title: "is: one of the values ticked; contains: holds any text typed",
+    onchange: () => { draw([]); touched(); } },
+    el("option", { value: "is", selected: !contains }, "is"), el("option", { value: "contains", selected: contains }, "contains"));
   const row = el("div", { className: "condition" },
-    el("div", { className: "condition-head" }, pick,
+    el("div", { className: "condition-head" }, pick, op,
       el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); touched(); } })),
     choices);
-  row.redraw = () => draw([...choices.querySelectorAll("input:checked")].map((i) => i.value));
+  row.read = () => [pick.value + (op.value === "contains" ? CONTAINS : ""), current()];
+  row.redraw = () => draw(current());
   draw(values || []);
   return row;
 }

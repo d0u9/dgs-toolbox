@@ -97,6 +97,17 @@ func (v View) Validate() error {
 			return fmt.Errorf("view %s: skip lists %q twice or empty", v.Name, id)
 		}
 	}
+	for _, conditions := range []map[string]Values{v.Query, v.Exclude} {
+		for key := range conditions {
+			field, contains := SplitKey(key)
+			if !keyPattern.MatchString(field) {
+				return fmt.Errorf("view %s: condition %q: a key, or a key and%s", v.Name, key, Contains)
+			}
+			if contains && field == StatusKey {
+				return fmt.Errorf("view %s: status is matched whole, not by%s", v.Name, Contains)
+			}
+		}
+	}
 	if v.Shared && len(v.Query["owner"]) == 0 {
 		return fmt.Errorf("view %s: shared needs an owner in the query", v.Name)
 	}
