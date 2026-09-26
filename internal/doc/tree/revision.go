@@ -7,6 +7,8 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -499,6 +501,38 @@ func SetRetired(root, id string, retired bool, reason string, now time.Time) (It
 	}
 	item.Retired, item.RetiredReason = retired, reason
 	item.History = append(item.History, event)
+	return item, WriteItem(root, item)
+}
+
+// SetSharedWith replaces the people an Item is shared with besides its
+// owner, trimmed, without repeats, sorted.
+func SetSharedWith(root, id string, people []string, now time.Time) (Item, error) {
+	if err := Require(root); err != nil {
+		return Item{}, err
+	}
+	item, _, err := FindItem(root, id)
+	if err != nil {
+		return Item{}, err
+	}
+	owner := strings.TrimSpace(item.CurrentFields()["owner"])
+	var shared []string
+	for _, p := range people {
+		p = strings.TrimSpace(p)
+		if p == "" || slices.Contains(shared, p) {
+			continue
+		}
+		if strings.EqualFold(p, owner) {
+			return Item{}, fmt.Errorf("%s owns this Item: share it with someone else", p)
+		}
+		shared = append(shared, p)
+	}
+	sort.Strings(shared)
+	if slices.Equal(shared, item.SharedWith) {
+		return item, nil
+	}
+	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "share",
+		Changes: map[string][2]string{"shared_with": {strings.Join(item.SharedWith, ", "), strings.Join(shared, ", ")}}})
+	item.SharedWith = shared
 	return item, WriteItem(root, item)
 }
 

@@ -26,6 +26,7 @@ export function fill(v) {
   $("conditions").replaceChildren(...Object.entries(v.query || {})
     .filter(([k]) => k !== "type").map(([k, values]) => condition(k, values)));
   document.querySelector(`input[name=selection][value=${v.selection || "head"}]`).checked = true;
+  if ($("shared")) $("shared").checked = !!v.shared;
   $("layout").value = v.layout;
   orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, list.join(", ")]));
   drawOrder();
@@ -43,6 +44,7 @@ export function read() {
     if (values.length) query[row.querySelector("select").value] = values;
   }
   const out = { query, selection: document.querySelector("input[name=selection]:checked").value, layout: $("layout").value.trim() };
+  if ($("shared")?.checked) out.shared = true;
   const order = {};
   for (const key of numberedKeys()) {
     const list = (orders[key] || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -84,6 +86,8 @@ function selected() {
     [...row.querySelectorAll(".checks input:checked")].map((i) => i.value)]).filter(([, values]) => values.length);
   return state.items.filter((item) => types.includes(item.type) && conditions.every(([key, values]) => {
     const held = key === "tags" ? [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])] : [currentFields(item)[key]].filter(Boolean);
+    // A rule taking shared Items takes them for the people they are shared with.
+    if (key === "owner" && $("shared")?.checked) held.push(...(item.shared_with || []));
     return held.some((h) => values.some((v) => same(h, v)));
   }));
 }

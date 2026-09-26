@@ -127,6 +127,26 @@ Source has retired.
 "Retired" rather than "expired", which is about a date, or "archived", which
 Cases already use.
 
+### Shared
+
+A letter addressed to two people belongs to both, but an Item has one
+owner: the owner field is one value everywhere, in a distinguishing key, a
+layout's `{owner}` and a rule's query. So the letter is imported once, as the
+owner's (the person named first), and shared with the other: Shared with, in
+the detail panel, lists the people it is shared with, from the owner field's
+options. It is kept in the sidecar as `shared_with`, sorted, never naming the
+owner, and changing it is a history event. A merge adds the Source's people
+to the matched Item's.
+
+On Browse, filtering by owner shows an Item shared with that person too,
+marked "shared by" its owner. An Outline is not changed by sharing: a rule
+selecting `owner: emma` does not select an Item Emma shares, unless it sets
+`shared: true`. Its layout still writes the Item's own owner for `{owner}`.
+
+"Shared" rather than several owners: a second owner would make every key,
+path and query that reads `owner` take a list, and a PDF would have more
+than one place in an export.
+
 ### Visa replacement: separate Items, explicit relationship
 
 Each visa grant is a separate record: it has its own grant number, dates and
@@ -547,7 +567,7 @@ order:
 
 ### Rules
 
-A rule has a query, a selection, and a layout.
+A rule has a query, a selection, and a layout, and may select shared Items.
 
 - **Query** — which Items, by their fields, such as type and owner. A value
   matches ignoring case, and a country matches however it is written: `CN`
@@ -556,6 +576,9 @@ A rule has a query, a selection, and a layout.
   Item's tags or its own include one of the values, ignoring case. An
   Item's tag holds for every revision; a revision's only for itself.
 - **Selection** — `head` (a document's HEAD revision only) or `all`.
+- **Shared** — `shared: true` also selects an Item shared with someone the
+  query's `owner` accepts, as if they were its owner (see Shared). A rule
+  setting it needs `owner` in its query.
 - **Layout** — fixed text and keys, such as
   `{country}/{owner}/important/{type}.pdf`: the folders, then the PDF's
   name. The export's folder provides the root, so a layout never names

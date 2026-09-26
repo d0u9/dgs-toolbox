@@ -37,6 +37,8 @@ type Change struct {
 	Notes string `json:"notes,omitempty"`
 	// Tags add the Source's tags to the matched Item.
 	Tags []string `json:"tags,omitempty"`
+	// SharedWith adds the people the Source's Item is shared with.
+	SharedWith []string `json:"shared_with,omitempty"`
 	// Frequent marks the matched Item frequent because the Source's is.
 	Frequent bool `json:"frequent,omitempty"`
 	// Retired retires the matched Item because the Source's is retired,
@@ -263,11 +265,17 @@ func Compute(root string, src Source) (Plan, error) {
 				c.SupersededBy = target
 			}
 		}
+		owner := m.CurrentFields()["owner"]
+		for _, person := range s.SharedWith {
+			if !slices.Contains(m.SharedWith, person) && !strings.EqualFold(person, owner) {
+				c.SharedWith = append(c.SharedWith, person)
+			}
+		}
 		c.Frequent = s.Frequent && !m.Frequent
 		if s.Retired && !m.Retired {
 			c.Retired, c.RetiredReason = true, s.RetiredReason
 		}
-		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" || len(c.Tags) > 0 || c.Frequent || c.Retired || c.SupersededBy != "" {
+		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" || len(c.Tags) > 0 || len(c.SharedWith) > 0 || c.Frequent || c.Retired || c.SupersededBy != "" {
 			plan.Changed = append(plan.Changed, c)
 		} else if len(plan.Conflicts) == conflicts {
 			plan.Same++
@@ -492,6 +500,15 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		if tags := tag.List(append(it.Tags, c.Tags...)); !slices.Equal(tags, it.Tags) {
 			change(c.Item, "tags", strings.Join(it.Tags, ", "), strings.Join(tags, ", "))
 			it.Tags = tags
+		}
+		if len(c.SharedWith) > 0 {
+			shared := append(slices.Clone(it.SharedWith), c.SharedWith...)
+			slices.Sort(shared)
+			shared = slices.Compact(shared)
+			if !slices.Equal(shared, it.SharedWith) {
+				change(c.Item, "shared_with", strings.Join(it.SharedWith, ", "), strings.Join(shared, ", "))
+				it.SharedWith = shared
+			}
 		}
 		if c.Frequent && !it.Frequent {
 			change(c.Item, "frequent", "", "yes")

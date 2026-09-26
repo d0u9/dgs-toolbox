@@ -438,6 +438,7 @@ export const eventTitles = {
   edit_tags: "Changed tags", edit_revision_tags: "Changed revision tags", make_head: "Made HEAD", delete_revision: "Deleted revision", change_type: "Changed type",
   export: "Exported", merge: "Merged", mark_frequent: "Marked frequent", unmark_frequent: "Unmarked frequent",
   retire: "Retired", unretire: "Back in use", edit_retired_reason: "Changed retired reason",
+  share: "Changed shared with",
 };
 
 // eventLines is one history event as a title and the lines under it. The

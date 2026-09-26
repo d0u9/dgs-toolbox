@@ -292,6 +292,7 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .badge-permanent { background: var(--fog); color: var(--charcoal); }
 /* Retired: no longer used, not expired. Faded, in grey, never in a warning
    colour — nothing is wrong with it. */
+.badge-shared { background: var(--fog); color: var(--charcoal); }
 .badge-retired { background: var(--fog); color: var(--graphite); }
 .card.retired .card-thumb-wrap { opacity: .45; filter: grayscale(1); }
 .card.retired .card-body { opacity: .6; }

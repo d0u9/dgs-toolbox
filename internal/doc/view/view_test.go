@@ -102,6 +102,39 @@ func TestBuildQueryTags(t *testing.T) {
 	}
 }
 
+func TestBuildShared(t *testing.T) {
+	a := item("A", "letter", map[string]string{"owner": "alex"}, "d1")
+	a.SharedWith = []string{"emma"}
+	b := item("B", "letter", map[string]string{"owner": "emma"}, "d2")
+	v := View{Name: "x", Selection: Head, Layout: "{owner}/{id}.{ext}", Query: map[string]Values{"owner": {"Emma"}}}
+	paths := func() []string {
+		plan, err := Build(v, []tree.Item{a, b}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, f := range plan.Files {
+			out = append(out, f.Path)
+		}
+		return out
+	}
+	if got := paths(); !reflect.DeepEqual(got, []string{"emma/B.pdf"}) {
+		t.Fatalf("without shared: %v", got)
+	}
+	// A shared Item is taken for Emma and keeps its own owner in the path.
+	v.Shared = true
+	if got := paths(); !reflect.DeepEqual(got, []string{"alex/A.pdf", "emma/B.pdf"}) {
+		t.Fatalf("with shared: %v", got)
+	}
+	if a.Fields["owner"] != "alex" {
+		t.Fatalf("matching changed the Item: %v", a.Fields)
+	}
+	v.Query = nil
+	if err := v.Validate(); err == nil {
+		t.Fatal("shared without an owner in the query was accepted")
+	}
+}
+
 func TestBuildMissingAndDefault(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"owner": "emma"}, "d1")}
 	v := View{Name: "x", Selection: Head, Layout: "{country}/{owner}/{year}.{ext}"}

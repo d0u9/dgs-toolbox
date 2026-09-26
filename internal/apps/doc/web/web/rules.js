@@ -18,7 +18,7 @@ let grouping = null; // the server's answer for the draft
 const tree = outlineTree($("tree"), () => state, { empty: () => "Give the rule a path to see the tree." });
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
-const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", layout: r.layout,
+const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", shared: !!r.shared, layout: r.layout,
   default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null });
 const blank = () => {
   let n = 1;

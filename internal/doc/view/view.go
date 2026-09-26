@@ -61,7 +61,10 @@ type View struct {
 	// match every key. `type` is the Item's type.
 	Query     map[string]Values `yaml:"query,omitempty" json:"query"`
 	Selection Selection         `yaml:"selection" json:"selection"`
-	Layout    string            `yaml:"layout" json:"layout"`
+	// Shared also selects an Item shared with someone the query's owner
+	// accepts, as if they owned it.
+	Shared bool   `yaml:"shared,omitempty" json:"shared,omitempty"`
+	Layout string `yaml:"layout" json:"layout"`
 	// Default, when set, is written for a key an Item lacks.
 	Default *string `yaml:"default,omitempty" json:"default,omitempty"`
 	// Dedupe is empty (refuse) or DedupeNumber.
@@ -82,6 +85,9 @@ func (v View) Validate() error {
 	}
 	if v.Selection != Head && v.Selection != All {
 		return fmt.Errorf("view %s: selection %q is neither head nor all", v.Name, v.Selection)
+	}
+	if v.Shared && len(v.Query["owner"]) == 0 {
+		return fmt.Errorf("view %s: shared needs an owner in the query", v.Name)
 	}
 	if v.Dedupe != "" && v.Dedupe != DedupeNumber {
 		return fmt.Errorf("view %s: dedupe %q: leave it out, or use number", v.Name, v.Dedupe)
