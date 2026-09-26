@@ -81,7 +81,9 @@ across the top narrows them: search (fields, tags and the text on the page), typ
 a tag filter that matches every tag chosen,
 a select for every distinguishing key any Template has, expiry and kind, and
 a Use filter for Items in use or retired, and a **★ Frequent** chip that
-shows only the frequent Items. They
+shows only the frequent Items. The type and key selects offer only the
+values the other filters leave — choosing a type narrows the owners to that
+type's — and a key with no value left is hidden. They
 sort by date added, expiry, name or type; frequent Items always come first
 and retired ones last, and the sort orders each part. The layout, sort, order and the Frequent chip
 are remembered in the browser. A thumbnail too tall or wide for its card shows
