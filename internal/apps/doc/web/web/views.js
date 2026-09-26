@@ -67,7 +67,7 @@ function open(v, name) {
   $("name").value = v.name;
   const types = (v.query && v.query.type) || [];
   $("types").replaceChildren(...state.templates.map((t) => el("label", {},
-    el("input", { type: "checkbox", value: t.type, checked: types.includes(t.type), onchange: changed }), " " + t.type)));
+    el("input", { type: "checkbox", value: t.type, checked: types.includes(t.type), onchange: narrow }), " " + t.type)));
   $("conditions").replaceChildren(...Object.entries(v.query || {})
     .filter(([k]) => k !== "type").map(([k, values]) => condition(k, values)));
   document.querySelector(`input[name=selection][value=${v.selection || "head"}]`).checked = true;
@@ -88,6 +88,21 @@ function open(v, name) {
   changed();
 }
 
+// chosenTypes is the types ticked, or every type when none is: a View
+// without types selects them all.
+function chosenTypes() {
+  const ticked = [...$("types").querySelectorAll("input:checked")].map((i) => i.value);
+  return ticked.length ? ticked : state.templates.map((t) => t.type);
+}
+
+// narrow redraws what depends on the types: the field chips and each
+// condition's values, keeping only what the chosen types have.
+function narrow() {
+  chips();
+  for (const row of $("conditions").children) row.redraw();
+  changed();
+}
+
 // condition is one query key and the values it accepts, picked from those
 // the Items hold, so a value is never typed in a form no Item uses. A saved
 // value is ticked as the held value it is one with — CHN as 中国 — and one
@@ -96,7 +111,8 @@ function condition(key, values) {
   const choices = el("div", { className: "checks" });
   const same = (a, b) => (countries[a] && countries[a] === countries[b]) || a.toLowerCase() === b.toLowerCase();
   const draw = (saved) => {
-    const held = [...new Set(state.items.map((item) => currentFields(item)[pick.value]).filter(Boolean))];
+    const types = chosenTypes();
+    const held = [...new Set(state.items.filter((item) => types.includes(item.type)).map((item) => currentFields(item)[pick.value]).filter(Boolean))];
     const all = [...held, ...saved.filter((v) => !held.some((h) => same(h, v)))].sort((a, b) => a.localeCompare(b));
     choices.replaceChildren(...(all.length ? all.map((v) => el("label", {},
       el("input", { type: "checkbox", value: v, checked: saved.some((s) => same(s, v)), onchange: changed }), " " + v))
@@ -108,6 +124,7 @@ function condition(key, values) {
     el("div", { className: "condition-head" }, pick,
       el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); changed(); } })),
     choices);
+  row.redraw = () => draw([...choices.querySelectorAll("input:checked")].map((i) => i.value));
   draw(values || []);
   return row;
 }
@@ -146,8 +163,10 @@ function chips() {
   });
   const group = (name, ...children) => children.length ? el("div", { className: "key-group" },
     el("span", { className: "key-group-name" }, name), el("div", { className: "key-chips" }, ...children)) : null;
-  const fields = keys.filter((k) => !BUILT_IN[k]);
-  const countries = [...countryKeys()];
+  const types = chosenTypes();
+  const held = new Set(state.templates.filter((t) => types.includes(t.type)).flatMap((t) => t.fields.map((f) => f.key)));
+  const fields = keys.filter((k) => !BUILT_IN[k] && held.has(k));
+  const countries = [...countryKeys()].filter((k) => held.has(k));
   $("keys").replaceChildren(...[
     group("Fields", ...fields.map((k) => chip(k, "{" + k + "}", describe(k)))),
     group("Every PDF", ...keys.filter((k) => BUILT_IN[k]).map((k) => chip(k, "{" + k + "}", describe(k))), chip("/", "/", "a folder")),
