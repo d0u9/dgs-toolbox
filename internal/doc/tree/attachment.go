@@ -34,11 +34,15 @@ func CreateWithoutPDF(request ImportRequest) (Item, error) {
 	if err := linked(request.Template, items, fields, ""); err != nil {
 		return Item{}, err
 	}
+	shared, err := sharedList(fields["owner"], request.SharedWith)
+	if err != nil {
+		return Item{}, err
+	}
 	id, err := NewID(request.Now)
 	if err != nil {
 		return Item{}, err
 	}
-	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags)}
+	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags), SharedWith: shared}
 	ref := item.saveSnapshot(request.Template.Type, fields, "", "", request.Now)
 	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "create_without_pdf", Digest: ref}}
 	if err := WriteItem(request.Root, item); err != nil {

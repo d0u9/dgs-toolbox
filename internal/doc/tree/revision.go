@@ -514,19 +514,10 @@ func SetSharedWith(root, id string, people []string, now time.Time) (Item, error
 	if err != nil {
 		return Item{}, err
 	}
-	owner := strings.TrimSpace(item.CurrentFields()["owner"])
-	var shared []string
-	for _, p := range people {
-		p = strings.TrimSpace(p)
-		if p == "" || slices.Contains(shared, p) {
-			continue
-		}
-		if strings.EqualFold(p, owner) {
-			return Item{}, fmt.Errorf("%s owns this Item: share it with someone else", p)
-		}
-		shared = append(shared, p)
+	shared, err := sharedList(item.CurrentFields()["owner"], people)
+	if err != nil {
+		return Item{}, err
 	}
-	sort.Strings(shared)
 	if slices.Equal(shared, item.SharedWith) {
 		return item, nil
 	}
@@ -534,6 +525,25 @@ func SetSharedWith(root, id string, people []string, now time.Time) (Item, error
 		Changes: map[string][2]string{"shared_with": {strings.Join(item.SharedWith, ", "), strings.Join(shared, ", ")}}})
 	item.SharedWith = shared
 	return item, WriteItem(root, item)
+}
+
+// sharedList is people trimmed, without repeats, sorted, refusing the
+// owner.
+func sharedList(owner string, people []string) ([]string, error) {
+	owner = strings.TrimSpace(owner)
+	var shared []string
+	for _, p := range people {
+		p = strings.TrimSpace(p)
+		if p == "" || slices.Contains(shared, p) {
+			continue
+		}
+		if strings.EqualFold(p, owner) {
+			return nil, fmt.Errorf("%s owns this Item: share it with someone else", p)
+		}
+		shared = append(shared, p)
+	}
+	sort.Strings(shared)
+	return shared, nil
 }
 
 // SetRevisionTags replaces one revision's own tags, in canonical spelling.
