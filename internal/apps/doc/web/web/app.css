@@ -679,7 +679,16 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .rule-shared { margin: 4px 0 0; font-size: var(--font-size-xs); }
 .outline-row.unplaced { margin-top: 10px; color: var(--error); }
 .outline-row.unplaced .ft-icon, .outline-row.unplaced .outline-count { color: var(--error); }
+.outline-row.outline-snapshot .ft-icon, .outline-row.outline-snapshot .outline-name { color: var(--primary); }
 .outline-empty { padding: 12px 4px; }
+/* A PDF picked on Explore opens beside the tree, as in a file manager. */
+.outline-preview { border-left: 1px solid var(--hairline); }
+body.previewing .outline-main { flex: 0 0 360px; }
+body.previewing .outline-side { display: none; }
+body.list-shut .outline-list { display: none; }
+.outline-main .template-bar { flex-wrap: wrap; }
+.outline-preview .reader-bar .button { white-space: nowrap; }
+.outline-preview .reader-bar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .outline-side { width: 340px; min-width: 300px; flex: none; padding: 0 16px 24px; }
 .outline-files { list-style: none; margin: 0; padding: 0; font-size: var(--font-size-ui); }
 .outline-files li { padding: 6px 0; border-bottom: 1px solid var(--hairline); overflow-wrap: anywhere; }

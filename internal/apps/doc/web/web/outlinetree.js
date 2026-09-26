@@ -7,6 +7,8 @@ import { api, el, label } from "/common.js";
 const FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h4.5l1.5 1.5h6.5v8H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M1.75 6.25h12.5" stroke="currentColor" stroke-width="1.25"/></svg>';
 const FILE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 1.75h6l3.5 3.5v9H3.25z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M9.25 1.75v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>';
 
+const SNAPSHOT = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 4.75h3l1.25-1.75h4l1.25 1.75h3v8.5H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><circle cx="8" cy="8.75" r="2.5" fill="none" stroke="currentColor" stroke-width="1.25"/></svg>';
+
 // UNPLACED is the path of the Not placed row.
 export const UNPLACED = "\u0000unplaced";
 
@@ -43,9 +45,11 @@ export function unplaced(grouping) {
 // outlineTree draws into host. With onPick, a row is picked by clicking it
 // and onPick is called with its path ("" when unpicked); without, a click
 // opens or shuts a folder and a PDF links to its Item. empty is the text
-// drawn when there is nothing.
+// drawn when there is nothing. A folder with snapshot set is drawn as a
+// Snapshot, shut until opened.
 export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
-  const closed = new Set();
+  const closed = new Set(); // folders toggled from how they start
+  const shut = (c) => closed.has(c.path) !== !!c.snapshot;
   let picked = "";
   let grouping = null;
   const name = (id) => { const item = state().items.find((i) => i.id === id); return item ? label(state(), item) : id; };
@@ -58,7 +62,7 @@ export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
     const walk = (node, depth) => {
       for (const c of node.children) {
         rows.push(folderRow(c, depth));
-        if (!closed.has(c.path)) walk(c, depth + 1);
+        if (!shut(c)) walk(c, depth + 1);
       }
       for (const f of node.files) rows.push(fileRow(f, depth));
     };
@@ -67,11 +71,12 @@ export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
     host.replaceChildren(...(rows.length ? rows : [el("p", { className: "muted outline-empty" }, root ? "No Item matches." : empty())]));
   };
   const toggle = (path) => { if (closed.has(path)) closed.delete(path); else closed.add(path); draw(); };
-  const folderRow = (c, depth) => row({ name: c.name, path: c.path, depth, count: c.count, icon: FOLDER, parent: true, title: c.path });
+  const folderRow = (c, depth) => row({ name: c.name, path: c.path, depth, count: c.count, parent: true, open: !shut(c),
+    icon: c.snapshot ? SNAPSHOT : FOLDER, className: c.snapshot ? " outline-snapshot" : "",
+    title: c.snapshot ? "Snapshot " + c.name + ", taken " + c.snapshot.taken.replace("T", " ").slice(0, 16) + (c.snapshot.about ? "\n" + c.snapshot.about : "") : c.path });
   const fileRow = (f, depth) => row({ name: f.path.split("/").pop(), path: f.path, depth, icon: FILE, className: " outline-file",
     title: f.path + "\n" + name(f.item) + (f.view ? " · rule " + f.view : ""), href: api("/browse/") + "#" + f.item });
-  const row = ({ name, path, depth, count, icon, parent, className = "", title, href }) => {
-    const open = !closed.has(path);
+  const row = ({ name, path, depth, count, icon, parent, open, className = "", title, href }) => {
     const twist = el("span", { className: "outline-twist", textContent: parent ? (open ? "▾" : "▸") : "",
       onclick: (event) => { event.stopPropagation(); if (parent) toggle(path); } });
     const glyph = el("span", { className: "ft-icon" });
@@ -91,7 +96,9 @@ export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
   return {
     show(answer) { grouping = answer; draw(); },
     reset() { closed.clear(); picked = ""; },
+    pick(path) { picked = path; draw(); },
     get picked() { return picked; },
+    get root() { return grouping && grouping.root; },
   };
 }
 
@@ -106,7 +113,8 @@ export function pdfRow(state, f, extra) {
 }
 
 // folderFiles lists the PDFs in node and beneath it, those beneath under
-// the folder they are in, relative to node.
+// the folder they are in, relative to node. A Snapshot within node is not
+// its PDFs.
 export function folderFiles(state, node) {
   const out = [];
   const walk = (n) => {
@@ -114,7 +122,7 @@ export function folderFiles(state, node) {
       if (n !== node) out.push(el("li", { className: "outline-sub mono" }, n.path.slice(node.path ? node.path.length + 1 : 0)));
       out.push(...n.files.map((f) => pdfRow(state, f)));
     }
-    n.children.forEach(walk);
+    n.children.filter((c) => !c.snapshot).forEach(walk);
   };
   walk(node);
   return out;

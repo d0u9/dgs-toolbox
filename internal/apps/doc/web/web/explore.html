@@ -34,19 +34,23 @@
 </header>
 <p id="error" class="message error" hidden></p>
 <main class="work">
-  <section class="list">
+  <section class="list outline-list">
     <div class="list-head">
       <h2>Outlines <span id="count" class="count numeric"></span></h2>
       <a class="button" href="/outlines/#new">+ New</a>
+      <button id="shut-list" class="button" type="button" title="Hide the Outlines">‹</button>
     </div>
-    <p id="empty" class="muted outline-empty" hidden>No Outline yet. Make one on the <a href="/outlines/">Outlines</a> page.</p>
+    <p id="no-outlines" class="muted outline-empty" hidden>No Outline yet. Make one on the <a href="/outlines/">Outlines</a> page.</p>
     <ul id="outlines" class="template-list scroll"></ul>
-    <div class="list-head"><h2>Snapshots <span id="snap-count" class="count numeric"></span></h2></div>
-    <p id="snap-empty" class="muted outline-empty" hidden>No Snapshot yet. Pick an Outline's folder, or none for all of it, and click Snapshot.</p>
-    <ul id="snapshots" class="template-list scroll"></ul>
+    <div id="snap-head" hidden>
+      <div class="list-head"><h2>Snapshots <span id="snap-count" class="count numeric"></span></h2></div>
+      <p class="muted outline-empty">Their Outlines are gone. A Snapshot is otherwise inside its Outline's tree.</p>
+      <ul id="snapshots" class="template-list scroll"></ul>
+    </div>
   </section>
   <section class="outline-main">
     <div class="template-bar">
+      <button id="open-list" class="button" type="button" title="Show the Outlines" hidden>›</button>
       <div class="template-title">
         <h2 id="title"></h2>
         <span id="total" class="count muted"></span>
@@ -54,6 +58,7 @@
       <p id="message" class="message"></p>
       <a id="edit" class="button" hidden>Edit rules</a>
       <button id="take" class="button" type="button" hidden title="Keep the folder picked, or the whole tree, as it is now">Snapshot</button>
+      <button id="export-button" class="button" type="button" title="Write the Outline or Snapshot into a folder you choose">Export…</button>
       <button id="drop" class="button" type="button" hidden title="Move the Snapshot into the tree's trash">Delete</button>
     </div>
     <form id="take-form" class="take-form" hidden>
@@ -66,22 +71,34 @@
     <div id="tree" class="outline-tree scroll" role="tree"></div>
   </section>
   <aside class="side outline-side">
-    <section id="export" class="export outline-export" hidden>
-      <div class="result-head"><h3>Export</h3><span id="about" class="count muted"></span></div>
-      <div class="export-row">
-        <button id="choose" class="button export-folder" type="button" title="Where an export from this browser goes">
-          <span id="folder-path" class="export-path"></span></button>
-      </div>
-      <div class="export-row">
-        <button id="dry-run" class="button" type="button">Check</button>
-        <button id="run" class="action" type="button" disabled>Export</button>
-      </div>
-      <p id="export-message" class="message"></p>
-      <div id="export-plan"></div>
-    </section>
     <div class="result-head"><h3 id="folder">PDFs</h3><span id="folder-count" class="count muted"></span></div>
     <ul id="files" class="outline-files"></ul>
   </aside>
+  <section id="preview" class="preview reader outline-preview" hidden>
+    <div class="reader-bar">
+      <strong id="reader-title"></strong>
+      <span class="viewer-spacer"></span>
+      <a id="reader-browse" class="button">Open in Browse</a>
+      <button id="reveal" class="button" type="button" title="Show the PDF in the tree's folder in Finder">Show in Finder</button>
+    </div>
+    <div class="reader-body">
+    <p id="empty" class="muted" hidden></p>
+    <nav id="rail" class="rail" aria-label="Pages" hidden></nav>
+    <div id="viewer" class="viewer" hidden>
+      <div class="viewer-bar">
+        <button type="button" id="zoom-out" class="tool" title="Zoom out (−)">−</button>
+        <button type="button" id="zoom-level" class="tool zoom-level" title="Actual width (0)">100%</button>
+        <button type="button" id="zoom-in" class="tool" title="Zoom in (+)">+</button>
+        <button type="button" id="fit-width" class="tool" title="Fit width">Width</button>
+        <button type="button" id="fit-page" class="tool" title="Fit page">Page</button>
+        <span class="viewer-spacer"></span>
+        <span id="page-at" class="muted numeric"></span>
+      </div>
+      <div id="pages" class="pages"></div>
+    </div>
+    <iframe id="frame" title="Preview" hidden></iframe>
+    </div>
+  </section>
 </main>
 <script type="module" src="/explore.js"></script>
 </body>
