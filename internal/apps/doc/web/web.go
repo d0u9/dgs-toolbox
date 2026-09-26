@@ -236,6 +236,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/revision-tags", s.setRevisionTags)
 	mux.HandleFunc("POST /api/frequent", s.setFrequent)
 	mux.HandleFunc("POST /api/retired", s.setRetired)
+	mux.HandleFunc("POST /api/shared", s.setShared)
 	mux.HandleFunc("POST /api/supersession", s.supersession)
 	mux.HandleFunc("GET /api/supersession-candidates", s.supersessionCandidates)
 	mux.HandleFunc("GET /api/history", s.historyLog)
@@ -931,6 +932,20 @@ func (s server) setRetired(w http.ResponseWriter, r *http.Request) {
 	s.writing.Lock()
 	defer s.writing.Unlock()
 	item, err := tree.SetRetired(s.root, request.Item, request.Retired, request.Reason, s.now())
+	answer(w, item, err)
+}
+
+func (s server) setShared(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item   string   `json:"item"`
+		People []string `json:"people"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := tree.SetSharedWith(s.root, request.Item, request.People, s.now())
 	answer(w, item, err)
 }
 

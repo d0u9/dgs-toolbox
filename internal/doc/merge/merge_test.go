@@ -108,10 +108,10 @@ func source(t *testing.T, root string) Source {
 func TestMergeMatchesAndAdds(t *testing.T) {
 	full := newTree(t, passport, bill)
 	sub := newTree(t, passport, bill)
-	put(t, full, tree.Item{ID: "F1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "emma"}, Tags: []string{"home"}}, "old passport")
+	put(t, full, tree.Item{ID: "F1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "emma"}, Tags: []string{"home"}, SharedWith: []string{"tom"}}, "old passport")
 	put(t, full, tree.Item{ID: "F2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"}}, "bill 1")
 	// The sub-tree has the renewed passport, the same bill, and a new bill.
-	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "EMMA"}, Notes: "renewed in Sydney", Tags: []string{"travel"}, Frequent: true, Retired: true, RetiredReason: "moved"}, "new passport")
+	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "EMMA"}, Notes: "renewed in Sydney", Tags: []string{"travel"}, SharedWith: []string{"amy", "tom", "emma"}, Frequent: true, Retired: true, RetiredReason: "moved"}, "new passport")
 	put(t, sub, tree.Item{ID: "S2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"}}, "bill 1")
 	put(t, sub, tree.Item{ID: "S3", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom"}}, "bill 2")
 	if err := outline.Save(sub, "", outline.Outline{Name: "all", Rules: []view.View{{Name: "all", Selection: view.Head, Layout: "{owner}/{type}.{ext}"}}}); err != nil {
@@ -124,7 +124,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 		t.Fatalf("plan: %+v", p)
 	}
 	c := p.Changed[0]
-	if c.Item != "F1" || c.Head != digest("new passport") || len(c.Digests) != 1 || c.Notes != "renewed in Sydney" || len(c.Tags) != 1 || c.Tags[0] != "travel" || !c.Frequent || !c.Retired || c.RetiredReason != "moved" {
+	if c.Item != "F1" || c.Head != digest("new passport") || len(c.Digests) != 1 || c.Notes != "renewed in Sydney" || len(c.Tags) != 1 || c.Tags[0] != "travel" || strings.Join(c.SharedWith, ",") != "amy" || !c.Frequent || !c.Retired || c.RetiredReason != "moved" {
 		t.Fatalf("change: %+v", c)
 	}
 	// owner differs in case only in the match, but the fields still differ.
@@ -144,6 +144,9 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	f1, _, err := tree.FindItem(full, "F1")
 	if err != nil || f1.Head != digest("new passport") || len(f1.Revisions) != 2 || f1.Fields["owner"] != "emma" || f1.Notes != "renewed in Sydney" || len(f1.Tags) != 2 || f1.Tags[0] != "home" || f1.Tags[1] != "travel" {
 		t.Fatalf("F1: %v %+v", err, f1)
+	}
+	if strings.Join(f1.SharedWith, ",") != "amy,tom" {
+		t.Fatalf("F1 shared with %v", f1.SharedWith)
 	}
 	if !f1.Frequent || !f1.Retired || f1.RetiredReason != "moved" || len(f1.History) != 1 || f1.History[0].Action != "merge" || f1.History[0].At != now.Format(time.RFC3339) {
 		t.Fatalf("F1 history: %+v", f1)

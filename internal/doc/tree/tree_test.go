@@ -543,6 +543,33 @@ func TestSetRetiredKeepsReasonAndHistory(t *testing.T) {
 	}
 }
 
+func TestSetSharedWith(t *testing.T) {
+	root := newTree(t)
+	if err := WriteItem(root, Item{ID: "A", Type: "letter", Kind: KindRecord, Fields: map[string]string{"owner": "alex"}}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	if _, err := SetSharedWith(root, "A", []string{"Alex"}, at); err == nil {
+		t.Fatal("shared with its owner")
+	}
+	for _, people := range [][]string{{" tom ", "emma", "tom", ""}, {"emma", "tom"}, nil} {
+		if _, err := SetSharedWith(root, "A", people, at); err != nil {
+			t.Fatal(err)
+		}
+		if people != nil {
+			item, _, _ := FindItem(root, "A")
+			if strings.Join(item.SharedWith, ",") != "emma,tom" {
+				t.Fatalf("shared with %v", item.SharedWith)
+			}
+		}
+	}
+	item, _, _ := FindItem(root, "A")
+	// The same people again are no change.
+	if item.SharedWith != nil || len(item.History) != 2 || item.History[1].Changes["shared_with"] != [2]string{"emma, tom", ""} {
+		t.Fatalf("item %+v", item)
+	}
+}
+
 func TestRevisionTagsAreTheRevisionsOwn(t *testing.T) {
 	root := newTree(t)
 	item := Item{ID: "A", Type: "card", Kind: KindDocument, Tags: []string{"home"}, Head: "y",

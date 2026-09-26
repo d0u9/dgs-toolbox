@@ -58,6 +58,10 @@ type Item struct {
 	// organisation the owner has left — though it has not expired. Browse
 	// shows it faded and last; exports are not affected. RetiredReason is
 	// the owner's optional note on why.
+	// SharedWith names the people besides the owner the Item belongs to — a
+	// letter addressed to two — sorted, never the owner. Outlines select it
+	// for them only in a rule that asks.
+	SharedWith    []string   `yaml:"shared_with,omitempty" json:"shared_with,omitempty"`
 	SupersededBy  string     `yaml:"superseded_by,omitempty" json:"superseded_by,omitempty"`
 	Retired       bool       `yaml:"retired,omitempty" json:"retired,omitempty"`
 	RetiredReason string     `yaml:"retired_reason,omitempty" json:"retired_reason,omitempty"`

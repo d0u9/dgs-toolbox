@@ -82,7 +82,9 @@ function passes(i, skip) {
   return (!onlyFrequent() || i.frequent) && (!use || (use === "retired") === !!i.retired) &&
     (skip === "type" || !type || i.type === type) && (!kind || i.kind === kind) &&
     (!exp || expiryOf(i).state === exp) &&
-    [...$("field-filters").querySelectorAll("select[data-key]")].every((s) => !s.value || s.dataset.key === skip || fields[s.dataset.key] === s.value) &&
+    // Filtering by owner shows an Item shared with that person too.
+    [...$("field-filters").querySelectorAll("select[data-key]")].every((s) => !s.value || s.dataset.key === skip || fields[s.dataset.key] === s.value ||
+      (s.dataset.key === "owner" && (i.shared_with || []).includes(s.value))) &&
     // An Item has the tags its HEAD has: its own and HEAD's.
     filterTags.get().every((tag) => tagsAt(i, headOf(i)).includes(tag)) &&
     (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
@@ -111,6 +113,10 @@ function shownItems() {
 }
 
 const expiryOf = (item) => (state.expiry || {})[item.id] || { state: "none" };
+
+// sharedBadge marks an Item shared with someone besides its owner.
+const sharedBadge = (item) => (item.shared_with || []).length
+  ? el("span", { className: "badge badge-shared", title: "Shared by " + (currentFields(item).owner || "its owner") + " with " + item.shared_with.join(", ") }, "shared") : null;
 
 // retiredBadge marks an Item no longer used, its reason on hover.
 const retiredBadge = (item) => item.retired
@@ -174,7 +180,7 @@ function card(item) {
         item.revisions.length > 1 ? el("span", { title: "Revisions" }, item.revisions.length + " revisions") : null),
       el("p", { className: "card-details", title: details(item) }, details(item)),
       textHits.get(item.id) ? el("p", { className: "card-snippet" }, textHits.get(item.id)) : null,
-      el("p", { className: "card-badges" }, retiredBadge(item), expiryBadge(item))));
+      el("p", { className: "card-badges" }, sharedBadge(item), retiredBadge(item), expiryBadge(item))));
   if (selected && selected.id === item.id) li.classList.add("card-selected");
   return li;
 }
@@ -250,7 +256,7 @@ function row(item, keys) {
     el("td", { className: "table-star" }, star(item)),
     el("td", {}, item.type),
     ...keys.map((k) => el("td", {}, fields[k] ? shown(item, k, fields[k]) : "")),
-    el("td", {}, retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))),
+    el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))),
     el("td", { className: "numeric" }, String(item.revisions.length)),
     el("td", { className: "numeric" }, new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString()));
   if (selected && selected.id === item.id) tr.classList.add("card-selected");
@@ -465,6 +471,7 @@ function detail(item) {
   $("change-type").href = api("/change-type/?item=" + encodeURIComponent(item.id));
   drawHistory(item);
   drawRetired(item);
+  drawShared(item);
   $("history-all").href = api("/log/") + "#" + encodeURIComponent(item.id);
   $("frequent").setAttribute("aria-pressed", String(!!item.frequent));
   $("frequent").textContent = item.frequent ? "★ Frequent" : "☆ Frequent";
@@ -589,6 +596,34 @@ async function setRetired(retired) {
 }
 $("retire-form").onsubmit = (event) => { event.preventDefault(); setRetired(true); };
 $("unretire").onclick = () => setRetired(false);
+
+// The Shared with section: the people besides the owner an Item belongs
+// to, from the owner field's options.
+let sharedOf = "";
+function drawShared(item) {
+  const key = item.id + "\n" + (item.shared_with || []).join(",") + "\n" + (currentFields(item).owner || "");
+  if (sharedOf === key) return;
+  sharedOf = key;
+  const owner = currentFields(item).owner || "";
+  const field = (templateOf(state, item.type)?.fields || []).find((f) => f.key === "owner");
+  const people = [...new Set([...(field?.options || []), ...(item.shared_with || [])])].filter((p) => p !== owner);
+  $("shared-people").replaceChildren(...(people.length ? people.map((p) => el("label", { className: "pick" },
+    el("input", { type: "checkbox", value: p, checked: (item.shared_with || []).includes(p), onchange: saveShared }), " ", p)) :
+    [el("span", { className: "muted" }, "No one else is an owner option in this Item's Template.")]));
+  say($("shared-message"), "");
+}
+async function saveShared() {
+  if (!selected) return;
+  const people = [...$("shared-people").querySelectorAll("input:checked")].map((i) => i.value);
+  try {
+    await post("/api/shared", { item: selected.id, people });
+    await reload();
+    say($("shared-message"), people.length ? "Shared with " + people.join(", ") + "." : "Not shared.");
+  } catch (err) {
+    sharedOf = "";
+    say($("shared-message"), err.message, true);
+  }
+}
 
 async function setFrequent(item, frequent) {
   try {

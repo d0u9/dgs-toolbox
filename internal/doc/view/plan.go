@@ -3,6 +3,7 @@ package view
 import (
 	"dgs-toolbox/internal/doc/country"
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"sort"
@@ -58,7 +59,23 @@ func (p Plan) Complete() bool { return len(p.Missing) == 0 && len(p.Clashes) == 
 // country however written, or else equal ignoring case. TagsKey is left
 // to MatchesTags.
 func Matches(query map[string]Values, item tree.Item) bool {
-	fields := item.CurrentFields()
+	return matchesFields(query, item, item.CurrentFields())
+}
+
+// MatchesShared reports whether item passes query as someone it is shared
+// with: as Matches, with that person as its owner.
+func MatchesShared(query map[string]Values, item tree.Item) bool {
+	for _, person := range item.SharedWith {
+		fields := maps.Clone(item.CurrentFields())
+		fields["owner"] = person
+		if matchesFields(query, item, fields) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesFields(query map[string]Values, item tree.Item, fields map[string]string) bool {
 	for key, accepted := range query {
 		if len(accepted) == 0 || key == TagsKey {
 			continue
@@ -209,7 +226,7 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 	plan := Plan{Files: []File{}, Missing: []Missing{}, Clashes: []Clash{}}
 	var placed []File
 	for _, item := range sorted {
-		if !Matches(v.Query, item) {
+		if !Matches(v.Query, item) && !(v.Shared && MatchesShared(v.Query, item)) {
 			continue
 		}
 		current := item.Current()
