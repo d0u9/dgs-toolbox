@@ -94,8 +94,8 @@ export function skipItem(id) {
 function drawSkip() {
   const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
   const unskip = (id) => { skip = skip.filter((x) => x !== id); drawSkip(); drawOrder(); changed(); };
-  $("skip-list").replaceChildren(...skip.map((id) => el("span", { className: "order-chip", title: id },
-    byId[id] ? label(state, byId[id]) : id + " (no such Item)",
+  $("skip-list").replaceChildren(...skip.map((id) => el("li", { title: id },
+    el("span", { className: byId[id] ? "" : "muted" }, byId[id] ? label(state, byId[id]) : id + " — no such Item"),
     el("button", { type: "button", className: "tool", title: "Put it back", textContent: "×", onclick: () => unskip(id) }))));
   const offered = selected().sort((a, b) => label(state, a).localeCompare(label(state, b)));
   $("add-skip").replaceChildren(el("option", { value: "" }, offered.length ? "+ Leave out an Item…" : "The rule selects no Item"),
