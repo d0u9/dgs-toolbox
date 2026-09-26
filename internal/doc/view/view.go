@@ -121,7 +121,9 @@ func (v View) Validate() error {
 // alpha3 — whatever form the Item keeps it in. A key written {key#} is
 // prefixed with its value's place in the View's order, as 01-. Keys written
 // {a|b} are alternatives: the first one an Item has is written. Alternatives
-// are numbered together, {a|b}#, from one order named a|b.
+// are numbered together, {a|b}#, from one order named a|b. A part ending
+// in ? is optional and may carry text around its key, {-key?}: an Item
+// with the value gets the text and the value, one without gets nothing.
 type Part struct {
 	Text     string `json:"text,omitempty"`
 	Key      string `json:"key,omitempty"`
@@ -129,6 +131,36 @@ type Part struct {
 	Numbered bool   `json:"numbered,omitempty"`
 	// Or holds the alternatives after the first, tried in order.
 	Or []Part `json:"or,omitempty"`
+	// Optional parts write nothing for an Item without the key, and
+	// Prefix and Suffix around its value otherwise.
+	Optional bool   `json:"optional,omitempty"`
+	Prefix   string `json:"prefix,omitempty"`
+	Suffix   string `json:"suffix,omitempty"`
+}
+
+// keyChar is a character that may start or end a key.
+func keyChar(r byte) bool {
+	return r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_'
+}
+
+// optionalParts splits an optional part's inner text, the ? removed, into
+// the text before its key, the key as written, and the text after it.
+func optionalParts(layout, written string) (prefix, inner, suffix string, err error) {
+	start, end := 0, len(written)
+	for start < end && !keyChar(written[start]) {
+		start++
+	}
+	for end > start && !keyChar(written[end-1]) {
+		end--
+	}
+	prefix, inner, suffix = written[:start], written[start:end], written[end:]
+	if inner == "" {
+		return "", "", "", fmt.Errorf("layout %q: {%s?} names no key", layout, written)
+	}
+	if strings.ContainsAny(prefix+suffix, "{}/:|#?") {
+		return "", "", "", fmt.Errorf("layout %q: {%s?}: the text around a key may not hold { } / : | # ?", layout, written)
+	}
+	return prefix, inner, suffix, nil
 }
 
 // choices is p and its alternatives, in the order they are tried.
@@ -208,6 +240,14 @@ func Parse(layout string) (Layout, error) {
 				return nil, fmt.Errorf("layout %q: { without }", layout)
 			}
 			inner := rest[:end]
+			optional := strings.HasSuffix(inner, "?")
+			var prefix, suffix string
+			if optional {
+				var err error
+				if prefix, inner, suffix, err = optionalParts(layout, strings.TrimSuffix(inner, "?")); err != nil {
+					return nil, err
+				}
+			}
 			var choices []Part
 			for _, written := range strings.Split(inner, "|") {
 				choice, err := parseKey(layout, written)
@@ -226,6 +266,12 @@ func Parse(layout string) (Layout, error) {
 				// {key}# is {key#}; {a|b}# numbers the alternatives together.
 				part.Numbered = true
 				rest = rest[1:]
+			}
+			if optional {
+				if part.Numbered {
+					return nil, fmt.Errorf("layout %q: {%s%s%s?}: an optional key is not numbered", layout, prefix, inner, suffix)
+				}
+				part.Optional, part.Prefix, part.Suffix = true, prefix, suffix
 			}
 			parts = append(parts, part)
 		}

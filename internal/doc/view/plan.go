@@ -377,6 +377,12 @@ func render(layout Layout, keys map[string]string, fallback *string, order map[s
 				continue
 			}
 			choice, value, ok := pick(part, keys)
+			if part.Optional {
+				if ok {
+					b.WriteString(part.Prefix + Clean(value) + part.Suffix)
+				}
+				continue
+			}
 			if !ok {
 				if fallback == nil {
 					if !contains(lacking, choice.Key) {
@@ -400,8 +406,27 @@ func render(layout Layout, keys map[string]string, fallback *string, order map[s
 			b.WriteString(Clean(value))
 		}
 		segments[s] = b.String()
+		if segments[s] == "" && allOptional(parts) {
+			// Only optional parts, all empty: the folder would vanish and
+			// the path change without anyone asking, so it is lacking.
+			for _, part := range parts {
+				if key := part.choices()[0].Key; !contains(lacking, key) {
+					lacking = append(lacking, key)
+				}
+			}
+		}
 	}
 	return strings.Join(segments, "/"), lacking
+}
+
+// allOptional reports whether every part is an optional key.
+func allOptional(parts []Part) bool {
+	for _, p := range parts {
+		if !p.Optional {
+			return false
+		}
+	}
+	return true
 }
 
 // pick is the first of part's choices an Item has, with its value as

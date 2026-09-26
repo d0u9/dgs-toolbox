@@ -397,3 +397,32 @@ func TestMatchesCountryInAnyForm(t *testing.T) {
 		t.Fatal("AU matches 中国")
 	}
 }
+
+func TestOptionalKey(t *testing.T) {
+	items := []tree.Item{
+		item("A", "diploma", map[string]string{"owner": "emma", "degree": "本科"}, "d1"),
+		item("B", "id_card", map[string]string{"owner": "emma"}, "d2"),
+	}
+	v := View{Name: "x", Selection: Head, Layout: "{owner}/{type}{-degree?}{ (country:alpha2)?}.{ext}"}
+	plan, err := Build(v, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"emma/diploma-本科.pdf", "emma/id_card.pdf"}; !reflect.DeepEqual(paths, want) || !plan.Complete() {
+		t.Fatalf("got %v %+v, want %v", paths, plan, want)
+	}
+	// A folder of only optional parts, all empty, would vanish: not placed.
+	plan, _ = Build(View{Name: "x", Selection: Head, Layout: "{owner}/{degree?}/{type}.{ext}"}, items, nil)
+	if len(plan.Files) != 1 || len(plan.Missing) != 1 || plan.Missing[0].Item != "B" {
+		t.Fatalf("empty folder: %+v", plan)
+	}
+	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "{degree?}#", "{:degree?}", "{degree|?}"} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("%q parsed", bad)
+		}
+	}
+}
