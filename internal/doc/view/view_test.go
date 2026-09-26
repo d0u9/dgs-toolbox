@@ -178,6 +178,45 @@ func TestBuildExcludeAndSkip(t *testing.T) {
 	}
 }
 
+func TestBuildContains(t *testing.T) {
+	a := item("A", "diploma", map[string]string{"owner": "emma", "name": "Bachelor Diploma"}, "d1")
+	b := item("B", "diploma", map[string]string{"owner": "emma", "name": "毕业证书英文版"}, "d2")
+	b.Tags = []string{"translation-en"}
+	c := item("C", "diploma", map[string]string{"owner": "emma", "name": "学位证书"}, "d3")
+	build := func(v View) []string {
+		v.Name, v.Selection, v.Layout = "x", Head, "{id}.{ext}"
+		if err := v.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		plan, err := Build(v, []tree.Item{a, b, c}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, f := range plan.Files {
+			out = append(out, f.Path)
+		}
+		return out
+	}
+	// Any listed text found in the value, ignoring case, is a match.
+	if got := build(View{Query: map[string]Values{"name contains": {"DIPLOMA", "证书"}}}); !reflect.DeepEqual(got, []string{"A.pdf", "B.pdf", "C.pdf"}) {
+		t.Fatalf("query: %v", got)
+	}
+	if got := build(View{Exclude: map[string]Values{"name contains": {"英文"}, "tags contains": {"translation"}}}); !reflect.DeepEqual(got, []string{"A.pdf", "C.pdf"}) {
+		t.Fatalf("exclude: %v", got)
+	}
+	// is and contains on one key must both hold.
+	if got := build(View{Query: map[string]Values{"name": {"学位证书"}, "name contains": {"英文"}}}); len(got) != 0 {
+		t.Fatalf("both: %v", got)
+	}
+	for _, bad := range []string{"name has", "status contains"} {
+		v := View{Name: "x", Selection: Head, Layout: "{id}.{ext}", Exclude: map[string]Values{bad: {"a"}}}
+		if err := v.Validate(); err == nil {
+			t.Fatalf("%q accepted", bad)
+		}
+	}
+}
+
 func TestBuildMissingAndDefault(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"owner": "emma"}, "d1")}
 	v := View{Name: "x", Selection: Head, Layout: "{country}/{owner}/{year}.{ext}"}
