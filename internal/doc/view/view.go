@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -59,8 +60,13 @@ type View struct {
 	Name string `yaml:"name" json:"name"`
 	// Query holds, per key, the values an Item's key may have. An Item must
 	// match every key. `type` is the Item's type.
-	Query     map[string]Values `yaml:"query,omitempty" json:"query"`
-	Selection Selection         `yaml:"selection" json:"selection"`
+	Query map[string]Values `yaml:"query,omitempty" json:"query"`
+	// Exclude leaves out a PDF matching any of its conditions: a key's
+	// value among those listed, or for `tags` a tag of the revision.
+	Exclude map[string]Values `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+	// Skip names Items the rule leaves out, whatever else it selects.
+	Skip      []string  `yaml:"skip,omitempty" json:"skip,omitempty"`
+	Selection Selection `yaml:"selection" json:"selection"`
 	// Shared also selects an Item shared with someone the query's owner
 	// accepts, as if they owned it.
 	Shared bool   `yaml:"shared,omitempty" json:"shared,omitempty"`
@@ -85,6 +91,11 @@ func (v View) Validate() error {
 	}
 	if v.Selection != Head && v.Selection != All {
 		return fmt.Errorf("view %s: selection %q is neither head nor all", v.Name, v.Selection)
+	}
+	for i, id := range v.Skip {
+		if strings.TrimSpace(id) == "" || slices.Contains(v.Skip[:i], id) {
+			return fmt.Errorf("view %s: skip lists %q twice or empty", v.Name, id)
+		}
 	}
 	if v.Shared && len(v.Query["owner"]) == 0 {
 		return fmt.Errorf("view %s: shared needs an owner in the query", v.Name)

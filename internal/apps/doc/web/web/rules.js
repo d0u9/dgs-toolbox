@@ -18,7 +18,7 @@ let grouping = null; // the server's answer for the draft
 const tree = outlineTree($("tree"), () => state, { empty: () => "Give the rule a path to see the tree." });
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
-const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", shared: !!r.shared, layout: r.layout,
+const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", shared: !!r.shared, exclude: r.exclude || {}, skip: r.skip || [], layout: r.layout,
   default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null });
 const blank = () => {
   let n = 1;
@@ -139,6 +139,8 @@ function problems() {
     li.append(" " + why + " ");
     for (const [key, value] of unordered) li.append(el("button", { type: "button", className: "small", textContent: "Number " + value + " last",
       onclick: () => which.numberLast(key, value) }));
+    if (m.view === here) li.append(" ", el("button", { type: "button", className: "small", textContent: "Leave out",
+      title: "Leave this Item out of the rule; it is listed under Leave out Items, to put back", onclick: () => which.skipItem(m.item) }));
     if (m.keys) {
       const keys = m.keys.filter((k) => !(m.view === here && numbered.includes(k) && byId[m.item] && which.orderValue(byId[m.item], k)));
       const fields = m.fields.filter((f) => !m.keys.includes(f) || keys.includes(f));
@@ -194,6 +196,8 @@ function fill(id, m, link) {
   return el("li", {}, link(id), " — missing ", el("span", { className: "mono" }, [...m.keys].join(", ")),
     unknown.length ? el("span", { className: "muted" }, " · " + (item ? item.type : "its Template") + " has no field " +
       unknown.map((f) => f === "issued_at" ? "issued_at (year, month and date come from it)" : f).join(", ")) : null,
+    " ", el("button", { type: "button", className: "small", textContent: "Leave out", title: "Leave this Item out of the rule instead",
+      onclick: () => which.skipItem(id) }),
     form);
 }
 
