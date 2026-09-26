@@ -626,10 +626,21 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .condition .checks { gap: 6px 16px; }
 #types.checks, .condition .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 12px; }
 #types label, .condition .checks label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.order-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--hairline); border-radius: var(--radius-md); }
-.order-list li { display: flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; border-bottom: 1px solid var(--hairline); cursor: grab; background: var(--paper); }
+.order-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--hairline); border-radius: var(--radius-md); overflow: hidden; background: var(--paper); }
+.order-list li { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 4px; border-bottom: 1px solid var(--hairline); cursor: grab; }
 .order-list li:last-child { border-bottom: 0; }
-.order-list .tool { height: 22px; min-width: 22px; padding: 0 4px; }
-.order-number { font-family: var(--font-mono); color: var(--graphite); font-size: var(--font-size-xs); }
+.order-list li:hover { background: var(--cloud); }
+.order-list li.dragging { opacity: .4; }
+.order-list li.drop { box-shadow: inset 0 2px 0 var(--primary); }
+.order-grip { color: var(--steel); font-size: 11px; letter-spacing: -2px; width: 12px; text-align: center; }
+.order-number { flex: none; min-width: 22px; padding: 0 4px; font-family: var(--font-mono); font-size: var(--font-size-xs); line-height: 18px; text-align: center; color: var(--primary); background: var(--primary-soft); border-radius: var(--radius-sm); }
 .order-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.order-add { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
+.order-acts { display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.order-list li:hover .order-acts, .order-acts:focus-within { opacity: 1; }
+.order-act { width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--graphite); cursor: pointer; font: inherit; line-height: 22px; }
+.order-act:hover:not(:disabled) { background: var(--paper); color: var(--primary); }
+.order-act:disabled { opacity: .3; cursor: default; }
+.order-add { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 8px; }
+.order-add-label { font-size: var(--font-size-xs); color: var(--graphite); margin-right: 2px; }
+.order-chip { height: 22px; padding: 0 8px; font: inherit; font-size: var(--font-size-xs); color: var(--graphite); background: var(--paper); border: 1px dashed var(--hairline-strong); border-radius: var(--radius-pill); cursor: pointer; }
+.order-chip:hover { color: var(--primary); border-color: var(--primary); border-style: solid; }

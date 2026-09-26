@@ -270,21 +270,30 @@ function drawOrder() {
       const unlisted = [...new Set(state.items.filter((i) => chosenTypes().includes(i.type)).map((i) => orderValue(i, key)).filter(Boolean))]
         .filter((v) => !values.some((w) => same(v, w))).sort();
       const move = (i, j) => { const next = [...values]; next.splice(j, 0, ...next.splice(i, 1)); set(next); };
-      box.replaceChildren(
-        el("ol", { className: "order-list" }, ...values.map((v, i) => el("li", {
-          draggable: true,
-          ondragstart: () => { dragged = i; },
-          ondragover: (event) => event.preventDefault(),
-          ondrop: (event) => { event.preventDefault(); if (dragged >= 0 && dragged !== i) move(dragged, i); dragged = -1; },
-        },
-          el("span", { className: "order-number", textContent: String(i + 1).padStart(2, "0") }),
-          el("span", { className: "order-value", textContent: v, title: "Drag to reorder" }),
-          el("button", { type: "button", className: "tool", title: "Up", textContent: "↑", disabled: i === 0, onclick: () => move(i, i - 1) }),
-          el("button", { type: "button", className: "tool", title: "Down", textContent: "↓", disabled: i === values.length - 1, onclick: () => move(i, i + 1) }),
-          el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => set(values.filter((_, k) => k !== i)) })))),
-        unlisted.length ? el("div", { className: "order-add" }, el("span", { className: "template-sub", textContent: "Not numbered:" }),
-          ...unlisted.map((v) => el("button", { type: "button", className: "chip", textContent: "+ " + v, title: "Number it last", onclick: () => set([...values, v]) })))
-          : null);
+      const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
+      box.replaceChildren(...[
+        el("ol", { className: "order-list" }, ...values.map((v, i) => {
+          const li = el("li", {
+            draggable: true,
+            ondragstart: (event) => { dragged = i; event.dataTransfer.effectAllowed = "move"; li.classList.add("dragging"); },
+            ondragend: () => li.classList.remove("dragging"),
+            ondragover: (event) => { event.preventDefault(); li.classList.add("drop"); },
+            ondragleave: () => li.classList.remove("drop"),
+            ondrop: (event) => { event.preventDefault(); li.classList.remove("drop"); if (dragged >= 0 && dragged !== i) move(dragged, i); dragged = -1; },
+          },
+            el("span", { className: "order-grip", textContent: "⋮⋮", "aria-hidden": "true" }),
+            el("span", { className: "order-number", textContent: String(i + 1).padStart(2, "0") }),
+            el("span", { className: "order-value", textContent: v, title: v }),
+            el("span", { className: "order-acts" },
+              act("Up", "↑", () => move(i, i - 1), i === 0),
+              act("Down", "↓", () => move(i, i + 1), i === values.length - 1),
+              act("Remove", "×", () => set(values.filter((_, k) => k !== i)))));
+          return li;
+        })),
+        unlisted.length ? el("div", { className: "order-add" }, el("span", { className: "order-add-label", textContent: "Not numbered" }),
+          ...unlisted.map((v) => el("button", { type: "button", className: "order-chip", textContent: "+ " + v, title: "Number it last", onclick: () => set([...values, v]) })))
+          : null,
+      ].filter(Boolean));
     };
     draw();
     return el("div", { className: "condition" }, el("code", {}, key.includes("|") ? "{" + key + "}#" : "{" + key + "#}"), box);
