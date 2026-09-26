@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Doc Templates · dgs</title>
 <meta name="robots" content="noindex, nofollow, noarchive">
-<link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/doc.svg">
 <link rel="stylesheet" href="/ui/fonts.css">
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
@@ -27,6 +27,7 @@
   <a class="topbar-link" href="/cases/">Cases</a>
   <a class="topbar-link" href="/merge/">Merge</a>
   <a class="topbar-link" href="/import/">Import</a>
+  <a class="topbar-link" href="/log/">Log</a>
   <span class="topbar-spacer"></span>
   <span id="root" class="muted"></span>
 </header>
@@ -47,6 +48,7 @@
         <span id="dirty" class="dirty" hidden>Unsaved</span>
       </div>
       <p id="message" class="message"></p>
+      <button id="duplicate" class="button" type="button" title="Start a new Template from this one" hidden>Duplicate</button>
       <button id="save" class="action" type="button" title="Save (Ctrl+S)">Save</button>
     </div>
     <div id="yaml" class="template-yaml"></div>

@@ -77,10 +77,14 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		return nil
 	}
 	for _, j := range plans {
+		var published []tree.Exported
 		result, err := export.Apply(context.Background(), root, j.Path, j.Views, j.Plan, items, nil,
-			func(a export.Action) error {
-				return tree.RecordExport(root, a.Item, a.Digest, j.Path, a.View, time.Now())
+			func(a export.Action) {
+				published = append(published, tree.Exported{Item: a.Item, Digest: a.Digest, Target: j.Path, View: a.View})
 			})
+		if recordErr := tree.RecordExports(root, published, time.Now()); recordErr != nil {
+			fmt.Fprintf(out, "%s: the files are written, but their history was not recorded: %v\n", j.Name, recordErr)
+		}
 		if err != nil {
 			return fmt.Errorf("%s: %w", j.Name, err)
 		}

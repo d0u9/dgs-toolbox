@@ -35,19 +35,26 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Targets `/targets/` | Where Views are exported to: add, rename and delete Targets, set their folders, move Views to them, export. |
 | Cases `/cases/` | A matter being dealt with and the Items it has needed; its export; archiving it. |
 | Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
-| Import `/import/` | Taking PDFs in. Last in the bar. |
+| Import `/import/` | Taking PDFs in. |
+| Log `/log/` | What was done to the tree's Items, newest first, filtered. Last in the bar. |
 
 ### Browse
 
-Browse opens on the Items as cards, as box's Browse does, or as a table:
-each shows the first page of HEAD, the fields that tell the document apart
+Browse opens on the Items as cards, as box's Browse does, or as a table,
+chosen with two icon buttons, Cards (a grid of squares) and List (bulleted lines). In the list, each column is as wide
+as its header's right edge is dragged, remembered per column, and a click on
+a header sorts by that column, again to turn the order round; Sort offers the
+same columns. Each card or row shows the first page of HEAD, the fields that tell the document apart
 (owner, country), the type, and where its expiry stands. A row of filters
 across the top narrows them: search (fields, tags and the text on the page), type,
 a tag filter that matches every tag chosen,
-a select for every distinguishing key any Template has, expiry and kind. They
-sort by date added, expiry, name or type. The layout, sort and order are
-remembered in the browser. A thumbnail too tall or wide for its card shows
-its middle. Picking one opens a detail panel beside the cards. At its top,
+a select for every distinguishing key any Template has, expiry and kind, and
+a **★ Frequent** chip that shows only the frequent Items. They
+sort by date added, expiry, name or type; frequent Items always come first
+and the sort orders each part. The layout, sort, order and the Frequent chip
+are remembered in the browser. A thumbnail too tall or wide for its card shows
+its middle. A card's name wraps to a second line before it is cut short.
+Picking one opens a detail panel beside the cards. At its top,
 fixed while the rest scrolls, is the picked revision one page at a time (‹ ›
 turn it), as tall as the reader drags it. Below scroll the fields,
 revisions, notes, similar Items, and apart at the foot, delete. The panel is
@@ -56,6 +63,23 @@ card, or the picture, opens the revision in place of the cards, the panel
 still beside it without its picture. Opening it is a step in the browser's
 history: the browser's Back, Esc or ← Back return to the cards; Esc again,
 or ×, closes the panel.
+
+### Frequent
+
+A few Items are opened far more often than the rest. The star on a card or
+row, or the Frequent button in the detail panel, marks an Item frequent or
+unmarks it. It is kept in the sidecar as `frequent: true`, so it travels with
+the tree and a merge carries it in; marking and unmarking are history events.
+"Frequent" rather than "favourite" or "highlight": it says why the Item is
+first, and a highlight is something done to a PDF's text.
+
+### Log
+
+The Log page lists every history event of every Item in the tree, newest
+first, as the server orders them (`tree.Log`). It filters by action, type,
+Item, text, and frequent Items; picking an entry opens its Item on Browse.
+An Item's own History on Browse is the same list for that one Item, and links
+to the Log filtered to it.
 
 Expiry is read from the first of `expires`, `expiry`, `expires_at`,
 `expiry_date` and `valid_until` that HEAD has, by the server
@@ -81,6 +105,8 @@ The Templates page edits a Template's file as text and saves it exactly as
 written, comments included, after it parses and validates. A type Items use
 cannot be renamed and its kind cannot change, since every sidecar names both;
 its fields can. Renaming an unused Template moves the old file to the trash.
+Duplicate starts a new, unsaved Template from the one shown, under the type
+`<type>_copy` (`_copy2`, … when taken); it is written only on Save.
 
 The file is edited in the shared code editor: line numbers, YAML colours and
 folding. An unsaved edit is marked, Ctrl/Cmd+S saves, and leaving the Template
@@ -255,8 +281,10 @@ revision's fields are saved.
 A sidecar may also hold `notes`, free text the owner writes. Notes are never a
 key and never exported. The Item sidecar also keeps timestamped history events
 for imports, field and metadata edits, HEAD changes, type changes, revision
-deletion and PDFs actually written by exports. Older sidecars remain readable;
-their revision `added` times appear as import history on Browse. Each event
+deletion, PDFs actually written by exports, merges, and marking an Item
+frequent or not. Older sidecars remain readable;
+their revision `added` times appear as import history on Browse and Log
+(`tree.Timeline`). Each event
 has an operation time. Type changes keep the previous type and fields in the
 history event.
 
@@ -553,6 +581,10 @@ refused while a conflict has no choice.
   conflict; a sub-tree made on its own shares none, and HEAD moves to its new
   revision.
 - Notes are never a conflict: notes the tree lacks are added below its own.
+- Tags and Frequent are never a conflict: the tree gains the Source's tags,
+  and an Item frequent on either side is frequent after.
+- A new Item keeps the history it had in the other tree. Every Item the merge
+  adds or changes gets a `merge` history event, listing what it changed.
 - A Template or View both sides have, different, is a conflict. Only the
   fields that differ are shown.
 - What no choice resolves stops the merge: an Item whose type has no Template

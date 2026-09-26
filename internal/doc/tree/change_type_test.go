@@ -70,7 +70,7 @@ func TestFieldHistoryHasTimeAndBeforeAfter(t *testing.T) {
 	if err := WriteItem(root, item); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := SetFields(root, "A", "x", tpl, map[string]string{"owner": "doug", "number": "2"})
+	changed, err := SetFields(root, "A", "x", tpl, map[string]string{"owner": "doug", "number": "2"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

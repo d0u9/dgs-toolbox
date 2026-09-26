@@ -103,7 +103,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	put(t, full, tree.Item{ID: "F1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "jane"}, Tags: []string{"home"}}, "old passport")
 	put(t, full, tree.Item{ID: "F2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "jane"}}, "bill 1")
 	// The sub-tree has the renewed passport, the same bill, and a new bill.
-	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "JANE"}, Notes: "renewed in Sydney", Tags: []string{"travel"}}, "new passport")
+	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "JANE"}, Notes: "renewed in Sydney", Tags: []string{"travel"}, Frequent: true}, "new passport")
 	put(t, sub, tree.Item{ID: "S2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "jane"}}, "bill 1")
 	put(t, sub, tree.Item{ID: "S3", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom"}}, "bill 2")
 	if err := view.Save(sub, view.View{Name: "all", Selection: view.Head, Layout: "{owner}/{type}.{ext}"}); err != nil {
@@ -116,17 +116,17 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 		t.Fatalf("plan: %+v", p)
 	}
 	c := p.Changed[0]
-	if c.Item != "F1" || c.Head != digest("new passport") || len(c.Digests) != 1 || c.Notes != "renewed in Sydney" || len(c.Tags) != 1 || c.Tags[0] != "travel" {
+	if c.Item != "F1" || c.Head != digest("new passport") || len(c.Digests) != 1 || c.Notes != "renewed in Sydney" || len(c.Tags) != 1 || c.Tags[0] != "travel" || !c.Frequent {
 		t.Fatalf("change: %+v", c)
 	}
 	// owner differs in case only in the match, but the fields still differ.
 	if len(p.Conflicts) != 1 || p.Conflicts[0].ID != "fields:F1" {
 		t.Fatalf("conflicts: %+v", p.Conflicts)
 	}
-	if _, err := Apply(context.Background(), full, src, p, nil); err == nil {
+	if _, err := Apply(context.Background(), full, src, p, nil, time.Now()); err == nil {
 		t.Fatal("applied without a choice")
 	}
-	result, err := Apply(context.Background(), full, src, p, map[string]string{"fields:F1": Ours})
+	result, err := Apply(context.Background(), full, src, p, map[string]string{"fields:F1": Ours}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,8 +137,20 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	if err != nil || f1.Head != digest("new passport") || len(f1.Revisions) != 2 || f1.Fields["owner"] != "jane" || f1.Notes != "renewed in Sydney" || len(f1.Tags) != 2 || f1.Tags[0] != "home" || f1.Tags[1] != "travel" {
 		t.Fatalf("F1: %v %+v", err, f1)
 	}
-	if _, _, err := tree.FindItem(full, "S3"); err != nil {
+	if !f1.Frequent || len(f1.History) != 1 || f1.History[0].Action != "merge" || f1.History[0].At != now.Format(time.RFC3339) {
+		t.Fatalf("F1 history: %+v", f1)
+	}
+	for _, key := range []string{"revisions", "head", "notes", "tags", "frequent"} {
+		if _, ok := f1.History[0].Changes[key]; !ok {
+			t.Errorf("merge event lacks %s: %+v", key, f1.History[0].Changes)
+		}
+	}
+	s3, _, err := tree.FindItem(full, "S3")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(s3.History) != 1 || s3.History[0].Action != "merge" {
+		t.Fatalf("S3 history: %+v", s3.History)
 	}
 
 	// Merging again changes nothing.
@@ -159,7 +171,7 @@ func TestHeadMovedOnBothSides(t *testing.T) {
 	if len(p.Conflicts) != 1 || p.Conflicts[0].Kind != ConflictHead {
 		t.Fatalf("plan: %+v", p)
 	}
-	if _, err := Apply(context.Background(), full, src, p, map[string]string{"head:F1": Theirs}); err != nil {
+	if _, err := Apply(context.Background(), full, src, p, map[string]string{"head:F1": Theirs}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	f1, _, _ := tree.FindItem(full, "F1")
@@ -202,7 +214,7 @@ func TestTemplateConflictAndUnknownType(t *testing.T) {
 	if len(p.Conflicts) != 1 || p.Conflicts[0].ID != "template:passport" {
 		t.Fatalf("plan: %+v", p)
 	}
-	if _, err := Apply(context.Background(), full, src, p, map[string]string{"template:passport": Theirs}); err != nil {
+	if _, err := Apply(context.Background(), full, src, p, map[string]string{"template:passport": Theirs}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(filepath.Join(full, tree.TemplatesDir, "passport.yaml")); string(data) != passport+"  - key: country\n" {
@@ -227,7 +239,7 @@ func TestImportBackFromTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := export.Apply(context.Background(), full, target, []string{"all"}, ep, []tree.Item{it}, nil); err != nil {
+	if _, err := export.Apply(context.Background(), full, target, []string{"all"}, ep, []tree.Item{it}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -241,7 +253,7 @@ func TestImportBackFromTarget(t *testing.T) {
 	if len(p.New) != 1 {
 		t.Fatalf("plan: %+v", p)
 	}
-	if _, err := Apply(context.Background(), empty, src, p, nil); err != nil {
+	if _, err := Apply(context.Background(), empty, src, p, nil, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	back, _, err := tree.FindItem(empty, "F1")

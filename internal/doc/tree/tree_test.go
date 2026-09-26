@@ -104,7 +104,7 @@ func TestImportMakesAnItemAndLeavesTheSource(t *testing.T) {
 	if err != nil || len(items) != 1 || items[0].ID != item.ID || items[0].Notes != item.Notes || strings.Join(items[0].Tags, ",") != strings.Join(item.Tags, ",") {
 		t.Fatalf("LoadItems = %+v, %v", items, err)
 	}
-	updated, err := SetTags(root, item.ID, []string{"Visa", "visa", "  archive "})
+	updated, err := SetTags(root, item.ID, []string{"Visa", "visa", "  archive "}, time.Now())
 	if err != nil || strings.Join(updated.Tags, ",") != "visa,archive" {
 		t.Fatalf("SetTags = %+v, %v", updated.Tags, err)
 	}
@@ -188,14 +188,14 @@ func TestRevisionsMoveHeadAndBack(t *testing.T) {
 	if _, err := AddRevision(context.Background(), root, item.ID, renewed, idCard(t, root), nil, now); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("same PDF again: %v", err)
 	}
-	if item, err = SetHead(root, item.ID, first); err != nil || item.Head != first {
+	if item, err = SetHead(root, item.ID, first, time.Now()); err != nil || item.Head != first {
 		t.Fatalf("SetHead: %+v %v", item, err)
 	}
 	loaded, _, _ := FindItem(root, item.ID)
 	if loaded.Head != first || len(loaded.Revisions) != 2 {
 		t.Fatalf("on disk: %+v", loaded)
 	}
-	if _, err := SetHead(root, item.ID, "nope"); err == nil {
+	if _, err := SetHead(root, item.ID, "nope", time.Now()); err == nil {
 		t.Fatal("HEAD moved to a digest that is not a revision")
 	}
 	for _, r := range loaded.Revisions {
@@ -218,7 +218,7 @@ func TestRecordsHaveNoRevisions(t *testing.T) {
 	if _, err := AddRevision(context.Background(), root, item.ID, other, templates[1], nil, now); err == nil {
 		t.Fatal("record took a revision")
 	}
-	if _, err := SetHead(root, item.ID, item.Revisions[0].Digest); err == nil {
+	if _, err := SetHead(root, item.ID, item.Revisions[0].Digest, time.Now()); err == nil {
 		t.Fatal("record took a HEAD")
 	}
 }
@@ -228,14 +228,14 @@ func TestSetFieldsKeepsDocumentsDistinct(t *testing.T) {
 	au := importOne(t, root, "au.pdf", "%PDF au", map[string]string{"owner": "jane", "country": "AU"})
 	importOne(t, root, "cn.pdf", "%PDF cn", map[string]string{"owner": "jane", "country": "CN"})
 	tpl := idCard(t, root)
-	if _, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "jane", "country": "CN"}); !errors.Is(err, ErrTaken) {
+	if _, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "jane", "country": "CN"}, time.Now()); !errors.Is(err, ErrTaken) {
 		t.Fatalf("clash: %v", err)
 	}
-	item, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "jane", "country": "AU", "number": "123"})
+	item, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "jane", "country": "AU", "number": "123"}, time.Now())
 	if err != nil || item.CurrentFields()["number"] != "123" {
 		t.Fatalf("%+v %v", item, err)
 	}
-	if _, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "jane"}); err == nil {
+	if _, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "jane"}, time.Now()); err == nil {
 		t.Fatal("required field dropped")
 	}
 }
@@ -295,10 +295,10 @@ func TestItemLinksAndNotes(t *testing.T) {
 	if err != nil || current.Fields["previous"] != old.ID {
 		t.Fatal(err, current)
 	}
-	if _, err := SetFields(root, current.ID, "", tpl, map[string]string{"owner": "ann", "previous": current.ID}); err == nil {
+	if _, err := SetFields(root, current.ID, "", tpl, map[string]string{"owner": "ann", "previous": current.ID}, time.Now()); err == nil {
 		t.Fatal("self link accepted")
 	}
-	noted, err := SetNotes(root, old.ID, "  expired; kept for the visa file \n")
+	noted, err := SetNotes(root, old.ID, "  expired; kept for the visa file \n", time.Now())
 	if err != nil || noted.Notes != "expired; kept for the visa file" {
 		t.Fatal(err, noted.Notes)
 	}
@@ -413,7 +413,7 @@ func TestPerRevisionFields(t *testing.T) {
 		t.Fatalf("old card: %v", got)
 	}
 	// Editing the old card changes only it.
-	item, err = SetFields(root, item.ID, first, tpl, map[string]string{"owner": "jane", "number": "110", "note": "y"})
+	item, err = SetFields(root, item.ID, first, tpl, map[string]string{"owner": "jane", "number": "110", "note": "y"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,5 +427,80 @@ func TestPerRevisionFields(t *testing.T) {
 	}
 	if (Template{Type: "r", Kind: KindRecord, Fields: []Field{{Key: "k", PerRevision: true}}}).Validate() == nil {
 		t.Error("per_revision on a record accepted")
+	}
+}
+
+func TestRecordExportsWritesEachItemOnce(t *testing.T) {
+	root := newTree(t)
+	for _, id := range []string{"A", "B"} {
+		if err := WriteItem(root, Item{ID: id, Type: "card", Kind: KindDocument}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	err := RecordExports(root, []Exported{
+		{Item: "A", Digest: "a1", Target: "/t", View: "v"},
+		{Item: "A", Digest: "a2", Target: "/t", View: "w"},
+		{Item: "B", Digest: "b1", Target: "/t", View: "v"},
+		{Item: "gone", Digest: "g", Target: "/t", View: "v"},
+	}, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _, _ := FindItem(root, "A")
+	b, _, _ := FindItem(root, "B")
+	if len(a.History) != 2 || a.History[1].Digest != "a2" || a.History[1].View != "w" || len(b.History) != 1 || b.History[0].Action != "export" {
+		t.Fatalf("A %+v, B %+v", a.History, b.History)
+	}
+}
+
+func TestInsertByTimeKeepsHistoryOrdered(t *testing.T) {
+	history := []HistoryEvent{{At: "2026-01-01T00:00:00Z", Action: "a"}, {At: "2026-03-01T00:00:00Z", Action: "c"}}
+	got := insertByTime(history, HistoryEvent{At: "2026-02-01T10:00:00+10:00", Action: "b"})
+	if len(got) != 3 || got[1].Action != "b" {
+		t.Fatalf("got %+v", got)
+	}
+	if got = insertByTime(got, HistoryEvent{At: "bad", Action: "z"}); got[3].Action != "z" {
+		t.Fatalf("unreadable time not last: %+v", got)
+	}
+}
+
+func TestSetFrequentRecordsOnlyChanges(t *testing.T) {
+	root := newTree(t)
+	if err := WriteItem(root, Item{ID: "A", Type: "card", Kind: KindDocument}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	for _, on := range []bool{true, true, false} {
+		if _, err := SetFrequent(root, "A", on, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	item, _, _ := FindItem(root, "A")
+	if item.Frequent || len(item.History) != 2 || item.History[0].Action != "mark_frequent" || item.History[1].Action != "unmark_frequent" {
+		t.Fatalf("item: %+v", item)
+	}
+}
+
+func TestTimelineAddsImportsOlderSidecarsLack(t *testing.T) {
+	item := Item{ID: "A", Revisions: []Revision{{Digest: "x", Added: "2026-01-01T00:00:00Z"}, {Digest: "y", Added: "2026-03-01T00:00:00Z"}},
+		History: []HistoryEvent{{At: "2026-02-01T00:00:00Z", Action: "edit_notes"}, {At: "2026-03-01T00:00:00Z", Action: "import_revision", Digest: "y"}}}
+	got := Timeline(item)
+	if len(got) != 3 || got[0].Action != "import" || got[0].Digest != "x" || got[1].Action != "edit_notes" {
+		t.Fatalf("timeline: %+v", got)
+	}
+}
+
+func TestLogIsNewestFirstAcrossItems(t *testing.T) {
+	items := []Item{
+		{ID: "A", Type: "a", History: []HistoryEvent{{At: "2026-01-01T00:00:00Z", Action: "one"}, {At: "2026-03-01T00:00:00Z", Action: "three"}, {At: "2026-03-01T00:00:00Z", Action: "four"}}},
+		{ID: "B", Type: "b", History: []HistoryEvent{{At: "2026-02-01T10:00:00+10:00", Action: "two"}, {At: "bad", Action: "last"}}},
+	}
+	var got []string
+	for _, e := range Log(items) {
+		got = append(got, e.Item+":"+e.Event.Action)
+	}
+	if strings.Join(got, " ") != "A:four A:three B:two A:one B:last" {
+		t.Fatalf("log: %v", got)
 	}
 }

@@ -123,7 +123,7 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 
 // SetHead points a document's HEAD at one of its revisions, which is how a
 // revision added by mistake is stepped back from. Nothing is removed.
-func SetHead(root, id, digest string) (Item, error) {
+func SetHead(root, id, digest string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -140,7 +140,7 @@ func SetHead(root, id, digest string) (Item, error) {
 				return item, nil
 			}
 			item.Head = digest
-			item.History = append(item.History, HistoryEvent{At: time.Now().Format(time.RFC3339), Action: "make_head", Digest: digest})
+			item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "make_head", Digest: digest})
 			return item, WriteItem(root, item)
 		}
 	}
@@ -191,7 +191,7 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 		}
 	}
 	if !imported && item.Revisions[at].Added != "" {
-		item.History = append(item.History, HistoryEvent{At: item.Revisions[at].Added, Action: "import", Digest: digest})
+		item.History = insertByTime(item.History, HistoryEvent{At: item.Revisions[at].Added, Action: "import", Digest: digest})
 	}
 	item.Revisions = append(item.Revisions[:at], item.Revisions[at+1:]...)
 	if item.Head == digest {
@@ -212,7 +212,7 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 // other document of the type with the same distinguishing fields. The
 // per_revision values go to the revision with digest — "" is the Current
 // one — and the rest to the Item.
-func SetFields(root, id, digest string, template Template, given map[string]string) (Item, error) {
+func SetFields(root, id, digest string, template Template, given map[string]string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -261,7 +261,7 @@ func SetFields(root, id, digest string, template Template, given map[string]stri
 		}
 	}
 	if len(changes) > 0 {
-		item.History = append(item.History, HistoryEvent{At: time.Now().Format(time.RFC3339), Action: "edit_fields", Digest: digest, Changes: changes})
+		item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_fields", Digest: digest, Changes: changes})
 	}
 	return item, WriteItem(root, item)
 }
@@ -281,7 +281,7 @@ func taken(t Template, items []Item, fields map[string]string, except string) (I
 }
 
 // SetNotes replaces an Item's notes. Surrounding space is trimmed.
-func SetNotes(root, id, notes string) (Item, error) {
+func SetNotes(root, id, notes string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -292,13 +292,13 @@ func SetNotes(root, id, notes string) (Item, error) {
 	old := item.Notes
 	item.Notes = strings.TrimSpace(notes)
 	if old != item.Notes {
-		item.History = append(item.History, HistoryEvent{At: time.Now().Format(time.RFC3339), Action: "edit_notes", Changes: map[string][2]string{"notes": {old, item.Notes}}})
+		item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_notes", Changes: map[string][2]string{"notes": {old, item.Notes}}})
 	}
 	return item, WriteItem(root, item)
 }
 
 // SetTags replaces an Item's tags in their canonical spelling.
-func SetTags(root, id string, tags []string) (Item, error) {
+func SetTags(root, id string, tags []string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -309,7 +309,7 @@ func SetTags(root, id string, tags []string) (Item, error) {
 	old := strings.Join(item.Tags, ", ")
 	item.Tags = tag.List(tags)
 	if next := strings.Join(item.Tags, ", "); old != next {
-		item.History = append(item.History, HistoryEvent{At: time.Now().Format(time.RFC3339), Action: "edit_tags", Changes: map[string][2]string{"tags": {old, next}}})
+		item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_tags", Changes: map[string][2]string{"tags": {old, next}}})
 	}
 	return item, WriteItem(root, item)
 }
@@ -336,4 +336,25 @@ func Trash(root, id string, now time.Time) (string, error) {
 		return "", fmt.Errorf("%s is already in the trash", to)
 	}
 	return to, os.Rename(Dir(root, id), to)
+}
+
+// SetFrequent marks or unmarks an Item as one the owner opens often.
+func SetFrequent(root, id string, frequent bool, now time.Time) (Item, error) {
+	if err := Require(root); err != nil {
+		return Item{}, err
+	}
+	item, _, err := FindItem(root, id)
+	if err != nil {
+		return Item{}, err
+	}
+	if item.Frequent == frequent {
+		return item, nil
+	}
+	item.Frequent = frequent
+	action := "mark_frequent"
+	if !frequent {
+		action = "unmark_frequent"
+	}
+	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: action})
+	return item, WriteItem(root, item)
 }

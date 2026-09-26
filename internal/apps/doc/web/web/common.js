@@ -369,3 +369,31 @@ export function clearPreview() {
   $("frame").removeAttribute("src");
   $("empty").hidden = false;
 }
+
+// What each history action is called on the page.
+export const eventTitles = {
+  import: "Imported", import_revision: "Added revision", edit_fields: "Changed fields", edit_notes: "Changed notes",
+  edit_tags: "Changed tags", make_head: "Made HEAD", delete_revision: "Deleted revision", change_type: "Changed type",
+  export: "Exported", merge: "Merged", mark_frequent: "Marked frequent", unmark_frequent: "Unmarked frequent",
+};
+
+// eventLines is one history event as a title and the lines under it. The
+// server keeps and orders the history; this only puts it into words.
+export function eventLines(event) {
+  const pairs = (values) => Object.entries(values || {}).map(([key, value]) => `${key}: ${value}`).join("; ");
+  const revisions = (byDigest) => Object.entries(byDigest || {}).map(([digest, values]) => `${digest.slice(0, 8)} (${pairs(values)})`).join("; ");
+  const lines = [];
+  const changes = Object.entries(event.changes || {}).map(([key, pair]) => `${key}: ${pair[0] || "∅"} → ${pair[1] || "∅"}`).join("; ");
+  if (changes) lines.push(changes);
+  if (event.action === "change_type") {
+    for (const [name, text] of [["Previous fields", pairs(event.previous_fields)], ["New fields", pairs(event.new_fields)],
+      ["Previous revision fields", revisions(event.previous_revisions)], ["New revision fields", revisions(event.new_revisions)]]) {
+      if (text) lines.push(name + ": " + text);
+    }
+  }
+  const at = event.at ? new Date(event.at) : null;
+  const when = at && !isNaN(at) ? at.toLocaleString() : event.at || "";
+  const meta = when + (event.from_type ? ` · ${event.from_type} → ${event.to_type}` : "") + (event.digest ? " · " + event.digest.slice(0, 8) : "") +
+    (event.target ? " · " + event.target : "") + (event.view ? " · " + event.view : "");
+  return { title: eventTitles[event.action] || event.action, meta, lines };
+}

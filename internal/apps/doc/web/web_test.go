@@ -182,6 +182,42 @@ func TestChangeTypePageAndAPI(t *testing.T) {
 	}
 }
 
+func TestFrequentAndLog(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root})
+	if rec := do(h, "GET", "/log/", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "log.js") {
+		t.Fatalf("log page: %d", rec.Code)
+	}
+	for _, path := range []string{"jane/licence.pdf", "jane/renewed.pdf"} {
+		body := `{"dir":` + q(scans) + `,"path":"` + path + `","type":"id_card","fields":{"owner":"` + path[5:9] + `","country":"AU"}}`
+		if rec := do(h, "POST", "/api/import", body); rec.Code != http.StatusOK {
+			t.Fatalf("import %s: %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+	id := state(t, h).Items[0].ID
+	if rec := do(h, "POST", "/api/frequent", `{"item":"`+id+`","frequent":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("frequent: %d %s", rec.Code, rec.Body.String())
+	}
+	for _, item := range state(t, h).Items {
+		if item.Frequent != (item.ID == id) {
+			t.Fatalf("frequent: %+v", item)
+		}
+	}
+	var log struct{ Entries []tree.LogEntry }
+	if err := json.Unmarshal(do(h, "GET", "/api/history", "").Body.Bytes(), &log); err != nil {
+		t.Fatal(err)
+	}
+	if len(log.Entries) != 3 || log.Entries[0].Item != id || log.Entries[0].Event.Action != "mark_frequent" {
+		t.Fatalf("log: %+v", log.Entries)
+	}
+	if err := json.Unmarshal(do(h, "GET", "/api/history?item="+id, "").Body.Bytes(), &log); err != nil {
+		t.Fatal(err)
+	}
+	if len(log.Entries) != 2 || log.Entries[1].Event.Action != "import" {
+		t.Fatalf("one Item's log: %+v", log.Entries)
+	}
+}
+
 func TestImportRefusedOutsideATree(t *testing.T) {
 	root, scans := setup(t, false)
 	rec := do(Handler(Settings{Root: root}), "POST", "/api/import", `{"dir":`+q(scans)+`,"path":"jane/licence.pdf","type":"id_card"}`)
