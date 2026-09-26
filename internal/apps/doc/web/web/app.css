@@ -686,7 +686,9 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 body.previewing .outline-main { flex: 0 0 360px; }
 body.previewing .outline-side { display: none; }
 body.list-shut .outline-list { display: none; }
-.outline-main .template-bar { flex-wrap: wrap; }
+.outline-main .template-title { flex: 1 1 160px; }
+.outline-main .template-title h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.outline-main .template-title .count { flex: none; white-space: nowrap; }
 .outline-preview .reader-bar .button { white-space: nowrap; }
 .outline-preview .reader-bar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .outline-side { width: 340px; min-width: 300px; flex: none; padding: 0 16px 24px; }
