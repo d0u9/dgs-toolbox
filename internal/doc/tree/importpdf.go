@@ -26,7 +26,10 @@ type ImportRequest struct {
 	Fields   map[string]string
 	Notes    string
 	Tags     []string
-	Now      time.Time
+	// RevisionTags are the first revision's own. It starts with the Item's
+	// tags, since at first the Item is that one revision; these are added.
+	RevisionTags []string
+	Now          time.Time
 }
 
 // ErrDuplicate is returned when the PDF is already kept in the tree.
@@ -86,6 +89,7 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	}
 	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags)}
 	ref := item.saveSnapshot(request.Template.Type, fields, digest, filepath.Base(request.Source), request.Now)
+	item.Revisions[len(item.Revisions)-1].Tags = tag.List(append(append([]string(nil), item.Tags...), request.RevisionTags...))
 	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "import", Digest: ref}}
 	if err := WriteItem(request.Root, item); err != nil {
 		_ = os.Remove(PDFPath(request.Root, id, digest))

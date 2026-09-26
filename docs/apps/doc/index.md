@@ -345,6 +345,11 @@ unchanged content does nothing. Returning to content already kept reuses that
 snapshot and moves HEAD instead of storing a duplicate; that snapshot keeps
 its revision tags, and tags given with it are added.
 
+Import asks for both kinds of tags: the Item's, and the revision's own. An
+imported Item's first revision starts with the Item's tags, since at first
+the Item is that one revision, and the revision tags given are added to
+them. A later revision gets only the tags given for it.
+
 The revision ID is SHA-256 of a versioned, canonical JSON payload containing
 the type, nonempty fields (keys sorted), and the PDF's SHA-256 or an empty
 string. The PDF digest identifies only the attachment. Notes, tags, filenames
