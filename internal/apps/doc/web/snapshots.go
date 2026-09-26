@@ -1,7 +1,9 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/snapshot"
@@ -14,12 +16,12 @@ type snapshotJSON struct {
 	// Root is the tree of its files the tree still has; Lost are the rest.
 	Root *outline.Node   `json:"root"`
 	Lost []snapshot.Lost `json:"lost"`
-	// Default is the Snapshot's own folder on this machine, ~ made home.
-	Default string `json:"default"`
+	// Used names the Outlines putting it in their trees.
+	Used []string `json:"used"`
 }
 
 // snapshotList answers every Snapshot with its tree as the Items have it
-// now, and what of it the tree has lost.
+// now, what of it the tree has lost, and the Outlines using it.
 func (s server) snapshotList(w http.ResponseWriter, _ *http.Request) {
 	out := struct {
 		Snapshots []snapshotJSON `json:"snapshots"`
@@ -33,25 +35,29 @@ func (s server) snapshotList(w http.ResponseWriter, _ *http.Request) {
 	if err != nil && out.Error == "" {
 		out.Error = err.Error()
 	}
+	outlines, err := outline.Load(s.root)
+	if err != nil && out.Error == "" {
+		out.Error = err.Error()
+	}
+	used := outline.SnapshotUsers(outlines)
 	for _, sn := range list {
 		r := snapshot.Resolve(sn, items)
-		j := snapshotJSON{Snapshot: sn, Root: r.Root, Lost: r.Lost}
-		if sn.Folder != "" {
-			j.Default = outline.Expand(sn.Folder, home())
+		j := snapshotJSON{Snapshot: sn, Root: outline.Nest(r.Files), Lost: r.Lost, Used: used[sn.Name]}
+		if j.Used == nil {
+			j.Used = []string{}
 		}
 		out.Snapshots = append(out.Snapshots, j)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// snapshotTake records a saved Outline's tree, or one folder of it, as it
-// is now.
+// snapshotTake records what a saved rule places now, or, with no rule,
+// begins an empty Snapshot.
 func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Outline string `json:"outline"`
-		Node    string `json:"node"`
-		Name    string `json:"name"`
-		About   string `json:"about"`
+		Rule  string `json:"rule"`
+		Name  string `json:"name"`
+		About string `json:"about"`
 	}
 	if !decode(w, r, &request) {
 		return
@@ -63,20 +69,19 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 	s.writing.Lock()
 	defer s.writing.Unlock()
 	fail := func(status int, err error) { writeJSON(w, status, map[string]string{"error": err.Error()}) }
-	outlines, err := outline.Load(s.root)
-	if err != nil {
-		fail(http.StatusConflict, err)
-		return
-	}
-	var o *outline.Outline
-	for i := range outlines {
-		if outlines[i].Name == request.Outline {
-			o = &outlines[i]
+	var rule *view.View
+	if request.Rule != "" {
+		rules, err := outline.LoadRules(s.root)
+		if err != nil {
+			fail(http.StatusConflict, err)
+			return
 		}
-	}
-	if o == nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no Outline named " + request.Outline})
-		return
+		found, ok := rules[request.Rule]
+		if !ok {
+			fail(http.StatusBadRequest, fmt.Errorf("no rule named %s", request.Rule))
+			return
+		}
+		rule = &found
 	}
 	items, err := tree.LoadItems(s.root)
 	if err != nil {
@@ -88,12 +93,7 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusConflict, err)
 		return
 	}
-	g, err := outline.Group(*o, items, view.NamesOf(templates))
-	if err != nil {
-		fail(http.StatusBadRequest, err)
-		return
-	}
-	sn, err := snapshot.Take(request.Name, request.About, *o, g, request.Node, items, s.now())
+	sn, err := snapshot.Take(request.Name, request.About, rule, items, view.NamesOf(templates), s.now())
 	if err == nil {
 		err = snapshot.Save(s.root, "", sn, true)
 	}
@@ -104,8 +104,8 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sn)
 }
 
-// snapshotSave renames a Snapshot or changes its about or folder; what it
-// holds does not change.
+// snapshotSave writes a Snapshot as edited: its about and its files. A new
+// name renames it first, in every Outline using it.
 func (s server) snapshotSave(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Snapshot snapshot.Snapshot `json:"snapshot"`
@@ -120,14 +120,26 @@ func (s server) snapshotSave(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	if err := snapshot.Save(s.root, request.Previous, request.Snapshot, false); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	fail := func(err error) { writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()}) }
+	sn := request.Snapshot
+	if err := sn.Validate(); err != nil {
+		fail(err)
 		return
 	}
-	writeJSON(w, http.StatusOK, request.Snapshot)
+	if request.Previous != "" && request.Previous != sn.Name {
+		if err := outline.RenameSnapshot(s.root, request.Previous, sn.Name); err != nil {
+			fail(err)
+			return
+		}
+	}
+	if err := snapshot.Save(s.root, "", sn, false); err != nil {
+		fail(err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sn)
 }
 
-// snapshotDelete moves a Snapshot's file into the tree's trash.
+// snapshotDelete moves a Snapshot no Outline uses into the tree's trash.
 func (s server) snapshotDelete(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Name string `json:"name"`
@@ -141,6 +153,15 @@ func (s server) snapshotDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
+	outlines, err := outline.Load(s.root)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	if used := outline.SnapshotUsers(outlines)[request.Name]; len(used) > 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the Snapshot " + request.Name + " is used by " + strings.Join(used, ", ")})
+		return
+	}
 	if _, err := snapshot.Trash(s.root, request.Name, s.now()); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

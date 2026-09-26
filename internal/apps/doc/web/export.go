@@ -18,8 +18,8 @@ func home() string {
 	return h
 }
 
-// exportRequest is what to export: the Outlines and Snapshots named, or
-// every one with rules or files and a folder when All is set.
+// exportRequest is what to export: the Outlines named, or every one with
+// rules or Snapshots and a folder when All is set.
 type exportRequest struct {
 	Outlines []string `json:"outlines"`
 	// Folders are the folders chosen for Outlines this time, by name. An
@@ -61,7 +61,7 @@ func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON
 	if err != nil {
 		return out, nil, http.StatusConflict, err
 	}
-	sources := append(export.FromOutlines(outlines), export.FromSnapshots(snapshots, items)...)
+	sources := export.FromOutlines(outlines, snapshots, items)
 	jobs, problems := export.Jobs(sources, request.Folders, home(), names)
 	out.Problems = append(out.Problems, problems...)
 	if out.Jobs, err = export.PlanJobs(ctx, s.root, jobs, items); err != nil {

@@ -306,8 +306,14 @@ func (c Combined) Complete() bool {
 // Combine plans views into one Target: each is built alone, then their files
 // are put together and checked against each other as Build checks one View.
 func Combine(views []View, items []tree.Item, names TypeNames) (Combined, error) {
+	return CombineWith(views, nil, items, names)
+}
+
+// CombineWith is Combine with fixed files beside the views', each already
+// at its path and marked with what placed it, checked against them alike.
+func CombineWith(views []View, fixed []File, items []tree.Item, names TypeNames) (Combined, error) {
 	out := Combined{Plans: map[string]Plan{}, Files: []File{}, Clashes: []Clash{}}
-	var all []File
+	all := append([]File{}, fixed...)
 	for _, v := range views {
 		p, err := Build(v, items, names)
 		if err != nil {

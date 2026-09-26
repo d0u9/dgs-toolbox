@@ -198,7 +198,7 @@ func Handler(settings Settings) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
-	for _, page := range []string{"browse", "explore", "outlines", "templates", "import", "cases", "merge", "change-type", "log"} {
+	for _, page := range []string{"browse", "explore", "outlines", "rules", "snapshots", "templates", "import", "cases", "merge", "change-type", "log"} {
 		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
 		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
 	}
@@ -247,6 +247,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/outlines/group", s.outlineGroup)
 	mux.HandleFunc("POST /api/outlines", s.outlineSave)
 	mux.HandleFunc("POST /api/outlines/delete", s.outlineDelete)
+	mux.HandleFunc("POST /api/rules", s.ruleSave)
 	mux.HandleFunc("POST /api/rules/delete", s.ruleDelete)
 	mux.HandleFunc("GET /api/snapshots", s.snapshotList)
 	mux.HandleFunc("POST /api/snapshots/take", s.snapshotTake)

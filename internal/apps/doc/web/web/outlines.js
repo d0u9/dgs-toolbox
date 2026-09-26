@@ -1,138 +1,69 @@
-// Outlines: making an Outline — its name, the folder it is exported to, and
-// its rules, each picking PDFs and naming the path each has — with the tree
-// the rules make redrawn beside the form as it changes. A rule is the
-// tree's, not the Outline's: one already made is added as it is, and
-// editing it changes it in every Outline using it. Looking through the
+// Outlines: making an Outline — its name, the folder it is exported to, the
+// rules that place PDFs in its tree and the Snapshots it puts in as
+// folders — with the tree they make redrawn beside the form as it changes.
+// Rules are made on the Rules page and Snapshots on the Snapshots page;
+// both are the tree's, and several Outlines use one. Looking through the
 // result and exporting it is the Explore page's.
-import { $, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
+import { $, api, el, loadState, post, label, frame, say } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
-import * as which from "/layoutform.js";
 import { outlineTree, unplaced } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
 let outlines = [];
 let rules = []; // every rule in the tree
-let used = {}; // the Outlines using each rule, as saved
-let origins = []; // each draft rule's saved name, or "" for one made here
+let snapshots = []; // every Snapshot in the tree
 let editing = null; // the saved name of the Outline shown, or "" for a new one
-let draft = null; // the Outline as the form has it, every rule included
-let rule = 0; // the rule in the form
+let draft = null; // the Outline as the form has it
 let saved = ""; // the Outline as last loaded or saved, to tell an edit
 let grouping = null; // the server's answer for the draft
-const tree = outlineTree($("tree"), () => state, { empty: () => "Add a rule with a path to see the tree." });
+const tree = outlineTree($("tree"), () => state, { empty: () => "Pick a rule or add a Snapshot to see the tree." });
 
-const newRule = (n) => ({ name: "rule-" + n, query: {}, selection: "head", layout: "{owner}/{type}.{ext}" });
-const blank = () => {
-  let n = 1;
-  while (rules.some((r) => r.name === "rule-" + n)) n++;
-  return { name: "", about: "", folder: "", rules: [newRule(n)] };
-};
+const blank = () => ({ name: "", about: "", folder: "", rules: [], snapshots: [] });
 const copy = (o) => JSON.parse(JSON.stringify(o));
 const text = (o) => JSON.stringify({ name: o.name, about: o.about || "", folder: o.folder || "",
-  rules: (o.rules || []).map((r) => ({ name: r.name, query: r.query || {}, selection: r.selection || "head", layout: r.layout,
-    default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null })) });
+  rules: o.rules.map((r) => r.name), snapshots: o.snapshots.map((m) => ({ name: m.name, at: m.at || "" })) });
 
 function list() {
   $("count").textContent = outlines.length;
   const row = (name, sub, selected, onclick) => el("li", { className: selected ? "selected" : "", onclick },
     el("span", { className: "template-name" }, name), el("span", { className: "template-sub" }, sub));
-  $("outlines").replaceChildren(...outlines.map((o) => row(o.name, o.about || o.rules.map((r) => r.name).join(", "), o.name === editing, () => leave() && open(o.name))),
+  const parts = (o) => [...o.rules.map((r) => r.name), ...(o.snapshots || []).map((m) => m.name)].join(", ");
+  $("outlines").replaceChildren(...outlines.map((o) => row(o.name, o.about || parts(o), o.name === editing, () => leave() && open(o.name))),
     ...(editing === "" ? [row("new outline", "not saved yet", true)] : []));
-}
-
-// readRule is the rule in the form.
-function readRule() {
-  const { order, ...picked } = which.read();
-  const r = { name: $("rule-name").value.trim(), ...picked };
-  if ($("use-default").checked) r.default = $("default").value;
-  if ($("dedupe").checked) r.dedupe = "number";
-  if (order) r.order = order;
-  return r;
 }
 
 // sync takes the form into the draft.
 function sync() {
   draft.name = $("name").value.trim();
   draft.about = $("about").value.trim();
-  if (draft.rules.length) draft.rules[rule] = readRule();
+  draft.rules = rules.filter((r) => $("rules").querySelector(`input[value="${CSS.escape(r.name)}"]`)?.checked);
+  draft.snapshots = [...$("mounts").querySelectorAll(".mount")].map((row) => ({ name: row.dataset.name, at: row.querySelector("input").value.trim().replace(/^\/+|\/+$/g, "") }));
 }
 
-function fillRule() {
-  const r = draft.rules[rule];
-  const on = !!r;
-  for (const id of ["rule-name", "rule-delete", "layout", "add-condition", "use-default", "default", "dedupe"]) $(id).disabled = !on;
-  const shown = r || newRule(1);
-  $("rule-name").value = on ? r.name : "";
-  which.fill(shown);
-  $("use-default").checked = on && r.default !== undefined && r.default !== null;
-  $("default").value = $("use-default").checked ? r.default : "none";
-  $("dedupe").checked = on && r.dedupe === "number";
-  tabs();
-}
-
-function tabs() {
-  const others = rules.filter((r) => !origins.includes(r.name));
-  const existing = el("select", { className: "chip", title: "Add a rule another Outline uses, or one no Outline uses now",
-    onchange: () => {
-      const r = rules.find((x) => x.name === existing.value);
-      if (!r) return;
-      sync();
-      draft.rules.push(copy(r));
-      origins.push(r.name);
-      pickRule(draft.rules.length - 1);
-      changed();
-    } }, el("option", { value: "" }, "+ Existing rule…"),
-    ...others.map((r) => el("option", { value: r.name }, r.name + ((used[r.name] || []).length ? " · " + used[r.name].join(", ") : " · unused"))));
-  existing.hidden = !others.length;
-  const unused = others.filter((r) => !(used[r.name] || []).length);
-  $("rules").replaceChildren(...draft.rules.map((r, i) => el("button", { type: "button", className: "chip" + (i === rule ? " on" : ""),
-    textContent: r.name || "unnamed", title: r.layout, onclick: () => pickRule(i) })),
-    el("button", { type: "button", className: "chip", textContent: "+ Rule", title: "Make a new rule: more PDFs in the same tree",
-      onclick: () => {
-        sync();
-        let n = draft.rules.length + 1;
-        while (draft.rules.some((r) => r.name === "rule-" + n) || rules.some((r) => r.name === "rule-" + n)) n++;
-        draft.rules.push(newRule(n));
-        origins.push("");
-        pickRule(draft.rules.length - 1);
-        changed();
-      } }),
-    existing,
-    ...(unused.length ? [el("select", { className: "chip", title: "Delete a rule no Outline uses",
-      onchange: (event) => dropUnused(event.target) }, el("option", { value: "" }, "Delete unused rule…"),
-      ...unused.map((r) => el("option", { value: r.name }, r.name)))] : []));
-  shared();
-}
-
-// shared says which other saved Outlines the rule shown is in: an edit
-// saved here changes it there too.
-function shared() {
-  const from = origins[rule];
-  const also = from ? (used[from] || []).filter((o) => o !== editing) : [];
-  $("rule-shared").hidden = !also.length;
-  $("rule-shared").textContent = also.length ? "Also used by " + also.join(", ") + ": saving changes it there too." : "";
-}
-
-async function dropUnused(select) {
-  const name = select.value;
-  select.value = "";
-  if (!name || !confirm("Delete the rule " + name + "? No Outline uses it; its file under rules/ is removed.")) return;
-  try {
-    await post("/api/rules/delete", { name });
-    const answer = await (await fetch(api("/api/outlines"))).json();
-    rules = answer.rules;
-    used = answer.used;
-    tabs();
-  } catch (err) {
-    say($("form-message"), err.message, true);
-  }
-}
-
-function pickRule(i) {
-  sync();
-  rule = i;
-  fillRule();
-  problems();
+// fill draws the draft's rules and Snapshots into the form.
+function fill() {
+  const on = new Set(draft.rules.map((r) => r.name));
+  $("rules").replaceChildren(...(rules.length ? rules.map((r) => el("label", { className: "pick", title: r.layout },
+    el("input", { type: "checkbox", value: r.name, checked: on.has(r.name) }), " ", el("span", { className: "mono" }, r.name),
+    " ", el("a", { href: api("/rules/") + "#" + encodeURIComponent(r.name), className: "muted", textContent: "edit" }))) :
+    [el("p", { className: "muted" }, "No rule yet.")]));
+  $("mounts").replaceChildren(...draft.snapshots.map((m) => {
+    const s = snapshots.find((x) => x.name === m.name);
+    const row = el("div", { className: "mount checks" },
+      el("span", { className: "mono mount-name", title: s ? (s.about || "") : "No Snapshot of this name" }, m.name),
+      el("span", { className: "muted" }, " in "),
+      el("input", { className: "mono", value: m.at || "", placeholder: "the top", spellcheck: false, autocomplete: "off",
+        title: "The folder it goes in; it becomes a folder of its name there" }),
+      el("button", { type: "button", className: "button small-button", textContent: "Remove",
+        onclick: () => { sync(); draft.snapshots = draft.snapshots.filter((x) => x.name !== m.name); fill(); changed(); } }),
+      s ? null : el("span", { className: "message error" }, " not in the tree"));
+    row.dataset.name = m.name;
+    return row;
+  }));
+  const free = snapshots.filter((s) => !draft.snapshots.some((m) => m.name === s.name) && !rules.some((r) => r.name === s.name));
+  $("add-mount").replaceChildren(el("option", { value: "" }, free.length ? "+ Snapshot…" : "No other Snapshot"),
+    ...free.map((s) => el("option", { value: s.name }, s.name + " · " + s.files.length + " PDFs" + (s.about ? " · " + s.about : ""))));
+  $("add-mount").disabled = !free.length;
 }
 
 function folderShown() {
@@ -151,14 +82,13 @@ function leave() {
 function open(name) {
   editing = name;
   draft = copy(outlines.find((x) => x.name === name) || blank());
+  draft.snapshots ||= [];
   delete draft.default;
-  origins = draft.rules.map((r) => name ? r.name : "");
-  rule = 0;
   $("name").value = draft.name;
   $("about").value = draft.about || "";
   folderShown();
-  fillRule();
-  sync(); // the form's own reading, so an untouched Outline is not an edit
+  fill();
+  sync();
   saved = text(draft);
   tree.reset();
   history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
@@ -177,7 +107,6 @@ let asked = 0;
 // changed regroups the draft a moment after the last change.
 function changed() {
   sync();
-  tabs();
   $("dirty").hidden = editing === null || text(draft) === saved;
   clearTimeout(pending);
   pending = setTimeout(regroup, 200);
@@ -185,14 +114,12 @@ function changed() {
 
 async function regroup() {
   const mine = ++asked;
-  const o = { ...copy(draft), name: draft.name || "preview" };
-  o.rules = o.rules.filter((r) => r.layout);
-  if (!o.rules.length) {
+  if (!draft.rules.length && !draft.snapshots.length) {
     grouping = null;
     return draw();
   }
   try {
-    const answer = await post("/api/outlines/group", o);
+    const answer = await post("/api/outlines/group", { ...copy(draft), name: draft.name || "preview" });
     if (mine !== asked) return;
     grouping = answer;
     say($("message"), "");
@@ -211,157 +138,49 @@ function draw() {
   problems();
 }
 
-// problems lists what the rules cannot place. A PDF lacking a field gets a
-// form to fill it; a numbered value with no place in the rule's order gets
-// a button to number it last; a PDF of another rule switches to that rule.
+// problems lists what the Outline cannot place: a rule's PDF is fixed in
+// the rule, or its Item, on their own pages; a clash between a rule and a
+// Snapshot is fixed by moving one of them.
 function problems() {
   const lost = unplaced(grouping);
   if (!lost.length) return $("unplaced").replaceChildren();
   const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
-  const link = (id) => el("a", { href: api("/browse/") + "#" + id }, byId[id] ? label(state, byId[id]) : id);
-  const here = draft.rules[rule] && draft.rules[rule].name;
-  const numbered = which.numberedKeys();
-  const rows = [];
-  const lacking = new Map(); // Item: the keys, fields and revisions it lacks
-  for (const m of lost) {
-    const li = el("li", {}, m.view && m.view !== here ? el("button", { type: "button", className: "small", textContent: m.view,
-      title: "Show this rule", onclick: () => pickRule(draft.rules.findIndex((r) => r.name === m.view)) }) : null,
-      m.view && m.view !== here ? " " : null, link(m.item));
-    // A numbered key the Item has a value for lacks only a place in the
-    // rule's order: that is fixed in the order, not in the Item.
-    const unordered = m.keys && m.view === here
-      ? m.keys.filter((k) => numbered.includes(k)).map((k) => [k, byId[m.item] && which.orderValue(byId[m.item], k)]).filter(([, v]) => v)
-      : [];
-    const absent = m.keys ? m.keys.filter((k) => !unordered.some(([u]) => u === k)) : [];
-    const why = !m.keys ? m.why : [
-      absent.length ? "lacks " + absent.join(", ") : "",
-      ...unordered.map(([k, v]) => "has no number for " + k + " " + v),
-    ].filter(Boolean).join("; ");
-    li.append(" " + why + " ");
-    for (const [key, value] of unordered) li.append(el("button", { type: "button", className: "small", textContent: "Number " + value + " last",
-      onclick: () => which.numberLast(key, value) }));
-    if (m.keys) {
-      const keys = m.keys.filter((k) => !(m.view === here && numbered.includes(k) && byId[m.item] && which.orderValue(byId[m.item], k)));
-      const fields = m.fields.filter((f) => !m.keys.includes(f) || keys.includes(f));
-      if (fields.length) {
-        const seen = lacking.get(m.item) || { keys: new Set(), fields: new Set(), digests: new Set() };
-        seen.digests.add(m.digest);
-        keys.forEach((k) => seen.keys.add(k));
-        fields.forEach((f) => seen.fields.add(f));
-        lacking.set(m.item, seen);
-        continue;
-      }
-    }
-    rows.push(li);
-  }
+  const isRule = (name) => draft.rules.some((r) => r.name === name);
   $("unplaced").replaceChildren(el("details", { className: "problem", open: lost.length <= 8 },
-    el("summary", {}, el("strong", {}, lost.length + " PDF" + (lost.length === 1 ? " is" : "s are") + " not placed")),
-    lacking.size > 1 ? fillAll(lacking) : null,
-    el("ul", { className: "fill-list" }, ...rows, ...[...lacking].map(([id, m]) => fill(id, m, link)))));
-}
-
-async function refill() {
-  state = await loadState();
-  which.setup({ state });
-  regroup();
-}
-
-// fill is one Item lacking keys, with a field to type each in. A key no
-// field of its Template supplies is only named: the path must change.
-function fill(id, m, link) {
-  const item = state.items.find((i) => i.id === id);
-  const t = item && templateOf(state, item.type);
-  const known = t ? t.fields.filter((f) => m.fields.has(f.key)) : [];
-  const unknown = [...m.fields].filter((f) => !known.some((k) => k.key === f));
-  const message = el("span", { className: "message" });
-  const form = el("form", { className: "fill" },
-    ...known.map((f) => inputFor(f, "", "", state, id)),
-    known.length ? el("button", { className: "small", type: "submit", textContent: "Save" }) : null,
-    message);
-  form.onsubmit = async (event) => {
-    event.preventDefault();
-    const typed = Object.fromEntries(Object.entries(fieldsOf(form)).filter(([, v]) => v !== ""));
-    if (!Object.keys(typed).length) return;
-    try {
-      // Each lacking revision gets the value: a per_revision field is its own.
-      for (const digest of m.digests) {
-        await post("/api/fields", { item: id, digest, fields: { ...fieldsAt(item, digest), ...typed } });
-      }
-      await refill();
-    } catch (error) {
-      say(message, error.message, true);
-    }
-  };
-  return el("li", {}, link(id), " — missing ", el("span", { className: "mono" }, [...m.keys].join(", ")),
-    unknown.length ? el("span", { className: "muted" }, " · " + (item ? item.type : "its Template") + " has no field " +
-      unknown.map((f) => f === "issued_at" ? "issued_at (year, month and date come from it)" : f).join(", ")) : null,
-    form);
-}
-
-// fillAll sets one value on every listed Item that lacks the field and whose
-// Template has it.
-function fillAll(byItem) {
-  const wanting = {};
-  for (const [id, m] of byItem) {
-    const item = state.items.find((i) => i.id === id);
-    const t = item && templateOf(state, item.type);
-    for (const f of t ? t.fields.filter((f) => m.fields.has(f.key)) : []) {
-      (wanting[f.key] ||= { field: f, items: [] }).items.push({ item, digests: m.digests });
-    }
-  }
-  const shared = Object.values(wanting).filter((w) => w.items.length > 1);
-  if (!shared.length) return null;
-  const message = el("span", { className: "message" });
-  const pick = el("select", {}, ...shared.map((w) => el("option", { value: w.field.key }, w.field.key + " on " + w.items.length + " Items")));
-  const slot = el("span");
-  const drawSlot = () => {
-    const selected = shared.find((w) => w.field.key === pick.value);
-    const types = new Set(selected.items.map(({ item }) => item.type));
-    slot.replaceChildren(inputFor(selected.field, "", "", state, undefined, types.size === 1 ? [...types][0] : undefined));
-  };
-  pick.onchange = drawSlot;
-  drawSlot();
-  const form = el("form", { className: "fill fill-all" }, el("span", {}, "Set "), pick, slot,
-    el("button", { className: "small", type: "submit", textContent: "Set on all" }), message);
-  form.onsubmit = async (event) => {
-    event.preventDefault();
-    const value = fieldsOf(form)[pick.value];
-    if (!value) return;
-    try {
-      for (const { item, digests } of shared.find((w) => w.field.key === pick.value).items) {
-        for (const digest of digests) {
-          await post("/api/fields", { item: item.id, digest, fields: { ...fieldsAt(item, digest), [pick.value]: value } });
-        }
-      }
-      await refill();
-    } catch (error) {
-      await refill();
-      say(message, error.message, true);
-    }
-  };
-  return form;
+    el("summary", {}, el("strong", {}, lost.length + " PDF" + (lost.length === 1 ? " is" : "s are") + " not placed: nothing is exported until they are")),
+    el("ul", { className: "fill-list" }, ...lost.map((m) => el("li", {},
+      m.view ? el("a", { href: api(isRule(m.view) ? "/rules/" : "/snapshots/") + "#" + encodeURIComponent(m.view), className: "mono" }, m.view) : null,
+      m.view ? " " : null,
+      el("a", { href: api("/browse/") + "#" + m.item }, byId[m.item] ? label(state, byId[m.item]) : m.item),
+      " " + m.why)))));
 }
 
 async function reload() {
   state = await loadState();
   frame(state);
-  const answer = await (await fetch(api("/api/outlines"))).json();
-  which.setup({ state, keys: answer.keys, countries: answer.countries || {}, onChange: changed });
+  const [answer, snaps] = await Promise.all([(await fetch(api("/api/outlines"))).json(), (await fetch(api("/api/snapshots"))).json()]);
   outlines = answer.outlines;
   rules = answer.rules || [];
-  used = answer.used || {};
-  if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
+  snapshots = snaps.snapshots || [];
+  const error = answer.error || snaps.error;
+  if (error) { $("error").hidden = false; $("error").textContent = error; }
   return answer;
 }
 
-$("form").addEventListener("input", (event) => { if (!event.target.closest(".fill")) changed(); });
+$("form").addEventListener("input", () => changed());
+$("add-mount").onchange = () => {
+  const name = $("add-mount").value;
+  if (!name) return;
+  sync();
+  draft.snapshots.push({ name, at: "" });
+  fill();
+  changed();
+};
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
   sync();
   try {
-    const fresh = draft.rules.filter((r, i) => !origins[i]).map((r) => r.name);
-    const renamed = Object.fromEntries(draft.rules.map((r, i) => [origins[i], r.name]).filter(([from, to]) => from && from !== to));
-    await post("/api/outlines", { outline: draft, previous: editing || "", fresh, renamed });
+    await post("/api/outlines", { outline: draft, previous: editing || "" });
     const name = draft.name;
     await reload();
     open(name);
@@ -370,16 +189,6 @@ $("form").addEventListener("submit", async (event) => {
     say($("form-message"), err.message, true);
   }
 });
-$("rule-delete").onclick = () => {
-  sync();
-  const r = draft.rules[rule];
-  if (!r || !confirm("Remove the rule " + (r.name || "unnamed") + " from this Outline? Other Outlines keep it; one made here and not saved is gone.")) return;
-  draft.rules.splice(rule, 1);
-  origins.splice(rule, 1);
-  rule = Math.max(0, rule - 1);
-  fillRule();
-  changed();
-};
 $("folder").onclick = async () => {
   const chosen = await openFile({ title: "Export " + (draft.name || "the Outline") + " to", folders: true, writable: true, confirm: "Choose",
     message: "The folder every machine exports this Outline to unless another is chosen on Explore. It is kept in the Outline's file.",
@@ -392,7 +201,7 @@ $("folder").onclick = async () => {
 $("folder-clear").onclick = () => { draft.folder = ""; folderShown(); changed(); };
 $("new").onclick = () => leave() && open("");
 $("delete").onclick = async () => {
-  if (!editing || !confirm("Delete the Outline " + editing + "? Its file under outlines/ is removed; no Item changes, and nothing exported is touched.")) return;
+  if (!editing || !confirm("Delete the Outline " + editing + "? Its file under outlines/ is removed; its rules and Snapshots stay, no Item changes, and nothing exported is touched.")) return;
   try {
     await post("/api/outlines/delete", { name: editing });
     await reload();

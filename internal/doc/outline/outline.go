@@ -1,9 +1,11 @@
 // Package outline is a doc tree's Outlines and the rules they use. An
-// Outline is a tree of PDFs made by its rules: each rule selects Items and
-// names the path each of their PDFs has, and the rules' paths together are
-// the tree. The same tree is browsed and, into a folder chosen then,
-// exported. A rule is kept apart from the Outlines, under rules/, so several
-// Outlines use one. The rules are in docs/apps/doc/index.md.
+// Outline is a tree of PDFs made by its rules and its Snapshots: each rule
+// selects Items and names the path each of their PDFs has, and each
+// Snapshot is a fixed subtree put in as a folder at a path the Outline
+// gives it. Together they are the tree, browsed and, into a folder chosen
+// then, exported. Rules and Snapshots are kept apart from the Outlines,
+// under rules/ and snapshots/, so several Outlines use one. The rules are
+// in docs/apps/doc/index.md.
 package outline
 
 import (
@@ -11,11 +13,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"dgs-toolbox/internal/doc/snapshot"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 
@@ -42,7 +46,20 @@ type Outline struct {
 	Folder string `yaml:"folder,omitempty" json:"folder,omitempty"`
 	// Rules place the PDFs, each named uniquely within the Outline.
 	Rules []view.View `yaml:"rules" json:"rules"`
+	// Snapshots are put in the tree, each as a folder of its name.
+	Snapshots []Mount `yaml:"snapshots,omitempty" json:"snapshots"`
 }
+
+// Mount puts the Snapshot named Name in an Outline's tree, as the folder
+// At/Name.
+type Mount struct {
+	Name string `yaml:"name" json:"name"`
+	// At is the folder it goes in, empty for the top.
+	At string `yaml:"at,omitempty" json:"at,omitempty"`
+}
+
+// Folder is the Snapshot's folder in the tree.
+func (m Mount) Folder() string { return path.Join(m.At, m.Name) }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
@@ -64,6 +81,18 @@ func (o Outline) Validate() error {
 		}
 		seen[r.Name] = true
 	}
+	for _, m := range o.Snapshots {
+		if !namePattern.MatchString(m.Name) {
+			return fmt.Errorf("outline %s: %q is not a Snapshot's name", o.Name, m.Name)
+		}
+		if m.At != "" && (path.IsAbs(m.At) || m.At != path.Clean(m.At) || m.At == ".." || strings.HasPrefix(m.At, "../") || strings.Contains(m.At, "\\")) {
+			return fmt.Errorf("outline %s: the Snapshot %s's folder %q is not a path inside the tree", o.Name, m.Name, m.At)
+		}
+		if seen[m.Name] {
+			return fmt.Errorf("outline %s: %s is named twice among its rules and Snapshots", o.Name, m.Name)
+		}
+		seen[m.Name] = true
+	}
 	return nil
 }
 
@@ -81,18 +110,20 @@ func Expand(folder, home string) string {
 // onDisk is an Outline file: rules by name, or, written before rules were
 // shared, whole.
 type onDisk struct {
-	Name   string      `yaml:"name"`
-	About  string      `yaml:"about,omitempty"`
-	Folder string      `yaml:"folder,omitempty"`
-	Rules  []yaml.Node `yaml:"rules"`
+	Name      string      `yaml:"name"`
+	About     string      `yaml:"about,omitempty"`
+	Folder    string      `yaml:"folder,omitempty"`
+	Rules     []yaml.Node `yaml:"rules"`
+	Snapshots []Mount     `yaml:"snapshots,omitempty"`
 }
 
 // named is how an Outline is written now.
 type named struct {
-	Name   string   `yaml:"name"`
-	About  string   `yaml:"about,omitempty"`
-	Folder string   `yaml:"folder,omitempty"`
-	Rules  []string `yaml:"rules"`
+	Name      string   `yaml:"name"`
+	About     string   `yaml:"about,omitempty"`
+	Folder    string   `yaml:"folder,omitempty"`
+	Rules     []string `yaml:"rules"`
+	Snapshots []Mount  `yaml:"snapshots,omitempty"`
 }
 
 // parse reads one Outline file, refusing keys it does not know: its rules
@@ -104,7 +135,7 @@ func parse(data []byte, rules map[string]view.View) (o Outline, inline bool, err
 	if err := decoder.Decode(&d); err != nil {
 		return Outline{}, false, err
 	}
-	o = Outline{Name: d.Name, About: d.About, Folder: d.Folder, Rules: []view.View{}}
+	o = Outline{Name: d.Name, About: d.About, Folder: d.Folder, Rules: []view.View{}, Snapshots: d.Snapshots}
 	for _, n := range d.Rules {
 		if n.Kind == yaml.ScalarNode {
 			r, ok := rules[n.Value]
@@ -256,13 +287,12 @@ func Save(root, previous string, o Outline) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
-	// A Snapshot shares the Outlines' names, exported and remembered by
-	// them; package snapshot keeps its files in snapshots/.
-	if _, err := os.Stat(filepath.Join(root, "snapshots", o.Name+".yaml")); err == nil {
-		return fmt.Errorf("a Snapshot is named %s: choose another name", o.Name)
-	}
-	file := named{Name: o.Name, About: o.About, Folder: o.Folder, Rules: []string{}}
+	file := named{Name: o.Name, About: o.About, Folder: o.Folder, Rules: []string{}, Snapshots: o.Snapshots}
 	for _, r := range o.Rules {
+		// An Outline names its rules and Snapshots together.
+		if _, err := os.Stat(snapshot.Path(root, r.Name)); err == nil {
+			return fmt.Errorf("a Snapshot is named %s: choose another name for the rule", r.Name)
+		}
 		data, err := yaml.Marshal(r)
 		if err != nil {
 			return err
@@ -294,6 +324,35 @@ func Fresh(root string, names []string) error {
 		}
 	}
 	return nil
+}
+
+// SaveRule writes r to rules/<name>.yaml, replacing the rule of that name:
+// every Outline using it sees the change. With previous empty r is new and
+// must not replace a rule; with previous another name, that rule is
+// renamed first, in every Outline naming it.
+func SaveRule(root, previous string, r view.View) error {
+	r = withHead(r)
+	if err := r.Validate(); err != nil {
+		return errors.New(strings.Replace(err.Error(), "view ", "rule ", 1))
+	}
+	if _, err := os.Stat(snapshot.Path(root, r.Name)); err == nil {
+		return fmt.Errorf("a Snapshot is named %s: choose another name for the rule", r.Name)
+	}
+	switch {
+	case previous == "":
+		if err := Fresh(root, []string{r.Name}); err != nil {
+			return err
+		}
+	case previous != r.Name:
+		if err := RenameRule(root, previous, r.Name); err != nil {
+			return err
+		}
+	}
+	data, err := yaml.Marshal(r)
+	if err != nil {
+		return err
+	}
+	return write(filepath.Join(root, RulesDir), r.Name+".yaml", data)
 }
 
 // RenameRule renames the rule from to to, in its file and in every Outline
@@ -402,6 +461,8 @@ func Delete(root, name string) error {
 // Node is one folder: its name, the PDFs directly in it, and its folders.
 type Node struct {
 	Name string `json:"name"`
+	// Snapshot is set on a Snapshot's folder: the Snapshot's name.
+	Snapshot string `json:"snapshot,omitempty"`
 	// Path is the folder's segments joined by /.
 	Path string `json:"path"`
 	// Count is every PDF in the folder and beneath it.
@@ -411,22 +472,138 @@ type Node struct {
 	Children []*Node     `json:"children"`
 }
 
-// Grouping is an Outline's rules planned together, and the tree of the PDFs
-// with a path of their own. What the tree lacks is in the plans' Missing and
-// Clashes, and in Clashes between rules.
+// Grouping is an Outline's rules and Snapshots planned together, and the
+// tree of the PDFs with a path of their own. What the tree lacks is in the
+// plans' Missing and Clashes, in Clashes between rules and Snapshots, and
+// in Lost, the Snapshots' files the tree no longer has, each at its path
+// in the Outline.
 type Grouping struct {
 	view.Combined
-	Root *Node `json:"root"`
+	Lost []snapshot.Lost `json:"lost"`
+	Root *Node           `json:"root"`
 }
 
-// Group plans o's rules together and puts every placed PDF in its folder.
-// Folders and files sort by name, which keeps numbered ones in their order.
-func Group(o Outline, items []tree.Item, names view.TypeNames) (Grouping, error) {
-	combined, err := view.Combine(o.Rules, items, names)
+// Complete reports whether nothing stops the tree being exported.
+func (g Grouping) Complete() bool { return g.Combined.Complete() && len(g.Lost) == 0 }
+
+// Group plans o's rules together with its Snapshots, found in snapshots,
+// and puts every placed PDF in its folder. A Snapshot's files are marked
+// with its name, as a rule's are with the rule's. Folders and files sort by
+// name, which keeps numbered ones in their order.
+func Group(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names view.TypeNames) (Grouping, error) {
+	fixed, lost, err := Mounted(o, snapshots, items)
 	if err != nil {
 		return Grouping{}, err
 	}
-	return Grouping{Combined: combined, Root: Nest(combined.Files)}, nil
+	combined, err := view.CombineWith(o.Rules, fixed, items, names)
+	if err != nil {
+		return Grouping{}, err
+	}
+	root := Nest(combined.Files)
+	for _, m := range o.Snapshots {
+		if n := find(root, m.Folder()); n != nil {
+			n.Snapshot = m.Name
+		}
+	}
+	return Grouping{Combined: combined, Lost: lost, Root: root}, nil
+}
+
+// Mounted is o's Snapshots' files as items have them now, each at its path
+// in the Outline, and those the tree has lost. A Snapshot missing from
+// snapshots is an error.
+func Mounted(o Outline, snapshots []snapshot.Snapshot, items []tree.Item) ([]view.File, []snapshot.Lost, error) {
+	byName := map[string]snapshot.Snapshot{}
+	for _, s := range snapshots {
+		byName[s.Name] = s
+	}
+	files, lost := []view.File{}, []snapshot.Lost{}
+	for _, m := range o.Snapshots {
+		s, ok := byName[m.Name]
+		if !ok {
+			return nil, nil, fmt.Errorf("outline %s: no Snapshot named %s in %s/", o.Name, m.Name, snapshot.Dir)
+		}
+		r := snapshot.Resolve(s, items)
+		for _, f := range r.Files {
+			f.Path = m.Folder() + "/" + f.Path
+			files = append(files, f)
+		}
+		for _, l := range r.Lost {
+			l.Path = m.Folder() + "/" + l.Path
+			lost = append(lost, l)
+		}
+	}
+	return files, lost, nil
+}
+
+// find is the folder at p under n, or nil.
+func find(n *Node, p string) *Node {
+	for _, c := range n.Children {
+		if strings.EqualFold(c.Path, p) {
+			return c
+		}
+		if strings.HasPrefix(strings.ToLower(p), strings.ToLower(c.Path)+"/") {
+			return find(c, p)
+		}
+	}
+	return nil
+}
+
+// SnapshotUsers is the Outlines using each Snapshot, by its name.
+func SnapshotUsers(outlines []Outline) map[string][]string {
+	used := map[string][]string{}
+	for _, o := range outlines {
+		for _, m := range o.Snapshots {
+			used[m.Name] = append(used[m.Name], o.Name)
+		}
+	}
+	return used
+}
+
+// RenameSnapshot renames the Snapshot from to to, in its file and in
+// every Outline putting it in its tree.
+func RenameSnapshot(root, from, to string) error {
+	outlines, err := Load(root)
+	if err != nil {
+		return err
+	}
+	list, err := snapshot.Load(root)
+	if err != nil {
+		return err
+	}
+	var s *snapshot.Snapshot
+	for i := range list {
+		if list[i].Name == from {
+			s = &list[i]
+		}
+	}
+	if s == nil {
+		return fmt.Errorf("no Snapshot named %s", from)
+	}
+	for _, o := range outlines {
+		for _, r := range o.Rules {
+			if r.Name == to {
+				return fmt.Errorf("the Outline %s has a rule named %s", o.Name, to)
+			}
+		}
+	}
+	s.Name = to
+	if err := snapshot.Save(root, from, *s, false); err != nil {
+		return err
+	}
+	for _, o := range outlines {
+		uses := false
+		for i := range o.Snapshots {
+			if o.Snapshots[i].Name == from {
+				o.Snapshots[i].Name, uses = to, true
+			}
+		}
+		if uses {
+			if err := Save(root, "", o); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Nest puts files, each at a path of its own, into folders.

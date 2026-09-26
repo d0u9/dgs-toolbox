@@ -6,6 +6,7 @@ import (
 
 	"dgs-toolbox/internal/doc/country"
 	"dgs-toolbox/internal/doc/outline"
+	"dgs-toolbox/internal/doc/snapshot"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
@@ -91,7 +92,8 @@ func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
 }
 
 // outlineGroup plans an Outline, saved or not, and nests the PDFs its rules
-// place into folders. It writes nothing.
+// and Snapshots place into folders. It writes nothing. The Rules page plans
+// one rule by sending an Outline of it alone.
 func (s server) outlineGroup(w http.ResponseWriter, r *http.Request) {
 	var o outline.Outline
 	if !decode(w, r, &o) {
@@ -116,7 +118,12 @@ func (s server) outlineGroup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	g, err := outline.Group(o, items, view.NamesOf(templates))
+	snapshots, err := snapshot.Load(s.root)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	g, err := outline.Group(o, snapshots, items, view.NamesOf(templates))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -200,4 +207,27 @@ func (s server) ruleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{})
+}
+
+// ruleSave writes one rule, renaming it first in every Outline using it
+// when Previous names it otherwise. A new rule must not replace another.
+func (s server) ruleSave(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Rule     view.View `json:"rule"`
+		Previous string    `json:"previous"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	if err := tree.Require(s.root); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	if err := outline.SaveRule(s.root, request.Previous, request.Rule); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, request.Rule)
 }

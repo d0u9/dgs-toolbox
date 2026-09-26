@@ -701,3 +701,18 @@ body.list-shut .outline-list { display: none; }
 #unplaced .problem { margin: 0; }
 #unplaced .problem summary { cursor: pointer; }
 .outline-note { border-bottom: 0 !important; font-size: var(--font-size-xs); }
+/* The Outlines page picks rules and puts Snapshots in the tree. */
+.pick-list { display: flex; flex-direction: column; gap: 4px; }
+.pick-list .pick { display: flex; align-items: center; gap: 4px; }
+.pick-list .pick a { font-size: var(--font-size-xs); }
+.mount { align-items: center; }
+.mount input { flex: 1 1 140px; min-width: 0; }
+.mount-name { font-weight: 600; }
+/* The Snapshots page edits a Snapshot's PDFs one row each. */
+.snap-files { display: flex; flex-direction: column; gap: 6px; }
+.snap-file { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 6px; align-items: center; }
+.snap-file input { min-width: 0; }
+.snap-file .template-sub { grid-column: 1 / -1; }
+.snap-file.lost .template-sub { color: var(--error); }
+.snap-add { margin-top: 8px; }
+.snap-add select { flex: 1 1 auto; min-width: 0; }

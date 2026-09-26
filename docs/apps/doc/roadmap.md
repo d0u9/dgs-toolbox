@@ -21,7 +21,7 @@ step at a time as it grows. The page comes first; what it writes follows.
 | M8 | Searching Items by their text on Browse, and "more like this" | done |
 | M9 | Several trees (`doc.trees`), switched from the top bar | done |
 | M10 | Cases: Items added as a matter needs them, still-needed notes, export, archive | done |
-| M11 | Snapshots on Explore: an Outline's tree or folder kept as it was, browsed and exported | done |
+| M11 | Snapshots: fixed subtrees taken from a rule and edited by hand, put in an Outline's tree as folders beside its rules | done |
 
 The layout and formats are in [`index.md`](index.md#layout-on-disk).
 

@@ -539,37 +539,56 @@ func TestSnapshotKeepsWhatWasTaken(t *testing.T) {
 	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	o := `{"name":"phone","rules":[{"name":"ids","layout":"ids/{owner}.{ext}"}]}`
+	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","layout":"{owner}.{ext}"}}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","layout":"x.{ext}"}}`); rec.Code == 200 {
+		t.Fatal("a new rule replaced another")
+	}
+	if rec := do(h, "POST", "/api/snapshots/take", `{"rule":"ids","name":"visa"}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/snapshots/take", `{"rule":"ids","name":"ids"}`); rec.Code == 200 {
+		t.Fatal("a Snapshot took a rule's name")
+	}
+	// The rule changes; the Snapshot still has emma.pdf at its top, put
+	// in the Outline's tree as the folder old/visa.
+	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","layout":"{country}/{owner}.{ext}"},"previous":"ids"}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	o := `{"name":"phone","rules":[{"name":"ids","layout":"{country}/{owner}.{ext}"}],"snapshots":[{"name":"visa","at":"old"}]}`
 	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	if rec := do(h, "POST", "/api/snapshots/take", `{"outline":"phone","node":"ids","name":"visa"}`); rec.Code != 200 {
-		t.Fatal(rec.Body.String())
-	}
-	if rec := do(h, "POST", "/api/snapshots/take", `{"outline":"phone","name":"phone"}`); rec.Code == 200 {
-		t.Fatal("a Snapshot took an Outline's name")
-	}
-	// The rule changes; the Snapshot still has emma.pdf at its root.
-	o = `{"name":"phone","rules":[{"name":"ids","layout":"{country}/{owner}.{ext}"}]}`
-	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`,"previous":"phone"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
 	var list struct {
 		Snapshots []snapshotJSON `json:"snapshots"`
 	}
 	must(t, json.Unmarshal(do(h, "GET", "/api/snapshots", "").Body.Bytes(), &list))
-	if len(list.Snapshots) != 1 || list.Snapshots[0].Root.Count != 1 || list.Snapshots[0].Root.Files[0].Path != "emma.pdf" {
+	if len(list.Snapshots) != 1 || list.Snapshots[0].Root.Count != 1 || list.Snapshots[0].Root.Files[0].Path != "emma.pdf" || list.Snapshots[0].Used[0] != "phone" {
 		t.Fatalf("%+v", list)
 	}
 	out := t.TempDir()
-	if rec := do(h, "POST", "/api/export", `{"outlines":["visa"],"folders":{"visa":`+q(out)+`}}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/export", `{"outlines":["phone"],"folders":{"phone":`+q(out)+`}}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(out, "emma.pdf")); err != nil {
-		t.Fatal(err)
+	for _, p := range []string{"old/visa/emma.pdf", "澳大利亚/emma.pdf"} {
+		if _, err := os.Stat(filepath.Join(out, p)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if rec := do(h, "POST", "/api/snapshots/delete", `{"name":"visa"}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/snapshots/delete", `{"name":"visa"}`); rec.Code == 200 {
+		t.Fatal("a Snapshot an Outline uses was deleted")
+	}
+	// Renamed, it is renamed in the Outline too.
+	list.Snapshots[0].Name = "visa-2026"
+	sn, _ := json.Marshal(list.Snapshots[0].Snapshot)
+	if rec := do(h, "POST", "/api/snapshots", `{"snapshot":`+string(sn)+`,"previous":"visa"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
+	}
+	var outlines outlinesJSON
+	must(t, json.Unmarshal(do(h, "GET", "/api/outlines", "").Body.Bytes(), &outlines))
+	if outlines.Outlines[0].Snapshots[0].Name != "visa-2026" {
+		t.Fatalf("%+v", outlines.Outlines[0])
 	}
 }
 

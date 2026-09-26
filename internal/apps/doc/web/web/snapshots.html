@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Doc Outlines · dgs</title>
+<title>Doc Snapshots · dgs</title>
 <meta name="robots" content="noindex, nofollow, noarchive">
 <link rel="icon" type="image/svg+xml" href="/ui/icons/doc.svg">
 <link rel="stylesheet" href="/ui/fonts.css">
@@ -17,7 +17,7 @@
 </head>
 <body>
 <div id="banner" class="banner" hidden>
-  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before saving Outlines in it.
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before taking Snapshots in it.
 </div>
 <header class="topbar">
   <span class="brand">DOC</span>
@@ -25,8 +25,8 @@
   <a class="topbar-link" href="/explore/">Explore</a>
   <a class="topbar-link" href="/templates/">Templates</a>
   <a class="topbar-link" href="/rules/">Rules</a>
-  <a class="topbar-link" href="/snapshots/">Snapshots</a>
-  <a class="topbar-link current" href="/outlines/">Outlines</a>
+  <a class="topbar-link current" href="/snapshots/">Snapshots</a>
+  <a class="topbar-link" href="/outlines/">Outlines</a>
   <a class="topbar-link" href="/cases/">Cases</a>
   <a class="topbar-link" href="/merge/">Merge</a>
   <a class="topbar-link" href="/import/">Import</a>
@@ -38,38 +38,46 @@
 <main class="work">
   <section class="list">
     <div class="list-head">
-      <h2>Outlines <span id="count" class="count numeric"></span></h2>
+      <h2>Snapshots <span id="count" class="count numeric"></span></h2>
       <button id="new" class="button" type="button">+ New</button>
     </div>
-    <ul id="outlines" class="template-list scroll"></ul>
+    <ul id="snapshots" class="template-list scroll"></ul>
   </section>
-  <form id="form" class="view-form outline-form">
+  <form id="take-form" class="view-form outline-form" hidden>
     <div class="view-group">
+      <h3>New Snapshot</h3>
+      <p class="muted rule-shared">A Snapshot keeps each PDF's revision and path as they are now, however the rule or the Items change after. Take it from a rule, then edit it by hand; or begin it empty.</p>
       <label class="vf"><span class="vf-label">Name</span>
-        <input id="name" spellcheck="false" autocomplete="off" placeholder="phone"></label>
+        <input id="take-name" class="mono" spellcheck="false" autocomplete="off" placeholder="visa-2026" required pattern="[a-z0-9][a-z0-9_\-]*" title="lowercase letters, digits, _ and -"></label>
       <label class="vf"><span class="vf-label">For</span>
-        <input id="about" autocomplete="off" placeholder="read on the phone"></label>
-      <div class="vf"><span class="vf-label">Exports to</span>
-        <div class="checks">
-          <button id="folder" class="button export-folder" type="button" title="The folder every machine exports to unless another is chosen on Explore">
-            <span id="folder-path" class="export-path"></span></button>
-          <button id="folder-clear" class="button small-button" type="button" title="Keep no folder: one is chosen when exporting">Clear</button>
-        </div>
-      </div>
-    </div>
-    <div class="view-group">
-      <h3>Rules</h3>
-      <p class="muted rule-shared">Each places the PDFs it picks at the path it gives them. Make and edit them on the <a href="/rules/">Rules</a> page.</p>
-      <div id="rules" class="pick-list"></div>
-    </div>
-    <div class="view-group">
-      <h3>Snapshots</h3>
-      <p class="muted rule-shared">Each goes in as a folder of its name, inside the folder given. Take them on the <a href="/snapshots/">Snapshots</a> page.</p>
-      <div id="mounts" class="vf-stack"></div>
-      <select id="add-mount" class="chip"></select>
+        <input id="take-about" autocomplete="off" placeholder="handed in for the visa"></label>
+      <label class="vf"><span class="vf-label">From</span>
+        <select id="take-rule"></select></label>
     </div>
     <div class="view-actions">
-      <button id="save" class="action" type="submit">Save Outline</button>
+      <button class="action" type="submit">Take</button>
+      <p id="take-message" class="message"></p>
+    </div>
+  </form>
+  <form id="form" class="view-form outline-form" hidden>
+    <div class="view-group">
+      <label class="vf"><span class="vf-label">Name</span>
+        <input id="name" class="mono" spellcheck="false" autocomplete="off" required pattern="[a-z0-9][a-z0-9_\-]*"></label>
+      <label class="vf"><span class="vf-label">For</span>
+        <input id="about" autocomplete="off"></label>
+      <p id="origin" class="muted rule-shared"></p>
+    </div>
+    <div class="view-group">
+      <h3>PDFs <span id="file-count" class="count muted"></span></h3>
+      <p class="muted rule-shared">A path is inside the Snapshot's folder; <code>/</code> makes folders in it.</p>
+      <div id="files" class="snap-files"></div>
+      <div class="snap-add checks">
+        <select id="add-item"></select>
+        <button id="add" class="button" type="button">+ PDF</button>
+      </div>
+    </div>
+    <div class="view-actions">
+      <button id="save" class="action" type="submit">Save Snapshot</button>
       <p id="form-message" class="message"></p>
       <button id="delete" class="button danger" type="button">Delete…</button>
     </div>
@@ -77,17 +85,15 @@
   <section class="outline-main">
     <div class="template-bar">
       <div class="template-title">
-        <h2 id="title">outline</h2>
+        <h2 id="title">snapshot</h2>
         <span id="total" class="count muted"></span>
         <span id="dirty" class="dirty" hidden>Unsaved</span>
       </div>
       <p id="message" class="message"></p>
-      <a id="explore" class="button" hidden>Open in Explore</a>
     </div>
-    <div id="unplaced"></div>
     <div id="tree" class="outline-tree scroll" role="tree"></div>
   </section>
 </main>
-<script type="module" src="/outlines.js"></script>
+<script type="module" src="/snapshots.js"></script>
 </body>
 </html>
