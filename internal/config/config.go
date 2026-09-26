@@ -612,7 +612,7 @@ func LoadPath(path string) (Config, error) {
 		config.Doc.Trees[name] = expanded
 	}
 	if len(config.Doc.Targets) > 0 {
-		return Config{}, fmt.Errorf("decode config %s: doc.targets: Targets now live in each tree, in targets.yaml, with the folder as a default the page lets you change; move them there (the Views page adds them) and remove doc.targets", path)
+		return Config{}, fmt.Errorf("decode config %s: doc.targets: export folders now belong to each Outline in the tree, as a default the Explore page lets you change; set them on the Outlines page and remove doc.targets", path)
 	}
 	if config.Conf.Root != "" {
 		expanded, err := ExpandPath(config.Conf.Root, os.LookupEnv, home)

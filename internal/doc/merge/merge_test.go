@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/doc/export"
+	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
@@ -113,13 +114,13 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "EMMA"}, Notes: "renewed in Sydney", Tags: []string{"travel"}, Frequent: true, Retired: true, RetiredReason: "moved"}, "new passport")
 	put(t, sub, tree.Item{ID: "S2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"}}, "bill 1")
 	put(t, sub, tree.Item{ID: "S3", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom"}}, "bill 2")
-	if err := view.Save(sub, view.View{Name: "all", Selection: view.Head, Layout: "{owner}/{type}.{ext}"}); err != nil {
+	if err := outline.Save(sub, "", outline.Outline{Name: "all", Rules: []view.View{{Name: "all", Selection: view.Head, Layout: "{owner}/{type}.{ext}"}}}); err != nil {
 		t.Fatal(err)
 	}
 
 	src := source(t, sub)
 	p := plan(t, full, src)
-	if len(p.New) != 1 || p.New[0].Item != "S3" || len(p.Changed) != 1 || p.Same != 1 || len(p.Views) != 1 || len(p.Conflicts) != 1 {
+	if len(p.New) != 1 || p.New[0].Item != "S3" || len(p.Changed) != 1 || p.Same != 1 || len(p.Outlines) != 1 || len(p.Conflicts) != 1 {
 		t.Fatalf("plan: %+v", p)
 	}
 	c := p.Changed[0]
@@ -137,7 +138,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.PDFs != 2 || result.Views != 1 {
+	if result.PDFs != 2 || result.Outlines != 1 {
 		t.Fatalf("result: %+v", result)
 	}
 	f1, _, err := tree.FindItem(full, "F1")
@@ -162,7 +163,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 
 	// Merging again changes nothing.
 	p = plan(t, full, src)
-	if len(p.New)+len(p.Changed) != 0 || len(p.Views) != 0 {
+	if len(p.New)+len(p.Changed) != 0 || len(p.Outlines) != 0 {
 		t.Fatalf("second plan: %+v", p)
 	}
 }

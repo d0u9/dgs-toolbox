@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
@@ -249,25 +250,24 @@ func TestVersionOneManifestIsRead(t *testing.T) {
 	}
 }
 
-func TestJobsGroupViewsByTarget(t *testing.T) {
-	views := []view.View{
-		{Name: "ids", Target: "google"}, {Name: "bills", Target: "google"},
-		{Name: "icloud-ids", Target: "icloud"}, {Name: "loose"}, {Name: "lost", Target: "nas"},
+func TestJobsAreOutlinesWithAFolder(t *testing.T) {
+	rule := []view.View{{Name: "ids"}}
+	outlines := []outline.Outline{
+		{Name: "google", Folder: "/g", Rules: []view.View{{Name: "ids"}, {Name: "bills"}}},
+		{Name: "icloud", Folder: "~/i", Rules: rule},
+		{Name: "browse", Rules: rule},
+		{Name: "empty", Folder: "/e"},
 	}
-	targets := map[string]string{"google": "/g", "icloud": "/i", "empty": "/e"}
-	jobs, problems := Jobs(views, targets, nil)
-	if len(jobs) != 2 || jobs[0].Name != "google" || len(jobs[0].Views) != 2 || jobs[1].Name != "icloud" {
-		t.Fatalf("jobs %+v", jobs)
+	jobs, problems := Jobs(outlines, nil, "/home", nil)
+	if len(problems) != 0 || len(jobs) != 2 || jobs[0].Name != "google" || len(jobs[0].Views) != 2 || jobs[1].Path != "/home/i" {
+		t.Fatalf("jobs %+v %v", jobs, problems)
 	}
-	if len(problems) != 1 {
+	if jobs, _ = Jobs(outlines, map[string]string{"browse": "/b"}, "/home", []string{"browse"}); len(jobs) != 1 || jobs[0].Path != "/b" {
+		t.Fatalf("chosen %+v", jobs)
+	}
+	_, problems = Jobs(outlines, nil, "/home", []string{"browse", "empty", "gone"})
+	if len(problems) != 3 || !strings.Contains(problems[0], "choose a folder") {
 		t.Fatalf("problems %v", problems)
-	}
-	if _, problems = Jobs(views, targets, []string{"empty", "gone"}); len(problems) != 3 {
-		t.Fatalf("problems %v", problems)
-	}
-	targets["icloud"] = ""
-	if _, problems = Jobs(views, targets, []string{"icloud"}); len(problems) != 2 || !strings.Contains(problems[1], "choose a folder") {
-		t.Fatalf("no folder: %v", problems)
 	}
 }
 

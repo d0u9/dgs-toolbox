@@ -1,6 +1,6 @@
-// The part of a form that picks PDFs and lays them out, shared by the Views
-// and Outlines pages: types, conditions, revisions, a layout built from key
-// chips, and a Numbering list per numbered key. The page owns the rest of
+// The part of the Outlines form that makes one rule: types, conditions,
+// revisions, a layout built from key chips, and a Numbering list per
+// numbered key. The page owns the rest of
 // its form and what a change redraws; the server computes the result.
 import { $, el, currentFields } from "/common.js";
 
@@ -68,7 +68,7 @@ $("add-condition").addEventListener("click", () => {
 // written, or else equal ignoring case.
 const same = (a, b) => (countries[a] && countries[a] === countries[b]) || a.toLowerCase() === b.toLowerCase();
 
-// chosenTypes is the types ticked, or every type when none is: a View
+// chosenTypes is the types ticked, or every type when none is: a rule
 // without types selects them all.
 function chosenTypes() {
   const ticked = [...$("types").querySelectorAll("input:checked")].map((i) => i.value);

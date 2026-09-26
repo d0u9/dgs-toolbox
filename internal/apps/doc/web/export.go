@@ -8,110 +8,29 @@ import (
 	"path/filepath"
 
 	"dgs-toolbox/internal/doc/export"
-	"dgs-toolbox/internal/doc/target"
+	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
-	"dgs-toolbox/internal/doc/view"
 )
-
-type targetJSON struct {
-	target.Target
-	// Default is the Target's own folder on this machine, ~ made home.
-	Default string `json:"default"`
-	// Views are the Views that name this Target.
-	Views []string `json:"views"`
-}
 
 func home() string {
 	h, _ := os.UserHomeDir()
 	return h
 }
 
-// targetList is the tree's Targets, each with the Views naming it.
-func (s server) targetList(w http.ResponseWriter, _ *http.Request) {
-	out := struct {
-		Targets []targetJSON `json:"targets"`
-		Error   string       `json:"error,omitempty"`
-	}{Targets: []targetJSON{}}
-	targets, err := target.Load(s.root)
-	if err != nil {
-		out.Error = err.Error()
-	}
-	views, _ := view.Load(s.root)
-	for _, t := range targets {
-		j := targetJSON{Target: t, Views: []string{}}
-		if t.Folder != "" {
-			j.Default = target.Expand(t.Folder, home())
-		}
-		for _, v := range views {
-			if v.Target == t.Name {
-				j.Views = append(j.Views, v.Name)
-			}
-		}
-		out.Targets = append(out.Targets, j)
-	}
-	writeJSON(w, http.StatusOK, out)
-}
-
-// targetSave replaces the tree's Targets. A Target a View still names is
-// not removed.
-func (s server) targetSave(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Targets []target.Target `json:"targets"`
-	}
-	if !decode(w, r, &request) {
-		return
-	}
-	s.writing.Lock()
-	defer s.writing.Unlock()
-	if err := tree.Require(s.root); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		return
-	}
-	kept := map[string]bool{}
-	for _, t := range request.Targets {
-		kept[t.Name] = true
-	}
-	views, _ := view.Load(s.root)
-	for _, v := range views {
-		if v.Target != "" && !kept[v.Target] {
-			if old, _ := target.Load(s.root); containsTarget(old, v.Target) {
-				writeJSON(w, http.StatusConflict, map[string]string{"error": "the View " + v.Name + " exports to " + v.Target + ": point it elsewhere first"})
-				return
-			}
-		}
-	}
-	if err := target.Save(s.root, request.Targets); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	s.targetList(w, r)
-}
-
-func containsTarget(targets []target.Target, name string) bool {
-	for _, t := range targets {
-		if t.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-// exportRequest is what to export: the Targets named (every Target a View
-// names when All is set), or one View into a folder chosen by hand.
+// exportRequest is what to export: the Outlines named, or every Outline
+// with rules and a folder when All is set.
 type exportRequest struct {
-	Targets []string `json:"targets"`
-	// Folders are the folders chosen for Targets this time, by name. A
-	// Target without one goes to its own folder.
+	Outlines []string `json:"outlines"`
+	// Folders are the folders chosen for Outlines this time, by name. An
+	// Outline without one goes to its own folder.
 	Folders map[string]string `json:"folders"`
 	All     bool              `json:"all"`
-	View    string            `json:"view"`
-	Folder  string            `json:"folder"`
 }
 
 type exportPlanJSON struct {
 	Jobs []export.JobPlan `json:"jobs"`
-	// Problems stop the whole run: a View naming an unknown Target, a
-	// Target asked for that no View names.
+	// Problems stop the whole run: an Outline asked for that the tree
+	// lacks, or that has no rule or no folder.
 	Problems []string `json:"problems"`
 	// Ready is set when every Job may be written, so the run may start.
 	Ready bool `json:"ready"`
@@ -122,37 +41,19 @@ type exportPlanJSON struct {
 // then, never a plan the page was shown earlier.
 func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON, []tree.Item, int, error) {
 	out := exportPlanJSON{Jobs: []export.JobPlan{}, Problems: []string{}}
-	views, err := view.Load(s.root)
+	if !request.All && len(request.Outlines) == 0 {
+		return out, nil, http.StatusBadRequest, errors.New("name the Outlines to export")
+	}
+	outlines, err := outline.Load(s.root)
 	if err != nil {
 		return out, nil, http.StatusConflict, err
 	}
-	var jobs []export.Job
-	switch {
-	case request.View != "":
-		if !filepath.IsAbs(request.Folder) {
-			return out, nil, http.StatusBadRequest, errors.New("the folder to export to must be an absolute path")
-		}
-		var v *view.View
-		for i := range views {
-			if views[i].Name == request.View {
-				v = &views[i]
-			}
-		}
-		if v == nil {
-			return out, nil, http.StatusBadRequest, errors.New("no View named " + request.View)
-		}
-		jobs = []export.Job{{Path: filepath.Clean(request.Folder), Views: []view.View{*v}}}
-	case request.All || len(request.Targets) > 0:
-		targets, err := target.Load(s.root)
-		if err != nil {
-			return out, nil, http.StatusConflict, err
-		}
-		var problems []string
-		jobs, problems = export.Jobs(views, target.Folders(targets, request.Folders, home()), request.Targets)
-		out.Problems = append(out.Problems, problems...)
-	default:
-		return out, nil, http.StatusBadRequest, errors.New("name a View and a folder, or Targets")
+	names := request.Outlines
+	if request.All {
+		names = nil
 	}
+	jobs, problems := export.Jobs(outlines, request.Folders, home(), names)
+	out.Problems = append(out.Problems, problems...)
 	items, err := tree.LoadItems(s.root)
 	if err != nil {
 		return out, nil, http.StatusConflict, err
@@ -192,7 +93,7 @@ type exportResultJSON struct {
 }
 
 // exportRun plans again and writes only when the whole run is ready: one
-// Target with a problem means no Target is written.
+// Outline with a problem means no Outline is written.
 func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 	var request exportRequest
 	if !decode(w, r, &request) {

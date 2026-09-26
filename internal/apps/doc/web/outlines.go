@@ -2,30 +2,98 @@ package web
 
 import (
 	"net/http"
+	"sort"
 
+	"dgs-toolbox/internal/doc/country"
 	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
 
-// outlineList answers every Outline.
+type outlineJSON struct {
+	outline.Outline
+	// Default is the Outline's own folder on this machine, ~ made home.
+	Default string `json:"default"`
+}
+
+type outlinesJSON struct {
+	Outlines []outlineJSON `json:"outlines"`
+	// Keys is every key a layout can use with the tree's Items: the
+	// Templates' fields and the keys every Item has.
+	Keys []string `json:"keys"`
+	// Countries maps each country's every form to its alpha-3 code, so the
+	// page shows CN and 中国 as one condition value.
+	Countries map[string]string `json:"countries"`
+	// Migrated names the Outlines the tree's Views and Targets just became.
+	Migrated []string `json:"migrated,omitempty"`
+	Error    string   `json:"error,omitempty"`
+}
+
+// builtIn are the keys every Item has, and those derived from its fields.
+var builtIn = []string{"type", "kind", "id", "revision", "ext", "year", "month", "date"}
+
+// outlineList answers every Outline, first making the tree's Views and
+// Targets into Outlines if it still has them.
 func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
-	out := map[string]any{"outlines": []outline.Outline{}}
+	out := outlinesJSON{Outlines: []outlineJSON{}, Countries: map[string]string{}}
+	for _, c := range country.All() {
+		for _, f := range country.Formats {
+			out.Countries[c.In(f)] = c.Alpha3
+		}
+	}
+	seen := map[string]bool{}
+	var fields []string
+	if templates, err := tree.LoadTemplates(s.root); err == nil {
+		for _, t := range templates {
+			for _, f := range t.Fields {
+				if !seen[f.Key] {
+					seen[f.Key] = true
+					fields = append(fields, f.Key)
+				}
+			}
+		}
+	}
+	sort.Strings(fields)
+	for _, k := range builtIn {
+		if !seen[k] {
+			out.Keys = append(out.Keys, k)
+		}
+	}
+	out.Keys = append(fields, out.Keys...)
+	if tree.Require(s.root) == nil {
+		s.writing.Lock()
+		migrated, err := outline.Migrate(s.root)
+		s.writing.Unlock()
+		out.Migrated = migrated
+		if err != nil {
+			out.Error = err.Error()
+		}
+	}
 	entries, err := outline.Load(s.root)
 	if err != nil {
-		out["error"] = err.Error()
-	} else {
-		out["outlines"] = entries
+		out.Error = err.Error()
+	}
+	for _, o := range entries {
+		j := outlineJSON{Outline: o}
+		if o.Folder != "" {
+			j.Default = outline.Expand(o.Folder, home())
+		}
+		out.Outlines = append(out.Outlines, j)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// outlineGroup places the PDFs an Outline, saved or not, selects in its
-// folders. It writes nothing.
+// outlineGroup plans an Outline, saved or not, and nests the PDFs its rules
+// place into folders. It writes nothing.
 func (s server) outlineGroup(w http.ResponseWriter, r *http.Request) {
 	var o outline.Outline
 	if !decode(w, r, &o) {
 		return
+	}
+	for i := range o.Rules {
+		if o.Rules[i].Selection == "" {
+			o.Rules[i].Selection = view.Head
+		}
 	}
 	if err := o.Validate(); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

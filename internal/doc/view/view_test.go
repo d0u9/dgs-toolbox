@@ -1,8 +1,6 @@
 package view
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -129,33 +127,6 @@ func TestBuildClashAndNumbering(t *testing.T) {
 	}
 }
 
-func TestSaveLoadDelete(t *testing.T) {
-	root := t.TempDir()
-	none := "none"
-	v := View{Name: "important", Selection: Head, Layout: "{owner}/{type}.{ext}",
-		Query: map[string]Values{"type": {"id_card", "passport"}, "owner": {"emma"}}, Default: &none}
-	if err := Save(root, v); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(filepath.Join(root, Dir, "important.yaml"))
-	if !strings.Contains(string(data), "owner: emma") {
-		t.Fatalf("single value should be a scalar:\n%s", data)
-	}
-	got, err := Load(root)
-	if err != nil || len(got) != 1 || !reflect.DeepEqual(got[0], v) {
-		t.Fatalf("%v %+v", err, got)
-	}
-	if err := Save(root, View{Name: "Bad", Selection: Head, Layout: "x"}); err == nil {
-		t.Fatal("bad name saved")
-	}
-	if err := Delete(root, "important"); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := Load(root); len(got) != 0 {
-		t.Fatal("not deleted")
-	}
-}
-
 func TestFieldsFor(t *testing.T) {
 	got := FieldsFor([]string{"year", "owner", "month", "date"})
 	if !reflect.DeepEqual(got, []string{DateField, "owner"}) {
@@ -236,17 +207,6 @@ func TestAFileWhereAFolderIsWantedClashes(t *testing.T) {
 	files, clashes := separate([]File{{Path: "emma/x", Item: "A"}, {Path: "Emma/x/y.pdf", Item: "B"}, {Path: "tom.pdf", Item: "C"}})
 	if len(files) != 1 || files[0].Path != "tom.pdf" || len(clashes) != 1 || len(clashes[0].Files) != 2 {
 		t.Fatalf("files %v clashes %v", files, clashes)
-	}
-}
-
-func TestTargetIsValidated(t *testing.T) {
-	v := View{Name: "a", Selection: Head, Layout: "{owner}.{ext}", Target: "Google Drive"}
-	if v.Validate() == nil {
-		t.Fatal("a target with a space was accepted")
-	}
-	v.Target = "google"
-	if err := v.Validate(); err != nil {
-		t.Fatal(err)
 	}
 }
 

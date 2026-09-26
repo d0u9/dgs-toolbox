@@ -10,6 +10,8 @@
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/filetree.css">
+<link rel="stylesheet" href="/ui/filedialog.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="/app.css">
 </head>
@@ -22,9 +24,7 @@
   <a class="topbar-link" href="/browse/">Browse</a>
   <a class="topbar-link" href="/explore/">Explore</a>
   <a class="topbar-link" href="/templates/">Templates</a>
-  <a class="topbar-link" href="/views/">Views</a>
   <a class="topbar-link current" href="/outlines/">Outlines</a>
-  <a class="topbar-link" href="/targets/">Targets</a>
   <a class="topbar-link" href="/cases/">Cases</a>
   <a class="topbar-link" href="/merge/">Merge</a>
   <a class="topbar-link" href="/import/">Import</a>
@@ -44,7 +44,26 @@
   <form id="form" class="view-form outline-form">
     <div class="view-group">
       <label class="vf"><span class="vf-label">Name</span>
-        <input id="name" spellcheck="false" autocomplete="off" placeholder="vehicles"></label>
+        <input id="name" spellcheck="false" autocomplete="off" placeholder="phone"></label>
+      <label class="vf"><span class="vf-label">For</span>
+        <input id="about" autocomplete="off" placeholder="read on the phone"></label>
+      <div class="vf"><span class="vf-label">Exports to</span>
+        <div class="checks">
+          <button id="folder" class="button export-folder" type="button" title="The folder every machine exports to unless another is chosen on Explore">
+            <span id="folder-path" class="export-path"></span></button>
+          <button id="folder-clear" class="button small-button" type="button" title="Keep no folder: one is chosen when exporting">Clear</button>
+        </div>
+      </div>
+    </div>
+    <div class="view-group">
+      <h3>Rules</h3>
+      <div id="rules" class="rule-tabs"></div>
+      <div class="vf"><span class="vf-label">Rule name</span>
+        <div class="checks">
+          <input id="rule-name" class="short mono" spellcheck="false" autocomplete="off" placeholder="ids">
+          <button id="rule-delete" class="button small-button danger" type="button">Remove rule</button>
+        </div>
+      </div>
     </div>
     <div class="view-group">
       <h3>Which PDFs</h3>
@@ -63,18 +82,33 @@
       </div>
     </div>
     <div class="view-group">
-      <h3>Folders</h3>
-      <div class="vf vf-wide"><span class="vf-label">Levels</span>
+      <h3>Where they go</h3>
+      <div class="vf vf-wide"><span class="vf-label">Path</span>
         <div class="layout-wrap">
-          <input id="layout" class="mono" spellcheck="false" autocomplete="off" placeholder="{country:alpha2} {make}/{plate#}"
+          <input id="layout" class="mono" spellcheck="false" autocomplete="off" placeholder="{country:alpha2} {make}/{plate#}/{type}.{ext}"
             role="combobox" aria-autocomplete="list" aria-controls="suggest">
           <ul id="suggest" class="suggest" role="listbox" hidden></ul>
         </div>
-        <p class="layout-help">Click a key to add it. <code>/</code> starts the next level; <code>{plate#}</code> numbers a level as 01-, 02- in the order below.</p>
+        <p class="layout-help">Click a key to add it. <code>/</code> starts a folder; the last part names the PDF. <code>{plate#}</code> numbers as 01-, 02- in the order below.</p>
       </div>
       <div id="keys" class="key-groups"></div>
       <div id="order-row" class="vf" hidden><span class="vf-label">Numbering</span>
         <div class="vf-stack"><div id="order"></div></div>
+      </div>
+    </div>
+    <div class="view-group">
+      <h3>When it does not fit</h3>
+      <div class="vf"><span class="vf-label">Missing key</span>
+        <div class="checks">
+          <label><input type="checkbox" id="use-default"> write</label>
+          <input id="default" class="short" value="none" spellcheck="false" autocomplete="off">
+          <span class="muted">instead of leaving it out</span>
+        </div>
+      </div>
+      <div class="vf"><span class="vf-label">Same path</span>
+        <div class="checks">
+          <label><input type="checkbox" id="dedupe"> number them _01, _02</label>
+        </div>
       </div>
     </div>
     <div class="view-actions">

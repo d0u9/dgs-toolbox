@@ -29,7 +29,7 @@ type Doc struct {
 	// DateOrder is how a date like 03/04/2026 is read: DMY or MDY. Empty is
 	// dates.DefaultOrder.
 	DateOrder string `json:"date_order"`
-	// Targets is no longer read: a tree's Targets are in its targets.yaml.
+	// Targets is no longer read: each Outline in a tree names its own folder.
 	// It is kept so a configuration still holding it is told where they
 	// went, rather than that the key is unknown.
 	Targets map[string]string `json:"targets"`

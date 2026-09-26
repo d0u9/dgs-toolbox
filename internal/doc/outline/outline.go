@@ -1,7 +1,8 @@
-// Package outline is a doc tree's Outlines: a browsing tree of folders an
-// Outline's layout groups its Items into, each folder counting the PDFs
-// beneath it. It shares a View's query, selection, layout and numbering but
-// is never exported. The rules are in docs/apps/doc/index.md.
+// Package outline is a doc tree's Outlines. An Outline is a tree of PDFs
+// made by its rules: each rule selects Items and names the path each of
+// their PDFs has, and the rules' paths together are the tree. The same tree
+// is browsed and, into a folder chosen then, exported. The rules are in
+// docs/apps/doc/index.md.
 package outline
 
 import (
@@ -10,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -22,35 +24,51 @@ import (
 // Dir is the folder under a tree's root that holds one file per Outline.
 const Dir = "outlines"
 
-// Outline is one file under outlines/. Its layout names folders only: the
-// PDFs are listed in the folder they land in, never named.
+// Outline is one file under outlines/.
 type Outline struct {
-	Name      string                 `yaml:"name" json:"name"`
-	Query     map[string]view.Values `yaml:"query,omitempty" json:"query"`
-	Selection view.Selection         `yaml:"selection" json:"selection"`
-	Layout    string                 `yaml:"layout" json:"layout"`
-	Order     map[string][]string    `yaml:"order,omitempty" json:"order,omitempty"`
+	Name string `yaml:"name" json:"name"`
+	// About says what it is for: "read on the phone".
+	About string `yaml:"about,omitempty" json:"about,omitempty"`
+	// Folder is where it is exported unless another is chosen then. A
+	// leading ~ is the home directory of the machine exporting. Empty asks
+	// every time.
+	Folder string `yaml:"folder,omitempty" json:"folder,omitempty"`
+	// Rules place the PDFs, each named uniquely within the Outline.
+	Rules []view.View `yaml:"rules" json:"rules"`
 }
 
-// fileKey names each PDF inside its folder while planning; it is dropped
-// from the path, so the layout's segments are all folders.
-const fileKey = "{id}-{revision}"
-
-// asView is o as a View whose last segment names each PDF uniquely.
-func (o Outline) asView() view.View {
-	return view.View{Name: o.Name, Query: o.Query, Selection: o.Selection, Layout: o.Layout + "/" + fileKey, Order: o.Order}
-}
+var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // Validate reports the first thing wrong with o.
 func (o Outline) Validate() error {
-	if o.Selection == "" {
-		o.Selection = view.Head
+	if !namePattern.MatchString(o.Name) {
+		return fmt.Errorf("outline %q: use lowercase letters, digits, _ and -", o.Name)
 	}
-	err := o.asView().Validate()
-	if err != nil {
-		return errors.New(strings.Replace(err.Error(), "view ", "outline ", 1))
+	if o.Folder != "" && !strings.HasPrefix(o.Folder, "~") && !filepath.IsAbs(o.Folder) {
+		return fmt.Errorf("outline %s: the folder %q is neither absolute nor under ~", o.Name, o.Folder)
+	}
+	seen := map[string]bool{}
+	for _, r := range o.Rules {
+		if err := r.Validate(); err != nil {
+			return fmt.Errorf("outline %s: %s", o.Name, strings.Replace(err.Error(), "view ", "rule ", 1))
+		}
+		if seen[r.Name] {
+			return fmt.Errorf("outline %s: two rules are named %s", o.Name, r.Name)
+		}
+		seen[r.Name] = true
 	}
 	return nil
+}
+
+// Expand is folder with a leading ~ made home.
+func Expand(folder, home string) string {
+	if folder == "~" {
+		return home
+	}
+	if strings.HasPrefix(folder, "~/") {
+		return filepath.Join(home, folder[2:])
+	}
+	return folder
 }
 
 // Parse reads one Outline file, refusing keys it does not know.
@@ -61,8 +79,10 @@ func Parse(data []byte) (Outline, error) {
 	if err := decoder.Decode(&o); err != nil {
 		return Outline{}, err
 	}
-	if o.Selection == "" {
-		o.Selection = view.Head
+	for i := range o.Rules {
+		if o.Rules[i].Selection == "" {
+			o.Rules[i].Selection = view.Head
+		}
 	}
 	return o, o.Validate()
 }
@@ -97,8 +117,13 @@ func Load(root string) ([]Outline, error) {
 // rename, once it is valid. Previous, when it names another Outline, is
 // removed after.
 func Save(root, previous string, o Outline) error {
-	if o.Selection == "" {
-		o.Selection = view.Head
+	for i := range o.Rules {
+		if o.Rules[i].Selection == "" {
+			o.Rules[i].Selection = view.Head
+		}
+	}
+	if o.Rules == nil {
+		o.Rules = []view.View{}
 	}
 	if err := o.Validate(); err != nil {
 		return err
@@ -107,7 +132,17 @@ func Save(root, previous string, o Outline) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(root, Dir)
+	if err := write(filepath.Join(root, Dir), o.Name+".yaml", data); err != nil {
+		return err
+	}
+	if previous != "" && previous != o.Name {
+		return Delete(root, previous)
+	}
+	return nil
+}
+
+// write puts data at dir/name through a temporary file and a rename.
+func write(dir, name string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -127,18 +162,12 @@ func Save(root, previous string, o Outline) error {
 	if err := temp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temp.Name(), filepath.Join(dir, o.Name+".yaml")); err != nil {
-		return err
-	}
-	if previous != "" && previous != o.Name {
-		return Delete(root, previous)
-	}
-	return nil
+	return os.Rename(temp.Name(), filepath.Join(dir, name))
 }
 
 // Delete removes an Outline's file. One that is not there is not an error.
 func Delete(root, name string) error {
-	if strings.ContainsAny(name, `/\`) || name == "" || name == "." || name == ".." {
+	if !namePattern.MatchString(name) {
 		return fmt.Errorf("outline %q: not an outline name", name)
 	}
 	err := os.Remove(filepath.Join(root, Dir, name+".yaml"))
@@ -154,35 +183,33 @@ type Node struct {
 	// Path is the folder's segments joined by /.
 	Path string `json:"path"`
 	// Count is every PDF in the folder and beneath it.
-	Count    int         `json:"count"`
+	Count int `json:"count"`
+	// Files are the PDFs directly in the folder, each with its whole path.
 	Files    []view.File `json:"files"`
 	Children []*Node     `json:"children"`
 }
 
-// Grouping is an Outline's folders, and the PDFs it selects but cannot place.
+// Grouping is an Outline's rules planned together, and the tree of the PDFs
+// with a path of their own. What the tree lacks is in the plans' Missing and
+// Clashes, and in Clashes between rules.
 type Grouping struct {
-	Root    *Node          `json:"root"`
-	Missing []view.Missing `json:"missing"`
+	view.Combined
+	Root *Node `json:"root"`
 }
 
-// Group places every PDF o selects in its folder. Folders sort by name,
-// which keeps numbered folders in their order; PDFs sort by Item ID and
-// revision.
+// Group plans o's rules together and puts every placed PDF in its folder.
+// Folders and files sort by name, which keeps numbered ones in their order.
 func Group(o Outline, items []tree.Item, names view.TypeNames) (Grouping, error) {
-	if o.Selection == "" {
-		o.Selection = view.Head
-	}
-	plan, err := view.Build(o.asView(), items, names)
+	combined, err := view.Combine(o.Rules, items, names)
 	if err != nil {
 		return Grouping{}, err
 	}
+	return Grouping{Combined: combined, Root: Nest(combined.Files)}, nil
+}
+
+// Nest puts files, each at a path of its own, into folders.
+func Nest(files []view.File) *Node {
 	root := &Node{Files: []view.File{}, Children: []*Node{}}
-	files := append([]view.File(nil), plan.Files...)
-	// Clashes cannot happen, as each PDF's last segment is its own; a case
-	// fold of two folders still lands both in the first one's spelling.
-	for _, c := range plan.Clashes {
-		files = append(files, c.Files...)
-	}
 	for _, f := range files {
 		segments := strings.Split(f.Path, "/")
 		node := root
@@ -191,11 +218,10 @@ func Group(o Outline, items []tree.Item, names view.TypeNames) (Grouping, error)
 			node = child(node, s, strings.Join(segments[:i+1], "/"))
 			node.Count++
 		}
-		f.Path = strings.Join(segments[:len(segments)-1], "/")
 		node.Files = append(node.Files, f)
 	}
 	tidy(root)
-	return Grouping{Root: root, Missing: plan.Missing}, nil
+	return root
 }
 
 func child(n *Node, name, path string) *Node {
@@ -211,13 +237,7 @@ func child(n *Node, name, path string) *Node {
 
 func tidy(n *Node) {
 	sort.Slice(n.Children, func(i, j int) bool { return n.Children[i].Name < n.Children[j].Name })
-	sort.Slice(n.Files, func(i, j int) bool {
-		a, b := n.Files[i], n.Files[j]
-		if a.Item != b.Item {
-			return a.Item < b.Item
-		}
-		return a.Revision < b.Revision
-	})
+	sort.Slice(n.Files, func(i, j int) bool { return n.Files[i].Path < n.Files[j].Path })
 	for _, c := range n.Children {
 		tidy(c)
 	}

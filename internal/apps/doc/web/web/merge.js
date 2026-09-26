@@ -43,7 +43,7 @@ function side(conflict, which) {
 
 function conflictRow(c) {
   const title = c.kind === "template" ? "Template " + c.type
-    : c.kind === "view" ? "View " + c.name
+    : c.kind === "outline" ? "Outline " + c.name
     : [named(c.item), c.kind === "fields" ? " — fields differ" : " — HEAD moved on both sides"];
   const option = (which, text) => el("label", { className: "merge-choice" },
     el("input", { type: "radio", name: c.id, value: which, checked: choices[c.id] === which,
@@ -68,7 +68,7 @@ function draw() {
         c.notes ? "notes added" : "",
       ].filter(Boolean).join(" · "))))),
     section("New Templates", plan.templates.map((t) => el("li", {}, t))),
-    section("New Views", plan.views.map((v) => el("li", {}, v))),
+    section("New Outlines", plan.outlines.map((v) => el("li", {}, v))),
     plan.same ? el("p", { className: "muted merge-intro" }, plan.same + " Item" + (plan.same === 1 ? " is" : "s are") + " already here as they are") : null,
   ].filter(Boolean);
   $("plan").replaceChildren(...parts);
@@ -76,7 +76,7 @@ function draw() {
 }
 
 function ready() {
-  const nothing = plan && !plan.new.length && !plan.changed.length && !plan.templates.length && !plan.views.length && !plan.conflicts.length;
+  const nothing = plan && !plan.new.length && !plan.changed.length && !plan.templates.length && !plan.outlines.length && !plan.conflicts.length;
   const open = plan ? plan.conflicts.filter((c) => !choices[c.id]).length : 0;
   $("merge").disabled = !plan || plan.problems.length > 0 || open > 0 || nothing;
   if (!plan) return;
@@ -121,7 +121,7 @@ $("merge").onclick = async () => {
     state = await loadState();
     await planFor(dir);
     say($("message"), "Merged: " + result.items + " Item" + (result.items === 1 ? "" : "s") + " written, " + result.pdfs + " PDF" + (result.pdfs === 1 ? "" : "s") + " copied, " +
-      result.templates + " Template" + (result.templates === 1 ? "" : "s") + ", " + result.views + " View" + (result.views === 1 ? "" : "s") + ".");
+      result.templates + " Template" + (result.templates === 1 ? "" : "s") + ", " + result.outlines + " Outline" + (result.outlines === 1 ? "" : "s") + ".");
   } catch (error) {
     say($("message"), error.message, true);
     ready();

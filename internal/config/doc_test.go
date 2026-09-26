@@ -25,7 +25,7 @@ func TestDocDateOrder(t *testing.T) {
 
 func TestDocTargetsSayWhereTheyWent(t *testing.T) {
 	_, err := LoadPath(writeConfig(t, `{"doc": {"targets": {"icloud": "~/Docs"}}}`))
-	if err == nil || !strings.Contains(err.Error(), "targets.yaml") {
+	if err == nil || !strings.Contains(err.Error(), "Outline") {
 		t.Fatalf("doc.targets: %v", err)
 	}
 }
