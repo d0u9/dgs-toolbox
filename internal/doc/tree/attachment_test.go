@@ -26,11 +26,11 @@ func TestSnapshotLifecycle(t *testing.T) {
 	}
 	root := t.TempDir()
 	must(tree.Init(root, now))
-	data := []byte("type: bank_card\nkind: document\nfields:\n  - key: owner\n    required: true\n    distinguishing: true\n  - key: card_name\n    required: true\n    distinguishing: true\n  - key: expires\n    type: month\n    per_revision: true\n")
+	data := []byte("type: bank_card\nkind: document\nfields:\n  - key: owner\n    required: true\n    distinguishing: true\n  - key: country\n    type: country\n    format: alpha2\n    required: true\n  - key: card_name\n    required: true\n    distinguishing: true\n  - key: expires\n    type: month\n    per_revision: true\n")
 	must(os.WriteFile(filepath.Join(root, tree.TemplatesDir, "bank_card.yaml"), data, 0600))
 	tpl, err := tree.ParseTemplate(data)
 	must(err)
-	req := tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "alex", "card_name": "A", "expires": "2026-09"}, Now: now, Notes: "mobile", Tags: []string{"bank"}}
+	req := tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2026-09"}, Now: now, Notes: "mobile", Tags: []string{"bank"}}
 	item, err := tree.CreateWithoutPDF(req)
 	must(err)
 	initial := item.Current()
@@ -75,7 +75,7 @@ func TestSnapshotLifecycle(t *testing.T) {
 	if len(same.Revisions) != 3 || len(same.History) != len(item.History) {
 		t.Fatal("same PDF created a snapshot")
 	}
-	item, err = tree.SetFields(root, item.ID, attached, tpl, map[string]string{"owner": "alex", "card_name": "A", "expires": "2028-02"}, now.Add(3*time.Hour))
+	item, err = tree.SetFields(root, item.ID, attached, tpl, map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2028-02"}, now.Add(3*time.Hour))
 	must(err)
 	edited := item.Current()
 	if len(item.Revisions) != 4 || item.CurrentDigest() != blob || item.FieldsAt(attached)["expires"] != "2026-09" {
@@ -129,7 +129,7 @@ func TestSnapshotLifecycle(t *testing.T) {
 	}
 	// A later snapshot merges without confusing HEAD's derived fields with
 	// independently edited Item metadata.
-	item, err = tree.SetFields(root, item.ID, item.Current(), tpl, map[string]string{"owner": "alex", "card_name": "A", "expires": "2033-03"}, now.Add(4*time.Hour))
+	item, err = tree.SetFields(root, item.ID, item.Current(), tpl, map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2033-03"}, now.Add(4*time.Hour))
 	must(err)
 	src, err = merge.FromTree(root)
 	must(err)

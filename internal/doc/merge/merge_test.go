@@ -21,6 +21,9 @@ fields:
   - key: owner
     required: true
     distinguishing: true
+  - key: country
+    type: country
+    required: true
   - key: number
 `
 
@@ -28,6 +31,10 @@ const bill = `type: bill
 kind: record
 fields:
   - key: owner
+    required: true
+  - key: country
+    type: country
+    required: true
 `
 
 var now = time.Date(2026, 9, 25, 10, 0, 0, 0, time.UTC)
@@ -208,7 +215,7 @@ func TestHeads(t *testing.T) {
 
 func TestTemplateConflictAndUnknownType(t *testing.T) {
 	full := newTree(t, passport)
-	sub := newTree(t, passport+"  - key: country\n")
+	sub := newTree(t, passport+"  - key: issuer\n")
 	src := source(t, sub)
 	p := plan(t, full, src)
 	if len(p.Conflicts) != 1 || p.Conflicts[0].ID != "template:passport" {
@@ -217,7 +224,7 @@ func TestTemplateConflictAndUnknownType(t *testing.T) {
 	if _, err := Apply(context.Background(), full, src, p, map[string]string{"template:passport": Theirs}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(full, tree.TemplatesDir, "passport.yaml")); string(data) != passport+"  - key: country\n" {
+	if data, _ := os.ReadFile(filepath.Join(full, tree.TemplatesDir, "passport.yaml")); string(data) != passport+"  - key: issuer\n" {
 		t.Fatalf("template: %s", data)
 	}
 

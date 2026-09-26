@@ -3,7 +3,7 @@ package tree
 import "testing"
 
 func TestMonthFields(t *testing.T) {
-	tpl, err := ParseTemplate([]byte("type: bank_card\nkind: document\nfields:\n  - key: expires\n    type: month\n    per_revision: true\ndefaults:\n  expires: 2030-02\n"))
+	tpl, err := ParseTemplate([]byte("type: bank_card\nkind: document\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n  - key: expires\n    type: month\n    per_revision: true\ndefaults:\n  expires: 2030-02\n"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -207,10 +207,10 @@ func TestRevisionsMoveHeadAndBack(t *testing.T) {
 
 func TestRecordsDoNotAcceptRenewals(t *testing.T) {
 	root := newTree(t)
-	write(t, filepath.Join(root, TemplatesDir, "payslip.yaml"), "type: payslip\nkind: record\nfields:\n  - key: owner\n")
+	write(t, filepath.Join(root, TemplatesDir, "payslip.yaml"), "type: payslip\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n")
 	templates, _ := LoadTemplates(root)
 	source := write(t, filepath.Join(root, "p.pdf"), "%PDF p")
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: templates[1], Now: now})
+	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: templates[1], Fields: map[string]string{"owner": "emma", "country": "AU"}, Now: now})
 	if err != nil || item.Head == "" {
 		t.Fatalf("%+v %v", item, err)
 	}
@@ -254,6 +254,8 @@ func TestFieldTypes(t *testing.T) {
 		}
 	}
 	tpl := Template{Type: "bill", Kind: KindRecord, Fields: []Field{
+		{Key: "owner", Required: true},
+		{Key: "country", Type: FieldCountry, Required: true},
 		{Key: "issued_at", Type: FieldDate},
 		{Key: "currency", Type: FieldSelect, Options: []string{"AUD", "CNY"}},
 		{Key: "replaces", Type: FieldItem},
@@ -264,11 +266,11 @@ func TestFieldTypes(t *testing.T) {
 	for _, given := range []map[string]string{
 		{"issued_at": "2026-13-01"}, {"currency": "USD"}, {"replaces": "not-an-id"},
 	} {
-		if _, err := CleanFields(tpl, given); err == nil {
+		if _, err := CleanFields(tpl, withMandatory(given)); err == nil {
 			t.Errorf("%v accepted", given)
 		}
 	}
-	if _, err := CleanFields(tpl, map[string]string{"issued_at": "2026-09-25", "currency": "AUD"}); err != nil {
+	if _, err := CleanFields(tpl, map[string]string{"owner": "emma", "country": "AU", "issued_at": "2026-09-25", "currency": "AUD"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -381,6 +383,7 @@ func TestPerRevisionFields(t *testing.T) {
 	root := newTree(t)
 	tpl := Template{Type: "card", Kind: KindDocument, Fields: []Field{
 		{Key: "owner", Required: true, Distinguishing: true},
+		{Key: "country", Type: FieldCountry, Required: true},
 		{Key: "number", Required: true, PerRevision: true},
 		{Key: "expires", PerRevision: true},
 		{Key: "note"},
@@ -390,7 +393,7 @@ func TestPerRevisionFields(t *testing.T) {
 	}
 	old := write(t, filepath.Join(root, "old.pdf"), "%PDF old")
 	item, err := Import(context.Background(), ImportRequest{Root: root, Source: old, Template: tpl, Now: now,
-		Fields: map[string]string{"owner": "emma", "number": "111", "expires": "2020", "note": "x"}})
+		Fields: map[string]string{"owner": "emma", "country": "AU", "number": "111", "expires": "2020", "note": "x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +404,7 @@ func TestPerRevisionFields(t *testing.T) {
 	if _, err := AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"expires": "2030"}, now); err == nil {
 		t.Fatal("a revision without its required number was added")
 	}
-	if _, err := AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"number": "222", "owner": "tom"}, now); err == nil {
+	if _, err := AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"number": "222", "owner": "tom", "country": "AU"}, now); err == nil {
 		t.Fatal("a revision changed the Item's own field")
 	}
 	item, err = AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"number": "222", "expires": "2030"}, now)
@@ -416,7 +419,7 @@ func TestPerRevisionFields(t *testing.T) {
 		t.Fatalf("old card: %v", got)
 	}
 	// Editing an old snapshot creates a new HEAD and preserves both old cards.
-	item, err = SetFields(root, item.ID, first, tpl, map[string]string{"owner": "emma", "number": "110", "note": "y"}, time.Now())
+	item, err = SetFields(root, item.ID, first, tpl, map[string]string{"owner": "emma", "country": "AU", "number": "110", "note": "y"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,5 +562,35 @@ func TestRevisionTagsAreTheRevisionsOwn(t *testing.T) {
 	}
 	if _, err := SetRevisionTags(root, "A", "nope", nil, at); err == nil {
 		t.Fatal("unknown revision accepted")
+	}
+}
+
+// withMandatory adds the fields every Template requires to given.
+func withMandatory(given map[string]string) map[string]string {
+	out := map[string]string{"owner": "emma", "country": "AU"}
+	for k, v := range given {
+		out[k] = v
+	}
+	return out
+}
+
+func TestEveryTemplateRequiresOwnerAndCountry(t *testing.T) {
+	owner := Field{Key: "owner", Required: true}
+	country := Field{Key: "country", Type: FieldCountry, Required: true}
+	for name, fields := range map[string][]Field{
+		"no owner":             {country},
+		"no country":           {owner},
+		"optional owner":       {{Key: "owner"}, country},
+		"optional country":     {owner, {Key: "country", Type: FieldCountry}},
+		"country as free text": {owner, {Key: "country", Required: true}},
+	} {
+		for _, kind := range []Kind{KindDocument, KindRecord} {
+			if (Template{Type: "x", Kind: kind, Fields: fields}).Validate() == nil {
+				t.Errorf("%s %s accepted", kind, name)
+			}
+		}
+	}
+	if err := (Template{Type: "x", Kind: KindRecord, Fields: []Field{owner, country}}).Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

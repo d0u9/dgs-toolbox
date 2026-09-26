@@ -174,7 +174,7 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 
 func TestChangeTypePageAndAPI(t *testing.T) {
 	root, scans := setup(t, true)
-	write(t, filepath.Join(root, tree.TemplatesDir, "student_id.yaml"), "type: student_id\nkind: document\nfields:\n  - key: owner\n    required: true\n    distinguishing: true\n  - key: school\n    required: true\n")
+	write(t, filepath.Join(root, tree.TemplatesDir, "student_id.yaml"), "type: student_id\nkind: document\nfields:\n  - key: owner\n    required: true\n    distinguishing: true\n  - key: country\n    type: country\n    required: true\n  - key: school\n    required: true\n")
 	h := Handler(Settings{Root: root})
 	if rec := do(h, "GET", "/change-type/", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Current Item") {
 		t.Fatalf("page: %d", rec.Code)
@@ -186,7 +186,7 @@ func TestChangeTypePageAndAPI(t *testing.T) {
 	if rec := do(h, "POST", "/api/change-type", `{"item":"`+id+`","type":"student_id","fields":{"owner":"emma"}}`); rec.Code == http.StatusOK {
 		t.Fatal("missing field accepted")
 	}
-	if rec := do(h, "POST", "/api/change-type", `{"item":"`+id+`","type":"student_id","fields":{"owner":"emma","school":"Uni"}}`); rec.Code != http.StatusOK {
+	if rec := do(h, "POST", "/api/change-type", `{"item":"`+id+`","type":"student_id","fields":{"owner":"emma","country":"AU","school":"Uni"}}`); rec.Code != http.StatusOK {
 		t.Fatalf("change: %d %s", rec.Code, rec.Body.String())
 	}
 	item := state(t, h).Items[0]

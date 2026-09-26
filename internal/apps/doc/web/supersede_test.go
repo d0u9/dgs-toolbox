@@ -9,7 +9,7 @@ import (
 
 func TestImportVisaReplacement(t *testing.T) {
 	root, _ := setup(t, true)
-	write(t, filepath.Join(root, tree.TemplatesDir, "visa.yaml"), "type: visa\nkind: record\nfields:\n  - key: owner\n    required: true\n    distinguishing: true\n  - key: country\n    type: country\n  - key: number\n    required: true\n    distinguishing: true\n")
+	write(t, filepath.Join(root, tree.TemplatesDir, "visa.yaml"), "type: visa\nkind: record\nfields:\n  - key: owner\n    required: true\n    distinguishing: true\n  - key: country\n    type: country\n    required: true\n  - key: number\n    required: true\n    distinguishing: true\n")
 	h := Handler(Settings{Root: root})
 	rec := do(h, "POST", "/api/import", `{"no_pdf":true,"type":"visa","fields":{"owner":"alex","country":"AU","number":"old"}}`)
 	if rec.Code != 200 {
