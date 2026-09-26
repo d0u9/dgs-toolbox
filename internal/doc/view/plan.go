@@ -121,8 +121,9 @@ func FieldsFor(keys []string) []string {
 		if k == "year" || k == "month" || k == "date" {
 			k = DateField
 		}
-		if strings.HasPrefix(k, "type:") {
-			// A type's name comes from its Template, not an Item field.
+		if strings.HasPrefix(k, "type:") || strings.Contains(k, "|") {
+			// A type's name comes from its Template, and alternatives name
+			// an order, not an Item field.
 			continue
 		}
 		if !seen[k] {
