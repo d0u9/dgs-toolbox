@@ -255,7 +255,7 @@ func TestPagesAreServed(t *testing.T) {
 	if rec := do(h, "GET", "/", ""); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/browse/" {
 		t.Fatalf("/: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
-	for _, p := range []string{"/browse/", "/import/", "/common.js", "/browse.js", "/import.js", "/app.css", "/ui/tags.js", "/ui/tags.css", "/ui/filedialog.js", "/ui/files/dir"} {
+	for _, p := range []string{"/browse/", "/import/", "/outlines/", "/common.js", "/browse.js", "/import.js", "/outlines.js", "/app.css", "/ui/tags.js", "/ui/tags.css", "/ui/filedialog.js", "/ui/files/dir"} {
 		if rec := do(h, "GET", p, ""); rec.Code != http.StatusOK {
 			t.Errorf("%s: %d", p, rec.Code)
 		}
@@ -545,5 +545,31 @@ func TestCreateWithoutPDFAndAttach(t *testing.T) {
 	must(t, json.Unmarshal(rec.Body.Bytes(), &item))
 	if len(item.Revisions) != 2 || item.Current() != ref || item.CurrentDigest() != "" {
 		t.Fatalf("renewed: %+v", item)
+	}
+}
+
+func TestOutlinesGroupSaveDelete(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root})
+	body := `{"dir":` + q(scans) + `,"path":"emma/licence.pdf","type":"id_card","fields":{"owner":"emma","country":"AU"}}`
+	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	text := "name: people\n# grouped by owner\nlayout: '{country:alpha2}/{owner}'\n"
+	rec := do(h, "POST", "/api/outlines/group", `{"data":`+q(text)+`}`)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"AU/emma","count":1`) {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/outlines", `{"data":`+q(text)+`}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "GET", "/api/outlines", ""); !strings.Contains(rec.Body.String(), `# grouped by owner`) {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/outlines/delete", `{"name":"people"}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/outlines", `{"data":"name: x\nlayout: '{owner#}'\n"}`); rec.Code != 400 {
+		t.Fatal("bad outline saved")
 	}
 }

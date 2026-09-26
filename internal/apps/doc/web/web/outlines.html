@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Outlines · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/doc.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/codeedit.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before saving Outlines in it.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link current" href="/outlines/">Outlines</a>
+  <a class="topbar-link" href="/templates/">Templates</a>
+  <a class="topbar-link" href="/views/">Views</a>
+  <a class="topbar-link" href="/targets/">Targets</a>
+  <a class="topbar-link" href="/cases/">Cases</a>
+  <a class="topbar-link" href="/merge/">Merge</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <a class="topbar-link" href="/log/">Log</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="work">
+  <section class="list">
+    <div class="list-head">
+      <h2>Outlines <span id="count" class="count numeric"></span></h2>
+      <button id="new" class="button" type="button">+ New</button>
+    </div>
+    <ul id="outlines" class="template-list scroll"></ul>
+  </section>
+  <section class="outline-main">
+    <div class="template-bar">
+      <div class="template-title">
+        <h2 id="title">outline</h2>
+        <span id="total" class="count muted"></span>
+        <span id="dirty" class="dirty" hidden>Unsaved</span>
+      </div>
+      <p id="message" class="message"></p>
+      <button id="edit" class="button" type="button" aria-pressed="false">Edit</button>
+      <button id="save" class="action" type="button" title="Save (Ctrl+S)" hidden>Save</button>
+    </div>
+    <div id="editor-row" class="outline-editor" hidden>
+      <div id="yaml" class="outline-yaml"></div>
+      <div class="outline-help">
+        <p class="about">Saved to <code id="file">outlines/&lt;name&gt;.yaml</code> as written.</p>
+        <dl class="ref">
+          <dt><code>query</code></dt><dd>Which Items, as a View's: <code>type: [a, b]</code>, <code>owner: emma</code>.</dd>
+          <dt><code>selection</code></dt><dd><code>head</code> (default) or <code>all</code> revisions.</dd>
+          <dt><code>layout</code></dt><dd>Folders only, one level per <code>/</code>: <code>{country:alpha2} {make}/{plate#}</code>.</dd>
+          <dt><code>order</code></dt><dd>Per numbered key, its values in order: <code>plate: [浙AF3897, 浙AT73C7]</code>.</dd>
+        </dl>
+        <button id="delete" class="button danger" type="button" hidden>Delete…</button>
+      </div>
+    </div>
+    <div id="tree" class="outline-tree scroll" role="tree"></div>
+  </section>
+  <aside class="side outline-side">
+    <div class="result-head"><h3 id="folder">PDFs</h3><span id="folder-count" class="count muted"></span></div>
+    <ul id="files" class="outline-files"></ul>
+  </aside>
+</main>
+<script type="module" src="/outlines.js"></script>
+</body>
+</html>
