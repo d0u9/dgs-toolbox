@@ -577,6 +577,19 @@ A rule has a query, a selection, and a layout. It may leave PDFs out and select 
   offers it beside `is` on every condition, `is` picking from the values
   Items hold and `contains` taking typed text. One key may have both
   conditions, and both must hold.
+  A condition may be asked of some types only: `query_types` (and
+  `exclude_types` for an exclusion) lists them by the condition's key,
+  and an Item of another type is not asked it. A rule taking letters,
+  visas and cards can so keep only the letters whose name holds a word:
+  ```yaml
+  query:
+    type: [official_letter, visa, social_card]
+    name contains: [tax]
+  query_types:
+    name contains: [official_letter]
+  ```
+  On the Rules page each condition's "for every type" button unfolds the
+  rule's types to tick; none ticked asks every type.
   The key `tags` selects by tag, per revision: a revision matches when the
   Item's tags or its own include one of the values, ignoring case. An
   Item's tag holds for every revision; a revision's only for itself.

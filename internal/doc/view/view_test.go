@@ -217,6 +217,35 @@ func TestBuildContains(t *testing.T) {
 	}
 }
 
+func TestBuildConditionTypes(t *testing.T) {
+	letter := item("L1", "official_letter", map[string]string{"name": "Tax notice"}, "d1")
+	other := item("L2", "official_letter", map[string]string{"name": "Parking fine"}, "d2")
+	visa := item("V", "visa", map[string]string{"name": "Subclass 500"}, "d3")
+	card := item("C", "social_card", map[string]string{}, "d4")
+	v := View{Name: "x", Selection: Head, Layout: "{id}.{ext}",
+		Query:        map[string]Values{"type": {"official_letter", "visa", "social_card"}, "name contains": {"tax"}},
+		QueryTypes:   map[string]Values{"name contains": {"official_letter"}},
+		Exclude:      map[string]Values{"name contains": {"500"}},
+		ExcludeTypes: map[string]Values{"name contains": {"official_letter"}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, _ := Build(v, []tree.Item{letter, other, visa, card}, nil)
+	var got []string
+	for _, f := range plan.Files {
+		got = append(got, f.Path)
+	}
+	// Only letters are asked the name; the visa's name is not excluded, as
+	// that exclusion is for letters.
+	if want := []string{"C.pdf", "L1.pdf", "V.pdf"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	v.QueryTypes = map[string]Values{"owner": {"visa"}}
+	if err := v.Validate(); err == nil {
+		t.Fatal("types for a condition the query lacks were accepted")
+	}
+}
+
 func TestBuildMissingAndDefault(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"owner": "emma"}, "d1")}
 	v := View{Name: "x", Selection: Head, Layout: "{country}/{owner}/{year}.{ext}"}

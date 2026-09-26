@@ -633,6 +633,10 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .condition-head { display: flex; align-items: center; gap: 6px; }
 .condition-head select { flex: 1; max-width: none; }
 .condition-head .condition-op { flex: none; width: auto; }
+.condition-types { padding-top: 4px; border-top: 1px dashed var(--hairline); font-size: var(--font-size-xs); }
+.condition .condition-types[hidden], .condition .condition-for[hidden] { display: none !important; }
+.condition-for { align-self: flex-start; padding: 0; font: inherit; font-size: var(--font-size-xs); color: var(--graphite); background: none; border: 0; cursor: pointer; text-decoration: underline dotted; }
+.condition-for:hover { color: var(--primary); }
 .vf .condition .checks > input { grid-column: 1 / -1; min-width: 0; width: 100%; }
 .condition .checks { gap: 6px 16px; }
 #types.checks, .condition .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 12px; }
