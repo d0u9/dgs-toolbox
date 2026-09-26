@@ -131,10 +131,20 @@ export function inputFor(field, value, placeholder, state, self) {
 export const fieldsOf = (container) => Object.fromEntries(
   [...container.querySelectorAll(".field-input")].map((input) => [input.name, input.value]));
 
+// tagsAt is the tags a revision has: the Item's, which hold for every
+// revision, and the revision's own.
+export function tagsAt(item, digest) {
+  const own = (item.revisions.find((r) => r.digest === digest) || {}).tags || [];
+  return [...new Set([...(item.tags || []), ...own])].sort();
+}
+
+// tagUses counts, for each tag, the Items that use it anywhere: on the Item
+// or on any of its revisions.
 export function tagUses(items) {
   const counts = new Map();
   for (const item of items || []) {
-    for (const name of new Set(item.tags || [])) counts.set(name, (counts.get(name) || 0) + 1);
+    const all = new Set([...(item.tags || []), ...item.revisions.flatMap((r) => r.tags || [])]);
+    for (const name of all) counts.set(name, (counts.get(name) || 0) + 1);
   }
   return [...counts].map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
@@ -373,8 +383,9 @@ export function clearPreview() {
 // What each history action is called on the page.
 export const eventTitles = {
   import: "Imported", import_revision: "Added revision", edit_fields: "Changed fields", edit_notes: "Changed notes",
-  edit_tags: "Changed tags", make_head: "Made HEAD", delete_revision: "Deleted revision", change_type: "Changed type",
+  edit_tags: "Changed tags", edit_revision_tags: "Changed revision tags", make_head: "Made HEAD", delete_revision: "Deleted revision", change_type: "Changed type",
   export: "Exported", merge: "Merged", mark_frequent: "Marked frequent", unmark_frequent: "Unmarked frequent",
+  retire: "Retired", unretire: "Back in use", edit_retired_reason: "Changed retired reason",
 };
 
 // eventLines is one history event as a title and the lines under it. The

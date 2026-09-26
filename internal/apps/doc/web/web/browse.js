@@ -1,7 +1,7 @@
 // Browse: the Items kept in the tree, their fields, revisions and HEAD.
 import { splitter } from "/ui/splitter.js";
 import { openMenu } from "/ui/menu.js";
-import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, frame, say, showText, showPreview, clearPreview, eventLines } from "/common.js";
+import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, frame, say, showText, showPreview, clearPreview, eventLines } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -9,6 +9,8 @@ let editing = "";
 let notesOf = "";
 let tagsOf = "";
 const detailTags = window.tagField($("detail-tags"), { known: () => tagUses(state.items), placeholder: "Add tags" });
+const revisionTags = window.tagField($("revision-tags"), { known: () => tagUses(state.items), placeholder: "Add tags" });
+let revisionTagsOf = "";
 const filterTags = window.tagField($("filter-tags"), {
   known: () => tagUses(state.items), only: true, placeholder: "any", onChange: () => render(),
 });
@@ -67,16 +69,17 @@ function drawFilters() {
 }
 
 function shownItems() {
-  const type = $("filter-type").value, kind = $("filter-kind").value, exp = $("filter-expiry").value;
+  const type = $("filter-type").value, kind = $("filter-kind").value, exp = $("filter-expiry").value, use = $("filter-use").value;
   const requiredTags = filterTags.get();
   const byKey = [...$("field-filters").querySelectorAll("select[data-key]")].filter((s) => s.value);
   const items = state.items.filter((i) => {
     const fields = currentFields(i);
-    return (!onlyFrequent() || i.frequent) && (!type || i.type === type) && (!kind || i.kind === kind) &&
+    return (!onlyFrequent() || i.frequent) && (!use || (use === "retired") === !!i.retired) && (!type || i.type === type) && (!kind || i.kind === kind) &&
       (!exp || expiryOf(i).state === exp) &&
       byKey.every((s) => fields[s.dataset.key] === s.value) &&
-      requiredTags.every((tag) => (i.tags || []).includes(tag)) &&
-      (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ") + " " + (i.tags || []).join(" ")));
+      // An Item has the tags its HEAD has: its own and HEAD's.
+      requiredTags.every((tag) => tagsAt(i, headOf(i)).includes(tag)) &&
+      (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
   });
   const sort = $("view-sort").value, dir = $("view-direction").value === "asc" ? 1 : -1;
   const added = (i) => (i.revisions[i.revisions.length - 1] || {}).added || "";
@@ -85,8 +88,10 @@ function shownItems() {
   const keyOf = sort.startsWith("field:") ? (i) => shown(i, sort.slice(6), currentFields(i)[sort.slice(6)] || "")
     : { added, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i),
       revisions: (i) => i.revisions.length }[sort] || added;
-  // Frequent Items come first, whatever the sort; the sort orders each part.
+  // Retired Items go last and frequent ones first, whatever the sort; the
+  // sort orders each part.
   return items.sort((x, y) => {
+    if (!!x.retired !== !!y.retired) return x.retired ? 1 : -1;
     if (!!x.frequent !== !!y.frequent) return x.frequent ? -1 : 1;
     const a = keyOf(x), b = keyOf(y);
     // No value sorts after any value, whichever way round.
@@ -97,6 +102,10 @@ function shownItems() {
 }
 
 const expiryOf = (item) => (state.expiry || {})[item.id] || { state: "none" };
+
+// retiredBadge marks an Item no longer used, its reason on hover.
+const retiredBadge = (item) => item.retired
+  ? el("span", { className: "badge badge-retired", title: item.retired_reason || "No longer used" }, "retired") : null;
 
 // expiryBadge says where an Item's expiry stands, coloured by how urgent.
 function expiryBadge(item) {
@@ -144,7 +153,7 @@ function details(item) {
 function card(item) {
   const t = templateOf(state, item.type);
   const named = t ? t.fields.filter((f) => f.distinguishing).map((f) => currentFields(item)[f.key]).filter(Boolean) : [];
-  const li = el("li", { className: "card state-" + expiryOf(item).state, onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
+  const li = el("li", { className: "card state-" + expiryOf(item).state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     thumb(item), star(item),
     el("div", { className: "card-body" },
       el("p", { className: "card-title", title: label(state, item) }, named.join(" · ") || item.type),
@@ -152,7 +161,7 @@ function card(item) {
         item.revisions.length > 1 ? el("span", { title: "Revisions" }, item.revisions.length + " revisions") : null),
       el("p", { className: "card-details", title: details(item) }, details(item)),
       textHits.get(item.id) ? el("p", { className: "card-snippet" }, textHits.get(item.id)) : null,
-      el("p", { className: "card-badges" }, expiryBadge(item))));
+      el("p", { className: "card-badges" }, retiredBadge(item), expiryBadge(item))));
   if (selected && selected.id === item.id) li.classList.add("card-selected");
   return li;
 }
@@ -223,12 +232,12 @@ function sortBy(column) {
 function row(item, keys) {
   const fields = currentFields(item);
   const e = expiryOf(item);
-  const tr = el("tr", { className: "table-row state-" + e.state, onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
+  const tr = el("tr", { className: "table-row state-" + e.state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     el("td", { className: "table-thumb" }, thumb(item)),
     el("td", { className: "table-star" }, star(item)),
     el("td", {}, item.type),
     ...keys.map((k) => el("td", {}, fields[k] ? shown(item, k, fields[k]) : "")),
-    el("td", {}, expiryBadge(item) || el("span", { className: "muted" }, "—")),
+    el("td", {}, retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))),
     el("td", { className: "numeric" }, String(item.revisions.length)),
     el("td", { className: "numeric" }, new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString()));
   if (selected && selected.id === item.id) tr.classList.add("card-selected");
@@ -360,7 +369,7 @@ for (const b of $("view-layout").querySelectorAll("button")) {
     render();
   };
 }
-for (const id of ["filter-type", "filter-expiry", "filter-kind", "view-sort", "view-direction"]) {
+for (const id of ["filter-type", "filter-expiry", "filter-kind", "filter-use", "view-sort", "view-direction"]) {
   $(id).addEventListener("change", () => {
     saveView();
     render();
@@ -424,6 +433,7 @@ function detail(item) {
   $("detail-head").textContent = label(state, item);
   $("change-type").href = api("/change-type/?item=" + encodeURIComponent(item.id));
   drawHistory(item);
+  drawRetired(item);
   $("history-all").href = api("/log/") + "#" + encodeURIComponent(item.id);
   $("frequent").setAttribute("aria-pressed", String(!!item.frequent));
   $("frequent").textContent = item.frequent ? "★ Frequent" : "☆ Frequent";
@@ -460,6 +470,17 @@ function detail(item) {
     detailTags.set(item.tags || []);
     say($("tags-message"), "");
   }
+  // A document's picked revision has tags of its own; a record has one PDF,
+  // so the Item's tags are all it needs.
+  const rev = item.revisions.find((r) => r.digest === selected.digest);
+  $("revision-tags-form").hidden = item.kind !== "document" || !rev;
+  if (rev && revisionTagsOf !== item.id + rev.digest + JSON.stringify(rev.tags || [])) {
+    revisionTagsOf = item.id + rev.digest + JSON.stringify(rev.tags || []);
+    revisionTags.set(rev.tags || []);
+    const n = item.revisions.indexOf(rev) + 1;
+    $("revision-tags-label").textContent = "Revision " + n + "'s own" + (rev.digest === item.head ? " (HEAD)" : "");
+    say($("revision-tags-message"), "");
+  }
   $("revisions").replaceChildren(...item.revisions.slice().reverse().map((r) => {
     const isHead = r.digest === item.head;
     const revisionMenu = (event) => openMenu(event, [
@@ -472,7 +493,8 @@ function detail(item) {
       oncontextmenu: revisionMenu },
       el("div", { className: "rev-text" },
         el("span", {}, new Date(r.added).toLocaleDateString(), isHead ? el("span", { className: "tag" }, "HEAD") : null),
-        el("span", { className: "sub", title: r.digest }, (r.source ? r.source + " · " : "") + r.digest.slice(0, 8))),
+        el("span", { className: "sub", title: r.digest }, (r.source ? r.source + " · " : "") + r.digest.slice(0, 8)),
+        (r.tags || []).length ? el("span", { className: "rev-tags" }, ...r.tags.map((t) => el("span", { className: "tag" }, t))) : null),
       item.kind === "document" && !isHead ? el("button", {
         className: "button", type: "button", textContent: "Make HEAD",
         onclick: (event) => { event.stopPropagation(); makeHead(item.id, r.digest); },
@@ -504,6 +526,34 @@ async function drawHistory(item) {
     $("history").replaceChildren(el("li", { className: "muted" }, err.message));
   }
 }
+
+// The Retire section: set an Item aside as no longer used, with an optional
+// reason, or put it back in use.
+let retiredOf = "";
+function drawRetired(item) {
+  const key = item.id + "\n" + !!item.retired + "\n" + (item.retired_reason || "");
+  if (retiredOf === key) return;
+  retiredOf = key;
+  $("retire-reason").value = item.retired_reason || "";
+  $("retire-note").textContent = item.retired
+    ? "Retired: shown faded and last on Browse. Exports still include it."
+    : "Keep it, but set it aside: no longer used, though it has not expired. It is shown faded and last; exports are not affected.";
+  $("retire").textContent = item.retired ? "Save reason" : "Retire";
+  $("unretire").hidden = !item.retired;
+  say($("retire-message"), "");
+}
+async function setRetired(retired) {
+  if (!selected) return;
+  try {
+    await post("/api/retired", { item: selected.id, retired, reason: retired ? $("retire-reason").value : "" });
+    await reload();
+    say($("retire-message"), retired ? "Retired." : "Back in use.");
+  } catch (err) {
+    say($("retire-message"), err.message, true);
+  }
+}
+$("retire-form").onsubmit = (event) => { event.preventDefault(); setRetired(true); };
+$("unretire").onclick = () => setRetired(false);
 
 async function setFrequent(item, frequent) {
   try {
@@ -615,6 +665,18 @@ $("notes-form").onsubmit = async (event) => {
     say($("notes-message"), "Saved.");
   } catch (err) {
     say($("notes-message"), err.message, true);
+  }
+};
+
+$("revision-tags-form").onsubmit = async (event) => {
+  event.preventDefault();
+  revisionTags.commit();
+  try {
+    await post("/api/revision-tags", { item: selected.id, digest: selected.digest, tags: revisionTags.get() });
+    await reload();
+    say($("revision-tags-message"), "Saved.");
+  } catch (err) {
+    say($("revision-tags-message"), err.message, true);
   }
 };
 

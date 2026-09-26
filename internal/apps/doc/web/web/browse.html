@@ -58,6 +58,9 @@
     <label class="filter"><span>Kind</span>
       <select id="filter-kind"><option value="">any</option><option value="document">document</option><option value="record">record</option></select>
     </label>
+    <label class="filter" title="Retired: no longer used, though not expired"><span>Use</span>
+      <select id="filter-use"><option value="">any</option><option value="active">in use</option><option value="retired">retired</option></select>
+    </label>
   </div>
   <div class="filter-group">
     <div class="filter"><span>Show</span>
@@ -177,9 +180,16 @@
     <section class="detail-section">
       <h3>Tags</h3>
       <form id="tags-form">
+        <span class="tags-label">Every revision</span>
         <div id="detail-tags" data-label="Item tags"></div>
         <div class="detail-actions"><button class="action" type="submit">Save tags</button>
           <p id="tags-message" class="message"></p></div>
+      </form>
+      <form id="revision-tags-form" hidden>
+        <span id="revision-tags-label" class="tags-label">This revision's own</span>
+        <div id="revision-tags" data-label="Revision tags"></div>
+        <div class="detail-actions"><button class="button" type="submit">Save revision tags</button>
+          <p id="revision-tags-message" class="message"></p></div>
       </form>
     </section>
     <section class="detail-section">
@@ -200,6 +210,18 @@
       <h3>History</h3>
       <a id="history-all" class="button" href="/log/">Whole tree's log…</a>
       <ul id="history" class="rows"></ul>
+    </section>
+    <section class="detail-section">
+      <h3>Retire</h3>
+      <p id="retire-note" class="danger-note"></p>
+      <form id="retire-form" class="retire-form">
+        <input id="retire-reason" autocomplete="off" placeholder="Why (optional): left the company, moved away…">
+        <div class="detail-actions">
+          <button id="retire" class="button" type="submit">Retire</button>
+          <button id="unretire" class="button" type="button" hidden>Back in use</button>
+          <p id="retire-message" class="message"></p>
+        </div>
+      </form>
     </section>
     <section class="detail-section danger-zone">
       <h3>Delete</h3>

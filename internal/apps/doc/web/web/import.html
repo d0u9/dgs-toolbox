@@ -64,11 +64,16 @@
   <aside id="side" class="side" hidden>
     <form id="import" hidden>
       <h2 class="panel-head">Import</h2>
-      <div class="form-field"><span id="template-label">Template</span><div id="template" class="template-choices" role="group" aria-labelledby="template-label"></div></div>
+      <div class="form-field"><span id="template-label">Template</span>
+        <div class="template-pick">
+          <input id="template-filter" class="template-filter" type="search" placeholder="Filter types" autocomplete="off" spellcheck="false" hidden>
+          <div id="template" class="template-choices" role="group" aria-labelledby="template-label"></div>
+        </div></div>
       <p id="type-hint" class="message type-hint" hidden></p>
       <div class="form-field" id="into-field"><span id="into-label">Into</span><select id="into" hidden></select><div id="into-choices" class="into-choices" role="group" aria-labelledby="into-label"></div></div>
       <div id="fields"></div>
       <div class="form-field" id="tags-field" hidden><span>Tags</span><div id="tags" data-label="Tags"></div></div>
+      <div class="form-field" id="revision-tags-field" hidden><span>This revision's tags</span><div id="revision-tags" data-label="This revision's tags"></div></div>
       <label class="form-field" id="notes-field" hidden><span>Notes</span><textarea id="notes" rows="3" placeholder="Optional details about this item"></textarea></label>
       <p id="import-message" class="message"></p>
       <button id="import-button" class="action" type="submit">Import</button>

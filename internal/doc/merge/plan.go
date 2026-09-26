@@ -38,6 +38,10 @@ type Change struct {
 	Tags []string `json:"tags,omitempty"`
 	// Frequent marks the matched Item frequent because the Source's is.
 	Frequent bool `json:"frequent,omitempty"`
+	// Retired retires the matched Item because the Source's is retired,
+	// with the Source's reason.
+	Retired       bool   `json:"retired,omitempty"`
+	RetiredReason string `json:"retired_reason,omitempty"`
 }
 
 // Conflict kinds.
@@ -191,7 +195,10 @@ func Compute(root string, src Source) (Plan, error) {
 			}
 		}
 		c.Frequent = s.Frequent && !m.Frequent
-		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" || len(c.Tags) > 0 || c.Frequent {
+		if s.Retired && !m.Retired {
+			c.Retired, c.RetiredReason = true, s.RetiredReason
+		}
+		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" || len(c.Tags) > 0 || c.Frequent || c.Retired {
 			plan.Changed = append(plan.Changed, c)
 		} else if len(plan.Conflicts) == conflicts {
 			plan.Same++
@@ -405,6 +412,10 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		if c.Frequent && !it.Frequent {
 			change(c.Item, "frequent", "", "yes")
 			it.Frequent = true
+		}
+		if c.Retired && !it.Retired {
+			change(c.Item, "retired", "", strings.TrimSpace("yes "+c.RetiredReason))
+			it.Retired, it.RetiredReason = true, c.RetiredReason
 		}
 	}
 	for _, c := range plan.Conflicts {

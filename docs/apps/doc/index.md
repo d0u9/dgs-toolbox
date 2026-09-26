@@ -49,9 +49,10 @@ same columns. Each card or row shows the first page of HEAD, the fields that tel
 across the top narrows them: search (fields, tags and the text on the page), type,
 a tag filter that matches every tag chosen,
 a select for every distinguishing key any Template has, expiry and kind, and
-a **★ Frequent** chip that shows only the frequent Items. They
+a Use filter for Items in use or retired, and a **★ Frequent** chip that
+shows only the frequent Items. They
 sort by date added, expiry, name or type; frequent Items always come first
-and the sort orders each part. The layout, sort, order and the Frequent chip
+and retired ones last, and the sort orders each part. The layout, sort, order and the Frequent chip
 are remembered in the browser. A thumbnail too tall or wide for its card shows
 its middle. A card's name wraps to a second line before it is cut short.
 Picking one opens a detail panel beside the cards. At its top,
@@ -72,6 +73,22 @@ unmarks it. It is kept in the sidecar as `frequent: true`, so it travels with
 the tree and a merge carries it in; marking and unmarking are history events.
 "Frequent" rather than "favourite" or "highlight": it says why the Item is
 first, and a highlight is something done to a PDF's text.
+
+### Retired
+
+Some documents stop being used without expiring: a staff card or a local
+residence card once the owner has left the organisation or the place. Retire,
+in the detail panel, sets such an Item aside, with an optional reason ("left
+the company"). It is kept in the sidecar as `retired: true` and
+`retired_reason`, and retiring, changing the reason and putting it back in use
+are history events. Browse still shows a retired Item, faded, in grey, with a
+"retired" badge whose hover gives the reason, and after every Item in use,
+whatever the sort. The Use filter shows only Items in use or only retired
+ones. Exports and Views are not affected. A merge retires a matched Item the
+Source has retired.
+
+"Retired" rather than "expired", which is about a date, or "archived", which
+Cases already use.
 
 ### Log
 
@@ -122,7 +139,9 @@ a Template Items use cannot be deleted.
    as folders rather than flattened. Folders with no PDF in them are left out.
    PDFs already in the tree are marked.
 3. Picking a PDF previews it; the form beside it takes a Template and its
-   fields. Into shows existing Items of that type as cards, alongside New item;
+   fields. The Templates are a list, one line each with the type and its
+   description, the suggested one marked; past six a filter narrows it, and
+   the chosen one always stays in view. Into shows existing Items of that type as cards, alongside New item;
    choosing an existing Item asks only for its revision fields, while New item
    asks for the distinguishing fields. After
    an import the next PDF not yet imported is picked.
@@ -282,7 +301,7 @@ A sidecar may also hold `notes`, free text the owner writes. Notes are never a
 key and never exported. The Item sidecar also keeps timestamped history events
 for imports, field and metadata edits, HEAD changes, type changes, revision
 deletion, PDFs actually written by exports, merges, and marking an Item
-frequent or not. Older sidecars remain readable;
+frequent or not, and retiring it or putting it back in use. Older sidecars remain readable;
 their revision `added` times appear as import history on Browse and Log
 (`tree.Timeline`). Each event
 has an operation time. Type changes keep the previous type and fields in the
@@ -684,7 +703,13 @@ revisions:
 ```
 
 A record has exactly one revision and no `head`. `notes` and `tags`, when the
-owner has written any, are Item keys in the sidecar. Tags are lower case, with
+owner has written any, are Item keys in the sidecar. A document's revision
+may also have `tags` of its own — a reissue, a copy — kept on that revision;
+the tags a revision has are the Item's and its own. Browse filters and
+searches an Item by the tags its HEAD has, edits the Item's tags and the
+picked revision's apart, and shows each revision's own beside it. Adding a
+revision on Import asks for its own tags as well. Changing a revision's tags
+is a history event. Tags are lower case, with
 spaces joined by hyphens, and duplicates removed. Import and Browse offer
 existing tags as the owner types; Browse filters by tags in the current tree.
 

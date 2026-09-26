@@ -56,6 +56,8 @@ func AddRevision(ctx context.Context, root, id, source string, template Template
 type RevisionMetadata struct {
 	Notes *string
 	Tags  *[]string
+	// RevisionTags are the new revision's own tags.
+	RevisionTags []string
 }
 
 // AddRevisionWithMetadata adds a revision and saves any Item metadata edits in
@@ -96,6 +98,7 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 	}
 	item.Revisions = append(item.Revisions, Revision{
 		Digest: digest, Added: now.Format(time.RFC3339), Source: filepath.Base(source), Fields: fields,
+		Tags: tag.List(metadata.RevisionTags),
 	})
 	item.Head = digest
 	event := HistoryEvent{At: now.Format(time.RFC3339), Action: "import_revision", Digest: digest, Changes: map[string][2]string{}}
@@ -357,4 +360,61 @@ func SetFrequent(root, id string, frequent bool, now time.Time) (Item, error) {
 	}
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: action})
 	return item, WriteItem(root, item)
+}
+
+// SetRetired marks an Item no longer used, with an optional reason, or puts it
+// back in use. Retiring an Item already retired changes only its reason.
+func SetRetired(root, id string, retired bool, reason string, now time.Time) (Item, error) {
+	if err := Require(root); err != nil {
+		return Item{}, err
+	}
+	item, _, err := FindItem(root, id)
+	if err != nil {
+		return Item{}, err
+	}
+	reason = strings.TrimSpace(reason)
+	if !retired {
+		reason = ""
+	}
+	if item.Retired == retired && item.RetiredReason == reason {
+		return item, nil
+	}
+	event := HistoryEvent{At: now.Format(time.RFC3339), Action: "retire"}
+	switch {
+	case !retired:
+		event.Action = "unretire"
+	case item.Retired:
+		event.Action = "edit_retired_reason"
+	}
+	if item.RetiredReason != reason {
+		event.Changes = map[string][2]string{"reason": {item.RetiredReason, reason}}
+	}
+	item.Retired, item.RetiredReason = retired, reason
+	item.History = append(item.History, event)
+	return item, WriteItem(root, item)
+}
+
+// SetRevisionTags replaces one revision's own tags, in canonical spelling.
+// The Item's tags are not touched.
+func SetRevisionTags(root, id, digest string, tags []string, now time.Time) (Item, error) {
+	if err := Require(root); err != nil {
+		return Item{}, err
+	}
+	item, _, err := FindItem(root, id)
+	if err != nil {
+		return Item{}, err
+	}
+	for i, r := range item.Revisions {
+		if r.Digest != digest {
+			continue
+		}
+		old := strings.Join(r.Tags, ", ")
+		item.Revisions[i].Tags = tag.List(tags)
+		if next := strings.Join(item.Revisions[i].Tags, ", "); old != next {
+			item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_revision_tags", Digest: digest,
+				Changes: map[string][2]string{"tags": {old, next}}})
+		}
+		return item, WriteItem(root, item)
+	}
+	return Item{}, fmt.Errorf("%s %s has no revision %s", item.Type, item.ID, digest)
 }

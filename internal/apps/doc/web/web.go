@@ -224,7 +224,9 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/change-type", s.changeType)
 	mux.HandleFunc("POST /api/notes", s.setNotes)
 	mux.HandleFunc("POST /api/tags", s.setTags)
+	mux.HandleFunc("POST /api/revision-tags", s.setRevisionTags)
 	mux.HandleFunc("POST /api/frequent", s.setFrequent)
+	mux.HandleFunc("POST /api/retired", s.setRetired)
 	mux.HandleFunc("GET /api/history", s.historyLog)
 	mux.HandleFunc("POST /api/items/delete", s.deleteItem)
 	mux.HandleFunc("GET /api/templates", s.templateList)
@@ -632,6 +634,8 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		Fields map[string]string `json:"fields"`
 		Notes  *string           `json:"notes"`
 		Tags   *[]string         `json:"tags"`
+		// RevisionTags are the new revision's own.
+		RevisionTags []string `json:"revision_tags"`
 	}
 	if !decode(w, r, &request) {
 		return
@@ -646,7 +650,7 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := tree.AddRevisionWithMetadata(r.Context(), s.root, request.Item, source, t, request.Fields,
-		tree.RevisionMetadata{Notes: request.Notes, Tags: request.Tags}, s.now())
+		tree.RevisionMetadata{Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags}, s.now())
 	answer(w, item, err)
 }
 
@@ -775,6 +779,21 @@ func (s server) setTags(w http.ResponseWriter, r *http.Request) {
 	answer(w, item, err)
 }
 
+func (s server) setRevisionTags(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item   string   `json:"item"`
+		Digest string   `json:"digest"`
+		Tags   []string `json:"tags"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := tree.SetRevisionTags(s.root, request.Item, request.Digest, request.Tags, s.now())
+	answer(w, item, err)
+}
+
 func (s server) setFrequent(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Item     string `json:"item"`
@@ -786,6 +805,21 @@ func (s server) setFrequent(w http.ResponseWriter, r *http.Request) {
 	s.writing.Lock()
 	defer s.writing.Unlock()
 	item, err := tree.SetFrequent(s.root, request.Item, request.Frequent, s.now())
+	answer(w, item, err)
+}
+
+func (s server) setRetired(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item    string `json:"item"`
+		Retired bool   `json:"retired"`
+		Reason  string `json:"reason"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := tree.SetRetired(s.root, request.Item, request.Retired, request.Reason, s.now())
 	answer(w, item, err)
 }
 
