@@ -27,3 +27,25 @@ func TestOf(t *testing.T) {
 		}
 	}
 }
+
+func TestMonthExpiry(t *testing.T) {
+	for _, c := range []struct {
+		month, now, date string
+		state            State
+	}{
+		{"2024-02", "2024-02-29T23:59:59Z", "2024-02-29", Soon},
+		{"2024-02", "2024-03-01T00:00:00Z", "2024-02-29", Expired},
+		{"2025-02", "2025-02-28T23:59:59Z", "2025-02-28", Soon},
+		{"2025-12", "2026-01-01T00:00:00Z", "2025-12-31", Expired},
+		{"2025-13", "2025-01-01T00:00:00Z", "", None},
+	} {
+		now, err := time.Parse(time.RFC3339, c.now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Of(map[string]string{"expires": c.month}, now, DefaultSoon, dates.DMY)
+		if got.Date != c.date || got.State != c.state {
+			t.Errorf("%+v: got %+v", c, got)
+		}
+	}
+}

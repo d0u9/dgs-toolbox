@@ -135,10 +135,15 @@ function drawFields() {
   $("into-field").hidden = documents.length === 0;
   $("into-choices").replaceChildren(...[{ id: "" }, ...documents].map((item) => {
     const value = item.id;
+    const identity = t.fields.filter((f) => f.distinguishing && item.fields?.[f.key])
+      .map((f) => ({ key: f.key, value: item.fields[f.key] }));
+    const primary = identity.find((f) => f.key === "card_name" || f.key === "name")
+      || identity[identity.length - 1];
+    const detail = identity.filter((f) => f !== primary).map((f) => f.value).join(" · ");
     const button = el("button", {
-      type: "button", className: "into-choice", title: value ? label(state, item) : "Create a separate Item",
-    }, el("strong", {}, value ? (item.fields?.name || label(state, item)) : "New item"),
-    el("small", {}, value ? [item.fields?.owner, item.fields?.country].filter(Boolean).join(" · ") : "Create a separate document"));
+      type: "button", className: "template-choice into-choice" + (into.value === value ? " selected" : ""), title: value ? label(state, item) : "Create a separate Item",
+    }, el("strong", {}, value ? (primary?.value || item.id) : "New item"),
+    el("small", {}, value ? detail : "Separate document"));
     button.value = value;
     button.setAttribute("aria-pressed", String(into.value === value));
     button.onclick = () => {

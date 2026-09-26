@@ -271,6 +271,8 @@ shows for it:
 - `text` — the default.
 - `date` — `YYYY-MM-DD`. A date field with no `pattern` is suggested from any
   date the text holds (see [Dates in the text](#dates-in-the-text)).
+- `month` — `YYYY-MM`, entered with a month control. An expiry month remains
+  valid through its last day.
 - `select` — one of the field's `options`.
 - `item` — the ID of another Item, such as a passport's previous passport. The
   page picks it from the Items; export never follows it.

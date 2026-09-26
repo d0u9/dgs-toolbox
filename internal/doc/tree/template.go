@@ -72,6 +72,8 @@ const (
 	FieldText FieldType = "text"
 	// FieldDate is YYYY-MM-DD.
 	FieldDate FieldType = "date"
+	// FieldMonth is YYYY-MM.
+	FieldMonth FieldType = "month"
 	// FieldSelect is one of the field's Options.
 	FieldSelect FieldType = "select"
 	// FieldItem is another Item's ID.
@@ -124,7 +126,7 @@ func (t Template) Validate() error {
 			return fmt.Errorf("type %s: key %s: format %q is not zh, en, alpha2 or alpha3", t.Type, f.Key, f.Format)
 		}
 		switch f.Type {
-		case "", FieldText, FieldDate, FieldItem, FieldCountry:
+		case "", FieldText, FieldDate, FieldMonth, FieldItem, FieldCountry:
 			if len(f.Options) > 0 {
 				return fmt.Errorf("type %s: key %s: options belong to a select field", t.Type, f.Key)
 			}
@@ -133,7 +135,7 @@ func (t Template) Validate() error {
 				return fmt.Errorf("type %s: key %s: a select field needs options", t.Type, f.Key)
 			}
 		default:
-			return fmt.Errorf("type %s: key %s: type %q is not text, date, select, item or country", t.Type, f.Key, f.Type)
+			return fmt.Errorf("type %s: key %s: type %q is not text, date, month, select, item or country", t.Type, f.Key, f.Type)
 		}
 		if f.PerRevision && t.Kind != KindDocument {
 			return fmt.Errorf("type %s: key %s: per_revision belongs to a document; a record has one PDF", t.Type, f.Key)
@@ -253,6 +255,10 @@ func (t Template) field(key string) Field {
 // for its shape here; that the Item exists is checked against the tree.
 func (f Field) clean(value string) (string, error) {
 	switch f.Type {
+	case FieldMonth:
+		if _, err := time.Parse("2006-01", value); err != nil {
+			return "", fmt.Errorf("%s: %q is not a month written YYYY-MM", f.Key, value)
+		}
 	case FieldDate:
 		if !validDate(value) {
 			return "", fmt.Errorf("%s: %q is not a date written YYYY-MM-DD", f.Key, value)
