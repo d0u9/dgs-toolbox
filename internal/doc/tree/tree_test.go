@@ -82,7 +82,7 @@ func TestImportMakesAnItemAndLeavesTheSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.Head == "" || item.Head != item.Revisions[0].Digest || item.Fields["owner"] != "jane" {
+	if item.Head == "" || item.Head != item.Revisions[0].Ref() || item.Fields["owner"] != "jane" {
 		t.Fatalf("item = %+v", item)
 	}
 	if item.Notes != "old card for records" {
@@ -94,7 +94,7 @@ func TestImportMakesAnItemAndLeavesTheSource(t *testing.T) {
 	if _, ok := item.Fields["number"]; ok {
 		t.Error("empty field kept")
 	}
-	if data, err := os.ReadFile(PDFPath(root, item.ID, item.Head)); err != nil || string(data) != "%PDF jane" {
+	if data, err := os.ReadFile(PDFPath(root, item.ID, item.CurrentDigest())); err != nil || string(data) != "%PDF jane" {
 		t.Fatalf("stored PDF: %q %v", data, err)
 	}
 	if _, err := os.Stat(source); err != nil {
@@ -182,10 +182,10 @@ func TestRevisionsMoveHeadAndBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(item.Revisions) != 2 || item.Head == first || item.Head != item.Revisions[1].Digest {
+	if len(item.Revisions) != 2 || item.Head == first || item.Head != item.Revisions[1].Ref() {
 		t.Fatalf("after adding: %+v", item)
 	}
-	if _, err := AddRevision(context.Background(), root, item.ID, renewed, idCard(t, root), nil, now); !errors.Is(err, ErrDuplicate) {
+	if again, err := AddRevision(context.Background(), root, item.ID, renewed, idCard(t, root), nil, now); err != nil || len(again.Revisions) != 2 {
 		t.Fatalf("same PDF again: %v", err)
 	}
 	if item, err = SetHead(root, item.ID, first, time.Now()); err != nil || item.Head != first {
@@ -205,21 +205,21 @@ func TestRevisionsMoveHeadAndBack(t *testing.T) {
 	}
 }
 
-func TestRecordsHaveNoRevisions(t *testing.T) {
+func TestRecordsDoNotAcceptRenewals(t *testing.T) {
 	root := newTree(t)
 	write(t, filepath.Join(root, TemplatesDir, "payslip.yaml"), "type: payslip\nkind: record\nfields:\n  - key: owner\n")
 	templates, _ := LoadTemplates(root)
 	source := write(t, filepath.Join(root, "p.pdf"), "%PDF p")
 	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: templates[1], Now: now})
-	if err != nil || item.Head != "" {
+	if err != nil || item.Head == "" {
 		t.Fatalf("%+v %v", item, err)
 	}
 	other := write(t, filepath.Join(root, "q.pdf"), "%PDF q")
 	if _, err := AddRevision(context.Background(), root, item.ID, other, templates[1], nil, now); err == nil {
 		t.Fatal("record took a revision")
 	}
-	if _, err := SetHead(root, item.ID, item.Revisions[0].Digest, time.Now()); err == nil {
-		t.Fatal("record took a HEAD")
+	if _, err := SetHead(root, item.ID, item.Revisions[0].Ref(), time.Now()); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -360,6 +360,9 @@ func TestTrashRevisionMovesPDFAndUpdatesHead(t *testing.T) {
 	if updated.Head != "old" || len(updated.Revisions) != 1 {
 		t.Fatalf("updated: %+v", updated)
 	}
+	if _, err := os.Stat(strings.TrimSuffix(to, ".pdf") + ".yaml"); err != nil {
+		t.Fatal("snapshot metadata not retained in trash")
+	}
 	if data, err := os.ReadFile(to); err != nil || string(data) != "new" {
 		t.Fatalf("trash: %q %v", data, err)
 	}
@@ -391,7 +394,7 @@ func TestPerRevisionFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.Fields["number"] != "" || item.Revisions[0].Fields["number"] != "111" || item.Fields["note"] != "x" {
+	if item.CurrentFields()["number"] != "111" || item.Revisions[0].Fields["number"] != "111" || item.Fields["note"] != "x" {
 		t.Fatalf("import split: %+v", item)
 	}
 	renewed := write(t, filepath.Join(root, "new.pdf"), "%PDF new")
@@ -405,19 +408,19 @@ func TestPerRevisionFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, second := item.Revisions[0].Digest, item.Revisions[1].Digest
+	first, second := item.Revisions[0].Ref(), item.Revisions[1].Ref()
 	if got := item.CurrentFields(); got["number"] != "222" || got["expires"] != "2030" || got["note"] != "x" {
 		t.Fatalf("current: %v", got)
 	}
 	if got := item.FieldsAt(first); got["number"] != "111" || got["expires"] != "2020" {
 		t.Fatalf("old card: %v", got)
 	}
-	// Editing the old card changes only it.
+	// Editing an old snapshot creates a new HEAD and preserves both old cards.
 	item, err = SetFields(root, item.ID, first, tpl, map[string]string{"owner": "jane", "number": "110", "note": "y"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.FieldsAt(first)["number"] != "110" || item.FieldsAt(first)["expires"] != "" || item.FieldsAt(second)["number"] != "222" || item.Fields["note"] != "y" {
+	if len(item.Revisions) != 3 || item.FieldsAt(first)["number"] != "111" || item.FieldsAt(first)["expires"] != "2020" || item.CurrentFields()["number"] != "110" || item.CurrentFields()["expires"] != "" || item.FieldsAt(second)["number"] != "222" || item.Fields["note"] != "y" {
 		t.Fatalf("after editing the old card: %+v", item)
 	}
 	for _, bad := range []Field{{Key: "k", PerRevision: true, Distinguishing: true, Required: true}} {

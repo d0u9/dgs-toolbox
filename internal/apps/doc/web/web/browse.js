@@ -1,4 +1,5 @@
 // Browse: the Items kept in the tree, their fields, revisions and HEAD.
+import { openFile } from "/ui/filedialog.js";
 import { splitter } from "/ui/splitter.js";
 import { openMenu } from "/ui/menu.js";
 import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, frame, say, showText, showPreview, clearPreview, eventLines } from "/common.js";
@@ -105,7 +106,7 @@ const expiryOf = (item) => (state.expiry || {})[item.id] || { state: "none" };
 
 // retiredBadge marks an Item no longer used, its reason on hover.
 const retiredBadge = (item) => item.retired
-  ? el("span", { className: "badge badge-retired", title: item.retired_reason || "No longer used" }, "retired") : null;
+  ? el("span", { className: "badge badge-retired", title: item.retired_reason || "No longer used" }, item.superseded_by ? "superseded" : "retired") : null;
 
 // expiryBadge says where an Item's expiry stands, coloured by how urgent.
 function expiryBadge(item) {
@@ -119,7 +120,8 @@ function expiryBadge(item) {
   return text ? el("span", { className: "badge badge-" + e.state, title: e.date || "" }, text) : null;
 }
 
-const headOf = (item) => item.head || (item.revisions[item.revisions.length - 1] || {}).digest;
+const hasPDF = (item, ref) => !!item?.revisions.find((r) => (r.id || r.digest) === ref)?.digest;
+const headOf = (item) => item.head || ((item.revisions[item.revisions.length - 1] || {}).id || (item.revisions[item.revisions.length - 1] || {}).digest);
 const thumbURL = (item) => { const d = headOf(item); return api(`/api/page?item=${encodeURIComponent(item.id)}&digest=${d}&n=1&size=thumb&v=${d}`); };
 
 // thumb is the first page of HEAD, or the type's name where the PDF has no
@@ -131,6 +133,9 @@ function thumb(item) {
   const wrap = el("div", { className: "card-thumb-wrap" });
   const url = thumbURL(item);
   const none = () => { noPicture.add(url); wrap.classList.add("no-picture"); wrap.dataset.type = item.type; };
+  if (!hasPDF(item, headOf(item))) {
+    wrap.classList.add("no-picture"); wrap.dataset.type = "No PDF"; return wrap;
+  }
   if (noPicture.has(url)) {
     none();
     return wrap;
@@ -254,6 +259,7 @@ let shownPage = { id: "", digest: "", n: 1, count: 1 };
 async function showImage(id, digest) {
   shownPage = { id, digest, n: 1, count: 1 };
   drawPage();
+  if (!hasPDF(state.items.find((i) => i.id === id), digest)) return;
   try {
     const info = await (await fetch(api("/api/pages?" + new URLSearchParams({ item: id, digest })))).json();
     if (shownPage.id === id && shownPage.digest === digest) {
@@ -268,6 +274,21 @@ function drawPage() {
   const frame = $("detail-frame");
   frame.classList.remove("no-picture");
   frame.dataset.type = item ? item.type : "";
+  const attached = hasPDF(item, digest);
+  $("detail-picture").classList.toggle("without-pdf", !attached);
+  $("picture-splitter").hidden = !attached;
+  $("detail-frame").hidden = !attached;
+  $("page-prev").hidden = !attached;
+  $("page-next").hidden = !attached;
+  $("open-reader").hidden = !attached;
+  $("detail-image").hidden = !attached;
+  $("open-reader").disabled = !attached;
+  if (!attached) {
+    frame.classList.add("no-picture"); frame.dataset.type = "No PDF";
+    $("page-label").textContent = "No attachment";
+    $("page-prev").disabled = true; $("page-next").disabled = true;
+    return;
+  }
   $("detail-image").src = api(`/api/page?item=${encodeURIComponent(id)}&digest=${digest}&n=${n}&size=page&v=${digest}`);
   $("page-label").textContent = n + " / " + count;
   $("page-prev").disabled = n <= 1;
@@ -288,6 +309,7 @@ $("detail-image").addEventListener("load", () => { if (!$("detail-image").natura
 function openReader() {
   if (!selected) return;
   const item = state.items.find((i) => i.id === selected.id);
+  if (!hasPDF(item, selected.digest)) return;
   $("reader-title").textContent = item ? label(state, item) : "";
   if (!document.body.classList.contains("reading")) history.pushState({ reader: true }, "", location.hash || location.pathname + location.search);
   document.body.classList.add("reading");
@@ -417,8 +439,9 @@ function shown(item, key, value) {
 function pick(id, digest) {
   if (!selected || selected.id !== id || selected.digest !== digest) {
     showImage(id, digest);
-    showText({ item: id, digest });
-    if (!$("preview").hidden) showPreview({ item: id, digest }, api("/api/revision?item=" + encodeURIComponent(id) + "&digest=" + encodeURIComponent(digest)));
+    if (hasPDF(state.items.find((i) => i.id === id), digest)) showText({ item: id, digest });
+    else { clearPreview(); say($("text-message"), ""); }
+    if (hasPDF(state.items.find((i) => i.id === id), digest) && !$("preview").hidden) showPreview({ item: id, digest }, api("/api/revision?item=" + encodeURIComponent(id) + "&digest=" + encodeURIComponent(digest)));
   }
   if (!selected || selected.id !== id) {
     $("similar").replaceChildren();
@@ -437,26 +460,26 @@ function detail(item) {
   $("history-all").href = api("/log/") + "#" + encodeURIComponent(item.id);
   $("frequent").setAttribute("aria-pressed", String(!!item.frequent));
   $("frequent").textContent = item.frequent ? "★ Frequent" : "☆ Frequent";
-  const n = item.revisions.findIndex((r) => r.digest === selected.digest) + 1;
-  $("detail-rev").textContent = item.kind === "document"
+  $("attach-pdf").hidden = false;
+  $("attach-pdf").title = "Save the PDF with these fields as a new revision";
+  $("attach-pdf").textContent = hasPDF(item, selected.digest) ? "Replace PDF…" : "Attach PDF…";
+  $("new-without-pdf").hidden = item.kind !== "document";
+  $("new-without-pdf").href = api("/import/?no_pdf=1&into=" + encodeURIComponent(item.id));
+  const n = item.revisions.findIndex((r) => (r.id || r.digest) === selected.digest) + 1;
+  $("detail-rev").textContent = item.kind === "document" || item.revisions.length > 1
     ? "Revision " + n + " of " + item.revisions.length + (selected.digest === item.head ? " · HEAD" : "")
     : "Record";
-  const t = templateOf(state, item.type);
+  const chosen = item.revisions.find((r) => (r.id || r.digest) === selected.digest);
+  const t = templateOf(state, chosen?.type || item.type);
   // The fields as the picked revision has them: its per_revision values are
   // its own, so picking the old card shows the old card's number.
   const fields = fieldsAt(item, selected.digest);
   if (editing !== item.id + selected.digest + JSON.stringify(fields)) {
     editing = item.id + selected.digest + JSON.stringify(fields);
     say($("edit-message"), "");
-    const perRevision = t && t.fields.some((f) => f.per_revision) && item.revisions.length > 1;
-    const n = item.revisions.findIndex((r) => r.digest === selected.digest) + 1;
-    $("edit-fields").replaceChildren(el("p", { className: "kind" }, item.kind,
-      perRevision ? " · fields marked ↻ are revision " + n + "'s own" : ""),
-      ...(t ? t.fields : Object.keys(fields).map((key) => ({ key }))).map((f) => {
-        const input = inputFor(f, fields[f.key] || "", "", state, item.id);
-        if (perRevision && f.per_revision) input.firstChild.append(el("span", { className: "muted", title: "Kept with each revision" }, " ↻"));
-        return input;
-      }));
+    $("edit-fields").replaceChildren(
+      ...(t ? t.fields : Object.keys(fields).map((key) => ({ key }))).map((f) =>
+        inputFor(f, fields[f.key] || "", "", state, item.id, t?.type || item.type)));
     $("save-button").disabled = !t;
   }
   drawCases(item);
@@ -470,38 +493,37 @@ function detail(item) {
     detailTags.set(item.tags || []);
     say($("tags-message"), "");
   }
-  // A document's picked revision has tags of its own; a record has one PDF,
-  // so the Item's tags are all it needs.
-  const rev = item.revisions.find((r) => r.digest === selected.digest);
-  $("revision-tags-form").hidden = item.kind !== "document" || !rev;
-  if (rev && revisionTagsOf !== item.id + rev.digest + JSON.stringify(rev.tags || [])) {
-    revisionTagsOf = item.id + rev.digest + JSON.stringify(rev.tags || []);
+  // Revision tags belong to the selected snapshot, with or without a PDF.
+  const rev = item.revisions.find((r) => (r.id || r.digest) === selected.digest);
+  $("revision-tags-form").hidden = !rev;
+  if (rev && revisionTagsOf !== item.id + (rev.id || rev.digest) + JSON.stringify(rev.tags || [])) {
+    revisionTagsOf = item.id + (rev.id || rev.digest) + JSON.stringify(rev.tags || []);
     revisionTags.set(rev.tags || []);
     const n = item.revisions.indexOf(rev) + 1;
-    $("revision-tags-label").textContent = "Revision " + n + "'s own" + (rev.digest === item.head ? " (HEAD)" : "");
+    $("revision-tags-label").textContent = "Revision " + n + "'s own" + ((rev.id || rev.digest) === item.head ? " (HEAD)" : "");
     say($("revision-tags-message"), "");
   }
   $("revisions").replaceChildren(...item.revisions.slice().reverse().map((r) => {
-    const isHead = r.digest === item.head;
+    const isHead = (r.id || r.digest) === item.head;
     const revisionMenu = (event) => openMenu(event, [
-      item.kind === "document" && !isHead ? [{ label: "Make HEAD", onSelect: () => makeHead(item.id, r.digest) }] : [],
+      !isHead ? [{ label: "Make HEAD", onSelect: () => makeHead(item.id, (r.id || r.digest)) }] : [],
       [{ label: "Delete revision…", danger: true, disabled: item.revisions.length < 2,
-        title: item.revisions.length < 2 ? "Delete the Item to remove its last revision" : "Move this revision's PDF to trash",
-        onSelect: () => deleteRevision(item.id, r.digest) }],
+        title: item.revisions.length < 2 ? "Delete the Item to remove its last revision" : (r.digest ? "Move this revision's PDF to trash" : "Save this revision's metadata in trash"),
+        onSelect: () => deleteRevision(item.id, (r.id || r.digest)) }],
     ]);
-    const li = el("li", { className: "rev", onclick: () => pick(item.id, r.digest),
+    const li = el("li", { className: "rev", onclick: () => pick(item.id, (r.id || r.digest)),
       oncontextmenu: revisionMenu },
       el("div", { className: "rev-text" },
         el("span", {}, new Date(r.added).toLocaleDateString(), isHead ? el("span", { className: "tag" }, "HEAD") : null),
-        el("span", { className: "sub", title: r.digest }, (r.source ? r.source + " · " : "") + r.digest.slice(0, 8)),
+        el("span", { className: "sub", title: (r.id || r.digest) }, r.digest ? (r.source ? r.source + " · " : "") + r.digest.slice(0, 8) : "No PDF"),
         (r.tags || []).length ? el("span", { className: "rev-tags" }, ...r.tags.map((t) => el("span", { className: "tag" }, t))) : null),
-      item.kind === "document" && !isHead ? el("button", {
+      !isHead ? el("button", {
         className: "button", type: "button", textContent: "Make HEAD",
-        onclick: (event) => { event.stopPropagation(); makeHead(item.id, r.digest); },
+        onclick: (event) => { event.stopPropagation(); makeHead(item.id, (r.id || r.digest)); },
       }) : null,
       el("button", { className: "tool", type: "button", textContent: "⋯", title: "Revision actions", "aria-label": "Revision actions",
         onclick: (event) => { event.stopPropagation(); revisionMenu(event); } }));
-    if (selected.digest === r.digest) li.classList.add("selected");
+    if (selected.digest === (r.id || r.digest)) li.classList.add("selected");
     return li;
   }));
 }
@@ -531,6 +553,7 @@ async function drawHistory(item) {
 // reason, or put it back in use.
 let retiredOf = "";
 function drawRetired(item) {
+  drawSupersession(item);
   const key = item.id + "\n" + !!item.retired + "\n" + (item.retired_reason || "");
   if (retiredOf === key) return;
   retiredOf = key;
@@ -591,8 +614,9 @@ async function makeHead(id, digest) {
 async function deleteRevision(id, digest) {
   const item = state.items.find((i) => i.id === id);
   if (!item || item.revisions.length < 2) return;
-  const n = item.revisions.findIndex((r) => r.digest === digest) + 1;
-  if (!confirm(`Delete revision ${n} of ${label(state, item)}?\n\nIts PDF moves into the tree's trash folder. The PDF you imported from is not touched.`)) return;
+  const n = item.revisions.findIndex((r) => (r.id || r.digest) === digest) + 1;
+  const consequence = "Its data is kept in the tree's trash. A PDF still used by another snapshot stays in place.";
+  if (!confirm(`Delete revision ${n} of ${label(state, item)}?\n\n${consequence}`)) return;
   say($("head-message"), "");
   try {
     await post("/api/revisions/delete", { item: id, digest });
@@ -608,8 +632,9 @@ async function deleteRevision(id, digest) {
 $("edit").onsubmit = async (event) => {
   event.preventDefault();
   try {
-    await post("/api/fields", { item: selected.id, digest: selected.digest, fields: fieldsOf($("edit-fields")) });
+    const saved = await post("/api/fields", { item: selected.id, digest: selected.digest, fields: fieldsOf($("edit-fields")) });
     await reload();
+    pick(saved.id, headOf(saved));
     say($("edit-message"), "Saved.");
   } catch (err) {
     say($("edit-message"), err.message, true);
@@ -748,7 +773,7 @@ $("more").onclick = async () => {
     if (!selected || selected.id !== id) return;
     const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
     $("similar").replaceChildren(...answer.hits.filter((h) => byId[h.id]).map((h) => el("li", {
-      onclick: () => { const it = byId[h.id]; pick(it.id, it.head || it.revisions[0].digest); },
+      onclick: () => { const it = byId[h.id]; pick(it.id, headOf(it)); },
     }, label(state, byId[h.id]), el("span", { className: "sub" }, Math.round(h.score * 100) + "% alike"))));
     say($("similar-message"), answer.hits.length ? "" : "Nothing alike among the Items whose text has been read.");
   } catch (err) {
@@ -764,8 +789,60 @@ async function reload() {
 reload().then(() => {
   searchText();
   const wanted = state.items.find((i) => i.id === location.hash.slice(1));
-  if (wanted) pick(wanted.id, wanted.head || wanted.revisions[0].digest);
+  if (wanted) pick(wanted.id, headOf(wanted));
 }).catch((err) => {
   state.error = err.message;
   render();
 });
+
+$("attach-pdf").onclick = async () => {
+  if (!selected) return;
+  const target = { ...selected };
+  const count = state.items.find((i) => i.id === target.id).revisions.length;
+  const chosen = await openFile({ title: "Save PDF as a new revision", folder: state.root,
+    filters: [{ label: "PDF", extensions: [".pdf"] }] });
+  if (!chosen) return;
+  const path = Array.isArray(chosen) ? chosen[0] : chosen;
+  const slash = path.lastIndexOf("/");
+  try {
+    const saved = await post("/api/attach", { item: target.id, digest: target.digest, dir: path.slice(0, slash) || "/", path: path.slice(slash + 1) });
+    state = await loadState(); selected = null; pick(saved.id, headOf(saved));
+    say($("edit-message"), saved.revisions.length > count ? "Saved as a new revision. Earlier snapshots preserved." : "Content already kept; no new revision.");
+  } catch (err) { say($("edit-message"), err.message, true); }
+};
+
+let supersessionRequest = 0;
+let predecessorID = "";
+async function drawSupersession(item) {
+  const request = ++supersessionRequest;
+  const previous = state.items.find((i) => i.superseded_by === item.id);
+  const next = state.items.find((i) => i.id === item.superseded_by);
+  predecessorID = item.superseded_by ? item.id : previous?.id || "";
+  $("supersession-links").replaceChildren();
+  for (const [title, linked, id] of [["Superseded by", next, item.superseded_by], ["Replaces", previous, previous?.id]]) {
+    if (id) $("supersession-links").append(el("p", {}, title + ": ", el("a", { href: "#" + id, onclick: (event) => { if (linked) { event.preventDefault(); open(linked); } } }, linked ? label(state, linked) : id + " (not in this tree)")));
+  }
+  $("undo-supersession").hidden = !predecessorID;
+  $("retire-form").hidden = !!item.superseded_by;
+  $("supersession-form").hidden = true;
+  if (item.type !== "visa" || item.retired || previous) return;
+  try {
+    const response = await fetch(api("/api/supersession-candidates?" + new URLSearchParams({owner:item.fields.owner || "",country:item.fields.country || "",exclude:item.id})));
+    const candidates = await response.json();
+    if (request !== supersessionRequest || selected?.id !== item.id) return;
+    if (!response.ok) throw new Error(candidates.error);
+    $("supersession-choice").replaceChildren(el("option", {value:""}, "Choose an existing visa…"), ...candidates.map((i) => el("option", {value:i.id}, [i.fields.visa_type, i.fields.number || i.id, i.fields.issued].filter(Boolean).join(" · "))));
+    $("supersession-form").hidden = !candidates.length;
+  } catch (err) { if (request === supersessionRequest) say($("retire-message"),err.message,true); }
+}
+$("supersession-form").onsubmit = async (event) => {
+  event.preventDefault();
+  if (!selected || !$("supersession-choice").value) return;
+  try { await post("/api/supersession", {item:$("supersession-choice").value,replacement:selected.id}); await reload(); }
+  catch (err) { say($("retire-message"),err.message,true); }
+};
+$("undo-supersession").onclick = async () => {
+  if (!predecessorID) return;
+  try { await post("/api/supersession", {item:predecessorID}); await reload(); }
+  catch (err) { say($("retire-message"),err.message,true); }
+};

@@ -29,7 +29,7 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 
 | Page | What it is for |
 | --- | --- |
-| Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete. Nothing is imported here. |
+| Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete and attach or replace a PDF on a selected revision. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
 | Views `/views/` | Building layouts, previewing the tree they make, and exporting (M4–M6). |
 | Targets `/targets/` | Where Views are exported to: add, rename and delete Targets, set their folders, move Views to them, export. |
@@ -37,6 +37,37 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
 | Import `/import/` | Taking PDFs in. |
 | Log `/log/` | What was done to the tree's Items, newest first, filtered. Last in the bar. |
+
+### Issuer suggestions
+
+Every text `issuer` field offers an editable list of previously saved issuers.
+The scope is **current tree + document type + country**: both type and country
+must match. Issuers from another type or country are not useful candidates,
+even when their names happen to match. This applies to every Template with a
+text `issuer` field, not just visas; no Template change is needed.
+
+- Import (including creation without a PDF), field editing and change-type
+  forms use the same control. Changing the selected Template or country updates
+  the candidates. Change-type forms use the target type; an old revision uses
+  its own type and country.
+- Country names and codes are normalized for matching: `AU`, `AUS` and
+  `澳大利亚` identify the same country. The form uses the entered country, or
+  the Template's country default when applicable. Without a recognized country,
+  there are no candidates; it never falls back to a cross-country list.
+- Choose a saved name or type a new one. Saving the Item makes that name
+  available in the same type-and-country scope next time. Suggestions are
+  optional, not validation constraints. Updating candidates does not replace
+  an issuer already entered.
+- Candidates come from Item sidecars, including retired Items and retained
+  revisions. A revision's own type and country determine where its issuer is
+  suggested; a later change of type or country must not relabel that history.
+  Values are sorted and deduplicated after trimming surrounding whitespace;
+  empty values are omitted.
+
+There is no separate issuer catalogue, database or browser-only history.
+Deleting all saved occurrences removes a name from the candidates. This keeps
+the list reproducible from the tree, including after moving it to another
+machine, and avoids a second source of metadata truth.
 
 ### Browse
 
@@ -89,6 +120,54 @@ Source has retired.
 
 "Retired" rather than "expired", which is about a date, or "archived", which
 Cases already use.
+
+### Visa replacement: separate Items, explicit relationship
+
+Each visa grant is a separate record: it has its own grant number, dates and
+supporting letter. A later grant does not become a revision of the earlier
+grant. Revisions describe changes to the same record, such as corrected
+fields or an attached scan; replacement describes a relationship between two
+records. Keeping both Items preserves their documents and any Cases that
+already refer to them.
+
+The same owner and country are not enough to infer replacement. The owner
+may need to keep multiple visas in use, so importing a visa never retires
+another automatically. **Replaces** is an explicit, optional choice,
+defaulting to none, on both PDF imports and creation without a PDF. Candidates
+are in-use visas for the same owner and country. The detail panel also lets
+the reader apply the relationship after both Items already exist. This
+feature currently applies to the `visa` type.
+
+For example, when visa B replaces visa A:
+
+- B remains a separate Item in use; A is retired and shown with a
+  **superseded** badge. Other visas stay as they were.
+- A's detail panel, in **Retire**, shows **Superseded by: B**, linking to B.
+- B's detail panel shows **Replaces: A**, linking back to A. The old record
+  must explain why it was set aside, without requiring the reader to find
+  the new record first.
+- **Undo replacement** removes the relationship and restores A to use. It
+  does not delete B or change either Item's snapshots, PDFs or Case entries.
+  Replacement and undo are recorded in history.
+
+Replacement is usage metadata, not an expiry date or a content revision.
+It therefore reuses retirement's filtering and ordering without rewriting
+`expires` or changing a revision ID. This also distinguishes an intentional
+replacement from an ordinary retirement with a free-text reason.
+
+The predecessor stores `superseded_by` (the successor's Item ID) together
+with `retired: true` in one sidecar write. The reverse link is derived from
+that field rather than stored a second time: there is only one relationship
+to update or undo. Saving a new Item succeeds before its predecessor is
+changed. If linking then fails, the UI reports that the new visa was saved
+but replacement failed; the relationship can be applied from details.
+
+A successor can replace only one predecessor. Self-links, already-retired
+predecessors and retired successors are refused. A normal retirement edit
+cannot bypass an active replacement; use **Undo replacement** first. A
+missing related Item is shown by ID, for example in a partial exported tree.
+Merge remaps successor IDs when source Items match different destination
+IDs and refuses conflicting replacement targets.
 
 ### Log
 
@@ -225,25 +304,70 @@ is content identity. There are two kinds.
 
 A document is one thing that is reissued over time: a driver licence is
 renewed, and the new card is a new **revision** of the same Item. Each revision
-is exactly one PDF; front and back are scanned into that one PDF, never as two
-files.
+keeps its own fields and may have one PDF; front and back are scanned into
+that one PDF, never as two files.
 
 Each document has a **HEAD** that points at one revision, like git's HEAD.
 Adding a revision moves HEAD to it. HEAD can be moved back by hand, for a
 later import that turns out to be a rescan of an older card. What is current is
 HEAD, not the highest revision number and not a computation over dates.
 
-Browse links to a Change type page for an Item. The left column shows its
-current fields and each revision's values; the right column chooses another
-Template of the same kind and asks for its Item and revision fields. The
-change is checked and saved in one sidecar write. The Item ID, PDFs, revisions,
-HEAD, notes and tags remain. Fields absent from the target Template leave the
-current fields and remain in the previous-values snapshot in history.
+Browse links to a Change type page. It maps the current revision into a
+Template of the same kind and saves a new snapshot. Previous snapshots keep
+their original type and fields. The Item ID, notes and tags remain.
 
 ### Records
 
 A record is one independent historical paper: a payslip, a bill, a statement.
-It has no revisions and no HEAD.
+It does not accept another paper as a renewal. Editing its details or adding
+its scan creates a new snapshot of that same paper, with HEAD identifying the
+current snapshot, just as for a document.
+
+### Revision snapshots
+
+A revision is an immutable snapshot of all Template field values, the type,
+and the optional PDF. Editing fields, changing type, attaching a PDF or
+replacing a PDF creates a new snapshot and moves HEAD to it. Editing an older
+snapshot branches from its values; other snapshots remain intact. Saving
+unchanged content does nothing. Returning to content already kept reuses that
+snapshot and moves HEAD instead of storing a duplicate.
+
+The revision ID is SHA-256 of a versioned, canonical JSON payload containing
+the type, nonempty fields (keys sorted), and the PDF's SHA-256 or an empty
+string. The PDF digest identifies only the attachment. Notes, tags, filenames
+and timestamps do not affect the snapshot ID. Metadata edits do not create
+revisions. One PDF may be shared by several snapshots with different fields.
+
+Old sidecars remain readable. Before a write changes shared Item fields, old
+revisions' effective values are frozen; their existing references stay valid.
+Case snapshots keep referencing the exact old version, including its lack of
+an attachment. They do not silently follow a later scan. Displayed revision
+numbers remain the positions in the revision list; the hash is the identity.
+
+### Details before a scan
+
+Import's **New without PDF** creates the first snapshot from a Template.
+Browse shows **No PDF**; fields and expiry work normally. Import also supports
+recording a replacement card without a scan.
+
+Only the selected Item on Browse offers **Attach PDF in a new revision** or
+**Replace PDF in a new revision**. These copy the chosen snapshot's field
+values into a new snapshot with the selected attachment. The earlier snapshot
+is kept. PDFs are independently read back before publication. A PDF already
+kept by another Item is refused; an existing blob in this Item is verified
+before reuse.
+
+Verify checks hashed snapshots against their stored content. It skips
+intentional missing attachments but still reports a missing or
+changed PDF when a digest is recorded. PDF Views and exports skip snapshots
+without attachments; a HEAD without a PDF does not fall back to an older scan.
+OCR and similarity reading skip these snapshots. Export manifests retain
+each snapshot ID and its own field values even when snapshots share a PDF.
+
+Tree merge carries the snapshots and their attachment blobs. A shared snapshot
+reference with conflicting content is refused rather than overwritten.
+Deleting any snapshot saves the original sidecar in trash. Its PDF moves
+to trash only when no remaining snapshot uses it; shared PDFs remain.
 
 ### Telling documents of one type apart
 
@@ -284,17 +408,18 @@ shows for it:
   is written differently, `AU` in an older sidecar and `澳大利亚` now, are
   the same document. The table is ISO 3166-1, in `internal/doc/country`.
 
-A field of a document may be `per_revision: true`: its value belongs to each
-revision rather than to the Item. A renewed card has its own number and expiry
+A field of a document may be `per_revision: true`: Import asks for it again
+when recording a renewal. Every snapshot stores all fields, including the
+fields inherited from the preceding snapshot. A renewed card has its own number and expiry
 and the old card keeps its own. Import asks for every field; adding a revision
 asks only for the per_revision ones, suggested from the new PDF's text. On
 the same form, the Item's current tags and notes can be edited and are saved
 with the new revision; they belong to the Item, not to an individual revision.
-On Browse, picking a revision shows and edits the fields as that revision has
-them. Everything else — the page's list, a View's query — uses HEAD's. A
+On Browse, picking a revision shows its fields; saving edits creates a new
+snapshot. Everything else — the page's list, a View's query — uses HEAD's. A
 layout key is the exported revision's own value, so exporting all revisions
 can name the old card and the new one differently. A distinguishing field
-names the document, so it cannot be per_revision, and a record has one PDF,
+names the document, so it cannot be per_revision, and a record has one issue,
 so its fields cannot be either. A value a sidecar keeps at the Item for a key
 made per_revision later stands for every revision without its own, until that
 revision's fields are saved.
@@ -631,7 +756,7 @@ exported and the Items' fields; a Target carries no Templates or Views.
   items/
     <item-id>/
       item.dgs-item.yaml    # the sidecar: everything known about the Item
-      <sha256>.pdf          # one PDF per revision, named by its content
+      <sha256>.pdf          # optional PDF per revision, named by its content
 ```
 
 - The marker is `dgs-doctree.yaml`, not `dgs-doc.yaml`, which reads too much
@@ -699,18 +824,23 @@ id: 01J8...               # ULID
 type: id_card
 kind: document
 fields: {owner: jane, country: AU}
-head: <sha256>            # documents only
+head: <snapshot-sha256>
 revisions:
-  - {digest: <sha256>, added: 2026-09-25T10:00:00+10:00, source: scan.pdf}
+  - id: <snapshot-sha256>
+    snapshot: true
+    type: id_card
+    fields: {owner: jane, country: AU}
+    digest: <pdf-sha256>   # empty when there is no attachment
+    added: 2026-09-25T10:00:00+10:00
+    source: scan.pdf
 ```
 
-A record has exactly one revision and no `head`. `notes` and `tags`, when the
-owner has written any, are Item keys in the sidecar. A document's revision
+Legacy records have one revision and no `head`; snapshot records also use HEAD. `notes` and `tags`, when the
+owner has written any, are Item keys in the sidecar. Each revision, with or without a PDF,
 may also have `tags` of its own — a reissue, a copy — kept on that revision;
 the tags a revision has are the Item's and its own. Browse filters and
 searches an Item by the tags its HEAD has, edits the Item's tags and the
-picked revision's apart, and shows each revision's own beside it. Adding a
-revision on Import asks for its own tags as well. Changing a revision's tags
+picked revision's apart, and shows each revision's own beside it. Item tags and revision tags can both be added, edited or cleared without changing snapshot content. Changing a revision's tags
 is a history event. Tags are lower case, with
 spaces joined by hyphens, and duplicates removed. Import and Browse offer
 existing tags as the owner types; Browse filters by tags in the current tree.

@@ -89,7 +89,7 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 	keys := map[string]string{}
 	fields := item.Fields
 	if revision >= 1 && revision <= len(item.Revisions) {
-		fields = item.FieldsAt(item.Revisions[revision-1].Digest)
+		fields = item.FieldsAt(item.Revisions[revision-1].Ref())
 	}
 	for k, v := range fields {
 		if v != "" {
@@ -98,6 +98,9 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 	}
 	keys["id"] = item.ID
 	keys["type"] = item.Type
+	if revision >= 1 && revision <= len(item.Revisions) && item.Revisions[revision-1].Type != "" {
+		keys["type"] = item.Revisions[revision-1].Type
+	}
 	keys["kind"] = string(item.Kind)
 	keys["revision"] = strconv.Itoa(revision)
 	keys["ext"] = "pdf"
@@ -168,13 +171,16 @@ func Build(v View, items []tree.Item) (Plan, error) {
 		}
 		current := item.Current()
 		for i, rev := range item.Revisions {
-			if v.Selection == Head && rev.Digest != current {
+			if rev.Digest == "" {
+				continue
+			}
+			if v.Selection == Head && rev.Ref() != current {
 				continue
 			}
 			keys := KeysOf(item, i+1)
 			name, lacking := render(layout, keys, v.Default)
 			if len(lacking) > 0 {
-				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Digest, Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
+				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
 				continue
 			}
 			placed = append(placed, File{Path: name, Item: item.ID, Digest: rev.Digest, Revision: i + 1})

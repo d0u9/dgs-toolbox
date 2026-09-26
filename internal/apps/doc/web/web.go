@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
@@ -209,6 +210,7 @@ func Handler(settings Settings) http.Handler {
 func (s server) api() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
+	mux.HandleFunc("GET /api/issuers", s.issuers)
 	mux.HandleFunc("GET /api/source", s.sourceList)
 	mux.HandleFunc("GET /api/source/file", s.sourceFile)
 	mux.HandleFunc("GET /api/revision", s.revision)
@@ -218,6 +220,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("GET /api/page", s.page)
 	mux.HandleFunc("POST /api/import", s.importPDF)
 	mux.HandleFunc("POST /api/revisions", s.addRevision)
+	mux.HandleFunc("POST /api/attach", s.attachPDF)
 	mux.HandleFunc("POST /api/head", s.setHead)
 	mux.HandleFunc("POST /api/revisions/delete", s.deleteRevision)
 	mux.HandleFunc("POST /api/fields", s.setFields)
@@ -227,6 +230,8 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/revision-tags", s.setRevisionTags)
 	mux.HandleFunc("POST /api/frequent", s.setFrequent)
 	mux.HandleFunc("POST /api/retired", s.setRetired)
+	mux.HandleFunc("POST /api/supersession", s.supersession)
+	mux.HandleFunc("GET /api/supersession-candidates", s.supersessionCandidates)
 	mux.HandleFunc("GET /api/history", s.historyLog)
 	mux.HandleFunc("POST /api/items/delete", s.deleteItem)
 	mux.HandleFunc("GET /api/templates", s.templateList)
@@ -385,7 +390,7 @@ func (s server) revision(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, rev := range item.Revisions {
-			if rev.Digest == digest {
+			if rev.Ref() == digest && rev.Digest != "" {
 				servePDF(w, r, tree.PDFPath(s.root, item.ID, rev.Digest))
 				return
 			}
@@ -482,7 +487,10 @@ func (s server) rank(templates []tree.Template, digest, text string) []classify.
 	}
 	var samples []classify.Sample
 	for _, item := range items {
-		head := item.Current()
+		head := item.CurrentDigest()
+		if head == "" {
+			continue
+		}
 		if !known[item.Type] || head == digest {
 			continue
 		}
@@ -529,7 +537,7 @@ func (s server) pdfPath(query url.Values) (string, error) {
 		return "", err
 	}
 	for _, rev := range item.Revisions {
-		if rev.Digest == query.Get("digest") {
+		if rev.Ref() == query.Get("digest") && rev.Digest != "" {
 			return tree.PDFPath(s.root, item.ID, rev.Digest), nil
 		}
 	}
@@ -554,12 +562,14 @@ func servePDF(w http.ResponseWriter, r *http.Request, path string) {
 }
 
 type importJSON struct {
-	Dir    string            `json:"dir"`
-	Path   string            `json:"path"`
-	Type   string            `json:"type"`
-	Fields map[string]string `json:"fields"`
-	Notes  string            `json:"notes"`
-	Tags   []string          `json:"tags"`
+	Replaces string            `json:"replaces"`
+	NoPDF    bool              `json:"no_pdf"`
+	Dir      string            `json:"dir"`
+	Path     string            `json:"path"`
+	Type     string            `json:"type"`
+	Fields   map[string]string `json:"fields"`
+	Notes    string            `json:"notes"`
+	Tags     []string          `json:"tags"`
 }
 
 func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
@@ -568,9 +578,15 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	source, ok := s.source(w, request.Dir, request.Path)
-	if !ok {
-		return
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	source := ""
+	if !request.NoPDF {
+		var ok bool
+		source, ok = s.source(w, request.Dir, request.Path)
+		if !ok {
+			return
+		}
 	}
 	templates, err := tree.LoadTemplates(s.root)
 	if err != nil {
@@ -581,12 +597,30 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 		if t.Type != request.Type {
 			continue
 		}
-		item, err := tree.Import(r.Context(), tree.ImportRequest{
+		if request.Replaces != "" {
+			if err := tree.ValidateSupersession(s.root, request.Replaces, request.Type, request.Fields); err != nil {
+				answer(w, tree.Item{}, err)
+				return
+			}
+		}
+		req := tree.ImportRequest{
 			Root: s.root, Source: source, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, Now: s.now(),
-		})
+		}
+		var item tree.Item
+		if request.NoPDF {
+			item, err = tree.CreateWithoutPDF(req)
+		} else {
+			item, err = tree.Import(r.Context(), req)
+		}
 		if err != nil {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
+		}
+		if request.Replaces != "" {
+			if _, err := tree.Supersede(s.root, request.Replaces, item.ID, s.now()); err != nil {
+				writeJSON(w, http.StatusOK, map[string]any{"item": item, "warning": "New visa saved, but replacement failed: " + err.Error()})
+				return
+			}
 		}
 		writeJSON(w, http.StatusOK, item)
 		return
@@ -628,6 +662,7 @@ func answer(w http.ResponseWriter, item tree.Item, err error) {
 // and moves HEAD to it.
 func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	var request struct {
+		NoPDF  bool              `json:"no_pdf"`
 		Dir    string            `json:"dir"`
 		Path   string            `json:"path"`
 		Item   string            `json:"item"`
@@ -640,17 +675,28 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	source, ok := s.source(w, request.Dir, request.Path)
-	if !ok {
-		return
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	source := ""
+	if !request.NoPDF {
+		var ok bool
+		source, ok = s.source(w, request.Dir, request.Path)
+		if !ok {
+			return
+		}
 	}
 	t, err := s.templateOfItem(request.Item)
 	if err != nil {
 		answer(w, tree.Item{}, err)
 		return
 	}
-	item, err := tree.AddRevisionWithMetadata(r.Context(), s.root, request.Item, source, t, request.Fields,
-		tree.RevisionMetadata{Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags}, s.now())
+	metadata := tree.RevisionMetadata{Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags}
+	var item tree.Item
+	if request.NoPDF {
+		item, err = tree.AddWithoutPDF(s.root, request.Item, t, request.Fields, metadata, s.now())
+	} else {
+		item, err = tree.AddRevisionWithMetadata(r.Context(), s.root, request.Item, source, t, request.Fields, metadata, s.now())
+	}
 	answer(w, item, err)
 }
 
@@ -714,6 +760,26 @@ func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := s.templateOfItem(request.Item)
+	if item, _, loadErr := tree.FindItem(s.root, request.Item); loadErr == nil {
+		if rev, ok := item.Revision(request.Digest); ok && rev.Type != "" {
+			templates, loadErr := tree.LoadTemplates(s.root)
+			if loadErr != nil {
+				err = loadErr
+			} else {
+				found := false
+				for _, candidate := range templates {
+					if candidate.Type == rev.Type {
+						t = candidate
+						found = true
+						break
+					}
+				}
+				if !found {
+					err = fmt.Errorf("no Template for historical type %s", rev.Type)
+				}
+			}
+		}
+	}
 	if err != nil {
 		answer(w, tree.Item{}, err)
 		return
@@ -895,4 +961,70 @@ func Serve(settings Settings) (string, error) {
 		}()
 	})
 	return serverURL, serverErr
+}
+
+func (s server) attachPDF(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item   string
+		Digest string
+		Dir    string
+		Path   string
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	source, ok := s.source(w, request.Dir, request.Path)
+	if !ok {
+		return
+	}
+	item, err := tree.AttachPDF(r.Context(), s.root, request.Item, request.Digest, source, s.now())
+	answer(w, item, err)
+}
+
+func (s server) supersession(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item        string `json:"item"`
+		Replacement string `json:"replacement"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	var item tree.Item
+	var err error
+	if request.Replacement == "" {
+		item, err = tree.UndoSupersession(s.root, request.Item, s.now())
+	} else {
+		item, err = tree.Supersede(s.root, request.Item, request.Replacement, s.now())
+	}
+	answer(w, item, err)
+}
+
+func (s server) supersessionCandidates(w http.ResponseWriter, r *http.Request) {
+	items, err := tree.LoadItems(s.root)
+	if err != nil {
+		answer(w, tree.Item{}, err)
+		return
+	}
+	result := []tree.Item{}
+	fields := map[string]string{"owner": r.URL.Query().Get("owner"), "country": r.URL.Query().Get("country")}
+	for _, it := range items {
+		if it.ID != r.URL.Query().Get("exclude") && tree.ValidateSupersession(s.root, it.ID, "visa", fields) == nil {
+			result = append(result, it)
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// issuers returns suggestions only for the requested type and country.
+func (s server) issuers(w http.ResponseWriter, r *http.Request) {
+	items, err := tree.LoadItems(s.root)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, tree.FieldValues(items, r.URL.Query().Get("type"), r.URL.Query().Get("country"), "issuer"))
 }

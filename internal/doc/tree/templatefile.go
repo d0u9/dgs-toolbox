@@ -70,7 +70,11 @@ func TrashTemplate(root, typ string, now time.Time) (string, error) {
 		return "", err
 	}
 	for _, item := range items {
-		if item.Type == typ {
+		inUse := item.Type == typ
+		for _, r := range item.Revisions {
+			inUse = inUse || r.Type == typ
+		}
+		if inUse {
 			return "", fmt.Errorf("Items of type %s exist: delete them first", typ)
 		}
 	}

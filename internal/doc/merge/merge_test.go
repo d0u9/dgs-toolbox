@@ -265,3 +265,27 @@ func TestImportBackFromTarget(t *testing.T) {
 		t.Fatalf("same tree: %+v", p)
 	}
 }
+
+func TestMergeReplacementRemapsSuccessor(t *testing.T) {
+	full := newTree(t, passport)
+	sub := newTree(t, passport)
+	put(t, full, tree.Item{ID: "F1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "old"}}, "old")
+	put(t, full, tree.Item{ID: "F2", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "new"}}, "new")
+	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "old"}, Retired: true, SupersededBy: "S2"}, "old")
+	put(t, sub, tree.Item{ID: "S2", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "new"}}, "new")
+	src := source(t, sub)
+	p := plan(t, full, src)
+	if len(p.Changed) != 1 || p.Changed[0].SupersededBy != "F2" {
+		t.Fatalf("bad remap: %+v", p)
+	}
+	if _, err := Apply(context.Background(), full, src, p, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	item, _, err := tree.FindItem(full, "F1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.SupersededBy != "F2" || !item.Retired {
+		t.Fatalf("lost replacement: %+v", item)
+	}
+}

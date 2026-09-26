@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// ChangeType reclassifies an Item using one target Template. The request
-// supplies Item fields and each revision's own fields explicitly, so values
-// the target does not define are only retained in the history snapshot.
+// ChangeType creates a new snapshot of HEAD using the target Template.
+// Earlier revisions retain their original type and complete field values.
 func ChangeType(root, id string, target Template, fields map[string]string, revisions map[string]map[string]string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
@@ -34,7 +33,7 @@ func ChangeType(root, id string, target Template, fields map[string]string, revi
 	for digest := range revisions {
 		found := false
 		for _, rev := range item.Revisions {
-			if rev.Digest == digest {
+			if rev.Ref() == digest {
 				found = true
 				break
 			}
@@ -46,43 +45,36 @@ func ChangeType(root, id string, target Template, fields map[string]string, revi
 	before := HistoryEvent{At: now.Format(time.RFC3339), Action: "change_type", FromType: item.Type, ToType: target.Type,
 		PreviousFields: maps.Clone(item.Fields), PreviousRevisions: map[string]map[string]string{}}
 	for _, rev := range item.Revisions {
-		before.PreviousRevisions[rev.Digest] = maps.Clone(rev.Fields)
+		before.PreviousRevisions[rev.Ref()] = maps.Clone(rev.Fields)
 	}
-	next := item
-	next.Type = target.Type
-	next.Fields = nil
-	next.Revisions = append([]Revision(nil), item.Revisions...)
-	for i, rev := range item.Revisions {
-		given := maps.Clone(fields)
-		for key, value := range revisions[rev.Digest] {
-			if !target.has(key) || !target.field(key).PerRevision {
-				return Item{}, fmt.Errorf("%s is not a revision field of %s", key, target.Type)
-			}
-			given[key] = value
-		}
-		clean, err := CleanFields(target, given)
-		if err != nil {
-			return Item{}, fmt.Errorf("revision %s: %w", rev.Digest, err)
-		}
-		own, per := target.Split(clean)
-		if next.Fields == nil {
-			next.Fields = own
-		} else if !maps.Equal(next.Fields, own) {
-			return Item{}, fmt.Errorf("Item fields differ across revisions")
-		}
-		next.Revisions[i].Fields = per
-		if err := linked(target, items, clean, id); err != nil {
-			return Item{}, err
-		}
+	given := maps.Clone(fields)
+	if given == nil {
+		given = map[string]string{}
 	}
-	if other, ok := taken(target, items, next.CurrentFields(), id); ok {
+	for key, value := range revisions[item.Current()] {
+		if !target.has(key) || !target.field(key).PerRevision {
+			return Item{}, fmt.Errorf("%s is not a revision field of %s", key, target.Type)
+		}
+		given[key] = value
+	}
+	clean, err := CleanFields(target, given)
+	if err != nil {
+		return Item{}, err
+	}
+	if err := linked(target, items, clean, id); err != nil {
+		return Item{}, err
+	}
+	if other, ok := taken(target, items, clean, id); ok {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
 	}
-	before.NewFields = maps.Clone(next.Fields)
-	before.NewRevisions = map[string]map[string]string{}
-	for _, rev := range next.Revisions {
-		before.NewRevisions[rev.Digest] = maps.Clone(rev.Fields)
+	base, ok := item.Revision(item.Current())
+	if !ok {
+		return Item{}, fmt.Errorf("no current revision")
 	}
+	next := item
+	before.Digest = next.saveSnapshot(target.Type, clean, base.Digest, base.Source, now)
+	before.NewFields = maps.Clone(next.Fields)
+	before.NewRevisions = map[string]map[string]string{next.Current(): maps.Clone(clean)}
 	next.History = append(append([]HistoryEvent(nil), item.History...), before)
 	return next, WriteItem(root, next)
 }

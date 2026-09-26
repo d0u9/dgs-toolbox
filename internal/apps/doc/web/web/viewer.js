@@ -60,7 +60,7 @@ function apply(anchor) {
     const width = widthFor(sheet);
     sheet.style.width = width + "px";
     const img = sheet.querySelector("img.page");
-    if (width * devicePixelRatio > SHARP && img.dataset.large && img.src !== img.dataset.large) {
+    if (width * devicePixelRatio > SHARP && img.dataset.large && img.getAttribute("src") !== img.dataset.large) {
       img.src = img.dataset.large;
     }
   }
@@ -138,6 +138,7 @@ export function show(count, pictureURL, onMissing) {
 }
 
 export function hide() {
+  if (observer) observer.disconnect();
   $("viewer").hidden = true;
   $("rail").hidden = true;
   $("pages").replaceChildren();
@@ -159,7 +160,17 @@ function watch() {
     $("page-at").textContent = sheets.length > 1 ? `${n + 1} / ${sheets.length}` : "";
     [...$("rail").children].forEach((t, i) => {
       t.classList.toggle("current", i === n);
-      if (i === n && !$("rail").hidden) t.scrollIntoView({ block: "nearest" });
+      if (i === n && !$("rail").hidden) {
+        // Only move the thumbnail rail. scrollIntoView also scrolls its
+        // ancestors, which can move the preview and retrigger this observer.
+        const rail = $("rail");
+        const bounds = rail.getBoundingClientRect();
+        const thumb = t.getBoundingClientRect();
+        const top = bounds.top + rail.clientTop;
+        const bottom = top + rail.clientHeight;
+        if (thumb.top < top) rail.scrollTop += thumb.top - top;
+        else if (thumb.bottom > bottom) rail.scrollTop += thumb.bottom - bottom;
+      }
     });
   }, { root: $("pages"), threshold: [0, 0.25, 0.5, 0.75, 1] });
   sheets.forEach((s) => observer.observe(s));

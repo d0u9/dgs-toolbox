@@ -9,6 +9,7 @@ let state = { templates: [], items: [] };
 let dir = "";
 let files = [];
 let selected = "";
+let noPDF = false;
 // What the text of the picked PDF suggests, by type: { type: { key: value } }.
 let suggestions = {};
 let selectedTemplate = "";
@@ -33,9 +34,13 @@ function remember(folder) {
 
 function render() {
   frame(state);
+  document.querySelector(".import-work").classList.toggle("manual-entry", noPDF);
+  $("cancel-without-pdf").hidden = !noPDF;
   $("dir").textContent = dir;
+  $("dir").title = dir;
   const kept = files.filter((f) => f.item).length;
   $("counts").textContent = dir ? `${files.length} PDFs · ${kept} in tree` : "";
+  $("counts").title = $("counts").textContent;
   $("tree").replaceChildren(fileTree(files, {
     closed, selected, onPick: (f) => pick(f.path),
     mark: (f) => f.item ? "Imported: already in the tree" : "",
@@ -47,8 +52,10 @@ function render() {
   }));
   if (dir && files.length === 0) say($("list-message"), "No PDFs in this folder or under it.");
   const file = files.find((f) => f.path === selected);
-  $("side").hidden = !file;
-  $("import").hidden = !file || !!file.item || !state.tree;
+  $("side").hidden = !file && !noPDF;
+  $("import").hidden = (!noPDF && (!file || !!file.item)) || !state.tree;
+  $("copy-note").hidden = noPDF;
+  $("import-title").textContent = noPDF ? "New without PDF" : "Import";
   $("kept").hidden = !file || !file.item;
   if (file && file.item) {
     const item = state.items.find((i) => i.id === file.item);
@@ -58,6 +65,7 @@ function render() {
 }
 
 function pick(path) {
+  noPDF = false;
   if (path !== selected) {
     $("notes").value = "";
     tags.set([]);
@@ -163,27 +171,29 @@ function drawFields() {
     metadataItem = into.value;
   }
   // A new revision can have tags of its own, beside the Item's.
-  $("revision-tags-field").hidden = !adding;
+  $("revision-tags-field").hidden = true;
   $("tags-field").hidden = false;
   $("notes-field").hidden = false;
-  $("import-button").textContent = adding ? "Add revision" : "Import";
+  $("import-button").textContent = adding ? "Add revision" : (noPDF ? "Create item" : "Import");
   // A new revision is asked only what changes with it: the fields the
   // Template marks per_revision. The rest belong to the Item it joins.
   const asked = adding ? t.fields.filter((f) => f.per_revision) : t.fields;
-  $("fields").replaceChildren(...asked.map((f) => inputFor(f, "", adding ? "" : (t.defaults || {})[f.key] || "", state)));
+  $("fields").replaceChildren(...asked.map((f) => inputFor(f, "", adding ? "" : (t.defaults || {})[f.key] || "", state, undefined, t.type)));
   if (adding && !asked.length) {
     $("fields").append(el("p", { className: "message" }, "Nothing is asked: " + t.type +
       " marks no field per_revision. To keep a renewed card's own number and expiry, add per_revision: true to them on the Templates page."));
   }
   for (const input of $("fields").querySelectorAll(".field-input")) {
+    if (["owner", "country"].includes(input.name)) { input.addEventListener("input", drawReplaces); input.addEventListener("change", drawReplaces); }
     input.addEventListener("input", () => { input.classList.remove("suggested"); showSource(null); });
-    const source = () => input.classList.contains("suggested") && showSource((suggestions[selectedTemplate] || {})[input.name]);
-    input.addEventListener("focus", source);
-    input.addEventListener("mouseenter", source);
+    const source = (reveal) => input.classList.contains("suggested") && showSource((suggestions[selectedTemplate] || {})[input.name], reveal);
+    input.addEventListener("focus", () => source(true));
+    input.addEventListener("mouseenter", () => source(false));
     input.addEventListener("blur", () => showSource(null));
     input.addEventListener("mouseleave", () => document.activeElement !== input && showSource(null));
   }
   suggest();
+  drawReplaces();
 }
 
 // suggest fills the empty fields the text has a value for, marked so they
@@ -196,7 +206,7 @@ function suggest() {
       input.value = value;
       input.dispatchEvent(new Event("change"));
       input.classList.add("suggested");
-      input.title = "Suggested from the text. Hover to see where on the page it was read.";
+      input.title = "Suggested from the text. Hover to highlight the source; focus this field to locate it.";
     }
   }
 }
@@ -258,17 +268,23 @@ $("import").onsubmit = async (event) => {
   event.preventDefault();
   tags.commit();
   $("import-button").disabled = true;
-  say($("import-message"), "Copying and reading back…");
+  say($("import-message"), noPDF ? "Saving…" : "Copying and reading back…");
   try {
     if ($("into").value && !$("into-field").hidden) {
       revisionTags.commit();
-      await post("/api/revisions", { dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
+      await post("/api/revisions", { no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
         revision_tags: revisionTags.get() });
     } else {
-      await post("/api/import", { dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get() });
+      const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get() });
+      if (saved.warning) { state = await loadState(); render(); say($("import-message"), saved.warning, true); return; }
     }
     const done = selected;
     state = await loadState();
+    if (noPDF) {
+      render(); drawFields();
+      say($("import-message"), "Saved without PDF. Add a scan later from Browse.");
+      return;
+    }
     await open(dir);
     const order = files.map((f) => f.path);
     const next = order.slice(order.indexOf(done) + 1).concat(order).find((p) => !files.find((f) => f.path === p).item);
@@ -281,12 +297,51 @@ $("import").onsubmit = async (event) => {
   }
 };
 
+$("cancel-without-pdf").onclick = () => {
+  noPDF = false; clearPreview(); $("empty").textContent = "Open a folder, then pick a PDF."; render();
+};
+
+$("without-pdf").onclick = () => {
+  noPDF = true; selected = ""; $("into").value = ""; suggestions = {}; suggestedType = ""; typeChosen = true;
+  $("notes").value = ""; tags.set([]); revisionTags.set([]); metadataItem = "";
+  clearPreview(); $("type-hint").hidden = true;
+  $("empty").textContent = "Enter the details now. Attach a PDF later from Browse.";
+  render(); drawFields();
+};
+
 loadState().then(async (s) => {
   state = s;
   render();
-  const last = remembered();
-  if (last) await open(last);
+  const into = new URLSearchParams(location.search).get("into");
+  if (new URLSearchParams(location.search).has("no_pdf")) {
+    $("without-pdf").click();
+    const item = state.items.find((i) => i.id === into);
+    if (item) { selectedTemplate = item.type; drawFields(); $("into").value = item.id; drawFields(); }
+  } else {
+    const last = remembered();
+    if (last) await open(last);
+  }
 }).catch((err) => {
   state.error = err.message;
   render();
 });
+
+let replacesRequest = 0;
+async function drawReplaces() {
+  const request = ++replacesRequest;
+  const visible = selectedTemplate === "visa" && (!$("into").value || $("into-field").hidden);
+  $("replaces-field").hidden = !visible;
+  const previous = $("replaces").value;
+  $("replaces").replaceChildren(el("option", { value: "" }, "None — keep existing visas in use"));
+  if (!visible) return;
+  const fields = fieldsOf($("fields"));
+  if (!fields.owner || !fields.country) return;
+  try {
+    const response = await fetch(api("/api/supersession-candidates?" + new URLSearchParams({ owner: fields.owner, country: fields.country })));
+    const candidates = await response.json();
+    if (request !== replacesRequest) return;
+    if (!response.ok) throw new Error(candidates.error);
+    $("replaces").append(...candidates.map((i) => el("option", { value: i.id }, [i.fields.visa_type, i.fields.number || i.id, i.fields.issued].filter(Boolean).join(" · "))));
+    if (candidates.some((i) => i.id === previous)) $("replaces").value = previous;
+  } catch (err) { if (request === replacesRequest) say($("import-message"), err.message, true); }
+}

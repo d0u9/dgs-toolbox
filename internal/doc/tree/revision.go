@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"dgs-toolbox/internal/tag"
 	"dgs-toolbox/internal/verifiedcopy"
+	"gopkg.in/yaml.v3"
 )
 
 // ErrNoItem is returned for an ID no sidecar has.
@@ -84,24 +86,42 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 	if err != nil {
 		return Item{}, err
 	}
-	if other, ok := holder(items, digest); ok {
+	if other, ok := holder(items, digest); ok && other.ID != id {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
 	}
 	destination := PDFPath(root, id, digest)
-	result, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{Source: source, Destination: destination})
-	if err != nil {
-		return Item{}, err
+	if _, ok := holder(items, digest); ok {
+		actual, err := FileDigest(destination)
+		if err != nil {
+			return Item{}, err
+		}
+		if actual != digest {
+			return Item{}, fmt.Errorf("stored PDF digest mismatch")
+		}
+	} else {
+		result, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{Source: source, Destination: destination})
+		if err != nil {
+			return Item{}, err
+		}
+		if result.Digest != digest {
+			_ = os.Remove(destination)
+			return Item{}, fmt.Errorf("%s changed while it was being imported", source)
+		}
 	}
-	if result.Digest != digest {
-		_ = os.Remove(destination)
-		return Item{}, fmt.Errorf("%s changed while it was being imported", source)
+	full, _ := template.Split(item.CurrentFields())
+	for k, v := range fields {
+		full[k] = v
 	}
-	item.Revisions = append(item.Revisions, Revision{
-		Digest: digest, Added: now.Format(time.RFC3339), Source: filepath.Base(source), Fields: fields,
-		Tags: tag.List(metadata.RevisionTags),
-	})
-	item.Head = digest
-	event := HistoryEvent{At: now.Format(time.RFC3339), Action: "import_revision", Digest: digest, Changes: map[string][2]string{}}
+	if SnapshotID(item.Type, item.CurrentFields(), item.CurrentDigest()) == SnapshotID(template.Type, full, digest) && metadata.Notes == nil && metadata.Tags == nil && len(metadata.RevisionTags) == 0 {
+		return item, nil
+	}
+	ref := item.saveSnapshot(template.Type, full, digest, filepath.Base(source), now)
+	for n := range item.Revisions {
+		if item.Revisions[n].Ref() == ref {
+			item.Revisions[n].Tags = tag.List(metadata.RevisionTags)
+		}
+	}
+	event := HistoryEvent{At: now.Format(time.RFC3339), Action: "import_revision", Digest: ref, Changes: map[string][2]string{}}
 	if metadata.Notes != nil {
 		if next := strings.TrimSpace(*metadata.Notes); next != item.Notes {
 			event.Changes["notes"] = [2]string{item.Notes, next}
@@ -130,19 +150,26 @@ func SetHead(root, id, digest string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
-	item, _, err := FindItem(root, id)
+	item, items, err := FindItem(root, id)
 	if err != nil {
 		return Item{}, err
 	}
-	if item.Kind != KindDocument {
+	if item.Kind != KindDocument && item.Head == "" {
 		return Item{}, fmt.Errorf("%s %s is a record: records have no HEAD", item.Type, item.ID)
 	}
 	for _, r := range item.Revisions {
-		if r.Digest == digest {
+		if r.Ref() == digest {
 			if item.Head == digest {
 				return item, nil
 			}
+			if err := checkSnapshotIdentity(root, item, r, items); err != nil {
+				return Item{}, err
+			}
 			item.Head = digest
+			if r.Snapshot {
+				item.Type = r.Type
+				item.Fields = maps.Clone(r.Fields)
+			}
 			item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "make_head", Digest: digest})
 			return item, WriteItem(root, item)
 		}
@@ -156,16 +183,16 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 	if err := Require(root); err != nil {
 		return Item{}, "", err
 	}
-	item, _, err := FindItem(root, id)
+	item, items, err := FindItem(root, id)
 	if err != nil {
 		return Item{}, "", err
 	}
-	if item.Kind != KindDocument || len(item.Revisions) < 2 {
+	if len(item.Revisions) < 2 {
 		return Item{}, "", fmt.Errorf("delete the Item to remove its last revision")
 	}
 	at := -1
 	for i, r := range item.Revisions {
-		if r.Digest == digest {
+		if r.Ref() == digest {
 			at = i
 			break
 		}
@@ -173,22 +200,67 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 	if at < 0 {
 		return Item{}, "", fmt.Errorf("%s %s has no revision %s", item.Type, id, digest)
 	}
-	from := PDFPath(root, id, digest)
+	if item.Head == digest {
+		for n := len(item.Revisions) - 1; n >= 0; n-- {
+			if n != at {
+				if err := checkSnapshotIdentity(root, item, item.Revisions[n], items); err != nil {
+					return Item{}, "", err
+				}
+				break
+			}
+		}
+	}
+	from := PDFPath(root, id, item.Revisions[at].Digest)
+	hasPDF := item.Revisions[at].Digest != ""
+	for n, r := range item.Revisions {
+		if n != at && r.Digest == item.Revisions[at].Digest {
+			hasPDF = false
+		}
+	}
 	if err := os.MkdirAll(filepath.Join(root, TrashDir), 0o755); err != nil {
 		return Item{}, "", err
 	}
 	to := filepath.Join(root, TrashDir, id+"-"+digest+"-"+now.UTC().Format("20060102T150405Z")+".pdf")
+	if !hasPDF {
+		to = strings.TrimSuffix(to, ".pdf") + ".yaml"
+	}
 	if _, err := os.Lstat(to); err == nil {
 		return Item{}, "", fmt.Errorf("%s is already in the trash", to)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return Item{}, "", err
 	}
-	if err := os.Rename(from, to); err != nil {
+	// Always retain the original sidecar, including field values. A PDF
+	// without its snapshot metadata is not enough to restore a revision.
+	metadataPath := strings.TrimSuffix(to, filepath.Ext(to)) + ".yaml"
+	data, err := yaml.Marshal(item)
+	if err != nil {
 		return Item{}, "", err
+	}
+	file, err := os.OpenFile(metadataPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return Item{}, "", err
+	}
+	_, err = file.Write(data)
+	if err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(metadataPath)
+		return Item{}, "", err
+	}
+	if hasPDF {
+		if err := os.Rename(from, to); err != nil {
+			_ = os.Remove(metadataPath)
+			return Item{}, "", err
+		}
 	}
 	imported := false
 	for _, event := range item.History {
-		if (event.Action == "import" || event.Action == "import_revision") && event.Digest == digest {
+		if (event.Action == "import" || event.Action == "import_revision" || event.Action == "create_without_pdf" || event.Action == "create_revision_without_pdf" || event.Action == "attach_pdf" || event.Action == "edit_fields" || event.Action == "change_type") && event.Digest == digest {
 			imported = true
 			break
 		}
@@ -198,23 +270,28 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 	}
 	item.Revisions = append(item.Revisions[:at], item.Revisions[at+1:]...)
 	if item.Head == digest {
-		item.Head = item.Revisions[len(item.Revisions)-1].Digest
+		item.Head = item.Revisions[len(item.Revisions)-1].Ref()
+		last := item.Revisions[len(item.Revisions)-1]
+		if last.Snapshot {
+			item.Fields = maps.Clone(last.Fields)
+			item.Type = last.Type
+		}
 	}
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "delete_revision", Digest: digest})
 	if err := WriteItem(root, item); err != nil {
-		if undo := os.Rename(to, from); undo != nil {
-			return Item{}, "", fmt.Errorf("write Item: %v; restore PDF: %v", err, undo)
+		if hasPDF {
+			if undo := os.Rename(to, from); undo != nil {
+				return Item{}, "", fmt.Errorf("write Item: %v; restore PDF: %v", err, undo)
+			}
 		}
+		_ = os.Remove(metadataPath)
 		return Item{}, "", err
 	}
 	return item, to, nil
 }
 
-// SetFields replaces an Item's fields as one revision has them, checked
-// against its Template as import checks them: required keys present, and no
-// other document of the type with the same distinguishing fields. The
-// per_revision values go to the revision with digest — "" is the Current
-// one — and the rest to the Item.
+// SetFields creates a snapshot from the selected revision with validated
+// field values. Unchanged fields do nothing; older snapshots remain intact.
 func SetFields(root, id, digest string, template Template, given map[string]string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
@@ -223,7 +300,11 @@ func SetFields(root, id, digest string, template Template, given map[string]stri
 	if err != nil {
 		return Item{}, err
 	}
-	if template.Type != item.Type {
+	baseType := item.Type
+	if r, ok := item.Revision(digest); ok && r.Type != "" {
+		baseType = r.Type
+	}
+	if template.Type != baseType {
 		return Item{}, fmt.Errorf("%s %s is not a %s", item.Type, item.ID, template.Type)
 	}
 	fields, err := CleanFields(template, given)
@@ -241,17 +322,19 @@ func SetFields(root, id, digest string, template Template, given map[string]stri
 	}
 	at := -1
 	for i, r := range item.Revisions {
-		if r.Digest == digest {
+		if r.Ref() == digest {
 			at = i
 		}
 	}
 	if at < 0 {
 		return Item{}, fmt.Errorf("%s %s has no revision %s", item.Type, item.ID, digest)
 	}
-	own, perRevision := template.Split(fields)
 	previous := item.FieldsAt(digest)
-	item.Fields = own
-	item.Revisions[at].Fields = perRevision
+	if maps.Equal(previous, fields) {
+		return item, nil
+	}
+	base := item.Revisions[at]
+	next := item.saveSnapshot(template.Type, fields, base.Digest, base.Source, now)
 	changes := map[string][2]string{}
 	for key, old := range previous {
 		if old != fields[key] {
@@ -264,7 +347,7 @@ func SetFields(root, id, digest string, template Template, given map[string]stri
 		}
 	}
 	if len(changes) > 0 {
-		item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_fields", Digest: digest, Changes: changes})
+		item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_fields", Digest: next, Changes: changes})
 	}
 	return item, WriteItem(root, item)
 }
@@ -372,6 +455,9 @@ func SetRetired(root, id string, retired bool, reason string, now time.Time) (It
 	if err != nil {
 		return Item{}, err
 	}
+	if item.SupersededBy != "" {
+		return Item{}, fmt.Errorf("undo the replacement before changing retirement")
+	}
 	reason = strings.TrimSpace(reason)
 	if !retired {
 		reason = ""
@@ -405,7 +491,7 @@ func SetRevisionTags(root, id, digest string, tags []string, now time.Time) (Ite
 		return Item{}, err
 	}
 	for i, r := range item.Revisions {
-		if r.Digest != digest {
+		if r.Ref() != digest {
 			continue
 		}
 		old := strings.Join(r.Tags, ", ")

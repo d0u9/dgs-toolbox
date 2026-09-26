@@ -150,7 +150,7 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 	}
 	do(h, "POST", "/api/head", `{"item":"`+item.ID+`","digest":"`+first+`"}`)
 	do(h, "POST", "/api/fields", `{"item":"`+item.ID+`","fields":{"owner":"jane","country":"CN"}}`)
-	if item = state(t, h).Items[0]; item.Head != first || item.Fields["country"] != "中国" {
+	if item = state(t, h).Items[0]; item.Head == first || item.Fields["country"] != "中国" || item.FieldsAt(first)["country"] != "澳大利亚" {
 		t.Fatalf("after head and fields: %+v", item)
 	}
 	// The tree's own items folder is not offered for import.
@@ -160,9 +160,13 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 	if rec := do(h, "POST", "/api/revisions/delete", `{"item":"`+item.ID+`","digest":"`+first+`"}`); rec.Code != http.StatusOK {
 		t.Fatalf("delete revision: %d %s", rec.Code, rec.Body.String())
 	}
-	if item = state(t, h).Items[0]; len(item.Revisions) != 1 || item.Head == first {
+	if item = state(t, h).Items[0]; len(item.Revisions) != 2 || item.Head == first {
 		t.Fatalf("after delete revision: %+v", item)
 	}
+	if rec := do(h, "POST", "/api/revisions/delete", `{"item":"`+item.ID+`","digest":"`+item.Revisions[0].Ref()+`"}`); rec.Code != http.StatusOK {
+		t.Fatalf("delete old snapshot: %s", rec.Body.String())
+	}
+	item = state(t, h).Items[0]
 	if rec := do(h, "POST", "/api/revisions/delete", `{"item":"`+item.ID+`","digest":"`+item.Head+`"}`); rec.Code == http.StatusOK {
 		t.Fatal("deleted final revision")
 	}
@@ -502,5 +506,44 @@ func TestTargetsLiveInTheTreeAndFoldersAreChosen(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(filepath.Join(root, "targets.yaml")); !strings.Contains(string(data), "read on the phone") {
 		t.Fatalf("targets.yaml: %s", data)
+	}
+}
+
+func TestCreateWithoutPDFAndAttach(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root})
+	rec := do(h, "POST", "/api/import", `{"no_pdf":true,"type":"id_card","fields":{"owner":"doug","country":"AU"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var item tree.Item
+	must(t, json.Unmarshal(rec.Body.Bytes(), &item))
+	ref := item.Current()
+	if ref == "" || item.CurrentDigest() != "" {
+		t.Fatalf("item: %+v", item)
+	}
+	rec = do(h, "GET", "/api/revision?item="+item.ID+"&digest="+ref, "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing attachment: %d", rec.Code)
+	}
+	rec = do(h, "POST", "/api/attach", `{"item":`+q(item.ID)+`,"digest":`+q(ref)+`,"dir":`+q(scans)+`,"path":"jane/licence.pdf"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("attach: %d %s", rec.Code, rec.Body.String())
+	}
+	must(t, json.Unmarshal(rec.Body.Bytes(), &item))
+	if len(item.Revisions) != 2 || item.Current() == ref || item.CurrentDigest() == "" {
+		t.Fatalf("attached: %+v", item)
+	}
+	rec = do(h, "GET", "/api/revision?item="+item.ID+"&digest="+item.Current(), "")
+	if rec.Code != http.StatusOK || rec.Body.String() != "%PDF-1.4 x" {
+		t.Fatalf("serve: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = do(h, "POST", "/api/revisions", `{"no_pdf":true,"item":`+q(item.ID)+`,"fields":{}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("renew: %d %s", rec.Code, rec.Body.String())
+	}
+	must(t, json.Unmarshal(rec.Body.Bytes(), &item))
+	if len(item.Revisions) != 2 || item.Current() != ref || item.CurrentDigest() != "" {
+		t.Fatalf("renewed: %+v", item)
 	}
 }

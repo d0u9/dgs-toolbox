@@ -12,14 +12,14 @@ import (
 func Timeline(item Item) []HistoryEvent {
 	imported := map[string]bool{}
 	for _, event := range item.History {
-		if event.Action == "import" || event.Action == "import_revision" {
+		if event.Action == "import" || event.Action == "import_revision" || event.Action == "create_without_pdf" || event.Action == "create_revision_without_pdf" || event.Action == "attach_pdf" || event.Action == "edit_fields" || event.Action == "change_type" {
 			imported[event.Digest] = true
 		}
 	}
 	out := append([]HistoryEvent(nil), item.History...)
 	for _, r := range item.Revisions {
-		if !imported[r.Digest] && r.Added != "" {
-			out = insertByTime(out, HistoryEvent{At: r.Added, Action: "import", Digest: r.Digest})
+		if !imported[r.Ref()] && r.Added != "" {
+			out = insertByTime(out, HistoryEvent{At: r.Added, Action: "import", Digest: r.Ref()})
 		}
 	}
 	return out
