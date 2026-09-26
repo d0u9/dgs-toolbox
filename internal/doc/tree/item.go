@@ -1,6 +1,8 @@
 package tree
 
 import (
+	"dgs-toolbox/internal/tag"
+
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -27,6 +29,8 @@ type Revision struct {
 	// Fields are this revision's own values of the fields its Template marks
 	// per_revision: a renewed card's number and expiry.
 	Fields map[string]string `yaml:"fields,omitempty" json:"fields,omitempty"`
+	// Tags are this revision's own, beside the Item's: a reissue, a copy.
+	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
 // Item is one sidecar.
@@ -38,9 +42,15 @@ type Item struct {
 	Tags   []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
 	// Frequent marks one of the few Items the owner opens often. Browse puts
 	// them first and can show them alone.
-	Frequent  bool       `yaml:"frequent,omitempty" json:"frequent,omitempty"`
-	Head      string     `yaml:"head,omitempty" json:"head,omitempty"`
-	Revisions []Revision `yaml:"revisions" json:"revisions"`
+	Frequent bool `yaml:"frequent,omitempty" json:"frequent,omitempty"`
+	// Retired marks an Item no longer used — a card for a place or an
+	// organisation the owner has left — though it has not expired. Browse
+	// shows it faded and last; exports are not affected. RetiredReason is
+	// the owner's optional note on why.
+	Retired       bool       `yaml:"retired,omitempty" json:"retired,omitempty"`
+	RetiredReason string     `yaml:"retired_reason,omitempty" json:"retired_reason,omitempty"`
+	Head          string     `yaml:"head,omitempty" json:"head,omitempty"`
+	Revisions     []Revision `yaml:"revisions" json:"revisions"`
 	// Notes is free text the owner writes. It is never a key and never
 	// exported.
 	Notes   string         `yaml:"notes,omitempty" json:"notes,omitempty"`
@@ -203,4 +213,16 @@ func NewID(now time.Time) (string, error) {
 		}
 	}
 	return string(out), nil
+}
+
+// TagsAt is the tags a revision has: the Item's, which hold for every
+// revision, and the revision's own, in canonical spelling.
+func (item Item) TagsAt(digest string) []string {
+	all := append([]string(nil), item.Tags...)
+	for _, r := range item.Revisions {
+		if r.Digest == digest {
+			all = append(all, r.Tags...)
+		}
+	}
+	return tag.List(all)
 }

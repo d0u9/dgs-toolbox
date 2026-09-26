@@ -504,3 +504,57 @@ func TestLogIsNewestFirstAcrossItems(t *testing.T) {
 		t.Fatalf("log: %v", got)
 	}
 }
+
+func TestSetRetiredKeepsReasonAndHistory(t *testing.T) {
+	root := newTree(t)
+	if err := WriteItem(root, Item{ID: "A", Type: "card", Kind: KindDocument}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	steps := []struct {
+		retired bool
+		reason  string
+	}{{true, " left the company "}, {true, "left the company"}, {true, "moved away"}, {false, "ignored"}}
+	for _, step := range steps {
+		if _, err := SetRetired(root, "A", step.retired, step.reason, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	item, _, _ := FindItem(root, "A")
+	var actions []string
+	for _, e := range item.History {
+		actions = append(actions, e.Action)
+	}
+	if item.Retired || item.RetiredReason != "" || strings.Join(actions, " ") != "retire edit_retired_reason unretire" {
+		t.Fatalf("item %+v, actions %v", item, actions)
+	}
+	if got := item.History[0].Changes["reason"]; got[1] != "left the company" {
+		t.Fatalf("retire reason: %v", got)
+	}
+}
+
+func TestRevisionTagsAreTheRevisionsOwn(t *testing.T) {
+	root := newTree(t)
+	item := Item{ID: "A", Type: "card", Kind: KindDocument, Tags: []string{"home"}, Head: "y",
+		Revisions: []Revision{{Digest: "x"}, {Digest: "y"}}}
+	if err := WriteItem(root, item); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	got, err := SetRevisionTags(root, "A", "x", []string{"Reissued", "reissued", "home"}, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got.Tags, ",") != "home" || strings.Join(got.Revisions[0].Tags, ",") != "reissued,home" || len(got.Revisions[1].Tags) != 0 {
+		t.Fatalf("tags: %+v", got)
+	}
+	if strings.Join(got.TagsAt("x"), ",") != "home,reissued" || strings.Join(got.TagsAt("y"), ",") != "home" {
+		t.Fatalf("TagsAt: %v %v", got.TagsAt("x"), got.TagsAt("y"))
+	}
+	if len(got.History) != 1 || got.History[0].Action != "edit_revision_tags" || got.History[0].Digest != "x" {
+		t.Fatalf("history: %+v", got.History)
+	}
+	if _, err := SetRevisionTags(root, "A", "nope", nil, at); err == nil {
+		t.Fatal("unknown revision accepted")
+	}
+}
