@@ -75,6 +75,19 @@ function chosenTypes() {
   return ticked.length ? ticked : state.templates.map((t) => t.type);
 }
 
+// selected is the Items the form's query picks: the chosen types, and each
+// condition's values when some are ticked. Tags count the Item's and any of
+// its revisions'.
+function selected() {
+  const types = chosenTypes();
+  const conditions = [...$("conditions").children].map((row) => [row.querySelector("select").value,
+    [...row.querySelectorAll(".checks input:checked")].map((i) => i.value)]).filter(([, values]) => values.length);
+  return state.items.filter((item) => types.includes(item.type) && conditions.every(([key, values]) => {
+    const held = key === "tags" ? [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])] : [currentFields(item)[key]].filter(Boolean);
+    return held.some((h) => values.some((v) => same(h, v)));
+  }));
+}
+
 // narrow redraws what depends on the types: the field chips and each
 // condition's values, keeping only what the chosen types have.
 function narrow() {
@@ -89,6 +102,8 @@ function narrow() {
 // value is ticked as the held value it is one with — CHN as 中国 — and one
 // no Item holds any more is still listed, ticked.
 function condition(key, values) {
+  // What the query picks changes the numbering shown.
+  const touched = () => { drawOrder(); changed(); };
   const choices = el("div", { className: "checks" });
   const draw = (saved) => {
     const types = chosenTypes();
@@ -98,14 +113,14 @@ function condition(key, values) {
       : chosen.map((item) => currentFields(item)[pick.value]).filter(Boolean))];
     const all = [...held, ...saved.filter((v) => !held.some((h) => same(h, v)))].sort((a, b) => a.localeCompare(b));
     choices.replaceChildren(...(all.length ? all.map((v) => el("label", {},
-      el("input", { type: "checkbox", value: v, checked: saved.some((s) => same(s, v)), onchange: changed }), " " + v))
+      el("input", { type: "checkbox", value: v, checked: saved.some((s) => same(s, v)), onchange: touched }), " " + v))
       : [el("span", { className: "template-sub", textContent: "no Item has one" })]));
   };
-  const pick = el("select", { onchange: () => { draw([]); changed(); } },
+  const pick = el("select", { onchange: () => { draw([]); touched(); } },
     ...[...keys.filter((k) => !["type", "revision", "ext", "id", "tags"].includes(k)), "tags"].map((k) => el("option", { value: k, selected: k === key }, k)));
   const row = el("div", { className: "condition" },
     el("div", { className: "condition-head" }, pick,
-      el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); changed(); } })),
+      el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); touched(); } })),
     choices);
   row.redraw = () => draw([...choices.querySelectorAll("input:checked")].map((i) => i.value));
   draw(values || []);
@@ -238,7 +253,7 @@ export function orderValue(item, key) {
 function drawOrder() {
   const rows = numberedKeys().map((key) => {
     if (orders[key] === undefined) {
-      orders[key] = [...new Set(state.items.map((i) => orderValue(i, key)).filter(Boolean))].sort().join(", ");
+      orders[key] = [...new Set(selected().map((i) => orderValue(i, key)).filter(Boolean))].sort().join(", ");
     }
     const box = el("div", { className: "order" });
     const list = () => orders[key].split(",").map((s) => s.trim()).filter(Boolean);
@@ -246,29 +261,41 @@ function drawOrder() {
     let dragged = -1;
     const draw = () => {
       const values = list();
-      const unlisted = [...new Set(state.items.filter((i) => chosenTypes().includes(i.type)).map((i) => orderValue(i, key)).filter(Boolean))]
-        .filter((v) => !values.some((w) => same(v, w))).sort();
-      const move = (i, j) => { const next = [...values]; next.splice(j, 0, ...next.splice(i, 1)); set(next); };
+      // Only the values the query's Items have are shown, each with its
+      // number in the whole order; the others stay in it, numbered, hidden.
+      const held = [...new Set(selected().map((i) => orderValue(i, key)).filter(Boolean))];
+      const shown = values.map((v, i) => i).filter((i) => held.some((h) => same(h, values[i])));
+      const hidden = values.length - shown.length;
+      const unlisted = held.filter((v) => !values.some((w) => same(v, w))).sort();
+      // move swaps a shown value with the shown one before or after it.
+      const move = (a, b) => { const next = [...values]; [next[a], next[b]] = [next[b], next[a]]; set(next); };
       const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
+      const pad = String(values.length).length < 2 ? 2 : String(values.length).length;
       box.replaceChildren(...[
-        el("ol", { className: "order-list" }, ...values.map((v, i) => {
+        el("ol", { className: "order-list" }, ...shown.map((i, k) => {
+          const v = values[i];
           const li = el("li", {
             draggable: true,
             ondragstart: (event) => { dragged = i; event.dataTransfer.effectAllowed = "move"; li.classList.add("dragging"); },
             ondragend: () => li.classList.remove("dragging"),
             ondragover: (event) => { event.preventDefault(); li.classList.add("drop"); },
             ondragleave: () => li.classList.remove("drop"),
-            ondrop: (event) => { event.preventDefault(); li.classList.remove("drop"); if (dragged >= 0 && dragged !== i) move(dragged, i); dragged = -1; },
+            ondrop: (event) => {
+              event.preventDefault(); li.classList.remove("drop");
+              if (dragged >= 0 && dragged !== i) { const next = [...values]; next.splice(i, 0, ...next.splice(dragged, 1)); set(next); }
+              dragged = -1;
+            },
           },
             el("span", { className: "order-grip", textContent: "⋮⋮", "aria-hidden": "true" }),
-            el("span", { className: "order-number", textContent: String(i + 1).padStart(2, "0") }),
+            el("span", { className: "order-number", textContent: String(i + 1).padStart(pad, "0") }),
             el("span", { className: "order-value", textContent: v, title: v }),
             el("span", { className: "order-acts" },
-              act("Up", "↑", () => move(i, i - 1), i === 0),
-              act("Down", "↓", () => move(i, i + 1), i === values.length - 1),
-              act("Remove", "×", () => set(values.filter((_, k) => k !== i)))));
+              act("Up", "↑", () => move(i, shown[k - 1]), k === 0),
+              act("Down", "↓", () => move(i, shown[k + 1]), k === shown.length - 1),
+              act("Remove", "×", () => set(values.filter((_, n) => n !== i)))));
           return li;
         })),
+        hidden ? el("p", { className: "template-sub", textContent: hidden + (hidden === 1 ? " value no Item this rule picks has is" : " values no Item this rule picks has are") + " kept in the order, hidden: " + values.filter((_, i) => !shown.includes(i)).join(", ") }) : null,
         unlisted.length ? el("div", { className: "order-add" }, el("span", { className: "order-add-label", textContent: "Not numbered" }),
           ...unlisted.map((v) => el("button", { type: "button", className: "order-chip", textContent: "+ " + v, title: "Number it last", onclick: () => set([...values, v]) })))
           : null,
