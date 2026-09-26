@@ -30,7 +30,8 @@ export function findFile(node, path) {
 }
 
 // unplaced is every PDF the grouping's rules select but cannot place: each
-// lacking a key, or wanting a path another PDF wants too.
+// lacking a key, or wanting a path another PDF wants too; and each of its
+// Snapshots' PDFs the tree no longer has.
 export function unplaced(grouping) {
   if (!grouping) return [];
   const out = [];
@@ -39,14 +40,15 @@ export function unplaced(grouping) {
     for (const c of plan.clashes) for (const f of c.files) out.push({ ...f, view: rule, why: "wants " + c.path + " with another PDF" });
   }
   for (const c of grouping.clashes || []) for (const f of c.files) out.push({ ...f, why: "wants " + c.path + " with a PDF of " + c.files.filter((g) => g !== f).map((g) => g.view).join(", ") });
+  for (const l of grouping.lost || []) out.push({ ...l, why: "is at " + l.path + ", but " + l.why });
   return out;
 }
 
 // outlineTree draws into host. With onPick, a row is picked by clicking it
 // and onPick is called with its path ("" when unpicked); without, a click
 // opens or shuts a folder and a PDF links to its Item. empty is the text
-// drawn when there is nothing. A folder with snapshot set is drawn as a
-// Snapshot, shut until opened.
+// drawn when there is nothing. A folder with snapshot set is a Snapshot's,
+// drawn as one and shut until opened.
 export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
   const closed = new Set(); // folders toggled from how they start
   const shut = (c) => closed.has(c.path) !== !!c.snapshot;
@@ -73,7 +75,7 @@ export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
   const toggle = (path) => { if (closed.has(path)) closed.delete(path); else closed.add(path); draw(); };
   const folderRow = (c, depth) => row({ name: c.name, path: c.path, depth, count: c.count, parent: true, open: !shut(c),
     icon: c.snapshot ? SNAPSHOT : FOLDER, className: c.snapshot ? " outline-snapshot" : "",
-    title: c.snapshot ? "Snapshot " + c.name + ", taken " + c.snapshot.taken.replace("T", " ").slice(0, 16) + (c.snapshot.about ? "\n" + c.snapshot.about : "") : c.path });
+    title: c.snapshot ? "Snapshot " + c.snapshot + ": fixed as it was taken" : c.path });
   const fileRow = (f, depth) => row({ name: f.path.split("/").pop(), path: f.path, depth, icon: FILE, className: " outline-file",
     title: f.path + "\n" + name(f.item) + (f.view ? " · rule " + f.view : ""), href: api("/browse/") + "#" + f.item });
   const row = ({ name, path, depth, count, icon, parent, open, className = "", title, href }) => {

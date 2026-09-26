@@ -12,19 +12,19 @@ import (
 	"dgs-toolbox/internal/doc/view"
 )
 
-// Job is one folder to export into, with the rules that go there, or the
-// files a Snapshot fixed.
+// Job is one folder to export into, with the rules that go there and the
+// files its Snapshots fixed.
 type Job struct {
-	// Name is the Outline's or Snapshot's name, or empty for a folder
-	// chosen by hand.
+	// Name is the Outline's name, or empty for a folder chosen by hand.
 	Name  string
 	Path  string
 	Views []view.View
-	// Fixed is set for a Snapshot: Files are what it exports, owned in the
-	// manifest by its name, and Lost are its files the tree no longer has.
-	Fixed bool
-	Files []view.File
-	Lost  []string
+	// Files are the Snapshots' files, each at its path and marked with its
+	// Snapshot, which owns it in the manifest; Snapshots names them, and
+	// Lost are their files the tree no longer has.
+	Files     []view.File
+	Snapshots []string
+	Lost      []string
 }
 
 // JobPlan is what exporting a Job would do, and what stops it.
@@ -48,44 +48,42 @@ func (j JobPlan) Ready() bool {
 	return j.Combined.Complete() && len(j.Plan.Blocked) == 0 && len(j.Problems) == 0
 }
 
-// Source is an Outline or a Snapshot, as Jobs chooses among them.
+// Source is an Outline, as Jobs chooses among them.
 type Source struct {
-	Name   string
-	Folder string
-	Rules  []view.View
-	Fixed  bool
-	Files  []view.File
-	Lost   []string
+	Name      string
+	Folder    string
+	Rules     []view.View
+	Files     []view.File
+	Snapshots []string
+	Lost      []string
 }
 
-// FromOutlines is each Outline as a Source.
-func FromOutlines(outlines []outline.Outline) []Source {
+// FromOutlines is each Outline as a Source, its Snapshots' files as items
+// have them. A Snapshot the tree lacks is one of its Lost.
+func FromOutlines(outlines []outline.Outline, snapshots []snapshot.Snapshot, items []tree.Item) []Source {
 	out := make([]Source, 0, len(outlines))
 	for _, o := range outlines {
-		out = append(out, Source{Name: o.Name, Folder: o.Folder, Rules: o.Rules})
-	}
-	return out
-}
-
-// FromSnapshots is each Snapshot as a Source, its files as items have them.
-func FromSnapshots(snapshots []snapshot.Snapshot, items []tree.Item) []Source {
-	out := make([]Source, 0, len(snapshots))
-	for _, s := range snapshots {
-		r := snapshot.Resolve(s, items)
-		src := Source{Name: s.Name, Folder: s.Folder, Fixed: true, Files: r.Files}
-		for _, l := range r.Lost {
-			src.Lost = append(src.Lost, fmt.Sprintf("the Snapshot %s: %s (Item %s): %s", s.Name, l.Path, l.Item, l.Why))
+		src := Source{Name: o.Name, Folder: o.Folder, Rules: o.Rules}
+		for _, m := range o.Snapshots {
+			src.Snapshots = append(src.Snapshots, m.Name)
+		}
+		files, lost, err := outline.Mounted(o, snapshots, items)
+		if err != nil {
+			src.Lost = append(src.Lost, err.Error())
+		}
+		src.Files = files
+		for _, l := range lost {
+			src.Lost = append(src.Lost, fmt.Sprintf("%s (Item %s): %s", l.Path, l.Item, l.Why))
 		}
 		out = append(out, src)
 	}
 	return out
 }
 
-// Jobs is one Job per Outline or Snapshot named, or, when none is, per one
-// with something to export and a folder. Each goes to the folder chosen for
-// it this time, else its own folder with ~ made home. A name the tree
-// lacks, an Outline with no rule, a Snapshot with no file, or no folder, is
-// a problem.
+// Jobs is one Job per Outline named, or, when none is, per one with
+// something to export and a folder. Each goes to the folder chosen for it
+// this time, else its own folder with ~ made home. A name the tree lacks,
+// an Outline with no rule and no Snapshot, or no folder, is a problem.
 func Jobs(sources []Source, chosen map[string]string, home string, names []string) ([]Job, []string) {
 	var problems []string
 	folder := func(o Source) string {
@@ -97,7 +95,7 @@ func Jobs(sources []Source, chosen map[string]string, home string, names []strin
 		}
 		return ""
 	}
-	empty := func(o Source) bool { return len(o.Rules) == 0 && (!o.Fixed || len(o.Files)+len(o.Lost) == 0) }
+	empty := func(o Source) bool { return len(o.Rules) == 0 && len(o.Snapshots) == 0 }
 	byName := map[string]Source{}
 	for _, o := range sources {
 		byName[o.Name] = o
@@ -116,15 +114,13 @@ func Jobs(sources []Source, chosen map[string]string, home string, names []strin
 		o, ok := byName[name]
 		switch {
 		case !ok:
-			problems = append(problems, "no Outline or Snapshot named "+name)
-		case empty(o) && o.Fixed:
-			problems = append(problems, "the Snapshot "+name+" has no file")
+			problems = append(problems, "no Outline named "+name)
 		case empty(o):
-			problems = append(problems, "the Outline "+name+" has no rule")
+			problems = append(problems, "the Outline "+name+" has no rule and no Snapshot")
 		case folder(o) == "":
 			problems = append(problems, "choose a folder for "+name+": it has none of its own")
 		default:
-			jobs = append(jobs, Job{Name: name, Path: folder(o), Views: o.Rules, Fixed: o.Fixed, Files: o.Files, Lost: o.Lost})
+			jobs = append(jobs, Job{Name: name, Path: folder(o), Views: o.Rules, Files: o.Files, Snapshots: o.Snapshots, Lost: o.Lost})
 		}
 	}
 	return jobs, problems
@@ -146,10 +142,8 @@ func PlanJobs(ctx context.Context, root string, jobs []Job, items []tree.Item) (
 		for _, v := range j.Views {
 			p.Views = append(p.Views, v.Name)
 		}
-		if j.Fixed {
-			p.Views = []string{j.Name}
-			p.Problems = append(p.Problems, j.Lost...)
-		}
+		p.Views = append(p.Views, j.Snapshots...)
+		p.Problems = append(p.Problems, j.Lost...)
 		if err := CheckTarget(root, j.Path); err != nil {
 			p.Problems = append(p.Problems, err.Error())
 		}
@@ -158,11 +152,9 @@ func PlanJobs(ctx context.Context, root string, jobs []Job, items []tree.Item) (
 				p.Problems = append(p.Problems, fmt.Sprintf("the folder %s overlaps %s's, %s", j.Path, label(other), other.Path))
 			}
 		}
-		combined := view.Combined{Plans: map[string]view.Plan{}, Files: j.Files, Clashes: []view.Clash{}}
-		if !j.Fixed {
-			if combined, err = view.Combine(j.Views, items, names); err != nil {
-				return nil, err
-			}
+		combined, err := view.CombineWith(j.Views, j.Files, items, names)
+		if err != nil {
+			return nil, err
 		}
 		p.Combined = combined
 		if len(p.Problems) == 0 {
@@ -183,9 +175,6 @@ func PlanJobs(ctx context.Context, root string, jobs []Job, items []tree.Item) (
 }
 
 func label(j Job) string {
-	if j.Name != "" && j.Fixed {
-		return "the Snapshot " + j.Name
-	}
 	if j.Name != "" {
 		return "the Outline " + j.Name
 	}

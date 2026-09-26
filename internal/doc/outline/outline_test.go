@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"dgs-toolbox/internal/doc/snapshot"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
@@ -31,7 +32,7 @@ func TestGroupNestsEveryRuleAndCounts(t *testing.T) {
 			Layout: "{country:alpha2} {make}/{plate#}/{id}.{ext}", Order: map[string][]string{"plate": {"浙AF3897", "浙AT73C7"}}},
 		{Name: "ids", Selection: view.Head, Query: map[string]view.Values{"type": {"passport"}}, Layout: "ids/{owner}.{ext}"},
 	}}
-	g, err := Group(o, items, nil)
+	g, err := Group(o, nil, items, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,5 +192,57 @@ func TestRulesAreSharedRenamedAndSplit(t *testing.T) {
 	}
 	if names, err := Migrate(root); err != nil || len(names) != 0 {
 		t.Fatalf("a second run: %v %v", names, err)
+	}
+}
+
+// A Snapshot is a folder of its name at the path the Outline gives it,
+// checked against the rules' PDFs like another rule's.
+func TestGroupMountsSnapshots(t *testing.T) {
+	items := []tree.Item{
+		item("A", "passport", map[string]string{"owner": "alex"}, "d1", "d2"),
+		item("B", "passport", map[string]string{"owner": "emma"}, "d3"),
+	}
+	items[0].Revisions[0].ID, items[0].Revisions[1].ID, items[1].Revisions[0].ID = "r1", "r2", "r3"
+	items[0].Head, items[1].Head = "r2", "r3"
+	visa := snapshot.Snapshot{Name: "visa", Taken: "2026-09-26T10:00:00Z", Files: []snapshot.File{
+		{Path: "alex.pdf", Item: "A", Revision: "r1"},
+		{Path: "gone.pdf", Item: "Z", Revision: "r9"},
+	}}
+	o := Outline{Name: "mine",
+		Rules:     []view.View{{Name: "ids", Selection: view.Head, Layout: "ids/{owner}.{ext}"}},
+		Snapshots: []Mount{{Name: "visa", At: "ids/2026"}}}
+	g, err := Group(o, []snapshot.Snapshot{visa}, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := g.Root.Children[0]
+	if ids.Count != 3 || len(ids.Children) != 1 || ids.Children[0].Name != "2026" {
+		t.Fatalf("%+v", ids)
+	}
+	folder := ids.Children[0].Children[0]
+	if folder.Snapshot != "visa" || folder.Path != "ids/2026/visa" || folder.Files[0].Path != "ids/2026/visa/alex.pdf" || folder.Files[0].Digest != "d1" || folder.Files[0].View != "visa" {
+		t.Fatalf("%+v", folder)
+	}
+	if len(g.Lost) != 1 || g.Lost[0].Path != "ids/2026/visa/gone.pdf" || g.Complete() {
+		t.Fatalf("%+v", g.Lost)
+	}
+
+	// Put where a rule's PDF is, it clashes and the export fails.
+	o.Snapshots = []Mount{{Name: "visa", At: ""}}
+	o.Rules[0].Layout = "visa/{owner}.{ext}"
+	visa.Files = visa.Files[:1]
+	if g, err = Group(o, []snapshot.Snapshot{visa}, items, nil); err != nil || len(g.Clashes) != 1 || g.Clashes[0].Path != "visa/alex.pdf" {
+		t.Fatalf("%v %+v", err, g.Clashes)
+	}
+	if _, err := Group(o, nil, items, nil); err == nil {
+		t.Fatal("a Snapshot the tree lacks was put in")
+	}
+	o.Snapshots = []Mount{{Name: "ids"}}
+	if err := o.Validate(); err == nil {
+		t.Fatal("a Snapshot took a rule's name in the Outline")
+	}
+	o.Snapshots = []Mount{{Name: "visa", At: "../out"}}
+	if err := o.Validate(); err == nil {
+		t.Fatal("a Snapshot was put outside the tree")
 	}
 }

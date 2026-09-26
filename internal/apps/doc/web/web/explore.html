@@ -24,6 +24,8 @@
   <a class="topbar-link" href="/browse/">Browse</a>
   <a class="topbar-link current" href="/explore/">Explore</a>
   <a class="topbar-link" href="/templates/">Templates</a>
+  <a class="topbar-link" href="/rules/">Rules</a>
+  <a class="topbar-link" href="/snapshots/">Snapshots</a>
   <a class="topbar-link" href="/outlines/">Outlines</a>
   <a class="topbar-link" href="/cases/">Cases</a>
   <a class="topbar-link" href="/merge/">Merge</a>
@@ -42,11 +44,6 @@
     </div>
     <p id="no-outlines" class="muted outline-empty" hidden>No Outline yet. Make one on the <a href="/outlines/">Outlines</a> page.</p>
     <ul id="outlines" class="template-list scroll"></ul>
-    <div id="snap-head" hidden>
-      <div class="list-head"><h2>Snapshots <span id="snap-count" class="count numeric"></span></h2></div>
-      <p class="muted outline-empty">Their Outlines are gone. A Snapshot is otherwise inside its Outline's tree.</p>
-      <ul id="snapshots" class="template-list scroll"></ul>
-    </div>
   </section>
   <section class="outline-main">
     <div class="template-bar">
@@ -57,17 +54,8 @@
       </div>
       <p id="message" class="message"></p>
       <a id="edit" class="button" hidden>Edit rules</a>
-      <button id="take" class="button" type="button" hidden title="Keep the folder picked, or the whole tree, as it is now">Snapshot</button>
-      <button id="export-button" class="button" type="button" title="Write the Outline or Snapshot into a folder you choose">Export…</button>
-      <button id="drop" class="button" type="button" hidden title="Move the Snapshot into the tree's trash">Delete</button>
+      <button id="export-button" class="button" type="button" title="Write the Outline into a folder you choose">Export…</button>
     </div>
-    <form id="take-form" class="take-form" hidden>
-      <p id="take-hint" class="muted"></p>
-      <input id="take-name" placeholder="name, e.g. visa-2026" required pattern="[a-z0-9][a-z0-9_\-]*" title="lowercase letters, digits, _ and -">
-      <input id="take-about" placeholder="what it was for (optional)">
-      <button class="action" type="submit">Take</button>
-      <button id="take-cancel" class="button" type="button">Cancel</button>
-    </form>
     <div id="tree" class="outline-tree scroll" role="tree"></div>
   </section>
   <aside class="side outline-side">

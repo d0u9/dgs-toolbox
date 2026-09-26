@@ -1,8 +1,9 @@
-// Package snapshot is a doc tree's Snapshots. A Snapshot is an Outline's
-// tree, or one folder of it, as it was at one moment: each PDF's path, Item
-// and revision, recorded so it is browsed and exported the same however the
-// rules or the Items change after. It copies no PDF: the revisions stay in
-// their Items, and one that leaves the tree is reported, never replaced.
+// Package snapshot is a doc tree's Snapshots. A Snapshot is a fixed
+// subtree of PDFs: each PDF's path, Item and revision, taken from a rule's
+// result at one moment and edited by hand after, so it stays the same
+// however the rules or the Items change. An Outline puts it in its tree as
+// a folder, as it puts a rule's PDFs. It copies no PDF: the revisions stay
+// in their Items, and one that leaves the tree is reported, never replaced.
 // The rules are in docs/apps/doc/index.md.
 package snapshot
 
@@ -16,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 
@@ -28,26 +28,29 @@ const Dir = "snapshots"
 
 // File is one PDF of a Snapshot.
 type File struct {
-	// Path is where it is in the Snapshot, relative to the folder taken.
+	// Path is where it is in the Snapshot, relative to the Snapshot's folder.
 	Path string `yaml:"path" json:"path"`
 	Item string `yaml:"item" json:"item"`
 	// Revision is the revision's ID, or for a legacy one its PDF's digest.
 	Revision string `yaml:"revision" json:"revision"`
-	// Rule is the Outline's rule that placed it, for a reader.
+	// Rule is the rule that placed it when it was taken, for a reader.
 	Rule string `yaml:"rule,omitempty" json:"rule,omitempty"`
 }
 
 // Snapshot is one file under snapshots/.
 type Snapshot struct {
-	Name   string `yaml:"name" json:"name"`
-	About  string `yaml:"about,omitempty" json:"about,omitempty"`
-	Folder string `yaml:"folder,omitempty" json:"folder,omitempty"`
+	Name  string `yaml:"name" json:"name"`
+	About string `yaml:"about,omitempty" json:"about,omitempty"`
 	// Taken is when it was taken, RFC 3339.
 	Taken string `yaml:"taken" json:"taken"`
-	// Outline and Node are what it was taken from: the Outline, and the
-	// folder of its tree, empty for the whole tree.
-	Outline string `yaml:"outline" json:"outline"`
+	// Rule is the rule it was taken from, empty when it was begun empty.
+	Rule string `yaml:"rule,omitempty" json:"rule,omitempty"`
+	// Outline, Node and Folder are kept from a Snapshot taken before
+	// Snapshots stood alone: the Outline and folder it was taken from, and
+	// where it was exported. Nothing reads them.
+	Outline string `yaml:"outline,omitempty" json:"outline,omitempty"`
 	Node    string `yaml:"node,omitempty" json:"node,omitempty"`
+	Folder  string `yaml:"folder,omitempty" json:"folder,omitempty"`
 	Files   []File `yaml:"files" json:"files"`
 }
 
@@ -57,9 +60,6 @@ var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 func (s Snapshot) Validate() error {
 	if !namePattern.MatchString(s.Name) {
 		return fmt.Errorf("snapshot %q: use lowercase letters, digits, _ and -", s.Name)
-	}
-	if s.Folder != "" && !strings.HasPrefix(s.Folder, "~") && !filepath.IsAbs(s.Folder) {
-		return fmt.Errorf("snapshot %s: the folder %q is neither absolute nor under ~", s.Name, s.Folder)
 	}
 	if _, err := time.Parse(time.RFC3339, s.Taken); err != nil {
 		return fmt.Errorf("snapshot %s: taken %q is not a time", s.Name, s.Taken)
@@ -80,34 +80,35 @@ func (s Snapshot) Validate() error {
 	return nil
 }
 
-// Take records the PDFs of g under the folder node, "" for all of them,
-// with paths relative to it. A grouping with PDFs it cannot place is
-// refused: a Snapshot is what an export would have written.
-func Take(name, about string, o outline.Outline, g outline.Grouping, node string, items []tree.Item, now time.Time) (Snapshot, error) {
-	if !g.Complete() {
-		return Snapshot{}, fmt.Errorf("the Outline %s has PDFs it cannot place: place them first", o.Name)
+// Take records the PDFs rule places now, at the paths it gives them. A
+// rule with PDFs it cannot place is refused: place them first. A nil rule
+// begins an empty Snapshot, filled by hand.
+func Take(name, about string, rule *view.View, items []tree.Item, names view.TypeNames, now time.Time) (Snapshot, error) {
+	s := Snapshot{Name: name, About: about, Taken: now.Format(time.RFC3339), Files: []File{}}
+	if rule == nil {
+		return s, s.Validate()
 	}
-	s := Snapshot{Name: name, About: about, Taken: now.Format(time.RFC3339), Outline: o.Name, Node: node, Files: []File{}}
+	s.Rule = rule.Name
+	plan, err := view.Build(*rule, items, names)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if !plan.Complete() {
+		return Snapshot{}, fmt.Errorf("the rule %s has PDFs it cannot place: place them first", rule.Name)
+	}
 	byID := map[string]tree.Item{}
 	for _, it := range items {
 		byID[it.ID] = it
 	}
-	for _, f := range g.Files {
-		rel := f.Path
-		if node != "" {
-			if !strings.HasPrefix(f.Path, node+"/") {
-				continue
-			}
-			rel = strings.TrimPrefix(f.Path, node+"/")
-		}
+	for _, f := range plan.Files {
 		it, ok := byID[f.Item]
 		if !ok || f.Revision < 1 || f.Revision > len(it.Revisions) {
 			return Snapshot{}, fmt.Errorf("%s: no revision %d of %s", f.Path, f.Revision, f.Item)
 		}
-		s.Files = append(s.Files, File{Path: rel, Item: f.Item, Revision: it.Revisions[f.Revision-1].Ref(), Rule: f.View})
+		s.Files = append(s.Files, File{Path: f.Path, Item: f.Item, Revision: it.Revisions[f.Revision-1].Ref(), Rule: rule.Name})
 	}
 	if len(s.Files) == 0 {
-		return Snapshot{}, fmt.Errorf("no PDF under %q to take", node)
+		return Snapshot{}, fmt.Errorf("the rule %s selects no PDF", rule.Name)
 	}
 	return s, s.Validate()
 }
@@ -119,12 +120,11 @@ type Lost struct {
 	Why string `json:"why"`
 }
 
-// Resolved is a Snapshot's files as the tree has them now: the tree of
-// those still there, and what is lost.
+// Resolved is a Snapshot's files as the tree has them now: those still
+// there, and what is lost.
 type Resolved struct {
-	Files []view.File   `json:"files"`
-	Lost  []Lost        `json:"lost"`
-	Root  *outline.Node `json:"root"`
+	Files []view.File `json:"files"`
+	Lost  []Lost      `json:"lost"`
 }
 
 // Resolve finds each file's revision in items. Each file found is marked
@@ -157,7 +157,6 @@ func Resolve(s Snapshot, items []tree.Item) Resolved {
 		}
 	}
 	sort.Slice(out.Files, func(i, j int) bool { return out.Files[i].Path < out.Files[j].Path })
-	out.Root = outline.Nest(out.Files)
 	return out
 }
 
@@ -200,24 +199,20 @@ func Load(root string) ([]Snapshot, error) {
 	return out, nil
 }
 
-// Save writes s. Create refuses a name an Outline or another Snapshot has;
-// otherwise s replaces the Snapshot of its name, whose files it must keep:
-// only the name's file, about and folder may change after it is taken.
-// Previous, when it names another Snapshot, is removed after.
+// Save writes s. Create refuses a name another Snapshot or a rule has, as
+// does a rename; an Outline names its rules and Snapshots together.
+// Previous, when it names another Snapshot, is removed after: package
+// outline renames it in the Outlines using it.
 func Save(root, previous string, s Snapshot, create bool) error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
-	taken := func(name string) bool {
-		_, err := os.Stat(Path(root, name))
-		return err == nil
-	}
-	if _, err := os.Stat(filepath.Join(root, outline.Dir, s.Name+".yaml")); err == nil {
-		return fmt.Errorf("an Outline is named %s: choose another name", s.Name)
-	}
-	if create || previous != s.Name {
-		if taken(s.Name) {
+	if create || (previous != "" && previous != s.Name) {
+		if _, err := os.Stat(Path(root, s.Name)); err == nil {
 			return fmt.Errorf("a Snapshot is named %s already", s.Name)
+		}
+		if _, err := os.Stat(filepath.Join(root, "rules", s.Name+".yaml")); err == nil {
+			return fmt.Errorf("a rule is named %s: choose another name", s.Name)
 		}
 	}
 	if !create {
@@ -225,16 +220,8 @@ func Save(root, previous string, s Snapshot, create bool) error {
 		if from == "" {
 			from = s.Name
 		}
-		data, err := os.ReadFile(Path(root, from))
-		if err != nil {
+		if _, err := os.Stat(Path(root, from)); err != nil {
 			return fmt.Errorf("no Snapshot named %s", from)
-		}
-		old, err := Parse(data)
-		if err != nil {
-			return err
-		}
-		if old.Taken != s.Taken || old.Outline != s.Outline || old.Node != s.Node || !sameFiles(old.Files, s.Files) {
-			return fmt.Errorf("the Snapshot %s is taken: only its name, about and folder change", from)
 		}
 	}
 	data, err := yaml.Marshal(s)
@@ -248,18 +235,6 @@ func Save(root, previous string, s Snapshot, create bool) error {
 		return os.Remove(Path(root, previous))
 	}
 	return nil
-}
-
-func sameFiles(a, b []File) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // write puts data at dir/name through a temporary file and a rename.

@@ -24,6 +24,8 @@
   <a class="topbar-link" href="/browse/">Browse</a>
   <a class="topbar-link" href="/explore/">Explore</a>
   <a class="topbar-link" href="/templates/">Templates</a>
+  <a class="topbar-link" href="/rules/">Rules</a>
+  <a class="topbar-link" href="/snapshots/">Snapshots</a>
   <a class="topbar-link current" href="/outlines/">Outlines</a>
   <a class="topbar-link" href="/cases/">Cases</a>
   <a class="topbar-link" href="/merge/">Merge</a>
@@ -57,60 +59,14 @@
     </div>
     <div class="view-group">
       <h3>Rules</h3>
-      <div id="rules" class="rule-tabs"></div>
-      <div class="vf"><span class="vf-label">Rule name</span>
-        <div class="checks">
-          <input id="rule-name" class="short mono" spellcheck="false" autocomplete="off" placeholder="ids">
-          <button id="rule-delete" class="button small-button danger" type="button">Remove rule</button>
-        </div>
-      </div>
-      <p id="rule-shared" class="muted rule-shared" hidden></p>
+      <p class="muted rule-shared">Each places the PDFs it picks at the path it gives them. Make and edit them on the <a href="/rules/">Rules</a> page.</p>
+      <div id="rules" class="pick-list"></div>
     </div>
     <div class="view-group">
-      <h3>Which PDFs</h3>
-      <div class="vf"><span class="vf-label">Types</span><div id="types" class="checks"></div></div>
-      <div class="vf"><span class="vf-label">Only where</span>
-        <div class="vf-stack">
-          <div id="conditions"></div>
-          <button id="add-condition" class="button" type="button">+ Condition</button>
-        </div>
-      </div>
-      <div class="vf"><span class="vf-label">Revisions</span>
-        <div class="checks">
-          <label><input type="radio" name="selection" value="head" checked> HEAD only</label>
-          <label><input type="radio" name="selection" value="all"> All revisions</label>
-        </div>
-      </div>
-    </div>
-    <div class="view-group">
-      <h3>Where they go</h3>
-      <div class="vf vf-wide"><span class="vf-label">Path</span>
-        <div class="layout-wrap">
-          <input id="layout" class="mono" spellcheck="false" autocomplete="off" placeholder="{country:alpha2} {make}/{plate#}/{type}.{ext}"
-            role="combobox" aria-autocomplete="list" aria-controls="suggest">
-          <ul id="suggest" class="suggest" role="listbox" hidden></ul>
-        </div>
-        <p class="layout-help">Click a key to add it. <code>/</code> starts a folder; the last part names the PDF. <code>{plate#}</code> numbers as 01-, 02- in the order below.</p>
-      </div>
-      <div id="keys" class="key-groups"></div>
-      <div id="order-row" class="vf" hidden><span class="vf-label">Numbering</span>
-        <div class="vf-stack"><div id="order"></div></div>
-      </div>
-    </div>
-    <div class="view-group">
-      <h3>When it does not fit</h3>
-      <div class="vf"><span class="vf-label">Missing key</span>
-        <div class="checks">
-          <label><input type="checkbox" id="use-default"> write</label>
-          <input id="default" class="short" value="none" spellcheck="false" autocomplete="off">
-          <span class="muted">instead of leaving it out</span>
-        </div>
-      </div>
-      <div class="vf"><span class="vf-label">Same path</span>
-        <div class="checks">
-          <label><input type="checkbox" id="dedupe"> number them _01, _02</label>
-        </div>
-      </div>
+      <h3>Snapshots</h3>
+      <p class="muted rule-shared">Each goes in as a folder of its name, inside the folder given. Take them on the <a href="/snapshots/">Snapshots</a> page.</p>
+      <div id="mounts" class="vf-stack"></div>
+      <select id="add-mount" class="chip"></select>
     </div>
     <div class="view-actions">
       <button id="save" class="action" type="submit">Save Outline</button>

@@ -30,9 +30,11 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Page | What it is for |
 | --- | --- |
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete and attach or replace a PDF on a selected revision. |
-| Explore `/explore/` | An Outline's result, or a Snapshot's: its PDFs in their tree, each folder counting the PDFs beneath it; picking a folder lists it, a PDF opens beside it; taking a Snapshot; exporting the tree. |
+| Explore `/explore/` | An Outline's result: its PDFs in their tree, its Snapshots as folders, each folder counting the PDFs beneath it; picking a folder lists it, a PDF opens beside it; exporting the tree. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
-| Outlines `/outlines/` | Making an Outline: its rules and the folder it is exported to, with its tree redrawn as they change. |
+| Rules `/rules/` | Making a rule: which PDFs it picks and the path each has, with the tree it makes redrawn as it changes. |
+| Snapshots `/snapshots/` | Taking a Snapshot from a rule, or beginning one empty, and editing its PDFs by hand. |
+| Outlines `/outlines/` | Making an Outline from rules and Snapshots, each Snapshot at a folder given, and the folder it is exported to, with its tree redrawn as they change. |
 | Cases `/cases/` | A matter being dealt with and the Items it has needed; its export; archiving it. |
 | Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
 | Import `/import/` | Taking PDFs in. |
@@ -480,12 +482,16 @@ the type's Template, so later imports of that type ask for it.
 ## Outlines
 
 Browse filters and lists, but has no levels and no order. An Outline puts
-PDFs into a tree, the same tree whether it is looked at or exported.
+PDFs into a tree, the same tree whether it is looked at or exported. Its
+tree is made of two kinds of part, alike in standing: rules, which place
+the PDFs they pick as the Items are now, and Snapshots, fixed subtrees put
+in as folders.
 
-An Outline is one YAML file under `outlines/`, and each rule one under
-`rules/`, each named after its `name`, written by the Outlines page and never
-edited by hand. A rule belongs to the tree, not to one Outline: an Outline
-names the rules it uses, and several Outlines can use one.
+An Outline is one YAML file under `outlines/`, each rule one under `rules/`
+and each Snapshot one under `snapshots/`, each named after its `name`,
+written by the Outlines, Rules and Snapshots pages and never edited by hand.
+Rules and Snapshots belong to the tree, not to one Outline: an Outline names
+those it uses, and several Outlines can use one.
 
 ```yaml
 # outlines/phone.yaml
@@ -493,6 +499,9 @@ name: phone
 about: read on the phone          # optional
 folder: ~/Library/Mobile Documents/com~apple~CloudDocs/Documents   # optional
 rules: [ids, cars]
+snapshots:                        # optional
+  - name: visa-2026
+    at: emma/visa                 # the folder it goes in; the top when empty
 ```
 
 ```yaml
@@ -521,8 +530,8 @@ order:
 - `folder` is where it is exported unless another is chosen then. A leading
   `~` is the home folder of the machine exporting, so one file usually fits
   every Mac. Without one, a folder is chosen every time.
-- A rule's `name` is unique in the tree. An export's manifest records it
-  against every file the rule placed.
+- A rule's `name` is unique in the tree, and no Snapshot has it. An export's
+  manifest records it against every file the rule placed.
 - Editing a rule changes it in every Outline using it. Renaming one renames
   it in each of them. Removing a rule from an Outline leaves it for the
   others; a rule no Outline uses stays until it is deleted.
@@ -615,22 +624,28 @@ only named — the layout or the Template has to change.
 
 Making the rules and looking through the result are kept apart:
 
-- **Outlines** makes them. The Outline's name, what it is for and its own
-  folder come first, then its rules as tabs, **+ Rule** making one and
-  **+ Existing rule** adding one the tree has already; a rule no Outline uses
-  can be deleted there. The rule shown is edited in a form, which names the
-  other Outlines using it: the types, conditions on other keys (`owner is
-  emma, tom`), each ticking values the Items of the chosen types hold, HEAD or
-  all revisions, and the layout, typed or built by clicking key chips that
-  insert at the caret. The field chips are those of the chosen types, or of
-  every type when none is, grouped: the Templates' fields, the keys every PDF
-  has, and each country field's formats. Typing `{` in the layout lists the
-  keys with what each writes; after a country key's `:` it lists the formats
-  with an example. Beside the form the tree of every rule together is redrawn
-  as it changes, with the PDFs not placed above it: a PDF lacking a field gets
-  a form to fill it, on one PDF or on several at once; a numbered value the
-  order lacks can be numbered last; a PDF of another rule opens that rule.
-  Saving writes `outlines/<name>.yaml`; renaming removes the old file.
+- **Rules** makes a rule. Its name, which names the Outlines using it —
+  saving changes it there too — then a form: the types, conditions on
+  other keys (`owner is emma, tom`), each ticking values the Items of the
+  chosen types hold, HEAD or all revisions, and the layout, typed or built
+  by clicking key chips that insert at the caret. The field chips are those
+  of the chosen types, or of every type when none is, grouped: the
+  Templates' fields, the keys every PDF has, and each country field's
+  formats. Typing `{` in the layout lists the keys with what each writes;
+  after a country key's `:` it lists the formats with an example. Beside
+  the form the rule's tree is redrawn as it changes, with the PDFs not
+  placed above it: a PDF lacking a field gets a form to fill it, on one PDF
+  or on several at once; a numbered value the order lacks can be numbered
+  last. **Snapshot…** takes a Snapshot of what it places now. Saving writes
+  `rules/<name>.yaml`; renaming renames it in every Outline. A rule an
+  Outline uses cannot be deleted.
+- **Snapshots** takes and edits Snapshots (below).
+- **Outlines** puts them together: the Outline's name, what it is for and
+  its own folder, then the rules it uses, ticked, and its Snapshots, each
+  with the folder it goes in. Beside the form the Outline's tree is redrawn
+  as it changes, each Snapshot a folder of its name, with what it cannot
+  place above it, each linked to the rule or Snapshot to fix. Saving writes
+  `outlines/<name>.yaml`; renaming removes the old file.
 - **Explore** shows the result, browsed as in a file manager. It lists the
   saved Outlines, a list that folds away, and draws the chosen one's tree
   down to each PDF's name, every folder counting the PDFs beneath it.
@@ -640,33 +655,48 @@ Making the rules and looking through the result are kept apart:
   Open in Browse. Not placed is a row of the tree. **Export…** writes it
   (below).
   Nothing on it changes an Outline; Edit rules opens it on the Outlines page.
-  An Outline's Snapshots are drawn inside its tree (below).
 
 ### Snapshots
 
-A Snapshot is an Outline's tree, or one folder of it, kept as it was at one
-moment: what was handed in for a visa or a claim. The rules and the Items
-change after; the Snapshot does not.
+A Snapshot is a fixed subtree of PDFs: what was handed in for a visa or a
+claim. The rules and the Items change after; the Snapshot does not. It
+stands beside the rules: an Outline puts it in its tree as it puts a
+rule's PDFs.
 
-- On Explore, **Snapshot** takes the folder picked, or the whole tree when
-  none is. Its paths are relative to that folder. An Outline with PDFs it
-  cannot place is refused: a Snapshot is what an export would have written.
-- It is one YAML file under `snapshots/`, recording for each PDF its path,
-  its Item and its revision ID, and the rule that placed it. Nothing is
-  copied, as an archived Case copies nothing.
-- Explore draws it inside its Outline's tree as a folder beside the folder
-  it was taken from, shut until opened; at the top when that folder is
-  gone. Picking it, or anything in it, makes Export and Delete act on the
-  Snapshot. Only one whose Outline is gone is listed below the Outlines.
-- It sits beside the Outlines, sharing their names: an Outline and a
-  Snapshot cannot have the same one. Only its name, about and folder change
-  after it is taken.
+```yaml
+# snapshots/visa-2026.yaml
+name: visa-2026
+about: handed in for the visa     # optional
+taken: 2026-09-26T10:00:00+10:00
+rule: ids                         # what it was taken from; absent when begun empty
+files:
+  - path: CN/passport.pdf         # inside the Snapshot's folder
+    item: 01M3CQZ4J29EC3KMWDG5DGB6R3
+    revision: 01M3CR0A…           # the revision's ID
+    rule: ids                     # the rule that placed it, for a reader
+```
+
+- On the Snapshots page one is taken from a rule — what it places now, at
+  the paths it gives them — or begun empty. A rule with PDFs it cannot
+  place is refused: place them first.
+- It is edited by hand after: a PDF added (an Item's latest revision), its
+  path changed, set to another revision of its Item, or taken out. Nothing
+  is copied, as an archived Case copies nothing. Its tree is redrawn as it
+  changes.
+- An Outline puts it in its tree as the folder `<at>/<name>`. One of its
+  paths wanted by a rule's PDF too, or one needed as a folder, is a clash,
+  and the export fails, as between two rules.
+- Its name is unique among the Snapshots and the rules: an Outline names
+  them together, and the manifest records its files under it. Renaming one
+  renames it in every Outline.
 - A revision that leaves the tree, or an Item deleted, is listed as lost,
-  never replaced by a newer one. An export of a Snapshot with a lost file
-  stops, as one with a PDF not placed does.
-- It exports as an Outline does, into its folder or one chosen then; the
-  manifest records its files under the Snapshot's name.
-- Deleting one moves its file into `trash/snapshots/`. Its Items stay.
+  never replaced by a newer one. An Outline with a lost file is not
+  exported, as one with a PDF not placed is not.
+- One an Outline uses cannot be deleted. Deleting moves its file into
+  `trash/snapshots/`. Its Items stay.
+- A Snapshot taken before Snapshots stood alone keeps the Outline and folder
+  it was taken from; nothing reads them. Its old folder no longer exports
+  it: an Outline does.
 
 ## Export
 
@@ -682,25 +712,25 @@ matches its SHA-256.
 Export removes only files it wrote itself, recorded in a manifest at the
 root of the folder; anything else under it is never touched.
 
-An Outline is exported as a whole: every rule, planned together, into the
-folder chosen for it; a Snapshot exports its files the same way — this browser's choice, else its own folder. A run is
-one Outline, several, or every Outline with rules and a folder, and it is
+An Outline is exported as a whole: every rule and Snapshot, planned
+together, into the folder chosen for it — this browser's choice, else its
+own folder. A run is one Outline, several, or every Outline with rules or
+Snapshots and a folder, and it is
 checked entirely before anything is written. Any of these stops the whole
 run, and no Outline is written:
 
-- a PDF not placed, by any rule;
+- a PDF not placed, by any rule, and a Snapshot's PDF the tree has lost;
 - a wanted path held by a file the export does not own (below), including one
   another Outline exported into the same folder;
 - a folder inside the tree or holding it, two folders of the run
-  overlapping, an Outline with no rule or no folder, a folder inside another
+  overlapping, an Outline with no rule and no Snapshot, or no folder, a folder inside another
   tree, and a manifest that cannot be read.
 
 The check lists every one of them, by rule and path; the export itself plans
 and checks again from the state at that moment.
 
 On Explore, **Export…** opens the shared file dialog on the folder the
-Outline, or the Snapshot picked, last went to from that browser, else its
-own; the dialog can make a new folder there. Choosing one checks the plan:
+Outline last went to from that browser, else its own; the dialog can make a new folder there. Choosing one checks the plan:
 what stops it is listed beside the tree and nothing is written; a plan that
 replaces or removes a file asks first; otherwise it writes. `dgs doc export [<outline>...]` does the same from the
 command line, every Outline with rules and a folder when none is named;
