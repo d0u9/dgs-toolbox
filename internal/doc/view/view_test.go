@@ -358,7 +358,46 @@ func TestAlternativeKeys(t *testing.T) {
 			t.Errorf("%s accepted", bad)
 		}
 	}
-	if err := (View{Name: "v", Selection: Head, Layout: "{name|owner#}"}).Validate(); err == nil {
-		t.Error("numbered alternative without an order accepted")
+	if _, err := Parse("{name|owner#}"); err == nil {
+		t.Error("one numbered alternative accepted")
+	}
+}
+
+// {a|b}# numbers alternatives from one order, so an ID card and a driver
+// licence in one folder never share a number.
+func TestAlternativesAreNumberedTogether(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "driver_licence", Kind: tree.KindRecord, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"name": "户口首页"}, Revisions: []tree.Revision{{Digest: "b"}}},
+		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"name": "护照"}, Revisions: []tree.Revision{{Digest: "c"}}},
+	}
+	names := NamesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}})
+	v := View{Name: "v", Selection: Head, Layout: "{name|type:zh}#.{ext}", Order: map[string][]string{"name|type:zh": {"户口首页", "驾驶证"}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Build(v, items, names)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	sort.Strings(paths)
+	if want := []string{"01-户口首页.pdf", "02-驾驶证.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	if len(plan.Missing) != 1 || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"name|type:zh"}) {
+		t.Fatalf("missing %+v", plan.Missing)
+	}
+	v.Order = nil
+	if err := v.Validate(); err == nil || !strings.Contains(err.Error(), "name|type:zh") {
+		t.Fatalf("no order: %v", err)
+	}
+	// {key}# is {key#}.
+	layout, err := Parse("{owner}#")
+	if err != nil || !layout[0][0].Numbered || layout[0][0].OrderKey() != "owner" {
+		t.Fatalf("%+v %v", layout, err)
 	}
 }

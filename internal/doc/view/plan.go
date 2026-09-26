@@ -352,15 +352,16 @@ func render(layout Layout, keys map[string]string, fallback *string, order map[s
 				}
 				value = *fallback
 			}
-			if choice.Numbered {
-				n := place(order[choice.Key], value)
+			if part.Numbered {
+				key := part.OrderKey()
+				n := place(order[key], value)
 				if n == 0 {
-					if !contains(lacking, choice.Key) {
-						lacking = append(lacking, choice.Key)
+					if !contains(lacking, key) {
+						lacking = append(lacking, key)
 					}
 					continue
 				}
-				b.WriteString(padTo(n, len(order[choice.Key])) + "-")
+				b.WriteString(padTo(n, len(order[key])) + "-")
 			}
 			b.WriteString(Clean(value))
 		}
