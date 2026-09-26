@@ -171,7 +171,6 @@ function drawFields() {
     revisionTags.set([]);
     metadataItem = into.value;
   }
-  drawShared(t, adding);
   // Every revision can have tags of its own, beside the Item's, which are
   // shown too. A new Item's first revision also gets the Item's tags.
   $("revision-tags-field").hidden = noPDF;
@@ -188,6 +187,8 @@ function drawFields() {
   }
   for (const input of $("fields").querySelectorAll(".field-input")) {
     if (["owner", "country"].includes(input.name)) { input.addEventListener("input", drawReplaces); input.addEventListener("change", drawReplaces); }
+    // The owner chosen is left out of the people it is shared with.
+    if (input.name === "owner") for (const on of ["input", "change"]) input.addEventListener(on, () => drawShared(t, adding));
     input.addEventListener("input", () => { input.classList.remove("suggested"); showSource(null); });
     const source = (reveal) => input.classList.contains("suggested") && showSource((suggestions[selectedTemplate] || {})[input.name], reveal);
     input.addEventListener("focus", () => source(true));
@@ -197,6 +198,7 @@ function drawFields() {
   }
   suggest();
   drawReplaces();
+  drawShared(t, adding);
 }
 
 // suggest fills the empty fields the text has a value for, marked so they
@@ -362,8 +364,3 @@ async function drawReplaces() {
     if (candidates.some((i) => i.id === previous)) $("replaces").value = previous;
   } catch (err) { if (request === replacesRequest) say($("import-message"), err.message, true); }
 }
-// Choosing the owner takes them out of the people it is shared with.
-$("fields").addEventListener("change", (event) => {
-  const t = templateOf(state, selectedTemplate);
-  if (t && event.target.name === "owner") drawShared(t, $("into").value !== "");
-});
