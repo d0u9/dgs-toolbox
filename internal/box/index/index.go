@@ -241,6 +241,8 @@ func Refresh(root string, existing Index) (Index, []Orphan, error) {
 	// made itself as a missing file tells the person something is wrong when it
 	// is not. Only new paths count: a copy the cache already knew, such as a
 	// duplicate discarded earlier, must not hide the loss of the original.
+	// One case is still missed: if the original is lost in the same interval
+	// that a copy with its digest first appears, the loss is taken for a move.
 	moved := make(map[string]bool, len(entries))
 	for _, entry := range entries {
 		if _, known := previous[entry.SidecarPath]; !known && entry.File.Digest != "" {
