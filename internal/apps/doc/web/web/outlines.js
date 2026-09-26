@@ -226,14 +226,20 @@ function problems() {
   for (const m of lost) {
     const li = el("li", {}, m.view && m.view !== here ? el("button", { type: "button", className: "small", textContent: m.view,
       title: "Show this rule", onclick: () => pickRule(draft.rules.findIndex((r) => r.name === m.view)) }) : null,
-      m.view && m.view !== here ? " " : null, link(m.item), " " + m.why + " ");
-    if (m.keys && m.view === here) {
-      for (const key of m.keys.filter((k) => numbered.includes(k))) {
-        const value = byId[m.item] && which.orderValue(byId[m.item], key);
-        if (value) li.append(el("button", { type: "button", className: "small", textContent: "Number " + value + " last",
-          onclick: () => which.numberLast(key, value) }));
-      }
-    }
+      m.view && m.view !== here ? " " : null, link(m.item));
+    // A numbered key the Item has a value for lacks only a place in the
+    // rule's order: that is fixed in the order, not in the Item.
+    const unordered = m.keys && m.view === here
+      ? m.keys.filter((k) => numbered.includes(k)).map((k) => [k, byId[m.item] && which.orderValue(byId[m.item], k)]).filter(([, v]) => v)
+      : [];
+    const absent = m.keys ? m.keys.filter((k) => !unordered.some(([u]) => u === k)) : [];
+    const why = !m.keys ? m.why : [
+      absent.length ? "lacks " + absent.join(", ") : "",
+      ...unordered.map(([k, v]) => "has no number for " + k + " " + v),
+    ].filter(Boolean).join("; ");
+    li.append(" " + why + " ");
+    for (const [key, value] of unordered) li.append(el("button", { type: "button", className: "small", textContent: "Number " + value + " last",
+      onclick: () => which.numberLast(key, value) }));
     if (m.keys) {
       const keys = m.keys.filter((k) => !(m.view === here && numbered.includes(k) && byId[m.item] && which.orderValue(byId[m.item], k)));
       const fields = m.fields.filter((f) => !m.keys.includes(f) || keys.includes(f));
