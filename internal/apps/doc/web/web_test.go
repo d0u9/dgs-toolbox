@@ -532,6 +532,47 @@ func TestOutlinesExportIntoTheirFolder(t *testing.T) {
 	}
 }
 
+func TestSnapshotKeepsWhatWasTaken(t *testing.T) {
+	root, scans := setup(t, true)
+	h := Handler(Settings{Root: root})
+	body := `{"dir":` + q(scans) + `,"path":"emma/licence.pdf","type":"id_card","fields":{"owner":"emma","country":"AU"}}`
+	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	o := `{"name":"phone","rules":[{"name":"ids","layout":"ids/{owner}.{ext}"}]}`
+	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/snapshots/take", `{"outline":"phone","node":"ids","name":"visa"}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/snapshots/take", `{"outline":"phone","name":"phone"}`); rec.Code == 200 {
+		t.Fatal("a Snapshot took an Outline's name")
+	}
+	// The rule changes; the Snapshot still has emma.pdf at its root.
+	o = `{"name":"phone","rules":[{"name":"ids","layout":"{country}/{owner}.{ext}"}]}`
+	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`,"previous":"phone"}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	var list struct {
+		Snapshots []snapshotJSON `json:"snapshots"`
+	}
+	must(t, json.Unmarshal(do(h, "GET", "/api/snapshots", "").Body.Bytes(), &list))
+	if len(list.Snapshots) != 1 || list.Snapshots[0].Root.Count != 1 || list.Snapshots[0].Root.Files[0].Path != "emma.pdf" {
+		t.Fatalf("%+v", list)
+	}
+	out := t.TempDir()
+	if rec := do(h, "POST", "/api/export", `{"outlines":["visa"],"folders":{"visa":`+q(out)+`}}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(out, "emma.pdf")); err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(h, "POST", "/api/snapshots/delete", `{"name":"visa"}`); rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+}
+
 func TestViewsAndTargetsBecomeOutlines(t *testing.T) {
 	root, _ := setup(t, true)
 	h := Handler(Settings{Root: root})

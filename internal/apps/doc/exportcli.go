@@ -15,11 +15,12 @@ import (
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/doc/export"
 	"dgs-toolbox/internal/doc/outline"
+	"dgs-toolbox/internal/doc/snapshot"
 	"dgs-toolbox/internal/doc/tree"
 )
 
-// exportAction exports Outlines into their folders: the Outlines given, or
-// every Outline with rules and a folder. The whole run is planned and checked
+// exportAction exports Outlines and Snapshots into their folders: those
+// given, or every one with rules or files and a folder. The whole run is planned and checked
 // first; any conflict, missing key or problem means nothing is written.
 func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {
 	named, err := global.DocTreeNamed(flags["tree"])
@@ -52,7 +53,12 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		return err
 	}
 	home, _ := os.UserHomeDir()
-	jobs, problems := export.Jobs(outlines, chosen, home, args)
+	snapshots, err := snapshot.Load(root)
+	if err != nil {
+		return err
+	}
+	sources := append(export.FromOutlines(outlines), export.FromSnapshots(snapshots, items)...)
+	jobs, problems := export.Jobs(sources, chosen, home, args)
 	plans, err := export.PlanJobs(context.Background(), root, jobs, items)
 	if err != nil {
 		return err
@@ -68,7 +74,7 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 	}
 	switch {
 	case len(plans) == 0 && len(problems) == 0:
-		return errors.New("no Outline has rules and a folder: give one a folder, or name it with --to <outline>=<folder>")
+		return errors.New("no Outline or Snapshot has a folder: give one a folder, or name it with --to <name>=<folder>")
 	case !ready:
 		fmt.Fprintln(out, "Nothing was written.")
 		return errors.New("the export has conflicts or missing keys")

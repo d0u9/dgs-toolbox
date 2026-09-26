@@ -258,14 +258,14 @@ func TestJobsAreOutlinesWithAFolder(t *testing.T) {
 		{Name: "browse", Rules: rule},
 		{Name: "empty", Folder: "/e"},
 	}
-	jobs, problems := Jobs(outlines, nil, "/home", nil)
+	jobs, problems := Jobs(FromOutlines(outlines), nil, "/home", nil)
 	if len(problems) != 0 || len(jobs) != 2 || jobs[0].Name != "google" || len(jobs[0].Views) != 2 || jobs[1].Path != "/home/i" {
 		t.Fatalf("jobs %+v %v", jobs, problems)
 	}
-	if jobs, _ = Jobs(outlines, map[string]string{"browse": "/b"}, "/home", []string{"browse"}); len(jobs) != 1 || jobs[0].Path != "/b" {
+	if jobs, _ = Jobs(FromOutlines(outlines), map[string]string{"browse": "/b"}, "/home", []string{"browse"}); len(jobs) != 1 || jobs[0].Path != "/b" {
 		t.Fatalf("chosen %+v", jobs)
 	}
-	_, problems = Jobs(outlines, nil, "/home", []string{"browse", "empty", "gone"})
+	_, problems = Jobs(FromOutlines(outlines), nil, "/home", []string{"browse", "empty", "gone"})
 	if len(problems) != 3 || !strings.Contains(problems[0], "choose a folder") {
 		t.Fatalf("problems %v", problems)
 	}

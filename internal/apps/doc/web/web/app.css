@@ -666,6 +666,14 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .outline-export { padding: 0 0 12px; margin-bottom: 8px; border-bottom: 1px solid var(--hairline); }
 .outline-export .export-row { display: flex; gap: 8px; margin: 6px 0; }
 .outline-export .export-folder { flex: 1; min-width: 0; }
+.outline-main .template-bar { flex-wrap: wrap; }
+.outline-main .template-bar .message { order: 1; flex: 1 0 100%; }
+.outline-main .template-bar .message:empty { display: none; }
+.take-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.take-form[hidden] { display: none; }
+.take-form p { flex: 1 0 100%; margin: 0; font-size: var(--font-size-sm); }
+.take-form input { flex: 1 1 180px; min-width: 0; height: 28px; padding: 0 8px; font: inherit; border: 1px solid var(--hairline-strong); border-radius: var(--radius-md); background: var(--paper); }
+.take-form .action { margin: 0; }
 .rule-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
 .outline-row.unplaced { margin-top: 10px; color: var(--error); }
 .outline-row.unplaced .ft-icon, .outline-row.unplaced .outline-count { color: var(--error); }

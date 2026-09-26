@@ -128,6 +128,11 @@ func Save(root, previous string, o Outline) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
+	// A Snapshot shares the Outlines' names, exported and remembered by
+	// them; package snapshot keeps its files in snapshots/.
+	if _, err := os.Stat(filepath.Join(root, "snapshots", o.Name+".yaml")); err == nil {
+		return fmt.Errorf("a Snapshot is named %s: choose another name", o.Name)
+	}
 	data, err := yaml.Marshal(o)
 	if err != nil {
 		return err
