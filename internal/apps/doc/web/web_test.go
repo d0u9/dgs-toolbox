@@ -148,6 +148,10 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 	if rec := do(h, "GET", "/api/revision?item="+item.ID+"&digest="+first, ""); rec.Body.String() != "%PDF-1.4 x" {
 		t.Fatalf("revision: %d", rec.Code)
 	}
+	// An Outline's tree names a revision by its PDF's digest, not its ref.
+	if rec := do(h, "GET", "/api/revision?item="+item.ID+"&digest="+item.Revisions[0].Digest, ""); rec.Body.String() != "%PDF-1.4 x" {
+		t.Fatalf("revision by PDF digest: %d %s", rec.Code, rec.Body.String())
+	}
 	do(h, "POST", "/api/head", `{"item":"`+item.ID+`","digest":"`+first+`"}`)
 	do(h, "POST", "/api/fields", `{"item":"`+item.ID+`","fields":{"owner":"emma","country":"CN"}}`)
 	if item = state(t, h).Items[0]; item.Head == first || item.Fields["country"] != "中国" || item.FieldsAt(first)["country"] != "澳大利亚" {
