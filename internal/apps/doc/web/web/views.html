@@ -74,9 +74,12 @@
               role="combobox" aria-autocomplete="list" aria-controls="suggest">
             <ul id="suggest" class="suggest" role="listbox" hidden></ul>
           </div>
-          <p class="layout-help">Type <code>{</code> for a key. <code>{owner}</code> is a value, <code>{country:en}</code> a country in one form, <code>/</code> a folder.</p>
+          <p class="layout-help">Type <code>{</code> for a key. <code>{owner}</code> is a value, <code>{country:en}</code> a country in one form, <code>{owner#}</code> numbered as 01-alex, <code>/</code> a folder.</p>
         </div>
         <div id="keys" class="key-groups"></div>
+        <div id="order-row" class="vf" hidden><span class="vf-label">Numbering</span>
+          <div class="vf-stack"><div id="order"></div></div>
+        </div>
         <label class="vf"><span class="vf-label">Target</span>
           <select id="target"></select></label>
         <p id="target-note" class="layout-help"></p>
