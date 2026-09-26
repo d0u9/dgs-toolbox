@@ -257,7 +257,8 @@ $("run").addEventListener("click", async () => {
   try {
     const answer = await post("/api/export", { ...planned, folders: folders() });
     say($("export-message"), "Exported. " + answer.results.map((r) => (r.name || r.path) + ": " + r.result.written + " written, " +
-      r.result.removed + " removed, " + r.result.kept + " unchanged").join("; ") + ".");
+      r.result.removed + " removed, " + r.result.kept + " unchanged" +
+      (r.history_error ? " (history not recorded: " + r.history_error + ")" : "")).join("; ") + ".");
     $("export-plan").replaceChildren();
   } catch (error) {
     say($("export-message"), error.message, true);

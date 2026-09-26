@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -195,7 +196,7 @@ func Handler(settings Settings) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
-	for _, page := range []string{"browse", "templates", "import", "views", "targets", "cases", "merge", "change-type"} {
+	for _, page := range []string{"browse", "templates", "import", "views", "targets", "cases", "merge", "change-type", "log"} {
 		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
 		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
 	}
@@ -223,6 +224,8 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/change-type", s.changeType)
 	mux.HandleFunc("POST /api/notes", s.setNotes)
 	mux.HandleFunc("POST /api/tags", s.setTags)
+	mux.HandleFunc("POST /api/frequent", s.setFrequent)
+	mux.HandleFunc("GET /api/history", s.historyLog)
 	mux.HandleFunc("POST /api/items/delete", s.deleteItem)
 	mux.HandleFunc("GET /api/templates", s.templateList)
 	mux.HandleFunc("POST /api/templates", s.templateSave)
@@ -673,7 +676,9 @@ func (s server) setHead(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	item, err := tree.SetHead(s.root, request.Item, request.Digest)
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := tree.SetHead(s.root, request.Item, request.Digest, s.now())
 	answer(w, item, err)
 }
 
@@ -709,7 +714,9 @@ func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 		answer(w, tree.Item{}, err)
 		return
 	}
-	item, err := tree.SetFields(s.root, request.Item, request.Digest, t, request.Fields)
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := tree.SetFields(s.root, request.Item, request.Digest, t, request.Fields, s.now())
 	answer(w, item, err)
 }
 
@@ -748,7 +755,9 @@ func (s server) setNotes(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	item, err := tree.SetNotes(s.root, request.Item, request.Notes)
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := tree.SetNotes(s.root, request.Item, request.Notes, s.now())
 	answer(w, item, err)
 }
 
@@ -760,8 +769,46 @@ func (s server) setTags(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	item, err := tree.SetTags(s.root, request.Item, request.Tags)
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := tree.SetTags(s.root, request.Item, request.Tags, s.now())
 	answer(w, item, err)
+}
+
+func (s server) setFrequent(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Item     string `json:"item"`
+		Frequent bool   `json:"frequent"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := tree.SetFrequent(s.root, request.Item, request.Frequent, s.now())
+	answer(w, item, err)
+}
+
+// historyLog is what was done to the tree's Items, newest first: every Item's,
+// or with ?item= one Item's.
+func (s server) historyLog(w http.ResponseWriter, r *http.Request) {
+	if err := tree.Require(s.root); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	items, err := tree.LoadItems(s.root)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if id := r.URL.Query().Get("item"); id != "" {
+		items = slices.DeleteFunc(items, func(item tree.Item) bool { return item.ID != id })
+	}
+	entries := tree.Log(items)
+	if entries == nil {
+		entries = []tree.LogEntry{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
 }
 
 // deleteItem moves an Item's folder into the tree's trash. The page asks

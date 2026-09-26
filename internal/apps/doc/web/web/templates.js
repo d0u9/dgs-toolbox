@@ -37,6 +37,7 @@ function render() {
   $("file").textContent = file;
   $("file-again").textContent = file;
   $("danger").hidden = !t;
+  $("duplicate").hidden = !t;
   $("confirm-name").textContent = t ? t.type : "";
   armDelete(t ? t.type : "");
   $("confirm").disabled = !!(t && t.items);
@@ -50,11 +51,13 @@ function leave() {
   return editor.value === saved || confirm("Drop the unsaved changes to this Template?");
 }
 
-function open(type) {
+// open shows a Template, or a new one: from the example, or from text given,
+// which stays unsaved until Save.
+function open(type, text) {
   editing = type;
   const t = templates.find((x) => x.type === type);
   saved = t ? t.data : example.replace("type: id_card", "type: new_type");
-  editor.value = saved;
+  editor.value = text ?? saved;
   dirty();
   say($("message"), "");
   history.replaceState(null, "", type ? "#" + type : location.pathname + location.search);
@@ -83,6 +86,18 @@ async function save() {
 }
 
 $("new").onclick = () => leave() && open("");
+
+// Duplicate starts a new Template from the one shown, as saved, under a type
+// no Template has yet. Nothing is written until Save.
+$("duplicate").onclick = () => {
+  const from = editing;
+  if (!from || !leave()) return;
+  let type = from + "_copy";
+  for (let n = 2; templates.some((t) => t.type === type); n++) type = from + "_copy" + n;
+  const text = /^type:.*$/m.test(saved) ? saved.replace(/^type:.*$/m, "type: " + type) : "type: " + type + "\n" + saved;
+  open("", text);
+  say($("message"), "A copy of " + from + ": change what differs, then Save.");
+};
 $("save").onclick = save;
 $("delete").onclick = async () => {
   if (!editing || $("confirm").value !== editing) return;

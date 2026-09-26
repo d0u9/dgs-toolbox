@@ -276,8 +276,9 @@ func readerWith(ctx context.Context, r io.Reader) io.Reader { return ctxReader{c
 // touched. The manifest is rewritten at the end with every file the Target
 // then holds for those Views, and the other Views' entries as they were;
 // also when Apply stops early, so what was done is recorded. Progress, when
-// set, is called after each file.
-func Apply(ctx context.Context, root, target string, views []string, plan Plan, items []tree.Item, progress func(done, total int), onPublished ...func(Action) error) (Result, error) {
+// set, is called after each file. Published, when set, is called for each
+// file written, after it is in place.
+func Apply(ctx context.Context, root, target string, views []string, plan Plan, items []tree.Item, progress func(done, total int), published func(Action)) (Result, error) {
 	var result Result
 	if len(plan.Blocked) > 0 {
 		return result, fmt.Errorf("%d file(s) cannot be written; nothing was changed", len(plan.Blocked))
@@ -368,10 +369,8 @@ func Apply(ctx context.Context, root, target string, views []string, plan Plan, 
 		}
 		done = append(done, entry(a))
 		result.Written++
-		if len(onPublished) > 0 {
-			if err := onPublished[0](a); err != nil {
-				return finish(err)
-			}
+		if published != nil {
+			published(a)
 		}
 		tick()
 	}
@@ -381,10 +380,8 @@ func Apply(ctx context.Context, root, target string, views []string, plan Plan, 
 		}
 		done = append(done, entry(a))
 		result.Written++
-		if len(onPublished) > 0 {
-			if err := onPublished[0](a); err != nil {
-				return finish(err)
-			}
+		if published != nil {
+			published(a)
 		}
 		tick()
 	}

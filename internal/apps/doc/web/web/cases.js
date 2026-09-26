@@ -294,7 +294,9 @@ $("run").addEventListener("click", async () => {
   try {
     const answer = await post("/api/cases/export", planned);
     const r = answer.results[0].result;
-    say($("export-message"), "Exported: " + r.written + " written, " + r.removed + " removed, " + r.kept + " unchanged.");
+    const missed = answer.results[0].history_error;
+    say($("export-message"), "Exported: " + r.written + " written, " + r.removed + " removed, " + r.kept + " unchanged." +
+      (missed ? " History not recorded: " + missed : ""));
     $("export-plan").replaceChildren();
   } catch (error) {
     say($("export-message"), error.message, true);

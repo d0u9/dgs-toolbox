@@ -186,6 +186,9 @@ type exportResultJSON struct {
 	Name   string        `json:"name"`
 	Path   string        `json:"path"`
 	Result export.Result `json:"result"`
+	// HistoryError says the files were written but the Items' history of
+	// them was not.
+	HistoryError string `json:"history_error,omitempty"`
 }
 
 // exportRun plans again and writes only when the whole run is ready: one
@@ -210,17 +213,31 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 	// leaves more to do next time.
 	results := []exportResultJSON{}
 	for _, j := range out.Jobs {
-		result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, nil,
-			func(a export.Action) error {
-				return tree.RecordExport(s.root, a.Item, a.Digest, j.Path, a.View, s.now())
-			})
-		results = append(results, exportResultJSON{Name: j.Name, Path: j.Path, Result: result})
+		result, err := s.applyExport(r, j, items)
+		results = append(results, result)
 		if err != nil {
 			writeJSON(w, http.StatusConflict, map[string]any{"error": j.Path + ": " + err.Error(), "results": results})
 			return
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// applyExport runs one job and records in each Item's history the PDFs it
+// published, also when the job stops early. The files are in place whether or
+// not the history can be written, so a failure to record is reported in the
+// result, not as a failed export.
+func (s server) applyExport(r *http.Request, j export.JobPlan, items []tree.Item) (exportResultJSON, error) {
+	var published []tree.Exported
+	result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, nil,
+		func(a export.Action) {
+			published = append(published, tree.Exported{Item: a.Item, Digest: a.Digest, Target: j.Path, View: a.View})
+		})
+	out := exportResultJSON{Name: j.Name, Path: j.Path, Result: result}
+	if recordErr := tree.RecordExports(s.root, published, s.now()); recordErr != nil {
+		out.HistoryError = recordErr.Error()
+	}
+	return out, err
 }
 
 // Others is every tree but the one at root.
