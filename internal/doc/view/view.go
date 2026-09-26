@@ -74,6 +74,9 @@ type View struct {
 	// Target names the configured folder the View is exported to. Views
 	// naming one Target are exported into it together.
 	Target string `yaml:"target,omitempty" json:"target,omitempty"`
+	// Order lists, per key, the values a numbered key {key#} may have, in
+	// the order they are numbered from 01.
+	Order map[string][]string `yaml:"order,omitempty" json:"order,omitempty"`
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -89,8 +92,31 @@ func (v View) Validate() error {
 	if v.Dedupe != "" && v.Dedupe != DedupeNumber {
 		return fmt.Errorf("view %s: dedupe %q: leave it out, or use number", v.Name, v.Dedupe)
 	}
-	if _, err := Parse(v.Layout); err != nil {
+	layout, err := Parse(v.Layout)
+	if err != nil {
 		return fmt.Errorf("view %s: %w", v.Name, err)
+	}
+	for key, values := range v.Order {
+		if len(values) == 0 {
+			return fmt.Errorf("view %s: order %s is empty", v.Name, key)
+		}
+		for i, a := range values {
+			if strings.TrimSpace(a) == "" {
+				return fmt.Errorf("view %s: order %s has an empty value", v.Name, key)
+			}
+			for _, b := range values[:i] {
+				if sameValue(a, b) {
+					return fmt.Errorf("view %s: order %s lists %s and %s, which are one value", v.Name, key, b, a)
+				}
+			}
+		}
+	}
+	for _, segment := range layout {
+		for _, part := range segment {
+			if part.Numbered && len(v.Order[part.Key]) == 0 {
+				return fmt.Errorf("view %s: {%s#} is numbered, so order needs a list for %s", v.Name, part.Key, part.Key)
+			}
+		}
 	}
 	if v.Target != "" && !namePattern.MatchString(v.Target) {
 		return fmt.Errorf("view %s: target %q: use lowercase letters, digits, _ and -", v.Name, v.Target)
@@ -100,11 +126,13 @@ func (v View) Validate() error {
 
 // Part is a piece of a layout: fixed text, or a key. A key written
 // {key:format} is a country written in that format — zh, en, alpha2 or
-// alpha3 — whatever form the Item keeps it in.
+// alpha3 — whatever form the Item keeps it in. A key written {key#} is
+// prefixed with its value's place in the View's order, as 01-.
 type Part struct {
-	Text   string `json:"text,omitempty"`
-	Key    string `json:"key,omitempty"`
-	Format string `json:"format,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Format   string `json:"format,omitempty"`
+	Numbered bool   `json:"numbered,omitempty"`
 }
 
 // Layout is a parsed layout, one list of parts per path segment.
@@ -154,13 +182,17 @@ func Parse(layout string) (Layout, error) {
 				return nil, fmt.Errorf("layout %q: { without }", layout)
 			}
 			key, format, _ := strings.Cut(rest[:end], ":")
+			key, numbered := strings.CutSuffix(key, "#")
 			if !keyPattern.MatchString(key) {
 				return nil, fmt.Errorf("layout %q: {%s} is not a key", layout, rest[:end])
+			}
+			if key == "type" && strings.Contains(rest[:end], ":") && format != "zh" && format != "en" {
+				return nil, fmt.Errorf("layout %q: {%s}: a type is written zh or en", layout, rest[:end])
 			}
 			if strings.Contains(rest[:end], ":") && !country.Format(format).Valid() {
 				return nil, fmt.Errorf("layout %q: {%s}: a country is written zh, en, alpha2 or alpha3", layout, rest[:end])
 			}
-			parts = append(parts, Part{Key: key, Format: format})
+			parts = append(parts, Part{Key: key, Format: format, Numbered: numbered})
 			rest = rest[end+1:]
 		}
 		out = append(out, parts)
@@ -256,4 +288,15 @@ func Delete(root, name string) error {
 		return nil
 	}
 	return err
+}
+
+// sameValue reports whether a and b are one value: one country however each
+// is written, or else equal ignoring case.
+func sameValue(a, b string) bool {
+	x, okA := country.Normalize(a, country.Alpha3)
+	y, okB := country.Normalize(b, country.Alpha3)
+	if okA && okB {
+		return x == y
+	}
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }

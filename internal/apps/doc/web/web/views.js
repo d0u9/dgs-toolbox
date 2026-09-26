@@ -105,6 +105,8 @@ const BUILT_IN = {
   date: "issued_at, YYYY-MM-DD",
 };
 const FORMATS = { zh: "中国", en: "China", alpha2: "CN", alpha3: "CHN" };
+// A type is written in its Template's names.
+const TYPE_FORMATS = { zh: "the Chinese name, such as 驾驶证", en: "the English name, such as Driver licence" };
 
 const countryKeys = () => new Set(state.templates.flatMap((t) => t.fields.filter((f) => f.type === "country").map((f) => f.key)));
 
@@ -131,6 +133,7 @@ function chips() {
     group("Every PDF", ...keys.filter((k) => BUILT_IN[k]).map((k) => chip(k, "{" + k + "}", describe(k))), chip("/", "/", "a folder")),
     ...countries.map((k) => group(k + " as", ...Object.entries(FORMATS).map(([f, example]) =>
       chip(":" + f, "{" + k + ":" + f + "}", `{${k}:${f}} writes ${example}`)))),
+    group("type as", ...Object.entries(TYPE_FORMATS).map(([f, note]) => chip(":" + f, "{type:" + f + "}", note))),
   ].filter(Boolean));
 }
 
@@ -149,7 +152,9 @@ function suggest() {
   if (colon >= 0) {
     const key = typed.slice(0, colon);
     const part = typed.slice(colon + 1);
-    suggestions = countryKeys().has(key)
+    suggestions = key === "type"
+      ? Object.entries(TYPE_FORMATS).filter(([f]) => f.startsWith(part)).map(([f, note]) => ({ text: "type:" + f, note }))
+      : countryKeys().has(key)
       ? Object.entries(FORMATS).filter(([f]) => f.startsWith(part)).map(([f, example]) => ({ text: key + ":" + f, note: "writes " + example }))
       : [];
   } else {
@@ -226,6 +231,9 @@ function current() {
   if ($("use-default").checked) v.default = $("default").value;
   if ($("dedupe").checked) v.dedupe = "number";
   if ($("target").value) v.target = $("target").value;
+  // The form does not edit order; a saved View keeps the one in its file.
+  const kept = views.find((x) => x.name === editing);
+  if (kept && kept.order) v.order = kept.order;
   return v;
 }
 
@@ -537,7 +545,7 @@ function saved() {
   return v && JSON.stringify(normal(v)) === JSON.stringify(normal(current()));
 }
 const normal = (v) => ({ name: v.name, query: v.query || {}, selection: v.selection || "head", layout: v.layout,
-  default: v.default ?? null, dedupe: v.dedupe || "", target: v.target || "" });
+  default: v.default ?? null, dedupe: v.dedupe || "", target: v.target || "", order: v.order || null });
 
 // The Export button beside the form: the View's Target, or the View alone.
 function dryRun() {

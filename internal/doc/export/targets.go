@@ -85,6 +85,11 @@ func Jobs(views []view.View, targets map[string]string, names []string) ([]Job, 
 // tree, the Targets against each other, each Target's Views against each
 // other, and every wanted path against what is on disk.
 func PlanJobs(ctx context.Context, root string, jobs []Job, items []tree.Item) ([]JobPlan, error) {
+	templates, err := tree.LoadTemplates(root)
+	if err != nil {
+		return nil, err
+	}
+	names := view.NamesOf(templates)
 	out := make([]JobPlan, len(jobs))
 	for i, j := range jobs {
 		p := JobPlan{Name: j.Name, Path: j.Path, Problems: []string{}}
@@ -99,7 +104,7 @@ func PlanJobs(ctx context.Context, root string, jobs []Job, items []tree.Item) (
 				p.Problems = append(p.Problems, fmt.Sprintf("the folder %s overlaps %s's, %s", j.Path, label(other), other.Path))
 			}
 		}
-		combined, err := view.Combine(j.Views, items)
+		combined, err := view.Combine(j.Views, items, names)
 		if err != nil {
 			return nil, err
 		}
