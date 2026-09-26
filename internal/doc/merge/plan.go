@@ -153,6 +153,23 @@ func Compute(root string, src Source) (Plan, error) {
 			}
 		}
 	}
+	// successor resolves a Source Item's superseded_by to this tree's ID. A
+	// successor in neither tree is a problem: the link would point nowhere.
+	successor := func(s tree.Item) (string, bool) {
+		if s.SupersededBy == "" {
+			return "", true
+		}
+		target, ok := mappedID[s.SupersededBy]
+		if !ok {
+			if _, here := byID[s.SupersededBy]; here {
+				target, ok = s.SupersededBy, true
+			}
+		}
+		if !ok {
+			plan.Problems = append(plan.Problems, fmt.Sprintf("%s %s is replaced by %s, which is in neither tree", s.Type, s.ID, s.SupersededBy))
+		}
+		return target, ok
+	}
 	claimed := map[string]string{}
 	for _, s := range src.Items {
 		t, ok := templates[s.Type]
@@ -162,7 +179,8 @@ func Compute(root string, src Source) (Plan, error) {
 		}
 		m, found := match(t, items, byID, s)
 		if !found {
-			plan.New = append(plan.New, Change{Item: s.ID, From: s.ID, Type: s.Type, Fields: s.Fields, Digests: digests(s.Revisions), Head: s.Head, SupersededBy: mappedID[s.SupersededBy]})
+			next, _ := successor(s)
+			plan.New = append(plan.New, Change{Item: s.ID, From: s.ID, Type: s.Type, Fields: s.Fields, Digests: digests(s.Revisions), Head: s.Head, SupersededBy: next})
 			continue
 		}
 		if other, ok := claimed[m.ID]; ok {
@@ -218,11 +236,7 @@ func Compute(root string, src Source) (Plan, error) {
 				c.Tags = append(c.Tags, tag)
 			}
 		}
-		if s.SupersededBy != "" {
-			target := mappedID[s.SupersededBy]
-			if target == "" {
-				target = s.SupersededBy
-			}
+		if target, ok := successor(s); ok && target != "" {
 			if m.SupersededBy != "" && m.SupersededBy != target {
 				plan.Problems = append(plan.Problems, "conflicting visa replacements for "+m.ID)
 			} else if m.SupersededBy == "" {

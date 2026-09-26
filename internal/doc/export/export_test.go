@@ -306,3 +306,20 @@ func TestAgainstOthers(t *testing.T) {
 		t.Fatalf("inside another tree: %v", plans[1].Problems)
 	}
 }
+
+// Snapshots may share one PDF; a manifest entry found only by digest names
+// HEAD when HEAD holds that PDF, never merely the first holder.
+func TestByDigestPrefersHead(t *testing.T) {
+	it := tree.Item{Revisions: []tree.Revision{
+		{ID: "a", Snapshot: true, Digest: "pdf"},
+		{ID: "b", Snapshot: true, Digest: "pdf"},
+		{ID: "c", Snapshot: true, Digest: "pdf"},
+	}, Head: "b"}
+	if got := byDigest(it, "pdf").Ref(); got != "b" {
+		t.Fatalf("got %s, want HEAD b", got)
+	}
+	it.Head = "other"
+	if got := byDigest(it, "pdf").Ref(); got != "c" {
+		t.Fatalf("got %s, want newest c", got)
+	}
+}

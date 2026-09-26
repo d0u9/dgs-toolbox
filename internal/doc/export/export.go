@@ -303,12 +303,7 @@ func Apply(ctx context.Context, root, target string, views []string, plan Plan, 
 		if a.Revision > 0 && a.Revision <= len(it.Revisions) {
 			revision = it.Revisions[a.Revision-1]
 		} else {
-			for _, r := range it.Revisions {
-				if r.Digest == a.Digest {
-					revision = r
-					break
-				}
-			}
+			revision = byDigest(it, a.Digest)
 		}
 		ref := revision.Ref()
 		return Entry{Snapshot: revision.Snapshot, RevisionType: revision.Type, ItemFields: it.Fields, RevisionFields: revision.Fields, RevisionID: revision.ID,
@@ -466,4 +461,21 @@ func writeManifest(target string, m Manifest) error {
 		return err
 	}
 	return os.Rename(tmp, filepath.Join(target, ManifestName))
+}
+
+// byDigest picks the revision an action names only by its PDF. Several
+// snapshots may share one PDF: HEAD wins when it is one of them, otherwise
+// the newest does.
+func byDigest(it tree.Item, digest string) tree.Revision {
+	var found tree.Revision
+	for _, r := range it.Revisions {
+		if r.Digest != digest {
+			continue
+		}
+		if r.Ref() == it.Current() {
+			return r
+		}
+		found = r
+	}
+	return found
 }

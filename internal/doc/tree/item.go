@@ -117,7 +117,7 @@ func (i Item) FieldsAt(digest string) map[string]string {
 		out[k] = v
 	}
 	for _, r := range i.Revisions {
-		if r.Ref() == digest || (digest != "" && r.Digest == digest) {
+		if matchesRef(r, digest) {
 			for k, v := range r.Fields {
 				out[k] = v
 			}
@@ -241,7 +241,7 @@ func NewID(now time.Time) (string, error) {
 func (item Item) TagsAt(digest string) []string {
 	all := append([]string(nil), item.Tags...)
 	for _, r := range item.Revisions {
-		if r.Ref() == digest || (digest != "" && r.Digest == digest) {
+		if matchesRef(r, digest) {
 			all = append(all, r.Tags...)
 		}
 	}
@@ -256,4 +256,11 @@ func (i Item) CurrentDigest() string {
 		}
 	}
 	return ""
+}
+
+// matchesRef reports whether r is the revision ref names. A legacy revision
+// is also named by its PDF digest; a hashed snapshot only by its ID, since
+// several snapshots may share one PDF.
+func matchesRef(r Revision, ref string) bool {
+	return r.Ref() == ref || (ref != "" && r.ID == "" && r.Digest == ref)
 }

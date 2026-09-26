@@ -470,6 +470,10 @@ function detail(item) {
     ? "Revision " + n + " of " + item.revisions.length + (selected.digest === item.head ? " · HEAD" : "")
     : "Record";
   const chosen = item.revisions.find((r) => (r.id || r.digest) === selected.digest);
+  // Saving an older revision's fields branches from it and moves HEAD there.
+  const branching = selected.digest !== headOf(item);
+  $("save-button").textContent = branching ? "Save as new HEAD" : "Save new revision";
+  $("save-button").title = branching ? "Saves a new revision from this one's values and makes it HEAD; the others are kept" : "";
   const t = templateOf(state, chosen?.type || item.type);
   // The fields as the picked revision has them: its per_revision values are
   // its own, so picking the old card shows the old card's number.

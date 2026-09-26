@@ -18,7 +18,7 @@ func ValidateSupersession(root, oldID, typ string, fields map[string]string) err
 	}
 	a, okA := country.Normalize(fields["country"], country.Format("alpha2"))
 	b, okB := country.Normalize(old.Fields["country"], country.Format("alpha2"))
-	if strings.TrimSpace(fields["owner"]) == "" || fields["owner"] != old.Fields["owner"] || !okA || !okB || a != b {
+	if owner := strings.TrimSpace(fields["owner"]); owner == "" || owner != strings.TrimSpace(old.Fields["owner"]) || !okA || !okB || a != b {
 		return fmt.Errorf("choose a visa for the same owner and country")
 	}
 	if old.Retired || old.SupersededBy != "" {
