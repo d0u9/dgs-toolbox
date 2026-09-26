@@ -119,7 +119,7 @@ export function inputFor(field, value, placeholder, state, self) {
         control, cards);
     }
   } else {
-    control = el("input", { ...common, type: field.type === "date" ? "date" : "text",
+    control = el("input", { ...common, type: ["date", "month"].includes(field.type) ? field.type : "text",
       value, placeholder: placeholder || (field.type === "country" ? "cn, CHN, China, 中国…" : ""),
       spellcheck: false, autocomplete: "off" });
     if (field.type === "country") control.title = "Any code or name: kept as the Template's format says.";
