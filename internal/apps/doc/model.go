@@ -72,6 +72,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	// Labels are padded to the widest so every value starts in one column.
+	trees := m.settings.ResolvedTrees()
+	labels := make([]string, len(trees))
+	width := len("Page")
+	for i, tree := range trees {
+		labels[i] = "Tree"
+		if tree.Name != "" {
+			labels[i] += " " + tree.Name
+		}
+		width = max(width, lipgloss.Width(labels[i]))
+	}
+	label := func(text string) string {
+		return hintStyle.Render(text + strings.Repeat(" ", width-lipgloss.Width(text)+2))
+	}
 	lines := []string{}
 	switch {
 	case m.err != nil:
@@ -79,17 +93,13 @@ func (m Model) View() string {
 	case m.url == "":
 		lines = append(lines, hintStyle.Render("Starting the local page…"))
 	default:
-		lines = append(lines, hintStyle.Render("Page  ")+m.url)
+		lines = append(lines, label("Page")+m.url)
 	}
-	for _, tree := range m.settings.ResolvedTrees() {
-		label := "Tree"
-		if tree.Name != "" {
-			label += " " + tree.Name
-		}
-		lines = append(lines, hintStyle.Render(label+"  ")+tree.Root)
+	for i, tree := range trees {
+		lines = append(lines, label(labels[i])+tree.Root)
 	}
 	lines = append(lines, "", hintStyle.Render("Import copies a PDF in after reading it back. The original is never touched."))
-	content := titleStyle.Render("DOC") + "\n\n" + strings.Join(lines, "\n")
+	content := titleStyle.Render("DOC") + "\n\n" + lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
