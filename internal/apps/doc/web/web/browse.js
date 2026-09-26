@@ -41,7 +41,7 @@ function drawFilters() {
     select.replaceChildren(el("option", { value: "" }, "any"), ...values.map((v) => el("option", { value: v }, v)));
     select.value = values.includes(was) ? was : "";
   };
-  keep($("filter-type"), [...new Set(state.items.map((i) => i.type))].sort());
+  keep($("filter-type"), [...new Set(state.items.filter((i) => passes(i, "type")).map((i) => i.type))].sort());
   // The list can sort by any of its columns, so Sort offers them too.
   const sortSelect = $("view-sort"), wantSort = sortSelect.dataset.want || sortSelect.value;
   for (const o of [...sortSelect.options]) if (o.dataset.column) o.remove();
@@ -65,23 +65,31 @@ function drawFilters() {
       label.dataset.key = key;
       group.append(label);
     }
-    keep(select, [...new Set(state.items.map((i) => currentFields(i)[key]).filter(Boolean))].sort());
+    const values = [...new Set(state.items.filter((i) => passes(i, key)).map((i) => currentFields(i)[key]).filter(Boolean))].sort();
+    keep(select, values);
+    // A key no Item left has, such as a bank card's issuer under passports,
+    // is hidden rather than offered empty.
+    select.closest("label").hidden = !values.length && !select.value;
   }
 }
 
-function shownItems() {
+// passes says whether an Item meets every filter but skip, which names the
+// select being filled: a select offers the values the other filters leave,
+// so choosing a type narrows the owners to that type's.
+function passes(i, skip) {
   const type = $("filter-type").value, kind = $("filter-kind").value, exp = $("filter-expiry").value, use = $("filter-use").value;
-  const requiredTags = filterTags.get();
-  const byKey = [...$("field-filters").querySelectorAll("select[data-key]")].filter((s) => s.value);
-  const items = state.items.filter((i) => {
-    const fields = currentFields(i);
-    return (!onlyFrequent() || i.frequent) && (!use || (use === "retired") === !!i.retired) && (!type || i.type === type) && (!kind || i.kind === kind) &&
-      (!exp || expiryOf(i).state === exp) &&
-      byKey.every((s) => fields[s.dataset.key] === s.value) &&
-      // An Item has the tags its HEAD has: its own and HEAD's.
-      requiredTags.every((tag) => tagsAt(i, headOf(i)).includes(tag)) &&
-      (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
-  });
+  const fields = currentFields(i);
+  return (!onlyFrequent() || i.frequent) && (!use || (use === "retired") === !!i.retired) &&
+    (skip === "type" || !type || i.type === type) && (!kind || i.kind === kind) &&
+    (!exp || expiryOf(i).state === exp) &&
+    [...$("field-filters").querySelectorAll("select[data-key]")].every((s) => !s.value || s.dataset.key === skip || fields[s.dataset.key] === s.value) &&
+    // An Item has the tags its HEAD has: its own and HEAD's.
+    filterTags.get().every((tag) => tagsAt(i, headOf(i)).includes(tag)) &&
+    (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
+}
+
+function shownItems() {
+  const items = state.items.filter((i) => passes(i, null));
   const sort = $("view-sort").value, dir = $("view-direction").value === "asc" ? 1 : -1;
   const added = (i) => (i.revisions[i.revisions.length - 1] || {}).added || "";
   // No expiry sorts after any date, whichever way round.
