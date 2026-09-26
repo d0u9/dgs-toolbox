@@ -20,8 +20,8 @@ func TestChangeTypePreservesPDFsAndArchivesOldFields(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	target := Template{Type: "student_id", Kind: KindDocument, Fields: []Field{{Key: "owner", Required: true, Distinguishing: true}, {Key: "school", Required: true}, {Key: "issued", PerRevision: true}}}
-	fields := map[string]string{"owner": "alex", "school": "Uni"}
+	target := Template{Type: "student_id", Kind: KindDocument, Fields: []Field{{Key: "owner", Required: true, Distinguishing: true}, {Key: "country", Type: FieldCountry, Required: true}, {Key: "school", Required: true}, {Key: "issued", PerRevision: true}}}
+	fields := map[string]string{"owner": "alex", "country": "AU", "school": "Uni"}
 	revs := map[string]map[string]string{"old": {"issued": "2020-01-01"}, "new": {"issued": "2024-01-01"}}
 	changed, err := ChangeType(root, "A", target, fields, revs, at)
 	if err != nil {

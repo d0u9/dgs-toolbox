@@ -12,7 +12,7 @@ func TestSaveAndTrashTemplate(t *testing.T) {
 	if err := Init(root, now); err != nil {
 		t.Fatal(err)
 	}
-	bill := "# bills\ntype: bill\ndescription: Monthly bills\nkind: record\nfields:\n  - key: owner\n"
+	bill := "# bills\ntype: bill\ndescription: Monthly bills\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n"
 	if _, err := SaveTemplate(root, "", []byte(bill), now); err != nil {
 		t.Fatal(err)
 	}
@@ -33,13 +33,13 @@ func TestSaveAndTrashTemplate(t *testing.T) {
 	if err := WriteItem(root, Item{ID: "A", Type: "bill", Kind: KindRecord, Revisions: []Revision{{Digest: "d"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SaveTemplate(root, "bill", []byte("type: invoice\nkind: record\nfields: []\n"), now); err == nil {
+	if _, err := SaveTemplate(root, "bill", []byte("type: invoice\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n"), now); err == nil {
 		t.Fatal("renamed a type in use")
 	}
-	if _, err := SaveTemplate(root, "bill", []byte("type: bill\nkind: document\nfields: []\n"), now); err == nil {
+	if _, err := SaveTemplate(root, "bill", []byte("type: bill\nkind: document\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n"), now); err == nil {
 		t.Fatal("changed the kind of a type in use")
 	}
-	if _, err := SaveTemplate(root, "bill", []byte("type: bill\nkind: record\nfields:\n  - key: amount\n"), now); err != nil {
+	if _, err := SaveTemplate(root, "bill", []byte("type: bill\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n  - key: amount\n"), now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := TrashTemplate(root, "bill", now); err == nil {
@@ -47,7 +47,7 @@ func TestSaveAndTrashTemplate(t *testing.T) {
 	}
 
 	// Unused: renamed, and the old file goes to the trash.
-	if _, err := SaveTemplate(root, "id_card", []byte("type: card\nkind: document\nfields: []\n"), now); err != nil {
+	if _, err := SaveTemplate(root, "id_card", []byte("type: card\nkind: document\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n"), now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(TemplatePath(root, "id_card")); !os.IsNotExist(err) {

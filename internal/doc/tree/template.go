@@ -95,6 +95,10 @@ type Template struct {
 	IgnoreDates []string `yaml:"ignore_dates,omitempty" json:"ignore_dates,omitempty"`
 }
 
+// MandatoryKeys are the fields every Template requires besides its type: whose
+// document it is and which country issued it.
+var MandatoryKeys = []string{"owner", "country"}
+
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // Validate reports the first thing wrong with t.
@@ -145,6 +149,15 @@ func (t Template) Validate() error {
 		}
 		if f.Distinguishing && !f.Required {
 			return fmt.Errorf("type %s: key %s distinguishes documents, so it must be required", t.Type, f.Key)
+		}
+	}
+	for _, key := range MandatoryKeys {
+		f, ok := t.fieldOK(key)
+		if !ok || !f.Required {
+			return fmt.Errorf("type %s: every document has %s, so the Template needs each as a required field", t.Type, strings.Join(MandatoryKeys, " and "))
+		}
+		if key == "country" && f.Type != FieldCountry {
+			return fmt.Errorf("type %s: key country must be of type country", t.Type)
 		}
 	}
 	for key, value := range t.Defaults {
@@ -248,6 +261,15 @@ func (t Template) field(key string) Field {
 		}
 	}
 	return Field{Key: key}
+}
+
+func (t Template) fieldOK(key string) (Field, bool) {
+	for _, f := range t.Fields {
+		if f.Key == key {
+			return f, true
+		}
+	}
+	return Field{}, false
 }
 
 // clean reports whether value suits the field's type, and answers it as it

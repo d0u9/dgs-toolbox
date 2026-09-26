@@ -20,7 +20,7 @@ func cardTree(t *testing.T) (string, tree.Template) {
 	if err := tree.Init(root, time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
-	data := []byte("type: card\nkind: document\nfields:\n  - key: owner\n    required: true\n    distinguishing: true\n  - key: number\n    per_revision: true\n")
+	data := []byte("type: card\nkind: document\nfields:\n  - key: owner\n    required: true\n    distinguishing: true\n  - key: country\n    type: country\n    required: true\n  - key: number\n    per_revision: true\n")
 	if err := os.WriteFile(filepath.Join(root, tree.TemplatesDir, "card.yaml"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -45,10 +45,10 @@ func scan(t *testing.T, content string) string {
 func TestRenewalCannotTakeAnotherDocumentsIdentity(t *testing.T) {
 	root, tpl := cardTree(t)
 	now := time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
-	if _, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "alex", "number": "1"}, Now: now}); err != nil {
+	if _, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "alex", "country": "AU", "number": "1"}, Now: now}); err != nil {
 		t.Fatal(err)
 	}
-	second, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "ann", "number": "2"}, Now: now.Add(time.Second)})
+	second, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "ann", "country": "AU", "number": "2"}, Now: now.Add(time.Second)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestRenewalCannotTakeAnotherDocumentsIdentity(t *testing.T) {
 func TestReturningToSnapshotKeepsItsRevisionTags(t *testing.T) {
 	root, tpl := cardTree(t)
 	now := time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
-	item, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "alex", "number": "1"}, Now: now})
+	item, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "alex", "country": "AU", "number": "1"}, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestReturningToSnapshotKeepsItsRevisionTags(t *testing.T) {
 func TestSnapshotsSharingPDFKeepTheirOwnTagsAndFields(t *testing.T) {
 	root, tpl := cardTree(t)
 	now := time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
-	item, err := tree.Import(context.Background(), tree.ImportRequest{Root: root, Template: tpl, Source: scan(t, "%PDF shared"), Fields: map[string]string{"owner": "alex", "number": "1"}, Now: now})
+	item, err := tree.Import(context.Background(), tree.ImportRequest{Root: root, Template: tpl, Source: scan(t, "%PDF shared"), Fields: map[string]string{"owner": "alex", "country": "AU", "number": "1"}, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestSnapshotsSharingPDFKeepTheirOwnTagsAndFields(t *testing.T) {
 	if _, err := tree.SetRevisionTags(root, item.ID, first, []string{"old-number"}, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	item, err = tree.SetFields(root, item.ID, first, tpl, map[string]string{"owner": "alex", "number": "9"}, now.Add(time.Hour))
+	item, err = tree.SetFields(root, item.ID, first, tpl, map[string]string{"owner": "alex", "country": "AU", "number": "9"}, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}

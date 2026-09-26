@@ -43,7 +43,9 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 Every text `issuer` field offers an editable list of previously saved issuers.
 The scope is **current tree + document type + country**: both type and country
 must match. Issuers from another type or country are not useful candidates,
-even when their names happen to match. This applies to every Template with a
+even when their names happen to match. The owner is not part of the scope: one authority
+issues a type to everyone in its region, so another owner's issuer is a
+candidate too. This applies to every Template with a
 text `issuer` field, not just visas; no Template change is needed.
 
 - Import (including creation without a PDF), field editing and change-type
@@ -392,6 +394,11 @@ A Template describes one type for import: the fields it fills in by default
 and the fields it asks for. Adding a PDF means picking a Template and answering
 only what it asks. Nothing is filed automatically: the page may suggest a
 Template (see [Suggesting a type](#suggesting-a-type)), and the owner picks.
+
+Every document has a type, an owner and a country. A Template must list
+`owner` and `country` (of type `country`) as `required` fields, for records
+as for documents; a Template without them is refused when it is loaded or
+saved.
 
 A field has a `type`, which checks its value and chooses the control the page
 shows for it:
