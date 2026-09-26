@@ -585,6 +585,16 @@ together, written `{name|type:zh}#`, from one order named `name|type:zh`
 that lists the values as written, such as `[身份证, 户口首页, 驾驶证]`, so
 they never share a number. One alternative alone may not be numbered.
 
+A key written with `?` at the end is optional, and may carry text before
+and after it inside the braces: `{-degree?}` writes `-本科` for an Item
+whose `degree` is `本科`, and nothing, not even the `-`, for one without.
+An Item lacking an optional key is still placed. The text around the key
+is written as it is and may not hold `{ } / : | # ?`; it runs up to the
+key's first letter, digit or `_`, and from its last. An optional key takes
+formats and alternatives, `{-country:alpha3?}` or `{ (name|type:zh)?}`, but
+is never numbered. A folder made only of optional keys, all empty, would
+vanish from the path, so the PDF is not placed instead.
+
 A key written `{key#}`, or `{key}#`, is numbered: its value is prefixed with its place in
 the rule's `order` for that key, counting from `01-`, so
 `{owner#}/{country#:alpha3}` with the order above writes `01-alex/02-AUS`.
