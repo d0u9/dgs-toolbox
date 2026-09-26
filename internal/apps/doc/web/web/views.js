@@ -88,6 +88,10 @@ function open(v, name) {
   changed();
 }
 
+// same reports whether a and b are one value: one country however each is
+// written, or else equal ignoring case.
+const same = (a, b) => (countries[a] && countries[a] === countries[b]) || a.toLowerCase() === b.toLowerCase();
+
 // chosenTypes is the types ticked, or every type when none is: a View
 // without types selects them all.
 function chosenTypes() {
@@ -100,6 +104,7 @@ function chosenTypes() {
 function narrow() {
   chips();
   for (const row of $("conditions").children) row.redraw();
+  drawOrder();
   changed();
 }
 
@@ -109,7 +114,6 @@ function narrow() {
 // no Item holds any more is still listed, ticked.
 function condition(key, values) {
   const choices = el("div", { className: "checks" });
-  const same = (a, b) => (countries[a] && countries[a] === countries[b]) || a.toLowerCase() === b.toLowerCase();
   const draw = (saved) => {
     const types = chosenTypes();
     const held = [...new Set(state.items.filter((item) => types.includes(item.type)).map((item) => currentFields(item)[pick.value]).filter(Boolean))];
@@ -257,11 +261,33 @@ function drawOrder() {
     if (orders[key] === undefined) {
       orders[key] = [...new Set(state.items.map((i) => orderValue(i, key)).filter(Boolean))].sort().join(", ");
     }
-    return el("div", { className: "condition" },
-      el("code", {}, key.includes("|") ? "{" + key + "}#" : "{" + key + "#}"),
-      el("input", { value: orders[key], placeholder: "first, second, …", spellcheck: false, autocomplete: "off",
-        title: "Numbered 01, 02, … in this order. A value not listed is a missing key.",
-        oninput: (event) => { orders[key] = event.target.value; } }));
+    const box = el("div", { className: "order" });
+    const list = () => orders[key].split(",").map((s) => s.trim()).filter(Boolean);
+    const set = (values) => { orders[key] = values.join(", "); draw(); changed(); };
+    let dragged = -1;
+    const draw = () => {
+      const values = list();
+      const unlisted = [...new Set(state.items.filter((i) => chosenTypes().includes(i.type)).map((i) => orderValue(i, key)).filter(Boolean))]
+        .filter((v) => !values.some((w) => same(v, w))).sort();
+      const move = (i, j) => { const next = [...values]; next.splice(j, 0, ...next.splice(i, 1)); set(next); };
+      box.replaceChildren(
+        el("ol", { className: "order-list" }, ...values.map((v, i) => el("li", {
+          draggable: true,
+          ondragstart: () => { dragged = i; },
+          ondragover: (event) => event.preventDefault(),
+          ondrop: (event) => { event.preventDefault(); if (dragged >= 0 && dragged !== i) move(dragged, i); dragged = -1; },
+        },
+          el("span", { className: "order-number", textContent: String(i + 1).padStart(2, "0") }),
+          el("span", { className: "order-value", textContent: v, title: "Drag to reorder" }),
+          el("button", { type: "button", className: "tool", title: "Up", textContent: "↑", disabled: i === 0, onclick: () => move(i, i - 1) }),
+          el("button", { type: "button", className: "tool", title: "Down", textContent: "↓", disabled: i === values.length - 1, onclick: () => move(i, i + 1) }),
+          el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => set(values.filter((_, k) => k !== i)) })))),
+        unlisted.length ? el("div", { className: "order-add" }, el("span", { className: "template-sub", textContent: "Not numbered:" }),
+          ...unlisted.map((v) => el("button", { type: "button", className: "chip", textContent: "+ " + v, title: "Number it last", onclick: () => set([...values, v]) })))
+          : null);
+    };
+    draw();
+    return el("div", { className: "condition" }, el("code", {}, key.includes("|") ? "{" + key + "}#" : "{" + key + "#}"), box);
   });
   $("order").replaceChildren(...rows);
   $("order-row").hidden = !rows.length;

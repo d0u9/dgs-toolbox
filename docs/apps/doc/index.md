@@ -517,9 +517,10 @@ are one entry, and otherwise ignoring case. A numbered key needs an order,
 and an order may not list one value twice. A value the order does not list
 leaves the PDF missing that key: the number is never guessed. Changing an
 order renames every folder after the moved entry at the next export. On the
-Views page, each numbered key in the layout gets a Numbering row, its values
-comma-separated in order; a key new to the layout starts with the values its
-Items have, sorted.
+Views page, each numbered key in the layout gets a Numbering list, its values
+shown with their numbers and reordered by dragging or with up and down; a key
+new to the layout starts with the values its Items have, sorted. A value the
+chosen types' Items have that the list lacks is offered below it, to add last.
 
 A View is one YAML file under `views/`, named after its `name`:
 
