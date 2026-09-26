@@ -69,15 +69,19 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
+	// The Item's folder is new; a failed import leaves nothing behind, not
+	// even the folder. Remove takes only an empty directory.
 	result, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{
 		Source:      request.Source,
 		Destination: PDFPath(request.Root, id, digest),
 	})
 	if err != nil {
+		_ = os.Remove(Dir(request.Root, id))
 		return Item{}, err
 	}
 	if result.Digest != digest {
 		_ = os.Remove(PDFPath(request.Root, id, digest))
+		_ = os.Remove(Dir(request.Root, id))
 		return Item{}, fmt.Errorf("%s changed while it was being imported", request.Source)
 	}
 	own, perRevision := request.Template.Split(fields)
@@ -92,6 +96,8 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	}
 	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "import", Digest: digest}}
 	if err := WriteItem(request.Root, item); err != nil {
+		_ = os.Remove(PDFPath(request.Root, id, digest))
+		_ = os.Remove(Dir(request.Root, id))
 		return Item{}, err
 	}
 	return item, nil
