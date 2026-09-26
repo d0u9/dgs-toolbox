@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sort"
 
+	"dgs-toolbox/internal/doc/country"
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
 )
@@ -12,15 +13,23 @@ type viewsJSON struct {
 	Views []view.View `json:"views"`
 	// Keys is every key a layout can use with the tree's Items: the
 	// Templates' fields and the keys every Item has.
-	Keys  []string `json:"keys"`
-	Error string   `json:"error,omitempty"`
+	Keys []string `json:"keys"`
+	// Countries maps each country's every form to its alpha-3 code, so the
+	// page shows CN and 中国 as one condition value.
+	Countries map[string]string `json:"countries"`
+	Error     string            `json:"error,omitempty"`
 }
 
 // builtIn are the keys every Item has, and those derived from its fields.
 var builtIn = []string{"type", "kind", "id", "revision", "ext", "year", "month", "date"}
 
 func (s server) viewList(w http.ResponseWriter, _ *http.Request) {
-	out := viewsJSON{Views: []view.View{}}
+	out := viewsJSON{Views: []view.View{}, Countries: map[string]string{}}
+	for _, c := range country.All() {
+		for _, f := range country.Formats {
+			out.Countries[c.In(f)] = c.Alpha3
+		}
+	}
 	seen := map[string]bool{}
 	var fields []string
 	if templates, err := tree.LoadTemplates(s.root); err == nil {
