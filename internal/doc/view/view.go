@@ -64,6 +64,10 @@ type View struct {
 	// Exclude leaves out a PDF matching any of its conditions: a key's
 	// value among those listed, or for `tags` a tag of the revision.
 	Exclude map[string]Values `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+	// QueryTypes and ExcludeTypes limit a condition, by its key, to Items of
+	// the types listed: an Item of another type is not asked it.
+	QueryTypes   map[string]Values `yaml:"query_types,omitempty" json:"query_types,omitempty"`
+	ExcludeTypes map[string]Values `yaml:"exclude_types,omitempty" json:"exclude_types,omitempty"`
 	// Skip names Items the rule leaves out, whatever else it selects.
 	Skip      []string  `yaml:"skip,omitempty" json:"skip,omitempty"`
 	Selection Selection `yaml:"selection" json:"selection"`
@@ -84,6 +88,22 @@ type View struct {
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
+// For is conditions as an Item of type t is asked them: those types limits
+// to other types are left out.
+func For(conditions, types map[string]Values, t string) map[string]Values {
+	if len(types) == 0 {
+		return conditions
+	}
+	out := make(map[string]Values, len(conditions))
+	for key, values := range conditions {
+		if limit, ok := types[key]; ok && !slices.Contains(limit, t) {
+			continue
+		}
+		out[key] = values
+	}
+	return out
+}
+
 // Validate reports the first thing wrong with v.
 func (v View) Validate() error {
 	if !namePattern.MatchString(v.Name) {
@@ -95,6 +115,17 @@ func (v View) Validate() error {
 	for i, id := range v.Skip {
 		if strings.TrimSpace(id) == "" || slices.Contains(v.Skip[:i], id) {
 			return fmt.Errorf("view %s: skip lists %q twice or empty", v.Name, id)
+		}
+	}
+	for _, scope := range []struct {
+		name       string
+		types      map[string]Values
+		conditions map[string]Values
+	}{{"query_types", v.QueryTypes, v.Query}, {"exclude_types", v.ExcludeTypes, v.Exclude}} {
+		for key, types := range scope.types {
+			if _, ok := scope.conditions[key]; !ok || len(types) == 0 {
+				return fmt.Errorf("view %s: %s %q names no condition, or no type", v.Name, scope.name, key)
+			}
 		}
 	}
 	for _, conditions := range []map[string]Values{v.Query, v.Exclude} {

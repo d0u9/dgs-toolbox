@@ -25,8 +25,8 @@ export function fill(v) {
   $("types").replaceChildren(...state.templates.map((t) => el("label", {},
     el("input", { type: "checkbox", value: t.type, checked: types.includes(t.type), onchange: narrow }), " " + t.type)));
   $("conditions").replaceChildren(...Object.entries(v.query || {})
-    .filter(([k]) => k !== "type").map(([k, values]) => condition(k, values)));
-  $("exclude").replaceChildren(...Object.entries(v.exclude || {}).map(([k, values]) => condition(k, values, true)));
+    .filter(([k]) => k !== "type").map(([k, values]) => condition(k, values, false, (v.query_types || {})[k])));
+  $("exclude").replaceChildren(...Object.entries(v.exclude || {}).map(([k, values]) => condition(k, values, true, (v.exclude_types || {})[k])));
   skip = [...(v.skip || [])];
   drawSkip();
   document.querySelector(`input[name=selection][value=${v.selection || "head"}]`).checked = true;
@@ -44,15 +44,22 @@ export function read() {
   const types = [...$("types").querySelectorAll("input:checked")].map((i) => i.value);
   if (types.length) query.type = types;
   // Two rows of one key and operator are one condition.
-  const gather = (rows, into) => {
-    for (const [key, values] of rows) into[key] = [...new Set([...(into[key] || []), ...values])];
+  // A condition limited to some types keeps them beside it.
+  const gather = (rows, into, types) => {
+    for (const [key, values, only] of rows) {
+      into[key] = [...new Set([...(into[key] || []), ...values])];
+      if (only.length) types[key] = [...new Set([...(types[key] || []), ...only])];
+    }
     return into;
   };
-  gather(read_("conditions"), query);
-  const exclude = gather(read_("exclude"), {});
+  const queryTypes = {}, excludeTypes = {};
+  gather(read_("conditions"), query, queryTypes);
+  const exclude = gather(read_("exclude"), {}, excludeTypes);
   const out = { query, selection: document.querySelector("input[name=selection]:checked").value, layout: $("layout").value.trim() };
   if ($("shared")?.checked) out.shared = true;
   if (Object.keys(exclude).length) out.exclude = exclude;
+  if (Object.keys(queryTypes).length) out.query_types = queryTypes;
+  if (Object.keys(excludeTypes).length) out.exclude_types = excludeTypes;
   if (skip.length) out.skip = [...skip];
   const order = {};
   for (const key of numberedKeys()) {
@@ -126,7 +133,8 @@ function selected() {
   const types = chosenTypes();
   const conditions = read_("conditions");
   const exclusions = read_("exclude");
-  const excluded = (item) => exclusions.some(([key, values]) => {
+  const excluded = (item) => exclusions.some(([key, values, only]) => {
+    if (only.length && !only.includes(item.type)) return false;
     const [field] = splitKey(key);
     const head = item.head || item.revisions?.[item.revisions.length - 1]?.id || item.revisions?.[item.revisions.length - 1]?.digest;
     const held = field === "tags" ? [...(item.tags || []), ...((item.revisions || []).find((r) => (r.id || r.digest) === head)?.tags || [])]
@@ -134,7 +142,8 @@ function selected() {
       : [field === "type" ? item.type : currentFields(item)[field]].filter(Boolean);
     return accepts(key, held, values);
   });
-  return state.items.filter((item) => !skip.includes(item.id) && !excluded(item) && types.includes(item.type) && conditions.every(([key, values]) => {
+  return state.items.filter((item) => !skip.includes(item.id) && !excluded(item) && types.includes(item.type) && conditions.every(([key, values, only]) => {
+    if (only.length && !only.includes(item.type)) return true;
     const [field] = splitKey(key);
     const held = field === "tags" ? [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])] : [currentFields(item)[field]].filter(Boolean);
     // A rule taking shared Items takes them for the people they are shared with.
@@ -175,7 +184,8 @@ function narrow() {
 // ticked. "contains" takes typed text, several separated by commas.
 // An exclusion may also name a status, which no field holds and which is
 // matched whole.
-function condition(key, values, exclusion = false) {
+// Ticking types under "for" asks the condition of those types only.
+function condition(key, values, exclusion = false, only = []) {
   // What the query picks changes the numbering shown.
   const touched = () => { drawOrder(); drawSkip(); changed(); };
   const [field, contains] = splitKey(key);
@@ -210,8 +220,23 @@ function condition(key, values, exclusion = false) {
     el("div", { className: "condition-head" }, pick, op,
       el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); touched(); } })),
     choices);
-  row.read = () => [pick.value + (op.value === "contains" ? CONTAINS : ""), current()];
-  row.redraw = () => draw(current());
+  // The types it is asked of fold away behind a button naming them.
+  const scope = el("div", { className: "checks condition-types", hidden: true });
+  const ticked = () => [...scope.querySelectorAll("input:checked")].map((i) => i.value);
+  const forButton = el("button", { type: "button", className: "condition-for", title: "Ask this condition of some types only",
+    onclick: () => { scope.hidden = !scope.hidden; } });
+  const named = () => { const t = ticked(); forButton.textContent = t.length ? "for " + t.join(", ") : "for every type"; };
+  const drawScope = (saved) => {
+    const all = [...new Set([...chosenTypes(), ...saved])];
+    forButton.hidden = all.length < 2 && !saved.length;
+    scope.replaceChildren(...all.map((t) => el("label", {},
+      el("input", { type: "checkbox", value: t, checked: saved.includes(t), onchange: () => { named(); touched(); } }), " " + t)));
+    named();
+  };
+  row.append(forButton, scope);
+  row.read = () => [pick.value + (op.value === "contains" ? CONTAINS : ""), current(), forButton.hidden ? [] : ticked()];
+  row.redraw = () => { draw(current()); drawScope(ticked()); };
+  drawScope(only || []);
   draw(values || []);
   return row;
 }

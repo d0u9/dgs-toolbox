@@ -292,7 +292,8 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 	plan := Plan{Files: []File{}, Missing: []Missing{}, Clashes: []Clash{}}
 	var placed []File
 	for _, item := range sorted {
-		if slices.Contains(v.Skip, item.ID) || !Matches(v.Query, item) && !(v.Shared && MatchesShared(v.Query, item)) {
+		query, exclude := For(v.Query, v.QueryTypes, item.Type), For(v.Exclude, v.ExcludeTypes, item.Type)
+		if slices.Contains(v.Skip, item.ID) || !Matches(query, item) && !(v.Shared && MatchesShared(query, item)) {
 			continue
 		}
 		current := item.Current()
@@ -303,7 +304,7 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 			if v.Selection == Head && rev.Ref() != current {
 				continue
 			}
-			if !MatchesTags(v.Query, item, rev.Ref()) || Excludes(v.Exclude, item, rev.Ref()) {
+			if !MatchesTags(query, item, rev.Ref()) || Excludes(exclude, item, rev.Ref()) {
 				continue
 			}
 			keys := KeysOf(item, i+1)
