@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Log · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/doc.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder first.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link" href="/templates/">Templates</a>
+  <a class="topbar-link" href="/views/">Views</a>
+  <a class="topbar-link" href="/targets/">Targets</a>
+  <a class="topbar-link" href="/cases/">Cases</a>
+  <a class="topbar-link" href="/merge/">Merge</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <a class="topbar-link current" href="/log/">Log</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="log-work">
+  <nav class="filters" aria-label="Filters">
+    <div class="filter-group">
+      <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Only the Items marked frequent">★ Frequent</button>
+      <label class="filter filter-search"><span>Search</span>
+        <input id="filter" type="search" placeholder="Item, field or value" spellcheck="false" autocomplete="off">
+      </label>
+    </div>
+    <div class="filter-group">
+      <label class="filter"><span>Action</span><select id="filter-action"><option value="">any</option></select></label>
+      <label class="filter"><span>Type</span><select id="filter-type"><option value="">any</option></select></label>
+      <label class="filter"><span>Item</span><select id="filter-item"><option value="">any</option></select></label>
+    </div>
+    <div class="filter-result">
+      <span id="count" class="numeric"></span>
+      <button type="button" id="filters-clear" class="small-inline" hidden>Clear filters</button>
+    </div>
+  </nav>
+  <ul id="log" class="rows log-list"></ul>
+  <p id="none" class="message" hidden>Nothing has been recorded yet.</p>
+  <p id="nothing" class="message" hidden>Nothing matches these filters.</p>
+</main>
+<script type="module" src="/log.js"></script>
+</body>
+</html>

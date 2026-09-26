@@ -31,13 +31,16 @@ type Revision struct {
 
 // Item is one sidecar.
 type Item struct {
-	ID        string            `yaml:"id" json:"id"`
-	Type      string            `yaml:"type" json:"type"`
-	Kind      Kind              `yaml:"kind" json:"kind"`
-	Fields    map[string]string `yaml:"fields" json:"fields"`
-	Tags      []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Head      string            `yaml:"head,omitempty" json:"head,omitempty"`
-	Revisions []Revision        `yaml:"revisions" json:"revisions"`
+	ID     string            `yaml:"id" json:"id"`
+	Type   string            `yaml:"type" json:"type"`
+	Kind   Kind              `yaml:"kind" json:"kind"`
+	Fields map[string]string `yaml:"fields" json:"fields"`
+	Tags   []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
+	// Frequent marks one of the few Items the owner opens often. Browse puts
+	// them first and can show them alone.
+	Frequent  bool       `yaml:"frequent,omitempty" json:"frequent,omitempty"`
+	Head      string     `yaml:"head,omitempty" json:"head,omitempty"`
+	Revisions []Revision `yaml:"revisions" json:"revisions"`
 	// Notes is free text the owner writes. It is never a key and never
 	// exported.
 	Notes   string         `yaml:"notes,omitempty" json:"notes,omitempty"`

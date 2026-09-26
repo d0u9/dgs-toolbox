@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Doc Browse · dgs</title>
 <meta name="robots" content="noindex, nofollow, noarchive">
-<link rel="icon" type="image/svg+xml" href="/ui/icons/box.svg">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/doc.svg">
 <link rel="stylesheet" href="/ui/fonts.css">
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/base.css">
@@ -28,12 +28,14 @@
   <a class="topbar-link" href="/cases/">Cases</a>
   <a class="topbar-link" href="/merge/">Merge</a>
   <a class="topbar-link" href="/import/">Import</a>
+  <a class="topbar-link" href="/log/">Log</a>
   <span class="topbar-spacer"></span>
   <span id="root" class="muted"></span>
 </header>
 <p id="error" class="message error" hidden></p>
 <nav class="filters" aria-label="Filters">
   <div class="filter-group">
+    <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Show only the Items marked frequent">★ Frequent</button>
     <label class="filter filter-search"><span>Search</span>
       <input id="filter" type="search" placeholder="fields or text on the page" spellcheck="false" autocomplete="off">
     </label>
@@ -58,9 +60,20 @@
     </label>
   </div>
   <div class="filter-group">
-    <label class="filter"><span>Show</span>
-      <select id="view-layout"><option value="grid">cards</option><option value="list">list</option></select>
-    </label>
+    <div class="filter"><span>Show</span>
+      <div id="view-layout" class="segmented" role="group" aria-label="Show as">
+        <button class="chip icon-chip" type="button" data-layout="grid" aria-pressed="true" title="Cards" aria-label="Cards">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/>
+            <rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg>
+        </button>
+        <button class="chip icon-chip" type="button" data-layout="list" aria-pressed="false" title="List" aria-label="List">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <circle cx="3" cy="4" r="1.1" stroke="none"/><circle cx="3" cy="8" r="1.1" stroke="none"/><circle cx="3" cy="12" r="1.1" stroke="none"/>
+            <path d="M6.5 4h7.5M6.5 8h7.5M6.5 12h7.5" fill="none"/></svg>
+        </button>
+      </div>
+    </div>
     <label class="filter"><span>Sort</span>
       <select id="view-sort">
         <option value="added">date added</option>
@@ -84,6 +97,7 @@
       <button id="read-all" class="small-inline" type="button">Read their text</button></p>
     <ul id="grid" class="grid"></ul>
     <table id="table" class="items-table" hidden>
+      <colgroup id="table-cols"></colgroup>
       <thead><tr id="table-head"></tr></thead>
       <tbody id="table-body"></tbody>
     </table>
@@ -118,6 +132,7 @@
   <aside id="side" class="side detail" hidden>
     <header class="detail-head">
       <h2 id="detail-head"></h2>
+      <button id="frequent" class="chip" type="button" aria-pressed="false" title="Frequent Items come first on Browse">☆ Frequent</button>
       <button id="close" class="tool" type="button" title="Close (Esc)" aria-label="Close">×</button>
     </header>
     <div id="detail-picture" class="detail-picture">
@@ -183,6 +198,7 @@
     </section>
     <section class="detail-section">
       <h3>History</h3>
+      <a id="history-all" class="button" href="/log/">Whole tree's log…</a>
       <ul id="history" class="rows"></ul>
     </section>
     <section class="detail-section danger-zone">

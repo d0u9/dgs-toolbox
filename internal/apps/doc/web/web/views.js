@@ -584,7 +584,8 @@ async function run() {
   try {
     const answer = await post("/api/export", { ...request, folders: chosenFolders() });
     say($("export-message"), "Exported. " + answer.results.map((r) => (r.name || r.path) + ": " + r.result.written + " written, " +
-      r.result.removed + " removed, " + r.result.kept + " unchanged").join("; ") + ".");
+      r.result.removed + " removed, " + r.result.kept + " unchanged" +
+      (r.history_error ? " (history not recorded: " + r.history_error + ")" : "")).join("; ") + ".");
     $("export-plan").replaceChildren();
     await loadTargets();
   } catch (error) {

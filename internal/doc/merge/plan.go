@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
@@ -35,6 +36,8 @@ type Change struct {
 	Notes string `json:"notes,omitempty"`
 	// Tags add the Source's tags to the matched Item.
 	Tags []string `json:"tags,omitempty"`
+	// Frequent marks the matched Item frequent because the Source's is.
+	Frequent bool `json:"frequent,omitempty"`
 }
 
 // Conflict kinds.
@@ -187,7 +190,8 @@ func Compute(root string, src Source) (Plan, error) {
 				c.Tags = append(c.Tags, tag)
 			}
 		}
-		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" || len(c.Tags) > 0 {
+		c.Frequent = s.Frequent && !m.Frequent
+		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" || len(c.Tags) > 0 || c.Frequent {
 			plan.Changed = append(plan.Changed, c)
 		} else if len(plan.Conflicts) == conflicts {
 			plan.Same++
@@ -272,7 +276,7 @@ type Result struct {
 // with verifiedcopy before the sidecar naming them is written, so a sidecar
 // never names a PDF that is not there. Templates come first, so an Item is
 // never written before its type is known.
-func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[string]string) (Result, error) {
+func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[string]string, now time.Time) (Result, error) {
 	var result Result
 	if len(plan.Problems) > 0 {
 		return result, errors.New("the merge has problems no choice resolves; nothing was changed")
@@ -333,6 +337,10 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		}
 		item := s
 		item.Revisions = append([]tree.Revision(nil), s.Revisions...)
+		// The Item keeps the history it had in the other tree, and says when
+		// it came into this one.
+		item.History = append(append([]tree.HistoryEvent(nil), s.History...),
+			tree.HistoryEvent{At: now.Format(time.RFC3339), Action: "merge"})
 		if err := tree.WriteItem(root, item); err != nil {
 			return result, err
 		}
@@ -353,6 +361,15 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		return &it, nil
 	}
 	var order []string
+	// changes is what the merge did to each matched Item, recorded as one
+	// merge event in its history.
+	changes := map[string]map[string][2]string{}
+	change := func(id, key, old, next string) {
+		if changes[id] == nil {
+			changes[id] = map[string][2]string{}
+		}
+		changes[id][key] = [2]string{old, next}
+	}
 	for _, c := range plan.Changed {
 		it, err := load(c.Item)
 		if err != nil {
@@ -360,6 +377,9 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		}
 		order = append(order, c.Item)
 		s := srcItems[c.From]
+		if len(c.Digests) > 0 {
+			change(c.Item, "revisions", "", strings.Join(c.Digests, ", "))
+		}
 		for _, d := range c.Digests {
 			if err := copyPDF(ctx, src.PDF(s.ID, d), tree.PDFPath(root, c.Item, d), d, &result); err != nil {
 				return result, err
@@ -370,13 +390,22 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 				}
 			}
 		}
-		if c.Head != "" {
+		if c.Head != "" && c.Head != it.Head {
+			change(c.Item, "head", it.Head, c.Head)
 			it.Head = c.Head
 		}
-		if c.Notes != "" {
+		if c.Notes != "" && c.Notes != it.Notes {
+			change(c.Item, "notes", it.Notes, c.Notes)
 			it.Notes = c.Notes
 		}
-		it.Tags = tag.List(append(it.Tags, c.Tags...))
+		if tags := tag.List(append(it.Tags, c.Tags...)); !slices.Equal(tags, it.Tags) {
+			change(c.Item, "tags", strings.Join(it.Tags, ", "), strings.Join(tags, ", "))
+			it.Tags = tags
+		}
+		if c.Frequent && !it.Frequent {
+			change(c.Item, "frequent", "", "yes")
+			it.Frequent = true
+		}
 	}
 	for _, c := range plan.Conflicts {
 		if chosen[c.ID] != Theirs || (c.Kind != ConflictFields && c.Kind != ConflictHead) {
@@ -389,15 +418,30 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		order = append(order, c.Item)
 		s := srcItems[c.From]
 		if c.Kind == ConflictFields {
+			for key, value := range s.Fields {
+				if it.Fields[key] != value {
+					change(c.Item, key, it.Fields[key], value)
+				}
+			}
+			for key, value := range it.Fields {
+				if _, ok := s.Fields[key]; !ok {
+					change(c.Item, key, value, "")
+				}
+			}
 			it.Fields = maps.Clone(s.Fields)
-		} else {
-			it.Head = s.Current()
+		} else if head := s.Current(); head != it.Head {
+			change(c.Item, "head", it.Head, head)
+			it.Head = head
 		}
 	}
 	sort.Strings(order)
 	for i, id := range order {
 		if i > 0 && order[i-1] == id {
 			continue
+		}
+		if len(changes[id]) > 0 {
+			touched[id].History = append(touched[id].History,
+				tree.HistoryEvent{At: now.Format(time.RFC3339), Action: "merge", Changes: changes[id]})
 		}
 		if err := tree.WriteItem(root, *touched[id]); err != nil {
 			return result, err

@@ -1,7 +1,7 @@
 // Browse: the Items kept in the tree, their fields, revisions and HEAD.
 import { splitter } from "/ui/splitter.js";
 import { openMenu } from "/ui/menu.js";
-import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, frame, say, showText, showPreview, clearPreview } from "/common.js";
+import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, frame, say, showText, showPreview, clearPreview, eventLines } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -39,6 +39,17 @@ function drawFilters() {
     select.value = values.includes(was) ? was : "";
   };
   keep($("filter-type"), [...new Set(state.items.map((i) => i.type))].sort());
+  // The list can sort by any of its columns, so Sort offers them too.
+  const sortSelect = $("view-sort"), wantSort = sortSelect.dataset.want || sortSelect.value;
+  for (const o of [...sortSelect.options]) if (o.dataset.column) o.remove();
+  for (const [value, text] of [...filterKeys().map((k) => ["field:" + k, k]), ["revisions", "revisions"]]) {
+    const o = el("option", { value }, text);
+    o.dataset.column = "1";
+    sortSelect.append(o);
+  }
+  sortSelect.value = wantSort;
+  if (sortSelect.value !== wantSort) sortSelect.value = "added";
+  delete sortSelect.dataset.want;
   const group = $("field-filters");
   const keys = filterKeys();
   for (const label of [...group.querySelectorAll("label[data-key]")]) if (!keys.includes(label.dataset.key)) label.remove();
@@ -61,7 +72,7 @@ function shownItems() {
   const byKey = [...$("field-filters").querySelectorAll("select[data-key]")].filter((s) => s.value);
   const items = state.items.filter((i) => {
     const fields = currentFields(i);
-    return (!type || i.type === type) && (!kind || i.kind === kind) &&
+    return (!onlyFrequent() || i.frequent) && (!type || i.type === type) && (!kind || i.kind === kind) &&
       (!exp || expiryOf(i).state === exp) &&
       byKey.every((s) => fields[s.dataset.key] === s.value) &&
       requiredTags.every((tag) => (i.tags || []).includes(tag)) &&
@@ -71,10 +82,16 @@ function shownItems() {
   const added = (i) => (i.revisions[i.revisions.length - 1] || {}).added || "";
   // No expiry sorts after any date, whichever way round.
   const exp_ = (i) => { const e = expiryOf(i); return e.date || (e.state === "permanent" ? "9999" : ""); };
-  const keyOf = { added, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i) }[sort];
+  const keyOf = sort.startsWith("field:") ? (i) => shown(i, sort.slice(6), currentFields(i)[sort.slice(6)] || "")
+    : { added, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i),
+      revisions: (i) => i.revisions.length }[sort] || added;
+  // Frequent Items come first, whatever the sort; the sort orders each part.
   return items.sort((x, y) => {
+    if (!!x.frequent !== !!y.frequent) return x.frequent ? -1 : 1;
     const a = keyOf(x), b = keyOf(y);
-    if (sort === "expiry" && (!a || !b)) return !a && !b ? 0 : !a ? 1 : -1;
+    // No value sorts after any value, whichever way round.
+    if ((sort === "expiry" || sort.startsWith("field:")) && (!a || !b)) return !a && !b ? 0 : !a ? 1 : -1;
+    if (typeof a === "string") return a.localeCompare(b, undefined, { numeric: true }) * dir;
     return a < b ? -dir : a > b ? dir : 0;
   });
 }
@@ -128,7 +145,7 @@ function card(item) {
   const t = templateOf(state, item.type);
   const named = t ? t.fields.filter((f) => f.distinguishing).map((f) => currentFields(item)[f.key]).filter(Boolean) : [];
   const li = el("li", { className: "card state-" + expiryOf(item).state, onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
-    thumb(item),
+    thumb(item), star(item),
     el("div", { className: "card-body" },
       el("p", { className: "card-title", title: label(state, item) }, named.join(" · ") || item.type),
       el("p", { className: "card-meta" }, el("span", { className: "card-type" }, item.type),
@@ -140,11 +157,75 @@ function card(item) {
   return li;
 }
 
+// star marks an Item frequent, or unmarks it, from its card or row.
+function star(item) {
+  const on = !!item.frequent;
+  const button = el("button", { type: "button", className: "star" + (on ? " on" : ""), textContent: on ? "★" : "☆",
+    title: on ? "Frequent: click to unmark" : "Mark frequent", onclick: (event) => { event.stopPropagation(); setFrequent(item, !on); },
+    ondblclick: (event) => event.stopPropagation() });
+  button.setAttribute("aria-pressed", String(on));
+  button.setAttribute("aria-label", "Frequent");
+  return button;
+}
+
+// The list's columns: each can be made wider or narrower by dragging its
+// right edge, remembered per column, and a click on a sortable one sorts by
+// it, again to turn the order round.
+const COLUMN_KEY = "dgs-doc-browse-column-";
+const columnWidth = (id, fallback) => { try { return Number(localStorage.getItem(COLUMN_KEY + id)) || fallback; } catch { return fallback; } };
+function drawHead(keys) {
+  const columns = [
+    { id: "thumb", text: "", width: 56, fixed: true },
+    { id: "frequent", text: "★", title: "Frequent", width: 36, fixed: true },
+    { id: "type", text: "Type", sort: "type", width: 140 },
+    ...keys.map((k) => ({ id: "field:" + k, text: k, sort: "field:" + k, width: 140 })),
+    { id: "expiry", text: "Expiry", sort: "expiry", width: 150 },
+    { id: "revisions", text: "Revisions", sort: "revisions", width: 90 },
+    { id: "added", text: "Added", sort: "added", width: 110 },
+  ];
+  const sort = $("view-sort").value, asc = $("view-direction").value === "asc";
+  const cols = columns.map((c) => el("col", {}));
+  const total = () => cols.reduce((sum, col) => sum + parseFloat(col.style.width), 0);
+  const fit = () => { $("table").style.width = total() + "px"; };
+  columns.forEach((c, n) => { cols[n].style.width = columnWidth(c.id, c.width) + "px"; });
+  $("table-cols").replaceChildren(...cols);
+  fit();
+  $("table-head").replaceChildren(...columns.map((c, n) => {
+    const th = el("th", { title: c.title || "" });
+    if (c.sort) {
+      const on = sort === c.sort;
+      th.classList.add("sortable");
+      th.setAttribute("aria-sort", on ? (asc ? "ascending" : "descending") : "none");
+      th.append(el("button", { type: "button", className: "th-sort", onclick: () => sortBy(c.sort) },
+        c.text, el("span", { className: "th-arrow" }, on ? (asc ? "▲" : "▼") : "")));
+    } else th.append(c.text);
+    if (!c.fixed) {
+      const handle = el("div", { className: "th-resize", role: "separator", onclick: (event) => event.stopPropagation() });
+      handle.setAttribute("aria-orientation", "vertical");
+      handle.setAttribute("aria-label", "Width of " + c.text);
+      th.append(handle);
+      splitter({ handle, target: th, axis: "x", min: 48, key: COLUMN_KEY + c.id, fallback: c.width,
+        set: (size) => { cols[n].style.width = size + "px"; fit(); } });
+    }
+    return th;
+  }));
+}
+function sortBy(column) {
+  if ($("view-sort").value === column) $("view-direction").value = $("view-direction").value === "asc" ? "desc" : "asc";
+  else {
+    $("view-sort").value = column;
+    $("view-direction").value = column === "added" || column === "revisions" ? "desc" : "asc";
+  }
+  saveView();
+  render();
+}
+
 function row(item, keys) {
   const fields = currentFields(item);
   const e = expiryOf(item);
   const tr = el("tr", { className: "table-row state-" + e.state, onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     el("td", { className: "table-thumb" }, thumb(item)),
+    el("td", { className: "table-star" }, star(item)),
     el("td", {}, item.type),
     ...keys.map((k) => el("td", {}, fields[k] ? shown(item, k, fields[k]) : "")),
     el("td", {}, expiryBadge(item) || el("span", { className: "muted" }, "—")),
@@ -232,13 +313,12 @@ function render() {
   for (const s of document.querySelectorAll(".filters select")) s.closest(".filter").classList.toggle("filter-active", !!s.value && !s.id.startsWith("view-"));
   $("unread").hidden = !unread;
   $("unread-count").textContent = unread + (unread === 1 ? " Item's text is" : " Items' text is") + " not read yet, so searching cannot find " + (unread === 1 ? "it." : "them.");
-  const list = $("view-layout").value === "list";
+  const list = layout === "list";
   $("grid").hidden = list;
   $("table").hidden = !list;
   if (list) {
     const keys = filterKeys();
-    $("table-head").replaceChildren(el("th", {}), el("th", {}, "Type"), ...keys.map((k) => el("th", {}, k)),
-      el("th", {}, "Expiry"), el("th", {}, "Revisions"), el("th", {}, "Added"));
+    drawHead(keys);
     $("table-body").replaceChildren(...items.map((i) => row(i, keys)));
   } else {
     $("grid").replaceChildren(...items.map(card));
@@ -249,26 +329,48 @@ function render() {
   if (item) detail(item);
 }
 
-const filtering = () => $("filter").value.trim() || filterTags.get().length || [...document.querySelectorAll(".filters select")].some((s) => s.value && !s.id.startsWith("view-"));
+const filtering = () => onlyFrequent() || $("filter").value.trim() || filterTags.get().length || [...document.querySelectorAll(".filters select")].some((s) => s.value && !s.id.startsWith("view-"));
 
 $("filters-clear").onclick = () => {
   $("filter").value = "";
+  $("filter-frequent").setAttribute("aria-pressed", "false");
+  saveView();
   filterTags.set([]);
   for (const s of document.querySelectorAll(".filters select")) if (!s.id.startsWith("view-")) s.value = "";
   textHits = new Map();
   render();
   searchText();
 };
-for (const id of ["filter-type", "filter-expiry", "filter-kind", "view-layout", "view-sort", "view-direction"]) {
+function saveView() {
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ layout, sort: $("view-sort").value,
+      direction: $("view-direction").value, frequent: onlyFrequent() }));
+  } catch { /* not kept */ }
+}
+// Cards or list: two buttons, the pressed one is how the Items are shown.
+let layout = "grid";
+function setLayout(value) {
+  layout = value === "list" ? "list" : "grid";
+  for (const b of $("view-layout").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.layout === layout));
+}
+for (const b of $("view-layout").querySelectorAll("button")) {
+  b.onclick = () => {
+    setLayout(b.dataset.layout);
+    saveView();
+    render();
+  };
+}
+for (const id of ["filter-type", "filter-expiry", "filter-kind", "view-sort", "view-direction"]) {
   $(id).addEventListener("change", () => {
-    try { localStorage.setItem(VIEW_KEY, JSON.stringify({ layout: $("view-layout").value, sort: $("view-sort").value, direction: $("view-direction").value })); } catch { /* not kept */ }
+    saveView();
     render();
   });
 }
 try {
   const v = JSON.parse(localStorage.getItem(VIEW_KEY) || "{}");
-  if (v.layout) $("view-layout").value = v.layout;
-  if (v.sort) $("view-sort").value = v.sort;
+  if (v.frequent) $("filter-frequent").setAttribute("aria-pressed", "true");
+  if (v.layout) setLayout(v.layout);
+  if (v.sort) { $("view-sort").value = v.sort; $("view-sort").dataset.want = v.sort; }
   if (v.direction) $("view-direction").value = v.direction;
 } catch { /* the defaults stand */ }
 
@@ -321,29 +423,10 @@ function pick(id, digest) {
 function detail(item) {
   $("detail-head").textContent = label(state, item);
   $("change-type").href = api("/change-type/?item=" + encodeURIComponent(item.id));
-  const history = [...(item.history || [])];
-  for (const r of item.revisions) if (!history.some((event) => event.action === "import" || event.action === "import_revision" ? event.digest === r.digest : false))
-    history.push({ at: r.added, action: "import", digest: r.digest });
-  history.sort((a, b) => (b.at || "").localeCompare(a.at || ""));
-  $("history").replaceChildren(...history.map((event) => {
-    const title = { import: "Imported", import_revision: "Added revision", edit_fields: "Changed fields", edit_notes: "Changed notes",
-      edit_tags: "Changed tags", make_head: "Made HEAD", delete_revision: "Deleted revision", change_type: "Changed type", export: "Exported" }[event.action] || event.action;
-    const changes = Object.entries(event.changes || {}).map(([key, pair]) => `${key}: ${pair[0] || "∅"} → ${pair[1] || "∅"}`).join("; ");
-    const oldFields = event.action === "change_type" ? Object.entries(event.previous_fields || {}).map(([key, value]) => `${key}: ${value}`).join("; ") : "";
-    const newFields = event.action === "change_type" ? Object.entries(event.new_fields || {}).map(([key, value]) => `${key}: ${value}`).join("; ") : "";
-    const oldRevisions = event.action === "change_type" ? Object.entries(event.previous_revisions || {}).map(([digest, values]) =>
-      `${digest.slice(0, 8)} (${Object.entries(values || {}).map(([key, value]) => `${key}: ${value}`).join("; ")})`).join("; ") : "";
-    const newRevisions = event.action === "change_type" ? Object.entries(event.new_revisions || {}).map(([digest, values]) =>
-      `${digest.slice(0, 8)} (${Object.entries(values || {}).map(([key, value]) => `${key}: ${value}`).join("; ")})`).join("; ") : "";
-    return el("li", {}, el("strong", {}, title), el("span", { className: "sub" }, new Date(event.at).toLocaleString(),
-      event.from_type ? ` · ${event.from_type} → ${event.to_type}` : "", event.digest ? " · " + event.digest.slice(0, 8) : "",
-      event.target ? " · " + event.target : "", event.view ? " · " + event.view : ""),
-      changes ? el("span", { className: "sub", title: changes }, changes) : null,
-      oldFields ? el("span", { className: "sub", title: oldFields }, "Previous fields: " + oldFields) : null,
-      newFields ? el("span", { className: "sub", title: newFields }, "New fields: " + newFields) : null,
-      oldRevisions ? el("span", { className: "sub", title: oldRevisions }, "Previous revision fields: " + oldRevisions) : null,
-      newRevisions ? el("span", { className: "sub", title: newRevisions }, "New revision fields: " + newRevisions) : null);
-  }));
+  drawHistory(item);
+  $("history-all").href = api("/log/") + "#" + encodeURIComponent(item.id);
+  $("frequent").setAttribute("aria-pressed", String(!!item.frequent));
+  $("frequent").textContent = item.frequent ? "★ Frequent" : "☆ Frequent";
   const n = item.revisions.findIndex((r) => r.digest === selected.digest) + 1;
   $("detail-rev").textContent = item.kind === "document"
     ? "Revision " + n + " of " + item.revisions.length + (selected.digest === item.head ? " · HEAD" : "")
@@ -400,6 +483,49 @@ function detail(item) {
     return li;
   }));
 }
+
+// The picked Item's history, newest first, as the server orders it. It is
+// asked for again only when the Item's history has changed.
+let historyOf = "";
+async function drawHistory(item) {
+  const key = item.id + "\n" + (item.history || []).length + "\n" + item.revisions.length;
+  if (historyOf === key) return;
+  historyOf = key;
+  try {
+    const answer = await (await fetch(api("/api/history?item=" + encodeURIComponent(item.id)))).json();
+    if (historyOf !== key) return;
+    $("history").replaceChildren(...(answer.entries || []).map((entry) => {
+      const { title, meta, lines } = eventLines(entry.event);
+      return el("li", {}, el("strong", {}, title), el("span", { className: "sub" }, meta),
+        ...lines.map((line) => el("span", { className: "sub", title: line }, line)));
+    }));
+  } catch (err) {
+    historyOf = "";
+    $("history").replaceChildren(el("li", { className: "muted" }, err.message));
+  }
+}
+
+async function setFrequent(item, frequent) {
+  try {
+    await post("/api/frequent", { item: item.id, frequent });
+    await reload();
+  } catch (err) {
+    say($("list-message"), err.message, true);
+  }
+}
+$("frequent").onclick = () => {
+  const item = selected && state.items.find((i) => i.id === selected.id);
+  if (item) setFrequent(item, !item.frequent);
+};
+
+// Only frequent Items, when the chip is pressed; remembered with the view.
+$("filter-frequent").onclick = () => {
+  const on = $("filter-frequent").getAttribute("aria-pressed") !== "true";
+  $("filter-frequent").setAttribute("aria-pressed", String(on));
+  saveView();
+  render();
+};
+const onlyFrequent = () => $("filter-frequent").getAttribute("aria-pressed") === "true";
 
 async function makeHead(id, digest) {
   say($("head-message"), "");

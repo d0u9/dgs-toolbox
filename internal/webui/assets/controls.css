@@ -12,6 +12,12 @@ button, select, input, textarea { font: inherit; color: inherit; }
   cursor: pointer;
 }
 .button { height: var(--control-height); padding: 0 var(--space-sm); }
+/* A link that does what a button does looks like one: no underline, no
+   visited colour, its text centred in the box. */
+a.button, a.button:visited {
+  display: inline-flex; align-items: center; box-sizing: border-box;
+  color: var(--ink); text-decoration: none;
+}
 .icon-button { width: 26px; height: var(--control-height-sm); padding: 0; }
 .text-button {
   padding: 1px var(--control-pad-x);

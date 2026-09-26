@@ -47,7 +47,7 @@ func TestFontsAreEmbedded(t *testing.T) {
 // name.
 // The tab icons, pinned for the same reason: a page links its app's icon by
 // name.
-var sharedIcons = []string{"icons/box.svg", "icons/gpx.svg", "icons/graph.svg"}
+var sharedIcons = []string{"icons/box.svg", "icons/doc.svg", "icons/gpx.svg", "icons/graph.svg"}
 
 func TestAssetsHoldTheTabIcons(t *testing.T) {
 	for _, name := range sharedIcons {

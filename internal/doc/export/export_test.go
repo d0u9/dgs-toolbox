@@ -44,7 +44,7 @@ func exportAs(t *testing.T, root, target, name string, files []view.File, items 
 		t.Fatal(err)
 	}
 	if len(plan.Blocked) == 0 {
-		if _, err := Apply(context.Background(), root, target, []string{name}, plan, items, nil); err != nil {
+		if _, err := Apply(context.Background(), root, target, []string{name}, plan, items, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -115,12 +115,11 @@ func TestPublishedCallbackOnlyForWrittenPDFs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = Apply(context.Background(), root, target, []string{"v"}, plan, items, nil, func(a Action) error {
+		_, err = Apply(context.Background(), root, target, []string{"v"}, plan, items, nil, func(a Action) {
 			count++
 			if a.Item != "A" || a.Digest != digest {
 				t.Fatalf("callback: %+v", a)
 			}
-			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -147,7 +146,7 @@ func TestExportLeavesOtherFilesAlone(t *testing.T) {
 	if len(plan.Blocked) != 1 || read(t, filepath.Join(target, "b.pdf")) != "<missing>" {
 		t.Fatalf("blocked: %+v", plan)
 	}
-	if _, err := Apply(context.Background(), root, target, []string{"v"}, plan, items, nil); err == nil {
+	if _, err := Apply(context.Background(), root, target, []string{"v"}, plan, items, nil, nil); err == nil {
 		t.Fatal("Apply wrote a blocked plan")
 	}
 
