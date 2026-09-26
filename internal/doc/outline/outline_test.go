@@ -51,25 +51,27 @@ func TestGroupNumbersFoldersAndCounts(t *testing.T) {
 	}
 }
 
-func TestSaveKeepsTextAndRenames(t *testing.T) {
+func TestSaveRenamesAndRefuses(t *testing.T) {
 	root := t.TempDir()
-	text := "name: a\n# kept\nlayout: '{owner}'\n"
-	if _, err := Save(root, "", []byte(text)); err != nil {
+	if err := Save(root, "", Outline{Name: "a", Layout: "{owner}"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Save(root, "a", []byte("name: b\nlayout: '{owner}'\n")); err != nil {
+	if err := Save(root, "a", Outline{Name: "b", Layout: "{owner}"}); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := Load(root)
-	if err != nil || len(entries) != 1 || entries[0].Name != "b" {
-		t.Fatalf("%v %+v", err, entries)
+	list, err := Load(root)
+	if err != nil || len(list) != 1 || list[0].Name != "b" || list[0].Selection != view.Head {
+		t.Fatalf("%v %+v", err, list)
 	}
 	if _, err := os.Stat(filepath.Join(root, Dir, "a.yaml")); !os.IsNotExist(err) {
 		t.Fatal("a.yaml is still there")
 	}
-	for _, bad := range []string{"name: c\nlayout: '{owner#}'\n", "name: c\nlayout: x\nextra: 1\n", "name: C\nlayout: x\n"} {
-		if _, err := Save(root, "", []byte(bad)); err == nil {
-			t.Fatalf("%q saved", bad)
+	for _, bad := range []Outline{{Name: "c", Layout: "{owner#}"}, {Name: "C", Layout: "x"}, {Name: "c", Layout: "../x"}} {
+		if err := Save(root, "", bad); err == nil {
+			t.Fatalf("%+v saved", bad)
 		}
+	}
+	if _, err := Parse([]byte("name: c\nlayout: x\nextra: 1\n")); err == nil {
+		t.Fatal("an unknown key parsed")
 	}
 }

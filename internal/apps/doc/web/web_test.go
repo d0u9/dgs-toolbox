@@ -555,21 +555,21 @@ func TestOutlinesGroupSaveDelete(t *testing.T) {
 	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	text := "name: people\n# grouped by owner\nlayout: '{country:alpha2}/{owner}'\n"
-	rec := do(h, "POST", "/api/outlines/group", `{"data":`+q(text)+`}`)
+	o := `{"name":"people","layout":"{country:alpha2}/{owner}"}`
+	rec := do(h, "POST", "/api/outlines/group", o)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"AU/emma","count":1`) {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/outlines", `{"data":`+q(text)+`}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "GET", "/api/outlines", ""); !strings.Contains(rec.Body.String(), `# grouped by owner`) {
+	if rec := do(h, "GET", "/api/outlines", ""); !strings.Contains(rec.Body.String(), `"name":"people"`) {
 		t.Fatal(rec.Body.String())
 	}
 	if rec := do(h, "POST", "/api/outlines/delete", `{"name":"people"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/outlines", `{"data":"name: x\nlayout: '{owner#}'\n"}`); rec.Code != 400 {
+	if rec := do(h, "POST", "/api/outlines", `{"outline":{"name":"x","layout":"{owner#}"}}`); rec.Code != 400 {
 		t.Fatal("bad outline saved")
 	}
 }
