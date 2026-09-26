@@ -255,7 +255,7 @@ func TestPagesAreServed(t *testing.T) {
 	if rec := do(h, "GET", "/", ""); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/browse/" {
 		t.Fatalf("/: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
-	for _, p := range []string{"/browse/", "/import/", "/outlines/", "/common.js", "/browse.js", "/import.js", "/outlines.js", "/app.css", "/ui/tags.js", "/ui/tags.css", "/ui/filedialog.js", "/ui/files/dir"} {
+	for _, p := range []string{"/browse/", "/import/", "/outlines/", "/explore/", "/explore.js", "/outlinetree.js", "/layoutform.js", "/common.js", "/browse.js", "/import.js", "/outlines.js", "/app.css", "/ui/tags.js", "/ui/tags.css", "/ui/filedialog.js", "/ui/files/dir"} {
 		if rec := do(h, "GET", p, ""); rec.Code != http.StatusOK {
 			t.Errorf("%s: %d", p, rec.Code)
 		}

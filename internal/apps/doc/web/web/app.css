@@ -675,3 +675,7 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .outline-files li.outline-sub { padding: 12px 0 4px; border-bottom: 0; color: var(--graphite); font-size: var(--font-size-xs); }
 .outline-form { overflow-y: auto; }
 .outline-form[hidden] { display: none; }
+.outline-form { border-right: 1px solid var(--hairline); }
+#unplaced .problem { margin: 0; }
+#unplaced .problem summary { cursor: pointer; }
+.outline-note { border-bottom: 0 !important; font-size: var(--font-size-xs); }

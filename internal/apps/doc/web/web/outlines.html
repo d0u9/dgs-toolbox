@@ -20,9 +20,10 @@
 <header class="topbar">
   <span class="brand">DOC</span>
   <a class="topbar-link" href="/browse/">Browse</a>
-  <a class="topbar-link current" href="/outlines/">Outlines</a>
+  <a class="topbar-link" href="/explore/">Explore</a>
   <a class="topbar-link" href="/templates/">Templates</a>
   <a class="topbar-link" href="/views/">Views</a>
+  <a class="topbar-link current" href="/outlines/">Outlines</a>
   <a class="topbar-link" href="/targets/">Targets</a>
   <a class="topbar-link" href="/cases/">Cases</a>
   <a class="topbar-link" href="/merge/">Merge</a>
@@ -40,7 +41,7 @@
     </div>
     <ul id="outlines" class="template-list scroll"></ul>
   </section>
-  <form id="form" class="view-form outline-form" hidden>
+  <form id="form" class="view-form outline-form">
     <div class="view-group">
       <label class="vf"><span class="vf-label">Name</span>
         <input id="name" spellcheck="false" autocomplete="off" placeholder="vehicles"></label>
@@ -90,14 +91,11 @@
         <span id="dirty" class="dirty" hidden>Unsaved</span>
       </div>
       <p id="message" class="message"></p>
-      <button id="edit" class="button" type="button" aria-pressed="false">Edit</button>
+      <a id="explore" class="button" hidden>Open in Explore</a>
     </div>
+    <div id="unplaced"></div>
     <div id="tree" class="outline-tree scroll" role="tree"></div>
   </section>
-  <aside class="side outline-side">
-    <div class="result-head"><h3 id="folder">PDFs</h3><span id="folder-count" class="count muted"></span></div>
-    <ul id="files" class="outline-files"></ul>
-  </aside>
 </main>
 <script type="module" src="/outlines.js"></script>
 </body>
