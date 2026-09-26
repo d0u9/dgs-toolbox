@@ -237,8 +237,8 @@ func TestNumberedKeysFollowTheOrder(t *testing.T) {
 		{ID: "B", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "alex", "country": "AU"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "alex", "country": "NZ"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Layout: "{owner#}/{country#:alpha3}/{type}.{ext}",
-		Order: map[string][]string{"owner": {"alex", "emma"}, "country": {"CHN", "Australia"}}}
+	v := View{Name: "v", Selection: Head, Layout: "{#}-{owner}/{#}-{country:alpha3}/{type}.{ext}",
+		Order: map[string][]string{"{owner}": {"alex", "emma"}, "{country:alpha3}": {"CHN", "Australia"}}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -254,12 +254,12 @@ func TestNumberedKeysFollowTheOrder(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 	// A value the order does not list is not numbered by guess.
-	if len(plan.Missing) != 1 || plan.Missing[0].Item != "C" || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"country"}) {
+	if len(plan.Missing) != 1 || plan.Missing[0].Item != "C" || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"{country:alpha3}"}) {
 		t.Fatalf("missing %+v", plan.Missing)
 	}
 	for _, bad := range []View{
-		{Name: "v", Selection: Head, Layout: "{owner#}.{ext}"},
-		{Name: "v", Selection: Head, Layout: "{country#}.{ext}", Order: map[string][]string{"country": {"CN", "中国"}}},
+		{Name: "v", Selection: Head, Layout: "{#}-{owner}.{ext}"},
+		{Name: "v", Selection: Head, Layout: "{#}-{country}.{ext}", Order: map[string][]string{"{country}": {"CN", "中国"}}},
 		{Name: "v", Selection: Head, Layout: "{owner}.{ext}", Order: map[string][]string{"owner": {}}},
 	} {
 		if bad.Validate() == nil {
@@ -310,7 +310,7 @@ func TestAlternativeKeys(t *testing.T) {
 		{ID: "C", Type: "visa", Kind: tree.KindRecord, Fields: map[string]string{"country": "CN"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
 	names := NamesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}})
-	v := View{Name: "v", Selection: Head, Layout: "{country#:alpha3}/{name|type:zh}.{ext}", Order: map[string][]string{"country": {"CN", "AU"}}}
+	v := View{Name: "v", Selection: Head, Layout: "{#}-{country:alpha3}/{name|type:zh}.{ext}", Order: map[string][]string{"{country:alpha3}": {"CN", "AU"}}}
 	plan, err := Build(v, items, names)
 	if err != nil {
 		t.Fatal(err)
@@ -339,12 +339,12 @@ func TestAlternativeKeys(t *testing.T) {
 			t.Errorf("%s accepted", bad)
 		}
 	}
-	if _, err := Parse("{name|owner#}"); err == nil {
+	if _, err := Parse("{name#|owner}"); err == nil {
 		t.Error("one numbered alternative accepted")
 	}
 }
 
-// {a|b}# numbers alternatives from one order, so an ID card and a driver
+// {#}-{a|b} numbers alternatives from one order, so an ID card and a driver
 // licence in one folder never share a number.
 func TestAlternativesAreNumberedTogether(t *testing.T) {
 	items := []tree.Item{
@@ -353,7 +353,7 @@ func TestAlternativesAreNumberedTogether(t *testing.T) {
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"name": "护照"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
 	names := NamesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}})
-	v := View{Name: "v", Selection: Head, Layout: "{name|type:zh}#.{ext}", Order: map[string][]string{"name|type:zh": {"户口首页", "驾驶证"}}}
+	v := View{Name: "v", Selection: Head, Layout: "{#}-{name|type:zh}.{ext}", Order: map[string][]string{"{name|type:zh}": {"户口首页", "驾驶证"}}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -369,17 +369,37 @@ func TestAlternativesAreNumberedTogether(t *testing.T) {
 	if want := []string{"01-户口首页.pdf", "02-驾驶证.pdf"}; !reflect.DeepEqual(paths, want) {
 		t.Fatalf("got %v, want %v", paths, want)
 	}
-	if len(plan.Missing) != 1 || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"name|type:zh"}) {
+	if len(plan.Missing) != 1 || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"{name|type:zh}"}) {
 		t.Fatalf("missing %+v", plan.Missing)
 	}
 	v.Order = nil
 	if err := v.Validate(); err == nil || !strings.Contains(err.Error(), "name|type:zh") {
 		t.Fatalf("no order: %v", err)
 	}
-	// {key}# is {key#}.
-	layout, err := Parse("{owner}#")
-	if err != nil || !layout[0][0].Numbered || layout[0][0].OrderKey() != "owner" {
-		t.Fatalf("%+v %v", layout, err)
+	// # comes last inside the braces, and only there.
+	for _, bad := range []string{"{owner}#", "{name|type:zh}#", "{country#:alpha3}", "{name#|type:zh}", "{owner#}", "{#}-{owner}{#}", "{#}-x.{ext}", "{#}"} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("%q parsed", bad)
+		}
+	}
+}
+
+// Layouts written before # came last inside the braces are rewritten.
+func TestRewrite(t *testing.T) {
+	for old, want := range map[string]string{
+		"{owner#}/{country#:alpha3}/{name|type:zh}#-{x}.{ext}": "{#}-{owner}/{#}-{country:alpha3}/{#}-{name|type:zh}-{x}.{ext}",
+		"{owner}#/{type}.{ext}":                                "{#}-{owner}/{type}.{ext}",
+	} {
+		got, changed := Rewrite(old)
+		if got != want || !changed {
+			t.Errorf("Rewrite(%q) = %q %v, want %q", old, got, changed, want)
+		}
+		if _, err := Parse(got); err != nil {
+			t.Error(err)
+		}
+	}
+	if _, changed := Rewrite("{#}-{owner}/{-degree?}.{ext}"); changed {
+		t.Error("a layout written now was rewritten")
 	}
 }
 
@@ -424,5 +444,41 @@ func TestOptionalKey(t *testing.T) {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%q parsed", bad)
 		}
+	}
+}
+
+// {#} numbers everything after it in the name, so a name with a level and
+// the same name with another level each have their own number.
+func TestCounterNumbersTheWholeName(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "diploma", Kind: tree.KindRecord, Fields: map[string]string{"name": "毕业证书", "level": "本科"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "diploma", Kind: tree.KindRecord, Fields: map[string]string{"name": "毕业证书", "level": "硕士"}, Revisions: []tree.Revision{{Digest: "b"}}},
+		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"name": "护照"}, Revisions: []tree.Revision{{Digest: "c"}}},
+	}
+	v := View{Name: "v", Selection: Head, Layout: "x/{#}-{name}{-level?}.{ext}",
+		Order: map[string][]string{"{name}{-level?}": {"护照", "毕业证书-本科", "毕业证书-硕士"}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Build(v, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"x/01-护照.pdf", "x/02-毕业证书-本科.pdf", "x/03-毕业证书-硕士.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+}
+
+// An old rule's orders move to the names its layout numbers now.
+func TestUpgradeRenamesOrders(t *testing.T) {
+	v, changed := Upgrade(View{Layout: "{owner#}/{name|type:zh#}{-level?}.{ext}",
+		Order: map[string][]string{"owner": {"alex"}, "name|type:zh": {"护照"}}})
+	want := map[string][]string{"{owner}": {"alex"}, "{name|type:zh}{-level?}": {"护照"}}
+	if !changed || v.Layout != "{#}-{owner}/{#}-{name|type:zh}{-level?}.{ext}" || !reflect.DeepEqual(v.Order, want) {
+		t.Fatalf("%v %+v", changed, v)
 	}
 }

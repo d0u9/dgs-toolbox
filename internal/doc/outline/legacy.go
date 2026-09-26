@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"dgs-toolbox/internal/doc/view"
 
@@ -111,8 +112,16 @@ func Legacy(root string) ([]Outline, error) {
 //   - An Outline holding its rules whole has them moved under rules/. A rule
 //     whose name another Outline's different rule has is renamed
 //     <outline>-<rule>; one the same is shared.
+//   - A rule whose layout numbers a key the way it once was, {a|b}#, {key}#
+//     or {key#:format}, is written the way it is now, {a|b#}, {key#},
+//     {key:format#}; it is named rules/<name>.
 func Migrate(root string) ([]string, error) {
 	names, err := migrateLegacy(root)
+	if err != nil {
+		return names, err
+	}
+	rewritten, err := rewriteRules(root)
+	names = append(names, rewritten...)
 	if err != nil {
 		return names, err
 	}
@@ -143,6 +152,41 @@ func Migrate(root string) ([]string, error) {
 			return names, err
 		}
 		names = append(names, o.Name)
+	}
+	return names, nil
+}
+
+// rewriteRules saves again every rule whose file writes a layout the old
+// way, naming each as rules/<name>.
+func rewriteRules(root string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(root, RulesDir, "*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return names, err
+		}
+		var raw struct {
+			Layout string `yaml:"layout"`
+		}
+		if err := yaml.Unmarshal(data, &raw); err != nil {
+			return names, fmt.Errorf("%s: %w", path, err)
+		}
+		if _, old := view.Rewrite(raw.Layout); !old {
+			continue
+		}
+		rules, err := LoadRules(root)
+		if err != nil {
+			return names, err
+		}
+		name := strings.TrimSuffix(filepath.Base(path), ".yaml")
+		if err := SaveRule(root, name, rules[name]); err != nil {
+			return names, err
+		}
+		names = append(names, RulesDir+"/"+name)
 	}
 	return names, nil
 }

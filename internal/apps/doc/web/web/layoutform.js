@@ -1,13 +1,13 @@
 // The part of the Outlines form that makes one rule: types, conditions,
 // revisions, a layout built from key chips, and a Numbering list per
-// numbered key. The page owns the rest of
+// {#}. The page owns the rest of
 // its form and what a change redraws; the server computes the result.
 import { $, el, currentFields } from "/common.js";
 
 let state = { templates: [], items: [] };
 let keys = [];
 let countries = {}; // each country's every form: its alpha-3 code
-let orders = {}; // per numbered key, its order as typed: "alex, emma"
+let orders = {}; // per numbered name, its order as typed: "alex, emma"
 let changed = () => {};
 
 // setup gives the form the tree's state, the keys a layout can use, the
@@ -167,7 +167,7 @@ function chips() {
   const countries = [...countryKeys()].filter((k) => held.has(k));
   $("keys").replaceChildren(...[
     group("Fields", ...fields.map((k) => chip(k, "{" + k + "}", describe(k)))),
-    group("Every PDF", ...keys.filter((k) => BUILT_IN[k]).map((k) => chip(k, "{" + k + "}", describe(k))), chip("/", "/", "a folder")),
+    group("Every PDF", ...keys.filter((k) => BUILT_IN[k]).map((k) => chip(k, "{" + k + "}", describe(k))), chip("/", "/", "a folder"), chip("#", "{#}-", "numbers the rest of this folder or file name, 01-, 02-, in the order below")),
     ...countries.map((k) => group(k + " as", ...Object.entries(FORMATS).map(([f, example]) =>
       chip(":" + f, "{" + k + ":" + f + "}", `{${k}:${f}} writes ${example}`)))),
     group("type as", ...Object.entries(TYPE_FORMATS).map(([f, note]) => chip(":" + f, "{type:" + f + "}", note))),
@@ -227,18 +227,20 @@ function accept(i) {
 
 $("layout").addEventListener("input", () => { active = 0; suggest(); drawOrder(); });
 
-// The orders the layout numbers from, each once: a key written {key#},
-// {key#:format} or {key}#, or alternatives written {a|b}#, named a|b.
-export const numberedKeys = () => [...new Set([...$("layout").value.matchAll(/\{([^{}]*)\}(#?)/g)].flatMap(([, inner, after]) => {
-  if (inner.includes("|")) return after ? [inner] : [];
-  const [, key, hash] = /^([a-z0-9_-]+)(#?)/.exec(inner) || [];
-  return key && (hash || after) ? [key] : [];
+// The orders the layout numbers from, each once: a folder or file name
+// with {#} numbers what follows it, less the text straight after {#} and
+// a trailing .{ext}, and its order is named that as written.
+export const numberedKeys = () => [...new Set($("layout").value.split("/").flatMap((segment) => {
+  const at = segment.indexOf("{#}");
+  if (at < 0) return [];
+  const rest = segment.slice(at + 3).replace(/^[^{]*/, "").replace(/\.?\{ext\}$/, "");
+  return /\{[^#{}]+\}/.test(rest) ? [rest] : [];
 }))];
 
-// An Item's value for one order: the first alternative it has. A type:zh or
-// type:en is its Template's name.
-export function orderValue(item, key) {
-  for (const choice of key.split("|")) {
+// An Item's value for one key, {a|b} or {a|b:format}: the first alternative
+// it has. A type:zh or type:en is its Template's name.
+function keyValue(item, inner) {
+  for (const choice of inner.split("|")) {
     const [name, format] = choice.split(":");
     const value = name === "type"
       ? (format ? (state.templates.find((t) => t.type === item.type)?.names || {})[format] : item.type)
@@ -246,6 +248,20 @@ export function orderValue(item, key) {
     if (value) return value;
   }
   return "";
+}
+
+// An Item's name in one order: the order's name, {key}s and {-key?}s, filled
+// in. A key it lacks makes no name; an optional one it lacks is left out.
+export function orderValue(item, key) {
+  let whole = true;
+  const name = key.replace(/\{([^{}]*)\}/g, (_, inner) => {
+    const optional = inner.endsWith("?");
+    const [, pre = "", k, post = ""] = optional ? /^([^a-z0-9_]*)(.*?)([^a-z0-9_]*)\?$/.exec(inner) : [null, "", inner, ""];
+    const value = keyValue(item, k);
+    if (!value && !optional) whole = false;
+    return value ? pre + value + post : "";
+  });
+  return whole ? name : "";
 }
 
 // One row per order: the values it may have, in the order they are numbered
@@ -302,7 +318,7 @@ function drawOrder() {
       ].filter(Boolean));
     };
     draw();
-    return el("div", { className: "condition" }, el("code", {}, key.includes("|") ? "{" + key + "}#" : "{" + key + "#}"), box);
+    return el("div", { className: "condition" }, el("code", {}, "{#}-" + key), box);
   });
   $("order").replaceChildren(...rows);
   $("order-row").hidden = !rows.length;

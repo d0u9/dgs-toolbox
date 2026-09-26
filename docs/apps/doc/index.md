@@ -516,9 +516,9 @@ query: {type: [id_card, passport], owner: emma}
 selection: head
 layout: '{country}/{owner}/important/{type}.{ext}'
 default: none                     # optional: stands in for a missing key
-order:                            # optional: the numbering of {key#}
-  owner: [alex, emma]
-  country: [CN, AU]
+order:                            # optional: what each {#} numbers, in order
+  '{owner}': [alex, emma]
+  '{country}': [CN, AU]
 ```
 
 ```yaml
@@ -526,10 +526,10 @@ order:                            # optional: the numbering of {key#}
 name: cars
 query: {type: [vehicle_registration]}
 selection: all
-layout: '{country:alpha2} {make}/{plate#}/{type:zh}.{ext}'
+layout: '{country:alpha2} {make}/{#}-{plate}/{type:zh}.{ext}'
 dedupe: number
 order:
-  plate: [浙AF3897, 浙AT73C7]
+  '{plate}': [浙AF3897, 浙AT73C7]
 ```
 
 - `folder` is where it is exported unless another is chosen then. A leading
@@ -578,12 +578,9 @@ PDF missing the key `type:zh` or `type:en`, fixed in the Template, not the
 Item.
 
 Keys written `{a|b}` are alternatives: the first one an Item has is written,
-each with its own format or numbering. `{name|type:zh}` writes an ID card's
+each with its own format. `{name|type:zh}` writes an ID card's
 name, such as `户口首页`, and a driver licence, which has no name, as `驾驶证`.
-An Item with none of them is missing the first. Alternatives are numbered
-together, written `{name|type:zh}#`, from one order named `name|type:zh`
-that lists the values as written, such as `[身份证, 户口首页, 驾驶证]`, so
-they never share a number. One alternative alone may not be numbered.
+An Item with none of them is missing the first.
 
 A key written with `?` at the end is optional, and may carry text before
 and after it inside the braces: `{-degree?}` writes `-本科` for an Item
@@ -591,24 +588,35 @@ whose `degree` is `本科`, and nothing, not even the `-`, for one without.
 An Item lacking an optional key is still placed. The text around the key
 is written as it is and may not hold `{ } / : | # ?`; it runs up to the
 key's first letter, digit or `_`, and from its last. An optional key takes
-formats and alternatives, `{-country:alpha3?}` or `{ (name|type:zh)?}`, but
-is never numbered. A folder made only of optional keys, all empty, would
+formats and alternatives, `{-country:alpha3?}` or `{ (name|type:zh)?}`. A folder made only of optional keys, all empty, would
 vanish from the path, so the PDF is not placed instead.
 
-A key written `{key#}`, or `{key}#`, is numbered: its value is prefixed with its place in
-the rule's `order` for that key, counting from `01-`, so
-`{owner#}/{country#:alpha3}` with the order above writes `01-alex/02-AUS`.
-Numbers have two digits, more when the list is longer than 99. Values in an
+`{#}` numbers a folder or file name: it writes the place, counting from
+`01`, of the name the rest of that folder or file name makes, in the rule's
+`order` named after that rest as written. The rest leaves out the text
+straight after `{#}`, its separator, and a file's `.{ext}`. So
+`{#}-{owner}/{#}-{country:alpha3}` with the order above writes
+`01-alex/02-AUS`, and `{#}-{name|type:zh}{-level?}.{ext}`, with an order
+named `{name|type:zh}{-level?}` listing `[身份证, 毕业证书-本科,
+毕业证书-硕士]`, writes `02-毕业证书-本科.pdf` and `03-毕业证书-硕士.pdf`:
+the name and its level together get one number. A folder or file name has
+one `{#}` at most, and a key must follow it.
+
+A key is no longer numbered on its own. A layout written `{key#}`,
+`{key:format#}` or `{a|b#}`, or earlier `{a|b}#`, `{key}#` or
+`{key#:format}`, is rewritten as `{#}-{key}` in its rule's file when the tree
+is opened, and its order renamed to match, `owner` becoming `{owner}`.
+
+Numbers have two digits, more when the list is longer than 99. Names in an
 order are compared as a country when both name one, so `CN`, `CHN` and `中国`
-are one entry, and otherwise ignoring case. A numbered key needs an order,
-and an order may not list one value twice. A value the order does not list
-leaves the PDF missing that key: the number is never guessed. Changing an
-order renames every folder after the moved entry at the next export. On the
-Outlines page, each numbered key in the layout gets a Numbering list, its
-values shown with their numbers and reordered by dragging or with up and
-down; a key new to the layout starts with the values its Items have, sorted.
-A value the chosen types' Items have that the list lacks is offered below it,
-to add last.
+are one entry, and otherwise ignoring case. A `{#}` needs an order, and an
+order may not list one name twice. A name the order does not list leaves
+the PDF missing that order: the number is never guessed. Changing an order
+renames every folder after the moved entry at the next export. On the Rules
+page, each `{#}` in the layout gets a Numbering list, its names shown with
+their numbers and reordered by dragging or with up and down; one new to the
+layout starts with the names its Items make, sorted. A name the chosen
+Items make that the list lacks is offered below it, to add last.
 
 A layout is rendered by three rules:
 
