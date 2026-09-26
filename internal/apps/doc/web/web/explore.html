@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Explore · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/doc.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder before saving Outlines in it.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link current" href="/explore/">Explore</a>
+  <a class="topbar-link" href="/templates/">Templates</a>
+  <a class="topbar-link" href="/views/">Views</a>
+  <a class="topbar-link" href="/outlines/">Outlines</a>
+  <a class="topbar-link" href="/targets/">Targets</a>
+  <a class="topbar-link" href="/cases/">Cases</a>
+  <a class="topbar-link" href="/merge/">Merge</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <a class="topbar-link" href="/log/">Log</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="work">
+  <section class="list">
+    <div class="list-head">
+      <h2>Outlines <span id="count" class="count numeric"></span></h2>
+      <a class="button" href="/outlines/#new">+ New</a>
+    </div>
+    <p id="empty" class="muted outline-empty" hidden>No Outline yet. Make one on the <a href="/outlines/">Outlines</a> page.</p>
+    <ul id="outlines" class="template-list scroll"></ul>
+  </section>
+  <section class="outline-main">
+    <div class="template-bar">
+      <div class="template-title">
+        <h2 id="title"></h2>
+        <span id="total" class="count muted"></span>
+      </div>
+      <p id="message" class="message"></p>
+      <a id="edit" class="button" hidden>Edit rules</a>
+    </div>
+    <div id="tree" class="outline-tree scroll" role="tree"></div>
+  </section>
+  <aside class="side outline-side">
+    <div class="result-head"><h3 id="folder">PDFs</h3><span id="folder-count" class="count muted"></span></div>
+    <ul id="files" class="outline-files"></ul>
+  </aside>
+</main>
+<script type="module" src="/explore.js"></script>
+</body>
+</html>

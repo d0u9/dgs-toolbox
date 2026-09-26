@@ -30,9 +30,10 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Page | What it is for |
 | --- | --- |
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete and attach or replace a PDF on a selected revision. |
-| Outlines `/outlines/` | The Items grouped into a tree of folders, each counting the PDFs beneath it; picking a folder lists its PDFs. |
+| Explore `/explore/` | An Outline's result: the Items grouped into a tree of folders, each counting the PDFs beneath it; picking a folder lists its PDFs. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
 | Views `/views/` | Building layouts, previewing the tree they make, and exporting (M4–M6). |
+| Outlines `/outlines/` | Making the rules an Outline groups Items by, with its tree redrawn as they change. |
 | Targets `/targets/` | Where Views are exported to: add, rename and delete Targets, set their folders, move Views to them, export. |
 | Cases `/cases/` | A matter being dealt with and the Items it has needed; its export; archiving it. |
 | Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
@@ -636,14 +637,20 @@ order:
 - A PDF lacking a key the layout uses, or a numbered value its order does not
   list, is gathered under Not placed with what it lacks, never dropped.
 
-The Outlines page lists them on the left and draws the chosen one's tree;
-picking a folder lists its PDFs, and those beneath it under their folder, on
-the right, each linked to its Item on Browse. Edit opens the same form the
-Views page uses for which PDFs and their layout — types, conditions ticking
-held values, revisions, levels built from key chips, and a Numbering list per
-numbered level — and the tree redraws as it changes. A PDF under Not placed
-whose numbered value the order lacks can be numbered last from there. The
-file is never edited by hand.
+Two pages share them. Making the rules and looking through the result are
+kept apart:
+
+- **Outlines** makes the rules. It uses the same form the Views page does for
+  which PDFs and their layout — types, conditions ticking held values,
+  revisions, levels built from key chips, and a Numbering list per numbered
+  level — with the tree redrawn beside it as the form changes. PDFs not
+  placed are listed above the tree; one whose numbered value the order lacks
+  can be numbered last from there. The file is never edited by hand.
+- **Explore** shows the result. It lists the saved Outlines and draws the
+  chosen one's tree; picking a folder lists its PDFs, and those beneath it
+  under their folder, each linked to its Item on Browse. Not placed is a row
+  of the tree. Nothing on it changes an Outline; Edit rules opens it on the
+  Outlines page.
 
 ## Export
 

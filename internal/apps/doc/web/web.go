@@ -197,7 +197,7 @@ func Handler(settings Settings) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
-	for _, page := range []string{"browse", "outlines", "templates", "import", "views", "targets", "cases", "merge", "change-type", "log"} {
+	for _, page := range []string{"browse", "explore", "outlines", "templates", "import", "views", "targets", "cases", "merge", "change-type", "log"} {
 		mux.Handle("GET /"+page, http.RedirectHandler("/"+page+"/", http.StatusFound))
 		mux.Handle("GET /"+page+"/", http.StripPrefix("/"+page+"/", pageHandler(serve, page+".html")))
 	}
