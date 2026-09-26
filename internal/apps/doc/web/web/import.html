@@ -34,10 +34,11 @@
   <span id="root" class="muted"></span>
 </header>
 <p id="error" class="message error" hidden></p>
-<main class="work">
+<main class="work import-work">
   <section class="list">
     <div class="open-bar">
       <button id="open" class="action" type="button">Open folder…</button>
+      <button id="without-pdf" class="button" type="button" title="Create an item without a PDF">New item…</button>
       <span id="counts" class="muted numeric"></span>
     </div>
     <p id="dir" class="dir-path muted"></p>
@@ -63,7 +64,7 @@
   </section>
   <aside id="side" class="side" hidden>
     <form id="import" hidden>
-      <h2 class="panel-head">Import</h2>
+      <div class="import-form-head"><h2 id="import-title" class="panel-head">Import</h2><button id="cancel-without-pdf" class="button" type="button" hidden>Cancel</button></div>
       <div class="form-field"><span id="template-label">Template</span>
         <div class="template-pick">
           <input id="template-filter" class="template-filter" type="search" placeholder="Filter types" autocomplete="off" spellcheck="false" hidden>
@@ -72,12 +73,13 @@
       <p id="type-hint" class="message type-hint" hidden></p>
       <div class="form-field" id="into-field"><span id="into-label">Into</span><select id="into" hidden></select><div id="into-choices" class="template-choices into-choices" role="group" aria-labelledby="into-label"></div></div>
       <div id="fields"></div>
+      <label id="replaces-field" class="form-field" hidden><span>Replaces</span><select id="replaces"><option value="">None — keep existing visas in use</option></select></label>
       <div class="form-field" id="tags-field" hidden><span>Tags</span><div id="tags" data-label="Tags"></div></div>
       <div class="form-field" id="revision-tags-field" hidden><span>This revision's tags</span><div id="revision-tags" data-label="This revision's tags"></div></div>
       <label class="form-field" id="notes-field" hidden><span>Notes</span><textarea id="notes" rows="3" placeholder="Optional details about this item"></textarea></label>
       <p id="import-message" class="message"></p>
       <button id="import-button" class="action" type="submit">Import</button>
-      <p class="message">The PDF is copied into the tree and read back before it counts. This file stays where it is.</p>
+      <p id="copy-note" class="message">The PDF is copied into the tree and read back before it counts. This file stays where it is.</p>
     </form>
     <div id="kept" hidden>
       <h2 class="panel-head">Already in the tree</h2>

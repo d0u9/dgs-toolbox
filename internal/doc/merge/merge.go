@@ -90,19 +90,30 @@ func FromTarget(target string, now time.Time) (Source, error) {
 			items = append(items, tree.Item{ID: e.Item, Type: e.Type, Kind: tree.Kind(e.Kind), Fields: maps.Clone(e.Fields)})
 		}
 		it := &items[len(items)-1]
-		if hasDigest(*it, e.Digest) {
+		ref := e.Digest
+		if e.RevisionID != "" {
+			ref = e.RevisionID
+		}
+		if hasDigest(*it, ref) {
 			continue
 		}
-		it.Revisions = append(it.Revisions, tree.Revision{Digest: e.Digest, Added: now.Format(time.RFC3339), Source: e.Path})
+		it.Revisions = append(it.Revisions, tree.Revision{Snapshot: e.Snapshot, Type: e.RevisionType, ID: e.RevisionID, Digest: e.Digest, Added: now.Format(time.RFC3339), Source: e.Path})
 		if e.Head {
 			it.Head = e.Digest
+			if e.RevisionID != "" {
+				it.Head = e.RevisionID
+			}
 		}
 	}
 	// Each entry has the fields its revision had. The Item keeps HEAD's, and
 	// a revision keeps what differs from them as its own.
 	byRevision := map[string]map[string]string{}
 	for _, e := range entries {
-		byRevision[e.Item+"/"+e.Digest] = e.Fields
+		ref := e.RevisionID
+		if ref == "" {
+			ref = e.Digest
+		}
+		byRevision[e.Item+"/"+ref] = e.Fields
 	}
 	for i := range items {
 		it := &items[i]
@@ -112,13 +123,27 @@ func FromTarget(target string, now time.Time) (Source, error) {
 		it.Fields = maps.Clone(byRevision[it.ID+"/"+it.Current()])
 		for r := range it.Revisions {
 			own := map[string]string{}
-			for k, v := range byRevision[it.ID+"/"+it.Revisions[r].Digest] {
+			for k, v := range byRevision[it.ID+"/"+it.Revisions[r].Ref()] {
 				if it.Fields[k] != v {
 					own[k] = v
 				}
 			}
 			if len(own) > 0 {
 				it.Revisions[r].Fields = own
+			}
+		}
+	}
+	// Stable-ID entries preserve Item and revision fields separately.
+	for i := range items {
+		for _, e := range entries {
+			if e.Item != items[i].ID || e.RevisionID == "" {
+				continue
+			}
+			items[i].Fields = maps.Clone(e.ItemFields)
+			for n := range items[i].Revisions {
+				if items[i].Revisions[n].Ref() == e.RevisionID {
+					items[i].Revisions[n].Fields = maps.Clone(e.RevisionFields)
+				}
 			}
 		}
 	}

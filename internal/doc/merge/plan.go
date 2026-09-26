@@ -42,6 +42,7 @@ type Change struct {
 	// with the Source's reason.
 	Retired       bool   `json:"retired,omitempty"`
 	RetiredReason string `json:"retired_reason,omitempty"`
+	SupersededBy  string `json:"superseded_by,omitempty"`
 }
 
 // Conflict kinds.
@@ -85,7 +86,7 @@ type Plan struct {
 
 func hasDigest(item tree.Item, digest string) bool {
 	for _, r := range item.Revisions {
-		if r.Digest == digest {
+		if r.Ref() == digest {
 			return true
 		}
 	}
@@ -143,6 +144,15 @@ func Compute(root string, src Source) (Plan, error) {
 	for _, it := range items {
 		byID[it.ID] = it
 	}
+	mappedID := map[string]string{}
+	for _, source := range src.Items {
+		mappedID[source.ID] = source.ID
+		if template, ok := templates[source.Type]; ok {
+			if target, found := match(template, items, byID, source); found {
+				mappedID[source.ID] = target.ID
+			}
+		}
+	}
 	claimed := map[string]string{}
 	for _, s := range src.Items {
 		t, ok := templates[s.Type]
@@ -152,7 +162,7 @@ func Compute(root string, src Source) (Plan, error) {
 		}
 		m, found := match(t, items, byID, s)
 		if !found {
-			plan.New = append(plan.New, Change{Item: s.ID, From: s.ID, Type: s.Type, Fields: s.Fields, Digests: digests(s.Revisions), Head: s.Head})
+			plan.New = append(plan.New, Change{Item: s.ID, From: s.ID, Type: s.Type, Fields: s.Fields, Digests: digests(s.Revisions), Head: s.Head, SupersededBy: mappedID[s.SupersededBy]})
 			continue
 		}
 		if other, ok := claimed[m.ID]; ok {
@@ -167,18 +177,32 @@ func Compute(root string, src Source) (Plan, error) {
 		c := Change{Item: m.ID, From: s.ID, Type: s.Type, Fields: m.Fields}
 		conflicts := len(plan.Conflicts)
 		for _, r := range s.Revisions {
-			if !hasDigest(m, r.Digest) {
-				c.Digests = append(c.Digests, r.Digest)
+			if !hasDigest(m, r.Ref()) {
+				c.Digests = append(c.Digests, r.Ref())
+			} else if r.ID != "" {
+				for _, existing := range m.Revisions {
+					if existing.Ref() != r.Ref() {
+						continue
+					}
+					if !maps.Equal(m.FieldsAt(existing.Ref()), s.FieldsAt(r.Ref())) || !slices.Equal(existing.Tags, r.Tags) ||
+						(existing.Digest != "" && r.Digest != "" && existing.Digest != r.Digest) {
+						plan.Problems = append(plan.Problems, fmt.Sprintf("revision %s of %s differs; reconcile its fields, tags or attachment before merging", r.Ref(), s.ID))
+					} else if existing.Digest == "" && r.Digest != "" && !r.Snapshot {
+						c.Digests = append(c.Digests, r.Ref())
+					}
+				}
 			}
 		}
-		if s.Kind == tree.KindRecord && len(c.Digests) > 0 {
+		if s.Kind == tree.KindRecord && len(c.Digests) > 0 && !hasDigest(m, c.Digests[0]) && !s.Revisions[len(s.Revisions)-1].Snapshot {
 			plan.Problems = append(plan.Problems, fmt.Sprintf("record %s %s holds another PDF here", s.Type, s.ID))
 			continue
 		}
-		if !maps.Equal(m.Fields, s.Fields) {
+		mHead, _ := m.Revision(m.Current())
+		sHead, _ := s.Revision(s.Current())
+		if !maps.Equal(m.Fields, s.Fields) && !(mHead.Snapshot && sHead.Snapshot) {
 			plan.Conflicts = append(plan.Conflicts, Conflict{ID: "fields:" + m.ID, Kind: ConflictFields, Item: m.ID, From: s.ID, Type: s.Type, Ours: m.Fields, Theirs: s.Fields})
 		}
-		if s.Kind == tree.KindDocument {
+		if s.Kind == tree.KindDocument || s.Head != "" {
 			head, conflict := heads(m, s)
 			if conflict {
 				plan.Conflicts = append(plan.Conflicts, Conflict{ID: "head:" + m.ID, Kind: ConflictHead, Item: m.ID, From: s.ID, Type: s.Type, Ours: m.Current(), Theirs: s.Current()})
@@ -194,11 +218,22 @@ func Compute(root string, src Source) (Plan, error) {
 				c.Tags = append(c.Tags, tag)
 			}
 		}
+		if s.SupersededBy != "" {
+			target := mappedID[s.SupersededBy]
+			if target == "" {
+				target = s.SupersededBy
+			}
+			if m.SupersededBy != "" && m.SupersededBy != target {
+				plan.Problems = append(plan.Problems, "conflicting visa replacements for "+m.ID)
+			} else if m.SupersededBy == "" {
+				c.SupersededBy = target
+			}
+		}
 		c.Frequent = s.Frequent && !m.Frequent
 		if s.Retired && !m.Retired {
 			c.Retired, c.RetiredReason = true, s.RetiredReason
 		}
-		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" || len(c.Tags) > 0 || c.Frequent || c.Retired {
+		if len(c.Digests) > 0 || c.Head != "" || c.Notes != "" || len(c.Tags) > 0 || c.Frequent || c.Retired || c.SupersededBy != "" {
 			plan.Changed = append(plan.Changed, c)
 		} else if len(plan.Conflicts) == conflicts {
 			plan.Same++
@@ -220,7 +255,7 @@ func match(t tree.Template, items []tree.Item, byID map[string]tree.Item, s tree
 		}
 		if s.Kind == tree.KindRecord {
 			for _, r := range s.Revisions {
-				if hasDigest(m, r.Digest) {
+				if hasDigest(m, r.Ref()) {
 					return m, true
 				}
 			}
@@ -256,7 +291,7 @@ func heads(ours, theirs tree.Item) (string, bool) {
 
 func shared(a, b tree.Item) bool {
 	for _, r := range a.Revisions {
-		if hasDigest(b, r.Digest) {
+		if hasDigest(b, r.Ref()) {
 			return true
 		}
 	}
@@ -266,7 +301,7 @@ func shared(a, b tree.Item) bool {
 func digests(revs []tree.Revision) []string {
 	out := make([]string, len(revs))
 	for i, r := range revs {
-		out[i] = r.Digest
+		out[i] = r.Ref()
 	}
 	return out
 }
@@ -338,11 +373,15 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 	for _, c := range plan.New {
 		s := srcItems[c.From]
 		for _, d := range c.Digests {
-			if err := copyPDF(ctx, src.PDF(s.ID, d), tree.PDFPath(root, c.Item, d), d, &result); err != nil {
+			if err := copyRevision(ctx, src, s, root, c.Item, d, &result); err != nil {
 				return result, err
 			}
 		}
 		item := s
+		if c.SupersededBy != "" {
+			item.SupersededBy = c.SupersededBy
+			item.RetiredReason = "Superseded by " + c.SupersededBy
+		}
 		item.Revisions = append([]tree.Revision(nil), s.Revisions...)
 		// The Item keeps the history it had in the other tree, and says when
 		// it came into this one.
@@ -388,12 +427,23 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 			change(c.Item, "revisions", "", strings.Join(c.Digests, ", "))
 		}
 		for _, d := range c.Digests {
-			if err := copyPDF(ctx, src.PDF(s.ID, d), tree.PDFPath(root, c.Item, d), d, &result); err != nil {
+			if err := copyRevision(ctx, src, s, root, c.Item, d, &result); err != nil {
 				return result, err
 			}
 			for _, r := range s.Revisions {
-				if r.Digest == d {
-					it.Revisions = append(it.Revisions, r)
+				if r.Ref() == d {
+					found := false
+					for n := range it.Revisions {
+						if it.Revisions[n].Ref() == d {
+							it.Revisions[n].Digest = r.Digest
+							it.Revisions[n].Source = r.Source
+							found = true
+							break
+						}
+					}
+					if !found {
+						it.Revisions = append(it.Revisions, r)
+					}
 				}
 			}
 		}
@@ -412,6 +462,12 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		if c.Frequent && !it.Frequent {
 			change(c.Item, "frequent", "", "yes")
 			it.Frequent = true
+		}
+		if c.SupersededBy != "" {
+			change(c.Item, "superseded_by", it.SupersededBy, c.SupersededBy)
+			it.SupersededBy = c.SupersededBy
+			it.Retired = true
+			it.RetiredReason = "Superseded by " + c.SupersededBy
 		}
 		if c.Retired && !it.Retired {
 			change(c.Item, "retired", "", strings.TrimSpace("yes "+c.RetiredReason))
@@ -454,6 +510,10 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 			touched[id].History = append(touched[id].History,
 				tree.HistoryEvent{At: now.Format(time.RFC3339), Action: "merge", Changes: changes[id]})
 		}
+		if head, ok := touched[id].Revision(touched[id].Current()); ok && head.Snapshot {
+			touched[id].Type = head.Type
+			touched[id].Fields = maps.Clone(head.Fields)
+		}
 		if err := tree.WriteItem(root, *touched[id]); err != nil {
 			return result, err
 		}
@@ -492,4 +552,17 @@ func writeFile(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func copyRevision(ctx context.Context, src Source, item tree.Item, root, target, ref string, result *Result) error {
+	for _, r := range item.Revisions {
+		if r.Ref() != ref {
+			continue
+		}
+		if r.Digest == "" {
+			return nil
+		}
+		return copyPDF(ctx, src.PDF(item.ID, r.Digest), tree.PDFPath(root, target, r.Digest), r.Digest, result)
+	}
+	return fmt.Errorf("no revision %s", ref)
 }

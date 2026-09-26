@@ -108,14 +108,32 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 			if !known[item.Type] {
 				add(UnknownType, sidecar, fmt.Sprintf("type %q has no Template", item.Type))
 			}
+			refs := map[string]bool{}
 			for _, rev := range item.Revisions {
-				named[rev.Digest+".pdf"] = true
+				if refs[rev.Ref()] {
+					add(BadSidecar, sidecar, "duplicate revision "+rev.Ref())
+				}
+				refs[rev.Ref()] = true
+				if rev.Snapshot && len(rev.ID) == 64 && tree.SnapshotID(rev.Type, rev.Fields, rev.Digest) != rev.ID {
+					add(BadSidecar, sidecar, "snapshot "+short(rev.ID)+" does not match its content")
+				}
+				if rev.Digest != "" {
+					named[rev.Digest+".pdf"] = true
+				}
 			}
-			if item.Head != "" && !named[item.Head+".pdf"] {
+			if item.Head != "" && !refs[item.Head] {
 				add(BadHead, sidecar, "HEAD "+short(item.Head)+" is not one of the revisions")
 			}
+			seenFiles := map[string]bool{}
 			for _, rev := range item.Revisions {
+				if rev.Digest == "" && rev.ID != "" {
+					continue
+				}
 				path := filepath.Join(dir, rev.Digest+".pdf")
+				if seenFiles[path] {
+					continue
+				}
+				seenFiles[path] = true
 				if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 					add(Missing, path, "revision added "+rev.Added)
 					continue

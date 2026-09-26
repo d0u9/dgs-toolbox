@@ -27,8 +27,11 @@ func TestChangeTypePreservesPDFsAndArchivesOldFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if changed.ID != "A" || changed.Type != "student_id" || changed.Head != "new" || len(changed.Revisions) != 2 || changed.Fields["old_number"] != "" {
+	if changed.ID != "A" || changed.Type != "student_id" || changed.Head == "new" || len(changed.Revisions) != 3 || changed.Fields["old_number"] != "" {
 		t.Fatalf("changed: %+v", changed)
+	}
+	if changed.FieldsAt("new")["old_number"] != "42" {
+		t.Fatal("old snapshot rewritten")
 	}
 	if len(changed.History) != 1 || changed.History[0].At != at.Format(time.RFC3339) || changed.History[0].PreviousFields["old_number"] != "42" {
 		t.Fatalf("history: %+v", changed.History)

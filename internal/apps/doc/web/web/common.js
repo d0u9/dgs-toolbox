@@ -64,12 +64,12 @@ export const templateOf = (state, type) => state.templates.find((t) => t.type ==
 // fieldsAt is an Item's fields as one revision has them: its own, with the
 // revision's per_revision values over them.
 export function fieldsAt(item, digest) {
-  const rev = (item.revisions || []).find((r) => r.digest === digest);
-  return { ...item.fields, ...((rev && rev.fields) || {}) };
+  const rev = (item.revisions || []).find((r) => (r.id || r.digest) === digest);
+  return rev?.snapshot ? { ...(rev.fields || {}) } : { ...item.fields, ...((rev && rev.fields) || {}) };
 }
 
 // currentFields is fieldsAt the revision that stands for the Item.
-export const currentFields = (item) => fieldsAt(item, item.head || (item.revisions.length ? item.revisions[item.revisions.length - 1].digest : ""));
+export const currentFields = (item) => fieldsAt(item, item.head || (item.revisions.length ? (item.revisions[item.revisions.length - 1].id || item.revisions[item.revisions.length - 1].digest) : ""));
 
 export function label(state, item) {
   const t = templateOf(state, item.type);
@@ -81,10 +81,47 @@ export function label(state, item) {
 // inputFor is the control a field's type asks for: a date picker, a list of
 // options, a list of the tree's other Items, or a line of text. Every value
 // control has the class field-input and the field's key as its name.
-export function inputFor(field, value, placeholder, state, self) {
+let fieldListID = 0;
+export function inputFor(field, value, placeholder, state, self, type) {
   const common = { name: field.key, className: "field-input" };
   let control;
-  if (field.type === "select" || field.type === "item") {
+  if (field.key === "issuer" && (!field.type || field.type === "text")) {
+    const id = "issuer-options-" + (++fieldListID);
+    control = el("input", { ...common, type: "text", value,
+      placeholder: placeholder || "Choose or enter an issuer…", autocomplete: "off", spellcheck: false });
+    control.setAttribute("list", id);
+    const options = el("datalist", { id });
+    const wrapper = el("label", { className: "form-field" },
+      el("span", {}, field.key, field.required ? el("span", { className: "req" }, " *") : null), control, options);
+    const item = state?.items?.find((item) => item.id === self);
+    const typ = type || item?.type || "";
+    let request = 0;
+    const refresh = async () => {
+      const generation = ++request;
+      options.replaceChildren();
+      const scope = wrapper.parentElement;
+      const countryInput = scope?.querySelector('[name="country"]') || wrapper.closest("form")?.querySelector('[name="country"]');
+      const nation = countryInput ? countryInput.value || templateOf(state, typ)?.defaults?.country || ""
+        : item?.fields?.country || templateOf(state, typ)?.defaults?.country || "";
+      if (!typ || !nation) return;
+      try {
+        const response = await fetch(api("/api/issuers?" + new URLSearchParams({ type: typ, country: nation })));
+        if (!response.ok) return;
+        const values = await response.json();
+        if (generation === request && wrapper.isConnected) options.replaceChildren(...values.map((value) => el("option", { value })));
+      } catch { /* Free text remains usable when suggestions are unavailable. */ }
+    };
+    control.addEventListener("focus", refresh);
+    queueMicrotask(() => {
+      if (!wrapper.isConnected) return;
+      const scope = wrapper.closest("form") || wrapper.parentElement;
+      scope.addEventListener("input", (event) => {
+        if (wrapper.isConnected && event.target.name === "country") refresh();
+      });
+      refresh();
+    });
+    return wrapper;
+  } else if (field.type === "select" || field.type === "item") {
     const choices = field.type === "select"
       ? field.options.map((o) => [o, o])
       : (state ? state.items : []).filter((i) => i.id !== self).map((i) => [i.id, label(state, i)]);
@@ -134,7 +171,7 @@ export const fieldsOf = (container) => Object.fromEntries(
 // tagsAt is the tags a revision has: the Item's, which hold for every
 // revision, and the revision's own.
 export function tagsAt(item, digest) {
-  const own = (item.revisions.find((r) => r.digest === digest) || {}).tags || [];
+  const own = (item.revisions.find((r) => (r.id || r.digest) === digest) || {}).tags || [];
   return [...new Set([...(item.tags || []), ...own])].sort();
 }
 
@@ -330,13 +367,23 @@ function fit(sheet) {
 const refit = new ResizeObserver((entries) => entries.forEach((e) => fit(e.target)));
 
 // showSource marks the line a suggested value was read from, or none.
-export function showSource(at) {
+export function showSource(at, reveal = false) {
   for (const old of $("pages").querySelectorAll(".text-line.source")) old.classList.remove("source");
   if (!at || at.page < 0) return;
   const span = $("pages").querySelector(`.sheet[data-page="${at.page}"] .text-line[data-line="${at.line}"]`);
   if (!span) return;
   span.classList.add("source");
-  span.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (!reveal) return;
+  // Hover must never move the document. Explicit field focus reveals the
+  // source inside the PDF pane without scrolling the surrounding form.
+  const pages = $("pages");
+  const bounds = pages.getBoundingClientRect();
+  const line = span.getBoundingClientRect();
+  const top = bounds.top + pages.clientTop;
+  const left = bounds.left + pages.clientLeft;
+  const dy = line.top < top ? line.top - top : Math.max(0, line.bottom - top - pages.clientHeight);
+  const dx = line.left < left ? line.left - left : Math.max(0, line.right - left - pages.clientWidth);
+  pages.scrollBy({ top: dy, left: dx, behavior: "instant" });
 }
 
 // showPreview draws a PDF as pictures of its pages, which scroll smoothly,
@@ -374,6 +421,8 @@ export async function showPreview(query, viewer) {
 
 export function clearPreview() {
   previewAsked++;
+  textAsked++;
+  textPages = [];
   hideViewer();
   $("frame").hidden = true;
   $("frame").removeAttribute("src");
@@ -382,6 +431,8 @@ export function clearPreview() {
 
 // What each history action is called on the page.
 export const eventTitles = {
+  supersede: "Superseded by", undo_supersede: "Replacement undone",
+  create_without_pdf: "Created without PDF", create_revision_without_pdf: "Added revision without PDF", attach_pdf: "Attached PDF",
   import: "Imported", import_revision: "Added revision", edit_fields: "Changed fields", edit_notes: "Changed notes",
   edit_tags: "Changed tags", edit_revision_tags: "Changed revision tags", make_head: "Made HEAD", delete_revision: "Deleted revision", change_type: "Changed type",
   export: "Exported", merge: "Merged", mark_frequent: "Marked frequent", unmark_frequent: "Unmarked frequent",

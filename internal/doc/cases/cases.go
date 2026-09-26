@@ -253,13 +253,17 @@ func (c Case) Items(items []tree.Item) (found []tree.Item, missing []string) {
 		if c.Status == Archived && e.Digest != "" {
 			has := false
 			for _, r := range item.Revisions {
-				has = has || r.Digest == e.Digest
+				has = has || r.Ref() == e.Digest
 			}
 			if !has {
 				missing = append(missing, e.Item)
 				continue
 			}
 			item.Head = e.Digest
+			if r, ok := item.Revision(e.Digest); ok && r.Snapshot {
+				item.Type = r.Type
+				item.Fields = item.FieldsAt(e.Digest)
+			}
 		}
 		found = append(found, item)
 	}
