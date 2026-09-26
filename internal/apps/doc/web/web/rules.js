@@ -19,7 +19,7 @@ const tree = outlineTree($("tree"), () => state, { empty: () => "Give the rule a
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
 const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", shared: !!r.shared, exclude: r.exclude || {}, query_types: r.query_types || {}, exclude_types: r.exclude_types || {}, skip: r.skip || [], layout: r.layout,
-  default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null });
+  default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null, numbers: r.numbers || null });
 const blank = () => {
   let n = 1;
   while (rules.some((r) => r.name === "rule-" + n)) n++;

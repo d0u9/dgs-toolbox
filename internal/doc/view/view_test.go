@@ -1,6 +1,7 @@
 package view
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -243,6 +244,36 @@ func TestBuildConditionTypes(t *testing.T) {
 	v.QueryTypes = map[string]Values{"owner": {"visa"}}
 	if err := v.Validate(); err == nil {
 		t.Fatal("types for a condition the query lacks were accepted")
+	}
+}
+
+func TestBuildNumbersSkip(t *testing.T) {
+	var items []tree.Item
+	for i, name := range []string{"身份证", "护照", "结婚证", "户口"} {
+		items = append(items, item(string(rune('A'+i)), "id_card", map[string]string{"name": name}, fmt.Sprint("d", i)))
+	}
+	v := View{Name: "x", Selection: Head, Layout: "{#}-{name}.{ext}",
+		Order:   map[string][]string{"{name}": {"身份证", "护照", "结婚证", "户口"}},
+		Numbers: map[string]map[string]int{"{name}": {"结婚证": 6}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, _ := Build(v, items, nil)
+	var got []string
+	for _, f := range plan.Files {
+		got = append(got, f.Path)
+	}
+	if want := []string{"01-身份证.pdf", "02-护照.pdf", "06-结婚证.pdf", "07-户口.pdf"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	// A number at or below the one before it is refused.
+	v.Numbers = map[string]map[string]int{"{name}": {"结婚证": 2}}
+	if err := v.Validate(); err == nil {
+		t.Fatal("a number not after the one before was accepted")
+	}
+	v.Numbers = map[string]map[string]int{"{name}": {"驾照": 9}}
+	if err := v.Validate(); err == nil {
+		t.Fatal("a number for a name not in the order was accepted")
 	}
 }
 

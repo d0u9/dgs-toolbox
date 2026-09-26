@@ -8,6 +8,7 @@ import (
 	"dgs-toolbox/internal/doc/country"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -84,6 +85,10 @@ type View struct {
 	// {#}-{name|type:zh}{-level?}.{ext} is numbered from the order named
 	// {name|type:zh}{-level?}.
 	Order map[string][]string `yaml:"order,omitempty" json:"order,omitempty"`
+	// Numbers sets, per order and name in it, the number that name gets in
+	// place of the next: the names after it count on from there, so
+	// setting the third of four to 6 numbers them 1, 2, 6, 7.
+	Numbers map[string]map[string]int `yaml:"numbers,omitempty" json:"numbers,omitempty"`
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -161,6 +166,23 @@ func (v View) Validate() error {
 				if sameValue(a, b) {
 					return fmt.Errorf("view %s: order %s lists %s and %s, which are one value", v.Name, key, b, a)
 				}
+			}
+		}
+	}
+	for key, set := range v.Numbers {
+		list, ok := v.Order[key]
+		if !ok {
+			return fmt.Errorf("view %s: numbers %s: order has no list for it", v.Name, key)
+		}
+		for name, n := range set {
+			if place(list, name) == 0 || n < 1 {
+				return fmt.Errorf("view %s: numbers %s: %s must be in the order and numbered from 1", v.Name, key, name)
+			}
+		}
+		numbers := Numbered(list, set)
+		for i := 1; i < len(numbers); i++ {
+			if numbers[i] <= numbers[i-1] {
+				return fmt.Errorf("view %s: numbers %s: %s would be %d, not after %s's %d", v.Name, key, list[i], numbers[i], list[i-1], numbers[i-1])
 			}
 		}
 	}
@@ -305,6 +327,13 @@ func Upgrade(v View) (View, bool) {
 			}
 		}
 		v.Order = order
+	}
+	v.Numbers = maps.Clone(v.Numbers)
+	for old, now := range renamed {
+		if set, ok := v.Numbers[old]; ok {
+			delete(v.Numbers, old)
+			v.Numbers[now] = set
+		}
 	}
 	return v, true
 }
