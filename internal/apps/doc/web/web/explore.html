@@ -41,6 +41,9 @@
     </div>
     <p id="empty" class="muted outline-empty" hidden>No Outline yet. Make one on the <a href="/outlines/">Outlines</a> page.</p>
     <ul id="outlines" class="template-list scroll"></ul>
+    <div class="list-head"><h2>Snapshots <span id="snap-count" class="count numeric"></span></h2></div>
+    <p id="snap-empty" class="muted outline-empty" hidden>No Snapshot yet. Pick an Outline's folder, or none for all of it, and click Snapshot.</p>
+    <ul id="snapshots" class="template-list scroll"></ul>
   </section>
   <section class="outline-main">
     <div class="template-bar">
@@ -50,7 +53,16 @@
       </div>
       <p id="message" class="message"></p>
       <a id="edit" class="button" hidden>Edit rules</a>
+      <button id="take" class="button" type="button" hidden title="Keep the folder picked, or the whole tree, as it is now">Snapshot</button>
+      <button id="drop" class="button" type="button" hidden title="Move the Snapshot into the tree's trash">Delete</button>
     </div>
+    <form id="take-form" class="take-form" hidden>
+      <p id="take-hint" class="muted"></p>
+      <input id="take-name" placeholder="name, e.g. visa-2026" required pattern="[a-z0-9][a-z0-9_\-]*" title="lowercase letters, digits, _ and -">
+      <input id="take-about" placeholder="what it was for (optional)">
+      <button class="action" type="submit">Take</button>
+      <button id="take-cancel" class="button" type="button">Cancel</button>
+    </form>
     <div id="tree" class="outline-tree scroll" role="tree"></div>
   </section>
   <aside class="side outline-side">

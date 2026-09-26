@@ -30,7 +30,7 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Page | What it is for |
 | --- | --- |
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete and attach or replace a PDF on a selected revision. |
-| Explore `/explore/` | An Outline's result: its PDFs in the tree its rules make, each folder counting the PDFs beneath it; picking a folder or a PDF lists it; exporting the tree. |
+| Explore `/explore/` | An Outline's result, or a Snapshot's: its PDFs in their tree, each folder counting the PDFs beneath it; picking a folder or a PDF lists it; taking a Snapshot; exporting the tree. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
 | Outlines `/outlines/` | Making an Outline: its rules and the folder it is exported to, with its tree redrawn as they change. |
 | Cases `/cases/` | A matter being dealt with and the Items it has needed; its export; archiving it. |
@@ -617,6 +617,29 @@ Making the rules and looking through the result are kept apart:
   their folder; picking a PDF shows its Item; each is linked to its Item on
   Browse. Not placed is a row of the tree. Export sits beside it (below).
   Nothing on it changes an Outline; Edit rules opens it on the Outlines page.
+  Snapshots are listed below the Outlines and drawn the same way (below).
+
+### Snapshots
+
+A Snapshot is an Outline's tree, or one folder of it, kept as it was at one
+moment: what was handed in for a visa or a claim. The rules and the Items
+change after; the Snapshot does not.
+
+- On Explore, **Snapshot** takes the folder picked, or the whole tree when
+  none is. Its paths are relative to that folder. An Outline with PDFs it
+  cannot place is refused: a Snapshot is what an export would have written.
+- It is one YAML file under `snapshots/`, recording for each PDF its path,
+  its Item and its revision ID, and the rule that placed it. Nothing is
+  copied, as an archived Case copies nothing.
+- It sits beside the Outlines, sharing their names: an Outline and a
+  Snapshot cannot have the same one. Only its name, about and folder change
+  after it is taken.
+- A revision that leaves the tree, or an Item deleted, is listed as lost,
+  never replaced by a newer one. An export of a Snapshot with a lost file
+  stops, as one with a PDF not placed does.
+- It exports as an Outline does, into its folder or one chosen then; the
+  manifest records its files under the Snapshot's name.
+- Deleting one moves its file into `trash/snapshots/`. Its Items stay.
 
 ## Export
 
@@ -633,7 +656,7 @@ Export removes only files it wrote itself, recorded in a manifest at the
 root of the folder; anything else under it is never touched.
 
 An Outline is exported as a whole: every rule, planned together, into the
-folder chosen for it — this browser's choice, else its own folder. A run is
+folder chosen for it; a Snapshot exports its files the same way — this browser's choice, else its own folder. A run is
 one Outline, several, or every Outline with rules and a folder, and it is
 checked entirely before anything is written. Any of these stops the whole
 run, and no Outline is written:
@@ -808,6 +831,7 @@ exported and the Items' fields; it carries no Templates or Outlines.
   templates/
     id_card.yaml            # one Template per type
   outlines/                 # one Outline per file
+  snapshots/                # one Snapshot per file
   cases/                    # one Case per file
   migrated/                 # views/ and targets.yaml, once they became Outlines
   trash/                    # deleted Items and Templates, never erased
@@ -909,8 +933,6 @@ existing tags as the owner types; Browse filters by tags in the current tree.
 - **Archive serial numbers and barcode separator pages**, if box wants them:
   they concern paper, not filed documents.
 
-- **Snapshot** — an export into a new dated directory that is never updated,
-  recording what was submitted for a visa or a claim.
 - **Clone** — a sub-tree cloned from the full tree would remember the state it
   was cloned from, so its merge could compare three sides, as git does.
 
