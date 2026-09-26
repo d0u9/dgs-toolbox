@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/config"
+	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/doc/classify"
 	"dgs-toolbox/internal/doc/dates"
 	"dgs-toolbox/internal/doc/expiry"
@@ -218,6 +219,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("GET /api/source", s.sourceList)
 	mux.HandleFunc("GET /api/source/file", s.sourceFile)
 	mux.HandleFunc("GET /api/revision", s.revision)
+	mux.HandleFunc("POST /api/reveal", s.reveal)
 	mux.HandleFunc("GET /api/text", s.text)
 	mux.HandleFunc("POST /api/ahead", s.ahead)
 	mux.HandleFunc("GET /api/pages", s.pages)
@@ -386,11 +388,19 @@ func (s server) sourceFile(w http.ResponseWriter, r *http.Request) {
 
 // revision serves an Item's PDF, looked up through its sidecar.
 func (s server) revision(w http.ResponseWriter, r *http.Request) {
-	id, digest := r.URL.Query().Get("item"), r.URL.Query().Get("digest")
+	path, status, err := s.revisionPath(r.URL.Query().Get("item"), r.URL.Query().Get("digest"))
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	servePDF(w, r, path)
+}
+
+// revisionPath is where the tree keeps an Item's revision's PDF.
+func (s server) revisionPath(id, digest string) (string, int, error) {
 	items, err := tree.LoadItems(s.root)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return "", http.StatusInternalServerError, err
 	}
 	for _, item := range items {
 		if item.ID != id {
@@ -398,12 +408,35 @@ func (s server) revision(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, rev := range item.Revisions {
 			if rev.Ref() == digest && rev.Digest != "" {
-				servePDF(w, r, tree.PDFPath(s.root, item.ID, rev.Digest))
-				return
+				return tree.PDFPath(s.root, item.ID, rev.Digest), 0, nil
 			}
 		}
 	}
-	http.Error(w, "no such revision", http.StatusNotFound)
+	return "", http.StatusNotFound, errors.New("no such revision")
+}
+
+// reveal shows a revision's PDF in the file manager of the machine serving
+// the page, selected in its folder. The page is local, so that is the
+// machine in front of the person clicking.
+func (s server) reveal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Item   string `json:"item"`
+		Digest string `json:"digest"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	path, status, err := s.revisionPath(body.Item, body.Digest)
+	if err == nil {
+		err = desktop.Reveal(path)
+		status = http.StatusInternalServerError
+	}
+	if err != nil {
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 type textJSON struct {

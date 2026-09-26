@@ -30,7 +30,7 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Page | What it is for |
 | --- | --- |
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete and attach or replace a PDF on a selected revision. |
-| Explore `/explore/` | An Outline's result, or a Snapshot's: its PDFs in their tree, each folder counting the PDFs beneath it; picking a folder or a PDF lists it; taking a Snapshot; exporting the tree. |
+| Explore `/explore/` | An Outline's result, or a Snapshot's: its PDFs in their tree, each folder counting the PDFs beneath it; picking a folder lists it, a PDF opens beside it; taking a Snapshot; exporting the tree. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
 | Outlines `/outlines/` | Making an Outline: its rules and the folder it is exported to, with its tree redrawn as they change. |
 | Cases `/cases/` | A matter being dealt with and the Items it has needed; its export; archiving it. |
@@ -631,13 +631,16 @@ Making the rules and looking through the result are kept apart:
   a form to fill it, on one PDF or on several at once; a numbered value the
   order lacks can be numbered last; a PDF of another rule opens that rule.
   Saving writes `outlines/<name>.yaml`; renaming removes the old file.
-- **Explore** shows the result. It lists the saved Outlines and draws the
-  chosen one's tree down to each PDF's name, every folder counting the PDFs
-  beneath it. Picking a folder lists its PDFs, and those beneath it under
-  their folder; picking a PDF shows its Item; each is linked to its Item on
-  Browse. Not placed is a row of the tree. Export sits beside it (below).
+- **Explore** shows the result, browsed as in a file manager. It lists the
+  saved Outlines, a list that folds away, and draws the chosen one's tree
+  down to each PDF's name, every folder counting the PDFs beneath it.
+  Picking a folder lists its PDFs, and those beneath it under their folder,
+  each linked to its Item on Browse; picking a PDF opens its pages beside
+  the tree, with Show in Finder, which selects the tree's own file, and
+  Open in Browse. Not placed is a row of the tree. **Export…** writes it
+  (below).
   Nothing on it changes an Outline; Edit rules opens it on the Outlines page.
-  Snapshots are listed below the Outlines and drawn the same way (below).
+  An Outline's Snapshots are drawn inside its tree (below).
 
 ### Snapshots
 
@@ -651,6 +654,10 @@ change after; the Snapshot does not.
 - It is one YAML file under `snapshots/`, recording for each PDF its path,
   its Item and its revision ID, and the rule that placed it. Nothing is
   copied, as an archived Case copies nothing.
+- Explore draws it inside its Outline's tree as a folder beside the folder
+  it was taken from, shut until opened; at the top when that folder is
+  gone. Picking it, or anything in it, makes Export and Delete act on the
+  Snapshot. Only one whose Outline is gone is listed below the Outlines.
 - It sits beside the Outlines, sharing their names: an Outline and a
   Snapshot cannot have the same one. Only its name, about and folder change
   after it is taken.
@@ -691,10 +698,11 @@ run, and no Outline is written:
 The check lists every one of them, by rule and path; the export itself plans
 and checks again from the state at that moment.
 
-On Explore, Export shows the folder the Outline goes to; clicking it chooses
-another through the shared file dialog, which can make a new folder there,
-remembered in that browser. **Check** lists the plan and what stops it;
-**Export** writes it. `dgs doc export [<outline>...]` does the same from the
+On Explore, **Export…** opens the shared file dialog on the folder the
+Outline, or the Snapshot picked, last went to from that browser, else its
+own; the dialog can make a new folder there. Choosing one checks the plan:
+what stops it is listed beside the tree and nothing is written; a plan that
+replaces or removes a file asks first; otherwise it writes. `dgs doc export [<outline>...]` does the same from the
 command line, every Outline with rules and a folder when none is named;
 `--to phone=/Volumes/Kindle/documents` chooses a folder, comma separated for
 several; `-n` checks and writes nothing. It fails, writing nothing, when the
