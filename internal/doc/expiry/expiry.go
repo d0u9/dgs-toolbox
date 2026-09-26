@@ -56,6 +56,9 @@ func Of(fields map[string]string, now time.Time, soon time.Duration, order dates
 			}
 		}
 		date, ok := dates.Parse(value, order)
+		if month, err := time.Parse("2006-01", value); err == nil {
+			date, ok = month.AddDate(0, 1, -1).Format("2006-01-02"), true
+		}
 		if !ok {
 			return Status{State: None}
 		}
