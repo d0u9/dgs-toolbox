@@ -9,6 +9,7 @@ let keys = [];
 let countries = {}; // each country's every form: its alpha-3 code
 let orders = {}; // per numbered name, its order as typed: "alex, emma"
 let skip = []; // the IDs of the Items the rule leaves out
+let numbers = {}; // per numbered name, the numbers set by hand: { 结婚证: 6 }
 let changed = () => {};
 
 // setup gives the form the tree's state, the keys a layout can use, the
@@ -33,6 +34,7 @@ export function fill(v) {
   if ($("shared")) $("shared").checked = !!v.shared;
   $("layout").value = v.layout;
   orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, list.join(", ")]));
+  numbers = JSON.parse(JSON.stringify(v.numbers || {}));
   drawOrder();
   closeSuggest();
   chips();
@@ -67,6 +69,13 @@ export function read() {
     if (list.length) order[key] = list;
   }
   if (Object.keys(order).length) out.order = order;
+  // A number is kept only for a name still in its order.
+  const set = {};
+  for (const [key, list] of Object.entries(order)) {
+    const kept = Object.fromEntries(Object.entries(numbers[key] || {}).filter(([name]) => list.some((v) => same(v, name))));
+    if (Object.keys(kept).length) set[key] = kept;
+  }
+  if (Object.keys(set).length) out.numbers = set;
   return out;
 }
 
@@ -380,6 +389,17 @@ export function orderValue(item, key) {
 
 // One row per order: the values it may have, in the order they are numbered
 // from 01. An order new to the layout starts with the values Items have.
+// numbered is the number each name of an order gets: the next after the
+// one before, unless set gives it its own, from which the rest count on.
+function numbered(values, set = {}) {
+  let n = 0;
+  return values.map((v) => {
+    const own = Object.entries(set).find(([name]) => same(name, v));
+    n = own ? own[1] : n + 1;
+    return n;
+  });
+}
+
 function drawOrder() {
   const rows = numberedKeys().map((key) => {
     if (orders[key] === undefined) {
@@ -400,7 +420,23 @@ function drawOrder() {
       // move swaps a shown value with the shown one before or after it.
       const move = (a, b) => { const next = [...values]; [next[a], next[b]] = [next[b], next[a]]; set(next); };
       const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
-      const pad = String(values.length).length < 2 ? 2 : String(values.length).length;
+      const counted = numbered(values, numbers[key]);
+      const pad = Math.max(2, String(counted[counted.length - 1] || 0).length);
+      // renumber sets a name's number by hand, or clears it when it is the
+      // next one anyway; a number not after the one before is refused.
+      const renumber = (i, input) => {
+        const own = { ...(numbers[key] || {}) };
+        for (const name of Object.keys(own)) if (same(name, values[i])) delete own[name];
+        const typed = parseInt(input.value, 10);
+        const next = numbered(values.slice(0, i + 1), own)[i];
+        if (input.value.trim() !== "" && typed !== next) {
+          if (!(typed >= 1) || (i > 0 && typed <= counted[i - 1])) { input.value = String(counted[i]).padStart(pad, "0"); input.classList.add("invalid"); return; }
+          own[values[i]] = typed;
+        }
+        numbers[key] = own;
+        draw();
+        changed();
+      };
       box.replaceChildren(...[
         el("ol", { className: "order-list" }, ...shown.map((i, k) => {
           const v = values[i];
@@ -417,7 +453,9 @@ function drawOrder() {
             },
           },
             el("span", { className: "order-grip", textContent: "⋮⋮", "aria-hidden": "true" }),
-            el("span", { className: "order-number", textContent: String(i + 1).padStart(pad, "0") }),
+            el("input", { className: "order-number" + (Object.keys(numbers[key] || {}).some((name) => same(name, v)) ? " set" : ""), type: "text", inputMode: "numeric",
+              value: String(counted[i]).padStart(pad, "0"), title: "Its number. Type another to skip some; the ones after count on from it. Clear it to count on from the one before.",
+              onchange: (event) => renumber(i, event.target), onkeydown: (event) => { if (event.key === "Enter") { event.preventDefault(); event.target.blur(); } } }),
             el("span", { className: "order-value", textContent: v, title: v }),
             el("span", { className: "order-acts" },
               act("Up", "↑", () => move(i, shown[k - 1]), k === 0),

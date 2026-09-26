@@ -311,7 +311,7 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 			for lang, name := range names[keys["type"]] {
 				keys["type:"+lang] = name
 			}
-			name, lacking := render(layout, keys, v.Default, v.Order)
+			name, lacking := render(layout, keys, v.Default, v.Order, v.Numbers)
 			if len(lacking) > 0 {
 				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
 				continue
@@ -450,7 +450,7 @@ func CombineWith(views []View, fixed []File, items []tree.Item, names TypeNames)
 // render fills a layout from keys. It returns the keys it lacked, when there
 // is no default to stand in for them, and the numbered names, named
 // as their orders are, not in their order.
-func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string) (string, []string) {
+func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string, set map[string]map[string]int) (string, []string) {
 	var lacking []string
 	segments := make([]string, len(layout))
 	for s, parts := range layout {
@@ -487,7 +487,8 @@ func render(layout Layout, keys map[string]string, fallback *string, order map[s
 			c := parts[counter]
 			name := strings.Join(pieces[c.From:c.To], "")
 			if n := place(order[c.Of], name); n > 0 {
-				pieces[counter] = padTo(n, len(order[c.Of]))
+				numbers := Numbered(order[c.Of], set[c.Of])
+				pieces[counter] = padTo(numbers[n-1], numbers[len(numbers)-1])
 			} else if !contains(lacking, c.Of) {
 				lacking = append(lacking, c.Of)
 			}
@@ -557,13 +558,32 @@ func numbered(p string, n int) string {
 func pad(n int) string { return padTo(n, 0) }
 
 // padTo writes n with at least two digits, and as many as count has.
-func padTo(n, count int) string {
-	width := max(2, len(strconv.Itoa(count)))
+func padTo(n, largest int) string {
+	width := max(2, len(strconv.Itoa(largest)))
 	s := strconv.Itoa(n)
 	for len(s) < width {
 		s = "0" + s
 	}
 	return s
+}
+
+// Numbered is the number {#} writes for each name of order: the next
+// after the one before, counting from 1, unless set gives the name its
+// own, from which the names after it count on.
+func Numbered(order []string, set map[string]int) []int {
+	out := make([]int, len(order))
+	n := 0
+	for i, name := range order {
+		n++
+		for named, m := range set {
+			if sameValue(named, name) {
+				n = m
+				break
+			}
+		}
+		out[i] = n
+	}
+	return out
 }
 
 // place is value's position in order, counting from 1, or 0 when it is not

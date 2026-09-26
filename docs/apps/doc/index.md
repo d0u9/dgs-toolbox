@@ -660,7 +660,15 @@ A key is no longer numbered on its own. A layout written `{key#}`,
 `{key#:format}`, is rewritten as `{#}-{key}` in its rule's file when the tree
 is opened, and its order renamed to match, `owner` becoming `{owner}`.
 
-Numbers have two digits, more when the list is longer than 99. Names in an
+A name may be given its own number, to skip some: `numbers`, per order,
+sets it, and the names after it count on from there. With the order
+`[身份证, 护照, 结婚证, 户口]` and `numbers: {"{name}": {结婚证: 6}}`, they
+are `01`, `02`, `06` and `07`. A number must be larger than the one before
+it. On the Rules page each number in a Numbering list can be typed over;
+one set by hand is filled in, and clearing it counts on from the one
+before again.
+
+Numbers have two digits, more when the largest is over 99. Names in an
 order are compared as a country when both name one, so `CN`, `CHN` and `中国`
 are one entry, and otherwise ignoring case. A `{#}` needs an order, and an
 order may not list one name twice. A name the order does not list leaves
