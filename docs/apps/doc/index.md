@@ -579,7 +579,10 @@ A rule has a query, a selection, and a layout. It may leave PDFs out and select 
   a PDF meeting any one of them is not selected. `exclude: {tags:
   [translation]}` leaves out every translation, however many are added
   later; a field's value, such as `name: [DIPLOMA]`, works the same way.
-  Tags are matched per revision, as in the query.
+  Tags are matched per revision, as in the query. The key `status`, which
+  only an exclusion has, leaves Items out by where they stand: `superseded`
+  a visa a later one replaces, `retired` any Item no longer used, a
+  superseded one included.
 - **Skip** — Items left out by ID, whatever else selects them: the
   exceptions no condition describes. The Rules page offers to leave out only
   the Items the rule selects, and each PDF it cannot place has a Leave out

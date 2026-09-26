@@ -26,7 +26,7 @@ export function fill(v) {
     el("input", { type: "checkbox", value: t.type, checked: types.includes(t.type), onchange: narrow }), " " + t.type)));
   $("conditions").replaceChildren(...Object.entries(v.query || {})
     .filter(([k]) => k !== "type").map(([k, values]) => condition(k, values)));
-  $("exclude").replaceChildren(...Object.entries(v.exclude || {}).map(([k, values]) => condition(k, values)));
+  $("exclude").replaceChildren(...Object.entries(v.exclude || {}).map(([k, values]) => condition(k, values, true)));
   skip = [...(v.skip || [])];
   drawSkip();
   document.querySelector(`input[name=selection][value=${v.selection || "head"}]`).checked = true;
@@ -77,7 +77,7 @@ $("add-condition").addEventListener("click", () => {
   changed();
 });
 $("add-exclude").addEventListener("click", () => {
-  $("exclude").append(condition("tags", []));
+  $("exclude").append(condition("tags", [], true));
   changed();
 });
 
@@ -133,6 +133,7 @@ function selected() {
   const excluded = (item) => exclusions.some(([key, values]) => {
     const head = item.head || item.revisions?.[item.revisions.length - 1]?.id || item.revisions?.[item.revisions.length - 1]?.digest;
     const held = key === "tags" ? [...(item.tags || []), ...((item.revisions || []).find((r) => (r.id || r.digest) === head)?.tags || [])]
+      : key === "status" ? [item.superseded_by ? "superseded" : "", item.retired || item.superseded_by ? "retired" : ""].filter(Boolean)
       : [key === "type" ? item.type : currentFields(item)[key]].filter(Boolean);
     return held.some((h) => values.some((v) => same(h, v)));
   });
@@ -159,7 +160,8 @@ function narrow() {
 // the Items hold, so a value is never typed in a form no Item uses. A saved
 // value is ticked as the held value it is one with — CHN as 中国 — and one
 // no Item holds any more is still listed, ticked.
-function condition(key, values) {
+// An exclusion may also name a status, which no field holds.
+function condition(key, values, exclusion = false) {
   // What the query picks changes the numbering shown.
   const touched = () => { drawOrder(); drawSkip(); changed(); };
   const choices = el("div", { className: "checks" });
@@ -167,7 +169,7 @@ function condition(key, values) {
     const types = chosenTypes();
     const chosen = state.items.filter((item) => types.includes(item.type));
     // Tags are the Items' and their revisions' own, matched per revision.
-    const held = [...new Set(pick.value === "tags" ? chosen.flatMap((item) => [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])])
+    const held = pick.value === "status" ? ["superseded", "retired"] : [...new Set(pick.value === "tags" ? chosen.flatMap((item) => [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])])
       : chosen.map((item) => currentFields(item)[pick.value]).filter(Boolean))];
     const all = [...held, ...saved.filter((v) => !held.some((h) => same(h, v)))].sort((a, b) => a.localeCompare(b));
     choices.replaceChildren(...(all.length ? all.map((v) => el("label", {},
@@ -175,7 +177,7 @@ function condition(key, values) {
       : [el("span", { className: "template-sub", textContent: "no Item has one" })]));
   };
   const pick = el("select", { onchange: () => { draw([]); touched(); } },
-    ...[...keys.filter((k) => !["type", "revision", "ext", "id", "tags"].includes(k)), "tags"].map((k) => el("option", { value: k, selected: k === key }, k)));
+    ...[...keys.filter((k) => !["type", "revision", "ext", "id", "tags", "status"].includes(k)), "tags", ...(exclusion ? ["status"] : [])].map((k) => el("option", { value: k, selected: k === key }, k)));
   const row = el("div", { className: "condition" },
     el("div", { className: "condition-head" }, pick,
       el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); touched(); } })),
