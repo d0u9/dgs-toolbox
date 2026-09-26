@@ -397,7 +397,9 @@ func (s server) revision(w http.ResponseWriter, r *http.Request) {
 	servePDF(w, r, path)
 }
 
-// revisionPath is where the tree keeps an Item's revision's PDF.
+// revisionPath is where the tree keeps an Item's revision's PDF. The
+// revision is named by its ref, as Browse has it, or by its PDF's digest,
+// as an Outline's tree has it: a revision with an ID of its own differs.
 func (s server) revisionPath(id, digest string) (string, int, error) {
 	items, err := tree.LoadItems(s.root)
 	if err != nil {
@@ -408,7 +410,7 @@ func (s server) revisionPath(id, digest string) (string, int, error) {
 			continue
 		}
 		for _, rev := range item.Revisions {
-			if rev.Ref() == digest && rev.Digest != "" {
+			if (rev.Ref() == digest || rev.Digest == digest) && rev.Digest != "" {
 				return tree.PDFPath(s.root, item.ID, rev.Digest), 0, nil
 			}
 		}
