@@ -1,24 +1,21 @@
 // Outlines: the Items grouped into a tree of folders, each counting the PDFs
-// beneath it. The server groups them; this draws the tree and lists the PDFs
-// of the folder picked.
-import { $, api, el, loadState, post, label, frame, say, statusBar } from "/common.js";
-import { codeEditor } from "/ui/codeedit.js";
-
-statusBar.setHints("<kbd>Ctrl</kbd>+<kbd>S</kbd> save", { html: true });
+// beneath it. The Outline is built in a form, as a View is; the server groups
+// the Items and this draws the tree and lists the PDFs of the folder picked.
+import { $, api, el, loadState, post, label, frame, say } from "/common.js";
+import * as which from "/layoutform.js";
 
 const FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h4.5l1.5 1.5h6.5v8H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M1.75 6.25h12.5" stroke="currentColor" stroke-width="1.25"/></svg>';
 
 let state = { templates: [], items: [] };
 let outlines = [];
-let example = "";
 let editing = null; // the saved name of the Outline shown, or "" for a new one
-let saved = ""; // the text as last loaded or saved, to tell an edit
-let grouping = null; // the server's answer for the text in the editor
+let saved = ""; // the Outline as last loaded or saved, to tell an edit
+let grouping = null; // the server's answer for the Outline in the form
 let picked = ""; // the path of the folder picked; "" is the whole Outline
 const closed = new Set(); // folder paths drawn shut
 const UNPLACED = "\u0000unplaced";
 
-const editor = codeEditor($("yaml"), { onChange: changed, onSave: save });
+const blank = () => ({ name: "", query: {}, selection: "head", layout: "" });
 
 function list() {
   $("count").textContent = outlines.length;
@@ -28,49 +25,65 @@ function list() {
     ...(editing === "" ? [row("new outline", "not saved yet", true)] : []));
 }
 
+// current is the Outline as the form has it.
+function current() {
+  return { name: $("name").value.trim(), ...which.read() };
+}
+const text = (o) => JSON.stringify({ name: o.name, query: o.query || {}, selection: o.selection || "head", layout: o.layout, order: o.order || null });
+
 // leave asks before an unsaved edit is dropped.
 function leave() {
-  return editor.value === saved || confirm("Drop the unsaved changes to this Outline?");
+  return editing === null || text(current()) === saved || confirm("Drop the unsaved changes to this Outline?");
 }
 
-function open(name, text) {
+function open(name) {
   editing = name;
-  const o = outlines.find((x) => x.name === name);
-  saved = o ? o.data : example;
-  editor.value = text ?? saved;
+  const o = outlines.find((x) => x.name === name) || blank();
+  $("name").value = o.name;
+  which.fill(o);
+  saved = text(current());
   picked = "";
   closed.clear();
   history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
-  $("title").textContent = o ? o.name : "New Outline";
-  $("file").textContent = "outlines/" + (o ? o.name : "<name>") + ".yaml";
-  $("delete").hidden = !o;
-  if (!o) editMode(true);
+  $("title").textContent = name || "New Outline";
+  $("delete").hidden = !name;
+  if (!name) editMode(true);
   say($("message"), "");
+  say($("form-message"), "");
   list();
   changed();
 }
 
 function editMode(on) {
-  $("editor-row").hidden = !on;
-  $("save").hidden = !on;
+  $("form").hidden = !on;
   $("edit").setAttribute("aria-pressed", String(on));
   $("edit").textContent = on ? "Done" : "Edit";
 }
 
 let pending = 0;
-// changed regroups the text in the editor, saved or not, a moment after the
-// last keystroke.
+let asked = 0;
+// changed regroups the Outline in the form, saved or not, a moment after the
+// last change.
 function changed() {
-  $("dirty").hidden = editor.value === saved;
+  $("dirty").hidden = editing === null || text(current()) === saved;
   clearTimeout(pending);
-  pending = setTimeout(regroup, 250);
+  pending = setTimeout(regroup, 200);
 }
 
 async function regroup() {
+  const mine = ++asked;
+  const o = current();
+  if (!o.layout) {
+    grouping = null;
+    return draw();
+  }
   try {
-    grouping = await post("/api/outlines/group", { data: editor.value });
+    const answer = await post("/api/outlines/group", { ...o, name: o.name || "preview" });
+    if (mine !== asked) return;
+    grouping = answer;
     say($("message"), "");
   } catch (err) {
+    if (mine !== asked) return;
     grouping = null;
     say($("message"), err.message, true);
   }
@@ -101,7 +114,7 @@ function draw() {
   };
   if (root) walk(root, 0);
   if (missing.length) rows.push(folderRow("Not placed", UNPLACED, missing.length, 0, false, true));
-  $("tree").replaceChildren(...(rows.length ? rows : [el("p", { className: "muted outline-empty" }, root ? "No Item matches." : "")]));
+  $("tree").replaceChildren(...(rows.length ? rows : [el("p", { className: "muted outline-empty" }, root ? "No Item matches." : current().layout ? "" : "Add a level to see the tree: Edit, then click a key.")]));
   files();
 }
 
@@ -124,13 +137,24 @@ function files() {
   const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
   const name = (id) => byId[id] ? label(state, byId[id]) : id;
   const link = (f, extra) => el("li", {}, el("a", { href: api("/browse/") + "#" + f.item }, name(f.item)),
-    f.revision > 1 || (grouping && editor.value.includes("selection: all")) ? el("span", { className: "muted" }, " · revision " + f.revision) : null,
+    f.revision > 1 || current().selection === "all" ? el("span", { className: "muted" }, " · revision " + f.revision) : null,
     extra ? el("div", { className: "template-sub" }, extra) : null);
   if (picked === UNPLACED) {
     const missing = grouping.missing;
     $("folder").textContent = "Not placed";
     $("folder-count").textContent = missing.length;
-    $("files").replaceChildren(...missing.map((m) => link(m, "lacks " + m.keys.join(", "))));
+    // A numbered level an Item has a value for lacks only a place in its
+    // order: that is fixed here, not in the Item.
+    const numbered = which.numberedKeys();
+    $("files").replaceChildren(...missing.map((m) => {
+      const li = link(m, "lacks " + m.keys.join(", "));
+      for (const key of m.keys.filter((k) => numbered.includes(k))) {
+        const value = byId[m.item] && which.orderValue(byId[m.item], key);
+        if (value) li.append(el("button", { type: "button", className: "small", textContent: "Number " + value + " last",
+          onclick: () => which.numberLast(key, value) }));
+      }
+      return li;
+    }));
     return;
   }
   const node = find(grouping && grouping.root, picked);
@@ -152,38 +176,42 @@ function files() {
 async function reload() {
   state = await loadState();
   frame(state);
-  const answer = await (await fetch(api("/api/outlines"))).json();
+  const [views, answer] = await Promise.all([
+    fetch(api("/api/views")).then((r) => r.json()),
+    fetch(api("/api/outlines")).then((r) => r.json()),
+  ]);
+  which.setup({ state, keys: views.keys, countries: views.countries || {}, onChange: changed });
   outlines = answer.outlines;
-  example = answer.example;
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
 }
 
-async function save() {
+$("form").addEventListener("input", changed);
+$("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const o = current();
   try {
-    const o = await post("/api/outlines", { previous: editing || "", data: editor.value });
+    await post("/api/outlines", { outline: o, previous: editing || "" });
     await reload();
     open(o.name);
-    say($("message"), "Saved.");
+    say($("form-message"), "Saved outlines/" + o.name + ".yaml.");
   } catch (err) {
-    say($("message"), err.message, true);
+    say($("form-message"), err.message, true);
   }
-}
-
+});
 $("new").onclick = () => leave() && open("");
-$("edit").onclick = () => editMode($("editor-row").hidden);
-$("save").onclick = save;
+$("edit").onclick = () => editMode($("form").hidden);
 $("delete").onclick = async () => {
-  if (!editing || !confirm("Delete the Outline " + editing + "? Its file is removed; no Item changes.")) return;
+  if (!editing || !confirm("Delete the Outline " + editing + "? Its file under outlines/ is removed; no Item changes.")) return;
   try {
     await post("/api/outlines/delete", { name: editing });
     await reload();
-    saved = editor.value;
+    editing = null;
     open(outlines.length ? outlines[0].name : "");
   } catch (err) {
-    say($("message"), err.message, true);
+    say($("form-message"), err.message, true);
   }
 };
-window.addEventListener("beforeunload", (event) => { if (editor.value !== saved) event.preventDefault(); });
+window.addEventListener("beforeunload", (event) => { if (editing !== null && text(current()) !== saved) event.preventDefault(); });
 
 reload().then(() => {
   const wanted = decodeURIComponent(location.hash.slice(1));

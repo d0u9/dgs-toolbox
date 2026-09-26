@@ -613,8 +613,8 @@ Browse filters and lists, but has no levels and no order. An Outline groups
 Items into a tree of folders, as a View's export would, and is only ever
 looked at: nothing is written but its own file.
 
-It is one YAML file under `outlines/`, named after its `name`, saved as
-written, comments and all:
+It is one YAML file under `outlines/`, named after its `name`, written by
+the page:
 
 ```yaml
 name: vehicles
@@ -638,8 +638,12 @@ order:
 
 The Outlines page lists them on the left and draws the chosen one's tree;
 picking a folder lists its PDFs, and those beneath it under their folder, on
-the right, each linked to its Item on Browse. Edit opens the file, and the
-tree redraws as it is typed.
+the right, each linked to its Item on Browse. Edit opens the same form the
+Views page uses for which PDFs and their layout — types, conditions ticking
+held values, revisions, levels built from key chips, and a Numbering list per
+numbered level — and the tree redraws as it changes. A PDF under Not placed
+whose numbered value the order lacks can be numbered last from there. The
+file is never edited by hand.
 
 ## Export
 

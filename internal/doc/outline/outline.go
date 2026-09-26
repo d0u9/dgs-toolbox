@@ -67,20 +67,14 @@ func Parse(data []byte) (Outline, error) {
 	return o, o.Validate()
 }
 
-// Entry is an Outline and its file as written.
-type Entry struct {
-	Outline
-	Data string `json:"data"`
-}
-
 // Load reads every outlines/*.yaml under root, sorted by name. A file whose
 // name is not its Outline's name is refused.
-func Load(root string) ([]Entry, error) {
+func Load(root string) ([]Outline, error) {
 	paths, err := filepath.Glob(filepath.Join(root, Dir, "*.yaml"))
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Entry, 0, len(paths))
+	out := make([]Outline, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -93,49 +87,53 @@ func Load(root string) ([]Entry, error) {
 		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != o.Name {
 			return nil, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, o.Name, o.Name)
 		}
-		out = append(out, Entry{Outline: o, Data: string(data)})
+		out = append(out, o)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
-// Save writes data, as written, to outlines/<name>.yaml through a temporary
-// file and a rename, once it parses. Previous, when it names another
-// Outline, is removed after.
-func Save(root, previous string, data []byte) (Outline, error) {
-	o, err := Parse(data)
+// Save writes o to outlines/<name>.yaml through a temporary file and a
+// rename, once it is valid. Previous, when it names another Outline, is
+// removed after.
+func Save(root, previous string, o Outline) error {
+	if o.Selection == "" {
+		o.Selection = view.Head
+	}
+	if err := o.Validate(); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(o)
 	if err != nil {
-		return Outline{}, err
+		return err
 	}
 	dir := filepath.Join(root, Dir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return Outline{}, err
+		return err
 	}
 	temp, err := os.CreateTemp(dir, ".outline-*.dgs-part")
 	if err != nil {
-		return Outline{}, err
+		return err
 	}
 	defer os.Remove(temp.Name())
 	if _, err := temp.Write(data); err != nil {
 		temp.Close()
-		return Outline{}, err
+		return err
 	}
 	if err := temp.Sync(); err != nil {
 		temp.Close()
-		return Outline{}, err
+		return err
 	}
 	if err := temp.Close(); err != nil {
-		return Outline{}, err
+		return err
 	}
 	if err := os.Rename(temp.Name(), filepath.Join(dir, o.Name+".yaml")); err != nil {
-		return Outline{}, err
+		return err
 	}
 	if previous != "" && previous != o.Name {
-		if err := Delete(root, previous); err != nil {
-			return o, err
-		}
+		return Delete(root, previous)
 	}
-	return o, nil
+	return nil
 }
 
 // Delete removes an Outline's file. One that is not there is not an error.
@@ -224,14 +222,3 @@ func tidy(n *Node) {
 		tidy(c)
 	}
 }
-
-// Example is a new Outline's starting text.
-const Example = `name: vehicles
-query:
-  type: [vehicle_registration, vehicle_insurance]
-selection: head
-# Folders only: each / is a level. {key#} numbers a level by order below.
-layout: '{country:alpha2} {make} {year}/{plate#}'
-order:
-  plate: [浙AF3897, 浙AT73C7]
-`
