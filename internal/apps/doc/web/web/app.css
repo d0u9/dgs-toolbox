@@ -619,4 +619,8 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 }
 
 .side.detail form[hidden], #replaces-field[hidden], #undo-supersession[hidden] { display: none; }
-.condition .choices { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.vf-stack .condition { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 0; border-top: 1px solid var(--hairline); }
+.vf-stack .condition:first-child { border-top: none; padding-top: 0; }
+.condition-head { display: flex; align-items: center; gap: 6px; }
+.condition-head select { flex: 1; max-width: none; }
+.condition .checks { gap: 6px 16px; }

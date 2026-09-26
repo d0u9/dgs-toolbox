@@ -7,6 +7,7 @@ import { openFile } from "/ui/filedialog.js";
 let state = { templates: [], items: [] };
 let views = [];
 let keys = [];
+let countries = {}; // each country's every form: its alpha-3 code
 let editing = null; // the saved name of the View in the form, or "" for a new one
 let orders = {}; // per numbered key, its order as typed: "alex, emma"
 
@@ -18,6 +19,7 @@ async function load() {
   const answer = await (await fetch(api("/api/views"))).json();
   views = answer.views;
   keys = answer.keys;
+  countries = answer.countries || {};
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
   const wanted = decodeURIComponent(location.hash.slice(1));
   // #new:<target> opens a new View going to that Target.
@@ -88,20 +90,24 @@ function open(v, name) {
 
 // condition is one query key and the values it accepts, picked from those
 // the Items hold, so a value is never typed in a form no Item uses. A saved
-// value no Item holds any more is still listed, checked.
+// value is ticked as the held value it is one with — CHN as 中国 — and one
+// no Item holds any more is still listed, ticked.
 function condition(key, values) {
-  const choices = el("span", { className: "choices" });
-  const draw = (checked) => {
-    const held = state.items.map((item) => currentFields(item)[pick.value]).filter(Boolean);
-    const all = [...new Set([...held, ...checked])].sort((a, b) => a.localeCompare(b));
+  const choices = el("div", { className: "checks" });
+  const same = (a, b) => (countries[a] && countries[a] === countries[b]) || a.toLowerCase() === b.toLowerCase();
+  const draw = (saved) => {
+    const held = [...new Set(state.items.map((item) => currentFields(item)[pick.value]).filter(Boolean))];
+    const all = [...held, ...saved.filter((v) => !held.some((h) => same(h, v)))].sort((a, b) => a.localeCompare(b));
     choices.replaceChildren(...(all.length ? all.map((v) => el("label", {},
-      el("input", { type: "checkbox", value: v, checked: checked.includes(v), onchange: changed }), " " + v))
+      el("input", { type: "checkbox", value: v, checked: saved.some((s) => same(s, v)), onchange: changed }), " " + v))
       : [el("span", { className: "template-sub", textContent: "no Item has one" })]));
   };
   const pick = el("select", { onchange: () => { draw([]); changed(); } },
     ...keys.filter((k) => !["type", "revision", "ext", "id"].includes(k)).map((k) => el("option", { value: k, selected: k === key }, k)));
-  const row = el("div", { className: "condition" }, pick, " is ", choices,
-    el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); changed(); } }));
+  const row = el("div", { className: "condition" },
+    el("div", { className: "condition-head" }, pick,
+      el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); changed(); } })),
+    choices);
   draw(values || []);
   return row;
 }
@@ -272,7 +278,7 @@ function current() {
   const types = [...$("types").querySelectorAll("input:checked")].map((i) => i.value);
   if (types.length) query.type = types;
   for (const row of $("conditions").children) {
-    const values = [...row.querySelectorAll(".choices input:checked")].map((i) => i.value);
+    const values = [...row.querySelectorAll(".checks input:checked")].map((i) => i.value);
     if (values.length) query[row.querySelector("select").value] = values;
   }
   const v = {
