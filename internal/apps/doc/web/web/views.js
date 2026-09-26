@@ -378,10 +378,36 @@ async function preview() {
   const link = (id) => el("a", { href: api("/browse/") + "#" + id }, name(id));
   $("summary").textContent = plan.files.length + (plan.files.length === 1 ? " file" : " files");
   const problems = [];
-  if (plan.missing.length) {
+  // A numbered key an Item has a value for lacks only a place in its order:
+  // that is fixed in the order, not in the Item.
+  const numbered = numberedKeys();
+  const unordered = new Map(); // order key: its values no order lists
+  const lacking = [];
+  for (const m of plan.missing) {
+    const item = byId[m.item];
+    const keys = m.keys.filter((k) => {
+      const value = item && numbered.includes(k) ? orderValue(item, k) : "";
+      if (value) (unordered.get(k) || unordered.set(k, new Set()).get(k)).add(value);
+      return !value;
+    });
+    if (keys.length) lacking.push({ ...m, keys, fields: m.fields.filter((f) => !m.keys.includes(f) || keys.includes(f)) });
+  }
+  if (unordered.size) {
+    problems.push(el("div", { className: "problem" },
+      el("strong", {}, "Values with no number"),
+      el("ul", { className: "fill-list" }, ...[...unordered].flatMap(([key, values]) => [...values].map((value) =>
+        el("li", {}, el("span", { className: "mono" }, key.includes("|") ? "{" + key + "}#" : "{" + key + "#}"), " has no place for ",
+          el("strong", {}, value), " ",
+          el("button", { type: "button", className: "small", textContent: "Number it last", onclick: () => {
+            orders[key] = [...(orders[key] || "").split(",").map((s) => s.trim()).filter(Boolean), value].join(", ");
+            drawOrder();
+            changed();
+          } })))))));
+  }
+  if (lacking.length) {
     // One form per Item: its revisions share the fields that are missing.
     const byItem = new Map();
-    for (const m of plan.missing) {
+    for (const m of lacking) {
       const seen = byItem.get(m.item) || { keys: new Set(), fields: new Set(), digests: new Set() };
       seen.digests.add(m.digest);
       m.keys.forEach((k) => seen.keys.add(k));
@@ -389,7 +415,7 @@ async function preview() {
       byItem.set(m.item, seen);
     }
     problems.push(el("div", { className: "problem" },
-      el("strong", {}, plan.missing.length + " PDF" + (plan.missing.length === 1 ? " lacks" : "s lack") + " a key the layout uses"),
+      el("strong", {}, lacking.length + " PDF" + (lacking.length === 1 ? " lacks" : "s lack") + " a key the layout uses"),
       byItem.size > 1 ? fillAll(byItem) : null,
       el("ul", { className: "fill-list" }, ...[...byItem].map(([id, m]) => fill(id, m, link)))));
   }
