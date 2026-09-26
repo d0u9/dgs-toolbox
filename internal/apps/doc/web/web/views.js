@@ -8,6 +8,7 @@ let state = { templates: [], items: [] };
 let views = [];
 let keys = [];
 let editing = null; // the saved name of the View in the form, or "" for a new one
+let orders = {}; // per numbered key, its order as typed: "alex, emma"
 
 const blank = () => ({ name: "", query: {}, selection: "head", layout: "{owner}/{type}.{ext}" });
 
@@ -72,6 +73,8 @@ function open(v, name) {
   $("use-default").checked = v.default !== undefined && v.default !== null;
   $("default").value = $("use-default").checked ? v.default : "none";
   $("dedupe").checked = v.dedupe === "number";
+  orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, list.join(", ")]));
+  drawOrder();
   drawTargets(v.target || "");
   $("delete").hidden = !name;
   closeSuggest();
@@ -188,7 +191,27 @@ function accept(i) {
   changed();
 }
 
-$("layout").addEventListener("input", () => { active = 0; suggest(); });
+$("layout").addEventListener("input", () => { active = 0; suggest(); drawOrder(); });
+
+// The keys the layout numbers, {key#} or {key#:format}, each once.
+const numberedKeys = () => [...new Set([...$("layout").value.matchAll(/[{|]([a-z0-9_-]+)#/g)].map((m) => m[1]))];
+
+// One row per numbered key: the values it may have, in the order they are
+// numbered from 01. A key new to the layout starts with the values Items have.
+function drawOrder() {
+  const rows = numberedKeys().map((key) => {
+    if (orders[key] === undefined) {
+      orders[key] = [...new Set(state.items.map((i) => i.fields && i.fields[key]).filter(Boolean))].sort().join(", ");
+    }
+    return el("div", { className: "condition" },
+      el("code", {}, "{" + key + "#}"),
+      el("input", { value: orders[key], placeholder: "first, second, …", spellcheck: false, autocomplete: "off",
+        title: "Numbered 01, 02, … in this order. A value not listed is a missing key.",
+        oninput: (event) => { orders[key] = event.target.value; } }));
+  });
+  $("order").replaceChildren(...rows);
+  $("order-row").hidden = !rows.length;
+}
 $("layout").addEventListener("click", suggest);
 $("layout").addEventListener("blur", closeSuggest);
 $("layout").addEventListener("keydown", (event) => {
@@ -231,9 +254,12 @@ function current() {
   if ($("use-default").checked) v.default = $("default").value;
   if ($("dedupe").checked) v.dedupe = "number";
   if ($("target").value) v.target = $("target").value;
-  // The form does not edit order; a saved View keeps the one in its file.
-  const kept = views.find((x) => x.name === editing);
-  if (kept && kept.order) v.order = kept.order;
+  const order = {};
+  for (const key of numberedKeys()) {
+    const list = (orders[key] || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (list.length) order[key] = list;
+  }
+  if (Object.keys(order).length) v.order = order;
   return v;
 }
 

@@ -498,6 +498,11 @@ file name. A Template that does not name its type in that language leaves the
 PDF missing the key `type:zh` or `type:en`, fixed in the Template, not the
 Item.
 
+Keys written `{a|b}` are alternatives: the first one an Item has is written,
+each with its own format or numbering. `{name|type:zh}` writes an ID card's
+name, such as `户口首页`, and a driver licence, which has no name, as `驾驶证`.
+An Item with none of them is missing the first.
+
 A key written `{key#}` is numbered: its value is prefixed with its place in
 the View's `order` for that key, counting from `01-`, so
 `{owner#}/{country#:alpha3}` with the order below writes `01-alex/02-AUS`.
@@ -506,8 +511,10 @@ order are compared as a country when both name one, so `CN`, `CHN` and `中国`
 are one entry, and otherwise ignoring case. A numbered key needs an order,
 and an order may not list one value twice. A value the order does not list
 leaves the PDF missing that key: the number is never guessed. Changing an
-order renames every folder after the moved entry at the next export. The web
-form does not edit `order`; a View saved there keeps the one in its file.
+order renames every folder after the moved entry at the next export. On the
+Views page, each numbered key in the layout gets a Numbering row, its values
+comma-separated in order; a key new to the layout starts with the values its
+Items have, sorted.
 
 A View is one YAML file under `views/`, named after its `name`:
 

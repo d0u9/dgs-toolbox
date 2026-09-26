@@ -113,8 +113,13 @@ func (v View) Validate() error {
 	}
 	for _, segment := range layout {
 		for _, part := range segment {
-			if part.Numbered && len(v.Order[part.Key]) == 0 {
-				return fmt.Errorf("view %s: {%s#} is numbered, so order needs a list for %s", v.Name, part.Key, part.Key)
+			if part.Key == "" {
+				continue
+			}
+			for _, choice := range part.choices() {
+				if choice.Numbered && len(v.Order[choice.Key]) == 0 {
+					return fmt.Errorf("view %s: {%s#} is numbered, so order needs a list for %s", v.Name, choice.Key, choice.Key)
+				}
 			}
 		}
 	}
@@ -127,12 +132,20 @@ func (v View) Validate() error {
 // Part is a piece of a layout: fixed text, or a key. A key written
 // {key:format} is a country written in that format — zh, en, alpha2 or
 // alpha3 — whatever form the Item keeps it in. A key written {key#} is
-// prefixed with its value's place in the View's order, as 01-.
+// prefixed with its value's place in the View's order, as 01-. Keys written
+// {a|b} are alternatives: the first one an Item has is written.
 type Part struct {
 	Text     string `json:"text,omitempty"`
 	Key      string `json:"key,omitempty"`
 	Format   string `json:"format,omitempty"`
 	Numbered bool   `json:"numbered,omitempty"`
+	// Or holds the alternatives after the first, tried in order.
+	Or []Part `json:"or,omitempty"`
+}
+
+// choices is p and its alternatives, in the order they are tried.
+func (p Part) choices() []Part {
+	return append([]Part{{Key: p.Key, Format: p.Format, Numbered: p.Numbered}}, p.Or...)
 }
 
 // Layout is a parsed layout, one list of parts per path segment.
@@ -181,23 +194,38 @@ func Parse(layout string) (Layout, error) {
 			if end < 0 {
 				return nil, fmt.Errorf("layout %q: { without }", layout)
 			}
-			key, format, _ := strings.Cut(rest[:end], ":")
-			key, numbered := strings.CutSuffix(key, "#")
-			if !keyPattern.MatchString(key) {
-				return nil, fmt.Errorf("layout %q: {%s} is not a key", layout, rest[:end])
+			var choices []Part
+			for _, written := range strings.Split(rest[:end], "|") {
+				choice, err := parseKey(layout, written)
+				if err != nil {
+					return nil, err
+				}
+				choices = append(choices, choice)
 			}
-			if key == "type" && strings.Contains(rest[:end], ":") && format != "zh" && format != "en" {
-				return nil, fmt.Errorf("layout %q: {%s}: a type is written zh or en", layout, rest[:end])
-			}
-			if strings.Contains(rest[:end], ":") && !country.Format(format).Valid() {
-				return nil, fmt.Errorf("layout %q: {%s}: a country is written zh, en, alpha2 or alpha3", layout, rest[:end])
-			}
-			parts = append(parts, Part{Key: key, Format: format, Numbered: numbered})
+			part := choices[0]
+			part.Or = choices[1:]
+			parts = append(parts, part)
 			rest = rest[end+1:]
 		}
 		out = append(out, parts)
 	}
 	return out, nil
+}
+
+// parseKey reads one key as written between { and }: key, key#, key:format.
+func parseKey(layout, written string) (Part, error) {
+	key, format, _ := strings.Cut(written, ":")
+	key, numbered := strings.CutSuffix(key, "#")
+	if !keyPattern.MatchString(key) {
+		return Part{}, fmt.Errorf("layout %q: {%s} is not a key", layout, written)
+	}
+	if key == "type" && strings.Contains(written, ":") && format != "zh" && format != "en" {
+		return Part{}, fmt.Errorf("layout %q: {%s}: a type is written zh or en", layout, written)
+	}
+	if strings.Contains(written, ":") && !country.Format(format).Valid() {
+		return Part{}, fmt.Errorf("layout %q: {%s}: a country is written zh, en, alpha2 or alpha3", layout, written)
+	}
+	return Part{Key: key, Format: format, Numbered: numbered}, nil
 }
 
 // Keys lists the keys a layout uses, each once, in order.
@@ -206,9 +234,14 @@ func (l Layout) Keys() []string {
 	seen := map[string]bool{}
 	for _, segment := range l {
 		for _, part := range segment {
-			if part.Key != "" && !seen[part.Key] {
-				seen[part.Key] = true
-				keys = append(keys, part.Key)
+			if part.Key == "" {
+				continue
+			}
+			for _, choice := range part.choices() {
+				if !seen[choice.Key] {
+					seen[choice.Key] = true
+					keys = append(keys, choice.Key)
+				}
 			}
 		}
 	}

@@ -342,41 +342,59 @@ func render(layout Layout, keys map[string]string, fallback *string, order map[s
 				b.WriteString(part.Text)
 				continue
 			}
-			key := part.Key
-			if key == "type" && part.Format != "" {
-				// The type's name in a language, from its Template.
-				key = "type:" + part.Format
-			}
-			value, ok := keys[key]
+			choice, value, ok := pick(part, keys)
 			if !ok {
 				if fallback == nil {
-					if !contains(lacking, key) {
-						lacking = append(lacking, key)
+					if !contains(lacking, choice.Key) {
+						lacking = append(lacking, choice.Key)
 					}
 					continue
 				}
 				value = *fallback
-			} else if part.Format != "" && part.Key != "type" {
-				// A value that names no country is written as it is.
-				if kept, ok := country.Normalize(value, country.Format(part.Format)); ok {
-					value = kept
-				}
 			}
-			if part.Numbered {
-				n := place(order[part.Key], value)
+			if choice.Numbered {
+				n := place(order[choice.Key], value)
 				if n == 0 {
-					if !contains(lacking, part.Key) {
-						lacking = append(lacking, part.Key)
+					if !contains(lacking, choice.Key) {
+						lacking = append(lacking, choice.Key)
 					}
 					continue
 				}
-				b.WriteString(padTo(n, len(order[part.Key])) + "-")
+				b.WriteString(padTo(n, len(order[choice.Key])) + "-")
 			}
 			b.WriteString(Clean(value))
 		}
 		segments[s] = b.String()
 	}
 	return strings.Join(segments, "/"), lacking
+}
+
+// pick is the first of part's choices an Item has, with its value as
+// written. When it has none, it is the first choice, and ok is false.
+func pick(part Part, keys map[string]string) (choice Part, value string, ok bool) {
+	for _, c := range part.choices() {
+		key := c.Key
+		if key == "type" && c.Format != "" {
+			// The type's name in a language, from its Template.
+			key = "type:" + c.Format
+		}
+		value, ok := keys[key]
+		if !ok {
+			continue
+		}
+		if c.Format != "" && c.Key != "type" {
+			// A value that names no country is written as it is.
+			if kept, ok := country.Normalize(value, country.Format(c.Format)); ok {
+				value = kept
+			}
+		}
+		return c, value, true
+	}
+	first := part.choices()[0]
+	if first.Key == "type" && first.Format != "" {
+		first.Key = "type:" + first.Format
+	}
+	return first, "", false
 }
 
 // numbered puts _NN before the file name's extension.

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -316,5 +317,48 @@ func TestTypeIsWrittenInALanguage(t *testing.T) {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%s accepted", bad)
 		}
+	}
+}
+
+// {a|b} writes the first key an Item has, so one layout names an ID card by
+// its name and a driver licence by its type.
+func TestAlternativeKeys(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "driver_licence", Kind: tree.KindRecord, Fields: map[string]string{"country": "AU"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"country": "CN", "name": "户口首页"}, Revisions: []tree.Revision{{Digest: "b"}}},
+		{ID: "C", Type: "visa", Kind: tree.KindRecord, Fields: map[string]string{"country": "CN"}, Revisions: []tree.Revision{{Digest: "c"}}},
+	}
+	names := NamesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}})
+	v := View{Name: "v", Selection: Head, Layout: "{country#:alpha3}/{name|type:zh}.{ext}", Order: map[string][]string{"country": {"CN", "AU"}}}
+	plan, err := Build(v, items, names)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	sort.Strings(paths)
+	if want := []string{"01-CHN/户口首页.pdf", "02-AUS/驾驶证.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	// An Item with none of the keys lacks the first.
+	if len(plan.Missing) != 1 || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"name"}) {
+		t.Fatalf("missing %+v", plan.Missing)
+	}
+	layout, err := Parse("{name|type:zh|type}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := layout.Keys(); !reflect.DeepEqual(got, []string{"name", "type"}) {
+		t.Fatalf("keys %v", got)
+	}
+	for _, bad := range []string{"{name|}", "{|type}", "{name|type:fr}"} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("%s accepted", bad)
+		}
+	}
+	if err := (View{Name: "v", Selection: Head, Layout: "{name|owner#}"}).Validate(); err == nil {
+		t.Error("numbered alternative without an order accepted")
 	}
 }
