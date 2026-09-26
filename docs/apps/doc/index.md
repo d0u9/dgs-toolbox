@@ -30,6 +30,7 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Page | What it is for |
 | --- | --- |
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete and attach or replace a PDF on a selected revision. |
+| Outlines `/outlines/` | The Items grouped into a tree of folders, each counting the PDFs beneath it; picking a folder lists its PDFs. |
 | Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
 | Views `/views/` | Building layouts, previewing the tree they make, and exporting (M4–M6). |
 | Targets `/targets/` | Where Views are exported to: add, rename and delete Targets, set their folders, move Views to them, export. |
@@ -606,6 +607,40 @@ Template has to change.
 
 The same refusal applies when two PDFs would land on one path.
 
+## Outlines
+
+Browse filters and lists, but has no levels and no order. An Outline groups
+Items into a tree of folders, as a View's export would, and is only ever
+looked at: nothing is written but its own file.
+
+It is one YAML file under `outlines/`, named after its `name`, saved as
+written, comments and all:
+
+```yaml
+name: vehicles
+query: {type: [vehicle_registration, vehicle_insurance]}
+selection: head            # optional: head (default) or all
+layout: '{country:alpha2} {make} {year}/{plate#}'
+order:
+  plate: [浙AF3897, 浙AT73C7]
+```
+
+- It is its own definition, not a View: an Outline may group Items in a way
+  no export does, and has no Target, default or dedupe.
+- `query`, `selection`, keys, formats, alternatives and numbering follow a
+  View's rules exactly.
+- Every segment of the layout is a folder. PDFs are never named: each is
+  listed in the folder it lands in.
+- A folder shows how many PDFs are in it and beneath it. Folders sort by
+  name, so numbered ones keep their order.
+- A PDF lacking a key the layout uses, or a numbered value its order does not
+  list, is gathered under Not placed with what it lacks, never dropped.
+
+The Outlines page lists them on the left and draws the chosen one's tree;
+picking a folder lists its PDFs, and those beneath it under their folder, on
+the right, each linked to its Item on Browse. Edit opens the file, and the
+tree redraws as it is typed.
+
 ## Export
 
 Exports are deterministic: the same repository state and View produce the same
@@ -796,6 +831,7 @@ exported and the Items' fields; a Target carries no Templates or Views.
   templates/
     id_card.yaml            # one Template per type
   views/                    # one View per file (M4)
+  outlines/                 # one Outline per file
   cases/                    # one Case per file
   targets.yaml              # where Views are exported to, by name
   trash/                    # deleted Items and Templates, never erased
