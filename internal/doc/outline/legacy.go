@@ -103,11 +103,57 @@ func Legacy(root string) ([]Outline, error) {
 	return out, nil
 }
 
-// Migrate writes the Outlines Legacy makes, then moves views/ and
-// targets.yaml into migrated/. It names the Outlines written. An Outline
-// already saved under one of those names stops it before anything is
-// written.
+// Migrate brings a tree's Outlines up to date, naming those it wrote:
+//
+//   - Views and Targets become the Outlines Legacy makes, and views/ and
+//     targets.yaml move into migrated/. An Outline or a rule already saved
+//     under one of those names stops it before anything is written.
+//   - An Outline holding its rules whole has them moved under rules/. A rule
+//     whose name another Outline's different rule has is renamed
+//     <outline>-<rule>; one the same is shared.
 func Migrate(root string) ([]string, error) {
+	names, err := migrateLegacy(root)
+	if err != nil {
+		return names, err
+	}
+	outlines, whole, err := load(root)
+	if err != nil {
+		return names, err
+	}
+	for _, o := range outlines {
+		if !whole[o.Name] {
+			continue
+		}
+		rules, err := LoadRules(root)
+		if err != nil {
+			return names, err
+		}
+		for i, r := range o.Rules {
+			name := r.Name
+			for {
+				have, ok := rules[name]
+				if !ok || same(have, r) {
+					break
+				}
+				name = o.Name + "-" + name
+			}
+			o.Rules[i].Name = name
+		}
+		if err := Save(root, "", o); err != nil {
+			return names, err
+		}
+		names = append(names, o.Name)
+	}
+	return names, nil
+}
+
+func same(a, b view.View) bool {
+	x, _ := yaml.Marshal(withHead(a))
+	y, _ := yaml.Marshal(withHead(b))
+	return bytes.Equal(x, y)
+}
+
+func migrateLegacy(root string) ([]string, error) {
 	outlines, err := Legacy(root)
 	if err != nil || len(outlines) == 0 {
 		return nil, err
@@ -120,6 +166,11 @@ func Migrate(root string) ([]string, error) {
 		for _, s := range saved {
 			if s.Name == o.Name {
 				return nil, fmt.Errorf("the View or Target %s would become an Outline, and outlines/%s.yaml is there already: rename one", o.Name, o.Name)
+			}
+		}
+		for _, r := range o.Rules {
+			if err := Fresh(root, []string{r.Name}); err != nil {
+				return nil, fmt.Errorf("the View %s would become a rule: %w", r.Name, err)
 			}
 		}
 	}

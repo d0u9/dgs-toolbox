@@ -199,7 +199,7 @@ $("run").addEventListener("click", async () => {
   const answer = await (await fetch(api("/api/outlines"))).json();
   outlines = answer.outlines;
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
-  if (answer.migrated && answer.migrated.length) say($("message"), "The tree's Views and Targets are Outlines now: " + answer.migrated.join(", ") + ". The old files are in migrated/.");
+  if (answer.migrated && answer.migrated.length) say($("message"), "Outlines brought up to date: " + answer.migrated.join(", ") + ". Their rules are under rules/; old Views and Targets, if any, are in migrated/.");
   for (const a of document.querySelectorAll('a[href^="/outlines/"]')) a.href = api("/outlines/") + a.hash;
   const wanted = decodeURIComponent(location.hash.slice(1));
   await loadSnapshots();

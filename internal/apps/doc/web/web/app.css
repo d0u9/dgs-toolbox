@@ -675,6 +675,8 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .take-form input { flex: 1 1 180px; min-width: 0; height: 28px; padding: 0 8px; font: inherit; border: 1px solid var(--hairline-strong); border-radius: var(--radius-md); background: var(--paper); }
 .take-form .action { margin: 0; }
 .rule-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
+.rule-tabs select[hidden] { display: none; }
+.rule-shared { margin: 4px 0 0; font-size: var(--font-size-xs); }
 .outline-row.unplaced { margin-top: 10px; color: var(--error); }
 .outline-row.unplaced .ft-icon, .outline-row.unplaced .outline-count { color: var(--error); }
 .outline-empty { padding: 12px 4px; }

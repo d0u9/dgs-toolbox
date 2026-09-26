@@ -482,36 +482,54 @@ the type's Template, so later imports of that type ask for it.
 Browse filters and lists, but has no levels and no order. An Outline puts
 PDFs into a tree, the same tree whether it is looked at or exported.
 
-It is one YAML file under `outlines/`, named after its `name`, written by
-the Outlines page and never edited by hand:
+An Outline is one YAML file under `outlines/`, and each rule one under
+`rules/`, each named after its `name`, written by the Outlines page and never
+edited by hand. A rule belongs to the tree, not to one Outline: an Outline
+names the rules it uses, and several Outlines can use one.
 
 ```yaml
+# outlines/phone.yaml
 name: phone
 about: read on the phone          # optional
 folder: ~/Library/Mobile Documents/com~apple~CloudDocs/Documents   # optional
-rules:
-  - name: ids
-    query: {type: [id_card, passport], owner: emma}
-    selection: head
-    layout: '{country}/{owner}/important/{type}.{ext}'
-    default: none                 # optional: stands in for a missing key
-    order:                        # optional: the numbering of {key#}
-      owner: [alex, emma]
-      country: [CN, AU]
-  - name: cars
-    query: {type: [vehicle_registration]}
-    selection: all
-    layout: '{country:alpha2} {make}/{plate#}/{type:zh}.{ext}'
-    dedupe: number
-    order:
-      plate: [浙AF3897, 浙AT73C7]
+rules: [ids, cars]
+```
+
+```yaml
+# rules/ids.yaml
+name: ids
+query: {type: [id_card, passport], owner: emma}
+selection: head
+layout: '{country}/{owner}/important/{type}.{ext}'
+default: none                     # optional: stands in for a missing key
+order:                            # optional: the numbering of {key#}
+  owner: [alex, emma]
+  country: [CN, AU]
+```
+
+```yaml
+# rules/cars.yaml
+name: cars
+query: {type: [vehicle_registration]}
+selection: all
+layout: '{country:alpha2} {make}/{plate#}/{type:zh}.{ext}'
+dedupe: number
+order:
+  plate: [浙AF3897, 浙AT73C7]
 ```
 
 - `folder` is where it is exported unless another is chosen then. A leading
   `~` is the home folder of the machine exporting, so one file usually fits
   every Mac. Without one, a folder is chosen every time.
-- Each rule's `name` is unique within the Outline. An export's manifest
-  records it against every file the rule placed.
+- A rule's `name` is unique in the tree. An export's manifest records it
+  against every file the rule placed.
+- Editing a rule changes it in every Outline using it. Renaming one renames
+  it in each of them. Removing a rule from an Outline leaves it for the
+  others; a rule no Outline uses stays until it is deleted.
+- An Outline file written before rules were shared holds its rules whole.
+  Opening the tree moves them under `rules/`; a rule whose name another
+  Outline's different rule already has becomes `<outline>-<rule>`, and one
+  the same is shared.
 
 ### Rules
 
@@ -598,8 +616,10 @@ only named — the layout or the Template has to change.
 Making the rules and looking through the result are kept apart:
 
 - **Outlines** makes them. The Outline's name, what it is for and its own
-  folder come first, then its rules as tabs, **+ Rule** adding one. The rule
-  shown is edited in a form: the types, conditions on other keys (`owner is
+  folder come first, then its rules as tabs, **+ Rule** making one and
+  **+ Existing rule** adding one the tree has already; a rule no Outline uses
+  can be deleted there. The rule shown is edited in a form, which names the
+  other Outlines using it: the types, conditions on other keys (`owner is
   emma, tom`), each ticking values the Items of the chosen types hold, HEAD or
   all revisions, and the layout, typed or built by clicking key chips that
   insert at the caret. The field chips are those of the chosen types, or of
@@ -811,8 +831,10 @@ refused while a conflict has no choice.
   and an Item frequent on either side is frequent after.
 - A new Item keeps the history it had in the other tree. Every Item the merge
   adds or changes gets a `merge` history event, listing what it changed.
-- A Template or Outline both sides have, different, is a conflict. A tree
-  still holding Views and Targets is read as the Outlines they become. Only the
+- A Template or Outline both sides have, different, is a conflict. So is a
+  new Outline using a rule this tree has differently: taking it changes the
+  rule for every Outline here using it. A tree still holding Views and
+  Targets is read as the Outlines they become. Only the
   fields that differ are shown.
 - What no choice resolves stops the merge: an Item whose type has no Template
   on either side, two Items matching one, a record holding another PDF here.
@@ -830,7 +852,8 @@ exported and the Items' fields; it carries no Templates or Outlines.
   dgs-doctree.yaml          # the marker: dgs doc init writes it, nothing else does
   templates/
     id_card.yaml            # one Template per type
-  outlines/                 # one Outline per file
+  outlines/                 # one Outline per file, naming its rules
+  rules/                    # one rule per file, shared by Outlines
   snapshots/                # one Snapshot per file
   cases/                    # one Case per file
   migrated/                 # views/ and targets.yaml, once they became Outlines

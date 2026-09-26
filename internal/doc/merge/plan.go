@@ -15,6 +15,7 @@ import (
 
 	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/tree"
+	"dgs-toolbox/internal/doc/view"
 	"dgs-toolbox/internal/tag"
 	"dgs-toolbox/internal/verifiedcopy"
 )
@@ -125,11 +126,30 @@ func Compute(root string, src Source) (Plan, error) {
 	if err != nil {
 		return plan, err
 	}
+	rules, err := outline.LoadRules(root)
+	if err != nil {
+		return plan, err
+	}
 	for _, v := range src.Outlines {
 		var mine *outline.Outline
 		for i := range outlines {
 			if outlines[i].Name == v.Name {
 				mine = &outlines[i]
+			}
+		}
+		// A new Outline using a rule this tree has differently would change
+		// that rule for every Outline here using it: the owner chooses.
+		if mine == nil {
+			ours := outline.Outline{Name: v.Name, About: v.About, Folder: v.Folder, Rules: []view.View{}}
+			for _, r := range v.Rules {
+				have, ok := rules[r.Name]
+				if !ok {
+					have = r
+				}
+				ours.Rules = append(ours.Rules, have)
+			}
+			if !reflect.DeepEqual(ours, v) {
+				mine = &ours
 			}
 		}
 		switch {

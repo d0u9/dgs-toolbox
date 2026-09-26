@@ -24,6 +24,9 @@ type outlinesJSON struct {
 	// Countries maps each country's every form to its alpha-3 code, so the
 	// page shows CN and 中国 as one condition value.
 	Countries map[string]string `json:"countries"`
+	// Rules are every rule in the tree, and Used the Outlines using each.
+	Rules []view.View         `json:"rules"`
+	Used  map[string][]string `json:"used"`
 	// Migrated names the Outlines the tree's Views and Targets just became.
 	Migrated []string `json:"migrated,omitempty"`
 	Error    string   `json:"error,omitempty"`
@@ -73,6 +76,10 @@ func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
 	if err != nil {
 		out.Error = err.Error()
 	}
+	out.Rules, out.Used = []view.View{}, map[string][]string{}
+	if rules, used, err := outline.Rules(s.root); err == nil {
+		out.Rules, out.Used = rules, used
+	}
 	for _, o := range entries {
 		j := outlineJSON{Outline: o}
 		if o.Folder != "" {
@@ -121,6 +128,11 @@ func (s server) outlineSave(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Outline  outline.Outline `json:"outline"`
 		Previous string          `json:"previous"`
+		// Fresh are the rules made new in this Outline, which must not
+		// replace a rule of the same name; Renamed maps a rule's saved
+		// name to its new one, renamed in every Outline using it.
+		Fresh   []string          `json:"fresh"`
+		Renamed map[string]string `json:"renamed"`
 	}
 	if !decode(w, r, &request) {
 		return
@@ -131,6 +143,17 @@ func (s server) outlineSave(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
+	fail := func(err error) { writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()}) }
+	if err := outline.Fresh(s.root, request.Fresh); err != nil {
+		fail(err)
+		return
+	}
+	for from, to := range request.Renamed {
+		if err := outline.RenameRule(s.root, from, to); err != nil {
+			fail(err)
+			return
+		}
+	}
 	if err := outline.Save(s.root, request.Previous, request.Outline); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -152,6 +175,27 @@ func (s server) outlineDelete(w http.ResponseWriter, r *http.Request) {
 	s.writing.Lock()
 	defer s.writing.Unlock()
 	if err := outline.Delete(s.root, request.Name); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{})
+}
+
+// ruleDelete removes a rule no Outline uses.
+func (s server) ruleDelete(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Name string `json:"name"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	if err := tree.Require(s.root); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	if err := outline.DeleteRule(s.root, request.Name); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

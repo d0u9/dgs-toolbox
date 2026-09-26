@@ -132,3 +132,64 @@ func TestMigrateTurnsViewsAndTargetsIntoOutlines(t *testing.T) {
 		t.Fatalf("a second run: %v %v", names, err)
 	}
 }
+
+func TestRulesAreSharedRenamedAndSplit(t *testing.T) {
+	root := t.TempDir()
+	ids := view.View{Name: "ids", Layout: "{owner}.{ext}"}
+	cars := view.View{Name: "cars", Layout: "cars/{id}.{ext}"}
+	if err := Save(root, "", Outline{Name: "phone", Rules: []view.View{ids}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(root, "", Outline{Name: "kindle", Rules: []view.View{ids, cars}}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(root, Dir, "phone.yaml"))
+	if string(data) != "name: phone\nrules:\n    - ids\n" {
+		t.Fatalf("%q", data)
+	}
+	// Editing the rule in one Outline changes it in both.
+	ids.Layout = "ids/{owner}.{ext}"
+	if err := Save(root, "", Outline{Name: "phone", Rules: []view.View{ids}}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := Load(root)
+	if err != nil || list[0].Name != "kindle" || list[0].Rules[0].Layout != "ids/{owner}.{ext}" {
+		t.Fatalf("%v %+v", err, list)
+	}
+	if err := Fresh(root, []string{"ids"}); err == nil {
+		t.Fatal("a new rule could replace ids")
+	}
+	if err := RenameRule(root, "ids", "people"); err != nil {
+		t.Fatal(err)
+	}
+	rules, used, err := Rules(root)
+	if err != nil || len(rules) != 2 || rules[1].Name != "people" || len(used["people"]) != 2 {
+		t.Fatalf("%v %+v %v", err, rules, used)
+	}
+	if err := DeleteRule(root, "people"); err == nil {
+		t.Fatal("a rule in use was deleted")
+	}
+	if err := Delete(root, "kindle"); err != nil {
+		t.Fatal(err)
+	}
+	if err := DeleteRule(root, "cars"); err != nil {
+		t.Fatal(err)
+	}
+
+	// An Outline written with its rules whole is split; a rule of the same
+	// name but different is renamed.
+	whole := "name: old\nrules:\n  - name: people\n    layout: 'x/{id}.{ext}'\n  - name: bills\n    layout: 'b/{id}.{ext}'\n"
+	if err := os.WriteFile(filepath.Join(root, Dir, "old.yaml"), []byte(whole), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if names, err := Migrate(root); err != nil || len(names) != 1 {
+		t.Fatalf("%v %v", names, err)
+	}
+	list, _ = Load(root)
+	if old := list[0]; old.Name != "old" || old.Rules[0].Name != "old-people" || old.Rules[1].Name != "bills" {
+		t.Fatalf("%+v", old)
+	}
+	if names, err := Migrate(root); err != nil || len(names) != 0 {
+		t.Fatalf("a second run: %v %v", names, err)
+	}
+}

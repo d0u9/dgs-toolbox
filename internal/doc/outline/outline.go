@@ -1,8 +1,9 @@
-// Package outline is a doc tree's Outlines. An Outline is a tree of PDFs
-// made by its rules: each rule selects Items and names the path each of
-// their PDFs has, and the rules' paths together are the tree. The same tree
-// is browsed and, into a folder chosen then, exported. The rules are in
-// docs/apps/doc/index.md.
+// Package outline is a doc tree's Outlines and the rules they use. An
+// Outline is a tree of PDFs made by its rules: each rule selects Items and
+// names the path each of their PDFs has, and the rules' paths together are
+// the tree. The same tree is browsed and, into a folder chosen then,
+// exported. A rule is kept apart from the Outlines, under rules/, so several
+// Outlines use one. The rules are in docs/apps/doc/index.md.
 package outline
 
 import (
@@ -21,10 +22,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Dir is the folder under a tree's root that holds one file per Outline.
-const Dir = "outlines"
+// Dir is the folder under a tree's root that holds one file per Outline,
+// and RulesDir the one that holds one file per rule.
+const (
+	Dir      = "outlines"
+	RulesDir = "rules"
+)
 
-// Outline is one file under outlines/.
+// Outline is one file under outlines/, its rules read from rules/. The file
+// names them; an Outline written before rules were shared holds them itself,
+// which Load still reads and Migrate splits.
 type Outline struct {
 	Name string `yaml:"name" json:"name"`
 	// About says what it is for: "read on the phone".
@@ -71,56 +78,177 @@ func Expand(folder, home string) string {
 	return folder
 }
 
-// Parse reads one Outline file, refusing keys it does not know.
-func Parse(data []byte) (Outline, error) {
-	var o Outline
-	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&o); err != nil {
-		return Outline{}, err
-	}
-	for i := range o.Rules {
-		if o.Rules[i].Selection == "" {
-			o.Rules[i].Selection = view.Head
-		}
-	}
-	return o, o.Validate()
+// onDisk is an Outline file: rules by name, or, written before rules were
+// shared, whole.
+type onDisk struct {
+	Name   string      `yaml:"name"`
+	About  string      `yaml:"about,omitempty"`
+	Folder string      `yaml:"folder,omitempty"`
+	Rules  []yaml.Node `yaml:"rules"`
 }
 
-// Load reads every outlines/*.yaml under root, sorted by name. A file whose
-// name is not its Outline's name is refused.
-func Load(root string) ([]Outline, error) {
-	paths, err := filepath.Glob(filepath.Join(root, Dir, "*.yaml"))
+// named is how an Outline is written now.
+type named struct {
+	Name   string   `yaml:"name"`
+	About  string   `yaml:"about,omitempty"`
+	Folder string   `yaml:"folder,omitempty"`
+	Rules  []string `yaml:"rules"`
+}
+
+// parse reads one Outline file, refusing keys it does not know: its rules
+// found in rules by name, or held whole, when inline is set.
+func parse(data []byte, rules map[string]view.View) (o Outline, inline bool, err error) {
+	var d onDisk
+	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&d); err != nil {
+		return Outline{}, false, err
+	}
+	o = Outline{Name: d.Name, About: d.About, Folder: d.Folder, Rules: []view.View{}}
+	for _, n := range d.Rules {
+		if n.Kind == yaml.ScalarNode {
+			r, ok := rules[n.Value]
+			if !ok {
+				return Outline{}, false, fmt.Errorf("outline %s: no rule named %s in %s/", d.Name, n.Value, RulesDir)
+			}
+			o.Rules = append(o.Rules, r)
+			continue
+		}
+		inline = true
+		var r view.View
+		if err := decodeStrict(&n, &r); err != nil {
+			return Outline{}, false, err
+		}
+		o.Rules = append(o.Rules, withHead(r))
+	}
+	return o, inline, o.Validate()
+}
+
+func decodeStrict(n *yaml.Node, out any) error {
+	data, err := yaml.Marshal(n)
+	if err != nil {
+		return err
+	}
+	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	decoder.KnownFields(true)
+	return decoder.Decode(out)
+}
+
+func withHead(r view.View) view.View {
+	if r.Selection == "" {
+		r.Selection = view.Head
+	}
+	return r
+}
+
+// Parse reads one Outline file that holds its rules whole.
+func Parse(data []byte) (Outline, error) {
+	o, _, err := parse(data, nil)
+	return o, err
+}
+
+// LoadRules reads every rules/*.yaml under root, by name. A file whose name
+// is not its rule's name is refused.
+func LoadRules(root string) (map[string]view.View, error) {
+	paths, err := filepath.Glob(filepath.Join(root, RulesDir, "*.yaml"))
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Outline, 0, len(paths))
+	out := map[string]view.View{}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
-		o, err := Parse(data)
-		if err != nil {
+		var r view.View
+		decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+		decoder.KnownFields(true)
+		if err := decoder.Decode(&r); err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
-		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != o.Name {
-			return nil, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, o.Name, o.Name)
+		r = withHead(r)
+		if err := r.Validate(); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
 		}
-		out = append(out, o)
+		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != r.Name {
+			return nil, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, r.Name, r.Name)
+		}
+		out[r.Name] = r
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
-// Save writes o to outlines/<name>.yaml through a temporary file and a
-// rename, once it is valid. Previous, when it names another Outline, is
-// removed after.
+// Rules is every rule under root, sorted by name, and the Outlines using
+// each.
+func Rules(root string) ([]view.View, map[string][]string, error) {
+	rules, err := LoadRules(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	outlines, err := Load(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	used := map[string][]string{}
+	for _, o := range outlines {
+		for _, r := range o.Rules {
+			used[r.Name] = append(used[r.Name], o.Name)
+		}
+	}
+	out := make([]view.View, 0, len(rules))
+	for _, r := range rules {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, used, nil
+}
+
+// Load reads every outlines/*.yaml under root, sorted by name, each with its
+// rules. A file whose name is not its Outline's name is refused.
+func Load(root string) ([]Outline, error) {
+	outlines, _, err := load(root)
+	return outlines, err
+}
+
+// load is Load, and the names of the Outlines holding their rules whole.
+func load(root string) ([]Outline, map[string]bool, error) {
+	rules, err := LoadRules(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	paths, err := filepath.Glob(filepath.Join(root, Dir, "*.yaml"))
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make([]Outline, 0, len(paths))
+	whole := map[string]bool{}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, nil, err
+		}
+		o, inline, err := parse(data, rules)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", path, err)
+		}
+		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != o.Name {
+			return nil, nil, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, o.Name, o.Name)
+		}
+		whole[o.Name] = inline
+		out = append(out, o)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, whole, nil
+}
+
+// Save writes each of o's rules to rules/<name>.yaml, replacing a rule of
+// that name — every Outline using it sees the change — then o to
+// outlines/<name>.yaml naming them, once o is valid. Previous, when it names
+// another Outline, is removed after. Each file is written through a
+// temporary file and a rename.
 func Save(root, previous string, o Outline) error {
 	for i := range o.Rules {
-		if o.Rules[i].Selection == "" {
-			o.Rules[i].Selection = view.Head
-		}
+		o.Rules[i] = withHead(o.Rules[i])
 	}
 	if o.Rules == nil {
 		o.Rules = []view.View{}
@@ -133,7 +261,18 @@ func Save(root, previous string, o Outline) error {
 	if _, err := os.Stat(filepath.Join(root, "snapshots", o.Name+".yaml")); err == nil {
 		return fmt.Errorf("a Snapshot is named %s: choose another name", o.Name)
 	}
-	data, err := yaml.Marshal(o)
+	file := named{Name: o.Name, About: o.About, Folder: o.Folder, Rules: []string{}}
+	for _, r := range o.Rules {
+		data, err := yaml.Marshal(r)
+		if err != nil {
+			return err
+		}
+		if err := write(filepath.Join(root, RulesDir), r.Name+".yaml", data); err != nil {
+			return err
+		}
+		file.Rules = append(file.Rules, r.Name)
+	}
+	data, err := yaml.Marshal(file)
 	if err != nil {
 		return err
 	}
@@ -144,6 +283,84 @@ func Save(root, previous string, o Outline) error {
 		return Delete(root, previous)
 	}
 	return nil
+}
+
+// Fresh refuses any of names a rule under root already has: a rule made new
+// in one Outline must not replace another Outline's.
+func Fresh(root string, names []string) error {
+	for _, n := range names {
+		if _, err := os.Stat(filepath.Join(root, RulesDir, n+".yaml")); err == nil {
+			return fmt.Errorf("a rule is named %s already: add it as it is, or choose another name", n)
+		}
+	}
+	return nil
+}
+
+// RenameRule renames the rule from to to, in its file and in every Outline
+// naming it.
+func RenameRule(root, from, to string) error {
+	if from == to {
+		return nil
+	}
+	if err := (view.View{Name: to, Selection: view.Head, Layout: "x"}).Validate(); err != nil {
+		return err
+	}
+	if err := Fresh(root, []string{to}); err != nil {
+		return err
+	}
+	rules, err := LoadRules(root)
+	if err != nil {
+		return err
+	}
+	r, ok := rules[from]
+	if !ok {
+		return fmt.Errorf("no rule named %s", from)
+	}
+	outlines, err := Load(root)
+	if err != nil {
+		return err
+	}
+	r.Name = to
+	data, err := yaml.Marshal(r)
+	if err != nil {
+		return err
+	}
+	if err := write(filepath.Join(root, RulesDir), to+".yaml", data); err != nil {
+		return err
+	}
+	for _, o := range outlines {
+		uses := false
+		for i := range o.Rules {
+			if o.Rules[i].Name == from {
+				o.Rules[i].Name, uses = to, true
+			}
+		}
+		if uses {
+			if err := Save(root, "", o); err != nil {
+				return err
+			}
+		}
+	}
+	return os.Remove(filepath.Join(root, RulesDir, from+".yaml"))
+}
+
+// DeleteRule removes a rule no Outline uses.
+func DeleteRule(root, name string) error {
+	if err := (view.View{Name: name, Selection: view.Head, Layout: "x"}).Validate(); err != nil {
+		return err
+	}
+	_, used, err := Rules(root)
+	if err != nil {
+		return err
+	}
+	if len(used[name]) > 0 {
+		return fmt.Errorf("the rule %s is used by %s", name, strings.Join(used[name], ", "))
+	}
+	err = os.Remove(filepath.Join(root, RulesDir, name+".yaml"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("no rule named %s", name)
+	}
+	return err
 }
 
 // write puts data at dir/name through a temporary file and a rename.
