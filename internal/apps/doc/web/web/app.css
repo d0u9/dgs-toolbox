@@ -418,6 +418,13 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .vf-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .vf-stack #conditions { align-self: stretch; }
 .vf-stack #conditions:empty { display: none; }
+.vf-stack #exclude, .vf-stack .skip-list, .vf-stack #add-skip { align-self: stretch; }
+.vf-stack #exclude:empty, .skip-list:empty { display: none; }
+.skip-list { list-style: none; margin: 0; padding: 0; }
+.skip-list li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid var(--hairline); font-size: var(--font-size-sm); }
+.skip-list li:last-child { border-bottom: 1px solid var(--hairline); }
+.skip-list li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.skip-list .tool { flex: none; }
 .vf .checks { gap: 6px 16px; }
 .vf .checks input.short { width: 80px; }
 .vf-wide { grid-template-columns: 92px 1fr; }
