@@ -552,6 +552,9 @@ A rule has a query, a selection, and a layout.
 - **Query** — which Items, by their fields, such as type and owner. A value
   matches ignoring case, and a country matches however it is written: `CN`
   selects an Item that keeps `中国`.
+  The key `tags` selects by tag, per revision: a revision matches when the
+  Item's tags or its own include one of the values, ignoring case. An
+  Item's tag holds for every revision; a revision's only for itself.
 - **Selection** — `head` (a document's HEAD revision only) or `all`.
 - **Layout** — fixed text and keys, such as
   `{country}/{owner}/important/{type}.pdf`: the folders, then the PDF's

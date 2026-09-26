@@ -81,6 +81,27 @@ func TestBuildAllRevisions(t *testing.T) {
 	}
 }
 
+func TestBuildQueryTags(t *testing.T) {
+	a := item("A", "id_card", map[string]string{"owner": "emma"}, "d1", "d2")
+	a.Revisions[0].Tags = []string{"original"}
+	b := item("B", "id_card", map[string]string{"owner": "tom"}, "d3")
+	b.Tags = []string{"Important"}
+	c := item("C", "id_card", map[string]string{"owner": "sam"}, "d4")
+	v := View{Name: "x", Selection: All, Layout: "{owner}/{revision}.{ext}", Query: map[string]Values{"tags": {"important", "original"}}}
+	plan, err := Build(v, []tree.Item{a, b, c}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	// An Item's tag holds for its every revision, a revision's for itself.
+	if want := []string{"emma/1.pdf", "tom/1.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+}
+
 func TestBuildMissingAndDefault(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"owner": "emma"}, "d1")}
 	v := View{Name: "x", Selection: Head, Layout: "{country}/{owner}/{year}.{ext}"}

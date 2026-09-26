@@ -92,14 +92,17 @@ function condition(key, values) {
   const choices = el("div", { className: "checks" });
   const draw = (saved) => {
     const types = chosenTypes();
-    const held = [...new Set(state.items.filter((item) => types.includes(item.type)).map((item) => currentFields(item)[pick.value]).filter(Boolean))];
+    const chosen = state.items.filter((item) => types.includes(item.type));
+    // Tags are the Items' and their revisions' own, matched per revision.
+    const held = [...new Set(pick.value === "tags" ? chosen.flatMap((item) => [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])])
+      : chosen.map((item) => currentFields(item)[pick.value]).filter(Boolean))];
     const all = [...held, ...saved.filter((v) => !held.some((h) => same(h, v)))].sort((a, b) => a.localeCompare(b));
     choices.replaceChildren(...(all.length ? all.map((v) => el("label", {},
       el("input", { type: "checkbox", value: v, checked: saved.some((s) => same(s, v)), onchange: changed }), " " + v))
       : [el("span", { className: "template-sub", textContent: "no Item has one" })]));
   };
   const pick = el("select", { onchange: () => { draw([]); changed(); } },
-    ...keys.filter((k) => !["type", "revision", "ext", "id"].includes(k)).map((k) => el("option", { value: k, selected: k === key }, k)));
+    ...[...keys.filter((k) => !["type", "revision", "ext", "id", "tags"].includes(k)), "tags"].map((k) => el("option", { value: k, selected: k === key }, k)));
   const row = el("div", { className: "condition" },
     el("div", { className: "condition-head" }, pick,
       el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); changed(); } })),
