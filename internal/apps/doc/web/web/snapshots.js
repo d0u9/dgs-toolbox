@@ -234,44 +234,14 @@ function lostOf() {
   return new Map(((snapshots.find((s) => s.name === editing) || {}).lost || []).map((l) => [l.item + " " + l.revision, l.why]));
 }
 
-// renamer is a name field that renames path when it is left or Enter is
-// pressed.
-function renamer(path) {
-  const folder = isFolder(path);
-  const old = folder ? path.slice(0, -1) : path;
-  const input = el("input", { className: "mono", value: baseOf(old), spellcheck: false, autocomplete: "off" });
-  let gone = false; // renamed already: the field is being redrawn
-  const done = () => {
-    const name = input.value.trim();
-    if (gone || name === baseOf(old)) return;
-    gone = true;
-    if (name.includes("/")) { input.value = baseOf(old); gone = false; return tried("A name holds no /: drag it into a folder instead"); }
-    const why = relocate(path, join(dirOf(old), name));
-    if (why) { input.value = baseOf(old); gone = false; }
-    tried(why);
-  };
-  input.addEventListener("change", done);
-  input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); done(); } });
-  return el("label", { className: "vf" }, el("span", { className: "vf-label" }, "Name"), input);
-}
-
 // details draws the controls for what is picked in the tree.
 function details() {
   $("add-to").textContent = target() ? target() + "/" : "the top";
   const box = $("picked");
-  if (!picked) {
-    $("picked-head").textContent = "Selected";
-    return box.replaceChildren(el("p", { className: "muted" }, "Pick a PDF or folder in the tree to rename, move or remove it."));
-  }
-  if (isFolder(picked)) {
-    const old = picked.slice(0, -1);
-    const inside = draft.files.filter((f) => within(f.path, old));
-    $("picked-head").textContent = "Folder";
-    return box.replaceChildren(el("p", { className: "mono muted" }, old + "/"), renamer(picked),
-      el("div", { className: "checks" },
-        el("span", { className: "muted" }, inside.length + (inside.length === 1 ? " PDF" : " PDFs") + " in it"),
-        el("button", { type: "button", className: "button small-button", textContent: "Remove folder", onclick: () => remove(picked) })));
-  }
+  // A folder, and a PDF's name and place, are edited in the tree; only
+  // what the tree cannot show is here.
+  box.parentElement.hidden = !picked || isFolder(picked);
+  if (box.parentElement.hidden) return box.replaceChildren();
   const f = draft.files.find((x) => x.path === picked);
   const item = itemOf(f.item);
   const revs = item ? item.revisions || [] : [];
@@ -280,12 +250,10 @@ function details() {
       "revision " + (n + 1) + (ref(r) === ref(revs[revs.length - 1] || {}) ? " (latest)" : "") + (r.added ? " · " + r.added.slice(0, 10) : ""))),
     ...(revs.some((r) => ref(r) === f.revision) ? [] : [el("option", { value: f.revision, selected: true }, "gone")]));
   const why = lostOf().get(f.item + " " + f.revision);
-  $("picked-head").textContent = "PDF";
-  box.replaceChildren(el("p", { className: "mono muted" }, f.path), renamer(picked),
+  box.replaceChildren(el("p", { className: "mono muted" }, f.path),
     el("label", { className: "vf" }, el("span", { className: "vf-label" }, "Revision"), choice),
     el("p", {}, item ? el("a", { href: api("/browse/") + "#" + f.item }, label(state, item)) : f.item,
-      why ? el("span", { className: "message error" }, " · " + why) : null),
-    el("div", { className: "checks" }, el("button", { type: "button", className: "button small-button", textContent: "Remove", onclick: () => remove(picked) })));
+      why ? el("span", { className: "message error" }, " · " + why) : null));
 }
 
 // The filters are remembered in this browser, so the next Snapshot opens
