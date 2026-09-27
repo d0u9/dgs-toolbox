@@ -749,3 +749,4 @@ body.list-shut .outline-list { display: none; }
 .snap-tools .muted { font-size: var(--font-size-xs); }
 .file-tree .ft-row.snap-lost { color: var(--error); }
 .file-tree .ft-row.drop, .outline-tree.drop { background: var(--selected); outline: 1px dashed var(--primary); outline-offset: -1px; }
+.snap-naming { flex: 1; min-width: 16em; }

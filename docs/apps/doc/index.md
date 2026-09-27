@@ -763,6 +763,7 @@ files:
     rule: ids                     # the rule that placed it, for a reader
 folders:                          # optional: folders with no PDF in them
   - CN/old
+naming: "{owner}-{type}.{ext}"    # optional: how a PDF added by hand is named
 ```
 
 - On the Snapshots page one is taken from a rule — what it places now, at
@@ -786,6 +787,13 @@ folders:                          # optional: folders with no PDF in them
   there picks nothing; a name is typed in its row; Enter renames the row
   picked, Cmd-Delete removes it, Shift-Cmd-N makes a folder. The filters
   fold away. Nothing is copied, as an archived Case copies nothing.
+- A PDF added by hand is named by `naming`, a layout written as a rule's,
+  relative to the folder it is added to; a `/` in it makes folders, and
+  `{#}` is refused, since one PDF numbers nothing. Without `naming` it is
+  named by its Item's label. `.pdf` is added when the name lacks it, and a
+  name already there gets `_02`, `_03`. An Item lacking a key the layout
+  needs is refused with the keys it lacks, and nothing is added. Changing
+  `naming` renames no PDF already in the Snapshot.
 - A folder with no PDF in it is kept under `folders`; one holding a PDF is
   not written. An Outline and an export see only the folders its PDFs are
   in: an empty folder is not exported.

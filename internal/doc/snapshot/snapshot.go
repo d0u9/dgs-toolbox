@@ -56,6 +56,9 @@ type Snapshot struct {
 	// A folder holding a PDF needs no entry; an Outline and an export see
 	// only the folders its PDFs are in.
 	Folders []string `yaml:"folders,omitempty" json:"folders,omitempty"`
+	// Naming is the layout, as a rule's, a PDF added by hand is named by,
+	// relative to the folder it is added to. Empty names it by its label.
+	Naming string `yaml:"naming,omitempty" json:"naming,omitempty"`
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -67,6 +70,11 @@ func (s Snapshot) Validate() error {
 	}
 	if _, err := time.Parse(time.RFC3339, s.Taken); err != nil {
 		return fmt.Errorf("snapshot %s: taken %q is not a time", s.Name, s.Taken)
+	}
+	if s.Naming != "" {
+		if _, err := view.Parse(s.Naming); err != nil {
+			return fmt.Errorf("snapshot %s: naming: %w", s.Name, err)
+		}
 	}
 	seen := map[string]bool{}
 	for _, f := range s.Files {

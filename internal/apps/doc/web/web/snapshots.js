@@ -23,7 +23,7 @@ resizable(document.querySelector(".outline-main"), "dgs-doc-snapshots-tree");
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
 const text = (s) => JSON.stringify({ name: s.name, about: s.about || "", files: s.files.map((f) => [f.path, f.item, f.revision]),
-  folders: prune(s).sort() });
+  folders: prune(s).sort(), naming: s.naming || "" });
 const itemOf = (id) => state.items.find((i) => i.id === id);
 const ref = (r) => r.id || r.digest;
 const low = (p) => p.toLowerCase();
@@ -311,6 +311,8 @@ new ResizeObserver(() => fitList()).observe($("add-list"));
 function addDialog() {
   details();
   choices();
+  $("add-naming").value = draft.naming || "";
+  say($("add-message"), "");
   $("add-dialog").showModal();
   $("add-search").focus();
 }
@@ -460,7 +462,7 @@ function open(name) {
     return;
   }
   history.replaceState(null, "", "#" + encodeURIComponent(name));
-  draft = copy({ name: s.name, about: s.about || "", taken: s.taken, rule: s.rule, outline: s.outline, node: s.node, folder: s.folder, files: s.files, folders: s.folders || [] });
+  draft = copy({ name: s.name, about: s.about || "", taken: s.taken, rule: s.rule, outline: s.outline, node: s.node, folder: s.folder, files: s.files, folders: s.folders || [], naming: s.naming || "" });
   $("name").value = draft.name;
   $("about").value = draft.about;
   $("origin").textContent = "Taken " + s.taken.replace("T", " ").slice(0, 16) + (s.rule ? " from the rule " + s.rule : s.outline ? " from " + s.outline + (s.node ? " / " + s.node : "") : ", begun empty") +
@@ -498,16 +500,31 @@ for (const id of ["add-owner", "add-country", "add-tag", "add-value", "add-fresh
 for (const id of ["add-type", "add-field"]) $(id).addEventListener("change", () => { filters(); choices(); });
 $("add-open").onclick = () => addDialog();
 $("add-cancel").onclick = () => $("add-dialog").close();
-$("add").onclick = () => {
+$("add").onclick = async () => {
   const dir = target();
-  for (const box of $("add-list").querySelectorAll("tbody input:checked")) {
-    const item = itemOf(box.value);
-    const revs = item.revisions;
-    const name = label(state, item).replace(/[\/\\:]+/g, "-");
-    let path = join(dir, name + ".pdf"), n = 2;
-    while (taken(path)) path = join(dir, name + "_" + String(n++).padStart(2, "0") + ".pdf");
-    draft.files.push({ path, item: item.id, revision: ref(revs[revs.length - 1]) });
+  const picks = [...$("add-list").querySelectorAll("tbody input:checked")].map((box) => {
+    const item = itemOf(box.value), revs = item.revisions;
+    return { item, revision: ref(revs[revs.length - 1]) };
+  });
+  const naming = draft.naming = $("add-naming").value.trim();
+  let names = picks.map((p) => label(state, p.item).replace(/[\/\\:]+/g, "-") + ".pdf");
+  if (naming) {
+    try {
+      const answer = await post("/api/snapshots/names", { naming, files: picks.map((p) => ({ item: p.item.id, revision: p.revision })) });
+      const lacking = answer.names.map((n, i) => n.lacking ? label(state, picks[i].item) + " lacks " + n.lacking.join(", ") : "").filter(Boolean);
+      if (lacking.length) return say($("add-message"), lacking.join("; "), true);
+      names = answer.names.map((n) => /\.pdf$/i.test(n.path) ? n.path : n.path + ".pdf");
+    } catch (err) {
+      return say($("add-message"), err.message, true);
+    }
   }
+  say($("add-message"), "");
+  picks.forEach((p, i) => {
+    const stem = names[i].replace(/\.pdf$/i, "");
+    let path = join(dir, names[i]), n = 2;
+    while (taken(path)) path = join(dir, stem + "_" + String(n++).padStart(2, "0") + ".pdf");
+    draft.files.push({ path, item: p.item.id, revision: p.revision });
+  });
   draft.folders = draft.folders.filter((d) => low(d) !== low(dir));
   if (dir) closed.delete(dir + "/");
   $("add-list").querySelectorAll("input:checked").forEach((b) => { b.checked = false; });
@@ -515,6 +532,7 @@ $("add").onclick = () => {
   choices();
   changed();
 };
+$("add-naming").oninput = () => { draft.naming = $("add-naming").value.trim(); changed(); };
 $("new-folder").onclick = () => newFolder(target());
 // Around the rows, as in Finder: a click picks nothing, so what is made
 // next goes to the top, and a right click offers what goes there.
