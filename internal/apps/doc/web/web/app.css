@@ -722,6 +722,9 @@ body.list-shut .outline-list { display: none; }
 .snap-add-list .pick { display: flex; align-items: center; gap: 4px; padding: 3px 8px; }
 .snap-add-list p { margin: 4px 8px; }
 .snap-add { margin-top: 8px; }
+.snap-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-top: 6px; }
+.snap-filters.checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.snap-filters select { min-width: 0; }
 .snap-tools { flex: none; }
 .snap-tools .muted { font-size: var(--font-size-xs); }
 .file-tree .ft-row.snap-lost { color: var(--error); }

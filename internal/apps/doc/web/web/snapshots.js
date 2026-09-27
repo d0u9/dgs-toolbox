@@ -209,22 +209,49 @@ function details() {
     } })));
 }
 
-// choices lists the Items to add, filtered by the search words, each
-// ticked to add; an Item the Snapshot has already says so.
+// filters fills each filter with the values the Items have, keeping what
+// is chosen.
+function filters() {
+  const fill = (id, all, values) => {
+    const was = $(id).value;
+    $(id).replaceChildren(el("option", { value: "" }, all), ...[...new Set(values.filter(Boolean))].sort().map((v) => el("option", { value: v }, v)));
+    $(id).value = [...$(id).options].some((o) => o.value === was) ? was : "";
+  };
+  fill("add-type", "Any type", state.items.map((i) => i.type));
+  fill("add-tag", "Any tag", state.items.flatMap((i) => i.tags || []));
+  fill("add-field", "Any field", state.items.filter(ofType).flatMap((i) => Object.keys(i.fields)));
+  const key = $("add-field").value;
+  fill("add-value", key ? "Any " + key : "Pick a field first", key ? state.items.filter(ofType).map((i) => i.fields[key]) : []);
+  $("add-value").disabled = !key;
+}
+
+const ofType = (i) => !$("add-type").value || i.type === $("add-type").value;
+
+// choices lists the Items to add, narrowed by the search words, which match
+// any field, and by the filters, each ticked to add; an Item the Snapshot
+// has already says so.
 function choices() {
   const words = $("add-search").value.toLowerCase().split(/\s+/).filter(Boolean);
   const have = new Set(draft ? draft.files.map((f) => f.item) : []);
-  const sorted = state.items.filter((i) => (i.revisions || []).length).map((i) => ({ i, name: label(state, i) }))
-    .filter(({ i, name }) => words.every((w) => (name + " " + i.type).toLowerCase().includes(w)))
+  const [type, tag, key, value] = ["add-type", "add-tag", "add-field", "add-value"].map((id) => $(id).value);
+  const kept = new Set([...$("add-list").querySelectorAll("input:checked")].map((b) => b.value));
+  const sorted = state.items.filter((i) => (i.revisions || []).length)
+    .filter((i) => (!type || i.type === type) && (!key || (value ? i.fields[key] === value : !!i.fields[key])) &&
+      (!tag || (i.tags || []).includes(tag)) && ($("add-retired").checked || !i.retired) && (!$("add-fresh").checked || !have.has(i.id)))
+    .map((i) => ({ i, name: label(state, i), all: [i.type, ...Object.values(i.fields), ...(i.tags || [])].join(" ").toLowerCase() }))
+    .filter(({ all }) => words.every((w) => all.includes(w)))
     .sort((a, b) => a.name.localeCompare(b.name));
   $("add-list").replaceChildren(...(sorted.length ? sorted.map(({ i, name }) => el("label", { className: "pick" },
-    el("input", { type: "checkbox", value: i.id }), " ", el("span", {}, name),
+    el("input", { type: "checkbox", value: i.id, checked: kept.has(i.id) }), " ", el("span", {}, name),
+    i.retired ? el("span", { className: "muted" }, " · retired") : null,
     have.has(i.id) ? el("span", { className: "muted" }, " · in it") : null)) : [el("p", { className: "muted" }, "No Item matches.")]));
   ticked();
 }
 
 function ticked() {
-  const n = $("add-list").querySelectorAll("input:checked").length;
+  const boxes = [...$("add-list").querySelectorAll("input")];
+  const n = boxes.filter((b) => b.checked).length;
+  $("add-all").checked = !!boxes.length && n === boxes.length;
   $("add").disabled = !n;
   $("add").textContent = n ? "Add " + n : "Add";
 }
@@ -262,6 +289,7 @@ function open(name) {
     ". " + (s.used.length ? "In " + s.used.join(", ") + "." : "In no Outline yet: add it on the Outlines page.");
   $("title").textContent = name;
   saved = text(draft);
+  filters();
   choices();
   draw();
   if (s.lost.length) say($("message"), s.lost.length + " of its PDFs are no longer in the tree: an Outline with it is not exported until they are removed or replaced.", true);
@@ -287,6 +315,12 @@ async function reload() {
 $("name").addEventListener("input", () => { draft.name = $("name").value.trim(); changed(); });
 $("about").addEventListener("input", () => { draft.about = $("about").value.trim(); changed(); });
 $("add-search").addEventListener("input", choices);
+for (const id of ["add-tag", "add-value", "add-fresh", "add-retired"]) $(id).addEventListener("change", choices);
+for (const id of ["add-type", "add-field"]) $(id).addEventListener("change", () => { filters(); choices(); });
+$("add-all").addEventListener("change", () => {
+  $("add-list").querySelectorAll("input").forEach((b) => { b.checked = $("add-all").checked; });
+  ticked();
+});
 $("add-list").addEventListener("change", ticked);
 $("add").onclick = () => {
   const dir = target();
@@ -300,6 +334,7 @@ $("add").onclick = () => {
   }
   draft.folders = draft.folders.filter((d) => low(d) !== low(dir));
   if (dir) closed.delete(dir + "/");
+  $("add-list").querySelectorAll("input:checked").forEach((b) => { b.checked = false; });
   choices();
   changed();
 };

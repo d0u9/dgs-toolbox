@@ -76,7 +76,18 @@
     </div>
     <div class="view-group">
       <h3>Add PDFs <span class="muted">to <span id="add-to" class="mono"></span></span></h3>
-      <input id="add-search" type="search" placeholder="Filter Items" autocomplete="off" spellcheck="false">
+      <input id="add-search" type="search" placeholder="Search any field" autocomplete="off" spellcheck="false">
+      <div class="snap-filters">
+        <select id="add-type" title="Type"></select>
+        <select id="add-tag" title="Tag"></select>
+        <select id="add-field" title="Field"></select>
+        <select id="add-value" title="The field's value"></select>
+      </div>
+      <div class="snap-filters checks">
+        <label class="pick"><input id="add-fresh" type="checkbox" checked> Not in it yet</label>
+        <label class="pick"><input id="add-retired" type="checkbox"> Retired too</label>
+        <label class="pick"><input id="add-all" type="checkbox"> Tick all shown</label>
+      </div>
       <div id="add-list" class="snap-add-list scroll"></div>
       <div class="snap-add checks">
         <button id="add" class="button" type="button" disabled>Add</button>
