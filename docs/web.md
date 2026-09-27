@@ -376,7 +376,7 @@ and class, and let a folder row be picked: the row then takes a chevron that
 opens or shuts it, and a click elsewhere on it picks it. The tree draws
 and reports clicks; what a row means stays with the page. The doc app's
 Outline trees — on Outlines, Rules, Snapshots and Explore — are drawn with it, each PDF row carrying a button, shown on hover, that
-shows the PDF in Finder.
+shows the PDF in Finder; so does each PDF row on Import.
 
 It also carries the **splitter**: the hairline between two panes that the
 reader drags to resize them. A page puts a `.splitter.col` or `.splitter.row`

@@ -44,7 +44,9 @@ function render() {
   $("tree").replaceChildren(fileTree(files, {
     closed, selected, onPick: (f) => pick(f.path),
     mark: (f) => f.item ? "Imported: already in the tree" : "",
-    fileExtra: (f) => el("span", {}, size(f.size) + " · " + new Date(f.modified).toLocaleDateString()),
+    fileExtra: (f) => el("span", {}, size(f.size) + " · " + new Date(f.modified).toLocaleDateString(),
+      el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder", textContent: "↗",
+        onclick: (event) => { event.stopPropagation(); post("/api/reveal", { dir, path: f.path }).catch((err) => alert(err.message)); } })),
     folderExtra: (path, under) => {
       const kept = under.filter((f) => f.item).length;
       return el("span", { className: "numeric" }, kept ? `${kept}/${under.length} in tree` : String(under.length));
