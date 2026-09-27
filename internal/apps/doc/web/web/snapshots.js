@@ -16,6 +16,7 @@ let editing = null; // the saved name of the Snapshot shown
 let draft = null; // the Snapshot as edited: name, about, files, folders
 let saved = "";
 let picked = ""; // the file's path, or a folder's with a trailing "/"
+let marked = new Set(); // every path picked, as picked is: more than one by Cmd- or Shift-click
 let dragging = ""; // the path being dragged, as picked is
 let renaming = ""; // the path whose name is being typed in the tree, as picked is
 const closed = new Set();
@@ -46,6 +47,14 @@ function folders() {
 function prune(s) {
   return s.folders.filter((d) => !s.files.some((f) => within(f.path, d)) && !s.folders.some((e) => within(e, d)));
 }
+
+// chosen is what an action on the tree acts on: every path picked, less
+// those inside a folder also picked.
+function chosen() {
+  const all = marked.size ? [...marked] : picked ? [picked] : [];
+  return all.filter((p) => !all.some((q) => q !== p && isFolder(q) && within(isFolder(p) ? p.slice(0, -1) : p, q.slice(0, -1))));
+}
+const many = (path) => marked.size > 1 && marked.has(path);
 
 // taken reports whether path is a PDF's or a folder's already.
 const taken = (path) => draft.files.some((f) => low(f.path) === low(path)) || folders().some((d) => low(d) === low(path));
@@ -79,7 +88,9 @@ function relocate(from, to) {
   if (folder && draft.folders.every((d) => low(d) !== low(to))) draft.folders.push(to);
   const left = dirOf(old);
   if (left && !folders().some((d) => low(d) === low(left))) draft.folders.push(left);
-  if (picked === from || (folder && within(picked, old))) picked = folder ? move(picked.slice(0, -1)) + "/" : move(picked);
+  const again = (p) => isFolder(p) ? move(p.slice(0, -1)) + "/" : move(p);
+  picked = picked && again(picked);
+  marked = new Set([...marked].map(again));
   return "";
 }
 
@@ -89,13 +100,46 @@ function tried(why) {
 }
 
 function pick(path) {
-  picked = picked === path ? "" : path;
+  picked = picked === path && marked.size <= 1 ? "" : path;
+  marked = new Set(picked ? [picked] : []);
   draw();
+}
+
+// extend adds path to what is picked, or takes it away, as Cmd-click does
+// in Finder; with range, Shift-click, it picks every row shown from the
+// row picked last to path.
+function extend(path, range) {
+  if (range && picked) {
+    const rows = [...$("tree").querySelectorAll(".ft-row")].map((r) => r.dataset.path);
+    const [a, b] = [rows.indexOf(picked), rows.indexOf(path)].sort((x, y) => x - y);
+    if (a >= 0) marked = new Set([...marked, ...rows.slice(a, b + 1)]);
+  } else if (marked.has(path)) {
+    marked.delete(path);
+    if (picked === path) picked = [...marked].at(-1) || "";
+    return draw();
+  } else {
+    if (picked) marked.add(picked);
+    marked.add(path);
+  }
+  picked = path;
+  draw();
+}
+
+// moveInto moves from into the folder dir, "" the top; from goes with
+// everything else picked when it is picked among others.
+function moveInto(dir, from) {
+  const paths = many(from) ? chosen() : [from];
+  let why = "";
+  for (const p of paths) why ||= relocate(p, join(dir, baseOf(isFolder(p) ? p.slice(0, -1) : p)));
+  if (dir) closed.delete(dir + "/");
+  tried(why);
 }
 
 // draw redraws the tree, the picked row's controls and where PDFs go.
 function draw() {
-  if (picked && !(isFolder(picked) ? folders().some((d) => d + "/" === picked) : draft.files.some((f) => f.path === picked))) picked = "";
+  const exists = (p) => isFolder(p) ? folders().some((d) => d + "/" === p) : draft.files.some((f) => f.path === p);
+  if (picked && !exists(picked)) picked = "";
+  marked = new Set([...marked].filter(exists));
   const count = draft.files.length;
   $("total").textContent = count + (count === 1 ? " PDF" : " PDFs");
   const lost = lostOf();
@@ -110,10 +154,21 @@ function draw() {
       onclick: (event) => { event.stopPropagation(); reveal(f); } }),
     decorate: (row, { kind, path }) => {
       // Picked without a redraw, which would scroll and so shut the menu.
+      row.dataset.path = path;
+      if (marked.has(path)) row.classList.add("selected");
+      row.addEventListener("click", (event) => {
+        if (!(event.metaKey || event.ctrlKey || event.shiftKey) || event.target.closest(".ft-twist, .ft-reveal, input")) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        extend(path, event.shiftKey);
+      }, true);
       row.addEventListener("contextmenu", (event) => {
-        picked = path;
-        host.querySelectorAll(".ft-row.selected").forEach((r) => r.classList.remove("selected"));
-        row.classList.add("selected");
+        if (!many(path)) {
+          picked = path;
+          marked = new Set([path]);
+          host.querySelectorAll(".ft-row.selected").forEach((r) => r.classList.remove("selected"));
+          row.classList.add("selected");
+        }
         details();
         menu(event, path);
       });
@@ -135,8 +190,7 @@ function draw() {
         row.classList.remove("drop");
         const from = event.dataTransfer.getData("text/plain") || dragging;
         if (!from || from === path) return;
-        closed.delete(path);
-        tried(relocate(from, join(path.slice(0, -1), baseOf(isFolder(from) ? from.slice(0, -1) : from))));
+        moveInto(path.slice(0, -1), from);
       });
     },
   }) : el("p", { className: "muted outline-empty" }, "No PDF yet: add one, or right-click here for a folder."));
@@ -194,19 +248,59 @@ function newFolder(dir) {
   rename(path + "/");
 }
 
-// remove takes the PDF or folder at path out of the Snapshot; a folder goes
-// with its PDFs, asked first. The folder it was in stays.
-function remove(path) {
-  const folder = isFolder(path);
-  const old = folder ? path.slice(0, -1) : path;
-  const inside = folder ? draft.files.filter((f) => within(f.path, old)) : [];
-  if (inside.length && !confirm("Take the folder " + old + " and its " + inside.length + " PDFs out of the Snapshot? Their Items stay.")) return;
-  draft.files = draft.files.filter((f) => f.path !== old && !within(f.path, old));
-  draft.folders = draft.folders.filter((d) => low(d) !== low(old) && !within(d, old));
-  const dir = dirOf(old);
-  if (dir && !folders().includes(dir)) draft.folders.push(dir);
-  picked = dir ? dir + "/" : "";
+// remove takes the PDFs and folders at paths out of the Snapshot; a folder
+// goes with its PDFs. More than one, or a folder with PDFs, is asked
+// first. The folders they were in stay.
+function remove(paths) {
+  const olds = paths.map((p) => isFolder(p) ? p.slice(0, -1) : p);
+  const gone = (p) => olds.some((o) => low(p) === low(o) || within(p, o));
+  const inside = draft.files.filter((f) => gone(f.path)).length;
+  const folders_ = paths.filter(isFolder).length;
+  if (paths.length > 1 ? !confirm("Take " + paths.length + " items" + (inside ? ", " + inside + " PDFs in all," : "") + " out of the Snapshot? Their Items stay.") :
+    folders_ && inside && !confirm("Take the folder " + olds[0] + " and its " + inside + " PDFs out of the Snapshot? Their Items stay.")) return;
+  const before = folders();
+  draft.files = draft.files.filter((f) => !gone(f.path));
+  draft.folders = draft.folders.filter((d) => !gone(d));
+  for (const o of olds) {
+    const dir = dirOf(o);
+    if (dir && !gone(dir) && before.includes(dir) && !folders().includes(dir)) draft.folders.push(dir);
+  }
+  const dir = dirOf(olds[0]);
+  picked = dir && !gone(dir) ? dir + "/" : "";
+  marked = new Set(picked ? [picked] : []);
   changed();
+}
+
+// renameByNaming names the PDFs at paths, and every PDF in a folder among
+// them, by the Snapshot's naming, each in the folder it is in. A name taken
+// gets _02, as when PDFs are added.
+async function renameByNaming(paths) {
+  const olds = paths.map((p) => isFolder(p) ? p.slice(0, -1) : p);
+  const files = draft.files.filter((f) => olds.some((o) => f.path === o || within(f.path, o)));
+  if (!files.length) return tried("No PDF to rename");
+  let answer;
+  try {
+    answer = await post("/api/snapshots/names", { naming: draft.naming, files: files.map((f) => ({ item: f.item, revision: f.revision })) });
+  } catch (err) {
+    return tried(err.message);
+  }
+  const lacking = answer.names.map((n, i) => n.lacking ? baseOf(files[i].path) + " lacks " + n.lacking.join(", ") : "").filter(Boolean);
+  if (lacking.length) return tried(lacking.join("; "));
+  const before = folders();
+  const moved = new Map();
+  draft.files = draft.files.filter((f) => !files.includes(f));
+  files.forEach((f, i) => {
+    const name = /\.pdf$/i.test(answer.names[i].path) ? answer.names[i].path : answer.names[i].path + ".pdf";
+    const stem = name.replace(/\.pdf$/i, ""), dir = dirOf(f.path);
+    let path = join(dir, name), n = 2;
+    while (taken(path)) path = join(dir, stem + "_" + String(n++).padStart(2, "0") + ".pdf");
+    moved.set(f.path, path);
+    draft.files.push({ ...f, path });
+  });
+  for (const d of before) if (!folders().includes(d)) draft.folders.push(d);
+  picked = moved.get(picked) || picked;
+  marked = new Set([...marked].map((p) => moved.get(p) || p));
+  tried("");
 }
 
 // menu is the right-click menu on a row, or with no path on the space
@@ -215,12 +309,21 @@ function menu(event, path) {
   const folder = !path || isFolder(path);
   const dir = !path ? "" : folder ? path.slice(0, -1) : dirOf(path);
   const f = path && !folder ? draft.files.find((x) => x.path === path) : null;
+  const naming = { label: "Rename by Naming", disabled: !draft.naming,
+    title: draft.naming ? "Name as " + draft.naming : "Set Name as in Add PDFs first" };
+  if (many(path)) {
+    const all = chosen();
+    return openMenu(event, [
+      [{ ...naming, label: "Rename " + all.length + " by Naming", onSelect: () => renameByNaming(all) }],
+      [{ label: "Remove " + all.length + " Items", danger: true, onSelect: () => remove(all) }],
+    ]);
+  }
   openMenu(event, [
     [{ label: "New Folder", onSelect: () => newFolder(folder ? dir : dirOf(path)) },
       { label: "Add PDFs " + (dir ? "to " + baseOf(dir) : "to the top") + "…", onSelect: () => {
         picked = dir ? dir + "/" : ""; draw(); addDialog(); } }],
-    path ? [{ label: "Rename", onSelect: () => rename(path) }, f ? { label: "Show in Finder", onSelect: () => reveal(f) } : null] : [],
-    path ? [{ label: folder ? "Remove Folder" : "Remove", danger: true, onSelect: () => remove(path) }] : [],
+    path ? [{ label: "Rename", onSelect: () => rename(path) }, { ...naming, onSelect: () => renameByNaming([path]) }, f ? { label: "Show in Finder", onSelect: () => reveal(f) } : null] : [],
+    path ? [{ label: folder ? "Remove Folder" : "Remove", danger: true, onSelect: () => remove([path]) }] : [],
   ]);
 }
 
@@ -240,7 +343,7 @@ function details() {
   const box = $("picked");
   // A folder, and a PDF's name and place, are edited in the tree; only
   // what the tree cannot show is here.
-  box.parentElement.hidden = !picked || isFolder(picked);
+  box.parentElement.hidden = !picked || isFolder(picked) || marked.size > 1;
   if (box.parentElement.hidden) return box.replaceChildren();
   const f = draft.files.find((x) => x.path === picked);
   const item = itemOf(f.item);
@@ -452,6 +555,7 @@ function open(name) {
   say($("form-message"), "");
   closed.clear();
   picked = "";
+  marked = new Set();
   list();
   if (!s) {
     draft = null;
@@ -536,9 +640,10 @@ $("add-naming").oninput = () => { draft.naming = $("add-naming").value.trim(); c
 $("new-folder").onclick = () => newFolder(target());
 // Around the rows, as in Finder: a click picks nothing, so what is made
 // next goes to the top, and a right click offers what goes there.
-$("tree").addEventListener("click", (event) => { if (!event.target.closest(".ft-row") && picked) { picked = ""; draw(); } });
+$("tree").addEventListener("click", (event) => { if (!event.target.closest(".ft-row") && picked) { picked = ""; marked = new Set(); draw(); } });
 $("tree").addEventListener("contextmenu", (event) => { if (!event.target.closest(".ft-row") && draft) {
   picked = "";
+  marked = new Set();
   $("tree").querySelectorAll(".ft-row.selected").forEach((r) => r.classList.remove("selected"));
   details();
   menu(event, "");
@@ -549,7 +654,8 @@ $("tree").addEventListener("keydown", (event) => {
   if (!draft || renaming) return;
   const cmd = event.metaKey || event.ctrlKey;
   if (event.key === "Enter" && picked && !cmd) { event.preventDefault(); event.stopPropagation(); rename(picked); }
-  else if (event.key === "Backspace" && cmd && picked) { event.preventDefault(); remove(picked); }
+  else if (event.key === "Backspace" && cmd && picked) { event.preventDefault(); remove(chosen()); }
+  else if (event.key === "Escape" && marked.size > 1) { event.preventDefault(); marked = new Set([picked]); draw(); }
   else if (event.key.toLowerCase() === "n" && cmd && event.shiftKey) { event.preventDefault(); newFolder(target()); }
 }, true);
 // A PDF or folder dropped beside the folders goes to the top.
@@ -559,7 +665,7 @@ $("tree").addEventListener("drop", (event) => {
   event.preventDefault();
   $("tree").classList.remove("drop");
   const from = event.dataTransfer.getData("text/plain") || dragging;
-  if (from) tried(relocate(from, baseOf(isFolder(from) ? from.slice(0, -1) : from)));
+  if (from) moveInto("", from);
 });
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault();

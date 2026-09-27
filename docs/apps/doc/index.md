@@ -785,7 +785,11 @@ naming: "{owner}-{type}.{ext}"    # optional: how a PDF added by hand is named
   offers New Folder, Add PDFs, Rename, Show in Finder and Remove, and on
   the space around the rows New Folder and Add PDFs at the top; a click
   there picks nothing; a name is typed in its row; Enter renames the row
-  picked, Cmd-Delete removes it, Shift-Cmd-N makes a folder. The filters
+  picked, Cmd-Delete removes it, Shift-Cmd-N makes a folder. Cmd-click
+  adds a row to what is picked or takes it away, Shift-click picks every
+  row from the last one picked; dragging one of them moves them all, and
+  the menu and Cmd-Delete act on them all, asked first. Escape keeps only
+  the last one picked. The filters
   fold away. Nothing is copied, as an archived Case copies nothing.
 - A PDF added by hand is named by `naming`, a layout written as a rule's,
   relative to the folder it is added to; a `/` in it makes folders, and
@@ -793,7 +797,9 @@ naming: "{owner}-{type}.{ext}"    # optional: how a PDF added by hand is named
   named by its Item's label. `.pdf` is added when the name lacks it, and a
   name already there gets `_02`, `_03`. An Item lacking a key the layout
   needs is refused with the keys it lacks, and nothing is added. Changing
-  `naming` renames no PDF already in the Snapshot.
+  `naming` renames no PDF already in the Snapshot by itself: Rename by
+  Naming, on a PDF, a folder or several picked, renames those PDFs and the
+  PDFs in those folders, each in the folder it is in.
 - A folder with no PDF in it is kept under `folders`; one holding a PDF is
   not written. An Outline and an export see only the folders its PDFs are
   in: an empty folder is not exported.
