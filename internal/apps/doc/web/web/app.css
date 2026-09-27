@@ -684,6 +684,9 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .file-tree .ft-row.unplaced { margin-top: 10px; }
 .file-tree .ft-row.unplaced, .file-tree .ft-row.unplaced .ft-icon, .file-tree .ft-row.unplaced > .numeric { color: var(--error); }
 .file-tree .ft-row.outline-snapshot .ft-icon, .file-tree .ft-row.outline-snapshot .ft-name { color: var(--primary); }
+.file-tree .ft-row > .ft-reveal { flex: none; padding: 0 6px; border: 0; border-radius: 4px; background: none; color: var(--graphite); cursor: pointer; visibility: hidden; }
+.file-tree .ft-row:hover > .ft-reveal, .file-tree .ft-row:focus-within > .ft-reveal { visibility: visible; }
+.file-tree .ft-row > .ft-reveal:hover { color: var(--primary); background: var(--selected); }
 .outline-empty { padding: 12px 4px; }
 /* A PDF picked on Explore opens beside the tree, as in a file manager. */
 .outline-preview { border-left: 1px solid var(--hairline); }
