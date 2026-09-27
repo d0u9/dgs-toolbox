@@ -725,6 +725,10 @@ body.list-shut .outline-list { display: none; }
 .snap-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-top: 6px; }
 .snap-filters.checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .snap-filters select { min-width: 0; }
+.snap-filter-box { margin-top: 6px; }
+.snap-filter-box > summary { cursor: pointer; color: var(--graphite); font-size: var(--font-size-xs); }
+.snap-all { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.file-tree .ft-row .ft-rename { width: 100%; min-width: 0; padding: 0 4px; font: inherit; }
 .snap-tools { flex: none; }
 .snap-tools .muted { font-size: var(--font-size-xs); }
 .file-tree .ft-row.snap-lost { color: var(--error); }

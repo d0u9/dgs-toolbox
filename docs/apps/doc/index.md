@@ -777,7 +777,12 @@ folders:                          # optional: folders with no PDF in them
   Item's latest revision, named after the Item), a PDF or folder dragged onto another
   folder or to the top, renamed, a PDF set to another revision of its Item,
   or either taken out — a folder with the PDFs in it. A folder a PDF leaves
-  stays. Nothing is copied, as an archived Case copies nothing.
+  stays. The tree works as Finder's: a right click on a row
+  offers New Folder, Add PDFs, Rename, Show in Finder and Remove, and on
+  the space around the rows New Folder and Add PDFs at the top; a click
+  there picks nothing; a name is typed in its row; Enter renames the row
+  picked, Cmd-Delete removes it, Shift-Cmd-N makes a folder. The filters
+  fold away. Nothing is copied, as an archived Case copies nothing.
 - A folder with no PDF in it is kept under `folders`; one holding a PDF is
   not written. An Outline and an export see only the folders its PDFs are
   in: an empty folder is not exported.
