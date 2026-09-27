@@ -713,7 +713,9 @@ body.list-shut .outline-list { display: none; }
 .pick-list .pick { display: flex; align-items: center; gap: 4px; }
 .pick-list .pick a { font-size: var(--font-size-xs); }
 .mount { align-items: center; }
-.mount input { flex: 1 1 140px; min-width: 0; }
+.mount input:not([type=checkbox]) { flex: 1 1 140px; min-width: 0; }
+.mount.off .mount-where { display: none; }
+.mount-where { display: contents; }
 .mount-name { font-weight: 600; }
 /* The Snapshots page edits a Snapshot's PDFs one row each. */
 .snap-picked { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
