@@ -38,8 +38,9 @@ function sync() {
   draft.name = $("name").value.trim();
   draft.about = $("about").value.trim();
   draft.rules = rules.filter((r) => $("rules").querySelector(`input[value="${CSS.escape(r.name)}"]`)?.checked);
-  draft.snapshots = [...$("mounts").querySelectorAll(".mount")].map((row) => ({ name: row.dataset.name, at: row.querySelector(".mount-at").value.trim().replace(/^\/+|\/+$/g, ""),
-    as: row.querySelector(".mount-as").value.trim() }));
+  draft.snapshots = [...$("mounts").querySelectorAll(".mount")].filter((row) => row.querySelector(".mount-on").checked)
+    .map((row) => ({ name: row.dataset.name, at: row.querySelector(".mount-at").value.trim().replace(/^\/+|\/+$/g, ""),
+      as: row.querySelector(".mount-as").value.trim() }));
 }
 
 // fill draws the draft's rules and Snapshots into the form.
@@ -49,26 +50,30 @@ function fill() {
     el("input", { type: "checkbox", value: r.name, checked: on.has(r.name) }), " ", el("span", { className: "mono" }, r.name),
     " ", el("a", { href: api("/rules/") + "#" + encodeURIComponent(r.name), className: "muted", textContent: "edit" }))) :
     [el("p", { className: "muted" }, "No rule yet.")]));
-  $("mounts").replaceChildren(...draft.snapshots.map((m) => {
-    const s = snapshots.find((x) => x.name === m.name);
-    const row = el("div", { className: "mount checks" },
-      el("span", { className: "mono mount-name", title: s ? (s.about || "") : "No Snapshot of this name" }, m.name),
-      el("span", { className: "muted" }, " in "),
-      el("input", { className: "mono mount-at", value: m.at || "", placeholder: "the top", spellcheck: false, autocomplete: "off",
-        title: "The folder it goes in; it becomes a folder of its name there" }),
-      el("span", { className: "muted" }, " as "),
-      el("input", { className: "mono mount-as", value: m.as || "", placeholder: m.name, spellcheck: false, autocomplete: "off",
-        title: "The folder's name there; empty for the Snapshot's name" }),
-      el("button", { type: "button", className: "button small-button", textContent: "Remove",
-        onclick: () => { sync(); draft.snapshots = draft.snapshots.filter((x) => x.name !== m.name); fill(); changed(); } }),
+  // Every Snapshot of the tree, ticked when the Outline puts it in: those
+  // it puts in first, in its order, then the rest. One the tree lacks
+  // stays listed, ticked, until it is unticked.
+  const put = new Map(draft.snapshots.map((m) => [m.name, m]));
+  const names = [...draft.snapshots.map((m) => m.name), ...snapshots.map((s) => s.name).filter((n) => !put.has(n))];
+  $("mounts").replaceChildren(...(names.length ? names.map((name) => {
+    const s = snapshots.find((x) => x.name === name), m = put.get(name) || { name, at: "", as: "" };
+    const clash = !put.has(name) && rules.some((r) => r.name === name);
+    const on = el("input", { type: "checkbox", className: "mount-on", checked: put.has(name), disabled: clash,
+      onchange: () => row.classList.toggle("off", !on.checked) });
+    const row = el("div", { className: "mount checks" + (put.has(name) ? "" : " off"), title: clash ? "A rule has this name" : "" },
+      el("label", { className: "pick", title: s ? (s.about || "") + (s.about ? " · " : "") + s.files.length + " PDFs" : "No Snapshot of this name" },
+        on, " ", el("span", { className: "mono mount-name" }, name)),
+      el("span", { className: "mount-where" },
+        el("span", { className: "muted" }, " in "),
+        el("input", { className: "mono mount-at", value: m.at || "", placeholder: "the top", spellcheck: false, autocomplete: "off",
+          title: "The folder it goes in; it becomes a folder of its name there" }),
+        el("span", { className: "muted" }, " as "),
+        el("input", { className: "mono mount-as", value: m.as || "", placeholder: name, spellcheck: false, autocomplete: "off",
+          title: "The folder's name there; empty for the Snapshot's name" })),
       s ? null : el("span", { className: "message error" }, " not in the tree"));
-    row.dataset.name = m.name;
+    row.dataset.name = name;
     return row;
-  }));
-  const free = snapshots.filter((s) => !draft.snapshots.some((m) => m.name === s.name) && !rules.some((r) => r.name === s.name));
-  $("add-mount").replaceChildren(el("option", { value: "" }, free.length ? "+ Snapshot…" : "No other Snapshot"),
-    ...free.map((s) => el("option", { value: s.name }, s.name + " · " + s.files.length + " PDFs" + (s.about ? " · " + s.about : ""))));
-  $("add-mount").disabled = !free.length;
+  }) : [el("p", { className: "muted" }, "No Snapshot yet.")]));
 }
 
 function folderShown() {
@@ -173,14 +178,6 @@ async function reload() {
 }
 
 $("form").addEventListener("input", () => changed());
-$("add-mount").onchange = () => {
-  const name = $("add-mount").value;
-  if (!name) return;
-  sync();
-  draft.snapshots.push({ name, at: "" });
-  fill();
-  changed();
-};
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
   sync();
