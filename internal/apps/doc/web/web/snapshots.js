@@ -218,7 +218,7 @@ function menu(event, path) {
   openMenu(event, [
     [{ label: "New Folder", onSelect: () => newFolder(folder ? dir : dirOf(path)) },
       { label: "Add PDFs " + (dir ? "to " + baseOf(dir) : "to the top") + "…", onSelect: () => {
-        picked = dir ? dir + "/" : ""; draw(); $("add-search").focus(); } }],
+        picked = dir ? dir + "/" : ""; draw(); addDialog(); } }],
     path ? [{ label: "Rename", onSelect: () => rename(path) }, f ? { label: "Show in Finder", onSelect: () => reveal(f) } : null] : [],
     path ? [{ label: folder ? "Remove Folder" : "Remove", danger: true, onSelect: () => remove(path) }] : [],
   ]);
@@ -236,7 +236,7 @@ function lostOf() {
 
 // details draws the controls for what is picked in the tree.
 function details() {
-  $("add-to").textContent = target() ? target() + "/" : "the top";
+  $("add-to").textContent = $("add-to-title").textContent = target() ? target() + "/" : "the top";
   const box = $("picked");
   // A folder, and a PDF's name and place, are edited in the tree; only
   // what the tree cannot show is here.
@@ -266,7 +266,6 @@ function remember() {
   try { localStorage.setItem(FILTERS_KEY, JSON.stringify(Object.fromEntries(FILTERS.map((id) => [id, $(id).type === "checkbox" ? $(id).checked : $(id).value])))); } catch { /* not kept */ }
 }
 function recall() {
-  try { $("add-filters").open = localStorage.getItem(FILTERS_KEY + "-open") !== "no"; } catch { /* open */ }
   try { recalled = JSON.parse(localStorage.getItem(FILTERS_KEY) || "null"); } catch { recalled = null; }
   if (!recalled) return;
   for (const id of ["add-search", "add-fresh", "add-retired"]) if (id in recalled) {
@@ -301,8 +300,18 @@ const ofType = (i) => !$("add-type").value || i.type === $("add-type").value;
 const COLUMNS_KEY = "dgs-doc-snapshots-columns";
 let columns = ["type", "owner", "country"];
 let sortBy = { key: "", down: false }; // "" is Name
-try { const kept = JSON.parse(localStorage.getItem(COLUMNS_KEY) || "null"); if (kept) ({ columns, sortBy } = kept); } catch { /* defaults */ }
-const keep = () => { try { localStorage.setItem(COLUMNS_KEY, JSON.stringify({ columns, sortBy })); } catch { /* not kept */ } };
+let widths = {}; // px per column, "" for Name
+try { const kept = JSON.parse(localStorage.getItem(COLUMNS_KEY) || "null"); if (kept) ({ columns, sortBy, widths = {} } = kept); } catch { /* defaults */ }
+const keep = () => { try { localStorage.setItem(COLUMNS_KEY, JSON.stringify({ columns, sortBy, widths })); } catch { /* not kept */ } };
+let moving = ""; // the column whose header is being dragged
+
+// addDialog opens Add PDFs over the page.
+function addDialog() {
+  details();
+  choices();
+  $("add-dialog").showModal();
+  $("add-search").focus();
+}
 const HEADS = { type: "Type", tags: "Tags", added: "Added" };
 const cell = (i, key) => key === "type" ? i.type : key === "tags" ? (i.tags || []).join(", ") :
   key === "added" ? ((i.revisions || []).at(-1)?.added || "").slice(0, 10) : i.fields[key] || "";
@@ -341,21 +350,64 @@ function choices() {
     $("add-list").querySelectorAll("tbody input").forEach((b) => { b.checked = all.checked; });
     ticked();
   } });
-  const head = (k, text) => el("th", { className: sortBy.key === k ? "sorted" : "", title: "Sort; right-click for columns",
-    onclick: () => { sortBy = sortBy.key === k ? { key: k, down: !sortBy.down } : { key: k, down: false }; keep(); choices(); } },
-    text, sortBy.key === k ? el("span", { className: "snap-sort" }, sortBy.down ? " ˅" : " ˄") : null);
+  const head = (k, text) => {
+    const th = el("th", { className: sortBy.key === k ? "sorted" : "", title: "Click to sort; drag to move; right-click for columns",
+      onclick: () => { sortBy = sortBy.key === k ? { key: k, down: !sortBy.down } : { key: k, down: false }; keep(); choices(); } },
+      el("span", { className: "snap-th" }, text, sortBy.key === k ? (sortBy.down ? " ˅" : " ˄") : ""));
+    // The edge sizes the column, as in Finder.
+    const grip = el("span", { className: "snap-grip", title: "Drag to size" });
+    grip.addEventListener("click", (event) => event.stopPropagation());
+    grip.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const col = table.querySelector(`col[data-key="${CSS.escape(k)}"]`);
+      const from = event.clientX, start = col.getBoundingClientRect().width || th.getBoundingClientRect().width;
+      grip.setPointerCapture(event.pointerId);
+      const move = (e) => { widths[k] = Math.max(48, Math.round(start + e.clientX - from)); col.style.width = widths[k] + "px"; fit(); };
+      const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); keep(); };
+      grip.addEventListener("pointermove", move);
+      grip.addEventListener("pointerup", up);
+    });
+    th.append(grip);
+    if (k) {
+      th.draggable = true;
+      th.addEventListener("dragstart", (event) => { moving = k; event.dataTransfer.setData("text/plain", k); event.dataTransfer.effectAllowed = "move"; });
+      th.addEventListener("dragend", () => { moving = ""; });
+      th.addEventListener("dragover", (event) => { if (moving && moving !== k) { event.preventDefault(); th.classList.add("drop"); } });
+      th.addEventListener("dragleave", () => th.classList.remove("drop"));
+      th.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const from = event.dataTransfer.getData("text/plain") || moving;
+        if (!from || from === k) return;
+        const rest = columns.filter((c) => c !== from);
+        rest.splice(rest.indexOf(k) + (columns.indexOf(from) < columns.indexOf(k) ? 1 : 0), 0, from);
+        columns = rest;
+        keep();
+        choices();
+      });
+    }
+    return th;
+  };
+  const width = (k) => (widths[k] || (k ? 130 : 300)) + "px";
   const table = el("table", { className: "snap-table" },
+    el("colgroup", {}, el("col", { style: "width: 32px" }), ...["", ...columns].map((k) => { const c = el("col", { style: "width: " + width(k) }); c.dataset.key = k; return c; }),
+      el("col", { style: "width: 36px" })),
     el("thead", { oncontextmenu: columnMenu }, el("tr", {}, el("th", { className: "snap-tick" }, all), head("", "Name"),
-      ...columns.map((k) => head(k, HEADS[k] || k)))),
+      ...columns.map((k) => head(k, HEADS[k] || k)),
+      el("th", { className: "snap-plus", title: "Add a column", onclick: (event) => { event.stopPropagation(); columnMenu(event); } }, "+"))),
     el("tbody", {}, ...sorted.map(({ i, name }) => {
       const box = el("input", { type: "checkbox", value: i.id, checked: kept.has(i.id) });
       const tr = el("tr", { className: (kept.has(i.id) ? "ticked" : "") + (i.retired ? " retired" : ""),
         onclick: (event) => { if (event.target !== box) { box.checked = !box.checked; } tr.classList.toggle("ticked", box.checked); ticked(); } },
         el("td", { className: "snap-tick" }, box),
         el("td", { title: name }, name, have.has(i.id) ? el("span", { className: "muted" }, " · in it") : null),
-        ...columns.map((k) => el("td", { title: cell(i, k) }, cell(i, k))));
+        ...columns.map((k) => el("td", { title: cell(i, k) }, cell(i, k))), el("td"));
       return tr;
     })));
+  // A fixed table is as wide as its columns, so a column sized narrower
+  // leaves room at the right rather than widening another.
+  const fit = () => { table.style.width = [...table.querySelectorAll("col")].reduce((n, c) => n + parseFloat(c.style.width), 0) + "px"; };
+  fit();
   $("add-list").replaceChildren(table);
   ticked();
 }
@@ -428,10 +480,10 @@ async function reload() {
 $("name").addEventListener("input", () => { draft.name = $("name").value.trim(); changed(); });
 $("about").addEventListener("input", () => { draft.about = $("about").value.trim(); changed(); });
 $("add-search").addEventListener("input", choices);
-$("add-filters").addEventListener("toggle", () => { try { localStorage.setItem(FILTERS_KEY + "-open", $("add-filters").open ? "yes" : "no"); } catch { /* not kept */ } });
 for (const id of ["add-owner", "add-country", "add-tag", "add-value", "add-fresh", "add-retired"]) $(id).addEventListener("change", choices);
 for (const id of ["add-type", "add-field"]) $(id).addEventListener("change", () => { filters(); choices(); });
-$("add-columns").onclick = (event) => columnMenu(event);
+$("add-open").onclick = () => addDialog();
+$("add-cancel").onclick = () => $("add-dialog").close();
 $("add").onclick = () => {
   const dir = target();
   for (const box of $("add-list").querySelectorAll("tbody input:checked")) {
@@ -445,6 +497,7 @@ $("add").onclick = () => {
   draft.folders = draft.folders.filter((d) => low(d) !== low(dir));
   if (dir) closed.delete(dir + "/");
   $("add-list").querySelectorAll("input:checked").forEach((b) => { b.checked = false; });
+  $("add-dialog").close();
   choices();
   changed();
 };
