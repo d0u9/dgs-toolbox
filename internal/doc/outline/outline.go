@@ -51,15 +51,23 @@ type Outline struct {
 }
 
 // Mount puts the Snapshot named Name in an Outline's tree, as the folder
-// At/Name.
+// At/Name, or At/As when As is given.
 type Mount struct {
 	Name string `yaml:"name" json:"name"`
 	// At is the folder it goes in, empty for the top.
 	At string `yaml:"at,omitempty" json:"at,omitempty"`
+	// As is the folder's name, empty for the Snapshot's own name. It is
+	// one name: a folder is placed by At.
+	As string `yaml:"as,omitempty" json:"as,omitempty"`
 }
 
 // Folder is the Snapshot's folder in the tree.
-func (m Mount) Folder() string { return path.Join(m.At, m.Name) }
+func (m Mount) Folder() string {
+	if m.As != "" {
+		return path.Join(m.At, m.As)
+	}
+	return path.Join(m.At, m.Name)
+}
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
@@ -87,6 +95,9 @@ func (o Outline) Validate() error {
 		}
 		if m.At != "" && (path.IsAbs(m.At) || m.At != path.Clean(m.At) || m.At == ".." || strings.HasPrefix(m.At, "../") || strings.Contains(m.At, "\\")) {
 			return fmt.Errorf("outline %s: the Snapshot %s's folder %q is not a path inside the tree", o.Name, m.Name, m.At)
+		}
+		if m.As != "" && (m.As == "." || m.As == ".." || strings.ContainsAny(m.As, "/\\") || strings.TrimSpace(m.As) != m.As) {
+			return fmt.Errorf("outline %s: the Snapshot %s's folder name %q is not one name", o.Name, m.Name, m.As)
 		}
 		if seen[m.Name] {
 			return fmt.Errorf("outline %s: %s is named twice among its rules and Snapshots", o.Name, m.Name)

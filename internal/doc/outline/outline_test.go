@@ -245,6 +245,20 @@ func TestGroupMountsSnapshots(t *testing.T) {
 	if err := o.Validate(); err == nil {
 		t.Fatal("a Snapshot was put outside the tree")
 	}
+	o.Snapshots = []Mount{{Name: "visa", At: "ids", As: "a/b"}}
+	if err := o.Validate(); err == nil {
+		t.Fatal("a Snapshot's folder name held a /")
+	}
+
+	// As names its folder in place of the Snapshot's name.
+	o.Rules[0].Layout = "ids/{owner}.{ext}"
+	o.Snapshots = []Mount{{Name: "visa", At: "ids", As: "签证"}}
+	if g, err = Group(o, []snapshot.Snapshot{visa}, items, nil); err != nil {
+		t.Fatal(err)
+	}
+	if f := g.Root.Children[0].Children[0]; f.Snapshot != "visa" || f.Path != "ids/签证" || f.Files[0].Path != "ids/签证/alex.pdf" {
+		t.Fatalf("%+v", f)
+	}
 }
 
 // A rule numbering a key the way it once was is written the way it is now.

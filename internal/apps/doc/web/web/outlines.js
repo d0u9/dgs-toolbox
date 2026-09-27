@@ -22,7 +22,7 @@ resizable(document.querySelector(".outline-main"), "dgs-doc-outlines-tree");
 const blank = () => ({ name: "", about: "", folder: "", rules: [], snapshots: [] });
 const copy = (o) => JSON.parse(JSON.stringify(o));
 const text = (o) => JSON.stringify({ name: o.name, about: o.about || "", folder: o.folder || "",
-  rules: o.rules.map((r) => r.name), snapshots: o.snapshots.map((m) => ({ name: m.name, at: m.at || "" })) });
+  rules: o.rules.map((r) => r.name), snapshots: o.snapshots.map((m) => ({ name: m.name, at: m.at || "", as: m.as || "" })) });
 
 function list() {
   $("count").textContent = outlines.length;
@@ -38,7 +38,8 @@ function sync() {
   draft.name = $("name").value.trim();
   draft.about = $("about").value.trim();
   draft.rules = rules.filter((r) => $("rules").querySelector(`input[value="${CSS.escape(r.name)}"]`)?.checked);
-  draft.snapshots = [...$("mounts").querySelectorAll(".mount")].map((row) => ({ name: row.dataset.name, at: row.querySelector("input").value.trim().replace(/^\/+|\/+$/g, "") }));
+  draft.snapshots = [...$("mounts").querySelectorAll(".mount")].map((row) => ({ name: row.dataset.name, at: row.querySelector(".mount-at").value.trim().replace(/^\/+|\/+$/g, ""),
+    as: row.querySelector(".mount-as").value.trim() }));
 }
 
 // fill draws the draft's rules and Snapshots into the form.
@@ -53,8 +54,11 @@ function fill() {
     const row = el("div", { className: "mount checks" },
       el("span", { className: "mono mount-name", title: s ? (s.about || "") : "No Snapshot of this name" }, m.name),
       el("span", { className: "muted" }, " in "),
-      el("input", { className: "mono", value: m.at || "", placeholder: "the top", spellcheck: false, autocomplete: "off",
+      el("input", { className: "mono mount-at", value: m.at || "", placeholder: "the top", spellcheck: false, autocomplete: "off",
         title: "The folder it goes in; it becomes a folder of its name there" }),
+      el("span", { className: "muted" }, " as "),
+      el("input", { className: "mono mount-as", value: m.as || "", placeholder: m.name, spellcheck: false, autocomplete: "off",
+        title: "The folder's name there; empty for the Snapshot's name" }),
       el("button", { type: "button", className: "button small-button", textContent: "Remove",
         onclick: () => { sync(); draft.snapshots = draft.snapshots.filter((x) => x.name !== m.name); fill(); changed(); } }),
       s ? null : el("span", { className: "message error" }, " not in the tree"));

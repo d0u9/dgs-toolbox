@@ -527,6 +527,7 @@ rules: [ids, cars]
 snapshots:                        # optional
   - name: visa-2026
     at: emma/visa                 # the folder it goes in; the top when empty
+    as: 签证                      # optional: the folder's name; the Snapshot's when empty
 ```
 
 ```yaml
@@ -805,7 +806,8 @@ naming: "{owner}-{type}.{ext}"    # optional: how a PDF added by hand is named
 - A folder with no PDF in it is kept under `folders`; one holding a PDF is
   not written. An Outline and an export see only the folders its PDFs are
   in: an empty folder is not exported.
-- An Outline puts it in its tree as the folder `<at>/<name>`. One of its
+- An Outline puts it in its tree as the folder `<at>/<name>`, or
+  `<at>/<as>` when the Outline gives it a name there: one name, no `/`. One of its
   paths wanted by a rule's PDF too, or one needed as a folder, is a clash,
   and the export fails, as between two rules.
 - Its name is unique among the Snapshots and the rules: an Outline names
