@@ -209,20 +209,40 @@ function details() {
     } })));
 }
 
+// The filters are remembered in this browser, so the next Snapshot opens
+// with the same ones.
+const FILTERS = ["add-search", "add-owner", "add-country", "add-type", "add-tag", "add-field", "add-value", "add-fresh", "add-retired"];
+const FILTERS_KEY = "dgs-doc-snapshots-filters";
+let recalled = null; // the filters remembered, until the lists are filled
+let recalledOnce = false;
+function remember() {
+  try { localStorage.setItem(FILTERS_KEY, JSON.stringify(Object.fromEntries(FILTERS.map((id) => [id, $(id).type === "checkbox" ? $(id).checked : $(id).value])))); } catch { /* not kept */ }
+}
+function recall() {
+  try { recalled = JSON.parse(localStorage.getItem(FILTERS_KEY) || "null"); } catch { recalled = null; }
+  if (!recalled) return;
+  for (const id of ["add-search", "add-fresh", "add-retired"]) if (id in recalled) {
+    if ($(id).type === "checkbox") $(id).checked = !!recalled[id]; else $(id).value = recalled[id];
+  }
+}
+
 // filters fills each filter with the values the Items have, keeping what
 // is chosen.
 function filters() {
   const fill = (id, all, values) => {
-    const was = $(id).value;
+    const was = recalled && id in recalled ? recalled[id] : $(id).value;
     $(id).replaceChildren(el("option", { value: "" }, all), ...[...new Set(values.filter(Boolean))].sort().map((v) => el("option", { value: v }, v)));
     $(id).value = [...$(id).options].some((o) => o.value === was) ? was : "";
   };
+  fill("add-owner", "Any owner", state.items.map((i) => i.fields.owner));
+  fill("add-country", "Any country", state.items.map((i) => i.fields.country));
   fill("add-type", "Any type", state.items.map((i) => i.type));
   fill("add-tag", "Any tag", state.items.flatMap((i) => i.tags || []));
   fill("add-field", "Any field", state.items.filter(ofType).flatMap((i) => Object.keys(i.fields)));
   const key = $("add-field").value;
   fill("add-value", key ? "Any " + key : "Pick a field first", key ? state.items.filter(ofType).map((i) => i.fields[key]) : []);
   $("add-value").disabled = !key;
+  recalled = null;
 }
 
 const ofType = (i) => !$("add-type").value || i.type === $("add-type").value;
@@ -233,10 +253,12 @@ const ofType = (i) => !$("add-type").value || i.type === $("add-type").value;
 function choices() {
   const words = $("add-search").value.toLowerCase().split(/\s+/).filter(Boolean);
   const have = new Set(draft ? draft.files.map((f) => f.item) : []);
-  const [type, tag, key, value] = ["add-type", "add-tag", "add-field", "add-value"].map((id) => $(id).value);
+  const [owner, country, type, tag, key, value] = ["add-owner", "add-country", "add-type", "add-tag", "add-field", "add-value"].map((id) => $(id).value);
+  remember();
   const kept = new Set([...$("add-list").querySelectorAll("input:checked")].map((b) => b.value));
   const sorted = state.items.filter((i) => (i.revisions || []).length)
-    .filter((i) => (!type || i.type === type) && (!key || (value ? i.fields[key] === value : !!i.fields[key])) &&
+    .filter((i) => (!type || i.type === type) && (!owner || i.fields.owner === owner) && (!country || i.fields.country === country) &&
+      (!key || (value ? i.fields[key] === value : !!i.fields[key])) &&
       (!tag || (i.tags || []).includes(tag)) && ($("add-retired").checked || !i.retired) && (!$("add-fresh").checked || !have.has(i.id)))
     .map((i) => ({ i, name: label(state, i), all: [i.type, ...Object.values(i.fields), ...(i.tags || [])].join(" ").toLowerCase() }))
     .filter(({ all }) => words.every((w) => all.includes(w)))
@@ -289,6 +311,7 @@ function open(name) {
     ". " + (s.used.length ? "In " + s.used.join(", ") + "." : "In no Outline yet: add it on the Outlines page.");
   $("title").textContent = name;
   saved = text(draft);
+  if (!recalledOnce) { recalledOnce = true; recall(); }
   filters();
   choices();
   draw();
@@ -315,7 +338,7 @@ async function reload() {
 $("name").addEventListener("input", () => { draft.name = $("name").value.trim(); changed(); });
 $("about").addEventListener("input", () => { draft.about = $("about").value.trim(); changed(); });
 $("add-search").addEventListener("input", choices);
-for (const id of ["add-tag", "add-value", "add-fresh", "add-retired"]) $(id).addEventListener("change", choices);
+for (const id of ["add-owner", "add-country", "add-tag", "add-value", "add-fresh", "add-retired"]) $(id).addEventListener("change", choices);
 for (const id of ["add-type", "add-field"]) $(id).addEventListener("change", () => { filters(); choices(); });
 $("add-all").addEventListener("change", () => {
   $("add-list").querySelectorAll("input").forEach((b) => { b.checked = $("add-all").checked; });

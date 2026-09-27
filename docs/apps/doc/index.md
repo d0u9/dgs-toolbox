@@ -770,8 +770,10 @@ folders:                          # optional: folders with no PDF in them
   place is refused: place them first.
 - It is edited by hand after, in its tree: a folder made in the folder
   picked, PDFs added there several at once from a list narrowed by words
-  matching any field, a type, a tag, one field's value (`fy` 2023),
-  whether it is in the Snapshot already and whether retired (each its
+  matching any field, an owner, a country, a type, a tag, one field's
+  value (`fy` 2023),
+  whether it is in the Snapshot already and whether retired, the filters
+  remembered in the browser (each its
   Item's latest revision, named after the Item), a PDF or folder dragged onto another
   folder or to the top, renamed, a PDF set to another revision of its Item,
   or either taken out — a folder with the PDFs in it. A folder a PDF leaves
