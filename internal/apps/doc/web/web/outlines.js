@@ -100,7 +100,7 @@ function open(name) {
   fill();
   sync();
   saved = text(draft);
-  tree.reset();
+  tree.reset(name ? "outline:" + name : "");
   history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
   $("title").textContent = name || "New Outline";
   $("delete").hidden = !name;

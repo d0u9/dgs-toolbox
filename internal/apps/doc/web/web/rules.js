@@ -62,7 +62,7 @@ function open(name) {
   $("dedupe").checked = r.dedupe === "number";
   sync(); // the form's own reading, so an untouched rule is not an edit
   saved = text(draft);
-  tree.reset();
+  tree.reset(name ? "rule:" + name : "");
   history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
   $("title").textContent = name || "New rule";
   $("delete").hidden = !name;
