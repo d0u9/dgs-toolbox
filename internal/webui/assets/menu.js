@@ -32,7 +32,9 @@ export function openMenu(event, sections) {
     menu.append(group);
   }
 
-  document.body.append(menu);
+  // Inside an open modal dialog the menu joins it, or the dialog's top
+  // layer would draw over it.
+  (event.target instanceof Element && event.target.closest("dialog[open]") || document.body).append(menu);
   place(menu, event.clientX, event.clientY);
   open = menu;
   listen(true);
