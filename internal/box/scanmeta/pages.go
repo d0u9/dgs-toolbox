@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strings"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
 // ErrNoPageImage means the page asked for carries no picture this build can
@@ -73,9 +75,10 @@ func (p *Pages) Page(page int) (Image, error) {
 	}
 	objects := pdfcpu.ImageObjNrs(p.context, page)
 	sort.Ints(objects)
+	box := pageBox(p.context, page)
 	for _, objNr := range objects {
 		object := p.context.Optimize.ImageObjects[objNr]
-		if object == nil || object.ImageDict == nil {
+		if object == nil || object.ImageDict == nil || !wholePage(object.ImageDict.Dict, box) {
 			continue
 		}
 		rendered, err := pdfcpu.ExtractImage(p.context, object.ImageDict, false, "", objNr, false)
@@ -95,3 +98,50 @@ func (p *Pages) Page(page int) (Image, error) {
 	}
 	return Image{}, ErrNoPageImage
 }
+
+// pageBox is the page's width and height in points, or zeros when the page
+// names none.
+func pageBox(context *model.Context, page int) [2]float64 {
+	_, _, inherited, err := context.PageDict(page, false)
+	if err != nil || inherited == nil {
+		return [2]float64{}
+	}
+	r := inherited.CropBox
+	if r == nil {
+		r = inherited.MediaBox
+	}
+	if r == nil {
+		return [2]float64{}
+	}
+	return [2]float64{r.Width(), r.Height()}
+}
+
+// wholePage tells a scan of the page from a picture placed on it — a logo on
+// a letter made on a computer. A scan has the page's shape, in either
+// orientation, and at least ScanMinDPI across. A page with no size passes.
+func wholePage(image types.Dict, box [2]float64) bool {
+	if box[0] <= 0 || box[1] <= 0 {
+		return true
+	}
+	w, h := image.IntEntry("Width"), image.IntEntry("Height")
+	if w == nil || h == nil || *w <= 0 || *h <= 0 {
+		return false
+	}
+	iw, ih := float64(*w), float64(*h)
+	near := func(a, b float64) bool { return math.Abs(a-b) <= ScanShapeTolerance*b }
+	page := box[0] / box[1]
+	switch {
+	case near(iw/ih, page):
+		return iw >= box[0]/72*ScanMinDPI
+	case near(ih/iw, page):
+		return ih >= box[0]/72*ScanMinDPI
+	}
+	return false
+}
+
+// ScanShapeTolerance is how far, as a fraction, a picture's shape may be
+// from its page's and still be a scan of it.
+const ScanShapeTolerance = 0.1
+
+// ScanMinDPI is the fewest pixels per inch across a page a scan of it has.
+const ScanMinDPI = 50
