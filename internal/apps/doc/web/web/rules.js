@@ -4,7 +4,7 @@
 // after, sees the change. Outlines put rules and Snapshots together.
 import { $, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
 import * as which from "/layoutform.js";
-import { outlineTree, unplaced } from "/outlinetree.js";
+import { outlineTree, unplaced, resizable } from "/outlinetree.js";
 
 // PREVIEW is the name the rule is planned under.
 const PREVIEW = "preview";
@@ -16,6 +16,7 @@ let draft = null; // the rule as the form has it
 let saved = ""; // the rule as last loaded or saved, to tell an edit
 let grouping = null; // the server's answer for the draft
 const tree = outlineTree($("tree"), () => state, { empty: () => "Give the rule a path to see the tree." });
+resizable(document.querySelector(".outline-main"), "dgs-doc-rules-tree");
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
 const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", shared: !!r.shared, exclude: r.exclude || {}, query_types: r.query_types || {}, exclude_types: r.exclude_types || {}, skip: r.skip || [], layout: r.layout,

@@ -6,7 +6,7 @@
 // result and exporting it is the Explore page's.
 import { $, api, el, loadState, post, label, frame, say } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
-import { outlineTree, unplaced } from "/outlinetree.js";
+import { outlineTree, unplaced, resizable } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
 let outlines = [];
@@ -17,6 +17,7 @@ let draft = null; // the Outline as the form has it
 let saved = ""; // the Outline as last loaded or saved, to tell an edit
 let grouping = null; // the server's answer for the draft
 const tree = outlineTree($("tree"), () => state, { empty: () => "Pick a rule or add a Snapshot to see the tree." });
+resizable(document.querySelector(".outline-main"), "dgs-doc-outlines-tree");
 
 const blank = () => ({ name: "", about: "", folder: "", rules: [], snapshots: [] });
 const copy = (o) => JSON.parse(JSON.stringify(o));

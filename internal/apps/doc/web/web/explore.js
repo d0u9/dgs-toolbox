@@ -6,7 +6,7 @@
 // and Snapshots made on theirs; nothing here changes one.
 import { $, api, el, loadState, post, frame, say, planNodes, showPreview, clearPreview, label, outlineFolder, rememberOutlineFolder } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
-import { outlineTree, find, findFile, folderFiles, pdfRow, unplaced, UNPLACED } from "/outlinetree.js";
+import { outlineTree, find, findFile, folderFiles, pdfRow, unplaced, UNPLACED, resizable } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
 let outlines = [];
@@ -17,6 +17,7 @@ let picture = null; // the PDF previewed
 
 const tree = outlineTree($("tree"), () => state, { onPick: files, empty: () =>
   shown && !shown.rules.length && !(shown.snapshots || []).length ? "The Outline has no rule and no Snapshot yet." : "The Outline selects no PDFs." });
+resizable(document.querySelector(".outline-main"), "dgs-doc-explore-tree", { after: false });
 
 function list() {
   const parts = (o) => o.rules.length + (o.rules.length === 1 ? " rule" : " rules") +
