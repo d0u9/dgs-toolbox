@@ -116,6 +116,12 @@
       <label class="pick"><input id="add-retired" type="checkbox"> Retired too</label>
     </div>
     <div id="add-list" class="snap-add-list scroll"></div>
+    <div class="snap-dialog-bar">
+      <label for="add-naming">Name as</label>
+      <input id="add-naming" class="mono snap-naming" placeholder="the Item's label, as {type}-{owner}" autocomplete="off" spellcheck="false"
+        title="A layout, as a rule's: {owner}-{name}.{ext}, {a|b}, {-key?}, {country:zh}. A / makes folders. Kept in the Snapshot.">
+      <span id="add-message" class="message"></span>
+    </div>
     <div class="dialog-buttons">
       <span class="muted snap-dialog-note">Each takes its Item's latest revision. Drag a header's edge to size it, the header to move it; click to sort; right-click or + for columns.</span>
       <button id="add-cancel" class="button" type="button">Cancel</button>

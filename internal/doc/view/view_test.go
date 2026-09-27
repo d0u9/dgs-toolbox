@@ -657,3 +657,17 @@ func TestUpgradeRenamesOrders(t *testing.T) {
 		t.Fatalf("%v %+v", changed, v)
 	}
 }
+
+func TestName(t *testing.T) {
+	it := item("i1", "passport", map[string]string{"owner": "alex", "country": "AU"}, "d1")
+	got, lacking, err := Name("{owner}-{type}{-number?}.{ext}", it, 1, nil)
+	if err != nil || got != "alex-passport.pdf" || len(lacking) != 0 {
+		t.Fatalf("got %q %v %v", got, lacking, err)
+	}
+	if _, lacking, _ := Name("{owner}-{name}.{ext}", it, 1, nil); len(lacking) != 1 || lacking[0] != "name" {
+		t.Fatalf("lacking %v", lacking)
+	}
+	if _, _, err := Name("{#}-{owner}.{ext}", it, 1, nil); err == nil {
+		t.Fatal("{#} accepted")
+	}
+}

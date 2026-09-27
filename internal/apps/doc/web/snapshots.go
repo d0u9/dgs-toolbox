@@ -168,3 +168,58 @@ func (s server) snapshotDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{})
 }
+
+// snapshotNames names PDFs about to be added to a Snapshot by a naming
+// layout, as a rule would: each name, or the keys its Item lacks.
+func (s server) snapshotNames(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Naming string `json:"naming"`
+		Files  []struct {
+			Item     string `json:"item"`
+			Revision string `json:"revision"`
+		} `json:"files"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	fail := func(status int, err error) { writeJSON(w, status, map[string]string{"error": err.Error()}) }
+	items, err := tree.LoadItems(s.root)
+	if err != nil {
+		fail(http.StatusConflict, err)
+		return
+	}
+	templates, err := tree.LoadTemplates(s.root)
+	if err != nil {
+		fail(http.StatusConflict, err)
+		return
+	}
+	byID := map[string]tree.Item{}
+	for _, it := range items {
+		byID[it.ID] = it
+	}
+	type named struct {
+		Path    string   `json:"path"`
+		Lacking []string `json:"lacking,omitempty"`
+	}
+	out := make([]named, len(request.Files))
+	for i, f := range request.Files {
+		it, ok := byID[f.Item]
+		if !ok {
+			fail(http.StatusBadRequest, fmt.Errorf("no Item %s", f.Item))
+			return
+		}
+		revision := 0
+		for n, rev := range it.Revisions {
+			if rev.Ref() == f.Revision || rev.Digest == f.Revision {
+				revision = n + 1
+			}
+		}
+		path, lacking, err := view.Name(request.Naming, it, revision, view.NamesOf(templates))
+		if err != nil {
+			fail(http.StatusBadRequest, err)
+			return
+		}
+		out[i] = named{Path: path, Lacking: lacking}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"names": out})
+}

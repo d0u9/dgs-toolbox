@@ -605,3 +605,26 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// Name renders layout for one revision of item, counting from 1, as Build
+// would for a rule with no default: the path, and the keys the Item lacks.
+// A layout for one PDF numbers nothing, so {#} is refused.
+func Name(layout string, item tree.Item, revision int, names TypeNames) (string, []string, error) {
+	parsed, err := Parse(layout)
+	if err != nil {
+		return "", nil, err
+	}
+	for _, parts := range parsed {
+		for _, part := range parts {
+			if part.Counter {
+				return "", nil, fmt.Errorf("layout %q: {#} numbers a rule's PDFs, not one PDF's name", layout)
+			}
+		}
+	}
+	keys := KeysOf(item, revision)
+	for lang, name := range names[keys["type"]] {
+		keys["type:"+lang] = name
+	}
+	name, lacking := render(parsed, keys, nil, nil, nil)
+	return name, lacking, nil
+}
