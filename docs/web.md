@@ -441,8 +441,9 @@ and whether the item is disabled or destructive — and sections are drawn with
 a rule between them, so commands of one kind sit together. An empty section is
 left out, so a page builds its sections from what is there without counting
 first. Only one menu is open at a time; it closes on a choice, on a click
-elsewhere, on `Esc`, on scroll and on resize, and it flips back inside the
-window near an edge. A menu offers nothing that is not also reachable without
+elsewhere, on `Esc`, on a scroll outside it and on resize, and it flips back
+inside the window near an edge; one taller than the window scrolls within
+itself. A menu offers nothing that is not also reachable without
 it: it is a shortcut to the row's own actions, never the only way to one.
 
 The dialog is what a reader already knows from Finder and Explorer:

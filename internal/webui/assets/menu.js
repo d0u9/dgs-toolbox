@@ -11,7 +11,8 @@ let open = null; // the one menu on the page, or null
 //   { label, title, onSelect, disabled, danger }
 // An empty or all-empty section is left out, so a caller can build sections
 // from what is there without counting first. Returns nothing; the menu closes
-// on a choice, on a click elsewhere, on Escape, on scroll and on resize.
+// on a choice, on a click elsewhere, on Escape, on a scroll outside it and
+// on resize. One taller than the window scrolls within itself.
 export function openMenu(event, sections) {
   event.preventDefault();
   event.stopPropagation();
@@ -96,5 +97,10 @@ function listen(on) {
   document[method]("pointerdown", onPointerDown, true);
   document[method]("keydown", onKeyDown, true);
   window[method]("resize", closeMenu);
-  window[method]("scroll", closeMenu, true);
+  window[method]("scroll", onScroll, true);
+}
+
+// A long menu scrolls within itself; that keeps it open.
+function onScroll(event) {
+  if (!open?.contains(event.target)) closeMenu();
 }

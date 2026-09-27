@@ -295,6 +295,30 @@ function filters() {
 
 const ofType = (i) => !$("add-type").value || i.type === $("add-type").value;
 
+// The list's columns, as in Finder's list view: Name always, then the keys
+// chosen by a right click on the header; a click on a header sorts by it,
+// again the other way. Both are remembered in this browser.
+const COLUMNS_KEY = "dgs-doc-snapshots-columns";
+let columns = ["type", "owner", "country"];
+let sortBy = { key: "", down: false }; // "" is Name
+try { const kept = JSON.parse(localStorage.getItem(COLUMNS_KEY) || "null"); if (kept) ({ columns, sortBy } = kept); } catch { /* defaults */ }
+const keep = () => { try { localStorage.setItem(COLUMNS_KEY, JSON.stringify({ columns, sortBy })); } catch { /* not kept */ } };
+const HEADS = { type: "Type", tags: "Tags", added: "Added" };
+const cell = (i, key) => key === "type" ? i.type : key === "tags" ? (i.tags || []).join(", ") :
+  key === "added" ? ((i.revisions || []).at(-1)?.added || "").slice(0, 10) : i.fields[key] || "";
+
+// columnMenu offers every key an Item has, ticked when shown.
+function columnMenu(event) {
+  const keys = [...new Set(state.items.flatMap((i) => Object.keys(i.fields)))].sort();
+  const item = (key) => ({ label: (columns.includes(key) ? "✓ " : "\u2003") + (HEADS[key] || key), onSelect: () => {
+    columns = columns.includes(key) ? columns.filter((c) => c !== key) : [...columns, key];
+    if (!columns.includes(sortBy.key)) sortBy = { key: "", down: false };
+    keep();
+    choices();
+  } });
+  openMenu(event, [["type", "tags", "added"].map(item), keys.map(item)]);
+}
+
 // choices lists the Items to add, narrowed by the search words, which match
 // any field, and by the filters, each ticked to add; an Item the Snapshot
 // has already says so.
@@ -303,25 +327,43 @@ function choices() {
   const have = new Set(draft ? draft.files.map((f) => f.item) : []);
   const [owner, country, type, tag, key, value] = ["add-owner", "add-country", "add-type", "add-tag", "add-field", "add-value"].map((id) => $(id).value);
   remember();
-  const kept = new Set([...$("add-list").querySelectorAll("input:checked")].map((b) => b.value));
+  const kept = new Set([...$("add-list").querySelectorAll("tbody input:checked")].map((b) => b.value));
+  const by = (x) => sortBy.key ? cell(x.i, sortBy.key) : x.name;
   const sorted = state.items.filter((i) => (i.revisions || []).length)
     .filter((i) => (!type || i.type === type) && (!owner || i.fields.owner === owner) && (!country || i.fields.country === country) &&
       (!key || (value ? i.fields[key] === value : !!i.fields[key])) &&
       (!tag || (i.tags || []).includes(tag)) && ($("add-retired").checked || !i.retired) && (!$("add-fresh").checked || !have.has(i.id)))
     .map((i) => ({ i, name: label(state, i), all: [i.type, ...Object.values(i.fields), ...(i.tags || [])].join(" ").toLowerCase() }))
     .filter(({ all }) => words.every((w) => all.includes(w)))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  $("add-list").replaceChildren(...(sorted.length ? sorted.map(({ i, name }) => el("label", { className: "pick" },
-    el("input", { type: "checkbox", value: i.id, checked: kept.has(i.id) }), " ", el("span", {}, name),
-    i.retired ? el("span", { className: "muted" }, " · retired") : null,
-    have.has(i.id) ? el("span", { className: "muted" }, " · in it") : null)) : [el("p", { className: "muted" }, "No Item matches.")]));
+    .sort((a, b) => (by(a).localeCompare(by(b), undefined, { numeric: true }) || a.name.localeCompare(b.name)) * (sortBy.down ? -1 : 1));
+  if (!sorted.length) return $("add-list").replaceChildren(el("p", { className: "muted" }, "No Item matches.")), ticked();
+  const all = el("input", { type: "checkbox", id: "add-all", title: "Tick all shown", onchange: () => {
+    $("add-list").querySelectorAll("tbody input").forEach((b) => { b.checked = all.checked; });
+    ticked();
+  } });
+  const head = (k, text) => el("th", { className: sortBy.key === k ? "sorted" : "", title: "Sort; right-click for columns",
+    onclick: () => { sortBy = sortBy.key === k ? { key: k, down: !sortBy.down } : { key: k, down: false }; keep(); choices(); } },
+    text, sortBy.key === k ? el("span", { className: "snap-sort" }, sortBy.down ? " ˅" : " ˄") : null);
+  const table = el("table", { className: "snap-table" },
+    el("thead", { oncontextmenu: columnMenu }, el("tr", {}, el("th", { className: "snap-tick" }, all), head("", "Name"),
+      ...columns.map((k) => head(k, HEADS[k] || k)))),
+    el("tbody", {}, ...sorted.map(({ i, name }) => {
+      const box = el("input", { type: "checkbox", value: i.id, checked: kept.has(i.id) });
+      const tr = el("tr", { className: (kept.has(i.id) ? "ticked" : "") + (i.retired ? " retired" : ""),
+        onclick: (event) => { if (event.target !== box) { box.checked = !box.checked; } tr.classList.toggle("ticked", box.checked); ticked(); } },
+        el("td", { className: "snap-tick" }, box),
+        el("td", { title: name }, name, have.has(i.id) ? el("span", { className: "muted" }, " · in it") : null),
+        ...columns.map((k) => el("td", { title: cell(i, k) }, cell(i, k))));
+      return tr;
+    })));
+  $("add-list").replaceChildren(table);
   ticked();
 }
 
 function ticked() {
-  const boxes = [...$("add-list").querySelectorAll("input")];
+  const boxes = [...$("add-list").querySelectorAll("tbody input")];
   const n = boxes.filter((b) => b.checked).length;
-  $("add-all").checked = !!boxes.length && n === boxes.length;
+  if ($("add-all")) $("add-all").checked = !!boxes.length && n === boxes.length;
   $("add").disabled = !n;
   $("add").textContent = n ? "Add " + n : "Add";
 }
@@ -389,14 +431,10 @@ $("add-search").addEventListener("input", choices);
 $("add-filters").addEventListener("toggle", () => { try { localStorage.setItem(FILTERS_KEY + "-open", $("add-filters").open ? "yes" : "no"); } catch { /* not kept */ } });
 for (const id of ["add-owner", "add-country", "add-tag", "add-value", "add-fresh", "add-retired"]) $(id).addEventListener("change", choices);
 for (const id of ["add-type", "add-field"]) $(id).addEventListener("change", () => { filters(); choices(); });
-$("add-all").addEventListener("change", () => {
-  $("add-list").querySelectorAll("input").forEach((b) => { b.checked = $("add-all").checked; });
-  ticked();
-});
-$("add-list").addEventListener("change", ticked);
+$("add-columns").onclick = (event) => columnMenu(event);
 $("add").onclick = () => {
   const dir = target();
-  for (const box of $("add-list").querySelectorAll("input:checked")) {
+  for (const box of $("add-list").querySelectorAll("tbody input:checked")) {
     const item = itemOf(box.value);
     const revs = item.revisions;
     const name = label(state, item).replace(/[\/\\:]+/g, "-");
