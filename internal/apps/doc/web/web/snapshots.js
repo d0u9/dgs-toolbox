@@ -6,6 +6,7 @@
 // Outlines page says where.
 import { $, api, el, loadState, post, label, frame, say } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
+import { openMenu } from "/ui/menu.js";
 import { resizable } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
@@ -16,6 +17,7 @@ let draft = null; // the Snapshot as edited: name, about, files, folders
 let saved = "";
 let picked = ""; // the file's path, or a folder's with a trailing "/"
 let dragging = ""; // the path being dragged, as picked is
+let renaming = ""; // the path whose name is being typed in the tree, as picked is
 const closed = new Set();
 resizable(document.querySelector(".outline-main"), "dgs-doc-snapshots-tree");
 
@@ -96,7 +98,6 @@ function draw() {
   if (picked && !(isFolder(picked) ? folders().some((d) => d + "/" === picked) : draft.files.some((f) => f.path === picked))) picked = "";
   const count = draft.files.length;
   $("total").textContent = count + (count === 1 ? " PDF" : " PDFs");
-  $("add-to").textContent = target() ? target() + "/" : "the top";
   const lost = lostOf();
   const host = $("tree");
   host.replaceChildren(draft.files.length || draft.folders.length ? fileTree(draft.files, {
@@ -108,6 +109,15 @@ function draw() {
     fileExtra: (f) => el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder", textContent: "↗",
       onclick: (event) => { event.stopPropagation(); reveal(f); } }),
     decorate: (row, { kind, path }) => {
+      // Picked without a redraw, which would scroll and so shut the menu.
+      row.addEventListener("contextmenu", (event) => {
+        picked = path;
+        host.querySelectorAll(".ft-row.selected").forEach((r) => r.classList.remove("selected"));
+        row.classList.add("selected");
+        details();
+        menu(event, path);
+      });
+      if (path === renaming) return inline(row, path);
       row.draggable = true;
       row.addEventListener("dragstart", (event) => { dragging = path; event.dataTransfer.setData("text/plain", path); event.dataTransfer.effectAllowed = "move"; });
       row.addEventListener("dragend", () => { dragging = ""; host.querySelectorAll(".drop").forEach((r) => r.classList.remove("drop")); host.classList.remove("drop"); });
@@ -129,8 +139,89 @@ function draw() {
         tried(relocate(from, join(path.slice(0, -1), baseOf(isFolder(from) ? from.slice(0, -1) : from))));
       });
     },
-  }) : el("p", { className: "muted outline-empty" }, "No PDF yet: add one."));
+  }) : el("p", { className: "muted outline-empty" }, "No PDF yet: add one, or right-click here for a folder."));
+  // The picked row keeps the keyboard across a redraw, so Enter renames it.
+  const focus = document.activeElement;
+  if (picked && !renaming && (!focus || focus === document.body || host.contains(focus))) host.querySelector(".ft-row.selected")?.focus({ preventScroll: true });
   details();
+}
+
+// inline turns row's name into a field, as Finder does: Enter or leaving
+// it renames, Escape keeps the name.
+function inline(row, path) {
+  const old = isFolder(path) ? path.slice(0, -1) : path;
+  const input = el("input", { className: "mono ft-rename", value: baseOf(old), spellcheck: false, autocomplete: "off" });
+  let done = false;
+  const finish = (keep) => {
+    if (done) return;
+    done = true;
+    renaming = "";
+    const name = input.value.trim();
+    if (keep || !name || name === baseOf(old)) return draw();
+    if (name.includes("/")) return tried("A name holds no /: drag it into a folder instead");
+    tried(relocate(path, join(dirOf(old), name)));
+  };
+  input.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Enter") { event.preventDefault(); finish(false); }
+    if (event.key === "Escape") { event.preventDefault(); finish(true); }
+  });
+  input.addEventListener("blur", () => finish(false));
+  row.querySelector(".ft-name").replaceChildren(input);
+  requestAnimationFrame(() => {
+    input.focus();
+    const dot = isFolder(path) ? -1 : input.value.lastIndexOf(".");
+    input.setSelectionRange(0, dot > 0 ? dot : input.value.length);
+  });
+}
+
+// rename starts typing a new name for path in the tree.
+function rename(path) {
+  renaming = path;
+  picked = path;
+  for (let d = dirOf(isFolder(path) ? path.slice(0, -1) : path); d; d = dirOf(d)) closed.delete(d + "/");
+  draw();
+}
+
+// newFolder makes an untitled folder in dir and names it in the tree.
+function newFolder(dir) {
+  let path = join(dir, "untitled folder"), n = 2;
+  while (taken(path)) path = join(dir, "untitled folder " + n++);
+  draft.folders.push(path);
+  if (dir) closed.delete(dir + "/");
+  changed();
+  rename(path + "/");
+}
+
+// remove takes the PDF or folder at path out of the Snapshot; a folder goes
+// with its PDFs, asked first. The folder it was in stays.
+function remove(path) {
+  const folder = isFolder(path);
+  const old = folder ? path.slice(0, -1) : path;
+  const inside = folder ? draft.files.filter((f) => within(f.path, old)) : [];
+  if (inside.length && !confirm("Take the folder " + old + " and its " + inside.length + " PDFs out of the Snapshot? Their Items stay.")) return;
+  draft.files = draft.files.filter((f) => f.path !== old && !within(f.path, old));
+  draft.folders = draft.folders.filter((d) => low(d) !== low(old) && !within(d, old));
+  const dir = dirOf(old);
+  if (dir && !folders().includes(dir)) draft.folders.push(dir);
+  picked = dir ? dir + "/" : "";
+  changed();
+}
+
+// menu is the right-click menu on a row, or with no path on the space
+// around them.
+function menu(event, path) {
+  const folder = !path || isFolder(path);
+  const dir = !path ? "" : folder ? path.slice(0, -1) : dirOf(path);
+  const f = path && !folder ? draft.files.find((x) => x.path === path) : null;
+  openMenu(event, [
+    [{ label: "New Folder", onSelect: () => newFolder(folder ? dir : dirOf(path)) },
+      { label: "Add PDFs " + (dir ? "to " + baseOf(dir) : "to the top") + "…", onSelect: () => {
+        picked = dir ? dir + "/" : ""; draw(); $("add-search").focus(); } }],
+    path ? [{ label: "Rename", onSelect: () => rename(path) }, f ? { label: "Show in Finder", onSelect: () => reveal(f) } : null] : [],
+    path ? [{ label: folder ? "Remove Folder" : "Remove", danger: true, onSelect: () => remove(path) }] : [],
+  ]);
 }
 
 // reveal shows a PDF of the Snapshot in Finder, as its revision has it.
@@ -166,6 +257,7 @@ function renamer(path) {
 
 // details draws the controls for what is picked in the tree.
 function details() {
+  $("add-to").textContent = target() ? target() + "/" : "the top";
   const box = $("picked");
   if (!picked) {
     $("picked-head").textContent = "Selected";
@@ -178,14 +270,7 @@ function details() {
     return box.replaceChildren(el("p", { className: "mono muted" }, old + "/"), renamer(picked),
       el("div", { className: "checks" },
         el("span", { className: "muted" }, inside.length + (inside.length === 1 ? " PDF" : " PDFs") + " in it"),
-        el("button", { type: "button", className: "button small-button", textContent: "Remove folder", onclick: () => {
-          if (inside.length && !confirm("Take the folder " + old + " and its " + inside.length + " PDFs out of the Snapshot? Their Items stay.")) return;
-          draft.files = draft.files.filter((f) => !within(f.path, old));
-          draft.folders = draft.folders.filter((d) => low(d) !== low(old) && !within(d, old));
-          picked = dirOf(old) ? dirOf(old) + "/" : "";
-          if (!folders().includes(dirOf(old)) && dirOf(old)) draft.folders.push(dirOf(old));
-          changed();
-        } })));
+        el("button", { type: "button", className: "button small-button", textContent: "Remove folder", onclick: () => remove(picked) })));
   }
   const f = draft.files.find((x) => x.path === picked);
   const item = itemOf(f.item);
@@ -200,13 +285,7 @@ function details() {
     el("label", { className: "vf" }, el("span", { className: "vf-label" }, "Revision"), choice),
     el("p", {}, item ? el("a", { href: api("/browse/") + "#" + f.item }, label(state, item)) : f.item,
       why ? el("span", { className: "message error" }, " · " + why) : null),
-    el("div", { className: "checks" }, el("button", { type: "button", className: "button small-button", textContent: "Remove", onclick: () => {
-      const dir = dirOf(f.path);
-      draft.files = draft.files.filter((x) => x !== f);
-      if (dir && !folders().includes(dir)) draft.folders.push(dir);
-      picked = dir ? dir + "/" : "";
-      changed();
-    } })));
+    el("div", { className: "checks" }, el("button", { type: "button", className: "button small-button", textContent: "Remove", onclick: () => remove(picked) })));
 }
 
 // The filters are remembered in this browser, so the next Snapshot opens
@@ -219,6 +298,7 @@ function remember() {
   try { localStorage.setItem(FILTERS_KEY, JSON.stringify(Object.fromEntries(FILTERS.map((id) => [id, $(id).type === "checkbox" ? $(id).checked : $(id).value])))); } catch { /* not kept */ }
 }
 function recall() {
+  try { $("add-filters").open = localStorage.getItem(FILTERS_KEY + "-open") !== "no"; } catch { /* open */ }
   try { recalled = JSON.parse(localStorage.getItem(FILTERS_KEY) || "null"); } catch { recalled = null; }
   if (!recalled) return;
   for (const id of ["add-search", "add-fresh", "add-retired"]) if (id in recalled) {
@@ -338,6 +418,7 @@ async function reload() {
 $("name").addEventListener("input", () => { draft.name = $("name").value.trim(); changed(); });
 $("about").addEventListener("input", () => { draft.about = $("about").value.trim(); changed(); });
 $("add-search").addEventListener("input", choices);
+$("add-filters").addEventListener("toggle", () => { try { localStorage.setItem(FILTERS_KEY + "-open", $("add-filters").open ? "yes" : "no"); } catch { /* not kept */ } });
 for (const id of ["add-owner", "add-country", "add-tag", "add-value", "add-fresh", "add-retired"]) $(id).addEventListener("change", choices);
 for (const id of ["add-type", "add-field"]) $(id).addEventListener("change", () => { filters(); choices(); });
 $("add-all").addEventListener("change", () => {
@@ -361,16 +442,25 @@ $("add").onclick = () => {
   choices();
   changed();
 };
-$("new-folder").onclick = () => {
-  const dir = target();
-  let path = join(dir, "New folder"), n = 2;
-  while (taken(path)) path = join(dir, "New folder " + n++);
-  draft.folders.push(path);
-  if (dir) closed.delete(dir + "/");
-  picked = path + "/";
-  changed();
-  $("picked").querySelector("input")?.select();
-};
+$("new-folder").onclick = () => newFolder(target());
+// Around the rows, as in Finder: a click picks nothing, so what is made
+// next goes to the top, and a right click offers what goes there.
+$("tree").addEventListener("click", (event) => { if (!event.target.closest(".ft-row") && picked) { picked = ""; draw(); } });
+$("tree").addEventListener("contextmenu", (event) => { if (!event.target.closest(".ft-row") && draft) {
+  picked = "";
+  $("tree").querySelectorAll(".ft-row.selected").forEach((r) => r.classList.remove("selected"));
+  details();
+  menu(event, "");
+}  });
+// Keys on a picked row, as in Finder: Enter renames, Cmd-Delete removes,
+// Shift-Cmd-N makes a folder.
+$("tree").addEventListener("keydown", (event) => {
+  if (!draft || renaming) return;
+  const cmd = event.metaKey || event.ctrlKey;
+  if (event.key === "Enter" && picked && !cmd) { event.preventDefault(); event.stopPropagation(); rename(picked); }
+  else if (event.key === "Backspace" && cmd && picked) { event.preventDefault(); remove(picked); }
+  else if (event.key.toLowerCase() === "n" && cmd && event.shiftKey) { event.preventDefault(); newFolder(target()); }
+}, true);
 // A PDF or folder dropped beside the folders goes to the top.
 $("tree").addEventListener("dragover", (event) => { if (dragging) { event.preventDefault(); $("tree").classList.add("drop"); } });
 $("tree").addEventListener("dragleave", (event) => { if (event.target === $("tree")) $("tree").classList.remove("drop"); });
