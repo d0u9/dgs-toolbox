@@ -2,7 +2,7 @@
 // and its PDFs by the name each has there. The server plans and nests the
 // rules; this draws what it answered. Shared by the Explore and Outlines
 // pages.
-import { api, el, label } from "/common.js";
+import { api, el, label, post } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 
 const FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h4.5l1.5 1.5h6.5v8H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M1.75 6.25h12.5" stroke="currentColor" stroke-width="1.25"/></svg>';
@@ -56,6 +56,8 @@ export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
   let picked = "";
   let grouping = null;
   const name = (id) => { const item = state().items.find((i) => i.id === id); return item ? label(state(), item) : id; };
+  // reveal shows the PDF selected in its folder in Finder.
+  const reveal = (f) => post("/api/reveal", { item: f.item, digest: f.digest }).catch((err) => alert(err.message));
   const pick = (path) => { picked = picked === path ? "" : path; draw(); onPick(picked); };
   const draw = () => {
     const root = grouping && grouping.root;
@@ -79,6 +81,8 @@ export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
       href: onPick ? undefined : (f) => api("/browse/") + "#" + f.item,
       folderIcon: (path) => folder(path)?.snapshot ? SNAPSHOT : "",
       folderClass: (path) => folder(path)?.snapshot ? "outline-snapshot" : "",
+      fileExtra: (f) => el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder",
+        textContent: "↗", onclick: (event) => { event.preventDefault(); event.stopPropagation(); reveal(f); } }),
       folderExtra: (path) => el("span", { className: "numeric" }, String(folder(path)?.count ?? "")),
     }));
     if (lost.length && onPick) {
