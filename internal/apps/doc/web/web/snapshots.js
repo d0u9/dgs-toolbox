@@ -7,6 +7,7 @@
 import { $, api, el, loadState, post, label, frame, say } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openMenu } from "/ui/menu.js";
+import { splitter } from "/ui/splitter.js";
 import { resizable, Folded } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
@@ -751,3 +752,13 @@ reload().then(() => {
   state.error = err.message;
   frame(state);
 });
+
+// The names beside the Items are as wide as they are dragged.
+{
+  const pane = document.querySelector(".snap-add-preview");
+  const handle = el("div", { className: "splitter col", role: "separator", "aria-orientation": "vertical", title: "Drag to resize; double-click for the default" });
+  pane.before(handle);
+  splitter({ handle, target: pane, axis: "x", invert: true, min: 160, fallback: 280, key: "dgs-doc-snapshots-names",
+    // Shut, the dialog has no width to hold the pane to.
+    max: () => pane.parentElement.clientWidth ? Math.max(160, pane.parentElement.clientWidth - 240) : Infinity });
+}
