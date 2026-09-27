@@ -8,6 +8,8 @@ import (
 
 	"dgs-toolbox/internal/doc/tree"
 	"dgs-toolbox/internal/doc/view"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestTakeResolveAndKeep(t *testing.T) {
@@ -88,5 +90,31 @@ func TestParseKeepsAnOldSnapshot(t *testing.T) {
 	s, err := Parse([]byte("name: visa\ntaken: 2026-09-26T10:00:00Z\noutline: ids\nnode: a/b\nfolder: ~/v\nfiles:\n    - path: emma.pdf\n      item: A\n      revision: r2\n"))
 	if err != nil || s.Outline != "ids" || len(s.Files) != 1 {
 		t.Fatalf("%v %+v", err, s)
+	}
+}
+
+func TestFoldersKeptAndChecked(t *testing.T) {
+	base := Snapshot{Name: "v", Taken: "2026-09-26T10:00:00Z", Files: []File{{Path: "a/x.pdf", Item: "A", Revision: "r"}}}
+	ok := base
+	ok.Folders = []string{"empty", "a/b"}
+	data, err := yaml.Marshal(ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := Parse(data)
+	if err != nil || len(back.Folders) != 2 || back.Folders[1] != "a/b" {
+		t.Fatalf("%v %+v", err, back)
+	}
+	for _, bad := range [][]string{{"../up"}, {"/abs"}, {"a//b"}, {"a/x.pdf"}, {"E", "e"}, {""}} {
+		s := base
+		s.Folders = bad
+		if s.Validate() == nil {
+			t.Errorf("folders %q passed", bad)
+		}
+	}
+	s := base
+	s.Files = append(s.Files, File{Path: "a", Item: "B", Revision: "r"})
+	if s.Validate() == nil {
+		t.Error("a file where a folder is passed")
 	}
 }

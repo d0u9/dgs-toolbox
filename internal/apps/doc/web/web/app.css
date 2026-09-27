@@ -716,10 +716,13 @@ body.list-shut .outline-list { display: none; }
 .mount input { flex: 1 1 140px; min-width: 0; }
 .mount-name { font-weight: 600; }
 /* The Snapshots page edits a Snapshot's PDFs one row each. */
-.snap-files { display: flex; flex-direction: column; gap: 6px; }
-.snap-file { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 6px; align-items: center; }
-.snap-file input { min-width: 0; }
-.snap-file .template-sub { grid-column: 1 / -1; }
-.snap-file.lost .template-sub { color: var(--error); }
+.snap-picked { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
+.snap-picked p { margin: 0; }
+.snap-add-list { display: flex; flex-direction: column; max-height: 260px; margin-top: 6px; padding: 4px 0; border: 1px solid var(--hairline); border-radius: 6px; }
+.snap-add-list .pick { display: flex; align-items: center; gap: 4px; padding: 3px 8px; }
+.snap-add-list p { margin: 4px 8px; }
 .snap-add { margin-top: 8px; }
-.snap-add select { flex: 1 1 auto; min-width: 0; }
+.snap-tools { flex: none; }
+.snap-tools .muted { font-size: var(--font-size-xs); }
+.file-tree .ft-row.snap-lost { color: var(--error); }
+.file-tree .ft-row.drop, .outline-tree.drop { background: var(--selected); outline: 1px dashed var(--primary); outline-offset: -1px; }

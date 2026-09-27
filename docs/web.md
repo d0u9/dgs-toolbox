@@ -373,7 +373,9 @@ does or where it links, a short note drawn at the right of a row, and
 which files are marked — already taken in: a marked file is drawn green, its
 file icon holding a check. A page may also give a folder its own icon
 and class, and let a folder row be picked: the row then takes a chevron that
-opens or shuts it, and a click elsewhere on it picks it. The tree draws
+opens or shuts it, and a click elsewhere on it picks it. A page may name
+folders to draw though no file is in them, and hook each row as it is drawn,
+as Snapshots does to drag PDFs and folders between folders. The tree draws
 and reports clicks; what a row means stays with the page. The doc app's
 Outline trees — on Outlines, Rules, Snapshots and Explore — are drawn with it, each PDF row carrying a button, shown on hover, that
 shows the PDF in Finder; so does each PDF row on Import.

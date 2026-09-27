@@ -761,15 +761,22 @@ files:
     item: 01M3CQZ4J29EC3KMWDG5DGB6R3
     revision: 01M3CR0A…           # the revision's ID
     rule: ids                     # the rule that placed it, for a reader
+folders:                          # optional: folders with no PDF in them
+  - CN/old
 ```
 
 - On the Snapshots page one is taken from a rule — what it places now, at
   the paths it gives them — or begun empty. A rule with PDFs it cannot
   place is refused: place them first.
-- It is edited by hand after: a PDF added (an Item's latest revision), its
-  path changed, set to another revision of its Item, or taken out. Nothing
-  is copied, as an archived Case copies nothing. Its tree is redrawn as it
-  changes.
+- It is edited by hand after, in its tree: a folder made in the folder
+  picked, PDFs added there several at once (each its Item's latest
+  revision, named after the Item), a PDF or folder dragged onto another
+  folder or to the top, renamed, a PDF set to another revision of its Item,
+  or either taken out — a folder with the PDFs in it. A folder a PDF leaves
+  stays. Nothing is copied, as an archived Case copies nothing.
+- A folder with no PDF in it is kept under `folders`; one holding a PDF is
+  not written. An Outline and an export see only the folders its PDFs are
+  in: an empty folder is not exported.
 - An Outline puts it in its tree as the folder `<at>/<name>`. One of its
   paths wanted by a rule's PDF too, or one needed as a folder, is a clash,
   and the export fails, as between two rules.

@@ -52,6 +52,10 @@ type Snapshot struct {
 	Node    string `yaml:"node,omitempty" json:"node,omitempty"`
 	Folder  string `yaml:"folder,omitempty" json:"folder,omitempty"`
 	Files   []File `yaml:"files" json:"files"`
+	// Folders are folders made by hand, kept even while no PDF is in them.
+	// A folder holding a PDF needs no entry; an Outline and an export see
+	// only the folders its PDFs are in.
+	Folders []string `yaml:"folders,omitempty" json:"folders,omitempty"`
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -69,7 +73,7 @@ func (s Snapshot) Validate() error {
 		if f.Path == "" || f.Item == "" || f.Revision == "" {
 			return fmt.Errorf("snapshot %s: a file lacks its path, Item or revision", s.Name)
 		}
-		if filepath.IsAbs(f.Path) || f.Path != filepath.ToSlash(filepath.Clean(f.Path)) || strings.HasPrefix(f.Path, "../") {
+		if !inside(f.Path) {
 			return fmt.Errorf("snapshot %s: %q is not a path inside it", s.Name, f.Path)
 		}
 		if seen[strings.ToLower(f.Path)] {
@@ -77,7 +81,35 @@ func (s Snapshot) Validate() error {
 		}
 		seen[strings.ToLower(f.Path)] = true
 	}
+	folders := map[string]bool{}
+	for _, d := range s.Folders {
+		if !inside(d) {
+			return fmt.Errorf("snapshot %s: folder %q is not a path inside it", s.Name, d)
+		}
+		if seen[strings.ToLower(d)] {
+			return fmt.Errorf("snapshot %s: %s is a file and a folder", s.Name, d)
+		}
+		if folders[strings.ToLower(d)] {
+			return fmt.Errorf("snapshot %s: folder %s twice", s.Name, d)
+		}
+		folders[strings.ToLower(d)] = true
+	}
+	for _, f := range s.Files {
+		for d := f.Path; strings.Contains(d, "/"); {
+			d = d[:strings.LastIndex(d, "/")]
+			if seen[strings.ToLower(d)] {
+				return fmt.Errorf("snapshot %s: %s is a file and a folder", s.Name, d)
+			}
+		}
+	}
 	return nil
+}
+
+// inside reports whether p is a clean slash-separated path within a
+// Snapshot's folder.
+func inside(p string) bool {
+	return p != "" && p != "." && !filepath.IsAbs(p) && !strings.HasPrefix(p, "/") &&
+		p == filepath.ToSlash(filepath.Clean(p)) && p != ".." && !strings.HasPrefix(p, "../")
 }
 
 // Take records the PDFs rule places now, at the paths it gives them. A
