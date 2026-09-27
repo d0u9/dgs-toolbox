@@ -115,7 +115,13 @@
       <label class="pick"><input id="add-fresh" type="checkbox" checked> Not in it yet</label>
       <label class="pick"><input id="add-retired" type="checkbox"> Retired too</label>
     </div>
-    <div id="add-list" class="snap-add-list scroll"></div>
+    <div class="snap-add-main">
+      <div id="add-list" class="snap-add-list scroll"></div>
+      <aside class="snap-add-preview">
+        <div class="muted snap-preview-head">Named as</div>
+        <div id="add-preview" class="scroll"></div>
+      </aside>
+    </div>
     <div class="snap-dialog-bar">
       <label for="add-naming">Name as</label>
       <input id="add-naming" class="mono snap-naming" placeholder="the Item's label, as {type}-{owner}" autocomplete="off" spellcheck="false"

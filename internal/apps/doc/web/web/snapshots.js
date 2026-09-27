@@ -537,6 +537,7 @@ function ticked() {
   if ($("add-all")) $("add-all").checked = !!boxes.length && n === boxes.length;
   $("add").disabled = !n;
   $("add").textContent = n ? "Add " + n : "Add";
+  preview();
 }
 
 // leave asks before an unsaved edit is dropped.
@@ -604,31 +605,56 @@ for (const id of ["add-owner", "add-country", "add-tag", "add-value", "add-fresh
 for (const id of ["add-type", "add-field"]) $(id).addEventListener("change", () => { filters(); choices(); });
 $("add-open").onclick = () => addDialog();
 $("add-cancel").onclick = () => $("add-dialog").close();
-$("add").onclick = async () => {
-  const dir = target();
-  const picks = [...$("add-list").querySelectorAll("tbody input:checked")].map((box) => {
-    const item = itemOf(box.value), revs = item.revisions;
-    return { item, revision: ref(revs[revs.length - 1]) };
-  });
-  const naming = draft.naming = $("add-naming").value.trim();
+// named is where the Items picked would go in dir, by the Snapshot's
+// naming or else by their labels, each a path of its own: a name taken,
+// by the Snapshot or one before it, gets _02. It is { paths } or { error }.
+async function named(picks, dir) {
   let names = picks.map((p) => label(state, p.item).replace(/[\/\\:]+/g, "-") + ".pdf");
-  if (naming) {
+  if (draft.naming) {
     try {
-      const answer = await post("/api/snapshots/names", { naming, files: picks.map((p) => ({ item: p.item.id, revision: p.revision })) });
+      const answer = await post("/api/snapshots/names", { naming: draft.naming, files: picks.map((p) => ({ item: p.item.id, revision: p.revision })) });
       const lacking = answer.names.map((n, i) => n.lacking ? label(state, picks[i].item) + " lacks " + n.lacking.join(", ") : "").filter(Boolean);
-      if (lacking.length) return say($("add-message"), lacking.join("; "), true);
+      if (lacking.length) return { error: lacking.join("; ") };
       names = answer.names.map((n) => /\.pdf$/i.test(n.path) ? n.path : n.path + ".pdf");
     } catch (err) {
-      return say($("add-message"), err.message, true);
+      return { error: err.message };
     }
   }
-  say($("add-message"), "");
-  picks.forEach((p, i) => {
-    const stem = names[i].replace(/\.pdf$/i, "");
-    let path = join(dir, names[i]), n = 2;
-    while (taken(path)) path = join(dir, stem + "_" + String(n++).padStart(2, "0") + ".pdf");
-    draft.files.push({ path, item: p.item.id, revision: p.revision });
+  const used = new Set();
+  const paths = names.map((name) => {
+    const stem = name.replace(/\.pdf$/i, "");
+    let path = join(dir, name), n = 2;
+    while (taken(path) || used.has(low(path))) path = join(dir, stem + "_" + String(n++).padStart(2, "0") + ".pdf");
+    used.add(low(path));
+    return path;
   });
+  return { paths };
+}
+
+// picks is the Items ticked in Add PDFs, each with its latest revision.
+const picks = () => [...$("add-list").querySelectorAll("tbody input:checked")].map((box) => {
+  const item = itemOf(box.value), revs = item.revisions;
+  return { item, revision: ref(revs[revs.length - 1]) };
+});
+
+// preview draws beside the list where the Items ticked would go, as a tree.
+let previewing = 0;
+async function preview() {
+  const mine = ++previewing, chosen = picks();
+  if (!chosen.length) return $("add-preview").replaceChildren(el("p", { className: "muted" }, "Tick Items to see their names."));
+  const got = await named(chosen, target());
+  if (mine !== previewing) return;
+  if (got.error) return $("add-preview").replaceChildren(el("p", { className: "message error" }, got.error));
+  $("add-preview").replaceChildren(fileTree(got.paths.map((path) => ({ path })), {}));
+}
+
+$("add").onclick = async () => {
+  const dir = target();
+  const chosen = picks();
+  const got = await named(chosen, dir);
+  if (got.error) return say($("add-message"), got.error, true);
+  say($("add-message"), "");
+  chosen.forEach((p, i) => draft.files.push({ path: got.paths[i], item: p.item.id, revision: p.revision }));
   draft.folders = draft.folders.filter((d) => low(d) !== low(dir));
   if (dir) closed.delete(dir + "/");
   $("add-list").querySelectorAll("input:checked").forEach((b) => { b.checked = false; });
@@ -636,7 +662,13 @@ $("add").onclick = async () => {
   choices();
   changed();
 };
-$("add-naming").oninput = () => { draft.naming = $("add-naming").value.trim(); changed(); };
+let naming = 0;
+$("add-naming").oninput = () => {
+  draft.naming = $("add-naming").value.trim();
+  changed();
+  clearTimeout(naming);
+  naming = setTimeout(preview, 250);
+};
 $("new-folder").onclick = () => newFolder(target());
 // Around the rows, as in Finder: a click picks nothing, so what is made
 // next goes to the top, and a right click offers what goes there.

@@ -793,7 +793,9 @@ naming: "{owner}-{type}.{ext}"    # optional: how a PDF added by hand is named
   fold away. Nothing is copied, as an archived Case copies nothing.
 - A PDF added by hand is named by `naming`, a layout written as a rule's,
   relative to the folder it is added to; a `/` in it makes folders, and
-  `{#}` is refused, since one PDF numbers nothing. Without `naming` it is
+  `{#}` is refused, since one PDF numbers nothing. Beside the Items, Add PDFs
+  shows the ticked ones as the tree they would make, named as they would
+  be, redrawn as the ticks or the layout change. Without `naming` it is
   named by its Item's label. `.pdf` is added when the name lacks it, and a
   name already there gets `_02`, `_03`. An Item lacking a key the layout
   needs is refused with the keys it lacks, and nothing is added. Changing
