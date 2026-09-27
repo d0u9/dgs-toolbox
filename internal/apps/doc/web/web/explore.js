@@ -35,7 +35,7 @@ async function open(o) {
   $("title").textContent = o.name;
   $("edit").href = api("/outlines/") + "#" + encodeURIComponent(o.name);
   $("export-button").disabled = !o.rules.length && !(o.snapshots || []).length;
-  tree.reset();
+  tree.reset("outline:" + o.name);
   list();
   try {
     grouping = await post("/api/outlines/group", o);

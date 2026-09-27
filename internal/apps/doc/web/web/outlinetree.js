@@ -62,9 +62,43 @@ export function resizable(pane, key, { after = true, fallback = 480 } = {}) {
 // shuts a folder and a PDF links to its Item. empty is the text drawn when
 // there is nothing. A folder with snapshot set is a Snapshot's, drawn as one
 // and shut until opened.
+// Folded is a set of folder paths kept in this browser under a key, so a
+// tree opens as it was left. load switches it to another key; with none it
+// keeps nothing. Snapshot folders shut once are kept beside it, in seen,
+// so one opened stays open.
+const FOLDED_KEY = "dgs-doc-folded";
+export class Folded extends Set {
+  constructor() { super(); this.seen = new Set(); this.key = ""; }
+  load(key) {
+    this.key = "";
+    super.clear();
+    this.seen.clear();
+    let kept = {};
+    try { kept = (JSON.parse(localStorage.getItem(FOLDED_KEY)) || {})[key] || {}; } catch { kept = {}; }
+    (kept.closed || []).forEach((p) => super.add(p));
+    (kept.seen || []).forEach((p) => this.seen.add(p));
+    this.key = key || "";
+  }
+  save() {
+    if (!this.key) return;
+    try {
+      const all = JSON.parse(localStorage.getItem(FOLDED_KEY)) || {};
+      delete all[this.key];
+      all[this.key] = { closed: [...this], seen: [...this.seen] };
+      // The trees left longest ago go first, so it stays small.
+      const keys = Object.keys(all);
+      keys.slice(0, Math.max(0, keys.length - 200)).forEach((k) => delete all[k]);
+      localStorage.setItem(FOLDED_KEY, JSON.stringify(all));
+    } catch { /* kept for this page only */ }
+  }
+  add(p) { super.add(p); if (this.save) this.save(); return this; }
+  delete(p) { const had = super.delete(p); if (this.save) this.save(); return had; }
+  clear() { super.clear(); this.seen.clear(); if (this.save) this.save(); }
+}
+
 export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
-  const closed = new Set(); // folder paths ("a/b/") drawn shut
-  const seen = new Set(); // Snapshot folders already shut once
+  const closed = new Folded(); // folder paths ("a/b/") drawn shut
+  const seen = closed.seen; // Snapshot folders already shut once
   let picked = "";
   let grouping = null;
   const name = (id) => { const item = state().items.find((i) => i.id === id); return item ? label(state(), item) : id; };
@@ -109,7 +143,8 @@ export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
   };
   return {
     show(answer) { grouping = answer; draw(); },
-    reset() { closed.clear(); seen.clear(); picked = ""; },
+    // reset starts afresh on another tree, as it was left under key.
+    reset(key) { closed.load(key); picked = ""; },
     pick(path) { picked = path; draw(); },
     get picked() { return picked; },
     get root() { return grouping && grouping.root; },

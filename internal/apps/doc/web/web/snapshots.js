@@ -7,7 +7,7 @@
 import { $, api, el, loadState, post, label, frame, say } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openMenu } from "/ui/menu.js";
-import { resizable } from "/outlinetree.js";
+import { resizable, Folded } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
 let snapshots = [];
@@ -19,7 +19,7 @@ let picked = ""; // the file's path, or a folder's with a trailing "/"
 let marked = new Set(); // every path picked, as picked is: more than one by Cmd- or Shift-click
 let dragging = ""; // the path being dragged, as picked is
 let renaming = ""; // the path whose name is being typed in the tree, as picked is
-const closed = new Set();
+const closed = new Folded();
 resizable(document.querySelector(".outline-main"), "dgs-doc-snapshots-tree");
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
@@ -554,7 +554,7 @@ function open(name) {
   $("dirty").hidden = true;
   say($("message"), "");
   say($("form-message"), "");
-  closed.clear();
+  closed.load(name ? "snapshot:" + name : "");
   picked = "";
   marked = new Set();
   list();

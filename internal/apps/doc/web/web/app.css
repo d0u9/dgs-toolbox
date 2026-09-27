@@ -715,7 +715,10 @@ body.list-shut .outline-list { display: none; }
 .mount { align-items: center; }
 .mount input:not([type=checkbox]) { flex: 1 1 140px; min-width: 0; }
 .mount.off .mount-where { display: none; }
+.mount { display: grid; grid-template-columns: auto 1fr auto 1fr; padding-left: 20px; gap: 4px 6px; }
+.mount > .pick { grid-column: 1 / -1; margin-left: -20px; }
 .mount-where { display: contents; }
+.mount > .message { grid-column: 1 / -1; }
 .mount-name { font-weight: 600; }
 /* The Snapshots page edits a Snapshot's PDFs one row each. */
 .snap-picked { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
