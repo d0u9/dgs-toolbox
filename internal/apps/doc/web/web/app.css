@@ -718,7 +718,7 @@ body.list-shut .outline-list { display: none; }
 /* The Snapshots page edits a Snapshot's PDFs one row each. */
 .snap-picked { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
 .snap-picked p { margin: 0; }
-.snap-add-list { display: flex; flex-direction: column; max-height: 260px; margin-top: 6px; padding: 4px 0; border: 1px solid var(--hairline); border-radius: 6px; }
+.snap-add-list { display: block; overflow: auto; max-height: 360px; margin-top: 6px; padding: 4px 0; border: 1px solid var(--hairline); border-radius: 6px; }
 .snap-add-list .pick { display: flex; align-items: center; gap: 4px; padding: 3px 8px; }
 .snap-add-list p { margin: 4px 8px; }
 .snap-add { margin-top: 8px; }
@@ -727,7 +727,16 @@ body.list-shut .outline-list { display: none; }
 .snap-filters select { min-width: 0; }
 .snap-filter-box { margin-top: 6px; }
 .snap-filter-box > summary { cursor: pointer; color: var(--graphite); font-size: var(--font-size-xs); }
-.snap-all { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.snap-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-xs); }
+.snap-table th, .snap-table td { padding: 3px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.snap-table th { position: sticky; top: 0; background: var(--paper); color: var(--graphite); font-weight: 500; border-bottom: 1px solid var(--hairline); cursor: pointer; user-select: none; }
+.snap-table th.sorted { color: var(--ink); }
+.snap-table th:not(:last-child) { border-right: 1px solid var(--hairline); }
+.snap-table .snap-tick { width: 1%; padding-right: 0; cursor: default; }
+.snap-table tbody tr { cursor: default; }
+.snap-table tbody tr:nth-child(even) { background: var(--hover); }
+.snap-table tbody tr.ticked { background: var(--selected); }
+.snap-table tbody tr.retired td { color: var(--graphite); }
 .file-tree .ft-row .ft-rename { width: 100%; min-width: 0; padding: 0 4px; font: inherit; }
 .snap-tools { flex: none; }
 .snap-tools .muted { font-size: var(--font-size-xs); }

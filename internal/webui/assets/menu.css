@@ -5,6 +5,8 @@
   position: fixed;
   z-index: 60;
   min-width: 160px;
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
   padding: var(--space-xxs) 0;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-md);
