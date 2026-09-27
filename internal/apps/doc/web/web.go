@@ -419,19 +419,30 @@ func (s server) revisionPath(id, digest string) (string, int, error) {
 	return "", http.StatusNotFound, errors.New("no such revision")
 }
 
-// reveal shows a revision's PDF in the file manager of the machine serving
-// the page, selected in its folder. The page is local, so that is the
+// reveal shows a PDF in the file manager of the machine serving the page,
+// selected in its folder: a revision's, named by item and digest, or one
+// Import lists, named by dir and path. The page is local, so that is the
 // machine in front of the person clicking.
 func (s server) reveal(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Item   string `json:"item"`
 		Digest string `json:"digest"`
+		Dir    string `json:"dir"`
+		Path   string `json:"path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	path, status, err := s.revisionPath(body.Item, body.Digest)
+	var path string
+	var status int
+	var err error
+	if body.Item == "" {
+		path, err = sourcePath(body.Dir, body.Path)
+		status = http.StatusNotFound
+	} else {
+		path, status, err = s.revisionPath(body.Item, body.Digest)
+	}
 	if err == nil {
 		err = desktop.Reveal(path)
 		status = http.StatusInternalServerError
