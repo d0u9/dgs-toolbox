@@ -3,9 +3,9 @@
 // rules; this draws what it answered. Shared by the Explore and Outlines
 // pages.
 import { api, el, label } from "/common.js";
+import { fileTree } from "/ui/filetree.js";
 
 const FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h4.5l1.5 1.5h6.5v8H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M1.75 6.25h12.5" stroke="currentColor" stroke-width="1.25"/></svg>';
-const FILE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 1.75h6l3.5 3.5v9H3.25z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M9.25 1.75v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>';
 
 const SNAPSHOT = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 4.75h3l1.25-1.75h4l1.25 1.75h3v8.5H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><circle cx="8" cy="8.75" r="2.5" fill="none" stroke="currentColor" stroke-width="1.25"/></svg>';
 
@@ -44,60 +44,56 @@ export function unplaced(grouping) {
   return out;
 }
 
-// outlineTree draws into host. With onPick, a row is picked by clicking it
-// and onPick is called with its path ("" when unpicked); without, a click
-// opens or shuts a folder and a PDF links to its Item. empty is the text
-// drawn when there is nothing. A folder with snapshot set is a Snapshot's,
-// drawn as one and shut until opened.
+// outlineTree draws into host with the shared file tree. With onPick, a
+// row is picked by clicking it and onPick is called with its path ("" when
+// unpicked); a folder's chevron opens or shuts it. Without, a click opens or
+// shuts a folder and a PDF links to its Item. empty is the text drawn when
+// there is nothing. A folder with snapshot set is a Snapshot's, drawn as one
+// and shut until opened.
 export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
-  const closed = new Set(); // folders toggled from how they start
-  const shut = (c) => closed.has(c.path) !== !!c.snapshot;
+  const closed = new Set(); // folder paths ("a/b/") drawn shut
+  const seen = new Set(); // Snapshot folders already shut once
   let picked = "";
   let grouping = null;
   const name = (id) => { const item = state().items.find((i) => i.id === id); return item ? label(state(), item) : id; };
+  const pick = (path) => { picked = picked === path ? "" : path; draw(); onPick(picked); };
   const draw = () => {
     const root = grouping && grouping.root;
     const lost = unplaced(grouping);
     if (picked !== UNPLACED && !find(root, picked) && !findFile(root, picked)) picked = "";
     if (picked === UNPLACED && !lost.length) picked = "";
-    const rows = [];
-    const walk = (node, depth) => {
-      for (const c of node.children) {
-        rows.push(folderRow(c, depth));
-        if (!shut(c)) walk(c, depth + 1);
-      }
-      for (const f of node.files) rows.push(fileRow(f, depth));
+    const files = [];
+    const walk = (node) => {
+      if (node.snapshot && !seen.has(node.path)) { seen.add(node.path); closed.add(node.path + "/"); }
+      files.push(...node.files);
+      node.children.forEach(walk);
     };
-    if (root) walk(root, 0);
-    if (lost.length && onPick) rows.push(row({ name: "Not placed", path: UNPLACED, depth: 0, count: lost.length, icon: FOLDER, className: " unplaced", title: "PDFs the rules cannot place" }));
-    host.replaceChildren(...(rows.length ? rows : [el("p", { className: "muted outline-empty" }, root ? "No Item matches." : empty())]));
-  };
-  const toggle = (path) => { if (closed.has(path)) closed.delete(path); else closed.add(path); draw(); };
-  const folderRow = (c, depth) => row({ name: c.name, path: c.path, depth, count: c.count, parent: true, open: !shut(c),
-    icon: c.snapshot ? SNAPSHOT : FOLDER, className: c.snapshot ? " outline-snapshot" : "",
-    title: c.snapshot ? "Snapshot " + c.snapshot + ": fixed as it was taken" : c.path });
-  const fileRow = (f, depth) => row({ name: f.path.split("/").pop(), path: f.path, depth, icon: FILE, className: " outline-file",
-    title: f.path + "\n" + name(f.item) + (f.view ? " · rule " + f.view : ""), href: api("/browse/") + "#" + f.item });
-  const row = ({ name, path, depth, count, icon, parent, open, className = "", title, href }) => {
-    const twist = el("span", { className: "outline-twist", textContent: parent ? (open ? "▾" : "▸") : "",
-      onclick: (event) => { event.stopPropagation(); if (parent) toggle(path); } });
-    const glyph = el("span", { className: "ft-icon" });
-    glyph.innerHTML = icon;
-    return el("div", { className: "outline-row" + className + (onPick && picked === path ? " selected" : ""),
-      role: "treeitem", tabIndex: 0, style: `--depth:${depth}`, title,
-      onclick: () => {
-        if (!onPick) return parent ? toggle(path) : href && (location.href = href);
-        picked = picked === path ? "" : path;
-        draw();
-        onPick(picked);
-      },
-      onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } } },
-      twist, glyph, el("span", { className: "outline-name" }, name),
-      el("span", { className: "outline-count numeric" }, count !== undefined ? String(count) : ""));
+    if (root) walk(root);
+    const folder = (path) => find(root, path.slice(0, -1));
+    const parts = [];
+    if (files.length) parts.push(fileTree(files, {
+      closed,
+      selected: onPick ? (find(root, picked) && picked ? picked + "/" : picked) : "",
+      onPick: onPick ? (f) => pick(f.path) : undefined,
+      onPickFolder: onPick ? (path) => pick(path.slice(0, -1)) : undefined,
+      href: onPick ? undefined : (f) => api("/browse/") + "#" + f.item,
+      folderIcon: (path) => folder(path)?.snapshot ? SNAPSHOT : "",
+      folderClass: (path) => folder(path)?.snapshot ? "outline-snapshot" : "",
+      folderExtra: (path) => el("span", { className: "numeric" }, String(folder(path)?.count ?? "")),
+    }));
+    if (lost.length && onPick) {
+      const r = el("div", { className: "ft-row unplaced" + (picked === UNPLACED ? " selected" : ""), role: "button", tabIndex: 0,
+        title: "PDFs the rules cannot place", onclick: () => pick(UNPLACED),
+        onkeydown: (event) => { if (event.key === "Enter") pick(UNPLACED); } },
+        el("span", { className: "ft-icon" }), el("span", { className: "ft-name" }, "Not placed"), el("span", { className: "numeric" }, String(lost.length)));
+      r.firstChild.innerHTML = FOLDER;
+      parts.push(el("div", { className: "file-tree" }, r));
+    }
+    host.replaceChildren(...(parts.length ? parts : [el("p", { className: "muted outline-empty" }, root ? "No Item matches." : empty())]));
   };
   return {
     show(answer) { grouping = answer; draw(); },
-    reset() { closed.clear(); picked = ""; },
+    reset() { closed.clear(); seen.clear(); picked = ""; },
     pick(path) { picked = path; draw(); },
     get picked() { return picked; },
     get root() { return grouping && grouping.root; },

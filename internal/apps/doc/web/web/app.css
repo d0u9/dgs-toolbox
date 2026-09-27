@@ -667,21 +667,6 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
    beside it. */
 .outline-main { flex: 1; min-width: 360px; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 0; }
 .outline-tree { padding: 4px 0 16px; border-top: 1px solid var(--hairline); }
-.outline-row {
-  --depth: 0;
-  display: grid; grid-template-columns: 16px 18px minmax(0, 1fr) auto; align-items: center; gap: 6px;
-  margin-left: calc(var(--depth) * 22px); padding: 5px 10px 5px 4px; border-radius: var(--radius-md);
-  box-shadow: inset 0 0 0 1.5px transparent; cursor: pointer; font-size: var(--font-size-ui);
-}
-.outline-row:hover { background: var(--hover); }
-.outline-row.selected { box-shadow: inset 0 0 0 1.5px var(--primary); background: var(--paper); }
-.outline-row:focus-visible { outline: 2px solid var(--primary-bright); outline-offset: -2px; }
-.outline-row .ft-icon { display: inline-flex; width: 16px; height: 16px; color: var(--graphite); }
-.outline-row .ft-icon svg { width: 16px; height: 16px; }
-.outline-twist { color: var(--graphite); text-align: center; font-size: 11px; }
-.outline-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); }
-.outline-count { color: var(--graphite); font-variant-numeric: tabular-nums; }
-.outline-file .outline-name { color: var(--ink); }
 .outline-export { padding: 0 0 12px; margin-bottom: 8px; border-bottom: 1px solid var(--hairline); }
 .outline-export .export-row { display: flex; gap: 8px; margin: 6px 0; }
 .outline-export .export-folder { flex: 1; min-width: 0; }
@@ -696,9 +681,9 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .rule-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
 .rule-tabs select[hidden] { display: none; }
 .rule-shared { margin: 4px 0 0; font-size: var(--font-size-xs); }
-.outline-row.unplaced { margin-top: 10px; color: var(--error); }
-.outline-row.unplaced .ft-icon, .outline-row.unplaced .outline-count { color: var(--error); }
-.outline-row.outline-snapshot .ft-icon, .outline-row.outline-snapshot .outline-name { color: var(--primary); }
+.file-tree .ft-row.unplaced { margin-top: 10px; }
+.file-tree .ft-row.unplaced, .file-tree .ft-row.unplaced .ft-icon, .file-tree .ft-row.unplaced > .numeric { color: var(--error); }
+.file-tree .ft-row.outline-snapshot .ft-icon, .file-tree .ft-row.outline-snapshot .ft-name { color: var(--primary); }
 .outline-empty { padding: 12px 4px; }
 /* A PDF picked on Explore opens beside the tree, as in a file manager. */
 .outline-preview { border-left: 1px solid var(--hairline); }
