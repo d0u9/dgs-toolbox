@@ -718,18 +718,25 @@ body.list-shut .outline-list { display: none; }
 /* The Snapshots page edits a Snapshot's PDFs one row each. */
 .snap-picked { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
 .snap-picked p { margin: 0; }
-.snap-add-list { display: block; overflow: auto; max-height: 360px; margin-top: 6px; padding: 4px 0; border: 1px solid var(--hairline); border-radius: 6px; }
+.snap-add-list { display: block; overflow: auto; flex: 1 1 auto; min-height: 0; margin-top: 6px; padding: 4px 0; border: 1px solid var(--hairline); border-radius: 6px; }
 .snap-add-list .pick { display: flex; align-items: center; gap: 4px; padding: 3px 8px; }
 .snap-add-list p { margin: 4px 8px; }
 .snap-add { margin-top: 8px; }
-.snap-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-top: 6px; }
-.snap-filters.checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-.snap-filters select { min-width: 0; }
-.snap-filter-box { margin-top: 6px; }
-.snap-filter-box > summary { cursor: pointer; color: var(--graphite); font-size: var(--font-size-xs); }
-.snap-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-xs); }
-.snap-table th, .snap-table td { padding: 3px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.snap-table { table-layout: fixed; border-collapse: collapse; font-size: var(--font-size-xs); }
+.snap-table th, .snap-table td { padding: 3px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .snap-table th { position: sticky; top: 0; background: var(--paper); color: var(--graphite); font-weight: 500; border-bottom: 1px solid var(--hairline); cursor: pointer; user-select: none; }
+.snap-table th .snap-grip { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 1; }
+.snap-table th.drop { box-shadow: inset 2px 0 0 var(--primary); }
+.snap-table th.snap-plus { text-align: center; color: var(--primary); }
+.snap-dialog { width: 80vw; height: 80vh; min-width: 520px; min-height: 360px; max-width: 96vw; max-height: 92vh; resize: both; overflow: hidden; }
+.snap-dialog[open] { display: flex; }
+.snap-dialog-body { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+.snap-dialog-body h3 { margin: 0; }
+.snap-dialog-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.snap-dialog-bar input[type=search] { flex: 1 1 200px; min-width: 160px; }
+.snap-dialog-bar select { flex: 0 1 140px; min-width: 0; }
+.snap-dialog-bar .pick { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.snap-dialog-note { flex: 1; font-size: var(--font-size-xs); }
 .snap-table th.sorted { color: var(--ink); }
 .snap-table th:not(:last-child) { border-right: 1px solid var(--hairline); }
 .snap-table .snap-tick { width: 1%; padding-right: 0; cursor: default; }

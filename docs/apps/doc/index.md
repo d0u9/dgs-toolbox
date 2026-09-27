@@ -773,9 +773,10 @@ folders:                          # optional: folders with no PDF in them
   matching any field, an owner, a country, a type, a tag, one field's
   value (`fy` 2023),
   whether it is in the Snapshot already and whether retired, the filters
-  remembered in the browser, shown as a list with columns as in Finder:
-  Name and the keys chosen by a right click on the header or Columns…, a
-  click on a header sorting by it, both remembered (each its
+  remembered in the browser, in a dialog listing them in columns as in
+  Finder: Name and the keys chosen by a right click on the header or its
+  +, each dragged by its edge to size it and by its header to move it, a
+  click on a header sorting by it, all remembered (each its
   Item's latest revision, named after the Item), a PDF or folder dragged onto another
   folder or to the top, renamed, a PDF set to another revision of its Item,
   or either taken out — a folder with the PDFs in it. A folder a PDF leaves
