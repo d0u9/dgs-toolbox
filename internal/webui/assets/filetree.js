@@ -13,6 +13,11 @@
 //     mark,         (file) → a title for a file drawn marked: its icon holds a
 //                   check and the row takes the marked colour; or ""
 //     href,         (file) → a link for the name instead of onPick
+//     folderIcon,   (path) → an svg drawn instead of the folder icon, or ""
+//     folderClass,  (path) → extra class names for a folder row, or ""
+//     onPickFolder, called with a folder's path when its row is clicked; the
+//                   row then takes a chevron that opens or shuts it, and
+//                   selected may name a folder ("a/b/")
 //   });
 //
 // files are objects with a slash-separated path. Changing closed or selected
@@ -49,11 +54,11 @@ function icon(svg) {
   return span;
 }
 
-function row(kind, name, title) {
+function row(kind, name, title, svg) {
   const div = document.createElement("div");
   div.className = "ft-row ft-" + kind;
   div.title = title;
-  div.append(icon(kind === "folder" ? FOLDER : FILE));
+  div.append(icon(svg || (kind === "folder" ? FOLDER : FILE)));
   const label = document.createElement("span");
   label.className = "ft-name";
   label.textContent = name;
@@ -62,7 +67,7 @@ function row(kind, name, title) {
 }
 
 export function fileTree(files, options = {}) {
-  const { closed = new Set(), selected = "", onPick, fileExtra, folderExtra, fileClass, mark, href } = options;
+  const { closed = new Set(), selected = "", onPick, fileExtra, folderExtra, fileClass, mark, href, folderIcon, folderClass, onPickFolder } = options;
   const draw = (node, prefix) => {
     const ul = document.createElement("ul");
     ul.className = "ft-list";
@@ -70,10 +75,14 @@ export function fileTree(files, options = {}) {
       const path = prefix + name + "/";
       const li = document.createElement("li");
       const open = !closed.has(path);
-      const r = row("folder", name, path);
+      const r = row("folder", name, path, folderIcon && folderIcon(path));
       r.setAttribute("role", "button");
       r.setAttribute("aria-expanded", String(open));
       r.tabIndex = 0;
+      if (folderClass) { const c = folderClass(path); if (c) r.classList.add(...c.split(" ")); }
+      if (path === selected) r.classList.add("selected");
+      const twist = onPickFolder && document.createElement("span");
+      if (twist) { twist.className = "ft-twist"; twist.textContent = open ? "▾" : "▸"; r.prepend(twist); }
       const extra = folderExtra && folderExtra(path, under(child));
       if (extra) r.append(extra);
       const toggle = () => {
@@ -81,9 +90,19 @@ export function fileTree(files, options = {}) {
         const shut = closed.has(path);
         r.setAttribute("aria-expanded", String(!shut));
         sub.hidden = shut;
+        if (twist) twist.textContent = shut ? "▸" : "▾";
       };
-      r.addEventListener("click", toggle);
-      r.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+      if (twist) {
+        twist.addEventListener("click", (e) => { e.stopPropagation(); toggle(); });
+        r.addEventListener("click", () => onPickFolder(path));
+        r.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") onPickFolder(path);
+          if (e.key === " ") { e.preventDefault(); toggle(); }
+        });
+      } else {
+        r.addEventListener("click", toggle);
+        r.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+      }
       const sub = draw(child, path);
       sub.hidden = !open;
       li.append(r, sub);

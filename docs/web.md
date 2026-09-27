@@ -371,8 +371,11 @@ depth reads at a glance. A click on a folder opens or shuts it. A page links
 files with what only it knows: which row is picked, what a click on a file
 does or where it links, a short note drawn at the right of a row, and
 which files are marked — already taken in: a marked file is drawn green, its
-file icon holding a check. The tree draws
-and reports clicks; what a row means stays with the page.
+file icon holding a check. A page may also give a folder its own icon
+and class, and let a folder row be picked: the row then takes a chevron that
+opens or shuts it, and a click elsewhere on it picks it. The tree draws
+and reports clicks; what a row means stays with the page. The doc app's
+Outline trees — on Outlines, Rules, Snapshots and Explore — are drawn with it.
 
 It also carries the **splitter**: the hairline between two panes that the
 reader drags to resize them. A page puts a `.splitter.col` or `.splitter.row`
