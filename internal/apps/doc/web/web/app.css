@@ -725,7 +725,7 @@ body.list-shut .outline-list { display: none; }
 .snap-table { table-layout: fixed; border-collapse: collapse; font-size: var(--font-size-xs); }
 .snap-table th, .snap-table td { padding: 3px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .snap-table th { position: sticky; top: 0; background: var(--paper); color: var(--graphite); font-weight: 500; border-bottom: 1px solid var(--hairline); cursor: pointer; user-select: none; }
-.snap-table th .snap-grip { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 1; }
+.snap-table th .snap-grip { position: absolute; top: 0; right: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 1; }
 .snap-table th.drop { box-shadow: inset 2px 0 0 var(--primary); }
 .snap-table th.snap-plus { text-align: center; color: var(--primary); }
 .snap-dialog { width: 80vw; height: 80vh; min-width: 520px; min-height: 360px; max-width: 96vw; max-height: 92vh; resize: both; overflow: hidden; }

@@ -357,13 +357,14 @@ function choices() {
       onclick: () => { sortBy = sortBy.key === k ? { key: k, down: !sortBy.down } : { key: k, down: false }; keep(); choices(); } },
       el("span", { className: "snap-th" }, text, sortBy.key === k ? (sortBy.down ? " ˅" : " ˄") : ""));
     // The edge sizes the column, as in Finder.
-    const grip = el("span", { className: "snap-grip", title: "Drag to size" });
+    const grip = el("span", { className: "snap-grip", title: "Drag to size; double-click for the default" });
     grip.addEventListener("click", (event) => event.stopPropagation());
+    grip.addEventListener("dblclick", (event) => { event.stopPropagation(); delete widths[k]; keep(); choices(); });
     grip.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();
       const col = table.querySelector(`col[data-key="${CSS.escape(k)}"]`);
-      const from = event.clientX, start = parseFloat(width(k));
+      const from = event.clientX, start = parseFloat(col.style.width);
       grip.setPointerCapture(event.pointerId);
       const move = (e) => { widths[k] = Math.max(48, Math.round(start + e.clientX - from)); col.style.width = widths[k] + "px"; fit(); };
       const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); keep(); };
@@ -408,15 +409,16 @@ function choices() {
     })));
   // A fixed table is as wide as its columns, so a column sized narrower
   // leaves room at the right rather than widening another.
-  // Name takes whatever room the other columns leave, as the list is wide.
+  // Each column is the width it was dragged to, and its edge follows the
+  // pointer; nothing else moves. What room is left goes to the empty
+  // column after the last, as in Finder, so the rows still reach the side.
   const fit = () => {
     const cols = [...table.querySelectorAll("col")];
-    const name = cols[1];
-    name.style.width = width("");
-    const total = cols.reduce((n, c) => n + parseFloat(c.style.width), 0);
-    const slack = Math.max(0, $("add-list").clientWidth - total - 2);
-    name.style.width = parseFloat(width("")) + slack + "px";
-    table.style.width = total + slack + "px";
+    const filler = cols.at(-1);
+    const total = cols.slice(0, -1).reduce((n, c) => n + parseFloat(c.style.width), 0);
+    const room = Math.max(36, $("add-list").clientWidth - total - 2);
+    filler.style.width = room + "px";
+    table.style.width = total + room + "px";
   };
   $("add-list").replaceChildren(table);
   fit();
