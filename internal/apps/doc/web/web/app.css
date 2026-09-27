@@ -665,7 +665,7 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .order-chip:hover { color: var(--primary); border-color: var(--primary); border-style: solid; }
 /* Outlines: the tree an Outline's rules make, with what is picked in it
    beside it. */
-.outline-main { flex: 1; min-width: 360px; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 0; }
+.outline-main { flex: 0 1 auto; width: max-content; min-width: 300px; max-width: 70%; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 0; }
 .outline-tree { padding: 4px 0 16px; border-top: 1px solid var(--hairline); }
 .outline-export { padding: 0 0 12px; margin-bottom: 8px; border-bottom: 1px solid var(--hairline); }
 .outline-export .export-row { display: flex; gap: 8px; margin: 6px 0; }
@@ -698,11 +698,11 @@ body.list-shut .outline-list { display: none; }
 .outline-main .template-title .count { flex: none; white-space: nowrap; }
 .outline-preview .reader-bar .button { white-space: nowrap; }
 .outline-preview .reader-bar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.outline-side { width: 340px; min-width: 300px; flex: none; padding: 0 16px 24px; }
+.outline-side { width: 340px; min-width: 300px; flex: 1 1 340px; padding: 0 16px 24px; }
 .outline-files { list-style: none; margin: 0; padding: 0; font-size: var(--font-size-ui); }
 .outline-files li { padding: 6px 0; border-bottom: 1px solid var(--hairline); overflow-wrap: anywhere; }
 .outline-files li.outline-sub { padding: 12px 0 4px; border-bottom: 0; color: var(--graphite); font-size: var(--font-size-xs); }
-.outline-form { overflow-y: auto; }
+.outline-form { overflow-y: auto; flex: 1 1 auto; }
 .outline-form[hidden] { display: none; }
 .outline-form { border-right: 1px solid var(--hairline); }
 #unplaced .problem { margin: 0; }
