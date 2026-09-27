@@ -304,6 +304,8 @@ let widths = {}; // px per column, "" for Name
 try { const kept = JSON.parse(localStorage.getItem(COLUMNS_KEY) || "null"); if (kept) ({ columns, sortBy, widths = {} } = kept); } catch { /* defaults */ }
 const keep = () => { try { localStorage.setItem(COLUMNS_KEY, JSON.stringify({ columns, sortBy, widths })); } catch { /* not kept */ } };
 let moving = ""; // the column whose header is being dragged
+let fitList = () => {}; // sizes the list's columns to the dialog
+new ResizeObserver(() => fitList()).observe($("add-list"));
 
 // addDialog opens Add PDFs over the page.
 function addDialog() {
@@ -361,7 +363,7 @@ function choices() {
       event.preventDefault();
       event.stopPropagation();
       const col = table.querySelector(`col[data-key="${CSS.escape(k)}"]`);
-      const from = event.clientX, start = col.getBoundingClientRect().width || th.getBoundingClientRect().width;
+      const from = event.clientX, start = parseFloat(width(k));
       grip.setPointerCapture(event.pointerId);
       const move = (e) => { widths[k] = Math.max(48, Math.round(start + e.clientX - from)); col.style.width = widths[k] + "px"; fit(); };
       const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); keep(); };
@@ -406,9 +408,19 @@ function choices() {
     })));
   // A fixed table is as wide as its columns, so a column sized narrower
   // leaves room at the right rather than widening another.
-  const fit = () => { table.style.width = [...table.querySelectorAll("col")].reduce((n, c) => n + parseFloat(c.style.width), 0) + "px"; };
-  fit();
+  // Name takes whatever room the other columns leave, as the list is wide.
+  const fit = () => {
+    const cols = [...table.querySelectorAll("col")];
+    const name = cols[1];
+    name.style.width = width("");
+    const total = cols.reduce((n, c) => n + parseFloat(c.style.width), 0);
+    const slack = Math.max(0, $("add-list").clientWidth - total - 2);
+    name.style.width = parseFloat(width("")) + slack + "px";
+    table.style.width = total + slack + "px";
+  };
   $("add-list").replaceChildren(table);
+  fit();
+  fitList = fit;
   ticked();
 }
 
