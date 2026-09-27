@@ -71,12 +71,16 @@
       <p id="origin" class="muted rule-shared"></p>
     </div>
     <div class="view-group">
-      <h3>PDFs <span id="file-count" class="count muted"></span></h3>
-      <p class="muted rule-shared">A path is inside the Snapshot's folder; <code>/</code> makes folders in it.</p>
-      <div id="files" class="snap-files"></div>
+      <h3 id="picked-head">Selected</h3>
+      <div id="picked" class="snap-picked"></div>
+    </div>
+    <div class="view-group">
+      <h3>Add PDFs <span class="muted">to <span id="add-to" class="mono"></span></span></h3>
+      <input id="add-search" type="search" placeholder="Filter Items" autocomplete="off" spellcheck="false">
+      <div id="add-list" class="snap-add-list scroll"></div>
       <div class="snap-add checks">
-        <select id="add-item"></select>
-        <button id="add" class="button" type="button">+ PDF</button>
+        <button id="add" class="button" type="button" disabled>Add</button>
+        <span class="muted">Each takes its Item's latest revision.</span>
       </div>
     </div>
     <div class="view-actions">
@@ -93,6 +97,10 @@
         <span id="dirty" class="dirty" hidden>Unsaved</span>
       </div>
       <p id="message" class="message"></p>
+    </div>
+    <div id="tree-tools" class="snap-tools checks" hidden>
+      <button id="new-folder" class="button small-button" type="button">+ Folder</button>
+      <span class="muted">Drag a PDF or folder onto a folder to move it; onto the space below to move it to the top.</span>
     </div>
     <div id="tree" class="outline-tree scroll" role="tree"></div>
   </section>

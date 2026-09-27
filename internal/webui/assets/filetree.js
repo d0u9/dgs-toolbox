@@ -18,6 +18,10 @@
 //     onPickFolder, called with a folder's path when its row is clicked; the
 //                   row then takes a chevron that opens or shuts it, and
 //                   selected may name a folder ("a/b/")
+//     folders,      folder paths ("a/b/") drawn even when no file is in them
+//     decorate,     (row, {kind, path, file}) called on each row drawn, kind
+//                   "folder" or "file" and path the folder's ("a/b/") or the
+//                   file's; a page adds what the tree does not, such as drag
 //   });
 //
 // files are objects with a slash-separated path. Changing closed or selected
@@ -27,8 +31,15 @@ const FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h
 const FILE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 1.75h6l3.5 3.5v9h-9.5z M9.25 1.75v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>';
 const FILE_MARKED = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 1.75h6l3.5 3.5v9h-9.5z M9.25 1.75v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M5.5 9.5l1.75 1.75 3.25-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-function nest(files) {
+function nest(files, folders = []) {
   const top = { dirs: new Map(), files: [] };
+  for (const folder of folders) {
+    let node = top;
+    for (const part of folder.split("/").filter(Boolean)) {
+      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] });
+      node = node.dirs.get(part);
+    }
+  }
   for (const file of files) {
     const parts = file.path.split("/");
     let node = top;
@@ -67,7 +78,7 @@ function row(kind, name, title, svg) {
 }
 
 export function fileTree(files, options = {}) {
-  const { closed = new Set(), selected = "", onPick, fileExtra, folderExtra, fileClass, mark, href, folderIcon, folderClass, onPickFolder } = options;
+  const { closed = new Set(), selected = "", onPick, fileExtra, folderExtra, fileClass, mark, href, folderIcon, folderClass, onPickFolder, folders, decorate } = options;
   const draw = (node, prefix) => {
     const ul = document.createElement("ul");
     ul.className = "ft-list";
@@ -103,6 +114,7 @@ export function fileTree(files, options = {}) {
         r.addEventListener("click", toggle);
         r.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
       }
+      if (decorate) decorate(r, { kind: "folder", path });
       const sub = draw(child, path);
       sub.hidden = !open;
       li.append(r, sub);
@@ -136,6 +148,7 @@ export function fileTree(files, options = {}) {
         r.addEventListener("click", () => onPick(file));
         r.addEventListener("keydown", (e) => { if (e.key === "Enter") onPick(file); });
       }
+      if (decorate) decorate(r, { kind: "file", path: file.path, file });
       li.append(r);
       ul.append(li);
     }
@@ -143,6 +156,6 @@ export function fileTree(files, options = {}) {
   };
   const root = document.createElement("div");
   root.className = "file-tree";
-  root.append(draw(nest(files), ""));
+  root.append(draw(nest(files, folders), ""));
   return root;
 }
