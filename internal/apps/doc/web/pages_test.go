@@ -31,7 +31,7 @@ func scan(t *testing.T) []byte {
 		must(t, png.Encode(&b, img))
 		pictures = append(pictures, &b)
 	}
-	importer, err := api.Import("pos:c, scale:0.5", types.POINTS)
+	importer, err := api.Import("dim:40 60, pos:full", types.POINTS)
 	must(t, err)
 	var out bytes.Buffer
 	must(t, api.ImportImages(nil, &out, pictures, importer, nil))

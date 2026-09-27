@@ -15,7 +15,7 @@ import (
 // Paging decodes the page asked for and nothing else, and names each page's
 // picture by the page it sits on.
 func TestPagesDecodeOnePageAtATime(t *testing.T) {
-	importer, err := api.Import("pos:c, scale:0.5", types.POINTS)
+	importer, err := api.Import("dim:40 60, pos:full", types.POINTS)
 	if err != nil {
 		t.Fatalf("import settings: %v", err)
 	}
@@ -59,5 +59,25 @@ func TestPagesOfAPictureFile(t *testing.T) {
 	}
 	if _, err := pages.Page(2); errors.Is(err, scanmeta.ErrNoPageImage) {
 		t.Error("page 2 reported as blank rather than missing")
+	}
+}
+
+// A picture placed on a page — a logo on a letter made on a computer — is
+// not the page: its shape is not the page's, so the page has no picture.
+func TestPagesRefuseAPicturePlacedOnAPage(t *testing.T) {
+	importer, err := api.Import("form:A4, pos:tl, scale:0.1", types.POINTS)
+	if err != nil {
+		t.Fatalf("import settings: %v", err)
+	}
+	var out bytes.Buffer
+	if err := api.ImportImages(nil, &out, []io.Reader{bytes.NewReader(pngBytes(t, 60, 60))}, importer, nil); err != nil {
+		t.Fatalf("build pdf: %v", err)
+	}
+	pages, err := scanmeta.OpenPages(out.Bytes())
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := pages.Page(1); !errors.Is(err, scanmeta.ErrNoPageImage) {
+		t.Fatalf("page 1: got %v, want ErrNoPageImage", err)
 	}
 }
