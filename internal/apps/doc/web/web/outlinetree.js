@@ -4,6 +4,7 @@
 // pages.
 import { api, el, label, post } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
+import { splitter } from "/ui/splitter.js";
 
 const FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h4.5l1.5 1.5h6.5v8H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M1.75 6.25h12.5" stroke="currentColor" stroke-width="1.25"/></svg>';
 
@@ -42,6 +43,17 @@ export function unplaced(grouping) {
   for (const c of grouping.clashes || []) for (const f of c.files) out.push({ ...f, why: "wants " + c.path + " with a PDF of " + c.files.filter((g) => g !== f).map((g) => g.view).join(", ") });
   for (const l of grouping.lost || []) out.push({ ...l, why: "is at " + l.path + ", but " + l.why });
   return out;
+}
+
+// resizable puts a handle on the side of the tree's pane that faces the
+// rest of the page, so the reader drags it wider or narrower; the width is
+// remembered per page. The pane after the form grows leftward, the pane
+// before the list of PDFs rightward.
+export function resizable(pane, key, { after = true, fallback = 480 } = {}) {
+  const handle = el("div", { className: "splitter col", role: "separator", "aria-orientation": "vertical", title: "Drag to resize; double-click for the default" });
+  if (after) pane.before(handle); else pane.after(handle);
+  splitter({ handle, target: pane, axis: "x", invert: after, min: 260, fallback, key,
+    max: () => Math.max(260, pane.parentElement.clientWidth - 420) });
 }
 
 // outlineTree draws into host with the shared file tree. With onPick, a

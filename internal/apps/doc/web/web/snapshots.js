@@ -4,7 +4,7 @@
 // revision or taken out. An Outline puts it in its tree as a folder of its
 // name; the Outlines page says where.
 import { $, api, el, loadState, post, label, frame, say } from "/common.js";
-import { outlineTree } from "/outlinetree.js";
+import { outlineTree, resizable } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
 let snapshots = [];
@@ -13,6 +13,7 @@ let editing = null; // the saved name of the Snapshot shown
 let draft = null; // the Snapshot as the form has it
 let saved = "";
 const tree = outlineTree($("tree"), () => state, { empty: () => "No PDF yet: add one." });
+resizable(document.querySelector(".outline-main"), "dgs-doc-snapshots-tree");
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
 const text = (s) => JSON.stringify({ name: s.name, about: s.about || "", files: s.files.map((f) => [f.path, f.item, f.revision]) });
