@@ -27,7 +27,33 @@ The layout and formats are in [`index.md`](index.md#layout-on-disk).
 
 ## Deferred
 
-- **Convergence** — one field catalogue, conditions as one expression, a
-  rule's paths nesting. A proposal, not decided: [`convergence.md`](convergence.md).
+- **Convergence** — types that inherit, conditions as one `if` expression, a
+  rule's paths nesting. Decided except the nested Rules page:
+  [`convergence.md`](convergence.md).
+
+- **Accounts on a server** — not decided. The same web pages served to several
+  people, each seeing and editing only part of the Items.
+  - Sign-in with accounts in a YAML file, password hashes only; HTTPS.
+  - Access is per Item, not per folder: a generated tree is a view, and one
+    Item appears in several. What a person sees is the tree built from the
+    Items they may read.
+  - An `acl` field on `record`, inherited by every type, holds groups, not
+    people. A Template's `defaults` fills it when a PDF is added. Only an
+    owner or an admin may change it.
+  - `users.yaml` holds groups and a `policy` of `if` expressions per group,
+    for access without touching sidecars.
+  - Readers are the owner, the members of the groups in `acl`, and the
+    groups a policy matches. Grants only add; there is no deny. Write access
+    comes from policy only.
+  - Every endpoint filters: search, Browse, an Item, its PDF, `/api/values`,
+    `about` links (a link to an unreadable Item shows no content), export,
+    Outlines, Snapshots. Templates and Rules are admin only.
+  - Concurrent writers need a lock or a version check per sidecar; history
+    events record who made them.
+  - Shipped as the same `dgs` binary in a Docker image, run as a server mode
+    of `dgs doc`, not as a second program.
+  - Groundwork worth doing before: every Item read goes through one function;
+    history events carry an `actor`; `internal/doc/expr` knows nothing of
+    rules.
 
 - **Clone**, and the three-way merge a cloned sub-tree allows.
