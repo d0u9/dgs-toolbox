@@ -70,8 +70,11 @@ func TestTakeResolveAndKeep(t *testing.T) {
 	}
 	clash := edited
 	clash.Name = "ids"
-	if err := Save(root, "visa", clash, false); err == nil {
-		t.Fatal("a Snapshot took a rule's name")
+	if err := Save(root, "visa", clash, false); err != nil {
+		t.Fatalf("a Snapshot could not share a rule's name: %v", err)
+	}
+	if err := Save(root, "ids", edited, false); err != nil {
+		t.Fatal(err)
 	}
 	list, err := Load(root)
 	if err != nil || len(list) != 1 || len(list[0].Files) != 1 || list[0].Files[0].Revision != "r1" {

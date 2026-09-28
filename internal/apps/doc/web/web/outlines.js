@@ -57,10 +57,9 @@ function fill() {
   const names = [...draft.snapshots.map((m) => m.name), ...snapshots.map((s) => s.name).filter((n) => !put.has(n))];
   $("mounts").replaceChildren(...(names.length ? names.map((name) => {
     const s = snapshots.find((x) => x.name === name), m = put.get(name) || { name, at: "", as: "" };
-    const clash = !put.has(name) && rules.some((r) => r.name === name);
-    const on = el("input", { type: "checkbox", className: "mount-on", checked: put.has(name), disabled: clash,
+    const on = el("input", { type: "checkbox", className: "mount-on", checked: put.has(name),
       onchange: () => row.classList.toggle("off", !on.checked) });
-    const row = el("div", { className: "mount checks" + (put.has(name) ? "" : " off"), title: clash ? "A rule has this name" : "" },
+    const row = el("div", { className: "mount checks" + (put.has(name) ? "" : " off") },
       el("label", { className: "pick", title: s ? (s.about || "") + (s.about ? " · " : "") + s.files.length + " PDFs" : "No Snapshot of this name" },
         on, " ", el("span", { className: "mono mount-name" }, name)),
       el("span", { className: "mount-where" },

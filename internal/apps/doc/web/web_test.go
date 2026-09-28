@@ -552,8 +552,8 @@ func TestSnapshotKeepsWhatWasTaken(t *testing.T) {
 	if rec := do(h, "POST", "/api/snapshots/take", `{"rule":"ids","name":"visa"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/snapshots/take", `{"rule":"ids","name":"ids"}`); rec.Code == 200 {
-		t.Fatal("a Snapshot took a rule's name")
+	if rec := do(h, "POST", "/api/snapshots/take", `{"rule":"ids","name":"visa"}`); rec.Code == 200 {
+		t.Fatal("a Snapshot replaced another")
 	}
 	// The rule changes; the Snapshot still has emma.pdf at its top, put
 	// in the Outline's tree as the folder old/visa.

@@ -249,8 +249,8 @@ func ReadFile(path string) (Snapshot, error) {
 	return s, nil
 }
 
-// Save writes s. Create refuses a name another Snapshot or a rule has, as
-// does a rename; an Outline names its rules and Snapshots together.
+// Save writes s. Create refuses a name another Snapshot has, as does a
+// rename; a rule or an Outline may share it.
 // Previous, when it names another Snapshot, is removed after: package
 // outline renames it in the Outlines using it.
 func Save(root, previous string, s Snapshot, create bool) error {
@@ -260,9 +260,6 @@ func Save(root, previous string, s Snapshot, create bool) error {
 	if create || (previous != "" && previous != s.Name) {
 		if _, err := os.Stat(Path(root, s.Name)); err == nil {
 			return fmt.Errorf("a Snapshot is named %s already", s.Name)
-		}
-		if _, err := os.Stat(filepath.Join(root, "rules", s.Name+".yaml")); err == nil {
-			return fmt.Errorf("a rule is named %s: choose another name", s.Name)
 		}
 	}
 	if !create {
