@@ -664,7 +664,10 @@ folder of its own: `license{/language?}/{of|type}{-language?}.{ext}` puts a
 driver licence at `license/driver_licence.pdf` and its English translation
 at `license/en/driver_licence-en.pdf`. Such a key ends a name that has
 something before it. `{#}` does not number it: in `{#}-{level}{/language?}`
-the level is numbered and the language folder follows.
+the level is numbered and the language folder follows. `{/#-language?}`
+numbers the folder itself, from the order named `{language}`: with that
+order `en, fr, ru` and `en` numbered 10, the folders are `10-en`, `11-fr`,
+`12-ru`.
 
 A key written `<field>.<key>` is a key of the Item that an `item` or
 `revision` field links to, at the revision it names (an `item` field: its

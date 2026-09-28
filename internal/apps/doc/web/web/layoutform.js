@@ -354,11 +354,14 @@ $("layout").addEventListener("input", () => { active = 0; suggest(); drawOrder()
 // with {#} numbers what follows it, less the text straight after {#} and
 // a trailing .{ext}, and its order is named that as written.
 export const numberedKeys = () => [...new Set($("layout").value.split(/\/(?![^{}]*\})/).flatMap((segment) => {
+  // {/#-language?} numbers its folder from the order {language}.
+  const folder = segment.match(/\{\/#[^{}a-z0-9_]*([^{}?]*?)[^{}a-z0-9_]*\?\}$/);
+  const own = folder ? ["{" + folder[1] + "}"] : [];
   const at = segment.indexOf("{#}");
-  if (at < 0) return [];
+  if (at < 0) return own;
   // The folder a {/key?} adds after the name is not numbered.
   const rest = segment.slice(at + 3).replace(/^[^{]*/, "").replace(/\{\/[^{}]*\?\}$/, "").replace(/\.?\{ext\}$/, "");
-  return /\{[^#{}]+\}/.test(rest) ? [rest] : [];
+  return [...(/\{[^#{}]+\}/.test(rest) ? [rest] : []), ...own];
 }))];
 
 // An Item's value for one key, {a|b} or {a|b:format}: the first alternative
