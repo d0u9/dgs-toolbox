@@ -101,11 +101,6 @@ type View struct {
 	// number and the text straight after {#} are not written, and they
 	// take no number, so the next name counts on from the one before.
 	Unnumbered map[string][]string `yaml:"unnumbered,omitempty" json:"unnumbered,omitempty"`
-	// Map writes, per key, a value as another: {tags: {network-1: address01}}
-	// puts address01 where the layout has {tags}. For tags the value is the
-	// revision's first tag the map lists; a key whose value it does not
-	// list keeps its value.
-	Map map[string]map[string]string `yaml:"map,omitempty" json:"map,omitempty"`
 }
 
 // Path is one of a rule's Layouts: a layout for the PDFs When picks, as a
@@ -154,16 +149,6 @@ func (v View) Validate() error {
 		for key, types := range scope.types {
 			if _, ok := scope.conditions[key]; !ok || len(types) == 0 {
 				return fmt.Errorf("view %s: %s %q names no condition, or no type", v.Name, scope.name, key)
-			}
-		}
-	}
-	for key, values := range v.Map {
-		if strings.TrimSpace(key) == "" || len(values) == 0 {
-			return fmt.Errorf("view %s: map %q names no key, or no value", v.Name, key)
-		}
-		for from, to := range values {
-			if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
-				return fmt.Errorf("view %s: map %s writes %q as %q: neither may be empty", v.Name, key, from, to)
 			}
 		}
 	}

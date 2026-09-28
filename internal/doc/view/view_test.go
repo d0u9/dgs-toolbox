@@ -956,37 +956,6 @@ func TestInheritExcludesAndLinkedType(t *testing.T) {
 	}
 }
 
-func TestMapWritesAValueAsAnother(t *testing.T) {
-	a := item("01K00000000000000000000001", "bill", map[string]string{"service": "电"}, "d1")
-	a.Tags = []string{"paid", "HOME01"}
-	b := item("01K00000000000000000000002", "bill", map[string]string{"service": "网"}, "d2")
-	b.Tags = []string{"network-2"}
-	c := item("01K00000000000000000000003", "bill", map[string]string{"service": "水"}, "d3")
-	v := View{Name: "x", Selection: Head, Layout: "{tags}/{service}.{ext}",
-		Map: map[string]map[string]string{"tags": {"network-1": "address01", "network-2": "address02"}, "service": {"电": "electricity"}}}
-	if err := v.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	plan, err := Build(v, []tree.Item{a, b, c}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var paths []string
-	for _, f := range plan.Files {
-		paths = append(paths, f.Path)
-	}
-	if want := []string{"address01/electricity.pdf", "address02/网.pdf"}; !reflect.DeepEqual(paths, want) {
-		t.Fatalf("got %v, want %v", paths, want)
-	}
-	if len(plan.Missing) != 1 || plan.Missing[0].Keys[0] != "tags" {
-		t.Fatalf("a PDF with no tag the map lists was placed: %+v", plan.Missing)
-	}
-	v.Map = map[string]map[string]string{"tags": {"network-1": ""}}
-	if v.Validate() == nil {
-		t.Fatal("a map to nothing was taken")
-	}
-}
-
 func TestDateFormats(t *testing.T) {
 	a := item("01K00000000000000000000001", "tenancy", map[string]string{"start": "2010-01-01", "end": "2011-01-01"}, "d1")
 	b := item("01K00000000000000000000002", "bill", map[string]string{"tenancy": "01K00000000000000000000001", "date": "2010-08-03"}, "d2")

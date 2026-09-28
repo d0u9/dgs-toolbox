@@ -597,8 +597,6 @@ default: none                     # optional: stands in for a missing key
 order:                            # optional: what each {#} numbers, in order
   '{owner}': [alex, emma]
   '{country}': [CN, AU]
-map:                              # optional: a value written as another
-  tags: {network-1: address01, network-2: address02}
 ```
 
 ```yaml
@@ -796,15 +794,6 @@ deposit is `押金.pdf` — neither number nor the text straight after `{#}` —
 and takes no number, so the name after it counts on from the one before. A
 name is not both unnumbered and in `numbers`. On the Rules page the `#`
 button of a Numbering row switches it.
-
-`map` writes, per key, a value as another where the layout has the key:
-with `map: {service: {电: electricity}}`, `{service}` writes `electricity`
-for 电, and any value it does not list as it is. `{tags}` is the
-revision's first tag the map lists for `tags`, so `{network-1: address01,
-network-2: address02}` puts a bill tagged network-2 under `address02`; a PDF
-with none of them lacks the key. A value is matched as written, a tag
-ignoring case. On the Rules page the Map box holds a key a line:
-`tags: network-1 = address01, network-2 = address02`.
 
 Numbers have two digits, more when the largest is over 99. Names in an
 order are compared as a country when both name one, so `CN`, `CHN` and `中国`
