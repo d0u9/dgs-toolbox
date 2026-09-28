@@ -70,15 +70,7 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
   color: var(--charcoal);
 }
 .fieldrow-hint { color: var(--steel); }
-.fieldrow input, .fieldrow select {
-  width: 100%;
-  height: var(--control-height);
-  padding: 0 var(--control-pad-x);
-  background: var(--paper);
-  border-color: var(--hairline-strong);
-  font-size: var(--font-size-ui);
-}
-.fieldrow input::placeholder { color: var(--steel); }
+.fieldrow input, .fieldrow select { width: 100%; }
 .fieldrow input:hover { border-color: var(--graphite); }
 .fieldrow input:focus { border-color: var(--primary); }
 /* A date and an amount are read digit by digit, so they are set in the mono
@@ -481,9 +473,8 @@ body.resizing, body.resizing-x { cursor: col-resize; user-select: none; }
   color: var(--charcoal);
 }
 .filter > span { font-weight: 600; }
-.filter select { font-size: var(--font-size-ui); height: 26px; margin: 0; }
-.filter-search input { font-size: var(--font-size-ui); height: 26px; margin: 0; width: 16em; box-sizing: border-box; }
-.filter-active select { border-color: var(--primary); background: var(--selected); }
+.filter select { margin: 0; }
+.filter-search input { margin: 0; width: 16em; }
 .filter-result { display: flex; align-items: center; gap: var(--space-sm); }
 .count { font-size: var(--font-size-ui); color: var(--charcoal); white-space: nowrap; }
 
@@ -672,7 +663,6 @@ body.resizing, body.resizing-x { cursor: col-resize; user-select: none; }
   font-size: var(--font-size-sm);
   text-align: center;
 }
-.detail .button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); background: var(--selected); }
 
 /* Every button in the details is the same control at the same height, in a
    grid of equal cells, so a row lines up whatever its labels say. */
@@ -1098,7 +1088,6 @@ body.resizing, body.resizing-x { cursor: col-resize; user-select: none; }
    makes it, and a turn lands a page exactly in view. */
 .reader-column.reader-whole { align-items: center; }
 .reader-whole .reader-sheet { width: auto; height: var(--whole-height, 80vh); max-width: 100%; scroll-margin-top: var(--space-md); }
-.reader-bar .button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); background: var(--selected); }
 .reader-sheet {
   position: relative;
   width: 100%;
@@ -1163,7 +1152,7 @@ body.resizing, body.resizing-x { cursor: col-resize; user-select: none; }
 .check-dir { font-family: var(--font-mono); font-size: var(--font-size-sm); color: var(--graphite); overflow-wrap: anywhere; }
 .check-detail { font-size: var(--font-size-ui); line-height: 1.5; color: var(--charcoal); overflow-wrap: anywhere; }
 .check-actions { flex: none; display: flex; align-items: center; gap: var(--space-xs); }
-.check-actions select { height: var(--control-height); margin: 0; }
+.check-actions select { margin: 0; }
 /* A mismatch is the dangerous one: it may be the first sign of bit rot. */
 .check-danger { border-color: var(--error); }
 .check-danger .check-title { color: var(--error); }
