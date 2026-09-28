@@ -616,7 +616,14 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .detail-section { padding: var(--space-xs) 0; gap: var(--gap-row); }
 .side.detail .form-field { margin-bottom: var(--gap-row); }
 .detail-tools { flex-wrap: wrap; gap: var(--space-xxs); }
-.detail-tools #attach-pdf { margin-left: auto; }
+.detail-tools-end { margin-left: auto; display: flex; gap: var(--space-xxs); }
+/* The panel's sections fall into a few named groups: a band across the
+   panel, so what belongs together reads as one. */
+.detail-group { margin: var(--space-sm) -16px 0; padding: 6px 16px; background: var(--cloud); border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+  font-size: var(--font-size-xs); font-weight: 600; color: var(--ink); }
+.detail-group + .detail-section { border-top: 0; }
+.detail-section-head h3 { flex: 1; }
+.detail-section .detail-actions { margin-top: 2px; }
 .import-form-head .panel-head { flex: 1; }
 .import-form-head > .button { margin-right: var(--space-sm); }
 .import-work.manual-entry { justify-content: center; overflow: auto; }
