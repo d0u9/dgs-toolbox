@@ -33,6 +33,7 @@ type Model struct {
 	// is never selectable and never shifts the numbering.
 	divider      int
 	dividerLabel string
+	dividers     map[int]string
 	// hideNumbers drops the line-number column. A list whose rows carry
 	// their own structure — a tree, where depth is drawn into the label —
 	// gets nothing from a number that counts visible rows rather than
@@ -63,6 +64,7 @@ func New() Model { return Model{width: 20, height: 4, divider: -1} }
 // into two runs. A negative index, or one at either end of the list, removes
 // it: a rule with nothing on one side of it separates nothing.
 func (m *Model) SetDivider(index int, label string) {
+	m.dividers = nil
 	if index <= 0 || index >= len(m.items) {
 		m.divider = -1
 		m.dividerLabel = ""
@@ -71,11 +73,27 @@ func (m *Model) SetDivider(index int, label string) {
 	m.divider, m.dividerLabel = index, label
 }
 
+// SetDividers draws named section rules above item indices. Rules are not
+// selectable and do not change item numbering or cursor positions.
+func (m *Model) SetDividers(sections map[int]string) {
+	m.divider, m.dividerLabel = -1, ""
+	m.dividers = make(map[int]string, len(sections))
+	for index, label := range sections {
+		if index >= 0 && index < len(m.items) {
+			m.dividers[index] = label
+		}
+	}
+	m.clamp()
+}
+
 // hasDivider reports whether a rule is currently drawn between two items.
 func (m Model) hasDivider() bool { return m.divider > 0 && m.divider < len(m.items) }
 
 // dividerRows is the height the rule takes from the item rows.
 func (m Model) dividerRows() int {
+	if len(m.dividers) > 0 {
+		return len(m.dividers)
+	}
 	if m.hasDivider() {
 		return 1
 	}
@@ -84,6 +102,7 @@ func (m Model) dividerRows() int {
 
 func (m *Model) SetItems(items []Item) {
 	m.items = append([]Item(nil), items...)
+	m.dividers = nil
 	m.cursor = min(m.cursor, max(0, len(m.items)-1))
 	if m.divider >= len(m.items) {
 		m.divider, m.dividerLabel = -1, ""
@@ -202,7 +221,27 @@ func (m *Model) SelectRow(row int) bool {
 	if row < 0 || row >= m.height {
 		return false
 	}
-	if m.hasDivider() && m.divider > m.top {
+	if len(m.dividers) > 0 {
+		originalRow, removed := row, 0
+		for index := m.top; index < len(m.items); index++ {
+			if _, ok := m.dividers[index]; !ok {
+				continue
+			}
+			offset := (index - m.top) * m.rowsPerItem()
+			for earlier := range m.dividers {
+				if earlier >= m.top && earlier < index {
+					offset++
+				}
+			}
+			if originalRow == offset {
+				return false
+			}
+			if originalRow > offset {
+				removed++
+			}
+		}
+		row -= removed
+	} else if m.hasDivider() && m.divider > m.top {
 		offset := (m.divider - m.top) * m.rowsPerItem()
 		if row == offset {
 			// The rule itself is not selectable.
@@ -230,7 +269,9 @@ func (m Model) View(focused bool, _ lipgloss.Style, muted lipgloss.Style) string
 	lines := make([]string, 0, m.height)
 	detailIndent := strings.Repeat(" ", min(m.width, m.LabelOffset()))
 	for index := m.top; index < end; index++ {
-		if m.hasDivider() && index == m.divider && index > m.top {
+		if label, ok := m.dividers[index]; ok {
+			lines = append(lines, dividerRow(label, m.width))
+		} else if m.hasDivider() && index == m.divider && index > m.top {
 			lines = append(lines, dividerRow(m.dividerLabel, m.width))
 		}
 		marker := "  "

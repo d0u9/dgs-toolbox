@@ -90,6 +90,27 @@ func TestDividerSplitsTheListWithoutBecomingSelectable(t *testing.T) {
 	}
 }
 
+func TestMultipleSectionDividersDoNotTakeSelection(t *testing.T) {
+	m := New()
+	m.SetSize(30, 9)
+	m.SetItems([]Item{{ID: "a", Label: "alpha", Detail: "one"}, {ID: "b", Label: "beta", Detail: "two"}, {ID: "c", Label: "gamma", Detail: "three"}})
+	m.SetDividers(map[int]string{0: "FIRST", 1: "SECOND"})
+	view := ansi.Strip(m.View(true, lipgloss.NewStyle(), lipgloss.NewStyle()))
+	if !strings.Contains(view, "◆ FIRST") || !strings.Contains(view, "◆ SECOND") {
+		t.Fatalf("missing section: %s", view)
+	}
+	if m.SelectRow(0) || m.SelectRow(3) {
+		t.Fatal("a section divider was selectable")
+	}
+	if !m.SelectRow(4) || m.Cursor() != 1 {
+		t.Fatalf("row after second section selected %d", m.Cursor())
+	}
+	m.SetItems([]Item{{ID: "new", Label: "new"}})
+	if strings.Contains(ansi.Strip(m.View(true, lipgloss.NewStyle(), lipgloss.NewStyle())), "◆") {
+		t.Fatal("sections leaked into next list")
+	}
+}
+
 // TestHideNumbers covers a list that draws its own structure. The number
 // column has to go entirely — not be blanked — so the label starts right
 // after the cursor marker and a detail line lines up under it.

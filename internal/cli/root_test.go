@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +14,30 @@ import (
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 )
+
+func TestRepeatableActionFlagPreservesEachOccurrence(t *testing.T) {
+	var got map[string]string
+	app := tui.App{ID: "example", Name: "Example", Actions: []tui.Action{{
+		ID: "move", Args: 0,
+		Flags: []tui.ActionFlag{{Name: "network", Repeatable: true}},
+		Run: func(_ io.Reader, _ io.Writer, _ []string, flags map[string]string) error {
+			got = flags
+			return nil
+		},
+	}}}
+	command := NewRootCommand([]tui.App{app}, func(tui.Launch) error { return nil })
+	command.SetArgs([]string{"example", "move", "--network", "from=network-4,to=network-8,address=10.0.1.8", "--network", "from=tailnet,address=10.0.2.8"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var values []string
+	if err := json.Unmarshal([]byte(got["network"]), &values); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(values, []string{"from=network-4,to=network-8,address=10.0.1.8", "from=tailnet,address=10.0.2.8"}) {
+		t.Fatalf("network flags = %v", values)
+	}
+}
 
 func TestCommandRoutes(t *testing.T) {
 	tests := []struct {

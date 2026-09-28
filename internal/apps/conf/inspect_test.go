@@ -288,12 +288,16 @@ func TestInspect_TabsStartOnNodesAndBracketsCycle(t *testing.T) {
 	}
 
 	m = pressInspect(t, m, "]")
+	if !m.Tabs()[tabMigrate].Active {
+		t.Fatal("] after Secrets did not select Migrate")
+	}
+	m = pressInspect(t, m, "]")
 	if !m.Tabs()[tabNodes].Active {
 		t.Fatal("] past the last tab did not wrap round to Nodes")
 	}
 	m = pressInspect(t, m, "[")
-	if !m.Tabs()[tabSecrets].Active {
-		t.Fatal("[ from Nodes did not wrap round to Secrets")
+	if !m.Tabs()[tabMigrate].Active {
+		t.Fatal("[ from Nodes did not wrap round to Migrate")
 	}
 }
 

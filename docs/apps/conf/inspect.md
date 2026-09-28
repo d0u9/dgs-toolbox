@@ -2,8 +2,9 @@
 
 `dgs conf inspect` answers "what does this configuration actually say" from
 six angles — a node, a user, a service, an instance, a port, a secret — and
-draws the whole thing as a connectivity graph. Four of them are tabs; the
-other two are rows inside them. [`inventory.md`](inventory.md) is the model;
+draws the whole thing as a connectivity graph. Four inventory views are tabs;
+Migrate is a fifth tab for editing a proposed move and generating its report.
+Instance and port remain rows within the inventory tabs. [`inventory.md`](inventory.md) is the model;
 this page is a way to look at it without reading YAML by hand.
 
 ## Why a separate command from `export`
@@ -18,12 +19,13 @@ without competing for the same screen.
 
 Two regions, composed.
 
-**Tabs** — Nodes, Users, Services and Secrets — in the shell's shared
+**Tabs** — Nodes, Users, Services, Secrets and Migrate — in the shell's shared
 top-bar tab strip, per [`tui.md`](../../tui.md#top-bar): `Tabs()` names them,
-`[` and `]` cycle, a click sends `TabSelectedMsg`. Each has enough of its own
-members to want a whole index: instances under a node; the devices and
+`[` and `]` cycle, a click sends `TabSelectedMsg`. The inventory tabs each
+have an index: instances under a node; the devices and
 credentials a person's files hang off, and the files under each; the
-deployments of a service under it; the whole store under Secrets. Instance and port get no tab of their own,
+deployments of a service under it; the whole store under Secrets. Migrate
+holds a proposal table and its report. Instance and port get no tab of their own,
 because neither has an independent list worth browsing — every instance
 already appears under its node and under its service, and every port under
 its instance.
@@ -64,14 +66,15 @@ groups by machine and the other by software, and both groupings are wanted.
 
 **Two columns, leading narrow**, per
 [`tui.md`](../../tui.md#shared-column-skeletons), inside whichever tab is
-active: that tab's index on the left, one third of the width; the detail pane
+active for the four inventory views: that tab's index on the left, one third of the width; the detail pane
 on the right, the rest. Moving the cursor in the index updates the detail
 pane immediately — there is no separate open or closed state, and no
 full-screen swap between them. Both stay on screen together, so a reader can
 compare an instance's detail against its neighbour in the index without
 losing either. Switching tabs resets the cursor to the top of the new index
 and the detail pane to whatever that lands on — a tab switch is a fresh view,
-not a continuation of the last one.
+not a continuation of the last one. Migrate instead uses equal columns and
+retains the proposal when switching away and back, so edits are not lost.
 
 This is the first command to use the column skeleton `tui.md` already names
 but no command yet implements it, and the second to use the tab strip
