@@ -328,7 +328,7 @@ func SetFields(root, id, digest string, template Template, given map[string]stri
 	if other, ok := taken(template, items, fields, id); ok {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
 	}
-	if err := linked(template, items, fields, id); err != nil {
+	if err := linked(root, template, items, fields, id); err != nil {
 		return Item{}, err
 	}
 	if digest == "" {

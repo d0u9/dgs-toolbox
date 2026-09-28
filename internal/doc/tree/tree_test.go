@@ -676,6 +676,7 @@ func TestWithinAndMatchValues(t *testing.T) {
 		"within on no date":    {Key: "tenancy", Type: FieldItem, Within: &Within{Date: "owner", From: "start", To: "end"}},
 		"within with no to":    {Key: "tenancy", Type: FieldItem, Within: &Within{Date: "period", From: "start"}},
 		"match = with nothing": {Key: "tenancy", Type: FieldItem, Match: map[string]string{"type": "="}},
+		"anchor not a bool":    {Key: "about", Type: FieldItem, Match: map[string]string{"anchor": "=yes"}},
 	} {
 		if link(f).Validate() == nil {
 			t.Errorf("%s accepted", name)

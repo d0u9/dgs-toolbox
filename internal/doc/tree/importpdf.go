@@ -67,7 +67,7 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if other, ok := taken(request.Template, items, fields, ""); ok {
 		return Item{}, fmt.Errorf("%w: %s %s; add the PDF to it as a revision", ErrTaken, other.Type, other.ID)
 	}
-	if err := linked(request.Template, items, fields, ""); err != nil {
+	if err := linked(request.Root, request.Template, items, fields, ""); err != nil {
 		return Item{}, err
 	}
 	shared, err := sharedList(fields["owner"], request.SharedWith)
@@ -188,7 +188,8 @@ func FileDigest(path string) (string, error) {
 
 // linked checks that each item field names an Item in the tree, and each
 // revision field one of its revisions, other than the Item itself.
-func linked(t Template, items []Item, fields map[string]string, self string) error {
+func linked(root string, t Template, items []Item, fields map[string]string, self string) error {
+	var anchors map[string]bool
 	for _, f := range t.Fields {
 		value, ok := fields[f.Key]
 		if !ok || value == "" || (f.Type != FieldItem && f.Type != FieldRevision) {
@@ -216,10 +217,14 @@ func linked(t Template, items []Item, fields map[string]string, self string) err
 		}
 		for theirs, ours := range f.Match {
 			want := MatchValue(ours, fields)
-			got := found.Fields[theirs]
-			if theirs == "type" {
-				got = found.Type
+			if theirs == AnchorKey && anchors == nil {
+				templates, err := LoadTemplates(root)
+				if err != nil {
+					return err
+				}
+				anchors = AnchorTypes(templates)
 			}
+			got := Theirs(theirs, *found, anchors)
 			if want != "" && got != want {
 				return fmt.Errorf("%s: Item %s has %s %q, not the %q %s says", f.Key, id, theirs, got, want, ours)
 			}

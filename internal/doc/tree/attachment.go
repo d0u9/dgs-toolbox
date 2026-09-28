@@ -31,7 +31,7 @@ func CreateWithoutPDF(request ImportRequest) (Item, error) {
 	if other, ok := taken(request.Template, items, fields, ""); ok {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
 	}
-	if err := linked(request.Template, items, fields, ""); err != nil {
+	if err := linked(request.Root, request.Template, items, fields, ""); err != nil {
 		return Item{}, err
 	}
 	shared, err := sharedList(fields["owner"], request.SharedWith)
@@ -68,7 +68,7 @@ func AddWithoutPDF(root, id string, template Template, given map[string]string, 
 	if err != nil {
 		return Item{}, err
 	}
-	if err := linked(template, items, fields, id); err != nil {
+	if err := linked(root, template, items, fields, id); err != nil {
 		return Item{}, err
 	}
 	full, _ := template.Split(item.CurrentFields())

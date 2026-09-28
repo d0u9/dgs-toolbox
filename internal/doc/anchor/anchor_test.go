@@ -33,7 +33,7 @@ func TestHolds(t *testing.T) {
 func TestProposals(t *testing.T) {
 	bill := tree.Template{Type: "bill", Fields: []tree.Field{
 		{Key: "period", Type: tree.FieldMonth},
-		{Key: "tenancy", Type: tree.FieldItem, Match: map[string]string{"type": "=tenancy"},
+		{Key: "tenancy", Type: tree.FieldItem, Match: map[string]string{"anchor": "=true"},
 			Within: &tree.Within{Date: "period", From: "start", To: "end"}},
 	}}
 	items := []tree.Item{
@@ -45,14 +45,14 @@ func TestProposals(t *testing.T) {
 		item("B3", "bill", map[string]string{"period": "2013-06"}), // none holds
 		item("B4", "bill", map[string]string{"period": "2010-06", "tenancy": "T2"}),
 	}
-	proposals, unsure := Proposals([]tree.Template{bill}, items)
+	proposals, unsure := Proposals([]tree.Template{bill, {Type: "tenancy", Anchor: true}}, items)
 	if want := []Proposal{{Item: "B1", Key: "tenancy", Link: "T1"}}; !reflect.DeepEqual(proposals, want) {
 		t.Fatalf("proposals %+v", proposals)
 	}
 	if want := []Unsure{{Item: "B2", Key: "tenancy", Fitting: []string{"T1", "T2"}}}; !reflect.DeepEqual(unsure, want) {
 		t.Fatalf("unsure %+v", unsure)
 	}
-	if got := Offered(bill.Fields[1], "B1", nil, items); len(got) != 2 {
+	if got := Offered(bill.Fields[1], "B1", nil, items, map[string]bool{"tenancy": true}); len(got) != 2 {
 		t.Fatalf("offered %d, want the two tenancies", len(got))
 	}
 }
