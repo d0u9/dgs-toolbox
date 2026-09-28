@@ -631,7 +631,8 @@ func TestRevisionLink(t *testing.T) {
 	licence := Template{Type: "licence", Kind: KindDocument, Fields: []Field{{Key: "owner", Required: true, Distinguishing: true}}}
 	translation := Template{Type: "translation", Kind: KindRecord, Fields: []Field{
 		{Key: "owner", Required: true, Distinguishing: true},
-		{Key: "original", Type: FieldRevision},
+		{Key: "of"},
+		{Key: "original", Type: FieldRevision, Match: map[string]string{"type": "of"}},
 	}}
 	source := write(t, filepath.Join(t.TempDir(), "l.pdf"), "%PDF licence")
 	original, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: licence, Now: now,
@@ -650,6 +651,11 @@ func TestRevisionLink(t *testing.T) {
 		if add("tom", bad) == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+	source = write(t, filepath.Join(t.TempDir(), "w.pdf"), "%PDF wrong type")
+	if _, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: translation, Now: now,
+		Fields: map[string]string{"owner": "bob", "of": "diploma", "original": original.ID + "@" + ref}}); err == nil {
+		t.Error("an original of another type than of accepted")
 	}
 	if err := add("ann", original.ID+"@"+ref); err != nil {
 		t.Fatal(err)

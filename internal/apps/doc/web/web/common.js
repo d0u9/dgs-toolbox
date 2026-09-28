@@ -145,10 +145,22 @@ export function inputFor(field, value, placeholder, state, self, type) {
     // The value, <item-id>@<revision>, is in a hidden input.
     control = el("input", { ...common, type: "hidden", value: value || "" });
     const [id, ref] = (value || "").split("@");
-    const items = (state ? state.items : []).filter((i) => i.id !== self);
-    const pickItem = el("select", {}, el("option", { value: "" }, ""),
-      ...items.map((i) => el("option", { value: i.id, selected: i.id === id }, label(state, i))));
+    const all = (state ? state.items : []).filter((i) => i.id !== self);
+    let items = all;
+    const pickItem = el("select", {});
     const pickRevision = el("select", {});
+    // Only the Items that agree with the form where the field's match says:
+    // a translation of a driver_licence offers only licences.
+    const narrow = () => {
+      const scope = wrapper.closest("form") || wrapper.parentElement;
+      const here = (key) => scope?.querySelector(`.field-input[name="${CSS.escape(key)}"]`)?.value || "";
+      const want = Object.entries(field.match || {}).map(([theirs, ours]) => [theirs, here(ours)]).filter(([, v]) => v);
+      items = all.filter((i) => want.every(([k, v]) => (k === "type" ? i.type : currentFields(i)[k]) === v));
+      const keep = pickItem.value || id;
+      pickItem.replaceChildren(el("option", { value: "" }, want.length && !items.length ? "(no Item matches)" : ""),
+        ...items.map((i) => el("option", { value: i.id, selected: i.id === keep }, label(state, i))));
+      if (keep && !items.some((i) => i.id === keep)) pickItem.value = "";
+    };
     const fill = (keep) => {
       const item = items.find((i) => i.id === pickItem.value);
       const revs = item ? [...item.revisions].reverse() : [];
@@ -166,8 +178,20 @@ export function inputFor(field, value, placeholder, state, self, type) {
     };
     pickItem.onchange = () => { fill(""); set(); };
     pickRevision.onchange = set;
+    const wrapper = el("div", { className: "form-field" }, ...fieldHead(field), pickItem, pickRevision, control);
+    narrow();
     fill(ref);
-    return el("div", { className: "form-field" }, ...fieldHead(field), pickItem, pickRevision, control);
+    queueMicrotask(() => {
+      if (!wrapper.isConnected || !field.match) return;
+      narrow();
+      (wrapper.closest("form") || wrapper.parentElement).addEventListener("input", (event) => {
+        if (event.target === control || !Object.values(field.match).includes(event.target.name)) return;
+        const before = pickItem.value;
+        narrow();
+        if (pickItem.value !== before) { fill(""); set(); }
+      });
+    });
+    return wrapper;
   } else if (field.type === "select" || field.type === "item") {
     const choices = field.type === "select"
       ? field.options.map((o) => [o, o])
@@ -187,8 +211,8 @@ export function inputFor(field, value, placeholder, state, self, type) {
         const button = el("button", { type: "button", className: "button field-choice-card" }, text);
         button.onclick = () => {
           control.value = v;
-          control.dispatchEvent(new Event("input"));
-          control.dispatchEvent(new Event("change"));
+          control.dispatchEvent(new Event("input", { bubbles: true }));
+          control.dispatchEvent(new Event("change", { bubbles: true }));
         };
         return button;
       });

@@ -214,6 +214,16 @@ func linked(t Template, items []Item, fields map[string]string, self string) err
 		if ref != "" && !found.hasRevision(ref) {
 			return fmt.Errorf("%s: Item %s has no revision %s", f.Key, id, ref)
 		}
+		for theirs, ours := range f.Match {
+			want := fields[ours]
+			got := found.Fields[theirs]
+			if theirs == "type" {
+				got = found.Type
+			}
+			if want != "" && got != want {
+				return fmt.Errorf("%s: Item %s has %s %q, not the %q %s says", f.Key, id, theirs, got, want, ours)
+			}
+		}
 	}
 	return nil
 }
