@@ -104,11 +104,12 @@ card, or the picture, opens the revision in place of the cards, the panel
 still beside it with every section and Replace PDF…, only without its picture and page buttons. Opening it is a step in the browser's
 history: the browser's Back, Esc or ← Back return to the cards; Esc again,
 or ×, closes the panel.
-Browser viewer, beside the title, shows the PDF in the browser's own viewer
+Browser viewer, beside the title here and at the foot of the preview on
+every other page that shows a PDF (Import among them), shows it in the browser's own viewer
 instead of the pages dgs draws from each page's embedded image, to tell a
 PDF dgs draws wrongly — a layered scan whose text is a masked second image —
 from one that is itself wrong. The choice is kept in that browser and holds
-on every page that shows a PDF.
+on every such page.
 
 ### Frequent
 

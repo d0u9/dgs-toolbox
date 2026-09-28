@@ -816,3 +816,8 @@ body.list-shut .outline-list { display: none; }
 .snap-preview-head { padding: 4px 8px; border-bottom: 1px solid var(--hairline); font-size: 12px; }
 #add-preview { flex: 1; overflow: auto; padding: 4px; }
 #add-preview p { margin: 4px; }
+/* Floats at the preview's foot, clear of both viewers' own bars. */
+.preview { position: relative; }
+.native-bar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; }
+.native-bar .chip { background: var(--paper); box-shadow: 0 1px 4px rgba(0, 0, 0, .15); }
+.native-bar[hidden] { display: none; }

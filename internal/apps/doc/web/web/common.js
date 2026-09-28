@@ -555,8 +555,32 @@ let lastPreview = null;
 // redrawPreview shows the last PDF again, as the viewer now chosen.
 export const redrawPreview = () => { if (lastPreview) showPreview(...lastPreview); };
 
+// nativeSwitch is the Browser viewer button: a page's own, as Browse's in
+// its reader bar, or else one put above the preview.
+function nativeSwitch() {
+  let button = document.getElementById("native-pdf");
+  if (!button) {
+    button = el("button", { id: "native-pdf", className: "chip", type: "button",
+      title: "Show the PDF in the browser's own viewer, to compare with the pages dgs draws" }, "Browser viewer");
+    const bar = el("div", { className: "native-bar", id: "native-bar" }, button);
+    $("viewer").before(bar);
+  }
+  if (!button.dataset.wired) {
+    button.dataset.wired = "1";
+    button.addEventListener("click", () => {
+      setNativePDF(!nativePDF());
+      button.setAttribute("aria-pressed", String(nativePDF()));
+      redrawPreview();
+    });
+  }
+  button.setAttribute("aria-pressed", String(nativePDF()));
+  return button;
+}
+
 export async function showPreview(query, viewer) {
   lastPreview = [query, viewer];
+  nativeSwitch();
+  if ($("native-bar")) $("native-bar").hidden = false;
   const asked = ++previewAsked;
   $("empty").hidden = true;
   hideViewer();
@@ -588,6 +612,7 @@ export async function showPreview(query, viewer) {
 
 export function clearPreview() {
   lastPreview = null;
+  if (document.getElementById("native-bar")) $("native-bar").hidden = true;
   previewAsked++;
   textAsked++;
   textPages = [];
