@@ -287,6 +287,9 @@ export function inputFor(field, value, placeholder, state, self, type) {
     control = el("input", { ...common, type: ["date", "month"].includes(field.type) ? field.type : "text",
       value, placeholder: placeholder || (field.type === "country" ? "cn, CHN, China, 中国…" : ""),
       spellcheck: false, autocomplete: "off" });
+    // Without a max the browser takes a five-digit year as typed.
+    if (field.type === "date") control.max = "9999-12-31";
+    if (field.type === "month") control.max = "9999-12";
     if (field.type === "country") {
       control.title = "Pick a country the tree has, or type any code or name: kept as the Template's format says.";
       // The countries Items already have are offered; any other can be typed.
