@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,6 +88,34 @@ type Within struct {
 	To   string `yaml:"to" json:"to"`
 }
 
+// AnchorKey, in a match, is whether the linked Item's Template is an
+// anchor: match: {anchor: =true} offers every Item others hang under.
+const AnchorKey = "anchor"
+
+// Theirs is the value a match compares for key on it: its type for type,
+// "true" or "false" for AnchorKey by anchors, the anchor types, and
+// otherwise its field as its current revision has it.
+func Theirs(key string, it Item, anchors map[string]bool) string {
+	switch key {
+	case "type":
+		return it.Type
+	case AnchorKey:
+		return strconv.FormatBool(anchors[it.Type])
+	}
+	return it.FieldsAt(it.Current())[key]
+}
+
+// AnchorTypes is the types of the Templates marked anchor.
+func AnchorTypes(templates []Template) map[string]bool {
+	out := map[string]bool{}
+	for _, t := range templates {
+		if t.Anchor {
+			out[t.Type] = true
+		}
+	}
+	return out
+}
+
 // MatchValue is what the field ours of a match wants, given this form's
 // fields: the value itself when ours starts with =.
 func MatchValue(ours string, fields map[string]string) string {
@@ -120,11 +149,14 @@ const (
 
 // Template is one type's fields and defaults.
 type Template struct {
-	Type        string            `yaml:"type" json:"type"`
-	Description string            `yaml:"description,omitempty" json:"description,omitempty"`
-	Kind        Kind              `yaml:"kind" json:"kind"`
-	Fields      []Field           `yaml:"fields" json:"fields"`
-	Defaults    map[string]string `yaml:"defaults" json:"defaults"`
+	Type        string `yaml:"type" json:"type"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Kind        Kind   `yaml:"kind" json:"kind"`
+	// Anchor marks a Template other documents hang under: a tenancy, a
+	// vehicle. A link field with match {anchor: =true} offers its Items.
+	Anchor   bool              `yaml:"anchor,omitempty" json:"anchor,omitempty"`
+	Fields   []Field           `yaml:"fields" json:"fields"`
+	Defaults map[string]string `yaml:"defaults" json:"defaults"`
 	// IgnoreDates are dates, YYYY-MM-DD, never suggested for a date field: a
 	// birthday printed on every page of a person's documents.
 	IgnoreDates []string `yaml:"ignore_dates,omitempty" json:"ignore_dates,omitempty"`
@@ -176,6 +208,9 @@ func (t Template) Validate() error {
 			return fmt.Errorf("type %s: key %s: match belongs to an item or revision field", t.Type, f.Key)
 		}
 		for theirs, ours := range f.Match {
+			if theirs == AnchorKey && ours != "=true" && ours != "=false" {
+				return fmt.Errorf("type %s: key %s: match anchor is =true or =false", t.Type, f.Key)
+			}
 			if strings.HasPrefix(ours, "=") {
 				if strings.TrimSpace(ours[1:]) == "" {
 					return fmt.Errorf("type %s: key %s: match %s: = needs a value after it", t.Type, f.Key, theirs)

@@ -460,15 +460,19 @@ translation's `original` has `match: {type: of, owner: owner}`: once `of`
 is `driver_licence`, only that owner's licences are offered, and saving an
 original that disagrees is refused. A field left empty narrows nothing. A
 value starting with `=` is the value itself: `match: {type: =tenancy}`
-offers only tenancies. The page asks the server which Items to offer.
+offers only tenancies. The key `anchor` matches whether the linked Item's
+Template is marked `anchor: true`: `match: {anchor: =true}` offers every
+Item documents hang under, whatever its type, so a new kind of anchor needs
+no change to the Templates linking to it. The page asks the server which
+Items to offer.
 
 An `item` or `revision` field may also carry `within`, which suggests the
 linked Item by a date:
 
 ```yaml
-- key: tenancy
+- key: about
   type: item
-  match: {type: =tenancy}
+  match: {anchor: =true}
   within: {date: period, from: start, to: end}
 ```
 
@@ -481,9 +485,16 @@ and nobody has picked one. Any Item `match` allows can still be chosen.
 `dgs doc link` fills the same in for every Item at once.
 
 This is how documents are grouped by a part of life rather than by their
-own fields: a `tenancy` Item, usually without a PDF, holds an address and
-the days lived there; leases, bills and receipts link to it, and a rule
-places them with `rental/{tenancy.address}/{tenancy.start:compact}-{tenancy.end:compact}/`.
+own fields. An anchor is an Item of a Template marked `anchor: true`,
+usually without a PDF: a `tenancy` holds an address and the days lived
+there, a vehicle its plate and the days it was owned. Anchors name their
+span `start` and `end` and their short name `name`, so one `within` and one
+`{about.name}` serve every kind. A document's `about` field links it to
+one; a rule places a tenancy's leases, bills and receipts with
+`rental/{about.address}/{about.start:compact}-{about.end:compact}/`, and
+tells the kinds apart with `about.type`. A document is about one anchor; a
+date two anchors' spans hold, such as a tenancy's and a car's, suggests
+both and leaves the choice.
 - `country` — a country however it is typed: its ISO code (`cn`, `CHN`), its
   English or Chinese name (`China`, `中国`) or a common alias
   (`中华人民共和国`, `PRC`), any case. It is kept in the field's `format`:
@@ -1031,7 +1042,8 @@ be read.
 `dgs doc export [<target>...]` is described under [Export](#export).
 
 `dgs doc link [<tree>]` fills every empty link field whose `within`
-suggests exactly one Item, such as a bill's tenancy by its billing period.
+suggests exactly one Item, such as the tenancy a bill is about, by its
+billing period.
 It lists each link, and those where several Items fit, and writes nothing
 unless given `--apply`; each link is a new snapshot, as an edit on the page
 is. A link where several fit is left to be chosen on the page.

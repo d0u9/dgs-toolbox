@@ -54,7 +54,7 @@ func (s server) links(w http.ResponseWriter, r *http.Request) {
 		return out
 	}
 	writeJSON(w, http.StatusOK, map[string][]string{
-		"offered":   ids(anchor.Offered(*field, request.Self, request.Fields, items)),
-		"suggested": ids(anchor.Suggested(*field, request.Self, request.Fields, items)),
+		"offered":   ids(anchor.Offered(*field, request.Self, request.Fields, items, tree.AnchorTypes(templates))),
+		"suggested": ids(anchor.Suggested(*field, request.Self, request.Fields, items, tree.AnchorTypes(templates))),
 	})
 }

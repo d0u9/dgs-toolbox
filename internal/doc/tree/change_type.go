@@ -61,7 +61,7 @@ func ChangeType(root, id string, target Template, fields map[string]string, revi
 	if err != nil {
 		return Item{}, err
 	}
-	if err := linked(target, items, clean, id); err != nil {
+	if err := linked(root, target, items, clean, id); err != nil {
 		return Item{}, err
 	}
 	if other, ok := taken(target, items, clean, id); ok {

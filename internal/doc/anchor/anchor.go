@@ -12,11 +12,12 @@ import (
 )
 
 // Offered is the Items field f of an Item may link to, given the form's
-// fields: every Item but self that agrees with f's match.
-func Offered(f tree.Field, self string, fields map[string]string, items []tree.Item) []tree.Item {
+// fields: every Item but self that agrees with f's match. anchors are the
+// anchor types, tree.AnchorTypes, for a match on tree.AnchorKey.
+func Offered(f tree.Field, self string, fields map[string]string, items []tree.Item, anchors map[string]bool) []tree.Item {
 	var out []tree.Item
 	for _, it := range items {
-		if it.ID == self || !agrees(f, fields, it) {
+		if it.ID == self || !agrees(f, fields, it, anchors) {
 			continue
 		}
 		out = append(out, it)
@@ -24,15 +25,9 @@ func Offered(f tree.Field, self string, fields map[string]string, items []tree.I
 	return out
 }
 
-func agrees(f tree.Field, fields map[string]string, it tree.Item) bool {
-	theirs := it.FieldsAt(it.Current())
+func agrees(f tree.Field, fields map[string]string, it tree.Item, anchors map[string]bool) bool {
 	for key, ours := range f.Match {
-		want := tree.MatchValue(ours, fields)
-		got := theirs[key]
-		if key == "type" {
-			got = it.Type
-		}
-		if want != "" && got != want {
+		if want := tree.MatchValue(ours, fields); want != "" && tree.Theirs(key, it, anchors) != want {
 			return false
 		}
 	}
@@ -41,13 +36,13 @@ func agrees(f tree.Field, fields map[string]string, it tree.Item) bool {
 
 // Suggested is those of Offered whose span, by f's within, holds the form's
 // date. It is empty when f has no within or the form no date.
-func Suggested(f tree.Field, self string, fields map[string]string, items []tree.Item) []tree.Item {
+func Suggested(f tree.Field, self string, fields map[string]string, items []tree.Item, anchors map[string]bool) []tree.Item {
 	w := f.Within
 	if w == nil || fields[w.Date] == "" {
 		return nil
 	}
 	var out []tree.Item
-	for _, it := range Offered(f, self, fields, items) {
+	for _, it := range Offered(f, self, fields, items, anchors) {
 		theirs := it.FieldsAt(it.Current())
 		if Holds(fields[w.Date], theirs[w.From], theirs[w.To]) {
 			out = append(out, it)
@@ -118,6 +113,7 @@ func Proposals(templates []tree.Template, items []tree.Item) ([]Proposal, []Unsu
 	for _, t := range templates {
 		byType[t.Type] = t
 	}
+	anchors := tree.AnchorTypes(templates)
 	proposals, unsure := []Proposal{}, []Unsure{}
 	for _, it := range items {
 		t, ok := byType[it.Type]
@@ -129,7 +125,7 @@ func Proposals(templates []tree.Template, items []tree.Item) ([]Proposal, []Unsu
 			if f.Within == nil || fields[f.Key] != "" {
 				continue
 			}
-			fit := Suggested(f, it.ID, fields, items)
+			fit := Suggested(f, it.ID, fields, items, anchors)
 			switch {
 			case len(fit) == 1:
 				link := fit[0].ID
