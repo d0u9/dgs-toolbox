@@ -330,6 +330,13 @@ func TestFieldsFor(t *testing.T) {
 	}
 }
 
+func TestFieldsForLeavesOutAnOrderKey(t *testing.T) {
+	// {about.address} lacking a number is an order to extend, not a field.
+	if got := FieldsFor([]string{"{about.address}", "about.address"}); !reflect.DeepEqual(got, []string{"about"}) {
+		t.Fatalf("FieldsFor = %v", got)
+	}
+}
+
 func TestLayoutWritesACountryInAFormat(t *testing.T) {
 	items := []tree.Item{
 		{ID: "A", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma", "country": "中国"}, Revisions: []tree.Revision{{Digest: "a"}}},
