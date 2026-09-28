@@ -57,9 +57,8 @@ about:    {type: item, match: {anchor: =true}}
   goes into the catalogue first, so divergence is visible where it happens.
 - Rules write `{name}` and `{date}`, and condition on `kind`, the same for a
   bill, an invoice and a payment.
-- Renaming old keys (`provider` to `issuer`, `period_start` to `start`) changes
-  every sidecar. It needs a `dgs doc` action that writes a history event per
-  Item and shows a read-only plan first.
+- Old keys (`provider`, `period_start`) are not read. The real tree is
+  migrated once, separately (see [Migration](#migration)).
 
 Open: where `date`, `kind` and `issuer` end — for example whether a bill's
 `due` is its `date`, and whether `expires` is always `end`.
@@ -76,8 +75,8 @@ when: type in [bill, invoice, payment] and kind in [水, 电, 气, 网] and not 
   and those `inherit` supplies.
 - One package, `internal/doc/expr`, used by rules; later by Browse's filter and
   Cases.
-- It replaces `query`, `exclude`, `query_types`, `exclude_types` and `skip`;
-  old rules are rewritten when the tree is opened, as before.
+- It replaces `query`, `exclude`, `query_types`, `exclude_types` and `skip`.
+  The old keys are removed, not rewritten on open.
 
 ## 3. A rule's paths nest
 
@@ -102,10 +101,18 @@ children:
 
 The Rules page edits the children where More paths is now, nested.
 
+## Migration
+
+No backward compatibility. The code reads only the new model: no old keys, no
+rewrite on open, no rename action. The real tree (Templates, sidecars, rules)
+is migrated once, by a one-off step done with the user when the new model is
+built, and is not part of `dgs`.
+
 ## Order
 
-1. The field catalogue and the rename action — most fallbacks go away.
+1. The field catalogue — most fallbacks go away.
 2. The expression.
 3. Nested paths.
+4. The one-off migration of the real tree.
 
 Each section is written into `index.md` as it is confirmed, then built.
