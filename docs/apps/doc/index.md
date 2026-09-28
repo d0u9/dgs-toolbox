@@ -446,11 +446,13 @@ shows for it:
   valid through its last day.
 - `select` — one of the field's `options`.
 - `item` — the ID of another Item, such as a passport's previous passport. The
-  page picks it from the Items; export never follows it.
+  page picks it from the Items. A rule's layout may use the linked Item's
+  keys (see below); export never copies the linked PDF.
 - `revision` — one revision of another Item, written `<item-id>@<revision>`,
   such as the licence a translation was made from: a later renewal does not
   change what was translated. The page picks the Item, then its revision,
-  HEAD at first; export never follows it.
+  HEAD at first. A rule's layout may use that revision's keys (see below);
+  export never copies the linked PDF.
 
 An `item` or `revision` field may carry `match`: a field of the linked Item
 (or `type`) mapped to a field of this form that it must equal. A
@@ -661,7 +663,18 @@ starting with `/`, at the end of a folder or file name, makes the value a
 folder of its own: `license{/language?}/{of|type}{-language?}.{ext}` puts a
 driver licence at `license/driver_licence.pdf` and its English translation
 at `license/en/driver_licence-en.pdf`. Such a key ends a name that has
-something before it, and a name numbered with `{#}` cannot hold one. A folder made only of optional keys, all empty, would
+something before it. `{#}` does not number it: in `{#}-{level}{/language?}`
+the level is numbered and the language folder follows.
+
+A key written `<field>.<key>` is a key of the Item that an `item` or
+`revision` field links to, at the revision it names (an `item` field: its
+current one). A translation whose `original` is a bachelor's degree
+certificate has `{original.level}` 本科 and `{original.name}` 学位证书, so
+one rule places the certificates and their translations together:
+`{#}-{level|original.level}{/language?}/{#}-{name|original.name}.{ext}`
+puts the translation at `02-本科/en/02-学位证书.pdf`. A translation with no
+original, or one linking to an Item not in the tree, lacks the key and is
+not placed; its field to fill is the link. A folder made only of optional keys, all empty, would
 vanish from the path, so the PDF is not placed instead.
 
 `{#}` numbers a folder or file name: it writes the place, counting from

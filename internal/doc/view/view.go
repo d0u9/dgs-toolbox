@@ -344,7 +344,9 @@ func Upgrade(v View) (View, bool) {
 // Layout is a parsed layout, one list of parts per path segment.
 type Layout [][]Part
 
-var keyPattern = regexp.MustCompile(`^[a-z0-9_-]+$`)
+// keyPattern is a key, or a key of the Item a field links to:
+// original.level is the level of the revision original names.
+var keyPattern = regexp.MustCompile(`^[a-z0-9_-]+(\.[a-z0-9_-]+)?$`)
 
 // Parse splits a layout into segments and parts. A layout is relative: no
 // leading /, no empty segment, and no segment that is only . or .., so a path
@@ -431,9 +433,6 @@ func Parse(layout string) (Layout, error) {
 			if !strings.HasPrefix(p.Prefix, "/") {
 				continue
 			}
-			if slices.ContainsFunc(parts, func(p Part) bool { return p.Counter }) {
-				return nil, fmt.Errorf("layout %q: {%s?}: a name numbered with {#} cannot add a folder", layout, strings.Trim(written[i], "{}?"))
-			}
 			if i == 0 || i != len(parts)-1 {
 				return nil, fmt.Errorf("layout %q: {%s?}: a key that adds a folder ends a name that has more before it, as license{/language?}", layout, strings.Trim(written[i], "{}?"))
 			}
@@ -487,6 +486,10 @@ func counted(layout string, parts []Part, written []string) error {
 	from, to := at+1, len(parts)
 	if from < to && parts[from].Key == "" {
 		from++
+	}
+	if to > from && strings.HasPrefix(parts[to-1].Prefix, "/") {
+		// {#}-{level}{/language?}: the folder a key adds is not numbered.
+		to--
 	}
 	if to > from && parts[to-1].Key == "ext" {
 		to--
