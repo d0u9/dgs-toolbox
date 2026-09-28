@@ -542,7 +542,21 @@ export function showSource(at, reveal = false) {
 // and falls back to the browser's viewer when a page is not a scan. query
 // names the PDF as the API does; viewer is its URL for the viewer.
 let previewAsked = 0;
+// The browser's own PDF viewer in place of the pages dgs draws, kept per
+// viewer: a PDF dgs draws wrongly, a layered scan, can be compared with it.
+export const NATIVE_KEY = "dgs-doc-native-pdf";
+export function nativePDF() {
+  try { return localStorage.getItem(NATIVE_KEY) === "1"; } catch { return false; }
+}
+export function setNativePDF(on) {
+  try { localStorage.setItem(NATIVE_KEY, on ? "1" : "0"); } catch { /* this visit only */ }
+}
+let lastPreview = null;
+// redrawPreview shows the last PDF again, as the viewer now chosen.
+export const redrawPreview = () => { if (lastPreview) showPreview(...lastPreview); };
+
 export async function showPreview(query, viewer) {
+  lastPreview = [query, viewer];
   const asked = ++previewAsked;
   $("empty").hidden = true;
   hideViewer();
@@ -554,6 +568,7 @@ export async function showPreview(query, viewer) {
     $("frame").src = viewer;
     $("frame").hidden = false;
   };
+  if (nativePDF()) return useViewer();
   let info;
   try {
     const response = await fetch(api("/api/pages?" + new URLSearchParams(query)));
@@ -572,6 +587,7 @@ export async function showPreview(query, viewer) {
 }
 
 export function clearPreview() {
+  lastPreview = null;
   previewAsked++;
   textAsked++;
   textPages = [];
