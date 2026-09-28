@@ -72,6 +72,18 @@ body { display: flex; flex-direction: column; }
 .field-choice-card[aria-pressed="true"] { color: var(--primary); background: var(--selected); border-color: var(--primary); }
 .field-choice-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .form-field .req { color: var(--error); }
+/* A described field's ?: hover for its description, click to keep it shown. */
+.field-help-toggle {
+  display: inline-grid; place-items: center; width: 14px; height: 14px; padding: 0; margin-left: 2px;
+  font: inherit; font-size: 10px; line-height: 1; color: var(--graphite); background: var(--paper);
+  border: 1px solid var(--hairline-strong); border-radius: var(--radius-pill); cursor: help; vertical-align: 1px;
+}
+.field-help-toggle:hover, .field-help-toggle[aria-expanded="true"] { color: var(--primary); border-color: var(--primary); }
+.field-help-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.form-field .field-help {
+  padding: 4px 8px; color: var(--ink); background: var(--cloud); border-radius: var(--radius-md); line-height: 1.4;
+}
+.form-field .field-help[hidden] { display: none; }
 /* .action is the shared one (/ui/controls.css); here it only keeps its place. */
 .action { margin: var(--space-xs) 14px; }
 .fields { margin: 0 14px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
