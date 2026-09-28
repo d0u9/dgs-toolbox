@@ -10,6 +10,7 @@ package webfile
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -39,6 +40,7 @@ type Options struct {
 //
 //	GET  /ui/files/dir?path=&ext=.gpx&ext=.xml&hidden=1
 //	GET  /ui/files/places
+//	GET  /ui/files/preview?path=
 //	GET  /ui/files/taken?path=&name=      (Writable)
 //	POST /ui/files/folder  {parent,name}  (Writable)
 //	POST /ui/files/rename  {path,name}    (Writable)
@@ -64,6 +66,37 @@ func Mount(mux *http.ServeMux, options Options) {
 	})
 	mux.HandleFunc("GET "+Prefix+"places", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, map[string]any{"places": filebrowse.Places(options.Root)})
+	})
+	// preview answers a file's content for the dialog to show beside the
+	// listing: a PDF or an image whole, the start of a text file. Any other
+	// kind is refused, so the endpoint is never a way to fetch a file the
+	// dialog could not show.
+	mux.HandleFunc("GET "+Prefix+"preview", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Query().Get("path")
+		kind := filebrowse.PreviewKind(path)
+		if kind == "" {
+			writeError(w, http.StatusUnsupportedMediaType, errors.New("no preview for this kind of file"))
+			return
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			writeError(w, statusFor(err), err)
+			return
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil || !info.Mode().IsRegular() {
+			writeError(w, http.StatusBadRequest, errors.New("not a file"))
+			return
+		}
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "no-store")
+		if kind == filebrowse.PreviewText {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = io.Copy(w, io.LimitReader(file, filebrowse.PreviewTextLimit))
+			return
+		}
+		http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 	})
 	if !options.Writable {
 		return

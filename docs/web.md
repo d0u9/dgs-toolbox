@@ -481,6 +481,13 @@ The dialog is what a reader already knows from Finder and Explorer:
   answers one path, or several when the page asks for several — Shift extends the selection, Cmd or Ctrl adds one
   row. Saving answers the folder being browsed and the name that was typed.
   The dialog only chooses a path: writing it stays the server's work.
+- A **preview** beside the listing, in open and save alike: the one marked
+  file as it is — a PDF in the browser's own viewer, an image, the first
+  64 KB of a text file — or a note saying why there is nothing to show.
+  *Preview* in the bar turns it off and on, and the choice is kept in the
+  browser. Which files can be shown is `filebrowse.PreviewKind`'s to say,
+  and `GET /ui/files/preview` answers only those, so it is never a way to
+  fetch any other file.
 
 Saving adds what a save dialog has and an open dialog does not:
 

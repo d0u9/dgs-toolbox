@@ -3,11 +3,13 @@ package webfile_test
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dgs-toolbox/internal/filebrowse"
@@ -229,5 +231,37 @@ func TestRenameMovesNothingOutOfItsFolder(t *testing.T) {
 	taken := map[string]string{"path": filepath.Join(root, "hike.gpx"), "name": "notes.txt"}
 	if status := post(t, s, "/ui/files/rename", taken, nil); status != http.StatusConflict {
 		t.Fatalf("rename onto notes.txt = %d, want %d", status, http.StatusConflict)
+	}
+}
+
+func TestPreviewShowsOnlyWhatTheDialogCanShow(t *testing.T) {
+	root := t.TempDir()
+	big := strings.Repeat("a", filebrowse.PreviewTextLimit+10)
+	for name, content := range map[string]string{"a.pdf": "%PDF-1.4", "notes.txt": big, "page.html": "<p>hi"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := server(t, root)
+	fetch := func(name string) (*http.Response, string) {
+		response, err := http.Get(s.URL + webfile.Prefix + "preview?path=" + url.QueryEscape(filepath.Join(root, name)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		body, _ := io.ReadAll(response.Body)
+		return response, string(body)
+	}
+	if response, body := fetch("a.pdf"); response.StatusCode != 200 || body != "%PDF-1.4" || response.Header.Get("Content-Type") != "application/pdf" {
+		t.Fatalf("pdf: %d %q %s", response.StatusCode, body, response.Header.Get("Content-Type"))
+	}
+	if response, body := fetch("notes.txt"); response.StatusCode != 200 || len(body) != filebrowse.PreviewTextLimit {
+		t.Fatalf("text: %d, %d bytes", response.StatusCode, len(body))
+	}
+	if response, _ := fetch("page.html"); response.StatusCode != http.StatusUnsupportedMediaType {
+		t.Fatalf("html: %d", response.StatusCode)
+	}
+	if response, _ := fetch("missing.pdf"); response.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing: %d", response.StatusCode)
 	}
 }

@@ -24,6 +24,9 @@ type Entry struct {
 	Path     string    `json:"path"`
 	Size     int64     `json:"size,omitempty"`
 	Modified time.Time `json:"modified,omitzero"`
+	// Preview is how a dialog can show the file beside its listing, one
+	// of the Preview kinds, or empty when it cannot.
+	Preview string `json:"preview,omitempty"`
 }
 
 // Listing is one folder as a dialog draws it. Parent is empty at the root of
@@ -75,7 +78,7 @@ func List(dir string, options Options) (Listing, error) {
 		case info.IsDir():
 			listing.Dirs = append(listing.Dirs, Entry{Name: name, Path: full, Modified: info.ModTime()})
 		case matches(name, wanted):
-			listing.Files = append(listing.Files, Entry{Name: name, Path: full, Size: info.Size(), Modified: info.ModTime()})
+			listing.Files = append(listing.Files, Entry{Name: name, Path: full, Size: info.Size(), Modified: info.ModTime(), Preview: PreviewKind(name)})
 		}
 	}
 	byName(listing.Dirs)
@@ -279,4 +282,28 @@ func Taken(dir, name string) (bool, error) {
 	default:
 		return false, err
 	}
+}
+
+// Preview kinds: what a file dialog can show of a file beside its listing.
+const (
+	PreviewPDF   = "pdf"
+	PreviewImage = "image"
+	PreviewText  = "text"
+)
+
+// PreviewTextLimit is how much of a text file a preview reads: enough to
+// recognise the file, never the whole of a large log.
+const PreviewTextLimit = 64 << 10
+
+var previewKinds = map[string]string{
+	".pdf": PreviewPDF,
+	".png": PreviewImage, ".jpg": PreviewImage, ".jpeg": PreviewImage, ".gif": PreviewImage, ".webp": PreviewImage,
+	".txt": PreviewText, ".md": PreviewText, ".yaml": PreviewText, ".yml": PreviewText, ".json": PreviewText,
+	".csv": PreviewText, ".gpx": PreviewText, ".xml": PreviewText, ".log": PreviewText,
+}
+
+// PreviewKind says how a file of this name can be previewed, by its
+// extension without case, or "" when it cannot.
+func PreviewKind(name string) string {
+	return previewKinds[strings.ToLower(filepath.Ext(name))]
 }
