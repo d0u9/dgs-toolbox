@@ -153,6 +153,11 @@ function selected() {
     const held = field === "tags" ? [...(item.tags || []), ...((item.revisions || []).find((r) => (r.id || r.digest) === head)?.tags || [])]
       : field === "status" ? [item.superseded_by ? "superseded" : "", item.retired || item.superseded_by ? "retired" : ""].filter(Boolean)
       : [field === "type" ? item.type : currentFields(item)[field]].filter(Boolean);
+    // A field the Item lacks is the one it inherits, as the server has it.
+    if (!held.length && field !== "type" && field !== "tags" && field !== "status") {
+      const from = inherited().map((l) => choiceValue(item, l + "." + field)).find(Boolean);
+      if (from) held.push(from);
+    }
     return accepts(key, held, values);
   });
   return state.items.filter((item) => !skip.includes(item.id) && !excluded(item) && types.includes(item.type) && conditions.every(([key, values, only]) => {
@@ -631,7 +636,9 @@ function choiceValue(item, choice) {
     const other = state.items.find((i) => i.id === id);
     const rev = other && (ref ? other.revisions.find((r) => (r.id || r.digest) === ref) : null);
     const fields = !other ? {} : !rev ? other.fields : rev.snapshot ? rev.fields || {} : { ...other.fields, ...(rev.fields || {}) };
-    return key === "type" ? other?.type : fields[key];
+    // original.type:zh is the linked Item's type in a language.
+    if (key === "type") return format && other ? (state.templates.find((t) => t.type === other.type)?.names || {})[format] : other?.type;
+    return fields[key];
   }
   return name === "type"
     ? (format ? (state.templates.find((t) => t.type === item.type)?.names || {})[format] : item.type)
