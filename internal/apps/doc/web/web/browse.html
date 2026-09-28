@@ -152,14 +152,17 @@
         <button id="page-prev" class="tool" type="button" title="Previous page" aria-label="Previous page">‹</button>
         <span id="page-label" class="numeric muted"></span>
         <button id="page-next" class="tool" type="button" title="Next page" aria-label="Next page">›</button>
-        <button id="open-reader" class="button" type="button">Open</button>
-        <button id="attach-pdf" class="button small-button" type="button" hidden>Attach PDF…</button>
+        <span class="detail-tools-end">
+          <button id="open-reader" class="button small-button" type="button">Open</button>
+          <button id="attach-pdf" class="button small-button" type="button" hidden>Attach PDF…</button>
+        </span>
       </div>
     </div>
     <div id="picture-splitter" class="splitter row" role="separator" aria-orientation="horizontal"></div>
     <div class="detail-scroll">
     <div class="snapshot-bar"><span id="detail-rev" class="muted"></span></div>
     <p id="text-message" class="message text-status"></p>
+    <h2 class="detail-group">Details</h2>
     <section class="detail-section">
       <div class="detail-section-head"><h3>Fields</h3>
       <a id="change-type" class="button small-button" href="/change-type/">Change type…</a></div>
@@ -170,23 +173,7 @@
       </form>
     </section>
     <section class="detail-section">
-      <div class="detail-section-head"><h3>Revisions</h3>
-      <a id="new-without-pdf" class="button small-button" title="Create a revision without a PDF" hidden>New without PDF…</a></div>
-      <ul id="revisions" class="rows"></ul>
-      <p id="head-message" class="message"></p>
-    </section>
-    <section class="detail-section">
-      <h3>Cases</h3>
-      <div id="item-cases" class="item-cases"></div>
-      <div class="case-add">
-        <select id="to-case"></select>
-        <input id="to-case-note" autocomplete="off" placeholder="Why (optional)">
-        <button id="to-case-add" class="button" type="button">Add</button>
-      </div>
-      <p id="cases-message" class="message"></p>
-    </section>
-    <section class="detail-section">
-      <h3>Tags</h3>
+      <div class="detail-section-head"><h3>Tags</h3></div>
       <form id="tags-form">
         <span class="tags-label">Every revision</span>
         <div id="detail-tags" data-label="Item tags"></div>
@@ -201,32 +188,51 @@
       </form>
     </section>
     <section class="detail-section">
-      <h3>Notes</h3>
+      <div class="detail-section-head"><h3>Notes</h3></div>
       <form id="notes-form">
         <textarea id="notes" class="notes" rows="3" placeholder="Only for you: never a key, never exported."></textarea>
         <div class="detail-actions"><button class="button" type="submit">Save notes</button>
           <p id="notes-message" class="message"></p></div>
       </form>
     </section>
+    <h2 class="detail-group">Revisions and history</h2>
     <section class="detail-section">
-      <h3>More like this</h3>
-      <button id="more" class="button" type="button">Find similar Items</button>
-      <ul id="similar" class="rows"></ul>
-      <p id="similar-message" class="message"></p>
+      <div class="detail-section-head"><h3>Revisions</h3>
+      <a id="new-without-pdf" class="button small-button" title="Create a revision without a PDF" hidden>New without PDF…</a></div>
+      <ul id="revisions" class="rows"></ul>
+      <p id="head-message" class="message"></p>
     </section>
     <section class="detail-section">
-      <h3>History</h3>
-      <a id="history-all" class="button" href="/log/">Whole tree's log…</a>
+      <div class="detail-section-head"><h3>History</h3>
+      <a id="history-all" class="button small-button" href="/log/">Whole tree's log…</a></div>
       <ul id="history" class="rows"></ul>
     </section>
+    <h2 class="detail-group">Related</h2>
     <section class="detail-section">
-      <h3>Shared with</h3>
+      <div class="detail-section-head"><h3>Cases</h3></div>
+      <div id="item-cases" class="item-cases"></div>
+      <div class="case-add">
+        <select id="to-case"></select>
+        <input id="to-case-note" autocomplete="off" placeholder="Why (optional)">
+        <button id="to-case-add" class="button" type="button">Add</button>
+      </div>
+      <p id="cases-message" class="message"></p>
+    </section>
+    <section class="detail-section">
+      <div class="detail-section-head"><h3>Shared with</h3></div>
       <p class="muted">Also theirs, such as a letter addressed to both. Filtering by owner shows it for them; an Outline's rule selects it for them only when it asks.</p>
       <div id="shared-people" class="checks"></div>
       <p id="shared-message" class="message"></p>
     </section>
     <section class="detail-section">
-      <h3>Retire</h3>
+      <div class="detail-section-head"><h3>More like this</h3>
+      <button id="more" class="button small-button" type="button">Find similar</button></div>
+      <ul id="similar" class="rows"></ul>
+      <p id="similar-message" class="message"></p>
+    </section>
+    <h2 class="detail-group">Retire or delete</h2>
+    <section class="detail-section">
+      <div class="detail-section-head"><h3>Retire</h3></div>
       <div id="supersession-links"></div>
       <form id="supersession-form" hidden><label class="form-field"><span>Replaces</span><select id="supersession-choice"></select></label><button class="button" type="submit">Replace selected visa</button></form>
       <button id="undo-supersession" class="button" type="button" hidden>Undo replacement</button>
@@ -243,7 +249,7 @@
     <section class="detail-section danger-zone">
       <h3>Delete</h3>
       <p class="danger-note">Moves this Item, with every revision's PDF, into the tree's trash folder.</p>
-      <button id="delete" class="button danger" type="button">Delete Item…</button>
+      <div class="detail-actions"><button id="delete" class="button danger" type="button">Delete Item…</button></div>
       <p id="delete-message" class="message"></p>
     </section>
     </div>

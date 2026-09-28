@@ -94,8 +94,11 @@ are remembered in the browser. A thumbnail too tall or wide for its card shows
 its middle. A card's name wraps to a second line before it is cut short.
 Picking one opens a detail panel beside the cards. At its top,
 fixed while the rest scrolls, is the picked revision one page at a time (‹ ›
-turn it), as tall as the reader drags it. Below scroll the fields,
-revisions, notes, similar Items, and apart at the foot, delete. The panel is
+turn it), as tall as the reader drags it. Below scroll its sections in four named groups: Details (fields, tags,
+notes), Revisions and history, Related (Cases, sharing, similar Items),
+and Retire or delete, with delete apart at the foot. Beside the page
+buttons, Attach PDF… adds a PDF to a revision without one and Replace PDF…
+saves another PDF as a new revision of one that has it. The panel is
 as wide as the reader drags it, never narrower than 320px. Double-clicking a
 card, or the picture, opens the revision in place of the cards, the panel
 still beside it without its picture. Opening it is a step in the browser's
