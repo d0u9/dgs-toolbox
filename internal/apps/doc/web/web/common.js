@@ -78,6 +78,25 @@ export function label(state, item) {
   return item.type + (parts.length ? " · " + parts.join(" · ") : "");
 }
 
+// fieldHead is a field's name, marked when required. A field whose Template
+// describes it has a ? beside its name: hovering it shows the description,
+// clicking it shows it under the name until clicked again.
+function fieldHead(field) {
+  const name = el("span", { className: "field-name" }, field.key, field.required ? el("span", { className: "req" }, " *") : null);
+  if (!field.description) return [name];
+  const note = el("span", { className: "field-help", hidden: true }, field.description);
+  const toggle = el("button", { type: "button", className: "field-help-toggle", title: field.description, textContent: "?" });
+  toggle.setAttribute("aria-label", "About " + field.key);
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.onclick = (event) => {
+    event.preventDefault();
+    note.hidden = !note.hidden;
+    toggle.setAttribute("aria-expanded", String(!note.hidden));
+  };
+  name.append(" ", toggle);
+  return [name, note];
+}
+
 // inputFor is the control a field's type asks for: a date picker, a list of
 // options, a list of the tree's other Items, or a line of text. Every value
 // control has the class field-input and the field's key as its name.
@@ -92,7 +111,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
     control.setAttribute("list", id);
     const options = el("datalist", { id });
     const wrapper = el("label", { className: "form-field" },
-      el("span", {}, field.key, field.required ? el("span", { className: "req" }, " *") : null), control, options);
+      ...fieldHead(field), control, options);
     const item = state?.items?.find((item) => item.id === self);
     const typ = type || item?.type || "";
     let request = 0;
@@ -152,7 +171,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
       control.addEventListener("change", sync);
       sync();
       return el("div", { className: "form-field" },
-        el("span", {}, field.key, field.required ? el("span", { className: "req" }, " *") : null),
+        ...fieldHead(field),
         control, cards);
     }
   } else {
@@ -162,7 +181,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
     if (field.type === "country") control.title = "Any code or name: kept as the Template's format says.";
   }
   return el("label", { className: "form-field" },
-    el("span", {}, field.key, field.required ? el("span", { className: "req" }, " *") : null), control);
+    ...fieldHead(field), control);
 }
 
 export const fieldsOf = (container) => Object.fromEntries(

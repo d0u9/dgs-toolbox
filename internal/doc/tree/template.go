@@ -42,6 +42,9 @@ type Field struct {
 	Key            string `yaml:"key" json:"key"`
 	Required       bool   `yaml:"required,omitempty" json:"required"`
 	Distinguishing bool   `yaml:"distinguishing,omitempty" json:"distinguishing"`
+	// Description says what the field holds, for the reader filling it in:
+	// "the original's country, not where it is used".
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	// Pattern, when set, is a regular expression (Go's RE2 syntax) that finds
 	// the field's value in a document's recognised text: the first capture
 	// group when it has one, else the whole match. It only suggests; a person

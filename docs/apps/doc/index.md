@@ -1060,6 +1060,7 @@ fields:
     format: zh              # zh 中国, en China, alpha2 CN, alpha3 CHN
     required: true
     distinguishing: true
+    description: The country that issued it  # shown beside the field's name
   - key: number
     per_revision: true      # each revision keeps its own
     pattern: '(\d{17}[\dXx])'
@@ -1080,7 +1081,9 @@ defaults:
 
 The file is named after its `type`. `description` is a short explanation shown
 on the Import card and in the Templates list; older Templates may omit it.
-A `select` field lists its allowed values under `options`. A field's `pattern` is a regular
+A `select` field lists its allowed values under `options`. A field's `description` says
+what it holds; every form shows a `?` beside the field's name, which shows it
+on hover and keeps it shown under the name when clicked. A field's `pattern` is a regular
 expression that suggests its value from the document's text (below): the
 first capture group, else the whole match. A value written more than one way
 takes `patterns`, a list tried after `pattern`, in order: the first to find a
