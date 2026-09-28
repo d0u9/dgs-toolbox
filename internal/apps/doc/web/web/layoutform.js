@@ -11,6 +11,7 @@ let countries = {}; // each country's every form: its alpha-3 code
 let orders = {}; // per numbered name, its order as typed: "alex, emma"
 let skip = []; // the IDs of the Items the rule leaves out
 let numbers = {}; // per numbered name, the numbers set by hand: { 结婚证: 6 }
+let unnumbered = {}; // per numbered name, the names left unnumbered: [押金]
 let changed = () => {};
 
 // setup gives the form the tree's state, the keys a layout can use, the
@@ -39,6 +40,7 @@ export function fill(v) {
   drawInherit(v.inherit || []);
   orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, list.join(", ")]));
   numbers = JSON.parse(JSON.stringify(v.numbers || {}));
+  unnumbered = JSON.parse(JSON.stringify(v.unnumbered || {}));
   $("map").value = Object.entries(v.map || {}).map(([k, m]) => k + ": " + Object.entries(m).map(([a, b]) => a + " = " + b).join(", ")).join("\n");
   $("map").classList.remove("invalid");
   $("map-error").textContent = "";
@@ -83,6 +85,12 @@ export function read() {
     if (Object.keys(kept).length) set[key] = kept;
   }
   if (Object.keys(set).length) out.numbers = set;
+  const skipped = {};
+  for (const [key, list] of Object.entries(order)) {
+    const kept = (unnumbered[key] || []).filter((name) => list.some((v) => same(v, name)));
+    if (kept.length) skipped[key] = kept;
+  }
+  if (Object.keys(skipped).length) out.unnumbered = skipped;
   const map = mapOf($("map").value);
   $("map").classList.toggle("invalid", !map);
   $("map-error").textContent = map ? "" : "Write each line as key: value = as, value = as";
@@ -703,9 +711,11 @@ export function orderValue(item, key) {
 // from 01. An order new to the layout starts with the values Items have.
 // numbered is the number each name of an order gets: the next after the
 // one before, unless set gives it its own, from which the rest count on.
-function numbered(values, set = {}) {
+// A name skip lists is null and takes no number.
+function numbered(values, set = {}, skip = []) {
   let n = 0;
   return values.map((v) => {
+    if (skip.some((name) => same(name, v))) return null;
     const own = Object.entries(set).find(([name]) => same(name, v));
     n = own ? own[1] : n + 1;
     return n;
@@ -721,6 +731,7 @@ function drawOrder() {
     if (before) {
       orders[key] = orders[before];
       if (numbers[before]) numbers[key] = numbers[before];
+      if (unnumbered[before]) unnumbered[key] = unnumbered[before];
     }
     if (orders[key] === undefined) {
       orders[key] = [...new Set(selected().map((i) => orderValue(i, key)).filter(Boolean))].sort().join(", ");
@@ -740,17 +751,27 @@ function drawOrder() {
       // move swaps a shown value with the shown one before or after it.
       const move = (a, b) => { const next = [...values]; [next[a], next[b]] = [next[b], next[a]]; set(next); };
       const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
-      const counted = numbered(values, numbers[key]);
-      const pad = Math.max(2, String(counted[counted.length - 1] || 0).length);
+      const counted = numbered(values, numbers[key], unnumbered[key]);
+      const pad = Math.max(2, String(Math.max(0, ...counted)).length);
+      // before is the number of the last numbered name before i.
+      const before = (i) => counted.slice(0, i).filter((n) => n !== null).pop();
+      const skipped = (v) => (unnumbered[key] || []).some((name) => same(name, v));
+      // toggle leaves a name unnumbered, or numbers it again.
+      const toggle = (v) => {
+        unnumbered[key] = skipped(v) ? unnumbered[key].filter((name) => !same(name, v)) : [...(unnumbered[key] || []), v];
+        numbers[key] = Object.fromEntries(Object.entries(numbers[key] || {}).filter(([name]) => !same(name, v)));
+        draw();
+        changed();
+      };
       // renumber sets a name's number by hand, or clears it when it is the
       // next one anyway; a number not after the one before is refused.
       const renumber = (i, input) => {
         const own = { ...(numbers[key] || {}) };
         for (const name of Object.keys(own)) if (same(name, values[i])) delete own[name];
         const typed = parseInt(input.value, 10);
-        const next = numbered(values.slice(0, i + 1), own)[i];
+        const next = numbered(values.slice(0, i + 1), own, unnumbered[key])[i];
         if (input.value.trim() !== "" && typed !== next) {
-          if (!(typed >= 1) || (i > 0 && typed <= counted[i - 1])) { input.value = String(counted[i]).padStart(pad, "0"); input.classList.add("invalid"); return; }
+          if (!(typed >= 0) || (before(i) !== undefined && typed <= before(i))) { input.value = String(counted[i]).padStart(pad, "0"); input.classList.add("invalid"); return; }
           own[values[i]] = typed;
         }
         numbers[key] = own;
@@ -773,11 +794,15 @@ function drawOrder() {
             },
           },
             el("span", { className: "order-grip", textContent: "⋮⋮", "aria-hidden": "true" }),
-            el("input", { className: "order-number" + (Object.keys(numbers[key] || {}).some((name) => same(name, v)) ? " set" : ""), type: "text", inputMode: "numeric",
-              value: String(counted[i]).padStart(pad, "0"), title: "Its number. Type another to skip some; the ones after count on from it. Clear it to count on from the one before.",
-              onchange: (event) => renumber(i, event.target), onkeydown: (event) => { if (event.key === "Enter") { event.preventDefault(); event.target.blur(); } } }),
+            counted[i] === null
+              ? el("span", { className: "order-number unnumbered", textContent: "—", title: "Not numbered: no number, nor the text after {#}" })
+              : el("input", { className: "order-number" + (Object.keys(numbers[key] || {}).some((name) => same(name, v)) ? " set" : ""), type: "text", inputMode: "numeric",
+                value: String(counted[i]).padStart(pad, "0"), title: "Its number. Type another to skip some; the ones after count on from it. Clear it to count on from the one before.",
+                onchange: (event) => renumber(i, event.target), onkeydown: (event) => { if (event.key === "Enter") { event.preventDefault(); event.target.blur(); } } }),
             el("span", { className: "order-value", textContent: v, title: v }),
             el("span", { className: "order-acts" },
+              el("button", { type: "button", className: "order-act" + (skipped(v) ? " on" : ""), textContent: "#",
+                title: skipped(v) ? "Number it again" : "Leave it unnumbered", onclick: () => toggle(v) }),
               act("Up", "↑", () => move(i, shown[k - 1]), k === 0),
               act("Down", "↓", () => move(i, shown[k + 1]), k === shown.length - 1),
               act("Remove", "×", () => set(values.filter((_, n) => n !== i)))));

@@ -714,6 +714,9 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .order-act { width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--graphite); cursor: pointer; font: inherit; line-height: 22px; }
 .order-act:hover:not(:disabled) { background: var(--paper); color: var(--primary); }
 .order-act:disabled { opacity: .3; cursor: default; }
+.order-act.on { color: var(--primary); background: var(--primary-soft); }
+.order-list li:has(.order-act.on) .order-acts { opacity: 1; }
+.vf .order .order-number.unnumbered { display: inline-block; color: var(--graphite); background: none; }
 .order-add { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 8px; }
 .order-add-label { font-size: var(--font-size-xs); color: var(--graphite); margin-right: 2px; }
 .order-chip { height: 22px; padding: 0 8px; font: inherit; font-size: var(--font-size-xs); color: var(--graphite); background: var(--paper); border: 1px dashed var(--hairline-strong); border-radius: var(--radius-pill); cursor: pointer; }

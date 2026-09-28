@@ -396,7 +396,7 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 				continue
 			}
 			Remap(keys, v.Map, item.TagsAt(rev.Ref()))
-			name, lacking := render(layout, keys, v.Default, v.Order, v.Numbers)
+			name, lacking := render(layout, keys, v.Default, v.Order, v.Numbers, v.Unnumbered)
 			if len(lacking) > 0 {
 				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
 				continue
@@ -558,8 +558,8 @@ func CombineWith(views []View, fixed []File, items []tree.Item, names TypeNames)
 // render fills a layout from keys. It returns the keys it lacked, when there
 // is no default to stand in for them, and the numbered names, named
 // as their orders are, not in their order.
-func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string, set map[string]map[string]int) (string, []string) {
-	r := renderer{keys: keys, fallback: fallback, order: order, set: set}
+func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string, set map[string]map[string]int, skip map[string][]string) (string, []string) {
+	r := renderer{keys: keys, fallback: fallback, order: order, set: set, skip: skip}
 	segments := make([]string, len(layout))
 	for s, parts := range layout {
 		segments[s], _ = r.name(parts, false)
@@ -585,6 +585,7 @@ type renderer struct {
 	fallback *string
 	order    map[string][]string
 	set      map[string]map[string]int
+	skip     map[string][]string
 	lacking  []string
 }
 
@@ -634,8 +635,15 @@ func (r *renderer) name(parts []Part, group bool) (string, []string) {
 		c := parts[counter]
 		name := strings.Join(pieces[c.From:c.To], "")
 		if n := place(r.order[c.Of], name); n > 0 {
-			numbers := Numbered(r.order[c.Of], r.set[c.Of])
-			pieces[counter] = padTo(numbers[n-1], numbers[len(numbers)-1])
+			numbers := Numbered(r.order[c.Of], r.set[c.Of], r.skip[c.Of])
+			if numbers[n-1] == Unnumbered {
+				// No number, nor the text straight after it: 物业发票.pdf.
+				if counter+1 < c.From {
+					pieces[counter+1] = ""
+				}
+			} else {
+				pieces[counter] = padTo(numbers[n-1], slices.Max(numbers))
+			}
 		} else {
 			r.lack(c.Of)
 		}
@@ -725,13 +733,21 @@ func padTo(n, largest int) string {
 	return s
 }
 
+// Unnumbered is the number Numbered gives a name {#} leaves unnumbered.
+const Unnumbered = -1
+
 // Numbered is the number {#} writes for each name of order: the next
 // after the one before, counting from 1, unless set gives the name its
-// own, from which the names after it count on.
-func Numbered(order []string, set map[string]int) []int {
+// own, from which the names after it count on. A name skip lists is
+// Unnumbered and takes no number.
+func Numbered(order []string, set map[string]int, skip []string) []int {
 	out := make([]int, len(order))
 	n := 0
 	for i, name := range order {
+		if place(skip, name) > 0 {
+			out[i] = Unnumbered
+			continue
+		}
 		n++
 		for named, m := range set {
 			if sameValue(named, name) {
@@ -779,6 +795,6 @@ func Name(layout string, item tree.Item, revision int, names TypeNames) (string,
 	for lang, name := range names[keys["type"]] {
 		keys["type:"+lang] = name
 	}
-	name, lacking := render(parsed, keys, nil, nil, nil)
+	name, lacking := render(parsed, keys, nil, nil, nil, nil)
 	return name, lacking, nil
 }

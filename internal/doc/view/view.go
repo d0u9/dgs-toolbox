@@ -92,6 +92,10 @@ type View struct {
 	// place of the next: the names after it count on from there, so
 	// setting the third of four to 6 numbers them 1, 2, 6, 7.
 	Numbers map[string]map[string]int `yaml:"numbers,omitempty" json:"numbers,omitempty"`
+	// Unnumbered lists, per order, the names {#} leaves unnumbered: their
+	// number and the text straight after {#} are not written, and they
+	// take no number, so the next name counts on from the one before.
+	Unnumbered map[string][]string `yaml:"unnumbered,omitempty" json:"unnumbered,omitempty"`
 	// Map writes, per key, a value as another: {tags: {network-1: address01}}
 	// puts address01 where the layout has {tags}. For tags the value is the
 	// revision's first tag the map lists; a key whose value it does not
@@ -193,15 +197,36 @@ func (v View) Validate() error {
 			return fmt.Errorf("view %s: numbers %s: order has no list for it", v.Name, key)
 		}
 		for name, n := range set {
-			if place(list, name) == 0 || n < 1 {
-				return fmt.Errorf("view %s: numbers %s: %s must be in the order and numbered from 1", v.Name, key, name)
+			if place(list, name) == 0 || n < 0 {
+				return fmt.Errorf("view %s: numbers %s: %s must be in the order and numbered from 0", v.Name, key, name)
+			}
+			if place(v.Unnumbered[key], name) > 0 {
+				return fmt.Errorf("view %s: numbers %s: %s is unnumbered", v.Name, key, name)
 			}
 		}
-		numbers := Numbered(list, set)
-		for i := 1; i < len(numbers); i++ {
-			if numbers[i] <= numbers[i-1] {
-				return fmt.Errorf("view %s: numbers %s: %s would be %d, not after %s's %d", v.Name, key, list[i], numbers[i], list[i-1], numbers[i-1])
+	}
+	for key, names := range v.Unnumbered {
+		list, ok := v.Order[key]
+		if !ok {
+			return fmt.Errorf("view %s: unnumbered %s: order has no list for it", v.Name, key)
+		}
+		for _, name := range names {
+			if place(list, name) == 0 {
+				return fmt.Errorf("view %s: unnumbered %s: %s is not in the order", v.Name, key, name)
 			}
+		}
+	}
+	for key, list := range v.Order {
+		numbers := Numbered(list, v.Numbers[key], v.Unnumbered[key])
+		last := -1
+		for i, n := range numbers {
+			if n == Unnumbered {
+				continue
+			}
+			if last >= 0 && n <= numbers[last] {
+				return fmt.Errorf("view %s: numbers %s: %s would be %d, not after %s's %d", v.Name, key, list[i], n, list[last], numbers[last])
+			}
+			last = i
 		}
 	}
 	for _, part := range layout.Counters() {
@@ -372,10 +397,17 @@ func Upgrade(v View) (View, bool) {
 			numbers[name(key)] = set
 		}
 	}
+	var unnumbered map[string][]string
+	if v.Unnumbered != nil {
+		unnumbered = map[string][]string{}
+		for key, names := range v.Unnumbered {
+			unnumbered[name(key)] = names
+		}
+	}
 	if !changed {
 		return v, false
 	}
-	v.Layout, v.Order, v.Numbers = layout, order, numbers
+	v.Layout, v.Order, v.Numbers, v.Unnumbered = layout, order, numbers, unnumbered
 	return v, true
 }
 
