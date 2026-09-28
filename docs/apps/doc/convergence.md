@@ -19,49 +19,110 @@ folders. It sees whole trees, never how one was generated. The Rules,
 Snapshots and Outlines pages stay separate. Everything below is inside a rule,
 or in the Templates.
 
-## 1. One field catalogue
+## 1. Types that inherit
 
-The 23 Templates in use name one meaning several ways:
+Types form a tree, as classes do. A field is defined once, in the type where
+its meaning starts, and every type below inherits it. Relations between Items
+are fields of `type: item` (`about`); paths and conditions read through them
+(`about.address`). Rules then place Items like an if/else over the tree
+(section 3).
 
-| Meaning | Names now |
-| --- | --- |
-| The document's own date | `date` `issued` `signed` `paid` `registered` |
-| The span it covers | `start/end` `period_start/period_end` `effective/expires` `issued/expires` |
-| The other party | `issuer` `provider` `payee` `party` `landlord` `school` `translator` |
-| What it is called | `name` `subject` `card_name` |
-| Which kind | `category` `service` `insurance_type` `visa_type` `card_type` `class` `level` |
-| A number | `number` `reference` `licence_number` `card_number` `account` `member_number` |
+The 23 Templates in use name one meaning several ways, which this removes:
 
-Proposal: a tree defines each field once, and a key means the same in every
-Template.
+| Meaning | Names now | One name |
+| --- | --- | --- |
+| What it is called | `name` `subject` `card_name` | `name` |
+| The other party | `issuer` `provider` `payee` `party` `landlord` `school` `translator` | `issuer` |
+| Its own date | `date` `issued` `signed` `paid` `registered` | `date` |
+| The span it covers | `start/end` `period_start/period_end` `effective/expires` `issued/expires` | `start` `end` |
+| Which sort | `category` `service` `insurance_type` `visa_type` `card_type` `class` | `category` |
+
+`category`, not `kind`: `kind` already says whether a type is a `record` or a
+`document`.
 
 ```yaml
-# templates/fields.yaml
-owner:    {type: select, options: [alex, emma]}
-country:  {type: country}
-name:     {}                 # what it is called: 合同, 物业发票, IELTS
-kind:     {}                 # which kind: 水, a visa subclass, a policy type
-issuer:   {}                 # the other party: who issued it, was paid, signed
-number:   {}
-date:     {type: date}       # its own date: issued, signed, paid
-start:    {type: date}
-end:      {type: date}       # the end of what it covers, validity included
-amount:   {}
-currency: {type: select, options: [AUD, CNY, USD]}
-about:    {type: item, match: {anchor: =true}}
+# templates/record.yaml
+type: record
+abstract: true            # no Item is of this type; it only passes fields down
+fields:
+  - {key: owner, type: select, options: [alex, emma], required: true}
+  - {key: country, type: country, format: zh, required: true}
+  - {key: name}
+  - {key: issuer}
+  - {key: number}
+  - {key: date, type: date}
+
+# templates/money.yaml
+type: money
+extends: record
+abstract: true
+fields:
+  - {key: amount}
+  - {key: currency, type: select, options: [AUD, CNY, USD]}
+  - key: category
+    values: {utility: [水, 电, 气, 网], housing: [房租, 物业, 车位]}
+  - {key: about, type: item, match: {anchor: =true}}
+
+# templates/bill.yaml
+type: bill
+extends: money
+fields:
+  - {key: start, type: date}
+  - {key: end, type: date}
+  - {key: due, type: date}
 ```
 
-- A Template lists keys from the catalogue with its own `required`,
-  `distinguishing` and description: `fields: [owner, issuer, date, amount]`.
-- A field one Template needs alone, such as a visa's `first_entry_by`, still
-  goes into the catalogue first, so divergence is visible where it happens.
-- Rules write `{name}` and `{date}`, and condition on `kind`, the same for a
-  bill, an invoice and a payment.
-- Old keys (`provider`, `period_start`) are not read. The real tree is
-  migrated once, separately (see [Migration](#migration)).
+- One parent per type. A type inherits its parent's fields, `required`,
+  `distinguishing` and `defaults`.
+- A type may add fields, make an inherited field required or distinguishing,
+  and give it its own description. It may not rename it or change its type.
+- A value may sit in a group (`utility` holds 水 and 电). A condition on the
+  group matches every value in it.
+- A condition on a type matches its descendants: `type is money` matches
+  bill, invoice and payment.
 
-Open: where `date`, `kind` and `issuer` end — for example whether a bill's
-`due` is its `date`, and whether `expires` is always `end`.
+### Draft tree
+
+From the Templates in the tree now. Each line names the fields it adds.
+
+```
+record         owner country name issuer number date
+├─ credential  end                               (abstract)
+│  ├─ id_card, temp_id, student_id
+│  ├─ social_card        member_number
+│  ├─ bank_card          category last_four
+│  ├─ driver_licence     category address card_number
+│  ├─ visa               category first_entry_by travel_until
+│  ├─ certificate        level
+│  ├─ achievement        level
+│  ├─ diploma            level major entered graduated
+│  └─ marriage_cert      spouse
+├─ money       amount currency category about    (abstract)
+│  ├─ bill               address account start end due
+│  ├─ invoice            purpose
+│  └─ payment            via
+├─ agreement   start end about                   (abstract)
+│  ├─ tenancy            address
+│  ├─ contract           category address
+│  └─ insurance_policy   category insured
+├─ official_letter       about
+├─ notarial_certificate
+├─ tax_document          category fy signed
+├─ translation           of original language
+└─ other                 about
+```
+
+Open:
+
+- A credential's `date` is when it was issued, and it keeps no `start`. A
+  driver licence whose card and first licence differ loses one date.
+- A marriage certificate has two dates, `registered` and the copy's `issued`.
+  Which one is `date`?
+- `reference` (a second number on a letter, payment, visa, policy) merges
+  into `number`, or stays beside it.
+- `tax_document.signed` is yes/no, not a date: it keeps its name, or becomes
+  a tag.
+- Whether abstract types appear as filters in Browse.
 
 ## 2. Conditions as one expression
 
@@ -110,7 +171,7 @@ built, and is not part of `dgs`.
 
 ## Order
 
-1. The field catalogue — most fallbacks go away.
+1. Types that inherit — most fallbacks go away.
 2. The expression.
 3. Nested paths.
 4. The one-off migration of the real tree.
