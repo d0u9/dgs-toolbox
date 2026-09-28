@@ -241,10 +241,13 @@ type Part struct {
 	Format string `json:"format,omitempty"`
 	// Counter is {#}. Of is the rest it numbers as written, which names
 	// its order, and From and To are that rest's parts beside it.
-	Counter bool   `json:"counter,omitempty"`
-	Of      string `json:"of,omitempty"`
-	From    int    `json:"-"`
-	To      int    `json:"-"`
+	Counter bool `json:"counter,omitempty"`
+	// End is {/#}: the number's rest stops before it, so what follows is
+	// written but not numbered. It writes nothing itself.
+	End  bool   `json:"end,omitempty"`
+	Of   string `json:"of,omitempty"`
+	From int    `json:"-"`
+	To   int    `json:"-"`
 	// Or holds the alternatives after the first, tried in order.
 	Or []Part `json:"or,omitempty"`
 	// Group holds an optional group's parts, written only when the Item
@@ -465,7 +468,7 @@ func parseParts(layout, text string, group bool) ([]Part, []string, error) {
 			keyed := false
 			for _, p := range inside {
 				keyed = keyed || p.Key != ""
-				if p.Counter && !folder {
+				if (p.Counter || p.End) && !folder {
 					return nil, nil, fmt.Errorf("layout %q: [%s]: {#} in a group numbers only the folder it adds, as [/{#}-{language}]", layout, inner)
 				}
 			}
@@ -492,6 +495,10 @@ func parseParts(layout, text string, group bool) ([]Part, []string, error) {
 			written = append(written, "{"+inner+"}")
 			if inner == "#" {
 				parts = append(parts, Part{Counter: true})
+				continue
+			}
+			if inner == "/#" {
+				parts = append(parts, Part{End: true})
 				continue
 			}
 			if strings.HasSuffix(inner, "#") {
@@ -541,8 +548,14 @@ func splitSegments(layout string) []string {
 // text straight after it, a folder group ending the name and a trailing
 // .{ext}. A name has one {#} at most, and it numbers at least one key.
 func counted(layout string, parts []Part, written []string) error {
-	at := -1
+	at, end := -1, -1
 	for i, p := range parts {
+		if p.End {
+			if at < 0 || end >= 0 {
+				return fmt.Errorf("layout %q: {/#} ends the rest one {#} before it numbers", layout)
+			}
+			end = i
+		}
 		if !p.Counter {
 			continue
 		}
@@ -555,6 +568,10 @@ func counted(layout string, parts []Part, written []string) error {
 		return nil
 	}
 	from, to := at+1, len(parts)
+	if end >= 0 {
+		// {#}-{name}{/#}[-{signed}]: the number stops at {/#}.
+		to = end
+	}
 	if from < to && parts[from].Text != "" {
 		from++
 	}

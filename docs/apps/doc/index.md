@@ -753,6 +753,13 @@ named `{name|type:zh}[-{level}]` listing `[身份证, 毕业证书-本科,
 the name and its level together get one number. A folder or file name has
 one `{#}` at most, and a key must follow it.
 
+`{/#}` stops the number: what follows it is written but not numbered, and
+the order is named after the rest up to it. `{#}-{name}{/#}[-{signed:compact}].{ext}`,
+with an order `{name}` listing `[合同, 物业发票]`, writes `01-合同-20180320.pdf`,
+`01-合同-20190322.pdf` and `02-物业发票.pdf`: both contracts share the number
+their name has. A name has one `{/#}` at most, after its `{#}`; the page adds
+it with the `/#` chip.
+
 A key is no longer numbered on its own. A layout written `{key#}`,
 `{key:format#}` or `{a|b#}`, or earlier `{a|b}#`, `{key}#` or
 `{key#:format}`, is rewritten as `{#}-{key}` in its rule's file when the tree
