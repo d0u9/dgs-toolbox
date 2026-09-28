@@ -56,4 +56,20 @@ The layout and formats are in [`index.md`](index.md#layout-on-disk).
     history events carry an `actor`; `internal/doc/expr` knows nothing of
     rules.
 
+- **Integrity** — not decided. The PDFs are the data to protect, so the
+  answer is at the file level, not a database: content addressing, atomic
+  writes, `verify` and backups.
+  - An operation touching several files (a move on a changed date, a merge)
+    writes each file as a temporary, reads it back, then renames it, as Photo
+    Import does. Steps are ordered new before old and are idempotent, so an
+    interrupted run leaves at worst an extra file, which `verify` reports and
+    a rerun finishes.
+  - `verify` also checks fields: a required one missing, a value its type
+    rejects, an `about` naming an Item the tree lacks. Run before and after
+    the convergence migration.
+  - `verify --deep` hashes every PDF again to catch bit rot. A server runs
+    `verify` daily and `--deep` weekly, and reports what it finds.
+  - A deleted or damaged PDF comes back only from a backup (NAS snapshots, an
+    off-site copy); `verify` finds it, and its digest checks the restore.
+
 - **Clone**, and the three-way merge a cloned sub-tree allows.
