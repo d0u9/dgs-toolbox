@@ -784,3 +784,35 @@ func TestInherit(t *testing.T) {
 		t.Error("inherit original.level validated")
 	}
 }
+
+func TestInheritExcludesAndLinkedType(t *testing.T) {
+	const (
+		transcript = "01K00000000000000000000001"
+		licence    = "01K00000000000000000000002"
+		ofScript   = "01K00000000000000000000003"
+		ofLicence  = "01K00000000000000000000004"
+	)
+	items := []tree.Item{
+		item(transcript, "diploma", map[string]string{"name": "成绩单"}, "d1"),
+		item(licence, "driver_licence", map[string]string{}, "d2"),
+		item(ofScript, "translation", map[string]string{"original": transcript}, "d3"),
+		item(ofLicence, "translation", map[string]string{"original": licence}, "d4"),
+	}
+	names := TypeNames{"driver_licence": {"zh": "驾驶证"}, "translation": {"zh": "翻译件"}, "diploma": {"zh": "文凭"}}
+	v := View{Name: "x", Selection: Head, Inherit: []string{"original"}, Layout: "{type}/{name|original.type:zh|type:zh}.{ext}",
+		Exclude: map[string]Values{"name": {"成绩单"}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Build(v, items, names)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"driver_licence/驾驶证.pdf", "translation/驾驶证.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+}

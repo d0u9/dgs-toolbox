@@ -574,7 +574,7 @@ func parseKey(layout, written string) (Part, error) {
 	if !keyPattern.MatchString(key) {
 		return Part{}, fmt.Errorf("layout %q: {%s} is not a key", layout, written)
 	}
-	if key == "type" && strings.Contains(written, ":") && format != "zh" && format != "en" {
+	if isType(key) && strings.Contains(written, ":") && format != "zh" && format != "en" {
 		return Part{}, fmt.Errorf("layout %q: {%s}: a type is written zh or en", layout, written)
 	}
 	if strings.Contains(written, ":") && !country.Format(format).Valid() {

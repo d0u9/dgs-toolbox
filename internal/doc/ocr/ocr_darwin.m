@@ -10,7 +10,10 @@
 #import <Foundation/Foundation.h>
 #import <PDFKit/PDFKit.h>
 #import <Vision/Vision.h>
+#include <fcntl.h>
+#include <pthread.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 
 // A page with fewer characters than this in its text layer is taken to be a
@@ -138,7 +141,47 @@ static NSArray *layer(PDFPage *page) {
     return lines;
 }
 
+// CoreGraphics logs what it dislikes in a PDF, "CoreGraphics PDF has
+// logged an error", to stderr, which draws over the terminal interface.
+// While any page is read stderr goes to /dev/null; the last reader to
+// finish puts it back.
+static pthread_mutex_t quietLock = PTHREAD_MUTEX_INITIALIZER;
+static int quietReaders = 0;
+static int savedStderr = -1;
+
+static void quiet(void) {
+    pthread_mutex_lock(&quietLock);
+    if (quietReaders++ == 0) {
+        int null = open("/dev/null", O_WRONLY);
+        if (null >= 0) {
+            savedStderr = dup(STDERR_FILENO);
+            dup2(null, STDERR_FILENO);
+            close(null);
+        }
+    }
+    pthread_mutex_unlock(&quietLock);
+}
+
+static void loud(void) {
+    pthread_mutex_lock(&quietLock);
+    if (--quietReaders == 0 && savedStderr >= 0) {
+        dup2(savedStderr, STDERR_FILENO);
+        close(savedStderr);
+        savedStderr = -1;
+    }
+    pthread_mutex_unlock(&quietLock);
+}
+
+static char *readPage(const char *path, int index);
+
 char *dgs_ocr_page(const char *path, int index) {
+    quiet();
+    char *out = readPage(path, index);
+    loud();
+    return out;
+}
+
+static char *readPage(const char *path, int index) {
     @autoreleasepool {
         NSURL *url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path]];
         PDFDocument *document = [[PDFDocument alloc] initWithURL:url];
