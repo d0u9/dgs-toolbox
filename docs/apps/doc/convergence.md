@@ -187,7 +187,7 @@ children:
   - path: other                    # else
 ```
 
-The Rules page edits the children where More paths is now, nested.
+Open: how the Rules page edits nested children. Decided when section 3 is built.
 
 ## Migration
 
