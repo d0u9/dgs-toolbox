@@ -27,4 +27,7 @@ The layout and formats are in [`index.md`](index.md#layout-on-disk).
 
 ## Deferred
 
+- **Convergence** — one field catalogue, conditions as one expression, a
+  rule's paths nesting. A proposal, not decided: [`convergence.md`](convergence.md).
+
 - **Clone**, and the three-way merge a cloned sub-tree allows.
