@@ -8,7 +8,7 @@ let state = { templates: [], items: [] };
 let keys = [];
 let layouts = {}; // each saved rule's layout, parsed by the server
 let countries = {}; // each country's every form: its alpha-3 code
-let orders = {}; // per numbered name, its order as typed: "alex, emma"
+let orders = {}; // per numbered name, its order: a name may hold a comma
 let skip = []; // the IDs of the Items the rule leaves out
 let numbers = {}; // per numbered name, the numbers set by hand: { 结婚证: 6 }
 let unnumbered = {}; // per numbered name, the names left unnumbered: [押金]
@@ -38,7 +38,7 @@ export function fill(v) {
     : v.layout.split("/").map((text) => ({ parts: [{ text }] }));
   active = { row: rows.length - 1, group: -1 };
   drawInherit(v.inherit || []);
-  orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, list.join(", ")]));
+  orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, [...list]]));
   numbers = JSON.parse(JSON.stringify(v.numbers || {}));
   unnumbered = JSON.parse(JSON.stringify(v.unnumbered || {}));
   $("map").value = Object.entries(v.map || {}).map(([k, m]) => k + ": " + Object.entries(m).map(([a, b]) => a + " = " + b).join(", ")).join("\n");
@@ -74,7 +74,7 @@ export function read() {
   if (skip.length) out.skip = [...skip];
   const order = {};
   for (const key of numberedKeys()) {
-    const list = (orders[key] || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const list = (orders[key] || []).filter(Boolean);
     if (list.length) order[key] = list;
   }
   if (Object.keys(order).length) out.order = order;
@@ -119,7 +119,7 @@ function mapOf(text) {
 
 // numberLast puts value last in key's order.
 export function numberLast(key, value) {
-  orders[key] = [...(orders[key] || "").split(",").map((s) => s.trim()).filter(Boolean), value].join(", ");
+  orders[key] = [...(orders[key] || []), value];
   drawOrder();
   changed();
 }
@@ -734,11 +734,11 @@ function drawOrder() {
       if (unnumbered[before]) unnumbered[key] = unnumbered[before];
     }
     if (orders[key] === undefined) {
-      orders[key] = [...new Set(selected().map((i) => orderValue(i, key)).filter(Boolean))].sort().join(", ");
+      orders[key] = [...new Set(selected().map((i) => orderValue(i, key)).filter(Boolean))].sort();
     }
     const box = el("div", { className: "order" });
-    const list = () => orders[key].split(",").map((s) => s.trim()).filter(Boolean);
-    const set = (values) => { orders[key] = values.join(", "); draw(); changed(); };
+    const list = () => orders[key].filter(Boolean);
+    const set = (values) => { orders[key] = [...values]; draw(); changed(); };
     let dragged = -1;
     const draw = () => {
       const values = list();
