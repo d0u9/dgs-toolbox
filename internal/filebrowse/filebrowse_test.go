@@ -244,3 +244,14 @@ func TestTaken(t *testing.T) {
 		}
 	}
 }
+
+func TestPreviewKind(t *testing.T) {
+	for name, want := range map[string]string{
+		"Tax Receipt.PDF": filebrowse.PreviewPDF, "scan.jpeg": filebrowse.PreviewImage, "notes.md": filebrowse.PreviewText,
+		"track.gpx": filebrowse.PreviewText, "page.html": "", "photo.svg": "", "README": "",
+	} {
+		if got := filebrowse.PreviewKind(name); got != want {
+			t.Errorf("filebrowse.PreviewKind(%q) = %q, want %q", name, got, want)
+		}
+	}
+}

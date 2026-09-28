@@ -182,3 +182,29 @@
 .file-replace { width: 380px; max-width: 92vw; }
 
 .file-title { flex: none; }
+
+/* The preview: the picked file beside the listing, a third of the body. It
+   draws the file as it is and nothing of its own but a note when there is
+   nothing to draw. */
+.file-preview {
+  flex: 0 0 34%;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--cloud);
+  overflow: hidden;
+}
+.file-preview[hidden] { display: none; }
+.file-preview iframe { width: 100%; height: 100%; border: 0; background: var(--paper); }
+.file-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.file-preview pre {
+  align-self: stretch; flex: 1; margin: 0; padding: var(--space-xs);
+  overflow: auto; background: var(--paper);
+  font-family: var(--font-mono); font-size: var(--font-size-xs); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.file-preview-note { margin: 0; padding: var(--space-sm); color: var(--graphite); font-size: var(--font-size-sm); text-align: center; }
+.file-preview-toggle[aria-pressed="true"] { background: var(--selected); color: var(--primary); border-color: var(--primary-soft); }

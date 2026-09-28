@@ -27,6 +27,12 @@ let showHidden = false;
 // dialog after it opens that size. Nothing is kept when it was never dragged.
 let size = null;
 
+// Whether the picked file is shown beside the listing. Kept in the browser,
+// as the columns are kept between dialogs, and on until it is turned off.
+const PREVIEW_KEY = "dgs-file-dialog-preview";
+let previewing = true;
+try { previewing = localStorage.getItem(PREVIEW_KEY) !== "off"; } catch { /* on */ }
+
 // The filters a page offers when it names none: everything.
 const ALL_FILES = { label: "All files", extensions: [] };
 
@@ -173,7 +179,12 @@ function dialog({
     newFolder.className = "text-button file-new-folder";
     newFolder.textContent = "New Folder";
     newFolder.title = "Make a folder here";
-    bar.append(up, where, refresh);
+    const eye = document.createElement("button");
+    eye.type = "button";
+    eye.className = "text-button file-preview-toggle";
+    eye.textContent = "Preview";
+    eye.title = "Show the picked file beside the listing";
+    bar.append(up, where, refresh, eye);
     if (writable) bar.append(newFolder);
     form.append(bar);
 
@@ -209,7 +220,11 @@ function dialog({
     list.className = "file-list";
     list.tabIndex = 0;
     pane.append(header, list);
-    body.append(sidebar, pane);
+    // The preview: the one picked file as it is — a PDF in the browser's
+    // own viewer, an image, the start of a text file — or why not.
+    const preview = document.createElement("div");
+    preview.className = "file-preview";
+    body.append(sidebar, pane, preview);
     form.append(body);
 
     const problem = document.createElement("p");
@@ -323,6 +338,55 @@ function dialog({
       draw();
     };
 
+    // showPreview draws the picked file in the preview, only when the pick
+    // changed, so moving through the listing does not reload what is shown.
+    let shown = null;
+    const note = (text) => {
+      const p = document.createElement("p");
+      p.className = "file-preview-note";
+      p.textContent = text;
+      return p;
+    };
+    const showPreview = () => {
+      eye.setAttribute("aria-pressed", String(previewing));
+      preview.hidden = !previewing;
+      if (!previewing) { shown = null; preview.textContent = ""; return; }
+      const picked = rows.filter((entry) => chosen.has(entry.path));
+      const entry = picked.length === 1 ? picked[0] : null;
+      const key = entry ? entry.path : picked.length > 1 ? "*" : "";
+      if (key === shown) return;
+      shown = key;
+      preview.textContent = "";
+      if (!entry) return preview.append(note(picked.length > 1 ? picked.length + " files picked" : "Pick a file to see it here."));
+      if (entry.kind === "folder") return preview.append(note("A folder: open it to see what is in it."));
+      const src = `${endpoint}preview?${new URLSearchParams({ path: entry.path })}`;
+      if (entry.preview === "pdf") {
+        const frame = document.createElement("iframe");
+        frame.title = entry.name;
+        frame.src = src + "#toolbar=0&navpanes=0&view=FitH";
+        preview.append(frame);
+      } else if (entry.preview === "image") {
+        const image = document.createElement("img");
+        image.alt = entry.name;
+        image.src = src;
+        preview.append(image);
+      } else if (entry.preview === "text") {
+        const text = document.createElement("pre");
+        preview.append(text);
+        fetch(src).then((r) => r.ok ? r.text() : Promise.reject(new Error(r.statusText)))
+          .then((body) => { if (shown === key) text.textContent = body; })
+          .catch((error) => { if (shown === key) { preview.textContent = ""; preview.append(note(error.message)); } });
+      } else {
+        preview.append(note("No preview for this kind of file."));
+      }
+    };
+    eye.addEventListener("click", () => {
+      previewing = !previewing;
+      try { localStorage.setItem(PREVIEW_KEY, previewing ? "" : "off"); } catch { /* not kept */ }
+      shown = null;
+      showPreview();
+    });
+
     // selectable says whether confirming on this row would answer with it:
     // a file, or a folder when the dialog asks for one.
     const selectable = (entry) => Boolean(entry) && (pickFolders ? entry.kind === "folder" : entry.kind === "file");
@@ -358,6 +422,7 @@ function dialog({
       for (const item of list.children) {
         if (item.dataset.path) item.classList.toggle("chosen", chosen.has(item.dataset.path));
       }
+      showPreview();
       const ready = saving ? Boolean(input.value.trim()) : pickedPaths().length > 0;
       yes.disabled = !ready && !(pickFolders && here);
     };
