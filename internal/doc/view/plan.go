@@ -217,6 +217,35 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 	return keys
 }
 
+// Follow adds, for each key whose value links to another Item — an Item ID,
+// or <item-id>@<revision> — that Item's keys under the key's name:
+// original.level is the level of the revision original names, and an Item
+// ID alone stands for its current revision. A link to an Item not in items
+// adds nothing, so a layout using it finds the key missing.
+func Follow(keys map[string]string, items map[string]tree.Item) {
+	for key, value := range maps.Clone(keys) {
+		id, ref, ok := tree.SplitRevisionLink(value)
+		if !ok {
+			id, ref = value, ""
+		}
+		linked, found := items[id]
+		if !found {
+			continue
+		}
+		if ref == "" {
+			ref = linked.Current()
+		}
+		for i, rev := range linked.Revisions {
+			if rev.Ref() != ref && !(rev.ID == "" && rev.Digest == ref) {
+				continue
+			}
+			for k, v := range KeysOf(linked, i+1) {
+				keys[key+"."+k] = v
+			}
+		}
+	}
+}
+
 // FieldsFor is the Item fields that supply keys, in order and once each:
 // year, month and date come from DateField, every other key is a field of
 // its own name.
@@ -227,6 +256,8 @@ func FieldsFor(keys []string) []string {
 		if k == "year" || k == "month" || k == "date" {
 			k = DateField
 		}
+		// original.level is filled by the field original.
+		k, _, _ = strings.Cut(k, ".")
 		if strings.HasPrefix(k, "type:") || strings.Contains(k, "|") {
 			// A type's name comes from its Template, and alternatives name
 			// an order, not an Item field.
@@ -289,6 +320,10 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 	sorted := append([]tree.Item(nil), items...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 
+	byID := make(map[string]tree.Item, len(items))
+	for _, item := range items {
+		byID[item.ID] = item
+	}
 	plan := Plan{Files: []File{}, Missing: []Missing{}, Clashes: []Clash{}}
 	var placed []File
 	for _, item := range sorted {
@@ -311,6 +346,7 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 			for lang, name := range names[keys["type"]] {
 				keys["type:"+lang] = name
 			}
+			Follow(keys, byID)
 			name, lacking := render(layout, keys, v.Default, v.Order, v.Numbers)
 			if len(lacking) > 0 {
 				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})

@@ -625,7 +625,7 @@ func TestOptionalKey(t *testing.T) {
 		t.Fatalf("got %v %+v, want %v", paths, plan, want)
 	}
 	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "{degree?}#", "{:degree?}", "{degree|?}",
-		"{/degree?}/x", "a{/degree?}b", "a{/-/degree?}", "a{degree/?}", "{#}-{owner}{/degree?}"} {
+		"{/degree?}/x", "a{/degree?}b", "a{/-/degree?}", "a{degree/?}"} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%q parsed", bad)
 		}
@@ -679,5 +679,40 @@ func TestName(t *testing.T) {
 	}
 	if _, _, err := Name("{#}-{owner}.{ext}", it, 1, nil); err == nil {
 		t.Fatal("{#} accepted")
+	}
+}
+
+// A translation takes its original's keys through the link, and {#} numbers
+// a level without the language folder after it.
+func TestLinkedKeys(t *testing.T) {
+	const (
+		bachelor = "01K00000000000000000000001"
+		master   = "01K00000000000000000000002"
+		english  = "01K00000000000000000000003"
+		lost     = "01K00000000000000000000004"
+	)
+	items := []tree.Item{
+		item(bachelor, "diploma", map[string]string{"owner": "emma", "level": "本科", "name": "学位证书"}, "d1", "d2"),
+		item(master, "diploma", map[string]string{"owner": "emma", "level": "硕士研究生", "name": "毕业证书"}, "d3"),
+		item(english, "translation", map[string]string{"owner": "emma", "language": "en", "original": bachelor + "@d1"}, "d4"),
+		item(lost, "translation", map[string]string{"owner": "emma", "language": "fr"}, "d5"),
+	}
+	items[0].Revisions[0].Fields = map[string]string{"level": "本科"}
+	v := View{Name: "x", Selection: Head, Layout: "{#}-{level|original.level}{/language?}/{#}-{name|original.name}.{ext}",
+		Order: map[string][]string{"{level|original.level}": {"硕士研究生", "本科"}, "{name|original.name}": {"毕业证书", "学位证书"}}}
+	plan, err := Build(v, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	want := []string{"01-硕士研究生/01-毕业证书.pdf", "02-本科/02-学位证书.pdf", "02-本科/en/02-学位证书.pdf"}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	if len(plan.Missing) != 1 || plan.Missing[0].Item != lost || !reflect.DeepEqual(plan.Missing[0].Fields, []string{"level", "name"}) {
+		t.Fatalf("missing %+v", plan.Missing)
 	}
 }
