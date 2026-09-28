@@ -824,3 +824,6 @@ body.list-shut .outline-list { display: none; }
 .native-bar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; }
 .native-bar .chip { background: var(--paper); box-shadow: 0 1px 4px rgba(0, 0, 0, .15); }
 .native-bar[hidden] { display: none; }
+.more-path { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-bottom: 1px solid var(--hairline); }
+.more-path-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.more-path-head .order-acts { margin-left: auto; opacity: 1; }
