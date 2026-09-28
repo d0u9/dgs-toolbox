@@ -142,7 +142,7 @@ record         owner country name issuer number date
 ## 2. Conditions as one expression
 
 ```yaml
-when: type in [bill, invoice, payment] and kind in [水, 电, 气, 网] and not tags has archived
+when: type is money and category is utility and not tags has archived
 ```
 
 - `and`, `or`, `not`, parentheses.
@@ -166,13 +166,13 @@ now. It generalises the `layouts` already built (6f56c06).
 ```yaml
 name: rental
 when: owner is alex and tags in [network-5, network-6, network-7]
-path: 11-Rental/{#}-{about.address}/{about.start:compact}-{about.end:compact}
+path: 11-Rental/{#}-{about.address}/{about.date.start:compact}-{about.date.end:compact}
 file: '{#}-{name}{/#}[-{date:compact}].{ext}'
 children:
-  - when: kind in [水, 电, 气, 网]
-    path: utility/{kind}
-  - when: kind in [房租, 物业, 车位]
-    path: rental/{kind}
+  - when: category is utility
+    path: utility/{category}
+  - when: category is housing
+    path: rental/{category}
 ```
 
 The Rules page edits the children where More paths is now, nested.
