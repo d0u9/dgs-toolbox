@@ -197,6 +197,23 @@ func (s server) outlineDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{})
 }
 
+// ruleLayout parses a layout typed on the Rules page, an old one brought up
+// to date, for the page to edit part by part.
+func (s server) ruleLayout(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Layout string `json:"layout"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	layout, err := view.Parse(request.Layout)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"layout": layout})
+}
+
 // ruleDelete removes a rule no Outline uses.
 func (s server) ruleDelete(w http.ResponseWriter, r *http.Request) {
 	var request struct {

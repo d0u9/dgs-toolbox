@@ -2,7 +2,7 @@
 // revisions, a layout built from key chips, and a Numbering list per
 // {#}. The page owns the rest of
 // its form and what a change redraws; the server computes the result.
-import { $, el, currentFields, label } from "/common.js";
+import { $, el, currentFields, label, post } from "/common.js";
 
 let state = { templates: [], items: [] };
 let keys = [];
@@ -441,7 +441,7 @@ function partEl(part, list, r, g) {
         part.text = event.target.value.replace(/[{}[\]/\\]/g, "");
         event.target.value = part.text;
         fit(event.target);
-        $("layout-text").textContent = layoutText();
+        showText();
         drawOrder();
         changed();
       },
@@ -469,6 +469,46 @@ function partEl(part, list, r, g) {
   return node;
 }
 let dragging = null;
+
+// showText writes the layout the rows make into its box, unless it is
+// being typed in.
+function showText() {
+  const box = $("layout-text");
+  if (document.activeElement === box) return;
+  box.value = layoutText();
+  box.classList.remove("invalid");
+  $("layout-error").textContent = "";
+}
+
+// typed takes the layout typed in its box: the server parses it and the
+// rows are drawn from it; one it refuses stays, marked, with the reason.
+let typing = 0;
+async function typed() {
+  const box = $("layout-text"), mine = ++typing;
+  try {
+    const answer = await post("/api/rules/layout", { layout: box.value.trim() });
+    if (mine !== typing) return;
+    rows = fromLayout(answer.layout);
+    active = { row: rows.length - 1, group: -1 };
+    box.classList.remove("invalid");
+    $("layout-error").textContent = "";
+    edited();
+  } catch (err) {
+    if (mine !== typing) return;
+    box.classList.add("invalid");
+    $("layout-error").textContent = err.message;
+  }
+}
+// settle takes a layout typed and not yet taken, as Save is pressed; one
+// the server refuses stops the save.
+export async function settle() {
+  const box = $("layout-text");
+  if (box.value.trim() === layoutText()) return;
+  await typed();
+  if (box.classList.contains("invalid")) throw new Error($("layout-error").textContent);
+}
+$("layout-text").addEventListener("change", () => typed());
+$("layout-text").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); $("layout-text").blur(); } });
 
 // drawPath draws the rows, the one chips add to marked, and the layout
 // they make, which is shown and never typed.
@@ -500,7 +540,7 @@ function drawPath() {
     return level;
   }), el("button", { type: "button", className: "button path-add", textContent: "+ Folder", title: "Add a folder before the PDF's name",
     onclick: () => { rows.splice(rows.length - 1, 0, { parts: [] }); active = { row: rows.length - 2, group: -1 }; edited(); } }));
-  $("layout-text").textContent = layoutText();
+  showText();
   chips();
 }
 

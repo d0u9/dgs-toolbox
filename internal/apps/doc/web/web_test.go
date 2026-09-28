@@ -611,3 +611,14 @@ func TestViewsAndTargetsBecomeOutlines(t *testing.T) {
 		t.Fatalf("/views/: %d", rec.Code)
 	}
 }
+
+func TestRuleLayoutParses(t *testing.T) {
+	root, _ := setup(t, true)
+	h := Handler(Settings{Root: root})
+	if rec := do(h, "POST", "/api/rules/layout", `{"layout":"{owner}{/-level?}/{name}.{ext}"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"folder":true`) {
+		t.Fatal(rec.Body.String())
+	}
+	if rec := do(h, "POST", "/api/rules/layout", `{"layout":"{a"}`); rec.Code != 400 {
+		t.Fatal(rec.Body.String())
+	}
+}
