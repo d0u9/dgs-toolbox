@@ -293,9 +293,10 @@ func FieldsFor(keys []string) []string {
 		}
 		// original.level is filled by the field original.
 		k, _, _ = strings.Cut(k, ".")
-		if strings.HasPrefix(k, "type:") || strings.Contains(k, "|") {
-			// A type's name comes from its Template, and alternatives name
-			// an order, not an Item field.
+		if strings.HasPrefix(k, "type:") || strings.Contains(k, "|") || strings.HasPrefix(k, "{") {
+			// A type's name comes from its Template, and alternatives and
+			// a braced order key such as {about.address} name an order,
+			// not an Item field.
 			continue
 		}
 		if !seen[k] {
