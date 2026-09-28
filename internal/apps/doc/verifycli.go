@@ -45,7 +45,7 @@ func verifyAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 	}
 	fmt.Fprintf(out, "%d Items, %d PDFs read (%d bytes).\n", report.Items, report.Checked, report.Bytes)
 	if len(report.Problems) == 0 {
-		fmt.Fprintln(out, "Every PDF is where its sidecar says and still matches its digest.")
+		fmt.Fprintln(out, "Every PDF is where its sidecar says and still matches its digest, and every rule, Outline, Snapshot and Case reads.")
 		return nil
 	}
 	fmt.Fprintln(out, "Nothing was changed.")

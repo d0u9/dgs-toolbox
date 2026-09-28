@@ -945,6 +945,11 @@ changes nothing. It reports:
 - a PDF under `items/` no sidecar names;
 - a sidecar that does not parse, names an unknown Template, or whose HEAD is
   not one of its revisions.
+- a file under `rules/`, `outlines/`, `snapshots/` or `cases/` that does not
+  read on its own: it does not parse, is not valid, or is not named for what
+  it holds; an Outline naming a rule whose file does not read is among them;
+- such a file naming what the tree lacks: an Outline a Snapshot, a Snapshot an
+  Item or one of its revisions, a Case an Item.
 
 It exits non-zero when it reports anything.
 
