@@ -31,6 +31,7 @@ const (
 	tabUsers
 	tabServices
 	tabSecrets
+	tabMigrate
 	tabCount
 )
 
@@ -52,6 +53,7 @@ type InspectModel struct {
 	users      []string // sorted user keys
 	services   []*serviceGroup
 	secrets    secretsModel
+	migration  *migrationTable
 
 	tab          int
 	nodeItems    []scrolllist.Item
@@ -119,6 +121,7 @@ func newInspectModel(rootPath, secretsDir string) InspectModel {
 	m.userItems, m.userRowInstances = userTabItems(m.userGroups)
 	m.services = buildServiceGroups(m.l)
 	m.secrets = buildSecrets(m.l, secretsDir)
+	m.migration = newMigrationTable(m.l, rootPath, secretsDir)
 	m.refresh()
 	m.setTab(tabNodes)
 	return m
@@ -660,6 +663,8 @@ func (m *InspectModel) setTab(tab int) {
 	case tabSecrets:
 		m.list.SetItems(m.secretItems)
 		m.list.HideNumbers(true)
+	case tabMigrate:
+		// Migration keeps its own table cursor and proposed values.
 	default:
 		m.list.SetItems(m.markedItems(m.nodeItems, m.nodeRowInstances))
 		m.list.HideNumbers(true)
@@ -675,6 +680,7 @@ func (m InspectModel) Tabs() []tui.Tab {
 		{Label: "Users", Active: m.tab == tabUsers},
 		{Label: "Services", Active: m.tab == tabServices},
 		{Label: "Secrets", Active: m.tab == tabSecrets},
+		{Label: "Migrate", Active: m.tab == tabMigrate},
 	}
 }
 
@@ -684,6 +690,9 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		if m.migration != nil && m.migration.picking != "" {
+			m.migration.picker.SetSize(max(20, min(86, m.width-8)), max(6, m.height-9))
+		}
 		if m.export != nil && m.export.picking {
 			w, h := m.pickerSize()
 			m.export.picker.SetSize(w-4, h-6)
@@ -701,16 +710,26 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tui.TabSelectedMsg:
 		// An open export is about the tab it started on; a click on another
 		// tab behind it would change the page it is drawn over.
-		if m.export != nil {
+		if m.export != nil || (m.tab == tabMigrate && m.migration != nil && (m.migration.editing() || m.migration.picking != "")) {
 			return m, nil
 		}
 		if msg.Index >= 0 && msg.Index < tabCount {
 			m.setTab(msg.Index)
 		}
 		return m, nil
+	case tea.MouseMsg:
+		if m.tab == tabMigrate && m.migration != nil {
+			return m, m.migration.updateMouse(msg, m.width, m.height)
+		}
+		return m, nil
 	case tea.KeyMsg:
 		if m.export != nil {
 			return m.updateExport(msg)
+		}
+		if m.tab == tabMigrate && m.migration != nil {
+			if m.migration.editing() || m.migration.picking != "" || (msg.String() != "[" && msg.String() != "]") {
+				return m, m.migration.update(msg, m.width, m.height)
+			}
 		}
 		switch msg.String() {
 		case "[":
@@ -799,6 +818,9 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.tab == tabMigrate && m.migration != nil && m.migration.picking != "" {
+		return m, m.migration.updateMsg(msg)
+	}
 	return m.updateExportMsg(msg)
 }
 
@@ -827,6 +849,9 @@ func (m InspectModel) View() string {
 	if m.loadErr != nil {
 		return m.centered(titleStyle.Render("dgs conf inspect") + "\n\n" +
 			brokenStyle.Render(m.loadErr.Error()))
+	}
+	if m.tab == tabMigrate && m.migration != nil {
+		return m.migration.view(m.width, m.height)
 	}
 	if m.tab == tabUsers && len(m.users) == 0 {
 		return m.centered(titleStyle.Render("dgs conf inspect") + "\n\n" +
@@ -885,6 +910,9 @@ func (m InspectModel) View() string {
 // CapturesShellKey keeps Esc and q inside an open export, where Esc steps
 // back and q may be typed into the destination.
 func (m InspectModel) CapturesShellKey(key string) bool {
+	if m.tab == tabMigrate && m.migration != nil && m.migration.captures(key) {
+		return true
+	}
 	if m.export != nil && m.export.picking {
 		return key == "esc" || (key == "q" && m.export.picker.CapturesText())
 	}
@@ -913,6 +941,9 @@ func (m InspectModel) centered(content string) string {
 func (m InspectModel) Status() tui.Status {
 	if m.rootPath == "" || m.loadErr != nil {
 		return tui.Status{Left: "INSPECT", Center: "no generator root", Right: "q Quit"}
+	}
+	if m.tab == tabMigrate && m.migration != nil {
+		return m.migration.status()
 	}
 	// What the cursor is on is already the detail pane's own legend, so the
 	// centre carries what the whole tab amounts to instead — for Secrets,

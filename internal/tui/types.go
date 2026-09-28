@@ -125,7 +125,10 @@ type ActionFlag struct {
 	Shorthand string
 	Usage     string
 	Bool      bool
-	Default   string
+	// Repeatable registers a string-array flag. Run receives its values as a
+	// JSON array string so each occurrence remains distinct and ordered.
+	Repeatable bool
+	Default    string
 }
 
 // App describes a command domain and its leaf commands.

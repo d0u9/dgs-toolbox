@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"dgs-toolbox/internal/buildinfo"
@@ -113,7 +114,19 @@ func addActions(command *cobra.Command, actions []tui.Action, configPath *string
 			RunE: func(cmd *cobra.Command, args []string) error {
 				flags := make(map[string]string, len(action.Flags))
 				for _, flag := range action.Flags {
-					flags[flag.Name] = cmd.Flags().Lookup(flag.Name).Value.String()
+					if flag.Repeatable {
+						values, err := cmd.Flags().GetStringArray(flag.Name)
+						if err != nil {
+							return err
+						}
+						encoded, err := json.Marshal(values)
+						if err != nil {
+							return err
+						}
+						flags[flag.Name] = string(encoded)
+					} else {
+						flags[flag.Name] = cmd.Flags().Lookup(flag.Name).Value.String()
+					}
 				}
 				if action.RunWithConfig != nil {
 					global, err := loadConfig(*configPath)
@@ -126,7 +139,9 @@ func addActions(command *cobra.Command, actions []tui.Action, configPath *string
 			},
 		}
 		for _, flag := range action.Flags {
-			if flag.Bool {
+			if flag.Repeatable {
+				sub.Flags().StringArrayP(flag.Name, flag.Shorthand, nil, flag.Usage)
+			} else if flag.Bool {
 				sub.Flags().BoolP(flag.Name, flag.Shorthand, flag.Default == "true", flag.Usage)
 			} else {
 				sub.Flags().StringP(flag.Name, flag.Shorthand, flag.Default, flag.Usage)
