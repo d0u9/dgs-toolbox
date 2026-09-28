@@ -226,7 +226,7 @@ type Part struct {
 	Or []Part `json:"or,omitempty"`
 	// Optional parts write nothing for an Item without the key, and
 	// Prefix and Suffix around its value otherwise.
-	Optional bool   `json:"optional,omitempty"`
+	Optional bool `json:"optional,omitempty"`
 	// Numbered is an optional folder written {/#-key?}: its value is
 	// numbered, as {#} would, from the order Of names, {key}.
 	Numbered bool   `json:"numbered,omitempty"`
