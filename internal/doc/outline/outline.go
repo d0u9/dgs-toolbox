@@ -79,6 +79,8 @@ func (o Outline) Validate() error {
 	if o.Folder != "" && !strings.HasPrefix(o.Folder, "~") && !filepath.IsAbs(o.Folder) {
 		return fmt.Errorf("outline %s: the folder %q is neither absolute nor under ~", o.Name, o.Folder)
 	}
+	// A rule and a Snapshot may share a name: each is named once among
+	// its own kind.
 	seen := map[string]bool{}
 	for _, r := range o.Rules {
 		if err := r.Validate(); err != nil {
@@ -89,6 +91,7 @@ func (o Outline) Validate() error {
 		}
 		seen[r.Name] = true
 	}
+	seen = map[string]bool{}
 	for _, m := range o.Snapshots {
 		if !namePattern.MatchString(m.Name) {
 			return fmt.Errorf("outline %s: %q is not a Snapshot's name", o.Name, m.Name)
@@ -100,7 +103,7 @@ func (o Outline) Validate() error {
 			return fmt.Errorf("outline %s: the Snapshot %s's folder name %q is not one name", o.Name, m.Name, m.As)
 		}
 		if seen[m.Name] {
-			return fmt.Errorf("outline %s: %s is named twice among its rules and Snapshots", o.Name, m.Name)
+			return fmt.Errorf("outline %s: two Snapshots are named %s", o.Name, m.Name)
 		}
 		seen[m.Name] = true
 	}
@@ -328,10 +331,6 @@ func Save(root, previous string, o Outline) error {
 	}
 	file := named{Name: o.Name, About: o.About, Folder: o.Folder, Rules: []string{}, Snapshots: o.Snapshots}
 	for _, r := range o.Rules {
-		// An Outline names its rules and Snapshots together.
-		if _, err := os.Stat(snapshot.Path(root, r.Name)); err == nil {
-			return fmt.Errorf("a Snapshot is named %s: choose another name for the rule", r.Name)
-		}
 		data, err := yaml.Marshal(r)
 		if err != nil {
 			return err
@@ -373,9 +372,6 @@ func SaveRule(root, previous string, r view.View) error {
 	r = withHead(r)
 	if err := r.Validate(); err != nil {
 		return errors.New(strings.Replace(err.Error(), "view ", "rule ", 1))
-	}
-	if _, err := os.Stat(snapshot.Path(root, r.Name)); err == nil {
-		return fmt.Errorf("a Snapshot is named %s: choose another name for the rule", r.Name)
 	}
 	switch {
 	case previous == "":
@@ -617,13 +613,6 @@ func RenameSnapshot(root, from, to string) error {
 	}
 	if s == nil {
 		return fmt.Errorf("no Snapshot named %s", from)
-	}
-	for _, o := range outlines {
-		for _, r := range o.Rules {
-			if r.Name == to {
-				return fmt.Errorf("the Outline %s has a rule named %s", o.Name, to)
-			}
-		}
 	}
 	s.Name = to
 	if err := snapshot.Save(root, from, *s, false); err != nil {

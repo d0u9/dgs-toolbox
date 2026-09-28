@@ -572,8 +572,9 @@ order:
 - `folder` is where it is exported unless another is chosen then. A leading
   `~` is the home folder of the machine exporting, so one file usually fits
   every Mac. Without one, a folder is chosen every time.
-- A rule's `name` is unique in the tree, and no Snapshot has it. An export's
-  manifest records it against every file the rule placed.
+- A rule's `name` is unique among the rules; a Snapshot or an Outline may
+  share it. An export's manifest records it against every file the rule
+  placed.
 - Editing a rule changes it in every Outline using it. Renaming one renames
   it in each of them. Removing a rule from an Outline leaves it for the
   others; a rule no Outline uses stays until it is deleted.
@@ -866,9 +867,10 @@ naming: "{owner}-{type}.{ext}"    # optional: how a PDF added by hand is named
   `<at>/<as>` when the Outline gives it a name there: one name, no `/`. One of its
   paths wanted by a rule's PDF too, or one needed as a folder, is a clash,
   and the export fails, as between two rules.
-- Its name is unique among the Snapshots and the rules: an Outline names
-  them together, and the manifest records its files under it. Renaming one
-  renames it in every Outline.
+- Its name is unique among the Snapshots; a rule or an Outline may share
+  it. The manifest records its files under it, so a rule and a Snapshot of
+  one name share what an export wrote for them. Renaming one renames it in
+  every Outline.
 - A revision that leaves the tree, or an Item deleted, is listed as lost,
   never replaced by a newer one. An Outline with a lost file is not
   exported, as one with a PDF not placed is not.

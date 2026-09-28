@@ -238,8 +238,12 @@ func TestGroupMountsSnapshots(t *testing.T) {
 		t.Fatal("a Snapshot the tree lacks was put in")
 	}
 	o.Snapshots = []Mount{{Name: "ids"}}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("a Snapshot could not share a rule's name: %v", err)
+	}
+	o.Snapshots = []Mount{{Name: "ids"}, {Name: "ids", At: "old"}}
 	if err := o.Validate(); err == nil {
-		t.Fatal("a Snapshot took a rule's name in the Outline")
+		t.Fatal("two Snapshots of one name were put in")
 	}
 	o.Snapshots = []Mount{{Name: "visa", At: "../out"}}
 	if err := o.Validate(); err == nil {
