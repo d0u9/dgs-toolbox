@@ -2,6 +2,7 @@ package view
 
 import (
 	"dgs-toolbox/internal/doc/country"
+	"dgs-toolbox/internal/doc/dates"
 	"fmt"
 	"maps"
 	"path"
@@ -665,6 +666,12 @@ func pick(part Part, keys map[string]string) (choice Part, value string, ok bool
 		if !ok {
 			continue
 		}
+		switch {
+		case c.Format == DateCompact:
+			return c, dates.Compact(value), true
+		case c.Format == DateFinancialYear:
+			return c, dates.FinancialYear(value, dates.DefaultYearStart), true
+		}
 		if c.Format != "" && !isType(c.Key) {
 			// A value that names no country is written as it is.
 			if kept, ok := country.Normalize(value, country.Format(c.Format)); ok {
@@ -679,6 +686,15 @@ func pick(part Part, keys map[string]string) (choice Part, value string, ok bool
 	}
 	return first, "", false
 }
+
+// A date key's formats in a layout: {start:compact} writes 20100101,
+// {date:fy} the financial year, FY2024.
+const (
+	DateCompact       = "compact"
+	DateFinancialYear = "fy"
+)
+
+func isDateFormat(format string) bool { return format == DateCompact || format == DateFinancialYear }
 
 // isType reports whether key is an Item's type, its own or a linked one's:
 // type, original.type.

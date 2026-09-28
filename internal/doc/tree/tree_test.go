@@ -661,3 +661,27 @@ func TestRevisionLink(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWithinAndMatchValues(t *testing.T) {
+	base := []Field{{Key: "owner", Required: true}, {Key: "country", Type: FieldCountry, Required: true}, {Key: "period", Type: FieldMonth}}
+	link := func(f Field) Template {
+		return Template{Type: "bill", Kind: KindRecord, Fields: append(append([]Field{}, base...), f)}
+	}
+	within := &Within{Date: "period", From: "start", To: "end"}
+	if err := link(Field{Key: "tenancy", Type: FieldItem, Match: map[string]string{"type": "=tenancy"}, Within: within}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for name, f := range map[string]Field{
+		"within on text":       {Key: "tenancy", Within: within},
+		"within on no date":    {Key: "tenancy", Type: FieldItem, Within: &Within{Date: "owner", From: "start", To: "end"}},
+		"within with no to":    {Key: "tenancy", Type: FieldItem, Within: &Within{Date: "period", From: "start"}},
+		"match = with nothing": {Key: "tenancy", Type: FieldItem, Match: map[string]string{"type": "="}},
+	} {
+		if link(f).Validate() == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	if MatchValue("=tenancy", nil) != "tenancy" || MatchValue("of", map[string]string{"of": "visa"}) != "visa" {
+		t.Fatal("MatchValue")
+	}
+}

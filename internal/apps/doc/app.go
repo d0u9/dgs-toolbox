@@ -10,7 +10,7 @@ import (
 )
 
 // New returns the Doc app definition: `dgs doc`, which starts the local page,
-// `dgs doc init`, `dgs doc verify` and `dgs doc export`.
+// `dgs doc init`, `dgs doc verify`, `dgs doc export` and `dgs doc link`.
 func New() tui.App {
 	return tui.App{
 		ID:          "doc",
@@ -45,6 +45,16 @@ func New() tui.App {
 				{Name: "dry-run", Shorthand: "n", Bool: true, Usage: "plan and check, and write nothing"},
 			},
 			RunWithConfig: exportAction,
+		}, {
+			ID:          "link",
+			Usage:       "[<dir>]",
+			Description: "Fill each empty link field whose within finds exactly one Item, such as a bill's tenancy by its date. Lists them; writes only with --apply.",
+			MaxArgs:     1,
+			Flags: []tui.ActionFlag{
+				{Name: "tree", Shorthand: "t", Usage: "the tree in doc.trees to use, when there are several"},
+				{Name: "apply", Bool: true, Usage: "write the links listed"},
+			},
+			RunWithConfig: linkAction,
 		}},
 	}
 }

@@ -157,29 +157,52 @@ export function inputFor(field, value, placeholder, state, self, type) {
       refresh();
     });
     return wrapper;
-  } else if (field.type === "revision") {
-    // An Item, then one of its revisions: HEAD when the Item is picked.
-    // The value, <item-id>@<revision>, is in a hidden input.
+  } else if (field.type === "revision" || field.type === "item") {
+    // An Item, then for a revision field one of its revisions, HEAD when the
+    // Item is picked. The value, <item-id> or <item-id>@<revision>, is in a
+    // hidden input.
+    const withRevision = field.type === "revision";
     control = el("input", { ...common, type: "hidden", value: value || "" });
     const [id, ref] = (value || "").split("@");
     const all = (state ? state.items : []).filter((i) => i.id !== self);
-    let items = all;
+    let items = all, suggested = [], chosen = !!value;
     const pickItem = el("select", {});
-    const pickRevision = el("select", {});
-    // Only the Items that agree with the form where the field's match says:
-    // a translation of a driver_licence offers only licences.
-    const narrow = () => {
-      const scope = wrapper.closest("form") || wrapper.parentElement;
-      const here = (key) => scope?.querySelector(`.field-input[name="${CSS.escape(key)}"]`)?.value || "";
-      const want = Object.entries(field.match || {}).map(([theirs, ours]) => [theirs, here(ours)]).filter(([, v]) => v);
-      items = all.filter((i) => want.every(([k, v]) => (k === "type" ? i.type : currentFields(i)[k]) === v));
+    const pickRevision = el("select", { hidden: !withRevision });
+    const draw = (want) => {
       const keep = pickItem.value || id;
-      pickItem.replaceChildren(el("option", { value: "" }, want.length && !items.length ? "(no Item matches)" : ""),
-        ...items.map((i) => el("option", { value: i.id, selected: i.id === keep }, label(state, i))));
+      pickItem.replaceChildren(el("option", { value: "" }, want && !items.length ? "(no Item matches)" : ""),
+        ...items.map((i) => el("option", { value: i.id, selected: i.id === keep },
+          label(state, i) + (suggested.includes(i.id) ? " · suggested" : ""))));
       if (keep && !items.some((i) => i.id === keep)) pickItem.value = "";
     };
+    // The server answers which Items agree with the field's match and which
+    // its within suggests, from the form as it is now: a translation of a
+    // driver_licence offers only licences, a bill the tenancy it was in.
+    const here = () => {
+      const scope = wrapper.closest("form") || wrapper.parentElement;
+      return Object.fromEntries([...(scope?.querySelectorAll(".field-input[name]") || [])].map((i) => [i.name, i.value]));
+    };
+    let asked = 0;
+    const narrow = async () => {
+      if (!type || !(field.match || field.within)) return draw(false);
+      const mine = ++asked;
+      try {
+        const answer = await post("/api/links", { type, key: field.key, self: self || "", fields: here() });
+        if (mine !== asked) return;
+        const offered = new Set(answer.offered);
+        items = all.filter((i) => offered.has(i.id));
+        suggested = answer.suggested;
+      } catch {
+        items = all;
+        suggested = [];
+      }
+      const before = pickItem.value;
+      draw(true);
+      if (!chosen && !pickItem.value && suggested.length === 1) pickItem.value = suggested[0];
+      if (pickItem.value !== before) { fill(""); set(); }
+    };
     const fill = (keep) => {
-      const item = items.find((i) => i.id === pickItem.value);
+      const item = items.find((i) => i.id === pickItem.value) || all.find((i) => i.id === pickItem.value);
       const revs = item ? [...item.revisions].reverse() : [];
       const head = item && (item.head || (revs[0] && (revs[0].id || revs[0].digest)));
       pickRevision.replaceChildren(...revs.map((r) => {
@@ -187,32 +210,28 @@ export function inputFor(field, value, placeholder, state, self, type) {
         return el("option", { value: rid, selected: rid === (keep || head) }, revisionName(r, rid === head));
       }));
       if (keep && !revs.some((r) => (r.id || r.digest) === keep)) pickRevision.append(el("option", { value: keep, selected: true }, keep));
-      pickRevision.hidden = !item;
+      pickRevision.hidden = !withRevision || !item;
     };
     const set = () => {
-      control.value = pickItem.value && pickRevision.value ? pickItem.value + "@" + pickRevision.value : "";
+      control.value = !pickItem.value ? "" : !withRevision ? pickItem.value : pickRevision.value ? pickItem.value + "@" + pickRevision.value : "";
       control.dispatchEvent(new Event("input", { bubbles: true }));
     };
-    pickItem.onchange = () => { fill(""); set(); };
+    pickItem.onchange = () => { chosen = true; fill(""); set(); };
     pickRevision.onchange = set;
     const wrapper = el("div", { className: "form-field" }, ...fieldHead(field), pickItem, pickRevision, control);
-    narrow();
+    draw(false);
     fill(ref);
     queueMicrotask(() => {
-      if (!wrapper.isConnected || !field.match) return;
+      if (!wrapper.isConnected || !(field.match || field.within)) return;
       narrow();
+      const watched = [...Object.values(field.match || {}), ...(field.within ? [field.within.date] : [])];
       (wrapper.closest("form") || wrapper.parentElement).addEventListener("input", (event) => {
-        if (event.target === control || !Object.values(field.match).includes(event.target.name)) return;
-        const before = pickItem.value;
-        narrow();
-        if (pickItem.value !== before) { fill(""); set(); }
+        if (event.target !== control && watched.includes(event.target.name)) narrow();
       });
     });
     return wrapper;
-  } else if (field.type === "select" || field.type === "item") {
-    const choices = field.type === "select"
-      ? field.options.map((o) => [o, o])
-      : (state ? state.items : []).filter((i) => i.id !== self).map((i) => [i.id, label(state, i)]);
+  } else if (field.type === "select") {
+    const choices = field.options.map((o) => [o, o]);
     const empty = placeholder && field.type === "select" ? "(" + placeholder + ")" : "";
     control = el("select", common, el("option", { value: "" }, empty),
       ...choices.map(([v, text]) => el("option", { value: v, selected: v === value }, text)));

@@ -458,8 +458,32 @@ An `item` or `revision` field may carry `match`: a field of the linked Item
 (or `type`) mapped to a field of this form that it must equal. A
 translation's `original` has `match: {type: of, owner: owner}`: once `of`
 is `driver_licence`, only that owner's licences are offered, and saving an
-original that disagrees is refused. The page narrows only the revision
-picker so far. A field left empty narrows nothing.
+original that disagrees is refused. A field left empty narrows nothing. A
+value starting with `=` is the value itself: `match: {type: =tenancy}`
+offers only tenancies. The page asks the server which Items to offer.
+
+An `item` or `revision` field may also carry `within`, which suggests the
+linked Item by a date:
+
+```yaml
+- key: tenancy
+  type: item
+  match: {type: =tenancy}
+  within: {date: period, from: start, to: end}
+```
+
+`date` is a date or month field of this form; `from` and `to` are fields of
+the linked Item. An Item whose span from `from` to `to` holds the date is
+suggested — a month is held when it shares a day with the span, and an
+empty `to` leaves the span open. The page marks the suggestion, and fills
+the field in with it when the field is empty, only one Item is suggested,
+and nobody has picked one. Any Item `match` allows can still be chosen.
+`dgs doc link` fills the same in for every Item at once.
+
+This is how documents are grouped by a part of life rather than by their
+own fields: a `tenancy` Item, usually without a PDF, holds an address and
+the days lived there; leases, bills and receipts link to it, and a rule
+places them with `rental/{tenancy.address}/{tenancy.start:compact}-{tenancy.end:compact}/`.
 - `country` — a country however it is typed: its ISO code (`cn`, `CHN`), its
   English or Chinese name (`China`, `中国`) or a common alias
   (`中华人民共和国`, `PRC`), any case. It is kept in the field's `format`:
@@ -648,6 +672,9 @@ counting from 1, in order added) and `ext`.
 A key may name a country format: `{country:alpha3}` writes the Item's country
 as `CHN` however its sidecar keeps it, and likewise `:zh` (`中国`), `:en`
 (`China`) and `:alpha2` (`CN`). A value that names no country is written as it
+is. A date or month may be written `:compact`, `2010-01-01` as `20100101`,
+or `:fy`, the Australian financial year it falls in, named by the year it
+ends: `2023-08-03` is `FY2024`. A value that is no date is written as it
 is. Any other format after the colon is refused.
 
 `{type:zh}` and `{type:en}` write the type's name from its Template's
@@ -1002,6 +1029,12 @@ be read.
 ## Verify
 
 `dgs doc export [<target>...]` is described under [Export](#export).
+
+`dgs doc link [<tree>]` fills every empty link field whose `within`
+suggests exactly one Item, such as a bill's tenancy by its billing period.
+It lists each link, and those where several Items fit, and writes nothing
+unless given `--apply`; each link is a new snapshot, as an edit on the page
+is. A link where several fit is left to be chosen on the page.
 
 `dgs doc verify [<tree>]` (`-q` for the result only) checks the repository against its sidecars and
 changes nothing. It reports:
