@@ -101,7 +101,7 @@ buttons, Attach PDF… adds a PDF to a revision without one and Replace PDF…
 saves another PDF as a new revision of one that has it. The panel is
 as wide as the reader drags it, never narrower than 320px. Double-clicking a
 card, or the picture, opens the revision in place of the cards, the panel
-still beside it without its picture. Opening it is a step in the browser's
+still beside it with every section and Replace PDF…, only without its picture and page buttons. Opening it is a step in the browser's
 history: the browser's Back, Esc or ← Back return to the cards; Esc again,
 or ×, closes the panel.
 
