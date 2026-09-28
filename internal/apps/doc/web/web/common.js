@@ -230,6 +230,27 @@ export function inputFor(field, value, placeholder, state, self, type) {
       });
     });
     return wrapper;
+  } else if (field.type === "select" && field.multiple) {
+    // Several options: each card toggles, and a hidden input holds them
+    // joined in the options' order, as the server keeps them.
+    control = el("input", { ...common, type: "hidden", value });
+    const picked = new Set(String(value || "").split(",").map((v) => v.trim()).filter(Boolean));
+    const cards = el("div", { className: "field-choice-cards", role: "group" });
+    cards.setAttribute("aria-label", field.key);
+    const buttons = field.options.map((o) => {
+      const button = el("button", { type: "button", className: "button field-choice-card" }, o);
+      button.setAttribute("aria-pressed", String(picked.has(o)));
+      button.onclick = () => {
+        picked.has(o) ? picked.delete(o) : picked.add(o);
+        button.setAttribute("aria-pressed", String(picked.has(o)));
+        control.value = field.options.filter((x) => picked.has(x)).join(", ");
+        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+      return button;
+    });
+    cards.append(...buttons);
+    return el("div", { className: "form-field" }, ...fieldHead(field), control, cards);
   } else if (field.type === "select") {
     const choices = field.options.map((o) => [o, o]);
     const empty = placeholder && field.type === "select" ? "(" + placeholder + ")" : "";
