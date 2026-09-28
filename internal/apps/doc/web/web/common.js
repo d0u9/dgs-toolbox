@@ -31,6 +31,23 @@ export function el(tag, props, ...children) {
   return node;
 }
 
+// No field here is a login, an address or a card: password managers are
+// told to leave every one alone, so a field named country or name does not
+// open 1Password's or the browser's fill-in menu.
+function unfillable(root) {
+  const inputs = root.matches?.("input, textarea") ? [root] : root.querySelectorAll?.("input, textarea") || [];
+  for (const input of inputs) {
+    input.setAttribute("data-1p-ignore", "");
+    input.setAttribute("data-lpignore", "true");
+    input.setAttribute("data-bwignore", "");
+    input.setAttribute("data-form-type", "other");
+  }
+}
+unfillable(document.body);
+new MutationObserver((changes) => {
+  for (const change of changes) for (const node of change.addedNodes) if (node.nodeType === 1) unfillable(node);
+}).observe(document.body, { childList: true, subtree: true });
+
 // The list down the left of every page is as wide as the reader drags it,
 // one width for all the doc pages.
 const list = document.querySelector("main.work > section.list");
