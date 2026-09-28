@@ -671,12 +671,12 @@ A rule has a query, a selection, and a layout. It may leave PDFs out and select 
 - **Layout** — fixed text and keys, such as
   `{country}/{owner}/important/{type}.pdf`: the folders, then the PDF's
   name. The export's folder provides the root, so a layout never names
-  iCloud or a NAS. The Rules page edits one row per folder and one for
-  the file's name, each a line of keys, text, `{#}` and optional parts,
-  added from the chips below and dragged into place. The layout they make
-  is shown beneath and can be typed over: the server parses what is typed
-  and the rows are drawn from it, and a layout it refuses is marked with
-  the reason and not saved. An optional row is an optional folder,
+  iCloud or a NAS. The Rules page shows the layout as text, typed over
+  directly: the server parses what is typed, and a layout it refuses is
+  marked with the reason and not saved. Its Edit… opens a dialog of one
+  row per folder and one for the file's name, each a line of keys, text,
+  `{#}` and optional parts, added from the key chips and dragged into
+  place; Done keeps what it made and Cancel or Esc drops it. An optional row is an optional folder,
   `[/…]`, after the row before it.
 - **Layouts** — more paths, each for the PDFs its `when` picks, written
   like the query: `layouts: [{when: {type: [invoice, payment]}, layout:
@@ -685,7 +685,7 @@ A rule has a query, a selection, and a layout. It may leave PDFs out and select 
   query, inherit, map, default and orders: a `{#}` written alike in two of
   them numbers from one order. A path with no condition is refused. The
   Rules page lists them under More paths, each with the types it is for,
-  its layout typed, and ↑/↓ for which is tried first.
+  its layout typed and its own Edit…, and ↑/↓ for which is tried first.
 
 Keys are the Item's own fields (`owner`, `type`, `country`, and whatever its
 Template defines, such as `employer`), values derived from them (`year`,

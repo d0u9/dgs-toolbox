@@ -83,6 +83,8 @@ function drawPaths() {
       title: "The path for these types, typed as the Path above is kept",
       onchange: () => { p.layout = input.value; changed(); parsePath(p); },
       onkeydown: (event) => { if (event.key === "Enter") { event.preventDefault(); input.blur(); } } });
+    const edit = el("button", { type: "button", className: "path-more", textContent: "Edit…", title: "Build this path part by part",
+      disabled: !!p.error, onclick: () => openEditor(p) });
     const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
     return el("div", { className: "more-path" },
       el("div", { className: "more-path-head" },
@@ -97,10 +99,49 @@ function drawPaths() {
           act("Up: tried before the one above", "↑", () => { [paths[i - 1], paths[i]] = [paths[i], paths[i - 1]]; redraw(); }, i === 0),
           act("Down", "↓", () => { [paths[i + 1], paths[i]] = [paths[i], paths[i + 1]]; redraw(); }, i === paths.length - 1),
           act("Remove", "×", () => { paths.splice(i, 1); redraw(); drawOrder(); }))),
-      input,
+      el("div", { className: "path-line" }, input, edit),
       p.error ? el("span", { className: "message error", textContent: p.error }) : null);
   }));
 }
+// The path editor is a dialog: the rows and key chips build the rule's
+// Path, or one of its more paths, whose rows stand in for the Path's
+// until Done or Cancel puts them back.
+let editingPath = null; // the more path being edited; null for the Path
+let stash = null; // the rows and active part before the dialog opened
+async function openEditor(p) {
+  stash = { rows: JSON.parse(JSON.stringify(rows)), active: { ...active } };
+  editingPath = p || null;
+  if (p) {
+    try {
+      rows = fromLayout((await post("/api/rules/layout", { layout: p.layout.trim() })).layout);
+    } catch (err) {
+      p.error = err.message;
+      stash = null;
+      editingPath = null;
+      drawPaths();
+      return;
+    }
+    active = { row: rows.length - 1, group: -1 };
+  }
+  drawPath();
+  $("path-dialog").showModal();
+}
+function closeEditor(keep) {
+  if (!stash) return;
+  const p = editingPath;
+  if (p && keep) p.layout = layoutText();
+  if (p || !keep) { rows = stash.rows; active = stash.active; }
+  stash = null;
+  editingPath = null;
+  if ($("path-dialog").open) $("path-dialog").close();
+  if (p && keep) parsePath(p);
+  drawPaths();
+  edited();
+}
+$("path-edit")?.addEventListener("click", () => openEditor(null));
+$("path-done")?.addEventListener("click", () => closeEditor(true));
+$("path-cancel")?.addEventListener("click", () => closeEditor(false));
+$("path-dialog")?.addEventListener("close", () => closeEditor(false));
 $("path-add")?.addEventListener("click", () => {
   const p = { when: {}, layout: layoutText(), ofs: [], error: "" };
   paths.push(p);
@@ -556,6 +597,8 @@ let dragging = null;
 // showText writes the layout the rows make into its box, unless it is
 // being typed in.
 function showText() {
+  if ($("path-dialog-text")) $("path-dialog-text").textContent = layoutText();
+  if (editingPath) return;
   const box = $("layout-text");
   if (document.activeElement === box) return;
   box.value = layoutText();

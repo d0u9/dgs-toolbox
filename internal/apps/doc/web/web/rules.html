@@ -92,10 +92,12 @@
       </div>
       <div class="vf vf-wide"><span class="vf-label">Path</span>
         <div class="path-wrap">
-          <div id="path" class="path-rows"></div>
-          <input id="layout-text" class="layout-text" spellcheck="false" autocomplete="off" title="The path as the rule keeps it: edit it here, or part by part above"><span id="layout-error" class="message error"></span>
+          <div class="path-line">
+            <input id="layout-text" class="layout-text" spellcheck="false" autocomplete="off" title="The path as the rule keeps it: type it here, or build it part by part with Edit">
+            <button type="button" id="path-edit" class="path-more" title="Build the path part by part, from the keys the Items have">Edit…</button>
+          </div>
+          <span id="layout-error" class="message error"></span>
         </div>
-        <p class="layout-help">Click a row or an optional part, then a key below to add it there, or type the path in the box below the rows. Drag a key to move it. <code>#</code> numbers the rest of its name as 01, 02, in the order below; an optional part or folder is left out for an Item lacking a key in it.</p>
       </div>
       <div class="vf vf-wide"><span class="vf-label">More paths</span>
         <div class="vf-stack">
@@ -103,7 +105,6 @@
           <button type="button" id="path-add" class="path-more" title="Another path, for the Items of the types ticked on it; the first a PDF matches places it, the Path above the rest">+ Path for some types</button>
         </div>
       </div>
-      <div id="keys" class="key-groups"></div>
       <div id="order-row" class="vf" hidden><span class="vf-label">Numbering</span>
         <div class="vf-stack"><div id="order"></div></div>
       </div>
@@ -143,6 +144,21 @@
     <div id="tree" class="outline-tree scroll" role="tree"></div>
   </section>
 </main>
+<dialog id="path-dialog" class="dialog snap-dialog">
+  <div class="snap-dialog-body">
+    <h3>Path</h3>
+    <code id="path-dialog-text" class="layout-text"></code>
+    <div class="scroll path-dialog-scroll">
+      <div id="path" class="path-rows"></div>
+      <p class="layout-help">Click a row or an optional part, then a key below to add it there. Drag a key to move it. <code>#</code> numbers the rest of its name as 01, 02, in the Numbering order; an optional part or folder is left out for an Item lacking a key in it.</p>
+      <div id="keys" class="key-groups"></div>
+    </div>
+    <div class="dialog-buttons">
+      <button id="path-cancel" class="button" type="button">Cancel</button>
+      <button id="path-done" class="action" type="button">Done</button>
+    </div>
+  </div>
+</dialog>
 <script type="module" src="/rules.js"></script>
 </body>
 </html>
