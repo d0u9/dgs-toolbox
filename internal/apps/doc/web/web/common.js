@@ -184,7 +184,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
       cards.setAttribute("aria-label", field.key);
       const cardChoices = field.required ? choices : [["", "Not set"], ...choices];
       const buttons = cardChoices.map(([v, text]) => {
-        const button = el("button", { type: "button", className: "field-choice-card" }, text);
+        const button = el("button", { type: "button", className: "button field-choice-card" }, text);
         button.onclick = () => {
           control.value = v;
           control.dispatchEvent(new Event("input"));

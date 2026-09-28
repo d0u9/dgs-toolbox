@@ -665,6 +665,13 @@ The **density layer** replaces size only, and only on these pages:
 | `--row-pad-y` / `--row-pad-x` | 4px / 8px | the 24px card padding, for a list row |
 | `--gap-row` | 6px | the gap between rows in a list |
 
+Controls are styled once, in the shared `controls.css`: every one-line
+field and every select, wherever it sits — a filter bar, a detail panel, a
+rule, a dialog — is `--control-height` high with its text centred, and every
+button is one of `.button`, `.icon-button`, `.text-button` or `.chip`. A
+page's stylesheet places a control and sizes its width; it never sets a
+control's height, padding, border, radius, background or font.
+
 What does not change: the palette, the radius scale (buttons at
 `{rounded.md}`, containers at `{rounded.lg}` and `{rounded.xl}`), the
 elevation levels, and the rule that `{colors.primary}` stays scarce. A dense
