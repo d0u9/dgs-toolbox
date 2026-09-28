@@ -264,7 +264,6 @@ $("form").addEventListener("submit", async (event) => {
   try {
     await which.settle();
     sync();
-    if ($("map").classList.contains("invalid")) throw new Error("The Map box has a line it cannot read: fix it before saving.");
     await post("/api/rules", { rule: draft, previous: editing || "" });
     const name = draft.name;
     await reload();
