@@ -617,13 +617,22 @@ body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, 
 .side.detail .form-field { margin-bottom: var(--gap-row); }
 .detail-tools { flex-wrap: wrap; gap: var(--space-xxs); }
 .detail-tools-end { margin-left: auto; display: flex; gap: var(--space-xxs); }
-/* The panel's sections fall into a few named groups: a band across the
-   panel, so what belongs together reads as one. */
-.detail-group { margin: var(--space-sm) -16px 0; padding: 6px 16px; background: var(--cloud); border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
-  font-size: var(--font-size-xs); font-weight: 600; color: var(--ink); }
-.detail-group + .detail-section { border-top: 0; }
-.detail-section-head h3 { flex: 1; }
-.detail-section .detail-actions { margin-top: 2px; }
+/* The panel's sections fall into named groups, each a white card on the
+   cloud ground: depth by colour contrast, per docs/web.md. A group's name
+   is an eyebrow above its card; a section's name heads it inside, with its
+   one quiet action, a link button, on the right. */
+.side.detail .detail-scroll { background: var(--cloud); border-top: 1px solid var(--hairline); padding: 4px 12px 24px; }
+.detail-group { margin-top: var(--space-sm); }
+.detail-group > h2 { margin: 0 4px 6px; font-size: var(--font-size-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--graphite); }
+.detail-card { background: var(--paper); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 0 12px; }
+.detail-card > .detail-section { padding: 12px 0; gap: 8px; border-bottom: 1px solid var(--hairline); }
+.detail-card > .detail-section:last-child { border-bottom: 0; }
+.side.detail .detail-section-head h3, .side.detail .danger-zone h3 { flex: 1; margin: 0; font-size: var(--font-size-sm); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.side.detail .danger-zone h3 { color: var(--error); }
+.side.detail .detail-section > p.muted { margin: 0; font-size: var(--font-size-xs); }
+.side.detail .detail-section > .danger-zone, .side.detail .detail-scroll > .danger-zone { margin-top: var(--space-md); border-radius: var(--radius-lg); }
+.side.detail .detail-actions { margin-top: 4px; }
+.side.detail .snapshot-bar { padding: 8px 4px 0; color: var(--graphite); }
 .import-form-head .panel-head { flex: 1; }
 .import-form-head > .button { margin-right: var(--space-sm); }
 .import-work.manual-entry { justify-content: center; overflow: auto; }

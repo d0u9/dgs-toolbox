@@ -731,7 +731,9 @@ line rather than the other way round. A page does not restyle them.
 | Class | For |
 | --- | --- |
 | `.action` (or `.button.primary`, the same) | The one action a view is about — Save, Import, Export. Filled blue, semibold. |
-| `.button` | Every other action: a hairline box on paper. |
+| `.button.secondary` | `button-outline-ink`: an action beside the primary one that must still read as a button — Save tags, Open, Replace PDF…, Retire. Ink text in an ink frame, filled ink under the pointer. |
+| `.link-button` | `button-text-link`: a quiet action in a heading or a row, one that goes somewhere or finds something — Change type…, Whole tree's log…, Find similar. Blue text, no box. |
+| `.button` | The older hairline box on paper. A page moving to the two above leaves it; a new page does not use it. |
 | `.small-button` | With `.button`, an action on one row of a list: Remove, Take out. |
 | `.button.danger` | Delete, discard, move to the trash: red outline, red fill under the pointer. |
 | `.chip` | A setting, not an action: a filter, a mode. |
