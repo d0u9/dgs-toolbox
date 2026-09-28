@@ -92,6 +92,11 @@ type View struct {
 	// place of the next: the names after it count on from there, so
 	// setting the third of four to 6 numbers them 1, 2, 6, 7.
 	Numbers map[string]map[string]int `yaml:"numbers,omitempty" json:"numbers,omitempty"`
+	// Map writes, per key, a value as another: {tags: {network-1: address01}}
+	// puts address01 where the layout has {tags}. For tags the value is the
+	// revision's first tag the map lists; a key whose value it does not
+	// list keeps its value.
+	Map map[string]map[string]string `yaml:"map,omitempty" json:"map,omitempty"`
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -133,6 +138,16 @@ func (v View) Validate() error {
 		for key, types := range scope.types {
 			if _, ok := scope.conditions[key]; !ok || len(types) == 0 {
 				return fmt.Errorf("view %s: %s %q names no condition, or no type", v.Name, scope.name, key)
+			}
+		}
+	}
+	for key, values := range v.Map {
+		if strings.TrimSpace(key) == "" || len(values) == 0 {
+			return fmt.Errorf("view %s: map %q names no key, or no value", v.Name, key)
+		}
+		for from, to := range values {
+			if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
+				return fmt.Errorf("view %s: map %s writes %q as %q: neither may be empty", v.Name, key, from, to)
 			}
 		}
 	}

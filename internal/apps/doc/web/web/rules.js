@@ -20,7 +20,7 @@ resizable(document.querySelector(".outline-main"), "dgs-doc-rules-tree");
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
 const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", shared: !!r.shared, exclude: r.exclude || {}, query_types: r.query_types || {}, exclude_types: r.exclude_types || {}, skip: r.skip || [], inherit: r.inherit || [], layout: r.layout,
-  default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null, numbers: r.numbers || null });
+  default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null, numbers: r.numbers || null, map: r.map || null });
 const blank = () => {
   let n = 1;
   while (rules.some((r) => r.name === "rule-" + n)) n++;
@@ -264,6 +264,7 @@ $("form").addEventListener("submit", async (event) => {
   try {
     await which.settle();
     sync();
+    if ($("map").classList.contains("invalid")) throw new Error("The Map box has a line it cannot read: fix it before saving.");
     await post("/api/rules", { rule: draft, previous: editing || "" });
     const name = draft.name;
     await reload();
