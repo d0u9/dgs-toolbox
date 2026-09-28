@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,6 +61,9 @@ type Field struct {
 	Type FieldType `yaml:"type,omitempty" json:"type,omitempty"`
 	// Options are a FieldSelect's values, and only its.
 	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
+	// Multiple lets a FieldSelect hold several Options, kept in the
+	// Options' order joined by MultipleSeparator: 电, 水.
+	Multiple bool `yaml:"multiple,omitempty" json:"multiple,omitempty"`
 	// Format is how a FieldCountry is written, and only its: zh (the
 	// default), en, alpha2 or alpha3.
 	Format string `yaml:"format,omitempty" json:"format,omitempty"`
@@ -238,6 +242,9 @@ func (t Template) Validate() error {
 		if f.Format != "" && !country.Format(f.Format).Valid() {
 			return fmt.Errorf("type %s: key %s: format %q is not zh, en, alpha2 or alpha3", t.Type, f.Key, f.Format)
 		}
+		if f.Multiple && f.Type != FieldSelect {
+			return fmt.Errorf("type %s: key %s: multiple belongs to a select field", t.Type, f.Key)
+		}
 		switch f.Type {
 		case "", FieldText, FieldDate, FieldMonth, FieldItem, FieldRevision, FieldCountry:
 			if len(f.Options) > 0 {
@@ -246,6 +253,11 @@ func (t Template) Validate() error {
 		case FieldSelect:
 			if len(f.Options) == 0 {
 				return fmt.Errorf("type %s: key %s: a select field needs options", t.Type, f.Key)
+			}
+			for _, o := range f.Options {
+				if f.Multiple && strings.Contains(o, ",") {
+					return fmt.Errorf("type %s: key %s: option %q holds a comma, which separates a multiple field's values", t.Type, f.Key, o)
+				}
 			}
 		default:
 			return fmt.Errorf("type %s: key %s: type %q is not text, date, month, select, item, revision or country", t.Type, f.Key, f.Type)
@@ -381,6 +393,32 @@ func (t Template) fieldOK(key string) (Field, bool) {
 	return Field{}, false
 }
 
+// MultipleSeparator joins a multiple select field's values.
+const MultipleSeparator = ", "
+
+// cleanMultiple keeps each comma-separated value once, in the Options'
+// order, and refuses one that is not an Option.
+func (f Field) cleanMultiple(value string) (string, error) {
+	chosen := map[string]bool{}
+	for _, v := range strings.Split(value, ",") {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if !slices.Contains(f.Options, v) {
+			return "", fmt.Errorf("%s: %q is not one of %s", f.Key, v, strings.Join(f.Options, ", "))
+		}
+		chosen[v] = true
+	}
+	var kept []string
+	for _, o := range f.Options {
+		if chosen[o] {
+			kept = append(kept, o)
+		}
+	}
+	return strings.Join(kept, MultipleSeparator), nil
+}
+
 // clean reports whether value suits the field's type, and answers it as it
 // is kept: a country in the field's Format. An Item field is checked only
 // for its shape here; that the Item exists is checked against the tree.
@@ -395,6 +433,9 @@ func (f Field) clean(value string) (string, error) {
 			return "", fmt.Errorf("%s: %q is not a date written YYYY-MM-DD", f.Key, value)
 		}
 	case FieldSelect:
+		if f.Multiple {
+			return f.cleanMultiple(value)
+		}
 		for _, o := range f.Options {
 			if o == value {
 				return value, nil

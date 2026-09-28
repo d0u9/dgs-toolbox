@@ -1199,7 +1199,11 @@ defaults:
 
 The file is named after its `type`. `description` is a short explanation shown
 on the Import card and in the Templates list; older Templates may omit it.
-A `select` field lists its allowed values under `options`. A field's `description` says
+A `select` field lists its allowed values under `options`. With `multiple: true` it
+holds several, kept in the options' order joined by `, ` (`电, 水`), each
+toggled on the page; its options may not hold a comma. A rule writes the
+joined value, and a condition picks one of them with `contains` (`service
+contains 水`). A field's `description` says
 what it holds; every form shows a `?` beside the field's name, which shows it
 on hover and keeps it shown under the name when clicked. A field's `pattern` is a regular
 expression that suggests its value from the document's text (below): the
