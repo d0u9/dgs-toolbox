@@ -37,6 +37,9 @@ type Missing struct {
 	Keys     []string `json:"keys"`
 	// Fields are the Item fields that, filled in, supply Keys.
 	Fields []string `json:"fields"`
+	// Unordered are the Keys that are orders the Item has a name for,
+	// but that name is not in the order: order key to name.
+	Unordered map[string]string `json:"unordered,omitempty"`
 }
 
 // Clash is a path more than one PDF would land on.
@@ -396,9 +399,9 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 				continue
 			}
 			Remap(keys, v.Map, item.TagsAt(rev.Ref()))
-			name, lacking := render(layout, keys, v.Default, v.Order, v.Numbers, v.Unnumbered)
+			name, lacking, unordered := render(layout, keys, v.Default, v.Order, v.Numbers, v.Unnumbered)
 			if len(lacking) > 0 {
-				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
+				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking), Unordered: unordered})
 				continue
 			}
 			placed = append(placed, File{Path: name, Item: item.ID, Digest: rev.Digest, Revision: i + 1})
@@ -558,7 +561,7 @@ func CombineWith(views []View, fixed []File, items []tree.Item, names TypeNames)
 // render fills a layout from keys. It returns the keys it lacked, when there
 // is no default to stand in for them, and the numbered names, named
 // as their orders are, not in their order.
-func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string, set map[string]map[string]int, skip map[string][]string) (string, []string) {
+func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string, set map[string]map[string]int, skip map[string][]string) (string, []string, map[string]string) {
 	r := renderer{keys: keys, fallback: fallback, order: order, set: set, skip: skip}
 	segments := make([]string, len(layout))
 	for s, parts := range layout {
@@ -576,7 +579,7 @@ func render(layout Layout, keys map[string]string, fallback *string, order map[s
 			}
 		}
 	}
-	return strings.Join(segments, "/"), r.lacking
+	return strings.Join(segments, "/"), r.lacking, r.unordered
 }
 
 // renderer is one render's keys, orders, and what it found lacking.
@@ -587,6 +590,8 @@ type renderer struct {
 	set      map[string]map[string]int
 	skip     map[string][]string
 	lacking  []string
+	// unordered is an order key the name it made is not in, to the name.
+	unordered map[string]string
 }
 
 func (r *renderer) lack(key string) {
@@ -646,6 +651,10 @@ func (r *renderer) name(parts []Part, group bool) (string, []string) {
 			}
 		} else {
 			r.lack(c.Of)
+			if r.unordered == nil {
+				r.unordered = map[string]string{}
+			}
+			r.unordered[c.Of] = name
 		}
 	}
 	return strings.Join(pieces, ""), absent
@@ -795,6 +804,6 @@ func Name(layout string, item tree.Item, revision int, names TypeNames) (string,
 	for lang, name := range names[keys["type"]] {
 		keys["type:"+lang] = name
 	}
-	name, lacking := render(parsed, keys, nil, nil, nil, nil)
+	name, lacking, _ := render(parsed, keys, nil, nil, nil, nil)
 	return name, lacking, nil
 }

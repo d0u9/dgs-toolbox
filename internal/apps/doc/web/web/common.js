@@ -374,6 +374,16 @@ export function planNodes(state, answer) {
   const list = (title, rows, open) => rows.length ? el("details", { open: open || rows.length <= 12 },
     el("summary", {}, title + " (" + rows.length + ")"), el("ul", {}, ...rows)) : null;
   const line = (...parts) => el("li", {}, ...parts);
+  // A name the Item has but its rule's order does not is fixed in the
+  // order, not in the Item.
+  const missingWhy = (m, path) => {
+    const unordered = m.unordered || {};
+    const absent = m.keys.filter((k) => !(k in unordered));
+    return [
+      ...(absent.length ? [" lacks ", path(absent.join(", "))] : []),
+      ...Object.entries(unordered).flatMap(([k, v], i) => [absent.length || i ? "; " : " ", "has no number for ", path(v), " in the order of ", path(k)]),
+    ];
+  };
   const path = (p) => el("span", { className: "mono" }, p);
   const out = [];
   if (answer.problems.length) out.push(el("div", { className: "problem" }, el("strong", {}, "The run"),
@@ -383,7 +393,7 @@ export function planNodes(state, answer) {
     for (const p of j.problems) issues.push(line(p));
     for (const [view, p] of Object.entries(j.combined.plans)) {
       for (const m of p.missing) issues.push(line(el("strong", {}, view), ": ", el("a", { href: api("/browse/") + "#" + m.item }, name(m.item)),
-        " lacks ", path(m.keys.join(", "))));
+        ...missingWhy(m, path)));
       for (const c of p.clashes) issues.push(line(el("strong", {}, view), ": ", path(c.path), " is wanted by " + c.files.length + " PDFs"));
     }
     for (const c of j.combined.clashes) issues.push(line(path(c.path), " is wanted by ",
