@@ -201,7 +201,10 @@ func (v View) Validate() error {
 // alpha3 — whatever form the Item keeps it in. Keys written {a|b} are
 // alternatives: the first one an Item has is written. A part ending in ?
 // is optional and may carry text around its key, {-key?}: an Item with the
-// value gets the text and the value, one without gets nothing.
+// value gets the text and the value, one without gets nothing. Text starting
+// with /, {/key?} at the end of a folder or file name, makes the value a
+// folder of its own: license{/language?}/x puts a translation in
+// license/en/ and the original in license/.
 //
 // {#} writes the place, as 01, of the name the rest of its folder or file
 // name makes, in the View's order named that rest as written. The rest
@@ -249,7 +252,7 @@ func optionalParts(layout, written string) (prefix, inner, suffix string, err er
 	if strings.HasSuffix(inner, "#") {
 		return "", "", "", fmt.Errorf("layout %q: {%s?}: an optional key is not numbered", layout, written)
 	}
-	if strings.ContainsAny(prefix+suffix, "{}/:|#?") {
+	if strings.ContainsAny(strings.TrimPrefix(prefix, "/")+suffix, "{}/:|#?") {
 		return "", "", "", fmt.Errorf("layout %q: {%s?}: the text around a key may not hold { } / : | # ?", layout, written)
 	}
 	return prefix, inner, suffix, nil
@@ -279,7 +282,7 @@ func Rewrite(layout string) (string, bool) {
 // rewrite is Rewrite, with the order each numbered key was numbered from
 // named against the order it is numbered from now.
 func rewrite(layout string) (string, map[string]string) {
-	segments := strings.Split(layout, "/")
+	segments := splitSegments(layout)
 	renamed := map[string]string{}
 	for i, segment := range segments {
 		segment = oldInside.ReplaceAllString(segment, "{$1:$2#}")
@@ -354,7 +357,7 @@ func Parse(layout string) (Layout, error) {
 		return nil, errors.New(`layout: use / between folders, not \`)
 	}
 	var out Layout
-	for _, segment := range strings.Split(layout, "/") {
+	for _, segment := range splitSegments(layout) {
 		if segment == "" {
 			return nil, fmt.Errorf("layout %q: empty folder name (a leading, trailing or doubled /)", layout)
 		}
@@ -424,12 +427,44 @@ func Parse(layout string) (Layout, error) {
 			}
 			parts = append(parts, part)
 		}
+		for i, p := range parts {
+			if !strings.HasPrefix(p.Prefix, "/") {
+				continue
+			}
+			if slices.ContainsFunc(parts, func(p Part) bool { return p.Counter }) {
+				return nil, fmt.Errorf("layout %q: {%s?}: a name numbered with {#} cannot add a folder", layout, strings.Trim(written[i], "{}?"))
+			}
+			if i == 0 || i != len(parts)-1 {
+				return nil, fmt.Errorf("layout %q: {%s?}: a key that adds a folder ends a name that has more before it, as license{/language?}", layout, strings.Trim(written[i], "{}?"))
+			}
+		}
 		if err := counted(layout, parts, written); err != nil {
 			return nil, err
 		}
 		out = append(out, parts)
 	}
 	return out, nil
+}
+
+// splitSegments splits a layout at each / outside braces: the / in
+// {/key?} belongs to its key.
+func splitSegments(layout string) []string {
+	var out []string
+	depth, start := 0, 0
+	for i := 0; i < len(layout); i++ {
+		switch layout[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		case '/':
+			if depth == 0 {
+				out = append(out, layout[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(out, layout[start:])
 }
 
 // counted finds what a segment's {#} numbers: the parts after it, less

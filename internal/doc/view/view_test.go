@@ -615,7 +615,17 @@ func TestOptionalKey(t *testing.T) {
 	if len(plan.Files) != 1 || len(plan.Missing) != 1 || plan.Missing[0].Item != "B" {
 		t.Fatalf("empty folder: %+v", plan)
 	}
-	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "{degree?}#", "{:degree?}", "{degree|?}"} {
+	// {/key?} adds a folder when the key is there, and none when it is not.
+	plan, _ = Build(View{Name: "x", Selection: Head, Layout: "licence{/degree?}/{type}{-degree?}.{ext}"}, items, nil)
+	paths = nil
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"licence/id_card.pdf", "licence/本科/diploma-本科.pdf"}; !reflect.DeepEqual(paths, want) || !plan.Complete() {
+		t.Fatalf("got %v %+v, want %v", paths, plan, want)
+	}
+	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "{degree?}#", "{:degree?}", "{degree|?}",
+		"{/degree?}/x", "a{/degree?}b", "a{/-/degree?}", "a{degree/?}", "{#}-{owner}{/degree?}"} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%q parsed", bad)
 		}
