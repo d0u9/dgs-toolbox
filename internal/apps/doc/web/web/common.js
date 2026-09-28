@@ -140,6 +140,34 @@ export function inputFor(field, value, placeholder, state, self, type) {
       refresh();
     });
     return wrapper;
+  } else if (field.type === "revision") {
+    // An Item, then one of its revisions: HEAD when the Item is picked.
+    // The value, <item-id>@<revision>, is in a hidden input.
+    control = el("input", { ...common, type: "hidden", value: value || "" });
+    const [id, ref] = (value || "").split("@");
+    const items = (state ? state.items : []).filter((i) => i.id !== self);
+    const pickItem = el("select", {}, el("option", { value: "" }, ""),
+      ...items.map((i) => el("option", { value: i.id, selected: i.id === id }, label(state, i))));
+    const pickRevision = el("select", {});
+    const fill = (keep) => {
+      const item = items.find((i) => i.id === pickItem.value);
+      const revs = item ? [...item.revisions].reverse() : [];
+      const head = item && (item.head || (revs[0] && (revs[0].id || revs[0].digest)));
+      pickRevision.replaceChildren(...revs.map((r) => {
+        const rid = r.id || r.digest;
+        return el("option", { value: rid, selected: rid === (keep || head) }, revisionName(r, rid === head));
+      }));
+      if (keep && !revs.some((r) => (r.id || r.digest) === keep)) pickRevision.append(el("option", { value: keep, selected: true }, keep));
+      pickRevision.hidden = !item;
+    };
+    const set = () => {
+      control.value = pickItem.value && pickRevision.value ? pickItem.value + "@" + pickRevision.value : "";
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    pickItem.onchange = () => { fill(""); set(); };
+    pickRevision.onchange = set;
+    fill(ref);
+    return el("div", { className: "form-field" }, ...fieldHead(field), pickItem, pickRevision, control);
   } else if (field.type === "select" || field.type === "item") {
     const choices = field.type === "select"
       ? field.options.map((o) => [o, o])
@@ -183,6 +211,10 @@ export function inputFor(field, value, placeholder, state, self, type) {
   return el("label", { className: "form-field" },
     ...fieldHead(field), control);
 }
+
+// revisionName is a revision as a picker lists it: when it was added, its
+// ID's start, and HEAD when it is.
+export const revisionName = (r, head) => (r.added || "").slice(0, 10) + " · " + (r.id || r.digest).slice(0, 8) + (head ? " · HEAD" : "");
 
 export const fieldsOf = (container) => Object.fromEntries(
   [...container.querySelectorAll(".field-input")].map((input) => [input.name, input.value]));

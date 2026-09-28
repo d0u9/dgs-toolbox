@@ -447,6 +447,10 @@ shows for it:
 - `select` — one of the field's `options`.
 - `item` — the ID of another Item, such as a passport's previous passport. The
   page picks it from the Items; export never follows it.
+- `revision` — one revision of another Item, written `<item-id>@<revision>`,
+  such as the licence a translation was made from: a later renewal does not
+  change what was translated. The page picks the Item, then its revision,
+  HEAD at first; export never follows it.
 - `country` — a country however it is typed: its ISO code (`cn`, `CHN`), its
   English or Chinese name (`China`, `中国`) or a common alias
   (`中华人民共和国`, `PRC`), any case. It is kept in the field's `format`:

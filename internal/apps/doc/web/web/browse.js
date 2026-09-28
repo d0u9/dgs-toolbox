@@ -2,7 +2,7 @@
 import { openFile } from "/ui/filedialog.js";
 import { splitter } from "/ui/splitter.js";
 import { openMenu } from "/ui/menu.js";
-import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, frame, say, showText, showPreview, clearPreview, eventLines } from "/common.js";
+import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -446,6 +446,12 @@ splitter({ handle: $("side-splitter"), target: $("side"), axis: "x", invert: tru
 function shown(item, key, value) {
   const t = templateOf(state, item.type);
   const f = t && t.fields.find((x) => x.key === key);
+  if (f && f.type === "revision") {
+    const [id, ref] = (value || "").split("@");
+    const other = state.items.find((i) => i.id === id);
+    const r = other && other.revisions.find((x) => (x.id || x.digest) === ref);
+    return other ? label(state, other) + " @ " + (r ? revisionName(r, false) : ref) : value;
+  }
   const other = f && f.type === "item" && state.items.find((i) => i.id === value);
   return other ? label(state, other) : value;
 }

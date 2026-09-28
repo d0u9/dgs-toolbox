@@ -81,6 +81,10 @@ const (
 	FieldSelect FieldType = "select"
 	// FieldItem is another Item's ID.
 	FieldItem FieldType = "item"
+	// FieldRevision is one revision of another Item, written
+	// <item-id>@<revision>: the licence a translation was made from, not
+	// whichever licence is HEAD now.
+	FieldRevision FieldType = "revision"
 	// FieldCountry is a country, however it is typed — cn, CHN, China,
 	// 中国 — kept in the field's Format.
 	FieldCountry FieldType = "country"
@@ -147,7 +151,7 @@ func (t Template) Validate() error {
 			return fmt.Errorf("type %s: key %s: format %q is not zh, en, alpha2 or alpha3", t.Type, f.Key, f.Format)
 		}
 		switch f.Type {
-		case "", FieldText, FieldDate, FieldMonth, FieldItem, FieldCountry:
+		case "", FieldText, FieldDate, FieldMonth, FieldItem, FieldRevision, FieldCountry:
 			if len(f.Options) > 0 {
 				return fmt.Errorf("type %s: key %s: options belong to a select field", t.Type, f.Key)
 			}
@@ -156,7 +160,7 @@ func (t Template) Validate() error {
 				return fmt.Errorf("type %s: key %s: a select field needs options", t.Type, f.Key)
 			}
 		default:
-			return fmt.Errorf("type %s: key %s: type %q is not text, date, month, select, item or country", t.Type, f.Key, f.Type)
+			return fmt.Errorf("type %s: key %s: type %q is not text, date, month, select, item, revision or country", t.Type, f.Key, f.Type)
 		}
 		if f.PerRevision && t.Kind != KindDocument {
 			return fmt.Errorf("type %s: key %s: per_revision belongs to a document; a record has one PDF", t.Type, f.Key)
@@ -313,6 +317,10 @@ func (f Field) clean(value string) (string, error) {
 		if !idPattern.MatchString(value) {
 			return "", fmt.Errorf("%s: %q is not an Item ID", f.Key, value)
 		}
+	case FieldRevision:
+		if _, _, ok := SplitRevisionLink(value); !ok {
+			return "", fmt.Errorf("%s: %q is not a revision written <item-id>@<revision>", f.Key, value)
+		}
 	case FieldCountry:
 		kept, ok := country.Normalize(value, country.Format(f.Format))
 		if !ok {
@@ -322,6 +330,17 @@ func (f Field) clean(value string) (string, error) {
 	}
 	return value, nil
 }
+
+// SplitRevisionLink reads a revision field's value, <item-id>@<revision>.
+func SplitRevisionLink(value string) (id, ref string, ok bool) {
+	id, ref, found := strings.Cut(value, "@")
+	if !found || !idPattern.MatchString(id) || !refPattern.MatchString(ref) {
+		return "", "", false
+	}
+	return id, ref, true
+}
+
+var refPattern = regexp.MustCompile(`^[0-9A-Za-z]+$`)
 
 var idPattern = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
 
