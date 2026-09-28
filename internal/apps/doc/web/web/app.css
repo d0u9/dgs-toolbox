@@ -399,7 +399,12 @@ th[aria-sort="ascending"] .th-sort, th[aria-sort="descending"] .th-sort { color:
 .reader { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; background: var(--cloud); }
 .reader-bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--paper); border-bottom: 1px solid var(--hairline); }
 .reader-body { flex: 1; min-height: 0; display: flex; align-items: stretch; justify-content: center; }
-body.reading .filters, body.reading .browse-pane, body.reading #detail-picture, body.reading #picture-splitter { display: none; }
+body.reading .filters, body.reading .browse-pane, body.reading #picture-splitter { display: none; }
+/* Reading, the panel keeps every section and action it has beside the
+   cards: only the picture, shown large beside it, and what turns or opens
+   it are left out. */
+body.reading #detail-picture { height: auto !important; min-height: 0; padding-bottom: 8px; }
+body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, body.reading #page-label, body.reading #open-reader { display: none; }
 .card-thumb { object-position: center; }
 .side.detail form { display: flex; flex-direction: column; gap: 10px; }
 .side.detail .kind { margin: 0 0 4px; color: var(--graphite); }
