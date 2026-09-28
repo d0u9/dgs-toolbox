@@ -261,8 +261,9 @@ async function reload() {
 $("form").addEventListener("input", (event) => { if (!event.target.closest(".fill")) changed(); });
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  sync();
   try {
+    await which.settle();
+    sync();
     await post("/api/rules", { rule: draft, previous: editing || "" });
     const name = draft.name;
     await reload();

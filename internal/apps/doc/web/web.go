@@ -250,6 +250,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/outlines/delete", s.outlineDelete)
 	mux.HandleFunc("POST /api/rules", s.ruleSave)
 	mux.HandleFunc("POST /api/rules/delete", s.ruleDelete)
+	mux.HandleFunc("POST /api/rules/layout", s.ruleLayout)
 	mux.HandleFunc("GET /api/snapshots", s.snapshotList)
 	mux.HandleFunc("POST /api/snapshots/take", s.snapshotTake)
 	mux.HandleFunc("POST /api/snapshots/names", s.snapshotNames)

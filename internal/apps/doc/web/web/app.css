@@ -465,7 +465,8 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .path-key.drop, .path-counter.drop, .path-group.drop { box-shadow: -2px 0 0 var(--primary); }
 .path-add { align-self: flex-start; }
 .layout-text { display: block; padding: 4px 8px; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--font-size-xs);
-  color: var(--graphite); background: var(--cloud); border-radius: var(--radius-sm); user-select: all; }
+  color: var(--graphite); background: var(--cloud); border-radius: var(--radius-sm); width: 100%; box-sizing: border-box; }
+.layout-text.invalid { box-shadow: inset 0 0 0 1px var(--danger, #c33); }
 .chip:disabled { opacity: .4; cursor: default; }
 .layout-help { grid-column: 2; margin: -4px 0 0; font-size: var(--font-size-xs); color: var(--graphite); line-height: 1.5; }
 .layout-help code { padding: 0 3px; background: var(--cloud); border-radius: var(--radius-sm); color: var(--charcoal); }
