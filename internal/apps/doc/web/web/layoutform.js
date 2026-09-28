@@ -39,6 +39,9 @@ export function fill(v) {
   drawInherit(v.inherit || []);
   orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, list.join(", ")]));
   numbers = JSON.parse(JSON.stringify(v.numbers || {}));
+  $("map").value = Object.entries(v.map || {}).map(([k, m]) => k + ": " + Object.entries(m).map(([a, b]) => a + " = " + b).join(", ")).join("\n");
+  $("map").classList.remove("invalid");
+  $("map-error").textContent = "";
   drawOrder();
   drawPath();
 }
@@ -80,6 +83,29 @@ export function read() {
     if (Object.keys(kept).length) set[key] = kept;
   }
   if (Object.keys(set).length) out.numbers = set;
+  const map = mapOf($("map").value);
+  $("map").classList.toggle("invalid", !map);
+  $("map-error").textContent = map ? "" : "Write each line as key: value = as, value = as";
+  if (map && Object.keys(map).length) out.map = map;
+  return out;
+}
+
+// mapOf reads the Map box: a line a key, "tags: network-1 = address01,
+// network-2 = address02". Null when a line is not that.
+function mapOf(text) {
+  const out = {};
+  for (const line of text.split("\n").map((s) => s.trim()).filter(Boolean)) {
+    const at = line.indexOf(":");
+    const key = line.slice(0, at).trim();
+    if (at < 1 || !key) return null;
+    const pairs = line.slice(at + 1).split(",").map((s) => s.trim()).filter(Boolean);
+    for (const pair of pairs) {
+      const [from, to, ...rest] = pair.split("=").map((s) => s.trim());
+      if (!from || !to || rest.length) return null;
+      (out[key] ||= {})[from] = to;
+    }
+    if (!out[key]) return null;
+  }
   return out;
 }
 

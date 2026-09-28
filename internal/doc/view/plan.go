@@ -393,6 +393,7 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 			if len(v.Inherit) > 0 && ExcludesInherited(exclude, item, rev.Ref(), keys) {
 				continue
 			}
+			Remap(keys, v.Map, item.TagsAt(rev.Ref()))
 			name, lacking := render(layout, keys, v.Default, v.Order, v.Numbers)
 			if len(lacking) > 0 {
 				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
@@ -421,6 +422,29 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 	plan.Files, plan.Clashes = separate(placed)
 	sort.Slice(plan.Files, func(i, j int) bool { return plan.Files[i].Path < plan.Files[j].Path })
 	return plan, nil
+}
+
+// Remap writes each key m lists as m has it. tags, the revision's tags,
+// give TagsKey the first of them m lists for it; none listed leaves it
+// missing.
+func Remap(keys map[string]string, m map[string]map[string]string, tags []string) {
+	for key, values := range m {
+		if key == TagsKey {
+		tagged:
+			for _, t := range tags {
+				for from, to := range values {
+					if strings.EqualFold(from, t) {
+						keys[TagsKey] = to
+						break tagged
+					}
+				}
+			}
+			continue
+		}
+		if to, ok := values[keys[key]]; ok {
+			keys[key] = to
+		}
+	}
 }
 
 // separate splits files into those with a path of their own and the
