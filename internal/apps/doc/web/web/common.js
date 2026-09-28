@@ -230,10 +230,29 @@ export function inputFor(field, value, placeholder, state, self, type) {
     control = el("input", { ...common, type: ["date", "month"].includes(field.type) ? field.type : "text",
       value, placeholder: placeholder || (field.type === "country" ? "cn, CHN, China, 中国…" : ""),
       spellcheck: false, autocomplete: "off" });
-    if (field.type === "country") control.title = "Any code or name: kept as the Template's format says.";
+    if (field.type === "country") {
+      control.title = "Pick a country the tree has, or type any code or name: kept as the Template's format says.";
+      // The countries Items already have are offered; any other can be typed.
+      const id = "country-options-" + (++fieldListID);
+      control.setAttribute("list", id);
+      return el("label", { className: "form-field" }, ...fieldHead(field), control,
+        el("datalist", { id }, ...countriesOf(state).map((c) => el("option", { value: c }))));
+    }
   }
   return el("label", { className: "form-field" },
     ...fieldHead(field), control);
+}
+
+// countriesOf is every value a country field of the tree's Items holds,
+// once each, sorted.
+function countriesOf(state) {
+  if (!state) return [];
+  const keys = new Set((state.templates || []).flatMap((t) => t.fields.filter((f) => f.type === "country").map((f) => f.key)));
+  const seen = new Set();
+  for (const item of state.items || []) {
+    for (const k of keys) if (item.fields?.[k]) seen.add(item.fields[k]);
+  }
+  return [...seen].sort();
 }
 
 // revisionName is a revision as a picker lists it: when it was added, its
