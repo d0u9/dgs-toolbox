@@ -379,7 +379,7 @@ function keyOptions() {
   return [
     ["Keys", [...plain, "type", "type:zh", "type:en"]],
     ["Countries", [...countryKeys()].filter((k) => held.has(k)).flatMap((k) => Object.keys(FORMATS).map((f) => k + ":" + f))],
-    ...linkFields().map((l) => ["From " + l, [...linkKeys(l), "year", "month", "date"].map((k) => l + "." + k)]),
+    ...linkFields().map((l) => ["From " + l, [...linkKeys(l), "type:zh", "type:en", "year", "month", "date"].map((k) => l + "." + k)]),
   ];
 }
 
@@ -542,7 +542,7 @@ function chips() {
     ...countries.map((k) => group(k + " as", ...Object.entries(FORMATS).map(([f, example]) =>
       chip(":" + f, key(k + ":" + f), `{${k}:${f}} writes ${example}`)))),
     group("type as", ...Object.entries(TYPE_FORMATS).map(([f, note]) => chip(":" + f, key("type:" + f), note))),
-    ...linkFields().map((l) => group("from " + l, ...linkKeys(l).map((k) => chip(k, key(l + "." + k), "the " + k + " of the Item " + l + " links to")))),
+    ...linkFields().map((l) => group("from " + l, ...[...linkKeys(l), "type:zh", "type:en"].map((k) => chip(k, key(l + "." + k), "the " + k + " of the Item " + l + " links to")))),
   ].filter(Boolean));
 }
 

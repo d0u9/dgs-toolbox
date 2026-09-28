@@ -186,6 +186,23 @@ func Excludes(exclude map[string]Values, item tree.Item, ref string) bool {
 	return false
 }
 
+// ExcludesInherited reports whether a condition of exclude meets a field
+// revision ref of item lacks and keys inherited: a translation without a
+// name is excluded by name: [成绩单] when its original is a transcript.
+func ExcludesInherited(exclude map[string]Values, item tree.Item, ref string, keys map[string]string) bool {
+	own := item.FieldsAt(ref)
+	for key, values := range exclude {
+		field, _ := SplitKey(key)
+		if field == "type" || field == TagsKey || field == StatusKey || own[field] != "" || keys[field] == "" {
+			continue
+		}
+		if meets(key, values, item, ref, keys) {
+			return true
+		}
+	}
+	return false
+}
+
 var isoDate = regexp.MustCompile(`^(\d{4})-(\d{2})-(\d{2})`)
 
 // KeysOf is every key a layout can use for one revision of item, counting
@@ -364,7 +381,18 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 				keys["type:"+lang] = name
 			}
 			Follow(keys, byID)
+			for k, t := range maps.Clone(keys) {
+				// original.type:zh, the linked Item's type in a language.
+				if strings.HasSuffix(k, ".type") {
+					for lang, name := range names[t] {
+						keys[k+":"+lang] = name
+					}
+				}
+			}
 			Inherit(keys, v.Inherit)
+			if len(v.Inherit) > 0 && ExcludesInherited(exclude, item, rev.Ref(), keys) {
+				continue
+			}
 			name, lacking := render(layout, keys, v.Default, v.Order, v.Numbers)
 			if len(lacking) > 0 {
 				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
@@ -604,15 +632,16 @@ func allGroups(parts []Part) bool {
 func pick(part Part, keys map[string]string) (choice Part, value string, ok bool) {
 	for _, c := range part.choices() {
 		key := c.Key
-		if key == "type" && c.Format != "" {
-			// The type's name in a language, from its Template.
-			key = "type:" + c.Format
+		if isType(key) && c.Format != "" {
+			// The type's name in a language, from its Template:
+			// type:zh, or original.type:zh for a linked Item's.
+			key += ":" + c.Format
 		}
 		value, ok := keys[key]
 		if !ok {
 			continue
 		}
-		if c.Format != "" && c.Key != "type" {
+		if c.Format != "" && !isType(c.Key) {
 			// A value that names no country is written as it is.
 			if kept, ok := country.Normalize(value, country.Format(c.Format)); ok {
 				value = kept
@@ -621,10 +650,16 @@ func pick(part Part, keys map[string]string) (choice Part, value string, ok bool
 		return c, value, true
 	}
 	first := part.choices()[0]
-	if first.Key == "type" && first.Format != "" {
-		first.Key = "type:" + first.Format
+	if isType(first.Key) && first.Format != "" {
+		first.Key += ":" + first.Format
 	}
 	return first, "", false
+}
+
+// isType reports whether key is an Item's type, its own or a linked one's:
+// type, original.type.
+func isType(key string) bool {
+	return key == "type" || strings.HasSuffix(key, ".type")
 }
 
 // numbered puts _NN before the file name's extension.
