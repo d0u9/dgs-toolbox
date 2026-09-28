@@ -694,6 +694,37 @@ func TestCounterNumbersTheWholeName(t *testing.T) {
 	}
 }
 
+// {/#} stops the number: two contracts told apart by date share one.
+func TestCounterEndStopsTheNumber(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "contract", Kind: tree.KindRecord, Fields: map[string]string{"name": "合同", "signed": "2018-03-20"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "contract", Kind: tree.KindRecord, Fields: map[string]string{"name": "合同", "signed": "2019-03-22"}, Revisions: []tree.Revision{{Digest: "b"}}},
+		{ID: "C", Type: "invoice", Kind: tree.KindRecord, Fields: map[string]string{"name": "物业发票"}, Revisions: []tree.Revision{{Digest: "c"}}},
+	}
+	v := View{Name: "v", Selection: Head, Layout: "x/{#}-{name}{/#}[-{signed:compact}].{ext}",
+		Order: map[string][]string{"{name}": {"合同", "物业发票"}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Build(v, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	sort.Strings(paths)
+	if want := []string{"x/01-合同-20180320.pdf", "x/01-合同-20190322.pdf", "x/02-物业发票.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	for _, bad := range []string{"x/{name}{/#}.{ext}", "x/{#}-{name}{/#}{/#}.{ext}", "x/{/#}{#}-{name}.{ext}"} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("Parse(%q) took it", bad)
+		}
+	}
+}
+
 // An old rule's orders move to the names its layout numbers now.
 func TestUpgradeRenamesOrders(t *testing.T) {
 	v, changed := Upgrade(View{Layout: "{owner#}/{name|type:zh#}{-level?}.{ext}",

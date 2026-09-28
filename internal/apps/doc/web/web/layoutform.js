@@ -333,7 +333,7 @@ const DEFAULT_ROWS = () => [{ parts: [{ keys: ["owner"] }] }, { parts: [{ keys: 
 // fromLayout makes rows of a layout the server parsed: a folder group
 // ending a name becomes an optional row of its own.
 function fromLayout(layout) {
-  const part = (p) => p.counter ? { counter: true } : p.group ? { group: p.group.map(part) }
+  const part = (p) => p.counter ? { counter: true } : p.end ? { end: true } : p.group ? { group: p.group.map(part) }
     : p.key ? { keys: [p, ...(p.or || [])].map((c) => c.key + (c.format ? ":" + c.format : "")) } : { text: p.text };
   const out = [];
   for (const segment of layout) {
@@ -347,7 +347,7 @@ function fromLayout(layout) {
   return out;
 }
 
-const written = (p) => p.counter ? "{#}" : p.group ? "[" + p.group.map(written).join("") + "]" : p.keys ? "{" + p.keys.join("|") + "}" : p.text;
+const written = (p) => p.counter ? "{#}" : p.end ? "{/#}" : p.group ? "[" + p.group.map(written).join("") + "]" : p.keys ? "{" + p.keys.join("|") + "}" : p.text;
 
 // layoutText is the rows as the layout the rule saves.
 export const layoutText = () => rows.map((row, i) => {
@@ -453,6 +453,9 @@ function partEl(part, list, r, g) {
   if (part.counter) {
     node = el("span", { className: "path-counter", title: "Numbers the rest of this name, 01, 02, in the order below" }, "#",
       el("button", { type: "button", className: "path-x", title: "Remove the number", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
+  } else if (part.end) {
+    node = el("span", { className: "path-counter", title: "The number stops here: what follows is written but not numbered" }, "/#",
+      el("button", { type: "button", className: "path-x", title: "Remove the stop", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
   } else if (part.keys) {
     node = keyPart(part, remove);
   } else if (part.group) {
@@ -603,12 +606,14 @@ function chips() {
   const fields = keys.filter((k) => !BUILT_IN[k] && held.has(k));
   const countries = [...countryKeys()].filter((k) => held.has(k));
   const numbered = target().some((p) => p.counter);
+  const stopped = target().some((p) => p.end);
   const key = (k) => () => ({ keys: [k] });
   $("keys").replaceChildren(...[
     group("Fields", ...fields.map((k) => chip(k, key(k), describe(k)))),
     group("Every PDF", ...keys.filter((k) => BUILT_IN[k]).map((k) => chip(k, key(k), describe(k)))),
     group("Add", chip("text", () => ({ text: "" }), "Fixed text, such as - or 03-Education"),
       chip("#", () => ({ counter: true }), inGroup() ? "A number goes only in a row, or in an optional folder" : "Numbers the rest of this name, 01-, 02-, in the order below", numbered || inGroup()),
+      chip("/#", () => ({ end: true }), "Stops the number: what follows, such as a date, is written but not numbered", !numbered || stopped || inGroup()),
       chip("if any […]", () => ({ group: [] }), "An optional part, written only when the Item has every key in it: -本科 or nothing", inGroup())),
     ...countries.map((k) => group(k + " as", ...Object.entries(FORMATS).map(([f, example]) =>
       chip(":" + f, key(k + ":" + f), `{${k}:${f}} writes ${example}`)))),
@@ -628,12 +633,14 @@ function drawInherit(saved) {
 const inherited = () => [...$("inherit").querySelectorAll("input:checked")].map((i) => i.value);
 
 // The orders the layout numbers from, each once: a row with {#} numbers
-// what follows it, less the text straight after {#} and a trailing .{ext},
+// what follows it up to {/#}, less the text straight after {#} and a trailing .{ext},
 // and its order is named that as written.
 export const numberedKeys = () => [...new Set(rows.flatMap((row) => {
   const at = row.parts.findIndex((p) => p.counter);
   if (at < 0) return [];
   let rest = row.parts.slice(at + 1);
+  const end = rest.findIndex((p) => p.end);
+  if (end >= 0) rest = rest.slice(0, end);
   if (rest.length && rest[0].text !== undefined) rest = rest.slice(1);
   if (rest.length && rest[rest.length - 1].keys && rest[rest.length - 1].keys[0] === "ext") {
     rest = rest.slice(0, -1);
