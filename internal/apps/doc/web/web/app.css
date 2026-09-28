@@ -827,3 +827,6 @@ body.list-shut .outline-list { display: none; }
 .more-path { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-bottom: 1px solid var(--hairline); }
 .more-path-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .more-path-head .order-acts { margin-left: auto; opacity: 1; }
+.path-line { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.path-line .layout-text { flex: 1; min-width: 0; }
+.path-dialog-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
