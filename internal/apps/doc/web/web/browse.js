@@ -537,7 +537,7 @@ function detail(item) {
         el("span", { className: "sub", title: (r.id || r.digest) }, r.digest ? (r.source ? r.source + " · " : "") + r.digest.slice(0, 8) : "No PDF"),
         (r.tags || []).length ? el("span", { className: "rev-tags" }, ...r.tags.map((t) => el("span", { className: "tag" }, t))) : null),
       !isHead ? el("button", {
-        className: "button", type: "button", textContent: "Make HEAD",
+        className: "button secondary small-button", type: "button", textContent: "Make HEAD",
         onclick: (event) => { event.stopPropagation(); makeHead(item.id, (r.id || r.digest)); },
       }) : null,
       el("button", { className: "tool", type: "button", textContent: "⋯", title: "Revision actions", "aria-label": "Revision actions",

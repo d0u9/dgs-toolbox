@@ -47,6 +47,24 @@ a.button, a.button:visited {
 .action:disabled, .button.primary:disabled { background: var(--steel); border-color: var(--steel); opacity: 1; cursor: default; }
 .action[hidden], .button[hidden] { display: none; }
 
+/* The design's secondary buttons (docs/web.md, Buttons): .button.secondary
+   is button-outline-ink, an action beside the primary one that must still
+   read as a button; .link-button is button-text-link, a quiet action in a
+   heading or a row that goes somewhere or finds something. */
+.button.secondary { color: var(--ink); border-color: var(--ink); background: var(--paper); font-weight: 600; }
+.button.secondary:hover { background: var(--ink); color: var(--on-ink); }
+.button.secondary:disabled { background: var(--paper); color: var(--ink); }
+a.button.secondary, a.button.secondary:visited { color: var(--ink); }
+a.button.secondary:hover { color: var(--on-ink); }
+.link-button, a.link-button:visited {
+  display: inline-flex; align-items: center; height: var(--control-height-sm); padding: 0;
+  border: 0; background: none; cursor: pointer;
+  font-size: var(--font-size-xs); font-weight: 600; color: var(--primary); text-decoration: none;
+}
+.link-button:hover { color: var(--primary-deep); text-decoration: underline; }
+.link-button:disabled { color: var(--steel); cursor: default; text-decoration: none; }
+.link-button[hidden] { display: none; }
+
 /* A compact default control, for an action on one row of a list. */
 .small-button { height: 22px; padding: 0 8px; font-size: var(--font-size-xs); }
 
