@@ -33,12 +33,32 @@ The 23 Templates in use name one meaning several ways, which this removes:
 | --- | --- | --- |
 | What it is called | `name` `subject` `card_name` | `name` |
 | The other party | `issuer` `provider` `payee` `party` `landlord` `school` `translator` | `issuer` |
-| Its own date | `date` `issued` `signed` `paid` `registered` | `date` |
-| The span it covers | `start/end` `period_start/period_end` `effective/expires` `issued/expires` | `start` `end` |
+| Its number | `number` `reference` | `number` |
+| Its date, or the span it covers | `date` `issued` `signed` `paid` `start/end` `period_start/period_end` `effective/expires` `issued/expires` | `date` |
 | Which sort | `category` `service` `insurance_type` `visa_type` `card_type` `class` | `category` |
 
 `category`, not `kind`: `kind` already says whether a type is a `record` or a
 `document`.
+
+### A date is one day or a span
+
+`date` has type `date`, whose shape is one day or a pair `[start, end]`. Each
+type declares which one it takes, and a type below may narrow it but not
+change it. A path reads `{date.start}` and `{date.end}`; for a single day both
+are that day. There are no separate `start` and `end` fields.
+
+| Type | `date` |
+| --- | --- |
+| credential (ID, visa, licence card) | `[issued, expires]` |
+| bill | `[period start, period end]`; `due` is its own field |
+| agreement (tenancy, contract, policy) | `[start, end]` |
+| payment, invoice, letter | one day |
+| marriage_cert | one day: this copy's `issued`; `registered` is its own field |
+| driver_licence | `[card start, expires]`; `first_issued` is its own field |
+
+An open end (a certificate that never lapses) leaves `end` empty.
+
+### Templates
 
 ```yaml
 # templates/record.yaml
@@ -50,7 +70,7 @@ fields:
   - {key: name}
   - {key: issuer}
   - {key: number}
-  - {key: date, type: date}
+  - {key: date, type: date, shape: [day, span]}
 
 # templates/money.yaml
 type: money
@@ -67,19 +87,26 @@ fields:
 type: bill
 extends: money
 fields:
-  - {key: start, type: date}
-  - {key: end, type: date}
-  - {key: due, type: date}
+  - {key: date, shape: span}
+  - {key: due, type: date, shape: day}
 ```
 
-- One parent per type. A type inherits its parent's fields, `required`,
-  `distinguishing` and `defaults`.
+- One parent per type, named by `extends`. A type inherits its parent's
+  fields, `required`, `distinguishing` and `defaults`.
 - A type may add fields, make an inherited field required or distinguishing,
-  and give it its own description. It may not rename it or change its type.
+  narrow a date's shape, and give a field its own description. It may not
+  rename a field or change its type.
+- The tree is not fixed: changing `extends` changes only which fields a type
+  inherits and what `type is X` matches. Sidecars are untouched; a type that
+  loses a field its Items use fails validation.
 - A value may sit in a group (`utility` holds 水 and 电). A condition on the
   group matches every value in it.
 - A condition on a type matches its descendants: `type is money` matches
   bill, invoice and payment.
+- A yes/no a file name shows stays a field, not a tag: a file name reads
+  fields only. `tax_document.signed` is a select with one option, `已签`, and
+  `[-{signed}]` adds the suffix only when it is set.
+- Abstract types do not appear as filters in Browse, for now.
 
 ### Draft tree
 
@@ -87,21 +114,21 @@ From the Templates in the tree now. Each line names the fields it adds.
 
 ```
 record         owner country name issuer number date
-├─ credential  end                               (abstract)
+├─ credential                                    (abstract, date: span)
 │  ├─ id_card, temp_id, student_id
 │  ├─ social_card        member_number
 │  ├─ bank_card          category last_four
-│  ├─ driver_licence     category address card_number
+│  ├─ driver_licence     category address card_number first_issued
 │  ├─ visa               category first_entry_by travel_until
 │  ├─ certificate        level
 │  ├─ achievement        level
 │  ├─ diploma            level major entered graduated
-│  └─ marriage_cert      spouse
+│  └─ marriage_cert      spouse registered       (date: day)
 ├─ money       amount currency category about    (abstract)
-│  ├─ bill               address account start end due
-│  ├─ invoice            purpose
-│  └─ payment            via
-├─ agreement   start end about                   (abstract)
+│  ├─ bill               address account due     (date: span)
+│  ├─ invoice            purpose                 (date: day)
+│  └─ payment            via                     (date: day)
+├─ agreement   about                             (abstract, date: span)
 │  ├─ tenancy            address
 │  ├─ contract           category address
 │  └─ insurance_policy   category insured
@@ -111,18 +138,6 @@ record         owner country name issuer number date
 ├─ translation           of original language
 └─ other                 about
 ```
-
-Open:
-
-- A credential's `date` is when it was issued, and it keeps no `start`. A
-  driver licence whose card and first licence differ loses one date.
-- A marriage certificate has two dates, `registered` and the copy's `issued`.
-  Which one is `date`?
-- `reference` (a second number on a letter, payment, visa, policy) merges
-  into `number`, or stays beside it.
-- `tax_document.signed` is yes/no, not a date: it keeps its name, or becomes
-  a tag.
-- Whether abstract types appear as filters in Browse.
 
 ## 2. Conditions as one expression
 
