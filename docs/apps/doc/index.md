@@ -451,6 +451,13 @@ shows for it:
   such as the licence a translation was made from: a later renewal does not
   change what was translated. The page picks the Item, then its revision,
   HEAD at first; export never follows it.
+
+An `item` or `revision` field may carry `match`: a field of the linked Item
+(or `type`) mapped to a field of this form that it must equal. A
+translation's `original` has `match: {type: of, owner: owner}`: once `of`
+is `driver_licence`, only that owner's licences are offered, and saving an
+original that disagrees is refused. The page narrows only the revision
+picker so far. A field left empty narrows nothing.
 - `country` — a country however it is typed: its ISO code (`cn`, `CHN`), its
   English or Chinese name (`China`, `中国`) or a common alias
   (`中华人民共和国`, `PRC`), any case. It is kept in the field's `format`:

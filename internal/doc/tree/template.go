@@ -66,6 +66,12 @@ type Field struct {
 	// than with the Item: a renewed card has a new number and expiry, and the
 	// old card keeps its own. Adding a revision asks for these fields.
 	PerRevision bool `yaml:"per_revision,omitempty" json:"per_revision"`
+	// Match narrows an item or revision field to the Items that agree with
+	// this form: each entry names a field of the linked Item (or "type") and
+	// the field here that it must equal. A translation's original has
+	// {type: of, owner: owner}: pick driver_licence and only licences are
+	// offered. A field here left empty narrows nothing.
+	Match map[string]string `yaml:"match,omitempty" json:"match,omitempty"`
 }
 
 // FieldType is what a field's value is.
@@ -142,6 +148,14 @@ func (t Template) Validate() error {
 		for _, p := range f.AllPatterns() {
 			if _, err := regexp.Compile(p); err != nil {
 				return fmt.Errorf("type %s: key %s: pattern %q: %w", t.Type, f.Key, p, err)
+			}
+		}
+		if len(f.Match) > 0 && f.Type != FieldItem && f.Type != FieldRevision {
+			return fmt.Errorf("type %s: key %s: match belongs to an item or revision field", t.Type, f.Key)
+		}
+		for theirs, ours := range f.Match {
+			if !t.hasField(ours) || ours == f.Key {
+				return fmt.Errorf("type %s: key %s: match %s: %s is not another field of this Template", t.Type, f.Key, theirs, ours)
 			}
 		}
 		if f.Format != "" && f.Type != FieldCountry {
@@ -329,6 +343,15 @@ func (f Field) clean(value string) (string, error) {
 		return kept, nil
 	}
 	return value, nil
+}
+
+func (t Template) hasField(key string) bool {
+	for _, f := range t.Fields {
+		if f.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 // SplitRevisionLink reads a revision field's value, <item-id>@<revision>.
