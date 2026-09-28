@@ -356,7 +356,8 @@ $("layout").addEventListener("input", () => { active = 0; suggest(); drawOrder()
 export const numberedKeys = () => [...new Set($("layout").value.split(/\/(?![^{}]*\})/).flatMap((segment) => {
   const at = segment.indexOf("{#}");
   if (at < 0) return [];
-  const rest = segment.slice(at + 3).replace(/^[^{]*/, "").replace(/\.?\{ext\}$/, "");
+  // The folder a {/key?} adds after the name is not numbered.
+  const rest = segment.slice(at + 3).replace(/^[^{]*/, "").replace(/\{\/[^{}]*\?\}$/, "").replace(/\.?\{ext\}$/, "");
   return /\{[^#{}]+\}/.test(rest) ? [rest] : [];
 }))];
 
@@ -365,6 +366,17 @@ export const numberedKeys = () => [...new Set($("layout").value.split(/\/(?![^{}
 function keyValue(item, inner) {
   for (const choice of inner.split("|")) {
     const [name, format] = choice.split(":");
+    if (name.includes(".")) {
+      // original.level: the key of the revision the field original links to.
+      const [field, key] = name.split(".");
+      const [id, ref] = String((item.fields || {})[field] || "").split("@");
+      const other = state.items.find((i) => i.id === id);
+      const rev = other && (ref ? other.revisions.find((r) => (r.id || r.digest) === ref) : null);
+      const fields = !other ? {} : !rev ? other.fields : rev.snapshot ? rev.fields || {} : { ...other.fields, ...(rev.fields || {}) };
+      const value = key === "type" ? other?.type : fields[key];
+      if (value) return value;
+      continue;
+    }
     const value = name === "type"
       ? (format ? (state.templates.find((t) => t.type === item.type)?.names || {})[format] : item.type)
       : item.fields && item.fields[name];
@@ -402,6 +414,10 @@ function numbered(values, set = {}) {
 
 function drawOrder() {
   const rows = numberedKeys().map((key) => {
+    // A key given alternatives, {level} become {level|original.level},
+    // keeps the order it had.
+    const plain = key.replace(/\|[^{}]*?(?=[?}])/g, "");
+    if (orders[key] === undefined && plain !== key && orders[plain] !== undefined) orders[key] = orders[plain];
     if (orders[key] === undefined) {
       orders[key] = [...new Set(selected().map((i) => orderValue(i, key)).filter(Boolean))].sort().join(", ");
     }
