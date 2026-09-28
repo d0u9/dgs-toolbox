@@ -37,3 +37,15 @@ func TestFieldValuesIgnoreOwner(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
+
+func TestTypeValuesAnyCountry(t *testing.T) {
+	items := []Item{
+		{Type: "payment", Fields: map[string]string{"country": "AU", "via": "CBA"}},
+		{Type: "payment", Fields: map[string]string{"country": "CN", "via": " 支付宝 "}},
+		{Type: "payment", Fields: map[string]string{"via": "CBA"}},
+		{Type: "invoice", Fields: map[string]string{"via": "Other type"}},
+	}
+	if got, want := TypeValues(items, "payment", "via"), []string{"CBA", "支付宝"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

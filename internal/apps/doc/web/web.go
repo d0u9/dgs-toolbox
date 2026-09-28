@@ -216,6 +216,7 @@ func (s server) api() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/issuers", s.issuers)
+	mux.HandleFunc("GET /api/values", s.values)
 	mux.HandleFunc("GET /api/source", s.sourceList)
 	mux.HandleFunc("GET /api/source/file", s.sourceFile)
 	mux.HandleFunc("GET /api/revision", s.revision)
@@ -1092,6 +1093,16 @@ func (s server) supersessionCandidates(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// values returns the values Items of a type have saved for a key.
+func (s server) values(w http.ResponseWriter, r *http.Request) {
+	items, err := tree.LoadItems(s.root)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, tree.TypeValues(items, r.URL.Query().Get("type"), r.URL.Query().Get("key")))
 }
 
 // issuers returns suggestions only for the requested type and country.

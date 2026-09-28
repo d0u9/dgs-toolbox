@@ -1219,7 +1219,9 @@ A `select` field lists its allowed values under `options`. With `multiple: true`
 holds several, kept in the options' order joined by `, ` (`电, 水`), each
 toggled on the page; its options may not hold a comma. A rule writes the
 joined value, and a condition picks one of them with `contains` (`service
-contains 水`). A field's `description` says
+contains 水`). A text field with `suggest: true` offers, as it is typed,
+the values Items of the same type have saved for it, in any country and
+revision, retired Items among them; any other value can still be typed. A field's `description` says
 what it holds; every form shows a `?` beside the field's name, which shows it
 on hover and keeps it shown under the name when clicked. A field's `pattern` is a regular
 expression that suggests its value from the document's text (below): the
