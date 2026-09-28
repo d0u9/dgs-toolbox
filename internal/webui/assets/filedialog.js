@@ -308,12 +308,13 @@ function dialog({
       item.addEventListener("click", (event) => select(index, event));
       item.addEventListener("dblclick", () => {
         if (kind === "folder") open(entry.path);
-        else submit();
+        else if (!pickFolders) submit();
       });
       return item;
     };
 
-    // select marks a row. Shift extends from the row the selection started
+    // select marks a row. Any row may be marked, to preview a file or step
+    // into a folder; pickedPaths keeps only what the dialog answers with. Shift extends from the row the selection started
     // at, and Cmd or Ctrl adds one row, as a file manager does — both only
     // where several files may be chosen.
     const select = (index, event = {}) => {
@@ -331,7 +332,7 @@ function dialog({
         else if (selectable(entry)) chosen.add(entry.path);
         anchor = index;
       } else {
-        chosen = selectable(entry) || entry.kind === "folder" ? new Set([entry.path]) : new Set();
+        chosen = new Set([entry.path]);
         anchor = index;
       }
       if (saving && entry.kind === "file") input.value = entry.name;
