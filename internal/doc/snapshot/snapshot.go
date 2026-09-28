@@ -222,21 +222,31 @@ func Load(root string) ([]Snapshot, error) {
 	}
 	out := make([]Snapshot, 0, len(paths))
 	for _, path := range paths {
-		data, err := os.ReadFile(path)
+		s, err := ReadFile(path)
 		if err != nil {
 			return nil, err
-		}
-		s, err := Parse(data)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != s.Name {
-			return nil, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, s.Name, s.Name)
 		}
 		out = append(out, s)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+// ReadFile reads one Snapshot file: it must parse, be valid, and be named
+// for its Snapshot.
+func ReadFile(path string) (Snapshot, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	s, err := Parse(data)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != s.Name {
+		return Snapshot{}, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, s.Name, s.Name)
+	}
+	return s, nil
 }
 
 // Save writes s. Create refuses a name another Snapshot or a rule has, as

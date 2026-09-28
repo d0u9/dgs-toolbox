@@ -201,26 +201,36 @@ func LoadRules(root string) (map[string]view.View, error) {
 	}
 	out := map[string]view.View{}
 	for _, path := range paths {
-		data, err := os.ReadFile(path)
+		r, err := ReadRule(path)
 		if err != nil {
 			return nil, err
-		}
-		var r view.View
-		decoder := yaml.NewDecoder(strings.NewReader(string(data)))
-		decoder.KnownFields(true)
-		if err := decoder.Decode(&r); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		r = withHead(r)
-		if err := r.Validate(); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != r.Name {
-			return nil, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, r.Name, r.Name)
 		}
 		out[r.Name] = r
 	}
 	return out, nil
+}
+
+// ReadRule reads one rule file: it must parse, be a valid rule, and be named
+// for its rule.
+func ReadRule(path string) (view.View, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return view.View{}, err
+	}
+	var r view.View
+	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&r); err != nil {
+		return view.View{}, fmt.Errorf("%s: %w", path, err)
+	}
+	r = withHead(r)
+	if err := r.Validate(); err != nil {
+		return view.View{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != r.Name {
+		return view.View{}, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, r.Name, r.Name)
+	}
+	return r, nil
 }
 
 // Rules is every rule under root, sorted by name, and the Outlines using
@@ -268,22 +278,37 @@ func load(root string) ([]Outline, map[string]bool, error) {
 	out := make([]Outline, 0, len(paths))
 	whole := map[string]bool{}
 	for _, path := range paths {
-		data, err := os.ReadFile(path)
+		o, inline, err := readFile(path, rules)
 		if err != nil {
 			return nil, nil, err
-		}
-		o, inline, err := parse(data, rules)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != o.Name {
-			return nil, nil, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, o.Name, o.Name)
 		}
 		whole[o.Name] = inline
 		out = append(out, o)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, whole, nil
+}
+
+// ReadFile reads one Outline file, its rules named from rules: it must
+// parse, name only rules there, be valid, and be named for its Outline.
+func ReadFile(path string, rules map[string]view.View) (Outline, error) {
+	o, _, err := readFile(path, rules)
+	return o, err
+}
+
+func readFile(path string, rules map[string]view.View) (Outline, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Outline{}, false, err
+	}
+	o, inline, err := parse(data, rules)
+	if err != nil {
+		return Outline{}, false, fmt.Errorf("%s: %w", path, err)
+	}
+	if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != o.Name {
+		return Outline{}, false, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, o.Name, o.Name)
+	}
+	return o, inline, nil
 }
 
 // Save writes each of o's rules to rules/<name>.yaml, replacing a rule of

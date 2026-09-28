@@ -292,27 +292,9 @@ func Load(root string) ([]Case, error) {
 	}
 	out := make([]Case, 0, len(paths))
 	for _, path := range paths {
-		data, err := os.ReadFile(path)
+		c, err := ReadFile(path)
 		if err != nil {
 			return nil, err
-		}
-		var c Case
-		decoder := yaml.NewDecoder(bytes.NewReader(data))
-		decoder.KnownFields(true)
-		if err := decoder.Decode(&c); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if err := c.Validate(); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if strings.TrimSuffix(filepath.Base(path), ".yaml") != c.Name {
-			return nil, fmt.Errorf("%s: name %q is not the file's name", path, c.Name)
-		}
-		if c.Entries == nil {
-			c.Entries = []Entry{}
-		}
-		if c.Needs == nil {
-			c.Needs = []Need{}
 		}
 		out = append(out, c)
 	}
@@ -323,6 +305,34 @@ func Load(root string) ([]Case, error) {
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// ReadFile reads one Case file: it must parse, be valid, and be named for
+// its Case.
+func ReadFile(path string) (Case, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Case{}, err
+	}
+	var c Case
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&c); err != nil {
+		return Case{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := c.Validate(); err != nil {
+		return Case{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if strings.TrimSuffix(filepath.Base(path), ".yaml") != c.Name {
+		return Case{}, fmt.Errorf("%s: name %q is not the file's name", path, c.Name)
+	}
+	if c.Entries == nil {
+		c.Entries = []Entry{}
+	}
+	if c.Needs == nil {
+		c.Needs = []Need{}
+	}
+	return c, nil
 }
 
 // Find is the Case of that name.

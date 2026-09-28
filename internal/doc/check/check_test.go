@@ -89,3 +89,41 @@ func TestNotATree(t *testing.T) {
 		t.Fatal("checked a folder with no marker")
 	}
 }
+
+func TestFilesBesideItems(t *testing.T) {
+	root := t.TempDir()
+	if err := tree.Init(root, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	item := importOne(t, root, "a.pdf", "emma")
+	write := func(dir, name, body string) {
+		os.MkdirAll(filepath.Join(root, dir), 0o755)
+		if err := os.WriteFile(filepath.Join(root, dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("rules", "ids.yaml", "name: ids\nlayout: \"{type}.{ext}\"\n")
+	write("rules", "broken.yaml", "name: [unclosed")
+	write("snapshots", "visa.yaml", "name: visa\ntaken: 2026-01-02T03:04:05Z\nfiles:\n"+
+		"  - {path: a.pdf, item: "+item.ID+", revision: "+item.Head+"}\n"+
+		"  - {path: b.pdf, item: GONE, revision: 1111}\n"+
+		"  - {path: c.pdf, item: "+item.ID+", revision: 0000}\n")
+	write("outlines", "phone.yaml", "name: phone\nrules: [ids]\nsnapshots: [{name: visa}, {name: lost}]\n")
+	write("outlines", "wrong.yaml", "name: other\nrules: [ids]\n")
+	write("cases", "lease.yaml", "name: lease\nstatus: open\nopened: 2026-01-02T03:04:05Z\nentries:\n  - {item: GONE, added: 2026-01-02T03:04:05Z}\nneeds: []\n")
+
+	r, err := Tree(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[Kind]int{BadFile: 2, Dangling: 4}
+	got := kinds(r)
+	if len(got) != len(want) {
+		t.Errorf("kinds %v, want %v (%+v)", got, want, r.Problems)
+	}
+	for k, n := range want {
+		if got[k] != n {
+			t.Errorf("%s: got %d, want %d (%+v)", k, got[k], n, r.Problems)
+		}
+	}
+}
