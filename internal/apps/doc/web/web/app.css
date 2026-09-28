@@ -436,7 +436,12 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
   border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--paper); cursor: pointer; }
 .path-row:hover { border-color: var(--hairline-strong); }
 .path-row.active { border-color: var(--primary); box-shadow: inset 2px 0 0 var(--primary); }
-.path-row.optional { border-style: dashed; margin-left: 16px; }
+.path-row.optional { border-style: dashed; }
+/* Each row one step in from the one before, a line down from each parent
+   level, as the tree draws folders. */
+.path-level { --step: 20px; padding-left: calc(var(--depth) * var(--step)); background-image: repeating-linear-gradient(to right, var(--hairline-strong) 0 1px, transparent 1px var(--step)); background-size: calc(var(--depth) * var(--step)) 100%; background-repeat: no-repeat; background-position: 9px 0; position: relative; }
+.path-level > .path-row { position: relative; }
+.path-level:not([style*="--depth: 0"]) > .path-row::before { content: ""; position: absolute; left: -10px; top: 14px; width: 10px; border-top: 1px solid var(--hairline-strong); }
 .path-kind { grid-area: kind; font-size: var(--font-size-xs); color: var(--graphite); white-space: nowrap; }
 .path-parts { grid-area: parts; display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0; font-size: var(--font-size-sm); }
 .path-parts .muted { font-size: var(--font-size-xs); }

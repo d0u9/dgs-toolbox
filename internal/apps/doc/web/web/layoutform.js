@@ -201,7 +201,7 @@ function narrow() {
 // Ticking types under "for" asks the condition of those types only.
 function condition(key, values, exclusion = false, only = []) {
   // What the query picks changes the numbering shown.
-  const touched = () => { drawOrder(); drawSkip(); changed(); };
+  const touched = () => { drawOrder(); drawSkip(); drawPath(); changed(); };
   const [field, contains] = splitKey(key);
   const choices = el("div", { className: "checks" });
   const text = el("input", { className: "mono", spellcheck: false, autocomplete: "off", placeholder: "text, other text", oninput: touched,
@@ -348,15 +348,38 @@ function add(part) {
   edited();
 }
 
-// The keys a part may be, for its menus: fields and the keys every PDF
-// has, each country field and type in each form, and the keys of the Items
-// link fields name, original.level.
+// heldBy is the field keys the Templates of types have.
+const heldBy = (types) => new Set(state.templates.filter((t) => types.includes(t.type)).flatMap((t) => t.fields.map((f) => f.key)));
+
+// linkedTypes is the types the Item a link field names can be: those its
+// match ties to a field the query limits, such as of: diploma, or else
+// every type.
+function linkedTypes(link) {
+  const all = state.templates.map((t) => t.type);
+  const query = read().query;
+  const types = chosenTypes();
+  const f = state.templates.filter((t) => types.includes(t.type)).flatMap((t) => t.fields).find((x) => x.key === link);
+  const by = f && f.match && f.match.type;
+  const wanted = by && query[by];
+  return wanted && wanted.length ? all.filter((t) => wanted.includes(t)) : all;
+}
+
+// linkKeys is the keys offered from the Item a link field names.
+function linkKeys(link) {
+  const held = heldBy(linkedTypes(link));
+  return [...keys.filter((k) => !BUILT_IN[k] && k !== link && held.has(k)), "type"];
+}
+
+// The keys a part may be, for its menus: the chosen types' fields and the
+// keys every PDF has, each country field and type in each form, and the
+// keys of the Items link fields name, original.level.
 function keyOptions() {
-  const plain = keys.filter((k) => k !== "type");
+  const held = heldBy(chosenTypes());
+  const plain = keys.filter((k) => k !== "type" && (BUILT_IN[k] || held.has(k)));
   return [
     ["Keys", [...plain, "type", "type:zh", "type:en"]],
-    ["Countries", [...countryKeys()].flatMap((k) => Object.keys(FORMATS).map((f) => k + ":" + f))],
-    ...linkFields().map((l) => ["From " + l, [...plain.filter((k) => !BUILT_IN[k] || k === "year" || k === "month" || k === "date"), "type"].map((k) => l + "." + k)]),
+    ["Countries", [...countryKeys()].filter((k) => held.has(k)).flatMap((k) => Object.keys(FORMATS).map((f) => k + ":" + f))],
+    ...linkFields().map((l) => ["From " + l, [...linkKeys(l), "year", "month", "date"].map((k) => l + "." + k)]),
   ];
 }
 
@@ -366,7 +389,8 @@ function keyPart(part, remove) {
     const options = keyOptions();
     box.replaceChildren(...part.keys.flatMap((k, i) => {
       const known = options.some(([, list]) => list.includes(k));
-      const pick = el("select", { onchange: () => { part.keys[i] = pick.value; edited(); } },
+      // A click stays in the menu: the row it would reach redraws.
+      const pick = el("select", { onclick: (event) => event.stopPropagation(), onmousedown: (event) => event.stopPropagation(), onchange: () => { part.keys[i] = pick.value; edited(); } },
         ...(known ? [] : [el("option", { value: k, selected: true }, k)]),
         ...options.filter(([, list]) => list.length).map(([name, list]) => el("optgroup", { label: name },
           ...list.map((o) => el("option", { value: o, selected: o === k, title: describe(o.split(/[:.]/)[0]) }, o)))));
@@ -448,7 +472,9 @@ function drawPath() {
   $("path").replaceChildren(...rows.map((row, r) => {
     const file = r === last;
     const optionalAllowed = r > 0 && !file && !rows[r - 1].optional;
-    return el("div", { className: "path-row" + (row.optional ? " optional" : "") + (active.row === r && active.group < 0 ? " active" : ""),
+    // Each row sits under the one before, indented a step with a line
+    // down from its parent, as the tree is drawn.
+    const node = el("div", { className: "path-row" + (row.optional ? " optional" : "") + (active.row === r && active.group < 0 ? " active" : ""),
       onclick: () => { active = { row: r, group: -1 }; drawPath(); } },
       el("span", { className: "path-kind", textContent: file ? "File" : row.optional ? "If any" : "Folder",
         title: file ? "The PDF's name" : row.optional ? "A folder only an Item with every key in it gets" : "A folder" }),
@@ -461,6 +487,9 @@ function drawPath() {
         file ? null : act("Up", "↑", () => { [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; active = { row: r - 1, group: -1 }; edited(); }, r === 0),
         file ? null : act("Down", "↓", () => { [rows[r + 1], rows[r]] = [rows[r], rows[r + 1]]; active = { row: r + 1, group: -1 }; edited(); }, r + 1 >= last),
         file ? null : act("Remove the folder", "×", () => { rows.splice(r, 1); active = { row: Math.min(r, rows.length - 1), group: -1 }; edited(); })));
+    const level = el("div", { className: "path-level" }, node);
+    level.style.setProperty("--depth", r);
+    return level;
   }), el("button", { type: "button", className: "button path-add", textContent: "+ Folder", title: "Add a folder before the PDF's name",
     onclick: () => { rows.splice(rows.length - 1, 0, { parts: [] }); active = { row: rows.length - 2, group: -1 }; edited(); } }));
   $("layout-text").textContent = layoutText();
@@ -491,7 +520,7 @@ function chips() {
   const group = (name, ...children) => children.length ? el("div", { className: "key-group" },
     el("span", { className: "key-group-name" }, name), el("div", { className: "key-chips" }, ...children)) : null;
   const types = chosenTypes();
-  const held = new Set(state.templates.filter((t) => types.includes(t.type)).flatMap((t) => t.fields.map((f) => f.key)));
+  const held = heldBy(types);
   const fields = keys.filter((k) => !BUILT_IN[k] && held.has(k));
   const countries = [...countryKeys()].filter((k) => held.has(k));
   const numbered = target().some((p) => p.counter);
@@ -505,7 +534,7 @@ function chips() {
     ...countries.map((k) => group(k + " as", ...Object.entries(FORMATS).map(([f, example]) =>
       chip(":" + f, key(k + ":" + f), `{${k}:${f}} writes ${example}`)))),
     group("type as", ...Object.entries(TYPE_FORMATS).map(([f, note]) => chip(":" + f, key("type:" + f), note))),
-    ...linkFields().map((l) => group("from " + l, ...[...keys.filter((k) => !BUILT_IN[k] && k !== l), "type"].map((k) => chip(k, key(l + "." + k), "the " + k + " of the Item " + l + " links to")))),
+    ...linkFields().map((l) => group("from " + l, ...linkKeys(l).map((k) => chip(k, key(l + "." + k), "the " + k + " of the Item " + l + " links to")))),
   ].filter(Boolean));
 }
 
