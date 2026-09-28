@@ -396,6 +396,7 @@ th[aria-sort="ascending"] .th-sort, th[aria-sort="descending"] .th-sort { color:
 .reader[hidden] { display: none !important; }
 .reader { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; background: var(--cloud); }
 .reader-bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--paper); border-bottom: 1px solid var(--hairline); }
+#native-pdf { margin-left: auto; }
 .reader-body { flex: 1; min-height: 0; display: flex; align-items: stretch; justify-content: center; }
 body.reading .filters, body.reading .browse-pane, body.reading #picture-splitter { display: none; }
 /* Reading, the panel keeps every section and action it has beside the

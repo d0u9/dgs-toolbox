@@ -2,7 +2,7 @@
 import { openFile } from "/ui/filedialog.js";
 import { splitter } from "/ui/splitter.js";
 import { openMenu } from "/ui/menu.js";
-import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines } from "/common.js";
+import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, nativePDF, setNativePDF, redrawPreview } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -344,6 +344,12 @@ window.addEventListener("popstate", () => { if (document.body.classList.contains
 $("open-reader").onclick = openReader;
 $("detail-frame").onclick = openReader;
 $("reader-back").onclick = closeReader;
+$("native-pdf").setAttribute("aria-pressed", String(nativePDF()));
+$("native-pdf").onclick = () => {
+  setNativePDF(!nativePDF());
+  $("native-pdf").setAttribute("aria-pressed", String(nativePDF()));
+  redrawPreview();
+};
 
 function render() {
   frame(state);
