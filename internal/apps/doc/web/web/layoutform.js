@@ -468,11 +468,13 @@ function partEl(part, list, r, g) {
       el("button", { type: "button", className: "path-x", title: "Remove the optional part", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
   } else {
     // Text is typed in place; what would start a key, group or folder is
-    // left out, and emptied text goes.
+    // left out, and emptied text goes. An optional folder's own text may
+    // hold /: bill/{service} adds both folders or neither.
+    const slash = rows[r]?.optional && list === rows[r].parts;
     node = el("input", { className: "path-text", value: part.text,  spellcheck: false, autocomplete: "off",
-      title: "Fixed text", onclick: (event) => event.stopPropagation(),
+      title: slash ? "Fixed text; / adds a folder" : "Fixed text", onclick: (event) => event.stopPropagation(),
       oninput: (event) => {
-        part.text = event.target.value.replace(/[{}[\]/\\]/g, "");
+        part.text = event.target.value.replace(slash ? /[{}[\]\\]/g : /[{}[\]/\\]/g, "");
         event.target.value = part.text;
         fit(event.target);
         showText();

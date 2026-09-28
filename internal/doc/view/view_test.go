@@ -661,7 +661,7 @@ func TestOptionalKey(t *testing.T) {
 		t.Fatalf("got %v, want %v", paths, want)
 	}
 	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "[-]", "a[-[{x}]]", "a[{x}", "a{x}]", "[{#}-{x}]", "a[-{#}{x}]",
-		"[/{degree}]/x", "a[/{degree}]b", "a[/-/{degree}]", "a[{degree}/]", "a[/{degree}][/{level}]"} {
+		"[/{degree}]/x", "a[/{degree}]b", "a[/{degree}/]","a[{degree}/]", "a[/{degree}][/{level}]"} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%q parsed", bad)
 		}
@@ -787,6 +787,31 @@ func TestLinkedKeys(t *testing.T) {
 	}
 	if len(plan.Missing) != 1 || plan.Missing[0].Item != lost || !reflect.DeepEqual(plan.Missing[0].Fields, []string{"level", "name"}) {
 		t.Fatalf("missing %+v", plan.Missing)
+	}
+}
+
+// A folder group may add several folders, all or none.
+func TestFolderGroupAddsSeveralFolders(t *testing.T) {
+	items := []tree.Item{
+		item("01K00000000000000000000001", "bill", map[string]string{"owner": "emma", "service": "水"}, "d1"),
+		item("01K00000000000000000000002", "contract", map[string]string{"owner": "emma"}, "d2"),
+	}
+	v := View{Name: "x", Selection: Head, Layout: "r[/bill/{service}]/{type}.{ext}"}
+	plan, err := Build(v, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"r/bill/水/bill.pdf", "r/contract.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	for _, bad := range []string{"r[/bill//{service}]/x", "r[/../{service}]/x", "r[-a/{service}]/x", "r[/{#}-a/{service}]/x"} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("%s parsed", bad)
+		}
 	}
 }
 

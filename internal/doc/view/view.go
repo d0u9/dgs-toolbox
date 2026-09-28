@@ -228,7 +228,8 @@ func (v View) Validate() error {
 // the end of a folder or file name, is a folder of its own:
 // license[/{language}]/x puts a translation in license/en/ and the
 // original in license/. [/{#}-{language}] numbers that folder, 10-en, from
-// the order named {language}.
+// the order named {language}. A folder group may add several folders, all
+// or none: [/bill/{service}] puts a bill in bill/水/.
 //
 // {#} writes the place, as 01, of the name the rest of its folder or file
 // name makes, in the View's order named that rest as written. The rest
@@ -458,8 +459,17 @@ func parseParts(layout, text string, group bool) ([]Part, []string, error) {
 			}
 			rest = rest[at+end+1:]
 			body, folder := strings.CutPrefix(inner, "/")
-			if strings.Contains(body, "/") {
-				return nil, nil, fmt.Errorf("layout %q: [%s]: a group holds a / only at its start, where it adds a folder", layout, inner)
+			nested := strings.Contains(body, "/")
+			if nested && !folder {
+				return nil, nil, fmt.Errorf("layout %q: [%s]: a group holds a / only after one at its start, where it adds folders", layout, inner)
+			}
+			if nested {
+				// [/bill/{service}] adds bill/水 or nothing.
+				for _, name := range splitSegments(body) {
+					if name == "" || name == "." || name == ".." {
+						return nil, nil, fmt.Errorf("layout %q: [%s]: %q is not a folder name", layout, inner, name)
+					}
+				}
 			}
 			inside, words, err := parseParts(layout, body, true)
 			if err != nil {
@@ -470,6 +480,9 @@ func parseParts(layout, text string, group bool) ([]Part, []string, error) {
 				keyed = keyed || p.Key != ""
 				if (p.Counter || p.End) && !folder {
 					return nil, nil, fmt.Errorf("layout %q: [%s]: {#} in a group numbers only the folder it adds, as [/{#}-{language}]", layout, inner)
+				}
+				if (p.Counter || p.End) && nested {
+					return nil, nil, fmt.Errorf("layout %q: [%s]: {#} numbers a group that adds one folder, not several", layout, inner)
 				}
 			}
 			if !keyed {
