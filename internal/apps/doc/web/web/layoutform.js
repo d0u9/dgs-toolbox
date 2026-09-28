@@ -13,6 +13,9 @@ let skip = []; // the IDs of the Items the rule leaves out
 let numbers = {}; // per numbered name, the numbers set by hand: { 结婚证: 6 }
 let unnumbered = {}; // per numbered name, the names left unnumbered: [押金]
 let changed = () => {};
+// paths are the rule's more layouts: { when, layout, ofs, error }, ofs the
+// orders its {#} number, as the server parsed it.
+let paths = [];
 
 // setup gives the form the tree's state, the keys a layout can use, the
 // country forms, and what to call on every change. Called again when the
@@ -44,9 +47,70 @@ export function fill(v) {
   $("map").value = Object.entries(v.map || {}).map(([k, m]) => k + ": " + Object.entries(m).map(([a, b]) => a + " = " + b).join(", ")).join("\n");
   $("map").classList.remove("invalid");
   $("map-error").textContent = "";
+  paths = (v.layouts || []).map((p) => ({ when: JSON.parse(JSON.stringify(p.when || {})), layout: p.layout, ofs: [], error: "" }));
+  drawPaths();
+  paths.forEach((p) => parsePath(p));
   drawOrder();
   drawPath();
 }
+
+// counters are the orders a parsed layout's {#} number.
+const counters = (layout) => layout.flat(Infinity).flatMap(function walk(p) {
+  return p.counter && p.of ? [p.of] : p.group ? p.group.flatMap(walk) : [];
+});
+
+// parsePath has the server parse a path's layout, for the orders it numbers.
+async function parsePath(p) {
+  try {
+    const answer = await post("/api/rules/layout", { layout: p.layout.trim() });
+    p.ofs = counters(answer.layout);
+    p.error = "";
+  } catch (err) {
+    p.ofs = [];
+    p.error = err.message;
+  }
+  drawPaths();
+  drawOrder();
+}
+
+// drawPaths draws the more paths: the types each is for, its layout typed,
+// and moving or removing it.
+function drawPaths() {
+  const box = $("paths");
+  if (!box) return;
+  const redraw = () => { drawPaths(); changed(); };
+  box.replaceChildren(...paths.map((p, i) => {
+    const types = p.when.type || [];
+    const others = Object.entries(p.when).filter(([k]) => k !== "type").map(([k, v]) => k + ": " + v.join(", "));
+    const input = el("input", { className: "layout-text" + (p.error ? " invalid" : ""), value: p.layout, spellcheck: false, autocomplete: "off",
+      title: "The path for these types, typed as the Path above is kept",
+      onchange: () => { p.layout = input.value; changed(); parsePath(p); },
+      onkeydown: (event) => { if (event.key === "Enter") { event.preventDefault(); input.blur(); } } });
+    const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
+    return el("div", { className: "more-path" },
+      el("div", { className: "more-path-head" },
+        el("span", { className: "checks" }, ...state.templates.map((t) => el("label", {},
+          el("input", { type: "checkbox", value: t.type, checked: types.includes(t.type), onchange: (event) => {
+            const next = event.target.checked ? [...types, t.type] : types.filter((x) => x !== t.type);
+            if (next.length) p.when.type = next; else delete p.when.type;
+            redraw();
+          } }), " " + t.type))),
+        others.length ? el("span", { className: "template-sub", textContent: "and " + others.join("; ") }) : null,
+        el("span", { className: "order-acts" },
+          act("Up: tried before the one above", "↑", () => { [paths[i - 1], paths[i]] = [paths[i], paths[i - 1]]; redraw(); }, i === 0),
+          act("Down", "↓", () => { [paths[i + 1], paths[i]] = [paths[i], paths[i + 1]]; redraw(); }, i === paths.length - 1),
+          act("Remove", "×", () => { paths.splice(i, 1); redraw(); drawOrder(); }))),
+      input,
+      p.error ? el("span", { className: "message error", textContent: p.error }) : null);
+  }));
+}
+$("path-add")?.addEventListener("click", () => {
+  const p = { when: {}, layout: layoutText(), ofs: [], error: "" };
+  paths.push(p);
+  drawPaths();
+  parsePath(p);
+  changed();
+});
 
 // read is the form's query, selection, layout and order.
 export function read() {
@@ -66,6 +130,7 @@ export function read() {
   gather(read_("conditions"), query, queryTypes);
   const exclude = gather(read_("exclude"), {}, excludeTypes);
   const out = { query, selection: document.querySelector("input[name=selection]:checked").value, layout: layoutText() };
+  if (paths.length) out.layouts = paths.map((p) => ({ when: p.when, layout: p.layout.trim() }));
   if (inherited().length) out.inherit = inherited();
   if ($("shared")?.checked) out.shared = true;
   if (Object.keys(exclude).length) out.exclude = exclude;
@@ -546,6 +611,8 @@ async function typed() {
 // settle takes a layout typed and not yet taken, as Save is pressed; one
 // the server refuses stops the save.
 export async function settle() {
+  const bad = paths.find((p) => p.error || !Object.keys(p.when).length);
+  if (bad) throw new Error(bad.error || "A path is for no type: tick one, or remove it");
   const box = $("layout-text");
   if (box.value.trim() === layoutText()) return;
   await typed();
@@ -645,7 +712,7 @@ const inherited = () => [...$("inherit").querySelectorAll("input:checked")].map(
 // The orders the layout numbers from, each once: a row with {#} numbers
 // what follows it up to {/#}, less the text straight after {#} and a trailing .{ext},
 // and its order is named that as written.
-export const numberedKeys = () => [...new Set(rows.flatMap((row) => {
+export const numberedKeys = () => [...new Set([...rows.flatMap((row) => {
   const at = row.parts.findIndex((p) => p.counter);
   if (at < 0) return [];
   let rest = row.parts.slice(at + 1);
@@ -657,7 +724,7 @@ export const numberedKeys = () => [...new Set(rows.flatMap((row) => {
     if (rest.length && rest[rest.length - 1].text === ".") rest = rest.slice(0, -1);
   }
   return rest.some((p) => p.keys || p.group) ? [rest.map(written).join("")] : [];
-}))];
+}), ...paths.flatMap((p) => p.ofs)])];
 
 // An Item's value for one key, {a|b} or {a|b:format}: the first alternative
 // it has, or with inherit the first the Items it links to have. A type:zh

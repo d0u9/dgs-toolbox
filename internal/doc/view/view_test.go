@@ -761,6 +761,46 @@ func TestUnnumbered(t *testing.T) {
 	}
 }
 
+// The first of a rule's Layouts an Item matches places it, the Layout the
+// rest, and a {#} written alike in two numbers from one order.
+func TestLayouts(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "contract", Kind: tree.KindRecord, Fields: map[string]string{"home": "h1", "name": "合同"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"home": "h2", "name": "水费"}, Revisions: []tree.Revision{{Digest: "b"}}},
+		{ID: "C", Type: "invoice", Kind: tree.KindRecord, Fields: map[string]string{"home": "h2", "name": "物业"}, Revisions: []tree.Revision{{Digest: "c"}}},
+	}
+	v := View{Name: "v", Selection: Head, Layout: "{#}-{home}/{name}.{ext}",
+		Layouts: []Path{
+			{When: map[string]Values{"type": {"bill"}}, Layout: "{#}-{home}/bill/{name}.{ext}"},
+			{When: map[string]Values{"type": {"invoice", "bill"}}, Layout: "{#}-{home}/rental/{name}.{ext}"},
+		},
+		Order: map[string][]string{"{home}": {"h1", "h2"}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Build(v, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"01-h1/合同.pdf", "02-h2/bill/水费.pdf", "02-h2/rental/物业.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	for _, bad := range []Path{
+		{Layout: "x/{name}.{ext}"},
+		{When: map[string]Values{"type": {"bill"}}, Layout: "x/{#}-{name}.{ext}"},
+		{When: map[string]Values{"type": {"bill"}}, Layout: "x/{name"},
+	} {
+		v.Layouts = []Path{bad}
+		if v.Validate() == nil {
+			t.Errorf("%+v was taken", bad)
+		}
+	}
+}
+
 // An old rule's orders move to the names its layout numbers now.
 func TestUpgradeRenamesOrders(t *testing.T) {
 	v, changed := Upgrade(View{Layout: "{owner#}/{name|type:zh#}{-level?}.{ext}",

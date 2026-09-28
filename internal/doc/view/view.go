@@ -75,6 +75,11 @@ type View struct {
 	// accepts, as if they owned it.
 	Shared bool   `yaml:"shared,omitempty" json:"shared,omitempty"`
 	Layout string `yaml:"layout" json:"layout"`
+	// Layouts are more paths, each for the PDFs its When picks: the first
+	// whose When an Item matches places it, and Layout places the rest.
+	// They share the rule's query, orders and everything else, so a {#}
+	// written alike in two of them numbers from one order.
+	Layouts []Path `yaml:"layouts,omitempty" json:"layouts,omitempty"`
 	// Inherit names fields that link to an Item, such as original: a key
 	// an Item lacks is taken from the Item its first such field links to
 	// that has it, so a translation is placed by its original's level.
@@ -101,6 +106,13 @@ type View struct {
 	// revision's first tag the map lists; a key whose value it does not
 	// list keeps its value.
 	Map map[string]map[string]string `yaml:"map,omitempty" json:"map,omitempty"`
+}
+
+// Path is one of a rule's Layouts: a layout for the PDFs When picks, as a
+// query picks them.
+type Path struct {
+	When   map[string]Values `yaml:"when" json:"when"`
+	Layout string            `yaml:"layout" json:"layout"`
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -176,6 +188,17 @@ func (v View) Validate() error {
 	if err != nil {
 		return fmt.Errorf("view %s: %w", v.Name, err)
 	}
+	counters := layout.Counters()
+	for i, p := range v.Layouts {
+		if len(p.When) == 0 {
+			return fmt.Errorf("view %s: layouts %d: when picks nothing; it needs a condition", v.Name, i+1)
+		}
+		parsed, err := Parse(p.Layout)
+		if err != nil {
+			return fmt.Errorf("view %s: layouts %d: %w", v.Name, i+1, err)
+		}
+		counters = append(counters, parsed.Counters()...)
+	}
 	for key, values := range v.Order {
 		if len(values) == 0 {
 			return fmt.Errorf("view %s: order %s is empty", v.Name, key)
@@ -229,7 +252,7 @@ func (v View) Validate() error {
 			last = i
 		}
 	}
-	for _, part := range layout.Counters() {
+	for _, part := range counters {
 		if len(v.Order[part.Of]) == 0 {
 			return fmt.Errorf("view %s: {#} numbers %s, so order needs a list for %s", v.Name, part.Of, part.Of)
 		}

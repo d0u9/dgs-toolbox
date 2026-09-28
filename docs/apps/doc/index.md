@@ -680,6 +680,14 @@ A rule has a query, a selection, and a layout. It may leave PDFs out and select 
   and the rows are drawn from it, and a layout it refuses is marked with
   the reason and not saved. An optional row is an optional folder,
   `[/…]`, after the row before it.
+- **Layouts** — more paths, each for the PDFs its `when` picks, written
+  like the query: `layouts: [{when: {type: [invoice, payment]}, layout:
+  '…/rental/{name}.{ext}'}]`. The first a PDF's Item matches places it and
+  `layout` places the rest, so each PDF lands once. They share the rule's
+  query, inherit, map, default and orders: a `{#}` written alike in two of
+  them numbers from one order. A path with no condition is refused. The
+  Rules page lists them under More paths, each with the types it is for,
+  its layout typed, and ↑/↓ for which is tried first.
 
 Keys are the Item's own fields (`owner`, `type`, `country`, and whatever its
 Template defines, such as `employer`), values derived from them (`year`,

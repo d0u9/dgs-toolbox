@@ -356,6 +356,12 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
+	paths := make([]Layout, len(v.Layouts))
+	for i, p := range v.Layouts {
+		if paths[i], err = Parse(p.Layout); err != nil {
+			return Plan{}, err
+		}
+	}
 	sorted := append([]tree.Item(nil), items...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 
@@ -399,7 +405,14 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 				continue
 			}
 			Remap(keys, v.Map, item.TagsAt(rev.Ref()))
-			name, lacking, unordered := render(layout, keys, v.Default, v.Order, v.Numbers, v.Unnumbered)
+			chosen := layout
+			for p, path := range v.Layouts {
+				if Matches(path.When, item) && MatchesTags(path.When, item, rev.Ref()) {
+					chosen = paths[p]
+					break
+				}
+			}
+			name, lacking, unordered := render(chosen, keys, v.Default, v.Order, v.Numbers, v.Unnumbered)
 			if len(lacking) > 0 {
 				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking), Unordered: unordered})
 				continue
