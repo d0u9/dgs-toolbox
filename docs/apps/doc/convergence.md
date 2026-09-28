@@ -142,10 +142,10 @@ record         owner country name issuer number date
 ## 2. Conditions as one expression
 
 ```yaml
-when: type is money and category is utility and not tags has archived
+if: type is money and category is utility and not tags has archived
 ```
 
-- `and`, `or`, `not`, parentheses.
+- Written under `if`, which replaces `when`. `and`, `or`, `not`, parentheses.
 - `is`, `in [...]`, `contains`, `has` (the field is filled, or the tag is on).
 - Keys as a path has them: the Item's own, linked ones such as `about.type`,
   and those `inherit` supplies.
@@ -156,23 +156,26 @@ when: type is money and category is utility and not tags has archived
 
 ## 3. A rule's paths nest
 
-A rule is a node: a condition, a path fragment appended to its parent's, and
-children. The first child whose condition an Item matches places it; one no
-child takes is placed by the node itself. Settings (`inherit`, `default`,
-orders) are inherited down; an order is shared by the whole rule. A child with
-no path leaves what it matches out, which is what `exclude` and `skip` are
-now. It generalises the `layouts` already built (6f56c06).
+A rule is a node: an `if`, a path fragment appended to its parent's, and
+children. The children are an if/elif/else chain: the first whose `if` an Item
+matches takes it, and a child with no `if` is the `else`. An Item no child
+takes is placed by the node itself. Settings (`inherit`, `default`, orders)
+are inherited down; an order is shared by the whole rule. A child with no
+path leaves what it takes out, which is what `exclude` and `skip` are now. It
+generalises the `layouts` already built (6f56c06).
 
 ```yaml
 name: rental
-when: owner is alex and tags in [network-5, network-6, network-7]
+if: owner is alex and tags in [network-5, network-6, network-7]
 path: 11-Rental/{#}-{about.address}/{about.date.start:compact}-{about.date.end:compact}
 file: '{#}-{name}{/#}[-{date:compact}].{ext}'
 children:
-  - when: category is utility
+  - if: category is utility
     path: utility/{category}
-  - when: category is housing
+  - if: category is housing
     path: rental/{category}
+  - if: type is translation        # left out: no path
+  - path: other                    # else
 ```
 
 The Rules page edits the children where More paths is now, nested.
