@@ -439,7 +439,10 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .path-row.optional { border-style: dashed; }
 /* Each row one step in from the one before, a line down from each parent
    level, as the tree draws folders. */
-.path-level { --step: 20px; padding-left: calc(var(--depth) * var(--step)); background-image: repeating-linear-gradient(to right, var(--hairline-strong) 0 1px, transparent 1px var(--step)); background-size: calc(var(--depth) * var(--step)) 100%; background-repeat: no-repeat; background-position: 9px 0; position: relative; }
+.path-level {
+  --step: 20px;
+  --depth: 0; /* set on each row: how deep it is */
+  padding-left: calc(var(--depth) * var(--step)); background-image: repeating-linear-gradient(to right, var(--hairline-strong) 0 1px, transparent 1px var(--step)); background-size: calc(var(--depth) * var(--step)) 100%; background-repeat: no-repeat; background-position: 9px 0; position: relative; }
 .path-level > .path-row { position: relative; }
 .path-level:not([style*="--depth: 0"]) > .path-row::before { content: ""; position: absolute; left: -10px; top: 14px; width: 10px; border-top: 1px solid var(--hairline-strong); }
 .path-kind { grid-area: kind; font-size: var(--font-size-xs); color: var(--graphite); white-space: nowrap; }
