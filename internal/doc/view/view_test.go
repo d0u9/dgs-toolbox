@@ -661,7 +661,7 @@ func TestOptionalKey(t *testing.T) {
 		t.Fatalf("got %v, want %v", paths, want)
 	}
 	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "[-]", "a[-[{x}]]", "a[{x}", "a{x}]", "[{#}-{x}]", "a[-{#}{x}]",
-		"[/{degree}]/x", "a[/{degree}]b", "a[/{degree}/]","a[{degree}/]", "a[/{degree}][/{level}]"} {
+		"[/{degree}]/x", "a[/{degree}]b", "a[/{degree}/]", "a[{degree}/]", "a[/{degree}][/{level}]"} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%q parsed", bad)
 		}
@@ -722,6 +722,42 @@ func TestCounterEndStopsTheNumber(t *testing.T) {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("Parse(%q) took it", bad)
 		}
+	}
+}
+
+// An unnumbered name has no number nor the text after {#}, and takes no
+// number from the names after it.
+func TestUnnumbered(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "contract", Kind: tree.KindRecord, Fields: map[string]string{"name": "合同"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "other", Kind: tree.KindRecord, Fields: map[string]string{"name": "押金"}, Revisions: []tree.Revision{{Digest: "b"}}},
+		{ID: "C", Type: "invoice", Kind: tree.KindRecord, Fields: map[string]string{"name": "物业发票"}, Revisions: []tree.Revision{{Digest: "c"}}},
+	}
+	v := View{Name: "v", Selection: Head, Layout: "x/{#}-{name}.{ext}",
+		Order:      map[string][]string{"{name}": {"合同", "押金", "物业发票"}},
+		Numbers:    map[string]map[string]int{"{name}": {"合同": 0}},
+		Unnumbered: map[string][]string{"{name}": {"押金"}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Build(v, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"x/00-合同.pdf", "x/01-物业发票.pdf", "x/押金.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	v.Numbers = map[string]map[string]int{"{name}": {"押金": 5}}
+	if v.Validate() == nil {
+		t.Error("a name both numbered and unnumbered was taken")
+	}
+	v.Numbers, v.Unnumbered = nil, map[string][]string{"{name}": {"租约"}}
+	if v.Validate() == nil {
+		t.Error("an unnumbered name not in the order was taken")
 	}
 }
 

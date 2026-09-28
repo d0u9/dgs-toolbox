@@ -778,9 +778,16 @@ A name may be given its own number, to skip some: `numbers`, per order,
 sets it, and the names after it count on from there. With the order
 `[身份证, 护照, 结婚证, 户口]` and `numbers: {"{name}": {结婚证: 6}}`, they
 are `01`, `02`, `06` and `07`. A number must be larger than the one before
-it. On the Rules page each number in a Numbering list can be typed over;
+it, and may be `0`. On the Rules page each number in a Numbering list can be typed over;
 one set by hand is filled in, and clearing it counts on from the one
 before again.
+
+`unnumbered`, per order, lists names left without a number: with
+`unnumbered: {"{name}": [押金]}` and the layout `{#}-{name}.{ext}`, the
+deposit is `押金.pdf` — neither number nor the text straight after `{#}` —
+and takes no number, so the name after it counts on from the one before. A
+name is not both unnumbered and in `numbers`. On the Rules page the `#`
+button of a Numbering row switches it.
 
 `map` writes, per key, a value as another where the layout has the key:
 with `map: {service: {电: electricity}}`, `{service}` writes `electricity`
