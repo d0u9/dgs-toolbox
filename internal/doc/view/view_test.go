@@ -573,7 +573,10 @@ func TestRewrite(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	if _, changed := Rewrite("{#}-{owner}/{-degree?}.{ext}"); changed {
+	if got, changed := Rewrite("{#}-{owner}/{type}{-degree?}{/#-language?}.{ext}"); !changed || got != "{#}-{owner}/{type}[-{degree}][/{#}-{language}].{ext}" {
+		t.Errorf("optional keys: %q", got)
+	}
+	if _, changed := Rewrite("{#}-{owner}/[-{degree}].{ext}"); changed {
 		t.Error("a layout written now was rewritten")
 	}
 }
@@ -598,7 +601,7 @@ func TestOptionalKey(t *testing.T) {
 		item("A", "diploma", map[string]string{"owner": "emma", "degree": "本科"}, "d1"),
 		item("B", "id_card", map[string]string{"owner": "emma"}, "d2"),
 	}
-	v := View{Name: "x", Selection: Head, Layout: "{owner}/{type}{-degree?}{ (country:alpha2)?}.{ext}"}
+	v := View{Name: "x", Selection: Head, Layout: "{owner}/{type}[-{degree}][ ({country:alpha2})].{ext}"}
 	plan, err := Build(v, items, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -611,12 +614,12 @@ func TestOptionalKey(t *testing.T) {
 		t.Fatalf("got %v %+v, want %v", paths, plan, want)
 	}
 	// A folder of only optional parts, all empty, would vanish: not placed.
-	plan, _ = Build(View{Name: "x", Selection: Head, Layout: "{owner}/{degree?}/{type}.{ext}"}, items, nil)
+	plan, _ = Build(View{Name: "x", Selection: Head, Layout: "{owner}/[{degree}]/{type}.{ext}"}, items, nil)
 	if len(plan.Files) != 1 || len(plan.Missing) != 1 || plan.Missing[0].Item != "B" {
 		t.Fatalf("empty folder: %+v", plan)
 	}
-	// {/key?} adds a folder when the key is there, and none when it is not.
-	plan, _ = Build(View{Name: "x", Selection: Head, Layout: "licence{/degree?}/{type}{-degree?}.{ext}"}, items, nil)
+	// [/{key}] adds a folder when the key is there, and none when it is not.
+	plan, _ = Build(View{Name: "x", Selection: Head, Layout: "licence[/{degree}]/{type}[-{degree}].{ext}"}, items, nil)
 	paths = nil
 	for _, f := range plan.Files {
 		paths = append(paths, f.Path)
@@ -624,8 +627,8 @@ func TestOptionalKey(t *testing.T) {
 	if want := []string{"licence/id_card.pdf", "licence/本科/diploma-本科.pdf"}; !reflect.DeepEqual(paths, want) || !plan.Complete() {
 		t.Fatalf("got %v %+v, want %v", paths, plan, want)
 	}
-	// {/#-key?} numbers the folder from the order {key}, from where numbers set.
-	v = View{Name: "x", Selection: Head, Layout: "licence{/#-degree?}/{type}.{ext}",
+	// [/{#}-{key}] numbers the folder from the order {key}, from where numbers set.
+	v = View{Name: "x", Selection: Head, Layout: "licence[/{#}-{degree}]/{type}.{ext}",
 		Order: map[string][]string{"{degree}": {"硕士", "本科"}}, Numbers: map[string]map[string]int{"{degree}": {"硕士": 10}}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
@@ -639,10 +642,19 @@ func TestOptionalKey(t *testing.T) {
 		t.Fatalf("got %v %+v, want %v", paths, plan, want)
 	}
 	if err := (View{Name: "x", Selection: Head, Layout: v.Layout}).Validate(); err == nil {
-		t.Error("{/#-degree?} without an order validated")
+		t.Error("[/{#}-{degree}] without an order validated")
 	}
-	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "a{#-degree?}", "a{/-#degree?}", "{degree?}#", "{:degree?}", "{degree|?}",
-		"{/degree?}/x", "a{/degree?}b", "a{/-/degree?}", "a{degree/?}"} {
+	// A group of several keys is left out when any of them is lacking.
+	plan, _ = Build(View{Name: "x", Selection: Head, Layout: "{owner}/{type}[ {degree}-{owner}][ {degree}-{level}].{ext}"}, items, nil)
+	paths = nil
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"emma/diploma 本科-emma.pdf", "emma/id_card.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "[-]", "a[-[{x}]]", "a[{x}", "a{x}]", "[{#}-{x}]", "a[-{#}{x}]",
+		"[/{degree}]/x", "a[/{degree}]b", "a[/-/{degree}]", "a[{degree}/]", "a[/{degree}][/{level}]"} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%q parsed", bad)
 		}
@@ -657,8 +669,8 @@ func TestCounterNumbersTheWholeName(t *testing.T) {
 		{ID: "B", Type: "diploma", Kind: tree.KindRecord, Fields: map[string]string{"name": "毕业证书", "level": "硕士"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"name": "护照"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Layout: "x/{#}-{name}{-level?}.{ext}",
-		Order: map[string][]string{"{name}{-level?}": {"护照", "毕业证书-本科", "毕业证书-硕士"}}}
+	v := View{Name: "v", Selection: Head, Layout: "x/{#}-{name}[-{level}].{ext}",
+		Order: map[string][]string{"{name}[-{level}]": {"护照", "毕业证书-本科", "毕业证书-硕士"}}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -679,15 +691,21 @@ func TestCounterNumbersTheWholeName(t *testing.T) {
 func TestUpgradeRenamesOrders(t *testing.T) {
 	v, changed := Upgrade(View{Layout: "{owner#}/{name|type:zh#}{-level?}.{ext}",
 		Order: map[string][]string{"owner": {"alex"}, "name|type:zh": {"护照"}}})
-	want := map[string][]string{"{owner}": {"alex"}, "{name|type:zh}{-level?}": {"护照"}}
-	if !changed || v.Layout != "{#}-{owner}/{#}-{name|type:zh}{-level?}.{ext}" || !reflect.DeepEqual(v.Order, want) {
+	want := map[string][]string{"{owner}": {"alex"}, "{name|type:zh}[-{level}]": {"护照"}}
+	if !changed || v.Layout != "{#}-{owner}/{#}-{name|type:zh}[-{level}].{ext}" || !reflect.DeepEqual(v.Order, want) {
+		t.Fatalf("%v %+v", changed, v)
+	}
+	// An order named the old way moves with its optional key.
+	v, changed = Upgrade(View{Layout: "{#}-{name}{-level?}.{ext}", Order: map[string][]string{"{name}{-level?}": {"护照"}},
+		Numbers: map[string]map[string]int{"{name}{-level?}": {"护照": 3}}})
+	if !changed || v.Layout != "{#}-{name}[-{level}].{ext}" || v.Order["{name}[-{level}]"] == nil || v.Numbers["{name}[-{level}]"]["护照"] != 3 {
 		t.Fatalf("%v %+v", changed, v)
 	}
 }
 
 func TestName(t *testing.T) {
 	it := item("i1", "passport", map[string]string{"owner": "alex", "country": "AU"}, "d1")
-	got, lacking, err := Name("{owner}-{type}{-number?}.{ext}", it, 1, nil)
+	got, lacking, err := Name("{owner}-{type}[-{number}].{ext}", it, 1, nil)
 	if err != nil || got != "alex-passport.pdf" || len(lacking) != 0 {
 		t.Fatalf("got %q %v %v", got, lacking, err)
 	}
@@ -715,7 +733,7 @@ func TestLinkedKeys(t *testing.T) {
 		item(lost, "translation", map[string]string{"owner": "emma", "language": "fr"}, "d5"),
 	}
 	items[0].Revisions[0].Fields = map[string]string{"level": "本科"}
-	v := View{Name: "x", Selection: Head, Layout: "{#}-{level|original.level}{/language?}/{#}-{name|original.name}.{ext}",
+	v := View{Name: "x", Selection: Head, Layout: "{#}-{level|original.level}[/{language}]/{#}-{name|original.name}.{ext}",
 		Order: map[string][]string{"{level|original.level}": {"硕士研究生", "本科"}, "{name|original.name}": {"毕业证书", "学位证书"}}}
 	plan, err := Build(v, items, nil)
 	if err != nil {
@@ -731,5 +749,38 @@ func TestLinkedKeys(t *testing.T) {
 	}
 	if len(plan.Missing) != 1 || plan.Missing[0].Item != lost || !reflect.DeepEqual(plan.Missing[0].Fields, []string{"level", "name"}) {
 		t.Fatalf("missing %+v", plan.Missing)
+	}
+}
+
+// With inherit, a key a translation lacks is its original's, and its own
+// key stays its own.
+func TestInherit(t *testing.T) {
+	const (
+		bachelor = "01K00000000000000000000001"
+		english  = "01K00000000000000000000003"
+	)
+	items := []tree.Item{
+		item(bachelor, "diploma", map[string]string{"owner": "emma", "level": "本科", "name": "学位证书"}, "d1"),
+		item(english, "translation", map[string]string{"owner": "emma", "language": "en", "name": "degree", "original": bachelor}, "d2"),
+	}
+	v := View{Name: "x", Selection: Head, Inherit: []string{"original"}, Layout: "{#}-{level}[/{language}]/{name}.{ext}",
+		Order: map[string][]string{"{level}": {"本科"}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Build(v, items, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"01-本科/en/degree.pdf", "01-本科/学位证书.pdf"}; !reflect.DeepEqual(paths, want) || !plan.Complete() {
+		t.Fatalf("got %v %+v, want %v", paths, plan, want)
+	}
+	v.Inherit = []string{"original.level"}
+	if err := v.Validate(); err == nil {
+		t.Error("inherit original.level validated")
 	}
 }
