@@ -717,7 +717,10 @@ A group starting with `/`, at the end of a folder or file name, makes a
 folder of its own: `license[/{language}]/{of|type}[-{language}].{ext}` puts a
 driver licence at `license/driver_licence.pdf` and its English translation at
 `license/en/driver_licence-en.pdf`. Such a group ends a name that has
-something before it, and holds no other `/`. `{#}` does not number it: in
+something before it. It may add several folders, all or none:
+`{end:compact}[/bill/{service}]/…` puts a bill in `…/bill/水/` and anything
+without a service straight in the folder before. Such a group holds no `{#}`.
+`{#}` does not number a folder group: in
 `{#}-{level}[/{language}]` the level is numbered and the language folder
 follows. `[/{#}-{language}]` numbers the folder itself, from the order named
 `{language}`: with that order `en, fr, ru` and `en` numbered 10, the folders
