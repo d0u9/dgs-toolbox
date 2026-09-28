@@ -406,6 +406,13 @@ function keyPart(part, remove) {
   return box;
 }
 
+// fit sizes a text input to its text: a wide character, 中, takes two
+// columns of a narrow one.
+function fit(input) {
+  const cols = [...input.value].reduce((n, c) => n + (/[\u1100-\uffff]/.test(c) && !/[\uff61-\uffdc]/.test(c) ? 2 : 1), 0);
+  input.style.width = `calc(${Math.max(1, cols)}ch + 20px)`;
+}
+
 // partEl draws one part of a container; the container's own list is where
 // it moves and is removed from.
 function partEl(part, list, r, g) {
@@ -428,17 +435,18 @@ function partEl(part, list, r, g) {
   } else {
     // Text is typed in place; what would start a key, group or folder is
     // left out, and emptied text goes.
-    node = el("input", { className: "path-text", value: part.text, size: Math.max(1, [...part.text].length), spellcheck: false, autocomplete: "off",
+    node = el("input", { className: "path-text", value: part.text,  spellcheck: false, autocomplete: "off",
       title: "Fixed text", onclick: (event) => event.stopPropagation(),
       oninput: (event) => {
         part.text = event.target.value.replace(/[{}[\]/\\]/g, "");
         event.target.value = part.text;
-        event.target.size = Math.max(1, [...part.text].length);
+        fit(event.target);
         $("layout-text").textContent = layoutText();
         drawOrder();
         changed();
       },
       onchange: () => { if (!part.text) remove(); } });
+    fit(node);
   }
   // A part is dragged to another place in its own container.
   node.draggable = !(part.text !== undefined);
