@@ -45,7 +45,8 @@ The 23 Templates in use name one meaning several ways, which this removes:
 `date` has type `date`, whose shape is one day or a pair `[start, end]`. Each
 type declares which one it takes, and a type below may narrow it but not
 change it. A path reads `{date.start}` and `{date.end}`; for a single day both
-are that day. There are no separate `start` and `end` fields.
+are that day. There are no separate `start` and `end` fields. `{date}` and
+`{date:compact}` show a span as both ends: `20250101-20251231`.
 
 | Type | `date` |
 | --- | --- |
@@ -92,7 +93,10 @@ fields:
 ```
 
 - One parent per type, named by `extends`. A type inherits its parent's
-  fields, `required`, `distinguishing` and `defaults`.
+  fields, `required`, `distinguishing` and `defaults`. It does not inherit
+  `names`, `description` or `kind`.
+- Abstract types have no `kind`. Every concrete type states its own `kind`
+  (`record` or `document`); it is required.
 - A type may add fields, make an inherited field required or distinguishing,
   narrow a date's shape, and give a field its own description. It may not
   rename a field or change its type.
@@ -100,7 +104,8 @@ fields:
   inherits and what `type is X` matches. Sidecars are untouched; a type that
   loses a field its Items use fails validation.
 - A value may sit in a group (`utility` holds 水 and 电). A condition on the
-  group matches every value in it.
+  group matches every value in it. All values and groups are written in the
+  type that defines the field; a type below cannot add to them.
 - A condition on a type matches its descendants: `type is money` matches
   bill, invoice and payment.
 - A yes/no a file name shows stays a field, not a tag: a file name reads
@@ -147,6 +152,8 @@ if: type is money and category is utility and not tags has archived
 
 - Written under `if`, which replaces `when`. `and`, `or`, `not`, parentheses.
 - `is`, `in [...]`, `contains`, `has` (the field is filled, or the tag is on).
+- `tags in [a, b]` holds when any of them is on. All of them is
+  `tags has a and tags has b`; no operator of its own until it is needed.
 - Keys as a path has them: the Item's own, linked ones such as `about.type`,
   and those `inherit` supplies.
 - One package, `internal/doc/expr`, used by rules; later by Browse's filter and
@@ -157,7 +164,9 @@ if: type is money and category is utility and not tags has archived
 ## 3. A rule's paths nest
 
 A rule is a node: an `if`, a path fragment appended to its parent's, and
-children. The children are an if/elif/else chain: the first whose `if` an Item
+children. `path`, `file` and settings pass down; a child that writes its own
+`file` (or setting) replaces the one above it for everything it takes. The
+children are an if/elif/else chain: the first whose `if` an Item
 matches takes it, and a child with no `if` is the `else`. An Item no child
 takes is placed by the node itself. Settings (`inherit`, `default`, orders)
 are inherited down; an order is shared by the whole rule. A child with no
