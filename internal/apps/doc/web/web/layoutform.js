@@ -353,7 +353,7 @@ $("layout").addEventListener("input", () => { active = 0; suggest(); drawOrder()
 // The orders the layout numbers from, each once: a folder or file name
 // with {#} numbers what follows it, less the text straight after {#} and
 // a trailing .{ext}, and its order is named that as written.
-export const numberedKeys = () => [...new Set($("layout").value.split("/").flatMap((segment) => {
+export const numberedKeys = () => [...new Set($("layout").value.split(/\/(?![^{}]*\})/).flatMap((segment) => {
   const at = segment.indexOf("{#}");
   if (at < 0) return [];
   const rest = segment.slice(at + 3).replace(/^[^{]*/, "").replace(/\.?\{ext\}$/, "");

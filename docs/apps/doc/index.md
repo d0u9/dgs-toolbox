@@ -656,7 +656,12 @@ whose `degree` is `本科`, and nothing, not even the `-`, for one without.
 An Item lacking an optional key is still placed. The text around the key
 is written as it is and may not hold `{ } / : | # ?`; it runs up to the
 key's first letter, digit or `_`, and from its last. An optional key takes
-formats and alternatives, `{-country:alpha3?}` or `{ (name|type:zh)?}`. A folder made only of optional keys, all empty, would
+formats and alternatives, `{-country:alpha3?}` or `{ (name|type:zh)?}`. Text
+starting with `/`, at the end of a folder or file name, makes the value a
+folder of its own: `license{/language?}/{of|type}{-language?}.{ext}` puts a
+driver licence at `license/driver_licence.pdf` and its English translation
+at `license/en/driver_licence-en.pdf`. Such a key ends a name that has
+something before it, and a name numbered with `{#}` cannot hold one. A folder made only of optional keys, all empty, would
 vanish from the path, so the PDF is not placed instead.
 
 `{#}` numbers a folder or file name: it writes the place, counting from
