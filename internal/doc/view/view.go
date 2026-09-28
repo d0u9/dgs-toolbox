@@ -188,7 +188,7 @@ func (v View) Validate() error {
 	}
 	for _, segment := range layout {
 		for _, part := range segment {
-			if part.Counter && len(v.Order[part.Of]) == 0 {
+			if (part.Counter || part.Numbered) && len(v.Order[part.Of]) == 0 {
 				return fmt.Errorf("view %s: {#} numbers %s, so order needs a list for %s", v.Name, part.Of, part.Of)
 			}
 		}
@@ -204,7 +204,8 @@ func (v View) Validate() error {
 // value gets the text and the value, one without gets nothing. Text starting
 // with /, {/key?} at the end of a folder or file name, makes the value a
 // folder of its own: license{/language?}/x puts a translation in
-// license/en/ and the original in license/.
+// license/en/ and the original in license/. {/#-language?} numbers that
+// folder, 10-en, from the order named {language}.
 //
 // {#} writes the place, as 01, of the name the rest of its folder or file
 // name makes, in the View's order named that rest as written. The rest
@@ -226,6 +227,9 @@ type Part struct {
 	// Optional parts write nothing for an Item without the key, and
 	// Prefix and Suffix around its value otherwise.
 	Optional bool   `json:"optional,omitempty"`
+	// Numbered is an optional folder written {/#-key?}: its value is
+	// numbered, as {#} would, from the order Of names, {key}.
+	Numbered bool   `json:"numbered,omitempty"`
 	Prefix   string `json:"prefix,omitempty"`
 	Suffix   string `json:"suffix,omitempty"`
 }
@@ -252,7 +256,8 @@ func optionalParts(layout, written string) (prefix, inner, suffix string, err er
 	if strings.HasSuffix(inner, "#") {
 		return "", "", "", fmt.Errorf("layout %q: {%s?}: an optional key is not numbered", layout, written)
 	}
-	if strings.ContainsAny(strings.TrimPrefix(prefix, "/")+suffix, "{}/:|#?") {
+	if strings.ContainsAny(strings.TrimPrefix(strings.TrimPrefix(prefix, "/"), "#")+suffix, "{}/:|#?") ||
+		strings.HasPrefix(prefix, "#") {
 		return "", "", "", fmt.Errorf("layout %q: {%s?}: the text around a key may not hold { } / : | # ?", layout, written)
 	}
 	return prefix, inner, suffix, nil
@@ -426,6 +431,9 @@ func Parse(layout string) (Layout, error) {
 			}
 			if optional {
 				part.Optional, part.Prefix, part.Suffix = true, prefix, suffix
+				if strings.HasPrefix(prefix, "/#") {
+					part.Numbered, part.Prefix, part.Of = true, "/"+prefix[2:], "{"+inner+"}"
+				}
 			}
 			parts = append(parts, part)
 		}

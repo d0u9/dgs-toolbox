@@ -624,7 +624,24 @@ func TestOptionalKey(t *testing.T) {
 	if want := []string{"licence/id_card.pdf", "licence/本科/diploma-本科.pdf"}; !reflect.DeepEqual(paths, want) || !plan.Complete() {
 		t.Fatalf("got %v %+v, want %v", paths, plan, want)
 	}
-	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "{degree?}#", "{:degree?}", "{degree|?}",
+	// {/#-key?} numbers the folder from the order {key}, from where numbers set.
+	v = View{Name: "x", Selection: Head, Layout: "licence{/#-degree?}/{type}.{ext}",
+		Order: map[string][]string{"{degree}": {"硕士", "本科"}}, Numbers: map[string]map[string]int{"{degree}": {"硕士": 10}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, _ = Build(v, items, nil)
+	paths = nil
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"licence/11-本科/diploma.pdf", "licence/id_card.pdf"}; !reflect.DeepEqual(paths, want) || !plan.Complete() {
+		t.Fatalf("got %v %+v, want %v", paths, plan, want)
+	}
+	if err := (View{Name: "x", Selection: Head, Layout: v.Layout}).Validate(); err == nil {
+		t.Error("{/#-degree?} without an order validated")
+	}
+	for _, bad := range []string{"{?}", "{-?}", "{-degree#?}", "a{#-degree?}", "a{/-#degree?}", "{degree?}#", "{:degree?}", "{degree|?}",
 		"{/degree?}/x", "a{/degree?}b", "a{/-/degree?}", "a{degree/?}"} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%q parsed", bad)

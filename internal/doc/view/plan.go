@@ -503,7 +503,18 @@ func render(layout Layout, keys map[string]string, fallback *string, order map[s
 			}
 			choice, value, ok := pick(part, keys)
 			if part.Optional {
-				if ok {
+				if ok && part.Numbered {
+					// {/#-language?}: /10-en, the number from its order.
+					n := place(order[part.Of], Clean(value))
+					if n == 0 {
+						if !contains(lacking, part.Of) {
+							lacking = append(lacking, part.Of)
+						}
+						continue
+					}
+					numbers := Numbered(order[part.Of], set[part.Of])
+					pieces[i] = "/" + padTo(numbers[n-1], numbers[len(numbers)-1]) + part.Prefix[1:] + Clean(value) + part.Suffix
+				} else if ok {
 					pieces[i] = part.Prefix + Clean(value) + part.Suffix
 				}
 				continue
@@ -652,7 +663,7 @@ func Name(layout string, item tree.Item, revision int, names TypeNames) (string,
 	}
 	for _, parts := range parsed {
 		for _, part := range parts {
-			if part.Counter {
+			if part.Counter || part.Numbered {
 				return "", nil, fmt.Errorf("layout %q: {#} numbers a rule's PDFs, not one PDF's name", layout)
 			}
 		}
