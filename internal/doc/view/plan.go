@@ -246,6 +246,23 @@ func Follow(keys map[string]string, items map[string]tree.Item) {
 	}
 }
 
+// Inherit gives keys, for each key they lack, the value a link field's
+// Item has, as Follow added it: with links [original], a translation
+// without a level takes original.level. The first link having it wins.
+func Inherit(keys map[string]string, links []string) {
+	for _, link := range links {
+		for k, v := range maps.Clone(keys) {
+			base, ok := strings.CutPrefix(k, link+".")
+			if !ok || strings.Contains(base, ".") {
+				continue
+			}
+			if _, has := keys[base]; !has {
+				keys[base] = v
+			}
+		}
+	}
+}
+
 // FieldsFor is the Item fields that supply keys, in order and once each:
 // year, month and date come from DateField, every other key is a field of
 // its own name.
@@ -347,6 +364,7 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 				keys["type:"+lang] = name
 			}
 			Follow(keys, byID)
+			Inherit(keys, v.Inherit)
 			name, lacking := render(layout, keys, v.Default, v.Order, v.Numbers)
 			if len(lacking) > 0 {
 				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking)})
@@ -487,77 +505,94 @@ func CombineWith(views []View, fixed []File, items []tree.Item, names TypeNames)
 // is no default to stand in for them, and the numbered names, named
 // as their orders are, not in their order.
 func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string, set map[string]map[string]int) (string, []string) {
-	var lacking []string
+	r := renderer{keys: keys, fallback: fallback, order: order, set: set}
 	segments := make([]string, len(layout))
 	for s, parts := range layout {
-		pieces := make([]string, len(parts))
-		counter, short := -1, len(lacking)
-		for i, part := range parts {
-			if part.Counter {
-				counter = i
-				continue
-			}
-			if part.Key == "" {
-				pieces[i] = part.Text
-				continue
-			}
-			choice, value, ok := pick(part, keys)
-			if part.Optional {
-				if ok && part.Numbered {
-					// {/#-language?}: /10-en, the number from its order.
-					n := place(order[part.Of], Clean(value))
-					if n == 0 {
-						if !contains(lacking, part.Of) {
-							lacking = append(lacking, part.Of)
-						}
-						continue
-					}
-					numbers := Numbered(order[part.Of], set[part.Of])
-					pieces[i] = "/" + padTo(numbers[n-1], numbers[len(numbers)-1]) + part.Prefix[1:] + Clean(value) + part.Suffix
-				} else if ok {
-					pieces[i] = part.Prefix + Clean(value) + part.Suffix
-				}
-				continue
-			}
-			if !ok {
-				if fallback == nil {
-					if !contains(lacking, choice.Key) {
-						lacking = append(lacking, choice.Key)
-					}
-					continue
-				}
-				value = *fallback
-			}
-			pieces[i] = Clean(value)
-		}
-		if counter >= 0 && len(lacking) == short {
-			c := parts[counter]
-			name := strings.Join(pieces[c.From:c.To], "")
-			if n := place(order[c.Of], name); n > 0 {
-				numbers := Numbered(order[c.Of], set[c.Of])
-				pieces[counter] = padTo(numbers[n-1], numbers[len(numbers)-1])
-			} else if !contains(lacking, c.Of) {
-				lacking = append(lacking, c.Of)
-			}
-		}
-		segments[s] = strings.Join(pieces, "")
-		if segments[s] == "" && allOptional(parts) {
-			// Only optional parts, all empty: the folder would vanish and
-			// the path change without anyone asking, so it is lacking.
+		segments[s], _ = r.name(parts, false)
+		if segments[s] == "" && allGroups(parts) {
+			// Only groups, all left out: the folder would vanish and the
+			// path change without anyone asking, so it is lacking.
 			for _, part := range parts {
-				if key := part.choices()[0].Key; !contains(lacking, key) {
-					lacking = append(lacking, key)
+				for _, p := range part.Group {
+					if p.Key != "" {
+						r.lack(p.choices()[0].Key)
+						break
+					}
 				}
 			}
 		}
 	}
-	return strings.Join(segments, "/"), lacking
+	return strings.Join(segments, "/"), r.lacking
 }
 
-// allOptional reports whether every part is an optional key.
-func allOptional(parts []Part) bool {
+// renderer is one render's keys, orders, and what it found lacking.
+type renderer struct {
+	keys     map[string]string
+	fallback *string
+	order    map[string][]string
+	set      map[string]map[string]int
+	lacking  []string
+}
+
+func (r *renderer) lack(key string) {
+	if !contains(r.lacking, key) {
+		r.lacking = append(r.lacking, key)
+	}
+}
+
+// name writes one folder or file name, or a group's inside. A key the
+// Item lacks is lacking, or written as the default; in a group it is
+// returned as absent instead, and the group is left out.
+func (r *renderer) name(parts []Part, group bool) (string, []string) {
+	pieces := make([]string, len(parts))
+	var absent []string
+	counter, short := -1, len(r.lacking)
+	for i, part := range parts {
+		switch {
+		case part.Counter:
+			counter = i
+		case len(part.Group) > 0:
+			text, missing := r.name(part.Group, true)
+			if len(missing) == 0 && part.Folder {
+				pieces[i] = "/" + text
+			} else if len(missing) == 0 {
+				pieces[i] = text
+			}
+		case part.Key == "":
+			pieces[i] = part.Text
+		default:
+			choice, value, ok := pick(part, r.keys)
+			if !ok {
+				if group {
+					absent = append(absent, choice.Key)
+					continue
+				}
+				if r.fallback == nil {
+					r.lack(choice.Key)
+					continue
+				}
+				value = *r.fallback
+			}
+			pieces[i] = Clean(value)
+		}
+	}
+	if counter >= 0 && len(absent) == 0 && len(r.lacking) == short {
+		c := parts[counter]
+		name := strings.Join(pieces[c.From:c.To], "")
+		if n := place(r.order[c.Of], name); n > 0 {
+			numbers := Numbered(r.order[c.Of], r.set[c.Of])
+			pieces[counter] = padTo(numbers[n-1], numbers[len(numbers)-1])
+		} else {
+			r.lack(c.Of)
+		}
+	}
+	return strings.Join(pieces, ""), absent
+}
+
+// allGroups reports whether every part is a group.
+func allGroups(parts []Part) bool {
 	for _, p := range parts {
-		if !p.Optional {
+		if len(p.Group) == 0 {
 			return false
 		}
 	}
@@ -661,12 +696,8 @@ func Name(layout string, item tree.Item, revision int, names TypeNames) (string,
 	if err != nil {
 		return "", nil, err
 	}
-	for _, parts := range parsed {
-		for _, part := range parts {
-			if part.Counter || part.Numbered {
-				return "", nil, fmt.Errorf("layout %q: {#} numbers a rule's PDFs, not one PDF's name", layout)
-			}
-		}
+	if len(parsed.Counters()) > 0 {
+		return "", nil, fmt.Errorf("layout %q: {#} numbers a rule's PDFs, not one PDF's name", layout)
 	}
 	keys := KeysOf(item, revision)
 	for lang, name := range names[keys["type"]] {

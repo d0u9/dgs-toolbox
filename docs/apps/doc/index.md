@@ -652,41 +652,56 @@ each with its own format. `{name|type:zh}` writes an ID card's
 name, such as `户口首页`, and a driver licence, which has no name, as `驾驶证`.
 An Item with none of them is missing the first.
 
-A key written with `?` at the end is optional, and may carry text before
-and after it inside the braces: `{-degree?}` writes `-本科` for an Item
-whose `degree` is `本科`, and nothing, not even the `-`, for one without.
-An Item lacking an optional key is still placed. The text around the key
-is written as it is and may not hold `{ } / : | # ?`; it runs up to the
-key's first letter, digit or `_`, and from its last. An optional key takes
-formats and alternatives, `{-country:alpha3?}` or `{ (name|type:zh)?}`. Text
-starting with `/`, at the end of a folder or file name, makes the value a
-folder of its own: `license{/language?}/{of|type}{-language?}.{ext}` puts a
-driver licence at `license/driver_licence.pdf` and its English translation
-at `license/en/driver_licence-en.pdf`. Such a key ends a name that has
-something before it. `{#}` does not number it: in `{#}-{level}{/language?}`
-the level is numbered and the language folder follows. `{/#-language?}`
-numbers the folder itself, from the order named `{language}`: with that
-order `en, fr, ru` and `en` numbered 10, the folders are `10-en`, `11-fr`,
-`12-ru`.
+A group in square brackets is optional: it is written only when the Item
+has every key in it, and otherwise leaves nothing, its text included.
+`[-{degree}]` writes `-本科` for an Item whose `degree` is `本科`, and nothing,
+not even the `-`, for one without. An Item lacking a key in a group is still
+placed. A group holds text and keys, formats and alternatives included,
+`[-{country:alpha3}]` or `[ ({name|type:zh})]`, but no other group. Text in a
+layout, in a group or not, may not hold `{ } [ ]`.
+
+A group starting with `/`, at the end of a folder or file name, makes a
+folder of its own: `license[/{language}]/{of|type}[-{language}].{ext}` puts a
+driver licence at `license/driver_licence.pdf` and its English translation at
+`license/en/driver_licence-en.pdf`. Such a group ends a name that has
+something before it, and holds no other `/`. `{#}` does not number it: in
+`{#}-{level}[/{language}]` the level is numbered and the language folder
+follows. `[/{#}-{language}]` numbers the folder itself, from the order named
+`{language}`: with that order `en, fr, ru` and `en` numbered 10, the folders
+are `10-en`, `11-fr`, `12-ru`. `{#}` goes in no other group.
+
+A layout written before groups, with an optional key in its braces —
+`{-degree?}`, `{/language?}`, `{/#-language?}` — is rewritten as the group it
+is, `[-{degree}]`, `[/{language}]`, `[/{#}-{language}]`, in its rule's file
+when the tree is opened, and its orders renamed to match.
 
 A key written `<field>.<key>` is a key of the Item that an `item` or
 `revision` field links to, at the revision it names (an `item` field: its
 current one). A translation whose `original` is a bachelor's degree
-certificate has `{original.level}` 本科 and `{original.name}` 学位证书, so
-one rule places the certificates and their translations together:
-`{#}-{level|original.level}{/language?}/{#}-{name|original.name}.{ext}`
-puts the translation at `02-本科/en/02-学位证书.pdf`. A translation with no
-original, or one linking to an Item not in the tree, lacks the key and is
-not placed; its field to fill is the link. A folder made only of optional keys, all empty, would
-vanish from the path, so the PDF is not placed instead.
+certificate has `{original.level}` 本科 and `{original.name}` 学位证书. A
+translation with no original, or one linking to an Item not in the tree,
+lacks the key and is not placed; its field to fill is the link.
+
+A rule may name such fields to inherit from: with `inherit: [original]`, a
+key an Item lacks is its original's, and a key it has stays its own. One rule
+then places the certificates and their translations together:
+`{#}-{level}[/{language}]/{#}-{name}.{ext}` puts the translation at
+`02-本科/en/02-学位证书.pdf`, as `{level|original.level}` and
+`{name|original.name}` would without it. With several fields named, the first
+whose Item has the key gives it. On the Rules page it is a tick per link field
+the rule's Templates have.
+
+A folder made only of groups, all left out, would vanish from the path, so
+the PDF is not placed instead.
 
 `{#}` numbers a folder or file name: it writes the place, counting from
 `01`, of the name the rest of that folder or file name makes, in the rule's
 `order` named after that rest as written. The rest leaves out the text
-straight after `{#}`, its separator, and a file's `.{ext}`. So
+straight after `{#}`, its separator, a folder group ending the name, and a
+file's `.{ext}`. So
 `{#}-{owner}/{#}-{country:alpha3}` with the order above writes
-`01-alex/02-AUS`, and `{#}-{name|type:zh}{-level?}.{ext}`, with an order
-named `{name|type:zh}{-level?}` listing `[身份证, 毕业证书-本科,
+`01-alex/02-AUS`, and `{#}-{name|type:zh}[-{level}].{ext}`, with an order
+named `{name|type:zh}[-{level}]` listing `[身份证, 毕业证书-本科,
 毕业证书-硕士]`, writes `02-毕业证书-本科.pdf` and `03-毕业证书-硕士.pdf`:
 the name and its level together get one number. A folder or file name has
 one `{#}` at most, and a key must follow it.
