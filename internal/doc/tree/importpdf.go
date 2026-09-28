@@ -186,27 +186,43 @@ func FileDigest(path string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-// linked checks that each item field names an Item in the tree, other than
-// the Item itself.
+// linked checks that each item field names an Item in the tree, and each
+// revision field one of its revisions, other than the Item itself.
 func linked(t Template, items []Item, fields map[string]string, self string) error {
 	for _, f := range t.Fields {
 		value, ok := fields[f.Key]
-		if f.Type != FieldItem || !ok {
+		if !ok || value == "" || (f.Type != FieldItem && f.Type != FieldRevision) {
 			continue
 		}
-		if value == self {
+		id, ref := value, ""
+		if f.Type == FieldRevision {
+			id, ref, _ = SplitRevisionLink(value)
+		}
+		if id == self {
 			return fmt.Errorf("%s: an Item cannot link to itself", f.Key)
 		}
-		found := false
-		for _, item := range items {
-			if item.ID == value {
-				found = true
+		var found *Item
+		for i := range items {
+			if items[i].ID == id {
+				found = &items[i]
 				break
 			}
 		}
-		if !found {
-			return fmt.Errorf("%s: no Item %s in this tree", f.Key, value)
+		if found == nil {
+			return fmt.Errorf("%s: no Item %s in this tree", f.Key, id)
+		}
+		if ref != "" && !found.hasRevision(ref) {
+			return fmt.Errorf("%s: Item %s has no revision %s", f.Key, id, ref)
 		}
 	}
 	return nil
+}
+
+func (i Item) hasRevision(ref string) bool {
+	for _, r := range i.Revisions {
+		if matchesRef(r, ref) {
+			return true
+		}
+	}
+	return false
 }

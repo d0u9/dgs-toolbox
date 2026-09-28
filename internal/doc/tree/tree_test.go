@@ -625,3 +625,33 @@ func TestEveryTemplateRequiresOwnerAndCountry(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRevisionLink(t *testing.T) {
+	root := newTree(t)
+	licence := Template{Type: "licence", Kind: KindDocument, Fields: []Field{{Key: "owner", Required: true, Distinguishing: true}}}
+	translation := Template{Type: "translation", Kind: KindRecord, Fields: []Field{
+		{Key: "owner", Required: true, Distinguishing: true},
+		{Key: "original", Type: FieldRevision},
+	}}
+	source := write(t, filepath.Join(t.TempDir(), "l.pdf"), "%PDF licence")
+	original, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: licence, Now: now,
+		Fields: map[string]string{"owner": "emma"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := original.Revisions[0].Ref()
+	add := func(owner, value string) error {
+		source := write(t, filepath.Join(t.TempDir(), "t.pdf"), "%PDF translation "+owner)
+		_, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: translation, Now: now,
+			Fields: map[string]string{"owner": owner, "original": value}})
+		return err
+	}
+	for _, bad := range []string{original.ID, original.ID + "@", original.ID + "@nosuchrevision", "01ARZ3NDEKTSV4RRFFQ69G5FAV@" + ref} {
+		if add("tom", bad) == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	if err := add("ann", original.ID+"@"+ref); err != nil {
+		t.Fatal(err)
+	}
+}
