@@ -239,6 +239,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/shared", s.setShared)
 	mux.HandleFunc("POST /api/supersession", s.supersession)
 	mux.HandleFunc("GET /api/supersession-candidates", s.supersessionCandidates)
+	mux.HandleFunc("POST /api/links", s.links)
 	mux.HandleFunc("GET /api/history", s.historyLog)
 	mux.HandleFunc("POST /api/items/delete", s.deleteItem)
 	mux.HandleFunc("GET /api/templates", s.templateList)

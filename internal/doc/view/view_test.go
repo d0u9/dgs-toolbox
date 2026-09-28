@@ -847,3 +847,23 @@ func TestMapWritesAValueAsAnother(t *testing.T) {
 		t.Fatal("a map to nothing was taken")
 	}
 }
+
+func TestDateFormats(t *testing.T) {
+	a := item("01K00000000000000000000001", "tenancy", map[string]string{"start": "2010-01-01", "end": "2011-01-01"}, "d1")
+	b := item("01K00000000000000000000002", "bill", map[string]string{"tenancy": "01K00000000000000000000001", "date": "2010-08-03"}, "d2")
+	v := View{Name: "x", Selection: Head, Query: map[string]Values{"type": {"bill"}},
+		Layout: "{tenancy.start:compact}-{tenancy.end:compact}/{date:fy}.{ext}"}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Build(v, []tree.Item{a, b}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Files) != 1 || plan.Files[0].Path != "20100101-20110101/FY2011.pdf" {
+		t.Fatalf("%+v %+v", plan.Files, plan.Missing)
+	}
+	if _, err := Parse("{date:weekday}.{ext}"); err == nil {
+		t.Fatal("an unknown format was taken")
+	}
+}

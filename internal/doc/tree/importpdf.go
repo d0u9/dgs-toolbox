@@ -215,7 +215,7 @@ func linked(t Template, items []Item, fields map[string]string, self string) err
 			return fmt.Errorf("%s: Item %s has no revision %s", f.Key, id, ref)
 		}
 		for theirs, ours := range f.Match {
-			want := fields[ours]
+			want := MatchValue(ours, fields)
 			got := found.Fields[theirs]
 			if theirs == "type" {
 				got = found.Type

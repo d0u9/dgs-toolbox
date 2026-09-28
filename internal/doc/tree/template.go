@@ -70,8 +70,30 @@ type Field struct {
 	// this form: each entry names a field of the linked Item (or "type") and
 	// the field here that it must equal. A translation's original has
 	// {type: of, owner: owner}: pick driver_licence and only licences are
-	// offered. A field here left empty narrows nothing.
+	// offered. A field here left empty narrows nothing. A value starting
+	// with = is the value itself: {type: =tenancy} offers only tenancies.
 	Match map[string]string `yaml:"match,omitempty" json:"match,omitempty"`
+	// Within suggests, for an item or revision field, the Item whose span
+	// holds this form's date: a bill's tenancy is the one it was issued in.
+	// It only suggests; any Item match allows can be chosen.
+	Within *Within `yaml:"within,omitempty" json:"within,omitempty"`
+}
+
+// Within names the date on this form and the linked Item's fields that
+// begin and end its span. From or to left empty on an Item is open.
+type Within struct {
+	Date string `yaml:"date" json:"date"`
+	From string `yaml:"from" json:"from"`
+	To   string `yaml:"to" json:"to"`
+}
+
+// MatchValue is what the field ours of a match wants, given this form's
+// fields: the value itself when ours starts with =.
+func MatchValue(ours string, fields map[string]string) string {
+	if v, ok := strings.CutPrefix(ours, "="); ok {
+		return v
+	}
+	return fields[ours]
 }
 
 // FieldType is what a field's value is.
@@ -154,8 +176,25 @@ func (t Template) Validate() error {
 			return fmt.Errorf("type %s: key %s: match belongs to an item or revision field", t.Type, f.Key)
 		}
 		for theirs, ours := range f.Match {
+			if strings.HasPrefix(ours, "=") {
+				if strings.TrimSpace(ours[1:]) == "" {
+					return fmt.Errorf("type %s: key %s: match %s: = needs a value after it", t.Type, f.Key, theirs)
+				}
+				continue
+			}
 			if !t.hasField(ours) || ours == f.Key {
 				return fmt.Errorf("type %s: key %s: match %s: %s is not another field of this Template", t.Type, f.Key, theirs, ours)
+			}
+		}
+		if w := f.Within; w != nil {
+			if f.Type != FieldItem && f.Type != FieldRevision {
+				return fmt.Errorf("type %s: key %s: within belongs to an item or revision field", t.Type, f.Key)
+			}
+			if d, ok := t.fieldOK(w.Date); !ok || d.Type != FieldDate && d.Type != FieldMonth {
+				return fmt.Errorf("type %s: key %s: within date %q is not a date or month field of this Template", t.Type, f.Key, w.Date)
+			}
+			if w.From == "" || w.To == "" {
+				return fmt.Errorf("type %s: key %s: within needs from and to, the linked Item's fields", t.Type, f.Key)
 			}
 		}
 		if f.Format != "" && f.Type != FieldCountry {
