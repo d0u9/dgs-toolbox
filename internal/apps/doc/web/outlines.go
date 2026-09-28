@@ -28,6 +28,9 @@ type outlinesJSON struct {
 	// Rules are every rule in the tree, and Used the Outlines using each.
 	Rules []view.View         `json:"rules"`
 	Used  map[string][]string `json:"used"`
+	// Layouts are each rule's layout parsed, by rule name, for the page to
+	// edit part by part; a layout that does not parse is left out.
+	Layouts map[string]view.Layout `json:"layouts"`
 	// Migrated names the Outlines the tree's Views and Targets just became.
 	Migrated []string `json:"migrated,omitempty"`
 	Error    string   `json:"error,omitempty"`
@@ -80,6 +83,12 @@ func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
 	out.Rules, out.Used = []view.View{}, map[string][]string{}
 	if rules, used, err := outline.Rules(s.root); err == nil {
 		out.Rules, out.Used = rules, used
+	}
+	out.Layouts = map[string]view.Layout{}
+	for _, r := range out.Rules {
+		if layout, err := view.Parse(r.Layout); err == nil {
+			out.Layouts[r.Name] = layout
+		}
 	}
 	for _, o := range entries {
 		j := outlineJSON{Outline: o}

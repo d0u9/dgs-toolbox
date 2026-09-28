@@ -87,13 +87,15 @@
     </div>
     <div class="view-group">
       <h3>Where they go</h3>
+      <div id="inherit-row" class="vf" hidden><span class="vf-label">Inherit</span>
+        <div id="inherit" class="checks"></div>
+      </div>
       <div class="vf vf-wide"><span class="vf-label">Path</span>
-        <div class="layout-wrap">
-          <input id="layout" class="mono" spellcheck="false" autocomplete="off" placeholder="{country:alpha2} {make}/{#}-{plate}/{type}.{ext}"
-            role="combobox" aria-autocomplete="list" aria-controls="suggest">
-          <ul id="suggest" class="suggest" role="listbox" hidden></ul>
+        <div class="path-wrap">
+          <div id="path" class="path-rows"></div>
+          <code id="layout-text" class="layout-text" title="The path as the rule keeps it"></code>
         </div>
-        <p class="layout-help">Click a key to add it. <code>/</code> starts a folder; the last part names the PDF. <code>{#}</code> numbers the rest of its name as 01, 02, in the order below.</p>
+        <p class="layout-help">Click a row or an optional part, then a key below to add it there. Drag a key to move it. <code>#</code> numbers the rest of its name as 01, 02, in the order below; an optional part or folder is left out for an Item lacking a key in it.</p>
       </div>
       <div id="keys" class="key-groups"></div>
       <div id="order-row" class="vf" hidden><span class="vf-label">Numbering</span>

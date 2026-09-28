@@ -629,7 +629,11 @@ A rule has a query, a selection, and a layout. It may leave PDFs out and select 
 - **Layout** — fixed text and keys, such as
   `{country}/{owner}/important/{type}.pdf`: the folders, then the PDF's
   name. The export's folder provides the root, so a layout never names
-  iCloud or a NAS.
+  iCloud or a NAS. The Rules page never shows a layout to type: it edits
+  one row per folder and one for the file's name, each a line of keys,
+  text, `{#}` and optional parts, added from the chips below and dragged
+  into place, with the layout they make shown read-only beneath. An
+  optional row is an optional folder, `[/…]`, after the row before it.
 
 Keys are the Item's own fields (`owner`, `type`, `country`, and whatever its
 Template defines, such as `employer`), values derived from them (`year`,

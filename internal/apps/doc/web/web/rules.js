@@ -19,12 +19,13 @@ const tree = outlineTree($("tree"), () => state, { empty: () => "Give the rule a
 resizable(document.querySelector(".outline-main"), "dgs-doc-rules-tree");
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
-const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", shared: !!r.shared, exclude: r.exclude || {}, query_types: r.query_types || {}, exclude_types: r.exclude_types || {}, skip: r.skip || [], layout: r.layout,
+const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", shared: !!r.shared, exclude: r.exclude || {}, query_types: r.query_types || {}, exclude_types: r.exclude_types || {}, skip: r.skip || [], inherit: r.inherit || [], layout: r.layout,
   default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null, numbers: r.numbers || null });
 const blank = () => {
   let n = 1;
   while (rules.some((r) => r.name === "rule-" + n)) n++;
-  return { name: "rule-" + n, query: {}, selection: "head", layout: "{owner}/{type}.{ext}" };
+  // No layout: the form starts it as {owner}/{type}.{ext}.
+  return { name: "rule-" + n, query: {}, selection: "head", layout: "" };
 };
 
 function list() {
@@ -250,7 +251,7 @@ async function reload() {
   state = await loadState();
   frame(state);
   const answer = await (await fetch(api("/api/outlines"))).json();
-  which.setup({ state, keys: answer.keys, countries: answer.countries || {}, onChange: changed });
+  which.setup({ state, keys: answer.keys, countries: answer.countries || {}, layouts: answer.layouts || {}, onChange: changed });
   rules = answer.rules || [];
   used = answer.used || {};
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
