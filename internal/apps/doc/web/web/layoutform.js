@@ -6,6 +6,7 @@ import { $, el, currentFields, label } from "/common.js";
 
 let state = { templates: [], items: [] };
 let keys = [];
+let layouts = {}; // each saved rule's layout, parsed by the server
 let countries = {}; // each country's every form: its alpha-3 code
 let orders = {}; // per numbered name, its order as typed: "alex, emma"
 let skip = []; // the IDs of the Items the rule leaves out
@@ -16,7 +17,7 @@ let changed = () => {};
 // country forms, and what to call on every change. Called again when the
 // state is reloaded.
 export function setup(options) {
-  ({ state = state, keys = keys, countries = countries } = options);
+  ({ state = state, keys = keys, countries = countries, layouts = layouts } = options);
   if (options.onChange) changed = options.onChange;
 }
 
@@ -32,12 +33,14 @@ export function fill(v) {
   drawSkip();
   document.querySelector(`input[name=selection][value=${v.selection || "head"}]`).checked = true;
   if ($("shared")) $("shared").checked = !!v.shared;
-  $("layout").value = v.layout;
+  rows = !v.layout ? DEFAULT_ROWS() : layouts[v.name] && v.layout ? fromLayout(layouts[v.name])
+    : v.layout.split("/").map((text) => ({ parts: [{ text }] }));
+  active = { row: rows.length - 1, group: -1 };
+  drawInherit(v.inherit || []);
   orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, list.join(", ")]));
   numbers = JSON.parse(JSON.stringify(v.numbers || {}));
   drawOrder();
-  closeSuggest();
-  chips();
+  drawPath();
 }
 
 // read is the form's query, selection, layout and order.
@@ -57,7 +60,8 @@ export function read() {
   const queryTypes = {}, excludeTypes = {};
   gather(read_("conditions"), query, queryTypes);
   const exclude = gather(read_("exclude"), {}, excludeTypes);
-  const out = { query, selection: document.querySelector("input[name=selection]:checked").value, layout: $("layout").value.trim() };
+  const out = { query, selection: document.querySelector("input[name=selection]:checked").value, layout: layoutText() };
+  if (inherited().length) out.inherit = inherited();
   if ($("shared")?.checked) out.shared = true;
   if (Object.keys(exclude).length) out.exclude = exclude;
   if (Object.keys(queryTypes).length) out.query_types = queryTypes;
@@ -178,7 +182,8 @@ const read_ = (id) => [...$(id).children].map((row) => row.read()).filter(([, va
 // narrow redraws what depends on the types: the field chips and each
 // condition's values, keeping only what the chosen types have.
 function narrow() {
-  chips();
+  drawInherit(inherited());
+  drawPath();
   for (const row of $("conditions").children) row.redraw();
   for (const row of $("exclude").children) row.redraw();
   drawSkip();
@@ -268,19 +273,220 @@ const TYPE_FORMATS = { zh: "the Chinese name, such as 驾驶证", en: "the Engli
 
 const countryKeys = () => new Set(state.templates.flatMap((t) => t.fields.filter((f) => f.type === "country").map((f) => f.key)));
 
+// linkFields is the fields of the chosen types' Templates that link to
+// another Item: an Item's keys can be taken from the Item they name.
+const linkFields = () => {
+  const types = chosenTypes();
+  return [...new Set(state.templates.filter((t) => types.includes(t.type))
+    .flatMap((t) => t.fields.filter((f) => f.type === "item" || f.type === "revision").map((f) => f.key)))];
+};
+
 function describe(key) {
   if (BUILT_IN[key]) return BUILT_IN[key];
   const types = state.templates.filter((t) => t.fields.some((f) => f.key === key)).map((t) => t.type);
   return (countryKeys().has(key) ? "a country, as the Item keeps it" : "a field") + (types.length ? " of " + types.join(", ") : "");
 }
 
-// The keys as chips that insert at the caret: fields, then the ones every
-// PDF has, then each country field in each form it can be written in.
+// The path is edited part by part, never as text. A row is a folder or,
+// last, the file's name: { parts, optional }. An optional row is a folder
+// only an Item with every key in it gets, written [/…] after the row
+// before. A part is fixed text { text }, a key and its alternatives
+// { keys: ["name", "type:zh"] }, the number {#} { counter: true }, or an
+// optional group { group: [parts] }, written only when the Item has every
+// key in it. The server parses a saved layout into these; the page writes
+// them back as the layout it saves.
+let rows = [];
+let active = { row: 0, group: -1 }; // where a chip adds: a row, or a group in it
+const DEFAULT_ROWS = () => [{ parts: [{ keys: ["owner"] }] }, { parts: [{ keys: ["type"] }, { text: "." }, { keys: ["ext"] }] }];
+
+// fromLayout makes rows of a layout the server parsed: a folder group
+// ending a name becomes an optional row of its own.
+function fromLayout(layout) {
+  const part = (p) => p.counter ? { counter: true } : p.group ? { group: p.group.map(part) }
+    : p.key ? { keys: [p, ...(p.or || [])].map((c) => c.key + (c.format ? ":" + c.format : "")) } : { text: p.text };
+  const out = [];
+  for (const segment of layout) {
+    const last = segment[segment.length - 1];
+    if (last && last.folder) {
+      out.push({ parts: segment.slice(0, -1).map(part) }, { parts: last.group.map(part), optional: true });
+    } else {
+      out.push({ parts: segment.map(part) });
+    }
+  }
+  return out;
+}
+
+const written = (p) => p.counter ? "{#}" : p.group ? "[" + p.group.map(written).join("") + "]" : p.keys ? "{" + p.keys.join("|") + "}" : p.text;
+
+// layoutText is the rows as the layout the rule saves.
+export const layoutText = () => rows.map((row, i) => {
+  const inner = row.parts.map(written).join("");
+  return row.optional ? "[/" + inner + "]" : (i ? "/" : "") + inner;
+}).join("");
+
+// The container a chip adds to: the active row's parts, or a group's.
+function target() {
+  const row = rows[Math.min(active.row, rows.length - 1)];
+  const group = row.parts[active.group];
+  return group && group.group ? group.group : row.parts;
+}
+const inGroup = () => active.group >= 0 && !!rows[active.row]?.parts[active.group]?.group;
+
+function edited() {
+  drawPath();
+  drawOrder();
+  changed();
+}
+
+// add puts a part last in the container chips add to; in the file's name,
+// before its .{ext}.
+function add(part) {
+  const list = target();
+  let at = list.length;
+  if (list === rows[rows.length - 1].parts && list[at - 1]?.keys?.[0] === "ext") at -= list[at - 2]?.text === "." ? 2 : 1;
+  list.splice(at, 0, part);
+  edited();
+}
+
+// The keys a part may be, for its menus: fields and the keys every PDF
+// has, each country field and type in each form, and the keys of the Items
+// link fields name, original.level.
+function keyOptions() {
+  const plain = keys.filter((k) => k !== "type");
+  return [
+    ["Keys", [...plain, "type", "type:zh", "type:en"]],
+    ["Countries", [...countryKeys()].flatMap((k) => Object.keys(FORMATS).map((f) => k + ":" + f))],
+    ...linkFields().map((l) => ["From " + l, [...plain.filter((k) => !BUILT_IN[k] || k === "year" || k === "month" || k === "date"), "type"].map((k) => l + "." + k)]),
+  ];
+}
+
+function keyPart(part, remove) {
+  const box = el("span", { className: "path-key", title: "A key. Several are alternatives: the first the Item has is written." });
+  const draw = () => {
+    const options = keyOptions();
+    box.replaceChildren(...part.keys.flatMap((k, i) => {
+      const known = options.some(([, list]) => list.includes(k));
+      const pick = el("select", { onchange: () => { part.keys[i] = pick.value; edited(); } },
+        ...(known ? [] : [el("option", { value: k, selected: true }, k)]),
+        ...options.filter(([, list]) => list.length).map(([name, list]) => el("optgroup", { label: name },
+          ...list.map((o) => el("option", { value: o, selected: o === k, title: describe(o.split(/[:.]/)[0]) }, o)))));
+      const drop = part.keys.length > 1 ? el("button", { type: "button", className: "path-x", title: "Remove this alternative", textContent: "×",
+        onclick: (event) => { event.stopPropagation(); part.keys.splice(i, 1); edited(); } }) : null;
+      return [i ? el("span", { className: "path-or", textContent: "or" }) : null, pick, drop].filter(Boolean);
+    }),
+    el("button", { type: "button", className: "path-more", title: "Add an alternative, written when the Item lacks the keys before it", textContent: "+ or",
+      onclick: (event) => { event.stopPropagation(); part.keys.push(part.keys[part.keys.length - 1]); edited(); } }),
+    el("button", { type: "button", className: "path-x", title: "Remove the key", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
+  };
+  draw();
+  return box;
+}
+
+// partEl draws one part of a container; the container's own list is where
+// it moves and is removed from.
+function partEl(part, list, r, g) {
+  const i = list.indexOf(part);
+  const remove = () => { list.splice(list.indexOf(part), 1); if (part.group) active = { row: r, group: -1 }; edited(); };
+  let node;
+  if (part.counter) {
+    node = el("span", { className: "path-counter", title: "Numbers the rest of this name, 01, 02, in the order below" }, "#",
+      el("button", { type: "button", className: "path-x", title: "Remove the number", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
+  } else if (part.keys) {
+    node = keyPart(part, remove);
+  } else if (part.group) {
+    const at = rows[r].parts.indexOf(part);
+    node = el("span", { className: "path-group" + (active.row === r && active.group === at ? " active" : ""),
+      title: "Optional: written only when the Item has every key in it; otherwise nothing, its text included",
+      onclick: (event) => { event.stopPropagation(); active = { row: r, group: at }; drawPath(); } },
+      el("span", { className: "path-group-name", textContent: "if any" }),
+      ...(part.group.length ? part.group.map((p) => partEl(p, part.group, r, at)) : [el("span", { className: "muted", textContent: "click a key below" })]),
+      el("button", { type: "button", className: "path-x", title: "Remove the optional part", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
+  } else {
+    // Text is typed in place; what would start a key, group or folder is
+    // left out, and emptied text goes.
+    node = el("input", { className: "path-text", value: part.text, size: Math.max(1, [...part.text].length), spellcheck: false, autocomplete: "off",
+      title: "Fixed text", onclick: (event) => event.stopPropagation(),
+      oninput: (event) => {
+        part.text = event.target.value.replace(/[{}[\]/\\]/g, "");
+        event.target.value = part.text;
+        event.target.size = Math.max(1, [...part.text].length);
+        $("layout-text").textContent = layoutText();
+        drawOrder();
+        changed();
+      },
+      onchange: () => { if (!part.text) remove(); } });
+  }
+  // A part is dragged to another place in its own container.
+  node.draggable = !(part.text !== undefined);
+  node.dataset.row = r;
+  node.dataset.group = g;
+  node.addEventListener("dragstart", (event) => { event.stopPropagation(); dragging = { list, part }; event.dataTransfer.effectAllowed = "move"; });
+  node.addEventListener("dragover", (event) => { if (dragging && dragging.list === list) { event.preventDefault(); event.stopPropagation(); node.classList.add("drop"); } });
+  node.addEventListener("dragleave", () => node.classList.remove("drop"));
+  node.addEventListener("drop", (event) => {
+    node.classList.remove("drop");
+    if (!dragging || dragging.list !== list) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const from = list.indexOf(dragging.part);
+    list.splice(from, 1);
+    list.splice(list.indexOf(part) + (from <= i ? 1 : 0), 0, dragging.part);
+    dragging = null;
+    edited();
+  });
+  return node;
+}
+let dragging = null;
+
+// drawPath draws the rows, the one chips add to marked, and the layout
+// they make, which is shown and never typed.
+function drawPath() {
+  if (active.row >= rows.length) active = { row: rows.length - 1, group: -1 };
+  const last = rows.length - 1;
+  const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled,
+    onclick: (event) => { event.stopPropagation(); onclick(); } });
+  $("path").replaceChildren(...rows.map((row, r) => {
+    const file = r === last;
+    const optionalAllowed = r > 0 && !file && !rows[r - 1].optional;
+    return el("div", { className: "path-row" + (row.optional ? " optional" : "") + (active.row === r && active.group < 0 ? " active" : ""),
+      onclick: () => { active = { row: r, group: -1 }; drawPath(); } },
+      el("span", { className: "path-kind", textContent: file ? "File" : row.optional ? "If any" : "Folder",
+        title: file ? "The PDF's name" : row.optional ? "A folder only an Item with every key in it gets" : "A folder" }),
+      el("div", { className: "path-parts" }, ...(row.parts.length ? row.parts.map((p) => partEl(p, row.parts, r, -1)) : [el("span", { className: "muted", textContent: "click a key below" })])),
+      el("span", { className: "path-acts" },
+        file ? null : el("label", { className: "path-optional", title: "Only an Item with every key in this folder gets it; the others stay in the folder before",
+          onclick: (event) => event.stopPropagation() },
+          el("input", { type: "checkbox", checked: !!row.optional, disabled: !optionalAllowed && !row.optional,
+            onchange: (event) => { row.optional = event.target.checked; edited(); } }), " optional"),
+        file ? null : act("Up", "↑", () => { [rows[r - 1], rows[r]] = [rows[r], rows[r - 1]]; active = { row: r - 1, group: -1 }; edited(); }, r === 0),
+        file ? null : act("Down", "↓", () => { [rows[r + 1], rows[r]] = [rows[r], rows[r + 1]]; active = { row: r + 1, group: -1 }; edited(); }, r + 1 >= last),
+        file ? null : act("Remove the folder", "×", () => { rows.splice(r, 1); active = { row: Math.min(r, rows.length - 1), group: -1 }; edited(); })));
+  }), el("button", { type: "button", className: "button path-add", textContent: "+ Folder", title: "Add a folder before the PDF's name",
+    onclick: () => { rows.splice(rows.length - 1, 0, { parts: [] }); active = { row: rows.length - 2, group: -1 }; edited(); } }));
+  $("layout-text").textContent = layoutText();
+  chips();
+}
+
+// The keys as chips that add to the row or optional part chosen: fields,
+// the ones every PDF has, text, a number and an optional part, and each
+// country field in each form it can be written in.
 function chips() {
-  const chip = (text, insertText, title) => el("button", {
-    type: "button", className: "chip", textContent: text, title,
-    onmousedown: (event) => event.preventDefault(),
-    onclick: () => insert(insertText),
+  const chip = (text, part, title, disabled) => el("button", {
+    type: "button", className: "chip", textContent: text, title, disabled,
+    onclick: () => {
+      const made = part();
+      if (made.counter) {
+        // The number starts its name, 01-.
+        target().unshift(made, { text: "-" });
+        return edited();
+      }
+      add(made);
+      if (made.group) { active = { row: active.row, group: rows[active.row].parts.indexOf(made) }; drawPath(); }
+      if (made.text !== undefined) {
+        // The new text is focused to type into: the only empty one.
+        [...$("path").querySelectorAll(".path-text")].find((input) => input.value === "")?.focus();
+      }
+    },
   });
   const group = (name, ...children) => children.length ? el("div", { className: "key-group" },
     el("span", { className: "key-group-name" }, name), el("div", { className: "key-chips" }, ...children)) : null;
@@ -288,116 +494,88 @@ function chips() {
   const held = new Set(state.templates.filter((t) => types.includes(t.type)).flatMap((t) => t.fields.map((f) => f.key)));
   const fields = keys.filter((k) => !BUILT_IN[k] && held.has(k));
   const countries = [...countryKeys()].filter((k) => held.has(k));
+  const numbered = target().some((p) => p.counter);
+  const key = (k) => () => ({ keys: [k] });
   $("keys").replaceChildren(...[
-    group("Fields", ...fields.map((k) => chip(k, "{" + k + "}", describe(k)))),
-    group("Every PDF", ...keys.filter((k) => BUILT_IN[k]).map((k) => chip(k, "{" + k + "}", describe(k))), chip("/", "/", "a folder"), chip("#", "{#}-", "numbers the rest of this folder or file name, 01-, 02-, in the order below")),
+    group("Fields", ...fields.map((k) => chip(k, key(k), describe(k)))),
+    group("Every PDF", ...keys.filter((k) => BUILT_IN[k]).map((k) => chip(k, key(k), describe(k)))),
+    group("Add", chip("text", () => ({ text: "" }), "Fixed text, such as - or 03-Education"),
+      chip("#", () => ({ counter: true }), inGroup() ? "A number goes only in a row, or in an optional folder" : "Numbers the rest of this name, 01-, 02-, in the order below", numbered || inGroup()),
+      chip("if any […]", () => ({ group: [] }), "An optional part, written only when the Item has every key in it: -本科 or nothing", inGroup())),
     ...countries.map((k) => group(k + " as", ...Object.entries(FORMATS).map(([f, example]) =>
-      chip(":" + f, "{" + k + ":" + f + "}", `{${k}:${f}} writes ${example}`)))),
-    group("type as", ...Object.entries(TYPE_FORMATS).map(([f, note]) => chip(":" + f, "{type:" + f + "}", note))),
+      chip(":" + f, key(k + ":" + f), `{${k}:${f}} writes ${example}`)))),
+    group("type as", ...Object.entries(TYPE_FORMATS).map(([f, note]) => chip(":" + f, key("type:" + f), note))),
+    ...linkFields().map((l) => group("from " + l, ...[...keys.filter((k) => !BUILT_IN[k] && k !== l), "type"].map((k) => chip(k, key(l + "." + k), "the " + k + " of the Item " + l + " links to")))),
   ].filter(Boolean));
 }
 
-// The suggestions under the layout while the caret is inside a { }: keys
-// that start with what is typed, or after a country key's colon, its forms.
-let suggestions = [];
-let active = 0;
+// drawInherit offers each link field of the rule's types, ticked when the
+// rule takes the keys an Item lacks from the Item it names.
+function drawInherit(saved) {
+  const all = [...new Set([...linkFields(), ...saved])];
+  $("inherit-row").hidden = !all.length;
+  $("inherit").replaceChildren(...all.map((l) => el("label", { title: "A key an Item lacks is taken from the Item its " + l + " links to" },
+    el("input", { type: "checkbox", value: l, checked: saved.includes(l), onchange: () => { drawOrder(); changed(); } }), " keys it lacks, from its " + l)));
+}
+const inherited = () => [...$("inherit").querySelectorAll("input:checked")].map((i) => i.value);
 
-function suggest() {
-  const input = $("layout");
-  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
-  const open = /\{([^{}]*)$/.exec(before);
-  if (!open || document.activeElement !== input) { closeSuggest(); return; }
-  const typed = open[1];
-  const colon = typed.indexOf(":");
-  if (colon >= 0) {
-    const key = typed.slice(0, colon);
-    const part = typed.slice(colon + 1);
-    suggestions = key === "type"
-      ? Object.entries(TYPE_FORMATS).filter(([f]) => f.startsWith(part)).map(([f, note]) => ({ text: "type:" + f, note }))
-      : countryKeys().has(key)
-      ? Object.entries(FORMATS).filter(([f]) => f.startsWith(part)).map(([f, example]) => ({ text: key + ":" + f, note: "writes " + example }))
-      : [];
-  } else {
-    suggestions = keys.filter((k) => k.startsWith(typed)).flatMap((k) => [{ text: k, note: describe(k) },
-      ...(countryKeys().has(k) && typed === k ? Object.entries(FORMATS).map(([f, example]) => ({ text: k + ":" + f, note: "writes " + example })) : [])]);
+// The orders the layout numbers from, each once: a row with {#} numbers
+// what follows it, less the text straight after {#} and a trailing .{ext},
+// and its order is named that as written.
+export const numberedKeys = () => [...new Set(rows.flatMap((row) => {
+  const at = row.parts.findIndex((p) => p.counter);
+  if (at < 0) return [];
+  let rest = row.parts.slice(at + 1);
+  if (rest.length && rest[0].text !== undefined) rest = rest.slice(1);
+  if (rest.length && rest[rest.length - 1].keys && rest[rest.length - 1].keys[0] === "ext") {
+    rest = rest.slice(0, -1);
+    if (rest.length && rest[rest.length - 1].text === ".") rest = rest.slice(0, -1);
   }
-  if (!suggestions.length) { closeSuggest(); return; }
-  active = Math.min(active, suggestions.length - 1);
-  $("suggest").replaceChildren(...suggestions.map((s, i) => el("li", {
-    className: i === active ? "active" : "", role: "option",
-    onmousedown: (event) => { event.preventDefault(); accept(i); },
-  }, el("code", {}, "{" + s.text + "}"), el("span", {}, s.note))));
-  $("suggest").hidden = false;
-}
-
-function closeSuggest() {
-  suggestions = [];
-  active = 0;
-  $("suggest").hidden = true;
-}
-
-function accept(i) {
-  const input = $("layout");
-  const caret = input.selectionStart;
-  const start = input.value.lastIndexOf("{", caret - 1);
-  const after = input.value.slice(caret).replace(/^[^{}\/]*\}/, "");
-  const text = "{" + suggestions[i].text + "}";
-  input.value = input.value.slice(0, start) + text + after;
-  input.setSelectionRange(start + text.length, start + text.length);
-  closeSuggest();
-  changed();
-}
-
-$("layout").addEventListener("input", () => { active = 0; suggest(); drawOrder(); });
-
-// The orders the layout numbers from, each once: a folder or file name
-// with {#} numbers what follows it, less the text straight after {#} and
-// a trailing .{ext}, and its order is named that as written.
-export const numberedKeys = () => [...new Set($("layout").value.split(/\/(?![^{}]*\})/).flatMap((segment) => {
-  // {/#-language?} numbers its folder from the order {language}.
-  const folder = segment.match(/\{\/#[^{}a-z0-9_]*([^{}?]*?)[^{}a-z0-9_]*\?\}$/);
-  const own = folder ? ["{" + folder[1] + "}"] : [];
-  const at = segment.indexOf("{#}");
-  if (at < 0) return own;
-  // The folder a {/key?} adds after the name is not numbered.
-  const rest = segment.slice(at + 3).replace(/^[^{]*/, "").replace(/\{\/[^{}]*\?\}$/, "").replace(/\.?\{ext\}$/, "");
-  return [...(/\{[^#{}]+\}/.test(rest) ? [rest] : []), ...own];
+  return rest.some((p) => p.keys || p.group) ? [rest.map(written).join("")] : [];
 }))];
 
 // An Item's value for one key, {a|b} or {a|b:format}: the first alternative
-// it has. A type:zh or type:en is its Template's name.
+// it has, or with inherit the first the Items it links to have. A type:zh
+// or type:en is its Template's name.
 function keyValue(item, inner) {
   for (const choice of inner.split("|")) {
-    const [name, format] = choice.split(":");
-    if (name.includes(".")) {
-      // original.level: the key of the revision the field original links to.
-      const [field, key] = name.split(".");
-      const [id, ref] = String((item.fields || {})[field] || "").split("@");
-      const other = state.items.find((i) => i.id === id);
-      const rev = other && (ref ? other.revisions.find((r) => (r.id || r.digest) === ref) : null);
-      const fields = !other ? {} : !rev ? other.fields : rev.snapshot ? rev.fields || {} : { ...other.fields, ...(rev.fields || {}) };
-      const value = key === "type" ? other?.type : fields[key];
-      if (value) return value;
-      continue;
-    }
-    const value = name === "type"
-      ? (format ? (state.templates.find((t) => t.type === item.type)?.names || {})[format] : item.type)
-      : item.fields && item.fields[name];
+    const value = choiceValue(item, choice) || (choice.includes(".") ? "" : inherited().map((l) => choiceValue(item, l + "." + choice)).find(Boolean));
     if (value) return value;
   }
   return "";
 }
 
-// An Item's name in one order: the order's name, {key}s and {-key?}s, filled
-// in. A key it lacks makes no name; an optional one it lacks is left out.
+function choiceValue(item, choice) {
+  const [name, format] = choice.split(":");
+  if (name.includes(".")) {
+    // original.level: the key of the revision the field original links to.
+    const [field, key] = name.split(".");
+    const [id, ref] = String((item.fields || {})[field] || "").split("@");
+    const other = state.items.find((i) => i.id === id);
+    const rev = other && (ref ? other.revisions.find((r) => (r.id || r.digest) === ref) : null);
+    const fields = !other ? {} : !rev ? other.fields : rev.snapshot ? rev.fields || {} : { ...other.fields, ...(rev.fields || {}) };
+    return key === "type" ? other?.type : fields[key];
+  }
+  return name === "type"
+    ? (format ? (state.templates.find((t) => t.type === item.type)?.names || {})[format] : item.type)
+    : item.fields && item.fields[name];
+}
+
+// An Item's name in one order: the order's name, its {key}s and [groups],
+// filled in. A key it lacks makes no name; a group it lacks a key of is
+// left out.
 export function orderValue(item, key) {
   let whole = true;
-  const name = key.replace(/\{([^{}]*)\}/g, (_, inner) => {
-    const optional = inner.endsWith("?");
-    const [, pre = "", k, post = ""] = optional ? /^([^a-z0-9_]*)(.*?)([^a-z0-9_]*)\?$/.exec(inner) : [null, "", inner, ""];
-    const value = keyValue(item, k);
-    if (!value && !optional) whole = false;
-    return value ? pre + value + post : "";
+  const fill = (text) => {
+    let ok = true;
+    const out = text.replace(/\{([^{}]*)\}/g, (_, inner) => { const v = keyValue(item, inner); if (!v) ok = false; return v || ""; });
+    return [out, ok];
+  };
+  const name = key.replace(/\[([^\]]*)\]|\{([^{}]*)\}/g, (_, group, inner) => {
+    if (group !== undefined) { const [out, ok] = fill(group); return ok ? out : ""; }
+    const v = keyValue(item, inner);
+    if (!v) whole = false;
+    return v || "";
   });
   return whole ? name : "";
 }
@@ -416,11 +594,15 @@ function numbered(values, set = {}) {
 }
 
 function drawOrder() {
-  const rows = numberedKeys().map((key) => {
-    // A key given alternatives, {level} become {level|original.level},
-    // keeps the order it had.
-    const plain = key.replace(/\|[^{}]*?(?=[?}])/g, "");
-    if (orders[key] === undefined && plain !== key && orders[plain] !== undefined) orders[key] = orders[plain];
+  const lists = numberedKeys().map((key) => {
+    // A key given alternatives or losing them, {level} become
+    // {level|original.level} or back, keeps the order it had.
+    const plain = (name) => name.replace(/\|[^{}]*?(?=\})/g, "");
+    const before = orders[key] === undefined && Object.keys(orders).find((k) => orders[k] && plain(k) === plain(key));
+    if (before) {
+      orders[key] = orders[before];
+      if (numbers[before]) numbers[key] = numbers[before];
+    }
     if (orders[key] === undefined) {
       orders[key] = [...new Set(selected().map((i) => orderValue(i, key)).filter(Boolean))].sort().join(", ");
     }
@@ -491,32 +673,6 @@ function drawOrder() {
     draw();
     return el("div", { className: "condition" }, el("code", {}, "{#}-" + key), box);
   });
-  $("order").replaceChildren(...rows);
-  $("order-row").hidden = !rows.length;
+  $("order").replaceChildren(...lists);
+  $("order-row").hidden = !lists.length;
 }
-$("layout").addEventListener("click", suggest);
-$("layout").addEventListener("blur", closeSuggest);
-$("layout").addEventListener("keydown", (event) => {
-  if ($("suggest").hidden) return;
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-    event.preventDefault();
-    active = (active + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length;
-    suggest();
-  } else if (event.key === "Enter" || event.key === "Tab") {
-    event.preventDefault();
-    accept(active);
-  } else if (event.key === "Escape") {
-    closeSuggest();
-  }
-});
-
-function insert(text) {
-  const input = $("layout");
-  const start = input.selectionStart ?? input.value.length;
-  const end = input.selectionEnd ?? start;
-  input.value = input.value.slice(0, start) + text + input.value.slice(end);
-  input.focus();
-  input.setSelectionRange(start + text.length, start + text.length);
-  changed();
-}
-
