@@ -64,6 +64,9 @@ type Field struct {
 	// Multiple lets a FieldSelect hold several Options, kept in the
 	// Options' order joined by MultipleSeparator: 电, 水.
 	Multiple bool `yaml:"multiple,omitempty" json:"multiple,omitempty"`
+	// Suggest offers, for a text field, the values Items of this type
+	// have saved for it; any other value can still be typed.
+	Suggest bool `yaml:"suggest,omitempty" json:"suggest,omitempty"`
 	// Format is how a FieldCountry is written, and only its: zh (the
 	// default), en, alpha2 or alpha3.
 	Format string `yaml:"format,omitempty" json:"format,omitempty"`
@@ -241,6 +244,9 @@ func (t Template) Validate() error {
 		}
 		if f.Format != "" && !country.Format(f.Format).Valid() {
 			return fmt.Errorf("type %s: key %s: format %q is not zh, en, alpha2 or alpha3", t.Type, f.Key, f.Format)
+		}
+		if f.Suggest && f.Type != "" && f.Type != FieldText {
+			return fmt.Errorf("type %s: key %s: suggest belongs to a text field", t.Type, f.Key)
 		}
 		if f.Multiple && f.Type != FieldSelect {
 			return fmt.Errorf("type %s: key %s: multiple belongs to a select field", t.Type, f.Key)

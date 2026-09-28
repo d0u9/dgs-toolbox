@@ -157,6 +157,23 @@ export function inputFor(field, value, placeholder, state, self, type) {
       refresh();
     });
     return wrapper;
+  } else if (field.suggest && (!field.type || field.type === "text")) {
+    const id = "field-options-" + (++fieldListID);
+    control = el("input", { ...common, type: "text", value, placeholder: placeholder || "",
+      autocomplete: "off", spellcheck: false });
+    control.setAttribute("list", id);
+    const options = el("datalist", { id });
+    const typ = type || state?.items?.find((item) => item.id === self)?.type || "";
+    let loaded = false;
+    control.addEventListener("focus", async () => {
+      if (loaded || !typ) return;
+      loaded = true;
+      try {
+        const response = await fetch(api("/api/values?" + new URLSearchParams({ type: typ, key: field.key })));
+        if (response.ok) options.replaceChildren(...(await response.json()).map((value) => el("option", { value })));
+      } catch { /* Free text remains usable when suggestions are unavailable. */ }
+    });
+    return el("label", { className: "form-field" }, ...fieldHead(field), control, options);
   } else if (field.type === "revision" || field.type === "item") {
     // An Item, then for a revision field one of its revisions, HEAD when the
     // Item is picked. The value, <item-id> or <item-id>@<revision>, is in a
