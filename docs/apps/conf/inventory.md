@@ -577,8 +577,14 @@ open every route the instance enters; `users.yaml` remains the one grant table
 and therefore the audit of who gained or lost access. It is always that one
 credential: an instance carries a program's identity, and a program has one,
 so there is nothing here to choose between. The service must declare `upstream`, since
-otherwise no rendered file would consume the selected credential. Without
-`principal`, an instance continues to dial as itself.
+otherwise no rendered file would consume the selected credential.
+
+Usually `principal` is not written. When a service declares `upstream`, the
+instance enters at least one route, and exactly one user's `default` credential
+opens every route it enters, dgs fills that user in: `users.yaml` already names
+the only identity the instance could be carrying. With no such user, or with
+several, the instance dials as itself unless it writes `principal`. A filled
+principal is never written back by `dgs conf migrate`.
 
 This is separate from a device's `credential`: that key chooses which of a
 person's credentials a device carries, while `principal` chooses which person

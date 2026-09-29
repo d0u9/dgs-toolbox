@@ -147,8 +147,12 @@ type Instance struct {
 	// Principal names the user whose credential this instance carries when
 	// it dials its upstream. Empty means the instance carries its own. It
 	// grants no access: validate requires the named user already to hold
-	// every route the instance enters.
+	// every route the instance enters. Unwritten, derive.FillPrincipals
+	// fills it when users.yaml grants those routes to one user alone.
 	Principal string `yaml:"principal"`
+	// PrincipalDerived is set when Principal was filled rather than written,
+	// so a tool rewriting the file leaves it alone.
+	PrincipalDerived bool `yaml:"-"`
 	// Runtime says what delivers this process: RuntimeHost, RuntimeDocker
 	// or RuntimePodman. Unwritten, Load fills it from the node's own
 	// `runtime`, and from RuntimeHost when the node writes none either.
@@ -275,9 +279,9 @@ type Port struct {
 
 // portYAML is Port's mapping form as written.
 type portYAML struct {
-	Number    int       `yaml:"port"`
-	Protocol  string    `yaml:"protocol"`
-	Self      []string  `yaml:"self"`
+	Number      int            `yaml:"port"`
+	Protocol    string         `yaml:"protocol"`
+	Self        []string       `yaml:"self"`
 	Published   yaml.Node      `yaml:"published"`
 	Title       string         `yaml:"title"`
 	Description string         `yaml:"description"`
