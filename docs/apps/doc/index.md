@@ -1239,8 +1239,8 @@ fields:
   order and before its own, their `required` and `distinguishing`, and its
   `defaults` and `ignore_dates`. It does not inherit `names`,
   `description`, `kind` or `anchor`.
-- An inherited field may be listed again to make it required or
-  distinguishing, narrow its shape, or give it its own description and
+- An inherited field may be listed again to make it required,
+  distinguishing or `per_revision`, narrow its shape, or give it its own description and
   patterns. Anything else — another type, options, suggest — is refused.
 - An abstract type has no `kind` and no Item; Import does not offer it, and
   the Templates page lists it with the others. Every other type states its
