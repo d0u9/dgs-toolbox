@@ -10,8 +10,9 @@ import (
 	"dgs-toolbox/internal/doc/dates"
 )
 
-// Keys are the field keys that hold an expiry, tried in order.
-var Keys = []string{"expires", "expiry", "expires_at", "expiry_date", "valid_until"}
+// Key is the field whose span holds an expiry: its end. A span left open
+// at its end never lapses; a one-day date has no expiry.
+const Key = "date"
 
 // DefaultSoon is how long before its expiry a document counts as expiring
 // soon.
@@ -44,10 +45,13 @@ type Status struct {
 // expires at the end of its expiry day. order reads a date whose day and
 // month could be either way round.
 func Of(fields map[string]string, now time.Time, soon time.Duration, order dates.Order) Status {
-	for _, key := range Keys {
-		value := strings.TrimSpace(fields[key])
-		if value == "" {
+	for _, value := range []string{fields[Key]} {
+		_, value, span := strings.Cut(strings.TrimSpace(value), "/")
+		if !span {
 			continue
+		}
+		if value == "" {
+			return Status{State: Permanent}
 		}
 		lower := strings.ToLower(value)
 		for _, word := range permanent {
