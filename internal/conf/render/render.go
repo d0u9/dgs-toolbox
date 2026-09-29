@@ -94,6 +94,12 @@ type Downstream struct {
 	Number  int
 }
 
+// Name is one entry of a network's name table.
+type Name struct {
+	Name    string
+	Address string
+}
+
 // Mapping is where a container runtime publishes one of this instance's
 // ports on the machine it runs on: the addresses it binds, and the number,
 // which is the port's own on both sides. A deploy template reads one as
@@ -159,6 +165,15 @@ type Input struct {
 	// rather than a key inside Instance's ports so that a template reads it
 	// the way it reads an account table, with published "<port>".
 	Published map[string]string
+	// PublishedNames is every name each port is published at, for a proxy
+	// answering to its own sites; read with publishedNames "<port>".
+	PublishedNames map[string][]string
+	// Dials is this instance's `dials`, resolved, by the caller's name for
+	// each. A template reads one with dial "<name>".
+	Dials map[string]Downstream
+	// Names is every network's name table, by network, read with
+	// names "<network>".
+	Names map[string][]Name
 	// Principals is every port with auth: per-principal, each to the
 	// accounts and secrets of everything holding a grant on it.
 	Principals map[string][]Principal

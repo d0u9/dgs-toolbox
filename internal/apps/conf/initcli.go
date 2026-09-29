@@ -110,7 +110,7 @@ const networksSkeleton = `# The networks nodes belong to, most preferred first. 
 # Neither name is known to dgs. These are this inventory's own.
 
 networks:
-  - internet
+  - name: internet
 
 universal: internet
 `

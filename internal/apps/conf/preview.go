@@ -100,6 +100,11 @@ func (m renderer) renderTarget(instance string) ([]artefact, error) {
 		}
 	}
 
+	dials, err := m.dialsFor(instance)
+	if err != nil {
+		return nil, err
+	}
+
 	out := make([]artefact, 0, len(files))
 	for _, file := range files {
 		templatePath := filepath.Join(dir, file.Template)
@@ -108,17 +113,20 @@ func (m renderer) renderTarget(instance string) ([]artefact, error) {
 			return nil, fmt.Errorf("reading template %s: %w", templatePath, err)
 		}
 		rendered, err := render.Render(render.Input{
-			Target:       render.Target{Service: t.Service, Instance: instance},
-			Template:     string(templateBytes),
-			Defaults:     defaultsBytes,
-			DefaultsKind: defaults,
-			Instance:     instanceMap,
-			Node:         nodeMap,
-			Upstream:     upstream,
-			Downstreams:  downstreams,
-			Published:    m.publishedFor(instance),
-			Principals:   principals,
-			Self:         own,
+			Target:         render.Target{Service: t.Service, Instance: instance},
+			Template:       string(templateBytes),
+			Defaults:       defaultsBytes,
+			DefaultsKind:   defaults,
+			Instance:       instanceMap,
+			Node:           nodeMap,
+			Upstream:       upstream,
+			Downstreams:    downstreams,
+			Published:      m.publishedFor(instance),
+			PublishedNames: m.publishedNamesFor(instance),
+			Dials:          dials,
+			Names:          m.names(),
+			Principals:     principals,
+			Self:           own,
 		})
 		if err != nil {
 			return nil, err
@@ -696,16 +704,18 @@ func (m renderer) deployFor(instance string) ([]deployArtefact, error) {
 			return nil, fmt.Errorf("reading template %s: %w", templatePath, err)
 		}
 		rendered, err := render.Render(render.Input{
-			Target:       render.Target{Service: t.Service, Instance: instance},
-			Template:     string(templateBytes),
-			Defaults:     defaultsBytes,
-			DefaultsKind: deploy.Defaults,
-			Instance:     instanceMap,
-			Overlay:      overlay,
-			Node:         nodeMap,
-			Downstreams:  m.downstreamsFor(instance, m.l.manifests[t.Service].FansOut()),
-			Published:    m.publishedFor(instance),
-			Mapping:      mapping,
+			Target:         render.Target{Service: t.Service, Instance: instance},
+			Template:       string(templateBytes),
+			Defaults:       defaultsBytes,
+			DefaultsKind:   deploy.Defaults,
+			Instance:       instanceMap,
+			Overlay:        overlay,
+			Node:           nodeMap,
+			Downstreams:    m.downstreamsFor(instance, m.l.manifests[t.Service].FansOut()),
+			Published:      m.publishedFor(instance),
+			PublishedNames: m.publishedNamesFor(instance),
+			Names:          m.names(),
+			Mapping:        mapping,
 		})
 		if err != nil {
 			return nil, err
@@ -713,4 +723,79 @@ func (m renderer) deployFor(instance string) ([]deployArtefact, error) {
 		out = append(out, deployArtefact{Output: file.Output, Bytes: rendered, Executable: file.Executable()})
 	}
 	return out, nil
+}
+
+// dialsFor is this instance's `dials`, resolved as an edge would be. See
+// docs/apps/conf/inventory.md#dialling-a-service-that-is-not-on-a-route.
+func (m renderer) dialsFor(instance string) (map[string]render.Downstream, error) {
+	from, fromNode := m.realInstance(instance)
+	if from == nil || len(from.Dials) == 0 {
+		return nil, nil
+	}
+	out := map[string]render.Downstream{}
+	for name, value := range from.Dials {
+		hop, err := derive.ParseHop(value)
+		if err != nil {
+			return nil, fmt.Errorf("%s: dial %q: %w", instance, name, err)
+		}
+		to, toNode := m.realInstance(hop.Instance)
+		if to == nil {
+			return nil, fmt.Errorf("%s: dial %q: no instance %q", instance, name, hop.Instance)
+		}
+		addr, _, err := derive.ResolveAddress(m.l.inv, fromNode, toNode)
+		if err != nil {
+			return nil, fmt.Errorf("%s: dial %q: %w", instance, name, err)
+		}
+		out[name] = render.Downstream{
+			Instance:  hop.Instance,
+			Port:      hop.Port,
+			Published: to.Ports[hop.Port].Published,
+			Address:   addr,
+			Number:    to.Ports[hop.Port].Number,
+		}
+	}
+	return out, nil
+}
+
+// realInstance finds a real instance and the node it runs on.
+func (m renderer) realInstance(instance string) (*inventory.Instance, inventory.Node) {
+	for _, n := range m.l.inv.Nodes {
+		for i := range n.Instances {
+			if n.Instances[i].ID == instance && n.Instances[i].Service != "" {
+				return &n.Instances[i], n
+			}
+		}
+	}
+	return nil, inventory.Node{}
+}
+
+// names is every network's name table, for the names template function.
+func (m renderer) names() map[string][]render.Name {
+	tables, _ := derive.Names(m.l.inv, func(instance string) bool {
+		inst := m.instanceByID(instance)
+		return inst != nil && m.l.manifests[inst.Service].FansOut() && m.l.manifests[inst.Service].DispatchesBy() == confgen.DispatchName
+	})
+	out := make(map[string][]render.Name, len(tables))
+	for network, list := range tables {
+		for _, n := range list {
+			out[network] = append(out[network], render.Name{Name: n.Name, Address: n.Address})
+		}
+	}
+	return out
+}
+
+// publishedNamesFor is every name each of this instance's ports is
+// published at.
+func (m renderer) publishedNamesFor(instance string) map[string][]string {
+	inst := m.instanceByID(instance)
+	if inst == nil {
+		return nil
+	}
+	out := map[string][]string{}
+	for name, p := range inst.Ports {
+		if len(p.Names) > 0 {
+			out[name] = p.Names
+		}
+	}
+	return out
 }

@@ -47,7 +47,7 @@ routes:
     hops: [u-node-group-10:main]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
-networks: [internet]
+networks: [{name: internet}]
 universal: internet
 `)
 

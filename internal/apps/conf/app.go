@@ -58,6 +58,13 @@ func New() tui.App {
 				{Name: "yes", Shorthand: "y", Bool: true, Usage: "generate without asking"},
 			},
 			RunWithConfig: secretAction,
+		}, {
+			ID:            "reservations",
+			Usage:         "<network>",
+			Description:   "Print the address reservations a network's router should hold, in address order.",
+			MinArgs:       1,
+			MaxArgs:       1,
+			RunWithConfig: reservationsAction,
 		}},
 		Commands: []tui.Command{
 			{

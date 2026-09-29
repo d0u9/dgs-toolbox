@@ -51,7 +51,18 @@ func funcs(defaults map[string]any, in Input) map[string]any {
 		},
 		"downstreams": func() []Downstream { return in.Downstreams },
 		"published":   func(port string) string { return in.Published[port] },
-		"mapping":     func(port string) Mapping { return in.Mapping[port] },
+		"publishedNames": func(port string) []string {
+			return in.PublishedNames[port]
+		},
+		"mapping": func(port string) Mapping { return in.Mapping[port] },
+		"dial": func(name string) (Downstream, error) {
+			d, ok := in.Dials[name]
+			if !ok {
+				return Downstream{}, fmt.Errorf("dial %q: the instance declares no such dial", name)
+			}
+			return d, nil
+		},
+		"names": func(network string) []Name { return in.Names[network] },
 		"target": func() map[string]string {
 			return map[string]string{
 				"service":  in.Target.Service,

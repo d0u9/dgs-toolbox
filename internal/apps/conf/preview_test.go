@@ -86,7 +86,7 @@ routes:
     hops: [ss-srv:main]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
-networks: [internet]
+networks: [{name: internet}]
 universal: internet
 `)
 
@@ -445,7 +445,7 @@ owner: alex
 `)
 	writeFile(t, filepath.Join(root, "users.yaml"), "users:\n  alex:\n    access: [sfo]\n")
 	writeFile(t, filepath.Join(root, "routes.yaml"), "routes:\n  sfo:\n    hops: [ss-srv:main]\n")
-	writeFile(t, filepath.Join(root, "networks.yaml"), "networks: [internet]\nuniversal: internet\n")
+	writeFile(t, filepath.Join(root, "networks.yaml"), "networks: [{name: internet}]\nuniversal: internet\n")
 
 	secretsDir := t.TempDir()
 	current := filepath.Join(secretsDir, "ss-srv", "main", "alex", "default")
@@ -493,7 +493,7 @@ owner: alex
 `)
 	writeFile(t, filepath.Join(root, "users.yaml"), "users:\n  alex:\n    access: [sfo]\n")
 	writeFile(t, filepath.Join(root, "routes.yaml"), "routes:\n  sfo:\n    hops: [ss-srv:main]\n")
-	writeFile(t, filepath.Join(root, "networks.yaml"), "networks: [internet]\nuniversal: internet\n")
+	writeFile(t, filepath.Join(root, "networks.yaml"), "networks: [{name: internet}]\nuniversal: internet\n")
 
 	secretsDir := t.TempDir()
 	current := filepath.Join(secretsDir, "ss-srv", "main", "alex", "default")
@@ -566,7 +566,7 @@ routes:
     hops: [proxy:https, bin:web]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
-networks: [internet]
+networks: [{name: internet}]
 universal: internet
 `)
 	writeFile(t, filepath.Join(root, "users.yaml"), "users: {}\n")
@@ -778,7 +778,7 @@ routes:
     hops: [fwd-far:in, web:web]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
-networks: [home, internet]
+networks: [{name: home}, {name: internet}]
 universal: internet
 `)
 	writeFile(t, filepath.Join(root, "users.yaml"), "users: {}\n")
@@ -851,7 +851,7 @@ routes:
     hops: [samba-srv:smb]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
-networks: [internet]
+networks: [{name: internet}]
 universal: internet
 `)
 
