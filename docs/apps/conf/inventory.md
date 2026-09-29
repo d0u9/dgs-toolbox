@@ -401,9 +401,15 @@ unchanged, which is why a private subnet needs nothing new here.
 The address at either end of a hop is never written down. It is chosen from the
 two nodes involved:
 
+It is the downstream's address in the innermost scope the two ends share.
+Scopes nest: the networks in `networks.yaml`, then one node's loopback, then
+the [container networks](#container-networks) on that node.
+
 | The two ends | The address used |
 | --- | --- |
-| The same node | `127.0.0.1` and the downstream port |
+| Two instances on one container network | The downstream instance's name there, and the downstream port |
+| The same node, the upstream on no container network | `127.0.0.1` and the downstream port |
+| The same node, the upstream on a container network the downstream is not on | An error: loopback inside the container is the container itself |
 | The downstream has an address on a network the upstream reaches | That address, on the first such network in preference order |
 | Neither | An error naming both nodes and what each one reaches |
 
@@ -833,65 +839,72 @@ looks complete and connects to nothing.
 ### What runs the process
 
 `runtime` says what the process is delivered by, and it is one of `host`,
-`docker` or `podman`:
+`docker` or `podman`. An instance that writes none takes its node's `runtime`,
+and a node that writes none means `host`:
 
 ```yaml
-  - id: bin-network-1
+id: network-1
+runtime: docker
+containers: [web]
+instances:
+  - id: bin-01
     service: microbin
-    runtime: docker
-    bind: "0.0.0.0"
     ports:
       web: 8080
+  - id: sshd-01
+    service: sshd
+    runtime: host
 ```
 
-`host` is the default and is not written. `dgs` knows nothing about any of
-these names beyond the name: nothing branches on it, no template reads it —
-it is not in [the render context](#the-render-context) — and no rendered byte
-changes when it does.
-
-**It earns its place by fixing what `bind` means.** Inside a container `bind`
-is the container's own interfaces, and `0.0.0.0` there is not the open
-listener the same string is on a host: what may actually arrive is decided by
-the publish address of a port mapping, in a file this inventory does not read.
-A reader who does not know a process is containerised sees `bind: "0.0.0.0"`
-here and `bind: 127.0.0.1` on another node and draws the wrong conclusion
-about both. One word on the instance, and neither line is ambiguous. It is
-written on the instance rather than on each port because a container is one
-running program, which is the same boundary [`process`](#ports) already draws.
+**A containerised instance binds `0.0.0.0`, and it is not written.** Inside a
+container every interface is the container's own, so no other bind is
+reachable, and what may actually arrive is decided by the host mapping, which
+is [derived](export.md#a-second-file-what-deploys-it). Writing another bind on
+a container is an error.
 
 **`ports` is the number reached from outside the container**, always, because
 that is the number every edge dials and every proxy writes. A container's
 internal number, when it differs, lives with the deployment tool that
-publishes it and nowhere here — two numbers in this file would be two truths, and the one the
-model needs is the outer one.
-
-That makes a one-to-one mapping the convention, and rule
-[14](#validation) is why: two instances on one node may not bind the same
-address, port and transport, and a same-node hop resolves to `127.0.0.1` and
-the downstream port. A container publishing `8080` at some other host number
-leaves the inventory describing a listener that is not there, and the
-collision check reading numbers that never meet. Publishing `127.0.0.1:8080`
-for a service behind a proxy, and the node's own address for one the network
-may reach, keeps both true — and a containerised proxy reaching its
-downstreams at `127.0.0.1` has to be on the host's network namespace for that
-address to mean the same thing at both ends.
+publishes it and nowhere here — two numbers in this file would be two truths,
+and the one the model needs is the outer one. Rule [14](#validation) reads
+these numbers: two instances on one node may not bind the same address, port
+and transport.
 
 A service declaring a [deploy template](export.md#a-second-file-what-deploys-it)
-takes the convention out of a reader's hands: the mapping is rendered from the
-same `ports` field the program's own configuration is rendered from, so the two
-cannot disagree. For a service that declares none, the paragraphs above are a
-convention and nothing more.
-
-**No check confirms the rest.** `runtime` is an assertion copied from the
-delivery side, the way `networks` is an assertion about where a node answers:
-`dgs` has not seen the deployment files, the image or the mapping, and a mapping
-edited afterwards leaves this file unchanged and wrong. This is the same
-boundary [Deployment is not here](#boundaries) already draws, and `runtime`
-does not cross it — it names no image, no project, no volume and no host
-number. It says only that the `bind` above it is a container's.
+renders the mapping from the same `ports` field the program's own
+configuration is rendered from, so the two cannot disagree. For a service that
+declares none, the mapping is a convention the inventory cannot check.
 
 The [connectivity graph](inspect.md#the-connectivity-graph) badges a process
-box for it, which is the whole of what it is for.
+box for it.
+
+### Container networks
+
+A node lists the container networks on it, in the order an instance picks from:
+
+```yaml
+containers: [web, backend]
+```
+
+A containerised instance joins the first unless it writes `network: <name>`,
+which must be one the node lists. A host process joins none. A container on no
+network — a node listing none — shares the host's network, and dials loopback
+like a host process.
+
+**A container network is a scope inside the node.** Two instances on one dial
+each other by instance name, which the deploy template gives the container as
+its alias on that network, and the edge between them never reaches the host:
+it publishes nothing. A reverse proxy and its backends in containers on one
+network is the case this exists for — the backends publish no port at all,
+and only the proxy's entry does.
+
+A container on a network reaching a host process on its own node is an error.
+Loopback inside it is the container itself, and reaching the host takes a
+gateway the model does not carry.
+
+Another network on the same node is another scope: two instances on different
+container networks of one node share no scope below the node, and neither can
+dial the other.
 
 ### What a container needs beyond the model
 
@@ -2183,7 +2196,8 @@ node:        the node this instance runs on: id, networks
 instance:    id, service, ports (each with its number — the transport is the
              model's, not a template's — the name it is published at, when it
              has one, and the self values it hands out, in the order written),
-             bind, and the instance's own values
+             bind, the container network it joins when it joins one, and the
+             instance's own values
 upstream:    the next hop, resolved: address, port, the name that hop's port
              is published at when it has one and the edge resolved on the
              universal network, the account name this
@@ -2321,9 +2335,8 @@ failing can be told which level it was reading.
     `port` have the same successor. A port listens for one next hop, and
     `downstreams: many` lifting rule 8 for the instance does not lift it for
     the port.
-23. An instance's `runtime`, when written, is `host`, `docker` or `podman`.
-    The error lists the three: a misspelling is silent everywhere else, since
-    nothing reads the value.
+23. An instance's `runtime`, after it takes its node's, is `host`, `docker`
+    or `podman`. The error lists the three.
 24. An instance writing `deploy` names a service holding a `deploy/` directory,
     and its `runtime` is not `host`. A container's deployment file is what the
     key is for, and a host process writing one renders nothing.
@@ -2350,6 +2363,9 @@ failing can be told which level it was reading.
 31. Every `dials` value names an existing instance and an existing port on
     it, not the dialling instance itself, and the two ends resolve an address
     as rule 10 requires of an edge.
+32. A containerised instance binds `0.0.0.0` or writes no bind, and its
+    `network` is one its node lists in `containers`. A host process names no
+    `network`. A node lists no container network twice.
 
 ## Boundaries
 

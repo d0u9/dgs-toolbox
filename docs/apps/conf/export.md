@@ -394,7 +394,13 @@ downstreams:  as elsewhere, for a service declaring downstreams: many
 
 `mapping` is the whole point of the file, and it is derived, never written:
 
-- A port entered by hops from its own node publishes on `127.0.0.1`. A
+- An edge between two instances on one
+  [container network](inventory.md#container-networks) asks for nothing: it
+  never reaches the host. A backend behind a proxy on the same container
+  network, entered by nothing else, publishes nowhere, and its mapping is
+  empty. A template writes no `ports` for it.
+- A port entered by hops from its own node, from outside its container
+  network, publishes on `127.0.0.1`. A
   reverse proxy's backend is this case, and a backend published on every
   interface because someone typed it is what the derivation removes.
 - A port entered from another node publishes on this node's address on the

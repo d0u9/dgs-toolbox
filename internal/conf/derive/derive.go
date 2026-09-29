@@ -127,8 +127,12 @@ type Edge struct {
 	// docs/apps/conf/inventory.md#networks-and-how-an-address-is-chosen.
 	Address string
 	// Network is the network Address is on, or empty when the two ends share
-	// a node and Address is loopback.
+	// a node.
 	Network string
+	// Container is the container network both ends are on, when they share
+	// one: Address is then the To instance's name there, and the edge never
+	// leaves the network, so it publishes nothing on the host.
+	Container string
 	// Port is the numeric port the To hop's instance names for To.Port.
 	Port int
 	// Terminal is the hop whose credential the From side authenticates
@@ -505,7 +509,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 			if !ok {
 				return nil, fmt.Errorf("derive: route %q: %s has no port %q", routeName, hops[i+1].Instance, hops[i+1].Port)
 			}
-			address, network, err := resolveAddress(from.node, to.node, inv.Networks, inv.Universal)
+			address, network, container, err := resolveEndpoint(from.inst, from.node, to.inst, to.node, inv.Networks, inv.Universal)
 			if err != nil {
 				return nil, fmt.Errorf("derive: route %q: %w", routeName, err)
 			}
@@ -513,7 +517,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 			terminal := terminalHopFrom(hops, i+1, instances, manifests)
 			m.Edges = append(m.Edges, Edge{
 				Route: routeName, From: hops[i], To: hops[i+1], Terminal: terminal,
-				Address: address, Network: network, Port: port.Number,
+				Address: address, Network: network, Container: container, Port: port.Number,
 			})
 			// A forwarder holds no credential: it never reads what passes
 			// through it, so there is nothing for it to authenticate with.

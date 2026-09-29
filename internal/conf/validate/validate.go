@@ -507,6 +507,39 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		}
 	}
 
+	// Rule 32: a containerised instance binds every interface of its
+	// container and joins one of its node's container networks; a host
+	// process joins none. A node's `containers` names no network twice.
+	for _, nodeID := range nodeIDsInOrder {
+		n := nodeByID[nodeID]
+		seen := map[string]bool{}
+		for _, c := range n.Containers {
+			if seen[c] {
+				add("node %q: container network %q is listed twice", n.ID, c)
+			}
+			seen[c] = true
+		}
+	}
+	for _, id := range realIDs {
+		ref := realInstances[id]
+		inst := ref.inst
+		if !inst.Containerised() {
+			if inst.Network != "" {
+				add("instance %q runs as a %s process and names container network %q: only a container joins one",
+					id, inventory.RuntimeHost, inst.Network)
+			}
+			continue
+		}
+		if inst.Bind != "" && inst.Bind != inventory.ContainerBind {
+			add("instance %q runs in a container and binds %q: inside a container only %q is reachable, and what the host publishes is derived from the edges into it",
+				id, inst.Bind, inventory.ContainerBind)
+		}
+		if inst.Network != "" && !containsString(nodeByID[ref.nodeID].Containers, inst.Network) {
+			add("instance %q joins container network %q, which node %q does not list in `containers`",
+				id, inst.Network, ref.nodeID)
+		}
+	}
+
 	// Rules 24 and 25: what an instance's `deploy` may say, and where it
 	// may say it. A host process renders no deployment file, and neither
 	// does an instance of a service that declares no deploy/ — in both
@@ -1221,11 +1254,13 @@ func networkIssues(inv *inventory.Root, nodeByID map[string]inventory.Node, fans
 
 	// Rule 31.
 	nodeOf := map[string]inventory.Node{}
+	instOf := map[string]inventory.Instance{}
 	portsOf := map[string]inventory.Ports{}
 	for _, id := range sortedKeys(nodeByID) {
 		for _, inst := range nodeByID[id].Instances {
 			if inst.Service != "" {
 				nodeOf[inst.ID] = nodeByID[id]
+				instOf[inst.ID] = inst
 				portsOf[inst.ID] = inst.Ports
 			}
 		}
@@ -1256,7 +1291,7 @@ func networkIssues(inv *inventory.Root, nodeByID map[string]inventory.Node, fans
 					add("instance %q dials %q at %s, and %q has no port %q", inst.ID, name, inst.Dials[name], hop.Instance, hop.Port)
 					continue
 				}
-				if _, _, err := derive.ResolveAddress(inv, nodeByID[id], to); err != nil {
+				if _, _, err := derive.ResolveAddress(inv, inst, nodeByID[id], instOf[hop.Instance], to); err != nil {
 					add("instance %q dials %q: %s", inst.ID, name, err)
 				}
 			}

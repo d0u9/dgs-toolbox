@@ -49,10 +49,9 @@ const DefaultCredential = "default"
 const ExportNone = "none"
 
 // Runtime values an instance's `runtime` may take: what delivers the
-// process. RuntimeHost is the default and is not written. dgs branches on
-// none of them and no template reads them — the key exists to fix what
-// `bind` means, since 0.0.0.0 inside a container is the container's own
-// interfaces and not an open listener. See
+// process. RuntimeHost is the default and is not written. A containerised
+// instance binds ContainerBind, joins a container network of its node, and is
+// what a deployment file is rendered for. See
 // docs/apps/conf/inventory.md#what-runs-the-process.
 const (
 	RuntimeHost   = "host"
@@ -151,9 +150,16 @@ type Instance struct {
 	// every route the instance enters.
 	Principal string `yaml:"principal"`
 	// Runtime says what delivers this process: RuntimeHost, RuntimeDocker
-	// or RuntimePodman. Empty means RuntimeHost. Nothing reads the value
-	// beyond validate checking it is one of the three; see the constants.
+	// or RuntimePodman. Unwritten, Load fills it from the node's own
+	// `runtime`, and from RuntimeHost when the node writes none either.
 	Runtime string `yaml:"runtime"`
+	// Network is the container network this instance joins, one of its
+	// node's `containers`. Unwritten on a containerised instance, Load
+	// fills the node's first; a host process joins none. Two instances on
+	// one container network dial each other by name, and an edge between
+	// them publishes nothing on the host. See
+	// docs/apps/conf/inventory.md#container-networks.
+	Network string `yaml:"network"`
 	// Self says which of its service's own secrets this instance holds,
 	// and the keys of each one that is a set. Unwritten means every name
 	// the service declares, which is the ordinary case; written, it is the
@@ -448,6 +454,14 @@ type Node struct {
 	// remaining case. See
 	// docs/apps/conf/inventory.md#reached-and-reaching.
 	Reaches []string `yaml:"reaches"`
+	// Containers is the container networks on this machine, in the order an
+	// instance picks its default from: the first is the one a containerised
+	// instance joins when it names none. Each is a scope inside the node's
+	// loopback. See docs/apps/conf/inventory.md#container-networks.
+	Containers []string `yaml:"containers"`
+	// Runtime is what delivers an instance on this node that writes no
+	// `runtime` of its own. Empty means RuntimeHost.
+	Runtime string `yaml:"runtime"`
 	// Export narrows what is written for this device to one of the ways the
 	// services it reaches offer, or ExportNone to write nothing at all.
 	// Empty takes every way they offer. See
@@ -1018,8 +1032,14 @@ func FlatID(id string) string {
 	return strings.ReplaceAll(id, QualifiedSep, "-")
 }
 
-// qualifyInstances sets each instance's ID to <node>/<name> and writes the
-// node into every dial that leaves it out.
+// ContainerBind is the only bind a containerised instance has: inside the
+// container every interface is the container's own, and what reaches it from
+// the host is the mapping, not the bind.
+const ContainerBind = "0.0.0.0"
+
+// qualifyInstances sets each instance's ID to <node>/<name>, fills what an
+// instance takes from its node — runtime, container network, bind — and
+// writes the node into every dial that leaves it out.
 func qualifyInstances(node *Node) {
 	if node.Broken != "" {
 		return
@@ -1027,6 +1047,21 @@ func qualifyInstances(node *Node) {
 	for i := range node.Instances {
 		inst := &node.Instances[i]
 		inst.ID = node.ID + QualifiedSep + inst.Name
+		// What runs the process, which container network it joins and
+		// what it binds follow from the node unless the instance says
+		// otherwise. Inside a container the only bind that is reachable at
+		// all is every interface: who gets in is the host mapping's to say.
+		if inst.Runtime == "" {
+			inst.Runtime = node.Runtime
+		}
+		if inst.Containerised() {
+			if inst.Network == "" && len(node.Containers) > 0 {
+				inst.Network = node.Containers[0]
+			}
+			if inst.Bind == "" {
+				inst.Bind = ContainerBind
+			}
+		}
 		if len(inst.Dials) == 0 {
 			continue
 		}

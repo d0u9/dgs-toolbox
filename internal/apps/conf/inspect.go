@@ -1110,7 +1110,7 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	if inst.Containerised() {
 		runtime = inst.RuntimeOr()
 	}
-	line(&b, fields(service, where, field("runs in", runtime)))
+	line(&b, fields(service, where, field("runs in", runtime), field("container network", inst.Network)))
 
 	var portParts []string
 	for _, name := range sortedPortNames(ports) {
@@ -1160,6 +1160,9 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	upstreamText := ""
 	if upstream != nil {
 		upstreamText = fmt.Sprintf("%s:%s (%s:%d)", upstream.To.Instance, upstream.To.Port, upstream.Address, upstream.Port)
+		if upstream.Container != "" {
+			upstreamText += " on container network " + upstream.Container
+		}
 	}
 	line(&b,
 		field("hop of", strings.Join(routes, ", ")),

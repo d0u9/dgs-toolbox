@@ -11,8 +11,34 @@ import (
 // ResolveAddress is the address rule an edge follows, for a caller that is
 // not an edge: a dial. See
 // docs/apps/conf/inventory.md#dialling-a-service-that-is-not-on-a-route.
-func ResolveAddress(inv *inventory.Root, from, to inventory.Node) (address, network string, err error) {
-	return resolveAddress(from, to, inv.Networks, inv.Universal)
+func ResolveAddress(inv *inventory.Root, from inventory.Instance, fromNode inventory.Node, to inventory.Instance, toNode inventory.Node) (address, network string, err error) {
+	address, network, _, err = resolveEndpoint(from, fromNode, to, toNode, inv.Networks, inv.Universal)
+	return address, network, err
+}
+
+// resolveEndpoint is the address one instance dials another at: the other
+// end's address in the innermost scope the two share. Two instances on one
+// container network dial by the instance's name there, and container is that
+// network. Otherwise one node is loopback, and two nodes are resolveAddress.
+//
+// A container on a container network reaching anything on its own node off
+// that network is the one pairing with no answer: loopback inside it is the
+// container itself, and reaching the host takes a gateway this model does
+// not carry. A container on no container network shares the host's, and
+// dials loopback like a host process.
+func resolveEndpoint(from inventory.Instance, fromNode inventory.Node, to inventory.Instance, toNode inventory.Node, networkPref []string, universal string) (address, network, container string, err error) {
+	if fromNode.ID != toNode.ID {
+		address, network, err = resolveAddress(fromNode, toNode, networkPref, universal)
+		return address, network, "", err
+	}
+	if to.Network != "" && from.Network == to.Network {
+		return inventory.LocalName(to.ID), "", to.Network, nil
+	}
+	if from.Network != "" {
+		return "", "", "", fmt.Errorf("%s is on container network %q and %s is not, so loopback inside it is the container itself: put both on one of %s's containers",
+			from.ID, from.Network, to.ID, fromNode.ID)
+	}
+	return "127.0.0.1", "", "", nil
 }
 
 // Name is one entry of a network's name table: a name and the address that

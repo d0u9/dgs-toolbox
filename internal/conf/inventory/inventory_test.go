@@ -414,3 +414,29 @@ func TestLoad_UnreferencedInstancesSuffixIsAGroup(t *testing.T) {
 		t.Fatalf("Nodes = %+v, want node n in group odd.instances", got.Nodes)
 	}
 }
+
+// TestQualifyInstances_FillsWhatAContainerTakesFromItsNode: an instance that
+// writes no runtime takes its node's, a containerised one joins the node's
+// first container network and binds every interface, and a host process
+// joins none.
+func TestQualifyInstances_FillsWhatAContainerTakesFromItsNode(t *testing.T) {
+	node := Node{
+		ID: "home", Runtime: RuntimeDocker, Containers: []string{"matrix", "other"},
+		Instances: []Instance{
+			{Name: "caddy"},
+			{Name: "dns", Network: "other"},
+			{Name: "ssh", Runtime: RuntimeHost},
+		},
+	}
+	qualifyInstances(&node)
+	caddy, dns, ssh := node.Instances[0], node.Instances[1], node.Instances[2]
+	if caddy.Runtime != RuntimeDocker || caddy.Network != "matrix" || caddy.Bind != ContainerBind {
+		t.Errorf("caddy = runtime %q network %q bind %q, want docker, matrix, %s", caddy.Runtime, caddy.Network, caddy.Bind, ContainerBind)
+	}
+	if dns.Network != "other" {
+		t.Errorf("dns network = %q, want the one it wrote", dns.Network)
+	}
+	if ssh.Runtime != RuntimeHost || ssh.Network != "" || ssh.Bind != "" {
+		t.Errorf("ssh = runtime %q network %q bind %q, want a host process with neither", ssh.Runtime, ssh.Network, ssh.Bind)
+	}
+}
