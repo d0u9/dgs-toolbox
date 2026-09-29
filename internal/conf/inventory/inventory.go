@@ -26,6 +26,7 @@ const (
 	UsersFilename    = "users.yaml"
 	RoutesFilename   = "routes.yaml"
 	NetworksFilename = "networks.yaml"
+	HostsFilename    = "hosts.yaml"
 )
 
 // DevicesNone is the one value a user's `devices` key may take: this person
@@ -61,7 +62,76 @@ const (
 
 // Networks is a node's `networks` key: a mapping of network name to this
 // node's address on it. It says where others can reach this node.
+//
+// An entry is an address, or {address, mac} for a network that hands
+// addresses out by hardware address; the mac is kept in Node.MACs.
 type Networks map[string]string
+
+// UnmarshalYAML accepts both spellings of an entry.
+func (ns *Networks) UnmarshalYAML(value *yaml.Node) error {
+	entries, err := decodeAddresses(value)
+	if err != nil {
+		return err
+	}
+	out := make(Networks, len(entries))
+	for name, e := range entries {
+		out[name] = e.Address
+	}
+	*ns = out
+	return nil
+}
+
+// address is one entry of a node's `networks` key in its mapping form.
+type address struct {
+	Address string `yaml:"address"`
+	MAC     string `yaml:"mac"`
+}
+
+func decodeAddresses(value *yaml.Node) (map[string]address, error) {
+	var raw map[string]yaml.Node
+	if err := value.Decode(&raw); err != nil {
+		return nil, err
+	}
+	out := make(map[string]address, len(raw))
+	for name, node := range raw {
+		if node.Kind == yaml.ScalarNode {
+			out[name] = address{Address: node.Value}
+			continue
+		}
+		var a address
+		dec := node
+		if err := dec.Decode(&a); err != nil {
+			return nil, fmt.Errorf("network %q: want an address or {address, mac}: %w", name, err)
+		}
+		a.MAC = NormalizeMAC(a.MAC)
+		out[name] = a
+	}
+	return out, nil
+}
+
+// NormalizeMAC writes a hardware address lower case with colons, so a value
+// copied from a router's upper-case or dashed table is the same value.
+func NormalizeMAC(mac string) string {
+	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(mac)), "-", ":")
+}
+
+// Network is one entry of networks.yaml: a name, and the range it covers
+// when someone administers it.
+type Network struct {
+	Name    string `yaml:"name"`
+	Subnet  string `yaml:"subnet"`
+	Gateway string `yaml:"gateway"`
+}
+
+// Host is one entry of hosts.yaml: a machine this inventory deploys nothing
+// to, but still names and reserves an address for. See
+// docs/apps/conf/inventory.md#hosts.
+type Host struct {
+	Network string   `yaml:"network"`
+	Address string   `yaml:"address"`
+	MAC     string   `yaml:"mac"`
+	Names   []string `yaml:"names"`
+}
 
 // Instance is one service running on a node, and one rendered configuration file.
 type Instance struct {
@@ -108,6 +178,11 @@ type Instance struct {
 	// and the credential stays in the configuration file beside it. See
 	// docs/apps/conf/inventory.md#what-a-container-needs-beyond-the-model.
 	Deploy map[string]any `yaml:"deploy"`
+	// Dials names services this instance calls in passing, off any route:
+	// the caller's own name for the dependency to a hop, <instance>:<port>.
+	// A dial is not an edge and grants nothing. See
+	// docs/apps/conf/inventory.md#dialling-a-service-that-is-not-on-a-route.
+	Dials map[string]string `yaml:"dials"`
 
 	// Path is the file this instance was written in, relative to the
 	// generator root: its node file, or its own file in the node's instance
@@ -167,7 +242,19 @@ type Port struct {
 	// page. It is a bare hostname and not a URL: the site block wants the
 	// name alone, and a template needing a scheme writes one. See
 	// docs/apps/conf/inventory.md#the-name-a-port-is-published-at.
-	Published string `yaml:"published"`
+	//
+	// It is written as a string or a list; Published is the first name and
+	// Names all of them, for a proxy answering to its own sites.
+	Published string   `yaml:"-"`
+	Names     []string `yaml:"-"`
+}
+
+// portYAML is Port's mapping form as written.
+type portYAML struct {
+	Number    int       `yaml:"port"`
+	Protocol  string    `yaml:"protocol"`
+	Self      []string  `yaml:"self"`
+	Published yaml.Node `yaml:"published"`
 }
 
 // SelfRef is one entry of Port.Self, split: the secret's name, and the key
@@ -281,9 +368,22 @@ func (ps *Ports) UnmarshalYAML(value *yaml.Node) error {
 			out[name] = Port{Number: number}
 			continue
 		}
-		var port Port
-		if err := node.Decode(&port); err != nil {
+		var py portYAML
+		if err := node.Decode(&py); err != nil {
 			return fmt.Errorf("port %q: want a number or {port, protocol}: %w", name, err)
+		}
+		port := Port{Number: py.Number, Protocol: py.Protocol, Self: py.Self}
+		switch py.Published.Kind {
+		case 0:
+		case yaml.ScalarNode:
+			port.Names = []string{py.Published.Value}
+		default:
+			if err := py.Published.Decode(&port.Names); err != nil {
+				return fmt.Errorf("port %q: published: want a name or a list of names: %w", name, err)
+			}
+		}
+		if len(port.Names) > 0 {
+			port.Published = port.Names[0]
 		}
 		switch port.ProtocolOr() {
 		case ProtocolTCP, ProtocolUDP:
@@ -331,6 +431,9 @@ type Node struct {
 	// Networks says where others can reach this node: network name to
 	// address.
 	Networks Networks `yaml:"networks"`
+	// MACs is the hardware address written beside an address in
+	// `networks`, by network. Read for the reservation export and rule 28.
+	MACs map[string]string `yaml:"-"`
 	// Reaches lists networks this node can open a connection on, without
 	// being reachable on them — a phone or a laptop on the home LAN. Every
 	// node reaches every network it has an address on, and every node
@@ -531,6 +634,12 @@ type Root struct {
 	// node can reach without saying so. Empty means nothing is implicit.
 	Universal      string
 	NetworksBroken string
+	// NetworkInfo is each network's subnet and gateway, by name.
+	NetworkInfo map[string]Network
+
+	// Hosts is hosts.yaml's `hosts` map, keyed by host identifier.
+	Hosts       map[string]Host
+	HostsBroken string
 }
 
 // Load parses a generator root's inventory. A missing nodes/ directory or a
@@ -578,7 +687,18 @@ func Load(root string) (*Root, error) {
 	if err != nil {
 		return nil, err
 	}
-	rt.Networks, rt.Universal, rt.NetworksBroken = networks, universal, brokenNetworks
+	rt.Universal, rt.NetworksBroken = universal, brokenNetworks
+	rt.NetworkInfo = map[string]Network{}
+	for _, n := range networks {
+		rt.Networks = append(rt.Networks, n.Name)
+		rt.NetworkInfo[n.Name] = n
+	}
+
+	hosts, brokenHosts, err := loadHosts(root)
+	if err != nil {
+		return nil, err
+	}
+	rt.Hosts, rt.HostsBroken = hosts, brokenHosts
 
 	return rt, nil
 }
@@ -685,10 +805,27 @@ type nodeFileWithDirectory struct {
 func decodeNode(data []byte, node *Node) (string, error) {
 	var peek struct {
 		Instances yaml.Node `yaml:"instances"`
+		Networks  yaml.Node `yaml:"networks"`
 	}
 	if err := yaml.Unmarshal(data, &peek); err != nil {
 		return "", err
 	}
+	defer func() {
+		if peek.Networks.Kind != yaml.MappingNode {
+			return
+		}
+		if entries, err := decodeAddresses(&peek.Networks); err == nil {
+			for name, e := range entries {
+				if e.MAC == "" {
+					continue
+				}
+				if node.MACs == nil {
+					node.MACs = map[string]string{}
+				}
+				node.MACs[name] = e.MAC
+			}
+		}
+	}()
 	if peek.Instances.Kind != yaml.MappingNode {
 		var doc nodeFile
 		if err := decodeStrict(data, &doc); err != nil {
@@ -803,7 +940,29 @@ func loadRoutes(root string) (map[string]Route, string, error) {
 	return doc.Routes, "", nil
 }
 
-func loadNetworks(root string) (networks []string, universal string, broken string, err error) {
+func loadHosts(root string) (map[string]Host, string, error) {
+	path := filepath.Join(root, HostsFilename)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", nil
+		}
+		return nil, "", fmt.Errorf("inventory: reading %s: %w", path, err)
+	}
+	var doc struct {
+		Hosts map[string]Host `yaml:"hosts"`
+	}
+	if err := decodeStrict(data, &doc); err != nil {
+		return nil, fmt.Sprintf("%s: %s", path, err), nil
+	}
+	for id, h := range doc.Hosts {
+		h.MAC = NormalizeMAC(h.MAC)
+		doc.Hosts[id] = h
+	}
+	return doc.Hosts, "", nil
+}
+
+func loadNetworks(root string) (networks []Network, universal string, broken string, err error) {
 	path := filepath.Join(root, NetworksFilename)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -814,8 +973,8 @@ func loadNetworks(root string) (networks []string, universal string, broken stri
 	}
 
 	var doc struct {
-		Networks  []string `yaml:"networks"`
-		Universal string   `yaml:"universal"`
+		Networks  []Network `yaml:"networks"`
+		Universal string    `yaml:"universal"`
 	}
 	if err := decodeStrict(data, &doc); err != nil {
 		return nil, "", fmt.Sprintf("%s: %s", path, err), nil

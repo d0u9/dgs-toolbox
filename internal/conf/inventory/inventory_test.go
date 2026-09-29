@@ -56,7 +56,7 @@ routes:
     hops: [ss-sfo01:main]
 `)
 	writeFile(t, filepath.Join(root, NetworksFilename), `
-networks: [home, internet]
+networks: [{name: home}, {name: internet}]
 universal: internet
 `)
 

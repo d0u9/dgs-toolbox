@@ -16,6 +16,7 @@ package validate
 
 import (
 	"fmt"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -1103,8 +1104,182 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		}
 	}
 
+	fanOutProxy := func(instance string) bool {
+		r, ok := realInstances[instance]
+		return ok && manifests[r.inst.Service].FansOut() && manifests[r.inst.Service].DispatchesBy() == confgen.DispatchName
+	}
+	for _, msg := range networkIssues(inv, nodeByID, fanOutProxy) {
+		add("%s", msg)
+	}
+
 	return issues
 }
 
 // sevenDays is rule 16's staleness limit for a .previous file.
 const sevenDays = 7 * 24 * time.Hour
+
+// networkIssues is rules 27 to 31: network ranges, hardware addresses,
+// hosts, names and dials.
+func networkIssues(inv *inventory.Root, nodeByID map[string]inventory.Node, fansOut func(string) bool) []string {
+	var out []string
+	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+
+	if inv.HostsBroken != "" {
+		add("hosts.yaml will not parse: %s", inv.HostsBroken)
+	}
+
+	// Rule 27: subnet and gateway.
+	prefixes := map[string]netip.Prefix{}
+	for _, name := range inv.Networks {
+		n := inv.NetworkInfo[name]
+		if n.Subnet == "" {
+			if n.Gateway != "" {
+				add("network %q has a gateway but no subnet", name)
+			}
+			continue
+		}
+		prefix, err := netip.ParsePrefix(n.Subnet)
+		if err != nil {
+			add("network %q: subnet %q is not a CIDR prefix", name, n.Subnet)
+			continue
+		}
+		prefixes[name] = prefix
+		if n.Gateway != "" {
+			if gw, err := netip.ParseAddr(n.Gateway); err != nil || !prefix.Contains(gw) {
+				add("network %q: gateway %q is not an address inside %s", name, n.Gateway, n.Subnet)
+			}
+		}
+	}
+
+	// Members of every network, nodes and hosts together, for 27 and 28.
+	type member struct{ id, network, address, mac string }
+	var members []member
+	for _, id := range sortedKeys(nodeByID) {
+		n := nodeByID[id]
+		for network, addr := range n.Networks {
+			members = append(members, member{"node " + strconv.Quote(id), network, addr, n.MACs[network]})
+		}
+	}
+	hostIDs := make([]string, 0, len(inv.Hosts))
+	for id := range inv.Hosts {
+		hostIDs = append(hostIDs, id)
+	}
+	sort.Strings(hostIDs)
+	for _, id := range hostIDs {
+		h := inv.Hosts[id]
+		// Rule 29.
+		if !containsString(inv.Networks, h.Network) && h.Network != inv.Universal {
+			add("host %q names network %q, which networks.yaml does not declare", id, h.Network)
+		}
+		if _, ok := nodeByID[id]; ok {
+			add("host %q is also a node identifier", id)
+		}
+		if _, err := netip.ParseAddr(h.Address); err != nil {
+			add("host %q: address %q is not an IP address", id, h.Address)
+		}
+		members = append(members, member{"host " + strconv.Quote(id), h.Network, h.Address, h.MAC})
+	}
+	sort.Slice(members, func(i, j int) bool {
+		if members[i].network != members[j].network {
+			return members[i].network < members[j].network
+		}
+		return members[i].id < members[j].id
+	})
+	addrHeld := map[[2]string]string{}
+	macHeld := map[[2]string]string{}
+	for _, m := range members {
+		if prefix, ok := prefixes[m.network]; ok {
+			if a, err := netip.ParseAddr(m.address); err == nil && !prefix.Contains(a) {
+				add("%s: address %s on network %q is outside %s", m.id, m.address, m.network, prefix)
+			}
+		}
+		// Rule 28.
+		if prev, ok := addrHeld[[2]string{m.network, m.address}]; ok {
+			add("on network %q, address %s is held by %s and %s", m.network, m.address, prev, m.id)
+		} else {
+			addrHeld[[2]string{m.network, m.address}] = m.id
+		}
+		if m.mac == "" {
+			continue
+		}
+		if !validMAC(m.mac) {
+			add("%s: mac %q on network %q is not six colon-separated octets", m.id, m.mac, m.network)
+		}
+		if prev, ok := macHeld[[2]string{m.network, m.mac}]; ok {
+			add("on network %q, mac %s is held by %s and %s", m.network, m.mac, prev, m.id)
+		} else {
+			macHeld[[2]string{m.network, m.mac}] = m.id
+		}
+	}
+
+	// Rule 30.
+	_, conflicts := derive.Names(inv, fansOut)
+	out = append(out, conflicts...)
+
+	// Rule 31.
+	nodeOf := map[string]inventory.Node{}
+	portsOf := map[string]inventory.Ports{}
+	for _, id := range sortedKeys(nodeByID) {
+		for _, inst := range nodeByID[id].Instances {
+			if inst.Service != "" {
+				nodeOf[inst.ID] = nodeByID[id]
+				portsOf[inst.ID] = inst.Ports
+			}
+		}
+	}
+	for _, id := range sortedKeys(nodeByID) {
+		for _, inst := range nodeByID[id].Instances {
+			names := make([]string, 0, len(inst.Dials))
+			for name := range inst.Dials {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				hop, err := derive.ParseHop(inst.Dials[name])
+				if err != nil {
+					add("instance %q dials %q as %q, which is not <instance>:<port>", inst.ID, name, inst.Dials[name])
+					continue
+				}
+				to, ok := nodeOf[hop.Instance]
+				switch {
+				case !ok:
+					add("instance %q dials %q at instance %q, which does not exist", inst.ID, name, hop.Instance)
+					continue
+				case hop.Instance == inst.ID:
+					add("instance %q dials itself as %q", inst.ID, name)
+					continue
+				}
+				if _, ok := portsOf[hop.Instance][hop.Port]; !ok {
+					add("instance %q dials %q at %s, and %q has no port %q", inst.ID, name, inst.Dials[name], hop.Instance, hop.Port)
+					continue
+				}
+				if _, _, err := derive.ResolveAddress(inv, nodeByID[id], to); err != nil {
+					add("instance %q dials %q: %s", inst.ID, name, err)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func validMAC(mac string) bool {
+	parts := strings.Split(mac, ":")
+	if len(parts) != 6 {
+		return false
+	}
+	for _, p := range parts {
+		if _, err := strconv.ParseUint(p, 16, 8); err != nil || len(p) != 2 {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedKeys(m map[string]inventory.Node) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

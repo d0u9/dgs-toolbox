@@ -67,7 +67,7 @@ routes:
     hops: [ss-srv:main]
 `)
 	writeFile(t, filepath.Join(dir, "networks.yaml"), `
-networks: [internet]
+networks: [{name: internet}]
 universal: internet
 `)
 	return dir

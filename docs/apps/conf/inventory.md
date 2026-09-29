@@ -75,15 +75,17 @@ data.
 
 | What | The names |
 | --- | --- |
-| Files | `services/`, `services/<service>/exports/`, `services/<service>/deploy/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml`, `confgen.yaml`, `defaults.yaml` |
+| Files | `services/`, `services/<service>/exports/`, `services/<service>/deploy/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml`, `hosts.yaml`, `confgen.yaml`, `defaults.yaml` |
 | Node keys | `id`, `networks`, `reaches`, `owner`, `export`, `profiles`, `credential`, `instances` |
 | Profile keys | `export`, `values`, `access` |
-| Instance keys | `id`, `service`, `ports`, `process`, `runtime`, `bind`, `self`, `values`, `deploy` |
-| Port keys | `port`, `protocol`, `self`, when a port is written as a mapping rather than a bare number |
+| Instance keys | `id`, `service`, `ports`, `process`, `runtime`, `bind`, `self`, `values`, `deploy`, `dials` |
+| Port keys | `port`, `protocol`, `self`, `published` (a string or a list), when a port is written as a mapping rather than a bare number |
 | User keys | `username`, `devices`, `export`, `credentials`, `access` |
 | Credential keys | `note`, `access`, `reaches` |
 | Route keys | `hops` |
-| Network keys | `networks`, `universal` |
+| Network keys | `networks`, `universal`; per network `name`, `subnet`, `gateway` |
+| Node address keys | `address`, `mac`, when a node's address on a network is written as a mapping |
+| Host keys | `hosts`; per host `network`, `address`, `mac`, `names` |
 | Service manifest keys | `secret`, `auth`, `template`, `defaults`, `output`, `rotation`, `self`, `upstream` |
 | Self declaration keys | `set`, `fields`, `kind`, `bytes` |
 | Export manifest keys | `template`, `defaults`, `output`, `upstream` |
@@ -104,6 +106,7 @@ the model attaches no meaning to any particular spelling:
 | Network names | `home`, `internet` |
 | Port names | `main`, `alt`, `proxy`, `local`, `web`, `socks`, `http` |
 | Node, instance, user and route identifiers | `u-node-group-10-01`, `ss-sfo01`, `alex`, `jp` |
+| Host identifiers and dial names | `nas`, `printer`, `rss` |
 | Names of an instance's own secrets | `auth_password`, `server_password`, `psk`, `tls_key` |
 | Keys and fields of one of them | `main`, `backup`, `username`, `password` |
 | Everything inside `values` | `masquerade`, `fast_open`, `public_path` — a template's own, not dgs's |
@@ -125,7 +128,8 @@ so.
 ├── nodes/<group>/*.instances/*.yaml  optional instance files
 ├── users.yaml                people and what they may reach
 ├── routes.yaml               chains
-└── networks.yaml             network preference order
+├── networks.yaml             networks, their preference order and address ranges
+└── hosts.yaml                machines on a network that run no instance
 
 ~/confgen-secrets/            conf.secrets
 ```
@@ -322,13 +326,32 @@ it is there.
 ```yaml
 # networks.yaml
 
-networks: [home, internet]
+networks:
+  - name: home
+    subnet: 10.0.0.0/8
+    gateway: 10.0.0.1
+  - name: internet
 universal: internet
 ```
 
 `networks` is a preference order, most preferred first. `universal` names the one
 network every node can reach without saying so, and may be omitted, in which case
 nothing is implicit and every node states what it reaches.
+
+**A network may say what range it covers.** `subnet` is a CIDR prefix, and
+`gateway` the router's address inside it. Both are optional, and both are
+written only for a network someone administers: the internet has no subnet
+worth checking. A network with a `subnet` has every literal address on it —
+a node's and a [host's](#hosts) — checked to fall inside it, and every address
+on it checked to be written once. Nothing is inferred from the prefix: `dgs`
+does not pick addresses, and a network without one is the same network,
+unchecked.
+
+One network is one layer-2 segment, the range its members' masks say. A
+virtual machine bridged onto it is a member with an address in that range,
+even when the address looks like another subnet: `10.0.11.31` on a `/8` is
+on `home`, and writing it as its own network would claim a router between
+the two that is not there.
 
 Neither name is known to `dgs`. `home` and `internet` are this inventory's
 names, and the rule that one network is reachable from everywhere is expressed
@@ -391,12 +414,81 @@ them.
 
 A machine changing address is one line in one node file.
 
+### A node's hardware address
+
+An address in `networks` may be written as a mapping when the network hands
+addresses out by hardware address:
+
+```yaml
+networks:
+  home: {address: 10.0.10.10, mac: "02:00:00:00:00:01"}
+```
+
+`mac` is read for two things only: [the reservation table](#what-the-router-is-given)
+and the check that no two members of a network share one. It never affects
+which address a hop resolves to. It is written lower case with colons, and
+`dgs` normalises what it reads to that, so a value copied from a router's
+upper-case table is the same value.
+
 A mobile device is not a special case, because "at home" and "away" are not two
 addresses for one route — they are two routes. A phone at home reaches the
 internet through the home server; away, it reaches a server directly. Those are
 different chains, the person picks one in their client, and each renders its own
 configuration. The model states which chains exist; which one to use at a given
 moment is a decision no file can make.
+
+## Hosts
+
+Some machines on a network run nothing this inventory deploys — a NAS with its
+own firmware, a printer, a virtual machine someone uses as a desktop — and are
+still named, reserved an address and dialled. They are hosts, and they live in
+one file:
+
+```yaml
+# hosts.yaml
+
+hosts:
+  nas:
+    network: home
+    address: 10.0.10.11
+    mac: "02:00:00:00:00:02"
+    names: [nas.example.com]
+  printer:
+    network: home
+    address: 10.0.10.12
+    mac: "02:00:00:00:00:03"
+    names: [printer.example.com]
+  desk-vm:
+    network: home
+    address: 10.0.11.31
+    mac: "02:00:00:00:00:04"
+```
+
+A host is not a node. It has no instances, no owner, no `reaches`, and no
+route may name it: nothing here renders a file for it, and the one thing it
+takes part in is being found. Anything that grows an instance becomes a node
+file, and its entry here is deleted rather than kept beside it.
+
+`names` is the DNS names the host answers to on that network, as bare
+hostnames, and may be empty: a machine with a reservation and no name is
+ordinary. `mac` is optional too, for a host whose address is fixed on the host
+itself. The key is the host's identifier, for a template or another file to
+refer to; it need not match anything the router calls it.
+
+Everything a host says is checked against its network: the address falls in
+the network's `subnet`, no other host or node holds it, no other member has
+the same `mac`, and no name is claimed twice — see
+[names on a network](#names-on-a-network).
+
+### What the router is given
+
+A network whose router hands out addresses keeps its reservations in the
+router, where `dgs` cannot write. What `dgs` can do is say what they should
+be: an export listing, for one network, every node and host with a `mac`,
+its address and its identifier, in address order. It is copied into the
+router by hand, and a diff of it against the router's own table is the check
+that the two agree. `dgs conf reservations <network>` prints it, one line
+per member: address, `mac`, identifier.
 
 ## Instances and ports
 
@@ -698,6 +790,51 @@ being the clear case: two MicroBin instances cannot share one.
 An authored override on a client node carries `values` the same way it carries
 `ports` and `bind`; see [what is derived](#what-is-derived).
 
+### Dialling a service that is not on a route
+
+A route is a chain someone chooses to use: a person picks it in a client, or a
+program's single upstream follows it. Programs also call each other in
+passing — a digest reading a feed reader's API, a feed reader fetching from a
+feed generator — and those calls are neither a choice anyone makes nor an
+entrance anything listens on. The caller often listens on nothing at all, so
+it has no port to start a route from.
+
+`dials` names them, on the caller:
+
+```yaml
+  - id: digest-home
+    service: ai-digest
+    runtime: docker
+    dials:
+      rss: freshrss-home:web
+```
+
+Each key is the caller's own name for the dependency, and each value a hop,
+`<instance>:<port>`, written exactly as a route writes one. A template reads
+it with `dial "<name>"`, which returns the same shape a proxy's
+[`downstreams`](#the-render-context) entry has: the target's `Instance` and
+`Port`, its `Number`, the `Address` chosen by [the usual rule](#choosing-an-address),
+and its `Published` name when it has one:
+
+```text
+{{ with dial "rss" }}http://{{ .Instance }}:{{ .Number }}{{ end }}
+```
+
+A container on the same bridge network as its target dials the instance
+identifier, which the target's deployment registers as a network alias; the
+loopback address chosen for two ends on one node is the caller's own
+container there. A host process dials `Address`. Which of the two is the
+template's choice, as it is for a proxy.
+
+A dial is not an edge. It grants nothing, carries no credential, adds no
+host mapping to the target's ports and plays no part in rule 8. A dependency
+that needs a credential, or that must be reachable from another node through
+a published port, is a route.
+
+`dial` of a name the instance does not declare is a render error, not an
+empty string: the value is an address, and an empty one renders a file that
+looks complete and connects to nothing.
+
 ### What runs the process
 
 `runtime` says what the process is delivered by, and it is one of `host`,
@@ -811,6 +948,62 @@ instance of it writing `deploy` is an error rather than a mapping nothing reads.
 instance of a service deploys with — its image, most of all — belongs in
 `deploy/defaults.yaml`, and an instance's `deploy` lays over it key by key, the
 way `values` lays over `defaults.yaml`.
+
+### Names on a network
+
+A name is written once, where the thing answering to it is: a port's
+`published`, or a host's `names`. What a resolver on a network needs is the
+other direction — every name, and the address that answers it on that
+network — and that is derived:
+
+| The name comes from | It resolves to |
+| --- | --- |
+| A port's `published`, entered directly | The port's node's address on the network |
+| A port's `published`, fronted by a proxy | The address of the node of the route's first hop |
+
+"Fronted" means the route's first hop is a service with `downstreams: many`
+that dispatches by name: a relay forwards bytes and answers to no name, so a
+route entering through one leaves the name where it was. An address written
+as a hostname is not an entry — a resolver's record wants an IP address.
+| A host's `names` | The host's `address` |
+
+A name resolves on a network only where its node has an address there; a
+name whose node is on the internet alone is absent from `home`'s table
+rather than pointed at a public address.
+
+A template reads the table with `names "<network>"`, a list of `Name`,
+`Address` pairs in name order. A DNS server rendering its local records is
+the case it exists for, and it is why a proxy site or a host added to the
+inventory needs no second edit: the resolver's records follow.
+
+The same name reaching two addresses on one network is an error naming both
+sources. That is rule 18's one-machine rule seen from the resolver's side,
+extended to hosts.
+
+**A proxy's own sites are published on its port.** A reverse proxy also
+answers to names it serves itself — a static site, a landing page — that no
+port behind it publishes. They are written as the proxy's own entrance port's
+`published`, which for this case is a list:
+
+```yaml
+  - id: caddy-home
+    service: caddy
+    ports:
+      http:
+        port: 80
+        published: [server.example.com, example.com, daily.example.com]
+```
+
+A port's `published` is a string or a list of strings. `published "<port>"`
+still returns one name, the first, since the templates reading it — a
+service's own absolute URL — want one; `publishedNames "<port>"` returns
+the whole list, and the names table takes all of them. What a static site
+serves, its root and its log, stays in the proxy's `values`, keyed by the
+same name, because it is that service's configuration and not a network
+fact; a name with no entry there takes the proxy's defaults.
+
+Rule 18 is unchanged in substance: every name in the list counts as that
+port's, and the proxy fronting its own port is not fronting a downstream.
 
 ## Users
 
@@ -2024,6 +2217,16 @@ grantees:    the same port's principals grouped by the person holding them:
              revocable; anything belonging to a person rather than to a
              credential — a home directory, an entry in a name map — is
              rendered per grantee. Principals belonging to nobody are absent
+dials:       the instance's declared dependencies, by name, each resolved as a
+             downstreams entry is: instance, port, number, address, and the
+             published name when it has one. Read with dial "<name>"; a name
+             not declared is a render error
+names:       for a network, every name resolving on it and its address there:
+             ports' published names at their entrance node, and hosts'
+             names. Read with names "<network>", in name order
+publishedNames: every name one of the instance's own ports is published at,
+             where published alone gives the first. Read with
+             publishedNames "<port>"
 self:        the instance's own secrets, by name: a value, a map of fields, a
              map of keys, or a map of keys of maps of fields, as the service
              declares
@@ -2136,6 +2339,19 @@ failing can be told which level it was reading.
     under a different credential, or keeping none called `default`, does not
     satisfy this. The errors name the instance, principal and, for a missing
     grant, route.
+27. Each network's `subnet`, when written, is a CIDR prefix, and its `gateway`
+    an address inside it. Every literal address a node or host holds on that
+    network falls inside the prefix; an address written as a hostname is not
+    checked.
+28. On one network, no address is held twice and no `mac` is held twice,
+    nodes and hosts counted together. A `mac` is six colon-separated octets.
+29. Every host names an existing network, and its identifier is not also a
+    node identifier.
+30. On one network, a name resolves to one address. The sources are ports'
+    `published` names and hosts' `names`; the error names both.
+31. Every `dials` value names an existing instance and an existing port on
+    it, not the dialling instance itself, and the two ends resolve an address
+    as rule 10 requires of an edge.
 
 ## Boundaries
 
@@ -2316,6 +2532,16 @@ and a service's `deploy/` arrive there in this milestone's own commits.
 Open before it starts: `mapping "<port>"` sits one letter from
 `published "<port>"` in a template, and a better name for one of the two would
 be worth having.
+
+### 13. Network ranges, hosts and dials
+
+In order, each standing alone: `networks.yaml` in its list-of-mappings form
+with `subnet` and `gateway`, and a node's address as a mapping with `mac`,
+with rules 27 and 28; `hosts.yaml` and rule 29; `dials`, the `dial` function
+and rule 31; `published` as a list; the `names` function and rule 30; the reservation export. The
+first three change no rendered byte. `names` is the first that lets an
+inventory delete hand-written records, and the order is chosen so the
+records it replaces can be compared against it before they go.
 
 ### Two cautions
 

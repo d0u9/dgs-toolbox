@@ -9,7 +9,9 @@
 # `home` comes first: a device on the house network reaches the file server
 # over it rather than going out and back.
 networks:
-  - home
-  - internet
+  - name: home
+    subnet: 10.0.0.0/8
+    gateway: 10.0.0.1
+  - name: internet
 
 universal: internet
