@@ -56,8 +56,8 @@
       <h3>Which PDFs</h3>
       <div class="vf vf-wide"><span class="vf-label">If</span>
         <div class="path-wrap">
-          <input id="if" class="layout-text mono" spellcheck="false" autocomplete="off" placeholder="every Item; or: owner is alex and type in [bill, invoice]"
-            title="The Items the rule takes. and, or, not, (…); key is value, key in [a, b], key contains text, has key. Empty takes every Item.">
+          <input id="if" class="layout-text mono" spellcheck="false" autocomplete="off" placeholder="every Item; or: owner == alex && type in [bill, invoice]"
+            title="The Items the rule takes. &&, ||, !, (…); key == value, key != value, key in [a, b], key ~ text, has(key). Empty takes every Item.">
           <span id="if-error" class="message error"></span>
         </div>
       </div>

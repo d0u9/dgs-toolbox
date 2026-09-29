@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/codeedit.css">
+<link rel="stylesheet" href="/ui/filetree.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="/app.css">
 </head>
@@ -43,7 +44,7 @@
       <h2>Templates <span id="count" class="count numeric"></span></h2>
       <button id="new" class="button" type="button">+ New</button>
     </div>
-    <ul id="templates" class="template-list scroll"></ul>
+    <div id="templates" class="template-tree scroll"></div>
   </section>
   <section class="template-edit">
     <div class="template-bar">
@@ -52,6 +53,7 @@
         <code id="file" class="file-chip">templates/id_card.yaml</code>
         <span id="dirty" class="dirty" hidden>Unsaved</span>
       </div>
+      <p id="description" class="template-description muted"></p>
       <p id="message" class="message"></p>
       <button id="duplicate" class="button" type="button" title="Start a new Template from this one" hidden>Duplicate</button>
       <button id="save" class="action" type="button" title="Save (Ctrl+S)">Save</button>
@@ -68,6 +70,8 @@
       <h3>What a Template can say</h3>
       <dl class="ref">
         <dt><code>type</code></dt><dd>The file name: lowercase letters, digits, <code>_</code> and <code>-</code>.</dd>
+        <dt><code>extends</code></dt><dd>The type it inherits fields, defaults and <code>ignore_dates</code> from; the list draws it inside that one.</dd>
+        <dt><code>abstract</code></dt><dd><code>true</code> for a type only extended, never imported: no <code>kind</code>.</dd>
         <dt><code>kind</code></dt><dd><code>document</code> keeps revisions and a HEAD; <code>record</code> is one PDF.</dd>
         <dt><code>fields</code></dt><dd>What an import asks for, in order. Each has a <code>key</code> and may say:</dd>
       </dl>

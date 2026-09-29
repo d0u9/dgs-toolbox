@@ -3,6 +3,7 @@
 import { $, api, el, loadState, post, frame, say, statusBar } from "/common.js";
 import { codeEditor, highlight } from "/ui/codeedit.js";
 import { guardByName } from "/ui/confirm.js";
+import { fileTree } from "/ui/filetree.js";
 
 const armDelete = guardByName($("confirm"), $("delete"), "");
 statusBar.setHints("<kbd>Ctrl</kbd>+<kbd>S</kbd> save", { html: true });
@@ -12,6 +13,7 @@ let templates = [];
 let example = "";
 let editing = null; // the type being edited, or "" for a new one
 let saved = ""; // the text as last loaded or saved, to tell an edit
+const closed = new Set(); // the type folders drawn shut
 
 const editor = codeEditor($("yaml"), { onChange: dirty, onSave: save });
 
@@ -22,18 +24,29 @@ function dirty() {
 function render() {
   frame(state);
   $("count").textContent = templates.length;
-  const row = (type, kind, sub, selected, onclick) => el("li", { className: selected ? "selected" : "", onclick },
-    el("span", { className: "template-name" }, type),
-    kind ? el("span", { className: "badge" }, kind) : null,
-    el("span", { className: "template-sub" }, sub));
-  $("templates").replaceChildren(...templates.map((t) => {
-    const fields = (state.templates || []).find((x) => x.type === t.type)?.fields.length ?? 0;
-    return row(t.type, t.kind, (t.description ? t.description + " · " : "") + `${fields} field${fields === 1 ? "" : "s"} · ${t.items === 1 ? "1 Item" : t.items + " Items"}`,
-      t.type === editing, () => leave() && open(t.type));
-  }), ...(editing === "" ? [row("new template", "", "not saved yet", true)] : []));
+  // The types as a tree of what extends what: a type others extend is a
+  // folder, opened by picking its row; one none extends is a file.
+  const parents = new Set(templates.flatMap((t) => (t.lineage || []).slice(1)));
+  const pathOf = (t) => [...(t.lineage || [t.type])].reverse().join("/") + (parents.has(t.type) ? "/" : "");
+  const byPath = new Map(templates.map((t) => [pathOf(t), t]));
+  const extra = (t) => t && el("span", { className: "template-meta" },
+    t.abstract ? el("span", { className: "badge" }, "abstract") : el("span", { className: "template-sub numeric", title: t.items === 1 ? "1 Item" : t.items + " Items" }, String(t.items)));
+  const files = templates.filter((t) => !parents.has(t.type)).map((t) => ({ path: pathOf(t), t }));
+  const shown = templates.find((x) => x.type === editing);
+  $("templates").replaceChildren(fileTree(files, {
+    closed,
+    folders: templates.filter((t) => parents.has(t.type)).map(pathOf),
+    selected: shown ? pathOf(shown) : "",
+    onPick: (f) => leave() && open(f.t.type),
+    onPickFolder: (path) => leave() && open(byPath.get(path).type),
+    fileExtra: (f) => extra(f.t),
+    folderExtra: (path) => extra(byPath.get(path)),
+    decorate: (row, { path }) => { const t = byPath.get(path); if (t) row.title = [t.type, t.kind, t.description].filter(Boolean).join(" · "); },
+  }), ...(editing === "" ? [el("p", { className: "template-sub new-template" }, "new template · not saved yet")] : []));
   const t = templates.find((x) => x.type === editing);
   const file = t ? "templates/" + t.type + ".yaml" : "templates/<type>.yaml";
   $("title").textContent = t ? t.type : "New Template";
+  $("description").textContent = t ? [t.lineage?.length > 1 ? "extends " + t.lineage.slice(1).join(" › ") : "", t.description].filter(Boolean).join(" · ") : "";
   $("file").textContent = file;
   $("file-again").textContent = file;
   $("danger").hidden = !t;
