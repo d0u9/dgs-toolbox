@@ -12,9 +12,24 @@ import (
 // migrationDNSReview describes inventory evidence only. DNS zones and their
 // current answers are external to conf, so every record action remains a check.
 func migrationDNSReview(rep *migrationReport, before, after loaded, oldID, newID string, nodeChanged bool, instances []instanceChange) {
-	reverse := map[string]string{}
+	// Facts are keyed by the instance's ID before the migration, so the
+	// same service compares with itself across a node or instance rename.
+	renamed := map[string]string{}
 	for _, change := range instances {
-		reverse[change.To] = change.From
+		renamed[change.To] = change.From
+	}
+	reverse := map[string]string{}
+	for _, node := range after.inv.Nodes {
+		if node.ID != newID {
+			continue
+		}
+		for _, inst := range node.Instances {
+			local := inventory.LocalName(inst.ID)
+			if from := renamed[local]; from != "" {
+				local = from
+			}
+			reverse[inst.ID] = oldID + inventory.QualifiedSep + local
+		}
 	}
 	oldFacts := migrationPublishedFacts(before.inv, nil)
 	newFacts := migrationPublishedFacts(after.inv, reverse)
@@ -39,7 +54,7 @@ func migrationDNSReview(rep *migrationReport, before, after loaded, oldID, newID
 			item.Service = old.service
 		}
 		instance, port, _ := strings.Cut(key, ":")
-		item.Service += "/" + instance
+		item.Service += "/" + inventory.LocalName(instance)
 		item.Port = port
 		if len(old.ingress) == 0 && len(new.ingress) == 0 {
 			item.NoIngress = true

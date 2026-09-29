@@ -20,7 +20,7 @@ func testInventory() (*inventory.Root, map[string]confgen.Manifest) {
 				ID:       "srv",
 				Networks: inventory.Networks{"internet": "203.0.113.10"},
 				Instances: []inventory.Instance{
-					{ID: "ss-srv", Service: "ssserver", Ports: inventory.PortsOf(map[string]int{"main": 38250})},
+					{ID: "srv/ss-srv", Service: "ssserver", Ports: inventory.PortsOf(map[string]int{"main": 38250})},
 				},
 			},
 			{ID: "laptop", Owner: "alex"},
@@ -28,7 +28,7 @@ func testInventory() (*inventory.Root, map[string]confgen.Manifest) {
 		Users: map[string]inventory.User{
 			"alex": {Access: []string{"sfo"}},
 		},
-		Routes:    map[string]inventory.Route{"sfo": {Hops: []string{"ss-srv:main"}}},
+		Routes:    map[string]inventory.Route{"sfo": {Hops: []string{"srv/ss-srv:main"}}},
 		Networks:  []string{"internet"},
 		Universal: "internet",
 	}
@@ -62,10 +62,10 @@ func TestImpliedPaths_OnePerPrincipalGrant(t *testing.T) {
 		t.Fatalf("ImpliedPaths = %+v, want 1", paths)
 	}
 	p := paths[0]
-	if p.Instance != "ss-srv" || p.Port != "main" || p.Group != "alex" || p.Name != "default" {
+	if p.Instance != "srv/ss-srv" || p.Port != "main" || p.Group != "alex" || p.Name != "default" {
 		t.Fatalf("path = %+v, want ss-srv/main/alex/default", p)
 	}
-	if p.String() != filepath.Join("ss-srv", "main", "alex", "default") {
+	if p.String() != filepath.Join("srv", "ss-srv", "main", "alex", "default") {
 		t.Fatalf("String() = %q", p.String())
 	}
 }
@@ -88,7 +88,7 @@ func TestSync_MissingAndGenerate(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	full := filepath.Join(root, "ss-srv", "main", "alex", "default")
+	full := filepath.Join(root, "srv", "ss-srv", "main", "alex", "default")
 	data, err := os.ReadFile(full)
 	if err != nil {
 		t.Fatalf("reading generated secret: %v", err)
@@ -125,7 +125,7 @@ func TestSync_RenameProducesTheHint(t *testing.T) {
 	if err := Generate(root, implied, inv, manifests); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	oldValue, err := os.ReadFile(filepath.Join(root, "ss-srv", "main", "alex", "default"))
+	oldValue, err := os.ReadFile(filepath.Join(root, "srv", "ss-srv", "main", "alex", "default"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestSync_RenameProducesTheHint(t *testing.T) {
 	if len(res3.Missing) != 0 || len(res3.Orphaned) != 0 {
 		t.Fatalf("Sync after Mv = %+v, want none missing, none orphaned", res3)
 	}
-	newValue, err := os.ReadFile(filepath.Join(root, "ss-srv", "main", "alex", "work"))
+	newValue, err := os.ReadFile(filepath.Join(root, "srv", "ss-srv", "main", "alex", "work"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,10 +193,10 @@ func TestImpliedPaths_Own(t *testing.T) {
 	if own == nil {
 		t.Fatalf("ImpliedPaths = %+v, want an own/psk path", paths)
 	}
-	if own.Instance != "ss-srv" || own.Name != "psk" || own.Group != "" {
+	if own.Instance != "srv/ss-srv" || own.Name != "psk" || own.Group != "" {
 		t.Fatalf("own path = %+v, want ss-srv/self/psk", own)
 	}
-	if own.String() != filepath.Join("ss-srv", "self", "psk") {
+	if own.String() != filepath.Join("srv", "ss-srv", "self", "psk") {
 		t.Fatalf("String() = %q", own.String())
 	}
 }
@@ -267,10 +267,10 @@ func TestSync_OwnDroppedFromListIsOrphaned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if len(res.Orphaned) != 1 || res.Orphaned[0].String() != filepath.Join("ss-srv", "self", "psk") {
+	if len(res.Orphaned) != 1 || res.Orphaned[0].String() != filepath.Join("srv", "ss-srv", "self", "psk") {
 		t.Fatalf("Sync.Orphaned = %+v, want ss-srv/self/psk", res.Orphaned)
 	}
-	if _, err := os.Stat(filepath.Join(root, "ss-srv", "self", "psk")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "srv", "ss-srv", "self", "psk")); err != nil {
 		t.Fatalf("Sync deleted the orphaned file: %v", err)
 	}
 }
@@ -288,7 +288,7 @@ func TestSync_UnlistedOwnPathIsOrphaned(t *testing.T) {
 	if err := Generate(root, implied, inv, manifests); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	ownPath := filepath.Join(root, "ss-srv", SelfPort, "auth_password")
+	ownPath := filepath.Join(root, "srv", "ss-srv", SelfPort, "auth_password")
 	if err := os.MkdirAll(filepath.Dir(ownPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestSync_UnlistedOwnPathIsOrphaned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if len(res.Orphaned) != 1 || res.Orphaned[0].String() != filepath.Join("ss-srv", "self", "auth_password") {
+	if len(res.Orphaned) != 1 || res.Orphaned[0].String() != filepath.Join("srv", "ss-srv", "self", "auth_password") {
 		t.Fatalf("Sync.Orphaned = %+v, want ss-srv/self/auth_password", res.Orphaned)
 	}
 }
@@ -314,7 +314,7 @@ func TestSync_PreviousFilesAreNeverOrphaned(t *testing.T) {
 	if err := Generate(root, implied, inv, manifests); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	prev := filepath.Join(root, "ss-srv", "main", "alex", "default"+PreviousSuffix)
+	prev := filepath.Join(root, "srv", "ss-srv", "main", "alex", "default"+PreviousSuffix)
 	if err := os.WriteFile(prev, []byte("old-value"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -413,7 +413,7 @@ func TestSync_NonCredentialFilesAreNotOrphans(t *testing.T) {
 	}
 	write("README.md")
 	write(".gitignore")
-	write("ss-srv", ".DS_Store")
+	write("srv", "ss-srv", ".DS_Store")
 
 	res, err := Sync(root, implied)
 	if err != nil {
@@ -424,7 +424,7 @@ func TestSync_NonCredentialFilesAreNotOrphans(t *testing.T) {
 	}
 
 	// A stray file deeper in is still a credential nothing implies.
-	write("ss-srv", "main", "alex", "stray")
+	write("srv", "ss-srv", "main", "alex", "stray")
 	res, err = Sync(root, implied)
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
@@ -501,12 +501,12 @@ func TestImpliedPaths_SetAndFields(t *testing.T) {
 		}
 	}
 	want := []string{
-		"ss-srv/self/account/main/password",
-		"ss-srv/self/account/main/uuid",
-		"ss-srv/self/psk/relays",
-		"ss-srv/self/psk/users",
-		"ss-srv/self/tls/cert",
-		"ss-srv/self/tls/key",
+		"srv/ss-srv/self/account/main/password",
+		"srv/ss-srv/self/account/main/uuid",
+		"srv/ss-srv/self/psk/relays",
+		"srv/ss-srv/self/psk/users",
+		"srv/ss-srv/self/tls/cert",
+		"srv/ss-srv/self/tls/key",
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("self paths = %v, want %v", got, want)
@@ -530,10 +530,10 @@ func TestGenerate_OpaqueIsNeverGenerated(t *testing.T) {
 	if err := Generate(root, implied, inv, manifests); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "ss-srv", "self", "psk")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "srv", "ss-srv", "self", "psk")); err != nil {
 		t.Fatalf("psk was not generated: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "ss-srv", "self", "tls_key")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, "srv", "ss-srv", "self", "tls_key")); !os.IsNotExist(err) {
 		t.Fatalf("tls_key = %v, want an opaque value left for someone to write", err)
 	}
 	res, err := Sync(root, implied)
@@ -550,11 +550,11 @@ func TestGenerate_OpaqueIsNeverGenerated(t *testing.T) {
 // so self.psk.users is written the way its path is.
 func TestReadSelf_MirrorsTheTree(t *testing.T) {
 	root := t.TempDir()
-	writeSecretFile(t, root, "ss-srv/self/tls_key", "pem")
-	writeSecretFile(t, root, "ss-srv/self/psk/users", "a")
-	writeSecretFile(t, root, "ss-srv/self/account/main/uuid", "u")
+	writeSecretFile(t, root, "srv/ss-srv/self/tls_key", "pem")
+	writeSecretFile(t, root, "srv/ss-srv/self/psk/users", "a")
+	writeSecretFile(t, root, "srv/ss-srv/self/account/main/uuid", "u")
 
-	self, err := ReadSelf(root, "ss-srv")
+	self, err := ReadSelf(root, "srv/ss-srv")
 	if err != nil {
 		t.Fatalf("ReadSelf: %v", err)
 	}

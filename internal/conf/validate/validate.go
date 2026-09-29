@@ -161,6 +161,9 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 				overridesByNode[n.ID] = append(overridesByNode[n.ID], inst)
 				continue
 			}
+			if strings.ContainsAny(inst.Name, inventory.QualifiedSep+":") {
+				add("node %q: instance id %q may not contain %q or %q; the node is already part of its key", n.ID, inst.Name, inventory.QualifiedSep, ":")
+			}
 			if _, dup := realInstances[inst.ID]; dup {
 				realDupes = append(realDupes, inst.ID)
 			}
@@ -603,7 +606,7 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	for _, nodeID := range nodeIDsInOrder {
 		for _, inst := range overridesByNode[nodeID] {
 			matched := false
-			for _, ci := range derivedByID[inst.ID] {
+			for _, ci := range derivedByID[inventory.LocalName(inst.ID)] {
 				if ci.Node == nodeID {
 					matched = true
 					break
@@ -1237,7 +1240,7 @@ func networkIssues(inv *inventory.Root, nodeByID map[string]inventory.Node, fans
 			for _, name := range names {
 				hop, err := derive.ParseHop(inst.Dials[name])
 				if err != nil {
-					add("instance %q dials %q as %q, which is not <instance>:<port>", inst.ID, name, inst.Dials[name])
+					add("instance %q dials %q as %q, which is not [<node>/]<instance>:<port>", inst.ID, name, inst.Dials[name])
 					continue
 				}
 				to, ok := nodeOf[hop.Instance]

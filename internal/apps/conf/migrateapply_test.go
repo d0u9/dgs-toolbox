@@ -42,7 +42,7 @@ func TestMigrationApplyWritesTypedFieldsAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inv.Nodes) != 1 || inv.Nodes[0].ID != "srv08" || inv.Nodes[0].Networks["wan"] != "203.0.113.8" || inv.Routes["sfo08"].Hops[0] != "u-node-group-10:main" {
+	if len(inv.Nodes) != 1 || inv.Nodes[0].ID != "srv08" || inv.Nodes[0].Networks["wan"] != "203.0.113.8" || inv.Routes["sfo08"].Hops[0] != "srv08/u-node-group-10:main" {
 		t.Fatalf("applied inventory: %+v", inv)
 	}
 	if _, old := inv.Routes["sfo"]; old {
@@ -86,8 +86,8 @@ func TestMigrationApplyCopiesRenamedSecretsAndKeepsOriginals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldSecret := filepath.Join(secrets, "u-node-group-10", "main", "friend-a", "default")
-	newSecret := filepath.Join(secrets, "u-node-group-1008", "main", "friend-a", "default")
+	oldSecret := filepath.Join(secrets, "srv", "u-node-group-10", "main", "friend-a", "default")
+	newSecret := filepath.Join(secrets, "srv08", "u-node-group-1008", "main", "friend-a", "default")
 	oldValue, err := os.ReadFile(oldSecret)
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestMigrationApplyRejectsConflictingSecretDestination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(secrets, "u-node-group-1008", "main", "friend-a", "default"), "different")
+	writeFile(t, filepath.Join(secrets, "srv08", "u-node-group-1008", "main", "friend-a", "default"), "different")
 	var out bytes.Buffer
 	err = migrateAction(nil, &out, []string{"node"}, map[string]string{
 		"apply": "true", "yes": "true", "node": "from=srv,to=srv08",

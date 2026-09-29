@@ -115,8 +115,10 @@ operator to run; the TUI runs none of them. A compose service without
 Instances without a generated lifecycle script are listed for manual
 handling.
 
-An instance rename updates its authored ID and route-hop references in the
-preview. A route rename updates the route key and typed access lists in users,
+An instance's key is `<node>/<id>`, so a node rename rewrites every route hop
+and dial that names one of the node's instances, on any node; a dial written
+without its node stays that way. An instance rename updates its authored ID and
+route-hop and dial references in the preview. A route rename updates the route key and typed access lists in users,
 credentials and node profiles. Values, deploy settings and templates remain
 opaque, and the report marks them for manual review. A changed instance ID
 can change secret paths; the report lists those before anyone edits files.
@@ -215,8 +217,8 @@ verification from the networks clients use.
 
 ## Execution and rollback
 
-Apply edits local inventory files and copies secrets whose instance IDs
-are explicitly renamed. Before writing, it rechecks the
+Apply edits local inventory files and copies secrets whose instance keys
+change: every instance of a renamed node, and each explicitly renamed instance. Before writing, it rechecks the
 captured file digests and rebuilds the plan. It writes complete replacement
 files in their existing directories, then atomically renames them into place.
 Because several file renames are not one filesystem transaction, it records
@@ -237,8 +239,10 @@ replacement. A failed write or failed post-write load and validation restores
 every file already replaced. This is filesystem API level recovery, not a
 claim of power-loss durability across several renames.
 
-For an explicit instance rename, apply copies each implied secret to the
-new instance path before replacing inventory files. It checks source bytes,
+For a node rename or an explicit instance rename, apply copies each implied
+secret to the new `<node>/<id>` path before replacing inventory files. The
+preview renders a renamed node's targets with the secrets still at their old
+paths. It checks source bytes,
 rejects a different destination value, and reads back each new file. The old
 files remain for rollback; a retry accepts matching copies left by a partial
 attempt. Added or removed secret paths without a one-to-one instance rename
@@ -313,8 +317,8 @@ rather than a known change.
 - A same-node hop retains loopback when the node's address changes.
 - A changed container bind mapping appears in the deployment list even when
   the runtime configuration does not change.
-- A node rename changes derived client target paths; unchanged instance IDs
-  and unchanged secret paths remain untouched.
+- A node rename changes derived client target paths and every secret path of
+  the node's instances; instance IDs remain untouched.
 - A `published` name behind a proxy yields a DNS review item with the ingress
   node, without claiming that the backend's address is its DNS answer.
 - An opaque template value containing the old IP is flagged for review and

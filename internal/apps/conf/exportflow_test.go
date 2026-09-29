@@ -39,7 +39,7 @@ func TestInspectMark_NodeMarksEveryInstance(t *testing.T) {
 	if !strings.HasSuffix(selectedLabel(t, m), "▾ [x] srv") {
 		t.Fatalf("srv label = %q, want it marked", selectedLabel(t, m))
 	}
-	if !m.marked["ss-srv"] {
+	if !m.marked["srv/ss-srv"] {
 		t.Fatalf("marked = %v, want ss-srv", m.marked)
 	}
 	m = pressInspect(t, m, " ")
@@ -99,7 +99,7 @@ func TestInspectMark_AllTogglesTheTab(t *testing.T) {
 
 func TestInspectMark_BoxFollowsTheIndent(t *testing.T) {
 	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
-	m.list.SelectID("inst:ss-srv")
+	m.list.SelectID("inst:srv/ss-srv")
 	if got := selectedLabel(t, m); !strings.Contains(got, "─ [ ] ss-srv") {
 		t.Fatalf("instance label = %q, want the box after its branch", got)
 	}
@@ -107,8 +107,8 @@ func TestInspectMark_BoxFollowsTheIndent(t *testing.T) {
 
 func TestInspectExport_NoMarksTakesTheCursorRow(t *testing.T) {
 	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
-	m.list.SelectID("inst:ss-srv")
-	if got := m.exportSelection(); len(got) != 1 || got[0] != "ss-srv" {
+	m.list.SelectID("inst:srv/ss-srv")
+	if got := m.exportSelection(); len(got) != 1 || got[0] != "srv/ss-srv" {
 		t.Fatalf("exportSelection = %v, want [ss-srv]", got)
 	}
 }
@@ -216,7 +216,7 @@ func TestInspectExport_RefusesToOverwriteUnasked(t *testing.T) {
 	runInspectExport(t, formatFolder, dest)
 
 	m := newInspectModel(buildExportableRoot(t))
-	m.list.SelectID("inst:u-node-group-10")
+	m.list.SelectID("inst:srv/u-node-group-10")
 	m = pressInspect(t, m, "x")
 	m.export.form.SetValue(fieldDest, dest)
 	m = pressInspect(t, m, "n")

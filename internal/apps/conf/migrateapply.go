@@ -426,7 +426,7 @@ func migrationAlreadyApplied(root string, flags map[string]string) (bool, error)
 	for _, change := range instances {
 		instanceNames[change.From] = change.To
 		for _, inst := range node.Instances {
-			if inst.ID == change.From {
+			if inventory.LocalName(inst.ID) == change.From {
 				return false, nil
 			}
 		}
@@ -449,7 +449,7 @@ func migrationAlreadyApplied(root string, flags map[string]string) (bool, error)
 		}
 		found := false
 		for _, inst := range node.Instances {
-			if inst.ID == instanceID && inst.Ports[change.Port].Published == change.To {
+			if inventory.LocalName(inst.ID) == instanceID && inst.Ports[change.Port].Published == change.To {
 				found = true
 			}
 		}
@@ -462,7 +462,7 @@ func migrationAlreadyApplied(root string, flags map[string]string) (bool, error)
 
 func migrationNodeHasInstance(node *inventory.Node, id string) bool {
 	for _, inst := range node.Instances {
-		if inst.ID == id {
+		if inventory.LocalName(inst.ID) == id {
 			return true
 		}
 	}

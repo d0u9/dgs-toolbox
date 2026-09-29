@@ -425,18 +425,18 @@ func (m *InspectModel) toParent() {
 	if kind == "port" {
 		// The Services tree is three deep: a port's parent is the instance
 		// listening on it.
-		instance, _, _ := strings.Cut(name, "/")
-		m.list.SelectID("inst:" + instance)
+		m.list.SelectID("inst:" + name[:strings.LastIndex(name, "/")])
 		m.detailScroll = 0
 		return
 	}
 	if kind == "secret" || kind == "secretport" {
 		// A credential's parent is its port, and a port's is its instance.
+		// The instance is the first two segments, <node>/<name>.
 		p := strings.Split(name, "/")
-		if kind == "secret" && len(p) >= 2 {
-			m.list.SelectID("secretport:" + p[0] + "/" + p[1])
-		} else if len(p) >= 1 {
-			m.list.SelectID("secretinst:" + p[0])
+		if kind == "secret" && len(p) >= 3 {
+			m.list.SelectID("secretport:" + strings.Join(p[:3], "/"))
+		} else if len(p) >= 2 {
+			m.list.SelectID("secretinst:" + strings.Join(p[:2], "/"))
 		}
 		m.detailScroll = 0
 		return
@@ -1498,10 +1498,11 @@ func instancesOfService(l InspectData, service string) []string {
 // this is where "who can reach this, and with which credential" is
 // answered — the instance above it holds several of these, independently.
 func renderPortDetail(l InspectData, id string) (string, error) {
-	instance, port, ok := strings.Cut(id, "/")
-	if !ok {
+	i := strings.LastIndex(id, "/")
+	if i < 0 {
 		return "", fmt.Errorf("port %q is not <instance>/<port>", id)
 	}
+	instance, port := id[:i], id[i+1:]
 
 	var found *inventory.Instance
 	var node string

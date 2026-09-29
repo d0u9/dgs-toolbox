@@ -1,5 +1,5 @@
 # Routes: one chain each, from where traffic enters to where it leaves,
-# written as an ordered list of hops. A hop is `<instance>:<port>`, and each
+# written as an ordered list of hops. A hop is `<node>/<instance>:<port>`, and each
 # adjacent pair is one edge whose address dgs works out from the two nodes.
 #
 # A route's name is what a person sees when they pick a line in their client,
@@ -14,25 +14,25 @@ routes:
   # one is the choice being offered: a network that blocks Shadowsocks still
   # leaves Hysteria2. A server offering one protocol would not write it.
   sfo-01-ss:
-    hops: [ss-sfo01:users]
+    hops: [sfo1/ss-sfo01:users]
 
   # A program on the relay machine dials the separate `relays` account table.
   # Its principal in that node file says whose authorised credential it uses.
   hkg-local-sfo-01-ss:
-    hops: [sslocal-hkg01:socks, ss-sfo01:relays]
+    hops: [hkg1/sslocal-hkg01:socks, sfo1/ss-sfo01:relays]
 
   sfo-01-hy2:
-    hops: [hy2-sfo01:users]
+    hops: [sfo1/hy2-sfo01:users]
 
   # The same exit, reached through a relay that terminates nothing. Two hops,
   # and the account is the one at the end: a person holding this line and the
   # line above uses one password and dials two different addresses. The name
   # carries both ends, because a person picking it is choosing both.
   hkg-sfo-01-ss:
-    hops: [fwd-hkg01:ss, ss-sfo01:users]
+    hops: [hkg1/fwd-hkg01:ss, sfo1/ss-sfo01:users]
 
   hkg-sfo-01-hy2:
-    hops: [fwd-hkg01:hy2, hy2-sfo01:users]
+    hops: [hkg1/fwd-hkg01:hy2, sfo1/hy2-sfo01:users]
 
   # A service reached from a browser shares the name table with the proxy
   # lines: a person picks from one list and does not care which kind it is.
@@ -40,9 +40,9 @@ routes:
   # that proxy is adding a route like this one, and the proxy's configuration
   # follows without anyone copying a port number.
   paste:
-    hops: [caddy-sfo01:https, microbin-node1:web]
+    hops: [sfo1/caddy-sfo01:https, sfo1/microbin-node1:web]
 
   # The file server, reached over the house network only. One hop: reaching a
   # service directly is an ordinary route, not a special form.
   files:
-    hops: [samba-nas:smb]
+    hops: [nas/samba-nas:smb]

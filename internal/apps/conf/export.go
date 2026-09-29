@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dgs-toolbox/internal/conf/inventory"
 	"dgs-toolbox/internal/cred/publish"
 )
 
@@ -63,7 +64,7 @@ func (m renderer) renderAll(instances []string) ([]exportFile, error) {
 				bytes = indentJSON(bytes)
 			}
 			files = append(files, exportFile{
-				Path:       filepath.Join(t.Node, kind, instance, a.Output),
+				Path:       filepath.Join(t.Node, kind, inventory.LocalName(instance), a.Output),
 				Bytes:      bytes,
 				Executable: a.Executable,
 			})
@@ -80,7 +81,7 @@ func (m renderer) renderAll(instances []string) ([]exportFile, error) {
 		}
 		for _, d := range deploy {
 			files = append(files, exportFile{
-				Path:       filepath.Join(t.Node, kind, instance, d.Output),
+				Path:       filepath.Join(t.Node, kind, inventory.LocalName(instance), d.Output),
 				Bytes:      d.Bytes,
 				Executable: d.Executable,
 			})

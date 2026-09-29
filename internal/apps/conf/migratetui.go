@@ -209,8 +209,9 @@ func (m *migrationTable) selectNode(id string) {
 		if inst.Service == "" {
 			continue
 		}
+		local := inventory.LocalName(inst.ID)
 		instances[inst.ID] = true
-		m.rows = append(m.rows, migrationRow{kind: "instance", label: "INSTANCE " + inst.ID, source: inst.Path + ": id", before: inst.ID, after: inst.ID})
+		m.rows = append(m.rows, migrationRow{kind: "instance", label: "INSTANCE " + local, source: inst.Path + ": id", before: local, after: local})
 		ports := make([]string, 0, len(inst.Ports))
 		for name, port := range inst.Ports {
 			if port.Published != "" {
@@ -219,7 +220,7 @@ func (m *migrationTable) selectNode(id string) {
 		}
 		sort.Strings(ports)
 		for _, name := range ports {
-			publishedRows = append(publishedRows, migrationRow{kind: "published", label: "PUBLISHED " + inst.ID + ":" + name, source: inst.Path + ": ports." + name + ".published", before: inst.Ports[name].Published, after: inst.Ports[name].Published, instance: inst.ID, port: name})
+			publishedRows = append(publishedRows, migrationRow{kind: "published", label: "PUBLISHED " + inventory.LocalName(inst.ID) + ":" + name, source: inst.Path + ": ports." + name + ".published", before: inst.Ports[name].Published, after: inst.Ports[name].Published, instance: inventory.LocalName(inst.ID), port: name})
 		}
 	}
 	m.rows = append(m.rows, publishedRows...)

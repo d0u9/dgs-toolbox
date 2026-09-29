@@ -27,7 +27,7 @@ func TestMigrateNodePreviewShowsChangedEdgeWithoutWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	for _, want := range []string{"| Node ID | `srv` | `srv08` |", "| Address on internet | `203.0.113.10` | `203.0.113.8` |", "### Route edges\n\n| Edge |", "#### `srv08`", "| `hysteria2/u-node-group-10` | `config.yaml` | bundle path moves; **content changed** |", "#### `friend-a`", "| `hysteria2/yak-default-sfo-hysteria2-link` | `share.txt` | content changed |", "dgs conf export instance:'yak-default-sfo-hysteria2-link'", "### Secret paths\n\nUnchanged.", "No inventory, secret or DNS change has been made"} {
+	for _, want := range []string{"| Node ID | `srv` | `srv08` |", "| Address on internet | `203.0.113.10` | `203.0.113.8` |", "### Route edges\n\n| Edge |", "#### `srv08`", "| `hysteria2/u-node-group-10` | `config.yaml` | bundle path moves; **content changed** |", "#### `friend-a`", "| `hysteria2/yak-default-sfo-hysteria2-link` | `share.txt` | content changed |", "dgs conf export instance:'yak-default-sfo-hysteria2-link'", "### Secret paths\n\n- added: `srv08/u-node-group-10/main/friend-a/default`\n- removed: `srv/u-node-group-10/main/friend-a/default`", "No inventory, secret or DNS change has been made"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("preview missing %q:\n%s", want, got)
 		}
@@ -380,11 +380,11 @@ func TestRenameInventoryNetworkUpdatesAllTypedReferencesWithoutMutatingSource(t 
 func TestMigrateInstanceRenameRewritesDialsOnEveryNode(t *testing.T) {
 	inv := &inventory.Root{Nodes: []inventory.Node{
 		{ID: "srv", Instances: []inventory.Instance{
-			{ID: "rss-old", Service: "freshrss", Path: "nodes/srv.yaml"},
-			{ID: "digest", Service: "ai-digest", Path: "nodes/srv.yaml", Dials: map[string]string{"rss": "rss-old:http", "llm": "llm:api"}},
+			{ID: "srv/rss-old", Service: "freshrss", Path: "nodes/srv.yaml"},
+			{ID: "srv/digest", Service: "ai-digest", Path: "nodes/srv.yaml", Dials: map[string]string{"rss": "srv/rss-old:http", "llm": "srv/llm:api"}},
 		}},
 		{ID: "other", Instances: []inventory.Instance{
-			{ID: "reader", Service: "reader", Path: "nodes/other.yaml", Dials: map[string]string{"feed": "rss-old:http"}},
+			{ID: "other/reader", Service: "reader", Path: "nodes/other.yaml", Dials: map[string]string{"feed": "srv/rss-old:http"}},
 		}},
 	}}
 	original := inv.Nodes[1].Instances[0].Dials
@@ -392,13 +392,13 @@ func TestMigrateInstanceRenameRewritesDialsOnEveryNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := inv.Nodes[0].Instances[1].Dials; got["rss"] != "rss-new:http" || got["llm"] != "llm:api" {
+	if got := inv.Nodes[0].Instances[1].Dials; got["rss"] != "srv/rss-new:http" || got["llm"] != "srv/llm:api" {
 		t.Fatalf("digest dials = %v", got)
 	}
-	if got := inv.Nodes[1].Instances[0].Dials["feed"]; got != "rss-new:http" {
+	if got := inv.Nodes[1].Instances[0].Dials["feed"]; got != "srv/rss-new:http" {
 		t.Fatalf("reader dial = %q", got)
 	}
-	if original["feed"] != "rss-old:http" {
+	if original["feed"] != "srv/rss-old:http" {
 		t.Fatal("rename changed the source inventory's dials")
 	}
 	if !strings.Contains(strings.Join(refs["rss-old"], "\n"), "nodes/other.yaml: reader.dials.feed") {
@@ -416,8 +416,8 @@ instances:
       rss: rss-old:http # the reader
 `)
 	m := migrationYAML{root: root, files: map[string]*migrationYAMLFile{}}
-	source := []inventory.Instance{{ID: "digest", Path: "nodes/srv.yaml", Dials: map[string]string{"rss": "rss-old:http"}}}
-	target := []inventory.Instance{{ID: "digest", Path: "nodes/srv.yaml", Dials: map[string]string{"rss": "rss-new:http"}}}
+	source := []inventory.Instance{{ID: "srv/digest", Path: "nodes/srv.yaml", Dials: map[string]string{"rss": "srv/rss-old:http"}}}
+	target := []inventory.Instance{{ID: "srv/digest", Path: "nodes/srv.yaml", Dials: map[string]string{"rss": "srv/rss-new:http"}}}
 	if err := m.patchInstances(source, target); err != nil {
 		t.Fatal(err)
 	}

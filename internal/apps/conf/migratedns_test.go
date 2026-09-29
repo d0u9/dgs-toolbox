@@ -10,19 +10,19 @@ import (
 func TestMigrationDNSReviewNamesProxyIngressWithoutClaimingBackendIsDNSTarget(t *testing.T) {
 	before := loaded{inv: &inventory.Root{
 		Nodes: []inventory.Node{
-			{ID: "proxy", Networks: inventory.Networks{"internet": "198.51.100.5"}, Instances: []inventory.Instance{{ID: "gateway", Ports: inventory.Ports{"web": {Number: 443}}}}},
-			{ID: "network-4", Networks: inventory.Networks{"home": "10.0.1.4"}, Instances: []inventory.Instance{{ID: "vault", Service: "vaultwarden", Ports: inventory.Ports{"web": {Number: 8080, Published: "vault.example.test"}}}}},
-			{ID: "unrelated", Networks: inventory.Networks{"internet": "198.51.100.9"}, Instances: []inventory.Instance{{ID: "other", Ports: inventory.Ports{"web": {Number: 80, Published: "other.example.test"}}}}},
+			{ID: "proxy", Networks: inventory.Networks{"internet": "198.51.100.5"}, Instances: []inventory.Instance{{ID: "proxy/gateway", Ports: inventory.Ports{"web": {Number: 443}}}}},
+			{ID: "network-4", Networks: inventory.Networks{"home": "10.0.1.4"}, Instances: []inventory.Instance{{ID: "network-4/vault", Service: "vaultwarden", Ports: inventory.Ports{"web": {Number: 8080, Published: "vault.example.test"}}}}},
+			{ID: "unrelated", Networks: inventory.Networks{"internet": "198.51.100.9"}, Instances: []inventory.Instance{{ID: "unrelated/other", Ports: inventory.Ports{"web": {Number: 80, Published: "other.example.test"}}}}},
 		},
-		Routes: map[string]inventory.Route{"vault": {Hops: []string{"gateway:web", "vault:web"}}, "other": {Hops: []string{"other:web"}}},
+		Routes: map[string]inventory.Route{"vault": {Hops: []string{"proxy/gateway:web", "network-4/vault:web"}}, "other": {Hops: []string{"unrelated/other:web"}}},
 	}}
 	after := loaded{inv: &inventory.Root{
 		Nodes: []inventory.Node{
 			before.inv.Nodes[0],
-			{ID: "network-8", Networks: inventory.Networks{"network-8": "10.0.1.8"}, Instances: before.inv.Nodes[1].Instances},
+			{ID: "network-8", Networks: inventory.Networks{"network-8": "10.0.1.8"}, Instances: []inventory.Instance{{ID: "network-8/vault", Service: "vaultwarden", Ports: inventory.Ports{"web": {Number: 8080, Published: "vault.example.test"}}}}},
 			before.inv.Nodes[2],
 		},
-		Routes: before.inv.Routes,
+		Routes: map[string]inventory.Route{"vault": {Hops: []string{"proxy/gateway:web", "network-8/vault:web"}}, "other": {Hops: []string{"unrelated/other:web"}}},
 	}}
 	rep := &migrationReport{}
 	migrationDNSReview(rep, before, after, "network-4", "network-8", true, nil)

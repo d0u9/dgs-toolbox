@@ -159,7 +159,7 @@ func buildTree(targets []target.Target) []*nodeGroup {
 			// A deployment says the program it runs; a file written for a
 			// person says the way it was written, which is what tells two
 			// of them for one route apart.
-			label, detail := t.Instance, t.Service
+			label, detail := inventory.LocalName(t.Instance), t.Service
 			if t.Export != "" {
 				detail = t.Service + " " + t.Export
 				if len(t.Routes) == 1 {

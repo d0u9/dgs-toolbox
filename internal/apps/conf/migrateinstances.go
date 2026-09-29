@@ -55,16 +55,14 @@ func renameMigrationInstances(inv *inventory.Root, nodeIndex int, changes []inst
 	}
 	node := &inv.Nodes[nodeIndex]
 	all := map[string]bool{}
-	for _, n := range inv.Nodes {
-		for _, inst := range n.Instances {
-			all[inst.ID] = true
-		}
+	for _, inst := range node.Instances {
+		all[inventory.LocalName(inst.ID)] = true
 	}
 	changesByID := map[string]string{}
 	for _, change := range changes {
 		found := false
 		for _, inst := range node.Instances {
-			if inst.ID == change.From && inst.Service != "" {
+			if inventory.LocalName(inst.ID) == change.From && inst.Service != "" {
 				found = true
 				refs[change.From] = append(refs[change.From], inst.Path+": id")
 				if strings.Contains(filepath.Base(inst.Path), change.From) {
@@ -78,12 +76,13 @@ func renameMigrationInstances(inv *inventory.Root, nodeIndex int, changes []inst
 		if all[change.To] {
 			return nil, fmt.Errorf("instance %q already exists", change.To)
 		}
-		changesByID[change.From] = change.To
+		changesByID[node.ID+inventory.QualifiedSep+change.From] = node.ID + inventory.QualifiedSep + change.To
 	}
 	node.Instances = append([]inventory.Instance(nil), node.Instances...)
 	for i := range node.Instances {
 		if to := changesByID[node.Instances[i].ID]; to != "" {
 			node.Instances[i].ID = to
+			node.Instances[i].Name = inventory.LocalName(to)
 		}
 	}
 	// A dial names its target the way a hop does, and may live on any node.
@@ -112,7 +111,7 @@ func renameMigrationInstances(inv *inventory.Root, nodeIndex int, changes []inst
 					}
 				}
 				dials[name] = to + ":" + hop.Port
-				refs[hop.Instance] = append(refs[hop.Instance], inst.Path+": "+inst.ID+".dials."+name)
+				refs[hop.Instance] = append(refs[hop.Instance], inst.Path+": "+inventory.LocalName(inst.ID)+".dials."+name)
 			}
 			if dials != nil {
 				inst.Dials = dials
@@ -133,10 +132,74 @@ func renameMigrationInstances(inv *inventory.Root, nodeIndex int, changes []inst
 		}
 		inv.Routes[name] = route
 	}
-	for from := range refs {
-		sort.Strings(refs[from])
+	// refs are reported by the name the operator gave.
+	named := make(map[string][]string, len(refs))
+	for from, list := range refs {
+		local := inventory.LocalName(from)
+		named[local] = append(named[local], list...)
 	}
-	return refs, nil
+	for from := range named {
+		sort.Strings(named[from])
+	}
+	return named, nil
+}
+
+// renameMigrationNode moves every instance of a renamed node to the new
+// node's name, and every hop and dial that reached it with them.
+func renameMigrationNode(inv *inventory.Root, nodeIndex int, oldID, newID string) error {
+	if oldID == newID {
+		return nil
+	}
+	requalify := func(raw string) (string, error) {
+		hop, err := derive.ParseHop(raw)
+		if err != nil {
+			return "", err
+		}
+		node, name, _ := strings.Cut(hop.Instance, inventory.QualifiedSep)
+		if node != oldID {
+			return raw, nil
+		}
+		return newID + inventory.QualifiedSep + name + ":" + hop.Port, nil
+	}
+	node := &inv.Nodes[nodeIndex]
+	node.Instances = append([]inventory.Instance(nil), node.Instances...)
+	for i := range node.Instances {
+		node.Instances[i].ID = newID + inventory.QualifiedSep + inventory.LocalName(node.Instances[i].ID)
+	}
+	inv.Nodes = append([]inventory.Node(nil), inv.Nodes...)
+	for n := range inv.Nodes {
+		other := &inv.Nodes[n]
+		if n != nodeIndex {
+			other.Instances = append([]inventory.Instance(nil), other.Instances...)
+		}
+		for i := range other.Instances {
+			inst := &other.Instances[i]
+			if len(inst.Dials) == 0 {
+				continue
+			}
+			dials := make(map[string]string, len(inst.Dials))
+			for name, raw := range inst.Dials {
+				next, err := requalify(raw)
+				if err != nil {
+					return err
+				}
+				dials[name] = next
+			}
+			inst.Dials = dials
+		}
+	}
+	inv.Routes = cloneRoutes(inv.Routes)
+	for name, route := range inv.Routes {
+		for i, raw := range route.Hops {
+			next, err := requalify(raw)
+			if err != nil {
+				return err
+			}
+			route.Hops[i] = next
+		}
+		inv.Routes[name] = route
+	}
+	return nil
 }
 
 func cloneRoutes(routes map[string]inventory.Route) map[string]inventory.Route {

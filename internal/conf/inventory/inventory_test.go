@@ -53,7 +53,7 @@ users:
 	writeFile(t, filepath.Join(root, RoutesFilename), `
 routes:
   sfo:
-    hops: [ss-sfo01:main]
+    hops: [u-node-group-10-01/ss-sfo01:main]
 `)
 	writeFile(t, filepath.Join(root, NetworksFilename), `
 networks: [{name: home}, {name: internet}]
@@ -94,7 +94,7 @@ universal: internet
 		t.Fatalf("sfo.Instances = %+v, want 1", sfo.Instances)
 	}
 	inst := sfo.Instances[0]
-	if inst.ID != "ss-sfo01" || inst.Service != "shadowsocks-rust" || inst.Role != "server" {
+	if inst.Name != "ss-sfo01" || inst.ID != "u-node-group-10-01/ss-sfo01" || inst.Service != "shadowsocks-rust" || inst.Role != "server" {
 		t.Fatalf("inst = %+v", inst)
 	}
 	if inst.Ports["main"].Number != 38250 || inst.Ports["alt"].Number != 49217 {
@@ -129,7 +129,7 @@ universal: internet
 	if len(got.Routes) != 1 || len(got.Routes["sfo"].Hops) != 1 {
 		t.Fatalf("Routes = %+v", got.Routes)
 	}
-	if got.Routes["sfo"].Hops[0] != "ss-sfo01:main" {
+	if got.Routes["sfo"].Hops[0] != "u-node-group-10-01/ss-sfo01:main" {
 		t.Fatalf("Hops[0] = %q", got.Routes["sfo"].Hops[0])
 	}
 
@@ -209,13 +209,13 @@ func TestLoad_InstancesFromDirectory(t *testing.T) {
 		t.Fatalf("Nodes = %+v", got.Nodes)
 	}
 	instances := got.Nodes[0].Instances
-	if len(instances) != 4 || instances[0].ID != "first" || instances[1].ID != "second" || instances[2].ID != "third" || instances[3].ID != "fourth" {
+	if len(instances) != 4 || instances[0].Name != "first" || instances[1].Name != "second" || instances[2].Name != "third" || instances[3].ID != "srv/fourth" {
 		t.Fatalf("Instances = %+v, want file-name order", instances)
 	}
 	if instances[2].Path != filepath.Join(NodesDir, "cloud", "srv.instances", "c.yaml") || instances[3].Path != instances[2].Path {
 		t.Fatalf("list entries must retain their source path: %+v", instances)
 	}
-	if got.Nodes[1].ID != "local" || len(got.Nodes[1].Instances) != 1 || got.Nodes[1].Instances[0].ID != "local-instance" {
+	if got.Nodes[1].ID != "local" || len(got.Nodes[1].Instances) != 1 || got.Nodes[1].Instances[0].ID != "local/local-instance" {
 		t.Fatalf("root-level node = %+v", got.Nodes[1])
 	}
 }
@@ -310,7 +310,7 @@ func TestLoad_BrokenNodeIsListedWithParseError(t *testing.T) {
 func TestLoad_BrokenTopLevelFileIsReported(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, UsersFilename), "users: [not, a, mapping]\n")
-	writeFile(t, filepath.Join(root, RoutesFilename), "routes:\n  sfo:\n    hops: [ss-sfo01:main]\n    typo: oops\n")
+	writeFile(t, filepath.Join(root, RoutesFilename), "routes:\n  sfo:\n    hops: [u-node-group-10-01/ss-sfo01:main]\n    typo: oops\n")
 	writeFile(t, filepath.Join(root, NetworksFilename), "networks: {not: a-list}\n")
 
 	got, err := Load(root)
@@ -372,7 +372,7 @@ func TestLoad_InstancePathIsItsOwnFile(t *testing.T) {
 			t.Fatalf("node %s broken: %s", n.Path, n.Broken)
 		}
 		for _, inst := range n.Instances {
-			if inst.Path != want[inst.ID] {
+			if inst.Path != want[inst.Name] {
 				t.Errorf("instance %s Path = %q, want %q", inst.ID, inst.Path, want[inst.ID])
 			}
 		}

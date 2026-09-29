@@ -70,13 +70,13 @@ func TestCheckReport_NamesEveryKindOfProblem(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A credential the inventory implies and the store does not hold.
-	if err := os.Remove(filepath.Join(secrets, "ss-srv", "self", "psk", "main")); err != nil {
+	if err := os.Remove(filepath.Join(secrets, "srv/ss-srv", "self", "psk", "main")); err != nil {
 		t.Fatal(err)
 	}
 	// A file nothing implies.
-	writeSecret(t, secrets, "ss-srv/main/user/nobody", "orphan")
+	writeSecret(t, secrets, "srv/ss-srv/main/user/nobody", "orphan")
 	// A rotation nobody finished.
-	stale := writeSecret(t, secrets, "ss-srv/main/user/yak.previous", "old")
+	stale := writeSecret(t, secrets, "srv/ss-srv/main/user/yak.previous", "old")
 	old := time.Now().Add(-30 * 24 * time.Hour)
 	if err := os.Chtimes(stale, old, old); err != nil {
 		t.Fatal(err)
@@ -93,8 +93,8 @@ func TestCheckReport_NamesEveryKindOfProblem(t *testing.T) {
 	for _, want := range []string{
 		"bad.yaml",
 		"nosuchroute",
-		"secret missing: ss-srv/self/psk",
-		"secret orphaned: ss-srv/main/user/nobody",
+		"secret missing: srv/ss-srv/self/psk",
+		"secret orphaned: srv/ss-srv/main/user/nobody",
 		"days old",
 	} {
 		if !strings.Contains(report, want) {
@@ -145,7 +145,7 @@ func TestTargetReport(t *testing.T) {
 		t.Fatalf("writeTargetReport: %v", err)
 	}
 	report := out.String()
-	for _, want := range []string{"srv", "ss-srv", "ssserver", "yak (unmanaged user)", "broken"} {
+	for _, want := range []string{"srv", "srv/ss-srv", "ssserver", "yak (unmanaged user)", "broken"} {
 		if !strings.Contains(report, want) {
 			t.Fatalf("report = %q, want it to name %q", report, want)
 		}
@@ -201,7 +201,7 @@ func TestCheckReport_AnOpaqueSecretIsNotSyncsToGenerate(t *testing.T) {
 	// writeImplied writes every implied path, opaque or not. Take the
 	// opaque one back out: what it stands for is a value only a person can
 	// put there, and the report about it is this test's subject.
-	if err := os.Remove(filepath.Join(secrets, "ss-srv", "self", "tls_key")); err != nil {
+	if err := os.Remove(filepath.Join(secrets, "srv/ss-srv", "self", "tls_key")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -210,7 +210,7 @@ func TestCheckReport_AnOpaqueSecretIsNotSyncsToGenerate(t *testing.T) {
 		t.Fatalf("report = %q, want a missing secret to count as a problem", out.String())
 	}
 	report := out.String()
-	if !strings.Contains(report, "secret missing: ss-srv/self/tls_key — an opaque value, which nothing generates: write the file yourself") {
+	if !strings.Contains(report, "secret missing: srv/ss-srv/self/tls_key — an opaque value, which nothing generates: write the file yourself") {
 		t.Fatalf("report = %q, want the opaque path reported as one nobody generates", report)
 	}
 	if strings.Contains(report, "tls_key — run secret sync") {

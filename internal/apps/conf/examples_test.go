@@ -341,7 +341,7 @@ func TestExamples_ServiceWritingSeveralFilesRendersEachOne(t *testing.T) {
 // that hands it to a person.
 func TestExamples_TheAccountTableHoldsNoPlaintext(t *testing.T) {
 	_, secretsDir := examplesRoot(t)
-	secret, err := os.ReadFile(filepath.Join(secretsDir, "samba-nas", "smb", "alice", "default"))
+	secret, err := os.ReadFile(filepath.Join(secretsDir, "nas/samba-nas", "smb", "alice", "default"))
 	if err != nil {
 		t.Fatalf("reading alice's credential: %v", err)
 	}
