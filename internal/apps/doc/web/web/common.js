@@ -300,6 +300,23 @@ export function inputFor(field, value, placeholder, state, self, type) {
         ...fieldHead(field),
         control, cards);
     }
+  } else if (field.type === "date" && (field.shape || []).includes("span")) {
+    // A span is start/end, kept in one hidden value; an end left empty is
+    // open, or, where the field also takes one day, makes it that day.
+    control = el("input", { ...common, type: "hidden", value });
+    const [from, to] = value.includes("/") ? value.split("/") : [value, ""];
+    const day = field.shape.includes("day");
+    const start = el("input", { type: "date", max: "9999-12-31", value: from });
+    const end = el("input", { type: "date", max: "9999-12-31", value: to });
+    end.title = day ? "Leave empty for one day" : "Leave empty for no end";
+    const set = () => {
+      control.value = !start.value ? "" : !end.value && day ? start.value : start.value + "/" + end.value;
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    start.oninput = end.oninput = set;
+    return el("div", { className: "form-field" }, ...fieldHead(field), control,
+      el("div", { className: "date-span" }, start, el("span", {}, "–"), end));
   } else {
     control = el("input", { ...common, type: ["date", "month"].includes(field.type) ? field.type : "text",
       value, placeholder: placeholder || (field.type === "country" ? "cn, CHN, China, 中国…" : ""),
