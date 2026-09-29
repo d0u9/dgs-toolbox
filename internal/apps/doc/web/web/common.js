@@ -4,6 +4,7 @@
 import { show as showViewer, hide as hideViewer } from "/viewer.js";
 import { splitter } from "/ui/splitter.js";
 import * as statusBar from "/ui/statusbar.js";
+import { suggest } from "/combo.js";
 
 // The status bar along the bottom, as on every dgs page: the tree on the
 // left, what the page shows in the middle, and every message said anywhere
@@ -117,37 +118,32 @@ function fieldHead(field) {
 // inputFor is the control a field's type asks for: a date picker, a list of
 // options, a list of the tree's other Items, or a line of text. Every value
 // control has the class field-input and the field's key as its name.
-let fieldListID = 0;
 export function inputFor(field, value, placeholder, state, self, type) {
   const common = { name: field.key, className: "field-input" };
   let control;
   if (field.key === "issuer" && (!field.type || field.type === "text")) {
-    const id = "issuer-options-" + (++fieldListID);
     control = el("input", { ...common, type: "text", value,
       placeholder: placeholder || "Choose or enter an issuer…", autocomplete: "off", spellcheck: false });
-    control.setAttribute("list", id);
-    const options = el("datalist", { id });
+    let known = [];
     const wrapper = el("label", { className: "form-field" },
-      ...fieldHead(field), control, options);
+      ...fieldHead(field), suggest(control, () => known, { arrow: true }));
     const item = state?.items?.find((item) => item.id === self);
     const typ = type || item?.type || "";
     let request = 0;
     const refresh = async () => {
       const generation = ++request;
-      options.replaceChildren();
       const scope = wrapper.parentElement;
       const countryInput = scope?.querySelector('[name="country"]') || wrapper.closest("form")?.querySelector('[name="country"]');
       const nation = countryInput ? countryInput.value || templateOf(state, typ)?.defaults?.country || ""
         : item?.fields?.country || templateOf(state, typ)?.defaults?.country || "";
-      if (!typ || !nation) return;
+      if (!typ || !nation) { known = []; return; }
       try {
         const response = await fetch(api("/api/issuers?" + new URLSearchParams({ type: typ, country: nation })));
         if (!response.ok) return;
         const values = await response.json();
-        if (generation === request && wrapper.isConnected) options.replaceChildren(...values.map((value) => el("option", { value })));
+        if (generation === request) known = values;
       } catch { /* Free text remains usable when suggestions are unavailable. */ }
     };
-    control.addEventListener("focus", refresh);
     queueMicrotask(() => {
       if (!wrapper.isConnected) return;
       const scope = wrapper.closest("form") || wrapper.parentElement;
@@ -158,22 +154,13 @@ export function inputFor(field, value, placeholder, state, self, type) {
     });
     return wrapper;
   } else if (field.suggest && (!field.type || field.type === "text")) {
-    const id = "field-options-" + (++fieldListID);
     control = el("input", { ...common, type: "text", value, placeholder: placeholder || "",
       autocomplete: "off", spellcheck: false });
-    control.setAttribute("list", id);
-    const options = el("datalist", { id });
     const typ = type || state?.items?.find((item) => item.id === self)?.type || "";
-    let loaded = false;
-    control.addEventListener("focus", async () => {
-      if (loaded || !typ) return;
-      loaded = true;
-      try {
-        const response = await fetch(api("/api/values?" + new URLSearchParams({ type: typ, key: field.key })));
-        if (response.ok) options.replaceChildren(...(await response.json()).map((value) => el("option", { value })));
-      } catch { /* Free text remains usable when suggestions are unavailable. */ }
-    });
-    return el("label", { className: "form-field" }, ...fieldHead(field), control, options);
+    let loaded = null;
+    const known = () => loaded ||= typ ? fetch(api("/api/values?" + new URLSearchParams({ type: typ, key: field.key })))
+      .then((response) => response.ok ? response.json() : []).catch(() => []) : Promise.resolve([]);
+    return el("label", { className: "form-field" }, ...fieldHead(field), suggest(control, known, { arrow: true }));
   } else if (field.type === "revision" || field.type === "item") {
     // An Item, then for a revision field one of its revisions, HEAD when the
     // Item is picked. The value, <item-id> or <item-id>@<revision>, is in a
@@ -327,10 +314,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
     if (field.type === "country") {
       control.title = "Pick a country the tree has, or type any code or name: kept as the Template's format says.";
       // The countries Items already have are offered; any other can be typed.
-      const id = "country-options-" + (++fieldListID);
-      control.setAttribute("list", id);
-      return el("label", { className: "form-field" }, ...fieldHead(field), control,
-        el("datalist", { id }, ...countriesOf(state).map((c) => el("option", { value: c }))));
+      return el("label", { className: "form-field" }, ...fieldHead(field), suggest(control, () => countriesOf(state), { arrow: true }));
     }
   }
   return el("label", { className: "form-field" },

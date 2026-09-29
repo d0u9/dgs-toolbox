@@ -4,6 +4,7 @@
 import { $, api, el, loadState, post, label, planNodes, frame, say } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { guardByName } from "/ui/confirm.js";
+import { suggest } from "/combo.js";
 
 let state = { templates: [], items: [], expiry: {} };
 let cases = [];
@@ -23,7 +24,6 @@ async function load(wanted) {
   const answer = await (await fetch(api("/api/cases"))).json();
   cases = answer.cases;
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
-  $("item-options").replaceChildren(...state.items.map((i) => el("option", { value: label(state, i) + " — " + i.id })));
   const name = wanted ?? decodeURIComponent(location.hash.slice(1));
   const found = cases.find((c) => c.name === name) || (name === "" && !location.hash ? cases[0] : null);
   if (found) show(found);
@@ -159,7 +159,12 @@ function drawEntries() {
   $("entries").replaceChildren(...rows);
 }
 
-// itemFrom reads the Item picked in a datalist input: the ID after the dash.
+// itemChoices are the Items a box offers, each its label and ID.
+const itemChoices = () => state.items.map((i) => label(state, i) + " — " + i.id);
+
+// itemFrom reads the Item picked in a box of itemChoices: the ID after the dash.
+suggest($("add-item"), itemChoices, { arrow: true });
+
 function itemFrom(text) {
   const id = text.split(" — ").pop().trim();
   return state.items.some((i) => i.id === id) ? id : "";
@@ -177,13 +182,12 @@ function drawNeeds() {
     else if (n.item) tools = el("button", { type: "button", className: "button small-button", textContent: "Drop", title: "No longer asked for", onclick: () => change({ op: "drop", need: i }) });
     else {
       const pick = el("input", { placeholder: "Met by…", className: "case-meet", autocomplete: "off" });
-      pick.setAttribute("list", "item-options");
       pick.addEventListener("change", () => {
         const id = itemFrom(pick.value);
         if (id) change({ op: "meet", need: i, item: id }, "Met, and the Item put in the Case.");
         else say($("message"), "Pick an Item from the list.", true);
       });
-      tools = el("span", { className: "row-tools" }, pick,
+      tools = el("span", { className: "row-tools" }, suggest(pick, itemChoices, { arrow: true }),
         el("button", { type: "button", className: "button small-button", textContent: "Drop", title: "No longer asked for", onclick: () => change({ op: "drop", need: i }) }));
     }
     return el("li", { className: n.item ? "met" : "" },

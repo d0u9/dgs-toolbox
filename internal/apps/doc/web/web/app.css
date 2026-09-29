@@ -919,10 +919,20 @@ body.list-shut .outline-list { display: none; }
 .cond-bubble .cond-more:focus { max-width: none; min-width: 6ch; text-align: left; }
 .cond-bubble .cond-more::placeholder { color: var(--graphite); }
 .cond-bubble.negated .cond-op { color: var(--error); }
-.cond-menu { position: absolute; z-index: 50; min-width: 120px; max-width: 360px; max-height: 240px; overflow: auto; margin: 0; padding: 4px; list-style: none;
-  background: var(--paper); border: 1px solid var(--hairline-strong); border-radius: 8px; box-shadow: var(--lift-soft); font-size: var(--font-size-xs); }
-.cond-menu li { padding: 3px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cond-menu li:hover, .cond-menu li.active { background: var(--selected); }
+/* A box's choices, from combo.js: a card under the box, the typed part marked. */
+.combo { position: relative; display: flex; align-items: stretch; min-width: 0; }
+.combo > input { flex: 1; min-width: 0; padding-right: 26px; }
+.combo-arrow { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px;
+  background: transparent; color: var(--graphite); cursor: pointer; }
+.combo-arrow::before { content: ""; position: absolute; left: 8px; top: 6px; width: 5px; height: 5px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.combo-arrow:hover { background: var(--hover); color: inherit; }
+.combo-menu { position: fixed; z-index: 1000; max-width: min(480px, calc(100vw - 32px)); max-height: 280px; overflow: auto; margin: 0; padding: 4px; list-style: none;
+  background: var(--paper); border: 1px solid var(--hairline-strong); border-radius: 8px; box-shadow: var(--lift-soft); font-size: var(--font-size-ui); }
+.combo-menu li { padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.combo-menu li:hover, .combo-menu li.active { background: var(--selected); }
+.combo-menu li.chosen { font-weight: 600; }
+.combo-menu li.empty { color: var(--graphite); cursor: default; background: none; }
+.combo-menu mark { background: none; color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .cond-group > .cond-x { display: none; }
 .cond-group:hover > .cond-x { display: inline; }
 /* A block's ↑ ↓ × follow its if word, faint until the block is hovered. */
