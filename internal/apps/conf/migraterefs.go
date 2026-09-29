@@ -3,7 +3,6 @@ package conf
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,10 +12,10 @@ import (
 	"dgs-toolbox/internal/conf/inventory"
 )
 
-// reportServiceReferences finds literal old facts in authored service files.
-// These are review candidates: the same string may be a comment, a historical
-// example, or a hostname which intentionally stays unchanged after the move.
-func reportServiceReferences(out io.Writer, root, oldID string, oldNode inventory.Node, changes []networkChange, instances []instanceChange, routes []routeChange) error {
+// reportServiceReferences finds literal old facts in authored service and
+// node files. These are review candidates: the same string may be a comment,
+// a historical example, or a hostname which intentionally stays unchanged.
+func reportServiceReferences(rep *migrationReport, root, oldID string, oldNode inventory.Node, changes []networkChange, instances []instanceChange, routes []routeChange) error {
 	terms := map[string]bool{oldID: true}
 	for _, change := range changes {
 		if change.From != change.To {
@@ -31,24 +30,27 @@ func reportServiceReferences(out io.Writer, root, oldID string, oldNode inventor
 	if err != nil {
 		return fmt.Errorf("scanning service references: %w", err)
 	}
-	fmt.Fprintln(out, "Service references to review:")
-	printMigrationMatches(out, matches)
+	rep.ServiceMatches = matches
+	// Node files also hold opaque instance values and deploy settings.
 	ids := map[string]bool{}
+	for term := range terms {
+		ids[term] = true
+	}
 	for _, change := range instances {
 		ids[change.From] = true
 	}
 	for _, change := range routes {
 		ids[change.From] = true
 	}
-	if len(ids) != 0 {
-		matches, err := scanMigrationText(root, "nodes", ids)
-		if err != nil {
-			return fmt.Errorf("scanning node references: %w", err)
-		}
-		fmt.Fprintln(out, "Node-file references to review (includes typed and opaque fields):")
-		printMigrationMatches(out, matches)
+	matches, err = scanMigrationText(root, "nodes", ids)
+	if err != nil {
+		return fmt.Errorf("scanning node references: %w", err)
 	}
-	var instanceMatches []string
+	for _, match := range matches {
+		if !migrationTypedLine(match.Text, changes) {
+			rep.NodeMatches = append(rep.NodeMatches, match)
+		}
+	}
 	renamed := map[string]bool{}
 	for _, change := range instances {
 		renamed[change.From] = true
@@ -57,20 +59,18 @@ func reportServiceReferences(out io.Writer, root, oldID string, oldNode inventor
 		if renamed[inst.ID] {
 			continue
 		}
-		for term := range terms {
+		for _, term := range sortedKeys(terms) {
 			if strings.Contains(inst.ID, term) {
-				instanceMatches = append(instanceMatches, fmt.Sprintf("  %s: %s contains %q (ID unchanged)", inst.Path, inst.ID, term))
+				rep.InstanceIDs = append(rep.InstanceIDs, fmt.Sprintf("%s contains %s (%s)", mdCode(inst.ID), mdCode(term), mdCode(inst.Path)))
 			}
 		}
 	}
-	sort.Strings(instanceMatches)
-	fmt.Fprintln(out, "Instance IDs to review:")
-	printMigrationMatches(out, instanceMatches)
+	sort.Strings(rep.InstanceIDs)
 	return nil
 }
 
-func scanMigrationText(root, subtree string, terms map[string]bool) ([]string, error) {
-	var matches []string
+func scanMigrationText(root, subtree string, terms map[string]bool) ([]migrationTextMatch, error) {
+	var matches []migrationTextMatch
 	err := filepath.WalkDir(filepath.Join(root, subtree), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -91,13 +91,14 @@ func scanMigrationText(root, subtree string, terms map[string]bool) ([]string, e
 		}
 		scanner := bufio.NewScanner(strings.NewReader(string(data)))
 		for line := 1; scanner.Scan(); line++ {
+			text := strings.TrimSpace(scanner.Text())
 			kind := "配置/模板内容"
-			if strings.HasPrefix(strings.TrimSpace(scanner.Text()), "#") {
+			if strings.HasPrefix(text, "#") {
 				kind = "注释"
 			}
-			for term := range terms {
-				if strings.Contains(scanner.Text(), term) {
-					matches = append(matches, fmt.Sprintf("  %s:%d [%s]: %q", rel, line, kind, term))
+			for _, term := range sortedKeys(terms) {
+				if strings.Contains(text, term) {
+					matches = append(matches, migrationTextMatch{Path: filepath.ToSlash(rel), Line: line, Kind: kind, Term: term, Text: text})
 				}
 			}
 		}
@@ -109,16 +110,32 @@ func scanMigrationText(root, subtree string, terms map[string]bool) ([]string, e
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(matches)
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].Path != matches[j].Path {
+			return matches[i].Path < matches[j].Path
+		}
+		return matches[i].Line < matches[j].Line
+	})
 	return matches, nil
 }
 
-func printMigrationMatches(out io.Writer, matches []string) {
-	if len(matches) == 0 {
-		fmt.Fprintln(out, "  none found")
-	} else {
-		for _, match := range matches {
-			fmt.Fprintln(out, match)
+// migrationTypedLine reports a node-file line whose match is a typed field
+// the plan already rewrites or reports elsewhere: an ID (instance IDs have
+// their own attention item), the instance directory, a renamed network's
+// key, or reaches.
+func migrationTypedLine(text string, changes []networkChange) bool {
+	key, _, ok := strings.Cut(strings.TrimPrefix(text, "- "), ":")
+	if !ok || strings.HasPrefix(text, "#") {
+		return false
+	}
+	switch strings.TrimSpace(key) {
+	case "id", "directory", "reaches":
+		return true
+	}
+	for _, change := range changes {
+		if strings.TrimSpace(key) == change.From {
+			return true
 		}
 	}
+	return false
 }

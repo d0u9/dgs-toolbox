@@ -26,7 +26,7 @@ func TestMigrateNodePreviewShowsChangedEdgeWithoutWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	for _, want := range []string{"srv -> srv08", "203.0.113.10 -> 203.0.113.8", "Changed route edges:", "Service and export impact:", "export path srv/hysteria2/u-node-group-10/config.yaml -> srv08/hysteria2/u-node-group-10/config.yaml", "update friend-a/hysteria2-link/yak-default-sfo-hysteria2-link/share.txt", "Deployment and handoff list:", "srv08: export, install and restart/reload hysteria2/u-node-group-10", "Implied secret paths:\n  unchanged", "No inventory or secret files were changed"} {
+	for _, want := range []string{"| Node ID | `srv` | `srv08` |", "| Address on internet | `203.0.113.10` | `203.0.113.8` |", "### Route edges\n\n| Edge |", "#### `srv08`", "| `hysteria2/u-node-group-10` | `config.yaml` | bundle path moves; **content changed** |", "#### `friend-a`", "| `hysteria2/yak-default-sfo-hysteria2-link` | `share.txt` | content changed |", "dgs conf export instance:'yak-default-sfo-hysteria2-link'", "### Secret paths\n\nUnchanged.", "No inventory, secret or DNS change has been made"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("preview missing %q:\n%s", want, got)
 		}
@@ -37,6 +37,53 @@ func TestMigrateNodePreviewShowsChangedEdgeWithoutWriting(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) {
 		t.Fatal("preview changed the node file")
+	}
+}
+
+func TestMigrationReportMarksTemplateAndDeployForReview(t *testing.T) {
+	root, secrets := buildExportableRoot(t)
+	path := filepath.Join(root, "services", "hysteria2", "deploy", "templates", "install.sh.tmpl")
+	writeFile(t, path, "# previous node srv\necho srv\n")
+	var out bytes.Buffer
+	err := migrateAction(nil, &out, []string{"node"}, map[string]string{"node": "from=srv,to=srv08"}, configFor(root, secrets))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{"Old names in service files", "| `services/hysteria2/deploy/templates/install.sh.tmpl:1` | 注释 | `srv` | `# previous node srv` |", "| `services/hysteria2/deploy/templates/install.sh.tmpl:2` | 配置/模板内容 | `srv` | `echo srv` |"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in report:\n%s", want, got)
+		}
+	}
+}
+
+func TestMigrationCutoverListsSameMachineStopAndStartInstances(t *testing.T) {
+	root, secrets := buildExportableRoot(t)
+	var out bytes.Buffer
+	err := migrateAction(nil, &out, []string{"node"}, map[string]string{
+		"node":     "from=srv,to=srv08",
+		"instance": `["from=u-node-group-10,to=u-node-group-1008"]`,
+	}, configFor(root, secrets))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		"### Phase 1 — Take services offline",
+		"`hysteria2/u-node-group-10`",
+		"### Phase 5 — Start services",
+		"`hysteria2/u-node-group-1008`",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("cutover missing %q:\n%s", want, got)
+		}
+	}
+	procedure := got[strings.Index(got, "## 3. Procedure"):]
+	if strings.Contains(procedure[:strings.Index(procedure, "### Phase 2")], "hysteria2-link/") {
+		t.Fatal("export handoff was treated as a runtime service")
+	}
+	if strings.Index(procedure, "`hysteria2/u-node-group-10`") > strings.Index(procedure, "`hysteria2/u-node-group-1008`") {
+		t.Fatal("startup listed before shutdown")
 	}
 }
 
@@ -61,79 +108,16 @@ func TestCompareExportFilesExplainsPathOnlyChange(t *testing.T) {
 
 func TestReportServiceReferencesFlagsUnchangedInstanceID(t *testing.T) {
 	root := t.TempDir()
-	var out bytes.Buffer
-	err := reportServiceReferences(&out, root, "a-node-group-02-01", inventory.Node{
+	rep := &migrationReport{}
+	err := reportServiceReferences(rep, root, "a-node-group-02-01", inventory.Node{
 		Path:      "nodes/home/server.yaml",
 		Instances: []inventory.Instance{{ID: "samba-network-4-01", Path: "nodes/home/server.yaml"}},
 	}, []networkChange{{From: "network-4", To: "network-8"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `samba-network-4-01 contains "network-4" (ID unchanged)`) {
-		t.Fatalf("report = %s", out.String())
-	}
-}
-
-func TestMigrateWizardRenamesInstanceAndWritesReport(t *testing.T) {
-	root, secrets := buildExportableRoot(t)
-	reportPath := filepath.Join(t.TempDir(), "upgrade.txt")
-	input := strings.NewReader("srv\nsrv08\n\n203.0.113.8\nu-node-group-1008\nsfo08\n" + reportPath + "\n")
-	var out bytes.Buffer
-	if err := migrateAction(input, &out, []string{"node"}, nil, configFor(root, secrets)); err != nil {
-		t.Fatal(err)
-	}
-	got := out.String()
-	for _, want := range []string{"Upgrade report", "Instance: u-node-group-10 -> u-node-group-1008", "routes.yaml: sfo.hops", "Route: sfo -> sfo08", "Implied secret paths:", "Operator checklist:", "Report saved:"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("wizard output missing %q:\n%s", want, got)
-		}
-	}
-	data, err := os.ReadFile(reportPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "Instance: u-node-group-10 -> u-node-group-1008") || !strings.Contains(string(data), "Operator checklist:") {
-		t.Fatalf("saved report = %s", data)
-	}
-	nodeData, err := os.ReadFile(filepath.Join(root, "nodes", "srv.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(nodeData), "id: u-node-group-10") || strings.Contains(string(nodeData), "u-node-group-1008") {
-		t.Fatalf("wizard changed inventory: %s", nodeData)
-	}
-}
-
-func TestMigrateWizardEOFDoesNotWriteReportOrInventory(t *testing.T) {
-	root, secrets := buildExportableRoot(t)
-	before, err := os.ReadFile(filepath.Join(root, "nodes", "srv.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = migrateAction(strings.NewReader("srv\nsrv08\n"), &bytes.Buffer{}, []string{"node"}, nil, configFor(root, secrets))
-	if err == nil || !strings.Contains(err.Error(), "cancelled") {
-		t.Fatalf("error = %v", err)
-	}
-	after, err := os.ReadFile(filepath.Join(root, "nodes", "srv.yaml"))
-	if err != nil || !bytes.Equal(before, after) {
-		t.Fatal("cancelled wizard changed inventory")
-	}
-}
-
-func TestMigrateWizardDoesNotOverwriteReport(t *testing.T) {
-	root, secrets := buildExportableRoot(t)
-	reportPath := filepath.Join(t.TempDir(), "upgrade.txt")
-	if err := os.WriteFile(reportPath, []byte("existing"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	input := strings.NewReader("srv\nsrv08\n\n\n\n\n" + reportPath + "\n")
-	err := migrateAction(input, &bytes.Buffer{}, []string{"node"}, nil, configFor(root, secrets))
-	if err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("error = %v", err)
-	}
-	data, err := os.ReadFile(reportPath)
-	if err != nil || string(data) != "existing" {
-		t.Fatalf("existing report changed: %q, %v", data, err)
+	if len(rep.InstanceIDs) != 1 || !strings.Contains(rep.InstanceIDs[0], "`samba-network-4-01` contains `network-4`") {
+		t.Fatalf("instance IDs = %v", rep.InstanceIDs)
 	}
 }
 
@@ -162,7 +146,7 @@ func TestMigratePublishedNamePreviewDoesNotWriteInventory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Published name: u-node-group-10:main old.example.test -> new.example.test") || !strings.Contains(out.String(), "DNS review:") {
+	if !strings.Contains(out.String(), "| Published name u-node-group-10:main | `old.example.test` | `new.example.test` |") || !strings.Contains(out.String(), "DNS records to inspect") || !strings.Contains(out.String(), "- Published name: `old.example.test` → `new.example.test`") {
 		t.Fatalf("preview = %s", out.String())
 	}
 	after, err := os.ReadFile(path)
@@ -171,21 +155,32 @@ func TestMigratePublishedNamePreviewDoesNotWriteInventory(t *testing.T) {
 	}
 }
 
-func TestMigrateWizardAsksPublishedName(t *testing.T) {
+func TestMigrationAddressChangeReviewsUnchangedPublishedName(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	path := filepath.Join(root, "nodes", "srv.yaml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, path, strings.Replace(string(data), "main: 443", "main: {port: 443, published: old.example.test}", 1))
-	input := strings.NewReader("srv\nsrv08\n\n\n\nnew.example.test\n\n\n")
+	writeFile(t, path, strings.Replace(string(data), "main: 443", "main: {port: 443, published: service.example.test}", 1))
 	var out bytes.Buffer
-	if err := migrateAction(input, &out, []string{"node"}, nil, configFor(root, secrets)); err != nil {
+	err = migrateAction(nil, &out, []string{"node"}, map[string]string{
+		"node": "from=srv,to=srv08", "network": `["from=internet,address=203.0.113.8"]`,
+	}, configFor(root, secrets))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Published name for u-node-group-10:main") || !strings.Contains(out.String(), "Published name: u-node-group-10:main old.example.test -> new.example.test") {
-		t.Fatalf("wizard output = %s", out.String())
+	got := out.String()
+	for _, want := range []string{
+		"DNS records to inspect",
+		"**`service.example.test`** — `hysteria2/u-node-group-10` on port `main`",
+		"- Ingress: route `sfo` via `srv` → route `sfo` via `srv08`",
+		"`internet 203.0.113.10` → `internet 203.0.113.8`",
+		"- [ ] `dig +short service.example.test`",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q:\n%s", want, got)
+		}
 	}
 }
 
@@ -214,7 +209,7 @@ func TestExplicitMigrationFlagsNeedNode(t *testing.T) {
 	err := migrateAction(strings.NewReader(""), &bytes.Buffer{}, []string{"node"}, map[string]string{
 		"instance": `["from=u-node-group-10,to=u-node-group-1008"]`,
 	}, configFor(root, secrets))
-	if err == nil || !strings.Contains(err.Error(), "--node is required") {
+	if err == nil || !strings.Contains(err.Error(), "names no source node") {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -239,7 +234,7 @@ func TestMigratePreviewMarksMissingSecretsUncompared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "render not compared") {
+	if !strings.Contains(out.String(), "**not compared**") || !strings.Contains(out.String(), "Render comparison unavailable") {
 		t.Fatalf("preview = %s", out.String())
 	}
 }
@@ -256,7 +251,7 @@ func TestMigratePreviewListsLiteralServiceNodeReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	for _, want := range []string{"Service references to review:", `services/hysteria2/defaults.yaml:2 [配置/模板内容]: "srv"`, `services/hysteria2/templates/server.yaml.tmpl:2 [注释]: "203.0.113.10"`} {
+	for _, want := range []string{"Old names in service files", "| `services/hysteria2/defaults.yaml:2` | 配置/模板内容 | `srv` |", "| `services/hysteria2/templates/server.yaml.tmpl:2` | 注释 | `203.0.113.10` |"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("preview missing %q:\n%s", want, got)
 		}
@@ -292,7 +287,7 @@ func TestMigrateNodePreviewAllowsAddressOnlyChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "203.0.113.10 -> 203.0.113.8") {
+	if !strings.Contains(out.String(), "| Address on internet | `203.0.113.10` | `203.0.113.8` |") {
 		t.Fatalf("preview = %s", out.String())
 	}
 }
@@ -307,7 +302,7 @@ func TestMigrateNodePreviewRenamesNetworkAndAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	for _, want := range []string{"Network: internet -> wan", "networks.yaml: networks", "networks.yaml: universal", "nodes/srv.yaml: networks.internet", "Address: wan 203.0.113.10 -> 203.0.113.8"} {
+	for _, want := range []string{"| Network name | `internet` | `wan` |", "networks.yaml: networks", "networks.yaml: universal", "nodes/srv.yaml: networks.internet", "| Address on wan | `203.0.113.10` | `203.0.113.8` |"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("preview missing %q:\n%s", want, got)
 		}
@@ -322,7 +317,7 @@ func TestMigrateNodePreviewHandlesMultipleNetworks(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, path, strings.Replace(string(data), "  internet: 203.0.113.10", "  network-4: 10.0.1.4\n  tailnet: 10.0.2.4\n  internet: 203.0.113.10", 1))
-	writeFile(t, filepath.Join(root, "networks.yaml"), "networks: [network-4, tailnet, internet]\nuniversal: internet\n")
+	writeFile(t, filepath.Join(root, "networks.yaml"), "networks: [{name: network-4}, {name: tailnet}, {name: internet}]\nuniversal: internet\n")
 	var out bytes.Buffer
 	err = migrateAction(nil, &out, []string{"node"}, map[string]string{
 		"node":    "from=srv,to=srv08",
@@ -332,7 +327,7 @@ func TestMigrateNodePreviewHandlesMultipleNetworks(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	for _, want := range []string{"Network: network-4 -> network-8", "Address: network-8 10.0.1.4 -> 10.0.1.8", "Address: tailnet 10.0.2.4 -> 10.0.2.8"} {
+	for _, want := range []string{"| Network name | `network-4` | `network-8` |", "| Address on network-8 | `10.0.1.4` | `10.0.1.8` |", "| Address on tailnet | `10.0.2.4` | `10.0.2.8` |"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("preview missing %q:\n%s", want, got)
 		}

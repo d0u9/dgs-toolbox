@@ -4,6 +4,12 @@
 [inventory](inventory.md) and secrets, and writes a chosen set of them to a
 folder or a zip archive.
 
+For deployments that declare `install.sh` and `uninstall.sh`, both are exported
+beside `compose.yaml` for the instance. `install.sh` starts or updates the
+service. `uninstall.sh` stops its runtime and removes disposable generated files
+while keeping persistent volumes, mounted data and backups. Run either
+script on the host that owns the instance; export itself does not run them.
+
 It is the generator side of what [`dgs cred`](../cred/vault.md) protects: the
 templates and the values are in version control, the secrets they draw on are
 not, and the rendered result is plaintext that leaves the machine only when

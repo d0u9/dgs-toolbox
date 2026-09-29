@@ -19,9 +19,12 @@ const migrationPlanVersion = 1
 var migrationNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 type migrationPlan struct {
-	Version    int                `yaml:"version"`
-	SourceNode string             `yaml:"source_node"`
-	Rows       []migrationPlanRow `yaml:"rows"`
+	Version    int    `yaml:"version"`
+	SourceNode string `yaml:"source_node"`
+	// Scenario is relocate or replace. A plan saved before it existed has
+	// none, and opening it asks.
+	Scenario string             `yaml:"scenario,omitempty"`
+	Rows     []migrationPlanRow `yaml:"rows"`
 }
 
 type migrationPlanRow struct {
@@ -43,7 +46,7 @@ func migrationRowKey(row migrationRow) string {
 }
 
 func migrationPlanFromTable(m *migrationTable) migrationPlan {
-	p := migrationPlan{Version: migrationPlanVersion, SourceNode: m.selectedNode}
+	p := migrationPlan{Version: migrationPlanVersion, SourceNode: m.selectedNode, Scenario: m.scenario}
 	for _, row := range m.rows {
 		if row.kind == "secret" {
 			continue
@@ -74,6 +77,12 @@ func applyMigrationPlan(m *migrationTable, p migrationPlan) error {
 	}
 	for i, saved := range p.Rows {
 		m.rows[i].after = saved.To
+	}
+	switch p.Scenario {
+	case "", migrationRelocate, migrationReplace:
+		m.scenario = p.Scenario
+	default:
+		return fmt.Errorf("migration plan has unknown scenario %q", p.Scenario)
 	}
 	m.refreshSecretRows()
 	m.refreshRows()

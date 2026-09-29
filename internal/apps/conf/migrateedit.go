@@ -1,0 +1,448 @@
+package conf
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strconv"
+
+	"dgs-toolbox/internal/conf/inventory"
+	"gopkg.in/yaml.v3"
+)
+
+type migrationEdit struct {
+	path     string // relative to the generator root
+	original []byte
+	replaced []byte
+	mode     os.FileMode
+}
+
+type migrationYAML struct {
+	root  string
+	files map[string]*migrationYAMLFile
+}
+
+type migrationYAMLFile struct {
+	doc      yaml.Node
+	original []byte
+	mode     os.FileMode
+	changed  bool
+}
+
+func (m *migrationYAML) file(path string) (*migrationYAMLFile, error) {
+	if file := m.files[path]; file != nil {
+		return file, nil
+	}
+	if path == "" || filepath.IsAbs(path) || filepath.Clean(path) != path || path == ".." || len(path) >= 3 && path[:3] == "../" {
+		return nil, fmt.Errorf("unsafe inventory path %q", path)
+	}
+	abs := filepath.Join(m.root, path)
+	parent := filepath.Dir(path)
+	for parent != "." {
+		info, err := os.Lstat(filepath.Join(m.root, parent))
+		if err != nil {
+			return nil, err
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("%s has a non-directory or symlink ancestor", path)
+		}
+		parent = filepath.Dir(parent)
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return nil, err
+	}
+	file := &migrationYAMLFile{original: data, mode: info.Mode().Perm()}
+	if err := yaml.Unmarshal(data, &file.doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	m.files[path] = file
+	return file, nil
+}
+
+func migrationMap(node *yaml.Node, key string) (*yaml.Node, *yaml.Node) {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i], node.Content[i+1]
+		}
+	}
+	return nil, nil
+}
+
+func migrationRoot(doc *yaml.Node) *yaml.Node {
+	if doc != nil && len(doc.Content) == 1 {
+		return doc.Content[0]
+	}
+	return nil
+}
+
+func migrationScalar(node *yaml.Node, old, next, where string) (bool, error) {
+	if node == nil || node.Kind != yaml.ScalarNode || node.Value != old {
+		return false, fmt.Errorf("stale migration field %s: expected %q", where, old)
+	}
+	if old == next {
+		return false, nil
+	}
+	node.Value = next
+	return true, nil
+}
+
+func migrationSetField(mapping *yaml.Node, key, old, next, where string) (bool, error) {
+	if old == next {
+		return false, nil
+	}
+	_, value := migrationMap(mapping, key)
+	return migrationScalar(value, old, next, where)
+}
+
+func migrationSetSequence(node *yaml.Node, old, next []string, where string) (bool, error) {
+	if len(old) != len(next) {
+		return false, fmt.Errorf("migration cannot change sequence length at %s", where)
+	}
+	changed := false
+	for i := range old {
+		if old[i] == next[i] {
+			continue
+		}
+		if node == nil || node.Kind != yaml.SequenceNode || i >= len(node.Content) {
+			return false, fmt.Errorf("missing migration sequence at %s", where)
+		}
+		one, err := migrationScalar(node.Content[i], old[i], next[i], where)
+		if err != nil {
+			return false, err
+		}
+		changed = changed || one
+	}
+	return changed, nil
+}
+
+func migrationInstanceNode(doc *yaml.Node, id string) *yaml.Node {
+	root := migrationRoot(doc)
+	if root == nil {
+		return nil
+	}
+	if root.Kind == yaml.MappingNode {
+		if _, idNode := migrationMap(root, "id"); idNode != nil && idNode.Value == id {
+			return root
+		}
+		_, root = migrationMap(root, "instances")
+	}
+	if root != nil && root.Kind == yaml.SequenceNode {
+		for _, candidate := range root.Content {
+			if _, idNode := migrationMap(candidate, "id"); idNode != nil && idNode.Value == id {
+				return candidate
+			}
+		}
+	}
+	return nil
+}
+
+func (m *migrationYAML) patchInstances(old, next []inventory.Instance) error {
+	if len(old) != len(next) {
+		return fmt.Errorf("migration changed instance count")
+	}
+	for i, source := range old {
+		target := next[i]
+		if source.ID == target.ID && migrationPublishedEqual(source.Ports, target.Ports) {
+			continue
+		}
+		file, err := m.file(source.Path)
+		if err != nil {
+			return err
+		}
+		instance := migrationInstanceNode(&file.doc, source.ID)
+		if instance == nil {
+			return fmt.Errorf("%s: instance %q was not found", source.Path, source.ID)
+		}
+		changed, err := migrationSetField(instance, "id", source.ID, target.ID, source.Path+": id")
+		if err != nil {
+			return err
+		}
+		file.changed = file.changed || changed
+		_, ports := migrationMap(instance, "ports")
+		for portName, sourcePort := range source.Ports {
+			targetPort := target.Ports[portName]
+			if sourcePort.Published == targetPort.Published {
+				continue
+			}
+			_, port := migrationMap(ports, portName)
+			// published is a name or a list; the first entry is Published.
+			_, published := migrationMap(port, "published")
+			where := source.Path + ": ports." + portName + ".published"
+			if published != nil && published.Kind == yaml.SequenceNode && len(published.Content) > 0 {
+				published, where = published.Content[0], where+"[0]"
+			}
+			changed, err = migrationScalar(published, sourcePort.Published, targetPort.Published, where)
+			if err != nil {
+				return err
+			}
+			file.changed = file.changed || changed
+		}
+	}
+	return nil
+}
+
+func migrationPublishedEqual(old, next inventory.Ports) bool {
+	for name, port := range old {
+		if port.Published != next[name].Published {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *migrationYAML) patchNodes(old, next *inventory.Root, networks []networkChange) error {
+	if len(old.Nodes) != len(next.Nodes) {
+		return fmt.Errorf("migration changed node count")
+	}
+	renamed := map[string]string{}
+	for _, change := range networks {
+		if change.From != change.To {
+			renamed[change.From] = change.To
+		}
+	}
+	for i, source := range old.Nodes {
+		target := next.Nodes[i]
+		file, err := m.file(source.Path)
+		if err != nil {
+			return err
+		}
+		mapping := migrationRoot(&file.doc)
+		changed, err := migrationSetField(mapping, "id", source.ID, target.ID, source.Path+": id")
+		if err != nil {
+			return err
+		}
+		file.changed = file.changed || changed
+		_, addresses := migrationMap(mapping, "networks")
+		for oldName, oldAddress := range source.Networks {
+			newName := oldName
+			if to := renamed[oldName]; to != "" {
+				newName = to
+			}
+			newAddress := target.Networks[newName]
+			if oldName == newName && oldAddress == newAddress {
+				continue
+			}
+			key, value := migrationMap(addresses, oldName)
+			if key == nil {
+				return fmt.Errorf("%s: network %q was not found", source.Path, oldName)
+			}
+			if _, err := migrationScalar(key, oldName, newName, source.Path+": networks key"); err != nil {
+				return err
+			}
+			// An entry is an address or {address, mac}; the mac stays.
+			if value != nil && value.Kind == yaml.MappingNode {
+				_, value = migrationMap(value, "address")
+			}
+			if _, err := migrationScalar(value, oldAddress, newAddress, source.Path+": networks."+oldName); err != nil {
+				return err
+			}
+			file.changed = true
+		}
+		_, reaches := migrationMap(mapping, "reaches")
+		changed, err = migrationSetSequence(reaches, source.Reaches, target.Reaches, source.Path+": reaches")
+		if err != nil {
+			return err
+		}
+		file.changed = file.changed || changed
+		_, profiles := migrationMap(mapping, "profiles")
+		for name, profile := range source.Profiles {
+			_, profileNode := migrationMap(profiles, name)
+			_, access := migrationMap(profileNode, "access")
+			changed, err = migrationSetSequence(access, profile.Access, target.Profiles[name].Access, source.Path+": profiles."+name+".access")
+			if err != nil {
+				return err
+			}
+			file.changed = file.changed || changed
+		}
+		if err := m.patchInstances(source.Instances, target.Instances); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *migrationYAML) patchNetworks(old, next *inventory.Root) error {
+	if len(old.Networks) != len(next.Networks) {
+		return fmt.Errorf("migration changed network count")
+	}
+	if reflect.DeepEqual(old.Networks, next.Networks) && old.Universal == next.Universal {
+		return nil
+	}
+	file, err := m.file(inventory.NetworksFilename)
+	if err != nil {
+		return err
+	}
+	mapping := migrationRoot(&file.doc)
+	_, sequence := migrationMap(mapping, "networks")
+	for i := range old.Networks {
+		if old.Networks[i] == next.Networks[i] {
+			continue
+		}
+		if sequence == nil || sequence.Kind != yaml.SequenceNode || i >= len(sequence.Content) {
+			return fmt.Errorf("missing migration sequence at networks.yaml: networks")
+		}
+		// Each entry is {name, subnet, gateway}; only the name changes.
+		_, name := migrationMap(sequence.Content[i], "name")
+		changed, err := migrationScalar(name, old.Networks[i], next.Networks[i], "networks.yaml: networks["+strconv.Itoa(i)+"].name")
+		if err != nil {
+			return err
+		}
+		file.changed = file.changed || changed
+	}
+	changed, err := migrationSetField(mapping, "universal", old.Universal, next.Universal, "networks.yaml: universal")
+	if err != nil {
+		return err
+	}
+	file.changed = file.changed || changed
+	return nil
+}
+
+func (m *migrationYAML) patchHosts(old, next *inventory.Root) error {
+	if reflect.DeepEqual(old.Hosts, next.Hosts) {
+		return nil
+	}
+	if len(old.Hosts) != len(next.Hosts) {
+		return fmt.Errorf("migration changed host count")
+	}
+	file, err := m.file(inventory.HostsFilename)
+	if err != nil {
+		return err
+	}
+	_, hosts := migrationMap(migrationRoot(&file.doc), "hosts")
+	for key, host := range old.Hosts {
+		_, node := migrationMap(hosts, key)
+		changed, err := migrationSetField(node, "network", host.Network, next.Hosts[key].Network, "hosts.yaml: hosts."+key+".network")
+		if err != nil {
+			return err
+		}
+		file.changed = file.changed || changed
+	}
+	return nil
+}
+
+func (m *migrationYAML) patchRoutes(old, next *inventory.Root, changes []routeChange) error {
+	if reflect.DeepEqual(old.Routes, next.Routes) || len(old.Routes) == 0 && len(next.Routes) == 0 {
+		return nil
+	}
+	file, err := m.file(inventory.RoutesFilename)
+	if err != nil {
+		return err
+	}
+	_, routes := migrationMap(migrationRoot(&file.doc), "routes")
+	renamed := map[string]string{}
+	for _, change := range changes {
+		renamed[change.From] = change.To
+	}
+	for oldName, source := range old.Routes {
+		newName := oldName
+		if to := renamed[oldName]; to != "" {
+			newName = to
+		}
+		target, ok := next.Routes[newName]
+		if !ok {
+			return fmt.Errorf("route %q missing from target", newName)
+		}
+		key, route := migrationMap(routes, oldName)
+		if key == nil {
+			return fmt.Errorf("routes.yaml: route %q was not found", oldName)
+		}
+		changed, err := migrationScalar(key, oldName, newName, "routes.yaml: route key")
+		if err != nil {
+			return err
+		}
+		file.changed = file.changed || changed
+		_, hops := migrationMap(route, "hops")
+		changed, err = migrationSetSequence(hops, source.Hops, target.Hops, "routes.yaml: "+oldName+".hops")
+		if err != nil {
+			return err
+		}
+		file.changed = file.changed || changed
+	}
+	return nil
+}
+
+func (m *migrationYAML) patchUsers(old, next *inventory.Root) error {
+	if len(old.Users) == 0 {
+		return nil
+	}
+	file, err := m.file(inventory.UsersFilename)
+	if err != nil {
+		return err
+	}
+	_, users := migrationMap(migrationRoot(&file.doc), "users")
+	for name, source := range old.Users {
+		_, user := migrationMap(users, name)
+		_, access := migrationMap(user, "access")
+		changed, err := migrationSetSequence(access, source.Access, next.Users[name].Access, "users.yaml: "+name+".access")
+		if err != nil {
+			return err
+		}
+		file.changed = file.changed || changed
+		_, credentials := migrationMap(user, "credentials")
+		for credentialName, credential := range source.Credentials {
+			_, one := migrationMap(credentials, credentialName)
+			_, access = migrationMap(one, "access")
+			changed, err = migrationSetSequence(access, credential.Access, next.Users[name].Credentials[credentialName].Access, "users.yaml: "+name+"."+credentialName+".access")
+			if err != nil {
+				return err
+			}
+			file.changed = file.changed || changed
+			_, reaches := migrationMap(one, "reaches")
+			changed, err = migrationSetSequence(reaches, credential.Reaches, next.Users[name].Credentials[credentialName].Reaches, "users.yaml: "+name+"."+credentialName+".reaches")
+			if err != nil {
+				return err
+			}
+			file.changed = file.changed || changed
+		}
+	}
+	return nil
+}
+
+func buildMigrationEdits(root string, before, after loaded, networks []networkChange, routes []routeChange) ([]migrationEdit, error) {
+	m := migrationYAML{root: root, files: map[string]*migrationYAMLFile{}}
+	if err := m.patchNodes(before.inv, after.inv, networks); err != nil {
+		return nil, err
+	}
+	if err := m.patchNetworks(before.inv, after.inv); err != nil {
+		return nil, err
+	}
+	if err := m.patchHosts(before.inv, after.inv); err != nil {
+		return nil, err
+	}
+	if err := m.patchRoutes(before.inv, after.inv, routes); err != nil {
+		return nil, err
+	}
+	if err := m.patchUsers(before.inv, after.inv); err != nil {
+		return nil, err
+	}
+	var edits []migrationEdit
+	for path, file := range m.files {
+		if !file.changed {
+			continue
+		}
+		data, err := yaml.Marshal(&file.doc)
+		if err != nil {
+			return nil, fmt.Errorf("encoding %s: %w", path, err)
+		}
+		if bytes.Equal(data, file.original) {
+			continue
+		}
+		edits = append(edits, migrationEdit{path: path, original: file.original, replaced: data, mode: file.mode})
+	}
+	sort.Slice(edits, func(i, j int) bool { return edits[i].path < edits[j].path })
+	return edits, nil
+}

@@ -21,3 +21,5 @@ files:
     output: compose.yaml
   - template: templates/install.sh.tmpl
     output: install.sh
+  - template: templates/uninstall.sh.tmpl
+    output: uninstall.sh

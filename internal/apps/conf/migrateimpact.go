@@ -3,7 +3,6 @@ package conf
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,7 +13,14 @@ import (
 
 // compareMigrationTargets uses the export renderer on each side. A failed
 // render is reported as unknown, never mistaken for an unchanged target.
-func compareMigrationTargets(out io.Writer, before, after loaded, root, secrets, oldID, newID string) {
+type migrationTargetWork struct {
+	Target  target.Target
+	Present bool
+	Unknown bool
+	Files   []exportFile
+}
+
+func compareMigrationTargets(rep *migrationReport, before, after loaded, root, secrets, oldID, newID string) []migrationTargetWork {
 	oldTargets := map[string]target.Target{}
 	newTargets := map[string]target.Target{}
 	for _, t := range target.List(before.inv, before.derived) {
@@ -38,28 +44,23 @@ func compareMigrationTargets(out io.Writer, before, after loaded, root, secrets,
 	oldRenderer := renderer{l: before, rootPath: root, secretsDir: secrets}
 	newRenderer := renderer{l: after, rootPath: root, secretsDir: secrets}
 	secretProblem := missingMigrationSecret(before, after, secrets)
-	lines := []string{}
-	work := []string{}
+	workDetails := []migrationTargetWork{}
 	for _, key := range keys {
 		old, hadOld := oldTargets[key]
 		newTarget, hasNew := newTargets[key]
-		owner := newTarget.Node
+		item := newTarget
+		if !hasNew {
+			item = old
+		}
+		owner := item.Node
 		if owner == "" {
-			owner = newTarget.User
+			owner = item.User
 		}
-		if !hasNew {
-			owner = old.Node
-			if owner == "" {
-				owner = old.User
-			}
-		}
-		label := newTarget.Service + "/" + newTarget.Instance
-		if !hasNew {
-			label = old.Service + "/" + old.Instance
-		}
+		change := migrationTargetChange{Owner: owner, Label: item.Service + "/" + item.Instance}
 		if secretProblem != "" {
-			lines = append(lines, fmt.Sprintf("  %s: %s: render not compared (%s)", owner, label, secretProblem))
-			work = append(work, fmt.Sprintf("  %s: review %s (render not compared)", owner, label))
+			change.Unknown = secretProblem
+			rep.Targets = append(rep.Targets, change)
+			workDetails = append(workDetails, migrationTargetWork{Target: item, Present: hasNew, Unknown: true})
 			continue
 		}
 		var oldFiles, newFiles []exportFile
@@ -71,8 +72,9 @@ func compareMigrationTargets(out io.Writer, before, after loaded, root, secrets,
 			newFiles, newErr = newRenderer.renderAll([]string{newTarget.Instance})
 		}
 		if oldErr != nil || newErr != nil {
-			lines = append(lines, fmt.Sprintf("  %s: %s: render not compared (before: %s; after: %s)", owner, label, renderState(oldErr, hadOld), renderState(newErr, hasNew)))
-			work = append(work, fmt.Sprintf("  %s: review %s (render not compared)", owner, label))
+			change.Unknown = fmt.Sprintf("before: %s; after: %s", renderState(oldErr, hadOld), renderState(newErr, hasNew))
+			rep.Targets = append(rep.Targets, change)
+			workDetails = append(workDetails, migrationTargetWork{Target: item, Present: hasNew, Unknown: true})
 			continue
 		}
 		if !hadOld || !hasNew {
@@ -81,45 +83,24 @@ func compareMigrationTargets(out io.Writer, before, after loaded, root, secrets,
 				files, action = oldFiles, "remove"
 			}
 			for _, file := range files {
-				lines = append(lines, fmt.Sprintf("  %s: %s: %s %s", owner, label, action, file.Path))
+				if action == "add" {
+					change.Files = append(change.Files, migrationFileChange{Action: action, New: file.Path})
+				} else {
+					change.Files = append(change.Files, migrationFileChange{Action: action, Old: file.Path})
+				}
 			}
-			work = append(work, migrationWorkItem(owner, label, newTarget.Export, hasNew))
+			rep.Targets = append(rep.Targets, change)
+			workDetails = append(workDetails, migrationTargetWork{Target: item, Present: hasNew, Files: files})
 			continue
 		}
-		changes := compareExportFiles(oldFiles, newFiles)
-		for _, change := range changes {
-			lines = append(lines, fmt.Sprintf("  %s: %s: %s", owner, label, change))
-		}
-		if len(changes) != 0 {
-			work = append(work, migrationWorkItem(owner, label, newTarget.Export, true))
+		change.Files = compareExportFileChanges(oldFiles, newFiles)
+		if len(change.Files) != 0 {
+			rep.Targets = append(rep.Targets, change)
+			workDetails = append(workDetails, migrationTargetWork{Target: item, Present: true, Files: newFiles})
 		}
 	}
-	fmt.Fprintln(out, "Service and export impact:")
-	if len(lines) == 0 {
-		fmt.Fprintln(out, "  none (all targets rendered identically)")
-	} else {
-		for _, line := range lines {
-			fmt.Fprintln(out, line)
-		}
-	}
-	fmt.Fprintln(out, "Deployment and handoff list:")
-	if len(work) == 0 {
-		fmt.Fprintln(out, "  none")
-	} else {
-		for _, item := range work {
-			fmt.Fprintln(out, item)
-		}
-	}
-}
-
-func migrationWorkItem(owner, label, export string, present bool) string {
-	if !present {
-		return fmt.Sprintf("  %s: retire old export for %s after cutover", owner, label)
-	}
-	if export != "" {
-		return fmt.Sprintf("  %s: regenerate and hand off %s", owner, label)
-	}
-	return fmt.Sprintf("  %s: export, install and restart/reload %s", owner, label)
+	sort.SliceStable(rep.Targets, func(i, j int) bool { return rep.Targets[i].Owner < rep.Targets[j].Owner })
+	return workDetails
 }
 
 func missingMigrationSecret(before, after loaded, secrets string) string {
@@ -158,46 +139,57 @@ func renderState(err error, exists bool) string {
 	return "rendered"
 }
 
+// compareExportFiles describes each changed file in one line.
 func compareExportFiles(oldFiles, newFiles []exportFile) []string {
+	var lines []string
+	for _, change := range compareExportFileChanges(oldFiles, newFiles) {
+		switch change.Action {
+		case "add":
+			lines = append(lines, "add "+change.New)
+		case "remove":
+			lines = append(lines, "remove "+change.Old)
+		case "update":
+			lines = append(lines, "update "+change.New+" (content or mode changed)")
+		default:
+			state := "content or mode also changed"
+			if change.Same {
+				state = "content unchanged"
+			}
+			lines = append(lines, "export path "+change.Old+" -> "+change.New+" ("+state+")")
+		}
+	}
+	return lines
+}
+
+// compareExportFileChanges pairs files by their name inside the target, so a
+// moved bundle path is one change rather than a removal and an addition.
+func compareExportFileChanges(oldFiles, newFiles []exportFile) []migrationFileChange {
 	oldByName := map[string]exportFile{}
 	newByName := map[string]exportFile{}
+	names := map[string]bool{}
 	for _, file := range oldFiles {
 		oldByName[exportOutputName(file.Path)] = file
+		names[exportOutputName(file.Path)] = true
 	}
 	for _, file := range newFiles {
 		newByName[exportOutputName(file.Path)] = file
+		names[exportOutputName(file.Path)] = true
 	}
-	keys := make([]string, 0, len(oldByName)+len(newByName))
-	seen := map[string]bool{}
-	for key := range oldByName {
-		keys = append(keys, key)
-		seen[key] = true
-	}
-	for key := range newByName {
-		if !seen[key] {
-			keys = append(keys, key)
-		}
-	}
-	sort.Strings(keys)
-	var changes []string
-	for _, key := range keys {
+	var changes []migrationFileChange
+	for _, key := range sortedKeys(names) {
 		old, hadOld := oldByName[key]
 		newFile, hasNew := newByName[key]
 		switch {
 		case !hadOld:
-			changes = append(changes, "add "+newFile.Path)
+			changes = append(changes, migrationFileChange{Action: "add", New: newFile.Path})
 		case !hasNew:
-			changes = append(changes, "remove "+old.Path)
+			changes = append(changes, migrationFileChange{Action: "remove", Old: old.Path})
 		default:
+			same := bytes.Equal(old.Bytes, newFile.Bytes) && old.fileMode() == newFile.fileMode()
 			if old.Path != newFile.Path {
-				state := "content unchanged"
-				if !bytes.Equal(old.Bytes, newFile.Bytes) || old.fileMode() != newFile.fileMode() {
-					state = "content or mode also changed"
-				}
-				changes = append(changes, "export path "+old.Path+" -> "+newFile.Path+" ("+state+")")
-			}
-			if old.Path == newFile.Path && (!bytes.Equal(old.Bytes, newFile.Bytes) || old.fileMode() != newFile.fileMode()) {
-				changes = append(changes, "update "+newFile.Path+" (content or mode changed)")
+				changes = append(changes, migrationFileChange{Action: "move", Old: old.Path, New: newFile.Path, Same: same})
+			} else if !same {
+				changes = append(changes, migrationFileChange{Action: "update", Old: old.Path, New: newFile.Path})
 			}
 		}
 	}
@@ -212,7 +204,7 @@ func exportOutputName(path string) string {
 	return strings.Join(parts[3:], "/")
 }
 
-func compareMigrationSecrets(out io.Writer, before, after loaded) {
+func compareMigrationSecrets(rep *migrationReport, before, after loaded) {
 	oldPaths := secretstore.ImpliedPaths(before.inv, before.manifests, before.derived)
 	newPaths := secretstore.ImpliedPaths(after.inv, after.manifests, after.derived)
 	oldSet, newSet := map[string]bool{}, map[string]bool{}
@@ -225,21 +217,14 @@ func compareMigrationSecrets(out io.Writer, before, after loaded) {
 	var changes []string
 	for path := range oldSet {
 		if !newSet[path] {
-			changes = append(changes, "  removed: "+path)
+			changes = append(changes, "removed: "+mdCode(path))
 		}
 	}
 	for path := range newSet {
 		if !oldSet[path] {
-			changes = append(changes, "  added: "+path)
+			changes = append(changes, "added: "+mdCode(path))
 		}
 	}
 	sort.Strings(changes)
-	fmt.Fprintln(out, "Implied secret paths:")
-	if len(changes) == 0 {
-		fmt.Fprintln(out, "  unchanged")
-	} else {
-		for _, change := range changes {
-			fmt.Fprintln(out, change)
-		}
-	}
+	rep.Secrets = changes
 }

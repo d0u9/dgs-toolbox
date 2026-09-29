@@ -707,6 +707,15 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case exportCopiedMsg:
 		m.finishCopy(msg)
 		return m, nil
+	case migrationCopiedMsg:
+		if m.migration != nil {
+			if msg.err != nil {
+				m.migration.notice = "! Copy failed: " + msg.err.Error()
+			} else {
+				m.migration.notice = "report copied · it stays on the clipboard until replaced"
+			}
+		}
+		return m, nil
 	case tui.TabSelectedMsg:
 		// An open export is about the tab it started on; a click on another
 		// tab behind it would change the page it is drawn over.

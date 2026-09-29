@@ -1,7 +1,7 @@
 # Configuration: Node migration (proposal)
 
 This design covers moving
-the configuration represented by one node to a replacement machine, including
+the configuration represented by one node to a new location or machine, including
 changes to its name and network addresses. It does not say that a generated
 file has been installed or that DNS has been changed.
 
@@ -20,20 +20,33 @@ For a move such as `network-4` to `network-8`, the operator needs to know:
    installed or restarted there?
 3. Which names might need a DNS update, what old and new addresses do they
    suggest, and what cannot be decided from the inventory?
-4. In what order can the new machine be prepared, checked, and cut over, with
+4. In what order can the machine be shut down, moved, checked, and brought up, with
    a way back if a step fails?
+
+A migration is one of two scenarios, chosen when it starts because the
+inventory cannot tell them apart:
+
+- **Relocate** — the same machine moves to a new place, for example
+  `network-4` → `network-8`. Its disks, Docker volumes and bind paths come along.
+- **Replace** — the node moves onto a new machine that starts empty, for
+  example `network-4-linux-01` → `network-4-linux-02`. Data travels as an archive.
+
+The scenario shapes only the report's procedure; the inventory edits are the
+same. Export handoffs to people or other nodes are not services to stop on
+the moved machine.
 
 A node's address is written in `nodes/<group>/*.yaml`; route edges and
 container port mappings are derived. A port's `published` name is a service
 name, not necessarily the node's hostname or a DNS record managed here.
 
-## Proposed command shape
+## Interface
 
-The `dgs conf` TUI has a **Migrate** tab. It starts with **New migration** and
+Migration lives only in the `dgs conf` TUI; there is no command-line action.
+The TUI has a **Migrate** tab. It starts with **New migration** and
 the saved plans in `<config_dir>/conf/migrations/`, plus **Open migration file**
 through the shared File Explorer. Its path input and root navigation can reach
-any accessible directory. A new migration selects a
-source node, then opens a
+any accessible directory. A new migration first asks for the scenario
+(relocate or replace), then selects a source node, then opens a
 two-column table grouped into Node, Networks, Instances, Published, Routes, and
 Secrets. Secret rows show implied relative paths before and after the proposed
 changes. They are read-only because the paths are derived from instance IDs,
@@ -53,9 +66,13 @@ the whole proposal and opens the report; Esc returns to the table, where every
 value remains editable; clicking a row also returns from the report to that
 row. `p` from the report opens File Explorer for a destination directory, then
 asks for a report filename and creates a
-report file without overwriting an existing one. Leaving the tab never writes
-inventory, secrets or DNS. The plan file is versioned YAML containing the
-source node and each row's original and proposed values. Opening checks every
+report file without overwriting an existing one. `a` from the report asks for
+confirmation; `y` applies the plan (see Execution and rollback) and appends the
+result, including the backup directory, to the report. Any other key cancels.
+Nothing else in the tab writes inventory or secrets, and nothing writes DNS.
+The plan file is versioned YAML containing the source node, the scenario and
+each row's original and proposed values. A plan saved without a scenario asks
+for one when it is opened. Opening checks every
 original value against the current inventory; a stale plan is refused. Saving
 an open plan also refuses to replace a file changed outside this session.
 Unsaved edits are marked in the status bar; leaving the table asks for a
@@ -63,23 +80,38 @@ second Esc before discarding them.
 
 The TUI gives the migration table one third of the workspace width and the
 detail or report pane two thirds, with the table capped at 90 cells. The report
-pane scrolls independently of the table. `[` and `]` still switch tabs when
-no text editor is open.
+pane scrolls independently of the table. Up/Down and `k`/`j` move one report
+line; `g`/`G` move to its top/bottom. The mouse wheel scrolls the pane under
+the pointer: table rows on the left, report lines on the right. In report mode,
+`c` or `y` copies the complete report through the terminal clipboard (OSC 52);
+`p` writes it to a file. `[` and `]` still switch tabs when no text editor is
+open.
 
-`dgs conf migrate node` opens a terminal wizard. It asks for the source node,
-the new node ID, each network's new name and address, each authored instance's
-new ID, each published port's hostname, and each route touching that node's
-new name. Enter keeps the shown
-value. EOF cancels. The wizard validates the proposed inventory in memory and
-prints an upgrade report with changed references, rendered target impact,
-secret-path changes, a per-node deployment/handoff list, and an operator
-checklist. It can save that report to a
-path supplied at the final prompt, creating the file only if it does not
-already exist. It does not modify inventory or secrets. Supplying `--node`
-keeps the noninteractive read-only preview; `--network`, `--instance` and
-`--route` can be repeated with explicit `from` and `to` fields. `--published`
-names an old instance and port plus the desired hostname. The report flags
-published-name changes for DNS review; it never edits external DNS.
+The report is Markdown in three parts: **Changes** (inventory edits with the
+typed references they rewrite, route edges, rendered output per destination
+machine, secret paths), **Needs attention** (numbered items the operator must
+decide), and **Procedure**, the scenario's steps in six phases:
+
+1. Take services offline on the old host. Each instance's container mounts
+   are recorded with `docker inspect` before its generated `uninstall.sh`
+   runs; jobs stop before the services they read.
+2. Back up data. Every mount is archived under its path inside the
+   container, which is stable across hosts. A size check comes first, since a
+   bind mount may be large shared storage the operator chooses not to carry.
+3. Manual work: the numbered attention items, network configuration, apply
+   in the TUI, `dgs conf --check`, and exporting the new bundle.
+4. Import data. Replace only: `install.sh` creates the new container, which
+   is stopped at once, and each archive is unpacked into the mount with the
+   same container path. Relocate imports nothing.
+5. Start services, listening services before jobs; then redeploy changed
+   targets on other machines.
+6. Verify containers, logs, each address a route dials, and DNS answers.
+
+A rollback section closes the procedure. Commands are printed for the
+operator to run; the TUI runs none of them. A compose service without
+`container_name` is found by its `com.docker.compose.service` label.
+Instances without a generated lifecycle script are listed for manual
+handling.
 
 An instance rename updates its authored ID and route-hop references in the
 preview. A route rename updates the route key and typed access lists in users,
@@ -87,37 +119,13 @@ credentials and node profiles. Values, deploy settings and templates remain
 opaque, and the report marks them for manual review. A changed instance ID
 can change secret paths; the report lists those before anyone edits files.
 
-The first interface is a CLI action, separate from `conf inspect` and
-`conf export`:
+Each network change is one row pair: its name and its address on the moved
+node. Network renames are inventory-wide: `networks.yaml`, `hosts.yaml`, every
+node's `networks` and `reaches`, and every credential's `reaches` must agree.
+A rename is never inferred from the node ID, since another node or credential
+may also use that network. The report lists each typed reference it would
+change.
 
-```text
-dgs conf migrate node \
-  --node 'from=network-4,to=network-8' \
-  --network 'from=home,address=10.0.1.8'
-```
-
-When the network itself is renamed as well, name that separately from its new
-address:
-
-```text
-dgs conf migrate node \
-  --node 'from=a-node-group-02-01,to=a-node-group-03-01' \
-  --network 'from=network-4,to=network-8,address=10.0.1.8' \
-  --network 'from=tailnet,address=10.0.2.8'
-```
-
-Each `--network` is one complete change, so several networks cannot be paired
-in the wrong order. `from` is required; `to` defaults to `from` for an
-address-only change, and `address` may be omitted for a name-only change.
-Network renames are inventory-wide: `networks.yaml`, every node's
-`networks` and `reaches`, and every credential's `reaches` must agree. It is
-never inferred from the node ID, since another node or credential may also
-use that network. The preview lists each typed reference it would change.
-
-The first milestone implements only the read-only route-edge preview. Later,
-without `--apply`, it only prints a full plan. `--apply` prints the same plan and
-asks before changing local inventory files; `--yes` answers that prompt for a
-script. Each `from` names an existing inventory network on the old node.
 Leaving a network
 out retains its address. Explicit address removal, adding a network, and moving
 instances between two concurrently existing nodes are outside the first
@@ -195,9 +203,18 @@ reverse proxy may need a change to the proxy's record, while its backend's
 `published` name stays the same; the plan must identify the actual ingress
 node from the route and label the DNS step accordingly.
 
+The read-only report now lists every affected `published` name even when its
+text stays unchanged. It names the hosting service/port and the first hop of
+each route using that port as the known ingress, before and after migration.
+Addresses are shown with their inventory network name and labelled as ingress
+or backend candidates. A proxied backend's private address is never presented
+as a confirmed DNS answer. Each item asks for an authoritative lookup and
+verification from the networks clients use.
+
 ## Execution and rollback
 
-`--apply` edits only local inventory files. Before writing, it rechecks the
+Apply edits local inventory files and copies secrets whose instance IDs
+are explicitly renamed. Before writing, it rechecks the
 captured file digests and rebuilds the plan. It writes complete replacement
 files in their existing directories, then atomically renames them into place.
 Because several file renames are not one filesystem transaction, it records
@@ -207,26 +224,43 @@ any restore failure with paths. Re-running the same migration after success
 should report that the requested target state is already present; it must not
 create another replacement or alter unrelated fields.
 
-The command does not move or generate secrets automatically. A changed node ID
-can change derived client target IDs and export paths; whether it changes any
-secret path must be measured by comparing `secretstore.ImpliedPaths` before and
-after. If paths differ, list the exact old/new paths and stop before applying
-until a separate, explicit secret move has a defined implementation. The
-inventory design currently notes that `dgs conf secret mv` is not implemented.
+The implementation saves originals with their permissions under a unique
+`.dgs-migration-backup-*` directory in the generator root and reports that
+path after success. It retains this directory for operator rollback. Each
+replacement is staged in its destination directory. YAML comments and
+unrelated typed fields survive the edit; opaque `values`, `deploy`, templates
+and file basenames are left for manual review. Input files are checked again
+after confirmation, and the same validated plan is rebuilt before any
+replacement. A failed write or failed post-write load and validation restores
+every file already replaced. This is filesystem API level recovery, not a
+claim of power-loss durability across several renames.
+
+For an explicit instance rename, apply copies each implied secret to the
+new instance path before replacing inventory files. It checks source bytes,
+rejects a different destination value, and reads back each new file. The old
+files remain for rollback; a retry accepts matching copies left by a partial
+attempt. Added or removed secret paths without a one-to-one instance rename
+still block apply. `dgs conf secret mv` remains unimplemented.
+While the old paths are retained, `dgs conf --check` reports them as orphaned
+and exits unsuccessfully. The operator must match those reports against the
+reviewed copy list and investigate every other problem. Retire old paths only
+after the new services work and rollback is no longer needed.
 
 The human rollout checklist should separate preparation from cutover:
 
-1. Prepare `network-8` with the intended addresses and services; keep `network-4`
-   available while verifying the replacement.
-2. Apply the inventory edit, run `dgs conf --check`, and export the changed
+1. Review the old-node shutdown list and save the running state and configuration
+   needed for rollback. Stop the listed runtime services before relocating the
+   physical machine.
+2. Move the machine and configure its new networks. Apply the inventory edit,
+   run `dgs conf --check`, and export the changed
    targets. Review the rendered output and copy/install it on each listed node.
-3. Restart or reload each listed service using its own deployment procedure;
+3. Start each instance in the new-node startup list using its deployment procedure;
    test its listening ports and the route edges that changed.
 4. Inspect and update the listed DNS records where necessary, then verify
    answers and service reachability from the relevant networks. DNS caching
    means the old endpoint may still receive traffic during cutover.
-5. Remove `network-4` only after the new endpoint works and old traffic has
-   drained. The command never performs this step.
+5. Remove the old `network-4` logical identity only after the new endpoint works
+   and old traffic has drained. The command never performs this step.
 
 Rollback means restoring the saved inventory bytes, exporting the old targets
 again, redeploying those files, and reverting any separately changed DNS.
@@ -236,34 +270,39 @@ machines or DNS.
 
 ## Example of the report
 
-```text
-Node migration: network-4 -> network-8
-Inventory: nodes/home/network-4.yaml
-Address: home 10.0.1.4 -> 10.0.1.8
+An abridged relocation report:
 
-Local edits
-  nodes/home/network-4.yaml: id, networks.home
+```markdown
+# Node migration: `network-4` → `network-8`
 
-Export and deploy
-  network-8: microbin/bin-home: configuration and compose.yaml changed
-  laptop: ssclient/laptop-home: upstream address changed
-  alex-phone: ssclient/phone-home: upstream address changed
+## 1. Changes
+| Change | Before | After |
+|---|---|---|
+| Node ID | `network-4` | `network-8` |
+| Address on home | `10.0.1.4` | `10.0.1.8` |
 
-DNS review
-  bin.example.net: published by bin-home:web; inspect its public DNS target
-  network-4.example.net: possible node hostname; confirm whether a record exists
+#### `network-8`
+| Instance | File | Change |
+|---|---|---|
+| `microbin/bin-home` | `compose.yaml` | bundle path moves; **content changed** |
 
-Manual review
-  services/microbin/deploy/defaults.yaml: old address appears in an opaque value
+## 2. Needs attention
+### 2.1 DNS records to inspect
+**`bin.example.net`** — `microbin/bin-home` on port `web`
 
-Checks after installation
-  Verify bin-home:web from home and internet as applicable
-  Verify client routes whose resolved edge changed
+## 3. Procedure
+### Phase 1 — Take services offline (old host)
+### Phase 2 — Back up data (old host)
+### Phase 3 — Manual work
+### Phase 4 — Import data (new host)
+### Phase 5 — Start services (new host)
+### Phase 6 — Verify
+### Rollback
 ```
 
-The names and paths in this example are illustrative. Each real report names
-only evidence found in that generator root, and says when a check is a
-candidate rather than a known change.
+The names in this example are illustrative. Each real report names only
+evidence found in that generator root, and says when a check is a candidate
+rather than a known change.
 
 ## Acceptance cases for implementation
 
@@ -283,23 +322,21 @@ candidate rather than a known change.
 
 ## Proposed milestones
 
-Implementation status: the read-only CLI preview and interactive report wizard
-are implemented. The preview compares each target with the existing export renderer, including
-deployment files, and reports changed export paths, content or modes. It also
-compares implied secret paths. If `conf.secrets` is not configured, the preview
-marks all render comparisons unavailable. With a configured secrets root,
-each target is rendered separately; only a target whose render fails is marked
-unavailable. It lists literal old node IDs, network names and
-changed addresses found in service files for manual review; it does not rewrite
-those opaque values. It also flags authored instance IDs containing an old
-node or network name. An `export path` line means only the bundle location
-changes; it explicitly says whether the rendered bytes changed. The wizard
-adds a per-node deployment/handoff list and a basic ordered checklist.
-Authoritative DNS review and guarded local apply are still planned.
+Implementation status: the Migrate tab, its report, guarded local apply and
+the DNS and manual review items are implemented. The report compares each
+target with the existing export renderer, including deployment files, and
+reports changed export paths, content or modes. If `conf.secrets` is not
+configured, render comparisons and container mounts are marked unavailable.
+It lists literal old node IDs, network names and changed addresses found in
+service and node files for manual review, leaving out node-file lines whose
+match is a typed field the plan already covers; it never rewrites them. It
+also flags authored instance IDs containing an old node or network name.
+The report does not query or edit external DNS, and deployment and DNS
+commands remain operator work.
 
-Service reference matches are labelled `注释` when the line begins with `#`
-after whitespace, and `配置/模板内容` otherwise. This label describes the line
-in the source file; it does not decide whether a comment should be updated.
+Text matches are labelled `注释` when the line begins with `#` after
+whitespace, and `配置/模板内容` otherwise. This label describes the line in the
+source file; it does not decide whether a comment should be updated.
 
 1. **Read-only node plan.** Accept the old/new node IDs and repeatable per-network
    addresses. Load and validate both inventory snapshots, show the exact
@@ -317,10 +354,10 @@ in the source file; it does not decide whether a comment should be updated.
    opaque fields or templates. Distinguish confirmed inventory facts from
    DNS checks requiring an authoritative lookup. Acceptance: a proxied
    backend does not produce an asserted DNS change to its private address.
-4. **Guarded local apply and rollback.** Add `--apply`, stale-plan checks,
+4. **Guarded local apply and rollback.** Add apply, stale-plan checks,
    same-directory replacement files, exact backups, post-write validation
-   and restoration after partial failure. Block when implied secret paths
-   would change until secret moves have their own implementation. Acceptance:
+   and restoration after partial failure. Copy verified secrets for explicit
+   instance renames and retain the old paths. Block ambiguous changes. Acceptance:
    repeated apply is harmless, a changed input invalidates a preview, and
    injected write failure restores the original inventory.
 5. **Operator checklist.** Print preparation, per-node export/install/restart,
@@ -343,5 +380,5 @@ milestone 4.
   DNS record inventory with ownership and authoritative readback?
 - Should a node file and its instance directory be renamed when their basename
   equals the old node ID? The proposed first version keeps paths stable.
-- What is the desired cutover policy when a node rename changes secret paths?
-  The first version blocks apply and reports them until secret moves exist.
+- Should old secret paths be retired after a verified cutover? The current
+  implementation retains them for rollback and never deletes them automatically.

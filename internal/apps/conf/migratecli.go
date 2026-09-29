@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,9 +14,16 @@ import (
 	"dgs-toolbox/internal/config"
 )
 
-// migrateAction is the read-only first milestone of node migration. It uses
-// the same inventory, derivation and validation as conf inspect and check.
+// migrateAction builds the report for a plan the Migrate tab encodes as
+// flags; "apply" writes it through the same validated plan. It is not a
+// command-line action: the TUI is the only interface.
 func migrateAction(in io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {
+	if flags["apply"] == "true" {
+		return migrateApplyAction(in, out, args, flags, global)
+	}
+	if flags["yes"] == "true" {
+		return fmt.Errorf("confirmation given without apply")
+	}
 	return migrateActionSnapshot(in, out, args, flags, global, nil)
 }
 
@@ -30,12 +38,7 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 		return fmt.Errorf("conf.root is not configured")
 	}
 	if flags["node"] == "" {
-		for _, name := range []string{"network", "instance", "route", "published"} {
-			if flags[name] != "" && flags[name] != "[]" {
-				return fmt.Errorf("--node is required when using --%s; omit all change flags to start the wizard", name)
-			}
-		}
-		return migrateWizard(in, out, root, global)
+		return fmt.Errorf("migration plan names no source node")
 	}
 	oldID, newID, err := parseNodeChange(flags["node"])
 	if err != nil {
@@ -154,37 +157,33 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 		return nil
 	}
 
-	fmt.Fprintf(out, "Node migration preview: %s -> %s\nInventory: %s\n", oldID, newID, before.Path)
-	if oldID != newID && strings.Contains(before.Path, oldID) {
-		fmt.Fprintf(out, "  manual review: inventory filename retains old node ID: %s\n", before.Path)
+	if _, err := parseMigrationScenario(flags["scenario"]); err != nil {
+		return err
+	}
+	rep := &migrationReport{OldID: oldID, NewID: newID, Root: root, Inventory: before.Path, Apply: flags["apply"] == "true"}
+	if oldID != newID {
+		rep.Edits = append(rep.Edits, migrationChangeRow{Kind: "Node ID", Before: oldID, After: newID})
 	}
 	for _, change := range networkChanges {
 		if change.From != change.To {
-			fmt.Fprintf(out, "Network: %s -> %s\n", change.From, change.To)
-			for _, ref := range renamedRefs[change.From] {
-				fmt.Fprintf(out, "  reference: %s\n", ref)
-			}
+			rep.Edits = append(rep.Edits, migrationChangeRow{Kind: "Network name", Before: change.From, After: change.To, Refs: renamedRefs[change.From]})
 		}
 		if change.Address != "" {
-			fmt.Fprintf(out, "Address: %s %s -> %s\n", change.To, before.Networks[change.From], change.Address)
+			rep.Edits = append(rep.Edits, migrationChangeRow{Kind: "Address on " + change.To, Before: before.Networks[change.From], After: change.Address})
 		}
 	}
+	renames := map[string]string{}
 	for _, change := range instanceChanges {
-		fmt.Fprintf(out, "Instance: %s -> %s\n", change.From, change.To)
-		for _, ref := range instanceRefs[change.From] {
-			fmt.Fprintf(out, "  reference: %s\n", ref)
-		}
+		renames[change.From] = change.To
+		rep.Edits = append(rep.Edits, migrationChangeRow{Kind: "Instance ID", Before: change.From, After: change.To, Refs: instanceRefs[change.From]})
 	}
 	for _, change := range routeChanges {
-		fmt.Fprintf(out, "Route: %s -> %s\n", change.From, change.To)
-		for _, ref := range routeRefs[change.From] {
-			fmt.Fprintf(out, "  reference: %s\n", ref)
-		}
-		fmt.Fprintf(out, "  manual review: opaque instance values/deploy and service templates may use %q as a key\n", change.From)
+		rep.Edits = append(rep.Edits, migrationChangeRow{Kind: "Route name", Before: change.From, After: change.To, Refs: routeRefs[change.From]})
+		rep.NodeMatches = append(rep.NodeMatches, migrationTextMatch{Path: "routes.yaml", Kind: "route key", Term: change.From,
+			Text: "opaque instance values, deploy settings and service templates may use this route name as a key"})
 	}
 	for _, change := range publishedChanges {
-		fmt.Fprintf(out, "Published name: %s:%s %s -> %s\n", change.Instance, change.Port, publishedRefs[change.key()], change.To)
-		fmt.Fprintln(out, "  DNS review: check authoritative records and affected clients; this preview does not edit DNS")
+		rep.Edits = append(rep.Edits, migrationChangeRow{Kind: "Published name " + change.Instance + ":" + change.Port, Before: publishedRefs[change.key()], After: change.To})
 	}
 
 	// The edge key denotes the same route connection across a node rename.
@@ -197,40 +196,37 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 	for _, edge := range after.Edges {
 		newEdges[edgeKey(edge, newID, newID)] = edge
 	}
-	keys := make([]string, 0, len(oldEdges)+len(newEdges))
-	seen := map[string]bool{}
+	keys := map[string]bool{}
 	for key := range oldEdges {
-		seen[key] = true
-		keys = append(keys, key)
+		keys[key] = true
 	}
 	for key := range newEdges {
-		if !seen[key] {
-			keys = append(keys, key)
-		}
+		keys[key] = true
 	}
-	sort.Strings(keys)
-	changed := 0
-	for _, key := range keys {
+	for _, key := range sortedKeys(keys) {
 		old, was := oldEdges[key]
 		new, is := newEdges[key]
 		if !was || !is || old.Address != new.Address || old.Network != new.Network || old.Port != new.Port {
-			if changed == 0 {
-				fmt.Fprintln(out, "Changed route edges:")
-			}
-			changed++
-			fmt.Fprintf(out, "  %s: %s -> %s\n", key, edgeAddress(old, was), edgeAddress(new, is))
+			rep.Edges = append(rep.Edges, migrationEdgeChange{Key: key, Before: edgeAddress(old, was), After: edgeAddress(new, is)})
 		}
 	}
-	if changed == 0 {
-		fmt.Fprintln(out, "Changed route edges: none")
-	}
-	compareMigrationTargets(out, l, newLoaded, root, global.ConfSecrets(), oldID, newID)
-	compareMigrationSecrets(out, l, newLoaded)
-	if err := reportServiceReferences(out, root, oldID, before, networkChanges, instanceChanges, routeChanges); err != nil {
+	rep.Work = compareMigrationTargets(rep, l, newLoaded, root, global.ConfSecrets(), oldID, newID)
+	compareMigrationSecrets(rep, l, newLoaded)
+	migrationDNSReview(rep, l, newLoaded, oldID, newID, oldID != newID || len(networkChanges) != 0, instanceChanges)
+	if err := reportServiceReferences(rep, root, oldID, before, networkChanges, instanceChanges, routeChanges); err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "No inventory or secret files were changed. External DNS records were not checked.")
-	return nil
+	rep.Procedure = buildMigrationProcedure(l, newLoaded, oldID, newID, root, global.ConfSecrets(), flags, renames)
+	_, err = out.Write(rep.markdown())
+	return err
+}
+
+func buildMigrationReport(flags map[string]string, global config.Config) ([]byte, error) {
+	var report bytes.Buffer
+	if err := migrateAction(nil, &report, []string{"node"}, flags, global); err != nil {
+		return nil, err
+	}
+	return report.Bytes(), nil
 }
 
 func edgeKey(edge derive.Edge, sourceID, targetID string) string {
@@ -330,9 +326,30 @@ func renameInventoryNetwork(inv *inventory.Root, oldName, newName string) ([]str
 			inv.Networks[i] = newName
 		}
 	}
+	if info, ok := inv.NetworkInfo[oldName]; ok {
+		infos := make(map[string]inventory.Network, len(inv.NetworkInfo))
+		for name, value := range inv.NetworkInfo {
+			infos[name] = value
+		}
+		delete(infos, oldName)
+		info.Name = newName
+		infos[newName] = info
+		inv.NetworkInfo = infos
+	}
 	if inv.Universal == oldName {
 		inv.Universal = newName
 		refs = append(refs, "networks.yaml: universal")
+	}
+	if len(inv.Hosts) > 0 {
+		hosts := make(map[string]inventory.Host, len(inv.Hosts))
+		for key, host := range inv.Hosts {
+			if host.Network == oldName {
+				host.Network = newName
+				refs = append(refs, "hosts.yaml: hosts."+key+".network")
+			}
+			hosts[key] = host
+		}
+		inv.Hosts = hosts
 	}
 	for i := range inv.Nodes {
 		node := &inv.Nodes[i]
@@ -347,6 +364,15 @@ func renameInventoryNetwork(inv *inventory.Root, oldName, newName string) ([]str
 			delete(copied, oldName)
 			copied[newName] = address
 			node.Networks = copied
+			if mac, ok := node.MACs[oldName]; ok {
+				macs := make(map[string]string, len(node.MACs))
+				for name, value := range node.MACs {
+					macs[name] = value
+				}
+				delete(macs, oldName)
+				macs[newName] = mac
+				node.MACs = macs
+			}
 			refs = append(refs, node.Path+": networks."+oldName)
 		}
 		for j, name := range node.Reaches {
