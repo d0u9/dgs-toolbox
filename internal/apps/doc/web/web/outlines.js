@@ -46,7 +46,7 @@ function sync() {
 // fill draws the draft's rules and Snapshots into the form.
 function fill() {
   const on = new Set(draft.rules.map((r) => r.name));
-  $("rules").replaceChildren(...(rules.length ? rules.map((r) => el("label", { className: "pick", title: r.layout },
+  $("rules").replaceChildren(...(rules.length ? rules.map((r) => el("label", { className: "pick", title: [r.if, r.path, r.file].filter(Boolean).join(" · ") },
     el("input", { type: "checkbox", value: r.name, checked: on.has(r.name) }), " ", el("span", { className: "mono" }, r.name),
     " ", el("a", { href: api("/rules/") + "#" + encodeURIComponent(r.name), className: "muted", textContent: "edit" }))) :
     [el("p", { className: "muted" }, "No rule yet.")]));
