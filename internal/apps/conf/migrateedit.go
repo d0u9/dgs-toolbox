@@ -19,6 +19,9 @@ type migrationEdit struct {
 	original []byte
 	replaced []byte
 	mode     os.FileMode
+	// moveTo, when set, is where the replaced file is written instead of
+	// path, which is then removed: a renamed node's file.
+	moveTo string
 }
 
 type migrationYAML struct {
@@ -585,6 +588,28 @@ func buildMigrationEdits(root string, before, after loaded, networks []networkCh
 			continue
 		}
 		edits = append(edits, migrationEdit{path: path, original: file.original, replaced: data, mode: file.mode})
+	}
+	// A node whose file is named after it moves with a rename.
+	afterPath := map[string]string{}
+	for i, n := range before.inv.Nodes {
+		if i < len(after.inv.Nodes) && after.inv.Nodes[i].Path != n.Path {
+			afterPath[n.Path] = after.inv.Nodes[i].Path
+		}
+	}
+	for from, to := range afterPath {
+		found := false
+		for i := range edits {
+			if edits[i].path == from {
+				edits[i].moveTo, found = to, true
+			}
+		}
+		if !found {
+			file, err := m.file(from)
+			if err != nil {
+				return nil, err
+			}
+			edits = append(edits, migrationEdit{path: from, original: file.original, replaced: file.original, mode: file.mode, moveTo: to})
+		}
 	}
 	sort.Slice(edits, func(i, j int) bool { return edits[i].path < edits[j].path })
 	return edits, nil

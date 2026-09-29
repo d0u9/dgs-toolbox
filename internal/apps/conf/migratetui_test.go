@@ -445,7 +445,7 @@ func TestMigrationReportAppliesOnlyAfterConfirmation(t *testing.T) {
 	}
 	m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, 120, 40)
 	m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}, 120, 40)
-	if data, _ := os.ReadFile(path); !strings.Contains(string(data), "id: srv08") {
+	if data, _ := os.ReadFile(filepath.Join(filepath.Dir(path), "srv08.yaml")); !strings.Contains(string(data), "id: srv08") {
 		t.Fatalf("apply did not write the node file: %s; notice %s", data, m.notice)
 	}
 	if !strings.Contains(string(m.report), "## Apply result") || !strings.Contains(string(m.report), ".dgs-migration-backup-") {

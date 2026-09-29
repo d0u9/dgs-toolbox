@@ -17,6 +17,7 @@ package validate
 import (
 	"fmt"
 	"net/netip"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -544,6 +545,20 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	// that does not write it.
 	for _, issue := range derive.ServiceDialIssues(inv, manifests) {
 		add("%s", issue)
+	}
+
+	// Rule 36: a node's id is its file's name, so the file a reader opens
+	// for a node is the one that defines it. A node account names a uid.
+	for _, id := range nodeIDsInOrder {
+		n := nodeByID[id]
+		if base := strings.TrimSuffix(filepath.Base(n.Path), ".yaml"); n.Path != "" && base != n.ID {
+			add("node %q is written in %s: name the file %s.yaml", n.ID, n.Path, n.ID)
+		}
+		for name, a := range n.Accounts {
+			if a.UID <= 0 {
+				add("node %q: account %q has no uid", n.ID, name)
+			}
+		}
 	}
 
 	// Rule 34: every set's members are routes, and every @set named in an

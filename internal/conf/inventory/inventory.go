@@ -477,6 +477,11 @@ type Node struct {
 	// Runtime is what delivers an instance on this node that writes no
 	// `runtime` of its own. Empty means RuntimeHost.
 	Runtime string `yaml:"runtime"`
+	// Accounts is this machine's POSIX accounts by name, for templates that
+	// must write numeric owners: a file on a volume keeps the number, so the
+	// number is written once, here. See
+	// docs/apps/conf/inventory.md#a-nodes-accounts.
+	Accounts map[string]Account `yaml:"accounts"`
 	// Export narrows what is written for this device to one of the ways the
 	// services it reaches offer, or ExportNone to write nothing at all.
 	// Empty takes every way they offer. See
@@ -1208,4 +1213,13 @@ func expandSets(rt *Root) {
 			rt.Nodes[i].Profiles[name] = p
 		}
 	}
+}
+
+// Account is one POSIX account on a node: its uid, and its primary group's
+// gid and name. An unwritten group is the account's own name, and an
+// unwritten gid its uid.
+type Account struct {
+	UID   int    `yaml:"uid"`
+	GID   int    `yaml:"gid"`
+	Group string `yaml:"group"`
 }
