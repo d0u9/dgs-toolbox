@@ -28,8 +28,8 @@ func TestGroupNestsEveryRuleAndCounts(t *testing.T) {
 		item("E", "passport", map[string]string{"country": "CN", "owner": "alex"}, "d5"),
 	}
 	o := Outline{Name: "mine", Rules: []view.View{
-		{Name: "cars", Selection: view.Head, Order: map[string][]string{"{plate}": {"浙AF3897", "浙AT73C7"}}, Node: view.Node{If: "type is car", File: "{country:alpha2} {make}/{#}-{plate}/{id}.{ext}"}},
-		{Name: "ids", Selection: view.Head, Node: view.Node{If: "type is passport", File: "ids/{owner}.{ext}"}},
+		{Name: "cars", Selection: view.Head, Order: map[string][]string{"{plate}": {"浙AF3897", "浙AT73C7"}}, Node: view.Node{If: "type == car", File: "{country:alpha2} {make}/{#}-{plate}/{id}.{ext}"}},
+		{Name: "ids", Selection: view.Head, Node: view.Node{If: "type == passport", File: "ids/{owner}.{ext}"}},
 	}}
 	g, err := Group(o, nil, items, view.Types{})
 	if err != nil {

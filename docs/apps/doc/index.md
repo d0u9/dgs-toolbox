@@ -31,7 +31,7 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | --- | --- |
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete and attach or replace a PDF on a selected revision. |
 | Explore `/explore/` | An Outline's result: its PDFs in their tree, its Snapshots as folders, each folder counting the PDFs beneath it; picking a folder lists it, a PDF opens beside it; exporting the tree. |
-| Templates `/templates/` | Each type's Template file, edited as written; new and delete. |
+| Templates `/templates/` | Each type's Template file, edited as written, listed as the tree of what extends what; new and delete. |
 | Rules `/rules/` | Making a rule: which PDFs it picks and the path each has, with the tree it makes redrawn as it changes. |
 | Snapshots `/snapshots/` | Taking a Snapshot from a rule, or beginning one empty, and editing its PDFs by hand. |
 | Outlines `/outlines/` | Making an Outline from rules and Snapshots, each Snapshot at a folder given, and the folder it is exported to, with its tree redrawn as they change. |
@@ -234,6 +234,10 @@ The Templates page edits a Template's file as text and saves it exactly as
 written, comments included, after it parses and validates. A type Items use
 cannot be renamed and its kind cannot change, since every sidecar names both;
 its fields can. Renaming an unused Template moves the old file to the trash.
+The list is a file tree of what extends what: a type others extend is a
+folder, opened by picking its row, and one none extends is a file; each row
+shows its Item count, or `abstract`. A type's description and what it
+extends show beside its name above the text, and on its row's hover.
 Duplicate starts a new, unsaved Template from the one shown, under the type
 `<type>_copy` (`_copy2`, … when taken); it is written only on Save.
 
@@ -588,7 +592,7 @@ snapshots:                        # optional
 ```yaml
 # rules/ids.yaml
 name: ids
-if: type in [id_card, passport] and owner is emma
+if: type in [id_card, passport] && owner == emma
 selection: head
 file: '{country}/{owner}/important/{type}.{ext}'
 default: none                     # optional: stands in for a missing key
@@ -600,7 +604,7 @@ order:                            # optional: what each {#} numbers, in order
 ```yaml
 # rules/cars.yaml
 name: cars
-if: type is vehicle_registration
+if: type == vehicle_registration
 selection: all
 file: '{country:alpha2} {make}/{#}-{plate}/{type:zh}.{ext}'
 dedupe: number
@@ -625,33 +629,35 @@ are nodes too.
 
 ```yaml
 name: rental
-if: owner is alex and tags in [network-5, network-6]
+if: owner == alex && tags in [network-5, network-6]
 path: 11-Rental/{#}-{about.address}
 file: '{name}[-{date:compact}].{ext}'
 children:
-  - if: category is utility
+  - if: category == utility
     path: utility/{category}
     file: '{date:compact}-{issuer}.{ext}'   # in place of the file above
-  - if: type is money
+  - if: type == money
     path: rental/{category}
-  - if: type is translation                 # no path, file or children: left out
+  - if: type == translation                 # no path, file or children: left out
   - path: other                             # no if: the else
 ```
 
 - **If** — which Items, one condition in package `expr`'s language:
-  `and`, `or`, `not` and brackets; `key is value`, `key in [a, b]`,
-  `key contains text`, `key has value`, and `has key` for a key that is
-  filled. A rule without one takes every Item. A value matches ignoring
-  case, and a country however it is written: `country is CN` takes an Item
+  `&&`, `||`, `!` and brackets; `key == value`, `key != value`,
+  `key in [a, b]`, `key ~ text` for a value holding the text, and
+  `has(key)` for a key that is filled. `!` binds before `&&`, and `&&`
+  before `||`. For a key of several values, such as `tags`, `==` asks
+  whether any is the value and `!=` whether none is. A rule without one takes every Item. A value matches ignoring
+  case, and a country however it is written: `country == CN` takes an Item
   that keeps `中国`. A value with a space, or one that is a word of the
-  language, is quoted: `name is "Water Bill"`.
+  language (`in`, `has`), is quoted: `name == "Water Bill"`.
   Keys are those a layout reads (below), linked ones such as `about.type`
   and those `inherit` supplies included, and two more: `tags`, the Item's
   tags and the revision's own, and `status`, where the Item stands:
   `superseded` a visa a later one replaces, `retired` any Item no longer
-  used, a superseded one included. `not id is <id>` leaves one Item out.
-  `type is money` takes every type below money (see Templates); a value
-  matches the group its field names it in: `category is utility` takes 水
+  used, a superseded one included. `id != <id>` leaves one Item out.
+  `type == money` takes every type below money (see Templates); a value
+  matches the group its field names it in: `category == utility` takes 水
   when utility holds it.
 - **Path and file** — fixed text and keys: `path` is folders, after the
   parent's; `file` is the PDF's name, and may hold folders too. A rule
@@ -668,14 +674,19 @@ children:
   they were its owner (see Shared): its `if` is asked with `owner` as each
   person. A rule setting it needs `owner` in its `if`.
 
-The Rules page writes the `if` in a box, the server marking what it cannot
-read and where. The path and file are typed as text; Edit… opens a dialog of
+The Rules page draws an `if` as bubbles: each comparison a key, an
+operator and its values, the key and values offered from the Templates and
+the Items, joined by `&&` or `||`, which a click switches, and brackets as
+boxes that nest, negated with `!`. A bubble or box is dragged to move it.
+A Text switch shows the condition as text for typing, the server marking
+what it cannot read and where; text it can read redraws the bubbles. The path and file are typed as text; Edit… opens a dialog of
 one row per folder and one for the file's name, each a line of keys, text,
 `{#}` and optional parts, added from the key chips and dragged into place.
 Children are drawn as nested blocks, as Scratch draws an if: `if`, `else
 if` and `else` heads with their conditions, their folders and file, and the
-blocks inside them; ↑/↓ orders them and + if and + else add one. Each PDF
-the rule cannot place has a Leave out button, which adds `not id is <id>`
+blocks inside them; dragging a block by its head, or ↑/↓, orders them,
+and + if and + else add one. Each PDF
+the rule cannot place has a Leave out button, which adds `id != <id>`
 to the `if`.
 
 Keys are the Item's own fields (`owner`, `type`, `country`, and whatever its
@@ -1243,10 +1254,10 @@ fields:
   distinguishing or `per_revision`, narrow its shape, or give it its own description and
   patterns. Anything else — another type, options, suggest — is refused.
 - An abstract type has no `kind` and no Item; Import does not offer it, and
-  the Templates page lists it with the others. Every other type states its
+  the Templates page draws it as a folder with the types extending it. Every other type states its
   `kind`.
 - The tree is not fixed: changing `extends` changes only what a type
-  inherits and what `type is <parent>` takes. A type another extends cannot
+  inherits and what `type == <parent>` takes. A type another extends cannot
   be renamed or deleted first.
 - A `date` field's `shape` is `day` (the default), `span`, or both. A span
   is kept as `2025-01-01/2025-12-31`; an end not known is left empty,

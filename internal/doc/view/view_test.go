@@ -58,7 +58,7 @@ func TestBuildHeadAndQuery(t *testing.T) {
 		item("A", "passport", map[string]string{"owner": "tom", "country": "CN"}, "d3"),
 		item("C", "id_card", map[string]string{"owner": "tom", "country": "CN"}, "d4"),
 	}
-	v := View{Name: "x", Selection: Head, Node: Node{If: "type is id_card", File: "{country}/{owner}/{type}.{ext}"}}
+	v := View{Name: "x", Selection: Head, Node: Node{If: "type == id_card", File: "{country}/{owner}/{type}.{ext}"}}
 	plan, err := Build(v, items, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestBuildShared(t *testing.T) {
 	a := item("A", "letter", map[string]string{"owner": "alex"}, "d1")
 	a.SharedWith = []string{"emma"}
 	b := item("B", "letter", map[string]string{"owner": "emma"}, "d2")
-	v := View{Name: "x", Selection: Head, Node: Node{If: "owner is Emma", File: "{owner}/{id}.{ext}"}}
+	v := View{Name: "x", Selection: Head, Node: Node{If: "owner == Emma", File: "{owner}/{id}.{ext}"}}
 	paths := func() []string {
 		plan, err := Build(v, []tree.Item{a, b}, Types{})
 		if err != nil {
@@ -143,7 +143,7 @@ func TestBuildExcludeAndSkip(t *testing.T) {
 	c.Revisions[1].Tags = []string{"copy"}
 	d := item("D", "diploma", map[string]string{"owner": "emma", "name": "成绩单"}, "d5")
 	v := View{Name: "x", Selection: All, Node: Node{File: "{id}-{revision}.{ext}",
-		If: "not id is A and not tags in [translation, copy] and not name is 成绩单"}}
+		If: "id != A && !tags in [translation, copy] && name != 成绩单"}}
 	plan, err := Build(v, []tree.Item{a, b, c, d}, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestBuildExcludeAndSkip(t *testing.T) {
 	g := item("G", "visa", map[string]string{"owner": "emma"}, "d8")
 	g.Retired = true
 	for status, want := range map[string][]string{"superseded": {"F-1.pdf", "G-1.pdf"}, "retired": {"F-1.pdf"}} {
-		plan, _ := Build(View{Name: "v", Selection: All, Node: Node{If: "not status is " + status, File: "{id}-{revision}.{ext}"}}, []tree.Item{e, f, g}, Types{})
+		plan, _ := Build(View{Name: "v", Selection: All, Node: Node{If: "!status ==" + status, File: "{id}-{revision}.{ext}"}}, []tree.Item{e, f, g}, Types{})
 		var got []string
 		for _, file := range plan.Files {
 			got = append(got, file.Path)
@@ -195,14 +195,14 @@ func TestBuildContains(t *testing.T) {
 		return out
 	}
 	// Any listed text found in the value, ignoring case, is a match.
-	if got := build(View{Node: Node{If: "name contains DIPLOMA or name contains 证书"}}); !reflect.DeepEqual(got, []string{"A.pdf", "B.pdf", "C.pdf"}) {
+	if got := build(View{Node: Node{If: "name ~ DIPLOMA || name ~ 证书"}}); !reflect.DeepEqual(got, []string{"A.pdf", "B.pdf", "C.pdf"}) {
 		t.Fatalf("query: %v", got)
 	}
-	if got := build(View{Node: Node{If: "not (name contains 英文 or tags contains translation)"}}); !reflect.DeepEqual(got, []string{"A.pdf", "C.pdf"}) {
+	if got := build(View{Node: Node{If: "!(name ~ 英文 || tags ~ translation)"}}); !reflect.DeepEqual(got, []string{"A.pdf", "C.pdf"}) {
 		t.Fatalf("exclude: %v", got)
 	}
 	// is and contains on one key must both hold.
-	if got := build(View{Node: Node{If: "name is 学位证书 and name contains 英文"}}); len(got) != 0 {
+	if got := build(View{Node: Node{If: "name == 学位证书 && name ~ 英文"}}); len(got) != 0 {
 		t.Fatalf("both: %v", got)
 	}
 	for _, bad := range []string{"name has", "status is"} {
@@ -345,7 +345,7 @@ func TestKeysComeFromTheirRevision(t *testing.T) {
 	if err != nil || len(plan.Files) != 2 || plan.Files[0].Path != "emma-2020.pdf" || plan.Files[1].Path != "emma-2030.pdf" {
 		t.Fatalf("%v %+v", err, plan)
 	}
-	head, _ := Build(View{Name: "v", Selection: Head, Node: Node{If: "expires is 2030", File: "{id}.{ext}"}}, []tree.Item{item}, Types{})
+	head, _ := Build(View{Name: "v", Selection: Head, Node: Node{If: "expires == 2030", File: "{id}.{ext}"}}, []tree.Item{item}, Types{})
 	if len(head.Files) != 1 {
 		t.Fatal("a condition does not read HEAD's fields")
 	}
@@ -356,8 +356,8 @@ func TestCombineFindsClashesAcrossViews(t *testing.T) {
 		item("A", "id_card", map[string]string{"owner": "emma"}, "d1"),
 		item("B", "bill", map[string]string{"owner": "emma"}, "d2"),
 	}
-	ids := View{Name: "ids", Selection: Head, Node: Node{If: "type is id_card", File: "{owner}/{type}.{ext}"}}
-	bills := View{Name: "bills", Selection: Head, Node: Node{If: "type is bill", File: "{owner}/id_card.{ext}"}}
+	ids := View{Name: "ids", Selection: Head, Node: Node{If: "type == id_card", File: "{owner}/{type}.{ext}"}}
+	bills := View{Name: "bills", Selection: Head, Node: Node{If: "type == bill", File: "{owner}/id_card.{ext}"}}
 	c, err := Combine([]View{ids, bills}, items, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -539,7 +539,7 @@ func TestAlternativesAreNumberedTogether(t *testing.T) {
 func TestMatchesCountryInAnyForm(t *testing.T) {
 	item := item("A", "id_card", map[string]string{"country": "中国", "owner": "Alex"}, "d1")
 	for cond, want := range map[string]bool{
-		"country is CN": true, "country is CHN": true, "country is China": true, "owner is alex": true, "country is AU": false,
+		"country == CN": true, "country == CHN": true, "country == China": true, "owner == alex": true, "country == AU": false,
 	} {
 		plan, err := Build(View{Name: "v", Selection: Head, Node: Node{If: cond, File: "{id}.{ext}"}}, []tree.Item{item}, Types{})
 		if err != nil || (len(plan.Files) == 1) != want {
@@ -725,9 +725,9 @@ func TestChildren(t *testing.T) {
 	v := View{Name: "v", Selection: Head, Order: map[string][]string{"{home}": {"h1", "h2"}}, Node: Node{
 		Path: "{#}-{home}", File: "{name}.{ext}",
 		Children: []Node{
-			{If: "category is utility", Path: "utility", File: "{category}-{name}.{ext}"},
-			{If: "type is money", Path: "rental"},
-			{If: "type is photo"},
+			{If: "category == utility", Path: "utility", File: "{category}-{name}.{ext}"},
+			{If: "type == money", Path: "rental"},
+			{If: "type == photo"},
 		}}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
@@ -745,11 +745,11 @@ func TestChildren(t *testing.T) {
 		t.Fatalf("got %v, want %v", paths, want)
 	}
 	for name, bad := range map[string][]Node{
-		"else not last":    {{Path: "x"}, {If: "type is bill", Path: "y"}},
-		"else leaving out": {{If: "type is bill", Path: "y"}, {}},
-		"a bad condition":  {{If: "type is", Path: "x"}},
-		"an unordered {#}": {{If: "type is bill", Path: "{#}-{name}"}},
-		"a broken path":    {{If: "type is bill", Path: "x/{name"}},
+		"else not last":    {{Path: "x"}, {If: "type == bill", Path: "y"}},
+		"else leaving out": {{If: "type == bill", Path: "y"}, {}},
+		"a bad condition":  {{If: "type ==", Path: "x"}},
+		"an unordered {#}": {{If: "type == bill", Path: "{#}-{name}"}},
+		"a broken path":    {{If: "type == bill", Path: "x/{name"}},
 	} {
 		v.Children = bad
 		if v.Validate() == nil {
@@ -877,7 +877,7 @@ func TestInheritExcludesAndLinkedType(t *testing.T) {
 		item(ofLicence, "translation", map[string]string{"original": licence}, "d4"),
 	}
 	names := TypesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}, {Type: "translation", Names: map[string]string{"zh": "翻译件"}}, {Type: "diploma", Names: map[string]string{"zh": "文凭"}}})
-	v := View{Name: "x", Selection: Head, Inherit: []string{"original"}, Node: Node{If: "not name is 成绩单", File: "{type}/{name|original.type:zh|type:zh}.{ext}"}}
+	v := View{Name: "x", Selection: Head, Inherit: []string{"original"}, Node: Node{If: "name != 成绩单", File: "{type}/{name|original.type:zh|type:zh}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -897,7 +897,7 @@ func TestInheritExcludesAndLinkedType(t *testing.T) {
 func TestDateFormats(t *testing.T) {
 	a := item("01K00000000000000000000001", "tenancy", map[string]string{"start": "2010-01-01", "end": "2011-01-01"}, "d1")
 	b := item("01K00000000000000000000002", "bill", map[string]string{"tenancy": "01K00000000000000000000001", "date": "2010-08-03"}, "d2")
-	v := View{Name: "x", Selection: Head, Node: Node{If: "type is bill", File: "{tenancy.start:compact}-{tenancy.end:compact}/{date:fy}.{ext}"}}
+	v := View{Name: "x", Selection: Head, Node: Node{If: "type == bill", File: "{tenancy.start:compact}-{tenancy.end:compact}/{date:fy}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}

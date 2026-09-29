@@ -194,7 +194,8 @@ func (s server) ruleLayout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"layout": layout})
 }
 
-// ruleIf reads a rule's condition, answering why it cannot be read.
+// ruleIf reads a rule's condition, answering its shape, or why it cannot
+// be read.
 func (s server) ruleIf(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		If string `json:"if"`
@@ -202,11 +203,12 @@ func (s server) ruleIf(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	if _, err := expr.Parse(request.If); err != nil {
+	e, err := expr.Parse(request.If)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tree": expr.Tree(e)})
 }
 
 // ruleDelete removes a rule no Outline uses.

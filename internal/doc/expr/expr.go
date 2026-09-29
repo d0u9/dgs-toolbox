@@ -1,6 +1,6 @@
 // Package expr reads and evaluates a condition on an Item's keys:
 //
-//	type is money and category is utility and not tags has archived
+//	type == money && category == utility && tags != archived
 //
 // It knows nothing of rules or Items: what a key holds, and whether a value
 // is another (a type below money, a value in the group utility), come from
@@ -9,6 +9,7 @@ package expr
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -44,7 +45,7 @@ func Parse(s string) (Expr, error) {
 		return nil, err
 	}
 	if t := p.peek(); t.kind != tEOF {
-		return nil, p.errAt(t, "expected and, or, or the end, found %q", t.text)
+		return nil, p.errAt(t, "expected &&, || or the end, found %q", t.text)
 	}
 	return e, nil
 }
@@ -64,7 +65,6 @@ const (
 	opIs op = iota
 	opIn
 	opContains
-	opHas
 	opFilled
 )
 
@@ -145,6 +145,7 @@ const (
 	tLBrack
 	tRBrack
 	tComma
+	tOp // && || ! == != ~
 )
 
 type tok struct {
@@ -174,6 +175,16 @@ func (p *parser) lex() error {
 			kind := map[rune]tokKind{'(': tLParen, ')': tRParen, '[': tLBrack, ']': tRBrack, ',': tComma}[r]
 			p.toks = append(p.toks, tok{kind, string(r), col})
 			i++
+		case strings.ContainsRune("&|!=~", r):
+			op := string(r)
+			if i+1 < len(runes) && slices.Contains([]string{"&&", "||", "==", "!="}, string(runes[i:i+2])) {
+				op = string(runes[i : i+2])
+			}
+			if op == "&" || op == "|" || op == "=" {
+				return fmt.Errorf("column %d: %s is not an operator; write %s%s", col, op, op, op)
+			}
+			p.toks = append(p.toks, tok{tOp, op, col})
+			i += len(op)
 		case r == '"':
 			j := i + 1
 			for j < len(runes) && runes[j] != '"' {
@@ -186,7 +197,7 @@ func (p *parser) lex() error {
 			i = j + 1
 		default:
 			j := i
-			for j < len(runes) && !unicode.IsSpace(runes[j]) && !strings.ContainsRune("()[],\"", runes[j]) {
+			for j < len(runes) && !unicode.IsSpace(runes[j]) && !strings.ContainsRune("()[],\"&|!=~", runes[j]) {
 				j++
 			}
 			p.toks = append(p.toks, tok{tWord, string(runes[i:j]), col})
@@ -211,6 +222,11 @@ func (p *parser) next() tok {
 	return t
 }
 
+func (p *parser) isOp(o string) bool {
+	t := p.peek()
+	return t.kind == tOp && t.text == o
+}
+
 func (p *parser) isWord(w string) bool {
 	t := p.peek()
 	return t.kind == tWord && t.text == w
@@ -218,7 +234,7 @@ func (p *parser) isWord(w string) bool {
 
 func (p *parser) or() (Expr, error) {
 	a, err := p.and()
-	for err == nil && p.isWord("or") {
+	for err == nil && p.isOp("||") {
 		p.next()
 		var b Expr
 		if b, err = p.and(); err == nil {
@@ -230,7 +246,7 @@ func (p *parser) or() (Expr, error) {
 
 func (p *parser) and() (Expr, error) {
 	a, err := p.unary()
-	for err == nil && p.isWord("and") {
+	for err == nil && p.isOp("&&") {
 		p.next()
 		var b Expr
 		if b, err = p.unary(); err == nil {
@@ -240,10 +256,10 @@ func (p *parser) and() (Expr, error) {
 	return a, err
 }
 
-var keywords = map[string]bool{"and": true, "or": true, "not": true, "is": true, "in": true, "contains": true, "has": true}
+var keywords = map[string]bool{"in": true, "has": true}
 
 func (p *parser) unary() (Expr, error) {
-	if p.isWord("not") {
+	if p.isOp("!") {
 		p.next()
 		e, err := p.unary()
 		return not{e}, err
@@ -261,22 +277,33 @@ func (p *parser) unary() (Expr, error) {
 	}
 	if p.isWord("has") {
 		p.next()
+		if t := p.next(); t.kind != tLParen {
+			return nil, p.errAt(t, "has takes a key in brackets: has(due)")
+		}
 		key, err := p.key()
-		return cmp{key: key, op: opFilled}, err
+		if err != nil {
+			return nil, err
+		}
+		if t := p.next(); t.kind != tRParen {
+			return nil, p.errAt(t, "a bracket ( is not closed")
+		}
+		return cmp{key: key, op: opFilled}, nil
 	}
 	key, err := p.key()
 	if err != nil {
 		return nil, err
 	}
 	t := p.next()
-	ops := map[string]op{"is": opIs, "in": opIn, "contains": opContains, "has": opHas}
-	o, ok := ops[t.text]
-	if t.kind != tWord || !ok {
-		return nil, p.errAt(t, "after %s, expected is, in, contains or has", key)
-	}
-	if o != opIn {
+	switch {
+	case t.kind == tOp && (t.text == "==" || t.text == "~"):
+		o := map[string]op{"==": opIs, "~": opContains}[t.text]
 		v, err := p.value()
 		return cmp{key, o, []string{v}}, err
+	case t.kind == tOp && t.text == "!=":
+		v, err := p.value()
+		return not{cmp{key, opIs, []string{v}}}, err
+	case t.kind != tWord || t.text != "in":
+		return nil, p.errAt(t, "after %s, expected ==, !=, ~ or in", key)
 	}
 	if t := p.next(); t.kind != tLBrack {
 		return nil, p.errAt(t, "in takes a list: [a, b]")
@@ -311,5 +338,5 @@ func (p *parser) value() (string, error) {
 	if t.kind == tString || t.kind == tWord && !keywords[t.text] {
 		return t.text, nil
 	}
-	return "", p.errAt(t, "expected a value, found %q; quote one that is a word such as \"and\"", t.text)
+	return "", p.errAt(t, "expected a value, found %q; quote one that is a word such as \"in\"", t.text)
 }
