@@ -24,3 +24,9 @@ aside dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: var(-
 aside dt { display: flex; align-items: center; gap: var(--space-xxs); }
 aside dd { margin: 0; color: var(--graphite); }
 .swatch { width: 0.7rem; height: 0.7rem; border-radius: 50%; display: inline-block; }
+
+#filters { margin-bottom: var(--space-md); }
+.filter { display: flex; align-items: baseline; gap: var(--space-xxs); padding: 2px 0; cursor: pointer; }
+.filter small { display: block; color: var(--graphite); font-size: var(--font-size-sm); }
+.filter .swatch { flex: none; }
+.colour-by { margin-top: var(--space-xs); color: var(--graphite); }
