@@ -140,7 +140,7 @@ Cases already use.
 
 A letter addressed to two people belongs to both, but an Item has one
 owner: the owner field is one value everywhere, in a distinguishing key, a
-layout's `{owner}` and a rule's query. So the letter is imported once, as the
+layout's `{owner}` and a rule's `if`. So the letter is imported once, as the
 owner's (the person named first), and shared with the other: Shared with, in
 the detail panel, lists the people it is shared with, from the owner field's
 options, or Import's Shared with for a new Item. It is kept in the sidecar as `shared_with`, sorted, never naming the
@@ -153,7 +153,7 @@ selecting `owner: emma` does not select an Item Emma shares, unless it sets
 `shared: true`. Its layout still writes the Item's own owner for `{owner}`.
 
 "Shared" rather than several owners: a second owner would make every key,
-path and query that reads `owner` take a list, and a PDF would have more
+path and `if` that reads `owner` take a list, and a PDF would have more
 than one place in an export.
 
 ### Visa replacement: separate Items, explicit relationship
@@ -515,7 +515,7 @@ asks only for the per_revision ones, suggested from the new PDF's text. On
 the same form, the Item's current tags and notes can be edited and are saved
 with the new revision; they belong to the Item, not to an individual revision.
 On Browse, picking a revision shows its fields; saving edits creates a new
-snapshot. Everything else — the page's list, a rule's query — uses HEAD's. A
+snapshot. Everything else — the page's list, a rule's `if` — uses HEAD's. A
 layout key is the exported revision's own value, so exporting all revisions
 can name the old card and the new one differently. A distinguishing field
 names the document, so it cannot be per_revision, and a record has one issue,
@@ -588,9 +588,9 @@ snapshots:                        # optional
 ```yaml
 # rules/ids.yaml
 name: ids
-query: {type: [id_card, passport], owner: emma}
+if: type in [id_card, passport] and owner is emma
 selection: head
-layout: '{country}/{owner}/important/{type}.{ext}'
+file: '{country}/{owner}/important/{type}.{ext}'
 default: none                     # optional: stands in for a missing key
 order:                            # optional: what each {#} numbers, in order
   '{owner}': [alex, emma]
@@ -600,9 +600,9 @@ order:                            # optional: what each {#} numbers, in order
 ```yaml
 # rules/cars.yaml
 name: cars
-query: {type: [vehicle_registration]}
+if: type is vehicle_registration
 selection: all
-layout: '{country:alpha2} {make}/{#}-{plate}/{type:zh}.{ext}'
+file: '{country:alpha2} {make}/{#}-{plate}/{type:zh}.{ext}'
 dedupe: number
 order:
   '{plate}': [浙AF3897, 浙AT73C7]
@@ -617,73 +617,66 @@ order:
 - Editing a rule changes it in every Outline using it. Renaming one renames
   it in each of them. Removing a rule from an Outline leaves it for the
   others; a rule no Outline uses stays until it is deleted.
-- An Outline file written before rules were shared holds its rules whole.
-  Opening the tree moves them under `rules/`; a rule whose name another
-  Outline's different rule already has becomes `<outline>-<rule>`, and one
-  the same is shared.
 
 ### Rules
 
-A rule has a query, a selection, and a layout. It may leave PDFs out and select shared Items.
+A rule is a node: an `if`, a path and a file name, and children, which
+are nodes too.
 
-- **Query** — which Items, by their fields, such as type and owner. A value
-  matches ignoring case, and a country matches however it is written: `CN`
-  selects an Item that keeps `中国`.
-  A key written `<key> contains` matches a value holding one of the texts
-  instead, ignoring case: `name contains: [英文, English]`. The Rules page
-  offers it beside `is` on every condition, `is` picking from the values
-  Items hold and `contains` taking typed text. One key may have both
-  conditions, and both must hold.
-  A condition may be asked of some types only: `query_types` (and
-  `exclude_types` for an exclusion) lists them by the condition's key,
-  and an Item of another type is not asked it. A rule taking letters,
-  visas and cards can so keep only the letters whose name holds a word:
-  ```yaml
-  query:
-    type: [official_letter, visa, social_card]
-    name contains: [tax]
-  query_types:
-    name contains: [official_letter]
-  ```
-  On the Rules page each condition's "for every type" button unfolds the
-  rule's types to tick; none ticked asks every type.
-  The key `tags` selects by tag, per revision: a revision matches when the
-  Item's tags or its own include one of the values, ignoring case. An
-  Item's tag holds for every revision; a revision's only for itself.
-- **Exclude** — conditions that leave a PDF out, written like the query:
-  a PDF meeting any one of them is not selected. `exclude: {tags:
-  [translation]}` leaves out every translation, however many are added
-  later; a field's value, such as `name: [DIPLOMA]`, works the same way.
-  Tags are matched per revision, as in the query. The key `status`, which
-  only an exclusion has, leaves Items out by where they stand: `superseded`
-  a visa a later one replaces, `retired` any Item no longer used, a
-  superseded one included.
-- **Skip** — Items left out by ID, whatever else selects them: the
-  exceptions no condition describes. The Rules page offers to leave out only
-  the Items the rule selects, and each PDF it cannot place has a Leave out
-  button. An ID naming no Item any more is shown as such, to remove.
+```yaml
+name: rental
+if: owner is alex and tags in [network-5, network-6]
+path: 11-Rental/{#}-{about.address}
+file: '{name}[-{date:compact}].{ext}'
+children:
+  - if: category is utility
+    path: utility/{category}
+    file: '{date:compact}-{issuer}.{ext}'   # in place of the file above
+  - if: type is money
+    path: rental/{category}
+  - if: type is translation                 # no path, file or children: left out
+  - path: other                             # no if: the else
+```
+
+- **If** — which Items, one condition in package `expr`'s language:
+  `and`, `or`, `not` and brackets; `key is value`, `key in [a, b]`,
+  `key contains text`, `key has value`, and `has key` for a key that is
+  filled. A rule without one takes every Item. A value matches ignoring
+  case, and a country however it is written: `country is CN` takes an Item
+  that keeps `中国`. A value with a space, or one that is a word of the
+  language, is quoted: `name is "Water Bill"`.
+  Keys are those a layout reads (below), linked ones such as `about.type`
+  and those `inherit` supplies included, and two more: `tags`, the Item's
+  tags and the revision's own, and `status`, where the Item stands:
+  `superseded` a visa a later one replaces, `retired` any Item no longer
+  used, a superseded one included. `not id is <id>` leaves one Item out.
+  `type is money` takes every type below money (see Templates); a value
+  matches the group its field names it in: `category is utility` takes 水
+  when utility holds it.
+- **Path and file** — fixed text and keys: `path` is folders, after the
+  parent's; `file` is the PDF's name, and may hold folders too. A rule
+  needs a file; a child's replaces the one above it. The export's folder
+  provides the root, so a layout never names iCloud or a NAS.
+- **Children** — an if/elif/else chain: the first whose `if` an Item meets
+  takes it, a child with no `if` is the else and comes last, and an Item
+  none takes is placed by the node itself. A child with no path, file or
+  children leaves what it takes out. `default` passes down like `file`;
+  orders serve the whole rule, so a `{#}` written alike in two nodes
+  numbers from one order.
 - **Selection** — `head` (a document's HEAD revision only) or `all`.
-- **Shared** — `shared: true` also selects an Item shared with someone the
-  query's `owner` accepts, as if they were its owner (see Shared). A rule
-  setting it needs `owner` in its query.
-- **Layout** — fixed text and keys, such as
-  `{country}/{owner}/important/{type}.pdf`: the folders, then the PDF's
-  name. The export's folder provides the root, so a layout never names
-  iCloud or a NAS. The Rules page shows the layout as text, typed over
-  directly: the server parses what is typed, and a layout it refuses is
-  marked with the reason and not saved. Its Edit… opens a dialog of one
-  row per folder and one for the file's name, each a line of keys, text,
-  `{#}` and optional parts, added from the key chips and dragged into
-  place; Done keeps what it made and Cancel or Esc drops it. An optional row is an optional folder,
-  `[/…]`, after the row before it.
-- **Layouts** — more paths, each for the PDFs its `when` picks, written
-  like the query: `layouts: [{when: {type: [invoice, payment]}, layout:
-  '…/rental/{name}.{ext}'}]`. The first a PDF's Item matches places it and
-  `layout` places the rest, so each PDF lands once. They share the rule's
-  query, inherit, map, default and orders: a `{#}` written alike in two of
-  them numbers from one order. A path with no condition is refused. The
-  Rules page lists them under More paths, each with the types it is for,
-  its layout typed and its own Edit…, and ↑/↓ for which is tried first.
+- **Shared** — `shared: true` also takes an Item shared with someone, as if
+  they were its owner (see Shared): its `if` is asked with `owner` as each
+  person. A rule setting it needs `owner` in its `if`.
+
+The Rules page writes the `if` in a box, the server marking what it cannot
+read and where. The path and file are typed as text; Edit… opens a dialog of
+one row per folder and one for the file's name, each a line of keys, text,
+`{#}` and optional parts, added from the key chips and dragged into place.
+Children are drawn as nested blocks, as Scratch draws an if: `if`, `else
+if` and `else` heads with their conditions, their folders and file, and the
+blocks inside them; ↑/↓ orders them and + if and + else add one. Each PDF
+the rule cannot place has a Leave out button, which adds `not id is <id>`
+to the `if`.
 
 Keys are the Item's own fields (`owner`, `type`, `country`, and whatever its
 Template defines, such as `employer`), values derived from them (`year` and
@@ -1209,13 +1202,67 @@ defaults:
   country: AU
 ```
 
+### Types that inherit
+
+Types form a tree, as classes do: a field is defined once, in the type where
+its meaning starts, and the types below inherit it.
+
+```yaml
+# templates/record.yaml
+type: record
+abstract: true            # no Item is of this type; it only passes fields down
+fields:
+  - {key: owner, type: select, options: [alex, emma], required: true}
+  - {key: country, type: country, required: true}
+  - {key: name}
+  - {key: date, type: date, shape: [day, span]}
+
+# templates/money.yaml
+type: money
+extends: record
+abstract: true
+fields:
+  - key: category
+    type: select
+    values: {utility: [水, 电, 气, 网], housing: [房租, 物业, 车位]}
+
+# templates/bill.yaml
+type: bill
+extends: money
+kind: record
+fields:
+  - {key: date, shape: span}
+  - {key: due, type: date}
+```
+
+- `extends` names one parent. A type inherits its fields, in the parent's
+  order and before its own, their `required` and `distinguishing`, and its
+  `defaults` and `ignore_dates`. It does not inherit `names`,
+  `description`, `kind` or `anchor`.
+- An inherited field may be listed again to make it required or
+  distinguishing, narrow its shape, or give it its own description and
+  patterns. Anything else — another type, options, suggest — is refused.
+- An abstract type has no `kind` and no Item; Import does not offer it, and
+  the Templates page lists it with the others. Every other type states its
+  `kind`.
+- The tree is not fixed: changing `extends` changes only what a type
+  inherits and what `type is <parent>` takes. A type another extends cannot
+  be renamed or deleted first.
+- A `date` field's `shape` is `day` (the default), `span`, or both. A span
+  is kept as `2025-01-01/2025-12-31`; an end left empty, `2025-01-01/`, is
+  open. On the page a span is two date boxes; one that also takes a day
+  keeps one day when the end is left empty.
+- A `select` field may write `values`, its options in named groups, in
+  place of `options`. A condition on a group takes each value in it. The
+  groups are written only where the field is defined.
+
 The file is named after its `type`. `description` is a short explanation shown
 on the Import card and in the Templates list; older Templates may omit it.
 A `select` field lists its allowed values under `options`. With `multiple: true` it
 holds several, kept in the options' order joined by `, ` (`电, 水`), each
 toggled on the page; its options may not hold a comma. A rule writes the
-joined value, and a condition picks one of them with `contains` (`service
-contains 水`). A text field with `suggest: true` offers, as it is typed,
+joined value, and a condition asks for one of them with `is` (`service is
+水`). A text field with `suggest: true` offers, as it is typed,
 the values Items of the same type have saved for it, in any country and
 revision, retired Items among them; any other value can still be typed. A field's `description` says
 what it holds; every form shows a `?` beside the field's name, which shows it
