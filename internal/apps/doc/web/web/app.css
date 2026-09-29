@@ -926,6 +926,10 @@ body.list-shut .outline-list { display: none; }
 .cond-group > .cond-x { display: none; }
 .cond-group:hover > .cond-x { display: inline; }
 /* A block's ↑ ↓ × follow its if word, faint until the block is hovered. */
-.block-head > .block-acts { flex: none; opacity: 0.3; }
+.block-head > .block-acts { flex: none; gap: 0; opacity: 0.35; border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
+.block-acts .order-act { width: 20px; height: 20px; line-height: 0; border-radius: 0; display: inline-flex; align-items: center; justify-content: center; }
+.block-acts .order-act + .order-act { border-left: 1px solid var(--hairline); }
+.block-acts .order-act:hover:not(:disabled) { background: var(--hover); }
+.block-acts .order-act:last-child:hover { color: var(--error); }
 .block:hover > .block-head > .block-acts { opacity: 1; }
 .block-more { align-self: flex-start; min-width: 0; }

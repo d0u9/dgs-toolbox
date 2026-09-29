@@ -141,6 +141,13 @@ function drawNodes() {
   if (!box) return;
   const redraw = () => { drawNodes(); changed(); };
   const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
+  // icon draws a block's ↑ ↓ × as small line icons.
+  const ICONS = { "↑": "M8 13V3M4 7l4-4 4 4", "↓": "M8 3v10M4 9l4 4 4-4", "×": "M4 4l8 8M12 4l-8 8" };
+  const icon = (title, text, onclick, disabled) => {
+    const b = act(title, "", onclick, disabled);
+    b.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="' + ICONS[text] + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    return b;
+  };
   const field = (n, key, label, title) => {
     const input = el("input", { className: "layout-text", value: n[key], spellcheck: false, autocomplete: "off", title,
       placeholder: key === "file" ? "the file name above" : "",
@@ -174,9 +181,9 @@ function drawNodes() {
       el("div", { className: "block-head" },
         el("span", { className: "block-word", textContent: isElse ? "else" : i ? "else if" : "if" }),
         el("span", { className: "order-acts block-acts" },
-          act("Up: tried before the one above", "↑", () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; redraw(); }, i === 0 || isElse),
-          act("Down", "↓", () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; redraw(); }, i >= list.length - 1 || !list[i + 1].if),
-          act("Remove, with the blocks inside it", "×", () => { list.splice(i, 1); redraw(); drawOrder(); })),
+          icon("Up: tried before the one above", "↑", () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; redraw(); }, i === 0 || isElse),
+          icon("Down", "↓", () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; redraw(); }, i >= list.length - 1 || !list[i + 1].if),
+          icon("Remove, with the blocks inside it", "×", () => { list.splice(i, 1); redraw(); drawOrder(); })),
         isElse ? null : bubbles.el),
       why,
       el("div", { className: "block-body" },
