@@ -30,6 +30,9 @@ const (
 	kindHop     = "hop"
 	kindEntry   = "entry"
 	kindLocal   = "local"
+	kindBridge  = "container network"
+	kindHost    = "host"
+	kindJoins   = "joins"
 )
 
 // buildGraph turns one loaded inventory into the picture.
@@ -56,7 +59,12 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 			kindEntry:   "a person's device reaching the port it was granted",
 			kindHop:     "one hop of a route to the next, across machines",
 			kindLocal:   "one hop of a route to the next, on the same machine",
+			kindBridge:  "a container network on one machine: the processes on it dial each other by name",
+			kindHost:    "a machine hosts.yaml names and reserves an address for, running no instance",
+			kindJoins:   "a process on a further container network, beside the one it is drawn in",
 		},
+		FilterTitle: "Networks",
+		Filters:     graphFilters(l),
 	}
 
 	// A node's own line says where it can be reached and what it can reach:
@@ -95,7 +103,21 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 		g.Groups = append(g.Groups, webgraph.Group{
 			ID: c.ID, Label: label, Detail: strings.Join(parts, " · "), Parent: groupBox(c.Group), Kind: kindNode, Collapse: true,
 		})
+		// A container network is a box inside its machine, holding the
+		// processes that join it first. One joining several sits in the
+		// first, in the node's order, and reaches the others by a line: a
+		// box has one parent, and a process spanning two networks cannot be
+		// drawn inside both.
+		for _, cn := range nodeContainers(l, c.ID) {
+			if !bridgeUsed(l, c.ID, cn.Name) {
+				continue // a network nothing joins says nothing
+			}
+			g.Groups = append(g.Groups, webgraph.Group{
+				ID: bridgeBox(c.ID, cn.Name), Label: cn.Name, Detail: cn.Subnet, Parent: c.ID, Kind: kindBridge,
+			})
+		}
 	}
+	addHosts(l, &g)
 
 	// A client instance is drawn as the route it was derived for, inside a
 	// box for the device and a box for whose device that is. Its own ID
@@ -148,6 +170,12 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 			// Nothing listens: one shape for the whole instance, which is
 			// what a client dialling out is.
 			label, box := sh.Instance, sh.Container
+			if ok {
+				if joined := containersOf(l, node, inst); len(joined) > 0 {
+					box = bridgeBox(node, joined[0].Name)
+					addJoins(&g, sh.Instance, node, inst, joined)
+				}
+			}
 			if ci, isClient := clientOf[sh.Instance]; isClient {
 				label = ci.Route
 				if box == "" {
@@ -183,7 +211,17 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 		if ok && inst.Containerised() {
 			runtime = inst.RuntimeOr()
 		}
-		addProcess(sh.Container, procID, procLabel, runtime, false)
+		parent, detail := sh.Container, runtime
+		if ok {
+			if joined := containersOf(l, node, inst); len(joined) > 0 {
+				parent = bridgeBox(node, joined[0].Name)
+				detail = strings.Join(append([]string{runtime}, joinedLabels(inst, joined)...), " · ")
+			}
+		}
+		addProcess(parent, procID, procLabel, detail, false)
+		if ok {
+			addJoins(&g, procID, node, inst, containersOf(l, node, inst))
+		}
 		source[sh.Instance] = procID
 		for _, port := range sortedPortNames(ports) {
 			g.Nodes = append(g.Nodes, webgraph.Node{
@@ -236,9 +274,165 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 			To:    portShape(e.To, e.ToPort),
 			Label: label,
 			Kind:  kind,
+			Tags:  []string{edgeFilter(e)},
 		})
 	}
 	return g
+}
+
+// Filter IDs. A network and a container network may share a name — a
+// container network can be named for the network it is advertised into — so
+// each kind has its own prefix.
+const (
+	filterLoopback = "loopback"
+	filterNetwork  = "net:"
+	filterBridge   = "container:"
+)
+
+// graphFilters is one switch per network a line can run over: the networks
+// in networks.yaml in preference order, then every container network by
+// name, then loopback. A container network of one name on two machines is
+// one switch, since the name is what a reader picks by.
+func graphFilters(l InspectData) []webgraph.Filter {
+	var out []webgraph.Filter
+	for _, name := range l.inv.Networks {
+		out = append(out, webgraph.Filter{ID: filterNetwork + name, Label: name, Detail: l.inv.NetworkInfo[name].Subnet})
+	}
+	seen := map[string]bool{}
+	for _, n := range l.inv.Nodes {
+		if n.Broken != "" {
+			continue
+		}
+		for _, c := range n.Containers {
+			if seen[c.Name] {
+				continue
+			}
+			seen[c.Name] = true
+			out = append(out, webgraph.Filter{ID: filterBridge + c.Name, Label: c.Name + " (container)", Detail: c.Subnet})
+		}
+	}
+	return append(out, webgraph.Filter{ID: filterLoopback, Label: "loopback", Detail: "two processes on one machine"})
+}
+
+// edgeFilter is the filter one line belongs to: the container network both
+// ends share, the network its address was chosen on, or loopback.
+func edgeFilter(e topology.Edge) string {
+	switch {
+	case e.Container != "":
+		return filterBridge + e.Container
+	case e.Network != "":
+		return filterNetwork + e.Network
+	}
+	return filterLoopback
+}
+
+// bridgeBox is the box ID for one container network on one node.
+func bridgeBox(node, network string) string { return node + "/container:" + network }
+
+// addJoins draws a line from a process to the box of every container
+// network it joins beyond the one it is drawn in, carrying its address there
+// when fixed. The process can sit in one box only, and without the line a
+// network it shares with others would look like one it is absent from.
+func addJoins(g *webgraph.Graph, from, node string, inst inventory.Instance, joined []inventory.ContainerNetwork) {
+	for _, c := range joined[min(1, len(joined)):] {
+		g.Edges = append(g.Edges, webgraph.Edge{
+			From: from, To: bridgeBox(node, c.Name), Label: inst.Containers[c.Name], Kind: kindJoins,
+			Tags: []string{filterBridge + c.Name},
+		})
+	}
+}
+
+// bridgeUsed reports whether any instance on nodeID joins network.
+func bridgeUsed(l InspectData, nodeID, network string) bool {
+	for _, n := range l.inv.Nodes {
+		if n.ID != nodeID || n.Broken != "" {
+			continue
+		}
+		for _, inst := range n.Instances {
+			if _, ok := inst.Containers[network]; ok && inst.Service != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// nodeContainers is one node's container networks, in its order.
+func nodeContainers(l InspectData, nodeID string) []inventory.ContainerNetwork {
+	for _, n := range l.inv.Nodes {
+		if n.ID == nodeID && n.Broken == "" {
+			return n.Containers
+		}
+	}
+	return nil
+}
+
+// containersOf is the container networks inst joins on its node, in the
+// node's order.
+func containersOf(l InspectData, nodeID string, inst inventory.Instance) []inventory.ContainerNetwork {
+	for _, n := range l.inv.Nodes {
+		if n.ID == nodeID && n.Broken == "" {
+			return n.JoinedContainers(inst)
+		}
+	}
+	return nil
+}
+
+// joinedLabels says, for a process box, what its container box does not: a
+// fixed address on the network it sits in, and every further network it
+// joins, with its address there when fixed.
+func joinedLabels(inst inventory.Instance, joined []inventory.ContainerNetwork) []string {
+	var out []string
+	for i, c := range joined {
+		addr := inst.Containers[c.Name]
+		switch {
+		case i == 0 && addr != "":
+			out = append(out, addr)
+		case i > 0 && addr != "":
+			out = append(out, c.Name+" "+addr)
+		case i > 0:
+			out = append(out, c.Name)
+		}
+	}
+	return out
+}
+
+// addHosts draws the machines hosts.yaml names: one shape each, in a box of
+// their own, tagged with the network their address is on. They run no
+// instance, so no line reaches them.
+func addHosts(l InspectData, g *webgraph.Graph) {
+	if len(l.inv.Hosts) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(l.inv.Hosts))
+	for id := range l.inv.Hosts {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	const box = "hosts:"
+	tags := map[string]bool{}
+	for _, id := range ids {
+		h := l.inv.Hosts[id]
+		tag := filterNetwork + h.Network
+		tags[tag] = true
+		tooltip := []string{fmt.Sprintf("%s %s on %s", id, h.Address, h.Network)}
+		if len(h.Names) > 0 {
+			tooltip = append(tooltip, strings.Join(h.Names, ", "))
+		}
+		if h.MAC != "" {
+			tooltip = append(tooltip, h.MAC)
+		}
+		g.Nodes = append(g.Nodes, webgraph.Node{
+			ID: box + id, Label: id, Group: box, Kind: kindHost,
+			Detail: h.Network + " " + h.Address, Tooltip: strings.Join(tooltip, "\n"), Tags: []string{tag},
+		})
+	}
+	var boxTags []string
+	for tag := range tags {
+		boxTags = append(boxTags, tag)
+	}
+	sort.Strings(boxTags)
+	g.Groups = append(g.Groups, webgraph.Group{ID: box, Label: "hosts", Detail: "hosts.yaml", Kind: kindGroup, Tags: boxTags})
 }
 
 // portLabel names one port: its name, its number, and its transport when

@@ -2,8 +2,11 @@ package conf
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"dgs-toolbox/internal/webgraph"
 )
 
 // TestBuildGraph_ThePortIsTheUnit covers the choice the picture is built
@@ -215,5 +218,88 @@ func TestBuildGraph_AHostProcessIsNotBadged(t *testing.T) {
 		if grp.ID == "srv/ss-srv" && grp.Detail != "" {
 			t.Fatalf("process ss-srv is badged %q, want nothing for a host process", grp.Detail)
 		}
+	}
+}
+
+// TestBuildGraph_ContainerNetworksAndHosts: a process sits in the box of the
+// first container network it joins and names the others with their fixed
+// addresses; every line and host is tagged with the network it runs over,
+// and each network is one filter.
+func TestBuildGraph_ContainerNetworksAndHosts(t *testing.T) {
+	root := buildInspectRoot(t)
+	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
+id: srv
+networks:
+  internet: 203.0.113.10
+runtime: docker
+containers:
+  - {name: apps, subnet: 172.30.0.0/24}
+  - {name: tailnet, subnet: 172.30.250.0/24}
+instances:
+  - id: ss-srv
+    service: ssserver
+    containers:
+      apps:
+      tailnet: 172.30.250.10
+    ports:
+      main: {port: 38250, self: [psk.main]}
+      alt: {port: 49217, self: [psk.alt]}
+`)
+	writeFile(t, filepath.Join(root, "hosts.yaml"), `
+hosts:
+  nas:
+    network: internet
+    address: 203.0.113.50
+    names: [nas.example.test]
+`)
+	m := newInspectModel(root, "")
+	g := buildGraph(m.l, "test")
+
+	groups := map[string]webgraph.Group{}
+	for _, grp := range g.Groups {
+		groups[grp.ID] = grp
+	}
+	proc, ok := groups["srv/ss-srv"]
+	if !ok || proc.Parent != "srv/container:apps" || proc.Detail != "docker · tailnet 172.30.250.10" {
+		t.Errorf("process box = %+v, want it inside apps naming tailnet 172.30.250.10", proc)
+	}
+	if box, ok := groups["srv/container:apps"]; !ok || box.Parent != "srv" || box.Detail != "172.30.0.0/24" {
+		t.Errorf("apps box = %+v, want it inside srv with its subnet", box)
+	}
+	if _, ok := groups["srv/container:tailnet"]; !ok {
+		t.Error("tailnet has no box, but ss-srv joins it")
+	}
+	joins := false
+	for _, e := range g.Edges {
+		if e.Kind == kindJoins && e.From == "srv/ss-srv" && e.To == "srv/container:tailnet" && e.Label == "172.30.250.10" {
+			joins = true
+		}
+	}
+	if !joins {
+		t.Errorf("edges = %+v, want ss-srv joining tailnet at 172.30.250.10", g.Edges)
+	}
+
+	var filters []string
+	for _, f := range g.Filters {
+		filters = append(filters, f.ID)
+	}
+	for _, want := range []string{"net:internet", "container:apps", "container:tailnet", "loopback"} {
+		if !slices.Contains(filters, want) {
+			t.Errorf("filters = %v, want %s", filters, want)
+		}
+	}
+	for _, e := range g.Edges {
+		if len(e.Tags) != 1 || !slices.Contains(filters, e.Tags[0]) {
+			t.Errorf("edge %s -> %s tags %v, want one of the filters", e.From, e.To, e.Tags)
+		}
+	}
+	var host *webgraph.Node
+	for i := range g.Nodes {
+		if g.Nodes[i].ID == "hosts:nas" {
+			host = &g.Nodes[i]
+		}
+	}
+	if host == nil || host.Detail != "internet 203.0.113.50" || !slices.Equal(host.Tags, []string{"net:internet"}) {
+		t.Errorf("host = %+v, want nas on internet", host)
 	}
 }
