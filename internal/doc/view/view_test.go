@@ -934,3 +934,12 @@ func TestValueIsWrittenInALanguage(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// A span open at one end is written as the one day it has.
+func TestOpenSpanIsItsDay(t *testing.T) {
+	items := []tree.Item{{ID: "A", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"date": "/2019-01-20"}, Revisions: []tree.Revision{{Digest: "a"}}}}
+	plan, err := Build(View{Name: "v", Selection: Head, Node: Node{File: "{date:compact}-{date}-{year}.{ext}"}}, items, Types{})
+	if err != nil || len(plan.Files) != 1 || plan.Files[0].Path != "20190120-2019-01-20-2019.pdf" {
+		t.Fatalf("%v %+v", err, plan)
+	}
+}

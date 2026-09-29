@@ -693,8 +693,9 @@ to the `if`.
 
 Keys are the Item's own fields (`owner`, `type`, `country`, and whatever its
 Template defines, such as `employer`), values derived from them (`year` and
-`month` from `date`, its start when it is a span; `.start` and `.end` of any
-span, such as `{date.end}`), `revision` (the revision's number,
+`month` from `date`, its start when it is a span, its end when the span is
+open at the start; `.start` and `.end` of any span, such as `{date.end}`;
+a span open at one end is written as the one day it has), `revision` (the revision's number,
 counting from 1, in order added) and `ext`.
 
 A key may name a country format: `{country:alpha3}` writes the Item's country
