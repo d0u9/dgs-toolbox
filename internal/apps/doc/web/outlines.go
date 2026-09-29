@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"dgs-toolbox/internal/doc/country"
+	"dgs-toolbox/internal/doc/expr"
 	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/snapshot"
 	"dgs-toolbox/internal/doc/tree"
@@ -191,6 +192,21 @@ func (s server) ruleLayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"layout": layout})
+}
+
+// ruleIf reads a rule's condition, answering why it cannot be read.
+func (s server) ruleIf(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		If string `json:"if"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	if _, err := expr.Parse(request.If); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // ruleDelete removes a rule no Outline uses.

@@ -1,124 +1,181 @@
-// The part of the Outlines form that makes one rule: types, conditions,
-// revisions, a layout built from key chips, and a Numbering list per
-// {#}. The page owns the rest of
+// The part of the Rules form that makes one rule: its if, revisions, a
+// layout built from key chips, its children as nested if blocks, and a
+// Numbering list per {#}. The page owns the rest of
 // its form and what a change redraws; the server computes the result.
 import { $, el, currentFields, label, post } from "/common.js";
 
 let state = { templates: [], items: [] };
 let keys = [];
-let layouts = {}; // each saved rule's layout, parsed by the server
 let countries = {}; // each country's every form: its alpha-3 code
 let orders = {}; // per numbered name, its order: a name may hold a comma
-let skip = []; // the IDs of the Items the rule leaves out
+let previewed = null; // the IDs of the Items the rule takes, as the server last planned it
 let numbers = {}; // per numbered name, the numbers set by hand: { 结婚证: 6 }
 let unnumbered = {}; // per numbered name, the names left unnumbered: [押金]
 let changed = () => {};
-// paths are the rule's more layouts: { when, layout, ofs, error }, ofs the
-// orders its {#} number, as the server parsed it.
-let paths = [];
+// nodes are the rule's children: { if, path, file, default, children } as
+// saved, with ofs, the orders its path and file number, and error and
+// ifError, as the server answered them.
+let nodes = [];
 
 // setup gives the form the tree's state, the keys a layout can use, the
 // country forms, and what to call on every change. Called again when the
 // state is reloaded.
 export function setup(options) {
-  ({ state = state, keys = keys, countries = countries, layouts = layouts } = options);
+  ({ state = state, keys = keys, countries = countries } = options);
   if (options.onChange) changed = options.onChange;
 }
 
 // fill shows v's query, selection, layout and order.
 export function fill(v) {
-  const types = (v.query && v.query.type) || [];
-  $("types").replaceChildren(...state.templates.map((t) => el("label", {},
-    el("input", { type: "checkbox", value: t.type, checked: types.includes(t.type), onchange: narrow }), " " + t.type)));
-  $("conditions").replaceChildren(...Object.entries(v.query || {})
-    .filter(([k]) => k !== "type").map(([k, values]) => condition(k, values, false, (v.query_types || {})[k])));
-  $("exclude").replaceChildren(...Object.entries(v.exclude || {}).map(([k, values]) => condition(k, values, true, (v.exclude_types || {})[k])));
-  skip = [...(v.skip || [])];
-  drawSkip();
+  $("if").value = v.if || "";
+  checkIf($("if"), $("if-error"));
   document.querySelector(`input[name=selection][value=${v.selection || "head"}]`).checked = true;
   if ($("shared")) $("shared").checked = !!v.shared;
-  rows = !v.layout ? DEFAULT_ROWS() : layouts[v.name] && v.layout ? fromLayout(layouts[v.name])
-    : v.layout.split("/").map((text) => ({ parts: [{ text }] }));
+  rows = DEFAULT_ROWS();
   active = { row: rows.length - 1, group: -1 };
+  $("layout-text").value = v.file || "";
+  if (v.file) typed();
+  else showText();
   drawInherit(v.inherit || []);
   orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, [...list]]));
   numbers = JSON.parse(JSON.stringify(v.numbers || {}));
   unnumbered = JSON.parse(JSON.stringify(v.unnumbered || {}));
-  paths = (v.layouts || []).map((p) => ({ when: JSON.parse(JSON.stringify(p.when || {})), layout: p.layout, ofs: [], error: "" }));
-  drawPaths();
-  paths.forEach((p) => parsePath(p));
+  const take = (n) => ({ if: n.if || "", path: n.path || "", file: n.file || "", default: n.default, children: (n.children || []).map(take), ofs: [], error: "", ifError: "" });
+  nodes = (v.children || []).map(take);
+  drawNodes();
+  every(nodes).forEach(parseNode);
   drawOrder();
   drawPath();
 }
+
+// skipItem leaves an Item out, by adding not id is <id> to the rule's if.
+export function skipItem(id) {
+  const box = $("if"), now = box.value.trim();
+  box.value = !now ? "not id is " + id : /\bor\b/.test(now) ? "(" + now + ") and not id is " + id : now + " and not id is " + id;
+  checkIf(box, $("if-error"));
+  changed();
+}
+
+// setPreviewed tells the form which Items the rule takes, so numbering
+// lists their values only.
+export function setPreviewed(ids) {
+  previewed = ids ? new Set(ids) : null;
+  drawOrder();
+}
+
+// every is the nodes and all below them, parents first.
+const every = (list) => list.flatMap((n) => [n, ...every(n.children)]);
+
+// checkIf has the server read a condition, and marks the box with why not.
+let ifAsked = new WeakMap();
+async function checkIf(box, out, node) {
+  const mine = (ifAsked.get(box) || 0) + 1;
+  ifAsked.set(box, mine);
+  let error = "";
+  if (box.value.trim()) {
+    try {
+      await post("/api/rules/if", { if: box.value.trim() });
+    } catch (err) {
+      error = err.message;
+    }
+  }
+  if (ifAsked.get(box) !== mine) return;
+  box.classList.toggle("invalid", !!error);
+  out.textContent = error;
+  if (node) node.ifError = error;
+}
+$("if").addEventListener("input", () => checkIf($("if"), $("if-error")));
 
 // counters are the orders a parsed layout's {#} number.
 const counters = (layout) => layout.flat(Infinity).flatMap(function walk(p) {
   return p.counter && p.of ? [p.of] : p.group ? p.group.flatMap(walk) : [];
 });
 
-// parsePath has the server parse a path's layout, for the orders it numbers.
-async function parsePath(p) {
-  try {
-    const answer = await post("/api/rules/layout", { layout: p.layout.trim() });
-    p.ofs = counters(answer.layout);
-    p.error = "";
-  } catch (err) {
-    p.ofs = [];
-    p.error = err.message;
+// parseNode has the server parse a node's path and file, for the orders
+// they number.
+async function parseNode(n) {
+  n.ofs = [];
+  n.error = "";
+  for (const text of [n.path, n.file]) {
+    if (!text.trim()) continue;
+    try {
+      n.ofs.push(...counters((await post("/api/rules/layout", { layout: text.trim() })).layout));
+    } catch (err) {
+      n.error = err.message;
+    }
   }
-  drawPaths();
+  drawNodes();
   drawOrder();
 }
 
-// drawPaths draws the more paths: the types each is for, its layout typed,
-// and moving or removing it.
-function drawPaths() {
+// drawNodes draws the children as nested blocks, as Scratch draws an if:
+// a head with its condition, the path and file it adds, and a slot of
+// blocks below it. A block with no condition is the else, and comes last.
+function drawNodes() {
   const box = $("paths");
   if (!box) return;
-  const redraw = () => { drawPaths(); changed(); };
-  box.replaceChildren(...paths.map((p, i) => {
-    const types = p.when.type || [];
-    const others = Object.entries(p.when).filter(([k]) => k !== "type").map(([k, v]) => k + ": " + v.join(", "));
-    const input = el("input", { className: "layout-text" + (p.error ? " invalid" : ""), value: p.layout, spellcheck: false, autocomplete: "off",
-      title: "The path for these types, typed as the Path above is kept",
-      onchange: () => { p.layout = input.value; changed(); parsePath(p); },
+  const redraw = () => { drawNodes(); changed(); };
+  const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
+  const field = (n, key, label, title) => {
+    const input = el("input", { className: "layout-text", value: n[key], spellcheck: false, autocomplete: "off", title,
+      placeholder: key === "file" ? "the file name above" : "",
+      onchange: () => { n[key] = input.value; changed(); parseNode(n); },
       onkeydown: (event) => { if (event.key === "Enter") { event.preventDefault(); input.blur(); } } });
-    const edit = el("button", { type: "button", className: "path-more", textContent: "Edit…", title: "Build this path part by part",
-      disabled: !!p.error, onclick: () => openEditor(p) });
-    const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
-    return el("div", { className: "more-path" },
-      el("div", { className: "more-path-head" },
-        el("span", { className: "checks" }, ...state.templates.map((t) => el("label", {},
-          el("input", { type: "checkbox", value: t.type, checked: types.includes(t.type), onchange: (event) => {
-            const next = event.target.checked ? [...types, t.type] : types.filter((x) => x !== t.type);
-            if (next.length) p.when.type = next; else delete p.when.type;
-            redraw();
-          } }), " " + t.type))),
-        others.length ? el("span", { className: "template-sub", textContent: "and " + others.join("; ") }) : null,
+    return el("label", { className: "block-line" }, el("span", { className: "block-key", textContent: label }), input,
+      el("button", { type: "button", className: "path-more", textContent: "Edit…", title: "Build it part by part",
+        onclick: () => openEditor({ text: n[key], set: (v) => { n[key] = v; input.value = v; parseNode(n); } }) }));
+  };
+  const adder = (list) => {
+    const hasElse = list.some((n) => !n.if);
+    const add = (cond) => () => {
+      const n = { if: cond, path: "", file: "", children: [], ofs: [], error: "", ifError: "" };
+      if (cond && hasElse) list.splice(list.length - 1, 0, n); else list.push(n);
+      redraw();
+    };
+    return el("div", { className: "block-adds" },
+      el("button", { type: "button", className: "button block-add", textContent: "+ if", onclick: add("type is " + (state.templates[0]?.type || "x")) }),
+      hasElse ? null : el("button", { type: "button", className: "button block-add", textContent: "+ else", onclick: add("") }));
+  };
+  const blocks = (list) => list.map((n, i) => {
+    const isElse = !n.if && i === list.length - 1;
+    const cond = el("input", { className: "block-if mono" + (n.ifError ? " invalid" : ""), value: n.if, spellcheck: false, autocomplete: "off",
+      placeholder: "type is bill and category is utility", title: "and, or, not, (…); is, in […], contains, has" });
+    const why = el("span", { className: "message error", textContent: n.ifError });
+    cond.oninput = () => { n.if = cond.value; changed(); checkIf(cond, why, n); };
+    const out = !n.path && !n.file && !n.children.length;
+    return el("div", { className: "block" + (isElse ? " else" : "") + (out ? " out" : "") },
+      el("div", { className: "block-head" },
+        el("span", { className: "block-word", textContent: isElse ? "else" : i ? "else if" : "if" }),
+        isElse ? null : cond,
         el("span", { className: "order-acts" },
-          act("Up: tried before the one above", "↑", () => { [paths[i - 1], paths[i]] = [paths[i], paths[i - 1]]; redraw(); }, i === 0),
-          act("Down", "↓", () => { [paths[i + 1], paths[i]] = [paths[i], paths[i + 1]]; redraw(); }, i === paths.length - 1),
-          act("Remove", "×", () => { paths.splice(i, 1); redraw(); drawOrder(); }))),
-      el("div", { className: "path-line" }, input, edit),
-      p.error ? el("span", { className: "message error", textContent: p.error }) : null);
-  }));
+          act("Up: tried before the one above", "↑", () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; redraw(); }, i === 0 || isElse),
+          act("Down", "↓", () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; redraw(); }, i >= list.length - 1 || !list[i + 1].if),
+          act("Remove, with the blocks inside it", "×", () => { list.splice(i, 1); redraw(); drawOrder(); }))),
+      why,
+      el("div", { className: "block-body" },
+        field(n, "path", "folders", "Folders after the ones above"),
+        field(n, "file", "file", "The file name, in place of the one above; empty keeps it"),
+        out ? el("p", { className: "muted block-note", textContent: isElse ? "Give it folders or a file name." : "No folders, file or blocks: what it takes is left out." }) : null,
+        n.error ? el("span", { className: "message error", textContent: n.error }) : null,
+        ...blocks(n.children), adder(n.children)));
+  });
+  box.replaceChildren(...blocks(nodes), adder(nodes));
 }
 // The path editor is a dialog: the rows and key chips build the rule's
-// Path, or one of its more paths, whose rows stand in for the Path's
+// file, or a block's folders or file, whose rows stand in for the file's
 // until Done or Cancel puts them back.
-let editingPath = null; // the more path being edited; null for the Path
+let editingPath = null; // the block text being edited, { text, set }; null for the rule's file
 let stash = null; // the rows and active part before the dialog opened
 async function openEditor(p) {
   stash = { rows: JSON.parse(JSON.stringify(rows)), active: { ...active } };
   editingPath = p || null;
   if (p) {
     try {
-      rows = fromLayout((await post("/api/rules/layout", { layout: p.layout.trim() })).layout);
+      rows = p.text.trim() ? fromLayout((await post("/api/rules/layout", { layout: p.text.trim() })).layout) : [{ parts: [] }];
     } catch (err) {
-      p.error = err.message;
       stash = null;
       editingPath = null;
-      drawPaths();
+      alert(err.message);
       return;
     }
     active = { row: rows.length - 1, group: -1 };
@@ -129,52 +186,34 @@ async function openEditor(p) {
 function closeEditor(keep) {
   if (!stash) return;
   const p = editingPath;
-  if (p && keep) p.layout = layoutText();
+  const text = layoutText();
   if (p || !keep) { rows = stash.rows; active = stash.active; }
   stash = null;
   editingPath = null;
   if ($("path-dialog").open) $("path-dialog").close();
-  if (p && keep) parsePath(p);
-  drawPaths();
+  if (p && keep) { p.set(text); changed(); }
   edited();
 }
 $("path-edit")?.addEventListener("click", () => openEditor(null));
 $("path-done")?.addEventListener("click", () => closeEditor(true));
 $("path-cancel")?.addEventListener("click", () => closeEditor(false));
 $("path-dialog")?.addEventListener("close", () => closeEditor(false));
-$("path-add")?.addEventListener("click", () => {
-  const p = { when: {}, layout: layoutText(), ofs: [], error: "" };
-  paths.push(p);
-  drawPaths();
-  parsePath(p);
-  changed();
-});
-
-// read is the form's query, selection, layout and order.
+// read is the form's rule, less its name and what the page owns.
 export function read() {
-  const query = {};
-  const types = [...$("types").querySelectorAll("input:checked")].map((i) => i.value);
-  if (types.length) query.type = types;
-  // Two rows of one key and operator are one condition.
-  // A condition limited to some types keeps them beside it.
-  const gather = (rows, into, types) => {
-    for (const [key, values, only] of rows) {
-      into[key] = [...new Set([...(into[key] || []), ...values])];
-      if (only.length) types[key] = [...new Set([...(types[key] || []), ...only])];
-    }
-    return into;
+  const clean = (n) => {
+    const out = {};
+    if (n.if.trim()) out.if = n.if.trim();
+    if (n.path.trim()) out.path = n.path.trim();
+    if (n.file.trim()) out.file = n.file.trim();
+    if (n.default !== undefined && n.default !== null) out.default = n.default;
+    if (n.children.length) out.children = n.children.map(clean);
+    return out;
   };
-  const queryTypes = {}, excludeTypes = {};
-  gather(read_("conditions"), query, queryTypes);
-  const exclude = gather(read_("exclude"), {}, excludeTypes);
-  const out = { query, selection: document.querySelector("input[name=selection]:checked").value, layout: layoutText() };
-  if (paths.length) out.layouts = paths.map((p) => ({ when: p.when, layout: p.layout.trim() }));
+  const out = { selection: document.querySelector("input[name=selection]:checked").value, file: layoutText() };
+  if ($("if").value.trim()) out.if = $("if").value.trim();
+  if (nodes.length) out.children = nodes.map(clean);
   if (inherited().length) out.inherit = inherited();
   if ($("shared")?.checked) out.shared = true;
-  if (Object.keys(exclude).length) out.exclude = exclude;
-  if (Object.keys(queryTypes).length) out.query_types = queryTypes;
-  if (Object.keys(excludeTypes).length) out.exclude_types = excludeTypes;
-  if (skip.length) out.skip = [...skip];
   const order = {};
   for (const key of numberedKeys()) {
     const list = (orders[key] || []).filter(Boolean);
@@ -204,175 +243,16 @@ export function numberLast(key, value) {
   changed();
 }
 
-$("add-condition").addEventListener("click", () => {
-  $("conditions").append(condition(keys.find((k) => k === "owner") || keys[0], []));
-  changed();
-});
-$("add-exclude").addEventListener("click", () => {
-  $("exclude").append(condition("tags", [], true));
-  changed();
-});
-
-// skipItem leaves an Item out of the rule, whatever else it selects.
-export function skipItem(id) {
-  if (!skip.includes(id)) skip.push(id);
-  drawSkip();
-  drawOrder();
-  changed();
-}
-
-// drawSkip lists the Items left out, each put back with ×, and offers the
-// Items the rule selects, so one is picked from those, not from the tree.
-function drawSkip() {
-  const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
-  const unskip = (id) => { skip = skip.filter((x) => x !== id); drawSkip(); drawOrder(); changed(); };
-  $("skip-list").replaceChildren(...skip.map((id) => el("li", { title: id },
-    el("span", { className: byId[id] ? "" : "muted" }, byId[id] ? label(state, byId[id]) : id + " — no such Item"),
-    el("button", { type: "button", className: "tool", title: "Put it back", textContent: "×", onclick: () => unskip(id) }))));
-  const offered = selected().sort((a, b) => label(state, a).localeCompare(label(state, b)));
-  $("add-skip").replaceChildren(el("option", { value: "" }, offered.length ? "+ Leave out an Item…" : "The rule selects no Item"),
-    ...offered.map((i) => el("option", { value: i.id }, label(state, i))));
-  $("add-skip").disabled = !offered.length;
-}
-$("add-skip").addEventListener("change", (event) => {
-  const id = event.target.value;
-  event.target.value = "";
-  if (id) skipItem(id);
-});
-
-
 // same reports whether a and b are one value: one country however each is
 // written, or else equal ignoring case.
 const same = (a, b) => (countries[a] && countries[a] === countries[b]) || a.toLowerCase() === b.toLowerCase();
 
-// chosenTypes is the types ticked, or every type when none is: a rule
-// without types selects them all.
-function chosenTypes() {
-  const ticked = [...$("types").querySelectorAll("input:checked")].map((i) => i.value);
-  return ticked.length ? ticked : state.templates.map((t) => t.type);
-}
+// chosenTypes is every type: a rule's if says which it takes.
+const chosenTypes = () => state.templates.map((t) => t.type);
 
-// selected is the Items the form's query picks: the chosen types, and each
-// condition's values when some are ticked, less the Items skipped and those
-// an exclusion meets at their current revision. Tags count the Item's and
-// any of its revisions'.
-function selected() {
-  const types = chosenTypes();
-  const conditions = read_("conditions");
-  const exclusions = read_("exclude");
-  const excluded = (item) => exclusions.some(([key, values, only]) => {
-    if (only.length && !only.includes(item.type)) return false;
-    const [field] = splitKey(key);
-    const head = item.head || item.revisions?.[item.revisions.length - 1]?.id || item.revisions?.[item.revisions.length - 1]?.digest;
-    const held = field === "tags" ? [...(item.tags || []), ...((item.revisions || []).find((r) => (r.id || r.digest) === head)?.tags || [])]
-      : field === "status" ? [item.superseded_by ? "superseded" : "", item.retired || item.superseded_by ? "retired" : ""].filter(Boolean)
-      : [field === "type" ? item.type : currentFields(item)[field]].filter(Boolean);
-    // A field the Item lacks is the one it inherits, as the server has it.
-    if (!held.length && field !== "type" && field !== "tags" && field !== "status") {
-      const from = inherited().map((l) => choiceValue(item, l + "." + field)).find(Boolean);
-      if (from) held.push(from);
-    }
-    return accepts(key, held, values);
-  });
-  return state.items.filter((item) => !skip.includes(item.id) && !excluded(item) && types.includes(item.type) && conditions.every(([key, values, only]) => {
-    if (only.length && !only.includes(item.type)) return true;
-    const [field] = splitKey(key);
-    const held = field === "tags" ? [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])] : [currentFields(item)[field]].filter(Boolean);
-    // A rule taking shared Items takes them for the people they are shared with.
-    if (field === "owner" && $("shared")?.checked) held.push(...(item.shared_with || []));
-    return accepts(key, held, values);
-  }));
-}
-
-// CONTAINS ends a condition's key that matches a value holding the text,
-// ignoring case, rather than one equal to it: "name contains".
-const CONTAINS = " contains";
-const splitKey = (key) => key.endsWith(CONTAINS) ? [key.slice(0, -CONTAINS.length), true] : [key, false];
-
-// accepts reports whether a held value meets the condition key's values.
-function accepts(key, held, values) {
-  const [, contains] = splitKey(key);
-  return held.some((h) => values.some((v) => contains ? h.toLowerCase().includes(v.toLowerCase()) : same(h, v)));
-}
-
-// read_ is the conditions in one list of rows, those with values.
-const read_ = (id) => [...$(id).children].map((row) => row.read()).filter(([, values]) => values.length);
-
-// narrow redraws what depends on the types: the field chips and each
-// condition's values, keeping only what the chosen types have.
-function narrow() {
-  drawInherit(inherited());
-  drawPath();
-  for (const row of $("conditions").children) row.redraw();
-  for (const row of $("exclude").children) row.redraw();
-  drawSkip();
-  drawOrder();
-  changed();
-}
-
-// condition is one query key, how it matches, and the values it accepts.
-// "is" picks values from those the Items hold, so a value is never typed
-// in a form no Item uses; a saved value is ticked as the held value it is
-// one with — CHN as 中国 — and one no Item holds any more is still listed,
-// ticked. "contains" takes typed text, several separated by commas.
-// An exclusion may also name a status, which no field holds and which is
-// matched whole.
-// Ticking types under "for" asks the condition of those types only.
-function condition(key, values, exclusion = false, only = []) {
-  // What the query picks changes the numbering shown.
-  const touched = () => { drawOrder(); drawSkip(); drawPath(); changed(); };
-  const [field, contains] = splitKey(key);
-  const choices = el("div", { className: "checks" });
-  const text = el("input", { className: "mono", spellcheck: false, autocomplete: "off", placeholder: "text, other text", oninput: touched,
-    title: "Matches a value holding any of these, ignoring case" });
-  const draw = (saved) => {
-    op.hidden = pick.value === "status";
-    if (op.hidden) op.value = "is";
-    if (op.value === "contains") {
-      text.value = saved.join(", ");
-      return choices.replaceChildren(text);
-    }
-    const types = chosenTypes();
-    const chosen = state.items.filter((item) => types.includes(item.type));
-    // Tags are the Items' and their revisions' own, matched per revision.
-    const held = pick.value === "status" ? ["superseded", "retired"] : [...new Set(pick.value === "tags" ? chosen.flatMap((item) => [...(item.tags || []), ...(item.revisions || []).flatMap((r) => r.tags || [])])
-      : chosen.map((item) => currentFields(item)[pick.value]).filter(Boolean))];
-    const all = [...held, ...saved.filter((v) => !held.some((h) => same(h, v)))].sort((a, b) => a.localeCompare(b));
-    choices.replaceChildren(...(all.length ? all.map((v) => el("label", {},
-      el("input", { type: "checkbox", value: v, checked: saved.some((s) => same(s, v)), onchange: touched }), " " + v))
-      : [el("span", { className: "template-sub", textContent: "no Item has one" })]));
-  };
-  const current = () => op.value === "contains" ? text.value.split(",").map((v) => v.trim()).filter(Boolean)
-    : [...choices.querySelectorAll("input:checked")].map((i) => i.value);
-  const pick = el("select", { onchange: () => { draw(op.value === "contains" ? current() : []); touched(); } },
-    ...[...keys.filter((k) => !["type", "revision", "ext", "id", "tags", "status"].includes(k)), "tags", ...(exclusion ? ["status"] : [])].map((k) => el("option", { value: k, selected: k === field }, k)));
-  const op = el("select", { className: "condition-op", title: "is: one of the values ticked; contains: holds any text typed",
-    onchange: () => { draw([]); touched(); } },
-    el("option", { value: "is", selected: !contains }, "is"), el("option", { value: "contains", selected: contains }, "contains"));
-  const row = el("div", { className: "condition" },
-    el("div", { className: "condition-head" }, pick, op,
-      el("button", { type: "button", className: "tool", title: "Remove", textContent: "×", onclick: () => { row.remove(); touched(); } })),
-    choices);
-  // The types it is asked of fold away behind a button naming them.
-  const scope = el("div", { className: "checks condition-types", hidden: true });
-  const ticked = () => [...scope.querySelectorAll("input:checked")].map((i) => i.value);
-  const forButton = el("button", { type: "button", className: "condition-for", title: "Ask this condition of some types only",
-    onclick: () => { scope.hidden = !scope.hidden; } });
-  const named = () => { const t = ticked(); forButton.textContent = t.length ? "for " + t.join(", ") : "for every type"; };
-  const drawScope = (saved) => {
-    const all = [...new Set([...chosenTypes(), ...saved])];
-    forButton.hidden = all.length < 2 && !saved.length;
-    scope.replaceChildren(...all.map((t) => el("label", {},
-      el("input", { type: "checkbox", value: t, checked: saved.includes(t), onchange: () => { named(); touched(); } }), " " + t)));
-    named();
-  };
-  row.append(forButton, scope);
-  row.read = () => [pick.value + (op.value === "contains" ? CONTAINS : ""), current(), forButton.hidden ? [] : ticked()];
-  row.redraw = () => { draw(current()); drawScope(ticked()); };
-  drawScope(only || []);
-  draw(values || []);
-  return row;
-}
+// selected is the Items the rule takes, as the server last planned it, or
+// every Item before it has.
+const selected = () => state.items.filter((item) => !previewed || previewed.has(item.id));
 
 // What each key a layout can use writes. A Template's own field is named
 // with the types that have it.
@@ -628,8 +508,9 @@ async function typed() {
 // settle takes a layout typed and not yet taken, as Save is pressed; one
 // the server refuses stops the save.
 export async function settle() {
-  const bad = paths.find((p) => p.error || !Object.keys(p.when).length);
-  if (bad) throw new Error(bad.error || "A path is for no type: tick one, or remove it");
+  const bad = every(nodes).find((n) => n.error || n.ifError);
+  if (bad) throw new Error(bad.error || bad.ifError);
+  if ($("if-error").textContent) throw new Error($("if-error").textContent);
   const box = $("layout-text");
   if (box.value.trim() === layoutText()) return;
   await typed();
@@ -741,7 +622,7 @@ export const numberedKeys = () => [...new Set([...rows.flatMap((row) => {
     if (rest.length && rest[rest.length - 1].text === ".") rest = rest.slice(0, -1);
   }
   return rest.some((p) => p.keys || p.group) ? [rest.map(written).join("")] : [];
-}), ...paths.flatMap((p) => p.ofs)])];
+}), ...every(nodes).flatMap((n) => n.ofs)])];
 
 // An Item's value for one key, {a|b} or {a|b:format}: the first alternative
 // it has, or with inherit the first the Items it links to have. A type:zh
