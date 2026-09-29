@@ -540,6 +540,12 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		}
 	}
 
+	// Rule 35: a dial a service declares resolves for every instance of it
+	// that does not write it.
+	for _, issue := range derive.ServiceDialIssues(inv, manifests) {
+		add("%s", issue)
+	}
+
 	// Rule 34: every set's members are routes, and every @set named in an
 	// access list is a set.
 	setNames := make([]string, 0, len(inv.Sets))

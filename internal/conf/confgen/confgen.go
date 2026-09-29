@@ -186,6 +186,12 @@ type Manifest struct {
 	// port's business, not this one's; see inventory.Port.Self. See
 	// docs/apps/conf/inventory.md#a-services-own-secrets.
 	Self SelfDecls `yaml:"self"`
+	// Dials is what an instance of this service calls off any route, by the
+	// name its templates use: a service and a port of it. An instance that
+	// writes no dial of that name gets the one instance of that service in
+	// the innermost scope it shares with it. See
+	// docs/apps/conf/inventory.md#dialling-a-service-by-type.
+	Dials map[string]DialDecl `yaml:"dials"`
 	// Upstream declares what this service needs from the hop it connects
 	// to, beyond the address, port and account every template is given.
 	// Reading it is the consumer's business: a value crosses from one
@@ -759,4 +765,11 @@ func loadManifest(path string) (*Manifest, error) {
 		return nil, err
 	}
 	return &m, nil
+}
+
+// DialDecl is one dial a service declares: which service it calls, and at
+// which of that service's ports.
+type DialDecl struct {
+	Service string `yaml:"service"`
+	Port    string `yaml:"port"`
 }

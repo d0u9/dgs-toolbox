@@ -836,6 +836,24 @@ a published port, is a route.
 empty string: the value is an address, and an empty one renders a file that
 looks complete and connects to nothing.
 
+### Dialling a service by type
+
+A service may declare what it dials, by the name its templates use:
+
+```yaml
+# services/digest/confgen.yaml
+dials:
+  rss: {service: freshrss, port: web}
+```
+
+An instance that writes no dial of that name gets the one instance of that
+service, holding that port, in the innermost scope it shares with it: its
+container network, then its node, then each network in preference order it
+reaches. Two in the first scope holding any is an error naming them; so is
+none anywhere. A written dial always wins. The resolved dial is an ordinary
+dial from then on — the render, the tree and a migration see it — except that
+a migration never writes it into the file.
+
 ### What runs the process
 
 `runtime` says what the process is delivered by, and it is one of `host`,
@@ -2423,6 +2441,8 @@ failing can be told which level it was reading.
     credential opening a route scoped to a non-universal network reaches it.
 34. Every route a set names exists, and every `@<set>` in an access list names
     a set.
+35. Every dial a service declares resolves, for each instance of it that does
+    not write it, to exactly one instance in the innermost shared scope.
 
 ## Boundaries
 

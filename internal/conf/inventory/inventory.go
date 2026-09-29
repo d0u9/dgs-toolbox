@@ -196,6 +196,9 @@ type Instance struct {
 	// A dial is not an edge and grants nothing. See
 	// docs/apps/conf/inventory.md#dialling-a-service-that-is-not-on-a-route.
 	Dials map[string]string `yaml:"dials"`
+	// DialsDerived names the dials resolved from the service's declaration
+	// rather than written, so a tool rewriting the file leaves them alone.
+	DialsDerived map[string]bool `yaml:"-"`
 
 	// Path is the file this instance was written in, relative to the
 	// generator root: its node file, or its own file in the node's instance

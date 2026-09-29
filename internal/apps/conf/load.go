@@ -69,6 +69,7 @@ func load(rootPath string) (loaded, error) {
 	l.exports = exports
 	l.exportDirs = exportDirs
 
+	derive.FillServiceDials(inv, manifests)
 	model, err := derive.Derive(inv, manifests)
 	if err != nil {
 		return l, err

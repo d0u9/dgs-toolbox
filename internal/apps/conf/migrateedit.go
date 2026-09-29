@@ -175,6 +175,9 @@ func (m *migrationYAML) patchInstances(old, next []inventory.Instance) error {
 		file.changed = file.changed || changed
 		_, dials := migrationMap(instance, "dials")
 		for name, sourceDial := range source.Dials {
+			if source.DialsDerived[name] {
+				continue
+			}
 			// A dial to its own node is usually written without the node;
 			// keep whichever form the file has.
 			from := migrationDialText(sourceDial, source.ID)
