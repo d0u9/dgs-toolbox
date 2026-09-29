@@ -92,6 +92,13 @@ type Downstream struct {
 	// the first network in preference order that the proxy reaches.
 	Address string
 	Number  int
+	// Title and Description are the downstream port's own, for a page
+	// listing what this proxy serves.
+	Title       string
+	Description string
+	// Proxy is what the downstream asks of the proxy in front of it: its
+	// service's hints, overridden by its port's.
+	Proxy map[string]any
 }
 
 // Name is one entry of a network's name table.

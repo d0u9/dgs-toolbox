@@ -263,6 +263,14 @@ type Port struct {
 	// Names all of them, for a proxy answering to its own sites.
 	Published string   `yaml:"-"`
 	Names     []string `yaml:"-"`
+	// Title and Description are what a page listing this port calls it and
+	// says it is for — a portal card. Only a port a reverse proxy publishes
+	// is listed.
+	Title       string
+	Description string
+	// Proxy overrides, key by key, the proxy hints the service declares:
+	// what a reverse proxy in front of this port must do for it.
+	Proxy map[string]any
 }
 
 // portYAML is Port's mapping form as written.
@@ -270,7 +278,10 @@ type portYAML struct {
 	Number    int       `yaml:"port"`
 	Protocol  string    `yaml:"protocol"`
 	Self      []string  `yaml:"self"`
-	Published yaml.Node `yaml:"published"`
+	Published   yaml.Node      `yaml:"published"`
+	Title       string         `yaml:"title"`
+	Description string         `yaml:"description"`
+	Proxy       map[string]any `yaml:"proxy"`
 }
 
 // SelfRef is one entry of Port.Self, split: the secret's name, and the key
@@ -388,7 +399,8 @@ func (ps *Ports) UnmarshalYAML(value *yaml.Node) error {
 		if err := node.Decode(&py); err != nil {
 			return fmt.Errorf("port %q: want a number or {port, protocol}: %w", name, err)
 		}
-		port := Port{Number: py.Number, Protocol: py.Protocol, Self: py.Self}
+		port := Port{Number: py.Number, Protocol: py.Protocol, Self: py.Self,
+			Title: py.Title, Description: py.Description, Proxy: py.Proxy}
 		switch py.Published.Kind {
 		case 0:
 		case yaml.ScalarNode:
