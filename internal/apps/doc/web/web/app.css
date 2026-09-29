@@ -63,6 +63,12 @@ body { display: flex; flex-direction: column; }
 .into-choice strong { max-width: 55%; font-family: inherit; font-size: var(--font-size-xs); }
 .into-choice small { text-align: right; }
 .field-choice-cards { display: flex; flex-wrap: wrap; gap: 5px; }
+/* A required choice still unmade: its cards framed blue on a faint blue ground. */
+.field-choice-cards.needed { padding: 6px; margin: -6px; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--selected) 45%, transparent);
+  box-shadow: inset 0 0 0 1px var(--primary-soft); align-items: center; }
+.field-choice-cards.needed .field-choice-card { border-color: var(--primary); color: var(--primary); background: var(--paper); }
+.field-choice-cards.needed .field-choice-card:hover { background: var(--selected); }
+.field-choice-cards .field-choice-ask { margin-left: 4px; color: var(--primary); font-size: var(--font-size-sm); font-weight: 600; }
 .form-field .req { color: var(--error); }
 /* A described field's ?: hover for its description, click to keep it shown. */
 .field-help-toggle {

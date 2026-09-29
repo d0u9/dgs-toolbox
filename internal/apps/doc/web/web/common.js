@@ -277,10 +277,15 @@ export function inputFor(field, value, placeholder, state, self, type) {
         };
         return button;
       });
-      const sync = () => buttons.forEach((button, i) => {
-        button.setAttribute("aria-pressed", String(control.value === cardChoices[i][0]));
-      });
-      cards.append(...buttons);
+      // A required choice not yet made asks for it, so it is not passed over.
+      const ask = el("span", { className: "field-choice-ask" }, "Pick one");
+      const sync = () => {
+        buttons.forEach((button, i) => button.setAttribute("aria-pressed", String(control.value === cardChoices[i][0])));
+        const needed = !!field.required && !control.value;
+        cards.classList.toggle("needed", needed);
+        ask.hidden = !needed;
+      };
+      cards.append(...buttons, ask);
       control.addEventListener("change", sync);
       sync();
       return el("div", { className: "form-field" },
