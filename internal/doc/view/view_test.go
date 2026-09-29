@@ -293,9 +293,14 @@ func TestBuildMissingAndDefault(t *testing.T) {
 }
 
 func TestBuildDates(t *testing.T) {
-	items := []tree.Item{item("A", "bill", map[string]string{"issued_at": "2026-09-25"}, "d1")}
+	items := []tree.Item{item("A", "bill", map[string]string{"date": "2026-09-25"}, "d1")}
 	plan, _ := Build(View{Name: "x", Selection: Head, Layout: "{year}/{month}/{date}.{ext}"}, items, nil)
 	if plan.Files[0].Path != "2026/09/2026-09-25.pdf" {
+		t.Fatalf("%+v", plan)
+	}
+	span := []tree.Item{item("A", "bill", map[string]string{"date": "2026-01-01/2026-03-31"}, "d1")}
+	plan, _ = Build(View{Name: "x", Selection: Head, Layout: "{year}/{date.end}/{date}/{date:compact}.{ext}"}, span, nil)
+	if plan.Files[0].Path != "2026/2026-03-31/2026-01-01-2026-03-31/20260101-20260331.pdf" {
 		t.Fatalf("%+v", plan)
 	}
 }

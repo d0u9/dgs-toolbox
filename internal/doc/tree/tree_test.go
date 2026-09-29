@@ -674,7 +674,7 @@ func TestWithinAndMatchValues(t *testing.T) {
 	for name, f := range map[string]Field{
 		"within on text":       {Key: "tenancy", Within: within},
 		"within on no date":    {Key: "tenancy", Type: FieldItem, Within: &Within{Date: "owner", From: "start", To: "end"}},
-		"within with no to":    {Key: "tenancy", Type: FieldItem, Within: &Within{Date: "period", From: "start"}},
+		"within with no from":  {Key: "tenancy", Type: FieldItem, Within: &Within{Date: "period", To: "end"}},
 		"match = with nothing": {Key: "tenancy", Type: FieldItem, Match: map[string]string{"type": "="}},
 		"anchor not a bool":    {Key: "about", Type: FieldItem, Match: map[string]string{"anchor": "=yes"}},
 	} {
