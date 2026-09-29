@@ -45,9 +45,11 @@ export function fill(v) {
   drawPath();
   // The file goes in its box for the server to read; its rows then replace
   // the default ones.
-  const file = [v.path, v.file].filter(Boolean).join("/");
-  if (file) {
-    $("layout-text").value = file;
+  root.path = v.path || "";
+  $("root-path").value = root.path;
+  parseNode(root);
+  if (v.file) {
+    $("layout-text").value = v.file;
     typed();
   }
 }
@@ -98,6 +100,11 @@ const counters = (layout) => layout.flat(Infinity).flatMap(function walk(p) {
 // parseNode has the server parse a node's path and file, for the orders
 // they number.
 let parsing = 0;
+// root holds the rule's own folders, parsed as a block's are.
+const root = { path: "", file: "", children: [], ofs: [], error: "" };
+$("root-path").addEventListener("change", () => { root.path = $("root-path").value; changed(); parseNode(root); });
+$("root-path-edit").addEventListener("click", () => openEditor({ text: root.path,
+  set: (v) => { root.path = v; $("root-path").value = v; parseNode(root); } }));
 async function parseNode(n) {
   parsing++;
   n.ofs = [];
@@ -111,6 +118,10 @@ async function parseNode(n) {
     }
   }
   parsing--;
+  if (n === root) {
+    $("root-path").classList.toggle("invalid", !!n.error);
+    $("root-path-error").textContent = n.error;
+  }
   drawNodes();
   drawOrder();
   changed();
@@ -221,6 +232,7 @@ export function read() {
   // server has read it.
   const out = { selection: document.querySelector("input[name=selection]:checked").value, file: $("layout-text").value.trim() || layoutText() };
   if ($("if").value.trim()) out.if = $("if").value.trim();
+  if ($("root-path").value.trim()) out.path = $("root-path").value.trim();
   if (nodes.length) out.children = nodes.map(clean);
   if (inherited().length) out.inherit = inherited();
   if ($("shared")?.checked) out.shared = true;
@@ -521,7 +533,7 @@ async function typed() {
 // settle takes a layout typed and not yet taken, as Save is pressed; one
 // the server refuses stops the save.
 export async function settle() {
-  const bad = every(nodes).find((n) => n.error || n.ifError);
+  const bad = [root, ...every(nodes)].find((n) => n.error || n.ifError);
   if (bad) throw new Error(bad.error || bad.ifError);
   if ($("if-error").textContent) throw new Error($("if-error").textContent);
   const box = $("layout-text");
@@ -635,7 +647,7 @@ export const numberedKeys = () => [...new Set([...rows.flatMap((row) => {
     if (rest.length && rest[rest.length - 1].text === ".") rest = rest.slice(0, -1);
   }
   return rest.some((p) => p.keys || p.group) ? [rest.map(written).join("")] : [];
-}), ...every(nodes).flatMap((n) => n.ofs)])];
+}), ...[root, ...every(nodes)].flatMap((n) => n.ofs)])];
 
 // An Item's value for one key, {a|b} or {a|b:format}: the first alternative
 // it has, or with inherit the first the Items it links to have. A type:zh
