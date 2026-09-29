@@ -105,8 +105,8 @@ func (t Template) Is(typ string) bool {
 
 // Resolve gives each Template the fields, defaults and ignored dates of the
 // types it extends, and validates the result. A type may add fields, and of
-// an inherited one make it required or distinguishing, narrow a date's shape
-// and give its own description and patterns; nothing else. Names,
+// an inherited one make it required, distinguishing or per_revision, narrow
+// a date's shape and give its own description and patterns; nothing else. Names,
 // description, kind and anchor are a type's own.
 func Resolve(raw []Template) ([]Template, error) {
 	byType := map[string]Template{}
@@ -199,17 +199,18 @@ func inherit(parent, child Template) (Template, error) {
 // override is the inherited field p as child type typ narrows it with c.
 func override(typ string, p, c Field) (Field, error) {
 	rest := c
-	rest.Required, rest.Distinguishing, rest.Description = false, false, ""
+	rest.Required, rest.Distinguishing, rest.PerRevision, rest.Description = false, false, false, ""
 	rest.Shape, rest.Pattern, rest.Patterns = nil, "", nil
 	if rest.Type == p.Type {
 		rest.Type = ""
 	}
 	if !reflect.DeepEqual(rest, Field{Key: c.Key}) {
-		return Field{}, fmt.Errorf("type %s: key %s is inherited: it may be made required or distinguishing, narrowed in shape and described, not changed", typ, c.Key)
+		return Field{}, fmt.Errorf("type %s: key %s is inherited: it may be made required, distinguishing or per_revision, narrowed in shape and described, not changed", typ, c.Key)
 	}
 	f := p
 	f.Required = p.Required || c.Required
 	f.Distinguishing = p.Distinguishing || c.Distinguishing
+	f.PerRevision = p.PerRevision || c.PerRevision
 	if c.Description != "" {
 		f.Description = c.Description
 	}
