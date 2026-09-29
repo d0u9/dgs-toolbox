@@ -830,3 +830,6 @@ body.list-shut .outline-list { display: none; }
 .path-line { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .path-line .layout-text { flex: 1; min-width: 0; }
 .path-dialog-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.date-span { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.date-span input { flex: 1 1 140px; min-width: 0; }
