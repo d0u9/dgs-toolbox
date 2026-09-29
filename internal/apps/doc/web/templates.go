@@ -13,6 +13,9 @@ type templateEntry struct {
 	Kind        string `json:"kind"`
 	Data        string `json:"data"`
 	Items       int    `json:"items"`
+	// Lineage is the type, then each it extends, nearest first.
+	Lineage  []string `json:"lineage"`
+	Abstract bool     `json:"abstract,omitempty"`
 }
 
 // templateList answers every Template as its file is written, and how many
@@ -39,7 +42,7 @@ func (s server) templateList(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
-		out = append(out, templateEntry{Type: t.Type, Description: t.Description, Kind: string(t.Kind), Data: string(data), Items: used[t.Type]})
+		out = append(out, templateEntry{Type: t.Type, Description: t.Description, Kind: string(t.Kind), Data: string(data), Items: used[t.Type], Lineage: t.Lineage, Abstract: t.Abstract})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"templates": out, "example": tree.ExampleTemplate})
 }

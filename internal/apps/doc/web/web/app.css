@@ -859,3 +859,32 @@ body.list-shut .outline-list { display: none; }
 .block-adds { display: flex; gap: 6px; }
 .block-add { font-size: 0.85em; padding: 2px 8px; }
 .block-note { margin: 0; font-size: 0.85em; }
+
+/* A rule's if as bubbles: key, operator and values, joined by && or ||. */
+.cond-wrap { display: flex; align-items: flex-start; gap: 6px; flex: 1; min-width: 0; }
+.cond-wrap > input { flex: 1; }
+.cond-wrap > [hidden] { display: none; }
+.cond { flex: 1; min-width: 0; }
+.cond-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cond-group.top { display: flex; }
+.cond-group:not(.top) { border: 1px dashed var(--hairline); border-radius: 8px; padding: 2px 4px; }
+.cond-bubble { display: inline-flex; flex-wrap: wrap; max-width: 100%; align-items: center; gap: 2px; padding: 2px 4px; border: 1px solid var(--hairline); border-radius: 999px; background: var(--paper); cursor: grab; }
+.cond-bubble.empty { border-style: dashed; }
+.cond-bubble input, .cond-bubble select { field-sizing: content; flex: none; border: 0; background: transparent; font: inherit; font-size: var(--font-size-xs); padding: 1px 2px; }
+.cond-key, .cond-value { min-width: 3ch; }
+.cond-chip { display: inline-flex; align-items: center; border-radius: 999px; background: var(--hairline); padding: 0 2px; }
+.cond-join, .cond-not { border: 1px solid var(--hairline); border-radius: 999px; background: transparent; font-size: var(--font-size-xs); padding: 1px 6px; cursor: pointer; color: var(--primary); }
+.cond-not:not(.on) { opacity: 0.35; }
+.cond-bracket { color: var(--graphite); }
+.cond-x { border: 0; background: transparent; color: var(--graphite); cursor: pointer; padding: 0 3px; }
+.cond-text.on { color: var(--primary); }
+.cond-group.drop, .cond-bubble.drop { box-shadow: -3px 0 0 var(--primary); }
+.dragging { opacity: 0.5; }
+
+/* Templates drawn as the tree of what extends what. */
+.template-tree { padding: 0 8px 8px; }
+.template-tree .template-meta { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+.template-tree .template-sub { grid-column: auto; white-space: nowrap; }
+.template-tree .ft-name { font-family: var(--font-mono); font-weight: 600; }
+.template-description { margin: 0; font-size: var(--font-size-xs); flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.template-bar .file-chip { flex: none; }

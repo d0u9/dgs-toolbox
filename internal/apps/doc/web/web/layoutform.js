@@ -2,7 +2,8 @@
 // layout built from key chips, its children as nested if blocks, and a
 // Numbering list per {#}. The page owns the rest of
 // its form and what a change redraws; the server computes the result.
-import { $, el, currentFields, label, post } from "/common.js";
+import { $, el, currentFields, label, post, tagUses } from "/common.js";
+import { condition } from "/condition.js";
 
 let state = { templates: [], items: [] };
 let keys = [];
@@ -29,6 +30,7 @@ export function setup(options) {
 export function fill(v) {
   $("if").value = v.if || "";
   checkIf($("if"), $("if-error"));
+  ifBubbles.read();
   document.querySelector(`input[name=selection][value=${v.selection || "head"}]`).checked = true;
   if ($("shared")) $("shared").checked = !!v.shared;
   rows = DEFAULT_ROWS();
@@ -57,8 +59,9 @@ export function fill(v) {
 // skipItem leaves an Item out, by adding not id is <id> to the rule's if.
 export function skipItem(id) {
   const box = $("if"), now = box.value.trim();
-  box.value = !now ? "not id is " + id : /\bor\b/.test(now) ? "(" + now + ") and not id is " + id : now + " and not id is " + id;
+  box.value = !now ? "id != " + id : /\|\|/.test(now) ? "(" + now + ") && id != " + id : now + " && id != " + id;
   checkIf(box, $("if-error"));
+  ifBubbles.read();
   changed();
 }
 
@@ -155,20 +158,22 @@ function drawNodes() {
       redraw();
     };
     return el("div", { className: "block-adds" },
-      el("button", { type: "button", className: "button block-add", textContent: "+ if", onclick: add("type is " + (state.templates[0]?.type || "x")) }),
+      el("button", { type: "button", className: "button block-add", textContent: "+ if", onclick: add("type == " + (state.templates[0]?.type || "x")) }),
       hasElse ? null : el("button", { type: "button", className: "button block-add", textContent: "+ else", onclick: add("") }));
   };
   const blocks = (list) => list.map((n, i) => {
     const isElse = !n.if && i === list.length - 1;
     const cond = el("input", { className: "block-if mono" + (n.ifError ? " invalid" : ""), value: n.if, spellcheck: false, autocomplete: "off",
-      placeholder: "type is bill and category is utility", title: "and, or, not, (…); is, in […], contains, has" });
+      placeholder: "type == bill && category == utility", title: "&&, ||, !, (…); ==, !=, in […], ~ (contains), has(key)" });
     const why = el("span", { className: "message error", textContent: n.ifError });
     cond.oninput = () => { n.if = cond.value; changed(); checkIf(cond, why, n); };
+    const bubbles = isElse ? null : condition(cond, { keys: condKeys, values: condValues });
+    bubbles?.read();
     const out = !n.path && !n.file && !n.children.length;
     const block = el("div", { className: "block" + (isElse ? " else" : "") + (out ? " out" : "") },
       el("div", { className: "block-head" },
         el("span", { className: "block-word", textContent: isElse ? "else" : i ? "else if" : "if" }),
-        isElse ? null : cond,
+        isElse ? null : bubbles.el,
         el("span", { className: "order-acts" },
           act("Up: tried before the one above", "↑", () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; redraw(); }, i === 0 || isElse),
           act("Down", "↓", () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; redraw(); }, i >= list.length - 1 || !list[i + 1].if),
@@ -835,3 +840,29 @@ function drawOrder() {
   $("order").replaceChildren(...lists);
   $("order-row").hidden = !lists.length;
 }
+
+// condKeys is the keys an if can ask of: a layout's, less the ways of
+// writing one, and tags and status.
+const condKeys = () => [...new Set(["type", "tags", "status", "id", "owner",
+  ...keyOptions().flatMap(([, list]) => list).filter((k) => !k.includes(":"))])];
+
+// condValues is the values known for key: a type and those above it, the
+// tags in use, a field's options and groups, and what the Items hold.
+function condValues(key) {
+  if (key === "type" || key.endsWith(".type")) return [...new Set(state.templates.flatMap((t) => [t.type, ...(t.lineage || [])]))].sort();
+  if (key === "tags") return tagUses(state.items).map((t) => t.name);
+  if (key === "status") return ["superseded", "retired"];
+  if (key === "id") return state.items.map((i) => i.id);
+  const field = key.split(".").pop();
+  const out = new Set();
+  for (const t of state.templates) for (const f of t.fields) if (f.key === field) {
+    (f.values || []).forEach((g) => out.add(g.name));
+    (f.options || []).forEach((o) => out.add(o));
+  }
+  if (!key.includes(".")) for (const item of state.items) {
+    const v = currentFields(item)[key];
+    if (v) v.split(", ").forEach((x) => out.add(x));
+  }
+  return [...out].slice(0, 300);
+}
+const ifBubbles = condition($("if"), { keys: condKeys, values: condValues, onEdit: () => changed() });
