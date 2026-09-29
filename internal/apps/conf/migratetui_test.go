@@ -24,7 +24,11 @@ func TestMigrationTableEditsCanBeRevisitedAndReported(t *testing.T) {
 		t.Fatalf("migration tab did not open plan list: %s", m.View())
 	}
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.migration.mode != "nodes" {
+	if m.migration.mode != "scenario" || !strings.Contains(m.View(), "SELECT SCENARIO") {
+		t.Fatal("new migration did not ask for a scenario")
+	}
+	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.migration.mode != "nodes" || m.migration.scenario != migrationRelocate {
 		t.Fatal("new migration did not open node list")
 	}
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -55,7 +59,7 @@ func TestMigrationTableEditsCanBeRevisitedAndReported(t *testing.T) {
 		t.Fatal("moving away and back lost the edit")
 	}
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	if m.migration.mode != "report" || !strings.Contains(string(m.migration.report), "Node migration preview: srv -> srv08") {
+	if m.migration.mode != "report" || !strings.Contains(string(m.migration.report), "# Node migration: `srv` → `srv08`") {
 		t.Fatalf("report = %s; notice = %s", m.migration.report, m.migration.notice)
 	}
 	after, err := os.ReadFile(path)
@@ -67,6 +71,7 @@ func TestMigrationTableEditsCanBeRevisitedAndReported(t *testing.T) {
 func TestMigrationTableSaveReportDoesNotOverwrite(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
+	m.scenario = migrationRelocate
 	m.selectNode("srv")
 	for _, section := range []string{"NODE", "NETWORKS", "INSTANCES", "ROUTES"} {
 		found := false
@@ -105,6 +110,7 @@ func TestMigrationTableMouseSelectsRowsButNotSections(t *testing.T) {
 	m.setTab(tabMigrate)
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
+	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
 	m.View() // establish the scroll list's viewport size
 	if m.migration.selectedRow() != 0 {
 		t.Fatal("first editable row was not selected")
@@ -134,6 +140,58 @@ func clickMigration(m *InspectModel, x, y int) {
 	*m = next.(InspectModel)
 }
 
+func TestMigrationReportScrollReturnsFromBottomAndWheelFollowsPane(t *testing.T) {
+	root, secrets := buildExportableRoot(t)
+	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
+	m.scenario = migrationRelocate
+	m.selectNode("srv")
+	m.mode = "report"
+	m.report = []byte(strings.Repeat("A report line that wraps across this pane and needs scrolling.\n", 40))
+	width, height := 90, 16
+	m.view(width, height)
+	m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}, width, height)
+	bottom := m.reportScroll
+	if bottom <= 0 {
+		t.Fatal("report did not scroll")
+	}
+	m.update(tea.KeyMsg{Type: tea.KeyUp}, width, height)
+	if m.reportScroll != bottom-1 {
+		t.Fatalf("up from bottom = %d, want %d", m.reportScroll, bottom-1)
+	}
+	left, _ := migrationColumns(width)
+	m.updateMouse(tea.MouseMsg{X: left + 2, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp}, width, height)
+	if m.reportScroll != bottom-4 {
+		t.Fatalf("report wheel = %d", m.reportScroll)
+	}
+	selected := m.selectedRow()
+	m.updateMouse(tea.MouseMsg{X: 2, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown}, width, height)
+	if m.selectedRow() == selected || m.reportScroll != bottom-4 {
+		t.Fatal("table wheel did not stay in its pane")
+	}
+}
+
+func TestMigrationReportCopiesWithCAndY(t *testing.T) {
+	root, secrets := buildExportableRoot(t)
+	m := newInspectModel(root, secrets)
+	m.migration.mode = "report"
+	m.migration.report = []byte("migration report")
+	var copied string
+	m.migration.copy = func(value string) error { copied = value; return nil }
+	for _, key := range []string{"c", "y"} {
+		copied = ""
+		cmd := m.migration.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}, 120, 40)
+		if cmd == nil {
+			t.Fatalf("%s did not return a clipboard command", key)
+		}
+		msg := cmd()
+		updated, _ := m.Update(msg)
+		m = updated.(InspectModel)
+		if copied != "migration report" || !strings.Contains(m.migration.notice, "report copied") {
+			t.Fatalf("%s copied %q, notice %q", key, copied, m.migration.notice)
+		}
+	}
+}
+
 func TestMigrationTableCollectsAllEditableKinds(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	path := filepath.Join(root, "nodes", "srv.yaml")
@@ -143,6 +201,7 @@ func TestMigrationTableCollectsAllEditableKinds(t *testing.T) {
 	}
 	writeFile(t, path, strings.Replace(string(data), "main: 443", "main: {port: 443, published: old.example.test}", 1))
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
+	m.scenario = migrationRelocate
 	m.selectNode("srv")
 	if !strings.Contains(m.view(120, 40), "◆ PUBLISHED") {
 		t.Fatal("published section is missing")
@@ -159,7 +218,7 @@ func TestMigrationTableCollectsAllEditableKinds(t *testing.T) {
 	if m.mode != "report" {
 		t.Fatalf("report failed: %s", m.notice)
 	}
-	for _, want := range []string{"Network: internet -> wan", "Address: wan 203.0.113.10 -> 203.0.113.8", "Instance: u-node-group-10 -> u-node-group-1008", "Published name: u-node-group-10:main old.example.test -> new.example.test", "Route: sfo -> sfo08"} {
+	for _, want := range []string{"| Network name | `internet` | `wan` |", "| Address on wan | `203.0.113.10` | `203.0.113.8` |", "| Instance ID | `u-node-group-10` | `u-node-group-1008` |", "| Published name u-node-group-10:main | `old.example.test` | `new.example.test` |", "| Route name | `sfo` | `sfo08` |"} {
 		if !strings.Contains(string(m.report), want) {
 			t.Errorf("report missing %q:\n%s", want, m.report)
 		}
@@ -169,6 +228,7 @@ func TestMigrationTableCollectsAllEditableKinds(t *testing.T) {
 func TestMigrationTableShowsDerivedSecretsWithoutPersistingThem(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
+	m.scenario = migrationRelocate
 	m.selectNode("srv")
 	var oldSecret string
 	for _, row := range m.rows {
@@ -213,6 +273,7 @@ func TestMigrationTableShowsDerivedSecretsWithoutPersistingThem(t *testing.T) {
 func TestMigrationPlanCreateOpenEditAndRejectStaleInventory(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
+	m.scenario = migrationRelocate
 	m.selectNode("srv")
 	m.rows[0].after = "srv08"
 	m.savePlan("move-home")
@@ -259,6 +320,7 @@ func TestMigrationPlanRejectsUnsafeNameAndVersion(t *testing.T) {
 	}
 	root, secrets := buildExportableRoot(t)
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
+	m.scenario = migrationRelocate
 	m.selectNode("srv")
 	p := migrationPlanFromTable(m)
 	p.Version = 99
@@ -271,6 +333,7 @@ func TestMigrationPlanCanOpenAndSaveOutsideDefaultDirectory(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	outside := t.TempDir()
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
+	m.scenario = migrationRelocate
 	m.selectNode("srv")
 	m.rows[0].after = "srv08"
 	m.outputDir = outside
@@ -305,6 +368,7 @@ func TestMigrationTUIStartsNewPlanAndReopensIt(t *testing.T) {
 	m.width, m.height = 110, 30
 	m.setTab(tabMigrate)
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter}) // New migration
+	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter}) // Scenario
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter}) // Source node
 	m.migration.rows[0].after = "srv08"
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
@@ -338,6 +402,7 @@ func TestMigrationTUIWarnsBeforeDiscardingUnsavedPlan(t *testing.T) {
 	m.setTab(tabMigrate)
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
+	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.migration.mode != "table" || !strings.Contains(m.migration.notice, "Unsaved plan") {
 		t.Fatal("first Esc discarded an unsaved plan")
@@ -360,4 +425,30 @@ func mustLoadMigration(t *testing.T, root string) loaded {
 func pressMigration(m *InspectModel, key tea.KeyMsg) {
 	next, _ := m.Update(key)
 	*m = next.(InspectModel)
+}
+
+func TestMigrationReportAppliesOnlyAfterConfirmation(t *testing.T) {
+	root, secrets := buildExportableRoot(t)
+	path := filepath.Join(root, "nodes", "srv.yaml")
+	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
+	m.scenario = migrationReplace
+	m.selectNode("srv")
+	m.rows[0].after = "srv08"
+	m.generateReport()
+	if m.mode != "report" || !strings.Contains(string(m.report), "**Scenario: replace with a new machine.**") {
+		t.Fatalf("report failed: %s\n%s", m.notice, m.report)
+	}
+	m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, 120, 40)
+	m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}, 120, 40)
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "srv08") {
+		t.Fatal("declined apply changed the node file")
+	}
+	m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, 120, 40)
+	m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}, 120, 40)
+	if data, _ := os.ReadFile(path); !strings.Contains(string(data), "id: srv08") {
+		t.Fatalf("apply did not write the node file: %s; notice %s", data, m.notice)
+	}
+	if !strings.Contains(string(m.report), "## Apply result") || !strings.Contains(string(m.report), ".dgs-migration-backup-") {
+		t.Fatalf("apply result missing:\n%s", m.report)
+	}
 }

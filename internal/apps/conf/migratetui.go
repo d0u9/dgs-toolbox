@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/cred/publish"
 	"dgs-toolbox/internal/tui"
+	"dgs-toolbox/internal/tui/clipboard"
 	"dgs-toolbox/internal/tui/fieldset"
 	"dgs-toolbox/internal/tui/fileexplorer"
 	"dgs-toolbox/internal/tui/form"
@@ -42,9 +44,10 @@ type migrationTable struct {
 	confirmLeave  bool
 	nodes         []inventory.Node
 	selectedNode  string
+	scenario      string // migrationRelocate or migrationReplace
 	rows          []migrationRow
 	list          scrolllist.Model
-	mode          string // plans, nodes, table, report, save, plan-name
+	mode          string // plans, scenario, nodes, table, report, save, plan-name
 	picking       string // open, plan-dir, report-dir
 	picker        fileexplorer.Model
 	outputDir     string
@@ -53,10 +56,11 @@ type migrationTable struct {
 	report        []byte
 	reportScroll  int
 	notice        string
+	copy          func(string) error
 }
 
 func newMigrationTable(l loaded, root, secrets string) *migrationTable {
-	m := &migrationTable{l: l, root: root, secrets: secrets, planDir: filepath.Join(root, "migrations"), outputDir: filepath.Join(root, "migrations"), list: scrolllist.New(), mode: "plans"}
+	m := &migrationTable{l: l, root: root, secrets: secrets, planDir: filepath.Join(root, "migrations"), outputDir: filepath.Join(root, "migrations"), list: scrolllist.New(), mode: "plans", copy: clipboard.Copy}
 	m.list.HideNumbers(true)
 	for _, node := range l.inv.Nodes {
 		if node.Broken == "" {
@@ -73,6 +77,23 @@ func (m *migrationTable) refreshNodes() {
 		items = append(items, scrolllist.Item{ID: node.ID, Label: node.ID, Detail: node.Path})
 	}
 	m.list.SetItems(items)
+}
+
+// listMode reports whether the left pane is a pick list rather than the table.
+func (m *migrationTable) listMode() bool {
+	return m.mode == "plans" || m.mode == "scenario" || m.mode == "nodes"
+}
+
+func (m *migrationTable) refreshScenarios() {
+	items := make([]scrolllist.Item, 0, len(migrationScenarios))
+	for _, scenario := range migrationScenarios {
+		items = append(items, scrolllist.Item{ID: scenario.ID, Label: scenario.Label, Detail: scenario.Detail})
+	}
+	m.list.SetItems(items)
+	m.list.First()
+	if m.scenario != "" {
+		m.list.SelectID(m.scenario)
+	}
 }
 
 func (m *migrationTable) refreshPlans() {
@@ -123,6 +144,10 @@ func (m *migrationTable) openPlanPath(path string) {
 	}
 	m.planName, m.planPath, m.planDigest, m.notice = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), path, &digest, "Opened: "+path
 	m.dirty, m.confirmLeave = false, false
+	if m.scenario == "" {
+		m.mode, m.notice = "scenario", "This plan names no scenario; choose one"
+		m.refreshScenarios()
+	}
 }
 
 func (m *migrationTable) savePlan(name string) {
@@ -382,11 +407,28 @@ func (m *migrationTable) updateMouse(msg tea.MouseMsg, width, height int) tea.Cm
 		}
 		return cmd
 	}
-	if m.editing() || msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+	if m.editing() || msg.Action != tea.MouseActionPress {
 		return nil
 	}
 	left, _ := migrationColumns(width)
-	if msg.X <= 0 || msg.X >= left-1 || msg.Y <= 0 || msg.Y >= height-1 {
+	if msg.Y <= 0 || msg.Y >= height-1 {
+		return nil
+	}
+	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+		delta := -3
+		if msg.Button == tea.MouseButtonWheelDown {
+			delta = 3
+		}
+		if msg.X > left && msg.X < width-1 {
+			if m.mode == "report" {
+				m.scrollReport(delta, width, height)
+			}
+		} else if msg.X > 0 && msg.X < left-1 {
+			m.list.Move(delta)
+		}
+		return nil
+	}
+	if msg.Button != tea.MouseButtonLeft || msg.X <= 0 || msg.X >= left-1 {
 		return nil
 	}
 	if !m.list.SelectRow(msg.Y - 1) {
@@ -396,6 +438,13 @@ func (m *migrationTable) updateMouse(msg tea.MouseMsg, width, height int) tea.Cm
 		m.mode = "table"
 	}
 	return nil
+}
+
+func (m *migrationTable) scrollReport(delta, width, height int) {
+	_, right := migrationColumns(width)
+	lines := text.Hanging(string(m.report), right-4)
+	last := max(0, len(lines)-max(1, height-2))
+	m.reportScroll = min(last, max(0, m.reportScroll+delta))
 }
 
 func (m *migrationTable) openPicker(purpose string, width, height int) tea.Cmd {
@@ -432,7 +481,7 @@ func (m *migrationTable) acceptPicked(path string) {
 	case "report-dir":
 		m.outputDir = path
 		m.mode = "save"
-		m.form = form.New(form.Field{ID: "value", Kind: form.Text, Label: "Report filename", Value: "migration-report.txt"})
+		m.form = form.New(form.Field{ID: "value", Kind: form.Text, Label: "Report filename", Value: "migration-report.md"})
 		m.form.HandleInteraction("enter")
 	}
 }
@@ -447,6 +496,23 @@ func (m *migrationTable) updateMsg(msg tea.Msg) tea.Cmd {
 		m.acceptPicked(selected)
 	}
 	return cmd
+}
+
+type migrationCopiedMsg struct{ err error }
+
+func (m *migrationTable) copyReport() tea.Cmd {
+	if len(m.report) > clipboard.MaxSize {
+		m.notice = fmt.Sprintf("! Report is larger than %d KiB; export it with p instead", clipboard.MaxSize/1024)
+		return nil
+	}
+	copyText := m.copy
+	if copyText == nil {
+		copyText = clipboard.Copy
+	}
+	text := string(m.report)
+	return func() tea.Msg {
+		return migrationCopiedMsg{err: copyText(text)}
+	}
 }
 
 func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
@@ -488,15 +554,24 @@ func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
 	if m.mode == "save" {
 		m.mode = "report"
 	}
+	if m.mode == "confirm-apply" {
+		m.mode = "report"
+		if key == "y" {
+			m.applyPlan()
+		} else {
+			m.notice = "Apply cancelled; no files changed"
+		}
+		return nil
+	}
 	if key != "esc" {
 		m.confirmLeave = false
 	}
 	switch key {
 	case "up", "k":
 		if m.mode == "report" {
-			m.reportScroll = max(0, m.reportScroll-1)
+			m.scrollReport(-1, width, height)
 		} else {
-			if m.mode == "nodes" || m.mode == "plans" {
+			if m.listMode() {
 				m.list.Move(-1)
 			} else {
 				m.moveRow(-1)
@@ -504,9 +579,9 @@ func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
 		}
 	case "down", "j":
 		if m.mode == "report" {
-			m.reportScroll++
+			m.scrollReport(1, width, height)
 		} else {
-			if m.mode == "nodes" || m.mode == "plans" {
+			if m.listMode() {
 				m.list.Move(1)
 			} else {
 				m.moveRow(1)
@@ -516,7 +591,7 @@ func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
 		if m.mode == "report" {
 			m.reportScroll = 0
 		} else {
-			if m.mode == "nodes" || m.mode == "plans" {
+			if m.listMode() {
 				m.list.First()
 			} else {
 				m.selectFirstRow()
@@ -524,10 +599,10 @@ func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
 		}
 	case "G", "end":
 		if m.mode == "report" {
-			m.reportScroll = len(strings.Split(string(m.report), "\n"))
+			m.scrollReport(len(m.report), width, height)
 		} else {
 			m.list.Last()
-			if m.mode != "nodes" && m.mode != "plans" && m.selectedRow() < 0 {
+			if !m.listMode() && m.selectedRow() < 0 {
 				m.moveRow(-1)
 			}
 		}
@@ -536,13 +611,25 @@ func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
 			if item, ok := m.list.Selected(); ok {
 				if item.ID == "new" {
 					m.planName, m.planPath, m.planDigest, m.notice = "", "", nil, ""
-					m.selectedNode, m.rows = "", nil
-					m.mode = "nodes"
-					m.refreshNodes()
+					m.selectedNode, m.rows, m.scenario = "", nil, ""
+					m.mode = "scenario"
+					m.refreshScenarios()
 				} else if item.ID == "open" {
 					return m.openPicker("open", width, height)
 				} else if strings.HasPrefix(item.ID, "plan:") {
 					m.openPlan(strings.TrimPrefix(item.ID, "plan:"))
+				}
+			}
+		} else if m.mode == "scenario" {
+			if item, ok := m.list.Selected(); ok {
+				m.scenario = item.ID
+				if len(m.rows) != 0 {
+					// An opened plan that named no scenario: back to its table.
+					m.mode, m.dirty = "table", true
+					m.selectFirstRow()
+				} else {
+					m.mode = "nodes"
+					m.refreshNodes()
 				}
 			}
 		} else if m.mode == "nodes" {
@@ -578,6 +665,15 @@ func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
 		if m.mode == "report" {
 			return m.openPicker("report-dir", width, height)
 		}
+	case "c", "y":
+		if m.mode == "report" {
+			return m.copyReport()
+		}
+	case "a":
+		if m.mode == "report" {
+			m.mode = "confirm-apply"
+			m.notice = "Apply the local inventory edits and secret copies? y applies; any other key cancels"
+		}
 	case "esc":
 		if m.mode == "report" {
 			m.mode = "table"
@@ -594,7 +690,10 @@ func (m *migrationTable) update(msg tea.KeyMsg, width, height int) tea.Cmd {
 				m.list.SelectID("plan:" + m.planName)
 			}
 		} else if m.mode == "nodes" {
-			m.mode = "plans"
+			m.mode = "scenario"
+			m.refreshScenarios()
+		} else if m.mode == "scenario" {
+			m.mode, m.rows, m.selectedNode = "plans", nil, ""
 			m.refreshPlans()
 		}
 	}
@@ -611,6 +710,39 @@ func (m *migrationTable) generateReport() {
 		return
 	}
 	m.report, m.reportScroll, m.mode, m.notice = report, 0, "report", ""
+}
+
+// applyPlan writes the validated inventory edits, backing up every original.
+// The loaded inventory is reread afterwards: the plan's "before" values no
+// longer describe it, so the table cannot be applied twice.
+func (m *migrationTable) applyPlan() {
+	flags := m.flags()
+	flags["apply"], flags["yes"] = "true", "true"
+	cfg := config.Config{}
+	cfg.Conf.Root, cfg.Conf.Secrets = m.root, m.secrets
+	var out bytes.Buffer
+	err := migrateAction(nil, &out, []string{"node"}, flags, cfg)
+	result := strings.TrimSpace(out.String())
+	// The apply output starts with the report already on screen; keep what
+	// follows it.
+	for _, marker := range []string{"Secret copies to create", "Local inventory files to replace", "No local inventory edits"} {
+		if i := strings.Index(result, marker); i >= 0 {
+			result = result[i:]
+			break
+		}
+	}
+	if err != nil {
+		m.notice = "Apply failed: " + err.Error()
+		result += "\n\nApply failed: " + err.Error()
+	} else {
+		m.notice = "Applied; exact originals are listed at the end of the report"
+		if l, loadErr := load(m.root); loadErr == nil {
+			m.l = l
+		}
+		m.dirty = false
+	}
+	m.report = append(m.report, []byte("\n## Apply result\n\n```text\n"+result+"\n```\n")...)
+	m.reportScroll = len(m.report)
 }
 
 func (m *migrationTable) flags() map[string]string {
@@ -668,6 +800,7 @@ func (m *migrationTable) flags() map[string]string {
 	encRoutes, _ := json.Marshal(routes)
 	encPublished, _ := json.Marshal(published)
 	flags["node"] = "from=" + m.selectedNode + ",to=" + nodeTo
+	flags["scenario"] = m.scenario
 	flags["network"], flags["instance"], flags["route"], flags["published"] = string(encNetworks), string(encInstances), string(encRoutes), string(encPublished)
 	return flags
 }
@@ -692,24 +825,30 @@ func (m *migrationTable) view(width, height int) string {
 	contentHeight := max(1, height-2)
 	m.list.SetSize(left-4, contentHeight)
 	title := "MIGRATION PLANS"
+	if m.mode == "scenario" {
+		title = "SELECT SCENARIO"
+	}
 	if m.mode == "nodes" {
 		title = "SELECT NODE"
 	}
-	if m.mode != "nodes" && m.mode != "plans" {
+	if !m.listMode() {
 		title = "MIGRATION TABLE"
 	}
 	leftBox := fieldset.ViewFocused(title, text.Fit(m.list.View(true, titleStyle, mutedStyle), contentHeight, left-4), left, true)
 	body, detailTitle := "Choose New migration or Open migration file.\n\nRecent plans: "+m.planDir, "MIGRATION"
+	if m.mode == "scenario" {
+		body = "What kind of move is this?\n\nRelocate: the same machine moves to a new place. Its disks, Docker volumes and bind paths come along; the report backs data up but imports nothing.\n\nReplace: the node moves onto a new machine that starts empty. The report archives each container mount and imports it on the new machine.\n\nThe inventory cannot tell these apart; the choice only shapes the report's procedure."
+	}
 	if m.mode == "nodes" {
 		body = "Choose a source node with ↑↓ and Enter."
 	}
-	if m.mode != "nodes" && m.mode != "plans" && len(m.rows) > 0 {
+	if !m.listMode() && len(m.rows) > 0 {
 		index := m.selectedRow()
 		if index < 0 {
 			index = 0
 		}
 		row := m.rows[index]
-		body = "Before:\n    " + row.before + "\nAfter:\n    " + row.after + "\nSource:\n    " + row.source + "\n\nEnter edits. s saves the plan; r builds the report."
+		body = "Before:\n    " + row.before + "\nAfter:\n    " + row.after + "\nSource:\n    " + row.source + "\n\nScenario: " + m.scenario + "\n\nEnter edits. s saves the plan; r builds the report."
 		if row.kind == "secret" {
 			body = "Before:\n    " + row.before + "\nAfter:\n    " + row.after + "\n\n" + row.source + "\n\nSecret paths are derived and read-only."
 		}
@@ -728,9 +867,11 @@ func (m *migrationTable) view(width, height int) string {
 	lines := text.Hanging(body, right-4)
 	scroll := 0
 	if m.mode == "report" {
-		scroll = min(m.reportScroll, max(0, len(lines)-contentHeight))
+		m.reportScroll = min(m.reportScroll, max(0, len(lines)-contentHeight))
+		scroll = m.reportScroll
 	}
-	rightBox := fieldset.View(detailTitle, text.Fit(strings.Join(lines[scroll:min(len(lines), scroll+contentHeight)], "\n"), contentHeight, right-4), right)
+	visible := lines[scroll:min(len(lines), scroll+contentHeight)]
+	rightBox := fieldset.View(detailTitle, text.Fit(strings.Join(visible, "\n"), contentHeight, right-4), right)
 	page := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, " ", rightBox)
 	if m.picking != "" {
 		return overlay.Place(page, m.pickerView(width), width, height)
@@ -759,6 +900,9 @@ func (m *migrationTable) status() tui.Status {
 	if center == "" {
 		center = m.selectedNode
 	}
+	if m.scenario != "" && !m.listMode() {
+		center += " · " + m.scenario
+	}
 	if m.dirty {
 		center += " * unsaved"
 	}
@@ -770,7 +914,9 @@ func (m *migrationTable) status() tui.Status {
 	case "table":
 		right = "↑↓/Click Move  Enter Edit  s Save  r Report  Esc Plans"
 	case "report":
-		right = "↑↓ Scroll  s Save Plan  p Export Report  Esc Table"
+		right = "↑↓ Scroll  c/y Copy  a Apply  s Save Plan  p Export Report  Esc Table"
+	case "confirm-apply":
+		right = "y Apply  any other key Cancel"
 	case "save":
 		right = "Enter Export  Esc Cancel"
 	case "plan-name":

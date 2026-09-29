@@ -27,20 +27,6 @@ func New() tui.App {
 			Run:         writeTargetReport,
 		}},
 		Actions: []tui.Action{{
-			ID:          "migrate",
-			Usage:       "node [--node from=<old>,to=<new>] [--network from=<old>,to=<new>,address=<new> ...] [--instance from=<old>,to=<new> ...] [--route from=<old>,to=<new> ...] [--published instance=<id>,port=<port>,to=<name> ...]",
-			Description: "Interactively plan a node migration, or preview supplied changes, without editing inventory.",
-			MinArgs:     1,
-			MaxArgs:     1,
-			Flags: []tui.ActionFlag{
-				{Name: "node", Usage: "node change: from=<old>,to=<new>"},
-				{Name: "network", Repeatable: true, Usage: "network change: from=<old>,to=<new>,address=<new address>; repeat for each network"},
-				{Name: "instance", Repeatable: true, Usage: "instance rename: from=<old>,to=<new>; repeat for each instance"},
-				{Name: "route", Repeatable: true, Usage: "route rename: from=<old>,to=<new>; repeat for each route"},
-				{Name: "published", Repeatable: true, Usage: "published hostname change: instance=<old instance>,port=<port>,to=<hostname>"},
-			},
-			RunWithConfig: migrateAction,
-		}, {
 			ID:          "init",
 			Usage:       "[<dir>]",
 			Description: "Write the scaffold a generator root starts from, overwriting nothing.",

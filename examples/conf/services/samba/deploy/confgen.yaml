@@ -22,3 +22,5 @@ files:
   # execute bit, and nothing says so a second time.
   - template: templates/install.sh.tmpl
     output: install.sh
+  - template: templates/uninstall.sh.tmpl
+    output: uninstall.sh

@@ -68,7 +68,10 @@ func renameMigrationPublished(inv *inventory.Root, nodeIndex int, changes []publ
 			for name, value := range inst.Ports {
 				ports[name] = value
 			}
+			// Published is Names[0]; a change renames that first name only.
 			port.Published = change.To
+			port.Names = append([]string(nil), port.Names...)
+			port.Names[0] = change.To
 			ports[change.Port] = port
 			node.Instances[i].Ports = ports
 			found = true
