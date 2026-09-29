@@ -203,6 +203,9 @@ func (m renderer) instanceAndNode(instance, nodeID string) (instanceMap, nodeMap
 
 func instanceValues(inst inventory.Instance) map[string]any {
 	v := map[string]any{"id": inventory.LocalName(inst.ID), "service": inst.Service, "bind": inst.Bind}
+	if inst.Network != "" {
+		v["network"] = inst.Network
+	}
 	if len(inst.Ports) > 0 {
 		// A template asks what an instance listens on, not how: the
 		// transport belongs to the model, and a role that needs it reads
@@ -760,7 +763,7 @@ func (m renderer) dialsFor(instance string) (map[string]render.Downstream, error
 		if to == nil {
 			return nil, fmt.Errorf("%s: dial %q: no instance %q", instance, name, hop.Instance)
 		}
-		addr, _, err := derive.ResolveAddress(m.l.inv, fromNode, toNode)
+		addr, _, err := derive.ResolveAddress(m.l.inv, *from, fromNode, *to, toNode)
 		if err != nil {
 			return nil, fmt.Errorf("%s: dial %q: %w", instance, name, err)
 		}

@@ -31,7 +31,8 @@ type Mapping struct {
 	// than one network: a machine with a port on each of two segments
 	// serves both, and a port reached by a proxy on its own node and by
 	// another machine needs loopback as well as the address that machine
-	// dials. It is never empty.
+	// dials. It is empty for a port entered only from its own container
+	// network: nothing on the host dials it.
 	Addresses []string
 	Number    int
 }
@@ -42,8 +43,10 @@ type Mapping struct {
 // port written twice is the second truth the deployment file exists to
 // remove.
 //
-// The three cases are the ones docs/apps/conf/export.md pins. A port only
-// hops from its own node enter publishes on PublishLoopback. A port entered
+// The cases are the ones docs/apps/conf/export.md pins. An edge between two
+// instances on one container network asks for nothing: it never reaches the
+// host. A port only hops from its own node enter publishes on
+// PublishLoopback. A port entered
 // from another node publishes on this node's own address, on the network
 // that edge resolved. A port no edge enters — one reached from a browser —
 // publishes the same way as the second: it is reached from outside, and
@@ -102,6 +105,11 @@ func (m *Model) Mappings(inv *inventory.Root, instance string) map[string]Mappin
 				continue
 			}
 			entered = true
+			// An edge inside one container network never reaches the
+			// host, so it asks nothing of the mapping.
+			if e.Container != "" {
+				continue
+			}
 			from := e.From.Instance
 			if from == "" {
 				from = e.FromInstance
@@ -153,10 +161,8 @@ func (m *Model) Mappings(inv *inventory.Root, instance string) map[string]Mappin
 // collapse is the addresses a port actually binds: PublishEverywhere alone
 // when it is among them, since it already covers every interface and a
 // second bind on one of them would fail; the list deduplicated and in the
-// order given otherwise; and PublishLoopback alone when there is nothing
-// else, which is a port only its own node enters — and a port nothing
-// enters on a node with no address anywhere, where there is no interface
-// this derivation can name.
+// order given otherwise; and nothing when nothing asked for an address,
+// which is a port entered only from its own container network.
 func collapse(addresses []string) []string {
 	out := make([]string, 0, len(addresses))
 	seen := map[string]bool{}
@@ -169,9 +175,6 @@ func collapse(addresses []string) []string {
 		}
 		seen[address] = true
 		out = append(out, address)
-	}
-	if len(out) == 0 {
-		return []string{PublishLoopback}
 	}
 	return out
 }

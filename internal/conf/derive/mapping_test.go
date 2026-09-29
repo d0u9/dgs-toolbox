@@ -215,3 +215,64 @@ func TestMappings_ARouteStartingAtAProxiedPortStillPublishesOnThisNodesAddress(t
 	got := mappingsOf(t, inv, "bin-node1")
 	wantMapping(t, got, "web", 8080, "127.0.0.1", "203.0.113.10")
 }
+
+// containerInventory is mappingInventory with the proxy and its backend on
+// one container network, the way a machine running both in containers is
+// written.
+func containerInventory() *inventory.Root {
+	inv := mappingInventory("203.0.113.10")
+	inv.Nodes[0].Containers = []string{"web"}
+	inv.Nodes[0].Instances[0].Network = "web"
+	inv.Nodes[0].Instances[1].Network = "web"
+	return inv
+}
+
+// TestMappings_EdgeInsideAContainerNetworkPublishesNothing: the proxy dials
+// its backend by name on the network they share, which never reaches the
+// host, so the backend's port is published nowhere.
+func TestMappings_EdgeInsideAContainerNetworkPublishesNothing(t *testing.T) {
+	got := mappingsOf(t, containerInventory(), "bin-node1")
+	if m, ok := got["web"]; !ok || len(m.Addresses) != 0 || m.Number != 8080 {
+		t.Fatalf("web = %+v, want 8080 published nowhere", got["web"])
+	}
+}
+
+// TestMappings_DirectRouteIntoAContainerStillPublishesOnThisNodesAddress: the
+// edge inside the container network asks for nothing, but a route entered at
+// the port from outside still does.
+func TestMappings_DirectRouteIntoAContainerStillPublishesOnThisNodesAddress(t *testing.T) {
+	inv := containerInventory()
+	inv.Routes["paste-direct"] = inventory.Route{Hops: []string{"bin-node1:web"}}
+	got := mappingsOf(t, inv, "bin-node1")
+	wantMapping(t, got, "web", 8080, "203.0.113.10")
+}
+
+// TestDerive_EdgeInsideAContainerNetworkDialsByName: the address is the
+// downstream's own name on the network, and the edge says which network.
+func TestDerive_EdgeInsideAContainerNetworkDialsByName(t *testing.T) {
+	m, err := Derive(containerInventory(), mappingManifests())
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+	for _, e := range m.Edges {
+		if e.Route == "paste" && e.From.Instance == "caddy-sfo01" {
+			if e.Address != "bin-node1" || e.Container != "web" || e.Network != "" {
+				t.Fatalf("edge = %+v, want bin-node1 on container network web", e)
+			}
+			return
+		}
+	}
+	t.Fatal("no edge out of caddy-sfo01 on route paste")
+}
+
+// TestDerive_ContainerDialingItsHostIsAnError: loopback inside a container on
+// a container network is the container itself, so an edge from it to a host
+// process on the same node has no address this model can give.
+func TestDerive_ContainerDialingItsHostIsAnError(t *testing.T) {
+	inv := containerInventory()
+	inv.Nodes[0].Instances[1].Runtime = ""
+	inv.Nodes[0].Instances[1].Network = ""
+	if _, err := Derive(inv, mappingManifests()); err == nil {
+		t.Fatal("Derive succeeded, want an error for a container dialling a host process beside it")
+	}
+}
