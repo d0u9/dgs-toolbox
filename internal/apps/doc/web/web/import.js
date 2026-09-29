@@ -5,6 +5,7 @@ import { openFile } from "/ui/filedialog.js";
 import { fileTree } from "/ui/filetree.js";
 
 const FOLDER_KEY = "dgs-doc-import-folder";
+const HIDE_KEY = "dgs-doc-import-hide-kept";
 let state = { templates: [], items: [] };
 let dir = "";
 let files = [];
@@ -32,6 +33,12 @@ function remember(folder) {
   try { localStorage.setItem(FOLDER_KEY, folder); } catch { /* not kept */ }
 }
 
+try { $("hide-kept").checked = localStorage.getItem(HIDE_KEY) === "1"; } catch { /* not kept */ }
+$("hide-kept").onchange = () => {
+  try { localStorage.setItem(HIDE_KEY, $("hide-kept").checked ? "1" : ""); } catch { /* not kept */ }
+  render();
+};
+
 function render() {
   frame(state);
   document.querySelector(".import-work").classList.toggle("manual-entry", noPDF);
@@ -41,7 +48,9 @@ function render() {
   const kept = files.filter((f) => f.item).length;
   $("counts").textContent = dir ? `${files.length} PDFs · ${kept} in tree` : "";
   $("counts").title = $("counts").textContent;
-  $("tree").replaceChildren(fileTree(files, {
+  // Hidden imported PDFs leave the tree, except the one being looked at.
+  const shown = $("hide-kept").checked ? files.filter((f) => !f.item || f.path === selected) : files;
+  $("tree").replaceChildren(fileTree(shown, {
     closed, selected, onPick: (f) => pick(f.path),
     mark: (f) => f.item ? "Imported: already in the tree" : "",
     fileExtra: (f) => el("span", {}, size(f.size) + " · " + new Date(f.modified).toLocaleDateString(),
