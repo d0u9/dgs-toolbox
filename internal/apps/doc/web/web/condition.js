@@ -3,6 +3,7 @@
 // that nest. The text box it wraps stays the value; a Text switch shows it
 // for typing, and the server's reading of the text redraws the bubbles.
 import { el, post } from "/common.js";
+import { suggest } from "/combo.js";
 
 // The operators a bubble offers; a leading ! negates.
 const OPS = [["==", "=="], ["!=", "!="], ["in", "in"], ["!in", "not in"], ["~", "~ contains"], ["!~", "not ~"], ["has", "has"], ["!has", "not has"]];
@@ -29,47 +30,6 @@ export function format(n, top = true) {
 }
 
 let dragging = null; // the bubble being dragged: { list, n }
-
-// suggest gives input a list of choices under it, narrowed as it is typed:
-// ↑/↓ move, Enter or a click picks, Esc closes. What is typed stays allowed.
-const menu = el("ul", { className: "cond-menu", hidden: true });
-document.body.append(menu);
-let menuFor = null;
-function suggest(input, choices) {
-  let active = -1, shown = [];
-  const pick = (v) => { input.value = v; close(); input.dispatchEvent(new Event("change")); };
-  const close = () => { if (menuFor === input) { menu.hidden = true; menuFor = null; } };
-  const draw = () => {
-    const q = input.value.trim().toLowerCase();
-    const all = choices();
-    shown = (q && all.some((c) => c.toLowerCase() === q) ? all : all.filter((c) => c.toLowerCase().includes(q))).slice(0, 50);
-    if (!shown.length) { close(); return; }
-    active = Math.min(active, shown.length - 1);
-    menu.replaceChildren(...shown.map((c, i) => el("li", { className: i === active ? "active" : "", textContent: c,
-      onmousedown: (event) => { event.preventDefault(); pick(c); } })));
-    const r = input.getBoundingClientRect();
-    menu.style.left = r.left + scrollX + "px";
-    menu.style.top = r.bottom + scrollY + 4 + "px";
-    menu.hidden = false;
-    menuFor = input;
-    menu.children[active]?.scrollIntoView({ block: "nearest" });
-  };
-  input.addEventListener("focus", () => { active = -1; draw(); });
-  input.addEventListener("input", () => { active = -1; draw(); });
-  input.addEventListener("blur", close);
-  input.addEventListener("keydown", (event) => {
-    if (menuFor !== input) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      active = (active + (event.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length;
-      draw();
-    } else if (event.key === "Enter" && active >= 0) {
-      event.preventDefault(); pick(shown[active]);
-    } else if (event.key === "Escape") {
-      close();
-    }
-  });
-}
 
 // condition wraps input, in place when it is in the page, a text box holding an if. keys() lists the keys
 // to offer; values(key) the values known for one. onEdit is called after
