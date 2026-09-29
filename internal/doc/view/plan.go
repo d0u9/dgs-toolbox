@@ -177,7 +177,9 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 			}
 		}
 	}
-	if m := isoDate.FindStringSubmatch(fields[DateField]); m != nil {
+	// year and month are the date's start's, or its end's when the span
+	// is open at the start.
+	if m := isoDate.FindStringSubmatch(strings.TrimPrefix(fields[DateField], tree.SpanSeparator)); m != nil {
 		keys["year"], keys["month"] = m[1], m[2]
 	}
 	return keys
@@ -702,6 +704,10 @@ func pick(part Part, keys map[string]string) (choice Part, value string, ok bool
 		}
 		start, end, span := tree.SplitSpan(value)
 		span = span && strings.Contains(value, tree.SpanSeparator)
+		if span && (start == "" || end == "") {
+			// A span open at one end is written as the day it has.
+			value, span = start+end, false
+		}
 		switch {
 		case c.Format == DateCompact && span:
 			return c, dates.Compact(start) + "-" + dates.Compact(end), true
