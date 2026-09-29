@@ -19,13 +19,9 @@ const tree = outlineTree($("tree"), () => state, { empty: () => "Give the rule a
 resizable(document.querySelector(".outline-main"), "dgs-doc-rules-tree");
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
-// rootFile is a rule's path and file as one: the form keeps them in one box,
-// which places every PDF as the two did.
-const rootFile = (r) => [r.path, r.file].filter(Boolean).join("/");
-
 // sorted is o with its keys in order, so two readings of one rule compare equal.
 const sorted = (o) => o && Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]]));
-const text = (r) => JSON.stringify({ name: r.name, if: r.if || "", selection: r.selection || "head", shared: !!r.shared, inherit: r.inherit || [], file: rootFile(r),
+const text = (r) => JSON.stringify({ name: r.name, if: r.if || "", selection: r.selection || "head", shared: !!r.shared, inherit: r.inherit || [], path: r.path || "", file: r.file,
   children: r.children || [], default: r.default ?? null, dedupe: r.dedupe || "", order: sorted(r.order) || null, numbers: sorted(r.numbers) || null, unnumbered: sorted(r.unnumbered) || null });
 const blank = () => {
   let n = 1;

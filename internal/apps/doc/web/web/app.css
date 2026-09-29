@@ -835,18 +835,24 @@ body.list-shut .outline-list { display: none; }
 .date-span input { flex: 1 1 140px; min-width: 0; }
 
 /* A rule's children, drawn as Scratch draws an if: a head, and a slot of
-   blocks below it framed on the left. */
+   blocks below it framed on the left. They take the form's whole width, each
+   label above its box, so a long path stays readable. */
+.vf.vf-blocks { display: block; }
+.vf.vf-blocks > .vf-label { display: block; margin-bottom: 6px; }
+.vf.vf-blocks .vf-stack, .blocks, .block { width: 100%; box-sizing: border-box; }
 .blocks { display: flex; flex-direction: column; gap: var(--space-xs); }
 .block { border: 1px solid var(--hairline); border-left: 6px solid var(--primary-bright); border-radius: 8px; padding: 6px 8px; background: var(--paper); }
 .block.else { border-left-color: var(--graphite); }
 .block.out { border-style: dashed; }
-.block-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.block-word { font-weight: 600; min-width: 3.5em; }
-.block-if { flex: 1 1 200px; min-width: 0; }
-.block-body { margin: 6px 0 0 12px; padding-left: 8px; border-left: 2px solid var(--hairline); display: flex; flex-direction: column; gap: 4px; }
-.block-line { display: flex; align-items: center; gap: 6px; }
-.block-line .layout-text { flex: 1 1 160px; min-width: 0; }
-.block-key { color: var(--ink-soft); min-width: 4em; font-size: 0.9em; }
+.block-head { display: flex; align-items: center; gap: 6px; }
+.block-word { font-weight: 600; white-space: nowrap; }
+.block-if { flex: 1 1 auto; min-width: 0; }
+.block .message.error:empty { display: none; }
+.block-body { margin: 6px 0 0 4px; padding-left: 8px; border-left: 2px solid var(--hairline); display: flex; flex-direction: column; gap: 6px; }
+.block-line { display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; align-items: center; }
+.block-line .block-key { grid-column: 1 / -1; }
+.block-line .layout-text { width: 100%; min-width: 0; box-sizing: border-box; }
+.block-key { color: var(--ink-soft); font-size: 0.85em; }
 .block-adds { display: flex; gap: 6px; }
 .block-add { font-size: 0.85em; padding: 2px 8px; }
 .block-note { margin: 0; font-size: 0.85em; }

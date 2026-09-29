@@ -78,7 +78,16 @@
       <div id="inherit-row" class="vf" hidden><span class="vf-label">Inherit</span>
         <div id="inherit" class="checks"></div>
       </div>
-      <div class="vf vf-wide"><span class="vf-label">Path and file</span>
+      <div class="vf vf-wide"><span class="vf-label">Folders</span>
+        <div class="path-wrap">
+          <div class="path-line">
+            <input id="root-path" class="layout-text" spellcheck="false" autocomplete="off" placeholder="none: the file's own folders only" title="Folders every PDF of the rule goes under, blocks below included">
+            <button type="button" id="root-path-edit" class="path-more" title="Build the folders part by part">Edit…</button>
+          </div>
+          <span id="root-path-error" class="message error"></span>
+        </div>
+      </div>
+      <div class="vf vf-wide"><span class="vf-label">File</span>
         <div class="path-wrap">
           <div class="path-line">
             <input id="layout-text" class="layout-text" spellcheck="false" autocomplete="off" title="The path as the rule keeps it: type it here, or build it part by part with Edit">
@@ -87,7 +96,7 @@
           <span id="layout-error" class="message error"></span>
         </div>
       </div>
-      <div class="vf vf-wide"><span class="vf-label">Then</span>
+      <div class="vf vf-wide vf-blocks"><span class="vf-label">Then</span>
         <div class="vf-stack">
           <div id="paths" class="blocks"></div>
         </div>
