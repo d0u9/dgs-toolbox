@@ -466,6 +466,8 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .path-text:hover, .path-text:focus { border-color: var(--hairline-strong); outline: none; }
 .path-x, .path-more { height: 20px; padding: 0 3px; border: 0; background: none; color: var(--graphite); cursor: pointer; font: inherit; font-size: 11px; line-height: 20px; }
 .path-x:hover, .path-more:hover { color: var(--primary); }
+/* Edit… and an if's Text line up in one column at the form's right. */
+.path-more { min-width: 40px; text-align: left; flex: none; }
 .path-key.drop, .path-counter.drop, .path-group.drop { box-shadow: -2px 0 0 var(--primary); }
 .path-add { align-self: flex-start; }
 .layout-text { display: block; padding: 4px 8px; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--font-size-xs);
@@ -863,7 +865,7 @@ body.list-shut .outline-list { display: none; }
 /* A rule's if as bubbles: key, operator and values, joined by && or ||.
    Controls that add, remove or negate show on hover, so the condition reads
    first. */
-.cond-wrap { display: flex; align-items: flex-start; gap: 8px; flex: 1; min-width: 0; }
+.cond-wrap { display: flex; align-items: flex-start; gap: 6px; flex: 1; min-width: 0; }
 .cond-wrap > input { flex: 1; }
 .cond-wrap > [hidden] { display: none; }
 .cond { flex: 1; min-width: 0; }
@@ -902,8 +904,7 @@ body.list-shut .outline-list { display: none; }
 .cond-adds .cond-x:hover { color: var(--primary); border-color: var(--primary); }
 .cond-group:not(.top):hover > .cond-adds { display: inline-flex; }
 .cond-group.top:hover > .cond-adds, .cond-group.top:focus-within > .cond-adds, .cond-group.top > .cond-adds:only-child { opacity: 1; }
-.cond-text { font-size: var(--font-size-xs); padding: 2px 8px; }
-.cond-text.on { color: var(--primary); border-color: var(--primary); }
+.cond-text.on { color: var(--primary); }
 .cond-group.drop, .cond-bubble.drop { box-shadow: -3px 0 0 var(--primary); }
 .dragging { opacity: 0.5; }
 
