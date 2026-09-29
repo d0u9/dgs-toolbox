@@ -15,8 +15,9 @@ import (
 	"dgs-toolbox/internal/doc/tree"
 )
 
-// DateField is the field year, month and date are derived from.
-const DateField = "issued_at"
+// DateField is the field year and month are derived from, from its start
+// when it is a span.
+const DateField = "date"
 
 // File is one PDF a View places.
 type File struct {
@@ -232,8 +233,16 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 	keys["kind"] = string(item.Kind)
 	keys["revision"] = strconv.Itoa(revision)
 	keys["ext"] = "pdf"
+	for k, v := range fields {
+		if start, end, ok := tree.SplitSpan(v); ok {
+			keys[k+".start"] = start
+			if end != "" {
+				keys[k+".end"] = end
+			}
+		}
+	}
 	if m := isoDate.FindStringSubmatch(fields[DateField]); m != nil {
-		keys["year"], keys["month"], keys["date"] = m[1], m[2], m[1]+"-"+m[2]+"-"+m[3]
+		keys["year"], keys["month"] = m[1], m[2]
 	}
 	return keys
 }
@@ -285,13 +294,13 @@ func Inherit(keys map[string]string, links []string) {
 }
 
 // FieldsFor is the Item fields that supply keys, in order and once each:
-// year, month and date come from DateField, every other key is a field of
+// year and month come from DateField, every other key is a field of
 // its own name.
 func FieldsFor(keys []string) []string {
 	var fields []string
 	seen := map[string]bool{}
 	for _, k := range keys {
-		if k == "year" || k == "month" || k == "date" {
+		if k == "year" || k == "month" {
 			k = DateField
 		}
 		// original.level is filled by the field original.
@@ -673,11 +682,17 @@ func pick(part Part, keys map[string]string) (choice Part, value string, ok bool
 		if !ok {
 			continue
 		}
+		start, end, span := tree.SplitSpan(value)
+		span = span && strings.Contains(value, tree.SpanSeparator)
 		switch {
+		case c.Format == DateCompact && span:
+			return c, dates.Compact(start) + "-" + dates.Compact(end), true
 		case c.Format == DateCompact:
 			return c, dates.Compact(value), true
 		case c.Format == DateFinancialYear:
-			return c, dates.FinancialYear(value, dates.DefaultYearStart), true
+			return c, dates.FinancialYear(start, dates.DefaultYearStart), true
+		case span:
+			return c, start + "-" + end, true
 		}
 		if c.Format != "" && !isType(c.Key) {
 			// A value that names no country is written as it is.

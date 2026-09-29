@@ -92,11 +92,12 @@ type Field struct {
 }
 
 // Within names the date on this form and the linked Item's fields that
-// begin and end its span. From or to left empty on an Item is open.
+// begin and end its span: from and to, or from alone when it is a span
+// field. An end left empty on an Item is open.
 type Within struct {
 	Date string `yaml:"date" json:"date"`
 	From string `yaml:"from" json:"from"`
-	To   string `yaml:"to" json:"to"`
+	To   string `yaml:"to,omitempty" json:"to,omitempty"`
 }
 
 // AnchorKey, in a match, is whether the linked Item's Template is an
@@ -256,8 +257,8 @@ func (t Template) Validate() error {
 			if d, ok := t.fieldOK(w.Date); !ok || d.Type != FieldDate && d.Type != FieldMonth {
 				return fmt.Errorf("type %s: key %s: within date %q is not a date or month field of this Template", t.Type, f.Key, w.Date)
 			}
-			if w.From == "" || w.To == "" {
-				return fmt.Errorf("type %s: key %s: within needs from and to, the linked Item's fields", t.Type, f.Key)
+			if w.From == "" {
+				return fmt.Errorf("type %s: key %s: within needs from, the linked Item's span field, or from and to", t.Type, f.Key)
 			}
 		}
 		if f.Format != "" && f.Type != FieldCountry {

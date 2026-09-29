@@ -35,16 +35,26 @@ func agrees(f tree.Field, fields map[string]string, it tree.Item, anchors map[st
 }
 
 // Suggested is those of Offered whose span, by f's within, holds the form's
-// date. It is empty when f has no within or the form no date.
+// date, or its start when it is a span. It is empty when f has no within or
+// the form no date.
 func Suggested(f tree.Field, self string, fields map[string]string, items []tree.Item, anchors map[string]bool) []tree.Item {
 	w := f.Within
 	if w == nil || fields[w.Date] == "" {
 		return nil
 	}
+	date := fields[w.Date]
+	if start, _, ok := tree.SplitSpan(date); ok {
+		date = start
+	}
 	var out []tree.Item
 	for _, it := range Offered(f, self, fields, items, anchors) {
 		theirs := it.FieldsAt(it.Current())
-		if Holds(fields[w.Date], theirs[w.From], theirs[w.To]) {
+		from, to := theirs[w.From], theirs[w.To]
+		if w.To == "" {
+			// From names a span field: its two ends.
+			from, to, _ = tree.SplitSpan(from)
+		}
+		if Holds(date, from, to) {
 			out = append(out, it)
 		}
 	}
