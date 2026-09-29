@@ -596,7 +596,7 @@ async function reload() {
   const error = snaps.error || outlines.error;
   if (error) { $("error").hidden = false; $("error").textContent = error; }
   $("take-rule").replaceChildren(el("option", { value: "" }, "nothing: begin it empty"),
-    ...rules.map((r) => el("option", { value: r.name }, "the rule " + r.name + " · " + r.layout)));
+    ...rules.map((r) => el("option", { value: r.name }, "the rule " + r.name + " · " + r.file)));
 }
 
 $("name").addEventListener("input", () => { draft.name = $("name").value.trim(); changed(); });

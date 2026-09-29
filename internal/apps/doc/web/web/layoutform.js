@@ -25,7 +25,7 @@ export function setup(options) {
   if (options.onChange) changed = options.onChange;
 }
 
-// fill shows v's query, selection, layout and order.
+// fill shows v's if, selection, file, children and orders.
 export function fill(v) {
   $("if").value = v.if || "";
   checkIf($("if"), $("if-error"));
@@ -33,9 +33,6 @@ export function fill(v) {
   if ($("shared")) $("shared").checked = !!v.shared;
   rows = DEFAULT_ROWS();
   active = { row: rows.length - 1, group: -1 };
-  $("layout-text").value = v.file || "";
-  if (v.file) typed();
-  else showText();
   drawInherit(v.inherit || []);
   orders = Object.fromEntries(Object.entries(v.order || {}).map(([k, list]) => [k, [...list]]));
   numbers = JSON.parse(JSON.stringify(v.numbers || {}));
@@ -46,6 +43,13 @@ export function fill(v) {
   every(nodes).forEach(parseNode);
   drawOrder();
   drawPath();
+  // The file goes in its box for the server to read; its rows then replace
+  // the default ones.
+  const file = [v.path, v.file].filter(Boolean).join("/");
+  if (file) {
+    $("layout-text").value = file;
+    typed();
+  }
 }
 
 // skipItem leaves an Item out, by adding not id is <id> to the rule's if.
@@ -93,7 +97,9 @@ const counters = (layout) => layout.flat(Infinity).flatMap(function walk(p) {
 
 // parseNode has the server parse a node's path and file, for the orders
 // they number.
+let parsing = 0;
 async function parseNode(n) {
+  parsing++;
   n.ofs = [];
   n.error = "";
   for (const text of [n.path, n.file]) {
@@ -104,8 +110,10 @@ async function parseNode(n) {
       n.error = err.message;
     }
   }
+  parsing--;
   drawNodes();
   drawOrder();
+  changed();
 }
 
 // drawNodes draws the children as nested blocks, as Scratch draws an if:
@@ -209,13 +217,17 @@ export function read() {
     if (n.children.length) out.children = n.children.map(clean);
     return out;
   };
-  const out = { selection: document.querySelector("input[name=selection]:checked").value, file: layoutText() };
+  // The box shows the file as the rows make it, and as typed until the
+  // server has read it.
+  const out = { selection: document.querySelector("input[name=selection]:checked").value, file: $("layout-text").value.trim() || layoutText() };
   if ($("if").value.trim()) out.if = $("if").value.trim();
   if (nodes.length) out.children = nodes.map(clean);
   if (inherited().length) out.inherit = inherited();
   if ($("shared")?.checked) out.shared = true;
   const order = {};
-  for (const key of numberedKeys()) {
+  // While a path is still being parsed its orders are not known yet: keep
+  // every order until it is.
+  for (const key of parsing ? Object.keys(orders) : numberedKeys()) {
     const list = (orders[key] || []).filter(Boolean);
     if (list.length) order[key] = list;
   }
@@ -350,17 +362,14 @@ function add(part) {
 // heldBy is the field keys the Templates of types have.
 const heldBy = (types) => new Set(state.templates.filter((t) => types.includes(t.type)).flatMap((t) => t.fields.map((f) => f.key)));
 
-// linkedTypes is the types the Item a link field names can be: those its
-// match ties to a field the query limits, such as of: diploma, or else
-// every type.
+// linkedTypes is the types the Item a link field names can be: the one its
+// match names, such as {type: =tenancy}, or else every type.
 function linkedTypes(link) {
   const all = state.templates.map((t) => t.type);
-  const query = read().query;
-  const types = chosenTypes();
-  const f = state.templates.filter((t) => types.includes(t.type)).flatMap((t) => t.fields).find((x) => x.key === link);
+  const f = state.templates.flatMap((t) => t.fields).find((x) => x.key === link);
   const by = f && f.match && f.match.type;
-  const wanted = by && query[by];
-  return wanted && wanted.length ? all.filter((t) => wanted.includes(t)) : all;
+  // A match naming its type itself, {type: =tenancy}, offers that type's keys.
+  return by && by.startsWith("=") ? all.filter((t) => t === by.slice(1)) : all;
 }
 
 // linkKeys is the keys offered from the Item a link field names.
@@ -491,6 +500,7 @@ function showText() {
 let typing = 0;
 async function typed() {
   const box = $("layout-text"), mine = ++typing;
+  parsing++;
   try {
     const answer = await post("/api/rules/layout", { layout: box.value.trim() });
     if (mine !== typing) return;
@@ -503,7 +513,10 @@ async function typed() {
     if (mine !== typing) return;
     box.classList.add("invalid");
     $("layout-error").textContent = err.message;
+  } finally {
+    parsing--;
   }
+  changed();
 }
 // settle takes a layout typed and not yet taken, as Save is pressed; one
 // the server refuses stops the save.
