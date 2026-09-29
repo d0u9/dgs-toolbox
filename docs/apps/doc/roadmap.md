@@ -28,8 +28,9 @@ The layout and formats are in [`index.md`](index.md#layout-on-disk).
 ## Deferred
 
 - **Convergence** — types that inherit, conditions as one `if` expression, a
-  rule's paths nesting. Decided except the nested Rules page:
-  [`convergence.md`](convergence.md).
+  rule's paths nesting: built, and in [`index.md`](index.md). What is left is
+  the one-off migration of the real tree. [`convergence.md`](convergence.md)
+  keeps the reasoning.
 
 - **Accounts on a server** — not decided. The same web pages served to several
   people, each seeing and editing only part of the Items.
