@@ -321,7 +321,7 @@ type Layout [][]Part
 
 // keyPattern is a key, or a key of the Item a field links to:
 // original.level is the level of the revision original names.
-var keyPattern = regexp.MustCompile(`^[a-z0-9_-]+(\.[a-z0-9_-]+)?$`)
+var keyPattern = regexp.MustCompile(`^[a-z0-9_-]+(\.[a-z0-9_-]+)*$`)
 
 // Parse splits a layout into segments and parts. A layout is relative: no
 // leading /, no empty segment, and no segment that is only . or .., so a path

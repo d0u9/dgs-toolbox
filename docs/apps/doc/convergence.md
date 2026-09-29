@@ -1,8 +1,7 @@
 # Convergence — proposal
 
-**State: proposal, not decided.** Nothing here is built, and nothing here
-overrides [`index.md`](index.md). Each section becomes design only when it is
-confirmed, and is then moved into `index.md`.
+**State: built.** The design is in [`index.md`](index.md); this keeps how it
+was reached. The Rules page draws children as nested if blocks.
 
 The model has grown one feature at a time: a rule gained `query`, `exclude`,
 `query_types`, `exclude_types`, `skip`, then `layouts` with `when`. Templates
