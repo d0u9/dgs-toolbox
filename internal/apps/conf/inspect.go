@@ -1110,7 +1110,7 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	if inst.Containerised() {
 		runtime = inst.RuntimeOr()
 	}
-	line(&b, fields(service, where, field("runs in", runtime), field("container network", inst.Network)))
+	line(&b, fields(service, where, field("runs in", runtime), field("container networks", containerLabel(inst))))
 
 	var portParts []string
 	for _, name := range sortedPortNames(ports) {
@@ -1607,4 +1607,17 @@ func portsHandingOut(inst inventory.Instance, name, key string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// containerLabel is the container networks inst joins, each followed by the
+// address it holds there when that address is fixed.
+func containerLabel(inst inventory.Instance) string {
+	parts := make([]string, 0, len(inst.Containers))
+	for _, name := range inst.ContainerNames() {
+		if addr := inst.Containers[name]; addr != "" {
+			name += " " + addr
+		}
+		parts = append(parts, name)
+	}
+	return strings.Join(parts, ", ")
 }

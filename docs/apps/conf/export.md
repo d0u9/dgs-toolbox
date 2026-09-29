@@ -394,9 +394,9 @@ downstreams:  as elsewhere, for a service declaring downstreams: many
 
 `mapping` is the whole point of the file, and it is derived, never written:
 
-- An edge between two instances on one
+- An edge between two instances sharing a
   [container network](inventory.md#container-networks) asks for nothing: it
-  never reaches the host. A backend behind a proxy on the same container
+  never reaches the host. A backend behind a proxy on a shared container
   network, entered by nothing else, publishes nowhere, and its mapping is
   empty. A template writes no `ports` for it.
 - A port entered by hops from its own node, from outside its container

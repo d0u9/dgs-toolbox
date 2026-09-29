@@ -925,8 +925,7 @@ body.list-shut .outline-list { display: none; }
 .cond-menu li:hover, .cond-menu li.active { background: var(--selected); }
 .cond-group > .cond-x { display: none; }
 .cond-group:hover > .cond-x { display: inline; }
-/* A block's ↑ ↓ × sit on its top edge, shown on hover, so its if and the
-   Text beside it line up with the Edit… links below. */
-.block { position: relative; }
-.block-head > .order-acts { position: absolute; top: -11px; right: 10px; padding: 0 2px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--paper); z-index: 1; }
-.block:hover > .block-head > .order-acts { opacity: 1; }
+/* A block's ↑ ↓ × follow its if word, faint until the block is hovered. */
+.block-head > .block-acts { flex: none; opacity: 0.3; }
+.block:hover > .block-head > .block-acts { opacity: 1; }
+.block-more { align-self: flex-start; min-width: 0; }

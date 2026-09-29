@@ -11,9 +11,9 @@ import (
 func dialInventory() *inventory.Root {
 	return &inventory.Root{
 		Nodes: []inventory.Node{
-			{ID: "home", Networks: inventory.Networks{"lan": "10.0.0.2"}, Containers: []string{"web"}, Instances: []inventory.Instance{
-				{ID: "home/digest", Service: "digest", Runtime: inventory.RuntimeDocker, Network: "web"},
-				{ID: "home/rss", Service: "rss", Runtime: inventory.RuntimeDocker, Network: "web", Ports: inventory.PortsOf(map[string]int{"web": 80})},
+			{ID: "home", Networks: inventory.Networks{"lan": "10.0.0.2"}, Containers: []inventory.ContainerNetwork{{Name: "web", Subnet: "172.20.0.0/24"}}, Instances: []inventory.Instance{
+				{ID: "home/digest", Service: "digest", Runtime: inventory.RuntimeDocker, Containers: map[string]string{"web": ""}},
+				{ID: "home/rss", Service: "rss", Runtime: inventory.RuntimeDocker, Containers: map[string]string{"web": ""}, Ports: inventory.PortsOf(map[string]int{"web": 80})},
 			}},
 			{ID: "far", Networks: inventory.Networks{"lan": "10.0.0.3"}, Instances: []inventory.Instance{
 				{ID: "far/rss", Service: "rss", Ports: inventory.PortsOf(map[string]int{"web": 80})},
