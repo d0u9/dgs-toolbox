@@ -89,6 +89,25 @@ type Field struct {
 	// Values are a select field's values in named groups, in place of
 	// Options: {utility: [水, 电, 气]}. Options then lists them all.
 	Values ValueGroups `yaml:"values,omitempty" json:"values,omitempty"`
+	// Names are a select field's values in other languages, for a layout's
+	// {key:en}: {en: {房租: rent}}. A value without one is written as kept.
+	Names map[string]map[string]string `yaml:"names,omitempty" json:"names,omitempty"`
+}
+
+// ValueName is value in lang, as Names give it; value itself when they
+// do not. Several values, joined by MultipleSeparator, are named each.
+func (f Field) ValueName(value, lang string) string {
+	names := f.Names[lang]
+	if len(names) == 0 {
+		return value
+	}
+	parts := strings.Split(value, MultipleSeparator)
+	for i, v := range parts {
+		if n, ok := names[v]; ok {
+			parts[i] = n
+		}
+	}
+	return strings.Join(parts, MultipleSeparator)
 }
 
 // Within names the date on this form and the linked Item's fields that
@@ -289,6 +308,23 @@ func (t Template) Validate() error {
 			groups[g.Name] = true
 			if len(g.Values) == 0 {
 				return fmt.Errorf("type %s: key %s: group %s holds no values", t.Type, f.Key, g.Name)
+			}
+		}
+		if len(f.Names) > 0 && f.Type != FieldSelect {
+			return fmt.Errorf("type %s: key %s: names belong to a select field", t.Type, f.Key)
+		}
+		for lang, names := range f.Names {
+			if lang != "zh" && lang != "en" {
+				return fmt.Errorf("type %s: key %s: names are given in zh or en, not %s", t.Type, f.Key, lang)
+			}
+			for v, n := range names {
+				known := slices.Contains(f.Options, v)
+				for _, g := range f.Values {
+					known = known || slices.Contains(g.Values, v)
+				}
+				if !known || strings.TrimSpace(n) == "" {
+					return fmt.Errorf("type %s: key %s: names.%s: %s is not one of its values, or its name is empty", t.Type, f.Key, lang, v)
+				}
 			}
 		}
 		switch f.Type {

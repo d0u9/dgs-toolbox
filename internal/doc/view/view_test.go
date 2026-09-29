@@ -912,3 +912,25 @@ func TestDateFormats(t *testing.T) {
 		t.Fatal("an unknown format was taken")
 	}
 }
+
+// A select value is written in a language its field names it in; one
+// without a name, as kept.
+func TestValueIsWrittenInALanguage(t *testing.T) {
+	bill := tree.Template{Type: "bill", Fields: []tree.Field{{Key: "category", Type: tree.FieldSelect, Options: []string{"房租", "电", "水"},
+		Names: map[string]map[string]string{"en": {"房租": "rent", "电": "power"}}}}}
+	items := []tree.Item{
+		{ID: "A", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"category": "房租"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"category": "电, 水"}, Revisions: []tree.Revision{{Digest: "b"}}},
+	}
+	plan, err := Build(View{Name: "v", Selection: Head, Node: Node{File: "{category:en}/{id}.{ext}"}}, items, TypesOf([]tree.Template{bill}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range plan.Files {
+		got = append(got, f.Path)
+	}
+	if !reflect.DeepEqual(got, []string{"power, 水/B.pdf", "rent/A.pdf"}) {
+		t.Fatal(got)
+	}
+}

@@ -296,6 +296,20 @@ func TypesOf(templates []tree.Template) Types {
 // Names is typ's names by language.
 func (t Types) Names(typ string) map[string]string { return t.byType[typ].Names }
 
+// nameValues adds, for each select field of keys' type with names, its
+// value in each language: keys["category:en"] = "rent".
+func (t Types) nameValues(keys map[string]string) {
+	for _, f := range t.byType[keys["type"]].Fields {
+		v, ok := keys[f.Key]
+		if !ok {
+			continue
+		}
+		for lang := range f.Names {
+			keys[f.Key+":"+lang] = f.ValueName(v, lang)
+		}
+	}
+}
+
 // Is reports whether typ is want or below it.
 func (t Types) Is(typ, want string) bool {
 	tpl, ok := t.byType[typ]
@@ -373,6 +387,7 @@ func Build(v View, items []tree.Item, types Types) (Plan, error) {
 			for lang, name := range types.Names(keys["type"]) {
 				keys["type:"+lang] = name
 			}
+			types.nameValues(keys)
 			Follow(keys, byID)
 			for k, t := range maps.Clone(keys) {
 				// original.type:zh, the linked Item's type in a language.
@@ -697,6 +712,10 @@ func pick(part Part, keys map[string]string) (choice Part, value string, ok bool
 		case span:
 			return c, start + "-" + end, true
 		}
+		if named, ok := keys[key+":"+c.Format]; ok && c.Format != "" && !isType(c.Key) {
+			// A select value in a language, from its field's names.
+			return c, named, true
+		}
 		if c.Format != "" && !isType(c.Key) {
 			// A value that names no country is written as it is.
 			if kept, ok := country.Normalize(value, country.Format(c.Format)); ok {
@@ -811,6 +830,7 @@ func Name(layout string, item tree.Item, revision int, types Types) (string, []s
 	for lang, name := range types.Names(keys["type"]) {
 		keys["type:"+lang] = name
 	}
+	types.nameValues(keys)
 	name, lacking, _ := render(parsed, keys, nil, nil, nil, nil)
 	return name, lacking, nil
 }
