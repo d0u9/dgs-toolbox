@@ -310,7 +310,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
     const end = el("input", { type: "date", max: "9999-12-31", value: to });
     end.title = day ? "Leave empty for one day" : "Leave empty for no end";
     const set = () => {
-      control.value = !start.value ? "" : !end.value && day ? start.value : start.value + "/" + end.value;
+      control.value = !start.value && !end.value ? "" : !end.value && day ? start.value : start.value + "/" + end.value;
       control.dispatchEvent(new Event("input", { bubbles: true }));
       control.dispatchEvent(new Event("change", { bubbles: true }));
     };

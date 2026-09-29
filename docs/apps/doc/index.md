@@ -1249,8 +1249,8 @@ fields:
   inherits and what `type is <parent>` takes. A type another extends cannot
   be renamed or deleted first.
 - A `date` field's `shape` is `day` (the default), `span`, or both. A span
-  is kept as `2025-01-01/2025-12-31`; an end left empty, `2025-01-01/`, is
-  open. On the page a span is two date boxes; one that also takes a day
+  is kept as `2025-01-01/2025-12-31`; an end not known is left empty,
+  `2025-01-01/` or `/2030-03-01`, and an empty end is open. On the page a span is two date boxes; one that also takes a day
   keeps one day when the end is left empty.
 - A `select` field may write `values`, its options in named groups, in
   place of `options`. A condition on a group takes each value in it. The

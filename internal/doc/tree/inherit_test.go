@@ -104,7 +104,8 @@ func TestSplitSpan(t *testing.T) {
 		"2025-01-01/2025-12-31": "2025-01-01 2025-12-31 true",
 		"2025-01-01/":           "2025-01-01  true",
 		"2025-12-31/2025-01-01": "  false",
-		"/2025-01-01":           "  false",
+		"/2025-01-01":           " 2025-01-01 true",
+		"/":                     "  false",
 	} {
 		a, b, ok := SplitSpan(value)
 		if got := a + " " + b + " " + map[bool]string{true: "true", false: "false"}[ok]; got != want {
