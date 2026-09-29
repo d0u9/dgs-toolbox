@@ -845,6 +845,9 @@ body.list-shut .outline-list { display: none; }
 .block.else { border-left-color: var(--graphite); }
 .block.out { border-style: dashed; }
 .block-head { display: flex; align-items: center; gap: 6px; }
+.block-head[draggable="true"] { cursor: grab; }
+.block-head.drop { box-shadow: 0 -3px 0 var(--primary); }
+.block.dragging { opacity: 0.5; }
 .block-word { font-weight: 600; white-space: nowrap; }
 .block-if { flex: 1 1 auto; min-width: 0; }
 .block .message.error:empty { display: none; }

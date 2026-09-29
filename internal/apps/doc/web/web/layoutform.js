@@ -130,6 +130,9 @@ async function parseNode(n) {
 // drawNodes draws the children as nested blocks, as Scratch draws an if:
 // a head with its condition, the path and file it adds, and a slot of
 // blocks below it. A block with no condition is the else, and comes last.
+let draggingBlock = null; // the block being dragged, { list, n }
+// contains says whether list is n's own children or lies below them.
+const contains = (n, list) => n.children === list || n.children.some((c) => contains(c, list));
 function drawNodes() {
   const box = $("paths");
   if (!box) return;
@@ -162,7 +165,7 @@ function drawNodes() {
     const why = el("span", { className: "message error", textContent: n.ifError });
     cond.oninput = () => { n.if = cond.value; changed(); checkIf(cond, why, n); };
     const out = !n.path && !n.file && !n.children.length;
-    return el("div", { className: "block" + (isElse ? " else" : "") + (out ? " out" : "") },
+    const block = el("div", { className: "block" + (isElse ? " else" : "") + (out ? " out" : "") },
       el("div", { className: "block-head" },
         el("span", { className: "block-word", textContent: isElse ? "else" : i ? "else if" : "if" }),
         isElse ? null : cond,
@@ -177,6 +180,28 @@ function drawNodes() {
         out ? el("p", { className: "muted block-note", textContent: isElse ? "Give it folders or a file name." : "No folders, file or blocks: what it takes is left out." }) : null,
         n.error ? el("span", { className: "message error", textContent: n.error }) : null,
         ...blocks(n.children), adder(n.children)));
+    // Dragged by its head, a block drops before the one it is let go on,
+    // in that one's list; never into itself, and never after an else.
+    const head = block.firstChild;
+    head.draggable = true;
+    head.addEventListener("dragstart", (event) => {
+      if (event.target !== head) return;
+      event.stopPropagation(); draggingBlock = { list, n }; event.dataTransfer.effectAllowed = "move"; block.classList.add("dragging");
+    });
+    head.addEventListener("dragend", () => block.classList.remove("dragging"));
+    const fits = () => draggingBlock && draggingBlock.n !== n && !contains(draggingBlock.n, list) && (draggingBlock.n.if || list === draggingBlock.list && i === list.length - 1);
+    head.addEventListener("dragover", (event) => { if (!fits()) return; event.preventDefault(); event.stopPropagation(); head.classList.add("drop"); });
+    head.addEventListener("dragleave", () => head.classList.remove("drop"));
+    head.addEventListener("drop", (event) => {
+      head.classList.remove("drop");
+      if (!fits()) return;
+      event.preventDefault(); event.stopPropagation();
+      const from = draggingBlock; draggingBlock = null;
+      from.list.splice(from.list.indexOf(from.n), 1);
+      list.splice(list.indexOf(n), 0, from.n);
+      redraw();
+    });
+    return block;
   });
   box.replaceChildren(...blocks(nodes), adder(nodes));
 }
