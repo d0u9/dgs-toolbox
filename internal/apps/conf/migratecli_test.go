@@ -9,6 +9,7 @@ import (
 
 	"dgs-toolbox/internal/conf/inventory"
 	"dgs-toolbox/internal/conf/secretstore"
+	"gopkg.in/yaml.v3"
 )
 
 func TestMigrateNodePreviewShowsChangedEdgeWithoutWriting(t *testing.T) {
@@ -373,5 +374,56 @@ func TestRenameInventoryNetworkUpdatesAllTypedReferencesWithoutMutatingSource(t 
 	}
 	if old.Networks[0] != "network-4" || old.Nodes[0].Networks["network-4"] != "10.0.1.4" || old.Nodes[1].Reaches[0] != "network-4" || old.Users["alice"].Credentials["first"].Reaches[0] != "network-4" {
 		t.Fatal("source inventory was mutated")
+	}
+}
+
+func TestMigrateInstanceRenameRewritesDialsOnEveryNode(t *testing.T) {
+	inv := &inventory.Root{Nodes: []inventory.Node{
+		{ID: "srv", Instances: []inventory.Instance{
+			{ID: "rss-old", Service: "freshrss", Path: "nodes/srv.yaml"},
+			{ID: "digest", Service: "ai-digest", Path: "nodes/srv.yaml", Dials: map[string]string{"rss": "rss-old:http", "llm": "llm:api"}},
+		}},
+		{ID: "other", Instances: []inventory.Instance{
+			{ID: "reader", Service: "reader", Path: "nodes/other.yaml", Dials: map[string]string{"feed": "rss-old:http"}},
+		}},
+	}}
+	original := inv.Nodes[1].Instances[0].Dials
+	refs, err := renameMigrationInstances(inv, 0, []instanceChange{{From: "rss-old", To: "rss-new"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := inv.Nodes[0].Instances[1].Dials; got["rss"] != "rss-new:http" || got["llm"] != "llm:api" {
+		t.Fatalf("digest dials = %v", got)
+	}
+	if got := inv.Nodes[1].Instances[0].Dials["feed"]; got != "rss-new:http" {
+		t.Fatalf("reader dial = %q", got)
+	}
+	if original["feed"] != "rss-old:http" {
+		t.Fatal("rename changed the source inventory's dials")
+	}
+	if !strings.Contains(strings.Join(refs["rss-old"], "\n"), "nodes/other.yaml: reader.dials.feed") {
+		t.Fatalf("refs = %v", refs["rss-old"])
+	}
+}
+
+func TestMigrationEditsRewriteDialValue(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `id: srv
+instances:
+  - id: digest
+    service: ai-digest
+    dials:
+      rss: rss-old:http # the reader
+`)
+	m := migrationYAML{root: root, files: map[string]*migrationYAMLFile{}}
+	source := []inventory.Instance{{ID: "digest", Path: "nodes/srv.yaml", Dials: map[string]string{"rss": "rss-old:http"}}}
+	target := []inventory.Instance{{ID: "digest", Path: "nodes/srv.yaml", Dials: map[string]string{"rss": "rss-new:http"}}}
+	if err := m.patchInstances(source, target); err != nil {
+		t.Fatal(err)
+	}
+	file := m.files["nodes/srv.yaml"]
+	data, err := yaml.Marshal(&file.doc)
+	if err != nil || !file.changed || !strings.Contains(string(data), "rss: rss-new:http # the reader") {
+		t.Fatalf("changed %v, err %v:\n%s", file.changed, err, data)
 	}
 }

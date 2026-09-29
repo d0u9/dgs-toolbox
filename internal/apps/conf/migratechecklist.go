@@ -59,11 +59,22 @@ type migrationRuntime struct {
 	Script            bool // the side's install.sh or uninstall.sh is rendered
 	Containers        []migrationContainer
 	Mounts            []migrationMount
+	// OnDemand lists the compose services that only run when asked for,
+	// under a profile: they have no container to inspect or stop.
+	OnDemand []migrationOnDemand
 	// Problem says why containers and mounts are unknown.
 	Problem string
 }
 
 type migrationMount struct{ Type, Target string }
+
+// migrationOnDemand is a compose service under a profile. Mounts are the
+// targets it declares that no always-running service of the instance also
+// mounts, so no .mounts record will locate them.
+type migrationOnDemand struct {
+	Service, Profiles string
+	Mounts            []string
+}
 
 // migrationContainer names one container for files (Name), for commands
 // (Ref, already shell-quoted) and for docker ps (Filter). A compose service
@@ -170,7 +181,7 @@ func migrationRuntimes(l loaded, nodeID, root, secrets, script string) []migrati
 				run.Problem = "render failed: " + err.Error()
 				break
 			}
-			run.Containers, run.Mounts, run.Problem = migrationComposeFacts(files)
+			run.Containers, run.Mounts, run.OnDemand, run.Problem = migrationComposeFacts(files)
 		}
 		out = append(out, run)
 	}
@@ -186,7 +197,10 @@ func migrationRuntimes(l loaded, nodeID, root, secrets, script string) []migrati
 // migrationComposeFacts reads container names and volume targets from the
 // rendered compose.yaml. A mount's host source is not read here: a named
 // volume's lives where Docker puts it, so the commands ask Docker.
-func migrationComposeFacts(files []exportFile) ([]migrationContainer, []migrationMount, string) {
+// migrationComposeFacts reads the containers and mounts of one rendered
+// compose.yaml. A service under a profile is on demand: it has no container
+// until someone runs it, so it is listed apart instead of being inspected.
+func migrationComposeFacts(files []exportFile) ([]migrationContainer, []migrationMount, []migrationOnDemand, string) {
 	for _, file := range files {
 		if filepath.Base(file.Path) != "compose.yaml" {
 			continue
@@ -194,31 +208,51 @@ func migrationComposeFacts(files []exportFile) ([]migrationContainer, []migratio
 		var doc struct {
 			Services map[string]struct {
 				ContainerName string      `yaml:"container_name"`
+				Profiles      []string    `yaml:"profiles"`
 				Volumes       []yaml.Node `yaml:"volumes"`
 			} `yaml:"services"`
 		}
 		if err := yaml.Unmarshal(file.Bytes, &doc); err != nil {
-			return nil, nil, "compose.yaml does not parse: " + err.Error()
+			return nil, nil, nil, "compose.yaml does not parse: " + err.Error()
 		}
 		var containers []migrationContainer
 		var mounts []migrationMount
+		var onDemand []migrationOnDemand
+		mounted := map[string]bool{}
 		for _, name := range sortedKeys(doc.Services) {
 			service := doc.Services[name]
+			if len(service.Profiles) != 0 {
+				continue
+			}
+			for _, volume := range service.Volumes {
+				if mount, ok := migrationComposeMount(volume); ok && !mounted[mount.Target] {
+					mounted[mount.Target] = true
+					mounts = append(mounts, mount)
+				}
+			}
+		}
+		for _, name := range sortedKeys(doc.Services) {
+			service := doc.Services[name]
+			if len(service.Profiles) != 0 {
+				entry := migrationOnDemand{Service: name, Profiles: strings.Join(service.Profiles, ", ")}
+				for _, volume := range service.Volumes {
+					if mount, ok := migrationComposeMount(volume); ok && !mounted[mount.Target] {
+						entry.Mounts = append(entry.Mounts, mount.Target)
+					}
+				}
+				onDemand = append(onDemand, entry)
+				continue
+			}
 			if service.ContainerName == "" {
 				filter := "label=com.docker.compose.service=" + name
 				containers = append(containers, migrationContainer{Name: name, Ref: `"$(docker ps -aq --filter ` + filter + `)"`, Filter: filter})
 			} else {
 				containers = append(containers, migrationNamedContainer(service.ContainerName))
 			}
-			for _, volume := range service.Volumes {
-				if mount, ok := migrationComposeMount(volume); ok {
-					mounts = append(mounts, mount)
-				}
-			}
 		}
-		return containers, mounts, ""
+		return containers, mounts, onDemand, ""
 	}
-	return nil, nil, "no compose.yaml rendered"
+	return nil, nil, nil, "no compose.yaml rendered"
 }
 
 func migrationComposeMount(node yaml.Node) (migrationMount, bool) {
@@ -277,7 +311,7 @@ func (r *migrationReport) writeProcedure(b *bytes.Buffer, attention []migrationA
 
 	// Phase 1.
 	b.WriteString("\n### Phase 1 — Take services offline (old host)\n\nOn the workstation, check the inventory and export the bundle the old host runs from:\n\n```sh\n")
-	fmt.Fprintf(b, "dgs conf --check\ndgs conf export node:%s --to %s --yes\nrsync -a %s/ OLD_HOST:dgs-migration/old/\n```\n", shellQuote(r.OldID), shellQuote(p.OldBundle), shellQuote(p.OldBundle))
+	fmt.Fprintf(b, "dgs conf --check\ndgs conf export node:%s --to %s --yes\nssh OLD_HOST 'mkdir -p ~/dgs-migration/old'\nrsync -a %s/ OLD_HOST:dgs-migration/old/\n```\n\nDo this before applying the plan: once applied, the inventory no longer has the old node to export. Keep the trailing `/` on the rsync source, or the bundle lands one directory deeper than the paths below.\n", shellQuote(r.OldID), shellQuote(p.OldBundle), shellQuote(p.OldBundle))
 	b.WriteString("\nOn the old host, record what runs, then stop each instance. Jobs stop before the services they read. Each block saves the container's mounts first: `uninstall.sh` removes the container, and with it Docker's record of where the data lives.\n\n```sh\nmkdir -p \"$M/data\"\ndocker ps --format '{{.Names}}\\t{{.Status}}' > \"$M/data/docker-ps.txt\"\n```\n")
 	for _, run := range p.Old {
 		if !run.Script {
@@ -285,7 +319,12 @@ func (r *migrationReport) writeProcedure(b *bytes.Buffer, attention []migrationA
 		}
 		fmt.Fprintf(b, "\n%s%s\n\n```sh\nmkdir -p \"$M/data/%s\"\n", label(run), migrationJobLabel(run), run.Instance)
 		for _, container := range run.Containers {
-			fmt.Fprintf(b, "docker inspect -f %s %s > \"$M/data/%s/%s.mounts\"\n", migrationMountsFormat, container.Ref, run.Instance, container.Name)
+			// A container that was never created, or already removed, has
+			// no mounts to record; say so rather than fail on an empty ID.
+			fmt.Fprintf(b, "id=$(docker ps -aq --filter %s); [ -n \"$id\" ] && docker inspect -f %s \"$id\" > \"$M/data/%s/%s.mounts\" || echo 'no container: %s'\n", shellQuote(container.Filter), migrationMountsFormat, run.Instance, container.Name, container.Name)
+		}
+		for _, service := range run.OnDemand {
+			fmt.Fprintf(b, "# %s runs only on demand (profiles: %s): no container to inspect\n", service.Service, service.Profiles)
 		}
 		if run.Problem != "" {
 			fmt.Fprintf(b, "# containers unknown (%s): save `docker inspect` of each by hand\n", run.Problem)
@@ -301,7 +340,12 @@ func (r *migrationReport) writeProcedure(b *bytes.Buffer, attention []migrationA
 			fmt.Fprintf(b, "- [ ] %s: %s. Stop it with its own service manager.\n", label(run), run.Problem)
 		}
 	}
-	b.WriteString("- [ ] `docker ps` lists none of the stopped containers.\n- [ ] Read the `Preserved:` line each `uninstall.sh` printed. Anything it names outside a container mount is not in phase 2's archive; copy it too.\n")
+	b.WriteString("- [ ] `docker ps` lists none of the stopped containers.\n- [ ] Check what each `uninstall.sh` left behind. Each prints a `Preserved:` line naming what it did not delete. Phase 2 archives container mounts only, so compare each path on that line with the mount sources:\n\n  ```sh\n  cut -d'|' -f2 \"$M\"/data/*/*.mounts | sort -u\n  ```\n\n  A path in this list is archived in phase 2. A path not in it, such as a deploy key under `~/.ssh` or a web root outside the container, is not; ")
+	if replace {
+		b.WriteString("copy it to the new host yourself, or the new host starts without it.\n")
+	} else {
+		b.WriteString("it stays where it is on this machine, so a copy is only a safeguard against a damaged disk.\n")
+	}
 
 	// Phase 2.
 	b.WriteString("\n### Phase 2 — Back up data (old host)\n\nArchive every mount under its path inside the container, which is the same on both sides.")
@@ -327,6 +371,11 @@ func (r *migrationReport) writeProcedure(b *bytes.Buffer, attention []migrationA
 		b.WriteString("\nNo container mount is known. Back up each service's data by hand.\n")
 	}
 	for _, run := range p.Old {
+		for _, service := range run.OnDemand {
+			if len(service.Mounts) != 0 {
+				fmt.Fprintf(b, "\n- [ ] %s: on-demand service %s alone mounts %s, which no `.mounts` record locates. Find the source in its `compose.yaml` under `$M/old` and archive it by hand.\n", label(run), mdCode(service.Service), migrationInline(service.Mounts))
+			}
+		}
 		if run.Script && run.Problem != "" {
 			fmt.Fprintf(b, "\n- [ ] %s: mounts unknown (%s). Back it up by hand from its `.mounts` record.\n", label(run), run.Problem)
 		}
@@ -336,7 +385,7 @@ func (r *migrationReport) writeProcedure(b *bytes.Buffer, attention []migrationA
 	// Phase 3.
 	b.WriteString("\n### Phase 3 — Manual work\n\n")
 	if len(attention) != 0 {
-		b.WriteString("- [ ] Resolve each item in [Needs attention](#2-needs-attention):\n")
+		b.WriteString("- [ ] Resolve each item in [Needs attention](#2.%20Needs%20attention):\n")
 		for i, item := range attention {
 			fmt.Fprintf(b, "  - [ ] 2.%d %s\n", i+1, item.title)
 		}
@@ -349,7 +398,7 @@ func (r *migrationReport) writeProcedure(b *bytes.Buffer, attention []migrationA
 	for _, address := range p.NewAddresses {
 		fmt.Fprintf(b, "  - %s\n", mdCode(address))
 	}
-	fmt.Fprintf(b, "- [ ] On the workstation, apply the inventory change: in `dgs conf`, Migrate tab, open this plan, press `r` for the report, then `a` and `y`. Then check it and export the new bundle:\n\n  ```sh\n  dgs conf --check\n  dgs conf export node:%s --to %s --yes\n  rsync -a %s/ NEW_HOST:dgs-migration/new/\n  ```\n\n",
+	fmt.Fprintf(b, "- [ ] On the workstation, apply the inventory change: in `dgs conf`, Migrate tab, open this plan, press `r` for the report, then `a` and `y`. Then check it and export the new bundle:\n\n  ```sh\n  dgs conf --check\n  dgs conf export node:%s --to %s --yes\n  ssh NEW_HOST 'mkdir -p ~/dgs-migration/new'\n  rsync -a %s/ NEW_HOST:dgs-migration/new/\n  ```\n\n",
 		shellQuote(r.NewID), shellQuote(p.NewBundle), shellQuote(p.NewBundle))
 	b.WriteString("  Keep the `.dgs-migration-backup-*` path the apply result prints; it is the inventory rollback.\n")
 	if replace {

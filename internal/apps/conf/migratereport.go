@@ -80,7 +80,9 @@ func (r *migrationReport) markdown() []byte {
 	fmt.Fprintf(&b, "- Generator root: `%s`\n- Inventory file: `%s`\n", r.Root, r.Inventory)
 	attention := r.attention()
 	fmt.Fprintf(&b, "- Needs attention: %d item(s)\n", len(attention))
-	b.WriteString("\n## Contents\n\n1. [Changes](#1-changes)\n2. [Needs attention](#2-needs-attention)\n3. [Procedure](#3-procedure)\n")
+	// Links name the heading text, URL-encoded, which is how Obsidian resolves
+	// them; a GitHub-style slug such as #1-changes does not jump there.
+	b.WriteString("\n## Contents\n\n1. [Changes](#1.%20Changes)\n2. [Needs attention](#2.%20Needs%20attention)\n3. [Procedure](#3.%20Procedure)\n")
 
 	b.WriteString("\n## 1. Changes\n")
 	r.writeChanges(&b)
@@ -210,7 +212,7 @@ func (r *migrationReport) attention() []migrationAttentionItem {
 	}
 	if len(unknown) != 0 {
 		items = append(items, migrationAttentionItem{"render", "Render comparison unavailable",
-			"These targets could not be rendered, so the plan cannot say whether they change. Treat each as changed: export, inspect and redeploy it.\n\n" + strings.Join(unknown, "\n") + "\n"})
+			"These targets could not be rendered, so the plan cannot say whether they change. Treat each as changed: export, inspect and redeploy it.\n\nWhen an instance is renamed, its secrets reach the new ID only when the plan is applied, so before that `no own secret named` or a missing file under the new ID is expected. Export the target again after applying; only an error that remains then needs fixing.\n\n" + strings.Join(unknown, "\n") + "\n"})
 	}
 	if r.OldID != r.NewID && strings.Contains(r.Inventory, r.OldID) {
 		items = append(items, migrationAttentionItem{"filename", "Inventory filename keeps the old node ID",
