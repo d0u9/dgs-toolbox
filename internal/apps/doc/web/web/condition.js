@@ -90,12 +90,12 @@ export function condition(input, { keys, values, onEdit }) {
     if (n.cmp === "in") {
       vals = [el("span", { className: "cond-bracket" }, "["),
         ...(n.values || []).map((v, i) => el("span", { className: "cond-chip" }, valueIn(v, i), act("Remove the value", "×", () => { n.values.splice(i, 1); edited(); }))),
-        (() => { const add = valueIn("", (n.values || []).length); add.placeholder = "+"; return add; })(),
+        (() => { const add = valueIn("", (n.values || []).length); add.placeholder = "+"; add.classList.add("cond-more"); add.title = "Add a value"; return add; })(),
         el("span", { className: "cond-bracket" }, "]")];
     } else if (n.cmp !== "has") {
       vals = [valueIn((n.values || [])[0] || "", 0)];
     }
-    const node = el("span", { className: "cond-bubble" + (n.key ? "" : " empty") }, keyIn, keyList, opSel, ...vals, valList,
+    const node = el("span", { className: "cond-bubble" + (n.key ? "" : " empty") + (n.not ? " negated" : "") }, keyIn, keyList, opSel, ...vals, valList,
       act("Remove the condition", "×", () => { list.splice(list.indexOf(n), 1); edited(); }));
     return node;
   };
@@ -113,12 +113,11 @@ export function condition(input, { keys, values, onEdit }) {
     });
     const adds = el("span", { className: "cond-adds" },
       act("Add a condition", "+", () => { g.items.push({ key: "", cmp: "==", values: [] }); edited(); }),
-      act("Add brackets: conditions joined the other way", "( )", () => { g.items.push({ op: g.op === "&&" ? "||" : "&&", items: [{ key: "", cmp: "==", values: [] }] }); edited(); }));
+      act("Add brackets: conditions joined the other way", "(+)", () => { g.items.push({ op: g.op === "&&" ? "||" : "&&", items: [{ key: "", cmp: "==", values: [] }] }); edited(); }));
     if (!parent) return el("div", { className: "cond-group top" }, ...parts, adds);
     const neg = el("button", { type: "button", className: "cond-not mono" + (g.not ? " on" : ""), textContent: "!", title: "Negate the brackets",
       onclick: () => { g.not = !g.not; edited(); } });
-    return el("span", { className: "cond-group" }, neg, el("span", { className: "cond-bracket" }, "("), ...parts, adds,
-      el("span", { className: "cond-bracket" }, ")"), act("Remove the brackets and what is in them", "×", () => { parent.splice(parent.indexOf(g), 1); edited(); }));
+    return el("span", { className: "cond-group" + (g.not ? " negated" : "") }, neg, ...parts, adds, act("Remove the brackets and what is in them", "×", () => { parent.splice(parent.indexOf(g), 1); edited(); }));
   };
 
   // A bubble or bracket box dragged onto another drops before it, in its
