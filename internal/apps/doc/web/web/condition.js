@@ -78,7 +78,7 @@ export function condition(input, { keys, values, onEdit }) {
   let tree = { op: "&&", items: [] };
   let text = false;
   const box = el("div", { className: "cond" });
-  const toggle = el("button", { type: "button", className: "button cond-text", textContent: "Text", title: "Type the condition as text" });
+  const toggle = el("button", { type: "button", className: "path-more cond-text", textContent: "Text", title: "Type the condition as text" });
   const wrap = el("div", { className: "cond-wrap" });
   if (input.parentNode) input.replaceWith(wrap);
   wrap.append(box, input, toggle);
