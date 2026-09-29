@@ -169,7 +169,9 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 	keys["ext"] = "pdf"
 	for k, v := range fields {
 		if start, end, ok := tree.SplitSpan(v); ok {
-			keys[k+".start"] = start
+			if start != "" {
+				keys[k+".start"] = start
+			}
 			if end != "" {
 				keys[k+".end"] = end
 			}

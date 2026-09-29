@@ -44,15 +44,15 @@ func (s Shapes) allows(shape Shape) bool {
 	return slices.Contains(s, shape)
 }
 
-// SpanSeparator joins a span's two days: 2025-01-01/2025-12-31. An open end
-// is left empty: 2025-01-01/.
+// SpanSeparator joins a span's two days: 2025-01-01/2025-12-31. An end not
+// known is left empty, 2025-01-01/ or /2030-03-01, but not both.
 const SpanSeparator = "/"
 
 // SplitSpan reads a date field's value as its start and end: a span's two
 // days, or one day as both. ok is false for anything else.
 func SplitSpan(value string) (start, end string, ok bool) {
 	if a, b, found := strings.Cut(value, SpanSeparator); found {
-		if !validDate(a) || b != "" && (!validDate(b) || b < a) {
+		if a == "" && b == "" || a != "" && !validDate(a) || b != "" && !validDate(b) || a != "" && b != "" && b < a {
 			return "", "", false
 		}
 		return a, b, true
