@@ -212,12 +212,10 @@ Item, text, and frequent Items; picking an entry opens its Item on Browse.
 An Item's own History on Browse is the same list for that one Item, and links
 to the Log filtered to it.
 
-Expiry is read from the first of `expires`, `expiry`, `expires_at`,
-`expiry_date` and `valid_until` that HEAD has, by the server
-(`internal/doc/expiry`): **expired** after its day, **expires soon** within
-[`doc.expiring_within_days`](../../configuration/doc.md) days (90 by default), **valid**, **no end date** for `长期`, `永久`,
-`permanent` or `indefinite`, and nothing when there is no such field or it is
-not a date.
+Expiry is the end of HEAD's `date` when it is a span, read by the server
+(`internal/doc/expiry`): **expired** after that day, **expires soon** within
+[`doc.expiring_within_days`](../../configuration/doc.md) days (90 by default), **valid**, **no end date** for a span
+left open at its end, and nothing for a one-day date or none.
 
 ### Deleting
 
@@ -688,8 +686,9 @@ A rule has a query, a selection, and a layout. It may leave PDFs out and select 
   its layout typed and its own Edit…, and ↑/↓ for which is tried first.
 
 Keys are the Item's own fields (`owner`, `type`, `country`, and whatever its
-Template defines, such as `employer`), values derived from them (`year`,
-`month` and `date` from `issued_at`), `revision` (the revision's number,
+Template defines, such as `employer`), values derived from them (`year` and
+`month` from `date`, its start when it is a span; `.start` and `.end` of any
+span, such as `{date.end}`), `revision` (the revision's number,
 counting from 1, in order added) and `ext`.
 
 A key may name a country format: `{country:alpha3}` writes the Item's country
