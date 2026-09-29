@@ -1,4 +1,4 @@
-# Convergence — proposal
+# Convergence
 
 **State: built.** The design is in [`index.md`](index.md); this keeps how it
 was reached. The Rules page draws children as nested if blocks.
