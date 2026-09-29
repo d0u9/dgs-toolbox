@@ -1081,6 +1081,18 @@ The same name reaching two addresses on one network is an error naming both
 sources. That is rule 18's one-machine rule seen from the resolver's side,
 extended to hosts.
 
+**A container network has a table too, on its own node.** A name enters it
+when the instance answering to the name — the proxy in front of the port, or
+the port's own instance when nothing fronts it — joins that container network
+at a [fixed address](#container-networks). An address the
+runtime assigns is not a record a resolver can hold, so a network joined
+without one contributes nothing. A resolver on a node reads its own node's
+container tables with the same `names "<container network>"`; another node's
+are not visible to it, since two nodes may each list a network of one name.
+A resolver answering clients that reach a node through a router on one of its
+bridges — a Tailscale subnet router, say — is the case this exists for: the
+clients need the proxy's address on that bridge, not the node's own.
+
 **A proxy's own sites are published on its port.** A reverse proxy also
 answers to names it serves itself — a static site, a landing page — that no
 port behind it publishes. They are written as the proxy's own entrance port's
@@ -1390,13 +1402,23 @@ part of a derived id, `/` becomes `-`: `home-samba`.
 
 The scope is a choice, and it narrows where the entry is published: a route
 scoped to a network publishes its entry only on the entry node's address
-there, and a route scoped to a node only on loopback. A top-level route
-publishes on every network the node answers on.
+there, a route scoped to a node only on loopback, and a route scoped to a
+container network of its entry's node on no host address at all. A top-level
+route publishes on every network the node answers on.
 
-Rule 33 checks it: the scope names a network or a node and not a name both
-use, the entry has an address on the network or runs on the node, and a
+A container network scope says the clients are on that bridge: behind a
+router joined to it — a Tailscale subnet router, say — that the model does not
+carry. The entry is reached at its address on the bridge and publishes
+nothing, which is how a second listener on a port number the host already
+publishes stays off the host. No credential reaches a container network, so
+no credential opens such a route.
+
+Rule 33 checks it: the scope names a network, a node or a container network
+of the entry's node, and no name two of those use; the entry has an address
+on the network, runs on the node or joins the container network; a
 credential opening a route scoped to a non-universal network reaches that
-network, through its own `reaches` or a device carrying it.
+network, through its own `reaches` or a device carrying it; and no credential
+opens a route scoped to a container network.
 
 Renaming a node renames its scope key and every grant naming a route in it.
 
@@ -2383,7 +2405,9 @@ dials:       the instance's declared dependencies, by name, each resolved as a
              not declared is a render error
 names:       for a network, every name resolving on it and its address there:
              ports' published names at their entrance node, and hosts'
-             names. Read with names "<network>", in name order
+             names; for a container network of the rendering node, the names
+             whose answering instance holds a fixed address on it. Read with
+             names "<network>", in name order
 publishedNames: every name one of the instance's own ports is published at,
              where published alone gives the first. Read with
              publishedNames "<port>"
@@ -2452,6 +2476,9 @@ failing can be told which level it was reading.
     accounts by person, this is what two of one person's credentials on the
     same port fail.
 14. Two instances on one node do not bind the same address, port and protocol.
+    A container on a container network binds in its own network namespace,
+    so what it holds on the node is the host mapping derived for it, and a
+    port published on no host address holds nothing.
 15. Every secret the inventory implies exists, and every file in the secrets
     tree is implied by it. Both directions are reported; neither is fixed here.
 16. No `.previous` file is older than seven days.
@@ -2506,8 +2533,9 @@ failing can be told which level it was reading.
     nodes and hosts counted together. A `mac` is six colon-separated octets.
 29. Every host names an existing network, and its identifier is not also a
     node identifier.
-30. On one network, a name resolves to one address. The sources are ports'
-    `published` names and hosts' `names`; the error names both.
+30. On one network, and on one node's container network, a name resolves to
+    one address. The sources are ports' `published` names and hosts'
+    `names`; the error names both.
 31. Every `dials` value names an existing instance and an existing port on
     it, not the dialling instance itself, and the two ends resolve an address
     as rule 10 requires of an edge.
@@ -2517,9 +2545,12 @@ failing can be told which level it was reading.
     a CIDR prefix and overlaps no other of the node's, and a gateway, when
     written, inside it. An address fixed on a container network is inside
     its subnet, is not its gateway, and is held by one instance.
-33. A route's scope names a network or a node, never a name both hold; its
-    entry has an address on that network or runs on that node; and every
-    credential opening a route scoped to a non-universal network reaches it.
+33. A route's scope names a network, a node, or a container network of its
+    entry's node, and no container network, network or node shares a name
+    with another; its entry has an address on that network, runs on that
+    node or joins that container network; every credential opening a route
+    scoped to a non-universal network reaches it; and no credential opens a
+    route scoped to a container network.
 34. Every route a set names exists, and every `@<set>` in an access list names
     a set.
 35. Every dial a service declares resolves, for each instance of it that does
