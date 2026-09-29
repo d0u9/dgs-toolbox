@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -85,6 +84,11 @@ type Field struct {
 	// holds this form's date: a bill's tenancy is the one it was issued in.
 	// It only suggests; any Item match allows can be chosen.
 	Within *Within `yaml:"within,omitempty" json:"within,omitempty"`
+	// Shape is what a date field holds: day, span, or both. Empty is day.
+	Shape Shapes `yaml:"shape,omitempty" json:"shape,omitempty"`
+	// Values are a select field's values in named groups, in place of
+	// Options: {utility: [水, 电, 气]}. Options then lists them all.
+	Values ValueGroups `yaml:"values,omitempty" json:"values,omitempty"`
 }
 
 // Within names the date on this form and the linked Item's fields that
@@ -156,7 +160,11 @@ const (
 
 // Template is one type's fields and defaults.
 type Template struct {
-	Type        string `yaml:"type" json:"type"`
+	Type string `yaml:"type" json:"type"`
+	// Extends names the type this one inherits fields from.
+	Extends string `yaml:"extends,omitempty" json:"extends,omitempty"`
+	// Abstract types only pass fields down: no Item is of one.
+	Abstract    bool   `yaml:"abstract,omitempty" json:"abstract,omitempty"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	Kind        Kind   `yaml:"kind" json:"kind"`
 	// Anchor marks a Template other documents hang under: a tenancy, a
@@ -170,6 +178,9 @@ type Template struct {
 	// Names are the type's names for people, by language: zh and en. A View
 	// layout writes one with {type:zh} or {type:en}.
 	Names map[string]string `yaml:"names,omitempty" json:"names,omitempty"`
+	// Lineage is the type and those it extends, nearest first. Resolve
+	// sets it.
+	Lineage []string `yaml:"-" json:"lineage,omitempty"`
 }
 
 // NameLanguages are the languages a Template may name its type in.
@@ -186,7 +197,17 @@ func (t Template) Validate() error {
 	if !namePattern.MatchString(t.Type) {
 		return fmt.Errorf("type %q: use lowercase letters, digits, _ and -", t.Type)
 	}
-	if t.Kind != KindDocument && t.Kind != KindRecord {
+	if t.Extends != "" && !namePattern.MatchString(t.Extends) {
+		return fmt.Errorf("type %s: extends %q: use lowercase letters, digits, _ and -", t.Type, t.Extends)
+	}
+	if t.Abstract {
+		if t.Kind != "" {
+			return fmt.Errorf("type %s is abstract, so it has no kind: each type below states its own", t.Type)
+		}
+		if t.Anchor {
+			return fmt.Errorf("type %s is abstract, so no Item hangs under it: anchor belongs to a type below", t.Type)
+		}
+	} else if t.Kind != KindDocument && t.Kind != KindRecord {
 		return fmt.Errorf("type %s: kind %q is neither document nor record", t.Type, t.Kind)
 	}
 	for lang, name := range t.Names {
@@ -251,10 +272,28 @@ func (t Template) Validate() error {
 		if f.Multiple && f.Type != FieldSelect {
 			return fmt.Errorf("type %s: key %s: multiple belongs to a select field", t.Type, f.Key)
 		}
+		if len(f.Shape) > 0 && f.Type != FieldDate {
+			return fmt.Errorf("type %s: key %s: shape belongs to a date field", t.Type, f.Key)
+		}
+		for _, s := range f.Shape {
+			if s != ShapeDay && s != ShapeSpan {
+				return fmt.Errorf("type %s: key %s: shape %q is neither day nor span", t.Type, f.Key, s)
+			}
+		}
+		groups := map[string]bool{}
+		for _, g := range f.Values {
+			if groups[g.Name] || slices.Contains(f.Options, g.Name) {
+				return fmt.Errorf("type %s: key %s: %s names a group twice, or a group and a value", t.Type, f.Key, g.Name)
+			}
+			groups[g.Name] = true
+			if len(g.Values) == 0 {
+				return fmt.Errorf("type %s: key %s: group %s holds no values", t.Type, f.Key, g.Name)
+			}
+		}
 		switch f.Type {
 		case "", FieldText, FieldDate, FieldMonth, FieldItem, FieldRevision, FieldCountry:
-			if len(f.Options) > 0 {
-				return fmt.Errorf("type %s: key %s: options belong to a select field", t.Type, f.Key)
+			if len(f.Options) > 0 || len(f.Values) > 0 {
+				return fmt.Errorf("type %s: key %s: options and values belong to a select field", t.Type, f.Key)
 			}
 		case FieldSelect:
 			if len(f.Options) == 0 {
@@ -279,6 +318,9 @@ func (t Template) Validate() error {
 		}
 	}
 	for _, key := range MandatoryKeys {
+		if t.Abstract {
+			break
+		}
 		f, ok := t.fieldOK(key)
 		if !ok || !f.Required {
 			return fmt.Errorf("type %s: every document has %s, so the Template needs each as a required field", t.Type, strings.Join(MandatoryKeys, " and "))
@@ -303,15 +345,25 @@ func (t Template) Validate() error {
 	return nil
 }
 
-// LoadTemplates reads every templates/*.yaml under root, sorted by type. A
-// file whose name is not its type is refused: the name is how a person finds
-// the Template to edit.
-func LoadTemplates(root string) ([]Template, error) {
+// LoadAllTemplates reads every templates/*.yaml under root, abstract ones
+// included, each resolved against those it extends, sorted by type. A file
+// whose name is not its type is refused: the name is how a person finds the
+// Template to edit.
+func LoadAllTemplates(root string) ([]Template, error) {
+	raw, err := loadRawTemplates(root)
+	if err != nil {
+		return nil, err
+	}
+	return Resolve(raw)
+}
+
+// loadRawTemplates reads the Template files as written, unresolved.
+func loadRawTemplates(root string) ([]Template, error) {
 	paths, err := filepath.Glob(filepath.Join(root, TemplatesDir, "*.yaml"))
 	if err != nil {
 		return nil, err
 	}
-	templates := make([]Template, 0, len(paths))
+	raw := make([]Template, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -324,14 +376,25 @@ func LoadTemplates(root string) ([]Template, error) {
 		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != t.Type {
 			return nil, fmt.Errorf("%s: type is %s, so the file should be %s.yaml", path, t.Type, t.Type)
 		}
-		templates = append(templates, t)
+		raw = append(raw, t)
 	}
-	sort.Slice(templates, func(i, j int) bool { return templates[i].Type < templates[j].Type })
-	return templates, nil
+	return raw, nil
 }
 
-// ParseTemplate reads one Template file's content and validates it. A key the
-// Template does not know is refused, so a misspelt one is not silently lost.
+// LoadTemplates is every Template an Item can be of: LoadAllTemplates
+// without the abstract ones.
+func LoadTemplates(root string) ([]Template, error) {
+	all, err := LoadAllTemplates(root)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(all, func(t Template) bool { return t.Abstract }), nil
+}
+
+// ParseTemplate reads one Template file's content. A key the Template does
+// not know is refused, so a misspelt one is not silently lost. One that
+// extends no type is validated here; one that does is validated by Resolve,
+// against what it inherits.
 func ParseTemplate(data []byte) (Template, error) {
 	var t Template
 	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
@@ -339,6 +402,20 @@ func ParseTemplate(data []byte) (Template, error) {
 	if err := decoder.Decode(&t); err != nil {
 		return Template{}, err
 	}
+	for _, f := range t.Fields {
+		if len(f.Values) > 0 && len(f.Options) > 0 {
+			return Template{}, fmt.Errorf("type %s: key %s: write options or values, not both", t.Type, f.Key)
+		}
+	}
+	for i, f := range t.Fields {
+		for _, g := range f.Values {
+			t.Fields[i].Options = append(t.Fields[i].Options, g.Values...)
+		}
+	}
+	if t.Extends != "" {
+		return t, nil
+	}
+	t.Lineage = []string{t.Type}
 	return t, t.Validate()
 }
 
@@ -435,9 +512,7 @@ func (f Field) clean(value string) (string, error) {
 			return "", fmt.Errorf("%s: %q is not a month written YYYY-MM", f.Key, value)
 		}
 	case FieldDate:
-		if !validDate(value) {
-			return "", fmt.Errorf("%s: %q is not a date written YYYY-MM-DD", f.Key, value)
-		}
+		return f.cleanDate(value)
 	case FieldSelect:
 		if f.Multiple {
 			return f.cleanMultiple(value)

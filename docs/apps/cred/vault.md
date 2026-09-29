@@ -135,7 +135,7 @@ passphrase.
   refuses the folder rather than archiving something unexpected.
   - Junk is left out: the names in `archive_skip` in `credentials.json`, which
     default to what macOS, Windows, Linux file managers and git write beside
-    the files — `.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.git` and the
+    the files — `.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.git`, `.gitignore` and the
     rest of the list in
     [`configuration/cred.md`](../../configuration/cred.md). A matching
     directory is not walked. Dotfiles are not junk by themselves: `.ssh` and
