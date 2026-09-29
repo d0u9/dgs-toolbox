@@ -740,6 +740,32 @@ name reaches one machine; a port a proxy fronts, because the proxy tells its
 downstreams apart by name alone; and two ports on one number and transport,
 because nobody dialing the name can tell them apart.
 
+### What a proxy is told
+
+A reverse proxy renders one site per downstream, and what it needs to know
+about each is the downstream's, not its own:
+
+- **Scheme** is the proxy port the route enters: a route entering at `http`
+  is a plain-text site, at `https` one with a certificate.
+- **`title` and `description`** on a port are what a page listing the proxy's
+  sites shows for it.
+- **`proxy`** in a service manifest is what a proxy in front of it must do —
+  `forward_remote_addr: true`, `max_body: 128MB` — by the name the proxy's
+  template reads. A port's own `proxy` overrides it key by key.
+
+```yaml
+ports:
+  web:
+    port: 8080
+    published: clip.example.org
+    title: Clip
+    description: Paste bin.
+    proxy: {max_body: 128MB}
+```
+
+A template reads them as `.Entry`, `.Title`, `.Description` and `.Proxy` on
+each downstream. Moving a service behind another proxy moves none of it.
+
 ### An instance's own values
 
 `id`, `service`, `bind` and `ports` are what dgs itself needs: enough to

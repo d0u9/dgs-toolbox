@@ -583,6 +583,18 @@ func (m renderer) downstreamsFor(instance string, fansOut bool) []render.Downstr
 		if from := m.instanceByID(instance); from != nil {
 			d.EntryNumber = from.Ports[e.From.Port].Number
 		}
+		if to := m.instanceByID(e.To.Instance); to != nil {
+			port := to.Ports[e.To.Port]
+			d.Title, d.Description = port.Title, port.Description
+			proxy := map[string]any{}
+			for k, v := range m.l.manifests[to.Service].Proxy {
+				proxy[k] = v
+			}
+			for k, v := range port.Proxy {
+				proxy[k] = v
+			}
+			d.Proxy = proxy
+		}
 		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Route < out[j].Route })
