@@ -44,7 +44,7 @@ func TestMigrationProcedureNamesRenderedUninstallAndInstallPaths(t *testing.T) {
 }
 
 func TestMigrationComposeFactsReadsContainersAndMounts(t *testing.T) {
-	containers, mounts, problem := migrationComposeFacts([]exportFile{{Path: "n/freshrss/rss/compose.yaml", Bytes: []byte(`services:
+	containers, mounts, _, problem := migrationComposeFacts([]exportFile{{Path: "n/freshrss/rss/compose.yaml", Bytes: []byte(`services:
   rss:
     container_name: rss
     volumes:
@@ -67,7 +67,7 @@ func TestMigrationComposeFactsReadsContainersAndMounts(t *testing.T) {
 }
 
 func TestMigrationComposeFactsFindsUnnamedContainerByLabel(t *testing.T) {
-	containers, _, problem := migrationComposeFacts([]exportFile{{Path: "compose.yaml", Bytes: []byte("services:\n  archive:\n    image: x\n")}})
+	containers, _, _, problem := migrationComposeFacts([]exportFile{{Path: "compose.yaml", Bytes: []byte("services:\n  archive:\n    image: x\n")}})
 	if problem != "" || len(containers) != 1 || containers[0].Ref != `"$(docker ps -aq --filter label=com.docker.compose.service=archive)"` {
 		t.Fatalf("containers = %+v, problem = %q", containers, problem)
 	}
@@ -81,7 +81,7 @@ func TestMigrationProcedureImportsOnlyWhenReplacing(t *testing.T) {
 	rep.writeProcedure(&out, nil)
 	got := out.String()
 	for _, want := range []string{
-		`docker inspect -f '{{range .Mounts}}{{.Type}}|{{.Source}}|{{.Destination}}{{"\n"}}{{end}}' 'rss' > "$M/data/rss/rss.mounts"`,
+		`id=$(docker ps -aq --filter 'name=^rss$'); [ -n "$id" ] && docker inspect -f '{{range .Mounts}}{{.Type}}|{{.Source}}|{{.Destination}}{{"\n"}}{{end}}' "$id" > "$M/data/rss/rss.mounts" || echo 'no container: rss'`,
 		`sudo tar -C "$(awk -F'|' '$3=="/data"{print $2}' *.mounts)" -czpf data.tgz .`,
 		`sudo tar -C "$(awk -F'|' '$3=="/data"{print $2}' *.new-mounts)" -xzpf data.tgz`,
 		"docker start 'rss'  # installed in phase 4",
@@ -95,5 +95,42 @@ func TestMigrationProcedureImportsOnlyWhenReplacing(t *testing.T) {
 	rep.writeProcedure(&out, nil)
 	if strings.Contains(out.String(), "-xzpf") || !strings.Contains(out.String(), `(cd "$M/new/network-4-linux-02/freshrss/rss" && ./install.sh)`) {
 		t.Fatalf("relocation imports data or does not install:\n%s", out.String())
+	}
+}
+
+func TestMigrationProcedureSkipsOnDemandServices(t *testing.T) {
+	containers, mounts, onDemand, problem := migrationComposeFacts([]exportFile{{Path: "compose.yaml", Bytes: []byte(`services:
+  digest:
+    container_name: digest
+    volumes:
+      - /srv/digest:/data
+  archive:
+    profiles: [manual]
+    volumes:
+      - /srv/digest:/data
+      - /srv/archive:/archive
+`)}})
+	if problem != "" || len(containers) != 1 || containers[0].Name != "digest" {
+		t.Fatalf("containers = %+v, problem = %q", containers, problem)
+	}
+	if fmt.Sprint(mounts) != fmt.Sprint([]migrationMount{{"bind", "/data"}}) {
+		t.Fatalf("mounts = %v", mounts)
+	}
+	if len(onDemand) != 1 || onDemand[0].Service != "archive" || onDemand[0].Profiles != "manual" || fmt.Sprint(onDemand[0].Mounts) != "[/archive]" {
+		t.Fatalf("on demand = %+v", onDemand)
+	}
+	run := migrationRuntime{Service: "ai-digest", Instance: "digest", Script: true, Containers: containers, Mounts: mounts, OnDemand: onDemand}
+	rep := &migrationReport{OldID: "network-4", NewID: "network-8"}
+	rep.Procedure = migrationProcedure{Scenario: migrationRelocate, Old: []migrationRuntime{run}, New: []migrationRuntime{run}, Pair: map[string]string{"digest": "digest"}}
+	var out bytes.Buffer
+	rep.writeProcedure(&out, nil)
+	got := out.String()
+	if strings.Contains(got, "com.docker.compose.service=archive") {
+		t.Fatalf("on-demand service was inspected:\n%s", got)
+	}
+	for _, want := range []string{"# archive runs only on demand (profiles: manual): no container to inspect", "on-demand service `archive` alone mounts `/archive`", "Keep the trailing `/`", "a copy is only a safeguard against a damaged disk"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("procedure lacks %q:\n%s", want, got)
+		}
 	}
 }

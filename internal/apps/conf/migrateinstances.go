@@ -46,7 +46,7 @@ func parseInstanceChanges(encoded string) ([]instanceChange, error) {
 	return changes, nil
 }
 
-// renameMigrationInstances changes authored IDs and typed route-hop references
+// renameMigrationInstances changes authored IDs and typed route-hop and dial references
 // in the preview snapshot. Opaque values, paths and secrets remain manual work.
 func renameMigrationInstances(inv *inventory.Root, nodeIndex int, changes []instanceChange) (map[string][]string, error) {
 	refs := map[string][]string{}
@@ -84,6 +84,39 @@ func renameMigrationInstances(inv *inventory.Root, nodeIndex int, changes []inst
 	for i := range node.Instances {
 		if to := changesByID[node.Instances[i].ID]; to != "" {
 			node.Instances[i].ID = to
+		}
+	}
+	// A dial names its target the way a hop does, and may live on any node.
+	inv.Nodes = append([]inventory.Node(nil), inv.Nodes...)
+	for n := range inv.Nodes {
+		other := &inv.Nodes[n]
+		if n != nodeIndex {
+			other.Instances = append([]inventory.Instance(nil), other.Instances...)
+		}
+		for i := range other.Instances {
+			inst := &other.Instances[i]
+			var dials map[string]string
+			for name, raw := range inst.Dials {
+				hop, err := derive.ParseHop(raw)
+				if err != nil {
+					return nil, err
+				}
+				to := changesByID[hop.Instance]
+				if to == "" {
+					continue
+				}
+				if dials == nil {
+					dials = make(map[string]string, len(inst.Dials))
+					for k, v := range inst.Dials {
+						dials[k] = v
+					}
+				}
+				dials[name] = to + ":" + hop.Port
+				refs[hop.Instance] = append(refs[hop.Instance], inst.Path+": "+inst.ID+".dials."+name)
+			}
+			if dials != nil {
+				inst.Dials = dials
+			}
 		}
 	}
 	inv.Routes = cloneRoutes(inv.Routes)

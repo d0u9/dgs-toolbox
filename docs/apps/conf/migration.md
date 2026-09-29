@@ -94,7 +94,9 @@ decide), and **Procedure**, the scenario's steps in six phases:
 
 1. Take services offline on the old host. Each instance's container mounts
    are recorded with `docker inspect` before its generated `uninstall.sh`
-   runs; jobs stop before the services they read.
+   runs; jobs stop before the services they read. A compose service under a
+   `profiles` entry runs only on demand and has no container, so it is not
+   inspected; a mount only it declares is named for backup by hand.
 2. Back up data. Every mount is archived under its path inside the
    container, which is stable across hosts. A size check comes first, since a
    bind mount may be large shared storage the operator chooses not to carry.

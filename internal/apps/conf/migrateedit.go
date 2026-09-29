@@ -156,7 +156,7 @@ func (m *migrationYAML) patchInstances(old, next []inventory.Instance) error {
 	}
 	for i, source := range old {
 		target := next[i]
-		if source.ID == target.ID && migrationPublishedEqual(source.Ports, target.Ports) {
+		if source.ID == target.ID && migrationPublishedEqual(source.Ports, target.Ports) && reflect.DeepEqual(source.Dials, target.Dials) {
 			continue
 		}
 		file, err := m.file(source.Path)
@@ -172,6 +172,14 @@ func (m *migrationYAML) patchInstances(old, next []inventory.Instance) error {
 			return err
 		}
 		file.changed = file.changed || changed
+		_, dials := migrationMap(instance, "dials")
+		for name, sourceDial := range source.Dials {
+			changed, err = migrationSetField(dials, name, sourceDial, target.Dials[name], source.Path+": "+source.ID+".dials."+name)
+			if err != nil {
+				return err
+			}
+			file.changed = file.changed || changed
+		}
 		_, ports := migrationMap(instance, "ports")
 		for portName, sourcePort := range source.Ports {
 			targetPort := target.Ports[portName]
