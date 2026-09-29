@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -152,30 +153,66 @@ func LoadItems(root string) ([]Item, error) {
 		}
 		return nil, err
 	}
-	var items []Item
+	var names []string
 	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			names = append(names, entry.Name())
 		}
-		path := filepath.Join(root, ItemsDir, entry.Name(), SidecarName)
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
+	}
+	// Sidecars are read LoadWorkers at a time: on a network share each read
+	// waits on the round trip, not the disk.
+	found := make([]*Item, len(names))
+	errs := make([]error, len(names))
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for range min(LoadWorkers, len(names)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				found[i], errs[i] = loadItem(root, names[i])
 			}
-			return nil, err
+		}()
+	}
+	for i := range names {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	var items []Item
+	for i := range names {
+		if errs[i] != nil {
+			return nil, errs[i]
 		}
-		var item Item
-		if err := yaml.Unmarshal(data, &item); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
+		if found[i] != nil {
+			items = append(items, *found[i])
 		}
-		if item.ID != entry.Name() {
-			return nil, fmt.Errorf("%s: id %q is not the folder's name", path, item.ID)
-		}
-		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	return items, nil
+}
+
+// LoadWorkers is how many sidecars LoadItems reads at once.
+const LoadWorkers = 16
+
+// loadItem reads the sidecar in the folder name; none there is no Item.
+func loadItem(root, name string) (*Item, error) {
+	path := filepath.Join(root, ItemsDir, name, SidecarName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var item Item
+	if err := yaml.Unmarshal(data, &item); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if item.ID != name {
+		return nil, fmt.Errorf("%s: id %q is not the folder's name", path, item.ID)
+	}
+	return &item, nil
 }
 
 // WriteItem replaces an Item's sidecar through a temporary file and a rename,

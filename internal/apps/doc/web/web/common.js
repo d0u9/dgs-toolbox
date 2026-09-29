@@ -229,8 +229,16 @@ export function inputFor(field, value, placeholder, state, self, type) {
       if (!wrapper.isConnected || !(field.match || field.within)) return;
       narrow();
       const watched = [...Object.values(field.match || {}), ...(field.within ? [field.within.date] : [])];
+      // Typing a date sends one question once it pauses, and none when the
+      // watched fields are as they were last asked.
+      let timer = 0, last = "";
       (wrapper.closest("form") || wrapper.parentElement).addEventListener("input", (event) => {
-        if (event.target !== control && watched.includes(event.target.name)) narrow();
+        if (event.target === control || !watched.includes(event.target.name)) return;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          const fields = here(), now = JSON.stringify(watched.map((k) => fields[k]));
+          if (now !== last) { last = now; narrow(); }
+        }, 250);
       });
     });
     return wrapper;
