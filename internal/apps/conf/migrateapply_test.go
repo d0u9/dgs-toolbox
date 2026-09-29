@@ -51,7 +51,11 @@ func TestMigrationApplyWritesTypedFieldsAndIsIdempotent(t *testing.T) {
 	if len(inv.Users["friend-a"].Access) != 1 || inv.Users["friend-a"].Access[0] != "sfo08" {
 		t.Fatalf("user access: %+v", inv.Users["friend-a"])
 	}
-	newNode, err := os.ReadFile(nodePath)
+	// The node's file is renamed with it.
+	if _, err := os.Stat(nodePath); !os.IsNotExist(err) {
+		t.Fatalf("old node file still present: %v", err)
+	}
+	newNode, err := os.ReadFile(filepath.Join(root, "nodes", "srv08.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +77,7 @@ func TestMigrationApplyWritesTypedFieldsAndIsIdempotent(t *testing.T) {
 	if !strings.Contains(again.String(), "already present") {
 		t.Fatalf("second apply: %s", again.String())
 	}
-	unchanged, err := os.ReadFile(nodePath)
+	unchanged, err := os.ReadFile(filepath.Join(root, "nodes", "srv08.yaml"))
 	if err != nil || !bytes.Equal(newNode, unchanged) {
 		t.Fatal("second apply changed node file")
 	}
@@ -100,7 +104,7 @@ func TestMigrationApplyCopiesRenamedSecretsAndKeepsOriginals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}
-	after, err := os.ReadFile(path)
+	after, err := os.ReadFile(filepath.Join(filepath.Dir(path), "srv08.yaml"))
 	if err != nil || bytes.Equal(before, after) {
 		t.Fatal("apply did not update inventory")
 	}

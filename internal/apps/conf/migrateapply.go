@@ -257,6 +257,9 @@ func applyMigrationEdits(root string, edits []migrationEdit, expected loaded, re
 		for i := len(applied) - 1; i >= 0; i-- {
 			edit := applied[i]
 			backup := filepath.Join(backupDir, edit.path)
+			if edit.moveTo != "" {
+				_ = os.Remove(filepath.Join(root, edit.moveTo))
+			}
 			if err := os.Rename(backup, filepath.Join(root, edit.path)); err != nil {
 				failures = append(failures, edit.path+": "+err.Error())
 			}
@@ -270,8 +273,21 @@ func applyMigrationEdits(root string, edits []migrationEdit, expected loaded, re
 		if err := checkMigrationEdit(root, edit); err != nil {
 			return rollback(err)
 		}
-		if err := replace(staged[edit.path], filepath.Join(root, edit.path)); err != nil {
+		dest := edit.path
+		if edit.moveTo != "" {
+			dest = edit.moveTo
+			if _, err := os.Lstat(filepath.Join(root, dest)); err == nil {
+				return rollback(fmt.Errorf("moving %s: %s already exists", edit.path, dest))
+			}
+		}
+		if err := replace(staged[edit.path], filepath.Join(root, dest)); err != nil {
 			return rollback(fmt.Errorf("replacing %s: %w", edit.path, err))
+		}
+		if edit.moveTo != "" {
+			if err := os.Remove(filepath.Join(root, edit.path)); err != nil {
+				applied = append(applied, edit)
+				return rollback(fmt.Errorf("removing %s after moving it: %w", edit.path, err))
+			}
 		}
 		delete(staged, edit.path)
 		applied = append(applied, edit)

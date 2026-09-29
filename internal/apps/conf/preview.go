@@ -223,7 +223,22 @@ func nodeValues(n inventory.Node) map[string]any {
 	for name, addr := range n.Networks {
 		networks[name] = addr
 	}
-	return map[string]any{"id": n.ID, "networks": networks}
+	out := map[string]any{"id": n.ID, "networks": networks}
+	if len(n.Accounts) > 0 {
+		accounts := map[string]any{}
+		for name, a := range n.Accounts {
+			gid, group := a.GID, a.Group
+			if gid == 0 {
+				gid = a.UID
+			}
+			if group == "" {
+				group = name
+			}
+			accounts[name] = map[string]any{"name": name, "uid": a.UID, "gid": gid, "group": group}
+		}
+		out["accounts"] = accounts
+	}
+	return out
 }
 
 // principalsFor reads every per-principal port's accounts and secrets for

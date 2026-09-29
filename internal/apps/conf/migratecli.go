@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -131,6 +132,18 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 		inv.Nodes[index].Networks[change.To] = change.Address
 	}
 	inv.Nodes[index].ID = newID
+	// A node's file is named after it, so a renamed node moves to a new file.
+	if oldPath := inv.Nodes[index].Path; oldID != newID && oldPath != "" {
+		newPath := filepath.Join(filepath.Dir(oldPath), newID+".yaml")
+		inv.Nodes[index].Path = newPath
+		instances := append([]inventory.Instance(nil), inv.Nodes[index].Instances...)
+		for i := range instances {
+			if instances[i].Path == oldPath {
+				instances[i].Path = newPath
+			}
+		}
+		inv.Nodes[index].Instances = instances
+	}
 	if err := renameMigrationNode(&inv, index, oldID, newID); err != nil {
 		return err
 	}

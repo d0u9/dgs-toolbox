@@ -420,6 +420,21 @@ them.
 
 A machine changing address is one line in one node file.
 
+### A node's accounts
+
+A node may list its POSIX accounts, for services that write numeric owners:
+
+```yaml
+accounts:
+  trident: {uid: 1000}
+  bob: {uid: 3003, gid: 65533, group: nogroup}
+```
+
+An unwritten `gid` is the uid, an unwritten `group` the account's name. A
+template reads them as `(node).accounts.<name>` — `name`, `uid`, `gid`,
+`group` — and an instance names an account rather than repeating its
+numbers: a file on a volume keeps the number, so it is written once.
+
 ### A node's hardware address
 
 An address in `networks` may be written as a mapping when the network hands
@@ -2469,6 +2484,8 @@ failing can be told which level it was reading.
     a set.
 35. Every dial a service declares resolves, for each instance of it that does
     not write it, to exactly one instance in the innermost shared scope.
+36. A node's id is its file's name without `.yaml`, and every account in a
+    node's `accounts` has a uid.
 
 ## Boundaries
 
