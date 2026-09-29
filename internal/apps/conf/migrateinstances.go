@@ -199,13 +199,22 @@ func renameMigrationNode(inv *inventory.Root, nodeIndex int, oldID, newID string
 		}
 		inv.Routes[name] = route
 	}
-	return nil
+	// Routes scoped to the node move with it.
+	var scoped []routeChange
+	for name, route := range inv.Routes {
+		if route.Scope == oldID {
+			_, local := inventory.RouteScope(name)
+			scoped = append(scoped, routeChange{From: name, To: newID + inventory.QualifiedSep + local})
+		}
+	}
+	_, err := renameMigrationRoutes(inv, scoped)
+	return err
 }
 
 func cloneRoutes(routes map[string]inventory.Route) map[string]inventory.Route {
 	copyOf := make(map[string]inventory.Route, len(routes))
 	for name, route := range routes {
-		copyOf[name] = inventory.Route{Hops: append([]string(nil), route.Hops...)}
+		copyOf[name] = inventory.Route{Hops: append([]string(nil), route.Hops...), Scope: route.Scope}
 	}
 	return copyOf
 }

@@ -119,7 +119,10 @@ An instance's key is `<node>/<id>`, so a node rename rewrites every route hop
 and dial that names one of the node's instances, on any node; a dial written
 without its node stays that way. An instance rename updates its authored ID and
 route-hop and dial references in the preview. A route rename updates the route key and typed access lists in users,
-credentials and node profiles. Values, deploy settings and templates remain
+credentials and node profiles. `--route from=home/samba,to=nas` keeps the
+route in its scope; `to=<scope>/<name>` moves it to another scope, or to the
+top level with no scope. A node rename renames the scope key of routes scoped
+to it, and every grant naming one. Values, deploy settings and templates remain
 opaque, and the report marks them for manual review. A changed instance ID
 can change secret paths; the report lists those before anyone edits files.
 

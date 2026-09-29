@@ -397,7 +397,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 						continue
 					}
 					for _, export := range narrowExports(exports, use.export) {
-						derivedID := nodeID + "-" + routeName + "-" + terminal.inst.Service + "-" + export
+						derivedID := nodeID + "-" + inventory.FlatID(routeName) + "-" + terminal.inst.Service + "-" + export
 						if use.profile != "" {
 							derivedID += "-" + use.profile
 						}
@@ -447,7 +447,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 					continue
 				}
 				for _, export := range narrowExports(exports, user.Export) {
-					id := username + "-" + credential + "-" + routeName + "-" + terminal.inst.Service + "-" + export
+					id := username + "-" + credential + "-" + inventory.FlatID(routeName) + "-" + terminal.inst.Service + "-" + export
 					m.ExportInstances = append(m.ExportInstances, ExportInstance{
 						ID:         id,
 						User:       key,

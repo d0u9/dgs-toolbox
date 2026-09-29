@@ -30,8 +30,14 @@ func parseRouteChanges(encoded string) ([]routeChange, error) {
 			}
 			fields[key] = value
 		}
-		if fields["from"] == "" || fields["to"] == "" || strings.ContainsAny(fields["to"], "/:\\") {
-			return nil, fmt.Errorf("--route %q: want from=<old>,to=<new> with a plain route name", spec)
+		if fields["from"] == "" || fields["to"] == "" || strings.ContainsAny(fields["to"], ":\\") || strings.Count(fields["to"], inventory.QualifiedSep) > 1 {
+			return nil, fmt.Errorf("--route %q: want from=<old>,to=<new> with a route name, or <scope>/<name> to move it", spec)
+		}
+		// A plain new name keeps the route in the scope it is in.
+		if !strings.Contains(fields["to"], inventory.QualifiedSep) {
+			if scope, _ := inventory.RouteScope(fields["from"]); scope != "" {
+				fields["to"] = scope + inventory.QualifiedSep + fields["to"]
+			}
 		}
 		if fromSeen[fields["from"]] || toSeen[fields["to"]] {
 			return nil, fmt.Errorf("--route %q: route given more than once", spec)
@@ -62,8 +68,10 @@ func renameMigrationRoutes(inv *inventory.Root, changes []routeChange) (map[stri
 	}
 	copyOf := cloneRoutes(inv.Routes)
 	for from, to := range byName {
-		copyOf[to] = copyOf[from]
+		route := copyOf[from]
+		route.Scope, _ = inventory.RouteScope(to)
 		delete(copyOf, from)
+		copyOf[to] = route
 	}
 	inv.Routes = copyOf
 	inv.Users = cloneUsersForRoutes(inv.Users)
