@@ -269,7 +269,7 @@ var DefaultSkip = []string{
 	// Linux desktops
 	".directory", ".Trash-*",
 	// git
-	".git",
+	".git", ".gitignore", ".gitattributes", ".gitmodules", ".gitkeep",
 }
 
 // skipped reports whether the entry name matches one of the patterns, case

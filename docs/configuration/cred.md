@@ -38,11 +38,11 @@ The built-in list is:
 Thumbs.db  Thumbs.db:encryptable  ehthumbs.db  ehthumbs_vista.db
 desktop.ini  $RECYCLE.BIN  *.stackdump
 .directory  .Trash-*
-.git
+.git  .gitignore  .gitattributes  .gitmodules  .gitkeep
 ```
 
-`.gitignore` and `.gitattributes` are not in it: they are the folder's own
-content, not git's bookkeeping. The confirmation before encrypting names what
+The git files go with `.git`: a folder added to the vault is a copy of
+credentials, not a repository, and they describe the repository. The confirmation before encrypting names what
 will be left out, so nothing goes missing without a word.
 
 ## Paths

@@ -18,7 +18,7 @@ type templateEntry struct {
 // templateList answers every Template as its file is written, and how many
 // Items use it.
 func (s server) templateList(w http.ResponseWriter, r *http.Request) {
-	templates, err := tree.LoadTemplates(s.root)
+	templates, err := tree.LoadAllTemplates(s.root)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return

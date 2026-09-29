@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 )
 
@@ -26,9 +27,35 @@ func SaveTemplate(root, previous string, data []byte, now time.Time) (Template, 
 	if err != nil {
 		return Template{}, err
 	}
+	raw, err := loadRawTemplates(root)
+	if err != nil {
+		return Template{}, err
+	}
+	for _, r := range raw {
+		if previous != "" && previous != t.Type && r.Extends == previous {
+			return Template{}, fmt.Errorf("type %s extends %s, so it cannot be renamed", r.Type, previous)
+		}
+	}
+	raw = slices.DeleteFunc(raw, func(r Template) bool { return r.Type == previous || r.Type == t.Type })
+	resolved, err := Resolve(append(raw, t))
+	if err != nil {
+		return Template{}, err
+	}
+	for _, r := range resolved {
+		if r.Type == t.Type {
+			t = r
+		}
+	}
 	items, err := LoadItems(root)
 	if err != nil {
 		return Template{}, err
+	}
+	if t.Abstract && previous != "" {
+		for _, item := range items {
+			if item.Type == previous {
+				return Template{}, fmt.Errorf("Items of type %s exist, so it cannot be abstract", previous)
+			}
+		}
 	}
 	if previous != t.Type {
 		if _, err := os.Lstat(TemplatePath(root, t.Type)); err == nil {
@@ -76,6 +103,15 @@ func TrashTemplate(root, typ string, now time.Time) (string, error) {
 		}
 		if inUse {
 			return "", fmt.Errorf("Items of type %s exist: delete them first", typ)
+		}
+	}
+	raw, err := loadRawTemplates(root)
+	if err != nil {
+		return "", err
+	}
+	for _, r := range raw {
+		if r.Extends == typ {
+			return "", fmt.Errorf("type %s extends %s: change it first", r.Type, typ)
 		}
 	}
 	from := TemplatePath(root, typ)

@@ -377,13 +377,14 @@ func TestArchiveSkipsJunk(t *testing.T) {
 	write(t, filepath.Join(folder, "thumbs.db"), "junk", 0o644)
 	write(t, filepath.Join(folder, "desktop.ini"), "junk", 0o644)
 	write(t, filepath.Join(folder, ".git", "config"), "junk", 0o644)
+	write(t, filepath.Join(folder, ".gitignore"), "junk", 0o644)
 	write(t, filepath.Join(folder, "sub", ".DS_Store"), "junk", 0o644)
 
 	names, err := Count(folder, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(names) != 6 {
+	if len(names) != 7 {
 		t.Errorf("counted %v", names)
 	}
 
@@ -391,7 +392,7 @@ func TestArchiveSkipsJunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if skipped != 6 {
+	if skipped != 7 {
 		t.Errorf("skipped %d", skipped)
 	}
 	entries := archiveNames(t, data)
