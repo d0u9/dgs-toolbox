@@ -75,12 +75,34 @@ function textOn(hex) {
 // all — are chosen to work as a filled swatch rather than as one. So a line
 // takes a darker version of its kind's colour.
 function lineColourFor(kind) {
-  const hex = colourFor(kind);
+  return darken(colourFor(kind));
+}
+
+function darken(hex) {
   const n = parseInt(hex.slice(1), 16);
   const darker = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
     .map((c) => Math.round(c * 0.72).toString(16).padStart(2, "0"))
     .join("");
   return `#${darker}`;
+}
+
+// Filters are the caller's switches: an element tagged with a filter is shown
+// while that filter is on. filterOn holds the ones switched on, and a line
+// can be coloured by its first tag instead of its kind, since the filters
+// are usually what a reader is tracing.
+let filterOn = new Set();
+let filterColour = new Map();
+let colourByFilter = false;
+
+function edgeColour(kind, tags) {
+  if (colourByFilter && tags && tags.length && filterColour.has(tags[0])) return darken(filterColour.get(tags[0]));
+  return lineColourFor(kind);
+}
+
+// The union of the tags on a set of lines, for a line standing for them.
+function unionTags(into, tags) {
+  for (const t of tags || []) if (!into.includes(t)) into.push(t);
+  return into;
 }
 
 function lineStyleFor(kind) {
@@ -110,6 +132,7 @@ function elements(graph) {
         detail: g.detail || "",
         kind: g.kind || "",
         colour: colourFor(g.kind),
+        tags: g.tags || [],
         isGroup: true,
       },
       classes: g.collapse ? "collapsible" : "",
@@ -128,6 +151,7 @@ function elements(graph) {
         textColour: textOn(colourFor(n.kind)),
         shape: shapeFor(n.kind),
         pad: shapePadding[shapeFor(n.kind)] || "12px",
+        tags: n.tags || [],
       },
     });
   }
@@ -157,6 +181,7 @@ function elements(graph) {
         shape: "round-rectangle",
         pad: "14px",
         opens: g.id,
+        tags: g.tags || [],
       },
       classes: "stand",
     });
@@ -173,7 +198,8 @@ function elements(graph) {
         target: e.to,
         label: e.label || "",
         kind: e.kind || "",
-        colour: lineColourFor(e.kind),
+        tags: e.tags || [],
+        colour: edgeColour(e.kind, e.tags),
         lineStyle: lineStyleFor(e.kind),
       },
       // An edge inside one collapsed box has nothing to say once the box is
@@ -185,8 +211,9 @@ function elements(graph) {
     const s = from ? standID(from) : e.from;
     const t = to ? standID(to) : e.to;
     const key = `${s}|${t}`;
-    const agg = meta.get(key) || { source: s, target: t, count: 0, kinds: new Set(), label: "" };
+    const agg = meta.get(key) || { source: s, target: t, count: 0, kinds: new Set(), label: "", tags: [] };
     agg.count += 1;
+    unionTags(agg.tags, e.tags);
     agg.kinds.add(e.kind || "");
     agg.label = e.label || agg.label;
     meta.set(key, agg);
@@ -203,7 +230,8 @@ function elements(graph) {
         label: agg.count > 1 ? `${agg.count}` : agg.label,
         weight: agg.count,
         kind: kind,
-        colour: lineColourFor(kind),
+        tags: agg.tags,
+        colour: edgeColour(kind, agg.tags),
         lineStyle: lineStyleFor(kind),
       },
       classes: "meta",
@@ -354,6 +382,11 @@ function styleSheet() {
     // meant to be the size of its own name, and an element that still takes
     // up space would keep the box as wide as everything inside it.
     selector: ".lod-hide",
+    style: { "display": "none" },
+  },
+  {
+    // Switched off in the filter list: out of the picture the same way.
+    selector: ".filter-hide",
     style: { "display": "none" },
   },
   {
@@ -872,20 +905,75 @@ function layOutOverview() {
   });
 }
 
+// applyFilters hides every element whose tags are all switched off. An
+// element carrying no tag is never hidden by a filter.
+function applyFilters() {
+  if (!cy) return;
+  cy.batch(() => {
+    cy.elements().forEach((el) => {
+      const tags = el.data("tags") || [];
+      const off = tags.length > 0 && !tags.some((t) => filterOn.has(t));
+      if (off) el.addClass("filter-hide");
+      else el.removeClass("filter-hide");
+    });
+  });
+}
+
+function recolourEdges() {
+  if (!cy) return;
+  cy.batch(() => {
+    cy.edges().forEach((e) => e.data("colour", edgeColour(e.data("kind"), e.data("tags"))));
+  });
+}
+
+// drawFilters writes the filter list above the key: one switch per filter,
+// with the swatch its lines take when coloured by filter, and a switch for
+// that colouring.
+function drawFilters(graph) {
+  const filters = graph.filters || [];
+  filterColour = new Map(filters.map((f, i) => [f.id, paletteAt(i)]));
+  filterOn = new Set(filters.map((f) => f.id));
+  const box = document.getElementById("filters");
+  if (filters.length === 0) {
+    box.hidden = true;
+    return;
+  }
+  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const rows = filters.map((f) =>
+    `<label class="filter"><input type="checkbox" data-filter="${esc(f.id)}" checked>` +
+    `<span class="swatch" style="background:${filterColour.get(f.id)}"></span>` +
+    `<span>${esc(f.label)}${f.detail ? `<small>${esc(f.detail)}</small>` : ""}</span></label>`
+  );
+  box.innerHTML = `<h2>${esc(graph.filterTitle || "Filters")}</h2>${rows.join("")}` +
+    `<label class="filter colour-by"><input type="checkbox" data-colour-by${colourByFilter ? " checked" : ""}><span>Colour lines by these</span></label>`;
+  box.hidden = false;
+  box.querySelectorAll("input[data-filter]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) filterOn.add(input.dataset.filter);
+      else filterOn.delete(input.dataset.filter);
+      applyFilters();
+    });
+  });
+  box.querySelector("input[data-colour-by]").addEventListener("change", (event) => {
+    colourByFilter = event.target.checked;
+    recolourEdges();
+  });
+}
+
 function drawLegend(graph) {
   const aside = document.getElementById("key");
   const kinds = new Map();
   for (const g of graph.groups || []) if (g.kind) kinds.set(g.kind, (graph.legend || {})[g.kind] || "");
   for (const n of graph.nodes || []) if (n.kind) kinds.set(n.kind, (graph.legend || {})[n.kind] || "");
   for (const e of graph.edges || []) if (e.kind) kinds.set(e.kind, (graph.legend || {})[e.kind] || "");
-  if (kinds.size === 0) {
+  if (kinds.size === 0 && !(graph.filters || []).length) {
     aside.hidden = true;
     return;
   }
   const rows = [...kinds].map(([kind, meaning]) =>
     `<dt><span class="swatch" style="background:${colourFor(kind)}"></span>${kind}</dt><dd>${meaning}</dd>`
   );
-  aside.innerHTML = `<h2>Key</h2><dl>${rows.join("")}</dl>`;
+  document.getElementById("legend").innerHTML = `<h2>Key</h2><dl>${rows.join("")}</dl>`;
   aside.hidden = false;
 }
 
@@ -926,6 +1014,8 @@ async function load() {
   ];
   document.getElementById("counts").textContent = counts.join(" · ");
 
+  // Before the elements are built: a line's colour may come from its filter.
+  drawFilters(graph);
   if (cy) cy.destroy();
   cy = cytoscape({
     container: document.getElementById("graph"),
@@ -939,6 +1029,7 @@ async function load() {
   wireHighlighting();
   wireDetail();
   drawLegend(graph);
+  applyFilters();
   // The layout runs after the legend, so the container has its final width
   // before anything is placed, and it is run rather than passed to the
   // constructor so its stop event is there to listen for.

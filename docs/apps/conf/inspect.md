@@ -210,6 +210,28 @@ A site a proxy serves from its own disk has no downstream instance and so no
 line at all — it is the proxy's own configuration, not an edge — which is why
 the picture shows fewer names than the rendered file does.
 
+**A container network is a box inside its machine.** A process sits in the box
+of the first [container network](inventory.md#container-networks) it joins,
+in the node's order, and a line runs from it to the box of every further one
+it joins, carrying the address it holds there when that address is fixed; its
+own box names them too. A box has one parent, so a process spanning two
+networks is drawn inside one and reaches the other rather than being drawn
+twice. A container network nothing joins has no box.
+
+**Every line says which network it runs over,** and the page lists the
+networks as switches: each network in `networks.yaml`, in preference order,
+then each container network by name, then loopback. A line belongs to the
+container network its two ends share, else the network its address was
+chosen on, else loopback. Switching one off takes its lines out of the
+picture, and the list can colour the lines by network instead of by kind —
+the question a reader switching networks on and off is usually asking.
+
+**The machines `hosts.yaml` names are drawn too,** each as one shape in a box
+of their own, carrying its network and address. They run no instance, so no
+line reaches them; they are there because they hold addresses on the same
+networks, and a picture of who sits where on a LAN without them would be
+missing the NAS. Each belongs to its network's switch.
+
 Someone with no device file has no node box, so the box standing in for one is
 named after the credential this file authenticates with — the same name the
 secrets tree files it under.
@@ -249,7 +271,8 @@ Unlike `geo/gpx`'s `web/`, which is mapping and GPX editing mixed into one
 bundle nothing else can reuse, the page and its vendored library live in a
 package of their own: `internal/webgraph`, taking a generic node/group/edge
 shape and knowing nothing about nodes, instances or secrets. It exposes an
-`http.Handler`, a `Server` and a small JSON contract; a caller supplies a
+`http.Handler`, a `Server` and a small JSON contract — groups, nodes and edges,
+each optionally tagged with filters the page lists as switches; a caller supplies a
 `Load` function producing its own graph as that shape, plus a `Legend` saying
 what each `Kind` means. This inventory's `topology.Graph` maps onto it in one
 file inside `internal/apps/conf`, which is where the Container/Shape/Edge

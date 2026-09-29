@@ -47,6 +47,8 @@ type Group struct {
 	// again. It is the caller saying which level of its own hierarchy is
 	// the one worth seeing first — a machine, rather than every port on it.
 	Collapse bool `json:"collapse,omitempty"`
+	// Tags name the filters this box belongs to; see Graph.Filters.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // Node is one shape of the graph.
@@ -63,6 +65,8 @@ type Node struct {
 	// Detail is a line under the label, and Tooltip is what hovering shows.
 	Detail  string `json:"detail,omitempty"`
 	Tooltip string `json:"tooltip,omitempty"`
+	// Tags name the filters this shape belongs to; see Graph.Filters.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // Edge is one connection. It is drawn with an arrow from From to To.
@@ -72,6 +76,20 @@ type Edge struct {
 	Label string `json:"label,omitempty"`
 	// Kind styles the line the way Node.Kind styles a shape.
 	Kind string `json:"kind,omitempty"`
+	// Tags name the filters this line belongs to; see Graph.Filters. When
+	// the reader colours lines by filter, a line takes the colour of its
+	// first tag.
+	Tags []string `json:"tags,omitempty"`
+}
+
+// Filter is one switch in the page's filter list: every group, node and edge
+// carrying its ID in Tags is shown while it is on. An element carrying no
+// tag is never filtered, and one carrying several is shown while any of them
+// is on.
+type Filter struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // Graph is a whole picture.
@@ -84,6 +102,10 @@ type Graph struct {
 	// Legend maps a Kind to what it means, for the key beside the graph.
 	// A kind with no entry is drawn and left out of the key.
 	Legend map[string]string `json:"legend,omitempty"`
+	// Filters are the switches the page offers, in the order listed, under
+	// FilterTitle. All start on. None means no filter list is drawn.
+	Filters     []Filter `json:"filters,omitempty"`
+	FilterTitle string   `json:"filterTitle,omitempty"`
 }
 
 // Load produces the graph to draw. It is called on every request rather than

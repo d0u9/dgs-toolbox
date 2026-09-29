@@ -47,6 +47,10 @@ type Edge struct {
 	ToPort  string
 	Address string
 	Port    int
+	// Network is the network Address was chosen on, and Container the
+	// container network both ends share; both are empty for loopback.
+	Network   string
+	Container string
 }
 
 // Graph is the whole connectivity picture one inventory and its derivation
@@ -107,8 +111,10 @@ func Build(inv *inventory.Root, model *derive.Model) *Graph {
 			From:    from,
 			To:      e.To.Instance,
 			ToPort:  e.To.Port,
-			Address: e.Address,
-			Port:    e.Port,
+			Address:   e.Address,
+			Port:      e.Port,
+			Network:   e.Network,
+			Container: e.Container,
 		})
 	}
 
