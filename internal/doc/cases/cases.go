@@ -278,7 +278,7 @@ func (c Case) View() view.View {
 	if layout == "" {
 		layout = DefaultLayout
 	}
-	return view.View{Name: "case-" + c.Name, Selection: view.Head, Layout: layout, Dedupe: view.DedupeNumber}
+	return view.View{Name: "case-" + c.Name, Selection: view.Head, Node: view.Node{File: layout}, Dedupe: view.DedupeNumber}
 }
 
 // Path is where a Case's file is.

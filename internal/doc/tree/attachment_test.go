@@ -94,8 +94,8 @@ func TestSnapshotLifecycle(t *testing.T) {
 		t.Fatal("metadata made a snapshot")
 	}
 	// Same PDF, different fields exports distinct snapshot identities and values.
-	v := view.View{Name: "cards", Selection: view.All, Layout: "{revision}-{expires}.{ext}"}
-	plan, err := view.Build(v, []tree.Item{item}, nil)
+	v := view.View{Name: "cards", Selection: view.All, Node: view.Node{File: "{revision}-{expires}.{ext}"}}
+	plan, err := view.Build(v, []tree.Item{item}, view.Types{})
 	must(err)
 	if len(plan.Files) != 2 {
 		t.Fatalf("export plan: %+v", plan)

@@ -28,19 +28,13 @@ type outlinesJSON struct {
 	// Rules are every rule in the tree, and Used the Outlines using each.
 	Rules []view.View         `json:"rules"`
 	Used  map[string][]string `json:"used"`
-	// Layouts are each rule's layout parsed, by rule name, for the page to
-	// edit part by part; a layout that does not parse is left out.
-	Layouts map[string]view.Layout `json:"layouts"`
-	// Migrated names the Outlines the tree's Views and Targets just became.
-	Migrated []string `json:"migrated,omitempty"`
-	Error    string   `json:"error,omitempty"`
+	Error string              `json:"error,omitempty"`
 }
 
 // builtIn are the keys every Item has, and those derived from its fields.
 var builtIn = []string{"type", "kind", "id", "revision", "ext", "year", "month", "date"}
 
-// outlineList answers every Outline, first making the tree's Views and
-// Targets into Outlines if it still has them.
+// outlineList answers every Outline, and every rule.
 func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
 	out := outlinesJSON{Outlines: []outlineJSON{}, Countries: map[string]string{}}
 	for _, c := range country.All() {
@@ -67,15 +61,6 @@ func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	out.Keys = append(fields, out.Keys...)
-	if tree.Require(s.root) == nil {
-		s.writing.Lock()
-		migrated, err := outline.Migrate(s.root)
-		s.writing.Unlock()
-		out.Migrated = migrated
-		if err != nil {
-			out.Error = err.Error()
-		}
-	}
 	entries, err := outline.Load(s.root)
 	if err != nil {
 		out.Error = err.Error()
@@ -83,12 +68,6 @@ func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
 	out.Rules, out.Used = []view.View{}, map[string][]string{}
 	if rules, used, err := outline.Rules(s.root); err == nil {
 		out.Rules, out.Used = rules, used
-	}
-	out.Layouts = map[string]view.Layout{}
-	for _, r := range out.Rules {
-		if layout, err := view.Parse(r.Layout); err == nil {
-			out.Layouts[r.Name] = layout
-		}
 	}
 	for _, o := range entries {
 		j := outlineJSON{Outline: o}
@@ -132,7 +111,7 @@ func (s server) outlineGroup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	g, err := outline.Group(o, snapshots, items, view.NamesOf(templates))
+	g, err := outline.Group(o, snapshots, items, view.TypesOf(templates))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

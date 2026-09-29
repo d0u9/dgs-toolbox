@@ -102,7 +102,7 @@ func TestFilesBesideItems(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("rules", "ids.yaml", "name: ids\nlayout: \"{type}.{ext}\"\n")
+	write("rules", "ids.yaml", "name: ids\nfile: \"{type}.{ext}\"\n")
 	write("rules", "broken.yaml", "name: [unclosed")
 	write("snapshots", "visa.yaml", "name: visa\ntaken: 2026-01-02T03:04:05Z\nfiles:\n"+
 		"  - {path: a.pdf, item: "+item.ID+", revision: "+item.Head+"}\n"+

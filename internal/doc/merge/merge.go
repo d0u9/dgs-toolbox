@@ -11,7 +11,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"time"
 
@@ -45,7 +44,7 @@ func FromTree(root string) (Source, error) {
 	if err != nil {
 		return Source{}, err
 	}
-	parsed, err := tree.LoadTemplates(root)
+	parsed, err := tree.LoadAllTemplates(root)
 	if err != nil {
 		return Source{}, err
 	}
@@ -60,16 +59,6 @@ func FromTree(root string) (Source, error) {
 	outlines, err := outline.Load(root)
 	if err != nil {
 		return Source{}, err
-	}
-	// A tree not opened since Outlines came still has Views and Targets.
-	legacy, err := outline.Legacy(root)
-	if err != nil {
-		return Source{}, err
-	}
-	for _, o := range legacy {
-		if !slices.ContainsFunc(outlines, func(x outline.Outline) bool { return x.Name == o.Name }) {
-			outlines = append(outlines, o)
-		}
 	}
 	return Source{Items: items, Templates: templates, Outlines: outlines,
 		PDF: func(id, digest string) string { return tree.PDFPath(root, id, digest) }}, nil

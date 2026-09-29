@@ -93,7 +93,7 @@ func TestTheDefaultViewNumbersOneType(t *testing.T) {
 	_ = c.Add("C", "", now)
 	_ = c.Add("A", "", now)
 	found, _ := c.Items(items())
-	plan, err := view.Build(c.View(), found, nil)
+	plan, err := view.Build(c.View(), found, view.Types{})
 	if err != nil {
 		t.Fatal(err)
 	}
