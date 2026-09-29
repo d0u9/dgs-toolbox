@@ -1261,6 +1261,11 @@ fields:
 - The tree is not fixed: changing `extends` changes only what a type
   inherits and what `type == <parent>` takes. A type another extends cannot
   be renamed or deleted first.
+- A select field's `names` give its values in `en` or `zh`, as
+  `names: {en: {房租: rent, 电: power}}`; a layout writes one with
+  `{category:en}`, each of several values in turn, and a value without a
+  name as it is kept. `if` still compares the kept value. Names are
+  inherited with the field and cannot be changed below it.
 - A `date` field's `shape` is `day` (the default), `span`, or both. A span
   is kept as `2025-01-01/2025-12-31`; an end not known is left empty,
   `2025-01-01/` or `/2030-03-01`, and an empty end is open. On the page a span is two date boxes; one that also takes a day

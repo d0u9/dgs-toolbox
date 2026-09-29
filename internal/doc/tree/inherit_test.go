@@ -113,3 +113,19 @@ func TestSplitSpan(t *testing.T) {
 		}
 	}
 }
+
+func TestValueNamesAreChecked(t *testing.T) {
+	for _, bad := range []string{
+		"type: x\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n  - key: a\n    names: {en: {b: c}}\n",
+		"type: x\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n  - key: a\n    type: select\n    options: [b]\n    names: {en: {z: c}}\n",
+		"type: x\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n  - key: a\n    type: select\n    options: [b]\n    names: {fr: {b: c}}\n",
+	} {
+		if _, err := ParseTemplate([]byte(bad)); err == nil {
+			t.Errorf("%q parsed", bad)
+		}
+	}
+	tpl, err := ParseTemplate([]byte("type: x\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n  - key: a\n    type: select\n    values: {g: [b]}\n    names: {en: {b: c}}\n"))
+	if err != nil || tpl.Fields[2].ValueName("b", "en") != "c" {
+		t.Fatalf("%v %+v", err, tpl)
+	}
+}

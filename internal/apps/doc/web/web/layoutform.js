@@ -437,6 +437,8 @@ function keyOptions() {
   const plain = keys.filter((k) => k !== "type" && (BUILT_IN[k] || held.has(k)));
   return [
     ["Keys", [...plain, "type", "type:zh", "type:en"]],
+    // A select field whose values are named in a language: {category:en}.
+    ["Named values", [...new Set(state.templates.flatMap((t) => t.fields.filter((f) => held.has(f.key) && f.names).flatMap((f) => Object.keys(f.names).map((l) => f.key + ":" + l))))]],
     ["Countries", [...countryKeys()].filter((k) => held.has(k)).flatMap((k) => Object.keys(FORMATS).map((f) => k + ":" + f))],
     ...linkFields().map((l) => ["From " + l, [...linkKeys(l), "type:zh", "type:en", "year", "month", "date"].map((k) => l + "." + k)]),
   ];
