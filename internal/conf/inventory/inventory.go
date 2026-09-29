@@ -506,7 +506,8 @@ type Profile struct {
 	Values map[string]any `yaml:"values"`
 	// Access narrows this profile to some of the routes the device's
 	// credential opens. Empty takes every one of them.
-	Access []string `yaml:"access"`
+	Access        []string `yaml:"access"`
+	AccessWritten []string `yaml:"-"`
 }
 
 // ProfileNames is n's profile names, sorted.
@@ -549,7 +550,10 @@ type User struct {
 	// per device, and the server carries whatever number results. A device
 	// names which one it uses; two naming the same one share a value.
 	Credentials map[string]Credential `yaml:"credentials"`
-	Access      []string              `yaml:"access"`
+	// Access is the routes granted, with every @set expanded by Load.
+	// AccessWritten is the list as written, for a tool rewriting the file.
+	Access        []string `yaml:"access"`
+	AccessWritten []string `yaml:"-"`
 }
 
 // Credential is one of a person's credentials: what it is for, and which of
@@ -566,7 +570,8 @@ type Credential struct {
 	// granted to the person, and a credential chooses among what they
 	// already have rather than reaching past it. See
 	// docs/apps/conf/inventory.md#a-credential-may-open-fewer-routes.
-	Access []string `yaml:"access"`
+	Access        []string `yaml:"access"`
+	AccessWritten []string `yaml:"-"`
 }
 
 // CredentialNames returns this person's credential names in a stable order,
@@ -659,6 +664,10 @@ type Root struct {
 	// UsersBroken empty if the file does not exist.
 	Users       map[string]User
 	UsersBroken string
+	// Sets is users.yaml's `sets`: named lists of routes an access list
+	// names as @<set>. Load expands them; see
+	// docs/apps/conf/inventory.md#named-sets.
+	Sets map[string][]string
 
 	// Routes is routes.yaml's `routes` map, keyed by route name.
 	Routes       map[string]Route
@@ -695,11 +704,12 @@ func Load(root string) (*Root, error) {
 	}
 	rt.Nodes = nodes
 
-	users, brokenUsers, err := loadUsers(root)
+	users, sets, brokenUsers, err := loadUsers(root)
 	if err != nil {
 		return nil, err
 	}
-	rt.Users, rt.UsersBroken = users, brokenUsers
+	rt.Users, rt.Sets, rt.UsersBroken = users, sets, brokenUsers
+	expandSets(rt)
 
 	// A group naming a user is that user's devices, so the owner is the
 	// directory and does not have to be repeated in every file in it. An
@@ -939,23 +949,24 @@ func loadInstanceDir(root, dir string) ([]Instance, error) {
 	return instances, nil
 }
 
-func loadUsers(root string) (map[string]User, string, error) {
+func loadUsers(root string) (map[string]User, map[string][]string, string, error) {
 	path := filepath.Join(root, UsersFilename)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, "", nil
+			return nil, nil, "", nil
 		}
-		return nil, "", fmt.Errorf("inventory: reading %s: %w", path, err)
+		return nil, nil, "", fmt.Errorf("inventory: reading %s: %w", path, err)
 	}
 
 	var doc struct {
-		Users map[string]User `yaml:"users"`
+		Sets  map[string][]string `yaml:"sets"`
+		Users map[string]User     `yaml:"users"`
 	}
 	if err := decodeStrict(data, &doc); err != nil {
-		return nil, fmt.Sprintf("%s: %s", path, err), nil
+		return nil, nil, fmt.Sprintf("%s: %s", path, err), nil
 	}
-	return doc.Users, "", nil
+	return doc.Users, doc.Sets, "", nil
 }
 
 func loadRoutes(root string) (map[string]Route, string, error) {
@@ -1130,4 +1141,56 @@ func mappingValue(node *yaml.Node, key string) (*yaml.Node, bool) {
 		}
 	}
 	return nil, false
+}
+
+// SetPrefix marks an access entry naming a set rather than a route.
+const SetPrefix = "@"
+
+// ExpandAccess is list with every @set replaced by its routes, in order,
+// each route once. An unknown set is kept as written, for validate to name.
+func ExpandAccess(list []string, sets map[string][]string) []string {
+	if list == nil {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	seen := map[string]bool{}
+	add := func(s string) {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	for _, entry := range list {
+		name, isSet := strings.CutPrefix(entry, SetPrefix)
+		members, ok := sets[name]
+		if !isSet || !ok {
+			add(entry)
+			continue
+		}
+		for _, route := range members {
+			add(route)
+		}
+	}
+	return out
+}
+
+// expandSets fills every access list from its written form.
+func expandSets(rt *Root) {
+	for key, u := range rt.Users {
+		u.AccessWritten = u.Access
+		u.Access = ExpandAccess(u.Access, rt.Sets)
+		for name, c := range u.Credentials {
+			c.AccessWritten = c.Access
+			c.Access = ExpandAccess(c.Access, rt.Sets)
+			u.Credentials[name] = c
+		}
+		rt.Users[key] = u
+	}
+	for i := range rt.Nodes {
+		for name, p := range rt.Nodes[i].Profiles {
+			p.AccessWritten = p.Access
+			p.Access = ExpandAccess(p.Access, rt.Sets)
+			rt.Nodes[i].Profiles[name] = p
+		}
+	}
 }

@@ -1148,6 +1148,24 @@ cannot tell a removal from a rename. That report is the reminder to delete the
 file and re-render the servers it reached; until both are done, the password
 still opens the port. `dgs conf --check` names it.
 
+### Named sets
+
+`users.yaml` may name lists of routes that several people are granted:
+
+```yaml
+sets:
+  proxies: [sfo-ss, sfo-hy2, hkg-ss]
+users:
+  emma:
+    access: ["@proxies", home/samba]
+```
+
+An access list — a person's, a credential's, a device profile's — names a set
+as `@<set>`, and Load expands it in place. A set is an explicit list, never a
+pattern: adding a route to it grants every person holding the set, and that
+grant is one line in this file. A set names routes only, not other sets.
+Renaming a route rewrites the sets that name it.
+
 ### A credential may open fewer routes
 
 `access` on a credential narrows it to some of the routes its owner holds:
@@ -2403,6 +2421,8 @@ failing can be told which level it was reading.
 33. A route's scope names a network or a node, never a name both hold; its
     entry has an address on that network or runs on that node; and every
     credential opening a route scoped to a non-universal network reaches it.
+34. Every route a set names exists, and every `@<set>` in an access list names
+    a set.
 
 ## Boundaries
 

@@ -278,7 +278,7 @@ func (m *migrationYAML) patchNodes(old, next *inventory.Root, networks []network
 		for name, profile := range source.Profiles {
 			_, profileNode := migrationMap(profiles, name)
 			_, access := migrationMap(profileNode, "access")
-			changed, err = migrationSetSequence(access, profile.Access, target.Profiles[name].Access, source.Path+": profiles."+name+".access")
+			changed, err = migrationSetSequence(access, profile.AccessWritten, target.Profiles[name].AccessWritten, source.Path+": profiles."+name+".access")
 			if err != nil {
 				return err
 			}
@@ -514,11 +514,20 @@ func (m *migrationYAML) patchUsers(old, next *inventory.Root) error {
 	if err != nil {
 		return err
 	}
+	_, sets := migrationMap(migrationRoot(&file.doc), "sets")
+	for name, members := range old.Sets {
+		_, list := migrationMap(sets, name)
+		changed, err := migrationSetSequence(list, members, next.Sets[name], "users.yaml: sets."+name)
+		if err != nil {
+			return err
+		}
+		file.changed = file.changed || changed
+	}
 	_, users := migrationMap(migrationRoot(&file.doc), "users")
 	for name, source := range old.Users {
 		_, user := migrationMap(users, name)
 		_, access := migrationMap(user, "access")
-		changed, err := migrationSetSequence(access, source.Access, next.Users[name].Access, "users.yaml: "+name+".access")
+		changed, err := migrationSetSequence(access, source.AccessWritten, next.Users[name].AccessWritten, "users.yaml: "+name+".access")
 		if err != nil {
 			return err
 		}
@@ -527,7 +536,7 @@ func (m *migrationYAML) patchUsers(old, next *inventory.Root) error {
 		for credentialName, credential := range source.Credentials {
 			_, one := migrationMap(credentials, credentialName)
 			_, access = migrationMap(one, "access")
-			changed, err = migrationSetSequence(access, credential.Access, next.Users[name].Credentials[credentialName].Access, "users.yaml: "+name+"."+credentialName+".access")
+			changed, err = migrationSetSequence(access, credential.AccessWritten, next.Users[name].Credentials[credentialName].AccessWritten, "users.yaml: "+name+"."+credentialName+".access")
 			if err != nil {
 				return err
 			}
