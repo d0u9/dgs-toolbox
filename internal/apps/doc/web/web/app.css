@@ -860,24 +860,45 @@ body.list-shut .outline-list { display: none; }
 .block-add { font-size: 0.85em; padding: 2px 8px; }
 .block-note { margin: 0; font-size: 0.85em; }
 
-/* A rule's if as bubbles: key, operator and values, joined by && or ||. */
-.cond-wrap { display: flex; align-items: flex-start; gap: 6px; flex: 1; min-width: 0; }
+/* A rule's if as bubbles: key, operator and values, joined by && or ||.
+   Controls that add, remove or negate show on hover, so the condition reads
+   first. */
+.cond-wrap { display: flex; align-items: flex-start; gap: 8px; flex: 1; min-width: 0; }
 .cond-wrap > input { flex: 1; }
 .cond-wrap > [hidden] { display: none; }
 .cond { flex: 1; min-width: 0; }
-.cond-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cond-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 3px; }
 .cond-group.top { display: flex; }
-.cond-group:not(.top) { border: 1px dashed var(--hairline); border-radius: 8px; padding: 2px 4px; }
-.cond-bubble { display: inline-flex; flex-wrap: wrap; max-width: 100%; align-items: center; gap: 2px; padding: 2px 4px; border: 1px solid var(--hairline); border-radius: 999px; background: var(--paper); cursor: grab; }
+.cond-group:not(.top) { position: relative; padding: 3px 6px 3px 14px; border-left: 2px solid var(--hairline-strong); border-radius: 4px; background: color-mix(in srgb, var(--hairline) 35%, transparent); }
+.cond-group.negated { border-left-color: var(--error); }
+.cond-bubble { display: inline-flex; flex-wrap: wrap; max-width: 100%; align-items: center; gap: 0; height: auto; min-height: 24px; padding: 0 4px 0 8px;
+  border: 1px solid var(--hairline-strong); border-radius: 12px; background: var(--paper); cursor: grab; font-size: var(--font-size-xs); line-height: 22px; }
+.cond-bubble:hover { border-color: var(--primary); }
 .cond-bubble.empty { border-style: dashed; }
-.cond-bubble input, .cond-bubble select { field-sizing: content; flex: none; border: 0; background: transparent; font: inherit; font-size: var(--font-size-xs); padding: 1px 2px; }
-.cond-key, .cond-value { min-width: 3ch; }
-.cond-chip { display: inline-flex; align-items: center; border-radius: 999px; background: var(--hairline); padding: 0 2px; }
-.cond-join, .cond-not { border: 1px solid var(--hairline); border-radius: 999px; background: transparent; font-size: var(--font-size-xs); padding: 1px 6px; cursor: pointer; color: var(--primary); }
-.cond-not:not(.on) { opacity: 0.35; }
-.cond-bracket { color: var(--graphite); }
-.cond-x { border: 0; background: transparent; color: var(--graphite); cursor: pointer; padding: 0 3px; }
-.cond-text.on { color: var(--primary); }
+.cond-bubble.negated { border-color: color-mix(in srgb, var(--error) 50%, var(--hairline-strong)); }
+.cond-bubble input, .cond-bubble select { field-sizing: content; flex: none; border: 0; background: transparent; font: inherit; line-height: 22px; height: 22px; padding: 0 2px; outline: none; }
+.cond-bubble input:focus, .cond-bubble select:focus { background: var(--hover); border-radius: 4px; }
+.cond-key { font-weight: 600; min-width: 3ch; }
+.cond-op { font-family: var(--font-mono); color: var(--primary); appearance: none; -webkit-appearance: none; cursor: pointer; padding: 0 4px !important; }
+.cond-value { min-width: 3ch; }
+.cond-chip { display: inline-flex; align-items: center; height: 18px; margin: 0 1px; padding: 0 0 0 2px; border-radius: 9px; background: var(--hover); }
+.cond-chip input { height: 18px; line-height: 18px; }
+.cond-bracket { color: var(--graphite); font-family: var(--font-mono); }
+.cond-join { border: 0; background: transparent; font-family: var(--font-mono); font-size: var(--font-size-xs); font-weight: 600; padding: 0 3px; cursor: pointer; color: var(--graphite); }
+.cond-join:hover { color: var(--primary); }
+.cond-not { position: absolute; left: -9px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; padding: 0; border: 1px solid var(--hairline-strong); border-radius: 50%;
+  background: var(--paper); font-size: 10px; line-height: 14px; cursor: pointer; color: var(--graphite); opacity: 0; }
+.cond-group:hover > .cond-not, .cond-not.on { opacity: 1; }
+.cond-not.on { color: var(--paper); background: var(--error); border-color: var(--error); }
+.cond-x { border: 0; background: transparent; color: var(--graphite); cursor: pointer; padding: 0 3px; font-size: 11px; line-height: 1; visibility: hidden; }
+.cond-bubble:hover > .cond-x, .cond-chip:hover > .cond-x, .cond-group:hover > .cond-x { visibility: visible; }
+.cond-x:hover { color: var(--error); }
+.cond-adds { display: inline-flex; gap: 2px; opacity: 0; transition: opacity .1s; }
+.cond-adds .cond-x { visibility: visible; font-size: var(--font-size-xs); border: 1px dashed var(--hairline-strong); border-radius: 10px; padding: 1px 6px; }
+.cond-adds .cond-x:hover { color: var(--primary); border-color: var(--primary); }
+.cond-group:hover > .cond-adds, .cond-group.top:focus-within > .cond-adds, .cond-group.top > .cond-adds:only-child { opacity: 1; }
+.cond-text { font-size: var(--font-size-xs); padding: 2px 8px; }
+.cond-text.on { color: var(--primary); border-color: var(--primary); }
 .cond-group.drop, .cond-bubble.drop { box-shadow: -3px 0 0 var(--primary); }
 .dragging { opacity: 0.5; }
 
@@ -888,3 +909,7 @@ body.list-shut .outline-list { display: none; }
 .template-tree .ft-name { font-family: var(--font-mono); font-weight: 600; }
 .template-description { margin: 0; font-size: var(--font-size-xs); flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .template-bar .file-chip { flex: none; }
+.cond-bubble .cond-more { min-width: 2ch; max-width: 2ch; color: var(--graphite); text-align: center; }
+.cond-bubble .cond-more:focus { max-width: none; min-width: 6ch; text-align: left; }
+.cond-bubble .cond-more::placeholder { color: var(--graphite); }
+.cond-bubble.negated .cond-op { color: var(--error); }
