@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"sort"
+	"strings"
 
 	"dgs-toolbox/internal/conf/inventory"
 )
@@ -17,9 +18,9 @@ func ResolveAddress(inv *inventory.Root, from inventory.Instance, fromNode inven
 }
 
 // resolveEndpoint is the address one instance dials another at: the other
-// end's address in the innermost scope the two share. Two instances on one
-// container network dial by the instance's name there, and container is that
-// network. Otherwise one node is loopback, and two nodes are resolveAddress.
+// end's address in the innermost scope the two share. Two instances sharing a
+// container network dial by the instance's name there, and container is the
+// first they share in the node's order. Otherwise one node is loopback, and two nodes are resolveAddress.
 //
 // A container on a container network reaching anything on its own node off
 // that network is the one pairing with no answer: loopback inside it is the
@@ -31,12 +32,12 @@ func resolveEndpoint(from inventory.Instance, fromNode inventory.Node, to invent
 		address, network, err = resolveAddress(fromNode, toNode, networkPref, universal)
 		return address, network, "", err
 	}
-	if to.Network != "" && from.Network == to.Network {
-		return inventory.LocalName(to.ID), "", to.Network, nil
+	if shared := toNode.SharedContainer(from, to); shared != "" {
+		return inventory.LocalName(to.ID), "", shared, nil
 	}
-	if from.Network != "" {
-		return "", "", "", fmt.Errorf("%s is on container network %q and %s is not, so loopback inside it is the container itself: put both on one of %s's containers",
-			from.ID, from.Network, to.ID, fromNode.ID)
+	if len(from.Containers) > 0 {
+		return "", "", "", fmt.Errorf("%s is on container networks %s and %s shares none of them, so loopback inside it is the container itself: put both on one of %s's containers",
+			from.ID, strings.Join(from.ContainerNames(), ", "), to.ID, fromNode.ID)
 	}
 	return "127.0.0.1", "", "", nil
 }

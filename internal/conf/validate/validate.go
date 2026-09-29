@@ -509,25 +509,52 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 	}
 
 	// Rule 32: a containerised instance binds every interface of its
-	// container and joins one of its node's container networks; a host
-	// process joins none. A node's `containers` names no network twice.
+	// container and joins only container networks its node lists; a host
+	// process joins none. A node's `containers` names no network twice, each
+	// with a subnet that overlaps no other of the node's, and a gateway,
+	// when written, inside it. A fixed address sits inside its network's
+	// subnet, is not its gateway, and is held by one instance.
 	for _, nodeID := range nodeIDsInOrder {
 		n := nodeByID[nodeID]
 		seen := map[string]bool{}
+		var prefixes []netip.Prefix
+		var names []string
 		for _, c := range n.Containers {
-			if seen[c] {
-				add("node %q: container network %q is listed twice", n.ID, c)
+			if c.Name == "" {
+				add("node %q: a container network has no name", n.ID)
+				continue
 			}
-			seen[c] = true
+			if seen[c.Name] {
+				add("node %q: container network %q is listed twice", n.ID, c.Name)
+			}
+			seen[c.Name] = true
+			prefix, err := netip.ParsePrefix(c.Subnet)
+			if err != nil {
+				add("node %q: container network %q: subnet %q is not a CIDR prefix", n.ID, c.Name, c.Subnet)
+				continue
+			}
+			if c.Gateway != "" {
+				if gw, err := netip.ParseAddr(c.Gateway); err != nil || !prefix.Contains(gw) {
+					add("node %q: container network %q: gateway %q is not an address inside %s", n.ID, c.Name, c.Gateway, c.Subnet)
+				}
+			}
+			for i, other := range prefixes {
+				if other.Overlaps(prefix) {
+					add("node %q: container networks %q and %q overlap: %s and %s", n.ID, names[i], c.Name, other, prefix)
+				}
+			}
+			prefixes = append(prefixes, prefix)
+			names = append(names, c.Name)
 		}
 	}
+	held := map[string]string{}
 	for _, id := range realIDs {
 		ref := realInstances[id]
 		inst := ref.inst
 		if !inst.Containerised() {
-			if inst.Network != "" {
-				add("instance %q runs as a %s process and names container network %q: only a container joins one",
-					id, inventory.RuntimeHost, inst.Network)
+			if len(inst.Containers) > 0 {
+				add("instance %q runs as a %s process and names container networks %s: only a container joins one",
+					id, inventory.RuntimeHost, strings.Join(inst.ContainerNames(), ", "))
 			}
 			continue
 		}
@@ -535,9 +562,38 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 			add("instance %q runs in a container and binds %q: inside a container only %q is reachable, and what the host publishes is derived from the edges into it",
 				id, inst.Bind, inventory.ContainerBind)
 		}
-		if inst.Network != "" && !containsString(nodeByID[ref.nodeID].Containers, inst.Network) {
-			add("instance %q joins container network %q, which node %q does not list in `containers`",
-				id, inst.Network, ref.nodeID)
+		node := nodeByID[ref.nodeID]
+		byName := map[string]inventory.ContainerNetwork{}
+		for _, c := range node.Containers {
+			byName[c.Name] = c
+		}
+		for _, name := range inst.ContainerNames() {
+			c, ok := byName[name]
+			if !ok {
+				add("instance %q joins container network %q, which node %q does not list in `containers`",
+					id, name, ref.nodeID)
+				continue
+			}
+			address := inst.Containers[name]
+			if address == "" {
+				continue
+			}
+			a, err := netip.ParseAddr(address)
+			if err != nil {
+				add("instance %q: address %q on container network %q is not an IP address", id, address, name)
+				continue
+			}
+			if prefix, err := netip.ParsePrefix(c.Subnet); err == nil && !prefix.Contains(a) {
+				add("instance %q: address %s on container network %q is outside its subnet %s", id, address, name, c.Subnet)
+			}
+			if c.Gateway != "" && c.Gateway == address {
+				add("instance %q: address %s on container network %q is the network's gateway", id, address, name)
+			}
+			key := ref.nodeID + "|" + name + "|" + a.String()
+			if other, ok := held[key]; ok {
+				add("instances %q and %q both hold %s on container network %q", other, id, address, name)
+			}
+			held[key] = id
 		}
 	}
 

@@ -37,8 +37,8 @@ func ServiceDial(inv *inventory.Root, from inventory.Instance, fromNode inventor
 		name string
 		in   func(c candidate) bool
 	}{
-		{"container network " + from.Network, func(c candidate) bool {
-			return from.Network != "" && c.node.ID == fromNode.ID && c.inst.Network == from.Network
+		{"container network", func(c candidate) bool {
+			return c.node.ID == fromNode.ID && fromNode.SharedContainer(from, c.inst) != ""
 		}},
 		{"node " + fromNode.ID, func(c candidate) bool { return c.node.ID == fromNode.ID }},
 	}

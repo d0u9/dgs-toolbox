@@ -157,13 +157,14 @@ type Instance struct {
 	// or RuntimePodman. Unwritten, Load fills it from the node's own
 	// `runtime`, and from RuntimeHost when the node writes none either.
 	Runtime string `yaml:"runtime"`
-	// Network is the container network this instance joins, one of its
-	// node's `containers`. Unwritten on a containerised instance, Load
-	// fills the node's first; a host process joins none. Two instances on
-	// one container network dial each other by name, and an edge between
-	// them publishes nothing on the host. See
+	// Containers is the container networks this instance joins, each one
+	// of its node's `containers`, mapped to the fixed address it holds
+	// there, or to "" when the runtime assigns one. Unwritten on a
+	// containerised instance, Load fills the node's first; a host process
+	// joins none. Two instances sharing a container network dial each other
+	// by name, and an edge between them publishes nothing on the host. See
 	// docs/apps/conf/inventory.md#container-networks.
-	Network string `yaml:"network"`
+	Containers map[string]string `yaml:"containers"`
 	// Self says which of its service's own secrets this instance holds,
 	// and the keys of each one that is a set. Unwritten means every name
 	// the service declares, which is the ordinary case; written, it is the
@@ -217,6 +218,64 @@ func (i Instance) RuntimeOr() string {
 		return RuntimeHost
 	}
 	return i.Runtime
+}
+
+// ContainerNetwork is one entry of a node's `containers`: a network the
+// node's container runtime holds, and the range it covers. The range is
+// written rather than left to the runtime, because a runtime picks a
+// different one on every machine that creates the network, and an address
+// fixed inside it is only fixed if the range is.
+type ContainerNetwork struct {
+	Name    string `yaml:"name"`
+	Subnet  string `yaml:"subnet"`
+	Gateway string `yaml:"gateway"`
+}
+
+// ContainerNames is the names of this node's container networks, in its
+// preference order.
+func (n Node) ContainerNames() []string {
+	out := make([]string, len(n.Containers))
+	for i, c := range n.Containers {
+		out[i] = c.Name
+	}
+	return out
+}
+
+// JoinedContainers is the container networks inst joins, in its node's
+// preference order. A network the node does not list is left out; the
+// validator reports it.
+func (n Node) JoinedContainers(inst Instance) []ContainerNetwork {
+	var out []ContainerNetwork
+	for _, c := range n.Containers {
+		if _, ok := inst.Containers[c.Name]; ok {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// SharedContainer is the first container network, in n's preference order,
+// that both a and b join, or "" when they share none.
+func (n Node) SharedContainer(a, b Instance) string {
+	for _, c := range n.Containers {
+		_, inA := a.Containers[c.Name]
+		_, inB := b.Containers[c.Name]
+		if inA && inB {
+			return c.Name
+		}
+	}
+	return ""
+}
+
+// ContainerNames is the names of the container networks this instance
+// joins, sorted.
+func (i Instance) ContainerNames() []string {
+	out := make([]string, 0, len(i.Containers))
+	for name := range i.Containers {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Containerised reports whether this instance's process runs in a
@@ -473,11 +532,12 @@ type Node struct {
 	// remaining case. See
 	// docs/apps/conf/inventory.md#reached-and-reaching.
 	Reaches []string `yaml:"reaches"`
-	// Containers is the container networks on this machine, in the order an
-	// instance picks its default from: the first is the one a containerised
-	// instance joins when it names none. Each is a scope inside the node's
-	// loopback. See docs/apps/conf/inventory.md#container-networks.
-	Containers []string `yaml:"containers"`
+	// Containers is the container networks on this machine, in preference
+	// order: the first is the one a containerised instance joins when it
+	// names none, and two instances sharing several dial over the first of
+	// them. Each is a scope inside the node's loopback. See
+	// docs/apps/conf/inventory.md#container-networks.
+	Containers []ContainerNetwork `yaml:"containers"`
 	// Runtime is what delivers an instance on this node that writes no
 	// `runtime` of its own. Empty means RuntimeHost.
 	Runtime string `yaml:"runtime"`
@@ -1136,8 +1196,8 @@ func qualifyInstances(node *Node) {
 			inst.Runtime = node.Runtime
 		}
 		if inst.Containerised() {
-			if inst.Network == "" && len(node.Containers) > 0 {
-				inst.Network = node.Containers[0]
+			if len(inst.Containers) == 0 && len(node.Containers) > 0 {
+				inst.Containers = map[string]string{node.Containers[0].Name: ""}
 			}
 			if inst.Bind == "" {
 				inst.Bind = ContainerBind
