@@ -77,7 +77,7 @@ func (m renderer) renderTarget(instance string) ([]artefact, error) {
 
 	var own map[string]any
 	if m.secretsDir != "" {
-		own, err = secretstore.ReadSelf(m.secretsDir, instance)
+		own, err = secretstore.ReadSelf(m.secretsDir, m.secretID(instance))
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +113,7 @@ func (m renderer) renderTarget(instance string) ([]artefact, error) {
 			return nil, fmt.Errorf("reading template %s: %w", templatePath, err)
 		}
 		rendered, err := render.Render(render.Input{
-			Target:         render.Target{Service: t.Service, Instance: instance},
+			Target:         render.Target{Service: t.Service, Instance: inventory.LocalName(instance)},
 			Template:       string(templateBytes),
 			Defaults:       defaultsBytes,
 			DefaultsKind:   defaults,
@@ -202,7 +202,7 @@ func (m renderer) instanceAndNode(instance, nodeID string) (instanceMap, nodeMap
 }
 
 func instanceValues(inst inventory.Instance) map[string]any {
-	v := map[string]any{"id": inst.ID, "service": inst.Service, "bind": inst.Bind}
+	v := map[string]any{"id": inventory.LocalName(inst.ID), "service": inst.Service, "bind": inst.Bind}
 	if len(inst.Ports) > 0 {
 		// A template asks what an instance listens on, not how: the
 		// transport belongs to the model, and a role that needs it reads
@@ -274,7 +274,7 @@ func (m renderer) principalsFor(instance string) (map[string][]render.Principal,
 				principal.User, principal.Credential = p.Group, p.Slot
 			}
 			if m.secretsDir != "" {
-				v, err := secretstore.ReadValue(m.secretsDir, path)
+				v, err := secretstore.ReadValue(m.secretsDir, m.storedAt(path))
 				if err != nil {
 					return nil, err
 				}
@@ -286,7 +286,7 @@ func (m renderer) principalsFor(instance string) (map[string][]render.Principal,
 				// A role rendering an account table emits both the current
 				// and the previous value as two accounts, so the old
 				// credential keeps working until the rotation finishes.
-				if v, ok, err := secretstore.ReadPrevious(m.secretsDir, path); err != nil {
+				if v, ok, err := secretstore.ReadPrevious(m.secretsDir, m.storedAt(path)); err != nil {
 					return nil, err
 				} else if ok {
 					previous := render.Principal{Name: p.Name, Secret: v}
@@ -373,7 +373,7 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 	var secret string
 	if m.secretsDir != "" && slot != "" && authenticates {
 		v, err := secretstore.ReadValue(m.secretsDir, secretstore.Path{
-			Instance: creds.Instance, Port: creds.Port, Group: group, Name: slot,
+			Instance: m.secretID(creds.Instance), Port: creds.Port, Group: group, Name: slot,
 		})
 		if err != nil {
 			return nil, err
@@ -419,7 +419,7 @@ func (m renderer) upstreamFor(instance string, wants confgen.UpstreamDecls) (map
 	// declares nothing and is handed nothing.
 	if wants.Wants(confgen.UpstreamShared) && m.secretsDir != "" && !relaying {
 		handed := destinationSelf(m, creds.Instance, creds.Port)
-		own, err := secretstore.ReadSelf(m.secretsDir, creds.Instance)
+		own, err := secretstore.ReadSelf(m.secretsDir, m.secretID(creds.Instance))
 		if err != nil {
 			return nil, err
 		}
@@ -532,6 +532,24 @@ type renderer struct {
 	l          loaded
 	rootPath   string
 	secretsDir string
+	// secretInstance, when set, maps an instance ID to the one its secrets
+	// are stored under: a migration preview reads a renamed node's secrets
+	// where they are before apply moves them.
+	secretInstance func(string) string
+}
+
+// storedAt is where p is stored, after secretInstance.
+func (m renderer) storedAt(p secretstore.Path) secretstore.Path {
+	p.Instance = m.secretID(p.Instance)
+	return p
+}
+
+// secretID is the instance ID whose directory holds instance's secrets.
+func (m renderer) secretID(instance string) string {
+	if m.secretInstance == nil {
+		return instance
+	}
+	return m.secretInstance(instance)
 }
 
 // downstreamsFor is the hop that follows this instance in each route through
@@ -552,7 +570,7 @@ func (m renderer) downstreamsFor(instance string, fansOut bool) []render.Downstr
 		}
 		d := render.Downstream{
 			Route:     e.Route,
-			Instance:  e.To.Instance,
+			Instance:  inventory.LocalName(e.To.Instance),
 			Port:      e.To.Port,
 			Published: m.publishedAt(e.To.Instance, e.To.Port),
 			Address:   e.Address,
@@ -704,7 +722,7 @@ func (m renderer) deployFor(instance string) ([]deployArtefact, error) {
 			return nil, fmt.Errorf("reading template %s: %w", templatePath, err)
 		}
 		rendered, err := render.Render(render.Input{
-			Target:         render.Target{Service: t.Service, Instance: instance},
+			Target:         render.Target{Service: t.Service, Instance: inventory.LocalName(instance)},
 			Template:       string(templateBytes),
 			Defaults:       defaultsBytes,
 			DefaultsKind:   deploy.Defaults,
@@ -747,7 +765,7 @@ func (m renderer) dialsFor(instance string) (map[string]render.Downstream, error
 			return nil, fmt.Errorf("%s: dial %q: %w", instance, name, err)
 		}
 		out[name] = render.Downstream{
-			Instance:  hop.Instance,
+			Instance:  inventory.LocalName(hop.Instance),
 			Port:      hop.Port,
 			Published: to.Ports[hop.Port].Published,
 			Address:   addr,

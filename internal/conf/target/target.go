@@ -55,7 +55,7 @@ func (t Target) String() string {
 	if node == "" {
 		node = t.User
 	}
-	return node + "/" + t.Instance
+	return node + "/" + inventory.LocalName(t.Instance)
 }
 
 // List is every target an inventory and its derivation hold, sorted by
@@ -286,7 +286,8 @@ func matchesOne(t Target, term Term) bool {
 	case FieldProfile:
 		return globMatch(term.Value, t.Profile)
 	case FieldInstance:
-		return globMatch(term.Value, t.Instance)
+		// Either the whole <node>/<name> or the name alone.
+		return globMatch(term.Value, t.Instance) || globMatch(term.Value, inventory.LocalName(t.Instance))
 	case FieldRoute:
 		for _, r := range t.Routes {
 			if globMatch(term.Value, r) {

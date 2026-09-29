@@ -41,7 +41,7 @@ The inventory states each of these once. The renderer derives the rest.
 | **instance** | One service running on one node, and one rendered configuration file. |
 | **port** | A named listening port of an instance. Every port an instance listens on is named; an instance that listens on nothing has none. |
 | **route** | An ordered list of hops, from where traffic enters to where it leaves. |
-| **hop** | One step of a route, written `<instance>:<port>`. |
+| **hop** | One step of a route, written `<node>/<instance>:<port>`. |
 | **user** | A logical identity: a person, not a Linux account and not a password. |
 | **credential** | One of a person's identities. A device names which one it uses; two naming the same one share a secret. |
 | **group** | The directory a node's file sits in: whose machines these are — a person, or whoever hosts them. |
@@ -493,36 +493,31 @@ per member: address, `mac`, identifier.
 ## Instances and ports
 
 An instance is one service running on one node, and one rendered configuration
-file. Its identifier is global: hops name instances with no node to qualify
-them.
+file. Its `id` is unique within its node, and does not repeat the node: the
+instance is written under its node already, so a site code in its name would
+say the same thing twice and change twice when the service moves.
 
-The identifier is free text and nothing parses it. It is written in two places
-only — a route's hops, and a selector — and there are few routes, so a longer
-name costs almost nothing while an ambiguous one costs a rename of every secret
-path under it.
+Across the inventory an instance is `<node>/<id>`, and that is its key. A
+route's hops are written that way, as is a selector that has to tell two
+nodes' instances apart. A [dial](#dialling-a-service-that-is-not-on-a-route)
+may leave the node out when its target is on the caller's own node. Secrets
+are filed under the same two segments, `<node>/<id>/...`, in the store.
+
+What the rendered files see is the `id` alone: it names the container, the
+export directory and the host name on a container network, all of which live
+on one node.
 
 ### Naming
 
-The convention is `<service>-<site><index>`, where the site and index are the
-part of the node's name that tells it apart from its neighbours:
+The convention is `<service>-<index>`: `ss-01`, `hy2-01`, `caddy-01`. Two
+instances of one service on one node take the next index, or a purpose suffix
+when the difference is worth reading: `ss-pub` beside `ss-fam`.
 
-```text
-u-node-group-10-01   →   ss-sfo01, hy2-sfo01, bin-node1
-j-node-group-06-01   →   hy2-tyo01
-home-server           →   http-home, ss-home, bin-home
-```
-
-A node with no index gives instances with no index, and a site that grows a
-second machine gets its index from the node that already carries one.
-
-Two instances of one service on one node — which is rare, since several ports of
-one service are one instance with several ports — take a purpose suffix:
-`ss-sfo01-pub` beside `ss-sfo01-fam`.
-
-The site codes are IATA, which are unique worldwide: no two airports share one,
-and airport and city codes are assigned from the same namespace, so `sfo` and
-`nrt` cannot mean two places. That uniqueness is worth having, and it holds only
-while one scheme is used throughout. Three things break it:
+Node names carry the site. The site codes are IATA, which are unique worldwide:
+no two airports share one, and airport and city codes are assigned from the
+same namespace, so `sfo` and `nrt` cannot mean two places. That uniqueness is
+worth having, and it holds only while one scheme is used throughout. Three
+things break it:
 
 - **Mixing schemes.** An invented abbreviation for a place with no airport is
   registered nowhere, so two of them will eventually collide. A site near an
@@ -535,8 +530,7 @@ while one scheme is used throughout. Three things break it:
   codes do not.
 
 Node names keep their country prefix, which is redundant for uniqueness and
-worth its three characters for reading a list of machines. Instance names drop
-it, since the site code is already unique.
+worth its three characters for reading a list of machines.
 
 None of this is enforced, and it cannot be: no checker knows which scheme a name
 came from. What is enforced is that instance identifiers are unique, so the cost
@@ -802,15 +796,16 @@ it has no port to start a route from.
 `dials` names them, on the caller:
 
 ```yaml
-  - id: digest-home
+  - id: digest-01
     service: ai-digest
     runtime: docker
     dials:
-      rss: freshrss-home:web
+      rss: freshrss-01:web
 ```
 
 Each key is the caller's own name for the dependency, and each value a hop,
-`<instance>:<port>`, written exactly as a route writes one. A template reads
+`[<node>/]<instance>:<port>`: a route's form, with the node left out when the
+target runs on the caller's own node. A template reads
 it with `dial "<name>"`, which returns the same shape a proxy's
 [`downstreams`](#the-render-context) entry has: the target's `Instance` and
 `Port`, its `Number`, the `Address` chosen by [the usual rule](#choosing-an-address),
@@ -1066,8 +1061,8 @@ credential: work
 
 | | Account | Secret | Files |
 | --- | --- | --- | --- |
-| `default` | `alex-default` | `ss-sfo01/users/alex/default` | one per device naming it, per route it opens |
-| `work` | `alex-work` | `ss-sfo01/users/alex/work` | one per device naming it, per route it opens |
+| `default` | `alex-default` | `u-node-group-10-01/ss-sfo01/users/alex/default` | one per device naming it, per route it opens |
+| `work` | `alex-work` | `u-node-group-10-01/ss-sfo01/users/alex/work` | one per device naming it, per route it opens |
 
 Two devices naming one credential are **one principal**: one row in the
 server's table, one file on disk, one password. They still render a
@@ -1222,16 +1217,16 @@ every program imports.
 
 routes:
   jp:
-    hops: [hy2-tyo01:users]
+    hops: [j-node-group-06-01/hy2-01:users]
 
   sfo:
-    hops: [ss-sfo01:users]
+    hops: [u-node-group-10-01/ss-01:users]
 
   home-sfo:
-    hops: [http-home:proxy, ss-home:local, ss-sfo01-relay:relays]
+    hops: [home-server/http-01:proxy, home-server/ss-01:local, u-node-group-10-01/ss-relay:relays]
 
   bin:
-    hops: [bin-node1:web]
+    hops: [u-node-group-10-01/bin-01:web]
 ```
 
 Each adjacent pair of hops is one edge. `home-sfo` says traffic enters the home
@@ -1301,10 +1296,10 @@ its instances:
 ```yaml
 routes:
   vault:
-    hops: [caddy-fra:https, vault-fra:web]
+    hops: [de-fra-htz-linux-01/caddy-01:https, de-fra-htz-linux-01/vault-01:web]
 
   bin:
-    hops: [caddy-fra:https, bin-fra:web]
+    hops: [de-fra-htz-linux-01/caddy-01:https, de-fra-htz-linux-01/bin-01:web]
 ```
 
 This is not the rule-based routing above, and the difference is not one of
@@ -1596,7 +1591,7 @@ ss-sfo01, port users:
   yak-default
 
 ss-sfo01-relay, port relays:
-  ss-home
+  home-server-ss-home
 ```
 
 Two ports of one instance carry two independent tables and two independent sets
@@ -1607,43 +1602,46 @@ of credentials.
 One credential is one file. The path is the identity:
 
 ```text
-<instance>/<port>/<group>/<name>
+<node>/<instance>/<port>/<group>/<name>
 ```
 
 | Segment | What it says |
 | --- | --- |
-| `<instance>` | Which instance the credential opens |
+| `<node>/<instance>` | Which instance the credential opens: its key, two segments |
 | `<port>` | Which port of it — ports have separate account tables |
 | `<group>` | Whose it is: a person, or an instance relaying through |
 | `<name>` | Which of theirs: a credential, or `default` for a relay's single one |
 
 ```text
 ~/confgen-secrets/
-├── ss-sfo01/
-│   ├── users/alex/default
-│   ├── users/alex/work
-│   ├── users/friend-a/default
-│   ├── relays/ss-home/default
-│   ├── self/psk/main
-│   └── self/psk/backup
-├── hy2-tyo01/
-│   ├── users/
-│   │   ├── alex/default
-│   │   └── friend-a/default
-│   └── self/tls_key
-└── bin-node1/
-    └── self/auth_password
+├── u-node-group-10-01/
+│   ├── ss-sfo01/
+│   │   ├── users/alex/default
+│   │   ├── users/alex/work
+│   │   ├── users/friend-a/default
+│   │   ├── relays/home-server-ss-home/default
+│   │   ├── self/psk/main
+│   │   └── self/psk/backup
+│   └── bin-node1/
+│       └── self/auth_password
+└── j-node-group-06-01/
+    └── hy2-tyo01/
+        ├── users/
+        │   ├── alex/default
+        │   └── friend-a/default
+        └── self/tls_key
 ```
 
 **Every credential under a port is a `<group>/<name>` pair**, whatever holds
 it. Sorting by the kind of holder instead — a `node/` beside a `user/` — draws
 a distinction a reader of the tree never needs, and leaves `node/phone` unable
 to say whose phone it is. Grouping by the holder answers that. A relaying
-instance is its own group: what connects is the instance, not the machine under
-it and not whoever hosts that machine. When the connecting instance declares
+instance is its own group, named `<node>-<instance>` so the path keeps its
+depth: what connects is the instance, not the machine under it and not whoever
+hosts that machine. When the connecting instance declares
 `principal`, the named user is the group instead; for example an instance
 dialling as `cn-repeater` reads
-`ss-sfo01/relays/cn-repeater/default`. This changes whose credential the
+`u-node-group-10-01/ss-sfo01/relays/cn-repeater/default`. This changes whose credential the
 instance carries, not who is granted the route.
 
 `self` is the exception, and sits at the instance level rather than under a
@@ -1678,13 +1676,13 @@ machine with no `dgs` on it still works with what is already there.
 
 ```bash
 # every credential ss-sfo01 holds, without decrypting anything special
-find ss-sfo01 -type f -exec sh -c 'echo "== $1 =="; cat "$1"' _ {} \;
+find u-node-group-10-01/ss-sfo01 -type f -exec sh -c 'echo "== $1 =="; cat "$1"' _ {} \;
 
 # change one
-printf 'new-value' > ss-sfo01/users/alex/default
+printf 'new-value' > u-node-group-10-01/ss-sfo01/users/alex/default
 
 # who can reach it, with nothing decrypted
-ls -R ss-sfo01
+ls -R u-node-group-10-01/ss-sfo01
 ```
 
 This is not a fallback bolted on afterward — it is what one file per credential

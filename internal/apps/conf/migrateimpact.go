@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"dgs-toolbox/internal/conf/inventory"
 	"dgs-toolbox/internal/conf/secretstore"
 	"dgs-toolbox/internal/conf/target"
 )
@@ -42,7 +43,14 @@ func compareMigrationTargets(rep *migrationReport, before, after loaded, root, s
 	}
 	sort.Strings(keys)
 	oldRenderer := renderer{l: before, rootPath: root, secretsDir: secrets}
-	newRenderer := renderer{l: after, rootPath: root, secretsDir: secrets}
+	// Until apply copies them, a renamed node's secrets are still under its
+	// old name; the preview reads them there.
+	newRenderer := renderer{l: after, rootPath: root, secretsDir: secrets, secretInstance: func(id string) string {
+		if oldID != newID && strings.HasPrefix(id, newID+inventory.QualifiedSep) {
+			return oldID + strings.TrimPrefix(id, newID)
+		}
+		return id
+	}}
 	secretProblem := missingMigrationSecret(before, after, secrets)
 	workDetails := []migrationTargetWork{}
 	for _, key := range keys {
@@ -56,7 +64,7 @@ func compareMigrationTargets(rep *migrationReport, before, after loaded, root, s
 		if owner == "" {
 			owner = item.User
 		}
-		change := migrationTargetChange{Owner: owner, Label: item.Service + "/" + item.Instance}
+		change := migrationTargetChange{Owner: owner, Label: item.Service + "/" + inventory.LocalName(item.Instance)}
 		if secretProblem != "" {
 			change.Unknown = secretProblem
 			rep.Targets = append(rep.Targets, change)
@@ -123,7 +131,9 @@ func migrationTargetKey(t target.Target, oldID, newID string) string {
 		owner = newID
 	}
 	instance := t.Instance
-	if oldID != newID && strings.HasPrefix(instance, oldID+"-") {
+	if oldID != newID && strings.HasPrefix(instance, oldID+inventory.QualifiedSep) {
+		instance = newID + strings.TrimPrefix(instance, oldID)
+	} else if oldID != newID && strings.HasPrefix(instance, oldID+"-") {
 		instance = newID + strings.TrimPrefix(instance, oldID)
 	}
 	return owner + "/" + t.Service + "/" + t.Export + "/" + instance

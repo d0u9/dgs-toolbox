@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"dgs-toolbox/internal/conf/inventory"
 	"dgs-toolbox/internal/conf/target"
 )
 
@@ -295,9 +296,15 @@ func migrationArchiveName(target string) string {
 func (r *migrationReport) writeProcedure(b *bytes.Buffer, attention []migrationAttentionItem) {
 	p := r.Procedure
 	replace := p.Scenario == migrationReplace
-	label := func(run migrationRuntime) string { return mdCode(run.Service + "/" + run.Instance) }
-	oldDir := func(run migrationRuntime) string { return "$M/old/" + r.OldID + "/" + run.Service + "/" + run.Instance }
-	newDir := func(run migrationRuntime) string { return "$M/new/" + r.NewID + "/" + run.Service + "/" + run.Instance }
+	label := func(run migrationRuntime) string {
+		return mdCode(run.Service + "/" + inventory.LocalName(run.Instance))
+	}
+	oldDir := func(run migrationRuntime) string {
+		return "$M/old/" + r.OldID + "/" + run.Service + "/" + inventory.LocalName(run.Instance)
+	}
+	newDir := func(run migrationRuntime) string {
+		return "$M/new/" + r.NewID + "/" + run.Service + "/" + inventory.LocalName(run.Instance)
+	}
 
 	if replace {
 		b.WriteString("\n**Scenario: replace with a new machine.** The new host starts empty; data travels as an archive and phase 4 imports it.\n")

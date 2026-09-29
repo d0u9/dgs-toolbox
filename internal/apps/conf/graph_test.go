@@ -22,10 +22,10 @@ func TestBuildGraph_ThePortIsTheUnit(t *testing.T) {
 	for _, n := range g.Nodes {
 		kinds[n.ID] = n.Kind
 	}
-	if kinds["ss-srv:main"] != kindPort {
-		t.Fatalf("ss-srv:main = %q, want %q — a listening port is the unit", kinds["ss-srv:main"], kindPort)
+	if kinds["srv/ss-srv:main"] != kindPort {
+		t.Fatalf("srv/ss-srv:main = %q, want %q — a listening port is the unit", kinds["srv/ss-srv:main"], kindPort)
 	}
-	if _, drawn := kinds["ss-srv"]; drawn {
+	if _, drawn := kinds["srv/ss-srv"]; drawn {
 		t.Fatal("ss-srv is drawn as a shape of its own; its ports are the shapes")
 	}
 	if kinds["yak-default-sfo-ssserver-ss-json"] != kindClient {
@@ -50,8 +50,8 @@ func TestBuildGraph_PortsSitInAProcessInsideItsNode(t *testing.T) {
 	if _, ok := parent["srv"]; !ok {
 		t.Fatalf("groups = %+v, want one per node", g.Groups)
 	}
-	if parent["ss-srv"] != "srv" {
-		t.Fatalf("process ss-srv sits in %q, want the node it runs on", parent["ss-srv"])
+	if parent["srv/ss-srv"] != "srv" {
+		t.Fatalf("process ss-srv sits in %q, want the node it runs on", parent["srv/ss-srv"])
 	}
 	if parent["yak/default"] != groupBox("yak") {
 		t.Fatalf("yak's default device sits in %q, want yak's own box", parent["yak/default"])
@@ -59,8 +59,8 @@ func TestBuildGraph_PortsSitInAProcessInsideItsNode(t *testing.T) {
 
 	for _, n := range g.Nodes {
 		switch n.ID {
-		case "ss-srv:main":
-			if n.Group != "ss-srv" {
+		case "srv/ss-srv:main":
+			if n.Group != "srv/ss-srv" {
 				t.Fatalf("%s is in %q, want the process serving it", n.ID, n.Group)
 			}
 		case "yak-default-sfo-ssserver-ss-json":
@@ -82,7 +82,7 @@ func TestBuildGraph_NoSecretValueReachesThePage(t *testing.T) {
 	g := buildGraph(m.l, "test")
 
 	for _, n := range g.Nodes {
-		if n.ID != "ss-srv:main" {
+		if n.ID != "srv/ss-srv:main" {
 			continue
 		}
 		if !strings.Contains(n.Tooltip, "38250") {
@@ -140,8 +140,8 @@ func TestBuildGraph_FanOutEdgesCarryThePublishedName(t *testing.T) {
 		got[e.To] = e.Label
 	}
 	for to, want := range map[string]string{
-		"vault:web": "vault.example.com",
-		"bin:web":   "clip.example.com",
+		"srv/vault:web": "vault.example.com",
+		"srv/bin:web":   "clip.example.com",
 	} {
 		if got[to] != want {
 			t.Fatalf("edge to %s = %q, want %q", to, got[to], want)
@@ -188,7 +188,7 @@ instances:
 
 	found := false
 	for _, grp := range g.Groups {
-		if grp.ID != "ss-srv" {
+		if grp.ID != "srv/ss-srv" {
 			continue
 		}
 		found = true
@@ -212,7 +212,7 @@ func TestBuildGraph_AHostProcessIsNotBadged(t *testing.T) {
 	m := newInspectModel(buildInspectRoot(t), "")
 	g := buildGraph(m.l, "test")
 	for _, grp := range g.Groups {
-		if grp.ID == "ss-srv" && grp.Detail != "" {
+		if grp.ID == "srv/ss-srv" && grp.Detail != "" {
 			t.Fatalf("process ss-srv is badged %q, want nothing for a host process", grp.Detail)
 		}
 	}

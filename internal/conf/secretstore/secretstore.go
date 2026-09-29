@@ -230,6 +230,11 @@ func Sync(root string, implied []Path) (Result, error) {
 
 func parsePath(rel string) Path {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
+	// The instance is two segments, <node>/<name>, as its ID is.
+	if len(parts) < 2 {
+		return Path{Instance: rel}
+	}
+	parts = append([]string{parts[0] + "/" + parts[1]}, parts[2:]...)
 	// An instance's own secret is <instance>/self/<name>, and one or two
 	// segments deeper when the name is a set, a record of fields, or both.
 	// Everything else is a principal's, and is always four.

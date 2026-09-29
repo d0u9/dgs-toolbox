@@ -131,6 +131,9 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 		inv.Nodes[index].Networks[change.To] = change.Address
 	}
 	inv.Nodes[index].ID = newID
+	if err := renameMigrationNode(&inv, index, oldID, newID); err != nil {
+		return err
+	}
 	publishedRefs, err := renameMigrationPublished(&inv, index, publishedChanges)
 	if err != nil {
 		return err

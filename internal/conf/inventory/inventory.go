@@ -135,7 +135,12 @@ type Host struct {
 
 // Instance is one service running on a node, and one rendered configuration file.
 type Instance struct {
-	ID      string `yaml:"id"`
+	// Name is the instance's id as written: unique within its node, which
+	// already says where it runs.
+	Name string `yaml:"id"`
+	// ID is the instance's key across the inventory, <node>/<name>. Set by
+	// Load, not part of the YAML; hops and dials name an instance by it.
+	ID      string `yaml:"-"`
 	Service string `yaml:"service"`
 	Role    string `yaml:"role"`
 	Bind    string `yaml:"bind"`
@@ -179,7 +184,9 @@ type Instance struct {
 	// docs/apps/conf/inventory.md#what-a-container-needs-beyond-the-model.
 	Deploy map[string]any `yaml:"deploy"`
 	// Dials names services this instance calls in passing, off any route:
-	// the caller's own name for the dependency to a hop, <instance>:<port>.
+	// the caller's own name for the dependency to a hop,
+	// [<node>/]<instance>:<port>. The node defaults to this instance's own;
+	// Load writes it in.
 	// A dial is not an edge and grants nothing. See
 	// docs/apps/conf/inventory.md#dialling-a-service-that-is-not-on-a-route.
 	Dials map[string]string `yaml:"dials"`
@@ -749,6 +756,7 @@ func loadNodes(root string) ([]Node, error) {
 			node = Node{Path: relPath, Group: group, Broken: fmt.Sprintf("%s: %s", path, err)}
 		}
 		node.Group = group
+		qualifyInstances(&node)
 		nodes = append(nodes, node)
 	}
 	for _, entry := range entries {
@@ -988,4 +996,47 @@ func decodeStrict(data []byte, v any) error {
 	dec := yaml.NewDecoder(strings.NewReader(string(data)))
 	dec.KnownFields(true)
 	return dec.Decode(v)
+}
+
+// QualifiedSep separates a node from an instance name in an instance's ID.
+const QualifiedSep = "/"
+
+// LocalName is the part of an instance ID after its node: what the instance
+// file wrote, and what names its container, its export directory and its
+// hostname on a container network. A derived instance's ID has no node part
+// and is returned whole.
+func LocalName(id string) string {
+	if i := strings.LastIndex(id, QualifiedSep); i >= 0 {
+		return id[i+1:]
+	}
+	return id
+}
+
+// FlatID is an instance ID with its separator replaced, for a place that
+// needs the whole ID as one path segment or account name.
+func FlatID(id string) string {
+	return strings.ReplaceAll(id, QualifiedSep, "-")
+}
+
+// qualifyInstances sets each instance's ID to <node>/<name> and writes the
+// node into every dial that leaves it out.
+func qualifyInstances(node *Node) {
+	if node.Broken != "" {
+		return
+	}
+	for i := range node.Instances {
+		inst := &node.Instances[i]
+		inst.ID = node.ID + QualifiedSep + inst.Name
+		if len(inst.Dials) == 0 {
+			continue
+		}
+		dials := make(map[string]string, len(inst.Dials))
+		for name, raw := range inst.Dials {
+			if !strings.Contains(raw, QualifiedSep) {
+				raw = node.ID + QualifiedSep + raw
+			}
+			dials[name] = raw
+		}
+		inst.Dials = dials
+	}
 }

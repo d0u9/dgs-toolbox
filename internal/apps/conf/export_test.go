@@ -44,7 +44,7 @@ users:
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   sfo:
-    hops: [u-node-group-10:main]
+    hops: [srv/u-node-group-10:main]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
 networks: [{name: internet}]

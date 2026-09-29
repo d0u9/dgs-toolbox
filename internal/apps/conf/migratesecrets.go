@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"dgs-toolbox/internal/conf/inventory"
 	"dgs-toolbox/internal/conf/secretstore"
 )
 
@@ -34,6 +35,7 @@ func planMigrationSecretCopies(before, after loaded, flags map[string]string, ro
 	if err != nil {
 		return nil, err
 	}
+	nodeFrom, nodeTo, _ := parseNodeChange(flags["node"])
 	renames := map[string]string{}
 	for _, change := range changes {
 		renames[change.From] = change.To
@@ -44,8 +46,18 @@ func planMigrationSecretCopies(before, after loaded, flags map[string]string, ro
 		if newSet[old] {
 			continue
 		}
-		newID := renames[old.Instance]
-		if newID == "" {
+		// A secret sits under <node>/<name>: renaming the node moves every
+		// one of its instances, and renaming an instance moves that one.
+		oldNode, oldName, _ := strings.Cut(old.Instance, inventory.QualifiedSep)
+		newID := ""
+		if oldNode == nodeFrom && nodeFrom != "" {
+			name := oldName
+			if to := renames[oldName]; to != "" {
+				name = to
+			}
+			newID = nodeTo + inventory.QualifiedSep + name
+		}
+		if newID == "" || newID == old.Instance {
 			return nil, fmt.Errorf("apply blocked: no explicit instance rename maps secret %s", old)
 		}
 		next := old

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 
 	"dgs-toolbox/internal/conf/inventory"
 	"gopkg.in/yaml.v3"
@@ -156,25 +157,32 @@ func (m *migrationYAML) patchInstances(old, next []inventory.Instance) error {
 	}
 	for i, source := range old {
 		target := next[i]
-		if source.ID == target.ID && migrationPublishedEqual(source.Ports, target.Ports) && reflect.DeepEqual(source.Dials, target.Dials) {
+		if inventory.LocalName(source.ID) == inventory.LocalName(target.ID) && migrationPublishedEqual(source.Ports, target.Ports) && reflect.DeepEqual(source.Dials, target.Dials) {
 			continue
 		}
 		file, err := m.file(source.Path)
 		if err != nil {
 			return err
 		}
-		instance := migrationInstanceNode(&file.doc, source.ID)
+		instance := migrationInstanceNode(&file.doc, inventory.LocalName(source.ID))
 		if instance == nil {
-			return fmt.Errorf("%s: instance %q was not found", source.Path, source.ID)
+			return fmt.Errorf("%s: instance %q was not found", source.Path, inventory.LocalName(source.ID))
 		}
-		changed, err := migrationSetField(instance, "id", source.ID, target.ID, source.Path+": id")
+		changed, err := migrationSetField(instance, "id", inventory.LocalName(source.ID), inventory.LocalName(target.ID), source.Path+": id")
 		if err != nil {
 			return err
 		}
 		file.changed = file.changed || changed
 		_, dials := migrationMap(instance, "dials")
 		for name, sourceDial := range source.Dials {
-			changed, err = migrationSetField(dials, name, sourceDial, target.Dials[name], source.Path+": "+source.ID+".dials."+name)
+			// A dial to its own node is usually written without the node;
+			// keep whichever form the file has.
+			from := migrationDialText(sourceDial, source.ID)
+			to := migrationDialText(target.Dials[name], target.ID)
+			if _, value := migrationMap(dials, name); value != nil && value.Value == sourceDial {
+				from, to = sourceDial, target.Dials[name]
+			}
+			changed, err = migrationSetField(dials, name, from, to, source.Path+": "+inventory.LocalName(source.ID)+".dials."+name)
 			if err != nil {
 				return err
 			}
@@ -453,4 +461,11 @@ func buildMigrationEdits(root string, before, after loaded, networks []networkCh
 	}
 	sort.Slice(edits, func(i, j int) bool { return edits[i].path < edits[j].path })
 	return edits, nil
+}
+
+// migrationDialText is a dial as its instance file writes it: without the
+// node when the target is on the instance's own node.
+func migrationDialText(dial, instanceID string) string {
+	node, _, _ := strings.Cut(instanceID, inventory.QualifiedSep)
+	return strings.TrimPrefix(dial, node+inventory.QualifiedSep)
 }

@@ -140,7 +140,7 @@ users: {}
 `
 
 const routesSkeleton = `# Routes: one chain each, from where traffic enters to where it leaves,
-# written as an ordered list of hops. A hop is ` + "`<instance>:<port>`" + `, and each
+# written as an ordered list of hops. A hop is ` + "`<node>/<instance>:<port>`" + `, and each
 # adjacent pair is one edge whose address dgs works out from the two nodes.
 #
 # A route's name is what a person sees when they pick a line in their client,
@@ -153,7 +153,7 @@ const routesSkeleton = `# Routes: one chain each, from where traffic enters to w
 
 routes: {}
 #  sfo:
-#    hops: [ss-sfo01:users]
+#    hops: [sfo1/ss-sfo01:users]
 `
 
 const nodesReadme = `# nodes/

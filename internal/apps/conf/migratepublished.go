@@ -56,7 +56,7 @@ func renameMigrationPublished(inv *inventory.Root, nodeIndex int, changes []publ
 	for _, change := range changes {
 		found := false
 		for i, inst := range node.Instances {
-			if inst.ID != change.Instance || inst.Service == "" {
+			if inventory.LocalName(inst.ID) != change.Instance || inst.Service == "" {
 				continue
 			}
 			port, ok := inst.Ports[change.Port]

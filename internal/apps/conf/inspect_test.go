@@ -64,7 +64,7 @@ users:
 	writeFile(t, filepath.Join(dir, "routes.yaml"), `
 routes:
   sfo:
-    hops: [ss-srv:main]
+    hops: [srv/ss-srv:main]
 `)
 	writeFile(t, filepath.Join(dir, "networks.yaml"), `
 networks: [{name: internet}]
@@ -109,7 +109,7 @@ func TestInspect_IndexListsNodesInstancesAndUsers(t *testing.T) {
 	}
 
 	want := map[string]bool{
-		"node:srv": true, "inst:ss-srv": true,
+		"node:srv": true, "inst:srv/ss-srv": true,
 		"node:laptop": true, "inst:laptop-sfo-ssserver-ss-json": true,
 		"node:nodes/bad.yaml": true,
 		// yak is unmanaged, so it appears twice: once as buildTree's
@@ -166,7 +166,7 @@ func TestInspect_NodeDetailShowsNetworksAndInstances(t *testing.T) {
 	if !strings.Contains(body, "203.0.113.10") {
 		t.Fatalf("node detail = %q, want the network address", body)
 	}
-	if !strings.Contains(body, "ss-srv") {
+	if !strings.Contains(body, "srv/ss-srv") {
 		t.Fatalf("node detail = %q, want its instance listed", body)
 	}
 }
@@ -174,7 +174,7 @@ func TestInspect_NodeDetailShowsNetworksAndInstances(t *testing.T) {
 func TestInspect_InstanceDetailShowsRouteAndSecretStructure(t *testing.T) {
 	m := newInspectModel(buildInspectRoot(t), "")
 	m.width, m.height = 80, 24
-	kind, body := selectDetail(t, m, "inst:ss-srv")
+	kind, body := selectDetail(t, m, "inst:srv/ss-srv")
 
 	if kind != "inst" {
 		t.Fatalf("kind = %q, want inst", kind)
@@ -185,10 +185,10 @@ func TestInspect_InstanceDetailShowsRouteAndSecretStructure(t *testing.T) {
 	if !strings.Contains(body, "sfo") {
 		t.Fatalf("instance detail = %q, want the route it is a hop of", body)
 	}
-	if !strings.Contains(body, "ss-srv/main/") {
+	if !strings.Contains(body, "srv/ss-srv/main/") {
 		t.Fatalf("instance detail = %q, want its secret path structure, no value", body)
 	}
-	if !strings.Contains(body, "ss-srv/self/psk") {
+	if !strings.Contains(body, "srv/ss-srv/self/psk") {
 		t.Fatalf("instance detail = %q, want the shared path listed", body)
 	}
 	if strings.Contains(body, "-----BEGIN") {
@@ -201,7 +201,7 @@ func TestInspect_DerivedExportInstanceDetailShowsUpstream(t *testing.T) {
 	m.width, m.height = 80, 24
 	_, body := selectDetail(t, m, "inst:laptop-sfo-ssserver-ss-json")
 
-	if !strings.Contains(body, "upstream ss-srv:main") {
+	if !strings.Contains(body, "upstream srv/ss-srv:main") {
 		t.Fatalf("instance detail = %q, want its upstream", body)
 	}
 }
@@ -321,13 +321,13 @@ func pressInspect(t *testing.T, m InspectModel, key string) InspectModel {
 func TestInspect_ViewRendersBothColumns(t *testing.T) {
 	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	m.width, m.height = 100, 24
-	m.list.SelectID("inst:ss-srv")
+	m.list.SelectID("inst:srv/ss-srv")
 
 	view := m.View()
 	if !strings.Contains(view, "NODES") {
 		t.Fatalf("View() = %q, want the left column's fieldset legend naming the active tab", view)
 	}
-	if !strings.Contains(view, "ss-srv") {
+	if !strings.Contains(view, "srv/ss-srv") {
 		t.Fatalf("View() = %q, want the selected instance's detail on the right", view)
 	}
 }
@@ -405,7 +405,7 @@ func TestInspect_NodesIndexDrawsInstancesOnBranches(t *testing.T) {
 		switch m.nodeItems[i].ID {
 		case "node:srv":
 			node = &m.nodeItems[i]
-		case "inst:ss-srv":
+		case "inst:srv/ss-srv":
 			instance = &m.nodeItems[i]
 		}
 	}
@@ -429,7 +429,7 @@ func TestInspect_FoldingHidesAndShowsInstances(t *testing.T) {
 	m.list.SelectID("node:srv")
 
 	folded := pressInspect(t, m, "h")
-	if indexHas(folded.nodeItems, "inst:ss-srv") {
+	if indexHas(folded.nodeItems, "inst:srv/ss-srv") {
 		t.Fatalf("index = %+v, want srv's instances hidden once folded", folded.nodeItems)
 	}
 	if !strings.HasPrefix(itemByID(t, folded.nodeItems, "node:srv").Label, "▸ ") {
@@ -437,7 +437,7 @@ func TestInspect_FoldingHidesAndShowsInstances(t *testing.T) {
 	}
 
 	reopened := pressInspect(t, folded, "l")
-	if !indexHas(reopened.nodeItems, "inst:ss-srv") {
+	if !indexHas(reopened.nodeItems, "inst:srv/ss-srv") {
 		t.Fatalf("index = %+v, want srv's instances back once unfolded", reopened.nodeItems)
 	}
 
@@ -463,7 +463,7 @@ func TestInspect_HoldersStartFolded(t *testing.T) {
 	if !strings.HasPrefix(srv.Label, "▸ ") {
 		t.Fatalf("node label = %q, want a closed disclosure marker", srv.Label)
 	}
-	if indexHas(m.nodeItems, "inst:ss-srv") {
+	if indexHas(m.nodeItems, "inst:srv/ss-srv") {
 		t.Fatalf("index = %+v, want no instance row under a folded node", m.nodeItems)
 	}
 
@@ -514,7 +514,7 @@ func TestInspect_FoldingACredentialLeavesItsPersonOpen(t *testing.T) {
 func TestInspect_FoldingLeftFromAnInstanceGoesToItsNode(t *testing.T) {
 	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	m.width, m.height = 100, 24
-	m.list.SelectID("inst:ss-srv")
+	m.list.SelectID("inst:srv/ss-srv")
 
 	up := pressInspect(t, m, "h")
 	item, ok := up.list.Selected()
@@ -553,13 +553,13 @@ func TestInspect_UserDetailNamesEveryGrantedRoute(t *testing.T) {
 	m.width, m.height = 100, 24
 	_, body := selectDetail(t, m, "user:yak")
 
-	if !strings.Contains(body, "enters ss-srv:main") {
+	if !strings.Contains(body, "enters srv/ss-srv:main") {
 		t.Fatalf("user detail = %q, want each granted route's entry hop", body)
 	}
 	if !strings.Contains(body, "yak-default-sfo-ssserver-ss-json") {
 		t.Fatalf("user detail = %q, want the instance derived for the route", body)
 	}
-	if !strings.Contains(body, "ss-srv/main/yak/default") {
+	if !strings.Contains(body, "srv/ss-srv/main/yak/default") {
 		t.Fatalf("user detail = %q, want the credential this person holds, by path", body)
 	}
 	if strings.Contains(body, "username: yak") {
@@ -622,7 +622,7 @@ func TestInspect_ServicesIndexIsDeployedInstancesAndTheirPorts(t *testing.T) {
 	if indexHas(m.serviceItems, "inst:yak-default-sfo-ssserver-ss-json") {
 		t.Fatalf("index = %+v, want no client file among the deployments", m.serviceItems)
 	}
-	if !indexHas(m.serviceItems, "inst:ss-srv") {
+	if !indexHas(m.serviceItems, "inst:srv/ss-srv") {
 		t.Fatalf("index = %+v, want the deployed instance", m.serviceItems)
 	}
 
@@ -644,7 +644,7 @@ func TestInspect_ServicesIndexGoesDownToPorts(t *testing.T) {
 	m.width, m.height = 100, 24
 	m.setTab(tabServices)
 
-	main := itemByID(t, m.serviceItems, "port:ss-srv/main")
+	main := itemByID(t, m.serviceItems, "port:srv/ss-srv/main")
 	if !strings.Contains(main.Detail, "38250") {
 		t.Fatalf("port row = %q, want the number it listens on", main.Detail)
 	}
@@ -652,7 +652,7 @@ func TestInspect_ServicesIndexGoesDownToPorts(t *testing.T) {
 		t.Fatalf("port row = %q, want the account names on this port", main.Detail)
 	}
 
-	alt := itemByID(t, m.serviceItems, "port:ss-srv/alt")
+	alt := itemByID(t, m.serviceItems, "port:srv/ss-srv/alt")
 	if !strings.Contains(alt.Detail, "nobody yet") {
 		t.Fatalf("port row = %q, want a port nothing reaches to say so", alt.Detail)
 	}
@@ -665,18 +665,18 @@ func TestInspect_PortDetailIsItsOwnAccountTable(t *testing.T) {
 	m := newInspectModel(buildInspectRoot(t), "")
 	m.width, m.height = 100, 24
 	m.setTab(tabServices)
-	_, body := selectDetail(t, m, "port:ss-srv/main")
+	_, body := selectDetail(t, m, "port:srv/ss-srv/main")
 
-	for _, want := range []string{"38250", "ss-srv", "srv", "sfo", "yak-default", "ss-srv/main/yak/default"} {
+	for _, want := range []string{"38250", "srv/ss-srv", "srv", "sfo", "yak-default", "srv/ss-srv/main/yak/default"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("port detail = %q, want it to name %q", body, want)
 		}
 	}
-	if strings.Contains(body, "ss-srv/alt") {
+	if strings.Contains(body, "srv/ss-srv/alt") {
 		t.Fatal("the port view showed another port's credentials")
 	}
 
-	_, empty := selectDetail(t, m, "port:ss-srv/alt")
+	_, empty := selectDetail(t, m, "port:srv/ss-srv/alt")
 	if !strings.Contains(empty, "nobody holds a grant") {
 		t.Fatalf("port detail = %q, want a port nothing reaches to say so", empty)
 	}
@@ -717,11 +717,11 @@ func TestInspect_ServicesIndexFolds(t *testing.T) {
 	m.list.SelectID("service:ssserver")
 
 	folded := pressInspect(t, m, "h")
-	if indexHas(folded.serviceItems, "inst:ss-srv") {
+	if indexHas(folded.serviceItems, "inst:srv/ss-srv") {
 		t.Fatalf("index = %+v, want the service's instances hidden once folded", folded.serviceItems)
 	}
 	reopened := pressInspect(t, folded, "l")
-	if !indexHas(reopened.serviceItems, "inst:ss-srv") {
+	if !indexHas(reopened.serviceItems, "inst:srv/ss-srv") {
 		t.Fatalf("index = %+v, want them back once unfolded", reopened.serviceItems)
 	}
 }
@@ -733,11 +733,11 @@ func TestInspect_LeftFromAPortGoesToItsInstance(t *testing.T) {
 	m := newInspectModel(buildInspectRoot(t), "")
 	m.width, m.height = 100, 24
 	m.setTab(tabServices)
-	m.list.SelectID("port:ss-srv/main")
+	m.list.SelectID("port:srv/ss-srv/main")
 
 	up := pressInspect(t, m, "h")
 	item, ok := up.list.Selected()
-	if !ok || item.ID != "inst:ss-srv" {
+	if !ok || item.ID != "inst:srv/ss-srv" {
 		t.Fatalf("selected = %+v, want the instance listening on that port", item)
 	}
 
@@ -765,11 +765,11 @@ func buildSecretsDir(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	write("ss-srv/main/yak/default", "in-step")
-	write("ss-srv/main/yak/default.previous", "rotating")
-	write("ss-srv/self/psk", "in-step")
-	write("ss-srv/main/user/nobody", "orphan")
-	// ss-srv/main/alex/default is deliberately absent: it is what the
+	write("srv/ss-srv/main/yak/default", "in-step")
+	write("srv/ss-srv/main/yak/default.previous", "rotating")
+	write("srv/ss-srv/self/psk", "in-step")
+	write("srv/ss-srv/main/user/nobody", "orphan")
+	// srv/ss-srv/main/alex/default is deliberately absent: it is what the
 	// inventory implies and the store does not hold.
 	return dir
 }
@@ -792,15 +792,15 @@ func TestInspect_SecretsTabComparesBothDirections(t *testing.T) {
 			m.secrets.present, m.secrets.missing, m.secrets.orphaned)
 	}
 
-	missing := itemByID(t, m.secretItems, "secret:ss-srv/main/alex/default")
+	missing := itemByID(t, m.secretItems, "secret:srv/ss-srv/main/alex/default")
 	if !strings.Contains(missing.Detail, "missing") {
 		t.Fatalf("row = %q, want a path the store does not hold to say so", missing.Detail)
 	}
-	orphaned := itemByID(t, m.secretItems, "secret:ss-srv/main/user/nobody")
+	orphaned := itemByID(t, m.secretItems, "secret:srv/ss-srv/main/user/nobody")
 	if !strings.Contains(orphaned.Detail, "orphaned") {
 		t.Fatalf("row = %q, want a file nothing implies to say so", orphaned.Detail)
 	}
-	rotating := itemByID(t, m.secretItems, "secret:ss-srv/main/yak/default")
+	rotating := itemByID(t, m.secretItems, "secret:srv/ss-srv/main/yak/default")
 	if !strings.Contains(rotating.Detail, ".previous") {
 		t.Fatalf("row = %q, want the rotation leftover named", rotating.Detail)
 	}
@@ -820,14 +820,14 @@ func TestInspect_SecretDetailNeverReadsTheValue(t *testing.T) {
 	m.width, m.height = 100, 24
 	m.setTab(tabSecrets)
 
-	body, err := renderSecretDetail(m.secrets, m.l, "ss-srv/main/yak/default")
+	body, err := renderSecretDetail(m.secrets, m.l, "srv/ss-srv/main/yak/default")
 	if err != nil {
 		t.Fatalf("renderSecretDetail: %v", err)
 	}
 	if strings.Contains(body, "in-step") || strings.Contains(body, "rotating") {
 		t.Fatalf("secret detail = %q, want no value in it", body)
 	}
-	if !strings.Contains(body, "ss-srv/main/yak/default") {
+	if !strings.Contains(body, "srv/ss-srv/main/yak/default") {
 		t.Fatalf("secret detail = %q, want the path it is addressed by", body)
 	}
 	if !strings.Contains(body, "yak-default") {

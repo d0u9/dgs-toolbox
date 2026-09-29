@@ -17,17 +17,18 @@ import (
 	"dgs-toolbox/internal/conf/inventory"
 )
 
-// Hop is one parsed element of a route's hops list: "<instance>:<port>".
+// Hop is one parsed element of a route's hops list: "<node>/<instance>:<port>".
+// Instance is the whole <node>/<instance>, an instance's ID.
 type Hop struct {
 	Instance string
 	Port     string
 }
 
-// ParseHop splits "<instance>:<port>" into its two parts.
+// ParseHop splits "<node>/<instance>:<port>" into instance ID and port.
 func ParseHop(s string) (Hop, error) {
 	instance, port, ok := strings.Cut(s, ":")
 	if !ok || instance == "" || port == "" {
-		return Hop{}, fmt.Errorf("hop %q: want <instance>:<port>", s)
+		return Hop{}, fmt.Errorf("hop %q: want <node>/<instance>:<port>", s)
 	}
 	return Hop{Instance: instance, Port: port}, nil
 }
@@ -402,7 +403,7 @@ func Derive(inv *inventory.Root, manifests map[string]confgen.Manifest) (*Model,
 							Profile: use.profile, Values: use.values,
 						}
 						for _, override := range n.Instances {
-							if override.ID == derivedID {
+							if inventory.LocalName(override.ID) == derivedID {
 								ci.Ports, ci.Bind = override.Ports, override.Bind
 								ci.Values = overlay(override.Values, use.values)
 								break
@@ -550,8 +551,8 @@ func upstreamPrincipal(inv *inventory.Root, inst inventory.Instance, terminal co
 		}
 	}
 	return Principal{
-		Kind: PrincipalInstance, ID: inst.ID, Name: inst.ID,
-		Group: inst.ID, Slot: inventory.DefaultCredential,
+		Kind: PrincipalInstance, ID: inst.ID, Name: inventory.FlatID(inst.ID),
+		Group: inventory.FlatID(inst.ID), Slot: inventory.DefaultCredential,
 	}
 }
 

@@ -83,7 +83,7 @@ users:
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   sfo:
-    hops: [ss-srv:main]
+    hops: [srv/ss-srv:main]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
 networks: [{name: internet}]
@@ -91,13 +91,13 @@ universal: internet
 `)
 
 	secretsDir = t.TempDir()
-	writeFile(t, filepath.Join(secretsDir, "ss-srv", "main", "alex", "default"), "user-psk")
+	writeFile(t, filepath.Join(secretsDir, "srv/ss-srv", "main", "alex", "default"), "user-psk")
 	return root, secretsDir
 }
 
 func TestPreview_UpstreamCombinesOwnWithThePrincipalsSecret(t *testing.T) {
 	root, secretsDir := buildSharedRoot(t)
-	writeFile(t, filepath.Join(secretsDir, "ss-srv", "self", "psk", "main"), "server-psk")
+	writeFile(t, filepath.Join(secretsDir, "srv/ss-srv", "self", "psk", "main"), "server-psk")
 
 	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
 	if p.err != nil {
@@ -135,7 +135,7 @@ func TestPreview_UpstreamMissingSharedNamesIt(t *testing.T) {
 // it — the port it reaches never decides that on its own.
 func TestPreview_UpstreamSharedOnlyReachesWhatDeclaredIt(t *testing.T) {
 	root, secretsDir := buildSharedRoot(t)
-	writeFile(t, filepath.Join(secretsDir, "ss-srv", "self", "psk", "main"), "server-psk")
+	writeFile(t, filepath.Join(secretsDir, "srv/ss-srv", "self", "psk", "main"), "server-psk")
 	// The same export, with its declaration taken away and a template that
 	// asks anyway. What it renders is what a template naming something it
 	// never declared gets: nothing.
@@ -241,7 +241,7 @@ instances:
 // name a certificate was issued for.
 func TestPreview_ForwardedRouteDialsTheRelayAndAuthenticatesAtTheExit(t *testing.T) {
 	root, secretsDir := buildSharedRoot(t)
-	writeFile(t, filepath.Join(secretsDir, "ss-srv", "self", "psk", "main"), "server-psk")
+	writeFile(t, filepath.Join(secretsDir, "srv/ss-srv", "self", "psk", "main"), "server-psk")
 	writeFile(t, filepath.Join(root, "services", "realm", "confgen.yaml"), `
 template: templates/config.toml.tmpl
 defaults: document
@@ -278,7 +278,7 @@ instances:
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   sfo:
-    hops: [fwd-relay:ss, ss-srv:main]
+    hops: [relay/fwd-relay:ss, srv/ss-srv:main]
 `)
 
 	p := renderPreview(t, root, secretsDir, "laptop-sfo-ssserver-ss-json")
@@ -300,7 +300,7 @@ routes:
 // one. Reading a secret for it would fail on a file that does not exist.
 func TestPreview_AForwarderReadsAnAddressAndNoCredential(t *testing.T) {
 	root, secretsDir := buildSharedRoot(t)
-	writeFile(t, filepath.Join(secretsDir, "ss-srv", "self", "psk", "main"), "server-psk")
+	writeFile(t, filepath.Join(secretsDir, "srv/ss-srv", "self", "psk", "main"), "server-psk")
 	writeFile(t, filepath.Join(root, "services", "realm", "confgen.yaml"), `
 template: templates/config.toml.tmpl
 defaults: document
@@ -325,10 +325,10 @@ instances:
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   sfo:
-    hops: [fwd-relay:ss, ss-srv:main]
+    hops: [relay/fwd-relay:ss, srv/ss-srv:main]
 `)
 
-	p := renderPreview(t, root, secretsDir, "fwd-relay")
+	p := renderPreview(t, root, secretsDir, "relay/fwd-relay")
 	if p.err != nil {
 		t.Fatalf("preview error: %v", p.err)
 	}
@@ -346,7 +346,7 @@ routes:
 // the template.
 func TestPreview_DownstreamsCarryThePortTheRouteArrivedOn(t *testing.T) {
 	root, secretsDir := buildSharedRoot(t)
-	writeFile(t, filepath.Join(secretsDir, "ss-srv", "self", "psk", "main"), "server-psk")
+	writeFile(t, filepath.Join(secretsDir, "srv/ss-srv", "self", "psk", "main"), "server-psk")
 	writeFile(t, filepath.Join(root, "services", "realm", "confgen.yaml"), `
 template: templates/config.toml.tmpl
 defaults: document
@@ -384,12 +384,12 @@ instances:
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   sfo:
-    hops: [fwd-relay:ss, ss-srv:main]
+    hops: [relay/fwd-relay:ss, srv/ss-srv:main]
   sfo-alt:
-    hops: [fwd-relay:alt, ss-srv:other]
+    hops: [relay/fwd-relay:alt, srv/ss-srv:other]
 `)
 
-	p := renderPreview(t, root, secretsDir, "fwd-relay")
+	p := renderPreview(t, root, secretsDir, "relay/fwd-relay")
 	if p.err != nil {
 		t.Fatalf("preview error: %v", p.err)
 	}
@@ -404,7 +404,7 @@ routes:
 
 func TestPreview_RendersTheSameWayExportWould(t *testing.T) {
 	root, secretsDir := buildRenderableRoot(t)
-	p := renderPreview(t, root, secretsDir, "u-node-group-10")
+	p := renderPreview(t, root, secretsDir, "srv/u-node-group-10")
 	if p.err != nil {
 		t.Fatalf("preview error: %v", p.err)
 	}
@@ -444,15 +444,15 @@ id: laptop
 owner: alex
 `)
 	writeFile(t, filepath.Join(root, "users.yaml"), "users:\n  alex:\n    access: [sfo]\n")
-	writeFile(t, filepath.Join(root, "routes.yaml"), "routes:\n  sfo:\n    hops: [ss-srv:main]\n")
+	writeFile(t, filepath.Join(root, "routes.yaml"), "routes:\n  sfo:\n    hops: [srv/ss-srv:main]\n")
 	writeFile(t, filepath.Join(root, "networks.yaml"), "networks: [{name: internet}]\nuniversal: internet\n")
 
 	secretsDir := t.TempDir()
-	current := filepath.Join(secretsDir, "ss-srv", "main", "alex", "default")
+	current := filepath.Join(secretsDir, "srv/ss-srv", "main", "alex", "default")
 	writeFile(t, current, "new-secret")
 	writeFile(t, current+".previous", "old-secret")
 
-	p := renderPreview(t, root, secretsDir, "ss-srv")
+	p := renderPreview(t, root, secretsDir, "srv/ss-srv")
 	if p.err != nil {
 		t.Fatalf("preview error: %v", p.err)
 	}
@@ -492,15 +492,15 @@ id: laptop
 owner: alex
 `)
 	writeFile(t, filepath.Join(root, "users.yaml"), "users:\n  alex:\n    access: [sfo]\n")
-	writeFile(t, filepath.Join(root, "routes.yaml"), "routes:\n  sfo:\n    hops: [ss-srv:main]\n")
+	writeFile(t, filepath.Join(root, "routes.yaml"), "routes:\n  sfo:\n    hops: [srv/ss-srv:main]\n")
 	writeFile(t, filepath.Join(root, "networks.yaml"), "networks: [{name: internet}]\nuniversal: internet\n")
 
 	secretsDir := t.TempDir()
-	current := filepath.Join(secretsDir, "ss-srv", "main", "alex", "default")
+	current := filepath.Join(secretsDir, "srv/ss-srv", "main", "alex", "default")
 	writeFile(t, current, "new-secret")
 	writeFile(t, current+".previous", "old-secret")
 
-	p := renderPreview(t, root, secretsDir, "ss-srv")
+	p := renderPreview(t, root, secretsDir, "srv/ss-srv")
 	if p.err != nil {
 		t.Fatalf("preview error: %v", p.err)
 	}
@@ -561,9 +561,9 @@ instances:
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   vault:
-    hops: [proxy:https, vault:web]
+    hops: [srv/proxy:https, srv/vault:web]
   clip:
-    hops: [proxy:https, bin:web]
+    hops: [srv/proxy:https, srv/bin:web]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
 networks: [{name: internet}]
@@ -588,7 +588,7 @@ func previewOf(t *testing.T, root, secretsDir, instance string) string {
 // is — loopback here, since the two ends share a node.
 func TestPreview_FanOutRendersEveryDownstream(t *testing.T) {
 	root, secretsDir := buildFanOutRoot(t)
-	got := previewOf(t, root, secretsDir, "proxy")
+	got := previewOf(t, root, secretsDir, "srv/proxy")
 	want := "clip.example.com -> 127.0.0.1:8080\nvault.example.com -> 127.0.0.1:8222"
 	if got != want {
 		t.Fatalf("preview = %q, want %q", got, want)
@@ -600,7 +600,7 @@ func TestPreview_FanOutRendersEveryDownstream(t *testing.T) {
 // block in front of it.
 func TestPreview_PublishedReachesTheServiceBehind(t *testing.T) {
 	root, secretsDir := buildFanOutRoot(t)
-	got := previewOf(t, root, secretsDir, "vault")
+	got := previewOf(t, root, secretsDir, "srv/vault")
 	want := "DOMAIN=https://vault.example.com"
 	if got != want {
 		t.Fatalf("preview = %q, want %q", got, want)
@@ -648,7 +648,7 @@ instances:
 // values is the only place a node file may write a service's own settings.
 func TestPreview_InstanceValuesOverrideDocumentDefaults(t *testing.T) {
 	root, secretsDir := buildValuesRoot(t)
-	p := renderPreview(t, root, secretsDir, "u-node-group-10")
+	p := renderPreview(t, root, secretsDir, "srv/u-node-group-10")
 	if p.err != nil {
 		t.Fatalf("preview error: %v", p.err)
 	}
@@ -771,11 +771,11 @@ instances:
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   local:
-    hops: [fwd-local:in, web:web]
+    hops: [srv/fwd-local:in, srv/web:web]
   lan:
-    hops: [fwd-lan:in, web:web]
+    hops: [lan/fwd-lan:in, srv/web:web]
   far:
-    hops: [fwd-far:in, web:web]
+    hops: [far/fwd-far:in, srv/web:web]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
 networks: [{name: home}, {name: internet}]
@@ -793,9 +793,9 @@ universal: internet
 func TestPreview_UpstreamPublishedOnlyOnTheUniversalNetwork(t *testing.T) {
 	root, secretsDir := buildPublishedEdgesRoot(t)
 	for instance, want := range map[string]string{
-		"fwd-local": "127.0.0.1",
-		"fwd-lan":   "10.0.1.10",
-		"fwd-far":   "web.example.com",
+		"srv/fwd-local": "127.0.0.1",
+		"lan/fwd-lan":   "10.0.1.10",
+		"far/fwd-far":   "web.example.com",
 	} {
 		if got := previewOf(t, root, secretsDir, instance); got != want {
 			t.Errorf("%s = %q, want %q", instance, got, want)
@@ -848,7 +848,7 @@ users:
 	writeFile(t, filepath.Join(root, "routes.yaml"), `
 routes:
   files:
-    hops: [samba-srv:smb]
+    hops: [srv/samba-srv:smb]
 `)
 	writeFile(t, filepath.Join(root, "networks.yaml"), `
 networks: [{name: internet}]
@@ -856,7 +856,7 @@ universal: internet
 `)
 
 	secretsDir = t.TempDir()
-	writeFile(t, filepath.Join(secretsDir, "samba-srv", "smb", "alex", "default"), "password")
+	writeFile(t, filepath.Join(secretsDir, "srv/samba-srv", "smb", "alex", "default"), "password")
 	return root, secretsDir
 }
 
@@ -865,7 +865,7 @@ universal: internet
 func TestPreview_ServiceWritingTwoFilesRendersBoth(t *testing.T) {
 	root, secretsDir := buildTwoFileRoot(t)
 
-	files, err := renderPreviewFiles(t, root, secretsDir, "samba-srv")
+	files, err := renderPreviewFiles(t, root, secretsDir, "srv/samba-srv")
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -891,7 +891,7 @@ func TestPreview_ServiceWritingTwoFilesRendersBoth(t *testing.T) {
 func TestPreview_AccountTableHoldsNoPlaintext(t *testing.T) {
 	root, secretsDir := buildTwoFileRoot(t)
 
-	files, err := renderPreviewFiles(t, root, secretsDir, "samba-srv")
+	files, err := renderPreviewFiles(t, root, secretsDir, "srv/samba-srv")
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
