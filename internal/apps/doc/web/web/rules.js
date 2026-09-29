@@ -19,13 +19,13 @@ const tree = outlineTree($("tree"), () => state, { empty: () => "Give the rule a
 resizable(document.querySelector(".outline-main"), "dgs-doc-rules-tree");
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
-const text = (r) => JSON.stringify({ name: r.name, query: r.query || {}, selection: r.selection || "head", shared: !!r.shared, exclude: r.exclude || {}, query_types: r.query_types || {}, exclude_types: r.exclude_types || {}, skip: r.skip || [], inherit: r.inherit || [], layout: r.layout,
-  default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null, numbers: r.numbers || null, map: r.map || null });
+const text = (r) => JSON.stringify({ name: r.name, if: r.if || "", selection: r.selection || "head", shared: !!r.shared, inherit: r.inherit || [], file: r.file,
+  children: r.children || [], default: r.default ?? null, dedupe: r.dedupe || "", order: r.order || null, numbers: r.numbers || null, unnumbered: r.unnumbered || null });
 const blank = () => {
   let n = 1;
   while (rules.some((r) => r.name === "rule-" + n)) n++;
-  // No layout: the form starts it as {owner}/{type}.{ext}.
-  return { name: "rule-" + n, query: {}, selection: "head", layout: "" };
+  // No file: the form starts it as {owner}/{type}.{ext}.
+  return { name: "rule-" + n, selection: "head", file: "" };
 };
 
 function list() {
@@ -90,7 +90,7 @@ function changed() {
 
 async function regroup() {
   const mine = ++asked;
-  if (!draft.layout) {
+  if (!draft.file) {
     grouping = null;
     return draw();
   }
@@ -98,6 +98,9 @@ async function regroup() {
     const answer = await post("/api/outlines/group", { name: PREVIEW, rules: [{ ...copy(draft), name: PREVIEW }] });
     if (mine !== asked) return;
     grouping = answer;
+    const ids = new Set();
+    JSON.stringify(answer, (k, v) => { if (k === "item" && typeof v === "string") ids.add(v); return v; });
+    which.setPreviewed([...ids]);
     say($("message"), "");
   } catch (err) {
     if (mine !== asked) return;
@@ -142,7 +145,7 @@ function problems() {
     for (const [key, value] of unordered) li.append(el("button", { type: "button", className: "small", textContent: "Number " + value + " last",
       onclick: () => which.numberLast(key, value) }));
     if (m.view === here) li.append(" ", el("button", { type: "button", className: "small", textContent: "Leave out",
-      title: "Leave this Item out of the rule; it is listed under Leave out Items, to put back", onclick: () => which.skipItem(m.item) }));
+      title: "Leave this Item out: adds not id is … to the rule's if", onclick: () => which.skipItem(m.item) }));
     if (m.keys) {
       const keys = m.keys.filter((k) => !(m.view === here && numbered.includes(k) && byId[m.item] && which.orderValue(byId[m.item], k)));
       const fields = m.fields.filter((f) => !m.keys.includes(f) || keys.includes(f));
@@ -197,7 +200,7 @@ function fill(id, m, link) {
   };
   return el("li", {}, link(id), " — missing ", el("span", { className: "mono" }, [...m.keys].join(", ")),
     unknown.length ? el("span", { className: "muted" }, " · " + (item ? item.type : "its Template") + " has no field " +
-      unknown.map((f) => f === "issued_at" ? "issued_at (year, month and date come from it)" : f).join(", ")) : null,
+      unknown.map((f) => f === "date" ? "date (year and month come from it)" : f).join(", ")) : null,
     " ", el("button", { type: "button", className: "small", textContent: "Leave out", title: "Leave this Item out of the rule instead",
       onclick: () => which.skipItem(id) }),
     form);

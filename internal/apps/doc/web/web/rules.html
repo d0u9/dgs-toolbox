@@ -54,11 +54,11 @@
     </div>
     <div class="view-group">
       <h3>Which PDFs</h3>
-      <div class="vf"><span class="vf-label">Types</span><div id="types" class="checks"></div></div>
-      <div class="vf"><span class="vf-label">Only where</span>
-        <div class="vf-stack">
-          <div id="conditions"></div>
-          <button id="add-condition" class="button" type="button">+ Condition</button>
+      <div class="vf vf-wide"><span class="vf-label">If</span>
+        <div class="path-wrap">
+          <input id="if" class="layout-text mono" spellcheck="false" autocomplete="off" placeholder="every Item; or: owner is alex and type in [bill, invoice]"
+            title="The Items the rule takes. and, or, not, (…); key is value, key in [a, b], key contains text, has key. Empty takes every Item.">
+          <span id="if-error" class="message error"></span>
         </div>
       </div>
       <div class="vf"><span class="vf-label">Revisions</span>
@@ -67,21 +67,9 @@
           <label><input type="radio" name="selection" value="all"> All revisions</label>
         </div>
       </div>
-      <div class="vf"><span class="vf-label">Leave out where</span>
-        <div class="vf-stack">
-          <div id="exclude"></div>
-          <button id="add-exclude" class="button" type="button" title="A PDF meeting any of these is left out: a tag such as translation, or a field's value">+ Exclusion</button>
-        </div>
-      </div>
-      <div class="vf"><span class="vf-label">Leave out Items</span>
-        <div class="vf-stack">
-          <ul id="skip-list" class="skip-list"></ul>
-          <select id="add-skip" title="Only the Items this rule selects are offered"></select>
-        </div>
-      </div>
       <div class="vf"><span class="vf-label">Shared</span>
         <div class="checks">
-          <label title="An Item shared with an owner the query names is taken as theirs; its {owner} is still its own owner"><input type="checkbox" id="shared"> also Items shared with the owners chosen</label>
+          <label title="An Item shared with an owner the if names is taken as theirs; its {owner} is still its own owner"><input type="checkbox" id="shared"> also Items shared with the owners the if names</label>
         </div>
       </div>
     </div>
@@ -90,7 +78,7 @@
       <div id="inherit-row" class="vf" hidden><span class="vf-label">Inherit</span>
         <div id="inherit" class="checks"></div>
       </div>
-      <div class="vf vf-wide"><span class="vf-label">Path</span>
+      <div class="vf vf-wide"><span class="vf-label">Path and file</span>
         <div class="path-wrap">
           <div class="path-line">
             <input id="layout-text" class="layout-text" spellcheck="false" autocomplete="off" title="The path as the rule keeps it: type it here, or build it part by part with Edit">
@@ -99,10 +87,9 @@
           <span id="layout-error" class="message error"></span>
         </div>
       </div>
-      <div class="vf vf-wide"><span class="vf-label">More paths</span>
+      <div class="vf vf-wide"><span class="vf-label">Then</span>
         <div class="vf-stack">
-          <div id="paths"></div>
-          <button type="button" id="path-add" class="path-more" title="Another path, for the Items of the types ticked on it; the first a PDF matches places it, the Path above the rest">+ Path for some types</button>
+          <div id="paths" class="blocks"></div>
         </div>
       </div>
       <div id="order-row" class="vf" hidden><span class="vf-label">Numbering</span>
