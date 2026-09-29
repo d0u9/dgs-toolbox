@@ -540,6 +540,37 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		}
 	}
 
+	// Rule 34: every set's members are routes, and every @set named in an
+	// access list is a set.
+	setNames := make([]string, 0, len(inv.Sets))
+	for name := range inv.Sets {
+		setNames = append(setNames, name)
+	}
+	sort.Strings(setNames)
+	for _, name := range setNames {
+		for _, member := range inv.Sets[name] {
+			if _, ok := inv.Routes[member]; !ok {
+				add("set %q names route %q, which does not exist", name, member)
+			}
+		}
+	}
+	checkWritten := func(where string, list []string) {
+		for _, entry := range list {
+			if set, ok := strings.CutPrefix(entry, inventory.SetPrefix); ok {
+				if _, defined := inv.Sets[set]; !defined {
+					add("%s: access names set %q, which users.yaml does not define under sets", where, set)
+				}
+			}
+		}
+	}
+	for _, key := range userKeys {
+		u := inv.Users[key]
+		checkWritten("user "+strconv.Quote(key), u.AccessWritten)
+		for _, c := range u.CredentialNames() {
+			checkWritten("user "+strconv.Quote(key)+" credential "+strconv.Quote(c), u.Credentials[c].AccessWritten)
+		}
+	}
+
 	// Rule 33: a route's scope names a network or a node, not both, and its
 	// entry is reachable there; a credential opening a route scoped to a
 	// network reaches that network.

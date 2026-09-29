@@ -74,7 +74,32 @@ func renameMigrationRoutes(inv *inventory.Root, changes []routeChange) (map[stri
 		copyOf[to] = route
 	}
 	inv.Routes = copyOf
+	renameIn := func(list []string, where string) {
+		for i, name := range list {
+			if to := byName[name]; to != "" {
+				list[i] = to
+				if where != "" {
+					refs[name] = append(refs[name], where)
+				}
+			}
+		}
+	}
+	if len(inv.Sets) > 0 {
+		sets := make(map[string][]string, len(inv.Sets))
+		for name, members := range inv.Sets {
+			members = append([]string(nil), members...)
+			renameIn(members, "users.yaml: sets."+name)
+			sets[name] = members
+		}
+		inv.Sets = sets
+	}
 	inv.Users = cloneUsersForRoutes(inv.Users)
+	for _, user := range inv.Users {
+		renameIn(user.AccessWritten, "")
+		for _, credential := range user.Credentials {
+			renameIn(credential.AccessWritten, "")
+		}
+	}
 	for key, user := range inv.Users {
 		for i, name := range user.Access {
 			if to := byName[name]; to != "" {
@@ -100,6 +125,8 @@ func renameMigrationRoutes(inv *inventory.Root, changes []routeChange) (map[stri
 		profiles := map[string]inventory.Profile{}
 		for name, profile := range inv.Nodes[i].Profiles {
 			profile.Access = append([]string(nil), profile.Access...)
+			profile.AccessWritten = append([]string(nil), profile.AccessWritten...)
+			renameIn(profile.AccessWritten, "")
 			for j, route := range profile.Access {
 				if to := byName[route]; to != "" {
 					profile.Access[j] = to
@@ -120,9 +147,11 @@ func cloneUsersForRoutes(users map[string]inventory.User) map[string]inventory.U
 	copyOf := make(map[string]inventory.User, len(users))
 	for key, user := range users {
 		user.Access = append([]string(nil), user.Access...)
+		user.AccessWritten = append([]string(nil), user.AccessWritten...)
 		credentials := make(map[string]inventory.Credential, len(user.Credentials))
 		for name, credential := range user.Credentials {
 			credential.Access = append([]string(nil), credential.Access...)
+			credential.AccessWritten = append([]string(nil), credential.AccessWritten...)
 			credentials[name] = credential
 		}
 		user.Credentials = credentials
