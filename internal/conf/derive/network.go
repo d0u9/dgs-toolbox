@@ -70,47 +70,9 @@ func Names(inv *inventory.Root, fansOut func(instance string) bool) (map[string]
 			}
 		}
 	}
-	// A port reached through a route answers at the node of the route's
-	// first hop: the proxy in front of it.
-	front := map[string]string{}
-	routeNames := make([]string, 0, len(inv.Routes))
-	for name := range inv.Routes {
-		routeNames = append(routeNames, name)
-	}
-	sort.Strings(routeNames)
-	for _, name := range routeNames {
-		hops := inv.Routes[name].Hops
-		for i := 1; i < len(hops); i++ {
-			first, err := ParseHop(hops[0])
-			if err != nil || !fansOut(first.Instance) {
-				continue
-			}
-			if _, seen := front[hops[i]]; !seen {
-				front[hops[i]] = first.Instance
-			}
-		}
-	}
-
-	byNetwork := map[string]map[string]Name{}
-	var conflicts []string
-	add := func(network string, n Name) {
-		if _, err := netip.ParseAddr(n.Address); err != nil {
-			return
-		}
-		table := byNetwork[network]
-		if table == nil {
-			table = map[string]Name{}
-			byNetwork[network] = table
-		}
-		if prev, ok := table[n.Name]; ok {
-			if prev.Address != n.Address {
-				conflicts = append(conflicts, fmt.Sprintf("on network %q, name %q resolves to %s (%s) and %s (%s)",
-					network, n.Name, prev.Address, prev.Source, n.Address, n.Source))
-			}
-			return
-		}
-		table[n.Name] = n
-	}
+	front := fronts(inv, fansOut)
+	tables := newNameTables("network")
+	add := tables.add
 
 	for _, n := range inv.Nodes {
 		if n.Broken != "" {
@@ -140,18 +102,130 @@ func Names(inv *inventory.Root, fansOut func(instance string) bool) (map[string]
 			add(h.Network, Name{Name: name, Address: h.Address, Source: "host " + id})
 		}
 	}
+	return tables.result()
+}
 
+// ContainerNames is the name table of each container network on one node,
+// and the conflicts rule 30 reports there. A name enters a container
+// network's table when the instance answering to it — the proxy in front of
+// the port, or the port's own instance when nothing fronts it — joins that
+// network at a fixed address. An address the runtime assigns is no record a
+// resolver can hold. See docs/apps/conf/inventory.md#names-on-a-network.
+//
+// A container network is a scope inside its node, so the tables are the
+// node's own: two nodes may each list a network of one name.
+func ContainerNames(inv *inventory.Root, nodeID string, fansOut func(instance string) bool) (map[string][]Name, []string) {
+	var node inventory.Node
+	byID := map[string]inventory.Instance{}
+	for _, n := range inv.Nodes {
+		if n.ID != nodeID || n.Broken != "" {
+			continue
+		}
+		node = n
+		for _, inst := range n.Instances {
+			if inst.Service != "" {
+				byID[inst.ID] = inst
+			}
+		}
+	}
+	front := fronts(inv, fansOut)
+	tables := newNameTables("container network")
+	for _, inst := range node.Instances {
+		if inst.Service == "" {
+			continue
+		}
+		for port, p := range inst.Ports {
+			answering := inst
+			if proxy, ok := front[inst.ID+":"+port]; ok {
+				pi, onNode := byID[proxy]
+				if !onNode {
+					continue
+				}
+				answering = pi
+			}
+			for _, c := range node.JoinedContainers(answering) {
+				address := answering.Containers[c.Name]
+				if address == "" {
+					continue
+				}
+				for _, name := range p.Names {
+					tables.add(c.Name, Name{Name: name, Address: address, Source: inst.ID + ":" + port})
+				}
+			}
+		}
+	}
+	return tables.result()
+}
+
+// fronts is the proxy each proxied port answers through: a port reached
+// through a route answers where the route's first hop is, when that hop
+// dispatches by name. The first route in name order wins.
+func fronts(inv *inventory.Root, fansOut func(instance string) bool) map[string]string {
+	front := map[string]string{}
+	routeNames := make([]string, 0, len(inv.Routes))
+	for name := range inv.Routes {
+		routeNames = append(routeNames, name)
+	}
+	sort.Strings(routeNames)
+	for _, name := range routeNames {
+		hops := inv.Routes[name].Hops
+		for i := 1; i < len(hops); i++ {
+			first, err := ParseHop(hops[0])
+			if err != nil || !fansOut(first.Instance) {
+				continue
+			}
+			if _, seen := front[hops[i]]; !seen {
+				front[hops[i]] = first.Instance
+			}
+		}
+	}
+	return front
+}
+
+// nameTables collects name tables keyed by network, keeping the first
+// address a name reaches and recording any second one as a conflict. kind
+// is how a conflict names the table's key.
+type nameTables struct {
+	kind      string
+	byKey     map[string]map[string]Name
+	conflicts []string
+}
+
+func newNameTables(kind string) *nameTables {
+	return &nameTables{kind: kind, byKey: map[string]map[string]Name{}}
+}
+
+func (t *nameTables) add(key string, n Name) {
+	if _, err := netip.ParseAddr(n.Address); err != nil {
+		return
+	}
+	table := t.byKey[key]
+	if table == nil {
+		table = map[string]Name{}
+		t.byKey[key] = table
+	}
+	if prev, ok := table[n.Name]; ok {
+		if prev.Address != n.Address {
+			t.conflicts = append(t.conflicts, fmt.Sprintf("on %s %q, name %q resolves to %s (%s) and %s (%s)",
+				t.kind, key, n.Name, prev.Address, prev.Source, n.Address, n.Source))
+		}
+		return
+	}
+	table[n.Name] = n
+}
+
+func (t *nameTables) result() (map[string][]Name, []string) {
 	out := map[string][]Name{}
-	for network, table := range byNetwork {
+	for key, table := range t.byKey {
 		list := make([]Name, 0, len(table))
 		for _, n := range table {
 			list = append(list, n)
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
-		out[network] = list
+		out[key] = list
 	}
-	sort.Strings(conflicts)
-	return out, conflicts
+	sort.Strings(t.conflicts)
+	return out, t.conflicts
 }
 
 // Reservation is one line of what a network's router is given: a member

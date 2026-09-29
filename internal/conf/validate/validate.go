@@ -662,7 +662,15 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		if networkNames[id] {
 			add("node %q has the name of a network, so a route scope %q is ambiguous", id, id)
 		}
+		for _, c := range nodeByID[id].Containers {
+			if networkNames[c.Name] || nodeByID[c.Name].ID != "" {
+				add("node %q: container network %q has the name of a network or a node, so a route scope or a name table %q is ambiguous", id, c.Name, c.Name)
+			}
+		}
 	}
+	// containerScope is every route scoped to a container network of its
+	// entry's node rather than to a network or a node.
+	containerScope := map[string]bool{}
 	routeKeys := make([]string, 0, len(inv.Routes))
 	for name := range inv.Routes {
 		routeKeys = append(routeKeys, name)
@@ -693,8 +701,28 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 				add("route %q is scoped to node %q, and its entry %s is on node %q",
 					name, r.Scope, r.Hops[0], ref.nodeID)
 			}
+		case containsString(entryNode.ContainerNames(), r.Scope):
+			containerScope[name] = true
+			if _, joined := ref.inst.Containers[r.Scope]; !joined {
+				add("route %q is scoped to container network %q, and its entry %s does not join it",
+					name, r.Scope, r.Hops[0])
+			}
 		default:
-			add("route %q is scoped to %q, which is neither a network nor a node", name, r.Scope)
+			add("route %q is scoped to %q, which is neither a network, a node, nor a container network of node %q", name, r.Scope, ref.nodeID)
+		}
+	}
+	// A credential is carried by a device or a person, and neither is on a
+	// container network: what reaches one is a router the model does not
+	// carry, so a route scoped to one is opened by nobody.
+	for _, key := range userKeys {
+		user := inv.Users[key]
+		for _, credential := range user.CredentialNames() {
+			for _, name := range routeKeys {
+				if containerScope[name] && user.OpensRoute(credential, name) {
+					add("user %q: credential %q opens route %q, scoped to a container network, which no credential reaches",
+						key, credential, name)
+				}
+			}
 		}
 	}
 	for _, key := range userKeys {
@@ -1278,10 +1306,22 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 			if isOverride(inst) {
 				continue // a client's own local listeners, not reachable from outside.
 			}
-			bind := inst.Bind
+			// A container on a container network binds inside its own
+			// network namespace, where nothing else listens: what it holds
+			// on the node is the host mapping derived for it.
+			var mappings map[string]derive.Mapping
+			if inst.Containerised() && len(inst.Containers) > 0 && model != nil {
+				mappings = model.Mappings(inv, inst.ID)
+			}
 			for portName, port := range inst.Ports {
-				b := bound{bind: bind, port: port.Number, protocol: port.ProtocolOr()}
-				seen[b] = append(seen[b], fmt.Sprintf("%s:%s", inst.ID, portName))
+				binds := []string{inst.Bind}
+				if mappings != nil {
+					binds = mappings[portName].Addresses
+				}
+				for _, bind := range binds {
+					b := bound{bind: bind, port: port.Number, protocol: port.ProtocolOr()}
+					seen[b] = append(seen[b], fmt.Sprintf("%s:%s", inst.ID, portName))
+				}
 			}
 		}
 		var bounds []bound
@@ -1434,6 +1474,12 @@ func networkIssues(inv *inventory.Root, nodeByID map[string]inventory.Node, fans
 	// Rule 30.
 	_, conflicts := derive.Names(inv, fansOut)
 	out = append(out, conflicts...)
+	for _, id := range sortedKeys(nodeByID) {
+		_, conflicts := derive.ContainerNames(inv, id, fansOut)
+		for _, c := range conflicts {
+			out = append(out, fmt.Sprintf("node %q: %s", id, c))
+		}
+	}
 
 	// Rule 31.
 	nodeOf := map[string]inventory.Node{}

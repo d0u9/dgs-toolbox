@@ -140,11 +140,19 @@ func (m *Model) Mappings(inv *inventory.Root, instance string) map[string]Mappin
 			// No edge chose a network for the way in from outside. A route
 			// written under a scope says where its clients are: a network
 			// publishes on this node's address there, the node itself on
-			// loopback. Otherwise every network this node answers on.
+			// loopback, and a container network this instance joins on
+			// nothing: its clients are on that bridge, behind a router
+			// there, and never reach the host. Otherwise every network this
+			// node answers on.
 			outside := 0
 			if scopes[node.ID] {
 				addresses = append(addresses, PublishLoopback)
 				outside++
+			}
+			for scope := range scopes {
+				if _, joined := inst.Containers[scope]; joined && scope != "" {
+					outside++
+				}
 			}
 			for _, network := range networkOrder(inv) {
 				if len(scopes) > 0 && !scopes[""] && !scopes[network] {

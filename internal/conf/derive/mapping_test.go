@@ -310,3 +310,42 @@ func TestDerive_TwoSharedContainersDialOverTheNodesFirst(t *testing.T) {
 	}
 	t.Fatal("no edge inside a container network")
 }
+
+// TestMappings_RouteScopedToAContainerNetworkPublishesNothing: a route
+// written under a container network its entry joins is for clients on that
+// bridge, behind a router the model does not carry, so the entry publishes
+// on no host address.
+func TestMappings_RouteScopedToAContainerNetworkPublishesNothing(t *testing.T) {
+	inv := containerInventory()
+	inv.Routes["web/direct"] = inventory.Route{Hops: []string{"bin-node1:web"}, Scope: "web"}
+	got := mappingsOf(t, inv, "bin-node1")
+	if m, ok := got["web"]; !ok || len(m.Addresses) != 0 || m.Number != 8080 {
+		t.Fatalf("web = %+v, want 8080 published nowhere", got["web"])
+	}
+}
+
+// TestContainerNames_AProxiedNameAnswersAtTheProxysFixedAddress: a name
+// behind a proxy enters a container network's table at the proxy's fixed
+// address there; a network the proxy joins at a runtime-assigned address
+// holds no record.
+func TestContainerNames_AProxiedNameAnswersAtTheProxysFixedAddress(t *testing.T) {
+	inv := containerInventory()
+	inv.Nodes[0].Containers = append(inv.Nodes[0].Containers, inventory.ContainerNetwork{Name: "tailnet", Subnet: "172.30.250.0/24"})
+	inv.Nodes[0].Instances[0].Containers = map[string]string{"web": "", "tailnet": "172.30.250.10"}
+	web := inv.Nodes[0].Instances[1].Ports["web"]
+	web.Names = []string{"paste.example.org"}
+	inv.Nodes[0].Instances[1].Ports["web"] = web
+	fansOut := func(instance string) bool { return instance == "caddy-sfo01" }
+
+	got, conflicts := ContainerNames(inv, "sfo1", fansOut)
+	if len(conflicts) != 0 {
+		t.Fatalf("conflicts = %v, want none", conflicts)
+	}
+	want := []Name{{Name: "paste.example.org", Address: "172.30.250.10", Source: "bin-node1:web"}}
+	if len(got) != 1 || len(got["tailnet"]) != 1 || got["tailnet"][0] != want[0] {
+		t.Fatalf("ContainerNames = %+v, want tailnet holding %+v alone", got, want)
+	}
+	if other, _ := ContainerNames(inv, "hkg1", fansOut); len(other) != 0 {
+		t.Fatalf("ContainerNames on another node = %+v, want none", other)
+	}
+}

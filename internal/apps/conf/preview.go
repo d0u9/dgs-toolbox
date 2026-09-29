@@ -124,7 +124,7 @@ func (m renderer) renderTarget(instance string) ([]artefact, error) {
 			Published:      m.publishedFor(instance),
 			PublishedNames: m.publishedNamesFor(instance),
 			Dials:          dials,
-			Names:          m.names(),
+			Names:          m.names(t.Node),
 			Principals:     principals,
 			Self:           own,
 		})
@@ -793,7 +793,7 @@ func (m renderer) deployFor(instance string) ([]deployArtefact, error) {
 			Downstreams:    m.downstreamsFor(instance, m.l.manifests[t.Service].FansOut()),
 			Published:      m.publishedFor(instance),
 			PublishedNames: m.publishedNamesFor(instance),
-			Names:          m.names(),
+			Names:          m.names(t.Node),
 			Mapping:        mapping,
 		})
 		if err != nil {
@@ -848,16 +848,22 @@ func (m renderer) realInstance(instance string) (*inventory.Instance, inventory.
 	return nil, inventory.Node{}
 }
 
-// names is every network's name table, for the names template function.
-func (m renderer) names() map[string][]render.Name {
-	tables, _ := derive.Names(m.l.inv, func(instance string) bool {
+// names is every network's name table and each container network's on
+// node, for the names template function. Rule 33 keeps a container
+// network's name from being a network's, so the two never share a key.
+func (m renderer) names(node string) map[string][]render.Name {
+	fansOut := func(instance string) bool {
 		inst := m.instanceByID(instance)
 		return inst != nil && m.l.manifests[inst.Service].FansOut() && m.l.manifests[inst.Service].DispatchesBy() == confgen.DispatchName
-	})
-	out := make(map[string][]render.Name, len(tables))
-	for network, list := range tables {
-		for _, n := range list {
-			out[network] = append(out[network], render.Name{Name: n.Name, Address: n.Address})
+	}
+	tables, _ := derive.Names(m.l.inv, fansOut)
+	containers, _ := derive.ContainerNames(m.l.inv, node, fansOut)
+	out := make(map[string][]render.Name, len(tables)+len(containers))
+	for _, from := range []map[string][]derive.Name{tables, containers} {
+		for network, list := range from {
+			for _, n := range list {
+				out[network] = append(out[network], render.Name{Name: n.Name, Address: n.Address})
+			}
 		}
 	}
 	return out

@@ -1095,3 +1095,83 @@ func TestValidate_ContainerNetworks(t *testing.T) {
 		}
 	}
 }
+
+// containerScopeInventory puts ss-srv in a container on srv's bridge br and
+// adds a route scoped to that bridge.
+func containerScopeInventory() *inventory.Root {
+	inv := validInventory()
+	inv.Nodes[0].Containers = []inventory.ContainerNetwork{{Name: "br", Subnet: "172.30.250.0/24"}}
+	inv.Nodes[0].Instances[0].Runtime = inventory.RuntimeDocker
+	inv.Nodes[0].Instances[0].Containers = map[string]string{"br": "172.30.250.53"}
+	inv.Routes["br/dns"] = inventory.Route{Hops: []string{"ss-srv:alt"}, Scope: "br"}
+	return inv
+}
+
+func TestValidate_RouteScopedToAContainerNetworkItsEntryJoins(t *testing.T) {
+	inv := containerScopeInventory()
+	manifests := validManifests()
+	for _, iss := range Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil) {
+		if strings.Contains(iss.Message, "br") {
+			t.Fatalf("Validate = %v, want no issue about the br scope", iss.Message)
+		}
+	}
+}
+
+func TestValidate_RouteScopedToAContainerNetworkItsEntryDoesNotJoin(t *testing.T) {
+	inv := containerScopeInventory()
+	inv.Nodes[0].Containers = append(inv.Nodes[0].Containers, inventory.ContainerNetwork{Name: "apps", Subnet: "172.30.0.0/24"})
+	inv.Nodes[0].Instances[0].Containers = map[string]string{"apps": ""}
+	manifests := validManifests()
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `route "br/dns" is scoped to container network "br", and its entry ss-srv:alt does not join it`) {
+		t.Fatalf("Validate = %v, want an entry-not-joined issue", messages(got))
+	}
+}
+
+func TestValidate_CredentialOpeningAContainerScopedRoute(t *testing.T) {
+	inv := containerScopeInventory()
+	inv.Users["alex"] = inventory.User{Username: "alex", Access: []string{"sfo", "br/dns"}}
+	manifests := validManifests()
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `opens route "br/dns", scoped to a container network`) {
+		t.Fatalf("Validate = %v, want a container-scope credential issue", messages(got))
+	}
+}
+
+func TestValidate_ContainerNetworkNamedLikeANetwork(t *testing.T) {
+	inv := validInventory()
+	inv.Nodes[0].Containers = []inventory.ContainerNetwork{{Name: "home", Subnet: "172.30.250.0/24"}}
+	manifests := validManifests()
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, `node "srv": container network "home" has the name of a network or a node`) {
+		t.Fatalf("Validate = %v, want an ambiguous-name issue", messages(got))
+	}
+}
+
+// TestValidate_ContainersOnOnePortPublishedApart: two containers listening on
+// one port number in their own network namespaces collide only where the
+// host mappings do. ss-srv:alt is published on the node's address for the
+// relay; ss-srv2:alt, scoped to the bridge, is published nowhere.
+func TestValidate_ContainersOnOnePortPublishedApart(t *testing.T) {
+	inv := containerScopeInventory()
+	inv.Nodes[0].Instances[0].Bind = "0.0.0.0"
+	inv.Nodes[0].Instances = append(inv.Nodes[0].Instances, inventory.Instance{
+		ID: "ss-srv2", Service: "ssserver", Runtime: inventory.RuntimeDocker, Bind: "0.0.0.0",
+		Containers: map[string]string{"br": ""},
+		Ports:      inventory.PortsOf(map[string]int{"alt": 49217}),
+	})
+	inv.Routes["br/dns"] = inventory.Route{Hops: []string{"ss-srv2:alt"}, Scope: "br"}
+	manifests := validManifests()
+	got := Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if containsSubstring(got, "bind the same address") {
+		t.Fatalf("Validate = %v, want no bind collision: ss-srv2:alt publishes nowhere", messages(got))
+	}
+
+	// Without the scope ss-srv2:alt is reached from outside, published on
+	// the node's address like ss-srv:alt, and the two collide.
+	delete(inv.Routes, "br/dns")
+	got = Validate(inv, manifests, validExports(), derived(t, inv, manifests), nil)
+	if !containsSubstring(got, "ss-srv2:alt, ss-srv:alt bind the same address, port and protocol (203.0.113.10:49217/tcp)") {
+		t.Fatalf("Validate = %v, want the two published on one host address to collide", messages(got))
+	}
+}
