@@ -1060,3 +1060,38 @@ func TestValidate_TwoCredentialsOnAPersonNamedPort(t *testing.T) {
 		t.Fatalf("issues = %v, want rule 13 to report emma's two credentials", messages(got))
 	}
 }
+
+// TestValidate_ContainerNetworks: rule 32 on a node's container networks and
+// the addresses fixed on them.
+func TestValidate_ContainerNetworks(t *testing.T) {
+	inv := validInventory()
+	srv := &inv.Nodes[0]
+	srv.Runtime = inventory.RuntimeDocker
+	srv.Containers = []inventory.ContainerNetwork{
+		{Name: "apps", Subnet: "172.30.0.0/24"},
+		{Name: "tailnet", Subnet: "172.30.250.0/24", Gateway: "172.30.250.1"},
+		{Name: "wide", Subnet: "172.30.0.0/16"},
+		{Name: "loose", Subnet: "not-a-prefix"},
+	}
+	srv.Instances[0].Runtime = inventory.RuntimeDocker
+	srv.Instances[0].Containers = map[string]string{"tailnet": "172.30.250.1", "apps": "10.0.0.5", "gone": ""}
+	srv.Instances = append(srv.Instances,
+		inventory.Instance{ID: "one", Service: "ssserver", Runtime: inventory.RuntimeDocker, Containers: map[string]string{"tailnet": "172.30.250.10"}},
+		inventory.Instance{ID: "two", Service: "ssserver", Runtime: inventory.RuntimeDocker, Containers: map[string]string{"tailnet": "172.30.250.10"}},
+		inventory.Instance{ID: "host", Service: "ssserver", Runtime: inventory.RuntimeHost, Containers: map[string]string{"apps": ""}},
+	)
+	got := Validate(inv, validManifests(), validExports(), &derive.Model{}, nil)
+	for _, want := range []string{
+		`container networks "apps" and "wide" overlap`,
+		`container network "loose": subnet "not-a-prefix" is not a CIDR prefix`,
+		`address 172.30.250.1 on container network "tailnet" is the network's gateway`,
+		`address 10.0.0.5 on container network "apps" is outside its subnet 172.30.0.0/24`,
+		`joins container network "gone", which node "srv" does not list`,
+		`instances "one" and "two" both hold 172.30.250.10 on container network "tailnet"`,
+		`instance "host" runs as a host process and names container networks apps`,
+	} {
+		if !containsSubstring(got, want) {
+			t.Errorf("Validate = %v, want %q", messages(got), want)
+		}
+	}
+}

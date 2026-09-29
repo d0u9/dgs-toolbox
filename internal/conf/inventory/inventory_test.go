@@ -421,23 +421,59 @@ func TestLoad_UnreferencedInstancesSuffixIsAGroup(t *testing.T) {
 // joins none.
 func TestQualifyInstances_FillsWhatAContainerTakesFromItsNode(t *testing.T) {
 	node := Node{
-		ID: "home", Runtime: RuntimeDocker, Containers: []string{"matrix", "other"},
+		ID: "home", Runtime: RuntimeDocker,
+		Containers: []ContainerNetwork{{Name: "apps", Subnet: "172.30.0.0/24"}, {Name: "other", Subnet: "172.30.1.0/24"}},
 		Instances: []Instance{
 			{Name: "caddy"},
-			{Name: "dns", Network: "other"},
+			{Name: "dns", Containers: map[string]string{"other": "172.30.1.53"}},
 			{Name: "ssh", Runtime: RuntimeHost},
 		},
 	}
 	qualifyInstances(&node)
 	caddy, dns, ssh := node.Instances[0], node.Instances[1], node.Instances[2]
-	if caddy.Runtime != RuntimeDocker || caddy.Network != "matrix" || caddy.Bind != ContainerBind {
-		t.Errorf("caddy = runtime %q network %q bind %q, want docker, matrix, %s", caddy.Runtime, caddy.Network, caddy.Bind, ContainerBind)
+	if _, ok := caddy.Containers["apps"]; caddy.Runtime != RuntimeDocker || !ok || len(caddy.Containers) != 1 || caddy.Bind != ContainerBind {
+		t.Errorf("caddy = runtime %q containers %v bind %q, want docker, apps, %s", caddy.Runtime, caddy.Containers, caddy.Bind, ContainerBind)
 	}
-	if dns.Network != "other" {
-		t.Errorf("dns network = %q, want the one it wrote", dns.Network)
+	if len(dns.Containers) != 1 || dns.Containers["other"] != "172.30.1.53" {
+		t.Errorf("dns containers = %v, want the one it wrote", dns.Containers)
 	}
-	if ssh.Runtime != RuntimeHost || ssh.Network != "" || ssh.Bind != "" {
-		t.Errorf("ssh = runtime %q network %q bind %q, want a host process with neither", ssh.Runtime, ssh.Network, ssh.Bind)
+	if ssh.Runtime != RuntimeHost || len(ssh.Containers) != 0 || ssh.Bind != "" {
+		t.Errorf("ssh = runtime %q containers %v bind %q, want a host process with neither", ssh.Runtime, ssh.Containers, ssh.Bind)
+	}
+}
+
+// TestNode_SharedContainerFollowsTheNodesOrder: two instances on two common
+// container networks dial over the one the node lists first, whatever order
+// either instance wrote them in.
+func TestNode_SharedContainerFollowsTheNodesOrder(t *testing.T) {
+	node := Node{Containers: []ContainerNetwork{{Name: "apps"}, {Name: "tailnet"}, {Name: "media"}}}
+	proxy := Instance{Containers: map[string]string{"tailnet": "172.30.250.10", "apps": ""}}
+	app := Instance{Containers: map[string]string{"apps": "", "tailnet": ""}}
+	media := Instance{Containers: map[string]string{"media": ""}}
+	if got := node.SharedContainer(proxy, app); got != "apps" {
+		t.Errorf("SharedContainer(proxy, app) = %q, want apps", got)
+	}
+	if got := node.SharedContainer(proxy, media); got != "" {
+		t.Errorf("SharedContainer(proxy, media) = %q, want none", got)
+	}
+	joined := node.JoinedContainers(proxy)
+	if len(joined) != 2 || joined[0].Name != "apps" || joined[1].Name != "tailnet" {
+		t.Errorf("JoinedContainers(proxy) = %v, want apps then tailnet", joined)
+	}
+}
+
+// TestLoad_ContainerWithoutAddressIsJoined: a container network written with
+// no value is joined, with the address left to the runtime.
+func TestLoad_ContainerWithoutAddressIsJoined(t *testing.T) {
+	var inst Instance
+	if err := decodeStrict([]byte("id: caddy\ncontainers:\n  apps:\n  tailnet: 172.30.250.10\n"), &inst); err != nil {
+		t.Fatal(err)
+	}
+	if addr, ok := inst.Containers["apps"]; !ok || addr != "" {
+		t.Errorf("apps = %q, %v; want joined with no address", addr, ok)
+	}
+	if inst.Containers["tailnet"] != "172.30.250.10" {
+		t.Errorf("tailnet = %q, want 172.30.250.10", inst.Containers["tailnet"])
 	}
 }
 

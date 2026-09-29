@@ -221,9 +221,9 @@ func TestMappings_ARouteStartingAtAProxiedPortStillPublishesOnThisNodesAddress(t
 // written.
 func containerInventory() *inventory.Root {
 	inv := mappingInventory("203.0.113.10")
-	inv.Nodes[0].Containers = []string{"web"}
-	inv.Nodes[0].Instances[0].Network = "web"
-	inv.Nodes[0].Instances[1].Network = "web"
+	inv.Nodes[0].Containers = []inventory.ContainerNetwork{{Name: "web", Subnet: "172.20.0.0/24"}}
+	inv.Nodes[0].Instances[0].Containers = map[string]string{"web": ""}
+	inv.Nodes[0].Instances[1].Containers = map[string]string{"web": ""}
 	return inv
 }
 
@@ -271,7 +271,7 @@ func TestDerive_EdgeInsideAContainerNetworkDialsByName(t *testing.T) {
 func TestDerive_ContainerDialingItsHostIsAnError(t *testing.T) {
 	inv := containerInventory()
 	inv.Nodes[0].Instances[1].Runtime = ""
-	inv.Nodes[0].Instances[1].Network = ""
+	inv.Nodes[0].Instances[1].Containers = nil
 	if _, err := Derive(inv, mappingManifests()); err == nil {
 		t.Fatal("Derive succeeded, want an error for a container dialling a host process beside it")
 	}
@@ -287,4 +287,26 @@ func TestMappings_RouteScopedToTheNodePublishesOnLoopback(t *testing.T) {
 	inv.Users["alex"] = inventory.User{Username: "alex", Access: []string{"paste"}}
 	got := mappingsOf(t, inv, "ss-sfo01")
 	wantMapping(t, got, "main", 38250, "127.0.0.1")
+}
+
+// TestDerive_TwoSharedContainersDialOverTheNodesFirst: a proxy and a backend
+// on two common container networks dial over the one the node lists first.
+func TestDerive_TwoSharedContainersDialOverTheNodesFirst(t *testing.T) {
+	inv := containerInventory()
+	inv.Nodes[0].Containers = append([]inventory.ContainerNetwork{{Name: "tailnet", Subnet: "172.30.250.0/24"}}, inv.Nodes[0].Containers...)
+	inv.Nodes[0].Instances[0].Containers = map[string]string{"web": "", "tailnet": "172.30.250.10"}
+	inv.Nodes[0].Instances[1].Containers = map[string]string{"web": "", "tailnet": ""}
+	m, err := Derive(inv, mappingManifests())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range m.Edges {
+		if e.Container != "" && e.Container != "tailnet" {
+			t.Fatalf("edge %v runs over %q, want tailnet, the node's first", e, e.Container)
+		}
+		if e.Container == "tailnet" {
+			return
+		}
+	}
+	t.Fatal("no edge inside a container network")
 }

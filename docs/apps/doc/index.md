@@ -685,7 +685,9 @@ one row per folder and one for the file's name, each a line of keys, text,
 Children are drawn as nested blocks, as Scratch draws an if: `if`, `else
 if` and `else` heads with their conditions, their folders and file, and the
 blocks inside them; dragging a block by its head, or ↑/↓, orders them,
-and + if and + else add one. Each PDF
+and + if and + else add one. A block's folders stay hidden behind + folders
+until it has some, as a block that only names its PDFs differently needs a
+file alone. Each PDF
 the rule cannot place has a Leave out button, which adds `id != <id>`
 to the `if`.
 

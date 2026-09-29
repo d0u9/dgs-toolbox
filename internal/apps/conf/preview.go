@@ -171,7 +171,7 @@ func (m renderer) instanceAndNode(instance, nodeID string) (instanceMap, nodeMap
 		}
 		for _, inst := range n.Instances {
 			if inst.ID == instance && inst.Service != "" {
-				return instanceValues(inst), nodeValues(n)
+				return instanceValues(inst, n), nodeValues(n)
 			}
 		}
 	}
@@ -201,10 +201,17 @@ func (m renderer) instanceAndNode(instance, nodeID string) (instanceMap, nodeMap
 	return nil, nil
 }
 
-func instanceValues(inst inventory.Instance) map[string]any {
+func instanceValues(inst inventory.Instance, n inventory.Node) map[string]any {
 	v := map[string]any{"id": inventory.LocalName(inst.ID), "service": inst.Service, "bind": inst.Bind}
-	if inst.Network != "" {
-		v["network"] = inst.Network
+	// The container networks it joins, in its node's preference order, each
+	// with its range and the address fixed there, so a deploy template
+	// writes the whole network definition from one list.
+	if joined := n.JoinedContainers(inst); len(joined) > 0 {
+		containers := make([]any, 0, len(joined))
+		for _, c := range joined {
+			containers = append(containers, containerValues(c, inst.Containers[c.Name]))
+		}
+		v["containers"] = containers
 	}
 	if len(inst.Ports) > 0 {
 		// A template asks what an instance listens on, not how: the
@@ -224,6 +231,13 @@ func nodeValues(n inventory.Node) map[string]any {
 		networks[name] = addr
 	}
 	out := map[string]any{"id": n.ID, "networks": networks}
+	if len(n.Containers) > 0 {
+		containers := make([]any, 0, len(n.Containers))
+		for _, c := range n.Containers {
+			containers = append(containers, containerValues(c, ""))
+		}
+		out["containers"] = containers
+	}
 	if len(n.Accounts) > 0 {
 		accounts := map[string]any{}
 		for name, a := range n.Accounts {
@@ -239,6 +253,19 @@ func nodeValues(n inventory.Node) map[string]any {
 		out["accounts"] = accounts
 	}
 	return out
+}
+
+// containerValues is one container network as a template reads it: its
+// name and range, and address when the instance holds a fixed one there.
+func containerValues(c inventory.ContainerNetwork, address string) map[string]any {
+	v := map[string]any{"name": c.Name, "subnet": c.Subnet}
+	if c.Gateway != "" {
+		v["gateway"] = c.Gateway
+	}
+	if address != "" {
+		v["address"] = address
+	}
+	return v
 }
 
 // principalsFor reads every per-principal port's accounts and secrets for
@@ -720,7 +747,13 @@ func (m renderer) deployFor(instance string) ([]deployArtefact, error) {
 	// The instance as every other render sees it, plus what only a
 	// deployment reads: what delivers the process, and the values that
 	// start it.
-	instanceMap := instanceValues(*inst)
+	var node inventory.Node
+	for _, n := range m.l.inv.Nodes {
+		if n.Broken == "" && n.ID == t.Node {
+			node = n
+		}
+	}
+	instanceMap := instanceValues(*inst, node)
 	instanceMap["runtime"] = inst.RuntimeOr()
 	overlay := inst.Deploy
 	if overlay == nil {
@@ -738,10 +771,8 @@ func (m renderer) deployFor(instance string) ([]deployArtefact, error) {
 	}
 
 	var nodeMap map[string]any
-	for _, n := range m.l.inv.Nodes {
-		if n.Broken == "" && n.ID == t.Node {
-			nodeMap = nodeValues(n)
-		}
+	if node.ID != "" {
+		nodeMap = nodeValues(node)
 	}
 
 	out := make([]deployArtefact, 0, len(deploy.Files))

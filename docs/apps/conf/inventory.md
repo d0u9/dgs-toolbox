@@ -76,9 +76,10 @@ data.
 | What | The names |
 | --- | --- |
 | Files | `services/`, `services/<service>/exports/`, `services/<service>/deploy/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml`, `hosts.yaml`, `confgen.yaml`, `defaults.yaml` |
-| Node keys | `id`, `networks`, `reaches`, `owner`, `export`, `profiles`, `credential`, `instances` |
+| Node keys | `id`, `networks`, `reaches`, `owner`, `export`, `profiles`, `credential`, `runtime`, `containers`, `accounts`, `instances` |
+| Container network keys | `name`, `subnet`, `gateway`, per entry of a node's `containers` |
 | Profile keys | `export`, `values`, `access` |
-| Instance keys | `id`, `service`, `ports`, `process`, `runtime`, `bind`, `self`, `values`, `deploy`, `dials` |
+| Instance keys | `id`, `service`, `ports`, `process`, `runtime`, `bind`, `containers`, `self`, `values`, `deploy`, `dials` |
 | Port keys | `port`, `protocol`, `self`, `published` (a string or a list), when a port is written as a mapping rather than a bare number |
 | User keys | `username`, `devices`, `export`, `credentials`, `access` |
 | Credential keys | `note`, `access`, `reaches` |
@@ -407,9 +408,9 @@ the [container networks](#container-networks) on that node.
 
 | The two ends | The address used |
 | --- | --- |
-| Two instances on one container network | The downstream instance's name there, and the downstream port |
+| Two instances sharing a container network | The downstream instance's name on the first they share, and the downstream port |
 | The same node, the upstream on no container network | `127.0.0.1` and the downstream port |
-| The same node, the upstream on a container network the downstream is not on | An error: loopback inside the container is the container itself |
+| The same node, the upstream on container networks the downstream shares none of | An error: loopback inside the container is the container itself |
 | The downstream has an address on a network the upstream reaches | That address, on the first such network in preference order |
 | Neither | An error naming both nodes and what each one reaches |
 
@@ -894,8 +895,8 @@ dials:
 ```
 
 An instance that writes no dial of that name gets the one instance of that
-service, holding that port, in the innermost scope it shares with it: its
-container network, then its node, then each network in preference order it
+service, holding that port, in the innermost scope it shares with it: a
+container network they both join, then its node, then each network in preference order it
 reaches. Two in the first scope holding any is an error naming them; so is
 none anywhere. A written dial always wins. The resolved dial is an ordinary
 dial from then on — the render, the tree and a migration see it — except that
@@ -910,7 +911,8 @@ and a node that writes none means `host`:
 ```yaml
 id: network-1
 runtime: docker
-containers: [web]
+containers:
+  - {name: web, subnet: 172.30.0.0/24}
 instances:
   - id: bin-01
     service: microbin
@@ -945,30 +947,56 @@ box for it.
 
 ### Container networks
 
-A node lists the container networks on it, in the order an instance picks from:
+A node lists the container networks on it, in preference order, each with the
+range it covers:
 
 ```yaml
-containers: [web, backend]
+containers:
+  - {name: apps, subnet: 172.30.0.0/24}
+  - {name: tailnet, subnet: 172.30.250.0/24, gateway: 172.30.250.1}
 ```
 
-A containerised instance joins the first unless it writes `network: <name>`,
-which must be one the node lists. A host process joins none. A container on no
+**The range is written, not left to the runtime.** A runtime creating a
+network with no range picks a free one, and picks differently on every machine
+that creates it, and after every time it is removed and created again. An
+address fixed on the network is only fixed if its range is, so `subnet` is
+required. `gateway` is optional; written, it lies inside the subnet, and no
+instance holds it. Two of a node's container networks may not overlap.
+
+A containerised instance joins the first unless it writes `containers`, a
+mapping from each network it joins to the address it holds there:
+
+```yaml
+containers:
+  apps:
+  tailnet: 172.30.250.10
+```
+
+A network written with no address is joined with one the runtime assigns. A
+written address is fixed: it lies inside the network's subnet, is not its
+gateway, and no other instance on the node holds it there. Fix one when
+something outside the model dials the container by address — a router
+forwarding into the network, or a record naming it — and leave it to the
+runtime otherwise, since every dial the model makes is by name. Every network
+named is one the node lists. A host process joins none. A container on no
 network — a node listing none — shares the host's network, and dials loopback
 like a host process.
 
-**A container network is a scope inside the node.** Two instances on one dial
-each other by instance name, which the deploy template gives the container as
-its alias on that network, and the edge between them never reaches the host:
-it publishes nothing. A reverse proxy and its backends in containers on one
-network is the case this exists for — the backends publish no port at all,
-and only the proxy's entry does.
+**A container network is a scope inside the node.** Two instances sharing one
+dial each other by instance name, which the deploy template gives the
+container as its alias on that network, and the edge between them never
+reaches the host: it publishes nothing. A reverse proxy and its backends in
+containers on one network is the case this exists for — the backends publish
+no port at all, and only the proxy's entry does. Two instances sharing
+several dial over the first of them in the node's order, the way two nodes
+sharing several networks use the first in `networks.yaml`.
 
 A container on a network reaching a host process on its own node is an error.
 Loopback inside it is the container itself, and reaching the host takes a
 gateway the model does not carry.
 
-Another network on the same node is another scope: two instances on different
-container networks of one node share no scope below the node, and neither can
+Another network on the same node is another scope: two instances sharing no
+container network of one node share no scope below the node, and neither can
 dial the other.
 
 ### What a container needs beyond the model
@@ -2309,12 +2337,15 @@ template at once, so it is written down here and changes to it are breaking
 changes.
 
 ```yaml
-node:        the node this instance runs on: id, networks
+node:        the node this instance runs on: id, networks, and its
+             container networks in order, each with name, subnet and
+             gateway when written
 instance:    id, service, ports (each with its number — the transport is the
              model's, not a template's — the name it is published at, when it
              has one, and the self values it hands out, in the order written),
-             bind, the container network it joins when it joins one, and the
-             instance's own values
+             bind, the container networks it joins in its node's order —
+             each with name, subnet, gateway when written and address when
+             fixed — and the instance's own values
 upstream:    the next hop, resolved: address, port, the name that hop's port
              is published at when it has one and the edge resolved on the
              universal network, the account name this
@@ -2480,9 +2511,12 @@ failing can be told which level it was reading.
 31. Every `dials` value names an existing instance and an existing port on
     it, not the dialling instance itself, and the two ends resolve an address
     as rule 10 requires of an edge.
-32. A containerised instance binds `0.0.0.0` or writes no bind, and its
-    `network` is one its node lists in `containers`. A host process names no
-    `network`. A node lists no container network twice.
+32. A containerised instance binds `0.0.0.0` or writes no bind, and every
+    network in its `containers` is one its node lists. A host process names
+    none. A node lists no container network twice; each has a subnet that is
+    a CIDR prefix and overlaps no other of the node's, and a gateway, when
+    written, inside it. An address fixed on a container network is inside
+    its subnet, is not its gateway, and is held by one instance.
 33. A route's scope names a network or a node, never a name both hold; its
     entry has an address on that network or runs on that node; and every
     credential opening a route scoped to a non-universal network reaches it.
