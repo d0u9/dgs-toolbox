@@ -580,7 +580,7 @@ func buildMigrationEdits(root string, before, after loaded, networks []networkCh
 		if !file.changed {
 			continue
 		}
-		data, err := yaml.Marshal(&file.doc)
+		data, err := encodeMigrationYAML(file.original, &file.doc)
 		if err != nil {
 			return nil, fmt.Errorf("encoding %s: %w", path, err)
 		}
