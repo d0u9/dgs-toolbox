@@ -28,11 +28,10 @@ func TestGroupNestsEveryRuleAndCounts(t *testing.T) {
 		item("E", "passport", map[string]string{"country": "CN", "owner": "alex"}, "d5"),
 	}
 	o := Outline{Name: "mine", Rules: []view.View{
-		{Name: "cars", Selection: view.Head, Query: map[string]view.Values{"type": {"car"}},
-			Layout: "{country:alpha2} {make}/{#}-{plate}/{id}.{ext}", Order: map[string][]string{"{plate}": {"浙AF3897", "浙AT73C7"}}},
-		{Name: "ids", Selection: view.Head, Query: map[string]view.Values{"type": {"passport"}}, Layout: "ids/{owner}.{ext}"},
+		{Name: "cars", Selection: view.Head, Order: map[string][]string{"{plate}": {"浙AF3897", "浙AT73C7"}}, Node: view.Node{If: "type is car", File: "{country:alpha2} {make}/{#}-{plate}/{id}.{ext}"}},
+		{Name: "ids", Selection: view.Head, Node: view.Node{If: "type is passport", File: "ids/{owner}.{ext}"}},
 	}}
-	g, err := Group(o, nil, items, nil)
+	g, err := Group(o, nil, items, view.Types{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +62,7 @@ func TestGroupNestsEveryRuleAndCounts(t *testing.T) {
 
 func TestSaveRenamesAndRefuses(t *testing.T) {
 	root := t.TempDir()
-	rule := view.View{Name: "all", Layout: "{owner}.{ext}"}
+	rule := view.View{Name: "all", Node: view.Node{File: "{owner}.{ext}"}}
 	if err := Save(root, "", Outline{Name: "a", Folder: "~/x", Rules: []view.View{rule}}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,8 +80,8 @@ func TestSaveRenamesAndRefuses(t *testing.T) {
 		{Name: "C"},
 		{Name: "c", Folder: "relative"},
 		{Name: "c", Rules: []view.View{rule, rule}},
-		{Name: "c", Rules: []view.View{{Name: "r", Layout: "{owner#}"}}},
-		{Name: "c", Rules: []view.View{{Name: "r", Layout: "../x"}}},
+		{Name: "c", Rules: []view.View{{Name: "r", Node: view.Node{File: "{owner#}"}}}},
+		{Name: "c", Rules: []view.View{{Name: "r", Node: view.Node{File: "../x"}}}},
 	} {
 		if err := Save(root, "", bad); err == nil {
 			t.Fatalf("%+v saved", bad)
@@ -93,51 +92,10 @@ func TestSaveRenamesAndRefuses(t *testing.T) {
 	}
 }
 
-func TestMigrateTurnsViewsAndTargetsIntoOutlines(t *testing.T) {
-	root := t.TempDir()
-	put := func(rel, text string) {
-		path := filepath.Join(root, rel)
-		os.MkdirAll(filepath.Dir(path), 0o755)
-		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	put("targets.yaml", "icloud:\n  about: phone\n  folder: ~/iCloud\nspare: {}\n")
-	put("views/ids.yaml", "name: ids\nselection: head\nlayout: '{owner}.{ext}'\ntarget: icloud\n")
-	put("views/bills.yaml", "name: bills\nselection: all\nlayout: 'b/{id}.{ext}'\ntarget: icloud\n")
-	put("views/spare.yaml", "name: spare\nselection: head\nlayout: '{id}.{ext}'\n")
-	names, err := Migrate(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	list, _ := Load(root)
-	if len(names) != 3 || len(list) != 3 {
-		t.Fatalf("%v %+v", names, list)
-	}
-	icloud, spare, loose := list[0], list[1], list[2]
-	if icloud.Name != "icloud" || icloud.Folder != "~/iCloud" || icloud.About != "phone" || len(icloud.Rules) != 2 || icloud.Rules[0].Name != "bills" {
-		t.Fatalf("%+v", icloud)
-	}
-	if spare.Name != "spare" || len(spare.Rules) != 0 || loose.Name != "spare-view" || loose.Rules[0].Name != "spare" {
-		t.Fatalf("%+v %+v", spare, loose)
-	}
-	for _, gone := range []string{"views", "targets.yaml"} {
-		if _, err := os.Stat(filepath.Join(root, gone)); !os.IsNotExist(err) {
-			t.Fatalf("%s is still there", gone)
-		}
-		if _, err := os.Stat(filepath.Join(root, MigratedDir, gone)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if names, err := Migrate(root); err != nil || len(names) != 0 {
-		t.Fatalf("a second run: %v %v", names, err)
-	}
-}
-
 func TestRulesAreSharedRenamedAndSplit(t *testing.T) {
 	root := t.TempDir()
-	ids := view.View{Name: "ids", Layout: "{owner}.{ext}"}
-	cars := view.View{Name: "cars", Layout: "cars/{id}.{ext}"}
+	ids := view.View{Name: "ids", Node: view.Node{File: "{owner}.{ext}"}}
+	cars := view.View{Name: "cars", Node: view.Node{File: "cars/{id}.{ext}"}}
 	if err := Save(root, "", Outline{Name: "phone", Rules: []view.View{ids}}); err != nil {
 		t.Fatal(err)
 	}
@@ -149,12 +107,12 @@ func TestRulesAreSharedRenamedAndSplit(t *testing.T) {
 		t.Fatalf("%q", data)
 	}
 	// Editing the rule in one Outline changes it in both.
-	ids.Layout = "ids/{owner}.{ext}"
+	ids.File = "ids/{owner}.{ext}"
 	if err := Save(root, "", Outline{Name: "phone", Rules: []view.View{ids}}); err != nil {
 		t.Fatal(err)
 	}
 	list, err := Load(root)
-	if err != nil || list[0].Name != "kindle" || list[0].Rules[0].Layout != "ids/{owner}.{ext}" {
+	if err != nil || list[0].Name != "kindle" || list[0].Rules[0].File != "ids/{owner}.{ext}" {
 		t.Fatalf("%v %+v", err, list)
 	}
 	if err := Fresh(root, []string{"ids"}); err == nil {
@@ -177,22 +135,6 @@ func TestRulesAreSharedRenamedAndSplit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// An Outline written with its rules whole is split; a rule of the same
-	// name but different is renamed.
-	whole := "name: old\nrules:\n  - name: people\n    layout: 'x/{id}.{ext}'\n  - name: bills\n    layout: 'b/{id}.{ext}'\n"
-	if err := os.WriteFile(filepath.Join(root, Dir, "old.yaml"), []byte(whole), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if names, err := Migrate(root); err != nil || len(names) != 1 {
-		t.Fatalf("%v %v", names, err)
-	}
-	list, _ = Load(root)
-	if old := list[0]; old.Name != "old" || old.Rules[0].Name != "old-people" || old.Rules[1].Name != "bills" {
-		t.Fatalf("%+v", old)
-	}
-	if names, err := Migrate(root); err != nil || len(names) != 0 {
-		t.Fatalf("a second run: %v %v", names, err)
-	}
 }
 
 // A Snapshot is a folder of its name at the path the Outline gives it,
@@ -209,9 +151,9 @@ func TestGroupMountsSnapshots(t *testing.T) {
 		{Path: "gone.pdf", Item: "Z", Revision: "r9"},
 	}}
 	o := Outline{Name: "mine",
-		Rules:     []view.View{{Name: "ids", Selection: view.Head, Layout: "ids/{owner}.{ext}"}},
+		Rules:     []view.View{{Name: "ids", Selection: view.Head, Node: view.Node{File: "ids/{owner}.{ext}"}}},
 		Snapshots: []Mount{{Name: "visa", At: "ids/2026"}}}
-	g, err := Group(o, []snapshot.Snapshot{visa}, items, nil)
+	g, err := Group(o, []snapshot.Snapshot{visa}, items, view.Types{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,12 +171,12 @@ func TestGroupMountsSnapshots(t *testing.T) {
 
 	// Put where a rule's PDF is, it clashes and the export fails.
 	o.Snapshots = []Mount{{Name: "visa", At: ""}}
-	o.Rules[0].Layout = "visa/{owner}.{ext}"
+	o.Rules[0].File = "visa/{owner}.{ext}"
 	visa.Files = visa.Files[:1]
-	if g, err = Group(o, []snapshot.Snapshot{visa}, items, nil); err != nil || len(g.Clashes) != 1 || g.Clashes[0].Path != "visa/alex.pdf" {
+	if g, err = Group(o, []snapshot.Snapshot{visa}, items, view.Types{}); err != nil || len(g.Clashes) != 1 || g.Clashes[0].Path != "visa/alex.pdf" {
 		t.Fatalf("%v %+v", err, g.Clashes)
 	}
-	if _, err := Group(o, nil, items, nil); err == nil {
+	if _, err := Group(o, nil, items, view.Types{}); err == nil {
 		t.Fatal("a Snapshot the tree lacks was put in")
 	}
 	o.Snapshots = []Mount{{Name: "ids"}}
@@ -255,33 +197,12 @@ func TestGroupMountsSnapshots(t *testing.T) {
 	}
 
 	// As names its folder in place of the Snapshot's name.
-	o.Rules[0].Layout = "ids/{owner}.{ext}"
+	o.Rules[0].File = "ids/{owner}.{ext}"
 	o.Snapshots = []Mount{{Name: "visa", At: "ids", As: "签证"}}
-	if g, err = Group(o, []snapshot.Snapshot{visa}, items, nil); err != nil {
+	if g, err = Group(o, []snapshot.Snapshot{visa}, items, view.Types{}); err != nil {
 		t.Fatal(err)
 	}
 	if f := g.Root.Children[0].Children[0]; f.Snapshot != "visa" || f.Path != "ids/签证" || f.Files[0].Path != "ids/签证/alex.pdf" {
 		t.Fatalf("%+v", f)
-	}
-}
-
-// A rule numbering a key the way it once was is written the way it is now.
-func TestMigrateRewritesOldNumbering(t *testing.T) {
-	root := t.TempDir()
-	os.MkdirAll(filepath.Join(root, RulesDir), 0o755)
-	old := "name: ids\nselection: head\nlayout: '{owner}#/{country#:alpha3}/{name|type:zh}#.{ext}'\norder:\n  owner: [alex]\n  country: [CN]\n  name|type:zh: [身份证]\n"
-	if err := os.WriteFile(filepath.Join(root, RulesDir, "ids.yaml"), []byte(old), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	names, err := Migrate(root)
-	if err != nil || len(names) != 1 || names[0] != "rules/ids" {
-		t.Fatalf("%v %v", names, err)
-	}
-	rules, err := LoadRules(root)
-	if err != nil || rules["ids"].Layout != "{#}-{owner}/{#}-{country:alpha3}/{#}-{name|type:zh}.{ext}" || rules["ids"].Order["{name|type:zh}"][0] != "身份证" {
-		t.Fatalf("%+v %v", rules["ids"], err)
-	}
-	if names, err := Migrate(root); err != nil || len(names) != 0 {
-		t.Fatalf("again: %v %v", names, err)
 	}
 }

@@ -114,7 +114,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "EMMA"}, Notes: "renewed in Sydney", Tags: []string{"travel"}, SharedWith: []string{"amy", "tom", "emma"}, Frequent: true, Retired: true, RetiredReason: "moved"}, "new passport")
 	put(t, sub, tree.Item{ID: "S2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"}}, "bill 1")
 	put(t, sub, tree.Item{ID: "S3", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom"}}, "bill 2")
-	if err := outline.Save(sub, "", outline.Outline{Name: "all", Rules: []view.View{{Name: "all", Selection: view.Head, Layout: "{owner}/{type}.{ext}"}}}); err != nil {
+	if err := outline.Save(sub, "", outline.Outline{Name: "all", Rules: []view.View{{Name: "all", Selection: view.Head, Node: view.Node{File: "{owner}/{type}.{ext}"}}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -331,8 +331,8 @@ func TestNewOutlineChangingASharedRuleIsAConflict(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(outline.Save(full, "", outline.Outline{Name: "phone", Rules: []view.View{{Name: "ids", Selection: view.Head, Layout: "{owner}.{ext}"}}}))
-	must(outline.Save(sub, "", outline.Outline{Name: "kindle", Rules: []view.View{{Name: "ids", Selection: view.Head, Layout: "ids/{owner}.{ext}"}}}))
+	must(outline.Save(full, "", outline.Outline{Name: "phone", Rules: []view.View{{Name: "ids", Selection: view.Head, Node: view.Node{File: "{owner}.{ext}"}}}}))
+	must(outline.Save(sub, "", outline.Outline{Name: "kindle", Rules: []view.View{{Name: "ids", Selection: view.Head, Node: view.Node{File: "ids/{owner}.{ext}"}}}}))
 	p := plan(t, full, source(t, sub))
 	if len(p.Outlines) != 0 || len(p.Conflicts) != 1 || p.Conflicts[0].ID != "outline:kindle" {
 		t.Fatalf("plan: %+v", p)

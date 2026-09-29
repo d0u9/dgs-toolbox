@@ -36,11 +36,6 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		}
 		root = wd
 	}
-	if names, err := outline.Migrate(root); err != nil {
-		return err
-	} else if len(names) > 0 {
-		fmt.Fprintf(out, "Outlines brought up to date: %v; their rules are under rules/, and old Views and Targets, if any, are in %s/.\n", names, outline.MigratedDir)
-	}
 	outlines, err := outline.Load(root)
 	if err != nil {
 		return err

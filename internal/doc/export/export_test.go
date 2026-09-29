@@ -276,8 +276,8 @@ func TestPlanJobsChecksEverythingFirst(t *testing.T) {
 	a := stored(t, root, "A", "passport")
 	items := []tree.Item{{ID: "A", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"},
 		Revisions: []tree.Revision{{Digest: a}}}}
-	ids := view.View{Name: "ids", Selection: view.Head, Layout: "{owner}/{type}.{ext}"}
-	same := view.View{Name: "same", Selection: view.Head, Layout: "{owner}/id_card.{ext}"}
+	ids := view.View{Name: "ids", Selection: view.Head, Node: view.Node{File: "{owner}/{type}.{ext}"}}
+	same := view.View{Name: "same", Selection: view.Head, Node: view.Node{File: "{owner}/id_card.{ext}"}}
 	google := filepath.Join(out, "google")
 	nested := filepath.Join(google, "inner")
 	plans, err := PlanJobs(context.Background(), root, []Job{

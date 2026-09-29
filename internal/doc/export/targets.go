@@ -135,7 +135,7 @@ func PlanJobs(ctx context.Context, root string, jobs []Job, items []tree.Item) (
 	if err != nil {
 		return nil, err
 	}
-	names := view.NamesOf(templates)
+	names := view.TypesOf(templates)
 	out := make([]JobPlan, len(jobs))
 	for i, j := range jobs {
 		p := JobPlan{Name: j.Name, Path: j.Path, Problems: []string{}}

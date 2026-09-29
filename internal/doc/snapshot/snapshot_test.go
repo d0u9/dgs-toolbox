@@ -19,20 +19,20 @@ func TestTakeResolveAndKeep(t *testing.T) {
 		{ID: "B", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "tom"},
 			Revisions: []tree.Revision{{ID: "r3", Digest: "d3"}}, Head: "r3"},
 	}
-	rule := view.View{Name: "all", Selection: view.Head, Layout: "visa/{owner}.{ext}"}
+	rule := view.View{Name: "all", Selection: view.Head, Node: view.Node{File: "visa/{owner}.{ext}"}}
 	now := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
-	s, err := Take("visa", "", &rule, items, nil, now)
+	s, err := Take("visa", "", &rule, items, view.Types{}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(s.Files) != 2 || s.Rule != "all" || s.Files[0] != (File{Path: "visa/emma.pdf", Item: "A", Revision: "r2", Rule: "all"}) {
 		t.Fatalf("%+v", s)
 	}
-	if empty, err := Take("mine", "", nil, items, nil, now); err != nil || len(empty.Files) != 0 {
+	if empty, err := Take("mine", "", nil, items, view.Types{}, now); err != nil || len(empty.Files) != 0 {
 		t.Fatalf("%v %+v", err, empty)
 	}
-	gap := view.View{Name: "gap", Selection: view.Head, Layout: "{country}.{ext}"}
-	if _, err := Take("x", "", &gap, items, nil, now); err == nil {
+	gap := view.View{Name: "gap", Selection: view.Head, Node: view.Node{File: "{country}.{ext}"}}
+	if _, err := Take("x", "", &gap, items, view.Types{}, now); err == nil {
 		t.Fatal("a rule with PDFs it cannot place was taken")
 	}
 

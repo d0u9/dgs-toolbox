@@ -217,7 +217,6 @@ window.addEventListener("beforeunload", (event) => { if (editing !== null) { syn
 reload().then((answer) => {
   const wanted = decodeURIComponent(location.hash.slice(1));
   open(wanted === "new" ? "" : outlines.some((o) => o.name === wanted) ? wanted : outlines.length ? outlines[0].name : "");
-  if (answer.migrated && answer.migrated.length) say($("message"), "Brought up to date: " + answer.migrated.join(", ") + ". Rules are under rules/, their layouts written the way they are now; old Views and Targets, if any, are in migrated/.");
 }).catch((err) => {
   state.error = err.message;
   frame(state);

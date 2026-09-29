@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dgs-toolbox/internal/doc/expr"
 	"dgs-toolbox/internal/doc/tree"
 )
 
@@ -60,108 +61,12 @@ type Plan struct {
 // Complete reports whether nothing stops the plan being written.
 func (p Plan) Complete() bool { return len(p.Missing) == 0 && len(p.Clashes) == 0 }
 
-// Matches reports whether item passes every condition of query, as its
-// Current revision has its fields. A value matches as sameValue says: one
-// country however written, or else equal ignoring case; a key written
-// `<key> contains` takes a value holding the text instead. TagsKey is left
-// to MatchesTags.
-func Matches(query map[string]Values, item tree.Item) bool {
-	return matchesFields(query, item, item.CurrentFields())
-}
-
-// MatchesShared reports whether item passes query as someone it is shared
-// with: as Matches, with that person as its owner.
-func MatchesShared(query map[string]Values, item tree.Item) bool {
-	for _, person := range item.SharedWith {
-		fields := maps.Clone(item.CurrentFields())
-		fields["owner"] = person
-		if matchesFields(query, item, fields) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchesFields(query map[string]Values, item tree.Item, fields map[string]string) bool {
-	for key, accepted := range query {
-		if field, _ := SplitKey(key); len(accepted) == 0 || field == TagsKey {
-			continue
-		}
-		if !meets(key, accepted, item, "", fields) {
-			return false
-		}
-	}
-	return true
-}
-
-// Contains is the operator a condition's key ends with to match a value
-// holding the text, ignoring case, rather than one equal to it:
-// `name contains`.
-const Contains = " contains"
-
-// SplitKey is a condition's key as the field it reads and whether it
-// matches by Contains.
-func SplitKey(key string) (string, bool) {
-	if field, ok := strings.CutSuffix(key, Contains); ok {
-		return field, true
-	}
-	return key, false
-}
-
-// meets reports whether any value key reads from revision ref of item is
-// one accepted: a field from fields, `type`, the revision's tags or the
-// Item's Status.
-func meets(key string, accepted Values, item tree.Item, ref string, fields map[string]string) bool {
-	field, contains := SplitKey(key)
-	held := []string{fields[field]}
-	switch field {
-	case "type":
-		held = []string{item.Type}
-	case TagsKey:
-		held = item.TagsAt(ref)
-	case StatusKey:
-		held = Status(item)
-	}
-	for _, have := range held {
-		for _, want := range accepted {
-			switch {
-			case contains:
-				if want = strings.TrimSpace(want); want != "" && strings.Contains(strings.ToLower(have), strings.ToLower(want)) {
-					return true
-				}
-			case field == TagsKey:
-				if strings.EqualFold(have, want) {
-					return true
-				}
-			case sameValue(have, want) && (have != "" || field == "type"):
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// TagsKey is the query key that selects by tag. Unlike a field it is
-// matched per revision: a revision matches when it has, among the Item's
-// tags and its own, any tag the query accepts.
+// TagsKey is the key a condition reads a revision's tags from: the Item's
+// and the revision's own.
 const TagsKey = "tags"
 
-// MatchesTags reports whether the revision ref of item has a tag each
-// TagsKey condition of query accepts, or the query names no tag.
-func MatchesTags(query map[string]Values, item tree.Item, ref string) bool {
-	for key, accepted := range query {
-		if field, _ := SplitKey(key); field != TagsKey || len(accepted) == 0 {
-			continue
-		}
-		if !meets(key, accepted, item, ref, nil) {
-			return false
-		}
-	}
-	return true
-}
-
-// StatusKey is the exclude key that leaves Items out by where they stand
-// rather than by a field: Status names the values.
+// StatusKey is the key a condition reads where an Item stands from, rather
+// than a field: Status names the values.
 const StatusKey = "status"
 
 // Status is what item is besides its fields: `superseded` when a later
@@ -178,34 +83,63 @@ func Status(item tree.Item) []string {
 	return out
 }
 
-// Excludes reports whether revision ref of item meets any condition of
-// exclude, each as meets says: its field as that revision has it, its
-// tags, or the Item's StatusKey values.
-func Excludes(exclude map[string]Values, item tree.Item, ref string) bool {
-	fields := item.FieldsAt(ref)
-	for key, values := range exclude {
-		if meets(key, values, item, ref, fields) {
-			return true
+// env is what a condition asks of one revision: its keys as a layout has
+// them, its tags and the Item's Status.
+type env struct {
+	keys  map[string]string
+	tags  []string
+	item  tree.Item
+	types Types
+}
+
+func (e env) Values(key string) []string {
+	switch key {
+	case TagsKey:
+		return e.tags
+	case StatusKey:
+		return Status(e.item)
+	}
+	v := e.keys[key]
+	if v == "" {
+		return nil
+	}
+	if f, ok := e.field(key); ok && f.Multiple {
+		return strings.Split(v, tree.MultipleSeparator)
+	}
+	return []string{v}
+}
+
+// Is holds for a value equal to want, as sameValue compares; for a type
+// below want; and for a value in the group want of its field.
+func (e env) Is(key, value, want string) bool {
+	if key == TagsKey {
+		return strings.EqualFold(value, want)
+	}
+	if sameValue(value, want) {
+		return true
+	}
+	if isType(key) {
+		return e.types.Is(value, want)
+	}
+	if f, ok := e.field(key); ok {
+		group, _ := f.Group(want)
+		for _, v := range group {
+			if sameValue(v, value) {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// ExcludesInherited reports whether a condition of exclude meets a field
-// revision ref of item lacks and keys inherited: a translation without a
-// name is excluded by name: [成绩单] when its original is a transcript.
-func ExcludesInherited(exclude map[string]Values, item tree.Item, ref string, keys map[string]string) bool {
-	own := item.FieldsAt(ref)
-	for key, values := range exclude {
-		field, _ := SplitKey(key)
-		if field == "type" || field == TagsKey || field == StatusKey || own[field] != "" || keys[field] == "" {
-			continue
-		}
-		if meets(key, values, item, ref, keys) {
-			return true
-		}
+// field is the Template field key reads: an own field of this type, or
+// about.category a field of the linked Item's.
+func (e env) field(key string) (tree.Field, bool) {
+	typ := e.keys["type"]
+	if i := strings.LastIndex(key, "."); i >= 0 {
+		typ, key = e.keys[key[:i]+".type"], key[i+1:]
 	}
-	return false
+	return e.types.Field(typ, key)
 }
 
 var isoDate = regexp.MustCompile(`^(\d{4})-(\d{2})-(\d{2})`)
@@ -342,34 +276,78 @@ func Clean(value string) string {
 	return out
 }
 
-// TypeNames are each type's names by language, from its Template's names.
-type TypeNames map[string]map[string]string
+// Types is what a plan needs of the Templates: each type's names by
+// language, its lineage and its fields.
+type Types struct {
+	byType map[string]tree.Template
+}
 
-// NamesOf collects the TypeNames of templates.
-func NamesOf(templates []tree.Template) TypeNames {
-	out := TypeNames{}
+// TypesOf collects the Types of templates.
+func TypesOf(templates []tree.Template) Types {
+	out := Types{byType: map[string]tree.Template{}}
 	for _, t := range templates {
-		if len(t.Names) > 0 {
-			out[t.Type] = t.Names
-		}
+		out.byType[t.Type] = t
 	}
 	return out
+}
+
+// Names is typ's names by language.
+func (t Types) Names(typ string) map[string]string { return t.byType[typ].Names }
+
+// Is reports whether typ is want or below it.
+func (t Types) Is(typ, want string) bool {
+	tpl, ok := t.byType[typ]
+	return ok && tpl.Is(want)
+}
+
+// Field is typ's field key.
+func (t Types) Field(typ, key string) (tree.Field, bool) {
+	for _, f := range t.byType[typ].Fields {
+		if f.Key == key {
+			return f, true
+		}
+	}
+	return tree.Field{}, false
 }
 
 // Build computes v's plan over items. Items are taken in ID order and a
 // document's revisions in the order they were added, so the same state always
 // gives the same plan, numbering included. Paths are compared ignoring case,
 // as the file systems a Target usually lives on do.
-func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
-	layout, err := Parse(v.Layout)
-	if err != nil {
+func Build(v View, items []tree.Item, types Types) (Plan, error) {
+	if err := v.Validate(); err != nil {
 		return Plan{}, err
 	}
-	paths := make([]Layout, len(v.Layouts))
-	for i, p := range v.Layouts {
-		if paths[i], err = Parse(p.Layout); err != nil {
-			return Plan{}, err
+	layouts := map[string]Layout{}
+	conditions := map[string]expr.Expr{}
+	_ = v.walk(func(_ string, n Node, layout string, _ bool) error {
+		if layout != "" {
+			layouts[layout], _ = Parse(layout)
 		}
+		if n.If != "" {
+			conditions[n.If] = expr.MustParse(n.If)
+		}
+		return nil
+	})
+	meets := func(n Node, e env) bool {
+		if n.If == "" {
+			return true
+		}
+		if conditions[n.If].Eval(e) {
+			return true
+		}
+		if !v.Shared || n.If != v.If {
+			return false
+		}
+		for _, person := range e.item.SharedWith {
+			shared := e
+			shared.keys = maps.Clone(e.keys)
+			shared.keys["owner"] = person
+			if conditions[n.If].Eval(shared) {
+				return true
+			}
+		}
+		return false
 	}
 	sorted := append([]tree.Item(nil), items...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
@@ -381,10 +359,6 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 	plan := Plan{Files: []File{}, Missing: []Missing{}, Clashes: []Clash{}}
 	var placed []File
 	for _, item := range sorted {
-		query, exclude := For(v.Query, v.QueryTypes, item.Type), For(v.Exclude, v.ExcludeTypes, item.Type)
-		if slices.Contains(v.Skip, item.ID) || !Matches(query, item) && !(v.Shared && MatchesShared(query, item)) {
-			continue
-		}
 		current := item.Current()
 		for i, rev := range item.Revisions {
 			if rev.Digest == "" {
@@ -393,34 +367,61 @@ func Build(v View, items []tree.Item, names TypeNames) (Plan, error) {
 			if v.Selection == Head && rev.Ref() != current {
 				continue
 			}
-			if !MatchesTags(query, item, rev.Ref()) || Excludes(exclude, item, rev.Ref()) {
-				continue
-			}
 			keys := KeysOf(item, i+1)
-			for lang, name := range names[keys["type"]] {
+			for lang, name := range types.Names(keys["type"]) {
 				keys["type:"+lang] = name
 			}
 			Follow(keys, byID)
 			for k, t := range maps.Clone(keys) {
 				// original.type:zh, the linked Item's type in a language.
 				if strings.HasSuffix(k, ".type") {
-					for lang, name := range names[t] {
+					for lang, name := range types.Names(t) {
 						keys[k+":"+lang] = name
 					}
 				}
 			}
 			Inherit(keys, v.Inherit)
-			if len(v.Inherit) > 0 && ExcludesInherited(exclude, item, rev.Ref(), keys) {
+			e := env{keys: keys, tags: item.TagsAt(rev.Ref()), item: item, types: types}
+			if !meets(v.Node, e) {
 				continue
 			}
-			chosen := layout
-			for p, path := range v.Layouts {
-				if Matches(path.When, item) && MatchesTags(path.When, item, rev.Ref()) {
-					chosen = paths[p]
+			// Down the first child met at each level, keeping the path,
+			// file and default the deepest node sets.
+			node, path, file, fallback := v.Node, []string{}, v.File, v.Default
+			if v.Path != "" {
+				path = append(path, strings.Trim(v.Path, "/"))
+			}
+			out := false
+			for {
+				next := -1
+				for c, child := range node.Children {
+					if meets(child, e) {
+						next = c
+						break
+					}
+				}
+				if next < 0 {
 					break
 				}
+				node = node.Children[next]
+				if node.Out() {
+					out = true
+					break
+				}
+				if node.Path != "" {
+					path = append(path, strings.Trim(node.Path, "/"))
+				}
+				if node.File != "" {
+					file = node.File
+				}
+				if node.Default != nil {
+					fallback = node.Default
+				}
 			}
-			name, lacking, unordered := render(chosen, keys, v.Default, v.Order, v.Numbers, v.Unnumbered)
+			if out {
+				continue
+			}
+			name, lacking, unordered := render(layouts[strings.Join(append(path, file), "/")], keys, fallback, v.Order, v.Numbers, v.Unnumbered)
 			if len(lacking) > 0 {
 				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking), Unordered: unordered})
 				continue
@@ -524,17 +525,17 @@ func (c Combined) Complete() bool {
 
 // Combine plans views into one Target: each is built alone, then their files
 // are put together and checked against each other as Build checks one View.
-func Combine(views []View, items []tree.Item, names TypeNames) (Combined, error) {
-	return CombineWith(views, nil, items, names)
+func Combine(views []View, items []tree.Item, types Types) (Combined, error) {
+	return CombineWith(views, nil, items, types)
 }
 
 // CombineWith is Combine with fixed files beside the views', each already
 // at its path and marked with what placed it, checked against them alike.
-func CombineWith(views []View, fixed []File, items []tree.Item, names TypeNames) (Combined, error) {
+func CombineWith(views []View, fixed []File, items []tree.Item, types Types) (Combined, error) {
 	out := Combined{Plans: map[string]Plan{}, Files: []File{}, Clashes: []Clash{}}
 	all := append([]File{}, fixed...)
 	for _, v := range views {
-		p, err := Build(v, items, names)
+		p, err := Build(v, items, types)
 		if err != nil {
 			return out, fmt.Errorf("view %s: %w", v.Name, err)
 		}
@@ -796,7 +797,7 @@ func contains(list []string, s string) bool {
 // Name renders layout for one revision of item, counting from 1, as Build
 // would for a rule with no default: the path, and the keys the Item lacks.
 // A layout for one PDF numbers nothing, so {#} is refused.
-func Name(layout string, item tree.Item, revision int, names TypeNames) (string, []string, error) {
+func Name(layout string, item tree.Item, revision int, types Types) (string, []string, error) {
 	parsed, err := Parse(layout)
 	if err != nil {
 		return "", nil, err
@@ -805,7 +806,7 @@ func Name(layout string, item tree.Item, revision int, names TypeNames) (string,
 		return "", nil, fmt.Errorf("layout %q: {#} numbers a rule's PDFs, not one PDF's name", layout)
 	}
 	keys := KeysOf(item, revision)
-	for lang, name := range names[keys["type"]] {
+	for lang, name := range types.Names(keys["type"]) {
 		keys["type:"+lang] = name
 	}
 	name, lacking, _ := render(parsed, keys, nil, nil, nil, nil)

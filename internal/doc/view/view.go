@@ -6,6 +6,7 @@ package view
 
 import (
 	"dgs-toolbox/internal/doc/country"
+	"dgs-toolbox/internal/doc/expr"
 	"errors"
 	"fmt"
 	"regexp"
@@ -56,42 +57,28 @@ func (v Values) MarshalYAML() (any, error) {
 
 // View is one rule of an Outline. Its name is unique within the Outline; an
 // export's manifest records it against every file the rule placed.
+//
+// A rule is a Node: its If picks the Items it places, its Path and File
+// place them, and its Children, an if/elif/else chain, place some of them
+// deeper.
 type View struct {
 	Name string `yaml:"name" json:"name"`
-	// Query holds, per key, the values an Item's key may have. An Item must
-	// match every key. `type` is the Item's type.
-	Query map[string]Values `yaml:"query,omitempty" json:"query"`
-	// Exclude leaves out a PDF matching any of its conditions: a key's
-	// value among those listed, or for `tags` a tag of the revision.
-	Exclude map[string]Values `yaml:"exclude,omitempty" json:"exclude,omitempty"`
-	// QueryTypes and ExcludeTypes limit a condition, by its key, to Items of
-	// the types listed: an Item of another type is not asked it.
-	QueryTypes   map[string]Values `yaml:"query_types,omitempty" json:"query_types,omitempty"`
-	ExcludeTypes map[string]Values `yaml:"exclude_types,omitempty" json:"exclude_types,omitempty"`
-	// Skip names Items the rule leaves out, whatever else it selects.
-	Skip      []string  `yaml:"skip,omitempty" json:"skip,omitempty"`
+	Node `yaml:",inline"`
+	// Selection is which revisions of a document the rule takes.
 	Selection Selection `yaml:"selection" json:"selection"`
-	// Shared also selects an Item shared with someone the query's owner
-	// accepts, as if they owned it.
-	Shared bool   `yaml:"shared,omitempty" json:"shared,omitempty"`
-	Layout string `yaml:"layout" json:"layout"`
-	// Layouts are more paths, each for the PDFs its When picks: the first
-	// whose When an Item matches places it, and Layout places the rest.
-	// They share the rule's query, orders and everything else, so a {#}
-	// written alike in two of them numbers from one order.
-	Layouts []Path `yaml:"layouts,omitempty" json:"layouts,omitempty"`
+	// Shared also selects an Item shared with someone, as if they owned it:
+	// its If is asked with owner as each person it is shared with.
+	Shared bool `yaml:"shared,omitempty" json:"shared,omitempty"`
 	// Inherit names fields that link to an Item, such as original: a key
 	// an Item lacks is taken from the Item its first such field links to
 	// that has it, so a translation is placed by its original's level.
 	Inherit []string `yaml:"inherit,omitempty" json:"inherit,omitempty"`
-	// Default, when set, is written for a key an Item lacks.
-	Default *string `yaml:"default,omitempty" json:"default,omitempty"`
 	// Dedupe is empty (refuse) or DedupeNumber.
 	Dedupe string `yaml:"dedupe,omitempty" json:"dedupe,omitempty"`
 	// Order lists, per numbered name, the names {#} numbers from 01, in
 	// order. A numbered name is named by what follows its {#}, as written:
 	// {#}-{name|type:zh}[-{level}].{ext} is numbered from the order named
-	// {name|type:zh}[-{level}].
+	// {name|type:zh}[-{level}]. One order serves the whole rule.
 	Order map[string][]string `yaml:"order,omitempty" json:"order,omitempty"`
 	// Numbers sets, per order and name in it, the number that name gets in
 	// place of the next: the names after it count on from there, so
@@ -103,30 +90,64 @@ type View struct {
 	Unnumbered map[string][]string `yaml:"unnumbered,omitempty" json:"unnumbered,omitempty"`
 }
 
-// Path is one of a rule's Layouts: a layout for the PDFs When picks, as a
-// query picks them.
-type Path struct {
-	When   map[string]Values `yaml:"when" json:"when"`
-	Layout string            `yaml:"layout" json:"layout"`
+// Node is a rule, or one of its children.
+type Node struct {
+	// If is the condition, in package expr's language, an Item must meet.
+	// A rule without one takes every Item; a child without one is the
+	// else, and comes last.
+	If string `yaml:"if,omitempty" json:"if,omitempty"`
+	// Path is folders, appended to the parent's.
+	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+	// File is the file name, in place of the parent's.
+	File string `yaml:"file,omitempty" json:"file,omitempty"`
+	// Default, when set, is written for a key an Item lacks, in place of
+	// the parent's.
+	Default *string `yaml:"default,omitempty" json:"default,omitempty"`
+	// Children place some of what the node takes: the first whose If an
+	// Item meets. One none takes the node places itself.
+	Children []Node `yaml:"children,omitempty" json:"children,omitempty"`
+}
+
+// Out reports whether the node leaves what it takes out of the tree: a
+// child with no path, file or children.
+func (n Node) Out() bool { return n.Path == "" && n.File == "" && len(n.Children) == 0 }
+
+// walk calls fn on v's node and each below it, parents first, with where
+// it is (children 2.1: ) and the layout it places by: its path after its
+// parents', then the nearest file. A node that leaves out has none.
+func (v View) walk(fn func(where string, n Node, layout string, root bool) error) error {
+	var visit func(where string, n Node, path []string, file string, root bool) error
+	visit = func(where string, n Node, path []string, file string, root bool) error {
+		if n.Path != "" {
+			path = append(slices.Clone(path), strings.Trim(n.Path, "/"))
+		}
+		if n.File != "" {
+			file = n.File
+		}
+		layout := ""
+		if root || !n.Out() {
+			layout = strings.Join(append(slices.Clone(path), file), "/")
+		}
+		if err := fn(where, n, layout, root); err != nil {
+			return err
+		}
+		for i, c := range n.Children {
+			at := strings.TrimSuffix(where, ": ")
+			if at == "" {
+				at = "children "
+			} else {
+				at += "."
+			}
+			if err := visit(fmt.Sprintf("%s%d: ", at, i+1), c, path, file, false); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return visit("", v.Node, nil, "", true)
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
-
-// For is conditions as an Item of type t is asked them: those types limits
-// to other types are left out.
-func For(conditions, types map[string]Values, t string) map[string]Values {
-	if len(types) == 0 {
-		return conditions
-	}
-	out := make(map[string]Values, len(conditions))
-	for key, values := range conditions {
-		if limit, ok := types[key]; ok && !slices.Contains(limit, t) {
-			continue
-		}
-		out[key] = values
-	}
-	return out
-}
 
 // Validate reports the first thing wrong with v.
 func (v View) Validate() error {
@@ -136,53 +157,44 @@ func (v View) Validate() error {
 	if v.Selection != Head && v.Selection != All {
 		return fmt.Errorf("view %s: selection %q is neither head nor all", v.Name, v.Selection)
 	}
-	for i, id := range v.Skip {
-		if strings.TrimSpace(id) == "" || slices.Contains(v.Skip[:i], id) {
-			return fmt.Errorf("view %s: skip lists %q twice or empty", v.Name, id)
-		}
+	if v.File == "" {
+		return fmt.Errorf("view %s: a rule needs a file", v.Name)
 	}
-	for _, scope := range []struct {
-		name       string
-		types      map[string]Values
-		conditions map[string]Values
-	}{{"query_types", v.QueryTypes, v.Query}, {"exclude_types", v.ExcludeTypes, v.Exclude}} {
-		for key, types := range scope.types {
-			if _, ok := scope.conditions[key]; !ok || len(types) == 0 {
-				return fmt.Errorf("view %s: %s %q names no condition, or no type", v.Name, scope.name, key)
-			}
+	if v.Shared {
+		e, err := expr.Parse(v.If)
+		if err != nil || !slices.Contains(e.Keys(), "owner") {
+			return fmt.Errorf("view %s: shared needs an owner in its if", v.Name)
 		}
-	}
-	for _, conditions := range []map[string]Values{v.Query, v.Exclude} {
-		for key := range conditions {
-			field, contains := SplitKey(key)
-			if !keyPattern.MatchString(field) {
-				return fmt.Errorf("view %s: condition %q: a key, or a key and%s", v.Name, key, Contains)
-			}
-			if contains && field == StatusKey {
-				return fmt.Errorf("view %s: status is matched whole, not by%s", v.Name, Contains)
-			}
-		}
-	}
-	if v.Shared && len(v.Query["owner"]) == 0 {
-		return fmt.Errorf("view %s: shared needs an owner in the query", v.Name)
 	}
 	if v.Dedupe != "" && v.Dedupe != DedupeNumber {
 		return fmt.Errorf("view %s: dedupe %q: leave it out, or use number", v.Name, v.Dedupe)
 	}
-	layout, err := Parse(v.Layout)
-	if err != nil {
-		return fmt.Errorf("view %s: %w", v.Name, err)
-	}
-	counters := layout.Counters()
-	for i, p := range v.Layouts {
-		if len(p.When) == 0 {
-			return fmt.Errorf("view %s: layouts %d: when picks nothing; it needs a condition", v.Name, i+1)
+	var counters []Part
+	if err := v.walk(func(where string, n Node, layout string, root bool) error {
+		if n.If != "" {
+			if _, err := expr.Parse(n.If); err != nil {
+				return fmt.Errorf("view %s: %sif: %w", v.Name, where, err)
+			}
 		}
-		parsed, err := Parse(p.Layout)
+		for i, c := range n.Children {
+			if c.If == "" && i != len(n.Children)-1 {
+				return fmt.Errorf("view %s: %schild %d has no if, so it is the else and must come last", v.Name, where, i+1)
+			}
+			if c.If == "" && c.Out() {
+				return fmt.Errorf("view %s: %schild %d is an else that leaves everything out; give it a path or file", v.Name, where, i+1)
+			}
+		}
+		if layout == "" {
+			return nil
+		}
+		parsed, err := Parse(layout)
 		if err != nil {
-			return fmt.Errorf("view %s: layouts %d: %w", v.Name, i+1, err)
+			return fmt.Errorf("view %s: %s%w", v.Name, where, err)
 		}
 		counters = append(counters, parsed.Counters()...)
+		return nil
+	}); err != nil {
+		return err
 	}
 	for key, values := range v.Order {
 		if len(values) == 0 {
@@ -297,35 +309,6 @@ func keyChar(r byte) bool {
 	return r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_'
 }
 
-// oldOptional is an optional key as once written: text, a key and text in
-// one pair of braces, ending in ?, as {-degree?}.
-var oldOptional = regexp.MustCompile(`\{([^{}]*)\?\}`)
-
-// modernize writes each optional key written the old way as a group:
-// {-degree?} as [-{degree}], {/language?} as [/{language}] and
-// {/#-language?} as [/{#}-{language}]. One naming no key is left for Parse
-// to refuse.
-func modernize(layout string) string {
-	return oldOptional.ReplaceAllStringFunc(layout, func(m string) string {
-		written := m[1 : len(m)-2]
-		start, end := 0, len(written)
-		for start < end && !keyChar(written[start]) {
-			start++
-		}
-		for end > start && !keyChar(written[end-1]) {
-			end--
-		}
-		prefix, inner, suffix := written[:start], written[start:end], written[end:]
-		if inner == "" {
-			return m
-		}
-		if rest, ok := strings.CutPrefix(prefix, "/#"); ok {
-			prefix = "/{#}" + rest
-		}
-		return "[" + prefix + "{" + inner + "}" + suffix + "]"
-	})
-}
-
 // choices is p and its alternatives, in the order they are tried.
 func (p Part) choices() []Part {
 	return append([]Part{{Key: p.Key, Format: p.Format}}, p.Or...)
@@ -333,92 +316,6 @@ func (p Part) choices() []Part {
 
 // oldNumbered finds the ways a numbered key was once written: {inner}#,
 // {key#:format} and {inner#}, all now {#}-{inner}.
-var (
-	oldAfter  = regexp.MustCompile(`\{([^{}?#]*)\}#`)
-	oldInside = regexp.MustCompile(`\{([a-z0-9_-]+)#:([a-z0-9]+)\}`)
-	oldKey    = regexp.MustCompile(`\{([^{}?#]+)#\}`)
-)
-
-// Rewrite writes a layout the one way it is written now, and reports
-// whether anything changed: numbered keys once written {key#}, {a|b#},
-// {a|b}# and {key#:format} as {#}-{key}, and optional keys once written
-// {-key?} as groups, [-{key}].
-func Rewrite(layout string) (string, bool) {
-	out, _ := rewrite(layout)
-	return out, out != layout
-}
-
-// rewrite is Rewrite, with the order each numbered key was numbered from
-// named against the order it is numbered from now.
-func rewrite(layout string) (string, map[string]string) {
-	segments := splitSegments(layout)
-	renamed := map[string]string{}
-	for i, segment := range segments {
-		segment = oldInside.ReplaceAllString(segment, "{$1:$2#}")
-		segment = oldAfter.ReplaceAllString(segment, "{$1#}")
-		m := oldKey.FindStringSubmatch(segment)
-		if m == nil || strings.Contains(segment, "{#}") {
-			segments[i] = segment
-			continue
-		}
-		old := m[1]
-		if !strings.Contains(old, "|") {
-			old, _, _ = strings.Cut(old, ":")
-		}
-		segment = strings.Replace(segment, m[0], "{#}-{"+m[1]+"}", 1)
-		segments[i] = segment
-		if parsed, err := Parse(segment); err == nil {
-			for _, part := range parsed[0] {
-				if part.Counter {
-					renamed[old] = part.Of
-				}
-			}
-		}
-	}
-	return modernize(strings.Join(segments, "/")), renamed
-}
-
-// Upgrade is v with its layout rewritten as Rewrite does and each order
-// renamed after the numbered name it now numbers.
-func Upgrade(v View) (View, bool) {
-	layout, renamed := rewrite(v.Layout)
-	changed := layout != v.Layout
-	name := func(key string) string {
-		now, ok := renamed[key]
-		if !ok {
-			now = modernize(key)
-		}
-		changed = changed || now != key
-		return now
-	}
-	var order map[string][]string
-	if v.Order != nil {
-		order = map[string][]string{}
-		for key, values := range v.Order {
-			order[name(key)] = values
-		}
-	}
-	var numbers map[string]map[string]int
-	if v.Numbers != nil {
-		numbers = map[string]map[string]int{}
-		for key, set := range v.Numbers {
-			numbers[name(key)] = set
-		}
-	}
-	var unnumbered map[string][]string
-	if v.Unnumbered != nil {
-		unnumbered = map[string][]string{}
-		for key, names := range v.Unnumbered {
-			unnumbered[name(key)] = names
-		}
-	}
-	if !changed {
-		return v, false
-	}
-	v.Layout, v.Order, v.Numbers, v.Unnumbered = layout, order, numbers, unnumbered
-	return v, true
-}
-
 // Layout is a parsed layout, one list of parts per path segment.
 type Layout [][]Part
 
@@ -437,7 +334,6 @@ func Parse(layout string) (Layout, error) {
 	if strings.Contains(layout, `\`) {
 		return nil, errors.New(`layout: use / between folders, not \`)
 	}
-	layout = modernize(layout)
 	var out Layout
 	for _, segment := range splitSegments(layout) {
 		if segment == "" {

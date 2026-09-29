@@ -93,7 +93,7 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusConflict, err)
 		return
 	}
-	sn, err := snapshot.Take(request.Name, request.About, rule, items, view.NamesOf(templates), s.now())
+	sn, err := snapshot.Take(request.Name, request.About, rule, items, view.TypesOf(templates), s.now())
 	if err == nil {
 		err = snapshot.Save(s.root, "", sn, true)
 	}
@@ -214,7 +214,7 @@ func (s server) snapshotNames(w http.ResponseWriter, r *http.Request) {
 				revision = n + 1
 			}
 		}
-		path, lacking, err := view.Name(request.Naming, it, revision, view.NamesOf(templates))
+		path, lacking, err := view.Name(request.Naming, it, revision, view.TypesOf(templates))
 		if err != nil {
 			fail(http.StatusBadRequest, err)
 			return

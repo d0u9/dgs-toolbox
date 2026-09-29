@@ -491,7 +491,7 @@ func TestOutlinesGroupSaveDelete(t *testing.T) {
 	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	o := `{"name":"people","rules":[{"name":"ids","layout":"{country:alpha2}/{owner}/{type}.{ext}"},{"name":"lost","layout":"{number}.{ext}"}]}`
+	o := `{"name":"people","rules":[{"name":"ids","file":"{country:alpha2}/{owner}/{type}.{ext}"},{"name":"lost","file":"{number}.{ext}"}]}`
 	rec := do(h, "POST", "/api/outlines/group", o)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"AU/emma","count":1`) ||
 		!strings.Contains(rec.Body.String(), `"path":"AU/emma/id_card.pdf"`) || !strings.Contains(rec.Body.String(), `"keys":["number"]`) {
@@ -508,7 +508,7 @@ func TestOutlinesGroupSaveDelete(t *testing.T) {
 	if rec := do(h, "POST", "/api/outlines/delete", `{"name":"people"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/outlines", `{"outline":{"name":"x","rules":[{"name":"r","layout":"{owner#}"}]}}`); rec.Code != 400 {
+	if rec := do(h, "POST", "/api/outlines", `{"outline":{"name":"x","rules":[{"name":"r","file":"{owner#}"}]}}`); rec.Code != 400 {
 		t.Fatal("bad outline saved")
 	}
 }
@@ -520,7 +520,7 @@ func TestOutlinesExportIntoTheirFolder(t *testing.T) {
 	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	o := `{"name":"phone","about":"read on the phone","rules":[{"name":"ids","layout":"{owner}.{ext}"}]}`
+	o := `{"name":"phone","about":"read on the phone","rules":[{"name":"ids","file":"{owner}.{ext}"}]}`
 	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
@@ -543,10 +543,10 @@ func TestSnapshotKeepsWhatWasTaken(t *testing.T) {
 	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","layout":"{owner}.{ext}"}}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","file":"{owner}.{ext}"}}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","layout":"x.{ext}"}}`); rec.Code == 200 {
+	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","file":"x.{ext}"}}`); rec.Code == 200 {
 		t.Fatal("a new rule replaced another")
 	}
 	if rec := do(h, "POST", "/api/snapshots/take", `{"rule":"ids","name":"visa"}`); rec.Code != 200 {
@@ -557,10 +557,10 @@ func TestSnapshotKeepsWhatWasTaken(t *testing.T) {
 	}
 	// The rule changes; the Snapshot still has emma.pdf at its top, put
 	// in the Outline's tree as the folder old/visa.
-	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","layout":"{country}/{owner}.{ext}"},"previous":"ids"}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","file":"{country}/{owner}.{ext}"},"previous":"ids"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	o := `{"name":"phone","rules":[{"name":"ids","layout":"{country}/{owner}.{ext}"}],"snapshots":[{"name":"visa","at":"old"}]}`
+	o := `{"name":"phone","rules":[{"name":"ids","file":"{country}/{owner}.{ext}"}],"snapshots":[{"name":"visa","at":"old"}]}`
 	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
@@ -596,26 +596,10 @@ func TestSnapshotKeepsWhatWasTaken(t *testing.T) {
 	}
 }
 
-func TestViewsAndTargetsBecomeOutlines(t *testing.T) {
-	root, _ := setup(t, true)
-	h := Handler(Settings{Root: root})
-	must(t, os.WriteFile(filepath.Join(root, "targets.yaml"), []byte("phone:\n  folder: ~/p\n"), 0o644))
-	must(t, os.MkdirAll(filepath.Join(root, "views"), 0o755))
-	must(t, os.WriteFile(filepath.Join(root, "views", "ids.yaml"), []byte("name: ids\nselection: head\nlayout: '{owner}.{ext}'\ntarget: phone\n"), 0o644))
-	var list outlinesJSON
-	must(t, json.Unmarshal(do(h, "GET", "/api/outlines", "").Body.Bytes(), &list))
-	if len(list.Migrated) != 1 || len(list.Outlines) != 1 || list.Outlines[0].Folder != "~/p" || list.Outlines[0].Rules[0].Name != "ids" {
-		t.Fatalf("%+v", list)
-	}
-	if rec := do(h, "GET", "/views/", ""); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/outlines/" {
-		t.Fatalf("/views/: %d", rec.Code)
-	}
-}
-
 func TestRuleLayoutParses(t *testing.T) {
 	root, _ := setup(t, true)
 	h := Handler(Settings{Root: root})
-	if rec := do(h, "POST", "/api/rules/layout", `{"layout":"{owner}{/-level?}/{name}.{ext}"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"folder":true`) {
+	if rec := do(h, "POST", "/api/rules/layout", `{"layout":"{owner}[/-{level}]/{name}.{ext}"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"folder":true`) {
 		t.Fatal(rec.Body.String())
 	}
 	if rec := do(h, "POST", "/api/rules/layout", `{"layout":"{a"}`); rec.Code != 400 {

@@ -179,10 +179,8 @@ func decodeStrict(n *yaml.Node, out any) error {
 	return decoder.Decode(out)
 }
 
-// withHead fills what a rule file may leave out, and writes its layout the
-// way layouts are written now, so a rule saved before reads the same.
+// withHead fills what a rule file may leave out.
 func withHead(r view.View) view.View {
-	r, _ = view.Upgrade(r)
 	if r.Selection == "" {
 		r.Selection = view.Head
 	}
@@ -396,7 +394,7 @@ func RenameRule(root, from, to string) error {
 	if from == to {
 		return nil
 	}
-	if err := (view.View{Name: to, Selection: view.Head, Layout: "x"}).Validate(); err != nil {
+	if err := (view.View{Name: to, Selection: view.Head, Node: view.Node{File: "x"}}).Validate(); err != nil {
 		return err
 	}
 	if err := Fresh(root, []string{to}); err != nil {
@@ -440,7 +438,7 @@ func RenameRule(root, from, to string) error {
 
 // DeleteRule removes a rule no Outline uses.
 func DeleteRule(root, name string) error {
-	if err := (view.View{Name: name, Selection: view.Head, Layout: "x"}).Validate(); err != nil {
+	if err := (view.View{Name: name, Selection: view.Head, Node: view.Node{File: "x"}}).Validate(); err != nil {
 		return err
 	}
 	_, used, err := Rules(root)
@@ -525,7 +523,7 @@ func (g Grouping) Complete() bool { return g.Combined.Complete() && len(g.Lost) 
 // and puts every placed PDF in its folder. A Snapshot's files are marked
 // with its name, as a rule's are with the rule's. Folders and files sort by
 // name, which keeps numbered ones in their order.
-func Group(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names view.TypeNames) (Grouping, error) {
+func Group(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names view.Types) (Grouping, error) {
 	fixed, lost, err := Mounted(o, snapshots, items)
 	if err != nil {
 		return Grouping{}, err

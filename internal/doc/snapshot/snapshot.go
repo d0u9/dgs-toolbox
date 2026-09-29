@@ -123,7 +123,7 @@ func inside(p string) bool {
 // Take records the PDFs rule places now, at the paths it gives them. A
 // rule with PDFs it cannot place is refused: place them first. A nil rule
 // begins an empty Snapshot, filled by hand.
-func Take(name, about string, rule *view.View, items []tree.Item, names view.TypeNames, now time.Time) (Snapshot, error) {
+func Take(name, about string, rule *view.View, items []tree.Item, names view.Types, now time.Time) (Snapshot, error) {
 	s := Snapshot{Name: name, About: about, Taken: now.Format(time.RFC3339), Files: []File{}}
 	if rule == nil {
 		return s, s.Validate()
