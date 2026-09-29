@@ -29,7 +29,47 @@ export function format(n, top = true) {
 }
 
 let dragging = null; // the bubble being dragged: { list, n }
-let lists = 0;
+
+// suggest gives input a list of choices under it, narrowed as it is typed:
+// ↑/↓ move, Enter or a click picks, Esc closes. What is typed stays allowed.
+const menu = el("ul", { className: "cond-menu", hidden: true });
+document.body.append(menu);
+let menuFor = null;
+function suggest(input, choices) {
+  let active = -1, shown = [];
+  const pick = (v) => { input.value = v; close(); input.dispatchEvent(new Event("change")); };
+  const close = () => { if (menuFor === input) { menu.hidden = true; menuFor = null; } };
+  const draw = () => {
+    const q = input.value.trim().toLowerCase();
+    const all = choices();
+    shown = (q && all.some((c) => c.toLowerCase() === q) ? all : all.filter((c) => c.toLowerCase().includes(q))).slice(0, 50);
+    if (!shown.length) { close(); return; }
+    active = Math.min(active, shown.length - 1);
+    menu.replaceChildren(...shown.map((c, i) => el("li", { className: i === active ? "active" : "", textContent: c,
+      onmousedown: (event) => { event.preventDefault(); pick(c); } })));
+    const r = input.getBoundingClientRect();
+    menu.style.left = r.left + scrollX + "px";
+    menu.style.top = r.bottom + scrollY + 4 + "px";
+    menu.hidden = false;
+    menuFor = input;
+    menu.children[active]?.scrollIntoView({ block: "nearest" });
+  };
+  input.addEventListener("focus", () => { active = -1; draw(); });
+  input.addEventListener("input", () => { active = -1; draw(); });
+  input.addEventListener("blur", close);
+  input.addEventListener("keydown", (event) => {
+    if (menuFor !== input) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      active = (active + (event.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length;
+      draw();
+    } else if (event.key === "Enter" && active >= 0) {
+      event.preventDefault(); pick(shown[active]);
+    } else if (event.key === "Escape") {
+      close();
+    }
+  });
+}
 
 // condition wraps input, in place when it is in the page, a text box holding an if. keys() lists the keys
 // to offer; values(key) the values known for one. onEdit is called after
@@ -53,13 +93,10 @@ export function condition(input, { keys, values, onEdit }) {
     draw();
   };
   const act = (title, t, onclick) => el("button", { type: "button", className: "cond-x", title, textContent: t, onclick });
-  const listId = () => "cond-list-" + (++lists);
 
   const bubble = (n, list) => {
     const keyIn = el("input", { className: "cond-key mono", value: n.key || "", placeholder: "key", spellcheck: false, autocomplete: "off" });
-    const kid = listId();
-    keyIn.setAttribute("list", kid);
-    const keyList = el("datalist", { id: kid }, ...keys().map((k) => el("option", { value: k })));
+    suggest(keyIn, keys);
     keyIn.onchange = () => { n.key = keyIn.value.trim(); edited(); };
     const opSel = el("select", { className: "cond-op mono" }, ...OPS.map(([v, t]) => el("option", { value: v, textContent: t })));
     opSel.value = (n.not && n.cmp !== "==" ? "!" : "") + (n.cmp === "==" && n.not ? "!=" : n.cmp || "==");
@@ -71,12 +108,9 @@ export function condition(input, { keys, values, onEdit }) {
       else if (n.cmp !== "in") n.values = (n.values || []).slice(0, 1);
       edited();
     };
-    const vid = listId();
-    const known = n.key ? values(n.key) : [];
-    const valList = el("datalist", { id: vid }, ...known.map((v) => el("option", { value: v })));
     const valueIn = (v, i) => {
       const input = el("input", { className: "cond-value", value: v, placeholder: "value", spellcheck: false, autocomplete: "off" });
-      input.setAttribute("list", vid);
+      suggest(input, () => n.key ? values(n.key).filter((v) => !(n.values || []).includes(v) || v === input.value) : []);
       input.size = Math.max(4, [...v].length + 1);
       input.onchange = () => {
         const x = input.value.trim();
@@ -95,7 +129,7 @@ export function condition(input, { keys, values, onEdit }) {
     } else if (n.cmp !== "has") {
       vals = [valueIn((n.values || [])[0] || "", 0)];
     }
-    const node = el("span", { className: "cond-bubble" + (n.key ? "" : " empty") + (n.not ? " negated" : "") }, keyIn, keyList, opSel, ...vals, valList,
+    const node = el("span", { className: "cond-bubble" + (n.key ? "" : " empty") + (n.not ? " negated" : "") }, keyIn, opSel, ...vals,
       act("Remove the condition", "×", () => { list.splice(list.indexOf(n), 1); edited(); }));
     return node;
   };
@@ -117,7 +151,8 @@ export function condition(input, { keys, values, onEdit }) {
     if (!parent) return el("div", { className: "cond-group top" }, ...parts, adds);
     const neg = el("button", { type: "button", className: "cond-not mono" + (g.not ? " on" : ""), textContent: "!", title: "Negate the brackets",
       onclick: () => { g.not = !g.not; edited(); } });
-    return el("span", { className: "cond-group" + (g.not ? " negated" : "") }, neg, ...parts, adds, act("Remove the brackets and what is in them", "×", () => { parent.splice(parent.indexOf(g), 1); edited(); }));
+    return el("span", { className: "cond-group" + (g.not ? " negated" : "") }, neg, el("span", { className: "cond-paren" }, "("), ...parts, adds,
+      el("span", { className: "cond-paren" }, ")"), act("Remove the brackets and what is in them", "×", () => { parent.splice(parent.indexOf(g), 1); edited(); }));
   };
 
   // A bubble or bracket box dragged onto another drops before it, in its
