@@ -363,20 +363,69 @@ func (m *migrationYAML) patchRoutes(old, next *inventory.Root, changes []routeCh
 	for _, change := range changes {
 		renamed[change.From] = change.To
 	}
-	for oldName, source := range old.Routes {
-		newName := oldName
+	// A renamed node takes the routes scoped to it along.
+	nodeRename := migrationNodeRename(old, next)
+	newNameOf := func(oldName string) string {
 		if to := renamed[oldName]; to != "" {
-			newName = to
+			return to
 		}
+		if scope, local := inventory.RouteScope(oldName); scope != "" && nodeRename[scope] != "" {
+			return nodeRename[scope] + inventory.QualifiedSep + local
+		}
+		return oldName
+	}
+	// A scope every route of which moves to one new scope, not already
+	// written, is the group key renamed in place, so the file keeps its order.
+	moves := map[string]map[string]bool{}
+	for oldName := range old.Routes {
+		from, _ := inventory.RouteScope(oldName)
+		to, _ := inventory.RouteScope(newNameOf(oldName))
+		if moves[from] == nil {
+			moves[from] = map[string]bool{}
+		}
+		moves[from][to] = true
+	}
+	for from, tos := range moves {
+		if from == "" || len(tos) != 1 {
+			continue
+		}
+		for to := range tos {
+			if to == from || to == "" {
+				continue
+			}
+			if key, _ := migrationMap(routes, to); key != nil {
+				continue
+			}
+			key, _ := migrationMap(routes, from)
+			changed, err := migrationScalar(key, from, to, "routes.yaml: scope key")
+			if err != nil {
+				return err
+			}
+			file.changed = file.changed || changed
+		}
+	}
+	for oldName, source := range old.Routes {
+		newName := newNameOf(oldName)
 		target, ok := next.Routes[newName]
 		if !ok {
 			return fmt.Errorf("route %q missing from target", newName)
 		}
-		key, route := migrationMap(routes, oldName)
+		oldScope, oldLocal := inventory.RouteScope(oldName)
+		newScope, newLocal := inventory.RouteScope(newName)
+		// Where the route is written now: under its old scope's key, or the
+		// new one when the whole scope was renamed above.
+		parent := routes
+		if oldScope != "" {
+			_, parent = migrationMap(routes, oldScope)
+			if parent == nil {
+				_, parent = migrationMap(routes, newScope)
+			}
+		}
+		key, route := migrationMap(parent, oldLocal)
 		if key == nil {
 			return fmt.Errorf("routes.yaml: route %q was not found", oldName)
 		}
-		changed, err := migrationScalar(key, oldName, newName, "routes.yaml: route key")
+		changed, err := migrationScalar(key, oldLocal, newLocal, "routes.yaml: route key")
 		if err != nil {
 			return err
 		}
@@ -387,6 +436,72 @@ func (m *migrationYAML) patchRoutes(old, next *inventory.Root, changes []routeCh
 			return err
 		}
 		file.changed = file.changed || changed
+		if newScope == oldScope || parent == migrationScopeNode(routes, newScope) {
+			continue
+		}
+		// Moved to another scope: take the pair out and write it there.
+		for i := 0; i+1 < len(parent.Content); i += 2 {
+			if parent.Content[i] == key {
+				parent.Content = append(parent.Content[:i], parent.Content[i+2:]...)
+				break
+			}
+		}
+		dest := migrationScopeNode(routes, newScope)
+		if dest == nil {
+			dest = &yaml.Node{Kind: yaml.MappingNode}
+			routes.Content = append(routes.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: newScope}, dest)
+		}
+		dest.Content = append(dest.Content, key, route)
+		file.changed = true
+	}
+	// A scope left with no routes is removed.
+	for i := 0; i+1 < len(routes.Content); {
+		v := routes.Content[i+1]
+		if v.Kind == yaml.MappingNode && len(v.Content) == 0 {
+			routes.Content = append(routes.Content[:i], routes.Content[i+2:]...)
+			file.changed = true
+			continue
+		}
+		i += 2
+	}
+	return nil
+}
+
+// migrationScopeNode is the mapping routes are written in for a scope: the
+// routes mapping itself for the top level.
+func migrationScopeNode(routes *yaml.Node, scope string) *yaml.Node {
+	if scope == "" {
+		return routes
+	}
+	_, v := migrationMap(routes, scope)
+	return v
+}
+
+// migrationNodeRename is the one node id present before and not after,
+// mapped to the one present after and not before, when there is exactly one
+// of each.
+func migrationNodeRename(old, next *inventory.Root) map[string]string {
+	ids := func(r *inventory.Root) map[string]bool {
+		out := map[string]bool{}
+		for _, n := range r.Nodes {
+			out[n.ID] = true
+		}
+		return out
+	}
+	before, after := ids(old), ids(next)
+	var gone, added []string
+	for id := range before {
+		if !after[id] {
+			gone = append(gone, id)
+		}
+	}
+	for id := range after {
+		if !before[id] {
+			added = append(added, id)
+		}
+	}
+	if len(gone) == 1 && len(added) == 1 {
+		return map[string]string{gone[0]: added[0]}
 	}
 	return nil
 }

@@ -572,7 +572,7 @@ func (m renderer) downstreamsFor(instance string, fansOut bool) []render.Downstr
 			continue
 		}
 		d := render.Downstream{
-			Route:     e.Route,
+			Route:     inventory.FlatID(e.Route),
 			Instance:  inventory.LocalName(e.To.Instance),
 			Port:      e.To.Port,
 			Published: m.publishedAt(e.To.Instance, e.To.Port),

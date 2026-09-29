@@ -1255,6 +1255,40 @@ relay into the middle of a chain changes the route's hops and changes nothing in
 A one-hop route is an ordinary route. Reaching a service directly is not a
 special form.
 
+### Route scopes
+
+A route written under a key that is a network name or a node id is scoped
+there: the client must be on that network, or be that machine.
+
+```yaml
+routes:
+  sfo:
+    hops: [u-node-group-10-01/ss-01:users]
+  home:
+    samba:
+      hops: [home-server/samba-01:smb]
+  home-server:
+    sfo:
+      hops: [home-server/sslocal-01:socks, u-node-group-10-01/ss-01:relays]
+```
+
+A key holding `hops` is a route; any other key is a scope. A scoped route's
+full name is `<scope>/<name>` — `home/samba` — and that is what `users.yaml`
+grants and what `--route` renames. Where a name is shown to a person or used as
+part of a derived id, `/` becomes `-`: `home-samba`.
+
+The scope is a choice, and it narrows where the entry is published: a route
+scoped to a network publishes its entry only on the entry node's address
+there, and a route scoped to a node only on loopback. A top-level route
+publishes on every network the node answers on.
+
+Rule 33 checks it: the scope names a network or a node and not a name both
+use, the entry has an address on the network or runs on the node, and a
+credential opening a route scoped to a non-universal network reaches that
+network, through its own `reaches` or a device carrying it.
+
+Renaming a node renames its scope key and every grant naming a route in it.
+
 ### Naming
 
 A route's name says what the person is choosing when they pick it in their
@@ -2366,6 +2400,9 @@ failing can be told which level it was reading.
 32. A containerised instance binds `0.0.0.0` or writes no bind, and its
     `network` is one its node lists in `containers`. A host process names no
     `network`. A node lists no container network twice.
+33. A route's scope names a network or a node, never a name both hold; its
+    entry has an address on that network or runs on that node; and every
+    credential opening a route scoped to a non-universal network reaches it.
 
 ## Boundaries
 

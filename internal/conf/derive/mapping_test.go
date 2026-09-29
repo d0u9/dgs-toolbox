@@ -276,3 +276,15 @@ func TestDerive_ContainerDialingItsHostIsAnError(t *testing.T) {
 		t.Fatal("Derive succeeded, want an error for a container dialling a host process beside it")
 	}
 }
+
+// TestMappings_RouteScopedToTheNodePublishesOnLoopback: a route written under
+// its entry's node is for clients on that machine, so the entry publishes on
+// loopback rather than on the node's addresses.
+func TestMappings_RouteScopedToTheNodePublishesOnLoopback(t *testing.T) {
+	inv := mappingInventory("203.0.113.10")
+	inv.Routes["sfo1/local"] = inventory.Route{Hops: []string{"ss-sfo01:main"}, Scope: "sfo1"}
+	delete(inv.Routes, "hkg-sfo")
+	inv.Users["alex"] = inventory.User{Username: "alex", Access: []string{"paste"}}
+	got := mappingsOf(t, inv, "ss-sfo01")
+	wantMapping(t, got, "main", 38250, "127.0.0.1")
+}

@@ -135,12 +135,21 @@ func (m *Model) Mappings(inv *inventory.Root, instance string) map[string]Mappin
 		// reachable directly as well, is dialled at loopback by the proxy
 		// and at this node's address by a browser the route leaves
 		// unmodelled.
-		if !entered || isEntrance(inv, instance, name) {
-			// No edge chose a network for the way in from outside, and
-			// the inventory does not say from where, which every network
-			// this node answers on satisfies.
+		scopes, entrance := entranceScopes(inv, instance, name)
+		if !entered || entrance {
+			// No edge chose a network for the way in from outside. A route
+			// written under a scope says where its clients are: a network
+			// publishes on this node's address there, the node itself on
+			// loopback. Otherwise every network this node answers on.
 			outside := 0
+			if scopes[node.ID] {
+				addresses = append(addresses, PublishLoopback)
+				outside++
+			}
 			for _, network := range networkOrder(inv) {
+				if len(scopes) > 0 && !scopes[""] && !scopes[network] {
+					continue
+				}
 				if address, ok := node.Networks[network]; ok {
 					addresses = append(addresses, bindable(address))
 					outside++
@@ -198,15 +207,16 @@ func networkOrder(inv *inventory.Root) []string {
 	return order
 }
 
-// isEntrance is whether some route's first hop is this instance's port: a
-// route entered from outside at it, by something the inventory does not
-// model.
-func isEntrance(inv *inventory.Root, instance, port string) bool {
+// entranceScopes is the scopes of every route whose first hop is this
+// instance's port — a route entered from outside at it — and whether there is
+// one. The empty scope is a top-level route, reachable wherever the node is.
+func entranceScopes(inv *inventory.Root, instance, port string) (map[string]bool, bool) {
 	want := instance + ":" + port
+	scopes := map[string]bool{}
 	for _, r := range inv.Routes {
 		if len(r.Hops) > 0 && r.Hops[0] == want {
-			return true
+			scopes[r.Scope] = true
 		}
 	}
-	return false
+	return scopes, len(scopes) > 0
 }

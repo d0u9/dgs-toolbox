@@ -440,3 +440,23 @@ func TestQualifyInstances_FillsWhatAContainerTakesFromItsNode(t *testing.T) {
 		t.Errorf("ssh = runtime %q network %q bind %q, want a host process with neither", ssh.Runtime, ssh.Network, ssh.Bind)
 	}
 }
+
+// TestLoadRoutes_ScopedRoutesAreKeyedByScope: a key holding hops is a route;
+// any other key is a scope of routes, each keyed <scope>/<name>.
+func TestLoadRoutes_ScopedRoutesAreKeyedByScope(t *testing.T) {
+	dir := t.TempDir()
+	data := "routes:\n  ss:\n    hops: [a/ss:main]\n  home:\n    samba:\n      hops: [b/samba:smb]\n"
+	if err := os.WriteFile(filepath.Join(dir, RoutesFilename), []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	routes, broken, err := loadRoutes(dir)
+	if err != nil || broken != "" {
+		t.Fatalf("loadRoutes: %v %s", err, broken)
+	}
+	if r, ok := routes["ss"]; !ok || r.Scope != "" {
+		t.Errorf("ss = %+v, want a top-level route", r)
+	}
+	if r, ok := routes["home/samba"]; !ok || r.Scope != "home" || r.Hops[0] != "b/samba:smb" {
+		t.Errorf("home/samba = %+v, want scope home", r)
+	}
+}

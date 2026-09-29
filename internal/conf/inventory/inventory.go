@@ -631,6 +631,21 @@ func (u User) UsernameOr(key string) string {
 // Route is one entry of routes.yaml: an ordered list of hops.
 type Route struct {
 	Hops []string `yaml:"hops"`
+	// Scope is the group the route is written under in routes.yaml: a
+	// network name or a node id, the place a client must be to use it.
+	// Empty is a route written at the top level, reachable wherever its
+	// entry is. The route's key is <scope>/<name> when Scope is set. Set by
+	// Load, not part of the YAML. See docs/apps/conf/inventory.md#route-scopes.
+	Scope string `yaml:"-"`
+}
+
+// RouteScope splits a route key into its scope and its name within the
+// scope. A top-level route has no scope.
+func RouteScope(key string) (scope, name string) {
+	if i := strings.LastIndex(key, QualifiedSep); i >= 0 {
+		return key[:i], key[i+1:]
+	}
+	return "", key
 }
 
 // Root is a generator root's parsed inventory.
@@ -954,12 +969,43 @@ func loadRoutes(root string) (map[string]Route, string, error) {
 	}
 
 	var doc struct {
-		Routes map[string]Route `yaml:"routes"`
+		Routes map[string]yaml.Node `yaml:"routes"`
 	}
 	if err := decodeStrict(data, &doc); err != nil {
 		return nil, fmt.Sprintf("%s: %s", path, err), nil
 	}
-	return doc.Routes, "", nil
+	// A key is a route when its value holds `hops`, and a scope otherwise:
+	// a mapping of route names to routes, each keyed <scope>/<name>.
+	routes := map[string]Route{}
+	decode := func(node *yaml.Node, v any) error {
+		raw, err := yaml.Marshal(node)
+		if err != nil {
+			return err
+		}
+		return decodeStrict(raw, v)
+	}
+	for key, node := range doc.Routes {
+		if node.Kind != yaml.MappingNode {
+			return nil, fmt.Sprintf("%s: routes.%s: want a route or a scope of routes", path, key), nil
+		}
+		if hops, _ := mappingValue(&node, "hops"); hops != nil {
+			var r Route
+			if err := decode(&node, &r); err != nil {
+				return nil, fmt.Sprintf("%s: routes.%s: %s", path, key, err), nil
+			}
+			routes[key] = r
+			continue
+		}
+		var group map[string]Route
+		if err := decode(&node, &group); err != nil {
+			return nil, fmt.Sprintf("%s: routes.%s: %s", path, key, err), nil
+		}
+		for name, r := range group {
+			r.Scope = key
+			routes[key+QualifiedSep+name] = r
+		}
+	}
+	return routes, "", nil
 }
 
 func loadHosts(root string) (map[string]Host, string, error) {
@@ -1074,4 +1120,14 @@ func qualifyInstances(node *Node) {
 		}
 		inst.Dials = dials
 	}
+}
+
+// mappingValue is the value under key in a mapping node, or nil.
+func mappingValue(node *yaml.Node, key string) (*yaml.Node, bool) {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1], true
+		}
+	}
+	return nil, false
 }

@@ -540,6 +540,81 @@ func Validate(inv *inventory.Root, manifests map[string]confgen.Manifest, export
 		}
 	}
 
+	// Rule 33: a route's scope names a network or a node, not both, and its
+	// entry is reachable there; a credential opening a route scoped to a
+	// network reaches that network.
+	networkNames := map[string]bool{}
+	for _, n := range inv.Networks {
+		networkNames[n] = true
+	}
+	if inv.Universal != "" {
+		networkNames[inv.Universal] = true
+	}
+	for _, id := range nodeIDsInOrder {
+		if networkNames[id] {
+			add("node %q has the name of a network, so a route scope %q is ambiguous", id, id)
+		}
+	}
+	routeKeys := make([]string, 0, len(inv.Routes))
+	for name := range inv.Routes {
+		routeKeys = append(routeKeys, name)
+	}
+	sort.Strings(routeKeys)
+	for _, name := range routeKeys {
+		r := inv.Routes[name]
+		if r.Scope == "" || len(r.Hops) == 0 {
+			continue
+		}
+		entry, err := derive.ParseHop(r.Hops[0])
+		if err != nil {
+			continue
+		}
+		ref, ok := realInstances[entry.Instance]
+		if !ok {
+			continue
+		}
+		entryNode := nodeByID[ref.nodeID]
+		switch {
+		case networkNames[r.Scope]:
+			if _, on := entryNode.Networks[r.Scope]; !on {
+				add("route %q is scoped to network %q, and its entry %s is on node %q, which has no address there",
+					name, r.Scope, r.Hops[0], ref.nodeID)
+			}
+		case nodeByID[r.Scope].ID != "":
+			if r.Scope != ref.nodeID {
+				add("route %q is scoped to node %q, and its entry %s is on node %q",
+					name, r.Scope, r.Hops[0], ref.nodeID)
+			}
+		default:
+			add("route %q is scoped to %q, which is neither a network nor a node", name, r.Scope)
+		}
+	}
+	for _, key := range userKeys {
+		user := inv.Users[key]
+		for _, credential := range user.CredentialNames() {
+			for _, name := range routeKeys {
+				scope := inv.Routes[name].Scope
+				if scope == "" || !networkNames[scope] || scope == inv.Universal || !user.OpensRoute(credential, name) {
+					continue
+				}
+				reached := containsString(user.Credentials[credential].Reaches, scope)
+				for _, id := range nodeIDsInOrder {
+					n := nodeByID[id]
+					if n.Owner != key || n.CredentialOr() != credential {
+						continue
+					}
+					if _, on := n.Networks[scope]; on || containsString(n.Reaches, scope) {
+						reached = true
+					}
+				}
+				if !reached {
+					add("user %q: credential %q opens route %q, scoped to network %q, and neither it nor a device carrying it reaches %q: add it to `reaches`",
+						key, credential, name, scope, scope)
+				}
+			}
+		}
+	}
+
 	// Rules 24 and 25: what an instance's `deploy` may say, and where it
 	// may say it. A host process renders no deployment file, and neither
 	// does an instance of a service that declares no deploy/ — in both
