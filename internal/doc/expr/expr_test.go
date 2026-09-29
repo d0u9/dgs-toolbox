@@ -18,19 +18,19 @@ func (e env) Is(key, value, want string) bool {
 func TestEval(t *testing.T) {
 	bill := env{"type": {"bill"}, "category": {"水"}, "tags": {"network-5", "paid"}, "name": {"Water Bill"}}
 	for s, want := range map[string]bool{
-		"type is bill":                                      true,
-		"type is money":                                     true,
-		"type is payment":                                   false,
-		"category is utility and type is money":             true,
-		"tags in [network-6, network-5]":                          true,
-		"tags has paid and not tags has late":               true,
-		"not (type is bill or type is invoice)":             false,
-		"name contains water":                               true,
-		"has number":                                        false,
-		"not has number and has name":                       true,
-		"number is 1 or type is bill":                       true,
-		`name is "Water Bill"`:                              true,
-		"type is bill and (category is 电 or category is 水)": true,
+		"type == bill":                                 true,
+		"type == money":                                true,
+		"type == payment":                              false,
+		"category == utility && type == money":         true,
+		"tags in [network-6, network-5]":                     true,
+		"tags == paid && tags != late":                 true,
+		"!(type == bill || type == invoice)":           false,
+		"name ~ water":                                 true,
+		"has(number)":                                  false,
+		"!has(number) && has(name)":                    true,
+		"number == 1 || type == bill":                  true,
+		`name == "Water Bill"`:                         true,
+		"type==bill&&(category == 电 || category == 水)": true,
 	} {
 		e, err := Parse(s)
 		if err != nil {
@@ -44,7 +44,7 @@ func TestEval(t *testing.T) {
 }
 
 func TestKeys(t *testing.T) {
-	e := MustParse("type is bill and (about.type is tenancy or type is bill) and has number")
+	e := MustParse("type == bill && (about.type == tenancy || type == bill) && has(number)")
 	if got := strings.Join(e.Keys(), ","); got != "type,about.type,number" {
 		t.Fatal(got)
 	}
@@ -54,18 +54,37 @@ func TestParseErrors(t *testing.T) {
 	for s, want := range map[string]string{
 		"":                "empty",
 		"type bill":       "column 6",
-		"type is":         "column 8",
+		"type is a":       "column 6",
+		"a & b":           "write &&",
+		"has number":      "has takes a key",
+		"type ==":         "column 8",
 		"type in bill":    "in takes a list",
 		"type in [a b]":   "expected , or ]",
-		"(type is a":      "not closed",
-		"type is a b":     "column 11",
-		`name is "open`:   "quote",
-		"and is a":        "expected a key",
-		"type is a or or": "expected a key",
+		"(type == a":      "not closed",
+		"type == a b":     "column 11",
+		`name == "open`:   "quote",
+		"== a":            "expected a key",
+		"type == a || ||": "expected a key",
 	} {
 		_, err := Parse(s)
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v, want %q", s, err, want)
 		}
+	}
+}
+
+func TestTree(t *testing.T) {
+	got := Tree(MustParse("a == 1 && b != 2 && !(c in [x, y] || has(d)) && e ~ f"))
+	if got.Op != "&&" || len(got.Items) != 4 {
+		t.Fatalf("%+v", got)
+	}
+	if b := got.Items[1]; b.Key != "b" || b.Cmp != "==" || !b.Not {
+		t.Fatalf("%+v", b)
+	}
+	if g := got.Items[2]; g.Op != "||" || !g.Not || g.Items[0].Cmp != "in" || len(g.Items[0].Values) != 2 || g.Items[1].Cmp != "has" {
+		t.Fatalf("%+v", g)
+	}
+	if one := Tree(MustParse("a == 1")); one.Op != "" || one.Key != "a" {
+		t.Fatalf("%+v", one)
 	}
 }

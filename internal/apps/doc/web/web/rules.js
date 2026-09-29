@@ -147,10 +147,10 @@ function problems() {
     for (const [key, value] of unordered) li.append(el("button", { type: "button", className: "small", textContent: "Number " + value + " last",
       onclick: () => which.numberLast(key, value) }));
     if (m.view === here) li.append(" ", el("button", { type: "button", className: "small", textContent: "Leave out",
-      title: "Leave this Item out: adds not id is … to the rule's if", onclick: () => which.skipItem(m.item) }));
+      title: "Leave this Item out: adds id != … to the rule's if", onclick: () => which.skipItem(m.item) }));
     if (m.keys) {
       const keys = m.keys.filter((k) => !(m.view === here && numbered.includes(k) && byId[m.item] && which.orderValue(byId[m.item], k)));
-      const fields = m.fields.filter((f) => !m.keys.includes(f) || keys.includes(f));
+      const fields = (m.fields || []).filter((f) => !m.keys.includes(f) || keys.includes(f));
       if (fields.length) {
         const seen = lacking.get(m.item) || { keys: new Set(), fields: new Set(), digests: new Set() };
         seen.digests.add(m.digest);
