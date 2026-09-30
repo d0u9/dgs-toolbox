@@ -784,7 +784,7 @@ configure the program, and reach it through its rendered files.
 
 A test renders every containerised instance and checks that the ports,
 networks, addresses, container name and deploy volumes of the compose.yaml
-beside the manifest agree with it. Set `DGS_CONF_ROOT` and `DGS_CONF_SECRETS`
+beside the manifest agree with it; the test lives in rhumb's `cli` package. Set `RHUMB_ROOT` and `RHUMB_SECRETS`
 to run the same check against a real generator root.
 
 An export renders every target first, and publishes only once all of them have
