@@ -10,9 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/derive"
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/secretstore"
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/cred/publish"
 	"dgs-toolbox/internal/tui"
@@ -23,6 +20,9 @@ import (
 	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/scrolllist"
 	"dgs-toolbox/internal/tui/text"
+	"github.com/d0u9/rhumb/derive"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/secretstore"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

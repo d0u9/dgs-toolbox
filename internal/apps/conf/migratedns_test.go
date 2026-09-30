@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"dgs-toolbox/internal/conf/inventory"
+	"github.com/d0u9/rhumb/inventory"
 )
 
 func TestMigrationDNSReviewNamesProxyIngressWithoutClaimingBackendIsDNSTarget(t *testing.T) {

@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/secretstore"
-	"dgs-toolbox/internal/conf/target"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/secretstore"
+	"github.com/d0u9/rhumb/target"
 )
 
 // compareMigrationTargets uses the export renderer on each side. A failed

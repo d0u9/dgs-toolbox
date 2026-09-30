@@ -1,9 +1,9 @@
 package conf
 
 import (
-	"dgs-toolbox/internal/conf/confgen"
-	"dgs-toolbox/internal/conf/derive"
-	"dgs-toolbox/internal/conf/inventory"
+	"github.com/d0u9/rhumb/confgen"
+	"github.com/d0u9/rhumb/derive"
+	"github.com/d0u9/rhumb/inventory"
 )
 
 // loaded is the bootstrap every dgs conf command starts from: the inventory,

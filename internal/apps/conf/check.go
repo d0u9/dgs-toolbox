@@ -8,11 +8,11 @@ import (
 	"io"
 	"time"
 
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/secretstore"
-	"dgs-toolbox/internal/conf/target"
-	"dgs-toolbox/internal/conf/validate"
 	"dgs-toolbox/internal/config"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/secretstore"
+	"github.com/d0u9/rhumb/target"
+	"github.com/d0u9/rhumb/validate"
 )
 
 // ErrProblems is returned when the report found something. The report itself

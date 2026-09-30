@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"dgs-toolbox/internal/conf/secretstore"
 	"dgs-toolbox/internal/tui/scrolllist"
+	"github.com/d0u9/rhumb/secretstore"
 )
 
 // secretState is what one credential path is, comparing what the inventory

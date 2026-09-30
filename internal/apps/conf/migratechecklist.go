@@ -9,8 +9,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/target"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/target"
 )
 
 // The two kinds of move a node migration is. The inventory cannot tell them

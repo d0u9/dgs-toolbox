@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"dgs-toolbox/internal/conf/inventory"
+	"github.com/d0u9/rhumb/inventory"
 	"gopkg.in/yaml.v3"
 )
 

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"dgs-toolbox/internal/conf/secretstore"
 	"dgs-toolbox/internal/config"
+	"github.com/d0u9/rhumb/secretstore"
 )
 
 func checkConfig(root, secrets string) config.Config {

@@ -3,9 +3,9 @@ package conf
 import (
 	"sort"
 
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/target"
 	"dgs-toolbox/internal/tui/text"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/target"
 )
 
 // instanceNode is one instance under a node or an unmanaged user.

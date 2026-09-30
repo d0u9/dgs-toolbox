@@ -9,9 +9,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"dgs-toolbox/internal/conf/confgen"
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/render"
+	"github.com/d0u9/rhumb/confgen"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/render"
 )
 
 // ManifestFile is the name of the file every node instance's export carries

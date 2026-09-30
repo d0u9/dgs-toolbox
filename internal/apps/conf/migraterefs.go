@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/inventory"
+	"github.com/d0u9/rhumb/inventory"
 )
 
 // reportServiceReferences finds literal old facts in authored service and

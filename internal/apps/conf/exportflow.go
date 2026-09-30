@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/target"
 	"dgs-toolbox/internal/tui/clipboard"
 	tuiconfirm "dgs-toolbox/internal/tui/confirm"
 	"dgs-toolbox/internal/tui/fileexplorer"
@@ -20,6 +19,7 @@ import (
 	"dgs-toolbox/internal/tui/scrolllist"
 	"dgs-toolbox/internal/tui/text"
 	"dgs-toolbox/internal/tui/tristate"
+	"github.com/d0u9/rhumb/target"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

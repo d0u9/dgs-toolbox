@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dgs-toolbox/internal/conf/inventory"
 	"dgs-toolbox/internal/cred/publish"
+	"github.com/d0u9/rhumb/inventory"
 )
 
 // exportFile is one target's rendered bytes, at the path they belong under
