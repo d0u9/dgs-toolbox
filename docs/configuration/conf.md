@@ -23,4 +23,4 @@ home directory, `$NAME` and `${NAME}` are environment variables, and the
 result must be absolute.
 
 What `dgs conf export` does with these is in
-[`apps/conf/export.md`](../apps/conf/export.md).
+[`apps/conf/export.md`](https://github.com/d0u9/rhumb/blob/master/docs/export.md).

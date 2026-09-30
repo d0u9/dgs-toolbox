@@ -15,7 +15,7 @@ func New() tui.App {
 		Description: "Configuration generation",
 		// One command, so `dgs conf` opens it rather than a picker holding a
 		// single entry. Exporting is `dgs conf export` on the command line
-		// and x inside the page; see docs/apps/conf/export.md.
+		// and x inside the page; see rhumb docs/export.md.
 		Direct: true,
 		Reports: []tui.Report{{
 			Flag:        "check",

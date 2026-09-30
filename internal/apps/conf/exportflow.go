@@ -2,7 +2,7 @@
 // on the inspect page, and the form, confirmation and write that follow `x`.
 // The rendering and writing are export.go's, shared with `dgs conf export`;
 // only how the instances are chosen differs. See
-// docs/apps/conf/export.md#the-page.
+// rhumb docs/export.md#the-page.
 package conf
 
 import (

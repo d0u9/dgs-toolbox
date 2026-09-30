@@ -65,7 +65,7 @@ type InspectModel struct {
 
 	// nodeRowInstances and userRowInstances run beside nodeItems and
 	// userItems: the instances each row stands for, which is what marking
-	// that row marks. See docs/apps/conf/export.md#the-page.
+	// that row marks. See rhumb docs/export.md#the-page.
 	nodeRowInstances [][]string
 	userRowInstances [][]string
 	// marked is the instances marked for export, by name. It is one set for
@@ -1106,7 +1106,7 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	// What delivers the process, written only when it is not a host one.
 	// It is here for the same reason the graph badges it: it says how to
 	// read the bind under it — see
-	// docs/apps/conf/inventory.md#what-runs-the-process.
+	// rhumb docs/inventory.md#what-runs-the-process.
 	runtime := ""
 	if inst.Containerised() {
 		runtime = inst.RuntimeOr()
@@ -1120,7 +1120,7 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	line(&b, field("ports", strings.Join(portParts, fieldSeparator)))
 
 	// The service's own parameters, opaque to dgs — see
-	// docs/apps/conf/inventory.md#an-instances-own-values. They are printed
+	// rhumb docs/inventory.md#an-instances-own-values. They are printed
 	// as written, since naming a key without its value says nothing a
 	// reader could not get from the node file.
 	var valueParts []string
@@ -1173,7 +1173,7 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 
 	// Every secret this instance holds, by path and never by value: one per
 	// principal on a per-principal port, plus the role's own list. The paths
-	// are the real ones docs/apps/conf/inventory.md#secrets derives, so a
+	// are the real ones rhumb docs/inventory.md#secrets derives, so a
 	// reader can go straight to the file.
 	r := l.Manifests[service]
 	var secretRows [][]string
@@ -1217,7 +1217,7 @@ func renderUserDetail(l InspectData, id string) (string, error) {
 	var b strings.Builder
 
 	// The username is what the services see, and defaults to the user's own
-	// identifier — see docs/apps/conf/inventory.md#users. Printing it when
+	// identifier — see rhumb docs/inventory.md#users. Printing it when
 	// the two are equal says nothing; printing it when they differ is the
 	// whole point of the field.
 	username := ""
@@ -1307,7 +1307,7 @@ func renderUserDetail(l InspectData, id string) (string, error) {
 // anything. A route whose entry role declares no reached_by renders no client
 // file, and the person still holds a credential for it: listing only the
 // instances that exist would make the two cases look like one route missing.
-// See docs/apps/conf/inventory.md#what-is-derived.
+// See rhumb docs/inventory.md#what-is-derived.
 func userInstanceRows(l InspectData, user, node string, access []string) [][]string {
 	var rows [][]string
 	for _, route := range access {

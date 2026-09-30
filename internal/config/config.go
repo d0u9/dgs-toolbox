@@ -195,7 +195,7 @@ const (
 
 // Conf configures dgs conf export: where the generator root and its secrets
 // are, and where the destination form opens. See
-// docs/apps/conf/export.md#configuration.
+// rhumb docs/export.md#configuration.
 type Conf struct {
 	// Root is the directory holding one subdirectory per service. Empty means
 	// the page opens with no root and asks for one.
