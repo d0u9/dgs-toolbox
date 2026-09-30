@@ -444,6 +444,11 @@ tri-state behaviour the recipient checklist in
   `[ ]` when all, some or none of its instances are marked.
 - `a` marks every instance on the tab, or clears every mark when the tab is
   already fully marked.
+- An instance is one process. A device profile that runs a program is one
+  instance, named by the profile, and the routes it takes hang under it as
+  its own rows. Unmarking some of them exports the program with only the
+  routes left marked — this once; the profile's `access` is what narrows it
+  for good.
 
 ```text
 ▾ [-] u-node-group-10-01

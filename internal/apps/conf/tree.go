@@ -19,6 +19,26 @@ type instanceNode struct {
 	label  string
 	detail string // "service / role"
 	broken string
+	// routes are the routes of a device profile that runs a program: one
+	// process over all of them, each a sub-item of it that can be left out
+	// of one export. Empty for every other instance, which is marked whole.
+	routes []string
+}
+
+// routeSep joins an instance and one of its routes into the key a route
+// row is marked under. No instance or route name holds it.
+const routeSep = "#"
+
+// units is what marking inst marks: the instance, or each of its routes.
+func (inst *instanceNode) units() []string {
+	if len(inst.routes) == 0 {
+		return []string{inst.name}
+	}
+	out := make([]string, len(inst.routes))
+	for i, r := range inst.routes {
+		out[i] = inst.name + routeSep + r
+	}
+	return out
 }
 
 // nodeGroup is one top-level tree entry: a node, or an unmanaged user
@@ -160,7 +180,14 @@ func buildTree(targets []target.Target) []*nodeGroup {
 			// person says the way it was written, which is what tells two
 			// of them for one route apart.
 			label, detail := inventory.LocalName(t.Instance), t.Service
-			if t.Export != "" {
+			var routes []string
+			if t.Export == "" && t.Profile != "" {
+				// A device profile that runs a program: one process, named
+				// by its profile, whose routes hang under it.
+				label = t.Profile
+				detail = "runs " + t.Service + " · " + plural(len(t.Routes), "route")
+				routes = t.Routes
+			} else if t.Export != "" {
 				detail = t.Service + " " + t.Export
 				if len(t.Routes) == 1 {
 					label = t.Routes[0]
@@ -171,6 +198,7 @@ func buildTree(targets []target.Target) []*nodeGroup {
 				label:  label,
 				detail: detail,
 				broken: t.Broken,
+				routes: routes,
 			})
 		}
 		nodes = append(nodes, n)

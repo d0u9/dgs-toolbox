@@ -7,6 +7,7 @@ package conf
 import (
 	"fmt"
 	"github.com/d0u9/rhumb/engine"
+	"slices"
 	"sort"
 	"strings"
 
@@ -192,9 +193,11 @@ func buildServiceGroups(l InspectData) []*serviceGroup {
 
 	clients := map[string]int{} // instance ID -> client files reaching it
 	for _, ci := range l.Derived.ExportInstances {
-		if r, ok := l.Inv.Routes[ci.Route]; ok && len(r.Hops) > 0 {
-			if hop, err := derive.ParseHop(r.Hops[0]); err == nil {
-				clients[hop.Instance]++
+		for _, route := range ci.Routes {
+			if r, ok := l.Inv.Routes[route]; ok && len(r.Hops) > 0 {
+				if hop, err := derive.ParseHop(r.Hops[0]); err == nil {
+					clients[hop.Instance]++
+				}
 			}
 		}
 	}
@@ -548,7 +551,7 @@ func instancesOf(nodes []*nodeGroup) []string {
 	var out []string
 	for _, n := range nodes {
 		for _, inst := range n.instances {
-			out = append(out, inst.name)
+			out = append(out, inst.units()...)
 		}
 	}
 	return out
@@ -644,7 +647,25 @@ func treeRows(nodes []*nodeGroup, indent, unit string) ([]scrolllist.Item, [][]s
 				Label:  indent + "  " + branch + inst.label,
 				Detail: d,
 			})
-			rows = append(rows, []string{inst.name})
+			rows = append(rows, inst.units())
+			// A program's routes are what it is made of: marked one by
+			// one, they narrow the export to those routes.
+			rail := "│  "
+			if i == len(n.instances)-1 {
+				rail = "   "
+			}
+			for j, route := range inst.routes {
+				b := branchMid
+				if j == len(inst.routes)-1 {
+					b = branchLast
+				}
+				items = append(items, scrolllist.Item{
+					ID:     "route:" + inst.name + routeSep + route,
+					Label:  indent + "  " + rail + b + route,
+					Detail: "route",
+				})
+				rows = append(rows, []string{inst.name + routeSep + route})
+			}
 		}
 	}
 	return items, rows
@@ -1143,7 +1164,7 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 		if ci.ID == id {
 			// A derived client enters a route rather than being a hop of
 			// one, so the scan above never finds it.
-			derivedFor = ci.Route
+			derivedFor = strings.Join(ci.Routes, ", ")
 		}
 	}
 
@@ -1314,7 +1335,7 @@ func userInstanceRows(l InspectData, user, node string, access []string) [][]str
 		var found *derive.ExportInstance
 		for i := range l.Derived.ExportInstances {
 			ci := &l.Derived.ExportInstances[i]
-			if ci.Route != route {
+			if !slices.Contains(ci.Routes, route) {
 				continue
 			}
 			if (user != "" && ci.User == user) || (node != "" && ci.Node == node) {
@@ -1471,9 +1492,11 @@ func filesOf(l InspectData, service string) int {
 	n := 0
 	for _, inst := range instancesOfService(l, service) {
 		for _, ci := range l.Derived.ExportInstances {
-			if r, ok := l.Inv.Routes[ci.Route]; ok && len(r.Hops) > 0 {
-				if hop, err := derive.ParseHop(r.Hops[0]); err == nil && hop.Instance == inst {
-					n++
+			for _, route := range ci.Routes {
+				if r, ok := l.Inv.Routes[route]; ok && len(r.Hops) > 0 {
+					if hop, err := derive.ParseHop(r.Hops[0]); err == nil && hop.Instance == inst {
+						n++
+					}
 				}
 			}
 		}

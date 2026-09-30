@@ -178,7 +178,7 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 				}
 			}
 			if ci, isClient := clientOf[sh.Instance]; isClient {
-				label = ci.Route
+				label = strings.Join(ci.Routes, ", ")
 				if box == "" {
 					// A person with no node file has no device box, so
 					// the box is the credential this file authenticates
