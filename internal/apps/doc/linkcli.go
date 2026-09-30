@@ -80,6 +80,9 @@ func linkAction(_ io.Reader, out io.Writer, args []string, flags map[string]stri
 	for _, t := range templates {
 		byType[t.Type] = t
 	}
+	// Written or partly written, the tree has changed: a page's cache of it
+	// looks again.
+	defer tree.WriteChangeMark(root)
 	for i, p := range proposals {
 		it := byID[p.Item]
 		fields := it.FieldsAt(it.Current())

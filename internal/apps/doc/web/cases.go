@@ -28,7 +28,7 @@ func (s server) caseList(w http.ResponseWriter, _ *http.Request) {
 	if err != nil {
 		out.Error = err.Error()
 	}
-	items, _ := tree.LoadItems(s.root)
+	items, _ := s.items.Items()
 	for _, c := range all {
 		_, missing := c.Items(items)
 		if missing == nil {
@@ -87,7 +87,7 @@ func (s server) caseChange(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -139,7 +139,7 @@ func (s server) answerCase(w http.ResponseWriter, c cases.Case, err error) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	items, _ := tree.LoadItems(s.root)
+	items, _ := s.items.Items()
 	_, missing := c.Items(items)
 	if missing == nil {
 		missing = []string{}
@@ -164,7 +164,7 @@ func (s server) casePlan(ctx context.Context, request caseExportRequest) (export
 	if err != nil {
 		return out, nil, http.StatusNotFound, err
 	}
-	all, err := tree.LoadItems(s.root)
+	all, err := s.items.Items()
 	if err != nil {
 		return out, nil, http.StatusConflict, err
 	}

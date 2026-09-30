@@ -402,6 +402,18 @@ export function frame(state) {
     };
     $("root").before(pick);
   }
+  // The page answers from a cache of the tree that dgs's own writes keep
+  // up to date; a sidecar edited by hand needs a Reload to be seen.
+  if (state.tree !== false && !$("tree-reload")) {
+    const reload = el("button", { id: "tree-reload", type: "button", className: "button tree-reload",
+      title: "Read every sidecar again, for one edited outside dgs" }, "Reload");
+    reload.onclick = async () => {
+      reload.disabled = true;
+      try { await post("/api/items/reload", {}); location.reload(); }
+      catch (error) { statusBar.showError(error.message); reload.disabled = false; }
+    };
+    $("root").after(reload);
+  }
   $("banner").hidden = state.tree !== false;
   $("error").hidden = !state.error;
   $("error").textContent = state.error || "";

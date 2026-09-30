@@ -97,7 +97,7 @@ func (s server) outlineGroup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return

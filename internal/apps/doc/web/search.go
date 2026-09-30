@@ -21,7 +21,7 @@ type searchJSON struct {
 // texts is the cached text of every Item's current PDF, and the Items that
 // have none yet. Only what the cache holds is used: nothing is read here.
 func (s server) texts() ([]search.Doc, []tree.Item, error) {
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		return nil, nil, err
 	}
