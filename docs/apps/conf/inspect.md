@@ -499,8 +499,9 @@ first three, so what is about to be exported is on screen while choosing how.
   may be changed before confirmation; `.zip` is added when omitted. It must be
   a file name, not a path. The confirmation shows the final archive path.
 - **Download.** Shown only for Bundle: when a bundle's release is fetched.
-  At export (the default) puts the program in the bundle; On the machine
-  leaves it to `./ctl install`, which needs the machine online. It matters
+  On the machine (the default) leaves it to `./ctl install`, which needs the
+  machine online and keeps the bundle small; At export puts the program in
+  the bundle, for a machine that cannot reach the release. It matters
   only to a service whose program is a release.
 - **Replace files already there.** Off by default. When it is off and a file
   would be replaced, the form says so and does not go on. This matches the
