@@ -220,7 +220,7 @@ function suggest() {
     const value = found[input.name] && found[input.name].value;
     if (value && (input.value === "" || input.classList.contains("suggested"))) {
       input.value = value;
-      input.dispatchEvent(new Event("change"));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
       input.classList.add("suggested");
       input.title = "Suggested from the text. Hover to highlight the source; focus this field to locate it.";
     }
