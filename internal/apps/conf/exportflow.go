@@ -8,8 +8,10 @@ package conf
 import (
 	"fmt"
 	rcli "github.com/d0u9/rhumb/cli"
+	"github.com/d0u9/rhumb/deploy"
 	"github.com/d0u9/rhumb/engine"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -38,6 +40,10 @@ const (
 	formatShow   = "Show"
 	formatFolder = "Folder"
 	formatZip    = "Zip"
+	// formatBundle writes, per instance, what `rhumb deploy build` makes of
+	// its export: the files, compose.yaml and a ctl, ready to copy to the
+	// machine and install. The export itself is only a step on the way.
+	formatBundle = "Bundle"
 
 	// defaultZipName is the archive written when the destination names a
 	// directory rather than a .zip file.
@@ -81,7 +87,10 @@ type exportFlow struct {
 	err error
 	// Fixed once the form is accepted, so the confirmation asks about the
 	// write that is carried out.
-	zip       bool
+	zip    bool
+	bundle bool
+	// bundles are the export directories a Bundle builds, one per instance.
+	bundles   []string
 	where     string
 	overwrite bool
 
@@ -112,6 +121,8 @@ type exportCopiedMsg struct {
 // exportDoneMsg reports the write, successful or not.
 type exportDoneMsg struct {
 	files int
+	// noun is what files counts, "file" when empty.
+	noun  string
 	where string
 	err   error
 }
@@ -244,9 +255,9 @@ func (m *InspectModel) startExport() {
 	}
 	m.notice = ""
 	owner := m.singleOwner(instances)
-	formats, format := []string{formatFolder, formatZip}, formatFolder
+	formats, format := []string{formatFolder, formatZip, formatBundle}, formatFolder
 	if owner != "" {
-		formats, format = []string{formatShow, formatFolder, formatZip}, formatShow
+		formats, format = []string{formatShow, formatFolder, formatZip, formatBundle}, formatShow
 	}
 	m.export = &exportFlow{
 		stage:     exportForm,
@@ -457,6 +468,7 @@ func (m *InspectModel) planExport() {
 		return
 	}
 	flow.zip = flow.form.Value(fieldFormat) == formatZip
+	flow.bundle = flow.form.Value(fieldFormat) == formatBundle
 	flow.overwrite = flow.form.Checked(fieldOverwrite)
 	flow.where = expandHome(dest)
 	if flow.zip {
@@ -471,6 +483,10 @@ func (m *InspectModel) planExport() {
 	files, err := m.renderer().RenderAll(flow.instances)
 	if err != nil {
 		flow.err = err
+		return
+	}
+	if flow.bundle {
+		m.planBundles(files)
 		return
 	}
 	var existing []string
@@ -495,6 +511,88 @@ func (m *InspectModel) planExport() {
 		CancelLabel:  "Back",
 	})
 	flow.stage = exportConfirm
+}
+
+// planBundles moves on to the confirmation naming each bundle: one per
+// instance whose export has a manifest, at the same relative path an export
+// would write it.
+func (m *InspectModel) planBundles(files []engine.File) {
+	flow := m.export
+	flow.bundles = bundleDirs(files)
+	if len(flow.bundles) == 0 {
+		flow.err = fmt.Errorf("no instance here has a manifest to build a bundle from")
+		return
+	}
+	var existing []string
+	for _, dir := range flow.bundles {
+		if _, err := os.Lstat(filepath.Join(flow.where, dir)); err == nil {
+			existing = append(existing, dir)
+		}
+	}
+	if len(existing) > 0 && !flow.overwrite {
+		flow.err = fmt.Errorf("%s already %s; tick Replace to rebuild %s",
+			plural(len(existing), "bundle"), rcli.Exists(len(existing)), rcli.Them(len(existing)))
+		return
+	}
+	var lines []string
+	replacing := map[string]bool{}
+	for _, dir := range existing {
+		replacing[dir] = true
+	}
+	for i, dir := range flow.bundles {
+		if i == planRows {
+			lines = append(lines, fmt.Sprintf("… and %d more", len(flow.bundles)-planRows))
+			break
+		}
+		suffix := ""
+		if replacing[dir] {
+			suffix = "  (rebuilds)"
+		}
+		lines = append(lines, dir+"/"+suffix)
+	}
+	flow.dialog = tuiconfirm.New(tuiconfirm.Config{
+		Title:   "EXPORT",
+		Message: fmt.Sprintf("Build %s in %s?", plural(len(flow.bundles), "bundle"), flow.where),
+		Detail: strings.Join(lines, "\n") +
+			"\n\nEach holds ctl, compose.yaml and the files, plaintext, with every credential in them." +
+			"\nCopy one to its machine and run ./ctl install there.",
+		ConfirmLabel: "Build",
+		CancelLabel:  "Back",
+	})
+	flow.stage = exportConfirm
+}
+
+// bundleDirs is the export directory of every instance the files hold a
+// manifest for.
+func bundleDirs(files []engine.File) []string {
+	var dirs []string
+	for _, f := range files {
+		if path.Base(f.Path) == deploy.ManifestFile {
+			dirs = append(dirs, path.Dir(f.Path))
+		}
+	}
+	sort.Strings(dirs)
+	return dirs
+}
+
+// writeBundles exports the instances into a private temporary directory and
+// builds each bundle from there. The temporary export holds every credential
+// in plaintext, so it is removed whatever happens.
+func writeBundles(r engine.Renderer, instances, dirs []string, where string) error {
+	tmp, err := os.MkdirTemp("", "dgs-conf-bundle-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	if err := rcli.ExportFolder(r, instances, tmp, false); err != nil {
+		return err
+	}
+	for _, dir := range dirs {
+		if err := deploy.Build(filepath.Join(tmp, dir), filepath.Join(where, dir), deploy.Options{}); err != nil {
+			return fmt.Errorf("%s: %w", dir, err)
+		}
+	}
+	return nil
 }
 
 // brokenIn refuses a selection holding a target that cannot be rendered,
@@ -581,6 +679,10 @@ func (m InspectModel) runExport(flow exportFlow) tea.Cmd {
 	r := m.renderer()
 	return func() tea.Msg {
 		var err error
+		if flow.bundle {
+			err = writeBundles(r, flow.instances, flow.bundles, flow.where)
+			return exportDoneMsg{files: len(flow.bundles), noun: "bundle", where: flow.where, err: err}
+		}
 		if flow.zip {
 			err = rcli.ExportZip(r, flow.instances, flow.where, flow.overwrite)
 		} else {
@@ -602,7 +704,11 @@ func (m *InspectModel) finishExport(msg exportDoneMsg) {
 	}
 	m.export = nil
 	m.marked = map[string]bool{}
-	m.notice = fmt.Sprintf("exported %s to %s", plural(msg.files, "file"), msg.where)
+	noun := msg.noun
+	if noun == "" {
+		noun = "file"
+	}
+	m.notice = fmt.Sprintf("exported %s to %s", plural(msg.files, noun), msg.where)
 	m.refresh()
 }
 
@@ -629,6 +735,8 @@ func (m InspectModel) exportView() string {
 		lines = append(lines, mutedStyle.Render("writing…"))
 	case flow.err != nil:
 		lines = append(lines, brokenStyle.Render(flow.err.Error()))
+	case flow.form.Value(fieldFormat) == formatBundle:
+		lines = append(lines, mutedStyle.Render("Bundle builds, per instance, what ./ctl install deploys on its machine"))
 	case flow.form.Value(fieldFormat) == formatShow:
 		lines = append(lines, mutedStyle.Render("Show puts "+flow.owner+"'s files on screen to read or copy; nothing is written"))
 	default:

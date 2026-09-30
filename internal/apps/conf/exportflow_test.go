@@ -392,3 +392,39 @@ func TestInspectExport_PickerFrameFitsNarrowTerminal(t *testing.T) {
 		t.Fatal("picker bottom border was clipped")
 	}
 }
+
+// Bundle plans one bundle per instance with a manifest, at the path its export
+// would take, and says what to do with it.
+func TestInspectExport_BundlePlan(t *testing.T) {
+	dest := t.TempDir()
+	m := newInspectModel(buildExportableRoot(t))
+	m.list.SelectID("node:srv")
+	m = pressInspect(t, m, " ")
+	m = pressInspect(t, m, "x")
+	m.export.form.SetValue(fieldFormat, formatBundle)
+	m.export.form.SetValue(fieldDest, dest)
+	m = pressInspect(t, m, "n")
+	if m.export.stage != exportConfirm {
+		t.Fatalf("n did not reach the confirmation: %v", m.export.err)
+	}
+	if got := m.export.bundles; len(got) != 1 || got[0] != "srv/hysteria2/u-node-group-10" {
+		t.Fatalf("bundles = %v", got)
+	}
+
+	os.MkdirAll(filepath.Join(dest, "srv", "hysteria2", "u-node-group-10"), 0o700)
+	m.export.stage = exportForm
+	m = pressInspect(t, m, "n")
+	if m.export.err == nil || !strings.Contains(m.export.err.Error(), "tick Replace") {
+		t.Fatalf("an existing bundle was not refused: %v", m.export.err)
+	}
+}
+
+func TestBundleDirs(t *testing.T) {
+	files := []engine.File{
+		{Path: "b/s/i2/" + engine.ManifestFile}, {Path: "b/s/i2/a.conf"},
+		{Path: "a/s/i1/" + engine.ManifestFile}, {Path: "u/alex/app/x"},
+	}
+	if got := bundleDirs(files); strings.Join(got, ",") != "a/s/i1,b/s/i2" {
+		t.Fatalf("bundleDirs = %v", got)
+	}
+}

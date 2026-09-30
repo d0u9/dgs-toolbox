@@ -490,7 +490,8 @@ exporting a single thing needs no marking.
 The steps are the shared ones: a form, then the confirmation dialog, then the
 result in the status bar.
 
-- **Format.** Folder or Zip, and Show when every file is for one person.
+- **Format.** Folder, Zip or Bundle, and Show when every file is for one
+  person.
 - **Destination.** A directory chosen with the File Explorer: `Enter` on the
   row opens it, starting at `conf.export.dir`.
 - **ZIP file name.** Shown only for Zip, initially `conf-export.zip`. The name
@@ -503,6 +504,21 @@ result in the status bar.
 `n` renders every target before anything is written. The confirmation then
 lists each file and marks those it `(overwrites)`, the same plan the command
 line prints. A successful export clears the marks.
+
+### Deployment bundles
+
+Bundle writes, for each instance with a manifest, what `rhumb deploy build`
+makes of its export: `ctl`, `compose.yaml`, `files/` and the manifest, at the
+path the export itself would take under the destination. Copying one to its
+machine and running `./ctl install` there deploys it; no `rhumb` is needed
+beside `dgs`.
+
+The export the bundles are built from goes to a private temporary directory and
+is removed afterwards, whether the build succeeded or not: it is every
+credential in plaintext. The confirmation lists each bundle and marks those it
+`(rebuilds)`; with Replace off, an existing one stops the form, as a file does
+for Folder. A bundle directory holding another instance's bundle is never
+replaced.
 
 ### Showing one person's files
 
