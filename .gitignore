@@ -33,3 +33,5 @@ cpu.out
 mem.out
 trace.out
 testdata
+go.work
+go.work.sum
