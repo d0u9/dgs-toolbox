@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"io"
 	"path/filepath"
 	"sort"
@@ -30,7 +31,7 @@ func migrateAction(in io.Reader, out io.Writer, args []string, flags map[string]
 
 // migrateActionSnapshot lets the TUI inspect the same validated before/after
 // inventory used by the report. Returning true stops before report rendering.
-func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config, snapshot func(before, after loaded) bool) error {
+func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config, snapshot func(before, after engine.Loaded) bool) error {
 	if len(args) != 1 || args[0] != "node" {
 		return fmt.Errorf("usage: dgs conf migrate node [--node from=<old>,to=<new> --network ... --instance ... --route ... --published ...]")
 	}
@@ -65,21 +66,21 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 		return fmt.Errorf("give a new node ID, network name, or address")
 	}
 
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		return err
 	}
-	if broken := brokenFiles(l.inv); len(broken) != 0 {
+	if broken := brokenFiles(l.Inv); len(broken) != 0 {
 		return fmt.Errorf("current inventory is broken:\n  %s", strings.Join(broken, "\n  "))
 	}
-	if issues := validate.Validate(l.inv, l.manifests, l.exports, l.derived, nil); len(issues) != 0 {
+	if issues := validate.Validate(l.Inv, l.Manifests, l.Exports, l.Derived, nil); len(issues) != 0 {
 		return fmt.Errorf("current inventory has %d validation problems; run dgs conf --check first: %s", len(issues), issues[0].Message)
 	}
 
 	// Copy the containers that can change. No change to this preview can
 	// reach the loaded snapshot, which is the source for the before/after diff.
-	inv := *l.inv
-	inv.Nodes = append([]inventory.Node(nil), l.inv.Nodes...)
+	inv := *l.Inv
+	inv.Nodes = append([]inventory.Node(nil), l.Inv.Nodes...)
 	index := -1
 	for i := range inv.Nodes {
 		if inv.Nodes[i].ID == oldID {
@@ -100,7 +101,7 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 			return fmt.Errorf("node %q has no address on network %q", oldID, change.From)
 		}
 		if change.From != change.To {
-			for _, name := range l.inv.Networks {
+			for _, name := range l.Inv.Networks {
 				if name == change.To {
 					return fmt.Errorf("network %q already exists", change.To)
 				}
@@ -160,15 +161,15 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 		return err
 	}
 
-	after, err := derive.Derive(&inv, l.manifests)
+	after, err := derive.Derive(&inv, l.Manifests)
 	if err != nil {
 		return fmt.Errorf("target inventory cannot derive routes: %w", err)
 	}
-	if issues := validate.Validate(&inv, l.manifests, l.exports, after, nil); len(issues) != 0 {
+	if issues := validate.Validate(&inv, l.Manifests, l.Exports, after, nil); len(issues) != 0 {
 		return fmt.Errorf("target inventory has %d validation problems: %s", len(issues), issues[0].Message)
 	}
 	newLoaded := l
-	newLoaded.inv, newLoaded.derived = &inv, after
+	newLoaded.Inv, newLoaded.Derived = &inv, after
 	if snapshot != nil && snapshot(l, newLoaded) {
 		return nil
 	}
@@ -205,7 +206,7 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 	// The edge key denotes the same route connection across a node rename.
 	// A derived client ID starts with its node ID, so normalize that prefix.
 	oldEdges := map[string]derive.Edge{}
-	for _, edge := range l.derived.Edges {
+	for _, edge := range l.Derived.Edges {
 		oldEdges[edgeKey(edge, oldID, newID)] = edge
 	}
 	newEdges := map[string]derive.Edge{}

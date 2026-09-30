@@ -3,6 +3,7 @@ package conf
 import (
 	"bytes"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -558,21 +559,21 @@ func (m *migrationYAML) patchUsers(old, next *inventory.Root) error {
 	return nil
 }
 
-func buildMigrationEdits(root string, before, after loaded, networks []networkChange, routes []routeChange) ([]migrationEdit, error) {
+func buildMigrationEdits(root string, before, after engine.Loaded, networks []networkChange, routes []routeChange) ([]migrationEdit, error) {
 	m := migrationYAML{root: root, files: map[string]*migrationYAMLFile{}}
-	if err := m.patchNodes(before.inv, after.inv, networks); err != nil {
+	if err := m.patchNodes(before.Inv, after.Inv, networks); err != nil {
 		return nil, err
 	}
-	if err := m.patchNetworks(before.inv, after.inv); err != nil {
+	if err := m.patchNetworks(before.Inv, after.Inv); err != nil {
 		return nil, err
 	}
-	if err := m.patchHosts(before.inv, after.inv); err != nil {
+	if err := m.patchHosts(before.Inv, after.Inv); err != nil {
 		return nil, err
 	}
-	if err := m.patchRoutes(before.inv, after.inv, routes); err != nil {
+	if err := m.patchRoutes(before.Inv, after.Inv, routes); err != nil {
 		return nil, err
 	}
-	if err := m.patchUsers(before.inv, after.inv); err != nil {
+	if err := m.patchUsers(before.Inv, after.Inv); err != nil {
 		return nil, err
 	}
 	var edits []migrationEdit
@@ -591,9 +592,9 @@ func buildMigrationEdits(root string, before, after loaded, networks []networkCh
 	}
 	// A node whose file is named after it moves with a rename.
 	afterPath := map[string]string{}
-	for i, n := range before.inv.Nodes {
-		if i < len(after.inv.Nodes) && after.inv.Nodes[i].Path != n.Path {
-			afterPath[n.Path] = after.inv.Nodes[i].Path
+	for i, n := range before.Inv.Nodes {
+		if i < len(after.Inv.Nodes) && after.Inv.Nodes[i].Path != n.Path {
+			afterPath[n.Path] = after.Inv.Nodes[i].Path
 		}
 	}
 	for from, to := range afterPath {

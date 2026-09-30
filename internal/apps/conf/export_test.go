@@ -2,6 +2,7 @@ package conf
 
 import (
 	"archive/zip"
+	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
 	"sort"
@@ -79,7 +80,7 @@ func TestExportFolder_WritesUnderEachNodeAndUnmanagedUserDirectory(t *testing.T)
 	root, secretsDir := buildExportableRoot(t)
 	r, instances := exportAll(t, root, secretsDir)
 	dest := t.TempDir()
-	if err := r.ExportFolder(instances, dest, false); err != nil {
+	if err := ExportFolder(r, instances, dest, false); err != nil {
 		t.Fatalf("ExportFolder: %v", err)
 	}
 
@@ -112,7 +113,7 @@ func TestExportFolder_RenderFailureWritesNothing(t *testing.T) {
 		"{{ required .nonexistent \"required field\" }}")
 	r, instances := exportAll(t, root, secretsDir)
 	dest := t.TempDir()
-	if err := r.ExportFolder(instances, dest, false); err == nil {
+	if err := ExportFolder(r, instances, dest, false); err == nil {
 		t.Fatal("ExportFolder: want an error, the template is broken")
 	}
 
@@ -127,10 +128,10 @@ func TestExportFolder_RefusesAnExistingFile(t *testing.T) {
 	r, instances := exportAll(t, root, secretsDir)
 
 	dest := t.TempDir()
-	if err := r.ExportFolder(instances, dest, false); err != nil {
+	if err := ExportFolder(r, instances, dest, false); err != nil {
 		t.Fatalf("ExportFolder: %v", err)
 	}
-	if err := r.ExportFolder(instances, dest, false); err == nil {
+	if err := ExportFolder(r, instances, dest, false); err == nil {
 		t.Fatal("ExportFolder: want an error exporting into a destination that already holds these files")
 	}
 }
@@ -140,7 +141,7 @@ func TestExportZip_WritesOneArchiveWithBothEntries(t *testing.T) {
 	r, instances := exportAll(t, root, secretsDir)
 
 	zipPath := filepath.Join(t.TempDir(), "export.zip")
-	if err := r.ExportZip(instances, zipPath, false); err != nil {
+	if err := ExportZip(r, instances, zipPath, false); err != nil {
 		t.Fatalf("ExportZip: %v", err)
 	}
 
@@ -171,7 +172,7 @@ func TestExportZip_RenderFailureWritesNothing(t *testing.T) {
 	r, instances := exportAll(t, root, secretsDir)
 
 	zipPath := filepath.Join(t.TempDir(), "export.zip")
-	if err := r.ExportZip(instances, zipPath, false); err == nil {
+	if err := ExportZip(r, instances, zipPath, false); err == nil {
 		t.Fatal("ExportZip: want an error, the template is broken")
 	}
 	if _, err := os.Stat(zipPath); err == nil {
@@ -182,14 +183,14 @@ func TestExportZip_RenderFailureWritesNothing(t *testing.T) {
 // exportAll loads root and returns its renderer with every instance that is
 // not broken, sorted — the export tests care about what gets exported, not
 // about how the instances were chosen.
-func exportAll(t *testing.T, root, secretsDir string) (renderer, []string) {
+func exportAll(t *testing.T, root, secretsDir string) (engine.Renderer, []string) {
 	t.Helper()
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	var instances []string
-	for _, n := range buildTree(target.List(l.inv, l.derived)) {
+	for _, n := range buildTree(target.List(l.Inv, l.Derived)) {
 		for _, inst := range n.instances {
 			if inst.broken == "" {
 				instances = append(instances, inst.name)
@@ -197,16 +198,16 @@ func exportAll(t *testing.T, root, secretsDir string) (renderer, []string) {
 		}
 	}
 	sort.Strings(instances)
-	return renderer{l: l, rootPath: root, secretsDir: secretsDir}, instances
+	return engine.Renderer{Data: l, RootPath: root, SecretsDir: secretsDir}, instances
 }
 
 func TestIndentJSON(t *testing.T) {
-	got := string(indentJSON([]byte(`{"b":1,"a":[1,2]}`)))
+	got := string(engine.IndentJSON([]byte(`{"b":1,"a":[1,2]}`)))
 	want := "{\n  \"b\": 1,\n  \"a\": [\n    1,\n    2\n  ]\n}\n"
 	if got != want {
 		t.Fatalf("indentJSON = %q, want %q", got, want)
 	}
-	if got := string(indentJSON([]byte("not json"))); got != "not json" {
+	if got := string(engine.IndentJSON([]byte("not json"))); got != "not json" {
 		t.Fatalf("indentJSON(invalid) = %q, want it unchanged", got)
 	}
 }

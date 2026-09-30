@@ -2,6 +2,7 @@ package conf
 
 import (
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
 	"strings"
@@ -413,9 +414,9 @@ func TestMigrationTUIWarnsBeforeDiscardingUnsavedPlan(t *testing.T) {
 	}
 }
 
-func mustLoadMigration(t *testing.T, root string) loaded {
+func mustLoadMigration(t *testing.T, root string) engine.Loaded {
 	t.Helper()
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"github.com/d0u9/rhumb/engine"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -676,12 +677,12 @@ type rendered struct {
 // is read with.
 func renderPreviewFiles(t *testing.T, root, secretsDir, instance string) (map[string]string, error) {
 	t.Helper()
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r := renderer{l: l, rootPath: root, secretsDir: secretsDir}
-	out, err := r.renderTarget(instance)
+	r := engine.Renderer{Data: l, RootPath: root, SecretsDir: secretsDir}
+	out, err := r.RenderTarget(instance)
 	if err != nil {
 		return nil, err
 	}
@@ -695,12 +696,12 @@ func renderPreviewFiles(t *testing.T, root, secretsDir, instance string) (map[st
 // renderPreview renders one instance the way export and inspect do.
 func renderPreview(t *testing.T, root, secretsDir, instance string) rendered {
 	t.Helper()
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r := renderer{l: l, rootPath: root, secretsDir: secretsDir}
-	out, err := r.renderTarget(instance)
+	r := engine.Renderer{Data: l, RootPath: root, SecretsDir: secretsDir}
+	out, err := r.RenderTarget(instance)
 	if err != nil {
 		return rendered{err: err}
 	}

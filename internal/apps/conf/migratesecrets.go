@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,9 +22,9 @@ type migrationSecretCopy struct {
 	digest [32]byte
 }
 
-func planMigrationSecretCopies(before, after loaded, flags map[string]string, root string) ([]migrationSecretCopy, error) {
-	oldPaths := secretstore.ImpliedPaths(before.inv, before.manifests, before.derived)
-	newPaths := secretstore.ImpliedPaths(after.inv, after.manifests, after.derived)
+func planMigrationSecretCopies(before, after engine.Loaded, flags map[string]string, root string) ([]migrationSecretCopy, error) {
+	oldPaths := secretstore.ImpliedPaths(before.Inv, before.Manifests, before.Derived)
+	newPaths := secretstore.ImpliedPaths(after.Inv, after.Manifests, after.Derived)
 	oldSet, newSet := map[secretstore.Path]bool{}, map[secretstore.Path]bool{}
 	for _, path := range oldPaths {
 		oldSet[path] = true

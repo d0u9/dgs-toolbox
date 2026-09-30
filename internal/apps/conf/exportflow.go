@@ -7,6 +7,7 @@ package conf
 
 import (
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
 	"sort"
@@ -94,7 +95,7 @@ type exportFlow struct {
 
 	// files, shown and scroll are the Show stage: every rendered file, the
 	// one on screen, and how far down it is scrolled.
-	files  []exportFile
+	files  []engine.File
 	shown  int
 	scroll int
 	// copied is the outcome of the last c, shown under the file.
@@ -386,7 +387,7 @@ func (m *InspectModel) showExport() {
 		flow.err = err
 		return
 	}
-	files, err := m.renderer().renderAll(flow.instances)
+	files, err := m.renderer().RenderAll(flow.instances)
 	if err != nil {
 		flow.err = err
 		return
@@ -466,7 +467,7 @@ func (m *InspectModel) planExport() {
 		flow.where = exportDestination(flow.where, name)
 	}
 
-	files, err := m.renderer().renderAll(flow.instances)
+	files, err := m.renderer().RenderAll(flow.instances)
 	if err != nil {
 		flow.err = err
 		return
@@ -503,7 +504,7 @@ func (m InspectModel) brokenIn(instances []string) error {
 		want[instance] = true
 	}
 	var broken []string
-	for _, t := range target.List(m.l.inv, m.l.derived) {
+	for _, t := range target.List(m.l.Inv, m.l.Derived) {
 		if t.Broken != "" && want[t.Instance] {
 			broken = append(broken, fmt.Sprintf("%s: %s", t.Instance, t.Broken))
 		}
@@ -515,7 +516,7 @@ func (m InspectModel) brokenIn(instances []string) error {
 }
 
 // exportPlan lists the files an export writes, marking those it replaces.
-func exportPlan(files []exportFile, existing []string, zip bool) string {
+func exportPlan(files []engine.File, existing []string, zip bool) string {
 	replacing := map[string]bool{}
 	for _, path := range existing {
 		replacing[path] = true
@@ -570,8 +571,8 @@ func expandHome(path string) string {
 	return path
 }
 
-func (m InspectModel) renderer() renderer {
-	return renderer{l: m.l, rootPath: m.rootPath, secretsDir: m.secretsDir}
+func (m InspectModel) renderer() engine.Renderer {
+	return engine.Renderer{Data: m.l, RootPath: m.rootPath, SecretsDir: m.secretsDir}
 }
 
 // runExport writes the export the confirmation named, off the update loop.
@@ -580,9 +581,9 @@ func (m InspectModel) runExport(flow exportFlow) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if flow.zip {
-			err = r.ExportZip(flow.instances, flow.where, flow.overwrite)
+			err = ExportZip(r, flow.instances, flow.where, flow.overwrite)
 		} else {
-			err = r.ExportFolder(flow.instances, flow.where, flow.overwrite)
+			err = ExportFolder(r, flow.instances, flow.where, flow.overwrite)
 		}
 		return exportDoneMsg{files: len(flow.instances), where: flow.where, err: err}
 	}

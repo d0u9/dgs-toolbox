@@ -3,6 +3,7 @@ package conf
 import (
 	"bytes"
 	"errors"
+	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,11 +169,11 @@ func writeSecret(t *testing.T, root, rel, value string) string {
 // test starts from one that is in step.
 func writeImplied(t *testing.T, root, secrets string) error {
 	t.Helper()
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		return err
 	}
-	for _, p := range secretstore.ImpliedPaths(l.inv, l.manifests, l.derived) {
+	for _, p := range secretstore.ImpliedPaths(l.Inv, l.Manifests, l.Derived) {
 		writeSecret(t, secrets, p.String(), "value")
 	}
 	return nil

@@ -2,6 +2,7 @@ package conf
 
 import (
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"sort"
 	"strings"
 
@@ -11,7 +12,7 @@ import (
 
 // migrationDNSReview describes inventory evidence only. DNS zones and their
 // current answers are external to conf, so every record action remains a check.
-func migrationDNSReview(rep *migrationReport, before, after loaded, oldID, newID string, nodeChanged bool, instances []instanceChange) {
+func migrationDNSReview(rep *migrationReport, before, after engine.Loaded, oldID, newID string, nodeChanged bool, instances []instanceChange) {
 	// Facts are keyed by the instance's ID before the migration, so the
 	// same service compares with itself across a node or instance rename.
 	renamed := map[string]string{}
@@ -19,7 +20,7 @@ func migrationDNSReview(rep *migrationReport, before, after loaded, oldID, newID
 		renamed[change.To] = change.From
 	}
 	reverse := map[string]string{}
-	for _, node := range after.inv.Nodes {
+	for _, node := range after.Inv.Nodes {
 		if node.ID != newID {
 			continue
 		}
@@ -31,8 +32,8 @@ func migrationDNSReview(rep *migrationReport, before, after loaded, oldID, newID
 			reverse[inst.ID] = oldID + inventory.QualifiedSep + local
 		}
 	}
-	oldFacts := migrationPublishedFacts(before.inv, nil)
-	newFacts := migrationPublishedFacts(after.inv, reverse)
+	oldFacts := migrationPublishedFacts(before.Inv, nil)
+	newFacts := migrationPublishedFacts(after.Inv, reverse)
 	keys := map[string]bool{}
 	for key := range oldFacts {
 		keys[key] = true
@@ -62,8 +63,8 @@ func migrationDNSReview(rep *migrationReport, before, after loaded, oldID, newID
 			item.IngressBefore, item.IngressAfter = migrationIngressList(old.ingress), migrationIngressList(new.ingress)
 		}
 		for _, nodeID := range migrationDNSNodes(old, new, oldID, newID) {
-			oldNode := migrationNode(before.inv, nodeID, oldID, newID)
-			newNode := migrationNode(after.inv, nodeID, newID, oldID)
+			oldNode := migrationNode(before.Inv, nodeID, oldID, newID)
+			newNode := migrationNode(after.Inv, nodeID, newID, oldID)
 			label := nodeID
 			if nodeID == oldID && oldID != newID {
 				label = oldID + " → " + newID

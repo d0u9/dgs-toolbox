@@ -2,6 +2,7 @@ package conf
 
 import (
 	"bytes"
+	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,8 +90,8 @@ func TestMigrationCutoverListsSameMachineStopAndStartInstances(t *testing.T) {
 }
 
 func TestCompareExportFilesDistinguishesNestedOutputs(t *testing.T) {
-	oldFiles := []exportFile{{Path: "srv/service/instance/a/config.yaml", Bytes: []byte("old")}, {Path: "srv/service/instance/b/config.yaml", Bytes: []byte("same")}}
-	newFiles := []exportFile{{Path: "srv/service/instance/a/config.yaml", Bytes: []byte("new")}, {Path: "srv/service/instance/b/config.yaml", Bytes: []byte("same")}}
+	oldFiles := []engine.File{{Path: "srv/service/instance/a/config.yaml", Bytes: []byte("old")}, {Path: "srv/service/instance/b/config.yaml", Bytes: []byte("same")}}
+	newFiles := []engine.File{{Path: "srv/service/instance/a/config.yaml", Bytes: []byte("new")}, {Path: "srv/service/instance/b/config.yaml", Bytes: []byte("same")}}
 	changes := compareExportFiles(oldFiles, newFiles)
 	if len(changes) != 1 || changes[0] != "update srv/service/instance/a/config.yaml (content or mode changed)" {
 		t.Fatalf("changes = %v", changes)
@@ -99,8 +100,8 @@ func TestCompareExportFilesDistinguishesNestedOutputs(t *testing.T) {
 
 func TestCompareExportFilesExplainsPathOnlyChange(t *testing.T) {
 	changes := compareExportFiles(
-		[]exportFile{{Path: "a-node-group-02/samba/samba-network-4-01/smbpasswd", Bytes: []byte("same")}},
-		[]exportFile{{Path: "a-node-group-03/samba/samba-network-4-01/smbpasswd", Bytes: []byte("same")}},
+		[]engine.File{{Path: "a-node-group-02/samba/samba-network-4-01/smbpasswd", Bytes: []byte("same")}},
+		[]engine.File{{Path: "a-node-group-03/samba/samba-network-4-01/smbpasswd", Bytes: []byte("same")}},
 	)
 	if len(changes) != 1 || changes[0] != "export path a-node-group-02/samba/samba-network-4-01/smbpasswd -> a-node-group-03/samba/samba-network-4-01/smbpasswd (content unchanged)" {
 		t.Fatalf("changes = %v", changes)
@@ -217,11 +218,11 @@ func TestExplicitMigrationFlagsNeedNode(t *testing.T) {
 
 func TestMigratePreviewMarksMissingSecretsUncompared(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths := secretstore.ImpliedPaths(l.inv, l.manifests, l.derived)
+	paths := secretstore.ImpliedPaths(l.Inv, l.Manifests, l.Derived)
 	if len(paths) == 0 {
 		t.Fatal("fixture has no implied secrets")
 	}

@@ -84,7 +84,7 @@ func buildSecrets(l InspectData, dir string) secretsModel {
 		return m
 	}
 
-	implied := secretstore.ImpliedPaths(l.inv, l.manifests, l.derived)
+	implied := secretstore.ImpliedPaths(l.Inv, l.Manifests, l.Derived)
 	res, err := secretstore.Sync(dir, implied)
 	if err != nil {
 		m.loadErr = err
@@ -262,7 +262,7 @@ func renderSecretDetail(m secretsModel, l InspectData, id string) (string, error
 // docs/apps/conf/inventory.md#a-secret-several-people-hold.
 func sharedHolders(l InspectData, instance, name, key string) []string {
 	var handedBy []string
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
@@ -281,7 +281,7 @@ func sharedHolders(l InspectData, instance, name, key string) []string {
 	}
 	seen := map[string]bool{}
 	var out []string
-	for _, g := range l.derived.Grants {
+	for _, g := range l.Derived.Grants {
 		if g.Instance != instance || !on[g.Port] || seen[g.Principal.Name] {
 			continue
 		}
@@ -312,7 +312,7 @@ func (e secretEntry) detail(l InspectData) string {
 		// A node principal's ID carries its profile, and a node name may
 		// contain a hyphen of its own, so the answer comes from the grant
 		// that produced the path rather than from splitting the name.
-		for _, g := range l.derived.Grants {
+		for _, g := range l.Derived.Grants {
 			if g.Instance != e.path.Instance || g.Port != e.path.Port {
 				continue
 			}
@@ -323,7 +323,7 @@ func (e secretEntry) detail(l InspectData) string {
 			break
 		}
 		if account == "" {
-			if u, ok := l.inv.Users[e.path.Group]; ok {
+			if u, ok := l.Inv.Users[e.path.Group]; ok {
 				account = u.Account(e.path.Group, e.path.Name)
 			}
 		}
