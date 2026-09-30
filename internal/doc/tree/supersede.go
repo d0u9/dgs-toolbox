@@ -43,7 +43,7 @@ func Supersede(root, oldID, newID string, now time.Time) (Item, error) {
 	if err := ValidateSupersession(root, oldID, next.Type, next.Fields); err != nil {
 		return Item{}, err
 	}
-	items, err := LoadItems(root)
+	items, err := others(root)
 	if err != nil {
 		return Item{}, err
 	}

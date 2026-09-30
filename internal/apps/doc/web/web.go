@@ -176,6 +176,7 @@ func Handler(settings Settings) http.Handler {
 		s := shared
 		s.root, s.name = t.Root, t.Name
 		s.items = itemcache.New(t.Root, settings.CacheDir)
+		tree.UseForChecks(t.Root, s.items.Items)
 		apis[t.Name] = s.followWrites(s.api())
 	}
 	first := trees[0].Name

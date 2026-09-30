@@ -20,8 +20,13 @@ of every cache. The cache is a copy that can always be thrown away:
 - A write goes to the sidecar first. Only once the sidecar write has
   succeeded is the cache brought up to date, and only then does the page hear
   that the write succeeded — so the next question sees it.
-- Where a write checks what is on disk before it writes, it keeps reading
-  the disk. The cache speeds up questions; it does not decide a write.
+- A write from the page checks the Item against the others — a unique
+  field, a link, a PDF already kept — against the cache, once the change
+  mark has confirmed it current, so a write reads the Item's own sidecar and
+  not the tree. The Item being written is always read from its sidecar. A
+  sidecar edited by hand is not seen by those checks until Reload; `dgs doc
+  verify` always reads the sidecars. The command line's writes read the
+  sidecars.
 
 ## Where it lives
 

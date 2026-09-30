@@ -24,7 +24,7 @@ func CreateWithoutPDF(request ImportRequest) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	items, err := LoadItems(request.Root)
+	items, err := others(request.Root)
 	if err != nil {
 		return Item{}, err
 	}

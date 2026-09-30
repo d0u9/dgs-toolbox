@@ -35,19 +35,24 @@ func GetItem(root, id string) (Item, error) {
 	return *item, nil
 }
 
-// FindItem loads the tree and returns the Item with id, and every Item: for
-// a write that checks the Item against the others.
+// FindItem returns the Item with id, read from its sidecar, and every Item a
+// write to it checks against.
 func FindItem(root, id string) (Item, []Item, error) {
-	items, err := LoadItems(root)
+	item, err := GetItem(root, id)
 	if err != nil {
 		return Item{}, nil, err
 	}
-	for _, item := range items {
-		if item.ID == id {
-			return item, items, nil
+	items, err := others(root)
+	if err != nil {
+		return Item{}, nil, err
+	}
+	// The Item itself is as its sidecar says now, whatever the others' source.
+	for i := range items {
+		if items[i].ID == id {
+			items[i] = item
 		}
 	}
-	return Item{}, items, fmt.Errorf("%w: %s", ErrNoItem, id)
+	return item, items, nil
 }
 
 // holder is the Item already keeping digest, if any.
