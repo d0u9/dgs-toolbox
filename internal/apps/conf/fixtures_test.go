@@ -46,18 +46,18 @@ func buildExportableRoot(t *testing.T) (root, secretsDir string) {
 	t.Helper()
 	root, secretsDir = buildRenderableRoot(t)
 
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "confgen.yaml"), `
+	writeFile(t, filepath.Join(root, "services", "quicproxy", "confgen.yaml"), `
 template: templates/server.yaml.tmpl
 defaults: document
 output: config.yaml
 auth: per-principal
 `)
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "exports", "link", "confgen.yaml"), `
+	writeFile(t, filepath.Join(root, "services", "quicproxy", "exports", "link", "confgen.yaml"), `
 template: templates/link.tmpl
 defaults: element
 output: share.txt
 `)
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "exports", "link", "templates", "link.tmpl"),
+	writeFile(t, filepath.Join(root, "services", "quicproxy", "exports", "link", "templates", "link.tmpl"),
 		"hysteria2://{{ (upstream).address }}:{{ (upstream).port }}\n")
 	writeFile(t, filepath.Join(root, "users.yaml"), `
 users:

@@ -147,7 +147,7 @@ func TestInspectExport_Folder(t *testing.T) {
 	if m.export != nil || len(m.marked) != 0 {
 		t.Fatalf("export still open or marks kept: %+v", m.export)
 	}
-	if _, err := os.Stat(filepath.Join(dest, "srv", "hysteria2", "u-node-group-10", "config.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(dest, "srv", "quicproxy", "u-node-group-10", "config.yaml")); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(m.Status().Center, "exported") {
@@ -163,8 +163,8 @@ func TestInspectExport_ZipIntoDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	if len(r.File) != 2 || r.File[0].Name != "srv/hysteria2/u-node-group-10/config.yaml" ||
-		r.File[1].Name != "srv/hysteria2/u-node-group-10/"+engine.ManifestFile {
+	if len(r.File) != 2 || r.File[0].Name != "srv/quicproxy/u-node-group-10/config.yaml" ||
+		r.File[1].Name != "srv/quicproxy/u-node-group-10/"+engine.ManifestFile {
 		t.Fatalf("zip holds %v", r.File)
 	}
 }
@@ -405,16 +405,16 @@ func TestInspectExport_BundlePlan(t *testing.T) {
 	m.export.form.SetValue(fieldFormat, formatBundle)
 	m.export.form.SetValue(fieldDest, dest)
 	m = pressInspect(t, m, "n")
-	if got := m.export.bundles; len(got) != 1 || got[0] != "srv/hysteria2/u-node-group-10" {
+	if got := m.export.bundles; len(got) != 1 || got[0] != "srv/quicproxy/u-node-group-10" {
 		t.Fatalf("bundles = %v", got)
 	}
-	// hysteria2 has no deploy definition: the form says so before anything
+	// quicproxy has no deploy definition: the form says so before anything
 	// is built.
 	if m.export.stage != exportForm || m.export.err == nil || !strings.Contains(m.export.err.Error(), "no deploy definition") {
 		t.Fatalf("an unbuildable bundle reached the confirmation: %v", m.export.err)
 	}
 
-	os.MkdirAll(filepath.Join(dest, "srv", "hysteria2", "u-node-group-10"), 0o700)
+	os.MkdirAll(filepath.Join(dest, "srv", "quicproxy", "u-node-group-10"), 0o700)
 	m.export.stage = exportForm
 	m = pressInspect(t, m, "n")
 	if m.export.err == nil || !strings.Contains(m.export.err.Error(), "tick Replace") {
