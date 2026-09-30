@@ -277,9 +277,8 @@ func TestLocationBackfillGoesStraightToItsYear(t *testing.T) {
 	}
 }
 
-// Without an archive there is nowhere else to put it, so everything stays in
-// the one list.
-func TestLocationKeepsEverythingWhenNothingIsArchived(t *testing.T) {
+// Without an archive folder of its own, a year goes beside the note.
+func TestLocationArchivesBesideTheNoteByDefault(t *testing.T) {
 	vault := t.TempDir()
 	settings := locationSettings(t, vault)
 	settings.LocationArchive = ""
@@ -287,9 +286,14 @@ func TestLocationKeepsEverythingWhenNothingIsArchived(t *testing.T) {
 	old.Index.CreatedAt = "2024-03-03T09:00:00+10:00"
 	ctx := NewContext(old, map[FieldID]any{FieldContent: "补录"}).WithSettings(settings)
 
-	Execute(ctx, []ActionPlan{locationPlan(t, ctx)})
-	note, err := os.ReadFile(filepath.Join(vault, "88 Inbox/06 Locations.md"))
-	if err != nil || !strings.Contains(string(note), "补录") {
-		t.Fatalf("note = %s, err = %v", note, err)
+	if results := Execute(ctx, []ActionPlan{locationPlan(t, ctx)}); !Executed(results) {
+		t.Fatalf("results = %+v", results)
+	}
+	archived, err := os.ReadFile(filepath.Join(vault, "88 Inbox/2024.md"))
+	if err != nil || !strings.Contains(string(archived), "补录") {
+		t.Fatalf("archive = %s, err = %v", archived, err)
+	}
+	if _, err := os.Stat(filepath.Join(vault, "88 Inbox/06 Locations.md")); !os.IsNotExist(err) {
+		t.Fatal("a past year was written into the running note")
 	}
 }

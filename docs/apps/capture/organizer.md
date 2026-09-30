@@ -618,8 +618,9 @@ vault's rather than this tool's:
   which some parsers read back as a literal plus.
 
 `capture.obsidian.location_archive` names where a year that has rolled over is
-moved to, one file per year, and empty means nothing is archived. Without it the
-list grows without limit and every new entry rewrites all of it.
+moved to, one file per year; empty is the folder the note is in. Every list is
+archived: one that never sheds a year grows without limit, and every new entry
+rewrites all of it.
 
 Two things move a year out of the running list, and both matter:
 
