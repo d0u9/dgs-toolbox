@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/d0u9/rhumb/engine"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	rcli "github.com/d0u9/rhumb/cli"
+
+	"github.com/d0u9/rhumb/engine"
 
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/cred/publish"
@@ -21,6 +24,7 @@ import (
 	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/scrolllist"
 	"dgs-toolbox/internal/tui/text"
+
 	"github.com/d0u9/rhumb/derive"
 	"github.com/d0u9/rhumb/inventory"
 	"github.com/d0u9/rhumb/secretstore"
@@ -45,7 +49,7 @@ type migrationTable struct {
 	confirmLeave  bool
 	nodes         []inventory.Node
 	selectedNode  string
-	scenario      string // migrationRelocate or migrationReplace
+	scenario      string // rcli.MigrationRelocate or rcli.MigrationReplace
 	rows          []migrationRow
 	list          scrolllist.Model
 	mode          string // plans, scenario, nodes, table, report, save, plan-name
@@ -86,8 +90,8 @@ func (m *migrationTable) listMode() bool {
 }
 
 func (m *migrationTable) refreshScenarios() {
-	items := make([]scrolllist.Item, 0, len(migrationScenarios))
-	for _, scenario := range migrationScenarios {
+	items := make([]scrolllist.Item, 0, len(rcli.MigrationScenarios))
+	for _, scenario := range rcli.MigrationScenarios {
 		items = append(items, scrolllist.Item{ID: scenario.ID, Label: scenario.Label, Detail: scenario.Detail})
 	}
 	m.list.SetItems(items)
@@ -258,7 +262,7 @@ func (m *migrationTable) refreshSecretRows() {
 	if m.hasMigrationEdits() {
 		cfg := config.Config{}
 		cfg.Conf.Root, cfg.Conf.Secrets = m.root, m.secrets
-		err := migrateActionSnapshot(nil, io.Discard, []string{"node"}, m.flags(), cfg, func(old, next engine.Loaded) bool {
+		err := rcli.MigrateSnapshot(nil, io.Discard, []string{"node"}, m.flags(), settings(cfg), func(old, next engine.Loaded) bool {
 			before, after = old, next
 			return true
 		})
@@ -706,7 +710,7 @@ func (m *migrationTable) generateReport() {
 	flags := m.flags()
 	cfg := config.Config{}
 	cfg.Conf.Root, cfg.Conf.Secrets = m.root, m.secrets
-	report, err := buildMigrationReport(flags, cfg)
+	report, err := rcli.MigrationReport(flags, settings(cfg))
 	if err != nil {
 		m.notice = err.Error()
 		return
@@ -723,7 +727,7 @@ func (m *migrationTable) applyPlan() {
 	cfg := config.Config{}
 	cfg.Conf.Root, cfg.Conf.Secrets = m.root, m.secrets
 	var out bytes.Buffer
-	err := migrateAction(nil, &out, []string{"node"}, flags, cfg)
+	err := rcli.Migrate(nil, &out, []string{"node"}, flags, settings(cfg))
 	result := strings.TrimSpace(out.String())
 	// The apply output starts with the report already on screen; keep what
 	// follows it.
@@ -751,7 +755,7 @@ func (m *migrationTable) flags() map[string]string {
 	flags := map[string]string{}
 	var networks, instances, routes, published []string
 	nodeTo := m.selectedNode
-	byNetwork := map[string]networkChange{}
+	byNetwork := map[string]rcli.NetworkChange{}
 	for _, row := range m.rows {
 		switch row.kind {
 		case "node":

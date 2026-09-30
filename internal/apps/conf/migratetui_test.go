@@ -2,11 +2,14 @@ package conf
 
 import (
 	"fmt"
-	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	rcli "github.com/d0u9/rhumb/cli"
+
+	"github.com/d0u9/rhumb/engine"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -29,7 +32,7 @@ func TestMigrationTableEditsCanBeRevisitedAndReported(t *testing.T) {
 		t.Fatal("new migration did not ask for a scenario")
 	}
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.migration.mode != "nodes" || m.migration.scenario != migrationRelocate {
+	if m.migration.mode != "nodes" || m.migration.scenario != rcli.MigrationRelocate {
 		t.Fatal("new migration did not open node list")
 	}
 	pressMigration(&m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -72,7 +75,7 @@ func TestMigrationTableEditsCanBeRevisitedAndReported(t *testing.T) {
 func TestMigrationTableSaveReportDoesNotOverwrite(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
-	m.scenario = migrationRelocate
+	m.scenario = rcli.MigrationRelocate
 	m.selectNode("srv")
 	for _, section := range []string{"NODE", "NETWORKS", "INSTANCES", "ROUTES"} {
 		found := false
@@ -144,7 +147,7 @@ func clickMigration(m *InspectModel, x, y int) {
 func TestMigrationReportScrollReturnsFromBottomAndWheelFollowsPane(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
-	m.scenario = migrationRelocate
+	m.scenario = rcli.MigrationRelocate
 	m.selectNode("srv")
 	m.mode = "report"
 	m.report = []byte(strings.Repeat("A report line that wraps across this pane and needs scrolling.\n", 40))
@@ -202,7 +205,7 @@ func TestMigrationTableCollectsAllEditableKinds(t *testing.T) {
 	}
 	writeFile(t, path, strings.Replace(string(data), "main: 443", "main: {port: 443, published: old.example.test}", 1))
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
-	m.scenario = migrationRelocate
+	m.scenario = rcli.MigrationRelocate
 	m.selectNode("srv")
 	if !strings.Contains(m.view(120, 40), "◆ PUBLISHED") {
 		t.Fatal("published section is missing")
@@ -229,7 +232,7 @@ func TestMigrationTableCollectsAllEditableKinds(t *testing.T) {
 func TestMigrationTableShowsDerivedSecretsWithoutPersistingThem(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
-	m.scenario = migrationRelocate
+	m.scenario = rcli.MigrationRelocate
 	m.selectNode("srv")
 	var oldSecret string
 	for _, row := range m.rows {
@@ -274,7 +277,7 @@ func TestMigrationTableShowsDerivedSecretsWithoutPersistingThem(t *testing.T) {
 func TestMigrationPlanCreateOpenEditAndRejectStaleInventory(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
-	m.scenario = migrationRelocate
+	m.scenario = rcli.MigrationRelocate
 	m.selectNode("srv")
 	m.rows[0].after = "srv08"
 	m.savePlan("move-home")
@@ -321,7 +324,7 @@ func TestMigrationPlanRejectsUnsafeNameAndVersion(t *testing.T) {
 	}
 	root, secrets := buildExportableRoot(t)
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
-	m.scenario = migrationRelocate
+	m.scenario = rcli.MigrationRelocate
 	m.selectNode("srv")
 	p := migrationPlanFromTable(m)
 	p.Version = 99
@@ -334,7 +337,7 @@ func TestMigrationPlanCanOpenAndSaveOutsideDefaultDirectory(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	outside := t.TempDir()
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
-	m.scenario = migrationRelocate
+	m.scenario = rcli.MigrationRelocate
 	m.selectNode("srv")
 	m.rows[0].after = "srv08"
 	m.outputDir = outside
@@ -432,7 +435,7 @@ func TestMigrationReportAppliesOnlyAfterConfirmation(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	path := filepath.Join(root, "nodes", "srv.yaml")
 	m := newMigrationTable(mustLoadMigration(t, root), root, secrets)
-	m.scenario = migrationReplace
+	m.scenario = rcli.MigrationReplace
 	m.selectNode("srv")
 	m.rows[0].after = "srv08"
 	m.generateReport()
@@ -449,7 +452,7 @@ func TestMigrationReportAppliesOnlyAfterConfirmation(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(filepath.Dir(path), "srv08.yaml")); !strings.Contains(string(data), "id: srv08") {
 		t.Fatalf("apply did not write the node file: %s; notice %s", data, m.notice)
 	}
-	if !strings.Contains(string(m.report), "## Apply result") || !strings.Contains(string(m.report), ".dgs-migration-backup-") {
+	if !strings.Contains(string(m.report), "## Apply result") || !strings.Contains(string(m.report), ".rhumb-migration-backup-") {
 		t.Fatalf("apply result missing:\n%s", m.report)
 	}
 }
