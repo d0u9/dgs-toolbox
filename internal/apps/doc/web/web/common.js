@@ -66,9 +66,9 @@ export async function loadState() {
   return response.json();
 }
 
-export async function post(url, body) {
+export async function post(url, body, { signal } = {}) {
   const response = await fetch(api(url), {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal,
   });
   const answer = await response.json();
   if (!response.ok) throw new Error(answer.error || response.statusText);
@@ -186,17 +186,22 @@ export function inputFor(field, value, placeholder, state, self, type) {
       const scope = wrapper.closest("form") || wrapper.parentElement;
       return Object.fromEntries([...(scope?.querySelectorAll(".field-input[name]") || [])].map((i) => [i.name, i.value]));
     };
-    let asked = 0;
+    // A newer question cancels the one still asked; a field no longer on
+    // the page stops listening and asks nothing.
+    let asking = null;
+    const gone = new AbortController();
     const narrow = async () => {
       if (!type || !(field.match || field.within)) return draw(false);
-      const mine = ++asked;
+      asking?.abort();
+      const mine = asking = new AbortController();
       try {
-        const answer = await post("/api/links", { type, key: field.key, self: self || "", fields: here() });
-        if (mine !== asked) return;
+        const answer = await post("/api/links", { type, key: field.key, self: self || "", fields: here() }, { signal: mine.signal });
+        if (mine !== asking) return;
         const offered = new Set(answer.offered);
         items = all.filter((i) => offered.has(i.id));
         suggested = answer.suggested;
       } catch {
+        if (mine !== asking || !wrapper.isConnected) return;
         items = all;
         suggested = [];
       }
@@ -229,17 +234,22 @@ export function inputFor(field, value, placeholder, state, self, type) {
       if (!wrapper.isConnected || !(field.match || field.within)) return;
       narrow();
       const watched = [...Object.values(field.match || {}), ...(field.within ? [field.within.date] : [])];
-      // Typing a date sends one question once it pauses, and none when the
-      // watched fields are as they were last asked.
-      let timer = 0, last = "";
-      (wrapper.closest("form") || wrapper.parentElement).addEventListener("input", (event) => {
+      // Typing a date, or a value filled in for it, sends one question once
+      // it pauses, and none when the watched fields are as last asked.
+      const ask = () => { const fields = here(); return JSON.stringify(watched.map((k) => fields[k])); };
+      let timer = 0, last = ask();
+      const changed = (event) => {
+        if (!wrapper.isConnected) { gone.abort(); asking?.abort(); clearTimeout(timer); return; }
         if (event.target === control || !watched.includes(event.target.name)) return;
         clearTimeout(timer);
         timer = setTimeout(() => {
-          const fields = here(), now = JSON.stringify(watched.map((k) => fields[k]));
+          if (!wrapper.isConnected) return;
+          const now = ask();
           if (now !== last) { last = now; narrow(); }
         }, 250);
-      });
+      };
+      const scope = wrapper.closest("form") || wrapper.parentElement;
+      for (const on of ["input", "change"]) scope.addEventListener(on, changed, { signal: gone.signal });
     });
     return wrapper;
   } else if (field.type === "select" && field.multiple) {

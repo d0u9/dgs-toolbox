@@ -38,6 +38,13 @@ func agrees(f tree.Field, fields map[string]string, it tree.Item, anchors map[st
 // date, or its start when it is a span. It is empty when f has no within or
 // the form no date.
 func Suggested(f tree.Field, self string, fields map[string]string, items []tree.Item, anchors map[string]bool) []tree.Item {
+	return Within(f, fields, Offered(f, self, fields, items, anchors))
+}
+
+// Within is those of offered, already Offered for f, whose span holds the
+// form's date as Suggested says: a caller holding Offered's answer narrows
+// it without matching every Item again.
+func Within(f tree.Field, fields map[string]string, offered []tree.Item) []tree.Item {
 	w := f.Within
 	if w == nil || fields[w.Date] == "" {
 		return nil
@@ -47,7 +54,7 @@ func Suggested(f tree.Field, self string, fields map[string]string, items []tree
 		date = start
 	}
 	var out []tree.Item
-	for _, it := range Offered(f, self, fields, items, anchors) {
+	for _, it := range offered {
 		theirs := it.FieldsAt(it.Current())
 		from, to := theirs[w.From], theirs[w.To]
 		if w.To == "" {
