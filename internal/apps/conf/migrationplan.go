@@ -10,7 +10,10 @@ import (
 	"sort"
 	"strings"
 
+	rcli "github.com/d0u9/rhumb/cli"
+
 	"dgs-toolbox/internal/cred/publish"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -79,7 +82,7 @@ func applyMigrationPlan(m *migrationTable, p migrationPlan) error {
 		m.rows[i].after = saved.To
 	}
 	switch p.Scenario {
-	case "", migrationRelocate, migrationReplace:
+	case "", rcli.MigrationRelocate, rcli.MigrationReplace:
 		m.scenario = p.Scenario
 	default:
 		return fmt.Errorf("migration plan has unknown scenario %q", p.Scenario)
