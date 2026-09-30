@@ -94,8 +94,10 @@ const (
 type exportFlow struct {
 	stage     exportStage
 	instances []string
-	form      form.Model
-	dialog    tuiconfirm.Model
+	// routes narrows a program marked route by route to those routes.
+	routes map[string][]string
+	form   form.Model
+	dialog tuiconfirm.Model
 	// err is why the form could not go on, shown under it.
 	err error
 	// Fixed once the form is accepted, so the confirmation asks about the
@@ -237,17 +239,54 @@ func (m *InspectModel) setMarked(instances []string, marked bool) {
 	}
 }
 
-// markedCount is how many instances are marked.
-func (m InspectModel) markedCount() int { return len(m.marked) }
+// markedCount is how many instances are marked, a program counting once
+// however many of its routes are.
+func (m InspectModel) markedCount() int {
+	instances, _ := splitUnits(keys(m.marked))
+	return len(instances)
+}
 
-// exportSelection is what `x` exports: every marked instance, or, with
-// nothing marked, whatever the row under the cursor stands for.
-func (m InspectModel) exportSelection() []string {
+func keys(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	return out
+}
+
+// splitUnits turns marked rows' keys into the instances to render and, for
+// a program marked route by route, the routes to render it with.
+func splitUnits(units []string) ([]string, map[string][]string) {
+	seen := map[string]bool{}
 	var instances []string
-	if len(m.marked) > 0 {
-		for instance := range m.marked {
+	var routes map[string][]string
+	for _, u := range units {
+		instance, route, byRoute := strings.Cut(u, routeSep)
+		if !seen[instance] {
+			seen[instance] = true
 			instances = append(instances, instance)
 		}
+		if byRoute {
+			if routes == nil {
+				routes = map[string][]string{}
+			}
+			routes[instance] = append(routes[instance], route)
+		}
+	}
+	sort.Strings(instances)
+	for _, r := range routes {
+		sort.Strings(r)
+	}
+	return instances, routes
+}
+
+// exportSelection is what `x` exports: every marked instance, or, with
+// nothing marked, whatever the row under the cursor stands for — and, for a
+// program marked route by route, the routes it is rendered with.
+func (m InspectModel) exportSelection() ([]string, map[string][]string) {
+	var instances []string
+	if len(m.marked) > 0 {
+		instances = keys(m.marked)
 	} else if row, ok := m.rowInstances(); ok {
 		instances = append(instances, row...)
 	} else if item, ok := m.list.Selected(); ok {
@@ -256,13 +295,12 @@ func (m InspectModel) exportSelection() []string {
 			instances = []string{id}
 		}
 	}
-	sort.Strings(instances)
-	return instances
+	return splitUnits(instances)
 }
 
 // startExport opens the export form for the current selection.
 func (m *InspectModel) startExport() {
-	instances := m.exportSelection()
+	instances, routes := m.exportSelection()
 	if len(instances) == 0 {
 		m.notice = "nothing to export here"
 		return
@@ -276,6 +314,7 @@ func (m *InspectModel) startExport() {
 	m.export = &exportFlow{
 		stage:     exportForm,
 		instances: instances,
+		routes:    routes,
 		owner:     owner,
 		form: form.New(
 			form.Field{ID: fieldFormat, Kind: form.Radio, Label: "Format", Options: formats, Value: format},
@@ -737,7 +776,11 @@ func expandHome(path string) string {
 }
 
 func (m InspectModel) renderer() engine.Renderer {
-	return engine.Renderer{Data: m.l, RootPath: m.rootPath, SecretsDir: m.secretsDir}
+	r := engine.Renderer{Data: m.l, RootPath: m.rootPath, SecretsDir: m.secretsDir}
+	if m.export != nil {
+		r.Routes = m.export.routes
+	}
+	return r
 }
 
 // runExport writes the export the confirmation named, off the update loop.

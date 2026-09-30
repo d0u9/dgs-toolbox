@@ -110,7 +110,7 @@ func TestInspectMark_BoxFollowsTheIndent(t *testing.T) {
 func TestInspectExport_NoMarksTakesTheCursorRow(t *testing.T) {
 	m := openHolders(newInspectModel(buildInspectRoot(t), ""))
 	m.list.SelectID("inst:srv/ss-srv")
-	if got := m.exportSelection(); len(got) != 1 || got[0] != "srv/ss-srv" {
+	if got, _ := m.exportSelection(); len(got) != 1 || got[0] != "srv/ss-srv" {
 		t.Fatalf("exportSelection = %v, want [ss-srv]", got)
 	}
 }
@@ -447,5 +447,17 @@ func TestDescribeBundles_NodeDownload(t *testing.T) {
 	got, err := describeBundles(files, deploy.Options{})
 	if err != nil || got["n/microbin/i"] != "systemd · linux/amd64 · microbin latest release, downloaded now" {
 		t.Fatalf("describeBundles = %v, %v", got, err)
+	}
+}
+
+// A program marked route by route is one instance, rendered with the
+// routes marked.
+func TestSplitUnits_RoutesNarrowAProgram(t *testing.T) {
+	instances, routes := splitUnits([]string{"mac-singbox#sfo-hy2", "srv/ss", "mac-singbox#sfo-ss"})
+	if strings.Join(instances, ",") != "mac-singbox,srv/ss" {
+		t.Fatalf("instances = %v", instances)
+	}
+	if len(routes) != 1 || strings.Join(routes["mac-singbox"], ",") != "sfo-hy2,sfo-ss" {
+		t.Fatalf("routes = %v", routes)
 	}
 }
