@@ -26,7 +26,6 @@ model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
       "location_note": "88 Inbox/06 Locations.md",
       "location_archive": "88 Inbox/06 Locations",
       "timeline_note": "03 Family/00 Timeline/Timeline.md",
-      "timeline_archive": "03 Family/00 Timeline",
       "images": {
         "folder": "assets/{{.Note}}",
         "max_side": 2048,
@@ -373,18 +372,17 @@ described in
 | Key | Meaning | Default |
 | --- | --- | --- |
 | `capture.obsidian.location_note` | The running list of places, newest first, relative to the vault. | empty — the location Action refuses to run |
-| `capture.obsidian.location_archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — nothing is archived and the list grows without limit |
+| `capture.obsidian.location_archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — the note's own folder |
 
 ## The timeline
 
 The same shape as the location note: what happened, newest first, under the
-same date markers, a rolled-over year moved into its own file. The archive may
-be the folder the note itself is in.
+same date markers, a rolled-over year moved into its own file.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
 | `capture.obsidian.timeline_note` | The timeline, newest first, relative to the vault. | empty — the timeline Action refuses to run |
-| `capture.obsidian.timeline_archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — nothing is archived and the timeline grows without limit |
+| `capture.obsidian.timeline_archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — the note's own folder |
 
 ## Reminders
 

@@ -27,7 +27,7 @@ type Settings struct {
 	DailyNote string
 	// LocationNote is the running list of places, relative to the vault, newest
 	// first. LocationArchive is where a year that has rolled over is moved to;
-	// empty means nothing is archived and the list grows without limit.
+	// empty is the note's own folder.
 	LocationNote    string
 	LocationArchive string
 	// TimelineNote and TimelineArchive are the same for the timeline: what

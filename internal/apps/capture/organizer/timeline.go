@@ -23,7 +23,7 @@ type timelineKind struct {
 	// what is the list in the Action's effects: "the running list of places".
 	what string
 	// paths reads the running note and the archive folder, both relative to
-	// the vault. An empty archive means nothing is archived.
+	// the vault. An empty archive is the note's own folder.
 	paths func(Settings) (note, archive string)
 	// templates are the entry templates tried in order, first in the template
 	// directory and then compiled in, so a timeline may borrow another's.
@@ -122,6 +122,12 @@ func (kind timelineKind) prepend(ctx Context) (skipped string, err error) {
 	if err != nil {
 		return "", err
 	}
+	// Every timeline is archived: a list that is never shed grows without
+	// limit and every entry rewrites all of it. Without a folder of its own,
+	// a year goes beside the note.
+	if strings.TrimSpace(archive) == "" {
+		archive = filepath.Dir(note)
+	}
 	header := kind.header
 	header.Source = filepath.Base(note)
 
@@ -130,7 +136,7 @@ func (kind timelineKind) prepend(ctx Context) (skipped string, err error) {
 	// long after capturing, so this is the ordinary case rather than an edge.
 	target := note
 	running := true
-	if year := day.Format(timeline.YearLayout); archive != "" && year != currentYear() {
+	if year := day.Format(timeline.YearLayout); year != currentYear() {
 		target, running = filepath.Join(archive, year+".md"), false
 	}
 	path, ok := ctx.Settings.vaultPath(target)
@@ -154,7 +160,7 @@ func (kind timelineKind) prepend(ctx Context) (skipped string, err error) {
 	// The whole file is rewritten either way — a list that grows at the top
 	// cannot be appended to — so archiving costs nothing extra here, and reads
 	// the content already in hand.
-	if running && archive != "" {
+	if running {
 		var moved []timeline.Year
 		content, moved = timeline.Archive(content, currentYear())
 		for _, year := range moved {

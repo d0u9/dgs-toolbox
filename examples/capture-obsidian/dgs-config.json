@@ -11,7 +11,6 @@
       "location_note": "88 Inbox/06 Locations.md",
       "location_archive": "88 Inbox/06 Locations",
       "timeline_note": "03 Family/00 Timeline/Timeline.md",
-      "timeline_archive": "03 Family/00 Timeline",
       "images": {
         "folder": "assets/{{.Note}}",
         "max_side": 2048,

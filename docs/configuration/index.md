@@ -89,9 +89,9 @@ templates — lives under `config_dir`, laid out by command. That layout is in
 | `capture.obsidian.images.max_side` | [capture](capture.md#pictures-in-the-daily-note) | `2048` |
 | `capture.obsidian.images.quality` | [capture](capture.md#pictures-in-the-daily-note) | `80` |
 | `capture.obsidian.location_note` | [capture](capture.md#the-location-note) | empty — the location Action refuses to run |
-| `capture.obsidian.location_archive` | [capture](capture.md#the-location-note) | empty — nothing is archived |
+| `capture.obsidian.location_archive` | [capture](capture.md#the-location-note) | empty — the note's own folder |
 | `capture.obsidian.timeline_note` | [capture](capture.md#the-timeline) | empty — the timeline Action refuses to run |
-| `capture.obsidian.timeline_archive` | [capture](capture.md#the-timeline) | empty — nothing is archived |
+| `capture.obsidian.timeline_archive` | [capture](capture.md#the-timeline) | empty — the note's own folder |
 | `capture.apple.reminders.list` | [capture](capture.md#reminders) | empty — Reminders' own default list |
 | `capture.apple.reminders.radius` | [capture](capture.md#reminders) | `150` |
 | `photo.import.state_file` | [photo](photo.md) | `.dgs-state` |
