@@ -1,0 +1,9 @@
+{
+  "root": "/Volumes/nas/Box",
+  "inbox": "~/Scans/inbox",
+  "currency": "AUD",
+  "timezone": "Australia/Sydney",
+  "trash": {
+    "keep_days": 90
+  }
+}

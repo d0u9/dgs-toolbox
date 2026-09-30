@@ -2,40 +2,38 @@
 package config
 
 import (
-	"dgs-toolbox/internal/doc/dates"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
+	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
+// EnvPath names the configuration directory, as --config does.
 const EnvPath = "DGS_TOOLBOX_CONFIG"
-const ExportFilename = "dgs-config.json"
+
+// PartFile is the name of each part's file: <config dir>/<part>/config.json.
+// Every command has a folder of its own holding its file and whatever else it
+// reads from disk, so a command could leave the toolbox taking its folder
+// with it, and a mistake in one file refuses only the command it belongs to.
+const PartFile = "config.json"
 
 type Config struct {
-	// ConfigDir is where the file-based configuration lives: the recipes,
-	// templates and anything else a command reads from disk rather than from
-	// this file. dgs is a toolbox, so it is laid out by command —
-	// <config dir>/<command>/<what> — and a command asks for its own corner
-	// rather than for a path of its own in here. Empty means the directory the
-	// configuration file was loaded from.
-	ConfigDir string  `json:"config_dir"`
-	TUI       TUI     `json:"tui"`
-	Photo     Photo   `json:"photo"`
-	Box       Box     `json:"box"`
-	Doc       Doc     `json:"doc"`
-	Capture   Capture `json:"capture"`
-	Geo       Geo     `json:"geo"`
-	Conf      Conf    `json:"conf"`
-	// dir is the directory the configuration was loaded from. Paths that
-	// default to sitting beside the configuration resolve against this rather
-	// than against the operating system's location, so --config points at a
-	// whole configuration and not only at one file of it.
+	Shell   Shell
+	Photo   Photo
+	Box     Box
+	Doc     Doc
+	Capture Capture
+	Geo     Geo
+	Conf    Conf
+	// dir is the configuration directory. Everything a command reads from
+	// disk resolves against it, so --config points at a whole configuration.
 	dir string
+	// errs holds each part whose file was refused, by part name.
+	errs map[string]error
 }
 
 // Capture configures the Capture command. Route organizes a Capture through
@@ -51,7 +49,7 @@ type Capture struct {
 
 // CaptureGPX names the directory for daily Capture waypoint files.
 type CaptureGPX struct {
-	Directory string `json:"directory"`
+	Root string `json:"root"`
 }
 
 // CaptureApple configures the Actions that write into Apple's apps.
@@ -69,27 +67,34 @@ type CaptureReminders struct {
 }
 
 // CaptureObsidian tells the Obsidian Actions where to write. Vault is an
-// absolute path; the folders are relative to it, so what an Action plans and
-// records stays vault-relative and survives the vault moving.
+// absolute path; the notes and folders are relative to it, so what an Action
+// plans and records stays vault-relative and survives the vault moving. Each
+// note an Action writes has an object of its own.
 type CaptureObsidian struct {
-	Vault string `json:"vault"`
-	// DailyNote is where a day's note lives, relative to the vault, written as
-	// a template over the date: "00 Daily Log/{{.Year}}/{{.Date}}.md". It is
-	// configured rather than read from the vault, because a vault says where
-	// the plugin in use puts notes, which is not the same question.
-	DailyNote string `json:"daily_note"`
-	// Section is the heading a Capture is written under in a daily note.
-	Section string `json:"section"`
-	// LocationNote is the running list of places, relative to the vault, and
-	// LocationArchive the folder a year that has rolled over is moved into.
-	LocationNote    string `json:"location_note"`
-	LocationArchive string `json:"location_archive"`
-	// TimelineNote and TimelineArchive are the same for the timeline of what
-	// happened.
-	TimelineNote    string `json:"timeline_note"`
-	TimelineArchive string `json:"timeline_archive"`
-	// Images is how a Capture's pictures are written beside a daily note.
-	Images CaptureObsidianImages `json:"images"`
+	Vault    string                 `json:"vault"`
+	Daily    CaptureObsidianDaily   `json:"daily"`
+	Location CaptureObsidianRolling `json:"location"`
+	Timeline CaptureObsidianRolling `json:"timeline"`
+}
+
+// CaptureObsidianDaily is the day's note. Note is where it lives, relative to
+// the vault, written as a template over the date: "00 Daily Log/{{.Year}}/
+// {{.Date}}.md". It is configured rather than read from the vault, because a
+// vault says where the plugin in use puts notes, which is not the same
+// question. Section is the heading a Capture is written under, and Images how
+// its pictures are written beside the note.
+type CaptureObsidianDaily struct {
+	Note    string                `json:"note"`
+	Section string                `json:"section"`
+	Images  CaptureObsidianImages `json:"images"`
+}
+
+// CaptureObsidianRolling is a running note — the list of places, the
+// timeline — relative to the vault, and Archive the folder a year that has
+// rolled over is moved into.
+type CaptureObsidianRolling struct {
+	Note    string `json:"note"`
+	Archive string `json:"archive"`
 }
 
 // CaptureObsidianImages says where a daily note's pictures go and how they are
@@ -119,17 +124,16 @@ type CaptureScan struct {
 	IndexFile string `json:"index_file"`
 }
 
-// Geo configures the Geo app.
+// Geo configures the Geo app. Web lists its servers by use; the only one is
+// "gpx", the GPX page.
 type Geo struct {
+	Web []Web  `json:"web"`
 	GPX GeoGPX `json:"gpx"`
 }
 
-// GeoGPX configures the GPX command: where its web server listens, the
-// folder the browser opens at, and the base maps the page offers. Host 0.0.0.0
-// lets other machines reach the server. Empty values use the defaults.
+// GeoGPX configures the GPX command: the folder the browser opens at, and the
+// base maps the page offers. Empty values use the defaults.
 type GeoGPX struct {
-	Host  string       `json:"host"`
-	Port  int          `json:"port"`
 	Root  string       `json:"root"`
 	Tiles []GeoGPXTile `json:"tiles"`
 	// AmapKey is an Amap (高德) Web Service key: with it the page routes
@@ -183,19 +187,23 @@ type GeoGPXTile struct {
 	Coordinates string `json:"coordinates"`
 }
 
-// GeoGPXTilesFile is the file, in the GPX command's corner of the config
-// directory, that lists base maps beside those in geo.gpx.tiles, so a long
-// list does not crowd the configuration file:
+// GeoGPXTilesFile is the file, in the geo folder of the config directory,
+// that lists base maps beside those in gpx.tiles, so a long list does not
+// crowd the configuration file:
 //
 //	{"tiles": [{"name": "…", "url": "https://…/{z}/{x}/{y}.png", "coordinates": "gcj02"}]}
 const GeoGPXTilesFile = "tiles.json"
 
-// DefaultGeoGPXHost and DefaultGeoGPXPort keep the GPX page local and at a
-// stable URL.
+// GeoGPXServer is the web entry of the GPX page. Host 0.0.0.0 lets other
+// machines reach it; the default keeps the page local and at a stable URL.
+const GeoGPXServer = "gpx"
+
 const (
 	DefaultGeoGPXHost = "127.0.0.1"
 	DefaultGeoGPXPort = 8765
 )
+
+var geoServers = []server{{name: GeoGPXServer, host: DefaultGeoGPXHost, port: DefaultGeoGPXPort, hostSettable: true}}
 
 // Conf configures dgs conf export: where the generator root and its secrets
 // are, and where the destination form opens. See
@@ -227,7 +235,8 @@ type PhotoImport struct {
 	Destination string `json:"destination"`
 }
 
-type TUI struct {
+// Shell configures what every command shares: the top bar.
+type Shell struct {
 	TopBar TopBar `json:"top_bar"`
 }
 
@@ -247,18 +256,17 @@ func boolPointer(value bool) *bool { return &value }
 func intPointer(value int) *int { return &value }
 
 func Default() Config {
-	return Config{TUI: TUI{TopBar: TopBar{
+	return Config{Shell: Shell{TopBar: TopBar{
 		Disk: boolPointer(true), Network: boolPointer(true),
 		CPU: boolPointer(true), Time: boolPointer(true),
 	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Box: Box{
 		Marker: DefaultBoxMarker, StateFile: DefaultBoxStateFile,
-		Workers: DefaultBoxWorkers, Web: BoxWeb{Port: DefaultBoxWebPort},
-		Preview: BoxPreview{Keep: intPointer(DefaultBoxPreviewKeepDays)},
-		Trash:   BoxTrash{Keep: intPointer(DefaultBoxTrashKeepDays)},
-	}, Doc: Doc{Web: DocWeb{Port: DefaultDocWebPort}}, Capture: Capture{
-		Scan:     CaptureScan{IndexFile: "index.json"},
-		Obsidian: CaptureObsidian{},
-	}, Geo: Geo{GPX: GeoGPX{Host: DefaultGeoGPXHost, Port: DefaultGeoGPXPort}}}
+		Workers: DefaultBoxWorkers, Web: defaultWeb(boxServers),
+		Preview: BoxPreview{KeepDays: intPointer(DefaultBoxPreviewKeepDays)},
+		Trash:   BoxTrash{KeepDays: intPointer(DefaultBoxTrashKeepDays)},
+	}, Doc: Doc{Trees: map[string]string{}, Web: defaultWeb(docServers)}, Capture: Capture{
+		Scan: CaptureScan{IndexFile: "index.json"},
+	}, Geo: Geo{Web: defaultWeb(geoServers), GPX: GeoGPX{Tiles: []GeoGPXTile{}}}}
 }
 
 // CaptureArchiveFolders are the two directories Archive files into: where
@@ -278,26 +286,30 @@ func (c Config) CaptureScanSettings() (root, indexFile string) {
 	return c.Capture.Scan.Root, indexFile
 }
 
-// Dir is the root of the file-based configuration: the configured directory, or
-// the one the configuration file itself was loaded from. A run with --config
-// points at a whole configuration, so what it reads from disk belongs to it
-// rather than to the location the operating system would have chosen.
+// At is the default configuration read from dir: a Config for a directory
+// whose files are not to be loaded, as a test building one by hand wants.
+func At(dir string) Config {
+	config := Default()
+	config.dir = dir
+	return config
+}
+
+// Dir is the configuration directory: the one loaded, or the one this run
+// resolves to for a Config built without loading.
 func (c Config) Dir() string {
-	if c.ConfigDir != "" {
-		return c.ConfigDir
-	}
 	if c.dir != "" {
 		return c.dir
 	}
-	path, err := Path()
+	dir, err := Dir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Dir(path)
+	return dir
 }
 
-// AppDir is one command's corner of it. Commands are given a corner each
-// because they are unrelated: two of them both wanting "templates" is the
+// AppDir is one command's folder in it, holding its config.json and
+// everything else it reads from disk. Commands are given a folder each
+// because they are independent: two of them both wanting "templates" is the
 // normal case, not a collision to be worked around.
 func (c Config) AppDir(app string) string {
 	dir := c.Dir()
@@ -313,7 +325,7 @@ func (c Config) AppDir(app string) string {
 //
 // None of the three is configurable. The layout is the answer to "where does
 // this installation keep its Capture configuration?", and a path for each
-// would make that answer three paths to go and look up. config_dir moves the
+// would make that answer three paths to go and look up. --config moves the
 // whole thing, and a directory that genuinely belongs elsewhere — a vault's
 // templates kept with the vault — is a symlink.
 func (c Config) CaptureTemplatesDir() string { return c.captureDir("templates") }
@@ -352,16 +364,7 @@ func (c Config) PhotoImportStateFile() string {
 }
 
 // GeoGPXAddr is the host:port the GPX web server listens on.
-func (c Config) GeoGPXAddr() string {
-	host, port := c.Geo.GPX.Host, c.Geo.GPX.Port
-	if host == "" {
-		host = DefaultGeoGPXHost
-	}
-	if port == 0 {
-		port = DefaultGeoGPXPort
-	}
-	return net.JoinHostPort(host, strconv.Itoa(port))
-}
+func (c Config) GeoGPXAddr() string { return webAddr(c.Geo.Web, geoServers, GeoGPXServer) }
 
 // GeoGPXRoot is the folder the GPX browser opens at: geo.gpx.root, or the home
 // directory when it is empty. A leading ~ is the home directory.
@@ -442,7 +445,7 @@ func (c Config) PhotoImportPaths() (source, destination string) {
 }
 
 // ConfRoot and ConfSecrets are conf.root and conf.secrets, already expanded by
-// LoadPath. Both are empty until configured.
+// LoadDir. Both are empty until configured.
 func (c Config) ConfRoot() string    { return c.Conf.Root }
 func (c Config) ConfSecrets() string { return c.Conf.Secrets }
 
@@ -467,10 +470,10 @@ func (c Config) TopBarVisibility() TopBarVisibility {
 			*target = *value
 		}
 	}
-	apply(c.TUI.TopBar.Disk, &visibility.Disk)
-	apply(c.TUI.TopBar.Network, &visibility.Network)
-	apply(c.TUI.TopBar.CPU, &visibility.CPU)
-	apply(c.TUI.TopBar.Time, &visibility.Time)
+	apply(c.Shell.TopBar.Disk, &visibility.Disk)
+	apply(c.Shell.TopBar.Network, &visibility.Network)
+	apply(c.Shell.TopBar.CPU, &visibility.CPU)
+	apply(c.Shell.TopBar.Time, &visibility.Time)
 	return visibility
 }
 
@@ -479,30 +482,27 @@ func (c Config) TopBarVisibility() TopBarVisibility {
 const EnvXDGConfigHome = "XDG_CONFIG_HOME"
 
 // XDGDirName is the toolbox's own folder inside the XDG configuration
-// directory. The configuration file sits in it rather than beside it, so the
-// whole configuration — the file, the recipes, the workflows, the mappings, the
-// templates — is one folder a reader can move, copy or keep under version
-// control as a unit.
+// directory: the whole configuration, one folder a reader can move, copy or
+// keep under version control as a unit.
 const XDGDirName = "dgs-toolbox"
 
-// Path is the configuration file this run reads: the environment variable when
-// it is set, and otherwise the one default location. One rather than a list
-// tried in turn, because "which file am I editing?" should not be a question
-// with an answer that depends on which files exist.
-func Path() (string, error) {
-	if path := os.Getenv(EnvPath); path != "" {
-		return path, nil
+// Dir is the configuration directory this run reads: the environment variable
+// when it is set, and otherwise the one default location. One rather than a
+// list tried in turn, because "which file am I editing?" should not be a
+// question with an answer that depends on which files exist.
+func Dir() (string, error) {
+	if dir := os.Getenv(EnvPath); dir != "" {
+		return dir, nil
 	}
-	return DefaultPath()
+	return DefaultDir()
 }
 
-// DefaultPath is <XDG config home>/dgs-toolbox/dgs-config.json, falling back to
-// ~/.config when the variable is unset. The XDG directory rather than the
-// operating system's own: it is the folder the reader already keeps their other
-// tools' files in, and on macOS the operating system's answer is a Library path
-// nobody edits by choice. The filename is the one --export-config writes, so a
-// file copied out of it is found under the name it already has.
-func DefaultPath() (string, error) {
+// DefaultDir is <XDG config home>/dgs-toolbox, falling back to ~/.config when
+// the variable is unset. The XDG directory rather than the operating system's
+// own: it is the folder the reader already keeps their other tools' files in,
+// and on macOS the operating system's answer is a Library path nobody edits by
+// choice.
+func DefaultDir() (string, error) {
 	directory := os.Getenv(EnvXDGConfigHome)
 	if directory == "" {
 		home, err := os.UserHomeDir()
@@ -511,158 +511,207 @@ func DefaultPath() (string, error) {
 		}
 		directory = filepath.Join(home, ".config")
 	}
-	return filepath.Join(directory, XDGDirName, ExportFilename), nil
+	return filepath.Join(directory, XDGDirName), nil
 }
 
-func ExportPath(destination string) (string, error) {
-	if destination != "" {
-		info, err := os.Stat(destination)
-		if err == nil && info.IsDir() {
-			return filepath.Join(destination, ExportFilename), nil
-		}
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", err
-		}
-		return destination, nil
-	}
-	directory, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(directory, ExportFilename), nil
-}
-
-// Load returns defaults when the global file does not exist. A malformed file
-// is reported instead of silently ignoring a user's intended switches.
+// Load reads the configuration directory this run resolves to.
 func Load() (Config, error) {
-	path, err := Path()
+	dir, err := Dir()
 	if err != nil {
-		return Config{}, fmt.Errorf("resolve config path: %w", err)
+		return Config{}, fmt.Errorf("resolve config directory: %w", err)
 	}
-	return LoadPath(path)
+	return LoadDir(dir)
 }
 
-// LoadPath loads an explicit configuration file. It intentionally bypasses
-// DGS_TOOLBOX_CONFIG so command-line configuration can override the environment.
-func LoadPath(path string) (Config, error) {
-	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return Config{dir: filepath.Dir(path)}, nil
+// LoadDir reads every part's file under dir. A missing directory or file is
+// not an error: every setting has a default. It bypasses DGS_TOOLBOX_CONFIG so
+// --config can override the environment.
+//
+// The error it returns is for what spoils every command: dir being a file, a
+// file of the layout this one replaced, or a broken shell part, which the
+// shell itself reads. A broken file of one command is kept for PartErr and
+// refuses only that command, because the commands are independent and one
+// mistake should not take the others down with it.
+func LoadDir(dir string) (Config, error) {
+	config := Default()
+	config.dir = dir
+	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+		return Config{}, fmt.Errorf("config %s is a file: --config and %s name the configuration directory, one folder per command", dir, EnvPath)
 	}
-	if err != nil {
-		return Config{}, fmt.Errorf("open config %s: %w", path, err)
+	for _, legacy := range []string{"dgs-config.json", "credentials.json"} {
+		path := filepath.Join(dir, legacy)
+		if _, err := os.Stat(path); err == nil {
+			return Config{}, fmt.Errorf("%s is the old single-file configuration and is no longer read: move each part into %s, as docs/configuration/index.md lays out, and remove it", path, filepath.Join(dir, "<command>", PartFile))
+		}
 	}
-	defer file.Close()
-	var config Config
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&config); err != nil {
-		return Config{}, fmt.Errorf("decode config %s: %w", path, err)
-	}
-	stateFile := config.PhotoImportStateFile()
-	if filepath.Base(stateFile) != stateFile || stateFile == "." || stateFile == ".." {
-		return Config{}, fmt.Errorf("decode config %s: photo.import.state_file must be a filename, got %q", path, stateFile)
-	}
-	_, indexFile := config.CaptureScanSettings()
-	if filepath.Base(indexFile) != indexFile || indexFile == "." || indexFile == ".." {
-		return Config{}, fmt.Errorf("decode config %s: capture.scan.index_file must be a filename, got %q", path, indexFile)
-	}
-	if err := validateTiles(config.Geo.GPX.Tiles); err != nil {
-		return Config{}, fmt.Errorf("decode config %s: geo.gpx.%w", path, err)
-	}
-	if config.Doc.ExpiringWithinDays < 0 {
-		return Config{}, fmt.Errorf("decode config %s: doc.expiring_within_days: %d is negative", path, config.Doc.ExpiringWithinDays)
-	}
-	if _, err := dates.ParseOrder(config.Doc.DateOrder); err != nil {
-		return Config{}, fmt.Errorf("decode config %s: doc.date_order: %w", path, err)
-	}
-	if err := validateBox(config.Box, path); err != nil {
-		return Config{}, err
-	}
-	if err := validateBoxZone(config.Box, path); err != nil {
-		return Config{}, err
-	}
-	home, _ := os.UserHomeDir()
-	for _, field := range []struct {
-		key   string
-		value *string
-	}{
-		{"box.root", &config.Box.Root},
-		{"box.inbox", &config.Box.Inbox},
-		{"box.cache_dir", &config.Box.CacheDir},
-		{"doc.root", &config.Doc.Root},
-		{"doc.cache_dir", &config.Doc.CacheDir},
-	} {
-		if *field.value == "" {
+	for _, p := range parts {
+		if p.name == "cred" {
+			// dgs cred reads its file itself, each time it refreshes.
 			continue
 		}
-		expanded, err := ExpandPath(*field.value, os.LookupEnv, home)
-		if err != nil {
-			return Config{}, fmt.Errorf("decode config %s: %s: %w", path, field.key, err)
+		if err := loadPart(&config, dir, p); err != nil {
+			if p.name == "shell" {
+				return Config{}, err
+			}
+			if config.errs == nil {
+				config.errs = map[string]error{}
+			}
+			config.errs[p.name] = err
 		}
-		*field.value = expanded
 	}
-	if len(config.Doc.Trees) > 0 && config.Doc.Root != "" {
-		return Config{}, fmt.Errorf("decode config %s: doc.root and doc.trees: set one; with several trees, name each in doc.trees", path)
-	}
-	for name, root := range config.Doc.Trees {
-		if !docName.MatchString(name) || root == "" {
-			return Config{}, fmt.Errorf("decode config %s: doc.trees: a tree needs a name of lowercase letters, digits, _ and -, and a folder", path)
-		}
-		expanded, err := ExpandPath(root, os.LookupEnv, home)
-		if err != nil {
-			return Config{}, fmt.Errorf("decode config %s: doc.trees.%s: %w", path, name, err)
-		}
-		config.Doc.Trees[name] = expanded
-	}
-	if len(config.Doc.Targets) > 0 {
-		return Config{}, fmt.Errorf("decode config %s: doc.targets: export folders now belong to each Outline in the tree, as a default the Explore page lets you change; set them on the Outlines page and remove doc.targets", path)
-	}
-	if config.Conf.Root != "" {
-		expanded, err := ExpandPath(config.Conf.Root, os.LookupEnv, home)
-		if err != nil {
-			return Config{}, fmt.Errorf("decode config %s: conf.root: %w", path, err)
-		}
-		config.Conf.Root = expanded
-	}
-	if config.Conf.Secrets != "" {
-		expanded, err := ExpandPath(config.Conf.Secrets, os.LookupEnv, home)
-		if err != nil {
-			return Config{}, fmt.Errorf("decode config %s: conf.secrets: %w", path, err)
-		}
-		config.Conf.Secrets = expanded
-	}
-	if config.Conf.Export.Dir != "" {
-		expanded, err := ExpandPath(config.Conf.Export.Dir, os.LookupEnv, home)
-		if err != nil {
-			return Config{}, fmt.Errorf("decode config %s: conf.export.dir: %w", path, err)
-		}
-		config.Conf.Export.Dir = expanded
-	}
-	config.dir = filepath.Dir(path)
 	return config, nil
 }
 
-// ExportDefault writes a complete, editable default file without replacing an
-// existing user configuration.
-func ExportDefault(destination string) (string, error) {
-	path, err := ExportPath(destination)
-	if err != nil {
-		return "", fmt.Errorf("resolve export path: %w", err)
+// PartErr is why the part command's file was refused, or nil. A command whose
+// file was refused does not start.
+func (c Config) PartErr(part string) error { return c.errs[part] }
+
+// PartPath is <config dir>/<part>/config.json.
+func (c Config) PartPath(part string) string {
+	app := c.AppDir(part)
+	if app == "" {
+		return ""
 	}
+	return filepath.Join(app, PartFile)
+}
+
+func loadPart(config *Config, dir string, p part) error {
+	path := filepath.Join(dir, p.name, PartFile)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("open config %s: %w", path, err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(p.target(config)); err != nil {
+		return fmt.Errorf("decode config %s: %w", path, err)
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return fmt.Errorf("decode config %s: content after the object", path)
+	}
+	if p.check != nil {
+		if err := p.check(config); err != nil {
+			return fmt.Errorf("decode config %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// part is one command's file: where it decodes to, and what is refused when
+// the file is read rather than when the setting is first used.
+type part struct {
+	name   string
+	target func(*Config) any
+	check  func(*Config) error
+}
+
+var parts = []part{
+	{"shell", func(c *Config) any { return &c.Shell }, nil},
+	{"capture", func(c *Config) any { return &c.Capture }, checkCapture},
+	{"photo", func(c *Config) any { return &c.Photo }, checkPhoto},
+	{"box", func(c *Config) any { return &c.Box }, checkBox},
+	{"doc", func(c *Config) any { return &c.Doc }, checkDoc},
+	{"geo", func(c *Config) any { return &c.Geo }, checkGeo},
+	{"conf", func(c *Config) any { return &c.Conf }, checkConf},
+	{"cred", nil, nil},
+}
+
+func checkPhoto(c *Config) error {
+	stateFile := c.PhotoImportStateFile()
+	if filepath.Base(stateFile) != stateFile || stateFile == "." || stateFile == ".." {
+		return fmt.Errorf("import.state_file must be a filename, got %q", stateFile)
+	}
+	return nil
+}
+
+func checkCapture(c *Config) error {
+	_, indexFile := c.CaptureScanSettings()
+	if filepath.Base(indexFile) != indexFile || indexFile == "." || indexFile == ".." {
+		return fmt.Errorf("scan.index_file must be a filename, got %q", indexFile)
+	}
+	return nil
+}
+
+func checkGeo(c *Config) error {
+	if err := validateTiles(c.Geo.GPX.Tiles); err != nil {
+		return fmt.Errorf("gpx.%w", err)
+	}
+	return checkWeb(c.Geo.Web, geoServers)
+}
+
+func checkConf(c *Config) error {
+	return expandAll(map[string]*string{
+		"root": &c.Conf.Root, "secrets": &c.Conf.Secrets, "export.dir": &c.Conf.Export.Dir,
+	})
+}
+
+// expandAll expands each non-empty path in place, naming the key that fails.
+func expandAll(fields map[string]*string) error {
+	home, _ := os.UserHomeDir()
+	for key, value := range fields {
+		if *value == "" {
+			continue
+		}
+		expanded, err := ExpandPath(*value, os.LookupEnv, home)
+		if err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+		*value = expanded
+	}
+	return nil
+}
+
+// ExportDefault writes every part's complete default file under dir, the
+// working directory when it is empty. A file that already exists is left as it
+// is and reported as skipped, so exporting into a configuration in use only
+// adds what it lacks.
+func ExportDefault(dir string) (written, skipped []string, err error) {
+	if dir == "" {
+		if dir, err = os.Getwd(); err != nil {
+			return nil, nil, err
+		}
+	}
+	defaults := Default()
+	for _, p := range parts {
+		var value any
+		if p.target != nil {
+			value = p.target(&defaults)
+		} else {
+			value = DefaultCredentials()
+		}
+		path := filepath.Join(dir, p.name, PartFile)
+		ok, err := writeNew(path, value)
+		if err != nil {
+			return written, skipped, err
+		}
+		if ok {
+			written = append(written, path)
+		} else {
+			skipped = append(skipped, path)
+		}
+	}
+	return written, skipped, nil
+}
+
+// writeNew writes value as indented JSON to path unless a file is there
+// already, which it reports as false rather than as an error.
+func writeNew(path string, value any) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", fmt.Errorf("create config directory: %w", err)
+		return false, fmt.Errorf("create config directory: %w", err)
 	}
-	data, err := json.MarshalIndent(Default(), "", "  ")
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("encode default config: %w", err)
+		return false, fmt.Errorf("encode default config: %w", err)
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if errors.Is(err, os.ErrExist) {
-		return "", fmt.Errorf("config already exists: %s", path)
+		return false, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("create config %s: %w", path, err)
+		return false, fmt.Errorf("create config %s: %w", path, err)
 	}
 	removeIncomplete := true
 	defer func() {
@@ -672,15 +721,15 @@ func ExportDefault(destination string) (string, error) {
 	}()
 	if _, err := file.Write(append(data, '\n')); err != nil {
 		_ = file.Close()
-		return "", fmt.Errorf("write config %s: %w", path, err)
+		return false, fmt.Errorf("write config %s: %w", path, err)
 	}
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
-		return "", fmt.Errorf("sync config %s: %w", path, err)
+		return false, fmt.Errorf("sync config %s: %w", path, err)
 	}
 	if err := file.Close(); err != nil {
-		return "", fmt.Errorf("close config %s: %w", path, err)
+		return false, fmt.Errorf("close config %s: %w", path, err)
 	}
 	removeIncomplete = false
-	return path, nil
+	return true, nil
 }

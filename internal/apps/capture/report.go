@@ -87,7 +87,7 @@ func writeStarters(out io.Writer, global config.Config) error {
 	for _, kind := range organizer.StarterKinds {
 		dir := directories[kind]
 		if dir == "" {
-			return errors.New("no configuration directory: a configuration file has to exist, or config_dir has to name one")
+			return errors.New("no configuration directory: set --config or DGS_TOOLBOX_CONFIG, or have a home directory")
 		}
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
@@ -284,23 +284,23 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	settings := organizer.DefaultSettings()
 	settings.ObsidianVault = expandHome(obsidian.Vault)
 	settings.TemplateDir = expandHome(global.CaptureTemplatesDir())
-	settings.DailyNote = obsidian.DailyNote
+	settings.DailyNote = obsidian.Daily.Note
 	settings.Mappings = organizer.LoadMappings(expandHome(global.CaptureMappingsDir())).Tables
 	settings.Sources = loadWorkflows(global).Sources
-	if obsidian.Section != "" {
-		settings.DailySection = obsidian.Section
+	if obsidian.Daily.Section != "" {
+		settings.DailySection = obsidian.Daily.Section
 	}
-	settings.LocationNote = obsidian.LocationNote
-	settings.LocationArchive = obsidian.LocationArchive
-	settings.TimelineNote = obsidian.TimelineNote
-	settings.TimelineArchive = obsidian.TimelineArchive
-	settings.ImageFolder = obsidian.Images.Folder
-	settings.ImageMaxSide = obsidian.Images.MaxSide
-	settings.ImageQuality = obsidian.Images.Quality
+	settings.LocationNote = obsidian.Location.Note
+	settings.LocationArchive = obsidian.Location.Archive
+	settings.TimelineNote = obsidian.Timeline.Note
+	settings.TimelineArchive = obsidian.Timeline.Archive
+	settings.ImageFolder = obsidian.Daily.Images.Folder
+	settings.ImageMaxSide = obsidian.Daily.Images.MaxSide
+	settings.ImageQuality = obsidian.Daily.Images.Quality
 	reminders := global.CaptureReminders()
 	settings.ReminderList = reminders.List
 	settings.ReminderRadius = reminders.Radius
-	settings.GPXDirectory = expandHome(global.Capture.GPX.Directory)
+	settings.GPXDirectory = expandHome(global.Capture.GPX.Root)
 	return settings
 }
 

@@ -12,11 +12,6 @@ import (
 	"time"
 )
 
-// CredentialsFilename is dgs cred's own settings file. It is kept apart from
-// dgs-config.json: the identity directories are this machine's, and the file
-// sits beside the main one rather than inside it.
-const CredentialsFilename = "credentials.json"
-
 // Credentials are dgs cred's settings, with every path expanded.
 type Credentials struct {
 	// Identities are directories searched for private keys.
@@ -73,13 +68,22 @@ func DefaultNewIdentityDir() string {
 	return filepath.Join(directory, "age")
 }
 
-// CredentialsPath is <XDG config home>/dgs-toolbox/credentials.json.
+// CredentialsPath is dgs cred's file, <config dir>/cred/config.json, in the
+// directory this run resolves to.
 func CredentialsPath() (string, error) {
-	path, err := DefaultPath()
+	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(filepath.Dir(path), CredentialsFilename), nil
+	return filepath.Join(dir, "cred", PartFile), nil
+}
+
+// CredentialsPath is dgs cred's file in this configuration's directory.
+func (c Config) CredentialsPath() string { return c.PartPath("cred") }
+
+// DefaultCredentials is what an exported default cred file holds.
+func DefaultCredentials() Credentials {
+	return Credentials{Identities: []string{}, NewIdentityDir: "~/.config/age", CloseAfter: "5m"}
 }
 
 // LoadCredentials reads the file at path. A missing file is not an error:

@@ -17,7 +17,7 @@ import (
 // get them, so the command that writes them is exercised too.
 func starterConfig(t *testing.T) config.Config {
 	t.Helper()
-	global := config.Config{ConfigDir: t.TempDir()}
+	global := config.At(t.TempDir())
 	if err := writeStarters(io.Discard, global); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,14 @@ func TestExampleRecipesAndTemplatesLoad(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
-		global := config.Config{ConfigDir: filepath.Join(root, entry.Name())}
+		global, err := config.LoadDir(filepath.Join(root, entry.Name()))
+		if err == nil {
+			err = global.PartErr("capture")
+		}
+		if err != nil {
+			t.Errorf("examples/%s: %v", entry.Name(), err)
+			continue
+		}
 		loaded := organizer.Load(global.CaptureRecipesDir())
 		if len(loaded.Failures) > 0 {
 			t.Errorf("examples/%s: %v", entry.Name(), loaded.Failures)

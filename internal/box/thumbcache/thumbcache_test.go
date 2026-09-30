@@ -81,7 +81,7 @@ func TestUnknownSizeIsRefused(t *testing.T) {
 	}
 }
 
-// Grid thumbnails are never swept; previews go after box.preview.keep days
+// Grid thumbnails are never swept; previews go after box.preview.keep_days days
 // without use.
 func TestSweepDropsOldPreviewsOnly(t *testing.T) {
 	cacheDir := t.TempDir()
@@ -109,7 +109,7 @@ func TestSweepDropsOldPreviewsOnly(t *testing.T) {
 	}
 }
 
-// box.preview.keep = 0 means keep previews indefinitely.
+// box.preview.keep_days = 0 means keep previews indefinitely.
 func TestSweepOfZeroKeepsEverything(t *testing.T) {
 	cacheDir := t.TempDir()
 	store := thumbcache.New(cacheDir, "/Volumes/nas/Box")

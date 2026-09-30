@@ -35,7 +35,7 @@ const MediaType = "image/jpeg"
 
 // Store is one Box's pictures.
 type Store struct {
-	// Directory is <box.cache_dir>/<hash of root>.
+	// Directory is <box.cache.dir>/<hash of root>.
 	Directory string
 }
 
@@ -49,7 +49,7 @@ func New(cacheDir, root string) Store {
 //
 // Grid thumbnails and previews are in separate trees because they expire
 // differently: a grid thumbnail is a few KB and is never dropped, and a preview
-// is dropped after box.preview.keep days without use. Sweeping one must never
+// is dropped after box.preview.keep_days days without use. Sweeping one must never
 // be able to reach the other.
 func (s Store) PathFor(fullDigest, size string) (string, error) {
 	return s.PathForPage(fullDigest, size, 1)
@@ -171,7 +171,7 @@ func (s Store) LoadPage(fullDigest, size string, page int) ([]byte, error) {
 // Grid thumbnails are never swept: they are a few KB each and they are what a
 // grid is made of, so dropping one only means fetching the scan again to draw
 // the same picture. keep of zero sweeps nothing, which is how
-// box.preview.keep = 0 means "keep previews indefinitely".
+// box.preview.keep_days = 0 means "keep previews indefinitely".
 func (s Store) Sweep(keep int, now time.Time) (int, error) {
 	if keep <= 0 {
 		return 0, nil

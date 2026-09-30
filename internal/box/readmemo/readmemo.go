@@ -38,7 +38,7 @@ const (
 
 // Store is one inbox's memos.
 type Store struct {
-	// Directory is <box.cache_dir>/inbox/<hash of the inbox path>.
+	// Directory is <box.cache.dir>/inbox/<hash of the inbox path>.
 	Directory string
 }
 

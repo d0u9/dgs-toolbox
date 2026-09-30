@@ -1,0 +1,25 @@
+{
+  "scan": {
+    "root": "~/Captures",
+    "index_file": "index.json"
+  },
+  "obsidian": {
+    "vault": "~/Vaults/personal",
+    "daily": {
+      "note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
+      "section": "Captured{{with .Device}} - {{.}}{{end}}",
+      "images": {
+        "folder": "assets/{{.Note}}",
+        "max_side": 2048,
+        "quality": 80
+      }
+    },
+    "location": {
+      "note": "88 Inbox/06 Locations.md",
+      "archive": "88 Inbox/06 Locations"
+    },
+    "timeline": {
+      "note": "03 Family/00 Timeline/Timeline.md"
+    }
+  }
+}

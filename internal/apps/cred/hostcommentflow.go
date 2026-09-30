@@ -33,7 +33,7 @@ type hostCommentSavedMsg struct {
 func (m *keysModel) startHostComment() {
 	m.notice = ""
 	if m.snap.settings.Recipients == "" {
-		m.notice = "! Set recipients in credentials.json first"
+		m.notice = "! Set recipients in cred/config.json first"
 		return
 	}
 	host, ok := m.selectedHost()

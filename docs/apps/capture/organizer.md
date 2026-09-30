@@ -538,7 +538,7 @@ afterwards.
 `obsidian.location.append` and `obsidian.daily.append` are implemented. It writes the Capture into the
 daily note for the day it was taken:
 
-- **Where** is configured, not discovered. `capture.obsidian.daily_note` is a
+- **Where** is configured, not discovered. `capture.obsidian.daily.note` is a
   path relative to the vault, written as a template over the date:
   `00 Daily Log/{{.Year}}/{{.Date}}.md`. A vault does keep its own daily note
   settings, and reading them looked at first like sparing the reader a
@@ -553,7 +553,7 @@ daily note for the day it was taken:
 - **What** comes from a template, below.
 - **Under which heading**: its own section, added at the end of the note when it
   has none. The heading is a template over the Capture, `{{.App}} - Captured` by
-  default and configured by `capture.obsidian.section`: a note is read months
+  default and configured by `capture.obsidian.daily.section`: a note is read months
   later, and "Shortcut - Captured" says where the entries under it came from,
   which a fixed word does not. Captures from different apps therefore land under
   different headings, each grouped. A value with no placeholders is written as it
@@ -617,7 +617,7 @@ vault's rather than this tool's:
   what wrote the links already in the note: a space is `%20` rather than `+`,
   which some parsers read back as a literal plus.
 
-`capture.obsidian.location_archive` names where a year that has rolled over is
+`capture.obsidian.location.archive` names where a year that has rolled over is
 moved to, one file per year; empty is the folder the note is in. Every list is
 archived: one that never sheds a year grows without limit, and every new entry
 rewrites all of it.

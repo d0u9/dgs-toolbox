@@ -754,7 +754,7 @@ func (m vaultModel) message() string {
 	case m.snap.settingsErr != nil:
 		return "! " + m.snap.settingsErr.Error()
 	case m.root == "":
-		return "· No vault folder. Press o to choose one, or set vault in credentials.json."
+		return "· No vault folder. Press o to choose one, or set vault in cred/config.json."
 	case m.listErr != nil:
 		return "! " + m.listErr.Error()
 	case len(m.listing.Files) == 0 && len(m.problems()) == 0:

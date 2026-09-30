@@ -52,10 +52,10 @@ func NewModel(apps []App, launch Launch) Model {
 
 func NewModelWithConfig(apps []App, launch Launch, topBar dgsconfig.TopBarVisibility) Model {
 	global := dgsconfig.Default()
-	global.TUI.TopBar.Disk = boolPointer(topBar.Disk)
-	global.TUI.TopBar.Network = boolPointer(topBar.Network)
-	global.TUI.TopBar.CPU = boolPointer(topBar.CPU)
-	global.TUI.TopBar.Time = boolPointer(topBar.Time)
+	global.Shell.TopBar.Disk = boolPointer(topBar.Disk)
+	global.Shell.TopBar.Network = boolPointer(topBar.Network)
+	global.Shell.TopBar.CPU = boolPointer(topBar.CPU)
+	global.Shell.TopBar.Time = boolPointer(topBar.Time)
 	return NewModelWithGlobalConfig(apps, launch, global)
 }
 
@@ -304,6 +304,10 @@ func (m Model) activate(selected choice) Model {
 	command := m.apps[selected.appIndex].Commands[selected.commandIndex]
 	if command.New == nil && command.NewWithConfig == nil {
 		m.launchErr = fmt.Sprintf("command %q has no model factory", command.ID)
+		return m
+	}
+	if err := m.globalConfig.PartErr(m.apps[selected.appIndex].ID); err != nil {
+		m.launchErr = err.Error()
 		return m
 	}
 	if command.NewWithConfig != nil {

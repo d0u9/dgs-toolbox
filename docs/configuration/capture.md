@@ -7,40 +7,50 @@ described in [`apps/capture/scan.md`](../apps/capture/scan.md),
 [`apps/capture/archive.md`](../apps/capture/archive.md); the Recipe and Action
 model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
 
+`<config dir>/capture/config.json`:
+
 ```json
 {
-  "capture": {
-    "scan": {
-      "root": "~/Captures",
-      "index_file": "index.json"
-    },
-    "archive": {
-      "root": "~/Capture Archive",
-      "reject": "~/Capture Rejected"
-    },
-    "gpx": {"directory": "/xxx"},
-    "obsidian": {
-      "vault": "~/Vaults/personal",
-      "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
+  "scan": {
+    "root": "~/Captures",
+    "index_file": "index.json"
+  },
+  "archive": {
+    "root": "~/Capture Archive",
+    "reject": "~/Capture Rejected"
+  },
+  "gpx": {"root": "~/Capture GPX"},
+  "obsidian": {
+    "vault": "~/Vaults/personal",
+    "daily": {
+      "note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
       "section": "Captured{{with .Device}} - {{.}}{{end}}",
-      "location_note": "88 Inbox/06 Locations.md",
-      "location_archive": "88 Inbox/06 Locations",
-      "timeline_note": "03 Family/00 Timeline/Timeline.md",
       "images": {
         "folder": "assets/{{.Note}}",
         "max_side": 2048,
         "quality": 80
       }
     },
-    "apple": {
-      "reminders": {
-        "list": "Places",
-        "radius": 200
-      }
+    "location": {
+      "note": "88 Inbox/06 Locations.md",
+      "archive": "88 Inbox/06 Locations"
+    },
+    "timeline": {
+      "note": "03 Family/00 Timeline/Timeline.md",
+      "archive": ""
+    }
+  },
+  "apple": {
+    "reminders": {
+      "list": "Places",
+      "radius": 200
     }
   }
 }
 ```
+
+Keys below are written from the top of that file. Each note the Obsidian
+Actions write has an object of its own under `obsidian`.
 
 Paths beginning with `~` are expanded. Everything under `obsidian` other than
 `vault` is relative to the vault, so what an Action plans, writes and records
@@ -50,11 +60,11 @@ survives the vault moving.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.scan.root` | The directory Scan lists Captures from. It can also be chosen in the session. | empty — Scan opens with no root |
-| `capture.scan.index_file` | The filename that makes a folder a Capture. A bare filename, not a path: a configuration giving a path is refused. | `index.json` |
+| `scan.root` | The directory Scan lists Captures from. It can also be chosen in the session. | empty — Scan opens with no root |
+| `scan.index_file` | The filename that makes a folder a Capture. A bare filename, not a path: a configuration giving a path is refused. | `index.json` |
 
-An empty `capture.scan.root` starts at the current working directory, and
-`capture.scan.index_file` must be a filename rather than a path.
+An empty `scan.root` starts at the current working directory, and
+`scan.index_file` must be a filename rather than a path.
 
 ## Where Captures go
 
@@ -66,8 +76,8 @@ destination exactly as it read in the root.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.archive.root` | The directory organized Captures are kept in. | empty — Archive refuses to archive and names this key |
-| `capture.archive.reject` | The directory rejected Captures are set aside in. Scan rejects into it as well, so a Capture created by mistake is sent away the first time it is looked at. | empty — Scan and Archive refuse to reject and name this key |
+| `archive.root` | The directory organized Captures are kept in. | empty — Archive refuses to archive and names this key |
+| `archive.reject` | The directory rejected Captures are set aside in. Scan rejects into it as well, so a Capture created by mistake is sent away the first time it is looked at. | empty — Scan and Archive refuse to reject and name this key |
 
 Both are absolute paths, `~` expanded, and neither has to exist: the first move
 into a folder creates it. They are configuration and nothing else — unlike the
@@ -86,7 +96,8 @@ outside it.
 Capture reads three directories, and none of them is configurable:
 
 ```text
-<config_dir>/capture/
+<config dir>/capture/
+  config.json  this file
   recipes/     one file per Recipe
   workflows/   one file per workflow: where it keeps each field
   mappings/    one file per translation table
@@ -95,7 +106,7 @@ Capture reads three directories, and none of them is configurable:
 
 The layout is the answer to "where does this installation keep its Capture
 configuration?", and a path for each would make that answer three paths to go
-and look up. `config_dir` moves the whole thing at once, and a directory that
+and look up. `--config` moves the whole configuration at once, and a directory that
 genuinely belongs elsewhere — a vault's templates kept with the vault — is a
 symlink.
 
@@ -186,7 +197,7 @@ file, a `quick_note` Capture whose payload is
 `{"text": "buy milk", "labels": ["errand"]}` answers `content` and `tags`
 without anyone typing them, and a Recipe naming `obsidian.daily.append` runs
 with nothing missing. Nothing in the Recipe mentions a payload key, and nothing
-in `dgs-config.json` does either — workflows arrive one at a time and there is
+in `capture/config.json` does either — workflows arrive one at a time and there is
 no end to them, so they are a directory rather than a section of one file that
 grows without bound.
 
@@ -340,20 +351,20 @@ places.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.gpx.directory` | Directory for `YYYYMMDD.capture.gpx` files written by `gpx.daily.append`. `~` is expanded. | empty — the Action refuses to run |
+| `gpx.root` | Directory for `YYYYMMDD.capture.gpx` files written by `gpx.daily.append`. `~` is expanded. | empty — the Action refuses to run |
 
 ## The vault
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.obsidian.vault` | An absolute path to the Obsidian vault. Nothing is discovered from it: a vault says where the plugin in use puts notes, which is not the same question as where this tool should write. | empty — the Obsidian Actions refuse to run rather than guess |
+| `obsidian.vault` | An absolute path to the Obsidian vault. Nothing is discovered from it: a vault says where the plugin in use puts notes, which is not the same question as where this tool should write. | empty — the Obsidian Actions refuse to run rather than guess |
 
 ## The daily note
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.obsidian.daily_note` | Where a day's note lives, relative to the vault, as a template over the date: `{{.Year}}`, `{{.Month}}`, `{{.Day}}`, `{{.Date}}`. | empty — the daily Action refuses to run |
-| `capture.obsidian.section` | The heading a Capture is appended under. A template over the Capture, so a heading can name the device or app the entries under it came from. It may carry its own hashes — `## Captured` asks for a second-level heading — and is otherwise a first-level one. One run can override it from the `section` parameter in `FIELDS`. | `Captured{{with .Device}} - {{.}}{{end}}` |
+| `obsidian.daily.note` | Where a day's note lives, relative to the vault, as a template over the date: `{{.Year}}`, `{{.Month}}`, `{{.Day}}`, `{{.Date}}`. | empty — the daily Action refuses to run |
+| `obsidian.daily.section` | The heading a Capture is appended under. A template over the Capture, so a heading can name the device or app the entries under it came from. It may carry its own hashes — `## Captured` asks for a second-level heading — and is otherwise a first-level one. One run can override it from the `section` parameter in `FIELDS`. | `Captured{{with .Device}} - {{.}}{{end}}` |
 
 ## Pictures in the daily note
 
@@ -363,16 +374,16 @@ described in
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.obsidian.images.folder` | Where a daily note's pictures go, relative to the note's own folder, as a template over the note: `{{.Note}}` is its filename without `.md`, and `{{.Date}}`, `{{.Year}}`, `{{.Month}}`, `{{.Day}}` its day. A folder that leaves the vault is refused. The default is the layout the Custom Attachment Location plugin writes as `./assets/${noteFileName}`. | `assets/{{.Note}}` |
-| `capture.obsidian.images.max_side` | The longest side, in pixels, a picture is shrunk to. A smaller picture is not enlarged. | `2048` |
-| `capture.obsidian.images.quality` | The JPEG quality a picture is re-encoded at, 1 to 100. | `80` |
+| `obsidian.daily.images.folder` | Where a daily note's pictures go, relative to the note's own folder, as a template over the note: `{{.Note}}` is its filename without `.md`, and `{{.Date}}`, `{{.Year}}`, `{{.Month}}`, `{{.Day}}` its day. A folder that leaves the vault is refused. The default is the layout the Custom Attachment Location plugin writes as `./assets/${noteFileName}`. | `assets/{{.Note}}` |
+| `obsidian.daily.images.max_side` | The longest side, in pixels, a picture is shrunk to. A smaller picture is not enlarged. | `2048` |
+| `obsidian.daily.images.quality` | The JPEG quality a picture is re-encoded at, 1 to 100. | `80` |
 
 ## The location note
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.obsidian.location_note` | The running list of places, newest first, relative to the vault. | empty — the location Action refuses to run |
-| `capture.obsidian.location_archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — the note's own folder |
+| `obsidian.location.note` | The running list of places, newest first, relative to the vault. | empty — the location Action refuses to run |
+| `obsidian.location.archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — the note's own folder |
 
 ## The timeline
 
@@ -381,8 +392,8 @@ same date markers, a rolled-over year moved into its own file.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.obsidian.timeline_note` | The timeline, newest first, relative to the vault. | empty — the timeline Action refuses to run |
-| `capture.obsidian.timeline_archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — the note's own folder |
+| `obsidian.timeline.note` | The timeline, newest first, relative to the vault. | empty — the timeline Action refuses to run |
+| `obsidian.timeline.archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — the note's own folder |
 
 ## Reminders
 
@@ -393,8 +404,8 @@ what they need to reach Reminders, are described in
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `capture.apple.reminders.list` | The title of the Reminders list a reminder is written into. A list that does not exist, or a title two lists share, refuses rather than writing somewhere else. | empty — Reminders' own default list |
-| `capture.apple.reminders.radius` | How close counts as arriving at, or leaving, a reminder's place, in metres. | `150` |
+| `apple.reminders.list` | The title of the Reminders list a reminder is written into. A list that does not exist, or a title two lists share, refuses rather than writing somewhere else. | empty — Reminders' own default list |
+| `apple.reminders.radius` | How close counts as arriving at, or leaving, a reminder's place, in metres. | `150` |
 
 ## Map links and coordinates
 

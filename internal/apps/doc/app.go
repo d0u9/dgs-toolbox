@@ -71,10 +71,9 @@ func command() tui.Command {
 		NewWithConfig: build,
 		Flags: []tui.Flag{{
 			Name:  "root",
-			Usage: "the tree to open (default: doc.root or doc.trees, else the working directory)",
+			Usage: "the tree to open (default: the trees in doc/config.json, else the working directory)",
 			Apply: func(global *config.Config, value string) error {
-				global.Doc.Root = value
-				global.Doc.Trees = nil
+				global.Doc.Trees = map[string]string{"": value}
 				return nil
 			},
 		}, {
@@ -85,7 +84,7 @@ func command() tui.Command {
 				if err != nil || port < 1 || port > 65535 {
 					return fmt.Errorf("%q is not a port between 1 and 65535", value)
 				}
-				global.Doc.Web.Port = port
+				global.Doc.Web = config.SetWeb(global.Doc.Web, config.DocPagesServer, func(w *config.Web) { w.Port = port })
 				return nil
 			},
 		}},

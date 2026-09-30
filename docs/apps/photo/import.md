@@ -129,7 +129,7 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 
 - Source: directory selected through File Explorer.
 - Destination: directory selected through File Explorer.
-- `photo.import.source` and `photo.import.destination` in `dgs-config.json` optionally prefill those two fields. Empty values retain the repository mock directories for UI testing; users can still change either path in Directories.
+- `photo.import.source` and `photo.import.destination` in `photo/config.json` optionally prefill those two fields. Empty values retain the repository mock directories for UI testing; users can still change either path in Directories.
 - Operation: radio choice between Copy and Move.
 - Extensions: dynamic multi-checkbox choices derived from the extensions actually present in Source; all are selected initially.
 - Duplicates: filename-conflict policy. Skip leaves the existing destination untouched, Replace intends to publish the verified new file at that path, and Keep both chooses a new unique filename. Replace is not the default; its backup and rollback semantics remain to be designed before implementation.

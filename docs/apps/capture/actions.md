@@ -47,10 +47,10 @@ Capture with none is only the entry.
   before anything is written, naming the file.
 - Each is re-encoded rather than copied: turned upright from its EXIF
   orientation, shrunk so its longest side is at most
-  `capture.obsidian.images.max_side`, encoded at
-  `capture.obsidian.images.quality`. The result carries no EXIF — no time, no
+  `capture.obsidian.daily.images.max_side`, encoded at
+  `capture.obsidian.daily.images.quality`. The result carries no EXIF — no time, no
   place, no camera.
-- They go into `capture.obsidian.images.folder`, beside the note, as
+- They go into `capture.obsidian.daily.images.folder`, beside the note, as
   `file-<the Capture's time to the millisecond>-<n>.jpg`, each published only
   after reading it back matches, the way every file this toolbox writes is.
 - They are in place before the entry links them, one `![[file-….jpg]]` line
@@ -61,15 +61,15 @@ Capture with none is only the entry.
 
 Needs `createdAt`. `content` is optional: a Capture nobody wrote anything
 about is still written, and the template leaves out the lines its text would
-have filled. Configured by `capture.obsidian.daily_note`,
-`capture.obsidian.section` and `capture.obsidian.images`; shaped by the `daily-entry.md` and
+have filled. Configured by `capture.obsidian.daily.note`,
+`capture.obsidian.daily.section` and `capture.obsidian.images`; shaped by the `daily-entry.md` and
 `daily-note.md` templates.
 
 **Parameters** — a per-run override, edited in `FIELDS`:
 
 | Name | Meaning | Default |
 | --- | --- | --- |
-| `section` | The heading this Capture is written under. | `capture.obsidian.section` |
+| `section` | The heading this Capture is written under. | `capture.obsidian.daily.section` |
 
 ## `obsidian.location.append`
 
@@ -77,11 +77,11 @@ Puts the Capture at the top of the running list of places, under its day.
 
 - Newest first, under a marker for the day it was captured.
 - Moves any year that has rolled over into
-  `capture.obsidian.location_archive` as it goes.
+  `capture.obsidian.location.archive` as it goes.
 - Writes nothing the second time, on the same terms as the daily entry.
 
 Needs `createdAt`; `content` is optional, on the same terms. Configured by
-`capture.obsidian.location_note` and `capture.obsidian.location_archive`;
+`capture.obsidian.location.note` and `capture.obsidian.location.archive`;
 shaped by the `location-entry.md` template, which also decides the map services
 the line carries and the vault command a coordinate links to.
 
@@ -92,15 +92,15 @@ of what happened, kept exactly as the list of places is.
 
 - Newest first, under the same date marker.
 - Moves any year that has rolled over into
-  `capture.obsidian.timeline_archive` as it goes; a Capture from such a year
+  `capture.obsidian.timeline.archive` as it goes; a Capture from such a year
   goes straight into that year's file.
 - Writes nothing the second time, on the same terms as the daily entry.
 - Carries the place — address, coordinate, map links — when the Capture has a
   position, and is the one line otherwise.
 
 Needs `createdAt` and `content`: the entry is what happened, so a Capture
-nobody wrote about is not ready. Configured by `capture.obsidian.timeline_note`
-and `capture.obsidian.timeline_archive`; shaped by the `timeline-entry.md`
+nobody wrote about is not ready. Configured by `capture.obsidian.timeline.note`
+and `capture.obsidian.timeline.archive`; shaped by the `timeline-entry.md`
 template when the template directory has one, and otherwise by
 `location-entry.md`, so the timeline reads like the list of places until it
 is given a shape of its own.
@@ -108,7 +108,7 @@ is given a shape of its own.
 ## `gpx.daily.append`
 
 Writes one timed GPX waypoint for the Capture's WGS-84 position. The file is
-`<capture.gpx.directory>/YYYYMMDD.capture.gpx`, using the date and offset
+`<capture.gpx.root>/YYYYMMDD.capture.gpx`, using the date and offset
 recorded by the Capture. Captures from the same day share the file, regardless
 of workflow. The waypoint name is the resolved `content` note text, when
 present, using the same workflow mapping and enrichment as the Location Action.

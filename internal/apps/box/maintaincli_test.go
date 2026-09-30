@@ -27,7 +27,7 @@ func boxWith(t *testing.T, bodies ...string) (string, config.Config) {
 	root := t.TempDir()
 	global := config.Default()
 	global.Box.Root = root
-	global.Box.CacheDir = t.TempDir()
+	global.Box.Cache.Dir = t.TempDir()
 	if err := maintain.Init(root, global.BoxMarker(), time.Now()); err != nil {
 		t.Fatalf("init: %v", err)
 	}

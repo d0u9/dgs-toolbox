@@ -85,7 +85,7 @@ func flags() []tui.Flag {
 				if err != nil || port < 1 || port > 65535 {
 					return fmt.Errorf("%q is not a port between 1 and 65535", value)
 				}
-				global.Box.Web.Port = port
+				global.Box.Web = config.SetWeb(global.Box.Web, config.BoxBrowseServer, func(w *config.Web) { w.Port = port })
 				return nil
 			},
 		},

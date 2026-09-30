@@ -49,7 +49,7 @@ type Engine struct {
 	// whole file over a network filesystem, and a handful at once is faster
 	// than one and faster than many.
 	workers int
-	// trashKeepDays is box.trash.keep: advice about the trash, never a removal.
+	// trashKeepDays is box.trash.keep_days: advice about the trash, never a removal.
 	trashKeepDays int
 
 	cacheDir string
@@ -137,7 +137,7 @@ func NewEngine(settings Settings) (*Engine, error) {
 		workers:       settings.Workers,
 		trashKeepDays: settings.TrashKeepDays,
 	}
-	// Previews are dropped after box.preview.keep days without use. Sweeping
+	// Previews are dropped after box.preview.keep_days days without use. Sweeping
 	// at startup rather than on a timer is enough: they are a cache, and the
 	// only cost of keeping one a day longer is disk.
 	_, _ = engine.thumbs.Sweep(settings.PreviewKeepDays, time.Now())

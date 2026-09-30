@@ -33,7 +33,7 @@ func newOpenFixture(t *testing.T, closeAfter string) openFixture {
 	writeFile(t, filepath.Join(root, "keys", "age.txt"), mine.String()+"\n", 0o600)
 	vaultDir := filepath.Join(root, "vault")
 	os.MkdirAll(vaultDir, 0o755)
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"identities":["`+filepath.Join(root, "keys")+`"],"vault":"`+vaultDir+`","close_after":"`+closeAfter+`"}`, 0o600)
 	return openFixture{path: path, vaultDir: vaultDir, mine: mine}
 }

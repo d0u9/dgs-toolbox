@@ -4,6 +4,7 @@
 package cred
 
 import (
+	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 )
 
@@ -21,12 +22,22 @@ func New() tui.App {
 			New: func() tui.CommandModel {
 				return newKeysModel()
 			},
+			NewWithConfig: func(global config.Config) tui.CommandModel {
+				m := newKeysModel()
+				m.path = global.CredentialsPath()
+				return m
+			},
 		}, {
 			ID:          "vault",
 			Name:        "Vault",
 			Description: "The age files in a folder, and which this machine can open.",
 			New: func() tui.CommandModel {
 				return newVaultModel()
+			},
+			NewWithConfig: func(global config.Config) tui.CommandModel {
+				m := newVaultModel()
+				m.path = global.CredentialsPath()
+				return m
 			},
 		}},
 	}

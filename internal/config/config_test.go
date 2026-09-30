@@ -1,16 +1,16 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 )
 
 func TestMissingConfigUsesAllTopBarMetrics(t *testing.T) {
-	t.Setenv(EnvPath, filepath.Join(t.TempDir(), "missing.json"))
+	t.Setenv(EnvPath, filepath.Join(t.TempDir(), "missing"))
 	config, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -21,11 +21,7 @@ func TestMissingConfigUsesAllTopBarMetrics(t *testing.T) {
 }
 
 func TestPartialConfigOnlyOverridesNamedMetrics(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"tui":{"top_bar":{"network":false,"time":false}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(EnvPath, path)
+	t.Setenv(EnvPath, writeConfig(t, `{"shell":{"top_bar":{"network":false,"time":false}}}`))
 	config, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -40,12 +36,7 @@ func TestPhotoImportStateFileDefaultsAndCanBeConfigured(t *testing.T) {
 	if got := (Config{}).PhotoImportStateFile(); got != ".dgs-state" {
 		t.Fatalf("default state file = %q", got)
 	}
-	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"photo":{"import":{"state_file":".photo-import-state"}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(EnvPath, path)
-	loaded, err := Load()
+	loaded, err := LoadPath(writeConfig(t, `{"photo":{"import":{"state_file":".photo-import-state"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,12 +46,7 @@ func TestPhotoImportStateFileDefaultsAndCanBeConfigured(t *testing.T) {
 }
 
 func TestPhotoImportStateFileRejectsPaths(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"photo":{"import":{"state_file":"nested/state"}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(EnvPath, path)
-	if _, err := Load(); err == nil {
+	if _, err := LoadPath(writeConfig(t, `{"photo":{"import":{"state_file":"nested/state"}}}`)); err == nil {
 		t.Fatal("state file path was accepted; only a filename is safe")
 	}
 }
@@ -70,11 +56,7 @@ func TestCaptureScanSettingsDefaultAndCanBeConfigured(t *testing.T) {
 	if root != "" || indexFile != "index.json" {
 		t.Fatalf("default Capture Scan settings = %q, %q", root, indexFile)
 	}
-	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"capture":{"scan":{"root":"/captures","index_file":"capture.json"}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := LoadPath(path)
+	loaded, err := LoadPath(writeConfig(t, `{"capture":{"scan":{"root":"/captures","index_file":"capture.json"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,12 +72,7 @@ func TestCaptureArchiveFoldersDefaultAndCanBeConfigured(t *testing.T) {
 	if archive, reject := (Config{}).CaptureArchiveFolders(); archive != "" || reject != "" {
 		t.Fatalf("default Archive folders = %q, %q; want neither set", archive, reject)
 	}
-	path := filepath.Join(t.TempDir(), "config.json")
-	body := `{"capture":{"archive":{"root":"/filed","reject":"/set-aside"}}}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := LoadPath(path)
+	loaded, err := LoadPath(writeConfig(t, `{"capture":{"archive":{"root":"/filed","reject":"/set-aside"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,28 +81,32 @@ func TestCaptureArchiveFoldersDefaultAndCanBeConfigured(t *testing.T) {
 	}
 }
 
-func TestCaptureIndexFileRejectsPaths(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"capture":{"scan":{"index_file":"metadata/index.json"}}}`), 0o600); err != nil {
+func TestCaptureObsidianIsOneObjectPerNote(t *testing.T) {
+	loaded, err := LoadPath(writeConfig(t, `{"capture":{"obsidian":{"vault":"/v",
+		"daily":{"note":"D/{{.Date}}.md","section":"S","images":{"max_side":100}},
+		"location":{"note":"L.md","archive":"L"},"timeline":{"note":"T.md"}}}}`))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadPath(path); err == nil {
+	o := loaded.CaptureObsidian()
+	if o.Daily.Note != "D/{{.Date}}.md" || o.Daily.Section != "S" || o.Daily.Images.MaxSide != 100 ||
+		o.Location.Note != "L.md" || o.Location.Archive != "L" || o.Timeline.Note != "T.md" {
+		t.Fatalf("obsidian = %+v", o)
+	}
+	if _, err := LoadPath(writeConfig(t, `{"capture":{"obsidian":{"daily_note":"D.md"}}}`)); err == nil {
+		t.Fatal("the old flat key was accepted")
+	}
+}
+
+func TestCaptureIndexFileRejectsPaths(t *testing.T) {
+	if _, err := LoadPath(writeConfig(t, `{"capture":{"scan":{"index_file":"metadata/index.json"}}}`)); err == nil {
 		t.Fatal("Capture index file path was accepted; only a filename is safe")
 	}
 }
 
-func TestLoadPathOverridesEnvironmentConfig(t *testing.T) {
-	directory := t.TempDir()
-	environmentPath := filepath.Join(directory, "environment.json")
-	explicitPath := filepath.Join(directory, "explicit.json")
-	if err := os.WriteFile(environmentPath, []byte(`{"photo":{"import":{"source":"/environment/source"}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(explicitPath, []byte(`{"photo":{"import":{"source":"/explicit/source","destination":"/explicit/destination"}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(EnvPath, environmentPath)
-	loaded, err := LoadPath(explicitPath)
+func TestLoadDirOverridesEnvironmentConfig(t *testing.T) {
+	t.Setenv(EnvPath, writeConfig(t, `{"photo":{"import":{"source":"/environment/source"}}}`))
+	loaded, err := LoadPath(writeConfig(t, `{"photo":{"import":{"source":"/explicit/source","destination":"/explicit/destination"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,14 +116,62 @@ func TestLoadPathOverridesEnvironmentConfig(t *testing.T) {
 	}
 }
 
-func TestExportDefaultCreatesEditableConfigWithoutOverwrite(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", "config.json")
-	t.Setenv(EnvPath, path)
-	exported, err := ExportDefault(path)
-	if err != nil || exported != path {
-		t.Fatalf("exported=%q err=%v", exported, err)
+// A broken file refuses only the command it belongs to: the commands are
+// independent, and a typo in one should not take the others down.
+func TestABrokenPartRefusesOnlyItsCommand(t *testing.T) {
+	loaded, err := LoadDir(writeConfig(t, `{"box":{"nope":1},"photo":{"import":{"source":"/s"}}}`))
+	if err != nil {
+		t.Fatalf("LoadDir failed as a whole: %v", err)
 	}
-	loaded, err := Load()
+	if err := loaded.PartErr("box"); err == nil || !strings.Contains(err.Error(), filepath.Join("box", PartFile)) {
+		t.Fatalf("box error = %v, want it to name box/config.json", err)
+	}
+	if err := loaded.PartErr("photo"); err != nil {
+		t.Fatalf("photo refused for box's mistake: %v", err)
+	}
+	if source, _ := loaded.PhotoImportPaths(); source != "/s" {
+		t.Fatalf("photo source = %q", source)
+	}
+}
+
+// The shell's file is read by the shell itself, so a broken one stops dgs.
+func TestABrokenShellPartStopsEverything(t *testing.T) {
+	if _, err := LoadDir(writeConfig(t, `{"shell":{"tui":{}}}`)); err == nil {
+		t.Fatal("a broken shell file was accepted")
+	}
+}
+
+// The single-file layout this one replaced is refused by name rather than
+// silently ignored: settings someone wrote must not quietly stop applying.
+func TestTheOldSingleFileIsRefused(t *testing.T) {
+	for _, name := range []string{"dgs-config.json", "credentials.json"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadDir(dir); err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("%s: err = %v, want it refused by name", name, err)
+		}
+	}
+}
+
+func TestConfigNamesADirectoryNotAFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadDir(path); err == nil {
+		t.Fatal("a file was accepted as the configuration directory")
+	}
+}
+
+func TestExportDefaultWritesEveryPartWithoutOverwrite(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nested")
+	written, skipped, err := ExportDefault(dir)
+	if err != nil || len(skipped) != 0 || len(written) != len(parts) {
+		t.Fatalf("written=%v skipped=%v err=%v", written, skipped, err)
+	}
+	loaded, err := LoadPath(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,129 +182,73 @@ func TestExportDefaultCreatesEditableConfigWithoutOverwrite(t *testing.T) {
 	if loaded.PhotoImportStateFile() != ".dgs-state" {
 		t.Fatalf("exported state file = %q", loaded.PhotoImportStateFile())
 	}
-	if root, indexFile := loaded.CaptureScanSettings(); root != "" || indexFile != "index.json" {
-		t.Fatalf("exported Capture Scan settings = %q, %q", root, indexFile)
+	if got := loaded.BoxWebAddr(); got != "127.0.0.1:8766" {
+		t.Fatalf("exported box web = %q", got)
 	}
-	if _, err := ExportDefault(path); err == nil {
-		t.Fatal("second export overwrote existing config")
+	if _, _, err := LoadCredentials(loaded.CredentialsPath()); err != nil {
+		t.Fatalf("exported cred file: %v", err)
+	}
+	box := filepath.Join(dir, "box", PartFile)
+	if err := os.WriteFile(box, []byte(`{"workers": 2}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	written, skipped, err = ExportDefault(dir)
+	if err != nil || len(written) != 0 || len(skipped) != len(parts) {
+		t.Fatalf("second export: written=%v skipped=%v err=%v", written, skipped, err)
+	}
+	if data, _ := os.ReadFile(box); string(data) != `{"workers": 2}` {
+		t.Fatalf("second export overwrote box: %s", data)
 	}
 }
 
-func TestDefaultExportPathUsesCurrentWorkingDirectory(t *testing.T) {
-	t.Setenv(EnvPath, "")
-	directory, err := os.Getwd()
+// Each command reads its own folder of the configuration directory. dgs is a
+// toolbox: two commands both wanting "templates" is the normal case, not a
+// collision to work around, and a folder is what a command takes with it if
+// it leaves.
+func TestTheConfigurationIsLaidOutByCommand(t *testing.T) {
+	dir := writeConfig(t, `{"capture": {"scan": {"index_file": "index.json"}}}`)
+	t.Setenv(EnvPath, filepath.Join(t.TempDir(), "elsewhere"))
+
+	loaded, err := LoadPath(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := ExportPath("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path != filepath.Join(directory, ExportFilename) {
-		t.Fatalf("export path = %q", path)
-	}
-}
-
-func TestExportPathAcceptsFileOrExistingDirectory(t *testing.T) {
-	directory := t.TempDir()
-	path, err := ExportPath(directory)
-	if err != nil || path != filepath.Join(directory, ExportFilename) {
-		t.Fatalf("directory export path=%q err=%v", path, err)
-	}
-	want := filepath.Join(directory, "custom.json")
-	path, err = ExportPath(want)
-	if err != nil || path != want {
-		t.Fatalf("file export path=%q err=%v", path, err)
-	}
-}
-
-// The file-based configuration is laid out by command under one root, and the
-// root defaults to the directory of the file that was loaded rather than the
-// location the operating system would have chosen: --config points at a whole
-// configuration.
-func TestCaptureDirectoriesFollowTheLoadedConfig(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "dgs-config.json")
-	if err := os.WriteFile(path, []byte(`{"capture": {"scan": {"index_file": "index.json"}}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(EnvPath, filepath.Join(t.TempDir(), "elsewhere", "config.json"))
-
-	loaded, err := LoadPath(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := loaded.CaptureRecipesDir(); got != filepath.Join(dir, "capture", "recipes") {
-		t.Fatalf("recipes = %q, want them under the command's own directory", got)
-	}
-	if got := loaded.CaptureTemplatesDir(); got != filepath.Join(dir, "capture", "templates") {
-		t.Fatalf("templates = %q, want them under the command's own directory", got)
-	}
-
-	if got := loaded.CaptureWorkflowsDir(); got != filepath.Join(dir, "capture", "workflows") {
-		t.Fatalf("workflows = %q, want them under the command's own directory", got)
+	for got, want := range map[string]string{
+		loaded.CaptureRecipesDir():   filepath.Join(dir, "capture", "recipes"),
+		loaded.CaptureTemplatesDir(): filepath.Join(dir, "capture", "templates"),
+		loaded.CaptureWorkflowsDir(): filepath.Join(dir, "capture", "workflows"),
+		loaded.AppDir("photo"):       filepath.Join(dir, "photo"),
+		loaded.CredentialsPath():     filepath.Join(dir, "cred", PartFile),
+	} {
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
 	}
 
 	// The layout is not negotiable: a path for each directory would make
 	// "where does this installation keep its configuration?" three answers.
-	if err := os.WriteFile(path, []byte(`{"capture": {"recipes": "/somewhere/else"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadPath(path); err == nil {
+	if _, err := LoadPath(writeConfig(t, `{"capture": {"recipes": "/somewhere/else"}}`)); err == nil {
 		t.Fatal("a path of its own was accepted, want the unknown key refused")
 	}
 }
 
-// config_dir moves the whole file-based configuration, and each command reads
-// its own corner of it. dgs is a toolbox: two commands both wanting
-// "templates" is the normal case, not a collision to work around.
-func TestConfigDirIsLaidOutByCommand(t *testing.T) {
-	root := t.TempDir()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "dgs-config.json")
-	body := `{"config_dir": ` + strconv.Quote(root) + `}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	loaded, err := LoadPath(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := loaded.Dir(); got != root {
-		t.Fatalf("dir = %q, want the configured root", got)
-	}
-	if got := loaded.AppDir("photo"); got != filepath.Join(root, "photo") {
-		t.Fatalf("photo dir = %q", got)
-	}
-	if got := loaded.CaptureRecipesDir(); got != filepath.Join(root, "capture", "recipes") {
-		t.Fatalf("recipes = %q", got)
-	}
-	if got := loaded.CaptureTemplatesDir(); got != filepath.Join(root, "capture", "templates") {
-		t.Fatalf("templates = %q", got)
-	}
-
-	if got := loaded.CaptureWorkflowsDir(); got != filepath.Join(root, "capture", "workflows") {
-		t.Fatalf("workflows = %q", got)
-	}
-}
-
 // There is one default location, and it is in the XDG directory whether or not
-// a file is there yet: "which file am I editing?" must not have an answer that
-// depends on which files exist.
+// anything is there yet: "which file am I editing?" must not have an answer
+// that depends on which files exist.
 func TestTheDefaultLocationIsTheXDGOne(t *testing.T) {
 	xdg := t.TempDir()
 	t.Setenv(EnvPath, "")
 	t.Setenv(EnvXDGConfigHome, xdg)
 
-	wanted := filepath.Join(xdg, XDGDirName, ExportFilename)
-	if got, err := Path(); err != nil || got != wanted {
-		t.Fatalf("path = %q, %v, want %q even before the file exists", got, err, wanted)
+	wanted := filepath.Join(xdg, XDGDirName)
+	if got, err := Dir(); err != nil || got != wanted {
+		t.Fatalf("dir = %q, %v, want %q even before it exists", got, err, wanted)
 	}
-	if err := os.MkdirAll(filepath.Join(xdg, XDGDirName), 0o755); err != nil {
+	shell := filepath.Join(wanted, "shell", PartFile)
+	if err := os.MkdirAll(filepath.Dir(shell), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(wanted, []byte(`{"tui":{"top_bar":{"cpu":false}}}`), 0o600); err != nil {
+	if err := os.WriteFile(shell, []byte(`{"top_bar":{"cpu":false}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	config, err := Load()
@@ -285,8 +258,11 @@ func TestTheDefaultLocationIsTheXDGOne(t *testing.T) {
 	if config.TopBarVisibility().CPU {
 		t.Fatal("the XDG configuration was not the one loaded")
 	}
-	if want := filepath.Join(xdg, XDGDirName); config.Dir() != want {
-		t.Fatalf("config dir = %q, want %q — the folder holding the whole configuration", config.Dir(), want)
+	if config.Dir() != wanted {
+		t.Fatalf("config dir = %q, want %q", config.Dir(), wanted)
+	}
+	if path, err := CredentialsPath(); err != nil || path != filepath.Join(wanted, "cred", PartFile) {
+		t.Fatalf("credentials path = %q, %v", path, err)
 	}
 }
 
@@ -300,12 +276,12 @@ func TestTheDefaultLocationFallsBackToHomeConfig(t *testing.T) {
 	if err != nil {
 		t.Skip("no home directory")
 	}
-	got, err := Path()
+	got, err := Dir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(home, ".config", XDGDirName, ExportFilename); got != want {
-		t.Fatalf("path = %q, want %q", got, want)
+	if want := filepath.Join(home, ".config", XDGDirName); got != want {
+		t.Fatalf("dir = %q, want %q", got, want)
 	}
 }
 
@@ -327,25 +303,24 @@ func TestExampleConfigurationsLoad(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
-		// A folder holds dgs-config.json, credentials.json, or both.
+		dir := filepath.Join(root, entry.Name())
 		held := false
-		path := filepath.Join(root, entry.Name(), ExportFilename)
-		if _, err := os.Stat(path); err == nil {
-			held = true
-			if _, err := LoadPath(path); err != nil {
-				t.Errorf("examples/%s: %v", entry.Name(), err)
-			}
-		}
-		path = filepath.Join(root, entry.Name(), CredentialsFilename)
-		if _, err := os.Stat(path); err == nil {
-			held = true
-			if _, _, err := LoadCredentials(path); err != nil {
-				t.Errorf("examples/%s: %v", entry.Name(), err)
+		for _, p := range parts {
+			if _, err := os.Stat(filepath.Join(dir, p.name, PartFile)); err == nil {
+				held = true
 			}
 		}
 		if !held {
-			t.Errorf("examples/%s holds neither %s nor %s", entry.Name(), ExportFilename, CredentialsFilename)
+			t.Errorf("examples/%s holds no <command>/%s", entry.Name(), PartFile)
 			continue
+		}
+		loaded, err := LoadPath(dir)
+		if err != nil {
+			t.Errorf("examples/%s: %v", entry.Name(), err)
+			continue
+		}
+		if _, _, err := LoadCredentials(loaded.CredentialsPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("examples/%s: %v", entry.Name(), err)
 		}
 		found++
 	}
@@ -360,11 +335,7 @@ func TestGeoGPXTilesAreValidated(t *testing.T) {
 		"no placeholder": `{"geo":{"gpx":{"tiles":[{"name":"t","url":"https://t/{z}/{x}.png"}]}}}`,
 		"coordinates":    `{"geo":{"gpx":{"tiles":[{"name":"t","url":"https://t/{z}/{x}/{y}.png","coordinates":"bd09"}]}}}`,
 	} {
-		path := filepath.Join(t.TempDir(), "config.json")
-		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := LoadPath(path); err == nil {
+		if _, err := LoadPath(writeConfig(t, body)); err == nil {
 			t.Errorf("%s: loaded", name)
 		}
 	}
@@ -372,7 +343,7 @@ func TestGeoGPXTilesAreValidated(t *testing.T) {
 
 func TestGeoGPXTilesFileAddsTiles(t *testing.T) {
 	dir := t.TempDir()
-	config := Config{ConfigDir: dir, Geo: Geo{GPX: GeoGPX{Tiles: []GeoGPXTile{{Name: "inline", URL: "https://i/{z}/{x}/{y}.png"}}}}}
+	config := Config{dir: dir, Geo: Geo{GPX: GeoGPX{Tiles: []GeoGPXTile{{Name: "inline", URL: "https://i/{z}/{x}/{y}.png"}}}}}
 	if tiles, err := config.GeoGPXTiles(); err != nil || len(tiles) != 1 {
 		t.Fatalf("without a file: %v %v", tiles, err)
 	}

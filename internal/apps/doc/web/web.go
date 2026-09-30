@@ -70,7 +70,7 @@ func SettingsFrom(global config.Config) Settings {
 	if dir, err := global.DocCacheDir(); err == nil {
 		settings.CacheDir = dir
 	}
-	if len(global.Doc.Trees) > 0 {
+	if len(global.Doc.Trees) > 1 {
 		for _, t := range global.DocTrees() {
 			settings.Trees = append(settings.Trees, Tree{Name: t.Name, Root: t.Root})
 		}
@@ -108,7 +108,8 @@ type sourceFileJSON struct {
 
 type stateJSON struct {
 	Root string `json:"root"`
-	// Name is the tree's name in doc.trees, empty for doc.root.
+	// Name is the tree's name in doc.trees, empty for --root or the working
+	// directory.
 	Name string `json:"name"`
 	// Trees are every tree the page switches between.
 	Trees     []Tree          `json:"trees"`

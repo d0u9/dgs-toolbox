@@ -98,7 +98,7 @@ func TestVersionFlagDoesNotStartTUI(t *testing.T) {
 }
 
 func TestExportConfigFlagWritesDefaultsWithoutStartingTUI(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "dgs", "config.json")
+	path := filepath.Join(t.TempDir(), "dgs")
 	t.Setenv(config.EnvPath, path)
 	called := false
 	command := NewRootCommand(apps.All(), func(tui.Launch) error {
@@ -114,11 +114,12 @@ func TestExportConfigFlagWritesDefaultsWithoutStartingTUI(t *testing.T) {
 	if called {
 		t.Fatal("export started the TUI")
 	}
-	data, err := os.ReadFile(path)
+	shell := filepath.Join(path, "shell", config.PartFile)
+	data, err := os.ReadFile(shell)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"disk": true`) || !strings.Contains(output.String(), path) {
+	if !strings.Contains(string(data), `"disk": true`) || !strings.Contains(output.String(), shell) {
 		t.Fatalf("config=%s output=%q", data, output.String())
 	}
 }
@@ -129,11 +130,11 @@ func TestConfigFlagIsPassedToDirectCommandAndOverridesEnvironment(t *testing.T) 
 		got = launch
 		return nil
 	})
-	command.SetArgs([]string{"photo", "import", "-c", "/tmp/explicit-config.json"})
+	command.SetArgs([]string{"photo", "import", "-c", "/tmp/explicit-config"})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if got.ConfigPath != "/tmp/explicit-config.json" {
+	if got.ConfigPath != "/tmp/explicit-config" {
 		t.Fatalf("config path = %q", got.ConfigPath)
 	}
 }
@@ -141,7 +142,7 @@ func TestConfigFlagIsPassedToDirectCommandAndOverridesEnvironment(t *testing.T) 
 // A report answers on stdout instead of opening the TUI, and it is registered
 // from the app's own registry entry rather than special-cased by the CLI.
 func TestReportFlagWritesToStdoutWithoutStartingTUI(t *testing.T) {
-	t.Setenv(config.EnvPath, filepath.Join(t.TempDir(), "dgs", "config.json"))
+	t.Setenv(config.EnvPath, filepath.Join(t.TempDir(), "dgs"))
 	called := false
 	command := NewRootCommand(apps.All(), func(tui.Launch) error {
 		called = true

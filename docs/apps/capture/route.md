@@ -405,18 +405,17 @@ lays down the ones this version ships:
 
 ```json
 {
-  "config_dir": "",
-  "capture": {
-    "obsidian": {
-      "vault": "~/Vaults/personal",
-      "daily_note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
+  "obsidian": {
+    "vault": "~/Vaults/personal",
+    "daily": {
+      "note": "00 Daily Log/{{.Year}}/{{.Date}}.md",
       "section": "Captured{{with .Device}} - {{.}}{{end}}"
     }
   }
 }
 ```
 
-`daily_note` is where a day's note lives, relative to the vault, as a template
+`daily.note` is where a day's note lives, relative to the vault, as a template
 over the date. The files Route reads live under the configuration directory in
 Capture's own corner of it — `capture/recipes/`, `capture/workflows/` and
 `capture/templates/` — and none of them is named here or anywhere else; see

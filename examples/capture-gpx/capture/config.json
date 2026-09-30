@@ -1,0 +1,4 @@
+{
+  "scan": {"root": "~/Captures", "index_file": "index.json"},
+  "gpx": {"root": "~/Capture GPX"}
+}

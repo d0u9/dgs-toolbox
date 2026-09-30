@@ -85,10 +85,10 @@ func (m *keysModel) startKeyFlow(action keyAction) tea.Cmd {
 	m.notice = ""
 	switch {
 	case m.snap.settingsErr != nil || !m.snap.found:
-		m.notice = "! credentials.json is needed first"
+		m.notice = "! cred/config.json is needed first"
 		return nil
 	case m.snap.settings.Recipients == "":
-		m.notice = "! Set recipients in credentials.json first"
+		m.notice = "! Set recipients in cred/config.json first"
 		return nil
 	case m.snap.folderErr != nil:
 		m.notice = "! " + m.snap.folderErr.Error()
@@ -413,7 +413,7 @@ func (m keysModel) keyConfirmConfig() confirm.Config {
 		config.Message = fmt.Sprintf("Add the %s key %s under %s, %s? This machine holds no private key for it.", key.Type, shortKey(key), host, existing)
 	}
 	if (m.keyFlow.action == actionGenerate || m.keyFlow.action == actionImport) && !m.identityDirListed() {
-		notes = append(notes, tilde(m.snap.settings.NewIdentityDir)+" is not in identities in credentials.json, so the key will not be found until it is added.")
+		notes = append(notes, tilde(m.snap.settings.NewIdentityDir)+" is not in identities in cred/config.json, so the key will not be found until it is added.")
 	}
 	config.Detail = strings.Join(notes, " ")
 	return config
