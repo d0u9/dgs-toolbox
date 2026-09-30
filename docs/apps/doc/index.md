@@ -23,6 +23,9 @@ process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
 [`../../web.md`](../../web.md) before changing either. The parts, in order, are
 in [`roadmap.md`](roadmap.md).
 
+The questions the page asks while a form is filled in are answered from a
+local cache of the tree, kept as [`cache.md`](cache.md) says.
+
 ## Pages
 
 Separate pages, linked from the top bar, as box's intake and browse are:
