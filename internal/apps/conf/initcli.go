@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"dgs-toolbox/internal/conf/confgen"
-	"dgs-toolbox/internal/conf/inventory"
 	"dgs-toolbox/internal/config"
+	"github.com/d0u9/rhumb/confgen"
+	"github.com/d0u9/rhumb/inventory"
 )
 
 // initAction runs `dgs conf init [<dir>] [--secrets <dir>] [--gitignore]`.

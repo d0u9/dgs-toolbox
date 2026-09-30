@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/inventory"
+	"github.com/d0u9/rhumb/inventory"
 )
 
 type routeChange struct{ From, To string }

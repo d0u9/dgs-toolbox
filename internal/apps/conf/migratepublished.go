@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"dgs-toolbox/internal/conf/inventory"
+	"github.com/d0u9/rhumb/inventory"
 )
 
 type publishedChange struct{ Instance, Port, To string }

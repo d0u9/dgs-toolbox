@@ -17,8 +17,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"dgs-toolbox/internal/conf/target"
 	"dgs-toolbox/internal/config"
+	"github.com/d0u9/rhumb/target"
 )
 
 // stdoutDest is what --to reads as "write it to stdout" rather than as a

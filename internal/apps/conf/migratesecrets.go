@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/secretstore"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/secretstore"
 )
 
 // A rename expands the secret store first. Old files remain valid for rollback.

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"io"
 
-	"dgs-toolbox/internal/conf/secretstore"
 	"dgs-toolbox/internal/config"
+	"github.com/d0u9/rhumb/secretstore"
 )
 
 // secretAction runs `dgs conf secret sync [--yes]`.

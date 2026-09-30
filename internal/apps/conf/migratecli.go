@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/derive"
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/validate"
 	"dgs-toolbox/internal/config"
+	"github.com/d0u9/rhumb/derive"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/validate"
 )
 
 // migrateAction builds the report for a plan the Migrate tab encodes as

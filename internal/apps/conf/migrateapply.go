@@ -12,9 +12,9 @@ import (
 	"slices"
 	"strings"
 
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/validate"
 	"dgs-toolbox/internal/config"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/validate"
 )
 
 func migrateApplyAction(in io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {

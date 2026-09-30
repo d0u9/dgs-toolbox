@@ -10,11 +10,11 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/derive"
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/topology"
 	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/webgraph"
+	"github.com/d0u9/rhumb/derive"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/topology"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

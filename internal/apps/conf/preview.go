@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"sort"
 
-	"dgs-toolbox/internal/conf/confgen"
-	"dgs-toolbox/internal/conf/derive"
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/render"
-	"dgs-toolbox/internal/conf/secretstore"
-	"dgs-toolbox/internal/conf/target"
+	"github.com/d0u9/rhumb/confgen"
+	"github.com/d0u9/rhumb/derive"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/render"
+	"github.com/d0u9/rhumb/secretstore"
+	"github.com/d0u9/rhumb/target"
 )
 
 // renderTarget runs the same rendering the export performs for one target:

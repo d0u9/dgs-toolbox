@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"dgs-toolbox/internal/conf/derive"
-	"dgs-toolbox/internal/conf/inventory"
+	"github.com/d0u9/rhumb/derive"
+	"github.com/d0u9/rhumb/inventory"
 )
 
 type instanceChange struct{ From, To string }

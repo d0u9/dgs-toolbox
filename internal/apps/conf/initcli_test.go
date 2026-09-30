@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"dgs-toolbox/internal/conf/confgen"
-	"dgs-toolbox/internal/conf/derive"
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/secretstore"
-	"dgs-toolbox/internal/conf/validate"
 	"dgs-toolbox/internal/config"
+	"github.com/d0u9/rhumb/confgen"
+	"github.com/d0u9/rhumb/derive"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/secretstore"
+	"github.com/d0u9/rhumb/validate"
 )
 
 // TestInit_ScaffoldLoadsAndValidatesClean covers what the scaffold is for: a

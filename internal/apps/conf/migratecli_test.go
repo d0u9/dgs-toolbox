@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"dgs-toolbox/internal/conf/inventory"
-	"dgs-toolbox/internal/conf/secretstore"
+	"github.com/d0u9/rhumb/inventory"
+	"github.com/d0u9/rhumb/secretstore"
 	"gopkg.in/yaml.v3"
 )
 

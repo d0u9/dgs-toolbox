@@ -7,8 +7,8 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"dgs-toolbox/internal/conf/derive"
 	"dgs-toolbox/internal/config"
+	"github.com/d0u9/rhumb/derive"
 )
 
 func reservationsAction(in io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {
