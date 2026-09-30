@@ -490,8 +490,8 @@ exporting a single thing needs no marking.
 The steps are the shared ones: a form, then the confirmation dialog, then the
 result in the status bar.
 
-- **Format.** Folder, Zip or Bundle, and Show when every file is for one
-  person.
+- **Format.** Bundle (the default), Folder or Zip, and Show — then the
+  default — when every file is for one person.
 - **Destination.** A directory chosen with the File Explorer: `Enter` on the
   row opens it, starting at `conf.export.dir`.
 - **ZIP file name.** Shown only for Zip, initially `conf-export.zip`. The name

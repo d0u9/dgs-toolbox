@@ -255,7 +255,7 @@ func (m *InspectModel) startExport() {
 	}
 	m.notice = ""
 	owner := m.singleOwner(instances)
-	formats, format := []string{formatFolder, formatZip, formatBundle}, formatFolder
+	formats, format := []string{formatBundle, formatFolder, formatZip}, formatBundle
 	if owner != "" {
 		formats, format = []string{formatShow, formatFolder, formatZip, formatBundle}, formatShow
 	}
