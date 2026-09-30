@@ -9,7 +9,7 @@ import (
 
 // ValidateSupersession checks a manually selected predecessor before import.
 func ValidateSupersession(root, oldID, typ string, fields map[string]string) error {
-	old, _, err := FindItem(root, oldID)
+	old, err := GetItem(root, oldID)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func Supersede(root, oldID, newID string, now time.Time) (Item, error) {
 	if oldID == newID {
 		return Item{}, fmt.Errorf("a visa cannot replace itself")
 	}
-	next, _, err := FindItem(root, newID)
+	next, err := GetItem(root, newID)
 	if err != nil {
 		return Item{}, err
 	}
@@ -52,7 +52,7 @@ func Supersede(root, oldID, newID string, now time.Time) (Item, error) {
 			return Item{}, fmt.Errorf("this visa already replaces another visa")
 		}
 	}
-	old, _, err := FindItem(root, oldID)
+	old, err := GetItem(root, oldID)
 	if err != nil {
 		return Item{}, err
 	}
@@ -65,7 +65,7 @@ func Supersede(root, oldID, newID string, now time.Time) (Item, error) {
 
 // UndoSupersession restores the predecessor to use without changing snapshots.
 func UndoSupersession(root, id string, now time.Time) (Item, error) {
-	old, _, err := FindItem(root, id)
+	old, err := GetItem(root, id)
 	if err != nil {
 		return Item{}, err
 	}

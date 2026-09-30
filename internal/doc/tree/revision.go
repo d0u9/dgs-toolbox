@@ -20,7 +20,23 @@ import (
 // ErrNoItem is returned for an ID no sidecar has.
 var ErrNoItem = errors.New("no such Item")
 
-// FindItem loads the tree and returns the Item with id, and every Item.
+// GetItem reads the one sidecar of the Item id, and nothing else.
+func GetItem(root, id string) (Item, error) {
+	if id == "" || strings.ContainsAny(id, `/\`) || id == "." || id == ".." {
+		return Item{}, fmt.Errorf("%w: %s", ErrNoItem, id)
+	}
+	item, err := loadItem(root, id)
+	if err != nil {
+		return Item{}, err
+	}
+	if item == nil {
+		return Item{}, fmt.Errorf("%w: %s", ErrNoItem, id)
+	}
+	return *item, nil
+}
+
+// FindItem loads the tree and returns the Item with id, and every Item: for
+// a write that checks the Item against the others.
 func FindItem(root, id string) (Item, []Item, error) {
 	items, err := LoadItems(root)
 	if err != nil {
@@ -395,7 +411,7 @@ func SetNotes(root, id, notes string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
-	item, _, err := FindItem(root, id)
+	item, err := GetItem(root, id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -412,7 +428,7 @@ func SetTags(root, id string, tags []string, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
-	item, _, err := FindItem(root, id)
+	item, err := GetItem(root, id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -435,7 +451,7 @@ func Trash(root, id string, now time.Time) (string, error) {
 	if err := Require(root); err != nil {
 		return "", err
 	}
-	if _, _, err := FindItem(root, id); err != nil {
+	if _, err := GetItem(root, id); err != nil {
 		return "", err
 	}
 	if err := os.MkdirAll(filepath.Join(root, TrashDir), 0o755); err != nil {
@@ -453,7 +469,7 @@ func SetFrequent(root, id string, frequent bool, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
-	item, _, err := FindItem(root, id)
+	item, err := GetItem(root, id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -475,7 +491,7 @@ func SetRetired(root, id string, retired bool, reason string, now time.Time) (It
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
-	item, _, err := FindItem(root, id)
+	item, err := GetItem(root, id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -510,7 +526,7 @@ func SetSharedWith(root, id string, people []string, now time.Time) (Item, error
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
-	item, _, err := FindItem(root, id)
+	item, err := GetItem(root, id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -552,7 +568,7 @@ func SetRevisionTags(root, id, digest string, tags []string, now time.Time) (Ite
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
-	item, _, err := FindItem(root, id)
+	item, err := GetItem(root, id)
 	if err != nil {
 		return Item{}, err
 	}

@@ -441,7 +441,7 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		if it, ok := touched[id]; ok {
 			return it, nil
 		}
-		it, _, err := tree.FindItem(root, id)
+		it, err := tree.GetItem(root, id)
 		if err != nil {
 			return nil, err
 		}

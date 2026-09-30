@@ -597,7 +597,7 @@ func (s server) pdfPath(query url.Values) (string, error) {
 	if query.Get("item") == "" {
 		return sourcePath(query.Get("dir"), query.Get("path"))
 	}
-	item, _, err := tree.FindItem(s.root, query.Get("item"))
+	item, err := tree.GetItem(s.root, query.Get("item"))
 	if err != nil {
 		return "", err
 	}
@@ -770,7 +770,7 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 
 // templateOfItem is the Template of the Item with id.
 func (s server) templateOfItem(id string) (tree.Template, error) {
-	item, _, err := tree.FindItem(s.root, id)
+	item, err := tree.GetItem(s.root, id)
 	if err != nil {
 		return tree.Template{}, err
 	}
@@ -828,7 +828,7 @@ func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := s.templateOfItem(request.Item)
-	if item, _, loadErr := tree.FindItem(s.root, request.Item); loadErr == nil {
+	if item, loadErr := tree.GetItem(s.root, request.Item); loadErr == nil {
 		if rev, ok := item.Revision(request.Digest); ok && rev.Type != "" {
 			templates, loadErr := tree.LoadTemplates(s.root)
 			if loadErr != nil {
