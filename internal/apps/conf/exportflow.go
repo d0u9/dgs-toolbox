@@ -51,9 +51,9 @@ const (
 	defaultZipName = "conf-export.zip"
 
 	// The Download field's choices: when a bundle's release is fetched.
-	downloadPerNode   = "As each node says"
+	downloadPerNode   = "Per node"
 	downloadNow       = "At export"
-	downloadOnMachine = "On the machine"
+	downloadOnMachine = "On machine"
 
 	// headerTargets is how many targets the form's header names before it
 	// counts the rest.
@@ -309,7 +309,7 @@ func (m *InspectModel) startExport() {
 	owner := m.singleOwner(instances)
 	formats, format := []string{formatBundle, formatFolder, formatZip}, formatBundle
 	if owner != "" {
-		formats, format = []string{formatShow, formatFolder, formatZip, formatBundle}, formatShow
+		formats, format = []string{formatShow, formatBundle, formatFolder, formatZip}, formatShow
 	}
 	m.export = &exportFlow{
 		stage:     exportForm,
@@ -835,12 +835,17 @@ func (m InspectModel) exportView() string {
 	case flow.stage == exportShow:
 		return m.showView()
 	}
-	width := max(24, min(72, m.width-4))
+	width := max(24, min(96, m.width-4))
+	inner := max(1, width-2-2*exportPadX)
+	var fields []string
+	for _, id := range flow.visibleFields() {
+		fields = append(fields, flow.form.ViewFocusedWidth([]string{id}, true, inner))
+	}
 	lines := []string{
 		titleStyle.Render("EXPORT") + mutedStyle.Render(" · "+plural(len(flow.instances), "target")),
-		mutedStyle.Render(ansi.Truncate(targetSummary(flow.instances), width-4, "…")),
+		mutedStyle.Render(ansi.Truncate(targetSummary(flow.instances), inner, "…")),
 		"",
-		flow.form.ViewFocusedWidth(flow.visibleFields(), true, width-4),
+		strings.Join(fields, "\n\n"),
 		"",
 	}
 	switch {
@@ -849,7 +854,7 @@ func (m InspectModel) exportView() string {
 	case flow.err != nil:
 		lines = append(lines, brokenStyle.Render(flow.err.Error()))
 	case flow.form.Value(fieldFormat) == formatBundle && flow.form.Focused(fieldDownload):
-		lines = append(lines, mutedStyle.Render("As each node says follows its download, else on the machine · At export puts the release in the bundle"))
+		lines = append(lines, mutedStyle.Render("Per node follows each node's download, else on machine · At export puts the release in the bundle"))
 	case flow.form.Value(fieldFormat) == formatBundle:
 		lines = append(lines, mutedStyle.Render("Bundle builds, per instance, what ./ctl install deploys on its machine"))
 	case flow.form.Value(fieldFormat) == formatZip:
@@ -859,8 +864,13 @@ func (m InspectModel) exportView() string {
 	default:
 		lines = append(lines, mutedStyle.Render("Folder writes the rendered files · Enter on Destination chooses a directory"))
 	}
-	return exportFrame.Width(width - 2).Render(strings.Join(lines, "\n"))
+	hint := lipgloss.NewStyle().Width(inner).Render(lines[len(lines)-1])
+	lines[len(lines)-1] = hint
+	return exportFrame.Padding(1, exportPadX).Width(width - 2).Render(strings.Join(lines, "\n"))
 }
+
+// exportPadX is the export form's side padding, so the form breathes.
+const exportPadX = 3
 
 // targetSummary names the first targets and counts the rest.
 func targetSummary(instances []string) string {
