@@ -281,8 +281,8 @@ func TestInspectExport_ShowOnlyForOnePerson(t *testing.T) {
 	m := newInspectModel(buildExportableRoot(t))
 	m.list.SelectID("node:srv")
 	m = pressInspect(t, m, "x")
-	if got := m.export.form.Value(fieldFormat); got != formatFolder {
-		t.Fatalf("format = %q for a server, want Folder: Show is for one person", got)
+	if got := m.export.form.Value(fieldFormat); got != formatBundle {
+		t.Fatalf("format = %q for a server, want Bundle: Show is for one person", got)
 	}
 }
 
