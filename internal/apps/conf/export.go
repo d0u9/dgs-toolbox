@@ -86,6 +86,20 @@ func (m renderer) renderAll(instances []string) ([]exportFile, error) {
 				Executable: d.Executable,
 			})
 		}
+
+		// Every node instance, containerised or not, also writes the
+		// manifest: the derived values a deployment tool needs, so that the
+		// tool never reads the inventory.
+		manifest, err := m.manifestFor(instance, append(rendered, deploy...))
+		if err != nil {
+			return nil, err
+		}
+		if manifest != nil {
+			files = append(files, exportFile{
+				Path:  filepath.Join(t.Node, kind, inventory.LocalName(instance), ManifestFile),
+				Bytes: manifest,
+			})
+		}
 	}
 	return files, nil
 }
