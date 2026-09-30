@@ -281,6 +281,17 @@ func TestActiveWorkCanCaptureCtrlCFromShell(t *testing.T) {
 	}
 }
 
+func TestCtrlZSuspends(t *testing.T) {
+	m := NewModel(testApps, Launch{})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlZ})
+	if cmd == nil {
+		t.Fatal("ctrl+z should suspend")
+	}
+	if _, ok := cmd().(tea.SuspendMsg); !ok {
+		t.Fatal("ctrl+z should suspend")
+	}
+}
+
 func TestHelpIsContextual(t *testing.T) {
 	m := NewModel(testApps, Launch{})
 	m = update(t, m, "?")

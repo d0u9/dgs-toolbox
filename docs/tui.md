@@ -202,7 +202,10 @@ Tab                        Move to the next selectable control
 Shift+Tab                  Move to the previous selectable control
 <CR>                       Confirm or invoke the focused item
 Ctrl+C                     Request exit through the shared confirmation dialog
+Ctrl+Z                     Suspend dgs to the shell; `fg` resumes it
 ```
+
+Ctrl+Z is the shell's and no command captures it. It suspends the whole process, active work included, and `fg` redraws the workspace as it was.
 
 Ctrl+C never terminates `dgs` immediately. It opens the shared safe-default confirmation dialog, with No selected. If work is active, the owning command may pause or cancel it as part of the confirmed exit, but it must still use the shared dialog.
 

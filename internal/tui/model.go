@@ -166,6 +166,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if key == "ctrl+z" {
+		// Raw mode delivers Ctrl+Z as a key rather than SIGTSTP; hand it back
+		// to the terminal so job control works as it does outside dgs.
+		return m, tea.Suspend
+	}
 	if key == "ctrl+c" {
 		if m.active != nil {
 			if capturer, ok := m.active.(ShellKeyCapturer); ok && capturer.CapturesShellKey(key) {
