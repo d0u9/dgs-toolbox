@@ -7,6 +7,7 @@ package conf
 
 import (
 	"fmt"
+	rcli "github.com/d0u9/rhumb/cli"
 	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
@@ -478,11 +479,11 @@ func (m *InspectModel) planExport() {
 			existing = []string{flow.where}
 		}
 	} else {
-		existing = existingOf(files, flow.where)
+		existing = rcli.ExistingOf(files, flow.where)
 	}
 	if len(existing) > 0 && !flow.overwrite {
 		flow.err = fmt.Errorf("%s already %s; tick Replace to overwrite %s",
-			plural(len(existing), "file"), exists(len(existing)), them(len(existing)))
+			plural(len(existing), "file"), rcli.Exists(len(existing)), rcli.Them(len(existing)))
 		return
 	}
 
@@ -581,9 +582,9 @@ func (m InspectModel) runExport(flow exportFlow) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if flow.zip {
-			err = ExportZip(r, flow.instances, flow.where, flow.overwrite)
+			err = rcli.ExportZip(r, flow.instances, flow.where, flow.overwrite)
 		} else {
-			err = ExportFolder(r, flow.instances, flow.where, flow.overwrite)
+			err = rcli.ExportFolder(r, flow.instances, flow.where, flow.overwrite)
 		}
 		return exportDoneMsg{files: len(flow.instances), where: flow.where, err: err}
 	}

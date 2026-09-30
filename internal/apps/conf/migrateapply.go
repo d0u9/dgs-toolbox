@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	rcli "github.com/d0u9/rhumb/cli"
 	"github.com/d0u9/rhumb/engine"
 	"io"
 	"io/fs"
@@ -87,7 +88,7 @@ func migrateApplyAction(in io.Reader, out io.Writer, args []string, flags map[st
 		if in == nil {
 			in = strings.NewReader("")
 		}
-		approved, err := confirm(in, out, "Apply these local inventory edits? [y/N] ")
+		approved, err := rcli.Confirm(in, out, "Apply these local inventory edits? [y/N] ")
 		if err != nil {
 			return err
 		}
@@ -297,7 +298,7 @@ func applyMigrationEdits(root string, edits []migrationEdit, expected engine.Loa
 	if err != nil {
 		return rollback(fmt.Errorf("loading applied inventory: %w", err))
 	}
-	if broken := brokenFiles(actual.Inv); len(broken) != 0 {
+	if broken := rcli.BrokenFiles(actual.Inv); len(broken) != 0 {
 		return rollback(fmt.Errorf("applied inventory is broken: %s", strings.Join(broken, "; ")))
 	}
 	if issues := validate.Validate(actual.Inv, actual.Manifests, actual.Exports, actual.Derived, nil); len(issues) != 0 {
@@ -403,7 +404,7 @@ func migrationAlreadyApplied(root string, flags map[string]string) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	if broken := brokenFiles(l.Inv); len(broken) != 0 {
+	if broken := rcli.BrokenFiles(l.Inv); len(broken) != 0 {
 		return false, fmt.Errorf("current inventory is broken: %s", strings.Join(broken, "; "))
 	}
 	if issues := validate.Validate(l.Inv, l.Manifests, l.Exports, l.Derived, nil); len(issues) != 0 {

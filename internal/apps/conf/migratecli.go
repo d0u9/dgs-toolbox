@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	rcli "github.com/d0u9/rhumb/cli"
 	"github.com/d0u9/rhumb/engine"
 	"io"
 	"path/filepath"
@@ -70,7 +71,7 @@ func migrateActionSnapshot(in io.Reader, out io.Writer, args []string, flags map
 	if err != nil {
 		return err
 	}
-	if broken := brokenFiles(l.Inv); len(broken) != 0 {
+	if broken := rcli.BrokenFiles(l.Inv); len(broken) != 0 {
 		return fmt.Errorf("current inventory is broken:\n  %s", strings.Join(broken, "\n  "))
 	}
 	if issues := validate.Validate(l.Inv, l.Manifests, l.Exports, l.Derived, nil); len(issues) != 0 {
