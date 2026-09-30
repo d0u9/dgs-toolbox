@@ -30,7 +30,7 @@ of every cache. The cache is a copy that can always be thrown away:
 
 ## Where it lives
 
-In `doc.cache_dir` ([configuration](../../configuration/doc.md)), one
+In `doc.cache.dir` ([configuration](../../configuration/doc.md)), one
 subdirectory per tree, beside the text already cached there. It is outside
 the tree and belongs to one machine. Deleting it costs one full read of the
 tree.
@@ -58,7 +58,7 @@ Kept apart, as [`AGENTS.md`](../../../AGENTS.md) asks of every algorithm:
 - **Indexing and querying** — a doc domain package. Items in, answers out; no
   files, HTTP or configuration. The web page and `dgs doc link` use the same
   one.
-- **Keeping** — reading and writing the cache under `doc.cache_dir`, noticing
+- **Keeping** — reading and writing the cache under `doc.cache.dir`, noticing
   a version or a file it cannot read, rebuilding.
 - **Serving** — the web handlers ask the cache and draw what it answers.
 

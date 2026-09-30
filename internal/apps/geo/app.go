@@ -44,7 +44,7 @@ func New() tui.App {
 							if value != "" && value != "localhost" && net.ParseIP(value) == nil {
 								return fmt.Errorf("%q is not an IP address", value)
 							}
-							global.Geo.GPX.Host = value
+							global.Geo.Web = config.SetWeb(global.Geo.Web, config.GeoGPXServer, func(w *config.Web) { w.Host = value })
 							return nil
 						},
 					},
@@ -56,7 +56,7 @@ func New() tui.App {
 							if err != nil || port < 1 || port > 65535 {
 								return fmt.Errorf("%q is not a port between 1 and 65535", value)
 							}
-							global.Geo.GPX.Port = port
+							global.Geo.Web = config.SetWeb(global.Geo.Web, config.GeoGPXServer, func(w *config.Web) { w.Port = port })
 							return nil
 						},
 					},

@@ -1,19 +1,46 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
+// writeConfig lays body out as a configuration directory: each top-level key
+// of body is a part, written to <dir>/<part>/config.json.
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), ExportFilename)
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
+	var parts map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &parts); err != nil {
+		t.Fatalf("test body: %v", err)
 	}
-	return path
+	dir := t.TempDir()
+	for name, raw := range parts {
+		if err := os.MkdirAll(filepath.Join(dir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name, PartFile), raw, 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+	}
+	return dir
+}
+
+// LoadPath loads dir and reports the first refused part as the error, as a
+// command would refuse to start.
+func LoadPath(dir string) (Config, error) {
+	config, err := LoadDir(dir)
+	if err != nil {
+		return config, err
+	}
+	for _, p := range parts {
+		if err := config.PartErr(p.name); err != nil {
+			return config, err
+		}
+	}
+	return config, nil
 }
 
 func TestBoxDefaultsWhenNothingIsConfigured(t *testing.T) {
@@ -48,25 +75,25 @@ func TestBoxDefaultsWhenNothingIsConfigured(t *testing.T) {
 }
 
 func TestBoxNeverListensBeyondLoopback(t *testing.T) {
-	// There is no host key on purpose: a Box holds identity and medical
+	// There is no host to set on purpose: a Box holds identity and medical
 	// documents, so reaching it from another machine is a design with access
 	// control rather than a setting.
-	config, err := LoadPath(writeConfig(t, `{"box": {"web": {"port": 9000}}}`))
+	config, err := LoadPath(writeConfig(t, `{"box": {"web": [{"name": "browse", "port": 9000}]}}`))
 	if err != nil {
 		t.Fatalf("LoadPath: %v", err)
 	}
 	if got := config.BoxWebAddr(); got != "127.0.0.1:9000" {
 		t.Errorf("BoxWebAddr = %q, want 127.0.0.1:9000", got)
 	}
-	if _, err := LoadPath(writeConfig(t, `{"box": {"web": {"host": "0.0.0.0"}}}`)); err == nil {
-		t.Error("a host key was accepted; box.web has only a port")
+	if _, err := LoadPath(writeConfig(t, `{"box": {"web": [{"name": "browse", "host": "0.0.0.0"}]}}`)); err == nil {
+		t.Error("a host was accepted; the browse server is loopback only")
 	}
 }
 
 func TestBoxKeepDaysTellZeroApartFromUnset(t *testing.T) {
 	// Zero is a meaningful answer for both — keep previews forever, advise
 	// nothing about the trash — so an unset key cannot be spelled as zero.
-	config, err := LoadPath(writeConfig(t, `{"box": {"preview": {"keep": 0}, "trash": {"keep": 0}}}`))
+	config, err := LoadPath(writeConfig(t, `{"box": {"preview": {"keep_days": 0}, "trash": {"keep_days": 0}}}`))
 	if err != nil {
 		t.Fatalf("LoadPath: %v", err)
 	}
@@ -80,14 +107,14 @@ func TestBoxKeepDaysTellZeroApartFromUnset(t *testing.T) {
 
 func TestBoxRefusesWhatWouldBeWrongLater(t *testing.T) {
 	for _, test := range []struct{ name, body, wants string }{
-		{"a currency with unknown decimals", `{"box": {"currency": "ZZZ"}}`, "box.currency"},
-		{"a path where a filename belongs", `{"box": {"marker": "meta/dgs-box.yaml"}}`, "box.marker"},
-		{"a path in the state filename", `{"box": {"state_file": "../state.json"}}`, "box.state_file"},
-		{"an offset instead of a zone", `{"box": {"timezone": "+10:00"}}`, "box.timezone"},
-		{"a zone that is not one", `{"box": {"timezone": "Middle/Earth"}}`, "box.timezone"},
-		{"negative workers", `{"box": {"workers": -1}}`, "box.workers"},
-		{"negative preview days", `{"box": {"preview": {"keep": -1}}}`, "box.preview.keep"},
-		{"negative trash days", `{"box": {"trash": {"keep": -5}}}`, "box.trash.keep"},
+		{"a currency with unknown decimals", `{"box": {"currency": "ZZZ"}}`, "currency"},
+		{"a path where a filename belongs", `{"box": {"marker": "meta/dgs-box.yaml"}}`, "marker"},
+		{"a path in the state filename", `{"box": {"state_file": "../state.json"}}`, "state_file"},
+		{"an offset instead of a zone", `{"box": {"timezone": "+10:00"}}`, "timezone"},
+		{"a zone that is not one", `{"box": {"timezone": "Middle/Earth"}}`, "timezone"},
+		{"negative workers", `{"box": {"workers": -1}}`, "workers"},
+		{"negative preview days", `{"box": {"preview": {"keep_days": -1}}}`, "preview.keep_days"},
+		{"negative trash days", `{"box": {"trash": {"keep_days": -5}}}`, "trash.keep_days"},
 		{"a key that does not exist", `{"box": {"lifetimes": {"receipt": 3650}}}`, "lifetimes"},
 	} {
 		_, err := LoadPath(writeConfig(t, test.body))
@@ -154,7 +181,7 @@ func TestBoxPathsAreExpanded(t *testing.T) {
 }
 
 func TestBoxCacheDirIsOutsideTheBoxAndPerBox(t *testing.T) {
-	config, err := LoadPath(writeConfig(t, `{"box": {"root": "/Volumes/nas/Box", "cache_dir": "/tmp/box-cache"}}`))
+	config, err := LoadPath(writeConfig(t, `{"box": {"root": "/Volumes/nas/Box", "cache": {"dir": "/tmp/box-cache"}}}`))
 	if err != nil {
 		t.Fatalf("LoadPath: %v", err)
 	}
@@ -198,5 +225,28 @@ func TestBoxDefaultConfigIsTheDocumentedOne(t *testing.T) {
 		if strings.HasPrefix(name, ".") {
 			t.Errorf("%q is a hidden file; nothing a person needs in a Box is hidden", name)
 		}
+	}
+}
+
+func TestWebEntriesNameTheServersACommandHas(t *testing.T) {
+	for _, body := range []string{
+		`{"box": {"web": [{"name": "pages", "port": 9000}]}}`,
+		`{"box": {"web": [{"name": "browse"}, {"name": "browse"}]}}`,
+		`{"box": {"web": [{"name": "browse", "port": 70000}]}}`,
+		`{"box": {"web": {"port": 9000}}}`,
+	} {
+		if _, err := LoadPath(writeConfig(t, body)); err == nil {
+			t.Errorf("accepted %s", body)
+		}
+	}
+	config, err := LoadPath(writeConfig(t, `{"geo": {"web": [{"name": "gpx", "host": "0.0.0.0", "port": 9001}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := config.GeoGPXAddr(); got != "0.0.0.0:9001" {
+		t.Errorf("GeoGPXAddr = %q", got)
+	}
+	if got := (Config{}).GeoGPXAddr(); got != "127.0.0.1:8765" {
+		t.Errorf("default GeoGPXAddr = %q", got)
 	}
 }

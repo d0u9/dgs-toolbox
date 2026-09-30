@@ -9,7 +9,7 @@ folder it names hosts from are the ones that page shows.
 
 ## Opening a folder
 
-The vault folder is `vault` in `credentials.json`; see
+The vault folder is `vault` in `cred/config.json`; see
 [`configuration/cred.md`](../../configuration/cred.md). The page can also switch
 to another folder with the shared File Explorer. With no `vault` configured the
 page opens with no folder and asks for one.
@@ -133,7 +133,7 @@ passphrase.
   holds the folder by its name, every entry within it including hidden ones,
   with their permission bits. A symbolic link or any other non-regular entry
   refuses the folder rather than archiving something unexpected.
-  - Junk is left out: the names in `archive_skip` in `credentials.json`, which
+  - Junk is left out: the names in `archive_skip` in `cred/config.json`, which
     default to what macOS, Windows, Linux file managers and git write beside
     the files — `.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.git`, `.gitignore` and the
     rest of the list in

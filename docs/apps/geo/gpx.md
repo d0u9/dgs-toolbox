@@ -343,7 +343,7 @@ map. It is the interface later milestones build on.
   whose roads still read under a coloured track), Gaode (街道), Gaode Satellite
   (imagery with Gaode's road and place names above it) and Esri World Imagery
   are built in and need no key, followed by the maps in `geo.gpx.tiles` and then those in
-  `<config_dir>/geo/gpx/tiles.json` — `{"tiles": [...]}`, each entry as in
+  `<config dir>/geo/gpx/tiles.json` — `{"tiles": [...]}`, each entry as in
   `geo.gpx.tiles` — which keeps a long list out of the configuration file. A
   tiles file that cannot be read keeps the server from starting, saying why. Gaode's tile
   addresses are undocumented and could change; the rest are public services.
@@ -810,8 +810,7 @@ hotel and on again at its door stayed there.
 ## Where the server listens
 
 By default the server listens on `127.0.0.1:8765`, reachable only from this
-machine. The address is set by `geo.gpx.host` and `geo.gpx.port` in the
-configuration (see [`configuration/geo.md`](../../configuration/geo.md)) and
+machine. The address is set by the `gpx` entry of `web` in `geo/config.json` (see [`configuration/geo.md`](../../configuration/geo.md)) and
 overridden for one run by flags:
 
 ```text

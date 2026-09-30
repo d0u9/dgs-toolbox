@@ -209,12 +209,12 @@ type BatchFailed struct {
 	Error  string `json:"error"`
 }
 
-// TrashSummary is what trash/ holds and what box.trash.keep says about it.
+// TrashSummary is what trash/ holds and what box.trash.keep_days says about it.
 type TrashSummary struct {
 	Count int `json:"count"`
 	// Oldest is the earliest discard date still in the trash, or empty.
 	Oldest string `json:"oldest"`
-	// KeepDays is box.trash.keep. Zero means no advice is offered.
+	// KeepDays is box.trash.keep_days. Zero means no advice is offered.
 	KeepDays int `json:"keepDays"`
 	// Overdue is how many were discarded longer than KeepDays ago.
 	Overdue int `json:"overdue"`

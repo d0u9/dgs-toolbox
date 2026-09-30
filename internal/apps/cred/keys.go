@@ -65,7 +65,7 @@ type problem struct {
 // machine and the recipient folder.
 type keysModel struct {
 	width, height int
-	// path is the credentials.json to read; empty means the default location.
+	// path is the cred/config.json to read; empty means the default location.
 	path   string
 	loaded bool
 	snap   snapshot
@@ -364,7 +364,7 @@ func (m *keysModel) rebuild() {
 		}
 	case !snap.found:
 		for tab := range m.messages {
-			m.messages[tab] = "· No credentials.json at " + tilde(snap.path)
+			m.messages[tab] = "· No cred/config.json at " + tilde(snap.path)
 		}
 	}
 
@@ -378,7 +378,7 @@ func (m *keysModel) rebuild() {
 	}
 	if m.messages[tabIdentities] == "" && len(items) == 0 && len(m.problems[tabIdentities]) == 0 {
 		if len(snap.settings.Identities) == 0 {
-			m.messages[tabIdentities] = "· credentials.json names no identity directories"
+			m.messages[tabIdentities] = "· cred/config.json names no identity directories"
 		} else {
 			m.messages[tabIdentities] = "· No identities found"
 		}
@@ -406,7 +406,7 @@ func (m *keysModel) rebuild() {
 	folderMessage := ""
 	switch {
 	case snap.settings.Recipients == "":
-		folderMessage = "· credentials.json names no recipient folder"
+		folderMessage = "· cred/config.json names no recipient folder"
 	case snap.folderErr != nil:
 		folderMessage = "! " + snap.folderErr.Error()
 	}

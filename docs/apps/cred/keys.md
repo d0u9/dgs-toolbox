@@ -20,7 +20,7 @@ Actions, encrypting and changing recipients — is outlined in
 ## Settings
 
 Where identities are searched for and where the recipient folder is are set in
-`credentials.json`, a file of its own beside `dgs-config.json`, not inside it.
+`cred/config.json`, `dgs cred`'s own folder of the configuration directory.
 The keys are in [`configuration/cred.md`](../../configuration/cred.md).
 
 Identities are local to one machine and differ between machines, so the list of
@@ -82,7 +82,7 @@ the name; it is not repeated inside the file.
 - Files not ending in `.json`, and hidden files, are ignored.
 - Subdirectories of `hosts/` and `groups/` are not read, and are reported: two
   of them could otherwise hold hosts of the same name.
-- Unknown fields are an error, as in `dgs-config.json`.
+- Unknown fields are an error, as in every configuration file.
 - The files carry no format version.
 
 ### A host
@@ -206,7 +206,7 @@ subdirectory, an identity directory that does not exist, a file that cannot be
 read — is listed under a **PROBLEMS** divider at the end of the list in the tab
 it concerns, and selecting it shows the problem.
 
-When `credentials.json` does not exist, or names no recipient folder, the lists
+When `cred/config.json` does not exist, or names no recipient folder, the lists
 say so and name where the file is looked for.
 
 Keys: `↑↓`/`j k` move, `gg`/`G` jump, `c` copies the selected public key — an
@@ -236,11 +236,11 @@ still edited by hand.
 ### Where a new identity goes
 
 Generated and imported identities are written to `new_identity_dir` in
-`credentials.json`, `~/.config/age` by default. The directory is created with
+`cred/config.json`, `~/.config/age` by default. The directory is created with
 mode `0700` when missing, and each identity file is written `0600`. When that
 directory is not among `identities`, the confirmation says so, since the new
 key would not be found again until it is added; `dgs` does not edit
-`credentials.json` itself.
+`cred/config.json` itself.
 
 - A generated file has the layout `age-keygen` writes: `# created:` and
   `# public key:` comments above the `AGE-SECRET-KEY-1…` line.
@@ -350,7 +350,7 @@ incomplete.
 
 ## Milestones
 
-1. **A1 — Recipient folder.** Load `credentials.json`, and load hosts and
+1. **A1 — Recipient folder.** Load `cred/config.json`, and load hosts and
    groups with the errors and warnings above. `internal/cred/recipients`, with no
    TUI code, tested on constructed folders.
 2. **A2 — Identities.** Discover and parse identities in the configured
@@ -369,7 +369,6 @@ incomplete.
 - **Refusing to encrypt with an incomplete folder.** A left-out file means a
   host may silently be missing from a group. Encryption, when it is built, should
   refuse or ask while the folder has errors.
-- **Naming `credentials.json` by a flag or environment variable.**
 - **Recipient trust confirmation.** Only the owner writes the recipient folder,
   so for now every recipient in it is trusted. If that changes, a key that is
   new, replaced or renamed should be confirmed on this machine before it can be

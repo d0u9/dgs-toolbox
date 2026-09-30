@@ -13,12 +13,17 @@ func Run(apps []App, launch Launch) error {
 	var global config.Config
 	var err error
 	if launch.ConfigPath != "" {
-		global, err = config.LoadPath(launch.ConfigPath)
+		global, err = config.LoadDir(launch.ConfigPath)
 	} else {
 		global, err = config.Load()
 	}
 	if err != nil {
 		return fmt.Errorf("cannot load global config: %w", err)
+	}
+	if launch.App != "" {
+		if err := global.PartErr(launch.App); err != nil {
+			return err
+		}
 	}
 	model := NewModelWithGlobalConfig(apps, launch, global)
 	if model.launchErr != "" {

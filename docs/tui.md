@@ -56,59 +56,42 @@ Top-bar telemetry belongs to the shared shell rather than individual commands. S
 
 Every key of every part of the toolbox is listed in [`configuration/index.md`](configuration/index.md); this section says what the shell does with its own.
 
-The global configuration controls the visibility of Disk, Network, CPU, and Time independently. All four default to enabled; omitting one key preserves that default. The breadcrumb is structural and cannot be disabled. Load JSON from `$XDG_CONFIG_HOME/dgs-toolbox/dgs-config.json` (`~/.config/dgs-toolbox/dgs-config.json` when that variable is unset), or from the path in `DGS_TOOLBOX_CONFIG` when set:
+The shell's own file, `shell/config.json` in the configuration directory, controls the visibility of Disk, Network, CPU, and Time independently. All four default to enabled; omitting one key preserves that default. The breadcrumb is structural and cannot be disabled.
 
 ```json
 {
-  "tui": {
-    "top_bar": {
-      "disk": true,
-      "network": true,
-      "cpu": true,
-      "time": true
-    }
-  },
-  "photo": {
-    "import": {
-      "state_file": ".dgs-state",
-      "source": "",
-      "destination": ""
-    }
-  },
-  "capture": {
-    "scan": {
-      "root": "",
-      "index_file": "index.json"
-    }
+  "top_bar": {
+    "disk": true,
+    "network": true,
+    "cpu": true,
+    "time": true
   }
 }
 ```
 
-App-specific settings remain under their app key. `photo.import.state_file` configures the Photo Import state filename and defaults to `.dgs-state`. `photo.import.source` and `photo.import.destination` optionally replace the repository mock paths shown when those values are empty. Detailed behavior belongs to the Photo Import design rather than this shared TUI document.
-
 Setting any value to `false` removes that entire fixed-width cell and its adjacent separator. If Disk, Network, and CPU are all disabled, the shell does not start the system-counter sampler.
-
-Run `dgs --export-config` to create `dgs-config.json` in the current working directory and print its absolute path. An optional positional path writes elsewhere: `dgs --export-config /path/to/config.json` uses that exact file, while an existing directory receives `dgs-config.json`. The command never overwrites an existing file. Export destinations are explicit and independent of `DGS_TOOLBOX_CONFIG`; the environment variable controls where `dgs` loads configuration. The exported file is an editable template: move it to `~/.config/dgs-toolbox/dgs-config.json`, or set `DGS_TOOLBOX_CONFIG` to its path, before launching `dgs`. `dgs -c /path/to/config.json …` (or `--config`) loads that exact configuration file and takes precedence over `DGS_TOOLBOX_CONFIG`.
 
 ### The configuration directory
 
-Settings that are values live in the configuration file; everything a command reads from disk—recipes, templates, whatever a later command needs—lives under one directory, `config_dir`. It defaults to the directory the configuration file was loaded from, so `--config` selects a whole configuration and not only one file of it.
-
-dgs is a toolbox, so that directory is laid out **by command**:
+The configuration is a directory: `--config` / `-c <dir>`, else `DGS_TOOLBOX_CONFIG`, else `$XDG_CONFIG_HOME/dgs-toolbox/` (`~/.config/dgs-toolbox/` when that variable is unset). dgs is a toolbox of independent commands, so the directory is laid out **by command**, each folder holding the command's `config.json` and everything else it reads from disk:
 
 ```text
-<config_dir>/
-  capture/
-    recipes/
-    templates/
-  geo/
-    gpx/
-      tiles.json
-  photo/
-    …
+<config dir>/
+  shell/config.json
+  capture/config.json
+  capture/recipes/
+  capture/templates/
+  geo/config.json
+  geo/gpx/tiles.json
+  photo/config.json
+  …
 ```
 
-A command asks for its own corner rather than for a path of its own in the configuration file: two commands both wanting `templates` is the normal case, not a collision to work around, and adding a command adds no configuration keys. The layout itself is not configurable: `config_dir` moves all of it at once, and a directory that genuinely belongs elsewhere—templates kept beside the vault they belong to—is a symlink. A path per directory would make "where does this installation keep its configuration?" a question with as many answers as there are directories.
+A command reads only its own folder, and a refused file refuses only its own command, which names the file and the key when it is started; the others keep working. The shell's file is the exception, since the shell reads it before any command. A command that leaves the toolbox takes its folder with it unchanged.
+
+Two commands both wanting `templates` is the normal case, not a collision to work around. The layout itself is not configurable: `--config` moves all of it at once, and a directory that genuinely belongs elsewhere—templates kept beside the vault they belong to—is a symlink. A path per directory would make "where does this installation keep its configuration?" a question with as many answers as there are directories.
+
+`dgs --export-config [dir]` writes a default `config.json` for every command into `dir`, the working directory when omitted, and never overwrites an existing file. The keys are in [`configuration/`](configuration/index.md).
 
 ### Workspace
 

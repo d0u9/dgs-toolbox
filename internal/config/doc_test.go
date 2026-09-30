@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"dgs-toolbox/internal/doc/dates"
@@ -23,10 +22,15 @@ func TestDocDateOrder(t *testing.T) {
 	}
 }
 
-func TestDocTargetsSayWhereTheyWent(t *testing.T) {
-	_, err := LoadPath(writeConfig(t, `{"doc": {"targets": {"icloud": "~/Docs"}}}`))
-	if err == nil || !strings.Contains(err.Error(), "Outline") {
-		t.Fatalf("doc.targets: %v", err)
+func TestDocOldKeysAreRefused(t *testing.T) {
+	for _, body := range []string{
+		`{"doc": {"targets": {"icloud": "~/Docs"}}}`,
+		`{"doc": {"root": "/x"}}`,
+		`{"doc": {"cache_dir": "/x"}}`,
+	} {
+		if _, err := LoadPath(writeConfig(t, body)); err == nil {
+			t.Errorf("accepted %s", body)
+		}
 	}
 }
 
@@ -46,7 +50,11 @@ func TestDocTrees(t *testing.T) {
 	if tr, err := config.DocTreeNamed("papers"); err != nil || tr.Name != "papers" {
 		t.Fatalf("%+v %v", tr, err)
 	}
-	if _, err := LoadPath(writeConfig(t, `{"doc": {"root": "/x", "trees": {"a": "/a"}}}`)); err == nil {
-		t.Fatal("root and trees together")
+	one, err := LoadPath(writeConfig(t, `{"doc": {"trees": {"papers": "/P"}}}`))
+	if err != nil || one.DocRoot() != "/P" {
+		t.Fatalf("one tree: root %q, %v", one.DocRoot(), err)
+	}
+	if config.DocRoot() != "" {
+		t.Fatalf("two trees: root %q, want none", config.DocRoot())
 	}
 }

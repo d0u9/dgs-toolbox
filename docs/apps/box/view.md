@@ -56,7 +56,7 @@ record the batch refuses is reported on its own and does not undo the ones that
 were written: a batch is a convenience over a list of edits, not a transaction.
 
 The trash is shown as advice: how much is in it, how old the oldest is, and how
-much of it is older than `box.trash.keep`. Nothing is ever removed for it.
+much of it is older than `box.trash.keep_days`. Nothing is ever removed for it.
 Emptying `trash/` stays something done by hand.
 
 ## Browsing, and searching what was typed
@@ -238,7 +238,7 @@ handle for clearing out: select the dead ticket stubs, send the selection to
 the trash in one action.
 
 Emptying the trash is not `box`'s job — it is done in Finder or a shell. `view`
-shows how much is in there and how old it is, and treats `box.trash.keep` as
+shows how much is in there and how old it is, and treats `box.trash.keep_days` as
 advice rather than as a timer, because with no NAS snapshots behind it the
 trash is the only undo in the system.
 

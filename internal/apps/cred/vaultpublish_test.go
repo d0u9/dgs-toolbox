@@ -23,7 +23,7 @@ func vaultWith(t *testing.T, root string) vaultModel {
 	vaultDir := filepath.Join(root, "vault")
 	ageFile(t, filepath.Join(vaultDir, "top.age"), mine.Recipient())
 	writeFile(t, filepath.Join(vaultDir, "top.age.json"), `{"version":1,"created":"2026-09-15T14:00:00+10:00","recipients":[]}`, 0o644)
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"identities":["`+filepath.Join(root, "keys")+`"],"vault":"`+vaultDir+`"}`, 0o600)
 
 	m := newVaultModel()

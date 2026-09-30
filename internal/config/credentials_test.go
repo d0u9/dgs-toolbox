@@ -46,7 +46,7 @@ func TestExpandPath(t *testing.T) {
 
 func TestLoadCredentials(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, CredentialsFilename)
+	path := filepath.Join(dir, PartFile)
 
 	if _, found, err := LoadCredentials(path); found || err != nil {
 		t.Fatalf("missing file: found %v, %v", found, err)
@@ -115,7 +115,7 @@ func TestIdleClose(t *testing.T) {
 // package's own default, a list replaces it, and [] skips nothing.
 func TestArchiveSkip(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, CredentialsFilename)
+	path := filepath.Join(dir, PartFile)
 	load := func(body string) Credentials {
 		t.Helper()
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {

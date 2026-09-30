@@ -40,7 +40,7 @@ func (m *keysModel) startRename() {
 	m.notice = ""
 	switch {
 	case m.snap.settings.Recipients == "":
-		m.notice = "! Set recipients in credentials.json first"
+		m.notice = "! Set recipients in cred/config.json first"
 		return
 	case m.snap.folderErr != nil:
 		m.notice = "! " + m.snap.folderErr.Error()

@@ -38,7 +38,7 @@ func writeFile(t *testing.T, path, body string, mode os.FileMode) {
 	}
 }
 
-// newFixture writes a credentials.json, an identity directory holding one
+// newFixture writes a cred/config.json, an identity directory holding one
 // registered age key and one unregistered SSH key, and a recipient folder with
 // two hosts, a group, and a file left out with an error.
 func newFixture(t *testing.T) fixture {
@@ -60,7 +60,7 @@ func newFixture(t *testing.T) fixture {
 	writeFile(t, filepath.Join(folder, "hosts", "broken.json"), `{`, 0o644)
 	writeFile(t, filepath.Join(folder, "groups", "g-home.json"), `{"hosts":["nas","laptop"]}`, 0o644)
 
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"identities":["`+filepath.Join(root, "keys")+`","`+filepath.Join(root, "absent")+`"],"recipients":"`+folder+`"}`, 0o600)
 	return fixture{path: path, registered: registered.Recipient().String(), stranger: other.Recipient().String()}
 }
@@ -194,9 +194,9 @@ func TestGroupsTab(t *testing.T) {
 }
 
 func TestMissingCredentials(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "credentials.json")
+	path := filepath.Join(t.TempDir(), "config.json")
 	m := loadedModel(t, path)
-	if screen := view(m); !strings.Contains(screen, "No credentials.json at") {
+	if screen := view(m); !strings.Contains(screen, "No cred/config.json at") {
 		t.Errorf("view:\n%s", screen)
 	}
 	writeFile(t, path, `{"identities":["relative"]}`, 0o600)
@@ -208,7 +208,7 @@ func TestMissingCredentials(t *testing.T) {
 }
 
 func TestNoRecipientFolder(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "credentials.json")
+	path := filepath.Join(t.TempDir(), "config.json")
 	writeFile(t, path, `{}`, 0o600)
 	m, _ := press(t, loadedModel(t, path), "]")
 	if screen := view(m); !strings.Contains(screen, "names no recipient") {
@@ -277,7 +277,7 @@ func TestGenerateAndRegister(t *testing.T) {
 	if err := os.MkdirAll(folder, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"identities":["`+filepath.Join(root, "ssh")+`","`+ageDir+`"],"recipients":"`+folder+`","new_identity_dir":"`+ageDir+`"}`, 0o600)
 
 	m := loadedModel(t, path)
@@ -400,7 +400,7 @@ func TestDeleteAndUnregister(t *testing.T) {
 	if err := record.Create(filepath.Join(vaultDir, "only.age.json"), record.Record{Recipients: []record.Recipient{{PublicKey: written.PublicKeys[0]}}}); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"identities":["`+ageDir+`","`+filepath.Join(root, "ssh")+`"],"recipients":"`+folder+`","vault":"`+vaultDir+`","new_identity_dir":"`+ageDir+`"}`, 0o600)
 
 	m := loadedModel(t, path)
@@ -467,7 +467,7 @@ func TestAddPublicKey(t *testing.T) {
 	root := t.TempDir()
 	folder := filepath.Join(root, "recipients")
 	os.MkdirAll(folder, 0o755)
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"recipients":"`+folder+`"}`, 0o600)
 	_, edPrivate, _ := ed25519.GenerateKey(rand.Reader)
 	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(mustSigner(t, edPrivate).PublicKey()))) + " root@vps"
@@ -523,7 +523,7 @@ func TestDeleteHost(t *testing.T) {
 	if err := record.Create(filepath.Join(vaultDir, "nas-only.age.json"), record.Record{Recipients: []record.Recipient{{PublicKey: nasKey}}}); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"recipients":"`+folder+`","vault":"`+vaultDir+`"}`, 0o600)
 
 	m := keyPress(t, loadedModel(t, path), "]")
@@ -568,7 +568,7 @@ func TestRenameHost(t *testing.T) {
 	writeFile(t, filepath.Join(folder, "hosts", "nas.json"), `{"keys":[{"public_key":"`+key+`","description":"a"}]}`, 0o644)
 	writeFile(t, filepath.Join(folder, "hosts", "vps.json"), `{"keys":[{"public_key":"`+newAgeRecipient(t)+`","description":"b"}]}`, 0o644)
 	writeFile(t, filepath.Join(folder, "groups", "g-all.json"), `{"hosts":["NAS","vps"]}`, 0o644)
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"recipients":"`+folder+`"}`, 0o600)
 
 	m := keyPress(t, loadedModel(t, path), "]")
@@ -622,7 +622,7 @@ func TestHostComment(t *testing.T) {
 	root := t.TempDir()
 	folder := filepath.Join(root, "recipients")
 	writeFile(t, filepath.Join(folder, "hosts", "nas.json"), `{"keys":[{"public_key":"`+newAgeRecipient(t)+`","description":"a"}]}`, 0o644)
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"recipients":"`+folder+`"}`, 0o600)
 
 	m := keyPress(t, loadedModel(t, path), "]")

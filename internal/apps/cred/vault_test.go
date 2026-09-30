@@ -64,7 +64,7 @@ func TestVaultPage(t *testing.T) {
 	ageFile(t, filepath.Join(vaultDir, "servers", "nas.age"), stranger.Recipient())
 	writeFile(t, filepath.Join(vaultDir, "servers", "broken.age"), "not an age file", 0o644)
 	ageFile(t, filepath.Join(vaultDir, ".git", "hidden.age"), mine.Recipient())
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"identities":["`+filepath.Join(root, "keys")+`"],"vault":"`+vaultDir+`"}`, 0o600)
 
 	m := newVaultModel()
@@ -108,7 +108,7 @@ func TestVaultPage(t *testing.T) {
 }
 
 func TestVaultWithoutFolder(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "credentials.json")
+	path := filepath.Join(t.TempDir(), "config.json")
 	writeFile(t, path, `{}`, 0o600)
 	m := newVaultModel()
 	m.path = path
@@ -182,7 +182,7 @@ func TestAddFlow(t *testing.T) {
 	ageFile(t, filepath.Join(vaultDir, "servers", "old.age"), mine.Recipient())
 	source := filepath.Join(root, "src", "nas-keys")
 	writeFile(t, filepath.Join(source, "id_ed25519"), "secret key", 0o600)
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"identities":["`+filepath.Join(root, "keys")+`"],"recipients":"`+folder+`","vault":"`+vaultDir+`"}`, 0o600)
 
 	m := newVaultModel()
@@ -277,7 +277,7 @@ func TestAddFlowPassphrase(t *testing.T) {
 	}
 	source := filepath.Join(root, "src", "notes.txt")
 	writeFile(t, source, "secret notes", 0o600)
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"recipients":"`+folder+`","vault":"`+vaultDir+`"}`, 0o600)
 
 	m := newVaultModel()
@@ -340,7 +340,7 @@ func TestVaultMove(t *testing.T) {
 		t.Fatal(err)
 	}
 	ageFile(t, filepath.Join(vaultDir, "servers", "nas.age"), mine.Recipient())
-	path := filepath.Join(root, "credentials.json")
+	path := filepath.Join(root, "config.json")
 	writeFile(t, path, `{"identities":["`+filepath.Join(root, "keys")+`"],"vault":"`+vaultDir+`"}`, 0o600)
 
 	m := newVaultModel()

@@ -13,7 +13,7 @@ import (
 	"dgs-toolbox/internal/geo/gpxfile"
 )
 
-var ErrNoGPXDirectory = errors.New("capture.gpx.directory is not configured")
+var ErrNoGPXDirectory = errors.New("capture.gpx.root is not configured")
 
 func dailyGPXPath(ctx Context) string {
 	day, err := captureDay(ctx)

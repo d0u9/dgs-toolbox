@@ -315,19 +315,19 @@ JSON rather than a binary encoding because the one thing wanted from a cache
 that is behaving oddly is to read it. YAML for the truth a person edits, JSON
 for the cache a program writes: the extension says which is which.
 
-The cache is **not** in the Box. It lives under `box.cache_dir`, keyed by a hash
+The cache is **not** in the Box. It lives under `box.cache.dir`, keyed by a hash
 of the root path, for three reasons: SQLite-style databases on SMB or NFS are a
 known way to corrupt data and to hang a process; a cache is per-machine by
 nature, so two Macs get one each and never conflict; and keeping it out of the
 tree keeps the tree's meaning simple — everything in the Box is truth.
 
 ```text
-<box.cache_dir>/<hash of root>/
+<box.cache.dir>/<hash of root>/
   index.json
   thumbs/a1/a1b2c3d4-300.jpg
   previews/a1/a1b2c3d4-1600.jpg
   previews/a1/a1b2c3d4-p2-300.jpg
-<box.cache_dir>/inbox/<hash of inbox>/<hash of inbox path>/
+<box.cache.dir>/inbox/<hash of inbox>/<hash of inbox path>/
   read.json   grid.jpg   preview.jpg
 ```
 
@@ -381,7 +381,7 @@ top of the pyramid left off:
 
 - **300 px thumbnail** for grids. A few KB; never expires.
 - **1600 px preview** for looking at one scan. Dropped after
-  `box.preview.keep` without use. The sweep runs when a Box is opened, which is
+  `box.preview.keep_days` without use. The sweep runs when a Box is opened, which is
   often enough for something whose only cost is disk.
 - **Pages past the first**, at both sizes, for the page view of a multi-page
   PDF. Drawn when a page is first looked at, never during `import`, and kept
@@ -420,7 +420,7 @@ the only record of what the scan was called before.
 `trash/` is inside the Box root so the move is a same-volume rename: atomic,
 instant, no copy and no readback. Emptying it is a manual act, done in Finder or
 a shell; `box` never removes a file. With no NAS snapshots behind it, the trash
-is the only undo in the system, which is why `box.trash.keep` defaults to 90
+is the only undo in the system, which is why `box.trash.keep_days` defaults to 90
 days and is advice shown in `view` rather than a timer.
 
 **The trash takes part in deduplication.** A digest in `trash/` is still known,

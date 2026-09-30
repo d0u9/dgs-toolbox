@@ -301,7 +301,7 @@ Recognising a page takes about a second, so pages are read through a queue:
   read in advance;
 - while a PDF is looked at on Import, the next three not yet in the tree are
   read in advance;
-- every page read is kept in the local cache (`doc.cache_dir`) by the PDF's
+- every page read is kept in the local cache (`doc.cache.dir`) by the PDF's
   SHA-256, so it is read once per machine, and a PDF met again in another
   folder or tree is not read again.
 
@@ -1337,5 +1337,5 @@ existing tags as the owner types; Browse filters by tags in the current tree.
 - **Clone** — a sub-tree cloned from the full tree would remember the state it
   was cloned from, so its merge could compare three sides, as git does.
 
-Its settings — `doc.root`, `doc.web.port` — are in
+Its settings — `doc.trees`, `doc.web` — are in
 [`configuration/doc.md`](../../configuration/doc.md).

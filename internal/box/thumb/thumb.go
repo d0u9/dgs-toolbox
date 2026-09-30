@@ -38,7 +38,7 @@ const (
 	// GridSize is the grid thumbnail. A few KB, and never dropped.
 	GridSize = 300
 	// PreviewSize is for looking at one scan. It is dropped after
-	// box.preview.keep days without use.
+	// box.preview.keep_days days without use.
 	PreviewSize = 1600
 )
 

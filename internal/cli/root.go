@@ -35,18 +35,20 @@ func NewRootCommand(apps []tui.App, run tui.Runner) *cobra.Command {
 				if len(args) == 1 {
 					destination = args[0]
 				}
-				path, err := config.ExportDefault(destination)
-				if err != nil {
-					return err
+				written, skipped, err := config.ExportDefault(destination)
+				for _, path := range written {
+					fmt.Fprintf(command.OutOrStdout(), "Wrote %s\n", path)
 				}
-				fmt.Fprintf(command.OutOrStdout(), "Exported default config to %s\n", path)
-				return nil
+				for _, path := range skipped {
+					fmt.Fprintf(command.OutOrStdout(), "Kept %s, which exists\n", path)
+				}
+				return err
 			}
 			return run(tui.Launch{ConfigPath: configPath})
 		},
 	}
-	root.Flags().BoolVar(&exportConfig, "export-config", false, "write the default global configuration")
-	root.PersistentFlags().StringVarP(&configPath, "config", "c", "", "read configuration from this file")
+	root.Flags().BoolVar(&exportConfig, "export-config", false, "write a default config.json for every command into a directory")
+	root.PersistentFlags().StringVarP(&configPath, "config", "c", "", "read configuration from this directory")
 
 	for _, app := range apps {
 		root.AddCommand(newAppCommand(app, run, &configPath))
@@ -66,11 +68,11 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 		given := addFlags(command, leaf.Flags)
 		command.RunE = func(cmd *cobra.Command, _ []string) error {
 			if report, ok := chosen(); ok {
-				return runReport(cmd, report, *configPath)
+				return runReport(cmd, report, *configPath, app.ID)
 			}
 			return run(tui.Launch{App: app.ID, Command: leaf.ID, ConfigPath: *configPath, Flags: given(cmd)})
 		}
-		addActions(command, app.Actions, configPath)
+		addActions(command, app.ID, app.Actions, configPath)
 		return command
 	}
 	command := &cobra.Command{
@@ -81,7 +83,7 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 	chosen := addReports(command, app.Reports)
 	command.RunE = func(cmd *cobra.Command, _ []string) error {
 		if report, ok := chosen(); ok {
-			return runReport(cmd, report, *configPath)
+			return runReport(cmd, report, *configPath, app.ID)
 		}
 		return run(tui.Launch{App: app.ID, ConfigPath: *configPath})
 	}
@@ -99,12 +101,12 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 		}
 		command.AddCommand(sub)
 	}
-	addActions(command, app.Actions, configPath)
+	addActions(command, app.ID, app.Actions, configPath)
 	return command
 }
 
 // addActions registers an app's shell-only subcommands.
-func addActions(command *cobra.Command, actions []tui.Action, configPath *string) {
+func addActions(command *cobra.Command, part string, actions []tui.Action, configPath *string) {
 	for _, action := range actions {
 		action := action
 		sub := &cobra.Command{
@@ -129,7 +131,7 @@ func addActions(command *cobra.Command, actions []tui.Action, configPath *string
 					}
 				}
 				if action.RunWithConfig != nil {
-					global, err := loadConfig(*configPath)
+					global, err := loadConfig(*configPath, part)
 					if err != nil {
 						return err
 					}
@@ -204,17 +206,26 @@ func addReports(command *cobra.Command, reports []tui.Report) func() (tui.Report
 }
 
 // runReport loads the configuration the report reads and writes it to stdout.
-func runReport(command *cobra.Command, report tui.Report, configPath string) error {
-	global, err := loadConfig(configPath)
+func runReport(command *cobra.Command, report tui.Report, configPath, app string) error {
+	global, err := loadConfig(configPath, app)
 	if err != nil {
 		return err
 	}
 	return report.Run(command.OutOrStdout(), global)
 }
 
-func loadConfig(path string) (config.Config, error) {
+// loadConfig loads the configuration and refuses when the file of part, the
+// command about to run, was refused.
+func loadConfig(path, part string) (config.Config, error) {
+	var global config.Config
+	var err error
 	if path != "" {
-		return config.LoadPath(path)
+		global, err = config.LoadDir(path)
+	} else {
+		global, err = config.Load()
 	}
-	return config.Load()
+	if err != nil {
+		return global, err
+	}
+	return global, global.PartErr(part)
 }

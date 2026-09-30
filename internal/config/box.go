@@ -2,10 +2,8 @@ package config
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,8 +19,8 @@ import (
 // catalogue and its lifetimes are registered in code, because a type name goes
 // into a sidecar and has to mean the same thing on another machine. The
 // thumbnail sizes are fixed, because a size that could change would invalidate
-// every image already written. The listening address is fixed to a loopback
-// one, because a Box holds identity and medical documents.
+// every image already written. The listening host is fixed to a loopback one,
+// because a Box holds identity and medical documents.
 type Box struct {
 	// Root is the Box. Nothing is written unless Marker is found there, so an
 	// unmounted NAS is refused rather than turned into a second, local Box.
@@ -37,15 +35,13 @@ type Box struct {
 	// StateFile is where Import keeps its resumable state, inside the inbox. A
 	// bare filename, not a path.
 	StateFile string `json:"state_file"`
-	// CacheDir is where the discardable index and the thumbnails live. It is
-	// outside the Box on purpose: a cache belongs to one machine, and a
-	// database file on a network filesystem is a way to lose data. Empty means
-	// the user cache directory.
-	CacheDir string `json:"cache_dir"`
+	// Cache is where the discardable index and the thumbnails live.
+	Cache Cache `json:"cache"`
 	// Workers is how many whole files Import copies and verifies at once. Zero
 	// means DefaultBoxWorkers.
-	Workers int        `json:"workers"`
-	Web     BoxWeb     `json:"web"`
+	Workers int `json:"workers"`
+	// Web lists the servers by use; the only one is "browse", the box pages.
+	Web     []Web      `json:"web"`
 	Preview BoxPreview `json:"preview"`
 	Trash   BoxTrash   `json:"trash"`
 	// Currency is the ISO 4217 code an amount typed with no currency is taken
@@ -58,26 +54,28 @@ type Box struct {
 	Timezone string `json:"timezone"`
 }
 
-// BoxWeb is where the box pages listen. Only the port is configurable.
-type BoxWeb struct {
-	// Port is the port to listen on. Zero means DefaultBoxWebPort.
-	Port int `json:"port"`
+// Cache is where a command keeps its discardable local cache. It is outside
+// what the cache describes on purpose: a cache belongs to one machine, and a
+// database file on a network filesystem is a way to lose data.
+type Cache struct {
+	// Dir is the cache directory. Empty means <user cache dir>/dgs/<command>.
+	Dir string `json:"dir"`
 }
 
 // BoxPreview is how long the large previews are worth keeping. Grid thumbnails
 // are a few KB and are never dropped, so they have no setting.
 type BoxPreview struct {
-	// Keep is how many days an unused preview is kept. Zero keeps previews
-	// indefinitely, so nil rather than zero means the default.
-	Keep *int `json:"keep"`
+	// KeepDays is how many days an unused preview is kept. Zero keeps
+	// previews indefinitely, so nil rather than zero means the default.
+	KeepDays *int `json:"keep_days"`
 }
 
 // BoxTrash is how long the trash is worth keeping. box never removes a file:
 // emptying trash/ is done by hand, and this only decides what view advises.
 type BoxTrash struct {
-	// Keep is how many days the trash is worth keeping. Zero shows no advice,
-	// so nil rather than zero means the default.
-	Keep *int `json:"keep"`
+	// KeepDays is how many days the trash is worth keeping. Zero shows no
+	// advice, so nil rather than zero means the default.
+	KeepDays *int `json:"keep_days"`
 }
 
 // The defaults for the numbers a Box does not get from a document.
@@ -91,6 +89,8 @@ const (
 	// DefaultBoxWorkers is a handful, which is faster than one over a network
 	// filesystem and faster than many.
 	DefaultBoxWorkers = 4
+	// BoxBrowseServer is the web entry of the box pages.
+	BoxBrowseServer = "browse"
 	// DefaultBoxWebHost is not configurable. See Box.
 	DefaultBoxWebHost = "127.0.0.1"
 	// DefaultBoxWebPort sits next to the GPX server's.
@@ -102,8 +102,10 @@ const (
 	DefaultBoxTrashKeepDays = 90
 )
 
+var boxServers = []server{{name: BoxBrowseServer, host: DefaultBoxWebHost, port: DefaultBoxWebPort}}
+
 // BoxRoot and BoxInbox are box.root and box.inbox, already expanded by
-// LoadPath. Both are empty until configured.
+// LoadDir. Both are empty until configured.
 func (c Config) BoxRoot() string  { return c.Box.Root }
 func (c Config) BoxInbox() string { return c.Box.Inbox }
 
@@ -133,30 +135,24 @@ func (c Config) BoxWorkers() int {
 
 // BoxWebAddr is the host:port the box pages listen on. The host is always a
 // loopback address.
-func (c Config) BoxWebAddr() string {
-	port := c.Box.Web.Port
-	if port == 0 {
-		port = DefaultBoxWebPort
-	}
-	return net.JoinHostPort(DefaultBoxWebHost, strconv.Itoa(port))
-}
+func (c Config) BoxWebAddr() string { return webAddr(c.Box.Web, boxServers, BoxBrowseServer) }
 
 // BoxPreviewKeepDays is how many days an unused preview is kept; zero keeps
 // them indefinitely.
 func (c Config) BoxPreviewKeepDays() int {
-	if c.Box.Preview.Keep == nil {
+	if c.Box.Preview.KeepDays == nil {
 		return DefaultBoxPreviewKeepDays
 	}
-	return *c.Box.Preview.Keep
+	return *c.Box.Preview.KeepDays
 }
 
 // BoxTrashKeepDays is how many days the trash is worth keeping; zero means
 // view offers no advice.
 func (c Config) BoxTrashKeepDays() int {
-	if c.Box.Trash.Keep == nil {
+	if c.Box.Trash.KeepDays == nil {
 		return DefaultBoxTrashKeepDays
 	}
-	return *c.Box.Trash.Keep
+	return *c.Box.Trash.KeepDays
 }
 
 // BoxCurrency is the currency an amount with no code is read in, upper-cased.
@@ -178,9 +174,9 @@ func (c Config) BoxZone() (*time.Location, error) {
 // cache; and the cache is outside the Box so that nothing on a network
 // filesystem is ever written to as a database.
 //
-// An empty box.cache_dir uses the operating system's user cache directory.
+// An empty cache.dir uses the operating system's user cache directory.
 func (c Config) BoxCacheDir(root string) (string, error) {
-	base := c.Box.CacheDir
+	base := c.Box.Cache.Dir
 	if base == "" {
 		userCache, err := os.UserCacheDir()
 		if err != nil {
@@ -194,43 +190,43 @@ func (c Config) BoxCacheDir(root string) (string, error) {
 	return filepath.Join(base, box.CacheKey(root)), nil
 }
 
-// validateBox checks what has to be refused when the file is read rather than
+// checkBox checks what has to be refused when the file is read rather than
 // when the first scan is filed: a mistyped currency, an offset written where a
-// zone belongs, a path written where a filename belongs.
-func validateBox(settings Box, path string) error {
+// zone belongs, a path written where a filename belongs. It expands the paths.
+func checkBox(c *Config) error {
+	settings := c.Box
 	for key, name := range map[string]string{
-		"box.marker":     firstNonEmpty(settings.Marker, DefaultBoxMarker),
-		"box.state_file": firstNonEmpty(settings.StateFile, DefaultBoxStateFile),
+		"marker":     firstNonEmpty(settings.Marker, DefaultBoxMarker),
+		"state_file": firstNonEmpty(settings.StateFile, DefaultBoxStateFile),
 	} {
 		if filepath.Base(name) != name || name == "." || name == ".." {
-			return fmt.Errorf("decode config %s: %s must be a filename, got %q", path, key, name)
+			return fmt.Errorf("%s must be a filename, got %q", key, name)
 		}
 	}
 	if code := strings.ToUpper(strings.TrimSpace(settings.Currency)); code != "" && !money.Known(code) {
-		return fmt.Errorf("decode config %s: box.currency %q is not a currency this build knows the decimals of", path, code)
+		return fmt.Errorf("currency %q is not a currency this build knows the decimals of", code)
 	}
 	if settings.Workers < 0 {
-		return fmt.Errorf("decode config %s: box.workers cannot be negative, got %d", path, settings.Workers)
+		return fmt.Errorf("workers cannot be negative, got %d", settings.Workers)
 	}
-	if settings.Preview.Keep != nil && *settings.Preview.Keep < 0 {
-		return fmt.Errorf("decode config %s: box.preview.keep is a number of days and cannot be negative, got %d", path, *settings.Preview.Keep)
+	if settings.Preview.KeepDays != nil && *settings.Preview.KeepDays < 0 {
+		return fmt.Errorf("preview.keep_days cannot be negative, got %d", *settings.Preview.KeepDays)
 	}
-	if settings.Trash.Keep != nil && *settings.Trash.Keep < 0 {
-		return fmt.Errorf("decode config %s: box.trash.keep is a number of days and cannot be negative, got %d", path, *settings.Trash.Keep)
+	if settings.Trash.KeepDays != nil && *settings.Trash.KeepDays < 0 {
+		return fmt.Errorf("trash.keep_days cannot be negative, got %d", *settings.Trash.KeepDays)
 	}
-	return nil
-}
-
-// validateBoxZone is separate because it loads the zone database, which the
-// rest of the checks do not need.
-func validateBoxZone(configured Box, path string) error {
-	if configured.Timezone == "" {
-		return nil
+	if err := checkWeb(settings.Web, boxServers); err != nil {
+		return err
 	}
-	if _, err := box.LoadZone(configured.Timezone); err != nil {
-		return fmt.Errorf("decode config %s: box.timezone: %w", path, err)
+	if settings.Timezone != "" {
+		// The zone database is loaded only when a zone is named.
+		if _, err := box.LoadZone(settings.Timezone); err != nil {
+			return fmt.Errorf("timezone: %w", err)
+		}
 	}
-	return nil
+	return expandAll(map[string]*string{
+		"root": &c.Box.Root, "inbox": &c.Box.Inbox, "cache.dir": &c.Box.Cache.Dir,
+	})
 }
 
 func firstNonEmpty(value, fallback string) string {

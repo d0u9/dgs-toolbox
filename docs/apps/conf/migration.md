@@ -43,7 +43,7 @@ name, not necessarily the node's hostname or a DNS record managed here.
 
 Migration lives only in the `dgs conf` TUI; there is no command-line action.
 The TUI has a **Migrate** tab. It starts with **New migration** and
-the saved plans in `<config_dir>/conf/migrations/`, plus **Open migration file**
+the saved plans in `<config dir>/conf/migrations/`, plus **Open migration file**
 through the shared File Explorer. Its path input and root navigation can reach
 any accessible directory. A new migration first asks for the scenario
 (relocate or replace), then selects a source node, then opens a
@@ -142,7 +142,7 @@ version; they require a separate design because they can change reachability
 or ownership, not just an address. The old ID must identify exactly one valid
 node and the new ID must not already be in use.
 
-No new `dgs-config.json` key is needed. The command reads `conf.root`; it reads
+No new `conf/config.json` key is needed. The command reads `conf.root`; it reads
 `conf.secrets` only when comparing rendered output. Its plan remains useful if
 the secrets root is unavailable, but it must mark render comparisons that it
 could not perform.
