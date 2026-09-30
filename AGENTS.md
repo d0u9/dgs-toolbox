@@ -150,6 +150,9 @@ one and compares. It lives on the local machine, outside the tree or Box it
 describes. When it is missing, corrupt, or of a version it does not recognise,
 it is discarded and rebuilt, never repaired or upgraded; it carries no
 migration code. Writes go to the original files first; the cache follows.
+Where a cache, configuration or database lives is the user's to configure,
+never assumed by the code: a path has a documented setting, and a default,
+where there is one, is named in the configuration reference.
 `box` does not introduce SQLite while its in-memory index holds; the
 conditions for revisiting that are named in
 [`docs/apps/box/index.md`](docs/apps/box/index.md).
