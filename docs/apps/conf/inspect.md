@@ -504,9 +504,9 @@ first three, so what is about to be exported is on screen while choosing how.
   may be changed before confirmation; `.zip` is added when omitted. It must be
   a file name, not a path. The confirmation shows the final archive path.
 - **Download.** Shown only for Bundle: when a bundle's release is fetched.
-  As each node says (the default) follows the node's `download` and fetches
+  Per node (the default) follows the node's `download` and fetches
   on the machine where it says nothing; the confirmation shows what each
-  bundle will do. On the machine leaves it to `./ctl install`, which needs
+  bundle will do. On machine leaves it to `./ctl install`, which needs
   the machine online and keeps the bundle small; At export puts the program
   in the bundle, for a machine that cannot reach the release. Both override
   every node. It matters
