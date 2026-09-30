@@ -143,11 +143,13 @@ plugin loading, or speculative shared infrastructure. Do not claim stronger
 durability than the user-space/filesystem API boundary documented for Photo
 Import or for `dgs box`.
 
-`dgs box` may keep a discardable local index. Metadata truth is always the
-per-scan sidecar in the Box, the index must be reproducible from sidecars
-alone — a test rebuilds one and compares — and it lives outside the Box, on
-the local machine. It carries no migration code: a version it does not
-recognise is rebuilt, never upgraded. No other app introduces a database, and
-`box` does not introduce SQLite while the in-memory index holds; the
+Any app may keep a local cache, index or database. It is never the truth:
+metadata truth is always the original files — sidecars and the files they
+describe — and the cache must be rebuildable from them alone. A test rebuilds
+one and compares. It lives on the local machine, outside the tree or Box it
+describes. When it is missing, corrupt, or of a version it does not recognise,
+it is discarded and rebuilt, never repaired or upgraded; it carries no
+migration code. Writes go to the original files first; the cache follows.
+`box` does not introduce SQLite while its in-memory index holds; the
 conditions for revisiting that are named in
 [`docs/apps/box/index.md`](docs/apps/box/index.md).
