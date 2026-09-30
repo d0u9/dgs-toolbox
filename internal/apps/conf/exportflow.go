@@ -280,7 +280,7 @@ func (m *InspectModel) startExport() {
 			form.Field{ID: fieldFormat, Kind: form.Radio, Label: "Format", Options: formats, Value: format},
 			form.Field{ID: fieldDest, Kind: form.Path, Label: "Destination", Value: m.exportDir},
 			form.Field{ID: fieldZipName, Kind: form.Text, Label: "ZIP file name", Value: defaultZipName},
-			form.Field{ID: fieldDownload, Kind: form.Radio, Label: "Download", Options: []string{downloadNow, downloadOnMachine}, Value: downloadNow},
+			form.Field{ID: fieldDownload, Kind: form.Radio, Label: "Download", Options: []string{downloadOnMachine, downloadNow}, Value: downloadOnMachine},
 			form.Field{ID: fieldOverwrite, Kind: form.Checkbox, Label: "Replace files already there"},
 		),
 	}
