@@ -24,6 +24,7 @@ import (
 	"dgs-toolbox/internal/doc/classify"
 	"dgs-toolbox/internal/doc/dates"
 	"dgs-toolbox/internal/doc/expiry"
+	"dgs-toolbox/internal/doc/itemcache"
 	"dgs-toolbox/internal/doc/ocr"
 	"dgs-toolbox/internal/doc/pdflist"
 	"dgs-toolbox/internal/doc/suggest"
@@ -141,6 +142,8 @@ type server struct {
 	pictures *pictures
 	// writing is held while an export or a merge writes, so two never overlap.
 	writing *sync.Mutex
+	// items is this tree's Items, kept parsed between questions.
+	items *itemcache.Cache
 }
 
 // Handler serves the pages and their API.
@@ -172,7 +175,8 @@ func Handler(settings Settings) http.Handler {
 	for _, t := range trees {
 		s := shared
 		s.root, s.name = t.Root, t.Name
-		apis[t.Name] = s.api()
+		s.items = itemcache.New(t.Root, settings.CacheDir)
+		apis[t.Name] = s.followWrites(s.api())
 	}
 	first := trees[0].Name
 	mux := http.NewServeMux()
@@ -270,6 +274,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("GET /api/search", s.search)
 	mux.HandleFunc("GET /api/similar", s.similar)
 	mux.HandleFunc("POST /api/read-all", s.readAll)
+	mux.HandleFunc("POST /api/items/reload", s.reloadItems)
 	return mux
 }
 
@@ -294,7 +299,7 @@ func (s server) state(w http.ResponseWriter, _ *http.Request) {
 			problems = append(problems, err.Error())
 			out.Templates = []tree.Template{}
 		}
-		if out.Items, err = tree.LoadItems(s.root); err != nil {
+		if out.Items, err = s.items.Items(); err != nil {
 			problems = append(problems, err.Error())
 		}
 		if out.Items == nil {
@@ -327,7 +332,7 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	items, _ := tree.LoadItems(s.root)
+	items, _ := s.items.Items()
 	kept := map[string]string{}
 	for _, item := range items {
 		for _, r := range item.Revisions {
@@ -407,7 +412,7 @@ func (s server) revision(w http.ResponseWriter, r *http.Request) {
 // revision is named by its ref, as Browse has it, or by its PDF's digest,
 // as an Outline's tree has it: a revision with an ID of its own differs.
 func (s server) revisionPath(id, digest string) (string, int, error) {
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		return "", http.StatusInternalServerError, err
 	}
@@ -537,7 +542,7 @@ func (s server) text(w http.ResponseWriter, r *http.Request) {
 // each Template, as far as their text has been read and kept. The PDF itself,
 // when it is already filed, is left out: it would only find itself.
 func (s server) rank(templates []tree.Template, digest, text string) []classify.Score {
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		return nil
 	}
@@ -973,7 +978,7 @@ func (s server) historyLog(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1081,7 +1086,7 @@ func (s server) supersession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s server) supersessionCandidates(w http.ResponseWriter, r *http.Request) {
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		answer(w, tree.Item{}, err)
 		return
@@ -1098,7 +1103,7 @@ func (s server) supersessionCandidates(w http.ResponseWriter, r *http.Request) {
 
 // values returns the values Items of a type have saved for a key.
 func (s server) values(w http.ResponseWriter, r *http.Request) {
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1108,7 +1113,7 @@ func (s server) values(w http.ResponseWriter, r *http.Request) {
 
 // issuers returns suggestions only for the requested type and country.
 func (s server) issuers(w http.ResponseWriter, r *http.Request) {
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

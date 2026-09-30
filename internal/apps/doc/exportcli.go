@@ -78,6 +78,9 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		fmt.Fprintln(out, "Dry run: nothing was written.")
 		return nil
 	}
+	// Recording exports writes Items' history: a page's cache of the tree
+	// looks again.
+	defer tree.WriteChangeMark(root)
 	for _, j := range plans {
 		var published []tree.Exported
 		result, err := export.Apply(context.Background(), root, j.Path, j.Views, j.Plan, items, nil,

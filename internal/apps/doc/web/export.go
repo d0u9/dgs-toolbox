@@ -57,7 +57,7 @@ func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON
 	if err != nil {
 		return out, nil, http.StatusConflict, err
 	}
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		return out, nil, http.StatusConflict, err
 	}

@@ -31,7 +31,7 @@ func (s server) snapshotList(w http.ResponseWriter, _ *http.Request) {
 	if err != nil {
 		out.Error = err.Error()
 	}
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil && out.Error == "" {
 		out.Error = err.Error()
 	}
@@ -83,7 +83,7 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 		}
 		rule = &found
 	}
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		fail(http.StatusConflict, err)
 		return
@@ -183,7 +183,7 @@ func (s server) snapshotNames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fail := func(status int, err error) { writeJSON(w, status, map[string]string{"error": err.Error()}) }
-	items, err := tree.LoadItems(s.root)
+	items, err := s.items.Items()
 	if err != nil {
 		fail(http.StatusConflict, err)
 		return
