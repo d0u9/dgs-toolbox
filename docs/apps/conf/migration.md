@@ -5,8 +5,8 @@ the configuration represented by one node to a new location or machine, includin
 changes to its name and network addresses. It does not say that a generated
 file has been installed or that DNS has been changed.
 
-The [inventory](inventory.md) is the source of node, instance, route, network
-and published-name facts. [Export](export.md) renders files from those facts;
+The [inventory](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md) is the source of node, instance, route, network
+and published-name facts. [Export](https://github.com/d0u9/rhumb/blob/master/docs/export.md) renders files from those facts;
 it does not deploy them. A migration should use those existing readers and
 renderers, not keep a second set of rules for how addresses or services depend
 on one another.

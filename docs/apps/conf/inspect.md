@@ -4,7 +4,7 @@
 six angles — a node, a user, a service, an instance, a port, a secret — and
 draws the whole thing as a connectivity graph. Four inventory views are tabs;
 Migrate is a fifth tab for editing a proposed move and generating its report.
-Instance and port remain rows within the inventory tabs. [`inventory.md`](inventory.md) is the model;
+Instance and port remain rows within the inventory tabs. [`inventory.md`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md) is the model;
 this page is a way to look at it without reading YAML by hand.
 
 ## Why a separate command from `export`
@@ -141,7 +141,7 @@ like one that is still in use. The status bar carries the counts, and says
 
 A `.previous` beside a value is named with its age, and past seven days it
 says the rotation is unfinished — the same limit
-[`validate`](inventory.md#rotation) enforces, reached here by looking rather
+[`validate`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#rotation) enforces, reached here by looking rather
 than by running a check.
 
 **No value is read.** The path, the account it belongs to and its state are
@@ -165,11 +165,11 @@ Shadowsocks server has two ports and cannot say that four people are on one
 of them and one relay on the other, which is the question a per-principal
 service is looked at for.
 - **Secret** — one credential's path, decoded per
-  [Secrets](inventory.md#secrets): which instance, which port, which
+  [Secrets](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#secrets): which instance, which port, which
   principal, and the account name it renders as. Its state against the
   store, and its rotation leftover when it has one. The value is not read;
   `Enter` reveals it in place, with the same warning
-  [preview](export.md#previewing) uses: plaintext, stays in this terminal's
+  [preview](https://github.com/d0u9/rhumb/blob/master/docs/export.md#previewing) uses: plaintext, stays in this terminal's
   scrollback. `e` opens it for editing — see
   [Editing a secret](#editing-a-secret).
 
@@ -184,7 +184,7 @@ belongs to, so a server listening on two of them is two shapes and a line says
 which one it lands on. The boxes nest — a group, a node inside it, a process
 inside that holding the ports one running program serves — and every edge is a
 resolved connection from the model
-[`inventory.md`](inventory.md#what-is-derived) computes as
+[`inventory.md`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#what-is-derived) computes as
 `derive.Model.Edges`. A line carries the account crossing it, because the port
 it lands on says the rest.
 
@@ -193,13 +193,13 @@ one running program, which is the boundary a container draws too, so the fact
 sits there once instead of on each port inside it. What it tells the reader is
 how to read the `bind` under it: `0.0.0.0` in a container is the container's
 interfaces, not an open listener — see
-[what runs the process](inventory.md#what-runs-the-process). It is what the
+[what runs the process](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#what-runs-the-process). It is what the
 inventory says, not something `dgs` observed: no port mapping was read, and a
 badge is never a claim that a port is or is not reachable.
 
 **A line out of a reverse proxy carries the name that route arrived at**
 instead — the `published` of the port it lands on. Every line out of a
-[fan-out instance](inventory.md#a-service-that-fans-out) leaves one entrance,
+[fan-out instance](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#a-service-that-fans-out) leaves one entrance,
 so what tells them apart is exactly that name; the proxy itself holds no
 credential, and repeating its instance name on each line would say nothing the
 shapes at either end do not already. An ordinary edge into a published port is
@@ -211,7 +211,7 @@ line at all — it is the proxy's own configuration, not an edge — which is wh
 the picture shows fewer names than the rendered file does.
 
 **A container network is a box inside its machine.** A process sits in the box
-of the first [container network](inventory.md#container-networks) it joins,
+of the first [container network](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#container-networks) it joins,
 in the node's order, and a line runs from it to the box of every further one
 it joins, carrying the address it holds there when that address is fixed; its
 own box names them too. A box has one parent, so a process spanning two
@@ -348,7 +348,7 @@ It runs, in this order:
    template. These come first because everything below is computed from what did
    parse, so a rule failing underneath may be a consequence rather than a
    fault of its own.
-2. [`validate`](inventory.md#validation), rule by rule.
+2. [`validate`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#validation), rule by rule.
 3. The secrets store against the paths the inventory implies, in both
    directions, each named individually — a missing path is `secret sync`'s to
    generate, and an orphaned one is a person's to remove or rename. Equal
@@ -366,18 +366,18 @@ same sentence in two places.
 
 `dgs conf --targets` is the other report: what the generator root holds,
 grouped by node, per
-[export.md](export.md#targets-and-selectors).
+[export.md](https://github.com/d0u9/rhumb/blob/master/docs/export.md#targets-and-selectors).
 
 ## Editing a secret
 
 `e` on a secret view opens every credential under that view's instance —
-[`secret edit`](inventory.md#viewing-and-editing-several-at-once), which this
+[`secret edit`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#viewing-and-editing-several-at-once), which this
 command is what implements it. This is also the answer to the open question
-[`export.md`](export.md#open-questions) has carried since the TUI-first
+[`export.md`](https://github.com/d0u9/rhumb/blob/master/docs/export.md#open-questions) has carried since the TUI-first
 design: a leaf command's page performing a write, inside the TUI, guarded by
 the same confirmation dialog every other write in `dgs` uses. It is not a
 Cobra subcommand and needs no separate decision about the command model —
-[`secret show`](inventory.md#viewing-and-editing-several-at-once)'s read-only
+[`secret show`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md#viewing-and-editing-several-at-once)'s read-only
 half is the same view with `e` left unpressed.
 
 Rules carried over unchanged from the design:
@@ -397,7 +397,7 @@ The Nodes and Users tabs are also where the TUI exports from:
 - `x` exports what is marked, or the row under the cursor when nothing is.
 
 Marks are one set shared by both tabs. The rules, the form and what is
-written are in [`export.md`](export.md#the-page). Services and Secrets carry
+written are in [`export.md`](https://github.com/d0u9/rhumb/blob/master/docs/export.md#the-page). Services and Secrets carry
 no checkboxes.
 
 ## What is not here
@@ -412,7 +412,7 @@ no checkboxes.
 
 1. **The graph model.** A package turning an inventory and its derivation into
    containers, shapes and edges — no TUI, no HTTP, tests over the same worked
-   example [`inventory.md`](inventory.md) uses.
+   example [`inventory.md`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md) uses.
 2. **The six views, read-only.** Node, user, service, instance, port,
    secret, values unread, cross-linked. No graph yet. Every index but Secrets is a
    tree, folds with the File Explorer's keys, and hides its line numbers, per
@@ -423,3 +423,115 @@ no checkboxes.
 5. **The graph.** `internal/webgraph` — the embedded page, the vendored
    library, the JSON contract — and the mapping from this inventory onto it.
    Force-directed, grouped by node, keyed by kind.
+
+## Exporting from the page
+
+Exporting from the TUI happens on the inspect page's Nodes and Users tabs,
+per [`inspect.md`](#marking-and-exporting). No separate page is
+needed: those two tabs are already the target tree, one by machine and one
+by person, so a page of its own would draw the same tree again.
+
+### Selecting
+
+Every row on Nodes and Users carries a checkbox, and marking follows the
+tri-state behaviour the recipient checklist in
+[`cred/vault.md`](../cred/vault.md#the-flow) uses:
+
+- `Space` marks the row under the cursor and every instance under it: a group,
+  a node, a person, a device or credential, or one instance. Pressing it again
+  on a fully marked row unmarks the row.
+- An instance can then be unmarked on its own. A parent shows `[x]`, `[-]` or
+  `[ ]` when all, some or none of its instances are marked.
+- `a` marks every instance on the tab, or clears every mark when the tab is
+  already fully marked.
+
+```text
+▾ [-] u-node-group-10-01
+  ├─ [x] ss-sfo01                ssserver
+  └─ [ ] bin-node1               microbin
+▾ [x] alex
+  ▸ [x] macbook                  alex's device, 2 files
+```
+
+The box sits beside the name, after the row's indent, branch and fold marker,
+so it keeps the tree's depth.
+
+What is marked is one set of instances, not one per tab. A device marked
+under its node on Nodes shows marked under its owner on Users, since they are
+the same entry seen from two directions. So nodes and people can be mixed in
+one export. The status bar's centre counts the marked instances.
+
+Folded rows keep their mark. A broken target can be marked, and the export
+refuses it by name, the same way the command line does.
+
+### Previewing
+
+`Enter` on an instance renders that one target and shows the result, scrollable,
+without writing anything. It is the same rendering the export performs, so a
+template that cannot find a secret says so here —
+
+```text
+missing MicroBin auth password
+```
+
+— rather than in the middle of an export, or after the archive has been handed
+to someone.
+
+Rendered output is plaintext secrets on the terminal, and stays in its
+scrollback. The preview says so, for the same reason opening a vault file does.
+
+### Exporting
+
+`x` exports every marked instance. With nothing marked, it exports what the
+row under the cursor stands for: one node, one person, one device, or one
+instance. On Services, an instance row exports that one deployment. So
+exporting a single thing needs no marking.
+
+The steps are the shared ones: a form, then the confirmation dialog, then the
+result in the status bar.
+
+- **Format.** Folder or Zip, and Show when every file is for one person.
+- **Destination.** A directory chosen with the File Explorer: `Enter` on the
+  row opens it, starting at `conf.export.dir`.
+- **ZIP file name.** Shown only for Zip, initially `conf-export.zip`. The name
+  may be changed before confirmation; `.zip` is added when omitted. It must be
+  a file name, not a path. The confirmation shows the final archive path.
+- **Replace files already there.** Off by default. When it is off and a file
+  would be replaced, the form says so and does not go on. This matches the
+  command line's `--overwrite`.
+
+`n` renders every target before anything is written. The confirmation then
+lists each file and marks those it `(overwrites)`, the same plan the command
+line prints. A successful export clears the marks.
+
+### Showing one person's files
+
+When every selected file is for one person, Show comes first in the form, and
+it is the default. A person's files are the ones pasted into a client, and a
+share link is shorter to copy than to write to disk and open again.
+
+Show writes nothing. `n` renders the files and puts them on screen one at a
+time. `Tab` moves to the next file and `↑` `↓` scroll. `c` copies the file on
+screen to the clipboard through the terminal (OSC 52), up to the 64 KiB a
+terminal clipboard takes. The view says the text is plaintext with every
+credential in it, and that it stays in the terminal's scrollback.
+
+Show is not offered for a server's files, or for files of more than one
+person. Those go to a folder or an archive.
+
+## Configuration keys
+
+These keys are the design's. They belong in `docs/configuration/conf.md` and in
+the index table there, written in the change that implements them, per the rule
+in [`AGENTS.md`](../../../AGENTS.md). They are listed here so the design reads on
+its own, and are not yet a reference.
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `conf.root` | The directory holding `services/` and the inventory. | empty — the page opens with no root and asks for one |
+| `conf.secrets` | The root of the secrets tree. | empty — an instance needing a secret refuses to render |
+| `conf.export.dir` | Where the destination form opens, for a folder or an archive. | empty — the home directory |
+
+Paths follow the rules in
+[`configuration/index.md`](../../configuration/index.md): `~`, `$NAME`, absolute
+after expansion.

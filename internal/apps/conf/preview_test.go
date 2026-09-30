@@ -160,7 +160,7 @@ output: config.json
 }
 
 // TestPreview_UpstreamValuesReachTheClientThatDeclaredThem pins
-// docs/apps/conf/inventory.md#what-a-service-needs-from-its-upstream for
+// rhumb docs/inventory.md#what-a-service-needs-from-its-upstream for
 // `values`: a parameter the two ends have to agree on is written on the
 // instance that listens, and the client's file is rendered from there rather
 // than from a second copy of it.
@@ -235,7 +235,7 @@ instances:
 }
 
 // TestPreview_ForwardedRouteDialsTheRelayAndAuthenticatesAtTheExit pins
-// docs/apps/conf/inventory.md#a-service-that-forwards: a client's file is
+// rhumb docs/inventory.md#a-service-that-forwards: a client's file is
 // built from both ends of a forwarded chain — the relay's address and port,
 // the exit's account, secret and shared secrets — and `exit` carries what
 // belongs to the far end and cannot be taken from the near one, such as the
@@ -417,7 +417,7 @@ func TestPreview_RendersTheSameWayExportWould(t *testing.T) {
 }
 
 // TestPreview_RotationEmitsBothCurrentAndPreviousAccounts pins
-// docs/apps/conf/inventory.md#rotation: a role rendering an account table
+// rhumb docs/inventory.md#rotation: a role rendering an account table
 // emits both the current and previous value as two accounts for one
 // principal, until the .previous file is deleted.
 func TestPreview_RotationEmitsBothCurrentAndPreviousAccounts(t *testing.T) {
@@ -642,7 +642,7 @@ instances:
 }
 
 // TestPreview_InstanceValuesOverrideDocumentDefaults pins
-// docs/apps/conf/export.md#two-kinds-of-defaults: for a document-shaped
+// rhumb docs/export.md#two-kinds-of-defaults: for a document-shaped
 // defaults file, an instance's values merge over the whole document. The
 // instance's own keys — id, service, bind, ports — are not part of it: they
 // are what dgs itself needs and are read through the instance function, and

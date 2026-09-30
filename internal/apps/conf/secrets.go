@@ -71,7 +71,7 @@ type secretsModel struct {
 }
 
 // staleAfter is validate's rule 16: an overlap is a debt, not a state. See
-// docs/apps/conf/inventory.md#rotation.
+// rhumb docs/inventory.md#rotation.
 const staleAfter = 7 * 24 * time.Hour
 
 // buildSecrets compares the paths the inventory implies against the files in
@@ -259,7 +259,7 @@ func renderSecretDetail(m secretsModel, l InspectData, id string) (string, error
 // secret out, and nothing when no port does. Which ports hand out what is
 // the instance's own statement, so two ports of one program can hand out
 // two different values — see
-// docs/apps/conf/inventory.md#a-secret-several-people-hold.
+// rhumb docs/inventory.md#a-secret-several-people-hold.
 func sharedHolders(l InspectData, instance, name, key string) []string {
 	var handedBy []string
 	for _, n := range l.Inv.Nodes {

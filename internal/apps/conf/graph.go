@@ -207,7 +207,7 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 		// it. It says how to read the bind under it, and it is what the
 		// inventory states rather than anything dgs observed — no port
 		// mapping was read. See
-		// docs/apps/conf/inventory.md#what-runs-the-process.
+		// rhumb docs/inventory.md#what-runs-the-process.
 		runtime := ""
 		if ok && inst.Containerised() {
 			runtime = inst.RuntimeOr()
