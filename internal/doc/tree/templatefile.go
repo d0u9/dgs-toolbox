@@ -46,7 +46,7 @@ func SaveTemplate(root, previous string, data []byte, now time.Time) (Template, 
 			t = r
 		}
 	}
-	items, err := LoadItems(root)
+	items, err := others(root)
 	if err != nil {
 		return Template{}, err
 	}
@@ -92,7 +92,7 @@ func TrashTemplate(root, typ string, now time.Time) (string, error) {
 	if err := Require(root); err != nil {
 		return "", err
 	}
-	items, err := LoadItems(root)
+	items, err := others(root)
 	if err != nil {
 		return "", err
 	}
