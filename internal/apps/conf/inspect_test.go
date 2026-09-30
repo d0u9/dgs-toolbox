@@ -544,7 +544,7 @@ func itemByID(t *testing.T, items []scrolllist.Item, id string) scrolllist.Item 
 }
 
 // TestInspect_UserDetailNamesEveryGrantedRoute covers a route that derives
-// no client instance. hysteria2's server role declares no reached_by, so a
+// no client instance. quicproxy's server role declares no reached_by, so a
 // person granted a route into it holds a credential and gets no file; the
 // view listed only the instances that exist, which made the route look
 // missing rather than answered.

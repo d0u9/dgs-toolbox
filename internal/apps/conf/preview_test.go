@@ -12,22 +12,22 @@ import (
 func buildRenderableRoot(t *testing.T) (root, secretsDir string) {
 	t.Helper()
 	root = t.TempDir()
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "confgen.yaml"), `
+	writeFile(t, filepath.Join(root, "services", "quicproxy", "confgen.yaml"), `
 template: templates/server.yaml.tmpl
 defaults: document
 output: config.yaml
 auth: per-principal
 `)
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "templates", "server.yaml.tmpl"),
+	writeFile(t, filepath.Join(root, "services", "quicproxy", "templates", "server.yaml.tmpl"),
 		"listen: {{ .listen }} on {{ (node).id }}\n")
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "defaults.yaml"), "listen: :443\n")
+	writeFile(t, filepath.Join(root, "services", "quicproxy", "defaults.yaml"), "listen: :443\n")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
 networks:
   internet: 203.0.113.10
 instances:
   - id: u-node-group-10
-    service: hysteria2
+    service: quicproxy
     ports:
       main: 443
 `)
@@ -614,15 +614,15 @@ func TestPreview_PublishedReachesTheServiceBehind(t *testing.T) {
 func buildValuesRoot(t *testing.T) (root, secretsDir string) {
 	t.Helper()
 	root = t.TempDir()
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "confgen.yaml"), `
+	writeFile(t, filepath.Join(root, "services", "quicproxy", "confgen.yaml"), `
 template: templates/server.yaml.tmpl
 defaults: document
 output: config.yaml
 auth: per-principal
 `)
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "templates", "server.yaml.tmpl"),
+	writeFile(t, filepath.Join(root, "services", "quicproxy", "templates", "server.yaml.tmpl"),
 		"masquerade: {{ .masquerade_url }}\ncert: {{ .tls_cert }}\nid: {{ has . \"id\" }}\n")
-	writeFile(t, filepath.Join(root, "services", "hysteria2", "defaults.yaml"),
+	writeFile(t, filepath.Join(root, "services", "quicproxy", "defaults.yaml"),
 		"masquerade_url: https://example.org/\ntls_cert: /etc/hysteria/tls/fullchain.pem\n")
 	writeFile(t, filepath.Join(root, "nodes", "srv.yaml"), `
 id: srv
@@ -630,7 +630,7 @@ networks:
   internet: 203.0.113.10
 instances:
   - id: u-node-group-10
-    service: hysteria2
+    service: quicproxy
     ports:
       main: {port: 443, protocol: udp}
     values:
