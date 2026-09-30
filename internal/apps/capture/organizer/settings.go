@@ -30,6 +30,10 @@ type Settings struct {
 	// empty means nothing is archived and the list grows without limit.
 	LocationNote    string
 	LocationArchive string
+	// TimelineNote and TimelineArchive are the same for the timeline: what
+	// happened, newest first, and where a rolled-over year goes.
+	TimelineNote    string
+	TimelineArchive string
 	// DailySection is the heading a Capture is appended under. Its own section
 	// rather than the end of the note, so what this tool writes stays
 	// distinguishable from what the reader wrote.

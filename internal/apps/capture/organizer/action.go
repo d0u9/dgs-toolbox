@@ -13,6 +13,7 @@ type ActionID string
 const (
 	ActionLocationAppend  ActionID = "obsidian.location.append"
 	ActionDailyAppend     ActionID = "obsidian.daily.append"
+	ActionTimelineAppend  ActionID = "obsidian.timeline.append"
 	ActionCaptureArchive  ActionID = "capture.archive"
 	ActionAppleNoteCreate ActionID = "apple.notes.create"
 	ActionReminderCreate  ActionID = "apple.reminders.create"
@@ -93,23 +94,6 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 			optional(multiline(FieldContent, "Note")),
 		},
 		Target: dailyGPXPath,
-	},
-	ActionLocationAppend: {
-		ID:           ActionLocationAppend,
-		Label:        "Location note",
-		UsesPosition: true,
-		Effects: []string{
-			"Adds the Capture to the top of the running list of places, under its day",
-			"Moves any year that has rolled over into the archive as it goes",
-			"Writes nothing the second time: an entry carries the Capture's id and is added once",
-		},
-		// The note is optional: a place is worth recording whether or not
-		// anything was written about it.
-		Required: []FieldRequirement{
-			{Field: FieldCreatedAt, Label: "Created", Required: true, Input: InputText},
-			optional(multiline(FieldContent, "Note")),
-		},
-		Target: func(ctx Context) string { return ctx.Settings.LocationNote },
 	},
 	ActionDailyAppend: {
 		ID:    ActionDailyAppend,
@@ -226,7 +210,6 @@ var actionDefinitions = map[ActionID]ActionDefinition{
 func init() {
 	implementations := map[ActionID]func(Context, ActionPlan) (string, error){
 		ActionDailyAppend:     appendToDailyNote,
-		ActionLocationAppend:  appendToLocationNote,
 		ActionReminderCreate:  createReminder,
 		ActionReminderAtPlace: createPlaceReminder,
 		ActionGPXAppend:       appendToDailyGPX,
@@ -262,7 +245,7 @@ func init() {
 // the Obsidian ones and then the reminders, and the Apple ones that do nothing
 // yet last, rather than alphabetical, which would file them among each other.
 var ActionOrder = []ActionID{
-	ActionDailyAppend, ActionLocationAppend,
+	ActionDailyAppend, ActionLocationAppend, ActionTimelineAppend,
 	ActionGPXAppend,
 	ActionReminderCreate, ActionReminderAtPlace,
 	ActionAppleNoteCreate, ActionCalendarCreate,

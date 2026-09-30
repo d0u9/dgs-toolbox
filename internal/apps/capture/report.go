@@ -292,6 +292,8 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	}
 	settings.LocationNote = obsidian.LocationNote
 	settings.LocationArchive = obsidian.LocationArchive
+	settings.TimelineNote = obsidian.TimelineNote
+	settings.TimelineArchive = obsidian.TimelineArchive
 	settings.ImageFolder = obsidian.Images.Folder
 	settings.ImageMaxSide = obsidian.Images.MaxSide
 	settings.ImageQuality = obsidian.Images.Quality

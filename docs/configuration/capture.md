@@ -25,6 +25,8 @@ model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
       "section": "Captured{{with .Device}} - {{.}}{{end}}",
       "location_note": "88 Inbox/06 Locations.md",
       "location_archive": "88 Inbox/06 Locations",
+      "timeline_note": "03 Family/00 Timeline/Timeline.md",
+      "timeline_archive": "03 Family/00 Timeline",
       "images": {
         "folder": "assets/{{.Note}}",
         "max_side": 2048,
@@ -104,6 +106,7 @@ The filenames the templates directory is read by:
 | --- | --- | --- |
 | `daily-entry.md` | One Capture as it is written into a daily note. | yes |
 | `location-entry.md` | One Capture as it is written into the running list of places. | yes |
+| `timeline-entry.md` | One Capture as it is written onto the timeline. | no — `location-entry.md` is used instead |
 | `daily-note.md` | A day's note, when the day has none yet. | no — a missing one refuses rather than inventing a note |
 
 ## Recipes
@@ -371,6 +374,17 @@ described in
 | --- | --- | --- |
 | `capture.obsidian.location_note` | The running list of places, newest first, relative to the vault. | empty — the location Action refuses to run |
 | `capture.obsidian.location_archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — nothing is archived and the list grows without limit |
+
+## The timeline
+
+The same shape as the location note: what happened, newest first, under the
+same date markers, a rolled-over year moved into its own file. The archive may
+be the folder the note itself is in.
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `capture.obsidian.timeline_note` | The timeline, newest first, relative to the vault. | empty — the timeline Action refuses to run |
+| `capture.obsidian.timeline_archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — nothing is archived and the timeline grows without limit |
 
 ## Reminders
 

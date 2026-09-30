@@ -1,0 +1,10 @@
+# One Capture, one line on the timeline: what happened, when, and where when
+# the Capture knows. It asks for no place, since an event is worth recording
+# whether or not one was taken.
+name: Timeline
+
+match:
+  workflows: [been_here, photo_note, quick_mark]
+
+actions:
+  - id: obsidian.timeline.append
