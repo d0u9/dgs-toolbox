@@ -279,3 +279,15 @@ func decodeMapping(data []byte, what string) (map[string]any, error) {
 	}
 	return m, nil
 }
+
+// DeployValues is the document a deployment template renders against: the
+// service's deploy/defaults.yaml with the instance's `deploy` laid over it,
+// the same merge Render performs for a document render. The export's
+// manifest reads it so that it carries exactly what the templates saw.
+func DeployValues(defaults []byte, overlay map[string]any) (map[string]any, error) {
+	d, err := decodeMapping(defaults, "defaults")
+	if err != nil {
+		return nil, err
+	}
+	return mergeInto(overlay, d), nil
+}

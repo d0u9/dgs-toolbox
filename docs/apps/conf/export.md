@@ -749,6 +749,44 @@ the node directory and the instance directory are kept in the single-target case
 too: a layout that changes shape with the number of targets is one a script
 reading it has to handle twice.
 
+### The manifest
+
+Every instance on a node also writes `manifest.yaml` beside its files, whether
+it runs on the host or in a container. A file written for a person has none,
+because nothing deploys it. The manifest is what a deployment tool reads in
+place of the inventory: the derived values a deployment needs, and nothing
+the tool would have to interpret.
+
+```yaml
+schema: 1                 # a reader refuses a schema it does not know
+node: a-node-group-03-01
+instance: caddy-01
+service: caddy
+runtime: docker           # the instance's runtime, host when unset
+root: /srv/docker         # deploy values' root, lifted out of deploy
+files:                    # every file written for this instance, in order
+  - path: Caddyfile
+  - path: install.sh
+    executable: true
+ports:                    # by name; bind is the derived host mapping
+  - {name: https, port: 443, bind: [10.0.10.10], published: server.d0u9.cc}
+networks:                 # container networks joined, with a fixed address
+  - {name: tailnet, subnet: 172.30.250.0/24, address: 172.30.250.10}
+accounts: {}              # the node's accounts, containerised instances only
+deploy: {}                # defaults.yaml with the instance's deploy over it
+```
+
+`host_port` appears on a port only when the host publishes it under another
+number. `deploy` is carried as the templates see it and is not given a schema
+here: its keys are each service's own mechanism, which belongs to the tool
+that deploys it. An instance's `values` are not in the manifest; they
+configure the program, and reach it through its rendered files.
+
+A test renders every containerised instance and checks that the ports,
+networks, addresses, container name and deploy volumes of the compose.yaml
+beside the manifest agree with it. Set `DGS_CONF_ROOT` and `DGS_CONF_SECRETS`
+to run the same check against a real generator root.
+
 An export renders every target first, and publishes only once all of them have
 rendered. A failure anywhere reports the target and the error and writes
 nothing — a half-written folder of configuration is the one outcome worth

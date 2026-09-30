@@ -161,7 +161,8 @@ func TestInspectExport_ZipIntoDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	if len(r.File) != 1 || r.File[0].Name != "srv/hysteria2/u-node-group-10/config.yaml" {
+	if len(r.File) != 2 || r.File[0].Name != "srv/hysteria2/u-node-group-10/config.yaml" ||
+		r.File[1].Name != "srv/hysteria2/u-node-group-10/"+ManifestFile {
 		t.Fatalf("zip holds %v", r.File)
 	}
 }
