@@ -36,6 +36,7 @@ const (
 	fieldDest      = "dest"
 	fieldZipName   = "zip-name"
 	fieldOverwrite = "overwrite"
+	fieldDownload  = "download"
 
 	formatShow   = "Show"
 	formatFolder = "Folder"
@@ -48,6 +49,14 @@ const (
 	// defaultZipName is the archive written when the destination names a
 	// directory rather than a .zip file.
 	defaultZipName = "conf-export.zip"
+
+	// The Download field's choices: when a bundle's release is fetched.
+	downloadNow       = "At export"
+	downloadOnMachine = "On the machine"
+
+	// headerTargets is how many targets the form's header names before it
+	// counts the rest.
+	headerTargets = 3
 
 	// planRows is how many file paths the confirmation lists before it
 	// counts the rest.
@@ -62,6 +71,9 @@ func (f *exportFlow) visibleFields() []string {
 	}
 	if f.form.Value(fieldFormat) == formatZip {
 		return []string{fieldFormat, fieldDest, fieldZipName, fieldOverwrite}
+	}
+	if f.form.Value(fieldFormat) == formatBundle {
+		return []string{fieldFormat, fieldDest, fieldDownload, fieldOverwrite}
 	}
 	return []string{fieldFormat, fieldDest, fieldOverwrite}
 }
@@ -91,6 +103,7 @@ type exportFlow struct {
 	bundle bool
 	// bundles are the export directories a Bundle builds, one per instance.
 	bundles   []string
+	download  string
 	where     string
 	overwrite bool
 
@@ -267,6 +280,7 @@ func (m *InspectModel) startExport() {
 			form.Field{ID: fieldFormat, Kind: form.Radio, Label: "Format", Options: formats, Value: format},
 			form.Field{ID: fieldDest, Kind: form.Path, Label: "Destination", Value: m.exportDir},
 			form.Field{ID: fieldZipName, Kind: form.Text, Label: "ZIP file name", Value: defaultZipName},
+			form.Field{ID: fieldDownload, Kind: form.Radio, Label: "Download", Options: []string{downloadNow, downloadOnMachine}, Value: downloadNow},
 			form.Field{ID: fieldOverwrite, Kind: form.Checkbox, Label: "Replace files already there"},
 		),
 	}
@@ -534,6 +548,15 @@ func (m *InspectModel) planBundles(files []engine.File) {
 			plural(len(existing), "bundle"), rcli.Exists(len(existing)), rcli.Them(len(existing)))
 		return
 	}
+	flow.download = deploy.DownloadBuild
+	if flow.form.Value(fieldDownload) == downloadOnMachine {
+		flow.download = deploy.DownloadInstall
+	}
+	described, err := describeBundles(files, deploy.Options{Download: flow.download})
+	if err != nil {
+		flow.err = err
+		return
+	}
 	var lines []string
 	replacing := map[string]bool{}
 	for _, dir := range existing {
@@ -548,13 +571,13 @@ func (m *InspectModel) planBundles(files []engine.File) {
 		if replacing[dir] {
 			suffix = "  (rebuilds)"
 		}
-		lines = append(lines, dir+"/"+suffix)
+		lines = append(lines, dir+"/"+suffix, "  "+described[dir])
 	}
 	flow.dialog = tuiconfirm.New(tuiconfirm.Config{
 		Title:   "EXPORT",
 		Message: fmt.Sprintf("Build %s in %s?", plural(len(flow.bundles), "bundle"), flow.where),
 		Detail: strings.Join(lines, "\n") +
-			"\n\nEach holds ctl, compose.yaml and the files, plaintext, with every credential in them." +
+			"\n\nEach holds ctl and the rendered files, plaintext, with every credential in them." +
 			"\nCopy one to its machine and run ./ctl install there.",
 		ConfirmLabel: "Build",
 		CancelLabel:  "Back",
@@ -575,10 +598,46 @@ func bundleDirs(files []engine.File) []string {
 	return dirs
 }
 
+// describeBundles says, per bundle directory, how its instance will run and
+// where its program comes from, or refuses naming every bundle that cannot
+// be built.
+func describeBundles(files []engine.File, opt deploy.Options) (map[string]string, error) {
+	out := map[string]string{}
+	var bad []string
+	for _, f := range files {
+		if path.Base(f.Path) != deploy.ManifestFile {
+			continue
+		}
+		dir := path.Dir(f.Path)
+		m, err := deploy.ParseManifest(f.Bytes)
+		if err != nil {
+			bad = append(bad, fmt.Sprintf("%s: %v", dir, err))
+			continue
+		}
+		d := deploy.Describe(m, opt)
+		if d.Err != nil {
+			bad = append(bad, fmt.Sprintf("%s: %v", dir, d.Err))
+			continue
+		}
+		parts := []string{d.Manager}
+		if d.Platform != "" {
+			parts = append(parts, d.Platform)
+		}
+		if d.Binary != "" {
+			parts = append(parts, d.Binary)
+		}
+		out[dir] = strings.Join(parts, " · ")
+	}
+	if len(bad) > 0 {
+		return nil, fmt.Errorf("%s cannot be built: %s", plural(len(bad), "bundle"), strings.Join(bad, "; "))
+	}
+	return out, nil
+}
+
 // writeBundles exports the instances into a private temporary directory and
 // builds each bundle from there. The temporary export holds every credential
 // in plaintext, so it is removed whatever happens.
-func writeBundles(r engine.Renderer, instances, dirs []string, where string) error {
+func writeBundles(r engine.Renderer, instances, dirs []string, where, download string) error {
 	tmp, err := os.MkdirTemp("", "dgs-conf-bundle-")
 	if err != nil {
 		return err
@@ -588,7 +647,7 @@ func writeBundles(r engine.Renderer, instances, dirs []string, where string) err
 		return err
 	}
 	for _, dir := range dirs {
-		if err := deploy.Build(filepath.Join(tmp, dir), filepath.Join(where, dir), deploy.Options{}); err != nil {
+		if err := deploy.Build(filepath.Join(tmp, dir), filepath.Join(where, dir), deploy.Options{Download: download}); err != nil {
 			return fmt.Errorf("%s: %w", dir, err)
 		}
 	}
@@ -680,7 +739,7 @@ func (m InspectModel) runExport(flow exportFlow) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if flow.bundle {
-			err = writeBundles(r, flow.instances, flow.bundles, flow.where)
+			err = writeBundles(r, flow.instances, flow.bundles, flow.where, flow.download)
 			return exportDoneMsg{files: len(flow.bundles), noun: "bundle", where: flow.where, err: err}
 		}
 		if flow.zip {
@@ -709,6 +768,9 @@ func (m *InspectModel) finishExport(msg exportDoneMsg) {
 		noun = "file"
 	}
 	m.notice = fmt.Sprintf("exported %s to %s", plural(msg.files, noun), msg.where)
+	if noun == "bundle" {
+		m.notice = fmt.Sprintf("built %s in %s · copy each to its machine and run ./ctl install", plural(msg.files, noun), msg.where)
+	}
 	m.refresh()
 }
 
@@ -726,6 +788,7 @@ func (m InspectModel) exportView() string {
 	width := max(24, min(72, m.width-4))
 	lines := []string{
 		titleStyle.Render("EXPORT") + mutedStyle.Render(" · "+plural(len(flow.instances), "target")),
+		mutedStyle.Render(ansi.Truncate(targetSummary(flow.instances), width-4, "…")),
 		"",
 		flow.form.ViewFocusedWidth(flow.visibleFields(), true, width-4),
 		"",
@@ -735,14 +798,26 @@ func (m InspectModel) exportView() string {
 		lines = append(lines, mutedStyle.Render("writing…"))
 	case flow.err != nil:
 		lines = append(lines, brokenStyle.Render(flow.err.Error()))
+	case flow.form.Value(fieldFormat) == formatBundle && flow.form.Focused(fieldDownload):
+		lines = append(lines, mutedStyle.Render("At export puts each release in the bundle · On the machine has ctl install fetch it, online"))
 	case flow.form.Value(fieldFormat) == formatBundle:
 		lines = append(lines, mutedStyle.Render("Bundle builds, per instance, what ./ctl install deploys on its machine"))
+	case flow.form.Value(fieldFormat) == formatZip:
+		lines = append(lines, mutedStyle.Render("Zip writes every file into one archive · Enter on Destination chooses its directory"))
 	case flow.form.Value(fieldFormat) == formatShow:
 		lines = append(lines, mutedStyle.Render("Show puts "+flow.owner+"'s files on screen to read or copy; nothing is written"))
 	default:
-		lines = append(lines, mutedStyle.Render("Enter on Destination chooses a directory · Zip uses the file name above"))
+		lines = append(lines, mutedStyle.Render("Folder writes the rendered files · Enter on Destination chooses a directory"))
 	}
 	return exportFrame.Width(width - 2).Render(strings.Join(lines, "\n"))
+}
+
+// targetSummary names the first targets and counts the rest.
+func targetSummary(instances []string) string {
+	if len(instances) <= headerTargets {
+		return strings.Join(instances, ", ")
+	}
+	return strings.Join(instances[:headerTargets], ", ") + fmt.Sprintf(", +%d more", len(instances)-headerTargets)
 }
 
 var exportFrame = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)

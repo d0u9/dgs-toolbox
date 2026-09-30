@@ -2,6 +2,7 @@ package conf
 
 import (
 	"archive/zip"
+	"github.com/d0u9/rhumb/deploy"
 	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
@@ -404,11 +405,13 @@ func TestInspectExport_BundlePlan(t *testing.T) {
 	m.export.form.SetValue(fieldFormat, formatBundle)
 	m.export.form.SetValue(fieldDest, dest)
 	m = pressInspect(t, m, "n")
-	if m.export.stage != exportConfirm {
-		t.Fatalf("n did not reach the confirmation: %v", m.export.err)
-	}
 	if got := m.export.bundles; len(got) != 1 || got[0] != "srv/hysteria2/u-node-group-10" {
 		t.Fatalf("bundles = %v", got)
+	}
+	// hysteria2 has no deploy definition: the form says so before anything
+	// is built.
+	if m.export.stage != exportForm || m.export.err == nil || !strings.Contains(m.export.err.Error(), "no deploy definition") {
+		t.Fatalf("an unbuildable bundle reached the confirmation: %v", m.export.err)
 	}
 
 	os.MkdirAll(filepath.Join(dest, "srv", "hysteria2", "u-node-group-10"), 0o700)
@@ -416,6 +419,15 @@ func TestInspectExport_BundlePlan(t *testing.T) {
 	m = pressInspect(t, m, "n")
 	if m.export.err == nil || !strings.Contains(m.export.err.Error(), "tick Replace") {
 		t.Fatalf("an existing bundle was not refused: %v", m.export.err)
+	}
+}
+
+func TestDescribeBundles(t *testing.T) {
+	files := []engine.File{{Path: "n/microbin/i/" + engine.ManifestFile, Bytes: []byte(
+		"schema: 1\nnode: n\ninstance: i\nservice: microbin\nruntime: host\nplatform: linux/amd64\n")}}
+	got, err := describeBundles(files, deploy.Options{Download: deploy.DownloadInstall})
+	if err != nil || got["n/microbin/i"] != "systemd · linux/amd64 · microbin latest release, downloaded on the machine" {
+		t.Fatalf("describeBundles = %v, %v", got, err)
 	}
 }
 
