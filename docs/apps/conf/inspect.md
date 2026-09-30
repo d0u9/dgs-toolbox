@@ -488,7 +488,8 @@ instance. On Services, an instance row exports that one deployment. So
 exporting a single thing needs no marking.
 
 The steps are the shared ones: a form, then the confirmation dialog, then the
-result in the status bar.
+result in the status bar. The form's header counts the targets and names the
+first three, so what is about to be exported is on screen while choosing how.
 
 - **Format.** Bundle (the default), Folder or Zip, and Show — then the
   default — when every file is for one person.
@@ -497,6 +498,10 @@ result in the status bar.
 - **ZIP file name.** Shown only for Zip, initially `conf-export.zip`. The name
   may be changed before confirmation; `.zip` is added when omitted. It must be
   a file name, not a path. The confirmation shows the final archive path.
+- **Download.** Shown only for Bundle: when a bundle's release is fetched.
+  At export (the default) puts the program in the bundle; On the machine
+  leaves it to `./ctl install`, which needs the machine online. It matters
+  only to a service whose program is a release.
 - **Replace files already there.** Off by default. When it is off and a file
   would be replaced, the form says so and does not go on. This matches the
   command line's `--overwrite`.
@@ -512,6 +517,13 @@ makes of its export: `ctl`, `compose.yaml`, `files/` and the manifest, at the
 path the export itself would take under the destination. Copying one to its
 machine and running `./ctl install` there deploys it; no `rhumb` is needed
 beside `dgs`.
+
+The confirmation lists each bundle with what will run it — docker compose,
+systemd or launchd, and the platform — and where its program comes from. A
+bundle that cannot be built, such as a host instance whose service has no
+deploy definition, stops the form naming it, before anything is built or
+downloaded. When the build is done, the status bar says where the bundles are
+and that each is copied to its machine and installed with `./ctl install`.
 
 The export the bundles are built from goes to a private temporary directory and
 is removed afterwards, whether the build succeeded or not: it is every
