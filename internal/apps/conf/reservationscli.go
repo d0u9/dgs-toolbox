@@ -4,6 +4,7 @@ package conf
 
 import (
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"io"
 	"text/tabwriter"
 
@@ -16,15 +17,15 @@ func reservationsAction(in io.Reader, out io.Writer, args []string, flags map[st
 	if root == "" {
 		return fmt.Errorf("conf.root is not configured")
 	}
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		return err
 	}
-	if _, ok := l.inv.NetworkInfo[args[0]]; !ok {
+	if _, ok := l.Inv.NetworkInfo[args[0]]; !ok {
 		return fmt.Errorf("network %q is not declared in networks.yaml", args[0])
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	for _, r := range derive.Reservations(l.inv, args[0]) {
+	for _, r := range derive.Reservations(l.Inv, args[0]) {
 		fmt.Fprintf(w, "%s\t%s\t%s\n", r.Address, r.MAC, r.ID)
 	}
 	return w.Flush()

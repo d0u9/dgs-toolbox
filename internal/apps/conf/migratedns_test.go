@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"github.com/d0u9/rhumb/engine"
 	"strings"
 	"testing"
 
@@ -8,7 +9,7 @@ import (
 )
 
 func TestMigrationDNSReviewNamesProxyIngressWithoutClaimingBackendIsDNSTarget(t *testing.T) {
-	before := loaded{inv: &inventory.Root{
+	before := engine.Loaded{Inv: &inventory.Root{
 		Nodes: []inventory.Node{
 			{ID: "proxy", Networks: inventory.Networks{"internet": "198.51.100.5"}, Instances: []inventory.Instance{{ID: "proxy/gateway", Ports: inventory.Ports{"web": {Number: 443}}}}},
 			{ID: "network-4", Networks: inventory.Networks{"home": "10.0.1.4"}, Instances: []inventory.Instance{{ID: "network-4/vault", Service: "vaultwarden", Ports: inventory.Ports{"web": {Number: 8080, Published: "vault.example.test"}}}}},
@@ -16,11 +17,11 @@ func TestMigrationDNSReviewNamesProxyIngressWithoutClaimingBackendIsDNSTarget(t 
 		},
 		Routes: map[string]inventory.Route{"vault": {Hops: []string{"proxy/gateway:web", "network-4/vault:web"}}, "other": {Hops: []string{"unrelated/other:web"}}},
 	}}
-	after := loaded{inv: &inventory.Root{
+	after := engine.Loaded{Inv: &inventory.Root{
 		Nodes: []inventory.Node{
-			before.inv.Nodes[0],
+			before.Inv.Nodes[0],
 			{ID: "network-8", Networks: inventory.Networks{"network-8": "10.0.1.8"}, Instances: []inventory.Instance{{ID: "network-8/vault", Service: "vaultwarden", Ports: inventory.Ports{"web": {Number: 8080, Published: "vault.example.test"}}}}},
-			before.inv.Nodes[2],
+			before.Inv.Nodes[2],
 		},
 		Routes: map[string]inventory.Route{"vault": {Hops: []string{"proxy/gateway:web", "network-8/vault:web"}}, "other": {Hops: []string{"unrelated/other:web"}}},
 	}}
@@ -43,16 +44,16 @@ func TestMigrationDNSReviewNamesProxyIngressWithoutClaimingBackendIsDNSTarget(t 
 }
 
 func TestMigrationDNSReviewListsPublishedNameWhenIngressNodeMoves(t *testing.T) {
-	before := loaded{inv: &inventory.Root{
+	before := engine.Loaded{Inv: &inventory.Root{
 		Nodes: []inventory.Node{
 			{ID: "network-4", Networks: inventory.Networks{"internet": "203.0.113.4"}, Instances: []inventory.Instance{{ID: "proxy", Ports: inventory.Ports{"https": {Number: 443}}}}},
 			{ID: "backend", Networks: inventory.Networks{"home": "10.0.1.20"}, Instances: []inventory.Instance{{ID: "site", Service: "site", Ports: inventory.Ports{"web": {Number: 8080, Published: "site.example.test"}}}}},
 		},
 		Routes: map[string]inventory.Route{"site": {Hops: []string{"proxy:https", "site:web"}}},
 	}}
-	after := loaded{inv: &inventory.Root{
-		Nodes:  []inventory.Node{{ID: "network-8", Networks: inventory.Networks{"internet": "203.0.113.8"}, Instances: before.inv.Nodes[0].Instances}, before.inv.Nodes[1]},
-		Routes: before.inv.Routes,
+	after := engine.Loaded{Inv: &inventory.Root{
+		Nodes:  []inventory.Node{{ID: "network-8", Networks: inventory.Networks{"internet": "203.0.113.8"}, Instances: before.Inv.Nodes[0].Instances}, before.Inv.Nodes[1]},
+		Routes: before.Inv.Routes,
 	}}
 	rep := &migrationReport{}
 	migrationDNSReview(rep, before, after, "network-4", "network-8", true, nil)

@@ -3,6 +3,7 @@ package conf
 import (
 	"bytes"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path"
 	"slices"
@@ -49,14 +50,14 @@ func checkManifests(t *testing.T, files map[string]string, wantAtLeast int) {
 	t.Helper()
 	checked := 0
 	for p, body := range files {
-		if path.Base(p) != ManifestFile {
+		if path.Base(p) != engine.ManifestFile {
 			continue
 		}
-		var man deployManifest
+		var man engine.DeployManifest
 		if err := yaml.Unmarshal([]byte(body), &man); err != nil {
 			t.Fatalf("%s: %v", p, err)
 		}
-		if man.Schema != manifestSchema {
+		if man.Schema != engine.ManifestSchema {
 			t.Errorf("%s: schema %d", p, man.Schema)
 		}
 		compose, ok := files[path.Join(path.Dir(p), "compose.yaml")]
@@ -89,7 +90,7 @@ type composeFile struct {
 	} `yaml:"services"`
 }
 
-func compareCompose(man deployManifest, body string) []string {
+func compareCompose(man engine.DeployManifest, body string) []string {
 	var c composeFile
 	if err := yaml.Unmarshal([]byte(body), &c); err != nil {
 		return []string{err.Error()}
@@ -178,7 +179,7 @@ func volumeString(n yaml.Node) string {
 // instance write, so a change to the manifest's shape is a visible change.
 func TestManifest_ExampleContent(t *testing.T) {
 	files := renderExamples(t)
-	got := exampleFile(t, files, "microbin-node1/"+ManifestFile)
+	got := exampleFile(t, files, "microbin-node1/"+engine.ManifestFile)
 	for _, want := range []string{
 		"schema: 1\n",
 		"service: microbin\n",
@@ -192,7 +193,7 @@ func TestManifest_ExampleContent(t *testing.T) {
 			t.Errorf("microbin manifest has no %q:\n%s", want, got)
 		}
 	}
-	host := exampleFile(t, files, "hy2-sfo01/"+ManifestFile)
+	host := exampleFile(t, files, "hy2-sfo01/"+engine.ManifestFile)
 	for _, want := range []string{"runtime: host\n", "  - path: config.yaml\n"} {
 		if !strings.Contains(host, want) {
 			t.Errorf("hysteria2 manifest has no %q:\n%s", want, host)

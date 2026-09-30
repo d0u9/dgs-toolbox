@@ -5,6 +5,7 @@ package conf
 
 import (
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"io"
 	"time"
 
@@ -38,7 +39,7 @@ func writeCheckReport(out io.Writer, global config.Config) error {
 		return fmt.Errorf("conf.root is not configured")
 	}
 
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		return err
 	}
@@ -48,8 +49,8 @@ func writeCheckReport(out io.Writer, global config.Config) error {
 	// A file that would not parse. These come first: everything below them
 	// is computed from what did parse, so a rule failing underneath may be
 	// a consequence rather than a fault of its own.
-	problems = append(problems, brokenFiles(l.inv)...)
-	for name, manifest := range l.manifests {
+	problems = append(problems, brokenFiles(l.Inv)...)
+	for name, manifest := range l.Manifests {
 		// A service that renders nothing is a directory nothing deploys.
 		// Renders is what the two forms of the declaration meet in, so a
 		// service writing several files is not reported for lacking the
@@ -60,7 +61,7 @@ func writeCheckReport(out io.Writer, global config.Config) error {
 	}
 
 	previous, previousErr := previousModTimes(secretsDir)
-	for _, issue := range validate.Validate(l.inv, l.manifests, l.exports, l.derived, previous) {
+	for _, issue := range validate.Validate(l.Inv, l.Manifests, l.Exports, l.Derived, previous) {
 		problems = append(problems, issue.Message)
 	}
 
@@ -82,9 +83,9 @@ func writeCheckReport(out io.Writer, global config.Config) error {
 
 	if len(problems) == 0 {
 		fmt.Fprintf(out, "%s, %s, %s: no problem found\n",
-			plural(len(l.inv.Nodes), "node"),
-			plural(len(l.inv.Users), "user"),
-			plural(len(l.manifests), "service"))
+			plural(len(l.Inv.Nodes), "node"),
+			plural(len(l.Inv.Users), "user"),
+			plural(len(l.Manifests), "service"))
 		return nil
 	}
 
@@ -132,7 +133,7 @@ func previousModTimes(secretsDir string) (map[string]time.Time, error) {
 // missing path is `secret sync`'s to generate, and an orphaned one is a
 // person's to remove or to rename.
 func checkSecrets(l InspectData, secretsDir string) ([]string, error) {
-	implied := secretstore.ImpliedPaths(l.inv, l.manifests, l.derived)
+	implied := secretstore.ImpliedPaths(l.Inv, l.Manifests, l.Derived)
 	res, err := secretstore.Sync(secretsDir, implied)
 	if err != nil {
 		return nil, err
@@ -143,7 +144,7 @@ func checkSecrets(l InspectData, secretsDir string) ([]string, error) {
 	// sync` for it is sending them to a command that will list it and write
 	// nothing, so the two are reported apart, as `secret sync` itself
 	// already reports them.
-	generated, opaque := secretstore.Generated(l.inv, l.manifests, res.Missing)
+	generated, opaque := secretstore.Generated(l.Inv, l.Manifests, res.Missing)
 
 	var out []string
 	for _, p := range generated {
@@ -174,12 +175,12 @@ func writeTargetReport(out io.Writer, global config.Config) error {
 	if root == "" {
 		return fmt.Errorf("conf.root is not configured")
 	}
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		return err
 	}
 
-	groups := buildTree(target.List(l.inv, l.derived))
+	groups := buildTree(target.List(l.Inv, l.Derived))
 	for _, g := range groups {
 		what := ""
 		if g.user {

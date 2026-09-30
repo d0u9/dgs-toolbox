@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"io"
 	"os"
 	"path/filepath"
@@ -344,8 +345,8 @@ func TestMigrationApplyRejectsStaleInputAfterConfirmation(t *testing.T) {
 func TestMigrationApplyRestoresAfterSecondReplacementFails(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	flags := map[string]string{"node": "from=srv,to=srv08", "network": `["from=internet,to=wan,address=203.0.113.8"]`}
-	var before, after loaded
-	err := migrateActionSnapshot(nil, io.Discard, []string{"node"}, flags, configFor(root, secrets), func(old, next loaded) bool {
+	var before, after engine.Loaded
+	err := migrateActionSnapshot(nil, io.Discard, []string{"node"}, flags, configFor(root, secrets), func(old, next engine.Loaded) bool {
 		before, after = old, next
 		return true
 	})
@@ -388,8 +389,8 @@ func TestMigrationApplyRestoresAfterSecondReplacementFails(t *testing.T) {
 func TestMigrationApplyRestoresAfterPostWriteMismatch(t *testing.T) {
 	root, secrets := buildExportableRoot(t)
 	flags := map[string]string{"node": "from=srv,to=srv08"}
-	var before, after loaded
-	err := migrateActionSnapshot(nil, io.Discard, []string{"node"}, flags, configFor(root, secrets), func(old, next loaded) bool {
+	var before, after engine.Loaded
+	err := migrateActionSnapshot(nil, io.Discard, []string{"node"}, flags, configFor(root, secrets), func(old, next engine.Loaded) bool {
 		before, after = old, next
 		return true
 	})
@@ -401,10 +402,10 @@ func TestMigrationApplyRestoresAfterPostWriteMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	incorrect := after
-	copyOf := *after.inv
-	copyOf.Nodes = append([]inventory.Node(nil), after.inv.Nodes...)
+	copyOf := *after.Inv
+	copyOf.Nodes = append([]inventory.Node(nil), after.Inv.Nodes...)
 	copyOf.Nodes[0].ID = "unexpected"
-	incorrect.inv = &copyOf
+	incorrect.Inv = &copyOf
 	_, err = applyMigrationEdits(root, edits, incorrect, os.Rename)
 	if err == nil || !strings.Contains(err.Error(), "differs from the validated plan") {
 		t.Fatalf("error = %v", err)

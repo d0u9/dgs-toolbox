@@ -2,6 +2,7 @@ package conf
 
 import (
 	"archive/zip"
+	"github.com/d0u9/rhumb/engine"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,7 +163,7 @@ func TestInspectExport_ZipIntoDirectory(t *testing.T) {
 	}
 	defer r.Close()
 	if len(r.File) != 2 || r.File[0].Name != "srv/hysteria2/u-node-group-10/config.yaml" ||
-		r.File[1].Name != "srv/hysteria2/u-node-group-10/"+ManifestFile {
+		r.File[1].Name != "srv/hysteria2/u-node-group-10/"+engine.ManifestFile {
 		t.Fatalf("zip holds %v", r.File)
 	}
 }

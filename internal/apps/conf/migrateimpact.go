@@ -3,6 +3,7 @@ package conf
 import (
 	"bytes"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,16 +19,16 @@ type migrationTargetWork struct {
 	Target  target.Target
 	Present bool
 	Unknown bool
-	Files   []exportFile
+	Files   []engine.File
 }
 
-func compareMigrationTargets(rep *migrationReport, before, after loaded, root, secrets, oldID, newID string) []migrationTargetWork {
+func compareMigrationTargets(rep *migrationReport, before, after engine.Loaded, root, secrets, oldID, newID string) []migrationTargetWork {
 	oldTargets := map[string]target.Target{}
 	newTargets := map[string]target.Target{}
-	for _, t := range target.List(before.inv, before.derived) {
+	for _, t := range target.List(before.Inv, before.Derived) {
 		oldTargets[migrationTargetKey(t, oldID, newID)] = t
 	}
-	for _, t := range target.List(after.inv, after.derived) {
+	for _, t := range target.List(after.Inv, after.Derived) {
 		newTargets[migrationTargetKey(t, newID, newID)] = t
 	}
 	keys := make([]string, 0, len(oldTargets)+len(newTargets))
@@ -42,10 +43,10 @@ func compareMigrationTargets(rep *migrationReport, before, after loaded, root, s
 		}
 	}
 	sort.Strings(keys)
-	oldRenderer := renderer{l: before, rootPath: root, secretsDir: secrets}
+	oldRenderer := engine.Renderer{Data: before, RootPath: root, SecretsDir: secrets}
 	// Until apply copies them, a renamed node's secrets are still under its
 	// old name; the preview reads them there.
-	newRenderer := renderer{l: after, rootPath: root, secretsDir: secrets, secretInstance: func(id string) string {
+	newRenderer := engine.Renderer{Data: after, RootPath: root, SecretsDir: secrets, SecretInstance: func(id string) string {
 		if oldID != newID && strings.HasPrefix(id, newID+inventory.QualifiedSep) {
 			return oldID + strings.TrimPrefix(id, newID)
 		}
@@ -71,13 +72,13 @@ func compareMigrationTargets(rep *migrationReport, before, after loaded, root, s
 			workDetails = append(workDetails, migrationTargetWork{Target: item, Present: hasNew, Unknown: true})
 			continue
 		}
-		var oldFiles, newFiles []exportFile
+		var oldFiles, newFiles []engine.File
 		var oldErr, newErr error
 		if hadOld {
-			oldFiles, oldErr = oldRenderer.renderAll([]string{old.Instance})
+			oldFiles, oldErr = oldRenderer.RenderAll([]string{old.Instance})
 		}
 		if hasNew {
-			newFiles, newErr = newRenderer.renderAll([]string{newTarget.Instance})
+			newFiles, newErr = newRenderer.RenderAll([]string{newTarget.Instance})
 		}
 		if oldErr != nil || newErr != nil {
 			change.Unknown = fmt.Sprintf("before: %s; after: %s", renderState(oldErr, hadOld), renderState(newErr, hasNew))
@@ -111,8 +112,8 @@ func compareMigrationTargets(rep *migrationReport, before, after loaded, root, s
 	return workDetails
 }
 
-func missingMigrationSecret(before, after loaded, secrets string) string {
-	paths := append(secretstore.ImpliedPaths(before.inv, before.manifests, before.derived), secretstore.ImpliedPaths(after.inv, after.manifests, after.derived)...)
+func missingMigrationSecret(before, after engine.Loaded, secrets string) string {
+	paths := append(secretstore.ImpliedPaths(before.Inv, before.Manifests, before.Derived), secretstore.ImpliedPaths(after.Inv, after.Manifests, after.Derived)...)
 	if len(paths) == 0 {
 		return ""
 	}
@@ -150,7 +151,7 @@ func renderState(err error, exists bool) string {
 }
 
 // compareExportFiles describes each changed file in one line.
-func compareExportFiles(oldFiles, newFiles []exportFile) []string {
+func compareExportFiles(oldFiles, newFiles []engine.File) []string {
 	var lines []string
 	for _, change := range compareExportFileChanges(oldFiles, newFiles) {
 		switch change.Action {
@@ -173,9 +174,9 @@ func compareExportFiles(oldFiles, newFiles []exportFile) []string {
 
 // compareExportFileChanges pairs files by their name inside the target, so a
 // moved bundle path is one change rather than a removal and an addition.
-func compareExportFileChanges(oldFiles, newFiles []exportFile) []migrationFileChange {
-	oldByName := map[string]exportFile{}
-	newByName := map[string]exportFile{}
+func compareExportFileChanges(oldFiles, newFiles []engine.File) []migrationFileChange {
+	oldByName := map[string]engine.File{}
+	newByName := map[string]engine.File{}
 	names := map[string]bool{}
 	for _, file := range oldFiles {
 		oldByName[exportOutputName(file.Path)] = file
@@ -195,7 +196,7 @@ func compareExportFileChanges(oldFiles, newFiles []exportFile) []migrationFileCh
 		case !hasNew:
 			changes = append(changes, migrationFileChange{Action: "remove", Old: old.Path})
 		default:
-			same := bytes.Equal(old.Bytes, newFile.Bytes) && old.fileMode() == newFile.fileMode()
+			same := bytes.Equal(old.Bytes, newFile.Bytes) && old.Mode() == newFile.Mode()
 			if old.Path != newFile.Path {
 				changes = append(changes, migrationFileChange{Action: "move", Old: old.Path, New: newFile.Path, Same: same})
 			} else if !same {
@@ -214,9 +215,9 @@ func exportOutputName(path string) string {
 	return strings.Join(parts[3:], "/")
 }
 
-func compareMigrationSecrets(rep *migrationReport, before, after loaded) {
-	oldPaths := secretstore.ImpliedPaths(before.inv, before.manifests, before.derived)
-	newPaths := secretstore.ImpliedPaths(after.inv, after.manifests, after.derived)
+func compareMigrationSecrets(rep *migrationReport, before, after engine.Loaded) {
+	oldPaths := secretstore.ImpliedPaths(before.Inv, before.Manifests, before.Derived)
+	newPaths := secretstore.ImpliedPaths(after.Inv, after.Manifests, after.Derived)
 	oldSet, newSet := map[string]bool{}, map[string]bool{}
 	for _, path := range oldPaths {
 		oldSet[path.String()] = true

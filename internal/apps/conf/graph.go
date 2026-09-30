@@ -6,6 +6,7 @@ package conf
 
 import (
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -46,7 +47,7 @@ const (
 // principal that crosses it, because the port it lands on already says the
 // rest.
 func buildGraph(l InspectData, title string) webgraph.Graph {
-	t := topology.Build(l.inv, l.derived)
+	t := topology.Build(l.Inv, l.Derived)
 
 	g := webgraph.Graph{
 		Title: title,
@@ -79,7 +80,7 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 		}
 		seenGroup[group] = true
 		detail := ""
-		if _, isUser := l.inv.Users[group]; isUser {
+		if _, isUser := l.Inv.Users[group]; isUser {
 			detail = "devices"
 		}
 		g.Groups = append(g.Groups, webgraph.Group{
@@ -125,7 +126,7 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 	// — the only part a reader is tracing — to the end of a string that
 	// then reads like a machine.
 	clientOf := map[string]derive.ExportInstance{}
-	for _, ci := range l.derived.ExportInstances {
+	for _, ci := range l.Derived.ExportInstances {
 		clientOf[ci.ID] = ci
 	}
 
@@ -243,7 +244,7 @@ func buildGraph(l InspectData, title string) webgraph.Graph {
 		container[sh.Instance] = sh.Container
 	}
 	authored := map[string]bool{}
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
@@ -295,11 +296,11 @@ const (
 // one switch, since the name is what a reader picks by.
 func graphFilters(l InspectData) []webgraph.Filter {
 	var out []webgraph.Filter
-	for _, name := range l.inv.Networks {
-		out = append(out, webgraph.Filter{ID: filterNetwork + name, Label: name, Detail: l.inv.NetworkInfo[name].Subnet})
+	for _, name := range l.Inv.Networks {
+		out = append(out, webgraph.Filter{ID: filterNetwork + name, Label: name, Detail: l.Inv.NetworkInfo[name].Subnet})
 	}
 	seen := map[string]bool{}
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
@@ -344,7 +345,7 @@ func addJoins(g *webgraph.Graph, from, node string, inst inventory.Instance, joi
 
 // bridgeUsed reports whether any instance on nodeID joins network.
 func bridgeUsed(l InspectData, nodeID, network string) bool {
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.ID != nodeID || n.Broken != "" {
 			continue
 		}
@@ -359,7 +360,7 @@ func bridgeUsed(l InspectData, nodeID, network string) bool {
 
 // nodeContainers is one node's container networks, in its order.
 func nodeContainers(l InspectData, nodeID string) []inventory.ContainerNetwork {
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.ID == nodeID && n.Broken == "" {
 			return n.Containers
 		}
@@ -370,7 +371,7 @@ func nodeContainers(l InspectData, nodeID string) []inventory.ContainerNetwork {
 // containersOf is the container networks inst joins on its node, in the
 // node's order.
 func containersOf(l InspectData, nodeID string, inst inventory.Instance) []inventory.ContainerNetwork {
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.ID == nodeID && n.Broken == "" {
 			return n.JoinedContainers(inst)
 		}
@@ -401,18 +402,18 @@ func joinedLabels(inst inventory.Instance, joined []inventory.ContainerNetwork) 
 // their own, tagged with the network their address is on. They run no
 // instance, so no line reaches them.
 func addHosts(l InspectData, g *webgraph.Graph) {
-	if len(l.inv.Hosts) == 0 {
+	if len(l.Inv.Hosts) == 0 {
 		return
 	}
-	ids := make([]string, 0, len(l.inv.Hosts))
-	for id := range l.inv.Hosts {
+	ids := make([]string, 0, len(l.Inv.Hosts))
+	for id := range l.Inv.Hosts {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	const box = "hosts:"
 	tags := map[string]bool{}
 	for _, id := range ids {
-		h := l.inv.Hosts[id]
+		h := l.Inv.Hosts[id]
 		tag := filterNetwork + h.Network
 		tags[tag] = true
 		tooltip := []string{fmt.Sprintf("%s %s on %s", id, h.Address, h.Network)}
@@ -471,7 +472,7 @@ func portShape(instance, port string) string { return instance + ":" + port }
 // findInstance returns the authored instance with this ID and the node it
 // runs on. A derived client instance is not authored and has neither.
 func findInstance(l InspectData, id string) (inventory.Instance, string, bool) {
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
@@ -497,7 +498,7 @@ func findInstance(l InspectData, id string) (inventory.Instance, string, bool) {
 // thing crossing it.
 func publishedOn(l InspectData, e topology.Edge) string {
 	from := instanceByID(l, e.From)
-	if from == nil || !l.manifests[from.Service].FansOut() {
+	if from == nil || !l.Manifests[from.Service].FansOut() {
 		return ""
 	}
 	to := instanceByID(l, e.To)
@@ -509,7 +510,7 @@ func publishedOn(l InspectData, e topology.Edge) string {
 
 // instanceByID finds an authored instance in the inventory.
 func instanceByID(l InspectData, id string) *inventory.Instance {
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
@@ -523,7 +524,7 @@ func instanceByID(l InspectData, id string) *inventory.Instance {
 }
 
 func principalOn(l InspectData, e topology.Edge) string {
-	for _, ci := range l.derived.ExportInstances {
+	for _, ci := range l.Derived.ExportInstances {
 		if ci.ID != e.From {
 			continue
 		}
@@ -531,7 +532,7 @@ func principalOn(l InspectData, e topology.Edge) string {
 		// the account table: a service naming accounts by person drops the
 		// credential, and a label that kept it would name an account the
 		// server does not have.
-		byPerson := l.manifests[ci.Service].NamesAccountsByPerson()
+		byPerson := l.Manifests[ci.Service].NamesAccountsByPerson()
 		name := func(u inventory.User, key string) string {
 			if byPerson {
 				return u.UsernameOr(key)
@@ -539,13 +540,13 @@ func principalOn(l InspectData, e topology.Edge) string {
 			return u.Account(key, ci.Credential)
 		}
 		if ci.User != "" {
-			return name(l.inv.Users[ci.User], ci.User)
+			return name(l.Inv.Users[ci.User], ci.User)
 		}
-		for _, n := range l.inv.Nodes {
+		for _, n := range l.Inv.Nodes {
 			if n.ID != ci.Node || n.Broken != "" {
 				continue
 			}
-			return name(l.inv.Users[n.Owner], n.Owner)
+			return name(l.Inv.Users[n.Owner], n.Owner)
 		}
 		return ci.ID
 	}
@@ -557,7 +558,7 @@ func principalOn(l InspectData, e topology.Edge) string {
 // connection. NAT is why they cannot be one field, and why both belong on the
 // picture.
 func nodeNetworks(l InspectData, nodeID string) []string {
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.ID != nodeID || n.Broken != "" {
 			continue
 		}
@@ -584,7 +585,7 @@ func nodeNetworks(l InspectData, nodeID string) []string {
 func portTooltip(l InspectData, sh topology.Shape, port string, p inventory.Port) string {
 	lines := []string{fmt.Sprintf("%s %s on %s", sh.Instance, portLabel(port, p), sh.Container)}
 	var who []string
-	for _, p := range l.derived.Principals(sh.Instance, port) {
+	for _, p := range l.Derived.Principals(sh.Instance, port) {
 		who = append(who, p.Name)
 	}
 	if len(who) > 0 {
@@ -606,14 +607,14 @@ func instanceTooltip(l InspectData, sh topology.Shape) string {
 	case sh.Owner != "":
 		lines = append(lines, "for "+sh.Owner+" (unmanaged)")
 	}
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		for _, inst := range n.Instances {
 			if inst.ID != sh.Instance {
 				continue
 			}
 			for _, port := range sortedPortNames(inst.Ports) {
 				var who []string
-				for _, p := range l.derived.Principals(sh.Instance, port) {
+				for _, p := range l.Derived.Principals(sh.Instance, port) {
 					who = append(who, p.Name)
 				}
 				line := portLabel(port, inst.Ports[port])
@@ -641,7 +642,7 @@ func (m InspectModel) openGraph() tea.Cmd {
 			return graphOpenedMsg{err: fmt.Errorf("conf.root is not configured")}
 		}
 		url, err := graphServer.Start(graphAddr, func() (webgraph.Graph, error) {
-			l, err := load(root)
+			l, err := engine.Load(root)
 			if err != nil {
 				return webgraph.Graph{}, err
 			}

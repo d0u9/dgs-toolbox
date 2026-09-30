@@ -6,6 +6,7 @@ package conf
 
 import (
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"sort"
 	"strings"
 
@@ -90,7 +91,7 @@ type InspectModel struct {
 
 // InspectData is the loaded, is loaded's exported shape — inspect and export
 // read the same bootstrap; see load.go.
-type InspectData = loaded
+type InspectData = engine.Loaded
 
 func newInspectModel(rootPath, secretsDir string) InspectModel {
 	m := InspectModel{rootPath: rootPath, secretsDir: secretsDir, list: scrolllist.New(), marked: map[string]bool{}, copy: clipboard.Copy}
@@ -102,22 +103,22 @@ func newInspectModel(rootPath, secretsDir string) InspectModel {
 		return m
 	}
 
-	l, err := load(rootPath)
+	l, err := engine.Load(rootPath)
 	if err != nil {
 		m.loadErr = err
 		return m
 	}
 	m.l = l
-	m.nodes = buildTree(target.List(l.inv, l.derived))
-	fillNodeGroups(l.inv, m.nodes)
-	m.nodeGroups = groupTree(m.nodes, l.inv.IsUser, nil)
+	m.nodes = buildTree(target.List(l.Inv, l.Derived))
+	fillNodeGroups(l.Inv, m.nodes)
+	m.nodeGroups = groupTree(m.nodes, l.Inv.IsUser, nil)
 
-	for key := range l.inv.Users {
+	for key := range l.Inv.Users {
 		m.users = append(m.users, key)
 	}
 	sort.Strings(m.users)
 
-	m.userGroups = userTree(m.nodes, m.l.inv, nil)
+	m.userGroups = userTree(m.nodes, m.l.Inv, nil)
 	m.userItems, m.userRowInstances = userTabItems(m.userGroups)
 	m.services = buildServiceGroups(m.l)
 	m.secrets = buildSecrets(m.l, secretsDir)
@@ -182,7 +183,7 @@ func buildServiceGroups(l InspectData) []*serviceGroup {
 	}
 	// Every service the root declares, so one with no instance yet is still
 	// listed rather than silently absent.
-	for name, manifest := range l.manifests {
+	for name, manifest := range l.Manifests {
 		g := group(name)
 		if manifest.Template == "" {
 			g.broken = "no template declared"
@@ -190,15 +191,15 @@ func buildServiceGroups(l InspectData) []*serviceGroup {
 	}
 
 	clients := map[string]int{} // instance ID -> client files reaching it
-	for _, ci := range l.derived.ExportInstances {
-		if r, ok := l.inv.Routes[ci.Route]; ok && len(r.Hops) > 0 {
+	for _, ci := range l.Derived.ExportInstances {
+		if r, ok := l.Inv.Routes[ci.Route]; ok && len(r.Hops) > 0 {
 			if hop, err := derive.ParseHop(r.Hops[0]); err == nil {
 				clients[hop.Instance]++
 			}
 		}
 	}
 
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
@@ -235,7 +236,7 @@ func portsOf(l InspectData, instance string, ports inventory.Ports) []servicePor
 	out := make([]servicePort, 0, len(names))
 	for _, name := range names {
 		p := servicePort{name: name, port: ports[name]}
-		for _, principal := range l.derived.Principals(instance, name) {
+		for _, principal := range l.Derived.Principals(instance, name) {
 			p.principals = append(p.principals, principal.Name)
 		}
 		sort.Strings(p.principals)
@@ -340,9 +341,9 @@ func (m *InspectModel) refresh() {
 	if item, ok := m.list.Selected(); ok {
 		selected = item.ID
 	}
-	m.nodeGroups = groupTree(m.nodes, m.l.inv.IsUser, m.nodeGroups)
+	m.nodeGroups = groupTree(m.nodes, m.l.Inv.IsUser, m.nodeGroups)
 	m.nodeItems, m.nodeRowInstances = nodeTabItems(m.nodeGroups)
-	m.userGroups = userTree(m.nodes, m.l.inv, m.userGroups)
+	m.userGroups = userTree(m.nodes, m.l.Inv, m.userGroups)
 	m.userItems, m.userRowInstances = userTabItems(m.userGroups)
 	m.serviceItems = serviceTabItems(m.services)
 	m.secretItems = secretTabItems(m.secrets.groups)
@@ -1023,16 +1024,16 @@ func renderDetail(l InspectData, kind, id string) (string, error) {
 
 func renderNodeDetail(l InspectData, id string) (string, error) {
 	var n *inventory.Node
-	for i := range l.inv.Nodes {
+	for i := range l.Inv.Nodes {
 		// A broken node has no ID — target.List and buildTree index it by
 		// its file path instead, the same fallback as target.go's
 		// valueOr(n.ID, n.Path).
-		key := l.inv.Nodes[i].ID
+		key := l.Inv.Nodes[i].ID
 		if key == "" {
-			key = l.inv.Nodes[i].Path
+			key = l.Inv.Nodes[i].Path
 		}
 		if key == id {
-			n = &l.inv.Nodes[i]
+			n = &l.Inv.Nodes[i]
 		}
 	}
 	if n == nil {
@@ -1050,7 +1051,7 @@ func renderNodeDetail(l InspectData, id string) (string, error) {
 	)
 	line(&b, field("networks", pairsInline(n.Networks)))
 	if n.Owner != "" {
-		credential := l.inv.Users[n.Owner].Credentials[n.CredentialOr()]
+		credential := l.Inv.Users[n.Owner].Credentials[n.CredentialOr()]
 		line(&b, field("credential", n.CredentialOr()), field("note", credential.Note))
 	}
 	// Everything that runs here, authored and derived alike. An authored
@@ -1064,7 +1065,7 @@ func renderNodeDetail(l InspectData, id string) (string, error) {
 		}
 		rows = append(rows, []string{inst.ID, inst.Service})
 	}
-	for _, ci := range l.derived.ExportInstances {
+	for _, ci := range l.Derived.ExportInstances {
 		if ci.Node == id {
 			rows = append(rows, []string{ci.ID, ci.Export + "  (derived)"})
 		}
@@ -1076,7 +1077,7 @@ func renderNodeDetail(l InspectData, id string) (string, error) {
 
 func renderInstanceDetail(l InspectData, id string) (string, error) {
 	// A real, authored instance.
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		for _, inst := range n.Instances {
 			if inst.ID != id || inst.Service == "" {
 				continue
@@ -1085,7 +1086,7 @@ func renderInstanceDetail(l InspectData, id string) (string, error) {
 		}
 	}
 	// A derived client instance.
-	for _, ci := range l.derived.ExportInstances {
+	for _, ci := range l.Derived.ExportInstances {
 		if ci.ID != id {
 			continue
 		}
@@ -1129,7 +1130,7 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	line(&b, field("values", strings.Join(valueParts, fieldSeparator)))
 
 	var routes []string
-	for name, r := range l.inv.Routes {
+	for name, r := range l.Inv.Routes {
 		for _, raw := range r.Hops {
 			if hop, err := derive.ParseHop(raw); err == nil && hop.Instance == id {
 				routes = append(routes, name)
@@ -1138,7 +1139,7 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	}
 	sort.Strings(routes)
 	derivedFor := ""
-	for _, ci := range l.derived.ExportInstances {
+	for _, ci := range l.Derived.ExportInstances {
 		if ci.ID == id {
 			// A derived client enters a route rather than being a hop of
 			// one, so the scan above never finds it.
@@ -1147,8 +1148,8 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	}
 
 	var upstream *derive.Edge
-	for i := range l.derived.Edges {
-		e := &l.derived.Edges[i]
+	for i := range l.Derived.Edges {
+		e := &l.Derived.Edges[i]
 		from := e.FromInstance
 		if from == "" {
 			from = e.From.Instance
@@ -1174,11 +1175,11 @@ func textInstanceDetail(l InspectData, id, service, node, user string, inst inve
 	// principal on a per-principal port, plus the role's own list. The paths
 	// are the real ones docs/apps/conf/inventory.md#secrets derives, so a
 	// reader can go straight to the file.
-	r := l.manifests[service]
+	r := l.Manifests[service]
 	var secretRows [][]string
 	if r.Auth == confgen.AuthPerPrincipal {
 		for _, port := range sortedPortNames(ports) {
-			for _, principal := range l.derived.Principals(id, port) {
+			for _, principal := range l.Derived.Principals(id, port) {
 				path := secretstore.Path{Instance: id, Port: port, Group: principal.Group, Name: principal.Slot}
 				secretRows = append(secretRows, []string{path.String(), principal.Name})
 			}
@@ -1209,7 +1210,7 @@ func sortedAnyKeys(m map[string]any) []string {
 }
 
 func renderUserDetail(l InspectData, id string) (string, error) {
-	u, ok := l.inv.Users[id]
+	u, ok := l.Inv.Users[id]
 	if !ok {
 		return "", fmt.Errorf("user %q not found", id)
 	}
@@ -1225,7 +1226,7 @@ func renderUserDetail(l InspectData, id string) (string, error) {
 	}
 	var owned []string
 	named := map[string]bool{}
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.Owner == id {
 			owned = append(owned, n.ID)
 			named[n.CredentialOr()] = true
@@ -1258,7 +1259,7 @@ func renderUserDetail(l InspectData, id string) (string, error) {
 	// here: the entry hop is where this person's traffic goes in.
 	var accessRows [][]string
 	for _, name := range u.Access {
-		r, ok := l.inv.Routes[name]
+		r, ok := l.Inv.Routes[name]
 		if !ok || len(r.Hops) == 0 {
 			accessRows = append(accessRows, []string{name, "(no such route)"})
 			continue
@@ -1273,7 +1274,7 @@ func renderUserDetail(l InspectData, id string) (string, error) {
 	{
 		for _, node := range owned {
 			heading := node + " renders"
-			if c := nodeByID(l.inv, node).CredentialOr(); c != inventory.DefaultCredential {
+			if c := nodeByID(l.Inv, node).CredentialOr(); c != inventory.DefaultCredential {
 				heading = node + " · " + c + " renders"
 			}
 			section(&b, heading, columns(userInstanceRows(l, "", node, u.Access)))
@@ -1285,7 +1286,7 @@ func renderUserDetail(l InspectData, id string) (string, error) {
 	// always both.
 	var grantRows [][]string
 	seenGrant := map[string]bool{}
-	for _, g := range l.derived.Grants {
+	for _, g := range l.Derived.Grants {
 		if g.Principal.Kind != derive.PrincipalUser || g.Principal.Group != id {
 			continue
 		}
@@ -1311,8 +1312,8 @@ func userInstanceRows(l InspectData, user, node string, access []string) [][]str
 	var rows [][]string
 	for _, route := range access {
 		var found *derive.ExportInstance
-		for i := range l.derived.ExportInstances {
-			ci := &l.derived.ExportInstances[i]
+		for i := range l.Derived.ExportInstances {
+			ci := &l.Derived.ExportInstances[i]
 			if ci.Route != route {
 				continue
 			}
@@ -1332,7 +1333,7 @@ func userInstanceRows(l InspectData, user, node string, access []string) [][]str
 // noClientReason says why a granted route derives no client instance, which
 // is a fact about the service it enters rather than something missing here.
 func noClientReason(l InspectData, route string) string {
-	r, ok := l.inv.Routes[route]
+	r, ok := l.Inv.Routes[route]
 	if !ok || len(r.Hops) == 0 {
 		return "(no such route)"
 	}
@@ -1340,12 +1341,12 @@ func noClientReason(l InspectData, route string) string {
 	if err != nil {
 		return "(unreadable entry hop)"
 	}
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		for _, inst := range n.Instances {
 			if inst.ID != hop.Instance {
 				continue
 			}
-			if len(l.manifests[inst.Service].Exports) == 0 {
+			if len(l.Manifests[inst.Service].Exports) == 0 {
 				return fmt.Sprintf("no file (%s declares no exports)", inst.Service)
 			}
 		}
@@ -1371,7 +1372,7 @@ func nodeByID(inv *inventory.Root, id string) inventory.Node {
 // are what someone deploying the service needs and what a node detail,
 // which is about one machine, has no place for.
 func renderServiceDetail(l InspectData, id string) (string, error) {
-	manifest, ok := l.manifests[id]
+	manifest, ok := l.Manifests[id]
 	if !ok {
 		return "", fmt.Errorf("service %q not found", id)
 	}
@@ -1384,7 +1385,7 @@ func renderServiceDetail(l InspectData, id string) (string, error) {
 			secretShape += fmt.Sprintf(", %d bytes", manifest.Secret.Bytes)
 		}
 	}
-	line(&b, field("", l.serviceDirs[id]), field("secret", secretShape))
+	line(&b, field("", l.ServiceDirs[id]), field("secret", secretShape))
 
 	r := manifest
 
@@ -1469,8 +1470,8 @@ func renderServiceDetail(l InspectData, id string) (string, error) {
 func filesOf(l InspectData, service string) int {
 	n := 0
 	for _, inst := range instancesOfService(l, service) {
-		for _, ci := range l.derived.ExportInstances {
-			if r, ok := l.inv.Routes[ci.Route]; ok && len(r.Hops) > 0 {
+		for _, ci := range l.Derived.ExportInstances {
+			if r, ok := l.Inv.Routes[ci.Route]; ok && len(r.Hops) > 0 {
 				if hop, err := derive.ParseHop(r.Hops[0]); err == nil && hop.Instance == inst {
 					n++
 				}
@@ -1483,7 +1484,7 @@ func filesOf(l InspectData, service string) int {
 // instancesOfService is every authored instance of one service.
 func instancesOfService(l InspectData, service string) []string {
 	var out []string
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		if n.Broken != "" {
 			continue
 		}
@@ -1509,7 +1510,7 @@ func renderPortDetail(l InspectData, id string) (string, error) {
 
 	var found *inventory.Instance
 	var node string
-	for _, n := range l.inv.Nodes {
+	for _, n := range l.Inv.Nodes {
 		for i := range n.Instances {
 			if n.Instances[i].ID == instance {
 				found, node = &n.Instances[i], n.ID
@@ -1525,7 +1526,7 @@ func renderPortDetail(l InspectData, id string) (string, error) {
 	}
 
 	var routes []string
-	for name, r := range l.inv.Routes {
+	for name, r := range l.Inv.Routes {
 		for _, raw := range r.Hops {
 			if hop, err := derive.ParseHop(raw); err == nil && hop.Instance == instance && hop.Port == port {
 				routes = append(routes, name)
@@ -1543,7 +1544,7 @@ func renderPortDetail(l InspectData, id string) (string, error) {
 
 	// The account table, which is this port's alone: another port of the
 	// same process has its own, with its own credentials.
-	principals := l.derived.Principals(instance, port)
+	principals := l.Derived.Principals(instance, port)
 	if len(principals) == 0 {
 		line(&b, "\nnobody holds a grant on this port")
 		return b.String(), nil

@@ -3,13 +3,14 @@ package conf
 import (
 	"bytes"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"strings"
 	"testing"
 )
 
 func TestMigrationProcedureNamesRenderedUninstallAndInstallPaths(t *testing.T) {
 	root, _ := examplesRoot(t)
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,9 +31,9 @@ func TestMigrationProcedureNamesRenderedUninstallAndInstallPaths(t *testing.T) {
 	if strings.Contains(got, "no generated uninstall.sh") {
 		t.Fatalf("uninstall manifest was not read:\n%s", got)
 	}
-	for ni := range l.inv.Nodes {
-		if l.inv.Nodes[ni].ID == "nas" {
-			l.inv.Nodes[ni].Instances[0].Runtime = "" // host runtime: deploy/ is not rendered
+	for ni := range l.Inv.Nodes {
+		if l.Inv.Nodes[ni].ID == "nas" {
+			l.Inv.Nodes[ni].Instances[0].Runtime = "" // host runtime: deploy/ is not rendered
 		}
 	}
 	rep.Procedure = buildMigrationProcedure(l, l, "nas", "nas", root, "", map[string]string{"node": "from=nas,to=nas"}, nil)
@@ -44,7 +45,7 @@ func TestMigrationProcedureNamesRenderedUninstallAndInstallPaths(t *testing.T) {
 }
 
 func TestMigrationComposeFactsReadsContainersAndMounts(t *testing.T) {
-	containers, mounts, _, problem := migrationComposeFacts([]exportFile{{Path: "n/freshrss/rss/compose.yaml", Bytes: []byte(`services:
+	containers, mounts, _, problem := migrationComposeFacts([]engine.File{{Path: "n/freshrss/rss/compose.yaml", Bytes: []byte(`services:
   rss:
     container_name: rss
     volumes:
@@ -67,7 +68,7 @@ func TestMigrationComposeFactsReadsContainersAndMounts(t *testing.T) {
 }
 
 func TestMigrationComposeFactsFindsUnnamedContainerByLabel(t *testing.T) {
-	containers, _, _, problem := migrationComposeFacts([]exportFile{{Path: "compose.yaml", Bytes: []byte("services:\n  archive:\n    image: x\n")}})
+	containers, _, _, problem := migrationComposeFacts([]engine.File{{Path: "compose.yaml", Bytes: []byte("services:\n  archive:\n    image: x\n")}})
 	if problem != "" || len(containers) != 1 || containers[0].Ref != `"$(docker ps -aq --filter label=com.docker.compose.service=archive)"` {
 		t.Fatalf("containers = %+v, problem = %q", containers, problem)
 	}
@@ -99,7 +100,7 @@ func TestMigrationProcedureImportsOnlyWhenReplacing(t *testing.T) {
 }
 
 func TestMigrationProcedureSkipsOnDemandServices(t *testing.T) {
-	containers, mounts, onDemand, problem := migrationComposeFacts([]exportFile{{Path: "compose.yaml", Bytes: []byte(`services:
+	containers, mounts, onDemand, problem := migrationComposeFacts([]engine.File{{Path: "compose.yaml", Bytes: []byte(`services:
   digest:
     container_name: digest
     volumes:

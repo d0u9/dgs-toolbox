@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"io"
 	"io/fs"
 	"os"
@@ -37,9 +38,9 @@ func migrateApplyAction(in io.Reader, out io.Writer, args []string, flags map[st
 	if err != nil {
 		return err
 	}
-	var before, after loaded
+	var before, after engine.Loaded
 	var report bytes.Buffer
-	err = migrateActionSnapshot(nil, &report, args, flags, global, func(old, next loaded) bool {
+	err = migrateActionSnapshot(nil, &report, args, flags, global, func(old, next engine.Loaded) bool {
 		before, after = old, next
 		return false
 	})
@@ -100,9 +101,9 @@ func migrateApplyAction(in io.Reader, out io.Writer, args []string, flags map[st
 	}
 	// Rebuild after approval, before the first write. The preview and each
 	// replacement must still describe the same inventory and service files.
-	var rebuiltBefore, rebuiltAfter loaded
+	var rebuiltBefore, rebuiltAfter engine.Loaded
 	var rebuilt bytes.Buffer
-	err = migrateActionSnapshot(nil, &rebuilt, args, flags, global, func(old, next loaded) bool {
+	err = migrateActionSnapshot(nil, &rebuilt, args, flags, global, func(old, next engine.Loaded) bool {
 		rebuiltBefore, rebuiltAfter = old, next
 		return false
 	})
@@ -202,7 +203,7 @@ func checkMigrationInputDigests(root string, expected map[string][32]byte) error
 	return nil
 }
 
-func applyMigrationEdits(root string, edits []migrationEdit, expected loaded, replace func(string, string) error) (string, error) {
+func applyMigrationEdits(root string, edits []migrationEdit, expected engine.Loaded, replace func(string, string) error) (string, error) {
 	if len(edits) == 0 {
 		return "", nil
 	}
@@ -292,21 +293,21 @@ func applyMigrationEdits(root string, edits []migrationEdit, expected loaded, re
 		delete(staged, edit.path)
 		applied = append(applied, edit)
 	}
-	actual, err := load(root)
+	actual, err := engine.Load(root)
 	if err != nil {
 		return rollback(fmt.Errorf("loading applied inventory: %w", err))
 	}
-	if broken := brokenFiles(actual.inv); len(broken) != 0 {
+	if broken := brokenFiles(actual.Inv); len(broken) != 0 {
 		return rollback(fmt.Errorf("applied inventory is broken: %s", strings.Join(broken, "; ")))
 	}
-	if issues := validate.Validate(actual.inv, actual.manifests, actual.exports, actual.derived, nil); len(issues) != 0 {
+	if issues := validate.Validate(actual.Inv, actual.Manifests, actual.Exports, actual.Derived, nil); len(issues) != 0 {
 		return rollback(fmt.Errorf("applied inventory has %d validation problems: %s", len(issues), issues[0].Message))
 	}
-	if !reflect.DeepEqual(actual.inv.Nodes, expected.inv.Nodes) ||
-		!migrationUserReferencesEqual(actual.inv.Users, expected.inv.Users) ||
-		!reflect.DeepEqual(actual.inv.Routes, expected.inv.Routes) ||
-		!reflect.DeepEqual(actual.inv.Networks, expected.inv.Networks) ||
-		actual.inv.Universal != expected.inv.Universal {
+	if !reflect.DeepEqual(actual.Inv.Nodes, expected.Inv.Nodes) ||
+		!migrationUserReferencesEqual(actual.Inv.Users, expected.Inv.Users) ||
+		!reflect.DeepEqual(actual.Inv.Routes, expected.Inv.Routes) ||
+		!reflect.DeepEqual(actual.Inv.Networks, expected.Inv.Networks) ||
+		actual.Inv.Universal != expected.Inv.Universal {
 		return rollback(fmt.Errorf("applied inventory differs from the validated plan"))
 	}
 	return backupDir, nil
@@ -398,24 +399,24 @@ func migrationAlreadyApplied(root string, flags map[string]string) (bool, error)
 	if oldID == newID && len(networks)+len(instances)+len(routes)+len(published) == 0 {
 		return false, nil
 	}
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		return false, err
 	}
-	if broken := brokenFiles(l.inv); len(broken) != 0 {
+	if broken := brokenFiles(l.Inv); len(broken) != 0 {
 		return false, fmt.Errorf("current inventory is broken: %s", strings.Join(broken, "; "))
 	}
-	if issues := validate.Validate(l.inv, l.manifests, l.exports, l.derived, nil); len(issues) != 0 {
+	if issues := validate.Validate(l.Inv, l.Manifests, l.Exports, l.Derived, nil); len(issues) != 0 {
 		return false, fmt.Errorf("current inventory has %d validation problems: %s", len(issues), issues[0].Message)
 	}
 	var oldPresent bool
 	var node *inventory.Node
-	for i := range l.inv.Nodes {
-		if l.inv.Nodes[i].ID == oldID {
+	for i := range l.Inv.Nodes {
+		if l.Inv.Nodes[i].ID == oldID {
 			oldPresent = true
 		}
-		if l.inv.Nodes[i].ID == newID {
-			node = &l.inv.Nodes[i]
+		if l.Inv.Nodes[i].ID == newID {
+			node = &l.Inv.Nodes[i]
 		}
 	}
 	if node == nil || oldID != newID && oldPresent {
@@ -431,7 +432,7 @@ func migrationAlreadyApplied(root string, flags map[string]string) (bool, error)
 			return false, nil
 		}
 		if change.From != name {
-			for _, current := range l.inv.Networks {
+			for _, current := range l.Inv.Networks {
 				if current == change.From {
 					return false, nil
 				}
@@ -451,10 +452,10 @@ func migrationAlreadyApplied(root string, flags map[string]string) (bool, error)
 		}
 	}
 	for _, change := range routes {
-		if _, old := l.inv.Routes[change.From]; old {
+		if _, old := l.Inv.Routes[change.From]; old {
 			return false, nil
 		}
-		if _, present := l.inv.Routes[change.To]; !present {
+		if _, present := l.Inv.Routes[change.To]; !present {
 			return false, nil
 		}
 	}

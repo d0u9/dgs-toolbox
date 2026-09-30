@@ -6,6 +6,7 @@ package conf
 
 import (
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"io"
 
 	"dgs-toolbox/internal/config"
@@ -34,12 +35,12 @@ func secretAction(in io.Reader, out io.Writer, args []string, flags map[string]s
 		return fmt.Errorf("conf.secrets is not configured")
 	}
 
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		return err
 	}
 
-	implied := secretstore.ImpliedPaths(l.inv, l.manifests, l.derived)
+	implied := secretstore.ImpliedPaths(l.Inv, l.Manifests, l.Derived)
 	res, err := secretstore.Sync(secretsDir, implied)
 	if err != nil {
 		return err
@@ -66,7 +67,7 @@ func secretAction(in io.Reader, out io.Writer, args []string, flags map[string]s
 	// A path whose shape is opaque — a private key, a vendor's keyfile — is
 	// one dgs never invents. It stays missing, which is the report someone
 	// acts on, so it is named apart from what is about to be written.
-	generated, opaque := secretstore.Generated(l.inv, l.manifests, res.Missing)
+	generated, opaque := secretstore.Generated(l.Inv, l.Manifests, res.Missing)
 
 	if len(opaque) > 0 {
 		fmt.Fprintf(out, "%s nothing generates, still missing:\n", plural(len(opaque), "path"))
@@ -97,7 +98,7 @@ func secretAction(in io.Reader, out io.Writer, args []string, flags map[string]s
 		}
 	}
 
-	if err := secretstore.Generate(secretsDir, generated, l.inv, l.manifests); err != nil {
+	if err := secretstore.Generate(secretsDir, generated, l.Inv, l.Manifests); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "generated %s\n", plural(len(generated), "path"))

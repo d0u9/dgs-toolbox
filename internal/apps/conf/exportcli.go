@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"io"
 	"os"
 	"path/filepath"
@@ -42,14 +43,14 @@ func exportAction(in io.Reader, out io.Writer, args []string, flags map[string]s
 		return fmt.Errorf("conf.root is not configured")
 	}
 
-	l, err := load(root)
+	l, err := engine.Load(root)
 	if err != nil {
 		return err
 	}
-	r := renderer{l: l, rootPath: root, secretsDir: secretsDir}
+	r := engine.Renderer{Data: l, RootPath: root, SecretsDir: secretsDir}
 
 	selector := strings.Join(args, " ")
-	matched, err := target.Match(selector, target.List(l.inv, l.derived))
+	matched, err := target.Match(selector, target.List(l.Inv, l.Derived))
 	if err != nil {
 		return err
 	}
@@ -91,7 +92,7 @@ func exportAction(in io.Reader, out io.Writer, args []string, flags map[string]s
 
 	// Render everything before writing anything, so the plan named below is
 	// the plan carried out, and a failure leaves nothing behind.
-	files, err := r.renderAll(instances)
+	files, err := r.RenderAll(instances)
 	if err != nil {
 		return err
 	}
@@ -160,13 +161,13 @@ func exportAction(in io.Reader, out io.Writer, args []string, flags map[string]s
 	}
 
 	if zipPath != "" {
-		if err := r.ExportZip(instances, zipPath, overwrite); err != nil {
+		if err := ExportZip(r, instances, zipPath, overwrite); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "wrote %s\n", zipPath)
 		return nil
 	}
-	if err := r.ExportFolder(instances, destDir, overwrite); err != nil {
+	if err := ExportFolder(r, instances, destDir, overwrite); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "wrote %s\n", filepath.Clean(destDir))
@@ -181,7 +182,7 @@ func exportAction(in io.Reader, out io.Writer, args []string, flags map[string]s
 // that wanted both wanted their paths too. --format yaml is that caller's
 // answer; without it, a selector matching more than one file is an error
 // naming what it matched, the same way a selector matching none is.
-func exportToStdout(r renderer, out io.Writer, instances []string, zipPath, format string, overwrite bool) error {
+func exportToStdout(r engine.Renderer, out io.Writer, instances []string, zipPath, format string, overwrite bool) error {
 	switch {
 	case zipPath != "":
 		return fmt.Errorf("--to - and --zip are two destinations; give one")
@@ -191,7 +192,7 @@ func exportToStdout(r renderer, out io.Writer, instances []string, zipPath, form
 		return fmt.Errorf("unknown --format %q; the only one is yaml", format)
 	}
 
-	files, err := r.renderAll(instances)
+	files, err := r.RenderAll(instances)
 	if err != nil {
 		return err
 	}

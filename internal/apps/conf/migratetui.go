@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"io"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ type migrationRow struct {
 }
 
 type migrationTable struct {
-	l             loaded
+	l             engine.Loaded
 	root, secrets string
 	planDir       string
 	planName      string
@@ -59,10 +60,10 @@ type migrationTable struct {
 	copy          func(string) error
 }
 
-func newMigrationTable(l loaded, root, secrets string) *migrationTable {
+func newMigrationTable(l engine.Loaded, root, secrets string) *migrationTable {
 	m := &migrationTable{l: l, root: root, secrets: secrets, planDir: filepath.Join(root, "migrations"), outputDir: filepath.Join(root, "migrations"), list: scrolllist.New(), mode: "plans", copy: clipboard.Copy}
 	m.list.HideNumbers(true)
-	for _, node := range l.inv.Nodes {
+	for _, node := range l.Inv.Nodes {
 		if node.Broken == "" {
 			m.nodes = append(m.nodes, node)
 		}
@@ -224,8 +225,8 @@ func (m *migrationTable) selectNode(id string) {
 		}
 	}
 	m.rows = append(m.rows, publishedRows...)
-	routes := make([]string, 0, len(m.l.inv.Routes))
-	for name, route := range m.l.inv.Routes {
+	routes := make([]string, 0, len(m.l.Inv.Routes))
+	for name, route := range m.l.Inv.Routes {
 		for _, raw := range route.Hops {
 			hop, err := derive.ParseHop(raw)
 			if err == nil && instances[hop.Instance] {
@@ -257,7 +258,7 @@ func (m *migrationTable) refreshSecretRows() {
 	if m.hasMigrationEdits() {
 		cfg := config.Config{}
 		cfg.Conf.Root, cfg.Conf.Secrets = m.root, m.secrets
-		err := migrateActionSnapshot(nil, io.Discard, []string{"node"}, m.flags(), cfg, func(old, next loaded) bool {
+		err := migrateActionSnapshot(nil, io.Discard, []string{"node"}, m.flags(), cfg, func(old, next engine.Loaded) bool {
 			before, after = old, next
 			return true
 		})
@@ -267,8 +268,8 @@ func (m *migrationTable) refreshSecretRows() {
 			return
 		}
 	}
-	oldPaths := secretstore.ImpliedPaths(before.inv, before.manifests, before.derived)
-	newPaths := secretstore.ImpliedPaths(after.inv, after.manifests, after.derived)
+	oldPaths := secretstore.ImpliedPaths(before.Inv, before.Manifests, before.Derived)
+	newPaths := secretstore.ImpliedPaths(after.Inv, after.Manifests, after.Derived)
 	newSet := map[secretstore.Path]bool{}
 	for _, path := range newPaths {
 		newSet[path] = true
@@ -737,7 +738,7 @@ func (m *migrationTable) applyPlan() {
 		result += "\n\nApply failed: " + err.Error()
 	} else {
 		m.notice = "Applied; exact originals are listed at the end of the report"
-		if l, loadErr := load(m.root); loadErr == nil {
+		if l, loadErr := engine.Load(m.root); loadErr == nil {
 			m.l = l
 		}
 		m.dirty = false

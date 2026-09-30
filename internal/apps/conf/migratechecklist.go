@@ -3,6 +3,7 @@ package conf
 import (
 	"bytes"
 	"fmt"
+	"github.com/d0u9/rhumb/engine"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -92,7 +93,7 @@ type migrationProbe struct {
 	Port                              int
 }
 
-func buildMigrationProcedure(before, after loaded, oldID, newID, root, secrets string, flags map[string]string, renames map[string]string) migrationProcedure {
+func buildMigrationProcedure(before, after engine.Loaded, oldID, newID, root, secrets string, flags map[string]string, renames map[string]string) migrationProcedure {
 	scenario, _ := parseMigrationScenario(flags["scenario"])
 	p := migrationProcedure{
 		Scenario:     scenario,
@@ -116,7 +117,7 @@ func buildMigrationProcedure(before, after loaded, oldID, newID, root, secrets s
 		owned[run.Instance] = true
 	}
 	seen := map[string]bool{}
-	for _, edge := range after.derived.Edges {
+	for _, edge := range after.Derived.Edges {
 		if !owned[edge.To.Instance] {
 			continue
 		}
@@ -141,8 +142,8 @@ func buildMigrationProcedure(before, after loaded, oldID, newID, root, secrets s
 	return p
 }
 
-func migrationNodeAddresses(l loaded, nodeID string) []string {
-	for _, node := range l.inv.Nodes {
+func migrationNodeAddresses(l engine.Loaded, nodeID string) []string {
+	for _, node := range l.Inv.Nodes {
 		if node.ID != nodeID {
 			continue
 		}
@@ -158,10 +159,10 @@ func migrationNodeAddresses(l loaded, nodeID string) []string {
 // migrationRuntimes lists runtime instances in stop order for uninstall.sh
 // (jobs first) and start order for install.sh (jobs last): a job commonly
 // reads what a listening service holds.
-func migrationRuntimes(l loaded, nodeID, root, secrets, script string) []migrationRuntime {
-	r := renderer{l: l, rootPath: root, secretsDir: secrets}
+func migrationRuntimes(l engine.Loaded, nodeID, root, secrets, script string) []migrationRuntime {
+	r := engine.Renderer{Data: l, RootPath: root, SecretsDir: secrets}
 	var out []migrationRuntime
-	for _, item := range target.List(l.inv, l.derived) {
+	for _, item := range target.List(l.Inv, l.Derived) {
 		if item.Node != nodeID || item.Service == "" || item.Export != "" || item.Broken != "" {
 			continue
 		}
@@ -177,7 +178,7 @@ func migrationRuntimes(l loaded, nodeID, root, secrets, script string) []migrati
 		case secrets == "":
 			run.Problem = "conf.secrets is not configured, so compose.yaml was not rendered"
 		default:
-			files, err := r.renderAll([]string{item.Instance})
+			files, err := r.RenderAll([]string{item.Instance})
 			if err != nil {
 				run.Problem = "render failed: " + err.Error()
 				break
@@ -201,7 +202,7 @@ func migrationRuntimes(l loaded, nodeID, root, secrets, script string) []migrati
 // migrationComposeFacts reads the containers and mounts of one rendered
 // compose.yaml. A service under a profile is on demand: it has no container
 // until someone runs it, so it is listed apart instead of being inspected.
-func migrationComposeFacts(files []exportFile) ([]migrationContainer, []migrationMount, []migrationOnDemand, string) {
+func migrationComposeFacts(files []engine.File) ([]migrationContainer, []migrationMount, []migrationOnDemand, string) {
 	for _, file := range files {
 		if filepath.Base(file.Path) != "compose.yaml" {
 			continue
@@ -562,8 +563,8 @@ func migrationInline(values []string) string {
 	return mdCode(strings.Join(values, ", "))
 }
 
-func migrationListenerless(l loaded, nodeID, instanceID string) bool {
-	for _, node := range l.inv.Nodes {
+func migrationListenerless(l engine.Loaded, nodeID, instanceID string) bool {
+	for _, node := range l.Inv.Nodes {
 		if node.ID != nodeID {
 			continue
 		}
@@ -576,9 +577,9 @@ func migrationListenerless(l loaded, nodeID, instanceID string) bool {
 	return false
 }
 
-func migrationHasInstanceDeployScript(l loaded, item target.Target, name string) bool {
+func migrationHasInstanceDeployScript(l engine.Loaded, item target.Target, name string) bool {
 	containerised := false
-	for _, node := range l.inv.Nodes {
+	for _, node := range l.Inv.Nodes {
 		if node.ID != item.Node {
 			continue
 		}
@@ -592,7 +593,7 @@ func migrationHasInstanceDeployScript(l loaded, item target.Target, name string)
 	if !containerised {
 		return false
 	}
-	for _, file := range l.deploys[item.Service].Files {
+	for _, file := range l.Deploys[item.Service].Files {
 		if file.Output == name {
 			return true
 		}
