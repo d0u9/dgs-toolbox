@@ -17,6 +17,7 @@ authority on what it will actually do.
 | --- | --- | --- |
 | [`obsidian.daily.append`](#obsidiandailyappend) | the day's note in the vault, and its pictures beside it | `createdAt`; `content` optional |
 | [`obsidian.location.append`](#obsidianlocationappend) | the running list of places | `createdAt`; `content` optional |
+| [`obsidian.timeline.append`](#obsidiantimelineappend) | the timeline of what happened | `createdAt`, `content` |
 | [`gpx.daily.append`](#gpxdailyappend) | a daily GPX in the configured directory | `createdAt`, `coordinates`; `content` optional |
 | [`apple.reminders.create`](#applereminderscreate) | a reminder, due at a time | `title`, `due_at` |
 | [`apple.reminders.at_place`](#appleremindersat_place) | a reminder, at a place | `title`, `coordinates` |
@@ -83,6 +84,26 @@ Needs `createdAt`; `content` is optional, on the same terms. Configured by
 `capture.obsidian.location_note` and `capture.obsidian.location_archive`;
 shaped by the `location-entry.md` template, which also decides the map services
 the line carries and the vault command a coordinate links to.
+
+## `obsidian.timeline.append`
+
+Puts the Capture at the top of the timeline, under its day: the running list
+of what happened, kept exactly as the list of places is.
+
+- Newest first, under the same date marker.
+- Moves any year that has rolled over into
+  `capture.obsidian.timeline_archive` as it goes; a Capture from such a year
+  goes straight into that year's file.
+- Writes nothing the second time, on the same terms as the daily entry.
+- Carries the place — address, coordinate, map links — when the Capture has a
+  position, and is the one line otherwise.
+
+Needs `createdAt` and `content`: the entry is what happened, so a Capture
+nobody wrote about is not ready. Configured by `capture.obsidian.timeline_note`
+and `capture.obsidian.timeline_archive`; shaped by the `timeline-entry.md`
+template when the template directory has one, and otherwise by
+`location-entry.md`, so the timeline reads like the list of places until it
+is given a shape of its own.
 
 ## `gpx.daily.append`
 

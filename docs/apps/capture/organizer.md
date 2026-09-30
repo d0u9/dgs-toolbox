@@ -763,6 +763,7 @@ once written, they are the reader's files.
 | Location | `obsidian_location` | `been_here` | `obsidian.location.append` |
 | Location + Daily | `obsidian_location_daily` | `been_here` | `obsidian.location.append`, `obsidian.daily.append` |
 | Daily | `obsidian_daily` | `been_here`, `photo_note`, `quick_mark` | `obsidian.daily.append` |
+| Timeline | `obsidian_timeline` | `been_here`, `photo_note`, `quick_mark` | `obsidian.timeline.append` |
 | Photo + Location | `photo_location_daily` | `photo_note` | `obsidian.location.append`, `obsidian.daily.append` |
 | Apple Note | `apple_note` | `photo_note`, `quick_mark` | `apple.notes.create` |
 | Reminder | `apple_reminder` | `quick_mark` | `apple.reminders.create` |

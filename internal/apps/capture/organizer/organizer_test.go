@@ -75,21 +75,21 @@ func TestFindNarrowsCandidates(t *testing.T) {
 		{
 			name:    "been_here offers the location recipes",
 			capture: beenHere(),
-			want:    []RecipeID{"apple_reminder_place", "obsidian_daily", "obsidian_location", "obsidian_location_daily"},
+			want:    []RecipeID{"apple_reminder_place", "obsidian_daily", "obsidian_location", "obsidian_location_daily", "obsidian_timeline"},
 		},
 		{
 			name: "quick_mark offers a different set entirely",
 			capture: Capture{Index: indexschema.Index{
 				Source: indexschema.Source{Workflow: "quick_mark"},
 			}},
-			want: []RecipeID{"apple_calendar", "apple_note", "apple_reminder", "obsidian_daily"},
+			want: []RecipeID{"apple_calendar", "apple_note", "apple_reminder", "obsidian_daily", "obsidian_timeline"},
 		},
 		{
 			name: "a location recipe needs a location, so been_here without one drops them",
 			capture: Capture{Index: indexschema.Index{
 				Source: indexschema.Source{Workflow: "been_here"},
 			}},
-			want: []RecipeID{"obsidian_daily"},
+			want: []RecipeID{"obsidian_daily", "obsidian_timeline"},
 		},
 		{
 			name: "an unknown workflow is offered nothing",

@@ -84,6 +84,10 @@ type CaptureObsidian struct {
 	// LocationArchive the folder a year that has rolled over is moved into.
 	LocationNote    string `json:"location_note"`
 	LocationArchive string `json:"location_archive"`
+	// TimelineNote and TimelineArchive are the same for the timeline of what
+	// happened.
+	TimelineNote    string `json:"timeline_note"`
+	TimelineArchive string `json:"timeline_archive"`
 	// Images is how a Capture's pictures are written beside a daily note.
 	Images CaptureObsidianImages `json:"images"`
 }

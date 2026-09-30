@@ -37,6 +37,10 @@ const (
 	// LocationEntryTemplate is one Capture's entry in the running list of
 	// places. It has a compiled-in default too.
 	LocationEntryTemplate = "location-entry.md"
+	// TimelineEntryTemplate is one Capture's entry on the family timeline.
+	// Without one, the timeline is written with the location entry's template,
+	// so the two lists read alike until a reader says otherwise.
+	TimelineEntryTemplate = "timeline-entry.md"
 )
 
 // Value is a template field. It prints itself wrapped in markers the renderer
@@ -498,16 +502,6 @@ func mapLinksLine(ctx Context, latitude, longitude, services string) string {
 		parts = append(parts, fmt.Sprintf("[%s](%s)", link.Short, link.URL))
 	}
 	return strings.Join(parts, " · ")
-}
-
-// locationEntry is what one Capture becomes in the running list of places.
-func locationEntry(ctx Context) ([]string, error) {
-	data := entryData(ctx)
-	parsed, err := LoadTemplate(ctx.Settings, LocationEntryTemplate)
-	if err != nil {
-		return nil, err
-	}
-	return renderEntry(parsed, data)
 }
 
 // firstLine is the first line of a text that has anything on it, trimmed:

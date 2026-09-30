@@ -45,7 +45,7 @@ func TestRecipeReportCoversTheWholeRegistry(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(report, "RECIPES  8") {
+	if !strings.Contains(report, "RECIPES  9") {
 		t.Errorf("report does not count the recipes:\n%s", report)
 	}
 	if !strings.Contains(report, "obsidian_daily.yaml") {
@@ -126,7 +126,7 @@ func TestExampleRecipesAndTemplatesLoad(t *testing.T) {
 		if settings.TemplateDir == "" {
 			continue
 		}
-		for _, name := range []string{organizer.DailyEntryTemplate, organizer.LocationEntryTemplate} {
+		for _, name := range []string{organizer.DailyEntryTemplate, organizer.LocationEntryTemplate, organizer.TimelineEntryTemplate} {
 			if _, err := os.Stat(filepath.Join(settings.TemplateDir, name)); err != nil {
 				continue
 			}
