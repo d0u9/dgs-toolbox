@@ -440,3 +440,12 @@ func TestBundleDirs(t *testing.T) {
 		t.Fatalf("bundleDirs = %v", got)
 	}
 }
+
+func TestDescribeBundles_NodeDownload(t *testing.T) {
+	files := []engine.File{{Path: "n/microbin/i/" + engine.ManifestFile, Bytes: []byte(
+		"schema: 1\nnode: n\ninstance: i\nservice: microbin\nruntime: host\nplatform: linux/amd64\ndownload: build\n")}}
+	got, err := describeBundles(files, deploy.Options{})
+	if err != nil || got["n/microbin/i"] != "systemd · linux/amd64 · microbin latest release, downloaded now" {
+		t.Fatalf("describeBundles = %v, %v", got, err)
+	}
+}

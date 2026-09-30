@@ -51,6 +51,7 @@ const (
 	defaultZipName = "conf-export.zip"
 
 	// The Download field's choices: when a bundle's release is fetched.
+	downloadPerNode   = "As each node says"
 	downloadNow       = "At export"
 	downloadOnMachine = "On the machine"
 
@@ -280,7 +281,7 @@ func (m *InspectModel) startExport() {
 			form.Field{ID: fieldFormat, Kind: form.Radio, Label: "Format", Options: formats, Value: format},
 			form.Field{ID: fieldDest, Kind: form.Path, Label: "Destination", Value: m.exportDir},
 			form.Field{ID: fieldZipName, Kind: form.Text, Label: "ZIP file name", Value: defaultZipName},
-			form.Field{ID: fieldDownload, Kind: form.Radio, Label: "Download", Options: []string{downloadOnMachine, downloadNow}, Value: downloadOnMachine},
+			form.Field{ID: fieldDownload, Kind: form.Radio, Label: "Download", Options: []string{downloadPerNode, downloadOnMachine, downloadNow}, Value: downloadPerNode},
 			form.Field{ID: fieldOverwrite, Kind: form.Checkbox, Label: "Replace files already there"},
 		),
 	}
@@ -548,9 +549,15 @@ func (m *InspectModel) planBundles(files []engine.File) {
 			plural(len(existing), "bundle"), rcli.Exists(len(existing)), rcli.Them(len(existing)))
 		return
 	}
-	flow.download = deploy.DownloadBuild
-	if flow.form.Value(fieldDownload) == downloadOnMachine {
+	// Empty leaves it to each bundle's node, and on the machine where the
+	// node does not say.
+	switch flow.form.Value(fieldDownload) {
+	case downloadNow:
+		flow.download = deploy.DownloadBuild
+	case downloadOnMachine:
 		flow.download = deploy.DownloadInstall
+	default:
+		flow.download = ""
 	}
 	described, err := describeBundles(files, deploy.Options{Download: flow.download})
 	if err != nil {
@@ -799,7 +806,7 @@ func (m InspectModel) exportView() string {
 	case flow.err != nil:
 		lines = append(lines, brokenStyle.Render(flow.err.Error()))
 	case flow.form.Value(fieldFormat) == formatBundle && flow.form.Focused(fieldDownload):
-		lines = append(lines, mutedStyle.Render("At export puts each release in the bundle · On the machine has ctl install fetch it, online"))
+		lines = append(lines, mutedStyle.Render("As each node says follows its download, else on the machine · At export puts the release in the bundle"))
 	case flow.form.Value(fieldFormat) == formatBundle:
 		lines = append(lines, mutedStyle.Render("Bundle builds, per instance, what ./ctl install deploys on its machine"))
 	case flow.form.Value(fieldFormat) == formatZip:
