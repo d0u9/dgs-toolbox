@@ -64,36 +64,33 @@ type Exported struct {
 	Item, Digest, Target, View string
 }
 
-// RecordExports adds an export event for each published PDF, reading the
-// tree once and writing each Item's sidecar once however many of its PDFs
-// were published.
+// RecordExports adds an export event for each published PDF, reading and
+// writing each Item's sidecar once however many of its PDFs were published,
+// and no other Item's.
 func RecordExports(root string, published []Exported, now time.Time) error {
-	if len(published) == 0 {
-		return nil
-	}
-	items, err := LoadItems(root)
-	if err != nil {
-		return err
-	}
-	byID := make(map[string]int, len(items))
-	for i, item := range items {
-		byID[item.ID] = i
-	}
+	byID := map[string]*Item{}
 	var changed []string
 	for _, p := range published {
-		i, ok := byID[p.Item]
-		if !ok {
+		item, seen := byID[p.Item]
+		if !seen {
+			found, err := loadItem(root, p.Item)
+			if err != nil {
+				return err
+			}
+			byID[p.Item], item = found, found
+			if found != nil {
+				changed = append(changed, p.Item)
+			}
+		}
+		if item == nil {
 			continue
 		}
-		if !slices.Contains(changed, p.Item) {
-			changed = append(changed, p.Item)
-		}
-		items[i].History = append(items[i].History, HistoryEvent{
+		item.History = append(item.History, HistoryEvent{
 			At: now.Format(time.RFC3339), Action: "export", Digest: p.Digest, Target: p.Target, View: p.View,
 		})
 	}
 	for _, id := range changed {
-		if err := WriteItem(root, items[byID[id]]); err != nil {
+		if err := WriteItem(root, *byID[id]); err != nil {
 			return err
 		}
 	}
