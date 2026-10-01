@@ -1023,6 +1023,9 @@ reload().then(() => {
   const wanted = state.items.find((i) => i.id === location.hash.slice(1));
   if (wanted) pick(wanted.id, was && wanted.revisions.some((r) => (r.id || r.digest) === was.digest) ? was.digest : headOf(wanted));
   else render();
+  // ?read opens the picked Item straight in the reader, as a link from
+  // another page asks.
+  if (wanted && new URLSearchParams(location.search).has("read")) openReader();
   unscroll();
 }).catch((err) => {
   state.error = err.message;
