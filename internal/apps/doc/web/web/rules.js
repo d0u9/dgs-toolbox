@@ -2,7 +2,7 @@
 // with the tree it makes redrawn beside the form as it changes. A rule is
 // the tree's: every Outline naming it, and every Snapshot taken from it
 // after, sees the change. Outlines put rules and Snapshots together.
-import { $, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
+import { $, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say, nameTree } from "/common.js";
 import * as which from "/layoutform.js";
 import { outlineTree, unplaced, resizable } from "/outlinetree.js";
 
@@ -32,11 +32,12 @@ const blank = () => {
 
 function list() {
   $("count").textContent = rules.length;
-  const row = (name, sub, selected, onclick) => el("li", { className: selected ? "selected" : "", onclick },
-    el("span", { className: "template-name" }, name), el("span", { className: "template-sub" }, sub));
-  $("rules").replaceChildren(...rules.map((r) => row(r.name, (used[r.name] || []).length ? "in " + used[r.name].join(", ") : "in no Outline",
-    r.name === editing, () => leave() && open(r.name))),
-    ...(editing === "" ? [row("new rule", "not saved yet", true)] : []));
+  nameTree($("rules"), rules.map((r) => {
+    const by = used[r.name] || [];
+    return { name: r.name, note: by.length || "unused",
+      title: [r.if && "if " + r.if, r.path && "path " + r.path, by.length ? "in " + by.join(", ") : "in no Outline"] };
+  }), {
+    selected: editing, onPick: (e) => leave() && open(e.name), unsaved: editing === "" ? "new rule · not saved yet" : "" });
 }
 
 // sync takes the form into the draft.

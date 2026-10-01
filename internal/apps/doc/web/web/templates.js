@@ -4,6 +4,7 @@ import { $, api, el, loadState, post, frame, say, statusBar } from "/common.js";
 import { codeEditor, highlight } from "/ui/codeedit.js";
 import { guardByName } from "/ui/confirm.js";
 import { fileTree } from "/ui/filetree.js";
+import { tooltip } from "/ui/tooltip.js";
 
 const armDelete = guardByName($("confirm"), $("delete"), "");
 statusBar.setHints("<kbd>Ctrl</kbd>+<kbd>S</kbd> save", { html: true });
@@ -41,7 +42,7 @@ function render() {
     onPickFolder: (path) => leave() && open(byPath.get(path).type),
     fileExtra: (f) => extra(f.t),
     folderExtra: (path) => extra(byPath.get(path)),
-    decorate: (row, { path }) => { const t = byPath.get(path); if (t) row.title = [t.type, t.kind, t.description].filter(Boolean).join(" · "); },
+    decorate: (row, { path }) => { const t = byPath.get(path); if (t) tooltip(row, [t.type, t.kind, t.description]); },
   }), ...(editing === "" ? [el("p", { className: "template-sub new-template" }, "new template · not saved yet")] : []));
   const t = templates.find((x) => x.type === editing);
   const file = t ? "templates/" + t.type + ".yaml" : "templates/<type>.yaml";

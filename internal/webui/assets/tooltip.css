@@ -1,0 +1,20 @@
+/* The shared tooltip (tooltip.js). It draws only from tokens.css, like the
+   context menu: a small raised card beside the thing it describes. */
+
+.tooltip {
+  position: fixed;
+  z-index: 70;
+  max-width: min(360px, calc(100vw - 8px));
+  padding: var(--space-xxs) var(--space-xs);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: var(--lift-soft);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-ui);
+  color: var(--ink);
+  pointer-events: none;
+}
+.tooltip[hidden] { display: none; }
+.tooltip-head { font-family: var(--font-mono); font-weight: 600; overflow-wrap: anywhere; }
+.tooltip-line { color: var(--graphite); overflow-wrap: anywhere; }

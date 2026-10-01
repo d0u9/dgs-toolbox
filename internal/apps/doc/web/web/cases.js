@@ -1,7 +1,7 @@
 // Cases: a matter being dealt with and the Items it has needed so far. The
 // server keeps each Case as a file and decides every change; the page shows
 // the Case and asks for one change at a time.
-import { $, api, el, loadState, post, label, planNodes, frame, say } from "/common.js";
+import { $, api, el, loadState, post, label, planNodes, frame, say, nameTree } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { guardByName } from "/ui/confirm.js";
 import { suggest } from "/combo.js";
@@ -31,22 +31,20 @@ async function load(wanted) {
   else show(cases[0]);
 }
 
-// The list: open Cases first, then the archived ones.
+// The list: open Cases in one folder, archived ones in another, drawn shut
+// until opened.
+const closed = new Set(["Archived/"]);
 function list() {
   $("count").textContent = cases.length;
-  const row = (c) => {
+  const entry = (c) => {
     const open = c.needs.filter((n) => !n.item).length;
-    return el("li", { className: current && c.name === current.name ? "selected" : "", onclick: () => show(c) },
-      el("span", { className: "template-name case-list-title" }, titleOf(c)),
-      open ? el("span", { className: "badge badge-soon", title: open + " still needed" }, open + " needed") : el("span", {}),
-      el("span", { className: "template-sub" }, c.entries.length + (c.entries.length === 1 ? " Item" : " Items") + " · " +
-        (c.status === "archived" ? "archived " + day(c.archived) : "opened " + day(c.opened))));
+    return { name: c.name, label: titleOf(c), folder: c.status === "archived" ? "Archived" : "Open", c,
+      note: c.entries.length, badge: open ? open + " needed" : "",
+      title: [c.name, c.entries.length + (c.entries.length === 1 ? " Item" : " Items"), open ? open + " still needed" : "",
+        c.status === "archived" ? "archived " + day(c.archived) : "opened " + day(c.opened)] };
   };
-  const group = (title, members) => members.length ? el("section", { className: "view-group-list" },
-    el("div", { className: "group-head" }, el("span", { className: "group-name" }, title), el("span", { className: "muted" }, String(members.length))),
-    el("ul", { className: "template-list" }, ...members.map(row))) : null;
-  $("cases").replaceChildren(...[group("Open", cases.filter((c) => c.status === "open")),
-    group("Archived", cases.filter((c) => c.status === "archived"))].filter(Boolean));
+  nameTree($("cases"), [...cases.filter((c) => c.status !== "archived"), ...cases.filter((c) => c.status === "archived")].map(entry),
+    { closed, selected: current ? current.name : "", onPick: (e) => show(e.c) });
 }
 
 function showNew() {

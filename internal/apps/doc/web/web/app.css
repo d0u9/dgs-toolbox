@@ -197,17 +197,8 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 /* Templates: the list, the file as written, and what it can say. */
 .list-head { display: flex; align-items: center; gap: var(--space-xs); padding: 12px 14px 8px; }
 .list-head h2 { flex: 1; margin: 0; font-size: var(--font-size-title); font-weight: 600; }
-.template-list { list-style: none; margin: 0; padding: 0 8px 8px; }
-.template-list li {
-  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px;
-  padding: 8px 10px; margin-bottom: 2px; cursor: pointer; border-radius: var(--radius-md);
-  box-shadow: inset 0 0 0 1px transparent;
-}
-.template-list li:hover { background: var(--hover); }
-.template-list li.selected { background: var(--selected); box-shadow: inset 3px 0 0 var(--primary); }
 .template-name { font-family: var(--font-mono); font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .template-sub { grid-column: 1 / -1; font-size: var(--font-size-xs); color: var(--graphite); }
-.template-list .badge { justify-self: end; }
 .template-edit { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; }
 .template-bar { flex: none; display: flex; align-items: center; gap: 12px; min-height: 32px; }
 .template-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
@@ -524,10 +515,6 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 /* Views grouped by Target, and the export check. */
 .export-all-bar { padding: 0 14px 8px; }
 .export-all-bar .button { width: 100%; justify-content: center; }
-.view-group-list { padding: 0 0 6px; }
-.group-head { display: flex; align-items: center; gap: 8px; padding: 8px 18px 4px; font-size: var(--font-size-xs); }
-.group-name { font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--charcoal); }
-.group-head .muted { flex: 1; }
 .export-row + .export-row { margin-top: 8px; }
 .export-row .message { flex: 1; margin: 0; font-size: var(--font-size-sm); }
 .export-row[hidden] { display: none; }
@@ -583,7 +570,6 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .detail-section .case-add input { flex: 1 1 0; }
 .case-new[hidden], .case[hidden] { display: none; }
 .case .notes { margin: 0; }
-.case-list-title { font-family: inherit; }
 .case-meet { width: 220px; height: 26px; padding: 0 8px; border: 1px solid var(--hairline-strong); border-radius: 6px; font: inherit; font-size: var(--font-size-xs); background: var(--paper); color: inherit; }
 .danger-zone .form-field { margin: 0; }
 .danger-zone { margin-top: 16px; }

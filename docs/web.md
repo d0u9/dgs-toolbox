@@ -378,7 +378,25 @@ folders to draw though no file is in them, and hook each row as it is drawn,
 as Snapshots does to drag PDFs and folders between folders. The tree draws
 and reports clicks; what a row means stays with the page. The doc app's
 Outline trees — on Outlines, Rules, Snapshots and Explore — are drawn with it, each PDF row carrying a button, shown on hover, that
-shows the PDF in Finder; so does each PDF row on Import.
+shows the PDF in Finder; so does each PDF row on Import. The lists down the
+left of Templates, Outlines, Rules, Snapshots, Explore and Cases are drawn
+with it too: Templates as the tree of what extends what, the others one file
+row per name, Cases in an Open and an Archived folder. A row stays one line:
+at its right only a count or a short badge, and what describes it — what it
+is for, where it is used — in the row's tooltip. A page may set the order
+sibling folders are drawn in.
+
+It also carries the **tooltip**: what describes a thing, in a small raised
+card beside it while the pointer rests on it or the keyboard is on it. A page
+links `/ui/tooltip.css`, imports `tooltip` from `/ui/tooltip.js` and calls it
+with the node and a list of lines: the first is drawn as a heading in the
+monospace face, the rest beneath it in the muted colour. It replaces the
+browser's `title`, which comes late, cannot be styled and cuts long text. The
+tip opens a moment after the pointer comes to rest — at once when another has
+just closed, so running down a list is not kept waiting — sits to the right
+of the thing, or to its left near the window's edge, and closes when the
+pointer or focus leaves, on a click, on `Esc` and on a scroll. It holds no
+command: anything in it is only a description of what is already there.
 
 It also carries the **splitter**: the hairline between two panes that the
 reader drags to resize them. A page puts a `.splitter.col` or `.splitter.row`
