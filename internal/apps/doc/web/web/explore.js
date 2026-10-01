@@ -7,6 +7,7 @@
 import { $, api, el, loadState, post, frame, say, planNodes, showPreview, clearPreview, label, outlineFolder, rememberOutlineFolder, nameTree, outlineTitle } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { outlineTree, find, findFile, folderFiles, pdfRow, unplaced, UNPLACED, resizable } from "/outlinetree.js";
+import { outlineView } from "/outlineview.js";
 
 let state = { templates: [], items: [] };
 let outlines = [];
@@ -44,7 +45,28 @@ async function open(o) {
   $("total").textContent = grouping ? grouping.root.count + (grouping.root.count === 1 ? " PDF" : " PDFs") : "";
   tree.show(grouping);
   files(tree.picked);
+  $("view-button").disabled = !grouping;
+  if (view.open) grouping ? view.show(o.name, grouping.root) : leaveView();
 }
+
+// View reads the Outline shown as a folder, and nothing else. It is in the
+// address, ?view, so a link or a reload opens on it.
+const view = outlineView({ state: () => state, preview, onLeave: () => leaveView() });
+function enterView() {
+  if (!shown || !grouping) return;
+  view.show(shown.name, grouping.root);
+  const url = new URL(location.href);
+  url.searchParams.set("view", "");
+  history.replaceState(null, "", url);
+}
+function leaveView() {
+  view.hide();
+  const url = new URL(location.href);
+  url.searchParams.delete("view");
+  history.replaceState(null, "", url);
+  files(tree.picked);
+}
+$("view-button").addEventListener("click", enterView);
 
 // files lists what is picked: a PDF, a folder's PDFs, or the whole Outline's.
 function files(picked) {
@@ -147,7 +169,10 @@ $("export-button").addEventListener("click", async () => {
   for (const a of document.querySelectorAll('a[href^="/outlines/"]')) a.href = api("/outlines/") + a.hash;
   const wanted = decodeURIComponent(location.hash.slice(1));
   const o = outlines.find((x) => x.name === wanted) || outlines[0];
-  if (o) open(o);
+  if (o) {
+    await open(o);
+    if (new URLSearchParams(location.search).has("view")) enterView();
+  }
 })().catch((err) => {
   state.error = err.message;
   frame(state);
