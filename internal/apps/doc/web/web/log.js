@@ -1,9 +1,13 @@
 // Log: every event in the tree's Items' history, newest first, as the server
 // orders it. Picking an entry opens its Item on Browse.
-import { $, api, el, loadState, label, frame, eventLines, eventTitles } from "/common.js";
+import { $, keep as keepEntry, scrollBack, api, el, loadState, label, frame, eventLines, eventTitles } from "/common.js";
 
 let state = { templates: [], items: [] };
 let entries = [];
+// What the page showed when it was left — its filters and how far it was
+// scrolled — until it is drawn so again on coming Back.
+let back = history.state && history.state.log ? history.state : null;
+const unscroll = scrollBack();
 
 const byId = () => Object.fromEntries(state.items.map((i) => [i.id, i]));
 
@@ -25,7 +29,14 @@ const filtering = () => $("filter").value.trim() || $("filter-frequent").getAttr
 
 function render() {
   frame(state);
+  if (back) {
+    $("filter").value = back.log.q;
+    $("filter-frequent").setAttribute("aria-pressed", String(back.log.frequent));
+  }
   drawFilters();
+  if (back) for (const id of ["filter-action", "filter-type", "filter-item"]) $(id).value = back.log[id] || "";
+  else keepEntry({ log: { q: $("filter").value, frequent: $("filter-frequent").getAttribute("aria-pressed") === "true",
+    ...Object.fromEntries(["filter-action", "filter-type", "filter-item"].map((id) => [id, $(id).value])) } });
   const items = byId();
   const words = $("filter").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const action = $("filter-action").value, type = $("filter-type").value, item = $("filter-item").value;
@@ -75,6 +86,11 @@ async function load() {
   state = s;
   if (answer.error && !state.error) state.error = answer.error;
   entries = answer.entries || [];
+  if (back) {
+    render();
+    back = null;
+    return unscroll();
+  }
   render();
   // Browse links here with an Item in the address: show its events.
   const wanted = decodeURIComponent(location.hash.slice(1));

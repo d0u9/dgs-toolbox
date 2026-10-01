@@ -4,10 +4,13 @@ import { splitter } from "/ui/splitter.js";
 import { openMenu } from "/ui/menu.js";
 import { suggest } from "/combo.js";
 import { tooltip } from "/ui/tooltip.js";
-import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
+import { $, address, keep, scrollBack, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
+// What the page showed when it was left — the filters and the revision
+// picked — until it is drawn so again on coming Back.
+let back = history.state || null;
 let editing = "";
 let notesOf = "";
 let tagsOf = "";
@@ -60,7 +63,7 @@ function fieldFilter(key) {
   const name = key[0].toUpperCase() + key.slice(1);
   let control, offered = [];
   if (how === "text") {
-    control = el("input", { type: "search", placeholder: "any", spellcheck: false, autocomplete: "off", oninput: render });
+    control = el("input", { type: "search", placeholder: "any", spellcheck: false, autocomplete: "off", oninput: render, value: (back && back.fields && back.fields[key]) || "" });
     control.setAttribute("aria-label", name);
   } else {
     control = el("select", { onchange: render });
@@ -74,7 +77,7 @@ function fieldFilter(key) {
     offer: (values) => {
       offered = values;
       if (how === "text") return;
-      const was = control.value;
+      const was = control.value || (back && back.fields && back.fields[key]) || "";
       const text = how === "year" ? (v) => v : (v) => labelOf(key, v);
       control.replaceChildren(el("option", { value: "" }, "any"), ...values.map((v) => el("option", { value: v }, text(v))));
       control.value = values.includes(was) ? was : "";
@@ -123,7 +126,7 @@ function clearable(node, clear) {
 // Type; the others, and Expiry, Kind and Use, in the second, hidden when
 // empty.
 function drawFilters() {
-  const typeSelect = $("filter-type"), wasType = typeSelect.value;
+  const typeSelect = $("filter-type"), wasType = typeSelect.value || (back && back.type) || "";
   const types = new Map();
   for (const i of state.items.filter((i) => passes(i, "type"))) types.set(i.type, (types.get(i.type) || 0) + 1);
   // The types grouped under the one they all extend, as Templates draws them.
@@ -480,6 +483,10 @@ function render() {
   $("none").hidden = state.items.length > 0 || !state.tree;
   $("nothing").hidden = !state.items.length || items.length > 0;
   $("filters-clear").hidden = !filtering();
+  if (!back) {
+    keep({ q: $("filter").value, type: $("filter-type").value, expiry: $("filter-expiry").value, kind: $("filter-kind").value,
+      use: $("filter-use").value, tags: filterTags.get(), fields: Object.fromEntries([...fieldFilters].map(([k, f]) => [k, f.value()]).filter(([, v]) => v)) });
+  }
   $("filter-tags").closest(".filter").classList.toggle("filter-active", filterTags.get().length > 0);
   for (const s of document.querySelectorAll(".filters select, .filters .filter input")) s.closest(".filter").classList.toggle("filter-active", !!s.value.trim() && !s.id.startsWith("view-"));
   // The Filters button counts the filters narrowing, so a shut panel still
@@ -576,7 +583,7 @@ try {
 // Closing the detail gives the cards the width back.
 function close() {
   selected = null;
-  history.replaceState(null, "", location.pathname + location.search);
+  address(location.pathname + location.search);
   closeReader();
   render();
 }
@@ -622,7 +629,8 @@ function pick(id, digest) {
     say($("similar-message"), "");
   }
   selected = { id, digest };
-  history.replaceState(null, "", "#" + id);
+  keep({ digest });
+  address("#" + id);
   render();
 }
 
@@ -932,7 +940,7 @@ $("delete").onclick = async () => {
   try {
     const answer = await post("/api/items/delete", { item: item.id });
     selected = null;
-    history.replaceState(null, "", location.pathname + location.search);
+    address(location.pathname + location.search);
     await reload();
     clearPreview();
     say($("list-message"), "Deleted. It is in " + answer.trash + ".");
@@ -988,15 +996,27 @@ $("more").onclick = async () => {
   }
 };
 
+// Coming Back, the filters are set as they were before anything is drawn.
+if (back) {
+  $("filter").value = back.q || "";
+  for (const [id, k] of [["filter-expiry", "expiry"], ["filter-kind", "kind"], ["filter-use", "use"]]) $(id).value = back[k] || "";
+}
+const unscroll = scrollBack(["items-pane"]);
+
 async function reload() {
   [state] = await Promise.all([loadState(), loadCases()]);
   render();
 }
 
 reload().then(() => {
+  const was = back;
+  if (was && was.tags && was.tags.length) filterTags.set(was.tags);
+  back = null;
   searchText();
   const wanted = state.items.find((i) => i.id === location.hash.slice(1));
-  if (wanted) pick(wanted.id, headOf(wanted));
+  if (wanted) pick(wanted.id, was && wanted.revisions.some((r) => (r.id || r.digest) === was.digest) ? was.digest : headOf(wanted));
+  else render();
+  unscroll();
 }).catch((err) => {
   state.error = err.message;
   render();

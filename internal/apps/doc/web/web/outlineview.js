@@ -10,7 +10,7 @@
 // preview(file) shows a PDF's pages in the page's reader, or none for null;
 // the reader is moved into the view while it is open and back when it is
 // left. onLeave is called when the reader asks to leave: Esc, or the button.
-import { $, el, label, fieldsAt, tagsAt } from "/common.js";
+import { $, el, keep, label, fieldsAt, tagsAt } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { find, findFile, resizable } from "/outlinetree.js";
 
@@ -37,6 +37,7 @@ export function outlineView({ state, preview, onLeave }) {
 
   function pick(path) {
     picked = path;
+    keep({ viewing: picked });
     draw();
   }
   function quickLook(on) {
@@ -178,6 +179,10 @@ export function outlineView({ state, preview, onLeave }) {
       $("view").hidden = true;
       if (home) home.parent.insertBefore($("preview"), home.next);
       preview(null);
+    },
+    // pick picks the folder ("a/b/") or PDF named, if the Outline has it.
+    pick(path) {
+      if (isFolder(path) ? find(root, folderOf(path)) : findFile(root, path)) pick(path);
     },
     get open() { return document.body.classList.contains("viewing"); },
   };

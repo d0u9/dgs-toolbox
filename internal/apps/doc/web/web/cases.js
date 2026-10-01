@@ -1,7 +1,7 @@
 // Cases: a matter being dealt with and the Items it has needed so far. The
 // server keeps each Case as a file and decides every change; the page shows
 // the Case and asks for one change at a time.
-import { $, api, el, loadState, post, label, planNodes, frame, say, nameTree } from "/common.js";
+import { $, address, api, el, loadState, post, label, planNodes, frame, say, nameTree } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { guardByName } from "/ui/confirm.js";
 import { suggest } from "/combo.js";
@@ -49,7 +49,7 @@ function list() {
 
 function showNew() {
   current = null;
-  history.replaceState(null, "", location.pathname + location.search);
+  address(location.pathname + location.search);
   $("case").hidden = true;
   $("new-form").hidden = false;
   $("new-title").value = "";
@@ -88,7 +88,7 @@ $("new-form").addEventListener("submit", async (event) => {
 
 function show(c) {
   current = c;
-  history.replaceState(null, "", location.pathname + location.search + "#" + encodeURIComponent(c.name));
+  address(location.pathname + location.search + "#" + encodeURIComponent(c.name));
   $("new-form").hidden = true;
   $("case").hidden = false;
   const archived = c.status === "archived";

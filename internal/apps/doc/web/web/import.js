@@ -1,6 +1,6 @@
 // Import: open a folder from anywhere, see its PDFs as the tree of folders
 // they are in, and take them in one at a time. The folder is only read.
-import { $, api, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, tagUses, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
+import { $, keep, scrollBack, api, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, tagUses, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { fileTree } from "/ui/filetree.js";
 
@@ -98,6 +98,7 @@ function pick(path) {
     }).then(() => { if (selected === path) readAhead(path); });
   }
   selected = path;
+  keep({ selected });
   render();
   drawFields();
 }
@@ -339,6 +340,8 @@ $("without-pdf").onclick = () => {
   render(); drawFields();
 };
 
+const back = history.state || {}; // what the page showed when it was left, on coming Back
+const unscroll = scrollBack(["tree"]);
 loadState().then(async (s) => {
   state = s;
   render();
@@ -350,6 +353,9 @@ loadState().then(async (s) => {
   } else {
     const last = remembered();
     if (last) await open(last);
+    // Coming Back, the file picked before is picked again.
+    if (back.selected && files.some((f) => f.path === back.selected)) pick(back.selected);
+    unscroll();
   }
 }).catch((err) => {
   state.error = err.message;

@@ -18,6 +18,12 @@ tabs can hold two trees and a reload keeps its tree. `verify` and `export` take
 belong to one, and a folder an Outline is exported to may not lie inside any
 tree.
 
+Going to another page and coming Back returns a page as it was left, not to
+its start: the PDF or file picked in a tree, Browse's and Log's search and
+filters and the revision picked, Import's file, Merge's folder and the
+choices made in it, and how far each list was scrolled. They are kept in the
+browser's history entry for the page, beside what its address already holds.
+
 It follows `dgs box`'s shape: a TUI plus a local web page served by the same
 process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
 [`../../web.md`](../../web.md) before changing either. The parts, in order, are

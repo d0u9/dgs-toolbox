@@ -4,7 +4,7 @@
 // tree, picking a PDF opens it there. Export writes the same tree into a
 // folder you choose. Outlines are made on the Outlines page, from rules
 // and Snapshots made on theirs; nothing here changes one.
-import { $, api, el, loadState, post, frame, say, planNodes, showPreview, clearPreview, label, outlineFolder, rememberOutlineFolder, nameTree, outlineTitle } from "/common.js";
+import { $, address, keep, scrollBack, api, el, loadState, post, frame, say, planNodes, showPreview, clearPreview, label, outlineFolder, rememberOutlineFolder, nameTree, outlineTitle } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { outlineTree, find, findFile, folderFiles, pdfRow, unplaced, UNPLACED, resizable } from "/outlinetree.js";
 import { outlineView } from "/outlineview.js";
@@ -15,6 +15,8 @@ let shown = null; // the Outline drawn
 let target = null; // what Export writes: shown
 let grouping = null;
 let picture = null; // the PDF previewed
+const back = history.state || {}; // what the page showed when it was left, on coming Back
+const unscroll = scrollBack(["tree", "files", "view-tree", "view-info"]);
 
 const tree = outlineTree($("tree"), () => state, { onPick: files, empty: () =>
   shown && !shown.rules.length && !(shown.snapshots || []).length ? "The Outline has no rule and no Snapshot yet." : "The Outline selects no PDFs." });
@@ -28,7 +30,7 @@ function list() {
 
 async function open(o) {
   shown = target = o;
-  history.replaceState(null, "", "#" + encodeURIComponent(o.name));
+  address("#" + encodeURIComponent(o.name));
   $("title").textContent = o.name;
   $("description").textContent = o.about || "";
   $("edit").href = api("/outlines/") + "#" + encodeURIComponent(o.name);
@@ -57,19 +59,20 @@ function enterView() {
   view.show(shown.name, grouping.root);
   const url = new URL(location.href);
   url.searchParams.set("view", "");
-  history.replaceState(null, "", url);
+  address(url);
 }
 function leaveView() {
   view.hide();
   const url = new URL(location.href);
   url.searchParams.delete("view");
-  history.replaceState(null, "", url);
+  address(url);
   files(tree.picked);
 }
 $("view-button").addEventListener("click", enterView);
 
 // files lists what is picked: a PDF, a folder's PDFs, or the whole Outline's.
 function files(picked) {
+  keep({ picked });
   const root = tree.root;
   if (picked === UNPLACED) {
     preview(null);
@@ -171,7 +174,12 @@ $("export-button").addEventListener("click", async () => {
   const o = outlines.find((x) => x.name === wanted) || outlines[0];
   if (o) {
     await open(o);
-    if (new URLSearchParams(location.search).has("view")) enterView();
+    if (back.picked && o.name === wanted) { tree.pick(back.picked); files(tree.picked); }
+    if (new URLSearchParams(location.search).has("view")) {
+      enterView();
+      if (back.viewing && o.name === wanted) view.pick(back.viewing);
+    }
+    if (o.name === wanted) unscroll();
   }
 })().catch((err) => {
   state.error = err.message;
