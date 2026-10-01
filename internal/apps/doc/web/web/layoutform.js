@@ -8,7 +8,7 @@ import { condition } from "/condition.js";
 let state = { templates: [], items: [] };
 let keys = [];
 let countries = {}; // each country's every form: its alpha-3 code
-let previewed = null; // the IDs of the Items the rule takes, as the server last planned it
+let previewed = null; // each Item the rule takes to the nodes placing it ("", 2.1), as the server last planned it; null until it has
 // top is the rule's own numbering, and each node has its own the same way:
 // per order, its names in order (a name may hold a comma), the numbers set
 // by hand ({ 结婚证: 6 }), and the names left unnumbered ([押金]).
@@ -33,6 +33,7 @@ export function setup(options) {
 // once the server has parsed every path and file, when read() stops
 // keeping orders nothing numbers.
 export function fill(v) {
+  previewed = null;
   $("if").value = v.if || "";
   checkIf($("if"), $("if-error"));
   ifBubbles.read();
@@ -70,10 +71,13 @@ export function skipItem(id) {
   changed();
 }
 
-// setPreviewed tells the form which Items the rule takes, so numbering
-// lists their values only.
-export function setPreviewed(ids) {
-  previewed = ids ? new Set(ids) : null;
+// setPreviewed tells the form which Items the rule takes and the node
+// placing each, so numbering lists their values only.
+export function setPreviewed(taken) {
+  previewed = taken ? new Map(Object.entries(taken)) : null;
+  // A block's lists are drawn again in place, so a field being typed in
+  // keeps its focus.
+  $("paths")?.querySelectorAll(".order").forEach((box) => box.redraw?.());
   drawOrder();
 }
 
@@ -365,7 +369,29 @@ const chosenTypes = () => state.templates.map((t) => t.type);
 
 // selected is the Items the rule takes, as the server last planned it, or
 // every Item before it has.
-const selected = () => state.items.filter((item) => !previewed || previewed.has(item.id));
+// Until the server has planned the rule no Item is known to be taken:
+// none is listed, rather than every Item in the tree.
+// A block lists only the Items it or a block below it places.
+const selected = (s = top) => {
+  if (!previewed) return [];
+  const at = s === top ? null : whereOf(s);
+  return state.items.filter((item) => previewed.has(item.id)
+    && (at === null || [...previewed.get(item.id)].some((n) => n === at || n.startsWith(at + "."))));
+};
+// whereOf is a block's place as the server names it: 2.1 is the second
+// child's first.
+const whereOf = (s) => {
+  const walk = (list, prefix) => {
+    for (const [i, n] of list.entries()) {
+      const at = prefix + (i + 1);
+      if (n === s) return at;
+      const below = walk(n.children, at + ".");
+      if (below) return below;
+    }
+    return "";
+  };
+  return walk(nodes, "");
+};
 
 // What each key a layout can use writes. A Template's own field is named
 // with the types that have it.
@@ -818,18 +844,18 @@ function drawOrder() {
 // written. An order new to s starts with the names the Items have.
 function orderList(s, key, rest) {
   const numbers = s.numbers, unnumbered = s.unnumbered;
-  if (s.order[key] === undefined) {
-    s.order[key] = [...new Set(selected().map((i) => orderValue(i, rest)).filter(Boolean))].sort();
+  if (s.order[key] === undefined && previewed) {
+    s.order[key] = [...new Set(selected(s).map((i) => orderValue(i, rest)).filter(Boolean))].sort();
   }
   const box = el("div", { className: "order" });
-  const list = () => s.order[key].filter(Boolean);
+  const list = () => (s.order[key] || []).filter(Boolean);
   const set = (values) => { s.order[key] = [...values]; draw(); changed(); };
   let dragged = -1;
   const draw = () => {
     const values = list();
     // Only the values the query's Items have are shown, each with its
     // number in the whole order; the others stay in it, numbered, hidden.
-    const held = [...new Set(selected().map((i) => orderValue(i, rest)).filter(Boolean))];
+    const held = [...new Set(selected(s).map((i) => orderValue(i, rest)).filter(Boolean))];
     const shown = values.map((v, i) => i).filter((i) => held.some((h) => same(h, values[i])));
     const hidden = values.length - shown.length;
     const unlisted = held.filter((v) => !values.some((w) => same(v, w))).sort();
@@ -899,6 +925,7 @@ function orderList(s, key, rest) {
         : null,
     ].filter(Boolean));
   };
+  box.redraw = draw;
   draw();
   return el("div", { className: "condition" }, el("code", { title: "{#} numbers " + rest }, key), box);
 }
