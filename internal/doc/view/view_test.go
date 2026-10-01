@@ -218,7 +218,7 @@ func TestBuildNumbersSkip(t *testing.T) {
 	for i, name := range []string{"身份证", "护照", "结婚证", "户口"} {
 		items = append(items, item(string(rune('A'+i)), "id_card", map[string]string{"name": name}, fmt.Sprint("d", i)))
 	}
-	v := View{Name: "x", Selection: Head, Order: map[string][]string{"{name}": {"身份证", "护照", "结婚证", "户口"}}, Numbers: map[string]map[string]int{"{name}": {"结婚证": 6}}, Node: Node{File: "{#}-{name}.{ext}"}}
+	v := View{Name: "x", Selection: Head, Node: Node{Order: map[string][]string{"name": {"身份证", "护照", "结婚证", "户口"}}, Numbers: map[string]map[string]int{"name": {"结婚证": 6}}, File: "{#}-{name}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -231,11 +231,11 @@ func TestBuildNumbersSkip(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 	// A number at or below the one before it is refused.
-	v.Numbers = map[string]map[string]int{"{name}": {"结婚证": 2}}
+	v.Numbers = map[string]map[string]int{"name": {"结婚证": 2}}
 	if err := v.Validate(); err == nil {
 		t.Fatal("a number not after the one before was accepted")
 	}
-	v.Numbers = map[string]map[string]int{"{name}": {"驾照": 9}}
+	v.Numbers = map[string]map[string]int{"name": {"驾照": 9}}
 	if err := v.Validate(); err == nil {
 		t.Fatal("a number for a name not in the order was accepted")
 	}
@@ -389,7 +389,7 @@ func TestNumberedKeysFollowTheOrder(t *testing.T) {
 		{ID: "B", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "alex", "country": "AU"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "alex", "country": "NZ"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Order: map[string][]string{"{owner}": {"alex", "emma"}, "{country:alpha3}": {"CHN", "Australia"}}, Node: Node{File: "{#}-{owner}/{#}-{country:alpha3}/{type}.{ext}"}}
+	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"owner": {"alex", "emma"}, "country": {"CHN", "Australia"}}, File: "{#}-{owner}/{#}-{country:alpha3}/{type}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -405,13 +405,13 @@ func TestNumberedKeysFollowTheOrder(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 	// A value the order does not list is not numbered by guess.
-	if len(plan.Missing) != 1 || plan.Missing[0].Item != "C" || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"{country:alpha3}"}) {
+	if len(plan.Missing) != 1 || plan.Missing[0].Item != "C" || !reflect.DeepEqual(plan.Missing[0].Unordered, map[string]string{"country": "NZL"}) {
 		t.Fatalf("missing %+v", plan.Missing)
 	}
 	for _, bad := range []View{
 		{Name: "v", Selection: Head, Node: Node{File: "{#}-{owner}.{ext}"}},
-		{Name: "v", Selection: Head, Order: map[string][]string{"{country}": {"CN", "中国"}}, Node: Node{File: "{#}-{country}.{ext}"}},
-		{Name: "v", Selection: Head, Order: map[string][]string{"owner": {}}, Node: Node{File: "{owner}.{ext}"}},
+		{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"country": {"CN", "中国"}}, File: "{#}-{country}.{ext}"}},
+		{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"owner": {}}, File: "{owner}.{ext}"}},
 	} {
 		if bad.Validate() == nil {
 			t.Errorf("%+v accepted", bad)
@@ -461,7 +461,7 @@ func TestAlternativeKeys(t *testing.T) {
 		{ID: "C", Type: "visa", Kind: tree.KindRecord, Fields: map[string]string{"country": "CN"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
 	names := TypesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}})
-	v := View{Name: "v", Selection: Head, Order: map[string][]string{"{country:alpha3}": {"CN", "AU"}}, Node: Node{File: "{#}-{country:alpha3}/{name|type:zh}.{ext}"}}
+	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"country": {"CN", "AU"}}, File: "{#}-{country:alpha3}/{name|type:zh}.{ext}"}}
 	plan, err := Build(v, items, names)
 	if err != nil {
 		t.Fatal(err)
@@ -504,7 +504,7 @@ func TestAlternativesAreNumberedTogether(t *testing.T) {
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"name": "护照"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
 	names := TypesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}})
-	v := View{Name: "v", Selection: Head, Order: map[string][]string{"{name|type:zh}": {"户口首页", "驾驶证"}}, Node: Node{File: "{#}-{name|type:zh}.{ext}"}}
+	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"户口首页", "驾驶证"}}, File: "{#}-{name|type:zh}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -520,7 +520,7 @@ func TestAlternativesAreNumberedTogether(t *testing.T) {
 	if want := []string{"01-户口首页.pdf", "02-驾驶证.pdf"}; !reflect.DeepEqual(paths, want) {
 		t.Fatalf("got %v, want %v", paths, want)
 	}
-	if len(plan.Missing) != 1 || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"{name|type:zh}"}) {
+	if len(plan.Missing) != 1 || !reflect.DeepEqual(plan.Missing[0].Unordered, map[string]string{"name": "护照"}) {
 		t.Fatalf("missing %+v", plan.Missing)
 	}
 	v.Order = nil
@@ -580,7 +580,7 @@ func TestOptionalKey(t *testing.T) {
 		t.Fatalf("got %v %+v, want %v", paths, plan, want)
 	}
 	// [/{#}-{key}] numbers the folder from the order {key}, from where numbers set.
-	v = View{Name: "x", Selection: Head, Order: map[string][]string{"{degree}": {"硕士", "本科"}}, Numbers: map[string]map[string]int{"{degree}": {"硕士": 10}}, Node: Node{File: "licence[/{#}-{degree}]/{type}.{ext}"}}
+	v = View{Name: "x", Selection: Head, Node: Node{Order: map[string][]string{"degree": {"硕士", "本科"}}, Numbers: map[string]map[string]int{"degree": {"硕士": 10}}, File: "licence[/{#}-{degree}]/{type}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +620,7 @@ func TestCounterNumbersTheWholeName(t *testing.T) {
 		{ID: "B", Type: "diploma", Kind: tree.KindRecord, Fields: map[string]string{"name": "毕业证书", "level": "硕士"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"name": "护照"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Order: map[string][]string{"{name}[-{level}]": {"护照", "毕业证书-本科", "毕业证书-硕士"}}, Node: Node{File: "x/{#}-{name}[-{level}].{ext}"}}
+	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"护照", "毕业证书-本科", "毕业证书-硕士"}}, File: "x/{#}-{name}[-{level}].{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -644,7 +644,7 @@ func TestCounterEndStopsTheNumber(t *testing.T) {
 		{ID: "B", Type: "contract", Kind: tree.KindRecord, Fields: map[string]string{"name": "合同", "signed": "2019-03-22"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "invoice", Kind: tree.KindRecord, Fields: map[string]string{"name": "物业发票"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Order: map[string][]string{"{name}": {"合同", "物业发票"}}, Node: Node{File: "x/{#}-{name}{/#}[-{signed:compact}].{ext}"}}
+	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"合同", "物业发票"}}, File: "x/{#}-{name}{/#}[-{signed:compact}].{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -675,7 +675,7 @@ func TestUnnumbered(t *testing.T) {
 		{ID: "B", Type: "other", Kind: tree.KindRecord, Fields: map[string]string{"name": "押金"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "invoice", Kind: tree.KindRecord, Fields: map[string]string{"name": "物业发票"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Order: map[string][]string{"{name}": {"合同", "押金", "物业发票"}}, Numbers: map[string]map[string]int{"{name}": {"合同": 0}}, Unnumbered: map[string][]string{"{name}": {"押金"}}, Node: Node{File: "x/{#}-{name}.{ext}"}}
+	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"合同", "押金", "物业发票"}}, Numbers: map[string]map[string]int{"name": {"合同": 0}}, Unnumbered: map[string][]string{"name": {"押金"}}, File: "x/{#}-{name}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -690,21 +690,20 @@ func TestUnnumbered(t *testing.T) {
 	if want := []string{"x/00-合同.pdf", "x/01-物业发票.pdf", "x/押金.pdf"}; !reflect.DeepEqual(paths, want) {
 		t.Fatalf("got %v, want %v", paths, want)
 	}
-	v.Numbers = map[string]map[string]int{"{name}": {"押金": 5}}
+	v.Numbers = map[string]map[string]int{"name": {"押金": 5}}
 	if v.Validate() == nil {
 		t.Error("a name both numbered and unnumbered was taken")
 	}
-	v.Numbers, v.Unnumbered = nil, map[string][]string{"{name}": {"租约"}}
+	v.Numbers, v.Unnumbered = nil, map[string][]string{"name": {"租约"}}
 	if v.Validate() == nil {
 		t.Error("an unnumbered name not in the order was taken")
 	}
 }
 
 // Children are an if/elif/else chain: the first an Item meets places it
-// under the parent's path; one with no path, file or children leaves it
-// out; an Item none takes is placed by the parent. One order serves every
-// {#}, and a type condition takes the types below it, a value one in its
-// group.
+// under the parent's path; one that excludes leaves it out; an Item none
+// takes is placed by the parent. A {#} takes the nearest order, and a
+// type condition takes the types below it, a value one in its group.
 func TestChildren(t *testing.T) {
 	rec := func(id, typ string, fields map[string]string) tree.Item {
 		return tree.Item{ID: id, Type: typ, Kind: tree.KindRecord, Fields: fields, Revisions: []tree.Revision{{Digest: id}}}
@@ -722,12 +721,12 @@ func TestChildren(t *testing.T) {
 		{Type: "invoice", Lineage: []string{"invoice", "money"}},
 		{Type: "payment", Lineage: []string{"payment", "money"}},
 	})
-	v := View{Name: "v", Selection: Head, Order: map[string][]string{"{home}": {"h1", "h2"}}, Node: Node{
+	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"home": {"h1", "h2"}},
 		Path: "{#}-{home}", File: "{name}.{ext}",
 		Children: []Node{
 			{If: "category == utility", Path: "utility", File: "{category}-{name}.{ext}"},
 			{If: "type == money", Path: "rental"},
-			{If: "type == photo"},
+			{If: "type == photo", Exclude: true},
 		}}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
@@ -755,6 +754,63 @@ func TestChildren(t *testing.T) {
 		if v.Validate() == nil {
 			t.Errorf("%s was taken", name)
 		}
+	}
+	// A child with only an order numbers its Items apart, placed as its
+	// parent places them; one beside it keeps the rule's order.
+	v.Children = []Node{
+		{If: "category == utility", Path: "utility"},
+		{If: "type == money", Order: map[string][]string{"home": {"h2", "h1"}}},
+	}
+	plan, err = Build(v, items, types)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths = nil
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"01-h1/合同.pdf", "01-h1/照片.pdf", "01-h2/物业.pdf", "01-h2/转账.pdf", "02-h2/utility/水费.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	for name, bad := range map[string][]Node{
+		"a child changing nothing": {{If: "type == bill"}},
+		"exclude with a path":      {{If: "type == bill", Exclude: true, Path: "x"}},
+		"two rests in one order":   {{If: "type == bill", File: "{#}-{home}-{name}.{ext}"}},
+		"a bad order name":         {{If: "type == bill", File: "{#X}-{name}.{ext}"}},
+	} {
+		v.Children = bad
+		if v.Validate() == nil {
+			t.Errorf("%s was taken", name)
+		}
+	}
+	// {#label} names an order of its own, for a second rest.
+	v.Children = []Node{{If: "type == bill", File: "{#n}-{home}-{name}.{ext}", Order: map[string][]string{"n": {"h2-水费"}}}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Orders named the old way, by the rest as written, are renamed for their
+// first key and moved to the node holding every {#} that numbers them.
+func TestUpgradeRenamesOrders(t *testing.T) {
+	v := View{Name: "v", Selection: Head, Node: Node{
+		File:     "{#}-{owner}/{#}-{name}[-{level}].{ext}",
+		Order:    map[string][]string{"{owner}": {"alex"}, "{name}[-{level}]": {"a"}, "{name}[-{level|issuer}]": {"b"}},
+		Numbers:  map[string]map[string]int{"{name}[-{level|issuer}]": {"b": 5}},
+		Children: []Node{{If: "type == translation", File: "{#}-{owner}/{#}-{name}[-{level|issuer}].{ext}"}},
+	}}
+	u := v.Upgrade()
+	if err := u.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string][]string{"owner": {"alex"}, "name": {"a"}}; !reflect.DeepEqual(u.Order, want) {
+		t.Fatalf("rule %v", u.Order)
+	}
+	if c := u.Children[0]; !reflect.DeepEqual(c.Order, map[string][]string{"name": {"b"}}) || c.Numbers["name"]["b"] != 5 {
+		t.Fatalf("child %+v", c)
+	}
+	if len(v.Order) != 3 || v.Children[0].Order != nil {
+		t.Fatalf("the rule upgraded was changed: %+v", v)
 	}
 }
 
@@ -788,7 +844,7 @@ func TestLinkedKeys(t *testing.T) {
 		item(lost, "translation", map[string]string{"owner": "emma", "language": "fr"}, "d5"),
 	}
 	items[0].Revisions[0].Fields = map[string]string{"level": "本科"}
-	v := View{Name: "x", Selection: Head, Order: map[string][]string{"{level|original.level}": {"硕士研究生", "本科"}, "{name|original.name}": {"毕业证书", "学位证书"}}, Node: Node{File: "{#}-{level|original.level}[/{language}]/{#}-{name|original.name}.{ext}"}}
+	v := View{Name: "x", Selection: Head, Node: Node{Order: map[string][]string{"level": {"硕士研究生", "本科"}, "name": {"毕业证书", "学位证书"}}, File: "{#}-{level|original.level}[/{language}]/{#}-{name|original.name}.{ext}"}}
 	plan, err := Build(v, items, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -842,7 +898,7 @@ func TestInherit(t *testing.T) {
 		item(bachelor, "diploma", map[string]string{"owner": "emma", "level": "本科", "name": "学位证书"}, "d1"),
 		item(english, "translation", map[string]string{"owner": "emma", "language": "en", "name": "degree", "original": bachelor}, "d2"),
 	}
-	v := View{Name: "x", Selection: Head, Inherit: []string{"original"}, Order: map[string][]string{"{level}": {"本科"}}, Node: Node{File: "{#}-{level}[/{language}]/{name}.{ext}"}}
+	v := View{Name: "x", Selection: Head, Inherit: []string{"original"}, Node: Node{Order: map[string][]string{"level": {"本科"}}, File: "{#}-{level}[/{language}]/{name}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}

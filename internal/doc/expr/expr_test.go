@@ -88,3 +88,22 @@ func TestTree(t *testing.T) {
 		t.Fatalf("%+v", one)
 	}
 }
+
+func TestExplain(t *testing.T) {
+	bill := env{"type": {"bill"}, "tags": {"network-5"}}
+	got := Explain(MustParse("type == money || tags != network-5 && !(has(number))"), bill)
+	if !got.Met || got.Op != "||" || len(got.Parts) != 2 {
+		t.Fatalf("%+v", got)
+	}
+	// Asked although the first part already held.
+	and := got.Parts[1]
+	if and.Met || and.Op != "&&" || len(and.Parts) != 2 {
+		t.Fatalf("%+v", and)
+	}
+	if tags := and.Parts[0]; tags.Met || !tags.Not || tags.Held[0] != "network-5" {
+		t.Fatalf("%+v", tags)
+	}
+	if number := and.Parts[1]; !number.Met || !number.Not || number.Cmp != "has" || number.Held != nil {
+		t.Fatalf("%+v", number)
+	}
+}

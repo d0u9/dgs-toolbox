@@ -30,6 +30,13 @@ export function findFile(node, path) {
   return folder ? folder.files.find((f) => f.path === path) || null : null;
 }
 
+// missingWhy says what a PDF a rule cannot place lacks: keys, or a number
+// in an order that does not list its name.
+const missingWhy = (m) => [
+  m.keys?.length ? "lacks " + m.keys.join(", ") : "",
+  ...Object.entries(m.unordered || {}).map(([k, v]) => "has no number for " + v + " in order " + k + (m.unorderedAt?.[k] ? " (children " + m.unorderedAt[k] + ")" : "")),
+].filter(Boolean).join("; ");
+
 // unplaced is every PDF the grouping's rules select but cannot place: each
 // lacking a key, or wanting a path another PDF wants too; and each of its
 // Snapshots' PDFs the tree no longer has.
@@ -37,7 +44,7 @@ export function unplaced(grouping) {
   if (!grouping) return [];
   const out = [];
   for (const [rule, plan] of Object.entries(grouping.plans || {})) {
-    for (const m of plan.missing) out.push({ ...m, view: rule, why: "lacks " + m.keys.join(", ") });
+    for (const m of plan.missing) out.push({ ...m, view: rule, why: missingWhy(m) });
     for (const c of plan.clashes) for (const f of c.files) out.push({ ...f, view: rule, why: "wants " + c.path + " with another PDF" });
   }
   for (const c of grouping.clashes || []) for (const f of c.files) out.push({ ...f, why: "wants " + c.path + " with a PDF of " + c.files.filter((g) => g !== f).map((g) => g.view).join(", ") });
@@ -45,22 +52,32 @@ export function unplaced(grouping) {
   return out;
 }
 
+// whyText is the text of the server's explanations of how an Outline
+// places file's Item: those of the rule and revision that placed file, or
+// every one when file was not placed, such as a PDF Not placed.
+export function whyText(all, file) {
+  const mine = all.filter((x) => x.rule === file.view && (!file.revision || x.revision === file.revision));
+  return (mine.length ? mine : all).map((x) => x.text).join("\n");
+}
+
 // resizable puts a handle on the side of the tree's pane that faces the
 // rest of the page, so the reader drags it wider or narrower; the width is
 // remembered per page. The pane after the form grows leftward, the pane
-// before the list of PDFs rightward.
-export function resizable(pane, key, { after = true, fallback = 480 } = {}) {
+// before the list of PDFs rightward. A pane drawn while hidden measures
+// against the window, its parent having no width yet.
+export function resizable(pane, key, { after = true, fallback = 480, min = 260 } = {}) {
   const handle = el("div", { className: "splitter col", role: "separator", "aria-orientation": "vertical", title: "Drag to resize; double-click for the default" });
   if (after) pane.before(handle); else pane.after(handle);
-  splitter({ handle, target: pane, axis: "x", invert: after, min: 260, fallback, key,
-    max: () => Math.max(260, pane.parentElement.clientWidth - 420) });
+  splitter({ handle, target: pane, axis: "x", invert: after, min, fallback, key,
+    max: () => Math.max(min, (pane.parentElement.clientWidth || innerWidth) - 420) });
 }
 
 // outlineTree draws into host with the shared file tree. With onPick, a
 // row is picked by clicking it and onPick is called with its path ("" when
 // unpicked); a folder's chevron opens or shuts it. Without, a click opens or
-// shuts a folder and a PDF links to its Item. empty is the text drawn when
-// there is nothing. A folder with snapshot set is a Snapshot's, drawn as one
+// shuts a folder and a PDF links to its Item. With onWhy, each PDF has a ?
+// button calling it with the file, to explain where it is. empty is the
+// text drawn when there is nothing. A folder with snapshot set is a Snapshot's, drawn as one
 // and shut until opened.
 // Folded is a set of folder paths kept in this browser under a key, so a
 // tree opens as it was left. load switches it to another key; with none it
@@ -96,7 +113,7 @@ export class Folded extends Set {
   clear() { super.clear(); this.seen.clear(); if (this.save) this.save(); }
 }
 
-export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
+export function outlineTree(host, state, { onPick, onWhy, empty = () => "" } = {}) {
   const closed = new Folded(); // folder paths ("a/b/") drawn shut
   const seen = closed.seen; // Snapshot folders already shut once
   let picked = "";
@@ -127,8 +144,11 @@ export function outlineTree(host, state, { onPick, empty = () => "" } = {}) {
       href: onPick ? undefined : (f) => api("/browse/") + "#" + f.item,
       folderIcon: (path) => folder(path)?.snapshot ? SNAPSHOT : "",
       folderClass: (path) => folder(path)?.snapshot ? "outline-snapshot" : "",
-      fileExtra: (f) => el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder",
-        textContent: "↗", onclick: (event) => { event.preventDefault(); event.stopPropagation(); reveal(f); } }),
+      fileExtra: (f) => el("span", { className: "ft-extras" },
+        onWhy ? el("button", { type: "button", className: "ft-reveal", title: "Why here", "aria-label": "Why here",
+          textContent: "?", onclick: (event) => { event.preventDefault(); event.stopPropagation(); onWhy(f); } }) : null,
+        el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder",
+          textContent: "↗", onclick: (event) => { event.preventDefault(); event.stopPropagation(); reveal(f); } })),
       folderExtra: (path) => el("span", { className: "numeric" }, String(folder(path)?.count ?? "")),
     }));
     if (lost.length && onPick) {

@@ -18,6 +18,12 @@ tabs can hold two trees and a reload keeps its tree. `verify` and `export` take
 belong to one, and a folder an Outline is exported to may not lie inside any
 tree.
 
+Going to another page and coming Back returns a page as it was left, not to
+its start: the PDF or file picked in a tree, Browse's and Log's search and
+filters and the revision picked, Import's file, Merge's folder and the
+choices made in it, and how far each list was scrolled. They are kept in the
+browser's history entry for the page, beside what its address already holds.
+
 It follows `dgs box`'s shape: a TUI plus a local web page served by the same
 process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
 [`../../web.md`](../../web.md) before changing either. The parts, in order, are
@@ -82,15 +88,33 @@ Browse opens on the Items as cards, as box's Browse does, or as a table,
 chosen with two icon buttons, Cards (a grid of squares) and List (bulleted lines). In the list, each column is as wide
 as its header's right edge is dragged, remembered per column, and a click on
 a header sorts by that column, again to turn the order round; Sort offers the
-same columns. Each card or row shows the first page of HEAD, the fields that tell the document apart
-(owner, country), the type, and where its expiry stands. A row of filters
-across the top narrows them: search (fields, tags and the text on the page), type,
-a tag filter that matches every tag chosen,
-a select for every distinguishing key any Template has, expiry and kind, and
-a Use filter for Items in use or retired, and a **★ Frequent** chip that
-shows only the frequent Items. The type and key selects offer only the
-values the other filters leave — choosing a type narrows the owners to that
-type's — and a key with no value left is hidden. They
+columns of the types in view, and an arrow beside it turns the order round.
+The list's columns are, in order: the thumbnail and star; Item, the card's
+name without its type; Type, when more than one is shown; the fields every
+Template requires (Owner, Country); when one type is shown, its
+distinguishing keys in its order; Expiry, when any row has something there;
+Added; and Rev., the revisions. A field column no row has a value for is
+left out, and a field's description is its header's tooltip. Each card or row shows the first page of HEAD, the fields that tell the document apart
+(owner, country), the type, and where its expiry stands.
+
+Along the top are search (fields, tags and the text on the page), a
+**Filters** button, a **★ Frequent** chip that shows only the frequent Items,
+the count, and the layout and sort. The filters sit in a panel under them,
+shut until Filters opens it; whether it is open is remembered in the
+browser, and the button counts the filters narrowing, so a shut panel still
+says so. They offer only what the Items in view can use. The panel's first
+row holds type — grouped under the type they all extend, each with its
+count — the fields every Template requires (owner and country), any other
+distinguishing key every type in the tree has, and a tag filter that
+matches every tag chosen. A second row, shown only when something is in
+it, holds the distinguishing keys every type left has besides — all of a
+type's once it is chosen, none with any type — and expiry, kind and Use (in
+use or retired). Every filter offers the values the other filters leave — choosing
+a type narrows the owners to that type's — and one with fewer than two
+values left is hidden unless it is set. A date or month key is chosen by
+year; a text key with more than 20 values in the tree is typed, its values
+offered as it is; any other is picked from a list. A filter that narrows is
+drawn blue with a × that clears it. They
 sort by date added, expiry, name or type; frequent Items always come first
 and retired ones last, and the sort orders each part. The layout, sort, order and the Frequent chip
 are remembered in the browser. A thumbnail too tall or wide for its card shows
@@ -600,8 +624,8 @@ selection: head
 file: '{country}/{owner}/important/{type}.{ext}'
 default: none                     # optional: stands in for a missing key
 order:                            # optional: what each {#} numbers, in order
-  '{owner}': [alex, emma]
-  '{country}': [CN, AU]
+  owner: [alex, emma]
+  country: [CN, AU]
 ```
 
 ```yaml
@@ -612,7 +636,7 @@ selection: all
 file: '{country:alpha2} {make}/{#}-{plate}/{type:zh}.{ext}'
 dedupe: number
 order:
-  '{plate}': [浙AF3897, 浙AT73C7]
+  plate: [浙AF3897, 浙AT73C7]
 ```
 
 - `folder` is where it is exported unless another is chosen then. A leading
@@ -641,7 +665,11 @@ children:
     file: '{date:compact}-{issuer}.{ext}'   # in place of the file above
   - if: type == money
     path: rental/{category}
-  - if: type == translation                 # no path, file or children: left out
+  - if: type == translation
+    exclude: true                           # left out
+  - if: type == contract                    # placed as above, numbered apart
+    order:
+      about.address: [Unit 302, Unit 5]
   - path: other                             # no if: the else
 ```
 
@@ -668,10 +696,14 @@ children:
   provides the root, so a layout never names iCloud or a NAS.
 - **Children** — an if/elif/else chain: the first whose `if` an Item meets
   takes it, a child with no `if` is the else and comes last, and an Item
-  none takes is placed by the node itself. A child with no path, file or
-  children leaves what it takes out. `default` passes down like `file`;
-  orders serve the whole rule, so a `{#}` written alike in two nodes
-  numbers from one order.
+  none takes is placed by the node itself. A child with `exclude: true`
+  leaves what it takes out, and sets nothing else. A child sets at least
+  one of a path, a file, children, `default` or an `order`: one with only
+  an order is placed as its parent places, numbered apart. `default`
+  passes down like `file`. A `{#}` takes its order from the nearest node
+  that lists it, its own first, then up to the rule: a child listing
+  `about.address` numbers its Items' addresses its own way, the rest of
+  the rule keeping the rule's.
 - **Selection** — `head` (a document's HEAD revision only) or `all`.
 - **Shared** — `shared: true` also takes an Item shared with someone, as if
   they were its owner (see Shared): its `if` is asked with `owner` as each
@@ -738,7 +770,7 @@ without a service straight in the folder before. Such a group holds no `{#}`.
 `{#}` does not number a folder group: in
 `{#}-{level}[/{language}]` the level is numbered and the language folder
 follows. `[/{#}-{language}]` numbers the folder itself, from the order named
-`{language}`: with that order `en, fr, ru` and `en` numbered 10, the folders
+`language`: with that order `en, fr, ru` and `en` numbered 10, the folders
 are `10-en`, `11-fr`, `12-ru`. `{#}` goes in no other group.
 
 A layout written before groups, with an optional key in its braces —
@@ -766,20 +798,29 @@ A folder made only of groups, all left out, would vanish from the path, so
 the PDF is not placed instead.
 
 `{#}` numbers a folder or file name: it writes the place, counting from
-`01`, of the name the rest of that folder or file name makes, in the rule's
-`order` named after that rest as written. The rest leaves out the text
+`01`, of the name the rest of that folder or file name makes, in an
+`order` named for the rest's first key. The rest leaves out the text
 straight after `{#}`, its separator, a folder group ending the name, and a
 file's `.{ext}`. So
 `{#}-{owner}/{#}-{country:alpha3}` with the order above writes
-`01-alex/02-AUS`, and `{#}-{name|type:zh}[-{level}].{ext}`, with an order
-named `{name|type:zh}[-{level}]` listing `[身份证, 毕业证书-本科,
-毕业证书-硕士]`, writes `02-毕业证书-本科.pdf` and `03-毕业证书-硕士.pdf`:
-the name and its level together get one number. A folder or file name has
-one `{#}` at most, and a key must follow it.
+`01-alex/02-AUS`, and `{#}-{name|type:zh}[-{level}].{ext}`, with the order
+`name` listing `[身份证, 毕业证书-本科, 毕业证书-硕士]`, writes
+`02-毕业证书-本科.pdf` and `03-毕业证书-硕士.pdf`: the name and its level
+together get one number. Naming the order for a key, not the rest as
+written, keeps it when the layout around the key changes: adding
+`[-{level}]` or `|type:zh` leaves the order `name` as it was. Two `{#}`
+numbering different rests from one order are refused; `{#other}` names an
+order of its own: `{#}-{name}/…/{#short}-{name}` numbers the second from
+`short`. A folder or file name has one `{#}` at most, and a key must
+follow it.
+
+An order is listed on the rule, or on a child: a `{#}` takes the nearest
+node's, its own first, then up to the rule. So a contract can be `09` in
+one folder and `02` in another, each child listing its own `name`.
 
 `{/#}` stops the number: what follows it is written but not numbered, and
-the order is named after the rest up to it. `{#}-{name}{/#}[-{signed:compact}].{ext}`,
-with an order `{name}` listing `[合同, 物业发票]`, writes `01-合同-20180320.pdf`,
+the order is named for the rest up to it. `{#}-{name}{/#}[-{signed:compact}].{ext}`,
+with an order `name` listing `[合同, 物业发票]`, writes `01-合同-20180320.pdf`,
 `01-合同-20190322.pdf` and `02-物业发票.pdf`: both contracts share the number
 their name has. A name has one `{/#}` at most, after its `{#}`; the page adds
 it with the `/#` chip.
@@ -787,18 +828,21 @@ it with the `/#` chip.
 A key is no longer numbered on its own. A layout written `{key#}`,
 `{key:format#}` or `{a|b#}`, or earlier `{a|b}#`, `{key}#` or
 `{key#:format}`, is rewritten as `{#}-{key}` in its rule's file when the tree
-is opened, and its order renamed to match, `owner` becoming `{owner}`.
+is opened, and its order renamed to match. An order still named the way it
+once was, by its rest as written (`{name|type:zh}[-{level}]`), is renamed
+for its first key when the rule is read, and moved to the node nearest the
+rule that holds every `{#}` numbering that rest.
 
 A name may be given its own number, to skip some: `numbers`, per order,
 sets it, and the names after it count on from there. With the order
-`[身份证, 护照, 结婚证, 户口]` and `numbers: {"{name}": {结婚证: 6}}`, they
+`[身份证, 护照, 结婚证, 户口]` and `numbers: {name: {结婚证: 6}}`, they
 are `01`, `02`, `06` and `07`. A number must be larger than the one before
 it, and may be `0`. On the Rules page each number in a Numbering list can be typed over;
 one set by hand is filled in, and clearing it counts on from the one
 before again.
 
 `unnumbered`, per order, lists names left without a number: with
-`unnumbered: {"{name}": [押金]}` and the layout `{#}-{name}.{ext}`, the
+`unnumbered: {name: [押金]}` and the layout `{#}-{name}.{ext}`, the
 deposit is `押金.pdf` — neither number nor the text straight after `{#}` —
 and takes no number, so the name after it counts on from the one before. A
 name is not both unnumbered and in `numbers`. On the Rules page the `#`
@@ -813,7 +857,9 @@ renames every folder after the moved entry at the next export. On the Rules
 page, each `{#}` in the layout gets a Numbering list, its names shown with
 their numbers and reordered by dragging or with up and down; one new to the
 layout starts with the names its Items make, sorted. A name the chosen
-Items make that the list lacks is offered below it, to add last.
+Items make that the list lacks is offered below it, to add last. A block
+gets its own lists with + numbering, copied from the numbering above it, and
+drops them with Number as above; Leave out excludes what it takes.
 
 A layout is rendered by three rules:
 
@@ -842,6 +888,41 @@ PDFs a rule selects have to have its keys; the rest of the type is not
 checked. `year`, `month` and `date` are filled through the date field they
 come from; a key no field of the Item's Template supplies cannot be filled,
 only named — the layout or the Template has to change.
+
+### Why here
+
+Where a rule put a PDF, or why it did not, is explained step by step, so a
+surprise is read rather than guessed at:
+
+- **The rule's `if`** — each comparison on a line: whether it held, and
+  what its key holds for this revision, every part asked, even one after
+  the answer was already known. With `shared: true`, the person it held for.
+- **The branches** — each child asked, in order, `children 2.1` the first
+  child of the second, with its `if` as above, up to the one that took the
+  revision at each level, or the else.
+- **The layout** — the path and file it was written by, then each part: the
+  alternative a key used and the value written, from which link an
+  inherited key came, a value Clean changed, a key lacking or the default
+  written instead, an optional group left out and the keys it lacked; and
+  for each `{#}`, its order, the name it numbers, that name's place, and the
+  number written, or that the order lacks the name or leaves it unnumbered.
+- **The result** — placed, at its path; not selected; not HEAD; left out by a
+  child; lacking keys; or clashing, with the files that want the same path,
+  another rule's or a Snapshot's included. A Snapshot's file says only that
+  the Snapshot holds it.
+
+The explanation is recorded by the planning itself as it places the PDF,
+not worked out again beside it, so it cannot tell a different story from the
+tree. An Outline is planned whole, its other rules and Snapshots included,
+so a clash with them shows.
+
+It is on View, under each PDF; on the Rules page, from the ? beside each
+PDF of the tree and the Why button of each PDF Not placed, shown above the
+tree for the rule as it is being edited and asked again as it changes; and
+`dgs doc explain <item-id>
+[<outline>...]` prints it for every Outline, or those named, each rule's
+explanation in turn, including the rules that did not select the Item. The
+ID may be shortened while only one Item's starts with it.
 
 ### The pages
 
@@ -878,6 +959,20 @@ Making the rules and looking through the result are kept apart:
   Open in Browse. Not placed is a row of the tree. **Export…** writes it
   (below).
   Nothing on it changes an Outline; Edit rules opens it on the Outlines page.
+  **View** reads the Outline shown as a folder is read in Finder, and
+  nothing else: the Outlines list, Export and Edit rules step aside, while
+  the top bar stays to reach the other pages. Its folders and PDFs run down the left as a tree, each
+  folder counting its PDFs; the PDF picked fills the middle, its pages with
+  Open in Browse and Show in Finder; the right holds what the tree knows of
+  it — name, type, expiry, revision, its path in the Outline, tags, fields
+  and when it was added, read only — or of the folder picked — and, folded
+  shut, [Why here](#why-here): how its rule placed it. Once opened, Why
+  here stays open from PDF to PDF. Both sides
+  drag wider or narrower, and this browser keeps their widths. ↑ and ↓ move
+  down the tree, → or Enter open a folder, ← shuts it or goes to the folder
+  holding the row, Space shows the PDF large over the rest and again shuts
+  it, and Esc leaves. Not placed is not shown. View is in the address, `?view`,
+  so a link or a reload opens on it.
 
 ### Snapshots
 
@@ -1076,6 +1171,10 @@ billing period.
 It lists each link, and those where several Items fit, and writes nothing
 unless given `--apply`; each link is a new snapshot, as an edit on the page
 is. A link where several fit is left to be chosen on the page.
+
+`dgs doc explain <item-id> [<outline>...]` prints how each Outline places
+an Item's PDFs, or why it does not, as [Why here](#why-here) describes, and
+changes nothing.
 
 `dgs doc verify [<tree>]` (`-q` for the result only) checks the repository against its sidecars and
 changes nothing. It reports:

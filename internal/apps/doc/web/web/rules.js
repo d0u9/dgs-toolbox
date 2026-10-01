@@ -2,9 +2,9 @@
 // with the tree it makes redrawn beside the form as it changes. A rule is
 // the tree's: every Outline naming it, and every Snapshot taken from it
 // after, sees the change. Outlines put rules and Snapshots together.
-import { $, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say, nameTree } from "/common.js";
+import { $, address, scrollBack, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say, nameTree } from "/common.js";
 import * as which from "/layoutform.js";
-import { outlineTree, unplaced, resizable } from "/outlinetree.js";
+import { outlineTree, unplaced, resizable, whyText } from "/outlinetree.js";
 
 // PREVIEW is the name the rule is planned under.
 const PREVIEW = "preview";
@@ -15,14 +15,16 @@ let editing = null; // the saved name of the rule shown, or "" for a new one
 let draft = null; // the rule as the form has it
 let saved = ""; // the rule as last loaded or saved, to tell an edit
 let grouping = null; // the server's answer for the draft
-const tree = outlineTree($("tree"), () => state, { empty: () => "Give the rule a path to see the tree." });
+const tree = outlineTree($("tree"), () => state, { empty: () => "Give the rule a path to see the tree.", onWhy: (f) => why(f) });
 resizable(document.querySelector(".outline-main"), "dgs-doc-rules-tree");
 
 const copy = (o) => JSON.parse(JSON.stringify(o));
-// sorted is o with its keys in order, so two readings of one rule compare equal.
-const sorted = (o) => o && Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]]));
+// sorted is o with its keys in order, all the way down, so two readings of
+// one rule compare equal.
+const sorted = (o) => Array.isArray(o) ? o.map(sorted)
+  : o && typeof o === "object" ? Object.fromEntries(Object.keys(o).sort().map((k) => [k, sorted(o[k])])) : o;
 const text = (r) => JSON.stringify({ name: r.name, if: r.if || "", selection: r.selection || "head", shared: !!r.shared, inherit: r.inherit || [], path: r.path || "", file: r.file,
-  children: r.children || [], default: r.default ?? null, dedupe: r.dedupe || "", order: sorted(r.order) || null, numbers: sorted(r.numbers) || null, unnumbered: sorted(r.unnumbered) || null });
+  children: sorted(r.children || []), default: r.default ?? null, dedupe: r.dedupe || "", order: sorted(r.order) || null, numbers: sorted(r.numbers) || null, unnumbered: sorted(r.unnumbered) || null });
 const blank = () => {
   let n = 1;
   while (rules.some((r) => r.name === "rule-" + n)) n++;
@@ -67,7 +69,8 @@ function open(name) {
   sync(); // the form's own reading, so an untouched rule is not an edit
   saved = text(draft);
   tree.reset(name ? "rule:" + name : "");
-  history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
+  shut();
+  address(name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
   $("title").textContent = name || "New rule";
   $("delete").hidden = !name;
   $("take").hidden = !name;
@@ -111,12 +114,42 @@ async function regroup() {
     say($("message"), err.message, true);
   }
   draw();
+  if (explained) why(explained);
 }
 
+// why explains, above the tree, how the draft places file's Item, or why
+// it does not: file is a PDF of the tree, or one Not placed. It is asked
+// again each time the draft is regrouped, so it follows the edits.
+let explained = null; // the file explained, while the panel is open
+async function why(file) {
+  explained = file;
+  const mine = asked;
+  const item = state.items.find((i) => i.id === file.item);
+  const pre = el("pre", { className: "view-why-text" }, "…");
+  $("why").replaceChildren(el("header", {},
+    el("strong", {}, "Why here · " + (item ? label(state, item) : file.item)),
+    el("button", { type: "button", className: "small", textContent: "Close", onclick: () => shut() })), pre);
+  $("why").hidden = false;
+  try {
+    const all = await post("/api/outlines/explain", { outline: { name: PREVIEW, rules: [{ ...copy(draft), name: PREVIEW }] }, item: file.item });
+    if (explained === file && mine === asked) pre.textContent = whyText(all, file);
+  } catch (err) {
+    pre.textContent = err.message;
+  }
+}
+function shut() {
+  explained = null;
+  $("why").hidden = true;
+  $("why").replaceChildren();
+}
+
+// The tree is scrolled back as it was left once it is drawn.
+const unscroll = scrollBack(["tree"]);
 function draw() {
   const root = grouping && grouping.root;
   $("total").textContent = root ? root.count + (root.count === 1 ? " PDF" : " PDFs") : "";
   tree.show(grouping);
+  if (grouping) unscroll();
   problems();
 }
 
@@ -129,29 +162,21 @@ function problems() {
   const byId = Object.fromEntries(state.items.map((i) => [i.id, i]));
   const link = (id) => el("a", { href: api("/browse/") + "#" + id }, byId[id] ? label(state, byId[id]) : id);
   const here = PREVIEW;
-  const numbered = which.numberedKeys();
   const rows = [];
   const lacking = new Map(); // Item: the keys, fields and revisions it lacks
   for (const m of lost) {
     const li = el("li", {}, link(m.item));
-    // A numbered key the Item has a value for lacks only a place in the
-    // rule's order: that is fixed in the order, not in the Item.
-    const unordered = m.keys && m.view === here
-      ? m.keys.filter((k) => numbered.includes(k)).map((k) => [k, byId[m.item] && which.orderValue(byId[m.item], k)]).filter(([, v]) => v)
-      : [];
-    const absent = m.keys ? m.keys.filter((k) => !unordered.some(([u]) => u === k)) : [];
-    const why = !m.keys ? m.why : [
-      absent.length ? "lacks " + absent.join(", ") : "",
-      ...unordered.map(([k, v]) => "has no number for " + k + " " + v),
-    ].filter(Boolean).join("; ");
-    li.append(" " + why + " ");
-    for (const [key, value] of unordered) li.append(el("button", { type: "button", className: "small", textContent: "Number " + value + " last",
-      onclick: () => which.numberLast(key, value) }));
+    // A name the Item has that its order does not list is fixed in the
+    // order, not in the Item.
+    li.append(" " + m.why + " ");
+    if (m.view === here) for (const [key, value] of Object.entries(m.unordered || {})) li.append(el("button", { type: "button", className: "small", textContent: "Number " + value + " last",
+      onclick: () => which.numberLast(key, value, m.unorderedAt?.[key] || "") }));
     if (m.view === here) li.append(" ", el("button", { type: "button", className: "small", textContent: "Leave out",
       title: "Leave this Item out: adds id != … to the rule's if", onclick: () => which.skipItem(m.item) }));
-    if (m.keys) {
-      const keys = m.keys.filter((k) => !(m.view === here && numbered.includes(k) && byId[m.item] && which.orderValue(byId[m.item], k)));
-      const fields = (m.fields || []).filter((f) => !m.keys.includes(f) || keys.includes(f));
+    li.append(" ", whyButton(m));
+    if (m.keys?.length) {
+      const keys = m.keys;
+      const fields = m.fields || [];
       if (fields.length) {
         const seen = lacking.get(m.item) || { keys: new Set(), fields: new Set(), digests: new Set() };
         seen.digests.add(m.digest);
@@ -206,7 +231,14 @@ function fill(id, m, link) {
       unknown.map((f) => f === "date" ? "date (year and month come from it)" : f).join(", ")) : null,
     " ", el("button", { type: "button", className: "small", textContent: "Leave out", title: "Leave this Item out of the rule instead",
       onclick: () => which.skipItem(id) }),
+    " ", whyButton({ item: id, view: PREVIEW }),
     form);
+}
+
+// whyButton explains file above the tree.
+function whyButton(file) {
+  return el("button", { type: "button", className: "small", textContent: "Why",
+    title: "How the rule reads this PDF, step by step", onclick: () => why(file) });
 }
 
 // fillAll sets one value on every listed Item that lacks the field and whose

@@ -1,6 +1,6 @@
 // Templates: each type's file, edited as written. The server parses and
 // checks it; a type Items use keeps its name and kind.
-import { $, api, el, loadState, post, frame, say, statusBar } from "/common.js";
+import { $, address, api, el, loadState, post, frame, say, statusBar } from "/common.js";
 import { codeEditor, highlight } from "/ui/codeedit.js";
 import { guardByName } from "/ui/confirm.js";
 import { fileTree } from "/ui/filetree.js";
@@ -74,7 +74,7 @@ function open(type, text) {
   editor.value = text ?? saved;
   dirty();
   say($("message"), "");
-  history.replaceState(null, "", type ? "#" + type : location.pathname + location.search);
+  address(type ? "#" + type : location.pathname + location.search);
   render();
 }
 

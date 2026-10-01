@@ -2,10 +2,15 @@
 import { openFile } from "/ui/filedialog.js";
 import { splitter } from "/ui/splitter.js";
 import { openMenu } from "/ui/menu.js";
-import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
+import { suggest } from "/combo.js";
+import { tooltip } from "/ui/tooltip.js";
+import { $, address, keep, scrollBack, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
+// What the page showed when it was left — the filters and the revision
+// picked — until it is drawn so again on coming Back.
+let back = history.state || null;
 let editing = "";
 let notesOf = "";
 let tagsOf = "";
@@ -23,29 +28,151 @@ const words = () => $("filter").value.trim().toLowerCase().split(/\s+/).filter(B
 const matches = (text) => words().every((w) => text.toLowerCase().includes(w));
 const VIEW_KEY = "dgs-doc-browse-view";
 
-// The keys that tell documents apart — owner, country — each get a filter,
-// since they are what a person looks for first.
-function filterKeys() {
-  const keys = [];
-  for (const t of state.templates) {
-    for (const f of t.fields) if (f.distinguishing && !keys.includes(f.key)) keys.push(f.key);
-  }
-  return keys;
+// keysOf is the keys that tell a type's documents apart — owner, country —
+// which are what a person looks for first.
+const keysOf = (type) => (templateOf(state, type)?.fields || []).filter((f) => f.distinguishing).map((f) => f.key);
+const fieldOf = (key) => {
+  for (const t of state.templates) { const f = t.fields.find((x) => x.key === key); if (f) return f; }
+  return null;
+};
+
+// tableKeys is the field columns of the list for the Items given, and what
+// Sort offers besides its own: the fields every Template requires, then,
+// when the Items are all of one type, that type's distinguishing keys in its
+// order. A key none of them has a value for is left out.
+function tableKeys(items) {
+  const types = new Set(items.map((i) => i.type));
+  const keys = [...new Set([...(state.mandatory || []), ...(types.size === 1 ? keysOf([...types][0]) : [])])];
+  return keys.filter((k) => items.some((i) => currentFields(i)[k]));
 }
 
-// filters draws a select per filter key with the values the Items have,
-// keeping what was chosen.
-function drawFilters() {
-  const keep = (select, values) => {
-    const was = select.value;
-    select.replaceChildren(el("option", { value: "" }, "any"), ...values.map((v) => el("option", { value: v }, v)));
-    select.value = values.includes(was) ? was : "";
+// Each field filter is kept across draws, so a box being typed in keeps its
+// focus, and moved to the row its key belongs in. Its way of choosing is
+// settled once from every value the tree has: a date or month is picked by
+// year; a text key with more than MANY values is typed, the values offered
+// as it is; any other is picked from a list.
+const MANY = 20;
+const fieldFilters = new Map(); // key → { node, how, value(), clear(), offer(values) }
+
+function fieldFilter(key) {
+  if (fieldFilters.has(key)) return fieldFilters.get(key);
+  const f = fieldOf(key);
+  const all = new Set(state.items.map((i) => currentFields(i)[key]).filter(Boolean));
+  const how = f && (f.type === "date" || f.type === "month") ? "year"
+    : all.size > MANY && (!f || !f.type || f.type === "text") ? "text" : "pick";
+  const name = key[0].toUpperCase() + key.slice(1);
+  let control, offered = [];
+  if (how === "text") {
+    control = el("input", { type: "search", placeholder: "any", spellcheck: false, autocomplete: "off", oninput: render, value: (back && back.fields && back.fields[key]) || "" });
+    control.setAttribute("aria-label", name);
+  } else {
+    control = el("select", { onchange: render });
+  }
+  const node = el("label", { className: "filter" }, el("span", {}, how === "year" ? name + " year" : name),
+    how === "text" ? suggest(control, () => offered, { arrow: true }) : control);
+  const filter = {
+    node, how,
+    value: () => control.value.trim(),
+    clear: () => { control.value = ""; },
+    offer: (values) => {
+      offered = values;
+      if (how === "text") return;
+      const was = control.value || (back && back.fields && back.fields[key]) || "";
+      const text = how === "year" ? (v) => v : (v) => labelOf(key, v);
+      control.replaceChildren(el("option", { value: "" }, "any"), ...values.map((v) => el("option", { value: v }, text(v))));
+      control.value = values.includes(was) ? was : "";
+    },
   };
-  keep($("filter-type"), [...new Set(state.items.filter((i) => passes(i, "type")).map((i) => i.type))].sort());
+  clearable(node, () => { filter.clear(); render(); });
+  fieldFilters.set(key, filter);
+  return filter;
+}
+
+// labelOf is how a value is named in a list: an Item a field points at by
+// its name, any other value as kept.
+function labelOf(key, value) {
+  const f = fieldOf(key);
+  const other = f && f.type === "item" && state.items.find((i) => i.id === value);
+  return other ? label(state, other) : value;
+}
+
+// meets says whether an Item has the value a field filter asks for.
+function meets(i, key, filter) {
+  const want = filter.value();
+  if (!want) return true;
+  const have = String(currentFields(i)[key] || "");
+  // Filtering by owner shows an Item shared with that person too.
+  if (key === "owner" && (i.shared_with || []).includes(want)) return true;
+  if (filter.how === "year") return have.startsWith(want);
+  if (filter.how === "text") return have.toLowerCase().includes(want.toLowerCase());
+  return have === want;
+}
+
+// clearable puts a × on a filter that clears it, shown while it narrows.
+function clearable(node, clear) {
+  const x = el("button", { type: "button", className: "text-button filter-x", title: "Clear this filter",
+    onclick: (event) => { event.preventDefault(); clear(); } }, "×");
+  x.setAttribute("aria-label", "Clear this filter");
+  node.append(x);
+}
+
+// drawFilters offers only what the Items in view can use. Every filter
+// offers the values the other filters leave, so choosing a type narrows the
+// owners to that type's, and one with fewer than two values left is hidden
+// unless it is set. The field filters are the fields every Template requires
+// — owner and country — then the distinguishing keys every type left has:
+// none more with any type, all of a type's once it is chosen. The required
+// fields, and a key every type in the tree has, sit in the first row, beside
+// Type; the others, and Expiry, Kind and Use, in the second, hidden when
+// empty.
+function drawFilters() {
+  const typeSelect = $("filter-type"), wasType = typeSelect.value || (back && back.type) || "";
+  const types = new Map();
+  for (const i of state.items.filter((i) => passes(i, "type"))) types.set(i.type, (types.get(i.type) || 0) + 1);
+  // The types grouped under the one they all extend, as Templates draws them.
+  const roots = new Map();
+  for (const type of [...types.keys()].sort()) {
+    const root = (templateOf(state, type)?.lineage || [type]).at(-1);
+    if (!roots.has(root)) roots.set(root, []);
+    roots.get(root).push(type);
+  }
+  const option = (type) => el("option", { value: type }, type + " · " + types.get(type));
+  typeSelect.replaceChildren(el("option", { value: "" }, "any"), ...[...roots].sort(([a], [b]) => a.localeCompare(b)).map(([root, members]) =>
+    members.length === 1 && members[0] === root ? option(root) : el("optgroup", { label: root }, ...members.map(option))));
+  typeSelect.value = types.has(wasType) ? wasType : "";
+
+  const pool = state.items.filter((i) => passes(i, "fields"));
+  const common = (sets) => sets.length ? sets[0].filter((k) => sets.every((ks) => ks.includes(k))) : [];
+  const mandatory = state.mandatory || [];
+  const first = new Set([...mandatory, ...common([...new Set(state.items.map((i) => i.type))].map(keysOf))]);
+  const keys = [...new Set([...mandatory, ...common([...new Set(pool.map((i) => i.type))].map(keysOf))])];
+  for (const [key, filter] of fieldFilters) if (!keys.includes(key) && filter.value()) keys.push(key);
+  for (const filter of fieldFilters.values()) filter.node.hidden = true;
+  for (const key of keys) {
+    const filter = fieldFilter(key);
+    const left = state.items.filter((i) => passes(i, key)).map((i) => String(currentFields(i)[key] || "")).filter(Boolean);
+    const values = filter.how === "year" ? [...new Set(left.map((v) => v.slice(0, 4)))].sort().reverse() : [...new Set(left)].sort();
+    filter.offer(values);
+    filter.node.hidden = values.length < 2 && !filter.value();
+    (first.has(key) ? $("field-main") : $("field-more")).append(filter.node);
+  }
+  // Expiry, Kind and Use offer only the values the Items left have.
+  const fixed = [["filter-expiry", "expiry", (i) => expiryOf(i).state], ["filter-kind", "kind", (i) => i.kind],
+    ["filter-use", "use", (i) => (i.retired ? "retired" : "active")]];
+  for (const [id, skip, valueOf] of fixed) {
+    const have = new Set(state.items.filter((i) => passes(i, skip)).map(valueOf));
+    const select = $(id);
+    for (const o of select.options) o.hidden = !!o.value && !have.has(o.value) && o.value !== select.value;
+    select.closest(".filter").hidden = have.size < 2 && !select.value;
+  }
+  $("filter-more").hidden = ![...$("filter-more").querySelectorAll(".filter")].some((f) => !f.hidden);
+
   // The list can sort by any of its columns, so Sort offers them too.
   const sortSelect = $("view-sort"), wantSort = sortSelect.dataset.want || sortSelect.value;
   for (const o of [...sortSelect.options]) if (o.dataset.column) o.remove();
-  for (const [value, text] of [...filterKeys().map((k) => ["field:" + k, k]), ["revisions", "revisions"]]) {
+  const columns = tableKeys(pool);
+  if (wantSort.startsWith("field:") && !columns.includes(wantSort.slice(6))) columns.push(wantSort.slice(6));
+  for (const [value, text] of [...columns.map((k) => ["field:" + k, k]), ["revisions", "revisions"]]) {
     const o = el("option", { value }, text);
     o.dataset.column = "1";
     sortSelect.append(o);
@@ -53,46 +180,36 @@ function drawFilters() {
   sortSelect.value = wantSort;
   if (sortSelect.value !== wantSort) sortSelect.value = "added";
   delete sortSelect.dataset.want;
-  const group = $("field-filters");
-  const keys = filterKeys();
-  for (const label of [...group.querySelectorAll("label[data-key]")]) if (!keys.includes(label.dataset.key)) label.remove();
-  for (const key of keys) {
-    let select = group.querySelector(`select[data-key="${key}"]`);
-    if (!select) {
-      select = el("select", { onchange: render });
-      select.dataset.key = key;
-      const label = el("label", { className: "filter" }, el("span", {}, key[0].toUpperCase() + key.slice(1)), select);
-      label.dataset.key = key;
-      group.append(label);
-    }
-    const values = [...new Set(state.items.filter((i) => passes(i, key)).map((i) => currentFields(i)[key]).filter(Boolean))].sort();
-    keep(select, values);
-    // A key no Item left has, such as a bank card's issuer under passports,
-    // is hidden rather than offered empty.
-    select.closest("label").hidden = !values.length && !select.value;
-  }
 }
 
 // passes says whether an Item meets every filter but skip, which names the
-// select being filled: a select offers the values the other filters leave,
-// so choosing a type narrows the owners to that type's.
+// filter being filled — "type", "kind", "expiry", "use", a key, or "fields"
+// for every key: a filter offers the values the other filters leave.
 function passes(i, skip) {
   const type = $("filter-type").value, kind = $("filter-kind").value, exp = $("filter-expiry").value, use = $("filter-use").value;
   const fields = currentFields(i);
-  return (!onlyFrequent() || i.frequent) && (!use || (use === "retired") === !!i.retired) &&
-    (skip === "type" || !type || i.type === type) && (!kind || i.kind === kind) &&
-    (!exp || expiryOf(i).state === exp) &&
-    // Filtering by owner shows an Item shared with that person too.
-    [...$("field-filters").querySelectorAll("select[data-key]")].every((s) => !s.value || s.dataset.key === skip || fields[s.dataset.key] === s.value ||
-      (s.dataset.key === "owner" && (i.shared_with || []).includes(s.value))) &&
+  return (!onlyFrequent() || i.frequent) && (skip === "use" || !use || (use === "retired") === !!i.retired) &&
+    (skip === "type" || !type || i.type === type) && (skip === "kind" || !kind || i.kind === kind) &&
+    (skip === "expiry" || !exp || expiryOf(i).state === exp) &&
+    (skip === "fields" || [...fieldFilters].every(([key, filter]) => key === skip || meets(i, key, filter))) &&
     // An Item has the tags its HEAD has: its own and HEAD's.
     filterTags.get().every((tag) => tagsAt(i, headOf(i)).includes(tag)) &&
     (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
 }
 
+// The order the Items are sorted in, turned round by the button beside Sort.
+const direction = () => $("view-direction").dataset.dir === "asc" ? "asc" : "desc";
+function setDirection(dir) {
+  const b = $("view-direction");
+  b.dataset.dir = dir === "asc" ? "asc" : "desc";
+  b.textContent = b.dataset.dir === "asc" ? "↑" : "↓";
+  b.title = b.dataset.dir === "asc" ? "Ascending: click for descending" : "Descending: click for ascending";
+  b.setAttribute("aria-label", b.title);
+}
+
 function shownItems() {
   const items = state.items.filter((i) => passes(i, null));
-  const sort = $("view-sort").value, dir = $("view-direction").value === "asc" ? 1 : -1;
+  const sort = $("view-sort").value, dir = direction() === "asc" ? 1 : -1;
   const added = (i) => (i.revisions[i.revisions.length - 1] || {}).added || "";
   // No expiry sorts after any date, whichever way round.
   const exp_ = (i) => { const e = expiryOf(i); return e.date || (e.state === "permanent" ? "9999" : ""); };
@@ -201,17 +318,35 @@ function star(item) {
 // it, again to turn the order round.
 const COLUMN_KEY = "dgs-doc-browse-column-";
 const columnWidth = (id, fallback) => { try { return Number(localStorage.getItem(COLUMN_KEY + id)) || fallback; } catch { return fallback; } };
-function drawHead(keys) {
-  const columns = [
-    { id: "thumb", text: "", width: 56, fixed: true },
-    { id: "frequent", text: "★", title: "Frequent", width: 36, fixed: true },
-    { id: "type", text: "Type", sort: "type", width: 140 },
-    ...keys.map((k) => ({ id: "field:" + k, text: k, sort: "field:" + k, width: 140 })),
-    { id: "expiry", text: "Expiry", sort: "expiry", width: 150 },
-    { id: "revisions", text: "Revisions", sort: "revisions", width: 90 },
-    { id: "added", text: "Added", sort: "added", width: 110 },
-  ];
-  const sort = $("view-sort").value, asc = $("view-direction").value === "asc";
+// tableColumns is the list's columns for the Items shown, in order: the
+// thumbnail and star, the Item's name as its card carries it, the type when more than
+// one is shown, the field columns tableKeys gives, Expiry when any of them
+// has something to say there, when each was added, and its revisions. Each
+// says how its cell is drawn.
+function tableColumns(items) {
+  const capital = (k) => k[0].toUpperCase() + k.slice(1);
+  const added = (item) => new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString();
+  return [
+    { id: "thumb", text: "", width: 48, fixed: true, cell: (item) => el("td", { className: "table-thumb" }, thumb(item)) },
+    { id: "frequent", text: "★", title: "Frequent", width: 36, fixed: true, cell: (item) => el("td", { className: "table-star" }, star(item)) },
+    // The card's name without its type, which the Type column, or the type
+    // filter, already says.
+    { id: "name", text: "Item", sort: "name", width: 340, cell: (item) => {
+      const name = label(state, item).slice(item.type.length).replace(/^ · /, "") || item.type;
+      return el("td", { className: "table-name", title: label(state, item) }, name);
+    } },
+    new Set(items.map((i) => i.type)).size > 1 && { id: "type", text: "Type", sort: "type", width: 130, cell: (item) => el("td", { className: "mono" }, item.type) },
+    ...tableKeys(items).map((k) => ({ id: "field:" + k, text: capital(k), about: fieldOf(k)?.description, sort: "field:" + k, width: k === "country" ? 90 : 130,
+      cell: (item) => { const v = currentFields(item)[k]; return el("td", {}, v ? shown(item, k, v) : ""); } })),
+    items.some((i) => expiryOf(i).state !== "none" || i.retired || (i.shared_with || []).length) &&
+      { id: "expiry", text: "Expiry", sort: "expiry", width: 150,
+        cell: (item) => el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))) },
+    { id: "added", text: "Added", sort: "added", width: 100, cell: (item) => el("td", { className: "numeric" }, added(item)) },
+    { id: "revisions", text: "Rev.", title: "Revisions", sort: "revisions", width: 56, cell: (item) => el("td", { className: "numeric" }, String(item.revisions.length)) },
+  ].filter(Boolean);
+}
+function drawHead(columns) {
+  const sort = $("view-sort").value, asc = direction() === "asc";
   const cols = columns.map((c) => el("col", {}));
   const total = () => cols.reduce((sum, col) => sum + parseFloat(col.style.width), 0);
   const fit = () => { $("table").style.width = total() + "px"; };
@@ -219,7 +354,8 @@ function drawHead(keys) {
   $("table-cols").replaceChildren(...cols);
   fit();
   $("table-head").replaceChildren(...columns.map((c, n) => {
-    const th = el("th", { title: c.title || "" });
+    const th = el("th", {});
+    if (c.title || c.about) tooltip(th, [c.title || c.text, c.about]);
     if (c.sort) {
       const on = sort === c.sort;
       th.classList.add("sortable");
@@ -239,26 +375,19 @@ function drawHead(keys) {
   }));
 }
 function sortBy(column) {
-  if ($("view-sort").value === column) $("view-direction").value = $("view-direction").value === "asc" ? "desc" : "asc";
+  if ($("view-sort").value === column) setDirection(direction() === "asc" ? "desc" : "asc");
   else {
     $("view-sort").value = column;
-    $("view-direction").value = column === "added" || column === "revisions" ? "desc" : "asc";
+    setDirection(column === "added" || column === "revisions" ? "desc" : "asc");
   }
   saveView();
   render();
 }
 
-function row(item, keys) {
-  const fields = currentFields(item);
+function row(item, columns) {
   const e = expiryOf(item);
   const tr = el("tr", { className: "table-row state-" + e.state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
-    el("td", { className: "table-thumb" }, thumb(item)),
-    el("td", { className: "table-star" }, star(item)),
-    el("td", {}, item.type),
-    ...keys.map((k) => el("td", {}, fields[k] ? shown(item, k, fields[k]) : "")),
-    el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))),
-    el("td", { className: "numeric" }, String(item.revisions.length)),
-    el("td", { className: "numeric" }, new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString()));
+    ...columns.map((c) => c.cell(item)));
   if (selected && selected.id === item.id) tr.classList.add("card-selected");
   return tr;
 }
@@ -354,17 +483,26 @@ function render() {
   $("none").hidden = state.items.length > 0 || !state.tree;
   $("nothing").hidden = !state.items.length || items.length > 0;
   $("filters-clear").hidden = !filtering();
+  if (!back) {
+    keep({ q: $("filter").value, type: $("filter-type").value, expiry: $("filter-expiry").value, kind: $("filter-kind").value,
+      use: $("filter-use").value, tags: filterTags.get(), fields: Object.fromEntries([...fieldFilters].map(([k, f]) => [k, f.value()]).filter(([, v]) => v)) });
+  }
   $("filter-tags").closest(".filter").classList.toggle("filter-active", filterTags.get().length > 0);
-  for (const s of document.querySelectorAll(".filters select")) s.closest(".filter").classList.toggle("filter-active", !!s.value && !s.id.startsWith("view-"));
+  for (const s of document.querySelectorAll(".filters select, .filters .filter input")) s.closest(".filter").classList.toggle("filter-active", !!s.value.trim() && !s.id.startsWith("view-"));
+  // The Filters button counts the filters narrowing, so a shut panel still
+  // says something is.
+  const on = $("filter-panel").querySelectorAll(".filter.filter-active").length;
+  $("filters-on").textContent = String(on);
+  $("filters-on").hidden = !on;
   $("unread").hidden = !unread;
   $("unread-count").textContent = unread + (unread === 1 ? " Item's text is" : " Items' text is") + " not read yet, so searching cannot find " + (unread === 1 ? "it." : "them.");
   const list = layout === "list";
   $("grid").hidden = list;
   $("table").hidden = !list;
   if (list) {
-    const keys = filterKeys();
-    drawHead(keys);
-    $("table-body").replaceChildren(...items.map((i) => row(i, keys)));
+    const columns = tableColumns(items);
+    drawHead(columns);
+    $("table-body").replaceChildren(...items.map((i) => row(i, columns)));
   } else {
     $("grid").replaceChildren(...items.map(card));
   }
@@ -374,7 +512,9 @@ function render() {
   if (item) detail(item);
 }
 
-const filtering = () => onlyFrequent() || $("filter").value.trim() || filterTags.get().length || [...document.querySelectorAll(".filters select")].some((s) => s.value && !s.id.startsWith("view-"));
+const filtering = () => onlyFrequent() || $("filter").value.trim() || filterTags.get().length ||
+  [...document.querySelectorAll(".filters select")].some((s) => s.value && !s.id.startsWith("view-")) ||
+  [...fieldFilters.values()].some((f) => f.value());
 
 $("filters-clear").onclick = () => {
   $("filter").value = "";
@@ -382,6 +522,7 @@ $("filters-clear").onclick = () => {
   saveView();
   filterTags.set([]);
   for (const s of document.querySelectorAll(".filters select")) if (!s.id.startsWith("view-")) s.value = "";
+  for (const f of fieldFilters.values()) f.clear();
   textHits = new Map();
   render();
   searchText();
@@ -389,9 +530,19 @@ $("filters-clear").onclick = () => {
 function saveView() {
   try {
     localStorage.setItem(VIEW_KEY, JSON.stringify({ layout, sort: $("view-sort").value,
-      direction: $("view-direction").value, frequent: onlyFrequent() }));
+      direction: direction(), frequent: onlyFrequent(), filters: !$("filter-panel").hidden }));
   } catch { /* not kept */ }
 }
+// The filters sit in a panel, shut until Filters opens it.
+function showFilters(open) {
+  $("filter-panel").hidden = !open;
+  $("filters-toggle").setAttribute("aria-pressed", String(open));
+  $("filters-toggle").title = open ? "Hide the filters" : "Show the filters";
+}
+$("filters-toggle").onclick = () => {
+  showFilters($("filter-panel").hidden);
+  saveView();
+};
 // Cards or list: two buttons, the pressed one is how the Items are shown.
 let layout = "grid";
 function setLayout(value) {
@@ -405,24 +556,34 @@ for (const b of $("view-layout").querySelectorAll("button")) {
     render();
   };
 }
-for (const id of ["filter-type", "filter-expiry", "filter-kind", "filter-use", "view-sort", "view-direction"]) {
+for (const id of ["filter-type", "filter-expiry", "filter-kind", "filter-use", "view-sort"]) {
   $(id).addEventListener("change", () => {
     saveView();
     render();
   });
 }
+for (const id of ["filter-type", "filter-expiry", "filter-kind", "filter-use"]) {
+  clearable($(id).closest(".filter"), () => { $(id).value = ""; render(); });
+}
+$("view-direction").onclick = () => {
+  setDirection(direction() === "asc" ? "desc" : "asc");
+  saveView();
+  render();
+};
+setDirection("desc");
 try {
   const v = JSON.parse(localStorage.getItem(VIEW_KEY) || "{}");
   if (v.frequent) $("filter-frequent").setAttribute("aria-pressed", "true");
   if (v.layout) setLayout(v.layout);
   if (v.sort) { $("view-sort").value = v.sort; $("view-sort").dataset.want = v.sort; }
-  if (v.direction) $("view-direction").value = v.direction;
+  if (v.direction) setDirection(v.direction);
+  if (v.filters) showFilters(true);
 } catch { /* the defaults stand */ }
 
 // Closing the detail gives the cards the width back.
 function close() {
   selected = null;
-  history.replaceState(null, "", location.pathname + location.search);
+  address(location.pathname + location.search);
   closeReader();
   render();
 }
@@ -468,7 +629,8 @@ function pick(id, digest) {
     say($("similar-message"), "");
   }
   selected = { id, digest };
-  history.replaceState(null, "", "#" + id);
+  keep({ digest });
+  address("#" + id);
   render();
 }
 
@@ -778,7 +940,7 @@ $("delete").onclick = async () => {
   try {
     const answer = await post("/api/items/delete", { item: item.id });
     selected = null;
-    history.replaceState(null, "", location.pathname + location.search);
+    address(location.pathname + location.search);
     await reload();
     clearPreview();
     say($("list-message"), "Deleted. It is in " + answer.trash + ".");
@@ -834,15 +996,27 @@ $("more").onclick = async () => {
   }
 };
 
+// Coming Back, the filters are set as they were before anything is drawn.
+if (back) {
+  $("filter").value = back.q || "";
+  for (const [id, k] of [["filter-expiry", "expiry"], ["filter-kind", "kind"], ["filter-use", "use"]]) $(id).value = back[k] || "";
+}
+const unscroll = scrollBack(["items-pane"]);
+
 async function reload() {
   [state] = await Promise.all([loadState(), loadCases()]);
   render();
 }
 
 reload().then(() => {
+  const was = back;
+  if (was && was.tags && was.tags.length) filterTags.set(was.tags);
+  back = null;
   searchText();
   const wanted = state.items.find((i) => i.id === location.hash.slice(1));
-  if (wanted) pick(wanted.id, headOf(wanted));
+  if (wanted) pick(wanted.id, was && wanted.revisions.some((r) => (r.id || r.digest) === was.digest) ? was.digest : headOf(wanted));
+  else render();
+  unscroll();
 }).catch((err) => {
   state.error = err.message;
   render();

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -131,7 +133,12 @@ func describe(out io.Writer, j export.JobPlan) {
 	for _, name := range names {
 		p := j.Combined.Plans[name]
 		for _, m := range p.Missing {
-			fmt.Fprintf(out, "  missing   %s: Item %s revision %d lacks %v\n", name, m.Item, m.Revision, m.Keys)
+			if len(m.Keys) > 0 {
+				fmt.Fprintf(out, "  missing   %s: Item %s revision %d lacks %v\n", name, m.Item, m.Revision, m.Keys)
+			}
+			for _, order := range slices.Sorted(maps.Keys(m.Unordered)) {
+				fmt.Fprintf(out, "  missing   %s: Item %s revision %d has no number for %s in order %s\n", name, m.Item, m.Revision, m.Unordered[order], order)
+			}
 		}
 		for _, c := range p.Clashes {
 			fmt.Fprintf(out, "  clash     %s: %s wanted by %d PDFs\n", name, c.Path, len(c.Files))
