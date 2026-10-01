@@ -28,6 +28,9 @@ type Outcome struct {
 	DateSource string
 	Status     Status
 	Error      string
+	// group is the shot this file belongs to: its source folder and filename
+	// stem. A RAW and its JPG move together or not at all.
+	group string
 }
 
 type Result struct {
@@ -106,7 +109,7 @@ func NewLayoutPlan(root string, files []File, layout string) Plan {
 	}
 	for index, file := range files {
 		path := file.Path
-		outcome := Outcome{Original: path, Final: path, Status: Skipped}
+		outcome := Outcome{Original: path, Final: path, Status: Skipped, group: pairKey(file.Source)}
 		if !isJPEG(file.Source) && !isRAW(file.Source) {
 			plan.Files[index] = outcome
 			continue
@@ -136,7 +139,76 @@ func NewLayoutPlan(root string, files []File, layout string) Plan {
 		outcome.Status = Moved
 		plan.Files[index] = outcome
 	}
+	refuseCollisions(&plan)
 	return plan
+}
+
+// refuseCollisions keeps a shot from landing beside a different shot of the
+// same name.
+//
+// Date folders are flat, so two folders of one card that both hold IMG_0001 —
+// a camera whose counter rolled over in one day — meet in one folder. Moving
+// file by file would let the first IMG_0001.JPG in and the other shot's
+// IMG_0001.CR2 after it, and every tool reading that folder would pair them.
+// So a name is checked per shot, against the batch and against what the
+// folder already holds, and a shot that collides stays where it is whole.
+func refuseCollisions(plan *Plan) {
+	type claim struct {
+		group    string
+		original string
+	}
+	claims := make(map[string]claim)
+	conflicts := make(map[string]string)
+	originals := make(map[string]struct{})
+	for _, outcome := range plan.Files {
+		originals[filepath.Clean(outcome.Original)] = struct{}{}
+	}
+	folders := make(map[string][]os.DirEntry)
+	for _, outcome := range plan.Files {
+		if outcome.Status != Moved {
+			continue
+		}
+		key := stemKey(outcome.Final)
+		if other, ok := claims[key]; ok && other.group != outcome.group {
+			message := fmt.Sprintf("another shot named %s also goes to %s: %s", stem(outcome.Final), outcome.Date, other.original)
+			conflicts[outcome.group] = message
+			conflicts[other.group] = fmt.Sprintf("another shot named %s also goes to %s: %s", stem(outcome.Final), outcome.Date, outcome.Original)
+			continue
+		}
+		claims[key] = claim{group: outcome.group, original: outcome.Original}
+		folder := filepath.Dir(outcome.Final)
+		entries, read := folders[folder]
+		if !read {
+			entries, _ = os.ReadDir(folder)
+			folders[folder] = entries
+		}
+		for _, entry := range entries {
+			existing := filepath.Join(folder, entry.Name())
+			if _, own := originals[filepath.Clean(existing)]; own {
+				continue
+			}
+			if stemKey(existing) == key {
+				conflicts[outcome.group] = fmt.Sprintf("%s already has %s", outcome.Date, entry.Name())
+				break
+			}
+		}
+	}
+	for index, outcome := range plan.Files {
+		if message, ok := conflicts[outcome.group]; ok && outcome.Status == Moved {
+			plan.Files[index].Status, plan.Files[index].Error = Failed, message
+			plan.Files[index].Final = outcome.Original
+		}
+	}
+}
+
+func stem(path string) string {
+	base := filepath.Base(path)
+	return base[:len(base)-len(filepath.Ext(base))]
+}
+
+// stemKey compares names the way the case-insensitive volumes photos live on do.
+func stemKey(path string) string {
+	return strings.ToLower(filepath.Join(filepath.Dir(path), stem(path)))
 }
 
 // Dates lists the distinct date folders the plan would move files into.
@@ -170,6 +242,7 @@ func (plan Plan) ExistingDates() []string {
 // Apply moves the files a plan placed into date folders. It never overwrites.
 func Apply(plan Plan) Result {
 	result := Result{Files: make([]Outcome, len(plan.Files))}
+	failedGroups := make(map[string]struct{})
 	for index, outcome := range plan.Files {
 		result.Files[index] = outcome
 		if outcome.Status != Moved || samePath(outcome.Original, outcome.Final) {
@@ -177,6 +250,12 @@ func Apply(plan Plan) Result {
 		}
 		fail := func(message string) {
 			result.Files[index].Status, result.Files[index].Error = Failed, message
+			failedGroups[outcome.group] = struct{}{}
+		}
+		// Once part of a shot could not move, the rest stays with it.
+		if _, failed := failedGroups[outcome.group]; failed {
+			fail("another file of this shot could not be moved")
+			continue
 		}
 		if _, err := os.Lstat(outcome.Final); err == nil {
 			fail("destination already exists")
