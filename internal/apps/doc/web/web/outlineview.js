@@ -12,7 +12,7 @@
 // left. onLeave is called when the reader asks to leave: Esc, or the button.
 import { $, el, label, fieldsAt, tagsAt } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
-import { find, findFile } from "/outlinetree.js";
+import { find, findFile, resizable } from "/outlinetree.js";
 
 export function outlineView({ state, preview, onLeave }) {
   let name = "";
@@ -20,6 +20,9 @@ export function outlineView({ state, preview, onLeave }) {
   let picked = ""; // the folder ("a/b/") or PDF ("a/b/c.pdf") picked, by tree path
   const closed = new Set(); // the folders drawn shut on the left
   let home = null; // where the reader sits when the view is shut
+  // Both side panes are dragged wider or narrower, kept in this browser.
+  resizable($("view-tree"), "dgs-doc-view-tree", { after: false, fallback: 300, min: 180 });
+  resizable($("view-info"), "dgs-doc-view-info", { fallback: 320, min: 220 });
 
   const item = (f) => state().items.find((i) => i.id === f.item);
   const isFolder = (path) => path === "" || path.endsWith("/");
@@ -118,7 +121,8 @@ export function outlineView({ state, preview, onLeave }) {
   // Space shows the PDF large.
   function onKey(event) {
     if (!document.body.classList.contains("viewing")) return;
-    if (event.target instanceof Element && event.target.closest("input, select, textarea")) return;
+    // A field, or a splitter's own arrows, are not the tree's.
+    if (event.target instanceof Element && event.target.closest("input, select, textarea, .splitter")) return;
     // A button keeps its own Enter and Space.
     if (event.target instanceof Element && event.target.closest("button") && (event.key === "Enter" || event.key === " ")) return;
     const list = rows().map((r) => r.dataset.path);

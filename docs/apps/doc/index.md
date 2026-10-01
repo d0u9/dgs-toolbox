@@ -902,7 +902,8 @@ Making the rules and looking through the result are kept apart:
   folder counting its PDFs; the PDF picked fills the middle, its pages with
   Open in Browse and Show in Finder; the right holds what the tree knows of
   it — name, type, expiry, revision, its path in the Outline, tags, fields
-  and when it was added, read only — or of the folder picked. ↑ and ↓ move
+  and when it was added, read only — or of the folder picked. Both sides
+  drag wider or narrower, and this browser keeps their widths. ↑ and ↓ move
   down the tree, → or Enter open a folder, ← shuts it or goes to the folder
   holding the row, Space shows the PDF large over the rest and again shuts
   it, and Esc leaves. Not placed is not shown. View is in the address, `?view`,
