@@ -62,6 +62,7 @@ function open(name) {
   editing = name;
   const r = copy(rules.find((x) => x.name === name) || blank());
   $("name").value = r.name;
+  asked++; // a plan still on its way is the last rule's
   const settled = which.fill(r);
   $("use-default").checked = r.default !== undefined && r.default !== null;
   $("default").value = $("use-default").checked ? r.default : "none";
@@ -112,9 +113,13 @@ async function regroup() {
     const answer = await post("/api/outlines/group", { name: PREVIEW, rules: [{ ...copy(draft), name: PREVIEW }] });
     if (mine !== asked) return;
     grouping = answer;
-    const ids = new Set();
-    JSON.stringify(answer, (k, v) => { if (k === "item" && typeof v === "string") ids.add(v); return v; });
-    which.setPreviewed([...ids]);
+    // Each Item taken, with the nodes placing it.
+    const taken = {};
+    JSON.stringify(answer, (k, v) => {
+      if (v && typeof v === "object" && typeof v.item === "string") (taken[v.item] ||= new Set()).add(v.node || "");
+      return v;
+    });
+    which.setPreviewed(taken);
     say($("message"), "");
   } catch (err) {
     if (mine !== asked) return;

@@ -735,13 +735,17 @@ func TestChildren(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var paths []string
+	var paths, nodes []string
 	for _, f := range plan.Files {
-		paths = append(paths, f.Path)
+		paths, nodes = append(paths, f.Path), append(nodes, f.Node)
 	}
 	// D is a payment, whose category has no groups: 水 is not utility.
 	if want := []string{"01-h1/合同.pdf", "02-h2/rental/物业.pdf", "02-h2/rental/转账.pdf", "02-h2/utility/水-水费.pdf"}; !reflect.DeepEqual(paths, want) {
 		t.Fatalf("got %v, want %v", paths, want)
+	}
+	// Each file names the node that placed it, "" for the rule itself.
+	if want := []string{"", "2", "2", "1"}; !reflect.DeepEqual(nodes, want) {
+		t.Fatalf("nodes %q, want %q", nodes, want)
 	}
 	for name, bad := range map[string][]Node{
 		"else not last":    {{Path: "x"}, {If: "type == bill", Path: "y"}},

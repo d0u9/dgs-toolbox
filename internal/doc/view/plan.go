@@ -29,6 +29,9 @@ type File struct {
 	Revision int `json:"revision"`
 	// View is the View that placed the file, set when Views are combined.
 	View string `json:"view,omitempty"`
+	// Node is the rule node that placed it: "" for the rule, 2.1 for its
+	// second child's first.
+	Node string `json:"node,omitempty"`
 }
 
 // Missing is a selected PDF the layout cannot name, and the keys it lacks.
@@ -44,6 +47,8 @@ type Missing struct {
 	// is in: "" for the rule, 2.1 for its second child's first.
 	Unordered   map[string]string `json:"unordered,omitempty"`
 	UnorderedAt map[string]string `json:"unorderedAt,omitempty"`
+	// Node is the rule node that would place it, as File's.
+	Node string `json:"node,omitempty"`
 }
 
 // Clash is a path more than one PDF would land on.
@@ -499,7 +504,7 @@ func build(v View, items []tree.Item, types Types, watch string) (Plan, []Explan
 				x.Steps = r.steps
 			}
 			if len(r.lacking) > 0 || len(r.unordered) > 0 {
-				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: r.lacking, Fields: FieldsFor(r.lacking), Unordered: r.unordered, UnorderedAt: r.unorderedAt})
+				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: r.lacking, Fields: FieldsFor(r.lacking), Unordered: r.unordered, UnorderedAt: r.unorderedAt, Node: strings.TrimSuffix(where, ".")})
 				if x != nil {
 					x.Result, x.Lacking = Lacking, slices.Clone(r.lacking)
 					for _, order := range slices.Sorted(maps.Keys(r.unordered)) {
@@ -511,7 +516,7 @@ func build(v View, items []tree.Item, types Types, watch string) (Plan, []Explan
 			if x != nil {
 				x.Result, x.placed = Placed, len(placed)
 			}
-			placed = append(placed, File{Path: name, Item: item.ID, Digest: rev.Digest, Revision: i + 1})
+			placed = append(placed, File{Path: name, Item: item.ID, Digest: rev.Digest, Revision: i + 1, Node: strings.TrimSuffix(where, ".")})
 		}
 	}
 
