@@ -29,7 +29,9 @@ export function setup(options) {
   if (options.onChange) changed = options.onChange;
 }
 
-// fill shows v's if, selection, file, children and orders.
+// fill shows v's if, selection, file, children and orders. It settles
+// once the server has parsed every path and file, when read() stops
+// keeping orders nothing numbers.
 export function fill(v) {
   $("if").value = v.if || "";
   checkIf($("if"), $("if-error"));
@@ -44,18 +46,19 @@ export function fill(v) {
     exclude: !!n.exclude, order: clone(n.order), numbers: clone(n.numbers), unnumbered: clone(n.unnumbered), ofs: [], error: "", ifError: "" });
   nodes = (v.children || []).map(take);
   drawNodes();
-  every(nodes).forEach(parseNode);
+  const parses = every(nodes).map(parseNode);
   drawOrder();
   drawPath();
   // The file goes in its box for the server to read; its rows then replace
   // the default ones.
   root.path = v.path || "";
   $("root-path").value = root.path;
-  parseNode(root);
+  parses.push(parseNode(root));
   if (v.file) {
     $("layout-text").value = v.file;
-    typed();
+    parses.push(typed());
   }
+  return Promise.all(parses);
 }
 
 // skipItem leaves an Item out, by adding not id is <id> to the rule's if.
@@ -892,7 +895,7 @@ function orderList(s, key, rest) {
       })),
       hidden ? el("p", { className: "template-sub", textContent: hidden + (hidden === 1 ? " value no Item this rule picks has is" : " values no Item this rule picks has are") + " kept in the order, hidden: " + values.filter((_, i) => !shown.includes(i)).join(", ") }) : null,
       unlisted.length ? el("div", { className: "order-add" }, el("span", { className: "order-add-label", textContent: "Not numbered" }),
-        ...unlisted.map((v) => el("button", { type: "button", className: "order-chip", textContent: "+ " + v, title: "Number it last", onclick: () => set([...values, v]) })))
+        ...unlisted.map((v) => el("button", { type: "button", className: "order-chip", textContent: "+ " + v, title: "Number " + v + " last", onclick: () => set([...values, v]) })))
         : null,
     ].filter(Boolean));
   };

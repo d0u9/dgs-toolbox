@@ -321,8 +321,10 @@ const columnWidth = (id, fallback) => { try { return Number(localStorage.getItem
 // tableColumns is the list's columns for the Items shown, in order: the
 // thumbnail and star, the Item's name as its card carries it, the type when more than
 // one is shown, the field columns tableKeys gives, Expiry when any of them
-// has something to say there, when each was added, and its revisions. Each
-// says how its cell is drawn.
+// has something to say there, when each was added, and its revisions, then
+// an empty one taking whatever width the list has left, so every other column
+// is drawn exactly as wide as its <col> says and a drag starts where the edge
+// is. Each says how its cell is drawn.
 function tableColumns(items) {
   const capital = (k) => k[0].toUpperCase() + k.slice(1);
   const added = (item) => new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString();
@@ -343,18 +345,23 @@ function tableColumns(items) {
         cell: (item) => el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))) },
     { id: "added", text: "Added", sort: "added", width: 100, cell: (item) => el("td", { className: "numeric" }, added(item)) },
     { id: "revisions", text: "Rev.", title: "Revisions", sort: "revisions", width: 56, cell: (item) => el("td", { className: "numeric" }, String(item.revisions.length)) },
+    { id: "fill", text: "", fixed: true, cell: () => el("td", {}) },
   ].filter(Boolean);
 }
 function drawHead(columns) {
   const sort = $("view-sort").value, asc = direction() === "asc";
   const cols = columns.map((c) => el("col", {}));
-  const total = () => cols.reduce((sum, col) => sum + parseFloat(col.style.width), 0);
+  const total = () => cols.reduce((sum, col) => sum + (parseFloat(col.style.width) || 0), 0);
   const fit = () => { $("table").style.width = total() + "px"; };
-  columns.forEach((c, n) => { cols[n].style.width = columnWidth(c.id, c.width) + "px"; });
+  columns.forEach((c, n) => { if (c.width) cols[n].style.width = columnWidth(c.id, c.width) + "px"; });
   $("table-cols").replaceChildren(...cols);
   fit();
   $("table-head").replaceChildren(...columns.map((c, n) => {
+    // Each header above the one after it, so the handle reaching past its
+    // right edge is not covered by the next header: the edge is caught from
+    // either side.
     const th = el("th", {});
+    th.style.zIndex = String(columns.length - n);
     if (c.title || c.about) tooltip(th, [c.title || c.text, c.about]);
     if (c.sort) {
       const on = sort === c.sort;
