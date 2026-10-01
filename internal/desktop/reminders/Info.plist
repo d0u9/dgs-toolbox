@@ -10,5 +10,9 @@
 	<string>dgs creates reminders from the Captures you organize.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>dgs creates reminders from the Captures you organize, and checks a Capture is not already one.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>dgs reads your location when you run geo location.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>dgs reads your location when you run geo location.</string>
 </dict>
 </plist>
