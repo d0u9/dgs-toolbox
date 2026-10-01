@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "timelines": {
+    "locations": {
+      "note": "Timelines/Locations.md",
+      "archive": "Timelines/Locations",
+      "cssclass": "dgs-timeline",
+      "title": "Locations",
+      "template": "location-entry.md"
+    }
+  }
+}

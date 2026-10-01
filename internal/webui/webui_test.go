@@ -127,6 +127,11 @@ func TestPagesUseDeclaredTokens(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		// The plugins dgs carries style another application's pages, with
+		// that application's tokens.
+		if d.IsDir() && path == filepath.Join(root, "internal", "plugins", "bundled") {
+			return filepath.SkipDir
+		}
 		if d.IsDir() || filepath.Ext(path) != ".css" || strings.Contains(path, "vendor") {
 			return nil
 		}

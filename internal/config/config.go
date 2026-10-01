@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -207,9 +208,34 @@ type Plugins struct {
 // PluginsObsidian lists the vaults the Obsidian plugins are checked and
 // installed in when a run names none. Each is a vault's own folder, the one
 // holding its configuration folders; a leading ~ is the home directory.
+// Folders and Timelines are paths inside every vault.
 type PluginsObsidian struct {
-	Vaults []string `json:"vaults"`
+	Vaults    []string               `json:"vaults"`
+	Folders   PluginsObsidianFolders `json:"folders"`
+	Timelines string                 `json:"timelines"`
 }
+
+// PluginsObsidianFolders are the vault folders the scripts and templates dgs
+// carries are installed into, each relative to the vault. dgs owns the files
+// it writes there and nothing else.
+type PluginsObsidianFolders struct {
+	// Public is the scripts every caller shares: Templater's user scripts
+	// folder, also loaded by the QuickAdd scripts and the plugin.
+	Public string `json:"public"`
+	// QuickAdd is the scripts QuickAdd choices run.
+	QuickAdd string `json:"quickadd"`
+	// Templates is the Templater templates, inside Templater's templates folder.
+	Templates string `json:"templates"`
+}
+
+// The vault paths dgs plugins installs into when plugins/config.json names
+// none.
+const (
+	DefaultPluginsObsidianPublic    = "99 Toolkit/91 Scripts/01 DGS/00 Public"
+	DefaultPluginsObsidianQuickAdd  = "99 Toolkit/91 Scripts/01 DGS/02 QuickAdd"
+	DefaultPluginsObsidianTemplates = "99 Toolkit/01 Templates/01 DGS"
+	DefaultPluginsObsidianTimelines = "99 Toolkit/timelines.json"
+)
 
 // Conf configures dgs conf export: where the generator root and its secrets
 // are, and where the destination form opens. See
@@ -273,7 +299,15 @@ func Default() Config {
 	}, Doc: Doc{Trees: map[string]string{}, Web: defaultWeb(docServers)}, Capture: Capture{
 		Scan: CaptureScan{IndexFile: "index.json"},
 	}, Geo: Geo{Web: defaultWeb(geoServers), GPX: GeoGPX{Tiles: []GeoGPXTile{}}},
-		Plugins: Plugins{Obsidian: PluginsObsidian{Vaults: []string{}}}}
+		Plugins: Plugins{Obsidian: PluginsObsidian{
+			Vaults: []string{},
+			Folders: PluginsObsidianFolders{
+				Public:    DefaultPluginsObsidianPublic,
+				QuickAdd:  DefaultPluginsObsidianQuickAdd,
+				Templates: DefaultPluginsObsidianTemplates,
+			},
+			Timelines: DefaultPluginsObsidianTimelines,
+		}}}
 }
 
 // CaptureArchiveFolders are the two directories Archive files into: where
@@ -665,6 +699,41 @@ func checkPlugins(c *Config) error {
 			fmt.Sprintf("obsidian.vaults[%d]", index): &c.Plugins.Obsidian.Vaults[index],
 		}); err != nil {
 			return err
+		}
+	}
+	obsidian := c.Plugins.Obsidian
+	for key, value := range map[string]string{
+		"obsidian.folders.public": obsidian.Folders.Public, "obsidian.folders.quickadd": obsidian.Folders.QuickAdd,
+		"obsidian.folders.templates": obsidian.Folders.Templates, "obsidian.timelines": obsidian.Timelines,
+	} {
+		if err := checkVaultPath(value); err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+	}
+	folders := map[string]string{"public": obsidian.Folders.Public, "quickadd": obsidian.Folders.QuickAdd, "templates": obsidian.Folders.Templates}
+	for name, folder := range folders {
+		for other, inside := range folders {
+			if name != other && (folder == inside || strings.HasPrefix(inside, folder+"/")) {
+				return fmt.Errorf("obsidian.folders.%s %q holds obsidian.folders.%s %q; each needs a folder of its own", name, folder, other, inside)
+			}
+		}
+	}
+	return nil
+}
+
+// checkVaultPath refuses a path that is not a plain path inside a vault:
+// written with forward slashes, relative, and not climbing out or into a
+// hidden folder, where Obsidian would not see it.
+func checkVaultPath(value string) error {
+	if value == "" {
+		return errors.New("must not be empty")
+	}
+	if strings.Contains(value, "\\") || path.IsAbs(value) || path.Clean(value) != value {
+		return fmt.Errorf("must be a clean path relative to the vault, written with /, got %q", value)
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if strings.HasPrefix(segment, ".") {
+			return fmt.Errorf("must not climb out of the vault or into a hidden folder, got %q", value)
 		}
 	}
 	return nil

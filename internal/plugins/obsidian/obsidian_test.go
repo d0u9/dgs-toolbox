@@ -1,6 +1,8 @@
 package obsidian
 
 import (
+	"dgs-toolbox/internal/plugins"
+
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,9 +30,13 @@ func TestEveryConfigurationFolderIsATarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(targets) != 2 {
+	if len(targets) != 3 {
 		t.Fatalf("%d targets: %+v", len(targets), targets)
 	}
+	if files := targets[2]; files.Kind != plugins.KindFiles || files.Dir != vault {
+		t.Errorf("the vault's own target: %+v", files)
+	}
+	targets = targets[:2]
 	want := []struct {
 		dir     string
 		enabled bool

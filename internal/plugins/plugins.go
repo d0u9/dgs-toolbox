@@ -1,7 +1,9 @@
 // Package plugins installs the plugins dgs carries into the applications they
 // extend, and says what is installed where. A plugin is a set of files that
-// lands in one folder of its host application; which folders those are is the
-// host's to say (see the obsidian package), and everything after that —
+// lands in one folder of its host application — a plugin in the host's own
+// sense, or scripts and templates the host's other plugins read from a folder
+// of the user's; which folders those are is the host's to say (see the
+// obsidian package), and everything after that —
 // comparing, writing, removing — is the same for every host and lives here.
 //
 // What is installed is told apart from what dgs carries by content, not by a
@@ -34,6 +36,11 @@ type Plugin struct {
 	Host string
 	// ID is its folder name in the host, and the id the host knows it by.
 	ID string
+	// Kind is the kind of Target it goes into; empty is KindPlugins.
+	Kind string
+	// Folder is where it goes inside the target's Dir, written with /; empty
+	// is its ID.
+	Folder string
 	// Description says what it does, for a listing.
 	Description string
 	// Files builds what is installed, by path relative to the plugin's folder.
@@ -44,15 +51,29 @@ type Plugin struct {
 // Name is how a plugin is named on the command line: "obsidian/dgs-toolbox".
 func (p Plugin) Name() string { return p.Host + "/" + p.ID }
 
-// Target is one place a host keeps its plugins: an Obsidian vault's
+// The kinds of Target. A plugin goes into every target of its kind.
+const (
+	// KindPlugins is a folder each plugin gets a folder of its own in, by id:
+	// an Obsidian configuration folder's plugins/.
+	KindPlugins = "plugins"
+	// KindFiles is a folder of the user's that a plugin's files go into at its
+	// Folder: an Obsidian vault.
+	KindFiles = "files"
+)
+
+// Target is one place a host keeps plugins: an Obsidian vault's
 // configuration folder, for example.
 type Target struct {
 	// Host is the application the place belongs to.
 	Host string
+	// Kind is KindPlugins or KindFiles.
+	Kind string
 	// Place names it for a reader.
 	Place string
 	// Dir is the folder each plugin gets a folder of its own in.
 	Dir string
+	// Root is the folder of the user's the place belongs to: the vault.
+	Root string
 	// Enabled says whether the host has the plugin with this id switched on.
 	// Nil when the host keeps no such record.
 	Enabled func(id string) (bool, error)
@@ -102,8 +123,22 @@ type Status struct {
 	Enabled *bool
 }
 
+// KindOf is the kind of target the plugin goes into.
+func (p Plugin) KindOf() string {
+	if p.Kind == "" {
+		return KindPlugins
+	}
+	return p.Kind
+}
+
 // Dir is the plugin's own folder in the target.
-func Dir(target Target, plugin Plugin) string { return filepath.Join(target.Dir, plugin.ID) }
+func Dir(target Target, plugin Plugin) string {
+	folder := plugin.Folder
+	if folder == "" {
+		folder = plugin.ID
+	}
+	return filepath.Join(target.Dir, filepath.FromSlash(folder))
+}
 
 // Version is the digest of a set of files: the first 12 hex digits of the
 // SHA-256 of every path and its content's SHA-256, in path order. Two installs
@@ -143,7 +178,7 @@ func Inspect(target Target, plugin Plugin) (Status, error) {
 	} else {
 		status.Bundled = Version(files)
 	}
-	if target.Enabled != nil {
+	if target.Enabled != nil && plugin.KindOf() == KindPlugins {
 		enabled, err := target.Enabled(plugin.ID)
 		if err != nil {
 			return status, err
@@ -163,6 +198,12 @@ func Inspect(target Target, plugin Plugin) (Status, error) {
 		return status, fmt.Errorf("%s is a file, where the plugin's folder belongs", dir)
 	}
 	record, err := readRecord(dir)
+	if errors.Is(err, fs.ErrNotExist) && plugin.KindOf() == KindFiles {
+		// A folder of the user's may hold their own files beside dgs's; the
+		// install refuses only to write over one of them (see clashing).
+		status.State = Missing
+		return status, nil
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -253,6 +294,13 @@ func Install(target Target, plugin Plugin, by string, force bool, now time.Time)
 		return status, err
 	}
 	dir := Dir(target, plugin)
+	if !force {
+		if clashes, err := clashing(dir, files, status.Installed); err != nil {
+			return status, err
+		} else if len(clashes) > 0 {
+			return status, fmt.Errorf("%s in %s would replace %s, which dgs did not write; rename it, or --force replaces it", plugin.Name(), target.Place, strings.Join(clashes, ", "))
+		}
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return status, err
 	}
@@ -280,6 +328,31 @@ func Install(target Target, plugin Plugin, by string, force bool, now time.Time)
 		return status, err
 	}
 	return Inspect(target, plugin)
+}
+
+// clashing lists the files an install would write over that no earlier
+// install wrote and that hold something else: a file of the user's that has
+// the same name as one dgs carries.
+func clashing(dir string, files map[string][]byte, installed *Record) ([]string, error) {
+	var clashes []string
+	for _, path := range sortedKeys(files) {
+		if installed != nil {
+			if _, ok := installed.Files[path]; ok {
+				continue
+			}
+		}
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(path)))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if digest(data) != digest(files[path]) {
+			clashes = append(clashes, path)
+		}
+	}
+	return clashes, nil
 }
 
 // Uninstall removes the files an install wrote, and its record. The folder

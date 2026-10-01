@@ -1,0 +1,20 @@
+{
+  "op": "tidy",
+  "args": {
+    "note": "@note.md",
+    "archives": [],
+    "current": "2026",
+    "weekdays": ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
+    "offset": "+10",
+    "header": {"cssclass": "dgs-timeline", "title": "家庭时间线", "source": "Timeline.md"},
+    "undated": "无日期"
+  },
+  "want": {
+    "note": "@note.md",
+    "archives": [],
+    "stats": {
+      "read": 1, "files": 1, "duplicates": 0, "reformatted": 0, "guessedOffset": 0,
+      "untimed": 0, "undated": 0, "kept": 1, "archived": {}
+    }
+  }
+}

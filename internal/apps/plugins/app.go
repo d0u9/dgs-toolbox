@@ -23,6 +23,7 @@ import (
 var (
 	vaultFlag = tui.ActionFlag{Name: "vault", Repeatable: true, Usage: "an Obsidian vault to work on, instead of plugins.obsidian.vaults; may be given more than once"}
 	forceFlag = tui.ActionFlag{Name: "force", Bool: true, Usage: "replace or remove files changed since dgs installed them"}
+	fromFlag  = tui.ActionFlag{Name: "from", Usage: "a folder dgs plugins export wrote: start from its files instead of the ones dgs carries"}
 )
 
 // New returns the Plugins app definition. It has no TUI: every part of it is
@@ -31,7 +32,7 @@ func New() tui.App {
 	return tui.App{
 		ID:          "plugins",
 		Name:        "Plugins",
-		Description: "Plugins dgs carries for other applications: status, install, update, uninstall",
+		Description: "Plugins dgs carries for other applications: status, install, update, uninstall, bootstrap, export",
 		Actions: []tui.Action{{
 			ID:          "status",
 			Usage:       "[<plugin>...]",
@@ -69,20 +70,35 @@ func New() tui.App {
 			RunWithConfig: func(_ io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {
 				return run(out, args, flags, global, "uninstall")
 			},
+		}, {
+			ID:          "bootstrap",
+			Description: "Set up a vault: install everything dgs carries, write the starting files it lacks, and list what is left to do by hand. Overwrites nothing.",
+			Flags:       []tui.ActionFlag{vaultFlag, fromFlag},
+			RunWithConfig: func(_ io.Reader, out io.Writer, _ []string, flags map[string]string, global config.Config) error {
+				return bootstrap(out, flags, global)
+			},
+		}, {
+			ID:          "export",
+			Usage:       "<dir>",
+			Description: "Copy a vault's starting files, as they are now, into a folder, for someone else's bootstrap --from.",
+			MinArgs:     1,
+			MaxArgs:     1,
+			Flags:       []tui.ActionFlag{vaultFlag, forceFlag},
+			RunWithConfig: func(_ io.Reader, out io.Writer, args []string, flags map[string]string, global config.Config) error {
+				return export(out, args[0], flags, global)
+			},
 		}},
 	}
 }
 
 func run(out io.Writer, args []string, flags map[string]string, global config.Config, action string) error {
-	chosen, err := choose(bundled.All(), args)
+	chosen, err := choose(bundled.All(pathsOf(global)), args)
 	if err != nil {
 		return err
 	}
-	var vaults []string
-	if raw := flags["vault"]; raw != "" {
-		if err := json.Unmarshal([]byte(raw), &vaults); err != nil {
-			return err
-		}
+	vaults, err := vaultsOf(flags, global)
+	if err != nil {
+		return err
 	}
 	force := flags["force"] == "true"
 	statuses, err := statusesOf(chosen, vaults, global)
@@ -109,6 +125,32 @@ func run(out io.Writer, args []string, flags map[string]string, global config.Co
 	}
 	write(out, statuses)
 	return errors.Join(failures...)
+}
+
+// pathsOf is where in a vault the Obsidian files go.
+func pathsOf(global config.Config) bundled.Paths {
+	obsidian := global.Plugins.Obsidian
+	return bundled.Paths{
+		Public: obsidian.Folders.Public, QuickAdd: obsidian.Folders.QuickAdd,
+		Templates: obsidian.Folders.Templates, Timelines: obsidian.Timelines,
+	}
+}
+
+// vaultsOf is the vaults named with --vault, else the configured ones.
+func vaultsOf(flags map[string]string, global config.Config) ([]string, error) {
+	var vaults []string
+	if raw := flags["vault"]; raw != "" {
+		if err := json.Unmarshal([]byte(raw), &vaults); err != nil {
+			return nil, err
+		}
+	}
+	if len(vaults) == 0 {
+		vaults = global.Plugins.Obsidian.Vaults
+	}
+	if len(vaults) == 0 {
+		return nil, errors.New("no Obsidian vault: name one with --vault, or list them in obsidian.vaults in plugins/config.json")
+	}
+	return vaults, nil
 }
 
 // choose is the plugins named, by "host/id" or by id alone when only one host
@@ -151,6 +193,9 @@ func statusesOf(chosen []plugins.Plugin, vaults []string, global config.Config) 
 			targets[plugin.Host] = found
 		}
 		for _, target := range found {
+			if target.Kind != plugin.KindOf() {
+				continue
+			}
 			status, err := plugins.Inspect(target, plugin)
 			if err != nil {
 				return nil, err
@@ -165,12 +210,6 @@ func statusesOf(chosen []plugins.Plugin, vaults []string, global config.Config) 
 func targetsOf(host string, vaults []string, global config.Config) ([]plugins.Target, error) {
 	switch host {
 	case obsidian.Host:
-		if len(vaults) == 0 {
-			vaults = global.Plugins.Obsidian.Vaults
-		}
-		if len(vaults) == 0 {
-			return nil, errors.New("no Obsidian vault: name one with --vault, or list them in obsidian.vaults in plugins/config.json")
-		}
 		var targets []plugins.Target
 		for _, vault := range vaults {
 			found, err := obsidian.Targets(vault)

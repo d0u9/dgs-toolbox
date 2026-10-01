@@ -22,6 +22,12 @@ runs compiled to WebAssembly from `cmd/timeline-wasm`. The cases under
 test-timeline` runs them natively, in the WebAssembly build, and through the
 plugin's own `engine.js`.
 
+The file can be edited by hand, or from the plugin: its settings, under
+Timeline, list the timelines and add, change and remove them. The plugin has
+the engine read what it is about to write first and writes nothing the engine
+refuses; it writes the file back in its own layout, timelines by name, with
+default values left out, so hand-made spacing and key order are not kept.
+
 ```json
 {
   "version": 1,
@@ -29,7 +35,7 @@ plugin's own `engine.js`.
     "locations": {
       "note": "88 Inbox/06 Locations.md",
       "archive": "88 Inbox/06 Locations",
-      "cssclass": "locations",
+      "cssclass": "dgs-timeline",
       "title": "位置速记",
       "template": "location-entry.md"
     },
@@ -37,8 +43,8 @@ plugin's own `engine.js`.
       "note": "03 Family/00 Timeline/Timeline.md",
       "archive": "03 Family/00 Timeline/Archive",
       "split": "year",
-      "cssclass": "timeline",
-      "title": "时间线",
+      "cssclass": "dgs-timeline",
+      "title": "家庭时间线",
       "contentRequired": true
     }
   }
@@ -55,7 +61,7 @@ other than `1`, is refused rather than ignored, by both programs.
 | `timelines.<name>.note` | The running note, relative to the vault. | none — required |
 | `timelines.<name>.archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`, relative to the vault. | empty — the note's own folder |
 | `timelines.<name>.split` | What stays in the running note. `year` keeps the current year and archives the rest; it is the only value so far. | `year` |
-| `timelines.<name>.cssclass` | The class written into a year's archive, for the vault's stylesheet. | empty |
+| `timelines.<name>.cssclass` | The class written into a year's archive, for the vault's stylesheet. `dgs-timeline` is the one the plugin's `styles.css` draws as a timeline. | empty |
 | `timelines.<name>.title` | What the list is called in an archive's introduction: `2026 年的<title>`. | empty |
 | `timelines.<name>.template` | The entry template `dgs capture` renders a Capture with, by filename in its template directory. The plugin does not use it. | empty — `timeline-entry.md`, else `location-entry.md` |
 | `timelines.<name>.contentRequired` | Whether an entry needs text. A place is worth recording unannotated; an event is not. | `false` |
