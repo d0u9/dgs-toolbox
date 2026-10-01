@@ -179,12 +179,13 @@ func decodeStrict(n *yaml.Node, out any) error {
 	return decoder.Decode(out)
 }
 
-// withHead fills what a rule file may leave out.
+// withHead fills what a rule file may leave out, and names its orders as
+// they are named now.
 func withHead(r view.View) view.View {
 	if r.Selection == "" {
 		r.Selection = view.Head
 	}
-	return r
+	return r.Upgrade()
 }
 
 // Parse reads one Outline file that holds its rules whole.
@@ -539,6 +540,17 @@ func Group(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names vi
 		}
 	}
 	return Grouping{Combined: combined, Lost: lost, Root: root}, nil
+}
+
+// Explain is how o places each PDF of the Item id, or why it does not: by
+// each rule, planned with its Snapshots as Group plans them, and by each
+// Snapshot holding it.
+func Explain(o Outline, snapshots []snapshot.Snapshot, items []tree.Item, names view.Types, id string) ([]view.Explanation, error) {
+	fixed, _, err := Mounted(o, snapshots, items)
+	if err != nil {
+		return nil, err
+	}
+	return view.ExplainWith(o.Rules, fixed, items, names, id)
 }
 
 // Mounted is o's Snapshots' files as items have them now, each at its path

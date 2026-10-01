@@ -53,7 +53,8 @@ async function open(o) {
 
 // View reads the Outline shown as a folder, and nothing else. It is in the
 // address, ?view, so a link or a reload opens on it.
-const view = outlineView({ state: () => state, preview, onLeave: () => leaveView() });
+const view = outlineView({ state: () => state, preview, onLeave: () => leaveView(),
+  explain: (file) => post("/api/outlines/explain", { outline: shown, item: file.item }) });
 function enterView() {
   if (!shown || !grouping) return;
   view.show(shown.name, grouping.root);

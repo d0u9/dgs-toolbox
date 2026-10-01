@@ -472,10 +472,10 @@ export function planNodes(state, answer) {
   // order, not in the Item.
   const missingWhy = (m, path) => {
     const unordered = m.unordered || {};
-    const absent = m.keys.filter((k) => !(k in unordered));
+    const absent = m.keys || [];
     return [
       ...(absent.length ? [" lacks ", path(absent.join(", "))] : []),
-      ...Object.entries(unordered).flatMap(([k, v], i) => [absent.length || i ? "; " : " ", "has no number for ", path(v), " in the order of ", path(k)]),
+      ...Object.entries(unordered).flatMap(([k, v], i) => [absent.length || i ? "; " : " ", "has no number for ", path(v), " in the order ", path(k + (m.unorderedAt?.[k] ? " (children " + m.unorderedAt[k] + ")" : ""))]),
     ];
   };
   const path = (p) => el("span", { className: "mono" }, p);

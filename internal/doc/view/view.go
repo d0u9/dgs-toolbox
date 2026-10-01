@@ -9,8 +9,10 @@ import (
 	"dgs-toolbox/internal/doc/expr"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -75,19 +77,6 @@ type View struct {
 	Inherit []string `yaml:"inherit,omitempty" json:"inherit,omitempty"`
 	// Dedupe is empty (refuse) or DedupeNumber.
 	Dedupe string `yaml:"dedupe,omitempty" json:"dedupe,omitempty"`
-	// Order lists, per numbered name, the names {#} numbers from 01, in
-	// order. A numbered name is named by what follows its {#}, as written:
-	// {#}-{name|type:zh}[-{level}].{ext} is numbered from the order named
-	// {name|type:zh}[-{level}]. One order serves the whole rule.
-	Order map[string][]string `yaml:"order,omitempty" json:"order,omitempty"`
-	// Numbers sets, per order and name in it, the number that name gets in
-	// place of the next: the names after it count on from there, so
-	// setting the third of four to 6 numbers them 1, 2, 6, 7.
-	Numbers map[string]map[string]int `yaml:"numbers,omitempty" json:"numbers,omitempty"`
-	// Unnumbered lists, per order, the names {#} leaves unnumbered: their
-	// number and the text straight after {#} are not written, and they
-	// take no number, so the next name counts on from the one before.
-	Unnumbered map[string][]string `yaml:"unnumbered,omitempty" json:"unnumbered,omitempty"`
 }
 
 // Node is a rule, or one of its children.
@@ -106,18 +95,43 @@ type Node struct {
 	// Children place some of what the node takes: the first whose If an
 	// Item meets. One none takes the node places itself.
 	Children []Node `yaml:"children,omitempty" json:"children,omitempty"`
+	// Exclude leaves what a child takes out of the tree. A child that
+	// excludes has nothing else of its own.
+	Exclude bool `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+	// Order lists, per order, the names {#} numbers from 01, in order. A
+	// {#} takes its order from the nearest node that lists it, its own
+	// node first, then up: a child lists its own to number its Items apart
+	// from the rest of the rule. An order is named for the first key after
+	// its {#}: {#}-{name|type:zh}[-{level}].{ext} is numbered from the
+	// order name. {#other} names it other instead.
+	Order map[string][]string `yaml:"order,omitempty" json:"order,omitempty"`
+	// Numbers sets, per order and name in it, the number that name gets in
+	// place of the next: the names after it count on from there, so
+	// setting the third of four to 6 numbers them 1, 2, 6, 7.
+	Numbers map[string]map[string]int `yaml:"numbers,omitempty" json:"numbers,omitempty"`
+	// Unnumbered lists, per order, the names {#} leaves unnumbered: their
+	// number and the text straight after {#} are not written, and they
+	// take no number, so the next name counts on from the one before.
+	Unnumbered map[string][]string `yaml:"unnumbered,omitempty" json:"unnumbered,omitempty"`
 }
 
-// Out reports whether the node leaves what it takes out of the tree: a
-// child with no path, file or children.
-func (n Node) Out() bool { return n.Path == "" && n.File == "" && len(n.Children) == 0 }
+// Out reports whether the node leaves what it takes out of the tree.
+func (n Node) Out() bool { return n.Exclude }
+
+// own reports whether a child sets anything of its own besides its If.
+func (n Node) own() bool {
+	return n.Path != "" || n.File != "" || len(n.Children) > 0 || n.Default != nil || len(n.Order) > 0 || len(n.Numbers) > 0 || len(n.Unnumbered) > 0
+}
 
 // walk calls fn on v's node and each below it, parents first, with where
-// it is (children 2.1: ) and the layout it places by: its path after its
-// parents', then the nearest file. A node that leaves out has none.
-func (v View) walk(fn func(where string, n Node, layout string, root bool) error) error {
-	var visit func(where string, n Node, path []string, file string, root bool) error
-	visit = func(where string, n Node, path []string, file string, root bool) error {
+// it is (children 2.1: ), the layout it places by — its path after its
+// parents', then the nearest file — and the nodes from the rule down to
+// it. A node that leaves out has no layout.
+func (v View) walk(fn func(where string, n Node, layout string, up []Node) error) error {
+	var visit func(where string, n Node, path []string, file string, up []Node) error
+	visit = func(where string, n Node, path []string, file string, up []Node) error {
+		up = append(slices.Clone(up), n)
+		root := len(up) == 1
 		if n.Path != "" {
 			path = append(slices.Clone(path), strings.Trim(n.Path, "/"))
 		}
@@ -128,7 +142,7 @@ func (v View) walk(fn func(where string, n Node, layout string, root bool) error
 		if root || !n.Out() {
 			layout = strings.Join(append(slices.Clone(path), file), "/")
 		}
-		if err := fn(where, n, layout, root); err != nil {
+		if err := fn(where, n, layout, up); err != nil {
 			return err
 		}
 		for i, c := range n.Children {
@@ -138,13 +152,166 @@ func (v View) walk(fn func(where string, n Node, layout string, root bool) error
 			} else {
 				at += "."
 			}
-			if err := visit(fmt.Sprintf("%s%d: ", at, i+1), c, path, file, false); err != nil {
+			if err := visit(fmt.Sprintf("%s%d: ", at, i+1), c, path, file, up); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	return visit("", v.Node, nil, "", true)
+	return visit("", v.Node, nil, "", nil)
+}
+
+// Upgrade renames orders the way they were once named, by the whole rest
+// their {#} numbers as written, {name|type:zh}[-{level}], to the name they
+// have now, name. Once one order served a rule, so each moves to the node
+// nearest the rule that holds every {#} numbering its rest: two rests the
+// rule numbered apart stay apart. An order it cannot rename stays as it
+// was, for Validate to report.
+func (v View) Upgrade() View {
+	var old []string
+	for key := range v.Order {
+		if strings.ContainsAny(key, "{[") {
+			old = append(old, key)
+		}
+	}
+	if len(old) == 0 {
+		return v
+	}
+	slices.Sort(old)
+	type use struct {
+		at   []string
+		name string
+	}
+	uses := map[string][]use{}
+	_ = v.walk(func(where string, _ Node, layout string, _ []Node) error {
+		if parsed, err := Parse(layout); layout != "" && err == nil {
+			for _, c := range parsed.Counters() {
+				uses[c.Rest] = append(uses[c.Rest], use{branch(where), c.Of})
+			}
+		}
+		return nil
+	})
+	v.Order, v.Numbers, v.Unnumbered = maps.Clone(v.Order), maps.Clone(v.Numbers), maps.Clone(v.Unnumbered)
+	for _, key := range old {
+		found := uses[key]
+		if len(found) == 0 {
+			continue
+		}
+		name, at := found[0].name, found[0].at
+		for _, u := range found[1:] {
+			if u.name != name {
+				name = ""
+			}
+			n := 0
+			for n < len(at) && n < len(u.at) && at[n] == u.at[n] {
+				n++
+			}
+			at = at[:n]
+		}
+		if name == "" {
+			continue
+		}
+		node := &v.Node
+		for _, step := range at {
+			i, _ := strconv.Atoi(step)
+			node.Children = slices.Clone(node.Children)
+			node = &node.Children[i-1]
+		}
+		if _, taken := node.Order[name]; taken {
+			continue
+		}
+		list, numbers, skip := v.Order[key], v.Numbers[key], v.Unnumbered[key]
+		delete(v.Order, key)
+		delete(v.Numbers, key)
+		delete(v.Unnumbered, key)
+		node.Order = maps.Clone(node.Order)
+		if node.Order == nil {
+			node.Order = map[string][]string{}
+		}
+		node.Order[name] = list
+		if numbers != nil {
+			node.Numbers = maps.Clone(node.Numbers)
+			if node.Numbers == nil {
+				node.Numbers = map[string]map[string]int{}
+			}
+			node.Numbers[name] = numbers
+		}
+		if skip != nil {
+			node.Unnumbered = maps.Clone(node.Unnumbered)
+			if node.Unnumbered == nil {
+				node.Unnumbered = map[string][]string{}
+			}
+			node.Unnumbered[name] = skip
+		}
+	}
+	return v
+}
+
+// branch is where's children by number, 2.1 as [2 1]; none for the rule.
+func branch(where string) []string {
+	at := strings.TrimSuffix(strings.TrimPrefix(where, "children "), ": ")
+	if at == "" {
+		return nil
+	}
+	return strings.Split(at, ".")
+}
+
+// validOrders reports the first thing wrong with n's own orders.
+func (n Node) validOrders() error {
+	for key, values := range n.Order {
+		if len(values) == 0 {
+			return fmt.Errorf("order %s is empty", key)
+		}
+		for i, a := range values {
+			if strings.TrimSpace(a) == "" {
+				return fmt.Errorf("order %s has an empty value", key)
+			}
+			for _, b := range values[:i] {
+				if sameValue(a, b) {
+					return fmt.Errorf("order %s lists %s and %s, which are one value", key, b, a)
+				}
+			}
+		}
+	}
+	for key, set := range n.Numbers {
+		list, ok := n.Order[key]
+		if !ok {
+			return fmt.Errorf("numbers %s: order has no list for it", key)
+		}
+		for name, number := range set {
+			if place(list, name) == 0 || number < 0 {
+				return fmt.Errorf("numbers %s: %s must be in the order and numbered from 0", key, name)
+			}
+			if place(n.Unnumbered[key], name) > 0 {
+				return fmt.Errorf("numbers %s: %s is unnumbered", key, name)
+			}
+		}
+	}
+	for key, names := range n.Unnumbered {
+		list, ok := n.Order[key]
+		if !ok {
+			return fmt.Errorf("unnumbered %s: order has no list for it", key)
+		}
+		for _, name := range names {
+			if place(list, name) == 0 {
+				return fmt.Errorf("unnumbered %s: %s is not in the order", key, name)
+			}
+		}
+	}
+	for key, list := range n.Order {
+		numbers := Numbered(list, n.Numbers[key], n.Unnumbered[key])
+		last := -1
+		for i, number := range numbers {
+			if number == Unnumbered {
+				continue
+			}
+			if last >= 0 && number <= numbers[last] {
+				return fmt.Errorf("numbers %s: %s would be %d, not after %s's %d", key, list[i], number, list[last], numbers[last])
+			}
+			last = i
+		}
+	}
+	return nil
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -169,20 +336,32 @@ func (v View) Validate() error {
 	if v.Dedupe != "" && v.Dedupe != DedupeNumber {
 		return fmt.Errorf("view %s: dedupe %q: leave it out, or use number", v.Name, v.Dedupe)
 	}
-	var counters []Part
-	if err := v.walk(func(where string, n Node, layout string, root bool) error {
+	rests := map[string]string{} // by the node an order is in and its name, the rest it numbers
+	if err := v.walk(func(where string, n Node, layout string, up []Node) error {
 		if n.If != "" {
 			if _, err := expr.Parse(n.If); err != nil {
 				return fmt.Errorf("view %s: %sif: %w", v.Name, where, err)
 			}
 		}
+		if len(up) == 1 && n.Exclude {
+			return fmt.Errorf("view %s: exclude is for a child; a rule leaves out what its if does not take", v.Name)
+		}
 		for i, c := range n.Children {
 			if c.If == "" && i != len(n.Children)-1 {
 				return fmt.Errorf("view %s: %schild %d has no if, so it is the else and must come last", v.Name, where, i+1)
 			}
-			if c.If == "" && c.Out() {
+			if c.If == "" && c.Exclude {
 				return fmt.Errorf("view %s: %schild %d is an else that leaves everything out; give it a path or file", v.Name, where, i+1)
 			}
+			if c.Exclude && c.own() {
+				return fmt.Errorf("view %s: %schild %d excludes what it takes, so it has no path, file, children, default or order", v.Name, where, i+1)
+			}
+			if !c.Exclude && !c.own() {
+				return fmt.Errorf("view %s: %schild %d changes nothing: write exclude: true to leave its Items out, or give it a path, file or order", v.Name, where, i+1)
+			}
+		}
+		if err := n.validOrders(); err != nil {
+			return fmt.Errorf("view %s: %s%w", v.Name, where, err)
 		}
 		if layout == "" {
 			return nil
@@ -191,68 +370,25 @@ func (v View) Validate() error {
 		if err != nil {
 			return fmt.Errorf("view %s: %s%w", v.Name, where, err)
 		}
-		counters = append(counters, parsed.Counters()...)
+		// Each {#} needs an order, from its node or one above, and two
+		// numbering different names from one order would mix them.
+		for _, part := range parsed.Counters() {
+			at := len(up) - 1
+			for at >= 0 && len(up[at].Order[part.Of]) == 0 {
+				at--
+			}
+			if at < 0 {
+				return fmt.Errorf("view %s: %s{#} numbers %s, so order needs a list for %s", v.Name, where, part.Rest, part.Of)
+			}
+			key := strings.Join(branch(where)[:at], ".") + "\x00" + part.Of
+			if rest, ok := rests[key]; ok && rest != part.Rest {
+				return fmt.Errorf("view %s: %s{#} numbers %s and %s from one order %s; name one, as {#other}", v.Name, where, rest, part.Rest, part.Of)
+			}
+			rests[key] = part.Rest
+		}
 		return nil
 	}); err != nil {
 		return err
-	}
-	for key, values := range v.Order {
-		if len(values) == 0 {
-			return fmt.Errorf("view %s: order %s is empty", v.Name, key)
-		}
-		for i, a := range values {
-			if strings.TrimSpace(a) == "" {
-				return fmt.Errorf("view %s: order %s has an empty value", v.Name, key)
-			}
-			for _, b := range values[:i] {
-				if sameValue(a, b) {
-					return fmt.Errorf("view %s: order %s lists %s and %s, which are one value", v.Name, key, b, a)
-				}
-			}
-		}
-	}
-	for key, set := range v.Numbers {
-		list, ok := v.Order[key]
-		if !ok {
-			return fmt.Errorf("view %s: numbers %s: order has no list for it", v.Name, key)
-		}
-		for name, n := range set {
-			if place(list, name) == 0 || n < 0 {
-				return fmt.Errorf("view %s: numbers %s: %s must be in the order and numbered from 0", v.Name, key, name)
-			}
-			if place(v.Unnumbered[key], name) > 0 {
-				return fmt.Errorf("view %s: numbers %s: %s is unnumbered", v.Name, key, name)
-			}
-		}
-	}
-	for key, names := range v.Unnumbered {
-		list, ok := v.Order[key]
-		if !ok {
-			return fmt.Errorf("view %s: unnumbered %s: order has no list for it", v.Name, key)
-		}
-		for _, name := range names {
-			if place(list, name) == 0 {
-				return fmt.Errorf("view %s: unnumbered %s: %s is not in the order", v.Name, key, name)
-			}
-		}
-	}
-	for key, list := range v.Order {
-		numbers := Numbered(list, v.Numbers[key], v.Unnumbered[key])
-		last := -1
-		for i, n := range numbers {
-			if n == Unnumbered {
-				continue
-			}
-			if last >= 0 && n <= numbers[last] {
-				return fmt.Errorf("view %s: numbers %s: %s would be %d, not after %s's %d", v.Name, key, list[i], n, list[last], numbers[last])
-			}
-			last = i
-		}
-	}
-	for _, part := range counters {
-		if len(v.Order[part.Of]) == 0 {
-			return fmt.Errorf("view %s: {#} numbers %s, so order needs a list for %s", v.Name, part.Of, part.Of)
-		}
 	}
 	for _, link := range v.Inherit {
 		if !namePattern.MatchString(link) {
@@ -273,27 +409,31 @@ func (v View) Validate() error {
 // the end of a folder or file name, is a folder of its own:
 // license[/{language}]/x puts a translation in license/en/ and the
 // original in license/. [/{#}-{language}] numbers that folder, 10-en, from
-// the order named {language}. A folder group may add several folders, all
+// the order named language. A folder group may add several folders, all
 // or none: [/bill/{service}] puts a bill in bill/水/.
 //
 // {#} writes the place, as 01, of the name the rest of its folder or file
-// name makes, in the View's order named that rest as written. The rest
-// leaves out the text straight after {#}, a folder group ending the name,
-// and a file's .{ext}: in {#}-{name}[-{level}].{ext} it is
-// {name}[-{level}], so each name and level together is numbered.
+// name makes, in the order named for the first key of that rest, or as
+// {#label} names it. The rest leaves out the text straight after {#}, a
+// folder group ending the name, and a file's .{ext}: in
+// {#}-{name}[-{level}].{ext} it is {name}[-{level}], so each name and
+// level together is numbered, in the order name.
 type Part struct {
 	Text   string `json:"text,omitempty"`
 	Key    string `json:"key,omitempty"`
 	Format string `json:"format,omitempty"`
-	// Counter is {#}. Of is the rest it numbers as written, which names
-	// its order, and From and To are that rest's parts beside it.
+	// Counter is {#}. Of names its order, Label as {#label} wrote it, Rest
+	// is the rest it numbers as written, and From and To are that rest's
+	// parts beside it.
 	Counter bool `json:"counter,omitempty"`
 	// End is {/#}: the number's rest stops before it, so what follows is
 	// written but not numbered. It writes nothing itself.
-	End  bool   `json:"end,omitempty"`
-	Of   string `json:"of,omitempty"`
-	From int    `json:"-"`
-	To   int    `json:"-"`
+	End   bool   `json:"end,omitempty"`
+	Of    string `json:"of,omitempty"`
+	Label string `json:"label,omitempty"`
+	Rest  string `json:"rest,omitempty"`
+	From  int    `json:"-"`
+	To    int    `json:"-"`
 	// Or holds the alternatives after the first, tried in order.
 	Or []Part `json:"or,omitempty"`
 	// Group holds an optional group's parts, written only when the Item
@@ -442,8 +582,11 @@ func parseParts(layout, text string, group bool) ([]Part, []string, error) {
 			}
 			rest = rest[at+end+1:]
 			written = append(written, "{"+inner+"}")
-			if inner == "#" {
-				parts = append(parts, Part{Counter: true})
+			if label, ok := strings.CutPrefix(inner, "#"); ok {
+				if label != "" && !keyPattern.MatchString(label) {
+					return nil, nil, fmt.Errorf("layout %q: {%s}: name an order with lowercase letters, digits, _ and -, as {#other}", layout, inner)
+				}
+				parts = append(parts, Part{Counter: true, Label: label})
 				continue
 			}
 			if inner == "/#" {
@@ -542,8 +685,26 @@ func counted(layout string, parts []Part, written []string) error {
 		return fmt.Errorf("layout %q: {#} numbers the keys after it, and there is none", layout)
 	}
 	parts[at].From, parts[at].To = from, to
-	parts[at].Of = strings.Join(written[from:to], "")
+	parts[at].Rest = strings.Join(written[from:to], "")
+	parts[at].Of = parts[at].Label
+	if parts[at].Of == "" {
+		parts[at].Of = firstKey(parts[from:to])
+	}
 	return nil
+}
+
+// firstKey is the first key among parts, a group's included: what an
+// order is named for when its {#} does not name it.
+func firstKey(parts []Part) string {
+	for _, p := range parts {
+		if p.Key != "" {
+			return p.Key
+		}
+		if key := firstKey(p.Group); key != "" {
+			return key
+		}
+	}
+	return ""
 }
 
 // parseKey reads one key as written between { and }: key or key:format.
