@@ -184,3 +184,39 @@ func TestAppCommandStillLaunchesWhenNoReportIsRequested(t *testing.T) {
 		t.Fatalf("launch = %#v", got)
 	}
 }
+
+// Help must be available without running a workspace or action, including direct
+// apps (whose internal leaf is not exposed as a subcommand).
+func TestEveryRegisteredCommandHasUsageHelp(t *testing.T) {
+	paths := [][]string{{}}
+	for _, app := range apps.All() {
+		paths = append(paths, []string{app.ID})
+		if !app.Direct {
+			for _, leaf := range app.Commands {
+				paths = append(paths, []string{app.ID, leaf.ID})
+			}
+		}
+		for _, action := range app.Actions {
+			paths = append(paths, []string{app.ID, action.ID})
+		}
+	}
+	for _, path := range paths {
+		t.Run(strings.Join(path, "/"), func(t *testing.T) {
+			var output bytes.Buffer
+			command := NewRootCommand(apps.All(), func(tui.Launch) error { t.Fatal("help launched a workspace"); return nil })
+			command.SetOut(&output)
+			command.SetErr(&output)
+			command.SetArgs(append(append([]string(nil), path...), "--help"))
+			if err := command.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			text := output.String()
+			if !strings.Contains(strings.ToLower(text), "example") || !strings.Contains(text, "Usage:") {
+				t.Fatalf("help lacks usage/examples:\n%s", text)
+			}
+			if strings.Contains(text, "placeholder") {
+				t.Fatalf("stale placeholder help:\n%s", text)
+			}
+		})
+	}
+}

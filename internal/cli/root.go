@@ -20,6 +20,7 @@ func NewRootCommand(apps []tui.App, run tui.Runner) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "dgs",
 		Short:         "A small workflow toolbox",
+		Long:          rootHelp,
 		Version:       buildinfo.String(),
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -62,7 +63,11 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 		command := &cobra.Command{
 			Use:   app.ID,
 			Short: app.Description,
+			Long:  leaf.Help,
 			Args:  cobra.NoArgs,
+		}
+		if command.Long == "" {
+			command.Long = app.Help
 		}
 		chosen := addReports(command, app.Reports)
 		given := addFlags(command, leaf.Flags)
@@ -78,6 +83,7 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 	command := &cobra.Command{
 		Use:   app.ID,
 		Short: app.Description,
+		Long:  app.Help,
 		Args:  cobra.NoArgs,
 	}
 	chosen := addReports(command, app.Reports)
@@ -97,6 +103,7 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 		sub := &cobra.Command{
 			Use:   leaf.ID,
 			Short: leaf.Description,
+			Long:  leaf.Help,
 			Args:  cobra.NoArgs,
 		}
 		given := addFlags(sub, leaf.Flags)
@@ -116,6 +123,7 @@ func addActions(command *cobra.Command, part string, actions []tui.Action, confi
 		sub := &cobra.Command{
 			Use:   action.ID + " " + action.Usage,
 			Short: action.Description,
+			Long:  action.Help,
 			Args:  actionArgs(action),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				flags := make(map[string]string, len(action.Flags))
@@ -233,3 +241,26 @@ func loadConfig(path, part string) (config.Config, error) {
 	}
 	return global, global.PartErr(part)
 }
+
+const rootHelp = `A workflow toolbox with terminal workspaces, local web pages and CLI actions.
+
+Examples:
+  dgs                         Open the command picker.
+  dgs photo                   Open the Photo picker.
+  dgs photo import            Open a workspace directly.
+  dgs box verify /path/to/box  Run a CLI action, print results, and return.
+  dgs photo encode --help     Read help without starting a workspace.
+  dgs --export-config /path/to/config-directory
+
+--export-config writes a default <part>/config.json for each app. With no
+argument it uses the working directory; existing files are kept.
+Configuration directory selection: --config / -c, then DGS_TOOLBOX_CONFIG,
+then $XDG_CONFIG_HOME/dgs-toolbox (or ~/.config/dgs-toolbox).
+Each app reads its own <part>/config.json. Command flags override configuration
+for this process only. Omitted flags retain configured values.
+
+In terminal forms, Tab / Shift+Tab move focus and Enter edits or selects.
+Arrow keys and h j k l navigate; printable keys belong to an active editor.
+Esc backs out of an interaction; leaving a workspace and quitting are confirmed.
+Ctrl+C requests a safe-default exit confirmation; Ctrl+Z suspends the process.
+CLI actions are listed below but do not appear in the interactive picker.`

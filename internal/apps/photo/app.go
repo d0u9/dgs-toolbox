@@ -2,7 +2,6 @@ package photo
 
 import (
 	"dgs-toolbox/internal/apps/photo/postprocess"
-	"dgs-toolbox/internal/apps/placeholder"
 	"dgs-toolbox/internal/config"
 	"dgs-toolbox/internal/tui"
 )
@@ -12,13 +11,15 @@ import (
 func New() tui.App {
 	return tui.App{
 		ID:          "photo",
+		Help:        appHelp,
 		Name:        "Photo",
 		Description: "Photo tools",
 		Commands: []tui.Command{
 			{
 				ID:          "import",
+				Help:        importHelp,
 				Name:        "Import",
-				Description: "Photo import placeholder. No files are changed.",
+				Description: "Import photos with independently verified publication.",
 				New: func() tui.CommandModel {
 					return newImportModel()
 				},
@@ -30,15 +31,18 @@ func New() tui.App {
 			{
 				ID:          "encode",
 				Name:        "Encode",
-				Description: "Photo encode placeholder. No files are changed.",
+				Description: "Encode photos as JPEG with verified publication.",
+				Help:        encodeHelp,
 				New: func() tui.CommandModel {
-					return placeholder.New("Photo Encode")
+					return newEncodeModel(config.Default().Photo.Encode)
 				},
+				NewWithConfig: func(global config.Config) tui.CommandModel { return newEncodeModel(global.Photo.Encode) },
 			},
 		},
 		Actions: []tui.Action{
 			{
 				ID:          "organize",
+				Help:        actionHelp["organize"],
 				Usage:       "<folder>",
 				Description: "Move photos in a folder into capture-date folders (YYYYMMDD by default).",
 				Args:        1,

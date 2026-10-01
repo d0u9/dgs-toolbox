@@ -28,6 +28,7 @@ func New() tui.App {
 		}},
 		Actions: []tui.Action{{
 			ID:          "init",
+			Help:        actionHelp["init"],
 			Usage:       "[<dir>]",
 			Description: "Write the scaffold a generator root starts from, overwriting nothing.",
 			MaxArgs:     1,
@@ -38,6 +39,7 @@ func New() tui.App {
 			RunWithConfig: initAction,
 		}, {
 			ID:          "export",
+			Help:        actionHelp["export"],
 			Usage:       "<selector>...",
 			Description: "Render the targets a selector matches and write them to a folder or a zip.",
 			MinArgs:     1,
@@ -51,6 +53,7 @@ func New() tui.App {
 			RunWithConfig: exportAction,
 		}, {
 			ID:          "secret",
+			Help:        actionHelp["secret"],
 			Usage:       "sync",
 			Description: "Generate the credentials the inventory implies and are not on disk yet.",
 			MinArgs:     1,
@@ -61,6 +64,7 @@ func New() tui.App {
 			RunWithConfig: secretAction,
 		}, {
 			ID:            "reservations",
+			Help:          actionHelp["reservations"],
 			Usage:         "<network>",
 			Description:   "Print the address reservations a network's router should hold, in address order.",
 			MinArgs:       1,
@@ -70,6 +74,7 @@ func New() tui.App {
 		Commands: []tui.Command{
 			{
 				ID:          "inspect",
+				Help:        inspectHelp,
 				Name:        "Inspect",
 				Description: "Look up a node, an instance, a user or a secret in the inventory.",
 				New: func() tui.CommandModel {

@@ -6,8 +6,9 @@
   operations only after the user starts Processing. Highest-priority contract: a
   destination file is not published under its final name until an independent
   destination readback matches the Source SHA-256 digest. Follow
-  [`docs/apps/photo/import.md`](docs/apps/photo/import.md). Other Photo commands
-  stay demos.
+  [`docs/apps/photo/import.md`](docs/apps/photo/import.md). Photo Encode
+  exports JPEGs per
+  [`docs/apps/photo/encode.md`](docs/apps/photo/encode.md).
 - **`dgs box`** — a Box of scanned paper: intake from a temporary folder,
   deduplication, per-scan YAML sidecars as the only metadata truth, and a
   discardable local index, per [`docs/apps/box/`](docs/apps/box/). Paths encode
@@ -139,7 +140,8 @@ readback, verified atomic publication, whole-file retry, and a versioned
 `.dgs-state` file. Keep it outside the TUI model and cover it with filesystem
 tests.
 
-Do not implement real Photo Encode behavior, GPX beyond the confirmed milestones,
+Do not implement Photo Encode beyond its confirmed JPEG export scope, GPX beyond
+the confirmed milestones,
 plugin loading, or speculative shared infrastructure. Do not claim stronger
 durability than the user-space/filesystem API boundary documented for Photo
 Import or for `dgs box`.
