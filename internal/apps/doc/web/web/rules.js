@@ -62,12 +62,20 @@ function open(name) {
   editing = name;
   const r = copy(rules.find((x) => x.name === name) || blank());
   $("name").value = r.name;
-  which.fill(r);
+  const settled = which.fill(r);
   $("use-default").checked = r.default !== undefined && r.default !== null;
   $("default").value = $("use-default").checked ? r.default : "none";
   $("dedupe").checked = r.dedupe === "number";
   sync(); // the form's own reading, so an untouched rule is not an edit
   saved = text(draft);
+  // Orders nothing numbers are dropped once the server has parsed the
+  // layouts, a moment after: that reading is the untouched rule.
+  settled.then(() => {
+    if (editing !== name) return;
+    sync();
+    saved = text(draft);
+    $("dirty").hidden = true;
+  });
   tree.reset(name ? "rule:" + name : "");
   shut();
   address(name ? "#" + encodeURIComponent(name) : location.pathname + location.search);

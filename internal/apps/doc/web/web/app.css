@@ -310,7 +310,8 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .retire-form input { width: 100%; box-sizing: border-box; }
 
 /* Fixed layout: each column is as wide as its <col> says, set by dragging
-   the header's right edge; what does not fit is cut short. */
+   the header's right edge; what does not fit is cut short. The last, empty
+   column has no width and takes what the list has left. */
 .items-table { min-width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--font-size-sm); }
 .items-table th {
   position: sticky; top: -14px; z-index: 1; text-align: left; font-weight: 600; white-space: nowrap;
@@ -426,7 +427,7 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .vf-label { font-size: var(--font-size-sm); color: var(--graphite); }
 .vf > input { width: 100%; }
 .vf-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.vf-stack #conditions { align-self: stretch; }
+.vf-stack #conditions, .vf-stack #order { align-self: stretch; }
 .vf-stack #conditions:empty { display: none; }
 .vf-stack #exclude, .vf-stack .skip-list, .vf-stack #add-skip { align-self: stretch; }
 .vf-stack #exclude:empty, .skip-list:empty { display: none; }
@@ -716,7 +717,9 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .vf .order .order-number:hover, .vf .order .order-number:focus { border-color: var(--primary); outline: none; }
 .vf .order .order-number.set { color: var(--on-ink); background: var(--primary); }
 .vf .order .order-number.invalid { border-color: var(--error); }
-.order-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long name is cut short rather than widening the list: the lists fill
+   their column whatever they hold. */
+.order-value { flex: 1; width: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .order-acts { display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
 .order-list li:hover .order-acts, .order-acts:focus-within { opacity: 1; }
 .order-act { width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--graphite); cursor: pointer; font: inherit; line-height: 22px; }
@@ -727,7 +730,7 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .vf .order .order-number.unnumbered { display: inline-block; color: var(--graphite); background: none; }
 .order-add { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 8px; }
 .order-add-label { font-size: var(--font-size-xs); color: var(--graphite); margin-right: 2px; }
-.order-chip { height: 22px; padding: 0 8px; font: inherit; font-size: var(--font-size-xs); color: var(--graphite); background: var(--paper); border: 1px dashed var(--hairline-strong); border-radius: var(--radius-pill); cursor: pointer; }
+.order-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; height: 22px; padding: 0 8px; font: inherit; font-size: var(--font-size-xs); color: var(--graphite); background: var(--paper); border: 1px dashed var(--hairline-strong); border-radius: var(--radius-pill); cursor: pointer; }
 .order-chip:hover { color: var(--primary); border-color: var(--primary); border-style: solid; }
 /* Outlines: the tree an Outline's rules make, with what is picked in it
    beside it. */
