@@ -44,8 +44,14 @@ const (
 	PhasePublishing     Phase = "publishing"
 	PhaseDeletingSource Phase = "deleting-source"
 	PhaseComplete       Phase = "complete"
-	PhaseSkipped        Phase = "skipped"
-	PhaseFailed         Phase = "failed"
+	// PhaseSourceKept is a Move whose destination was verified and published
+	// but whose source was not deleted: the source is read-only, or changed
+	// after it was copied. The photo is imported; only the move is unfinished,
+	// and a later run with the same state deletes the source once both sides
+	// still match the recorded digest.
+	PhaseSourceKept Phase = "source-kept"
+	PhaseSkipped    Phase = "skipped"
+	PhaseFailed     Phase = "failed"
 )
 
 type Job struct {
@@ -54,12 +60,18 @@ type Job struct {
 }
 
 type Plan struct {
-	Jobs       []Job
-	Operation  Operation
-	Conflict   ConflictPolicy
-	Workers    int
-	StatePath  string
-	Controller *Controller
+	Jobs      []Job
+	Operation Operation
+	Conflict  ConflictPolicy
+	Workers   int
+	StatePath string
+	// DestinationRoot, when set, is the tree every Destination lies under.
+	// Directories below it are never followed through a symbolic link.
+	DestinationRoot string
+	Controller      *Controller
+	// planned holds each job's Destination before Keep both renamed it, so
+	// the state file can still recognise the job on a later run.
+	planned []string
 }
 
 // Controller pauses transfers between bounded I/O chunks. A paused transfer
@@ -163,7 +175,6 @@ type outcome struct {
 // Run executes a bounded pool and serializes state-file updates. Events may be
 // nil. Replace is rejected until its rollback contract is explicitly settled.
 func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
-	plan = reserveDestinations(plan)
 	workers := plan.Workers
 	if workers < 1 {
 		workers = 1
@@ -175,7 +186,12 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 	state := State{Version: StateVersion, HashAlgorithm: "SHA-256", Operation: plan.Operation, Files: make([]FileResult, len(plan.Jobs))}
 	pendingIndices := make([]int, 0, len(plan.Jobs))
 	prior := loadState(plan.StatePath)
+	plan.planned = make([]string, len(plan.Jobs))
+	// Resume is matched against each job's own Destination, before Keep both
+	// can rename it: a file this batch already published now stands at that
+	// name, and renaming first would make it look like a conflict to copy past.
 	for i, job := range plan.Jobs {
+		plan.planned[i] = job.Destination
 		pending := FileResult{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhasePending}
 		result.Files[i], state.Files[i] = pending, pending
 		if resumed, ok := resumable(ctx, prior, job, plan.Operation); ok {
@@ -184,6 +200,14 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 			continue
 		}
 		pendingIndices = append(pendingIndices, i)
+	}
+	plan = reserveDestinations(plan, pendingIndices)
+	for _, i := range pendingIndices {
+		pending := FileResult{Index: i, Source: plan.Jobs[i].Source, Destination: plan.Jobs[i].Destination, Phase: PhasePending}
+		if plan.Jobs[i].Destination != plan.planned[i] {
+			pending.PlannedDestination = plan.planned[i]
+		}
+		result.Files[i], state.Files[i] = pending, pending
 	}
 	if plan.StatePath != "" {
 		if err := writeState(plan.StatePath, &state); err != nil {
@@ -233,13 +257,13 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 	return result
 }
 
-func reserveDestinations(plan Plan) Plan {
+func reserveDestinations(plan Plan, pending []int) Plan {
 	if plan.Conflict != KeepBoth {
 		return plan
 	}
 	plan.Jobs = append([]Job(nil), plan.Jobs...)
 	reserved := make(map[string]struct{}, len(plan.Jobs))
-	for index := range plan.Jobs {
+	for _, index := range pending {
 		destination := plan.Jobs[index].Destination
 		if _, exists := reserved[destination]; exists || pathExists(destination) {
 			destination = availableUnreservedName(destination, reserved)
@@ -317,26 +341,60 @@ func UpdateDestinations(path string, destinations map[string]string) error {
 	return writeState(path, &state)
 }
 
+// resumable recognises a job a previous run with this state already imported:
+// its destination still hashes to the recorded digest. Copy needs nothing more.
+// Move also needs the source gone, so a source that is still there and still
+// matches is deleted now — whether the earlier run was a Copy, or a Move that
+// could not delete it.
 func resumable(ctx context.Context, state State, job Job, operation Operation) (FileResult, bool) {
 	for _, file := range state.Files {
 		matchesDestination := file.Destination == job.Destination || file.PlannedDestination == job.Destination
-		if file.Phase != PhaseComplete || file.Source != job.Source || !matchesDestination || file.DestinationHash == "" {
+		imported := file.Phase == PhaseComplete || file.Phase == PhaseSourceKept
+		if !imported || file.Source != job.Source || !matchesDestination || file.DestinationHash == "" {
 			continue
 		}
 		destinationHash, destinationSize, err := hashFile(ctx, file.Destination)
 		if err != nil || destinationSize != file.Size || destinationHash != file.DestinationHash {
 			return FileResult{}, false
 		}
-		sourceHash, sourceSize, sourceErr := hashFile(ctx, file.Source)
-		if operation == Move && errors.Is(sourceErr, os.ErrNotExist) {
+		before, statErr := os.Lstat(file.Source)
+		if operation == Move && errors.Is(statErr, os.ErrNotExist) {
+			file.Phase, file.Error = PhaseComplete, ""
 			return file, true
 		}
+		if statErr != nil || !before.Mode().IsRegular() {
+			return FileResult{}, false
+		}
+		sourceHash, sourceSize, sourceErr := hashFile(ctx, file.Source)
 		if sourceErr != nil || sourceSize != file.Size || sourceHash != file.SourceHash {
 			return FileResult{}, false
+		}
+		file.Phase, file.Error = PhaseComplete, ""
+		if operation == Move {
+			if err := deleteSource(file.Source, before); err != nil {
+				file.Phase, file.Error = PhaseSourceKept, err.Error()
+			}
 		}
 		return file, true
 	}
 	return FileResult{}, false
+}
+
+// deleteSource removes a Move's source only while it is still the file that was
+// read: same file, size and modification time. The digest describes those
+// bytes; a source that changed since holds something that was never imported.
+func deleteSource(path string, read os.FileInfo) error {
+	current, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("source metadata before delete: %w", err)
+	}
+	if !os.SameFile(current, read) || current.Size() != read.Size() || !current.ModTime().Equal(read.ModTime()) {
+		return errors.New("source changed after it was copied; kept")
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("delete source: %w", err)
+	}
+	return nil
 }
 
 func hashFile(ctx context.Context, path string) (string, int64, error) {
@@ -364,6 +422,9 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	job := plan.Jobs[index]
 	base := Event{Index: index, Source: job.Source, Destination: job.Destination}
 	result := FileResult{Index: index, Source: job.Source, Destination: job.Destination}
+	if index < len(plan.planned) && plan.planned[index] != job.Destination {
+		result.PlannedDestination = plan.planned[index]
+	}
 	fail := func(err error) (FileResult, Event) {
 		result.Phase, result.Error = PhaseFailed, err.Error()
 		base.Phase, base.Err = PhaseFailed, err
@@ -386,6 +447,9 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 			return result, base
 		}
 		if plan.Conflict == KeepBoth {
+			if result.PlannedDestination == "" {
+				result.PlannedDestination = job.Destination
+			}
 			job.Destination = availableName(job.Destination)
 			result.Destination, base.Destination = job.Destination, job.Destination
 		}
@@ -399,6 +463,10 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 		// A photograph's modification time is part of what was imported, so it
 		// is applied before the file is published and never after.
 		PreserveModTime: true,
+		// A photo library is read by more than its owner: a NAS media server,
+		// another account. The 0600 the unpublished copy has would hide it.
+		Mode: verifiedcopy.DefaultPhotoMode,
+		Root: plan.DestinationRoot,
 		Progress: func(phase verifiedcopy.Phase, done, total int64) {
 			event := base
 			event.Total = total
@@ -424,13 +492,17 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	result.SourceHash, result.DestinationHash = copied.Digest, copied.Digest
 	base.SourceHash, base.DestinationHash = copied.Digest, copied.Digest
 
+	result.Phase, base.Phase, base.Bytes = PhaseComplete, PhaseComplete, info.Size()
 	if plan.Operation == Move {
 		emit(ctx, events, withProgress(base, PhaseDeletingSource, info.Size()))
-		if err := os.Remove(job.Source); err != nil {
-			return fail(fmt.Errorf("delete source: %w", err))
+		// The photo is imported whatever happens here. A source that cannot be
+		// deleted, or changed after it was read, is kept and reported, not
+		// turned into a failed import.
+		if err := deleteSource(job.Source, copied.Source); err != nil {
+			result.Phase, result.Error = PhaseSourceKept, err.Error()
+			base.Phase, base.Err = PhaseSourceKept, err
 		}
 	}
-	result.Phase, base.Phase, base.Bytes = PhaseComplete, PhaseComplete, info.Size()
 	return result, base
 }
 
@@ -498,21 +570,24 @@ func writeState(path string, state *State) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	temporary := path + ".tmp"
-	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	// A temporary name of its own, so two imports into one Destination never
+	// interleave their writes into one file before either is renamed.
+	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
+	temporary := file.Name()
 	if _, err = file.Write(data); err == nil {
 		err = file.Sync()
 	}
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
-	if err != nil {
-		return err
+	if err == nil {
+		err = os.Rename(temporary, path)
 	}
-	if err := os.Rename(temporary, path); err != nil {
+	if err != nil {
+		_ = os.Remove(temporary)
 		return err
 	}
 	return verifiedcopy.SyncDirectory(filepath.Dir(path))

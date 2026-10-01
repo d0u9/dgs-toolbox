@@ -195,3 +195,154 @@ func TestPreserveModTimeIsOptional(t *testing.T) {
 		t.Errorf("modification time not preserved: %v vs %v", keptInfo.ModTime(), info.ModTime())
 	}
 }
+
+// partFiles lists the unpublished copies in dir.
+func partFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parts []string
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), verifiedcopy.PartSuffix) {
+			parts = append(parts, filepath.Join(dir, entry.Name()))
+		}
+	}
+	return parts
+}
+
+// verifyingWait runs once, at the first pause of the readback pass.
+func verifyingWait(once func()) (func(verifiedcopy.Phase, int64, int64), func(context.Context) error) {
+	var phase verifiedcopy.Phase
+	done := false
+	return func(p verifiedcopy.Phase, _, _ int64) { phase = p },
+		func(context.Context) error {
+			if phase == verifiedcopy.PhaseVerifying && !done {
+				done = true
+				once()
+			}
+			return nil
+		}
+}
+
+// Another writer replacing the unpublished copy while it is read back must not
+// get its bytes published under the final name: the readback verified this
+// copy's file, and only that file may be published.
+func TestReplacedTemporaryIsNeverPublished(t *testing.T) {
+	dir := t.TempDir()
+	source := write(t, filepath.Join(dir, "in", "IMG.JPG"), []byte(strings.Repeat("X", 3<<20)))
+	destination := filepath.Join(dir, "out", "IMG.JPG")
+	progress, wait := verifyingWait(func() {
+		for _, part := range partFiles(t, filepath.Dir(destination)) {
+			os.Remove(part)
+			write(t, part, []byte("PARTIAL-OTHER"))
+		}
+	})
+	_, err := verifiedcopy.Copy(context.Background(), verifiedcopy.Request{Source: source, Destination: destination, Progress: progress, Wait: wait})
+	if err == nil {
+		t.Fatal("copy succeeded although its temporary file was replaced")
+	}
+	if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("something was published: %v", err)
+	}
+}
+
+// Two copies of one final name never share a temporary path.
+func TestTemporaryNameIsUniquePerCopy(t *testing.T) {
+	dir := t.TempDir()
+	source := write(t, filepath.Join(dir, "in", "IMG.JPG"), []byte("photo"))
+	destination := filepath.Join(dir, "out", "IMG.JPG")
+	var seen string
+	progress, wait := verifyingWait(func() {
+		parts := partFiles(t, filepath.Dir(destination))
+		if len(parts) != 1 {
+			t.Fatalf("parts = %v", parts)
+		}
+		seen = filepath.Base(parts[0])
+	})
+	if _, err := verifiedcopy.Copy(context.Background(), verifiedcopy.Request{Source: source, Destination: destination, Progress: progress, Wait: wait}); err != nil {
+		t.Fatal(err)
+	}
+	if seen == ".IMG.JPG"+verifiedcopy.PartSuffix || !strings.HasPrefix(seen, ".IMG.JPG.") {
+		t.Fatalf("temporary name %q is not unique to the copy", seen)
+	}
+}
+
+// A file appearing at the final name during verification is never replaced.
+func TestPublicationNeverReplacesAFileThatAppeared(t *testing.T) {
+	dir := t.TempDir()
+	source := write(t, filepath.Join(dir, "in", "IMG.JPG"), []byte("new photo"))
+	destination := filepath.Join(dir, "out", "IMG.JPG")
+	progress, wait := verifyingWait(func() { write(t, destination, []byte("someone else's")) })
+	_, err := verifiedcopy.Copy(context.Background(), verifiedcopy.Request{Source: source, Destination: destination, Progress: progress, Wait: wait})
+	if !errors.Is(err, verifiedcopy.ErrDestinationExists) {
+		t.Fatalf("err = %v, want ErrDestinationExists", err)
+	}
+	if data, _ := os.ReadFile(destination); string(data) != "someone else's" {
+		t.Fatalf("existing file replaced: %q", data)
+	}
+	if parts := partFiles(t, filepath.Dir(destination)); len(parts) != 0 {
+		t.Fatalf("left behind %v", parts)
+	}
+}
+
+func TestStaleNumberedPartIsDiscarded(t *testing.T) {
+	dir := t.TempDir()
+	source := write(t, filepath.Join(dir, "in", "scan.pdf"), []byte("real"))
+	destination := filepath.Join(dir, "box", "scan.pdf")
+	stale := write(t, filepath.Join(dir, "box", ".scan.pdf.123456"+verifiedcopy.PartSuffix), []byte("old"))
+	unrelated := write(t, filepath.Join(dir, "box", ".scan.pdf.notes"+verifiedcopy.PartSuffix), []byte("keep"))
+	if _, err := verifiedcopy.Copy(context.Background(), verifiedcopy.Request{Source: source, Destination: destination}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Error("stale numbered part is still there")
+	}
+	if _, err := os.Lstat(unrelated); err != nil {
+		t.Error("a file that is not a part of this name was removed")
+	}
+}
+
+func TestModeIsAppliedBeforePublication(t *testing.T) {
+	dir := t.TempDir()
+	source := write(t, filepath.Join(dir, "in", "IMG.JPG"), []byte("photo"))
+	destination := filepath.Join(dir, "out", "IMG.JPG")
+	result, err := verifiedcopy.Copy(context.Background(), verifiedcopy.Request{Source: source, Destination: destination, Mode: verifiedcopy.DefaultPhotoMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(destination)
+	if info.Mode().Perm() != verifiedcopy.DefaultPhotoMode {
+		t.Fatalf("mode = %v", info.Mode().Perm())
+	}
+	if result.Source == nil || result.Source.Size() != 5 {
+		t.Fatalf("source metadata = %v", result.Source)
+	}
+}
+
+// Under a Root, a symbolic link inside the tree is refused, not written through.
+func TestRootRefusesSymlinkedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	source := write(t, filepath.Join(dir, "in", "IMG.JPG"), []byte("photo"))
+	root, elsewhere := filepath.Join(dir, "library"), filepath.Join(dir, "elsewhere")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(root, "DCIM")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := verifiedcopy.Copy(context.Background(), verifiedcopy.Request{Source: source, Destination: filepath.Join(root, "DCIM", "sub", "IMG.JPG"), Root: root})
+	if err == nil || !strings.Contains(err.Error(), "not a real directory") {
+		t.Fatalf("err = %v", err)
+	}
+	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+		t.Fatalf("wrote through the link: %v", entries)
+	}
+	if _, err := verifiedcopy.Copy(context.Background(), verifiedcopy.Request{Source: source, Destination: filepath.Join(root, "a", "b", "IMG.JPG"), Root: root}); err != nil {
+		t.Fatalf("nested real directories: %v", err)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -118,5 +119,44 @@ func TestPlanReportsExistingDatesWithoutMoving(t *testing.T) {
 	}
 	if _, err := os.Stat(first); err != nil {
 		t.Fatalf("plan moved a file: %v", err)
+	}
+}
+
+// Two folders holding different shots named IMG_0001 on one day must not meet
+// in one date folder, where the first one's JPG would be paired with the
+// other's RAW.
+func TestShotsSharingANameAreNotMixedInOneDateFolder(t *testing.T) {
+	root := t.TempDir()
+	lone := writePhoto(t, root, "100CANON/IMG_0001.JPG", jpeg(t, "2026:10:10 09:00:00"))
+	raw := writePhoto(t, root, "101CANON/IMG_0001.CR2", tiff(t, "2026:10:10 18:00:00"))
+	paired := writePhoto(t, root, "101CANON/IMG_0001.JPG", jpeg(t, "2026:10:10 18:00:00"))
+	result := Run(root, []File{{Source: lone, Path: lone}, {Source: raw, Path: raw}, {Source: paired, Path: paired}})
+	for _, outcome := range result.Files {
+		if outcome.Status != Failed || !strings.Contains(outcome.Error, "another shot") {
+			t.Fatalf("outcome = %#v", outcome)
+		}
+	}
+	for _, path := range []string{lone, raw, paired} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s moved: %v", path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "20261010")); !os.IsNotExist(err) {
+		t.Fatalf("date folder created: %v", err)
+	}
+}
+
+// A RAW whose name is already taken in its date folder by an earlier shot's
+// JPG stays where it is.
+func TestShotDoesNotJoinAnEarlierShotOfTheSameName(t *testing.T) {
+	root := t.TempDir()
+	writePhoto(t, root, "20261010/IMG_0001.JPG", []byte("an earlier import"))
+	raw := writePhoto(t, root, "camera/IMG_0001.CR2", tiff(t, "2026:10:10 18:00:00"))
+	result := Run(root, []File{{Source: raw, Path: raw}})
+	if result.Files[0].Status != Failed || !strings.Contains(result.Files[0].Error, "already has IMG_0001.JPG") {
+		t.Fatalf("outcome = %#v", result.Files[0])
+	}
+	if _, err := os.Stat(raw); err != nil {
+		t.Fatalf("raw moved: %v", err)
 	}
 }

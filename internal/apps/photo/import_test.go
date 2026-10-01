@@ -594,7 +594,7 @@ func TestScanDirectoriesCollectsBothInventories(t *testing.T) {
 		t.Fatal(err)
 	}
 	summary := scanDirectories([pathFieldCount]string{source, destination})
-	if len(summary.errors) != 0 || len(summary.source) != 1 || len(summary.destination) != 1 {
+	if len(summary.sourceErrors)+len(summary.destinationErrors) != 0 || len(summary.source) != 1 || len(summary.destination) != 1 {
 		t.Fatalf("summary = %#v", summary)
 	}
 	if summary.source[0].path != "nested/one.jpg" || summary.destination[0].path != "existing.dng" {
@@ -919,5 +919,59 @@ func TestLeavingParametersDuringRefreshDoesNotCaptureNextScan(t *testing.T) {
 	model = updated.(importModel)
 	if model.stage != parameterStage || model.refreshing {
 		t.Fatalf("stage=%v refreshing=%v, want Parameters after the new scan", model.stage, model.refreshing)
+	}
+}
+
+// An unreadable folder must not silently end the scan: everything after it in
+// lexical order would be missing from an inventory that still looks complete.
+func TestScanContinuesPastUnreadableFoldersAndReportsThem(t *testing.T) {
+	root := t.TempDir()
+	source, destination := filepath.Join(root, "card"), filepath.Join(root, "missing-destination")
+	for _, dir := range []string{".Trashes", "Broken", "DCIM"} {
+		if err := os.MkdirAll(filepath.Join(source, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"Broken/lost.JPG", "DCIM/IMG_0001.JPG", "zzz.JPG"} {
+		if err := os.WriteFile(filepath.Join(source, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("/etc/hosts", filepath.Join(source, "DCIM", "link.JPG")); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{".Trashes", "Broken"} {
+		if err := os.Chmod(filepath.Join(source, dir), 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(filepath.Join(source, dir), 0o755) })
+	}
+	summary := scanDirectories([pathFieldCount]string{source, destination})
+	var paths []string
+	for _, file := range summary.source {
+		paths = append(paths, file.path)
+	}
+	if strings.Join(paths, ",") != "DCIM/IMG_0001.JPG,zzz.JPG" {
+		t.Fatalf("source = %v", paths)
+	}
+	if len(summary.sourceErrors) != 1 || !strings.Contains(summary.sourceErrors[0], "Broken") {
+		t.Fatalf("source errors = %v", summary.sourceErrors)
+	}
+	if len(summary.sourceSkipped) != 2 || len(summary.destinationErrors) != 0 {
+		t.Fatalf("skipped = %v, destination errors = %v", summary.sourceSkipped, summary.destinationErrors)
+	}
+
+	model := newImportModel().(importModel)
+	model.stage = parameterStage
+	model.paths = [pathFieldCount]string{source, destination}
+	model.scan = summary
+	model.configureExtensions()
+	updated, cmd := model.startProcessing()
+	model = updated.(importModel)
+	if cmd != nil || model.stage != parameterStage || !strings.Contains(model.actionNotice, "Source scan incomplete") {
+		t.Fatalf("processing started on an incomplete scan: stage=%v notice=%q", model.stage, model.actionNotice)
+	}
+	if !strings.Contains(model.importSummaryView(80), "Unreadable") {
+		t.Fatal("summary does not show the unreadable folder")
 	}
 }

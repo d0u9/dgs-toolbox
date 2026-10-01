@@ -292,3 +292,152 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func listNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+// A second Keep both run over the same state resumes the files the first run
+// published instead of treating them as conflicts and copying them again.
+func TestKeepBothRunResumesInsteadOfCopyingAgain(t *testing.T) {
+	root := t.TempDir()
+	source, destination := filepath.Join(root, "src", "a.jpg"), filepath.Join(root, "dst", "a.jpg")
+	existing := filepath.Join(root, "dst", "b.jpg")
+	writeFile(t, source, "photo a")
+	writeFile(t, filepath.Join(root, "src", "b.jpg"), "photo b")
+	writeFile(t, existing, "an older b")
+	statePath := filepath.Join(root, "dst", ".dgs-state")
+	plan := Plan{Jobs: []Job{{source, destination}, {filepath.Join(root, "src", "b.jpg"), existing}}, Operation: Copy, Conflict: KeepBoth, StatePath: statePath}
+	first := Run(context.Background(), plan, nil)
+	second := Run(context.Background(), plan, nil)
+	for i := range second.Files {
+		if second.Files[i].Phase != PhaseComplete || second.Files[i].Destination != first.Files[i].Destination {
+			t.Fatalf("file %d: first %#v, second %#v", i, first.Files[i], second.Files[i])
+		}
+	}
+	if got := strings.Join(listNames(t, filepath.Join(root, "dst")), ","); got != ".dgs-state,a.jpg,b-2.jpg,b.jpg" {
+		t.Fatalf("destination = %s", got)
+	}
+}
+
+// A Move over the state of an earlier Copy finishes the move: the verified
+// destination stays and the matching source is deleted, not reported moved.
+func TestMoveAfterCopyStateDeletesTheSource(t *testing.T) {
+	root := t.TempDir()
+	source, destination := filepath.Join(root, "src", "a.jpg"), filepath.Join(root, "dst", "a.jpg")
+	writeFile(t, source, "photo")
+	statePath := filepath.Join(root, "dst", ".dgs-state")
+	Run(context.Background(), Plan{Jobs: []Job{{source, destination}}, Operation: Copy, Conflict: Skip, StatePath: statePath}, nil)
+	result := Run(context.Background(), Plan{Jobs: []Job{{source, destination}}, Operation: Move, Conflict: Skip, StatePath: statePath}, nil)
+	if result.Files[0].Phase != PhaseComplete {
+		t.Fatalf("result = %#v", result.Files[0])
+	}
+	if _, err := os.Lstat(source); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("source still exists after a completed Move: %v", err)
+	}
+}
+
+func TestPublishedPhotosAreReadableByOthers(t *testing.T) {
+	root := t.TempDir()
+	source, destination := filepath.Join(root, "src", "a.jpg"), filepath.Join(root, "dst", "a.jpg")
+	writeFile(t, source, "photo")
+	Run(context.Background(), Plan{Jobs: []Job{{source, destination}}, Operation: Copy, Conflict: Skip}, nil)
+	info, err := os.Stat(destination)
+	if err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("mode = %v, %v", info.Mode().Perm(), err)
+	}
+}
+
+// A source rewritten after it was copied holds bytes that were never imported:
+// Move keeps it rather than deleting it.
+func TestMoveKeepsASourceThatChangedAfterCopy(t *testing.T) {
+	root := t.TempDir()
+	source, destination := filepath.Join(root, "src", "a.jpg"), filepath.Join(root, "dst", "a.jpg")
+	writeFile(t, source, strings.Repeat("O", 3<<20))
+	events := make(chan Event)
+	done := make(chan Result)
+	go func() {
+		done <- Run(context.Background(), Plan{Jobs: []Job{{source, destination}}, Operation: Move, Conflict: Skip}, events)
+	}()
+	changed := false
+	var result Result
+	for result.Files == nil {
+		select {
+		case event := <-events:
+			if event.Phase == PhaseVerifying && !changed {
+				changed = true
+				later := time.Now().Add(time.Hour)
+				writeFile(t, source, "rewritten after the copy")
+				os.Chtimes(source, later, later)
+			}
+		case result = <-done:
+		}
+	}
+	if result.Files[0].Phase != PhaseSourceKept || !strings.Contains(result.Files[0].Error, "changed") {
+		t.Fatalf("result = %#v", result.Files[0])
+	}
+	if data, err := os.ReadFile(source); err != nil || string(data) != "rewritten after the copy" {
+		t.Fatalf("source = %q, %v", data, err)
+	}
+}
+
+// A read-only source still leaves an imported photo, and a later run deletes
+// the source once it can.
+func TestMoveWithUndeletableSourceIsImportedAndFinishedLater(t *testing.T) {
+	root := t.TempDir()
+	card := filepath.Join(root, "card")
+	source, destination := filepath.Join(card, "a.jpg"), filepath.Join(root, "dst", "a.jpg")
+	writeFile(t, source, "photo")
+	if err := os.Chmod(card, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(card, 0o755) })
+	statePath := filepath.Join(root, "dst", ".dgs-state")
+	plan := Plan{Jobs: []Job{{source, destination}}, Operation: Move, Conflict: Skip, StatePath: statePath}
+	first := Run(context.Background(), plan, nil)
+	if first.Files[0].Phase != PhaseSourceKept || first.Files[0].DestinationHash == "" {
+		t.Fatalf("first = %#v", first.Files[0])
+	}
+	if err := os.Chmod(card, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	second := Run(context.Background(), plan, nil)
+	if second.Files[0].Phase != PhaseComplete {
+		t.Fatalf("second = %#v", second.Files[0])
+	}
+	if _, err := os.Lstat(source); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("source still there: %v", err)
+	}
+}
+
+func TestDestinationSymlinkInsideTheTreeIsRefused(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "card", "DCIM", "a.jpg")
+	destinationRoot, elsewhere := filepath.Join(root, "dst"), filepath.Join(root, "elsewhere")
+	writeFile(t, source, "photo")
+	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(destinationRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(destinationRoot, "DCIM")); err != nil {
+		t.Fatal(err)
+	}
+	result := Run(context.Background(), Plan{Jobs: []Job{{source, filepath.Join(destinationRoot, "DCIM", "a.jpg")}}, Operation: Copy, Conflict: Skip, DestinationRoot: destinationRoot}, nil)
+	if result.Files[0].Phase != PhaseFailed {
+		t.Fatalf("result = %#v", result.Files[0])
+	}
+	if names := listNames(t, elsewhere); len(names) != 0 {
+		t.Fatalf("wrote through the link: %v", names)
+	}
+}

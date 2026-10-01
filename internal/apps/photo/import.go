@@ -2,6 +2,7 @@ package photo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -87,7 +88,17 @@ const (
 type scanSummary struct {
 	source      []scannedFile
 	destination []scannedFile
-	errors      []string
+	// sourceErrors are entries of Source that could not be read. Any of them
+	// means the inventory is incomplete, and Processing refuses to start: a
+	// Result reporting every scanned file verified must not be read as every
+	// file on the card.
+	sourceErrors []string
+	// sourceSkipped are Source entries deliberately left out: symbolic links,
+	// special files, and hidden system folders that cannot be read.
+	sourceSkipped []string
+	// destinationErrors only weaken the duplicate summary; the engine checks
+	// each final path itself.
+	destinationErrors []string
 }
 
 type importPlan struct {
@@ -137,6 +148,7 @@ type processingState struct {
 	verified     []scannedFile
 	results      []importer.FileResult
 	failed       int
+	sourceKept   int
 	skipped      int
 	finished     map[int]importer.Phase
 	workers      []processingWorker
@@ -301,35 +313,71 @@ func waitTransferUpdate(updates <-chan tea.Msg) tea.Cmd {
 
 func scanDirectories(paths [pathFieldCount]string) scanSummary {
 	var summary scanSummary
-	scanRoot := func(side, root string, target *[]scannedFile) {
+	scanRoot := func(side, root string, target *[]scannedFile, errs, skipped *[]string) {
 		root = expandHome(root)
 		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
-				return walkErr
+				if path == root {
+					if side == "DST" && errors.Is(walkErr, fs.ErrNotExist) {
+						// A Destination that does not exist yet is created by
+						// Processing; it simply holds nothing to compare.
+						return nil
+					}
+					return walkErr
+				}
+				// One unreadable folder must not end the walk: everything after
+				// it in lexical order would silently be missing. A hidden one is
+				// a system folder (.Trashes, .Spotlight-V100) and holds no
+				// photos; anything else is a gap the user has to see.
+				if entry != nil && strings.HasPrefix(entry.Name(), ".") {
+					*skipped = append(*skipped, "unreadable "+relativeTo(root, path)+": "+walkErr.Error())
+				} else {
+					*errs = append(*errs, walkErr.Error())
+				}
+				if entry != nil && entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
 			}
 			if entry.IsDir() {
 				return nil
 			}
+			if !entry.Type().IsRegular() {
+				// A link could read outside the selected root and a special file
+				// can block or never end; neither is a photo.
+				kind := "special file"
+				if entry.Type()&fs.ModeSymlink != 0 {
+					kind = "symbolic link"
+				}
+				*skipped = append(*skipped, kind+" "+relativeTo(root, path))
+				return nil
+			}
 			info, err := entry.Info()
 			if err != nil {
-				return err
+				*errs = append(*errs, err.Error())
+				return nil
 			}
-			relative, err := filepath.Rel(root, path)
-			if err != nil {
-				relative = path
-			}
-			*target = append(*target, scannedFile{side: side, path: filepath.ToSlash(relative), size: info.Size()})
+			*target = append(*target, scannedFile{side: side, path: filepath.ToSlash(relativeTo(root, path)), size: info.Size()})
 			return nil
 		})
 		if err != nil {
-			summary.errors = append(summary.errors, side+": "+err.Error())
+			*errs = append(*errs, err.Error())
 		}
 		sort.Slice(*target, func(i, j int) bool { return (*target)[i].path < (*target)[j].path })
 	}
-	scanRoot("SRC", paths[sourceField], &summary.source)
-	scanRoot("DST", paths[destinationField], &summary.destination)
+	var destinationSkipped []string
+	scanRoot("SRC", paths[sourceField], &summary.source, &summary.sourceErrors, &summary.sourceSkipped)
+	scanRoot("DST", paths[destinationField], &summary.destination, &summary.destinationErrors, &destinationSkipped)
 	classifySidecars(summary.source)
 	return summary
+}
+
+func relativeTo(root, path string) string {
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return path
+	}
+	return relative
 }
 
 var rawExtensions = map[string]struct{}{
@@ -1168,6 +1216,10 @@ func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 		m.actionNotice = "Replace is unavailable until atomic backup and rollback are implemented"
 		return m, nil
 	}
+	if len(m.scan.sourceErrors) > 0 {
+		m.actionNotice = fmt.Sprintf("Source scan incomplete (%d unreadable): %s — fix access and press r to rescan", len(m.scan.sourceErrors), m.scan.sourceErrors[0])
+		return m, nil
+	}
 	files := append([]scannedFile(nil), m.filteredSource()...)
 	sourceRoot := expandHome(m.paths[sourceField])
 	destinationRoot := expandHome(m.paths[destinationField])
@@ -1186,9 +1238,10 @@ func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 	updates := make(chan tea.Msg, max(16, len(jobs)))
 	plan := importer.Plan{
 		Jobs: jobs, Operation: operation, Conflict: conflict,
-		Workers:    max(1, m.controls.IntValue(parallelID)),
-		StatePath:  filepath.Join(destinationRoot, m.stateFilename),
-		Controller: controller,
+		Workers:         max(1, m.controls.IntValue(parallelID)),
+		StatePath:       filepath.Join(destinationRoot, m.stateFilename),
+		DestinationRoot: destinationRoot,
+		Controller:      controller,
 	}
 	m.stage = processingStage
 	m.actionNotice = ""
@@ -1227,7 +1280,7 @@ func (m importModel) startPostProcessing() (tea.Model, tea.Cmd) {
 func (m importModel) runPostProcessing() (tea.Model, tea.Cmd) {
 	files := make([]postprocess.File, 0, len(m.processing.results))
 	for _, result := range m.processing.results {
-		if result.Phase == importer.PhaseComplete {
+		if imported(result.Phase) {
 			files = append(files, postprocess.File{Source: result.Source, Path: result.Destination})
 		}
 	}
@@ -1266,6 +1319,9 @@ func (m *importModel) openResult() {
 		}
 		if result.Phase == importer.PhaseSkipped {
 			label = fmt.Sprintf("–  %s  ·  skipped", filepath.Base(result.Destination))
+		}
+		if result.Phase == importer.PhaseSourceKept {
+			label += "  ·  source kept: " + result.Error
 		}
 		if result.Phase == importer.PhaseFailed {
 			label = fmt.Sprintf("!  %s  ·  %s", filepath.Base(result.Source), result.Error)
@@ -1313,9 +1369,12 @@ func (m *importModel) applyTransferEvent(event importer.Event) {
 		worker.phase = workerVerifying
 	case importer.PhasePublishing, importer.PhaseDeletingSource:
 		worker.phase = workerPublishing
-	case importer.PhaseComplete, importer.PhaseSkipped, importer.PhaseFailed:
+	case importer.PhaseComplete, importer.PhaseSourceKept, importer.PhaseSkipped, importer.PhaseFailed:
 		m.processing.finished[event.Index] = event.Phase
-		if event.Phase == importer.PhaseComplete && event.Index >= 0 && event.Index < len(m.processing.files) {
+		if event.Phase == importer.PhaseSourceKept {
+			m.processing.sourceKept++
+		}
+		if imported(event.Phase) && event.Index >= 0 && event.Index < len(m.processing.files) {
 			m.processing.verified = append(m.processing.verified, m.processing.files[event.Index])
 		}
 		if event.Phase == importer.PhaseSkipped {
@@ -1341,9 +1400,12 @@ func (m *importModel) applyTransferResult(result importer.Result) {
 		m.actionNotice = "Could not persist " + m.stateFilename + ": " + result.StateError.Error()
 	}
 	m.processing.verified = nil
-	m.processing.failed, m.processing.skipped = 0, 0
+	m.processing.failed, m.processing.skipped, m.processing.sourceKept = 0, 0, 0
 	for _, item := range result.Files {
-		if item.Phase == importer.PhaseComplete && item.Index >= 0 && item.Index < len(m.processing.files) {
+		if item.Phase == importer.PhaseSourceKept {
+			m.processing.sourceKept++
+		}
+		if imported(item.Phase) && item.Index >= 0 && item.Index < len(m.processing.files) {
 			m.processing.verified = append(m.processing.verified, m.processing.files[item.Index])
 		}
 		if item.Phase == importer.PhaseFailed {
@@ -1664,10 +1726,24 @@ func (m *importModel) cleanupResultState() bool {
 	return true
 }
 
+// imported reports a file whose destination was verified and published. A Move
+// that kept its source still imported the photo.
+func imported(phase importer.Phase) bool {
+	return phase == importer.PhaseComplete || phase == importer.PhaseSourceKept
+}
+
+func (m importModel) publishedLine() string {
+	line := fmt.Sprintf("Published %s   Skipped %d   Failed %d", formatBytes(m.publishedBytes()), m.processing.skipped, m.processing.failed)
+	if m.processing.sourceKept > 0 {
+		line += fmt.Sprintf("   Source kept %d", m.processing.sourceKept)
+	}
+	return line
+}
+
 func (m importModel) publishedBytes() int64 {
 	var bytes int64
 	for _, result := range m.processing.results {
-		if result.Phase == importer.PhaseComplete {
+		if imported(result.Phase) {
 			bytes += result.Size
 		}
 	}
@@ -1680,7 +1756,7 @@ func (m importModel) resultHeaderContent() string {
 		"Source       " + m.paths[sourceField],
 		"Destination  " + m.paths[destinationField],
 		fmt.Sprintf("%d/%d files passed Source and Destination SHA-256 comparison", len(m.processing.verified), len(m.processing.files)),
-		fmt.Sprintf("Published %s   Skipped %d   Failed %d", formatBytes(m.publishedBytes()), m.processing.skipped, m.processing.failed),
+		m.publishedLine(),
 		"Post-process " + m.postprocessSummary(),
 	}, "\n")
 }
@@ -2027,7 +2103,7 @@ func (m importModel) parameterView() string {
 			Next: &pageactions.Action{Destination: "Processing"},
 		}, trailingWidth),
 	)
-	summaryContent := m.importSummaryView()
+	summaryContent := m.importSummaryView(leftWidth - 4)
 	parameterHeight := layout.parameterHeight
 	parameterContent := m.parametersView(leftWidth-4, parametersFocused)
 	parameterContent = fitContentHeight(parameterContent, parameterHeight-2, leftWidth-4)
@@ -2078,16 +2154,27 @@ func directoryRootLine(path string, width int) string {
 	return importNoteStyle.Render(ansi.Truncate("Root  "+path, max(1, width), "…"))
 }
 
-func (m importModel) importSummaryView() string {
+func (m importModel) importSummaryView(width int) string {
 	plan := m.buildPlan()
 	action := strings.ToUpper(plan.operation[:1]) + plan.operation[1:]
-	return strings.Join([]string{
+	lines := []string{
 		fmt.Sprintf("Eligible       %s", fileCount(plan.eligible)),
 		fmt.Sprintf("Duplicates     %s", fileCount(plan.duplicates)),
 		fmt.Sprintf("Skipped        %s", fileCount(plan.skipped)),
 		fmt.Sprintf("Will %-9s %s", strings.ToLower(action), fileCount(plan.processed)),
 		fmt.Sprintf("Workers        %d", max(1, m.controls.IntValue(parallelID))),
-	}, "\n")
+	}
+	// Scan problems stay on screen, not only in a notice that can scroll away:
+	// an unreadable Source folder means the counts above are not the card.
+	line := func(label string, items []string) {
+		if len(items) > 0 {
+			lines = append(lines, ansi.Truncate(fmt.Sprintf("%-14s %d · %s", label, len(items), items[0]), max(1, width), "…"))
+		}
+	}
+	line("Unreadable", m.scan.sourceErrors)
+	line("Not scanned", m.scan.sourceSkipped)
+	line("Dest. errors", m.scan.destinationErrors)
+	return strings.Join(lines, "\n")
 }
 
 func (m importModel) buildPlan() importPlan {
