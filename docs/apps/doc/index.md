@@ -82,15 +82,24 @@ Browse opens on the Items as cards, as box's Browse does, or as a table,
 chosen with two icon buttons, Cards (a grid of squares) and List (bulleted lines). In the list, each column is as wide
 as its header's right edge is dragged, remembered per column, and a click on
 a header sorts by that column, again to turn the order round; Sort offers the
-same columns. Each card or row shows the first page of HEAD, the fields that tell the document apart
-(owner, country), the type, and where its expiry stands. A row of filters
-across the top narrows them: search (fields, tags and the text on the page), type,
-a tag filter that matches every tag chosen,
-a select for every distinguishing key any Template has, expiry and kind, and
-a Use filter for Items in use or retired, and a **★ Frequent** chip that
-shows only the frequent Items. The type and key selects offer only the
-values the other filters leave — choosing a type narrows the owners to that
-type's — and a key with no value left is hidden. They
+columns of the types in view, and an arrow beside it turns the order round.
+The list's columns are the distinguishing keys of the types in view. Each card or row shows the first page of HEAD, the fields that tell the document apart
+(owner, country), the type, and where its expiry stands.
+
+Filters across the top narrow them, offering only what the Items in view
+can use. The first row holds search (fields, tags and the text on the
+page), type — grouped under the type they all extend, each with its count —
+the distinguishing keys every type in the tree has (the owner), a tag filter
+that matches every tag chosen, and a **★ Frequent** chip that shows only the
+frequent Items. A second row, shown only when something is in it, holds the
+distinguishing keys every type left has besides — all of a type's once it
+is chosen, none with any type — and expiry, kind and Use (in use or
+retired). Every filter offers the values the other filters leave — choosing
+a type narrows the owners to that type's — and one with fewer than two
+values left is hidden unless it is set. A date or month key is chosen by
+year; a text key with more than 20 values in the tree is typed, its values
+offered as it is; any other is picked from a list. A filter that narrows is
+drawn blue with a × that clears it. They
 sort by date added, expiry, name or type; frequent Items always come first
 and retired ones last, and the sort orders each part. The layout, sort, order and the Frequent chip
 are remembered in the browser. A thumbnail too tall or wide for its card shows
