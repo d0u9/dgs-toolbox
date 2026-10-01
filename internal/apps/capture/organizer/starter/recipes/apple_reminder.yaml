@@ -4,7 +4,7 @@
 name: Reminder
 
 match:
-  workflows: [quick_mark]
+  workflows: [quick_marker]
 
 actions:
   - id: apple.reminders.create

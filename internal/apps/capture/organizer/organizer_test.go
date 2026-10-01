@@ -78,9 +78,9 @@ func TestFindNarrowsCandidates(t *testing.T) {
 			want:    []RecipeID{"apple_reminder_place", "obsidian_daily", "obsidian_location", "obsidian_location_daily", "obsidian_timeline"},
 		},
 		{
-			name: "quick_mark offers a different set entirely",
+			name: "quick_marker offers a different set entirely",
 			capture: Capture{Index: indexschema.Index{
-				Source: indexschema.Source{Workflow: "quick_mark"},
+				Source: indexschema.Source{Workflow: "quick_marker"},
 			}},
 			want: []RecipeID{"apple_calendar", "apple_note", "apple_reminder", "obsidian_daily", "obsidian_timeline"},
 		},
@@ -147,7 +147,7 @@ func TestContentIsSourcedPerWorkflow(t *testing.T) {
 	}{
 		{workflow: "been_here", payload: map[string]any{"note": "note text"}, want: "note text"},
 		{workflow: "photo_note", payload: map[string]any{"text": "photo text"}, want: "photo text"},
-		{workflow: "quick_mark", payload: map[string]any{"mark": "mark text"}, want: "mark text"},
+		{workflow: "quick_marker", payload: map[string]any{"mark": "mark text"}, want: "mark text"},
 		{workflow: "been_here", payload: map[string]any{"text": "wrong key"}, want: ""},
 	}
 

@@ -61,7 +61,7 @@ func TestTimelineEntryCarriesThePlaceWhenThereIsOne(t *testing.T) {
 func TestTimelineEntryWithoutAPlaceIsOneLine(t *testing.T) {
 	vault := t.TempDir()
 	capture := beenHere()
-	capture.Index.Source.Workflow = "quick_mark"
+	capture.Index.Source.Workflow = "quick_marker"
 	capture.Index.Coordinates = nil
 	capture.Index.Place = nil
 	ctx := NewContext(capture, map[FieldID]any{FieldContent: "Emma 说她怀孕了。"}).

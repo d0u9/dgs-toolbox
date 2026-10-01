@@ -237,7 +237,7 @@ The v1 Capture metadata contract is defined by
 `testdata/capture` is a generated Capture root for exercising Scan and Route
 without touching real data. It holds eight valid Captures—a `been_here` note with a
 text attachment, photo with JPEG and PNG attachments, voice memo with a WAV, a
-Capture carrying undescribed producer fields (the only one), a `quick_mark`
+Capture carrying undescribed producer fields (the only one), a `quick_marker`
 with a partly filled place, an ignored `"null"` attachment beside a real
 one, a place with no coordinates, and a required-fields-only Capture with no
 location at all—plus three directories that must be rejected: `not-a-capture` (no index file),

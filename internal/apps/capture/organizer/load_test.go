@@ -75,7 +75,7 @@ func TestLoadKeepsOneRecipePerID(t *testing.T) {
 	writeRecipe(t, dir, "obsidian_location.yaml", `
 name: My Location
 match:
-  workflows: [been_here, quick_mark]
+  workflows: [been_here, quick_marker]
 actions:
   - id: obsidian.location.append
 `)

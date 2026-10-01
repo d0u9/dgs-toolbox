@@ -147,7 +147,7 @@ the order the files sort in, which is changed by renaming them.
 name: Work Daily
 
 match:
-  workflows: [been_here, quick_mark]
+  workflows: [been_here, quick_marker]
   # Offered only when at least one of these resolves. Any field may be named,
   # including one a workflow file describes.
   requires_any: [coordinates, place.city]
@@ -290,7 +290,7 @@ be listed together, and the first that resolves answers.
   key held the wrong thing is still organized without editing anything.
 - **Nothing in the payload is read without a file saying where it is.** The
   workflows this toolbox ships shortcuts for — `been_here`, `photo_note`,
-  `quick_mark` — are files like everyone else's, laid down by `dgs capture
+  `quick_marker` — are files like everyone else's, laid down by `dgs capture
   --init`. An installation that has laid nothing down resolves no field from a
   payload and asks for it in `FIELDS`; the fields the index itself gives a
   meaning, `createdAt` and the place and the coordinates, are read as always.

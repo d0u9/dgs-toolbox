@@ -68,8 +68,8 @@ func Write(root string) (err error) {
 		Payload: map[string]any{"note": "Producer fields the schema does not describe are ignored, not rejected."}}
 	extra.build(root)
 
-	// 5 quick_mark, and a place without a locality
-	partial := capture{Dir: "2000-01-05-partial-place", Workflow: "quick_mark", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
+	// 5 quick_marker, and a place without a locality
+	partial := capture{Dir: "2000-01-05-partial-place", Workflow: "quick_marker", App: "Shortcut", OS: "iOS", System: "0.0.0", Device: "Alex's iPhone",
 		ID: "cap-2000-01-05-partial", Created: "2000-01-05T12:00:00.000Z",
 		Lat: 12.34005, Lon: 56.78005, Alt: 19,
 		Place:   map[string]string{"city": "Example place", "region": "Example place", "country": "Example place"},

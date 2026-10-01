@@ -3,7 +3,7 @@
 name: Apple Note
 
 match:
-  workflows: [photo_note, quick_mark]
+  workflows: [photo_note, quick_marker]
 
 actions:
   - id: apple.notes.create
