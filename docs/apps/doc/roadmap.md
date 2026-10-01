@@ -22,6 +22,8 @@ step at a time as it grows. The page comes first; what it writes follows.
 | M9 | Several trees (`doc.trees`), switched from the top bar | done |
 | M10 | Cases: Items added as a matter needs them, still-needed notes, export, archive | done |
 | M11 | Snapshots: fixed subtrees taken from a rule and edited by hand, put in an Outline's tree as folders beside its rules | done |
+| M12 | Why here: how a rule placed a PDF, or why not, step by step, on View and with `dgs doc explain` | done |
+| M13 | Numbering per branch: orders named for their first key, listed on any node and taken from the nearest; `exclude: true` leaves Items out | done |
 
 The layout and formats are in [`index.md`](index.md#layout-on-disk).
 

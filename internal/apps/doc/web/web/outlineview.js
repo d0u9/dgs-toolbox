@@ -1,25 +1,28 @@
-// View: one Outline read as a folder is in Finder, and nothing else on the
-// page. Its folders and PDFs down the left as a tree, the PDF picked in the
+// View: one Outline read as a folder is in Finder, and nothing else of
+// Explore; the top bar stays. Its folders and PDFs down the left as a tree, the PDF picked in the
 // middle, and on the right what the tree knows of it, or of the folder
 // picked. Nothing here changes anything: making and exporting are
 // Explore's, and PDFs the Outline cannot place are not shown.
 //
-//   const view = outlineView({ state, preview, onLeave });
+//   const view = outlineView({ state, preview, onLeave, explain });
 //   view.show(name, root)   draws the Outline named, root its grouping's root
 //
 // preview(file) shows a PDF's pages in the page's reader, or none for null;
 // the reader is moved into the view while it is open and back when it is
 // left. onLeave is called when the reader asks to leave: Esc, or the button.
+// explain(file) answers the server's explanations of how the Outline
+// places the file's Item, for Why here.
 import { $, el, keep, label, fieldsAt, tagsAt } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
-import { find, findFile, resizable } from "/outlinetree.js";
+import { find, findFile, resizable, whyText } from "/outlinetree.js";
 
-export function outlineView({ state, preview, onLeave }) {
+export function outlineView({ state, preview, onLeave, explain }) {
   let name = "";
   let root = null;
   let picked = ""; // the folder ("a/b/") or PDF ("a/b/c.pdf") picked, by tree path
   const closed = new Set(); // the folders drawn shut on the left
   let home = null; // where the reader sits when the view is shut
+  let why = false; // Why here is open, and stays open from PDF to PDF
   // Both side panes are dragged wider or narrower, kept in this browser.
   resizable($("view-tree"), "dgs-doc-view-tree", { after: false, fallback: 300, min: 180 });
   resizable($("view-info"), "dgs-doc-view-info", { fallback: 320, min: 220 });
@@ -97,7 +100,29 @@ export function outlineView({ state, preview, onLeave }) {
       el("p", { className: "mono view-path" }, file.path),
       tags.length ? el("p", { className: "view-tags" }, ...tags.map((tag) => el("span", { className: "tag" }, tag))) : null,
       el("dl", { className: "view-fields" }, ...keys.flatMap((k) => [el("dt", {}, k), el("dd", {}, value(k))])),
-      when ? el("p", { className: "muted" }, "Added " + when) : null);
+      when ? el("p", { className: "muted" }, "Added " + when) : null,
+      whyHere(file));
+  }
+
+  // whyHere is what placed file where it is: the rule's conditions, the
+  // branch taken and what each key wrote, as the server explains it. It is
+  // asked for only while open.
+  function whyHere(file) {
+    const body = el("pre", { className: "view-why-text" });
+    const box = el("details", { className: "view-why" }, el("summary", {}, "Why here"), body);
+    const load = async () => {
+      body.textContent = "…";
+      try {
+        const all = await explain(file);
+        if (picked !== file.path) return;
+        body.textContent = whyText(all, file);
+      } catch (err) {
+        body.textContent = err.message;
+      }
+    };
+    box.ontoggle = () => { why = box.open; if (why) load(); };
+    box.open = why;
+    return box;
   }
 
   function expiry(i) {

@@ -751,8 +751,13 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .file-tree .ft-row.unplaced, .file-tree .ft-row.unplaced .ft-icon, .file-tree .ft-row.unplaced > .numeric { color: var(--error); }
 .file-tree .ft-row.outline-snapshot .ft-icon, .file-tree .ft-row.outline-snapshot .ft-name { color: var(--primary); }
 .file-tree .ft-row .ft-reveal { flex: none; padding: 0 6px; border: 0; border-radius: 4px; background: none; color: var(--graphite); cursor: pointer; visibility: hidden; }
-.file-tree .ft-row:hover > .ft-reveal, .file-tree .ft-row:focus-within > .ft-reveal { visibility: visible; }
+.file-tree .ft-row:hover .ft-reveal, .file-tree .ft-row:focus-within .ft-reveal { visibility: visible; }
 .file-tree .ft-row .ft-reveal:hover { color: var(--primary); background: var(--selected); }
+.file-tree .ft-row .ft-extras { flex: none; display: flex; }
+.why-panel { margin: 0 0 8px; padding: 6px 10px; border: 1px solid var(--hairline); border-radius: 6px; }
+.why-panel header { display: flex; align-items: center; gap: 8px; font-size: var(--font-size-sm); }
+.why-panel header strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.why-panel pre { max-height: 50vh; overflow: auto; }
 .outline-empty { padding: 12px 4px; }
 /* A PDF picked on Explore opens beside the tree, as in a file manager. */
 .outline-preview { border-left: 1px solid var(--hairline); }
@@ -867,6 +872,7 @@ body.list-shut .outline-list { display: none; }
 .block-adds { display: flex; gap: 6px; }
 .block-add { font-size: 0.85em; padding: 2px 8px; }
 .block-note { margin: 0; font-size: 0.85em; }
+.block-order { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
 
 /* A rule's if as bubbles: key, operator and values, joined by && or ||.
    Controls that add, remove or negate show on hover, so the condition reads
@@ -951,8 +957,9 @@ body.list-shut .outline-list { display: none; }
 .block-more { align-self: flex-start; min-width: 0; }
 
 /* Explore's View: one Outline read as a folder in Finder. The rest of the
-   page steps aside; the reader moves into the right-hand column. */
-body.viewing .topbar > :not(.brand), body.viewing .work > :not(#view) { display: none; }
+   work area steps aside, the top bar stays; the reader moves into the
+   right-hand column. */
+body.viewing .work > :not(#view) { display: none; }
 .outline-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .outline-view[hidden] { display: none; }
 .view-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--hairline); background: var(--cloud); min-width: 0; }
@@ -973,6 +980,8 @@ body.viewing .topbar > :not(.brand), body.viewing .work > :not(#view) { display:
 .view-fields { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: var(--font-size-sm); }
 .view-fields dt { color: var(--graphite); }
 .view-fields dd { margin: 0; overflow-wrap: anywhere; }
+.view-why summary { cursor: pointer; color: var(--graphite); font-size: var(--font-size-sm); }
+.view-why-text { margin: 6px 0; font-size: 11px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .view-quicklook-close { display: none; }
 body.quicklook .view-preview { position: fixed; inset: 24px; z-index: 50; border: 1px solid var(--hairline-strong); border-radius: var(--radius-lg); box-shadow: var(--lift-modal); }
 body.quicklook .view-quicklook-close { display: inline-flex; position: absolute; bottom: 12px; right: 12px; z-index: 1; }
