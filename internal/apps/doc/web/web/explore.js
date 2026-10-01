@@ -4,7 +4,7 @@
 // tree, picking a PDF opens it there. Export writes the same tree into a
 // folder you choose. Outlines are made on the Outlines page, from rules
 // and Snapshots made on theirs; nothing here changes one.
-import { $, api, el, loadState, post, frame, say, planNodes, showPreview, clearPreview, label, outlineFolder, rememberOutlineFolder } from "/common.js";
+import { $, api, el, loadState, post, frame, say, planNodes, showPreview, clearPreview, label, outlineFolder, rememberOutlineFolder, nameTree, outlineTitle } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { outlineTree, find, findFile, folderFiles, pdfRow, unplaced, UNPLACED, resizable } from "/outlinetree.js";
 
@@ -20,12 +20,8 @@ const tree = outlineTree($("tree"), () => state, { onPick: files, empty: () =>
 resizable(document.querySelector(".outline-main"), "dgs-doc-explore-tree", { after: false });
 
 function list() {
-  const parts = (o) => o.rules.length + (o.rules.length === 1 ? " rule" : " rules") +
-    ((o.snapshots || []).length ? " · " + o.snapshots.length + (o.snapshots.length === 1 ? " Snapshot" : " Snapshots") : "");
   $("count").textContent = outlines.length;
-  $("outlines").replaceChildren(...outlines.map((o) => el("li", { className: o === shown ? "selected" : "", onclick: () => open(o) },
-    el("span", { className: "template-name" }, o.name), el("span", { className: "badge" }, parts(o)),
-    el("span", { className: "template-sub" }, o.about || ""))));
+  nameTree($("outlines"), outlines.map((o) => ({ name: o.name, note: o.rules.length + (o.snapshots || []).length, title: outlineTitle(o), o })), { selected: shown ? shown.name : "", onPick: (e) => open(e.o) });
   $("no-outlines").hidden = outlines.length > 0;
 }
 
@@ -33,6 +29,7 @@ async function open(o) {
   shown = target = o;
   history.replaceState(null, "", "#" + encodeURIComponent(o.name));
   $("title").textContent = o.name;
+  $("description").textContent = o.about || "";
   $("edit").href = api("/outlines/") + "#" + encodeURIComponent(o.name);
   $("export-button").disabled = !o.rules.length && !(o.snapshots || []).length;
   tree.reset("outline:" + o.name);

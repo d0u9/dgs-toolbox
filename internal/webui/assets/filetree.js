@@ -19,6 +19,8 @@
 //                   row then takes a chevron that opens or shuts it, and
 //                   selected may name a folder ("a/b/")
 //     folders,      folder paths ("a/b/") drawn even when no file is in them
+//     folderOrder,  (a, b) → how two sibling folder names sort; by name when
+//                   not given
 //     decorate,     (row, {kind, path, file}) called on each row drawn, kind
 //                   "folder" or "file" and path the folder's ("a/b/") or the
 //                   file's; a page adds what the tree does not, such as drag
@@ -78,11 +80,11 @@ function row(kind, name, title, svg) {
 }
 
 export function fileTree(files, options = {}) {
-  const { closed = new Set(), selected = "", onPick, fileExtra, folderExtra, fileClass, mark, href, folderIcon, folderClass, onPickFolder, folders, decorate } = options;
+  const { closed = new Set(), selected = "", onPick, fileExtra, folderExtra, fileClass, mark, href, folderIcon, folderClass, onPickFolder, folders, folderOrder, decorate } = options;
   const draw = (node, prefix) => {
     const ul = document.createElement("ul");
     ul.className = "ft-list";
-    for (const [name, child] of [...node.dirs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [name, child] of [...node.dirs.entries()].sort(([a], [b]) => folderOrder ? folderOrder(a, b) : a.localeCompare(b))) {
       const path = prefix + name + "/";
       const li = document.createElement("li");
       const open = !closed.has(path);

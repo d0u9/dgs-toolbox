@@ -5,6 +5,8 @@ import { show as showViewer, hide as hideViewer } from "/viewer.js";
 import { splitter } from "/ui/splitter.js";
 import * as statusBar from "/ui/statusbar.js";
 import { suggest } from "/combo.js";
+import { fileTree } from "/ui/filetree.js";
+import { tooltip } from "/ui/tooltip.js";
 
 // The status bar along the bottom, as on every dgs page: the tree on the
 // left, what the page shows in the middle, and every message said anywhere
@@ -485,6 +487,46 @@ export function rememberOutlineFolder(state, name, path) {
     else localStorage.removeItem(targetKey(state, name));
   } catch { /* not kept */ }
 }
+
+// nameTree draws a page's list of named things — Outlines, rules,
+// Snapshots, Cases — as the file tree Templates draws: one file row each,
+// a short note at its right, and what describes it in the row's tooltip
+// (/ui/tooltip.js), so
+// a row stays one line however long the description. entries are
+//   {name, label, folder, note, badge, title}
+// label is drawn instead of the name, folder puts the row in a folder of
+// that name, note is a number or a word drawn muted at the right, badge one
+// drawn as a badge, and title the tooltip's lines. selected is the picked
+// entry's name; closed holds the folders drawn shut ("Archived/"). One that
+// is new and not saved yet is noted under the tree.
+// Folders are drawn in the order their entries first name them, and the
+// picked entry's folder is drawn open.
+export function nameTree(node, entries, { selected = "", onPick, unsaved = "", closed } = {}) {
+  const pathOf = (e) => (e.folder ? e.folder + "/" : "") + e.name;
+  const picked = entries.find((e) => e.name === selected);
+  if (picked && picked.folder && closed) closed.delete(picked.folder + "/");
+  const order = [...new Set(entries.map((e) => e.folder).filter(Boolean))];
+  node.replaceChildren(fileTree(entries.map((e) => ({ path: pathOf(e), e })), {
+    closed,
+    folderOrder: (a, b) => order.indexOf(a) - order.indexOf(b),
+    selected: picked ? pathOf(picked) : "",
+    onPick: (f) => onPick(f.e),
+    fileExtra: (f) => f.e.badge ? el("span", { className: "badge badge-soon" }, f.e.badge)
+      : f.e.note !== undefined && f.e.note !== "" ? el("span", { className: "template-sub numeric" }, String(f.e.note)) : null,
+    folderExtra: (path, files) => el("span", { className: "template-sub numeric" }, String(files.length)),
+    decorate: (row, { file }) => {
+      if (!file) return;
+      if (file.e.label) row.querySelector(".ft-name").textContent = file.e.label;
+      tooltip(row, [file.e.label || file.e.name, ...[].concat(file.e.title || [])]);
+    },
+  }), ...(unsaved ? [el("p", { className: "template-sub new-template" }, unsaved)] : []));
+}
+
+// outlineTitle is what a row's tooltip says of an Outline: what it is for,
+// then its rules and Snapshots.
+export const outlineTitle = (o) => [o.about,
+  o.rules.length ? "rules: " + o.rules.map((r) => r.name).join(", ") : "no rule",
+  (o.snapshots || []).length ? "Snapshots: " + o.snapshots.map((m) => m.name).join(", ") : ""];
 
 export function say(node, text, error) {
   node.className = error ? "message error" : "message";

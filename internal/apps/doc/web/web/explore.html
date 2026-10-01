@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/filetree.css">
+<link rel="stylesheet" href="/ui/tooltip.css">
 <link rel="stylesheet" href="/ui/filedialog.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="/app.css">
@@ -46,7 +47,7 @@
       <button id="shut-list" class="button" type="button" title="Hide the Outlines">‹</button>
     </div>
     <p id="no-outlines" class="muted outline-empty" hidden>No Outline yet. Make one on the <a href="/outlines/">Outlines</a> page.</p>
-    <ul id="outlines" class="template-list scroll"></ul>
+    <div id="outlines" class="template-tree scroll"></div>
   </section>
   <section class="outline-main">
     <div class="template-bar">
@@ -55,6 +56,7 @@
         <h2 id="title"></h2>
         <span id="total" class="count muted"></span>
       </div>
+      <p id="description" class="template-description muted"></p>
       <p id="message" class="message"></p>
       <a id="edit" class="button" hidden>Edit rules</a>
       <button id="export-button" class="button" type="button" title="Write the Outline into a folder you choose">Export…</button>

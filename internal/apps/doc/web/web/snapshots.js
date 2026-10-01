@@ -4,7 +4,7 @@
 // the folder picked, dragged into another, renamed, set to another revision
 // or taken out. An Outline puts it in its tree as a folder of its name; the
 // Outlines page says where.
-import { $, api, el, loadState, post, label, frame, say } from "/common.js";
+import { $, api, el, loadState, post, label, frame, say, nameTree } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openMenu } from "/ui/menu.js";
 import { splitter } from "/ui/splitter.js";
@@ -66,12 +66,9 @@ const target = () => isFolder(picked) ? picked.slice(0, -1) : dirOf(picked);
 
 function list() {
   $("count").textContent = snapshots.length;
-  const row = (name, sub, selected, onclick) => el("li", { className: selected ? "selected" : "", onclick },
-    el("span", { className: "template-name" }, name), el("span", { className: "template-sub" }, sub));
-  $("snapshots").replaceChildren(...snapshots.map((s) => row(s.name,
-    (s.about ? s.about + " · " : "") + (s.used.length ? "in " + s.used.join(", ") : "in no Outline"),
-    s.name === editing, () => leave() && open(s.name))),
-    ...(editing === "" ? [row("new snapshot", "not taken yet", true)] : []));
+  nameTree($("snapshots"), snapshots.map((s) => ({ name: s.name, note: s.files.length,
+    title: [s.about, s.files.length === 1 ? "1 PDF" : s.files.length + " PDFs", s.used.length ? "in " + s.used.join(", ") : "in no Outline"] })), {
+    selected: editing, onPick: (e) => leave() && open(e.name), unsaved: editing === "" ? "new snapshot · not taken yet" : "" });
 }
 
 // relocate moves the PDF or folder at from to the path to, with everything

@@ -4,7 +4,7 @@
 // Rules are made on the Rules page and Snapshots on the Snapshots page;
 // both are the tree's, and several Outlines use one. Looking through the
 // result and exporting it is the Explore page's.
-import { $, api, el, loadState, post, label, frame, say } from "/common.js";
+import { $, api, el, loadState, post, label, frame, say, nameTree, outlineTitle } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { outlineTree, unplaced, resizable } from "/outlinetree.js";
 
@@ -26,11 +26,8 @@ const text = (o) => JSON.stringify({ name: o.name, about: o.about || "", folder:
 
 function list() {
   $("count").textContent = outlines.length;
-  const row = (name, sub, selected, onclick) => el("li", { className: selected ? "selected" : "", onclick },
-    el("span", { className: "template-name" }, name), el("span", { className: "template-sub" }, sub));
-  const parts = (o) => [...o.rules.map((r) => r.name), ...(o.snapshots || []).map((m) => m.name)].join(", ");
-  $("outlines").replaceChildren(...outlines.map((o) => row(o.name, o.about || parts(o), o.name === editing, () => leave() && open(o.name))),
-    ...(editing === "" ? [row("new outline", "not saved yet", true)] : []));
+  nameTree($("outlines"), outlines.map((o) => ({ name: o.name, note: o.rules.length + (o.snapshots || []).length, title: outlineTitle(o) })), {
+    selected: editing, onPick: (e) => leave() && open(e.name), unsaved: editing === "" ? "new outline · not saved yet" : "" });
 }
 
 // sync takes the form into the draft.
