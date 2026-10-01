@@ -2,7 +2,7 @@
 name: Calendar
 
 match:
-  workflows: [quick_mark]
+  workflows: [quick_marker]
 
 fields:
   - id: all_day

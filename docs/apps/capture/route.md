@@ -110,7 +110,7 @@ CAPTURES              RECIPES            ACTIONS                    FIELDS
   The directory itself stays available in the status bar.
 - `RECIPES` lists the candidates `FindRecipes` returns for the selected
   Capture, so the list changes as the Capture cursor moves; a `been_here`
-  Capture and a `quick_mark` Capture do not offer the same Recipes. Nothing is
+  Capture and a `quick_marker` Capture do not offer the same Recipes. Nothing is
   preselected and no candidate is highlighted as recommended — choosing the
   Recipe is the user's decision, and a lone candidate is still confirmed with
   `Enter`. With no candidate it shows `· No recipe matches this capture`.

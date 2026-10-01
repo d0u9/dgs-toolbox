@@ -4,7 +4,7 @@
 name: Work Daily
 
 match:
-  workflows: [been_here, quick_mark]
+  workflows: [been_here, quick_marker]
 
 fields:
   - id: project

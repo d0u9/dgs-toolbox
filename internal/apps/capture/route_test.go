@@ -1194,7 +1194,7 @@ func quickMarkRoot(t *testing.T, names ...string) string {
 		if err := os.Mkdir(path, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		index := []byte(`{"schema":"v1","source":{"app":"Shortcut","workflow":"quick_mark","device":{"os":"iOS","systemVersion":"26.4.2","name":"Phone"}},"id":"` + name + `","payload":{"mark":"a note"},"createdAt":"2026-09-09T16:34:35.556+10:00"}`)
+		index := []byte(`{"schema":"v1","source":{"app":"Shortcut","workflow":"quick_marker","device":{"os":"iOS","systemVersion":"26.4.2","name":"Phone"}},"id":"` + name + `","payload":{"mark":"a note"},"createdAt":"2026-09-09T16:34:35.556+10:00"}`)
 		if err := os.WriteFile(filepath.Join(path, "index.json"), index, 0o600); err != nil {
 			t.Fatal(err)
 		}

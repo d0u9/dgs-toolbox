@@ -182,9 +182,9 @@ A field is a `FieldID`, never a hardcoded path into the Capture JSON, because
 the same logical field is sourced differently per workflow:
 
 ```text
-been_here   content ← payload.note
-photo_note  content ← payload.text
-quick_mark  content ← payload.mark
+been_here     content ← payload.note
+photo_note    content ← payload.text
+quick_marker  content ← payload.mark
 ```
 
 Those three are shipped as workflow files, not compiled in: they are the same
@@ -470,7 +470,7 @@ empty `RECIPES` column rather than by pretending to offer something.
 name: Work Daily
 
 match:
-  workflows: [been_here, quick_mark]
+  workflows: [been_here, quick_marker]
 
 fields:
   - id: project
@@ -763,13 +763,13 @@ once written, they are the reader's files.
 | --- | --- | --- | --- |
 | Location | `obsidian_location` | `been_here` | `obsidian.location.append` |
 | Location + Daily | `obsidian_location_daily` | `been_here` | `obsidian.location.append`, `obsidian.daily.append` |
-| Daily | `obsidian_daily` | `been_here`, `photo_note`, `quick_mark` | `obsidian.daily.append` |
-| Timeline | `obsidian_timeline` | `been_here`, `photo_note`, `quick_mark` | `obsidian.timeline.append` |
+| Daily | `obsidian_daily` | `been_here`, `photo_note`, `quick_marker` | `obsidian.daily.append` |
+| Timeline | `obsidian_timeline` | `been_here`, `photo_note`, `quick_marker` | `obsidian.timeline.append` |
 | Photo + Location | `photo_location_daily` | `photo_note` | `obsidian.location.append`, `obsidian.daily.append` |
-| Apple Note | `apple_note` | `photo_note`, `quick_mark` | `apple.notes.create` |
-| Reminder | `apple_reminder` | `quick_mark` | `apple.reminders.create` |
+| Apple Note | `apple_note` | `photo_note`, `quick_marker` | `apple.notes.create` |
+| Reminder | `apple_reminder` | `quick_marker` | `apple.reminders.create` |
 | Reminder Here | `apple_reminder_place` | `been_here` | `apple.reminders.at_place` |
-| Calendar | `apple_calendar` | `quick_mark` | `apple.calendar.create` |
+| Calendar | `apple_calendar` | `quick_marker` | `apple.calendar.create` |
 
 The id is the filename each is written under, without the `.yaml`. The two location
 Recipes additionally require the Capture to carry a location at all, so a
@@ -808,6 +808,6 @@ come out. Every domain judgement lives here, and the TUI only calls these
 functions and draws the result.
 
 `been_here → Location / Location + Daily` is driven end to end before
-`photo_note` and `quick_mark` are added, and before any of Apple Notes,
+`photo_note` and `quick_marker` are added, and before any of Apple Notes,
 Reminders, or Calendar is touched — those bring their own API detail and must
 not shape the model.
