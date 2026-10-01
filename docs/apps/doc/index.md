@@ -898,15 +898,14 @@ Making the rules and looking through the result are kept apart:
   Nothing on it changes an Outline; Edit rules opens it on the Outlines page.
   **View** reads the Outline shown as a folder is read in Finder, and
   nothing else: the Outlines list, Export, Edit rules and the top bar's
-  links step aside. Its folders run down the left, each counting its PDFs;
-  the folder picked fills the middle, its folders then its PDFs, as cards
-  of each first page or as a list (name, type, owner, expiry, added), under
-  a path whose parts go back up; the PDF picked fills the right, what the
-  tree knows of it — name, type, expiry, revision, its path in the Outline,
-  tags and fields, read only — above its pages, with Open in Browse and Show
-  in Finder. ↑ and ↓ move, → or Enter go into a folder, ← or Backspace up
-  out of it, Space shows the PDF large over the rest and again shuts it,
-  and Esc leaves. Not placed is not shown. View is in the address, `?view`,
+  links step aside. Its folders and PDFs run down the left as a tree, each
+  folder counting its PDFs; the PDF picked fills the middle, its pages with
+  Open in Browse and Show in Finder; the right holds what the tree knows of
+  it — name, type, expiry, revision, its path in the Outline, tags, fields
+  and when it was added, read only — or of the folder picked. ↑ and ↓ move
+  down the tree, → or Enter open a folder, ← shuts it or goes to the folder
+  holding the row, Space shows the PDF large over the rest and again shuts
+  it, and Esc leaves. Not placed is not shown. View is in the address, `?view`,
   so a link or a reload opens on it.
 
 ### Snapshots

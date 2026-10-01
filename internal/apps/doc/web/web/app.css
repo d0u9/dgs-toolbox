@@ -959,42 +959,20 @@ body.viewing .topbar > :not(.brand), body.viewing .work > :not(#view) { display:
 .view-head h2 { margin: 0; font-size: var(--font-size-title); font-family: var(--font-mono); white-space: nowrap; }
 .view-crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .view-crumbs .crumb { max-width: 16em; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }
-.view-crumbs .crumb:first-child { display: none; }
 .crumb-sep { color: var(--graphite); }
 .view-body { flex: 1; min-height: 0; display: flex; }
-.view-tree { flex: none; width: 260px; padding: 8px; border-right: 1px solid var(--hairline); overflow-y: auto; }
-.view-items { flex: 1 1 auto; min-width: 280px; padding: 12px; overflow-y: auto; outline: none; }
-.view-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; align-content: start; }
-.view-tile { display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: var(--radius-md); cursor: pointer; min-width: 0; }
-.view-tile:hover { background: var(--hover); }
-.view-tile.selected { background: var(--selected); box-shadow: inset 0 0 0 1px var(--primary); }
-.view-tile-pic { position: relative; height: 150px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--hairline); border-radius: var(--radius-sm); background: var(--paper); }
-.view-tile-pic img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
-.view-tile-pic.no-picture img { display: none; }
-.view-tile-pic.no-picture::after { content: attr(data-type); font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--graphite); }
-.view-folder { border: 0; background: none; color: var(--charcoal); }
-.view-folder svg { width: 72px; height: 72px; }
-.view-tile-name { font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
-.view-tile-sub { font-size: var(--font-size-xs); color: var(--graphite); text-align: center; min-height: 1em; }
-.view-tile .badge { align-self: center; }
-.view-list .items-table { width: 100%; }
-.view-list .view-name { display: flex; align-items: center; gap: 8px; }
-.view-list .view-name .ft-icon { width: 16px; height: 16px; display: inline-flex; }
-.view-side { flex: none; width: 46%; min-width: 360px; display: flex; flex-direction: column; border-left: 1px solid var(--hairline); background: var(--paper); }
-.view-info { flex: none; max-height: 40%; overflow-y: auto; padding: 12px 16px; border-bottom: 1px solid var(--hairline); }
-.view-side:not(.has-file) .view-info { flex: 1; max-height: none; border-bottom: 0; }
+.view-tree { flex: none; width: 300px; padding: 8px; border-right: 1px solid var(--hairline); overflow-y: auto; outline: none; }
+.view-preview { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--paper); }
+.view-preview .outline-preview { flex: 1; align-self: stretch; min-width: 0; border-left: 0; }
+.outline-view.has-file .view-hint { display: none; }
+.view-info { flex: none; width: 320px; overflow-y: auto; padding: 12px 16px; border-left: 1px solid var(--hairline); }
 .view-info h3 { margin: 0 0 4px; font-size: var(--font-size-title); }
 .view-info p { margin: 0 0 6px; font-size: var(--font-size-sm); }
 .view-path { color: var(--graphite); overflow-wrap: anywhere; }
 .view-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.view-fields { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0 0; font-size: var(--font-size-sm); }
+.view-fields { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: var(--font-size-sm); }
 .view-fields dt { color: var(--graphite); }
 .view-fields dd { margin: 0; overflow-wrap: anywhere; }
-.view-preview { flex: 1; min-height: 0; display: flex; }
-.view-preview .outline-preview { flex: 1; min-width: 0; border-left: 0; }
-.view-side:not(.has-file) .view-preview { display: none; }
 .view-quicklook-close { display: none; }
-/* Space shows the PDF large, over the rest, as Quick Look does. */
-body.quicklook .view-side { position: fixed; inset: 24px; z-index: 50; width: auto; border: 1px solid var(--hairline-strong); border-radius: var(--radius-lg); box-shadow: var(--lift-modal); }
-body.quicklook .view-info { display: none; }
+body.quicklook .view-preview { position: fixed; inset: 24px; z-index: 50; border: 1px solid var(--hairline-strong); border-radius: var(--radius-lg); box-shadow: var(--lift-modal); }
 body.quicklook .view-quicklook-close { display: inline-flex; position: absolute; bottom: 12px; right: 12px; z-index: 1; }
