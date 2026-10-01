@@ -86,15 +86,19 @@ columns of the types in view, and an arrow beside it turns the order round.
 The list's columns are the distinguishing keys of the types in view. Each card or row shows the first page of HEAD, the fields that tell the document apart
 (owner, country), the type, and where its expiry stands.
 
-Filters across the top narrow them, offering only what the Items in view
-can use. The first row holds search (fields, tags and the text on the
-page), type — grouped under the type they all extend, each with its count —
-the distinguishing keys every type in the tree has (the owner), a tag filter
-that matches every tag chosen, and a **★ Frequent** chip that shows only the
-frequent Items. A second row, shown only when something is in it, holds the
-distinguishing keys every type left has besides — all of a type's once it
-is chosen, none with any type — and expiry, kind and Use (in use or
-retired). Every filter offers the values the other filters leave — choosing
+Along the top are search (fields, tags and the text on the page), a
+**Filters** button, a **★ Frequent** chip that shows only the frequent Items,
+the count, and the layout and sort. The filters sit in a panel under them,
+shut until Filters opens it; whether it is open is remembered in the
+browser, and the button counts the filters narrowing, so a shut panel still
+says so. They offer only what the Items in view can use. The panel's first
+row holds type — grouped under the type they all extend, each with its
+count — the fields every Template requires (owner and country), any other
+distinguishing key every type in the tree has, and a tag filter that
+matches every tag chosen. A second row, shown only when something is in
+it, holds the distinguishing keys every type left has besides — all of a
+type's once it is chosen, none with any type — and expiry, kind and Use (in
+use or retired). Every filter offers the values the other filters leave — choosing
 a type narrows the owners to that type's — and one with fewer than two
 values left is hidden unless it is set. A date or month key is chosen by
 year; a text key with more than 20 values in the tree is typed, its values

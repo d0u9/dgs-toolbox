@@ -42,9 +42,7 @@
 <nav class="filters" aria-label="Filters">
   <div class="filter-row">
     <input id="filter" class="filter-search" type="search" placeholder="Search fields, tags, page text" aria-label="Search" spellcheck="false" autocomplete="off">
-    <label class="filter"><span>Type</span><select id="filter-type"><option value="">any</option></select></label>
-    <span id="field-main" class="filter-set"></span>
-    <div class="filter filter-tags"><span>Tags</span><div id="filter-tags" data-label="Filter by tags"></div></div>
+    <button id="filters-toggle" class="chip" type="button" aria-pressed="false" aria-controls="filter-panel" title="Show the filters">Filters<span id="filters-on" class="filters-on numeric" hidden></span></button>
     <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Show only the Items marked frequent">★ Frequent</button>
     <div class="filter-result">
       <span id="count" class="numeric"></span>
@@ -74,7 +72,13 @@
       <button id="view-direction" class="icon-button" type="button" data-dir="desc">↓</button>
     </div>
   </div>
-  <div id="filter-more" class="filter-row filter-more" hidden>
+  <div id="filter-panel" class="filter-panel" hidden>
+  <div class="filter-row">
+    <label class="filter"><span>Type</span><select id="filter-type"><option value="">any</option></select></label>
+    <span id="field-main" class="filter-set"></span>
+    <div class="filter filter-tags"><span>Tags</span><div id="filter-tags" data-label="Filter by tags"></div></div>
+  </div>
+  <div id="filter-more" class="filter-row" hidden>
     <span id="field-more" class="filter-set"></span>
     <label class="filter" title="From the Item's expires field, as HEAD has it"><span>Expiry</span>
       <select id="filter-expiry">
@@ -92,6 +96,7 @@
     <label class="filter" title="Retired: no longer used, though not expired"><span>Use</span>
       <select id="filter-use"><option value="">any</option><option value="active">in use</option><option value="retired">retired</option></select>
     </label>
+  </div>
   </div>
 </nav>
 <main class="work">

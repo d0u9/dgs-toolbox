@@ -109,10 +109,12 @@ function clearable(node, clear) {
 // drawFilters offers only what the Items in view can use. Every filter
 // offers the values the other filters leave, so choosing a type narrows the
 // owners to that type's, and one with fewer than two values left is hidden
-// unless it is set. The field filters are the keys every type left has:
-// with any type that is the owner, with one chosen it is all of that type's.
-// A key every type in the tree has sits in the first row, beside Type; the
-// others, and Expiry, Kind and Use, in the second, hidden when empty.
+// unless it is set. The field filters are the fields every Template requires
+// — owner and country — then the distinguishing keys every type left has:
+// none more with any type, all of a type's once it is chosen. The required
+// fields, and a key every type in the tree has, sit in the first row, beside
+// Type; the others, and Expiry, Kind and Use, in the second, hidden when
+// empty.
 function drawFilters() {
   const typeSelect = $("filter-type"), wasType = typeSelect.value;
   const types = new Map();
@@ -131,8 +133,9 @@ function drawFilters() {
 
   const pool = state.items.filter((i) => passes(i, "fields"));
   const common = (sets) => sets.length ? sets[0].filter((k) => sets.every((ks) => ks.includes(k))) : [];
-  const first = new Set(common([...new Set(state.items.map((i) => i.type))].map(keysOf)));
-  const keys = common([...new Set(pool.map((i) => i.type))].map(keysOf));
+  const mandatory = state.mandatory || [];
+  const first = new Set([...mandatory, ...common([...new Set(state.items.map((i) => i.type))].map(keysOf))]);
+  const keys = [...new Set([...mandatory, ...common([...new Set(pool.map((i) => i.type))].map(keysOf))])];
   for (const [key, filter] of fieldFilters) if (!keys.includes(key) && filter.value()) keys.push(key);
   for (const filter of fieldFilters.values()) filter.node.hidden = true;
   for (const key of keys) {
@@ -460,6 +463,11 @@ function render() {
   $("filters-clear").hidden = !filtering();
   $("filter-tags").closest(".filter").classList.toggle("filter-active", filterTags.get().length > 0);
   for (const s of document.querySelectorAll(".filters select, .filters .filter input")) s.closest(".filter").classList.toggle("filter-active", !!s.value.trim() && !s.id.startsWith("view-"));
+  // The Filters button counts the filters narrowing, so a shut panel still
+  // says something is.
+  const on = $("filter-panel").querySelectorAll(".filter.filter-active").length;
+  $("filters-on").textContent = String(on);
+  $("filters-on").hidden = !on;
   $("unread").hidden = !unread;
   $("unread-count").textContent = unread + (unread === 1 ? " Item's text is" : " Items' text is") + " not read yet, so searching cannot find " + (unread === 1 ? "it." : "them.");
   const list = layout === "list";
@@ -496,9 +504,19 @@ $("filters-clear").onclick = () => {
 function saveView() {
   try {
     localStorage.setItem(VIEW_KEY, JSON.stringify({ layout, sort: $("view-sort").value,
-      direction: direction(), frequent: onlyFrequent() }));
+      direction: direction(), frequent: onlyFrequent(), filters: !$("filter-panel").hidden }));
   } catch { /* not kept */ }
 }
+// The filters sit in a panel, shut until Filters opens it.
+function showFilters(open) {
+  $("filter-panel").hidden = !open;
+  $("filters-toggle").setAttribute("aria-pressed", String(open));
+  $("filters-toggle").title = open ? "Hide the filters" : "Show the filters";
+}
+$("filters-toggle").onclick = () => {
+  showFilters($("filter-panel").hidden);
+  saveView();
+};
 // Cards or list: two buttons, the pressed one is how the Items are shown.
 let layout = "grid";
 function setLayout(value) {
@@ -533,6 +551,7 @@ try {
   if (v.layout) setLayout(v.layout);
   if (v.sort) { $("view-sort").value = v.sort; $("view-sort").dataset.want = v.sort; }
   if (v.direction) setDirection(v.direction);
+  if (v.filters) showFilters(true);
 } catch { /* the defaults stand */ }
 
 // Closing the detail gives the cards the width back.
