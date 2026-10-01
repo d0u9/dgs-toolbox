@@ -17,6 +17,7 @@ func New() tui.App {
 		ID:          "geo",
 		Name:        "Geo",
 		Description: "Geographic tools",
+		Actions:     []tui.Action{locationAction()},
 		Commands: []tui.Command{
 			{
 				ID:          "gpx",
