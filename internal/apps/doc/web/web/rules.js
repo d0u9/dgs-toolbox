@@ -2,7 +2,7 @@
 // with the tree it makes redrawn beside the form as it changes. A rule is
 // the tree's: every Outline naming it, and every Snapshot taken from it
 // after, sees the change. Outlines put rules and Snapshots together.
-import { $, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say, nameTree } from "/common.js";
+import { $, address, scrollBack, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say, nameTree } from "/common.js";
 import * as which from "/layoutform.js";
 import { outlineTree, unplaced, resizable } from "/outlinetree.js";
 
@@ -67,7 +67,7 @@ function open(name) {
   sync(); // the form's own reading, so an untouched rule is not an edit
   saved = text(draft);
   tree.reset(name ? "rule:" + name : "");
-  history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
+  address(name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
   $("title").textContent = name || "New rule";
   $("delete").hidden = !name;
   $("take").hidden = !name;
@@ -113,10 +113,13 @@ async function regroup() {
   draw();
 }
 
+// The tree is scrolled back as it was left once it is drawn.
+const unscroll = scrollBack(["tree"]);
 function draw() {
   const root = grouping && grouping.root;
   $("total").textContent = root ? root.count + (root.count === 1 ? " PDF" : " PDFs") : "";
   tree.show(grouping);
+  if (grouping) unscroll();
   problems();
 }
 
