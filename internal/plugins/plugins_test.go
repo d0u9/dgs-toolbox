@@ -151,3 +151,48 @@ func TestVersionIsTheContentNotTheOrder(t *testing.T) {
 		t.Fatalf("%s %s %s", a, b, c)
 	}
 }
+
+func TestFilesGoIntoTheirFolderBesideTheUsersOwn(t *testing.T) {
+	root := t.TempDir()
+	target := Target{Host: "test", Kind: KindFiles, Place: "vault", Dir: root, Root: root}
+	plugin := Plugin{Host: "test", ID: "public", Kind: KindFiles, Folder: "Scripts/DGS",
+		Files: func() (map[string][]byte, error) { return map[string][]byte{"a.js": []byte("dgs")}, nil }}
+	dir := filepath.Join(root, "Scripts", "DGS")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "mine.js"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustInspect(t, target, plugin).State; got != Missing {
+		t.Fatalf("a folder with only the user's files: %s", got)
+	}
+	if _, err := Install(target, plugin, "", false, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Uninstall(target, plugin, false); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "mine.js")); err != nil || string(data) != "mine" {
+		t.Fatalf("the user's file after uninstall: %q %v", data, err)
+	}
+}
+
+func TestInstallRefusesToWriteOverAFileItDidNotWrite(t *testing.T) {
+	target, plugin := fixture(t, map[string][]byte{"main.js": []byte("one")})
+	if _, err := Install(target, plugin, "", false, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target.Dir, "demo", "new.js"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plugin.Files = func() (map[string][]byte, error) {
+		return map[string][]byte{"main.js": []byte("one"), "new.js": []byte("dgs")}, nil
+	}
+	if _, err := Install(target, plugin, "", false, now); err == nil || !strings.Contains(err.Error(), "new.js") {
+		t.Fatalf("want a refusal naming new.js, got %v", err)
+	}
+	if _, err := Install(target, plugin, "", true, now); err != nil {
+		t.Fatal(err)
+	}
+}

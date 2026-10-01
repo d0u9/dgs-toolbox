@@ -1,0 +1,13 @@
+{
+  "op": "tidy",
+  "args": {
+    "note": "@note.md",
+    "archives": [],
+    "current": "2026",
+    "weekdays": ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
+    "offset": "+10",
+    "header": {"cssclass": "locations", "title": "位置速记", "source": "06 Locations.md"},
+    "undated": "无日期"
+  },
+  "error": "line 3 of the running note is not a day or an entry"
+}

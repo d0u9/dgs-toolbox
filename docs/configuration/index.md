@@ -22,7 +22,8 @@ link here; this is what a reader consults to find out *what* to write.
 - [Conf](conf.md) — the generator root `dgs conf` reads, holding the services
   and the inventory, its secrets tree, and where the destination form opens.
 - [Plugins](plugins.md) — the Obsidian vaults `dgs plugins` installs the
-  plugins dgs carries into.
+  plugins dgs carries into, and the folders in them its scripts and
+  templates go.
 - [Credentials](cred.md) — where identities are searched for, where the
   recipient folder is, and the vault.
 
@@ -153,6 +154,10 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [conf](conf.md) | `secrets` | empty — an instance needing a secret refuses to render |
 | [conf](conf.md) | `export.dir` | empty — the home directory |
 | [plugins](plugins.md) | `obsidian.vaults` | empty — every run names a vault with `--vault` |
+| [plugins](plugins.md) | `obsidian.folders.public` | `99 Toolkit/91 Scripts/01 DGS/00 Public` |
+| [plugins](plugins.md) | `obsidian.folders.quickadd` | `99 Toolkit/91 Scripts/01 DGS/02 QuickAdd` |
+| [plugins](plugins.md) | `obsidian.folders.templates` | `99 Toolkit/01 Templates/01 DGS` |
+| [plugins](plugins.md) | `obsidian.timelines` | `99 Toolkit/timelines.json` |
 | [cred](cred.md) | `identities` | empty — no identities |
 | [cred](cred.md) | `recipients` | empty — no recipients |
 | [cred](cred.md) | `new_identity_dir` | `~/.config/age` |

@@ -10,7 +10,7 @@
  */
 
 /** The engine's interface version this plugin was written against. */
-const DGS_TIMELINE_API_VERSION = 1;
+const DGS_TIMELINE_API_VERSION = 2;
 
 /** @type {Promise<{call: (op: string, args: unknown) => any}> | null} */
 let dgsTimelineStarting = null;

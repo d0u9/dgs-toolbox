@@ -55,3 +55,303 @@
 	text-decoration: line-through;
 	color: var(--text-faint);
 }
+
+/* The tidy form's report: one line per timeline. */
+.dgs-timeline-tidy__report {
+	user-select: text;
+	-webkit-user-select: text;
+	margin-bottom: var(--size-4-4);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.dgs-timeline-tidy__line + .dgs-timeline-tidy__line {
+	margin-top: var(--size-4-2);
+}
+
+.dgs-timeline-tidy__line.mod-warning {
+	color: var(--text-error);
+}
+
+
+/* 时间线 — 把嵌套列表读成一条时间线：圆点、竖线、日期刻度、三行细节、压淡的时间戳
+ *
+ * 只加样式，不改结构：底下仍旧是普通的嵌套列表，能搜索、能折叠、能手改。
+ * 用在 frontmatter 带 `cssclasses: dgs-timeline` 的笔记上，即 timelines.json 里每条时间线的 cssclass。
+ *
+ * 结构约定（DGS Toolbox 插件和 dgs capture 生成）：
+ *   一级列表项            `HH:mm 正文`
+ *     二级第一项          地址或描述，压淡
+ *     坐标那一项          认链接：href 带 value-coordinates，等宽、点击复制
+ *     地图那一项          认链接：几家地图的网址，排成小胶囊
+ * 坐标和地图按链接认，不按第几项认，所以细节只有一行描述的时间线不会被错画。
+ *
+ * 日志的「去过哪里」也用这套。日志没有 cssclass，插件在阅读视图里给设置的
+ * Log heading 下面那几个列表块加上 .dgs-daily-places；另外按默认标题「去过哪里」
+ * 认的那一长串（`.el-h1` 里 data-heading 是它，到下一个一级标题为止）留作后备，
+ * 插件没在跑的手机端靠它。所以选择器写成 :is(.dgs-timeline, .dgs-daily-places, <那串>)。
+ *
+ * 实时预览下的列表由编辑器逐行渲染，结构和阅读视图不同，所以这份样式主要作用
+ * 在阅读视图；实时预览里只有颜色和字号会生效。
+ */
+
+/* 二级那三行不要项目符号，也不要主题自己那条缩进线。
+ *
+ * 符号可能来自 list-style、::marker、li::before，或者实时预览里的
+ * .list-bullet 元素；缩进线来自主题给 ul 的左边框或 ::before。挨个关掉，
+ * 一级的符号留着 —— 它正好当时间线上的点。 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul,
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul > li {
+  list-style: none !important;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul > li::marker {
+  content: "" !important;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul > li .list-bullet,
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul > li .cm-formatting-list,
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li::before {
+  display: none !important;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul {
+  border-left: none !important;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul::before,
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul::after {
+  display: none !important;
+}
+
+/* 一条速记：行首一个圆点，圆点之间用竖线连起来。
+ *
+ * 圆点是自己画的（主题那个符号已经关掉了），描一圈背景色和竖线拉开。 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul:not(ul ul) {
+  margin: 0;
+  padding-left: 0;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul:not(ul ul) > li {
+  position: relative;
+  margin: 0 0 0.75em 0;
+  padding-left: 1.4em;
+  line-height: 1.5;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul:not(ul ul) > li::before {
+  content: "";
+  position: absolute;
+  left: 0.3em;
+  top: 0.45em;
+  width: 11px;
+  height: 11px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: var(--text-accent);
+  box-shadow: 0 0 0 3px var(--background-primary);
+  z-index: 1;
+}
+
+/* 竖线：从这个圆点连到下一个，最后一条不拖尾巴 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul:not(ul ul) > li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 0.3em;
+  top: 0.45em;
+  bottom: -0.9em;
+  width: 3px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--background-modifier-border-hover);
+}
+
+/* 时间线上的刻度：日期 `- *2026-09-04 周五*`。
+ *
+ * 靠斜体认出来（CSS 认不出文字内容），它和条目在同一层列表里，
+ * 所以条目和细节的结构不变。日期自带年月，不再单设月份刻度。 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul:not(ul ul) > li:has(> em:only-child) {
+  list-style: none;
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+  font-size: 0.92em;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul:not(ul ul) > li:has(> em:only-child)::before {
+  width: 9px;
+  height: 9px;
+  margin-left: -4px;
+  top: 0.42em;
+  background: var(--text-muted);
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul:not(ul ul) > li:has(> em:only-child) em {
+  font-style: normal;
+  font-family: var(--font-monospace);
+  font-size: 0.95em;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* 三行细节：地址、坐标、地图 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul {
+  list-style: none;
+  margin: 0.25em 0 0 0;
+  padding-left: 1.1em;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li {
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* 地址 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li:nth-child(1) {
+  color: var(--text-faint);
+  font-size: 0.9em;
+}
+
+/* 坐标：等宽，点一下复制 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li:has(> a[href*="value-coordinates"]) {
+  font-family: var(--font-monospace);
+  font-size: 0.82em;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li:has(> a[href*="value-coordinates"]) a {
+  color: var(--text-faint);
+  text-decoration: none;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li:has(> a[href*="value-coordinates"]) a:hover {
+  color: var(--text-accent);
+}
+
+/* 地图：排成一行小胶囊，手机上也够点 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li:has(> a[href^="https://maps.apple.com"], > a[href^="https://uri.amap.com"], > a[href^="https://www.google.com/maps"], > a[href^="https://api.map.baidu.com"], > a[href^="https://www.openstreetmap.org"]) {
+  margin-top: 0.3em;
+  font-size: 0.8em;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li:has(> a[href^="https://maps.apple.com"], > a[href^="https://uri.amap.com"], > a[href^="https://www.google.com/maps"], > a[href^="https://api.map.baidu.com"], > a[href^="https://www.openstreetmap.org"]) a {
+  display: inline-block;
+  padding: 0.15em 0.6em;
+  margin-right: 0.35em;
+  border-radius: 4px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li:has(> a[href^="https://maps.apple.com"], > a[href^="https://uri.amap.com"], > a[href^="https://www.google.com/maps"], > a[href^="https://api.map.baidu.com"], > a[href^="https://www.openstreetmap.org"]) a:hover {
+  background: var(--background-modifier-active-hover);
+  color: var(--text-accent);
+}
+
+/* 分隔用的「·」在胶囊之间是多余的 */
+:is(.dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) ul ul > li:has(> a[href^="https://maps.apple.com"], > a[href^="https://uri.amap.com"], > a[href^="https://www.google.com/maps"], > a[href^="https://api.map.baidu.com"], > a[href^="https://www.openstreetmap.org"]) {
+  word-spacing: -0.25em;
+}
+
+/* 顶上的说明：压到最轻，它是注解不是内容。默认折叠，只留一行标题。
+ * 折叠箭头是它自己的元素，别把它挤出可视区 —— 右边留出位置，也不裁剪。 */
+.dgs-timeline .callout {
+  background: transparent;
+  border: none;
+  border-left: 2px solid var(--background-modifier-border);
+  border-radius: 0;
+  padding: 0.2em 0.8em 0.2em 0.7em;
+  margin-bottom: 1.2em;
+  overflow: visible;
+}
+
+.dgs-timeline .callout .callout-title {
+  padding: 0;
+  gap: 0.4em;
+  color: var(--text-muted);
+  font-size: 0.95em;
+  font-weight: normal;
+  line-height: 1.6;
+}
+
+.dgs-timeline .callout .callout-icon,
+.dgs-timeline .callout .callout-fold {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.dgs-timeline .callout .callout-icon svg,
+.dgs-timeline .callout .callout-fold svg {
+  width: 1em;
+  height: 1em;
+}
+
+.dgs-timeline .callout .callout-content {
+  color: var(--text-faint);
+  font-size: 0.88em;
+  padding-top: 0.4em;
+}
+
+/* 日期分节：小一号，别喧宾夺主 */
+.dgs-timeline h2 {
+  font-size: 1.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 0.2em;
+  margin-top: 1.6em;
+}
+
+
+/* 条目里的时间戳 —— 用在带 `cssclasses: captures` 的笔记（想法收件箱）和时间线上
+ * （速记、想法、日志的速记和去过哪里）。
+ *
+ * CSS 选不中「正文那段文字」，它是裸文本节点不是元素；能选中的只有时间那个
+ * 行内代码。所以反过来做：把时间压暗压小，正文保持正常色，靠对比让正文跳出来。
+ *
+ * 两种视图的 DOM 不一样：阅读视图是 <code>，实时预览是 CodeMirror 的
+ * span.cm-inline-code，两个都要写，否则只有一边生效。
+ *
+ * 注意 cssclasses 的类是加在 .markdown-rendered 这个元素**自己**身上的，
+ * 写成 `.captures .markdown-rendered code` 这种后代选择器永远匹配不到。
+ */
+:is(.captures, .dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) code,
+:is(.captures, .dgs-timeline) .cm-inline-code {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  font-size: 0.82em;
+  color: var(--text-faint) !important;
+  letter-spacing: -0.01em;
+}
+
+/* 实时预览里包裹行内代码的那对反引号也压掉 */
+:is(.captures, .dgs-timeline) .cm-formatting-code {
+  color: var(--text-faint) !important;
+  opacity: 0.45;
+}
+
+/* 正文明确给正常色，免得被主题里列表的弱化规则拖暗 */
+:is(.captures, .dgs-timeline) li,
+:is(.captures, .dgs-timeline) .cm-line {
+  color: var(--text-normal);
+}
+
+/* 细节那几行（地址、坐标、地图）整体压淡，正文那行才是要看的。
+ *
+ * 阅读视图里它们是嵌套的 li；实时预览里没有嵌套结构，CodeMirror 给每一行
+ * 打的是 HyperMD-list-line-2/3 这种缩进层级的类，只能靠它认。
+ * 链接自己有颜色，不受这里影响。
+ */
+:is(.captures, .dgs-timeline, .dgs-daily-places, .el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-ul:not(.el-h1:has(> h1[data-heading="去过哪里"]) ~ .el-h1 ~ .el-ul)) li li {
+  color: var(--text-faint);
+}
+
+:is(.captures, .dgs-timeline) .HyperMD-list-line-2,
+:is(.captures, .dgs-timeline) .HyperMD-list-line-3 {
+  color: var(--text-faint);
+}
+
+/* The settings page: a feature's row opens its settings. */
+.dgs-settings-link {
+	cursor: pointer;
+}

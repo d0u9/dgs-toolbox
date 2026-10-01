@@ -9,7 +9,7 @@ import (
 // APIVersion names the shape of Call: its operations, their arguments and
 // their results. A caller built against another version must not use this
 // one, so any change to that shape bumps it.
-const APIVersion = 1
+const APIVersion = 2
 
 // Call runs one operation by name, with its arguments and result as JSON. It
 // is the whole surface the WebAssembly build exposes, and what the shared test
@@ -22,6 +22,7 @@ const APIVersion = 1
 //	header  {header, year}                  → string, a new archive's start
 //	parse   {content}                       → Document
 //	definitions {text}                      → [Definition], the timelines file read
+//	tidy    TidyInput                       → TidyResult
 func Call(op string, args []byte) (result []byte, err error) {
 	switch op {
 	case "marker":
@@ -89,6 +90,16 @@ func Call(op string, args []byte) (result []byte, err error) {
 			return nil, err
 		}
 		return json.Marshal(definitions)
+	case "tidy":
+		var in TidyInput
+		if err := decode(args, &in); err != nil {
+			return nil, err
+		}
+		result, err := Tidy(in)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(result)
 	}
 	return nil, fmt.Errorf("unknown operation %q", op)
 }

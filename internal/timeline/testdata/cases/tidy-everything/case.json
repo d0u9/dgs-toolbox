@@ -1,0 +1,26 @@
+{
+  "op": "tidy",
+  "args": {
+    "note": "@note.md",
+    "archives": [
+      {"year": "2025", "text": "@archive-2025.md"},
+      {"year": "2024", "text": "@want-2024.md"}
+    ],
+    "current": "2026",
+    "weekdays": ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
+    "offset": "+10",
+    "header": {"cssclass": "locations", "title": "位置速记", "source": "06 Locations.md"},
+    "undated": "无日期"
+  },
+  "want": {
+    "note": "@want-note.md",
+    "archives": [
+      {"year": "2025", "text": "@want-2025.md"},
+      {"year": "2024", "text": "@want-2024.md"}
+    ],
+    "stats": {
+      "read": 8, "files": 3, "duplicates": 1, "reformatted": 4, "guessedOffset": 3,
+      "untimed": 1, "undated": 1, "kept": 5, "archived": {"2025": 1, "2024": 0}
+    }
+  }
+}

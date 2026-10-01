@@ -1,7 +1,8 @@
 // Package obsidian finds where an Obsidian vault keeps its plugins. A vault
 // can have more than one configuration folder — .obsidian on the desktop and
 // another, such as .obsidian-mobile, chosen for a phone — and a plugin is
-// installed into each, since Obsidian reads only the one it is set to.
+// installed into each, since Obsidian reads only the one it is set to. The
+// scripts and templates other plugins read go into the vault itself, once.
 package obsidian
 
 import (
@@ -24,7 +25,8 @@ const Host = "obsidian"
 // from any other folder whose name starts with a dot.
 const marker = "app.json"
 
-// Targets is every configuration folder of the vault, in name order. A folder
+// Targets is every configuration folder of the vault, in the order the
+// folder lists them, then the vault itself for the files that go into it. A folder
 // is one when its name starts with a dot and it holds app.json. A vault with
 // none is refused: Obsidian has never opened it.
 func Targets(vault string) ([]plugins.Target, error) {
@@ -51,6 +53,8 @@ func Targets(vault string) ([]plugins.Target, error) {
 		}
 		targets = append(targets, plugins.Target{
 			Host:    Host,
+			Kind:    plugins.KindPlugins,
+			Root:    vault,
 			Place:   filepath.Join(filepath.Base(vault), name),
 			Dir:     filepath.Join(configDir, "plugins"),
 			Enabled: func(id string) (bool, error) { return enabled(configDir, id) },
@@ -59,7 +63,9 @@ func Targets(vault string) ([]plugins.Target, error) {
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("vault %s has no Obsidian configuration folder: open it in Obsidian once first", vault)
 	}
-	return targets, nil
+	return append(targets, plugins.Target{
+		Host: Host, Kind: plugins.KindFiles, Place: filepath.Base(vault), Dir: vault, Root: vault,
+	}), nil
 }
 
 // enabled reads community-plugins.json, the list of plugins Obsidian turns on.
