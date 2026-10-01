@@ -4,7 +4,7 @@
 // the folder picked, dragged into another, renamed, set to another revision
 // or taken out. An Outline puts it in its tree as a folder of its name; the
 // Outlines page says where.
-import { $, api, el, loadState, post, label, frame, say, nameTree } from "/common.js";
+import { $, address, keep as keepEntry, scrollBack, api, el, loadState, post, label, frame, say, nameTree } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openMenu } from "/ui/menu.js";
 import { splitter } from "/ui/splitter.js";
@@ -137,6 +137,7 @@ function moveInto(dir, from) {
 function draw() {
   const exists = (p) => isFolder(p) ? folders().some((d) => d + "/" === p) : draft.files.some((f) => f.path === p);
   if (picked && !exists(picked)) picked = "";
+  keepEntry({ picked });
   marked = new Set([...marked].filter(exists));
   const count = draft.files.length;
   $("total").textContent = count + (count === 1 ? " PDF" : " PDFs");
@@ -558,13 +559,13 @@ function open(name) {
   list();
   if (!s) {
     draft = null;
-    history.replaceState(null, "", location.pathname + location.search);
+    address(location.pathname + location.search);
     $("title").textContent = "New Snapshot";
     $("total").textContent = "";
     $("tree").replaceChildren();
     return;
   }
-  history.replaceState(null, "", "#" + encodeURIComponent(name));
+  address("#" + encodeURIComponent(name));
   draft = copy({ name: s.name, about: s.about || "", taken: s.taken, rule: s.rule, outline: s.outline, node: s.node, folder: s.folder, files: s.files, folders: s.folders || [], naming: s.naming || "" });
   $("name").value = draft.name;
   $("about").value = draft.about;
@@ -736,6 +737,8 @@ $("delete").onclick = async () => {
 };
 window.addEventListener("beforeunload", (event) => { if (draft && text(draft) !== saved) event.preventDefault(); });
 
+const back = history.state || {}; // what the page showed when it was left, on coming Back
+const unscroll = scrollBack(["snapshots", "tree"]);
 reload().then(() => {
   const wanted = decodeURIComponent(location.hash.slice(1));
   if (wanted.startsWith("take=")) {
@@ -745,6 +748,8 @@ reload().then(() => {
     return;
   }
   open(snapshots.some((s) => s.name === wanted) ? wanted : snapshots.length ? snapshots[0].name : "");
+  if (back.picked && editing === wanted) { picked = back.picked; marked = new Set([picked]); draw(); }
+  if (editing === wanted) unscroll();
 }).catch((err) => {
   state.error = err.message;
   frame(state);

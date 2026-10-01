@@ -28,6 +28,45 @@ for (const link of document.querySelectorAll("a.topbar-link")) {
   if (treeName) link.href = api(link.getAttribute("href"));
 }
 
+// What a page shows beyond its address — the PDF picked in a tree, a search
+// typed, a list scrolled — is kept in its history entry, so going to another
+// page and coming Back returns to it, not to the page's start. keep merges
+// values into the entry, kept reads one back, and address changes the
+// address without losing them.
+export function keep(values) {
+  try { history.replaceState({ ...(history.state || {}), ...values }, ""); } catch { /* not kept */ }
+}
+export function kept(key) {
+  return (history.state || {})[key];
+}
+export function address(url) {
+  history.replaceState(history.state, "", url);
+}
+// keepScroll keeps how far the page, and each element named by id, is
+// scrolled when the page is left; restoreScroll puts them back once the
+// page has drawn what they hold.
+const scroller = (id) => (id ? $(id) : document.scrollingElement);
+export function keepScroll(ids = []) {
+  // Kept a moment after each scroll: an entry changed while the page is
+  // being left is not always kept.
+  let timer = 0;
+  addEventListener("scroll", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => keep({ scroll: Object.fromEntries(["", ...ids].map((id) => [id, scroller(id) ? scroller(id).scrollTop : 0])) }), 150);
+  }, { capture: true, passive: true });
+}
+export function restoreScroll(scroll = kept("scroll")) {
+  for (const [id, top] of Object.entries(scroll || {})) if (scroller(id)) scroller(id).scrollTop = top;
+}
+// scrollBack keeps the scroll of the page and the elements named, and
+// returns what a page calls once it has drawn them: the first call puts the
+// scroll back as it was left, any later one does nothing.
+export function scrollBack(ids = []) {
+  keepScroll(ids);
+  let scroll = kept("scroll");
+  return () => { if (scroll) restoreScroll(scroll); scroll = null; };
+}
+
 export function el(tag, props, ...children) {
   const node = Object.assign(document.createElement(tag), props || {});
   node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
@@ -433,10 +472,10 @@ export function planNodes(state, answer) {
   // order, not in the Item.
   const missingWhy = (m, path) => {
     const unordered = m.unordered || {};
-    const absent = m.keys.filter((k) => !(k in unordered));
+    const absent = m.keys || [];
     return [
       ...(absent.length ? [" lacks ", path(absent.join(", "))] : []),
-      ...Object.entries(unordered).flatMap(([k, v], i) => [absent.length || i ? "; " : " ", "has no number for ", path(v), " in the order of ", path(k)]),
+      ...Object.entries(unordered).flatMap(([k, v], i) => [absent.length || i ? "; " : " ", "has no number for ", path(v), " in the order ", path(k + (m.unorderedAt?.[k] ? " (children " + m.unorderedAt[k] + ")" : ""))]),
     ];
   };
   const path = (p) => el("span", { className: "mono" }, p);

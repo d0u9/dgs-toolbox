@@ -1,7 +1,7 @@
 // Merge: bring a sub-tree, or an export read back, into this tree. The
 // server plans; the page shows the plan, takes a choice for each conflict,
 // and asks the server to merge, which plans again before writing.
-import { $, api, el, loadState, post, label, frame, say } from "/common.js";
+import { $, keep, api, el, loadState, post, label, frame, say } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 
 let state = { templates: [], items: [] };
@@ -54,6 +54,7 @@ function conflictRow(c) {
 }
 
 function draw() {
+  keep({ merge: { dir, choices } });
   $("dir").textContent = dir ? dir + (plan ? " · " + (plan.from === "tree" ? "a sub-tree" : "an export Target") : "") : "";
   if (!plan) { $("plan").replaceChildren(); ready(); return; }
   const parts = [
@@ -128,4 +129,13 @@ $("merge").onclick = async () => {
   }
 };
 
-loadState().then((s) => { state = s; frame(state); draw(); }).catch((err) => { state.error = err.message; frame(state); });
+// Coming Back, the folder is read again and the choices made are made again.
+const back = history.state || {};
+loadState().then(async (s) => {
+  state = s;
+  frame(state);
+  if (!back.merge || !back.merge.dir) return draw();
+  await planFor(back.merge.dir);
+  if (plan) for (const c of plan.conflicts) if (back.merge.choices[c.id]) choices[c.id] = back.merge.choices[c.id];
+  draw();
+}).catch((err) => { state.error = err.message; frame(state); });

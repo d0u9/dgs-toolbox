@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -496,6 +497,12 @@ func TestOutlinesGroupSaveDelete(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"AU/emma","count":1`) ||
 		!strings.Contains(rec.Body.String(), `"path":"AU/emma/id_card.pdf"`) || !strings.Contains(rec.Body.String(), `"keys":["number"]`) {
 		t.Fatal(rec.Body.String())
+	}
+	id := regexp.MustCompile(`"item":"([0-9A-Z]+)"`).FindStringSubmatch(rec.Body.String())[1]
+	why := do(h, "POST", "/api/outlines/explain", `{"outline":`+o+`,"item":"`+id+`"}`)
+	if why.Code != 200 || !strings.Contains(why.Body.String(), `"result":"placed"`) || !strings.Contains(why.Body.String(), `"result":"lacking"`) ||
+		!strings.Contains(why.Body.String(), `{owner}  owner = \"emma\"`) {
+		t.Fatal(why.Body.String())
 	}
 	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())

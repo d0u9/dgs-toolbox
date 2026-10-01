@@ -39,9 +39,11 @@ type Missing struct {
 	Keys     []string `json:"keys"`
 	// Fields are the Item fields that, filled in, supply Keys.
 	Fields []string `json:"fields"`
-	// Unordered are the Keys that are orders the Item has a name for,
-	// but that name is not in the order: order key to name.
-	Unordered map[string]string `json:"unordered,omitempty"`
+	// Unordered are the orders the Item has a name for that the order
+	// does not list: order to name. UnorderedAt is the node each order
+	// is in: "" for the rule, 2.1 for its second child's first.
+	Unordered   map[string]string `json:"unordered,omitempty"`
+	UnorderedAt map[string]string `json:"unorderedAt,omitempty"`
 }
 
 // Clash is a path more than one PDF would land on.
@@ -217,7 +219,11 @@ func Follow(keys map[string]string, items map[string]tree.Item) {
 // Inherit gives keys, for each key they lack, the value a link field's
 // Item has, as Follow added it: with links [original], a translation
 // without a level takes original.level. The first link having it wins.
-func Inherit(keys map[string]string, links []string) {
+func Inherit(keys map[string]string, links []string) { inherit(keys, links) }
+
+// inherit is Inherit, returning each key it gave and the link it came by.
+func inherit(keys map[string]string, links []string) map[string]string {
+	from := map[string]string{}
 	for _, link := range links {
 		for k, v := range maps.Clone(keys) {
 			base, ok := strings.CutPrefix(k, link+".")
@@ -226,9 +232,11 @@ func Inherit(keys map[string]string, links []string) {
 			}
 			if _, has := keys[base]; !has {
 				keys[base] = v
+				from[base] = link
 			}
 		}
 	}
+	return from
 }
 
 // FieldsFor is the Item fields that supply keys, in order and once each:
@@ -333,12 +341,19 @@ func (t Types) Field(typ, key string) (tree.Field, bool) {
 // gives the same plan, numbering included. Paths are compared ignoring case,
 // as the file systems a Target usually lives on do.
 func Build(v View, items []tree.Item, types Types) (Plan, error) {
+	plan, _, err := build(v, items, types, "")
+	return plan, err
+}
+
+// build is Build, also explaining each revision with a PDF of the Item
+// watch as it goes: what it asked, what it chose, and what it wrote.
+func build(v View, items []tree.Item, types Types, watch string) (Plan, []Explanation, error) {
 	if err := v.Validate(); err != nil {
-		return Plan{}, err
+		return Plan{}, nil, err
 	}
 	layouts := map[string]Layout{}
 	conditions := map[string]expr.Expr{}
-	_ = v.walk(func(_ string, n Node, layout string, _ bool) error {
+	_ = v.walk(func(_ string, n Node, layout string, _ []Node) error {
 		if layout != "" {
 			layouts[layout], _ = Parse(layout)
 		}
@@ -347,26 +362,36 @@ func Build(v View, items []tree.Item, types Types) (Plan, error) {
 		}
 		return nil
 	})
-	meets := func(n Node, e env) bool {
+	// meets reports whether e meets n's If, and the person it was asked
+	// as when only an Item shared with them does, with the env that held.
+	meets := func(n Node, e env) (bool, string, env) {
 		if n.If == "" {
-			return true
+			return true, "", e
 		}
 		if conditions[n.If].Eval(e) {
-			return true
+			return true, "", e
 		}
 		if !v.Shared || n.If != v.If {
-			return false
+			return false, "", e
 		}
 		for _, person := range e.item.SharedWith {
 			shared := e
 			shared.keys = maps.Clone(e.keys)
 			shared.keys["owner"] = person
 			if conditions[n.If].Eval(shared) {
-				return true
+				return true, person, shared
 			}
 		}
-		return false
+		return false, "", e
 	}
+	check := func(n Node, e env) *expr.Check {
+		if n.If == "" {
+			return nil
+		}
+		c := expr.Explain(conditions[n.If], e)
+		return &c
+	}
+	var explained []*Explanation
 	sorted := append([]tree.Item(nil), items...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 
@@ -382,7 +407,15 @@ func Build(v View, items []tree.Item, types Types) (Plan, error) {
 			if rev.Digest == "" {
 				continue
 			}
+			var x *Explanation
+			if item.ID == watch {
+				x = &Explanation{Rule: v.Name, Item: item.ID, Digest: rev.Digest, Revision: i + 1}
+				explained = append(explained, x)
+			}
 			if v.Selection == Head && rev.Ref() != current {
+				if x != nil {
+					x.Result = NotHead
+				}
 				continue
 			}
 			keys := KeysOf(item, i+1)
@@ -399,22 +432,34 @@ func Build(v View, items []tree.Item, types Types) (Plan, error) {
 					}
 				}
 			}
-			Inherit(keys, v.Inherit)
+			inherited := inherit(keys, v.Inherit)
 			e := env{keys: keys, tags: item.TagsAt(rev.Ref()), item: item, types: types}
-			if !meets(v.Node, e) {
+			ok, as, held := meets(v.Node, e)
+			if x != nil {
+				x.If, x.SharedAs = check(v.Node, held), as
+			}
+			if !ok {
+				if x != nil {
+					x.Result = NotSelected
+				}
 				continue
 			}
 			// Down the first child met at each level, keeping the path,
 			// file and default the deepest node sets.
 			node, path, file, fallback := v.Node, []string{}, v.File, v.Default
+			scopes := []scope{{v.Node, ""}}
 			if v.Path != "" {
 				path = append(path, strings.Trim(v.Path, "/"))
 			}
-			out := false
+			out, where := false, ""
 			for {
 				next := -1
 				for c, child := range node.Children {
-					if meets(child, e) {
+					ok, as, held := meets(child, e)
+					if x != nil {
+						x.Branches = append(x.Branches, Branch{Where: where + strconv.Itoa(c+1), If: check(child, held), SharedAs: as, Took: ok})
+					}
+					if ok {
 						next = c
 						break
 					}
@@ -422,7 +467,8 @@ func Build(v View, items []tree.Item, types Types) (Plan, error) {
 				if next < 0 {
 					break
 				}
-				node = node.Children[next]
+				node, where = node.Children[next], where+strconv.Itoa(next+1)+"."
+				scopes = append(scopes, scope{node, strings.TrimSuffix(where, ".")})
 				if node.Out() {
 					out = true
 					break
@@ -438,12 +484,32 @@ func Build(v View, items []tree.Item, types Types) (Plan, error) {
 				}
 			}
 			if out {
+				if x != nil {
+					x.Result = LeftOut
+				}
 				continue
 			}
-			name, lacking, unordered := render(layouts[strings.Join(append(path, file), "/")], keys, fallback, v.Order, v.Numbers, v.Unnumbered)
-			if len(lacking) > 0 {
-				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: lacking, Fields: FieldsFor(lacking), Unordered: unordered})
+			layout := strings.Join(append(path, file), "/")
+			r := renderer{keys: keys, fallback: fallback, scopes: scopes}
+			if x != nil {
+				r.record, r.from, x.Layout = true, inherited, layout
+			}
+			name := r.render(layouts[layout])
+			if x != nil {
+				x.Steps = r.steps
+			}
+			if len(r.lacking) > 0 || len(r.unordered) > 0 {
+				plan.Missing = append(plan.Missing, Missing{Item: item.ID, Digest: rev.Ref(), Revision: i + 1, Keys: r.lacking, Fields: FieldsFor(r.lacking), Unordered: r.unordered, UnorderedAt: r.unorderedAt})
+				if x != nil {
+					x.Result, x.Lacking = Lacking, slices.Clone(r.lacking)
+					for _, order := range slices.Sorted(maps.Keys(r.unordered)) {
+						x.Lacking = append(x.Lacking, "a number for "+r.unordered[order]+" in order "+order)
+					}
+				}
 				continue
+			}
+			if x != nil {
+				x.Result, x.placed = Placed, len(placed)
 			}
 			placed = append(placed, File{Path: name, Item: item.ID, Digest: rev.Digest, Revision: i + 1})
 		}
@@ -465,9 +531,19 @@ func Build(v View, items []tree.Item, types Types) (Plan, error) {
 			}
 		}
 	}
+	out := make([]Explanation, 0, len(explained))
+	for _, x := range explained {
+		if x.Result == Placed {
+			x.Path = placed[x.placed].Path
+		}
+	}
 	plan.Files, plan.Clashes = separate(placed)
 	sort.Slice(plan.Files, func(i, j int) bool { return plan.Files[i].Path < plan.Files[j].Path })
-	return plan, nil
+	for _, x := range explained {
+		x.clashIn(plan.Clashes)
+		out = append(out, *x)
+	}
+	return plan, out, nil
 }
 
 // separate splits files into those with a path of their own and the
@@ -576,11 +652,33 @@ func CombineWith(views []View, fixed []File, items []tree.Item, types Types) (Co
 	return out, nil
 }
 
-// render fills a layout from keys. It returns the keys it lacked, when there
-// is no default to stand in for them, and the numbered names, named
-// as their orders are, not in their order.
-func render(layout Layout, keys map[string]string, fallback *string, order map[string][]string, set map[string]map[string]int, skip map[string][]string) (string, []string, map[string]string) {
-	r := renderer{keys: keys, fallback: fallback, order: order, set: set, skip: skip}
+// render fills a layout that numbers nothing from keys. It returns the
+// keys it lacked, when there is no default to stand in for them.
+func render(layout Layout, keys map[string]string, fallback *string) (string, []string) {
+	r := renderer{keys: keys, fallback: fallback}
+	return r.render(layout), r.lacking
+}
+
+// scope is a node a {#} may take its order from, and where it is: "" for
+// the rule, 2.1 for its second child's first.
+type scope struct {
+	Node
+	at string
+}
+
+// order is the nearest of r's scopes to list the order named, the deepest
+// first.
+func (r *renderer) order(name string) (scope, bool) {
+	for i := len(r.scopes) - 1; i >= 0; i-- {
+		if len(r.scopes[i].Order[name]) > 0 {
+			return r.scopes[i], true
+		}
+	}
+	return scope{}, false
+}
+
+// render fills layout from r's keys, keeping in r what it lacked.
+func (r *renderer) render(layout Layout) string {
 	segments := make([]string, len(layout))
 	for s, parts := range layout {
 		segments[s], _ = r.name(parts, false)
@@ -597,19 +695,26 @@ func render(layout Layout, keys map[string]string, fallback *string, order map[s
 			}
 		}
 	}
-	return strings.Join(segments, "/"), r.lacking, r.unordered
+	return strings.Join(segments, "/")
 }
 
 // renderer is one render's keys, orders, and what it found lacking.
 type renderer struct {
 	keys     map[string]string
 	fallback *string
-	order    map[string][]string
-	set      map[string]map[string]int
-	skip     map[string][]string
-	lacking  []string
-	// unordered is an order key the name it made is not in, to the name.
-	unordered map[string]string
+	// scopes are the nodes from the rule down to the one placing, where
+	// each {#} looks for its order.
+	scopes  []scope
+	lacking []string
+	// unordered is an order the name it made is not in, to the name, and
+	// unorderedAt the node each order is in.
+	unordered   map[string]string
+	unorderedAt map[string]string
+	// record keeps in steps what each part wrote; from is the keys
+	// Inherit gave, by the link they came by.
+	record bool
+	from   map[string]string
+	steps  []Step
 }
 
 func (r *renderer) lack(key string) {
@@ -623,6 +728,7 @@ func (r *renderer) lack(key string) {
 // returned as absent instead, and the group is left out.
 func (r *renderer) name(parts []Part, group bool) (string, []string) {
 	pieces := make([]string, len(parts))
+	steps := make([]*Step, len(parts))
 	var absent []string
 	counter, short := -1, len(r.lacking)
 	for i, part := range parts {
@@ -630,17 +736,25 @@ func (r *renderer) name(parts []Part, group bool) (string, []string) {
 		case part.Counter:
 			counter = i
 		case len(part.Group) > 0:
+			outer := r.steps
+			r.steps = nil
 			text, missing := r.name(part.Group, true)
+			inner := r.steps
+			r.steps = outer
 			if len(missing) == 0 && part.Folder {
 				pieces[i] = "/" + text
 			} else if len(missing) == 0 {
 				pieces[i] = text
 			}
+			steps[i] = &Step{Value: pieces[i], Left: missing, Inner: inner}
 		case part.Key == "":
 			pieces[i] = part.Text
 		default:
 			choice, value, ok := pick(part, r.keys)
+			step := &Step{Key: choice.Key, From: r.from[choice.Key]}
+			steps[i] = step
 			if !ok {
+				step.Lacking = true
 				if group {
 					absent = append(absent, choice.Key)
 					continue
@@ -649,30 +763,51 @@ func (r *renderer) name(parts []Part, group bool) (string, []string) {
 					r.lack(choice.Key)
 					continue
 				}
-				value = *r.fallback
+				value, step.Lacking, step.Default = *r.fallback, false, true
 			}
 			pieces[i] = Clean(value)
+			step.Value = pieces[i]
+			if value != pieces[i] {
+				step.Raw = value
+			}
 		}
 	}
-	if counter >= 0 && len(absent) == 0 && len(r.lacking) == short {
+	if counter >= 0 {
 		c := parts[counter]
-		name := strings.Join(pieces[c.From:c.To], "")
-		if n := place(r.order[c.Of], name); n > 0 {
-			numbers := Numbered(r.order[c.Of], r.set[c.Of], r.skip[c.Of])
-			if numbers[n-1] == Unnumbered {
-				// No number, nor the text straight after it: 物业发票.pdf.
-				if counter+1 < c.From {
-					pieces[counter+1] = ""
+		s, _ := r.order(c.Of)
+		step := &Step{Order: c.Of, OrderAt: s.at, Skipped: true}
+		steps[counter] = step
+		if len(absent) == 0 && len(r.lacking) == short {
+			name := strings.Join(pieces[c.From:c.To], "")
+			step.Name, step.Skipped = name, false
+			if n := place(s.Order[c.Of], name); n > 0 {
+				step.Place = n
+				numbers := Numbered(s.Order[c.Of], s.Numbers[c.Of], s.Unnumbered[c.Of])
+				if numbers[n-1] == Unnumbered {
+					step.Unnumbered = true
+					// No number, nor the text straight after it: 物业发票.pdf.
+					if counter+1 < c.From {
+						pieces[counter+1] = ""
+					}
+				} else {
+					pieces[counter] = padTo(numbers[n-1], slices.Max(numbers))
+					step.Value = pieces[counter]
 				}
 			} else {
-				pieces[counter] = padTo(numbers[n-1], slices.Max(numbers))
+				step.Unordered = true
+				if r.unordered == nil {
+					r.unordered, r.unorderedAt = map[string]string{}, map[string]string{}
+				}
+				r.unordered[c.Of], r.unorderedAt[c.Of] = name, s.at
 			}
-		} else {
-			r.lack(c.Of)
-			if r.unordered == nil {
-				r.unordered = map[string]string{}
+		}
+	}
+	if r.record {
+		for i, s := range steps {
+			if s != nil {
+				s.Part = parts[i].String()
+				r.steps = append(r.steps, *s)
 			}
-			r.unordered[c.Of] = name
 		}
 	}
 	return strings.Join(pieces, ""), absent
@@ -837,6 +972,6 @@ func Name(layout string, item tree.Item, revision int, types Types) (string, []s
 		keys["type:"+lang] = name
 	}
 	types.nameValues(keys)
-	name, lacking, _ := render(parsed, keys, nil, nil, nil, nil)
+	name, lacking := render(parsed, keys, nil)
 	return name, lacking, nil
 }

@@ -4,7 +4,7 @@
 // Rules are made on the Rules page and Snapshots on the Snapshots page;
 // both are the tree's, and several Outlines use one. Looking through the
 // result and exporting it is the Explore page's.
-import { $, api, el, loadState, post, label, frame, say, nameTree, outlineTitle } from "/common.js";
+import { $, address, scrollBack, api, el, loadState, post, label, frame, say, nameTree, outlineTitle } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { outlineTree, unplaced, resizable } from "/outlinetree.js";
 
@@ -97,7 +97,7 @@ function open(name) {
   sync();
   saved = text(draft);
   tree.reset(name ? "outline:" + name : "");
-  history.replaceState(null, "", name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
+  address(name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
   $("title").textContent = name || "New Outline";
   $("delete").hidden = !name;
   $("explore").hidden = !name;
@@ -137,10 +137,13 @@ async function regroup() {
   draw();
 }
 
+// The tree is scrolled back as it was left once it is drawn.
+const unscroll = scrollBack(["tree"]);
 function draw() {
   const root = grouping && grouping.root;
   $("total").textContent = root ? root.count + (root.count === 1 ? " PDF" : " PDFs") : "";
   tree.show(grouping);
+  if (grouping) unscroll();
   problems();
 }
 

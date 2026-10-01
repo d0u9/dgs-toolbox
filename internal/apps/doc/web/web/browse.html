@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="/ui/filedialog.css">
 <link rel="stylesheet" href="/ui/menu.css">
 <link rel="stylesheet" href="/ui/tags.css">
+<link rel="stylesheet" href="/ui/tooltip.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
 <link rel="stylesheet" href="/app.css">
 </head>
@@ -40,17 +41,46 @@
 </header>
 <p id="error" class="message error" hidden></p>
 <nav class="filters" aria-label="Filters">
-  <div class="filter-group">
+  <div class="filter-row">
+    <input id="filter" class="filter-search" type="search" placeholder="Search fields, tags, page text" aria-label="Search" spellcheck="false" autocomplete="off">
+    <button id="filters-toggle" class="chip" type="button" aria-pressed="false" aria-controls="filter-panel" title="Show the filters">Filters<span id="filters-on" class="filters-on numeric" hidden></span></button>
     <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Show only the Items marked frequent">★ Frequent</button>
-    <label class="filter filter-search"><span>Search</span>
-      <input id="filter" type="search" placeholder="fields or text on the page" spellcheck="false" autocomplete="off">
-    </label>
+    <div class="filter-result">
+      <span id="count" class="numeric"></span>
+      <button type="button" id="filters-clear" class="small-inline" hidden>Clear filters</button>
+    </div>
+    <div class="filter-view">
+      <div id="view-layout" class="segmented" role="group" aria-label="Show as">
+        <button class="chip icon-chip" type="button" data-layout="grid" aria-pressed="true" title="Cards" aria-label="Cards">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/>
+            <rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg>
+        </button>
+        <button class="chip icon-chip" type="button" data-layout="list" aria-pressed="false" title="List" aria-label="List">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <circle cx="3" cy="4" r="1.1" stroke="none"/><circle cx="3" cy="8" r="1.1" stroke="none"/><circle cx="3" cy="12" r="1.1" stroke="none"/>
+            <path d="M6.5 4h7.5M6.5 8h7.5M6.5 12h7.5" fill="none"/></svg>
+        </button>
+      </div>
+      <label class="filter"><span>Sort</span>
+        <select id="view-sort">
+          <option value="added">date added</option>
+          <option value="expiry">expiry</option>
+          <option value="name">name</option>
+          <option value="type">type</option>
+        </select>
+      </label>
+      <button id="view-direction" class="icon-button" type="button" data-dir="desc">↓</button>
+    </div>
   </div>
-  <div class="filter-group" id="field-filters">
+  <div id="filter-panel" class="filter-panel" hidden>
+  <div class="filter-row">
     <label class="filter"><span>Type</span><select id="filter-type"><option value="">any</option></select></label>
+    <span id="field-main" class="filter-set"></span>
+    <div class="filter filter-tags"><span>Tags</span><div id="filter-tags" data-label="Filter by tags"></div></div>
   </div>
-  <div class="filter-group"><div class="filter filter-tags"><span>Tags</span><div id="filter-tags" data-label="Filter by tags"></div></div></div>
-  <div class="filter-group">
+  <div id="filter-more" class="filter-row" hidden>
+    <span id="field-more" class="filter-set"></span>
     <label class="filter" title="From the Item's expires field, as HEAD has it"><span>Expiry</span>
       <select id="filter-expiry">
         <option value="">any</option>
@@ -68,40 +98,10 @@
       <select id="filter-use"><option value="">any</option><option value="active">in use</option><option value="retired">retired</option></select>
     </label>
   </div>
-  <div class="filter-group">
-    <div class="filter"><span>Show</span>
-      <div id="view-layout" class="segmented" role="group" aria-label="Show as">
-        <button class="chip icon-chip" type="button" data-layout="grid" aria-pressed="true" title="Cards" aria-label="Cards">
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/>
-            <rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg>
-        </button>
-        <button class="chip icon-chip" type="button" data-layout="list" aria-pressed="false" title="List" aria-label="List">
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-            <circle cx="3" cy="4" r="1.1" stroke="none"/><circle cx="3" cy="8" r="1.1" stroke="none"/><circle cx="3" cy="12" r="1.1" stroke="none"/>
-            <path d="M6.5 4h7.5M6.5 8h7.5M6.5 12h7.5" fill="none"/></svg>
-        </button>
-      </div>
-    </div>
-    <label class="filter"><span>Sort</span>
-      <select id="view-sort">
-        <option value="added">date added</option>
-        <option value="expiry">expiry</option>
-        <option value="name">name</option>
-        <option value="type">type</option>
-      </select>
-    </label>
-    <label class="filter"><span>Order</span>
-      <select id="view-direction"><option value="desc">descending</option><option value="asc">ascending</option></select>
-    </label>
-  </div>
-  <div class="filter-result">
-    <span id="count" class="numeric"></span>
-    <button type="button" id="filters-clear" class="small-inline" hidden>Clear filters</button>
   </div>
 </nav>
 <main class="work">
-  <section class="browse-pane" aria-label="Items">
+  <section id="items-pane" class="browse-pane" aria-label="Items">
     <p id="unread" class="message" hidden><span id="unread-count"></span>
       <button id="read-all" class="small-inline" type="button">Read their text</button></p>
     <ul id="grid" class="grid"></ul>

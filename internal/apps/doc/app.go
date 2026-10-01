@@ -10,7 +10,8 @@ import (
 )
 
 // New returns the Doc app definition: `dgs doc`, which starts the local page,
-// `dgs doc init`, `dgs doc verify`, `dgs doc export` and `dgs doc link`.
+// `dgs doc init`, `dgs doc verify`, `dgs doc export`, `dgs doc link` and
+// `dgs doc explain`.
 func New() tui.App {
 	return tui.App{
 		ID:          "doc",
@@ -55,6 +56,16 @@ func New() tui.App {
 				{Name: "apply", Bool: true, Usage: "write the links listed"},
 			},
 			RunWithConfig: linkAction,
+		}, {
+			ID:          "explain",
+			Usage:       "<item-id> [<outline>...]",
+			Description: "Show how each Outline, or those given, places an Item's PDFs, or why it does not: each condition, branch and key. Changes nothing.",
+			MinArgs:     1,
+			MaxArgs:     64,
+			Flags: []tui.ActionFlag{
+				{Name: "tree", Shorthand: "t", Usage: "the tree in doc.trees to use, when there are several"},
+			},
+			RunWithConfig: explainAction,
 		}},
 	}
 }

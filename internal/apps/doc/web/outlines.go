@@ -88,36 +88,84 @@ func (s server) outlineGroup(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &o) {
 		return
 	}
-	for i := range o.Rules {
-		if o.Rules[i].Selection == "" {
-			o.Rules[i].Selection = view.Head
-		}
-	}
-	if err := o.Validate(); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	in, ok := s.planning(w, &o)
+	if !ok {
 		return
 	}
-	items, err := s.items.Items()
-	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		return
-	}
-	templates, err := tree.LoadTemplates(s.root)
-	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		return
-	}
-	snapshots, err := snapshot.Load(s.root)
-	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		return
-	}
-	g, err := outline.Group(o, snapshots, items, view.TypesOf(templates))
+	g, err := outline.Group(o, in.snapshots, in.items, in.names)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, g)
+}
+
+// outlineExplain is how an Outline, saved or not, places one Item's PDFs,
+// or why it does not, each explanation with its text. It writes nothing.
+func (s server) outlineExplain(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Outline outline.Outline `json:"outline"`
+		Item    string          `json:"item"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	in, ok := s.planning(w, &request.Outline)
+	if !ok {
+		return
+	}
+	xs, err := outline.Explain(request.Outline, in.snapshots, in.items, in.names, request.Item)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	type explained struct {
+		view.Explanation
+		Text string `json:"text"`
+	}
+	out := make([]explained, len(xs))
+	for i, x := range xs {
+		out[i] = explained{x, x.Text()}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// planned is what an Outline is planned over.
+type planned struct {
+	items     []tree.Item
+	snapshots []snapshot.Snapshot
+	names     view.Types
+}
+
+// planning checks o, its rules HEAD-only unless they say, and loads what
+// it is planned over; when it cannot, it has answered w.
+func (s server) planning(w http.ResponseWriter, o *outline.Outline) (planned, bool) {
+	for i := range o.Rules {
+		if o.Rules[i].Selection == "" {
+			o.Rules[i].Selection = view.Head
+		}
+		o.Rules[i] = o.Rules[i].Upgrade()
+	}
+	if err := o.Validate(); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return planned{}, false
+	}
+	items, err := s.items.Items()
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return planned{}, false
+	}
+	templates, err := tree.LoadTemplates(s.root)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return planned{}, false
+	}
+	snapshots, err := snapshot.Load(s.root)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return planned{}, false
+	}
+	return planned{items: items, snapshots: snapshots, names: view.TypesOf(templates)}, true
 }
 
 func (s server) outlineSave(w http.ResponseWriter, r *http.Request) {

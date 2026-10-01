@@ -58,6 +58,7 @@
       </div>
       <p id="description" class="template-description muted"></p>
       <p id="message" class="message"></p>
+      <button id="view-button" class="button" type="button" title="Read this Outline as a folder, and nothing else">View</button>
       <a id="edit" class="button" hidden>Edit rules</a>
       <button id="export-button" class="button" type="button" title="Write the Outline into a folder you choose">Export…</button>
     </div>
@@ -67,6 +68,22 @@
     <div class="result-head"><h3 id="folder">PDFs</h3><span id="folder-count" class="count muted"></span></div>
     <ul id="files" class="outline-files"></ul>
   </aside>
+  <section id="view" class="outline-view" hidden aria-label="View">
+    <div class="view-head">
+      <button id="view-leave" class="button" type="button" title="Back to Explore (Esc)">← Explore</button>
+      <h2 id="view-title"></h2>
+      <nav id="view-crumbs" class="view-crumbs" aria-label="Folder"></nav>
+      <span id="view-count" class="count muted"></span>
+    </div>
+    <div class="view-body">
+      <div id="view-tree" class="view-tree scroll" tabindex="0"></div>
+      <div id="view-preview" class="view-preview">
+        <p id="view-hint" class="muted view-hint">Pick a PDF to see it. Space shows it large.</p>
+        <button id="view-quicklook" class="button view-quicklook-close" type="button" title="Close (Space or Esc)">Close</button>
+      </div>
+      <aside id="view-info" class="view-info scroll"></aside>
+    </div>
+  </section>
   <section id="preview" class="preview reader outline-preview" hidden>
     <div class="reader-bar">
       <strong id="reader-title"></strong>
