@@ -1,0 +1,20 @@
+{
+  "op": "archive",
+  "args": {
+    "content": "@in.md",
+    "current": "2026"
+  },
+  "want": {
+    "moved": [
+      {
+        "text": "- *2025-12-31 周三*\n- old\n    - detail\n- *2025-01-01 周三*\n- old too",
+        "year": "2025"
+      },
+      {
+        "text": "- *2024-05-01 周三*\n- older",
+        "year": "2024"
+      }
+    ],
+    "remaining": "@want-remaining.md"
+  }
+}

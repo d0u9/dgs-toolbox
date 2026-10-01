@@ -1,0 +1,9 @@
+{
+	"id": "dgs-toolbox",
+	"name": "DGS Toolbox",
+	"version": "1.0.0",
+	"minAppVersion": "1.5.0",
+	"description": "What dgs does to a vault, from inside Obsidian: timelines. Installed and updated by dgs plugins.",
+	"author": "d0u9",
+	"isDesktopOnly": false
+}

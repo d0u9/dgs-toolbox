@@ -29,6 +29,7 @@ type Config struct {
 	Capture Capture
 	Geo     Geo
 	Conf    Conf
+	Plugins Plugins
 	// dir is the configuration directory. Everything a command reads from
 	// disk resolves against it, so --config points at a whole configuration.
 	dir string
@@ -71,10 +72,11 @@ type CaptureReminders struct {
 // plans and records stays vault-relative and survives the vault moving. Each
 // note an Action writes has an object of its own.
 type CaptureObsidian struct {
-	Vault    string                 `json:"vault"`
-	Daily    CaptureObsidianDaily   `json:"daily"`
-	Location CaptureObsidianRolling `json:"location"`
-	Timeline CaptureObsidianRolling `json:"timeline"`
+	Vault string               `json:"vault"`
+	Daily CaptureObsidianDaily `json:"daily"`
+	// Timelines is the file defining every timeline, relative to the vault.
+	// It is in the vault because the Obsidian plugin reads the same file.
+	Timelines string `json:"timelines"`
 }
 
 // CaptureObsidianDaily is the day's note. Note is where it lives, relative to
@@ -87,14 +89,6 @@ type CaptureObsidianDaily struct {
 	Note    string                `json:"note"`
 	Section string                `json:"section"`
 	Images  CaptureObsidianImages `json:"images"`
-}
-
-// CaptureObsidianRolling is a running note — the list of places, the
-// timeline — relative to the vault, and Archive the folder a year that has
-// rolled over is moved into.
-type CaptureObsidianRolling struct {
-	Note    string `json:"note"`
-	Archive string `json:"archive"`
 }
 
 // CaptureObsidianImages says where a daily note's pictures go and how they are
@@ -205,6 +199,18 @@ const (
 
 var geoServers = []server{{name: GeoGPXServer, host: DefaultGeoGPXHost, port: DefaultGeoGPXPort, hostSettable: true}}
 
+// Plugins configures dgs plugins: where the plugins dgs carries are installed.
+type Plugins struct {
+	Obsidian PluginsObsidian `json:"obsidian"`
+}
+
+// PluginsObsidian lists the vaults the Obsidian plugins are checked and
+// installed in when a run names none. Each is a vault's own folder, the one
+// holding its configuration folders; a leading ~ is the home directory.
+type PluginsObsidian struct {
+	Vaults []string `json:"vaults"`
+}
+
 // Conf configures dgs conf export: where the generator root and its secrets
 // are, and where the destination form opens. See
 // rhumb docs/export.md#configuration.
@@ -266,7 +272,8 @@ func Default() Config {
 		Trash:   BoxTrash{KeepDays: intPointer(DefaultBoxTrashKeepDays)},
 	}, Doc: Doc{Trees: map[string]string{}, Web: defaultWeb(docServers)}, Capture: Capture{
 		Scan: CaptureScan{IndexFile: "index.json"},
-	}, Geo: Geo{Web: defaultWeb(geoServers), GPX: GeoGPX{Tiles: []GeoGPXTile{}}}}
+	}, Geo: Geo{Web: defaultWeb(geoServers), GPX: GeoGPX{Tiles: []GeoGPXTile{}}},
+		Plugins: Plugins{Obsidian: PluginsObsidian{Vaults: []string{}}}}
 }
 
 // CaptureArchiveFolders are the two directories Archive files into: where
@@ -616,6 +623,7 @@ var parts = []part{
 	{"doc", func(c *Config) any { return &c.Doc }, checkDoc},
 	{"geo", func(c *Config) any { return &c.Geo }, checkGeo},
 	{"conf", func(c *Config) any { return &c.Conf }, checkConf},
+	{"plugins", func(c *Config) any { return &c.Plugins }, checkPlugins},
 	{"cred", nil, nil},
 }
 
@@ -646,6 +654,20 @@ func checkConf(c *Config) error {
 	return expandAll(map[string]*string{
 		"root": &c.Conf.Root, "secrets": &c.Conf.Secrets, "export.dir": &c.Conf.Export.Dir,
 	})
+}
+
+func checkPlugins(c *Config) error {
+	for index := range c.Plugins.Obsidian.Vaults {
+		if c.Plugins.Obsidian.Vaults[index] == "" {
+			return fmt.Errorf("obsidian.vaults[%d] is empty", index)
+		}
+		if err := expandAll(map[string]*string{
+			fmt.Sprintf("obsidian.vaults[%d]", index): &c.Plugins.Obsidian.Vaults[index],
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // expandAll expands each non-empty path in place, naming the key that fails.

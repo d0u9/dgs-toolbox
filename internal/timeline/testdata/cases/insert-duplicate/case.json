@@ -1,0 +1,13 @@
+{
+  "op": "insert",
+  "args": {
+    "content": "@in.md",
+    "date": "2026-09-24",
+    "marker": "- *2026-09-24 周四*",
+    "entry": "- `17:00:00 +10` · 买叶酸"
+  },
+  "want": {
+    "content": "@want-content.md",
+    "inserted": false
+  }
+}

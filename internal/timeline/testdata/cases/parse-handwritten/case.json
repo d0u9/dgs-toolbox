@@ -1,0 +1,38 @@
+{
+  "op": "parse",
+  "args": {
+    "content": "@in.md"
+  },
+  "want": {
+    "days": [
+      {
+        "date": "2026-09-24",
+        "entries": [
+          {
+            "details": [
+              "Epping 的 Chemist Warehouse",
+              "[高德](https://uri.amap.com/marker?position=151.08,-33.76) · [Apple](https://maps.apple.com/?ll=-33.76,151.08)"
+            ],
+            "line": 9,
+            "offset": "+10",
+            "raw": "- 17:00 +10 · Emma 去买了叶酸。",
+            "text": "Emma 去买了叶酸。",
+            "time": "17:00:00"
+          },
+          {
+            "details": [
+              "Australia, New South Wales, Sydney, Epping"
+            ],
+            "line": 12,
+            "offset": "+10",
+            "raw": "- `11:00 +10` · Emma 说她怀孕了。",
+            "text": "Emma 说她怀孕了。",
+            "time": "11:00:00"
+          }
+        ],
+        "line": 8,
+        "marker": "- *2026-09-24 周四*"
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "op": "definitions",
+  "args": {
+    "text": "@timelines.json"
+  },
+  "want": [
+    {
+      "archive": "03 Family/00 Timeline/Archive",
+      "contentRequired": true,
+      "cssclass": "timeline",
+      "name": "family",
+      "note": "03 Family/00 Timeline/Timeline.md",
+      "split": "year",
+      "template": "timeline-entry.md",
+      "title": "时间线"
+    },
+    {
+      "archive": "88 Inbox/06 Locations",
+      "cssclass": "locations",
+      "name": "locations",
+      "note": "88 Inbox/06 Locations.md",
+      "split": "year",
+      "template": "location-entry.md",
+      "title": "位置速记"
+    }
+  ]
+}

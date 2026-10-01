@@ -44,7 +44,7 @@ func TestFlagKeepsTheRuns(t *testing.T) {
 }
 
 func TestUsesPosition(t *testing.T) {
-	recipe := Recipe{Actions: []ActionID{ActionDailyAppend, ActionLocationAppend}}
+	recipe := Recipe{Actions: []ActionID{ActionDailyAppend, TimelineAction("locations")}}
 	if !UsesPosition(recipe, recipe.Actions) {
 		t.Error("the location note writes the position")
 	}

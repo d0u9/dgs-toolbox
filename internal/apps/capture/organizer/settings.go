@@ -25,15 +25,10 @@ type Settings struct {
 	// DailyNote is where a day's note lives, relative to the vault, as a
 	// template over the date: "00 Daily Log/{{.Year}}/{{.Date}}.md".
 	DailyNote string
-	// LocationNote is the running list of places, relative to the vault, newest
-	// first. LocationArchive is where a year that has rolled over is moved to;
-	// empty is the note's own folder.
-	LocationNote    string
-	LocationArchive string
-	// TimelineNote and TimelineArchive are the same for the timeline: what
-	// happened, newest first, and where a rolled-over year goes.
-	TimelineNote    string
-	TimelineArchive string
+	// TimelinesFile is the file defining every timeline, relative to the vault.
+	// It lives in the vault because the Obsidian plugin reads it too: one
+	// definition, written to by both.
+	TimelinesFile string
 	// DailySection is the heading a Capture is appended under. Its own section
 	// rather than the end of the note, so what this tool writes stays
 	// distinguishable from what the reader wrote.

@@ -85,8 +85,11 @@ func routeVault(t *testing.T) organizer.Settings {
 	settings.Sources = starterSources(t)
 	settings.ObsidianVault = t.TempDir()
 	settings.DailyNote = "Daily/{{.Date}}.md"
-	settings.LocationNote = "88 Inbox/06 Locations.md"
-	settings.LocationArchive = "88 Inbox/06 Locations"
+	settings.TimelinesFile = "timelines.json"
+	timelines := `{"version": 1, "timelines": {"locations": {"note": "88 Inbox/06 Locations.md", "archive": "88 Inbox/06 Locations", "cssclass": "locations", "title": "位置速记"}}}`
+	if err := os.WriteFile(filepath.Join(settings.ObsidianVault, settings.TimelinesFile), []byte(timelines), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	settings.TemplateDir = templates
 	return settings
 }
@@ -1019,11 +1022,11 @@ func TestRouteFieldsDeduplicateAcrossActions(t *testing.T) {
 func TestRouteActionDetailNamesNeedsAndEffects(t *testing.T) {
 	root := routeTestRoot(t, "alpha")
 	m := chooseRecipe(t, loadedRoute(t, root), "Location + Daily")
-	m.actions.SelectID("action:" + string(organizer.ActionLocationAppend))
+	m.actions.SelectID("action:" + string(organizer.TimelineAction("locations")))
 	m.refresh()
 
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"obsidian.location.append", "Note ", "Effects", "running list of places"} {
+	for _, want := range []string{"obsidian.timeline.locations", "Note ", "Effects", "Adds the Capture to the locations"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("action detail is missing %q:\n%s", want, view)
 		}
@@ -1050,7 +1053,7 @@ func TestRouteRecipeDetailDescribesTheCandidateUnderTheCursor(t *testing.T) {
 	m.refresh()
 
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"obsidian_location_daily", "Runs", "Location note", "Daily note", "Source  obsidian_location_daily.yaml", "Matches", "- been_here"} {
+	for _, want := range []string{"obsidian_location_daily", "Runs", "Timeline: locations", "Daily note", "Source  obsidian_location_daily.yaml", "Matches", "- been_here"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("recipe detail is missing %q:\n%s", want, view)
 		}

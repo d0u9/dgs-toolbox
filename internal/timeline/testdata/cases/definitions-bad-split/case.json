@@ -1,0 +1,7 @@
+{
+  "op": "definitions",
+  "args": {
+    "text": "{\"version\": 1, \"timelines\": {\"family\": {\"note\": \"a.md\", \"split\": \"month\"}}}"
+  },
+  "error": "only \"year\""
+}

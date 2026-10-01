@@ -66,7 +66,7 @@ fields:
     input: multi_select
 
 actions:
-  - id: obsidian.location.append
+  - id: obsidian.timeline.locations
   - id: obsidian.daily.append
 ```
 
@@ -99,7 +99,7 @@ otherwise adding a required field to an Action silently breaks every Recipe
 that forgot to sync.
 
 ```text
-obsidian.location.append  requires  createdAt, content
+obsidian.timeline.locations  requires  createdAt, content
 obsidian.daily.append     requires  createdAt, content
 
 Recipe "Location + Daily", both enabled, therefore requires
@@ -116,7 +116,7 @@ say the same thing, and so a new Action arrives with its own explanation instead
 of needing one added somewhere else.
 
 ```text
-obsidian.location.append  Adds the Capture to the top of the running list of
+obsidian.timeline.locations  Adds the Capture to the top of the running list of
                           places, under its day
                           Writes nothing the second time
 obsidian.daily.append     Appends one entry under the configured section
@@ -369,7 +369,7 @@ it before running. With the configuration in
 [`configuration/capture.md`](../../configuration/capture.md), the plan is:
 
 ```text
-[x] ● obsidian.location.append   88 Inbox/06 Locations.md
+[x] ● obsidian.timeline.locations   88 Inbox/06 Locations.md
 [x] ● obsidian.daily.append      00 Daily Log/2026/2026-09-09.md
 ```
 
@@ -418,7 +418,7 @@ than one decision. Each run records what was decided at that moment:
       "recipe": "obsidian_location_daily",
       "recipeName": "Location + Daily",
       "actions": [
-        { "action": "obsidian.location.append", "target": "88 Inbox/06 Locations.md", "executed": true },
+        { "action": "obsidian.timeline.locations", "target": "88 Inbox/06 Locations.md", "executed": true },
         { "action": "obsidian.daily.append", "target": "00 Daily Log/2026/2026-09-09.md", "executed": true,
           "parameters": { "section": "## Epping" } }
       ],
@@ -479,7 +479,7 @@ fields:
 
 actions:
   - id: obsidian.daily.append
-  - id: obsidian.location.append
+  - id: obsidian.timeline.locations
     enabled: false
 ```
 
@@ -535,7 +535,7 @@ is worse than one that refuses. `Unimplemented` names those Actions so a caller
 can refuse to offer a plan that cannot work, instead of accepting it and failing
 afterwards.
 
-`obsidian.location.append` and `obsidian.daily.append` are implemented. It writes the Capture into the
+`obsidian.timeline.locations` and `obsidian.daily.append` are implemented. It writes the Capture into the
 daily note for the day it was taken:
 
 - **Where** is configured, not discovered. `capture.obsidian.daily.note` is a
@@ -580,8 +580,10 @@ daily note for the day it was taken:
 
 ### The running list of places
 
-`obsidian.location.append` puts the Capture at the top of a note that is one
-long timeline of places, newest first, grouped under a day:
+`obsidian.timeline.locations` puts the Capture under its day in a note that is
+one long timeline of places, newest first, grouped under a day. The note and
+its archive come from the vault's [timelines file](../../configuration/timelines.md),
+which defines the family timeline the same way:
 
 ```markdown
 - *2026-09-09 周三*
@@ -617,8 +619,8 @@ vault's rather than this tool's:
   what wrote the links already in the note: a space is `%20` rather than `+`,
   which some parsers read back as a literal plus.
 
-`capture.obsidian.location.archive` names where a year that has rolled over is
-moved to, one file per year; empty is the folder the note is in. Every list is
+The timeline's `archive` names where a year that has rolled over is moved to,
+one file per year; empty is the folder the note is in. Every list is
 archived: one that never sheds a year grows without limit, and every new entry
 rewrites all of it.
 
@@ -761,11 +763,11 @@ once written, they are the reader's files.
 
 | Recipe | Id | Workflows | Actions |
 | --- | --- | --- | --- |
-| Location | `obsidian_location` | `been_here` | `obsidian.location.append` |
-| Location + Daily | `obsidian_location_daily` | `been_here` | `obsidian.location.append`, `obsidian.daily.append` |
+| Location | `obsidian_location` | `been_here` | `obsidian.timeline.locations` |
+| Location + Daily | `obsidian_location_daily` | `been_here` | `obsidian.timeline.locations`, `obsidian.daily.append` |
 | Daily | `obsidian_daily` | `been_here`, `photo_note`, `quick_marker` | `obsidian.daily.append` |
-| Timeline | `obsidian_timeline` | `been_here`, `photo_note`, `quick_marker` | `obsidian.timeline.append` |
-| Photo + Location | `photo_location_daily` | `photo_note` | `obsidian.location.append`, `obsidian.daily.append` |
+| Timeline | `obsidian_timeline` | `been_here`, `photo_note`, `quick_marker` | `obsidian.timeline.family` |
+| Photo + Location | `photo_location_daily` | `photo_note` | `obsidian.timeline.locations`, `obsidian.daily.append` |
 | Apple Note | `apple_note` | `photo_note`, `quick_marker` | `apple.notes.create` |
 | Reminder | `apple_reminder` | `quick_marker` | `apple.reminders.create` |
 | Reminder Here | `apple_reminder_place` | `been_here` | `apple.reminders.at_place` |

@@ -7,4 +7,4 @@ match:
   workflows: [been_here, photo_note, quick_marker]
 
 actions:
-  - id: obsidian.timeline.append
+  - id: obsidian.timeline.family

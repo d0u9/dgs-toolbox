@@ -85,6 +85,10 @@ func newAppCommand(app tui.App, run tui.Runner, configPath *string) *cobra.Comma
 		if report, ok := chosen(); ok {
 			return runReport(cmd, report, *configPath, app.ID)
 		}
+		if len(app.Commands) == 0 {
+			// Nothing to open: an app of Actions alone lists them.
+			return cmd.Help()
+		}
 		return run(tui.Launch{App: app.ID, ConfigPath: *configPath})
 	}
 

@@ -1,0 +1,16 @@
+{
+  "op": "merge",
+  "args": {
+    "archive": "",
+    "header": {
+      "cssclass": "timeline",
+      "title": "时间线",
+      "source": "Timeline.md"
+    },
+    "year": {
+      "year": "2025",
+      "text": "- *2025-12-31 周三*\n- old"
+    }
+  },
+  "want": "@want.md"
+}

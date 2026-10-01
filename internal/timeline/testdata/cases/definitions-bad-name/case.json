@@ -1,0 +1,7 @@
+{
+  "op": "definitions",
+  "args": {
+    "text": "{\"version\": 1, \"timelines\": {\"Family\": {\"note\": \"a.md\"}}}"
+  },
+  "error": "not a name"
+}

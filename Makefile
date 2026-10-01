@@ -5,7 +5,7 @@ BASHCOMPDIR ?= $(DATADIR)/bash-completion/completions
 BIN        := dgs
 COMPLETION ?=
 
-.PHONY: install install-zsh install-bash uninstall
+.PHONY: install install-zsh install-bash uninstall plugins test-timeline
 
 # On macOS dgs links EventKit through cgo for the reminder Actions, and carries
 # an Info.plist so Reminders can say who is asking. It needs only the Command
@@ -23,7 +23,7 @@ install-zsh: install
 install-bash: COMPLETION=bash
 install-bash: install
 
-install:
+install: plugins
 	@completion="$(COMPLETION)"; \
 	if [ -z "$$completion" ]; then completion="$${SHELL##*/}"; fi; \
 	case "$$completion" in \
@@ -62,3 +62,22 @@ uninstall:
 		if [ -e "$$f" ]; then rm -f "$$f" && echo "removed $$f"; \
 		else echo "$$f is not installed"; fi; \
 	done
+
+# What the plugins dgs carries need beside their sources, built into the
+# folders internal/plugins/bundled embeds: internal/timeline compiled to
+# WebAssembly, and Go's JavaScript glue for it. dgs builds without them and
+# says so when asked to install; make install runs this first.
+OBSIDIAN_GENERATED := internal/plugins/bundled/obsidian/dgs-toolbox/generated
+GOWASM_EXEC := $(shell go env GOROOT)/lib/wasm/go_js_wasm_exec
+
+plugins:
+	@mkdir -p "$(OBSIDIAN_GENERATED)"
+	GOOS=js GOARCH=wasm go build -trimpath -ldflags='-s -w' -o "$(OBSIDIAN_GENERATED)/timeline.wasm" ./cmd/timeline-wasm
+	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" "$(OBSIDIAN_GENERATED)/wasm_exec.js"
+
+# The timeline cases natively, in the WebAssembly build under Node, and
+# through the Obsidian plugin's engine.js: all three must give the same answers.
+test-timeline: plugins
+	go test ./internal/timeline
+	GOOS=js GOARCH=wasm go test -exec="$(GOWASM_EXEC)" ./internal/timeline
+	node --test internal/plugins/bundled/engine.test.mjs

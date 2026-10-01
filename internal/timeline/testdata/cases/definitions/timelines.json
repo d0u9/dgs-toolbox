@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "timelines": {
+    "locations": {
+      "note": "88 Inbox/06 Locations.md",
+      "archive": "88 Inbox/06 Locations",
+      "cssclass": "locations",
+      "title": "位置速记",
+      "template": "location-entry.md"
+    },
+    "family": {
+      "note": "03 Family/00 Timeline/Timeline.md",
+      "archive": "03 Family/00 Timeline/Archive",
+      "split": "year",
+      "cssclass": "timeline",
+      "title": "时间线",
+      "template": "timeline-entry.md",
+      "contentRequired": true
+    }
+  }
+}
