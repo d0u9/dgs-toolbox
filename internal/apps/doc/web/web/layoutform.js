@@ -2,7 +2,7 @@
 // layout built from key chips, its children as nested if blocks, and a
 // Numbering list per {#}. The page owns the rest of
 // its form and what a change redraws; the server computes the result.
-import { $, el, currentFields, label, post, tagUses } from "/common.js";
+import { $, api, el, currentFields, label, post, tagUses } from "/common.js";
 import { condition } from "/condition.js";
 
 let state = { templates: [], items: [] };
@@ -378,6 +378,19 @@ const selected = (s = top) => {
   return state.items.filter((item) => previewed.has(item.id)
     && (at === null || [...previewed.get(item.id)].some((n) => n === at || n.startsWith(at + "."))));
 };
+// nameOwn reports whether the Item is named by the rule's own file at
+// one of the places it lands: no block on the way there writes its own.
+// An order the rule's file numbers lists only those Items; the others
+// never print that number.
+const nameOwn = (item) => [...previewed.get(item.id)].some((at) => {
+  let list = nodes;
+  for (const i of at ? at.split(".") : []) {
+    const n = list[i - 1];
+    if (!n || n.file.trim()) return false;
+    list = n.children;
+  }
+  return true;
+});
 // whereOf is a block's place as the server names it: 2.1 is the second
 // child's first.
 const whereOf = (s) => {
@@ -755,7 +768,7 @@ const inherited = () => [...$("inherit").querySelectorAll("input:checked")].map(
 // key, or as {#label} names it.
 const firstKey = (parts) => parts.map((p) => p.keys ? p.keys[0].split(":")[0] : p.group ? firstKey(p.group) : "").find(Boolean) || "";
 export const numberedKeys = () => {
-  const all = [...rows.flatMap((row) => {
+  const all = [...rows.flatMap((row, r) => {
     const at = row.parts.findIndex((p) => p.counter);
     if (at < 0) return [];
     let rest = row.parts.slice(at + 1);
@@ -766,7 +779,7 @@ export const numberedKeys = () => {
       rest = rest.slice(0, -1);
       if (rest.length && rest[rest.length - 1].text === ".") rest = rest.slice(0, -1);
     }
-    return rest.some((p) => p.keys || p.group) ? [{ of: row.parts[at].label || firstKey(rest), rest: rest.map(written).join("") }] : [];
+    return rest.some((p) => p.keys || p.group) ? [{ of: row.parts[at].label || firstKey(rest), rest: rest.map(written).join(""), file: r === rows.length - 1 }] : [];
   }), ...[root, ...every(nodes)].flatMap((n) => n.ofs)];
   return all.filter((c, i) => all.findIndex((d) => d.of === c.of) === i);
 };
@@ -843,9 +856,11 @@ function drawOrder() {
 // orderList draws the order s keeps for key, rest what it numbers as
 // written. An order new to s starts with the names the Items have.
 function orderList(s, key, rest) {
+  const fileKey = s === top && numberedKeys().some((c) => c.of === key && c.file);
+  const takes = () => fileKey ? selected(s).filter(nameOwn) : selected(s);
   const numbers = s.numbers, unnumbered = s.unnumbered;
   if (s.order[key] === undefined && previewed) {
-    s.order[key] = [...new Set(selected(s).map((i) => orderValue(i, rest)).filter(Boolean))].sort();
+    s.order[key] = [...new Set(takes().map((i) => orderValue(i, rest)).filter(Boolean))].sort();
   }
   const box = el("div", { className: "order" });
   const list = () => (s.order[key] || []).filter(Boolean);
@@ -855,9 +870,11 @@ function orderList(s, key, rest) {
     const values = list();
     // Only the values the query's Items have are shown, each with its
     // number in the whole order; the others stay in it, numbered, hidden.
-    const held = [...new Set(selected(s).map((i) => orderValue(i, rest)).filter(Boolean))];
+    const held = [...new Set(takes().map((i) => orderValue(i, rest)).filter(Boolean))];
     const shown = values.map((v, i) => i).filter((i) => held.some((h) => same(h, values[i])));
     const hidden = values.length - shown.length;
+    // holders is the Items this block takes whose value for key is v.
+    const holders = (v) => takes().filter((i) => same(orderValue(i, rest), v));
     const unlisted = held.filter((v) => !values.some((w) => same(v, w))).sort();
     // move swaps a shown value with the shown one before or after it.
     const move = (a, b) => { const next = [...values]; [next[a], next[b]] = [next[b], next[a]]; set(next); };
@@ -921,13 +938,30 @@ function orderList(s, key, rest) {
       })),
       hidden ? el("p", { className: "template-sub", textContent: hidden + (hidden === 1 ? " value no Item this rule picks has is" : " values no Item this rule picks has are") + " kept in the order, hidden: " + values.filter((_, i) => !shown.includes(i)).join(", ") }) : null,
       unlisted.length ? el("div", { className: "order-add" }, el("span", { className: "order-add-label", textContent: "Not numbered" }),
-        ...unlisted.map((v) => el("button", { type: "button", className: "order-chip", textContent: "+ " + v, title: "Number " + v + " last", onclick: () => set([...values, v]) })))
+        ...unlisted.map((v) => el("button", { type: "button", className: "order-chip", textContent: "+ " + v + " · " + holders(v).length,
+          title: "Number " + v + " last", onclick: () => set([...values, v]) })),
+        el("button", { type: "button", className: "order-act order-show", textContent: "Files…",
+          title: "List the Items holding each value not numbered, to find a value written two ways", onclick: () => showHolders(key, unlisted.map((v) => [v, holders(v)])) }))
         : null,
     ].filter(Boolean));
   };
   box.redraw = draw;
   draw();
   return el("div", { className: "condition" }, el("code", { title: "{#} numbers " + rest }, key), box);
+}
+
+// showHolders lists, in a dialog, the Items behind each value key leaves
+// unnumbered; each opens in Browse.
+function showHolders(key, groups) {
+  $("holders-title").textContent = "Not numbered: " + key;
+  $("holders-list").replaceChildren(...groups.map(([v, items]) => el("section", { className: "holders-group" },
+    el("h4", { className: "holders-value" }, el("span", { textContent: v }), el("span", { className: "holders-count", textContent: String(items.length) })),
+    el("ul", { className: "holders-items" }, ...items.map((i) => {
+      const [type, ...rest] = label(state, i).split(" · ");
+      return el("li", {}, el("a", { href: api("/browse/?read") + "#" + encodeURIComponent(i.id), target: "_blank", title: label(state, i) },
+        el("span", { className: "holders-type", textContent: type }), el("span", { className: "holders-fields", textContent: rest.join(" · ") })));
+    })))));
+  $("holders-dialog").showModal();
 }
 
 // condKeys is the keys an if can ask of: a layout's, less the ways of

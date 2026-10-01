@@ -731,6 +731,21 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .order-add { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 8px; }
 .order-add-label { font-size: var(--font-size-xs); color: var(--graphite); margin-right: 2px; }
 .order-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; height: 22px; padding: 0 8px; font: inherit; font-size: var(--font-size-xs); color: var(--graphite); background: var(--paper); border: 1px dashed var(--hairline-strong); border-radius: var(--radius-pill); cursor: pointer; }
+.order-show { width: auto; padding: 0 8px; white-space: nowrap; }
+.holders-dialog { width: min(640px, 92vw); max-height: 80vh; }
+.holders-dialog[open] { display: flex; }
+.holders-dialog .snap-dialog-body { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.holders-dialog h3 { margin: 0; }
+.holders-dialog .template-sub { margin: 0; }
+.holders-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
+.holders-value { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: var(--font-size-sm); font-weight: 600; }
+.holders-count { min-width: 20px; height: 18px; padding: 0 6px; border-radius: var(--radius-pill); background: var(--hairline); color: var(--graphite); font-size: var(--font-size-xs); font-weight: normal; line-height: 18px; text-align: center; }
+.holders-items { list-style: none; margin: 0; padding: 0; border: 1px solid var(--hairline); border-radius: var(--radius-sm); }
+.holders-items li + li { border-top: 1px solid var(--hairline); }
+.holders-items a { display: flex; align-items: baseline; gap: 8px; padding: 5px 10px; color: inherit; text-decoration: none; font-size: var(--font-size-xs); }
+.holders-items a:hover { background: var(--paper); color: var(--primary); }
+.holders-type { flex: none; color: var(--graphite); font-family: var(--font-mono, monospace); }
+.holders-fields { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .order-chip:hover { color: var(--primary); border-color: var(--primary); border-style: solid; }
 /* Outlines: the tree an Outline's rules make, with what is picked in it
    beside it. */
