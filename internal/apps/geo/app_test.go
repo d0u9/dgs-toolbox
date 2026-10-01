@@ -36,3 +36,18 @@ func TestGPXFlagsRejectBadValues(t *testing.T) {
 		t.Fatalf("default addr = %q", got)
 	}
 }
+
+// The unfinished location implementation must not expose a command entry point.
+func TestLocationIsNotRegistered(t *testing.T) {
+	app := New()
+	for _, action := range app.Actions {
+		if action.ID == "location" {
+			t.Fatal("unfinished location Action is registered")
+		}
+	}
+	for _, command := range app.Commands {
+		if command.ID == "location" {
+			t.Fatal("unfinished location command is registered")
+		}
+	}
+}

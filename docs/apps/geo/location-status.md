@@ -2,6 +2,9 @@
 
 日期：2026-10-01。状态：保存实现，暂停推进；以后再决定部署方案。
 
+合并到 dev 时移除 Action 注册。`dgs geo location` 不可调用，也不出现在
+帮助、补全或 TUI 中；保留的 Action 构造与测试仅供以后恢复实现。
+
 ## 已确认的范围与实现
 
 命令为 `dgs geo location`，是 CLI Action，不进入 TUI。

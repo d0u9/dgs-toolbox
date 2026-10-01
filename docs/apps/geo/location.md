@@ -1,10 +1,12 @@
 # Location
 
-Status: implementation checkpoint. Single-file macOS authorization remains
-unresolved; this is not a completed, deployable feature. See
+Status: parked implementation checkpoint. The location Action is not registered,
+so `dgs geo location` is not available in the CLI, help or completion. Single-file
+macOS authorization remains unresolved. The examples below describe the tested
+prototype, not an enabled command. See
 [the investigation handoff](location-status.md).
 
-`dgs geo location` prints the current device location once and exits. It is a
+The prototype `dgs geo location` prints the current device location once and exits. It is a
 CLI Action, outside the TUI picker. macOS builds with cgo call Core Location
 and Contacts through `internal/desktop/location`; other builds refuse clearly.
 No helper executable is installed or invoked.
