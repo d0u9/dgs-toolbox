@@ -13,10 +13,12 @@ import (
 func New() tui.App {
 	return tui.App{
 		ID:          "cred",
+		Help:        appHelp,
 		Name:        "Credentials",
 		Description: "age identities, recipients and encrypted files",
 		Commands: []tui.Command{{
 			ID:          "keys",
+			Help:        keysHelp,
 			Name:        "Keys",
 			Description: "This machine's identities, and the hosts and groups in the recipient folder.",
 			New: func() tui.CommandModel {
@@ -29,6 +31,7 @@ func New() tui.App {
 			},
 		}, {
 			ID:          "vault",
+			Help:        vaultHelp,
 			Name:        "Vault",
 			Description: "The age files in a folder, and which this machine can open.",
 			New: func() tui.CommandModel {

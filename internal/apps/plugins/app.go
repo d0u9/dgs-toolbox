@@ -31,10 +31,12 @@ var (
 func New() tui.App {
 	return tui.App{
 		ID:          "plugins",
+		Help:        appHelp,
 		Name:        "Plugins",
 		Description: "Plugins dgs carries for other applications: status, install, update, uninstall, bootstrap, export",
 		Actions: []tui.Action{{
 			ID:          "status",
+			Help:        actionHelp["status"],
 			Usage:       "[<plugin>...]",
 			Description: "Show every plugin dgs carries in every place it goes: installed or not, which version, changed since or not, switched on or not. Changes nothing.",
 			MaxArgs:     64,
@@ -44,6 +46,7 @@ func New() tui.App {
 			},
 		}, {
 			ID:          "install",
+			Help:        actionHelp["install"],
 			Usage:       "[<plugin>...]",
 			Description: "Install plugins, every one dgs carries when none is named, in every place they go. Leaves files changed by hand alone unless --force.",
 			MaxArgs:     64,
@@ -53,6 +56,7 @@ func New() tui.App {
 			},
 		}, {
 			ID:          "update",
+			Help:        actionHelp["update"],
 			Usage:       "[<plugin>...]",
 			Description: "Replace installed plugins an older dgs wrote with what this one carries. Installs nothing new.",
 			MaxArgs:     64,
@@ -62,6 +66,7 @@ func New() tui.App {
 			},
 		}, {
 			ID:          "uninstall",
+			Help:        actionHelp["uninstall"],
 			Usage:       "<plugin>...",
 			Description: "Remove the files dgs installed for a plugin. The application's own settings for it stay.",
 			MinArgs:     1,
@@ -72,6 +77,7 @@ func New() tui.App {
 			},
 		}, {
 			ID:          "bootstrap",
+			Help:        actionHelp["bootstrap"],
 			Description: "Set up a vault: install everything dgs carries, write the starting files it lacks, and list what is left to do by hand. Overwrites nothing.",
 			Flags:       []tui.ActionFlag{vaultFlag, fromFlag},
 			RunWithConfig: func(_ io.Reader, out io.Writer, _ []string, flags map[string]string, global config.Config) error {
@@ -79,6 +85,7 @@ func New() tui.App {
 			},
 		}, {
 			ID:          "export",
+			Help:        actionHelp["export"],
 			Usage:       "<dir>",
 			Description: "Copy a vault's starting files, as they are now, into a folder, for someone else's bootstrap --from.",
 			MinArgs:     1,

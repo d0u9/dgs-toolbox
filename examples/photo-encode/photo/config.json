@@ -1,0 +1,13 @@
+{
+  "encode": {
+    "source": "",
+    "destination": "",
+    "quality": 82,
+    "max_side": 800,
+    "ppi": 240,
+    "recursive": false,
+    "preserve_gps": false,
+    "max_pixels": 40000000,
+    "background": "#ffffff"
+  }
+}

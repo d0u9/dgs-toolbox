@@ -21,12 +21,14 @@ func New() tui.App {
 		Commands:    []tui.Command{command()},
 		Actions: []tui.Action{{
 			ID:            "init",
+			Help:          actionHelp["init"],
 			Usage:         "[<dir>]",
 			Description:   "Make a folder a doc tree, by writing its marker and an example Template.",
 			MaxArgs:       1,
 			RunWithConfig: initAction,
 		}, {
 			ID:          "verify",
+			Help:        actionHelp["verify"],
 			Usage:       "[<dir>]",
 			Description: "Check every PDF against its sidecar and digest. Changes nothing.",
 			MaxArgs:     1,
@@ -37,6 +39,7 @@ func New() tui.App {
 			RunWithConfig: verifyAction,
 		}, {
 			ID:          "export",
+			Help:        actionHelp["export"],
 			Usage:       "[<outline>...]",
 			Description: "Export Outlines into their folders: those given, or every one with a folder. Checks everything first; a conflict writes nothing.",
 			MaxArgs:     64,
@@ -48,6 +51,7 @@ func New() tui.App {
 			RunWithConfig: exportAction,
 		}, {
 			ID:          "link",
+			Help:        actionHelp["link"],
 			Usage:       "[<dir>]",
 			Description: "Fill each empty link field whose within finds exactly one Item, such as a bill's tenancy by its date. Lists them; writes only with --apply.",
 			MaxArgs:     1,
@@ -58,6 +62,7 @@ func New() tui.App {
 			RunWithConfig: linkAction,
 		}, {
 			ID:          "explain",
+			Help:        actionHelp["explain"],
 			Usage:       "<item-id> [<outline>...]",
 			Description: "Show how each Outline, or those given, places an Item's PDFs, or why it does not: each condition, branch and key. Changes nothing.",
 			MinArgs:     1,
@@ -76,6 +81,7 @@ func command() tui.Command {
 	}
 	return tui.Command{
 		ID:            "doc",
+		Help:          docHelp,
 		Name:          "Doc",
 		Description:   "Start the local page for the document tree.",
 		New:           func() tui.CommandModel { return build(config.Default()) },

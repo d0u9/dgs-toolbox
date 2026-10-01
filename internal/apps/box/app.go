@@ -23,18 +23,21 @@ func New() tui.App {
 		Commands:    []tui.Command{command()},
 		Actions: []tui.Action{{
 			ID:            "init",
+			Help:          actionHelp["init"],
 			Usage:         "[<dir>]",
 			Description:   "Make a folder a Box, by writing its marker.",
 			MaxArgs:       1,
 			RunWithConfig: initAction,
 		}, {
 			ID:            "index",
+			Help:          actionHelp["index"],
 			Usage:         "[<dir>]",
 			Description:   "Rebuild the discardable local cache from the sidecars.",
 			MaxArgs:       1,
 			RunWithConfig: indexAction,
 		}, {
 			ID:          "verify",
+			Help:        actionHelp["verify"],
 			Usage:       "[<dir>]",
 			Description: "Read every byte and check it against its recorded digest.",
 			MaxArgs:     1,
@@ -44,6 +47,7 @@ func New() tui.App {
 			RunWithConfig: verifyAction,
 		}, {
 			ID:            "dedupe",
+			Help:          actionHelp["dedupe"],
 			Usage:         "[<dir>]",
 			Description:   "Group the scans that are the same piece of paper.",
 			MaxArgs:       1,
@@ -59,6 +63,7 @@ func command() tui.Command {
 	}
 	return tui.Command{
 		ID:            "box",
+		Help:          boxHelp,
 		Name:          "Box",
 		Description:   "Start the local pages for the Box.",
 		New:           func() tui.CommandModel { return build(config.Default()) },

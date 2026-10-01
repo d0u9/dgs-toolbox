@@ -13,7 +13,7 @@ link here; this is what a reader consults to find out *what* to write.
   in [`apps/capture/actions.md`](../apps/capture/actions.md).
 - [Timelines](timelines.md) — the file in the vault defining every running
   list, read by the capture Actions and the dgs-toolbox Obsidian plugin alike.
-- [Photo](photo.md) — Photo Import's state file and default paths.
+- [Photo](photo.md) — Photo Import paths and Photo Encode defaults.
 - [Box](box.md) — the Box `dgs box` archives scans into, the inbox it takes
   them from, its discardable local cache, the trash, amounts and time zones.
   The types it knows are catalogued in [`apps/box/types.md`](../apps/box/types.md).
@@ -125,6 +125,15 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [capture](capture.md#reminders) | `apple.reminders.list` | empty — Reminders' own default list |
 | [capture](capture.md#reminders) | `apple.reminders.radius` | `150` |
 | [photo](photo.md) | `import.state_file` | `.dgs-state` |
+| [photo](photo.md) | `encode.source` | empty |
+| [photo](photo.md) | `encode.destination` | empty |
+| [photo](photo.md) | `encode.quality` | `82` |
+| [photo](photo.md) | `encode.max_side` | `800` |
+| [photo](photo.md) | `encode.ppi` | `240` |
+| [photo](photo.md) | `encode.background` | `#ffffff` |
+| [photo](photo.md) | `encode.recursive` | `false` |
+| [photo](photo.md) | `encode.preserve_gps` | `false` |
+| [photo](photo.md) | `encode.max_pixels` | `40000000` |
 | [photo](photo.md) | `import.source` | empty — the repository's mock path |
 | [photo](photo.md) | `import.destination` | empty — the repository's mock path |
 | [box](box.md) | `root` | empty — the command asks for a folder |

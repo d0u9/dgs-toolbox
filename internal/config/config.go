@@ -259,6 +259,7 @@ type ConfExport struct {
 
 type Photo struct {
 	Import PhotoImport `json:"import"`
+	Encode PhotoEncode `json:"encode"`
 }
 
 type PhotoImport struct {
@@ -291,7 +292,7 @@ func Default() Config {
 	return Config{Shell: Shell{TopBar: TopBar{
 		Disk: boolPointer(true), Network: boolPointer(true),
 		CPU: boolPointer(true), Time: boolPointer(true),
-	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}}, Box: Box{
+	}}, Photo: Photo{Import: PhotoImport{StateFile: ".dgs-state"}, Encode: DefaultPhotoEncode()}, Box: Box{
 		Marker: DefaultBoxMarker, StateFile: DefaultBoxStateFile,
 		Workers: DefaultBoxWorkers, Web: defaultWeb(boxServers),
 		Preview: BoxPreview{KeepDays: intPointer(DefaultBoxPreviewKeepDays)},
@@ -662,6 +663,12 @@ var parts = []part{
 }
 
 func checkPhoto(c *Config) error {
+	if err := c.Photo.Encode.validate(); err != nil {
+		return err
+	}
+	if err := expandAll(map[string]*string{"encode.source": &c.Photo.Encode.Source, "encode.destination": &c.Photo.Encode.Destination}); err != nil {
+		return err
+	}
 	stateFile := c.PhotoImportStateFile()
 	if filepath.Base(stateFile) != stateFile || stateFile == "." || stateFile == ".." {
 		return fmt.Errorf("import.state_file must be a filename, got %q", stateFile)

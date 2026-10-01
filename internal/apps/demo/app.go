@@ -6,6 +6,7 @@ import "dgs-toolbox/internal/tui"
 func New() tui.App {
 	return tui.App{
 		ID:          "demo",
+		Help:        demoHelp,
 		Name:        "Component Demo",
 		Description: "Interactive gallery of reusable TUI components",
 		Direct:      true,

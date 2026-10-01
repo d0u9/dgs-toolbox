@@ -15,11 +15,13 @@ import (
 func New() tui.App {
 	return tui.App{
 		ID:          "geo",
+		Help:        appHelp,
 		Name:        "Geo",
 		Description: "Geographic tools",
 		Commands: []tui.Command{
 			{
 				ID:          "gpx",
+				Help:        gpxHelp,
 				Name:        "GPX",
 				Description: "GPX tracks in the terminal and a local map page.",
 				New: func() tui.CommandModel {

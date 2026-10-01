@@ -28,6 +28,7 @@ func New() tui.App {
 		}},
 		Commands: []tui.Command{{
 			ID:          "scan",
+			Help:        scanHelp,
 			Name:        "Scan",
 			Description: "Open the Capture workspace",
 			New: func() tui.CommandModel {

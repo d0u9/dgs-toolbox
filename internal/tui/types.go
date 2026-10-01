@@ -66,6 +66,8 @@ type TabSelectedMsg struct {
 // Command describes a leaf command and creates a fresh model each time it is
 // selected.
 type Command struct {
+	// Help is optional long-form CLI help, separate from the picker description.
+	Help          string
 	ID            string
 	Name          string
 	Description   string
@@ -97,6 +99,8 @@ type Report struct {
 // Action is a CLI-only subcommand such as `dgs photo organize <folder>`. It
 // reads answers from in and writes progress to out instead of opening the TUI.
 type Action struct {
+	// Help explains examples, argument defaults and effects of this CLI action.
+	Help        string
 	ID          string
 	Usage       string
 	Description string
@@ -133,6 +137,8 @@ type ActionFlag struct {
 
 // App describes a command domain and its leaf commands.
 type App struct {
+	// Help explains a command group when it does not launch a direct leaf.
+	Help        string
 	ID          string
 	Name        string
 	Description string
