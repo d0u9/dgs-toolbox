@@ -48,12 +48,13 @@ export function unplaced(grouping) {
 // resizable puts a handle on the side of the tree's pane that faces the
 // rest of the page, so the reader drags it wider or narrower; the width is
 // remembered per page. The pane after the form grows leftward, the pane
-// before the list of PDFs rightward.
-export function resizable(pane, key, { after = true, fallback = 480 } = {}) {
+// before the list of PDFs rightward. A pane drawn while hidden measures
+// against the window, its parent having no width yet.
+export function resizable(pane, key, { after = true, fallback = 480, min = 260 } = {}) {
   const handle = el("div", { className: "splitter col", role: "separator", "aria-orientation": "vertical", title: "Drag to resize; double-click for the default" });
   if (after) pane.before(handle); else pane.after(handle);
-  splitter({ handle, target: pane, axis: "x", invert: after, min: 260, fallback, key,
-    max: () => Math.max(260, pane.parentElement.clientWidth - 420) });
+  splitter({ handle, target: pane, axis: "x", invert: after, min, fallback, key,
+    max: () => Math.max(min, (pane.parentElement.clientWidth || innerWidth) - 420) });
 }
 
 // outlineTree draws into host with the shared file tree. With onPick, a
