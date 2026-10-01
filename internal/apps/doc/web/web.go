@@ -122,6 +122,9 @@ type stateJSON struct {
 	// SoonDays is how many days before its expiry an Item counts as
 	// expiring soon, doc.expiring_within_days.
 	SoonDays int `json:"soonDays"`
+	// Mandatory are the fields every Template requires, tree.MandatoryKeys:
+	// every Item has them, so Browse always offers them as filters.
+	Mandatory []string `json:"mandatory"`
 }
 
 type server struct {
@@ -312,6 +315,7 @@ func (s server) state(w http.ResponseWriter, _ *http.Request) {
 	}
 	out.Expiry = map[string]expiry.Status{}
 	out.SoonDays = int(s.soon / (24 * time.Hour))
+	out.Mandatory = tree.MandatoryKeys
 	now := s.now()
 	for _, item := range out.Items {
 		out.Expiry[item.ID] = expiry.Of(item.CurrentFields(), now, s.soon, s.dateOrder)

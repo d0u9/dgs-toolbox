@@ -224,15 +224,17 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .template-side .form-field { margin: 0; }
 .template-side .button { align-self: flex-start; }
 
-/* Browse: filters along the top, cards or a table, as box's Browse. The
-   first row holds what every Item has; the second, shown only when there is
-   something in it, what the Items in view have besides. */
+/* Browse: search and the view along the top, the filters in a panel under
+   them, shut until Filters opens it. In the panel the first row holds what
+   every Item has; the second, shown only when there is something in it,
+   what the Items in view have besides. */
 .filters {
   flex: none; display: flex; flex-direction: column; gap: 6px; padding: 6px 14px;
   border-bottom: 1px solid var(--hairline); background: var(--cloud);
 }
 .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--space-sm, 12px); min-width: 0; }
-.filter-more { padding-top: 6px; border-top: 1px solid var(--hairline); }
+.filter-panel { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px solid var(--hairline); }
+.filters-on { margin-left: 6px; padding: 0 6px; border-radius: var(--radius-full, 999px); background: var(--primary); color: var(--on-primary); font-size: var(--font-size-xs); }
 .filter-set { display: contents; }
 .filters [hidden] { display: none; }
 .filter { display: flex; align-items: center; gap: 6px; height: var(--control-height); font-size: var(--font-size-sm); color: var(--charcoal); }
