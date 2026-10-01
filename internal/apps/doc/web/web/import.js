@@ -114,6 +114,38 @@ function readAhead(path) {
 }
 
 $("template-filter").addEventListener("input", () => drawFields());
+// Coming back to the filter selects what is in it, so the next type is
+// typed over the last rather than after it. The click that focuses it
+// would otherwise put the caret back and drop the selection.
+let selectOnUp = false;
+$("template-filter").addEventListener("focus", () => { $("template-filter").select(); selectOnUp = true; });
+$("template-filter").addEventListener("mouseup", (event) => {
+  if (selectOnUp) event.preventDefault();
+  selectOnUp = false;
+});
+// Down from the filter goes into the list of Templates it leaves, the
+// first match first; up and down move in it, up from the top goes back to
+// the filter, and Enter or Space picks the one focused.
+const templateChoices = () => [...$("template").querySelectorAll(".template-choice")];
+$("template-filter").addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowDown" && event.key !== "Enter") return;
+  const choices = templateChoices();
+  const first = choices.find((c) => !c.classList.contains("selected")) || choices[0];
+  if (!first) return;
+  event.preventDefault();
+  if (event.key === "Enter" && choices.length - (choices.some((c) => c.classList.contains("selected")) ? 1 : 0) === 1) first.click();
+  else first.focus();
+});
+$("template").addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  const choices = templateChoices();
+  const at = choices.indexOf(document.activeElement);
+  if (at < 0) return;
+  event.preventDefault();
+  const next = at + (event.key === "ArrowDown" ? 1 : -1);
+  if (next < 0) { if (!$("template-filter").hidden) $("template-filter").focus(); }
+  else choices[Math.min(next, choices.length - 1)].focus();
+});
 
 function drawFields() {
   if (!templateOf(state, selectedTemplate)) selectedTemplate = state.templates[0]?.type || "";
@@ -158,7 +190,12 @@ function drawFields() {
     const value = item.id;
     const identity = t.fields.filter((f) => f.distinguishing && item.fields?.[f.key])
       .map((f) => ({ key: f.key, value: item.fields[f.key] }));
-    const primary = identity.find((f) => f.key === "card_name" || f.key === "name")
+    // A name says what the document is even where the Template does not
+    // count it among what distinguishes one: a lease and its condition
+    // report share owner, issuer and category.
+    const named = !identity.some((f) => f.key === "card_name" || f.key === "name") && item.fields?.name
+      ? { key: "name", value: item.fields.name } : null;
+    const primary = named || identity.find((f) => f.key === "card_name" || f.key === "name")
       || identity[identity.length - 1];
     const detail = identity.filter((f) => f !== primary).map((f) => f.value).join(" · ");
     const button = el("button", {
