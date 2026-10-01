@@ -41,6 +41,7 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Browse `/browse/` | The Items as cards or a table, filtered; preview, edit fields, revisions and HEAD, delete and attach or replace a PDF on a selected revision. |
 | Explore `/explore/` | An Outline's result: its PDFs in their tree, its Snapshots as folders, each folder counting the PDFs beneath it; picking a folder lists it, a PDF opens beside it; exporting the tree. |
 | Templates `/templates/` | Each type's Template file, edited as written, listed as the tree of what extends what; new and delete. |
+| Values `/values/` | Every value a field or the tags hold across the Items, with how many hold each; values written more than one way sit together, and ticked values are rewritten as one. |
 | Rules `/rules/` | Making a rule: which PDFs it picks and the path each has, with the tree it makes redrawn as it changes. |
 | Snapshots `/snapshots/` | Taking a Snapshot from a rule, or beginning one empty, and editing its PDFs by hand. |
 | Outlines `/outlines/` | Making an Outline from rules and Snapshots, each Snapshot at a folder given, and the folder it is exported to, with its tree redrawn as they change. |
@@ -230,6 +231,18 @@ cannot bypass an active replacement; use **Undo replacement** first. A
 missing related Item is shown by ID, for example in a partial exported tree.
 Merge remaps successor IDs when source Items match different destination
 IDs and refuses conflicting replacement targets.
+
+### Values
+
+The Values page lists, for one field picked on its left, every value the
+Items' current fields hold, with the number of Items holding each; `tags`
+counts an Item's tags and its revisions'. Values equal once case, spaces and
+punctuation are dropped sit together, marked ≈, and a filter keeps only
+those. Ticking values and writing one value for them rewrites each Item that
+holds them through `POST /api/fields` (or `/api/tags` and
+`/api/revision-tags`), so each Item's history records the change. Earlier
+revisions' fields are not rewritten. A Template refusing the new value
+leaves that Item as it was and says so.
 
 ### Log
 
