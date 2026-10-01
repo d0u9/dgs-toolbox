@@ -3,6 +3,7 @@ import { openFile } from "/ui/filedialog.js";
 import { splitter } from "/ui/splitter.js";
 import { openMenu } from "/ui/menu.js";
 import { suggest } from "/combo.js";
+import { tooltip } from "/ui/tooltip.js";
 import { $, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
 
 let state = { templates: [], items: [] };
@@ -32,9 +33,15 @@ const fieldOf = (key) => {
   return null;
 };
 
-// tableKeys is the keys any type among the Items given has: the list's
-// columns, and what Sort offers besides its own.
-const tableKeys = (items) => [...new Set([...new Set(items.map((i) => i.type))].flatMap(keysOf))];
+// tableKeys is the field columns of the list for the Items given, and what
+// Sort offers besides its own: the fields every Template requires, then,
+// when the Items are all of one type, that type's distinguishing keys in its
+// order. A key none of them has a value for is left out.
+function tableKeys(items) {
+  const types = new Set(items.map((i) => i.type));
+  const keys = [...new Set([...(state.mandatory || []), ...(types.size === 1 ? keysOf([...types][0]) : [])])];
+  return keys.filter((k) => items.some((i) => currentFields(i)[k]));
+}
 
 // Each field filter is kept across draws, so a box being typed in keeps its
 // focus, and moved to the row its key belongs in. Its way of choosing is
@@ -308,16 +315,34 @@ function star(item) {
 // it, again to turn the order round.
 const COLUMN_KEY = "dgs-doc-browse-column-";
 const columnWidth = (id, fallback) => { try { return Number(localStorage.getItem(COLUMN_KEY + id)) || fallback; } catch { return fallback; } };
-function drawHead(keys) {
-  const columns = [
-    { id: "thumb", text: "", width: 56, fixed: true },
-    { id: "frequent", text: "★", title: "Frequent", width: 36, fixed: true },
-    { id: "type", text: "Type", sort: "type", width: 140 },
-    ...keys.map((k) => ({ id: "field:" + k, text: k, sort: "field:" + k, width: 140 })),
-    { id: "expiry", text: "Expiry", sort: "expiry", width: 150 },
-    { id: "revisions", text: "Revisions", sort: "revisions", width: 90 },
-    { id: "added", text: "Added", sort: "added", width: 110 },
-  ];
+// tableColumns is the list's columns for the Items shown, in order: the
+// thumbnail and star, the Item's name as its card carries it, the type when more than
+// one is shown, the field columns tableKeys gives, Expiry when any of them
+// has something to say there, when each was added, and its revisions. Each
+// says how its cell is drawn.
+function tableColumns(items) {
+  const capital = (k) => k[0].toUpperCase() + k.slice(1);
+  const added = (item) => new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString();
+  return [
+    { id: "thumb", text: "", width: 48, fixed: true, cell: (item) => el("td", { className: "table-thumb" }, thumb(item)) },
+    { id: "frequent", text: "★", title: "Frequent", width: 36, fixed: true, cell: (item) => el("td", { className: "table-star" }, star(item)) },
+    // The card's name without its type, which the Type column, or the type
+    // filter, already says.
+    { id: "name", text: "Item", sort: "name", width: 340, cell: (item) => {
+      const name = label(state, item).slice(item.type.length).replace(/^ · /, "") || item.type;
+      return el("td", { className: "table-name", title: label(state, item) }, name);
+    } },
+    new Set(items.map((i) => i.type)).size > 1 && { id: "type", text: "Type", sort: "type", width: 130, cell: (item) => el("td", { className: "mono" }, item.type) },
+    ...tableKeys(items).map((k) => ({ id: "field:" + k, text: capital(k), about: fieldOf(k)?.description, sort: "field:" + k, width: k === "country" ? 90 : 130,
+      cell: (item) => { const v = currentFields(item)[k]; return el("td", {}, v ? shown(item, k, v) : ""); } })),
+    items.some((i) => expiryOf(i).state !== "none" || i.retired || (i.shared_with || []).length) &&
+      { id: "expiry", text: "Expiry", sort: "expiry", width: 150,
+        cell: (item) => el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))) },
+    { id: "added", text: "Added", sort: "added", width: 100, cell: (item) => el("td", { className: "numeric" }, added(item)) },
+    { id: "revisions", text: "Rev.", title: "Revisions", sort: "revisions", width: 56, cell: (item) => el("td", { className: "numeric" }, String(item.revisions.length)) },
+  ].filter(Boolean);
+}
+function drawHead(columns) {
   const sort = $("view-sort").value, asc = direction() === "asc";
   const cols = columns.map((c) => el("col", {}));
   const total = () => cols.reduce((sum, col) => sum + parseFloat(col.style.width), 0);
@@ -326,7 +351,8 @@ function drawHead(keys) {
   $("table-cols").replaceChildren(...cols);
   fit();
   $("table-head").replaceChildren(...columns.map((c, n) => {
-    const th = el("th", { title: c.title || "" });
+    const th = el("th", {});
+    if (c.title || c.about) tooltip(th, [c.title || c.text, c.about]);
     if (c.sort) {
       const on = sort === c.sort;
       th.classList.add("sortable");
@@ -355,17 +381,10 @@ function sortBy(column) {
   render();
 }
 
-function row(item, keys) {
-  const fields = currentFields(item);
+function row(item, columns) {
   const e = expiryOf(item);
   const tr = el("tr", { className: "table-row state-" + e.state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
-    el("td", { className: "table-thumb" }, thumb(item)),
-    el("td", { className: "table-star" }, star(item)),
-    el("td", {}, item.type),
-    ...keys.map((k) => el("td", {}, fields[k] ? shown(item, k, fields[k]) : "")),
-    el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))),
-    el("td", { className: "numeric" }, String(item.revisions.length)),
-    el("td", { className: "numeric" }, new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString()));
+    ...columns.map((c) => c.cell(item)));
   if (selected && selected.id === item.id) tr.classList.add("card-selected");
   return tr;
 }
@@ -474,9 +493,9 @@ function render() {
   $("grid").hidden = list;
   $("table").hidden = !list;
   if (list) {
-    const keys = tableKeys(items);
-    drawHead(keys);
-    $("table-body").replaceChildren(...items.map((i) => row(i, keys)));
+    const columns = tableColumns(items);
+    drawHead(columns);
+    $("table-body").replaceChildren(...items.map((i) => row(i, columns)));
   } else {
     $("grid").replaceChildren(...items.map(card));
   }

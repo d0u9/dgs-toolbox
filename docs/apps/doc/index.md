@@ -83,7 +83,12 @@ chosen with two icon buttons, Cards (a grid of squares) and List (bulleted lines
 as its header's right edge is dragged, remembered per column, and a click on
 a header sorts by that column, again to turn the order round; Sort offers the
 columns of the types in view, and an arrow beside it turns the order round.
-The list's columns are the distinguishing keys of the types in view. Each card or row shows the first page of HEAD, the fields that tell the document apart
+The list's columns are, in order: the thumbnail and star; Item, the card's
+name without its type; Type, when more than one is shown; the fields every
+Template requires (Owner, Country); when one type is shown, its
+distinguishing keys in its order; Expiry, when any row has something there;
+Added; and Rev., the revisions. A field column no row has a value for is
+left out, and a field's description is its header's tooltip. Each card or row shows the first page of HEAD, the fields that tell the document apart
 (owner, country), the type, and where its expiry stands.
 
 Along the top are search (fields, tags and the text on the page), a
