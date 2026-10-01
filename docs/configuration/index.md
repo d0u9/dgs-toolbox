@@ -11,6 +11,8 @@ link here; this is what a reader consults to find out *what* to write.
   rejected, Recipes, templates, the vault
   the Obsidian Actions write to, and how reminders are written. The Actions a Recipe may name are catalogued
   in [`apps/capture/actions.md`](../apps/capture/actions.md).
+- [Timelines](timelines.md) — the file in the vault defining every running
+  list, read by the capture Actions and the dgs-toolbox Obsidian plugin alike.
 - [Photo](photo.md) — Photo Import's state file and default paths.
 - [Box](box.md) — the Box `dgs box` archives scans into, the inbox it takes
   them from, its discardable local cache, the trash, amounts and time zones.
@@ -19,6 +21,8 @@ link here; this is what a reader consults to find out *what* to write.
 - [Geo](geo.md) — where the GPX web server listens, the folder it browses, its base maps, routing and contours.
 - [Conf](conf.md) — the generator root `dgs conf` reads, holding the services
   and the inventory, its secrets tree, and where the destination form opens.
+- [Plugins](plugins.md) — the Obsidian vaults `dgs plugins` installs the
+  plugins dgs carries into.
 - [Credentials](cred.md) — where identities are searched for, where the
   recipient folder is, and the vault.
 
@@ -54,6 +58,7 @@ editing?" should not have an answer that depends on which files exist.
   geo/config.json
   geo/gpx/tiles.json
   conf/config.json
+  plugins/config.json
   cred/config.json
 ```
 
@@ -107,10 +112,15 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [capture](capture.md#pictures-in-the-daily-note) | `obsidian.daily.images.folder` | `assets/{{.Note}}` |
 | [capture](capture.md#pictures-in-the-daily-note) | `obsidian.daily.images.max_side` | `2048` |
 | [capture](capture.md#pictures-in-the-daily-note) | `obsidian.daily.images.quality` | `80` |
-| [capture](capture.md#the-location-note) | `obsidian.location.note` | empty — the location Action refuses to run |
-| [capture](capture.md#the-location-note) | `obsidian.location.archive` | empty — the note's own folder |
-| [capture](capture.md#the-timeline) | `obsidian.timeline.note` | empty — the timeline Action refuses to run |
-| [capture](capture.md#the-timeline) | `obsidian.timeline.archive` | empty — the note's own folder |
+| [capture](capture.md#timelines) | `obsidian.timelines` | empty — the timeline Actions refuse to run |
+| [timelines](timelines.md) | `version` | none — must be `1` |
+| [timelines](timelines.md) | `timelines.<name>.note` | none — required |
+| [timelines](timelines.md) | `timelines.<name>.archive` | empty — the note's own folder |
+| [timelines](timelines.md) | `timelines.<name>.split` | `year` |
+| [timelines](timelines.md) | `timelines.<name>.cssclass` | empty |
+| [timelines](timelines.md) | `timelines.<name>.title` | empty |
+| [timelines](timelines.md) | `timelines.<name>.template` | empty — `timeline-entry.md`, else `location-entry.md` |
+| [timelines](timelines.md) | `timelines.<name>.contentRequired` | `false` |
 | [capture](capture.md#reminders) | `apple.reminders.list` | empty — Reminders' own default list |
 | [capture](capture.md#reminders) | `apple.reminders.radius` | `150` |
 | [photo](photo.md) | `import.state_file` | `.dgs-state` |
@@ -142,6 +152,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [conf](conf.md) | `root` | empty — the TUI page opens with no root and asks for one |
 | [conf](conf.md) | `secrets` | empty — an instance needing a secret refuses to render |
 | [conf](conf.md) | `export.dir` | empty — the home directory |
+| [plugins](plugins.md) | `obsidian.vaults` | empty — every run names a vault with `--vault` |
 | [cred](cred.md) | `identities` | empty — no identities |
 | [cred](cred.md) | `recipients` | empty — no recipients |
 | [cred](cred.md) | `new_identity_dir` | `~/.config/age` |

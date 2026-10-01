@@ -23,8 +23,9 @@ const (
 	YearLayout = "2006"
 )
 
-// markerLine matches a day's marker and captures its year.
-var markerLine = regexp.MustCompile(`^- \*(\d{4})-\d{2}-\d{2} .+\*$`)
+// markerLine matches a day's marker and captures its date; the year is the
+// date's first four characters.
+var markerLine = regexp.MustCompile(`^- \*(\d{4}-\d{2}-\d{2}) .+\*$`)
 
 // Marker is the day's tick on the timeline: "- *2026-09-24 周四*". The italics
 // are what a vault's stylesheet recognises, and what Archive matches on.
@@ -36,11 +37,11 @@ func Marker(day time.Time, weekday string) string {
 // from so a reader opening a year on its own knows what they are looking at.
 type Header struct {
 	// CSSClass is written into the frontmatter for the vault's stylesheet.
-	CSSClass string
+	CSSClass string `json:"cssclass"`
 	// Title names the list in the callout: "2026 年的<Title>".
-	Title string
+	Title string `json:"title"`
 	// Source is the running note's filename.
-	Source string
+	Source string `json:"source"`
 }
 
 // Render is the header of the archive for one year.
@@ -50,33 +51,11 @@ func (h Header) Render(year string) string {
 		fmt.Sprintf("> 从 %s 归档过来的，格式一样，新的在最上面。\n", h.Source)
 }
 
-// Prepend puts the entry at the top of the list: under the marker when it is
-// already the first one, and under a new one otherwise. The marker and its
-// entries are items of one list, so no blank line may separate them — a blank
-// line there breaks the list, and with it the timeline's rule. What introduces
-// the note, frontmatter and a callout, stays above.
-func Prepend(content, marker, entry string) string {
-	preamble, body := splitPreamble(content)
-	rest := strings.TrimLeft(body, "\n")
-	lines := strings.Split(rest, "\n")
-
-	var updated string
-	switch {
-	case len(lines) > 0 && strings.TrimSpace(lines[0]) == marker:
-		updated = strings.Join(append([]string{marker, entry}, trimLeadingBlank(lines[1:])...), "\n")
-	case strings.TrimSpace(rest) != "":
-		updated = marker + "\n" + entry + "\n" + rest
-	default:
-		updated = marker + "\n" + entry + "\n"
-	}
-	return withPreamble(preamble, updated)
-}
-
 // Year is the entries of one year leaving the running list, markers included,
 // newest first.
 type Year struct {
-	Year string
-	Text string
+	Year string `json:"year"`
+	Text string `json:"text"`
 }
 
 // Archive takes every day not in the current year out of the list. It returns
@@ -177,7 +156,7 @@ func splitByMarker(body string) (lead string, days []Year) {
 			if current != nil {
 				days = append(days, *current)
 			}
-			current = &Year{Year: match[1], Text: line}
+			current = &Year{Year: match[1][:4], Text: line}
 			continue
 		}
 		if current == nil {

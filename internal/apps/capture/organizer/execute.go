@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -225,10 +226,43 @@ func insertUnderSection(note, section string, entry []string) string {
 	for end > start+1 && strings.TrimSpace(lines[end-1]) == "" {
 		end--
 	}
+	// A section holding only the daily note template's placeholder, "1. 无",
+	// is empty: the first entry takes the placeholder's place rather than
+	// following it.
+	body := lines[start+1 : end]
+	if holdsOnlyPlaceholders(body) {
+		lines = append(append(append([]string{}, lines[:start+1]...), ""), lines[end:]...)
+		end = start + 2
+	}
 	updated := append([]string{}, lines[:end]...)
+	if end == start+1 {
+		// A blank line between the heading and the list, as one written by
+		// hand has.
+		updated = append(updated, "")
+	}
 	updated = append(updated, entry...)
 	updated = append(updated, lines[end:]...)
 	return strings.Join(updated, "\n") + "\n"
+}
+
+// placeholderLine is a line a template writes into a section with nothing in
+// it yet: "无", "None", "N/A" or a dash, as a list item or alone.
+var placeholderLine = regexp.MustCompile(`^\s*(?:\d+[.)]|[-*+])?\s*(?:无|None|N/A|-|—)\s*$`)
+
+// holdsOnlyPlaceholders reports whether lines have something in them and all
+// of it is placeholders.
+func holdsOnlyPlaceholders(lines []string) bool {
+	found := false
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if !placeholderLine.MatchString(line) {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 // sectionFor is the heading this Capture is written under, rendered against the

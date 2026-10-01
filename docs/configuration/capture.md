@@ -31,14 +31,7 @@ model is in [`apps/capture/organizer.md`](../apps/capture/organizer.md).
         "quality": 80
       }
     },
-    "location": {
-      "note": "88 Inbox/06 Locations.md",
-      "archive": "88 Inbox/06 Locations"
-    },
-    "timeline": {
-      "note": "03 Family/00 Timeline/Timeline.md",
-      "archive": ""
-    }
+    "timelines": "99 Toolkit/timelines.json"
   },
   "apple": {
     "reminders": {
@@ -159,7 +152,7 @@ fields:
 
 actions:
   - id: obsidian.daily.append
-  - id: obsidian.location.append
+  - id: obsidian.timeline.locations
     enabled: false
 ```
 
@@ -378,22 +371,16 @@ described in
 | `obsidian.daily.images.max_side` | The longest side, in pixels, a picture is shrunk to. A smaller picture is not enlarged. | `2048` |
 | `obsidian.daily.images.quality` | The JPEG quality a picture is re-encoded at, 1 to 100. | `80` |
 
-## The location note
+## Timelines
+
+The list of places, the family timeline and any other running list are
+defined in one file in the vault, which the Obsidian plugin reads too. Its
+shape is in [`timelines.md`](timelines.md); each timeline in it is the Action
+`obsidian.timeline.<name>`.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `obsidian.location.note` | The running list of places, newest first, relative to the vault. | empty — the location Action refuses to run |
-| `obsidian.location.archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — the note's own folder |
-
-## The timeline
-
-The same shape as the location note: what happened, newest first, under the
-same date markers, a rolled-over year moved into its own file.
-
-| Key | Meaning | Default |
-| --- | --- | --- |
-| `obsidian.timeline.note` | The timeline, newest first, relative to the vault. | empty — the timeline Action refuses to run |
-| `obsidian.timeline.archive` | The folder a year that has rolled over is moved into, as `<archive>/<year>.md`. | empty — the note's own folder |
+| `obsidian.timelines` | The timelines file, relative to the vault. | empty — the timeline Actions refuse to run |
 
 ## Reminders
 

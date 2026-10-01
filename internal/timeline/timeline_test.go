@@ -13,25 +13,6 @@ func TestMarker(t *testing.T) {
 	}
 }
 
-// A new day goes on top with its marker; the same day joins the marker already
-// there; frontmatter and callout stay above; no blank line splits the list.
-func TestPrepend(t *testing.T) {
-	preamble := "---\ncssclasses:\n  - timeline\n---\n\n> [!note]- 说明\n> 一行。"
-	content := preamble + "\n\n- *2026-09-24 周四*\n- b\n"
-
-	same := Prepend(content, "- *2026-09-24 周四*", "- a")
-	if want := preamble + "\n\n- *2026-09-24 周四*\n- a\n- b\n"; same != want {
-		t.Fatalf("same day =\n%q\nwant\n%q", same, want)
-	}
-	next := Prepend(content, "- *2026-09-25 周五*", "- c")
-	if want := preamble + "\n\n- *2026-09-25 周五*\n- c\n- *2026-09-24 周四*\n- b\n"; next != want {
-		t.Fatalf("new day =\n%q\nwant\n%q", next, want)
-	}
-	if empty := Prepend("", "- *2026-09-25 周五*", "- c"); empty != "- *2026-09-25 周五*\n- c\n" {
-		t.Fatalf("empty = %q", empty)
-	}
-}
-
 // Past years leave, grouped by year in the order met; this year stays; text
 // before the first marker is kept.
 func TestArchive(t *testing.T) {

@@ -185,18 +185,18 @@ func TestMissingFieldsFollowsTheEnabledSet(t *testing.T) {
 	}{
 		{
 			name:    "all actions enabled asks for the time the capture does not carry",
-			enabled: []ActionID{ActionLocationAppend, ActionDailyAppend},
+			enabled: []ActionID{TimelineAction("locations"), ActionDailyAppend},
 			// Both Actions want it; it is reported once per Action that does.
 			want: []FieldID{FieldCreatedAt, FieldCreatedAt},
 		},
 		{
 			name:    "the location note wants the time too, so disabling the daily one keeps it",
-			enabled: []ActionID{ActionLocationAppend},
+			enabled: []ActionID{TimelineAction("locations")},
 			want:    []FieldID{FieldCreatedAt},
 		},
 		{
 			name:    "the note is optional, so a capture with no text is not held up by it",
-			enabled: []ActionID{ActionLocationAppend, ActionDailyAppend},
+			enabled: []ActionID{TimelineAction("locations"), ActionDailyAppend},
 			// Supplying the time leaves nothing: the missing note does not block.
 			enrichment: map[FieldID]any{FieldCreatedAt: "2026-09-09T21:31:22+10:00"},
 			want:       nil,
@@ -209,7 +209,7 @@ func TestMissingFieldsFollowsTheEnabledSet(t *testing.T) {
 		},
 		{
 			name:       "enrichment satisfies the time",
-			enabled:    []ActionID{ActionLocationAppend, ActionDailyAppend},
+			enabled:    []ActionID{TimelineAction("locations"), ActionDailyAppend},
 			enrichment: map[FieldID]any{FieldPlaceName: "Epping Station", FieldCreatedAt: "2026-09-09T21:31:22+10:00", FieldContent: "晚上再来看看"},
 			want:       nil,
 		},
@@ -274,7 +274,7 @@ func TestMissingFieldsAreAttributedToTheirAction(t *testing.T) {
 		}
 		seen[req.Action] = true
 	}
-	for _, action := range []ActionID{ActionLocationAppend, ActionDailyAppend} {
+	for _, action := range []ActionID{TimelineAction("locations"), ActionDailyAppend} {
 		if !seen[action] {
 			t.Errorf("nothing attributed to %q", action)
 		}
@@ -337,7 +337,7 @@ func TestBuildProducesThePlanFromTheWorkedExample(t *testing.T) {
 		target string
 	}{
 		// Neither target resolves until the vault says where its note lives.
-		{ActionLocationAppend, ""},
+		{TimelineAction("locations"), ""},
 		{ActionDailyAppend, ""},
 	}
 
@@ -420,8 +420,8 @@ func TestSelectionDefaultsToEveryAction(t *testing.T) {
 		}
 	}
 
-	selection.Toggle(ActionLocationAppend)
-	selection.Toggle(ActionLocationAppend)
+	selection.Toggle(TimelineAction("locations"))
+	selection.Toggle(TimelineAction("locations"))
 	if len(selection.EnabledActions(recipe)) != len(recipe.Actions) {
 		t.Error("toggling twice should restore the default set")
 	}

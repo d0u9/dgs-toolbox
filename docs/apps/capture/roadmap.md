@@ -24,7 +24,7 @@ and the note says what shipped instead.
 - **The remaining Action implementations.** The Obsidian and reminder Actions
   write; `apple.notes.create` and `apple.calendar.create` declare and refuse.
   They need their APIs and the input controls their fields ask for.
-- **A note per place.** `obsidian.location.append` records places as one running
+- **A note per place.** `obsidian.timeline.locations` records places as one running
   timeline, which is what the vault it was written for keeps. A note per place —
   the earlier `obsidian.location.upsert` — is a different thing, deferred for
   want of a need rather than of a design. Writing a note that may already exist and may have been edited by hand

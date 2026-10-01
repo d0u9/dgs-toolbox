@@ -84,13 +84,13 @@ func TestCaptureArchiveFoldersDefaultAndCanBeConfigured(t *testing.T) {
 func TestCaptureObsidianIsOneObjectPerNote(t *testing.T) {
 	loaded, err := LoadPath(writeConfig(t, `{"capture":{"obsidian":{"vault":"/v",
 		"daily":{"note":"D/{{.Date}}.md","section":"S","images":{"max_side":100}},
-		"location":{"note":"L.md","archive":"L"},"timeline":{"note":"T.md"}}}}`))
+		"timelines":"T/timelines.json"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	o := loaded.CaptureObsidian()
 	if o.Daily.Note != "D/{{.Date}}.md" || o.Daily.Section != "S" || o.Daily.Images.MaxSide != 100 ||
-		o.Location.Note != "L.md" || o.Location.Archive != "L" || o.Timeline.Note != "T.md" {
+		o.Timelines != "T/timelines.json" {
 		t.Fatalf("obsidian = %+v", o)
 	}
 	if _, err := LoadPath(writeConfig(t, `{"capture":{"obsidian":{"daily_note":"D.md"}}}`)); err == nil {

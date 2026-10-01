@@ -77,7 +77,7 @@ name: My Location
 match:
   workflows: [been_here, quick_marker]
 actions:
-  - id: obsidian.location.append
+  - id: obsidian.timeline.locations
 `)
 
 	loaded := Load(dir)
@@ -243,7 +243,7 @@ match:
   workflows: [been_here]
 actions:
   - id: obsidian.daily.append
-  - id: obsidian.location.append
+  - id: obsidian.timeline.locations
     enabled: false
 `)
 
@@ -256,7 +256,7 @@ actions:
 		t.Fatalf("actions = %v, want both to stay in the recipe", recipe.Actions)
 	}
 	enabled := recipe.DefaultEnabled()
-	if !enabled[ActionDailyAppend] || enabled[ActionLocationAppend] {
+	if !enabled[ActionDailyAppend] || enabled[TimelineAction("locations")] {
 		t.Fatalf("default enabled = %v, want only the daily action ticked", enabled)
 	}
 	selection := NewSelection(recipe)

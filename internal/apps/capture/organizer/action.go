@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"dgs-toolbox/internal/timeline"
 )
 
 // ActionID identifies one concrete execution unit. A Recipe expands into
@@ -11,9 +13,7 @@ import (
 type ActionID string
 
 const (
-	ActionLocationAppend  ActionID = "obsidian.location.append"
 	ActionDailyAppend     ActionID = "obsidian.daily.append"
-	ActionTimelineAppend  ActionID = "obsidian.timeline.append"
 	ActionCaptureArchive  ActionID = "capture.archive"
 	ActionAppleNoteCreate ActionID = "apple.notes.create"
 	ActionReminderCreate  ActionID = "apple.reminders.create"
@@ -245,7 +245,7 @@ func init() {
 // the Obsidian ones and then the reminders, and the Apple ones that do nothing
 // yet last, rather than alphabetical, which would file them among each other.
 var ActionOrder = []ActionID{
-	ActionDailyAppend, ActionLocationAppend, ActionTimelineAppend,
+	ActionDailyAppend,
 	ActionGPXAppend,
 	ActionReminderCreate, ActionReminderAtPlace,
 	ActionAppleNoteCreate, ActionCalendarCreate,
@@ -286,17 +286,23 @@ func Actions() []ActionDefinition {
 // the Capture's position.
 func UsesPosition(recipe Recipe, enabled []ActionID) bool {
 	for _, id := range recipe.Actions {
-		if def, ok := actionDefinitions[id]; ok && def.UsesPosition && slices.Contains(enabled, id) {
+		if def, ok := LookupAction(id); ok && def.UsesPosition && slices.Contains(enabled, id) {
 			return true
 		}
 	}
 	return false
 }
 
-// LookupAction returns the definition of an Action.
+// LookupAction returns the definition of an Action: a registered one, or a
+// timeline's, which exists for any name the timelines file may hold.
 func LookupAction(id ActionID) (ActionDefinition, bool) {
-	def, ok := actionDefinitions[id]
-	return def, ok
+	if def, ok := actionDefinitions[id]; ok {
+		return def, ok
+	}
+	if name, ok := strings.CutPrefix(string(id), TimelineActionPrefix); ok && timeline.ValidName(name) {
+		return timelineAction(name), true
+	}
+	return ActionDefinition{}, false
 }
 
 // dayOf takes the date half of an RFC 3339 timestamp without converting it to

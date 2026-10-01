@@ -1,0 +1,10 @@
+{
+  "op": "insert",
+  "args": {
+    "content": "",
+    "date": "24/09/2026",
+    "marker": "- *x*",
+    "entry": "- y"
+  },
+  "error": "insert"
+}

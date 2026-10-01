@@ -33,5 +33,10 @@ cpu.out
 mem.out
 trace.out
 testdata
+# The timeline cases are the contract the Obsidian plugin is tested against
+# too, from a checkout of this repository, so they are kept.
+!/internal/timeline/testdata/
 go.work
 go.work.sum
+# Built by make plugins, embedded into dgs.
+/internal/plugins/bundled/*/*/generated/

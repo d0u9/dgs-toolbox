@@ -1,0 +1,11 @@
+{
+  "op": "archive",
+  "args": {
+    "content": "@in.md",
+    "current": "2026"
+  },
+  "want": {
+    "moved": [],
+    "remaining": "@want-remaining.md"
+  }
+}

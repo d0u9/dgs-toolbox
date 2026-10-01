@@ -1,0 +1,13 @@
+{
+  "op": "insert",
+  "args": {
+    "content": "@in.md",
+    "date": "2026-09-24",
+    "marker": "- *2026-09-24 周四*",
+    "entry": "- `12:30:00 +10` · 午饭\n    - 细节"
+  },
+  "want": {
+    "content": "@want-content.md",
+    "inserted": true
+  }
+}

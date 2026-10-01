@@ -13,8 +13,7 @@ func timelineSettings(t *testing.T, vault string) Settings {
 	settings := testSettings(t)
 	settings.Mappings = starterTables(t)
 	settings.ObsidianVault = vault
-	settings.TimelineNote = "03 Family/00 Timeline/Timeline.md"
-	settings.TimelineArchive = "03 Family/00 Timeline"
+	writeTimelines(t, &settings, testTimelines)
 	return settings
 }
 
@@ -106,16 +105,6 @@ func TestTimelineBackfillGoesToItsYear(t *testing.T) {
 	}
 }
 
-func TestTimelineRefusesWithoutANote(t *testing.T) {
-	settings := timelineSettings(t, t.TempDir())
-	settings.TimelineNote = ""
-	ctx := NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings)
-	results := Execute(ctx, []ActionPlan{{Action: ActionTimelineAppend}})
-	if !errorsIs(results[0].Err, ErrNoTimelineNote) {
-		t.Fatalf("err = %v, want ErrNoTimelineNote", results[0].Err)
-	}
-}
-
 // Without its own template, the timeline is written the way the reader writes
 // places; with one, its own wins.
 func TestTimelineBorrowsTheLocationTemplate(t *testing.T) {
@@ -142,14 +131,21 @@ func TestTimelineBorrowsTheLocationTemplate(t *testing.T) {
 	}
 }
 
-// Every timeline is an Action that is listed.
-func TestEveryTimelineIsListed(t *testing.T) {
-	for _, kind := range timelines {
-		if !slices.Contains(ActionOrder, kind.action) {
-			t.Errorf("%s is missing from ActionOrder", kind.action)
+// Any name the timelines file may hold is an Action, looked up rather than
+// registered; a name it may not hold is not.
+func TestTimelineActionsAreLookedUp(t *testing.T) {
+	for _, name := range []string{"family", "locations", "trip-2026"} {
+		def, ok := LookupAction(TimelineAction(name))
+		if !ok || def.Run == nil || def.Target == nil {
+			t.Errorf("%s: ok = %v, definition = %+v", name, ok, def)
 		}
-		if actionDefinitions[kind.action].Run == nil {
-			t.Errorf("%s has no Run", kind.action)
+	}
+	for _, id := range []ActionID{TimelineAction("Family"), TimelineAction(""), TimelineAction("a b")} {
+		if _, ok := LookupAction(id); ok {
+			t.Errorf("%s was looked up", id)
 		}
+	}
+	if slices.ContainsFunc(Actions(), func(def ActionDefinition) bool { return strings.HasPrefix(string(def.ID), TimelineActionPrefix) }) {
+		t.Error("a timeline Action is listed among the registered ones")
 	}
 }

@@ -12,5 +12,5 @@ fields:
     input: multi_select
 
 actions:
-  - id: obsidian.location.append
+  - id: obsidian.timeline.locations
   - id: obsidian.daily.append

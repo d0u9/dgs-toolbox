@@ -7,5 +7,5 @@ match:
   requires_any: [coordinates, place.city]
 
 actions:
-  - id: obsidian.location.append
+  - id: obsidian.timeline.locations
   - id: obsidian.daily.append

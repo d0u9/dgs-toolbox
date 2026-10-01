@@ -290,10 +290,7 @@ func obsidianSettings(global config.Config) organizer.Settings {
 	if obsidian.Daily.Section != "" {
 		settings.DailySection = obsidian.Daily.Section
 	}
-	settings.LocationNote = obsidian.Location.Note
-	settings.LocationArchive = obsidian.Location.Archive
-	settings.TimelineNote = obsidian.Timeline.Note
-	settings.TimelineArchive = obsidian.Timeline.Archive
+	settings.TimelinesFile = obsidian.Timelines
 	settings.ImageFolder = obsidian.Daily.Images.Folder
 	settings.ImageMaxSide = obsidian.Daily.Images.MaxSide
 	settings.ImageQuality = obsidian.Daily.Images.Quality

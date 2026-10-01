@@ -14,12 +14,6 @@
         "quality": 80
       }
     },
-    "location": {
-      "note": "88 Inbox/06 Locations.md",
-      "archive": "88 Inbox/06 Locations"
-    },
-    "timeline": {
-      "note": "03 Family/00 Timeline/Timeline.md"
-    }
+    "timelines": "99 Toolkit/timelines.json"
   }
 }

@@ -1,0 +1,57 @@
+/* The insert form: fields stacked full width, hints small under them. */
+.dgs-timeline-entry__field {
+	margin-bottom: var(--size-4-4);
+}
+
+.dgs-timeline-entry__label {
+	font-weight: var(--font-semibold);
+	margin-bottom: var(--size-4-2);
+}
+
+.dgs-timeline-entry__hint {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	margin-top: var(--size-4-1);
+}
+
+.dgs-timeline-entry__input,
+.dgs-timeline-entry__text {
+	width: 100%;
+}
+
+.dgs-timeline-entry__text {
+	min-height: 8em;
+	resize: vertical;
+}
+
+.dgs-timeline-entry__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+.dgs-timeline-entry__chip.is-active {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.dgs-timeline-entry__chip--daily {
+	margin-left: auto;
+}
+
+.dgs-timeline-entry__where {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-3);
+}
+
+.dgs-timeline-entry__place {
+	flex: 1;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.dgs-timeline-entry__place.is-off {
+	text-decoration: line-through;
+	color: var(--text-faint);
+}

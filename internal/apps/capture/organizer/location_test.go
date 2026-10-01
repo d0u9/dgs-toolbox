@@ -15,8 +15,7 @@ func locationSettings(t *testing.T, vault string) Settings {
 	// it does for a reader who has run --init.
 	settings.Mappings = starterTables(t)
 	settings.ObsidianVault = vault
-	settings.LocationNote = "88 Inbox/06 Locations.md"
-	settings.LocationArchive = "88 Inbox/06 Locations"
+	writeTimelines(t, &settings, testTimelines)
 	// Which services an entry carries and which vault command a coordinate
 	// links to are the template's decisions, so the test's template makes them.
 	writeLocationTemplate(t, settings.TemplateDir, `- `+"`"+`{{.Clock}} {{.Offset}}`+"`"+` · {{.Content}} {{.ID}}
@@ -24,6 +23,42 @@ func locationSettings(t *testing.T, vault string) Settings {
     - {{.CopyLink "Copy Coordinates (lng, lat)"}}
     - {{.MapLinks "Apple, 高德, Google"}}`)
 	return settings
+}
+
+// testTimelines are the vault's two timelines, as the timelines file defines
+// them.
+const testTimelines = `{
+  "version": 1,
+  "timelines": {
+    "locations": {
+      "note": "88 Inbox/06 Locations.md",
+      "archive": "88 Inbox/06 Locations",
+      "cssclass": "locations",
+      "title": "位置速记",
+      "template": "location-entry.md"
+    },
+    "family": {
+      "note": "03 Family/00 Timeline/Timeline.md",
+      "archive": "03 Family/00 Timeline",
+      "cssclass": "timeline",
+      "title": "时间线",
+      "contentRequired": true
+    }
+  }
+}`
+
+// writeTimelines puts a timelines file into the vault and points the settings
+// at it.
+func writeTimelines(t *testing.T, settings *Settings, text string) {
+	t.Helper()
+	settings.TimelinesFile = "99 Toolkit/timelines.json"
+	path := filepath.Join(settings.ObsidianVault, settings.TimelinesFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeLocationTemplate(t *testing.T, dir, body string) {
@@ -223,13 +258,24 @@ func TestLocationDoesNotTouchTheArchiveWithinOneYear(t *testing.T) {
 }
 
 // What is not configured is an error rather than a guess.
-func TestLocationRefusesWithoutANote(t *testing.T) {
+func TestTimelineRefusesWithoutTheFile(t *testing.T) {
 	settings := locationSettings(t, t.TempDir())
-	settings.LocationNote = ""
+	settings.TimelinesFile = ""
 	ctx := NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings)
-	results := Execute(ctx, []ActionPlan{{Action: ActionLocationAppend}})
-	if !errorsIs(results[0].Err, ErrNoLocationNote) {
-		t.Fatalf("err = %v, want ErrNoLocationNote", results[0].Err)
+	results := Execute(ctx, []ActionPlan{{Action: TimelineAction("locations")}})
+	if !errorsIs(results[0].Err, ErrNoTimelinesFile) {
+		t.Fatalf("err = %v, want ErrNoTimelinesFile", results[0].Err)
+	}
+}
+
+// A name the file does not define is refused with the file named, so the
+// reader knows where to add it.
+func TestTimelineRefusesAnUndefinedName(t *testing.T) {
+	settings := locationSettings(t, t.TempDir())
+	ctx := NewContext(beenHere(), map[FieldID]any{FieldContent: "x"}).WithSettings(settings)
+	results := Execute(ctx, []ActionPlan{{Action: TimelineAction("trips")}})
+	if results[0].Err == nil || !strings.Contains(results[0].Err.Error(), `defines no timeline named "trips"`) {
+		t.Fatalf("err = %v", results[0].Err)
 	}
 }
 
@@ -281,7 +327,7 @@ func TestLocationBackfillGoesStraightToItsYear(t *testing.T) {
 func TestLocationArchivesBesideTheNoteByDefault(t *testing.T) {
 	vault := t.TempDir()
 	settings := locationSettings(t, vault)
-	settings.LocationArchive = ""
+	writeTimelines(t, &settings, strings.Replace(testTimelines, `"archive": "88 Inbox/06 Locations",`, "", 1))
 	old := beenHere()
 	old.Index.CreatedAt = "2024-03-03T09:00:00+10:00"
 	ctx := NewContext(old, map[FieldID]any{FieldContent: "补录"}).WithSettings(settings)

@@ -17,6 +17,7 @@ and its files copied into whatever you already have.
 | [`doc/`](doc) | `dgs doc`'s document tree and the port its page listens on. |
 | [`doc-trees/`](doc-trees) | `dgs doc` over two trees, papers and books. |
 | [`conf/`](conf) | `dgs conf export`'s `conf/config.json`, plus a complete generator root — `services/`, `nodes/`, `users.yaml`, `routes.yaml`, `networks.yaml` — matching [`rhumb docs/inventory.md`](https://github.com/d0u9/rhumb/blob/master/docs/inventory.md)'s worked example. |
+| [`plugins/`](plugins) | The Obsidian vault `dgs plugins` installs into. |
 | [`cred/`](cred) | `dgs cred`'s `cred/config.json`, and a recipient folder with two hosts and a group. |
 
 Every key is documented in [`docs/configuration/`](../docs/configuration), and

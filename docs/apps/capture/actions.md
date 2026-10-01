@@ -16,8 +16,7 @@ authority on what it will actually do.
 | Action | Writes | Needs |
 | --- | --- | --- |
 | [`obsidian.daily.append`](#obsidiandailyappend) | the day's note in the vault, and its pictures beside it | `createdAt`; `content` optional |
-| [`obsidian.location.append`](#obsidianlocationappend) | the running list of places | `createdAt`; `content` optional |
-| [`obsidian.timeline.append`](#obsidiantimelineappend) | the timeline of what happened | `createdAt`, `content` |
+| [`obsidian.timeline.<name>`](#obsidiantimelinename) | the timeline the timelines file names, and its archive | `createdAt`; `content` when the timeline requires it |
 | [`gpx.daily.append`](#gpxdailyappend) | a daily GPX in the configured directory | `createdAt`, `coordinates`; `content` optional |
 | [`apple.reminders.create`](#applereminderscreate) | a reminder, due at a time | `title`, `due_at` |
 | [`apple.reminders.at_place`](#appleremindersat_place) | a reminder, at a place | `title`, `coordinates` |
@@ -71,39 +70,32 @@ have filled. Configured by `capture.obsidian.daily.note`,
 | --- | --- | --- |
 | `section` | The heading this Capture is written under. | `capture.obsidian.daily.section` |
 
-## `obsidian.location.append`
+## `obsidian.timeline.<name>`
 
-Puts the Capture at the top of the running list of places, under its day.
+One Action for every timeline the [timelines file](../../configuration/timelines.md)
+defines: `obsidian.timeline.family`, `obsidian.timeline.locations`. It is not
+registered and not listed by `--actions`; any name the file may hold is an
+Action, and one the file does not define refuses with the file named. The file
+is read when the Action runs, so a timeline added there needs nothing else.
 
-- Newest first, under a marker for the day it was captured.
-- Moves any year that has rolled over into
-  `capture.obsidian.location.archive` as it goes.
-- Writes nothing the second time, on the same terms as the daily entry.
+Puts the Capture under its day on the timeline's running note.
 
-Needs `createdAt`; `content` is optional, on the same terms. Configured by
-`capture.obsidian.location.note` and `capture.obsidian.location.archive`;
-shaped by the `location-entry.md` template, which also decides the map services
-the line carries and the vault command a coordinate links to.
-
-## `obsidian.timeline.append`
-
-Puts the Capture at the top of the timeline, under its day: the running list
-of what happened, kept exactly as the list of places is.
-
-- Newest first, under the same date marker.
-- Moves any year that has rolled over into
-  `capture.obsidian.timeline.archive` as it goes; a Capture from such a year
-  goes straight into that year's file.
+- Days newest first, and a day's entries newest first: the entry goes above
+  the first one earlier than it, and a new day goes among the days by date.
+  Nothing already on the list is moved or reformatted.
+- Moves any year that has rolled over into the timeline's archive as it goes;
+  a Capture from such a year goes straight into that year's file.
 - Writes nothing the second time, on the same terms as the daily entry.
 - Carries the place — address, coordinate, map links — when the Capture has a
   position, and is the one line otherwise.
 
-Needs `createdAt` and `content`: the entry is what happened, so a Capture
-nobody wrote about is not ready. Configured by `capture.obsidian.timeline.note`
-and `capture.obsidian.timeline.archive`; shaped by the `timeline-entry.md`
-template when the template directory has one, and otherwise by
-`location-entry.md`, so the timeline reads like the list of places until it
-is given a shape of its own.
+Needs `createdAt`; `content` too when the timeline sets `contentRequired`,
+and is optional otherwise. Shaped by the template the timeline names, else
+`timeline-entry.md`, else `location-entry.md`, which also decides the map
+services the line carries and the vault command a coordinate links to.
+
+The note is edited by `internal/timeline`, which the Obsidian plugin runs too,
+compiled to WebAssembly; see [`timelines.md`](../../configuration/timelines.md).
 
 ## `gpx.daily.append`
 
