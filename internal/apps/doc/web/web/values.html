@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doc Values · dgs</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="icon" type="image/svg+xml" href="/ui/icons/doc.svg">
+<link rel="stylesheet" href="/ui/fonts.css">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/base.css">
+<link rel="stylesheet" href="/ui/controls.css">
+<link rel="stylesheet" href="/ui/statusbar.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden>
+  <strong>Not a doc tree.</strong> Run <code>dgs doc init</code> on this folder first.
+</div>
+<header class="topbar">
+  <span class="brand">DOC</span>
+  <a class="topbar-link" href="/browse/">Browse</a>
+  <a class="topbar-link" href="/explore/">Explore</a>
+  <span class="topbar-sep" aria-hidden="true"></span>
+  <a class="topbar-link" href="/outlines/">Outlines</a>
+  <a class="topbar-link" href="/rules/">Rules</a>
+  <a class="topbar-link" href="/snapshots/">Snapshots</a>
+  <a class="topbar-link" href="/templates/">Templates</a>
+  <a class="topbar-link current" href="/values/">Values</a>
+  <span class="topbar-sep" aria-hidden="true"></span>
+  <a class="topbar-link" href="/cases/">Cases</a>
+  <a class="topbar-link" href="/merge/">Merge</a>
+  <span class="topbar-sep" aria-hidden="true"></span>
+  <a class="topbar-link" href="/log/">Log</a>
+  <a class="topbar-link" href="/import/">Import</a>
+  <span class="topbar-spacer"></span>
+  <span id="root" class="muted"></span>
+</header>
+<p id="error" class="message error" hidden></p>
+<main class="work">
+  <section class="list">
+    <div class="list-head">
+      <h2>Fields <span id="key-count" class="count numeric"></span></h2>
+    </div>
+    <div class="values-key-head" role="row">
+      <button type="button" class="values-sort values-ksort" data-by="name">Field <span class="values-arrow"></span></button>
+      <button type="button" class="values-sort values-ksort numeric" data-by="count">Values <span class="values-arrow"></span></button>
+    </div>
+    <ul id="keys" class="rows scroll values-key-list"></ul>
+  </section>
+  <section class="template-edit values-main">
+    <div class="template-bar">
+      <div class="template-title">
+        <h2 id="title"></h2>
+        <span id="count" class="file-chip numeric"></span>
+      </div>
+      <label class="filter"><span>Type</span><select id="filter-type"><option value="">any</option></select></label>
+      <input id="value-search" type="search" placeholder="Search values" spellcheck="false" autocomplete="off">
+      <button id="filter-similar" class="chip" type="button" aria-pressed="false" title="Only values written more than one way">≈ Similar</button>
+    </div>
+    <div class="values-list-box">
+      <div class="values-key-head values-value-head" role="row">
+        <button type="button" class="values-sort values-vsort" data-by="name">Value <span class="values-arrow"></span></button>
+        <button type="button" class="values-sort values-vsort numeric" data-by="count">Items <span class="values-arrow"></span></button>
+      </div>
+      <ul id="values" class="values-list scroll"></ul>
+    </div>
+    <p id="none" class="message" hidden>No Item has this field.</p>
+  </section>
+  <aside class="side template-side">
+    <section class="detail-section">
+      <h3>Rewrite as one</h3>
+      <form id="unify" class="values-unify">
+        <p id="unify-picked" class="about muted">Tick values to write them as one.</p>
+        <input id="unify-to" class="field-input" list="unify-options" placeholder="Write them as" spellcheck="false" autocomplete="off" disabled>
+        <datalist id="unify-options"></datalist>
+        <button id="unify-go" class="action" type="submit" disabled>Rewrite</button>
+        <p id="unify-message" class="message"></p>
+      </form>
+    </section>
+    <section class="detail-section">
+      <h3>About</h3>
+      <p class="about">Each value the field holds in the Items' current fields, with how many Items hold it. Click the number to see them.</p>
+      <p class="about muted">Values equal once case, spaces and punctuation are dropped sit together, marked ≈. Each rewrite is an edit recorded in the Item's history; earlier revisions keep their values.</p>
+    </section>
+  </aside>
+</main>
+<dialog id="holders-dialog" class="dialog holders-dialog">
+  <div class="snap-dialog-body">
+    <h3 id="holders-title"></h3>
+    <div id="holders-list" class="scroll holders-list"></div>
+    <form method="dialog" class="dialog-buttons">
+      <button class="action">Close</button>
+    </form>
+  </div>
+</dialog>
+<script type="module" src="/values.js"></script>
+</body>
+</html>

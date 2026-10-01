@@ -1003,3 +1003,44 @@ body.viewing .work > :not(#view) { display: none; }
 .view-quicklook-close { display: none; }
 body.quicklook .view-preview { position: fixed; inset: 24px; z-index: 50; border: 1px solid var(--hairline-strong); border-radius: var(--radius-lg); box-shadow: var(--lift-modal); }
 body.quicklook .view-quicklook-close { display: inline-flex; position: absolute; bottom: 12px; right: 12px; z-index: 1; }
+/* Values: the values one field holds across the tree, to write a value
+   spelt two ways as one. Laid out as Templates: list, work, side. */
+.values-key { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.values-key .count { color: var(--graphite); font-size: var(--font-size-xs); }
+.values-main .template-bar { flex-wrap: wrap; row-gap: 8px; }
+.values-main .template-title { flex: 1 0 100%; }
+.values-main .template-bar .filter { height: auto; }
+#value-search { width: 14em; }
+.values-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--paper); }
+.values-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--hairline); }
+.values-row:last-child { border-bottom: 0; }
+.values-row:hover { background: var(--hover); }
+.values-row.similar { box-shadow: inset 3px 0 0 var(--primary); }
+.values-row:has(input:checked) { background: var(--selected); }
+.values-value { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.values-mark { width: 1em; color: var(--primary); text-align: center; }
+.values-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.values-count { border: 0; cursor: pointer; font: inherit; font-size: var(--font-size-xs); }
+.values-count:hover { background: var(--primary-soft); color: var(--primary); }
+.values-unify { display: flex; flex-direction: column; gap: 8px; }
+.values-unify .field-input { width: 100%; box-sizing: border-box; }
+.values-unify .action { align-self: flex-start; }
+.values-unify .message { margin: 0; }
+.values-unify .message:empty { display: none; }
+.values-row { flex-wrap: wrap; row-gap: 2px; }
+.values-types { order: 3; flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 4px; padding-left: 46px; }
+.values-type { margin: 0; border: 0; white-space: nowrap; font-size: var(--font-size-xs); cursor: pointer; font-family: var(--font-mono); }
+.values-type:hover { background: var(--primary-soft); color: var(--primary); }
+.values-type-n { color: var(--graphite); }
+.holders-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: normal; font-size: var(--font-size-xs); color: var(--graphite); }
+.holders-dialog .holders-items a { flex-direction: column; gap: 4px; }
+.holders-files { display: flex; flex-wrap: wrap; gap: 4px; }
+.holders-files .file-chip { max-width: 100%; }
+.values-key-head { flex: none; display: flex; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid var(--hairline-strong); }
+.values-sort { padding: 4px 0; border: 0; background: none; cursor: pointer; font: inherit; font-size: var(--font-size-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--graphite); }
+.values-sort:hover, .values-sort.on { color: var(--primary); }
+.values-arrow { display: inline-block; width: 1em; text-transform: none; }
+.values-key .count { min-width: 3em; text-align: right; margin: 0; }
+.values-list-box { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--paper); overflow: hidden; }
+.values-list-box .values-list { border: 0; border-radius: 0; }
+.values-value-head { padding: 0 12px 0 46px; }
