@@ -331,6 +331,7 @@ th[aria-sort="ascending"] .th-sort, th[aria-sort="descending"] .th-sort { color:
 .table-row:hover { background: var(--hover); }
 .table-row.card-selected { background: var(--selected); box-shadow: inset 3px 0 0 var(--primary); }
 .table-thumb { width: 40px; }
+.items-table td.table-name { font-weight: 600; color: var(--ink); }
 .table-thumb .card-thumb-wrap { width: 32px; height: 40px; overflow: hidden; border-radius: var(--radius-sm); }
 .table-thumb .card-thumb { height: 40px; border: 0; }
 .table-thumb .no-picture::after { content: ""; height: 40px; border: 0; }
