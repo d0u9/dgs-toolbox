@@ -9,7 +9,7 @@ import { fileTree } from "/ui/filetree.js";
 import { openMenu } from "/ui/menu.js";
 import { listTable } from "/ui/listtable.js";
 import { splitter } from "/ui/splitter.js";
-import { resizable, Folded } from "/outlinetree.js";
+import { resizable, Folded, unplaced, whyText } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
 let snapshots = [];
@@ -355,8 +355,140 @@ function details() {
   const why = lostOf().get(f.item + " " + f.revision);
   box.replaceChildren(el("p", { className: "mono muted" }, f.path),
     el("label", { className: "vf" }, el("span", { className: "vf-label" }, "Revision"), choice),
-    el("p", {}, item ? el("a", { href: api("/browse/") + "#" + f.item }, label(state, item)) : f.item,
-      why ? el("span", { className: "message error" }, " · " + why) : null));
+    el("p", {}, item ? reader(f.item) : f.item,
+      why ? el("span", { className: "message error" }, " · " + why) : null),
+    el("button", { type: "button", className: "small", textContent: "Why here", onclick: () => explain(f) }));
+}
+
+// reader links to an Item in the Browse reader.
+const reader = (id) => el("a", { href: api("/browse/?read") + "#" + id }, itemOf(id) ? label(state, itemOf(id)) : id);
+
+// The rule a Snapshot was taken from may have changed since, or the Items
+// it picks: plan is what that rule places now, each file with its
+// revision's ID as a Snapshot keeps it; or { error }.
+let plan = null;
+let planning = 0;
+const ruleOf = (name) => name ? rules.find((r) => r.name === name) : null;
+const revisionAt = (id, n) => { const r = (itemOf(id)?.revisions || [])[n - 1]; return r ? ref(r) : ""; };
+const numberOf = (id, revision) => (itemOf(id)?.revisions || []).findIndex((r) => ref(r) === revision) + 1;
+
+async function replan() {
+  const mine = ++planning;
+  plan = null;
+  drift();
+  if (!draft || !draft.rule) return;
+  const rule = ruleOf(draft.rule);
+  if (!rule) {
+    plan = { error: "The rule " + draft.rule + " is gone: nothing to compare with." };
+    return drift();
+  }
+  try {
+    const answer = await post("/api/outlines/group", { name: "preview", rules: [rule] });
+    if (mine !== planning) return;
+    const files = ((answer.plans || {})[rule.name] || {}).files || [];
+    plan = { files: files.map((f) => ({ path: f.path, item: f.item, revision: revisionAt(f.item, f.revision) })), lost: unplaced(answer).length };
+  } catch (err) {
+    if (mine !== planning) return;
+    plan = { error: err.message };
+  }
+  drift();
+}
+
+// changes is how the Snapshot's PDFs from its rule differ from what the
+// rule places now: a PDF it picks that the Snapshot lacks (add), one it no
+// longer picks (gone), one it puts elsewhere (move), and one whose Item it
+// now takes at another revision (revision). PDFs added by hand are left be.
+function changes() {
+  if (!plan || !plan.files) return [];
+  const same = (f, p) => f.item === p.item && f.revision === p.revision;
+  const ruled = draft.files.filter((f) => f.rule === draft.rule);
+  const matched = new Set();
+  const out = [];
+  for (const p of plan.files) {
+    const kept = draft.files.find((f) => same(f, p));
+    if (kept) {
+      matched.add(kept);
+      if (kept.rule === draft.rule && low(kept.path) !== low(p.path)) out.push({ kind: "move", file: kept, to: p });
+      continue;
+    }
+    const older = ruled.find((f) => f.item === p.item && !matched.has(f) && !plan.files.some((q) => same(f, q)));
+    if (older) {
+      matched.add(older);
+      out.push({ kind: "revision", file: older, to: p });
+      continue;
+    }
+    out.push({ kind: "add", to: p });
+  }
+  for (const f of ruled) if (!matched.has(f)) out.push({ kind: "gone", file: f });
+  return out;
+}
+
+// apply takes one change into the draft, or says why it cannot.
+function apply(c) {
+  if (c.kind === "gone") {
+    draft.files = draft.files.filter((f) => f !== c.file);
+    return "";
+  }
+  if (c.kind === "add") {
+    if (taken(c.to.path)) return c.to.path + " is there already";
+    draft.files.push({ path: c.to.path, item: c.to.item, revision: c.to.revision, rule: draft.rule });
+    return "";
+  }
+  if (c.kind === "revision") c.file.revision = c.to.revision;
+  return relocate(c.file.path, c.to.path);
+}
+
+function applyAll(list) {
+  const order = { gone: 0, revision: 1, move: 2, add: 3 };
+  const failed = [...list].sort((a, b) => order[a.kind] - order[b.kind]).map(apply).filter(Boolean);
+  tried(failed.join("; "));
+}
+
+// drift draws, above the tree, how the Snapshot differs from what its rule
+// places now, each change with a button taking it into the draft.
+function drift() {
+  const box = $("drift");
+  if (!draft || !draft.rule || !plan) return box.replaceChildren();
+  if (plan.error) return box.replaceChildren(el("p", { className: "message error" }, plan.error));
+  const rule = el("a", { href: api("/rules/") + "#" + encodeURIComponent(draft.rule) }, draft.rule);
+  const lost = plan.lost ? el("p", { className: "message error" }, plan.lost + (plan.lost === 1 ? " PDF" : " PDFs") + " the rule cannot place now: see ", rule.cloneNode(true), ".") : null;
+  const list = changes();
+  if (!list.length) return box.replaceChildren(el("p", { className: "muted" }, "Same as the rule ", rule, " places now."), lost || "");
+  const row = (c) => {
+    const what = c.kind === "add" ? ["New: ", reader(c.to.item), " at " + c.to.path]
+      : c.kind === "gone" ? ["No longer picked: " + c.file.path + " · ", reader(c.file.item)]
+      : c.kind === "move" ? [c.file.path + ": the rule puts it at " + c.to.path]
+      : [c.file.path + ": the rule takes revision " + numberOf(c.to.item, c.to.revision) + " now, at " + c.to.path];
+    return el("li", {}, ...what, " ", el("button", { type: "button", className: "small", textContent: c.kind === "gone" ? "Remove" : c.kind === "add" ? "Add" : "Apply",
+      onclick: () => tried(apply(c)) }));
+  };
+  box.replaceChildren(el("details", { className: "problem", open: list.length <= 8 },
+    el("summary", {}, el("strong", {}, list.length + (list.length === 1 ? " change" : " changes")), " since taken from the rule ", rule, " ",
+      el("button", { type: "button", className: "small", textContent: "Apply all", title: "Make the Snapshot what the rule places now; PDFs added by hand stay",
+        onclick: (event) => { event.preventDefault(); applyAll(list); } })),
+    el("ul", { className: "fill-list" }, ...list.map(row))), lost || "");
+}
+
+// explain says, above the tree, how the Snapshot's rule places f's Item
+// now, or that f was added by hand.
+async function explain(f) {
+  const item = itemOf(f.item);
+  const pre = el("pre", { className: "view-why-text" }, "…");
+  $("why").replaceChildren(el("header", {},
+    el("strong", {}, "Why here · " + (item ? label(state, item) : f.item)),
+    el("button", { type: "button", className: "small", textContent: "Close", onclick: () => { $("why").hidden = true; $("why").replaceChildren(); } })), pre);
+  $("why").hidden = false;
+  const rule = ruleOf(f.rule);
+  if (!f.rule) return void (pre.textContent = "Added by hand: no rule placed it here.");
+  if (!rule) return void (pre.textContent = "Taken from the rule " + f.rule + ", which is gone.");
+  const moved = changes().find((c) => c.file === f && c.kind !== "gone");
+  try {
+    const all = await post("/api/outlines/explain", { outline: { name: "preview", rules: [rule] }, item: f.item });
+    pre.textContent = (moved ? "Moved by hand: the rule puts it at " + moved.to.path + " now.\n\n" : "") +
+      whyText(all, { view: rule.name, revision: numberOf(f.item, f.revision) });
+  } catch (err) {
+    pre.textContent = err.message;
+  }
 }
 
 // The filters are remembered in this browser, so the next Snapshot opens
@@ -491,6 +623,8 @@ function open(name) {
   list();
   if (!s) {
     draft = null;
+    replan();
+    $("why").hidden = true;
     address(location.pathname + location.search);
     $("title").textContent = "New Snapshot";
     $("total").textContent = "";
@@ -509,12 +643,15 @@ function open(name) {
   filters();
   choices();
   draw();
+  $("why").hidden = true;
+  replan();
   if (s.lost.length) say($("message"), s.lost.length + " of its PDFs are no longer in the tree: an Outline with it is not exported until they are removed or replaced.", true);
 }
 
 function changed() {
   $("dirty").hidden = text(draft) === saved;
   draw();
+  drift();
 }
 
 async function reload() {

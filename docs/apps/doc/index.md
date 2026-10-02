@@ -1013,6 +1013,13 @@ naming: "{owner}-{type}.{ext}"    # optional: how a PDF added by hand is named
 - On the Snapshots page one is taken from a rule — what it places now, at
   the paths it gives them — or begun empty. A rule with PDFs it cannot
   place is refused: place them first.
+- One taken from a rule is compared with what that rule places now, above
+  its tree: a PDF the rule picks that it lacks, one the rule no longer
+  picks, one the rule puts at another path — renumbered, say — and one
+  whose Item the rule takes at another revision, each with a button taking
+  it into the Snapshot, or all at once. PDFs added by hand are left be.
+  Nothing is saved until Save. A picked PDF's Why here says how the rule
+  places its Item, as on the Rules page, or that it was added by hand.
 - It is edited by hand after, in its tree: a folder made in the folder
   picked, PDFs added there several at once from a list narrowed by words
   matching any field, an owner, a country, a type, a tag, one field's
