@@ -5,6 +5,7 @@
 // rewrite goes through the same API an edit on Browse does, so each Item's
 // history records it.
 import { $, api, el, loadState, post, label, frame, say, currentFields, keep, kept } from "/common.js";
+import { listTable } from "/ui/listtable.js";
 
 const TAGS = "tags";
 let state = { templates: [], items: [] };
@@ -17,24 +18,11 @@ let keySort = kept("keySort") || { by: "name", desc: false };
 // how many Items hold them.
 let valueSort = kept("valueSort") || { by: "name", desc: false };
 const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
-function markSort(selector, sort) {
-  for (const button of document.querySelectorAll(selector)) {
-    const on = button.dataset.by === sort.by;
-    button.classList.toggle("on", on);
-    button.setAttribute("aria-sort", on ? (sort.desc ? "descending" : "ascending") : "none");
-    button.querySelector(".values-arrow").textContent = on ? (sort.desc ? "↓" : "↑") : "";
-  }
-}
-function sorter(selector, get, set, draw) {
-  for (const button of document.querySelectorAll(selector)) {
-    button.onclick = () => {
-      const by = button.dataset.by;
-      const was = get();
-      set(was.by === by ? { by, desc: !was.desc } : { by, desc: by === "count" });
-      draw();
-    };
-  }
-}
+// sortOf is a list table's sort as one of these: { by, desc }.
+const sortOf = (sort, set, draw) => ({
+  get: () => ({ id: sort().by, down: sort().desc }),
+  set: ({ id, down }) => { set({ by: id, desc: down }); draw(); },
+});
 
 // Two values are alike when they differ only in case, spaces or
 // punctuation: "NSW Fair Trading" and "nsw fair-trading".
@@ -58,6 +46,40 @@ function holdings(k, list = items()) {
   return held;
 }
 
+// The fields and their values are shared list tables, sorted here: values
+// written alike stay together however the list is sorted.
+const keyList = listTable($("keys"), {
+  key: "dgs-doc-values-keys",
+  chooser: false,
+  columns: [
+    { id: "name", text: "Field", width: 150, cell: ([k]) => k },
+    { id: "count", text: "Values", width: 70, down: true, cell: ([, n]) => el("td", { className: "numeric" }, String(n)) },
+  ],
+  sorting: sortOf(() => keySort, (s) => { keySort = s; keep({ keySort }); }, () => drawKeys()),
+  row: ([k], cells) => el("tr", { className: "values-key" + (k === key ? " selected" : ""),
+    onclick: () => { key = k; keep({ key }); picked.clear(); draw(); } }, ...cells),
+  empty: "",
+});
+const valueList = listTable($("values"), {
+  key: "dgs-doc-values-values",
+  chooser: false,
+  columns: [
+    { id: "name", text: "Value", width: 260, cell: (r) => el("td", { className: "values-value" },
+      el("label", {}, r.box,
+        el("span", { className: "values-mark", title: r.similar ? "Written more than one way" : "" }, r.similar ? "≈" : ""),
+        el("span", { className: "values-text", title: r.v }, r.v))) },
+    { id: "types", text: "Templates", width: 220, sortable: false, cell: (r) => el("td", {}, typesOf(r.holders, r.v)) },
+    { id: "count", text: "Items", width: 70, down: true, cell: (r) => {
+      const count = el("button", { type: "button", className: "holders-count values-count", title: "The Items holding it", textContent: String(r.holders.length) });
+      count.onclick = () => showHolders(r.v, r.holders);
+      return el("td", { className: "numeric" }, count);
+    } },
+  ],
+  sorting: sortOf(() => valueSort, (s) => { valueSort = s; keep({ valueSort }); }, () => drawValues()),
+  row: (r, cells) => el("tr", { className: "values-row" + (r.similar ? " similar" : "") }, ...cells),
+  empty: "",
+});
+
 function drawKeys() {
   const counts = new Map();
   for (const item of items()) {
@@ -72,16 +94,10 @@ function drawKeys() {
   keys.sort((a, b) => keySort.by === "count"
     ? dir * (a[1] - b[1]) || a[0].localeCompare(b[0])
     : dir * a[0].localeCompare(b[0]));
-  markSort(".values-ksort", keySort);
   if (!keys.some(([k]) => k === key)) key = keys.length > 1 ? keys[1][0] : TAGS;
   $("key-count").textContent = String(keys.length);
   $("title").textContent = key;
-  $("keys").replaceChildren(...keys.map(([k, n]) => {
-    const row = el("li", { className: "values-key" + (k === key ? " selected" : "") },
-      el("span", { className: "values-key-name" }, k), el("span", { className: "count numeric" }, String(n)));
-    row.onclick = () => { key = k; keep({ key }); picked.clear(); draw(); };
-    return row;
-  }));
+  keyList.draw(keys);
 }
 
 function drawValues() {
@@ -103,7 +119,6 @@ function drawValues() {
   const sorted = [...groups].sort((a, b) => valueSort.by === "count"
     ? dir * (total(a[1]) - total(b[1])) || natural(a[0], b[0])
     : dir * natural(a[0], b[0]));
-  markSort(".values-vsort", valueSort);
   for (const [f, values] of sorted) {
     const similar = values.length > 1;
     if (similarOnly && !similar) continue;
@@ -112,16 +127,10 @@ function drawValues() {
     for (const v of values) {
       const box = el("input", { type: "checkbox", checked: picked.has(v) });
       box.onchange = () => { box.checked ? picked.add(v) : picked.delete(v); drawUnify(held); };
-      const count = el("button", { type: "button", className: "holders-count values-count", title: "The Items holding it", textContent: String(held.get(v).length) });
-      count.onclick = () => showHolders(v, held.get(v));
-      rows.push(el("li", { className: "values-row" + (similar ? " similar" : "") },
-        el("label", { className: "values-value" }, box,
-          el("span", { className: "values-mark", title: similar ? "Written more than one way" : "" }, similar ? "≈" : ""),
-          el("span", { className: "values-text" }, v)),
-        typesOf(held.get(v), v), count));
+      rows.push({ v, box, similar, holders: held.get(v) });
     }
   }
-  $("values").replaceChildren(...rows);
+  valueList.draw(rows);
   $("none").hidden = held.size > 0;
   $("count").textContent = held.size + (held.size === 1 ? " value" : " values");
   $("unify-options").replaceChildren(...[...held.keys()].sort().map((v) => el("option", { value: v })));
@@ -227,8 +236,6 @@ $("filter-similar").onclick = () => {
   drawValues();
 };
 $("unify").onsubmit = rewrite;
-sorter(".values-ksort", () => keySort, (s) => { keySort = s; keep({ keySort }); }, drawKeys);
-sorter(".values-vsort", () => valueSort, (s) => { valueSort = s; keep({ valueSort }); }, drawValues);
 
 state = await loadState();
 frame(state);

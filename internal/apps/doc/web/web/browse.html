@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/filedialog.css">
 <link rel="stylesheet" href="/ui/menu.css">
+<link rel="stylesheet" href="/ui/listtable.css">
 <link rel="stylesheet" href="/ui/tags.css">
 <link rel="stylesheet" href="/ui/tooltip.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
@@ -106,11 +107,7 @@
     <p id="unread" class="message" hidden><span id="unread-count"></span>
       <button id="read-all" class="small-inline" type="button">Read their text</button></p>
     <ul id="grid" class="grid"></ul>
-    <table id="table" class="items-table" hidden>
-      <colgroup id="table-cols"></colgroup>
-      <thead><tr id="table-head"></tr></thead>
-      <tbody id="table-body"></tbody>
-    </table>
+    <div id="table" hidden></div>
     <p id="none" class="message" hidden>Nothing is kept yet. Take PDFs in on <a href="/import/">Import</a>.</p>
     <p id="nothing" class="message" hidden>Nothing matches these filters.</p>
     <p id="list-message" class="message"></p>

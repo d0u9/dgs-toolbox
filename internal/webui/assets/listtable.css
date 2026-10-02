@@ -1,0 +1,17 @@
+/* The shared list table: see listtable.js. */
+.list-table { table-layout: fixed; border-collapse: collapse; font-size: var(--font-size-xs); }
+.list-table th, .list-table td { padding: 3px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-table th { position: sticky; top: 0; background: var(--paper); color: var(--graphite); font-weight: 500; border-bottom: 1px solid var(--hairline); cursor: pointer; user-select: none; }
+.list-table th:not(:last-child) { border-right: 1px solid var(--hairline); }
+.list-table th.sorted { color: var(--ink); }
+.list-table th:not(.sortable) { cursor: default; }
+.list-table th.drop { box-shadow: inset 2px 0 0 var(--primary); }
+.list-table .lt-arrow { font-size: 9px; }
+.list-table .lt-grip { position: absolute; top: 0; right: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 1; touch-action: none; }
+.list-table .lt-grip:hover { background: linear-gradient(var(--primary), var(--primary)) center / 1px 100% no-repeat; }
+.list-table th.lt-plus { text-align: center; color: var(--primary); }
+.list-table .lt-lead { padding-right: 0; cursor: default; }
+.list-table.striped tbody tr:nth-child(even) { background: var(--hover); }
+.list-table tbody tr.ticked { background: var(--selected); }
+.list-table tbody tr.retired td { color: var(--graphite); }
+.lt-empty { margin: 4px 8px; }

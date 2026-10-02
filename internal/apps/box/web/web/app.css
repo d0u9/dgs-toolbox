@@ -1214,36 +1214,19 @@ body.resizing, body.resizing-x { cursor: col-resize; user-select: none; }
 .badge-tag-on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 
 /* List view: the same entries as the cards, one row each, a column per fact. */
-.list { width: 100%; border-collapse: collapse; font-size: var(--text-sm, 13px); }
+.list { font-size: var(--text-sm, 13px); }
 .list th {
-  position: sticky; top: calc(-1 * var(--space-md)); z-index: 1;
-  background: var(--paper); text-align: left; font-weight: 600; white-space: nowrap;
+  top: calc(-1 * var(--space-md)); z-index: 1; color: inherit; font-weight: 600; border-right: 0;
   padding: var(--space-xs, 4px) var(--space-sm, 8px); border-bottom: 1px solid var(--hairline);
 }
-.list th[data-sort] { cursor: pointer; user-select: none; }
-.list th[data-sort]:hover, .list th.list-sorted { color: var(--primary-deep); }
-.list th.list-sorted::after { content: " " attr(data-arrow); }
+.list th.sortable:hover, .list th.sorted { color: var(--primary-deep); }
 .list td { padding: var(--space-xs, 4px) var(--space-sm, 8px); border-bottom: 1px solid var(--hairline); vertical-align: middle; }
 .list-row { cursor: pointer; }
 .list-row:hover { background: var(--primary-soft); }
 .list-row.card-selected { background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); }
 .list-row.card-marked { outline: 2px solid var(--primary); outline-offset: -2px; }
-.list-thumb-col { width: 40px; }
 .list .card-thumb-wrap { width: 32px; height: 40px; overflow: hidden; border-radius: var(--radius-sm, 3px); }
 .list .card-thumb { width: 100%; height: 100%; object-fit: cover; }
-.list-title { max-width: 28ch; }
-.list td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.list-fixed { table-layout: fixed; width: max-content; min-width: 100%; }
-.list-fixed .list-title { max-width: none; }
-.list-grip {
-  position: absolute; top: 0; right: -3px; width: 7px; height: 100%;
-  cursor: col-resize; z-index: 2; touch-action: none;
-}
-.list-grip::after {
-  content: ""; position: absolute; top: 20%; bottom: 20%; left: 3px; width: 1px; background: var(--hairline);
-}
-.list-grip:hover::after, .list-resizing .list-grip:active::after { background: var(--primary); width: 2px; }
-.list-resizing, .list-resizing * { cursor: col-resize; user-select: none; }
 .list-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .list-date { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .list-tags .badge { margin-right: 2px; }

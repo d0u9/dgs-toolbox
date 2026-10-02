@@ -4,6 +4,7 @@ import { splitter } from "/ui/splitter.js";
 import { openMenu } from "/ui/menu.js";
 import { suggest } from "/combo.js";
 import { tooltip } from "/ui/tooltip.js";
+import { listTable } from "/ui/listtable.js";
 import { $, address, keep, scrollBack, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
 
 let state = { templates: [], items: [] };
@@ -313,88 +314,56 @@ function star(item) {
   return button;
 }
 
-// The list's columns: each can be made wider or narrower by dragging its
-// right edge, remembered per column, and a click on a sortable one sorts by
-// it, again to turn the order round.
-const COLUMN_KEY = "dgs-doc-browse-column-";
-const columnWidth = (id, fallback) => { try { return Number(localStorage.getItem(COLUMN_KEY + id)) || fallback; } catch { return fallback; } };
+// The list is the shared list table: a column's right edge drags it wider
+// or narrower, remembered per column, and a click on a header sorts by it,
+// again to turn the order round. Sort and its direction stay the page's,
+// since the cards are in the same order.
 // tableColumns is the list's columns for the Items shown, in order: the
 // thumbnail and star, the Item's name as its card carries it, the type when more than
 // one is shown, the field columns tableKeys gives, Expiry when any of them
-// has something to say there, when each was added, and its revisions, then
-// an empty one taking whatever width the list has left, so every other column
-// is drawn exactly as wide as its <col> says and a drag starts where the edge
-// is. Each says how its cell is drawn.
+// has something to say there, when each was added, and its revisions,. Each
+// says how its cell is drawn.
 function tableColumns(items) {
   const capital = (k) => k[0].toUpperCase() + k.slice(1);
   const added = (item) => new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString();
   return [
-    { id: "thumb", text: "", width: 48, fixed: true, cell: (item) => el("td", { className: "table-thumb" }, thumb(item)) },
-    { id: "frequent", text: "★", title: "Frequent", width: 36, fixed: true, cell: (item) => el("td", { className: "table-star" }, star(item)) },
+    { id: "thumb", text: "", width: 48, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-thumb" }, thumb(item)) },
+    { id: "frequent", text: "★", tip: "Frequent", width: 36, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-star" }, star(item)) },
     // The card's name without its type, which the Type column, or the type
     // filter, already says.
-    { id: "name", text: "Item", sort: "name", width: 340, cell: (item) => {
+    { id: "name", text: "Item", width: 340, cell: (item) => {
       const name = label(state, item).slice(item.type.length).replace(/^ · /, "") || item.type;
       return el("td", { className: "table-name", title: label(state, item) }, name);
     } },
-    new Set(items.map((i) => i.type)).size > 1 && { id: "type", text: "Type", sort: "type", width: 130, cell: (item) => el("td", { className: "mono" }, item.type) },
-    ...tableKeys(items).map((k) => ({ id: "field:" + k, text: capital(k), about: fieldOf(k)?.description, sort: "field:" + k, width: k === "country" ? 90 : 130,
+    new Set(items.map((i) => i.type)).size > 1 && { id: "type", text: "Type", width: 130, cell: (item) => el("td", { className: "mono" }, item.type) },
+    ...tableKeys(items).map((k) => ({ id: "field:" + k, text: capital(k), about: fieldOf(k)?.description, width: k === "country" ? 90 : 130,
       cell: (item) => { const v = currentFields(item)[k]; return el("td", {}, v ? shown(item, k, v) : ""); } })),
     items.some((i) => expiryOf(i).state !== "none" || i.retired || (i.shared_with || []).length) &&
-      { id: "expiry", text: "Expiry", sort: "expiry", width: 150,
+      { id: "expiry", text: "Expiry", width: 150,
         cell: (item) => el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))) },
-    { id: "added", text: "Added", sort: "added", width: 100, cell: (item) => el("td", { className: "numeric" }, added(item)) },
-    { id: "revisions", text: "Rev.", title: "Revisions", sort: "revisions", width: 56, cell: (item) => el("td", { className: "numeric" }, String(item.revisions.length)) },
-    { id: "fill", text: "", fixed: true, cell: () => el("td", {}) },
+    { id: "added", text: "Added", down: true, width: 100, cell: (item) => el("td", { className: "numeric" }, added(item)) },
+    { id: "revisions", text: "Rev.", tip: "Revisions", down: true, width: 56, cell: (item) => el("td", { className: "numeric" }, String(item.revisions.length)) },
   ].filter(Boolean);
 }
-function drawHead(columns) {
-  const sort = $("view-sort").value, asc = direction() === "asc";
-  const cols = columns.map((c) => el("col", {}));
-  const total = () => cols.reduce((sum, col) => sum + (parseFloat(col.style.width) || 0), 0);
-  const fit = () => { $("table").style.width = total() + "px"; };
-  columns.forEach((c, n) => { if (c.width) cols[n].style.width = columnWidth(c.id, c.width) + "px"; });
-  $("table-cols").replaceChildren(...cols);
-  fit();
-  $("table-head").replaceChildren(...columns.map((c, n) => {
-    // Each header above the one after it, so the handle reaching past its
-    // right edge is not covered by the next header: the edge is caught from
-    // either side.
-    const th = el("th", {});
-    th.style.zIndex = String(columns.length - n);
-    if (c.title || c.about) tooltip(th, [c.title || c.text, c.about]);
-    if (c.sort) {
-      const on = sort === c.sort;
-      th.classList.add("sortable");
-      th.setAttribute("aria-sort", on ? (asc ? "ascending" : "descending") : "none");
-      th.append(el("button", { type: "button", className: "th-sort", onclick: () => sortBy(c.sort) },
-        c.text, el("span", { className: "th-arrow" }, on ? (asc ? "▲" : "▼") : "")));
-    } else th.append(c.text);
-    if (!c.fixed) {
-      const handle = el("div", { className: "th-resize", role: "separator", onclick: (event) => event.stopPropagation() });
-      handle.setAttribute("aria-orientation", "vertical");
-      handle.setAttribute("aria-label", "Width of " + c.text);
-      th.append(handle);
-      splitter({ handle, target: th, axis: "x", min: 48, key: COLUMN_KEY + c.id, fallback: c.width,
-        set: (size) => { cols[n].style.width = size + "px"; fit(); } });
-    }
-    return th;
-  }));
-}
-function sortBy(column) {
-  if ($("view-sort").value === column) setDirection(direction() === "asc" ? "desc" : "asc");
-  else {
-    $("view-sort").value = column;
-    setDirection(column === "added" || column === "revisions" ? "desc" : "asc");
-  }
-  saveView();
-  render();
-}
+let shownColumns = [];
+const itemList = listTable($("table"), {
+  key: "dgs-doc-browse-list",
+  className: "items-table",
+  chooser: false,
+  columns: () => shownColumns,
+  sorting: {
+    get: () => ({ id: $("view-sort").value, down: direction() === "desc" }),
+    set: ({ id, down }) => { $("view-sort").value = id; setDirection(down ? "desc" : "asc"); saveView(); render(); },
+  },
+  head: (th, c) => { if (c.tip || c.about) tooltip(th, [c.tip || c.text, c.about]); },
+  row: (item, cells) => row(item, cells),
+  empty: "",
+});
 
-function row(item, columns) {
+function row(item, cells) {
   const e = expiryOf(item);
   const tr = el("tr", { className: "table-row state-" + e.state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
-    ...columns.map((c) => c.cell(item)));
+    ...cells);
   if (selected && selected.id === item.id) tr.classList.add("card-selected");
   return tr;
 }
@@ -507,9 +476,8 @@ function render() {
   $("grid").hidden = list;
   $("table").hidden = !list;
   if (list) {
-    const columns = tableColumns(items);
-    drawHead(columns);
-    $("table-body").replaceChildren(...items.map((i) => row(i, columns)));
+    shownColumns = tableColumns(items);
+    itemList.draw(items);
   } else {
     $("grid").replaceChildren(...items.map(card));
   }

@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/ui/base.css">
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
+<link rel="stylesheet" href="/ui/listtable.css">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -42,11 +43,7 @@
     <div class="list-head">
       <h2>Fields <span id="key-count" class="count numeric"></span></h2>
     </div>
-    <div class="values-key-head" role="row">
-      <button type="button" class="values-sort values-ksort" data-by="name">Field <span class="values-arrow"></span></button>
-      <button type="button" class="values-sort values-ksort numeric" data-by="count">Values <span class="values-arrow"></span></button>
-    </div>
-    <ul id="keys" class="rows scroll values-key-list"></ul>
+    <div id="keys" class="scroll values-key-list"></div>
   </section>
   <section class="template-edit values-main">
     <div class="template-bar">
@@ -59,11 +56,7 @@
       <button id="filter-similar" class="chip" type="button" aria-pressed="false" title="Only values written more than one way">≈ Similar</button>
     </div>
     <div class="values-list-box">
-      <div class="values-key-head values-value-head" role="row">
-        <button type="button" class="values-sort values-vsort" data-by="name">Value <span class="values-arrow"></span></button>
-        <button type="button" class="values-sort values-vsort numeric" data-by="count">Items <span class="values-arrow"></span></button>
-      </div>
-      <ul id="values" class="values-list scroll"></ul>
+      <div id="values" class="values-list scroll"></div>
     </div>
     <p id="none" class="message" hidden>No Item has this field.</p>
   </section>
