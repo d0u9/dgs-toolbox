@@ -93,6 +93,10 @@ func jpegMetadata(data []byte) (metadata, error) {
 
 func pngMetadata(data []byte) (metadata, error) {
 	m := metadata{orientation: 1}
+	// PNG gives iCCP, then sRGB, precedence over gAMA/cHRM; those are refused
+	// only when they are the image's sole colour description.
+	srgb := false
+	var signalling error
 	for p := 8; p+12 <= len(data); {
 		n := int(binary.BigEndian.Uint32(data[p:]))
 		if n > len(data)-p-12 {
@@ -125,12 +129,14 @@ func pngMetadata(data []byte) (metadata, error) {
 			m.exif = bytes.Clone(body)
 		case "cICP":
 			return m, errors.New("PNG cICP colour description is not supported without colour conversion")
+		case "sRGB":
+			srgb = true
 		case "gAMA":
 			if n != 4 {
 				return m, errors.New("invalid PNG gamma")
 			}
 			if binary.BigEndian.Uint32(body) != 45455 {
-				return m, errors.New("non-sRGB PNG gamma is not supported")
+				signalling = errors.New("non-sRGB PNG gamma is not supported")
 			}
 		case "cHRM":
 			expected := []uint32{31270, 32900, 64000, 33000, 30000, 60000, 15000, 6000}
@@ -139,7 +145,7 @@ func pngMetadata(data []byte) (metadata, error) {
 			}
 			for i, v := range expected {
 				if binary.BigEndian.Uint32(body[4*i:]) != v {
-					return m, errors.New("non-sRGB PNG chromaticities require a supported ICC profile")
+					signalling = errors.New("non-sRGB PNG chromaticities require a supported ICC profile")
 				}
 			}
 		}
@@ -147,6 +153,9 @@ func pngMetadata(data []byte) (metadata, error) {
 		if kind == "IEND" {
 			break
 		}
+	}
+	if m.icc == nil && !srgb && signalling != nil {
+		return m, signalling
 	}
 	if err := m.readExif(); err != nil {
 		return m, err
@@ -276,6 +285,9 @@ func (m metadata) outputExif(gps bool, w, h, ppi int) ([]byte, error) {
 			if tag == 0x112 {
 				o.PutUint16(e[8:], 1)
 			}
+			if tag == 0xa001 && o.Uint16(e[2:]) == 3 && o.Uint32(e[4:]) == 1 {
+				o.PutUint16(e[8:], 1) // ColorSpace: the pixels are now sRGB.
+			}
 			if tag == 0x100 || tag == 0xa002 || tag == 0x101 || tag == 0xa003 {
 				if o.Uint32(e[4:]) != 1 {
 					return errors.New("invalid EXIF dimension count")
@@ -305,37 +317,130 @@ func (m metadata) outputExif(gps bool, w, h, ppi int) ([]byte, error) {
 		p := int(order.Uint32(out[4:]))
 		end := p + 2 + 12*int(order.Uint16(out[p:]))
 		order.PutUint32(out[end:], 0)
+		if len(out)+6 > maxSegment {
+			// Large maker notes cannot fit one APP1 segment; keep what was asked for.
+			return compactExif(order, m.date, ifdEntries(out, order, order.Uint32(out[4:]), 0x8825)), nil
+		}
 		return append([]byte("Exif\x00\x00"), out...), nil
 	}
 	// With GPS disabled, rebuild only capture date. No discarded GPS bytes remain.
 	if m.date == "" {
 		return nil, nil
 	}
-	date := append([]byte(m.date), 0)
-	out := make([]byte, 44+len(date))
-	copy(out, "II")
-	o := binary.LittleEndian
-	o.PutUint16(out[2:], 42)
-	o.PutUint32(out[4:], 8)
-	o.PutUint16(out[8:], 1)
-	o.PutUint16(out[10:], 0x8769)
-	o.PutUint16(out[12:], 4)
-	o.PutUint32(out[14:], 1)
-	o.PutUint32(out[18:], 26)
-	o.PutUint16(out[26:], 1)
-	o.PutUint16(out[28:], 0x9003)
-	o.PutUint16(out[30:], 2)
-	o.PutUint32(out[32:], uint32(len(date)))
-	o.PutUint32(out[36:], 44)
-	copy(out[44:], date)
-	return append([]byte("Exif\x00\x00"), out...), nil
+	return compactExif(binary.LittleEndian, m.date, nil), nil
+}
+
+const maxSegment = 65533
+
+type exifEntry struct {
+	tag, typ uint16
+	count    uint32
+	value    []byte
+}
+
+// ifdEntries copies the directory that the pointer tag in directory off names.
+// The block has already been bounds-checked by walkExif.
+func ifdEntries(data []byte, order binary.ByteOrder, off uint32, pointer uint16) []exifEntry {
+	sizes := map[uint16]int{1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 13: 4}
+	read := func(off uint32) (entries []exifEntry) {
+		p := int(off)
+		for i := 0; i < int(order.Uint16(data[p:])); i++ {
+			e := data[p+2+12*i : p+14+12*i]
+			x := exifEntry{tag: order.Uint16(e), typ: order.Uint16(e[2:]), count: order.Uint32(e[4:])}
+			n := sizes[x.typ] * int(x.count)
+			if n <= 4 {
+				x.value = bytes.Clone(e[8 : 8+n])
+			} else {
+				v := int(order.Uint32(e[8:]))
+				x.value = bytes.Clone(data[v : v+n])
+			}
+			entries = append(entries, x)
+		}
+		return entries
+	}
+	for _, e := range read(off) {
+		if e.tag == pointer {
+			return read(order.Uint32(e.value))
+		}
+	}
+	return nil
+}
+
+// compactExif builds IFD0 → Exif IFD (capture date) and GPS IFD, in order.
+func compactExif(order binary.ByteOrder, date string, gps []exifEntry) []byte {
+	var a binary.AppendByteOrder = binary.LittleEndian
+	if order == binary.BigEndian {
+		a = binary.BigEndian
+	}
+	var exif []exifEntry
+	if date != "" {
+		v := append([]byte(date), 0)
+		exif = append(exif, exifEntry{0x9003, 2, uint32(len(v)), v})
+	}
+	if exif == nil && gps == nil {
+		return nil
+	}
+	size := func(entries []exifEntry) int {
+		n := 2 + 12*len(entries) + 4
+		for _, e := range entries {
+			if len(e.value) > 4 {
+				n += len(e.value) + len(e.value)%2
+			}
+		}
+		return n
+	}
+	var root []exifEntry
+	if exif != nil {
+		root = append(root, exifEntry{0x8769, 4, 1, nil})
+	}
+	if gps != nil {
+		root = append(root, exifEntry{0x8825, 4, 1, nil})
+	}
+	next := 8 + size(root)
+	for i := range root {
+		root[i].value = a.AppendUint32(nil, uint32(next))
+		if root[i].tag == 0x8769 {
+			next += size(exif)
+		}
+	}
+	out := append([]byte{}, "II\x2a\x00\x08\x00\x00\x00"...)
+	if order == binary.BigEndian {
+		out = append([]byte{}, "MM\x00\x2a\x00\x00\x00\x08"...)
+	}
+	for _, entries := range [][]exifEntry{root, exif, gps} {
+		if entries == nil {
+			continue
+		}
+		start := len(out)
+		data := start + 2 + 12*len(entries) + 4
+		out = a.AppendUint16(out, uint16(len(entries)))
+		var tail []byte
+		for _, e := range entries {
+			out = a.AppendUint16(out, e.tag)
+			out = a.AppendUint16(out, e.typ)
+			out = a.AppendUint32(out, e.count)
+			if len(e.value) > 4 {
+				out = a.AppendUint32(out, uint32(data+len(tail)))
+				tail = append(tail, e.value...)
+				if len(e.value)%2 == 1 {
+					tail = append(tail, 0)
+				}
+			} else {
+				out = append(out, e.value...)
+				out = append(out, make([]byte, 4-len(e.value))...)
+			}
+		}
+		out = a.AppendUint32(out, 0)
+		out = append(out, tail...)
+	}
+	return append([]byte("Exif\x00\x00"), out...)
 }
 
 func addMetadata(jpeg []byte, m metadata, gps bool, ppi, w, h int) ([]byte, error) {
 	var out bytes.Buffer
 	out.Write(jpeg[:2])
 	segment := func(marker byte, body []byte) error {
-		if len(body) > 65533 {
+		if len(body) > maxSegment {
 			return errors.New("metadata block too large")
 		}
 		out.Write([]byte{255, marker, byte((len(body) + 2) >> 8), byte(len(body) + 2)})
@@ -368,12 +473,16 @@ func addMetadata(jpeg []byte, m metadata, gps bool, ppi, w, h int) ([]byte, erro
 	return out.Bytes(), nil
 }
 
-func checkICC(icc []byte) error {
+// checkICC accepts an RGB profile, or a GRAY profile on a grayscale image.
+func checkICC(icc []byte, gray bool) error {
 	if len(icc) == 0 {
 		return nil
 	}
 	if len(icc) < 128 || string(icc[36:40]) != "acsp" || int(binary.BigEndian.Uint32(icc)) != len(icc) {
 		return errors.New("invalid ICC profile")
+	}
+	if gray && string(icc[16:20]) == "GRAY" {
+		return nil
 	}
 	if string(icc[16:20]) != "RGB " {
 		return fmt.Errorf("ICC colour space %q is not supported without conversion", icc[16:20])

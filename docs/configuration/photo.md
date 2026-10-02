@@ -35,7 +35,7 @@ refuse the Photo configuration; session edits never persist automatically.
 | `encode.ppi` | Output JPEG density in pixels per inch, integer 1–65535. | `240` |
 | `encode.background` | Opaque background for transparent input, written as `#RRGGBB`. | `#ffffff` |
 | `encode.recursive` | Include non-hidden subdirectories of the input folder. | `false` |
-| `encode.preserve_gps` | Retain JPEG/PNG EXIF including GPS, correcting direction/dimensions. When false, retain only capture date; HEIC with GPS refuses preservation requests. | `false` |
+| `encode.preserve_gps` | Retain JPEG/PNG EXIF including GPS, correcting direction/dimensions. When false, retain only capture date; HEIC/TIFF with GPS refuse preservation requests. | `false` |
 | `encode.max_pixels` | Maximum decoded input pixel count, integer 1–40000000; bounds allocation before decoding. | `40000000` |
 
 Behaviour and supported formats are in [Photo Encode](../apps/photo/encode.md).

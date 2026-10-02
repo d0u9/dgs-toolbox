@@ -27,62 +27,78 @@ JPEG and PNG use the Go standard library. Scaling and orientation reuse
 `internal/imaging` with the project's existing official `golang.org/x/image`
 Catmull-Rom scaler. No new third-party dependency is introduced.
 
-HEIC/HEIF uses ImageIO/CoreGraphics under `darwin && cgo`. Other builds refuse
-only those inputs with an explicit reason. The native path renders in the
-**decoded image's own RGB colour space**, and carries its corresponding ICC
-profile. It refuses multi-image containers, high-bit-depth/HDR pixels and
-unsupported colour representations. It does not promise original HEIC colour
-metadata bytes survive native decoding; the profile describes the decoded RGB.
-HEIC inputs carrying GPS are refused when Preserve GPS is enabled: native GPS
-export has not been implemented, so that request cannot silently lose location.
+HEIC/HEIF and TIFF use ImageIO/CoreGraphics under `darwin && cgo`, macOS
+only. On other platforms, and in a macOS build without cgo, the plan lists
+those files as not supported yet with the reason; other inputs still run.
+The native path decodes in the image's own colour space, RGB or grayscale,
+before the sRGB conversion below. It refuses multi-image files, floating
+point pixels and unsupported colour representations. HEIC high-bit-depth/HDR
+pixels are refused; 16-bit integer TIFF is reduced to 8 bits in its own colour
+space. HEIC/TIFF inputs carrying
+GPS are refused when Preserve GPS is enabled: native GPS export has not been
+implemented, so that request cannot silently lose location.
 
 Output is JPEG. Longest edge is an upper bound, proportions are kept, small
 images are not enlarged, EXIF orientations 1–8 are applied, and transparency
 is composited onto the configured opaque background (white by default). This is an 8-bit export path, not archival preservation.
 PPI is output density metadata and does not add pixels.
 
-TIFF is excluded. Its plan entry supplies a shell-quoted `sips` command using
-current quality, size, PPI and output path, for the user to run manually.
-**dgs never executes this command.** It does not add an sRGB conversion.
-
 ## Colour and metadata
 
-There is no ICC colour conversion. RGB profiles on JPEG/PNG are treated as
-opaque container data and copied to output. Invalid/incomplete profiles and
-non-RGB profiles are refused. CMYK JPEG is refused. Nonstandard PNG gamma,
-chromaticities and cICP colour signalling are refused rather than stripped or
-mislabeled. Untagged images are not assigned a made-up ICC profile.
+Every export is sRGB and carries the sRGB ICC profile, as the earlier `sips -m`
+workflow did and as the web and most viewers assume. Pixels with an RGB
+profile, or a GRAY profile on grayscale pixels, are converted by macOS
+ColorSync (CoreGraphics, default rendering intent) after scaling. Untagged
+pixels are taken to be sRGB already and are tagged as such. Grayscale output
+is three-channel sRGB.
+
+Conversion is macOS only, under `darwin && cgo`. Elsewhere untagged JPEG/PNG
+still export, untagged and unconverted; a tagged image is refused per file as
+not supported yet, rather than exported with colours its profile no longer
+describes.
+
+Invalid/incomplete profiles and other colour spaces are refused. CMYK JPEG is
+refused. Nonstandard PNG gamma or chromaticities are refused when they are the
+only colour description; an iCCP or sRGB chunk takes precedence, as the PNG
+specification says. cICP is refused rather than stripped or mislabeled.
 
 With Preserve GPS disabled (the default), export rebuilds only EXIF capture
 date when present; other EXIF, XMP, IPTC and location data are omitted. It does
 not leave discarded GPS bytes hidden in a copied EXIF payload. With Preserve
 GPS enabled, JPEG/PNG EXIF is retained, orientation and existing pixel dimension
-fields are corrected, density is corrected, and its old thumbnail is unlinked. XMP/IPTC are still
+fields are corrected, density is corrected, EXIF ColorSpace is set to sRGB, and
+its old thumbnail is unlinked.
+When that EXIF cannot fit one JPEG APP1 segment (large maker notes), it is
+rebuilt with only capture date and the GPS directory. XMP/IPTC are still
 omitted. This is not a promise to preserve every proprietary metadata tag.
 
 Container handling is bounded JPEG segment / PNG chunk / EXIF directory framing,
-not a custom codec or an ICC interpretation engine.
+not a custom codec or an ICC interpretation engine; colour conversion is
+ColorSync's.
 
 ## Files and publication
 
 The output name is `<stem>-q<quality>-s<longest-edge>.jpg`. Recursive batches
-preserve relative subdirectories, skip hidden subdirectories and symlinks, and
-exclude a nested Destination from scanning. Two inputs mapping to one output
-are both marked as conflicts. Unsupported TIFFs and conflicts are listed in the
+preserve relative subdirectories, skip hidden files and subdirectories
+(including AppleDouble `._` companions) and symlinks, and exclude a nested
+Destination from scanning. A folder or file that cannot be read becomes its own
+failed plan entry and the scan continues. Two inputs mapping to one output
+are both marked as conflicts. Unsupported inputs and conflicts are listed in the
 plan and reported individually without stopping other jobs.
 
 One job runs at a time. DecodeConfig checks the configured pixel limit before
 allocation; input file bytes are capped at 256 MiB. Limits also apply to native
-HEIC decoding. Progress is per-file rather than per-byte.
+ImageIO decoding. Progress is per-file rather than per-byte.
 
 Processing creates a unique same-directory `.dgs-part` file, writes the complete
-encoded JPEG, syncs and closes it, then independently reads it back. Its SHA-256
-must match the encoded artifact, and independent JPEG decoding must confirm the
-expected dimensions. Only then does an atomic hard-link creation publish the
-final name without replacement; temporary names are removed. Filesystems that
-cannot create hard links receive an explicit publication failure, with no
-unsafe rename fallback. Published files retain the temporary file's private
-permissions. A killed process may leave an unpublished temporary file.
+encoded JPEG, sets permission `0644` so the export can be shared, syncs and
+closes it, then reads it back through a fresh handle that must be the same file.
+Its SHA-256 must match the encoded artifact, and independent JPEG decoding must
+confirm the expected dimensions. The temporary name must still be that file;
+then it is published under its final name without replacement, using Photo
+Import's publication (`verifiedcopy.Publish`): an exclusive rename, else a hard
+link, else — only on a filesystem with neither — check-then-rename. A killed
+process may leave an unpublished temporary file.
 
 Source and output hashes are not compared: lossy encoding changes file contents.
 The guarantee is at the user-space/filesystem API boundary, not physical-media
@@ -90,5 +106,5 @@ power-loss durability. No resume-state file or persistent cache is introduced.
 
 ## Deferred
 
-Additional output formats, RAW/TIFF decoding, cropping, filters, target byte
+Additional output formats, RAW decoding, cropping, filters, target byte
 budgets, saved presets and HEIC GPS export are not part of this first version.

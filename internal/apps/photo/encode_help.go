@@ -11,7 +11,7 @@ Tab / Shift+Tab move between controls; Enter selects a path or edits a value.
 Press n to review the output plan, then n again to start writing files.
 Esc on the plan returns to parameters. During encoding, Esc, q or Ctrl+C
 opens a safe-default Stop confirmation. In Results, r returns to parameters.
-Arrow keys / h j k l scroll the plan and results, including long sips commands.
+Arrow keys / h j k l scroll the plan and results.
 No output files are written by planning. Sources and existing outputs are kept.
 
 Settings (initial values can all be configured):
@@ -52,22 +52,22 @@ limit (1-40000000); input files are also capped at 256 MiB. Jobs run sequentiall
 
 Formats and colour:
   JPEG / PNG         Decoded and encoded by Go; EXIF direction is applied.
-  HEIC / HEIF        Requires macOS and a cgo-enabled dgs build.
-                     HDR/high-bit-depth and multi-image containers are refused.
-                     HEIC carrying GPS is refused when Preserve GPS is enabled.
-  TIFF               Not supported. The plan provides a shell-quoted sips
-                     command using your size, quality, PPI and output path.
-                     Run it manually; dgs never executes external commands.
+  HEIC / HEIF, TIFF  Decoded by macOS ImageIO in a cgo-enabled dgs build.
+                     Other platforms list these files as not supported yet.
+                     Multi-image files are refused. HEIC HDR/high-bit-depth is
+                     refused; 16-bit TIFF is reduced to 8-bit.
+                     HEIC/TIFF carrying GPS is refused when Preserve GPS is on.
   Output             JPEG only; an 8-bit export, not an archival copy.
 
-No colour-space conversion is performed. Applicable RGB ICC profiles are
-retained; HEIC uses the decoded RGB image's corresponding profile. CMYK,
-invalid/non-RGB profiles and unsupported PNG colour signalling are refused.
-Untagged images are not assigned an invented sRGB profile.
+Every export is converted to sRGB by macOS ColorSync and tagged sRGB.
+Untagged images are taken to be sRGB. Other platforms export untagged
+images unconverted and refuse ICC-tagged ones as not supported yet.
+CMYK, invalid profiles, GRAY profiles on colour pixels and unsupported PNG
+colour signalling are refused. A PNG ICC or sRGB chunk takes precedence
+over gAMA/cHRM. Hidden files (including ._ companions) are skipped.
 
-Each JPEG is written to a same-directory .dgs-part file, synced and closed,
-then independently read back for SHA-256 and decode/dimension verification.
-Only then is its final name published atomically without replacement.
-The destination filesystem must support hard links; otherwise publication
-fails explicitly. This is a filesystem API guarantee, not a power-loss
+Each JPEG is written to a same-directory .dgs-part file with permission
+0644, synced and closed, then independently read back for SHA-256 and
+decode/dimension verification. Only then is its final name published
+without replacement, as Photo Import publishes. This is a filesystem API guarantee, not a power-loss
 physical-media guarantee.`
