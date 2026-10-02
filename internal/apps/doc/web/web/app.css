@@ -785,7 +785,9 @@ body.list-shut .outline-list { display: none; }
 .outline-form[hidden] { display: none; }
 .outline-form { border-right: 0; }
 #unplaced .problem { margin: 0; }
-#unplaced .problem summary { cursor: pointer; }
+#drift .problem { margin: 0 0 8px; }
+#unplaced .problem summary, #drift .problem summary { cursor: pointer; }
+#drift .muted { margin: 0 0 8px; font-size: var(--font-size-sm); }
 .outline-note { border-bottom: 0 !important; font-size: var(--font-size-xs); }
 /* The Outlines page picks rules and puts Snapshots in the tree. */
 .pick-list { display: flex; flex-direction: column; gap: 4px; }
