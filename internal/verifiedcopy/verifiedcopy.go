@@ -255,7 +255,7 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 	}
 	// Publication never replaces: a file that appeared at the final name while
 	// this one was being verified is somebody else's work.
-	if err := publish(temporary, request.Destination); err != nil {
+	if err := Publish(temporary, request.Destination); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return fail(fmt.Errorf("%w: appeared during copy: %s", ErrDestinationExists, request.Destination))
 		}
