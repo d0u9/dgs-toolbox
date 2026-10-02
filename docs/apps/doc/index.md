@@ -309,8 +309,13 @@ a Template Items use cannot be deleted.
 A scanned PDF is shown as pictures of its pages, drawn from each page's own
 embedded scan as box draws them, 1600 px on the long side, loaded as they
 scroll into view. The browser's PDF viewer redraws a full-resolution scan on
-every scroll and stutters. A PDF whose first page is not a scan — one made on
-a computer — is shown in the viewer.
+every scroll and stutters. A page that is not a scan — one made on a
+computer — is drawn instead, by Core Graphics compiled in on macOS
+(`internal/doc/pdfpage`), and never read for text, so every preview,
+thumbnail and page shows its content. Each picture is kept in `cache.dir` by
+the PDF's SHA-256, page and size, so a page is drawn once per machine;
+deleting the cache costs a redraw. Only where drawing is not compiled in — not
+macOS, or no cgo — is such a PDF shown in the browser's viewer.
 
 Beside the pages is a strip of thumbnails, the page in view marked; one
 clicked is scrolled to. With no saved zoom choice, a PDF opens fit to page.
@@ -1026,10 +1031,15 @@ naming: "{owner}-{type}.{ext}"    # optional: how a PDF added by hand is named
   value (`fy` 2023),
   whether it is in the Snapshot already and whether retired, the filters
   remembered in the browser, in a dialog listing them in columns as in
-  Finder: Name and the keys chosen by a right click on the header or its
-  +, each dragged by its edge to size it and by its header to move it, a
-  click on a header sorting by it, all remembered (each its
-  Item's latest revision, named after the Item), a PDF or folder dragged onto another
+  Finder: Name, the name Name as gives it (a key it lacks in red), and
+  the keys chosen by a right click on the header or its +, each dragged by
+  its edge to size it and by its header to move it, a click on a header
+  sorting by it, all remembered (each its Item's latest revision, named
+  after the Item). A click on a row shows its PDF beside the list, page by
+  page, as every preview shows one — ↑ and ↓ moving it; its box, or Space, ticks it. Named as, the other
+  tab beside it, draws where the ticked would go, says which were named
+  apart because the name was taken, and gives each Item lacking a key the
+  naming needs a form to fill it in; Add waits until none lacks one, a PDF or folder dragged onto another
   folder or to the top, renamed, a PDF set to another revision of its Item,
   or either taken out — a folder with the PDFs in it. A folder a PDF leaves
   stays. The tree works as Finder's: a right click on a row

@@ -26,6 +26,7 @@ import (
 	"dgs-toolbox/internal/doc/expiry"
 	"dgs-toolbox/internal/doc/itemcache"
 	"dgs-toolbox/internal/doc/ocr"
+	"dgs-toolbox/internal/doc/pagecache"
 	"dgs-toolbox/internal/doc/pdflist"
 	"dgs-toolbox/internal/doc/suggest"
 	"dgs-toolbox/internal/doc/textcache"
@@ -168,7 +169,7 @@ func Handler(settings Settings) http.Handler {
 	}
 	trees := settings.ResolvedTrees()
 	shared := server{
-		now: time.Now, pictures: newPictures(), dateOrder: settings.DateOrder, soon: settings.ExpiringWithin,
+		now: time.Now, pictures: newPictures(pagecache.Store{Dir: settings.CacheDir}), dateOrder: settings.DateOrder, soon: settings.ExpiringWithin,
 		writing: &sync.Mutex{}, trees: trees,
 		store:  textcache.Store{Dir: settings.CacheDir},
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),

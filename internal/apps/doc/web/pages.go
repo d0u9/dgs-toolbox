@@ -9,6 +9,8 @@ import (
 
 	"dgs-toolbox/internal/box/scanmeta"
 	"dgs-toolbox/internal/box/thumb"
+	"dgs-toolbox/internal/doc/pagecache"
+	"dgs-toolbox/internal/doc/pdfpage"
 	"dgs-toolbox/internal/doc/tree"
 )
 
@@ -17,11 +19,15 @@ import (
 // stutters, where a 1600 px JPEG scrolls like any image. The picture is the
 // page's own embedded scan, as box draws it (thumb), so nothing is rasterised
 // and no C library is compiled in. A page that is not a scan — a PDF made on
-// a computer — has no picture, and the page falls back to the viewer.
+// a computer — has no scan, and is drawn by pdfpage instead, which
+// compiles Core Graphics in on macOS; only where that is not compiled in
+// does the page fall back to the viewer.
 
 // pictures keeps drawn pages for the life of the process, the newest
-// maxPictures of them.
+// maxPictures of them, and every one on disk in store, so a page is drawn
+// once per machine.
 type pictures struct {
+	store pagecache.Store
 	mu    sync.Mutex
 	order []string
 	jpegs map[string][]byte
@@ -48,7 +54,52 @@ const (
 // largeSize is enough for a 300 dpi A4 scan at its own resolution.
 const largeSize = 3600
 
-func newPictures() *pictures { return &pictures{jpegs: map[string][]byte{}} }
+func newPictures(store pagecache.Store) *pictures {
+	return &pictures{store: store, jpegs: map[string][]byte{}}
+}
+
+// longSides are the pixels of a drawn page's longer side, by size.
+var longSides = map[string]int{sizeThumb: thumb.GridSize, sizePage: thumb.PreviewSize, sizeLarge: largeSize}
+
+// noScan says the page has no embedded scan to show.
+func noScan(err error) bool {
+	return errors.Is(err, scanmeta.ErrNoPageImage) || errors.Is(err, thumb.ErrNoImage)
+}
+
+// look is a page as kept on disk, or else page, or, for a page with no
+// scan where drawing is compiled in, the page drawn; what it answers is
+// kept on disk for next time. A disk that cannot keep it costs a redraw.
+func (p *pictures) look(path, digest string, n int, size string) ([]byte, error) {
+	if jpeg, ok := p.store.Load(digest, n, size); ok {
+		return jpeg, nil
+	}
+	jpeg, err := p.draw(path, digest, n, size)
+	if err == nil {
+		_ = p.store.Save(digest, n, size, jpeg)
+	}
+	return jpeg, err
+}
+
+// draw is page, or, for a page with no scan where drawing is compiled in,
+// the page drawn.
+func (p *pictures) draw(path, digest string, n int, size string) ([]byte, error) {
+	jpeg, err := p.page(path, digest, n, size)
+	if err == nil || !noScan(err) || !pdfpage.Available() {
+		return jpeg, err
+	}
+	key := digest + "/" + strconv.Itoa(n) + "/" + size + "/drawn"
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if jpeg, ok := p.jpegs[key]; ok {
+		return jpeg, nil
+	}
+	drawn, err := pdfpage.Render(path, n, longSides[size], pdfpage.DefaultQuality)
+	if err != nil {
+		return nil, err
+	}
+	p.keep(key, drawn)
+	return drawn, nil
+}
 
 // page is the JPEG of one page, counting from 1, at a size above.
 func (p *pictures) page(path, digest string, n int, size string) ([]byte, error) {
@@ -143,7 +194,7 @@ func (s server) pages(w http.ResponseWriter, r *http.Request) {
 	// with no picture means a PDF made on a computer, which the viewer shows.
 	count, err := s.pictures.count(path, digest)
 	if err == nil {
-		_, err = s.pictures.page(path, digest, 1, sizePage)
+		_, err = s.pictures.look(path, digest, 1, sizePage)
 	}
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"count": 0, "digest": digest})
@@ -180,9 +231,9 @@ func (s server) page(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "size is thumb, page or large", http.StatusBadRequest)
 		return
 	}
-	jpeg, err := s.pictures.page(path, digest, n, size)
+	jpeg, err := s.pictures.look(path, digest, n, size)
 	if err != nil {
-		if errors.Is(err, scanmeta.ErrNoPageImage) || errors.Is(err, thumb.ErrNoImage) {
+		if noScan(err) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
