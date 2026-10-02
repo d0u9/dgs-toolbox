@@ -1214,20 +1214,13 @@ body.resizing, body.resizing-x { cursor: col-resize; user-select: none; }
 .badge-tag-on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 
 /* List view: the same entries as the cards, one row each, a column per fact. */
-.list { font-size: var(--text-sm, 13px); }
-.list th {
-  top: calc(-1 * var(--space-md)); z-index: 1; color: inherit; font-weight: 600; border-right: 0;
-  padding: var(--space-xs, 4px) var(--space-sm, 8px); border-bottom: 1px solid var(--hairline);
-}
-.list th.sortable:hover, .list th.sorted { color: var(--primary-deep); }
-.list td { padding: var(--space-xs, 4px) var(--space-sm, 8px); border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+/* The list is the shared list table; only what is its own here. */
+.list th { top: calc(-1 * var(--space-md)); }
 .list-row { cursor: pointer; }
-.list-row:hover { background: var(--primary-soft); }
-.list-row.card-selected { background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); }
 .list-row.card-marked { outline: 2px solid var(--primary); outline-offset: -2px; }
 .list .card-thumb-wrap { width: 32px; height: 40px; overflow: hidden; border-radius: var(--radius-sm, 3px); }
 .list .card-thumb { width: 100%; height: 100%; object-fit: cover; }
-.list-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.list-table td.list-num { text-align: right; font-variant-numeric: tabular-nums; }
 .list-date { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .list-tags .badge { margin-right: 2px; }
 .list-row.state-dead td { color: var(--steel); }

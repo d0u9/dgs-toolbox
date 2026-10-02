@@ -4,7 +4,7 @@
 // the folder picked, dragged into another, renamed, set to another revision
 // or taken out. An Outline puts it in its tree as a folder of its name; the
 // Outlines page says where.
-import { $, address, keep as keepEntry, scrollBack, api, el, loadState, post, label, frame, say, nameTree } from "/common.js";
+import { $, address, keep as keepEntry, scrollBack, api, el, loadState, post, label, frame, say, nameTree, templateOf, inputFor, fieldsOf, fieldsAt } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openMenu } from "/ui/menu.js";
 import { listTable } from "/ui/listtable.js";
@@ -543,26 +543,127 @@ const addList = listTable($("add-list"), {
   columns: () => [
     { id: "name", text: "Name", width: 300, fixed: true, value: (x) => x.name,
       cell: (x) => el("span", {}, x.name, x.have ? el("span", { className: "muted" }, " · in it") : null) },
+    { id: "named", text: "Name as", width: 240, fixed: true, value: (x) => nameOf.get(x.i.id)?.path || "",
+      title: "The name it would have, by Name as; a key it lacks in red", cell: (x) => {
+        const n = nameOf.get(x.i.id);
+        return !n ? "" : n.lacking ? el("span", { className: "lacks" }, "lacks " + n.lacking.join(", ")) : n.path;
+      } },
     ...["type", "tags", "added"].map((k) => ({ id: k, text: HEADS[k], cell: (x) => cell(x.i, k) })),
     ...[...new Set(state.items.flatMap((i) => Object.keys(i.fields)))].sort()
       .map((k) => ({ id: k, text: k, group: "fields", cell: (x) => cell(x.i, k) })),
   ],
   lead: {
     head: () => el("input", { type: "checkbox", id: "add-all", title: "Tick all shown", onchange: (event) => {
-      $("add-list").querySelectorAll("tbody input").forEach((b) => { b.checked = event.target.checked; b.closest("tr").classList.toggle("ticked", b.checked); tick(b); });
+      $("add-list").querySelectorAll("tbody input").forEach((b) => { b.checked = event.target.checked; b.closest("tr").classList.toggle("selected", b.checked); tick(b); });
       ticked();
     } }),
     cell: (x) => el("input", { type: "checkbox", value: x.i.id, checked: tickedIds.has(x.i.id) }),
   },
+  // A click on a row previews it; its box, or Space, ticks it.
   row: (x, cells) => {
-    const tr = el("tr", { className: (tickedIds.has(x.i.id) ? "ticked" : "") + (x.i.retired ? " retired" : "") }, ...cells);
+    const tr = el("tr", { className: (tickedIds.has(x.i.id) ? "selected" : "") + (x.i.retired ? " retired" : "") + (x.i.id === focused ? " focused" : "") }, ...cells);
+    tr.dataset.id = x.i.id;
     const box = tr.querySelector("input");
-    tr.onclick = (event) => { if (event.target !== box) box.checked = !box.checked; tr.classList.toggle("ticked", box.checked); tick(box); ticked(); };
+    box.onchange = () => { tr.classList.toggle("selected", box.checked); tick(box); ticked(); };
+    tr.onclick = () => focus(x.i.id);
     return tr;
   },
   empty: "No Item matches.",
 });
 const tick = (box) => { if (box.checked) tickedIds.add(box.value); else tickedIds.delete(box.value); };
+
+// The pane beside the list: the PDF of the row last clicked, or where the
+// ticked ones would go. The tab chosen is remembered in this browser.
+const TAB_KEY = "dgs-doc-snapshots-add-tab";
+let tab = "pdf";
+try { tab = localStorage.getItem(TAB_KEY) === "named" ? "named" : "pdf"; } catch { /* PDF */ }
+function showTab(t) {
+  tab = t;
+  try { localStorage.setItem(TAB_KEY, t); } catch { /* this page only */ }
+  for (const b of document.querySelectorAll(".snap-tab")) b.setAttribute("aria-selected", String(b.dataset.tab === t));
+  $("add-pdf").hidden = t !== "pdf";
+  $("add-preview").hidden = t !== "named";
+}
+document.querySelectorAll(".snap-tab").forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
+
+// focused is the Item whose PDF is shown; page is the page of it shown.
+let focused = "";
+let page = { n: 1, count: 1 };
+const rowsShown = () => [...$("add-list").querySelectorAll("tbody tr")];
+function focus(id) {
+  if (focused !== id) page = { n: 1, count: 1 };
+  focused = id;
+  for (const tr of rowsShown()) tr.classList.toggle("focused", tr.dataset.id === id);
+  rowsShown().find((tr) => tr.dataset.id === id)?.scrollIntoView({ block: "nearest" });
+  showPdf();
+}
+let pdfAsked = 0;
+async function showPdf() {
+  const item = itemOf(focused);
+  if (!item) return $("add-pdf").replaceChildren(el("p", { className: "muted" }, "Click an Item to see its PDF."));
+  // The page endpoints name a revision by its ref, as the Snapshot does.
+  const latest = (item.revisions || []).at(-1);
+  const digest = latest?.digest && ref(latest);
+  if (!digest) return $("add-pdf").replaceChildren(el("p", { className: "muted" }, "Its latest revision has no PDF."));
+  const go = (n) => { page.n = n; showPdf(); };
+  $("add-pdf").replaceChildren(
+    el("div", { className: "snap-pdf-page" }, el("img", { alt: "", onerror: (event) => event.target.replaceWith(el("p", { className: "muted" }, "No picture of this page.")), src: api(`/api/page?item=${encodeURIComponent(item.id)}&digest=${digest}&n=${page.n}&size=page&v=${digest}`) })),
+    el("div", { className: "snap-pdf-bar" },
+      el("span", { className: "snap-pdf-title", title: label(state, item) }, label(state, item)),
+      el("button", { type: "button", className: "small", textContent: "‹", title: "Page before", disabled: page.n <= 1, onclick: () => go(page.n - 1) }),
+      el("span", { className: "numeric" }, page.n + " / " + page.count),
+      el("button", { type: "button", className: "small", textContent: "›", title: "Page after", disabled: page.n >= page.count, onclick: () => go(page.n + 1) }),
+      el("a", { href: api("/browse/?read") + "#" + item.id, target: "_blank", textContent: "Open", title: "Open it in the Browse reader" })));
+  const mine = ++pdfAsked;
+  try {
+    const info = await (await fetch(api("/api/pages?" + new URLSearchParams({ item: item.id, digest })))).json();
+    if (mine === pdfAsked && focused === item.id && (info.count || 1) !== page.count) { page.count = Math.max(1, info.count || 1); showPdf(); }
+  } catch { /* one page is shown */ }
+}
+// Keys on the list, as in Finder: ↑ ↓ move the preview, Space ticks.
+$("add-list").addEventListener("keydown", (event) => {
+  if (event.target.closest("input, button, select")) return;
+  const rows = rowsShown();
+  const at = rows.findIndex((tr) => tr.dataset.id === focused);
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const next = rows[Math.max(0, Math.min(rows.length - 1, at < 0 ? 0 : at + (event.key === "ArrowDown" ? 1 : -1)))];
+    if (next) focus(next.dataset.id);
+  } else if (event.key === " " && at >= 0) {
+    event.preventDefault();
+    const box = rows[at].querySelector("input");
+    box.checked = !box.checked;
+    box.onchange();
+  }
+});
+
+// nameOf is each Item shown named by Name as: { path } or { lacking }.
+// Asked of the server for every row shown, a moment after the last change.
+const nameOf = new Map();
+let namesAsked = 0, namesTimer = 0;
+function nameRows(rows) {
+  clearTimeout(namesTimer);
+  namesTimer = setTimeout(async () => {
+    const mine = ++namesAsked;
+    const want = rows.filter((x) => (x.i.revisions || []).length);
+    if (!draft || !draft.naming) {
+      nameOf.clear();
+      want.forEach((x) => nameOf.set(x.i.id, { path: plainName(x.i) }));
+    } else {
+      try {
+        const answer = await post("/api/snapshots/names", { naming: draft.naming, files: want.map((x) => ({ item: x.i.id, revision: ref(x.i.revisions.at(-1)) })) });
+        if (mine !== namesAsked) return;
+        nameOf.clear();
+        answer.names.forEach((n, k) => nameOf.set(want[k].i.id, n.lacking ? { lacking: n.lacking } : { path: n.path }));
+      } catch {
+        if (mine !== namesAsked) return;
+        nameOf.clear();
+      }
+    }
+    addList.draw();
+  }, 200);
+}
+const plainName = (item) => label(state, item).replace(/[\/\\:]+/g, "-") + ".pdf";
 
 // addDialog opens Add PDFs over the page.
 function addDialog() {
@@ -570,6 +671,9 @@ function addDialog() {
   choices();
   $("add-naming").value = draft.naming || "";
   say($("add-message"), "");
+  showTab(tab);
+  showPdf();
+  preview();
   $("add-dialog").showModal();
   $("add-search").focus();
 }
@@ -590,7 +694,9 @@ function choices() {
     .filter(({ all }) => words.every((w) => all.includes(w)));
   const shown = new Set(rows.map((x) => x.i.id));
   [...tickedIds].filter((id) => !shown.has(id)).forEach((id) => tickedIds.delete(id));
+  if (focused && !shown.has(focused)) focused = "";
   addList.draw(rows);
+  nameRows(rows);
   ticked();
 }
 
@@ -675,28 +781,62 @@ $("add-open").onclick = () => addDialog();
 $("add-cancel").onclick = () => $("add-dialog").close();
 // named is where the Items picked would go in dir, by the Snapshot's
 // naming or else by their labels, each a path of its own: a name taken,
-// by the Snapshot or one before it, gets _02. It is { paths } or { error }.
+// by the Snapshot or one before it, gets _02, and is listed in renamed. An
+// Item lacking a key the naming needs has no path and is in lacking. It is
+// { paths, lacking, renamed } or { error }.
 async function named(picks, dir) {
-  let names = picks.map((p) => label(state, p.item).replace(/[\/\\:]+/g, "-") + ".pdf");
+  let names = picks.map((p) => plainName(p.item));
+  const lacking = [];
   if (draft.naming) {
     try {
       const answer = await post("/api/snapshots/names", { naming: draft.naming, files: picks.map((p) => ({ item: p.item.id, revision: p.revision })) });
-      const lacking = answer.names.map((n, i) => n.lacking ? label(state, picks[i].item) + " lacks " + n.lacking.join(", ") : "").filter(Boolean);
-      if (lacking.length) return { error: lacking.join("; ") };
-      names = answer.names.map((n) => /\.pdf$/i.test(n.path) ? n.path : n.path + ".pdf");
+      names = answer.names.map((n, i) => {
+        if (n.lacking) { lacking.push({ item: picks[i].item, keys: n.lacking }); return null; }
+        return /\.pdf$/i.test(n.path) ? n.path : n.path + ".pdf";
+      });
     } catch (err) {
       return { error: err.message };
     }
   }
   const used = new Set();
-  const paths = names.map((name) => {
+  const renamed = [];
+  const paths = names.map((name, i) => {
+    if (name === null) return null;
     const stem = name.replace(/\.pdf$/i, "");
     let path = join(dir, name), n = 2;
     while (taken(path) || used.has(low(path))) path = join(dir, stem + "_" + String(n++).padStart(2, "0") + ".pdf");
+    if (n > 2) renamed.push({ item: picks[i].item, want: join(dir, name), path, inSnapshot: taken(join(dir, name)) });
     used.add(low(path));
     return path;
   });
-  return { paths };
+  return { paths, lacking, renamed };
+}
+
+// fillForm types in the fields an Item lacks for the naming, on its latest
+// revision, as the Rules page fills one. A key no field of its Template
+// supplies is only named: the naming must change.
+function fillForm(item, keys) {
+  const t = templateOf(state, item.type);
+  const wanted = new Set(keys.map((k) => k.split(/[:.]/)[0]));
+  const known = t ? t.fields.filter((f) => wanted.has(f.key)) : [];
+  const message = el("span", { className: "message" });
+  const form = el("form", {}, ...known.map((f) => inputFor(f, "", "", state, item.id)),
+    known.length ? el("button", { className: "small", type: "submit", textContent: "Save" }) : el("span", { className: "muted" }, item.type + " has no such field: change Name as."),
+    message);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const typed = Object.fromEntries(Object.entries(fieldsOf(form)).filter(([, v]) => v !== ""));
+    if (!Object.keys(typed).length) return;
+    const digest = ref(item.revisions.at(-1));
+    try {
+      await post("/api/fields", { item: item.id, digest, fields: { ...fieldsAt(item, digest), ...typed } });
+      state = await loadState();
+      choices();
+    } catch (err) {
+      say(message, err.message, true);
+    }
+  };
+  return el("div", { className: "snap-fill" }, el("strong", {}, label(state, item)), " lacks ", el("span", { className: "mono" }, keys.join(", ")), form);
 }
 
 // picks is the Items ticked in Add PDFs, each with its latest revision.
@@ -705,7 +845,9 @@ const picks = () => [...$("add-list").querySelectorAll("tbody input:checked")].m
   return { item, revision: ref(revs[revs.length - 1]) };
 });
 
-// preview draws beside the list where the Items ticked would go, as a tree.
+// preview draws beside the list where the Items ticked would go, as a tree,
+// with the names changed to keep each its own and a form for each Item
+// lacking a key the naming needs.
 let previewing = 0;
 async function preview() {
   const mine = ++previewing, chosen = picks();
@@ -713,7 +855,14 @@ async function preview() {
   const got = await named(chosen, target());
   if (mine !== previewing) return;
   if (got.error) return $("add-preview").replaceChildren(el("p", { className: "message error" }, got.error));
-  $("add-preview").replaceChildren(fileTree(got.paths.map((path) => ({ path })), {}));
+  const placed = got.paths.filter(Boolean);
+  $("add-preview").replaceChildren(
+    ...got.lacking.map((l) => fillForm(l.item, l.keys)),
+    got.renamed.length ? el("div", { className: "snap-named-note message warning" }, "Named apart, the name being taken:",
+      el("ul", {}, ...got.renamed.map((r) => el("li", { title: r.want }, label(state, r.item), " → ",
+        el("span", { className: "mono" }, r.path.split("/").pop()), r.inSnapshot ? " (in the Snapshot already)" : " (another ticked)")))) : null,
+    placed.length ? fileTree(placed.map((path) => ({ path })), {}) : null);
+  if (got.lacking.length && tab !== "named") showTab("named");
 }
 
 $("add").onclick = async () => {
@@ -721,6 +870,7 @@ $("add").onclick = async () => {
   const chosen = picks();
   const got = await named(chosen, dir);
   if (got.error) return say($("add-message"), got.error, true);
+  if (got.lacking.length) { showTab("named"); return say($("add-message"), got.lacking.length + " ticked lack a key Name as needs: fill it beside, or untick them.", true); }
   say($("add-message"), "");
   chosen.forEach((p, i) => draft.files.push({ path: got.paths[i], item: p.item.id, revision: p.revision }));
   draft.folders = draft.folders.filter((d) => low(d) !== low(dir));
@@ -736,6 +886,7 @@ $("add-naming").oninput = () => {
   changed();
   clearTimeout(naming);
   naming = setTimeout(preview, 250);
+  nameRows(addList.rows);
 };
 $("new-folder").onclick = () => newFolder(target());
 // Around the rows, as in Finder: a click picks nothing, so what is made

@@ -111,18 +111,12 @@
   overflow: auto;
 }
 .file-list:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-.file-table { font-size: var(--font-size-sm); }
-.file-table th { background: var(--cloud); font-size: var(--font-size-xs); padding: var(--row-pad-y) 6px; }
-.file-table th.sortable:hover, .file-table th.sorted { color: var(--primary); }
-.file-table td { padding: var(--row-pad-y) 6px; }
-.file-row { cursor: default; user-select: none; }
-.file-row:hover { background: var(--hover); }
-.file-row.chosen { background: var(--selected); }
+.file-table th { background: var(--cloud); }
+.file-row { user-select: none; }
 .file-folder .file-cell-name::before { content: "▸ "; color: var(--primary); }
 .file-file .file-cell-name { color: var(--charcoal); }
 .file-cell-modified, .file-cell-size { color: var(--graphite); }
 .file-table td.file-cell-size { text-align: right; }
-.file-list .lt-empty { padding: var(--row-pad-y) 6px; color: var(--graphite); font-size: var(--font-size-sm); }
 .file-problem { flex: none; margin: 0 0 var(--space-xs); color: var(--error); }
 
 /* The foot: the name field when saving, the type filter, the hidden-file

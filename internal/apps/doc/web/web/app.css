@@ -309,24 +309,29 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .retire-form { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .retire-form input { width: 100%; box-sizing: border-box; }
 
-/* The list of Items is the shared list table, drawn at this page's size. */
-.items-table { font-size: var(--font-size-sm); }
-.items-table th {
-  top: -14px; z-index: 1; font-weight: 600; color: var(--ink);
-  padding: 6px 8px; border-bottom: 1px solid var(--hairline-strong); border-right: 0;
-}
-.items-table th.sortable:hover { background: var(--hover); }
-.items-table th.sorted { color: var(--primary); }
-.items-table td { padding: 4px 8px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+/* The list of Items is the shared list table; only what is its own here.
+   The name is what a row is read by, so it alone is in ink and the other
+   columns step back to graphite. A row stays one line high: the page
+   picture shrinks to a mark beside the name, the state reads as coloured
+   text rather than a filled badge, and an unstarred star appears only on
+   the row under the pointer. The table sits in a framed sheet, as Values'
+   lists do. */
+#table:not([hidden]) { border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--paper); overflow: clip; }
+.items-table th { top: -15px; }
 .table-row { cursor: pointer; }
-.table-row:hover { background: var(--hover); }
-.table-row.card-selected { background: var(--selected); box-shadow: inset 3px 0 0 var(--primary); }
-.table-thumb { width: 40px; }
-.items-table td.table-name { font-weight: 600; color: var(--ink); }
-.table-thumb .card-thumb-wrap { width: 32px; height: 40px; overflow: hidden; border-radius: var(--radius-sm); }
-.table-thumb .card-thumb { height: 40px; border: 0; }
-.table-thumb .no-picture::after { content: ""; height: 40px; border: 0; }
-.state-expired td { color: var(--graphite); }
+.items-table td { color: var(--graphite); }
+.items-table td.table-name { color: var(--ink); }
+.table-row.state-expired td.table-name { color: var(--graphite); }
+.table-thumb { padding-top: 2px !important; padding-bottom: 2px !important; }
+.table-thumb .card-thumb-wrap { width: 22px; height: 28px; overflow: hidden; border-radius: 2px; box-shadow: 0 0 0 1px var(--hairline); }
+.table-thumb .card-thumb { height: 28px; border: 0; }
+.table-thumb .no-picture::after { content: ""; height: 28px; border: 0; }
+.items-table .badge { padding: 0; margin-right: 8px; background: none; color: var(--graphite); font-size: inherit; line-height: inherit; }
+.items-table .badge::before { content: "●"; margin-right: 4px; font-size: 8px; vertical-align: 1px; }
+.items-table .badge-expired { color: var(--error); }
+.items-table .badge-soon { color: #8a5300; }
+.items-table .badge-valid::before { color: #1a7f37; }
+.table-row:not(:hover):not(.selected) .star:not(.on) { opacity: 0; }
 .side-close { float: right; margin: 8px 10px 0 0; }
 .grid[hidden], #table[hidden] { display: none; }
 
@@ -826,7 +831,23 @@ body.list-shut .outline-list { display: none; }
 .snap-add-main { flex: 1 1 auto; display: flex; gap: 0; min-height: 0; margin-top: 6px; }
 .snap-add-main .snap-add-list { margin-top: 0; min-width: 0; }
 .snap-add-preview { flex: 0 0 280px; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--hairline); border-radius: 6px; min-height: 0; }
-.snap-preview-head { padding: 4px 8px; border-bottom: 1px solid var(--hairline); font-size: 12px; }
+.snap-preview-head { display: flex; gap: 2px; padding: 2px 4px; border-bottom: 1px solid var(--hairline); font-size: 12px; }
+.snap-tab { border: 0; background: none; padding: 3px 8px; border-radius: 4px; font: inherit; color: var(--graphite); cursor: pointer; }
+.snap-tab[aria-selected="true"] { background: var(--selected); color: var(--ink); }
+.snap-pdf { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.snap-pdf[hidden], #add-preview[hidden] { display: none; }
+.snap-pdf-page { flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center; padding: 6px; background: var(--cloud); }
+.snap-pdf-page img { max-width: 100%; height: auto; align-self: flex-start; box-shadow: 0 0 0 1px var(--hairline); background: #fff; }
+.snap-pdf-bar { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-top: 1px solid var(--hairline); font-size: 12px; }
+.snap-pdf-bar .snap-pdf-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snap-pdf p { margin: 8px; }
+.snap-add-list:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.list-table tbody tr.focused { box-shadow: inset 3px 0 0 var(--primary); }
+.list-table td .lacks { color: var(--error); }
+.snap-named-note { margin: 4px; font-size: var(--font-size-xs); }
+.snap-named-note ul { margin: 2px 0; padding-left: 16px; }
+.snap-fill { margin: 4px; padding: 6px; border: 1px solid var(--hairline); border-radius: 6px; font-size: var(--font-size-xs); }
+.snap-fill form { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px; }
 #add-preview { flex: 1; overflow: auto; padding: 4px; }
 #add-preview p { margin: 4px; }
 /* Floats at the preview's foot, clear of both viewers' own bars. */
@@ -988,27 +1009,24 @@ body.quicklook .view-quicklook-close { display: inline-flex; position: absolute;
 .values-main .template-title { flex: 1 0 100%; }
 .values-main .template-bar .filter { height: auto; }
 #value-search { width: 14em; }
-.values-list { border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--paper); }
-.values-row td, .values-key td { padding: 6px 8px; border-bottom: 1px solid var(--hairline); }
 .values-key { cursor: pointer; }
-.values-key:hover { background: var(--hover); }
-.values-key.selected { background: var(--selected); }
-.values-row:hover { background: var(--hover); }
-.values-row.similar { box-shadow: inset 3px 0 0 var(--primary); }
-.values-row:has(input:checked) { background: var(--selected); }
+/* A value written more than one way is marked by ≈ in amber, not by the
+   left band: the band means the row being looked at, everywhere. */
+.values-row.similar .values-mark { color: #8a5300; font-weight: 600; }
 .values-value label { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
 .values-mark { width: 1em; color: var(--primary); text-align: center; }
 .values-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.values-count { border: 0; cursor: pointer; font: inherit; font-size: var(--font-size-xs); }
-.values-count:hover { background: var(--primary-soft); color: var(--primary); }
+.values-count { border: 0; background: none; cursor: pointer; font: inherit; color: var(--charcoal); font-variant-numeric: tabular-nums; }
+.values-count:hover { background: none; color: var(--primary); text-decoration: underline; }
 .values-unify { display: flex; flex-direction: column; gap: 8px; }
 .values-unify .field-input { width: 100%; box-sizing: border-box; }
 .values-unify .action { align-self: flex-start; }
 .values-unify .message { margin: 0; }
 .values-unify .message:empty { display: none; }
 .values-types { display: flex; gap: 4px; overflow: hidden; }
-.values-type { margin: 0; border: 0; white-space: nowrap; font-size: var(--font-size-xs); cursor: pointer; font-family: var(--font-mono); }
-.values-type:hover { background: var(--primary-soft); color: var(--primary); }
+.values-types { gap: 10px; }
+.values-type { margin: 0; padding: 0; border: 0; background: none; white-space: nowrap; font-size: var(--font-size-xs); cursor: pointer; font-family: var(--font-mono); color: var(--graphite); }
+.values-type:hover { background: none; color: var(--primary); text-decoration: underline; }
 .values-type-n { color: var(--graphite); }
 .holders-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: normal; font-size: var(--font-size-xs); color: var(--graphite); }
 .holders-dialog .holders-items a { flex-direction: column; gap: 4px; }
@@ -1016,3 +1034,5 @@ body.quicklook .view-quicklook-close { display: inline-flex; position: absolute;
 .holders-files .file-chip { max-width: 100%; }
 .values-list-box { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--paper); overflow: hidden; }
 .values-list-box .values-list { border: 0; border-radius: 0; }
+.list-table tbody tr.values-row:has(input:checked) { background: var(--selected); }
+.list-table tbody tr.values-row:has(input:checked):hover { background: var(--selected-hover); }

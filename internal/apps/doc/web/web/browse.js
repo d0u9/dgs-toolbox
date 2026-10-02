@@ -364,7 +364,7 @@ function row(item, cells) {
   const e = expiryOf(item);
   const tr = el("tr", { className: "table-row state-" + e.state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     ...cells);
-  if (selected && selected.id === item.id) tr.classList.add("card-selected");
+  if (selected && selected.id === item.id) tr.classList.add("selected", "focused");
   return tr;
 }
 

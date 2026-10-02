@@ -1,9 +1,20 @@
-/* The shared list table: see listtable.js. */
-.list-table { table-layout: fixed; border-collapse: collapse; font-size: var(--font-size-xs); }
-.list-table th, .list-table td { padding: 3px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.list-table th { position: sticky; top: 0; background: var(--paper); color: var(--graphite); font-weight: 500; border-bottom: 1px solid var(--hairline); cursor: pointer; user-select: none; }
+/* The shared list table: see listtable.js. One look on every page, in the
+   density layer's sizes (docs/web.md): cells at --font-size-sm, headers at
+   --font-size-xs, rows padded --row-pad-y by --row-pad-x. A page adds only
+   what is its own — a thumbnail's size, a sticky offset, a number's
+   alignment — never a font size, padding or row colour. Row states follow
+   "Rows: hover, selection, focus": .selected is picked, .focused is the one
+   being looked at, and a selected row states its own hover. */
+.list-table { table-layout: fixed; border-collapse: collapse; font-size: var(--font-size-sm); line-height: var(--line-height-ui); color: var(--ink); }
+.list-table th, .list-table td { padding: var(--row-pad-y) var(--row-pad-x); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.list-table th {
+  position: sticky; top: 0; z-index: 1; background: var(--paper);
+  font-size: var(--font-size-xs); font-weight: 600; color: var(--graphite);
+  border-bottom: 1px solid var(--hairline-strong); cursor: pointer; user-select: none;
+}
 .list-table th:not(:last-child) { border-right: 1px solid var(--hairline); }
-.list-table th.sorted { color: var(--ink); }
+.list-table th.sortable:hover { color: var(--ink); }
+.list-table th.sorted { color: var(--primary); }
 .list-table th:not(.sortable) { cursor: default; }
 .list-table th.drop { box-shadow: inset 2px 0 0 var(--primary); }
 .list-table .lt-arrow { font-size: 9px; }
@@ -11,7 +22,12 @@
 .list-table .lt-grip:hover { background: linear-gradient(var(--primary), var(--primary)) center / 1px 100% no-repeat; }
 .list-table th.lt-plus { text-align: center; color: var(--primary); }
 .list-table .lt-lead { padding-right: 0; cursor: default; }
+.list-table td { border-bottom: 1px solid var(--hairline); }
+.list-table td.numeric, .list-table td.lt-num { text-align: right; font-variant-numeric: tabular-nums; }
 .list-table.striped tbody tr:nth-child(even) { background: var(--hover); }
-.list-table tbody tr.ticked { background: var(--selected); }
+.list-table tbody tr:hover { background: var(--hover); }
+.list-table tbody tr.selected { background: var(--selected); }
+.list-table tbody tr.selected:hover { background: var(--selected-hover); }
+.list-table tbody tr.focused { box-shadow: inset 3px 0 0 var(--primary); }
 .list-table tbody tr.retired td { color: var(--graphite); }
-.lt-empty { margin: 4px 8px; }
+.lt-empty { margin: 0; padding: var(--row-pad-y) var(--row-pad-x); color: var(--graphite); font-size: var(--font-size-sm); }

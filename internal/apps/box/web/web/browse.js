@@ -617,7 +617,7 @@ function row(scan, cells) {
   item.className = `list-row state-${scan.state}`;
   const splitIndex = scan.split?.index ?? null;
   const picked = state.selected === scan.digest && (!scan.split || state.selectedSplit === splitIndex);
-  if (picked) item.classList.add('card-selected');
+  if (picked) item.classList.add('selected', 'focused');
   if (state.marked.has(scan.digest)) item.classList.add('card-marked');
   item.append(...cells);
   wireEntry(item, scan, splitIndex);
