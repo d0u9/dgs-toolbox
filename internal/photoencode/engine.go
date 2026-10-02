@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"dgs-toolbox/internal/verifiedcopy"
 )
 
 // Options are per-run values. Destination is a directory, never an input file.
@@ -58,7 +60,18 @@ type Outcome struct {
 	Published               bool
 }
 
-// Plan performs no writes. Unsupported TIFFs carry a copyable shell command.
+// nativeKind names inputs decoded by macOS ImageIO rather than Go, or "".
+func nativeKind(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".heic", ".heif":
+		return "HEIC"
+	case ".tif", ".tiff":
+		return "TIFF"
+	}
+	return ""
+}
+
+// Plan performs no writes. Inputs this build cannot decode carry the reason.
 func Plan(source, destination string, o Options) ([]Job, error) {
 	if err := o.Validate(); err != nil {
 		return nil, err
@@ -97,13 +110,13 @@ func Plan(source, destination string, o Options) ([]Job, error) {
 		name := strings.TrimSuffix(relative, filepath.Ext(relative))
 		out := filepath.Join(dst, fmt.Sprintf("%s-q%d-s%d.jpg", name, o.Quality, o.Size))
 		j := Job{Source: path, Destination: out}
-		if ext == ".tif" || ext == ".tiff" {
-			j.Problem = "TIFF is not supported. Run manually: " + TIFFCommand(path, out, o)
+		if kind := nativeKind(path); kind != "" {
+			j.Problem = nativeProblem(kind)
 		}
 		if _, err := os.Lstat(out); err == nil {
-			j.Problem = "output already exists"
+			j.Problem = joinProblems(j.Problem, "output already exists")
 		} else if !errors.Is(err, os.ErrNotExist) {
-			j.Problem = err.Error()
+			j.Problem = joinProblems(j.Problem, err.Error())
 		}
 		jobs = append(jobs, j)
 	}
@@ -113,7 +126,7 @@ func Plan(source, destination string, o Options) ([]Job, error) {
 		}
 		add(src, filepath.Base(src))
 		if len(jobs) == 0 {
-			return nil, errors.New("supported inputs: JPEG, PNG, HEIC; TIFF gets a manual sips command")
+			return nil, errors.New("supported inputs: JPEG, PNG, HEIC/HEIF, TIFF")
 		}
 		return jobs, nil
 	}
@@ -136,7 +149,15 @@ func Plan(source, destination string, o Options) ([]Job, error) {
 	}
 	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, e error) error {
 		if e != nil {
-			return e
+			if path == src {
+				return e
+			}
+			// One unreadable entry is reported on its own; the scan goes on.
+			jobs = append(jobs, Job{Source: path, Problem: "cannot read: " + e.Error()})
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if d.IsDir() {
 			if path != src && (strings.HasPrefix(d.Name(), ".") || !o.Recursive || path == resolvedDst) {
@@ -144,7 +165,8 @@ func Plan(source, destination string, o Options) ([]Job, error) {
 			}
 			return nil
 		}
-		if d.Type().IsRegular() {
+		// Hidden files include AppleDouble "._" companions on non-Apple volumes.
+		if d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
 			rel, e := filepath.Rel(src, path)
 			if e != nil {
 				return e
@@ -162,6 +184,9 @@ func Plan(source, destination string, o Options) ([]Job, error) {
 	// Two inputs with the same stem must never compete for one output.
 	seen := map[string]int{}
 	for i, j := range jobs {
+		if j.Destination == "" {
+			continue
+		}
 		key := strings.ToLower(j.Destination)
 		if previous, ok := seen[key]; ok {
 			jobs[i].Problem = "multiple inputs share this output name"
@@ -172,9 +197,11 @@ func Plan(source, destination string, o Options) ([]Job, error) {
 	}
 	return jobs, nil
 }
-func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
-func TIFFCommand(source, destination string, o Options) string {
-	return fmt.Sprintf("sips %s -Z %d -s dpiWidth %d -s dpiHeight %d -s format jpeg -s formatOptions %d --out %s", shellQuote(source), o.Size, o.PPI, o.PPI, o.Quality, shellQuote(destination))
+func joinProblems(first, second string) string {
+	if first == "" {
+		return second
+	}
+	return first + "; " + second
 }
 
 // Encode never changes Source. Publication is atomic and refuses replacement.
@@ -219,10 +246,9 @@ func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 	result.BytesBefore = int64(len(data))
 	var src image.Image
 	var m metadata
-	switch strings.ToLower(filepath.Ext(j.Source)) {
-	case ".heic", ".heif":
-		src, m, err = decodeHEIC(data, o)
-	default:
+	if kind := nativeKind(j.Source); kind != "" {
+		src, m, err = decodeNative(kind, data, o)
+	} else {
 		var cfg image.Config
 		var format string
 		cfg, format, err = image.DecodeConfig(bytes.NewReader(data))
@@ -244,7 +270,7 @@ func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 			err = errors.New("only JPEG and PNG are supported by the Go decoder")
 		}
 		if err == nil {
-			err = checkICC(m.icc)
+			err = checkICC(m.icc, isGray(cfg.ColorModel))
 		}
 		if err == nil {
 			src, _, err = image.Decode(bytes.NewReader(data))
@@ -257,7 +283,12 @@ func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 		return fail(err)
 	}
 	background, _ := BackgroundColor(o.Background)
-	dst := Transform(src, m.orientation, o.Size, background)
+	// Every export is sRGB, as the web and most viewers assume.
+	dst, profile, err := toSRGB(Transform(src, m.orientation, o.Size, background), m.icc)
+	if err != nil {
+		return fail(err)
+	}
+	m.icc = profile
 	result.Width, result.Height = dst.Bounds().Dx(), dst.Bounds().Dy()
 	var encoded bytes.Buffer
 	if err = jpeg.Encode(&encoded, dst, &jpeg.Options{Quality: o.Quality}); err != nil {
@@ -279,18 +310,11 @@ func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 	}
 	temporary := f.Name()
 	defer os.Remove(temporary)
-	if _, err = f.Write(output); err != nil {
-		f.Close()
+	written, err := writeTemporary(f, output)
+	if err != nil {
 		return fail(err)
 	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return fail(err)
-	}
-	if err = f.Close(); err != nil {
-		return fail(err)
-	}
-	readback, err := os.ReadFile(temporary)
+	readback, err := readTemporary(temporary, written)
 	if err != nil {
 		return fail(err)
 	}
@@ -307,12 +331,53 @@ func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 	if err = ctx.Err(); err != nil {
 		return fail(err)
 	}
-	// Link atomically creates the final name only if absent. On filesystems without
-	// hard links this fails clearly; never fall back to an overwriting rename.
-	if err = os.Link(temporary, j.Destination); err != nil {
-		return fail(fmt.Errorf("atomic publication: %w", err))
+	// The name about to be published must still be the file that was verified.
+	if current, err := os.Lstat(temporary); err != nil || !os.SameFile(current, written) {
+		return fail(errors.New("temporary file changed before publication"))
+	}
+	if err = verifiedcopy.Publish(temporary, j.Destination); err != nil {
+		return fail(fmt.Errorf("publication: %w", err))
 	}
 	result.Published = true
 	result.BytesAfter = int64(len(readback))
 	return result
+}
+
+func isGray(model color.Model) bool { return model == color.GrayModel || model == color.Gray16Model }
+
+// writeTemporary writes, sets the published permission and syncs through one
+// handle, returning that file's identity for the readback to match.
+func writeTemporary(f *os.File, output []byte) (os.FileInfo, error) {
+	_, err := f.Write(output)
+	if err == nil {
+		err = f.Chmod(verifiedcopy.DefaultPhotoMode)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	var written os.FileInfo
+	if err == nil {
+		written, err = f.Stat()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return written, err
+}
+
+// readTemporary reads back through a fresh handle that must be the same file.
+func readTemporary(path string, written os.FileInfo) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(info, written) {
+		return nil, errors.New("readback opened a different file")
+	}
+	return io.ReadAll(f)
 }

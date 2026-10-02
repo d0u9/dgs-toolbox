@@ -2,8 +2,10 @@ package photoencode
 
 import (
 	"bytes"
+	"compress/zlib"
 	"context"
 	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -99,7 +101,7 @@ func TestPlanIsReadOnlyAndDetectsCollisions(t *testing.T) {
 	if len(jobs) != 3 {
 		t.Fatal(jobs)
 	}
-	for _, j := range jobs {
+	for _, j := range jobs[:2] {
 		if j.Problem == "" {
 			t.Fatal(j)
 		}
@@ -107,7 +109,7 @@ func TestPlanIsReadOnlyAndDetectsCollisions(t *testing.T) {
 	if _, e = os.Stat(dst); !os.IsNotExist(e) {
 		t.Fatal("plan wrote destination")
 	}
-	if !strings.Contains(jobs[2].Problem, "sips '") {
+	if jobs[2].Problem != nativeProblem("TIFF") {
 		t.Fatal(jobs)
 	}
 }
@@ -181,7 +183,7 @@ func TestMalformedMetadataRejected(t *testing.T) {
 		}
 	}
 	for _, icc := range [][]byte{[]byte("bad"), make([]byte, 128)} {
-		if checkICC(icc) == nil {
+		if checkICC(icc, false) == nil {
 			t.Fatal("accepted bad ICC")
 		}
 	}
@@ -189,13 +191,6 @@ func TestMalformedMetadataRejected(t *testing.T) {
 		t.Fatal("accepted truncated JPEG")
 	}
 }
-func TestTIFFCommandQuotesPaths(t *testing.T) {
-	s := TIFFCommand("/tmp/a'b $(secret).tiff", "/tmp/out.jpg", DefaultOptions())
-	if !strings.Contains(s, "'\"'\"'") || strings.Contains(s, " -m ") {
-		t.Fatal(s)
-	}
-}
-
 func TestEXIFExportCorrectsDirectionDimensionsDensityAndRemovesGPS(t *testing.T) {
 	ex := make([]byte, 150)
 	copy(ex, "II")
@@ -285,5 +280,147 @@ func TestConfigurableBackground(t *testing.T) {
 	o.Background = "bad"
 	if o.Validate() == nil {
 		t.Fatal("invalid background accepted")
+	}
+}
+
+func profile(space string) []byte {
+	icc := make([]byte, 128)
+	binary.BigEndian.PutUint32(icc, 128)
+	copy(icc[16:], space)
+	copy(icc[36:], "acsp")
+	return icc
+}
+
+func pngChunk(kind string, body []byte) []byte {
+	out := binary.BigEndian.AppendUint32(nil, uint32(len(body)))
+	out = append(out, kind...)
+	out = append(out, body...)
+	return binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(out[4:]))
+}
+
+func TestPNGProfileOverridesGammaAndChromaticities(t *testing.T) {
+	gamma := pngChunk("gAMA", binary.BigEndian.AppendUint32(nil, 100000))
+	head := []byte("\x89PNG\r\n\x1a\n")
+	end := pngChunk("IEND", nil)
+	if _, e := pngMetadata(append(append(append([]byte{}, head...), gamma...), end...)); e == nil {
+		t.Fatal("lone non-sRGB gamma accepted")
+	}
+	var z bytes.Buffer
+	w := zlib.NewWriter(&z)
+	w.Write(profile("RGB "))
+	w.Close()
+	iccp := pngChunk("iCCP", append([]byte("p\x00\x00"), z.Bytes()...))
+	for _, colour := range [][]byte{iccp, pngChunk("sRGB", []byte{0})} {
+		data := append(append(append(append([]byte{}, head...), gamma...), colour...), end...)
+		if _, e := pngMetadata(data); e != nil {
+			t.Fatal(e)
+		}
+	}
+}
+
+// grayJPEG writes a grayscale JPEG source tagged with icc.
+func grayJPEG(t *testing.T, path string, icc []byte) {
+	t.Helper()
+	var buf bytes.Buffer
+	src := image.NewGray(image.Rect(0, 0, 40, 20))
+	for i := range src.Pix {
+		src.Pix[i] = uint8(i)
+	}
+	jpeg.Encode(&buf, src, nil)
+	data, e := addMetadata(buf.Bytes(), metadata{icc: icc, orientation: 1}, false, 240, 40, 20)
+	if e != nil {
+		t.Fatal(e)
+	}
+	os.WriteFile(path, data, 0600)
+}
+
+func TestGrayProfileOnlyDescribesGrayPixels(t *testing.T) {
+	if checkICC(profile("GRAY"), false) == nil || checkICC(profile("GRAY"), true) != nil {
+		t.Fatal("GRAY profile check")
+	}
+}
+
+func TestPublishedFilesAreReadable(t *testing.T) {
+	root := t.TempDir()
+	in := filepath.Join(root, "in.png")
+	writePNG(t, in, image.NewNRGBA(image.Rect(0, 0, 4, 4)))
+	out := filepath.Join(root, "out.jpg")
+	if r := Encode(context.Background(), Job{Source: in, Destination: out}, DefaultOptions()); !r.Published {
+		t.Fatal(r)
+	}
+	if info, e := os.Stat(out); e != nil || info.Mode().Perm() != 0o644 {
+		t.Fatal(info.Mode(), e)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(root, ".dgs-encode-*")); len(leftovers) != 0 {
+		t.Fatal(leftovers)
+	}
+}
+
+func TestPlanSkipsHiddenFilesAndReportsUnreadableFolders(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every folder")
+	}
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "._IMG_0001.jpg"), nil, 0600)
+	os.WriteFile(filepath.Join(root, "IMG_0001.jpg"), nil, 0600)
+	locked := filepath.Join(root, "locked")
+	os.Mkdir(locked, 0700)
+	os.WriteFile(filepath.Join(locked, "a.jpg"), nil, 0600)
+	os.Chmod(locked, 0)
+	defer os.Chmod(locked, 0700)
+	o := DefaultOptions()
+	o.Recursive = true
+	jobs, e := Plan(root, filepath.Join(root, "out"), o)
+	if e != nil || len(jobs) != 2 {
+		t.Fatal(jobs, e)
+	}
+	if filepath.Base(jobs[0].Source) != "IMG_0001.jpg" || jobs[0].Problem != "" {
+		t.Fatal(jobs[0])
+	}
+	if filepath.Base(jobs[1].Source) != "locked" || !strings.HasPrefix(jobs[1].Problem, "cannot read") {
+		t.Fatal(jobs[1])
+	}
+}
+
+func TestOversizedEXIFKeepsDateAndGPS(t *testing.T) {
+	o := binary.BigEndian
+	ex := make([]byte, 70100)
+	copy(ex, "MM")
+	o.PutUint16(ex[2:], 42)
+	o.PutUint32(ex[4:], 8)
+	o.PutUint16(ex[8:], 3)
+	entry := func(at int, tag, typ uint16, count, value uint32) {
+		o.PutUint16(ex[at:], tag)
+		o.PutUint16(ex[at+2:], typ)
+		o.PutUint32(ex[at+4:], count)
+		o.PutUint32(ex[at+8:], value)
+	}
+	entry(10, 0x8769, 4, 1, 50)
+	entry(22, 0x8825, 4, 1, 80)
+	entry(34, 0x927c, 7, 70000, 100)
+	o.PutUint16(ex[50:], 1)
+	entry(52, 0x9003, 2, 20, 200)
+	o.PutUint16(ex[80:], 2)
+	entry(82, 1, 2, 2, 'N'<<24)
+	entry(94, 2, 5, 3, 300)
+	copy(ex[200:], "2026:10:01 12:34:56\x00")
+	for i := 0; i < 6; i++ {
+		o.PutUint32(ex[300+4*i:], uint32(i+1))
+	}
+	m := metadata{exif: ex}
+	if e := m.readExif(); e != nil {
+		t.Fatal(e)
+	}
+	kept, e := m.outputExif(true, 4, 2, 240)
+	if e != nil || len(kept) > maxSegment {
+		t.Fatal(len(kept), e)
+	}
+	read := metadata{exif: kept[6:]}
+	if e = read.readExif(); e != nil || read.date != m.date {
+		t.Fatal(e, read.date)
+	}
+	gps := ifdEntries(kept[6:], o, 8, 0x8825)
+	if len(gps) != 2 || string(gps[0].value[:1]) != "N" || len(gps[1].value) != 24 || o.Uint32(gps[1].value[20:]) != 6 {
+		t.Fatalf("GPS lost: %+v", gps)
 	}
 }

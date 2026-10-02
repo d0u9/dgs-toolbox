@@ -230,7 +230,7 @@ func (m encodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if mouse.Button == tea.MouseButtonLeft && mouse.Action == tea.MouseActionPress {
 			w := min(tui.DefaultContentWidth, m.width-4)
 			x := mouse.X - (m.width-w)/2
-			rows := lipgloss.Height(fieldset.View("JPEG ENCODE", m.parameterContent(w-4)+"\n\nJPEG / PNG / HEIC → JPEG · opaque background\nNo enlargement or colour conversion", w))
+			rows := lipgloss.Height(fieldset.View("JPEG ENCODE", m.parameterContent(w-4)+"\n\nJPEG / PNG / HEIC / TIFF → JPEG · opaque background\nsRGB · no enlargement", w))
 			if m.stage == "plan" || m.stage == "results" {
 				rows = lipgloss.Height(fieldset.View("PLAN", m.report.View(), w))
 			}
@@ -337,7 +337,7 @@ func (m encodeModel) View() string {
 	var body string
 	switch m.stage {
 	case "parameters", "planning":
-		body = fieldset.View("JPEG ENCODE", m.parameterContent(w-4)+"\n\nJPEG / PNG / HEIC → JPEG · opaque background\nNo enlargement or colour conversion", w)
+		body = fieldset.View("JPEG ENCODE", m.parameterContent(w-4)+"\n\nJPEG / PNG / HEIC / TIFF → JPEG · opaque background\nsRGB · no enlargement", w)
 		body += "\n" + pageactions.View(m.pageActions(), w)
 	case "plan":
 		body = fieldset.View("PLAN · originals kept", m.report.View(), w) + "\n" + pageactions.View(m.pageActions(), w)
