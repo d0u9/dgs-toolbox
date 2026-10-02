@@ -476,6 +476,12 @@ list follows a Sort control of its own, or keeps groups together, sorts the
 rows itself and the headers only set that order; a page with a set list of
 columns turns the chooser off. Every sortable list uses it: doc's Browse,
 Values and Snapshots' Add PDFs, box's Browse, and the file dialog.
+Every list table looks the same: cells at `--font-size-sm`, headers at
+`--font-size-xs` in graphite, the sorted one in primary, rows padded
+`--row-pad-y` by `--row-pad-x` over a hairline, and the row states of *Rows:
+hover, selection, focus* — `.selected` and `.focused` on the `<tr>`. A page's
+stylesheet adds only what is its own, such as a thumbnail's size or a
+sticky header's offset, never a font size, a padding or a row colour.
 
 The dialog is what a reader already knows from Finder and Explorer:
 

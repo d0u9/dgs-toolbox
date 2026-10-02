@@ -299,7 +299,7 @@ function dialog({
       item.className = `file-row file-${kind}`;
       item.dataset.path = entry.path;
       item.title = entry.path;
-      if (chosen.has(entry.path)) item.classList.add("chosen");
+      if (chosen.has(entry.path)) item.classList.add("selected");
       item.append(...cells);
       item.addEventListener("click", (event) => select(index, event));
       item.addEventListener("dblclick", () => {
@@ -407,7 +407,7 @@ function dialog({
 
     const draw = () => {
       for (const item of rowItems()) {
-        if (item.dataset.path) item.classList.toggle("chosen", chosen.has(item.dataset.path));
+        if (item.dataset.path) item.classList.toggle("selected", chosen.has(item.dataset.path));
       }
       showPreview();
       const ready = saving ? Boolean(input.value.trim()) : pickedPaths().length > 0;
