@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-// publish gives the verified temporary file its final name without ever
+// Publish gives the verified temporary file its final name without ever
 // replacing a file already there.
 //
 // A plain rename replaces silently, and a check before it leaves a window in
@@ -16,7 +16,7 @@ import (
 // otherwise a hard link, which fails when the name exists. Only a filesystem
 // that supports neither — some network mounts — falls back to check-then-rename,
 // which is as much as the user-space API can promise there.
-func publish(temporary, final string) error {
+func Publish(temporary, final string) error {
 	err := renameExclusive(temporary, final)
 	if err == nil || errors.Is(err, os.ErrExist) || !unsupported(err) {
 		return err
