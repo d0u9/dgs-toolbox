@@ -396,14 +396,11 @@ function draw() {
   drawTagStrip();
   const list = el('view-layout').value === 'list';
   const grid = el('grid');
-  const body = el('list-body');
   grid.hidden = list;
   el('list').hidden = !list;
   grid.innerHTML = '';
-  body.innerHTML = '';
   if (list) {
-    drawListHead();
-    for (const scan of shown) body.append(row(scan));
+    if (listTable) listTable.draw(shown);
   } else {
     for (const scan of shown) grid.append(card(scan));
   }
@@ -553,99 +550,6 @@ function wireEntry(item, scan, splitIndex) {
   });
 }
 
-// wireListColumns puts a drag line at the right edge of every list heading.
-// Dragging sets that column's width; a double-click on the line fits the
-// column to its widest cell. Once any width is set the table lays out by the
-// headings alone, so every column holds the width given to it. Widths are a
-// way of looking and the browser remembers them.
-function wireListColumns() {
-  const table = el('list');
-  const heads = [...table.querySelectorAll('thead th')];
-  const keyOf = (th, index) => th.dataset.sort || th.dataset.column || String(index);
-  let widths = {};
-  try {
-    widths = JSON.parse(localStorage.getItem('box.browse.columns') || '{}') || {};
-  } catch {}
-  const remember = () => {
-    try {
-      localStorage.setItem('box.browse.columns', JSON.stringify(widths));
-    } catch {}
-  };
-  // Fixing the layout freezes every column at the width it has now, so moving
-  // one line does not reflow the others.
-  const fix = () => {
-    if (table.classList.contains('list-fixed')) return;
-    heads.forEach((th, index) => {
-      const key = keyOf(th, index);
-      if (!widths[key]) widths[key] = th.offsetWidth;
-      th.style.width = `${widths[key]}px`;
-    });
-    table.classList.add('list-fixed');
-  };
-  const apply = (th, index, width) => {
-    widths[keyOf(th, index)] = Math.max(32, Math.round(width));
-    th.style.width = `${widths[keyOf(th, index)]}px`;
-  };
-  if (Object.keys(widths).length) {
-    heads.forEach((th, index) => {
-      const width = widths[keyOf(th, index)];
-      if (width) th.style.width = `${width}px`;
-    });
-    table.classList.add('list-fixed');
-  }
-  heads.forEach((th, index) => {
-    const grip = document.createElement('span');
-    grip.className = 'list-grip';
-    grip.title = 'Drag to change the width; double-click to fit';
-    th.append(grip);
-    // Neither dragging nor fitting is a click on the heading, which sorts.
-    grip.addEventListener('click', (event) => event.stopPropagation());
-    grip.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      fix();
-      const startX = event.clientX;
-      const startWidth = th.offsetWidth;
-      grip.setPointerCapture(event.pointerId);
-      table.classList.add('list-resizing');
-      const move = (moved) => apply(th, index, startWidth + moved.clientX - startX);
-      const end = () => {
-        grip.removeEventListener('pointermove', move);
-        table.classList.remove('list-resizing');
-        remember();
-      };
-      grip.addEventListener('pointermove', move);
-      grip.addEventListener('pointerup', end, { once: true });
-      grip.addEventListener('pointercancel', end, { once: true });
-    });
-    grip.addEventListener('dblclick', (event) => {
-      event.stopPropagation();
-      fix();
-      // A cell's scrollWidth is its content at full length, since cells do not
-      // wrap; the heading counts too, so its name and arrow stay whole.
-      let widest = th.scrollWidth;
-      for (const tr of table.tBodies[0].rows) {
-        const cell = tr.cells[index];
-        if (cell) widest = Math.max(widest, cell.scrollWidth);
-      }
-      apply(th, index, widest + 2);
-      remember();
-    });
-  });
-}
-
-// drawListHead says on the column heading which order the list is in.
-function drawListHead() {
-  const key = el('view-sort').value;
-  const asc = el('view-direction').value === 'asc';
-  for (const th of document.querySelectorAll('#list th[data-sort]')) {
-    const on = th.dataset.sort === key;
-    th.classList.toggle('list-sorted', on);
-    th.setAttribute('aria-sort', on ? (asc ? 'ascending' : 'descending') : 'none');
-    th.dataset.arrow = on ? (asc ? '▲' : '▼') : '';
-  }
-}
-
 function tagButtons(scan) {
   const chosen = new Set(filterTags.get());
   return tagsOf(scan)
@@ -669,41 +573,84 @@ function instantText(stamp) {
   return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${pad(when.getHours())}:${pad(when.getMinutes())}`;
 }
 
-// row is one scan, or one split, as a line of the list: the same facts a card
-// shows, each in its own column, plus producer, pages and the two stamps.
-function row(scan) {
+// cellOf is one cell of the list from trusted, escaped HTML.
+function cellOf(html, className = '', title = '') {
+  const td = document.createElement('td');
+  if (className) td.className = className;
+  if (title) td.title = title;
+  td.innerHTML = html;
+  return td;
+}
+
+// listColumns are the list's columns: the same facts a card shows, each in
+// its own column, plus producer, pages and the two stamps. A column's id is
+// the Sort it orders by; dates start newest first.
+const listColumns = [
+  { id: 'thumb', text: '', width: 48, sortable: false, resizable: false, cell: (scan) => {
+    const td = cellOf(`<div class="card-thumb-wrap"><img class="card-thumb" loading="lazy" src="${api.image(scan.digest, 'thumb', scan.split ? firstPage(scan.split.pages) : 1)}" alt=""></div>`);
+    td.querySelector('.card-thumb').addEventListener('error', () => td.firstChild.classList.add('no-picture'), { once: true });
+    return td;
+  } },
+  { id: 'title', text: 'Description', width: 260, cell: (scan) => { const title = escapeText(cardTitle(scan)); return cellOf(title, 'list-title', cardTitle(scan)); } },
+  { id: 'type', text: 'Type', cell: (scan) => {
+    const flags = [];
+    if (!scan.reviewed) flags.push('<span class="badge badge-guess">guess</span>');
+    if (!scan.typeKnown) flags.push('<span class="badge badge-warn">unknown type</span>');
+    return cellOf(`${escapeText(scan.type)} ${flags.join('')}`);
+  } },
+  { id: 'event', text: 'Date', width: 100, cell: (scan) => {
+    const fellBack = !scan.eventDate;
+    return cellOf(sortDay(scan) || 'no date', `list-date${fellBack ? ' card-fallback' : ''}`, fellBack ? 'No event date: the scan date' : '');
+  } },
+  { id: 'total', text: 'Amount', width: 110, cell: (scan) => cellOf(escapeText(scan.total || ''), 'list-num') },
+  { id: 'producer', text: 'Producer', cell: (scan) => cellOf(escapeText(scan.producer || '')) },
+  { id: 'pages', text: 'Pages', width: 70, cell: (scan) => cellOf(escapeText(scan.split ? `p ${scan.split.pages}` : String(scan.pages || '')), 'list-num') },
+  { id: 'state', text: 'State', width: 90, cell: (scan) => cellOf(escapeText(scan.state || '')) },
+  { id: 'tags', text: 'Tags', sortable: false, cell: (scan) => cellOf(tagButtons(scan), 'list-tags') },
+  { id: 'added', text: 'Added', width: 140, cell: (scan) => cellOf(instantText(scan.ingestedAt), 'list-date') },
+  { id: 'edited', text: 'Edited', width: 140, cell: (scan) => cellOf(instantText(scan.editedAt), 'list-date') },
+].map((c) => (newestFirst.has(c.id) ? { ...c, down: true } : c));
+
+// row is one scan, or one split, as a line of the list.
+function row(scan, cells) {
   const item = document.createElement('tr');
   item.className = `list-row state-${scan.state}`;
   const splitIndex = scan.split?.index ?? null;
   const picked = state.selected === scan.digest && (!scan.split || state.selectedSplit === splitIndex);
   if (picked) item.classList.add('card-selected');
   if (state.marked.has(scan.digest)) item.classList.add('card-marked');
-  const fellBack = !scan.eventDate;
-  const flags = [];
-  if (!scan.reviewed) flags.push('<span class="badge badge-guess">guess</span>');
-  if (!scan.typeKnown) flags.push('<span class="badge badge-warn">unknown type</span>');
-  const title = escapeText(cardTitle(scan));
-  const pagesText = scan.split ? `p ${scan.split.pages}` : scan.pages || '';
-  item.innerHTML =
-    `<td class="list-thumb-col"><div class="card-thumb-wrap"><img class="card-thumb" loading="lazy" src="${api.image(scan.digest, 'thumb', scan.split ? firstPage(scan.split.pages) : 1)}" alt=""></div></td>` +
-    `<td class="list-title" title="${title}">${title}</td>` +
-    `<td>${escapeText(scan.type)} ${flags.join('')}</td>` +
-    `<td class="list-date${fellBack ? ' card-fallback' : ''}"${fellBack ? ' title="No event date: the scan date"' : ''}>${sortDay(scan) || 'no date'}</td>` +
-    `<td class="list-num">${escapeText(scan.total || '')}</td>` +
-    `<td>${escapeText(scan.producer || '')}</td>` +
-    `<td class="list-num">${escapeText(pagesText)}</td>` +
-    `<td>${escapeText(scan.state || '')}</td>` +
-    `<td class="list-tags">${tagButtons(scan)}</td>` +
-    `<td class="list-date">${instantText(scan.ingestedAt)}</td>` +
-    `<td class="list-date">${instantText(scan.editedAt)}</td>`;
-  item.querySelector('.card-thumb').addEventListener(
-    'error',
-    () => item.querySelector('.card-thumb-wrap').classList.add('no-picture'),
-    { once: true },
-  );
+  item.append(...cells);
   wireEntry(item, scan, splitIndex);
   return item;
 }
+
+// listTable is the shared list table drawing the list, once it has loaded.
+// Sort and its direction stay the page's, since the cards are in the same
+// order; a click on a heading sets them.
+let listTable = null;
+import('/ui/listtable.js').then(({ listTable: make }) => {
+  listTable = make(el('list'), {
+    key: 'box.browse.list',
+    className: 'list',
+    chooser: false,
+    columns: listColumns,
+    sorting: {
+      get: () => ({ id: el('view-sort').value, down: el('view-direction').value !== 'asc' }),
+      set: ({ id, down }) => {
+        el('view-sort').value = id;
+        el('view-direction').value = down ? 'desc' : 'asc';
+        try {
+          localStorage.setItem('box.browse.sort', id);
+          localStorage.setItem('box.browse.direction', el('view-direction').value);
+        } catch {}
+        draw();
+      },
+    },
+    row,
+    empty: '',
+  });
+  if (el('view-layout').value === 'list') draw();
+});
 
 const reader = readerOf();
 
@@ -1155,23 +1102,6 @@ function wireFilters() {
     control.addEventListener('change', () => {
       try {
         localStorage.setItem(`box.browse.${name}`, control.value);
-      } catch {}
-      draw();
-    });
-  }
-  wireListColumns();
-  // A column heading sorts by that column; a second click turns the order.
-  for (const th of document.querySelectorAll('#list th[data-sort]')) {
-    th.addEventListener('click', () => {
-      if (sort.value === th.dataset.sort) {
-        direction.value = direction.value === 'asc' ? 'desc' : 'asc';
-      } else {
-        sort.value = th.dataset.sort;
-        direction.value = newestFirst.has(sort.value) ? 'desc' : 'asc';
-      }
-      try {
-        localStorage.setItem('box.browse.sort', sort.value);
-        localStorage.setItem('box.browse.direction', direction.value);
       } catch {}
       draw();
     });

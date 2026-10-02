@@ -14,6 +14,8 @@
 <link rel="stylesheet" href="/ui/controls.css">
 <link rel="stylesheet" href="/ui/tags.css">
 <link rel="stylesheet" href="/ui/statusbar.css">
+<link rel="stylesheet" href="/ui/menu.css">
+<link rel="stylesheet" href="/ui/listtable.css">
 <link rel="stylesheet" href="app.css">
 </head>
 <body class="browse">
@@ -154,22 +156,7 @@
       </p>
     </div>
     <ul id="grid" class="grid"></ul>
-    <table id="list" class="list" hidden>
-      <thead><tr>
-        <th scope="col" class="list-thumb-col" aria-label="Picture"></th>
-        <th scope="col" data-sort="title">Description</th>
-        <th scope="col" data-sort="type">Type</th>
-        <th scope="col" data-sort="event">Date</th>
-        <th scope="col" data-sort="total" class="list-num">Amount</th>
-        <th scope="col" data-sort="producer">Producer</th>
-        <th scope="col" data-sort="pages" class="list-num">Pages</th>
-        <th scope="col" data-sort="state">State</th>
-        <th scope="col">Tags</th>
-        <th scope="col" data-sort="added">Added</th>
-        <th scope="col" data-sort="edited">Edited</th>
-      </tr></thead>
-      <tbody id="list-body"></tbody>
-    </table>
+    <div id="list" hidden></div>
     <p id="grid-empty" class="grid-empty" hidden>Nothing matches these filters.</p>
   </section>
 

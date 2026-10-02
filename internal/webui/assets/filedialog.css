@@ -1,3 +1,4 @@
+@import url("/ui/listtable.css");
 /* The shared file dialog: places down the side, a listing in columns, and a
    foot holding the type filter and the two buttons. It draws only from
    tokens.css and the controls of controls.css, so it looks the same on every
@@ -102,56 +103,26 @@
   background: var(--paper);
   overflow: hidden;
 }
-.file-header { display: flex; border-bottom: 1px solid var(--hairline); background: var(--cloud); }
-.file-heading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xxs);
-  padding: var(--row-pad-y) 6px;
-  border: none;
-  border-right: 1px solid var(--hairline);
-  background: none;
-  color: var(--graphite);
-  font-size: var(--font-size-xs);
-  text-align: left;
-  cursor: pointer;
-}
-.file-heading:last-child { border-right: none; }
-.file-heading:hover { color: var(--primary); }
-.file-marker { color: var(--primary); font-size: 10px; }
-
 .file-list {
   flex: 1;
   min-width: 0;
   min-height: 0; /* without this the rows push the list past its size */
   margin: 0;
-  padding: var(--space-xxs);
-  list-style: none;
-  overflow-y: auto;
+  overflow: auto;
 }
 .file-list:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-.file-row {
-  display: flex;
-  gap: 6px;
-  padding: var(--row-pad-y) 6px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  cursor: default;
-  user-select: none;
-}
+.file-table { font-size: var(--font-size-sm); }
+.file-table th { background: var(--cloud); font-size: var(--font-size-xs); padding: var(--row-pad-y) 6px; }
+.file-table th.sortable:hover, .file-table th.sorted { color: var(--primary); }
+.file-table td { padding: var(--row-pad-y) 6px; }
+.file-row { cursor: default; user-select: none; }
 .file-row:hover { background: var(--hover); }
 .file-row.chosen { background: var(--selected); }
 .file-folder .file-cell-name::before { content: "▸ "; color: var(--primary); }
 .file-file .file-cell-name { color: var(--charcoal); }
-
-.file-cell-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-cell-modified { flex: none; width: 118px; color: var(--graphite); }
-.file-cell-size { flex: none; width: 64px; color: var(--graphite); text-align: right; }
-.file-heading.file-cell-name { flex: 1; min-width: 0; }
-.file-heading.file-cell-modified { flex: none; width: 130px; }
-.file-heading.file-cell-size { flex: none; width: 76px; }
-
-.file-empty { padding: var(--row-pad-y) 6px; color: var(--graphite); font-size: var(--font-size-sm); }
+.file-cell-modified, .file-cell-size { color: var(--graphite); }
+.file-table td.file-cell-size { text-align: right; }
+.file-list .lt-empty { padding: var(--row-pad-y) 6px; color: var(--graphite); font-size: var(--font-size-sm); }
 .file-problem { flex: none; margin: 0 0 var(--space-xs); color: var(--error); }
 
 /* The foot: the name field when saving, the type filter, the hidden-file

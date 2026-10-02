@@ -7,15 +7,12 @@
 // It talks to the endpoints internal/webfile mounts, under /ui/files/. A page
 // that mounts them gets the dialog with no code of its own.
 
+import { listTable } from "/ui/listtable.js";
+
 const ENDPOINT = "/ui/files/";
 
 // The columns, and how the list is sorted. The choice is kept between
 // dialogs, as a file manager keeps it.
-const COLUMNS = [
-  { key: "name", label: "Name" },
-  { key: "modified", label: "Date Modified" },
-  { key: "size", label: "Size" },
-];
 let sortBy = { key: "name", ascending: true };
 
 // Whether entries a file manager keeps out of sight are shown. Also kept
@@ -195,31 +192,37 @@ function dialog({
     sidebar.className = "file-places";
     const pane = document.createElement("div");
     pane.className = "file-listing";
-    const header = document.createElement("div");
-    header.className = "file-header";
-    const markers = {};
-    for (const column of COLUMNS) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `file-heading file-cell-${column.key}`;
-      const label = document.createElement("span");
-      label.textContent = column.label;
-      const marker = document.createElement("span");
-      marker.className = "file-marker";
-      button.append(label, marker);
-      button.addEventListener("click", () => {
-        sortBy = sortBy.key === column.key
-          ? { key: column.key, ascending: !sortBy.ascending }
-          : { key: column.key, ascending: column.key === "name" };
-        render();
-      });
-      markers[column.key] = marker;
-      header.append(button);
-    }
-    const list = document.createElement("ul");
+    // The listing is the shared list table; folders stay before files
+    // however it is sorted, so the dialog sorts and the table draws.
+    const list = document.createElement("div");
     list.className = "file-list";
     list.tabIndex = 0;
-    pane.append(header, list);
+    pane.append(list);
+    const cellOf = (className, text) => {
+      const td = document.createElement("td");
+      td.className = className;
+      td.textContent = text;
+      return td;
+    };
+    const table = listTable(list, {
+      key: "dgs-file-dialog-list",
+      className: "file-table",
+      chooser: false,
+      columns: [
+        { id: "name", text: "Name", width: 260, cell: (entry) => cellOf("file-cell-name", entry.name) },
+        { id: "modified", text: "Date Modified", width: 130, down: true, cell: (entry) => cellOf("file-cell-modified numeric", when(entry.modified)) },
+        { id: "size", text: "Size", width: 76, down: true,
+          cell: (entry) => cellOf("file-cell-size numeric", entry.kind === "folder" ? "" : fileSize(entry.size || 0)) },
+      ],
+      sorting: {
+        get: () => ({ id: sortBy.key, down: !sortBy.ascending }),
+        set: ({ id, down }) => { sortBy = { key: id, ascending: !down }; render(); },
+      },
+      row: (entry, cells) => row(entry, cells),
+      empty: "Empty",
+    });
+    // rowItems are the rows drawn, in the order of rows.
+    const rowItems = () => (table.table ? [...table.table.tBodies[0].rows] : []);
     // The preview: the one picked file as it is — a PDF in the browser's
     // own viewer, an image, the start of a text file — or why not.
     const preview = document.createElement("div");
@@ -289,22 +292,15 @@ function dialog({
 
     // A row per folder and per file: name, when it was last written, and a
     // file's size.
-    const row = (entry, kind, index) => {
-      const item = document.createElement("li");
+    const row = (entry, cells) => {
+      const kind = entry.kind;
+      const index = rows.indexOf(entry);
+      const item = document.createElement("tr");
       item.className = `file-row file-${kind}`;
       item.dataset.path = entry.path;
       item.title = entry.path;
       if (chosen.has(entry.path)) item.classList.add("chosen");
-      const label = document.createElement("span");
-      label.className = "file-cell-name";
-      label.textContent = entry.name;
-      const modified = document.createElement("span");
-      modified.className = "file-cell-modified numeric";
-      modified.textContent = when(entry.modified);
-      const size = document.createElement("span");
-      size.className = "file-cell-size numeric";
-      size.textContent = kind === "folder" ? "" : fileSize(entry.size || 0);
-      item.append(label, modified, size);
+      item.append(...cells);
       item.addEventListener("click", (event) => select(index, event));
       item.addEventListener("dblclick", () => {
         if (kind === "folder") open(entry.path);
@@ -400,27 +396,17 @@ function dialog({
     // render sorts the listing and draws it; draw only repaints the marks,
     // so moving the selection does not rebuild the rows.
     const render = () => {
-      for (const column of COLUMNS) {
-        markers[column.key].textContent = sortBy.key === column.key ? (sortBy.ascending ? "^" : "v") : "";
-      }
       const sorted = (list) => [...list].sort(compare(sortBy));
       rows = [
         ...sorted(entries.dirs).map((entry) => ({ ...entry, kind: "folder" })),
         ...sorted(entries.files).map((entry) => ({ ...entry, kind: "file" })),
       ];
-      list.textContent = "";
-      rows.forEach((entry, index) => list.append(row(entry, entry.kind, index)));
-      if (!rows.length) {
-        const item = document.createElement("li");
-        item.className = "file-empty";
-        item.textContent = "Empty";
-        list.append(item);
-      }
+      table.draw(rows);
       draw();
     };
 
     const draw = () => {
-      for (const item of list.children) {
+      for (const item of rowItems()) {
         if (item.dataset.path) item.classList.toggle("chosen", chosen.has(item.dataset.path));
       }
       showPreview();
@@ -539,12 +525,19 @@ function dialog({
     const makeFolder = () => {
       if (editing) return;
       say("");
-      const item = document.createElement("li");
+      const item = document.createElement("tr");
       item.className = "file-row file-folder";
-      const cell = document.createElement("span");
+      const cell = document.createElement("td");
       cell.className = "file-cell-name";
+      cell.colSpan = 3;
       item.append(cell);
-      list.prepend(item);
+      if (table.table) table.table.tBodies[0].prepend(item);
+      else {
+        const holder = document.createElement("table");
+        holder.className = "list-table file-table";
+        holder.createTBody().append(item);
+        list.replaceChildren(holder);
+      }
       item.scrollIntoView({ block: "nearest" });
       askName(cell, "untitled folder", (typedName) => createFolder(here, typedName, { endpoint }));
     };
@@ -555,7 +548,7 @@ function dialog({
       const index = rows.findIndex((entry) => chosen.has(entry.path));
       const entry = rows[index];
       if (!entry || chosen.size !== 1) return;
-      const item = list.children[index];
+      const item = rowItems()[index];
       const cell = item?.querySelector(".file-cell-name");
       if (!cell) return;
       say("");
@@ -627,7 +620,7 @@ function dialog({
         event.preventDefault();
         const next = Math.max(0, Math.min(rows.length - 1, to));
         select(next);
-        list.children[next]?.scrollIntoView({ block: "nearest" });
+        rowItems()[next]?.scrollIntoView({ block: "nearest" });
       };
       switch (event.key) {
         case "ArrowDown": return move(index < 0 ? 0 : index + 1);

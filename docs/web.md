@@ -464,6 +464,19 @@ inside the window near an edge; one taller than the window scrolls within
 itself. A menu offers nothing that is not also reachable without
 it: it is a shortcut to the row's own actions, never the only way to one.
 
+It also carries the **list table**, Finder's list view: a page links
+`/ui/listtable.css`, imports `listTable` from `/ui/listtable.js`, and gives it
+every column there may be and what a row is. A click on a header sorts by it,
+again the other way; its right edge drags it wider or narrower and a
+double-click fits it to its widest cell; a header dragged onto another moves
+it there; a right click on the header, or its `+`, chooses the columns shown.
+Columns marked fixed, such as the name, are always shown first. Order, widths
+and sort are remembered in this browser under the page's key. A page whose
+list follows a Sort control of its own, or keeps groups together, sorts the
+rows itself and the headers only set that order; a page with a set list of
+columns turns the chooser off. Every sortable list uses it: doc's Browse,
+Values and Snapshots' Add PDFs, box's Browse, and the file dialog.
+
 The dialog is what a reader already knows from Finder and Explorer:
 
 - Places down the side — the folder `dgs` opened at when it is not the home

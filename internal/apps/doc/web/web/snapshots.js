@@ -7,6 +7,7 @@
 import { $, address, keep as keepEntry, scrollBack, api, el, loadState, post, label, frame, say, nameTree } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openMenu } from "/ui/menu.js";
+import { listTable } from "/ui/listtable.js";
 import { splitter } from "/ui/splitter.js";
 import { resizable, Folded } from "/outlinetree.js";
 
@@ -397,17 +398,39 @@ function filters() {
 const ofType = (i) => !$("add-type").value || i.type === $("add-type").value;
 
 // The list's columns, as in Finder's list view: Name always, then the keys
-// chosen by a right click on the header; a click on a header sorts by it,
-// again the other way. Both are remembered in this browser.
-const COLUMNS_KEY = "dgs-doc-snapshots-columns";
-let columns = ["type", "owner", "country"];
-let sortBy = { key: "", down: false }; // "" is Name
-let widths = {}; // px per column, "" for Name
-try { const kept = JSON.parse(localStorage.getItem(COLUMNS_KEY) || "null"); if (kept) ({ columns, sortBy, widths = {} } = kept); } catch { /* defaults */ }
-const keep = () => { try { localStorage.setItem(COLUMNS_KEY, JSON.stringify({ columns, sortBy, widths })); } catch { /* not kept */ } };
-let moving = ""; // the column whose header is being dragged
-let fitList = () => {}; // sizes the list's columns to the dialog
-new ResizeObserver(() => fitList()).observe($("add-list"));
+// chosen by a right click on the header, sorted, sized and moved by the
+// shared list table, which remembers them in this browser.
+const HEADS = { type: "Type", tags: "Tags", added: "Added" };
+const cell = (i, key) => key === "type" ? i.type : key === "tags" ? (i.tags || []).join(", ") :
+  key === "added" ? ((i.revisions || []).at(-1)?.added || "").slice(0, 10) : i.fields[key] || "";
+const tickedIds = new Set(); // the Items ticked to add, kept across a sort
+const addList = listTable($("add-list"), {
+  key: "dgs-doc-snapshots-list",
+  className: "striped",
+  shown: ["type", "owner", "country"],
+  columns: () => [
+    { id: "name", text: "Name", width: 300, fixed: true, value: (x) => x.name,
+      cell: (x) => el("span", {}, x.name, x.have ? el("span", { className: "muted" }, " · in it") : null) },
+    ...["type", "tags", "added"].map((k) => ({ id: k, text: HEADS[k], cell: (x) => cell(x.i, k) })),
+    ...[...new Set(state.items.flatMap((i) => Object.keys(i.fields)))].sort()
+      .map((k) => ({ id: k, text: k, group: "fields", cell: (x) => cell(x.i, k) })),
+  ],
+  lead: {
+    head: () => el("input", { type: "checkbox", id: "add-all", title: "Tick all shown", onchange: (event) => {
+      $("add-list").querySelectorAll("tbody input").forEach((b) => { b.checked = event.target.checked; b.closest("tr").classList.toggle("ticked", b.checked); tick(b); });
+      ticked();
+    } }),
+    cell: (x) => el("input", { type: "checkbox", value: x.i.id, checked: tickedIds.has(x.i.id) }),
+  },
+  row: (x, cells) => {
+    const tr = el("tr", { className: (tickedIds.has(x.i.id) ? "ticked" : "") + (x.i.retired ? " retired" : "") }, ...cells);
+    const box = tr.querySelector("input");
+    tr.onclick = (event) => { if (event.target !== box) box.checked = !box.checked; tr.classList.toggle("ticked", box.checked); tick(box); ticked(); };
+    return tr;
+  },
+  empty: "No Item matches.",
+});
+const tick = (box) => { if (box.checked) tickedIds.add(box.value); else tickedIds.delete(box.value); };
 
 // addDialog opens Add PDFs over the page.
 function addDialog() {
@@ -418,115 +441,24 @@ function addDialog() {
   $("add-dialog").showModal();
   $("add-search").focus();
 }
-const HEADS = { type: "Type", tags: "Tags", added: "Added" };
-const cell = (i, key) => key === "type" ? i.type : key === "tags" ? (i.tags || []).join(", ") :
-  key === "added" ? ((i.revisions || []).at(-1)?.added || "").slice(0, 10) : i.fields[key] || "";
-
-// columnMenu offers every key an Item has, ticked when shown.
-function columnMenu(event) {
-  const keys = [...new Set(state.items.flatMap((i) => Object.keys(i.fields)))].sort();
-  const item = (key) => ({ label: (columns.includes(key) ? "✓ " : "\u2003") + (HEADS[key] || key), onSelect: () => {
-    columns = columns.includes(key) ? columns.filter((c) => c !== key) : [...columns, key];
-    if (!columns.includes(sortBy.key)) sortBy = { key: "", down: false };
-    keep();
-    choices();
-  } });
-  openMenu(event, [["type", "tags", "added"].map(item), keys.map(item)]);
-}
 
 // choices lists the Items to add, narrowed by the search words, which match
 // any field, and by the filters, each ticked to add; an Item the Snapshot
-// has already says so.
+// has already says so. A tick on an Item no longer shown is dropped.
 function choices() {
   const words = $("add-search").value.toLowerCase().split(/\s+/).filter(Boolean);
   const have = new Set(draft ? draft.files.map((f) => f.item) : []);
   const [owner, country, type, tag, key, value] = ["add-owner", "add-country", "add-type", "add-tag", "add-field", "add-value"].map((id) => $(id).value);
   remember();
-  const kept = new Set([...$("add-list").querySelectorAll("tbody input:checked")].map((b) => b.value));
-  const by = (x) => sortBy.key ? cell(x.i, sortBy.key) : x.name;
-  const sorted = state.items.filter((i) => (i.revisions || []).length)
+  const rows = state.items.filter((i) => (i.revisions || []).length)
     .filter((i) => (!type || i.type === type) && (!owner || i.fields.owner === owner) && (!country || i.fields.country === country) &&
       (!key || (value ? i.fields[key] === value : !!i.fields[key])) &&
       (!tag || (i.tags || []).includes(tag)) && ($("add-retired").checked || !i.retired) && (!$("add-fresh").checked || !have.has(i.id)))
-    .map((i) => ({ i, name: label(state, i), all: [i.type, ...Object.values(i.fields), ...(i.tags || [])].join(" ").toLowerCase() }))
-    .filter(({ all }) => words.every((w) => all.includes(w)))
-    .sort((a, b) => (by(a).localeCompare(by(b), undefined, { numeric: true }) || a.name.localeCompare(b.name)) * (sortBy.down ? -1 : 1));
-  if (!sorted.length) return $("add-list").replaceChildren(el("p", { className: "muted" }, "No Item matches.")), ticked();
-  const all = el("input", { type: "checkbox", id: "add-all", title: "Tick all shown", onchange: () => {
-    $("add-list").querySelectorAll("tbody input").forEach((b) => { b.checked = all.checked; });
-    ticked();
-  } });
-  const head = (k, text) => {
-    const th = el("th", { className: sortBy.key === k ? "sorted" : "", title: "Click to sort; drag to move; right-click for columns",
-      onclick: () => { sortBy = sortBy.key === k ? { key: k, down: !sortBy.down } : { key: k, down: false }; keep(); choices(); } },
-      el("span", { className: "snap-th" }, text, sortBy.key === k ? (sortBy.down ? " ˅" : " ˄") : ""));
-    // The edge sizes the column, as in Finder.
-    const grip = el("span", { className: "snap-grip", title: "Drag to size; double-click for the default" });
-    grip.addEventListener("click", (event) => event.stopPropagation());
-    grip.addEventListener("dblclick", (event) => { event.stopPropagation(); delete widths[k]; keep(); choices(); });
-    grip.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const col = table.querySelector(`col[data-key="${CSS.escape(k)}"]`);
-      const from = event.clientX, start = parseFloat(col.style.width);
-      grip.setPointerCapture(event.pointerId);
-      const move = (e) => { widths[k] = Math.max(48, Math.round(start + e.clientX - from)); col.style.width = widths[k] + "px"; fit(); };
-      const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); keep(); };
-      grip.addEventListener("pointermove", move);
-      grip.addEventListener("pointerup", up);
-    });
-    th.append(grip);
-    if (k) {
-      th.draggable = true;
-      th.addEventListener("dragstart", (event) => { moving = k; event.dataTransfer.setData("text/plain", k); event.dataTransfer.effectAllowed = "move"; });
-      th.addEventListener("dragend", () => { moving = ""; });
-      th.addEventListener("dragover", (event) => { if (moving && moving !== k) { event.preventDefault(); th.classList.add("drop"); } });
-      th.addEventListener("dragleave", () => th.classList.remove("drop"));
-      th.addEventListener("drop", (event) => {
-        event.preventDefault();
-        const from = event.dataTransfer.getData("text/plain") || moving;
-        if (!from || from === k) return;
-        const rest = columns.filter((c) => c !== from);
-        rest.splice(rest.indexOf(k) + (columns.indexOf(from) < columns.indexOf(k) ? 1 : 0), 0, from);
-        columns = rest;
-        keep();
-        choices();
-      });
-    }
-    return th;
-  };
-  const width = (k) => (widths[k] || (k ? 130 : 300)) + "px";
-  const table = el("table", { className: "snap-table" },
-    el("colgroup", {}, el("col", { style: "width: 32px" }), ...["", ...columns].map((k) => { const c = el("col", { style: "width: " + width(k) }); c.dataset.key = k; return c; }),
-      el("col", { style: "width: 36px" })),
-    el("thead", { oncontextmenu: columnMenu }, el("tr", {}, el("th", { className: "snap-tick" }, all), head("", "Name"),
-      ...columns.map((k) => head(k, HEADS[k] || k)),
-      el("th", { className: "snap-plus", title: "Add a column", onclick: (event) => { event.stopPropagation(); columnMenu(event); } }, "+"))),
-    el("tbody", {}, ...sorted.map(({ i, name }) => {
-      const box = el("input", { type: "checkbox", value: i.id, checked: kept.has(i.id) });
-      const tr = el("tr", { className: (kept.has(i.id) ? "ticked" : "") + (i.retired ? " retired" : ""),
-        onclick: (event) => { if (event.target !== box) { box.checked = !box.checked; } tr.classList.toggle("ticked", box.checked); ticked(); } },
-        el("td", { className: "snap-tick" }, box),
-        el("td", { title: name }, name, have.has(i.id) ? el("span", { className: "muted" }, " · in it") : null),
-        ...columns.map((k) => el("td", { title: cell(i, k) }, cell(i, k))), el("td"));
-      return tr;
-    })));
-  // A fixed table is as wide as its columns, so a column sized narrower
-  // leaves room at the right rather than widening another.
-  // Each column is the width it was dragged to, and its edge follows the
-  // pointer; nothing else moves. What room is left goes to the empty
-  // column after the last, as in Finder, so the rows still reach the side.
-  const fit = () => {
-    const cols = [...table.querySelectorAll("col")];
-    const filler = cols.at(-1);
-    const total = cols.slice(0, -1).reduce((n, c) => n + parseFloat(c.style.width), 0);
-    const room = Math.max(36, $("add-list").clientWidth - total - 2);
-    filler.style.width = room + "px";
-    table.style.width = total + room + "px";
-  };
-  $("add-list").replaceChildren(table);
-  fit();
-  fitList = fit;
+    .map((i) => ({ i, name: label(state, i), have: have.has(i.id), all: [i.type, ...Object.values(i.fields), ...(i.tags || [])].join(" ").toLowerCase() }))
+    .filter(({ all }) => words.every((w) => all.includes(w)));
+  const shown = new Set(rows.map((x) => x.i.id));
+  [...tickedIds].filter((id) => !shown.has(id)).forEach((id) => tickedIds.delete(id));
+  addList.draw(rows);
   ticked();
 }
 
@@ -656,7 +588,7 @@ $("add").onclick = async () => {
   chosen.forEach((p, i) => draft.files.push({ path: got.paths[i], item: p.item.id, revision: p.revision }));
   draft.folders = draft.folders.filter((d) => low(d) !== low(dir));
   if (dir) closed.delete(dir + "/");
-  $("add-list").querySelectorAll("input:checked").forEach((b) => { b.checked = false; });
+  tickedIds.clear();
   $("add-dialog").close();
   choices();
   changed();
