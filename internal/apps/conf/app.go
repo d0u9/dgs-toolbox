@@ -52,6 +52,7 @@ func New() tui.App {
 				{Name: "services", Usage: "with --bundle, directory of deploy service definitions to prefer (default: conf.services)"},
 				{Name: "install-root", Usage: "with --bundle, where a Linux host bundle with no deploy.dir is installed, as <root>/<service> (default: conf.install_root, else /srv/rhumb)"},
 				{Name: "label-prefix", Usage: "with --bundle, prefix of the systemd unit and launchd label, <prefix>.<node>.<instance> (default: conf.label_prefix, else rhumb)"},
+				{Name: "tool", Usage: "with --bundle, tool name for bundle comments and ownership markers (default: conf.tool, else " + config.DefaultConfTool + ")"},
 				{Name: "overwrite", Bool: true, Usage: "replace files the destination already holds"},
 				{Name: "yes", Shorthand: "y", Bool: true, Usage: "write without asking; everything written is plaintext"},
 			},
@@ -72,6 +73,7 @@ func New() tui.App {
 				{Name: "overwrite", Bool: true, Usage: "rebuild a bundle of the same instance built under another label prefix (not a macOS one)"},
 				{Name: "install-root", Usage: "where a Linux host bundle with no deploy.dir is installed, as <root>/<service> (default: conf.install_root, else /srv/rhumb)"},
 				{Name: "label-prefix", Usage: "prefix of the systemd unit and launchd label, <prefix>.<node>.<instance> (default: conf.label_prefix, else rhumb)"},
+				{Name: "tool", Usage: "tool name for bundle comments and ownership markers (default: conf.tool, else " + config.DefaultConfTool + ")"},
 			},
 			RunWithConfig: bundleAction,
 		}, {
@@ -82,6 +84,7 @@ func New() tui.App {
 			Flags: []tui.ActionFlag{
 				{Name: "yes", Shorthand: "y", Bool: true, Usage: "remove what is listed"},
 				{Name: "label-prefix", Usage: "label prefix the bundles were built with (default: conf.label_prefix, else rhumb)"},
+				{Name: "tool", Usage: "tool name the bundles were built with (default: conf.tool, else " + config.DefaultConfTool + ")"},
 			},
 			RunWithConfig: bundleGCAction,
 		}, {

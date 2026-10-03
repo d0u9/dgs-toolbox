@@ -164,6 +164,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [conf](conf.md) | `services` | empty — only the built-in definitions |
 | [conf](conf.md) | `install_root` | empty — `/srv/rhumb` |
 | [conf](conf.md) | `label_prefix` | empty — `rhumb` |
+| [conf](conf.md) | `tool` | empty — `dgs` |
 | [conf](conf.md) | `export.dir` | empty — the home directory |
 | [plugins](plugins.md) | `obsidian.vaults` | empty — every run names a vault with `--vault` |
 | [plugins](plugins.md) | `obsidian.folders.public` | `99 Toolkit/91 Scripts/01 DGS/00 Public` |

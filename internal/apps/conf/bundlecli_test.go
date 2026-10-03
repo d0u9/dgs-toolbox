@@ -128,8 +128,8 @@ func TestBundleAction_InstallRootAndLabelPrefix(t *testing.T) {
 		flags map[string]string
 		want  []string
 	}{
-		{map[string]string{}, []string{"DIR='/srv/example/demo'\n", "LABEL=example.node-1.node-1-demo\n"}},
-		{map[string]string{"install-root": "/opt/example", "label-prefix": "example-b"}, []string{"DIR='/opt/example/demo'\n", "LABEL=example-b.node-1.node-1-demo\n"}},
+		{map[string]string{}, []string{"DIR='/srv/example/demo'\n", "LABEL=example.node-1.node-1-demo\n", "written by dgs.", "# dgs-bundle: $DIR"}},
+		{map[string]string{"install-root": "/opt/example", "label-prefix": "example-b", "tool": "example"}, []string{"DIR='/opt/example/demo'\n", "LABEL=example-b.node-1.node-1-demo\n", "written by example.", "# example-bundle: $DIR"}},
 	} {
 		c.flags["platform"], c.flags["bin"] = "linux/amd64", bin
 		c.flags["to"] = filepath.Join(t.TempDir(), "b")
@@ -213,8 +213,8 @@ func TestBundleGCAction(t *testing.T) {
 	shims := filepath.Join(home, ".local", "bin")
 	os.MkdirAll(shims, 0o755)
 	gone := filepath.Join(shims, "demo-gone")
-	os.WriteFile(gone, []byte("#!/bin/sh\n# rhumb-bundle: "+filepath.Join(bundles, "gone")+"\n"), 0o755)
-	os.WriteFile(filepath.Join(shims, "demo-kept"), []byte("#!/bin/sh\n# rhumb-bundle: "+kept+"\n"), 0o755)
+	os.WriteFile(gone, []byte("#!/bin/sh\n# dgs-bundle: "+filepath.Join(bundles, "gone")+"\n"), 0o755)
+	os.WriteFile(filepath.Join(shims, "demo-kept"), []byte("#!/bin/sh\n# dgs-bundle: "+kept+"\n"), 0o755)
 
 	var out bytes.Buffer
 	if err := bundleGCAction(nil, &out, nil, map[string]string{}, config.Config{}); err != nil {
@@ -237,5 +237,27 @@ func TestBundleGCAction(t *testing.T) {
 	bundleGCAction(nil, &out, nil, map[string]string{}, config.Config{})
 	if !strings.Contains(out.String(), "nothing left behind") {
 		t.Fatalf("after removal = %q", out.String())
+	}
+}
+
+func TestBundleToolOptions(t *testing.T) {
+	g := config.Config{}
+	opt, err := bundleOptions(nil, g)
+	if err != nil || opt.Tool != "dgs" {
+		t.Fatalf("default tool = %q, %v", opt.Tool, err)
+	}
+	g.Conf.Tool = "example"
+	opt, err = bundleOptions(nil, g)
+	if err != nil || opt.Tool != "example" {
+		t.Fatalf("configured tool = %q, %v", opt.Tool, err)
+	}
+	opt, err = bundleOptions(map[string]string{"tool": "other"}, g)
+	if err != nil || opt.Tool != "other" {
+		t.Fatalf("override tool = %q, %v", opt.Tool, err)
+	}
+	m := newInspectModel("", "")
+	m.bundleBase = configBundleOptions(g)
+	if got := m.bundleOptions("install", false); got.Tool != "example" {
+		t.Fatal("TUI lost configured tool")
 	}
 }
