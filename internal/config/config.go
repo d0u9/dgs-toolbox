@@ -257,8 +257,11 @@ type Conf struct {
 	InstallRoot string `json:"install_root"`
 	// LabelPrefix begins the systemd unit and launchd label a bundle
 	// registers, <label_prefix>.<node>.<instance>. Empty means rhumb.
-	LabelPrefix string     `json:"label_prefix"`
-	Export      ConfExport `json:"export"`
+	LabelPrefix string `json:"label_prefix"`
+	// Tool identifies bundle ownership in ctl, command shims and plist keys.
+	// Empty means DefaultConfTool.
+	Tool   string     `json:"tool"`
+	Export ConfExport `json:"export"`
 }
 
 // ConfExport is where dgs conf export's destination form opens.
@@ -499,13 +502,25 @@ func (c Config) PhotoImportPaths() (source, destination string) {
 
 // ConfRoot, ConfSecrets, ConfServices and ConfInstallRoot are conf.root,
 // conf.secrets, conf.services and conf.install_root, already expanded by
-// LoadDir; ConfLabelPrefix is conf.label_prefix. All are empty until
+// LoadDir; ConfLabelPrefix is conf.label_prefix. These are empty until
 // configured.
 func (c Config) ConfRoot() string        { return c.Conf.Root }
 func (c Config) ConfSecrets() string     { return c.Conf.Secrets }
 func (c Config) ConfServices() string    { return c.Conf.Services }
 func (c Config) ConfInstallRoot() string { return c.Conf.InstallRoot }
 func (c Config) ConfLabelPrefix() string { return c.Conf.LabelPrefix }
+
+// DefaultConfTool is conf.tool when it is empty: the executable that builds
+// the bundles.
+const DefaultConfTool = "dgs"
+
+// ConfTool is conf.tool, else DefaultConfTool.
+func (c Config) ConfTool() string {
+	if c.Conf.Tool == "" {
+		return DefaultConfTool
+	}
+	return c.Conf.Tool
+}
 
 // ConfExportDir is where the destination form opens: conf.export.dir, or the
 // home directory when it is empty.

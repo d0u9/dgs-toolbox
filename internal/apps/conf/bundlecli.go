@@ -46,7 +46,7 @@ func bundleAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 
 // bundleOptions are the choices every bundle built from the command line
 // shares: --download, checked, and --services, --install-root and
-// --label-prefix, each else its conf setting.
+// --label-prefix and --tool, each else its conf setting.
 func bundleOptions(flags map[string]string, g config.Config) (deploy.Options, error) {
 	opt := configBundleOptions(g)
 	opt.Download = flags["download"]
@@ -62,13 +62,16 @@ func bundleOptions(flags map[string]string, g config.Config) (deploy.Options, er
 	if prefix := flags["label-prefix"]; prefix != "" {
 		opt.LabelPrefix = prefix
 	}
+	if tool := flags["tool"]; tool != "" {
+		opt.Tool = tool
+	}
 	return opt, nil
 }
 
 // configBundleOptions are the deploy options the conf settings give: every
 // way to a bundle starts from them.
 func configBundleOptions(g config.Config) deploy.Options {
-	return deploy.Options{Services: g.ConfServices(), InstallRoot: g.ConfInstallRoot(), LabelPrefix: g.ConfLabelPrefix()}
+	return deploy.Options{Services: g.ConfServices(), InstallRoot: g.ConfInstallRoot(), LabelPrefix: g.ConfLabelPrefix(), Tool: g.ConfTool()}
 }
 
 // exportBundles runs `dgs conf export <selector>... --bundle`.
@@ -192,12 +195,12 @@ func exportBundles(in io.Reader, out io.Writer, args []string, flags map[string]
 // userHome is where bundleGCAction looks; a test points it elsewhere.
 var userHome = os.UserHomeDir
 
-// bundleGCAction runs `dgs conf bundle-gc [--yes]`, which is
-// `rhumb deploy gc`: it lists the launchd agents and ~/.local/bin shims an
+// bundleGCAction runs `dgs conf bundle-gc [--yes]`, rhumb's deploy gc
+// under dgs's tool name: it lists the launchd agents and ~/.local/bin shims an
 // installed bundle left behind when its directory was deleted rather than
 // uninstalled, and with --yes removes them. It runs on the machine the
 // bundles were installed on, and looks under --label-prefix, else
-// conf.label_prefix, the prefix they were built with.
+// conf.label_prefix, and --tool, else conf.tool, matching the build.
 func bundleGCAction(_ io.Reader, out io.Writer, _ []string, flags map[string]string, g config.Config) error {
 	home, err := userHome()
 	if err != nil {
@@ -207,7 +210,11 @@ func bundleGCAction(_ io.Reader, out io.Writer, _ []string, flags map[string]str
 	if prefix == "" {
 		prefix = g.ConfLabelPrefix()
 	}
-	left, err := deploy.Leftovers(home, prefix)
+	tool := flags["tool"]
+	if tool == "" {
+		tool = g.ConfTool()
+	}
+	left, err := deploy.Leftovers(home, prefix, tool)
 	if err != nil {
 		return err
 	}

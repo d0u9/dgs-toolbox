@@ -59,7 +59,8 @@ Examples:
   dgs conf bundle-gc
   dgs conf bundle-gc --yes
 
-Run it on the machine the bundles were installed on; it is rhumb deploy gc.
+Run it on the machine the bundles were installed on. It recognizes only
+bundles built with the same tool name (--tool, else conf.tool, else dgs).
 Looks for launchd agents in ~/Library/LaunchAgents and shims in ~/.local/bin
 whose bundle directory is gone. A bundle counts as gone only while its parent
 directory exists, so a bundle on an unmounted disk is left alone.

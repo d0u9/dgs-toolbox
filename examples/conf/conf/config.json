@@ -4,6 +4,7 @@
   "services": "~/confgen-deploy",
   "install_root": "/srv/example",
   "label_prefix": "example",
+  "tool": "example",
   "export": {
     "dir": "~/Exports"
   }
