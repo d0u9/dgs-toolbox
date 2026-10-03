@@ -10,12 +10,13 @@ Examples:
 With no directory argument, use conf.root. --secrets selects a separate secrets
 root instead of conf.secrets; --gitignore also writes its ignore file.
 Creates starting files without overwriting existing files.`,
-	"export": `Render the targets a selector matches and write them to a folder or a zip.
+	"export": `Render the targets a selector matches and write them to a folder, a zip or deploy bundles.
 
 Examples:
   dgs conf export node:host-a --to /path/to/export
   dgs conf export service:caddy --zip /path/to/export.zip
   dgs conf export user:alice export:link --to - --format yaml
+  dgs conf export node:host-a --bundle --to /path/to/bundles
 
 At least one selector is required. Terms use field:value; a bare word names
 an instance. Values may contain * (quote such selectors in the shell).
@@ -23,9 +24,38 @@ Same-field terms are alternatives; different fields narrow each other.
 Use dgs conf --targets to discover targets and configure conf.root/secrets.
 --to selects a directory (default conf.export.dir) or - for stdout;
 --format yaml bundles stdout documents. --zip selects a ZIP destination.
+--bundle builds, under --to, one deploy bundle per matched instance with a
+manifest: ctl, compose.yaml and the rendered files. --download build fetches
+releases into the bundle now; install leaves it to ctl on the machine.
+--services (default conf.services) names deploy definitions to prefer.
 Existing outputs require overwrite confirmation; scripts must use --overwrite.
 --yes skips the plaintext-write prompt but does not authorize overwriting.
-This renders configuration; it does not run deployment scripts.`,
+This renders configuration; it does not copy bundles or run deployment scripts.`,
+	"bundle": `Build the deploy bundle for one exported instance, as rhumb deploy build does.
+
+Examples:
+  dgs conf bundle /path/to/export/node-1/microbin/node-1-microbin --to /path/to/bundle
+  dgs conf bundle /path/to/export/node-1/samba/node-1-samba --to /path/to/bundle --platform linux/arm64
+
+The argument is one instance's export directory, holding its manifest.
+Reads only the export, not conf.root or conf.secrets.
+--to is required. A bundle already there is rebuilt; another bundle is refused.
+--platform defaults to the manifest's, else this machine's os/arch.
+--bin bundles a local program instead of downloading a release.
+--download build fetches the release now; install leaves it to ctl install.
+--services (default conf.services) names deploy definitions consulted before
+the built-in ones. Copy the bundle to its machine and run ./ctl install.`,
+	"bundle-gc": `List what installed bundles left behind when deleted without ctl uninstall.
+
+Examples:
+  dgs conf bundle-gc
+  dgs conf bundle-gc --yes
+
+Run it on the machine the bundles were installed on; it is rhumb deploy gc.
+Looks for launchd agents in ~/Library/LaunchAgents and shims in ~/.local/bin
+whose bundle directory is gone. A bundle counts as gone only while its parent
+directory exists, so a bundle on an unmounted disk is left alone.
+Lists only; --yes stops each launchd agent and removes what is listed.`,
 	"secret": `Generate the credentials the inventory implies and are not on disk yet.
 
 Example:

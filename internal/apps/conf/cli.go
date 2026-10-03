@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"fmt"
 	"io"
 
 	"dgs-toolbox/internal/config"
@@ -18,6 +19,12 @@ func writeCheckReport(out io.Writer, g config.Config) error  { return rcli.Check
 func writeTargetReport(out io.Writer, g config.Config) error { return rcli.Targets(out, settings(g)) }
 
 func exportAction(in io.Reader, out io.Writer, args []string, flags map[string]string, g config.Config) error {
+	if flags["bundle"] == "true" {
+		return exportBundles(in, out, args, flags, g)
+	}
+	if flags["download"] != "" || flags["services"] != "" {
+		return fmt.Errorf("--download and --services choose how a bundle is built; they need --bundle")
+	}
 	return rcli.Export(in, out, args, flags, settings(g))
 }
 

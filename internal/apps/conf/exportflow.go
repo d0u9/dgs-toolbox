@@ -598,7 +598,7 @@ func (m *InspectModel) planBundles(files []engine.File) {
 	default:
 		flow.download = ""
 	}
-	described, err := describeBundles(files, deploy.Options{Download: flow.download})
+	described, err := describeBundles(files, m.bundleOptions(flow.download))
 	if err != nil {
 		flow.err = err
 		return
@@ -629,6 +629,12 @@ func (m *InspectModel) planBundles(files []engine.File) {
 		CancelLabel:  "Back",
 	})
 	flow.stage = exportConfirm
+}
+
+// bundleOptions are the deploy options a bundle built here takes: the
+// Download field's answer and conf.services.
+func (m InspectModel) bundleOptions(download string) deploy.Options {
+	return deploy.Options{Download: download, Services: m.servicesDir}
 }
 
 // bundleDirs is the export directory of every instance the files hold a
@@ -683,7 +689,7 @@ func describeBundles(files []engine.File, opt deploy.Options) (map[string]string
 // writeBundles exports the instances into a private temporary directory and
 // builds each bundle from there. The temporary export holds every credential
 // in plaintext, so it is removed whatever happens.
-func writeBundles(r engine.Renderer, instances, dirs []string, where, download string) error {
+func writeBundles(r engine.Renderer, instances, dirs []string, where string, opt deploy.Options) error {
 	tmp, err := os.MkdirTemp("", "dgs-conf-bundle-")
 	if err != nil {
 		return err
@@ -693,7 +699,7 @@ func writeBundles(r engine.Renderer, instances, dirs []string, where, download s
 		return err
 	}
 	for _, dir := range dirs {
-		if err := deploy.Build(filepath.Join(tmp, dir), filepath.Join(where, dir), deploy.Options{Download: download}); err != nil {
+		if err := deploy.Build(filepath.Join(tmp, dir), filepath.Join(where, dir), opt); err != nil {
 			return fmt.Errorf("%s: %w", dir, err)
 		}
 	}
@@ -789,7 +795,7 @@ func (m InspectModel) runExport(flow exportFlow) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if flow.bundle {
-			err = writeBundles(r, flow.instances, flow.bundles, flow.where, flow.download)
+			err = writeBundles(r, flow.instances, flow.bundles, flow.where, m.bundleOptions(flow.download))
 			return exportDoneMsg{files: len(flow.bundles), noun: "bundle", where: flow.where, err: err}
 		}
 		if flow.zip {
