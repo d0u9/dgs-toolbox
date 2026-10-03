@@ -115,7 +115,7 @@ func newInspectModel(rootPath, secretsDir string) InspectModel {
 		return m
 	}
 	m.l = l
-	m.nodes = buildTree(target.List(l.Inv, l.Derived))
+	m.nodes = buildTree(target.List(l.Inv, l.Derived), l.Derived.ExportInstances)
 	fillNodeGroups(l.Inv, m.nodes)
 	m.nodeGroups = groupTree(m.nodes, l.Inv.IsUser, nil)
 
