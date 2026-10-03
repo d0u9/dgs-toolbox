@@ -572,3 +572,18 @@ its own, and are not yet a reference.
 Paths follow the rules in
 [`configuration/index.md`](../../configuration/index.md): `~`, `$NAME`, absolute
 after expansion.
+
+## Refreshing external changes
+
+Press `r` (or `Ctrl+R`) in Nodes, Users, Services, Secrets, or the Migrate
+plan list to reload the generator root, service manifests and secret-store
+metadata from disk. Loading runs outside the UI update; the current tab,
+existing selected row, fold states and surviving export marks are retained.
+A failed generator load keeps the previous snapshot and reports the error;
+refresh also works after an initial load failure. Refresh notices clear on the
+next key. Secret values are not revealed.
+
+Refresh is unavailable inside export forms and migration editing flows.
+Save or discard an unsaved migration draft before refreshing; a successful
+refresh rebuilds the migration workspace from the new inventory. In a migration
+table, `r` continues to mean Report.
