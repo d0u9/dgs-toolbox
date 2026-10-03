@@ -1,161 +1,99 @@
 # AGENTS.md
 
-## Current goal
+## Public repository — privacy is mandatory
 
-- **Photo Import** — the real, integrity-verified Processing engine. Real file
-  operations only after the user starts Processing. Highest-priority contract: a
-  destination file is not published under its final name until an independent
-  destination readback matches the Source SHA-256 digest. Follow
-  [`docs/apps/photo/import.md`](docs/apps/photo/import.md). Photo Encode
-  exports JPEGs per
-  [`docs/apps/photo/encode.md`](docs/apps/photo/encode.md).
-- **`dgs box`** — a Box of scanned paper: intake from a temporary folder,
-  deduplication, per-scan YAML sidecars as the only metadata truth, and a
-  discardable local index, per [`docs/apps/box/`](docs/apps/box/). Paths encode
-  only the event year and month (the intake date when there is none), so a
-  changed event date moves a file by rename and nothing else does. Publication
-  follows Photo Import's readback contract. Nothing is deleted: discarding
-  moves a file into the Box's trash.
-- **GPX** — milestone by milestone per [`docs/apps/geo/gpx.md`](docs/apps/geo/gpx.md).
-  Iron rule: a GPX `dgs` did not write is never written to. Its edits live in
-  the sidecar beside it; anything wanting them inside a GPX writes a new file.
-  A recording cannot be recorded again, a sidecar can be entered again.
-- **`dgs cred`** — age identities, recipients, encrypted vault, per
-  [`docs/apps/cred/`](docs/apps/cred/). Decrypted content stays in memory unless
-  an Action the user confirms writes it. A vault file is replaced only after the
-  new one decrypts back to the same SHA-256.
+**This repository is public. Anyone can access, copy and retain its contents
+and Git history. Never put private, personal, confidential or deployment-specific
+data in this repository, even temporarily or in an untracked or ignored file.**
 
-## Documents
+- This applies to code, comments, docs, examples, tests, fixtures, snapshots,
+  logs, screenshots, generated files, commit messages and PR descriptions.
+- Never include real credentials, tokens, passwords, keys, secrets, personal
+  records, account identifiers, local user paths, hostnames, addresses or network
+  inventories. Encryption, redaction of only the secret, and `.gitignore` do not
+  make real private data suitable for this public repository.
+- Use wholly synthetic cases: `alice`, `bob`, `host-a`, `node-1`; domains under
+  `example.com`, `example.net`, `example.org` or `.test`; IPs in `192.0.2.0/24`,
+  `198.51.100.0/24`, `203.0.113.0/24` or `2001:db8::/32`; invented private
+  networks such as `10.0.0.0/24`; invented MACs starting `02:00:00`.
+- Keep real configuration, inputs, secrets and outputs outside the repository.
+  Reproduce bugs with invented data; implement generic capabilities here and
+  keep deployment-specific definitions in private configuration.
+- Check changes and generated artifacts for private data before staging or
+  sharing. Never bypass privacy hooks (`--no-verify`) or disguise rejected values.
+- If real data seems necessary, stop and ask the maintainer for a synthetic
+  alternative. If private data is found, stop propagating it and report without
+  quoting it. Deleting it in a later commit does not undo disclosure.
 
-- [`docs/tui.md`](docs/tui.md) holds shared interface decisions. Read it before
-  changing any TUI or interactive flow, and follow its links to the component
-  being changed — [`file-explorer.md`](docs/file-explorer.md),
-  [`parameter-controls.md`](docs/parameter-controls.md),
-  [`data-fields.md`](docs/data-fields.md).
-- [`docs/web.md`](docs/web.md) holds the shared visual design language for every
-  web page `dgs` serves. Read it before changing any served page or template.
-- App designs live under `docs/apps/<app>/` and must not be promoted into shared
-  requirements.
-- Update a design document only when a decision is confirmed. Never fill an
-  undecided section speculatively.
+## Project and scope
 
-## Configuration and catalogues
+- Go, Cobra, Bubble Tea; Bubbles and Lip Gloss when useful. `dgs` is the only
+  installed executable: copying it must suffice. Embed runtime assets and native
+  integrations; no required or optional helper executable or script on `PATH`.
+  Native APIs use platform/cgo build tags and clear unsupported fallbacks.
+- Follow confirmed app designs in [docs/apps/](docs/apps/). Do not expand Photo
+  Encode beyond JPEG exports, GPX beyond confirmed milestones, or add runtime
+  plugin loading or speculative infrastructure. Bundled plugin management is
+  documented in [docs/apps/plugins/](docs/apps/plugins/).
+- During development, use `go.work` to import local `../rhumb` rather than
+  binding development to a released version: a change may require coordinated
+  edits in both repositories. Keep those edits within the requested scope.
 
-Every setting `dgs` reads is documented in
-[`docs/configuration/`](docs/configuration/), one document per part, indexed by
-[`index.md`](docs/configuration/index.md). It is a reference — name, meaning,
-default — not a design document; designs explain why a setting exists and link
-here.
+## Data integrity
 
-Adding, renaming, removing a key, or changing its default, is not finished until
-the part's document **and** the index table say so in the same change. A key in
-one and not the other is worse than a key in neither: the index is what a reader
-trusts to be complete.
+- Photo Import: [design](docs/apps/photo/import.md). File operations begin only
+  when the user starts Processing. Use bounded whole-file workers,
+  same-directory `.dgs-part` files, source SHA-256 during copy, independent
+  destination readback, verified atomic publication, whole-file retry and
+  versioned `.dgs-state`. **Never publish the final name before readback matches
+  the source digest.** Keep processing outside the TUI and test with filesystems.
+  Reuse `internal/verifiedcopy`, also used by Box.
+- Box: [designs](docs/apps/box/). Per-scan YAML sidecars are metadata truth;
+  publication follows the same readback contract. Paths encode event year/month
+  (intake date when absent); date changes move files by rename. Discard moves to
+  Box trash; nothing is deleted. Keep the in-memory index until the conditions
+  in [index.md](docs/apps/box/index.md) justify revisiting SQLite.
+- GPX: [design](docs/apps/geo/gpx.md). Never write to a GPX that `dgs` did not
+  create. Edits belong in its sidecar; embedding them requires a new GPX.
+  A recording cannot be recorded again; a sidecar can be entered again.
+- Credentials: [designs](docs/apps/cred/). Decrypted content stays in memory
+  unless a user-confirmed Action writes it. Replace a vault only after the new
+  vault decrypts back to the same SHA-256.
+- Original files and sidecars are truth. Caches/indexes/databases live locally,
+  outside the described tree, at documented configurable paths. Write originals
+  first, then cache. Missing, corrupt or unknown-version caches are discarded
+  and rebuilt, never migrated or repaired; test that rebuilding yields the same
+  result. Claim only the documented filesystem/API durability boundary.
 
-[`examples/`](examples) holds a working configuration per feature and a test
-loads every one. Fixing examples a key change breaks is part of that change.
+## Interfaces and architecture
 
-The same rule covers two catalogues, each pinned by a test that fails when the
-document does not name every registered Action:
+- Read [docs/tui.md](docs/tui.md) before changing interactive flows and follow
+  its component links. Read [docs/web.md](docs/web.md) before changing served
+  pages. App-specific decisions stay in app docs.
+- One process, one active leaf, one top-level `tea.Program`. The shell owns
+  selection, lifecycle, sizing and bars; leaves expose workspace models, status
+  and hints, never nested programs. Switching commands creates a fresh model.
+- Leaves open their TUI; incomplete commands open scoped pickers. Registered
+  CLI actions take arguments, write stdout and return without a TUI, and are
+  excluded from pickers. Esc at a leaf root returns to the picker; there it exits.
+- Top and status bars are exactly one row each; shorten or omit on narrow
+  terminals, never wrap. Top: path/context left, local time right. Status:
+  state left, summary center, hints right. Workspace belongs to the active model.
+- Reuse algorithms before adding them. Domain packages take plain values and
+  import no TUI, HTTP, configuration or app code. Keep one concern per package,
+  parameters as arguments with documented named defaults, and constructed-input
+  tests beside the algorithm. Apps/handlers compose results; browser code only
+  computes interaction geometry.
 
-- `dgs cred` Actions — [`docs/apps/cred/actions.md`](docs/apps/cred/actions.md).
-- Capture Actions — [`docs/apps/capture/actions.md`](docs/apps/capture/actions.md).
-  It is what someone writes a Recipe against. The test cannot check that a
-  description is still true; that part is on the change.
+## Documentation and validation
 
-## Reusable algorithms
-
-The same computation is wanted in more than one place, so every algorithm lives
-in its own package, apart from whatever shows its result:
-
-- Domain packages such as `internal/geo`, `internal/geo/gpxfile`,
-  `internal/geo/track` — one concern per package, named for what it computes.
-- They import no TUI, HTTP, configuration or app code: plain values in, plain
-  values out, so a command, a web handler, a report and a test can all call them.
-- Parameters (a window, a threshold) are arguments with a named, documented
-  default, never constants in a caller.
-- Each has tests in its own package pinning behaviour on small constructed inputs.
-- Apps and web handlers compose algorithms, never reimplement them. A web page
-  draws what the server computed; only on-screen interaction geometry is its own.
-- Look for an algorithm to reuse or generalise before writing one. Move an
-  app-local helper into a shared package rather than copying it.
-
-## Technology
-
-Go, Cobra, Bubble Tea. Bubbles and Lip Gloss only when useful.
-
-## One binary
-
-`dgs` is the only executable installed, and this is hard: copying that one file
-to another machine must be enough to run it. No helper binary, sidecar or script
-beside `dgs` or on `PATH` — not as an option either.
-
-Compile in what Go cannot reach directly. Apple Reminders, for example, reach
-EventKit through cgo under a `darwin && cgo` tag; other platforms and
-`CGO_ENABLED=0` get a fallback that refuses with a clear reason. If a feature
-cannot be built this way, ask before designing around it.
-
-## Command model
-
-Commands are hierarchical: `dgs`, then `demo`, `capture`, `photo` (`import`,
-`encode`), `geo` (`gpx`), `box` (actions
-`init`, `index`, `verify`, `dedupe`), `doc` (actions `init`, `verify`, `export`, `link`, `explain`), `cred` (`keys`, `vault`), `conf`,
-`plugins` (actions `status`, `install`, `update`, `uninstall`; no TUI).
-
-One `dgs` process has exactly one active leaf command. It never runs or displays
-two command workspaces at once.
-
-- A leaf — `dgs demo`, `dgs photo import` — opens its TUI directly.
-- A CLI action — `dgs conf init`, `dgs box init` — takes positional arguments,
-  writes to stdout and returns without opening a TUI. Actions are declared in
-  the app registry and are not listed in the picker.
-- An incomplete command — `dgs`, `dgs photo` — opens a picker scoped to the
-  choices available; selecting replaces the picker with that command's TUI.
-- Leaving a command returns to the picker. Starting another builds a fresh
-  model; the previous command does not stay alive in the background.
-- `Esc` at a command's root returns to the picker; `Esc` in the picker exits.
-
-## Shared TUI shell
-
-Three vertical regions: a top bar of exactly one row, the workspace, a status bar
-of exactly one row. Both bars stay one row — on narrow terminals shorten or omit
-content, never wrap.
-
-- Top bar: left, the command path or picker context; right, local time.
-- Status bar: left, state; center, contextual summary; right, key hints.
-- Workspace: the picker's or the active command's. A demo shows only a large
-  label such as `PHOTO IMPORT`.
-
-The shell owns the single top-level Bubble Tea program, command selection,
-picker/command switching, both bars, window sizing and command lifecycle. A leaf
-command owns its workspace model and rendering, the status values and key hints
-it contributes, and its internal interaction. Leaf commands expose Bubble Tea
-models and never create a nested `tea.Program`.
-
-## Scope
-
-Implement Photo Import Processing with bounded worker concurrency, same-directory
-`.dgs-part` files, SHA-256 source hashing during copy, independent destination
-readback, verified atomic publication, whole-file retry, and a versioned
-`.dgs-state` file. Keep it outside the TUI model and cover it with filesystem
-tests.
-
-Do not implement Photo Encode beyond its confirmed JPEG export scope, GPX beyond
-the confirmed milestones,
-plugin loading, or speculative shared infrastructure. Do not claim stronger
-durability than the user-space/filesystem API boundary documented for Photo
-Import or for `dgs box`.
-
-Any app may keep a local cache, index or database. It is never the truth:
-metadata truth is always the original files — sidecars and the files they
-describe — and the cache must be rebuildable from them alone. A test rebuilds
-one and compares. It lives on the local machine, outside the tree or Box it
-describes. When it is missing, corrupt, or of a version it does not recognise,
-it is discarded and rebuilt, never repaired or upgraded; it carries no
-migration code. Writes go to the original files first; the cache follows.
-Where a cache, configuration or database lives is the user's to configure,
-never assumed by the code: a path has a documented setting, and a default,
-where there is one, is named in the configuration reference.
-`box` does not introduce SQLite while its in-memory index holds; the
-conditions for revisiting that are named in
-[`docs/apps/box/index.md`](docs/apps/box/index.md).
+- Update design docs only for confirmed decisions; leave undecided parts open.
+- Setting changes must update both the relevant [configuration reference](docs/configuration/)
+  and its [index](docs/configuration/index.md), including names, meanings and
+  defaults. Update affected [examples](examples/); their load test must pass.
+- Keep registered Actions and descriptions current in
+  [Cred Actions](docs/apps/cred/actions.md) and
+  [Capture Actions](docs/apps/capture/actions.md); catalogue tests check coverage.
+- Run checks relevant to the change. Use `go test ./...` for repository-wide Go
+  validation; timeline changes also use `make test-timeline` for native,
+  WebAssembly and bundled plugin parity. Do not install or deploy just to test.
