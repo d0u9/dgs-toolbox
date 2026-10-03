@@ -18,6 +18,7 @@ import (
 	"dgs-toolbox/internal/tui/scrolllist"
 	"dgs-toolbox/internal/tui/text"
 	"github.com/d0u9/rhumb/confgen"
+	"github.com/d0u9/rhumb/deploy"
 	"github.com/d0u9/rhumb/derive"
 	"github.com/d0u9/rhumb/inventory"
 	"github.com/d0u9/rhumb/secretstore"
@@ -45,10 +46,10 @@ const (
 // state: moving the cursor is the only navigation within a tab.
 type InspectModel struct {
 	rootPath, secretsDir string
-	// servicesDir is conf.services, the deploy definitions a bundle
-	// consults before the built-in ones.
-	servicesDir string
-	loadErr     error
+	// bundleBase is the deploy options conf.services, conf.install_root
+	// and conf.label_prefix give every bundle built here.
+	bundleBase deploy.Options
+	loadErr    error
 
 	l InspectData
 

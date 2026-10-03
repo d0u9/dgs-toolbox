@@ -598,7 +598,7 @@ func (m *InspectModel) planBundles(files []engine.File) {
 	default:
 		flow.download = ""
 	}
-	described, err := describeBundles(files, m.bundleOptions(flow.download))
+	described, err := describeBundles(files, m.bundleOptions(flow.download, flow.overwrite))
 	if err != nil {
 		flow.err = err
 		return
@@ -632,9 +632,13 @@ func (m *InspectModel) planBundles(files []engine.File) {
 }
 
 // bundleOptions are the deploy options a bundle built here takes: the
-// Download field's answer and conf.services.
-func (m InspectModel) bundleOptions(download string) deploy.Options {
-	return deploy.Options{Download: download, Services: m.servicesDir}
+// Download field's answer and the conf settings. replace, the Replace
+// box, also lets a bundle built under another label prefix be rebuilt.
+func (m InspectModel) bundleOptions(download string, replace bool) deploy.Options {
+	opt := m.bundleBase
+	opt.Download = download
+	opt.Relabel = replace
+	return opt
 }
 
 // bundleDirs is the export directory of every instance the files hold a
@@ -795,7 +799,7 @@ func (m InspectModel) runExport(flow exportFlow) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if flow.bundle {
-			err = writeBundles(r, flow.instances, flow.bundles, flow.where, m.bundleOptions(flow.download))
+			err = writeBundles(r, flow.instances, flow.bundles, flow.where, m.bundleOptions(flow.download, flow.overwrite))
 			return exportDoneMsg{files: len(flow.bundles), noun: "bundle", where: flow.where, err: err}
 		}
 		if flow.zip {

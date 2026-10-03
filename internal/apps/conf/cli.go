@@ -22,8 +22,10 @@ func exportAction(in io.Reader, out io.Writer, args []string, flags map[string]s
 	if flags["bundle"] == "true" {
 		return exportBundles(in, out, args, flags, g)
 	}
-	if flags["download"] != "" || flags["services"] != "" {
-		return fmt.Errorf("--download and --services choose how a bundle is built; they need --bundle")
+	for _, name := range []string{"download", "services", "install-root", "label-prefix"} {
+		if flags[name] != "" {
+			return fmt.Errorf("--%s chooses how a bundle is built; it needs --bundle", name)
+		}
 	}
 	return rcli.Export(in, out, args, flags, settings(g))
 }

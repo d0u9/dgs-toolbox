@@ -50,6 +50,8 @@ func New() tui.App {
 				{Name: "bundle", Bool: true, Usage: "build a deploy bundle per instance with a manifest, as rhumb deploy build does"},
 				{Name: "download", Usage: "with --bundle, when a release is fetched: build, into the bundle, or install, on the machine (default: each node's)"},
 				{Name: "services", Usage: "with --bundle, directory of deploy service definitions to prefer (default: conf.services)"},
+				{Name: "install-root", Usage: "with --bundle, where a Linux host bundle with no deploy.dir is installed, as <root>/<service> (default: conf.install_root, else /srv/rhumb)"},
+				{Name: "label-prefix", Usage: "with --bundle, prefix of the systemd unit and launchd label, <prefix>.<node>.<instance> (default: conf.label_prefix, else rhumb)"},
 				{Name: "overwrite", Bool: true, Usage: "replace files the destination already holds"},
 				{Name: "yes", Shorthand: "y", Bool: true, Usage: "write without asking; everything written is plaintext"},
 			},
@@ -67,6 +69,9 @@ func New() tui.App {
 				{Name: "bin", Usage: "bundle this program instead of what the source gives"},
 				{Name: "download", Usage: "when a release is fetched: build, into the bundle, or install, on the machine (default: the node's, else install)"},
 				{Name: "services", Usage: "directory of deploy service definitions to prefer (default: conf.services)"},
+				{Name: "overwrite", Bool: true, Usage: "rebuild a bundle of the same instance built under another label prefix (not a macOS one)"},
+				{Name: "install-root", Usage: "where a Linux host bundle with no deploy.dir is installed, as <root>/<service> (default: conf.install_root, else /srv/rhumb)"},
+				{Name: "label-prefix", Usage: "prefix of the systemd unit and launchd label, <prefix>.<node>.<instance> (default: conf.label_prefix, else rhumb)"},
 			},
 			RunWithConfig: bundleAction,
 		}, {
@@ -76,6 +81,7 @@ func New() tui.App {
 			MaxArgs:     0,
 			Flags: []tui.ActionFlag{
 				{Name: "yes", Shorthand: "y", Bool: true, Usage: "remove what is listed"},
+				{Name: "label-prefix", Usage: "label prefix the bundles were built with (default: conf.label_prefix, else rhumb)"},
 			},
 			RunWithConfig: bundleGCAction,
 		}, {
@@ -110,7 +116,7 @@ func New() tui.App {
 				NewWithConfig: func(global config.Config) tui.CommandModel {
 					m := newInspectModel(global.ConfRoot(), global.ConfSecrets())
 					m.exportDir = global.ConfExportDir()
-					m.servicesDir = global.ConfServices()
+					m.bundleBase = configBundleOptions(global)
 					if m.migration != nil {
 						m.migration.planDir = filepath.Join(global.AppDir("conf"), "migrations")
 						m.migration.outputDir = m.migration.planDir

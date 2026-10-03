@@ -250,8 +250,15 @@ type Conf struct {
 	// Services is a directory of deploy service definitions, consulted
 	// before the ones built into dgs when a bundle is built. Empty means
 	// only the built-in ones.
-	Services string     `json:"services"`
-	Export   ConfExport `json:"export"`
+	Services string `json:"services"`
+	// InstallRoot is where a Linux host bundle whose instance names no
+	// deploy.dir is installed, as <install_root>/<service>. Empty means
+	// rhumb's default, /srv/rhumb.
+	InstallRoot string `json:"install_root"`
+	// LabelPrefix begins the systemd unit and launchd label a bundle
+	// registers, <label_prefix>.<node>.<instance>. Empty means rhumb.
+	LabelPrefix string     `json:"label_prefix"`
+	Export      ConfExport `json:"export"`
 }
 
 // ConfExport is where dgs conf export's destination form opens.
@@ -490,11 +497,15 @@ func (c Config) PhotoImportPaths() (source, destination string) {
 	return c.Photo.Import.Source, c.Photo.Import.Destination
 }
 
-// ConfRoot, ConfSecrets and ConfServices are conf.root, conf.secrets and
-// conf.services, already expanded by LoadDir. All are empty until configured.
-func (c Config) ConfRoot() string     { return c.Conf.Root }
-func (c Config) ConfSecrets() string  { return c.Conf.Secrets }
-func (c Config) ConfServices() string { return c.Conf.Services }
+// ConfRoot, ConfSecrets, ConfServices and ConfInstallRoot are conf.root,
+// conf.secrets, conf.services and conf.install_root, already expanded by
+// LoadDir; ConfLabelPrefix is conf.label_prefix. All are empty until
+// configured.
+func (c Config) ConfRoot() string        { return c.Conf.Root }
+func (c Config) ConfSecrets() string     { return c.Conf.Secrets }
+func (c Config) ConfServices() string    { return c.Conf.Services }
+func (c Config) ConfInstallRoot() string { return c.Conf.InstallRoot }
+func (c Config) ConfLabelPrefix() string { return c.Conf.LabelPrefix }
 
 // ConfExportDir is where the destination form opens: conf.export.dir, or the
 // home directory when it is empty.
@@ -699,7 +710,8 @@ func checkGeo(c *Config) error {
 func checkConf(c *Config) error {
 	return expandAll(map[string]*string{
 		"root": &c.Conf.Root, "secrets": &c.Conf.Secrets, "services": &c.Conf.Services,
-		"export.dir": &c.Conf.Export.Dir,
+		"install_root": &c.Conf.InstallRoot,
+		"export.dir":   &c.Conf.Export.Dir,
 	})
 }
 
