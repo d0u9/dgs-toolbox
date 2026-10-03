@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"dgs-toolbox/internal/tui/text"
+	"github.com/d0u9/rhumb/derive"
 	"github.com/d0u9/rhumb/inventory"
 	"github.com/d0u9/rhumb/target"
 )
@@ -11,11 +12,9 @@ import (
 // instanceNode is one instance under a node or an unmanaged user.
 type instanceNode struct {
 	name string
-	// label is what the tree draws. A file rendered for a person is named
-	// for the device or credential, the route, the service and the export,
-	// and the tree already says the first by where the row hangs, so the
-	// row is the route and the detail says the rest. The full name is still
-	// the row's ID and the detail pane's title.
+	// Export labels name the credential or profile, route and format so
+	// distinct files remain distinguishable even when detail is omitted.
+	// The full instance name stays the row ID and detail pane title.
 	label  string
 	detail string // "service / role"
 	broken string
@@ -48,8 +47,8 @@ type nodeGroup struct {
 	name string
 	// key is what this entry is called in the inventory — a node ID, or an
 	// unmanaged user's key. It is not always the name shown: an unmanaged
-	// user's row is drawn as a device called inventory.DefaultCredential under
-	// a group of their own, so that a person's devices sit at one level
+	// user's row names its credential, or "credentials" when it holds
+	// several, under their own group, so that devices sit at one level
 	// whether or not this inventory has a file for them.
 	key string
 	// user is set when this entry is an unmanaged user rather than a node.
@@ -148,7 +147,11 @@ func groupTree(nodes []*nodeGroup, isUser func(string) bool, previous []*groupRo
 // buildTree turns target.List's result into the tree the page walks: nodes
 // (and unmanaged users, who have none) at the top level, their instances
 // under them.
-func buildTree(targets []target.Target) []*nodeGroup {
+func buildTree(targets []target.Target, exports []derive.ExportInstance) []*nodeGroup {
+	credentials := map[string]string{}
+	for _, inst := range exports {
+		credentials[inst.ID] = inst.Credential
+	}
 	var nodes []*nodeGroup
 	for _, g := range target.GroupByNode(targets) {
 		// A holder starts closed. An index opens on whose machines these are
@@ -161,10 +164,8 @@ func buildTree(targets []target.Target) []*nodeGroup {
 			// since they have no node; a target with no node is how the
 			// group says which of the two it is.
 			if t.Node == "" && t.User != "" {
-				// An unmanaged user has no node file, so the level a
-				// device would occupy is filled by one named `default` —
-				// the same way a directory with no page of its own still
-				// answers at its index.
+				// An unmanaged user has no node file. Its holder is named
+				// from the credentials below once all targets are collected.
 				n.user = true
 				n.key = t.User
 				n.group = t.User
@@ -188,9 +189,21 @@ func buildTree(targets []target.Target) []*nodeGroup {
 				detail = "runs " + t.Service + " · " + plural(len(t.Routes), "route")
 				routes = t.Routes
 			} else if t.Export != "" {
-				detail = t.Service + " " + t.Export
+				// Identity belongs in the label: muted details may disappear on
+				// narrow screens. Never infer credentials from flattened IDs.
+				// With one route the label is credential or profile, route and
+				// format; otherwise the instance's local name already says the
+				// route and format, so only the qualifier is added.
+				detail = t.Service
 				if len(t.Routes) == 1 {
-					label = t.Routes[0]
+					label = t.Routes[0] + " / " + t.Export
+				}
+				qualifier := t.Profile
+				if n.user {
+					qualifier = credentials[t.Instance]
+				}
+				if qualifier != "" {
+					label = qualifier + " / " + label
 				}
 			}
 			n.instances = append(n.instances, &instanceNode{
@@ -200,6 +213,22 @@ func buildTree(targets []target.Target) []*nodeGroup {
 				broken: t.Broken,
 				routes: routes,
 			})
+		}
+		if n.user {
+			seen := map[string]bool{}
+			for _, inst := range n.instances {
+				if credential := credentials[inst.name]; credential != "" {
+					seen[credential] = true
+				}
+			}
+			if len(seen) == 1 {
+				for credential := range seen {
+					n.name = credential
+				}
+			}
+			if len(seen) > 1 {
+				n.name = "credentials"
+			}
 		}
 		nodes = append(nodes, n)
 	}

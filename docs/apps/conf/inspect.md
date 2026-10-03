@@ -37,10 +37,18 @@ runs on this machine, and what does this person receive — and a tree mixing
 them answered neither cleanly, since the row standing in for a person had to
 call itself a node and contradict itself in the same breath.
 
-A file rendered for a person is drawn by its route, with its service and
-export beside it: `sfo-01-ss  ssserver link`. Its full name repeats the
-device or credential the row already hangs under, and in a tree three levels
-deep it did not fit. The full name stays the detail pane's title.
+A file rendered for a person shows `credential / route / export`, or
+`profile / route / export` for a device profile. A device without a profile
+shows `route / export`. The muted detail names the service. This keeps the
+identity visible when narrow columns omit the detail, and distinguishes
+files sharing a route but using different credentials, profiles or formats.
+A person's shared holder names the credential when there is only one, and
+`credentials` when it contains several. Rows under a single-credential holder
+still repeat the credential, so a row reads the same when its holder is out of
+view. A file with several routes shows `credential / instance` or
+`profile / instance`, since the instance's local name already carries the route
+and format. The full instance ID remains the selection/export key and the
+detail pane title.
 
 Under Users a device and a credential sit at one level, because they answer
 one question: which of a person's identities this file was rendered for. A
