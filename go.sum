@@ -43,6 +43,8 @@ github.com/d0u9/rhumb v0.1.4-0.20261003095112-25f69fc9fa14 h1:RIO+DZlHJBvRovB0ws
 github.com/d0u9/rhumb v0.1.4-0.20261003095112-25f69fc9fa14/go.mod h1:rBls8mPzpoFrb4qlegZWljPEjNWIGnsc83H/DnZy4EU=
 github.com/d0u9/rhumb v0.1.4-0.20261003134744-91ed62b85ee5 h1:IwcLFjPmO0H4HdJf/Xor36/Pta6UWfXVNInItISbu7s=
 github.com/d0u9/rhumb v0.1.4-0.20261003134744-91ed62b85ee5/go.mod h1:rBls8mPzpoFrb4qlegZWljPEjNWIGnsc83H/DnZy4EU=
+github.com/d0u9/rhumb v0.1.4-0.20261003143551-6ae3f4dc9cda h1:5gYnQLQJmX+u1+EVSwkd6rWpg+/vmzMFEaXVNZkw2Rc=
+github.com/d0u9/rhumb v0.1.4-0.20261003143551-6ae3f4dc9cda/go.mod h1:rBls8mPzpoFrb4qlegZWljPEjNWIGnsc83H/DnZy4EU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
