@@ -45,7 +45,10 @@ const (
 // state: moving the cursor is the only navigation within a tab.
 type InspectModel struct {
 	rootPath, secretsDir string
-	loadErr              error
+	// servicesDir is conf.services, the deploy definitions a bundle
+	// consults before the built-in ones.
+	servicesDir string
+	loadErr     error
 
 	l InspectData
 

@@ -246,8 +246,12 @@ type Conf struct {
 	Root string `json:"root"`
 	// Secrets is the directory a manifest's secrets file is named relative
 	// to. Empty means a service naming a secrets file refuses to render.
-	Secrets string     `json:"secrets"`
-	Export  ConfExport `json:"export"`
+	Secrets string `json:"secrets"`
+	// Services is a directory of deploy service definitions, consulted
+	// before the ones built into dgs when a bundle is built. Empty means
+	// only the built-in ones.
+	Services string     `json:"services"`
+	Export   ConfExport `json:"export"`
 }
 
 // ConfExport is where dgs conf export's destination form opens.
@@ -486,10 +490,11 @@ func (c Config) PhotoImportPaths() (source, destination string) {
 	return c.Photo.Import.Source, c.Photo.Import.Destination
 }
 
-// ConfRoot and ConfSecrets are conf.root and conf.secrets, already expanded by
-// LoadDir. Both are empty until configured.
-func (c Config) ConfRoot() string    { return c.Conf.Root }
-func (c Config) ConfSecrets() string { return c.Conf.Secrets }
+// ConfRoot, ConfSecrets and ConfServices are conf.root, conf.secrets and
+// conf.services, already expanded by LoadDir. All are empty until configured.
+func (c Config) ConfRoot() string     { return c.Conf.Root }
+func (c Config) ConfSecrets() string  { return c.Conf.Secrets }
+func (c Config) ConfServices() string { return c.Conf.Services }
 
 // ConfExportDir is where the destination form opens: conf.export.dir, or the
 // home directory when it is empty.
@@ -693,7 +698,8 @@ func checkGeo(c *Config) error {
 
 func checkConf(c *Config) error {
 	return expandAll(map[string]*string{
-		"root": &c.Conf.Root, "secrets": &c.Conf.Secrets, "export.dir": &c.Conf.Export.Dir,
+		"root": &c.Conf.Root, "secrets": &c.Conf.Secrets, "services": &c.Conf.Services,
+		"export.dir": &c.Conf.Export.Dir,
 	})
 }
 

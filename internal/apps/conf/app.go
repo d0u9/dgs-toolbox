@@ -41,16 +41,43 @@ func New() tui.App {
 			ID:          "export",
 			Help:        actionHelp["export"],
 			Usage:       "<selector>...",
-			Description: "Render the targets a selector matches and write them to a folder or a zip.",
+			Description: "Render the targets a selector matches and write them to a folder, a zip or deploy bundles.",
 			MinArgs:     1,
 			Flags: []tui.ActionFlag{
 				{Name: "to", Usage: "write the bundle into this directory, or - for stdout (default: conf.export.dir)"},
 				{Name: "format", Usage: "with --to -, write every file as one yaml document instead of one file's bytes"},
 				{Name: "zip", Usage: "write the bundle into this .zip instead of a directory"},
+				{Name: "bundle", Bool: true, Usage: "build a deploy bundle per instance with a manifest, as rhumb deploy build does"},
+				{Name: "download", Usage: "with --bundle, when a release is fetched: build, into the bundle, or install, on the machine (default: each node's)"},
+				{Name: "services", Usage: "with --bundle, directory of deploy service definitions to prefer (default: conf.services)"},
 				{Name: "overwrite", Bool: true, Usage: "replace files the destination already holds"},
 				{Name: "yes", Shorthand: "y", Bool: true, Usage: "write without asking; everything written is plaintext"},
 			},
 			RunWithConfig: exportAction,
+		}, {
+			ID:          "bundle",
+			Help:        actionHelp["bundle"],
+			Usage:       "<export-dir>",
+			Description: "Build the deploy bundle for one exported instance, as rhumb deploy build does.",
+			MinArgs:     1,
+			MaxArgs:     1,
+			Flags: []tui.ActionFlag{
+				{Name: "to", Usage: "bundle directory to write"},
+				{Name: "platform", Usage: "target os/arch (default: the manifest's, else this machine's)"},
+				{Name: "bin", Usage: "bundle this program instead of what the source gives"},
+				{Name: "download", Usage: "when a release is fetched: build, into the bundle, or install, on the machine (default: the node's, else install)"},
+				{Name: "services", Usage: "directory of deploy service definitions to prefer (default: conf.services)"},
+			},
+			RunWithConfig: bundleAction,
+		}, {
+			ID:          "bundle-gc",
+			Help:        actionHelp["bundle-gc"],
+			Description: "List what installed bundles left behind when deleted without ctl uninstall.",
+			MaxArgs:     0,
+			Flags: []tui.ActionFlag{
+				{Name: "yes", Shorthand: "y", Bool: true, Usage: "remove what is listed"},
+			},
+			RunWithConfig: bundleGCAction,
 		}, {
 			ID:          "secret",
 			Help:        actionHelp["secret"],
@@ -83,6 +110,7 @@ func New() tui.App {
 				NewWithConfig: func(global config.Config) tui.CommandModel {
 					m := newInspectModel(global.ConfRoot(), global.ConfSecrets())
 					m.exportDir = global.ConfExportDir()
+					m.servicesDir = global.ConfServices()
 					if m.migration != nil {
 						m.migration.planDir = filepath.Join(global.AppDir("conf"), "migrations")
 						m.migration.outputDir = m.migration.planDir
@@ -104,6 +132,14 @@ func New() tui.App {
 						Usage: "directory a manifest's secrets file is named relative to (default: conf.secrets)",
 						Apply: func(global *config.Config, value string) error {
 							global.Conf.Secrets = value
+							return nil
+						},
+					},
+					{
+						Name:  "services",
+						Usage: "directory of deploy service definitions a bundle prefers (default: conf.services)",
+						Apply: func(global *config.Config, value string) error {
+							global.Conf.Services = value
 							return nil
 						},
 					},

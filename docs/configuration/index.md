@@ -161,6 +161,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [geo](geo.md) | `gpx.dem.max_zoom` | `15` |
 | [conf](conf.md) | `root` | empty — the TUI page opens with no root and asks for one |
 | [conf](conf.md) | `secrets` | empty — an instance needing a secret refuses to render |
+| [conf](conf.md) | `services` | empty — only the built-in definitions |
 | [conf](conf.md) | `export.dir` | empty — the home directory |
 | [plugins](plugins.md) | `obsidian.vaults` | empty — every run names a vault with `--vault` |
 | [plugins](plugins.md) | `obsidian.folders.public` | `99 Toolkit/91 Scripts/01 DGS/00 Public` |

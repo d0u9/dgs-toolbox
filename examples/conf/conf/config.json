@@ -1,6 +1,7 @@
 {
   "root": "~/confgen",
   "secrets": "~/confgen-secrets",
+  "services": "~/confgen-deploy",
   "export": {
     "dir": "~/Exports"
   }
