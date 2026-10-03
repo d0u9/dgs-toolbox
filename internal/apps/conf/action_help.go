@@ -28,7 +28,10 @@ Use dgs conf --targets to discover targets and configure conf.root/secrets.
 manifest: ctl, compose.yaml and the rendered files. --download build fetches
 releases into the bundle now; install leaves it to ctl on the machine.
 --services (default conf.services) names deploy definitions to prefer.
+--install-root and --label-prefix (default conf.install_root, conf.label_prefix)
+set a Linux bundle's install root and the unit/launchd label prefix.
 Existing outputs require overwrite confirmation; scripts must use --overwrite.
+Confirmed, a bundle built under another label prefix is rebuilt (not macOS).
 --yes skips the plaintext-write prompt but does not authorize overwriting.
 This renders configuration; it does not copy bundles or run deployment scripts.`,
 	"bundle": `Build the deploy bundle for one exported instance, as rhumb deploy build does.
@@ -44,7 +47,12 @@ Reads only the export, not conf.root or conf.secrets.
 --bin bundles a local program instead of downloading a release.
 --download build fetches the release now; install leaves it to ctl install.
 --services (default conf.services) names deploy definitions consulted before
-the built-in ones. Copy the bundle to its machine and run ./ctl install.`,
+the built-in ones. --install-root (default conf.install_root, else /srv/rhumb)
+is where a Linux bundle with no deploy.dir installs, as <root>/<service>.
+--label-prefix (default conf.label_prefix, else rhumb) begins the unit and
+launchd label. A bundle of the same instance built under another prefix is
+refused unless --overwrite; a macOS one always is: uninstall it first.
+Copy the bundle to its machine and run ./ctl install.`,
 	"bundle-gc": `List what installed bundles left behind when deleted without ctl uninstall.
 
 Examples:
@@ -55,6 +63,8 @@ Run it on the machine the bundles were installed on; it is rhumb deploy gc.
 Looks for launchd agents in ~/Library/LaunchAgents and shims in ~/.local/bin
 whose bundle directory is gone. A bundle counts as gone only while its parent
 directory exists, so a bundle on an unmounted disk is left alone.
+Launchd agents are looked for under --label-prefix (default
+conf.label_prefix, else rhumb), the prefix the bundles were built with.
 Lists only; --yes stops each launchd agent and removes what is listed.`,
 	"secret": `Generate the credentials the inventory implies and are not on disk yet.
 

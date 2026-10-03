@@ -35,6 +35,7 @@ func bundleAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 	}
 	opt.Platform = flags["platform"]
 	opt.Binary = expandHome(flags["bin"])
+	opt.Relabel = flags["overwrite"] == "true"
 	to = expandHome(to)
 	if err := deploy.Build(expandHome(args[0]), to, opt); err != nil {
 		return err
@@ -44,16 +45,30 @@ func bundleAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 }
 
 // bundleOptions are the choices every bundle built from the command line
-// shares: --download, checked, and --services, else conf.services.
+// shares: --download, checked, and --services, --install-root and
+// --label-prefix, each else its conf setting.
 func bundleOptions(flags map[string]string, g config.Config) (deploy.Options, error) {
-	opt := deploy.Options{Download: flags["download"], Services: g.ConfServices()}
+	opt := configBundleOptions(g)
+	opt.Download = flags["download"]
 	if opt.Download != "" && opt.Download != deploy.DownloadBuild && opt.Download != deploy.DownloadInstall {
 		return opt, fmt.Errorf("unknown --download %q; give %s or %s", opt.Download, deploy.DownloadBuild, deploy.DownloadInstall)
 	}
 	if dir := flags["services"]; dir != "" {
 		opt.Services = expandHome(dir)
 	}
+	if root := flags["install-root"]; root != "" {
+		opt.InstallRoot = expandHome(root)
+	}
+	if prefix := flags["label-prefix"]; prefix != "" {
+		opt.LabelPrefix = prefix
+	}
 	return opt, nil
+}
+
+// configBundleOptions are the deploy options the conf settings give: every
+// way to a bundle starts from them.
+func configBundleOptions(g config.Config) deploy.Options {
+	return deploy.Options{Services: g.ConfServices(), InstallRoot: g.ConfInstallRoot(), LabelPrefix: g.ConfLabelPrefix()}
 }
 
 // exportBundles runs `dgs conf export <selector>... --bundle`.
@@ -164,6 +179,9 @@ func exportBundles(in io.Reader, out io.Writer, args []string, flags map[string]
 		}
 	}
 
+	// Replacing what is there was confirmed, by --overwrite or the
+	// question, so a bundle built under another label prefix is rebuilt.
+	opt.Relabel = len(existing) > 0
 	if err := writeBundles(r, instances, dirs, where, opt); err != nil {
 		return err
 	}
@@ -178,13 +196,18 @@ var userHome = os.UserHomeDir
 // `rhumb deploy gc`: it lists the launchd agents and ~/.local/bin shims an
 // installed bundle left behind when its directory was deleted rather than
 // uninstalled, and with --yes removes them. It runs on the machine the
-// bundles were installed on.
-func bundleGCAction(_ io.Reader, out io.Writer, _ []string, flags map[string]string, _ config.Config) error {
+// bundles were installed on, and looks under --label-prefix, else
+// conf.label_prefix, the prefix they were built with.
+func bundleGCAction(_ io.Reader, out io.Writer, _ []string, flags map[string]string, g config.Config) error {
 	home, err := userHome()
 	if err != nil {
 		return err
 	}
-	left, err := deploy.Leftovers(home)
+	prefix := flags["label-prefix"]
+	if prefix == "" {
+		prefix = g.ConfLabelPrefix()
+	}
+	left, err := deploy.Leftovers(home, prefix)
 	if err != nil {
 		return err
 	}
