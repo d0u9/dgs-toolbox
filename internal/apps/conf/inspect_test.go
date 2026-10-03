@@ -873,3 +873,132 @@ func TestInspect_ServicesIndexHoldsOnlyPrograms(t *testing.T) {
 		t.Fatalf("service detail = %q, want how many files that produced", body)
 	}
 }
+
+func reloadInspect(t *testing.T, m InspectModel) InspectModel {
+	t.Helper()
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("refresh did not start")
+	}
+	model, _ = model.Update(cmd())
+	return model.(InspectModel)
+}
+
+func TestInspectRefreshReadsExternalChanges(t *testing.T) {
+	root, secrets := buildInspectRoot(t), buildSecretsDir(t)
+	m := newInspectModel(root, secrets)
+	m.width, m.height = 100, 24
+	m.exportDir = "synthetic-export"
+	m.setTab(tabSecrets)
+	id := "secret:srv/ss-srv/main/alex/default"
+	m.list.SelectID(id)
+	writeFile(t, filepath.Join(secrets, "srv/ss-srv/main/alex/default"), "synthetic-secret")
+	writeFile(t, filepath.Join(root, "services/ssserver/confgen.yaml"), "template: templates/changed.tmpl\noutput: changed.json\nauth: per-principal\n")
+	m = reloadInspect(t, m)
+	if m.tab != tabSecrets || m.exportDir != "synthetic-export" || m.width != 100 {
+		t.Fatal("refresh lost workspace settings")
+	}
+	item, _ := m.list.Selected()
+	if item.ID != id {
+		t.Fatal("refresh lost selection")
+	}
+	if strings.Contains(item.Detail, "missing") {
+		t.Fatal("refresh did not reload secret presence")
+	}
+	body, err := renderDetail(m.l, "service", "ssserver")
+	if err != nil || !strings.Contains(body, "changed.json") {
+		t.Fatal("refresh did not reload manifest")
+	}
+	if strings.Contains(m.View(), "synthetic-secret") {
+		t.Fatal("refresh revealed secret value")
+	}
+}
+
+func TestInspectRefreshFailureAndRecovery(t *testing.T) {
+	root := buildInspectRoot(t)
+	m := newInspectModel(root, "")
+	if err := os.Rename(root, root+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+	m = reloadInspect(t, m)
+	if !strings.Contains(m.notice, "Refresh failed") || m.loadErr != nil || len(m.nodes) == 0 {
+		t.Fatal("failed refresh did not retain previous snapshot")
+	}
+	if err := os.Rename(root+"-moved", root); err != nil {
+		t.Fatal(err)
+	}
+	m = reloadInspect(t, m)
+	if m.notice != "Refreshed" {
+		t.Fatal("refresh did not recover")
+	}
+	broken := newInspectModel(root+"-absent", "")
+	broken.rootPath = root
+	broken = reloadInspect(t, broken)
+	if broken.loadErr != nil || len(broken.nodes) == 0 {
+		t.Fatal("initial load failure did not recover")
+	}
+}
+
+func TestInspectRefreshProtectsMigrationDraft(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.migration.dirty = true
+	model, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd != nil || !model.(InspectModel).migration.dirty {
+		t.Fatal("refresh discarded unsaved draft")
+	}
+}
+
+func TestInspectRefreshKeepsFoldsAndMarks(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.list.SelectID("node:srv")
+	m = pressInspect(t, m, "l")
+	m.list.SelectID("inst:srv/ss-srv")
+	m = pressInspect(t, m, " ")
+	if m.markedCount() == 0 {
+		t.Fatal("setup did not mark an instance")
+	}
+	marked := m.markedCount()
+	m = reloadInspect(t, m)
+	if !indexHas(m.nodeItems, "inst:srv/ss-srv") {
+		t.Fatal("refresh lost fold state")
+	}
+	if m.markedCount() != marked {
+		t.Fatalf("marked = %d, want %d after refresh", m.markedCount(), marked)
+	}
+	if item, _ := m.list.Selected(); item.ID != "inst:srv/ss-srv" {
+		t.Fatalf("selected = %q after refresh", item.ID)
+	}
+}
+
+func TestInspectRefreshCtrlR(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	if cmd == nil {
+		t.Fatal("ctrl+r did not start refresh")
+	}
+}
+
+func TestInspectRefreshKeyIsReportInMigrationTable(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.setTab(tabMigrate)
+	m.migration.mode = "table"
+	next := pressInspect(t, m, "r")
+	if next.reloading || next.notice == "Refreshing…" {
+		t.Fatal("r in migration table started refresh instead of Report")
+	}
+}
+
+func TestInspectRefreshNoticeClearsOnNextKey(t *testing.T) {
+	m := newInspectModel(buildInspectRoot(t), "")
+	m.width, m.height = 100, 24
+	m.migration.dirty = true
+	m = pressInspect(t, m, "r")
+	if m.notice != noticeRefreshBlocked || m.Status().Center != noticeRefreshBlocked {
+		t.Fatalf("notice = %q, want blocked notice", m.notice)
+	}
+	m = pressInspect(t, m, "j")
+	if m.notice != "" {
+		t.Fatalf("notice = %q, want cleared on next key", m.notice)
+	}
+}

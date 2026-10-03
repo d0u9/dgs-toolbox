@@ -79,8 +79,9 @@ type InspectModel struct {
 	// exportDir is where the export form opens: conf.export.dir.
 	exportDir string
 	export    *exportFlow
-	// notice is the outcome of the last export, shown in the status bar.
-	notice string
+	// notice is the outcome of the last export or refresh, shown in the status bar.
+	notice    string
+	reloading bool
 	// copy puts text on the clipboard; tests replace it.
 	copy func(string) error
 
@@ -131,6 +132,92 @@ func newInspectModel(rootPath, secretsDir string) InspectModel {
 	m.refresh()
 	m.setTab(tabNodes)
 	return m
+}
+
+// inspectReloadedMsg carries a complete disk snapshot, built off the UI thread.
+type inspectReloadedMsg struct{ model InspectModel }
+
+// Refresh notices last until the next key; export notices stay as before.
+const (
+	noticeRefreshed      = "Refreshed"
+	noticeRefreshBlocked = "Save or discard the migration draft in Migrate before refreshing"
+	noticeRefreshFailed  = "Refresh failed: "
+)
+
+func refreshNotice(notice string) bool {
+	return notice == noticeRefreshed || notice == noticeRefreshBlocked || strings.HasPrefix(notice, noticeRefreshFailed)
+}
+
+func (m *InspectModel) reload() tea.Cmd {
+	if m.rootPath == "" || m.reloading {
+		return nil
+	}
+	if m.migration != nil && m.migration.dirty {
+		m.notice = noticeRefreshBlocked
+		return nil
+	}
+	m.reloading = true
+	m.notice = "Refreshing…"
+	root, secrets := m.rootPath, m.secretsDir
+	return func() tea.Msg { return inspectReloadedMsg{newInspectModel(root, secrets)} }
+}
+
+func (m *InspectModel) finishReload(next InspectModel) {
+	m.reloading = false
+	if next.loadErr != nil {
+		m.notice = noticeRefreshFailed + next.loadErr.Error()
+		return
+	}
+	// next.list is new, so refresh() cannot recover the selection itself.
+	selected := ""
+	if item, ok := m.list.Selected(); ok {
+		selected = item.ID
+	}
+	for _, n := range next.nodes {
+		for _, old := range m.nodes {
+			if n.key == old.key {
+				n.expanded = old.expanded
+				break
+			}
+		}
+	}
+	for _, g := range next.services {
+		for _, old := range m.services {
+			if g.name == old.name {
+				g.expanded = old.expanded
+				break
+			}
+		}
+	}
+	for _, g := range next.secrets.groups {
+		for _, old := range m.secrets.groups {
+			if g.instance == old.instance {
+				g.expanded = old.expanded
+				break
+			}
+		}
+	}
+	// refresh() rebuilds the trees, carrying fold state from these.
+	next.nodeGroups, next.userGroups = m.nodeGroups, m.userGroups
+	for _, n := range next.nodes {
+		for _, inst := range n.instances {
+			for _, unit := range inst.units() {
+				if m.marked[unit] {
+					next.marked[unit] = true
+				}
+			}
+		}
+	}
+	next.bundleBase, next.exportDir, next.copy = m.bundleBase, m.exportDir, m.copy
+	next.width, next.height = m.width, m.height
+	next.tab = m.tab
+	next.refresh()
+	next.setTab(m.tab)
+	if selected != "" {
+		next.list.SelectID(selected)
+	}
+	next.notice = noticeRefreshed
+	*m = next
 }
 
 // serviceGroup is one service and every instance of it, wherever it runs.
@@ -724,6 +811,9 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.export.picker.SetSize(w-4, h-6)
 		}
 		return m, nil
+	case inspectReloadedMsg:
+		m.finishReload(msg.model)
+		return m, nil
 	case graphOpenedMsg:
 		m.graphErr = msg.err
 		return m, nil
@@ -758,8 +848,17 @@ func (m InspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.reloading {
+			return m, nil
+		}
+		if refreshNotice(m.notice) {
+			m.notice = ""
+		}
 		if m.export != nil {
 			return m.updateExport(msg)
+		}
+		if (msg.String() == "r" || msg.String() == "ctrl+r") && (m.tab != tabMigrate || (m.migration != nil && m.migration.mode == "plans" && m.migration.picking == "")) {
+			return m, m.reload()
 		}
 		if m.tab == tabMigrate && m.migration != nil {
 			if m.migration.editing() || m.migration.picking != "" || (msg.String() != "[" && msg.String() != "]") {
@@ -975,10 +1074,17 @@ func (m InspectModel) centered(content string) string {
 
 func (m InspectModel) Status() tui.Status {
 	if m.rootPath == "" || m.loadErr != nil {
-		return tui.Status{Left: "INSPECT", Center: "no generator root", Right: "q Quit"}
+		return tui.Status{Left: "INSPECT", Center: orNone(m.notice, "no generator root"), Right: "r Refresh  q Quit"}
 	}
 	if m.tab == tabMigrate && m.migration != nil {
-		return m.migration.status()
+		status := m.migration.status()
+		if m.migration.mode == "plans" && m.migration.picking == "" {
+			status.Right = "r Refresh  " + status.Right
+		}
+		if m.notice != "" && m.notice != noticeRefreshed && m.migration.notice == "" {
+			status.Center = m.notice
+		}
+		return status
 	}
 	// What the cursor is on is already the detail pane's own legend, so the
 	// centre carries what the whole tab amounts to instead — for Secrets,
@@ -992,10 +1098,10 @@ func (m InspectModel) Status() tui.Status {
 	case tabSecrets:
 		center = m.secrets.secretsStatus()
 	}
-	right := "[/] Tab  h/l Fold  w Fold all  t Graph"
+	right := "r Refresh  [/] Tab  h/l Fold  w Fold all  t Graph"
 	switch m.tab {
 	case tabNodes, tabUsers:
-		right = "[/] Tab  Space Mark  a All  x Export  t Graph"
+		right = "r Refresh  [/] Tab  Space Mark  a All  x Export  t Graph"
 		if n := m.markedCount(); n > 0 {
 			center += " · " + plural(n, "instance") + " marked"
 		}
@@ -1012,7 +1118,9 @@ func (m InspectModel) Status() tui.Status {
 			right = "n Next  Esc Cancel"
 		}
 	}
-	if m.notice != "" {
+	if m.notice == noticeRefreshed {
+		center += " · Refreshed"
+	} else if m.notice != "" {
 		center = m.notice
 	}
 	if m.graphErr != nil {
