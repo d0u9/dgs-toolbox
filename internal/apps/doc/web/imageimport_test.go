@@ -39,6 +39,16 @@ func TestImageImportPreviewAndRetentionOverride(t *testing.T) {
 			if (len(item.Revisions[0].Originals) > 0) != keep {
 				t.Fatal("retention override ignored")
 			}
+			if keep {
+				o := item.Revisions[0].Originals[0]
+				got := do(h, "GET", "/api/original?item="+item.ID+"&original="+o.Digest, "")
+				if got.Code != http.StatusOK || !bytes.Equal(got.Body.Bytes(), img.Bytes()) {
+					t.Fatalf("original: %d", got.Code)
+				}
+			}
+			if got := do(h, "GET", "/api/original?item="+item.ID+"&original="+item.Revisions[0].Digest, ""); got.Code != http.StatusNotFound {
+				t.Fatalf("a PDF's digest served as an original: %d", got.Code)
+			}
 			for _, f := range source(t, h, scans) {
 				if f.Path == "scan.PNG" && f.Item != item.ID {
 					t.Fatal("image not recognised after import")

@@ -5,7 +5,7 @@ import { openMenu } from "/ui/menu.js";
 import { suggest } from "/combo.js";
 import { tooltip } from "/ui/tooltip.js";
 import { listTable } from "/ui/listtable.js";
-import { $, address, keep, scrollBack, tagPills, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
+import { $, address, keep, scrollBack, tagPills, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -471,6 +471,7 @@ function drawPage() {
   $("page-prev").hidden = !attached;
   $("page-next").hidden = !attached;
   $("open-reader").hidden = !attached;
+  $("reveal-pdf").hidden = !attached;
   $("detail-image").hidden = !attached;
   $("open-reader").disabled = !attached;
   if (!attached) {
@@ -518,6 +519,16 @@ function closeReader() {
 }
 window.addEventListener("popstate", () => { if (document.body.classList.contains("reading")) hideReader(); });
 $("open-reader").onclick = openReader;
+$("reveal-pdf").onclick = () => reveal({ item: shownPage.id, digest: shownPage.digest });
+
+// drawOriginals lists the images the picked revision's PDF was made from,
+// kept beside it, a page each in order; each opens, or shows in Finder.
+function drawOriginals(item, rev) {
+  const originals = (rev && rev.originals) || [];
+  $("originals-group").hidden = originals.length === 0;
+  $("originals").replaceChildren(originalsList(item.id, originals));
+}
+
 $("detail-frame").onclick = openReader;
 $("reader-back").onclick = closeReader;
 
@@ -700,6 +711,7 @@ function detail(item) {
   }
   // Revision tags belong to the selected snapshot, with or without a PDF.
   const rev = item.revisions.find((r) => (r.id || r.digest) === selected.digest);
+  drawOriginals(item, rev);
   $("revision-tags-form").hidden = !rev;
   if (rev && revisionTagsOf !== item.id + (rev.id || rev.digest) + JSON.stringify(rev.tags || [])) {
     revisionTagsOf = item.id + (rev.id || rev.digest) + JSON.stringify(rev.tags || []);
@@ -712,6 +724,8 @@ function detail(item) {
     const isHead = (r.id || r.digest) === item.head;
     const revisionMenu = (event) => openMenu(event, [
       !isHead ? [{ label: "Make HEAD", onSelect: () => makeHead(item.id, (r.id || r.digest)) }] : [],
+      r.digest ? [{ label: "Show PDF in Finder", onSelect: () => reveal({ item: item.id, digest: r.digest }) },
+        ...(r.originals || []).map((o, n) => ({ label: "Show original " + (n + 1) + " in Finder", onSelect: () => reveal({ item: item.id, original: o.digest }) }))] : [],
       [{ label: "Delete revision…", danger: true, disabled: item.revisions.length < 2,
         title: item.revisions.length < 2 ? "Delete the Item to remove its last revision" : (r.digest ? "Move this revision's PDF to trash" : "Save this revision's metadata in trash"),
         onSelect: () => deleteRevision(item.id, (r.id || r.digest)) }],

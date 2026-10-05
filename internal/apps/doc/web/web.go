@@ -239,6 +239,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("GET /api/source", s.sourceList)
 	mux.HandleFunc("GET /api/source/file", s.sourceFile)
 	mux.HandleFunc("GET /api/revision", s.revision)
+	mux.HandleFunc("GET /api/original", s.original)
 	mux.HandleFunc("POST /api/reveal", s.reveal)
 	mux.HandleFunc("GET /api/text", s.text)
 	mux.HandleFunc("POST /api/ahead", s.ahead)
@@ -454,16 +455,53 @@ func (s server) revisionPath(id, digest string) (string, int, error) {
 	return "", http.StatusNotFound, errors.New("no such revision")
 }
 
-// reveal shows a PDF in the file manager of the machine serving the page,
-// selected in its folder: a revision's, named by item and digest, or one
-// Import lists, named by dir and path. The page is local, so that is the
-// machine in front of the person clicking.
+// originalPath is an archived original image of an Item, named by its
+// SHA-256, as one of the Item's revisions keeps it.
+func (s server) originalPath(id, digest string) (string, int, error) {
+	items, err := s.items.Items()
+	if err != nil {
+		return "", http.StatusInternalServerError, err
+	}
+	for _, item := range items {
+		if item.ID != id {
+			continue
+		}
+		for _, rev := range item.Revisions {
+			for _, o := range rev.Originals {
+				if o.Digest == digest {
+					if path := tree.OriginalPath(s.root, item.ID, o); path != "" {
+						return path, 0, nil
+					}
+				}
+			}
+		}
+	}
+	return "", http.StatusNotFound, errors.New("no such original image")
+}
+
+// original serves an archived original image, as it was imported.
+func (s server) original(w http.ResponseWriter, r *http.Request) {
+	path, status, err := s.originalPath(r.URL.Query().Get("item"), r.URL.Query().Get("original"))
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	http.ServeFile(w, r, path)
+}
+
+// reveal shows a file in the file manager of the machine serving the page,
+// selected in its folder: a revision's PDF, named by item and digest, an
+// original image kept beside it, by item and original, or one Import
+// lists, named by dir and path. The page is local, so that is the machine
+// in front of the person clicking.
 func (s server) reveal(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Item   string `json:"item"`
-		Digest string `json:"digest"`
-		Dir    string `json:"dir"`
-		Path   string `json:"path"`
+		Item     string `json:"item"`
+		Digest   string `json:"digest"`
+		Original string `json:"original"`
+		Dir      string `json:"dir"`
+		Path     string `json:"path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -475,6 +513,8 @@ func (s server) reveal(w http.ResponseWriter, r *http.Request) {
 	if body.Item == "" {
 		path, err = sourcePath(body.Dir, body.Path)
 		status = http.StatusNotFound
+	} else if body.Original != "" {
+		path, status, err = s.originalPath(body.Item, body.Original)
 	} else {
 		path, status, err = s.revisionPath(body.Item, body.Digest)
 	}
