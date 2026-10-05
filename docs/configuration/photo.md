@@ -20,6 +20,12 @@
 
 What Import does with these is in [`apps/photo/import.md`](../apps/photo/import.md).
 
+The Import workspace's **Incremental** checkbox defaults to enabled for each
+fresh session. It confirms identical size and SHA-256 anywhere under Destination,
+including date subdirectories, before skipping a copy. This is a session control,
+not an `import` JSON key; changing it does not persist. State uses version 2 and
+can be deleted without losing incremental detection; version 1 is still readable.
+
 ## Encode defaults
 
 The `encode` object in the same `photo/config.json` initializes each fresh

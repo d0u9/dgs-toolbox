@@ -2,6 +2,7 @@
 package postprocess
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"dgs-toolbox/internal/apps/photo/skipdirs"
+	"dgs-toolbox/internal/verifiedcopy"
 
 	"github.com/rwcarlsen/goexif/exif"
 )
@@ -42,6 +46,15 @@ type File struct {
 	Path   string
 }
 
+// ExistingFile carries verified shot context. Its source name groups it with
+// new files; its destination bytes must still match before organizing. It is
+// read-only unless its File also appears among the rename targets.
+type ExistingFile struct {
+	File
+	Digest string
+	Size   int64
+}
+
 var rawExtensions = map[string]struct{}{
 	"3FR": {}, "ARW": {}, "CR2": {}, "CR3": {}, "DNG": {}, "ERF": {},
 	"IIQ": {}, "KDC": {}, "MEF": {}, "MOS": {}, "MRW": {}, "NEF": {},
@@ -56,8 +69,10 @@ const DefaultLayout = "YYYYMMDD"
 // without changing any file. Check ExistingDates before Apply so a batch never
 // silently mixes into date folders that are already there.
 type Plan struct {
-	Root  string
-	Files []Outcome
+	Root     string
+	Files    []Outcome
+	existing []ExistingFile
+	verified map[string]string
 }
 
 // ValidateLayout checks a date folder layout built from YYYY, MM and DD, with
@@ -93,24 +108,108 @@ func NewPlan(root string, files []File) Plan {
 	return NewLayoutPlan(root, files, DefaultLayout)
 }
 
+// NewPlanWithExisting reads verified counterparts; only files are eligible to
+// move. A counterpart also listed in files retains both checks while moving.
+// Cancelling ctx stops reading counterparts; their shots are then refused,
+// never moved unchecked.
+func NewPlanWithExisting(ctx context.Context, root string, files []File, existing []ExistingFile) Plan {
+	return newLayoutPlan(ctx, root, files, DefaultLayout, existing)
+}
+
 // NewLayoutPlan plans moves into root/<layout>/, where layout must pass
 // ValidateLayout. Files may live anywhere; only their date folder is under root.
 func NewLayoutPlan(root string, files []File, layout string) Plan {
-	plan := Plan{Root: root, Files: make([]Outcome, len(files))}
+	return newLayoutPlan(context.Background(), root, files, layout, nil)
+}
+
+func newLayoutPlan(ctx context.Context, root string, files []File, layout string, existing []ExistingFile) Plan {
+	plan := Plan{Root: root, Files: make([]Outcome, len(files)), verified: make(map[string]string)}
+	contextErrors := make(map[string]string)
+	contextFolders := make(map[string]string)
+	contextVersions := make(map[string]os.FileInfo)
+	needed := make(map[string]bool)
+	movable := make(map[File]bool)
+	for _, file := range files {
+		movable[file] = true
+		if isJPEG(file.Source) || isRAW(file.Source) {
+			needed[pairKey(file.Source)] = true
+		}
+	}
+	metadataFiles := append([]File(nil), files...)
+	for _, item := range existing {
+		group := pairKey(item.Source)
+		if !needed[group] || (!isJPEG(item.Source) && !isRAW(item.Source)) {
+			continue
+		}
+		checked, err := verifiedcopy.Check(ctx, root, item.Path, nil, nil)
+		if ctx.Err() != nil {
+			contextErrors[group] = "organizing was cancelled"
+			continue
+		}
+		if err != nil || checked.Size != item.Size || checked.Digest != item.Digest {
+			contextErrors[group] = "existing shot counterpart no longer matches its verified content"
+			continue
+		}
+		if !movable[item.File] && !strings.EqualFold(stem(item.Source), stem(item.Path)) {
+			contextErrors[group] = "renamed existing counterpart has ambiguous shot ownership"
+			continue
+		}
+		if !movable[item.File] {
+			folder := filepath.Clean(filepath.Dir(item.Path))
+			if prior, ok := contextFolders[group]; ok && prior != folder {
+				contextErrors[group] = "existing shot counterparts occupy different folders"
+			}
+			contextFolders[group] = folder
+		}
+		plan.existing = append(plan.existing, item)
+		if prior, ok := plan.verified[filepath.Clean(item.Path)]; ok && prior != group {
+			contextErrors[prior], contextErrors[group] = "existing counterpart belongs to multiple source shots", "existing counterpart belongs to multiple source shots"
+		}
+		plan.verified[filepath.Clean(item.Path)] = group
+		contextVersions[item.Path] = checked.Source
+		if !movable[item.File] {
+			metadataFiles = append(metadataFiles, item.File)
+		}
+	}
+	// A shot's files pair by name. Keep both may have renamed one of them
+	// (IMG_0001-2.JPG beside IMG_0001.CR2); in a date folder that pairs with
+	// nothing, or with another shot, so the shot stays where it is.
+	stems := make(map[string]string)
+	for _, file := range metadataFiles {
+		if !isJPEG(file.Source) && !isRAW(file.Source) {
+			continue
+		}
+		group, name := pairKey(file.Source), strings.ToLower(stem(file.Path))
+		if prior, ok := stems[group]; ok && prior != name && contextErrors[group] == "" {
+			contextErrors[group] = "files of this shot were published under different names (Keep both); pair them by hand"
+		}
+		stems[group] = name
+	}
 	jpegByStem := make(map[string]string)
 	jpegDates := make(map[string]time.Time)
 	jpegErrors := make(map[string]error)
-	for _, file := range files {
-		if isJPEG(file.Source) {
+	for _, file := range metadataFiles {
+		if isJPEG(file.Source) && contextErrors[pairKey(file.Source)] == "" {
 			key := pairKey(file.Source)
 			jpegByStem[key] = file.Path
 			jpegDates[key], jpegErrors[key] = captureDate(file.Path)
+		}
+	}
+	for _, item := range plan.existing {
+		info, err := verifiedcopy.FileInfo(root, item.Path)
+		if err != nil || !verifiedcopy.SameVersion(info, contextVersions[item.Path]) {
+			contextErrors[pairKey(item.Source)] = "existing counterpart changed during metadata reading"
 		}
 	}
 	for index, file := range files {
 		path := file.Path
 		outcome := Outcome{Original: path, Final: path, Status: Skipped, group: pairKey(file.Source)}
 		if !isJPEG(file.Source) && !isRAW(file.Source) {
+			plan.Files[index] = outcome
+			continue
+		}
+		if message := contextErrors[outcome.group]; message != "" {
+			outcome.Status, outcome.Error = Failed, message
 			plan.Files[index] = outcome
 			continue
 		}
@@ -136,6 +235,12 @@ func NewLayoutPlan(root string, files []File, layout string) Plan {
 		}
 		date := FolderName(layout, captured)
 		outcome.Date, outcome.DateSource, outcome.Final = date, source, filepath.Join(root, date, filepath.Base(path))
+		if existingFolder, ok := contextFolders[outcome.group]; ok && existingFolder != filepath.Clean(filepath.Dir(outcome.Final)) {
+			outcome.Status, outcome.Error = Failed, "existing shot counterpart is outside the planned date folder"
+			outcome.Final = outcome.Original
+			plan.Files[index] = outcome
+			continue
+		}
 		outcome.Status = Moved
 		plan.Files[index] = outcome
 	}
@@ -188,6 +293,9 @@ func refuseCollisions(plan *Plan) {
 				continue
 			}
 			if stemKey(existing) == key {
+				if group, ok := plan.verified[filepath.Clean(existing)]; ok && group == outcome.group {
+					continue
+				}
 				conflicts[outcome.group] = fmt.Sprintf("%s already has %s", outcome.Date, entry.Name())
 				break
 			}
@@ -241,8 +349,37 @@ func (plan Plan) ExistingDates() []string {
 
 // Apply moves the files a plan placed into date folders. It never overwrites.
 func Apply(plan Plan) Result {
+	return ApplyContext(context.Background(), plan)
+}
+
+// ApplyContext is Apply whose counterpart checks stop when ctx is cancelled.
+// Cancellation is honoured only before the first move, so a shot is never
+// left half moved by it.
+func ApplyContext(ctx context.Context, plan Plan) Result {
+	plan.Files = append([]Outcome(nil), plan.Files...)
 	result := Result{Files: make([]Outcome, len(plan.Files))}
-	failedGroups := make(map[string]struct{})
+	// failedGroups holds why a shot stays where it is.
+	failedGroups := make(map[string]string)
+	// The user may have left a planned import at the date-folder confirmation.
+	// Re-read witnesses before any move; stale context cannot waive a collision.
+	for _, item := range plan.existing {
+		checked, err := verifiedcopy.Check(ctx, plan.Root, item.Path, nil, nil)
+		if err != nil || checked.Size != item.Size || checked.Digest != item.Digest {
+			failedGroups[pairKey(item.Source)] = "existing shot counterpart changed before organizing"
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		for index, outcome := range plan.Files {
+			result.Files[index] = outcome
+			if outcome.Status == Moved && !samePath(outcome.Original, outcome.Final) {
+				result.Files[index].Status, result.Files[index].Error = Failed, "organizing was cancelled"
+				result.Files[index].Final = outcome.Original
+			}
+		}
+		return result
+	}
+	// Recheck shot-level occupancy after the confirmation as well.
+	refuseCollisions(&plan)
 	for index, outcome := range plan.Files {
 		result.Files[index] = outcome
 		if outcome.Status != Moved || samePath(outcome.Original, outcome.Final) {
@@ -250,11 +387,14 @@ func Apply(plan Plan) Result {
 		}
 		fail := func(message string) {
 			result.Files[index].Status, result.Files[index].Error = Failed, message
-			failedGroups[outcome.group] = struct{}{}
+			result.Files[index].Final = outcome.Original
+			if _, recorded := failedGroups[outcome.group]; !recorded {
+				failedGroups[outcome.group] = "another file of this shot could not be moved"
+			}
 		}
 		// Once part of a shot could not move, the rest stays with it.
-		if _, failed := failedGroups[outcome.group]; failed {
-			fail("another file of this shot could not be moved")
+		if reason, failed := failedGroups[outcome.group]; failed {
+			fail(reason)
 			continue
 		}
 		if _, err := os.Lstat(outcome.Final); err == nil {
@@ -268,7 +408,7 @@ func Apply(plan Plan) Result {
 			fail(err.Error())
 			continue
 		}
-		if err := os.Rename(outcome.Original, outcome.Final); err != nil {
+		if err := verifiedcopy.Publish(outcome.Original, outcome.Final); err != nil {
 			fail(err.Error())
 		}
 	}
@@ -283,7 +423,7 @@ func TreeFiles(dir string) ([]File, error) {
 		if err != nil {
 			return err
 		}
-		if path != dir && strings.HasPrefix(entry.Name(), ".") {
+		if path != dir && (strings.HasPrefix(entry.Name(), ".") || entry.IsDir() && skipdirs.Skip(entry.Name())) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}

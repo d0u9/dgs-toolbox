@@ -163,6 +163,16 @@ func (m Model) Checked(id string) bool {
 	return false
 }
 
+// SetChecked sets a checkbox field.
+func (m *Model) SetChecked(id string, checked bool) {
+	for index := range m.fields {
+		if m.fields[index].ID == id {
+			m.fields[index].Checked = checked
+			return
+		}
+	}
+}
+
 func (m Model) IntValue(id string) int {
 	value, _ := strconv.Atoi(m.Value(id))
 	return value

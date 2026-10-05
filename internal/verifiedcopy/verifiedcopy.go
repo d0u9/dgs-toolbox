@@ -39,6 +39,10 @@ import (
 // neither can publish bytes the other wrote.
 const PartSuffix = ".dgs-part"
 
+// DefaultBufferSize bounds each sequential read and the interval between pause
+// or cancellation checks in Copy and Check.
+const DefaultBufferSize = 1024 * 1024
+
 // Phase is where a copy has got to. A caller showing progress needs to tell
 // copying from verifying, because the second pass reads the same number of
 // bytes again and a single bar would appear to stall at the end.
@@ -56,6 +60,11 @@ type Request struct {
 	// it is missing.
 	Source      string
 	Destination string
+	// ExpectedSource and ExpectedDigest optionally bind a copy to an earlier
+	// observation. Both are checked before publication; omitted values leave
+	// callers that have not pre-read source unchanged.
+	ExpectedSource os.FileInfo
+	ExpectedDigest string
 	// PreserveModTime applies the source's modification time to the copy before
 	// it is published, so the final name never denotes a file with incomplete
 	// metadata. A Box does not want this — a scan's intake date is a fact about
@@ -83,15 +92,16 @@ type Request struct {
 // whoever can read the library, writable by its owner.
 const DefaultPhotoMode os.FileMode = 0o644
 
-// Result is a completed, verified, published copy.
+// Result describes the bytes and file identity observed by Copy or Check.
+// Copy returns it only after verified publication; Check is a read-only digest.
 type Result struct {
 	// Source is the source's metadata as it was read. A caller that deletes the
 	// source afterwards compares against it first: the digest describes these
 	// bytes and no others.
 	Source os.FileInfo
 	Size   int64
-	// Digest is the SHA-256 both passes agreed on, lowercase hex with no
-	// algorithm prefix. It is what identifies the file from here on.
+	// Digest is lowercase SHA-256 hex with no algorithm prefix. Copy's source
+	// stream and independent destination readback must both agree on it.
 	Digest string
 }
 
@@ -132,13 +142,16 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 	if !info.Mode().IsRegular() {
 		return fail(fmt.Errorf("source is not a regular file: %s", request.Source))
 	}
+	if request.ExpectedSource != nil && !SameVersion(info, request.ExpectedSource) {
+		return fail(errors.New("source changed since comparison"))
+	}
 	if _, err := os.Lstat(request.Destination); err == nil {
 		return fail(fmt.Errorf("%w: %s", ErrDestinationExists, request.Destination))
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fail(fmt.Errorf("destination metadata: %w", err))
 	}
 	directory := filepath.Dir(request.Destination)
-	if err := ensureDirectory(request.Root, directory); err != nil {
+	if err := EnsureDirectory(request.Root, directory); err != nil {
 		return fail(fmt.Errorf("create destination directory: %w", err))
 	}
 	if err := clearStale(directory, filepath.Base(request.Destination)); err != nil {
@@ -150,6 +163,10 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 		return fail(fmt.Errorf("open source: %w", err))
 	}
 	defer source.Close()
+	opened, err := source.Stat()
+	if err != nil || !SameVersion(info, opened) {
+		return fail(errors.New("source changed while opening"))
+	}
 	// The temporary file goes in the destination's own directory, so publishing
 	// is a rename within one filesystem and cannot turn into a second copy.
 	// CreateTemp creates exclusively under a name nobody else holds.
@@ -159,6 +176,9 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 	}
 	temporary := destination.Name()
 	partial = temporary
+	// Best effort: a filesystem that refuses still gets a readback, served
+	// however the operating system chooses.
+	_ = bypassCache(destination)
 	// written is the file this copy wrote. Everything after the write —
 	// readback, metadata, publication — is checked against it, because they
 	// all go through a path and a path can come to name another file.
@@ -169,7 +189,7 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 	}
 
 	sourceDigest := sha256.New()
-	buffer := make([]byte, 1024*1024)
+	buffer := make([]byte, DefaultBufferSize)
 	var copied int64
 	report(request, PhaseCopying, 0, info.Size())
 	for {
@@ -200,6 +220,7 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 		destination.Close()
 		return fail(fmt.Errorf("sync destination: %w", err))
 	}
+	_ = dropCache(destination)
 	if err := destination.Close(); err != nil {
 		return fail(fmt.Errorf("close destination: %w", err))
 	}
@@ -215,9 +236,14 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 	}
 
 	// The verification pass opens the destination again and reads it back. It
-	// is not the buffer that was just written: a digest taken over bytes still
-	// in memory verifies memory, not the disk.
+	// is not the buffer that was just written, and the handles ask the system
+	// not to answer from its cache (F_NOCACHE on macOS, POSIX_FADV_DONTNEED on
+	// Linux): reopening alone would read the pages this process just wrote.
+	// A filesystem may ignore that request, which is the API's boundary.
 	expected := hex.EncodeToString(sourceDigest.Sum(nil))
+	if request.ExpectedDigest != "" && expected != request.ExpectedDigest {
+		return fail(errors.New("source digest changed since comparison"))
+	}
 	report(request, PhaseVerifying, 0, info.Size())
 	verified, actual, err := readBack(ctx, request, temporary, written, buffer, info.Size())
 	if err != nil {
@@ -282,6 +308,8 @@ func readBack(ctx context.Context, request Request, path string, written os.File
 		file.Close()
 		return 0, "", fmt.Errorf("temporary file was replaced before verification: %s", path)
 	}
+	_ = bypassCache(file)
+	_ = dropCache(file)
 	digest := sha256.New()
 	var read int64
 	for {
@@ -354,10 +382,10 @@ func clearStale(directory, name string) error {
 	return nil
 }
 
-// ensureDirectory creates directory. Under a root, every level below it is
+// EnsureDirectory creates directory. Under a root, every level below it is
 // checked without following links and made one at a time, so a symbolic link
 // planted inside the tree is refused rather than written through.
-func ensureDirectory(root, directory string) error {
+func EnsureDirectory(root, directory string) error {
 	if root == "" {
 		return os.MkdirAll(directory, 0o755)
 	}

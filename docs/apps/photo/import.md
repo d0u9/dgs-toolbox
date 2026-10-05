@@ -6,6 +6,9 @@ This document owns decisions specific to `dgs photo import`. Read [`../../tui.md
 
 Photo Import is a concrete consumer of the shared design language. Its page composition, labels, parameter groups, defaults, and workflow do not define requirements for other apps or commands.
 
+Incremental import finds existing copies after date organization. It is enabled initially and
+can be disabled in Parameters. Multiple destinations remain follow-up work.
+
 ## Product scenario and integrity contract
 
 The primary scenario is importing camera files from an SD card into durable storage. Data integrity is the highest-priority requirement: a destination file must not be published under its final photo or video filename until the bytes read from Source and the bytes independently read back from Destination produce the same cryptographic hash.
@@ -90,6 +93,8 @@ After scanning, divide the entire workspace into four columns:
 - The first and fourth columns are supporting widths. The middle two columns freely and equally divide all remaining width after the outer columns and three one-cell gutters are reserved.
 - Page Actions keeps only its shared four-row height at bottom-right, including its breathing space and right-edge inset. It does not shorten the other three columns.
 - Below 140 total columns, replace the columns with a resize prompt instead of overflowing or wrapping structural regions.
+- When controls, extension choices and the summary cannot fit vertically, show
+  the required workspace height instead of hiding controls or overflowing.
 - Each inventory displays its root directory before its count and relative file list.
 - The JPG-only and RAW-only inventories classify scanned Source files by matching a case-insensitive filename stem within the same relative directory. This classification reads filenames only; EXIF capture-time behavior is not part of this layout change.
 
@@ -109,7 +114,7 @@ This screen does not use the centered 100-cell configuration surface. Its compos
 ╰──────────────────╯ ╰────────────────────╯ ╰─────────────────────╯
 ```
 
-The summary updates immediately when Operation, Extensions, Duplicates, or Parallelism changes. Extensions are discovered from the scanned Source inventory, normalized case-insensitively, sorted, and rendered as independent checkboxes; extensions absent from Source are not offered. All discovered extensions begin selected. A leading `[ All ]` action selects every discovered extension again, providing an explicit recovery from an empty filtered Source viewport. Right/l or Enter enters the extension subitems; Up/Down or k/j then moves through All and the extensions, Space or Enter invokes the current row, and Left/h or Esc exits the group. Duplicates opens with either Space or Enter. Changing the selection immediately filters Source, the two sidecar exception inventories, and Summary from the same source of truth. Destination remains complete so existing files and conflicts stay visible. Duplicate detection compares the relative path under each root case-insensitively, matching the destination layout resolved by the engine. Do not summarize a long inventory with text such as `… 8 files more`; make each inventory a navigable viewport instead. All four inventories use the shared one-based line-number gutter. Within a focused list, `j/k` or Down/Up moves one file, `gg` moves to the first file, `G` moves to the last, and `h/l` or Left/Right pans long paths horizontally. The selected file uses `›` and the viewport follows it. A primary click selects a row and focuses its inventory. Hovering over an inventory and using the mouse wheel scrolls that inventory by three rows without changing focus. Space opens the selected file in macOS Quick Look. Right-clicking a row selects it and opens the shared context menu; Open with default app delegates to macOS `open`. `Alt+h/j/k/l` moves spatially among Parameters, Import summary, and all four inventories. `Esc` returns to Setup. The shared `n` Next Screen shortcut starts Processing without requiring traversal through unchanged parameters.
+The summary updates immediately when Operation, Incremental, Extensions, Duplicates, or Parallelism changes. With Incremental enabled it shows eligible files and bytes, mirrored-name conflicts, and files with same-size candidates needing content checks; exact copy and skip counts are established during Processing. With Incremental off it shows the filename-based transfer estimate. Extensions are discovered from the scanned Source inventory, normalized case-insensitively, sorted, and rendered as independent checkboxes; extensions absent from Source are not offered. All discovered extensions begin selected. A leading `[ All ]` action selects every discovered extension again, providing an explicit recovery from an empty filtered Source viewport. Right/l or Enter enters the extension subitems; Up/Down or k/j then moves through All and the extensions, Space or Enter invokes the current row, and Left/h or Esc exits the group. Duplicates opens with either Space or Enter. Changing the selection immediately filters Source, the two sidecar exception inventories, and Summary from the same source of truth. Destination remains complete so existing files and conflicts stay visible. Filename-conflict estimates compare the relative path under each root case-insensitively. Incremental content matching is separate and searches the complete destination tree, including date directories and renamed files. Do not summarize a long inventory with text such as `… 8 files more`; make each inventory a navigable viewport instead. All four inventories use the shared one-based line-number gutter. Within a focused list, `j/k` or Down/Up moves one file, `gg` moves to the first file, `G` moves to the last, and `h/l` or Left/Right pans long paths horizontally. The selected file uses `›` and the viewport follows it. A primary click selects a row and focuses its inventory. Hovering over an inventory and using the mouse wheel scrolls that inventory by three rows without changing focus. Space opens the selected file in macOS Quick Look. Right-clicking a row selects it and opens the shared context menu; Open with default app delegates to macOS `open`. `Alt+h/j/k/l` moves spatially among Parameters, Import summary, and all four inventories. `Esc` returns to Setup. The shared `n` Next Screen shortcut starts Processing without requiring traversal through unchanged parameters.
 
 The shared status-bar stepper shows `Directories › Parameters › Processing › Post-processing › Result`. The active stage is bold without an underline. Scan and the parameter-selection workspace both belong to Parameters.
 
@@ -131,6 +136,10 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 - Destination: directory selected through File Explorer.
 - `photo.import.source` and `photo.import.destination` in `photo/config.json` optionally prefill those two fields. Empty values retain the repository mock directories for UI testing; users can still change either path in Directories.
 - Operation: radio choice between Copy and Move.
+- Incremental: checkbox, enabled for each fresh import. Confirm matching content
+  anywhere under Destination before deciding whether to copy; disabling it uses
+  filename-conflict handling and retained-state recovery alone. It is a session
+  control, with no additional configuration key.
 - Extensions: dynamic multi-checkbox choices derived from the extensions actually present in Source; all are selected initially.
 - Duplicates: filename-conflict policy. Skip leaves the existing destination untouched, Replace intends to publish the verified new file at that path, and Keep both chooses a new unique filename. Replace is not the default; its backup and rollback semantics remain to be designed before implementation.
 - Parallelism: positive worker count controlling concurrent file transfers; default `1` for predictable removable-media I/O and bounded resource use.
@@ -140,11 +149,11 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 
 Processing uses the shared two-column landscape skeleton and keeps vertical stacks shallow. A compact full-width header shows file progress, aggregate progress, active workers, pending files, and failures. Below it, the narrow right column is divided vertically between Next files and Recent results, with Page Actions at bottom-right. The wider left column contains the worker list so filenames, metadata, step tracks, hashes, and progress bars receive the available width.
 
-Each Worker owns one file and exposes a distinct state: Copying, Verifying, Publishing, or Idle. Each compact worker entry includes the current filename, file size, phase progress bar, and Source/Destination hash state. It also uses a stable three-step track—`COPY → VERIFY → PUBLISH`—where completed steps use `✓`, the active step uses `●`, and forthcoming steps use `○`; this makes both completed and remaining work visible without relying only on a phase label. Render only configured workers; do not create placeholder worker cards to fill a landscape viewport. When workers exceed the visible height, keep them in one vertically scrollable list instead of laying them out side by side. Up/Down or `k/j` scrolls that list, while `g`/Home and `G`/End jump to its beginning or end. Do not display `MATCH` until independent destination verification has completed. Overall completion counts verified and published files, not merely copied bytes.
+Each Worker owns one file and exposes a distinct state: Checking existing copies, Copying, Verifying, Publishing, or Idle. Checking identifies source and destination reads separately and supports the same pause and cancellation controller. Each compact worker entry includes the current filename, file size, phase progress bar, and Source/Destination hash state. It also uses a stable three-step track—`COPY → VERIFY → PUBLISH`—where completed steps use `✓`, the active step uses `●`, and forthcoming steps use `○`; this makes both completed and remaining work visible without relying only on a phase label. Render only configured workers; do not create placeholder worker cards to fill a landscape viewport. When workers exceed the visible height, keep them in one vertically scrollable list instead of laying them out side by side. Up/Down or `k/j` scrolls that list, while `g`/Home and `G`/End jump to its beginning or end. Do not display `MATCH` until independent destination verification has completed. Overall completion counts verified and published files, not merely copied bytes. Progress events of one step are sent at most every 100 ms (`importer.ProgressInterval`); each step's start, end and every phase change always pass, so the pages redraw at a bounded rate however fast the disks are. While the incremental inventory is read, before any worker moves, the header shows how many destination files it has listed.
 
 The aggregate progress bar reserves a fixed right-hand status segment such as `42% │ 4/12 verified`. Calculate the bar width from the remaining cells after that segment, rather than stretching it to the fieldset width and truncating the right-hand information.
 
-Processing supports 1–8 workers and defaults to 1. Each worker handles a different whole file and reports real engine events. It writes same-directory `.dgs-part` files and persists `.dgs-state` at file transitions. `p` pauses or resumes I/O between bounded chunks. During active Processing, every key that could leave work is guarded: `Esc` asks before returning to Parameters, and `q` or Ctrl+C asks before exiting. Opening the confirmation pauses I/O; choosing No resumes it unless it was already paused. Choosing Yes cancels the batch and waits for workers to stop before navigation or exit. The shared dialog defaults to No; Tab switches actions, Enter invokes the selected action, and Esc continues processing.
+Processing supports 1–8 workers (`importer.MaxWorkers`) and defaults to 1. Each worker handles a different whole file and reports real engine events. It writes same-directory `.dgs-part` files and persists `.dgs-state` when the batch starts and when it ends; while it runs, pending changes are written within two seconds, even while a file is paused. `p` pauses or resumes I/O between bounded chunks. During active Processing, every key that could leave work is guarded: `Esc` asks before returning to Parameters, and `q` or Ctrl+C asks before exiting. Opening the confirmation pauses I/O; choosing No resumes it unless it was already paused. Choosing Yes cancels the batch and waits for workers to stop before navigation or exit. Returning to Parameters re-reads both roots: a Move has removed sources, and every run adds destination files. The shared dialog defaults to No; Tab switches actions, Enter invokes the selected action, and Esc continues processing.
 
 Photo Import status uses the shared three-part bar as follows: the left chip identifies `SCAN · READING`, `PROCESSING · RUNNING`, `PROCESSING · PAUSED`, `PROCESSING · COMPLETE`, or confirmation state; the center keeps the workflow track; and the right side contains only context-valid controls. A paused import replaces `p Pause` with `p Resume`; a completed import no longer advertises pause.
 
@@ -152,11 +161,31 @@ Processing remains visible when it reaches complete so its final worker state ca
 
 ## Post-processing screen
 
-Post-processing receives only files that Processing reported complete after independent destination readback and publication. Its page first shows a confirmation dialog. `Skip` is the safe default and performs no metadata reads or renames before continuing to Result. Choosing `Organize by capture date` closes the dialog and applies these rules:
+Post-processing receives newly published files as rename targets and verified
+existing counterparts as read-only shot context. An already-present or resumed
+file that still stands where Import places files — mirroring its Source folder,
+because an earlier run was interrupted or skipped organizing — is a rename
+target too, so a shot is not split between that folder and a date folder.
+These movable existing files retain their recorded size and SHA-256 and are
+revalidated before metadata reads and again after the date-folder confirmation;
+a changed file keeps the whole shot at its current paths.
+Existing files anywhere else never enter the rename list. Its page first shows a confirmation dialog. `Skip` is the safe
+default and performs no metadata reads or renames before continuing to Result.
+Choosing `Organize by capture date` closes the dialog and applies these rules:
 
 1. A RAW with a same-directory, case-insensitive filename-stem JPG/JPEG sidecar and that JPG/JPEG both use the sidecar's EXIF capture time.
 2. A JPG/JPEG without RAW uses its own EXIF capture time.
 3. A RAW without JPG/JPEG uses capture time read directly from the RAW through the existing Go EXIF library.
+
+A selected JPG already present in a date folder can provide capture time and
+same-shot ownership for a newly published RAW. Revalidate its bytes before
+planning and again after the existing-date-folder confirmation. An unrelated
+same-stem member, renamed ambiguous counterpart, or inconsistent date folders
+leaves the new file at its verified Processing path and reports organization
+unfinished. Existing counterparts are never moved or overwritten. A shot whose
+files were published under different names — Keep both renamed one, as
+`IMG_0001-2.JPG` beside `IMG_0001.CR2` — is left in place and reported, since
+in a date folder it would pair with nothing or with another shot.
 
 The destination is `<Destination>/YYYYMMDD/<filename>`. Post-processing reads the already verified destination file, not a deleted Move source. It uses same-filesystem rename and never overwrites an existing target. A missing/invalid capture time, unsupported RAW container, unsafe date directory, target conflict, or rename failure leaves that file at its published Processing path and reports a per-file failure. Non-photo files are skipped. Collisions are decided per shot — the files of one source folder sharing a filename stem — before anything moves: a shot whose name another shot of the batch also takes in the same date folder, or which that folder already holds under any extension, stays at its published path whole and is reported, so a RAW is never filed beside a different shot's JPG. If one file of a shot fails to move, the rest of that shot stays with it. Before moving any paired RAW, read its sidecar date so processing order cannot invalidate the metadata source.
 
@@ -193,7 +222,7 @@ Result uses a landscape summary rather than another progress surface:
   New import      › Exit dgs
 ```
 
-The full-width header answers whether the batch is trustworthy before showing detail. It repeats Source and Destination, reports the total bytes successfully verified and published, and summarizes whether Post-processing was skipped or how many files were organized, skipped, and failed. Transfer-skipped and transfer-failed files do not contribute to the published byte count. Below it, Result uses the shared two-column skeleton. The narrow left side separates integrity evidence, post-processing outcome, and the final state-file decision. The wider right column owns the complete per-file result inventory and uses the shared numbered, selectable, vertically scrollable list; organized rows include their `YYYYMMDD` directory. Do not mix cleanup controls into the verification summary.
+The full-width header answers whether the batch is trustworthy before showing detail. It repeats Source and Destination, reports the total bytes successfully verified and published, and summarizes whether Post-processing was skipped or how many files were organized, skipped, and failed. Already-present, transfer-skipped and transfer-failed files do not contribute to the published byte count. Results separate verified existing copies from conflict skips and new publications, and show the actual matching destination path. Below it, Result uses the shared two-column skeleton. The narrow left side separates integrity evidence, post-processing outcome, and the final state-file decision. The wider right column owns the complete per-file result inventory and uses the shared numbered, selectable, vertically scrollable list; organized rows include their `YYYYMMDD` directory. Do not mix cleanup controls into the verification summary.
 
 Delete state is selected by default, matching the confirmed lifecycle decision. Its filename is configured by the global configuration key `photo.import.state_file` and defaults to `.dgs-state`. The value must be a filename rather than a path so state cannot escape the selected Destination. The file lives directly inside that root as `<Destination>/<state_file>`; it is not stored in Source or in a global application-data directory. Result renders the configured filename in its cleanup control and confirmation copy. The explanatory copy makes retaining it an audit or diagnostic choice. When deletion is selected, leaving Result through Again or a confirmed exit—including Esc, `q`, Ctrl+C, and the Quit action—must remove the state file before navigation or process termination. If removal fails, remain on Result and report the error rather than silently exiting. When deletion is not selected, every exit path retains the file. `Alt+h/l` moves between the result inventory and state-file actions; list navigation uses the shared arrow/Vim behavior, mouse wheel works while hovering the inventory, and primary click changes focus or activates a control.
 
@@ -207,7 +236,7 @@ For each file:
 
 1. Resolve the final destination as the Source file's relative path reproduced under the Destination root, creating any missing intermediate directories. Mirroring the hierarchy rather than flattening to the basename keeps files that share a name in different Source subdirectories distinct, so one batch never contains two jobs competing for a single final name or a single `.dgs-part` file. Create a uniquely named temporary file in that same destination directory, for example `.IMG_0001.JPG.482913.dgs-part`, exclusively. A same-directory temporary file allows the final rename to be atomic on the destination filesystem. The random part makes the name belong to one copy: two imports of cards that both hold `IMG_0001.JPG` into one Destination never write, read back or publish through a shared path. Directories below the Destination root are checked without following links and created one level at a time; a symbolic link inside the tree is refused, not written through. The root itself may be a link.
 2. Open Source once and stream it sequentially into the temporary file while updating the Source SHA-256 digest in the same pass. Do not perform a separate pre-hash pass over Source.
-3. Flush and close the temporary file. Where supported, sync it before verification. The integrity guarantee is defined at the user-space/filesystem API boundary; it does not attempt to prove physical-media cache behavior.
+3. Flush and close the temporary file. Where supported, sync it before verification. Reopening alone would read the pages this process just wrote, so the write and readback handles ask the operating system not to answer from its cache: `F_NOCACHE` on macOS, `POSIX_FADV_DONTNEED` after the sync on Linux. The same request applies to content checks that decide skipping or deleting. A filesystem may ignore it; the integrity guarantee is defined at the user-space/filesystem API boundary and does not attempt to prove physical-media cache behavior.
 4. Read the temporary file sequentially and compute the Destination SHA-256 digest. The readback handle must be the same file that was written; a temporary name that has come to denote another file fails the copy. This second destination read is required by the integrity contract and is not considered redundant scanning. An error closing this read-only handle after a complete read is not a failure: the digest is already of every byte, and nothing is pending on the handle. macOS SMB mounts report `EBADF` there.
 5. Compare size and digest. On mismatch, keep the final filename absent and report a hard verification failure. A later retry restarts this individual file from byte zero.
 6. On a match, apply the Source modification time and permission `0644` to the still-unpublished temporary file and sync its metadata. The unpublished copy is owner-only; a library on a NAS is read by more than its owner. Destination filesystems may reduce timestamp precision. Access time is not treated as durable photo metadata because reading Source changes it on many systems.
@@ -216,9 +245,39 @@ For each file:
 
 Normal successful operation therefore has the minimum strict-verification I/O profile: one sequential Source read, one Destination write, and one sequential Destination verification read. Hashing is performed during those required streams. Directory inventory must not reread complete file contents.
 
+Incremental comparison is additional I/O when same-size candidates exist:
+read Source and independently check candidates, including date subdirectories.
+Matching content is Already present and is not newly published or counted in
+published bytes. Without a match, a comparison-bound transfer must preserve the
+checked source identity and digest before publication. With no candidates, copy
+retains the one-source-read profile. Move over an existing match independently
+revalidates Destination before deleting the unchanged Source. A filename Skip
+or undetermined comparison never authorizes source deletion. An undetermined
+result names the candidate that could not be read. A failed candidate read is
+not remembered: the next source of that size reads it again, while a digest
+once read is shared by every worker.
+
+With Incremental, a Skip means the name holds different content — no copy of
+this photo exists anywhere under Destination — so the file is reported
+`same name, different content: not imported` and counted apart from other
+skips, typically after a camera's counter restarted.
+
+The inventory is taken once before anything is published, so two Source files
+of identical content in one batch are both copied; the later run sees both. It
+is read again rather than reused from Scan because matching needs each file's
+identity and modification time, and the tree may have changed since.
+
 ### Resume state
 
-Resume operates at whole-file granularity, not byte or chunk granularity. Interrupted transfers use a versioned, atomically updated import-state file. It records the batch plan and which individual files have completed successfully. At minimum, record:
+Resume operates at whole-file granularity, not byte or chunk granularity. Interrupted transfers use a versioned, atomically updated import-state file. It records the batch plan and which individual files have completed successfully.
+
+New writes use version 2; versions 1 and 2 are supported on read. In incremental
+mode state only supplies candidate hints; deleting it does not lose detection
+of already-imported files. Current-run publications and existing-match outcomes
+are recorded separately. Older readers reject version 2 rather than interpreting
+its new outcomes as successful publications.
+
+At minimum, record:
 
 - Source identity: normalized path, size, modification time, and any available stable file identity.
 - Destination temporary and final filenames.
@@ -226,19 +285,28 @@ Resume operates at whole-file granularity, not byte or chunk granularity. Interr
 - Intended final path and the parameters that affect it.
 - Per-file state such as pending, transferring, verified, source-deleted, or failed.
 
-Persist state only at file-state transitions so bookkeeping does not amplify data I/O. If a process stops while one `.dgs-part` is incomplete, that partial file is never resumed internally. On retry, discard or truncate it and transfer that photo again from byte zero. Already published and recorded files are not recopied.
+Persist state when the batch starts and when it ends; while it runs, write pending changes within `importer.DefaultStateInterval` (two seconds), even while a file is slow or paused, and never rewrite unchanged state on a tick, so bookkeeping does not grow with the square of the batch or stall workers on a NAS. A crash loses at most that interval of records; each of those files is verified again before it is trusted, or found again by Incremental. Records of earlier batches into the same Destination are kept, so importing another card in between does not cost the first one its resume. If a process stops while one `.dgs-part` is incomplete, that partial file is never resumed internally. On retry, discard or truncate it and transfer that photo again from byte zero. Already published and recorded files are not recopied.
 
-Before skipping an item recorded as complete, confirm that the expected final destination still exists and matches the recorded identity or digest policy. Recorded items are matched against each job's planned destination before Keep both chooses a new name, and state keeps that planned destination, so a rerun resumes a Keep both batch instead of copying it again. A Move over a recorded item whose Source still exists and still matches the recorded digest deletes that Source — whether the earlier run was a Copy or a Move that kept its source. Before retrying an incomplete item, confirm that Source still matches its recorded identity. Never rename a leftover partial file merely because its expected byte count has been reached.
+Before skipping an item recorded as complete, confirm that the expected final destination still exists and matches the recorded identity or digest policy. Planning compares only metadata (the destination's size); the digests are read by the workers, with progress, pause and cancellation like any transfer. An interrupted check leaves the earlier record in state; a refuted record imports the file as new under the conflict policy. Recorded items are matched against each job's planned destination before Keep both chooses a new name, and state keeps that planned destination, so a rerun resumes a Keep both batch instead of copying it again. A Move over a recorded item whose Source still exists and still matches the recorded digest deletes that Source — whether the earlier run was a Copy or a Move that kept its source. Before retrying an incomplete item, confirm that Source still matches its recorded identity. Never rename a leftover partial file merely because its expected byte count has been reached.
 
-The Result screen must offer an explicit choice to delete or retain the import-state file after the batch has reached its terminal state. Delete is the default. Retaining it supports auditing or later diagnosis; deleting it does not delete imported photos.
+The Result screen must offer an explicit choice to delete or retain the import-state file after the batch has reached its terminal state. Delete is the default only when nothing is left to do; a batch with failed, undetermined, unstarted, source-kept or not-imported files keeps its state by default, because without Incremental a later run needs it to finish. Retaining it supports auditing or later diagnosis; deleting it does not delete imported photos.
 
 ### Source and destination entry policy
 
-Import regular files only. Directories are traversal structure rather than transfer items. Source symbolic links are skipped and reported because following one could read outside the selected SD-card root, and its target could change between scan and transfer. FIFOs, sockets, block or character devices, and other special entries are rejected because reading them can block, produce an unbounded stream, or access something other than the scanned file.
+Import regular files only. Directories are traversal structure rather than transfer items. Hidden Source entries are not camera files and are listed as not scanned: AppleDouble `._` companions carry a photo's extension but hold metadata. Trash, recycle-bin, snapshot and metadata folders (`.Trashes`, `.Trash-<uid>`, `$RECYCLE.BIN`, `#recycle`, `@Recycle`, `#snapshot`, `.snapshot`, `.zfs`, `@eaDir`, `.Spotlight-V100`, `.fseventsd` and the like, in `skipdirs`) are left out on both sides, readable or not, and by `dgs photo organize --recursive`. Source symbolic links are skipped and reported because following one could read outside the selected SD-card root, and its target could change between scan and transfer. FIFOs, sockets, block or character devices, and other special entries are rejected because reading them can block, produce an unbounded stream, or access something other than the scanned file.
 
 Destination path components and an existing final entry must be checked with non-following metadata operations. Do not write through a destination symbolic link. Create temporary files exclusively so an unrelated existing file cannot be silently reused.
 
 Scan never stops at an unreadable folder: it reports it and continues, so nothing after it in lexical order silently disappears from the inventory. An unreadable hidden folder (`.Trashes`, `.Spotlight-V100`) is listed as not scanned; any other unreadable Source entry makes the scan incomplete, the Import summary shows it, and Processing refuses to start until a rescan succeeds, because a Result reporting every scanned file verified must not be read as every file on the card. Skipped links and special files are listed as not scanned. A Destination that does not exist yet is not an error.
+
+All other unreadable Destination subtrees, including hidden ones, block
+incremental Processing. A photo found only in a trash or snapshot folder is not
+a durable copy: it is imported again, and a Move never deletes its source on
+that evidence. Excluded destination links, special files and import artifacts
+are listed separately. Source and Destination roots must not overlap or alias
+one another in either mode, compared by file identity so a case-insensitive volume cannot hide an
+overlap behind another spelling, and a source hard-link alias is not evidence
+of an independent copy.
 
 If a regular Source file disappears after Scan, fail that item clearly and continue or stop according to the later batch-failure policy; never create an empty final file. If it changes while being copied, detect the change by comparing size, modification time, and available stable file identity before and after the stream. Discard the unverified temporary result and require a fresh transfer of that image.
 
@@ -271,7 +339,8 @@ Parallelism remains an explicit user choice with default 1. Do not silently rais
 The core Processing engine is implemented. The following decisions must be settled before adding the corresponding conflict handling and recovery enhancements:
 
 - How Replace publishes atomically when a final destination already exists and how the previous file remains recoverable.
-- Whether an existing destination with the same size and SHA-256 is treated as already imported without rewriting it.
+- Whether to add a faster, weaker metadata-only mode; the implemented incremental
+  mode requires size and SHA-256 agreement for an existing-copy claim.
 - How to identify a Source file reliably when SD-card timestamps are coarse or unreliable.
 
 Example status values:
