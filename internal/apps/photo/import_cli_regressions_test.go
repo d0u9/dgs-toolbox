@@ -64,14 +64,15 @@ func TestCLIImportWarnsAboutSharedFilesystemAndStreamsFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err, output)
 	}
-	for _, want := range []string{"same filesystem", "Destination 1/2: " + targets[0], "Destination 2/2: " + targets[1], "complete  DCIM/IMG_0002.JPG", "Imported into every destination: 2/2 files"} {
+	for _, want := range []string{"same filesystem", "Destination 1/2: " + targets[0], "Destination 2/2: " + targets[1], "1  complete  DCIM/IMG_0002.JPG", "2  complete  DCIM/IMG_0002.JPG", "Imported into every destination: 2/2 files"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in:\n%s", want, output)
 		}
 	}
-	// Files are printed as each target finishes them, not after the batch.
-	if first, second := strings.Index(output, "complete  DCIM/IMG_0001.JPG"), strings.Index(output, "Destination 2/2"); first < 0 || first > second {
-		t.Fatalf("first target's files not printed before the second target:\n%s", output)
+	// Destinations are named before any file, and files are printed as they
+	// finish, not after the batch.
+	if names, first, summary := strings.Index(output, "Destination 2/2"), strings.Index(output, "complete  DCIM/IMG_0001.JPG"), strings.Index(output, "Imported into every"); names < 0 || first < names || summary < first {
+		t.Fatalf("destinations not named first or files not streamed:\n%s", output)
 	}
 }
 

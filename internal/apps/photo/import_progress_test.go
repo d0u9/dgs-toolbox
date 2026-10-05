@@ -25,8 +25,8 @@ func TestImportProgressShowsConcurrentWorkersWithoutFalseCompletion(t *testing.T
 	if strings.Contains(frame, "\x1b") {
 		t.Fatal("progress has styling escapes")
 	}
-	if len(p.frame(120, 24)) != 4 {
-		t.Fatal("missing worker rows")
+	if len(p.frame(120, 24)) != 6 {
+		t.Fatal("missing worker rows: one per destination", p.frame(120, 24))
 	}
 	for _, width := range []int{12, 32, 48, 80} {
 		for _, line := range p.frame(width, 24) {
@@ -48,7 +48,7 @@ func TestImportProgressRedrawsFixedRegionAndClearsBeforeLogs(t *testing.T) {
 	p.lastDraw = time.Time{}
 	out.Reset()
 	p.update(0, importer.Event{Worker: 2, Index: 1, Phase: importer.PhaseVerifying})
-	if strings.Count(out.String(), "\x1b[1A") != 3 || p.rows != 4 {
+	if strings.Count(out.String(), "\x1b[1A") != 5 || p.rows != 6 {
 		t.Fatal("redraw did not reuse worker region", out.String())
 	}
 	if _, err := p.Write([]byte("warning\n")); err != nil {
@@ -56,10 +56,6 @@ func TestImportProgressRedrawsFixedRegionAndClearsBeforeLogs(t *testing.T) {
 	}
 	if !strings.HasSuffix(out.String(), "\r\x1b[2Kwarning\n") || p.rows != 0 {
 		t.Fatal("log overwrote progress region", out.String())
-	}
-	p.update(1, importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseCopying})
-	if len(p.finished) != 0 || p.slots[1].Phase != "" {
-		t.Fatal("target progress not reset")
 	}
 	p.clear()
 	if p.rows != 0 {
@@ -73,7 +69,7 @@ func TestImportProgressLateCompletionDoesNotReplaceNextFile(t *testing.T) {
 	p.update(0, importer.Event{Worker: 1, Index: 1, Phase: importer.PhaseCopying, Source: "next.JPG"})
 	p.update(0, importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseComplete, Source: "previous.JPG"})
 	p.update(0, importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseComplete})
-	if len(p.finished) != 1 || p.slots[0].Source != "next.JPG" {
+	if p.finished[0] != 2 || p.slots[0][0].Source != "next.JPG" {
 		t.Fatal("late completion corrupted worker progress")
 	}
 }
@@ -95,8 +91,7 @@ func TestImportProgressKeepsDestinationNotesBelowWorkers(t *testing.T) {
 	p := newImportProgress(&bytes.Buffer{}, 2, 3, 2)
 	p.destinations = []string{"/library-a", "/library-b"}
 	p.summaries = []string{"Destination 1/2: 3 imported, 0 need attention", ""}
-	p.target = 1
-	p.slots[0] = importer.Event{Source: "photo.JPG", Phase: importer.PhaseCopying}
+	p.slots[0][0] = importer.Event{Source: "photo.JPG", Phase: importer.PhaseCopying}
 	lines := p.frame(120, 24)
 	if !strings.Contains(lines[len(lines)-2], "3 imported") || !strings.Contains(lines[len(lines)-1], "Destination 2/2: /library-b") {
 		t.Fatal("destination notes not at bottom", lines)
@@ -108,5 +103,28 @@ func TestImportProgressKeepsDestinationNotesBelowWorkers(t *testing.T) {
 		if lines := p.frame(80, height); len(lines) >= height {
 			t.Fatalf("footer overflow at height %d: %v", height, lines)
 		}
+	}
+}
+
+func TestImportProgressShowsEachDestinationUnderItsWorker(t *testing.T) {
+	p := newImportProgress(&bytes.Buffer{}, 2, 2, 1)
+	p.enabled = true
+	p.update(0, importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseCopying, Bytes: 512, Total: 1024, Source: "a.JPG"})
+	p.update(1, importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseVerifying, Bytes: 256, Total: 1024, Source: "a.JPG"})
+	lines := p.frame(120, 24)
+	first, second := ansi.Strip(lines[2]), ansi.Strip(lines[3])
+	if !strings.Contains(first, "#1") || !strings.Contains(first, "a.JPG") || !strings.Contains(first, "1  copying") {
+		t.Fatal("first destination row", first)
+	}
+	if strings.Contains(second, "#1") || strings.Contains(second, "a.JPG") || !strings.Contains(second, "2  verifying") || !strings.Contains(second, "256 B / 1.0 KB") {
+		t.Fatal("second destination row", second)
+	}
+	p.update(0, importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseComplete})
+	if p.done() != 0 {
+		t.Fatal("file counted before every destination finished it")
+	}
+	p.update(1, importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseComplete})
+	if p.done() != 1 {
+		t.Fatal("file finished in every destination not counted")
 	}
 }

@@ -181,14 +181,14 @@ func TestMultipleCancellationKeepsSourcesAfterCopiesFinish(t *testing.T) {
 	}
 }
 
-func TestMultipleDetectsSourceChangesBetweenTargets(t *testing.T) {
+func TestMultipleKeepsSourceChangedAfterCopies(t *testing.T) {
 	plans := multiplePlans(t)
 	result, err := RunMultiple(context.Background(), plans, Move, MultipleHooks{Target: func(i int, _ Result) {
 		if i == 0 {
 			writeFile(t, plans[0].Jobs[0].Source, "PHOTO A")
 		}
 	}})
-	if err != nil || result.Files[0].Phase != PhaseFailed {
+	if err != nil || result.Files[0].Phase != PhaseSourceKept {
 		t.Fatalf("result = %#v, %v", result, err)
 	}
 	if data, err := os.ReadFile(plans[0].Jobs[0].Source); err != nil || string(data) != "PHOTO A" {
@@ -224,5 +224,70 @@ func TestMultipleRejectsAliasedAndNestedTargetsBeforeWrites(t *testing.T) {
 				t.Fatal("validation wrote destination", err)
 			}
 		})
+	}
+}
+
+// Every target holds a different photo of the same size, so each needs the
+// source digest to decide. The card is read for it once, not once per target,
+// and the copies still land in both.
+func TestMultipleChecksSourceOnceForAllTargets(t *testing.T) {
+	plans := multiplePlans(t)
+	for _, plan := range plans {
+		writeFile(t, filepath.Join(plan.DestinationRoot, "old", "x.JPG"), "photo x")
+	}
+	checks := make(map[int]map[int]bool)
+	var copies [2]int
+	result, err := RunMultiple(context.Background(), plans, Copy, MultipleHooks{Event: func(target int, event Event) {
+		switch event.Phase {
+		case PhaseCheckingSource:
+			if checks[event.Index] == nil {
+				checks[event.Index] = make(map[int]bool)
+			}
+			checks[event.Index][target] = true
+		case PhaseComplete:
+			copies[target]++
+		}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks[0]) != 1 {
+		t.Fatalf("source of a.JPG checked by targets %v", checks[0])
+	}
+	if copies != [2]int{2, 2} {
+		t.Fatalf("copies = %v", copies)
+	}
+	for _, file := range result.Files {
+		if file.Phase != PhaseComplete {
+			t.Fatal(file)
+		}
+	}
+}
+
+// One target that cannot take a file does not stop the other from getting it.
+func TestMultipleTargetFailureLeavesOtherCopies(t *testing.T) {
+	plans := multiplePlans(t)
+	writeFile(t, filepath.Join(plans[1].DestinationRoot, "DCIM"), "not a directory")
+	result, err := RunMultiple(context.Background(), plans, Move, MultipleHooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, file := range result.Targets[0].Files {
+		if file.Phase != PhaseComplete {
+			t.Fatal(i, file)
+		}
+	}
+	for i, file := range result.Targets[1].Files {
+		if file.Phase != PhaseFailed {
+			t.Fatal(i, file)
+		}
+	}
+	for _, file := range result.Files {
+		if file.Phase != PhaseFailed {
+			t.Fatal(file)
+		}
+		if _, err := os.Stat(file.Source); err != nil {
+			t.Fatal("source of a failed target removed", err)
+		}
 	}
 }

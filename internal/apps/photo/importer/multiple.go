@@ -12,8 +12,8 @@ import (
 
 // MultipleResult records each target independently and each source's overall
 // outcome. Successful target copies are kept when another target fails.
-// Started counts the targets that ran; a cancelled run starts no more, and
-// the files of a target that never started are failed as not started.
+// Started counts the targets that ran: all of them, or none when the context
+// was already cancelled, and then every file is failed as not started.
 type MultipleResult struct {
 	Targets []Result
 	Files   []FileResult
@@ -23,9 +23,10 @@ type MultipleResult struct {
 // MultipleHooks observe RunMultiple. Each may be nil and must return promptly;
 // they are called from one goroutine at a time, never concurrently.
 type MultipleHooks struct {
-	// Event receives every engine event of the target currently running.
+	// Event receives every engine event of every target. Targets run at once,
+	// so events of different targets interleave; each target's stay in order.
 	Event func(target int, event Event)
-	// Target receives a target's result as soon as it has run.
+	// Target receives each target's result once the batch has run.
 	Target func(target int, result Result)
 	// File receives each source's overall outcome as it is decided.
 	File func(file FileResult)
@@ -102,8 +103,11 @@ func SharedFilesystems(targets []string) [][2]int {
 	return pairs
 }
 
-// RunMultiple uses the same bounded pool for each target in order. All plans
-// must describe the same sources in the same order. Transfers always Copy;
+// RunMultiple imports into every target at once: one bounded pool over the
+// files, and each file read once from Source for all the targets that need a
+// copy. All plans must describe the same sources in the same order. The first
+// plan's Workers and StateInterval apply to the batch; each plan's Controller
+// pauses its own target, and a shared copy waits for all of them. Transfers always Copy;
 // Move deletes a source only after fresh checks of every target copy agree
 // and the copies are distinct files.
 func RunMultiple(ctx context.Context, plans []Plan, operation Operation, hooks MultipleHooks) (MultipleResult, error) {
@@ -140,16 +144,20 @@ func RunMultiple(ctx context.Context, plans []Plan, operation Operation, hooks M
 	for i := range plans {
 		plans[i].expectedRoot = identities[i]
 	}
-	for i, plan := range plans {
-		if err := ctx.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
+		for _, plan := range plans {
 			result.Targets = append(result.Targets, notStarted(plan, err))
-			continue
 		}
-		plan.Operation = Copy
-		result.Targets = append(result.Targets, runObserved(ctx, plan, i, hooks.Event))
-		result.Started++
+	} else {
+		for i := range plans {
+			plans[i].Operation = Copy
+		}
+		result.Targets = runObserved(ctx, plans, hooks.Event)
+		result.Started = len(plans)
 		if hooks.Target != nil {
-			hooks.Target(i, result.Targets[i])
+			for i, target := range result.Targets {
+				hooks.Target(i, target)
+			}
 		}
 	}
 	result.Files = make([]FileResult, len(plans[0].Jobs))
@@ -169,23 +177,46 @@ func RunMultiple(ctx context.Context, plans []Plan, operation Operation, hooks M
 	return result, nil
 }
 
-// runObserved runs one target, forwarding its events to observe.
-func runObserved(ctx context.Context, plan Plan, target int, observe func(int, Event)) Result {
+// runObserved runs every target at once, forwarding their events to observe
+// from one goroutine.
+func runObserved(ctx context.Context, plans []Plan, observe func(int, Event)) []Result {
+	channels := make([]chan<- Event, len(plans))
 	if observe == nil {
-		return Run(ctx, plan, nil)
+		return runTargets(ctx, plans, channels)
 	}
-	events := make(chan Event)
+	type tagged struct {
+		target int
+		event  Event
+	}
+	merged := make(chan tagged)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for event := range events {
-			observe(target, event)
+		for next := range merged {
+			observe(next.target, next.event)
 		}
 	}()
-	result := Run(ctx, plan, events)
-	close(events)
+	var forwarders sync.WaitGroup
+	owned := make([]chan Event, len(plans))
+	for i := range plans {
+		owned[i] = make(chan Event)
+		channels[i] = owned[i]
+		forwarders.Add(1)
+		go func() {
+			defer forwarders.Done()
+			for event := range owned[i] {
+				merged <- tagged{target: i, event: event}
+			}
+		}()
+	}
+	results := runTargets(ctx, plans, channels)
+	for _, channel := range owned {
+		close(channel)
+	}
+	forwarders.Wait()
+	close(merged)
 	<-done
-	return result
+	return results
 }
 
 func notStarted(plan Plan, err error) Result {

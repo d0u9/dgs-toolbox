@@ -34,7 +34,11 @@ func TestPhotoAppInjectsConfiguredImportStateFilename(t *testing.T) {
 }
 
 func TestImportStartsWithDirectoriesOnly(t *testing.T) {
-	model := newImportModel()
+	// Layout assertions use short synthetic paths so the working directory's
+	// length cannot truncate the values before their distinguishing suffixes.
+	model := newImportModelWithSettings(".dgs-state",
+		filepath.Join("testdata", "photo-import", "src"),
+		filepath.Join("testdata", "photo-import", "dst"))
 	updated, _ := model.Update(tea.WindowSizeMsg{Width: 126, Height: 30})
 	model = updated.(tui.CommandModel)
 
@@ -79,6 +83,36 @@ func TestImportStartsWithDirectoriesOnly(t *testing.T) {
 	status := model.Status()
 	if status.Left != "READY" || !strings.Contains(status.Center, "Directories") || !strings.Contains(status.Center, "Post-processing") {
 		t.Errorf("status = %#v", status)
+	}
+}
+
+// Defaults still resolve against the working directory, even when the
+// absolute values are too long to fit in a fixed-width directory field.
+func TestImportDefaultPathsResolveFromLongWorkingDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), strings.Repeat("synthetic-long-directory-", 6))
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	model := newImportModel().(importModel)
+	for field, name := range map[int]string{sourceField: "src", destinationField: "dst"} {
+		got := expandHome(model.paths[field])
+		want := filepath.Join(root, "testdata", "photo-import", name)
+		if !filepath.IsAbs(got) || got != want {
+			t.Errorf("%s default did not resolve against the working directory", name)
+		}
+		id := sourceID
+		if field == destinationField {
+			id = destinationID
+		}
+		if model.controls.Value(id) != model.paths[field] {
+			t.Errorf("%s field lost its full default path", name)
+		}
+	}
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 126, Height: 30})
+	view := updated.(tui.CommandModel).View()
+	if lipgloss.Width(view) != 126 || lipgloss.Height(view) != 30 {
+		t.Fatal("long paths overflowed the workspace")
 	}
 }
 

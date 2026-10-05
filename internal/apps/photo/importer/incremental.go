@@ -244,7 +244,7 @@ func (c *candidate) check(ctx context.Context, index *contentIndex, plan Plan, b
 	return c.checked, nil
 }
 
-func (index *contentIndex) match(ctx context.Context, job Job, plan Plan, base Event, events chan<- Event) (string, verifiedcopy.Result, string, error) {
+func (index *contentIndex) match(ctx context.Context, job Job, plan Plan, sources *sourceChecks, base Event, events chan<- Event) (string, verifiedcopy.Result, string, error) {
 	info, err := verifiedcopy.FileInfo(plan.SourceRoot, job.Source)
 	if err != nil {
 		return "", verifiedcopy.Result{}, "", err
@@ -295,9 +295,7 @@ func (index *contentIndex) match(ctx context.Context, job Job, plan Plan, base E
 	sort.SliceStable(candidates, func(i, j int) bool { return rank(candidates[i].path) < rank(candidates[j].path) })
 	base.Total = info.Size()
 	var limit throttle
-	limit.allow(PhaseCheckingSource, 0, info.Size())
-	emit(ctx, events, withProgress(base, PhaseCheckingSource, 0))
-	source, err := verifiedcopy.Check(ctx, plan.SourceRoot, job.Source, plan.Controller.wait, func(done int64) {
+	source, err := sources.check(ctx, plan.SourceRoot, job.Source, plan.Controller.wait, func(done int64) {
 		if limit.allow(PhaseCheckingSource, done, info.Size()) {
 			emit(ctx, events, withProgress(base, PhaseCheckingSource, done))
 		}
