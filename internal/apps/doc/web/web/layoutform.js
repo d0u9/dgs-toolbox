@@ -350,16 +350,28 @@ export function numberLast(key, value, at = "") {
   changed();
 }
 
-// ownNumbering gives n its own copy of the orders it numbers, or of every
-// order of the rule when its own path and file number none, each as the
-// nearest block above numbers it.
+// ownNumbering gives n its own orders, for those it numbers, or for every
+// order of the rule when its own path and file number none. Each starts
+// from the nearest block above that numbers it, keeping only the names the
+// Items n takes have, each with the number it had there, then the names
+// they have that it lacks, sorted. Until the server has planned the block
+// nothing is known to be taken, and the whole order is copied.
 function ownNumbering(n, up) {
   const names = n.ofs.length ? n.ofs.map((c) => c.of) : numberedKeys().map((c) => c.of);
+  const taken = previewed ? selected(n) : [];
+  const takes = taken.length ? taken : null;
   for (const key of new Set(names)) {
     const from = [...up].reverse().find((s) => (s.order[key] || []).length) || top;
-    n.order[key] = [...(from.order[key] || [])];
-    if (from.numbers[key]) n.numbers[key] = { ...from.numbers[key] };
-    if (from.unnumbered[key]) n.unnumbered[key] = [...from.unnumbered[key]];
+    const all = from.order[key] || [];
+    const held = takes && [...new Set(takes.map((i) => orderValue(i, restOf(key, n))).filter(Boolean))];
+    const keep = (v) => !held || held.some((h) => same(h, v));
+    const kept = all.filter(keep);
+    // A kept name keeps the number it had above, set by hand or counted.
+    const counted = numbered(all, from.numbers[key], from.unnumbered[key]);
+    const own = Object.fromEntries(kept.map((v) => [v, counted[all.indexOf(v)]]).filter(([v, c], i) => c !== null && c !== numbered(kept, {}, from.unnumbered[key])[i]));
+    n.order[key] = [...kept, ...(held || []).filter((h) => !all.some((v) => same(h, v))).sort()];
+    if (Object.keys(own).length) n.numbers[key] = own;
+    if (from.unnumbered[key]) n.unnumbered[key] = from.unnumbered[key].filter(keep);
     if ((from.unlisted || {})[key] !== undefined) n.unlisted[key] = from.unlisted[key];
   }
 }
