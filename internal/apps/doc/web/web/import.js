@@ -46,7 +46,7 @@ function render() {
   $("dir").textContent = dir;
   $("dir").title = dir;
   const kept = files.filter((f) => f.item).length;
-  $("counts").textContent = dir ? `${files.length} PDFs · ${kept} in tree` : "";
+  $("counts").textContent = dir ? `${files.length} files · ${kept} in tree` : "";
   $("counts").title = $("counts").textContent;
   // Hidden imported PDFs leave the tree, except the one being looked at.
   const shown = $("hide-kept").checked ? files.filter((f) => !f.item || f.path === selected) : files;
@@ -61,11 +61,12 @@ function render() {
       return el("span", { className: "numeric" }, kept ? `${kept}/${under.length} in tree` : String(under.length));
     },
   }));
-  if (dir && files.length === 0) say($("list-message"), "No PDFs in this folder or under it.");
+  if (dir && files.length === 0) say($("list-message"), "No PDFs or supported images in this folder or under it.");
   const file = files.find((f) => f.path === selected);
   $("side").hidden = !file && !noPDF;
   $("import").hidden = (!noPDF && (!file || !!file.item)) || !state.tree;
   $("copy-note").hidden = noPDF;
+  $("keep-original-field").hidden = noPDF || !/\.(jpe?g|png|heic|heif|tiff?)$/i.test(selected);
   $("import-title").textContent = noPDF ? "New without PDF" : file?.item ? "Already in the tree" : "Import";
   $("kept").hidden = !file || !file.item;
   if (file && file.item) {
@@ -329,10 +330,10 @@ $("import").onsubmit = async (event) => {
   try {
     if ($("into").value && !$("into-field").hidden) {
       revisionTags.commit();
-      await post("/api/revisions", { no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
+      await post("/api/revisions", { keep_original: $("keep-original").checked, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
         revision_tags: revisionTags.get() });
     } else {
-      const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
+      const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, keep_original: $("keep-original").checked, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
         revision_tags: noPDF ? [] : (revisionTags.commit(), revisionTags.get()), shared_with: sharedWith() });
       if (saved.warning) { state = await loadState(); render(); say($("import-message"), saved.warning, true); return; }
     }
@@ -384,6 +385,7 @@ const back = history.state || {}; // what the page showed when it was left, on c
 const unscroll = scrollBack(["tree"]);
 loadState().then(async (s) => {
   state = s;
+  $("keep-original").checked = s.keepOriginal !== false;
   render();
   const into = new URLSearchParams(location.search).get("into");
   if (new URLSearchParams(location.search).has("no_pdf")) {

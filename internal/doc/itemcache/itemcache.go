@@ -18,7 +18,7 @@ import (
 )
 
 // Version is the cache file's format. A file of any other is rebuilt.
-const Version = 1
+const Version = 2
 
 // Cache is one tree's Items. Its methods are safe to call at once; a
 // rebuild and a write never overlap, so a write is never lost to a rebuild

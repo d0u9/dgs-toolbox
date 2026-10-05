@@ -1,8 +1,9 @@
-// Package pdflist finds the PDFs under a folder. It reads names and sizes and
+// Package pdflist finds PDFs and supported document images under a folder. It reads names and sizes and
 // nothing else: listing a tree must never write to it.
 package pdflist
 
 import (
+	"dgs-toolbox/internal/doc/imagepdf"
 	"io/fs"
 	"path"
 	"sort"
@@ -10,15 +11,15 @@ import (
 	"time"
 )
 
-// File is one PDF, named by its slash-separated path relative to the root.
+// File is one importable file, named by its slash-separated path relative to the root.
 type File struct {
 	Path     string
 	Size     int64
 	Modified time.Time
 }
 
-// List walks fsys and returns every PDF in it, sorted by path. A name ending
-// in .pdf in any case counts. Hidden files and folders — a leading dot — are
+// List walks fsys and returns every PDF and supported image, sorted by path.
+// Extensions are case insensitive. Hidden files and folders — a leading dot — are
 // skipped, which keeps out macOS's ._ files and the part files a copy leaves
 // behind. A folder that cannot be read is skipped rather than ending the list.
 func List(fsys fs.FS) ([]File, error) {
@@ -39,7 +40,7 @@ func List(fsys fs.FS) ([]File, error) {
 			}
 			return nil
 		}
-		if !entry.Type().IsRegular() || !strings.EqualFold(path.Ext(name), ".pdf") {
+		if !entry.Type().IsRegular() || !Supported(name) {
 			return nil
 		}
 		info, err := entry.Info()
@@ -54,4 +55,9 @@ func List(fsys fs.FS) ([]File, error) {
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil
+}
+
+// Supported reports the PDF and image formats accepted for import.
+func Supported(name string) bool {
+	return strings.EqualFold(path.Ext(name), ".pdf") || imagepdf.Supported(name)
 }

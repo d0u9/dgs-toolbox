@@ -53,7 +53,7 @@
     <p id="list-message" class="message"></p>
   </section>
   <section class="preview">
-    <p id="empty" class="muted">Open a folder, then pick a PDF.</p>
+    <p id="empty" class="muted">Open a folder, then pick a PDF or image.</p>
     <nav id="rail" class="rail" aria-label="Pages" hidden></nav>
     <div id="viewer" class="viewer" hidden>
       <div class="viewer-bar">
@@ -95,6 +95,10 @@
         <label id="replaces-field" class="form-field" hidden><span>Replaces</span><select id="replaces"><option value="">None — keep existing visas in use</option></select></label>
         <div class="form-field" id="shared-field" hidden><span>Shared with</span><div id="shared" class="checks" title="Also theirs, such as a letter addressed to both"></div></div>
       </section>
+      <section class="detail-section" id="keep-original-field" hidden>
+        <div class="detail-section-head"><h3>Import options</h3></div>
+        <div class="checks"><label><input id="keep-original" type="checkbox" checked> Keep original image in the doc tree</label></div>
+      </section>
       <section class="detail-section" id="tags-field" hidden>
         <div class="detail-section-head"><h3>Tags</h3></div>
         <span class="tags-label">Every revision</span>
@@ -111,7 +115,7 @@
       </div></div>
       <div class="detail-actions"><button id="import-button" class="action" type="submit">Import</button>
         <p id="import-message" class="message"></p></div>
-      <p id="copy-note" class="detail-note">The PDF is copied into the tree and read back before it counts. This file stays where it is.</p>
+      <p id="copy-note" class="detail-note">Images become single-page PDFs. Files are read back before publication. The source file stays where it is.</p>
     </form>
     <div id="kept" class="detail-group" hidden><div class="detail-card"><section class="detail-section">
       <p class="message">Kept as <a id="kept-link" href="/browse/"></a>.</p>

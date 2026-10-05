@@ -219,15 +219,19 @@ func Compute(root string, src Source) (Plan, error) {
 		for _, r := range s.Revisions {
 			if !hasDigest(m, r.Ref()) {
 				c.Digests = append(c.Digests, r.Ref())
-			} else if r.ID != "" {
+			} else {
 				for _, existing := range m.Revisions {
 					if existing.Ref() != r.Ref() {
 						continue
 					}
-					if !maps.Equal(m.FieldsAt(existing.Ref()), s.FieldsAt(r.Ref())) || !slices.Equal(existing.Tags, r.Tags) ||
-						(existing.Digest != "" && r.Digest != "" && existing.Digest != r.Digest) {
+					if r.ID != "" && (!maps.Equal(m.FieldsAt(existing.Ref()), s.FieldsAt(r.Ref())) || !slices.Equal(existing.Tags, r.Tags) ||
+						(existing.Digest != "" && r.Digest != "" && existing.Digest != r.Digest)) {
 						plan.Problems = append(plan.Problems, fmt.Sprintf("revision %s of %s differs; reconcile its fields, tags or attachment before merging", r.Ref(), s.ID))
-					} else if existing.Digest == "" && r.Digest != "" && !r.Snapshot {
+					} else if existing.Original != nil && r.Original != nil && existing.Original.Digest != r.Original.Digest {
+						plan.Problems = append(plan.Problems, fmt.Sprintf("revision %s of %s has different archived originals; reconcile before merging", r.Ref(), s.ID))
+					} else if (existing.Original == nil && r.Original != nil) || missingSourceDigests(existing, r) {
+						c.Digests = append(c.Digests, r.Ref())
+					} else if existing.Digest == "" && r.Digest != "" && !r.Snapshot && r.ID != "" {
 						c.Digests = append(c.Digests, r.Ref())
 					}
 				}
@@ -478,7 +482,10 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 					for n := range it.Revisions {
 						if it.Revisions[n].Ref() == d {
 							it.Revisions[n].Digest = r.Digest
-							it.Revisions[n].Source = r.Source
+							mergeSources(&it.Revisions[n], r)
+							if it.Revisions[n].Original == nil {
+								it.Revisions[n].Original = r.Original
+							}
 							found = true
 							break
 						}
@@ -613,7 +620,49 @@ func copyRevision(ctx context.Context, src Source, item tree.Item, root, target,
 		if r.Digest == "" {
 			return nil
 		}
+		if r.Original != nil {
+			if src.Original == nil {
+				return fmt.Errorf("source cannot resolve original image")
+			}
+			from, to := src.Original(item.ID, *r.Original), tree.OriginalPath(root, target, *r.Original)
+			// Keep the target's extension alias when this snapshot already archives
+			// the same bytes (for example .jpg versus .jpeg).
+			if stored, err := tree.GetItem(root, target); err == nil {
+				if existing, ok := stored.Revision(ref); ok && existing.Original != nil && existing.Original.Digest == r.Original.Digest {
+					to = tree.OriginalPath(root, target, *existing.Original)
+				}
+			} else if !errors.Is(err, tree.ErrNoItem) {
+				return err
+			}
+
+			if from == "" || to == "" {
+				return fmt.Errorf("invalid original image reference")
+			}
+			if err := copyPDF(ctx, from, to, r.Original.Digest, &Result{}); err != nil {
+				return err
+			}
+		}
 		return copyPDF(ctx, src.PDF(item.ID, r.Digest), tree.PDFPath(root, target, r.Digest), r.Digest, result)
 	}
 	return fmt.Errorf("no revision %s", ref)
+}
+
+func missingSourceDigests(existing, incoming tree.Revision) bool {
+	for _, d := range append(append([]string{}, incoming.SourceDigests...), incoming.SourceDigest) {
+		if d != "" && d != existing.SourceDigest && !slices.Contains(existing.SourceDigests, d) {
+			return true
+		}
+	}
+	return false
+}
+func mergeSources(existing *tree.Revision, incoming tree.Revision) {
+	if existing.SourceDigest == "" {
+		existing.SourceDigest = incoming.SourceDigest
+		existing.Source = incoming.Source
+	}
+	for _, d := range append(append([]string{}, incoming.SourceDigests...), incoming.SourceDigest) {
+		if d != "" && d != existing.SourceDigest && !slices.Contains(existing.SourceDigests, d) {
+			existing.SourceDigests = append(existing.SourceDigests, d)
+		}
+	}
 }

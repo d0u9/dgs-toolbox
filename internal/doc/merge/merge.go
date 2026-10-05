@@ -32,7 +32,8 @@ type Source struct {
 	Templates []Template
 	Outlines  []outline.Outline
 	// PDF is where a revision's PDF is read from.
-	PDF func(item, digest string) string
+	PDF      func(item, digest string) string
+	Original func(item string, original tree.Original) string
 }
 
 // FromTree reads a tree to merge in.
@@ -61,7 +62,8 @@ func FromTree(root string) (Source, error) {
 		return Source{}, err
 	}
 	return Source{Items: items, Templates: templates, Outlines: outlines,
-		PDF: func(id, digest string) string { return tree.PDFPath(root, id, digest) }}, nil
+		Original: func(id string, o tree.Original) string { return tree.OriginalPath(root, id, o) },
+		PDF:      func(id, digest string) string { return tree.PDFPath(root, id, digest) }}, nil
 }
 
 // FromTarget reads a Target back through its manifest: an Item for every ID

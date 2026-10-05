@@ -1,4 +1,5 @@
 {
+  "keep_original": true,
   "trees": {
     "papers": "/Volumes/nas/Documents",
     "books": "/Volumes/nas/Books"

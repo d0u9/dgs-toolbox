@@ -148,6 +148,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [box](box.md) | `preview.keep_days` | `30` |
 | [box](box.md) | `trash.keep_days` | `90` |
 | [doc](doc.md) | `trees` | empty — one tree, the working directory |
+| [doc](doc.md) | `keep_original` | `true` — archive imported images beside converted PDFs |
 | [doc](doc.md) | `date_order` | `DMY` |
 | [doc](doc.md) | `expiring_within_days` | `90` |
 | [doc](doc.md) | `cache.dir` | empty — `dgs/doc` under the user cache directory |

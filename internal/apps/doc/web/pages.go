@@ -180,7 +180,7 @@ func (p *pictures) count(path, digest string) (int, error) {
 // pages answers how many pages a PDF has, and the digest its pictures are
 // asked for by, so a browser may keep them.
 func (s server) pages(w http.ResponseWriter, r *http.Request) {
-	path, err := s.pdfPath(r.URL.Query())
+	path, err := s.pdfPath(r.Context(), r.URL.Query())
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
@@ -212,7 +212,7 @@ func (s server) page(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "page numbers count from 1", http.StatusBadRequest)
 		return
 	}
-	path, err := s.pdfPath(query)
+	path, err := s.pdfPath(r.Context(), query)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return

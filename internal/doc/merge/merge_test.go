@@ -338,3 +338,122 @@ func TestNewOutlineChangingASharedRuleIsAConflict(t *testing.T) {
 		t.Fatalf("plan: %+v", p)
 	}
 }
+
+func TestMergeCopiesArchivedOriginal(t *testing.T) {
+	srcRoot := newTree(t, passport)
+	dest := newTree(t, passport)
+	item := put(t, srcRoot, tree.Item{ID: "A", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "alice", "country": "AU"}}, "PDF")
+	data := []byte("synthetic archived image bytes")
+	sum := sha256.Sum256(data)
+	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
+	item.Revisions[0].Original = &original
+	item.Revisions[0].SourceDigest = original.Digest
+	if err := os.WriteFile(tree.OriginalPath(srcRoot, item.ID, original), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := tree.WriteItem(srcRoot, item); err != nil {
+		t.Fatal(err)
+	}
+	src, err := FromTree(srcRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Compute(dest, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.ReadFile(tree.OriginalPath(dest, item.ID, original))
+	if err != nil || string(actual) != string(data) {
+		t.Fatalf("original: %v", err)
+	}
+}
+
+func TestMergeOriginalOnExistingRevision(t *testing.T) {
+	sourceRoot := newTree(t, passport)
+	dest := newTree(t, passport)
+	item := put(t, sourceRoot, tree.Item{ID: "A", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "alice", "country": "AU"}}, "PDF")
+	src, err := FromTree(sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Compute(dest, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	input := []byte("synthetic original image")
+	sum := sha256.Sum256(input)
+	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
+	item.Revisions[0].Original = &original
+	item.Revisions[0].SourceDigest = original.Digest
+	os.WriteFile(tree.OriginalPath(sourceRoot, item.ID, original), input, 0600)
+	tree.WriteItem(sourceRoot, item)
+	src, err = FromTree(sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err = Compute(dest, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tree.OriginalPath(dest, item.ID, original)); err != nil {
+		t.Fatal("merge silently omitted original on existing revision")
+	}
+}
+
+func TestMergeSourceAliasesPreservesTargetOriginal(t *testing.T) {
+	srcRoot := newTree(t, passport)
+	dest := newTree(t, passport)
+	item := put(t, srcRoot, tree.Item{ID: "A", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "alice", "country": "AU"}}, "PDF")
+	src, err := FromTree(srcRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Compute(dest, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	target, err := tree.GetItem(dest, item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("synthetic original")
+	sum := sha256.Sum256(data)
+	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
+	target.Revisions[0].Original = &original
+	target.Revisions[0].SourceDigest = original.Digest
+	os.WriteFile(tree.OriginalPath(dest, item.ID, original), data, 0600)
+	tree.WriteItem(dest, target)
+	alias := sha256.Sum256([]byte("synthetic alternative input"))
+	item.Revisions[0].SourceDigest = hex.EncodeToString(alias[:])
+	tree.WriteItem(srcRoot, item)
+	src, err = FromTree(srcRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err = Compute(dest, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	target, err = tree.GetItem(dest, item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Revisions[0].Original == nil || *target.Revisions[0].Original != original || len(target.Revisions[0].SourceDigests) != 1 {
+		t.Fatal("merge dropped original or alternative input")
+	}
+}

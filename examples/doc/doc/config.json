@@ -3,6 +3,7 @@
     "documents": "/Volumes/nas/Documents"
   },
   "date_order": "DMY",
+  "keep_original": true,
   "expiring_within_days": 90,
   "web": [
     {"name": "pages", "port": 8767}

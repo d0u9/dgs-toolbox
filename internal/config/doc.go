@@ -14,6 +14,8 @@ import (
 // Doc configures dgs doc, the manager of important documents. The design is
 // docs/apps/doc/.
 type Doc struct {
+	// KeepOriginal defaults the image import checkbox; nil means true.
+	KeepOriginal *bool `json:"keep_original"`
 	// Trees are the document trees the pages open, by a name the page shows:
 	// papers, books. Empty means one tree, the command's working directory.
 	Trees map[string]string `json:"trees"`

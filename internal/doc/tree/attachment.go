@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -95,6 +95,11 @@ func AddWithoutPDF(root, id string, template Template, given map[string]string, 
 // AttachPDF creates a new snapshot from the selected revision and a PDF.
 // The selected revision and its references are never changed.
 func AttachPDF(ctx context.Context, root, id, ref, source string, now time.Time) (Item, error) {
+	return AttachFile(ctx, root, id, ref, source, false, now)
+}
+
+// AttachFile converts an image to PDF and optionally archives its original.
+func AttachFile(ctx context.Context, root, id, ref, source string, keepOriginal bool, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -121,11 +126,41 @@ func AttachPDF(ctx context.Context, root, id, ref, source string, now time.Time)
 			}
 		}
 	}
-	digest, err := FileDigest(source)
+	input, err := prepareInput(ctx, source)
+	if err != nil {
+		return Item{}, err
+	}
+	defer input.cleanup()
+	source = input.pdf
+	digest, err := input.digest()
 	if err != nil {
 		return Item{}, err
 	}
 	if digest == base.Digest {
+		if err := input.preserveProvenance(item, ref, keepOriginal); err != nil {
+			return Item{}, err
+		}
+		needsSource := input.inputDigest != "" && input.inputDigest != base.SourceDigest && !slices.Contains(base.SourceDigests, input.inputDigest)
+		if (!keepOriginal || input.original == nil) && !needsSource {
+			return item, nil
+		}
+		// Verify the reused PDF before changing only its original metadata.
+		actual, err := FileDigest(PDFPath(root, id, digest))
+		if err != nil {
+			return Item{}, err
+		}
+		if actual != digest {
+			return Item{}, fmt.Errorf("stored PDF digest mismatch")
+		}
+		undo, err := input.archive(ctx, root, id, keepOriginal)
+		if err != nil {
+			return Item{}, err
+		}
+		input.annotate(&item, ref, keepOriginal)
+		if err := WriteItem(root, item); err != nil {
+			undo()
+			return Item{}, err
+		}
 		return item, nil
 	}
 	if other, ok := holder(items, digest); ok && other.ID != id {
@@ -154,9 +189,24 @@ func AttachPDF(ctx context.Context, root, id, ref, source string, now time.Time)
 			return Item{}, fmt.Errorf("source changed while attaching PDF")
 		}
 	}
-	next := item.saveSnapshot(typ, item.FieldsAt(ref), digest, filepath.Base(source), now)
+	if err := input.preserveProvenance(item, SnapshotID(typ, item.FieldsAt(ref), digest), keepOriginal); err != nil {
+		if copied {
+			os.Remove(destination)
+		}
+		return Item{}, err
+	}
+	next := item.saveSnapshot(typ, item.FieldsAt(ref), digest, input.name, now)
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "attach_pdf", Digest: next, Changes: map[string][2]string{"pdf": {base.Digest, digest}}})
+	undoOriginal, err := input.archive(ctx, root, id, keepOriginal)
+	if err != nil {
+		if copied {
+			os.Remove(destination)
+		}
+		return Item{}, err
+	}
+	input.annotate(&item, next, keepOriginal)
 	if err := WriteItem(root, item); err != nil {
+		undoOriginal()
 		if copied {
 			_ = os.Remove(destination)
 		}

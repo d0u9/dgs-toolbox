@@ -9,6 +9,7 @@ Examples:
 --root selects one tree instead of doc.trees; with no configured tree the
 working directory is used. --port overrides the page's configured port
 (default 8767). The workspace shows the page address.
-Initialize a new tree with dgs doc init. Import and edit PDFs and their
-sidecars through the page; verification, export, linking and explanations
+Initialize a new tree with dgs doc init. Import PDFs and JPG/PNG/HEIC/TIFF images through the page; images become
+PDFs, with optional original archival (doc.keep_original, default true). Edit
+metadata through the page; verification, export, linking and explanations
 are also available as the CLI actions listed below.`

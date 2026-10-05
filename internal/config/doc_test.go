@@ -58,3 +58,19 @@ func TestDocTrees(t *testing.T) {
 		t.Fatalf("two trees: root %q, want none", config.DocRoot())
 	}
 }
+
+func TestDocKeepOriginal(t *testing.T) {
+	for _, value := range []string{"true", "false"} {
+		c, err := LoadPath(writeConfig(t, `{"doc":{"keep_original":`+value+`}}`))
+		if err != nil || c.Doc.KeepOriginal == nil || *c.Doc.KeepOriginal != (value == "true") {
+			t.Fatalf("%s: %v", value, err)
+		}
+	}
+	c, err := LoadPath(writeConfig(t, `{"doc":{}}`))
+	if err != nil || c.Doc.KeepOriginal != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	if _, err := LoadPath(writeConfig(t, `{"doc":{"keep_original":"yes"}}`)); err == nil {
+		t.Fatal("accepted string retention setting")
+	}
+}

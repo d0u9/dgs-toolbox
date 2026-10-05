@@ -132,6 +132,20 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 					add(BadSidecar, sidecar, "duplicate revision "+rev.Ref())
 				}
 				refs[rev.Ref()] = true
+				if rev.Original != nil {
+					original := tree.OriginalPath(root, item.ID, *rev.Original)
+					if original == "" {
+						add(BadSidecar, sidecar, "invalid original image reference")
+					} else {
+						named[filepath.Base(original)] = true
+						if _, err := os.Stat(original); errors.Is(err, fs.ErrNotExist) {
+							add(Missing, original, "original image")
+						} else {
+							reads = append(reads, pending{original, rev.Original.Digest})
+						}
+					}
+				}
+
 				if rev.Snapshot && len(rev.ID) == 64 && tree.SnapshotID(rev.Type, rev.Fields, rev.Digest) != rev.ID {
 					add(BadSidecar, sidecar, "snapshot "+short(rev.ID)+" does not match its content")
 				}
