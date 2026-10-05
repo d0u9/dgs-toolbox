@@ -36,7 +36,7 @@ func TestImageImportPreviewAndRetentionOverride(t *testing.T) {
 			}
 			var item tree.Item
 			must(t, json.Unmarshal(rec.Body.Bytes(), &item))
-			if (item.Revisions[0].Original != nil) != keep {
+			if (len(item.Revisions[0].Originals) > 0) != keep {
 				t.Fatal("retention override ignored")
 			}
 			for _, f := range source(t, h, scans) {

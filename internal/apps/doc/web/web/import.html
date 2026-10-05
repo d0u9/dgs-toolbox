@@ -96,8 +96,10 @@
         <div class="form-field" id="shared-field" hidden><span>Shared with</span><div id="shared" class="checks" title="Also theirs, such as a letter addressed to both"></div></div>
       </section>
       <section class="detail-section" id="keep-original-field" hidden>
-        <div class="detail-section-head"><h3>Import options</h3></div>
-        <div class="checks"><label><input id="keep-original" type="checkbox" checked> Keep original image in the doc tree</label></div>
+        <div class="detail-section-head"><h3>Image pages</h3></div>
+        <ol id="image-pages" class="image-pages"></ol>
+        <select id="add-page" title="Put another image of this folder after these, as the next page of the same PDF"></select>
+        <div class="checks"><label><input id="keep-original" type="checkbox" checked> Keep original images in the doc tree</label></div>
       </section>
       <section class="detail-section" id="tags-field" hidden>
         <div class="detail-section-head"><h3>Tags</h3></div>
@@ -115,7 +117,7 @@
       </div></div>
       <div class="detail-actions"><button id="import-button" class="action" type="submit">Import</button>
         <p id="import-message" class="message"></p></div>
-      <p id="copy-note" class="detail-note">Images become single-page PDFs. Files are read back before publication. The source file stays where it is.</p>
+      <p id="copy-note" class="detail-note">Images become one PDF, a page each. Files are read back before publication. The source file stays where it is.</p>
     </form>
     <div id="kept" class="detail-group" hidden><div class="detail-card"><section class="detail-section">
       <p class="message">Kept as <a id="kept-link" href="/browse/"></a>.</p>

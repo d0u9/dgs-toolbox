@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -95,11 +94,12 @@ func AddWithoutPDF(root, id string, template Template, given map[string]string, 
 // AttachPDF creates a new snapshot from the selected revision and a PDF.
 // The selected revision and its references are never changed.
 func AttachPDF(ctx context.Context, root, id, ref, source string, now time.Time) (Item, error) {
-	return AttachFile(ctx, root, id, ref, source, false, now)
+	return AttachFile(ctx, root, id, ref, []string{source}, false, now)
 }
 
-// AttachFile converts an image to PDF and optionally archives its original.
-func AttachFile(ctx context.Context, root, id, ref, source string, keepOriginal bool, now time.Time) (Item, error) {
+// AttachFile is AttachPDF for a PDF, or for images put together into one,
+// a page each, their originals optionally archived beside it.
+func AttachFile(ctx context.Context, root, id, ref string, sources []string, keepOriginal bool, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -126,22 +126,24 @@ func AttachFile(ctx context.Context, root, id, ref, source string, keepOriginal 
 			}
 		}
 	}
-	input, err := prepareInput(ctx, source)
+	input, err := prepareInput(ctx, root, sources)
 	if err != nil {
 		return Item{}, err
 	}
 	defer input.cleanup()
-	source = input.pdf
+	source := input.pdf
 	digest, err := input.digest()
 	if err != nil {
 		return Item{}, err
+	}
+	if other, ok := input.heldBy(items); ok && other.ID != id {
+		return Item{}, fmt.Errorf("%w: %s", ErrDuplicate, other.ID)
 	}
 	if digest == base.Digest {
 		if err := input.preserveProvenance(item, ref, keepOriginal); err != nil {
 			return Item{}, err
 		}
-		needsSource := input.inputDigest != "" && input.inputDigest != base.SourceDigest && !slices.Contains(base.SourceDigests, input.inputDigest)
-		if (!keepOriginal || input.original == nil) && !needsSource {
+		if (!keepOriginal || len(input.originals) == 0 || len(base.Originals) > 0) && !input.needsSource(base) {
 			return item, nil
 		}
 		// Verify the reused PDF before changing only its original metadata.

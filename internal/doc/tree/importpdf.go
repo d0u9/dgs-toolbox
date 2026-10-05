@@ -17,11 +17,16 @@ import (
 	"dgs-toolbox/internal/verifiedcopy"
 )
 
-// ImportRequest is one loose PDF to take into the tree as a new Item.
+// ImportRequest is one loose PDF, or images, to take into the tree as a new
+// Item.
 type ImportRequest struct {
+	Root   string
+	Source string
+	// Pages are more images after Source, each a page of the PDF made from
+	// them; empty for a PDF.
+	Pages []string
+	// KeepOriginal archives the images beside their PDF.
 	KeepOriginal bool
-	Root         string
-	Source       string
 	Template     Template
 	Fields       map[string]string
 	Notes        string
@@ -53,7 +58,7 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	input, err := prepareInput(ctx, request.Source)
+	input, err := prepareInput(ctx, request.Root, append([]string{request.Source}, request.Pages...))
 	if err != nil {
 		return Item{}, err
 	}
@@ -68,6 +73,9 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 		return Item{}, err
 	}
 	if other, ok := holder(items, digest); ok {
+		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
+	}
+	if other, ok := input.heldBy(items); ok {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
 	}
 	if other, ok := taken(request.Template, items, fields, ""); ok {

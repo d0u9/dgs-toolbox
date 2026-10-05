@@ -3,12 +3,13 @@
 package pdflist
 
 import (
-	"dgs-toolbox/internal/doc/imagepdf"
 	"io/fs"
 	"path"
 	"sort"
 	"strings"
 	"time"
+
+	"dgs-toolbox/internal/doc/docfile"
 )
 
 // File is one importable file, named by its slash-separated path relative to the root.
@@ -40,7 +41,7 @@ func List(fsys fs.FS) ([]File, error) {
 			}
 			return nil
 		}
-		if !entry.Type().IsRegular() || !Supported(name) {
+		if !entry.Type().IsRegular() || !docfile.Importable(name) {
 			return nil
 		}
 		info, err := entry.Info()
@@ -55,9 +56,4 @@ func List(fsys fs.FS) ([]File, error) {
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil
-}
-
-// Supported reports the PDF and image formats accepted for import.
-func Supported(name string) bool {
-	return strings.EqualFold(path.Ext(name), ".pdf") || imagepdf.Supported(name)
 }

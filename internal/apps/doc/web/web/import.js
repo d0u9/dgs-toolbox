@@ -10,6 +10,9 @@ let state = { templates: [], items: [] };
 let dir = "";
 let files = [];
 let selected = "";
+// pages are more images after the selected one, each the next page of the
+// PDF they become together.
+let pages = [];
 let noPDF = false;
 // What the text of the picked PDF suggests, by type: { type: { key: value } }.
 let suggestions = {};
@@ -66,7 +69,8 @@ function render() {
   $("side").hidden = !file && !noPDF;
   $("import").hidden = (!noPDF && (!file || !!file.item)) || !state.tree;
   $("copy-note").hidden = noPDF;
-  $("keep-original-field").hidden = noPDF || !/\.(jpe?g|png|heic|heif|tiff?)$/i.test(selected);
+  $("keep-original-field").hidden = noPDF || !file || !file.image || !!file.item;
+  if (!$("keep-original-field").hidden) drawPages();
   $("import-title").textContent = noPDF ? "New without PDF" : file?.item ? "Already in the tree" : "Import";
   $("kept").hidden = !file || !file.item;
   if (file && file.item) {
@@ -76,6 +80,12 @@ function render() {
   }
 }
 
+// source names the file picked, and the images of its other pages, as a
+// preview asks for them.
+function source(path) {
+  return pages.length ? { dir, path, pages: JSON.stringify(pages) } : { dir, path };
+}
+
 function pick(path) {
   noPDF = false;
   if (path !== selected) {
@@ -83,25 +93,54 @@ function pick(path) {
     tags.set([]);
     $("shared").replaceChildren();
     metadataItem = "";
-    showPreview({ dir, path }, api("/api/source/file?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path)));
+    pages = [];
     say($("import-message"), "");
-    suggestions = {};
     typeChosen = false;
     $("type-hint").hidden = true;
-    showText({ dir, path }, (answer) => {
-      if (selected !== path) return;
-      if (answer.types && answer.types.length) proposeType(answer);
-      // An earlier page's value stands: a document says what it is first.
-      for (const [type, found] of Object.entries(answer.suggestions || {})) {
-        suggestions[type] = { ...found, ...(suggestions[type] || {}) };
-      }
-      suggest();
-    }).then(() => { if (selected === path) readAhead(path); });
+    load(path);
   }
   selected = path;
   keep({ selected });
   render();
   drawFields();
+}
+
+// load shows the file picked, with its other pages, and reads its text.
+function load(path) {
+  const query = source(path);
+  const shown = JSON.stringify(query);
+  showPreview(query, api("/api/source/file?" + new URLSearchParams(query)));
+  suggestions = {};
+  showText(query, (answer) => {
+    if (selected !== path || JSON.stringify(source(path)) !== shown) return;
+    if (answer.types && answer.types.length) proposeType(answer);
+    // An earlier page's value stands: a document says what it is first.
+    for (const [type, found] of Object.entries(answer.suggestions || {})) {
+      suggestions[type] = { ...found, ...(suggestions[type] || {}) };
+    }
+    suggest();
+  }).then(() => { if (selected === path) readAhead(path); });
+}
+
+// drawPages lists the images that become the PDF, the picked one first;
+// a later one moves up or down or leaves. Any other image of the folder
+// not yet in the tree can be added after them.
+function drawPages() {
+  const name = (p) => p.split("/").pop();
+  const changed = () => { load(selected); render(); };
+  const move = (i, by) => { const [p] = pages.splice(i, 1); pages.splice(i + by, 0, p); changed(); };
+  $("image-pages").replaceChildren(el("li", {}, el("span", { textContent: name(selected), title: selected })),
+    ...pages.map((p, i) => el("li", {}, el("span", { textContent: name(p), title: p }),
+      el("button", { type: "button", className: "text-button", textContent: "↑", title: "Earlier", disabled: i === 0, onclick: () => move(i, -1) }),
+      el("button", { type: "button", className: "text-button", textContent: "↓", title: "Later", disabled: i === pages.length - 1, onclick: () => move(i, 1) }),
+      el("button", { type: "button", className: "text-button", textContent: "×", title: "Not a page of this PDF", onclick: () => { pages.splice(i, 1); changed(); } }))));
+  const folder = (p) => p.slice(0, p.lastIndexOf("/") + 1);
+  const others = files.filter((f) => f.image && !f.item && f.path !== selected && !pages.includes(f.path))
+    .sort((a, b) => (folder(b.path) === folder(selected)) - (folder(a.path) === folder(selected)) || a.path.localeCompare(b.path));
+  $("add-page").hidden = others.length === 0;
+  $("add-page").replaceChildren(el("option", { value: "", textContent: "+ Add a page…" }),
+    ...others.map((f) => el("option", { value: f.path, textContent: f.path })));
+  $("add-page").onchange = () => { if ($("add-page").value) { pages.push($("add-page").value); changed(); } };
 }
 
 // readAhead has the next PDFs not yet in the tree read while this one is
@@ -330,10 +369,10 @@ $("import").onsubmit = async (event) => {
   try {
     if ($("into").value && !$("into-field").hidden) {
       revisionTags.commit();
-      await post("/api/revisions", { keep_original: $("keep-original").checked, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
+      await post("/api/revisions", { keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
         revision_tags: revisionTags.get() });
     } else {
-      const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, keep_original: $("keep-original").checked, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
+      const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
         revision_tags: noPDF ? [] : (revisionTags.commit(), revisionTags.get()), shared_with: sharedWith() });
       if (saved.warning) { state = await loadState(); render(); say($("import-message"), saved.warning, true); return; }
     }
