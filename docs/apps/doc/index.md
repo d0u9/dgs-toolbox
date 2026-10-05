@@ -873,8 +873,9 @@ rule that holds every `{#}` numbering that rest.
 A name may be given its own number, to skip some: `numbers`, per order,
 sets it, and the names after it count on from there. With the order
 `[身份证, 护照, 结婚证, 户口]` and `numbers: {name: {结婚证: 6}}`, they
-are `01`, `02`, `06` and `07`. A number must be larger than the one before
-it, and may be `0`. On the Rules page each number in a Numbering list can be typed over;
+are `01`, `02`, `06` and `07`. A number may repeat the one before it, so
+two names share it — a tenancy agreement and its translation both `02` —
+but may not be smaller, and may be `0`. On the Rules page each number in a Numbering list can be typed over;
 one set by hand is filled in, and clearing it counts on from the one
 before again.
 

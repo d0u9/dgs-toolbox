@@ -868,15 +868,15 @@ function orderList(s, key, rest) {
   let dragged = -1;
   const draw = () => {
     const values = list();
-    // Only the values the query's Items have are shown, each with its
-    // number in the whole order; the others stay in it, numbered, hidden.
+    // Every value in the order is listed with its number; one no Item the
+    // query picks has is dimmed, but still holds its number, so a number
+    // refused is seen taken.
     const held = [...new Set(takes().map((i) => orderValue(i, rest)).filter(Boolean))];
-    const shown = values.map((v, i) => i).filter((i) => held.some((h) => same(h, values[i])));
-    const hidden = values.length - shown.length;
+    const idle = (v) => !held.some((h) => same(h, v));
     // holders is the Items this block takes whose value for key is v.
     const holders = (v) => takes().filter((i) => same(orderValue(i, rest), v));
     const unlisted = held.filter((v) => !values.some((w) => same(v, w))).sort();
-    // move swaps a shown value with the shown one before or after it.
+    // move swaps a value with the one before or after it.
     const move = (a, b) => { const next = [...values]; [next[a], next[b]] = [next[b], next[a]]; set(next); };
     const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
     const counted = numbered(values, numbers[key], unnumbered[key]);
@@ -892,14 +892,22 @@ function orderList(s, key, rest) {
       changed();
     };
     // renumber sets a name's number by hand, or clears it when it is the
-    // next one anyway; a number not after the one before is refused.
+    // next one anyway. It may repeat the one before, so two names, a
+    // tenancy agreement and its translation, share a number; a number
+    // before it is refused.
     const renumber = (i, input) => {
       const own = { ...(numbers[key] || {}) };
       for (const name of Object.keys(own)) if (same(name, values[i])) delete own[name];
       const typed = parseInt(input.value, 10);
       const next = numbered(values.slice(0, i + 1), own, unnumbered[key])[i];
       if (input.value.trim() !== "" && typed !== next) {
-        if (!(typed >= 0) || (before(i) !== undefined && typed <= before(i))) { input.value = String(counted[i]).padStart(pad, "0"); input.classList.add("invalid"); return; }
+        if (!(typed >= 0) || (before(i) !== undefined && typed < before(i))) {
+          const at = counted.slice(0, i).lastIndexOf(before(i));
+          input.value = String(counted[i]).padStart(pad, "0");
+          input.classList.add("invalid");
+          input.title = before(i) === undefined ? "A number is 0 or more." : "Not before " + String(before(i)).padStart(pad, "0") + ", which " + values[at] + " holds: type it to share that number.";
+          return;
+        }
         own[values[i]] = typed;
       }
       numbers[key] = own;
@@ -907,9 +915,10 @@ function orderList(s, key, rest) {
       changed();
     };
     box.replaceChildren(...[
-      el("ol", { className: "order-list" }, ...shown.map((i, k) => {
-        const v = values[i];
+      el("ol", { className: "order-list" }, ...values.map((v, i) => {
         const li = el("li", {
+          className: idle(v) ? "idle" : "",
+          title: idle(v) ? "No Item this rule picks has " + v + "; it keeps its place and number" : "",
           draggable: true,
           ondragstart: (event) => { dragged = i; event.dataTransfer.effectAllowed = "move"; li.classList.add("dragging"); },
           ondragend: () => li.classList.remove("dragging"),
@@ -925,18 +934,17 @@ function orderList(s, key, rest) {
           counted[i] === null
             ? el("span", { className: "order-number unnumbered", textContent: "—", title: "Not numbered: no number, nor the text after {#}" })
             : el("input", { className: "order-number" + (Object.keys(numbers[key] || {}).some((name) => same(name, v)) ? " set" : ""), type: "text", inputMode: "numeric",
-              value: String(counted[i]).padStart(pad, "0"), title: "Its number. Type another to skip some; the ones after count on from it. Clear it to count on from the one before.",
+              value: String(counted[i]).padStart(pad, "0"), title: "Its number. Type another to skip some, or the one before to share it; the ones after count on from it. Clear it to count on from the one before.",
               onchange: (event) => renumber(i, event.target), onkeydown: (event) => { if (event.key === "Enter") { event.preventDefault(); event.target.blur(); } } }),
           el("span", { className: "order-value", textContent: v, title: v }),
           el("span", { className: "order-acts" },
             el("button", { type: "button", className: "order-act" + (skipped(v) ? " on" : ""), textContent: "#",
               title: skipped(v) ? "Number it again" : "Leave it unnumbered", onclick: () => toggle(v) }),
-            act("Up", "↑", () => move(i, shown[k - 1]), k === 0),
-            act("Down", "↓", () => move(i, shown[k + 1]), k === shown.length - 1),
+            act("Up", "↑", () => move(i, i - 1), i === 0),
+            act("Down", "↓", () => move(i, i + 1), i === values.length - 1),
             act("Remove", "×", () => set(values.filter((_, n) => n !== i)))));
         return li;
       })),
-      hidden ? el("p", { className: "template-sub", textContent: hidden + (hidden === 1 ? " value no Item this rule picks has is" : " values no Item this rule picks has are") + " kept in the order, hidden: " + values.filter((_, i) => !shown.includes(i)).join(", ") }) : null,
       unlisted.length ? el("div", { className: "order-add" }, el("span", { className: "order-add-label", textContent: "Not numbered" }),
         ...unlisted.map((v) => el("button", { type: "button", className: "order-chip", textContent: "+ " + v + " · " + holders(v).length,
           title: "Number " + v + " last", onclick: () => set([...values, v]) })),
