@@ -305,8 +305,9 @@ func (n Node) validOrders() error {
 			if number == Unnumbered {
 				continue
 			}
-			if last >= 0 && number <= numbers[last] {
-				return fmt.Errorf("numbers %s: %s would be %d, not after %s's %d", key, list[i], number, list[last], numbers[last])
+			// A name may share the number before it, never go below it.
+			if last >= 0 && number < numbers[last] {
+				return fmt.Errorf("numbers %s: %s would be %d, before %s's %d", key, list[i], number, list[last], numbers[last])
 			}
 			last = i
 		}

@@ -230,10 +230,23 @@ func TestBuildNumbersSkip(t *testing.T) {
 	if want := []string{"01-身份证.pdf", "02-护照.pdf", "06-结婚证.pdf", "07-户口.pdf"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
-	// A number at or below the one before it is refused.
+	// A number may repeat the one before it, sharing it; the next counts on.
 	v.Numbers = map[string]map[string]int{"name": {"结婚证": 2}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, _ = Build(v, items, Types{})
+	got = nil
+	for _, f := range plan.Files {
+		got = append(got, f.Path)
+	}
+	if want := []string{"01-身份证.pdf", "02-护照.pdf", "02-结婚证.pdf", "03-户口.pdf"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("shared: got %v, want %v", got, want)
+	}
+	// A number below the one before it is refused.
+	v.Numbers = map[string]map[string]int{"name": {"结婚证": 1}}
 	if err := v.Validate(); err == nil {
-		t.Fatal("a number not after the one before was accepted")
+		t.Fatal("a number below the one before was accepted")
 	}
 	v.Numbers = map[string]map[string]int{"name": {"驾照": 9}}
 	if err := v.Validate(); err == nil {
