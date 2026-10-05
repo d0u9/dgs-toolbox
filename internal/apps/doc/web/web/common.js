@@ -130,6 +130,13 @@ export function fieldsAt(item, digest) {
 // currentFields is fieldsAt the revision that stands for the Item.
 export const currentFields = (item) => fieldsAt(item, item.head || (item.revisions.length ? (item.revisions[item.revisions.length - 1].id || item.revisions[item.revisions.length - 1].digest) : ""));
 
+// tagPills is a run of tags shown, not edited, as the shared pills from
+// /ui/tags.css: on one line cut at the holder's edge, or wrapping when wrap.
+// Each pill's title is the tag, for one cut short.
+export function tagPills(tags, wrap = false) {
+  return el("span", { className: "tag-pills" + (wrap ? " wrap" : "") }, ...tags.map((tag) => el("span", { className: "tag-pill", title: tag }, tag)));
+}
+
 export function label(state, item) {
   const t = templateOf(state, item.type);
   const keys = t ? t.fields.filter((f) => f.distinguishing).map((f) => f.key) : Object.keys(item.fields);

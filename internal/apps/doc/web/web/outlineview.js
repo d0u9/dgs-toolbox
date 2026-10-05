@@ -12,7 +12,7 @@
 // left. onLeave is called when the reader asks to leave: Esc, or the button.
 // explain(file) answers the server's explanations of how the Outline
 // places the file's Item, for Why here.
-import { $, el, keep, label, fieldsAt, tagsAt } from "/common.js";
+import { $, el, keep, label, fieldsAt, tagsAt, tagPills } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { find, findFile, resizable, whyText } from "/outlinetree.js";
 
@@ -98,7 +98,7 @@ export function outlineView({ state, preview, onLeave, explain }) {
       el("p", { className: "view-meta" }, el("span", { className: "mono" }, i ? i.type : ""), " ", expiry(i),
         file.revision > 1 ? el("span", { className: "muted" }, " revision " + file.revision) : null),
       el("p", { className: "mono view-path" }, file.path),
-      tags.length ? el("p", { className: "view-tags" }, ...tags.map((tag) => el("span", { className: "tag" }, tag))) : null,
+      tags.length ? el("p", { className: "view-tags" }, tagPills(tags, true)) : null,
       el("dl", { className: "view-fields" }, ...keys.flatMap((k) => [el("dt", {}, k), el("dd", {}, value(k))])),
       when ? el("p", { className: "muted" }, "Added " + when) : null,
       whyHere(file));

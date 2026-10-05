@@ -106,3 +106,27 @@
 .tag-option.tag-active { background: var(--selected); }
 .tag-option-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag-option-count { flex: none; font-size: var(--font-size-xs); color: var(--graphite); font-variant-numeric: tabular-nums; }
+
+/* A tag shown, not edited: in a list, a card or an information pane. Quieter
+   than the field's bubble, which is something being typed: a small grey
+   label with a hairline edge, so it stays seen on a selected row. A run of
+   them sits in .tag-pills, on one line unless the holder lets them wrap. */
+.tag-pills { display: inline-flex; flex-wrap: nowrap; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; vertical-align: middle; }
+.tag-pills.wrap { flex-wrap: wrap; }
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  max-width: 14em;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--cloud);
+  color: var(--charcoal);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
