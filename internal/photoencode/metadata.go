@@ -489,3 +489,18 @@ func checkICC(icc []byte, gray bool) error {
 	}
 	return nil
 }
+
+// JPEGLayout reads what embedding a JPEG's bytes unchanged needs, without
+// decoding its pixels: its EXIF orientation, 1–8, and its ICC profile, nil
+// when it has none. A profile that does not suit the JPEG's colour
+// components is refused, as Encode refuses it.
+func JPEGLayout(data []byte, gray bool) (orientation int, icc []byte, err error) {
+	m, err := jpegMetadata(data)
+	if err != nil {
+		return 0, nil, err
+	}
+	if err := checkICC(m.icc, gray); err != nil {
+		return 0, nil, err
+	}
+	return m.orientation, m.icc, nil
+}

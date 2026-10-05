@@ -24,6 +24,7 @@ import (
 	"dgs-toolbox/internal/desktop"
 	"dgs-toolbox/internal/doc/classify"
 	"dgs-toolbox/internal/doc/dates"
+	"dgs-toolbox/internal/doc/docfile"
 	"dgs-toolbox/internal/doc/expiry"
 	"dgs-toolbox/internal/doc/imagepdf"
 	"dgs-toolbox/internal/doc/itemcache"
@@ -108,6 +109,8 @@ type sourceFileJSON struct {
 	Modified time.Time `json:"modified"`
 	// Item is the Item already keeping this PDF, when one does.
 	Item string `json:"item,omitempty"`
+	// Image is set for an image, which an import makes a PDF page of.
+	Image bool `json:"image,omitempty"`
 }
 
 type stateJSON struct {
@@ -351,14 +354,8 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 	for _, item := range items {
 		for _, r := range item.Revisions {
 			kept[r.Digest] = item.ID
-			if r.SourceDigest != "" {
-				kept[r.SourceDigest] = item.ID
-			}
 			for _, digest := range r.SourceDigests {
 				kept[digest] = item.ID
-			}
-			if r.Original != nil {
-				kept[r.Original.Digest] = item.ID
 			}
 		}
 	}
@@ -369,7 +366,7 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 		if within(itemsDir, full) {
 			continue
 		}
-		entry := sourceFileJSON{Path: f.Path, Size: f.Size, Modified: f.Modified}
+		entry := sourceFileJSON{Path: f.Path, Size: f.Size, Modified: f.Modified, Image: docfile.IsImage(f.Path)}
 		if len(kept) > 0 {
 			if digest, err := tree.FileDigest(full); err == nil {
 				entry.Item = kept[digest]
@@ -392,8 +389,8 @@ func sourcePath(dir, path string) (string, error) {
 	if !filepath.IsAbs(dir) {
 		return "", errors.New("open a folder by its full path")
 	}
-	if !fs.ValidPath(path) || path == "." || !pdflist.Supported(path) {
-		return "", errors.New("not a PDF in the opened folder")
+	if !fs.ValidPath(path) || path == "." || !docfile.Importable(path) {
+		return "", errors.New("not a PDF or image in the opened folder")
 	}
 	for _, part := range strings.Split(path, "/") {
 		if strings.HasPrefix(part, ".") {
@@ -413,12 +410,12 @@ func sourcePath(dir, path string) (string, error) {
 
 // sourceFile serves a PDF under an opened folder for preview.
 func (s server) sourceFile(w http.ResponseWriter, r *http.Request) {
-	full, err := sourcePath(r.URL.Query().Get("dir"), r.URL.Query().Get("path"))
+	sources, err := sourcePaths(r.URL.Query())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	full, err = imagepdf.Cached(r.Context(), full, s.store.Dir)
+	full, err := imagepdf.Cached(r.Context(), sources, s.store.Dir)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return
@@ -611,7 +608,7 @@ func (s server) ahead(w http.ResponseWriter, r *http.Request) {
 	// Digesting a large scan takes a moment; nobody waits for it.
 	go func() {
 		for _, path := range paths {
-			pdf, err := imagepdf.Cached(context.Background(), path, s.store.Dir)
+			pdf, err := imagepdf.Cached(context.Background(), []string{path}, s.store.Dir)
 			if err != nil {
 				continue
 			}
@@ -628,11 +625,11 @@ func (s server) ahead(w http.ResponseWriter, r *http.Request) {
 // opened folder (dir, path) or a revision of an Item (item, digest).
 func (s server) pdfPath(ctx context.Context, query url.Values) (string, error) {
 	if query.Get("item") == "" {
-		source, err := sourcePath(query.Get("dir"), query.Get("path"))
+		sources, err := sourcePaths(query)
 		if err != nil {
 			return "", err
 		}
-		return imagepdf.Cached(ctx, source, s.store.Dir)
+		return imagepdf.Cached(ctx, sources, s.store.Dir)
 	}
 	item, err := tree.GetItem(s.root, query.Get("item"))
 	if err != nil {
@@ -665,6 +662,7 @@ func servePDF(w http.ResponseWriter, r *http.Request, path string) {
 
 type importJSON struct {
 	KeepOriginal *bool             `json:"keep_original"`
+	Pages        []string          `json:"pages"`
 	Replaces     string            `json:"replaces"`
 	NoPDF        bool              `json:"no_pdf"`
 	Dir          string            `json:"dir"`
@@ -687,10 +685,14 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 	s.writing.Lock()
 	defer s.writing.Unlock()
 	source := ""
+	var pages []string
 	if !request.NoPDF {
 		var ok bool
 		source, ok = s.source(w, request.Dir, request.Path)
 		if !ok {
+			return
+		}
+		if pages, ok = s.pagesOf(w, request.Dir, request.Pages); !ok {
 			return
 		}
 	}
@@ -710,7 +712,7 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		req := tree.ImportRequest{
-			KeepOriginal: s.keepImage(request.KeepOriginal), Root: s.root, Source: source, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
+			KeepOriginal: s.keepImage(request.KeepOriginal), Root: s.root, Source: source, Pages: pages, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
 		}
 		var item tree.Item
 		if request.NoPDF {
@@ -744,6 +746,45 @@ func (s server) source(w http.ResponseWriter, dir, path string) (string, bool) {
 	return full, true
 }
 
+// pagesOf is the files of more pages after the first, each under dir as
+// sourcePath takes it.
+func (s server) pagesOf(w http.ResponseWriter, dir string, pages []string) ([]string, bool) {
+	var out []string
+	for _, p := range pages {
+		full, ok := s.source(w, dir, p)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, full)
+	}
+	return out, true
+}
+
+// sourcePaths is the files a preview query names: path under dir, then the
+// images of more pages after it, pages, a JSON list.
+func sourcePaths(query url.Values) ([]string, error) {
+	first, err := sourcePath(query.Get("dir"), query.Get("path"))
+	if err != nil {
+		return nil, err
+	}
+	out := []string{first}
+	if query.Get("pages") == "" {
+		return out, nil
+	}
+	var pages []string
+	if err := json.Unmarshal([]byte(query.Get("pages")), &pages); err != nil {
+		return nil, fmt.Errorf("pages: %w", err)
+	}
+	for _, p := range pages {
+		full, err := sourcePath(query.Get("dir"), p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, full)
+	}
+	return out, nil
+}
+
 func decode(w http.ResponseWriter, r *http.Request, into any) bool {
 	if err := json.NewDecoder(r.Body).Decode(into); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -769,6 +810,7 @@ func answer(w http.ResponseWriter, item tree.Item, err error) {
 func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		KeepOriginal *bool             `json:"keep_original"`
+		Pages        []string          `json:"pages"`
 		NoPDF        bool              `json:"no_pdf"`
 		Dir          string            `json:"dir"`
 		Path         string            `json:"path"`
@@ -785,10 +827,14 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	s.writing.Lock()
 	defer s.writing.Unlock()
 	source := ""
+	var pages []string
 	if !request.NoPDF {
 		var ok bool
 		source, ok = s.source(w, request.Dir, request.Path)
 		if !ok {
+			return
+		}
+		if pages, ok = s.pagesOf(w, request.Dir, request.Pages); !ok {
 			return
 		}
 	}
@@ -797,7 +843,7 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		answer(w, tree.Item{}, err)
 		return
 	}
-	metadata := tree.RevisionMetadata{KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags}
+	metadata := tree.RevisionMetadata{Pages: pages, KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags}
 	var item tree.Item
 	if request.NoPDF {
 		item, err = tree.AddWithoutPDF(s.root, request.Item, t, request.Fields, metadata, s.now())
@@ -1086,7 +1132,8 @@ func Serve(settings Settings) (string, error) {
 
 func (s server) attachPDF(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		KeepOriginal *bool `json:"keep_original"`
+		KeepOriginal *bool    `json:"keep_original"`
+		Pages        []string `json:"pages"`
 		Item         string
 		Digest       string
 		Dir          string
@@ -1101,7 +1148,11 @@ func (s server) attachPDF(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, err := tree.AttachFile(r.Context(), s.root, request.Item, request.Digest, source, s.keepImage(request.KeepOriginal), s.now())
+	pages, ok := s.pagesOf(w, request.Dir, request.Pages)
+	if !ok {
+		return
+	}
+	item, err := tree.AttachFile(r.Context(), s.root, request.Item, request.Digest, append([]string{source}, pages...), s.keepImage(request.KeepOriginal), s.now())
 	answer(w, item, err)
 }
 

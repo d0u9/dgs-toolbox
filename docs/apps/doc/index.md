@@ -364,7 +364,7 @@ nothing is kept until the reader imports. Searching Items by their text, from
 the same cache, comes later.
 
 Loose PDFs inside the tree are allowed; they are imported by opening the
-tree's own folder. Images are not imported.
+tree's own folder. Images are imported as PDFs ([Image import](#image-import)).
 
 ## The three layers
 
@@ -1324,32 +1324,48 @@ exported and the Items' fields; it carries no Templates or Outlines.
 
 ## Image import
 
-Import lists PDFs and JPG/JPEG, PNG, HEIC/HEIF and TIFF images. Each image
-becomes one PDF page, retaining its pixel dimensions, applying its orientation,
-converting its colour to sRGB and compositing transparency onto white. PDF page
-size uses 300 pixels per inch without cropping. The PDF stores the converted
-8-bit pixels losslessly. Animated or multi-frame inputs contribute their first image
-only. No helper program is required. HEIC/HEIF, TIFF and ICC colour conversion
-use macOS ImageIO/ColorSync with cgo; other builds clearly refuse unsupported
-inputs. Existing Photo Encode limits still apply (including refusing HDR HEIC).
+Import lists PDFs and JPG/JPEG, PNG, HEIC/HEIF and TIFF images. An image
+becomes a PDF page; more images of the opened folder may be added after it
+under **Image pages**, reordered or removed, and together they become one
+PDF, a page each in that order, such as the photos of one parking fine. A PDF
+is never put together with images.
 
-**Keep original image in the doc tree** defaults to `doc.keep_original` (`true`).
-It also archives the input bytes as `<source-sha256>.<extension>` beside the
-PDF. Turning it off stores only the PDF. In both cases the source folder is
-untouched. The sidecar records the source digest, alternative input digests for the same
-PDF, and, when archived, the
-original’s digest and extension. A snapshot keeps one archived original; trying to retain different input bytes
-for a snapshot that already has an original is refused explicitly. Existing
+Nothing is lost. A JPEG whose colour needs no conversion — gray or YCbCr,
+with no ICC profile or one of its own colour space — is embedded as its own
+bytes, unchanged; its EXIF orientation is applied by the page drawing it
+turned, and its profile goes with it. Any other image is decoded, oriented,
+converted to sRGB and composited onto white, and its 8-bit pixels stored
+losslessly. A page is the image's pixels at 300 per inch, without cropping.
+Animated or multi-frame inputs contribute their first image only. No helper
+program is required. HEIC/HEIF, TIFF and ICC colour conversion use macOS
+ImageIO/ColorSync with cgo; other builds clearly refuse unsupported inputs.
+Existing Photo Encode limits still apply (including refusing HDR HEIC).
+
+**Keep original images in the doc tree** defaults to `doc.keep_original`
+(`true`). It also archives each input's bytes as
+`<source-sha256>.<extension>` beside the PDF. Turning it off stores only the
+PDF. In both cases the source folder is untouched; the converted PDF is
+written in a hidden `.dgs-import-*` folder under `items/`, on the tree's own
+volume, and removed once imported. The sidecar records, per revision, the
+SHA-256 of every image its PDF was made from (`source_digests`) and, when
+archived, the originals in page order (`originals`: digest and extension). A
+snapshot keeps one set of originals; trying to retain different input bytes
+for a snapshot that already has originals is refused explicitly. Existing
 originals are preserved, and merging adds originals missing on the target.
-Both stored files use independent readback
-before publication, and the sidecar is written last. Verify checks archived
-originals too; tree merging carries them, and discarding a revision moves its
-unshared original into trash. Outlines and exports continue to publish PDFs.
+Every stored file uses independent readback before publication, and the
+sidecar is written last. Verify checks archived originals too; tree merging
+carries them, and discarding a revision moves its unshared originals into
+trash. Outlines and exports continue to publish PDFs.
+
+An image already in the tree is known by its own SHA-256, whatever PDF it
+became: Import marks it, and importing it again is refused as a duplicate.
+The same images give the same PDF only on the same converter and system;
+another macOS may convert colour slightly differently, so the images'
+digests, not the PDF's, recognise them.
 
 Preview and OCR use converted PDFs in the discardable local `imagepdf` cache,
-with a converter version and input content key plus a checksum. Missing or
-corrupt entries are rebuilt. Identical image inputs produce identical PDFs,
-so repeated imports are recognised even when the original was not archived.
+keyed by the converter version and every input's content, with a checksum.
+Missing or corrupt entries are rebuilt.
 
 ## Layout on disk
 
@@ -1368,7 +1384,7 @@ so repeated imports are recognised even when the original was not archived.
     <item-id>/
       item.dgs-item.yaml    # the sidecar: everything known about the Item
       <sha256>.pdf          # optional PDF per revision, named by its content
-      <source-sha256>.png   # optional original image; extension matches input
+      <source-sha256>.png   # optional original image, one per page; extension matches input
 ```
 
 - The marker is `dgs-doctree.yaml`, not `dgs-doc.yaml`, which reads too much

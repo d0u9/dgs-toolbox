@@ -227,9 +227,9 @@ func Compute(root string, src Source) (Plan, error) {
 					if r.ID != "" && (!maps.Equal(m.FieldsAt(existing.Ref()), s.FieldsAt(r.Ref())) || !slices.Equal(existing.Tags, r.Tags) ||
 						(existing.Digest != "" && r.Digest != "" && existing.Digest != r.Digest)) {
 						plan.Problems = append(plan.Problems, fmt.Sprintf("revision %s of %s differs; reconcile its fields, tags or attachment before merging", r.Ref(), s.ID))
-					} else if existing.Original != nil && r.Original != nil && existing.Original.Digest != r.Original.Digest {
+					} else if len(existing.Originals) > 0 && len(r.Originals) > 0 && !slices.EqualFunc(existing.Originals, r.Originals, func(a, b tree.Original) bool { return a.Digest == b.Digest }) {
 						plan.Problems = append(plan.Problems, fmt.Sprintf("revision %s of %s has different archived originals; reconcile before merging", r.Ref(), s.ID))
-					} else if (existing.Original == nil && r.Original != nil) || missingSourceDigests(existing, r) {
+					} else if (len(existing.Originals) == 0 && len(r.Originals) > 0) || missingSourceDigests(existing, r) {
 						c.Digests = append(c.Digests, r.Ref())
 					} else if existing.Digest == "" && r.Digest != "" && !r.Snapshot && r.ID != "" {
 						c.Digests = append(c.Digests, r.Ref())
@@ -483,8 +483,8 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 						if it.Revisions[n].Ref() == d {
 							it.Revisions[n].Digest = r.Digest
 							mergeSources(&it.Revisions[n], r)
-							if it.Revisions[n].Original == nil {
-								it.Revisions[n].Original = r.Original
+							if len(it.Revisions[n].Originals) == 0 {
+								it.Revisions[n].Originals = r.Originals
 							}
 							found = true
 							break
@@ -620,25 +620,28 @@ func copyRevision(ctx context.Context, src Source, item tree.Item, root, target,
 		if r.Digest == "" {
 			return nil
 		}
-		if r.Original != nil {
-			if src.Original == nil {
-				return fmt.Errorf("source cannot resolve original image")
+		if len(r.Originals) > 0 && src.Original == nil {
+			return fmt.Errorf("source cannot resolve original image")
+		}
+		var kept []tree.Original
+		if stored, err := tree.GetItem(root, target); err == nil {
+			if existing, ok := stored.Revision(ref); ok {
+				kept = existing.Originals
 			}
-			from, to := src.Original(item.ID, *r.Original), tree.OriginalPath(root, target, *r.Original)
-			// Keep the target's extension alias when this snapshot already archives
-			// the same bytes (for example .jpg versus .jpeg).
-			if stored, err := tree.GetItem(root, target); err == nil {
-				if existing, ok := stored.Revision(ref); ok && existing.Original != nil && existing.Original.Digest == r.Original.Digest {
-					to = tree.OriginalPath(root, target, *existing.Original)
-				}
-			} else if !errors.Is(err, tree.ErrNoItem) {
-				return err
+		} else if !errors.Is(err, tree.ErrNoItem) {
+			return err
+		}
+		for n, o := range r.Originals {
+			from, to := src.Original(item.ID, o), tree.OriginalPath(root, target, o)
+			// Keep the target's extension alias when this snapshot already
+			// archives the same bytes (for example .jpg versus .jpeg).
+			if n < len(kept) && kept[n].Digest == o.Digest {
+				to = tree.OriginalPath(root, target, kept[n])
 			}
-
 			if from == "" || to == "" {
 				return fmt.Errorf("invalid original image reference")
 			}
-			if err := copyPDF(ctx, from, to, r.Original.Digest, &Result{}); err != nil {
+			if err := copyPDF(ctx, from, to, o.Digest, &Result{}); err != nil {
 				return err
 			}
 		}
@@ -647,21 +650,24 @@ func copyRevision(ctx context.Context, src Source, item tree.Item, root, target,
 	return fmt.Errorf("no revision %s", ref)
 }
 
+// missingSourceDigests reports whether incoming knows an image existing
+// does not.
 func missingSourceDigests(existing, incoming tree.Revision) bool {
-	for _, d := range append(append([]string{}, incoming.SourceDigests...), incoming.SourceDigest) {
-		if d != "" && d != existing.SourceDigest && !slices.Contains(existing.SourceDigests, d) {
+	for _, d := range incoming.SourceDigests {
+		if !slices.Contains(existing.SourceDigests, d) {
 			return true
 		}
 	}
 	return false
 }
+
+// mergeSources adds to existing the images incoming knows.
 func mergeSources(existing *tree.Revision, incoming tree.Revision) {
-	if existing.SourceDigest == "" {
-		existing.SourceDigest = incoming.SourceDigest
+	if existing.Source == "" {
 		existing.Source = incoming.Source
 	}
-	for _, d := range append(append([]string{}, incoming.SourceDigests...), incoming.SourceDigest) {
-		if d != "" && d != existing.SourceDigest && !slices.Contains(existing.SourceDigests, d) {
+	for _, d := range incoming.SourceDigests {
+		if !slices.Contains(existing.SourceDigests, d) {
 			existing.SourceDigests = append(existing.SourceDigests, d)
 		}
 	}

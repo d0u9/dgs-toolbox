@@ -79,6 +79,9 @@ func AddRevision(ctx context.Context, root, id, source string, template Template
 // RevisionMetadata optionally updates the Item's notes and tags when adding a
 // revision. Nil fields preserve the values already on the Item.
 type RevisionMetadata struct {
+	// Pages are more images after the source, each a page of the PDF made
+	// from them; KeepOriginal archives the images beside it.
+	Pages        []string
 	KeepOriginal bool
 	Notes        *string
 	Tags         *[]string
@@ -106,7 +109,7 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 	if err != nil {
 		return Item{}, err
 	}
-	input, err := prepareInput(ctx, source)
+	input, err := prepareInput(ctx, root, append([]string{source}, metadata.Pages...))
 	if err != nil {
 		return Item{}, err
 	}
@@ -117,6 +120,9 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 		return Item{}, err
 	}
 	if other, ok := holder(items, digest); ok && other.ID != id {
+		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
+	}
+	if other, ok := input.heldBy(items); ok && other.ID != id {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
 	}
 	full, _ := template.Split(item.CurrentFields())
@@ -154,13 +160,10 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 		}
 		return Item{}, err
 	}
-	needsSource := false
+	needsSource, needsArchive := len(input.inputDigests) > 0, metadata.KeepOriginal && len(input.originals) > 0
 	if current, ok := item.Revision(item.Current()); ok {
-		needsSource = input.inputDigest != "" && input.inputDigest != current.SourceDigest && !slices.Contains(current.SourceDigests, input.inputDigest)
-	}
-	needsArchive := metadata.KeepOriginal && input.original != nil
-	if current, ok := item.Revision(item.Current()); ok && current.Original != nil {
-		needsArchive = false
+		needsSource = input.needsSource(current)
+		needsArchive = needsArchive && len(current.Originals) == 0
 	}
 	if SnapshotID(item.Type, item.CurrentFields(), item.CurrentDigest()) == SnapshotID(template.Type, full, digest) && metadata.Notes == nil && metadata.Tags == nil && len(metadata.RevisionTags) == 0 && !needsArchive && !needsSource {
 		return item, nil
@@ -329,36 +332,52 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 			return Item{}, "", err
 		}
 	}
-	restorePDF := func(cause error) (Item, string, error) {
-		if hasPDF {
-			if undo := os.Rename(to, from); undo != nil {
-				return Item{}, "", fmt.Errorf("archive original: %v; restore PDF: %w", cause, undo)
+	// moved are the originals taken to the trash, to put back if the
+	// sidecar cannot be written.
+	var moved [][2]string
+	putBack := func() error {
+		var errs error
+		for _, m := range moved {
+			if err := os.Rename(m[1], m[0]); err != nil {
+				errs = errors.Join(errs, fmt.Errorf("restore original: %w", err))
 			}
 		}
-		_ = os.Remove(metadataPath)
-		return Item{}, "", cause
+		if hasPDF {
+			if err := os.Rename(to, from); err != nil {
+				errs = errors.Join(errs, fmt.Errorf("restore PDF: %w", err))
+			}
+		}
+		return errs
 	}
-	originalFrom, originalTo := "", ""
-	if original := item.Revisions[at].Original; original != nil {
+	// An original goes with its revision unless another revision keeps it.
+	for n, original := range item.Revisions[at].Originals {
 		shared := false
-		for n, r := range item.Revisions {
-			if n != at && r.Original != nil && *r.Original == *original {
+		for i, r := range item.Revisions {
+			if i != at && slices.ContainsFunc(r.Originals, func(o Original) bool { return o.Digest == original.Digest }) {
 				shared = true
 			}
 		}
-		if !shared {
-			originalFrom = OriginalPath(root, id, *original)
-			originalTo = strings.TrimSuffix(metadataPath, ".yaml") + "-original" + original.Extension
-			if originalFrom == "" {
-				return restorePDF(fmt.Errorf("invalid original image reference"))
-			}
-			if _, err := os.Lstat(originalTo); !os.IsNotExist(err) {
-				return restorePDF(fmt.Errorf("original image trash destination is taken"))
-			}
-			if err := os.Rename(originalFrom, originalTo); err != nil {
-				return restorePDF(err)
-			}
+		if shared {
+			continue
 		}
+		path := OriginalPath(root, id, original)
+		trashed := fmt.Sprintf("%s-original-%d%s", strings.TrimSuffix(metadataPath, ".yaml"), n+1, original.Extension)
+		err := error(nil)
+		if path == "" {
+			err = fmt.Errorf("invalid original image reference")
+		} else if _, statErr := os.Lstat(trashed); !os.IsNotExist(statErr) {
+			err = fmt.Errorf("original image trash destination is taken")
+		} else {
+			err = os.Rename(path, trashed)
+		}
+		if err != nil {
+			if undo := putBack(); undo != nil {
+				err = errors.Join(err, undo)
+			}
+			_ = os.Remove(metadataPath)
+			return Item{}, "", err
+		}
+		moved = append(moved, [2]string{path, trashed})
 	}
 	imported := false
 	for _, event := range item.History {
@@ -381,19 +400,8 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 	}
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "delete_revision", Digest: digest})
 	if err := WriteItem(root, item); err != nil {
-		var undoErr error
-		if originalFrom != "" {
-			if undo := os.Rename(originalTo, originalFrom); undo != nil {
-				undoErr = errors.Join(undoErr, fmt.Errorf("restore original: %w", undo))
-			}
-		}
-		if hasPDF {
-			if undo := os.Rename(to, from); undo != nil {
-				undoErr = errors.Join(undoErr, fmt.Errorf("restore PDF: %w", undo))
-			}
-		}
-		if undoErr != nil {
-			return Item{}, "", errors.Join(err, undoErr)
+		if undo := putBack(); undo != nil {
+			return Item{}, "", errors.Join(err, undo)
 		}
 		_ = os.Remove(metadataPath)
 		return Item{}, "", err

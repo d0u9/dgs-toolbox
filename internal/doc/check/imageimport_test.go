@@ -35,7 +35,7 @@ func TestArchivedImageVerifiedAndCorruptionReported(t *testing.T) {
 	if err != nil || len(report.Problems) != 0 || report.Checked != 2 {
 		t.Fatalf("verify: %+v %v", report, err)
 	}
-	path := tree.OriginalPath(root, item.ID, *item.Revisions[0].Original)
+	path := tree.OriginalPath(root, item.ID, item.Revisions[0].Originals[0])
 	os.WriteFile(path, []byte("damaged"), 0600)
 	report, err = Tree(context.Background(), root, nil)
 	if err != nil || kinds(report)[Changed] != 1 {

@@ -36,7 +36,7 @@ the tree and belongs to one machine. Deleting it costs one full read of the
 tree.
 
 Image previews and OCR also keep converted PDFs in `imagepdf/` under the same
-cache directory. Their keys include the converter version and source content;
+cache directory. Their keys include the converter version and every input's content;
 checksums detect damaged entries, which are discarded and rebuilt from the
 image. Conversions run one at a time to bound decoding allocations. Archived
 original images are truth in the document tree, not part of this cache.

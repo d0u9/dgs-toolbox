@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -42,11 +43,11 @@ func TestImageImportRetentionAndDuplicate(t *testing.T) {
 			if err != nil || !bytes.HasPrefix(pdf, []byte("%PDF-")) {
 				t.Fatalf("PDF: %v", err)
 			}
-			if rev.Source != "scan.png" || rev.SourceDigest == "" || (rev.Original != nil) != keep {
+			if rev.Source != "scan.png" || len(rev.SourceDigests) == 0 || (len(rev.Originals) > 0) != keep {
 				t.Fatalf("revision: %+v", rev)
 			}
 			if keep {
-				original, err := os.ReadFile(OriginalPath(root, item.ID, *rev.Original))
+				original, err := os.ReadFile(OriginalPath(root, item.ID, rev.Originals[0]))
 				if err != nil || !bytes.Equal(original, data) {
 					t.Fatalf("original: %v", err)
 				}
@@ -59,7 +60,7 @@ func TestImageImportRetentionAndDuplicate(t *testing.T) {
 				t.Fatalf("duplicate: %v", err)
 			}
 			loaded, err := GetItem(root, item.ID)
-			if err != nil || loaded.Revisions[0].SourceDigest != rev.SourceDigest {
+			if err != nil || !slices.Equal(loaded.Revisions[0].SourceDigests, rev.SourceDigests) {
 				t.Fatalf("sidecar: %v", err)
 			}
 		})
@@ -80,10 +81,10 @@ func TestImageRevisionAndTrashPreserveOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 	rev, _ := item.Revision(item.Head)
-	if rev.Original == nil {
+	if len(rev.Originals) == 0 {
 		t.Fatal("revision original missing")
 	}
-	originalPath := OriginalPath(root, item.ID, *rev.Original)
+	originalPath := OriginalPath(root, item.ID, rev.Originals[0])
 	item, to, err := TrashRevision(root, item.ID, rev.Ref(), now)
 	if err != nil {
 		t.Fatal(err)
@@ -122,10 +123,10 @@ func TestSameImageRevisionCanArchivePreviouslyOmittedOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(item.Revisions) != 1 || item.Revisions[0].Original == nil {
+	if len(item.Revisions) != 1 || len(item.Revisions[0].Originals) == 0 {
 		t.Fatal("same snapshot did not gain original")
 	}
-	original, err := os.ReadFile(OriginalPath(root, item.ID, *item.Revisions[0].Original))
+	original, err := os.ReadFile(OriginalPath(root, item.ID, item.Revisions[0].Originals[0]))
 	if err != nil || !bytes.Equal(original, data) {
 		t.Fatalf("original: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestRetainAlternateImageEncoding(t *testing.T) {
 		t.Fatal(err)
 	}
 	rev, _ := item.Revision(item.Current())
-	if rev.Original == nil {
+	if len(rev.Originals) == 0 {
 		t.Fatal("KeepOriginal=true silently ignored for alternate PNG encoding")
 	}
 }
@@ -168,19 +169,20 @@ func TestAttachSameImageCanRetainOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = AttachFile(context.Background(), root, item.ID, item.Current(), source, true, now)
+	item, err = AttachFile(context.Background(), root, item.ID, item.Current(), []string{source}, true, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rev, _ := item.Revision(item.Current())
-	if rev.Original == nil {
+	if len(rev.Originals) == 0 {
 		t.Fatal("AttachFile KeepOriginal=true returns without archiving same image")
 	}
 }
 
 func TestGeneratedPDFReadbackRejectsChangedTemporary(t *testing.T) {
+	root := newTree(t)
 	source, _ := docImage(t, 30)
-	input, err := prepareInput(context.Background(), source)
+	input, err := prepareInput(context.Background(), root, []string{source})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +212,7 @@ func TestAlternateEncodingDoesNotReplaceArchivedOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	original := *item.Revisions[0].Original
+	original := item.Revisions[0].Originals[0]
 	if _, err := AddRevisionWithMetadata(context.Background(), root, item.ID, second, tpl, nil, RevisionMetadata{KeepOriginal: true}, now); err == nil {
 		t.Fatal("silently accepted replacement of different archived original")
 	}
@@ -218,11 +220,44 @@ func TestAlternateEncodingDoesNotReplaceArchivedOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *item.Revisions[0].Original != original || len(item.Revisions[0].SourceDigests) != 1 {
+	if item.Revisions[0].Originals[0] != original || len(item.Revisions[0].SourceDigests) != 2 {
 		t.Fatal("lost original or input alias")
 	}
 	retained, err := os.ReadFile(OriginalPath(root, item.ID, original))
 	if err != nil || !bytes.Equal(retained, a.Bytes()) {
 		t.Fatalf("original: %v", err)
+	}
+}
+
+func TestImagesImportAsOnePDFAndAreKnownAgain(t *testing.T) {
+	root := newTree(t)
+	tpl := idCard(t, root)
+	first, a := docImage(t, 10)
+	second, b := docImage(t, 20)
+	item, err := Import(context.Background(), ImportRequest{Root: root, Source: first, Pages: []string{second}, Template: tpl,
+		Fields: map[string]string{"owner": "alice", "country": "AU"}, KeepOriginal: true, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := item.Revisions[0]
+	if len(rev.Originals) != 2 || len(rev.SourceDigests) != 2 || rev.Source != "scan.png" {
+		t.Fatalf("revision: %+v", rev)
+	}
+	for i, want := range [][]byte{a, b} {
+		got, err := os.ReadFile(OriginalPath(root, item.ID, rev.Originals[i]))
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("original %d: %v", i+1, err)
+		}
+	}
+	// One of the images alone makes another PDF, but is the same image.
+	if _, err := Import(context.Background(), ImportRequest{Root: root, Source: second, Template: tpl,
+		Fields: map[string]string{"owner": "bob", "country": "AU"}, Now: now}); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("image already in the tree: %v", err)
+	}
+	entries, _ := os.ReadDir(filepath.Join(root, ItemsDir))
+	for _, e := range entries {
+		if e.Name() != item.ID {
+			t.Fatalf("left behind %s", e.Name())
+		}
 	}
 }

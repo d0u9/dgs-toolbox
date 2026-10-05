@@ -346,8 +346,8 @@ func TestMergeCopiesArchivedOriginal(t *testing.T) {
 	data := []byte("synthetic archived image bytes")
 	sum := sha256.Sum256(data)
 	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
-	item.Revisions[0].Original = &original
-	item.Revisions[0].SourceDigest = original.Digest
+	item.Revisions[0].Originals = []tree.Original{original}
+	item.Revisions[0].SourceDigests = []string{original.Digest}
 	if err := os.WriteFile(tree.OriginalPath(srcRoot, item.ID, original), data, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -389,8 +389,8 @@ func TestMergeOriginalOnExistingRevision(t *testing.T) {
 	input := []byte("synthetic original image")
 	sum := sha256.Sum256(input)
 	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
-	item.Revisions[0].Original = &original
-	item.Revisions[0].SourceDigest = original.Digest
+	item.Revisions[0].Originals = []tree.Original{original}
+	item.Revisions[0].SourceDigests = []string{original.Digest}
 	os.WriteFile(tree.OriginalPath(sourceRoot, item.ID, original), input, 0600)
 	tree.WriteItem(sourceRoot, item)
 	src, err = FromTree(sourceRoot)
@@ -431,12 +431,12 @@ func TestMergeSourceAliasesPreservesTargetOriginal(t *testing.T) {
 	data := []byte("synthetic original")
 	sum := sha256.Sum256(data)
 	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
-	target.Revisions[0].Original = &original
-	target.Revisions[0].SourceDigest = original.Digest
+	target.Revisions[0].Originals = []tree.Original{original}
+	target.Revisions[0].SourceDigests = []string{original.Digest}
 	os.WriteFile(tree.OriginalPath(dest, item.ID, original), data, 0600)
 	tree.WriteItem(dest, target)
 	alias := sha256.Sum256([]byte("synthetic alternative input"))
-	item.Revisions[0].SourceDigest = hex.EncodeToString(alias[:])
+	item.Revisions[0].SourceDigests = []string{hex.EncodeToString(alias[:])}
 	tree.WriteItem(srcRoot, item)
 	src, err = FromTree(srcRoot)
 	if err != nil {
@@ -453,7 +453,7 @@ func TestMergeSourceAliasesPreservesTargetOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target.Revisions[0].Original == nil || *target.Revisions[0].Original != original || len(target.Revisions[0].SourceDigests) != 1 {
+	if len(target.Revisions[0].Originals) == 0 || target.Revisions[0].Originals[0] != original || len(target.Revisions[0].SourceDigests) != 2 {
 		t.Fatal("merge dropped original or alternative input")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Read bounds a document image's encoded input before decoding it.
@@ -30,11 +31,16 @@ func Read(source string) ([]byte, error) {
 // cachedWorker bounds conversion allocations across concurrent page requests.
 var cachedWorker = make(chan struct{}, 1)
 
-// Cached prepares an image for preview and OCR in a discardable local cache.
-// The key includes the converter version and source content, never its path.
-func Cached(ctx context.Context, source, dir string) (string, error) {
-	if !Supported(source) {
-		return source, nil
+// Version names the converter. It is part of every cache key, so a change
+// to what ConvertAll writes is never answered by an older entry.
+const Version = "dgs-imagepdf-v2"
+
+// Cached prepares images, as one PDF, for preview and OCR in a discardable
+// local cache. A single PDF is answered as it is. The key holds the
+// converter version and every input's extension and content, never a path.
+func Cached(ctx context.Context, sources []string, dir string) (string, error) {
+	if len(sources) == 1 && !Supported(sources[0]) {
+		return sources[0], nil
 	}
 	select {
 	case cachedWorker <- struct{}{}:
@@ -42,11 +48,23 @@ func Cached(ctx context.Context, source, dir string) (string, error) {
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
-	data, err := Read(source)
-	if err != nil {
-		return "", err
+	inputs := make([]Input, len(sources))
+	h := sha256.New()
+	h.Write([]byte(Version))
+	for i, source := range sources {
+		if !Supported(source) {
+			return "", fmt.Errorf("%s: only images become pages", filepath.Base(source))
+		}
+		data, err := Read(source)
+		if err != nil {
+			return "", err
+		}
+		inputs[i] = Input{Name: source, Data: data}
+		fmt.Fprintf(h, "\x00%s\x00%d\x00", strings.ToLower(filepath.Ext(source)), len(data))
+		h.Write(data)
 	}
-	key := sha256.Sum256(append([]byte("dgs-imagepdf-v1\x00"+filepath.Ext(source)), data...))
+	key := h.Sum(nil)
+	var err error
 	if dir == "" {
 		dir, err = os.UserCacheDir()
 		if err != nil {
@@ -55,7 +73,7 @@ func Cached(ctx context.Context, source, dir string) (string, error) {
 		dir = filepath.Join(dir, "dgs", "doc")
 	}
 	dir = filepath.Join(dir, "imagepdf")
-	path := filepath.Join(dir, hex.EncodeToString(key[:])+".pdf")
+	path := filepath.Join(dir, hex.EncodeToString(key)+".pdf")
 	// A checksum accompanies the disposable PDF. Missing or corrupt entries
 	// are rebuilt; only content verified against that checksum is reused.
 	if kept, err := os.ReadFile(path); err == nil {
@@ -66,7 +84,7 @@ func Cached(ctx context.Context, source, dir string) (string, error) {
 			}
 		}
 	}
-	output, err := Convert(ctx, source, data)
+	output, err := ConvertAll(ctx, inputs)
 	if err != nil {
 		return "", err
 	}

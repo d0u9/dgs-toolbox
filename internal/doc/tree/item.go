@@ -22,18 +22,19 @@ const SidecarName = "item.dgs-item.yaml"
 
 // Revision is one issue of an Item, optionally with a PDF.
 type Revision struct {
-	// SourceDigest recognises an imported image even when its original was not archived.
-	SourceDigests []string  `yaml:"source_digests,omitempty" json:"source_digests,omitempty"`
-	SourceDigest  string    `yaml:"source_digest,omitempty" json:"source_digest,omitempty"`
-	Original      *Original `yaml:"original,omitempty" json:"original,omitempty"`
-	Snapshot      bool      `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
-	Type          string    `yaml:"type,omitempty" json:"type,omitempty"`
-	ID            string    `yaml:"id,omitempty" json:"id,omitempty"`
-	Digest        string    `yaml:"digest" json:"digest"`
-	Added         string    `yaml:"added" json:"added"`
+	Snapshot bool   `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
+	Type     string `yaml:"type,omitempty" json:"type,omitempty"`
+	ID       string `yaml:"id,omitempty" json:"id,omitempty"`
+	Digest   string `yaml:"digest" json:"digest"`
+	Added    string `yaml:"added" json:"added"`
 	// Source is the name the PDF had when it was imported, for a person
 	// wondering where it came from.
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+	// SourceDigests are the SHA-256 of every image the PDF was made from,
+	// so they are known again even when no original was kept.
+	SourceDigests []string `yaml:"source_digests,omitempty" json:"source_digests,omitempty"`
+	// Originals are those images, kept beside the PDF, in page order.
+	Originals []Original `yaml:"originals,omitempty" json:"originals,omitempty"`
 	// Fields are this revision's own values of the fields its Template marks
 	// per_revision: a renewed card's number and expiry.
 	Fields map[string]string `yaml:"fields,omitempty" json:"fields,omitempty"`

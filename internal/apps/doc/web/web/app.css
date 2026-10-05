@@ -373,6 +373,9 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .detail-head h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--font-size-title); font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .detail-section { padding: 14px 0; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 8px; }
 .detail-section[hidden] { display: none; }
+.image-pages { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-sm); }
+.image-pages li { display: flex; align-items: center; gap: 6px; }
+.image-pages li span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .detail-section h3 { margin: 0; font-size: var(--font-size-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--graphite); }
 /* A section that is also the danger zone keeps the shared zone's frame and
    red heading; the section's own padding and grey heading would undo them. */

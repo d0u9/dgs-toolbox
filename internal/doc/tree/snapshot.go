@@ -57,9 +57,8 @@ func (item *Item) saveSnapshot(typ string, fields map[string]string, digest, sou
 		next := Revision{ID: ref, Type: typ, Snapshot: true, Digest: digest, Source: source, Fields: maps.Clone(fields), Added: now.Format(time.RFC3339)}
 		for _, r := range item.Revisions {
 			if r.Digest == digest && digest != "" {
-				next.SourceDigest = r.SourceDigest
 				next.SourceDigests = slices.Clone(r.SourceDigests)
-				next.Original = r.Original
+				next.Originals = slices.Clone(r.Originals)
 				break
 			}
 		}
