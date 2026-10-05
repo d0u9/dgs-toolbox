@@ -326,25 +326,23 @@ export function inputFor(field, value, placeholder, state, self, type) {
       control.hidden = true;
       const cards = el("div", { className: "field-choice-cards", role: "group" });
       cards.setAttribute("aria-label", field.key);
-      const cardChoices = field.required ? choices : [["", "Not set"], ...choices];
+      // An optional choice is cleared by clicking the picked card again.
+      const cardChoices = choices;
       const buttons = cardChoices.map(([v, text]) => {
         const button = el("button", { type: "button", className: "button field-choice-card" }, text);
+        if (!field.required) button.title = "Click again to clear";
         button.onclick = () => {
-          control.value = v;
+          control.value = !field.required && control.value === v ? "" : v;
           control.dispatchEvent(new Event("input", { bubbles: true }));
           control.dispatchEvent(new Event("change", { bubbles: true }));
         };
         return button;
       });
-      // A required choice not yet made asks for it, so it is not passed over.
-      const ask = el("span", { className: "field-choice-ask" }, "Pick one");
       const sync = () => {
         buttons.forEach((button, i) => button.setAttribute("aria-pressed", String(control.value === cardChoices[i][0])));
-        const needed = !!field.required && !control.value;
-        cards.classList.toggle("needed", needed);
-        ask.hidden = !needed;
+        cards.classList.toggle("needed", !!field.required && !control.value);
       };
-      cards.append(...buttons, ask);
+      cards.append(...buttons);
       control.addEventListener("change", sync);
       sync();
       return el("div", { className: "form-field" },
