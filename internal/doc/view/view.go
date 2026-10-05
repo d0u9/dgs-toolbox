@@ -113,6 +113,11 @@ type Node struct {
 	// number and the text straight after {#} are not written, and they
 	// take no number, so the next name counts on from the one before.
 	Unnumbered map[string][]string `yaml:"unnumbered,omitempty" json:"unnumbered,omitempty"`
+	// Unlisted says, per order, what a name the order does not list gets
+	// instead of leaving its PDF unplaced until it is listed: UnlistedNone
+	// ("unnumbered") leaves it unnumbered as Unnumbered leaves a listed
+	// one, and a number, such as "99", gives every such name that number.
+	Unlisted map[string]string `yaml:"unlisted,omitempty" json:"unlisted,omitempty"`
 }
 
 // Out reports whether the node leaves what it takes out of the tree.
@@ -120,7 +125,7 @@ func (n Node) Out() bool { return n.Exclude }
 
 // own reports whether a child sets anything of its own besides its If.
 func (n Node) own() bool {
-	return n.Path != "" || n.File != "" || len(n.Children) > 0 || n.Default != nil || len(n.Order) > 0 || len(n.Numbers) > 0 || len(n.Unnumbered) > 0
+	return n.Path != "" || n.File != "" || len(n.Children) > 0 || n.Default != nil || len(n.Order) > 0 || len(n.Numbers) > 0 || len(n.Unnumbered) > 0 || len(n.Unlisted) > 0
 }
 
 // walk calls fn on v's node and each below it, parents first, with where
@@ -224,6 +229,15 @@ func (v View) Upgrade() View {
 		delete(v.Order, key)
 		delete(v.Numbers, key)
 		delete(v.Unnumbered, key)
+		if unlisted, ok := v.Unlisted[key]; ok {
+			v.Unlisted = maps.Clone(v.Unlisted)
+			delete(v.Unlisted, key)
+			node.Unlisted = maps.Clone(node.Unlisted)
+			if node.Unlisted == nil {
+				node.Unlisted = map[string]string{}
+			}
+			node.Unlisted[name] = unlisted
+		}
 		node.Order = maps.Clone(node.Order)
 		if node.Order == nil {
 			node.Order = map[string][]string{}
@@ -285,6 +299,14 @@ func (n Node) validOrders() error {
 			if place(n.Unnumbered[key], name) > 0 {
 				return fmt.Errorf("numbers %s: %s is unnumbered", key, name)
 			}
+		}
+	}
+	for key, unlisted := range n.Unlisted {
+		if _, ok := n.Order[key]; !ok {
+			return fmt.Errorf("unlisted %s: order has no list for it", key)
+		}
+		if _, ok := UnlistedNumber(unlisted); !ok {
+			return fmt.Errorf("unlisted %s: %q is neither %s nor a number from 0", key, unlisted, UnlistedNone)
 		}
 	}
 	for key, names := range n.Unnumbered {
@@ -778,4 +800,17 @@ func sameValue(a, b string) bool {
 		return x == y
 	}
 	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+// UnlistedNone is the Unlisted value that leaves names not listed unnumbered.
+const UnlistedNone = "unnumbered"
+
+// UnlistedNumber is the number an Unlisted value gives a name not listed,
+// Unnumbered for UnlistedNone, and whether the value is either.
+func UnlistedNumber(value string) (int, bool) {
+	if value == UnlistedNone {
+		return Unnumbered, true
+	}
+	n, err := strconv.Atoi(value)
+	return n, err == nil && n >= 0
 }

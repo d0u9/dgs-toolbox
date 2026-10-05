@@ -713,6 +713,58 @@ func TestUnnumbered(t *testing.T) {
 	}
 }
 
+// An order may leave the names it does not list unnumbered, or give them
+// one number, so their PDFs are placed rather than missing.
+func TestUnlistedUnnumbered(t *testing.T) {
+	items := []tree.Item{
+		{ID: "A", Type: "contract", Kind: tree.KindRecord, Fields: map[string]string{"name": "合同"}, Revisions: []tree.Revision{{Digest: "a"}}},
+		{ID: "B", Type: "other", Kind: tree.KindRecord, Fields: map[string]string{"name": "账单"}, Revisions: []tree.Revision{{Digest: "b"}}},
+	}
+	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"合同"}}, File: "x/{#}-{name}.{ext}"}}
+	plan, err := Build(v, items, Types{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Files) != 1 || len(plan.Missing) != 1 {
+		t.Fatalf("without the option: %d files, %d missing", len(plan.Files), len(plan.Missing))
+	}
+	v.Unlisted = map[string]string{"name": UnlistedNone}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if plan, err = Build(v, items, Types{}); err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"x/01-合同.pdf", "x/账单.pdf"}; !reflect.DeepEqual(paths, want) || len(plan.Missing) != 0 {
+		t.Fatalf("got %v, %d missing, want %v", paths, len(plan.Missing), want)
+	}
+	// A number gives every name not listed that one number.
+	v.Unlisted = map[string]string{"name": "99"}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if plan, err = Build(v, items, Types{}); err != nil {
+		t.Fatal(err)
+	}
+	paths = nil
+	for _, f := range plan.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"x/01-合同.pdf", "x/99-账单.pdf"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("numbered: got %v, want %v", paths, want)
+	}
+	for _, bad := range []map[string]string{{"other": UnlistedNone}, {"name": "-1"}, {"name": "last"}} {
+		v.Unlisted = bad
+		if v.Validate() == nil {
+			t.Errorf("unlisted %v was taken", bad)
+		}
+	}
+}
+
 // Children are an if/elif/else chain: the first an Item meets places it
 // under the parent's path; one that excludes leaves it out; an Item none
 // takes is placed by the parent. A {#} takes the nearest order, and a

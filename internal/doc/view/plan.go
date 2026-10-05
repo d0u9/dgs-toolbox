@@ -795,7 +795,23 @@ func (r *renderer) name(parts []Part, group bool) (string, []string) {
 						pieces[counter+1] = ""
 					}
 				} else {
-					pieces[counter] = padTo(numbers[n-1], slices.Max(numbers))
+					widest := slices.Max(numbers)
+					if unlisted, ok := UnlistedNumber(s.Unlisted[c.Of]); ok {
+						widest = max(widest, unlisted)
+					}
+					pieces[counter] = padTo(numbers[n-1], widest)
+					step.Value = pieces[counter]
+				}
+			} else if number, ok := UnlistedNumber(s.Unlisted[c.Of]); ok && s.Unlisted[c.Of] != "" {
+				// Not listed, and the order says what such names get.
+				if number == Unnumbered {
+					step.Unnumbered = true
+					if counter+1 < c.From {
+						pieces[counter+1] = ""
+					}
+				} else {
+					numbers := Numbered(s.Order[c.Of], s.Numbers[c.Of], s.Unnumbered[c.Of])
+					pieces[counter] = padTo(number, max(number, slices.Max(numbers)))
 					step.Value = pieces[counter]
 				}
 			} else {

@@ -886,6 +886,14 @@ and takes no number, so the name after it counts on from the one before. A
 name is not both unnumbered and in `numbers`. On the Rules page the `#`
 button of a Numbering row switches it.
 
+`unlisted`, per order, says what a name the order does not list gets,
+instead of leaving its PDF unplaced until it is listed: `unnumbered`
+leaves it unnumbered the same way, so with `unlisted: {name: unnumbered}`
+a bill the order does not list is `账单.pdf`; a number gives every such
+name that one number, so `unlisted: {name: 99}` makes it `99-账单.pdf`.
+On the Rules page it is "Not in the list" under each Numbering list:
+Not placed, No number, or One number.
+
 Numbers have two digits, more when the largest is over 99. Names in an
 order are compared as a country when both name one, so `CN`, `CHN` and `中国`
 are one entry, and otherwise ignoring case. A `{#}` needs an order, and an
