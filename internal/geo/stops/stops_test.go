@@ -131,3 +131,58 @@ func TestDetectSkipsUntimedSamples(t *testing.T) {
 		t.Fatalf("untimed line has stops %+v", got)
 	}
 }
+
+// A stop's centroid lies inside this bend, away from both drawn legs.
+// Its marker belongs to a recorded sample rather than that empty space.
+func TestStopAnchorStaysOnTheRecordedLine(t *testing.T) {
+	line := track.Line{
+		{LatLon: geo.LatLon{Lat: 0, Lon: 0}, Time: start},
+		{LatLon: geo.LatLon{Lat: 30 / metresPerDegree, Lon: 0}, Time: start.Add(5 * time.Minute)},
+		{LatLon: geo.LatLon{Lat: 30 / metresPerDegree, Lon: 30 / metresPerDegree}, Time: start.Add(10 * time.Minute)},
+	}
+	found := Detect(line, Defaults())
+	if len(found) != 1 {
+		t.Fatalf("stops = %+v", found)
+	}
+	stop := found[0]
+	anchor := stop.Anchor(line)
+	if anchor != 1 {
+		t.Fatalf("anchor = %d, want the nearest timed sample 1", anchor)
+	}
+	if geo.Distance(stop.Center, line[anchor].LatLon) < 10 {
+		t.Fatal("case did not reproduce an off-track centroid")
+	}
+	// An untimed point at the mean must not take over the marker.
+	line = append(line[:1], append(track.Line{{LatLon: stop.Center}}, line[1:]...)...)
+	stop.Last++
+	if got := stop.Anchor(line); got != 2 {
+		t.Fatalf("anchor = %d, want timed sample 2", got)
+	}
+}
+
+// The approach and return are sampled once a second, but the recorder only
+// supplies arrival and departure at the turnaround. Sample-count averaging
+// puts the marker on the approach despite almost all elapsed time being at
+// the turnaround.
+func TestStopAnchorAtTurnaroundWithSparseStaySamples(t *testing.T) {
+	var line track.Line
+	add := func(north float64, seconds int) {
+		line = append(line, track.Sample{LatLon: geo.LatLon{Lat: north / metresPerDegree}, Time: start.Add(time.Duration(seconds) * time.Second)})
+	}
+	for seconds := 0; seconds <= 40; seconds++ {
+		add(float64(80-seconds*2), seconds)
+	}
+	add(0, 640)
+	for seconds := 641; seconds <= 680; seconds++ {
+		add(float64((seconds-640)*2), seconds)
+	}
+	found := Detect(line, Defaults())
+	if len(found) != 1 {
+		t.Fatalf("stops = %+v", found)
+	}
+	stop := found[0]
+	point := line[stop.Anchor(line)].LatLon
+	if distance := geo.Distance(point, geo.LatLon{}); distance > 0.01 {
+		t.Fatalf("marker is %.1f metres from the turnaround", distance)
+	}
+}

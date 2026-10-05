@@ -21,7 +21,7 @@ import { openMenu } from "/ui/menu.js";
 import * as status from "/ui/statusbar.js";
 import { splitter, shareSplitter } from "/ui/splitter.js";
 import { Terrain, DEFAULT_EXAGGERATION } from "./terrain.js";
-import { longPressDrag, SortGap } from "./drag.js";
+import { rowDoubleClick, longPressDrag, SortGap } from "./drag.js";
 
 // Okabe-Ito-derived hues: distinct under the common red/green colour-vision
 // deficiencies, with the darker variants retained for contrast on the map.
@@ -817,6 +817,42 @@ async function saveAs(path, { convert = false } = {}) {
   }
 }
 
+// Renaming preserves this workspace entry, including order and hidden parts.
+function replaceTrackPath(path, target) {
+  const entry = state.tracks.get(path);
+  state.tracks = new Map([...state.tracks].map(([key, value]) => [key === path ? target : key, value]));
+  if (state.selection.delete(path)) state.selection.add(target);
+  if (state.anchor === path) state.anchor = target;
+  if (state.fill.preview?.path === path) state.fill.preview.path = target;
+  entry.track.path = target;
+  entry.track.name = basename(target).replace(/\.gpx$/i, "");
+  if (state.focus === path) setFocus(target, { fit: false });
+  else { renderTracks(); save(); }
+}
+
+async function renameGPX(path) {
+  const entry = state.tracks.get(path);
+  const name = await promptDialog({
+    title: "Rename GPX",
+    message: entry.track.draft
+      ? "Name this new GPX. It stays in memory until you save it."
+      : "Rename this GPX in its current folder. Unsaved edits stay unsaved. An existing file is not replaced.",
+    value: entry.track.name,
+    confirm: "Rename",
+  });
+  if (!name) return;
+  try {
+    const result = await api.renameFile(path, name);
+    replaceTrackPath(path, result.path);
+    await reloadEntry(result.path);
+    if (state.focus === result.path) setFocus(result.path, { fit: false });
+    else renderTracks();
+    showMessage(`Renamed to ${basename(result.path)}`);
+  } catch (error) {
+    showMessage(error.message, true);
+  }
+}
+
 // newGPX starts an empty GPX in memory, shown in the workspace, to add
 // segments to from the Segments tab.
 async function newGPX() {
@@ -1034,7 +1070,8 @@ async function writeSegments(request) {
     // A GPX that gained a track opens to list what it now holds, so the
     // tracks added to it are there to see, hide and rename at once.
     if (expandable(entry)) entry.expanded = true;
-    renderTracks();
+    if (state.focus === result.path) setFocus(result.path, { fit: false });
+    else renderTracks();
     save();
   }
   return result;
@@ -1236,6 +1273,8 @@ function label(name, details) {
   return box;
 }
 
+const doubleRowClick = rowDoubleClick();
+
 function trackRow(path, entry) {
   const li = document.createElement("li");
   li.className = "track-row" + (state.focus === path ? " focused" : "") + (state.selection.has(path) ? " selected" : "")
@@ -1316,6 +1355,7 @@ function trackRow(path, entry) {
       return;
     }
     openMenu(event, [
+    (track.draft || track.ours) ? [{ label: "Rename…", title: "Rename this GPX", onSelect: () => renameGPX(path) }] : [],
     [{
       label: "Save",
       title: track.unsaved
@@ -1362,16 +1402,17 @@ function trackRow(path, entry) {
   });
   // Clicking a hidden track shows it: only a shown track can be focused.
   li.addEventListener("click", (event) => {
+    const double = doubleRowClick(JSON.stringify([path]), event);
     const toggle = event.metaKey || event.ctrlKey;
     select(path, { toggle, range: event.shiftKey });
     // Picking several rows out is not looking at one: only a plain click
-    // moves the map and the profile to a file.
+    // changes the map highlight and the profile to a file.
     if (toggle || event.shiftKey) {
       renderTracks();
       return;
     }
     if (!entry.visible) setVisible(path, true);
-    setFocus(path);
+    setFocus(path, { fit: double });
   });
   bindRowDrag(li, { kind: "file", path });
   return li;
@@ -1508,7 +1549,7 @@ function partRow(path, entry, part) {
       onSelect: () => deletePart(path, entry, part),
     }],
   ]));
-  li.addEventListener("click", () => showPart(path, part));
+  li.addEventListener("click", (event) => showPart(path, part, { fit: doubleRowClick(JSON.stringify([path, part.key]), event) }));
   bindRowDrag(li, { kind: part.kind, path, key: part.key });
   return li;
 }
@@ -1909,16 +1950,16 @@ function hiddenRanges(entry) {
     .map((part) => [part.first, part.last]);
 }
 
-// showPart brings one part of a file into view, showing it if hidden.
-function showPart(path, part) {
+// showPart focuses a part, showing it if hidden; double-click also frames it.
+function showPart(path, part, { fit: shouldFit = false } = {}) {
   const entry = state.tracks.get(path);
   if (!entry.visible) setVisible(path, true);
   if (entry.hiddenParts.has(part.key)) setPartHidden(path, part.key, false);
   if (state.focus !== path) setFocus(path, { fit: false });
   if (part.kind === "waypoint") {
     openWaypoint(entry, part);
-    map.easeTo({ center: part.points[0], zoom: Math.max(map.getZoom(), 15), duration: 400 });
-  } else {
+    if (shouldFit) map.easeTo({ center: part.points[0], zoom: Math.max(map.getZoom(), 15), duration: 400 });
+  } else if (shouldFit) {
     fitBox(part.bounds);
   }
 }
@@ -2035,10 +2076,12 @@ function timeSpan(track, min, max) {
 // selectStop opens a stop's times; from the timeline it also brings the stop
 // into view.
 function selectStop(index, { pan = false } = {}) {
-  const stop = focusedEntry()?.track.stops[index];
+  const entry = focusedEntry();
+  const stop = entry?.track.stops[index];
   if (!stop) return;
   stopMarkers.openPopup(index);
-  if (pan && !map.getBounds().contains(stop.center)) map.easeTo({ center: stop.center, duration: 400 });
+  const position = entry.track.points[stop.anchor];
+  if (pan && !map.getBounds().contains(position)) map.easeTo({ center: position, duration: 400 });
 }
 
 // waypointAt is the waypoint drawn under a screen point, as { path, entry,

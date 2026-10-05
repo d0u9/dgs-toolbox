@@ -37,3 +37,26 @@ func TestNameOf(t *testing.T) {
 		t.Fatal("Active")
 	}
 }
+
+func TestMergeRangesPreservesGapsAndInput(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		input, want []Range
+	}{
+		{"shared boundary", []Range{{2, 4}, {0, 2}}, []Range{{0, 4}}},
+		{"gap", []Range{{4, 6}, {0, 2}}, []Range{{0, 2}, {4, 6}}},
+		{"duplicates and contained", []Range{{0, 4}, {0, 4}, {1, 3}}, []Range{{0, 4}}},
+		{"recorded break", []Range{{0, 2}, {3, 5}}, []Range{{0, 2}, {3, 5}}},
+		{"empty", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := append([]Range(nil), tc.input...)
+			if got := Merge(tc.input); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Merge = %v, want %v", got, tc.want)
+			}
+			if !reflect.DeepEqual(tc.input, before) {
+				t.Fatal("Merge changed caller's ranges")
+			}
+		})
+	}
+}

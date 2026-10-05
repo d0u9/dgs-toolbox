@@ -1,4 +1,5 @@
-// The focused track's stops on the map: a numbered marker at each, opening a
+// The focused track's stops on the map: a numbered marker on each stop's
+// representative kept point near the time midpoint, opening a
 // popup with its arrival, departure and duration, and the radius the stop was
 // found within, drawn while a stop is pointed at. The server found the stops.
 
@@ -32,7 +33,11 @@ export class StopMarkers {
     this.clear();
     this.track = track;
     this.markers = track.stops.map((stop, i) => {
+      const anchor = document.createElement("div");
+      anchor.className = "stop-anchor";
       const element = document.createElement("button");
+      element.type = "button";
+      anchor.append(element);
       element.className = "stop-marker";
       element.classList.toggle("off-map", !this.onMap);
       element.hidden = hiddenRanges.some(([first, last]) => stop.first <= last && stop.last >= first);
@@ -45,7 +50,7 @@ export class StopMarkers {
         event.stopPropagation();
         this.onSelect(i);
       });
-      return new maplibregl.Marker({ element }).setLngLat(stop.center).addTo(this.map);
+      return new maplibregl.Marker({ element: anchor, anchor: "center", offset: [0, 0], subpixelPositioning: true }).setLngLat(track.points[stop.anchor]).addTo(this.map);
     });
   }
 
@@ -53,14 +58,14 @@ export class StopMarkers {
   // opened from the timeline, still work.
   setOnMap(onMap) {
     this.onMap = onMap;
-    for (const marker of this.markers) marker.getElement().classList.toggle("off-map", !onMap);
+    for (const marker of this.markers) marker.getElement().firstElementChild.classList.toggle("off-map", !onMap);
   }
 
   setTimeZone(timeZone) {
     this.timeZone = timeZone;
     if (!this.track) return;
     this.markers.forEach((marker, i) => {
-      marker.getElement().title = stopTitle(i, this.track.stops[i], timeZone);
+      marker.getElement().firstElementChild.title = stopTitle(i, this.track.stops[i], timeZone);
     });
     if (this.popup.isOpen() && this.open != null) this.openPopup(this.open);
   }
@@ -70,7 +75,7 @@ export class StopMarkers {
     const stop = this.track?.stops[index];
     if (!stop) return;
     this.open = index;
-    this.markers.forEach((marker, i) => marker.getElement().classList.toggle("selected", i === index));
+    this.markers.forEach((marker, i) => marker.getElement().firstElementChild.classList.toggle("selected", i === index));
     const body = document.createElement("div");
     body.className = "stop-popup";
     const title = document.createElement("strong");
@@ -89,11 +94,11 @@ export class StopMarkers {
       this.onRemove(index);
     });
     body.append(remove);
-    this.popup.setLngLat(stop.center).setDOMContent(body).addTo(this.map);
+    this.popup.setLngLat(this.track.points[stop.anchor]).setDOMContent(body).addTo(this.map);
     this.popup.once("close", () => {
       if (this.open !== index) return;
       this.open = null;
-      this.markers[index]?.getElement().classList.remove("selected");
+      this.markers[index]?.getElement().firstElementChild.classList.remove("selected");
     });
   }
 

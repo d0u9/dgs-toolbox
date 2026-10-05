@@ -244,6 +244,7 @@ type stopJSON struct {
 	First     int        `json:"first"` // index of the first point in the stop
 	Last      int        `json:"last"`
 	Center    [2]float64 `json:"center"`  // [lon, lat]
+	Anchor    int        `json:"anchor"`  // kept sample nearest the stop time midpoint
 	Arrival   int64      `json:"arrival"` // Unix milliseconds
 	Departure int64      `json:"departure"`
 	Duration  float64    `json:"duration"` // seconds
@@ -455,6 +456,7 @@ func trackResponse(a analysis) trackJSON {
 	for i, stop := range a.stops {
 		response.Stops[i] = stopJSON{
 			First:     a.index[stop.First],
+			Anchor:    a.index[stop.Anchor(line)],
 			Last:      a.index[stop.Last],
 			Center:    [2]float64{stop.Center.Lon, stop.Center.Lat},
 			Arrival:   stop.Arrival.UnixMilli(),

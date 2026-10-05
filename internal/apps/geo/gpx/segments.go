@@ -133,8 +133,10 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 			Name  string `json:"name"`
 		} `json:"segments"`
 		Target struct {
-			Mode string `json:"mode"` // "add" or "create"
-			Path string `json:"path"`
+			Mode  string `json:"mode"` // "add" or "create"
+			Path  string `json:"path"`
+			Merge bool   `json:"merge"`
+			Name  string `json:"name"`
 		} `json:"target"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -143,6 +145,10 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body.Segments) == 0 {
 		writeError(w, http.StatusBadRequest, errors.New("choose at least one segment"))
+		return
+	}
+	if body.Target.Merge && strings.TrimSpace(body.Target.Name) == "" {
+		writeError(w, http.StatusBadRequest, errors.New("name the merged track"))
 		return
 	}
 	target, err := filepath.Abs(body.Target.Path)
@@ -157,7 +163,7 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 	if !isDraft(source) {
 		source, _ = filepath.Abs(body.Path)
 	}
-	if sameFile(source, target) {
+	if sameFile(source, target) && body.Target.Mode != "add" {
 		writeError(w, http.StatusBadRequest, errors.New("the source GPX is never written; choose another file"))
 		return
 	}
@@ -166,12 +172,22 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusFor(err), err)
 		return
 	}
+	if sameFile(source, target) {
+		if !isDraft(source) && !result.file.IsOurs() {
+			writeError(w, http.StatusBadRequest, errors.New("only a GPX dgs created can add a segment to itself"))
+			return
+		}
+		// Use the source spelling for pending edits even if the target was
+		// reached through another path to the same file.
+		target = source
+	}
 	if result.sidecarErr != nil {
 		writeError(w, http.StatusUnprocessableEntity, result.sidecarErr)
 		return
 	}
 	list, _, _ := segments(result)
 	var tracks []gpxfile.Track
+	var ranges []segment.Range
 	for _, wanted := range body.Segments {
 		found := false
 		for _, s := range list {
@@ -183,7 +199,19 @@ func (a api) writeSegments(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, fmt.Errorf("segment %d–%d is not one of the track's segments; reload the page", wanted.First, wanted.Last))
 			return
 		}
-		tracks = append(tracks, result.trackOf(wanted.First, wanted.Last, strings.TrimSpace(wanted.Name)))
+		if body.Target.Merge {
+			ranges = append(ranges, segment.Range{First: wanted.First, Last: wanted.Last})
+		} else {
+			tracks = append(tracks, result.trackOf(wanted.First, wanted.Last, strings.TrimSpace(wanted.Name)))
+		}
+	}
+	if body.Target.Merge {
+		merged := gpxfile.Track{Name: strings.TrimSpace(body.Target.Name)}
+		for _, span := range segment.Merge(ranges) {
+			part := result.trackOf(span.First, span.Last, "")
+			merged.Segments = append(merged.Segments, part.Segments...)
+		}
+		tracks = []gpxfile.Track{merged}
 	}
 	switch body.Target.Mode {
 	case "add":
