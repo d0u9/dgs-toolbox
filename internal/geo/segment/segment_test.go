@@ -3,8 +3,10 @@ package segment
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"dgs-toolbox/internal/geo/stops"
+	"dgs-toolbox/internal/geo/track"
 )
 
 func TestSplitSharesTheCutPoint(t *testing.T) {
@@ -22,7 +24,12 @@ func TestSplitSharesTheCutPoint(t *testing.T) {
 }
 
 func TestCandidatesAreMidStop(t *testing.T) {
-	got := Candidates([]stops.Stop{{First: 10, Last: 20}, {First: 30, Last: 31}})
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	line := make(track.Line, 32)
+	for i := range line {
+		line[i].Time = at.Add(time.Duration(i) * time.Second)
+	}
+	got := Candidates(line, []stops.Stop{{First: 10, Last: 20, Arrival: line[10].Time, Departure: line[20].Time}, {First: 30, Last: 31, Arrival: line[30].Time, Departure: line[31].Time}})
 	if !reflect.DeepEqual(got, []int{15, 30}) {
 		t.Fatalf("Candidates = %v", got)
 	}
@@ -58,5 +65,19 @@ func TestMergeRangesPreservesGapsAndInput(t *testing.T) {
 				t.Fatal("Merge changed caller's ranges")
 			}
 		})
+	}
+}
+
+func TestCandidateUsesDwellTimeRatherThanSampleCount(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	line := make(track.Line, 12)
+	for i := 0; i < 10; i++ {
+		line[i].Time = at.Add(time.Duration(i) * time.Second)
+	}
+	line[10].Time = at.Add(5 * time.Minute)
+	line[11].Time = at.Add(10 * time.Minute)
+	stop := stops.Stop{First: 0, Last: 11, Arrival: at, Departure: line[11].Time}
+	if got := Candidates(line, []stops.Stop{stop}); !reflect.DeepEqual(got, []int{10}) {
+		t.Fatalf("cut drifted onto the approach: %v", got)
 	}
 }

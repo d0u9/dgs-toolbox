@@ -200,7 +200,7 @@ export class SortGap {
 // Recognise the second plain click by row identity across those rebuilds.
 export function rowDoubleClick() {
   let previous = null;
-  return (key, event) => {
+  const detect = (key, event) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.detail === 0) {
       previous = null;
       return false;
@@ -211,4 +211,6 @@ export function rowDoubleClick() {
     previous = double ? null : { key, time: event.timeStamp, x: event.clientX, y: event.clientY };
     return double;
   };
+  detect.reset = () => { previous = null; };
+  return detect;
 }

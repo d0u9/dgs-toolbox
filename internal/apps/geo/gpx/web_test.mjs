@@ -62,7 +62,7 @@ test('renaming a workspace file preserves its order, identity, selection and cam
  const entry = {id:4,track:{name:'Old',path:'draft:4/Old.gpx'},hiddenParts:new Set(['t1'])};
  const state = {tracks:new Map([['a',{}],['draft:4/Old.gpx',entry],['b',{}]]), selection:new Set(['draft:4/Old.gpx']), anchor:'draft:4/Old.gpx',focus:'draft:4/Old.gpx',fill:{preview:{path:'draft:4/Old.gpx'}}};
  const calls=[];
- const context=vm.createContext({state,basename:path=>path.split('/').pop(),setFocus:(path,options)=>{state.focus=path;calls.push(options);},renderTracks:()=>{},save:()=>{}});
+ const context=vm.createContext({state,cutPanel:null,planner:{source:'draft:4/Old.gpx'},basename:path=>path.split('/').pop(),setFocus:(path,options)=>{if(state.focus!==path)state.fill.preview=null;state.focus=path;calls.push(options);},renderTracks:()=>{},save:()=>{}});
  vm.runInContext(code,context);
  context.replaceTrackPath('draft:4/Old.gpx','draft:4/New.gpx');
  assert.deepEqual([...state.tracks.keys()],['a','draft:4/New.gpx','b']);
@@ -73,6 +73,7 @@ test('renaming a workspace file preserves its order, identity, selection and cam
  assert.equal(state.fill.preview.path,'draft:4/New.gpx');
  assert.equal(entry.track.name,'New');
  assert.equal(entry.track.path,'draft:4/New.gpx');
+ assert.equal(context.planner.source,'draft:4/New.gpx');
  assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{fit:false}]);
 });
 
@@ -93,7 +94,7 @@ test('Add 1 segment asks for a name before adding and preserves the source', asy
   assert.equal(calls.length,0);
   return '  Named stop  ';
  });
- await add.call({write:async (...args)=>calls.push(args)},[segment],target,button);
+ await add.call({track:{path:'source.gpx'},write:async (...args)=>calls.push(args)},[segment],target,button);
  assert.equal(calls.length,1);
  assert.deepEqual(JSON.parse(JSON.stringify(calls[0][0])),[{first:10,last:20,name:'Named stop'}]);
  assert.equal(calls[0][1],target);
@@ -105,7 +106,7 @@ test('cancelling or leaving the name empty adds nothing', async () => {
  for (const name of [null,'','   ']) {
   const button={disabled:false};
   const add=segmentAdder(async()=>name);
-  await add.call({write:()=>assert.fail('cancelled addition wrote')},[{first:0,last:1,name:'Segment 1'}],{mode:'add',path:'draft:1/Trip.gpx'},button);
+  await add.call({track:{path:'source.gpx'},write:()=>assert.fail('cancelled addition wrote')},[{first:0,last:1,name:'Segment 1'}],{mode:'add',path:'draft:1/Trip.gpx'},button);
   assert.equal(button.disabled,false);
  }
 });
@@ -122,7 +123,7 @@ test('multiple segments require a separate-or-merge choice before adding', async
   return 'separate';
  });
  const target={mode:'add',path:'draft:1/Trip.gpx'};
- await add.call({write:async (value,to)=>{written=value;assert.equal(to,target);}},segments,target,button);
+ await add.call({track:{path:'source.gpx'},write:async (value,to)=>{written=value;assert.equal(to,target);}},segments,target,button);
  assert.equal(choices,1);
  assert.equal(written,segments);
  assert.equal(button.disabled,false);
@@ -137,7 +138,7 @@ test('merge asks for a name and passes the original ranges with a named merge ta
   assert.equal(options.title,'Name the merged track');
   return '  Combined walk  ';
  },async()=>{order.push('choice');return 'merge';});
- await add.call({write:async (value,to)=>{
+ await add.call({track:{path:'source.gpx'},write:async (value,to)=>{
   order.push('write');
   assert.equal(value,segments);
   assert.deepEqual(JSON.parse(JSON.stringify(to)),{...target,merge:true,name:'Combined walk'});
@@ -151,11 +152,11 @@ test('cancelling the multi-segment choice or merged name never adds', async () =
  const segments=[{name:'One'},{name:'Two'}];
  const cancelled=segmentAdder(()=>assert.fail('cancelled choice opened name dialog'),async()=>null);
  const button={disabled:false};
- await cancelled.call({write:()=>assert.fail('cancelled choice wrote')},segments,{},button);
+ await cancelled.call({track:{path:'source.gpx'},write:()=>assert.fail('cancelled choice wrote')},segments,{},button);
  assert.equal(button.disabled,false);
  for (const name of [null,'','   ']) {
   const add=segmentAdder(async()=>name,async()=> 'merge');
-  await add.call({write:()=>assert.fail('cancelled or empty merged name wrote')},segments,{},button);
+  await add.call({track:{path:'source.gpx'},write:()=>assert.fail('cancelled or empty merged name wrote')},segments,{},button);
   assert.equal(button.disabled,false);
  }
 });
@@ -163,7 +164,7 @@ test('cancelling the multi-segment choice or merged name never adds', async () =
 test('segment naming restores the button if adding fails', async () => {
  const add=segmentAdder(async()=> 'Named');
  const button={disabled:false};
- await assert.rejects(add.call({write:async()=>{throw new Error('write failed');}},[{name:'One'}],{},button),/write failed/);
+ await assert.rejects(add.call({track:{path:'source.gpx'},write:async()=>{throw new Error('write failed');}},[{name:'One'}],{},button),/write failed/);
  assert.equal(button.disabled,false);
 });
 
@@ -177,4 +178,84 @@ test('segment targets include the current GPX only for our files and drafts', ()
   assert.deepEqual(JSON.parse(JSON.stringify(panel.workspace)),expected);
   assert.equal(panel.addPath,expected[0]);
  }
+});
+
+function cutMethods() {
+ const source=readFileSync(new URL('./web/cut.js',import.meta.url),'utf8');
+ return vm.runInNewContext(`(class {${source.slice(source.indexOf('  remember()'), source.indexOf('  hide()'))}}).prototype`, {defaultCreatePath:()=> 'new.gpx'});
+}
+
+test('current GPX is the default target regardless of workspace ordering', () => {
+ const {show,setWorkspace,remember}=cutMethods();
+ for (const track of [{path:'current.gpx',ours:true,pieces:[]},{path:'current.gpx',draft:true,pieces:[]}]) {
+  const panel={track:null,choices:new Map(),selected:new Set(),workspace:[],addPath:'',remember,render(){}};
+  show.call(panel,track,{workspace:['other.gpx','current.gpx']});
+  assert.equal(panel.addPath,'current.gpx');
+  panel.addPath='gone.gpx';
+  setWorkspace.call(panel,['third.gpx','other.gpx','current.gpx']);
+  assert.equal(panel.addPath,'current.gpx');
+  panel.addPath='other.gpx';
+  setWorkspace.call(panel,['other.gpx','current.gpx']);
+  assert.equal(panel.addPath,'other.gpx'); // an explicit target choice survives
+ }
+});
+
+test('rename keeps both remembered segment choices and a target in another panel', () => {
+ const {remember,renamePath,show}=cutMethods();
+ const track={path:'old.gpx',ours:true,pieces:[{first:0},{first:2}]};
+ const panel={track,selected:new Set([2]),known:new Set([0,2]),createPath:'export.gpx',choices:new Map(),workspace:['other.gpx','old.gpx'],addPath:'old.gpx',remember,render(){}};
+ renamePath.call(panel,'old.gpx','new.gpx');
+ assert.equal(panel.addPath,'new.gpx');
+ assert.equal(panel.track.path,'new.gpx');
+ assert.equal(panel.choices.has('old.gpx'),false);
+ assert.deepEqual([...panel.choices.get('new.gpx').selected],[2]);
+ panel.track={path:'other.gpx',pieces:[]};panel.selected=new Set();
+ show.call(panel,{...track,path:'new.gpx'},{workspace:['other.gpx','new.gpx']});
+ assert.deepEqual([...panel.selected],[2]);
+ assert.equal(panel.createPath,'export.gpx');
+ renamePath.call(panel,'other.gpx','renamed-other.gpx');
+ assert.equal(panel.track.path,'new.gpx');
+ assert.deepEqual(JSON.parse(JSON.stringify(panel.workspace)),['renamed-other.gpx','new.gpx']);
+});
+
+test('a segment operation retains its source while the naming prompt is open', async () => {
+ const panel={track:{path:'original.gpx'},write:async (segments,target,button,path)=>assert.equal(path,'original.gpx')};
+ const add=segmentAdder(async()=>{panel.track={path:'another.gpx'};return 'Named';});
+ await add.call(panel,[{first:0,last:1,name:'One'}],{mode:'add',path:'original.gpx'},{disabled:false});
+});
+
+test('segment request uses the captured source rather than the later focus', async () => {
+ const source=readFileSync(new URL('./web/app.js',import.meta.url),'utf8');
+ const code=source.slice(source.indexOf('async function writeSegments('),source.indexOf('// lassoDone'));
+ const request={path:'original.gpx',segments:[],target:{mode:'add',path:'target.gpx'}};
+ const context=vm.createContext({state:{focus:'another.gpx',tracks:new Map()},api:{writeSegments:async(path,value)=>{assert.equal(path,'original.gpx');assert.equal(value,request);return {path:'target.gpx'};}}});
+ vm.runInContext(code,context);
+ await context.writeSegments(request);
+});
+
+
+test('controls, context menus and drags can reset a pending row double click', () => {
+ const double=rowDoubleClick();
+ assert.equal(double('file-a',click(100)),false);
+ double.reset();
+ assert.equal(double('file-a',click(200)),false);
+ assert.equal(double('file-a',click(250)),true);
+});
+
+
+test('switching files defaults to each current GPX and remembers explicit targets per file', () => {
+ const {show,remember}=cutMethods();
+ const workspace=['other.gpx','a.gpx','b.gpx'];
+ const panel={track:null,choices:new Map(),selected:new Set(),workspace:[],addPath:'',remember,render(){}};
+ const a={path:'a.gpx',ours:true,pieces:[]}, b={path:'b.gpx',ours:true,pieces:[]};
+ show.call(panel,a,{workspace});
+ assert.equal(panel.addPath,'a.gpx');
+ panel.addPath='other.gpx';
+ show.call(panel,b,{workspace});
+ assert.equal(panel.addPath,'b.gpx');
+ panel.addPath='a.gpx';
+ show.call(panel,a,{workspace});
+ assert.equal(panel.addPath,'other.gpx');
+ show.call(panel,b,{workspace});
+ assert.equal(panel.addPath,'a.gpx');
 });

@@ -858,7 +858,17 @@ account running `dgs` can read.
 These pin single-segment naming, multi-segment separate/merge choice, required
 merged names, cancellation, current-file eligibility, unchanged original
 tracks, pending-before-Save behavior, point metadata, shared cut points and
-preserved gaps. The release test job runs the web checks too.
+preserved gaps. They also cover preserving edit state through renames,
+current-file default targets and per-file target choices, source binding across naming dialogs, time-based
+stop cut anchors excluding excursions between merged stays, failed-Save rollback and retry, and concurrent edits and
+saves. The release test job runs the web checks too.
+
+A Save of a dgs-created GPX stages all part edits and embedded state in its
+folder and publishes them with one rename. If a step fails, the original is
+unchanged and its pending edits remain available for retry. This has the same
+filesystem durability boundary as the existing single-file replacements.
+Within one process, GPX state edits are serialized and state reads see a
+complete edit. Route computation runs independently.
 
 ## Roadmap
 

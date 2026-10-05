@@ -39,7 +39,13 @@ type Stop struct {
 	Center    geo.LatLon
 	Arrival   time.Time
 	Departure time.Time
+
+	// Excursions between merged stays are part of the visit duration, but
+	// cannot represent where the visit stopped.
+	excursions []span
 }
+
+type span struct{ first, last int }
 
 // Duration is the time from arrival to departure.
 func (s Stop) Duration() time.Duration { return s.Departure.Sub(s.Arrival) }
@@ -48,12 +54,20 @@ func (s Stop) Duration() time.Duration { return s.Departure.Sub(s.Arrival) }
 // span. Sampling can be dense while approaching and sparse during the stay;
 // a spatial mean or the middle sample then lies on the approach rather than
 // where time was spent. Equally close times choose the sample nearest Center.
-// First and Last refer to the same line that was passed to Detect.
+// Excursions between merged stays are excluded. First and Last refer to the
+// same line that was passed to Detect.
 func (s Stop) Anchor(line track.Line) int {
 	midpoint := s.Arrival.Add(s.Duration() / 2)
 	anchor := s.First
 	nearest := line[anchor].Time.Sub(midpoint).Abs()
+	gap := 0
 	for i := s.First + 1; i <= s.Last; i++ {
+		for gap < len(s.excursions) && i > s.excursions[gap].last {
+			gap++
+		}
+		if gap < len(s.excursions) && i >= s.excursions[gap].first {
+			continue
+		}
 		if line[i].Time.IsZero() {
 			continue
 		}
@@ -104,7 +118,14 @@ func merge(line track.Line, found []Stop, distance float64) []Stop {
 	var merged []Stop
 	for _, stop := range found {
 		if n := len(merged); n > 0 && geo.Distance(merged[n-1].Center, stop.Center) < distance {
-			merged[n-1] = newStop(line, merged[n-1].First, stop.Last)
+			previous := merged[n-1]
+			combined := newStop(line, previous.First, stop.Last)
+			combined.excursions = append([]span(nil), previous.excursions...)
+			if previous.Last+1 < stop.First {
+				combined.excursions = append(combined.excursions, span{previous.Last + 1, stop.First - 1})
+			}
+			combined.excursions = append(combined.excursions, stop.excursions...)
+			merged[n-1] = combined
 			continue
 		}
 		merged = append(merged, stop)

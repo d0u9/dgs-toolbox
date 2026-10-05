@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 
 	"dgs-toolbox/internal/config"
@@ -90,7 +91,30 @@ func Handler(settings Settings) http.Handler {
 	webui.Mount(mux)
 	webfile.Mount(mux, webfile.Options{Root: settings.Root, Writable: true})
 	mux.Handle("GET /", http.FileServerFS(static))
-	return sameOrigin(mux)
+	return sameOrigin(consistentEdits(mux))
+}
+
+// The process's drafts and pending edits are shared by every page. Each
+// read/modify/write operation, including Save and Rename, must finish before
+// another edit can start. Readers see a complete state rather than maps or
+// files being changed. Route computation does not touch these stores.
+var editMu sync.RWMutex
+
+func consistentEdits(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/route/leg" || r.URL.Path == "/api/fill/route" || r.URL.Path == "/api/reveal" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.URL.Path == "/api/focus" {
+			editMu.RLock()
+			defer editMu.RUnlock()
+		} else {
+			editMu.Lock()
+			defer editMu.Unlock()
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // sameOrigin refuses a request that changes something unless the page itself

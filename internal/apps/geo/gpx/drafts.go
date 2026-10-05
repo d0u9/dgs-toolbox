@@ -157,19 +157,21 @@ func writeSidecarNow(path string, file sidecar.File) error {
 	}
 	// A GPX dgs wrote is ours to write: what was done to its parts goes into
 	// the file itself rather than staying beside it.
-	file, err = writeParts(path, parsed, file)
-	if err != nil {
-		return err
-	}
-	if !file.Active() {
-		return gpxfile.WriteState(path, nil)
-	}
-	file.Version = sidecar.Version
-	data, err := json.Marshal(file)
-	if err != nil {
-		return err
-	}
-	return gpxfile.WriteState(path, data)
+	return gpxfile.Update(path, func(staged string) error {
+		remaining, err := writeParts(staged, parsed, file)
+		if err != nil {
+			return err
+		}
+		if !remaining.Active() {
+			return gpxfile.WriteState(staged, nil)
+		}
+		remaining.Version = sidecar.Version
+		data, err := json.Marshal(remaining)
+		if err != nil {
+			return err
+		}
+		return gpxfile.WriteState(staged, data)
+	})
 }
 
 func draftName(path string) string {
@@ -222,10 +224,10 @@ func (a api) newDraft(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid JSON"))
 		return
 	}
-	name := strings.TrimSpace(strings.TrimSuffix(body.Name, filepath.Ext(body.Name)))
-	if name == "" || strings.ContainsAny(name, `/\`) {
-		writeError(w, http.StatusBadRequest, errors.New("name the new GPX, without / or \\"))
+	name, err := gpxName(body.Name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, map[string]any{"path": drafts.create(name)})
+	writeJSON(w, map[string]any{"path": drafts.create(strings.TrimSuffix(name, ".gpx"))})
 }

@@ -87,6 +87,12 @@ func TestDetectMergesNeighbouringStops(t *testing.T) {
 	if len(got) != 1 || got[0].First != 0 || got[0].Last != len(b.line)-1 {
 		t.Fatalf("stops = %+v", got)
 	}
+	// The time midpoint falls in the brief excursion, outside the stay.
+	// Merging visits must not put the marker there.
+	point := b.line[got[0].Anchor(b.line)].LatLon
+	if geo.Distance(point, geo.LatLon{Lat: 30, Lon: 120}) > 10 {
+		t.Fatal("merged stop anchor fell on the excursion")
+	}
 }
 
 func TestDetectSeparatesDistantStops(t *testing.T) {

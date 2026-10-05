@@ -2,6 +2,7 @@ package gpx
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -168,5 +169,45 @@ func TestRenameRejectsRecordingsInvalidNamesAndOccupiedTargets(t *testing.T) {
 	}
 	if _, err := os.Stat(foreign); err != nil {
 		t.Fatal("recording moved")
+	}
+}
+
+func TestDraftNamesKeepDotsAndRejectInvalidNames(t *testing.T) {
+	handler := Handler(Settings{})
+	for _, name := range []string{"Trip.v2", "Trip.v2.GPX", " Trip.v2 "} {
+		body, err := json.Marshal(map[string]string{"name": name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/draft", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != http.StatusOK {
+			t.Fatal(response.Body)
+		}
+		var result struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		defer drafts.remove(result.Path)
+		if draftName(result.Path) != "Trip.v2" {
+			t.Fatalf("name truncated: %s", draftName(result.Path))
+		}
+	}
+	for _, name := range []string{"", ".", "..", "../trip", "trip\x00"} {
+		body, err := json.Marshal(map[string]string{"name": name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/draft", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid draft name accepted: %q", name)
+		}
 	}
 }

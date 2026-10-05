@@ -62,7 +62,7 @@ func segments(a analysis) ([]segmentJSON, []int, []int) {
 		list[i] = s
 	}
 	candidates := []int{}
-	for _, cut := range segment.Candidates(a.stops) {
+	for _, cut := range segment.Candidates(a.line, a.stops) {
 		candidates = append(candidates, a.index[cut])
 	}
 	return list, cuts, candidates

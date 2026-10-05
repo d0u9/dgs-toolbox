@@ -820,14 +820,20 @@ async function saveAs(path, { convert = false } = {}) {
 // Renaming preserves this workspace entry, including order and hidden parts.
 function replaceTrackPath(path, target) {
   const entry = state.tracks.get(path);
+  if (!entry) return;
+  cutPanel?.renamePath(path, target);
+  if (planner?.source === path) planner.source = target;
   state.tracks = new Map([...state.tracks].map(([key, value]) => [key === path ? target : key, value]));
   if (state.selection.delete(path)) state.selection.add(target);
   if (state.anchor === path) state.anchor = target;
   if (state.fill.preview?.path === path) state.fill.preview.path = target;
   entry.track.path = target;
   entry.track.name = basename(target).replace(/\.gpx$/i, "");
-  if (state.focus === path) setFocus(target, { fit: false });
-  else { renderTracks(); save(); }
+  if (state.focus === path) {
+    // The same file is still focused; renaming must not discard its fill.
+    state.focus = target;
+    setFocus(target, { fit: false });
+  } else { renderTracks(); save(); }
 }
 
 async function renameGPX(path) {
@@ -1056,7 +1062,7 @@ function applyCutPanel() {
 }
 
 async function writeSegments(request) {
-  const result = await api.writeSegments(state.focus, request);
+  const result = await api.writeSegments(request.path, request);
   // A new GPX joins the workspace, so its segments are there to see at once.
   if (request.target.mode === "create" && !state.tracks.has(result.path)) {
     await addTrack(result.path, { visible: true });
@@ -1574,6 +1580,7 @@ function bindRowDrag(li, held) {
   if (held.key) li.dataset.key = held.key;
   longPressDrag(li, {
     onStart: () => {
+      doubleRowClick.reset();
       dragRow = { ...held, row: li };
       const rows = [...$("track-list").children].filter((row) => !row.classList.contains("drag-ghost"));
       // A file is carried with every row under it, down to the next file.
@@ -2484,6 +2491,11 @@ function bindLayersPanel() {
 // ---- start ----
 
 async function start() {
+  // Controls, outside clicks, context menus and drags interrupt a row pair.
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".track-row, .part-row") || event.target.closest("button, input, select, a")) doubleRowClick.reset();
+  }, true);
+  document.addEventListener("contextmenu", () => doubleRowClick.reset(), true);
   const saved = load();
   state.config = await api.config();
   stack = new MapStack(null, {

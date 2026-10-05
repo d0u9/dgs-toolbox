@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"dgs-toolbox/internal/geo/stops"
+	"dgs-toolbox/internal/geo/track"
 )
 
 // Range is one segment: the points first to last of a line, both included.
@@ -65,12 +66,12 @@ func Split(n int, cuts []int) []Range {
 	return append(ranges, Range{First: first, Last: n - 1})
 }
 
-// Candidates are the proposed cuts: the point recorded midway through each
-// stop, so the rest is split between the segment arriving and the one leaving.
-func Candidates(found []stops.Stop) []int {
+// Candidates use the same time-midpoint sample as stop markers and cleaning,
+// so a cut splits the visit where the track actually stopped.
+func Candidates(line track.Line, found []stops.Stop) []int {
 	cuts := make([]int, len(found))
 	for i, stop := range found {
-		cuts[i] = (stop.First + stop.Last) / 2
+		cuts[i] = stop.Anchor(line)
 	}
 	return cuts
 }
