@@ -1,4 +1,4 @@
-import { $, api, el, loadState, post, inputFor, fieldsOf, fieldsAt, frame, say } from "/common.js";
+import { $, api, el, loadState, post, fieldInputs, fieldsOf, fieldsAt, frame, say } from "/common.js";
 
 const id = new URLSearchParams(location.search).get("item");
 let state, item;
@@ -20,11 +20,11 @@ function draw() {
   const dropped = [...oldKeys].filter((key) => !nextKeys.has(key));
   $("dropped").textContent = dropped.length ? "Fields kept in earlier snapshots, omitted from the new one: " + dropped.join(", ") : "All existing field names occur in the new Template.";
   $("target-fields").replaceChildren(el("h3", {}, "Item fields"),
-    ...t.fields.filter((f) => !f.per_revision).map((f) => inputFor(f, item.fields?.[f.key] || "", (t.defaults || {})[f.key] || "", state, item.id, t.type)));
+    ...fieldInputs(t.fields.filter((f) => !f.per_revision), item.fields, t.defaults, state, item.id, t.type));
   $("target-revisions").replaceChildren(...item.revisions.filter((r) => (r.id || r.digest) === (item.head || (item.revisions.at(-1).id || item.revisions.at(-1).digest))).map((r, index) => {
     const box = el("section", { className: "change-type-revision" }, el("h3", {}, "Revision " + (item.revisions.indexOf(r) + 1) + " · " + (r.id || r.digest).slice(0, 8)));
     box.dataset.digest = (r.id || r.digest);
-    box.append(...t.fields.filter((f) => f.per_revision).map((f) => inputFor(f, fieldsAt(item, (r.id || r.digest))[f.key] || "", (t.defaults || {})[f.key] || "", state, item.id, t.type)));
+    box.append(...fieldInputs(t.fields.filter((f) => f.per_revision), fieldsAt(item, (r.id || r.digest)), t.defaults, state, item.id, t.type));
     return box;
   }));
 }

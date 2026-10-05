@@ -4,7 +4,7 @@
 // the folder picked, dragged into another, renamed, set to another revision
 // or taken out. An Outline puts it in its tree as a folder of its name; the
 // Outlines page says where.
-import { $, address, keep as keepEntry, scrollBack, api, el, loadState, post, label, frame, say, nameTree, templateOf, inputFor, fieldsOf, fieldsAt } from "/common.js";
+import { $, address, keep as keepEntry, scrollBack, api, el, loadState, post, label, frame, say, nameTree, templateOf, fieldInputs, fieldsOf, fieldsAt } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { openMenu } from "/ui/menu.js";
 import { listTable } from "/ui/listtable.js";
@@ -820,7 +820,7 @@ function fillForm(item, keys) {
   const wanted = new Set(keys.map((k) => k.split(/[:.]/)[0]));
   const known = t ? t.fields.filter((f) => wanted.has(f.key)) : [];
   const message = el("span", { className: "message" });
-  const form = el("form", {}, ...known.map((f) => inputFor(f, "", "", state, item.id)),
+  const form = el("form", {}, ...fieldInputs(known, null, null, state, item.id),
     known.length ? el("button", { className: "small", type: "submit", textContent: "Save" }) : el("span", { className: "muted" }, item.type + " has no such field: change Name as."),
     message);
   form.onsubmit = async (event) => {

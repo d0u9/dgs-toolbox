@@ -383,6 +383,11 @@ export function inputFor(field, value, placeholder, state, self, type) {
     ...fieldHead(field), control);
 }
 
+// fieldInputs is the controls for fields, each with its value and its
+// placeholder by key: what every panel that edits an Item's fields shows.
+export const fieldInputs = (fields, values, placeholders, state, self, type) =>
+  fields.map((f) => inputFor(f, values?.[f.key] || "", placeholders?.[f.key] || "", state, self, type));
+
 // countriesOf is every value a country field of the tree's Items holds,
 // once each, sorted.
 function countriesOf(state) {

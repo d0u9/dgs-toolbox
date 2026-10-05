@@ -2,7 +2,7 @@
 // with the tree it makes redrawn beside the form as it changes. A rule is
 // the tree's: every Outline naming it, and every Snapshot taken from it
 // after, sees the change. Outlines put rules and Snapshots together.
-import { $, address, scrollBack, api, el, loadState, post, label, templateOf, inputFor, fieldsOf, fieldsAt, frame, say, nameTree } from "/common.js";
+import { $, address, scrollBack, api, el, loadState, post, label, templateOf, inputFor, fieldInputs, fieldsOf, fieldsAt, frame, say, nameTree } from "/common.js";
 import * as which from "/layoutform.js";
 import { outlineTree, unplaced, resizable, whyText } from "/outlinetree.js";
 
@@ -222,7 +222,7 @@ function fill(id, m, link) {
   const unknown = [...m.fields].filter((f) => !known.some((k) => k.key === f));
   const message = el("span", { className: "message" });
   const form = el("form", { className: "fill" },
-    ...known.map((f) => inputFor(f, "", "", state, id)),
+    ...fieldInputs(known, null, null, state, id),
     known.length ? el("button", { className: "small", type: "submit", textContent: "Save" }) : null,
     message);
   form.onsubmit = async (event) => {

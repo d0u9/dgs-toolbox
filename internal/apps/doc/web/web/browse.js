@@ -5,7 +5,7 @@ import { openMenu } from "/ui/menu.js";
 import { suggest } from "/combo.js";
 import { tooltip } from "/ui/tooltip.js";
 import { listTable } from "/ui/listtable.js";
-import { $, address, keep, scrollBack, api, el, loadState, post, templateOf, label, inputFor, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
+import { $, address, keep, scrollBack, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -640,8 +640,7 @@ function detail(item) {
     editing = item.id + selected.digest + JSON.stringify(fields);
     say($("edit-message"), "");
     $("edit-fields").replaceChildren(
-      ...(t ? t.fields : Object.keys(fields).map((key) => ({ key }))).map((f) =>
-        inputFor(f, fields[f.key] || "", "", state, item.id, t?.type || item.type)));
+      ...fieldInputs(t ? t.fields : Object.keys(fields).map((key) => ({ key })), fields, null, state, item.id, t?.type || item.type));
     $("save-button").disabled = !t;
   }
   drawCases(item);
