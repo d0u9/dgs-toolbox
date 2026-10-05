@@ -236,30 +236,44 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .template-side .form-field { margin: 0; }
 .template-side .button { align-self: flex-start; }
 
-/* Browse: search and the view along the top, the filters in a panel under
-   them, shut until Filters opens it. In the panel the first row holds what
-   every Item has; the second, shown only when there is something in it,
-   what the Items in view have besides. */
+/* Browse: search, the filter steps and the view along the top, in one row
+   whatever is chosen. */
 .filters {
   flex: none; display: flex; flex-direction: column; gap: 6px; padding: 6px 14px;
   border-bottom: 1px solid var(--hairline); background: var(--cloud);
 }
-.filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--space-sm, 12px); min-width: 0; }
-.filter-panel { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px solid var(--hairline); }
-.filters-on { margin-left: 6px; padding: 0 6px; border-radius: var(--radius-full, 999px); background: var(--primary); color: var(--on-primary); font-size: var(--font-size-xs); }
-.filter-set { display: contents; }
+.filter-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px var(--space-sm, 12px); min-width: 0; }
 .filters [hidden] { display: none; }
 .filter { display: flex; align-items: center; gap: 6px; height: var(--control-height); font-size: var(--font-size-sm); color: var(--charcoal); }
 .filter > span { font-weight: 600; white-space: nowrap; }
-.filter select { max-width: 14em; }
-.filter .combo input { width: 11em; }
-.filter.filter-active > span { color: var(--primary); }
-.filter-x { display: none; margin-left: -4px; padding: 0 4px; color: var(--graphite); }
-.filter.filter-active .filter-x { display: inline-flex; }
-.filter-search { width: 20em; }
-.filter-tags { height: auto; min-height: var(--control-height); }
-.filter-tags .tag-field { width: 170px; }
-.filter-tags.filter-active .tag-field { border-color: var(--primary); }
+.filter-x { margin-left: -4px; padding: 0 4px; color: var(--graphite); }
+.filter-search { width: 16em; flex: 0 1 16em; min-width: 8em; }
+#filter-add, #filter-frequent, .filter-result, .filter-view { flex: none; white-space: nowrap; }
+/* The steps taken, as chips in one row; too many scroll sideways. */
+.filter-steps { display: flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 10em; overflow-x: auto; scrollbar-width: thin; }
+.filter-steps:empty { display: none; }
+.filter-steps .step { flex: none; cursor: pointer; }
+.filter-steps .step > span { max-width: 18em; }
+.step-key { color: var(--graphite); }
+.step-sep { flex: none; color: var(--graphite); }
+/* The facet panel: keys on the left, the picked key's values on the right. */
+.facets { width: min(1100px, calc(100vw - 32px)); max-width: none; height: min(760px, calc(100vh - 48px)); max-height: none; box-sizing: border-box; }
+.facets[open] { display: flex; flex-direction: column; gap: 8px; }
+.facets-head { display: flex; align-items: center; justify-content: space-between; }
+.facets-head h3 { margin: 0; }
+.facets .facets-steps { margin: 0; overflow-wrap: anywhere; }
+.facet-cols { flex: 1; display: flex; gap: 12px; min-height: 0; }
+.facet-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 0; flex: 1; }
+.facet-col-keys { flex: 0 0 320px; padding-right: 12px; border-right: 1px solid var(--hairline); }
+.facet-col-head { display: flex; align-items: center; gap: 8px; }
+.facet-col-head h4 { margin: 0; font-size: var(--font-size-sm); white-space: nowrap; }
+.facet-col-head input { flex: 1; min-width: 0; }
+.facet-col-keys input { width: 100%; box-sizing: border-box; }
+.facet-table { flex: 1; min-height: 0; overflow: auto; }
+.facet-key, .facet-pick { cursor: pointer; }
+.facet-key.selected { background: var(--selected); }
+.facet-value, .facet-types { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.facet-empty { margin: 4px; }
 .filter-result { display: flex; align-items: center; gap: var(--space-xs); margin-left: auto; font-size: var(--font-size-sm); color: var(--charcoal); white-space: nowrap; }
 .filter-result .small-inline { align-self: center; }
 .filter-view { display: flex; align-items: center; gap: 6px; padding-left: var(--space-sm, 12px); border-left: 1px solid var(--hairline); }
@@ -390,7 +404,7 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .rev { display: flex; align-items: center; gap: 8px; }
 .rev-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .rev .button { flex: none; }
-.rev-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.rev-tags { margin-top: 2px; }
 .tags-label { display: block; margin-bottom: 4px; font-size: var(--font-size-xs); color: var(--graphite); }
 #revision-tags-form { margin-top: 12px; }
 #revision-tags-form[hidden] { display: none; }
@@ -1011,7 +1025,7 @@ body.viewing .work > :not(#view) { display: none; }
 .view-info h3 { margin: 0 0 4px; font-size: var(--font-size-title); }
 .view-info p { margin: 0 0 6px; font-size: var(--font-size-sm); }
 .view-path { color: var(--graphite); overflow-wrap: anywhere; }
-.view-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.view-tags { margin: 0; }
 .view-fields { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: var(--font-size-sm); }
 .view-fields dt { color: var(--graphite); }
 .view-fields dd { margin: 0; overflow-wrap: anywhere; }

@@ -45,7 +45,8 @@
 <nav class="filters" aria-label="Filters">
   <div class="filter-row">
     <input id="filter" class="filter-search" type="search" placeholder="Search fields, tags, page text" aria-label="Search" spellcheck="false" autocomplete="off">
-    <button id="filters-toggle" class="chip" type="button" aria-pressed="false" aria-controls="filter-panel" title="Show the filters">Filters<span id="filters-on" class="filters-on numeric" hidden></span></button>
+    <div id="filter-steps" class="filter-steps" aria-label="Filters"></div>
+    <button id="filter-add" class="chip" type="button" aria-haspopup="true" aria-controls="facets" title="Narrow by a field, one step after another">+ Filter</button>
     <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Show only the Items marked frequent">★ Frequent</button>
     <div class="filter-result">
       <span id="count" class="numeric"></span>
@@ -75,32 +76,22 @@
       <button id="view-direction" class="icon-button" type="button" data-dir="desc">↓</button>
     </div>
   </div>
-  <div id="filter-panel" class="filter-panel" hidden>
-  <div class="filter-row">
-    <label class="filter"><span>Type</span><select id="filter-type"><option value="">any</option></select></label>
-    <span id="field-main" class="filter-set"></span>
-    <div class="filter filter-tags"><span>Tags</span><div id="filter-tags" data-label="Filter by tags"></div></div>
-  </div>
-  <div id="filter-more" class="filter-row" hidden>
-    <span id="field-more" class="filter-set"></span>
-    <label class="filter" title="From the Item's expires field, as HEAD has it"><span>Expiry</span>
-      <select id="filter-expiry">
-        <option value="">any</option>
-        <option value="expired">expired</option>
-        <option value="soon" id="soon-option">expiring soon</option>
-        <option value="valid">valid</option>
-        <option value="permanent">no end date</option>
-        <option value="none">no expiry field</option>
-      </select>
-    </label>
-    <label class="filter"><span>Kind</span>
-      <select id="filter-kind"><option value="">any</option><option value="document">document</option><option value="record">record</option></select>
-    </label>
-    <label class="filter" title="Retired: no longer used, though not expired"><span>Use</span>
-      <select id="filter-use"><option value="">any</option><option value="active">in use</option><option value="retired">retired</option></select>
-    </label>
-  </div>
-  </div>
+  <dialog id="facets" class="dialog facets" aria-labelledby="facets-title">
+    <div class="facets-head"><h3 id="facets-title">Filter</h3><button id="facets-close" class="icon-button" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
+    <p id="facets-steps" class="muted facets-steps"></p>
+    <div class="facet-cols">
+      <section class="facet-col facet-col-keys">
+        <input id="facet-key-search" type="search" placeholder="Find a field or value" aria-label="Find a field" spellcheck="false" autocomplete="off">
+        <div id="facet-keys" class="facet-table scroll"></div>
+      </section>
+      <section class="facet-col">
+        <div class="facet-col-head"><h4 id="facet-values-title"></h4>
+          <input id="facet-value-search" type="search" placeholder="Find a value" aria-label="Find a value" spellcheck="false" autocomplete="off"></div>
+        <div id="facet-values" class="facet-table scroll"></div>
+      </section>
+    </div>
+    <p id="facet-empty" class="muted facet-empty" hidden>Nothing left to tell these Items apart by.</p>
+  </dialog>
 </nav>
 <main class="work">
   <section id="items-pane" class="browse-pane" aria-label="Items">
