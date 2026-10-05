@@ -120,6 +120,9 @@ export function condition(input, { keys, values, onEdit }) {
   const inside = (n, list) => !!n.items && (n.items === list || n.items.some((c) => inside(c, list)));
   const draggable = (node, n, list) => {
     node.draggable = true;
+    // A press in a text box edits it: the bubble is not dragged meanwhile.
+    node.addEventListener("pointerdown", (event) => { node.draggable = !(event.target instanceof Element && event.target.closest("input, textarea")); });
+    node.addEventListener("pointerup", () => { node.draggable = true; });
     node.addEventListener("dragstart", (event) => {
       if (event.target !== node) return;
       event.stopPropagation(); dragging = { list, n }; event.dataTransfer.effectAllowed = "move"; node.classList.add("dragging");

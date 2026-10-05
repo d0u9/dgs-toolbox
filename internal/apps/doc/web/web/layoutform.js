@@ -221,6 +221,10 @@ function drawNodes() {
     // in that one's list; never into itself, and never after an else.
     const head = block.firstChild;
     head.draggable = true;
+    // A press in a text box selects and moves the cursor there, so the head
+    // is not draggable while it lasts.
+    head.addEventListener("pointerdown", (event) => { head.draggable = !(event.target instanceof Element && event.target.closest("input, textarea")); });
+    head.addEventListener("pointerup", () => { head.draggable = true; });
     head.addEventListener("dragstart", (event) => {
       if (event.target !== head) return;
       event.stopPropagation(); draggingBlock = { list, n }; event.dataTransfer.effectAllowed = "move"; block.classList.add("dragging");
