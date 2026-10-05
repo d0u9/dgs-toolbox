@@ -17,7 +17,7 @@ func nativeProblem(kind string) string {
 	return kind + " decoding uses macOS ImageIO and is not supported on " + runtime.GOOS + " yet"
 }
 
-// toSRGB passes untagged pixels through as sRGB without a profile. Tagged
+// toSRGB passes untagged pixels, alpha included, through as sRGB without a profile. Tagged
 // pixels need ColorSync, so they are refused with the reason.
 func toSRGB(img *image.NRGBA, icc []byte) (*image.NRGBA, []byte, error) {
 	if len(icc) == 0 {

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEncodeRequiresExplicitStart(t *testing.T) {
@@ -135,5 +136,34 @@ func TestEncodeCloseWaitsForWorker(t *testing.T) {
 	case <-m.finished:
 	default:
 		t.Fatal("Close left worker running")
+	}
+}
+
+func TestEncodeOptionErrorsMarkOnlyTheirField(t *testing.T) {
+	m := newEncodeModel(config.DefaultPhotoEncode())
+	m.controls.SetValue("input", "/photos")
+	m.controls.SetValue("output", "/exports")
+	updated, _ := m.Update(encodePlanMsg{session: m.session, err: &photoencode.OptionError{Option: "max_pixels", Message: "max_pixels must be 1–40000000"}})
+	m = updated.(encodeModel)
+	if len(m.fieldErrors) != 0 || !strings.Contains(m.notice, "max_pixels") {
+		t.Fatalf("errors = %v notice = %q", m.fieldErrors, m.notice)
+	}
+	updated, _ = m.Update(encodePlanMsg{session: m.session, err: &photoencode.OptionError{Option: "quality", Message: "quality must be 1–100"}})
+	m = updated.(encodeModel)
+	if len(m.fieldErrors) != 1 || m.fieldErrors["quality"] == "" {
+		t.Fatal(m.fieldErrors)
+	}
+}
+
+func TestEncodeCloseDoesNotWaitForeverForAJobThatNeverRan(t *testing.T) {
+	m := newEncodeModel(config.DefaultPhotoEncode())
+	_, m.cancel = context.WithCancel(context.Background())
+	m.finished = make(chan struct{})
+	done := make(chan struct{})
+	go func() { m.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(encodeCloseWait + 2*time.Second):
+		t.Fatal("Close hung")
 	}
 }
