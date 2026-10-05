@@ -12,7 +12,7 @@
 // left. onLeave is called when the reader asks to leave: Esc, or the button.
 // explain(file) answers the server's explanations of how the Outline
 // places the file's Item, for Why here.
-import { $, el, keep, label, fieldsAt, tagsAt, tagPills } from "/common.js";
+import { $, el, keep, label, fieldsAt, tagsAt, tagPills, reveal, originalsList } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { find, findFile, resizable, whyText } from "/outlinetree.js";
 
@@ -98,10 +98,20 @@ export function outlineView({ state, preview, onLeave, explain }) {
       el("p", { className: "view-meta" }, el("span", { className: "mono" }, i ? i.type : ""), " ", expiry(i),
         file.revision > 1 ? el("span", { className: "muted" }, " revision " + file.revision) : null),
       el("p", { className: "mono view-path" }, file.path),
+      el("p", {}, el("button", { type: "button", className: "button secondary small-button", textContent: "Show in Finder",
+        title: "Show this PDF in its folder in Finder", onclick: () => reveal({ item: file.item, digest: file.digest }) })),
+      originals(i, file),
       tags.length ? el("p", { className: "view-tags" }, tagPills(tags, true)) : null,
       el("dl", { className: "view-fields" }, ...keys.flatMap((k) => [el("dt", {}, k), el("dd", {}, value(k))])),
       when ? el("p", { className: "muted" }, "Added " + when) : null,
       whyHere(file));
+  }
+
+  // originals lists the images file's PDF was made from, kept beside it.
+  function originals(i, file) {
+    const r = i && i.revisions.find((x) => (x.id || x.digest) === file.digest || x.digest === file.digest);
+    if (!r || !(r.originals || []).length) return null;
+    return el("div", { className: "view-originals" }, el("h4", {}, "Original images"), originalsList(i.id, r.originals));
   }
 
   // whyHere is what placed file where it is: the rule's conditions, the

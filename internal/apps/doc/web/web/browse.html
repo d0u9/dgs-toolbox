@@ -144,6 +144,7 @@
         <button id="page-next" class="tool" type="button" title="Next page" aria-label="Next page">›</button>
         <span class="detail-tools-end">
           <button id="open-reader" class="button secondary small-button" type="button">Open</button>
+          <button id="reveal-pdf" class="button secondary small-button" type="button" title="Show this revision's PDF in its folder in Finder">Show in Finder</button>
           <button id="attach-pdf" class="button secondary small-button" type="button" hidden>Attach PDF…</button>
         </span>
       </div>
@@ -151,6 +152,11 @@
     <div id="picture-splitter" class="splitter row" role="separator" aria-orientation="horizontal"></div>
     <div class="detail-scroll">
     <div class="snapshot-bar"><span id="detail-rev" class="muted"></span></div>
+    <div id="originals-group" class="detail-group" hidden><h2>Original images</h2><div class="detail-card">
+    <section class="detail-section">
+      <div id="originals"></div>
+    </section>
+    </div></div>
     <p id="text-message" class="message text-status"></p>
     <div class="detail-group"><h2>Details</h2><div class="detail-card">
     <section class="detail-section">

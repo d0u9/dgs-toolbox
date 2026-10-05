@@ -406,6 +406,9 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .side.editor .rows li { padding: 6px 8px; border: 1px solid transparent; border-bottom-color: var(--hairline); }
 .side.editor .rows li.selected { border-radius: var(--radius-md); border-color: var(--primary-soft); }
 .rev { display: flex; align-items: center; gap: 8px; }
+.originals { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; font-size: var(--font-size-sm); }
+.originals li { display: flex; align-items: center; gap: 8px; }
+.originals li a { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rev-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .rev .button { flex: none; }
 .rev-tags { margin-top: 2px; }
@@ -1030,6 +1033,7 @@ body.viewing .work > :not(#view) { display: none; }
 .view-info h3 { margin: 0 0 4px; font-size: var(--font-size-title); }
 .view-info p { margin: 0 0 6px; font-size: var(--font-size-sm); }
 .view-path { color: var(--graphite); overflow-wrap: anywhere; }
+.view-originals h4 { margin: 12px 0 4px; font-size: var(--font-size-xs); font-weight: 600; color: var(--graphite); }
 .view-tags { margin: 0; }
 .view-fields { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: var(--font-size-sm); }
 .view-fields dt { color: var(--graphite); }

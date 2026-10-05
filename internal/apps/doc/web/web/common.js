@@ -815,3 +815,20 @@ export function eventLines(event) {
     (event.target ? " · " + event.target : "") + (event.view ? " · " + event.view : "");
   return { title: eventTitles[event.action] || event.action, meta, lines };
 }
+
+// reveal shows, in its folder in Finder on the machine serving the page, a
+// revision's PDF ({ item, digest }) or an original image kept beside it
+// ({ item, original }).
+export function reveal(what) {
+  post("/api/reveal", what).catch((err) => alert(err.message));
+}
+
+// originalsList lists the original images an Item's revision was made from,
+// a page each in order; each opens as it was imported, or shows in Finder.
+export function originalsList(id, originals) {
+  return el("ol", { className: "originals" }, ...(originals || []).map((o, n) => el("li", {},
+    el("a", { href: api("/api/original?item=" + encodeURIComponent(id) + "&original=" + encodeURIComponent(o.digest)), target: "_blank",
+      title: o.digest + o.extension, textContent: "Page " + (n + 1) + " · " + o.digest.slice(0, 8) + o.extension }),
+    el("button", { type: "button", className: "text-button", textContent: "Show in Finder", title: "Show this image in its folder in Finder",
+      onclick: () => reveal({ item: id, original: o.digest }) }))));
+}
