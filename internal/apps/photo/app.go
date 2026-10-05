@@ -24,8 +24,8 @@ func New() tui.App {
 					return newImportModel()
 				},
 				NewWithConfig: func(global config.Config) tui.CommandModel {
-					source, destination := global.PhotoImportPaths()
-					return newImportModelWithSettings(global.PhotoImportStateFile(), source, destination)
+					source, destinations := global.PhotoImportPaths()
+					return newImportModelWithSettings(global.PhotoImportStateFile(), source, destinations...)
 				},
 			},
 			{

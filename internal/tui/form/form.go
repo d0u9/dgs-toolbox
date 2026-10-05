@@ -856,3 +856,38 @@ func contains(values []string, target string) bool {
 	}
 	return false
 }
+
+// ReplaceFields replaces a command-owned group while preserving other controls.
+// Callers use this outside an active edit, for dynamic path rows.
+func (m *Model) ReplaceFields(ids []string, replacements []Field) {
+	focus := m.FocusedID()
+	owned := func(id string) bool {
+		for _, candidate := range ids {
+			if candidate == id {
+				return true
+			}
+		}
+		return false
+	}
+	fields := make([]Field, 0, len(m.fields)+len(replacements))
+	inserted := false
+	start := 0
+	for _, field := range m.fields {
+		if owned(field.ID) {
+			if !inserted {
+				start = len(fields)
+				fields = append(fields, replacements...)
+				inserted = true
+			}
+			continue
+		}
+		fields = append(fields, field)
+	}
+	if !inserted {
+		start = len(fields)
+		fields = append(fields, replacements...)
+	}
+	m.fields = fields
+	m.focus = min(start, max(0, len(fields)-1))
+	m.SetFocusID(focus)
+}

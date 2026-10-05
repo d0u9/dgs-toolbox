@@ -277,9 +277,11 @@ type Photo struct {
 }
 
 type PhotoImport struct {
-	StateFile   string `json:"state_file"`
-	Source      string `json:"source"`
-	Destination string `json:"destination"`
+	StateFile string   `json:"state_file"`
+	Source    string   `json:"source"`
+	Dest      []string `json:"dest"`
+	// Destination is the legacy single-target configuration. Prefer Dest.
+	Destination string `json:"destination,omitempty"`
 }
 
 // Shell configures what every command shares: the top bar.
@@ -496,8 +498,12 @@ func (c Config) GeoGPXRoot() string {
 	return root
 }
 
-func (c Config) PhotoImportPaths() (source, destination string) {
-	return c.Photo.Import.Source, c.Photo.Import.Destination
+func (c Config) PhotoImportPaths() (source string, destinations []string) {
+	destinations = append([]string(nil), c.Photo.Import.Dest...)
+	if c.Photo.Import.Dest == nil && c.Photo.Import.Destination != "" {
+		destinations = []string{c.Photo.Import.Destination}
+	}
+	return c.Photo.Import.Source, destinations
 }
 
 // ConfRoot, ConfSecrets, ConfServices and ConfInstallRoot are conf.root,
@@ -694,6 +700,15 @@ var parts = []part{
 }
 
 func checkPhoto(c *Config) error {
+	if c.Photo.Import.Dest != nil && c.Photo.Import.Destination != "" {
+		return errors.New("import.dest and legacy import.destination cannot both be configured")
+	}
+	for i, root := range c.Photo.Import.Dest {
+		if strings.TrimSpace(root) == "" {
+			return fmt.Errorf("import.dest[%d] must not be empty", i)
+		}
+	}
+
 	if err := c.Photo.Encode.validate(); err != nil {
 		return err
 	}

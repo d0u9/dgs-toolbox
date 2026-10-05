@@ -111,7 +111,7 @@ func TestLoadDirOverridesEnvironmentConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	source, destination := loaded.PhotoImportPaths()
-	if source != "/explicit/source" || destination != "/explicit/destination" {
+	if source != "/explicit/source" || (len(destination) != 1 || destination[0] != "/explicit/destination") {
 		t.Fatalf("paths = %q, %q", source, destination)
 	}
 }
@@ -371,5 +371,35 @@ func TestGeoGPXRootExpandsHome(t *testing.T) {
 	config := Config{Geo: Geo{GPX: GeoGPX{Root: "~/tracks"}}}
 	if got := config.GeoGPXRoot(); got != filepath.Join(home, "tracks") {
 		t.Fatalf("root = %q", got)
+	}
+}
+
+func TestPhotoImportDestinationArray(t *testing.T) {
+	c, err := LoadPath(writeConfig(t, `{"photo":{"import":{"source":"/card","dest":["/library-a","/library-b"]}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, roots := c.PhotoImportPaths()
+	if source != "/card" || len(roots) != 2 || roots[0] != "/library-a" || roots[1] != "/library-b" {
+		t.Fatalf("paths = %q, %q", source, roots)
+	}
+	roots[0] = "changed"
+	if c.Photo.Import.Dest[0] != "/library-a" {
+		t.Fatal("accessor mutated configured destinations")
+	}
+	for _, input := range []string{`{"dest":"/library"}`, `{"dest":[""]}`, `{"dest":["  "]}`, `{"dest":["/library"],"destination":"/legacy"}`} {
+		if _, err := LoadPath(writeConfig(t, `{"photo":{"import":`+input+`}}`)); err == nil {
+			t.Fatalf("invalid destinations accepted: %s", input)
+		}
+	}
+	for _, input := range []string{`{}`, `{"dest":[]}`} {
+		c, err := LoadPath(writeConfig(t, `{"photo":{"import":`+input+`}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, roots := c.PhotoImportPaths()
+		if len(roots) != 0 {
+			t.Fatalf("default destinations = %q", roots)
+		}
 	}
 }

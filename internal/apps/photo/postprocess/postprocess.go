@@ -47,6 +47,22 @@ type Result struct {
 	Files []Outcome
 }
 
+// Progress reports work within one organizing phase. Total zero means that
+// phase has no measurable file count (for example collision checks).
+// Callbacks run synchronously and must return promptly.
+type Progress struct {
+	Phase     string
+	Path      string
+	Completed int
+	Total     int
+}
+
+func reportProgress(report func(Progress), phase, path string, completed, total int) {
+	if report != nil {
+		report(Progress{Phase: phase, Path: path, Completed: completed, Total: total})
+	}
+}
+
 type File struct {
 	Source string
 	Path   string
@@ -123,16 +139,21 @@ func NewPlan(root string, files []File) Plan {
 // Cancelling ctx stops reading counterparts; their shots are then refused,
 // never moved unchecked.
 func NewPlanWithExisting(ctx context.Context, root string, files []File, existing []ExistingFile) Plan {
-	return newLayoutPlan(ctx, root, files, DefaultLayout, existing)
+	return newLayoutPlan(ctx, root, files, DefaultLayout, existing, nil)
+}
+
+// NewPlanWithProgress is NewPlanWithExisting with per-phase activity reports.
+func NewPlanWithProgress(ctx context.Context, root string, files []File, existing []ExistingFile, report func(Progress)) Plan {
+	return newLayoutPlan(ctx, root, files, DefaultLayout, existing, report)
 }
 
 // NewLayoutPlan plans moves into root/<layout>/, where layout must pass
 // ValidateLayout. Files may live anywhere; only their date folder is under root.
 func NewLayoutPlan(root string, files []File, layout string) Plan {
-	return newLayoutPlan(context.Background(), root, files, layout, nil)
+	return newLayoutPlan(context.Background(), root, files, layout, nil, nil)
 }
 
-func newLayoutPlan(ctx context.Context, root string, files []File, layout string, existing []ExistingFile) Plan {
+func newLayoutPlan(ctx context.Context, root string, files []File, layout string, existing []ExistingFile, report func(Progress)) Plan {
 	plan := Plan{Root: root, Files: make([]Outcome, len(files)), verified: make(map[string]string)}
 	if info, err := os.Stat(root); err == nil && info.IsDir() {
 		plan.rootInfo = info
@@ -149,7 +170,8 @@ func newLayoutPlan(ctx context.Context, root string, files []File, layout string
 		}
 	}
 	metadataFiles := append([]File(nil), files...)
-	for _, item := range existing {
+	for index, item := range existing {
+		reportProgress(report, "Checking existing copies", item.Path, index, len(existing))
 		group := pairKey(item.Source)
 		if !needed[group] || (!isJPEG(item.Source) && !isRAW(item.Source)) {
 			continue
@@ -201,7 +223,8 @@ func newLayoutPlan(ctx context.Context, root string, files []File, layout string
 	jpegByStem := make(map[string]string)
 	jpegDates := make(map[string]time.Time)
 	jpegErrors := make(map[string]error)
-	for _, file := range metadataFiles {
+	for index, file := range metadataFiles {
+		reportProgress(report, "Reading capture dates", file.Path, index, len(metadataFiles))
 		if isJPEG(file.Source) && contextErrors[pairKey(file.Source)] == "" {
 			key := pairKey(file.Source)
 			jpegByStem[key] = file.Path
@@ -215,6 +238,7 @@ func newLayoutPlan(ctx context.Context, root string, files []File, layout string
 		}
 	}
 	for index, file := range files {
+		reportProgress(report, "Planning date folders", file.Path, index, len(files))
 		path := file.Path
 		outcome := Outcome{Original: path, Final: path, Status: Skipped, group: pairKey(file.Source)}
 		if !isJPEG(file.Source) && !isRAW(file.Source) {
@@ -258,7 +282,9 @@ func newLayoutPlan(ctx context.Context, root string, files []File, layout string
 		outcome.Status = Moved
 		plan.Files[index] = outcome
 	}
+	reportProgress(report, "Checking date folders", "", 0, 0)
 	refuseCollisions(&plan)
+	reportProgress(report, "Planning complete", "", len(files), len(files))
 	return plan
 }
 
@@ -370,13 +396,20 @@ func Apply(plan Plan) Result {
 // Cancellation is honoured only before the first move, so a shot is never
 // left half moved by it.
 func ApplyContext(ctx context.Context, plan Plan) Result {
+	return ApplyWithProgress(ctx, plan, nil)
+}
+
+// ApplyWithProgress preserves ApplyContext's shot and cancellation contract,
+// and reports checks and file outcomes without changing the move order.
+func ApplyWithProgress(ctx context.Context, plan Plan, report func(Progress)) Result {
 	plan.Files = append([]Outcome(nil), plan.Files...)
 	result := Result{Files: make([]Outcome, len(plan.Files))}
 	// failedGroups holds why a shot stays where it is.
 	failedGroups := make(map[string]string)
 	// The user may have left a planned import at the date-folder confirmation.
 	// Re-read witnesses before any move; stale context cannot waive a collision.
-	for _, item := range plan.existing {
+	for index, item := range plan.existing {
+		reportProgress(report, "Rechecking existing copies", item.Path, index, len(plan.existing))
 		checked, err := verifiedcopy.Check(ctx, plan.Root, item.Path, nil, nil)
 		if err != nil || checked.Size != item.Size || checked.Digest != item.Digest {
 			failedGroups[pairKey(item.Source)] = "existing shot counterpart changed before organizing"
@@ -393,8 +426,10 @@ func ApplyContext(ctx context.Context, plan Plan) Result {
 		return result
 	}
 	// Recheck shot-level occupancy after the confirmation as well.
+	reportProgress(report, "Rechecking date folders", "", 0, 0)
 	refuseCollisions(&plan)
 	for index, outcome := range plan.Files {
+		reportProgress(report, "Organizing files", outcome.Original, index, len(plan.Files))
 		result.Files[index] = outcome
 		if outcome.Status != Moved || samePath(outcome.Original, outcome.Final) {
 			continue
@@ -434,6 +469,7 @@ func ApplyContext(ctx context.Context, plan Plan) Result {
 			fail(err.Error())
 		}
 	}
+	reportProgress(report, "Organizing files", "", len(plan.Files), len(plan.Files))
 	return result
 }
 

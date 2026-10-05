@@ -7,8 +7,7 @@ This document owns decisions specific to `dgs photo import`. Read [`../../tui.md
 Photo Import is a concrete consumer of the shared design language. Its page composition, labels, parameter groups, defaults, and workflow do not define requirements for other apps or commands.
 
 Incremental import finds existing copies after date organization. An empty Source file has no content to recognise, so it is already present only at its own planned name or where state recorded it, never at an unrelated empty file. It is enabled initially and
-can be disabled in Parameters. The workspace keeps one Destination; the CLI
-action supports multiple destination copies.
+can be disabled in Parameters. Both the workspace and CLI support multiple destination copies.
 
 ## Command-line import
 
@@ -161,6 +160,61 @@ Rerunning the same command provides whole-file resume; Ctrl+C provides clean
 cancellation. Interactive pause, confirmation dialogs, file preview and list
 navigation remain conveniences of the TUI rather than import parameters.
 
+## Multiple destinations in the workspace
+
+Directories shows Source followed by every selected destination as its own
+numbered path row: Destination 1, Destination 2, and so on. Enter or a primary
+click edits that row through the shared directory Explorer. `Add destination`
+opens Explorer and appends a visible row without replacing any existing one.
+Adding or editing refuses a directory already selected in another row, including
+filesystem aliases; Explorer stays open and identifies the existing row.
+Backspace on a destination row removes it; the `Remove destination N` button
+also names and removes the last focused destination. Removing a row only
+changes this session and never removes a directory or its contents. Add and
+Remove use shared one-row buttons on one horizontal row, separated from the
+path rows by a blank line.
+At least one destination remains. Configuration supplies the initial
+destinations (`import.dest`); rows added or removed here are session choices,
+and Again retains them.
+
+Scan inventories Source once and every destination without writes. Parameters
+shows the selected destination's inventory and estimates; `[` and `]` switch
+that inventory without changing extension selection. Processing covers all
+selected targets. Multiple targets must already exist and pass the same overlap,
+alias and nesting checks as the CLI. A single destination retains the existing
+new-folder behavior. Same-filesystem targets produce a warning.
+
+Targets run concurrently using `importer.RunMultiple`, sharing the pause/cancellation
+controller and bounded whole-file workers. One source stream feeds all destination
+writes; each destination verifies its own readback. Processing labels each
+destination and worker and preserves their progress across interleaved events. The final verified-source count requires a
+matching independent copy in every target. Move deletes each source only after
+fresh source and all-destination checks succeed, which the header reports as
+`checking copies before deleting sources N/M` once every copy is final; a target failure keeps the
+corresponding source. Successful copies in other targets remain available.
+
+Organizing runs outside the TUI update loop, including capture-date reads,
+existing-copy verification, date-folder checks, renames and state updates.
+The page shows the active destination, current phase and filename, and a
+phase-local file progress bar when counts are available. An activity indicator
+continues to update while a filesystem operation is waiting; it never invents
+completed files or a completion percentage for unmeasured work.
+
+The optional Post-processing choice organizes each started target in turn,
+using that target's verified outcomes even if another target failed. Existing
+date folders are confirmed separately for each root: Skip declines that
+root only, keeps earlier roots' outcomes and goes on to the next. State paths are updated
+in every organized target. Result groups file outcomes by destination and
+also names incomplete overall outcomes, including source-kept Moves and
+unstarted targets. Published bytes count new copies across all destinations.
+
+The Result state-file choice applies to every selected destination. As in the CLI, cleanup keeps every state while any of them still records
+an earlier source-kept Move. Unfinished
+imports, earlier source-kept records and state errors retain state by default.
+Cleanup checks every root's processing-time identity before removing any state,
+and rechecks each root at removal; an error keeps Result open. These checks
+have the documented filesystem API race boundary. Cleanup never deletes photos.
+
 ## Product scenario and integrity contract
 
 The primary scenario is importing camera files from an SD card into durable storage. Data integrity is the highest-priority requirement: a destination file must not be published under its final photo or video filename until the bytes read from Source and the bytes independently read back from Destination produce the same cryptographic hash.
@@ -286,7 +340,7 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 
 - Source: directory selected through File Explorer.
 - Destination: directory selected through File Explorer.
-- `photo.import.source` and `photo.import.destination` in `photo/config.json` optionally prefill those two fields. Empty values retain the repository mock directories for UI testing; users can still change either path in Directories.
+- `photo.import.source` and the `photo.import.dest` array in `photo/config.json` optionally prefill the source and all numbered destination fields. An empty source or destination array retains the repository mock directories for UI testing; users can edit, add or remove destinations in Directories.
 - Operation: radio choice between Copy and Move.
 - Incremental: checkbox, enabled for each fresh import. Confirm matching content
   anywhere under Destination before deciding whether to copy; disabling it uses
@@ -301,9 +355,9 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
 
 Processing uses the shared two-column landscape skeleton and keeps vertical stacks shallow. A compact full-width header shows file progress, aggregate progress, active workers, pending files, and failures. Below it, the narrow right column is divided vertically between Next files and Recent results, with Page Actions at bottom-right. The wider left column contains the worker list so filenames, metadata, step tracks, hashes, and progress bars receive the available width.
 
-Each Worker owns one file and exposes a distinct state: Checking existing copies, Copying, Verifying, Publishing, or Idle. Checking identifies source and destination reads separately and supports the same pause and cancellation controller. Each compact worker entry includes the current filename, file size, phase progress bar, and Source/Destination hash state. It also uses a stable three-step track—`COPY → VERIFY → PUBLISH`—where completed steps use `✓`, the active step uses `●`, and forthcoming steps use `○`; this makes both completed and remaining work visible without relying only on a phase label. Render only configured workers; do not create placeholder worker cards to fill a landscape viewport. When workers exceed the visible height, keep them in one vertically scrollable list instead of laying them out side by side. Up/Down or `k/j` scrolls that list, while `g`/Home and `G`/End jump to its beginning or end. Do not display `MATCH` until independent destination verification has completed. Overall completion counts verified and published files, not merely copied bytes. Progress events of one step are sent at most every 100 ms (`importer.ProgressInterval`); each step's start, end and every phase change always pass, so the pages redraw at a bounded rate however fast the disks are. While the incremental inventory is read, before any worker moves, the header shows how many destination files it has listed.
+Each whole-file worker uses the same row formatter and progress-bar style as the CLI. Its first destination row names the worker and file; subsequent destination rows align underneath it and show their own phase and byte counts. Completed rows show a check mark for successful outcomes or an attention marker for failures and source-kept Moves. Bars use the CLI's filled and empty cell pattern, with byte counts retained on narrower panels. Only engine terminal outcomes mark a row complete; copied bytes alone never imply verification. When workers exceed the visible height, scroll complete worker groups with Up/Down or `k/j`, and jump with `g`/Home or `G`/End. Pausing and cancellation retain the shared controller. Progress events remain bounded by `importer.ProgressInterval`.
 
-The aggregate progress bar reserves a fixed right-hand status segment such as `42% │ 4/12 verified`. Calculate the bar width from the remaining cells after that segment, rather than stretching it to the fieldset width and truncating the right-hand information.
+The aggregate progress bar uses the same cell pattern as the CLI and reserves a fixed right-hand status segment such as `33% │ 4/12 files`. Calculate the bar width from the remaining cells after that segment so the counts remain visible. Like the CLI, aggregate progress counts files whose outcomes are final in every destination; the separate verified count excludes failed or skipped files.
 
 Processing supports 1–8 workers (`importer.MaxWorkers`) and defaults to 1. Each worker handles a different whole file and reports real engine events. It writes same-directory `.dgs-part` files and persists `.dgs-state` when the batch starts and when it ends; while it runs, pending changes are written within two seconds, even while a file is paused. `p` pauses or resumes I/O between bounded chunks. During active Processing, every key that could leave work is guarded: `Esc` asks before returning to Parameters, and `q` or Ctrl+C asks before exiting. Opening the confirmation pauses I/O; choosing No resumes it unless it was already paused. Choosing Yes cancels the batch and waits for workers to stop before navigation or exit. Returning to Parameters re-reads both roots: a Move has removed sources, and every run adds destination files. The shared dialog defaults to No; Tab switches actions, Enter invokes the selected action, and Esc continues processing.
 

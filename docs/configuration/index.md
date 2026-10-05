@@ -136,7 +136,7 @@ Keys are written from the top of their part's file, `<config dir>/<part>/config.
 | [photo](photo.md) | `encode.preserve_gps` | `false` |
 | [photo](photo.md) | `encode.max_pixels` | `40000000` |
 | [photo](photo.md) | `import.source` | empty — the repository's mock path |
-| [photo](photo.md) | `import.destination` | empty — the repository's mock path |
+| [photo](photo.md) | `import.dest` | `[]` — initial destinations; empty uses the repository's mock path |
 | [box](box.md) | `root` | empty — the command asks for a folder |
 | [box](box.md) | `inbox` | empty — Import opens with no inbox |
 | [box](box.md) | `marker` | `dgs-box.yaml` |

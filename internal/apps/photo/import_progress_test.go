@@ -2,6 +2,7 @@ package photo
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -126,5 +127,102 @@ func TestImportProgressShowsEachDestinationUnderItsWorker(t *testing.T) {
 	p.update(1, importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseComplete})
 	if p.done() != 1 {
 		t.Fatal("file finished in every destination not counted")
+	}
+}
+
+func TestTUIProgressUsesCLIRowsAndWorkerGrouping(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	m := newImportModel().(importModel)
+	m.processing = processingState{files: []scannedFile{{path: "photo.JPG"}}, finished: make(map[int]importer.Phase)}
+	m.targetProcessing = make([]processingState, 2)
+	for target := range m.targetProcessing {
+		m.targetProcessing[target] = processingState{files: m.processing.files, finished: make(map[int]importer.Phase), workers: []processingWorker{{number: target + 1, jobIndex: -1}}}
+	}
+	first := importer.Event{Worker: 1, Index: 0, Source: "photo.JPG", Phase: importer.PhaseCopying, Bytes: 512, Total: 1024}
+	second := first
+	second.Phase = importer.PhaseVerifying
+	second.Bytes = 256
+	m.applyMultipleEvent(multipleTransferEventMsg{target: 0, event: first})
+	m.applyMultipleEvent(multipleTransferEventMsg{target: 1, event: second})
+	cli := importProgress{targets: 2, slots: [][]importer.Event{{first, second}}}
+	got := m.workerRows(120, 8)
+	expected := strings.Join([]string{fitProgressLine(cli.row(0, 0, first, 28, 120), 120), fitProgressLine(cli.row(0, 1, second, 28, 120), 120)}, "\n")
+	// The activity glyph changes every 100 ms; compare the remaining columns.
+	normalize := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if strings.ContainsRune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", r) {
+				return '*'
+			}
+			return r
+		}, s)
+	}
+	if normalize(got) != normalize(expected) {
+		t.Fatalf("TUI and CLI differ:\n%s\n%s", got, expected)
+	}
+	if m.progressWorkerCount() != 1 {
+		t.Fatal("destinations counted as workers")
+	}
+	m.applyMultipleEvent(multipleTransferEventMsg{target: 0, event: importer.Event{Worker: 1, Index: 0, Source: "photo.JPG", Phase: importer.PhaseComplete}})
+	got = m.workerRows(120, 8)
+	if !strings.Contains(got, "✓") || !strings.Contains(got, "verifying") {
+		t.Fatalf("lost independent target outcome: %s", got)
+	}
+	for _, width := range []int{24, 48, 80, 120} {
+		for _, height := range []int{1, 2, 3, 8} {
+			rows := m.workerRows(width, height)
+			if len(strings.Split(rows, "\n")) > height {
+				t.Fatalf("height overflow: %q", rows)
+			}
+			for _, line := range strings.Split(rows, "\n") {
+				if ansi.StringWidth(line) >= width {
+					t.Fatalf("width overflow: %q", line)
+				}
+			}
+		}
+	}
+}
+
+func TestTUIProgressPreservesNewFileOnLateCompletion(t *testing.T) {
+	m := newImportModel().(importModel)
+	m.processing = processingState{files: []scannedFile{{path: "previous.JPG"}, {path: "next.JPG"}}, finished: make(map[int]importer.Phase), workers: []processingWorker{{number: 1, jobIndex: -1}}}
+	m.applyTransferEvent(importer.Event{Worker: 1, Index: 1, Source: "next.JPG", Phase: importer.PhaseCopying, Bytes: 512, Total: 1024})
+	m.applyTransferEvent(importer.Event{Worker: 1, Index: 0, Source: "previous.JPG", Phase: importer.PhaseComplete})
+	rows := m.workerRows(120, 8)
+	if !strings.Contains(rows, "next.JPG") || strings.Contains(rows, "previous.JPG") {
+		t.Fatal(rows)
+	}
+	if !strings.Contains(rows, "512 B / 1.0 KB") {
+		t.Fatal("single destination lost byte progress", rows)
+	}
+}
+
+func TestTUIProgressScrollsCompleteWorkerGroupsToEnd(t *testing.T) {
+	m := newImportModel().(importModel)
+	m.targetProcessing = make([]processingState, 2)
+	for target := range m.targetProcessing {
+		for worker := range 4 {
+			m.targetProcessing[target].workers = append(m.targetProcessing[target].workers, processingWorker{event: importer.Event{Source: fmt.Sprintf("file-%d.JPG", worker+1), Phase: importer.PhaseCopying}})
+		}
+	}
+	m.processing.workerOffset = 3
+	rows := m.workerRows(120, 5)
+	if !strings.Contains(rows, "#4") || !strings.Contains(rows, "file-4.JPG") || strings.Contains(rows, "↓") {
+		t.Fatal("last worker inaccessible", rows)
+	}
+	if len(strings.Split(rows, "\n")) > 5 {
+		t.Fatal("scroll overflow", rows)
+	}
+}
+
+func TestTUIOverallProgressCountsFinishedFilesLikeCLI(t *testing.T) {
+	m := newImportModel().(importModel)
+	m.processing = processingState{files: []scannedFile{{}, {}}, finished: make(map[int]importer.Phase), workers: []processingWorker{{jobIndex: -1}}}
+	m.applyTransferEvent(importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseVerifying, Bytes: 1024, Total: 1024})
+	if m.processingPercent() != 0 {
+		t.Fatal("bytes counted as a finished file")
+	}
+	m.applyTransferEvent(importer.Event{Worker: 1, Index: 0, Phase: importer.PhaseFailed})
+	if m.processingPercent() != 50 || len(m.processing.verified) != 0 {
+		t.Fatal("failed outcome progress differs from CLI")
 	}
 }

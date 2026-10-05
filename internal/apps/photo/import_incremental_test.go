@@ -85,8 +85,7 @@ func TestIncrementalResultSeparatesExistingFromPublishedBytes(t *testing.T) {
 func TestIncrementalAllExistingDoesNotOfferRenameTargets(t *testing.T) {
 	model := newImportModel().(importModel)
 	model.processing.results = []importer.FileResult{{Source: "card/old.JPG", Destination: "library/20261003/old.JPG", Phase: importer.PhaseAlreadyPresent, Existing: true}}
-	_, cmd := model.runPostProcessing()
-	plan := postprocess.Plan(cmd().(postprocessPlannedMsg))
+	plan := awaitOrganizationPlan(t, model)
 	if len(plan.Files) != 0 {
 		t.Fatal("old file entered rename list")
 	}
@@ -198,8 +197,7 @@ func TestUnorganizedExistingFileKeepsItsDigestForPostProcessing(t *testing.T) {
 			if err := os.WriteFile(path, []byte("new photo"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			_, cmd := model.runPostProcessing()
-			plan := postprocess.Plan(cmd().(postprocessPlannedMsg))
+			plan := awaitOrganizationPlan(t, model)
 			if len(plan.Files) != 1 || plan.Files[0].Status != postprocess.Failed || !strings.Contains(plan.Files[0].Error, "verified content") {
 				t.Fatalf("verification evidence lost: %#v", plan.Files)
 			}
