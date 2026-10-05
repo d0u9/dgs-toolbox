@@ -8,6 +8,7 @@ import { condition } from "/condition.js";
 let state = { templates: [], items: [] };
 let keys = [];
 let countries = {}; // each country's every form: its alpha-3 code
+let countryForms = {}; // each country by its alpha-3 code: its form in each format
 let previewed = null; // each Item the rule takes to the nodes placing it ("", 2.1), as the server last planned it; null until it has
 // top is the rule's own numbering, and each node has its own the same way:
 // per order, its names in order (a name may hold a comma), the numbers set
@@ -25,7 +26,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o || {}));
 // country forms, and what to call on every change. Called again when the
 // state is reloaded.
 export function setup(options) {
-  ({ state = state, keys = keys, countries = countries } = options);
+  ({ state = state, keys = keys, countries = countries, countryForms = countryForms } = options);
   if (options.onChange) changed = options.onChange;
 }
 
@@ -802,7 +803,18 @@ function keyValue(item, inner) {
   return "";
 }
 
+// choiceValue is what one choice of a {key} writes for item. A country
+// key with a country format, {country:alpha2}, is written in it, as the
+// server writes it, so CN and 中国 make the same name; a value naming no
+// country is written as it is.
 function choiceValue(item, choice) {
+  const [, format] = choice.split(":");
+  const value = rawValue(item, choice);
+  const forms = format && countries[value] && countryForms[countries[value]];
+  return forms && forms[format] ? forms[format] : value;
+}
+
+function rawValue(item, choice) {
   const [name, format] = choice.split(":");
   if (name.includes(".")) {
     // original.level: the key of the revision the field original links to.
