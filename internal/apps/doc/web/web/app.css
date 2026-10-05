@@ -766,6 +766,7 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .holders-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
 .holders-value { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: var(--font-size-sm); font-weight: 600; }
 .holders-count { min-width: 20px; height: 18px; padding: 0 6px; border-radius: var(--radius-pill); background: var(--hairline); color: var(--graphite); font-size: var(--font-size-xs); font-weight: normal; line-height: 18px; text-align: center; }
+.holders-number { margin-left: auto; font-size: var(--font-size-xs); font-weight: normal; }
 .holders-items { list-style: none; margin: 0; padding: 0; border: 1px solid var(--hairline); border-radius: var(--radius-sm); }
 .holders-items li + li { border-top: 1px solid var(--hairline); }
 .holders-items a { display: flex; align-items: baseline; gap: 8px; padding: 5px 10px; color: inherit; text-decoration: none; font-size: var(--font-size-xs); }
