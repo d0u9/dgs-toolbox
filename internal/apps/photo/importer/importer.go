@@ -115,6 +115,8 @@ type Plan struct {
 	claimErrors map[int]error
 	// saveState writes the state file; tests count its calls.
 	saveState func(string, *State) error
+	// copyMany defaults to verifiedcopy.CopyMany; tests can delay one target.
+	copyMany func(context.Context, verifiedcopy.ManyRequest) (verifiedcopy.Result, []error)
 }
 
 // reservations hands out Keep both names that no other job holds and that
@@ -295,42 +297,46 @@ type outcome struct {
 // Run executes a bounded pool and serializes state-file updates. Events may be
 // nil. Replace is rejected until its rollback contract is explicitly settled.
 func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
-	workers := plan.Workers
-	if workers < 1 {
-		workers = 1
+	return runTargets(ctx, []Plan{plan}, []chan<- Event{events})[0]
+}
+
+// targetRun is one destination of a batch: its plan, state file and results.
+// Only the coordinator goroutine touches state, result and dirty.
+type targetRun struct {
+	plan   Plan
+	events chan<- Event
+	state  State
+	result Result
+	dirty  bool
+	// active is false when the target failed before any file was started.
+	active bool
+}
+
+// failAll ends a target before any file started: every job gets phase and err.
+func (t *targetRun) failAll(ctx context.Context, phase Phase, err error) *targetRun {
+	for i, job := range t.plan.Jobs {
+		t.result.Files[i] = FileResult{Index: i, Source: job.Source, Destination: job.Destination, Phase: phase, Error: err.Error()}
+		emit(ctx, t.events, Event{Index: i, Source: job.Source, Destination: job.Destination, Phase: phase, Err: err})
 	}
-	if workers > MaxWorkers {
-		workers = MaxWorkers
-	}
-	if workers > len(plan.Jobs) && len(plan.Jobs) > 0 {
-		workers = len(plan.Jobs)
-	}
-	result := Result{Files: make([]FileResult, len(plan.Jobs))}
+	return t
+}
+
+// setupTarget validates and pins a target, takes its inventory and resume
+// records, and writes its initial state. An inactive result is final.
+func setupTarget(ctx context.Context, plan Plan, events chan<- Event) *targetRun {
+	t := &targetRun{plan: plan, events: events, result: Result{Files: make([]FileResult, len(plan.Jobs))}}
 	if err := verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot); err != nil {
-		for i, job := range plan.Jobs {
-			result.Files[i] = FileResult{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Error: err.Error()}
-			emit(ctx, events, Event{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Err: err})
-		}
-		return result
+		return t.failAll(ctx, PhaseFailed, err)
 	}
-	state := State{Version: StateVersion, HashAlgorithm: "SHA-256", Operation: plan.Operation, Files: make([]FileResult, len(plan.Jobs))}
-	pendingIndices := make([]int, 0, len(plan.Jobs))
+	t.state = State{Version: StateVersion, HashAlgorithm: "SHA-256", Operation: plan.Operation, Files: make([]FileResult, len(plan.Jobs))}
 	if plan.saveState == nil {
 		plan.saveState = writeState
-	}
-	interval := plan.StateInterval
-	if interval <= 0 {
-		interval = DefaultStateInterval
 	}
 	// Overlapping roots make a Copy duplicate the card onto itself and a
 	// Move rename it in place, whatever the mode.
 	if plan.SourceRoot != "" && plan.DestinationRoot != "" {
 		if err := ValidateRoots(plan.SourceRoot, plan.DestinationRoot); err != nil {
-			for i, job := range plan.Jobs {
-				result.Files[i] = FileResult{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Error: err.Error()}
-				emit(ctx, events, Event{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Err: err})
-			}
-			return result
+			return t.failAll(ctx, PhaseFailed, err)
 		}
 	}
 	// Every caller's destination is pinned for the batch, not only the
@@ -340,11 +346,7 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 	if plan.DestinationRoot != "" && plan.expectedRoot == nil {
 		identity, err := pinRoot(plan.DestinationRoot)
 		if err != nil {
-			for i, job := range plan.Jobs {
-				result.Files[i] = FileResult{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Error: err.Error()}
-				emit(ctx, events, Event{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Err: err})
-			}
-			return result
+			return t.failAll(ctx, PhaseFailed, err)
 		}
 		plan.expectedRoot = identity
 	}
@@ -353,11 +355,8 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 		var err error
 		plan.index, err = newContentIndex(ctx, plan, prior, events)
 		if err != nil {
-			for i, job := range plan.Jobs {
-				result.Files[i] = FileResult{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseUndetermined, Error: err.Error()}
-				emit(ctx, events, Event{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseUndetermined, Err: err})
-			}
-			return result
+			t.plan = plan
+			return t.failAll(ctx, PhaseUndetermined, err)
 		}
 	}
 	plan.planned = make([]string, len(plan.Jobs))
@@ -371,15 +370,14 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 	for i, job := range plan.Jobs {
 		plan.planned[i] = job.Destination
 		pending := FileResult{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhasePending}
-		result.Files[i], state.Files[i] = pending, pending
-		pendingIndices = append(pendingIndices, i)
+		t.result.Files[i], t.state.Files[i] = pending, pending
 		if !plan.Incremental {
 			if record, ok := resumeRecord(prior, job); ok {
 				record.Index = i
 				plan.resume[i] = record
 				// The record stays the state's evidence until a worker
 				// confirms or refutes it, so an interrupted run loses nothing.
-				state.Files[i] = record
+				t.state.Files[i] = record
 				continue
 			}
 		}
@@ -391,55 +389,104 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 		if plan.Jobs[i].Destination != plan.planned[i] {
 			pending.PlannedDestination = plan.planned[i]
 		}
-		result.Files[i], state.Files[i] = pending, pending
+		t.result.Files[i], t.state.Files[i] = pending, pending
 	}
 	// Records of earlier batches into this Destination stay, so importing
 	// another card in between does not cost the first one its resume.
-	state.Files = append(state.Files, carriedRecords(prior, plan.Jobs)...)
-	save := func() bool {
-		if plan.StatePath == "" {
-			return true
-		}
-		// A file that reached the destination under its final name has
-		// already satisfied the integrity contract. Failing to record that is
-		// a bookkeeping failure, so keep the transfer outcome intact and
-		// report the state error once for the batch.
-		err := verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot)
-		if err == nil {
-			err = plan.saveState(plan.StatePath, &state)
-		}
-		if err != nil {
-			if result.StateError == nil {
-				result.StateError = fmt.Errorf("write state: %w", err)
-			}
-			return false
-		}
+	t.state.Files = append(t.state.Files, carriedRecords(prior, plan.Jobs)...)
+	t.plan, t.active = plan, true
+	t.dirty = !t.save()
+	return t
+}
+
+func (t *targetRun) save() bool {
+	if t.plan.StatePath == "" {
 		return true
 	}
-	dirty := !save()
+	// A file that reached the destination under its final name has already
+	// satisfied the integrity contract. Failing to record that is a
+	// bookkeeping failure, so keep the transfer outcome intact and report the
+	// state error once for the batch.
+	err := verifiedcopy.CheckRoot(t.plan.DestinationRoot, t.plan.expectedRoot)
+	if err == nil {
+		err = t.plan.saveState(t.plan.StatePath, &t.state)
+	}
+	if err != nil {
+		if t.result.StateError == nil {
+			t.result.StateError = fmt.Errorf("write state: %w", err)
+		}
+		return false
+	}
+	return true
+}
+
+// runTargets imports the same jobs into every plan's destination at once.
+// Each file is one unit of work for the whole batch: a worker prepares it in
+// every target, then copies it into all that need it from one source read.
+// All plans must describe the same jobs; Move is honoured only with one plan,
+// because a source can be deleted only after every target holds its copy.
+func runTargets(ctx context.Context, plans []Plan, events []chan<- Event) []Result {
+	runs := make([]*targetRun, len(plans))
+	active := false
+	for i, plan := range plans {
+		runs[i] = setupTarget(ctx, plan, events[i])
+		active = active || runs[i].active
+	}
+	results := func() []Result {
+		out := make([]Result, len(runs))
+		for i, run := range runs {
+			out[i] = run.result
+		}
+		return out
+	}
+	jobs := len(plans[0].Jobs)
+	if !active {
+		return results()
+	}
+	workers := min(max(plans[0].Workers, 1), MaxWorkers)
+	if workers > jobs && jobs > 0 {
+		workers = jobs
+	}
+	interval := plans[0].StateInterval
+	if interval <= 0 {
+		interval = DefaultStateInterval
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	jobs := make(chan int)
-	outcomes := make(chan outcome)
+	queue := make(chan int)
+	type targetOutcome struct {
+		target int
+		outcome
+	}
+	outcomes := make(chan targetOutcome)
 	var group sync.WaitGroup
 	for worker := range workers {
+		// Workers get only each target's plan and events, taken before they
+		// start: state, results and dirty belong to the coordinator.
+		workerRuns := make([]*targetRun, len(runs))
+		for i, run := range runs {
+			if run.active {
+				plan := run.plan
+				plan.worker = worker + 1
+				workerRuns[i] = &targetRun{plan: plan, events: run.events, active: true}
+			}
+		}
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			workerPlan := plan
-			workerPlan.worker = worker + 1
-			for index := range jobs {
-				fileResult, finalEvent := transfer(ctx, index, workerPlan, events)
-				outcomes <- outcome{result: fileResult, event: finalEvent}
+			for index := range queue {
+				transferAll(ctx, index, workerRuns, func(target int, finished outcome) {
+					outcomes <- targetOutcome{target: target, outcome: finished}
+				})
 			}
 		}()
 	}
 	go func() {
-		defer close(jobs)
-		for _, index := range pendingIndices {
+		defer close(queue)
+		for index := range jobs {
 			select {
-			case jobs <- index:
+			case queue <- index:
 			case <-ctx.Done():
 				return
 			}
@@ -452,40 +499,48 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 	// ticks; failed writes stay dirty so a later tick can retry them.
 	for outcomes != nil {
 		select {
-		case outcome, ok := <-outcomes:
+		case finished, ok := <-outcomes:
 			if !ok {
 				outcomes = nil
 				continue
 			}
-			result.Files[outcome.result.Index] = outcome.result
-			if _, resuming := plan.resume[outcome.result.Index]; !resuming || ctx.Err() == nil || outcome.result.Phase != PhaseFailed {
+			run := runs[finished.target]
+			run.result.Files[finished.result.Index] = finished.result
+			if _, resuming := run.plan.resume[finished.result.Index]; !resuming || ctx.Err() == nil || finished.result.Phase != PhaseFailed {
 				// An interrupted resume refutes nothing: keep its earlier record.
-				state.Files[outcome.result.Index] = outcome.result
-				dirty = true
+				run.state.Files[finished.result.Index] = finished.result
+				run.dirty = true
 			}
-			emit(ctx, events, outcome.event)
+			emit(ctx, run.events, finished.event)
 		case <-ticker.C:
-			if dirty {
-				dirty = !save()
-			}
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		for i := range result.Files {
-			if result.Files[i].Phase == PhasePending {
-				phase := PhaseFailed
-				if plan.Incremental {
-					phase = PhaseUndetermined
-				}
-				result.Files[i].Phase, result.Files[i].Error = phase, err.Error()
-				if _, resuming := plan.resume[i]; !resuming {
-					state.Files[i] = result.Files[i]
+			for _, run := range runs {
+				if run.active && run.dirty {
+					run.dirty = !run.save()
 				}
 			}
 		}
 	}
-	save()
-	return result
+	for _, run := range runs {
+		if !run.active {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			for i := range run.result.Files {
+				if run.result.Files[i].Phase == PhasePending {
+					phase := PhaseFailed
+					if run.plan.Incremental {
+						phase = PhaseUndetermined
+					}
+					run.result.Files[i].Phase, run.result.Files[i].Error = phase, err.Error()
+					if _, resuming := run.plan.resume[i]; !resuming {
+						run.state.Files[i] = run.result.Files[i]
+					}
+				}
+			}
+		}
+		run.save()
+	}
+	return results()
 }
 
 // pinRoot returns the identity of root, creating it first when it does not
@@ -645,26 +700,24 @@ func resumeRecord(state State, job Job) (FileResult, bool) {
 // not authorise anything. The record's two digests must agree, its
 // destination must lie under the pinned DestinationRoot without a link on the
 // way, and that destination must be a different file from the source.
-func verifyResume(ctx context.Context, file FileResult, plan Plan, base Event, events chan<- Event) (FileResult, Event, bool) {
+func verifyResume(ctx context.Context, file FileResult, plan Plan, sources *sourceChecks, base Event, events chan<- Event) (FileResult, Event, bool) {
 	if file.SourceHash == "" || file.SourceHash != file.DestinationHash {
 		return FileResult{}, base, false
 	}
 	if verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot) != nil {
 		return FileResult{}, base, false
 	}
-	check := func(phase Phase, root, path string) (verifiedcopy.Result, error) {
+	check := func(phase Phase, root, path string, sources *sourceChecks) (verifiedcopy.Result, error) {
 		base.Total = file.Size
 		var limit throttle
-		limit.allow(phase, 0, file.Size)
-		emit(ctx, events, withProgress(base, phase, 0))
-		return verifiedcopy.Check(ctx, root, path, plan.Controller.wait, func(done int64) {
+		return sources.check(ctx, root, path, plan.Controller.wait, func(done int64) {
 			if limit.allow(phase, done, file.Size) {
 				emit(ctx, events, withProgress(base, phase, done))
 			}
 		})
 	}
 	base.Destination = file.Destination
-	destination, err := check(PhaseCheckingDestination, plan.DestinationRoot, file.Destination)
+	destination, err := check(PhaseCheckingDestination, plan.DestinationRoot, file.Destination, nil)
 	if err != nil || destination.Size != file.Size || destination.Digest != file.DestinationHash {
 		return FileResult{}, base, false
 	}
@@ -678,7 +731,7 @@ func verifyResume(ctx context.Context, file FileResult, plan Plan, base Event, e
 	if statErr != nil || !before.Mode().IsRegular() {
 		return FileResult{}, base, false
 	}
-	source, err := check(PhaseCheckingSource, "", file.Source)
+	source, err := check(PhaseCheckingSource, "", file.Source, sources)
 	if err != nil || source.Size != file.Size || source.Digest != file.SourceHash || os.SameFile(source.Source, destination.Source) {
 		return FileResult{}, base, false
 	}
@@ -720,24 +773,168 @@ func deleteSource(path string, read os.FileInfo) error {
 	return nil
 }
 
-// transfer copies one file into the destination tree.
+// sourceChecks holds the digest of one file's source once a target has read
+// it, so the other targets of the batch compare against it rather than read
+// the card again. It belongs to one worker and one file.
+type sourceChecks struct {
+	root   string
+	done   bool
+	result verifiedcopy.Result
+}
+
+// check returns the digest of path under root, reading it only the first time.
+// Reuse requires unchanged file metadata. A failed read is not kept: the
+// next target tries again. Progress is reported only for an actual read,
+// starting from zero.
+func (s *sourceChecks) check(ctx context.Context, root, path string, wait func(context.Context) error, progress func(int64)) (verifiedcopy.Result, error) {
+	if s != nil && s.done && s.root == root {
+		current, err := verifiedcopy.FileInfo(root, path)
+		if err != nil {
+			return verifiedcopy.Result{}, err
+		}
+		if !verifiedcopy.SameVersion(current, s.result.Source) {
+			return verifiedcopy.Result{}, errors.New("source changed since comparison")
+		}
+		return s.result, nil
+	}
+	if progress != nil {
+		progress(0)
+	}
+	result, err := verifiedcopy.Check(ctx, root, path, wait, progress)
+	if err == nil && s != nil {
+		s.root, s.done, s.result = root, true, result
+	}
+	return result, err
+}
+
+// prepared is a target's file after every check that needs no copy. done
+// means result and event are final; otherwise the file still needs copying to
+// destination.
+type prepared struct {
+	result      FileResult
+	event       Event
+	done        bool
+	destination string
+	info        os.FileInfo
+	expected    verifiedcopy.Result
+}
+
+// transferAll imports one file into every active target and hands each
+// target's outcome to completed as soon as it is final. Calls of completed
+// never overlap.
 //
 // The integrity contract — copy, read the destination back independently, and
 // publish under the final name only when the two digests agree — is
 // internal/verifiedcopy, which dgs box uses for the same guarantee. What is
 // left here is what belongs to Photo Import and to nothing else: the conflict
 // policy, Move, the pause controller and the progress events the TUI draws.
-func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (FileResult, Event) {
+func transferAll(ctx context.Context, index int, runs []*targetRun, completed func(int, outcome)) {
+	record := func(target int, result FileResult, event Event) {
+		completed(target, outcome{result: result, event: event})
+	}
+	steps := make([]prepared, len(runs))
+	sources := &sourceChecks{}
+	var copying []int
+	for i, run := range runs {
+		if run == nil {
+			continue
+		}
+		steps[i] = prepare(ctx, index, run.plan, sources, run.events)
+		if steps[i].done {
+			record(i, steps[i].result, steps[i].event)
+			continue
+		}
+		copying = append(copying, i)
+	}
+	if len(copying) == 0 {
+		return
+	}
+	// One read serves every target. It is bound to the strictest observation
+	// a target made of the source — its digest when one was read — taking the
+	// identity and the digest from the same observation.
+	request := verifiedcopy.ManyRequest{
+		Source: runs[copying[0]].plan.Jobs[index].Source,
+		// A photograph's modification time is part of what was imported, so it
+		// is applied before the file is published and never after.
+		PreserveModTime: true,
+		// A photo library is read by more than its owner: a NAS media server,
+		// another account. The 0600 the unpublished copy has would hide it.
+		Mode: verifiedcopy.DefaultPhotoMode,
+		// Pausing is the same wait the copy already had, now asked for between
+		// blocks of both passes rather than written into each loop. A copy
+		// shared by several targets waits for every one of their controllers.
+		Wait: func(ctx context.Context) error {
+			for _, i := range copying {
+				if err := runs[i].plan.Controller.wait(ctx); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	limits := make([]throttle, len(copying))
+	for _, i := range copying {
+		step := steps[i]
+		if step.expected.Digest != "" && request.ExpectedDigest == "" {
+			request.ExpectedSource, request.ExpectedDigest = step.expected.Source, step.expected.Digest
+		} else if step.expected.Source != nil && request.ExpectedSource == nil {
+			request.ExpectedSource = step.expected.Source
+		}
+		request.Targets = append(request.Targets, verifiedcopy.Target{
+			Destination:  step.destination,
+			Root:         runs[i].plan.DestinationRoot,
+			ExpectedRoot: runs[i].plan.expectedRoot,
+		})
+	}
+	request.Progress = func(n int, phase verifiedcopy.Phase, done, total int64) {
+		// Complete owns the terminal event. Published progress may arrive later
+		// when another target resumes, and must not reopen a completed UI row.
+		if phase == verifiedcopy.PhasePublished {
+			return
+		}
+		if !limits[n].allow(Phase(phase), done, total) {
+			return
+		}
+		i := copying[n]
+		event := steps[i].event
+		event.Total = total
+		switch phase {
+		case verifiedcopy.PhaseCopying:
+			emit(ctx, runs[i].events, withProgress(event, PhaseCopying, done))
+		case verifiedcopy.PhaseVerifying:
+			emit(ctx, runs[i].events, withProgress(event, PhaseVerifying, done))
+		case verifiedcopy.PhasePublishing:
+			emit(ctx, runs[i].events, withProgress(event, PhasePublishing, done))
+		}
+	}
+	copyMany := runs[copying[0]].plan.copyMany
+	if copyMany == nil {
+		copyMany = verifiedcopy.CopyMany
+	}
+	request.Complete = func(n int, copied verifiedcopy.Result, err error) {
+		i := copying[n]
+		result, event := finishTransfer(ctx, runs[i].plan, steps[i], copied, err, runs[i].events)
+		record(i, result, event)
+	}
+	copyMany(ctx, request)
+}
+
+// prepare runs every per-target step of a file before its copy: conflict
+// policy, resume, the incremental comparison and Keep both naming.
+func prepare(ctx context.Context, index int, plan Plan, sources *sourceChecks, events chan<- Event) prepared {
 	job := plan.Jobs[index]
 	base := Event{Worker: plan.worker, Index: index, Source: job.Source, Destination: job.Destination}
 	result := FileResult{Index: index, Source: job.Source, Destination: job.Destination}
 	if index < len(plan.planned) && plan.planned[index] != job.Destination {
 		result.PlannedDestination = plan.planned[index]
 	}
-	fail := func(err error) (FileResult, Event) {
+	final := func(result FileResult, event Event) prepared {
+		return prepared{result: result, event: event, done: true}
+	}
+	fail := func(err error) prepared {
 		result.Phase, result.Error = PhaseFailed, err.Error()
 		base.Phase, base.Err = PhaseFailed, err
-		return result, base
+		return final(result, base)
 	}
 	if err := verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot); err != nil {
 		return fail(err)
@@ -749,9 +946,9 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 		return fail(err)
 	}
 	if record, ok := plan.resume[index]; ok {
-		if resumed, event, ok := verifyResume(ctx, record, plan, base, events); ok {
+		if resumed, event, ok := verifyResume(ctx, record, plan, sources, base, events); ok {
 			resumed.Index = index
-			return resumed, event
+			return final(resumed, event)
 		}
 		if err := ctx.Err(); err != nil {
 			return fail(err)
@@ -768,12 +965,12 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	result.Size, result.SourceModTime, base.Total = info.Size(), info.ModTime().UnixNano(), info.Size()
 	var expected verifiedcopy.Result
 	if plan.Incremental {
-		match, checked, warning, checkErr := plan.index.match(ctx, job, plan, base, events)
+		match, checked, warning, checkErr := plan.index.match(ctx, job, plan, sources, base, events)
 		expected, result.Warning = checked, warning
 		if checkErr != nil {
-			result, base = fail(checkErr)
-			result.Phase, base.Phase = PhaseUndetermined, PhaseUndetermined
-			return result, base
+			step := fail(checkErr)
+			step.result.Phase, step.event.Phase = PhaseUndetermined, PhaseUndetermined
+			return step
 		}
 		if expected.Source != nil && !verifiedcopy.SameVersion(info, expected.Source) {
 			return fail(errors.New("source changed before comparison"))
@@ -796,7 +993,7 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 					base.Phase, base.Err = PhaseSourceKept, err
 				}
 			}
-			return result, base
+			return final(result, base)
 		}
 	}
 	if _, err := os.Lstat(job.Destination); err == nil {
@@ -808,7 +1005,7 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 				// imported, which must not read as an ordinary skip.
 				result.Warning = ConflictNotImported
 			}
-			return result, base
+			return final(result, base)
 		}
 		if plan.Conflict == KeepBoth {
 			if result.PlannedDestination == "" {
@@ -828,42 +1025,16 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fail(fmt.Errorf("destination metadata: %w", err))
 	}
+	return prepared{result: result, event: base, destination: job.Destination, info: info, expected: expected}
+}
 
-	var limit throttle
-	copied, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{
-		Source:         job.Source,
-		Destination:    job.Destination,
-		ExpectedSource: expected.Source,
-		ExpectedDigest: expected.Digest,
-		// A photograph's modification time is part of what was imported, so it
-		// is applied before the file is published and never after.
-		PreserveModTime: true,
-		// A photo library is read by more than its owner: a NAS media server,
-		// another account. The 0600 the unpublished copy has would hide it.
-		Mode:         verifiedcopy.DefaultPhotoMode,
-		Root:         plan.DestinationRoot,
-		ExpectedRoot: plan.expectedRoot,
-		Progress: func(phase verifiedcopy.Phase, done, total int64) {
-			if !limit.allow(Phase(phase), done, total) {
-				return
-			}
-			event := base
-			event.Total = total
-			switch phase {
-			case verifiedcopy.PhaseCopying:
-				emit(ctx, events, withProgress(event, PhaseCopying, done))
-			case verifiedcopy.PhaseVerifying:
-				emit(ctx, events, withProgress(event, PhaseVerifying, done))
-			case verifiedcopy.PhasePublished:
-				emit(ctx, events, withProgress(event, PhasePublishing, done))
-			}
-		},
-		// Pausing is the same wait the copy already had, now asked for between
-		// blocks of both passes rather than written into each loop.
-		Wait: func(ctx context.Context) error { return plan.Controller.wait(ctx) },
-	})
+// finishTransfer records a target's copy and, for Move, deletes the source.
+func finishTransfer(ctx context.Context, plan Plan, step prepared, copied verifiedcopy.Result, err error, events chan<- Event) (FileResult, Event) {
+	result, base := step.result, step.event
 	if err != nil {
-		return fail(err)
+		result.Phase, result.Error = PhaseFailed, err.Error()
+		base.Phase, base.Err = PhaseFailed, err
+		return result, base
 	}
 	// The two passes agreed, or Copy would not have returned: that is what the
 	// one digest means, and both fields carry it so a state file written before
@@ -872,13 +1043,13 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 	result.Size, result.SourceModTime = copied.Size, copied.Source.ModTime().UnixNano()
 	base.SourceHash, base.DestinationHash = copied.Digest, copied.Digest
 
-	result.Phase, base.Phase, base.Bytes = PhaseComplete, PhaseComplete, info.Size()
+	result.Phase, base.Phase, base.Bytes = PhaseComplete, PhaseComplete, step.info.Size()
 	if plan.Operation == Move {
-		emit(ctx, events, withProgress(base, PhaseDeletingSource, info.Size()))
+		emit(ctx, events, withProgress(base, PhaseDeletingSource, step.info.Size()))
 		// The photo is imported whatever happens here. A source that cannot be
 		// deleted, or changed after it was read, is kept and reported, not
 		// turned into a failed import.
-		if err := deletePinnedSource(plan, job.Source, copied.Source); err != nil {
+		if err := deletePinnedSource(plan, step.result.Source, copied.Source); err != nil {
 			result.Phase, result.Error = PhaseSourceKept, err.Error()
 			base.Phase, base.Err = PhaseSourceKept, err
 		}

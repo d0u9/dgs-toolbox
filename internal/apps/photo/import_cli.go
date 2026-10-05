@@ -165,21 +165,21 @@ func importDirectoriesContext(ctx context.Context, out io.Writer, args []string,
 	defer display.clear()
 	out = display
 	unfinished := 0
-	current := -1
+	// Destinations run at once, so redirected logs name each up front and tag
+	// every file line with its destination number.
+	if !display.enabled {
+		for i, target := range targets {
+			fmt.Fprintf(out, "Destination %d/%d: %s\n", i+1, len(targets), target)
+		}
+	}
 	result, err := importer.RunMultiple(ctx, plans, operation, importer.MultipleHooks{
 		// Terminals update worker rows; redirected output keeps per-file logs.
 		Event: func(target int, event importer.Event) {
 			defer display.update(target, event)
-			if target != current {
-				current = target
-				if !display.enabled {
-					fmt.Fprintf(out, "Destination %d/%d: %s\n", target+1, len(targets), targets[target])
-				}
-			}
 			if display.enabled || !finalPhase(event.Phase) {
 				return
 			}
-			fmt.Fprintf(out, "  %s  %s", event.Phase, relative(targets[target], event.Destination))
+			fmt.Fprintf(out, "  %d  %s  %s", target+1, event.Phase, relative(targets[target], event.Destination))
 			if event.Err != nil {
 				fmt.Fprintf(out, "  %s", event.Err)
 			}

@@ -170,25 +170,25 @@ func TestSharedFilesystemsAreReported(t *testing.T) {
 	}
 }
 
-func TestCancelledRunStartsNoFurtherTarget(t *testing.T) {
+func TestCancelledRunStartsNoTarget(t *testing.T) {
 	plans := multiplePlans(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	result, err := RunMultiple(ctx, plans, Copy, MultipleHooks{Target: func(i int, _ Result) {
-		if i == 0 {
-			cancel()
-		}
-	}})
-	if err != nil || result.Started != 1 {
+	cancel()
+	result, err := RunMultiple(ctx, plans, Copy, MultipleHooks{})
+	if err != nil || result.Started != 0 {
 		t.Fatalf("started = %d, %v", result.Started, err)
 	}
-	for _, file := range result.Targets[1].Files {
-		if file.Phase != PhaseFailed || !strings.HasPrefix(file.Error, "not started") {
-			t.Fatal(file)
+	for _, target := range result.Targets {
+		for _, file := range target.Files {
+			if file.Phase != PhaseFailed || !strings.HasPrefix(file.Error, "not started") {
+				t.Fatal(file)
+			}
 		}
 	}
-	if entries, _ := os.ReadDir(plans[1].DestinationRoot); len(entries) != 0 {
-		t.Fatal("cancelled run wrote a later target", entries)
+	for _, plan := range plans {
+		if entries, _ := os.ReadDir(plan.DestinationRoot); len(entries) != 0 {
+			t.Fatal("cancelled run wrote a target", entries)
+		}
 	}
 	for _, file := range result.Files {
 		if file.Phase != PhaseFailed {

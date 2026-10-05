@@ -81,10 +81,18 @@ the workspace. `--incremental=false`, `--duplicates keep-both`, `--workers`
 (1–8) and repeated `--ext` override these for this run. An `--ext` value
 holding a comma or space, or matching no Source file, is refused: a misspelt
 filter must not read as a successful, empty import. No settings are saved.
-Replace remains unavailable. Targets run in the given order; workers within
-each target retain the bounded whole-file model. Interactive terminals show a
-fixed progress region: destination number and processed-file count above one
-row per worker, with aligned filename, phase and byte progress columns. Bars
+Replace remains unavailable. All targets run at once. Workers keep the bounded
+whole-file model: each takes one file, prepares it in every target (resume,
+incremental comparison, duplicate policy), then reads Source once and writes
+every block to each target that needs a copy, each into its own `.dgs-part`.
+A Source digest read for comparison is shared by all targets, and the copy is
+bound to it. Each target then reads its copy back independently and publishes
+only on a match. The slowest target sets the pace. A target that fails a file
+loses only its own partial copy; the others continue. Interactive terminals
+show a fixed progress region: processed-file count above, for each worker, one
+row per destination, with aligned filename (on the first row), destination
+number, phase and byte progress columns. A file counts as processed once every
+destination has finished it. Bars
 use wide muted sage-green dot patterns (dense for completed, sparse for remaining)
 that shorten with the terminal, without gradients or background colors.
 Text uses terminal defaults; `NO_COLOR` disables the green. Active worker events animate a braille
@@ -100,9 +108,10 @@ including failures; each worker's bar measures bytes in the current phase,
 so completed copying alone never means verified completion. Redraws are
 throttled, rows fit the terminal width and short terminals show how many
 worker rows are hidden. The region clears before logs or exit. Redirected
-output and dumb terminals retain plain per-file logs. After cancellation no
-further target starts; those
-are reported as not started. The first Ctrl+C or SIGTERM cancels cleanly; a
+output and dumb terminals retain plain per-file logs: every destination is
+named first, and each file line carries its destination number. Cancellation
+stops every target together; unfinished files fail in each, and a batch
+cancelled before it starts reports every target as not started. The first Ctrl+C or SIGTERM cancels cleanly; a
 second Ctrl+C ends the process even if a read is stuck on a hung mount. Successful copies are kept
 when another target fails. Report each target separately and return nonzero
 for conflict skips, failed/undetermined transfers, mismatched source content
@@ -386,7 +395,7 @@ For each file:
 7. Confirm the temporary name still denotes the written file, then rename it atomically to the final filename without ever replacing an existing file: `renamex_np(RENAME_EXCL)` on macOS, `renameat2(RENAME_NOREPLACE)` on Linux, a hard link where neither is available, and check-then-rename only on a filesystem that supports none of them. Sync the containing directory where supported before reporting success. The presence of the correct final extension means verification and metadata application succeeded at publication time.
 8. For Move, delete that individual Source file immediately after its verified destination has been published successfully, and only while it is still the file that was read: same file identity, size and modification time. A failure processing another file does not roll back already verified and moved files. A Source that cannot be deleted — a write-protected card — or that changed after it was read is kept, and the file is reported `source kept`: the photo is imported, counted as published and offered to Post-processing; only the move is unfinished.
 
-Normal successful operation therefore has the minimum strict-verification I/O profile: one sequential Source read, one Destination write, and one sequential Destination verification read. Hashing is performed during those required streams. Directory inventory must not reread complete file contents.
+Normal successful operation therefore has the minimum strict-verification I/O profile: one sequential Source read, one Destination write, and one sequential Destination verification read. With several destinations the one Source read feeds every Destination write; each Destination still has its own write and verification read. Hashing is performed during those required streams. Directory inventory must not reread complete file contents.
 
 Incremental comparison is additional I/O when same-size candidates exist:
 read Source and independently check candidates, including date subdirectories.
@@ -457,7 +466,7 @@ If a regular Source file disappears after Scan, fail that item clearly and conti
 
 ### Parallelism
 
-Implement parallelism as a bounded worker pool over files, not as multiple writers to one file. Default to one worker because SD cards and external disks often perform worse under competing reads and writes. Each worker owns at most one Source stream, one destination temporary file, and bounded copy buffers. The UI must expose active, verified, failed, and pending counts independently; completion means every published file passed verification.
+Implement parallelism as a bounded worker pool over files, not as multiple writers to one file. Default to one worker because SD cards and external disks often perform worse under competing reads and writes. Each worker owns at most one Source stream, one destination temporary file per target, and bounded copy buffers. The UI must expose active, verified, failed, and pending counts independently; completion means every published file passed verification.
 
 Concurrency increases throughput only when the source and destination devices benefit from it. It does not relax ordering, temporary-file, sync, or verification rules.
 
