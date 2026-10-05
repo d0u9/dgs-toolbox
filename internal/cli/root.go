@@ -161,6 +161,48 @@ func addActions(command *cobra.Command, part string, actions []tui.Action, confi
 				sub.Flags().StringP(flag.Name, flag.Shorthand, flag.Default, flag.Usage)
 			}
 		}
+		// An action may share a workspace's name: positional arguments run
+		// the action; no arguments or action flags retain the TUI entry point.
+		for _, workspace := range command.Commands() {
+			if workspace.Name() != action.ID {
+				continue
+			}
+			launch := workspace.RunE
+			execute, validate := sub.RunE, sub.Args
+			actionRequested := func(cmd *cobra.Command, args []string) bool {
+				if len(args) > 0 {
+					return true
+				}
+				for _, flag := range action.Flags {
+					if cmd.Flags().Changed(flag.Name) {
+						return true
+					}
+				}
+				return false
+			}
+			sub.Args = func(cmd *cobra.Command, args []string) error {
+				if actionRequested(cmd, args) {
+					return validate(cmd, args)
+				}
+				return nil
+			}
+			sub.RunE = func(cmd *cobra.Command, args []string) error {
+				if actionRequested(cmd, args) {
+					return execute(cmd, args)
+				}
+				return launch(cmd, args)
+			}
+			// AddFlagSet keeps the first of two flags with one name, which
+			// would leave the workspace reading a value nobody sets.
+			for _, flag := range action.Flags {
+				if workspace.Flags().Lookup(flag.Name) != nil {
+					panic(fmt.Sprintf("dgs %s %s: action and workspace both define --%s", part, action.ID, flag.Name))
+				}
+			}
+			sub.Flags().AddFlagSet(workspace.Flags())
+			command.RemoveCommand(workspace)
+			break
+		}
 		command.AddCommand(sub)
 	}
 }

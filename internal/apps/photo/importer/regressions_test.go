@@ -252,11 +252,19 @@ func TestKeepBothNamesAreSharedAcrossClaims(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "IMG_0001.JPG")
 	names := newReservations()
-	if first, second := names.claim(path), names.claim(path); first != path || second != filepath.Join(root, "IMG_0001-2.JPG") {
+	claim := func() string {
+		t.Helper()
+		name, err := names.claim(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return name
+	}
+	if first, second := claim(), claim(); first != path || second != filepath.Join(root, "IMG_0001-2.JPG") {
 		t.Fatalf("claims %s %s", first, second)
 	}
 	writeFile(t, filepath.Join(root, "IMG_0001-3.JPG"), "on disk")
-	if third := names.claim(path); third != filepath.Join(root, "IMG_0001-4.JPG") {
+	if third := claim(); third != filepath.Join(root, "IMG_0001-4.JPG") {
 		t.Fatalf("third claim %s", third)
 	}
 }

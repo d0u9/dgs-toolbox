@@ -80,6 +80,9 @@ type Request struct {
 	// inside the tree is refused instead of written through. Root itself may
 	// be a link: it is what the user chose.
 	Root string
+	// ExpectedRoot optionally pins an existing Root's identity. A pinned root
+	// is never created, and is rechecked before creating files and publishing.
+	ExpectedRoot os.FileInfo
 	// Progress, when set, is called as bytes move. It must not block: it runs
 	// on the copying goroutine.
 	Progress func(phase Phase, done, total int64)
@@ -125,6 +128,10 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 	// failure path below discards it rather than leaving an unverifiable
 	// remnant in the destination directory.
 	var partial string
+	// The partial is removed by path. When a pinned Root was replaced or
+	// detached meanwhile, that path no longer names it and it stays behind in
+	// the detached tree: unpublished and harmless, skipped by inventories,
+	// and cleared by the next copy of the same name in that directory.
 	fail := func(err error) (Result, error) {
 		if partial != "" {
 			_ = os.Remove(partial)
@@ -151,8 +158,11 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 		return fail(fmt.Errorf("destination metadata: %w", err))
 	}
 	directory := filepath.Dir(request.Destination)
-	if err := EnsureDirectory(request.Root, directory); err != nil {
+	if err := ensureDirectory(request.Root, directory, request.ExpectedRoot); err != nil {
 		return fail(fmt.Errorf("create destination directory: %w", err))
+	}
+	if err := CheckRoot(request.Root, request.ExpectedRoot); err != nil {
+		return fail(err)
 	}
 	if err := clearStale(directory, filepath.Base(request.Destination)); err != nil {
 		return fail(err)
@@ -170,6 +180,9 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 	// The temporary file goes in the destination's own directory, so publishing
 	// is a rename within one filesystem and cannot turn into a second copy.
 	// CreateTemp creates exclusively under a name nobody else holds.
+	if err := CheckRoot(request.Root, request.ExpectedRoot); err != nil {
+		return fail(err)
+	}
 	destination, err := os.CreateTemp(directory, "."+filepath.Base(request.Destination)+".*"+PartSuffix)
 	if err != nil {
 		return fail(fmt.Errorf("open destination temporary file: %w", err))
@@ -281,6 +294,9 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 	}
 	// Publication never replaces: a file that appeared at the final name while
 	// this one was being verified is somebody else's work.
+	if err := CheckRoot(request.Root, request.ExpectedRoot); err != nil {
+		return fail(err)
+	}
 	if err := Publish(temporary, request.Destination); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return fail(fmt.Errorf("%w: appeared during copy: %s", ErrDestinationExists, request.Destination))
@@ -386,6 +402,13 @@ func clearStale(directory, name string) error {
 // checked without following links and made one at a time, so a symbolic link
 // planted inside the tree is refused rather than written through.
 func EnsureDirectory(root, directory string) error {
+	return ensureDirectory(root, directory, nil)
+}
+
+func ensureDirectory(root, directory string, expected os.FileInfo) error {
+	if err := CheckRoot(root, expected); err != nil {
+		return err
+	}
 	if root == "" {
 		return os.MkdirAll(directory, 0o755)
 	}
@@ -396,14 +419,19 @@ func EnsureDirectory(root, directory string) error {
 	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 		return fmt.Errorf("%s is outside %s", directory, root)
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return err
+	if expected == nil {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return err
+		}
 	}
 	if relative == "." {
 		return nil
 	}
 	current := root
 	for _, part := range strings.Split(relative, string(filepath.Separator)) {
+		if err := CheckRoot(root, expected); err != nil {
+			return err
+		}
 		current = filepath.Join(current, part)
 		info, err := os.Lstat(current)
 		if errors.Is(err, os.ErrNotExist) {

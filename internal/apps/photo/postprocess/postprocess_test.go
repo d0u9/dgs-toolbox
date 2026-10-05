@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,30 @@ import (
 
 	"dgs-toolbox/internal/verifiedcopy"
 )
+
+type captureReadFailure struct{ err error }
+
+func (r captureReadFailure) Read([]byte) (int, error) { return 0, r.err }
+
+func TestCaptureDatePreservesReadErrorsWrappedByEXIFDecoder(t *testing.T) {
+	failure := errors.New("synthetic read failure")
+	input := io.MultiReader(bytes.NewReader([]byte("II*\x00")), captureReadFailure{failure})
+	_, err := captureDateReader(input)
+	if !errors.Is(err, failure) || errors.Is(err, errNoCaptureDate) {
+		t.Fatalf("I/O error classified as missing date: %v", err)
+	}
+}
+
+func TestUnavailableCaptureDateDiffersFromFileAccessFailure(t *testing.T) {
+	_, err := captureDateReader(bytes.NewReader([]byte("unsupported container")))
+	if !errors.Is(err, errNoCaptureDate) {
+		t.Fatalf("unsupported metadata was treated as I/O failure: %v", err)
+	}
+	_, err = captureDate(filepath.Join(t.TempDir(), "missing.JPG"))
+	if !errors.Is(err, os.ErrNotExist) || errors.Is(err, errNoCaptureDate) {
+		t.Fatalf("missing file was treated as missing metadata: %v", err)
+	}
+}
 
 func existingPhoto(t *testing.T, root, source, path string) ExistingFile {
 	t.Helper()
@@ -353,6 +379,34 @@ func TestCancelledOrganizeMovesNothing(t *testing.T) {
 		t.Fatal(result)
 	}
 	if _, err := os.Stat(jpg); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplyDoesNotFillAReplacedRoot(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "library")
+	source := writePhoto(t, root, "camera/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	plan := NewPlan(root, []File{{Source: source, Path: source}})
+	if plan.Files[0].Status != Moved {
+		t.Fatalf("plan = %#v", plan.Files[0])
+	}
+	// While the plan waits for confirmation the disk is unmounted, leaving an
+	// empty mount point at the same path.
+	if err := os.Rename(root, filepath.Join(parent, "unmounted")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := Apply(plan)
+	if result.Files[0].Status != Failed || result.Files[0].Final != source {
+		t.Fatalf("outcome = %#v", result.Files[0])
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 0 {
+		t.Fatal("organize wrote into the empty mount point", entries)
+	}
+	if _, err := os.Stat(filepath.Join(parent, "unmounted", "camera", "IMG_0001.JPG")); err != nil {
 		t.Fatal(err)
 	}
 }

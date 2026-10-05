@@ -93,20 +93,31 @@ func printPlan(out io.Writer, root string, outcomes []postprocess.Outcome) {
 }
 
 func printOutcomes(out io.Writer, root string, outcomes []postprocess.Outcome) {
-	moved, skipped, failed := 0, 0, 0
+	printOutcomesDetail(out, root, outcomes, true)
+}
+
+func printOutcomesDetail(out io.Writer, root string, outcomes []postprocess.Outcome, detailed bool) {
+	moved, skipped, undated, failed := 0, 0, 0, 0
 	for _, outcome := range outcomes {
 		switch {
+		case outcome.Status == postprocess.Failed && outcome.NoDate:
+			undated++
+			if detailed {
+				fmt.Fprintf(out, "– %s · left in place: %s\n", relative(root, outcome.Original), outcome.Error)
+			}
 		case outcome.Status == postprocess.Failed:
 			failed++
 			fmt.Fprintf(out, "! %s · %s\n", relative(root, outcome.Original), outcome.Error)
 		case outcome.Status == postprocess.Moved && !alreadyPlaced(outcome):
 			moved++
-			fmt.Fprintf(out, "✓ %s → %s/\n", relative(root, outcome.Original), outcome.Date)
+			if detailed {
+				fmt.Fprintf(out, "✓ %s → %s/\n", relative(root, outcome.Original), outcome.Date)
+			}
 		default:
 			skipped++
 		}
 	}
-	fmt.Fprintf(out, "Organized %d   Skipped %d   Failed %d\n", moved, skipped, failed)
+	fmt.Fprintf(out, "Organized %d   Skipped %d   No capture date %d   Failed %d\n", moved, skipped, undated, failed)
 }
 
 // alreadyPlaced reports a photo that is already in its date folder, which a

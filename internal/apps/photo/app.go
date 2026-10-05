@@ -41,6 +41,22 @@ func New() tui.App {
 		},
 		Actions: []tui.Action{
 			{
+				ID: "import", Help: importHelp, Usage: "[<source>]", Args: 1,
+				Description: "Import originals into independently verified destinations.",
+				Flags: []tui.ActionFlag{
+					{Name: "dest", Repeatable: true, Usage: "destination directory; repeat for each copy"},
+					{Name: "move", Bool: true, Usage: "delete each source only after every destination verifies it"},
+					{Name: "incremental", Bool: true, Default: "true", Usage: "find existing copies by size and SHA-256 in each destination"},
+					{Name: "duplicates", Default: "skip", Usage: "name conflict policy: skip or keep-both"},
+					{Name: "workers", Default: "1", Usage: "whole-file workers per destination (1–8)"},
+					{Name: "ext", Repeatable: true, Usage: "include this extension (e.g. JPG); repeat to select several; default all regular files"},
+					{Name: "organize", Bool: true, Usage: "organize imported JPG/RAW into YYYYMMDD folders"},
+					{Name: "dry-run", Shorthand: "n", Bool: true, Usage: "preview selected files and destination inventories without writing or deleting"},
+					{Name: "delete-state", Bool: true, Usage: "delete destination state after full success; retain unfinished batches"},
+				},
+				RunWithConfig: importDirectories,
+			},
+			{
 				ID:          "organize",
 				Help:        actionHelp["organize"],
 				Usage:       "<folder>",

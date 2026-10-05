@@ -167,3 +167,44 @@ func TestOrganizeTreeSkipsRecycleBins(t *testing.T) {
 		t.Fatalf("files = %v, %v", files, err)
 	}
 }
+
+func TestSummaryWarnsWhenDestinationWillBeCreated(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, filepath.Join(root, "card"), "DCIM/IMG_0001.JPG")
+	model := newImportModel().(importModel)
+	model.paths = [pathFieldCount]string{filepath.Join(root, "card"), filepath.Join(root, "nas", "photos")}
+	model.scan = scanDirectories(model.paths)
+	model.configureExtensions()
+	if summary := model.importSummaryView(200); !strings.Contains(summary, "will be created") {
+		t.Fatal(summary)
+	}
+	if err := os.MkdirAll(model.paths[destinationField], 0o755); err != nil {
+		t.Fatal(err)
+	}
+	model.scan = scanDirectories(model.paths)
+	if summary := model.importSummaryView(200); strings.Contains(summary, "will be created") {
+		t.Fatal(summary)
+	}
+}
+
+func TestEarlierSourceKeptMovesKeepStateByDefault(t *testing.T) {
+	destination := t.TempDir()
+	model := newImportModel().(importModel)
+	model.paths[destinationField] = destination
+	// A card imported before this one could not have its source deleted; the
+	// state file still carries that record for a later run to finish.
+	state := `{"version": 2, "hash_algorithm": "SHA-256", "files": [
+		{"index": 0, "source": "/card-b/IMG_0002.JPG", "destination": "` + filepath.ToSlash(filepath.Join(destination, "IMG_0002.JPG")) + `", "phase": "complete"},
+		{"index": -1, "source": "/card-a/IMG_0001.JPG", "destination": "` + filepath.ToSlash(filepath.Join(destination, "IMG_0001.JPG")) + `", "phase": "source-kept", "destination_hash": "00"}]}`
+	if err := os.WriteFile(filepath.Join(destination, model.stateFilename), []byte(state), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	model.processing.files = []scannedFile{{path: "IMG_0002.JPG"}}
+	model.applyTransferResult(importer.Result{Files: []importer.FileResult{{Phase: importer.PhaseComplete}}})
+	if model.controls.Checked(deleteStateID) {
+		t.Fatal("deleting state by default would forget an earlier unfinished Move")
+	}
+	if !strings.Contains(model.publishedLine(), "Earlier batches source kept 1") {
+		t.Fatal(model.publishedLine())
+	}
+}

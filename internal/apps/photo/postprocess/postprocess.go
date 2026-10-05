@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -32,6 +33,11 @@ type Outcome struct {
 	DateSource string
 	Status     Status
 	Error      string
+	// NoDate marks unavailable capture metadata, excluding file I/O errors: a
+	// RAW container the EXIF reader does not support (CR3, RAF, ORF) without a
+	// JPG, or a JPG without EXIF. The file stays where it is, unharmed; a
+	// caller may treat it as not organizable rather than as a fault.
+	NoDate bool
 	// group is the shot this file belongs to: its source folder and filename
 	// stem. A RAW and its JPG move together or not at all.
 	group string
@@ -73,6 +79,10 @@ type Plan struct {
 	Files    []Outcome
 	existing []ExistingFile
 	verified map[string]string
+	// rootInfo is Root's identity when the plan was made. The user may leave
+	// the plan at its confirmation while a disk is unmounted; Apply then finds
+	// another directory, or an empty mount point, and must not fill it.
+	rootInfo os.FileInfo
 }
 
 // ValidateLayout checks a date folder layout built from YYYY, MM and DD, with
@@ -124,6 +134,9 @@ func NewLayoutPlan(root string, files []File, layout string) Plan {
 
 func newLayoutPlan(ctx context.Context, root string, files []File, layout string, existing []ExistingFile) Plan {
 	plan := Plan{Root: root, Files: make([]Outcome, len(files)), verified: make(map[string]string)}
+	if info, err := os.Stat(root); err == nil && info.IsDir() {
+		plan.rootInfo = info
+	}
 	contextErrors := make(map[string]string)
 	contextFolders := make(map[string]string)
 	contextVersions := make(map[string]os.FileInfo)
@@ -230,6 +243,7 @@ func newLayoutPlan(ctx context.Context, root string, files []File, layout string
 		}
 		if err != nil {
 			outcome.Status, outcome.Error = Failed, fmt.Sprintf("read %s: %v", source, err)
+			outcome.NoDate = errors.Is(err, errNoCaptureDate)
 			plan.Files[index] = outcome
 			continue
 		}
@@ -404,7 +418,15 @@ func ApplyContext(ctx context.Context, plan Plan) Result {
 			fail(err.Error())
 			continue
 		}
+		if err := verifiedcopy.CheckRoot(plan.Root, plan.rootInfo); err != nil {
+			fail(err.Error())
+			continue
+		}
 		if err := ensureDateDirectory(plan.Root, outcome.Date); err != nil {
+			fail(err.Error())
+			continue
+		}
+		if err := verifiedcopy.CheckRoot(plan.Root, plan.rootInfo); err != nil {
 			fail(err.Error())
 			continue
 		}
@@ -483,11 +505,41 @@ func captureDate(path string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	defer file.Close()
-	metadata, err := exif.Decode(file)
-	if err != nil && metadata == nil {
-		return time.Time{}, err
+	return captureDateReader(file)
+}
+
+var errNoCaptureDate = errors.New("no readable capture date")
+
+// The EXIF decoder formats reader errors without wrapping them. Keep the
+// underlying non-EOF error so a disconnected mount is not treated as missing
+// metadata or an unsupported container.
+type captureReader struct {
+	io.Reader
+	err error
+}
+
+func (r *captureReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) {
+		r.err = err
 	}
-	return metadata.DateTime()
+	return n, err
+}
+
+func captureDateReader(input io.Reader) (time.Time, error) {
+	reader := &captureReader{Reader: input}
+	metadata, err := exif.Decode(reader)
+	if reader.err != nil {
+		return time.Time{}, reader.err
+	}
+	if err != nil && metadata == nil {
+		return time.Time{}, fmt.Errorf("%w: %v", errNoCaptureDate, err)
+	}
+	date, err := metadata.DateTime()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: %v", errNoCaptureDate, err)
+	}
+	return date, nil
 }
 
 func isJPEG(path string) bool {

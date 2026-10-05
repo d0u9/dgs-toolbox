@@ -75,7 +75,9 @@ data in this repository, even temporarily or in an untracked or ignored file.**
   and hints, never nested programs. Switching commands creates a fresh model.
 - Leaves open their TUI; incomplete commands open scoped pickers. Registered
   CLI actions take arguments, write stdout and return without a TUI, and are
-  excluded from pickers. Esc at a leaf root returns to the picker; there it exits.
+  excluded from pickers. An action may share a leaf's name: positional
+  arguments or action flags run the action; otherwise the leaf opens. The two
+  must not define a flag of the same name. Esc at a leaf root returns to the picker; there it exits.
 - Top and status bars are exactly one row each; shorten or omit on narrow
   terminals, never wrap. Top: path/context left, local time right. Status:
   state left, summary center, hints right. Workspace belongs to the active model.

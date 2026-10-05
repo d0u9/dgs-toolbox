@@ -94,7 +94,11 @@ type Plan struct {
 	// DestinationRoot, when set, is the tree every Destination lies under.
 	// Directories below it are never followed through a symbolic link.
 	DestinationRoot string
-	Controller      *Controller
+	// expectedRoot pins roots selected by multi-target preflight. A vanished
+	// or replaced mount must not be recreated by transfer or state writes.
+	expectedRoot os.FileInfo
+	worker       int
+	Controller   *Controller
 	// StateInterval overrides DefaultStateInterval when positive.
 	StateInterval time.Duration
 	// planned holds each job's Destination before Keep both renamed it, so
@@ -107,6 +111,8 @@ type Plan struct {
 	// names holds every destination name Keep both has handed out, shared by
 	// the workers so two of them never choose the same new name.
 	names *reservations
+	// claimErrors holds jobs for which Keep both could not choose a name.
+	claimErrors map[int]error
 	// saveState writes the state file; tests count its calls.
 	saveState func(string, *State) error
 }
@@ -122,28 +128,48 @@ func newReservations() *reservations {
 	return &reservations{names: make(map[string]struct{})}
 }
 
+// MaxKeepBothNames bounds the "<stem>-N<ext>" names Keep both tries for one
+// file, so a directory that answers every name as taken ends in an error.
+const MaxKeepBothNames = 10000
+
 // claim reserves path itself when it is free, or else the first free
-// "<stem>-N<ext>" beside it.
-func (r *reservations) claim(path string) string {
+// "<stem>-N<ext>" beside it. A name whose metadata cannot be read — a path
+// component that is a file, a directory without permission, a name too long —
+// is neither free nor taken, so it ends the search with an error instead of
+// counting as taken: otherwise every candidate would, and claim never returns.
+func (r *reservations) claim(path string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	free := func(candidate string) bool {
-		_, taken := r.names[candidate]
-		return !taken && !pathExists(candidate)
-	}
-	if free(path) {
-		r.names[path] = struct{}{}
-		return path
+	free := func(candidate string) (bool, error) {
+		if _, taken := r.names[candidate]; taken {
+			return false, nil
+		}
+		_, err := os.Lstat(candidate)
+		if err == nil {
+			return false, nil
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, fmt.Errorf("keep both name: %w", err)
 	}
 	ext := filepath.Ext(path)
 	stem := filepath.Base(path)[:len(filepath.Base(path))-len(ext)]
-	for index := 2; ; index++ {
-		candidate := filepath.Join(filepath.Dir(path), fmt.Sprintf("%s-%d%s", stem, index, ext))
-		if free(candidate) {
+	for index := 1; index <= MaxKeepBothNames; index++ {
+		candidate := path
+		if index > 1 {
+			candidate = filepath.Join(filepath.Dir(path), fmt.Sprintf("%s-%d%s", stem, index, ext))
+		}
+		ok, err := free(candidate)
+		if err != nil {
+			return "", err
+		}
+		if ok {
 			r.names[candidate] = struct{}{}
-			return candidate
+			return candidate, nil
 		}
 	}
+	return "", fmt.Errorf("keep both: no free name for %s after %d tries", path, MaxKeepBothNames)
 }
 
 // throttle limits progress events of one transfer step to ProgressInterval.
@@ -213,6 +239,8 @@ func (c *Controller) wait(ctx context.Context) error {
 }
 
 type Event struct {
+	// Worker is the one-based whole-file worker; zero denotes batch events.
+	Worker          int
 	Index           int
 	Phase           Phase
 	Source          string
@@ -278,6 +306,13 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 		workers = len(plan.Jobs)
 	}
 	result := Result{Files: make([]FileResult, len(plan.Jobs))}
+	if err := verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot); err != nil {
+		for i, job := range plan.Jobs {
+			result.Files[i] = FileResult{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Error: err.Error()}
+			emit(ctx, events, Event{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Err: err})
+		}
+		return result
+	}
 	state := State{Version: StateVersion, HashAlgorithm: "SHA-256", Operation: plan.Operation, Files: make([]FileResult, len(plan.Jobs))}
 	pendingIndices := make([]int, 0, len(plan.Jobs))
 	if plan.saveState == nil {
@@ -297,6 +332,21 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 			}
 			return result
 		}
+	}
+	// Every caller's destination is pinned for the batch, not only the
+	// command line's: a root that vanishes mid-run — a NAS unmounted under
+	// the workspace — must not be recreated on the local disk. A root that
+	// does not exist yet is created once, here, and pinned from then on.
+	if plan.DestinationRoot != "" && plan.expectedRoot == nil {
+		identity, err := pinRoot(plan.DestinationRoot)
+		if err != nil {
+			for i, job := range plan.Jobs {
+				result.Files[i] = FileResult{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Error: err.Error()}
+				emit(ctx, events, Event{Index: i, Source: job.Source, Destination: job.Destination, Phase: PhaseFailed, Err: err})
+			}
+			return result
+		}
+		plan.expectedRoot = identity
 	}
 	prior := loadState(plan.StatePath)
 	if plan.Incremental {
@@ -354,7 +404,11 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 		// already satisfied the integrity contract. Failing to record that is
 		// a bookkeeping failure, so keep the transfer outcome intact and
 		// report the state error once for the batch.
-		if err := plan.saveState(plan.StatePath, &state); err != nil {
+		err := verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot)
+		if err == nil {
+			err = plan.saveState(plan.StatePath, &state)
+		}
+		if err != nil {
 			if result.StateError == nil {
 				result.StateError = fmt.Errorf("write state: %w", err)
 			}
@@ -369,12 +423,14 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 	jobs := make(chan int)
 	outcomes := make(chan outcome)
 	var group sync.WaitGroup
-	for range workers {
+	for worker := range workers {
 		group.Add(1)
 		go func() {
 			defer group.Done()
+			workerPlan := plan
+			workerPlan.worker = worker + 1
 			for index := range jobs {
-				fileResult, finalEvent := transfer(ctx, index, plan, events)
+				fileResult, finalEvent := transfer(ctx, index, workerPlan, events)
 				outcomes <- outcome{result: fileResult, event: finalEvent}
 			}
 		}()
@@ -432,6 +488,38 @@ func Run(ctx context.Context, plan Plan, events chan<- Event) Result {
 	return result
 }
 
+// pinRoot returns the identity of root, creating it first when it does not
+// exist. A root that exists but is not a directory is refused.
+func pinRoot(root string) (os.FileInfo, error) {
+	info, err := os.Stat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return nil, fmt.Errorf("create destination root: %w", err)
+		}
+		info, err = os.Stat(root)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("destination root: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("destination root is not a directory: %s", root)
+	}
+	return info, nil
+}
+
+// EarlierSourceKept counts the source-kept Moves of earlier batches that a
+// state file carries: imported, with only the deletion unfinished. Without
+// Incremental, those records are what lets a later run finish them.
+func EarlierSourceKept(state State) int {
+	count := 0
+	for _, file := range state.Files {
+		if file.Index < 0 && file.Phase == PhaseSourceKept {
+			count++
+		}
+	}
+	return count
+}
+
 // carriedRecords keeps imported records of earlier batches whose source is
 // not part of this one. Their Index is -1: they belong to no job here.
 func carriedRecords(prior State, jobs []Job) []FileResult {
@@ -458,14 +546,18 @@ func reserveDestinations(plan Plan, pending []int) Plan {
 	}
 	plan.Jobs = append([]Job(nil), plan.Jobs...)
 	for _, index := range pending {
-		plan.Jobs[index].Destination = plan.names.claim(plan.Jobs[index].Destination)
+		name, err := plan.names.claim(plan.Jobs[index].Destination)
+		if err != nil {
+			// The job keeps its planned name and fails in its worker.
+			if plan.claimErrors == nil {
+				plan.claimErrors = make(map[int]error)
+			}
+			plan.claimErrors[index] = err
+			continue
+		}
+		plan.Jobs[index].Destination = name
 	}
 	return plan
-}
-
-func pathExists(path string) bool {
-	_, err := os.Lstat(path)
-	return err == nil || !errors.Is(err, os.ErrNotExist)
 }
 
 func LoadState(path string) (State, error) {
@@ -548,20 +640,31 @@ func resumeRecord(state State, job Job) (FileResult, bool) {
 // recorded digest. Copy needs nothing more. Move also needs the source gone,
 // so a source that is still there and still matches is deleted now — whether
 // the earlier run was a Copy, or a Move that could not delete it.
+//
+// State is bookkeeping, not evidence: a damaged, edited or foreign record must
+// not authorise anything. The record's two digests must agree, its
+// destination must lie under the pinned DestinationRoot without a link on the
+// way, and that destination must be a different file from the source.
 func verifyResume(ctx context.Context, file FileResult, plan Plan, base Event, events chan<- Event) (FileResult, Event, bool) {
-	check := func(phase Phase, path string) (verifiedcopy.Result, error) {
+	if file.SourceHash == "" || file.SourceHash != file.DestinationHash {
+		return FileResult{}, base, false
+	}
+	if verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot) != nil {
+		return FileResult{}, base, false
+	}
+	check := func(phase Phase, root, path string) (verifiedcopy.Result, error) {
 		base.Total = file.Size
 		var limit throttle
 		limit.allow(phase, 0, file.Size)
 		emit(ctx, events, withProgress(base, phase, 0))
-		return verifiedcopy.Check(ctx, "", path, plan.Controller.wait, func(done int64) {
+		return verifiedcopy.Check(ctx, root, path, plan.Controller.wait, func(done int64) {
 			if limit.allow(phase, done, file.Size) {
 				emit(ctx, events, withProgress(base, phase, done))
 			}
 		})
 	}
 	base.Destination = file.Destination
-	destination, err := check(PhaseCheckingDestination, file.Destination)
+	destination, err := check(PhaseCheckingDestination, plan.DestinationRoot, file.Destination)
 	if err != nil || destination.Size != file.Size || destination.Digest != file.DestinationHash {
 		return FileResult{}, base, false
 	}
@@ -575,18 +678,29 @@ func verifyResume(ctx context.Context, file FileResult, plan Plan, base Event, e
 	if statErr != nil || !before.Mode().IsRegular() {
 		return FileResult{}, base, false
 	}
-	source, err := check(PhaseCheckingSource, file.Source)
-	if err != nil || source.Size != file.Size || source.Digest != file.SourceHash {
+	source, err := check(PhaseCheckingSource, "", file.Source)
+	if err != nil || source.Size != file.Size || source.Digest != file.SourceHash || os.SameFile(source.Source, destination.Source) {
 		return FileResult{}, base, false
 	}
 	if plan.Operation == Move {
 		emit(ctx, events, withProgress(base, PhaseDeletingSource, file.Size))
-		if err := deleteSource(file.Source, source.Source); err != nil {
+		if err := deletePinnedSource(plan, file.Source, source.Source); err != nil {
 			file.Phase, file.Error = PhaseSourceKept, err.Error()
 			base.Phase, base.Err = PhaseSourceKept, err
 		}
 	}
 	return file, base, true
+}
+
+// deletePinnedSource deletes a Move's source only while the destination root
+// is still the pinned directory. A copy published before an unmount still
+// exists on that disk, but a source is never deleted on the word of a root
+// that cannot be seen: it is kept and reported, and a later run finishes it.
+func deletePinnedSource(plan Plan, path string, read os.FileInfo) error {
+	if err := verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot); err != nil {
+		return fmt.Errorf("%w; source kept", err)
+	}
+	return deleteSource(path, read)
 }
 
 // deleteSource removes a Move's source only while it is still the file that was
@@ -615,7 +729,7 @@ func deleteSource(path string, read os.FileInfo) error {
 // policy, Move, the pause controller and the progress events the TUI draws.
 func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (FileResult, Event) {
 	job := plan.Jobs[index]
-	base := Event{Index: index, Source: job.Source, Destination: job.Destination}
+	base := Event{Worker: plan.worker, Index: index, Source: job.Source, Destination: job.Destination}
 	result := FileResult{Index: index, Source: job.Source, Destination: job.Destination}
 	if index < len(plan.planned) && plan.planned[index] != job.Destination {
 		result.PlannedDestination = plan.planned[index]
@@ -625,8 +739,14 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 		base.Phase, base.Err = PhaseFailed, err
 		return result, base
 	}
+	if err := verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot); err != nil {
+		return fail(err)
+	}
 	if plan.Conflict == Replace {
 		return fail(errors.New("replace conflict policy is not implemented safely"))
+	}
+	if err := plan.claimErrors[index]; err != nil {
+		return fail(err)
 	}
 	if record, ok := plan.resume[index]; ok {
 		if resumed, event, ok := verifyResume(ctx, record, plan, base, events); ok {
@@ -698,7 +818,11 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 			if names == nil {
 				names = newReservations()
 			}
-			job.Destination = names.claim(job.Destination)
+			name, err := names.claim(job.Destination)
+			if err != nil {
+				return fail(err)
+			}
+			job.Destination = name
 			result.Destination, base.Destination = job.Destination, job.Destination
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -716,8 +840,9 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 		PreserveModTime: true,
 		// A photo library is read by more than its owner: a NAS media server,
 		// another account. The 0600 the unpublished copy has would hide it.
-		Mode: verifiedcopy.DefaultPhotoMode,
-		Root: plan.DestinationRoot,
+		Mode:         verifiedcopy.DefaultPhotoMode,
+		Root:         plan.DestinationRoot,
+		ExpectedRoot: plan.expectedRoot,
 		Progress: func(phase verifiedcopy.Phase, done, total int64) {
 			if !limit.allow(Phase(phase), done, total) {
 				return
@@ -753,7 +878,7 @@ func transfer(ctx context.Context, index int, plan Plan, events chan<- Event) (F
 		// The photo is imported whatever happens here. A source that cannot be
 		// deleted, or changed after it was read, is kept and reported, not
 		// turned into a failed import.
-		if err := deleteSource(job.Source, copied.Source); err != nil {
+		if err := deletePinnedSource(plan, job.Source, copied.Source); err != nil {
 			result.Phase, result.Error = PhaseSourceKept, err.Error()
 			base.Phase, base.Err = PhaseSourceKept, err
 		}

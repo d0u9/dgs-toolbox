@@ -264,6 +264,19 @@ func (index *contentIndex) match(ctx context.Context, job Job, plan Plan, base E
 			warning = "previously recorded destination size differs from its import state"
 		}
 	}
+	// An empty file has no content to recognise: every empty file matches it,
+	// a placeholder as much as a photo that failed to write. Only its own name,
+	// or where this state recorded it, can hold it, so a Move never deletes it
+	// on the evidence of an unrelated empty file.
+	if info.Size() == 0 {
+		own := candidates[:0]
+		for _, c := range candidates {
+			if _, recorded := hints[c.path]; recorded || c.path == planned {
+				own = append(own, c)
+			}
+		}
+		candidates = own
+	}
 	if len(candidates) == 0 {
 		return "", verifiedcopy.Result{}, warning, nil
 	}
@@ -332,6 +345,9 @@ func (index *contentIndex) match(ctx context.Context, job Job, plan Plan, base E
 }
 
 func deleteMatchedSource(ctx context.Context, sourcePath, destination string, plan Plan, source verifiedcopy.Result) error {
+	if err := verifiedcopy.CheckRoot(plan.DestinationRoot, plan.expectedRoot); err != nil {
+		return fmt.Errorf("%w; source kept", err)
+	}
 	verified, err := verifiedcopy.Check(ctx, plan.DestinationRoot, destination, plan.Controller.wait, nil)
 	if err != nil {
 		return fmt.Errorf("existing destination revalidation: %w", err)
@@ -339,8 +355,12 @@ func deleteMatchedSource(ctx context.Context, sourcePath, destination string, pl
 	if verified.Size != source.Size || verified.Digest != source.Digest {
 		return errors.New("existing destination changed; source kept")
 	}
+	// The source itself, reached through a hard link, is no second copy.
+	if os.SameFile(verified.Source, source.Source) {
+		return errors.New("existing destination is the source itself; source kept")
+	}
 	if err := plan.Controller.wait(ctx); err != nil {
 		return err
 	}
-	return deleteSource(sourcePath, source.Source)
+	return deletePinnedSource(plan, sourcePath, source.Source)
 }
