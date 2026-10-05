@@ -69,31 +69,54 @@
     </div>
     <iframe id="frame" title="Preview" hidden></iframe>
   </section>
-  <aside id="side" class="side" hidden>
-    <form id="import" hidden>
-      <div class="import-form-head"><h2 id="import-title" class="panel-head">Import</h2><button id="cancel-without-pdf" class="button" type="button" hidden>Cancel</button></div>
-      <div class="form-field"><span id="template-label">Template</span>
-        <div class="template-pick">
-          <input id="template-filter" class="template-filter" type="search" placeholder="Filter types" autocomplete="off" spellcheck="false" hidden>
-          <div id="template" class="template-choices" role="group" aria-labelledby="template-label"></div>
-        </div></div>
-      <p id="type-hint" class="message type-hint" hidden></p>
-      <div class="form-field" id="into-field"><span id="into-label">Into</span><select id="into" hidden></select><div id="into-choices" class="template-choices into-choices" role="group" aria-labelledby="into-label"></div></div>
-      <div id="fields"></div>
-      <label id="replaces-field" class="form-field" hidden><span>Replaces</span><select id="replaces"><option value="">None — keep existing visas in use</option></select></label>
-      <div class="form-field" id="tags-field" hidden><span>Tags</span><div id="tags" data-label="Tags"></div></div>
-      <div class="form-field" id="shared-field" hidden><span>Shared with</span><div id="shared" class="checks" title="Also theirs, such as a letter addressed to both"></div></div>
-      <div class="form-field" id="revision-tags-field" hidden><span>This revision's tags</span><div id="revision-tags" data-label="This revision's tags"></div></div>
-      <label class="form-field" id="notes-field" hidden><span>Notes</span><textarea id="notes" rows="3" placeholder="Optional details about this item"></textarea></label>
-      <p id="import-message" class="message"></p>
-      <button id="import-button" class="action" type="submit">Import</button>
-      <p id="copy-note" class="message">The PDF is copied into the tree and read back before it counts. This file stays where it is.</p>
-    </form>
-    <div id="kept" hidden>
-      <h2 class="panel-head">Already in the tree</h2>
-      <p class="message">Kept as <a id="kept-link" href="/browse/"></a>.</p>
-    </div>
+  <aside id="side" class="side editor" hidden>
+    <header class="detail-head">
+      <h2 id="import-title">Import</h2>
+      <button id="cancel-without-pdf" class="button secondary small-button" type="button" hidden>Cancel</button>
+    </header>
+    <div class="detail-scroll">
     <p id="text-message" class="message text-status"></p>
+    <form id="import" hidden>
+      <div class="detail-group"><h2>Type</h2><div class="detail-card">
+      <section class="detail-section">
+        <div class="form-field"><span id="template-label">Template</span>
+          <div class="template-pick">
+            <input id="template-filter" class="template-filter" type="search" placeholder="Filter types" autocomplete="off" spellcheck="false" hidden>
+            <div id="template" class="template-choices" role="group" aria-labelledby="template-label"></div>
+          </div></div>
+        <p id="type-hint" class="message type-hint" hidden></p>
+        <div class="form-field" id="into-field"><span id="into-label">Into</span><select id="into" hidden></select><div id="into-choices" class="template-choices into-choices" role="group" aria-labelledby="into-label"></div></div>
+      </section>
+      </div></div>
+      <div class="detail-group"><h2>Details</h2><div class="detail-card">
+      <section class="detail-section">
+        <div class="detail-section-head"><h3>Fields</h3></div>
+        <div id="fields"></div>
+        <label id="replaces-field" class="form-field" hidden><span>Replaces</span><select id="replaces"><option value="">None — keep existing visas in use</option></select></label>
+        <div class="form-field" id="shared-field" hidden><span>Shared with</span><div id="shared" class="checks" title="Also theirs, such as a letter addressed to both"></div></div>
+      </section>
+      <section class="detail-section" id="tags-field" hidden>
+        <div class="detail-section-head"><h3>Tags</h3></div>
+        <span class="tags-label">Every revision</span>
+        <div id="tags" data-label="Tags"></div>
+        <div id="revision-tags-field" hidden>
+          <span class="tags-label">This revision's own</span>
+          <div id="revision-tags" data-label="This revision's tags"></div>
+        </div>
+      </section>
+      <section class="detail-section" id="notes-field" hidden>
+        <div class="detail-section-head"><h3>Notes</h3></div>
+        <textarea id="notes" class="notes" rows="3" placeholder="Only for you: never a key, never exported."></textarea>
+      </section>
+      </div></div>
+      <div class="detail-actions"><button id="import-button" class="action" type="submit">Import</button>
+        <p id="import-message" class="message"></p></div>
+      <p id="copy-note" class="detail-note">The PDF is copied into the tree and read back before it counts. This file stays where it is.</p>
+    </form>
+    <div id="kept" class="detail-group" hidden><div class="detail-card"><section class="detail-section">
+      <p class="message">Kept as <a id="kept-link" href="/browse/"></a>.</p>
+    </section></div></div>
+    </div>
   </aside>
 </main>
 <script src="/ui/tags.js"></script>

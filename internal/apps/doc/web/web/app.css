@@ -347,10 +347,12 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .side-close { float: right; margin: 8px 10px 0 0; }
 .grid[hidden], #table[hidden] { display: none; }
 
-/* The detail panel beside the cards: one column of sections, one gutter,
-   one type scale, as box's detail panel. */
-.side.detail { width: 360px; min-width: 320px; flex: none; padding: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--paper); font-size: var(--font-size-ui); }
-.side.detail[hidden] { display: none; }
+/* An editor panel, the one look of every side panel that edits an Item's
+   fields (Browse's detail, Import's form): a head, then a scroll of named
+   groups, each a card of sections. One column, one gutter, one type scale,
+   as box's detail panel. */
+.side.editor { width: 360px; min-width: 320px; flex: none; padding: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--paper); font-size: var(--font-size-ui); }
+.side.editor[hidden] { display: none; }
 .detail-picture { flex: none; padding: 12px 16px 10px; display: flex; flex-direction: column; gap: 8px; }
 .detail-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 10px 16px 24px; }
 .detail-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--paper); border-bottom: 1px solid var(--hairline); }
@@ -372,19 +374,19 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .detail-tools #detail-rev { margin-left: auto; font-size: var(--font-size-xs); }
 .detail-tools #page-label { min-width: 3.5em; text-align: center; font-size: var(--font-size-xs); }
 .detail-scroll > .message:first-child { margin-bottom: 4px; }
-.side.detail .message { margin: 0; font-size: var(--font-size-xs); }
-.side.detail .message:empty { display: none; }
-.side.detail .kind { margin: 0; font-size: var(--font-size-xs); }
-.side.detail .form-field { margin: 0 0 10px; }
-.side.detail .form-field input, .side.detail .form-field select { width: 100%; }
-.side.detail textarea.notes { width: 100%; margin: 0; }
-.side.detail .action { margin: 0; }
+.side.editor .message { margin: 0; font-size: var(--font-size-xs); }
+.side.editor .message:empty { display: none; }
+.side.editor .kind { margin: 0; font-size: var(--font-size-xs); }
+.side.editor .form-field { margin: 0 0 10px; }
+.side.editor .form-field input, .side.editor .form-field select { width: 100%; }
+.side.editor textarea.notes { width: 100%; margin: 0; }
+.side.editor .action { margin: 0; }
 .detail-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .detail-note { margin: 0; font-size: var(--font-size-xs); color: var(--graphite); }
-.side.detail .button { align-self: flex-start; }
-.side.detail .rows { margin: 0; }
-.side.detail .rows li { padding: 6px 8px; border: 1px solid transparent; border-bottom-color: var(--hairline); }
-.side.detail .rows li.selected { border-radius: var(--radius-md); border-color: var(--primary-soft); }
+.side.editor .button { align-self: flex-start; }
+.side.editor .rows { margin: 0; }
+.side.editor .rows li { padding: 6px 8px; border: 1px solid transparent; border-bottom-color: var(--hairline); }
+.side.editor .rows li.selected { border-radius: var(--radius-md); border-color: var(--primary-soft); }
 .rev { display: flex; align-items: center; gap: 8px; }
 .rev-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .rev .button { flex: none; }
@@ -392,9 +394,9 @@ textarea.notes { display: block; width: calc(100% - 28px); margin: var(--space-x
 .tags-label { display: block; margin-bottom: 4px; font-size: var(--font-size-xs); color: var(--graphite); }
 #revision-tags-form { margin-top: 12px; }
 #revision-tags-form[hidden] { display: none; }
-.side.detail .danger-zone { box-sizing: border-box; width: 100%; }
-.side.detail .danger-zone .danger-note { overflow-wrap: anywhere; }
-.side.detail .danger-zone .button { margin: 0; }
+.side.editor .danger-zone { box-sizing: border-box; width: 100%; }
+.side.editor .danger-zone .danger-note { overflow-wrap: anywhere; }
+.side.editor .danger-zone .button { margin: 0; }
 .change-type-page { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
 .change-type-page h1 { margin: 0 0 8px; font-size: 24px; }
 .change-type-page > p { margin: 0 0 20px; }
@@ -423,8 +425,8 @@ body.reading .filters, body.reading .browse-pane, body.reading #picture-splitter
 body.reading #detail-picture { height: auto !important; min-height: 0; padding-bottom: 8px; }
 body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, body.reading #page-label, body.reading #open-reader { display: none; }
 .card-thumb { object-position: center; }
-.side.detail form { display: flex; flex-direction: column; gap: 10px; }
-.side.detail .kind { margin: 0 0 4px; color: var(--graphite); }
+.side.editor form { display: flex; flex-direction: column; gap: 10px; }
+.side.editor .kind { margin: 0 0 4px; color: var(--graphite); }
 
 /* Views: the form in labelled groups on one grid, the preview beside it. */
 .view-form { width: 460px; min-width: 380px; padding: 0; display: flex; flex-direction: column; }
@@ -663,33 +665,31 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 
 
 /* Snapshot controls stay beside the content they act on. */
-.detail-section-head, .snapshot-bar, .import-form-head {
+.detail-section-head, .snapshot-bar {
   display: flex; align-items: center; justify-content: space-between; gap: var(--gap-row);
 }
 .detail-section-head { min-height: var(--control-height-sm); }
 .snapshot-bar { font-size: var(--font-size-xs); }
 .detail-section { padding: var(--space-xs) 0; gap: var(--gap-row); }
-.side.detail .form-field { margin-bottom: var(--gap-row); }
+.side.editor .form-field { margin-bottom: var(--gap-row); }
 .detail-tools { flex-wrap: wrap; gap: var(--space-xxs); }
 .detail-tools-end { margin-left: auto; display: flex; gap: var(--space-xxs); }
 /* The panel's sections fall into named groups, each a white card on the
    cloud ground: depth by colour contrast, per docs/web.md. A group's name
    is an eyebrow above its card; a section's name heads it inside, with its
    one quiet action, a link button, on the right. */
-.side.detail .detail-scroll { background: var(--cloud); border-top: 1px solid var(--hairline); padding: 4px 12px 24px; }
+.side.editor .detail-scroll { background: var(--cloud); border-top: 1px solid var(--hairline); padding: 4px 12px 24px; }
 .detail-group { margin-top: var(--space-sm); }
 .detail-group > h2 { margin: 0 4px 6px; font-size: var(--font-size-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--graphite); }
 .detail-card { background: var(--paper); border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 0 12px; }
 .detail-card > .detail-section { padding: 12px 0; gap: 8px; border-bottom: 1px solid var(--hairline); }
 .detail-card > .detail-section:last-child { border-bottom: 0; }
-.side.detail .detail-section-head h3, .side.detail .danger-zone h3 { flex: 1; margin: 0; font-size: var(--font-size-sm); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
-.side.detail .danger-zone h3 { color: var(--error); }
-.side.detail .detail-section > p.muted { margin: 0; font-size: var(--font-size-xs); }
-.side.detail .detail-section > .danger-zone, .side.detail .detail-scroll > .danger-zone { margin-top: var(--space-md); border-radius: var(--radius-lg); }
-.side.detail .detail-actions { margin-top: 4px; }
-.side.detail .snapshot-bar { padding: 8px 4px 0; color: var(--graphite); }
-.import-form-head .panel-head { flex: 1; }
-.import-form-head > .button { margin-right: var(--space-sm); }
+.side.editor .detail-section-head h3, .side.editor .danger-zone h3 { flex: 1; margin: 0; font-size: var(--font-size-sm); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.side.editor .danger-zone h3 { color: var(--error); }
+.side.editor .detail-section > p.muted { margin: 0; font-size: var(--font-size-xs); }
+.side.editor .detail-section > .danger-zone, .side.editor .detail-scroll > .danger-zone { margin-top: var(--space-md); border-radius: var(--radius-lg); }
+.side.editor .detail-actions { margin-top: 4px; }
+.side.editor .snapshot-bar { padding: 8px 4px 0; color: var(--graphite); }
 .import-work.manual-entry { justify-content: center; overflow: auto; }
 .import-work.manual-entry > .list,
 .import-work.manual-entry > .preview,
@@ -698,7 +698,7 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
   width: min(100%, 480px); border-left: 0; flex: none;
 }
 
-.side.detail form[hidden], #replaces-field[hidden], #undo-supersession[hidden] { display: none; }
+.side.editor [hidden], #undo-supersession[hidden] { display: none !important; }
 .vf-stack .condition { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 0; border-top: 1px solid var(--hairline); }
 .vf-stack .condition:first-child { border-top: none; padding-top: 0; }
 .condition-head { display: flex; align-items: center; gap: 6px; }

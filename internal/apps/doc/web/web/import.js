@@ -1,6 +1,6 @@
 // Import: open a folder from anywhere, see its PDFs as the tree of folders
 // they are in, and take them in one at a time. The folder is only read.
-import { $, keep, scrollBack, api, el, size, loadState, post, templateOf, label, inputFor, fieldsOf, tagUses, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
+import { $, keep, scrollBack, api, el, size, loadState, post, templateOf, label, fieldInputs, fieldsOf, tagUses, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { fileTree } from "/ui/filetree.js";
 
@@ -66,7 +66,7 @@ function render() {
   $("side").hidden = !file && !noPDF;
   $("import").hidden = (!noPDF && (!file || !!file.item)) || !state.tree;
   $("copy-note").hidden = noPDF;
-  $("import-title").textContent = noPDF ? "New without PDF" : "Import";
+  $("import-title").textContent = noPDF ? "New without PDF" : file?.item ? "Already in the tree" : "Import";
   $("kept").hidden = !file || !file.item;
   if (file && file.item) {
     const item = state.items.find((i) => i.id === file.item);
@@ -232,7 +232,7 @@ function drawFields() {
   // A new revision is asked only what changes with it: the fields the
   // Template marks per_revision. The rest belong to the Item it joins.
   const asked = adding ? t.fields.filter((f) => f.per_revision) : t.fields;
-  $("fields").replaceChildren(...asked.map((f) => inputFor(f, "", adding ? "" : (t.defaults || {})[f.key] || "", state, undefined, t.type)));
+  $("fields").replaceChildren(...fieldInputs(asked, null, adding ? null : t.defaults, state, undefined, t.type));
   if (adding && !asked.length) {
     $("fields").append(el("p", { className: "message" }, "Nothing is asked: " + t.type +
       " marks no field per_revision. To keep a renewed card's own number and expiry, add per_revision: true to them on the Templates page."));
