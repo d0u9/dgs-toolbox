@@ -34,7 +34,10 @@ func pagePNG(t *testing.T, width, height int) []byte {
 // one, so the shape of what comes back says which page was drawn.
 func threePages(t *testing.T) []byte {
 	t.Helper()
-	importer, err := api.Import("pos:c, scale:0.5", types.POINTS)
+	// The fixture represents full-page scans at 72 DPI. Centering tiny
+	// pictures on default A4 pages would fall below scanmeta.ScanMinDPI and
+	// exercise the deliberate refusal of logos rather than page navigation.
+	importer, err := api.Import("dim:200 300, pos:full", types.POINTS)
 	if err != nil {
 		t.Fatal(err)
 	}

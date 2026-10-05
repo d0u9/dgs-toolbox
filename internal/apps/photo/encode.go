@@ -11,6 +11,7 @@ import (
 	"dgs-toolbox/internal/tui/form"
 	"dgs-toolbox/internal/tui/overlay"
 	"dgs-toolbox/internal/tui/pageactions"
+	"errors"
 	"fmt"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 var encodeSession atomic.Uint64
@@ -81,11 +83,20 @@ func (m encodeModel) options() photoencode.Options {
 func (m encodeModel) CapturesShellKey(key string) bool {
 	return m.picking != "" || m.controls.IsActive() || m.confirming || (m.stage == "processing" && (key == "esc" || key == "q" || key == "ctrl+c"))
 }
+
+// encodeCloseWait bounds how long leaving waits for the current file. ImageIO
+// decoding cannot be interrupted; a job still running afterwards stops at its
+// next cancellation check and removes its own temporary file.
+const encodeCloseWait = 2 * time.Second
+
 func (m encodeModel) Close() {
 	if m.cancel != nil {
 		m.cancel()
 		if m.finished != nil {
-			<-m.finished
+			select {
+			case <-m.finished:
+			case <-time.After(encodeCloseWait):
+			}
 		}
 	}
 }
@@ -111,9 +122,18 @@ func (m *encodeModel) refreshReport() {
 		}
 	} else {
 		for _, r := range m.results {
-			if r.Published {
-				lines = append(lines, fmt.Sprintf("✓ %s\n  %d × %d · %d → %d bytes", r.Job.Destination, r.Width, r.Height, r.BytesBefore, r.BytesAfter))
-			} else {
+			switch {
+			case r.Published:
+				line := fmt.Sprintf("✓ %s\n  %d × %d · %d → %d bytes", r.Job.Destination, r.Width, r.Height, r.BytesBefore, r.BytesAfter)
+				if r.Error != "" {
+					line += "\n  ! " + r.Error
+				}
+				lines = append(lines, line)
+			case r.Skipped:
+				lines = append(lines, "– "+r.Job.Destination+"\n  skipped: "+r.Error)
+			case r.Cancelled:
+				lines = append(lines, "– "+r.Job.Source+"\n  cancelled")
+			default:
 				lines = append(lines, "! "+r.Job.Source+"\n  "+r.Error)
 			}
 		}
@@ -137,12 +157,16 @@ func (m encodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if v.err != nil {
 			m.notice = v.err.Error()
 			m.fieldErrors = map[string]string{}
-			for _, pair := range [][2]string{{"quality", "quality"}, {"size", "size"}, {"ppi", "ppi"}, {"background", "background"}} {
-				if strings.HasPrefix(m.notice, pair[0]) {
-					m.fieldErrors[pair[1]] = m.notice
+			var optionErr *photoencode.OptionError
+			if errors.As(v.err, &optionErr) {
+				// max_pixels is a configuration value with no field here:
+				// the notice alone reports it.
+				for _, id := range encodeIDs {
+					if id == optionErr.Option {
+						m.fieldErrors[id] = m.notice
+					}
 				}
-			}
-			if len(m.fieldErrors) == 0 {
+			} else {
 				id := "input"
 				if strings.Contains(m.notice, m.controls.Value("output")) && m.controls.Value("output") != "" {
 					id = "output"
@@ -174,7 +198,7 @@ func (m encodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.stopping || m.index == len(m.jobs) {
 			m.stage = "results"
 			if m.stopping {
-				m.notice = fmt.Sprintf("Stopped · %d jobs not started", len(m.jobs)-m.index)
+				m.notice = fmt.Sprintf("Stopped · current file cancelled · %d jobs not started", len(m.jobs)-m.index)
 			}
 			m.confirming = false
 			m.cancel()
@@ -378,15 +402,18 @@ func (m encodeModel) Status() tui.Status {
 	if m.confirming {
 		hint = ""
 	}
-	complete, failed := 0, 0
+	complete, skipped, failed := 0, 0, 0
 	for _, r := range m.results {
-		if r.Published {
+		switch {
+		case r.Published:
 			complete++
-		} else {
+		case r.Skipped || r.Cancelled:
+			skipped++
+		default:
 			failed++
 		}
 	}
-	return tui.Status{Left: strings.ToUpper(m.stage), Center: fmt.Sprintf("%d published · %d failed", complete, failed), Right: hint}
+	return tui.Status{Left: strings.ToUpper(m.stage), Center: fmt.Sprintf("%d published · %d skipped · %d failed", complete, skipped, failed), Right: hint}
 }
 
 func (m encodeModel) pageActions() pageactions.Config {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"sort"
 )
 
 const maxMetadata = 4 << 20
@@ -313,9 +314,14 @@ func (m metadata) outputExif(gps bool, w, h, ppi int) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Remove the referenced IFD1 thumbnail, which describes the old pixels.
+		// Remove the referenced IFD1 thumbnail, which describes the old pixels:
+		// unlink it, then blank its directory and bytes so no picture of the
+		// uncropped original rides along, and drop them when they end the block.
 		p := int(order.Uint32(out[4:]))
 		end := p + 2 + 12*int(order.Uint16(out[p:]))
+		if keep := dropThumbnail(out, order, order.Uint32(out[end:])); keep >= end+4 {
+			out = out[:keep]
+		}
 		order.PutUint32(out[end:], 0)
 		if len(out)+6 > maxSegment {
 			// Large maker notes cannot fit one APP1 segment; keep what was asked for.
@@ -331,6 +337,47 @@ func (m metadata) outputExif(gps bool, w, h, ppi int) ([]byte, error) {
 }
 
 const maxSegment = 65533
+
+// dropThumbnail zeroes IFD1 at off and the JPEG thumbnail it points to, when
+// both lie inside data, and returns the length data keeps: shorter only when
+// the zeroed bytes were its tail.
+func dropThumbnail(data []byte, order binary.ByteOrder, off uint32) int {
+	keep := len(data)
+	p := int(off)
+	if off == 0 || p < 8 || p > len(data)-2 {
+		return keep
+	}
+	n := int(order.Uint16(data[p:]))
+	end := p + 2 + 12*n + 4
+	if end > len(data) {
+		return keep
+	}
+	var start, length uint64
+	for i := 0; i < n; i++ {
+		e := data[p+2+12*i : p+14+12*i]
+		if order.Uint16(e[2:]) != 4 || order.Uint32(e[4:]) != 1 {
+			continue
+		}
+		switch order.Uint16(e) {
+		case 0x201:
+			start = uint64(order.Uint32(e[8:]))
+		case 0x202:
+			length = uint64(order.Uint32(e[8:]))
+		}
+	}
+	ranges := [][2]int{{p, end}}
+	if start >= 8 && length > 0 && start+length <= uint64(len(data)) {
+		ranges = append(ranges, [2]int{int(start), int(start + length)})
+	}
+	sort.Slice(ranges, func(i, j int) bool { return ranges[i][0] < ranges[j][0] })
+	for _, r := range ranges {
+		clear(data[r[0]:r[1]])
+	}
+	for i := len(ranges) - 1; i >= 0 && ranges[i][1] == keep; i-- {
+		keep = ranges[i][0]
+	}
+	return keep
+}
 
 type exifEntry struct {
 	tag, typ uint16
