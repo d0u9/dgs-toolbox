@@ -412,6 +412,14 @@ count in the numbers and come back in the value. A page links
 `/ui/codeedit.css` and calls `codeEditor` from `/ui/codeedit.js`, with what an
 edit and Ctrl/Cmd+S do.
 
+It also carries **tags**, in `/ui/tags.css`. The tag field
+(`window.tagField` from `/ui/tags.js`) edits them as bubbles. A tag shown
+and not edited — in a list column, a card, an information pane — is a
+`.tag-pill` inside a `.tag-pills` run: a small grey label with a hairline
+edge, so it stays seen on a selected row. The run keeps to one line, cut at
+its holder's edge, unless it has `wrap`. A page never draws the field's
+bubble for a tag that cannot be edited.
+
 It also carries the **name guard** for dangerous actions, `/ui/confirm.js`
 (see [Buttons and dangerous actions](#buttons-and-dangerous-actions-docs-pages-are-the-reference)).
 
