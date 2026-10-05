@@ -743,7 +743,7 @@ func parseKey(layout, written string) (Part, error) {
 		return Part{}, fmt.Errorf("layout %q: {%s}: a type is written zh or en", layout, written)
 	}
 	if strings.Contains(written, ":") && !isType(key) && !isDateFormat(format) && !country.Format(format).Valid() {
-		return Part{}, fmt.Errorf("layout %q: {%s}: a country is written zh, en, alpha2 or alpha3, a date compact or fy", layout, written)
+		return Part{}, fmt.Errorf("layout %q: {%s}: a country is written zh, en, alpha2 or alpha3, a date compact, yyyy, yyyymm or fy", layout, written)
 	}
 	return Part{Key: key, Format: format}, nil
 }

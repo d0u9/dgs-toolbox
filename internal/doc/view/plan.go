@@ -869,6 +869,14 @@ func pick(part Part, keys map[string]string) (choice Part, value string, ok bool
 			return c, dates.Compact(start) + "-" + dates.Compact(end), true
 		case c.Format == DateCompact:
 			return c, dates.Compact(value), true
+		case c.Format == DateYear && span:
+			return c, dates.Year(start) + "-" + dates.Year(end), true
+		case c.Format == DateYear:
+			return c, dates.Year(value), true
+		case c.Format == DateYearMonth && span:
+			return c, dates.YearMonth(start) + "-" + dates.YearMonth(end), true
+		case c.Format == DateYearMonth:
+			return c, dates.YearMonth(value), true
 		case c.Format == DateFinancialYear:
 			return c, dates.FinancialYear(start, dates.DefaultYearStart), true
 		case span:
@@ -894,13 +902,18 @@ func pick(part Part, keys map[string]string) (choice Part, value string, ok bool
 }
 
 // A date key's formats in a layout: {start:compact} writes 20100101,
+// {date:yyyy} the year, 2010, {date:yyyymm} the year and month, 201001, and
 // {date:fy} the financial year, FY2024.
 const (
 	DateCompact       = "compact"
+	DateYear          = "yyyy"
+	DateYearMonth     = "yyyymm"
 	DateFinancialYear = "fy"
 )
 
-func isDateFormat(format string) bool { return format == DateCompact || format == DateFinancialYear }
+func isDateFormat(format string) bool {
+	return format == DateCompact || format == DateYear || format == DateYearMonth || format == DateFinancialYear
+}
 
 // isType reports whether key is an Item's type, its own or a linked one's:
 // type, original.type.

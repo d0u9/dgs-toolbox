@@ -17,6 +17,26 @@ func Compact(value string) string {
 	return m[1] + m[2] + m[3]
 }
 
+// Year writes the year of a kept date or month, 2010-01-01 as 2010.
+// Anything else is written as it is.
+func Year(value string) string {
+	m := kept.FindStringSubmatch(value)
+	if m == nil {
+		return value
+	}
+	return m[1]
+}
+
+// YearMonth writes the year and month of a kept date or month, 2010-01-01
+// as 201001. Anything else is written as it is.
+func YearMonth(value string) string {
+	m := kept.FindStringSubmatch(value)
+	if m == nil {
+		return value
+	}
+	return m[1] + m[2]
+}
+
 // DefaultYearStart is the month a financial year starts in: July, as in
 // Australia, where FY2024 runs from July 2023 to June 2024.
 const DefaultYearStart = 7

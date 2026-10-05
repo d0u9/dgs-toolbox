@@ -783,6 +783,7 @@ A key may name a country format: `{country:alpha3}` writes the Item's country
 as `CHN` however its sidecar keeps it, and likewise `:zh` (`中国`), `:en`
 (`China`) and `:alpha2` (`CN`). A value that names no country is written as it
 is. A date or month may be written `:compact`, `2010-01-01` as `20100101`,
+`:yyyy`, its year, `2010`, `:yyyymm`, its year and month, `201001`,
 or `:fy`, the Australian financial year it falls in, named by the year it
 ends: `2023-08-03` is `FY2024`. A value that is no date is written as it
 is. Any other format after the colon is refused.

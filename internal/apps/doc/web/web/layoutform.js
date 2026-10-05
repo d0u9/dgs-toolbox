@@ -430,6 +430,10 @@ const FORMATS = { zh: "中国", en: "China", alpha2: "CN", alpha3: "CHN" };
 // A type is written in its Template's names.
 const TYPE_FORMATS = { zh: "the Chinese name, such as 驾驶证", en: "the English name, such as Driver licence" };
 
+// A date or month is written compact, by its year, its year and month, or
+// the financial year it falls in, as the server writes it.
+const DATE_FORMATS = { compact: "20100101", yyyy: "2010", yyyymm: "201001", fy: "FY2024, the July–June year it ends in" };
+const dateKeys = () => new Set(state.templates.flatMap((t) => t.fields.filter((f) => f.type === "date" || f.type === "month").map((f) => f.key)));
 const countryKeys = () => new Set(state.templates.flatMap((t) => t.fields.filter((f) => f.type === "country").map((f) => f.key)));
 
 // linkFields is the fields of the chosen types' Templates that link to
@@ -537,6 +541,7 @@ function keyOptions() {
     // A select field whose values are named in a language: {category:en}.
     ["Named values", [...new Set(state.templates.flatMap((t) => t.fields.filter((f) => held.has(f.key) && f.names).flatMap((f) => Object.keys(f.names).map((l) => f.key + ":" + l))))]],
     ["Countries", [...countryKeys()].filter((k) => held.has(k)).flatMap((k) => Object.keys(FORMATS).map((f) => k + ":" + f))],
+    ["Dates", [...dateKeys()].filter((k) => held.has(k)).flatMap((k) => Object.keys(DATE_FORMATS).map((f) => k + ":" + f))],
     ...linkFields().map((l) => ["From " + l, [...linkKeys(l), "type:zh", "type:en", "year", "month", "date"].map((k) => l + "." + k)]),
   ];
 }
@@ -755,6 +760,8 @@ function chips() {
       chip("if any […]", () => ({ group: [] }), "An optional part, written only when the Item has every key in it: -本科 or nothing", inGroup())),
     ...countries.map((k) => group(k + " as", ...Object.entries(FORMATS).map(([f, example]) =>
       chip(":" + f, key(k + ":" + f), `{${k}:${f}} writes ${example}`)))),
+    ...[...dateKeys()].filter((k) => held.has(k)).map((k) => group(k + " as", ...Object.entries(DATE_FORMATS).map(([f, example]) =>
+      chip(":" + f, key(k + ":" + f), `{${k}:${f}} writes ${example}`)))),
     group("type as", ...Object.entries(TYPE_FORMATS).map(([f, note]) => chip(":" + f, key("type:" + f), note))),
     ...linkFields().map((l) => group("from " + l, ...[...linkKeys(l), "type:zh", "type:en"].map((k) => chip(k, key(l + "." + k), "the " + k + " of the Item " + l + " links to")))),
   ].filter(Boolean));
@@ -810,8 +817,26 @@ function keyValue(item, inner) {
 function choiceValue(item, choice) {
   const [, format] = choice.split(":");
   const value = rawValue(item, choice);
+  if (format && DATE_FORMATS[format] && typeof value === "string") return dateIn(value, format);
   const forms = format && countries[value] && countryForms[countries[value]];
   return forms && forms[format] ? forms[format] : value;
+}
+
+// dateIn writes a kept date or month, or a span of them, in a date format;
+// anything else as it is.
+function dateIn(value, format) {
+  const one = (v) => {
+    const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(v);
+    if (!m) return v;
+    if (format === "yyyy") return m[1];
+    if (format === "yyyymm") return m[1] + m[2];
+    if (format === "fy") return "FY" + (Number(m[1]) + (Number(m[2]) >= 7 ? 1 : 0));
+    return m[1] + m[2] + (m[3] || "");
+  };
+  const [start, end] = value.split("/");
+  if (end === undefined) return one(value);
+  if (!start || !end) return one(start || end);
+  return format === "fy" ? one(start) : one(start) + "-" + one(end);
 }
 
 function rawValue(item, choice) {
