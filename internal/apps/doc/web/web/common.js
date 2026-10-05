@@ -739,8 +739,13 @@ export async function showPreview(query, viewer) {
   const useViewer = () => {
     if (asked !== previewAsked) return;
     hideViewer();
-    $("frame").src = viewer;
-    $("frame").hidden = false;
+    // A fresh frame each time: navigating a frame that has shown a page
+    // adds a step to the browser's history, so Back would first go back
+    // a PDF inside it instead of leaving the reader.
+    const frame = $("frame").cloneNode(false);
+    frame.src = viewer;
+    frame.hidden = false;
+    $("frame").replaceWith(frame);
   };
   if (nativePDF()) return useViewer();
   let info;
