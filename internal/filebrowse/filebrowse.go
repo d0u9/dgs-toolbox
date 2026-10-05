@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"dgs-toolbox/internal/verifiedcopy"
 )
 
 // Entry is one row of a listing: a folder, or a file that passed the filter.
@@ -260,7 +262,10 @@ func Rename(path, name string) (string, error) {
 	if _, err := os.Lstat(target); err == nil {
 		return "", ErrExists
 	}
-	if err := os.Rename(full, target); err != nil {
+	if err := verifiedcopy.Publish(full, target); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", ErrExists
+		}
 		return "", err
 	}
 	return target, nil

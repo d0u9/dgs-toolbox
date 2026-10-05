@@ -41,7 +41,7 @@ export class CutPanel {
     this.timeZone = format.browserTimeZone();
     this.workspace = []; // other GPX paths in the workspace, to add segments to
     // Chosen segments per GPX path, so leaving a track and coming back keeps
-    // the choice: path -> { selected, known, createPath }.
+    // the choice: path -> { selected, known, createPath, addPath }.
     this.choices = new Map();
   }
 
@@ -52,7 +52,21 @@ export class CutPanel {
       selected: new Set(this.selected),
       known: new Set(this.known || []),
       createPath: this.createPath,
+      addPath: this.addPath,
     });
+  }
+
+  // A file's choices and any target pointing at it follow its new name.
+  renamePath(from, to) {
+    if (this.track?.path === from) this.remember();
+    if (this.choices.has(from)) {
+      this.choices.set(to, this.choices.get(from));
+      this.choices.delete(from);
+    }
+    for (const choice of this.choices.values()) if (choice.addPath === from) choice.addPath = to;
+    this.workspace = this.workspace.map(path => path === from ? to : path);
+    if (this.addPath === from) this.addPath = to;
+    if (this.track?.path === from) this.track.path = to;
   }
 
   // folder is where a new file from a track not yet on disk goes by default;
@@ -66,6 +80,7 @@ export class CutPanel {
     this.home = home;
     this.places = places;
     const kept = changed ? this.choices.get(track.path) : null;
+    if (changed) this.addPath = kept?.addPath || "";
     if (changed && !kept) {
       this.selected = new Set(track.pieces.map((piece) => piece.first));
       this.createPath = defaultCreatePath(track, folder);
@@ -82,7 +97,7 @@ export class CutPanel {
       for (const first of this.selected) if (!firsts.has(first)) this.selected.delete(first);
     }
     this.known = new Set(track.pieces.map((piece) => piece.first));
-    if (!this.workspace.includes(this.addPath)) this.addPath = this.workspace[0] || "";
+    if (!this.workspace.includes(this.addPath)) this.addPath = this.workspace.includes(track.path) ? track.path : this.workspace[0] || "";
     this.render();
   }
 
@@ -93,7 +108,7 @@ export class CutPanel {
     const others = workspace.filter((path) => path !== this.track.path || this.track.draft || this.track.ours);
     if (others.join("\n") === this.workspace.join("\n")) return;
     this.workspace = others;
-    if (!others.includes(this.addPath)) this.addPath = others[0] || "";
+    if (!others.includes(this.addPath)) this.addPath = others.includes(this.track.path) ? this.track.path : others[0] || "";
     this.render();
   }
 
@@ -345,7 +360,7 @@ export class CutPanel {
       });
       if (!target) return;
       this.createPath = target;
-      await this.write(segments(), { mode: "create", path: target }, saveAs);
+      await this.write(segments(), { mode: "create", path: target }, saveAs, track.path);
     });
     section.append(saveAs);
 
@@ -358,6 +373,7 @@ export class CutPanel {
 
   // No addition happens before the choice and any required name are confirmed.
   async addSegments(segments, target, button) {
+    const path = this.track.path;
     button.disabled = true;
     try {
       let merge = false;
@@ -387,18 +403,18 @@ export class CutPanel {
         if (merge) target = { ...target, merge: true, name: name.trim() };
         else segments = [{ ...segments[0], name: name.trim() }];
       }
-      await this.write(segments, target, button);
+      await this.write(segments, target, button, path);
     } finally {
       button.disabled = false;
     }
   }
 
   // write sends the chosen segments to their target and says what happened.
-  async write(segments, target, button) {
+  async write(segments, target, button, path) {
     button.disabled = true;
     status.show(target.mode === "add" ? "Adding…" : "Writing…");
     try {
-      const result = await this.onWrite({ segments, target });
+      const result = await this.onWrite({ path, segments, target });
       const tracks = `${result.tracks} track${result.tracks === 1 ? "" : "s"}`;
       status.show(target.mode === "add"
         ? `Added ${tracks} to ${basename(result.path)}. Save the target GPX from its row in the workspace.`

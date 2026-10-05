@@ -29,21 +29,12 @@ func (a api) renameFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusFor(err), err)
 		return
 	}
-	name := strings.TrimSpace(body.Name)
-	if err := filebrowse.CheckName(name); err != nil {
+	name, err := gpxName(body.Name)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if strings.EqualFold(filepath.Ext(name), ".gpx") {
-		name = strings.TrimSuffix(name, filepath.Ext(name))
-	}
-	if err := filebrowse.CheckName(name); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	name += ".gpx"
 	var target string
-	var err error
 	if isDraft(body.Path) {
 		target, err = drafts.rename(body.Path, name)
 	} else {
@@ -69,6 +60,24 @@ func (a api) renameFile(w http.ResponseWriter, r *http.Request) {
 	}
 	pending.move(body.Path, target)
 	writeJSON(w, map[string]string{"path": target})
+}
+
+// gpxName adds only the GPX extension, preserving dots in the given name.
+func gpxName(given string) (string, error) {
+	name := strings.TrimSpace(given)
+	if err := filebrowse.CheckName(name); err != nil {
+		return "", err
+	}
+	if strings.ContainsRune(name, 0) {
+		return "", errors.New("a name cannot contain a NUL character")
+	}
+	if strings.EqualFold(filepath.Ext(name), ".gpx") {
+		name = strings.TrimSuffix(name, filepath.Ext(name))
+	}
+	if err := filebrowse.CheckName(name); err != nil {
+		return "", err
+	}
+	return name + ".gpx", nil
 }
 
 func (s *draftStore) rename(path, name string) (string, error) {
