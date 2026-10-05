@@ -26,6 +26,9 @@ type outlinesJSON struct {
 	// Countries maps each country's every form to its alpha-3 code, so the
 	// page shows CN and 中国 as one condition value.
 	Countries map[string]string `json:"countries"`
+	// CountryForms is each country, by its alpha-3 code, in every format,
+	// so the page writes {country:alpha2} as the server does.
+	CountryForms map[string]map[country.Format]string `json:"countryForms"`
 	// Rules are every rule in the tree, and Used the Outlines using each.
 	Rules []view.View         `json:"rules"`
 	Used  map[string][]string `json:"used"`
@@ -37,10 +40,12 @@ var builtIn = []string{"type", "kind", "id", "revision", "ext", "year", "month",
 
 // outlineList answers every Outline, and every rule.
 func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
-	out := outlinesJSON{Outlines: []outlineJSON{}, Countries: map[string]string{}}
+	out := outlinesJSON{Outlines: []outlineJSON{}, Countries: map[string]string{}, CountryForms: map[string]map[country.Format]string{}}
 	for _, c := range country.All() {
+		out.CountryForms[c.Alpha3] = map[country.Format]string{}
 		for _, f := range country.Formats {
 			out.Countries[c.In(f)] = c.Alpha3
+			out.CountryForms[c.Alpha3][f] = c.In(f)
 		}
 	}
 	seen := map[string]bool{}

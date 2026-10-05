@@ -302,7 +302,7 @@ async function reload() {
   state = await loadState();
   frame(state);
   const answer = await (await fetch(api("/api/outlines"))).json();
-  which.setup({ state, keys: answer.keys, countries: answer.countries || {}, onChange: changed });
+  which.setup({ state, keys: answer.keys, countries: answer.countries || {}, countryForms: answer.countryForms || {}, onChange: changed });
   rules = answer.rules || [];
   used = answer.used || {};
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
