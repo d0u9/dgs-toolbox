@@ -160,9 +160,12 @@ function drawFields() {
       el("strong", {}, choice.type), el("small", {}, choice.description || choice.kind),
       choice.type === suggestedType ? el("span", { className: "template-suggested" }, "suggested") : null);
     button.setAttribute("aria-pressed", String(choice.type === selectedTemplate));
+    // A pick empties the filter, so the whole list is back for the next.
     button.onclick = () => {
       typeChosen = true;
-      if (selectedTemplate === choice.type) return;
+      const filtered = $("template-filter").value !== "";
+      $("template-filter").value = "";
+      if (selectedTemplate === choice.type && !filtered) return;
       selectedTemplate = choice.type;
       drawFields();
       $("template").querySelector(".selected")?.focus();
