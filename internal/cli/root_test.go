@@ -39,6 +39,50 @@ func TestRepeatableActionFlagPreservesEachOccurrence(t *testing.T) {
 	}
 }
 
+func TestPhotoImportWithPathsRunsWithoutTUI(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(config.EnvPath, filepath.Join(root, "config"))
+	source := filepath.Join(root, "card")
+	if err := os.Mkdir(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "a.JPG"), []byte("synthetic photo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	targets := []string{filepath.Join(root, "library,a"), filepath.Join(root, "library-b")}
+	for _, target := range targets {
+		if err := os.Mkdir(target, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	command := NewRootCommand(apps.All(), func(tui.Launch) error {
+		t.Fatal("CLI import launched TUI")
+		return nil
+	})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetArgs([]string{"photo", "import", source, "--dest", targets[0], "--dest", targets[1], "--ext", "JPG"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err, output.String())
+	}
+	for _, target := range targets {
+		if data, err := os.ReadFile(filepath.Join(target, "a.JPG")); err != nil || string(data) != "synthetic photo" {
+			t.Fatal("destination occurrence was not preserved", err)
+		}
+	}
+}
+
+func TestPhotoImportFlagsWithoutSourceDoNotOpenTUI(t *testing.T) {
+	command := NewRootCommand(apps.All(), func(tui.Launch) error {
+		t.Fatal("invalid CLI invocation launched TUI")
+		return nil
+	})
+	command.SetArgs([]string{"photo", "import", "--dest", "library"})
+	if err := command.Execute(); err == nil {
+		t.Fatal("missing source accepted")
+	}
+}
+
 func TestCommandRoutes(t *testing.T) {
 	tests := []struct {
 		name string
@@ -218,5 +262,56 @@ func TestEveryRegisteredCommandHasUsageHelp(t *testing.T) {
 				t.Fatalf("stale placeholder help:\n%s", text)
 			}
 		})
+	}
+}
+
+func TestActionAndWorkspaceMayNotShareAFlagName(t *testing.T) {
+	app := tui.App{ID: "probe", Name: "Probe",
+		Commands: []tui.Command{{ID: "run", Name: "Run", Flags: []tui.Flag{{Name: "dest"}}, New: func() tui.CommandModel { return nil }}},
+		Actions:  []tui.Action{{ID: "run", Args: 1, Flags: []tui.ActionFlag{{Name: "dest"}}, Run: func(io.Reader, io.Writer, []string, map[string]string) error { return nil }}},
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a shared flag name was accepted silently")
+		}
+	}()
+	NewRootCommand([]tui.App{app}, func(tui.Launch) error { return nil })
+}
+
+func TestPhotoImportPreviewAndCleanupFlagsRunWithoutTUI(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(config.EnvPath, filepath.Join(root, "config"))
+	source, target := filepath.Join(root, "card"), filepath.Join(root, "library")
+	for _, directory := range []string{source, target} {
+		if err := os.Mkdir(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(source, "a.JPG"), []byte("synthetic photo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(extra ...string) string {
+		t.Helper()
+		command := NewRootCommand(apps.All(), func(tui.Launch) error { t.Fatal("CLI launched TUI"); return nil })
+		var output bytes.Buffer
+		command.SetOut(&output)
+		command.SetArgs(append([]string{"photo", "import", source, "--dest", target}, extra...))
+		if err := command.Execute(); err != nil {
+			t.Fatal(err, output.String())
+		}
+		return output.String()
+	}
+	if output := run("-n", "--move", "--organize", "--delete-state"); !strings.Contains(output, "Dry run") {
+		t.Fatal(output)
+	}
+	if entries, err := os.ReadDir(target); err != nil || len(entries) != 0 {
+		t.Fatalf("preview changed target: %v %v", entries, err)
+	}
+	run("--delete-state")
+	if _, err := os.Stat(filepath.Join(target, config.Default().PhotoImportStateFile())); !os.IsNotExist(err) {
+		t.Fatal("state not cleaned", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "a.JPG")); err != nil {
+		t.Fatal(err)
 	}
 }

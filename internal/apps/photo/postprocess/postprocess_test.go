@@ -2,12 +2,193 @@ package postprocess
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"dgs-toolbox/internal/verifiedcopy"
 )
+
+type captureReadFailure struct{ err error }
+
+func (r captureReadFailure) Read([]byte) (int, error) { return 0, r.err }
+
+func TestCaptureDatePreservesReadErrorsWrappedByEXIFDecoder(t *testing.T) {
+	failure := errors.New("synthetic read failure")
+	input := io.MultiReader(bytes.NewReader([]byte("II*\x00")), captureReadFailure{failure})
+	_, err := captureDateReader(input)
+	if !errors.Is(err, failure) || errors.Is(err, errNoCaptureDate) {
+		t.Fatalf("I/O error classified as missing date: %v", err)
+	}
+}
+
+func TestUnavailableCaptureDateDiffersFromFileAccessFailure(t *testing.T) {
+	_, err := captureDateReader(bytes.NewReader([]byte("unsupported container")))
+	if !errors.Is(err, errNoCaptureDate) {
+		t.Fatalf("unsupported metadata was treated as I/O failure: %v", err)
+	}
+	_, err = captureDate(filepath.Join(t.TempDir(), "missing.JPG"))
+	if !errors.Is(err, os.ErrNotExist) || errors.Is(err, errNoCaptureDate) {
+		t.Fatalf("missing file was treated as missing metadata: %v", err)
+	}
+}
+
+func existingPhoto(t *testing.T, root, source, path string) ExistingFile {
+	t.Helper()
+	checked, err := verifiedcopy.Check(context.Background(), root, path, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ExistingFile{File: File{Source: source, Path: path}, Digest: checked.Digest, Size: checked.Size}
+}
+
+func TestUnorganizedExistingPhotoRetainsVerification(t *testing.T) {
+	for _, change := range []string{"unchanged", "before planning", "after planning"} {
+		t.Run(change, func(t *testing.T) {
+			root := t.TempDir()
+			jpg := writePhoto(t, root, "DCIM/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+			raw := writePhoto(t, root, "DCIM/IMG_0001.DNG", tiff(t, "2026:10:09 01:02:03"))
+			witness := existingPhoto(t, root, "card/DCIM/IMG_0001.JPG", jpg)
+			files := []File{witness.File, {Source: "card/DCIM/IMG_0001.DNG", Path: raw}}
+			changePhoto := func() { writePhoto(t, root, "DCIM/IMG_0001.JPG", jpeg(t, "2026:10:11 11:12:13")) }
+			if change == "before planning" {
+				changePhoto()
+			}
+			plan := NewPlanWithExisting(context.Background(), root, files, []ExistingFile{witness})
+			if change != "before planning" {
+				for _, outcome := range plan.Files {
+					if outcome.Status != Moved || outcome.Date != "20261010" {
+						t.Fatalf("unchanged shot cannot organize: %#v", outcome)
+					}
+				}
+			}
+			if change == "after planning" {
+				changePhoto()
+			}
+			result := Apply(plan)
+			for _, outcome := range result.Files {
+				if change == "unchanged" {
+					if outcome.Status != Moved {
+						t.Fatal(outcome)
+					}
+					if _, err := os.Stat(outcome.Final); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					if outcome.Status != Failed || !strings.Contains(outcome.Error, "counterpart") || outcome.Final != outcome.Original {
+						t.Fatalf("changed shot was not refused: %#v", outcome)
+					}
+					if _, err := os.Stat(outcome.Original); err != nil {
+						t.Fatal("changed shot moved", err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestIncrementalOrganizationUsesVerifiedExistingJPGWithoutMovingIt(t *testing.T) {
+	root := t.TempDir()
+	jpg := writePhoto(t, root, "20261010/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	raw := writePhoto(t, root, "DCIM/IMG_0001.DNG", tiff(t, "2026:10:09 01:02:03"))
+	witness := existingPhoto(t, root, "card/DCIM/IMG_0001.JPG", jpg)
+	before, _ := os.Stat(jpg)
+	plan := NewPlanWithExisting(context.Background(), root, []File{{Source: "card/DCIM/IMG_0001.DNG", Path: raw}}, []ExistingFile{witness})
+	if len(plan.Files) != 1 || plan.Files[0].Date != "20261010" || plan.Files[0].Status != Moved {
+		t.Fatalf("plan = %#v", plan.Files)
+	}
+	result := Apply(plan)
+	if result.Files[0].Status != Moved || result.Files[0].DateSource != "sidecar JPG EXIF" {
+		t.Fatal(result.Files[0])
+	}
+	if _, err := os.Stat(filepath.Join(root, "20261010", "IMG_0001.DNG")); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.Stat(jpg)
+	if !os.SameFile(before, after) || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("existing JPG moved or rewritten")
+	}
+}
+
+func TestIncrementalOrganizationRefusesUnrelatedShotMember(t *testing.T) {
+	root := t.TempDir()
+	jpg := writePhoto(t, root, "20261010/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	raw := writePhoto(t, root, "DCIM/IMG_0001.DNG", tiff(t, "2026:10:09 01:02:03"))
+	writePhoto(t, root, "20261010/IMG_0001.NEF", []byte("another shot"))
+	plan := NewPlanWithExisting(context.Background(), root, []File{{Source: "card/DCIM/IMG_0001.DNG", Path: raw}}, []ExistingFile{existingPhoto(t, root, "card/DCIM/IMG_0001.JPG", jpg)})
+	if plan.Files[0].Status != Failed {
+		t.Fatal(plan.Files[0])
+	}
+	if _, err := os.Stat(raw); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIncrementalOrganizationRevalidatesWitnessAfterConfirmation(t *testing.T) {
+	root := t.TempDir()
+	jpg := writePhoto(t, root, "20261010/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	raw := writePhoto(t, root, "DCIM/IMG_0001.DNG", tiff(t, "2026:10:09 01:02:03"))
+	plan := NewPlanWithExisting(context.Background(), root, []File{{Source: "card/DCIM/IMG_0001.DNG", Path: raw}}, []ExistingFile{existingPhoto(t, root, "card/DCIM/IMG_0001.JPG", jpg)})
+	writePhoto(t, root, "20261010/IMG_0001.JPG", jpeg(t, "2026:10:11 11:12:13"))
+	if result := Apply(plan); result.Files[0].Status != Failed {
+		t.Fatal(result.Files[0])
+	}
+	if _, err := os.Stat(raw); err != nil {
+		t.Fatal("new RAW moved using stale witness")
+	}
+}
+
+func TestIncrementalOrganizationRefusesRenamedWitness(t *testing.T) {
+	root := t.TempDir()
+	jpg := writePhoto(t, root, "20261010/renamed.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	raw := writePhoto(t, root, "DCIM/IMG_0001.DNG", tiff(t, "2026:10:09 01:02:03"))
+	plan := NewPlanWithExisting(context.Background(), root, []File{{Source: "card/DCIM/IMG_0001.DNG", Path: raw}}, []ExistingFile{existingPhoto(t, root, "card/DCIM/IMG_0001.JPG", jpg)})
+	if plan.Files[0].Status != Failed || !strings.Contains(plan.Files[0].Error, "ambiguous") {
+		t.Fatal(plan.Files[0])
+	}
+}
+
+func TestIncrementalOrganizationDoesNotUseGlobalBasenameForPairing(t *testing.T) {
+	root := t.TempDir()
+	jpg := writePhoto(t, root, "20261010/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	raw := writePhoto(t, root, "other/IMG_0001.DNG", tiff(t, "2026:10:09 01:02:03"))
+	plan := NewPlanWithExisting(context.Background(), root, []File{{Source: "card/other/IMG_0001.DNG", Path: raw}}, []ExistingFile{existingPhoto(t, root, "card/DCIM/IMG_0001.JPG", jpg)})
+	if plan.Files[0].Status != Moved || plan.Files[0].Date != "20261009" || plan.Files[0].DateSource != "RAW metadata" {
+		t.Fatal(plan.Files[0])
+	}
+}
+
+func TestIncrementalOrganizationKeepsNewMemberWhenDateFoldersDisagree(t *testing.T) {
+	root := t.TempDir()
+	raw := writePhoto(t, root, "20261009/IMG_0001.DNG", tiff(t, "2026:10:09 01:02:03"))
+	jpg := writePhoto(t, root, "DCIM/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	plan := NewPlanWithExisting(context.Background(), root, []File{{Source: "card/DCIM/IMG_0001.JPG", Path: jpg}}, []ExistingFile{existingPhoto(t, root, "card/DCIM/IMG_0001.DNG", raw)})
+	if plan.Files[0].Status != Failed || !strings.Contains(plan.Files[0].Error, "date folder") {
+		t.Fatal(plan.Files[0])
+	}
+	if _, err := os.Stat(jpg); err != nil {
+		t.Fatal("new JPG moved away from its verified publication")
+	}
+}
+
+func TestIncrementalOrganizationRefusesNewCollisionAfterPlanning(t *testing.T) {
+	root := t.TempDir()
+	jpg := writePhoto(t, root, "20261010/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	raw := writePhoto(t, root, "DCIM/IMG_0001.DNG", tiff(t, "2026:10:09 01:02:03"))
+	plan := NewPlanWithExisting(context.Background(), root, []File{{Source: "card/DCIM/IMG_0001.DNG", Path: raw}}, []ExistingFile{existingPhoto(t, root, "card/DCIM/IMG_0001.JPG", jpg)})
+	writePhoto(t, root, "20261010/IMG_0001.NEF", []byte("other shot"))
+	if result := Apply(plan); result.Files[0].Status != Failed {
+		t.Fatal(result.Files[0])
+	}
+	if _, err := os.Stat(raw); err != nil {
+		t.Fatal("late collision moved RAW")
+	}
+}
 
 func TestRunUsesSidecarDateAndRawDate(t *testing.T) {
 	root := t.TempDir()
@@ -158,5 +339,110 @@ func TestShotDoesNotJoinAnEarlierShotOfTheSameName(t *testing.T) {
 	}
 	if _, err := os.Stat(raw); err != nil {
 		t.Fatalf("raw moved: %v", err)
+	}
+}
+
+func TestKeepBothRenamedShotIsNotOrganizedApart(t *testing.T) {
+	root := t.TempDir()
+	jpg := writePhoto(t, root, "DCIM/IMG_0001-2.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	raw := writePhoto(t, root, "DCIM/IMG_0001.DNG", tiff(t, "2026:10:10 11:12:13"))
+	plan := NewPlan(root, []File{{Source: "card/DCIM/IMG_0001.JPG", Path: jpg}, {Source: "card/DCIM/IMG_0001.DNG", Path: raw}})
+	for _, outcome := range plan.Files {
+		if outcome.Status != Failed || !strings.Contains(outcome.Error, "Keep both") || outcome.Final != outcome.Original {
+			t.Fatalf("renamed shot planned apart: %#v", outcome)
+		}
+	}
+}
+
+func TestChangedWitnessReportsWhy(t *testing.T) {
+	root := t.TempDir()
+	jpg := writePhoto(t, root, "20261010/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	raw := writePhoto(t, root, "DCIM/IMG_0001.DNG", tiff(t, "2026:10:09 01:02:03"))
+	plan := NewPlanWithExisting(context.Background(), root, []File{{Source: "card/DCIM/IMG_0001.DNG", Path: raw}}, []ExistingFile{existingPhoto(t, root, "card/DCIM/IMG_0001.JPG", jpg)})
+	if err := os.WriteFile(jpg, []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := Apply(plan).Files[0]
+	if result.Status != Failed || !strings.Contains(result.Error, "counterpart changed") || result.Final != raw {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestCancelledOrganizeMovesNothing(t *testing.T) {
+	root := t.TempDir()
+	jpg := writePhoto(t, root, "DCIM/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	plan := NewPlan(root, []File{{Source: "card/DCIM/IMG_0001.JPG", Path: jpg}})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result := ApplyContext(ctx, plan).Files[0]
+	if result.Status != Failed || !strings.Contains(result.Error, "cancelled") {
+		t.Fatal(result)
+	}
+	if _, err := os.Stat(jpg); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplyDoesNotFillAReplacedRoot(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "library")
+	source := writePhoto(t, root, "camera/IMG_0001.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	plan := NewPlan(root, []File{{Source: source, Path: source}})
+	if plan.Files[0].Status != Moved {
+		t.Fatalf("plan = %#v", plan.Files[0])
+	}
+	// While the plan waits for confirmation the disk is unmounted, leaving an
+	// empty mount point at the same path.
+	if err := os.Rename(root, filepath.Join(parent, "unmounted")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := Apply(plan)
+	if result.Files[0].Status != Failed || result.Files[0].Final != source {
+		t.Fatalf("outcome = %#v", result.Files[0])
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 0 {
+		t.Fatal("organize wrote into the empty mount point", entries)
+	}
+	if _, err := os.Stat(filepath.Join(parent, "unmounted", "camera", "IMG_0001.JPG")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOrganizationProgressPreservesPlanAndMoves(t *testing.T) {
+	root := t.TempDir()
+	path := writePhoto(t, root, "DCIM/photo.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	files := []File{{Source: "card/photo.JPG", Path: path}}
+	plain := NewPlanWithExisting(context.Background(), root, files, nil)
+	var reports []Progress
+	report := func(p Progress) { reports = append(reports, p) }
+	plan := NewPlanWithProgress(context.Background(), root, files, nil, report)
+	if len(plan.Files) != 1 || plan.Files[0] != plain.Files[0] {
+		t.Fatal("progress changed planning outcome")
+	}
+	result := ApplyWithProgress(context.Background(), plan, report)
+	if len(result.Files) != 1 || result.Files[0].Status != Moved {
+		t.Fatal(result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "20261010", "photo.JPG")); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, p := range reports {
+		seen[p.Phase] = true
+		if p.Completed < 0 || p.Completed > p.Total {
+			t.Fatalf("invalid progress: %#v", p)
+		}
+	}
+	for _, phase := range []string{"Reading capture dates", "Planning date folders", "Organizing files"} {
+		if !seen[phase] {
+			t.Fatal("missing phase", phase)
+		}
+	}
+	last := reports[len(reports)-1]
+	if last.Phase != "Organizing files" || last.Completed != 1 || last.Total != 1 {
+		t.Fatal("missing final count", last)
 	}
 }

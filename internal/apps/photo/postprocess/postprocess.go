@@ -2,13 +2,18 @@
 package postprocess
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"dgs-toolbox/internal/apps/photo/skipdirs"
+	"dgs-toolbox/internal/verifiedcopy"
 
 	"github.com/rwcarlsen/goexif/exif"
 )
@@ -28,6 +33,11 @@ type Outcome struct {
 	DateSource string
 	Status     Status
 	Error      string
+	// NoDate marks unavailable capture metadata, excluding file I/O errors: a
+	// RAW container the EXIF reader does not support (CR3, RAF, ORF) without a
+	// JPG, or a JPG without EXIF. The file stays where it is, unharmed; a
+	// caller may treat it as not organizable rather than as a fault.
+	NoDate bool
 	// group is the shot this file belongs to: its source folder and filename
 	// stem. A RAW and its JPG move together or not at all.
 	group string
@@ -37,9 +47,34 @@ type Result struct {
 	Files []Outcome
 }
 
+// Progress reports work within one organizing phase. Total zero means that
+// phase has no measurable file count (for example collision checks).
+// Callbacks run synchronously and must return promptly.
+type Progress struct {
+	Phase     string
+	Path      string
+	Completed int
+	Total     int
+}
+
+func reportProgress(report func(Progress), phase, path string, completed, total int) {
+	if report != nil {
+		report(Progress{Phase: phase, Path: path, Completed: completed, Total: total})
+	}
+}
+
 type File struct {
 	Source string
 	Path   string
+}
+
+// ExistingFile carries verified shot context. Its source name groups it with
+// new files; its destination bytes must still match before organizing. It is
+// read-only unless its File also appears among the rename targets.
+type ExistingFile struct {
+	File
+	Digest string
+	Size   int64
 }
 
 var rawExtensions = map[string]struct{}{
@@ -56,8 +91,14 @@ const DefaultLayout = "YYYYMMDD"
 // without changing any file. Check ExistingDates before Apply so a batch never
 // silently mixes into date folders that are already there.
 type Plan struct {
-	Root  string
-	Files []Outcome
+	Root     string
+	Files    []Outcome
+	existing []ExistingFile
+	verified map[string]string
+	// rootInfo is Root's identity when the plan was made. The user may leave
+	// the plan at its confirmation while a disk is unmounted; Apply then finds
+	// another directory, or an empty mount point, and must not fill it.
+	rootInfo os.FileInfo
 }
 
 // ValidateLayout checks a date folder layout built from YYYY, MM and DD, with
@@ -93,24 +134,119 @@ func NewPlan(root string, files []File) Plan {
 	return NewLayoutPlan(root, files, DefaultLayout)
 }
 
+// NewPlanWithExisting reads verified counterparts; only files are eligible to
+// move. A counterpart also listed in files retains both checks while moving.
+// Cancelling ctx stops reading counterparts; their shots are then refused,
+// never moved unchecked.
+func NewPlanWithExisting(ctx context.Context, root string, files []File, existing []ExistingFile) Plan {
+	return newLayoutPlan(ctx, root, files, DefaultLayout, existing, nil)
+}
+
+// NewPlanWithProgress is NewPlanWithExisting with per-phase activity reports.
+func NewPlanWithProgress(ctx context.Context, root string, files []File, existing []ExistingFile, report func(Progress)) Plan {
+	return newLayoutPlan(ctx, root, files, DefaultLayout, existing, report)
+}
+
 // NewLayoutPlan plans moves into root/<layout>/, where layout must pass
 // ValidateLayout. Files may live anywhere; only their date folder is under root.
 func NewLayoutPlan(root string, files []File, layout string) Plan {
-	plan := Plan{Root: root, Files: make([]Outcome, len(files))}
+	return newLayoutPlan(context.Background(), root, files, layout, nil, nil)
+}
+
+func newLayoutPlan(ctx context.Context, root string, files []File, layout string, existing []ExistingFile, report func(Progress)) Plan {
+	plan := Plan{Root: root, Files: make([]Outcome, len(files)), verified: make(map[string]string)}
+	if info, err := os.Stat(root); err == nil && info.IsDir() {
+		plan.rootInfo = info
+	}
+	contextErrors := make(map[string]string)
+	contextFolders := make(map[string]string)
+	contextVersions := make(map[string]os.FileInfo)
+	needed := make(map[string]bool)
+	movable := make(map[File]bool)
+	for _, file := range files {
+		movable[file] = true
+		if isJPEG(file.Source) || isRAW(file.Source) {
+			needed[pairKey(file.Source)] = true
+		}
+	}
+	metadataFiles := append([]File(nil), files...)
+	for index, item := range existing {
+		reportProgress(report, "Checking existing copies", item.Path, index, len(existing))
+		group := pairKey(item.Source)
+		if !needed[group] || (!isJPEG(item.Source) && !isRAW(item.Source)) {
+			continue
+		}
+		checked, err := verifiedcopy.Check(ctx, root, item.Path, nil, nil)
+		if ctx.Err() != nil {
+			contextErrors[group] = "organizing was cancelled"
+			continue
+		}
+		if err != nil || checked.Size != item.Size || checked.Digest != item.Digest {
+			contextErrors[group] = "existing shot counterpart no longer matches its verified content"
+			continue
+		}
+		if !movable[item.File] && !strings.EqualFold(stem(item.Source), stem(item.Path)) {
+			contextErrors[group] = "renamed existing counterpart has ambiguous shot ownership"
+			continue
+		}
+		if !movable[item.File] {
+			folder := filepath.Clean(filepath.Dir(item.Path))
+			if prior, ok := contextFolders[group]; ok && prior != folder {
+				contextErrors[group] = "existing shot counterparts occupy different folders"
+			}
+			contextFolders[group] = folder
+		}
+		plan.existing = append(plan.existing, item)
+		if prior, ok := plan.verified[filepath.Clean(item.Path)]; ok && prior != group {
+			contextErrors[prior], contextErrors[group] = "existing counterpart belongs to multiple source shots", "existing counterpart belongs to multiple source shots"
+		}
+		plan.verified[filepath.Clean(item.Path)] = group
+		contextVersions[item.Path] = checked.Source
+		if !movable[item.File] {
+			metadataFiles = append(metadataFiles, item.File)
+		}
+	}
+	// A shot's files pair by name. Keep both may have renamed one of them
+	// (IMG_0001-2.JPG beside IMG_0001.CR2); in a date folder that pairs with
+	// nothing, or with another shot, so the shot stays where it is.
+	stems := make(map[string]string)
+	for _, file := range metadataFiles {
+		if !isJPEG(file.Source) && !isRAW(file.Source) {
+			continue
+		}
+		group, name := pairKey(file.Source), strings.ToLower(stem(file.Path))
+		if prior, ok := stems[group]; ok && prior != name && contextErrors[group] == "" {
+			contextErrors[group] = "files of this shot were published under different names (Keep both); pair them by hand"
+		}
+		stems[group] = name
+	}
 	jpegByStem := make(map[string]string)
 	jpegDates := make(map[string]time.Time)
 	jpegErrors := make(map[string]error)
-	for _, file := range files {
-		if isJPEG(file.Source) {
+	for index, file := range metadataFiles {
+		reportProgress(report, "Reading capture dates", file.Path, index, len(metadataFiles))
+		if isJPEG(file.Source) && contextErrors[pairKey(file.Source)] == "" {
 			key := pairKey(file.Source)
 			jpegByStem[key] = file.Path
 			jpegDates[key], jpegErrors[key] = captureDate(file.Path)
 		}
 	}
+	for _, item := range plan.existing {
+		info, err := verifiedcopy.FileInfo(root, item.Path)
+		if err != nil || !verifiedcopy.SameVersion(info, contextVersions[item.Path]) {
+			contextErrors[pairKey(item.Source)] = "existing counterpart changed during metadata reading"
+		}
+	}
 	for index, file := range files {
+		reportProgress(report, "Planning date folders", file.Path, index, len(files))
 		path := file.Path
 		outcome := Outcome{Original: path, Final: path, Status: Skipped, group: pairKey(file.Source)}
 		if !isJPEG(file.Source) && !isRAW(file.Source) {
+			plan.Files[index] = outcome
+			continue
+		}
+		if message := contextErrors[outcome.group]; message != "" {
+			outcome.Status, outcome.Error = Failed, message
 			plan.Files[index] = outcome
 			continue
 		}
@@ -131,15 +267,24 @@ func NewLayoutPlan(root string, files []File, layout string) Plan {
 		}
 		if err != nil {
 			outcome.Status, outcome.Error = Failed, fmt.Sprintf("read %s: %v", source, err)
+			outcome.NoDate = errors.Is(err, errNoCaptureDate)
 			plan.Files[index] = outcome
 			continue
 		}
 		date := FolderName(layout, captured)
 		outcome.Date, outcome.DateSource, outcome.Final = date, source, filepath.Join(root, date, filepath.Base(path))
+		if existingFolder, ok := contextFolders[outcome.group]; ok && existingFolder != filepath.Clean(filepath.Dir(outcome.Final)) {
+			outcome.Status, outcome.Error = Failed, "existing shot counterpart is outside the planned date folder"
+			outcome.Final = outcome.Original
+			plan.Files[index] = outcome
+			continue
+		}
 		outcome.Status = Moved
 		plan.Files[index] = outcome
 	}
+	reportProgress(report, "Checking date folders", "", 0, 0)
 	refuseCollisions(&plan)
+	reportProgress(report, "Planning complete", "", len(files), len(files))
 	return plan
 }
 
@@ -188,6 +333,9 @@ func refuseCollisions(plan *Plan) {
 				continue
 			}
 			if stemKey(existing) == key {
+				if group, ok := plan.verified[filepath.Clean(existing)]; ok && group == outcome.group {
+					continue
+				}
 				conflicts[outcome.group] = fmt.Sprintf("%s already has %s", outcome.Date, entry.Name())
 				break
 			}
@@ -241,20 +389,61 @@ func (plan Plan) ExistingDates() []string {
 
 // Apply moves the files a plan placed into date folders. It never overwrites.
 func Apply(plan Plan) Result {
+	return ApplyContext(context.Background(), plan)
+}
+
+// ApplyContext is Apply whose counterpart checks stop when ctx is cancelled.
+// Cancellation is honoured only before the first move, so a shot is never
+// left half moved by it.
+func ApplyContext(ctx context.Context, plan Plan) Result {
+	return ApplyWithProgress(ctx, plan, nil)
+}
+
+// ApplyWithProgress preserves ApplyContext's shot and cancellation contract,
+// and reports checks and file outcomes without changing the move order.
+func ApplyWithProgress(ctx context.Context, plan Plan, report func(Progress)) Result {
+	plan.Files = append([]Outcome(nil), plan.Files...)
 	result := Result{Files: make([]Outcome, len(plan.Files))}
-	failedGroups := make(map[string]struct{})
+	// failedGroups holds why a shot stays where it is.
+	failedGroups := make(map[string]string)
+	// The user may have left a planned import at the date-folder confirmation.
+	// Re-read witnesses before any move; stale context cannot waive a collision.
+	for index, item := range plan.existing {
+		reportProgress(report, "Rechecking existing copies", item.Path, index, len(plan.existing))
+		checked, err := verifiedcopy.Check(ctx, plan.Root, item.Path, nil, nil)
+		if err != nil || checked.Size != item.Size || checked.Digest != item.Digest {
+			failedGroups[pairKey(item.Source)] = "existing shot counterpart changed before organizing"
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		for index, outcome := range plan.Files {
+			result.Files[index] = outcome
+			if outcome.Status == Moved && !samePath(outcome.Original, outcome.Final) {
+				result.Files[index].Status, result.Files[index].Error = Failed, "organizing was cancelled"
+				result.Files[index].Final = outcome.Original
+			}
+		}
+		return result
+	}
+	// Recheck shot-level occupancy after the confirmation as well.
+	reportProgress(report, "Rechecking date folders", "", 0, 0)
+	refuseCollisions(&plan)
 	for index, outcome := range plan.Files {
+		reportProgress(report, "Organizing files", outcome.Original, index, len(plan.Files))
 		result.Files[index] = outcome
 		if outcome.Status != Moved || samePath(outcome.Original, outcome.Final) {
 			continue
 		}
 		fail := func(message string) {
 			result.Files[index].Status, result.Files[index].Error = Failed, message
-			failedGroups[outcome.group] = struct{}{}
+			result.Files[index].Final = outcome.Original
+			if _, recorded := failedGroups[outcome.group]; !recorded {
+				failedGroups[outcome.group] = "another file of this shot could not be moved"
+			}
 		}
 		// Once part of a shot could not move, the rest stays with it.
-		if _, failed := failedGroups[outcome.group]; failed {
-			fail("another file of this shot could not be moved")
+		if reason, failed := failedGroups[outcome.group]; failed {
+			fail(reason)
 			continue
 		}
 		if _, err := os.Lstat(outcome.Final); err == nil {
@@ -264,14 +453,23 @@ func Apply(plan Plan) Result {
 			fail(err.Error())
 			continue
 		}
+		if err := verifiedcopy.CheckRoot(plan.Root, plan.rootInfo); err != nil {
+			fail(err.Error())
+			continue
+		}
 		if err := ensureDateDirectory(plan.Root, outcome.Date); err != nil {
 			fail(err.Error())
 			continue
 		}
-		if err := os.Rename(outcome.Original, outcome.Final); err != nil {
+		if err := verifiedcopy.CheckRoot(plan.Root, plan.rootInfo); err != nil {
+			fail(err.Error())
+			continue
+		}
+		if err := verifiedcopy.Publish(outcome.Original, outcome.Final); err != nil {
 			fail(err.Error())
 		}
 	}
+	reportProgress(report, "Organizing files", "", len(plan.Files), len(plan.Files))
 	return result
 }
 
@@ -283,7 +481,7 @@ func TreeFiles(dir string) ([]File, error) {
 		if err != nil {
 			return err
 		}
-		if path != dir && strings.HasPrefix(entry.Name(), ".") {
+		if path != dir && (strings.HasPrefix(entry.Name(), ".") || entry.IsDir() && skipdirs.Skip(entry.Name())) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -343,11 +541,41 @@ func captureDate(path string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	defer file.Close()
-	metadata, err := exif.Decode(file)
-	if err != nil && metadata == nil {
-		return time.Time{}, err
+	return captureDateReader(file)
+}
+
+var errNoCaptureDate = errors.New("no readable capture date")
+
+// The EXIF decoder formats reader errors without wrapping them. Keep the
+// underlying non-EOF error so a disconnected mount is not treated as missing
+// metadata or an unsupported container.
+type captureReader struct {
+	io.Reader
+	err error
+}
+
+func (r *captureReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) {
+		r.err = err
 	}
-	return metadata.DateTime()
+	return n, err
+}
+
+func captureDateReader(input io.Reader) (time.Time, error) {
+	reader := &captureReader{Reader: input}
+	metadata, err := exif.Decode(reader)
+	if reader.err != nil {
+		return time.Time{}, reader.err
+	}
+	if err != nil && metadata == nil {
+		return time.Time{}, fmt.Errorf("%w: %v", errNoCaptureDate, err)
+	}
+	date, err := metadata.DateTime()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: %v", errNoCaptureDate, err)
+	}
+	return date, nil
 }
 
 func isJPEG(path string) bool {

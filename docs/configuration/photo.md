@@ -7,7 +7,7 @@
   "import": {
     "state_file": ".dgs-state",
     "source": "",
-    "destination": ""
+    "dest": []
   }
 }
 ```
@@ -16,9 +16,18 @@
 | --- | --- | --- |
 | `import.state_file` | The name of the file Photo Import keeps its state in, inside the destination. It must be a bare filename, not a path: a configuration giving a path is refused. | `.dgs-state` |
 | `import.source` | Where Import reads from. Empty shows the repository's mock path instead. | empty |
-| `import.destination` | Where Import publishes to. Empty shows the repository's mock path instead. | empty |
+| `import.dest` | Initial destination directories, in display order. Each receives a complete copy. An omitted or empty array shows the repository's mock destination instead. | `[]` |
+
+The legacy `import.destination` string remains readable as one destination. Do not
+combine it with `import.dest`; new configurations use the array.
 
 What Import does with these is in [`apps/photo/import.md`](../apps/photo/import.md).
+
+The Import workspace's **Incremental** checkbox defaults to enabled for each
+fresh session. It confirms identical size and SHA-256 anywhere under Destination,
+including date subdirectories, before skipping a copy. This is a session control,
+not an `import` JSON key; changing it does not persist. State uses version 2 and
+can be deleted without losing incremental detection; version 1 is still readable.
 
 ## Encode defaults
 

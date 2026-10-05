@@ -164,3 +164,19 @@ func TestExportsAreSRGB(t *testing.T) {
 		t.Fatal("untagged output is not tagged sRGB")
 	}
 }
+
+func TestTransparencyIsFlattenedInSRGB(t *testing.T) {
+	p3 := image.NewNRGBA(image.Rect(0, 0, 2, 1))
+	copy(p3.Pix, []byte{255, 0, 0, 0, 255, 0, 0, 128})
+	converted, _, e := toSRGB(p3, systemProfile(t, "Display P3.icc"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if converted.Pix[3] != 0 || converted.Pix[7] != 128 {
+		t.Fatal("alpha not carried over", converted.Pix)
+	}
+	background := color.NRGBA{R: 0x12, G: 0x34, B: 0x56, A: 255}
+	if got := Composite(converted, background).NRGBAAt(0, 0); got != background {
+		t.Fatal("transparent pixel shifted the sRGB background", got)
+	}
+}

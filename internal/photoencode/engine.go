@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"dgs-toolbox/internal/verifiedcopy"
@@ -29,28 +30,43 @@ type Options struct {
 func DefaultOptions() Options {
 	return Options{Quality: DefaultQuality, Size: DefaultSize, PPI: DefaultPPI, MaxPixels: DefaultMaxPixels, Background: DefaultBackground}
 }
+
+// OptionError names the option Validate refused, so a form can mark the field.
+type OptionError struct {
+	Option  string // background, quality, size, ppi or max_pixels
+	Message string
+}
+
+func (e *OptionError) Error() string { return e.Message }
+
 func (o Options) Validate() error {
 	if _, err := BackgroundColor(o.Background); err != nil {
-		return err
+		return &OptionError{"background", err.Error()}
 	}
 	if o.Quality < 1 || o.Quality > 100 {
-		return errors.New("quality must be 1–100")
+		return &OptionError{"quality", "quality must be 1–100"}
 	}
 	if o.Size < 1 || o.Size > 65535 {
-		return errors.New("size must be 1–65535")
+		return &OptionError{"size", "size must be 1–65535"}
 	}
 	if o.PPI < 1 || o.PPI > 65535 {
-		return errors.New("ppi must be 1–65535")
+		return &OptionError{"ppi", "ppi must be 1–65535"}
 	}
 	if o.MaxPixels < 1 || o.MaxPixels > DefaultMaxPixels {
-		return fmt.Errorf("max_pixels must be 1–%d", DefaultMaxPixels)
+		return &OptionError{"max_pixels", fmt.Sprintf("max_pixels must be 1–%d", DefaultMaxPixels)}
 	}
 	return nil
 }
 
 type Job struct {
 	Source, Destination string
-	Problem             string
+	// Root is the selected destination directory. Directories below it are
+	// created without following symbolic links.
+	Root    string
+	Problem string
+	// Exists marks an output that is already there: the job is skipped, not
+	// failed, so running the same plan again reports nothing new.
+	Exists bool
 }
 type Outcome struct {
 	Job                     Job
@@ -58,7 +74,14 @@ type Outcome struct {
 	Width, Height           int
 	Error                   string
 	Published               bool
+	Skipped                 bool
+	// Cancelled is a job stopped by the caller, not a failure of the image.
+	Cancelled bool
 }
+
+// outputPattern matches names Plan gives outputs, so a later run reading the
+// destination tree never encodes an earlier run's outputs again.
+var outputPattern = regexp.MustCompile(`(?i)-q\d+-s\d+\.jpg$`)
 
 // nativeKind names inputs decoded by macOS ImageIO rather than Go, or "".
 func nativeKind(path string) string {
@@ -109,11 +132,12 @@ func Plan(source, destination string, o Options) ([]Job, error) {
 		}
 		name := strings.TrimSuffix(relative, filepath.Ext(relative))
 		out := filepath.Join(dst, fmt.Sprintf("%s-q%d-s%d.jpg", name, o.Quality, o.Size))
-		j := Job{Source: path, Destination: out}
+		j := Job{Source: path, Destination: out, Root: dst}
 		if kind := nativeKind(path); kind != "" {
 			j.Problem = nativeProblem(kind)
 		}
 		if _, err := os.Lstat(out); err == nil {
+			j.Exists = true
 			j.Problem = joinProblems(j.Problem, "output already exists")
 		} else if !errors.Is(err, os.ErrNotExist) {
 			j.Problem = joinProblems(j.Problem, err.Error())
@@ -166,7 +190,9 @@ func Plan(source, destination string, o Options) ([]Job, error) {
 			return nil
 		}
 		// Hidden files include AppleDouble "._" companions on non-Apple volumes.
-		if d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
+		// An earlier run's output inside the destination is not an input, even
+		// when the destination is the source folder itself.
+		if d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") && !(outputPattern.MatchString(d.Name()) && insideDir(resolvedDst, path)) {
 			rel, e := filepath.Rel(src, path)
 			if e != nil {
 				return e
@@ -197,6 +223,11 @@ func Plan(source, destination string, o Options) ([]Job, error) {
 	}
 	return jobs, nil
 }
+func insideDir(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 func joinProblems(first, second string) string {
 	if first == "" {
 		return second
@@ -208,9 +239,17 @@ func joinProblems(first, second string) string {
 // Guarantees end at filesystem/user-space APIs, not physical media durability.
 func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 	result.Job = j
-	fail := func(err error) Outcome { result.Error = err.Error(); return result }
+	fail := func(err error) Outcome {
+		result.Error = err.Error()
+		result.Cancelled = ctx.Err() != nil
+		return result
+	}
 	if err := o.Validate(); err != nil {
 		return fail(err)
+	}
+	if j.Exists {
+		result.Skipped, result.Error = true, "output already exists"
+		return result
 	}
 	if j.Problem != "" {
 		return fail(errors.New(j.Problem))
@@ -249,11 +288,13 @@ func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 		return fail(err)
 	}
 	background, _ := BackgroundColor(o.Background)
-	// Every export is sRGB, as the web and most viewers assume.
-	dst, profile, err := toSRGB(Transform(src, m.orientation, o.Size, background), m.icc)
+	// Every export is sRGB, as the web and most viewers assume. Transparency is
+	// flattened after conversion, in the space the background colour names.
+	converted, profile, err := toSRGB(Fit(src, m.orientation, o.Size), m.icc)
 	if err != nil {
 		return fail(err)
 	}
+	dst := Composite(converted, background)
 	m.icc = profile
 	result.Width, result.Height = dst.Bounds().Dx(), dst.Bounds().Dy()
 	var encoded bytes.Buffer
@@ -267,7 +308,7 @@ func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 	if err = ctx.Err(); err != nil {
 		return fail(err)
 	}
-	if err = os.MkdirAll(filepath.Dir(j.Destination), 0755); err != nil {
+	if err = verifiedcopy.EnsureDirectory(j.Root, filepath.Dir(j.Destination)); err != nil {
 		return fail(err)
 	}
 	f, err := os.CreateTemp(filepath.Dir(j.Destination), ".dgs-encode-*.dgs-part")
@@ -305,6 +346,11 @@ func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 		return fail(fmt.Errorf("publication: %w", err))
 	}
 	result.Published = true
+	if err = verifiedcopy.SyncDirectory(filepath.Dir(j.Destination)); err != nil {
+		// The verified file already wears its final name; only the directory
+		// entry's flush is in doubt, as with Import.
+		result.Error = "sync destination directory: " + err.Error()
+	}
 	result.BytesAfter = int64(len(readback))
 	return result
 }

@@ -39,6 +39,10 @@ import (
 // neither can publish bytes the other wrote.
 const PartSuffix = ".dgs-part"
 
+// DefaultBufferSize bounds each sequential read and the interval between pause
+// or cancellation checks in Copy and Check.
+const DefaultBufferSize = 1024 * 1024
+
 // Phase is where a copy has got to. A caller showing progress needs to tell
 // copying from verifying, because the second pass reads the same number of
 // bytes again and a single bar would appear to stall at the end.
@@ -47,7 +51,10 @@ type Phase string
 const (
 	PhaseCopying   Phase = "copying"
 	PhaseVerifying Phase = "verifying"
-	PhasePublished Phase = "published"
+	// PhasePublishing follows a successful size and digest comparison and
+	// precedes destination metadata application and final-name publication.
+	PhasePublishing Phase = "publishing"
+	PhasePublished  Phase = "published"
 )
 
 // Request is one file to copy.
@@ -56,6 +63,11 @@ type Request struct {
 	// it is missing.
 	Source      string
 	Destination string
+	// ExpectedSource and ExpectedDigest optionally bind a copy to an earlier
+	// observation. Both are checked before publication; omitted values leave
+	// callers that have not pre-read source unchanged.
+	ExpectedSource os.FileInfo
+	ExpectedDigest string
 	// PreserveModTime applies the source's modification time to the copy before
 	// it is published, so the final name never denotes a file with incomplete
 	// metadata. A Box does not want this — a scan's intake date is a fact about
@@ -71,8 +83,11 @@ type Request struct {
 	// inside the tree is refused instead of written through. Root itself may
 	// be a link: it is what the user chose.
 	Root string
-	// Progress, when set, is called as bytes move. It must not block: it runs
-	// on the copying goroutine.
+	// ExpectedRoot optionally pins an existing Root's identity. A pinned root
+	// is never created, and is rechecked before creating files and publishing.
+	ExpectedRoot os.FileInfo
+	// Progress, when set, is called as bytes move. It must not block. Calls of
+	// Progress and Wait never overlap, but need not come from one goroutine.
 	Progress func(phase Phase, done, total int64)
 	// Wait, when set, is called between blocks and is how a caller pauses or
 	// cancels mid-file. Returning an error abandons the copy.
@@ -83,15 +98,16 @@ type Request struct {
 // whoever can read the library, writable by its owner.
 const DefaultPhotoMode os.FileMode = 0o644
 
-// Result is a completed, verified, published copy.
+// Result describes the bytes and file identity observed by Copy or Check.
+// Copy returns it only after verified publication; Check is a read-only digest.
 type Result struct {
 	// Source is the source's metadata as it was read. A caller that deletes the
 	// source afterwards compares against it first: the digest describes these
 	// bytes and no others.
 	Source os.FileInfo
 	Size   int64
-	// Digest is the SHA-256 both passes agreed on, lowercase hex with no
-	// algorithm prefix. It is what identifies the file from here on.
+	// Digest is lowercase SHA-256 hex with no algorithm prefix. Copy's source
+	// stream and independent destination readback must both agree on it.
 	Digest string
 }
 
@@ -102,7 +118,7 @@ type Result struct {
 var ErrDestinationExists = errors.New("destination exists")
 
 // Copy copies Source to Destination and publishes it only after an independent
-// readback agrees.
+// readback agrees. It is CopyMany with one target.
 //
 // Every failure removes the partial file. A partial copy is never published and
 // is never left under a name that looks final, so a retry is always a whole
@@ -111,166 +127,30 @@ func Copy(ctx context.Context, request Request) (Result, error) {
 	if request.Source == "" || request.Destination == "" {
 		return Result{}, errors.New("copy: source and destination are both required")
 	}
-	// partial holds the temporary path once it belongs to this copy, so every
-	// failure path below discards it rather than leaving an unverifiable
-	// remnant in the destination directory.
-	var partial string
-	fail := func(err error) (Result, error) {
-		if partial != "" {
-			_ = os.Remove(partial)
-		}
-		return Result{}, err
+	many := ManyRequest{
+		Source:          request.Source,
+		ExpectedSource:  request.ExpectedSource,
+		ExpectedDigest:  request.ExpectedDigest,
+		PreserveModTime: request.PreserveModTime,
+		Mode:            request.Mode,
+		Targets:         []Target{{Destination: request.Destination, Root: request.Root, ExpectedRoot: request.ExpectedRoot}},
+		Wait:            request.Wait,
 	}
-
-	// Non-following metadata operations throughout: a symbolic link in the
-	// source could read outside the tree that was scanned, and one at the
-	// destination would write through to somewhere nobody chose.
-	info, err := os.Lstat(request.Source)
-	if err != nil {
-		return fail(fmt.Errorf("source metadata: %w", err))
+	if request.Progress != nil {
+		many.Progress = func(_ int, phase Phase, done, total int64) { request.Progress(phase, done, total) }
 	}
-	if !info.Mode().IsRegular() {
-		return fail(fmt.Errorf("source is not a regular file: %s", request.Source))
+	result, errs := CopyMany(ctx, many)
+	if errs[0] != nil {
+		return Result{}, errs[0]
 	}
-	if _, err := os.Lstat(request.Destination); err == nil {
-		return fail(fmt.Errorf("%w: %s", ErrDestinationExists, request.Destination))
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fail(fmt.Errorf("destination metadata: %w", err))
-	}
-	directory := filepath.Dir(request.Destination)
-	if err := ensureDirectory(request.Root, directory); err != nil {
-		return fail(fmt.Errorf("create destination directory: %w", err))
-	}
-	if err := clearStale(directory, filepath.Base(request.Destination)); err != nil {
-		return fail(err)
-	}
-
-	source, err := os.Open(request.Source)
-	if err != nil {
-		return fail(fmt.Errorf("open source: %w", err))
-	}
-	defer source.Close()
-	// The temporary file goes in the destination's own directory, so publishing
-	// is a rename within one filesystem and cannot turn into a second copy.
-	// CreateTemp creates exclusively under a name nobody else holds.
-	destination, err := os.CreateTemp(directory, "."+filepath.Base(request.Destination)+".*"+PartSuffix)
-	if err != nil {
-		return fail(fmt.Errorf("open destination temporary file: %w", err))
-	}
-	temporary := destination.Name()
-	partial = temporary
-	// written is the file this copy wrote. Everything after the write —
-	// readback, metadata, publication — is checked against it, because they
-	// all go through a path and a path can come to name another file.
-	written, err := destination.Stat()
-	if err != nil {
-		destination.Close()
-		return fail(fmt.Errorf("temporary file metadata: %w", err))
-	}
-
-	sourceDigest := sha256.New()
-	buffer := make([]byte, 1024*1024)
-	var copied int64
-	report(request, PhaseCopying, 0, info.Size())
-	for {
-		if err := waitFor(ctx, request); err != nil {
-			destination.Close()
-			return fail(err)
-		}
-		read, readErr := source.Read(buffer)
-		if read > 0 {
-			chunk := buffer[:read]
-			if _, err := destination.Write(chunk); err != nil {
-				destination.Close()
-				return fail(fmt.Errorf("write destination: %w", err))
-			}
-			sourceDigest.Write(chunk)
-			copied += int64(read)
-			report(request, PhaseCopying, copied, info.Size())
-		}
-		if errors.Is(readErr, io.EOF) {
-			break
-		}
-		if readErr != nil {
-			destination.Close()
-			return fail(fmt.Errorf("read source: %w", readErr))
-		}
-	}
-	if err := destination.Sync(); err != nil {
-		destination.Close()
-		return fail(fmt.Errorf("sync destination: %w", err))
-	}
-	if err := destination.Close(); err != nil {
-		return fail(fmt.Errorf("close destination: %w", err))
-	}
-
-	// A source that changed under the copy makes the digest a digest of nothing
-	// in particular — partly the old file, partly the new one.
-	after, err := os.Lstat(request.Source)
-	if err != nil {
-		return fail(fmt.Errorf("source metadata after copy: %w", err))
-	}
-	if !os.SameFile(info, after) || after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
-		return fail(errors.New("source changed during copy"))
-	}
-
-	// The verification pass opens the destination again and reads it back. It
-	// is not the buffer that was just written: a digest taken over bytes still
-	// in memory verifies memory, not the disk.
-	expected := hex.EncodeToString(sourceDigest.Sum(nil))
-	report(request, PhaseVerifying, 0, info.Size())
-	verified, actual, err := readBack(ctx, request, temporary, written, buffer, info.Size())
-	if err != nil {
-		return fail(err)
-	}
-	if verified != info.Size() || actual != expected {
-		return fail(fmt.Errorf("source and destination SHA-256 mismatch: %s != %s", expected, actual))
-	}
-
-	if request.PreserveModTime || request.Mode != 0 {
-		// Applied while the file still has its unpublished name, so the final
-		// name never denotes a file with incomplete metadata.
-		if request.Mode != 0 {
-			if err := os.Chmod(temporary, request.Mode.Perm()); err != nil {
-				return fail(fmt.Errorf("set destination permission: %w", err))
-			}
-		}
-		if request.PreserveModTime {
-			if err := os.Chtimes(temporary, info.ModTime(), info.ModTime()); err != nil {
-				return fail(fmt.Errorf("preserve source modification time: %w", err))
-			}
-		}
-		if err := syncMetadata(temporary); err != nil {
-			return fail(err)
-		}
-	}
-
-	// The name about to be published must still be the file that was written
-	// and read back. Nothing else creates this name, but anything may remove
-	// it, and a rename of whatever stands there would publish unverified bytes.
-	if current, err := os.Lstat(temporary); err != nil {
-		return fail(fmt.Errorf("temporary metadata before publish: %w", err))
-	} else if !os.SameFile(current, written) {
-		return fail(fmt.Errorf("temporary file was replaced before publish: %s", temporary))
-	}
-	// Publication never replaces: a file that appeared at the final name while
-	// this one was being verified is somebody else's work.
-	if err := Publish(temporary, request.Destination); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return fail(fmt.Errorf("%w: appeared during copy: %s", ErrDestinationExists, request.Destination))
-		}
-		return fail(fmt.Errorf("publish destination: %w", err))
-	}
-	partial = ""
-	if err := SyncDirectory(directory); err != nil {
-		return Result{}, fmt.Errorf("sync destination directory: %w", err)
-	}
-	report(request, PhasePublished, info.Size(), info.Size())
-	return Result{Source: info, Size: info.Size(), Digest: expected}, nil
+	return result, nil
 }
 
-func readBack(ctx context.Context, request Request, path string, written os.FileInfo, buffer []byte, total int64) (int64, string, error) {
-	file, err := os.Open(path)
+// openReadBack opens the independent verification handle; tests delay an open.
+var openReadBack = os.Open
+
+func readBack(ctx context.Context, wait func(context.Context) error, progress func(Phase, int64, int64), path string, written os.FileInfo, buffer []byte, total int64) (int64, string, error) {
+	file, err := openReadBack(path)
 	if err != nil {
 		return 0, "", fmt.Errorf("open destination for verification: %w", err)
 	}
@@ -282,10 +162,12 @@ func readBack(ctx context.Context, request Request, path string, written os.File
 		file.Close()
 		return 0, "", fmt.Errorf("temporary file was replaced before verification: %s", path)
 	}
+	_ = bypassCache(file)
+	_ = dropCache(file)
 	digest := sha256.New()
 	var read int64
 	for {
-		if err := waitFor(ctx, request); err != nil {
+		if err := waitFor(ctx, wait); err != nil {
 			file.Close()
 			return 0, "", err
 		}
@@ -293,7 +175,7 @@ func readBack(ctx context.Context, request Request, path string, written os.File
 		if n > 0 {
 			digest.Write(buffer[:n])
 			read += int64(n)
-			report(request, PhaseVerifying, read, total)
+			progress(PhaseVerifying, read, total)
 		}
 		if errors.Is(readErr, io.EOF) {
 			break
@@ -354,10 +236,17 @@ func clearStale(directory, name string) error {
 	return nil
 }
 
-// ensureDirectory creates directory. Under a root, every level below it is
+// EnsureDirectory creates directory. Under a root, every level below it is
 // checked without following links and made one at a time, so a symbolic link
 // planted inside the tree is refused rather than written through.
-func ensureDirectory(root, directory string) error {
+func EnsureDirectory(root, directory string) error {
+	return ensureDirectory(root, directory, nil)
+}
+
+func ensureDirectory(root, directory string, expected os.FileInfo) error {
+	if err := CheckRoot(root, expected); err != nil {
+		return err
+	}
 	if root == "" {
 		return os.MkdirAll(directory, 0o755)
 	}
@@ -368,14 +257,19 @@ func ensureDirectory(root, directory string) error {
 	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 		return fmt.Errorf("%s is outside %s", directory, root)
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return err
+	if expected == nil {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return err
+		}
 	}
 	if relative == "." {
 		return nil
 	}
 	current := root
 	for _, part := range strings.Split(relative, string(filepath.Separator)) {
+		if err := CheckRoot(root, expected); err != nil {
+			return err
+		}
 		current = filepath.Join(current, part)
 		info, err := os.Lstat(current)
 		if errors.Is(err, os.ErrNotExist) {
@@ -432,15 +326,9 @@ func SyncDirectory(path string) error {
 	return nil
 }
 
-func report(request Request, phase Phase, done, total int64) {
-	if request.Progress != nil {
-		request.Progress(phase, done, total)
-	}
-}
-
-func waitFor(ctx context.Context, request Request) error {
-	if request.Wait != nil {
-		return request.Wait(ctx)
+func waitFor(ctx context.Context, wait func(context.Context) error) error {
+	if wait != nil {
+		return wait(ctx)
 	}
 	select {
 	case <-ctx.Done():

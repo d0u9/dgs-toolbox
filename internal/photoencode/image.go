@@ -17,17 +17,32 @@ const DefaultSize = 800
 const DefaultPPI = 240
 const DefaultBackground = "#ffffff"
 
-// DefaultMaxPixels bounds decoding allocations. Jobs run sequentially.
+// DefaultMaxPixels bounds decoding allocations. Jobs run sequentially. One
+// job can hold the input file (at most 256 MiB), the decoded image and, for
+// ImageIO inputs, a second copy of it: about 600 MiB at the default.
 const DefaultMaxPixels = 40000000
 
 // Transform reuses shared sizing and orientation algorithms, then composites
 // transparency onto the selected opaque background. It never enlarges or converts colour spaces.
 func Transform(src image.Image, orientation, size int, background color.Color) *image.NRGBA {
+	return Composite(Fit(src, orientation, size), background)
+}
+
+// Fit sizes and orients src, keeping its alpha.
+func Fit(src image.Image, orientation, size int) *image.NRGBA {
 	picture := imaging.Orient(imaging.Fit(src, size, xdraw.CatmullRom), orientation)
 	b := picture.Bounds()
 	dst := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	draw.Draw(dst, dst.Bounds(), picture, b.Min, draw.Src)
+	return dst
+}
+
+// Composite flattens img onto an opaque background. Encode calls it after
+// conversion to sRGB, the space the #RRGGBB background is written in.
+func Composite(img *image.NRGBA, background color.Color) *image.NRGBA {
+	dst := image.NewNRGBA(img.Bounds())
 	draw.Draw(dst, dst.Bounds(), image.NewUniform(background), image.Point{}, draw.Src)
-	draw.Draw(dst, dst.Bounds(), picture, b.Min, draw.Over)
+	draw.Draw(dst, dst.Bounds(), img, img.Bounds().Min, draw.Over)
 	return dst
 }
 

@@ -15,9 +15,12 @@ are temporary and do not rewrite configuration.
 `n` reviews the read-only plan, then `n` on the plan starts encoding. `Esc`
 from the plan returns to parameters. Results scroll vertically and horizontally (`h`/`l`), and `r` starts another
 setup. During work, Esc, q and Ctrl+C open the shared safe-default Stop dialog;
-stopping waits for the current job to finish cancelling. Published files remain
-complete. Leaving or quitting uses the shared shell confirmation and cancels
-work and waits for the active engine job to return. Async messages carry a
+stopping waits for the current job to finish cancelling; that job is reported
+cancelled, not failed. Published files remain complete. Leaving or quitting
+uses the shared shell confirmation and cancels work, waiting at most two
+seconds for the active engine job: ImageIO decoding cannot be interrupted, and
+a job still running stops at its next cancellation check and removes its own
+temporary file. Async messages carry a
 session identifier so a previous session cannot update a fresh workspace.
 There is no nested Bubble Tea program.
 
@@ -40,7 +43,10 @@ implemented, so that request cannot silently lose location.
 
 Output is JPEG. Longest edge is an upper bound, proportions are kept, small
 images are not enlarged, EXIF orientations 1–8 are applied, and transparency
-is composited onto the configured opaque background (white by default). This is an 8-bit export path, not archival preservation.
+is composited onto the configured opaque background (white by default) after
+conversion to sRGB, the space the `#RRGGBB` background is written in. Native
+grayscale inputs are the exception: ImageIO flattens them over the
+background's gray level in their own space while decoding. This is an 8-bit export path, not archival preservation.
 PPI is output density metadata and does not add pixels.
 
 ## Colour and metadata
@@ -67,7 +73,8 @@ date when present; other EXIF, XMP, IPTC and location data are omitted. It does
 not leave discarded GPS bytes hidden in a copied EXIF payload. With Preserve
 GPS enabled, JPEG/PNG EXIF is retained, orientation and existing pixel dimension
 fields are corrected, density is corrected, EXIF ColorSpace is set to sRGB, and
-its old thumbnail is unlinked.
+its old thumbnail is removed: unlinked, its directory and JPEG bytes blanked,
+and dropped from the block when they end it.
 When that EXIF cannot fit one JPEG APP1 segment (large maker notes), it is
 rebuilt with only capture date and the GPS directory. XMP/IPTC are still
 omitted. This is not a promise to preserve every proprietary metadata tag.
@@ -81,24 +88,33 @@ ColorSync's.
 The output name is `<stem>-q<quality>-s<longest-edge>.jpg`. Recursive batches
 preserve relative subdirectories, skip hidden files and subdirectories
 (including AppleDouble `._` companions) and symlinks, and exclude a nested
-Destination from scanning. A folder or file that cannot be read becomes its own
+Destination from scanning. Files inside Destination named like outputs
+(`-q<n>-s<n>.jpg`) are never inputs, so an earlier run is not encoded again
+even when Destination is the Source folder. An output that already exists is
+reported skipped, not failed. A folder or file that cannot be read becomes its own
 failed plan entry and the scan continues. Two inputs mapping to one output
 are both marked as conflicts. Unsupported inputs and conflicts are listed in the
 plan and reported individually without stopping other jobs.
 
 One job runs at a time. DecodeConfig checks the configured pixel limit before
 allocation; input file bytes are capped at 256 MiB. Limits also apply to native
-ImageIO decoding. Progress is per-file rather than per-byte.
+ImageIO decoding. Peak memory for one job is about 600 MiB at the default pixel
+limit: the input file, the decoded pixels and, for ImageIO inputs, a second copy
+of them. Progress is per-file rather than per-byte.
 
-Processing creates a unique same-directory `.dgs-part` file, writes the complete
+Directories below Destination are created one level at a time without
+following symbolic links, as Import does. Processing creates a unique
+same-directory `.dgs-part` file, writes the complete
 encoded JPEG, sets permission `0644` so the export can be shared, syncs and
 closes it, then reads it back through a fresh handle that must be the same file.
 Its SHA-256 must match the encoded artifact, and independent JPEG decoding must
 confirm the expected dimensions. The temporary name must still be that file;
 then it is published under its final name without replacement, using Photo
 Import's publication (`verifiedcopy.Publish`): an exclusive rename, else a hard
-link, else — only on a filesystem with neither — check-then-rename. A killed
-process may leave an unpublished temporary file.
+link, else — only on a filesystem with neither — check-then-rename. The
+directory entry is then synced, as Import does; a failed sync is reported
+beside the published file. A killed process may leave an unpublished temporary
+file.
 
 Source and output hashes are not compared: lossy encoding changes file contents.
 The guarantee is at the user-space/filesystem API boundary, not physical-media

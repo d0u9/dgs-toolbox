@@ -143,8 +143,9 @@ func decodeNative(kind string, data []byte, o Options) (image.Image, metadata, e
 	return &image.NRGBA{Pix: pixels, Stride: 4 * w, Rect: image.Rect(0, 0, w, h)}, m, nil
 }
 
-// toSRGB converts opaque pixels described by icc to sRGB and returns the sRGB
-// profile to embed. Untagged pixels are taken to be sRGB already.
+// toSRGB converts the colours of pixels described by icc to sRGB and returns
+// the sRGB profile to embed. Alpha is carried over unchanged, so transparency
+// is flattened afterwards in sRGB. Untagged pixels are taken to be sRGB already.
 func toSRGB(img *image.NRGBA, icc []byte) (*image.NRGBA, []byte, error) {
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	var r C.DGSConverted
@@ -175,6 +176,9 @@ func toSRGB(img *image.NRGBA, icc []byte) (*image.NRGBA, []byte, error) {
 		return img, profile, nil
 	}
 	out := &image.NRGBA{Pix: C.GoBytes(unsafe.Pointer(r.pixels), C.int(w*h*4)), Stride: 4 * w, Rect: image.Rect(0, 0, w, h)}
+	for i := 3; i < len(out.Pix); i += 4 {
+		out.Pix[i] = img.Pix[i]
+	}
 	return out, profile, nil
 }
 

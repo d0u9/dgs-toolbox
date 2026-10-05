@@ -16,6 +16,7 @@ import (
 
 	"dgs-toolbox/internal/apps/photo/importer"
 	"dgs-toolbox/internal/apps/photo/postprocess"
+	"dgs-toolbox/internal/apps/photo/skipdirs"
 	"dgs-toolbox/internal/tui"
 	"dgs-toolbox/internal/tui/confirm"
 	"dgs-toolbox/internal/tui/contextmenu"
@@ -43,6 +44,7 @@ const (
 	sourceID      = "source"
 	destinationID = "destination"
 	operationID   = "operation"
+	incrementalID = "incremental"
 	extensionsID  = "extensions"
 	duplicatesID  = "duplicates"
 	parallelID    = "parallelism"
@@ -50,8 +52,7 @@ const (
 )
 
 var (
-	setupIDs     = []string{sourceID, destinationID}
-	parameterIDs = []string{operationID, extensionsID, duplicatesID, parallelID}
+	parameterIDs = []string{operationID, incrementalID, extensionsID, duplicatesID, parallelID}
 )
 
 const (
@@ -96,9 +97,14 @@ type scanSummary struct {
 	// sourceSkipped are Source entries deliberately left out: symbolic links,
 	// special files, and hidden system folders that cannot be read.
 	sourceSkipped []string
-	// destinationErrors only weaken the duplicate summary; the engine checks
-	// each final path itself.
-	destinationErrors []string
+	// destinationErrors block incremental Processing: absence cannot be proved
+	// from an incomplete destination inventory.
+	destinationErrors  []string
+	destinationSkipped []string
+	// destinationMissing is a Destination that does not exist: Processing
+	// creates it. It is shown, because the empty mount point of an unmounted
+	// disk looks the same and would receive the photos on the local disk.
+	destinationMissing bool
 }
 
 type importPlan struct {
@@ -107,17 +113,28 @@ type importPlan struct {
 	skipped    int
 	processed  int
 	operation  string
+	checks     int
+	// incremental plans decide copies only after content checks, so processed
+	// and skipped are not known in advance.
+	incremental bool
 }
 
 type scanTickMsg time.Time
 type scanDoneMsg struct {
 	generation int
 	summary    scanSummary
+	targets    []scanSummary
 }
 
 type transferEventMsg importer.Event
 type transferDoneMsg importer.Result
-type postprocessPlannedMsg postprocess.Plan
+type postprocessProgressMsg postprocess.Progress
+type postprocessPulseMsg struct{}
+
+type postprocessPlannedMsg struct {
+	plan     postprocess.Plan
+	existing []string
+}
 type postprocessDoneMsg struct {
 	result     postprocess.Result
 	stateError error
@@ -127,6 +144,8 @@ type workerPhase int
 
 const (
 	workerIdle workerPhase = iota
+	workerChecking
+	workerCheckingDestination
 	workerCopying
 	workerVerifying
 	workerPublishing
@@ -134,6 +153,7 @@ const (
 )
 
 type processingWorker struct {
+	event           importer.Event
 	number          int
 	jobIndex        int
 	file            scannedFile
@@ -144,12 +164,26 @@ type processingWorker struct {
 }
 
 type processingState struct {
-	files        []scannedFile
-	verified     []scannedFile
-	results      []importer.FileResult
-	failed       int
-	sourceKept   int
-	skipped      int
+	files      []scannedFile
+	verified   []scannedFile
+	results    []importer.FileResult
+	failed     int
+	sourceKept int
+	skipped    int
+	existing   int
+	// conflicts are incremental Skips: the name holds different content, so
+	// the photo was not imported. They are counted apart from other skips.
+	conflicts int
+	// earlierKept counts source-kept Moves of earlier batches still recorded
+	// in the state file, which deleting it would forget.
+	earlierKept int
+	// inventory is how many destination files the incremental inventory has
+	// listed; it moves before any worker does.
+	inventory int
+	// moving marks a multi-target Move; decided counts sources whose overall
+	// outcome is known, which after the copies is the source-removal check.
+	moving       bool
+	decided      int
 	finished     map[int]importer.Phase
 	workers      []processingWorker
 	paused       bool
@@ -158,8 +192,10 @@ type processingState struct {
 }
 
 type postprocessState struct {
-	running bool
-	skipped bool
+	progress postprocess.Progress
+	pulse    int
+	running  bool
+	skipped  bool
 	// plan waits for the user to accept date folders that already exist.
 	plan   *postprocess.Plan
 	result postprocess.Result
@@ -186,10 +222,20 @@ var (
 				Background(importPanel)
 )
 
-// importModel owns the Photo Import setup workspace. Its path fields open a
-// read-only directory picker; review and scan behavior remain disabled.
+// importModel owns Photo Import workflow state and opens the shared directory picker.
 type importModel struct {
 	paths                [pathFieldCount]string
+	targetIdentities     []os.FileInfo
+	extraDestinations    []string
+	directoryFieldCount  int
+	selectedTarget       int
+	addingDestination    bool
+	targetScans          []scanSummary
+	targetResults        []importer.Result
+	targetProcessing     []processingState
+	processingTarget     int
+	postprocessTarget    int
+	stateFailed          bool
 	stateFilename        string
 	controls             form.Model
 	picking              bool
@@ -224,6 +270,8 @@ type importModel struct {
 	leaveWasPaused       bool
 	leaveDialog          confirm.Model
 	transferCancel       context.CancelFunc
+	postprocessCancel    context.CancelFunc
+	postprocessUpdates   <-chan tea.Msg
 	transferController   *importer.Controller
 	transferUpdates      <-chan tea.Msg
 	pendingExit          bool
@@ -238,7 +286,11 @@ func newImportModelWithStateFile(stateFilename string) tui.CommandModel {
 	return newImportModelWithSettings(stateFilename, "", "")
 }
 
-func newImportModelWithSettings(stateFilename, source, destination string) tui.CommandModel {
+func newImportModelWithSettings(stateFilename, source string, destinations ...string) tui.CommandModel {
+	destination := ""
+	if len(destinations) > 0 {
+		destination = destinations[0]
+	}
 	paths := [pathFieldCount]string{
 		demoPath("src"),
 		demoPath("dst"),
@@ -249,16 +301,19 @@ func newImportModelWithSettings(stateFilename, source, destination string) tui.C
 	if destination != "" {
 		paths[destinationField] = displayPath(expandHome(destination))
 	}
-	return importModel{
+	m := importModel{
 		paths:         paths,
 		stateFilename: stateFilename,
 		controls: form.New(
 			form.Field{ID: sourceID, Kind: form.Path, Label: "Source", Value: paths[sourceField]},
-			form.Field{ID: destinationID, Kind: form.Path, Label: "Destination", Value: paths[destinationField]},
+			form.Field{ID: destinationID, Kind: form.Path, Label: "Destination 1", Value: paths[destinationField]},
+			form.Field{ID: addTargetID, Kind: form.Button, Label: "Add destination"},
+			form.Field{ID: removeTargetID, Kind: form.Button, Label: "Remove destination 1"},
 			form.Field{ID: operationID, Kind: form.Radio, Label: "Operation", Value: "Copy", Options: []string{"Copy", "Move"}},
+			form.Field{ID: incrementalID, Kind: form.Checkbox, Label: "Incremental", Checked: true},
 			form.Field{ID: extensionsID, Kind: form.MultiCheckbox, Label: "Extensions", SelectAll: true},
 			form.Field{ID: duplicatesID, Kind: form.Option, Label: "Duplicates", Value: "Skip", Options: []string{"Skip", "Replace", "Keep both"}},
-			form.Field{ID: parallelID, Kind: form.Number, Label: "Parallelism", Value: "1", Min: 1, Max: 8, Step: 1},
+			form.Field{ID: parallelID, Kind: form.Number, Label: "Parallelism", Value: "1", Min: 1, Max: importer.MaxWorkers, Step: 1},
 			form.Field{ID: deleteStateID, Kind: form.Checkbox, Label: "Delete " + stateFilename, Checked: true},
 		),
 		parameterFields: datafield.New(
@@ -281,6 +336,13 @@ func newImportModelWithSettings(stateFilename, source, destination string) tui.C
 		menu:            contextmenu.New(contextmenu.Item{ID: "open", Label: "Open with default app"}),
 		width:           80, height: 22,
 	}
+	if len(destinations) > 1 {
+		for _, root := range destinations[1:] {
+			m.extraDestinations = append(m.extraDestinations, displayPath(expandHome(root)))
+		}
+		m.rebuildDirectoryControls()
+	}
+	return m
 }
 
 func demoPath(name string) string {
@@ -291,9 +353,9 @@ func demoPath(name string) string {
 	return displayPath(path)
 }
 
-func scanCmd(generation int, paths [pathFieldCount]string) tea.Cmd {
+func scanCmd(generation int, paths [pathFieldCount]string, stateFilename string) tea.Cmd {
 	return func() tea.Msg {
-		return scanDoneMsg{generation: generation, summary: scanDirectories(paths)}
+		return scanDoneMsg{generation: generation, summary: scanDirectories(paths, stateFilename)}
 	}
 }
 
@@ -311,65 +373,108 @@ func waitTransferUpdate(updates <-chan tea.Msg) tea.Cmd {
 	}
 }
 
-func scanDirectories(paths [pathFieldCount]string) scanSummary {
+func scanDirectories(paths [pathFieldCount]string, stateFilenames ...string) scanSummary {
 	var summary scanSummary
-	scanRoot := func(side, root string, target *[]scannedFile, errs, skipped *[]string) {
-		root = expandHome(root)
-		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				if path == root {
-					if side == "DST" && errors.Is(walkErr, fs.ErrNotExist) {
-						// A Destination that does not exist yet is created by
-						// Processing; it simply holds nothing to compare.
-						return nil
-					}
-					return walkErr
-				}
-				// One unreadable folder must not end the walk: everything after
-				// it in lexical order would silently be missing. A hidden one is
-				// a system folder (.Trashes, .Spotlight-V100) and holds no
-				// photos; anything else is a gap the user has to see.
-				if entry != nil && strings.HasPrefix(entry.Name(), ".") {
-					*skipped = append(*skipped, "unreadable "+relativeTo(root, path)+": "+walkErr.Error())
-				} else {
-					*errs = append(*errs, walkErr.Error())
-				}
-				if entry != nil && entry.IsDir() {
+	stateName := ".dgs-state"
+	if len(stateFilenames) > 0 {
+		stateName = stateFilenames[0]
+	}
+	scanTree("SRC", paths[sourceField], stateName, &summary.source, &summary.sourceErrors, &summary.sourceSkipped)
+	scanTree("DST", paths[destinationField], stateName, &summary.destination, &summary.destinationErrors, &summary.destinationSkipped)
+	if _, err := os.Stat(expandHome(paths[destinationField])); errors.Is(err, fs.ErrNotExist) {
+		summary.destinationMissing = true
+	}
+	classifySidecars(summary.source)
+	return summary
+}
+
+// scanSource reads Source alone, for the command line: each destination is
+// inventoried by the engine itself, so walking one here would be wasted I/O.
+func scanSource(root string) scanSummary {
+	var summary scanSummary
+	scanTree("SRC", root, "", &summary.source, &summary.sourceErrors, &summary.sourceSkipped)
+	classifySidecars(summary.source)
+	return summary
+}
+
+// scanTree inventories one root. side is "SRC" or "DST"; stateName is the
+// import-state file name left out of a destination.
+func scanTree(side, root, stateName string, target *[]scannedFile, errs, skipped *[]string) {
+	root = expandHome(root)
+	walkRoot := root
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		walkRoot = resolved
+	}
+	err := filepath.WalkDir(walkRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if path != walkRoot && entry != nil {
+			// Trash, snapshots and metadata stores are neither photos to
+			// import nor copies already imported, readable or not.
+			if entry.IsDir() && skipdirs.Skip(entry.Name()) {
+				*skipped = append(*skipped, "not scanned "+relativeTo(walkRoot, path))
+				return filepath.SkipDir
+			}
+			// A hidden Source entry is no camera file: AppleDouble "._"
+			// companions carry a photo's extension but hold metadata.
+			if side == "SRC" && strings.HasPrefix(entry.Name(), ".") {
+				*skipped = append(*skipped, "hidden "+relativeTo(walkRoot, path))
+				if entry.IsDir() {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			if entry.IsDir() {
-				return nil
-			}
-			if !entry.Type().IsRegular() {
-				// A link could read outside the selected root and a special file
-				// can block or never end; neither is a photo.
-				kind := "special file"
-				if entry.Type()&fs.ModeSymlink != 0 {
-					kind = "symbolic link"
+		}
+		if walkErr != nil {
+			if path == walkRoot {
+				if side == "DST" && errors.Is(walkErr, fs.ErrNotExist) {
+					// A Destination that does not exist yet is created by
+					// Processing; it simply holds nothing to compare.
+					return nil
 				}
-				*skipped = append(*skipped, kind+" "+relativeTo(root, path))
-				return nil
+				return walkErr
 			}
-			info, err := entry.Info()
-			if err != nil {
-				*errs = append(*errs, err.Error())
-				return nil
+			// One unreadable folder must not end the walk: everything after
+			// it in lexical order would silently be missing. A hidden one is
+			// a system folder (.Trashes, .Spotlight-V100) and holds no
+			// photos; anything else is a gap the user has to see.
+			if side == "SRC" && entry != nil && strings.HasPrefix(entry.Name(), ".") {
+				*skipped = append(*skipped, "unreadable "+relativeTo(walkRoot, path)+": "+walkErr.Error())
+			} else {
+				*errs = append(*errs, walkErr.Error())
 			}
-			*target = append(*target, scannedFile{side: side, path: filepath.ToSlash(relativeTo(root, path)), size: info.Size()})
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
-		})
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if side == "DST" && importer.IsImportArtifact(entry.Name(), stateName) {
+			*skipped = append(*skipped, "import artifact "+relativeTo(walkRoot, path))
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			// A link could read outside the selected root and a special file
+			// can block or never end; neither is a photo.
+			kind := "special file"
+			if entry.Type()&fs.ModeSymlink != 0 {
+				kind = "symbolic link"
+			}
+			*skipped = append(*skipped, kind+" "+relativeTo(walkRoot, path))
+			return nil
+		}
+		info, err := entry.Info()
 		if err != nil {
 			*errs = append(*errs, err.Error())
+			return nil
 		}
-		sort.Slice(*target, func(i, j int) bool { return (*target)[i].path < (*target)[j].path })
+		*target = append(*target, scannedFile{side: side, path: filepath.ToSlash(relativeTo(walkRoot, path)), size: info.Size()})
+		return nil
+	})
+	if err != nil {
+		*errs = append(*errs, err.Error())
 	}
-	var destinationSkipped []string
-	scanRoot("SRC", paths[sourceField], &summary.source, &summary.sourceErrors, &summary.sourceSkipped)
-	scanRoot("DST", paths[destinationField], &summary.destination, &summary.destinationErrors, &destinationSkipped)
-	classifySidecars(summary.source)
-	return summary
+	sort.Slice(*target, func(i, j int) bool { return (*target)[i].path < (*target)[j].path })
 }
 
 func relativeTo(root, path string) string {
@@ -449,6 +554,22 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.progress = min(.92, m.progress+.06)
 		return m, scanTick()
+	case multipleFileMsg:
+		m.processing.decided++
+		return m, waitTransferUpdate(m.transferUpdates)
+	case multipleTransferEventMsg:
+		m.applyMultipleEvent(msg)
+		return m, waitTransferUpdate(m.transferUpdates)
+	case multipleTransferDoneMsg:
+		m.applyMultipleResult(msg)
+		if m.pendingExit {
+			return m, tea.Quit
+		}
+		if m.pendingReturn {
+			m.pendingReturn = false
+			return m.returnToParameters()
+		}
+		return m, nil
 	case scanDoneMsg:
 		if msg.generation != m.scanGeneration {
 			return m, nil
@@ -459,7 +580,11 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			previous := m.sourceExtensions()
+			m.targetScans = msg.targets
 			m.scan = msg.summary
+			if len(m.targetScans) > m.selectedTarget {
+				m.scan = m.targetScans[m.selectedTarget]
+			}
 			m.refreshExtensions(previous)
 			m.syncResultLists()
 			m.actionNotice = "Refreshed"
@@ -468,7 +593,11 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.stage != scanStage {
 			return m, nil
 		}
+		m.targetScans = msg.targets
 		m.scan = msg.summary
+		if len(m.targetScans) > m.selectedTarget {
+			m.scan = m.targetScans[m.selectedTarget]
+		}
 		m.configureExtensions()
 		m.syncResultLists()
 		m.progress = 1
@@ -486,22 +615,43 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.pendingReturn {
 			m.pendingReturn = false
-			m.stage = parameterStage
+			return m.returnToParameters()
 		}
 		return m, nil
+	case postprocessProgressMsg:
+		if !m.postprocess.running {
+			return m, nil
+		}
+		m.postprocess.progress = postprocess.Progress(msg)
+		return m, waitPostprocessUpdate(m.postprocessUpdates)
+	case postprocessPulseMsg:
+		if !m.postprocess.running {
+			return m, nil
+		}
+		m.postprocess.pulse++
+		return m, waitPostprocessUpdate(m.postprocessUpdates)
 	case postprocessPlannedMsg:
-		plan := postprocess.Plan(msg)
-		existing := plan.ExistingDates()
+		plan := msg.plan
+		existing := msg.existing
 		if len(existing) == 0 {
 			return m.applyPostProcessing(plan)
 		}
-		m.postprocess = postprocessState{plan: &plan}
+		if len(m.extraDestinations) > 0 {
+			m.postprocess.running = false
+			m.postprocess.plan = &plan
+		} else {
+			m.postprocess = postprocessState{plan: &plan}
+		}
 		m.postprocessPrompt = true
-		m.postprocessDialog = confirm.New(confirm.Config{Title: "DATE FOLDERS ALREADY EXIST", Message: "Destination already has " + strings.Join(existing, ", ") + ". Move photos into them anyway?", Detail: "Skip continues to Result without changing files.", ConfirmLabel: "Continue", CancelLabel: "Skip"})
+		m.postprocessDialog = confirm.New(confirm.Config{Title: "DATE FOLDERS ALREADY EXIST", Message: displayPath(plan.Root) + " already has " + strings.Join(existing, ", ") + ". Move photos into them anyway?", Detail: "Skip continues to Result without changing files.", ConfirmLabel: "Continue", CancelLabel: "Skip"})
 		return m, nil
 	case postprocessDoneMsg:
 		m.postprocess.running = false
-		m.postprocess.result = msg.result
+		if len(m.extraDestinations) > 0 {
+			m.postprocess.result.Files = append(m.postprocess.result.Files, msg.result.Files...)
+		} else {
+			m.postprocess.result = msg.result
+		}
 		moved := make(map[string]string)
 		for _, outcome := range msg.result.Files {
 			if outcome.Status == postprocess.Moved {
@@ -518,6 +668,22 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.stateError != nil {
 			m.actionNotice = "Post-processing completed, but state update failed: " + msg.stateError.Error()
+		}
+		if len(m.extraDestinations) > 0 {
+			for _, file := range msg.result.Files {
+				if file.Status == postprocess.Failed && !file.NoDate {
+					m.controls.SetChecked(deleteStateID, false)
+				}
+			}
+			m.updateTargetOrganization(msg.result)
+			if msg.stateError != nil {
+				m.stateFailed = true
+				m.controls.SetChecked(deleteStateID, false)
+			}
+			m.postprocessTarget++
+			if m.postprocessTarget < len(m.targetResults) {
+				return m.planNextTargetOrganization()
+			}
 		}
 		return m, nil
 	case tea.MouseMsg:
@@ -543,9 +709,7 @@ func (m importModel) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		var selected string
 		m.picker, selected, cmd = m.picker.Update(msg)
 		if selected != "" {
-			m.paths[m.pickerFor] = displayPath(selected)
-			m.controls.SetValue(setupIDs[m.pickerFor], m.paths[m.pickerFor])
-			m.picking = false
+			m.picking = !m.acceptPickedPath(selected)
 		}
 		return m, cmd
 	}
@@ -676,15 +840,40 @@ func (m importModel) updateResultMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m importModel) clickSetup(x, y int) (tea.Model, tea.Cmd) {
 	contentWidth := min(tui.DefaultContentWidth, max(24, m.width-4))
-	contentHeight := 11
+	pathHeight := lipgloss.Height(m.controls.View(m.directoryPathIDs()))
+	contentHeight := 11 + pathHeight
 	topPadding := max(0, (max(1, m.height-4)-contentHeight)/2)
 	left := max(0, (m.width-contentWidth)/2)
-	if id, ok := m.controls.Click([]string{sourceID, destinationID}, x-left-2, y-topPadding-7); ok {
+	if id, ok := m.controls.Click(m.directoryPathIDs(), x-left-2, y-topPadding-7); ok {
 		if id == sourceID {
 			return m.openPicker(sourceField)
 		}
-		if id == destinationID {
+		if index, ok := m.focusedDestination(); ok {
+			m.selectedTarget = index
 			return m.openPicker(destinationField)
+		}
+		if id == addTargetID {
+			m.addingDestination = true
+			return m.openPicker(destinationField)
+		}
+		if id == removeTargetID {
+			m.removeSelectedTarget()
+		}
+	}
+	if y == topPadding+7+pathHeight+1 {
+		_, addWidth, removeWidth := m.directoryButtons(contentWidth - 4)
+		localX := x - left - 2
+		removeStart := contentWidth - 4 - removeWidth
+		addStart := removeStart - 2 - addWidth
+		if localX >= addStart && localX < addStart+addWidth {
+			m.controls.SetFocusID(addTargetID)
+			m.addingDestination = true
+			return m.openPicker(destinationField)
+		}
+		if localX >= removeStart && localX < removeStart+removeWidth {
+			m.controls.SetFocusID(removeTargetID)
+			m.removeSelectedTarget()
+			return m, nil
 		}
 	}
 	if pageactions.Hit(pageactions.Config{Next: &pageactions.Action{Destination: "Parameters"}}, m.width, x, y-(m.height-4)) == pageactions.Next {
@@ -696,7 +885,7 @@ func (m importModel) clickSetup(x, y int) (tea.Model, tea.Cmd) {
 func (m importModel) clickParameters(x, y int) (tea.Model, tea.Cmd) {
 	layout := m.parameterLayout()
 	localX := x - 2
-	importIDs := []string{operationID, extensionsID, duplicatesID, parallelID}
+	importIDs := parameterIDs
 	if _, ok := m.controls.Click(importIDs, localX, y-2); ok {
 		m.syncResultLists()
 		return m, nil
@@ -770,7 +959,7 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.leaveExits {
 				return m, tea.Quit
 			}
-			m.stage = parameterStage
+			return m.returnToParameters()
 		case confirm.Cancelled:
 			m.leaveConfirm = false
 			if !m.leaveWasPaused && !m.processingComplete() {
@@ -818,11 +1007,11 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			m.processing.workerOffset = max(0, m.processing.workerOffset-1)
 		case "down", "j":
-			m.processing.workerOffset = min(max(0, len(m.processing.workers)-1), m.processing.workerOffset+1)
+			m.processing.workerOffset = min(max(0, m.progressWorkerCount()-1), m.processing.workerOffset+1)
 		case "g", "home":
 			m.processing.workerOffset = 0
 		case "G", "end":
-			m.processing.workerOffset = max(0, len(m.processing.workers)-1)
+			m.processing.workerOffset = max(0, m.progressWorkerCount()-1)
 		case "enter", form.PrimaryActionKey:
 			if m.processingComplete() {
 				return m.startPostProcessing()
@@ -843,6 +1032,11 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.runPostProcessing()
 			case confirm.Cancelled:
 				m.postprocessPrompt = false
+				if len(m.extraDestinations) > 0 && m.postprocess.plan != nil {
+					// Skip declines only this root's existing date folders.
+					// Earlier targets keep their outcomes; later ones still run.
+					return m.skipTargetOrganization()
+				}
 				m.postprocess = postprocessState{skipped: true}
 				m.openResult()
 			}
@@ -909,19 +1103,14 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.picking {
 		if key == "esc" && !m.picker.HasDialog() {
 			m.picking = false
+			m.addingDestination = false
 			return m, nil
 		}
 		var selected string
 		var cmd tea.Cmd
 		m.picker, selected, cmd = m.picker.Update(msg)
 		if selected != "" {
-			m.paths[m.pickerFor] = displayPath(selected)
-			if m.pickerFor == sourceField {
-				m.controls.SetValue(sourceID, m.paths[m.pickerFor])
-			} else {
-				m.controls.SetValue(destinationID, m.paths[m.pickerFor])
-			}
-			m.picking = false
+			m.picking = !m.acceptPickedPath(selected)
 		}
 		return m, cmd
 	}
@@ -943,6 +1132,14 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	if m.stage == parameterStage && !m.controls.IsActive() && (key == "[" || key == "]") && len(m.extraDestinations) > 0 {
+		delta := 1
+		if key == "[" {
+			delta = -1
+		}
+		m.selectTarget((m.selectedTarget + delta + len(m.destinationRoots())) % len(m.destinationRoots()))
+		return m, nil
+	}
 	controlsActive := m.stage == setupStage || m.parameterFields.Current() == "parameters"
 	if controlsActive && m.controls.HandleInteraction(key) {
 		if m.stage == parameterStage {
@@ -951,22 +1148,47 @@ func (m importModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.help = false
 		return m, nil
 	}
-	visibleIDs := setupIDs
+	visibleIDs := m.setupControlIDs()
 	if m.stage == parameterStage {
 		visibleIDs = parameterIDs
 	}
 	if controlsActive && m.controls.UpdateNavigationWithin(visibleIDs, key) {
+		if m.stage == setupStage {
+			if index, ok := m.focusedDestination(); ok {
+				m.selectedTarget = index
+				m.rebuildDirectoryControls()
+			}
+		}
 		m.help = false
 		return m, nil
+	}
+	if m.stage == setupStage && key == "backspace" {
+		if index, ok := m.focusedDestination(); ok {
+			m.selectedTarget = index
+			m.removeSelectedTarget()
+			return m, nil
+		}
 	}
 	switch key {
 	case "enter":
 		m.help = false
+		if m.stage == setupStage {
+			if index, ok := m.focusedDestination(); ok {
+				m.selectedTarget = index
+				return m.openPicker(destinationField)
+			}
+		}
 		switch m.controls.FocusedID() {
 		case sourceID:
 			return m.openPicker(sourceField)
 		case destinationID:
 			return m.openPicker(destinationField)
+		case addTargetID:
+			m.addingDestination = true
+			return m.openPicker(destinationField)
+		case removeTargetID:
+			m.removeSelectedTarget()
+			return m, nil
 		}
 	case form.PrimaryActionKey:
 		m.help = false
@@ -1146,7 +1368,7 @@ func (m *importModel) selectHoveredResult(id string, mouseY int) bool {
 func (m importModel) selectedPath(target string) (string, bool) {
 	list, root := m.sourceList, m.paths[sourceField]
 	if target == "destination-results" {
-		list, root = m.destinationList, m.paths[destinationField]
+		list, root = m.destinationList, m.selectedDestination()
 	} else if target == "jpeg-only-results" {
 		list = m.jpegOnlyList
 	} else if target == "raw-only-results" {
@@ -1220,6 +1442,19 @@ func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 		m.actionNotice = fmt.Sprintf("Source scan incomplete (%d unreadable): %s — fix access and press r to rescan", len(m.scan.sourceErrors), m.scan.sourceErrors[0])
 		return m, nil
 	}
+	if m.controls.Checked(incrementalID) && len(m.scan.destinationErrors) > 0 {
+		m.actionNotice = "Destination scan incomplete — fix access and press r to rescan"
+		return m, nil
+	}
+	if err := importer.ValidateRoots(expandHome(m.paths[sourceField]), expandHome(m.paths[destinationField])); err != nil {
+		m.actionNotice = err.Error()
+		return m, nil
+	}
+	if len(m.extraDestinations) > 0 {
+		return m.startMultipleProcessing()
+	}
+	// A previous multi-target batch must not leave its per-target view behind.
+	m.targetProcessing, m.targetResults, m.targetIdentities = nil, nil, nil
 	files := append([]scannedFile(nil), m.filteredSource()...)
 	sourceRoot := expandHome(m.paths[sourceField])
 	destinationRoot := expandHome(m.paths[destinationField])
@@ -1241,6 +1476,8 @@ func (m importModel) startProcessing() (tea.Model, tea.Cmd) {
 		Workers:         max(1, m.controls.IntValue(parallelID)),
 		StatePath:       filepath.Join(destinationRoot, m.stateFilename),
 		DestinationRoot: destinationRoot,
+		SourceRoot:      sourceRoot,
+		Incremental:     m.controls.Checked(incrementalID),
 		Controller:      controller,
 	}
 	m.stage = processingStage
@@ -1273,40 +1510,97 @@ func (m importModel) startPostProcessing() (tea.Model, tea.Cmd) {
 	m.actionNotice = ""
 	m.stage = postprocessStage
 	m.postprocessPrompt = true
-	m.postprocessDialog = confirm.New(confirm.Config{Title: "ORGANIZE BY CAPTURE DATE?", Message: "Move verified JPG and RAW files into YYYYMMDD folders?", Detail: "Skip continues to Result without changing files.", ConfirmLabel: "Organize", CancelLabel: "Skip"})
+	m.postprocessDialog = confirm.New(confirm.Config{Title: "ORGANIZE BY CAPTURE DATE?", Message: "Move imported JPG and RAW files into YYYYMMDD folders?", Detail: "Skip continues to Result without changing files.", ConfirmLabel: "Organize", CancelLabel: "Skip"})
 	return m, nil
 }
 
 func (m importModel) runPostProcessing() (tea.Model, tea.Cmd) {
-	files := make([]postprocess.File, 0, len(m.processing.results))
-	for _, result := range m.processing.results {
-		if imported(result.Phase) {
-			files = append(files, postprocess.File{Source: result.Source, Path: result.Destination})
-		}
+	if len(m.extraDestinations) > 0 {
+		m.postprocessTarget = 0
+		m.postprocess = postprocessState{running: true}
+		return m.planNextTargetOrganization()
 	}
+	sourceRoot := expandHome(m.paths[sourceField])
 	root := expandHome(m.paths[destinationField])
+	files := make([]postprocess.File, 0, len(m.processing.results))
+	existing := make([]postprocess.ExistingFile, 0)
+	for _, result := range m.processing.results {
+		if !imported(result.Phase) {
+			continue
+		}
+		file := postprocess.File{Source: result.Source, Path: result.Destination}
+		if result.Existing || result.Phase == importer.PhaseAlreadyPresent {
+			if photoKind(result.Source) != mediaOther {
+				existing = append(existing, postprocess.ExistingFile{File: file, Digest: result.DestinationHash, Size: result.Size})
+			}
+			if !unorganized(sourceRoot, root, result) {
+				continue
+			}
+		}
+		files = append(files, file)
+	}
 	m.postprocess = postprocessState{running: true}
-	return m, func() tea.Msg {
-		return postprocessPlannedMsg(postprocess.NewPlan(root, files))
+	return m.startOrganizationTask(func(ctx context.Context, report func(postprocess.Progress)) tea.Msg {
+		plan := postprocess.NewPlanWithProgress(ctx, root, files, existing, report)
+		report(postprocess.Progress{Phase: "Checking existing date folders"})
+		return postprocessPlannedMsg{plan: plan, existing: plan.ExistingDates()}
+	})
+}
+
+// unorganized reports a file found already imported that still stands where
+// Import places files, mirroring its Source folder: an earlier run copied it
+// but was interrupted, or skipped organizing, before it reached a date folder.
+// It is organized with this batch, so a shot is not split between the two.
+// A copy found anywhere else is left where it is.
+func unorganized(sourceRoot, destinationRoot string, result importer.FileResult) bool {
+	source, err := filepath.Rel(sourceRoot, result.Source)
+	if err != nil {
+		return false
+	}
+	destination, err := filepath.Rel(destinationRoot, result.Destination)
+	if err != nil || destination == ".." || strings.HasPrefix(destination, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return filepath.Dir(source) == filepath.Dir(destination)
+}
+
+// Close stops reading for a pending organize step when the shell leaves this
+// command. A transfer still running is cancelled the same way.
+func (m importModel) Close() {
+	if m.postprocessCancel != nil {
+		m.postprocessCancel()
+	}
+	if m.transferCancel != nil {
+		m.transferCancel()
 	}
 }
 
 func (m importModel) applyPostProcessing(plan postprocess.Plan) (tea.Model, tea.Cmd) {
 	statePath := filepath.Join(plan.Root, m.stateFilename)
-	m.postprocess = postprocessState{running: true}
-	return m, func() tea.Msg {
-		result := postprocess.Apply(plan)
+	if len(m.extraDestinations) > 0 {
+		m.postprocess.running = true
+		m.postprocess.plan = nil
+	} else {
+		m.postprocess = postprocessState{running: true}
+	}
+	return m.startOrganizationTask(func(ctx context.Context, report func(postprocess.Progress)) tea.Msg {
+		result := postprocess.ApplyWithProgress(ctx, plan, report)
 		moved := make(map[string]string)
 		for _, outcome := range result.Files {
 			if outcome.Status == postprocess.Moved {
 				moved[outcome.Original] = outcome.Final
 			}
 		}
+		report(postprocess.Progress{Phase: "Saving import state"})
 		return postprocessDoneMsg{result: result, stateError: importer.UpdateDestinations(statePath, moved)}
-	}
+	})
 }
 
 func (m *importModel) openResult() {
+	if len(m.extraDestinations) > 0 {
+		m.openMultipleResult()
+		return
+	}
 	organized := make(map[string]postprocess.Outcome)
 	for _, outcome := range m.postprocess.result.Files {
 		organized[outcome.Final] = outcome
@@ -1318,13 +1612,22 @@ func (m *importModel) openResult() {
 			label = fmt.Sprintf("✓  %s/%s  ·  %s  ·  SHA-256 MATCH", outcome.Date, filepath.Base(result.Destination), formatBytes(result.Size))
 		}
 		if result.Phase == importer.PhaseSkipped {
-			label = fmt.Sprintf("–  %s  ·  skipped", filepath.Base(result.Destination))
+			label = fmt.Sprintf("–  %s  ·  conflict skipped", filepath.Base(result.Destination))
+			if result.Warning == importer.ConflictNotImported {
+				label = fmt.Sprintf("!  %s  ·  %s", filepath.Base(result.Source), result.Warning)
+			}
+		}
+		if result.Existing || result.Phase == importer.PhaseAlreadyPresent {
+			label = fmt.Sprintf("✓  %s  ·  already present · SHA-256 MATCH", relativeTo(expandHome(m.paths[destinationField]), result.Destination))
 		}
 		if result.Phase == importer.PhaseSourceKept {
 			label += "  ·  source kept: " + result.Error
 		}
-		if result.Phase == importer.PhaseFailed {
+		if result.Phase == importer.PhaseFailed || result.Phase == importer.PhaseUndetermined || result.Phase == importer.PhasePending {
 			label = fmt.Sprintf("!  %s  ·  %s", filepath.Base(result.Source), result.Error)
+		}
+		if result.Warning != "" && result.Warning != importer.ConflictNotImported {
+			label += "  ·  " + result.Warning
 		}
 		items = append(items, scrolllist.Item{
 			ID: result.Source, Label: label,
@@ -1358,21 +1661,50 @@ func (m *importModel) workerForJob(index int) *processingWorker {
 }
 
 func (m *importModel) applyTransferEvent(event importer.Event) {
-	worker := m.workerForJob(event.Index)
+	if event.Phase == importer.PhaseInventory {
+		m.processing.inventory = int(event.Bytes)
+		return
+	}
+	var worker *processingWorker
+	if event.Worker > 0 && event.Worker <= len(m.processing.workers) {
+		worker = &m.processing.workers[event.Worker-1]
+		if finalPhase(event.Phase) && worker.jobIndex >= 0 && worker.jobIndex != event.Index {
+			// A coordinator completion may follow this worker's next file.
+			// Count completion without replacing the newer file's display.
+			detached := processingWorker{}
+			worker = &detached
+		} else {
+			worker.jobIndex = event.Index
+			if event.Index >= 0 && event.Index < len(m.processing.files) {
+				worker.file = m.processing.files[event.Index]
+			}
+		}
+	} else {
+		worker = m.workerForJob(event.Index)
+	}
 	if worker == nil {
 		return
 	}
+	worker.event = event
 	switch event.Phase {
+	case importer.PhaseCheckingSource, importer.PhaseCheckingDestination:
+		worker.phase = workerChecking
+		if event.Phase == importer.PhaseCheckingDestination {
+			worker.phase = workerCheckingDestination
+		}
 	case importer.PhaseCopying:
 		worker.phase = workerCopying
 	case importer.PhaseVerifying:
 		worker.phase = workerVerifying
 	case importer.PhasePublishing, importer.PhaseDeletingSource:
 		worker.phase = workerPublishing
-	case importer.PhaseComplete, importer.PhaseSourceKept, importer.PhaseSkipped, importer.PhaseFailed:
+	case importer.PhaseComplete, importer.PhaseAlreadyPresent, importer.PhaseSourceKept, importer.PhaseSkipped, importer.PhaseFailed, importer.PhaseUndetermined:
 		m.processing.finished[event.Index] = event.Phase
 		if event.Phase == importer.PhaseSourceKept {
 			m.processing.sourceKept++
+		}
+		if event.Existing || event.Phase == importer.PhaseAlreadyPresent {
+			m.processing.existing++
 		}
 		if imported(event.Phase) && event.Index >= 0 && event.Index < len(m.processing.files) {
 			m.processing.verified = append(m.processing.verified, m.processing.files[event.Index])
@@ -1380,7 +1712,7 @@ func (m *importModel) applyTransferEvent(event importer.Event) {
 		if event.Phase == importer.PhaseSkipped {
 			m.processing.skipped++
 		}
-		if event.Phase == importer.PhaseFailed {
+		if event.Phase == importer.PhaseFailed || event.Phase == importer.PhaseUndetermined {
 			m.processing.failed++
 		}
 		worker.phase = workerDone
@@ -1401,14 +1733,25 @@ func (m *importModel) applyTransferResult(result importer.Result) {
 	}
 	m.processing.verified = nil
 	m.processing.failed, m.processing.skipped, m.processing.sourceKept = 0, 0, 0
+	m.processing.existing, m.processing.conflicts = 0, 0
+	m.processing.earlierKept = 0
+	if state, err := importer.LoadState(filepath.Join(expandHome(m.paths[destinationField]), m.stateFilename)); err == nil {
+		m.processing.earlierKept = importer.EarlierSourceKept(state)
+	}
 	for _, item := range result.Files {
+		if item.Warning == importer.ConflictNotImported {
+			m.processing.conflicts++
+		}
+		if item.Existing || item.Phase == importer.PhaseAlreadyPresent {
+			m.processing.existing++
+		}
 		if item.Phase == importer.PhaseSourceKept {
 			m.processing.sourceKept++
 		}
 		if imported(item.Phase) && item.Index >= 0 && item.Index < len(m.processing.files) {
 			m.processing.verified = append(m.processing.verified, m.processing.files[item.Index])
 		}
-		if item.Phase == importer.PhaseFailed {
+		if item.Phase == importer.PhaseFailed || item.Phase == importer.PhaseUndetermined || item.Phase == importer.PhasePending {
 			m.processing.failed++
 		}
 		if item.Phase == importer.PhaseSkipped {
@@ -1421,6 +1764,23 @@ func (m *importModel) applyTransferResult(result importer.Result) {
 	}
 	m.processing.complete = true
 	m.processing.paused = false
+	// An unfinished batch keeps its state by default: without Incremental, a
+	// later run needs those records to finish a kept Move or resume a copy.
+	m.controls.SetChecked(deleteStateID, m.batchFinished())
+}
+
+// batchFinished reports a state file with nothing left to do: no failed,
+// undetermined, unstarted, source-kept or not-imported file in this batch,
+// and no source-kept Move of an earlier batch recorded beside it.
+func (m importModel) batchFinished() bool {
+	if len(m.extraDestinations) > 0 {
+		for _, file := range m.postprocess.result.Files {
+			if file.Status == postprocess.Failed && !file.NoDate {
+				return false
+			}
+		}
+	}
+	return !m.stateFailed && m.processing.failed == 0 && m.processing.sourceKept == 0 && m.processing.conflicts == 0 && m.processing.earlierKept == 0
 }
 
 func (m importModel) startScan() (tea.Model, tea.Cmd) {
@@ -1429,8 +1789,16 @@ func (m importModel) startScan() (tea.Model, tea.Cmd) {
 	m.scanGeneration++
 	m.progress = 0
 	generation := m.scanGeneration
-	paths := m.paths
-	return m, tea.Batch(scanCmd(generation, paths), scanTick())
+	return m, tea.Batch(m.scanAllTargetsCmd(generation), scanTick())
+}
+
+// returnToParameters reopens Parameters after Processing and re-reads both
+// roots: a Move has removed sources and every run adds destination files, so
+// the earlier inventory no longer describes either folder.
+func (m importModel) returnToParameters() (tea.Model, tea.Cmd) {
+	m.stage = parameterStage
+	m.refreshing = false
+	return m.refreshScan()
 }
 
 // refreshScan re-reads both directories in place so Parameters reflects
@@ -1442,13 +1810,14 @@ func (m importModel) refreshScan() (tea.Model, tea.Cmd) {
 	m.scanGeneration++
 	m.refreshing = true
 	m.actionNotice = ""
-	return m, scanCmd(m.scanGeneration, m.paths)
+	return m, m.scanAllTargetsCmd(m.scanGeneration)
 }
 
 func (m importModel) openPicker(field int) (tea.Model, tea.Cmd) {
+	m.actionNotice = ""
 	width, height := m.modalSize()
 	m.picker = fileexplorer.New(
-		pickerStart(m.paths[field]),
+		pickerStart(m.pickerPath(field)),
 		width-2,
 		height-6,
 		fileexplorer.WithFilter(fileexplorer.Directories()),
@@ -1586,6 +1955,7 @@ func (m importModel) resultView() string {
 		importSectionStyle.Render("TRANSFER"),
 		fmt.Sprintf("Workers       %d", len(m.processing.workers)),
 		fmt.Sprintf("Verified      %d files", len(m.processing.verified)),
+		fmt.Sprintf("Already here  %d files", m.processing.existing),
 		fmt.Sprintf("Skipped       %d files", m.processing.skipped),
 		fmt.Sprintf("Failed        %d files", m.processing.failed),
 		"",
@@ -1594,6 +1964,9 @@ func (m importModel) resultView() string {
 	}, "\n")
 	actions := m.controls.ViewFocusedWidth([]string{deleteStateID}, actionsFocused, leftWidth-4)
 	cleanupNote := importNoteStyle.Render("Delete is the default. Retain state only for audit or diagnosis.")
+	if !m.batchFinished() {
+		cleanupNote = importNoteStyle.Render("State is retained by default so unfinished files can be retried.")
+	}
 	if m.actionNotice != "" {
 		cleanupNote = importNoteStyle.Render(m.actionNotice)
 	}
@@ -1621,7 +1994,18 @@ func (m importModel) postprocessView() string {
 	state := "COMPLETE"
 	note := m.postprocessSummary()
 	if m.postprocess.running {
-		state, note = "RUNNING", "Reading capture dates and organizing verified files…"
+		state = "RUNNING"
+		activity := string([]rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")[m.postprocess.pulse%10])
+		progress := m.postprocess.progress
+		note = activity + " " + progress.Phase
+		if progress.Total > 0 {
+			label := fmt.Sprintf(" %d/%d files", progress.Completed, progress.Total)
+			note += "\n" + progressBar(float64(progress.Completed)/float64(progress.Total), max(8, m.width-lipgloss.Width(label)-7)) + label
+		}
+		if progress.Path != "" {
+			note += "\n" + ansi.Truncate(plainName(filepath.Base(progress.Path)), max(1, m.width-4), "…")
+		}
+		note += fmt.Sprintf("\nDestination %d/%d: %s", m.postprocessTarget+1, len(m.destinationRoots()), ansi.Truncate(plainName(m.destinationRoots()[m.postprocessTarget]), max(1, m.width-24), "…"))
 	}
 	header := fieldset.View("Post-processing", strings.Join([]string{
 		state + "  ·  ORGANIZE BY CAPTURE DATE",
@@ -1688,7 +2072,7 @@ func (m importModel) scanView() string {
 		importNoteStyle.Render("Collecting file names and counts. No files are being changed."),
 		"",
 		fmt.Sprintf("%-13s %s", "Source", ansi.Truncate(m.paths[sourceField], max(1, width-15), "…")),
-		fmt.Sprintf("%-13s %s", "Destination", ansi.Truncate(m.paths[destinationField], max(1, width-15), "…")),
+		m.scanDestinationLines(width),
 		"",
 		scanProgressView(m.progress, barWidth),
 		"",
@@ -1706,16 +2090,22 @@ func resultPageActions() pageactions.Config {
 
 func (m *importModel) restartImport() {
 	width, height, paths, stateFilename := m.width, m.height, m.paths, m.stateFilename
+	extra := append([]string(nil), m.extraDestinations...)
 	fresh := newImportModelWithStateFile(stateFilename).(importModel)
 	fresh.width, fresh.height, fresh.paths = width, height, paths
 	fresh.controls.SetValue(sourceID, paths[sourceField])
 	fresh.controls.SetValue(destinationID, paths[destinationField])
+	fresh.extraDestinations = extra
+	fresh.rebuildDirectoryControls()
 	*m = fresh
 }
 
 func (m *importModel) cleanupResultState() bool {
 	if !m.controls.Checked(deleteStateID) {
 		return true
+	}
+	if len(m.extraDestinations) > 0 {
+		return m.cleanupAllStates()
 	}
 	path := filepath.Join(expandHome(m.paths[destinationField]), m.stateFilename)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -1726,24 +2116,44 @@ func (m *importModel) cleanupResultState() bool {
 	return true
 }
 
-// imported reports a file whose destination was verified and published. A Move
-// that kept its source still imported the photo.
+// imported reports verified destination content, whether it was published by
+// this run or found already present. A failed deletion still preserves a copy.
 func imported(phase importer.Phase) bool {
-	return phase == importer.PhaseComplete || phase == importer.PhaseSourceKept
+	return phase == importer.PhaseComplete || phase == importer.PhaseSourceKept || phase == importer.PhaseAlreadyPresent
 }
 
 func (m importModel) publishedLine() string {
 	line := fmt.Sprintf("Published %s   Skipped %d   Failed %d", formatBytes(m.publishedBytes()), m.processing.skipped, m.processing.failed)
+	if m.processing.existing > 0 {
+		line += fmt.Sprintf("   Already present %d", m.processing.existing)
+	}
+	if m.processing.conflicts > 0 {
+		line += fmt.Sprintf("   Not imported (same name, different content) %d", m.processing.conflicts)
+	}
 	if m.processing.sourceKept > 0 {
 		line += fmt.Sprintf("   Source kept %d", m.processing.sourceKept)
+	}
+	if m.processing.earlierKept > 0 {
+		line += fmt.Sprintf("   Earlier batches source kept %d", m.processing.earlierKept)
 	}
 	return line
 }
 
 func (m importModel) publishedBytes() int64 {
+	if len(m.extraDestinations) > 0 {
+		var bytes int64
+		for _, target := range m.targetResults {
+			for _, file := range target.Files {
+				if imported(file.Phase) && !file.Existing && file.Phase != importer.PhaseAlreadyPresent {
+					bytes += file.Size
+				}
+			}
+		}
+		return bytes
+	}
 	var bytes int64
 	for _, result := range m.processing.results {
-		if imported(result.Phase) {
+		if imported(result.Phase) && !result.Existing && result.Phase != importer.PhaseAlreadyPresent {
 			bytes += result.Size
 		}
 	}
@@ -1754,7 +2164,7 @@ func (m importModel) resultHeaderContent() string {
 	return strings.Join([]string{
 		"TRANSFER COMPLETE  ·  VERIFIED BEFORE PUBLISH",
 		"Source       " + m.paths[sourceField],
-		"Destination  " + m.paths[destinationField],
+		"Destinations " + strings.Join(m.destinationRoots(), ", "),
 		fmt.Sprintf("%d/%d files passed Source and Destination SHA-256 comparison", len(m.processing.verified), len(m.processing.files)),
 		m.publishedLine(),
 		"Post-process " + m.postprocessSummary(),
@@ -1788,12 +2198,12 @@ func (m importModel) processingView() string {
 	if m.processingComplete() {
 		state = "COMPLETE"
 	}
-	progressInfo := fmt.Sprintf("%3d%% │ %d/%d verified", percent, verified, total)
+	progressInfo := fmt.Sprintf("%3d%% │ %d/%d files", percent, m.processedFileCount(), total)
 	progressWidth := max(8, m.width-lipgloss.Width(progressInfo)-7)
 	headerContent := strings.Join([]string{
-		fmt.Sprintf("%s  ·  SHA-256 VERIFIED BEFORE PUBLISH", state),
-		fmt.Sprintf("Files %d/%d verified   Workers %d   Active %d   Pending %d   Skipped %d   Failed %d", verified, total, len(m.processing.workers), m.activeWorkerCount(), max(0, total-verified-m.processing.skipped-m.processing.failed-m.activeWorkerCount()), m.processing.skipped, m.processing.failed),
-		compactProgressBar(percent, progressWidth) + " " + progressInfo,
+		m.processingStateLine(state),
+		fmt.Sprintf("Files %d/%d verified   Already present %d   Workers %d   Active %d   Pending %d   Skipped %d   Failed %d", verified, total, m.processing.existing, m.progressWorkerCount(), m.activeWorkerCount(), max(0, total-verified-m.processing.skipped-m.processing.failed-m.activeWorkerCount()), m.processing.skipped, m.processing.failed),
+		progressBar(float64(percent)/100, progressWidth) + " " + progressInfo,
 	}, "\n")
 	header := fieldset.View("Import progress", headerContent, m.width)
 
@@ -1820,97 +2230,110 @@ func (m importModel) processingView() string {
 	return view
 }
 
+// processingStateLine heads Processing; while the incremental inventory is
+// read and no file has finished, it says how far the listing has got.
+func (m importModel) processingStateLine(state string) string {
+	line := fmt.Sprintf("%s  ·  SHA-256 VERIFIED BEFORE PUBLISH", state)
+	if m.processing.inventory > 0 && len(m.processing.finished) == 0 && !m.processingComplete() {
+		line += fmt.Sprintf("  ·  destination inventory %s", fileCount(m.processing.inventory))
+	}
+	if len(m.extraDestinations) > 0 {
+		line += fmt.Sprintf("  ·  %d destinations", len(m.destinationRoots()))
+	}
+	if total := len(m.processing.files); m.processing.moving && !m.processingComplete() && total > 0 && len(m.processing.finished) == total {
+		// Every copy is final; sources are rechecked against every copy
+		// before deletion, which reads them all again.
+		line += fmt.Sprintf("  ·  checking copies before deleting sources %d/%d", m.processing.decided, total)
+	}
+	return line
+}
+
 func (m importModel) afterProcessingDestination() string {
 	return "Post-processing"
 }
 
+func (m importModel) processedFileCount() int {
+	if m.processing.complete && len(m.processing.results) > 0 {
+		count := 0
+		for _, result := range m.processing.results {
+			if finalPhase(result.Phase) {
+				count++
+			}
+		}
+		return count
+	}
+	return len(m.processing.finished)
+}
+
 func (m importModel) processingPercent() int {
-	if len(m.processing.files) == 0 {
+	total := len(m.processing.files)
+	if total == 0 {
 		return 100
 	}
-	units := len(m.processing.verified) * 100
-	for _, worker := range m.processing.workers {
-		switch worker.phase {
-		case workerCopying:
-			units += worker.progress * 60 / 100
-		case workerVerifying:
-			units += 60 + worker.progress*35/100
-		case workerPublishing:
-			units += 100
-		}
-	}
-	return min(100, units/len(m.processing.files))
+	return min(100, (m.processedFileCount()*100+total/2)/total)
 }
 
 func (m importModel) activeWorkerCount() int {
-	count := 0
+	active := make(map[int]bool)
 	for _, worker := range m.processing.workers {
 		if worker.phase != workerDone && worker.phase != workerIdle {
-			count++
+			active[worker.jobIndex] = true
 		}
 	}
-	return count
+	return len(active)
+}
+
+// progressWorkerCount counts whole-file workers, independently of destination count.
+func (m importModel) progressWorkerCount() int {
+	if len(m.targetProcessing) > 0 {
+		return len(m.targetProcessing[0].workers)
+	}
+	return len(m.processing.workers)
 }
 
 func (m importModel) workerRows(width, height int) string {
-	rowsPerWorker := 4
-	visible := max(1, height/rowsPerWorker)
-	maxOffset := max(0, len(m.processing.workers)-visible)
-	offset := min(maxOffset, max(0, m.processing.workerOffset))
-	end := min(len(m.processing.workers), offset+visible)
-	lines := make([]string, 0, visible*rowsPerWorker)
+	targets := max(1, len(m.targetProcessing))
+	count := m.progressWorkerCount()
+	if height <= 0 || count == 0 {
+		return ""
+	}
+	p := importProgress{targets: targets, slots: make([][]importer.Event, count)}
+	for worker := range count {
+		p.slots[worker] = make([]importer.Event, targets)
+		for target := range targets {
+			workers := m.processing.workers
+			if len(m.targetProcessing) > 0 {
+				workers = m.targetProcessing[target].workers
+			}
+			if worker < len(workers) {
+				p.slots[worker][target] = workers[worker].event
+			}
+		}
+	}
+	// Scroll whole worker groups so every destination stays beside its file.
+	visible := height / targets
+	if count*targets > height {
+		visible = max(0, (height-2)/targets)
+	}
+	offset := min(max(0, count-visible), max(0, m.processing.workerOffset))
+	room := height
+	lines := make([]string, 0, height)
 	if offset > 0 {
-		lines = append(lines, importNoteStyle.Render("↑ more workers"))
+		lines = append(lines, fitProgressLine("↑ more workers", width))
+		room--
 	}
-	for _, worker := range m.processing.workers[offset:end] {
-		if worker.phase == workerDone {
-			lines = append(lines,
-				fmt.Sprintf("%02d  %-10s", worker.number, "IDLE"),
-				importNoteStyle.Render("    Waiting for work"),
-				"",
-				"",
-			)
-			continue
+	visible = min(visible, max(0, room/targets))
+	end := min(count, offset+visible)
+	nameWidth := min(28, max(8, width-64))
+	for worker := offset; worker < end; worker++ {
+		for target, event := range p.slots[worker] {
+			lines = append(lines, fitProgressLine(p.row(worker, target, event, nameWidth, width), width))
 		}
-		fileSize := formatBytes(worker.file.size)
-		filePrefix := fmt.Sprintf("%02d  %-10s  ", worker.number, workerPhaseLabel(worker.phase))
-		fileWidth := max(8, width-lipgloss.Width(filePrefix)-lipgloss.Width(" · "+fileSize))
-		name := ansi.Truncate(filepath.Base(worker.file.path), fileWidth, "...")
-		sourceHash, destinationHash := "computing", "waiting"
-		if worker.phase >= workerVerifying {
-			sourceHash = shortHash(worker.sourceHash, "ready")
-		}
-		if worker.phase == workerVerifying {
-			destinationHash = "computing"
-		}
-		if worker.phase == workerPublishing {
-			destinationHash = shortHash(worker.destinationHash, "MATCH")
-		}
-		barWidth := max(8, width-11)
-		lines = append(lines,
-			filePrefix+name+" · "+fileSize,
-			"    "+workerSteps(worker.phase),
-			importNoteStyle.Render(fmt.Sprintf("    Source %s  │  Destination %s", sourceHash, destinationHash)),
-			fmt.Sprintf("    %s %3d%%", compactProgressBar(worker.progress, barWidth), worker.progress),
-		)
 	}
-	if end < len(m.processing.workers) && len(lines) < height {
-		lines = append(lines, importNoteStyle.Render("↓ more workers"))
+	if end < count && len(lines) < height {
+		lines = append(lines, fitProgressLine("↓ more workers", width))
 	}
 	return strings.Join(lines, "\n")
-}
-
-func workerSteps(phase workerPhase) string {
-	current := 0
-	switch phase {
-	case workerVerifying:
-		current = 1
-	case workerPublishing:
-		current = 2
-	case workerDone:
-		current = 3
-	}
-	return stepper.View([]string{"COPY", "VERIFY", "PUBLISH"}, current, 999)
 }
 
 func (m importModel) leaveConfirmationView() string {
@@ -1957,19 +2380,6 @@ func (m importModel) newLeaveDialog() confirm.Model {
 	})
 }
 
-func workerPhaseLabel(phase workerPhase) string {
-	switch phase {
-	case workerCopying:
-		return "COPYING"
-	case workerVerifying:
-		return "VERIFYING"
-	case workerPublishing:
-		return "PUBLISHING"
-	default:
-		return "IDLE"
-	}
-}
-
 func (m importModel) pendingRows(width int) string {
 	active := make(map[int]struct{}, len(m.processing.workers))
 	for _, worker := range m.processing.workers {
@@ -1993,13 +2403,6 @@ func (m importModel) pendingRows(width int) string {
 	return strings.Join(lines, "\n")
 }
 
-func shortHash(hash, fallback string) string {
-	if hash == "" {
-		return fallback
-	}
-	return hash[:min(8, len(hash))]
-}
-
 func (m importModel) recentRows(width, limit int) string {
 	if len(m.processing.verified) == 0 {
 		return importNoteStyle.Render("Waiting for verification")
@@ -2010,12 +2413,6 @@ func (m importModel) recentRows(width, limit int) string {
 		lines = append(lines, "OK  "+ansi.Truncate(filepath.Base(m.processing.verified[index].path), max(1, width-4), "..."))
 	}
 	return strings.Join(lines, "\n")
-}
-
-func compactProgressBar(percent, width int) string {
-	width = max(8, width)
-	filled := width * min(100, max(0, percent)) / 100
-	return "[" + strings.Repeat("#", filled) + strings.Repeat("-", width-filled) + "]"
 }
 
 func (m importModel) pickerView() string {
@@ -2034,6 +2431,9 @@ func (m importModel) pickerView() string {
 	if notice := m.picker.Notice(); notice != "" {
 		selected = ansi.Truncate(notice, max(1, width-4), "…")
 	}
+	if m.actionNotice != "" {
+		selected = ansi.Truncate(m.actionNotice, max(1, width-4), "…")
+	}
 	body := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
@@ -2051,9 +2451,10 @@ func (m importModel) setupView() string {
 		lipgloss.Left,
 		importStepStyle.Render("SETUP  ·  PHOTO IMPORT"),
 		importHeadingStyle.Render("Choose directories"),
-		importNoteStyle.Render("Select the source and destination to scan before configuring the import."),
+		importNoteStyle.Render("Select the source and destinations below. Each destination receives a complete copy."),
 	)
-	directoryControls := "\n" + m.controls.View([]string{sourceID, destinationID}) + "\n"
+	buttons, _, _ := m.directoryButtons(contentWidth - 4)
+	directoryControls := "\n" + m.controls.View(m.directoryPathIDs()) + "\n\n" + buttons + "\n"
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
@@ -2062,6 +2463,9 @@ func (m importModel) setupView() string {
 		fieldset.View("Directories", directoryControls, contentWidth),
 	)
 	availableHeight := max(1, m.height-4)
+	if lipgloss.Height(content) > availableHeight {
+		content = importNoteStyle.Render(fmt.Sprintf("Use at least %d workspace rows for the directory controls.", lipgloss.Height(content)+4))
+	}
 	return lipgloss.Place(contentWidth, availableHeight, lipgloss.Left, lipgloss.Center, content)
 }
 
@@ -2077,6 +2481,15 @@ func (m importModel) parameterView() string {
 	}
 	layout := m.parameterLayout()
 	leftWidth, middleWidth, trailingWidth := layout.leftWidth, layout.middleWidth, layout.trailingWidth
+	requiredHeight := max(10, lipgloss.Height(m.parametersView(leftWidth-4, false))+2) + 1 + lipgloss.Height(m.importSummaryView(leftWidth-4)) + 2
+	if m.height < requiredHeight {
+		content := lipgloss.JoinVertical(lipgloss.Left,
+			importStepStyle.Render("PARAMETERS  ·  PHOTO IMPORT"),
+			importHeadingStyle.Render("More height required"),
+			importNoteStyle.Render(fmt.Sprintf("Use at least %d workspace rows to show parameters and the import summary.", requiredHeight)),
+		)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+	}
 	sourceFocused := m.parameterFields.Current() == "source-results"
 	destinationFocused := m.parameterFields.Current() == "destination-results"
 	parametersFocused := m.parameterFields.Current() == "parameters"
@@ -2093,7 +2506,7 @@ func (m importModel) parameterView() string {
 		return fieldset.ViewFocused(legend, fitContentHeight(content, height-2, width-4), width, focused)
 	}
 	sourcePane := inventory("Source files", m.paths[sourceField], m.filteredSource(), sourceList, sourceFocused, middleWidth, m.height)
-	destinationPane := inventory("Destination files", m.paths[destinationField], m.scan.destination, destinationList, destinationFocused, middleWidth, m.height)
+	destinationPane := inventory(m.destinationInventoryTitle(), m.selectedDestination(), m.scan.destination, destinationList, destinationFocused, middleWidth, m.height)
 	exceptionPane := lipgloss.JoinVertical(lipgloss.Left,
 		inventory("JPG only · no RAW", m.paths[sourceField], m.orphanFiles(mediaJPEG), jpegList, jpegFocused, trailingWidth, layout.exceptionHeight),
 		"",
@@ -2164,6 +2577,23 @@ func (m importModel) importSummaryView(width int) string {
 		fmt.Sprintf("Will %-9s %s", strings.ToLower(action), fileCount(plan.processed)),
 		fmt.Sprintf("Workers        %d", max(1, m.controls.IntValue(parallelID))),
 	}
+	if len(m.extraDestinations) > 0 {
+		lines = append(lines, fmt.Sprintf("Destinations   %d (inventory %d)", len(m.destinationRoots()), m.selectedTarget+1))
+	}
+	if m.controls.Checked(incrementalID) {
+		var bytes int64
+		for _, file := range m.filteredSource() {
+			bytes += file.size
+		}
+		lines = []string{
+			fmt.Sprintf("Eligible       %s", fileCount(plan.eligible)),
+			fmt.Sprintf("Source bytes   %s", formatBytes(bytes)),
+			fmt.Sprintf("Name conflicts %s", fileCount(plan.duplicates)),
+			fmt.Sprintf("To check       %s", fileCount(plan.checks)),
+			"Copy count after content checks",
+			fmt.Sprintf("Workers        %d", max(1, m.controls.IntValue(parallelID))),
+		}
+	}
 	// Scan problems stay on screen, not only in a notice that can scroll away:
 	// an unreadable Source folder means the counts above are not the card.
 	line := func(label string, items []string) {
@@ -2171,25 +2601,38 @@ func (m importModel) importSummaryView(width int) string {
 			lines = append(lines, ansi.Truncate(fmt.Sprintf("%-14s %d · %s", label, len(items), items[0]), max(1, width), "…"))
 		}
 	}
+	if m.scan.destinationMissing {
+		lines = append(lines, ansi.Truncate("New folder     Destination does not exist and will be created; check its disk is mounted", max(1, width), "…"))
+	}
 	line("Unreadable", m.scan.sourceErrors)
 	line("Not scanned", m.scan.sourceSkipped)
 	line("Dest. errors", m.scan.destinationErrors)
+	line("Dest. omitted", m.scan.destinationSkipped)
 	return strings.Join(lines, "\n")
 }
 
 func (m importModel) buildPlan() importPlan {
 	destinationPaths := make(map[string]struct{}, len(m.scan.destination))
+	destinationSizes := make(map[int64]struct{}, len(m.scan.destination))
 	for _, file := range m.scan.destination {
 		destinationPaths[strings.ToLower(file.path)] = struct{}{}
+		destinationSizes[file.size] = struct{}{}
 	}
 	plan := importPlan{operation: strings.ToLower(m.controls.Value(operationID))}
 	for _, file := range m.filteredSource() {
 		plan.eligible++
+		if _, exists := destinationSizes[file.size]; exists {
+			plan.checks++
+		}
 		if _, exists := destinationPaths[strings.ToLower(file.path)]; exists {
 			plan.duplicates++
 		}
 	}
 	plan.processed = plan.eligible
+	if m.controls.Checked(incrementalID) {
+		plan.incremental = true
+		return plan
+	}
 	if m.controls.Value(duplicatesID) == "Skip" {
 		plan.skipped = plan.duplicates
 		plan.processed -= plan.skipped
@@ -2229,7 +2672,7 @@ func (m importModel) parametersView(width int, focused bool) string {
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		importSectionStyle.Render("IMPORT"),
-		m.controls.ViewFocusedWidth([]string{operationID, extensionsID, duplicatesID, parallelID}, focused, width),
+		m.controls.ViewFocusedWidth(parameterIDs, focused, width),
 	)
 }
 
@@ -2301,7 +2744,7 @@ func (m importModel) Status() tui.Status {
 		return m.withWorkflow(tui.Status{Left: "SELECT", Right: "↑↓ Choose  ↵ Apply  esc Cancel"})
 	}
 	if m.stage == parameterStage {
-		left, right := "PARAMETERS", "n Next  r Refresh  space Preview  alt+hjkl Focus  esc Back"
+		left, right := "PARAMETERS", "n Next  r Refresh  [/] Dest  space Preview  alt+hjkl Focus  esc Back"
 		if m.refreshing {
 			left = "PARAMETERS · REFRESHING"
 		} else if m.actionNotice != "" {
