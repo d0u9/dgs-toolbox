@@ -88,35 +88,44 @@ machine, and avoids a second source of metadata truth.
 Browse opens on the Items as cards, as box's Browse does, or as a table,
 chosen with two icon buttons, Cards (a grid of squares) and List (bulleted lines). In the list, each column is as wide
 as its header's right edge is dragged, remembered per column, and a click on
-a header sorts by that column, again to turn the order round; Sort offers the
-columns of the types in view, and an arrow beside it turns the order round.
-The list's columns are, in order: the thumbnail and star; Item, the card's
-name without its type; Type, when more than one is shown; the fields every
-Template requires (Owner, Country); when one type is shown, its
-distinguishing keys in its order; Expiry, when any row has something there;
-Added; and Rev., the revisions. A field column no row has a value for is
-left out, and a field's description is its header's tooltip. Each card or row shows the first page of HEAD, the fields that tell the document apart
+a header sorts by that column, again to turn the order round; Sort offers
+every field the Items in view hold, tags and revisions, and an arrow beside
+it turns the order round. The thumbnail, the star and Item, the card's name
+without its type, are always shown. The other columns are chosen from the
+header's menu, opened by a right click on the header or its +, with the
+shared list table, and dragged into any order; the choice, order and widths
+are remembered in the browser. They are Type, any field the Items hold,
+grouped under Fields, Tags, Expiry, Added and Rev., the revisions. At first
+the list shows Type, Owner, Country, Tags, Expiry, Added and Rev. Tags are
+drawn as the shared tag pills, on one line cut at the column's edge. A field's description is its header's tooltip. Each card or row shows the first page of HEAD, the fields that tell the document apart
 (owner, country), the type, and where its expiry stands.
 
-Along the top are search (fields, tags and the text on the page), a
-**Filters** button, a **★ Frequent** chip that shows only the frequent Items,
-the count, and the layout and sort. The filters sit in a panel under them,
-shut until Filters opens it; whether it is open is remembered in the
-browser, and the button counts the filters narrowing, so a shut panel still
-says so. They offer only what the Items in view can use. The panel's first
-row holds type — grouped under the type they all extend, each with its
-count — the fields every Template requires (owner and country), any other
-distinguishing key every type in the tree has, and a tag filter that
-matches every tag chosen. A second row, shown only when something is in
-it, holds the distinguishing keys every type left has besides — all of a
-type's once it is chosen, none with any type — and expiry, kind and Use (in
-use or retired). Every filter offers the values the other filters leave — choosing
-a type narrows the owners to that type's — and one with fewer than two
-values left is hidden unless it is set. A date or month key is chosen by
-year; a text key with more than 20 values in the tree is typed, its values
-offered as it is; any other is picked from a list. A filter that narrows is
-drawn blue with a × that clears it. They
-sort by date added, expiry, name or type; frequent Items always come first
+Along the top, in one row whatever is chosen, are search (fields, tags and
+the text on the page; a field linking to another Item matches by that Item's
+name too, so a plate finds every document about the car), the filter steps,
+a **+ Filter** chip, a **★ Frequent** chip that shows only the frequent
+Items, the count, and the layout and sort. Filtering is walked into one step
+after another, as Values lists a field's values: + Filter opens a large dialog over the
+page, the steps so far and how many Items they leave at its top, and two
+tables of the shared list table: the keys on the left — the order
+suggested, how many of the Items left hold each, how many values — and the
+picked key's values on the right — how many Items hold each, their share,
+and the types holding it. A click on a column sorts by it. Each table has a
+box over it; the keys' box finds a key by its name or by a value it holds,
+and shows those values. Esc, × or a click outside closes it. The keys are
+type, kind, expiry, Use (in use or retired), tags and every field the Items
+left hold; a key every one of them holds the same value of is left out. The
+suggested order puts keys most Items hold first, the finer before the
+coarser, and a key that groups nothing — nearly every value held by one
+Item, as a number or an amount — last. A linked field's values are named by
+the Item linked; a date or month is chosen by year. Choosing a value adds a
+step, drawn as a tag bubble after the others, `about 浙A00000 › Type other`:
+a linked Item by the last part of its name, the whole on hover. The next
+step offers only what the Items left hold. Clicking a bubble goes back to that
+step: the steps after it are taken away and its key is offered again. Its ×
+takes only that step away. Bubbles that do not fit scroll sideways; the row
+never wraps. The steps are kept when the page is left and come Back. The
+Items sort by date added, expiry, name or type; frequent Items always come first
 and retired ones last, and the sort orders each part. The layout, sort, order and the Frequent chip
 are remembered in the browser. A thumbnail too tall or wide for its card shows
 its middle. A card's name wraps to a second line before it is cut short.
@@ -1484,7 +1493,8 @@ searches an Item by the tags its HEAD has, edits the Item's tags and the
 picked revision's apart, and shows each revision's own beside it. Item tags and revision tags can both be added, edited or cleared without changing snapshot content. Changing a revision's tags
 is a history event. Tags are lower case, with
 spaces joined by hyphens, and duplicates removed. Import and Browse offer
-existing tags as the owner types; Browse filters by tags in the current tree.
+existing tags as the owner types; Browse filters by tags in the current tree,
+one tag a step.
 
 ## Later
 

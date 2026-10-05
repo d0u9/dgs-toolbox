@@ -5,7 +5,7 @@ import { openMenu } from "/ui/menu.js";
 import { suggest } from "/combo.js";
 import { tooltip } from "/ui/tooltip.js";
 import { listTable } from "/ui/listtable.js";
-import { $, address, keep, scrollBack, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
+import { $, address, keep, scrollBack, tagPills, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines} from "/common.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -18,9 +18,6 @@ let tagsOf = "";
 const detailTags = window.tagField($("detail-tags"), { known: () => tagUses(state.items), placeholder: "Add tags" });
 const revisionTags = window.tagField($("revision-tags"), { known: () => tagUses(state.items), placeholder: "Add tags" });
 let revisionTagsOf = "";
-const filterTags = window.tagField($("filter-tags"), {
-  known: () => tagUses(state.items), only: true, placeholder: "any", onChange: () => render(),
-});
 // Items whose text matched the filter, by ID, with the line it matched on.
 let textHits = new Map();
 let unread = 0;
@@ -47,46 +44,40 @@ function tableKeys(items) {
   return keys.filter((k) => items.some((i) => currentFields(i)[k]));
 }
 
-// Each field filter is kept across draws, so a box being typed in keeps its
-// focus, and moved to the row its key belongs in. Its way of choosing is
-// settled once from every value the tree has: a date or month is picked by
-// year; a text key with more than MANY values is typed, the values offered
-// as it is; any other is picked from a list.
-const MANY = 20;
-const fieldFilters = new Map(); // key → { node, how, value(), clear(), offer(values) }
+// The filters are steps taken one after another, as a folder is walked into:
+// each is a key and the value chosen for it, and narrows the Items the one
+// before it left. The keys are any field the Items left hold, besides type,
+// kind, expiry, use and tags; a field linking to another Item is offered by
+// that Item's name. Each step is a chip beside the search, so the filters
+// stay one row however many there are.
+let steps = (back && back.steps) || []; // [{ key, value }]
 
-function fieldFilter(key) {
-  if (fieldFilters.has(key)) return fieldFilters.get(key);
+const EXPIRY = { expired: "expired", soon: "expiring soon", valid: "valid", permanent: "no end date", none: "no expiry field" };
+const USE = { active: "in use", retired: "retired" };
+const KEY_NAMES = { type: "Type", kind: "Kind", expiry: "Expiry", use: "Use", tags: "Tags" };
+const keyName = (key) => KEY_NAMES[key] || (fieldOf(key)?.type === "date" || fieldOf(key)?.type === "month" ? key + " year" : key);
+
+// valuesOf is what an Item holds for a filter key: one value, or for tags
+// and an owner it shares with, several. A date or month is held by its year.
+function valuesOf(i, key) {
+  if (key === "type") return [i.type];
+  if (key === "kind") return [i.kind];
+  if (key === "expiry") return [expiryOf(i).state];
+  if (key === "use") return [i.retired ? "retired" : "active"];
+  if (key === "tags") return tagsAt(i, headOf(i));
+  const v = currentFields(i)[key];
+  if (v === undefined || v === null || v === "") return key === "owner" ? i.shared_with || [] : [];
   const f = fieldOf(key);
-  const all = new Set(state.items.map((i) => currentFields(i)[key]).filter(Boolean));
-  const how = f && (f.type === "date" || f.type === "month") ? "year"
-    : all.size > MANY && (!f || !f.type || f.type === "text") ? "text" : "pick";
-  const name = key[0].toUpperCase() + key.slice(1);
-  let control, offered = [];
-  if (how === "text") {
-    control = el("input", { type: "search", placeholder: "any", spellcheck: false, autocomplete: "off", oninput: render, value: (back && back.fields && back.fields[key]) || "" });
-    control.setAttribute("aria-label", name);
-  } else {
-    control = el("select", { onchange: render });
-  }
-  const node = el("label", { className: "filter" }, el("span", {}, how === "year" ? name + " year" : name),
-    how === "text" ? suggest(control, () => offered, { arrow: true }) : control);
-  const filter = {
-    node, how,
-    value: () => control.value.trim(),
-    clear: () => { control.value = ""; },
-    offer: (values) => {
-      offered = values;
-      if (how === "text") return;
-      const was = control.value || (back && back.fields && back.fields[key]) || "";
-      const text = how === "year" ? (v) => v : (v) => labelOf(key, v);
-      control.replaceChildren(el("option", { value: "" }, "any"), ...values.map((v) => el("option", { value: v }, text(v))));
-      control.value = values.includes(was) ? was : "";
-    },
-  };
-  clearable(node, () => { filter.clear(); render(); });
-  fieldFilters.set(key, filter);
-  return filter;
+  const one = f && (f.type === "date" || f.type === "month") ? String(v).slice(0, 4) : String(v);
+  // Filtering by owner shows an Item shared with that person too.
+  return key === "owner" ? [one, ...(i.shared_with || [])] : [one];
+}
+
+// valueName is how a value is shown: an Item a field points at by its name.
+function valueName(key, value) {
+  if (key === "expiry") return value === "soon" && state.soonDays ? "expires within " + state.soonDays + " days" : EXPIRY[value] || value;
+  if (key === "use") return USE[value] || value;
+  return labelOf(key, value);
 }
 
 // labelOf is how a value is named in a list: an Item a field points at by
@@ -97,83 +88,168 @@ function labelOf(key, value) {
   return other ? label(state, other) : value;
 }
 
-// meets says whether an Item has the value a field filter asks for.
-function meets(i, key, filter) {
-  const want = filter.value();
-  if (!want) return true;
-  const have = String(currentFields(i)[key] || "");
-  // Filtering by owner shows an Item shared with that person too.
-  if (key === "owner" && (i.shared_with || []).includes(want)) return true;
-  if (filter.how === "year") return have.startsWith(want);
-  if (filter.how === "text") return have.toLowerCase().includes(want.toLowerCase());
-  return have === want;
+// passes says whether an Item meets the search, Frequent and the first n
+// steps, every step when n is left out.
+function passes(i, n = steps.length) {
+  const fields = currentFields(i);
+  return (!onlyFrequent() || i.frequent) &&
+    steps.slice(0, n).every((s) => valuesOf(i, s.key).includes(s.value)) &&
+    // A linked field matches by the linked Item's name too, so a plate finds
+    // every document about that car.
+    (textHits.has(i.id) || matches(label(state, i) + " " + Object.entries(fields).map(([k, v]) => v + " " + shown(i, k, v)).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
 }
 
-// clearable puts a × on a filter that clears it, shown while it narrows.
-function clearable(node, clear) {
-  const x = el("button", { type: "button", className: "text-button filter-x", title: "Clear this filter",
-    onclick: (event) => { event.preventDefault(); clear(); } }, "×");
-  x.setAttribute("aria-label", "Clear this filter");
-  node.append(x);
+// facets is what the Items given can still be told apart by: each key with
+// its values and how many Items hold each. A key every Item holds the same
+// one value of tells nothing and is left out, as is a value already chosen.
+// The keys most Items hold come first, the finer before the coarser; those
+// that group nothing last.
+function facets(items) {
+  const keys = new Map(); // key → Map(value → count)
+  const add = (key, value) => {
+    if (steps.some((s) => s.key === key && s.value === value)) return;
+    if (!keys.has(key)) keys.set(key, new Map());
+    const m = keys.get(key);
+    m.set(value, (m.get(value) || 0) + 1);
+  };
+  for (const i of items) {
+    const ks = new Set(["type", "kind", "expiry", "use", "tags", ...Object.keys(currentFields(i))]);
+    if ((i.shared_with || []).length) ks.add("owner");
+    for (const k of ks) for (const v of new Set(valuesOf(i, k))) add(k, v);
+  }
+  const out = [];
+  for (const [key, counts] of keys) {
+    if (counts.size === 1 && [...counts.values()][0] === items.length) continue;
+    // held: how many Items have the key; alike: how many share a value on
+    // average. A key nearly every value of is held by one Item alone —
+    // a number, an amount — groups nothing, so it goes last.
+    const held = items.filter((i) => valuesOf(i, key).length).length;
+    const alike = [...counts.values()].reduce((a, b) => a + b, 0) / counts.size;
+    out.push({ key, counts, held, groups: alike >= 1.5 });
+  }
+  return out.sort((a, b) => b.groups - a.groups || b.held - a.held || b.counts.size - a.counts.size || a.key.localeCompare(b.key));
 }
 
-// drawFilters offers only what the Items in view can use. Every filter
-// offers the values the other filters leave, so choosing a type narrows the
-// owners to that type's, and one with fewer than two values left is hidden
-// unless it is set. The field filters are the fields every Template requires
-// — owner and country — then the distinguishing keys every type left has:
-// none more with any type, all of a type's once it is chosen. The required
-// fields, and a key every type in the tree has, sit in the first row, beside
-// Type; the others, and Expiry, Kind and Use, in the second, hidden when
-// empty.
-function drawFilters() {
-  const typeSelect = $("filter-type"), wasType = typeSelect.value || (back && back.type) || "";
-  const types = new Map();
-  for (const i of state.items.filter((i) => passes(i, "type"))) types.set(i.type, (types.get(i.type) || 0) + 1);
-  // The types grouped under the one they all extend, as Templates draws them.
-  const roots = new Map();
-  for (const type of [...types.keys()].sort()) {
-    const root = (templateOf(state, type)?.lineage || [type]).at(-1);
-    if (!roots.has(root)) roots.set(root, []);
-    roots.get(root).push(type);
-  }
-  const option = (type) => el("option", { value: type }, type + " · " + types.get(type));
-  typeSelect.replaceChildren(el("option", { value: "" }, "any"), ...[...roots].sort(([a], [b]) => a.localeCompare(b)).map(([root, members]) =>
-    members.length === 1 && members[0] === root ? option(root) : el("optgroup", { label: root }, ...members.map(option))));
-  typeSelect.value = types.has(wasType) ? wasType : "";
+// drawSteps draws the steps as chips: clicking one goes back to that step
+// and offers its key again; its × takes only that step away.
+function drawSteps() {
+  $("filter-steps").replaceChildren(...steps.map((s, n) => {
+    // The tag bubble every page draws, from /ui/tags.css: a linked Item by
+    // the last part of its name, a plate or an address, the whole on hover.
+    const full = keyName(s.key) + ": " + valueName(s.key, s.value);
+    const back = () => { steps = steps.slice(0, n); render(); openFacets(s.key); };
+    const chip = el("span", { className: "tag-bubble step", tabIndex: 0, role: "button",
+      title: full + "\nClick to go back to this step and choose again", onclick: back,
+      onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); back(); } } },
+      el("span", {}, el("span", { className: "step-key" }, keyName(s.key) + " "), shortName(s.key, s.value)),
+      el("button", { type: "button", className: "tag-remove", title: "Take this filter away", "aria-label": "Take this filter away",
+        onclick: (event) => { event.stopPropagation(); steps.splice(n, 1); render(); } }, "×"));
+    return n ? [el("span", { className: "step-sep", "aria-hidden": "true" }, "›"), chip] : [chip];
+  }).flat());
+}
+// shortName is a value as a step names it: a linked Item by the last part
+// of its name, which is what tells it apart — a plate, an address.
+function shortName(key, value) {
+  const name = valueName(key, value);
+  const f = fieldOf(key);
+  return f && f.type === "item" && name !== value ? name.split(" · ").pop() : name;
+}
 
-  const pool = state.items.filter((i) => passes(i, "fields"));
-  const common = (sets) => sets.length ? sets[0].filter((k) => sets.every((ks) => ks.includes(k))) : [];
-  const mandatory = state.mandatory || [];
-  const first = new Set([...mandatory, ...common([...new Set(state.items.map((i) => i.type))].map(keysOf))]);
-  const keys = [...new Set([...mandatory, ...common([...new Set(pool.map((i) => i.type))].map(keysOf))])];
-  for (const [key, filter] of fieldFilters) if (!keys.includes(key) && filter.value()) keys.push(key);
-  for (const filter of fieldFilters.values()) filter.node.hidden = true;
-  for (const key of keys) {
-    const filter = fieldFilter(key);
-    const left = state.items.filter((i) => passes(i, key)).map((i) => String(currentFields(i)[key] || "")).filter(Boolean);
-    const values = filter.how === "year" ? [...new Set(left.map((v) => v.slice(0, 4)))].sort().reverse() : [...new Set(left)].sort();
-    filter.offer(values);
-    filter.node.hidden = values.length < 2 && !filter.value();
-    (first.has(key) ? $("field-main") : $("field-more")).append(filter.node);
-  }
-  // Expiry, Kind and Use offer only the values the Items left have.
-  const fixed = [["filter-expiry", "expiry", (i) => expiryOf(i).state], ["filter-kind", "kind", (i) => i.kind],
-    ["filter-use", "use", (i) => (i.retired ? "retired" : "active")]];
-  for (const [id, skip, valueOf] of fixed) {
-    const have = new Set(state.items.filter((i) => passes(i, skip)).map(valueOf));
-    const select = $(id);
-    for (const o of select.options) o.hidden = !!o.value && !have.has(o.value) && o.value !== select.value;
-    select.closest(".filter").hidden = have.size < 2 && !select.value;
-  }
-  $("filter-more").hidden = ![...$("filter-more").querySelectorAll(".filter")].some((f) => !f.hidden);
+// The facet dialog: the keys in a table on the left, the values of the one
+// picked in a table on the right, each sorted by a click on a column and
+// found by the box over it. Choosing a value adds a step and closes it.
+let facetKey = "";
+let facetRows = []; // the facets of the Items left, as facets answers them
+const pct = (n, of) => (of ? Math.round((n / of) * 100) : 0) + "%";
+const keyTable = listTable($("facet-keys"), {
+  key: "dgs-doc-browse-facet-keys",
+  chooser: false,
+  columns: [
+    { id: "rank", text: "#", width: 40, cell: (f) => el("td", { className: "numeric muted" }, String(f.rank)), value: (f) => f.rank,
+      title: "The order suggested: keys most Items hold first, the finer before the coarser, those that group nothing last" },
+    { id: "name", text: "Field", width: 150, cell: (f) => keyName(f.key), title: "The field, or type, kind, expiry, use or tags" },
+    { id: "held", text: "Items", width: 64, down: true, cell: (f) => el("td", { className: "numeric" }, String(f.held)), value: (f) => f.held, title: "How many of the Items left hold it" },
+    { id: "values", text: "Values", width: 64, down: true, cell: (f) => el("td", { className: "numeric" }, String(f.counts.size)), value: (f) => f.counts.size, title: "How many different values they hold" },
+  ],
+  sort: { id: "rank" },
+  row: (f, cells) => el("tr", { className: "facet-key" + (f.key === facetKey ? " selected" : ""),
+    onclick: () => { facetKey = f.key; $("facet-value-search").value = ""; drawFacets(); } }, ...cells),
+  empty: "No field matches.",
+});
+const valueTable = listTable($("facet-values"), {
+  key: "dgs-doc-browse-facet-values",
+  chooser: false,
+  columns: [
+    { id: "name", text: "Value", width: 320, cell: (v) => el("td", { className: "facet-value", title: v.name }, v.name), value: (v) => v.name },
+    { id: "count", text: "Items", width: 64, down: true, cell: (v) => el("td", { className: "numeric" }, String(v.count)), value: (v) => v.count, title: "How many of the Items left hold it" },
+    { id: "share", text: "Share", width: 64, down: true, cell: (v) => el("td", { className: "numeric muted" }, pct(v.count, v.of)), value: (v) => v.count },
+    { id: "types", text: "Types", width: 200, cell: (v) => el("td", { className: "muted facet-types", title: v.types }, v.types), title: "The types of the Items holding it" },
+  ],
+  sort: { id: "count", down: true },
+  row: (v, cells) => el("tr", { className: "facet-pick", title: "Narrow to " + v.name,
+    onclick: () => { steps.push({ key: facetKey, value: v.value }); closeFacets(); render(); } }, ...cells),
+  empty: "No value matches.",
+});
+function openFacets(key = "") {
+  facetKey = key;
+  $("facet-key-search").value = "";
+  $("facet-value-search").value = "";
+  if (!$("facets").open) $("facets").showModal();
+  drawFacets();
+  (key ? $("facet-value-search") : $("facet-key-search")).focus();
+}
+function closeFacets() { if ($("facets").open) $("facets").close(); }
+function drawFacets() {
+  if (!$("facets").open) return;
+  const pool = state.items.filter((i) => passes(i));
+  $("facets-steps").textContent = (steps.length ? steps.map((s) => keyName(s.key) + ": " + valueName(s.key, s.value)).join(" › ") + " · " : "") +
+    pool.length + (pool.length === 1 ? " Item" : " Items");
+  facetRows = facets(pool).map((f, n) => ({ ...f, rank: n + 1 }));
+  $("facet-empty").hidden = facetRows.length > 0;
+  // A key is found by its name or by any value it holds.
+  const kq = $("facet-key-search").value.trim().toLowerCase();
+  const keys = facetRows.filter((f) => !kq || keyName(f.key).toLowerCase().includes(kq) ||
+    [...f.counts.keys()].some((v) => valueName(f.key, v).toLowerCase().includes(kq)));
+  if (!keys.some((f) => f.key === facetKey)) facetKey = keys[0] ? keys[0].key : "";
+  keyTable.draw(keys);
+  const picked = facetRows.find((f) => f.key === facetKey);
+  $("facet-values-title").textContent = picked ? keyName(picked.key) : "";
+  // A key found by one of its values shows those values on the right, until
+  // the value box asks for others.
+  const keyHit = kq && keyName(facetKey).toLowerCase().includes(kq);
+  const vq = ($("facet-value-search").value.trim() || (keyHit ? "" : kq)).toLowerCase();
+  const typesOf = (value) => {
+    const n = new Map();
+    for (const i of pool) if (valuesOf(i, facetKey).includes(value)) n.set(i.type, (n.get(i.type) || 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1]).map(([t, c]) => t + " " + c).join(", ");
+  };
+  const values = picked ? [...picked.counts].map(([value, count]) => ({ value, count, of: pool.length, name: valueName(facetKey, value) }))
+    .filter((v) => !vq || v.name.toLowerCase().includes(vq))
+    .map((v) => ({ ...v, types: typesOf(v.value) })) : [];
+  valueTable.draw(values);
+}
+$("filter-add").onclick = () => openFacets();
+$("facets-close").onclick = closeFacets;
+// A click on the backdrop, outside the dialog's box, closes it.
+$("facets").onclick = (event) => {
+  const r = $("facets").getBoundingClientRect();
+  if (event.target === $("facets") && (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom)) closeFacets();
+};
+$("facet-key-search").oninput = drawFacets;
+$("facet-value-search").oninput = drawFacets;
+// Enter takes the first row: the first key on the left, the first value on
+// the right.
+$("facet-key-search").onkeydown = (event) => { if (event.key === "Enter") $("facet-value-search").focus(); };
+$("facet-value-search").onkeydown = (event) => { if (event.key === "Enter") $("facet-values").querySelector("tbody tr.facet-pick")?.click(); };
 
-  // The list can sort by any of its columns, so Sort offers them too.
+// drawSort lets the list sort by any of its columns.
+function drawSort(pool) {
   const sortSelect = $("view-sort"), wantSort = sortSelect.dataset.want || sortSelect.value;
   for (const o of [...sortSelect.options]) if (o.dataset.column) o.remove();
-  const columns = tableKeys(pool);
+  // Every field the Items hold, so a column chosen in the list sorts too.
+  const columns = [...new Set([...tableKeys(pool), ...pool.flatMap((i) => Object.keys(currentFields(i))).sort()])];
   if (wantSort.startsWith("field:") && !columns.includes(wantSort.slice(6))) columns.push(wantSort.slice(6));
-  for (const [value, text] of [...columns.map((k) => ["field:" + k, k]), ["revisions", "revisions"]]) {
+  for (const [value, text] of [...columns.map((k) => ["field:" + k, k]), ["tags", "tags"], ["revisions", "revisions"]]) {
     const o = el("option", { value }, text);
     o.dataset.column = "1";
     sortSelect.append(o);
@@ -181,21 +257,6 @@ function drawFilters() {
   sortSelect.value = wantSort;
   if (sortSelect.value !== wantSort) sortSelect.value = "added";
   delete sortSelect.dataset.want;
-}
-
-// passes says whether an Item meets every filter but skip, which names the
-// filter being filled — "type", "kind", "expiry", "use", a key, or "fields"
-// for every key: a filter offers the values the other filters leave.
-function passes(i, skip) {
-  const type = $("filter-type").value, kind = $("filter-kind").value, exp = $("filter-expiry").value, use = $("filter-use").value;
-  const fields = currentFields(i);
-  return (!onlyFrequent() || i.frequent) && (skip === "use" || !use || (use === "retired") === !!i.retired) &&
-    (skip === "type" || !type || i.type === type) && (skip === "kind" || !kind || i.kind === kind) &&
-    (skip === "expiry" || !exp || expiryOf(i).state === exp) &&
-    (skip === "fields" || [...fieldFilters].every(([key, filter]) => key === skip || meets(i, key, filter))) &&
-    // An Item has the tags its HEAD has: its own and HEAD's.
-    filterTags.get().every((tag) => tagsAt(i, headOf(i)).includes(tag)) &&
-    (textHits.has(i.id) || matches(label(state, i) + " " + Object.values(fields).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
 }
 
 // The order the Items are sorted in, turned round by the button beside Sort.
@@ -209,13 +270,14 @@ function setDirection(dir) {
 }
 
 function shownItems() {
-  const items = state.items.filter((i) => passes(i, null));
+  const items = state.items.filter((i) => passes(i));
   const sort = $("view-sort").value, dir = direction() === "asc" ? 1 : -1;
   const added = (i) => (i.revisions[i.revisions.length - 1] || {}).added || "";
   // No expiry sorts after any date, whichever way round.
   const exp_ = (i) => { const e = expiryOf(i); return e.date || (e.state === "permanent" ? "9999" : ""); };
   const keyOf = sort.startsWith("field:") ? (i) => shown(i, sort.slice(6), currentFields(i)[sort.slice(6)] || "")
     : { added, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i),
+      tags: (i) => tagsAt(i, headOf(i)).join(" "),
       revisions: (i) => i.revisions.length }[sort] || added;
   // Retired Items go last and frequent ones first, whatever the sort; the
   // sort orders each part.
@@ -224,7 +286,7 @@ function shownItems() {
     if (!!x.frequent !== !!y.frequent) return x.frequent ? -1 : 1;
     const a = keyOf(x), b = keyOf(y);
     // No value sorts after any value, whichever way round.
-    if ((sort === "expiry" || sort.startsWith("field:")) && (!a || !b)) return !a && !b ? 0 : !a ? 1 : -1;
+    if ((sort === "expiry" || sort === "tags" || sort.startsWith("field:")) && (!a || !b)) return !a && !b ? 0 : !a ? 1 : -1;
     if (typeof a === "string") return a.localeCompare(b, undefined, { numeric: true }) * dir;
     return a < b ? -dir : a > b ? dir : 0;
   });
@@ -323,34 +385,43 @@ function star(item) {
 // one is shown, the field columns tableKeys gives, Expiry when any of them
 // has something to say there, when each was added, and its revisions,. Each
 // says how its cell is drawn.
+// tableColumns is every column the list may show. Item, the star and the
+// thumbnail are always there; the rest are chosen from the header's menu
+// (right click, or its +): type, any field the Items hold, tags, expiry,
+// added and revisions.
+const SHOWN = ["type", "field:owner", "field:country", "tags", "expiry", "added", "revisions"];
 function tableColumns(items) {
   const capital = (k) => k[0].toUpperCase() + k.slice(1);
   const added = (item) => new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString();
+  const fields = [...new Set([...(state.mandatory || []), ...items.flatMap((i) => Object.keys(currentFields(i)))])]
+    .sort((a, b) => a.localeCompare(b));
   return [
-    { id: "thumb", text: "", width: 48, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-thumb" }, thumb(item)) },
-    { id: "frequent", text: "★", tip: "Frequent", width: 36, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-star" }, star(item)) },
+    { id: "thumb", text: "", fixed: true, width: 48, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-thumb" }, thumb(item)) },
+    { id: "frequent", text: "★", tip: "Frequent", fixed: true, width: 36, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-star" }, star(item)) },
     // The card's name without its type, which the Type column, or the type
     // filter, already says.
-    { id: "name", text: "Item", width: 340, cell: (item) => {
+    { id: "name", text: "Item", fixed: true, width: 340, cell: (item) => {
       const name = label(state, item).slice(item.type.length).replace(/^ · /, "") || item.type;
       return el("td", { className: "table-name", title: label(state, item) }, name);
     } },
-    new Set(items.map((i) => i.type)).size > 1 && { id: "type", text: "Type", width: 130, cell: (item) => el("td", { className: "mono" }, item.type) },
-    ...tableKeys(items).map((k) => ({ id: "field:" + k, text: capital(k), about: fieldOf(k)?.description, width: k === "country" ? 90 : 130,
+    { id: "type", text: "Type", width: 130, cell: (item) => el("td", { className: "mono" }, item.type) },
+    ...fields.map((k) => ({ id: "field:" + k, text: capital(k), about: fieldOf(k)?.description, width: k === "country" ? 90 : 130, group: "Fields",
       cell: (item) => { const v = currentFields(item)[k]; return el("td", {}, v ? shown(item, k, v) : ""); } })),
-    items.some((i) => expiryOf(i).state !== "none" || i.retired || (i.shared_with || []).length) &&
-      { id: "expiry", text: "Expiry", width: 150,
-        cell: (item) => el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))) },
+    // Tags as the shared pills from /ui/tags.css.
+    { id: "tags", text: "Tags", width: 160, value: (item) => tagsAt(item, headOf(item)).join(" "),
+      cell: (item) => el("td", { className: "table-tags" }, tagPills(tagsAt(item, headOf(item)))) },
+    { id: "expiry", text: "Expiry", width: 150,
+      cell: (item) => el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))) },
     { id: "added", text: "Added", down: true, width: 100, cell: (item) => el("td", { className: "numeric" }, added(item)) },
     { id: "revisions", text: "Rev.", tip: "Revisions", down: true, width: 56, cell: (item) => el("td", { className: "numeric" }, String(item.revisions.length)) },
-  ].filter(Boolean);
+  ];
 }
 let shownColumns = [];
 const itemList = listTable($("table"), {
-  key: "dgs-doc-browse-list",
+  key: "dgs-doc-browse-columns",
   className: "items-table",
-  chooser: false,
   columns: () => shownColumns,
+  shown: SHOWN,
   sorting: {
     get: () => ({ id: $("view-sort").value, down: direction() === "desc" }),
     set: ({ id, down }) => { $("view-sort").value = id; setDirection(down ? "desc" : "asc"); saveView(); render(); },
@@ -452,24 +523,17 @@ $("reader-back").onclick = closeReader;
 
 function render() {
   frame(state);
-  if (state.soonDays) $("soon-option").textContent = "expires within " + state.soonDays + " days";
-  drawFilters();
+  drawSort(state.items.filter((i) => passes(i)));
   const items = shownItems();
+  drawSteps();
+  drawFacets();
   $("count").textContent = items.length === state.items.length ? items.length + " Items" : items.length + " of " + state.items.length + " Items";
   $("none").hidden = state.items.length > 0 || !state.tree;
   $("nothing").hidden = !state.items.length || items.length > 0;
   $("filters-clear").hidden = !filtering();
   if (!back) {
-    keep({ q: $("filter").value, type: $("filter-type").value, expiry: $("filter-expiry").value, kind: $("filter-kind").value,
-      use: $("filter-use").value, tags: filterTags.get(), fields: Object.fromEntries([...fieldFilters].map(([k, f]) => [k, f.value()]).filter(([, v]) => v)) });
+    keep({ q: $("filter").value, steps });
   }
-  $("filter-tags").closest(".filter").classList.toggle("filter-active", filterTags.get().length > 0);
-  for (const s of document.querySelectorAll(".filters select, .filters .filter input")) s.closest(".filter").classList.toggle("filter-active", !!s.value.trim() && !s.id.startsWith("view-"));
-  // The Filters button counts the filters narrowing, so a shut panel still
-  // says something is.
-  const on = $("filter-panel").querySelectorAll(".filter.filter-active").length;
-  $("filters-on").textContent = String(on);
-  $("filters-on").hidden = !on;
   $("unread").hidden = !unread;
   $("unread-count").textContent = unread + (unread === 1 ? " Item's text is" : " Items' text is") + " not read yet, so searching cannot find " + (unread === 1 ? "it." : "them.");
   const list = layout === "list";
@@ -487,17 +551,13 @@ function render() {
   if (item) detail(item);
 }
 
-const filtering = () => onlyFrequent() || $("filter").value.trim() || filterTags.get().length ||
-  [...document.querySelectorAll(".filters select")].some((s) => s.value && !s.id.startsWith("view-")) ||
-  [...fieldFilters.values()].some((f) => f.value());
+const filtering = () => onlyFrequent() || $("filter").value.trim() || steps.length;
 
 $("filters-clear").onclick = () => {
   $("filter").value = "";
   $("filter-frequent").setAttribute("aria-pressed", "false");
   saveView();
-  filterTags.set([]);
-  for (const s of document.querySelectorAll(".filters select")) if (!s.id.startsWith("view-")) s.value = "";
-  for (const f of fieldFilters.values()) f.clear();
+  steps = [];
   textHits = new Map();
   render();
   searchText();
@@ -505,19 +565,9 @@ $("filters-clear").onclick = () => {
 function saveView() {
   try {
     localStorage.setItem(VIEW_KEY, JSON.stringify({ layout, sort: $("view-sort").value,
-      direction: direction(), frequent: onlyFrequent(), filters: !$("filter-panel").hidden }));
+      direction: direction(), frequent: onlyFrequent() }));
   } catch { /* not kept */ }
 }
-// The filters sit in a panel, shut until Filters opens it.
-function showFilters(open) {
-  $("filter-panel").hidden = !open;
-  $("filters-toggle").setAttribute("aria-pressed", String(open));
-  $("filters-toggle").title = open ? "Hide the filters" : "Show the filters";
-}
-$("filters-toggle").onclick = () => {
-  showFilters($("filter-panel").hidden);
-  saveView();
-};
 // Cards or list: two buttons, the pressed one is how the Items are shown.
 let layout = "grid";
 function setLayout(value) {
@@ -531,15 +581,10 @@ for (const b of $("view-layout").querySelectorAll("button")) {
     render();
   };
 }
-for (const id of ["filter-type", "filter-expiry", "filter-kind", "filter-use", "view-sort"]) {
-  $(id).addEventListener("change", () => {
-    saveView();
-    render();
-  });
-}
-for (const id of ["filter-type", "filter-expiry", "filter-kind", "filter-use"]) {
-  clearable($(id).closest(".filter"), () => { $(id).value = ""; render(); });
-}
+$("view-sort").addEventListener("change", () => {
+  saveView();
+  render();
+});
 $("view-direction").onclick = () => {
   setDirection(direction() === "asc" ? "desc" : "asc");
   saveView();
@@ -552,7 +597,6 @@ try {
   if (v.layout) setLayout(v.layout);
   if (v.sort) { $("view-sort").value = v.sort; $("view-sort").dataset.want = v.sort; }
   if (v.direction) setDirection(v.direction);
-  if (v.filters) showFilters(true);
 } catch { /* the defaults stand */ }
 
 // Closing the detail gives the cards the width back.
@@ -677,7 +721,7 @@ function detail(item) {
       el("div", { className: "rev-text" },
         el("span", {}, new Date(r.added).toLocaleDateString(), isHead ? el("span", { className: "tag" }, "HEAD") : null),
         el("span", { className: "sub", title: (r.id || r.digest) }, r.digest ? (r.source ? r.source + " · " : "") + r.digest.slice(0, 8) : "No PDF"),
-        (r.tags || []).length ? el("span", { className: "rev-tags" }, ...r.tags.map((t) => el("span", { className: "tag" }, t))) : null),
+        (r.tags || []).length ? Object.assign(tagPills(r.tags, true), { className: "tag-pills wrap rev-tags" }) : null),
       !isHead ? el("button", {
         className: "button secondary small-button", type: "button", textContent: "Make HEAD",
         onclick: (event) => { event.stopPropagation(); makeHead(item.id, (r.id || r.digest)); },
@@ -973,7 +1017,6 @@ $("more").onclick = async () => {
 // Coming Back, the filters are set as they were before anything is drawn.
 if (back) {
   $("filter").value = back.q || "";
-  for (const [id, k] of [["filter-expiry", "expiry"], ["filter-kind", "kind"], ["filter-use", "use"]]) $(id).value = back[k] || "";
 }
 const unscroll = scrollBack(["items-pane"]);
 
@@ -984,7 +1027,6 @@ async function reload() {
 
 reload().then(() => {
   const was = back;
-  if (was && was.tags && was.tags.length) filterTags.set(was.tags);
   back = null;
   searchText();
   const wanted = state.items.find((i) => i.id === location.hash.slice(1));
