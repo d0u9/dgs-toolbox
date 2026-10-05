@@ -6,8 +6,151 @@ This document owns decisions specific to `dgs photo import`. Read [`../../tui.md
 
 Photo Import is a concrete consumer of the shared design language. Its page composition, labels, parameter groups, defaults, and workflow do not define requirements for other apps or commands.
 
-Incremental import finds existing copies after date organization. It is enabled initially and
-can be disabled in Parameters. Multiple destinations remain follow-up work.
+Incremental import finds existing copies after date organization. An empty Source file has no content to recognise, so it is already present only at its own planned name or where state recorded it, never at an unrelated empty file. It is enabled initially and
+can be disabled in Parameters. The workspace keeps one Destination; the CLI
+action supports multiple destination copies.
+
+## Command-line import
+
+`dgs photo import` without arguments still opens the existing workspace. A
+source argument invokes the non-interactive Action; it does not open a TUI:
+
+```sh
+# Copy into one destination; incremental checks are enabled by default.
+dgs photo import /path/to/card --dest /path/to/library
+
+# Keep a complete copy in each destination.
+dgs photo import /path/to/card --dest /path/to/library --dest /path/to/backup
+
+# Preview selected files and destination inventories without changing files.
+dgs photo import /path/to/card --dest /path/to/library --dest /path/to/backup --dry-run
+
+# Organize JPG/RAW by capture date in every destination.
+dgs photo import /path/to/card --dest /path/to/library --dest /path/to/backup --organize
+
+# Import only JPG and DNG (both extensions must occur on the card).
+dgs photo import /path/to/card --dest /path/to/library --ext JPG --ext DNG
+
+# Keep different-content photos with the same name by adding safe suffixes.
+dgs photo import /path/to/card --dest /path/to/library --duplicates keep-both
+
+# Use two whole-file workers per destination.
+dgs photo import /path/to/card --dest /path/to/library --workers 2
+
+# Delete sources only after all destinations hold independently verified copies.
+dgs photo import /path/to/card --dest /path/to/library --dest /path/to/backup --move
+
+# Remove import state only after a fully successful import and organization.
+dgs photo import /path/to/card --dest /path/to/library --organize --delete-state
+
+# Disable content matching; use filename conflicts and verified resume state.
+dgs photo import /path/to/card --dest /path/to/library --incremental=false
+
+# Quote directory paths containing spaces.
+dgs photo import "/path/to/SD Card" --dest "/path/to/Photo Library"
+```
+
+After taking more photos on the same card, rerun the same command. Incremental
+checks find verified existing copies even in date folders and copy new or
+changed content under the selected duplicate policy. Rerunning also resumes an
+interrupted batch at whole-file granularity. No separate resume flag is needed.
+For the preview example, remove `--dry-run` to execute the same selection.
+
+At least one `--dest` is required. Each occurrence is a complete directory
+path, including commas or spaces; no comma splitting occurs. Every destination
+must already exist: a missing one may be the empty mount point of an unmounted
+disk, which would silently receive the "backup", and only existing directories
+can be compared by identity. Reject source/destination overlap, duplicate or
+nested destinations and aliases — including other case or Unicode
+normalization spellings of one directory — before writes. Each target's
+directory identity, as validation saw it, is pinned for the batch: queued
+targets must still be that directory, and transfer, state writes, publication
+and Move checks refuse a missing or replaced root instead of recreating a mount
+point. A network share that reconnects as a new mount counts as replaced; run
+the import again. Each check is one metadata call on the root. These are
+filesystem API checks, not protection against an external path change after a
+check. Destinations on one filesystem (the same device, or one network share
+mounted twice) are accepted with a warning: their copies are not independent of
+each other. Each destination independently uses the
+existing importer and retains its configured `import.state_file`. Missing or
+corrupt state falls back to filesystem content checks when Incremental is on.
+
+Defaults are Copy, Incremental on, duplicate policy `skip`, one whole-file
+worker, and all regular files recursively with the same Source exclusions as
+the workspace. `--incremental=false`, `--duplicates keep-both`, `--workers`
+(1–8) and repeated `--ext` override these for this run. An `--ext` value
+holding a comma or space, or matching no Source file, is refused: a misspelt
+filter must not read as a successful, empty import. No settings are saved.
+Replace remains unavailable. Targets run in the given order; workers within
+each target retain the bounded whole-file model. Interactive terminals show a
+fixed progress region: destination number and processed-file count above one
+row per worker, with aligned filename, phase and byte progress columns. Bars
+use wide muted sage-green dot patterns (dense for completed, sparse for remaining)
+that shorten with the terminal, without gradients or background colors.
+Text uses terminal defaults; `NO_COLOR` disables the green. Active worker events animate a braille
+spinner; successful files show a checkmark and other outcomes an exclamation. A blank
+row separates the overall progress from the workers. Destination paths and
+completed-target summaries sit below the worker rows and update in place. Workers keep
+their rows across files; normal completions update in place instead of
+printing a line per file. Each target ends with a compact summary and any
+failure or warning details. Import organization also prints counts rather than
+a list of successful moves or files without capture dates on a terminal; actual
+errors retain their file details. Redirected organization output keeps the list. The overall percentage counts processed files,
+including failures; each worker's bar measures bytes in the current phase,
+so completed copying alone never means verified completion. Redraws are
+throttled, rows fit the terminal width and short terminals show how many
+worker rows are hidden. The region clears before logs or exit. Redirected
+output and dumb terminals retain plain per-file logs. After cancellation no
+further target starts; those
+are reported as not started. The first Ctrl+C or SIGTERM cancels cleanly; a
+second Ctrl+C ends the process even if a read is stuck on a hung mount. Successful copies are kept
+when another target fails. Report each target separately and return nonzero
+for conflict skips, failed/undetermined transfers, mismatched source content
+between targets, state errors, organization failures or cancellation. The
+closing summary counts files imported into every destination, source-kept
+Moves included and counted apart.
+
+A file is complete only when every target holds a verified copy of the same
+content and the copies are distinct files: a hard link in one target to the
+copy in another is one copy, not two. A file missing from any target is
+`failed`, naming that target and its reason, whatever the operation.
+
+`--move` first copies into all targets, then independently rechecks Source and
+every target copy per file, with `--workers` parallel checks. Delete only an
+unchanged Source whose size and SHA-256 agree with all copies, which must still
+be distinct files. A failed target leaves the file `failed` and its Source in
+place; `source-kept` is reserved for a file copied everywhere whose deletion
+was refused (an unreadable or changed copy or Source, or a read-only card).
+Other fully verified files may complete Move.
+Destination state records remain verified Copy evidence for a later retry.
+
+`--organize` explicitly opts into existing capture-date Post-processing in
+each target after transfers, with the same pairing, collision and existing
+counterpart checks. It organizes newly published and previously unorganized
+copies, leaves other existing copies in place, and updates each target's state
+paths. A verified Move may already have removed Source before organization;
+an organization failure leaves verified copies at their imported paths. A
+file whose capture date cannot be read — a RAW container the EXIF reader does
+not support (CR3, RAF, ORF) without a JPG, or a JPG without EXIF — stays in
+place and is reported as `No capture date`; it does not make the command fail.
+Missing files, permission failures and other metadata-read I/O errors remain
+failures and make the CLI return nonzero; they are not missing capture dates.
+
+`--dry-run` (`-n`) exposes the read-only review step in the CLI: validate the
+same options, list selected Source files and every Destination inventory, and
+print the chosen parameters. It creates no directories, temporary files or
+state and never deletes Source, even with `--move`. It does not hash file
+contents or read capture dates, so it cannot promise final incremental skips,
+conflict outcomes or organization paths; execution establishes those.
+
+State is retained by default. `--delete-state` opts into Result cleanup after
+all targets, source deletions and requested organization finish successfully.
+Failures, cancellation and earlier source-kept Moves retain state for retry.
+Cleanup checks that each destination still denotes the selected directory;
+a cleanup error returns nonzero without rolling back verified copies.
+Rerunning the same command provides whole-file resume; Ctrl+C provides clean
+cancellation. Interactive pause, confirmation dialogs, file preview and list
+navigation remain conveniences of the TUI rather than import parameters.
 
 ## Product scenario and integrity contract
 
@@ -141,7 +284,7 @@ Use two rows of top breathing room on a comfortably sized Setup terminal, one on
   filename-conflict handling and retained-state recovery alone. It is a session
   control, with no additional configuration key.
 - Extensions: dynamic multi-checkbox choices derived from the extensions actually present in Source; all are selected initially.
-- Duplicates: filename-conflict policy. Skip leaves the existing destination untouched, Replace intends to publish the verified new file at that path, and Keep both chooses a new unique filename. Replace is not the default; its backup and rollback semantics remain to be designed before implementation.
+- Duplicates: filename-conflict policy. Skip leaves the existing destination untouched, Replace intends to publish the verified new file at that path, and Keep both chooses a new unique filename. A name whose metadata cannot be read — a path component that is a file, a folder without permission, a name made too long by its `-N` suffix — fails that file instead of counting as taken, and the search for a free name is bounded. Replace is not the default; its backup and rollback semantics remain to be designed before implementation.
 - Parallelism: positive worker count controlling concurrent file transfers; default `1` for predictable removable-media I/O and bounded resource use.
 - `Next → Processing`: starts the selected transfers. Replace remains unavailable until its backup and rollback contract is implemented; the screen reports this without starting file operations.
 
@@ -187,7 +330,7 @@ files were published under different names — Keep both renamed one, as
 `IMG_0001-2.JPG` beside `IMG_0001.CR2` — is left in place and reported, since
 in a date folder it would pair with nothing or with another shot.
 
-The destination is `<Destination>/YYYYMMDD/<filename>`. Post-processing reads the already verified destination file, not a deleted Move source. It uses same-filesystem rename and never overwrites an existing target. A missing/invalid capture time, unsupported RAW container, unsafe date directory, target conflict, or rename failure leaves that file at its published Processing path and reports a per-file failure. Non-photo files are skipped. Collisions are decided per shot — the files of one source folder sharing a filename stem — before anything moves: a shot whose name another shot of the batch also takes in the same date folder, or which that folder already holds under any extension, stays at its published path whole and is reported, so a RAW is never filed beside a different shot's JPG. If one file of a shot fails to move, the rest of that shot stays with it. Before moving any paired RAW, read its sidecar date so processing order cannot invalidate the metadata source.
+The destination is `<Destination>/YYYYMMDD/<filename>`. Post-processing reads the already verified destination file, not a deleted Move source. It uses same-filesystem rename and never overwrites an existing target. A missing/invalid capture time, unsupported RAW container, unsafe date directory, target conflict, or rename failure leaves that file at its published Processing path and reports a per-file failure. Non-photo files are skipped. Collisions are decided per shot — the files of one source folder sharing a filename stem — before anything moves: a shot whose name another shot of the batch also takes in the same date folder, or which that folder already holds under any extension, stays at its published path whole and is reported, so a RAW is never filed beside a different shot's JPG. If one file of a shot fails to move, the rest of that shot stays with it. Before moving any paired RAW, read its sidecar date so processing order cannot invalidate the metadata source. Destination's identity is taken when the moves are planned and checked again before each date folder is made and each file moves: a disk unmounted while the confirmation waits leaves every file in place rather than filling an empty mount point.
 
 Organizing runs in two steps. It first reads every capture date without moving anything. If any planned `YYYYMMDD` folder already exists under Destination, a second dialog lists those folders and asks to `Continue` or `Skip`, so a batch never silently mixes into earlier folders. The same check backs `dgs photo organize <folder>`, which organizes the files directly inside one folder and asks `[y/N]` on the terminal. Its flags: `-y/--yes` skips that question, `-n/--dry-run` prints each planned move and changes nothing, `-r/--recursive` includes subfolders (hidden ones skipped; photos already in their date folder are left alone), `--format` sets the folder layout from `YYYY`, `MM`, `DD`, `-`, `_`, `.` and `/` (default `YYYYMMDD`, e.g. `YYYY/MM/DD` nests), and `--dest` creates the date folders under another directory.
 
@@ -287,13 +430,15 @@ At minimum, record:
 
 Persist state when the batch starts and when it ends; while it runs, write pending changes within `importer.DefaultStateInterval` (two seconds), even while a file is slow or paused, and never rewrite unchanged state on a tick, so bookkeeping does not grow with the square of the batch or stall workers on a NAS. A crash loses at most that interval of records; each of those files is verified again before it is trusted, or found again by Incremental. Records of earlier batches into the same Destination are kept, so importing another card in between does not cost the first one its resume. If a process stops while one `.dgs-part` is incomplete, that partial file is never resumed internally. On retry, discard or truncate it and transfer that photo again from byte zero. Already published and recorded files are not recopied.
 
-Before skipping an item recorded as complete, confirm that the expected final destination still exists and matches the recorded identity or digest policy. Planning compares only metadata (the destination's size); the digests are read by the workers, with progress, pause and cancellation like any transfer. An interrupted check leaves the earlier record in state; a refuted record imports the file as new under the conflict policy. Recorded items are matched against each job's planned destination before Keep both chooses a new name, and state keeps that planned destination, so a rerun resumes a Keep both batch instead of copying it again. A Move over a recorded item whose Source still exists and still matches the recorded digest deletes that Source — whether the earlier run was a Copy or a Move that kept its source. Before retrying an incomplete item, confirm that Source still matches its recorded identity. Never rename a leftover partial file merely because its expected byte count has been reached.
+Before skipping an item recorded as complete, confirm that the expected final destination still exists and matches the recorded identity or digest policy. Planning compares only metadata (the destination's size); the digests are read by the workers, with progress, pause and cancellation like any transfer. An interrupted check leaves the earlier record in state; a refuted record imports the file as new under the conflict policy. State is bookkeeping, not evidence: a record is trusted only when its source and destination digests agree, its destination lies under the pinned Destination root with no link on the way, and that destination is a different file from the source. A damaged, edited or foreign record proves nothing and the file is imported anew. Recorded items are matched against each job's planned destination before Keep both chooses a new name, and state keeps that planned destination, so a rerun resumes a Keep both batch instead of copying it again. A Move over a recorded item whose Source still exists and still matches the recorded digest deletes that Source — whether the earlier run was a Copy or a Move that kept its source. Before retrying an incomplete item, confirm that Source still matches its recorded identity. Never rename a leftover partial file merely because its expected byte count has been reached.
 
-The Result screen must offer an explicit choice to delete or retain the import-state file after the batch has reached its terminal state. Delete is the default only when nothing is left to do; a batch with failed, undetermined, unstarted, source-kept or not-imported files keeps its state by default, because without Incremental a later run needs it to finish. Retaining it supports auditing or later diagnosis; deleting it does not delete imported photos.
+The Result screen must offer an explicit choice to delete or retain the import-state file after the batch has reached its terminal state. Delete is the default only when nothing is left to do; a batch with failed, undetermined, unstarted, source-kept or not-imported files keeps its state by default, because without Incremental a later run needs it to finish. The state file also carries earlier batches' records into the same Destination; a source-kept Move among them keeps it by default too, and Result counts those apart. Retaining it supports auditing or later diagnosis; deleting it does not delete imported photos.
 
 ### Source and destination entry policy
 
 Import regular files only. Directories are traversal structure rather than transfer items. Hidden Source entries are not camera files and are listed as not scanned: AppleDouble `._` companions carry a photo's extension but hold metadata. Trash, recycle-bin, snapshot and metadata folders (`.Trashes`, `.Trash-<uid>`, `$RECYCLE.BIN`, `#recycle`, `@Recycle`, `#snapshot`, `.snapshot`, `.zfs`, `@eaDir`, `.Spotlight-V100`, `.fseventsd` and the like, in `skipdirs`) are left out on both sides, readable or not, and by `dgs photo organize --recursive`. Source symbolic links are skipped and reported because following one could read outside the selected SD-card root, and its target could change between scan and transfer. FIFOs, sockets, block or character devices, and other special entries are rejected because reading them can block, produce an unbounded stream, or access something other than the scanned file.
+
+Every Move deletion — after publication, after a resumed record, and after an incremental match — first confirms the pinned root is still there; otherwise the source is kept and reported, and a later run finishes it. Every Processing run pins its Destination root the same way, the workspace's included: a root that existed when Processing started, or that Processing created then, is never recreated if it vanishes or is replaced mid-run. A Destination that does not exist is shown in the Import summary as a new folder to be created, because the empty mount point of an unmounted disk looks the same.
 
 Destination path components and an existing final entry must be checked with non-following metadata operations. Do not write through a destination symbolic link. Create temporary files exclusively so an unrelated existing file cannot be silently reused.
 

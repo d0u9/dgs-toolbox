@@ -102,6 +102,10 @@ type scanSummary struct {
 	// from an incomplete destination inventory.
 	destinationErrors  []string
 	destinationSkipped []string
+	// destinationMissing is a Destination that does not exist: Processing
+	// creates it. It is shown, because the empty mount point of an unmounted
+	// disk looks the same and would receive the photos on the local disk.
+	destinationMissing bool
 }
 
 type importPlan struct {
@@ -163,6 +167,9 @@ type processingState struct {
 	// conflicts are incremental Skips: the name holds different content, so
 	// the photo was not imported. They are counted apart from other skips.
 	conflicts int
+	// earlierKept counts source-kept Moves of earlier batches still recorded
+	// in the state file, which deleting it would forget.
+	earlierKept int
 	// inventory is how many destination files the incremental inventory has
 	// listed; it moves before any worker does.
 	inventory    int
@@ -335,87 +342,102 @@ func scanDirectories(paths [pathFieldCount]string, stateFilenames ...string) sca
 	if len(stateFilenames) > 0 {
 		stateName = stateFilenames[0]
 	}
-	scanRoot := func(side, root string, target *[]scannedFile, errs, skipped *[]string) {
-		root = expandHome(root)
-		walkRoot := root
-		if resolved, err := filepath.EvalSymlinks(root); err == nil {
-			walkRoot = resolved
-		}
-		err := filepath.WalkDir(walkRoot, func(path string, entry fs.DirEntry, walkErr error) error {
-			if path != walkRoot && entry != nil {
-				// Trash, snapshots and metadata stores are neither photos to
-				// import nor copies already imported, readable or not.
-				if entry.IsDir() && skipdirs.Skip(entry.Name()) {
-					*skipped = append(*skipped, "not scanned "+relativeTo(walkRoot, path))
-					return filepath.SkipDir
-				}
-				// A hidden Source entry is no camera file: AppleDouble "._"
-				// companions carry a photo's extension but hold metadata.
-				if side == "SRC" && strings.HasPrefix(entry.Name(), ".") {
-					*skipped = append(*skipped, "hidden "+relativeTo(walkRoot, path))
-					if entry.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-			}
-			if walkErr != nil {
-				if path == walkRoot {
-					if side == "DST" && errors.Is(walkErr, fs.ErrNotExist) {
-						// A Destination that does not exist yet is created by
-						// Processing; it simply holds nothing to compare.
-						return nil
-					}
-					return walkErr
-				}
-				// One unreadable folder must not end the walk: everything after
-				// it in lexical order would silently be missing. A hidden one is
-				// a system folder (.Trashes, .Spotlight-V100) and holds no
-				// photos; anything else is a gap the user has to see.
-				if side == "SRC" && entry != nil && strings.HasPrefix(entry.Name(), ".") {
-					*skipped = append(*skipped, "unreadable "+relativeTo(walkRoot, path)+": "+walkErr.Error())
-				} else {
-					*errs = append(*errs, walkErr.Error())
-				}
-				if entry != nil && entry.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if entry.IsDir() {
-				return nil
-			}
-			if side == "DST" && importer.IsImportArtifact(entry.Name(), stateName) {
-				*skipped = append(*skipped, "import artifact "+relativeTo(walkRoot, path))
-				return nil
-			}
-			if !entry.Type().IsRegular() {
-				// A link could read outside the selected root and a special file
-				// can block or never end; neither is a photo.
-				kind := "special file"
-				if entry.Type()&fs.ModeSymlink != 0 {
-					kind = "symbolic link"
-				}
-				*skipped = append(*skipped, kind+" "+relativeTo(walkRoot, path))
-				return nil
-			}
-			info, err := entry.Info()
-			if err != nil {
-				*errs = append(*errs, err.Error())
-				return nil
-			}
-			*target = append(*target, scannedFile{side: side, path: filepath.ToSlash(relativeTo(walkRoot, path)), size: info.Size()})
-			return nil
-		})
-		if err != nil {
-			*errs = append(*errs, err.Error())
-		}
-		sort.Slice(*target, func(i, j int) bool { return (*target)[i].path < (*target)[j].path })
+	scanTree("SRC", paths[sourceField], stateName, &summary.source, &summary.sourceErrors, &summary.sourceSkipped)
+	scanTree("DST", paths[destinationField], stateName, &summary.destination, &summary.destinationErrors, &summary.destinationSkipped)
+	if _, err := os.Stat(expandHome(paths[destinationField])); errors.Is(err, fs.ErrNotExist) {
+		summary.destinationMissing = true
 	}
-	scanRoot("SRC", paths[sourceField], &summary.source, &summary.sourceErrors, &summary.sourceSkipped)
-	scanRoot("DST", paths[destinationField], &summary.destination, &summary.destinationErrors, &summary.destinationSkipped)
 	classifySidecars(summary.source)
 	return summary
+}
+
+// scanSource reads Source alone, for the command line: each destination is
+// inventoried by the engine itself, so walking one here would be wasted I/O.
+func scanSource(root string) scanSummary {
+	var summary scanSummary
+	scanTree("SRC", root, "", &summary.source, &summary.sourceErrors, &summary.sourceSkipped)
+	classifySidecars(summary.source)
+	return summary
+}
+
+// scanTree inventories one root. side is "SRC" or "DST"; stateName is the
+// import-state file name left out of a destination.
+func scanTree(side, root, stateName string, target *[]scannedFile, errs, skipped *[]string) {
+	root = expandHome(root)
+	walkRoot := root
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		walkRoot = resolved
+	}
+	err := filepath.WalkDir(walkRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if path != walkRoot && entry != nil {
+			// Trash, snapshots and metadata stores are neither photos to
+			// import nor copies already imported, readable or not.
+			if entry.IsDir() && skipdirs.Skip(entry.Name()) {
+				*skipped = append(*skipped, "not scanned "+relativeTo(walkRoot, path))
+				return filepath.SkipDir
+			}
+			// A hidden Source entry is no camera file: AppleDouble "._"
+			// companions carry a photo's extension but hold metadata.
+			if side == "SRC" && strings.HasPrefix(entry.Name(), ".") {
+				*skipped = append(*skipped, "hidden "+relativeTo(walkRoot, path))
+				if entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+		if walkErr != nil {
+			if path == walkRoot {
+				if side == "DST" && errors.Is(walkErr, fs.ErrNotExist) {
+					// A Destination that does not exist yet is created by
+					// Processing; it simply holds nothing to compare.
+					return nil
+				}
+				return walkErr
+			}
+			// One unreadable folder must not end the walk: everything after
+			// it in lexical order would silently be missing. A hidden one is
+			// a system folder (.Trashes, .Spotlight-V100) and holds no
+			// photos; anything else is a gap the user has to see.
+			if side == "SRC" && entry != nil && strings.HasPrefix(entry.Name(), ".") {
+				*skipped = append(*skipped, "unreadable "+relativeTo(walkRoot, path)+": "+walkErr.Error())
+			} else {
+				*errs = append(*errs, walkErr.Error())
+			}
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if side == "DST" && importer.IsImportArtifact(entry.Name(), stateName) {
+			*skipped = append(*skipped, "import artifact "+relativeTo(walkRoot, path))
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			// A link could read outside the selected root and a special file
+			// can block or never end; neither is a photo.
+			kind := "special file"
+			if entry.Type()&fs.ModeSymlink != 0 {
+				kind = "symbolic link"
+			}
+			*skipped = append(*skipped, kind+" "+relativeTo(walkRoot, path))
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			*errs = append(*errs, err.Error())
+			return nil
+		}
+		*target = append(*target, scannedFile{side: side, path: filepath.ToSlash(relativeTo(walkRoot, path)), size: info.Size()})
+		return nil
+	})
+	if err != nil {
+		*errs = append(*errs, err.Error())
+	}
+	sort.Slice(*target, func(i, j int) bool { return (*target)[i].path < (*target)[j].path })
 }
 
 func relativeTo(root, path string) string {
@@ -1523,6 +1545,10 @@ func (m *importModel) applyTransferResult(result importer.Result) {
 	m.processing.verified = nil
 	m.processing.failed, m.processing.skipped, m.processing.sourceKept = 0, 0, 0
 	m.processing.existing, m.processing.conflicts = 0, 0
+	m.processing.earlierKept = 0
+	if state, err := importer.LoadState(filepath.Join(expandHome(m.paths[destinationField]), m.stateFilename)); err == nil {
+		m.processing.earlierKept = importer.EarlierSourceKept(state)
+	}
 	for _, item := range result.Files {
 		if item.Warning == importer.ConflictNotImported {
 			m.processing.conflicts++
@@ -1554,10 +1580,11 @@ func (m *importModel) applyTransferResult(result importer.Result) {
 	m.controls.SetChecked(deleteStateID, m.batchFinished())
 }
 
-// batchFinished reports a batch with nothing left to do: no failed,
-// undetermined, unstarted, source-kept or not-imported file.
+// batchFinished reports a state file with nothing left to do: no failed,
+// undetermined, unstarted, source-kept or not-imported file in this batch,
+// and no source-kept Move of an earlier batch recorded beside it.
 func (m importModel) batchFinished() bool {
-	return m.processing.failed == 0 && m.processing.sourceKept == 0 && m.processing.conflicts == 0
+	return m.processing.failed == 0 && m.processing.sourceKept == 0 && m.processing.conflicts == 0 && m.processing.earlierKept == 0
 }
 
 func (m importModel) startScan() (tea.Model, tea.Cmd) {
@@ -1889,6 +1916,9 @@ func (m importModel) publishedLine() string {
 	}
 	if m.processing.sourceKept > 0 {
 		line += fmt.Sprintf("   Source kept %d", m.processing.sourceKept)
+	}
+	if m.processing.earlierKept > 0 {
+		line += fmt.Sprintf("   Earlier batches source kept %d", m.processing.earlierKept)
 	}
 	return line
 }
@@ -2364,6 +2394,9 @@ func (m importModel) importSummaryView(width int) string {
 		if len(items) > 0 {
 			lines = append(lines, ansi.Truncate(fmt.Sprintf("%-14s %d · %s", label, len(items), items[0]), max(1, width), "…"))
 		}
+	}
+	if m.scan.destinationMissing {
+		lines = append(lines, ansi.Truncate("New folder     Destination does not exist and will be created; check its disk is mounted", max(1, width), "…"))
 	}
 	line("Unreadable", m.scan.sourceErrors)
 	line("Not scanned", m.scan.sourceSkipped)
