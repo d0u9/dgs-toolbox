@@ -213,7 +213,7 @@ func TestImportNavigationMatchesParameterLayout(t *testing.T) {
 	model.stage = parameterStage
 	model.parameterFields.Set("parameters")
 	model.controls.SetFocusID(operationID)
-	want := []string{extensionsID, duplicatesID, parallelID, operationID}
+	want := []string{incrementalID, extensionsID, duplicatesID, parallelID, operationID}
 	for _, wantID := range want {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(importModel)
@@ -628,7 +628,7 @@ func TestParameterScreenUsesFourColumnLayout(t *testing.T) {
 	}
 	model.syncResultLists()
 	view := model.View()
-	for _, want := range []string{"Source files", "Destination files", "JPG only · no RAW", "RAW only · no JPG", "Parameters", "Import summary", "Eligible", "Duplicates", "Will copy", "Workers"} {
+	for _, want := range []string{"Source files", "Destination files", "JPG only · no RAW", "RAW only · no JPG", "Parameters", "Import summary", "Eligible", "Incremental", "Name conflicts", "To check", "Workers"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("split view does not contain %q:\n%s", want, view)
 		}
@@ -703,6 +703,8 @@ func TestResultListsUseVimNavigationInsteadOfMoreText(t *testing.T) {
 
 func TestImportSummaryRespondsToParameters(t *testing.T) {
 	model := newImportModel().(importModel)
+	model.controls.SetFocusID(incrementalID)
+	model.controls.HandleInteraction(" ")
 	// Duplicates compare the full relative path, because Destination mirrors the
 	// Source hierarchy: "old/two.dng" does not collide with "two.DNG" at the root.
 	model.scan = scanSummary{

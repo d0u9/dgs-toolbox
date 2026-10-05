@@ -39,6 +39,11 @@ func Publish(temporary, final string) error {
 
 // unsupported reports an error that means "this filesystem cannot do that",
 // as opposed to a failure of the operation itself.
+//
+// EPERM is among them because FAT and exFAT volumes, and some FUSE and SMB
+// mounts, answer link(2) with it. A real permission failure costs nothing by
+// passing here: the final rename needs the same permission and fails as well,
+// so the check-then-rename window is only ever reached where it can succeed.
 func unsupported(err error) bool {
 	return errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) ||
 		errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOSYS) ||
