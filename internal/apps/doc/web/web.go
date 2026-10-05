@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"dgs-toolbox/internal/doc/classify"
 	"dgs-toolbox/internal/doc/dates"
 	"dgs-toolbox/internal/doc/expiry"
+	"dgs-toolbox/internal/doc/imagepdf"
 	"dgs-toolbox/internal/doc/itemcache"
 	"dgs-toolbox/internal/doc/ocr"
 	"dgs-toolbox/internal/doc/pagecache"
@@ -41,7 +43,8 @@ var webFiles embed.FS
 
 // Settings is what the server needs from the configuration.
 type Settings struct {
-	Addr string
+	KeepOriginal *bool
+	Addr         string
 	// Root is the tree the page lists when Trees is empty. Empty is the
 	// working directory.
 	Root string
@@ -67,7 +70,7 @@ type Tree struct {
 
 // SettingsFrom reads the server settings out of the configuration.
 func SettingsFrom(global config.Config) Settings {
-	settings := Settings{Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder(), ExpiringWithin: global.DocExpiringWithin()}
+	settings := Settings{KeepOriginal: global.Doc.KeepOriginal, Addr: global.DocWebAddr(), Root: global.DocRoot(), DateOrder: global.DocDateOrder(), ExpiringWithin: global.DocExpiringWithin()}
 	if dir, err := global.DocCacheDir(); err == nil {
 		settings.CacheDir = dir
 	}
@@ -108,7 +111,8 @@ type sourceFileJSON struct {
 }
 
 type stateJSON struct {
-	Root string `json:"root"`
+	KeepOriginal bool   `json:"keepOriginal"`
+	Root         string `json:"root"`
 	// Name is the tree's name in doc.trees, empty for --root or the working
 	// directory.
 	Name string `json:"name"`
@@ -129,8 +133,9 @@ type stateJSON struct {
 }
 
 type server struct {
-	root string
-	name string
+	keepOriginal bool
+	root         string
+	name         string
 	// trees are every tree served, this one too, so an export can check its
 	// Target against the others.
 	trees     []Tree
@@ -169,7 +174,8 @@ func Handler(settings Settings) http.Handler {
 	}
 	trees := settings.ResolvedTrees()
 	shared := server{
-		now: time.Now, pictures: newPictures(pagecache.Store{Dir: settings.CacheDir}), dateOrder: settings.DateOrder, soon: settings.ExpiringWithin,
+		keepOriginal: settings.KeepOriginal == nil || *settings.KeepOriginal,
+		now:          time.Now, pictures: newPictures(pagecache.Store{Dir: settings.CacheDir}), dateOrder: settings.DateOrder, soon: settings.ExpiringWithin,
 		writing: &sync.Mutex{}, trees: trees,
 		store:  textcache.Store{Dir: settings.CacheDir},
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
@@ -298,7 +304,7 @@ func pageHandler(files http.Handler, document string) http.Handler {
 }
 
 func (s server) state(w http.ResponseWriter, _ *http.Request) {
-	out := stateJSON{Root: s.root, Name: s.name, Trees: s.trees, Templates: []tree.Template{}, Items: []tree.Item{}}
+	out := stateJSON{KeepOriginal: s.keepOriginal, Root: s.root, Name: s.name, Trees: s.trees, Templates: []tree.Template{}, Items: []tree.Item{}}
 	var problems []string
 	if err := tree.Require(s.root); err == nil {
 		out.Tree = true
@@ -345,6 +351,15 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 	for _, item := range items {
 		for _, r := range item.Revisions {
 			kept[r.Digest] = item.ID
+			if r.SourceDigest != "" {
+				kept[r.SourceDigest] = item.ID
+			}
+			for _, digest := range r.SourceDigests {
+				kept[digest] = item.ID
+			}
+			if r.Original != nil {
+				kept[r.Original.Digest] = item.ID
+			}
 		}
 	}
 	itemsDir := filepath.Join(s.root, tree.ItemsDir)
@@ -377,7 +392,7 @@ func sourcePath(dir, path string) (string, error) {
 	if !filepath.IsAbs(dir) {
 		return "", errors.New("open a folder by its full path")
 	}
-	if !fs.ValidPath(path) || path == "." || !strings.EqualFold(filepath.Ext(path), ".pdf") {
+	if !fs.ValidPath(path) || path == "." || !pdflist.Supported(path) {
 		return "", errors.New("not a PDF in the opened folder")
 	}
 	for _, part := range strings.Split(path, "/") {
@@ -401,6 +416,11 @@ func (s server) sourceFile(w http.ResponseWriter, r *http.Request) {
 	full, err := sourcePath(r.URL.Query().Get("dir"), r.URL.Query().Get("path"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	full, err = imagepdf.Cached(r.Context(), full, s.store.Dir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 	servePDF(w, r, full)
@@ -501,7 +521,7 @@ type suggestion struct {
 // patterns find on it. The PDF is named as a preview names it.
 func (s server) text(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	path, err := s.pdfPath(query)
+	path, err := s.pdfPath(r.Context(), query)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
@@ -591,6 +611,11 @@ func (s server) ahead(w http.ResponseWriter, r *http.Request) {
 	// Digesting a large scan takes a moment; nobody waits for it.
 	go func() {
 		for _, path := range paths {
+			pdf, err := imagepdf.Cached(context.Background(), path, s.store.Dir)
+			if err != nil {
+				continue
+			}
+			path = pdf
 			if digest, err := tree.FileDigest(path); err == nil {
 				s.reader.Ahead(path, digest)
 			}
@@ -601,9 +626,13 @@ func (s server) ahead(w http.ResponseWriter, r *http.Request) {
 
 // pdfPath is the PDF a query names, as a preview names it: a file under an
 // opened folder (dir, path) or a revision of an Item (item, digest).
-func (s server) pdfPath(query url.Values) (string, error) {
+func (s server) pdfPath(ctx context.Context, query url.Values) (string, error) {
 	if query.Get("item") == "" {
-		return sourcePath(query.Get("dir"), query.Get("path"))
+		source, err := sourcePath(query.Get("dir"), query.Get("path"))
+		if err != nil {
+			return "", err
+		}
+		return imagepdf.Cached(ctx, source, s.store.Dir)
 	}
 	item, err := tree.GetItem(s.root, query.Get("item"))
 	if err != nil {
@@ -635,14 +664,15 @@ func servePDF(w http.ResponseWriter, r *http.Request, path string) {
 }
 
 type importJSON struct {
-	Replaces string            `json:"replaces"`
-	NoPDF    bool              `json:"no_pdf"`
-	Dir      string            `json:"dir"`
-	Path     string            `json:"path"`
-	Type     string            `json:"type"`
-	Fields   map[string]string `json:"fields"`
-	Notes    string            `json:"notes"`
-	Tags     []string          `json:"tags"`
+	KeepOriginal *bool             `json:"keep_original"`
+	Replaces     string            `json:"replaces"`
+	NoPDF        bool              `json:"no_pdf"`
+	Dir          string            `json:"dir"`
+	Path         string            `json:"path"`
+	Type         string            `json:"type"`
+	Fields       map[string]string `json:"fields"`
+	Notes        string            `json:"notes"`
+	Tags         []string          `json:"tags"`
 	// RevisionTags are the first revision's own, beside the Item's.
 	RevisionTags []string `json:"revision_tags"`
 	SharedWith   []string `json:"shared_with"`
@@ -680,7 +710,7 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		req := tree.ImportRequest{
-			Root: s.root, Source: source, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
+			KeepOriginal: s.keepImage(request.KeepOriginal), Root: s.root, Source: source, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
 		}
 		var item tree.Item
 		if request.NoPDF {
@@ -738,13 +768,14 @@ func answer(w http.ResponseWriter, item tree.Item, err error) {
 // and moves HEAD to it.
 func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		NoPDF  bool              `json:"no_pdf"`
-		Dir    string            `json:"dir"`
-		Path   string            `json:"path"`
-		Item   string            `json:"item"`
-		Fields map[string]string `json:"fields"`
-		Notes  *string           `json:"notes"`
-		Tags   *[]string         `json:"tags"`
+		KeepOriginal *bool             `json:"keep_original"`
+		NoPDF        bool              `json:"no_pdf"`
+		Dir          string            `json:"dir"`
+		Path         string            `json:"path"`
+		Item         string            `json:"item"`
+		Fields       map[string]string `json:"fields"`
+		Notes        *string           `json:"notes"`
+		Tags         *[]string         `json:"tags"`
 		// RevisionTags are the new revision's own.
 		RevisionTags []string `json:"revision_tags"`
 	}
@@ -766,7 +797,7 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		answer(w, tree.Item{}, err)
 		return
 	}
-	metadata := tree.RevisionMetadata{Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags}
+	metadata := tree.RevisionMetadata{KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags}
 	var item tree.Item
 	if request.NoPDF {
 		item, err = tree.AddWithoutPDF(s.root, request.Item, t, request.Fields, metadata, s.now())
@@ -1055,10 +1086,11 @@ func Serve(settings Settings) (string, error) {
 
 func (s server) attachPDF(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Item   string
-		Digest string
-		Dir    string
-		Path   string
+		KeepOriginal *bool `json:"keep_original"`
+		Item         string
+		Digest       string
+		Dir          string
+		Path         string
 	}
 	if !decode(w, r, &request) {
 		return
@@ -1069,7 +1101,7 @@ func (s server) attachPDF(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, err := tree.AttachPDF(r.Context(), s.root, request.Item, request.Digest, source, s.now())
+	item, err := tree.AttachFile(r.Context(), s.root, request.Item, request.Digest, source, s.keepImage(request.KeepOriginal), s.now())
 	answer(w, item, err)
 }
 
@@ -1127,4 +1159,11 @@ func (s server) issuers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tree.FieldValues(items, r.URL.Query().Get("type"), r.URL.Query().Get("country"), "issuer"))
+}
+
+func (s server) keepImage(override *bool) bool {
+	if override != nil {
+		return *override
+	}
+	return s.keepOriginal
 }

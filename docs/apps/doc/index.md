@@ -1322,6 +1322,35 @@ An exported folder imports back the same way: the Merge page opens a folder with
 `dgs-export.json` as it opens a sub-tree. It brings the revisions that were
 exported and the Items' fields; it carries no Templates or Outlines.
 
+## Image import
+
+Import lists PDFs and JPG/JPEG, PNG, HEIC/HEIF and TIFF images. Each image
+becomes one PDF page, retaining its pixel dimensions, applying its orientation,
+converting its colour to sRGB and compositing transparency onto white. PDF page
+size uses 300 pixels per inch without cropping. The PDF stores the converted
+8-bit pixels losslessly. Animated or multi-frame inputs contribute their first image
+only. No helper program is required. HEIC/HEIF, TIFF and ICC colour conversion
+use macOS ImageIO/ColorSync with cgo; other builds clearly refuse unsupported
+inputs. Existing Photo Encode limits still apply (including refusing HDR HEIC).
+
+**Keep original image in the doc tree** defaults to `doc.keep_original` (`true`).
+It also archives the input bytes as `<source-sha256>.<extension>` beside the
+PDF. Turning it off stores only the PDF. In both cases the source folder is
+untouched. The sidecar records the source digest, alternative input digests for the same
+PDF, and, when archived, the
+original’s digest and extension. A snapshot keeps one archived original; trying to retain different input bytes
+for a snapshot that already has an original is refused explicitly. Existing
+originals are preserved, and merging adds originals missing on the target.
+Both stored files use independent readback
+before publication, and the sidecar is written last. Verify checks archived
+originals too; tree merging carries them, and discarding a revision moves its
+unshared original into trash. Outlines and exports continue to publish PDFs.
+
+Preview and OCR use converted PDFs in the discardable local `imagepdf` cache,
+with a converter version and input content key plus a checksum. Missing or
+corrupt entries are rebuilt. Identical image inputs produce identical PDFs,
+so repeated imports are recognised even when the original was not archived.
+
 ## Layout on disk
 
 ```text
@@ -1339,6 +1368,7 @@ exported and the Items' fields; it carries no Templates or Outlines.
     <item-id>/
       item.dgs-item.yaml    # the sidecar: everything known about the Item
       <sha256>.pdf          # optional PDF per revision, named by its content
+      <source-sha256>.png   # optional original image; extension matches input
 ```
 
 - The marker is `dgs-doctree.yaml`, not `dgs-doc.yaml`, which reads too much

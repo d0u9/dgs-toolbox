@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"time"
 )
 
@@ -53,7 +54,16 @@ func (item *Item) saveSnapshot(typ string, fields map[string]string, digest, sou
 		}
 	}
 	if !exists {
-		item.Revisions = append(item.Revisions, Revision{ID: ref, Type: typ, Snapshot: true, Digest: digest, Source: source, Fields: maps.Clone(fields), Added: now.Format(time.RFC3339)})
+		next := Revision{ID: ref, Type: typ, Snapshot: true, Digest: digest, Source: source, Fields: maps.Clone(fields), Added: now.Format(time.RFC3339)}
+		for _, r := range item.Revisions {
+			if r.Digest == digest && digest != "" {
+				next.SourceDigest = r.SourceDigest
+				next.SourceDigests = slices.Clone(r.SourceDigests)
+				next.Original = r.Original
+				break
+			}
+		}
+		item.Revisions = append(item.Revisions, next)
 	}
 	item.Type = typ
 	item.Fields = maps.Clone(fields)

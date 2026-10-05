@@ -244,42 +244,8 @@ func Encode(ctx context.Context, j Job, o Options) (result Outcome) {
 		return fail(errors.New("input exceeds 256 MiB limit"))
 	}
 	result.BytesBefore = int64(len(data))
-	var src image.Image
-	var m metadata
-	if kind := nativeKind(j.Source); kind != "" {
-		src, m, err = decodeNative(kind, data, o)
-	} else {
-		var cfg image.Config
-		var format string
-		cfg, format, err = image.DecodeConfig(bytes.NewReader(data))
-		if err != nil {
-			return fail(err)
-		}
-		if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > int64(o.MaxPixels) {
-			return fail(errors.New("image exceeds configured pixel limit"))
-		}
-		if cfg.ColorModel == color.CMYKModel {
-			return fail(errors.New("CMYK requires colour conversion and is not supported"))
-		}
-		switch format {
-		case "jpeg":
-			m, err = jpegMetadata(data)
-		case "png":
-			m, err = pngMetadata(data)
-		default:
-			err = errors.New("only JPEG and PNG are supported by the Go decoder")
-		}
-		if err == nil {
-			err = checkICC(m.icc, isGray(cfg.ColorModel))
-		}
-		if err == nil {
-			src, _, err = image.Decode(bytes.NewReader(data))
-		}
-	}
+	src, m, err := decodeImage(ctx, j.Source, data, o)
 	if err != nil {
-		return fail(err)
-	}
-	if err = ctx.Err(); err != nil {
 		return fail(err)
 	}
 	background, _ := BackgroundColor(o.Background)
@@ -380,4 +346,73 @@ func readTemporary(path string, written os.FileInfo) ([]byte, error) {
 		return nil, errors.New("readback opened a different file")
 	}
 	return io.ReadAll(f)
+}
+
+// DecodeImage returns oriented, opaque sRGB pixels for a document conversion.
+// name selects the native HEIC/HEIF or TIFF decoder. Options bound allocation
+// and specify the background and maximum side; no source file is changed.
+func DecodeImage(ctx context.Context, name string, data []byte, o Options) (*image.NRGBA, error) {
+	if err := o.Validate(); err != nil {
+		return nil, err
+	}
+	if len(data) > 256<<20 {
+		return nil, errors.New("input exceeds 256 MiB limit")
+	}
+	src, m, err := decodeImage(ctx, name, data, o)
+	if err != nil {
+		return nil, err
+	}
+	background, _ := BackgroundColor(o.Background)
+	// Every export is sRGB, as the web and most viewers assume.
+	dst, _, err := toSRGB(Transform(src, m.orientation, o.Size, background), m.icc)
+	if err != nil {
+		return nil, err
+	}
+	return dst, nil
+}
+
+func decodeImage(ctx context.Context, name string, data []byte, o Options) (image.Image, metadata, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, metadata{}, err
+	}
+	var err error
+	var src image.Image
+	var m metadata
+	if kind := nativeKind(name); kind != "" {
+		src, m, err = decodeNative(kind, data, o)
+	} else {
+		var cfg image.Config
+		var format string
+		cfg, format, err = image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			return nil, m, err
+		}
+		if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > int64(o.MaxPixels) {
+			return nil, m, errors.New("image exceeds configured pixel limit")
+		}
+		if cfg.ColorModel == color.CMYKModel {
+			return nil, m, errors.New("CMYK requires colour conversion and is not supported")
+		}
+		switch format {
+		case "jpeg":
+			m, err = jpegMetadata(data)
+		case "png":
+			m, err = pngMetadata(data)
+		default:
+			err = errors.New("only JPEG and PNG are supported by the Go decoder")
+		}
+		if err == nil {
+			err = checkICC(m.icc, isGray(cfg.ColorModel))
+		}
+		if err == nil {
+			src, _, err = image.Decode(bytes.NewReader(data))
+		}
+	}
+	if err != nil {
+		return nil, m, err
+	}
+	if err = ctx.Err(); err != nil {
+		return nil, m, err
+	}
+	return src, m, nil
 }

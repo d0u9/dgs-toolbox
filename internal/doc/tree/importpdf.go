@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -20,12 +19,13 @@ import (
 
 // ImportRequest is one loose PDF to take into the tree as a new Item.
 type ImportRequest struct {
-	Root     string
-	Source   string
-	Template Template
-	Fields   map[string]string
-	Notes    string
-	Tags     []string
+	KeepOriginal bool
+	Root         string
+	Source       string
+	Template     Template
+	Fields       map[string]string
+	Notes        string
+	Tags         []string
 	// RevisionTags are the first revision's own. It starts with the Item's
 	// tags, since at first the Item is that one revision; these are added.
 	RevisionTags []string
@@ -53,7 +53,13 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	digest, err := FileDigest(request.Source)
+	input, err := prepareInput(ctx, request.Source)
+	if err != nil {
+		return Item{}, err
+	}
+	defer input.cleanup()
+	request.Source = input.pdf
+	digest, err := input.digest()
 	if err != nil {
 		return Item{}, err
 	}
@@ -94,10 +100,18 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 		return Item{}, fmt.Errorf("%s changed while it was being imported", request.Source)
 	}
 	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags), SharedWith: shared}
-	ref := item.saveSnapshot(request.Template.Type, fields, digest, filepath.Base(request.Source), request.Now)
+	ref := item.saveSnapshot(request.Template.Type, fields, digest, input.name, request.Now)
 	item.Revisions[len(item.Revisions)-1].Tags = tag.List(append(append([]string(nil), item.Tags...), request.RevisionTags...))
 	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "import", Digest: ref}}
+	undoOriginal, err := input.archive(ctx, request.Root, id, request.KeepOriginal)
+	if err != nil {
+		os.Remove(PDFPath(request.Root, id, digest))
+		os.Remove(Dir(request.Root, id))
+		return Item{}, err
+	}
+	input.annotate(&item, ref, request.KeepOriginal)
 	if err := WriteItem(request.Root, item); err != nil {
+		undoOriginal()
 		_ = os.Remove(PDFPath(request.Root, id, digest))
 		_ = os.Remove(Dir(request.Root, id))
 		return Item{}, err

@@ -22,11 +22,15 @@ const SidecarName = "item.dgs-item.yaml"
 
 // Revision is one issue of an Item, optionally with a PDF.
 type Revision struct {
-	Snapshot bool   `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
-	Type     string `yaml:"type,omitempty" json:"type,omitempty"`
-	ID       string `yaml:"id,omitempty" json:"id,omitempty"`
-	Digest   string `yaml:"digest" json:"digest"`
-	Added    string `yaml:"added" json:"added"`
+	// SourceDigest recognises an imported image even when its original was not archived.
+	SourceDigests []string  `yaml:"source_digests,omitempty" json:"source_digests,omitempty"`
+	SourceDigest  string    `yaml:"source_digest,omitempty" json:"source_digest,omitempty"`
+	Original      *Original `yaml:"original,omitempty" json:"original,omitempty"`
+	Snapshot      bool      `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
+	Type          string    `yaml:"type,omitempty" json:"type,omitempty"`
+	ID            string    `yaml:"id,omitempty" json:"id,omitempty"`
+	Digest        string    `yaml:"digest" json:"digest"`
+	Added         string    `yaml:"added" json:"added"`
 	// Source is the name the PDF had when it was imported, for a person
 	// wondering where it came from.
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`

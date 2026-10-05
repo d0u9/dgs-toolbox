@@ -40,3 +40,14 @@ func TestListEmpty(t *testing.T) {
 		t.Fatalf("got %v, %v", files, err)
 	}
 }
+
+func TestListIncludesDocumentImages(t *testing.T) {
+	files, err := List(fstest.MapFS{
+		"scan.JPG": {Data: []byte("a")}, "scan.jpeg": {Data: []byte("a")}, "scan.PNG": {Data: []byte("a")},
+		"scan.heic": {Data: []byte("a")}, "scan.HEIF": {Data: []byte("a")}, "scan.tif": {Data: []byte("a")}, "scan.tiff": {Data: []byte("a")},
+		"scan.gif": {Data: []byte("a")}, ".hidden/scan.png": {Data: []byte("a")},
+	})
+	if err != nil || len(files) != 7 {
+		t.Fatalf("images: %+v %v", files, err)
+	}
+}
