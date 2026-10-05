@@ -573,6 +573,24 @@ so its fields cannot be either. A value a sidecar keeps at the Item for a key
 made per_revision later stands for every revision without its own, until that
 revision's fields are saved.
 
+A state a document passes through is a per_revision select. A contract is
+first unsigned, then signed by one party, then by both; each copy is a
+revision of one document, and HEAD's value is where it stands now:
+
+```yaml
+# templates/contract.yaml
+type: contract
+kind: document
+fields:
+  - key: signing
+    type: select
+    options: [未签, 甲方已签, 双方已签]
+    per_revision: true
+```
+
+A layout's `[-{signing}]` names each copy by its state. `signed`, where a
+type has it, stays the date of signing.
+
 A sidecar may also hold `notes`, free text the owner writes. Notes are never a
 key and never exported. The Item sidecar also keeps timestamped history events
 for imports, field and metadata edits, HEAD changes, type changes, revision
