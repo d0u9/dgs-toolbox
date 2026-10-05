@@ -46,7 +46,7 @@ func TestImportStartsWithDirectoriesOnly(t *testing.T) {
 	for _, text := range []string{
 		"SETUP  ·  PHOTO IMPORT",
 		"Choose directories",
-		"Select the source and destination to scan",
+		"Select the source and destinations below",
 		"Directories",
 		"Source",
 		"testdata/photo-import/src",

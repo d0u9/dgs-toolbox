@@ -410,3 +410,39 @@ func TestApplyDoesNotFillAReplacedRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOrganizationProgressPreservesPlanAndMoves(t *testing.T) {
+	root := t.TempDir()
+	path := writePhoto(t, root, "DCIM/photo.JPG", jpeg(t, "2026:10:10 11:12:13"))
+	files := []File{{Source: "card/photo.JPG", Path: path}}
+	plain := NewPlanWithExisting(context.Background(), root, files, nil)
+	var reports []Progress
+	report := func(p Progress) { reports = append(reports, p) }
+	plan := NewPlanWithProgress(context.Background(), root, files, nil, report)
+	if len(plan.Files) != 1 || plan.Files[0] != plain.Files[0] {
+		t.Fatal("progress changed planning outcome")
+	}
+	result := ApplyWithProgress(context.Background(), plan, report)
+	if len(result.Files) != 1 || result.Files[0].Status != Moved {
+		t.Fatal(result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "20261010", "photo.JPG")); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, p := range reports {
+		seen[p.Phase] = true
+		if p.Completed < 0 || p.Completed > p.Total {
+			t.Fatalf("invalid progress: %#v", p)
+		}
+	}
+	for _, phase := range []string{"Reading capture dates", "Planning date folders", "Organizing files"} {
+		if !seen[phase] {
+			t.Fatal("missing phase", phase)
+		}
+	}
+	last := reports[len(reports)-1]
+	if last.Phase != "Organizing files" || last.Completed != 1 || last.Total != 1 {
+		t.Fatal("missing final count", last)
+	}
+}
