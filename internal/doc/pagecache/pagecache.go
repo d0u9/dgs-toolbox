@@ -12,9 +12,10 @@ import (
 	"strconv"
 )
 
-// Version names the layout. An older layout sits under another name and is
-// simply never read; there is nothing to migrate in a cache.
-const Version = "pages-v1"
+// Version names the layout and the drawing. An older one sits under another
+// name and is simply never read; there is nothing to migrate in a cache.
+// pages-v2 draws a filled form's fields, which pages-v1 left empty.
+const Version = "pages-v2"
 
 var (
 	digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
