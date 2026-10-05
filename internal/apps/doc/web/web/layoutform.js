@@ -1026,7 +1026,7 @@ function orderList(s, key, rest) {
         ...unlisted.map((v) => el("button", { type: "button", className: "order-chip", textContent: "+ " + v + " · " + holders(v).length,
           title: "Number " + v + " last", onclick: () => set([...values, v]) })),
         el("button", { type: "button", className: "order-act order-show", textContent: "Files…",
-          title: "List the Items holding each value not numbered, to find a value written two ways", onclick: () => showHolders(key, unlisted.map((v) => [v, holders(v)])) }))
+          title: "List the Items holding each value not numbered, to find a value written two ways", onclick: () => showHolders(key, unlisted.map((v) => [v, holders(v)]), (v) => set([...(s.order[key] || []), v])) }))
         : null,
     ].filter(Boolean));
   };
@@ -1036,11 +1036,16 @@ function orderList(s, key, rest) {
 }
 
 // showHolders lists, in a dialog, the Items behind each value key leaves
-// unnumbered; each opens in Browse.
-function showHolders(key, groups) {
+// unnumbered; each opens in Browse. number(v) adds a value to the
+// numbering, last, from beside its name: the value is then numbered, so it
+// leaves the list.
+function showHolders(key, groups, number) {
   $("holders-title").textContent = "Not numbered: " + key;
   $("holders-list").replaceChildren(...groups.map(([v, items]) => el("section", { className: "holders-group" },
-    el("h4", { className: "holders-value" }, el("span", { textContent: v }), el("span", { className: "holders-count", textContent: String(items.length) })),
+    el("h4", { className: "holders-value" }, el("span", { textContent: v }), el("span", { className: "holders-count", textContent: String(items.length) }),
+      number ? el("button", { type: "button", className: "text-button holders-number", textContent: "+ Number it",
+        title: "Add " + v + " to the numbering, last",
+        onclick: (event) => { number(v); event.currentTarget.closest(".holders-group").remove(); } }) : null),
     el("ul", { className: "holders-items" }, ...items.map((i) => {
       const [type, ...rest] = label(state, i).split(" · ");
       return el("li", {}, el("a", { href: api("/browse/?read") + "#" + encodeURIComponent(i.id), target: "_blank", title: label(state, i) },
