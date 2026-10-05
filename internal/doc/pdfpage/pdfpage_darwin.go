@@ -3,7 +3,7 @@
 package pdfpage
 
 /*
-#cgo LDFLAGS: -framework CoreFoundation -framework CoreGraphics -framework ImageIO
+#cgo LDFLAGS: -framework Foundation -framework CoreFoundation -framework CoreGraphics -framework ImageIO -framework PDFKit
 #include <stdlib.h>
 int dgs_pdf_count(const char *path);
 int dgs_pdf_render(const char *path, int page, int longSide, double quality, unsigned char **out, long *length);

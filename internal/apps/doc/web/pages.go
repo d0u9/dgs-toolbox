@@ -20,7 +20,7 @@ import (
 // page's own embedded scan, as box draws it (thumb), so nothing is rasterised
 // and no C library is compiled in. A page that is not a scan — a PDF made on
 // a computer — has no scan, and is drawn by pdfpage instead, which
-// compiles Core Graphics in on macOS; only where that is not compiled in
+// compiles PDFKit in on macOS; only where that is not compiled in
 // does the page fall back to the viewer.
 
 // pictures keeps drawn pages for the life of the process, the newest

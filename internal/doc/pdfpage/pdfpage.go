@@ -1,9 +1,9 @@
 // Package pdfpage draws one page of a PDF as a JPEG, as it is shown: text,
-// drawings and pictures alike, turned by its /Rotate. It reads nothing from
-// the page, so it is how a PDF made on a computer, which has no embedded
-// scan to show, is looked at. It is compiled in on macOS with cgo, through
-// Core Graphics and ImageIO; elsewhere, and without cgo, Render refuses with
-// ErrUnavailable.
+// drawings, pictures and a filled form's fields alike, turned by its
+// /Rotate. It reads nothing from the page, so it is how a PDF made on a
+// computer, which has no embedded scan to show, is looked at. It is compiled
+// in on macOS with cgo, through PDFKit, Core Graphics and ImageIO;
+// elsewhere, and without cgo, Render refuses with ErrUnavailable.
 package pdfpage
 
 import (

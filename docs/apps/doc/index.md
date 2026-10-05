@@ -310,10 +310,11 @@ A scanned PDF is shown as pictures of its pages, drawn from each page's own
 embedded scan as box draws them, 1600 px on the long side, loaded as they
 scroll into view. The browser's PDF viewer redraws a full-resolution scan on
 every scroll and stutters. A page that is not a scan — one made on a
-computer — is drawn instead, by Core Graphics compiled in on macOS
+computer — is drawn instead, by PDFKit compiled in on macOS
 (`internal/doc/pdfpage`), and never read for text, so every preview,
-thumbnail and page shows its content. Each picture is kept in `cache.dir` by
-the PDF's SHA-256, page and size, so a page is drawn once per machine;
+thumbnail and page shows its content, a filled form's fields included. Each
+picture is kept in `cache.dir` by the PDF's SHA-256, page and size, so a page
+is drawn once per machine;
 deleting the cache costs a redraw. Only where drawing is not compiled in — not
 macOS, or no cgo — is such a PDF shown in the browser's viewer.
 

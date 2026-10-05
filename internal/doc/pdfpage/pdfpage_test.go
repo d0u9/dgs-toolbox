@@ -59,3 +59,32 @@ func TestRenderRefusesBadArguments(t *testing.T) {
 		}
 	}
 }
+
+// A filled form keeps what was typed in its fields' appearances, not in the
+// page's content; a page drawn without them shows empty boxes.
+func TestRenderDrawsFilledFormFields(t *testing.T) {
+	if !Available() {
+		t.Skip("drawing is not compiled in")
+	}
+	path := filepath.Join(t.TempDir(), "form.pdf")
+	if err := os.WriteFile(path, pdftest.Form(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := Render(path, 1, 842, DefaultQuality)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := jpeg.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// At 842 on the long side a point is a pixel; image rows run down.
+	x, y, w, h := pdftest.FormBox[0], pdftest.FormBox[1], pdftest.FormBox[2], pdftest.FormBox[3]
+	r, g, b, _ := img.At(x+w/2, img.Bounds().Dy()-(y+h/2)).RGBA()
+	if r > 0x2000 || g > 0x2000 || b > 0x2000 {
+		t.Fatalf("field's middle is %04x %04x %04x, want black", r, g, b)
+	}
+	if r, _, _, _ := img.At(x/2, img.Bounds().Dy()-(y+h/2)).RGBA(); r < 0xe000 {
+		t.Fatalf("left of the field is %04x, want white", r)
+	}
+}
