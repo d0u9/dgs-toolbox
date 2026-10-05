@@ -84,7 +84,7 @@ test-timeline: plugins
 
 # GPX interaction rules and filesystem-backed segment addition contracts.
 test-gpx-web:
-	node --test internal/apps/geo/gpx/web_test.mjs
+	node --test internal/apps/geo/gpx/web*_test.mjs
 
 test-gpx: test-gpx-web
 	go test ./internal/apps/geo/gpx ./internal/geo/segment

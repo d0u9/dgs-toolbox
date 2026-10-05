@@ -861,7 +861,14 @@ tracks, pending-before-Save behavior, point metadata, shared cut points and
 preserved gaps. They also cover preserving edit state through renames,
 current-file default targets and per-file target choices, source binding across naming dialogs, time-based
 stop cut anchors excluding excursions between merged stays, failed-Save rollback and retry, and concurrent edits and
-saves. The release test job runs the web checks too.
+saves. Web behavior tests run the production row listeners and the complete
+segment panel → API request chain at mocked DOM, map and network boundaries.
+They cover rename-menu eligibility, click/fit behavior across rebuilt rows,
+marker/popup anchors through refresh, visibility of unfocused tracks and
+routes, cancellation, error recovery and disabled empty selections. Filesystem
+contract tests combine rename → add → save → reload for drafts and saved files,
+separate and merged tracks, repeated Save, and Revert. The release test job
+runs both web test files too.
 
 A Save of a dgs-created GPX stages all part edits and embedded state in its
 folder and publishes them with one rename. If a step fails, the original is
