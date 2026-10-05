@@ -243,6 +243,9 @@ func TestTrackCarriesStops(t *testing.T) {
 	}
 	var shifted trackJSON
 	get(t, server, "/api/track?coordinates=gcj02&path="+url.QueryEscape(path), &shifted)
+	if shifted.Stops[0].Anchor != got.Stops[0].Anchor || shifted.Points[shifted.Stops[0].Anchor] == got.Points[got.Stops[0].Anchor] {
+		t.Fatal("coordinate conversion changed the stop anchor index or failed to move its point")
+	}
 	if shifted.Coordinates != "gcj02" || shifted.Points[0] == got.Points[0] || shifted.Stops[0].Center == got.Stops[0].Center || shifted.Distance[10] != got.Distance[10] {
 		t.Fatalf("gcj02 track did not move its positions only")
 	}
@@ -346,6 +349,21 @@ func TestCleanIsSavedAndApplied(t *testing.T) {
 	}
 	if c.Sidecar == "" || c.Counts.Manual != 2 || c.Counts.Stop == 0 || c.Counts.Moved == 0 || after.Removed[0] != "manual" || len(after.Original) != len(after.Points) {
 		t.Fatalf("cleaned = %+v", c)
+	}
+	for _, stop := range after.Stops {
+		if stop.Anchor < stop.First || stop.Anchor > stop.Last || after.Removed[stop.Anchor] != "" {
+			t.Fatalf("stop anchor is not a retained source point: %+v", stop)
+		}
+		midpoint := stop.Arrival + (stop.Departure-stop.Arrival)/2
+		anchorDelta := time.Duration(*after.Time[stop.Anchor] - midpoint).Abs()
+		for i := stop.First; i <= stop.Last; i++ {
+			if after.Removed[i] != "" || after.Time[i] == nil {
+				continue
+			}
+			if time.Duration(*after.Time[i]-midpoint).Abs() < anchorDelta {
+				t.Fatalf("point %d is nearer the stop time midpoint than anchor %d", i, stop.Anchor)
+			}
+		}
 	}
 	if after.Speed[0] != nil || after.Distance[1] != 0 || len(after.Stops) != 1 || after.Removed[after.Stops[0].First] != "" {
 		t.Fatalf("removed points or stops wrong: speed %v distance %v stops %+v", after.Speed[0], after.Distance[1], after.Stops)
@@ -1100,6 +1118,7 @@ func TestARecordingIsNeverWritten(t *testing.T) {
 		}},
 		{"segments", http.MethodPut, "/api/segments", map[string]any{"path": source, "cuts": []int{1}}},
 		{"part-name", http.MethodPut, "/api/part-name", map[string]any{"path": source, "key": "t0", "name": "Walk home"}},
+		{"file-name", http.MethodPut, "/api/file-name", map[string]any{"path": source, "name": "Renamed recording"}},
 		{"waypoint", http.MethodPost, "/api/waypoint", map[string]any{"path": source, "name": "Here", "lat": 30.4, "lon": 120.4}},
 		{"fill", http.MethodPost, "/api/fill", map[string]any{
 			"path": source, "first": 0, "last": 2, "profile": "foot", "route": [][]float64{{120.0, 30.0}, {120.1, 30.1}},

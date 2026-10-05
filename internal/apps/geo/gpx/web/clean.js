@@ -53,7 +53,7 @@ const FILTERS = [
   },
   {
     key: "stops", title: "Scribbles in stops", rule: "stop",
-    help: "Points inside a stop collapse to its centre, keeping where it was entered and left.",
+    help: "Keep one point from the middle of the stay and its entry and exit, without shifting their positions.",
     fields: [
       { key: "distance", label: "Within", unit: "m" },
       { key: "duration", label: "At least", unit: "min", scale: 1 / 60 },

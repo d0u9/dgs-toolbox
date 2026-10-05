@@ -65,16 +65,17 @@ server exposes the API under `/api/`; everything else is the page.
 | `/api/config` | The ways of travel the routers offer (`ways`: `id`, `label`, `service`), the base maps — built-in first, then configured — each with its coordinate system, the folder to open at, and `places`: the folders the save dialog lists down its side, each `name` and `path`. |
 | `/ui/files/dir?path=&ext=&hidden=` | The shared file dialog's listing, mounted by `internal/webfile` rather than this app: one folder's folders and files, narrowed to the suffixes `ext` repeats. Documented in [`docs/web.md`](../../web.md). |
 | `/ui/files/places` | The folders the shared file dialog lists down its side. |
-| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; how many tracks were added to it, and `ours` when `dgs` wrote the file. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
+| `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops (with `center`, the mean position, and `anchor`, the kept sample index nearest the stop time midpoint, used for the marker) and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; how many tracks were added to it, and `ours` when `dgs` wrote the file. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
 | `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
 | `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
+| `PUT /api/file-name` | Rename a draft or a GPX dgs created within its current folder; `{path,name}` returns the new `path`. `.gpx` is added when omitted. Existing GPX and sidecar names are refused; pending edits remain unsaved and follow the new path. |
 | `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. |
 | `POST /api/waypoint` | Adds a named standalone `<wpt>` at WGS-84 `lat`, `lon` to an existing dgs-created GPX, or to a new GPX not yet saved. It is held under `waypoints` until the edit is saved. Files from other creators are refused. |
 | `PUT /api/waypoint` | Puts the waypoint `key` names at WGS-84 `lat`, `lon`, for a pin dropped in the wrong place. Held under `moved` until the edit is saved. Only a GPX `dgs` wrote, or one carried beside a file, is moved; a recorded waypoint is refused. |
 | `PUT /api/part-order` | Puts a file's tracks, routes or waypoints in the order `keys` gives, `kind` being `track`, `route` or `waypoint`; the keys are every key of that kind, as the page lists them. Held under `order` until the edit is saved, which puts the elements in that order inside the GPX. Only a GPX `dgs` wrote, or a new one not saved yet, is reordered; a recording is refused. A track's points go with it, so every point index the edits keep is moved to where its point now lies. |
 | `DELETE /api/part` | Takes the `<trk>`, `<rte>` or `<wpt>` `key` names out of a file: out of what is held beside the file at once, and out of a GPX `dgs` wrote when the edit is saved, recorded under `deleted`. A track goes with the edits, cuts and fills on its points. Any other file is refused. |
 | `POST /api/part/copy` | Copies the part `key` names into the GPX `target` names, as the page shows it, and takes it out of this file when `move`. Only a GPX `dgs` wrote, or a new one not yet saved, is copied into; only a file `dgs` wrote is moved out of. |
-| `POST /api/segments/write` | Writes chosen segments of a track, as cleaned, one `<trk>` each: added to another GPX's sidecar (mode `add`), or into a new GPX it will not overwrite (mode `create`). The source is refused. |
+| `POST /api/segments/write` | Writes chosen cleaned segments as separate named tracks by default. `target.merge: true` with a nonempty `target.name` combines them into one track in source order, sharing cut points once and preserving gaps and recording breaks. Mode `add` holds tracks as pending edits for a workspace GPX, including the current file only when dgs created it or it is a draft; Save writes them into a dgs GPX. Mode `create` writes a new GPX without overwriting. Ranges are validated before anything is added. |
 | `POST /api/fill/route` | Asks a router for the road between two kept points of a track, with a way of travel `/api/config` lists under `ways`. Returns the route in WGS-84 and as drawn. Nothing is saved. |
 | `POST /api/fill` | Records a route between two points in the companion sidecar or embedded dgs state, inserted after the first; later indices move along. |
 | `POST /api/route/leg` | Asks the router for the road between two waypoints of a planned route, `from` and `to` as `[lon, lat]` in WGS-84, with profile `car`, `bike` or `foot`. Nothing is saved. |
@@ -168,9 +169,12 @@ map. It is the interface later milestones build on.
   them: a plain click picks one, `Cmd`/`Ctrl` adds or takes one away, `Shift`
   reaches from the row last picked to this one over the rows the filter lists,
   and `Esc` clears the lot. Picking rows is not looking at one — only a plain
-  click moves the map and the profile to a file, so the focused row and the
+  click changes the map highlight and the profile to a file, so the focused row and the
   picked rows are drawn differently and mean different things.
-- **The context menu.** A right click on a file's row offers *Save* and
+- **The context menu.** A right click on a draft or a GPX dgs created offers
+  *Rename…*: a draft changes its name in memory; a saved file and any companion
+  sidecar move to the new name in the same folder. Pending edits follow it and
+  remain unsaved; existing names are refused. A file's row also offers *Save* and
   *Revert* for what is edited but not on disk, then *Save as…* and
   *Convert to a dgs GPX…*, then discarding its sidecar or its embedded edits,
   then *Close*, which takes it out of the workspace and changes nothing on
@@ -251,7 +255,8 @@ map. It is the interface later milestones build on.
   their distance and segment count, routes (drawn dashed) with their length,
   waypoints (drawn as dots) with their description and elevation. Each has its
   own show/hide, and a bar above the list shows or hides them all at once, or
-  all of one kind — every track, route or waypoint; clicking one frames it on the map, and clicking a waypoint, in
+  all of one kind — every track, route or waypoint; clicking one focuses its
+  file without moving the map; double-clicking frames the part. Clicking a waypoint, in
   the list or on the map, opens its name, description, elevation and time.
   Which parts are hidden and which rows are expanded are remembered. Profile,
   stops and timeline still cover all the file's tracks together, but hatch the
@@ -332,11 +337,13 @@ map. It is the interface later milestones build on.
   straight line.
 - **One focus.** Exactly one shown track is focused — the one later milestones
   edit. It is drawn above the others, wider and with a casing; the others are
-  thinner and translucent. Adding a track focuses it; clicking a row, or
+  slightly thinner, with a light casing and enough opacity to remain visible
+  on satellite imagery. Adding a track focuses it; clicking a row, or
   another track's line on the map, moves the focus. A hidden track cannot be
   focused: hiding the focused track passes the focus to the first shown one,
-  and clicking a hidden row shows it. Focusing a track fits the
-  map to it; *Fit all* fits every shown track. Fitting frames the bulk of a
+  and clicking a hidden row shows it. A single click in the workspace tree
+  changes focus without moving the map; a double-click fits the file or part.
+  Adding a track fits it; *Fit all* fits every shown track. Fitting frames the bulk of a
   track's points (`track.CoreBounds`), so a few stray fixes — a stale first fix
   a thousand kilometres away — do not zoom the map out to a corner.
 - **Maps.** OpenStreetMap, OpenFreeMap Fiord (a dark blue-grey vector style,
@@ -412,7 +419,9 @@ map. It is the interface later milestones build on.
   profile header, the inspected point — is shown in the time zone chosen in the
   top bar, with its UTC offset. It defaults to the browser's zone and is
   remembered.
-- **Stops.** The focused track's stops are drawn as numbered markers.
+- **Stops.** The focused track's stops are drawn as numbered markers at the kept
+  sample nearest each stop's time midpoint, so dense samples on the approach
+  cannot outweigh a sparsely sampled stay. The point stays on the displayed track. The distance circle remains centred on the mean used for detection.
   Clicking one opens its arrival, departure and duration. Pointing at a stop,
   on the map or the timeline, draws a thin dashed circle of radius D around
   it, so the threshold can be judged against the place. Stops › *Map*, beside the
@@ -517,7 +526,7 @@ not from the filters.
 | Sudden jumps (`spikes`) | A point reached and left faster than the max speed; a point the speed rose into and fell out of faster than the max acceleration; a point the path turns back at by the turn angle, standing at least the min jump from both neighbours and further from each than they are apart; a run of up to 5 points entered and left too fast while passing straight by is not. | max speed 360 km/h, max acceleration 15 m/s², turn back 160°, min jump 30 m |
 | Speed drift (`hampel`) | A point whose speed from the previous point is above the median of its neighbours' by the threshold × scaled MAD (never less than the min spread). Only too fast counts. Each pass removes the worst in its neighbourhood and measures again, so the point after a false fix is not removed with it. Optionally stricter, down to a quarter, for fixes with HDOP above 2 or fewer than 6 satellites. | 7 neighbours each side, threshold 3, min spread 3.6 km/h, stricter for poor fixes |
 | Position jitter (`kalman`) | Moves points: a constant-velocity Kalman filter and RTS smoother over east and north, a fix counting as fix error × HDOP metres uncertain. Smoothing restarts at a segment or after a pause. | fix error 5 m, acceleration 1 m/s², restart after 60 s |
-| Scribbles in stops | Inside each stop found on what is left, keeps the points where it was entered and left and the one recorded midway, moved to the stop's centre, and removes the rest. | within 50 m, at least 5 min |
+| Scribbles in stops | Inside each stop found on what is left, keeps its entry and exit and the timed sample nearest the middle of the stay, without shifting their positions, and removes the rest. | within 50 m, at least 5 min |
 
 Points filled in along the road (below) are never removed or moved by a
 filter, and the recorded points a fill replaces are removed before any of
@@ -679,7 +688,17 @@ nothing is lost between them. Segments are cut from what cleaning kept.
   satellites, a `<trkseg>` per recorded segment. A target is always a GPX
   `dgs` manages — one in the workspace, or one it creates:
   - **a GPX in the workspace**, picked from the list beside *Add n segments*,
-    each segment its own track after that file's tracks. This is how part of
+    each segment its own track after that file's tracks. For a draft or a GPX
+    dgs created, **Current GPX** adds the segment to that same file as a new
+    track, preserving its original tracks; *Save* writes the added track into
+    the GPX (a draft first uses *Save…*). *Add 1 segment* first
+    asks for the new track's name, prefilled with the segment's current name;
+    cancelling adds nothing. The source segment's name stays as it was.
+    Adding several asks whether to add separate tracks with their listed names,
+    or merge them into one track and then asks for its name. Merge follows source
+    order, shares adjacent cut points once, and retains unselected gaps and
+    recording breaks as separate `<trkseg>` elements. Cancelling either dialog
+    adds nothing. This is how part of
     one recording is moved into another file. The GPX that gained a track
     opens in the workspace to list what it now holds. The GPX on disk is not
     written: the added tracks are kept in its sidecar, as points, and it shows
@@ -833,6 +852,14 @@ The server has no authentication. Listening on `0.0.0.0` exposes the page to
 everyone on the network — including folder names and GPX files anywhere the
 account running `dgs` can read.
 
+## Segment addition regression checks
+
+`make test-gpx` runs the GPX and segment Go tests plus the web unit tests.
+These pin single-segment naming, multi-segment separate/merge choice, required
+merged names, cancellation, current-file eligibility, unchanged original
+tracks, pending-before-Save behavior, point metadata, shared cut points and
+preserved gaps. The release test job runs the web checks too.
+
 ## Roadmap
 
 The confirmed direction for GPX. Each milestone ships on its own; later ones
@@ -895,7 +922,7 @@ before and after.
 | Sudden jumps (A→B→A spikes) | Physically impossible speed or acceleration between neighbours; a near-180° turn to a distant point and back. |
 | Speed drift | A **Hampel filter** (rolling median and MAD) on speed, weighting points by HDOP and satellite count when present. |
 | Position drift and jitter | A constant-velocity **Kalman filter with RTS smoothing**. It moves points rather than removing them. |
-| Scribbles inside buildings | The stops from M1: points inside a stop collapse to its centre, keeping the entry and exit points. |
+| Scribbles inside buildings | The stops from M1: points inside a stop collapse to its time-midpoint sample without moving it, keeping the entry and exit points. |
 | Anything left | Lasso selection on the map to remove points by hand. |
 
 ### M3 — Segment, split into days, name

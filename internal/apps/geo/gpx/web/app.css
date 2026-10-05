@@ -491,7 +491,12 @@ body {
 .timeline-cursor { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #d55e00; box-shadow: 0 0 0 1px rgba(255,255,255,.8); pointer-events: none; }
 .timeline-cursor[hidden] { display: none; }
 
+.stop-anchor { width: 22px; height: 22px; }
+/* MapLibre positions the anchor; only its child grows on selection. */
 .stop-marker {
+  display: grid;
+  place-items: center;
+  margin: 0;
   width: 22px;
   height: 22px;
   padding: 0;
@@ -505,6 +510,7 @@ body {
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
 }
+.stop-marker[hidden] { display: none; }
 .stop-marker.selected { background: var(--primary); transform: scale(1.2); }
 .stop-popup { font: 12px/1.5 system-ui, -apple-system, "PingFang SC", sans-serif; font-variant-numeric: tabular-nums; }
 .stop-popup strong { display: block; margin-bottom: 2px; }

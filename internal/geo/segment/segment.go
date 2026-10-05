@@ -84,3 +84,27 @@ func NameOf(names []Name, start int) string {
 	}
 	return ""
 }
+
+// Merge combines overlapping or shared-boundary ranges in source order.
+// Gaps stay separate. The caller's ranges are left unchanged.
+func Merge(ranges []Range) []Range {
+	ordered := append([]Range(nil), ranges...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].First == ordered[j].First {
+			return ordered[i].Last < ordered[j].Last
+		}
+		return ordered[i].First < ordered[j].First
+	})
+	var merged []Range
+	for _, next := range ordered {
+		if len(merged) > 0 && next.First <= merged[len(merged)-1].Last {
+			last := &merged[len(merged)-1]
+			if next.Last > last.Last {
+				last.Last = next.Last
+			}
+		} else {
+			merged = append(merged, next)
+		}
+	}
+	return merged
+}

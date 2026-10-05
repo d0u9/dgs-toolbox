@@ -44,6 +44,27 @@ type Stop struct {
 // Duration is the time from arrival to departure.
 func (s Stop) Duration() time.Duration { return s.Departure.Sub(s.Arrival) }
 
+// Anchor returns the timed sample nearest the midpoint of the stop's time
+// span. Sampling can be dense while approaching and sparse during the stay;
+// a spatial mean or the middle sample then lies on the approach rather than
+// where time was spent. Equally close times choose the sample nearest Center.
+// First and Last refer to the same line that was passed to Detect.
+func (s Stop) Anchor(line track.Line) int {
+	midpoint := s.Arrival.Add(s.Duration() / 2)
+	anchor := s.First
+	nearest := line[anchor].Time.Sub(midpoint).Abs()
+	for i := s.First + 1; i <= s.Last; i++ {
+		if line[i].Time.IsZero() {
+			continue
+		}
+		delta := line[i].Time.Sub(midpoint).Abs()
+		if delta < nearest || (delta == nearest && geo.Distance(s.Center, line[i].LatLon) < geo.Distance(s.Center, line[anchor].LatLon)) {
+			anchor, nearest = i, delta
+		}
+	}
+	return anchor
+}
+
 // Detect finds the stops of a line in time order.
 //
 // Starting from an anchor sample, the samples that follow within p.Distance of

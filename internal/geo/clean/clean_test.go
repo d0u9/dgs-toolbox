@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"dgs-toolbox/internal/geo"
+	"dgs-toolbox/internal/geo/stops"
 	"dgs-toolbox/internal/geo/track"
 )
 
@@ -60,7 +61,7 @@ func TestRunAppliesRulesInOrder(t *testing.T) {
 		t.Fatalf("manual removals: %q %q", result.Removed[60], result.Removed[61])
 	}
 	counts := result.Counts()
-	if counts.Spike != 0 || counts.Stop < 500 || counts.Moved != 1 {
+	if counts.Spike != 0 || counts.Stop < 500 || counts.Moved != 0 {
 		t.Fatalf("counts %+v", counts)
 	}
 	kept, _ := result.Kept(line)
@@ -129,5 +130,64 @@ func TestNormalizeReadsOldRemovals(t *testing.T) {
 	line := walkStayWalk()
 	if got := Run(line, old).Counts().Manual; got != 5 {
 		t.Fatalf("old removals remove %d", got)
+	}
+}
+
+func TestCollapsedStopMarkerUsesTheRetainedTimeMidpoint(t *testing.T) {
+	point := func(east, north float64, seconds int) track.Sample {
+		return track.Sample{LatLon: geo.LatLon{Lat: north / metresPerDegree, Lon: east / metresPerDegree}, Time: start.Add(time.Duration(seconds) * time.Second)}
+	}
+	line := track.Line{point(0, 0, 0)}
+	for i := 1; i < 100; i++ {
+		line = append(line, point(10, 15, i*6))
+	}
+	line = append(line, point(30, 0, 600))
+	params := Defaults()
+	params.Stops.Enabled = true
+	result := Run(line, params)
+	kept, index := result.Kept(line)
+	if len(kept) != 3 {
+		t.Fatalf("kept %d points, want entry, centre and exit", len(kept))
+	}
+	found := stops.Detect(kept, stops.Defaults())
+	if len(found) != 1 {
+		t.Fatalf("stops = %+v", found)
+	}
+	stop := found[0]
+	if geo.Distance(stop.Center, kept[1].LatLon) < 5 {
+		t.Fatal("case did not reproduce the centre moving after collapse")
+	}
+	anchor := stop.Anchor(kept)
+	if anchor != 1 || result.Moved[index[anchor]] {
+		t.Fatalf("anchor %d did not preserve the retained stay point", anchor)
+	}
+}
+
+func TestCollapsedTurnaroundPreservesSparseStay(t *testing.T) {
+	var line track.Line
+	add := func(north float64, seconds int) {
+		line = append(line, track.Sample{LatLon: geo.LatLon{Lat: north / metresPerDegree}, Time: start.Add(time.Duration(seconds) * time.Second)})
+	}
+	for seconds := 0; seconds <= 40; seconds++ {
+		add(float64(80-seconds*2), seconds)
+	}
+	add(0, 640)
+	for seconds := 641; seconds <= 680; seconds++ {
+		add(float64((seconds-640)*2), seconds)
+	}
+	params := Defaults()
+	params.Stops.Enabled = true
+	result := Run(line, params)
+	kept, index := result.Kept(line)
+	found := stops.Detect(kept, stops.Defaults())
+	if len(found) != 1 {
+		t.Fatalf("stops = %+v", found)
+	}
+	anchor := found[0].Anchor(kept)
+	if distance := geo.Distance(kept[anchor].LatLon, geo.LatLon{}); distance > 0.01 {
+		t.Fatalf("cleaned marker is %.1f metres from the turnaround", distance)
+	}
+	if result.Moved[index[anchor]] {
+		t.Fatal("cleaning moved the representative stay point")
 	}
 }

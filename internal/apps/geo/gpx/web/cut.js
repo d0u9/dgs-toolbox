@@ -7,6 +7,7 @@
 import * as format from "./format.js";
 import { saveFile } from "/ui/filedialog.js";
 import * as status from "/ui/statusbar.js";
+import { chooseDialog, promptDialog } from "./dialog.js";
 
 const SEGMENT = "cut-segment";
 const CUTS = "cut-points";
@@ -61,7 +62,7 @@ export class CutPanel {
     if (changed) this.remember();
     this.track = track;
     this.timeZone = timeZone;
-    this.workspace = workspace.filter((path) => path !== track.path);
+    this.workspace = workspace.filter((path) => path !== track.path || track.draft || track.ours);
     this.home = home;
     this.places = places;
     const kept = changed ? this.choices.get(track.path) : null;
@@ -89,7 +90,7 @@ export class CutPanel {
   // while the panel is shown.
   setWorkspace(workspace) {
     if (!this.track) return;
-    const others = workspace.filter((path) => path !== this.track.path);
+    const others = workspace.filter((path) => path !== this.track.path || this.track.draft || this.track.ours);
     if (others.join("\n") === this.workspace.join("\n")) return;
     this.workspace = others;
     if (!others.includes(this.addPath)) this.addPath = others[0] || "";
@@ -304,8 +305,8 @@ export class CutPanel {
     addPath.className = "cut-path";
     addPath.disabled = this.workspace.length === 0;
     addPath.append(...(this.workspace.length
-      ? this.workspace.map((path) => new Option(basename(path), path))
-      : [new Option("No other GPX in the workspace", "")]));
+      ? this.workspace.map((path) => new Option(path === track.path ? `Current GPX — ${basename(path)}` : basename(path), path))
+      : [new Option("No target GPX in the workspace", "")]));
     addPath.value = this.addPath;
     addPath.title = this.addPath;
     addPath.addEventListener("change", () => {
@@ -316,9 +317,9 @@ export class CutPanel {
     add.type = "button";
     add.className = "button primary cut-go";
     add.textContent = `Add ${chosen.length} segment${plural}`;
-    add.title = "Add the chosen segments to that GPX, each its own track";
+    add.title = "Add the chosen segments as separate tracks, or merge them into one named track";
     add.disabled = chosen.length === 0 || !this.addPath;
-    add.addEventListener("click", () => this.write(segments(), { mode: "add", path: this.addPath }, add));
+    add.addEventListener("click", () => this.addSegments(segments(), { mode: "add", path: this.addPath }, add));
     // The select keeps the row to itself: a path is what the reader has to
     // read in full, and the button that acts on it goes under it.
     row.append(addPath);
@@ -350,9 +351,46 @@ export class CutPanel {
 
     const foot = document.createElement("p");
     foot.className = "clean-foot";
-    foot.textContent = "Each segment becomes one <trk>, as cleaned. No GPX already on disk is written: a GPX segments are added to is saved as a new file.";
+    foot.textContent = "Add one segment with a name, or choose separate tracks or one named merged track for several. Save the target GPX to write the added tracks.";
     section.append(foot);
     return section;
+  }
+
+  // No addition happens before the choice and any required name are confirmed.
+  async addSegments(segments, target, button) {
+    button.disabled = true;
+    try {
+      let merge = false;
+      if (segments.length > 1) {
+        const choice = await chooseDialog({
+          title: `Add ${segments.length} segments`,
+          message: "Add each segment as its own track, or merge them into one named track? Gaps remain disconnected.",
+          options: [
+            { value: "separate", label: `Separate tracks (${segments.length})` },
+            { value: "merge", label: "Merge into one track and name it" },
+          ],
+          confirm: "Continue",
+        });
+        if (!choice) return;
+        merge = choice === "merge";
+      }
+      if (segments.length === 1 || merge) {
+        const name = await promptDialog({
+          title: merge ? "Name the merged track" : "Name the segment",
+          message: merge
+            ? "The chosen segments are added as one track, in source order."
+            : "The segment is added to the chosen GPX as a track with this name.",
+          value: merge ? "Merged track" : segments[0].name,
+          confirm: merge ? "Merge and add" : "Add segment",
+        });
+        if (!name?.trim()) return;
+        if (merge) target = { ...target, merge: true, name: name.trim() };
+        else segments = [{ ...segments[0], name: name.trim() }];
+      }
+      await this.write(segments, target, button);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   // write sends the chosen segments to their target and says what happened.
@@ -363,7 +401,7 @@ export class CutPanel {
       const result = await this.onWrite({ segments, target });
       const tracks = `${result.tracks} track${result.tracks === 1 ? "" : "s"}`;
       status.show(target.mode === "add"
-        ? `Added ${tracks} to ${basename(result.path)}. Save it as a new GPX from its row in the workspace.`
+        ? `Added ${tracks} to ${basename(result.path)}. Save the target GPX from its row in the workspace.`
         : `Wrote ${tracks} to ${basename(result.path)}`);
     } catch (error) {
       status.showError(error.message);

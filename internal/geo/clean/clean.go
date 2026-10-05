@@ -23,7 +23,7 @@ const (
 	Manual Rule = "manual" // removed by hand
 	Spike  Rule = "spike"  // spikes.Detect
 	Drift  Rule = "drift"  // hampel.Detect
-	Stop   Rule = "stop"   // collapsed into a stop's centre
+	Stop   Rule = "stop"   // collapsed to a stop's representative sample
 	Fill   Rule = "fill"   // replaced by a route filled in along the road
 )
 
@@ -306,8 +306,9 @@ func RunComposed(line track.Line, p Params, c Composed) Result {
 	return result
 }
 
-// collapseStops keeps each stop's entry and exit samples and one sample at its
-// centre — the one recorded midway — and removes the rest of it.
+// collapseStops keeps each stop's entry, exit and time-midpoint sample, and
+// removes the rest. The representative sample stays at its current position:
+// moving it to the sample-count mean can move a sparse stay onto the approach.
 func collapseStops(line track.Line, result *Result, p StopsParams, fixed func(int) bool) {
 	kept, index := result.Kept(line)
 	found := stops.Detect(kept, stops.Params{Distance: p.Distance, Duration: secondsToDuration(p.Duration)})
@@ -315,14 +316,13 @@ func collapseStops(line track.Line, result *Result, p StopsParams, fixed func(in
 		if stop.Last-stop.First < 2 {
 			continue
 		}
-		middle := (stop.First + stop.Last) / 2
+		middle := stop.Anchor(kept)
 		for k := stop.First + 1; k < stop.Last; k++ {
 			i := index[k]
 			if fixed(i) {
 				continue
 			}
 			if k == middle {
-				result.Positions[i], result.Moved[i] = stop.Center, true
 				continue
 			}
 			result.Removed[i] = Stop

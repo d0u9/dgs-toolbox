@@ -5,7 +5,7 @@ BASHCOMPDIR ?= $(DATADIR)/bash-completion/completions
 BIN        := dgs
 COMPLETION ?=
 
-.PHONY: install install-zsh install-bash uninstall plugins test-timeline
+.PHONY: install install-zsh install-bash uninstall plugins test-timeline test-gpx test-gpx-web
 
 # On macOS dgs links EventKit through cgo for the reminder Actions, and carries
 # an Info.plist so Reminders can say who is asking. It needs only the Command
@@ -81,3 +81,10 @@ test-timeline: plugins
 	go test ./internal/timeline
 	GOOS=js GOARCH=wasm go test -exec="$(GOWASM_EXEC)" ./internal/timeline
 	node --test internal/plugins/bundled/engine.test.mjs
+
+# GPX interaction rules and filesystem-backed segment addition contracts.
+test-gpx-web:
+	node --test internal/apps/geo/gpx/web_test.mjs
+
+test-gpx: test-gpx-web
+	go test ./internal/apps/geo/gpx ./internal/geo/segment

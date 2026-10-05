@@ -144,7 +144,7 @@ export class TrackLayers {
     for (const layer of [lineId(id), routeId(id), waypointId(id)]) {
       this.map.setLayoutProperty(layer, "visibility", visible ? "visible" : "none");
     }
-    this.map.setLayoutProperty(casingId(id), "visibility", visible && this.focused === id ? "visible" : "none");
+    this.map.setLayoutProperty(casingId(id), "visibility", visible ? "visible" : "none");
   }
 
   // setFocus draws one file above the others, wider and opaque.
@@ -154,9 +154,12 @@ export class TrackLayers {
     for (const other of this.ids) {
       const focused = other === id;
       this.applyVisibility(other);
-      map.setPaintProperty(lineId(other), "line-width", focused ? 3 : 2);
-      map.setPaintProperty(lineId(other), "line-opacity", focused ? 1 : 0.55);
-      map.setPaintProperty(routeId(other), "line-opacity", focused ? 0.9 : 0.5);
+      map.setPaintProperty(casingId(other), "line-width", focused ? 5.5 : 4);
+      map.setPaintProperty(casingId(other), "line-opacity", focused ? 1 : 0.65);
+      map.setPaintProperty(routeId(other), "line-width", focused ? 2.4 : 2);
+      map.setPaintProperty(lineId(other), "line-width", focused ? 3 : 2.5);
+      map.setPaintProperty(lineId(other), "line-opacity", focused ? 1 : 0.85);
+      map.setPaintProperty(routeId(other), "line-opacity", focused ? 0.95 : 0.8);
     }
     if (id != null && this.ids.has(id)) {
       for (const layer of layerIds(id)) map.moveLayer(layer, CURSOR);

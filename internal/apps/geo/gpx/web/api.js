@@ -67,6 +67,7 @@ export const api = {
   discardSidecar: (path) => sendJSON("DELETE", "api/sidecar", { path }),
   // newDraft starts a new, empty GPX that lives in the server's memory until saved.
   newDraft: (name) => postJSON("api/draft", { name }),
+  renameFile: (path, name) => sendJSON("PUT", "api/file-name", { path, name }),
   // routeLeg asks the router for the road between two waypoints, [lon, lat] in WGS-84.
   routeLeg: (profile, from, to) => postJSON("api/route/leg", { profile, from, to }),
   // saveRoute writes a planned route into a new GPX, keeping the plan beside it.
