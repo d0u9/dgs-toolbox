@@ -106,10 +106,14 @@ async function checkIf(box, out, node) {
 $("if").addEventListener("input", () => checkIf($("if"), $("if-error")));
 
 // counters are the orders a parsed layout's {#} number, each with the
-// rest it numbers as written.
+// rest it numbers as written, and whether {#label} named it to share it.
 const counters = (layout) => layout.flat(Infinity).flatMap(function walk(p) {
-  return p.counter && p.of ? [{ of: p.of, rest: p.rest }] : p.group ? p.group.flatMap(walk) : [];
+  return p.counter && p.of ? [{ of: p.of, rest: p.rest, shared: !!p.label }] : p.group ? p.group.flatMap(walk) : [];
 });
+
+// ownKeys is the orders a block's own path and file number in it alone:
+// those an unnamed {#} it writes numbers. A {#label} shares the rule's.
+const ownKeys = (n) => [...new Set(n.ofs.filter((c) => !c.shared).map((c) => c.of))];
 
 // parseNode has the server parse a node's path and file, for the orders
 // they number.
@@ -188,7 +192,11 @@ function drawNodes() {
     const bubbles = isElse ? null : condition(cond, { keys: condKeys, values: condValues });
     bubbles?.read();
     const out = n.exclude;
-    const numbering = Object.keys(n.order).length > 0;
+    // The orders a block's own {#} number are always its; others it may
+    // take on, to number apart what the rule writes.
+    const own = ownKeys(n);
+    const taken = Object.keys(n.order).filter((key) => !own.includes(key));
+    const numbering = own.length > 0 || taken.length > 0;
     const idle = !out && !n.path && !n.file && !n.children.length && !numbering && n.default == null;
     const small = (text, title, onclick) => el("button", { type: "button", className: "path-more block-more", textContent: text, title, onclick });
     const body = out
@@ -199,10 +207,12 @@ function drawNodes() {
           : small("+ folders", "Folders after the ones above; without, only the file name differs", () => { n.showPath = true; redraw(); }),
         field(n, "file", "file", "The file name, in place of the one above; empty keeps it"),
         numbering ? el("div", { className: "block-order" },
-          ...Object.keys(n.order).map((key) => orderList(n, key, restOf(key, n))),
-          small("Number as above", "Drop this block's own numbering: its Items are numbered as the blocks above number theirs", () => {
-            n.order = {}; n.numbers = {}; n.unnumbered = {}; n.unlisted = {}; redraw(); }))
-          : small("+ numbering", "Number what this block takes on its own, starting from the numbering above", () => { ownNumbering(n, up); redraw(); }),
+          ...[...own, ...taken].map((key) => orderList(n, key, restOf(key, n)))) : null,
+        taken.length
+          ? small("Number as above", "Drop the numbering this block took on: its Items are numbered as the blocks above number theirs", () => {
+            for (const key of taken) { delete n.order[key]; delete n.numbers[key]; delete n.unnumbered[key]; delete n.unlisted[key]; }
+            redraw(); })
+          : inheritedKeys(n, up).length ? small("+ numbering", "Number what this block takes apart from the rest, for what the blocks above write, starting from their numbering", () => { ownNumbering(n, up); redraw(); }) : null,
         idle ? el("p", { className: "muted block-note", textContent: isElse ? "Give it folders or a file name." : "Changes nothing yet: give it folders, a file or numbering, or leave what it takes out." }) : null,
         isElse ? null : small("Leave out", "Leave what it takes out of the tree", () => {
           Object.assign(n, { exclude: true, path: "", file: "", children: [], order: {}, numbers: {}, unnumbered: {}, unlisted: {}, default: undefined, ofs: [] }); redraw(); }),
@@ -285,6 +295,10 @@ $("path-done")?.addEventListener("click", () => closeEditor(true));
 $("path-cancel")?.addEventListener("click", () => closeEditor(false));
 $("path-dialog")?.addEventListener("close", () => closeEditor(false));
 // read is the form's rule, less its name and what the page owns.
+// inheritedKeys is the orders an unnamed {#} the blocks above write
+// numbers, which a block may number apart.
+const inheritedKeys = (n, up) => [...new Set([...rootKeys(), ...up.filter((s) => s !== top).flatMap(ownKeys)])].filter((key) => !ownKeys(n).includes(key));
+
 export function read() {
   const clean = (n) => {
     const out = {};
@@ -294,11 +308,12 @@ export function read() {
     if (n.default !== undefined && n.default !== null) out.default = n.default;
     if (n.children.length) out.children = n.children.map(clean);
     if (n.exclude) out.exclude = true;
-    return Object.assign(out, numberingOf(n, Object.keys(n.order)));
+    return Object.assign(out, numberingOf(n, [...new Set([...ownKeys(n), ...Object.keys(n.order), ...Object.keys(n.unlisted || {})])]));
   };
   // The box shows the file as the rows make it, and as typed until the
   // server has read it.
-  const out = { selection: document.querySelector("input[name=selection]:checked").value, file: $("layout-text").value.trim() || layoutText() };
+  // The page writes each {#} numbered in its own node.
+  const out = { numbering: "scoped", selection: document.querySelector("input[name=selection]:checked").value, file: $("layout-text").value.trim() || layoutText() };
   if ($("if").value.trim()) out.if = $("if").value.trim();
   if ($("root-path").value.trim()) out.path = $("root-path").value.trim();
   if (nodes.length) out.children = nodes.map(clean);
@@ -306,7 +321,7 @@ export function read() {
   if ($("shared")?.checked) out.shared = true;
   // While a path is still being parsed its orders are not known yet: keep
   // every order until it is.
-  return Object.assign(out, numberingOf(top, parsing ? Object.keys(top.order) : numberedKeys().map((c) => c.of)));
+  return Object.assign(out, numberingOf(top, parsing ? [...new Set([...Object.keys(top.order), ...Object.keys(top.unlisted || {})])] : numberedKeys().map((c) => c.of)));
 }
 
 // numberingOf is the order, numbers and unnumbered s saves for the orders
@@ -315,14 +330,17 @@ export function read() {
 function numberingOf(s, names) {
   const out = {};
   const order = {};
+  const next = (key) => (s.unlisted || {})[key] === "next";
   for (const key of names) {
     const list = (s.order[key] || []).filter(Boolean);
     if (list.length) order[key] = list;
   }
   if (Object.keys(order).length) out.order = order;
   const set = {};
-  for (const [key, list] of Object.entries(order)) {
-    const kept = Object.fromEntries(Object.entries(s.numbers[key] || {}).filter(([name]) => list.some((v) => same(v, name))));
+  for (const key of names) {
+    const list = order[key] || [];
+    if (!list.length && !next(key)) continue;
+    const kept = Object.fromEntries(Object.entries(s.numbers[key] || {}).filter(([name]) => name === "start" || list.some((v) => same(v, name))));
     if (Object.keys(kept).length) set[key] = kept;
   }
   if (Object.keys(set).length) out.numbers = set;
@@ -332,7 +350,7 @@ function numberingOf(s, names) {
     if (kept.length) skipped[key] = kept;
   }
   if (Object.keys(skipped).length) out.unnumbered = skipped;
-  const unlisted = Object.fromEntries(Object.entries(s.unlisted || {}).filter(([key, v]) => order[key] && v !== ""));
+  const unlisted = Object.fromEntries(Object.entries(s.unlisted || {}).filter(([key, v]) => names.includes(key) && v !== ""));
   if (Object.keys(unlisted).length) out.unlisted = unlisted;
   return out;
 }
@@ -357,11 +375,11 @@ export function numberLast(key, value, at = "") {
 // they have that it lacks, sorted. Until the server has planned the block
 // nothing is known to be taken, and the whole order is copied.
 function ownNumbering(n, up) {
-  const names = n.ofs.length ? n.ofs.map((c) => c.of) : numberedKeys().map((c) => c.of);
+  const names = inheritedKeys(n, up);
   const taken = previewed ? selected(n) : [];
   const takes = taken.length ? taken : null;
   for (const key of new Set(names)) {
-    const from = [...up].reverse().find((s) => (s.order[key] || []).length) || top;
+    const from = [...up].reverse().find((s) => (s.order[key] || []).length || (s.unlisted || {})[key] === "next") || top;
     const all = from.order[key] || [];
     const held = takes && [...new Set(takes.map((i) => orderValue(i, restOf(key, n))).filter(Boolean))];
     const keep = (v) => !held || held.some((h) => same(h, v));
@@ -373,6 +391,7 @@ function ownNumbering(n, up) {
     if (Object.keys(own).length) n.numbers[key] = own;
     if (from.unnumbered[key]) n.unnumbered[key] = from.unnumbered[key].filter(keep);
     if ((from.unlisted || {})[key] !== undefined) n.unlisted[key] = from.unlisted[key];
+    if ((from.numbers[key] || {}).start !== undefined) n.numbers[key] = { ...(n.numbers[key] || {}), start: from.numbers[key].start };
   }
 }
 
@@ -806,10 +825,13 @@ export const numberedKeys = () => {
       rest = rest.slice(0, -1);
       if (rest.length && rest[rest.length - 1].text === ".") rest = rest.slice(0, -1);
     }
-    return rest.some((p) => p.keys || p.group) ? [{ of: row.parts[at].label || firstKey(rest), rest: rest.map(written).join(""), file: r === rows.length - 1 }] : [];
-  }), ...[root, ...every(nodes)].flatMap((n) => n.ofs)];
+    return rest.some((p) => p.keys || p.group) ? [{ of: row.parts[at].label || firstKey(rest), rest: rest.map(written).join(""), file: r === rows.length - 1, shared: !!row.parts[at].label }] : [];
+  }), ...root.ofs, ...every(nodes).flatMap((n) => n.ofs.filter((c) => c.shared))];
   return all.filter((c, i) => all.findIndex((d) => d.of === c.of) === i);
 };
+
+// rootKeys is the orders the rule's own folders and file number.
+const rootKeys = () => numberedKeys().filter((c) => !c.shared).map((c) => c.of);
 
 // An Item's value for one key, {a|b} or {a|b:format}: the first alternative
 // it has, or with inherit the first the Items it links to have. A type:zh
@@ -894,10 +916,10 @@ export function orderValue(item, key) {
 // one before, unless set gives it its own, from which the rest count on.
 // A name skip lists is null and takes no number.
 function numbered(values, set = {}, skip = []) {
-  let n = 0;
+  let n = (set.start ?? 1) - 1;
   return values.map((v) => {
     if (skip.some((name) => same(name, v))) return null;
-    const own = Object.entries(set).find(([name]) => same(name, v));
+    const own = Object.entries(set).find(([name]) => name !== "start" && same(name, v));
     n = own ? own[1] : n + 1;
     return n;
   });
@@ -910,11 +932,13 @@ function drawOrder() {
 }
 
 // unlistedPick is what s's order key gives a value it does not list: no
-// place until it is listed, no number, or one number shared by them all.
-function unlistedPick(s, key) {
+// place until it is listed, no number, the numbers after the list, in the
+// order of the values, or one number shared by them all. redraw draws the
+// order again when the choice changes what it shows.
+function unlistedPick(s, key, redraw) {
   s.unlisted ||= {};
   const now = s.unlisted[key] ?? "";
-  let mode = now === "" ? "" : now === "unnumbered" ? "unnumbered" : "number";
+  let mode = now === "" || now === "unnumbered" || now === "next" ? now : "number";
   const number = el("input", { type: "text", inputMode: "numeric", className: "order-unlisted-number",
     value: mode === "number" ? now : "99", "aria-label": "Their number" });
   const save = () => {
@@ -928,11 +952,13 @@ function unlistedPick(s, key) {
     else delete s.unlisted[key];
     for (const chip of chips.children) chip.setAttribute("aria-pressed", String(chip.value === mode));
     changed();
+    redraw?.();
   };
   const chip = (value, text, title) => el("button", { type: "button", className: "chip", value, textContent: text, title,
     onclick: () => { mode = value; save(); if (value === "number") number.focus(); } });
   const chips = el("div", { className: "segmented", role: "group", "aria-label": "Values not in the list" },
     chip("", "Not placed", "Missing until added to the list"),
+    chip("next", "Next numbers", "Numbered on after the list, in the order of their values: the list may be empty"),
     chip("unnumbered", "No number", "Placed without a number, nor the text straight after {#}"),
     chip("number", "One number", "Placed with one number they all share"));
   for (const c of chips.children) c.setAttribute("aria-pressed", String(c.value === mode));
@@ -947,7 +973,7 @@ function orderList(s, key, rest) {
   const fileKey = s === top && numberedKeys().some((c) => c.of === key && c.file);
   const takes = () => fileKey ? selected(s).filter(nameOwn) : selected(s);
   const numbers = s.numbers, unnumbered = s.unnumbered;
-  if (s.order[key] === undefined && previewed) {
+  if (s.order[key] === undefined && previewed && (s.unlisted || {})[key] !== "next") {
     s.order[key] = [...new Set(takes().map((i) => orderValue(i, rest)).filter(Boolean))].sort();
   }
   const box = el("div", { className: "order" });
@@ -963,12 +989,18 @@ function orderList(s, key, rest) {
     const idle = (v) => !held.some((h) => same(h, v));
     // holders is the Items this block takes whose value for key is v.
     const holders = (v) => takes().filter((i) => same(orderValue(i, rest), v));
-    const unlisted = held.filter((v) => !values.some((w) => same(v, w))).sort();
+    // In the order the server numbers them after the list: by value,
+    // ignoring case.
+    const unlisted = held.filter((v) => !values.some((w) => same(v, w)))
+      .sort((a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return x < y ? -1 : x > y ? 1 : 0; });
     // move swaps a value with the one before or after it.
     const move = (a, b) => { const next = [...values]; [next[a], next[b]] = [next[b], next[a]]; set(next); };
     const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
     const counted = numbered(values, numbers[key], unnumbered[key]);
-    const pad = Math.max(2, String(Math.max(0, ...counted)).length);
+    const next = (s.unlisted || {})[key] === "next";
+    // With next numbers, the values not listed follow the list's last.
+    const after = Math.max((numbers[key] || {}).start ?? 1, ...counted.filter((n) => n !== null).map((n) => n + 1));
+    const pad = Math.max(2, String(Math.max(0, ...counted, next ? after + unlisted.length - 1 : 0)).length);
     // before is the number of the last numbered name before i.
     const before = (i) => counted.slice(0, i).filter((n) => n !== null).pop();
     const skipped = (v) => (unnumbered[key] || []).some((name) => same(name, v));
@@ -1033,8 +1065,25 @@ function orderList(s, key, rest) {
             act("Remove", "×", () => set(values.filter((_, n) => n !== i)))));
         return li;
       })),
-      unlistedPick(s, key),
-      unlisted.length ? el("div", { className: "order-add" }, el("span", { className: "order-add-label", textContent: "Not numbered" }),
+      el("div", { className: "order-unlisted" }, el("span", { textContent: "Start at" }),
+        el("input", { type: "text", inputMode: "numeric", className: "order-unlisted-number", value: String((numbers[key] || {}).start ?? 1),
+          title: "The number the first value gets; the rest count on from it",
+          onchange: (event) => {
+            const n = parseInt(event.target.value, 10);
+            event.target.classList.toggle("invalid", !(n >= 0));
+            if (!(n >= 0)) return;
+            const own = { ...(numbers[key] || {}) };
+            if (n === 1) delete own.start; else own.start = n;
+            numbers[key] = own;
+            draw(); changed();
+          } })),
+      unlistedPick(s, key, draw),
+      next && unlisted.length ? el("ol", { className: "order-list order-next" }, ...unlisted.map((v, i) => el("li", { title: "Numbered after the list, by its value; + to place it in the list" },
+        el("span", { className: "order-grip" }),
+        el("span", { className: "order-number numeric", textContent: String(after + i).padStart(pad, "0") }),
+        el("span", { className: "order-value", textContent: v + " · " + holders(v).length }),
+        el("span", { className: "order-acts" }, act("Put in the list, last", "+", () => set([...values, v])))))) : null,
+      !next && unlisted.length ? el("div", { className: "order-add" }, el("span", { className: "order-add-label", textContent: "Not numbered" }),
         ...unlisted.map((v) => el("button", { type: "button", className: "order-chip", textContent: "+ " + v + " · " + holders(v).length,
           title: "Number " + v + " last", onclick: () => set([...values, v]) })),
         el("button", { type: "button", className: "order-act order-show", textContent: "Files…",

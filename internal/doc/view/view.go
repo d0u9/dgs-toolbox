@@ -77,7 +77,16 @@ type View struct {
 	Inherit []string `yaml:"inherit,omitempty" json:"inherit,omitempty"`
 	// Dedupe is empty (refuse) or DedupeNumber.
 	Dedupe string `yaml:"dedupe,omitempty" json:"dedupe,omitempty"`
+	// Numbering is NumberingScoped for a rule whose unnamed {#} takes its
+	// order only from the node that wrote it; empty for one written before,
+	// which Upgrade moves to it.
+	Numbering string `yaml:"numbering,omitempty" json:"numbering,omitempty"`
 }
+
+// NumberingScoped marks a rule written with each unnamed {#} numbered in
+// its own node. Only a rule without it is upgraded: one with it may hold a
+// {#} with no order yet, and keeps it so.
+const NumberingScoped = "scoped"
 
 // Node is a rule, or one of its children.
 type Node struct {
@@ -99,15 +108,18 @@ type Node struct {
 	// excludes has nothing else of its own.
 	Exclude bool `yaml:"exclude,omitempty" json:"exclude,omitempty"`
 	// Order lists, per order, the names {#} numbers from 01, in order. A
-	// {#} takes its order from the nearest node that lists it, its own
-	// node first, then up: a child lists its own to number its Items apart
-	// from the rest of the rule. An order is named for the first key after
-	// its {#}: {#}-{name|type:zh}[-{level}].{ext} is numbered from the
-	// order name. {#other} names it other instead.
+	// {#} takes its order from the nearest node that lists it, from the
+	// node placing up to the node whose path or file wrote the {#}, never
+	// above: a child lists its own to number its Items apart, and a {#} a
+	// child writes is numbered in that child alone. An order is named for
+	// the first key after its {#}: {#}-{name|type:zh}[-{level}].{ext} is
+	// numbered from the order name. {#other} names it other instead, and
+	// shares it: a named {#} looks up to the rule.
 	Order map[string][]string `yaml:"order,omitempty" json:"order,omitempty"`
 	// Numbers sets, per order and name in it, the number that name gets in
 	// place of the next: the names after it count on from there, so
-	// setting the third of four to 6 numbers them 1, 2, 6, 7.
+	// setting the third of four to 6 numbers them 1, 2, 6, 7. NumberStart,
+	// start, is the number the first name gets, listed or not.
 	Numbers map[string]map[string]int `yaml:"numbers,omitempty" json:"numbers,omitempty"`
 	// Unnumbered lists, per order, the names {#} leaves unnumbered: their
 	// number and the text straight after {#} are not written, and they
@@ -116,7 +128,9 @@ type Node struct {
 	// Unlisted says, per order, what a name the order does not list gets
 	// instead of leaving its PDF unplaced until it is listed: UnlistedNone
 	// ("unnumbered") leaves it unnumbered as Unnumbered leaves a listed
-	// one, and a number, such as "99", gives every such name that number.
+	// one, a number, such as "99", gives every such name that number, and
+	// UnlistedNext ("next") numbers them on after the list, in the order of
+	// their names, so an order may list nothing.
 	Unlisted map[string]string `yaml:"unlisted,omitempty" json:"unlisted,omitempty"`
 }
 
@@ -171,8 +185,21 @@ func (v View) walk(fn func(where string, n Node, layout string, up []Node) error
 // have now, name. Once one order served a rule, so each moves to the node
 // nearest the rule that holds every {#} numbering its rest: two rests the
 // rule numbered apart stay apart. An order it cannot rename stays as it
-// was, for Validate to report.
+// was, for Validate to report. Then each {#} that took its order from
+// above the node that wrote it, as every {#} once could, gets a copy of
+// that order in its node, so it numbers as it did; see ownOrders. That
+// happens once: the rule is then marked NumberingScoped, and a rule so
+// marked is never given orders again.
 func (v View) Upgrade() View {
+	if v.Numbering == NumberingScoped {
+		return v.renamed()
+	}
+	v = v.renamed().ownOrders()
+	v.Numbering = NumberingScoped
+	return v
+}
+
+func (v View) renamed() View {
 	var old []string
 	for key := range v.Order {
 		if strings.ContainsAny(key, "{[") {
@@ -261,6 +288,132 @@ func (v View) Upgrade() View {
 	return v
 }
 
+// ownOrders gives each node an order of its own for every unnamed {#} it
+// writes that took its order from a node above it, as a {#} once could:
+// the order is copied whole, numbers, unnumbered and unlisted with it, so
+// every name keeps its number. An order above that no {#} takes any more
+// is dropped. A rule already scoped is returned as it is.
+func (v View) ownOrders() View {
+	type at struct {
+		node string // the node's branch, 2.1, or "" for the rule
+		name string
+	}
+	// resolve calls fn with each {#} of each layout and the place in up of
+	// the nearest node listing its order, from floor (or 0 when old) up.
+	resolve := func(old bool, fn func(steps []string, c Part, floor, found int)) {
+		_ = v.walk(func(where string, _ Node, layout string, up []Node) error {
+			parsed, err := Parse(layout)
+			if layout == "" || err != nil {
+				return nil
+			}
+			writers := counterWriters(up)
+			for _, c := range parsed.Counters() {
+				floor := orderFloor(c, writers)
+				lowest := floor
+				if old {
+					lowest = 0
+				}
+				found := len(up) - 1
+				for found >= lowest && !up[found].lists(c.Of) {
+					found--
+				}
+				fn(branch(where), c, floor, found)
+			}
+			return nil
+		})
+	}
+	copies := map[at]at{} // to the writing node, from the node above
+	resolve(true, func(steps []string, c Part, floor, found int) {
+		if found < 0 || found >= floor {
+			return
+		}
+		to := at{strings.Join(steps[:floor], "."), c.Of}
+		if _, ok := copies[to]; !ok {
+			copies[to] = at{strings.Join(steps[:found], "."), c.Of}
+		}
+	})
+	if len(copies) == 0 {
+		return v
+	}
+	v.Node = cloneNode(v.Node)
+	node := func(where string) *Node {
+		n := &v.Node
+		if where == "" {
+			return n
+		}
+		for _, step := range strings.Split(where, ".") {
+			i, _ := strconv.Atoi(step)
+			n = &n.Children[i-1]
+		}
+		return n
+	}
+	sources := map[at]bool{}
+	for to, from := range copies {
+		src, dst := node(from.node), node(to.node)
+		name := to.name
+		if list, ok := src.Order[name]; ok {
+			dst.Order = setList(dst.Order, name, slices.Clone(list))
+		}
+		if set, ok := src.Numbers[name]; ok {
+			if dst.Numbers == nil {
+				dst.Numbers = map[string]map[string]int{}
+			}
+			dst.Numbers[name] = maps.Clone(set)
+		}
+		if skip, ok := src.Unnumbered[name]; ok {
+			dst.Unnumbered = setList(dst.Unnumbered, name, slices.Clone(skip))
+		}
+		if unlisted, ok := src.Unlisted[name]; ok {
+			if dst.Unlisted == nil {
+				dst.Unlisted = map[string]string{}
+			}
+			dst.Unlisted[name] = unlisted
+		}
+		sources[from] = true
+	}
+	// An order copied down that no {#} takes from where it was goes.
+	used := map[at]bool{}
+	resolve(false, func(steps []string, c Part, floor, found int) {
+		if found >= floor {
+			used[at{strings.Join(steps[:found], "."), c.Of}] = true
+		}
+	})
+	for from := range sources {
+		if used[from] {
+			continue
+		}
+		n := node(from.node)
+		delete(n.Order, from.name)
+		delete(n.Numbers, from.name)
+		delete(n.Unnumbered, from.name)
+		delete(n.Unlisted, from.name)
+	}
+	return v
+}
+
+// setList is m with name set to list, m made when it is nil.
+func setList(m map[string][]string, name string, list []string) map[string][]string {
+	if m == nil {
+		m = map[string][]string{}
+	}
+	m[name] = list
+	return m
+}
+
+// cloneNode copies n and every node below it, with their orders, so a
+// change to the copy leaves n as it was.
+func cloneNode(n Node) Node {
+	n.Order = maps.Clone(n.Order)
+	n.Numbers = maps.Clone(n.Numbers)
+	n.Unnumbered = maps.Clone(n.Unnumbered)
+	n.Unlisted = maps.Clone(n.Unlisted)
+	n.Children = slices.Clone(n.Children)
+	for i := range n.Children {
+		n.Children[i] = cloneNode(n.Children[i])
+	}
+	return n
+}
+
 // branch is where's children by number, 2.1 as [2 1]; none for the rule.
 func branch(where string) []string {
 	at := strings.TrimSuffix(strings.TrimPrefix(where, "children "), ": ")
@@ -289,10 +442,16 @@ func (n Node) validOrders() error {
 	}
 	for key, set := range n.Numbers {
 		list, ok := n.Order[key]
-		if !ok {
+		if !ok && n.Unlisted[key] != UnlistedNext {
 			return fmt.Errorf("numbers %s: order has no list for it", key)
 		}
 		for name, number := range set {
+			if name == NumberStart {
+				if number < 0 {
+					return fmt.Errorf("numbers %s: start is a number from 0", key)
+				}
+				continue
+			}
 			if place(list, name) == 0 || number < 0 {
 				return fmt.Errorf("numbers %s: %s must be in the order and numbered from 0", key, name)
 			}
@@ -302,11 +461,11 @@ func (n Node) validOrders() error {
 		}
 	}
 	for key, unlisted := range n.Unlisted {
-		if _, ok := n.Order[key]; !ok {
-			return fmt.Errorf("unlisted %s: order has no list for it", key)
+		if unlisted == UnlistedNext {
+			continue
 		}
 		if _, ok := UnlistedNumber(unlisted); !ok {
-			return fmt.Errorf("unlisted %s: %q is neither %s nor a number from 0", key, unlisted, UnlistedNone)
+			return fmt.Errorf("unlisted %s: %q is %s, %s or a number from 0", key, unlisted, UnlistedNone, UnlistedNext)
 		}
 	}
 	for key, names := range n.Unnumbered {
@@ -349,6 +508,9 @@ func (v View) Validate() error {
 	}
 	if v.File == "" {
 		return fmt.Errorf("view %s: a rule needs a file", v.Name)
+	}
+	if v.Numbering != "" && v.Numbering != NumberingScoped {
+		return fmt.Errorf("view %s: numbering %q is not %s", v.Name, v.Numbering, NumberingScoped)
 	}
 	if v.Shared {
 		e, err := expr.Parse(v.If)
@@ -393,14 +555,20 @@ func (v View) Validate() error {
 		if err != nil {
 			return fmt.Errorf("view %s: %s%w", v.Name, where, err)
 		}
-		// Each {#} needs an order, from its node or one above, and two
+		// Each {#} needs an order, from its node or one above, no higher
+		// than the node that wrote it unless it names a shared one, and two
 		// numbering different names from one order would mix them.
+		writers := counterWriters(up)
 		for _, part := range parsed.Counters() {
+			floor := orderFloor(part, writers)
 			at := len(up) - 1
-			for at >= 0 && len(up[at].Order[part.Of]) == 0 {
+			for at >= floor && !up[at].lists(part.Of) {
 				at--
 			}
-			if at < 0 {
+			if at < floor {
+				if floor > 0 {
+					return fmt.Errorf("view %s: %s{#} numbers %s, so order needs a list for %s in children %s, which writes it", v.Name, where, part.Rest, part.Of, strings.Join(branch(where)[:floor], "."))
+				}
 				return fmt.Errorf("view %s: %s{#} numbers %s, so order needs a list for %s", v.Name, where, part.Rest, part.Of)
 			}
 			key := strings.Join(branch(where)[:at], ".") + "\x00" + part.Of
@@ -449,6 +617,9 @@ type Part struct {
 	// is the rest it numbers as written, and From and To are that rest's
 	// parts beside it.
 	Counter bool `json:"counter,omitempty"`
+	// Index is a {#}'s place among its layout's, counting from 0, as
+	// Counters lists them.
+	Index int `json:"-"`
 	// End is {/#}: the number's rest stops before it, so what follows is
 	// written but not numbered. It writes nothing itself.
 	End   bool   `json:"end,omitempty"`
@@ -519,7 +690,61 @@ func Parse(layout string) (Layout, error) {
 		}
 		out = append(out, parts)
 	}
+	n := 0
+	var index func([]Part)
+	index = func(parts []Part) {
+		for i := range parts {
+			if parts[i].Counter {
+				parts[i].Index = n
+				n++
+			}
+			index(parts[i].Group)
+		}
+	}
+	for _, segment := range out {
+		index(segment)
+	}
 	return out, nil
+}
+
+// counterPattern finds each {#} or {#label} written in a path or file.
+var counterPattern = regexp.MustCompile(`\{#[a-z0-9_-]*\}`)
+
+// counterWriters is, for each {#} of the layout the nodes up make, from
+// the rule down, in the order Counters lists them, the place in up of the
+// node whose path or file wrote it: the folders first, each node's in
+// turn, then the file of the deepest node that has one.
+func counterWriters(up []Node) []int {
+	var out []int
+	file := 0
+	for i, n := range up {
+		for range counterPattern.FindAllString(n.Path, -1) {
+			out = append(out, i)
+		}
+		if n.File != "" {
+			file = i
+		}
+	}
+	for range counterPattern.FindAllString(up[file].File, -1) {
+		out = append(out, file)
+	}
+	return out
+}
+
+// lists reports whether n keeps the order named: a list of names, or an
+// Unlisted that numbers names it does not list.
+func (n Node) lists(name string) bool {
+	return len(n.Order[name]) > 0 || n.Unlisted[name] != ""
+}
+
+// orderFloor is the shallowest place in up a {#} may take its order from:
+// the node that wrote it, writers says which, or the rule for a {#label},
+// whose order is shared.
+func orderFloor(c Part, writers []int) int {
+	if c.Label != "" || c.Index >= len(writers) {
+		return 0
+	}
+	return writers[c.Index]
 }
 
 // parseParts reads one folder or file name, or a group's inside, into
@@ -804,6 +1029,13 @@ func sameValue(a, b string) bool {
 
 // UnlistedNone is the Unlisted value that leaves names not listed unnumbered.
 const UnlistedNone = "unnumbered"
+
+// UnlistedNext is the Unlisted value that numbers names not listed on
+// after the list, in the order of their names.
+const UnlistedNext = "next"
+
+// NumberStart, in Numbers, is the number an order's first name gets.
+const NumberStart = "start"
 
 // UnlistedNumber is the number an Unlisted value gives a name not listed,
 // Unnumbered for UnlistedNone, and whether the value is either.
