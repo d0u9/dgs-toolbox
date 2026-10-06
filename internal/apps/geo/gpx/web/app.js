@@ -1330,8 +1330,9 @@ function trackRow(path, entry) {
   const main = document.createElement("div");
   main.className = "file-main";
   main.append(label(track.name, []), distance);
-  if (disclosure) main.append(disclosure);
-  li.append(main, actions, color);
+  li.append(main, actions);
+  if (disclosure) li.append(disclosure);
+  li.append(color);
   // A right click on a file offers what is done to the file as a whole:
   // writing it out, then taking it out of the workspace.
   li.addEventListener("contextmenu", (event) => {

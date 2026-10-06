@@ -124,9 +124,9 @@ map. It is the interface later milestones build on.
   starts, so a change takes effect after restarting `dgs`.
 - **Workspace.** The tracks opened, kept together whatever
   folder they came from — the set later milestones edit and search. A row
-  shows its name and distance on one spacious line, with the parts
-  disclosure. A separate quiet toolbar holds only three icons: origin, reveal and
-  visibility. Colour and ordering remain in the context menu; no colour strip
+  shows its name, distance, three quiet icons (origin, reveal and visibility)
+  and the parts disclosure on one compact line. Names use 12 px type, icons
+  use 12 px artwork in 20 px controls, and neighbouring icons have 2 px gaps. Colour and ordering remain in the context menu; no colour strip
   touches the row edge. Extra details are available in a hover tip;
   no small tags or badges are used. Everything done to a
   file is in its context menu. A filter box narrows the list by words in the

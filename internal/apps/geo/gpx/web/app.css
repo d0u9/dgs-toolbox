@@ -472,20 +472,22 @@ body {
   line-height: 1.3;
 }
 .actions { flex: none; display: flex; align-items: center; gap: 2px; }
-.list li.track-row { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 5px; padding: 10px 12px; }
-.file-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.list li.track-row > .file-tools { display: flex; gap: 4px; margin-left: 0; }
-.track-row .actions.file-tools > button, .track-row .actions.file-tools > .ours-mark { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 5px; background: transparent; color: var(--graphite); }
+.list li.track-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 6px 8px; min-height: 32px; }
+.file-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.list li.track-row > .file-tools { display: flex; gap: 2px; margin-left: 0; }
+.track-row .actions.file-tools > button, .track-row .actions.file-tools > .ours-mark { flex: none; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: none; border-radius: 3px; background: transparent; color: var(--graphite); }
 .file-tools button { cursor: pointer; }
 .track-row .actions.file-tools > button:hover:not(:disabled) { background: var(--hover); color: var(--primary); }
 .track-row .actions.file-tools > button:disabled { color: var(--steel); cursor: default; }
 .file-tools button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.file-tools svg { width: 16px; height: 16px; }
+.file-tools svg { width: 12px; height: 12px; }
 .track-row .actions.file-tools > .ours-mark.ours, .track-row .actions.file-tools > .eye[aria-pressed="true"] { color: var(--primary); }
 .track-row .ui-row-label .meta, .part-row .ui-row-label .meta { display: none; }
-.track-row .name { font-size: 14px; font-weight: 500; }
+.track-row .name { font-size: 12px; font-weight: 500; }
 .track-row.state-error .name { color: var(--error); }
-.track-row .file-main > .disclosure { width: 28px; height: 28px; }
+.track-row > .disclosure { width: 18px; height: 20px; }
+.track-row > .disclosure svg { width: 12px; height: 12px; }
+.track-row .row-distance { font-size: 11px; }
 .disclosure {
   flex: none;
   width: 22px;
