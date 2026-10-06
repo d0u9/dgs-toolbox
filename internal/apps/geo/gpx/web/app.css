@@ -238,16 +238,16 @@ body {
 .cut-tools .button { flex: 1 1 auto; min-width: 0; white-space: nowrap; }
 .cut-hint { margin: 0 0 8px; color: var(--graphite); font-size: 12px; line-height: 1.45; }
 .cut-list { margin: 0 -14px; }
-.cut-list-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--hairline); background: var(--paper); color: var(--graphite); font-size: 12px; }
+.cut-list-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-bottom: 1px solid var(--hairline); background: var(--paper); color: var(--graphite); font-size: 12px; }
 .cut-list-bar label { cursor: pointer; }
 .cut-list-bar .clean-count { margin-left: auto; }
-.cut-check { width: 16px; height: 16px; flex: none; margin: 0; accent-color: var(--primary); }
+.cut-check { width: 13px; height: 13px; flex: none; margin: 0; accent-color: var(--primary); }
 .inspector { container-type: inline-size; }
-.cut-row { padding: 13px 14px 13px 11px; border-bottom: 1px solid var(--hairline); border-left: 3px solid transparent; cursor: pointer; }
+.cut-row { padding: 5px 10px 5px 8px; border-bottom: 1px solid var(--hairline); border-left: 3px solid transparent; cursor: pointer; }
 .cut-row:hover { background: var(--hover); }
-.cut-row-top { display: flex; align-items: center; gap: 10px; min-height: 24px; }
-.cut-number { flex: none; width: 20px; color: var(--graphite); font-size: 13px; font-weight: 400; font-variant-numeric: tabular-nums; text-align: center; }
-.cut-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.cut-row-top { display: flex; align-items: center; gap: 6px; min-height: 20px; }
+.cut-number { flex: none; width: 16px; color: var(--graphite); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; text-align: center; }
+.cut-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
 .row-distance { flex: none; color: var(--graphite); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Writing the segments out: a group of controls on one baseline. The select
    and the button beside it are the same height, the destination row and the
@@ -717,3 +717,9 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .map-tool svg, .map-button svg, .maplibregl-ctrl-group button svg { width: var(--map-control-icon); height: var(--map-control-icon); display: block; margin: auto; }
 .map-tool:hover, .map-button:hover, .maplibregl-ctrl-group button:hover { background: #f2f2f2; color: #333; }
 .map-tool[aria-pressed="true"], .map-button[aria-pressed="true"] { background: var(--selected); color: var(--primary); }
+
+/* Segment editing uses compact rows and quiet secondary actions. */
+.cut-row .row-distance, .cut-list-bar .clean-count { font-size: 11px; }
+.cut-actions .clean-filter-head { font-size: 12px; }
+.cut-actions .text-button, .cut-actions .button, .cut-actions select { min-height: 22px; height: 22px; font-size: 12px; padding: 0 6px; }
+.cut-actions .cut-tools { gap: 4px; }
