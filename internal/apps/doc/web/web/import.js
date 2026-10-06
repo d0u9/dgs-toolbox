@@ -2,7 +2,13 @@
 // they are in, and take them in one at a time. The folder is only read.
 import { $, keep, scrollBack, api, el, size, loadState, post, templateOf, label, fieldInputs, fieldsOf, tagUses, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
+import { splitter } from "/ui/splitter.js";
 import { fileTree } from "/ui/filetree.js";
+
+// The import panel is as wide as the reader drags it, and never so narrow
+// that its fields do not fit.
+splitter({ handle: $("side-splitter"), target: $("side"), axis: "x", invert: true, min: 320,
+  max: () => Math.max(320, window.innerWidth - 480), key: "dgs-doc-size-import-side" });
 
 const FOLDER_KEY = "dgs-doc-import-folder";
 const HIDE_KEY = "dgs-doc-import-hide-kept";
@@ -67,6 +73,7 @@ function render() {
   if (dir && files.length === 0) say($("list-message"), "No PDFs or supported images in this folder or under it.");
   const file = files.find((f) => f.path === selected);
   $("side").hidden = !file && !noPDF;
+  $("side-splitter").hidden = $("side").hidden;
   $("import").hidden = (!noPDF && (!file || !!file.item)) || !state.tree;
   $("copy-note").hidden = noPDF;
   $("keep-original-field").hidden = noPDF || !file || !file.image || !!file.item;
