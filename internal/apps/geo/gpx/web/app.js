@@ -1218,7 +1218,10 @@ function renderTracks() {
     const rows = [trackRow(path, entry)];
     if (entry.expanded && expandable(entry)) {
       // One part shows and hides from its own row; the toolbar is for several.
-      if (entry.track.parts.length > 1) rows.push(partsToolbar(path, entry));
+      if (entry.track.parts.length > 1) {
+        const toolbar = partsToolbar(path, entry);
+        if (toolbar.children.length) rows.push(toolbar);
+      }
       for (const part of entry.track.parts) rows.push(partRow(path, entry, part));
     }
     return rows;
@@ -1885,11 +1888,10 @@ function cancelWaypointMove() {
   movingWaypoint = null;
 }
 
-// partsToolbar shows or hides every part of a file at once, or every part of
-// one kind: all tracks, all routes, all waypoints.
+// Mixed files can show or hide a kind: tracks, routes or waypoints.
 function partsToolbar(path, entry) {
   const li = document.createElement("li");
-  li.className = "parts-toolbar";
+  li.className = "parts-toolbar ui-file-row";
   const group = (text, parts) => {
     const box = document.createElement("span");
     box.className = "parts-group";
@@ -1897,12 +1899,11 @@ function partsToolbar(path, entry) {
     name.textContent = text;
     const keys = parts.map((part) => part.key);
     const allHidden = keys.every((key) => entry.hiddenParts.has(key));
-    const toggle = iconButton("mini", allHidden ? EYE_OFF : EYE, `${allHidden ? "Show" : "Hide"} ${text.toLowerCase()}`, () => setPartsHidden(path, keys, !allHidden));
+    const toggle = iconButton("mini icon-button ui-row-icon", allHidden ? EYE_OFF : EYE, `${allHidden ? "Show" : "Hide"} ${text.toLowerCase()}`, () => setPartsHidden(path, keys, !allHidden));
     box.append(name, toggle);
     return box;
   };
   const { parts } = entry.track;
-  li.append(group("All", parts));
   for (const [kind, text] of [["track", "Tracks"], ["route", "Routes"], ["waypoint", "Waypoints"]]) {
     const ofKind = parts.filter((part) => part.kind === kind);
     if (ofKind.length && ofKind.length < parts.length) li.append(group(text, ofKind));
