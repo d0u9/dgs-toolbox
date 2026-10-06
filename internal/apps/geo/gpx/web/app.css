@@ -228,7 +228,8 @@ body {
 .clean-subhead { margin: 10px 0 0; padding-top: 8px; border-top: 2px solid var(--hairline); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--graphite); }
 .range-list { list-style: none; margin: 4px 0 0; padding: 0; }
 .range-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-top: 1px solid var(--hairline); }
-.range-row .label { flex: 1; min-width: 0; display: flex; flex-direction: column; cursor: pointer; }
+.range-row .label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; cursor: pointer; }
+.range-row .label .meta { overflow: hidden; text-overflow: ellipsis; }
 .range-row .name { font-variant-numeric: tabular-nums; }
 .range-row .meta { color: var(--graphite); font-size: 11px; }
 .range-join { padding: 1px 2px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--paper); font-size: 12px; }
@@ -284,9 +285,7 @@ body {
   font-size: 11px;
   font-weight: 700;
 }
-.cut-name { flex: 1; min-width: 0; padding: 3px 5px; border: 1px solid transparent; border-radius: 4px; background: transparent; font-size: 13px; font-weight: 600; }
-.cut-name:hover, .cut-name:focus { border-color: var(--hairline); background: var(--paper); }
-.cut-name::placeholder { color: var(--ink); font-weight: 600; opacity: .8; }
+.cut-name { flex: 1; min-width: 0; font-size: var(--font-size-ui); font-weight: 500; }
 /* Writing the segments out: a group of controls on one baseline. The select
    and the button beside it are the same height, the destination row and the
    new-file button share one column, and every gap comes from the spacing
@@ -296,7 +295,7 @@ body {
 .cut-target { display: flex; align-items: stretch; margin-top: var(--space-xs); }
 .cut-target .cut-path { flex: 1 1 auto; min-width: 0; }
 .cut-go, .cut-save-as { width: 100%; margin-top: var(--space-xxs); }
-.cut-path { width: 100%; height: var(--control-height); padding: 0 var(--control-pad-x); border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--paper); font-size: var(--font-size-sm); }
+.cut-path { width: 100%; }
 .cut-go { white-space: nowrap; }
 .text-button:disabled { opacity: .4; cursor: default; }
 
@@ -358,34 +357,7 @@ body {
    a single hairline box divided by hairlines, each part the height of every
    other control on the page, its label read in ink at the interface size.
    Which charts are shown is one setting, so it is drawn as one control. */
-.chart-toggles {
-  flex: none;
-  display: flex;
-  align-items: stretch;
-  height: var(--control-height-sm);
-  margin-left: var(--space-xs);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-md);
-  background: var(--paper);
-  overflow: hidden;
-}
-.chart-toggles .chip {
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  border: none;
-  border-left: 1px solid var(--hairline);
-  border-radius: 0;
-  background: var(--paper);
-  color: var(--charcoal);
-  font-size: var(--font-size-sm);
-  line-height: 1;
-}
-.chart-toggles > .chip:first-child, .layout-toggles .chip:first-child { border-left: none; }
-.chart-toggles .chip:hover { background: var(--hover); color: var(--ink); }
-.chart-toggles .chip[aria-pressed="true"] { background: var(--selected); color: var(--primary-deep); font-weight: 600; }
-.chart-toggles .chip:disabled { opacity: .4; }
-.chart-toggles .chip:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.chart-toggles { margin-left: var(--space-xs); }
 .layout-toggles { display: flex; margin-left: 0; border-left: 1px solid var(--hairline-strong); }
 .layout-toggles .chip { padding: 0 var(--space-xs); font-size: var(--font-size-ui); }
 
@@ -536,8 +508,6 @@ body {
   text-overflow: ellipsis;
   line-height: 1.3;
 }
-.label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.label .meta { overflow: hidden; text-overflow: ellipsis; }
 .actions { flex: none; display: flex; align-items: center; gap: 2px; }
 .track-row { align-items: flex-start !important; }
 .track-row > .disclosure, .track-row > .actions { margin-top: 1px; }
@@ -612,7 +582,7 @@ body {
 .fill-preview { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .fill-preview .meta { flex: 1; color: var(--graphite); font-size: 11px; }
 .cut-hint.error { color: var(--error); }
-.prompt-input { height: var(--control-height); margin: 0 0 var(--space-sm); padding: 0 var(--control-pad-x); font-size: var(--font-size-sm); }
+
 
 .timeline-piece { position: absolute; bottom: 0; height: 7px; z-index: 1; pointer-events: none; }
 
@@ -752,3 +722,11 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .actions button.order:hover:not(:disabled) { background: rgba(0, 0, 0, .06); }
 .actions button.order:hover:not(:disabled) { color: var(--primary); }
 .actions button.order:disabled { opacity: .25; cursor: default; }
+
+/* Fine text uses the bundled screen face; precision values use tabular digits.
+   Coordinates and diagnostics use the shared technical face. */
+.cut-row.selected, .route-waypoint.selected, .range-row.selected { background: var(--selected); }
+.cut-row-meta, .profile-stats, .timeline-ticks, .stop-popup { font-variant-numeric: tabular-nums; }
+.route-label .meta { font-family: var(--font-mono); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums slashed-zero; }
+.plan-marker.selected { outline: 2px solid var(--primary); outline-offset: 2px; }
+.label .meta, .clean-foot, .cut-hint { font-weight: 400; }

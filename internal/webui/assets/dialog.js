@@ -59,3 +59,52 @@ window.addEventListener("resize", () => {
     place(dialog, rect.left, rect.top);
   }
 });
+
+// Shared modal lifecycle. Pages build domain-specific fields; the library
+// owns heading, actions, cancellation, keyboard focus and completion.
+export function formDialog({ title, message, fields = [], read, confirm = "OK", cancel = "Cancel", danger = false, focus, focusCancel = false }) {
+  return new Promise(resolve => {
+    const opener = document.activeElement;
+    const dialog = document.createElement("dialog");
+    dialog.className = "dialog";
+    dialog.setAttribute("aria-label", title);
+    const heading = document.createElement("h3"); heading.textContent = title;
+    const text = document.createElement("p"); text.textContent = message || "";
+    const form = document.createElement("form"); form.method = "dialog";
+    const buttons = document.createElement("div"); buttons.className = "dialog-buttons";
+    const no = document.createElement("button"); no.type = "button"; no.className = "button"; no.textContent = cancel;
+    const yes = document.createElement("button"); yes.type = "submit"; yes.className = danger ? "button danger" : "action"; yes.textContent = confirm;
+    buttons.append(no, yes); form.append(...fields, buttons); dialog.append(heading, text, form);
+    let answer = null;
+    no.addEventListener("click", () => dialog.close());
+    form.addEventListener("submit", event => {
+      answer = read();
+      if (answer == null) { event.preventDefault(); (focus || fields[0])?.focus(); }
+    });
+    dialog.addEventListener("close", () => {
+      dialog.remove();
+      if (opener?.isConnected) opener.focus();
+      resolve(answer);
+    });
+    document.body.append(dialog); dialog.showModal();
+    const initial = focusCancel ? no : focus || fields[0] || no;
+    initial.focus(); initial.select?.();
+  });
+}
+export function promptDialog({ title, message, value = "", confirm = "OK", cancel = "Cancel" }) {
+  const input = document.createElement("input"); input.className = "field prompt-input"; input.value = value;
+  input.setAttribute("aria-label", title);
+  return formDialog({ title, message, fields: [input], confirm, cancel, read: () => input.value.trim() || null });
+}
+export function chooseDialog({ title, message, options, confirm = "OK", cancel = "Cancel" }) {
+  const choice = document.createElement("select"); choice.className = "field prompt-input"; choice.setAttribute("aria-label", title);
+  for (const option of options) {
+    const item = document.createElement("option"); item.value = option.value; item.textContent = option.label; item.title = option.title || option.value; choice.append(item);
+  }
+  return formDialog({ title, message, fields: [choice], confirm, cancel, read: () => choice.value || null });
+}
+export async function confirmDialog({ title, message, detail, confirm = "Continue", cancel = "Cancel", danger = false }) {
+  const fields = [];
+  if (detail) { const text = document.createElement("code"); text.className = "dialog-detail"; text.textContent = detail; fields.push(text); }
+  return await formDialog({ title, message, fields, confirm, cancel, danger, focusCancel: true, read: () => true }) === true;
+}

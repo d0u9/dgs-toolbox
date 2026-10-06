@@ -7,7 +7,10 @@
 import * as format from "./format.js";
 import { saveFile } from "/ui/filedialog.js";
 import * as status from "/ui/statusbar.js";
-import { chooseDialog, promptDialog } from "./dialog.js";
+import { chooseDialog, promptDialog } from "/ui/dialog.js";
+import { openMenu } from "/ui/menu.js";
+import { textButton as sharedTextButton } from "/ui/controls.js";
+import { rowDoubleClick } from "/ui/selection.js";
 
 const SEGMENT = "cut-segment";
 const CUTS = "cut-points";
@@ -43,6 +46,7 @@ export class CutPanel {
     // Chosen segments per GPX path, so leaving a track and coming back keeps
     // the choice: path -> { selected, known, createPath, addPath }.
     this.choices = new Map();
+    this.doubleClick = rowDoubleClick();
   }
 
   // remember keeps the shown track's choice, for when it is shown again.
@@ -165,8 +169,8 @@ export class CutPanel {
 
     const hint = document.createElement("p");
     hint.className = "cut-hint";
-    hint.textContent = "Click the track or timeline to cut there.";
-    hint.title = "Remove one cut with × beside the segment it starts; drag a timeline cut to move it. Clear cuts removes them all. Zoom the timeline with the wheel for finer placement.";
+    hint.textContent = "Click to select; double-click to fit. Right-click for names and cuts.";
+    hint.title = "Right-click a cut or its segment for removal; drag a timeline cut to move it. Clear cuts removes them all. Zoom the timeline with the wheel for finer placement.";
     parts.push(hint);
 
     parts.push(this.list());
@@ -192,6 +196,7 @@ export class CutPanel {
     all.indeterminate = chosen > 0 && chosen < track.pieces.length;
     all.id = "cut-all";
     all.addEventListener("change", () => {
+      this.doubleClick.reset();
       this.selected = all.checked ? new Set(track.pieces.map((piece) => piece.first)) : new Set();
       this.render();
     });
@@ -210,7 +215,8 @@ export class CutPanel {
   row(piece, number) {
     const item = document.createElement("div");
     item.className = "cut-row";
-    item.title = `${piece.points} points — click to show it on the map`;
+    item.classList.toggle("selected", this.selected.has(piece.first));
+    item.title = `${piece.points} points — click to select, double-click to fit, right-click for actions`;
 
     const top = document.createElement("div");
     top.className = "cut-row-top";
@@ -220,6 +226,7 @@ export class CutPanel {
     check.checked = this.selected.has(piece.first);
     check.title = "Write this segment";
     check.addEventListener("change", () => {
+      this.doubleClick.reset();
       if (check.checked) this.selected.add(piece.first);
       else this.selected.delete(piece.first);
       this.render();
@@ -228,13 +235,10 @@ export class CutPanel {
     badge.className = "cut-number";
     badge.textContent = String(number);
     badge.style.background = pieceColor(number - 1);
-    const name = document.createElement("input");
+    const name = document.createElement("span");
     name.className = "cut-name";
-    name.value = piece.name;
-    name.placeholder = defaultName(piece, number, this.timeZone);
-    name.title = "Name — empty uses its time span";
-    name.addEventListener("change", () => this.rename(piece, name.value));
-    name.addEventListener("click", (event) => event.stopPropagation());
+    name.textContent = piece.name || defaultName(piece, number, this.timeZone);
+    name.title = "Right-click to rename this segment";
     top.append(check, badge, name);
     if (number > 1 && this.track.cuts.includes(piece.first)) {
       const button = document.createElement("button");
@@ -265,9 +269,31 @@ export class CutPanel {
     item.append(meta);
 
     item.addEventListener("mouseenter", () => this.onHover(piece));
-    item.addEventListener("mouseleave", () => this.onHover(null));
+    item.addEventListener("mouseleave", () => this.onHover(this.selected.size === 1 ? this.track.pieces.find(piece => this.selected.has(piece.first)) : null));
     item.addEventListener("click", (event) => {
-      if (event.target !== check) this.onShow(piece);
+      if (event.target.closest?.("button, input")) return;
+      const fit = this.doubleClick(JSON.stringify([trackPath(this.track), piece.first]), event);
+      if (event.metaKey || event.ctrlKey) {
+        if (this.selected.has(piece.first)) this.selected.delete(piece.first); else this.selected.add(piece.first);
+      } else this.selected = new Set([piece.first]);
+      this.onShow(piece, { fit });
+      this.render();
+    });
+    item.addEventListener("contextmenu", event => {
+      this.doubleClick.reset();
+      if (!this.selected.has(piece.first)) {
+        this.selected = new Set([piece.first]);
+        this.onShow(piece, { fit: false });
+        this.render();
+      }
+      openMenu(event, [[
+        { label: "Fit this segment", onSelect: () => this.onShow(piece, { fit: true }) },
+        { label: "Use default name", onSelect: () => this.rename(piece, "") },
+        { label: "Rename…", onSelect: async () => {
+          const name = await promptDialog({ title: "Rename segment", message: "Give this segment a name.", value: piece.name, confirm: "Rename" });
+          if (name != null) this.rename(piece, name);
+        } },
+      ], this.track.cuts.includes(piece.first) ? [{ label: "Remove cut before this segment", onSelect: () => this.removeCut(piece.first) }] : []]);
     });
     return item;
   }
@@ -528,15 +554,8 @@ function defaultCreatePath(track, folder = "") {
   return `${dot > 0 ? source.slice(0, dot) : source} segments.gpx`;
 }
 
-function textButton(text, disabled, onClick) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "button";
-  button.textContent = text;
-  button.disabled = disabled;
-  button.addEventListener("click", onClick);
-  return button;
-}
+const textButton = (text, disabled, onClick) => sharedTextButton(text, disabled, onClick, "button");
+const trackPath = track => track?.path || "";
 
 const basename = (path) => path.split(/[\\/]/).pop();
 

@@ -6,36 +6,17 @@ import * as format from './web/format.js';
 import {TrackLayers} from './web/tracks.js';
 
 const source = name => readFileSync(new URL(`./web/${name}.js`, import.meta.url), 'utf8');
+const sharedSource = name => readFileSync(new URL(`../../../webui/assets/${name}.js`, import.meta.url), 'utf8');
 const plain = value => JSON.parse(JSON.stringify(value));
 
-// A minimal DOM boundary: the production code creates controls and registers
-// its real listeners. No rendering, layout or browser defaults are emulated.
-class Element {
-  constructor(tag) {
-    this.tagName=tag.toUpperCase();this.children=[];this.style={};this.dataset={};
-    this.attributes={};this.listeners=new Map();this.className='';this.disabled=false;
-    this.classList={
-      contains: name => this.className.split(/\s+/).includes(name),
-      add: (...names) => {this.className=[...new Set([...this.className.split(/\s+/).filter(Boolean),...names])].join(' ');},
-      remove: (...names) => {this.className=this.className.split(/\s+/).filter(name=>!names.includes(name)).join(' ');},
-      toggle: (name,on) => {const yes=on??!this.classList.contains(name);this.classList[yes?'add':'remove'](name);return yes;},
-    };
-  }
-  get firstElementChild(){return this.children[0];}
-  append(...children){this.children.push(...children);}
-  replaceChildren(...children){this.children=children;}
-  setAttribute(name,value){this.attributes[name]=value;}
-  addEventListener(type,listener){const listeners=this.listeners.get(type)||[];listeners.push(listener);this.listeners.set(type,listeners);}
-  async fire(type,values={}){
-    const event={target:this,timeStamp:100,clientX:10,clientY:10,detail:1,stopPropagation(){this.stopped=true;},...values};
-    for(const listener of this.listeners.get(type)||[])await listener(event);
-    return event;
-  }
-  all(predicate){return [this,...this.children.flatMap(child=>child instanceof Element?child.all(predicate):[])].filter(predicate);}
-}
-const documentStub=()=>({createElement:tag=>new Element(tag)});
+import {Element,documentStub} from '../../../webui/test_dom.mjs';
 const deferred=()=>{let resolve;const promise=new Promise(yes=>{resolve=yes;});return {promise,resolve};};
 
+function loadShared(name,context){
+  const original=sharedSource(name),names=[...original.matchAll(/export (?:function|class|const) (\w+)/g)].map(match=>match[1]);
+  const values=vm.runInContext(`(()=>{${original.replace(/^export /gm,'')} return {${names.join(',')}};})()`,context);
+  Object.assign(context,values);return values;
+}
 function loadModule(name,context){
   // Replace module linkage at the boundary, retaining every production method.
   vm.runInContext(source(name).replace(/^import .*;\s*$/gm,'').replace(/^export /gm,''),context,{filename:`${name}.js`});
@@ -46,11 +27,11 @@ function treeHarness(track){
   const entry={id:'a',color:'#0072b2',visible:false,hiddenParts:new Set(),track};
   const state={focus:'other.gpx',tracks:new Map([['current.gpx',entry]]),selection:new Set(),config:{canReveal:false}};
   const context=vm.createContext({
-    document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',
+    tooltip(){},document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',
     PART_GLYPH:{track:'track',route:'route',waypoint:'waypoint'},
     expandable:()=>false,oursMark:()=>new Element('span'),filteredPaths:()=>['current.gpx'],
     bindRowDrag(){},copyTargets:()=>[],renderTracks(){calls.push(['render']);},
-    select(path,options){calls.push(['select',path,plain(options)]);},
+    select(path,options={}){calls.push(['select',path,plain(options)]);},
     selectionFor:()=>['current.gpx'],openMenu(event,groups){calls.push(['menu',groups.flat().filter(Boolean)]);},
     setVisible(path,visible){entry.visible=visible;calls.push(['visible',visible]);},
     setPartHidden(path,key,hidden){entry.hiddenParts[hidden?'add':'delete'](key);calls.push(['hidden',key,hidden]);},
@@ -58,9 +39,10 @@ function treeHarness(track){
     fitBox(){calls.push(['fit']);},openWaypoint(){calls.push(['popup']);},
     map:{getZoom:()=>12,easeTo(){calls.push(['pan']);}},renameGPX(path){calls.push(['rename',path]);},
   });
+  loadShared('selection',context);loadShared('controls',context);context.label=context.rowLabel;
   loadModule('drag',context);
   const app=source('app');
-  vm.runInContext(app.slice(app.indexOf('function iconButton('),app.indexOf('// oursMark')),context);
+  vm.runInContext(app.slice(app.indexOf('const doubleRowClick'),app.indexOf('// oursMark')),context);
   vm.runInContext(app.slice(app.indexOf('function partRow('),app.indexOf('// ---- dragging rows')),context);
   vm.runInContext(app.slice(app.indexOf('function showPart('),app.indexOf('\nfunction openWaypoint(')),context);
   // Run the application's actual capture listeners before startup's I/O.
@@ -123,7 +105,7 @@ test('file context menu offers Rename only for a draft or a dgs-created GPX',asy
 });
 
 function segmentHarness(pieces,{choice='separate',name='Named track',fail=false}={}){
-  const root=new Element('div'),requests=[],dialogs=[],messages=[],refresh=[];
+  const root=new Element('div'),requests=[],dialogs=[],messages=[],refresh=[],shown=[];
   const ask=deferred(),choose=deferred(),nameShown=deferred();
   const track={path:'current.gpx',ours:true,pieces,cuts:pieces.slice(1).map(piece=>piece.first),cutCandidates:[],removed:[]};
   const entry={id:'a',track};
@@ -139,14 +121,15 @@ function segmentHarness(pieces,{choice='separate',name='Named track',fail=false}
     reloadEntry:async path=>refresh.push(['reload',path]),expandable:()=>true,
     setFocus:(path,options)=>refresh.push(['focus',path,plain(options)]),renderTracks(){},save(){},
   });
+  loadShared('selection',context);const controls=loadShared('controls',context);context.sharedTextButton=controls.textButton;
   loadModule('api',context);loadModule('cut',context);
   const app=source('app');
   vm.runInContext(app.slice(app.indexOf('async function writeSegments('),app.indexOf('// lassoDone')),context);
   const CutPanel=vm.runInContext('CutPanel',context);
-  const panel=new CutPanel({root,onCuts(){},onHover(){},onShow(){},onWrite:context.writeSegments});
+  const panel=new CutPanel({root,onCuts(){},onHover(){},onShow:(piece,options)=>shown.push([piece.first,plain(options)]),onWrite:context.writeSegments});
   panel.show(track,{timeZone:'UTC',workspace:['another.gpx',track.path],folder:''});
   const add=()=>root.all(element=>element.classList.contains('cut-go'))[0];
-  return {root,panel,track,state,requests,dialogs,messages,refresh,ask,choose,nameShown,add,choice,name};
+  return {root,panel,track,state,requests,dialogs,messages,refresh,ask,choose,nameShown,add,choice,name,shown,context};
 }
 const pieces=[{first:0,last:2,name:'First',points:3,distance:20},{first:2,last:4,name:'Second',points:3,distance:20}];
 
@@ -288,4 +271,111 @@ test('unfocused tracks and routes remain legible, while hidden files stay fully 
   for(const kind of ['line','route','casing','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'none');
   layers.setVisible('b',true);layers.setFocus('a');
   for(const kind of ['line','route','casing','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'visible');
+});
+
+
+test('segment rows select one or toggle selection without fitting; a second rebuilt row click fits',async()=>{
+  const h=segmentHarness(pieces);
+  const rows=()=>h.root.all(element=>element.classList.contains('cut-row'));
+  await rows()[0].fire('click',{timeStamp:100});
+  assert.deepEqual([...h.panel.selected],[0]);assert.deepEqual(h.shown,[[0,{fit:false}]]);
+  assert.equal(rows()[0].classList.contains('selected'),true);
+  await rows()[0].fire('click',{timeStamp:200});
+  assert.deepEqual(h.shown.at(-1),[0,{fit:true}]);
+  await rows()[1].fire('click',{timeStamp:300,ctrlKey:true});
+  assert.deepEqual([...h.panel.selected],[0,2]);assert.deepEqual(h.shown.at(-1),[2,{fit:false}]);
+  await rows()[0].fire('click',{timeStamp:400,ctrlKey:true});assert.deepEqual([...h.panel.selected],[2]);
+});
+
+test('route waypoint selection never pans or removes; fit and removal are explicit menu actions',()=>{
+  const calls=[],menus=[];
+  const context=vm.createContext({format,document:documentStub(),openMenu:(event,sections)=>menus.push(sections),rowDoubleClick:()=>({reset(){}})});
+  loadModule('route',context);
+  const proto=vm.runInContext('RoutePlanner.prototype',context);
+  const planner=Object.create(proto);
+  Object.assign(planner,{waypoints:[[0,0],[0,1]],selected:null,doubleClick:{reset(){}},map:{easeTo:options=>calls.push(['pan',options.center])},display:point=>point,draw:()=>calls.push(['draw']),render:()=>calls.push(['render']),remove:index=>calls.push(['remove',index])});
+  planner.selectWaypoint(1);assert.equal(planner.selected,1);assert.equal(calls.some(([kind])=>kind==='pan'||kind==='remove'),false);
+  planner.waypointMenu({},1);assert.equal(calls.some(([kind])=>kind==='remove'),false);
+  menus[0][0][0].onSelect();assert.deepEqual(calls.at(-3),['pan',planner.waypoints[1]]);
+  menus[0][0][1].onSelect();assert.deepEqual(calls.at(-1),['remove',1]);
+});
+
+test('timeline candidates and cuts select on click; only right-click menu commands edit cuts',async()=>{
+  const calls=[],menus=[],context=vm.createContext({format,document:documentStub(),openMenu:(event,sections)=>menus.push(sections)});
+  loadModule('timeline',context);
+  const timeline=Object.create(vm.runInContext('Timeline.prototype',context));
+  Object.assign(timeline,{timeZone:'UTC',track:{time:[0,1000,2000],pieces:[]},cutting:{cuts:[2],candidates:[1],onAdd:index=>calls.push(['add',index]),onRemove:index=>calls.push(['remove',index]),onMove(){ }},fraction:()=>0.5,onScrub:index=>calls.push(['pick',index]),setIndex(){}});
+  const elements=timeline.cutElements();
+  for(const element of elements){
+    await element.fire('click');await element.fire('dblclick');
+    assert.equal(calls.some(([kind])=>kind==='add'||kind==='remove'),false);
+    await element.fire('contextmenu');menus.at(-1)[0][0].onSelect();
+    assert.equal(calls.at(-1)[0],element.classList.contains('timeline-candidate')?'add':'remove');
+    calls.length=0;
+  }
+});
+
+
+test('planning marker double-click survives rebuilding without selecting a list row as a double-click',async()=>{
+  const calls=[];
+  class Marker {
+    constructor({element}){this.element=element;}
+    setLngLat(){return this;} addTo(){return this;} on(){return this;} remove(){}
+  }
+  const context=vm.createContext({format,document:documentStub(),maplibregl:{Marker}});
+  loadShared('selection',context);loadModule('route',context);
+  const planner=Object.create(vm.runInContext('RoutePlanner.prototype',context));
+  Object.assign(planner,{active:true,waypoints:[[0,0],[0,1]],legs:[],markers:[],handles:[],doubleClick:context.rowDoubleClick(),selected:null,display:point=>point,map:{getSource:()=>({setData(){}}),moveLayer(){},easeTo:options=>calls.push(options)},render(){}});
+  planner.draw();await planner.markers[0].element.fire('click',{timeStamp:100});
+  assert.equal(planner.selected,0);assert.equal(calls.length,0);
+  await planner.markers[0].element.fire('click',{timeStamp:200});assert.equal(calls.length,1);
+  assert.equal(planner.doubleClick('row:0',{timeStamp:300,clientX:10,clientY:10,detail:1}),false);
+});
+
+test('right-button presses cannot begin moving a timeline cut',async()=>{
+  const context=vm.createContext({format,document:documentStub()});loadModule('timeline',context);
+  const timeline=Object.create(vm.runInContext('Timeline.prototype',context));
+  Object.assign(timeline,{timeZone:'UTC',track:{time:[0,1000],pieces:[]},cutting:{cuts:[1],candidates:[],onMove(){assert.fail('right-click must not move a cut');}},fraction:()=>0.5});
+  const [cut]=timeline.cutElements();await cut.fire('pointerdown',{button:2});
+  assert.equal(cut.listeners.has('pointermove'),false);assert.equal(cut.listeners.has('pointerup'),false);
+});
+
+test('map clicks select tracks or points; cut commands require their menu action',()=>{
+  const listeners=new Map(),calls=[],menus=[];
+  const entry={id:'track-a',track:{points:[[0,0],[0,1]]},hiddenParts:new Set()};
+  const state={tracks:new Map([['synthetic.gpx',entry]]),focus:'synthetic.gpx',fill:{active:false}};
+  let cutting=true;
+  const context=vm.createContext({state,map:{on:(name,fn)=>listeners.set(name,fn),queryRenderedFeatures:()=>[{layer:{metadata:{track:'track-a'}}}]},layers:{nearest:()=>1,lineLayers:()=>['track-a-line']},focusedEntry:()=>entry,cutting:()=>cutting,waypointAt:()=>null,inspect:index=>calls.push(['inspect',index]),profile:{setIndex:index=>calls.push(['profile',index])},timeline:{setIndex:index=>calls.push(['timeline',index])},cutPanel:{addCut:index=>calls.push(['cut',index])},select:path=>calls.push(['select',path]),renderTracks(){},openMenu:(event,sections)=>menus.push(sections)});
+  const app=source('app');vm.runInContext(app.slice(app.indexOf('function bindMap()'),app.indexOf('// ---- layout ----')),context);context.bindMap();
+  const event={point:{x:10,y:10},originalEvent:{target:new Element('div')},preventDefault(){}};
+  listeners.get('click')(event);assert.deepEqual(calls,[['inspect',1],['profile',1],['timeline',1]]);
+  listeners.get('contextmenu')(event);assert.equal(calls.some(([kind])=>kind==='cut'),false);
+  menus[0][0][0].onSelect();assert.deepEqual(calls.at(-1),['cut',1]);
+  cutting=false;listeners.get('click')(event);assert.deepEqual(calls.at(-1),['select','synthetic.gpx']);
+});
+
+
+test('fill and removal rows select first, fit on double-click, and expose edits in context menus',async()=>{
+  const calls=[],menus=[],context=vm.createContext({format,document:documentStub(),openMenu:(event,sections)=>menus.push(sections)});
+  loadShared('selection',context);loadModule('clean',context);
+  const panel=Object.create(vm.runInContext('CleanPanel.prototype',context));
+  Object.assign(panel,{track:{time:[0,1000]},ways:[],timeZone:'UTC',doubleClick:context.rowDoubleClick(),render(){},onShowFill:(item,options)=>calls.push(['fill',options.fit]),onShowRange:(item,options)=>calls.push(['range',options.fit]),onRemoveFill:()=>calls.push(['remove']),restoreEdit:()=>calls.push(['restore'])});
+  for(const [build,kind] of [[()=>panel.fillRow({first:0,last:1,profile:'straight',distance:10,points:2},0),'fill'],[()=>panel.editRow({kind:'lasso',points:[0,1]},0),'range']]){
+    panel.doubleClick.reset();
+    await build().children[0].fire('click',{timeStamp:100});assert.deepEqual(calls.at(-1),[kind,false]);
+    await build().children[0].fire('click',{timeStamp:200});assert.deepEqual(calls.at(-1),[kind,true]);
+    await build().fire('contextmenu');assert.deepEqual(calls.at(-1),[kind,false]);
+    menus.at(-1)[0].at(-1).onSelect();assert.deepEqual(calls.at(-1),[kind==='fill'?'remove':'restore']);
+  }
+});
+
+
+test('selecting a removed range or fill retains the camera until an explicit fit',()=>{
+  const calls=[],context=vm.createContext({focusedEntry:()=>({track:{points:[[0,0],[0,1]]}}),inspect:index=>calls.push(['inspect',index]),profile:{setIndex(){}},timeline:{setIndex(){}},fitBox:()=>calls.push(['fit'])});
+  const app=source('app');
+  vm.runInContext(app.slice(app.indexOf('function showRange('),app.indexOf('// saveClean')),context);
+  vm.runInContext(app.slice(app.indexOf('function showFill('),app.indexOf('// ---- opening files ----')),context);
+  const range={kind:'range',first:0,last:1};
+  context.showRange(range);context.showFill(range);assert.equal(calls.some(([kind])=>kind==='fit'),false);
+  context.showRange(range,{fit:true});context.showFill(range,{fit:true});assert.equal(calls.filter(([kind])=>kind==='fit').length,2);
 });
