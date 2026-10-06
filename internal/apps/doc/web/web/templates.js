@@ -80,7 +80,7 @@ function open(type, text) {
 
 async function reload() {
   state = await loadState();
-  const answer = await (await fetch(api("/api/templates"))).json();
+  const answer = await (await fetch(api("/api/defs/templates"))).json();
   if (answer.error) throw new Error(answer.error);
   templates = answer.templates;
   example = answer.example;
@@ -90,7 +90,7 @@ async function reload() {
 
 async function save() {
   try {
-    const t = await post("/api/templates", { previous: editing || "", data: editor.value });
+    const t = await post("/api/defs/templates", { previous: editing || "", data: editor.value });
     await reload();
     open(t.type);
     say($("message"), "Saved.");
@@ -116,7 +116,7 @@ $("save").onclick = save;
 $("delete").onclick = async () => {
   if (!editing || $("confirm").value !== editing) return;
   try {
-    const answer = await post("/api/templates/delete", { type: editing });
+    const answer = await post("/api/defs/templates/trash", { name: editing });
     await reload();
     saved = editor.value;
     open(templates.length ? templates[0].type : "");

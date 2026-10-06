@@ -301,7 +301,7 @@ function fillAll(byItem) {
 async function reload() {
   state = await loadState();
   frame(state);
-  const answer = await (await fetch(api("/api/outlines"))).json();
+  const answer = await (await fetch(api("/api/defs/rules"))).json();
   which.setup({ state, keys: answer.keys, countries: answer.countries || {}, countryForms: answer.countryForms || {}, onChange: changed });
   rules = answer.rules || [];
   used = answer.used || {};
@@ -315,7 +315,7 @@ $("form").addEventListener("submit", async (event) => {
   try {
     await which.settle();
     sync();
-    await post("/api/rules", { rule: draft, previous: editing || "" });
+    await post("/api/defs/rules", { rule: draft, previous: editing || "" });
     const name = draft.name;
     await reload();
     open(name);
@@ -331,7 +331,7 @@ $("delete").onclick = async () => {
   if (also.length) return say($("form-message"), "Used by " + also.join(", ") + ": take it out of them on the Outlines page first.", true);
   if (!confirm("Delete the rule " + editing + "? Its file under rules/ is removed; no Item changes, and Snapshots taken from it stay.")) return;
   try {
-    await post("/api/rules/delete", { name: editing });
+    await post("/api/defs/rules/trash", { name: editing });
     await reload();
     editing = null;
     open(rules.length ? rules[0].name : "");

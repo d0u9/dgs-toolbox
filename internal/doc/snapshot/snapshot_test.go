@@ -45,21 +45,21 @@ func TestTakeResolveAndKeep(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	if err := Save(root, "", s, true); err != nil {
+	if err := Save(root, "", s, true, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := Save(root, "", s, true); err == nil {
+	if err := Save(root, "", s, true, time.Now()); err == nil {
 		t.Fatal("a second Snapshot of one name was saved")
 	}
 	// Its files are edited by hand after.
 	edited := s
 	edited.Files = []File{{Path: "emma.pdf", Item: "A", Revision: "r1"}}
-	if err := Save(root, "", edited, false); err != nil {
+	if err := Save(root, "", edited, false, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	twice := edited
 	twice.Files = append(twice.Files, File{Path: "EMMA.pdf", Item: "B", Revision: "r3"})
-	if err := Save(root, "", twice, false); err == nil {
+	if err := Save(root, "", twice, false, time.Now()); err == nil {
 		t.Fatal("two files at one path were saved")
 	}
 	if err := os.MkdirAll(filepath.Join(root, "rules"), 0o755); err != nil {
@@ -70,10 +70,10 @@ func TestTakeResolveAndKeep(t *testing.T) {
 	}
 	clash := edited
 	clash.Name = "ids"
-	if err := Save(root, "visa", clash, false); err != nil {
+	if err := Save(root, "visa", clash, false, time.Now()); err != nil {
 		t.Fatalf("a Snapshot could not share a rule's name: %v", err)
 	}
-	if err := Save(root, "ids", edited, false); err != nil {
+	if err := Save(root, "ids", edited, false, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	list, err := Load(root)
@@ -119,5 +119,32 @@ func TestFoldersKeptAndChecked(t *testing.T) {
 	s.Files = append(s.Files, File{Path: "a", Item: "B", Revision: "r"})
 	if s.Validate() == nil {
 		t.Error("a file where a folder is passed")
+	}
+}
+
+func TestSaveRenamePreservesOriginalBytes(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	s := Snapshot{Name: "alice", Taken: now.Format(time.RFC3339)}
+	if err := Save(root, "", s, true, now); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(Path(root, "alice"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Name = "bob"
+	if err := Save(root, "alice", s, false, now); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, tree.TrashDir, Dir, "alice-20261006T120000Z.yaml"))
+	if err != nil || string(got) != string(original) {
+		t.Fatalf("trash bytes = %q, %v", got, err)
+	}
+	if _, err := os.Stat(Path(root, "alice")); !os.IsNotExist(err) {
+		t.Fatalf("source remains: %v", err)
+	}
+	if _, err := os.Stat(Path(root, "bob")); err != nil {
+		t.Fatal(err)
 	}
 }

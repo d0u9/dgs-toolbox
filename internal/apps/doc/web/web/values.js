@@ -205,9 +205,9 @@ async function rewrite(event) {
     try {
       if (key === TAGS) {
         const swap = (tags) => [...new Set((tags || []).map((t) => from.includes(t) ? to : t))];
-        if ((item.tags || []).some((t) => from.includes(t))) await post("/api/tags", { item: item.id, tags: swap(item.tags) });
+        if ((item.tags || []).some((t) => from.includes(t))) await post("/api/items/meta", { item: item.id, tags: swap(item.tags) });
         for (const r of item.revisions) {
-          if ((r.tags || []).some((t) => from.includes(t))) await post("/api/revision-tags", { item: item.id, digest: r.id || r.digest, tags: swap(r.tags) });
+          if ((r.tags || []).some((t) => from.includes(t))) await post("/api/items/meta", { item: item.id, digest: r.id || r.digest, revision_tags: swap(r.tags) });
         }
       } else {
         await post("/api/fields", { item: item.id, digest: "", fields: { ...currentFields(item), [key]: to } });

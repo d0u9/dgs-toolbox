@@ -3,8 +3,6 @@ package tree
 import (
 	"dgs-toolbox/internal/doc/country"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -401,26 +399,8 @@ func LoadAllTemplates(root string) ([]Template, error) {
 
 // loadRawTemplates reads the Template files as written, unresolved.
 func loadRawTemplates(root string) ([]Template, error) {
-	paths, err := filepath.Glob(filepath.Join(root, TemplatesDir, "*.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	raw := make([]Template, 0, len(paths))
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		t, err := ParseTemplate(data)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != t.Type {
-			return nil, fmt.Errorf("%s: type is %s, so the file should be %s.yaml", path, t.Type, t.Type)
-		}
-		raw = append(raw, t)
-	}
-	return raw, nil
+	return ListDefinitions(At(root), DefinitionKind[Template]{Dir: TemplatesDir, Name: func(t Template) string { return t.Type }, Decode: func(_ string, data []byte) (Template, error) { return ParseTemplate(data) }})
+
 }
 
 // LoadTemplates is every Template an Item can be of: LoadAllTemplates

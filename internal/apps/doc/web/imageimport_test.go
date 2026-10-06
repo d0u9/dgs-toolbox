@@ -2,7 +2,6 @@ package web
 
 import (
 	"bytes"
-	"encoding/json"
 	"image"
 	"image/png"
 	"net/http"
@@ -35,7 +34,7 @@ func TestImageImportPreviewAndRetentionOverride(t *testing.T) {
 				t.Fatalf("import: %d %s", rec.Code, rec.Body.String())
 			}
 			var item tree.Item
-			must(t, json.Unmarshal(rec.Body.Bytes(), &item))
+			must(t, unmarshalItem(rec.Body.Bytes(), &item))
 			if (len(item.Revisions[0].Originals) > 0) != keep {
 				t.Fatal("retention override ignored")
 			}

@@ -21,7 +21,7 @@ func (s server) links(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	templates, err := tree.LoadTemplates(s.root)
+	templates, err := s.documents.LoadTemplates()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

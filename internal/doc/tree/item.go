@@ -2,6 +2,7 @@ package tree
 
 import (
 	"dgs-toolbox/internal/tag"
+	"path/filepath"
 	"slices"
 
 	"crypto/rand"
@@ -9,9 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -143,30 +142,21 @@ func (i Item) FieldsAt(digest string) map[string]string {
 // CurrentFields is FieldsAt the Current revision.
 func (i Item) CurrentFields() map[string]string { return i.FieldsAt(i.Current()) }
 
-// Dir is the Item's folder under root.
-func Dir(root, id string) string { return filepath.Join(root, ItemsDir, id) }
+// Dir is the folder holding the Item's sidecar.
+func Dir(root, id string) string { return filepath.Dir(At(root).Sidecar(id)) }
 
 // PDFPath is where a revision's PDF is kept.
 func PDFPath(root, id, digest string) string {
-	return filepath.Join(Dir(root, id), digest+".pdf")
+	return At(root).PDF(Item{ID: id}, digest)
 }
 
-// LoadItems reads every sidecar under root's items folder, sorted by ID. A
+// LoadItems reads every sidecar the layout lists, sorted by ID. A
 // sidecar that cannot be read is an error rather than a gap: a list missing
 // an Item looks complete.
 func LoadItems(root string) ([]Item, error) {
-	entries, err := os.ReadDir(filepath.Join(root, ItemsDir))
+	names, err := At(root).Sidecars()
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
-		}
 		return nil, err
-	}
-	var names []string
-	for _, entry := range entries {
-		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
-			names = append(names, entry.Name())
-		}
 	}
 	// Sidecars are read LoadWorkers at a time: on a network share each read
 	// waits on the round trip, not the disk.
@@ -179,7 +169,7 @@ func LoadItems(root string) ([]Item, error) {
 		go func() {
 			defer wg.Done()
 			for i := range next {
-				found[i], errs[i] = loadItem(root, names[i])
+				found[i], errs[i] = readItem(root, names[i])
 			}
 		}()
 	}
@@ -204,9 +194,12 @@ func LoadItems(root string) ([]Item, error) {
 // LoadWorkers is how many sidecars LoadItems reads at once.
 const LoadWorkers = 16
 
-// loadItem reads the sidecar in the folder name; none there is no Item.
-func loadItem(root, name string) (*Item, error) {
-	path := filepath.Join(root, ItemsDir, name, SidecarName)
+// loadItem reads the Item id's sidecar; none there is no Item.
+func loadItem(root, id string) (*Item, error) { return readItem(root, At(root).Sidecar(id)) }
+
+// readItem reads the sidecar at path; none there is no Item. The sidecar
+// must be where the layout places its ID's.
+func readItem(root, path string) (*Item, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -218,7 +211,7 @@ func loadItem(root, name string) (*Item, error) {
 	if err := yaml.Unmarshal(data, &item); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if item.ID != name {
+	if item.ID == "" || At(root).Sidecar(item.ID) != path {
 		return nil, fmt.Errorf("%s: id %q is not the folder's name", path, item.ID)
 	}
 	// A sidecar from before revisions were told from snapshots is read by
@@ -236,27 +229,7 @@ func WriteItem(root string, item Item) error {
 	if err != nil {
 		return err
 	}
-	dir := Dir(root, item.ID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(dir, ".item-*.dgs-part")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temp.Name(), filepath.Join(dir, SidecarName))
+	return WriteFileAtomic(At(root).Sidecar(item.ID), data)
 }
 
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"

@@ -766,7 +766,7 @@ function changed() {
 async function reload() {
   state = await loadState();
   frame(state);
-  const [snaps, outlines] = await Promise.all([(await fetch(api("/api/snapshots"))).json(), (await fetch(api("/api/outlines"))).json()]);
+  const [snaps, outlines] = await Promise.all([(await fetch(api("/api/defs/snapshots"))).json(), (await fetch(api("/api/defs/outlines"))).json()]);
   snapshots = snaps.snapshots || [];
   rules = outlines.rules || [];
   const error = snaps.error || outlines.error;
@@ -924,7 +924,7 @@ $("tree").addEventListener("drop", (event) => {
 $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    await post("/api/snapshots", { snapshot: { ...draft, folders: prune(draft) }, previous: editing });
+    await post("/api/defs/snapshots", { snapshot: { ...draft, folders: prune(draft) }, previous: editing });
     const name = draft.name;
     await reload();
     open(name);
@@ -950,7 +950,7 @@ $("delete").onclick = async () => {
   if (s.used.length) return say($("form-message"), "In " + s.used.join(", ") + ": take it out of them on the Outlines page first.", true);
   if (!confirm("Delete the Snapshot " + s.name + "? Its file moves into the tree's trash; the Items and anything exported stay.")) return;
   try {
-    await post("/api/snapshots/delete", { name: s.name });
+    await post("/api/defs/snapshots/trash", { name: s.name });
     await reload();
     draft = null;
     open(snapshots.length ? snapshots[0].name : "");

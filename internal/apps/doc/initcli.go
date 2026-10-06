@@ -31,7 +31,7 @@ func initAction(_ io.Reader, out io.Writer, args []string, _ map[string]string, 
 	}
 	fmt.Fprintf(out, "wrote  %s\n", filepath.Join(root, tree.MarkerName))
 	if len(before) == 0 {
-		fmt.Fprintf(out, "wrote  %s\n", filepath.Join(root, tree.TemplatesDir, "id_card.yaml"))
+		fmt.Fprintf(out, "wrote  %s\n", tree.At(root).DefinitionPath(tree.TemplatesDir, "id_card"))
 	}
 	fmt.Fprintf(out, "\n%s is a doc tree now. Nothing else in it was touched.\nImport PDFs with `dgs doc`.\n", root)
 	return nil

@@ -9,7 +9,6 @@ package merge
 import (
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -32,8 +31,9 @@ type Source struct {
 	Templates []Template
 	Outlines  []outline.Outline
 	// PDF is where a revision's PDF is read from.
-	PDF      func(item, digest string) string
-	Original func(item string, original tree.Original) string
+	PDF func(item tree.Item, digest string) string
+	// Original is where an original image of item's PDF pdf is read from.
+	Original func(item tree.Item, pdf string, original tree.Original) string
 }
 
 // FromTree reads a tree to merge in.
@@ -51,7 +51,7 @@ func FromTree(root string) (Source, error) {
 	}
 	var templates []Template
 	for _, t := range parsed {
-		data, err := os.ReadFile(filepath.Join(root, tree.TemplatesDir, t.Type+".yaml"))
+		data, err := tree.At(root).DefinitionBytes(tree.TemplatesDir, t.Type)
 		if err != nil {
 			return Source{}, err
 		}
@@ -62,8 +62,8 @@ func FromTree(root string) (Source, error) {
 		return Source{}, err
 	}
 	return Source{Items: items, Templates: templates, Outlines: outlines,
-		Original: func(id string, o tree.Original) string { return tree.OriginalPath(root, id, o) },
-		PDF:      func(id, digest string) string { return tree.PDFPath(root, id, digest) }}, nil
+		Original: tree.At(root).OriginalPath,
+		PDF:      tree.At(root).PDF}, nil
 }
 
 // FromTarget reads a Target back through its manifest: an Item for every ID
@@ -149,5 +149,5 @@ func FromTarget(target string, now time.Time) (Source, error) {
 			}
 		}
 	}
-	return Source{Items: items, PDF: func(id, digest string) string { return paths[id+"/"+digest] }}, nil
+	return Source{Items: items, PDF: func(item tree.Item, digest string) string { return paths[item.ID+"/"+digest] }}, nil
 }

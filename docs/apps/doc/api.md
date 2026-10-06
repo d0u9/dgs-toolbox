@@ -1,6 +1,6 @@
 # Web API
 
-The doc pages talk to `dgs doc` through 62 JSON endpoints under `/api/`. This
+The doc pages talk to `dgs doc` through JSON endpoints under `/api/`. This
 records what they are, where they have converged and where not, and which of
 them only read, so the reading part can later be served on its own.
 
@@ -17,29 +17,32 @@ them only read, so the reading part can later be served on its own.
 - **One client path.** Pages call the server only through `api()` and `post()`
   in `common.js`.
 
-## Where it has not converged
+## Current contracts
 
-1. **One endpoint per property.** Notes, tags, shared, retired, frequent,
-   revision tags and HEAD each change one property of a sidecar, and each has
-   its own endpoint. They differ in name, not in kind.
-2. **Answers differ.** A change to an Item answers `item`, `{item, trash}`,
-   `{item, warning}`, `{ok: true}` or `{queued: n}`, so each caller handles
-   its own.
-3. **Paths leak into the web layer.** Handlers call `tree.PDFPath(s.root, …)`
-   and join `items/` themselves, which [Storage Layouts](layout.md) removes.
-4. **The root is passed everywhere.** There is no value standing for a tree;
-   every call passes `s.root`.
+- Single-Item mutations answer `{item, trash?, warning?}`. Item deletion
+  includes the Item that was moved. Export and merge jobs retain their bulk
+  result shapes; local cache actions retain their queue/OK answers.
+- `POST /api/items/meta` takes `{item, digest?, notes?, tags?, shared_with?,
+  retired?, reason?, frequent?, revision_tags?}`. Omitted fields are kept;
+  empty strings and arrays clear them, and explicit `false` is set.
+  Revision tags require `digest`. All requested changes validate before one
+  sidecar write, retaining the existing history events and domain checks.
+  HEAD remains its own endpoint. The former per-property endpoints are removed.
+- Handlers use a `tree.Store` opened once per tree, with domain operations
+  composed through it. Storage paths are owned by the Store; missing-marker
+  source browsing remains available, and writes still require the marker.
+- All five definition kinds use the shared [definition routes](definitions.md#web-routes).
 
 ## Plan
 
-1. **With [layout step 1](layout.md#plan).** Handlers work through
+1. **Done — with [layout step 1](layout.md#plan).** Handlers work through
    `tree.Store`, opened once per tree, and never pass a root, join a path or
    call `PDFPath`. No endpoint or answer changes.
-2. **One answer for a changed Item.** Every endpoint that changes an Item
+2. **Done — one answer for a changed Item.** Every endpoint that changes an Item
    answers `{item, trash?, warning?}`: the Item as it now is, the trash path
    when something was moved there, and a warning when the change succeeded
    but a follow-up did not.
-3. **One endpoint for an Item's metadata.** Notes, tags, shared, retired,
+3. **Done — one endpoint for an Item's metadata.** Notes, tags, shared, retired,
    frequent and revision tags become `POST /api/items/meta` with
    `{item, digest?, notes?, tags?, shared_with?, retired?, frequent?,
    revision_tags?}`: what is present is set, what is absent is kept. HEAD
@@ -61,10 +64,11 @@ running `dgs` rather than the tree, and stay out of it.
 | Endpoint | Answers |
 |---|---|
 | `GET /api/state` | Items, Templates and the tree's settings |
-| `GET /api/templates` | Templates |
-| `GET /api/outlines` | Outlines and rules |
-| `GET /api/snapshots` | Snapshots |
-| `GET /api/cases` | Cases |
+| `GET /api/defs/templates` | Templates |
+| `GET /api/defs/outlines` | Outlines and rules |
+| `GET /api/defs/rules` | Rules, usage and editor support |
+| `GET /api/defs/snapshots` | Snapshots |
+| `GET /api/defs/cases` | Cases |
 | `GET /api/history` | the tree's log |
 | `GET /api/revision` | one snapshot of an Item |
 | `GET /api/values` | the values a type's key has |

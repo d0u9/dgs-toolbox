@@ -141,7 +141,7 @@ $("export-button").addEventListener("click", () => exportOutline(state, target, 
 (async () => {
   state = await loadState();
   frame(state);
-  const answer = await (await fetch(api("/api/outlines"))).json();
+  const answer = await (await fetch(api("/api/defs/outlines"))).json();
   outlines = answer.outlines;
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
   for (const a of document.querySelectorAll('a[href^="/outlines/"]')) a.href = api("/outlines/") + a.hash;

@@ -138,6 +138,7 @@ type stateJSON struct {
 type server struct {
 	keepOriginal bool
 	root         string
+	documents    *tree.Store
 	name         string
 	// trees are every tree served, this one too, so an export can check its
 	// Target against the others.
@@ -191,6 +192,10 @@ func Handler(settings Settings) http.Handler {
 	for _, t := range trees {
 		s := shared
 		s.root, s.name = t.Root, t.Name
+		s.documents, err = tree.Open(t.Root)
+		if err != nil {
+			s.documents = tree.At(t.Root)
+		}
 		s.items = itemcache.New(t.Root, settings.CacheDir)
 		tree.UseForChecks(t.Root, s.items.Items)
 		apis[t.Name] = s.followWrites(s.api())
@@ -235,6 +240,16 @@ func Handler(settings Settings) http.Handler {
 // api is one tree's API.
 func (s server) api() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/defs/{kind}", s.definitionHandler)
+	mux.HandleFunc("POST /api/defs/{kind}", s.definitionHandler)
+	mux.HandleFunc("POST /api/defs/{kind}/{action}", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("action") != "trash" {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no definition action " + r.PathValue("action")})
+			return
+		}
+		s.definitionHandler(w, r)
+	})
+	mux.HandleFunc("POST /api/items/meta", s.setMetadata)
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/issuers", s.issuers)
 	mux.HandleFunc("GET /api/values", s.values)
@@ -256,41 +271,22 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/revisions/delete", s.deleteRevision)
 	mux.HandleFunc("POST /api/fields", s.setFields)
 	mux.HandleFunc("POST /api/change-type", s.changeType)
-	mux.HandleFunc("POST /api/notes", s.setNotes)
-	mux.HandleFunc("POST /api/tags", s.setTags)
-	mux.HandleFunc("POST /api/revision-tags", s.setRevisionTags)
-	mux.HandleFunc("POST /api/frequent", s.setFrequent)
-	mux.HandleFunc("POST /api/retired", s.setRetired)
-	mux.HandleFunc("POST /api/shared", s.setShared)
 	mux.HandleFunc("POST /api/supersession", s.supersession)
 	mux.HandleFunc("GET /api/supersession-candidates", s.supersessionCandidates)
 	mux.HandleFunc("POST /api/links", s.links)
 	mux.HandleFunc("GET /api/history", s.historyLog)
 	mux.HandleFunc("POST /api/items/delete", s.deleteItem)
-	mux.HandleFunc("GET /api/templates", s.templateList)
-	mux.HandleFunc("POST /api/templates", s.templateSave)
-	mux.HandleFunc("POST /api/templates/delete", s.templateDelete)
-	mux.HandleFunc("GET /api/outlines", s.outlineList)
 	mux.HandleFunc("POST /api/outlines/group", s.outlineGroup)
 	mux.HandleFunc("POST /api/outlines/explain", s.outlineExplain)
-	mux.HandleFunc("POST /api/outlines", s.outlineSave)
-	mux.HandleFunc("POST /api/outlines/delete", s.outlineDelete)
-	mux.HandleFunc("POST /api/rules", s.ruleSave)
-	mux.HandleFunc("POST /api/rules/delete", s.ruleDelete)
 	mux.HandleFunc("POST /api/rules/layout", s.ruleLayout)
 	mux.HandleFunc("POST /api/rules/if", s.ruleIf)
-	mux.HandleFunc("GET /api/snapshots", s.snapshotList)
 	mux.HandleFunc("POST /api/snapshots/take", s.snapshotTake)
 	mux.HandleFunc("POST /api/snapshots/names", s.snapshotNames)
-	mux.HandleFunc("POST /api/snapshots", s.snapshotSave)
-	mux.HandleFunc("POST /api/snapshots/delete", s.snapshotDelete)
 	mux.HandleFunc("POST /api/export/plan", s.exportPlan)
 	mux.HandleFunc("POST /api/export", s.exportRun)
 	mux.HandleFunc("GET /api/export/progress", s.exportProgressRead)
 	mux.HandleFunc("POST /api/merge/plan", s.mergePlan)
 	mux.HandleFunc("POST /api/merge", s.mergeRun)
-	mux.HandleFunc("GET /api/cases", s.caseList)
-	mux.HandleFunc("POST /api/cases/change", s.caseChange)
 	mux.HandleFunc("POST /api/cases/export/plan", s.caseExportPlan)
 	mux.HandleFunc("POST /api/cases/export", s.caseExportRun)
 	mux.HandleFunc("GET /api/search", s.search)
@@ -315,9 +311,9 @@ func pageHandler(files http.Handler, document string) http.Handler {
 func (s server) state(w http.ResponseWriter, _ *http.Request) {
 	out := stateJSON{KeepOriginal: s.keepOriginal, Root: s.root, Name: s.name, Trees: s.trees, Templates: []tree.Template{}, Items: []tree.Item{}}
 	var problems []string
-	if err := tree.Require(s.root); err == nil {
+	if err := s.documents.Require(); err == nil {
 		out.Tree = true
-		if out.Templates, err = tree.LoadTemplates(s.root); err != nil {
+		if out.Templates, err = s.documents.LoadTemplates(); err != nil {
 			problems = append(problems, err.Error())
 			out.Templates = []tree.Template{}
 		}
@@ -365,11 +361,11 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	itemsDir := filepath.Join(s.root, tree.ItemsDir)
 	out := []sourceFileJSON{}
 	for _, f := range files {
 		full := filepath.Join(dir, filepath.FromSlash(f.Path))
-		if within(itemsDir, full) {
+		// The tree's own files are not offered for import.
+		if rel, err := filepath.Rel(s.root, full); err == nil && within(s.root, full) && s.documents.Owned(rel) {
 			continue
 		}
 		entry := sourceFileJSON{Path: f.Path, Size: f.Size, Modified: f.Modified, Image: docfile.IsImage(f.Path)}
@@ -453,7 +449,7 @@ func (s server) revisionPath(id, digest string) (string, int, error) {
 		}
 		for _, rev := range item.Revisions {
 			if (rev.Ref() == digest || rev.Digest == digest) && rev.Digest != "" {
-				return tree.PDFPath(s.root, item.ID, rev.Digest), 0, nil
+				return s.documents.PDF(item, rev.Digest), 0, nil
 			}
 		}
 	}
@@ -474,7 +470,7 @@ func (s server) originalPath(id, digest string) (string, int, error) {
 		for _, rev := range item.Revisions {
 			for _, o := range rev.Originals {
 				if o.Digest == digest {
-					if path := tree.OriginalPath(s.root, item.ID, o); path != "" {
+					if path := s.documents.OriginalPath(item, rev.Digest, o); path != "" {
 						return path, 0, nil
 					}
 				}
@@ -584,7 +580,7 @@ func (s server) text(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out.Page, out.Count = page, count
-	if templates, err := tree.LoadTemplates(s.root); err == nil {
+	if templates, err := s.documents.LoadTemplates(); err == nil {
 		read := ocr.Result{Pages: []ocr.Page{page}}
 		for kind, found := range suggest.All(templates, read.Text(), s.dateOrder) {
 			out.Suggestions[kind] = map[string]suggestion{}
@@ -676,13 +672,13 @@ func (s server) pdfPath(ctx context.Context, query url.Values) (string, error) {
 		}
 		return imagepdf.Cached(ctx, sources, s.store.Dir)
 	}
-	item, err := tree.GetItem(s.root, query.Get("item"))
+	item, err := s.documents.GetItem(query.Get("item"))
 	if err != nil {
 		return "", err
 	}
 	for _, rev := range item.Revisions {
 		if rev.Ref() == query.Get("digest") && rev.Digest != "" {
-			return tree.PDFPath(s.root, item.ID, rev.Digest), nil
+			return s.documents.PDF(item, rev.Digest), nil
 		}
 	}
 	return "", errors.New("no such revision")
@@ -741,7 +737,7 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	templates, err := tree.LoadTemplates(s.root)
+	templates, err := s.documents.LoadTemplates()
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -751,31 +747,31 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if request.Replaces != "" {
-			if err := tree.ValidateSupersession(s.root, request.Replaces, request.Type, request.Fields); err != nil {
+			if err := s.documents.ValidateSupersession(request.Replaces, request.Type, request.Fields); err != nil {
 				answer(w, tree.Item{}, err)
 				return
 			}
 		}
 		req := tree.ImportRequest{
-			KeepOriginal: s.keepImage(request.KeepOriginal), Root: s.root, Source: source, Pages: pages, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
+			KeepOriginal: s.keepImage(request.KeepOriginal), Source: source, Pages: pages, Template: t, Fields: request.Fields, Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, SharedWith: request.SharedWith, Now: s.now(),
 		}
 		var item tree.Item
 		if request.NoPDF {
-			item, err = tree.CreateWithoutPDF(req)
+			item, err = s.documents.CreateWithoutPDF(req)
 		} else {
-			item, err = tree.Import(r.Context(), req)
+			item, err = s.documents.Import(r.Context(), req)
 		}
 		if err != nil {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
 		if request.Replaces != "" {
-			if _, err := tree.Supersede(s.root, request.Replaces, item.ID, s.now()); err != nil {
+			if _, err := s.documents.Supersede(request.Replaces, item.ID, s.now()); err != nil {
 				writeJSON(w, http.StatusOK, map[string]any{"item": item, "warning": "New visa saved, but replacement failed: " + err.Error()})
 				return
 			}
 		}
-		writeJSON(w, http.StatusOK, item)
+		writeJSON(w, http.StatusOK, map[string]any{"item": item})
 		return
 	}
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "no Template for type " + request.Type})
@@ -847,7 +843,7 @@ func answer(w http.ResponseWriter, item tree.Item, err error) {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, item)
+	writeJSON(w, http.StatusOK, map[string]any{"item": item})
 }
 
 // addRevision adds a loose PDF to a document, with its per_revision fields,
@@ -893,20 +889,20 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 	metadata := tree.RevisionMetadata{Pages: pages, KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, NewRevision: request.NewRevision}
 	var item tree.Item
 	if request.NoPDF {
-		item, err = tree.AddWithoutPDF(s.root, request.Item, t, request.Fields, metadata, s.now())
+		item, err = s.documents.AddWithoutPDF(request.Item, t, request.Fields, metadata, s.now())
 	} else {
-		item, err = tree.AddRevisionWithMetadata(r.Context(), s.root, request.Item, source, t, request.Fields, metadata, s.now())
+		item, err = s.documents.AddRevisionWithMetadata(r.Context(), request.Item, source, t, request.Fields, metadata, s.now())
 	}
 	answer(w, item, err)
 }
 
 // templateOfItem is the Template of the Item with id.
 func (s server) templateOfItem(id string) (tree.Template, error) {
-	item, err := tree.GetItem(s.root, id)
+	item, err := s.documents.GetItem(id)
 	if err != nil {
 		return tree.Template{}, err
 	}
-	templates, err := tree.LoadTemplates(s.root)
+	templates, err := s.documents.LoadTemplates()
 	if err != nil {
 		return tree.Template{}, err
 	}
@@ -928,7 +924,7 @@ func (s server) setHead(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	item, err := tree.SetHead(s.root, request.Item, request.Digest, s.now())
+	item, err := s.documents.SetHead(request.Item, request.Digest, s.now())
 	answer(w, item, err)
 }
 
@@ -942,7 +938,7 @@ func (s server) deleteRevision(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	item, to, err := tree.TrashRevision(s.root, request.Item, request.Digest, s.now())
+	item, to, err := s.documents.TrashRevision(request.Item, request.Digest, s.now())
 	if err != nil {
 		answer(w, tree.Item{}, err)
 		return
@@ -953,14 +949,14 @@ func (s server) deleteRevision(w http.ResponseWriter, r *http.Request) {
 // makeRevision and makeCorrection put right which snapshots begin a
 // revision: the owner's word, given after the snapshot was saved.
 func (s server) makeRevision(w http.ResponseWriter, r *http.Request) {
-	s.changePaper(w, r, tree.MakeRevision)
+	s.changePaper(w, r, s.documents.MakeRevision)
 }
 
 func (s server) makeCorrection(w http.ResponseWriter, r *http.Request) {
-	s.changePaper(w, r, tree.MakeCorrection)
+	s.changePaper(w, r, s.documents.MakeCorrection)
 }
 
-func (s server) changePaper(w http.ResponseWriter, r *http.Request, change func(root, id, ref string, now time.Time) (tree.Item, error)) {
+func (s server) changePaper(w http.ResponseWriter, r *http.Request, change func(id, ref string, now time.Time) (tree.Item, error)) {
 	var request struct {
 		Item   string `json:"item"`
 		Digest string `json:"digest"`
@@ -970,7 +966,7 @@ func (s server) changePaper(w http.ResponseWriter, r *http.Request, change func(
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	item, err := change(s.root, request.Item, request.Digest, s.now())
+	item, err := change(request.Item, request.Digest, s.now())
 	answer(w, item, err)
 }
 
@@ -985,9 +981,9 @@ func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := s.templateOfItem(request.Item)
-	if item, loadErr := tree.GetItem(s.root, request.Item); loadErr == nil {
+	if item, loadErr := s.documents.GetItem(request.Item); loadErr == nil {
 		if rev, ok := item.Revision(request.Digest); ok && rev.Type != "" {
-			templates, loadErr := tree.LoadTemplates(s.root)
+			templates, loadErr := s.documents.LoadTemplates()
 			if loadErr != nil {
 				err = loadErr
 			} else {
@@ -1011,7 +1007,7 @@ func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	item, err := tree.SetFieldsAs(s.root, request.Item, request.Digest, t, request.Fields, request.NewRevision, s.now())
+	item, err := s.documents.SetFieldsAs(request.Item, request.Digest, t, request.Fields, request.NewRevision, s.now())
 	answer(w, item, err)
 }
 
@@ -1027,14 +1023,14 @@ func (s server) changeType(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	templates, err := tree.LoadTemplates(s.root)
+	templates, err := s.documents.LoadTemplates()
 	if err != nil {
 		answer(w, tree.Item{}, err)
 		return
 	}
 	for _, target := range templates {
 		if target.Type == request.Type {
-			item, err := tree.ChangeType(s.root, request.Item, target, request.Fields, request.Revisions, s.now())
+			item, err := s.documents.ChangeType(request.Item, target, request.Fields, request.Revisions, s.now())
 			answer(w, item, err)
 			return
 		}
@@ -1042,96 +1038,10 @@ func (s server) changeType(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no Template for type " + request.Type})
 }
 
-func (s server) setNotes(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Item  string `json:"item"`
-		Notes string `json:"notes"`
-	}
-	if !decode(w, r, &request) {
-		return
-	}
-	s.writing.Lock()
-	defer s.writing.Unlock()
-	item, err := tree.SetNotes(s.root, request.Item, request.Notes, s.now())
-	answer(w, item, err)
-}
-
-func (s server) setTags(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Item string   `json:"item"`
-		Tags []string `json:"tags"`
-	}
-	if !decode(w, r, &request) {
-		return
-	}
-	s.writing.Lock()
-	defer s.writing.Unlock()
-	item, err := tree.SetTags(s.root, request.Item, request.Tags, s.now())
-	answer(w, item, err)
-}
-
-func (s server) setRevisionTags(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Item   string   `json:"item"`
-		Digest string   `json:"digest"`
-		Tags   []string `json:"tags"`
-	}
-	if !decode(w, r, &request) {
-		return
-	}
-	s.writing.Lock()
-	defer s.writing.Unlock()
-	item, err := tree.SetRevisionTags(s.root, request.Item, request.Digest, request.Tags, s.now())
-	answer(w, item, err)
-}
-
-func (s server) setFrequent(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Item     string `json:"item"`
-		Frequent bool   `json:"frequent"`
-	}
-	if !decode(w, r, &request) {
-		return
-	}
-	s.writing.Lock()
-	defer s.writing.Unlock()
-	item, err := tree.SetFrequent(s.root, request.Item, request.Frequent, s.now())
-	answer(w, item, err)
-}
-
-func (s server) setRetired(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Item    string `json:"item"`
-		Retired bool   `json:"retired"`
-		Reason  string `json:"reason"`
-	}
-	if !decode(w, r, &request) {
-		return
-	}
-	s.writing.Lock()
-	defer s.writing.Unlock()
-	item, err := tree.SetRetired(s.root, request.Item, request.Retired, request.Reason, s.now())
-	answer(w, item, err)
-}
-
-func (s server) setShared(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Item   string   `json:"item"`
-		People []string `json:"people"`
-	}
-	if !decode(w, r, &request) {
-		return
-	}
-	s.writing.Lock()
-	defer s.writing.Unlock()
-	item, err := tree.SetSharedWith(s.root, request.Item, request.People, s.now())
-	answer(w, item, err)
-}
-
 // historyLog is what was done to the tree's Items, newest first: every Item's,
 // or with ?item= one Item's.
 func (s server) historyLog(w http.ResponseWriter, r *http.Request) {
-	if err := tree.Require(s.root); err != nil {
+	if err := s.documents.Require(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
@@ -1161,12 +1071,17 @@ func (s server) deleteItem(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	to, err := tree.Trash(s.root, request.Item, s.now())
+	item, err := s.documents.GetItem(request.Item)
 	if err != nil {
 		answer(w, tree.Item{}, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"trash": to})
+	to, err := s.documents.Trash(request.Item, s.now())
+	if err != nil {
+		answer(w, tree.Item{}, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": item, "trash": to})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -1225,7 +1140,7 @@ func (s server) attachPDF(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, err := tree.AttachFileAs(r.Context(), s.root, request.Item, request.Digest, append([]string{source}, pages...), s.keepImage(request.KeepOriginal), request.NewRevision, s.now())
+	item, err := s.documents.AttachFileAs(r.Context(), request.Item, request.Digest, append([]string{source}, pages...), s.keepImage(request.KeepOriginal), request.NewRevision, s.now())
 	answer(w, item, err)
 }
 
@@ -1242,9 +1157,9 @@ func (s server) supersession(w http.ResponseWriter, r *http.Request) {
 	var item tree.Item
 	var err error
 	if request.Replacement == "" {
-		item, err = tree.UndoSupersession(s.root, request.Item, s.now())
+		item, err = s.documents.UndoSupersession(request.Item, s.now())
 	} else {
-		item, err = tree.Supersede(s.root, request.Item, request.Replacement, s.now())
+		item, err = s.documents.Supersede(request.Item, request.Replacement, s.now())
 	}
 	answer(w, item, err)
 }
@@ -1258,7 +1173,7 @@ func (s server) supersessionCandidates(w http.ResponseWriter, r *http.Request) {
 	result := []tree.Item{}
 	fields := map[string]string{"owner": r.URL.Query().Get("owner"), "country": r.URL.Query().Get("country")}
 	for _, it := range items {
-		if it.ID != r.URL.Query().Get("exclude") && tree.ValidateSupersession(s.root, it.ID, "visa", fields) == nil {
+		if it.ID != r.URL.Query().Get("exclude") && s.documents.ValidateSupersession(it.ID, "visa", fields) == nil {
 			result = append(result, it)
 		}
 	}

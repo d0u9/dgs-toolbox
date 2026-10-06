@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"sort"
+	"time"
 
 	"dgs-toolbox/internal/doc/country"
 	"dgs-toolbox/internal/doc/expr"
@@ -50,7 +51,7 @@ func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
 	}
 	seen := map[string]bool{}
 	var fields []string
-	if templates, err := tree.LoadTemplates(s.root); err == nil {
+	if templates, err := s.documents.LoadTemplates(); err == nil {
 		for _, t := range templates {
 			for _, f := range t.Fields {
 				if !seen[f.Key] {
@@ -67,12 +68,12 @@ func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	out.Keys = append(fields, out.Keys...)
-	entries, err := outline.Load(s.root)
+	entries, err := outline.ForStore(s.documents).Load()
 	if err != nil {
 		out.Error = err.Error()
 	}
 	out.Rules, out.Used = []view.View{}, map[string][]string{}
-	if rules, used, err := outline.Rules(s.root); err == nil {
+	if rules, used, err := outline.ForStore(s.documents).Rules(); err == nil {
 		out.Rules, out.Used = rules, used
 	}
 	for _, o := range entries {
@@ -160,12 +161,12 @@ func (s server) planning(w http.ResponseWriter, o *outline.Outline) (planned, bo
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return planned{}, false
 	}
-	templates, err := tree.LoadTemplates(s.root)
+	templates, err := s.documents.LoadTemplates()
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return planned{}, false
 	}
-	snapshots, err := snapshot.Load(s.root)
+	snapshots, err := snapshot.ForStore(s.documents).Load()
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return planned{}, false
@@ -186,24 +187,24 @@ func (s server) outlineSave(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	if err := tree.Require(s.root); err != nil {
+	if err := s.documents.Require(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
 	fail := func(err error) { writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()}) }
-	if err := outline.Fresh(s.root, request.Fresh); err != nil {
+	if err := outline.ForStore(s.documents).Fresh(request.Fresh); err != nil {
 		fail(err)
 		return
 	}
 	for from, to := range request.Renamed {
-		if err := outline.RenameRule(s.root, from, to); err != nil {
+		if err := outline.ForStore(s.documents).RenameRule(from, to, time.Now()); err != nil {
 			fail(err)
 			return
 		}
 	}
-	if err := outline.Save(s.root, request.Previous, request.Outline); err != nil {
+	if err := outline.ForStore(s.documents).Save(request.Previous, request.Outline, time.Now()); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -217,17 +218,18 @@ func (s server) outlineDelete(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	if err := tree.Require(s.root); err != nil {
+	if err := s.documents.Require(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	if err := outline.Delete(s.root, request.Name); err != nil {
+	trash, err := outline.ForStore(s.documents).Trash(request.Name, time.Now())
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{})
+	writeJSON(w, http.StatusOK, map[string]string{"trash": trash})
 }
 
 // ruleLayout parses a layout typed on the Rules page, an old one brought up
@@ -264,7 +266,7 @@ func (s server) ruleIf(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tree": expr.Tree(e)})
 }
 
-// ruleDelete removes a rule no Outline uses.
+// ruleDelete trashes a rule no Outline uses.
 func (s server) ruleDelete(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Name string `json:"name"`
@@ -272,17 +274,18 @@ func (s server) ruleDelete(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	if err := tree.Require(s.root); err != nil {
+	if err := s.documents.Require(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	if err := outline.DeleteRule(s.root, request.Name); err != nil {
+	trash, err := outline.ForStore(s.documents).TrashRule(request.Name, time.Now())
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{})
+	writeJSON(w, http.StatusOK, map[string]string{"trash": trash})
 }
 
 // ruleSave writes one rule, renaming it first in every Outline using it
@@ -295,13 +298,13 @@ func (s server) ruleSave(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	if err := tree.Require(s.root); err != nil {
+	if err := s.documents.Require(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	if err := outline.SaveRule(s.root, request.Previous, request.Rule); err != nil {
+	if err := outline.ForStore(s.documents).SaveRule(request.Previous, request.Rule, time.Now()); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

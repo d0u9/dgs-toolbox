@@ -10,7 +10,6 @@ package snapshot
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -212,100 +211,34 @@ func Parse(data []byte) (Snapshot, error) {
 }
 
 // Path is where the Snapshot named name is kept.
-func Path(root, name string) string { return filepath.Join(root, Dir, name+".yaml") }
+func Path(root, name string) string { return tree.At(root).DefinitionPath(Dir, name) }
 
 // Load reads every snapshots/*.yaml under root, sorted by name.
 func Load(root string) ([]Snapshot, error) {
-	paths, err := filepath.Glob(filepath.Join(root, Dir, "*.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Snapshot, 0, len(paths))
-	for _, path := range paths {
-		s, err := ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	return tree.ListDefinitions(tree.At(root), definitionKind())
 }
 
 // ReadFile reads one Snapshot file: it must parse, be valid, and be named
 // for its Snapshot.
 func ReadFile(path string) (Snapshot, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	s, err := Parse(data)
-	if err != nil {
-		return Snapshot{}, fmt.Errorf("%s: %w", path, err)
-	}
-	if name := strings.TrimSuffix(filepath.Base(path), ".yaml"); name != s.Name {
-		return Snapshot{}, fmt.Errorf("%s: name is %s, so the file should be %s.yaml", path, s.Name, s.Name)
-	}
-	return s, nil
+	return tree.ReadDefinitionFile(tree.At(""), definitionKind(), path)
 }
 
 // Save writes s. Create refuses a name another Snapshot has, as does a
 // rename; a rule or an Outline may share it.
-// Previous, when it names another Snapshot, is removed after: package
+// Previous, when it names another Snapshot, is moved to the trash after: package
 // outline renames it in the Outlines using it.
-func Save(root, previous string, s Snapshot, create bool) error {
-	if err := s.Validate(); err != nil {
-		return err
+func Save(root, previous string, s Snapshot, create bool, now time.Time) error {
+	if create {
+		previous = ""
+	} else if previous == "" {
+		previous = s.Name
 	}
-	if create || (previous != "" && previous != s.Name) {
-		if _, err := os.Stat(Path(root, s.Name)); err == nil {
-			return fmt.Errorf("a Snapshot is named %s already", s.Name)
-		}
-	}
-	if !create {
-		from := previous
-		if from == "" {
-			from = s.Name
-		}
-		if _, err := os.Stat(Path(root, from)); err != nil {
-			return fmt.Errorf("no Snapshot named %s", from)
-		}
-	}
-	data, err := yaml.Marshal(s)
-	if err != nil {
-		return err
-	}
-	if err := write(filepath.Join(root, Dir), s.Name+".yaml", data); err != nil {
-		return err
-	}
-	if !create && previous != "" && previous != s.Name {
-		return os.Remove(Path(root, previous))
-	}
-	return nil
+	return tree.SaveDefinition(tree.At(root), definitionKind(), previous, s, now)
 }
 
-// write puts data at dir/name through a temporary file and a rename.
-func write(dir, name string, data []byte) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(dir, ".snapshot-*.dgs-part")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temp.Name(), filepath.Join(dir, name))
+func definitionKind() tree.DefinitionKind[Snapshot] {
+	return tree.DefinitionKind[Snapshot]{Dir: Dir, Validate: func(_ string, s Snapshot) error { return s.Validate() }, Name: func(s Snapshot) string { return s.Name }, Decode: func(_ string, data []byte) (Snapshot, error) { return Parse(data) }}
 }
 
 // Trash moves a Snapshot's file into the tree's trash, and answers where it
@@ -314,17 +247,12 @@ func Trash(root, name string, now time.Time) (string, error) {
 	if !namePattern.MatchString(name) {
 		return "", fmt.Errorf("snapshot %q: not a snapshot name", name)
 	}
-	from := Path(root, name)
-	if _, err := os.Lstat(from); err != nil {
-		return "", fmt.Errorf("no Snapshot named %s", name)
-	}
-	dir := filepath.Join(root, tree.TrashDir, Dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	exists, err := tree.At(root).DefinitionExists(Dir, name)
+	if err != nil {
 		return "", err
 	}
-	to := filepath.Join(dir, name+"-"+now.UTC().Format("20060102T150405Z")+".yaml")
-	if _, err := os.Lstat(to); err == nil {
-		return "", fmt.Errorf("%s is already in the trash", to)
+	if !exists {
+		return "", fmt.Errorf("no Snapshot named %s", name)
 	}
-	return to, os.Rename(from, to)
+	return tree.TrashDefinition(tree.At(root), definitionKind(), name, now)
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/snapshot"
@@ -27,7 +28,7 @@ func (s server) snapshotList(w http.ResponseWriter, _ *http.Request) {
 		Snapshots []snapshotJSON `json:"snapshots"`
 		Error     string         `json:"error,omitempty"`
 	}{Snapshots: []snapshotJSON{}}
-	list, err := snapshot.Load(s.root)
+	list, err := snapshot.ForStore(s.documents).Load()
 	if err != nil {
 		out.Error = err.Error()
 	}
@@ -35,7 +36,7 @@ func (s server) snapshotList(w http.ResponseWriter, _ *http.Request) {
 	if err != nil && out.Error == "" {
 		out.Error = err.Error()
 	}
-	outlines, err := outline.Load(s.root)
+	outlines, err := outline.ForStore(s.documents).Load()
 	if err != nil && out.Error == "" {
 		out.Error = err.Error()
 	}
@@ -62,7 +63,7 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	if err := tree.Require(s.root); err != nil {
+	if err := s.documents.Require(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
@@ -71,7 +72,7 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 	fail := func(status int, err error) { writeJSON(w, status, map[string]string{"error": err.Error()}) }
 	var rule *view.View
 	if request.Rule != "" {
-		rules, err := outline.LoadRules(s.root)
+		rules, err := outline.ForStore(s.documents).LoadRules()
 		if err != nil {
 			fail(http.StatusConflict, err)
 			return
@@ -88,14 +89,14 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusConflict, err)
 		return
 	}
-	templates, err := tree.LoadTemplates(s.root)
+	templates, err := s.documents.LoadTemplates()
 	if err != nil {
 		fail(http.StatusConflict, err)
 		return
 	}
 	sn, err := snapshot.Take(request.Name, request.About, rule, items, view.TypesOf(templates), s.now())
 	if err == nil {
-		err = snapshot.Save(s.root, "", sn, true)
+		err = snapshot.ForStore(s.documents).Save("", sn, true, time.Now())
 	}
 	if err != nil {
 		fail(http.StatusBadRequest, err)
@@ -114,7 +115,7 @@ func (s server) snapshotSave(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	if err := tree.Require(s.root); err != nil {
+	if err := s.documents.Require(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
@@ -127,12 +128,12 @@ func (s server) snapshotSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.Previous != "" && request.Previous != sn.Name {
-		if err := outline.RenameSnapshot(s.root, request.Previous, sn.Name); err != nil {
+		if err := outline.ForStore(s.documents).RenameSnapshot(request.Previous, sn.Name, time.Now()); err != nil {
 			fail(err)
 			return
 		}
 	}
-	if err := snapshot.Save(s.root, "", sn, false); err != nil {
+	if err := snapshot.ForStore(s.documents).Save("", sn, request.Previous == "", time.Now()); err != nil {
 		fail(err)
 		return
 	}
@@ -147,13 +148,13 @@ func (s server) snapshotDelete(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	if err := tree.Require(s.root); err != nil {
+	if err := s.documents.Require(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	outlines, err := outline.Load(s.root)
+	outlines, err := outline.ForStore(s.documents).Load()
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -162,11 +163,12 @@ func (s server) snapshotDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the Snapshot " + request.Name + " is used by " + strings.Join(used, ", ")})
 		return
 	}
-	if _, err := snapshot.Trash(s.root, request.Name, s.now()); err != nil {
+	trash, err := snapshot.ForStore(s.documents).Trash(request.Name, s.now())
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{})
+	writeJSON(w, http.StatusOK, map[string]string{"trash": trash})
 }
 
 // snapshotNames names PDFs about to be added to a Snapshot by a naming
@@ -188,7 +190,7 @@ func (s server) snapshotNames(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusConflict, err)
 		return
 	}
-	templates, err := tree.LoadTemplates(s.root)
+	templates, err := s.documents.LoadTemplates()
 	if err != nil {
 		fail(http.StatusConflict, err)
 		return
