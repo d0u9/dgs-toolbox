@@ -513,7 +513,7 @@ function defaultCreatePath(track, folder = "") {
   return `${dot > 0 ? source.slice(0, dot) : source} segments.gpx`;
 }
 
-const textButton = (text, disabled, onClick) => sharedTextButton(text, disabled, onClick, "button");
+const textButton = (text, disabled, onClick, className = "button") => sharedTextButton(text, disabled, onClick, className);
 const trackPath = track => track?.path || "";
 
 const basename = (path) => path.split(/[\\/]/).pop();
