@@ -120,33 +120,8 @@ body {
 .track-row.focused .name { font-weight: 600; color: var(--ink); }
 .track-row.focused:hover { background: var(--fog); }
 
-/* The track's colour is the band down the row's own left edge, not a square
-   sitting inside the row: one mark fewer, and the row starts with the colour
-   it is drawn in on the map. The band is the colour picker itself, so the
-   colour is still changed by clicking where it is shown. The focused row's
-   band is wider, which says which row is being looked at from the same mark
-   rather than from a second one. */
-.track-row { padding-left: 16px !important; overflow: hidden; }
-.track-row .color {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  height: auto;
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: none;
-  cursor: pointer;
-  transition: width .12s;
-}
-.track-row.focused { padding-left: 20px !important; }
-.track-row.focused .color { width: 9px; }
-.track-row.hidden-track .color { opacity: .45; }
-.track-row .color::-webkit-color-swatch-wrapper { padding: 0; }
-.track-row .color::-webkit-color-swatch { border: none; border-radius: 0; }
+/* Colour editing stays in the context menu; file rows have no colour strip. */
+.track-row .color[hidden] { display: none; }
 .track-row .eye { flex: none; width: 18px; padding: 0; border: none; background: none; color: var(--primary); cursor: pointer; font-size: 13px; }
 .track-row.hidden-track .eye { color: var(--graphite); }
 .track-row.hidden-track .name, .track-row.hidden-track .meta { opacity: .45; }
@@ -497,12 +472,20 @@ body {
   line-height: 1.3;
 }
 .actions { flex: none; display: flex; align-items: center; gap: 2px; }
-.list li.track-row { align-items: center; gap: 10px; min-height: 48px; padding-top: 10px; padding-bottom: 10px; }
+.list li.track-row { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 5px; padding: 10px 12px; }
+.file-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.list li.track-row > .file-tools { display: flex; gap: 4px; margin-left: 0; }
+.track-row .actions.file-tools > button, .track-row .actions.file-tools > .ours-mark { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 5px; background: transparent; color: var(--graphite); }
+.file-tools button { cursor: pointer; }
+.track-row .actions.file-tools > button:hover:not(:disabled) { background: var(--hover); color: var(--primary); }
+.track-row .actions.file-tools > button:disabled { color: var(--steel); cursor: default; }
+.file-tools button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.file-tools svg { width: 16px; height: 16px; }
+.track-row .actions.file-tools > .ours-mark.ours, .track-row .actions.file-tools > .eye[aria-pressed="true"] { color: var(--primary); }
 .track-row .ui-row-label .meta, .part-row .ui-row-label .meta { display: none; }
 .track-row .name { font-size: 14px; font-weight: 500; }
 .track-row.state-error .name { color: var(--error); }
-.track-row > .disclosure { width: 28px; height: 28px; }
-.track-row .actions > .eye { width: 28px; height: 28px; border: none; border-radius: 0; }
+.track-row .file-main > .disclosure { width: 28px; height: 28px; }
 .disclosure {
   flex: none;
   width: 22px;
