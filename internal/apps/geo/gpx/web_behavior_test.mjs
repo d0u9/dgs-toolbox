@@ -37,7 +37,7 @@ function treeHarness(track){
     setVisible(path,visible){entry.visible=visible;calls.push(['visible',visible]);},
     setPartHidden(path,key,hidden){entry.hiddenParts[hidden?'add':'delete'](key);calls.push(['hidden',key,hidden]);},
     setFocus(path,options){state.focus=path;calls.push(['focus',plain(options)]);},
-    fitBox(){calls.push(['fit']);},openWaypoint(){calls.push(['popup']);},
+    applyCutPanel(){calls.push(['cut-panel']);},fitBox(){calls.push(['fit']);},openWaypoint(){calls.push(['popup']);},
     map:{getZoom:()=>12,easeTo(){calls.push(['pan']);}},renameGPX(path){calls.push(['rename',path]);},
   });
   loadShared('selection',context);loadShared('controls',context);context.label=context.rowLabel;
@@ -716,4 +716,43 @@ test('track name fallback rejects cuts, changed geometry, removals, fills and mu
   assert.deepEqual(plain(h.panel.names()),[{start:0,name:'Custom segment'}]);
   piece.name='';piece.start=null;piece.end=null;h.panel.track.parts=[];h.panel.render();
   assert.equal(h.root.all(e=>e.classList.contains('cut-name'))[0].textContent,'Segment 1');
+});
+
+
+test('child track selection refreshes segments even when its GPX is already focused and preserves visibility',()=>{
+  const part={key:'t1',kind:'track',first:3,last:5,name:'Walk'};
+  const h=treeHarness(treeTrack({parts:[part]}));h.state.focus='current.gpx';h.entry.hiddenParts.add('t1');
+  h.context.showPart('current.gpx',part);
+  assert.ok(h.calls.some(([action])=>action==='cut-panel'));
+  assert.equal(h.entry.hiddenParts.has('t1'),true);
+  assert.equal(h.calls.some(([action])=>['fit','pan','visible','hidden'].includes(action)),false);
+});
+
+test('selected track scopes segment rows and writes while preserving other track names and cuts',()=>{
+  const all=[{first:0,last:1,name:'Ride A',points:2,distance:100},{first:1,last:2,name:'Ride B',points:2,distance:100},{first:3,last:4,name:'Walk A',points:2,distance:10},{first:4,last:5,name:'Walk B',points:2,distance:10}];
+  const h=segmentHarness(all);h.track.cuts=[1,4];h.track.cutCandidates=[1,4];
+  h.track.parts=[{key:'t0',kind:'track',first:0,last:2,name:'Ride'},{key:'t1',kind:'track',first:3,last:5,name:'Walk'}];
+  const changes=[];h.panel.onCuts=(cuts,names)=>changes.push(plain({cuts,names}));
+  const show=part=>h.panel.show(h.track,{part,timeZone:'UTC',workspace:[h.track.path],folder:''});
+  show(h.track.parts[1]);
+  h.panel.moveCut(4,1);assert.equal(changes.length,0);
+  assert.deepEqual(plain(h.panel.track.pieces.map(p=>p.distance)),[10,10]);
+  assert.equal(h.root.all(e=>e.classList.contains('cut-row')).length,2);
+  h.panel.rename(all[2],'New walk');
+  assert.deepEqual(changes.at(-1).cuts,[1,4]);assert.ok(changes.at(-1).names.some(n=>n.name==='Ride A'));
+  h.root.all(e=>e.tagName==='BUTTON'&&e.textContent==='Clear cuts')[0].fire('click');
+  assert.deepEqual(changes.at(-1).cuts,[1]);assert.ok(changes.at(-1).names.some(n=>n.name==='Ride B'));
+  h.panel.selected=new Set([4]);show(h.track.parts[0]);assert.deepEqual([...h.panel.selected],[0,1]);
+  show(h.track.parts[1]);assert.deepEqual([...h.panel.selected],[4]);
+  show(null);assert.equal(h.panel.track.pieces.length,4);
+});
+
+test('application passes the selected track to the real segment panel and its map overlay',()=>{
+  const h=segmentHarness([{first:0,last:2,points:3,distance:100},{first:3,last:5,points:3,distance:10}]);
+  h.track.parts=[{key:'t0',kind:'track',first:0,last:2,name:'Ride'},{key:'t1',kind:'track',first:3,last:5,name:'Walk'}];
+  h.state.focus=h.track.path;h.state.partSelection={path:h.track.path,key:'t1'};
+  const overlays=[],timelines=[];Object.assign(h.context,{focusedEntry:()=>({track:h.track}),cutting:()=>true,cutPanel:h.panel,cutOverlay:{show:track=>overlays.push(track)},hiddenRanges:()=>[],timeline:{setCutting:value=>timelines.push(value)},$:()=>({value:'UTC'})});h.state.config={};
+  const app=source('app');vm.runInContext(app.slice(app.indexOf('function applyCutPanel()'),app.indexOf('async function writeSegments(')),h.context);
+  h.context.applyCutPanel();assert.deepEqual(plain(h.panel.track.pieces.map(p=>p.distance)),[10]);assert.equal(overlays.at(-1).pieces.length,1);
+  h.state.partSelection=null;h.context.applyCutPanel();assert.equal(h.panel.track.pieces.length,2);
 });

@@ -28,9 +28,9 @@ export const pieceColor = (position) => PIECE_COLORS[position % PIECE_COLORS.len
 // A complete, unchanged track keeps its track name. This is a display
 // default, never a saved segment override, so renaming the track follows through.
 export function inheritedName(piece, track) {
-  if (!track || track.cuts?.length) return "";
+  if (!track) return "";
   const parts = (track.parts || []).filter(part => part.kind === "track" && part.first === piece.first && part.last === piece.last);
-  if (parts.length !== 1) return "";
+  if (parts.length !== 1 || track.cuts?.some(cut => cut > piece.first && cut < piece.last)) return "";
   for (let i = piece.first; i <= piece.last; i++) {
     if (track.removed?.[i]) return "";
     if (track.original && track.points?.[i]?.some((value, axis) => value !== track.original[i]?.[axis])) return "";
@@ -69,7 +69,7 @@ export class CutPanel {
   // remember keeps the shown track's choice, for when it is shown again.
   remember() {
     if (!this.track) return;
-    this.choices.set(this.track.path, {
+    this.choices.set(`${this.track.path}\0${this.scope || ""}`, {
       selected: new Set(this.selected),
       known: new Set(this.known || []),
       createPath: this.createPath,
@@ -80,9 +80,11 @@ export class CutPanel {
   // A file's choices and any target pointing at it follow its new name.
   renamePath(from, to) {
     if (this.track?.path === from) this.remember();
-    if (this.choices.has(from)) {
-      this.choices.set(to, this.choices.get(from));
-      this.choices.delete(from);
+    for (const [key, value] of this.choices) {
+      if (key.startsWith(`${from}\0`)) {
+        this.choices.set(`${to}${key.slice(from.length)}`, value);
+        this.choices.delete(key);
+      }
     }
     for (const choice of this.choices.values()) if (choice.addPath === from) choice.addPath = to;
     this.workspace = this.workspace.map(path => path === from ? to : path);
@@ -92,15 +94,19 @@ export class CutPanel {
 
   // folder is where a new file from a track not yet on disk goes by default;
   // home is where the save dialog falls back to when that folder is gone.
-  show(track, { timeZone, workspace, folder, home = "", places = [] }) {
-    const changed = !this.track || this.track.path !== track.path;
+  show(track, { part = null, timeZone, workspace, folder, home = "", places = [] }) {
+    const scope = part?.key || "";
+    const changed = !this.track || this.track.path !== track.path || this.scope !== scope;
+    const allPieces = track.pieces;
+    track = { ...track, pieces: part ? allPieces.filter(piece => piece.first >= part.first && piece.last <= part.last) : allPieces, allPieces };
     if (changed) this.remember();
     this.track = track;
+    this.scope = scope;
     this.timeZone = timeZone;
     this.workspace = workspace.filter((path) => path !== track.path || track.draft || track.ours);
     this.home = home;
     this.places = places;
-    const kept = changed ? this.choices.get(track.path) : null;
+    const kept = changed ? this.choices.get(`${track.path}\0${scope}`) : null;
     if (changed) this.addPath = kept?.addPath || "";
     if (changed && !kept) {
       this.selected = new Set(track.pieces.map((piece) => piece.first));
@@ -140,14 +146,15 @@ export class CutPanel {
   }
 
   names() {
-    return this.track.pieces.filter((piece) => piece.name).map((piece) => ({ start: piece.first, name: piece.name }));
+    return (this.track.allPieces || this.track.pieces).filter((piece) => piece.name).map((piece) => ({ start: piece.first, name: piece.name }));
   }
 
   // ---- edits: cuts are point indices; a name belongs to the segment starting at it ----
 
   addCut(index) {
-    const kept = this.track.removed.map((rule, i) => (rule ? -1 : i)).filter((i) => i >= 0);
-    if (index <= kept[0] || index >= kept[kept.length - 1] || this.track.cuts.includes(index)) return;
+    const kept = this.track.removed.map((rule, i) => (rule ? -1 : i)).filter((i) => i >= 0 && this.track.pieces.some(piece => i >= piece.first && i <= piece.last));
+    if (kept.length < 3 || index <= kept[0] || index >= kept[kept.length - 1] || this.track.cuts.includes(index)) return;
+    if (this.track.parts?.length && !this.track.parts.some(part => part.kind === "track" && index > part.first && index < part.last)) return;
     const cuts = [...new Set([...this.track.cuts, index])].sort((a, b) => a - b);
     this.onCuts(cuts, this.names());
   }
@@ -160,6 +167,10 @@ export class CutPanel {
   }
 
   moveCut(from, to) {
+    const part = this.track.parts?.find(part => part.kind === "track" && from > part.first && from < part.last);
+    if (part && (to <= part.first || to >= part.last)) return;
+    const scope = this.track.parts?.find(part => part.key === this.scope);
+    if (scope && (from <= scope.first || from >= scope.last || to <= scope.first || to >= scope.last)) return;
     const cuts = [...new Set(this.track.cuts.map((cut) => (cut === from ? to : cut)))].sort((a, b) => a - b);
     const names = this.names().map((name) => (name.start === from ? { ...name, start: to } : name));
     if (this.selected.delete(from)) this.selected.add(to);
@@ -300,18 +311,20 @@ export class CutPanel {
     cutHead.className = "clean-filter-head";
     const cutTitle = document.createElement("strong");
     cutTitle.textContent = "Cut";
+    const inScope = index => track.pieces.some(piece => index > piece.first && index <= piece.last);
+    const scopedCuts = track.cuts.filter(inScope);
     const cutCount = document.createElement("span");
     cutCount.className = "clean-count";
-    cutCount.textContent = `${track.cuts.length} cut${track.cuts.length === 1 ? "" : "s"}`;
+    cutCount.textContent = `${scopedCuts.length} cut${scopedCuts.length === 1 ? "" : "s"}`;
     cutHead.append(cutTitle, cutCount);
-    const candidates = track.cutCandidates.filter((cut) => !track.cuts.includes(cut));
+    const candidates = track.cutCandidates.filter((cut) => inScope(cut) && !track.cuts.includes(cut));
     const cutTools = document.createElement("div");
     cutTools.className = "cut-tools";
     cutTools.append(
       textButton("Cut at every stop", candidates.length === 0, () => {
-        this.onCuts([...new Set([...track.cuts, ...track.cutCandidates])].sort((a, b) => a - b), this.names());
+        this.onCuts([...new Set([...track.cuts, ...candidates])].sort((a, b) => a - b), this.names());
       }, "button secondary"),
-      textButton("Clear cuts", track.cuts.length === 0, () => this.onCuts([], this.names().filter((name) => name.start === 0)), "button secondary"),
+      textButton("Clear cuts", scopedCuts.length === 0, () => this.onCuts(track.cuts.filter(cut => !inScope(cut)), this.names().filter(name => !scopedCuts.includes(name.start))), "button secondary"),
     );
     section.append(cutHead, cutTools);
 
@@ -465,7 +478,7 @@ export class CutOverlay {
       this.clear();
       return;
     }
-    const features = track.cuts.filter(cut => !hidden.some(([first, last]) => cut >= first && cut <= last)).map((cut) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: track.points[cut] } }));
+    const features = track.cuts.filter(cut => track.pieces.some(piece => cut >= piece.first && cut <= piece.last) && !hidden.some(([first, last]) => cut >= first && cut <= last)).map((cut) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: track.points[cut] } }));
     this.map.getSource(CUTS).setData({ type: "FeatureCollection", features });
     const pieces = track.pieces.map((piece, i) => ({
       type: "Feature",

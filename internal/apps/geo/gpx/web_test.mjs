@@ -24,7 +24,7 @@ test('single part click preserves camera; double click frames tracks and routes'
  for (const kind of ['track', 'route', 'waypoint']) {
   const calls=[];
   const entry={visible:false,hiddenParts:new Set(['part-a'])};
-  const context=vm.createContext({state:{focus:'other',tracks:new Map([['file-a',entry]])},select(){},renderTracks(){},setVisible:(...args)=>calls.push(['visible',...args]),setPartHidden:(...args)=>calls.push(['hidden',...args]),setFocus:(...args)=>calls.push(['focus',...args]),fitBox:()=>calls.push(['fit']),openWaypoint:()=>calls.push(['popup']),map:{getZoom:()=>12,easeTo:()=>calls.push(['pan'])}});
+  const context=vm.createContext({state:{focus:'other',tracks:new Map([['file-a',entry]])},select(){},renderTracks(){},applyCutPanel(){},setVisible:(...args)=>calls.push(['visible',...args]),setPartHidden:(...args)=>calls.push(['hidden',...args]),setFocus:(...args)=>calls.push(['focus',...args]),fitBox:()=>calls.push(['fit']),openWaypoint:()=>calls.push(['popup']),map:{getZoom:()=>12,easeTo:()=>calls.push(['pan'])}});
   vm.runInContext(code,context);
   const part={kind,key:'part-a',points:[[0,0]],bounds:[[0,0],[1,1]]};
   context.showPart('file-a',part);
@@ -209,7 +209,7 @@ test('rename keeps both remembered segment choices and a target in another panel
  assert.equal(panel.addPath,'new.gpx');
  assert.equal(panel.track.path,'new.gpx');
  assert.equal(panel.choices.has('old.gpx'),false);
- assert.deepEqual([...panel.choices.get('new.gpx').selected],[2]);
+ assert.deepEqual([...panel.choices.get('new.gpx\0').selected],[2]);
  panel.track={path:'other.gpx',pieces:[]};panel.selected=new Set();
  show.call(panel,{...track,path:'new.gpx'},{workspace:['other.gpx','new.gpx']});
  assert.deepEqual([...panel.selected],[2]);

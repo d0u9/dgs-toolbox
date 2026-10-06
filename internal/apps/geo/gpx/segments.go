@@ -34,7 +34,24 @@ func segments(a analysis) ([]segmentJSON, []int, []int) {
 	for _, cut := range a.segmentParams().Cuts {
 		kept = append(kept, a.keptAt(cut))
 	}
-	ranges := segment.Split(n, kept)
+	// Track boundaries are independent pieces, never a segment spanning tracks.
+	var ranges []segment.Range
+	for first := 0; first < n; {
+		last := first + 1
+		for last < n && a.line[last].Track == a.line[first].Track {
+			last++
+		}
+		var local []int
+		for _, cut := range kept {
+			if cut > first && cut < last-1 {
+				local = append(local, cut-first)
+			}
+		}
+		for _, r := range segment.Split(last-first, local) {
+			ranges = append(ranges, segment.Range{First: first + r.First, Last: first + r.Last})
+		}
+		first = last
+	}
 	list := make([]segmentJSON, len(ranges))
 	cuts := []int{}
 	for i, r := range ranges {
@@ -56,7 +73,7 @@ func segments(a analysis) ([]segmentJSON, []int, []int) {
 				s.End = &end
 			}
 		}
-		if i > 0 {
+		if i > 0 && ranges[i-1].Last == r.First {
 			cuts = append(cuts, first)
 		}
 		list[i] = s

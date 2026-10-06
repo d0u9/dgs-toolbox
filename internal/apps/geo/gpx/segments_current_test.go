@@ -101,3 +101,35 @@ func TestRecordingCannotAddASegmentToItself(t *testing.T) {
 		t.Fatal("recording or its edits changed")
 	}
 }
+
+func TestSegmentsRespectTrackBoundaries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "two-tracks.gpx")
+	point := func(lat float64) gpxfile.Point { return gpxfile.Point{LatLon: geo.LatLon{Lat: lat}} }
+	tracks := []gpxfile.Track{
+		{Name: "Ride", Segments: []gpxfile.Segment{{Points: []gpxfile.Point{point(0), point(.01), point(.02)}}}},
+		{Name: "Walk", Segments: []gpxfile.Segment{{Points: []gpxfile.Point{point(1), point(1.0001), point(1.0002)}}}},
+	}
+	if err := gpxfile.Create(path, "Trip", tracks); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	defer pending.drop(path)
+	var shown trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &shown)
+	if len(shown.Pieces) != 2 || shown.Pieces[0].First != 0 || shown.Pieces[0].Last != 2 || shown.Pieces[1].First != 3 || shown.Pieces[1].Last != 5 || len(shown.Cuts) != 0 {
+		t.Fatalf("track pieces: %+v cuts: %v", shown.Pieces, shown.Cuts)
+	}
+	for i, piece := range shown.Pieces {
+		if piece.Distance != shown.Parts[i].Distance {
+			t.Fatalf("piece distance %v differs from track %v", piece.Distance, shown.Parts[i].Distance)
+		}
+	}
+	if code, result := send(t, server, http.MethodPut, "/api/segments", map[string]any{"path": path, "cuts": []int{1, 4}}); code != http.StatusOK {
+		t.Fatalf("cuts: %d %v", code, result)
+	}
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &shown)
+	if len(shown.Pieces) != 4 || len(shown.Cuts) != 2 || shown.Pieces[1].Last != 2 || shown.Pieces[2].First != 3 {
+		t.Fatalf("split track pieces: %+v cuts: %v", shown.Pieces, shown.Cuts)
+	}
+}
