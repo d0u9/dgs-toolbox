@@ -40,3 +40,7 @@
 .menu-item:focus-visible:not(:disabled) { background: var(--hover); outline: none; }
 .menu-item.danger { color: var(--error); }
 .menu-item:disabled { color: var(--steel); cursor: default; }
+.menu-item .menu-check { display: inline-flex; width: 14px; margin-right: 6px; vertical-align: -2px; }
+.menu-item .menu-check .icon { width: 14px; height: 14px; }
+.menu-item .menu-check { display: inline-flex; width: 14px; margin-right: 6px; vertical-align: -2px; }
+.menu-item .menu-check .icon { width: 14px; height: 14px; }

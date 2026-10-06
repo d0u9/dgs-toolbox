@@ -63,3 +63,7 @@ body {
   white-space: pre-wrap;
 }
 .error-banner[hidden] { display: none; }
+
+/* An icon from /ui/icons.js sits in a line of text at the text's size. */
+.icon { display: inline-block; width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.2em; }
+.icon-box { display: inline-flex; align-items: center; }

@@ -363,6 +363,14 @@ page that only opens leaves `Writable` off, and then nothing the dialog can
 reach changes anything on disk. The computation behind all of them is
 `internal/filebrowse`, so a TUI file view lists a folder with the same code.
 
+Icons on every page except GPX's are [Lucide](https://lucide.dev)'s (ISC
+licence), embedded, not fetched: `/ui/icons.js` holds the ones in use and
+draws them with `iconSvg(name)` or `icon(name)`, and gives an element in a
+page's HTML with `data-icon="name"` its icon. A button that is only an icon
+keeps its title and an `aria-label`. A plain script, which cannot import the
+module, or a stylesheet copies the one icon it draws, naming Lucide. Text
+symbols stay text: `·` between facts, `→` in a sentence, `⌘` in a key.
+
 It also carries the **file tree**: a set of slash-separated paths drawn as
 nested folders, folders first, each row with an outline folder or file icon
 and its name in the monospace face, and a hairline down every open folder so
@@ -373,7 +381,8 @@ does or where it links, a short note drawn at the right of a row, and
 which files are marked — already taken in: a marked file is drawn green, its
 file icon holding a check. A page may also give a folder its own icon
 and class, and let a folder row be picked: the row then takes a chevron that
-opens or shuts it, and a click elsewhere on it picks it. A page may name
+opens or shuts it, and a click elsewhere on it picks it; the chevron takes
+the row's full height and its left edge, so it is easy to hit. A page may name
 folders to draw though no file is in them, and hook each row as it is drawn,
 as Snapshots does to drag PDFs and folders between folders. The tree draws
 and reports clicks; what a row means stays with the page. The doc app's

@@ -57,9 +57,9 @@
     <nav id="rail" class="rail" aria-label="Pages" hidden></nav>
     <div id="viewer" class="viewer" hidden>
       <div class="viewer-bar">
-        <button type="button" id="zoom-out" class="tool" title="Zoom out (−)">−</button>
+        <button type="button" id="zoom-out" class="tool" title="Zoom out (−)" aria-label="Zoom out"><span data-icon="minus"></span></button>
         <button type="button" id="zoom-level" class="tool zoom-level" title="Actual width (0)">100%</button>
-        <button type="button" id="zoom-in" class="tool" title="Zoom in (+)">+</button>
+        <button type="button" id="zoom-in" class="tool" title="Zoom in (+)" aria-label="Zoom in"><span data-icon="plus"></span></button>
         <button type="button" id="fit-width" class="tool" title="Fit width">Width</button>
         <button type="button" id="fit-page" class="tool" title="Fit page">Page</button>
         <span class="viewer-spacer"></span>
@@ -128,5 +128,6 @@
 </main>
 <script src="/ui/tags.js"></script>
 <script type="module" src="/import.js"></script>
+<script type="module" src="/ui/icons.js"></script>
 </body>
 </html>

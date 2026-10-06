@@ -3,12 +3,11 @@
 // rules; this draws what it answered. Shared by the Explore and Outlines
 // pages.
 import { api, el, label, post } from "/common.js";
-import { fileTree } from "/ui/filetree.js";
+import { FOLDER, fileTree } from "/ui/filetree.js";
+import { iconSvg } from "/ui/icons.js";
 import { splitter } from "/ui/splitter.js";
 
-const FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h4.5l1.5 1.5h6.5v8H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M1.75 6.25h12.5" stroke="currentColor" stroke-width="1.25"/></svg>';
-
-const SNAPSHOT = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 4.75h3l1.25-1.75h4l1.25 1.75h3v8.5H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><circle cx="8" cy="8.75" r="2.5" fill="none" stroke="currentColor" stroke-width="1.25"/></svg>';
+const SNAPSHOT = iconSvg("camera");
 
 // UNPLACED is the path of the Not placed row.
 export const UNPLACED = "\u0000unplaced";
@@ -148,7 +147,7 @@ export function outlineTree(host, state, { onPick, onWhy, empty = () => "" } = {
         onWhy ? el("button", { type: "button", className: "ft-reveal", title: "Why here", "aria-label": "Why here",
           textContent: "?", onclick: (event) => { event.preventDefault(); event.stopPropagation(); onWhy(f); } }) : null,
         el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder",
-          textContent: "↗", onclick: (event) => { event.preventDefault(); event.stopPropagation(); reveal(f); } })),
+          innerHTML: iconSvg("square-arrow-out-up-right"), onclick: (event) => { event.preventDefault(); event.stopPropagation(); reveal(f); } })),
       folderExtra: (path) => el("span", { className: "numeric" }, String(folder(path)?.count ?? "")),
     }));
     if (lost.length && onPick) {

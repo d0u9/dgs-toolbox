@@ -4,6 +4,7 @@
 // for typing, and the server's reading of the text redraws the bubbles.
 import { el, post } from "/common.js";
 import { suggest } from "/combo.js";
+import { glyph } from "/ui/icons.js";
 
 // The operators a bubble offers; a leading ! negates.
 const OPS = [["==", "=="], ["!=", "!="], ["in", "in"], ["!in", "not in"], ["~", "~ contains"], ["!~", "not ~"], ["has", "has"], ["!has", "not has"]];
@@ -52,7 +53,7 @@ export function condition(input, { keys, values, onEdit }) {
     onEdit?.();
     draw();
   };
-  const act = (title, t, onclick) => el("button", { type: "button", className: "cond-x", title, textContent: t, onclick });
+  const act = (title, t, onclick) => el("button", { type: "button", className: "cond-x", title, ...glyph(t), onclick });
 
   const bubble = (n, list) => {
     const keyIn = el("input", { className: "cond-key mono", value: n.key || "", placeholder: "key", spellcheck: false, autocomplete: "off" });

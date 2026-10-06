@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<header class="topbar"><span class="brand">DOC</span><a class="topbar-link" id="back" href="/browse/">← Browse</a><span class="topbar-spacer"></span><span id="root" class="muted"></span></header>
+<header class="topbar"><span class="brand">DOC</span><a class="topbar-link" id="back" href="/browse/"><span data-icon="arrow-left"></span> Browse</a><span class="topbar-spacer"></span><span id="root" class="muted"></span></header>
 <div id="banner" class="banner" hidden>Not a doc tree.</div><p id="error" class="message error" hidden></p>
 <main class="change-type-page">
   <h1>Change type</h1>
@@ -30,5 +30,6 @@
   </div>
 </main>
 <script type="module" src="/change-type.js"></script>
+<script type="module" src="/ui/icons.js"></script>
 </body>
 </html>

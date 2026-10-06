@@ -13,7 +13,7 @@
   user-select: none; text-align: right; will-change: transform;
 }
 .code-number { display: flex; justify-content: flex-end; gap: 4px; height: var(--code-line); padding: 0 4px 0 8px; font-variant-numeric: tabular-nums; }
-.code-fold { width: 12px; text-align: center; color: var(--graphite); cursor: pointer; visibility: hidden; }
+.code-fold { display: inline-flex; align-items: center; justify-content: center; width: 12px; color: var(--graphite); cursor: pointer; visibility: hidden; }
 .code-edit:hover .code-fold, .code-fold.folded { visibility: visible; }
 .code-fold.folded { color: var(--primary); }
 .code-number .code-fold:hover { color: var(--primary); }
@@ -39,3 +39,4 @@
   margin-left: 6px; padding: 0 6px; border-radius: var(--radius-sm);
   color: var(--graphite); background: var(--fog); font-style: normal;
 }
+.code-fold .icon { width: 11px; height: 11px; }

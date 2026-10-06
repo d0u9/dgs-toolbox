@@ -15,6 +15,7 @@
 import { $, el, keep, label, fieldsAt, tagsAt, tagPills, reveal, originalsList } from "/common.js";
 import { fileTree } from "/ui/filetree.js";
 import { find, findFile, resizable, whyText } from "/outlinetree.js";
+import { iconSvg } from "/ui/icons.js";
 
 export function outlineView({ state, preview, onLeave, explain }) {
   let name = "";
@@ -67,7 +68,7 @@ export function outlineView({ state, preview, onLeave, explain }) {
 
   function drawCrumbs() {
     const parts = picked.replace(/\/$/, "").split("/").filter(Boolean);
-    $("view-crumbs").replaceChildren(...parts.flatMap((p) => [el("span", { className: "crumb-sep", "aria-hidden": "true" }, "›"),
+    $("view-crumbs").replaceChildren(...parts.flatMap((p) => [el("span", { className: "crumb-sep", "aria-hidden": "true", innerHTML: iconSvg("chevron-right") }),
       el("span", { className: "crumb" }, p)]));
     $("view-count").textContent = root ? root.count + (root.count === 1 ? " PDF" : " PDFs") : "";
   }

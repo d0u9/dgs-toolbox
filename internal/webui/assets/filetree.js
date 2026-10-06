@@ -29,9 +29,14 @@
 // files are objects with a slash-separated path. Changing closed or selected
 // redraws nothing: the page draws the tree again, as it does anything else.
 
-const FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h4.5l1.5 1.5h6.5v8H1.75z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M1.75 6.25h12.5" stroke="currentColor" stroke-width="1.25"/></svg>';
-const FILE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 1.75h6l3.5 3.5v9h-9.5z M9.25 1.75v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>';
-const FILE_MARKED = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 1.75h6l3.5 3.5v9h-9.5z M9.25 1.75v3.5h3.5" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M5.5 9.5l1.75 1.75 3.25-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+import { iconSvg } from "/ui/icons.js";
+
+// FOLDER is exported for a page's own folder-like rows.
+export const FOLDER = iconSvg("folder");
+const FILE = iconSvg("file");
+const FILE_MARKED = iconSvg("file-check");
+const SHUT = iconSvg("chevron-right");
+const OPEN = iconSvg("chevron-down");
 
 function nest(files, folders = []) {
   const top = { dirs: new Map(), files: [] };
@@ -95,7 +100,7 @@ export function fileTree(files, options = {}) {
       if (folderClass) { const c = folderClass(path); if (c) r.classList.add(...c.split(" ")); }
       if (path === selected) r.classList.add("selected");
       const twist = onPickFolder && document.createElement("span");
-      if (twist) { twist.className = "ft-twist"; twist.textContent = open ? "▾" : "▸"; r.prepend(twist); }
+      if (twist) { twist.className = "ft-twist"; twist.innerHTML = open ? OPEN : SHUT; r.prepend(twist); }
       const extra = folderExtra && folderExtra(path, under(child));
       if (extra) r.append(extra);
       const toggle = () => {
@@ -103,7 +108,7 @@ export function fileTree(files, options = {}) {
         const shut = closed.has(path);
         r.setAttribute("aria-expanded", String(!shut));
         sub.hidden = shut;
-        if (twist) twist.textContent = shut ? "▸" : "▾";
+        if (twist) twist.innerHTML = shut ? SHUT : OPEN;
       };
       if (twist) {
         twist.addEventListener("click", (e) => { e.stopPropagation(); toggle(); });

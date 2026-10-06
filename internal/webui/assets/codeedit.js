@@ -1,6 +1,7 @@
 // A small YAML editor for every page dgs serves: line numbers, colour and
 // folding over a plain textarea, so typing, undo and the clipboard stay the
 // browser's own. Folded lines leave the textarea and come back in value.
+import { iconSvg } from "/ui/icons.js";
 
 // codeEditor fills host and returns { value, focus }. onChange is called
 // after each edit, onSave on Ctrl/Cmd+S.
@@ -42,7 +43,7 @@ export function codeEditor(host, { onChange = () => {}, onSave = null } = {}) {
       row.className = "code-line";
       row.append(...highlight(line));
       const f = at.get(i);
-      if (f) row.append(span("code-folded", ` ⋯ ${f.hidden.length} lines`));
+      if (f) { const more = span("code-folded", ` ${f.hidden.length} lines`); more.insertAdjacentHTML("afterbegin", " " + iconSvg("ellipsis")); row.append(more); }
       if (!line && !f) row.append("​");
       return row;
     }));
@@ -54,12 +55,12 @@ export function codeEditor(host, { onChange = () => {}, onSave = null } = {}) {
       const toggle = document.createElement("span");
       toggle.className = "code-fold";
       if (f) {
-        toggle.textContent = "▸";
+        toggle.innerHTML = iconSvg("chevron-right");
         toggle.classList.add("folded");
         toggle.title = "Unfold";
         toggle.onclick = () => unfold(f);
       } else if (foldEnd(lines, i) > i) {
-        toggle.textContent = "▾";
+        toggle.innerHTML = iconSvg("chevron-down");
         toggle.title = "Fold";
         toggle.onclick = () => fold(i);
       }

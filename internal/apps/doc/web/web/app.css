@@ -741,7 +741,7 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .order-list li.drop { box-shadow: inset 0 2px 0 var(--primary); }
 .order-list li.idle .order-value, .order-list li.idle .order-number { color: var(--steel); }
 .order-list li.idle .order-value::after { content: " · no Item"; font-size: var(--font-size-xs); }
-.order-grip { color: var(--steel); font-size: 11px; letter-spacing: -2px; width: 12px; text-align: center; }
+.order-grip { display: inline-flex; color: var(--steel); width: 12px; }
 .order-number { flex: none; min-width: 22px; padding: 0 4px; font-family: var(--font-mono); font-size: var(--font-size-xs); line-height: 18px; text-align: center; color: var(--primary); background: var(--primary-soft); border-radius: var(--radius-sm); }
 .vf .order .order-number { width: 3.4em; min-width: 0; height: 20px; padding: 0 4px; border: 1px solid transparent; box-shadow: none; }
 .vf .order .order-number:hover, .vf .order .order-number:focus { border-color: var(--primary); outline: none; }
@@ -1078,3 +1078,12 @@ body.quicklook .view-quicklook-close { display: inline-flex; position: absolute;
 .values-list-box .values-list { border: 0; border-radius: 0; }
 .list-table tbody tr.values-row:has(input:checked) { background: var(--selected); }
 .list-table tbody tr.values-row:has(input:checked):hover { background: var(--selected-hover); }
+
+/* Icons from /ui/icons.js in this app's small buttons. */
+.order-act { display: inline-flex; align-items: center; justify-content: center; }
+.block-acts .order-act .icon { width: 12px; height: 12px; }
+.path-x .icon, .cond-x .icon { width: 11px; height: 11px; vertical-align: -1px; }
+.order-grip .icon { width: 12px; height: 12px; }
+.star.on .icon, .log-item .icon { fill: currentColor; }
+.step-sep .icon, .crumb-sep .icon { width: 12px; height: 12px; }
+#filter-frequent .icon, #frequent.on .icon { fill: currentColor; }

@@ -6,6 +6,7 @@ import { suggest } from "/combo.js";
 import { tooltip } from "/ui/tooltip.js";
 import { listTable } from "/ui/listtable.js";
 import { $, address, keep, scrollBack, tagPills, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
+import { icon, iconSvg } from "/ui/icons.js";
 
 let state = { templates: [], items: [] };
 let selected = null; // {id, digest}
@@ -143,8 +144,8 @@ function drawSteps() {
       onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); back(); } } },
       el("span", {}, el("span", { className: "step-key" }, keyName(s.key) + " "), shortName(s.key, s.value)),
       el("button", { type: "button", className: "tag-remove", title: "Take this filter away", "aria-label": "Take this filter away",
-        onclick: (event) => { event.stopPropagation(); steps.splice(n, 1); render(); } }, "×"));
-    return n ? [el("span", { className: "step-sep", "aria-hidden": "true" }, "›"), chip] : [chip];
+        onclick: (event) => { event.stopPropagation(); steps.splice(n, 1); render(); }, innerHTML: iconSvg("x") }));
+    return n ? [el("span", { className: "step-sep", "aria-hidden": "true", innerHTML: iconSvg("chevron-right") }), chip] : [chip];
   }).flat());
 }
 // shortName is a value as a step names it: a linked Item by the last part
@@ -264,7 +265,7 @@ const direction = () => $("view-direction").dataset.dir === "asc" ? "asc" : "des
 function setDirection(dir) {
   const b = $("view-direction");
   b.dataset.dir = dir === "asc" ? "asc" : "desc";
-  b.textContent = b.dataset.dir === "asc" ? "↑" : "↓";
+  b.innerHTML = iconSvg(b.dataset.dir === "asc" ? "arrow-up" : "arrow-down");
   b.title = b.dataset.dir === "asc" ? "Ascending: click for descending" : "Descending: click for ascending";
   b.setAttribute("aria-label", b.title);
 }
@@ -368,7 +369,7 @@ function card(item) {
 // star marks an Item frequent, or unmarks it, from its card or row.
 function star(item) {
   const on = !!item.frequent;
-  const button = el("button", { type: "button", className: "star" + (on ? " on" : ""), textContent: on ? "★" : "☆",
+  const button = el("button", { type: "button", className: "star" + (on ? " on" : ""), innerHTML: iconSvg("star"),
     title: on ? "Frequent: click to unmark" : "Mark frequent", onclick: (event) => { event.stopPropagation(); setFrequent(item, !on); },
     ondblclick: (event) => event.stopPropagation() });
   button.setAttribute("aria-pressed", String(on));
@@ -397,7 +398,7 @@ function tableColumns(items) {
     .sort((a, b) => a.localeCompare(b));
   return [
     { id: "thumb", text: "", fixed: true, width: 48, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-thumb" }, thumb(item)) },
-    { id: "frequent", text: "★", tip: "Frequent", fixed: true, width: 36, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-star" }, star(item)) },
+    { id: "frequent", text: "Frequent", icon: "star", tip: "Frequent", fixed: true, width: 36, sortable: false, resizable: false, cell: (item) => el("td", { className: "table-star" }, star(item)) },
     // The card's name without its type, which the Type column, or the type
     // filter, already says.
     { id: "name", text: "Item", fixed: true, width: 340, cell: (item) => {
@@ -672,7 +673,7 @@ function detail(item) {
   drawShared(item);
   $("history-all").href = api("/log/") + "#" + encodeURIComponent(item.id);
   $("frequent").setAttribute("aria-pressed", String(!!item.frequent));
-  $("frequent").textContent = item.frequent ? "★ Frequent" : "☆ Frequent";
+  $("frequent").classList.toggle("on", !!item.frequent);
   $("attach-pdf").hidden = false;
   $("attach-pdf").title = "Save the PDF with these fields as a new revision";
   $("attach-pdf").textContent = hasPDF(item, selected.digest) ? "Replace PDF…" : "Attach PDF…";
@@ -740,7 +741,7 @@ function detail(item) {
         className: "button secondary small-button", type: "button", textContent: "Make HEAD",
         onclick: (event) => { event.stopPropagation(); makeHead(item.id, (r.id || r.digest)); },
       }) : null,
-      el("button", { className: "tool", type: "button", textContent: "⋯", title: "Revision actions", "aria-label": "Revision actions",
+      el("button", { className: "tool", type: "button", innerHTML: iconSvg("ellipsis"), title: "Revision actions", "aria-label": "Revision actions",
         onclick: (event) => { event.stopPropagation(); revisionMenu(event); } }));
     if (selected.digest === (r.id || r.digest)) li.classList.add("selected");
     return li;
@@ -906,7 +907,7 @@ function drawCases(item) {
   const holding = cases.filter((c) => c.entries.some((e) => e.item === item.id));
   $("item-cases").replaceChildren(...(holding.length ? holding.map((c) => el("a", {
     className: "chip", href: api("/cases/") + "#" + encodeURIComponent(c.name),
-    title: c.status === "archived" ? "Archived" : "Open" }, (c.status === "archived" ? "▣ " : "") + (c.title || c.name)))
+    title: c.status === "archived" ? "Archived" : "Open" }, c.status === "archived" ? icon("archive") : "", c.title || c.name))
     : [el("span", { className: "muted" }, "In no Case.")]));
   const open = cases.filter((c) => c.status === "open" && !holding.includes(c));
   $("to-case").replaceChildren(el("option", { value: "" }, open.length ? "Add to a Case…" : "No open Case to add to"),

@@ -14,6 +14,10 @@
 //   ↑ ↓          move through the suggestions
 //   Esc          close the suggestions, then leave the field
 
+// Lucide's x (ISC licence), as /ui/icons.js draws it: this file is loaded as a
+// plain script by Box, so it cannot import that module.
+const REMOVE = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
 function normalizeTag(text) {
   return String(text).toLowerCase().trim().split(/\s+/).filter(Boolean).join('-');
 }
@@ -92,7 +96,7 @@ function tagField(host, options) {
       remove.className = 'tag-remove';
       remove.tabIndex = -1;
       remove.setAttribute('aria-label', `Remove ${tag}`);
-      remove.textContent = '×';
+      remove.innerHTML = REMOVE;
       remove.disabled = view.disabled;
       // mousedown, not click: the text box keeps its focus.
       remove.addEventListener('mousedown', (event) => {
