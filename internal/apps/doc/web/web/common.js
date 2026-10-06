@@ -7,6 +7,7 @@ import * as statusBar from "/ui/statusbar.js";
 import { suggest } from "/combo.js";
 import { fileTree } from "/ui/filetree.js";
 import { tooltip } from "/ui/tooltip.js";
+import { iconSvg } from "/ui/icons.js";
 
 // The status bar along the bottom, as on every dgs page: the tree on the
 // left, what the page shows in the middle, and every message said anywhere
@@ -374,7 +375,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
     };
     start.oninput = end.oninput = set;
     return el("div", { className: "form-field" }, ...fieldHead(field), control,
-      el("div", { className: "date-span" }, start, el("span", {}, "–"), end));
+      el("div", { className: "date-span" }, picked(start), el("span", {}, "–"), picked(end)));
   } else {
     control = el("input", { ...common, type: ["date", "month"].includes(field.type) ? field.type : "text",
       value, placeholder: placeholder || (field.type === "country" ? "cn, CHN, China, 中国…" : ""),
@@ -389,7 +390,17 @@ export function inputFor(field, value, placeholder, state, self, type) {
     }
   }
   return el("label", { className: "form-field" },
-    ...fieldHead(field), control);
+    ...fieldHead(field), ["date", "month"].includes(field.type) ? picked(control) : control);
+}
+
+// picked puts a calendar button after a date or month input in place of the
+// browser's own, which Tab stops on: Tab goes from field to field, and the
+// calendar opens only with a click.
+function picked(input) {
+  const open = el("button", { type: "button", className: "date-open", tabIndex: -1, title: "Choose a date",
+    "aria-hidden": "true", innerHTML: iconSvg("calendar"),
+    onclick: (event) => { event.preventDefault(); input.focus(); try { input.showPicker(); } catch { /* not shown here */ } } });
+  return el("span", { className: "date-box" }, input, open);
 }
 
 // fieldInputs is the controls for fields, each with its value and its

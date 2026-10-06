@@ -904,7 +904,7 @@ body.list-shut .outline-list { display: none; }
 .path-dialog-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 
 .date-span { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.date-span input { flex: 1 1 140px; min-width: 0; }
+.date-span .date-box { flex: 1 1 140px; min-width: 0; }
 
 /* A rule's children, drawn as Scratch draws an if: a head, and a slot of
    blocks below it framed on the left. They take the form's whole width, each
@@ -1087,3 +1087,12 @@ body.quicklook .view-quicklook-close { display: inline-flex; position: absolute;
 .star.on .icon, .log-item .icon { fill: currentColor; }
 .step-sep .icon, .crumb-sep .icon { width: 12px; height: 12px; }
 #filter-frequent .icon, #frequent.on .icon { fill: currentColor; }
+
+/* A date or month input with its calendar button: the browser's own picker
+   button is hidden, since Tab stops on it; this one opens only on a click. */
+.date-box { position: relative; display: flex; align-items: center; min-width: 0; }
+.date-box input { flex: 1 1 auto; width: 100%; min-width: 0; padding-right: 28px; }
+.date-box input::-webkit-calendar-picker-indicator { display: none; }
+.date-open { position: absolute; top: 0; right: 2px; bottom: 0; display: inline-flex; align-items: center; justify-content: center; width: 24px; padding: 0; border: 0; background: none; color: var(--graphite); cursor: pointer; }
+.date-open:hover { color: var(--primary); }
+.date-open .icon { width: 15px; height: 15px; }
