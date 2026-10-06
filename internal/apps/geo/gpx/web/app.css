@@ -443,7 +443,7 @@ body {
 .disclosure { flex: none; }
 .disclosure.expanded { transform: rotate(90deg); }
 .track-row.expandable > .actions { right: 32px; }
-.list li.part-row { padding-left: 28px; gap: 6px; }
+.list li.part-row { margin-left: 20px; padding-left: 8px; gap: 6px; }
 .list li.parts-toolbar {
   padding: 2px 8px 2px 34px;
   gap: 10px;
