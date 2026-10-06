@@ -264,14 +264,14 @@ test('unfocused tracks and routes remain legible, while hidden files stay fully 
     assert.ok(inactive.paint['line-width']>=1.5);
     assert.ok(active.paint['line-width']>inactive.paint['line-width']);
   }
-  assert.equal(styles.get('track-b-line-casing').layout.visibility,'visible');
-  assert.ok(styles.get('track-b-line-casing').paint['line-opacity']>=0.6);
-  assert.ok(styles.get('track-b-line-casing').paint['line-width']>styles.get('track-b-line').paint['line-width']);
-  assert.deepEqual(moves.map(([id])=>id),['track-a-line-edge','track-a-line-casing','track-a-line','track-a-route-edge','track-a-route-casing','track-a-route','track-a-waypoint']);
+  assert.equal(styles.get('track-b-line-edge').layout.visibility,'visible');
+  assert.ok(styles.get('track-b-line-edge').paint['line-opacity']>=0.6);
+  assert.ok(styles.get('track-b-line-edge').paint['line-width']>styles.get('track-b-line').paint['line-width']);
+  assert.deepEqual(moves.map(([id])=>id),['track-a-line-edge','track-a-line','track-a-route-edge','track-a-route','track-a-waypoint']);
   layers.setVisible('b',false);layers.setFocus('b');
-  for(const kind of ['line-edge','line-casing','line','route-edge','route-casing','route','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'none');
+  for(const kind of ['line-edge','line','route-edge','route','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'none');
   layers.setVisible('b',true);layers.setFocus('a');
-  for(const kind of ['line-edge','line-casing','line','route-edge','route-casing','route','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'visible');
+  for(const kind of ['line-edge','line','route-edge','route','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'visible');
 });
 
 
@@ -382,25 +382,25 @@ test('selecting a removed range or fill retains the camera until an explicit fit
 });
 
 
-test('fine traces keep opaque opposing borders and distinguish every selection state',()=>{
+test('traces keep an opaque inverse-colour outline and distinguish every selection state',()=>{
   const layers=new Map(),context=vm.createContext({});loadModule('trace',context);
   const widths=vm.runInContext('TRACE_WIDTHS',context);
   const map={addLayer:layer=>layers.set(layer.id,layer)};
   for(const state of ['inactive','focused','segment','selected'])context.addTrace(map,{id:state,source:'test',color:'#0072b2',state,dashed:true});
   for(const state of ['inactive','focused','segment','selected']){
     const ids=context.traceLayers?context.traceLayers(state):vm.runInContext(`traceLayers('${state}')`,context);
-    const [edge,casing,core]=[...ids].map(id=>layers.get(id).paint);
-    assert.equal(edge['line-color'],'#17212b');assert.equal(casing['line-color'],'#ffffff');
-    assert.ok(edge['line-width']>casing['line-width']);assert.ok(casing['line-width']>core['line-width']);
-    assert.ok(edge['line-width']<=5.2);assert.ok(core['line-width']>=2.6);
+    const [edge,core]=[...ids].map(id=>layers.get(id).paint);
+    assert.equal(edge['line-color'],'#ff8d4d');assert.equal(core['line-color'],'#0072b2');
+    assert.ok(edge['line-width']>core['line-width']);
+    assert.ok(edge['line-width']<=6);assert.ok(core['line-width']>=3.6);
     assert.ok(core['line-width']/edge['line-width']>=0.6);
-    for(const paint of [edge,casing,core]){
+    for(const paint of [edge,core]){
       assert.equal(paint['line-opacity'],1);
       assert.ok(Math.abs(paint['line-width']*paint['line-dasharray'][0]-7)<1e-9);
       assert.ok(Math.abs(paint['line-width']*paint['line-dasharray'][1]-4)<1e-9);
     }
   }
-  assert.ok(widths.selected[2]>widths.segment[2]);assert.ok(widths.focused[2]>widths.inactive[2]);
+  assert.ok(widths.selected[1]>widths.segment[1]);assert.ok(widths.focused[1]>widths.inactive[1]);
 });
 
 test('highlighted segments retain their colour and never bridge a recording break',()=>{
@@ -446,7 +446,7 @@ test('hiding parts and removing a GPX also updates every new outline layer',()=>
   const map={addSource(){},addLayer:layer=>added.push(layer.id),setFilter:(id,filter)=>filters.set(id,filter),removeLayer:id=>removed.push(id),removeSource:id=>sources.push(id)};
   const layers=new TrackLayers(map);layers.add('a',{parts:[]},'#0072b2');layers.setHiddenParts('a',new Set(['t0','r0']));
   const strokes=added.filter(id=>id.startsWith('track-a-'));
-  assert.equal(strokes.length,7);
+  assert.equal(strokes.length,5);
   for(const id of strokes){
     assert.ok(filters.has(id));assert.deepEqual(plain(filters.get(id).at(-1).at(-1).at(-1)),['literal',['t0','r0']]);
   }
@@ -634,4 +634,12 @@ test('a missed release and a detached source cancel instead of continuing a stal
   assert.equal(h.calls.at(-1),'cancel');assert.equal(h.list.children.length,1);
   await h.document.fire('pointerup',{pointerId:1});assert.equal(h.calls.includes('drop'),false);
  }
+});
+
+test('inverse outlines follow feature colours and file colour edits',()=>{
+ const context=vm.createContext({});loadModule('trace',context);
+ assert.equal(context.inverseColor('#123456'),'#edcba9');
+ assert.deepEqual(plain(context.inverseColor(['get','color'])),['rgb',...[0,1,2].map(i=>['-',255,['at',i,['to-rgba',['get','color']]]])]);
+ const paints=[];context.setTraceColor({setPaintProperty:(...args)=>paints.push(args)},'track','#123456');
+ assert.deepEqual(paints,[['track-edge','line-color','#edcba9'],['track','line-color','#123456']]);
 });

@@ -1,4 +1,4 @@
-import { addTrace, setTraceState, traceLayers } from "./trace.js";
+import { addTrace, setTraceState, setTraceColor, traceLayers } from "./trace.js";
 
 // Track layers on the map. Each workspace file draws its recorded tracks as
 // lines (the focused file on top with a casing), its planned routes as dashed
@@ -96,8 +96,8 @@ export class TrackLayers {
   }
 
   setColor(id, color) {
-    this.map.setPaintProperty(lineId(id), "line-color", color);
-    this.map.setPaintProperty(routeId(id), "line-color", color);
+    setTraceColor(this.map, lineId(id), color);
+    setTraceColor(this.map, routeId(id), color);
     this.map.setPaintProperty(waypointId(id), "circle-stroke-color", color);
   }
 
