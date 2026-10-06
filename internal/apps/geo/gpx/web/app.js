@@ -1057,11 +1057,13 @@ function applyCutPanel() {
   const entry = focusedEntry();
   const open = cutting();
   if (open) {
-    cutPanel.show(entry.track, { timeZone: $("timezone").value, workspace: [...state.tracks.keys()], folder: state.folder || state.config.root, home: state.config.root || "", places: state.config.places || [] });
-    cutOverlay.show(entry.track, hiddenRanges(entry));
+    const selected = state.partSelection?.path === state.focus
+      ? entry.track.parts.find(part => part.key === state.partSelection.key && part.kind === "track") : null;
+    cutPanel.show(entry.track, { part: selected, timeZone: $("timezone").value, workspace: [...state.tracks.keys()], folder: state.folder || state.config.root, home: state.config.root || "", places: state.config.places || [] });
+    cutOverlay.show(cutPanel.track, hiddenRanges(entry));
     timeline.setCutting({
-      cuts: entry.track.cuts,
-      candidates: entry.track.cutCandidates,
+      cuts: entry.track.cuts.filter(index => !selected || (index > selected.first && index < selected.last)),
+      candidates: entry.track.cutCandidates.filter(index => !selected || (index > selected.first && index < selected.last)),
       onAdd: (index) => cutPanel.addCut(index),
       onMove: (from, to) => cutPanel.moveCut(from, to),
       onRemove: (index) => cutPanel.removeCut(index),
@@ -1946,7 +1948,7 @@ function showPart(path, part, { fit: shouldFit = false } = {}) {
   select(path);
   const entry = state.tracks.get(path);
   if (entry.visible && state.focus !== path) setFocus(path, { fit: false });
-  else renderTracks();
+  else { renderTracks(); applyCutPanel(); }
   if (part.kind === "waypoint") {
     if (shouldFit && entry.visible && !entry.hiddenParts.has(part.key)) openWaypoint(entry, part);
     if (shouldFit) map.easeTo({ center: part.points[0], zoom: Math.max(map.getZoom(), 15), duration: 400 });
@@ -2610,9 +2612,9 @@ async function start() {
   cutPanel = new CutPanel({
     root: cleanPanel.segmentsRoot,
     onCuts: (cuts, names) => changeFocused((path) => api.saveSegments(path, cuts, names)),
-    onHover: (piece) => cutOverlay.highlight(focusedEntry()?.track, piece),
+    onHover: (piece) => cutOverlay.highlight(cutPanel.track, piece),
     onShow: (piece, { fit = false } = {}) => {
-      cutOverlay.highlight(focusedEntry()?.track, piece);
+      cutOverlay.highlight(cutPanel.track, piece);
       profile.setIndex(piece.first);
       timeline.setIndex(piece.first);
       if (!fit) return;

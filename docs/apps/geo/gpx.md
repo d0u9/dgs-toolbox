@@ -1121,3 +1121,9 @@ track inherits its current track name as a display and add-track default;
 this inherited name is not saved as a segment-name override. Cuts, removed or
 moved points, road fills, and segments spanning multiple tracks use the time
 range instead, or `Segment N` when times are unavailable.
+
+Segments respect track boundaries: a segment never spans two tracks. Selecting
+an individual track in the workspace shows only its segments; selecting the
+GPX parent shows all tracks' segments. Single clicks preserve visibility and
+the map camera. Segment edits and clearing cuts within a selected track retain
+other tracks' cuts and custom segment names.
