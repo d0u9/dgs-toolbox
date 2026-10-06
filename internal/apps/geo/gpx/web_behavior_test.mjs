@@ -643,3 +643,14 @@ test('inverse outlines follow feature colours and file colour edits',()=>{
  const paints=[];context.setTraceColor({setPaintProperty:(...args)=>paints.push(args)},'track','#123456');
  assert.deepEqual(paints,[['track-edge','line-color','#edcba9'],['track','line-color','#123456']]);
 });
+
+test('mixed-file visibility omits All and uses shared row icons without selecting the file',async()=>{
+ const h=treeHarness(treeTrack({parts:[{kind:'track',key:'t0'},{kind:'route',key:'r0'}]}));
+ const app=source('app');vm.runInContext(app.slice(app.indexOf('function partsToolbar('),app.indexOf('function setPartHidden(')),h.context);
+ h.context.setPartsHidden=(...args)=>h.calls.push(['parts',...args]);
+ const row=h.context.partsToolbar('current.gpx',h.entry),button=row.all(e=>e.tagName==='BUTTON')[0];
+ assert.ok(!row.all(e=>e.textContent==='All').length);
+ h.entry.track.parts=[{kind:'track',key:'t0'},{kind:'track',key:'t1'}];assert.equal(h.context.partsToolbar('current.gpx',h.entry).children.length,0);
+ assert.ok(row.classList.contains('ui-file-row'));assert.ok(button.classList.contains('icon-button'));assert.ok(button.classList.contains('ui-row-icon'));
+ const event=await button.fire('click');assert.equal(event.stopped,true);assert.equal(h.calls.at(-1)[0],'parts');
+});

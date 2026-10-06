@@ -455,20 +455,9 @@ body {
 .list li.parts-toolbar:hover { background: none; }
 .parts-group { display: flex; align-items: center; gap: 2px; }
 .parts-group span { margin-right: 2px; }
-.mini {
-  width: 20px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid var(--hairline);
-  border-radius: 4px;
-  background: var(--paper);
-  color: var(--primary);
-  font-size: 11px;
-  line-height: 16px;
-  cursor: pointer;
-}
+
 .mini:hover:not(:disabled) { background: var(--hover); }
-.mini:disabled { opacity: .35; cursor: default; }
+
 .part-row .glyph { flex: none; width: 14px; text-align: center; }
 
 .part-row.hidden-track .eye { color: var(--graphite); }
