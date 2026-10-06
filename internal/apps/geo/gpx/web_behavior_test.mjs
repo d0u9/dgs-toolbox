@@ -28,7 +28,7 @@ function treeHarness(track){
   const entry={id:'a',color:'#0072b2',visible:false,hiddenParts:new Set(),track};
   const state={focus:'other.gpx',tracks:new Map([['current.gpx',entry]]),selection:new Set(),config:{canReveal:false}};
   const context=vm.createContext({
-    tooltip(){},document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',
+    tooltip(node,lines){node.tip=lines.filter(Boolean);},document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',
     PART_GLYPH:{track:'track',route:'route',waypoint:'waypoint'},
     expandable:()=>false,oursMark:()=>new Element('span'),filteredPaths:()=>['current.gpx'],
     bindRowDrag(){},copyTargets:()=>[],renderTracks(){calls.push(['render']);},
@@ -43,7 +43,7 @@ function treeHarness(track){
   loadShared('selection',context);loadShared('controls',context);context.label=context.rowLabel;
   loadModule('drag',context);
   const app=source('app');
-  vm.runInContext(app.slice(app.indexOf('const doubleRowClick'),app.indexOf('// oursMark')),context);
+  vm.runInContext(app.slice(app.indexOf('const doubleRowClick'),app.indexOf('// manyMenu')),context);
   vm.runInContext(app.slice(app.indexOf('function partRow('),app.indexOf('// ---- dragging rows')),context);
   vm.runInContext(app.slice(app.indexOf('function showPart('),app.indexOf('\nfunction openWaypoint(')),context);
   // Run the application's actual capture listeners before startup's I/O.
@@ -112,7 +112,7 @@ function segmentHarness(pieces,{choice='separate',name='Named track',fail=false}
   const entry={id:'a',track};
   const state={focus:track.path,tracks:new Map([[track.path,entry]])};
   const context=vm.createContext({
-    document:documentStub(),format,state,
+    tooltip(node,lines){node.tip=lines.filter(Boolean);},document:documentStub(),format,state,
     Option:class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}},
     status:{show:message=>messages.push(message),showError:message=>messages.push(message)},
     promptDialog:options=>{dialogs.push(['name',options]);nameShown.resolve(options);return ask.promise;},
@@ -450,4 +450,56 @@ test('hiding parts and removing a GPX also updates every new outline layer',()=>
     assert.ok(filters.has(id));assert.deepEqual(plain(filters.get(id).at(-1).at(-1).at(-1)),['literal',['t0','r0']]);
   }
   layers.remove('a');assert.deepEqual(removed,strokes);assert.deepEqual(sources,['track-a']);assert.equal(layers.ids.size,0);
+});
+
+
+test('workspace rows reserve the name and distance for scanning and keep full details in hover tips',()=>{
+  const track=treeTrack({ours:true,unsaved:true,stats:{distance:1200},stops:[{},{}],clean:{sidecar:'synthetic.dgs.json'},parts:[{kind:'track'},{kind:'route'},{kind:'waypoint'}]});
+  const h=treeHarness(track),row=h.context.trackRow('current.gpx',h.entry);
+  assert.equal(row.all(e=>e.classList.contains('meta'))[0].textContent,'');
+  assert.equal(row.all(e=>e.classList.contains('row-distance'))[0].textContent,format.distance(1200));
+  for(const removed of ['ours-mark','order','row-action'])assert.equal(row.all(e=>e.classList.contains(removed)).length,0);
+  assert.ok(row.tip.includes('2 stops'));assert.ok(row.tip.includes('sidecar'));assert.ok(row.tip.includes('edited, not saved'));assert.ok(row.tip.includes('current.gpx'));
+  assert.ok(row.classList.contains('unsaved'));
+});
+
+test('secondary workspace actions remain accessible in the context menu after removing inline buttons',async()=>{
+  const h=treeHarness(treeTrack({ours:true}));h.state.config.canReveal=true;
+  h.state.tracks.set('other.gpx',{...h.entry});h.context.filteredPaths=()=>['current.gpx','other.gpx'];
+  h.context.api={reveal:async path=>h.calls.push(['reveal',path])};h.context.reorderFiles=(...args)=>h.calls.push(['order',...args]);
+  await h.context.trackRow('current.gpx',h.entry).fire('contextmenu');
+  const menu=h.calls.find(([kind])=>kind==='menu')[1];
+  assert.equal(menu.find(item=>item.label==='Move up').disabled,true);assert.equal(menu.find(item=>item.label==='Move down').disabled,false);
+  await menu.find(item=>item.label==='Show in file manager').onSelect();assert.deepEqual(h.calls.at(-1),['reveal','current.gpx']);
+  menu.find(item=>item.label==='Move down').onSelect();assert.deepEqual(h.calls.at(-1),['order','current.gpx',null]);
+});
+
+test('segment rows keep plain numbers and names, move details into tips, and retain cut removal in the menu',async()=>{
+  const h=segmentHarness(pieces),row=h.root.all(e=>e.classList.contains('cut-row'))[1];
+  assert.equal(row.all(e=>e.classList.contains('cut-row-meta')).length,0);assert.equal(row.all(e=>e.classList.contains('cut-remove')).length,0);
+  const number=row.all(e=>e.classList.contains('cut-number'))[0];assert.equal(number.textContent,'2');assert.equal(number.style.background,undefined);
+  assert.ok(row.tip.some(line=>line.includes('3 points')));assert.equal(row.style.borderLeftColor,h.context.pieceColor?h.context.pieceColor(1):vm.runInContext('pieceColor(1)',h.context));
+  const menus=[];h.context.openMenu=(event,sections)=>menus.push(sections.flat());
+  await row.fire('contextmenu');assert.ok(menus[0].some(item=>item.label==='Remove cut before this segment'));
+});
+
+test('unnamed same-day segments show a short time span but retain the complete dates in their tip',()=>{
+  const start=Date.UTC(2026,0,1,9),end=start+20*60*1000;
+  const h=segmentHarness([{first:0,last:2,points:3,distance:20,start,end}]);h.panel.timeZone='UTC';h.panel.render();
+  const row=h.root.all(e=>e.classList.contains('cut-row'))[0];assert.equal(row.all(e=>e.classList.contains('cut-name'))[0].textContent,'09:00–09:20');
+  assert.ok(row.tip.some(line=>line.includes('2026-01-01')));assert.ok(row.tip.includes('20m'));
+});
+
+
+test('segment inspector uses plain tab counts, suppresses routine footer text and keeps errors visible',()=>{
+  const context=vm.createContext({document:documentStub(),format});loadModule('clean',context);
+  const panel=Object.create(vm.runInContext('CleanPanel.prototype',context));
+  const params={edits:[]};for(const key of vm.runInContext('FILTERS.map(filter=>filter.key)',context))params[key]={enabled:false};
+  Object.assign(panel,{root:new Element('div'),segmentsRoot:new Element('div'),tab:'segments',track:{name:'Synthetic trip',pieces:[{},{},{}],fills:[],clean:{params,counts:{}}}});
+  panel.render();
+  const tabs=panel.root.all(e=>e.attributes.role==='tab');assert.ok(tabs.some(tab=>tab.textContent==='Segments (3)'));
+  assert.equal(panel.root.all(e=>e.classList.contains('tab-count')).length,0);
+  assert.equal(panel.root.all(e=>e.classList.contains('clean-foot')).length,0);
+  panel.track.clean.error='Synthetic state error';panel.render();
+  assert.equal(panel.root.all(e=>e.classList.contains('error'))[0].textContent,'Sidecar not read: Synthetic state error');
 });

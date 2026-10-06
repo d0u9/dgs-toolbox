@@ -124,20 +124,22 @@ map. It is the interface later milestones build on.
   starts, so a change takes effect after restarting `dgs`.
 - **Workspace.** The tracks opened, kept together whatever
   folder they came from — the set later milestones edit and search. A row
-  carries only what is looked at or reached for all the time: the eye, the
-  reveal button and the mark saying who wrote the file. Everything done to a
+  shows its name and distance on one spacious line, with a colour edge, the
+  eye and the parts disclosure. Extra details are available in a hover tip;
+  no small tags or badges are used. Everything done to a
   file is in its context menu. A filter box narrows the list by words in the
   name or path; the eye beside it acts on the tracks it lists.
-  The header counts shown against total. A file with a sidecar says *sidecar*
-  in its row (*sidecar unreadable* when it cannot be read).
+  The header counts shown against total. Sidecar state, stops, part counts, unsaved
+  details and the file path are in the tip. An unreadable state also marks
+  the name in the error colour; unsaved edits retain the dot beside the name.
 - **The eye.** Showing and hiding are one state, so one control carries it:
   an open eye where the track is drawn, an eye struck through where it is not.
   It is the same control on a file's row, on one of its tracks, routes or
   waypoints, over the tracks the filter lists, and over a file's tracks,
   routes or waypoints as a group: while any of them is shown it hides them,
   and once none is it shows them.
-- **Who wrote the file.** Beside the eye, a mark says whether dgs wrote this
-  GPX — filled for a file dgs wrote, hollow for any other. It decides where a
+- **Who wrote the file.** The file hover tip says whether dgs wrote this
+  GPX. It decides where a
   later edit goes: inside the file itself, or into a sidecar beside it.
 - **Editing is not saving.** Nothing an edit does reaches the disk until it
   is saved. What was done to a file — cleaning, removals, cuts, names, fills,
@@ -200,8 +202,8 @@ map. It is the interface later milestones build on.
   in the workspace, open as it was; the recording stays on disk. A file dgs
   already wrote has nothing to convert. This is *Save as…* under the name of
   what it is for, and it writes the same file.
-- **Show in file manager.** A track row has a button, on hover, that reveals
-  the file in Finder or Explorer. It appears only when the
+- **Show in file manager.** The file's right-click menu offers revealing
+  it in Finder or Explorer. It appears only when the
   page is opened on the machine running `dgs`: from another machine it would
   open windows on a screen nobody there can see.
 - **Dropping files.** GPX files dragged from Finder or Explorer onto the
@@ -310,13 +312,13 @@ map. It is the interface later milestones build on.
 
   - A **file** over another file lists the workspace in that order. The order
     is the page's own — no file is written — and is remembered with the
-    session. The up and down arrows on a file's row move it one step among
+    session. *Move up* and *Move down* in a file's right-click menu move it among
     the rows listed, for the same order without dragging.
   - A **part** dropped inside its own file does nothing. A track, route or
-    waypoint is put in order among those of its kind by the ▲ and ▼ on its
-    row, one place per click. The order is held beside the file, keyed as the
+    waypoint is put in order among those of its kind using *Move up* and
+    *Move down* in its right-click menu, one place per action. The order is held beside the file, keyed as the
     names are, and goes into the GPX itself when the file is saved. Only a
-    GPX `dgs` wrote, or a new one not saved yet, shows the arrows, and only
+    GPX `dgs` wrote, or a new one not saved yet, offers those commands, and only
     on a kind it holds more than one of; a recording keeps the order it was
     recorded in. A track's points go with it, and so do the edits on them:
     the cleaning, cuts and fills are kept by point index, so every index is
@@ -673,18 +675,22 @@ nothing is lost between them. Segments are cut from what cleaning kept.
   right-clicking offers *Cut here*. Timeline clicks also select, while dragging
   still scrubs. Cuts are yellow handles: drag one to move it, or right-click
   for *Remove cut*. The segment row also offers removal in its right-click
-  menu and an explicit `×` button. The first segment has no cut before it.
+  menu. The first segment has no cut before it.
   *Clear cuts* removes them all. Cuts are also marked on the map.
 - **Colours.** While the tab is shown each segment is drawn over the track in
   a colour of its own, neighbours always different, with the same colour on
-  its number in the table and as a strip along the foot of the timeline.
+  its row's colour edge and as a strip along the foot of the timeline.
   Unselected segments have a 1.8 px core; the highlighted segment retains its
   colour with a 2.6 px core. Both have light and dark edges, with total widths
   of 4 px and 4.8 px respectively. Highlighting preserves recording breaks.
-- **The list.** One row per segment, two lines: its box, colour and number
-  with its name, then its time span, duration and distance under them. A bar
-  over the list chooses all or none and says how many are chosen. Nothing is
-  laid out in columns, so a narrow inspector hides nothing.
+- **The list.** One spacious line per segment: a standard checkbox, plain number,
+  name and distance. A colour edge links it to the map; no coloured number
+  badge or small tag is used. Full dates, duration, point count and the full
+  name are in the shared hover tip. Unnamed same-day segments show just their
+  time span; cross-day names retain both dates. Long names use an ellipsis. A
+  bar selects all or none and shows the selected count. Cut removal is in the
+  right-click menu. The inspector tab uses a plain count; repeated headings
+  and explanatory paragraphs are replaced with hover tips. Errors stay visible.
 - **Names.** A segment is named by its time span in the page's time zone —
   `2026-09-06 09:00–09:26`, or with both dates when it crosses midnight —
   until *Rename…* in its right-click menu opens the naming dialog.
