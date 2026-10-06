@@ -699,22 +699,21 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .list li.part-row.selected .name { color: var(--ink); font-weight: 600; }
 
 /* All map actions use the navigation controls' compact stacked treatment. */
-.map-area { --map-control-size: 29px; --map-control-icon: 18px; --map-control-divider: #ddd; }
 .map-tools, .map-button, .maplibregl-ctrl-group {
   border: none; border-radius: 4px; background: #fff;
   box-shadow: 0 0 0 2px rgba(0,0,0,.1);
 }
 .map-tools, .maplibregl-ctrl-group { overflow: hidden; }
 .map-tools { top: 78px; }
-.map-button { width: var(--map-control-size); height: var(--map-control-size); color: #333; padding: 0; display: grid; place-items: center; }
+.map-button { width: 29px; height: 29px; color: #333; padding: 0; display: grid; place-items: center; }
 .map-button.terrain { top: 42px; font-size: 12px; font-weight: 700; }
 .map-tool, .maplibregl-ctrl-group button {
-  width: var(--map-control-size); height: var(--map-control-size);
+  width: 29px; height: 29px;
   padding: 0; border: none; border-radius: 0; color: #333;
 }
-.map-tools > .map-tool + .map-tool, .maplibregl-ctrl-group button + button { border-top: 1px solid var(--map-control-divider); }
-.map-tools-gap { height: 0; margin: 0; border-top: 1px solid var(--map-control-divider); }
-.map-tool svg, .map-button svg, .maplibregl-ctrl-group button svg { width: var(--map-control-icon); height: var(--map-control-icon); display: block; margin: auto; }
+.map-tools > .map-tool + .map-tool, .maplibregl-ctrl-group button + button { border-top: 1px solid #ddd; }
+.map-tools-gap { height: 0; margin: 0; border-top: 1px solid #ddd; }
+.map-tool svg, .map-button svg, .maplibregl-ctrl-group button svg { width: 18px; height: 18px; display: block; margin: auto; }
 .map-tool:hover, .map-button:hover, .maplibregl-ctrl-group button:hover { background: #f2f2f2; color: #333; }
 .map-tool[aria-pressed="true"], .map-button[aria-pressed="true"] { background: var(--selected); color: var(--primary); }
 
@@ -723,3 +722,15 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .cut-actions .clean-filter-head { font-size: 12px; }
 .cut-actions .text-button, .cut-actions .button, .cut-actions select { min-height: 22px; height: 22px; font-size: 12px; padding: 0 6px; }
 .cut-actions .cut-tools { gap: 4px; }
+
+/* Panel controls stay on the map side of each adjoining boundary. */
+.panel-hide, .panel-show { position: absolute; z-index: 5; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border-radius: 4px; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
+.panel-hide.left, .panel-show.left { left: 6px; top: 50%; transform: translateY(-50%); }
+.panel-hide.right, .panel-show.right { right: 6px; top: 50%; transform: translateY(-50%); }
+.panel-hide.bottom, .panel-show.bottom { left: 50%; bottom: 6px; transform: translateX(-50%); }
+.panel-hide svg, .panel-show svg { width: 14px; height: 14px; }
+.panel-hide[hidden], .panel-show[hidden] { display: none; }
+
+/* Reserve the edge lane so fold buttons never cover map tools. */
+.map-tools, .map-button { left: 34px; }
+.maplibregl-ctrl-top-right .maplibregl-ctrl { margin-right: 34px; }
