@@ -286,7 +286,7 @@ body {
 
 .profile-head { display: flex; align-items: center; gap: var(--space-xs); margin-bottom: 6px; white-space: nowrap; min-width: 0; }
 .profile-head .swatch { width: 10px; height: 10px; border-radius: var(--radius-sm); flex: none; }
-.profile-head strong { flex: none; font-size: var(--font-size-title); }
+.profile-head strong { flex: none; font-size: var(--font-size-sm); }
 .profile-head #profile-stats { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 100; font-variant-numeric: tabular-nums; }
 .readout { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--charcoal); font-variant-numeric: tabular-nums; }
 .chart-row { position: relative; min-height: 0; min-width: 0; overflow: hidden; display: flex; }
@@ -617,3 +617,7 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .panel-hide.left svg, .panel-show.right svg { transform: rotate(180deg); }
 .panel-hide.bottom svg { transform: rotate(90deg); }
 .panel-show.bottom svg { transform: rotate(-90deg); }
+
+/* Chart heading text follows the segmented controls at the same centre. */
+.profile-head { font-size: var(--font-size-sm); line-height: var(--line-height-ui); align-items: center; }
+.profile-head #profile-name, .profile-head #profile-stats, .profile-head .readout { line-height: var(--control-height-sm); }
