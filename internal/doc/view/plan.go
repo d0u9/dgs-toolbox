@@ -406,6 +406,7 @@ func build(v View, items []tree.Item, types Types, watch string) (Plan, []Explan
 	}
 	plan := Plan{Files: []File{}, Missing: []Missing{}, Clashes: []Clash{}}
 	var placed []File
+	next := &nextNumbers{orders: map[string]*nextOrder{}}
 	for _, item := range sorted {
 		current := item.Current()
 		for i, rev := range item.Revisions {
@@ -495,7 +496,11 @@ func build(v View, items []tree.Item, types Types, watch string) (Plan, []Explan
 				continue
 			}
 			layout := strings.Join(append(path, file), "/")
-			r := renderer{keys: keys, fallback: fallback, scopes: scopes}
+			nodes := make([]Node, len(scopes))
+			for i, sc := range scopes {
+				nodes[i] = sc.Node
+			}
+			r := renderer{keys: keys, fallback: fallback, scopes: scopes, writers: counterWriters(nodes), next: next}
 			if x != nil {
 				r.record, r.from, x.Layout = true, inherited, layout
 			}
@@ -518,6 +523,15 @@ func build(v View, items []tree.Item, types Types, watch string) (Plan, []Explan
 			}
 			placed = append(placed, File{Path: name, Item: item.ID, Digest: rev.Digest, Revision: i + 1, Node: strings.TrimSuffix(where, ".")})
 		}
+	}
+
+	// Names numbered after their lists get their numbers now that all are met.
+	next.settle()
+	for i := range placed {
+		placed[i].Path = next.fill(placed[i].Path)
+	}
+	for _, x := range explained {
+		fillSteps(x.Steps, next)
 	}
 
 	groups := map[string][]int{}
@@ -671,11 +685,11 @@ type scope struct {
 	at string
 }
 
-// order is the nearest of r's scopes to list the order named, the deepest
-// first.
-func (r *renderer) order(name string) (scope, bool) {
-	for i := len(r.scopes) - 1; i >= 0; i-- {
-		if len(r.scopes[i].Order[name]) > 0 {
+// order is the nearest of r's scopes to list the order c numbers, the
+// deepest first, no higher than orderFloor allows.
+func (r *renderer) order(c Part) (scope, bool) {
+	for i := len(r.scopes) - 1; i >= orderFloor(c, r.writers); i-- {
+		if r.scopes[i].lists(c.Of) {
 			return r.scopes[i], true
 		}
 	}
@@ -708,8 +722,13 @@ type renderer struct {
 	keys     map[string]string
 	fallback *string
 	// scopes are the nodes from the rule down to the one placing, where
-	// each {#} looks for its order.
+	// each {#} looks for its order, and writers the place among them of
+	// the node that wrote each {#}.
 	scopes  []scope
+	writers []int
+	// next gathers the names orders number on after their lists, for the
+	// whole plan, to be numbered once every Item is placed.
+	next    *nextNumbers
 	lacking []string
 	// unordered is an order the name it made is not in, to the name, and
 	// unorderedAt the node each order is in.
@@ -779,7 +798,7 @@ func (r *renderer) name(parts []Part, group bool) (string, []string) {
 	}
 	if counter >= 0 {
 		c := parts[counter]
-		s, _ := r.order(c.Of)
+		s, _ := r.order(c)
 		step := &Step{Order: c.Of, OrderAt: s.at, Skipped: true}
 		steps[counter] = step
 		if len(absent) == 0 && len(r.lacking) == short {
@@ -794,6 +813,10 @@ func (r *renderer) name(parts []Part, group bool) (string, []string) {
 					if counter+1 < c.From {
 						pieces[counter+1] = ""
 					}
+				} else if s.Unlisted[c.Of] == UnlistedNext {
+					// Its width waits for the names numbered after it.
+					pieces[counter] = r.next.token(s, c.Of, numbers[n-1], "")
+					step.Value = pieces[counter]
 				} else {
 					widest := slices.Max(numbers)
 					if unlisted, ok := UnlistedNumber(s.Unlisted[c.Of]); ok {
@@ -802,6 +825,11 @@ func (r *renderer) name(parts []Part, group bool) (string, []string) {
 					pieces[counter] = padTo(numbers[n-1], widest)
 					step.Value = pieces[counter]
 				}
+			} else if s.Unlisted[c.Of] == UnlistedNext {
+				// Not listed: numbered after the list once every name is known.
+				step.Next = true
+				pieces[counter] = r.next.token(s, c.Of, 0, name)
+				step.Value = pieces[counter]
 			} else if number, ok := UnlistedNumber(s.Unlisted[c.Of]); ok && s.Unlisted[c.Of] != "" {
 				// Not listed, and the order says what such names get.
 				if number == Unnumbered {
@@ -811,7 +839,11 @@ func (r *renderer) name(parts []Part, group bool) (string, []string) {
 					}
 				} else {
 					numbers := Numbered(s.Order[c.Of], s.Numbers[c.Of], s.Unnumbered[c.Of])
-					pieces[counter] = padTo(number, max(number, slices.Max(numbers)))
+					widest := number
+					if len(numbers) > 0 {
+						widest = max(number, slices.Max(numbers))
+					}
+					pieces[counter] = padTo(number, widest)
 					step.Value = pieces[counter]
 				}
 			} else {
@@ -946,6 +978,80 @@ func padTo(n, largest int) string {
 // Unnumbered is the number Numbered gives a name {#} leaves unnumbered.
 const Unnumbered = -1
 
+// nextNumbers is, per order that numbers names on after its list, the
+// numbers its list gives and the names not listed, to number once a plan
+// has met them all. A {#} writes a token in their place until then.
+type nextNumbers struct {
+	orders map[string]*nextOrder
+}
+
+type nextOrder struct {
+	last   int // the largest number the list gives, or start less one
+	widest int
+	names  []string
+}
+
+// token stands for a number of the order c.Of in scope s: number for a
+// listed name, or the number name gets after the list.
+func (x *nextNumbers) token(s scope, of string, number int, name string) string {
+	key := s.at + "\x01" + of
+	o, ok := x.orders[key]
+	if !ok {
+		o = &nextOrder{last: 0}
+		if start, ok := s.Numbers[of][NumberStart]; ok {
+			o.last = start - 1
+		}
+		for _, n := range Numbered(s.Order[of], s.Numbers[of], s.Unnumbered[of]) {
+			o.last = max(o.last, n)
+		}
+		o.widest = o.last
+		x.orders[key] = o
+	}
+	if name == "" {
+		return fmt.Sprintf("\x00%s\x00#%d\x00", key, number)
+	}
+	if place(o.names, name) == 0 {
+		o.names = append(o.names, name)
+	}
+	return "\x00" + key + "\x00" + name + "\x00"
+}
+
+var nextToken = regexp.MustCompile("\x00([^\x00]*)\x00([^\x00]*)\x00")
+
+// fill numbers the names met after their lists, in the order of their
+// names, and writes every token as its number, padded as wide as the
+// largest its order gives.
+func (x *nextNumbers) fill(s string) string {
+	return nextToken.ReplaceAllStringFunc(s, func(t string) string {
+		m := nextToken.FindStringSubmatch(t)
+		o := x.orders[m[1]]
+		if o == nil {
+			return t
+		}
+		if n, ok := strings.CutPrefix(m[2], "#"); ok {
+			number, _ := strconv.Atoi(n)
+			return padTo(number, o.widest)
+		}
+		return padTo(o.last+place(o.names, m[2]), o.widest)
+	})
+}
+
+// fillSteps writes the numbers of steps that wrote tokens.
+func fillSteps(steps []Step, next *nextNumbers) {
+	for i := range steps {
+		steps[i].Value = next.fill(steps[i].Value)
+		fillSteps(steps[i].Inner, next)
+	}
+}
+
+// settle sorts each order's names and finds its widest number.
+func (x *nextNumbers) settle() {
+	for _, o := range x.orders {
+		slices.SortFunc(o.names, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
+		o.widest = max(o.widest, o.last+len(o.names))
+	}
+}
+
 // Numbered is the number {#} writes for each name of order: the next
 // after the one before, counting from 1, unless set gives the name its
 // own, from which the names after it count on. A name skip lists is
@@ -953,6 +1059,9 @@ const Unnumbered = -1
 func Numbered(order []string, set map[string]int, skip []string) []int {
 	out := make([]int, len(order))
 	n := 0
+	if start, ok := set[NumberStart]; ok {
+		n = start - 1
+	}
 	for i, name := range order {
 		if place(skip, name) > 0 {
 			out[i] = Unnumbered
@@ -960,7 +1069,7 @@ func Numbered(order []string, set map[string]int, skip []string) []int {
 		}
 		n++
 		for named, m := range set {
-			if sameValue(named, name) {
+			if named != NumberStart && sameValue(named, name) {
 				n = m
 				break
 			}

@@ -858,12 +858,22 @@ written, keeps it when the layout around the key changes: adding
 `[-{level}]` or `|type:zh` leaves the order `name` as it was. Two `{#}`
 numbering different rests from one order are refused; `{#other}` names an
 order of its own: `{#}-{name}/…/{#short}-{name}` numbers the second from
-`short`. A folder or file name has one `{#}` at most, and a key must
+`short`, and shares it (below). A folder or file name has one `{#}` at most, and a key must
 follow it.
 
-An order is listed on the rule, or on a child: a `{#}` takes the nearest
-node's, its own first, then up to the rule. So a contract can be `09` in
-one folder and `02` in another, each child listing its own `name`.
+An order belongs where its `{#}` is written. A `{#}` takes the order of the
+nearest node from the one placing up to the node whose folders or file
+wrote it, never above: a `{#}` a child writes is numbered in that child
+alone, whatever the rule lists, and a `{#}` the rule writes may be
+numbered apart by a child that lists its own, so a contract can be `09`
+in one folder and `02` in another. Only a named `{#other}` shares: it
+looks up to the rule for an order `other`, so several children can count
+on in one list.
+
+A rule written before this, where a child's `{#}` took the rule's order,
+is read with a copy of that order in the child — its names, numbers,
+unnumbered and unlisted — so every PDF keeps its number; an order above
+that no `{#}` takes any more is dropped. Saving the rule keeps it so.
 
 `{/#}` stops the number: what follows it is written but not numbered, and
 the order is named for the rest up to it. `{#}-{name}{/#}[-{signed:compact}].{ext}`,
@@ -881,7 +891,8 @@ for its first key when the rule is read, and moved to the node nearest the
 rule that holds every `{#}` numbering that rest.
 
 A name may be given its own number, to skip some: `numbers`, per order,
-sets it, and the names after it count on from there. With the order
+sets it, and the names after it count on from there. `start` in it is the
+number the first name gets: `numbers: {date: {start: 50}}` counts from 50. With the order
 `[身份证, 护照, 结婚证, 户口]` and `numbers: {name: {结婚证: 6}}`, they
 are `01`, `02`, `06` and `07`. A number may repeat the one before it, so
 two names share it — a tenancy agreement and its translation both `02` —
@@ -900,9 +911,16 @@ button of a Numbering row switches it.
 instead of leaving its PDF unplaced until it is listed: `unnumbered`
 leaves it unnumbered the same way, so with `unlisted: {name: unnumbered}`
 a bill the order does not list is `账单.pdf`; a number gives every such
-name that one number, so `unlisted: {name: 99}` makes it `99-账单.pdf`.
-On the Rules page it is "Not in the list" under each Numbering list:
-Not placed, No number, or One number.
+name that one number, so `unlisted: {name: 99}` makes it `99-账单.pdf`;
+`next` numbers such names on after the list, in the order of the names
+ignoring case. With any of them an order may list nothing at all: every
+name is then unlisted. A traffic offence
+folder `{#}-{date:compact}-{name}` with `numbers: {date: {start: 50}}` and
+`unlisted: {date: next}` is `50-20200102-超速`, `51-20210304-压线`, and the
+next offence takes the next number by its date; one listed comes before
+them. On the Rules page it is "Not in the list" under each Numbering list:
+Not placed, Next numbers, No number, or One number, with "Start at" above
+it.
 
 Numbers have two digits, more when the largest is over 99. Names in an
 order are compared as a country when both name one, so `CN`, `CHN` and `中国`
@@ -913,9 +931,13 @@ renames every folder after the moved entry at the next export. On the Rules
 page, each `{#}` in the layout gets a Numbering list, its names shown with
 their numbers and reordered by dragging or with up and down; one new to the
 layout starts with the names its Items make, sorted. A name the chosen
-Items make that the list lacks is offered below it, to add last. A block
-gets its own lists with + numbering, copied from the numbering above it, and
-drops them with Number as above; Leave out excludes what it takes.
+Items make that the list lacks is offered below it, to add last. The rule's
+Numbering shows the orders of the `{#}` its own folders and file write, and
+the shared `{#other}` ones; each block shows the orders of the `{#}` its
+own folders and file write. A block numbers apart what the rule writes
+with + numbering, copied from the numbering above it, keeping only the
+names its Items make, and drops that with Number as above; Leave out
+excludes what it takes.
 
 A layout is rendered by three rules:
 

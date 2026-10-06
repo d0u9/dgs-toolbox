@@ -80,13 +80,16 @@ type Step struct {
 	// or Unordered when it is not there, Unnumbered when the order leaves
 	// it so, Skipped when a key it needs is lacking. OrderAt is the child
 	// the order is in, 2.1, or "" for the rule.
-	Order      string `json:"order,omitempty"`
-	OrderAt    string `json:"orderAt,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Place      int    `json:"place,omitempty"`
-	Unordered  bool   `json:"unordered,omitempty"`
-	Unnumbered bool   `json:"unnumbered,omitempty"`
-	Skipped    bool   `json:"skipped,omitempty"`
+	Order     string `json:"order,omitempty"`
+	OrderAt   string `json:"orderAt,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Place     int    `json:"place,omitempty"`
+	Unordered bool   `json:"unordered,omitempty"`
+	// Next is set when the order does not list the name but numbers it on
+	// after its list.
+	Next       bool `json:"next,omitempty"`
+	Unnumbered bool `json:"unnumbered,omitempty"`
+	Skipped    bool `json:"skipped,omitempty"`
 }
 
 // String is p as a layout writes it.
@@ -291,6 +294,8 @@ func stepText(s Step) string {
 		return "not numbered: a key it numbers is lacking"
 	case s.Order != "" && s.Unordered:
 		return fmt.Sprintf("order %s has no %q", orderOf(s), s.Name)
+	case s.Order != "" && s.Next:
+		return fmt.Sprintf("order %s: %q is not listed, numbered %s after the list", orderOf(s), s.Name, s.Value)
 	case s.Order != "" && s.Unnumbered:
 		return fmt.Sprintf("order %s: %q is #%d, left unnumbered", orderOf(s), s.Name, s.Place)
 	case s.Order != "":

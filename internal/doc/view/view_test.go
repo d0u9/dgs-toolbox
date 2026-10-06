@@ -757,7 +757,7 @@ func TestUnlistedUnnumbered(t *testing.T) {
 	if want := []string{"x/01-合同.pdf", "x/99-账单.pdf"}; !reflect.DeepEqual(paths, want) {
 		t.Fatalf("numbered: got %v, want %v", paths, want)
 	}
-	for _, bad := range []map[string]string{{"other": UnlistedNone}, {"name": "-1"}, {"name": "last"}} {
+	for _, bad := range []map[string]string{{"name": "-1"}, {"name": "last"}} {
 		v.Unlisted = bad
 		if v.Validate() == nil {
 			t.Errorf("unlisted %v was taken", bad)
@@ -875,7 +875,9 @@ func TestUpgradeRenamesOrders(t *testing.T) {
 	if want := map[string][]string{"owner": {"alex"}, "name": {"a"}}; !reflect.DeepEqual(u.Order, want) {
 		t.Fatalf("rule %v", u.Order)
 	}
-	if c := u.Children[0]; !reflect.DeepEqual(c.Order, map[string][]string{"name": {"b"}}) || c.Numbers["name"]["b"] != 5 {
+	// The child writes its own {#}-{owner}, so it numbers owner on its own,
+	// from a copy of the rule's.
+	if c := u.Children[0]; !reflect.DeepEqual(c.Order, map[string][]string{"name": {"b"}, "owner": {"alex"}}) || c.Numbers["name"]["b"] != 5 {
 		t.Fatalf("child %+v", c)
 	}
 	if len(v.Order) != 3 || v.Children[0].Order != nil {
@@ -1066,5 +1068,153 @@ func TestOpenSpanIsItsDay(t *testing.T) {
 	plan, err := Build(View{Name: "v", Selection: Head, Node: Node{File: "{date:compact}-{date}-{year}.{ext}"}}, items, Types{})
 	if err != nil || len(plan.Files) != 1 || plan.Files[0].Path != "20190120-2019-01-20-2019.pdf" {
 		t.Fatalf("%v %+v", err, plan)
+	}
+}
+
+func paths(t *testing.T, v View, items []tree.Item) []string {
+	t.Helper()
+	plan, err := Build(v, items, Types{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, f := range plan.Files {
+		out = append(out, f.Path)
+	}
+	return out
+}
+
+func offences() []tree.Item {
+	var items []tree.Item
+	for i, f := range []map[string]string{
+		{"name": "合同"}, {"name": "违停", "date": "2022-05-06"}, {"name": "超速", "date": "2020-01-02"}, {"name": "压线", "date": "2021-03-04"},
+	} {
+		typ := "contract"
+		if f["date"] != "" {
+			typ = "traffic_offence"
+		}
+		id := string(rune('A' + i))
+		items = append(items, tree.Item{ID: id, Type: typ, Kind: tree.KindRecord, Fields: f, Revisions: []tree.Revision{{Digest: strings.ToLower(id)}}})
+	}
+	return items
+}
+
+// A {#} a child writes takes its order from that child alone: the rule's
+// order, though it lists the name, is not looked at.
+func TestChildCounterNumbersInItsOwnNode(t *testing.T) {
+	v := View{Name: "v", Selection: Head, Node: Node{
+		File:     "{#}-{name}.{ext}",
+		Order:    map[string][]string{"name": {"合同"}, "date": {"20190101-x"}},
+		Children: []Node{{If: "type == traffic_offence", Path: "{#}-{date:compact}-{name}"}},
+	}}
+	if err := v.Validate(); err == nil || !strings.Contains(err.Error(), "in children 1, which writes it") {
+		t.Fatalf("rule's order taken for a child's {#}: %v", err)
+	}
+	// A named {#} shares the rule's order.
+	v.Children[0].Path = "{#date}-{date:compact}-{name}"
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Names an order does not list are numbered on after it, in the order of
+// their names, from start when the order lists nothing.
+func TestUnlistedNextNumbersOnFromStart(t *testing.T) {
+	v := View{Name: "v", Selection: Head, Node: Node{
+		File:  "{#}-{name}.{ext}",
+		Order: map[string][]string{"name": {"合同"}},
+		Children: []Node{{If: "type == traffic_offence", Path: "{#}-{date:compact}-{name}", File: "{name}.{ext}",
+			Numbers:  map[string]map[string]int{"date": {NumberStart: 50}},
+			Unlisted: map[string]string{"date": UnlistedNext}}},
+	}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"01-合同.pdf", "50-20200102-超速/超速.pdf", "51-20210304-压线/压线.pdf", "52-20220506-违停/违停.pdf"}
+	if got := paths(t, v, offences()); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	// A listed name keeps its place before them.
+	v.Children[0].Order = map[string][]string{"date": {"20220506-违停"}}
+	want = []string{"01-合同.pdf", "50-20220506-违停/违停.pdf", "51-20200102-超速/超速.pdf", "52-20210304-压线/压线.pdf"}
+	if got := paths(t, v, offences()); !reflect.DeepEqual(got, want) {
+		t.Fatalf("listed first: got %v, want %v", got, want)
+	}
+}
+
+// A rule written when a child's {#} took the rule's order is given the
+// child an order of its own on reading, and places every PDF as before;
+// the rule's order, no longer used, goes.
+func TestUpgradeScopesOrdersAndPlacesAsBefore(t *testing.T) {
+	old := View{Name: "v", Selection: Head, Node: Node{
+		File:     "{#}-{name}.{ext}",
+		Order:    map[string][]string{"name": {"合同"}, "date": {"20200102-超速", "20210304-压线", "20220506-违停"}},
+		Numbers:  map[string]map[string]int{"date": {"20200102-超速": 50}},
+		Children: []Node{{If: "type == traffic_offence", Path: "{#}-{date:compact}-{name}", File: "{name}.{ext}"}},
+	}}
+	u := old.Upgrade()
+	if err := u.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := u.Order["date"]; ok {
+		t.Fatalf("rule kept the order its child took: %v", u.Order)
+	}
+	if c := u.Children[0]; len(c.Order["date"]) != 3 || c.Numbers["date"]["20200102-超速"] != 50 {
+		t.Fatalf("child %+v", c)
+	}
+	if _, ok := old.Order["date"]; !ok {
+		t.Fatal("upgrade changed the rule it was given")
+	}
+	// As the rule's order numbered them before.
+	want := []string{"01-合同.pdf", "50-20200102-超速/超速.pdf", "51-20210304-压线/压线.pdf", "52-20220506-违停/违停.pdf"}
+	if got := paths(t, u, offences()); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if again := u.Upgrade(); !reflect.DeepEqual(again, u) {
+		t.Fatal("upgrading twice changed it")
+	}
+}
+
+// A child with no list numbers every name it places the one number it is
+// given, and reading it again leaves it so: the rule's order is not copied
+// back into it.
+func TestEmptyListWithOneNumberStaysEmpty(t *testing.T) {
+	v := View{Name: "v", Selection: Head, Node: Node{
+		File:     "{#}-{name}.{ext}",
+		Order:    map[string][]string{"name": {"合同"}},
+		Children: []Node{{If: "type == traffic_offence", Path: "罚单", File: "{#}-{name}.{ext}", Unlisted: map[string]string{"name": "99"}}},
+	}}
+	if err := v.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := v.Upgrade().Children[0].Order; len(got) != 0 {
+		t.Fatalf("order copied back: %v", got)
+	}
+	for _, p := range paths(t, v, offences()) {
+		if strings.HasPrefix(p, "罚单/") && !strings.HasPrefix(p, "罚单/99-") {
+			t.Fatalf("got %s", p)
+		}
+	}
+}
+
+// Upgrade moves a rule once: it is then marked scoped, and a child added
+// later with a {#} and no order of its own is not given the rule's order.
+func TestUpgradeOnlyOnce(t *testing.T) {
+	old := View{Name: "v", Selection: Head, Node: Node{
+		File:     "{#}-{name}.{ext}",
+		Order:    map[string][]string{"name": {"合同"}},
+		Children: []Node{{If: "type == traffic_offence", Path: "罚单", File: "{#}-{name}.{ext}"}},
+	}}
+	u := old.Upgrade()
+	if u.Numbering != NumberingScoped || len(u.Children[0].Order) != 1 {
+		t.Fatalf("not upgraded: %+v", u)
+	}
+	u.Children = append(u.Children, Node{If: "type == invoice", Path: "账单", File: "{#}-{name}.{ext}"})
+	if again := u.Upgrade(); len(again.Children[1].Order) != 0 {
+		t.Fatalf("a new child given the rule's order: %v", again.Children[1].Order)
+	}
+	u.Numbering = "x"
+	if u.Validate() == nil {
+		t.Fatal("unknown numbering taken")
 	}
 }
