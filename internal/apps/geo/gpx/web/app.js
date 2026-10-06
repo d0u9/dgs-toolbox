@@ -1266,7 +1266,7 @@ function trackRow(path, entry) {
 
   // The filled triangle leads the file row and toggles only its children.
   const disclosure = expandable(entry)
-    && iconButton("disclosure", CHEVRON, entry.expanded ? "Collapse" : "List its tracks, routes and waypoints", () => {
+    && iconButton("disclosure icon-button ui-disclosure", CHEVRON, entry.expanded ? "Collapse" : "List its tracks, routes and waypoints", () => {
       entry.expanded = !entry.expanded;
       renderTracks();
       save();
@@ -1276,7 +1276,7 @@ function trackRow(path, entry) {
     li.classList.add("expandable");
   }
 
-  const eye = iconButton("eye", entry.visible ? EYE : EYE_OFF, entry.visible ? "Hide on the map" : "Show on the map", () => setVisible(path, !entry.visible));
+  const eye = iconButton("eye icon-button ui-row-icon", entry.visible ? EYE : EYE_OFF, entry.visible ? "Hide on the map" : "Show on the map", () => setVisible(path, !entry.visible));
   eye.setAttribute("aria-pressed", String(entry.visible));
 
   const color = document.createElement("input");
@@ -1312,15 +1312,15 @@ function trackRow(path, entry) {
   if (track.clean.error) li.classList.add("state-error");
   const listed = filteredPaths();
   const at = listed.indexOf(path);
-  actions.classList.add("file-tools");
+  actions.classList.add("file-tools", "ui-icon-group");
   const mark = document.createElement("span");
-  mark.className = "ours-mark" + (track.ours || track.draft ? " ours" : "");
+  mark.className = "ours-mark ui-row-icon" + (track.ours || track.draft ? " ours" : "");
   mark.innerHTML = track.ours || track.draft ? DIAMOND : DIAMOND_OPEN;
   mark.setAttribute("role", "img");
   mark.setAttribute("aria-label", origin);
   tooltip(mark, [origin]);
   actions.append(mark);
-  if (state.config.canReveal && !track.draft) actions.append(iconButton("row-action", FOLDER, "Show in file manager", async () => {
+  if (state.config.canReveal && !track.draft) actions.append(iconButton("row-action icon-button ui-row-icon", FOLDER, "Show in file manager", async () => {
     try { await api.reveal(path); } catch (error) { showMessage(error.message, true); }
   }));
   actions.append(eye);
@@ -1463,7 +1463,7 @@ function partRow(path, entry, part) {
   li.className = "part-row" + (hidden || !entry.visible ? " hidden-track" : "")
     + (state.partSelection?.path === path && state.partSelection.key === part.key ? " selected" : "");
 
-  const eye = iconButton("eye", hidden ? EYE_OFF : EYE, hidden ? "Show this part" : "Hide this part", () => setPartHidden(path, part.key, !hidden));
+  const eye = iconButton("eye icon-button ui-row-icon", hidden ? EYE_OFF : EYE, hidden ? "Show this part" : "Hide this part", () => setPartHidden(path, part.key, !hidden));
   const glyph = document.createElement("span");
   glyph.className = "glyph";
   glyph.innerHTML = PART_GLYPH[part.kind];
@@ -2379,7 +2379,7 @@ class ViewControl {
   onAdd(map) {
     this.map = map;
     const box = document.createElement("div");
-    box.className = "maplibregl-ctrl maplibregl-ctrl-group view-control";
+    box.className = "maplibregl-ctrl maplibregl-ctrl-group ui-map-nav view-control";
     const buttons = [
       [CHEVRON_UP, "Tilt up — look further toward the horizon", () => ({ pitch: Math.min(map.getMaxPitch(), map.getPitch() + TILT_STEP) })],
       [CHEVRON_DOWN, "Tilt down — look straight down", () => ({ pitch: Math.max(0, map.getPitch() - TILT_STEP) })],
@@ -2534,6 +2534,7 @@ async function start() {
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
   map.addControl(new ViewControl(), "top-right");
+  document.querySelectorAll(".maplibregl-ctrl-group").forEach(group => group.classList.add("ui-map-nav"));
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
   await new Promise((resolve) => map.once("load", resolve));
 
