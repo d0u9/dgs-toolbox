@@ -1,3 +1,5 @@
+import "/ui/dialog.js";
+
 // The file dialog every dgs page opens and saves through: one folder browser,
 // as Finder and Explorer have one, so a reader learns it once. It is shared
 // because nothing in it is a page's own work — places down the side, a sorted

@@ -1,3 +1,5 @@
+import "/ui/dialog.js";
+
 // A modal confirmation, for anything that changes a file the reader already
 // has. It says exactly what will change and waits for a clear yes.
 

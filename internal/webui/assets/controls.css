@@ -219,3 +219,11 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   cursor: pointer;
 }
 .menu button:hover { background: var(--hover); }
+
+/* Dialog headings move the window; controls inside remain clickable. */
+dialog :is(h1, h2, h3, [data-dialog-handle]) {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+dialog .dialog-dragging { cursor: grabbing; }
