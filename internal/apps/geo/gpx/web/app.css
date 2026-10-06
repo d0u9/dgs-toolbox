@@ -432,7 +432,7 @@ body {
   line-height: 1.3;
 }
 .actions { flex: none; display: flex; align-items: center; gap: 2px; }
-.list li.track-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px 8px; min-height: 32px; }
+.list li.track-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
 .file-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .list li.track-row > .file-tools { margin-left: 0; }
 
@@ -443,7 +443,7 @@ body {
 .disclosure { flex: none; }
 .disclosure.expanded { transform: rotate(90deg); }
 .track-row.expandable > .actions { right: 32px; }
-.part-row { padding: 9px 12px 9px 34px !important; gap: 10px !important; font-size: 13px; min-height: 40px; }
+.list li.part-row { padding-left: 28px; gap: 6px; }
 .list li.parts-toolbar {
   padding: 2px 8px 2px 34px;
   gap: 10px;
