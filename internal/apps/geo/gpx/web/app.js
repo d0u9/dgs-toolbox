@@ -12,7 +12,7 @@ import { StopMarkers } from "./stops.js";
 import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
-import { CHEVRON } from "./icons.js";
+import { CHEVRON, DIAMOND, DIAMOND_OPEN, FOLDER } from "./icons.js";
 import { RoutePlanner } from "./route.js";
 import { waypointDialog } from "./dialog.js";
 import { chooseDialog, confirmDialog, promptDialog } from "/ui/dialog.js";
@@ -1280,9 +1280,11 @@ function trackRow(path, entry) {
 
   const color = document.createElement("input");
   color.type = "color";
+  color.hidden = true;
   color.className = "color";
   color.value = entry.color;
   color.title = "The colour this track is drawn in; click to change it";
+  color.setAttribute("aria-label", color.title);
   color.addEventListener("click", (event) => event.stopPropagation());
   color.addEventListener("input", () => setColor(path, color.value));
 
@@ -1309,12 +1311,27 @@ function trackRow(path, entry) {
   if (track.clean.error) li.classList.add("state-error");
   const listed = filteredPaths();
   const at = listed.indexOf(path);
+  actions.classList.add("file-tools");
+  const mark = document.createElement("span");
+  mark.className = "ours-mark" + (track.ours || track.draft ? " ours" : "");
+  mark.innerHTML = track.ours || track.draft ? DIAMOND : DIAMOND_OPEN;
+  mark.setAttribute("role", "img");
+  mark.setAttribute("aria-label", origin);
+  tooltip(mark, [origin]);
+  actions.append(mark);
+  if (state.config.canReveal && !track.draft) actions.append(iconButton("row-action", FOLDER, "Show in file manager", async () => {
+    try { await api.reveal(path); } catch (error) { showMessage(error.message, true); }
+  }));
   actions.append(eye);
+  for (const control of actions.children) if (control.title) tooltip(control, [control.title]);
   const distance = document.createElement("span");
   distance.className = "row-distance";
   distance.textContent = track.points.length ? format.distance(track.stats.distance) : "";
-  li.append(color, label(track.name, []), distance, actions);
-  if (disclosure) li.append(disclosure);
+  const main = document.createElement("div");
+  main.className = "file-main";
+  main.append(label(track.name, []), distance);
+  if (disclosure) main.append(disclosure);
+  li.append(main, actions, color);
   // A right click on a file offers what is done to the file as a whole:
   // writing it out, then taking it out of the workspace.
   li.addEventListener("contextmenu", (event) => {
@@ -1368,6 +1385,7 @@ function trackRow(path, entry) {
       },
     ],
     [
+      { label: "Change colour…", onSelect: () => color.click() },
       state.config.canReveal && !track.draft && { label: "Show in file manager", onSelect: async () => {
         try { await api.reveal(path); } catch (error) { showMessage(error.message, true); }
       } },

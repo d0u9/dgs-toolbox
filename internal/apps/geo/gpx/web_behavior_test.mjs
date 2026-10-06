@@ -28,7 +28,7 @@ function treeHarness(track){
   const entry={id:'a',color:'#0072b2',visible:false,hiddenParts:new Set(),track};
   const state={focus:'other.gpx',tracks:new Map([['current.gpx',entry]]),selection:new Set(),config:{canReveal:false}};
   const context=vm.createContext({
-    tooltip(node,lines){node.tip=lines.filter(Boolean);},document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',
+    tooltip(node,lines){node.tip=lines.filter(Boolean);},document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',DIAMOND:'ours',DIAMOND_OPEN:'recording',FOLDER:'folder',
     PART_GLYPH:{track:'track',route:'route',waypoint:'waypoint'},
     expandable:()=>false,oursMark:()=>new Element('span'),filteredPaths:()=>['current.gpx'],
     bindRowDrag(){},copyTargets:()=>[],renderTracks(){calls.push(['render']);},
@@ -458,7 +458,9 @@ test('workspace rows reserve the name and distance for scanning and keep full de
   const h=treeHarness(track),row=h.context.trackRow('current.gpx',h.entry);
   assert.equal(row.all(e=>e.classList.contains('meta'))[0].textContent,'');
   assert.equal(row.all(e=>e.classList.contains('row-distance'))[0].textContent,format.distance(1200));
-  for(const removed of ['ours-mark','order','row-action'])assert.equal(row.all(e=>e.classList.contains(removed)).length,0);
+  assert.equal(row.all(e=>e.classList.contains('ours-mark')).length,1);
+  assert.equal(row.all(e=>e.classList.contains('file-main')).length,1);
+  assert.equal(row.all(e=>e.classList.contains('file-tools')).length,1);
   assert.ok(row.tip.includes('2 stops'));assert.ok(row.tip.includes('sidecar'));assert.ok(row.tip.includes('edited, not saved'));assert.ok(row.tip.includes('current.gpx'));
   assert.ok(row.classList.contains('unsaved'));
 });
@@ -502,4 +504,29 @@ test('segment inspector uses plain tab counts, suppresses routine footer text an
   assert.equal(panel.root.all(e=>e.classList.contains('clean-foot')).length,0);
   panel.track.clean.error='Synthetic state error';panel.render();
   assert.equal(panel.root.all(e=>e.classList.contains('error'))[0].textContent,'Sidecar not read: Synthetic state error');
+});
+
+
+test('file toolbar contains only origin, reveal and visibility; actions do not select or fit the row',async()=>{
+  const h=treeHarness(treeTrack({ours:true}));h.state.config.canReveal=true;
+  h.state.tracks.set('other.gpx',{...h.entry});h.context.filteredPaths=()=>['current.gpx','other.gpx'];
+  h.context.api={reveal:async path=>h.calls.push(['reveal',path])};
+  const row=h.context.trackRow('current.gpx',h.entry),tools=row.all(e=>e.classList.contains('file-tools'))[0];
+  assert.deepEqual(tools.children.map(e=>e.className),['ours-mark ours','row-action','eye']);
+  assert.equal(row.all(e=>e.type==='color')[0].hidden,true);
+  assert.equal(row.children[0].className,'file-main');
+  const reveal=await tools.all(e=>e.classList.contains('row-action'))[0].fire('click');assert.equal(reveal.stopped,true);assert.deepEqual(h.calls.at(-1),['reveal','current.gpx']);
+  const eye=await tools.all(e=>e.classList.contains('eye'))[0].fire('click');assert.equal(eye.stopped,true);
+  assert.equal(h.calls.some(([kind])=>kind==='focus'||kind==='fit'||kind==='select'),false);
+  const color=row.all(e=>e.type==='color')[0];let opened=false;color.click=()=>{opened=true;};
+  await row.fire('contextmenu');h.calls.find(([kind])=>kind==='menu')[1].find(item=>item.label==='Change colour…').onSelect();assert.equal(opened,true);
+});
+
+test('draft and recording origins remain distinct and remote pages omit the reveal button',()=>{
+  for(const flags of [{draft:true},{ours:true},{}]){
+    const h=treeHarness(treeTrack(flags)),row=h.context.trackRow('current.gpx',h.entry);
+    const mark=row.all(e=>e.classList.contains('ours-mark'))[0];
+    assert.equal(mark.classList.contains('ours'),Boolean(flags.draft||flags.ours));
+    assert.ok(mark.attributes['aria-label']);assert.equal(row.all(e=>e.classList.contains('row-action')).length,0);
+  }
 });

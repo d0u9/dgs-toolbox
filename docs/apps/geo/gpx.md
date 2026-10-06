@@ -124,8 +124,10 @@ map. It is the interface later milestones build on.
   starts, so a change takes effect after restarting `dgs`.
 - **Workspace.** The tracks opened, kept together whatever
   folder they came from — the set later milestones edit and search. A row
-  shows its name and distance on one spacious line, with a colour edge, the
-  eye and the parts disclosure. Extra details are available in a hover tip;
+  shows its name and distance on one spacious line, with the parts
+  disclosure. A separate quiet toolbar holds only three icons: origin, reveal and
+  visibility. Colour and ordering remain in the context menu; no colour strip
+  touches the row edge. Extra details are available in a hover tip;
   no small tags or badges are used. Everything done to a
   file is in its context menu. A filter box narrows the list by words in the
   name or path; the eye beside it acts on the tracks it lists.
@@ -138,8 +140,8 @@ map. It is the interface later milestones build on.
   waypoints, over the tracks the filter lists, and over a file's tracks,
   routes or waypoints as a group: while any of them is shown it hides them,
   and once none is it shows them.
-- **Who wrote the file.** The file hover tip says whether dgs wrote this
-  GPX. It decides where a
+- **Who wrote the file.** The toolbar icon and file hover tip say whether dgs wrote
+  this GPX. It decides where a
   later edit goes: inside the file itself, or into a sidecar beside it.
 - **Editing is not saving.** Nothing an edit does reaches the disk until it
   is saved. What was done to a file — cleaning, removals, cuts, names, fills,
@@ -202,8 +204,8 @@ map. It is the interface later milestones build on.
   in the workspace, open as it was; the recording stays on disk. A file dgs
   already wrote has nothing to convert. This is *Save as…* under the name of
   what it is for, and it writes the same file.
-- **Show in file manager.** The file's right-click menu offers revealing
-  it in Finder or Explorer. It appears only when the
+- **Show in file manager.** The toolbar button and right-click menu reveal
+  the file in Finder or Explorer. It appears only when the
   page is opened on the machine running `dgs`: from another machine it would
   open windows on a screen nobody there can see.
 - **Dropping files.** GPX files dragged from Finder or Explorer onto the
@@ -312,7 +314,7 @@ map. It is the interface later milestones build on.
 
   - A **file** over another file lists the workspace in that order. The order
     is the page's own — no file is written — and is remembered with the
-    session. *Move up* and *Move down* in a file's right-click menu move it among
+    session. *Move up* / *Move down* in a file's right-click menu move it among
     the rows listed, for the same order without dragging.
   - A **part** dropped inside its own file does nothing. A track, route or
     waypoint is put in order among those of its kind using *Move up* and
