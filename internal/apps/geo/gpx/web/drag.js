@@ -18,79 +18,89 @@ const SLOP = 4;
 // A drag swallows the click that would otherwise follow it, so holding a row
 // does not also select it.
 export function longPressDrag(element, { onStart, onMove, onDrop, onCancel }) {
+  let activeCancel = null;
   element.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
-    // The row's own controls take their press first.
+    if (event.button !== 0 || event.isPrimary === false) return;
     if (event.target.closest?.("button, input, select, a, .parts-group")) return;
+    activeCancel?.();
+    const pointerId = event.pointerId;
     const startX = event.clientX, startY = event.clientY;
     const mouse = event.pointerType === "mouse";
-    let holding = false;
-    let ghost = null;
-    const take = () => {
-      timer = null;
-      holding = true;
-      // Capture keeps the moves coming to this row even over the map; a
-      // pointer already gone leaves nothing to capture.
-      try {
-        element.setPointerCapture?.(event.pointerId);
-      } catch {
-        // The press ended before the hold; the drop below finds that too.
-      }
-      ghost = makeGhost(element, startX, startY);
-      onStart?.(event);
-    };
-    let timer = mouse ? null : setTimeout(take, HOLD);
-
+    let holding = false, finished = false, ghost = null, timer = null;
+    const matches = e => e.pointerId === pointerId;
     const stop = () => {
+      if (finished) return false;
+      finished = true;
       if (timer) clearTimeout(timer);
       timer = null;
       ghost?.remove();
       ghost = null;
-      element.removeEventListener("pointermove", move);
-      element.removeEventListener("pointerup", up);
-      element.removeEventListener("pointercancel", cancel);
+      document.removeEventListener("pointermove", move, true);
+      document.removeEventListener("pointerup", up, true);
+      document.removeEventListener("pointercancel", lost, true);
       document.removeEventListener("keydown", key, true);
+      element.removeEventListener("lostpointercapture", lost);
+      window.removeEventListener("blur", cancel);
+      activeCancel = null;
+      try { element.releasePointerCapture?.(pointerId); } catch { /* Capture may already be gone. */ }
+      return true;
     };
-    const move = (e) => {
+    const cancel = () => {
+      if (!stop()) return;
+      if (holding) swallowNextClick();
+      onCancel?.();
+    };
+    const lost = e => { if (matches(e)) cancel(); };
+    const take = () => {
+      timer = null;
+      if (finished) return;
+      if (!element.isConnected) return cancel();
+      holding = true;
+      try {
+        ghost = makeGhost(element, startX, startY);
+        onStart?.(event);
+      } catch (error) { cancel(); throw error; }
+    };
+    const move = e => {
+      if (!matches(e) || finished) return;
+      // A missed release must never turn the next hover into a continued drag.
+      if (mouse && e.buttons === 0) return cancel();
+      if (!element.isConnected) return cancel();
       if (!holding) {
         const travelled = Math.abs(e.clientX - startX) > SLOP || Math.abs(e.clientY - startY) > SLOP;
         if (!travelled) return;
-        if (!mouse) {
-          // A touch that travels before the hold is a scroll, not a drag.
-          stop();
-          onCancel?.();
-          return;
-        }
+        if (!mouse) return cancel();
         take();
       }
+      if (finished) return;
       e.preventDefault();
       ghost?.follow(e.clientX, e.clientY);
-      onMove?.(e.clientX, e.clientY, e);
+      try { onMove?.(e.clientX, e.clientY, e); } catch (error) { cancel(); throw error; }
     };
-    const up = (e) => {
-      const dragged = holding;
-      stop();
-      if (!dragged) return onCancel?.();
+    const up = e => {
+      if (!matches(e) || !stop()) return;
+      if (!holding) return onCancel?.();
       swallowNextClick();
       onDrop?.(e.clientX, e.clientY, e);
     };
-    const cancel = () => {
-      const dragged = holding;
-      stop();
-      if (dragged) swallowNextClick();
-      onCancel?.();
+    const key = e => {
+      if (e.key !== "Escape") return;
+      e.preventDefault(); e.stopPropagation(); cancel();
     };
-    const key = (e) => {
-      if (e.key !== "Escape" || !holding) return;
-      e.preventDefault();
-      e.stopPropagation();
-      cancel();
-    };
-    element.addEventListener("pointermove", move);
-    element.addEventListener("pointerup", up);
-    element.addEventListener("pointercancel", cancel);
+    activeCancel = cancel;
+    document.addEventListener("pointermove", move, true);
+    document.addEventListener("pointerup", up, true);
+    document.addEventListener("pointercancel", lost, true);
     document.addEventListener("keydown", key, true);
+    element.addEventListener("lostpointercapture", lost);
+    window.addEventListener("blur", cancel);
+    // Capture at the press, before the pointer can outrun the source row.
+    // Document listeners still complete the gesture if capture is unavailable.
+    try { element.setPointerCapture?.(pointerId); } catch { /* Fall back to document events. */ }
+    if (!mouse) timer = setTimeout(take, HOLD);
   });
+  // A list owner calls this before replacing its DOM, even during a hold.
+  return () => activeCancel?.();
 }
 
 // makeGhost lifts a copy of the row that follows the pointer, so the hand
