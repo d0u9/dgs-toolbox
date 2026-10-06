@@ -460,6 +460,7 @@ test('workspace rows reserve the name and distance for scanning and keep full de
   assert.equal(row.all(e=>e.classList.contains('row-distance'))[0].textContent,format.distance(1200));
   assert.equal(row.all(e=>e.classList.contains('ours-mark')).length,1);
   assert.equal(row.all(e=>e.classList.contains('file-main')).length,1);
+  assert.ok(row.classList.contains('ui-file-row'));
   assert.equal(row.all(e=>e.classList.contains('file-tools')).length,1);
   assert.ok(row.tip.includes('2 stops'));assert.ok(row.tip.includes('sidecar'));assert.ok(row.tip.includes('edited, not saved'));assert.ok(row.tip.includes('current.gpx'));
   assert.ok(row.classList.contains('unsaved'));
@@ -546,6 +547,7 @@ test('clicking a child track visibly selects the rebuilt row and retains the cam
  await h.context.partRow('current.gpx',h.entry,part).fire('click',{timeStamp:100});
  assert.deepEqual(plain(h.state.partSelection),{path:'current.gpx',key:'t0'});
  assert.ok(h.context.partRow('current.gpx',h.entry,part).classList.contains('selected'));
+ assert.ok(h.context.partRow('current.gpx',h.entry,part).classList.contains('ui-file-row'));
  assert.equal(h.calls.some(([kind])=>kind==='fit'||kind==='pan'),false);
  const css=readFileSync(new URL('./web/app.css',import.meta.url),'utf8');
  assert.match(css,/\.list li\.part-row\.selected\s*\{[^}]*background: var\(--selected\)/);

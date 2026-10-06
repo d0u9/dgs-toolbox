@@ -1259,7 +1259,7 @@ const doubleRowClick = rowDoubleClick();
 
 function trackRow(path, entry) {
   const li = document.createElement("li");
-  li.className = "track-row" + (state.focus === path ? " focused" : "") + (state.selection.has(path) ? " selected" : "")
+  li.className = "track-row ui-file-row" + (state.focus === path ? " focused" : "") + (state.selection.has(path) ? " selected" : "")
     + (entry.track.unsaved ? " unsaved" : "") + (entry.visible ? "" : " hidden-track");
   // A name too long for the sidebar is cut with an ellipsis, so the tooltip
   // carries the whole name as well as where the file is.
@@ -1460,7 +1460,7 @@ const PART_GLYPH = { track: ROUTE, route: MOVE_HORIZONTAL, waypoint: MAP_PIN_PLU
 function partRow(path, entry, part) {
   const hidden = entry.hiddenParts.has(part.key);
   const li = document.createElement("li");
-  li.className = "part-row" + (hidden || !entry.visible ? " hidden-track" : "")
+  li.className = "part-row ui-file-row" + (hidden || !entry.visible ? " hidden-track" : "")
     + (state.partSelection?.path === path && state.partSelection.key === part.key ? " selected" : "");
 
   const eye = iconButton("eye icon-button ui-row-icon", hidden ? EYE_OFF : EYE, hidden ? "Show this part" : "Hide this part", () => setPartHidden(path, part.key, !hidden));

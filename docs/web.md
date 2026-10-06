@@ -1056,3 +1056,5 @@ Hero photography uses `{rounded.xl}` containers at every breakpoint. The chevron
 4. Default body to `{typography.body-md}`; reach for `{typography.body-emphasis}` for run-in bolds; keep display sizes for true heading roles
 5. Keep `{colors.primary}` scarce — at most two flame elements per viewport (one CTA + one chevron decoration). Three flame items in one viewport is over-saturation
 6. When introducing a new section band, choose from `{colors.canvas}` / `{colors.cloud}` / `{colors.fog}` / `{colors.ink}` — six pre-defined surface modes is the entire surface vocabulary
+
+File explorer workspace rows can use `.ui-file-row`: 28px height for both parent and child items, with the shared small text size. Pages supply indentation and column layout without increasing the child row height.

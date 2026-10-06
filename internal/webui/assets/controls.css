@@ -308,3 +308,8 @@ dialog .dialog-dragging { cursor: grabbing; }
 .ui-icon-group > :not(:first-child) { border-left: 1px solid var(--hairline); }
 .ui-content-button { border: none; padding: 0; background: none; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .ui-map-button:focus-visible, .ui-map-tool:focus-visible, .ui-fold-hide:focus-visible, .ui-fold-show:focus-visible, .ui-row-icon:focus-visible, .ui-disclosure:focus-visible, .ui-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* File explorer rhythm: parent and child rows share one compact height. */
+.list li.ui-file-row { box-sizing: border-box; height: 28px; min-height: 28px; padding: 0 var(--row-pad-x); font-size: var(--font-size-sm); }
+.ui-file-row .name { font-size: var(--font-size-sm); }
+.ui-file-row .row-distance { font-size: var(--font-size-xs); }
