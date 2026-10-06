@@ -1484,13 +1484,20 @@ Missing or corrupt entries are rebuilt.
 
 - The marker is `dgs-doctree.yaml`, not `dgs-doc.yaml`, which reads too much
   like box's `*.dgs-doc.yaml` sidecars. It is visible, as box's is.
-- An Item's folder is named by its ID, so changing `owner` or `country` moves
-  nothing. Readable paths are what an Outline exports.
+- In the default layout an Item's folder is named by its ID, so changing
+  `owner` or `country` moves nothing. A tree may choose another layout
+  instead; see [Storage Layouts](layout.md).
 - A PDF is named by its SHA-256, so the same file is stored once and merging
   matches by digest.
 - An export writes `dgs-export.json` in the folder it writes to (M6).
 - PDFs anywhere else in the tree are loose, and allowed. Import copies a PDF in
   from wherever it is and leaves the original where it was.
+
+### Storage layouts
+
+The layout above is a tree's default. A new tree may instead place its PDFs in
+directories built from their fields, with every sidecar kept in `items/`; see
+[Storage Layouts](layout.md).
 
 ## Template format
 
