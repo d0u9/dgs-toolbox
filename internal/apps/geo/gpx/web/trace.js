@@ -1,10 +1,10 @@
-// A fine colour core between light and dark borders stays legible on both
+// A prominent colour core between narrow light and dark borders reads on both
 // light cartography and dark imagery. State changes weight, never visibility.
 export const TRACE_WIDTHS = Object.freeze({
-  inactive: [3.8, 2.8, 1.6],
-  focused: [4.2, 3.2, 2],
-  segment: [4, 3, 1.8],
-  selected: [4.8, 3.8, 2.6],
+  inactive: [4.2, 3.4, 2.6],
+  focused: [4.6, 3.8, 3],
+  segment: [4.4, 3.6, 2.8],
+  selected: [5.2, 4.4, 3.6],
 });
 export const traceLayers = id => [`${id}-edge`, `${id}-casing`, id];
 export function addTrace(map, { id, source, color, state = "inactive", filter, metadata, dashed = false, before }) {

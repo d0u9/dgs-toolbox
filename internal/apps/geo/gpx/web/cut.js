@@ -20,7 +20,7 @@ const PIECES = "cut-pieces";
 
 // PIECE_COLORS tell neighbouring segments apart: Okabe-Ito hues, in an order
 // where each differs strongly from the one before it.
-const PIECE_COLORS = ["#e69f00", "#009e73", "#cc79a7", "#0072b2", "#d55e00", "#56b4e9", "#f0e442", "#6f4c9b"];
+const PIECE_COLORS = ["#cf8800", "#00856a", "#b53686", "#0072b2", "#d55e00", "#1685ae", "#9b8400", "#6f4c9b"];
 
 // pieceColor is the colour of the segment at a place in the list.
 export const pieceColor = (position) => PIECE_COLORS[position % PIECE_COLORS.length];
