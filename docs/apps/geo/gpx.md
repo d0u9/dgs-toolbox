@@ -1115,3 +1115,9 @@ File disclosures use a filled leading triangle. File action icons form a compact
 Map action controls share the navigation controls’ white stacked groups, compact square buttons, separators, dark icons and subtle outline. Selected tools retain a blue state.
 
 Panel folding uses a filled triangle grip centered on each resize divider. Clicking the grip folds the panel without starting a resize; a flush tab at the same map boundary restores it. The triangle points in the panel movement direction.
+
+Segment names prefer an explicit segment name. A complete, unchanged single
+track inherits its current track name as a display and add-track default;
+this inherited name is not saved as a segment-name override. Cuts, removed or
+moved points, road fills, and segments spanning multiple tracks use the time
+range instead, or `Segment N` when times are unavailable.
