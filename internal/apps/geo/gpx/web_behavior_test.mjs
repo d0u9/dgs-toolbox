@@ -539,3 +539,14 @@ test("file disclosure leads the row and expands without selecting or fitting", a
  assert.equal(event.stopped,true);assert.equal(h.entry.expanded,true);
  assert.equal(h.calls.some(([kind])=>kind==="focus"||kind==="fit"||kind==="select"),false);
 });
+
+test('clicking a child track visibly selects the rebuilt row and retains the camera',async()=>{
+ const part={kind:'track',key:'t0',name:'Synthetic track',points:[[0,0]],bounds:[[0,0],[1,1]],distance:100};
+ const h=treeHarness(treeTrack({ours:true,parts:[part]}));h.state.focus='current.gpx';
+ await h.context.partRow('current.gpx',h.entry,part).fire('click',{timeStamp:100});
+ assert.deepEqual(plain(h.state.partSelection),{path:'current.gpx',key:'t0'});
+ assert.ok(h.context.partRow('current.gpx',h.entry,part).classList.contains('selected'));
+ assert.equal(h.calls.some(([kind])=>kind==='fit'||kind==='pan'),false);
+ const css=readFileSync(new URL('./web/app.css',import.meta.url),'utf8');
+ assert.match(css,/\.list li\.part-row\.selected\s*\{[^}]*background: var\(--selected\)/);
+});
