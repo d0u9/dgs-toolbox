@@ -654,3 +654,18 @@ test('mixed-file visibility omits All and uses shared row icons without selectin
  assert.ok(row.classList.contains('ui-file-row'));assert.ok(button.classList.contains('icon-button'));assert.ok(button.classList.contains('ui-row-icon'));
  const event=await button.fire('click');assert.equal(event.stopped,true);assert.equal(h.calls.at(-1)[0],'parts');
 });
+
+test('hidden child tracks disappear from segments, cut points and existing selection without bridging gaps',()=>{
+ const sources=new Map(),context=vm.createContext({format,document:documentStub()});loadModule('cut',context);
+ const map={addSource:id=>sources.set(id,{}),addLayer(){},getLayer:()=>false,getSource:id=>({setData:data=>sources.set(id,data)})};context.map=map;
+ const overlay=vm.runInContext('new CutOverlay(map,"cursor")',context);
+ const piece={first:0,last:7},points=Array.from({length:8},(_,i)=>[i,0]);
+ const track={pieces:[piece],points,removed:Array(8).fill(false),segments:Array(8).fill(0),cuts:[1,3,6]};
+ overlay.show(track);overlay.highlight(track,piece);overlay.show(track,[[2,5]]);
+ const expected=[points.slice(0,2),points.slice(6)];
+ assert.deepEqual(plain(sources.get('cut-pieces').features[0].geometry.coordinates),expected);
+ assert.deepEqual(plain(sources.get('cut-segment').geometry.coordinates),expected);
+ assert.deepEqual(plain(sources.get('cut-points').features.map(f=>f.geometry.coordinates)),[points[1],points[6]]);
+ overlay.show(track,[[0,7]]);assert.equal(sources.get('cut-segment').geometry.coordinates.length,0);
+ overlay.show(track);assert.deepEqual(plain(sources.get('cut-segment').geometry.coordinates),[points]);
+});
