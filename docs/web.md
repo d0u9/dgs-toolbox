@@ -363,6 +363,13 @@ page that only opens leaves `Writable` off, and then nothing the dialog can
 reach changes anything on disk. The computation behind all of them is
 `internal/filebrowse`, so a TUI file view lists a folder with the same code.
 
+Every page loads `/ui/ime.js` first. While an input method composes a word
+— pinyin, kana, a dead key — it keeps every input and key event from the
+page's handlers, so a filter does not run on half a word and an Enter or Tab
+that picks a candidate does not pick a row or move the focus; when the word
+is entered, the field gets one input event. A page's own handlers need no
+check of their own.
+
 Icons on every page except GPX's are [Lucide](https://lucide.dev)'s (ISC
 licence), embedded, not fetched: `/ui/icons.js` holds the ones in use and
 draws them with `iconSvg(name)` or `icon(name)`, and gives an element in a
