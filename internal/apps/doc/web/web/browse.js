@@ -5,7 +5,7 @@ import { openMenu } from "/ui/menu.js";
 import { suggest } from "/ui/combo.js";
 import { tooltip } from "/ui/tooltip.js";
 import { listTable } from "/ui/listtable.js";
-import { $, address, keep, scrollBack, tagPills, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
+import { $, address, keep, scrollBack, tagPills, papersOf, api, el, loadState, post, templateOf, label, fieldInputs, fieldsOf, fieldsAt, currentFields, tagUses, tagsAt, revisionName, frame, say, showText, showPreview, clearPreview, eventLines, reveal, originalsList } from "/common.js";
 import { icon, iconSvg } from "/ui/icons.js";
 
 let state = { templates: [], items: [] };
@@ -279,7 +279,7 @@ function shownItems() {
   const keyOf = sort.startsWith("field:") ? (i) => shown(i, sort.slice(6), currentFields(i)[sort.slice(6)] || "")
     : { added, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i),
       tags: (i) => tagsAt(i, headOf(i)).join(" "),
-      revisions: (i) => i.revisions.length }[sort] || added;
+      revisions: (i) => papersOf(i).length }[sort] || added;
   // Retired Items go last and frequent ones first, whatever the sort; the
   // sort orders each part.
   return items.sort((x, y) => {
@@ -358,7 +358,7 @@ function card(item) {
     el("div", { className: "card-body" },
       el("p", { className: "card-title", title: label(state, item) }, named.join(" · ") || item.type),
       el("p", { className: "card-meta" }, el("span", { className: "card-type" }, item.type),
-        item.revisions.length > 1 ? el("span", { title: "Revisions" }, item.revisions.length + " revisions") : null),
+        papersOf(item).length > 1 ? el("span", { title: "Revisions" }, papersOf(item).length + " revisions") : null),
       el("p", { className: "card-details", title: details(item) }, details(item)),
       textHits.get(item.id) ? el("p", { className: "card-snippet" }, textHits.get(item.id)) : null,
       el("p", { className: "card-badges" }, sharedBadge(item), retiredBadge(item), expiryBadge(item))));
@@ -414,7 +414,7 @@ function tableColumns(items) {
     { id: "expiry", text: "Expiry", width: 150,
       cell: (item) => el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))) },
     { id: "added", text: "Added", down: true, width: 100, cell: (item) => el("td", { className: "numeric" }, added(item)) },
-    { id: "revisions", text: "Rev.", tip: "Revisions", down: true, width: 56, cell: (item) => el("td", { className: "numeric" }, String(item.revisions.length)) },
+    { id: "revisions", text: "Rev.", tip: "Revisions", down: true, width: 56, cell: (item) => el("td", { className: "numeric" }, String(papersOf(item).length)) },
   ];
 }
 let shownColumns = [];
@@ -675,19 +675,22 @@ function detail(item) {
   $("frequent").setAttribute("aria-pressed", String(!!item.frequent));
   $("frequent").classList.toggle("on", !!item.frequent);
   $("attach-pdf").hidden = false;
-  $("attach-pdf").title = "Save the PDF with these fields as a new revision";
+  $("attach-pdf").title = "Save the PDF with these fields: a correction, or a new revision when that is ticked";
   $("attach-pdf").textContent = hasPDF(item, selected.digest) ? "Replace PDF…" : "Attach PDF…";
   $("new-without-pdf").hidden = item.kind !== "document";
   $("new-without-pdf").href = api("/import/?no_pdf=1&into=" + encodeURIComponent(item.id));
-  const n = item.revisions.findIndex((r) => (r.id || r.digest) === selected.digest) + 1;
-  $("detail-rev").textContent = item.kind === "document" || item.revisions.length > 1
-    ? "Revision " + n + " of " + item.revisions.length + (selected.digest === item.head ? " · HEAD" : "")
-    : "Record";
+  const papers = papersOf(item);
+  const paper = papers.findIndex((p) => p.some((r) => (r.id || r.digest) === selected.digest));
+  const correction = paper >= 0 && (papers[paper][0].id || papers[paper][0].digest) !== selected.digest;
+  $("detail-rev").textContent = (item.kind === "document" ? "Revision " + (paper + 1) + " of " + papers.length : "Record")
+    + (correction ? " · correction" : "") + (selected.digest === item.head ? " · HEAD" : "");
+  // New revision is the owner's word, asked each time; a record has none.
+  $("new-revision-field").hidden = item.kind !== "document";
   const chosen = item.revisions.find((r) => (r.id || r.digest) === selected.digest);
   // Saving an older revision's fields branches from it and moves HEAD there.
   const branching = selected.digest !== headOf(item);
-  $("save-button").textContent = branching ? "Save as new HEAD" : "Save new revision";
-  $("save-button").title = branching ? "Saves a new revision from this one's values and makes it HEAD; the others are kept" : "";
+  $("save-button").textContent = branching ? "Save as new HEAD" : "Save";
+  $("save-button").title = branching ? "Saves a snapshot from this one's values and makes it HEAD; the others are kept" : "";
   const t = templateOf(state, chosen?.type || item.type);
   // The fields as the picked revision has them: its per_revision values are
   // its own, so picking the old card shows the old card's number.
@@ -721,20 +724,26 @@ function detail(item) {
     $("revision-tags-label").textContent = "Revision " + n + "'s own" + ((rev.id || rev.digest) === item.head ? " (HEAD)" : "");
     say($("revision-tags-message"), "");
   }
-  $("revisions").replaceChildren(...item.revisions.slice().reverse().map((r) => {
+  // Newest revision first, each its corrections above the snapshot that
+  // began it.
+  const rows = papers.flatMap((p, n) => p.map((r, k) => ({ r, n, first: k === 0 }))).reverse();
+  $("revisions").replaceChildren(...rows.map(({ r, n, first }) => {
     const isHead = (r.id || r.digest) === item.head;
     const revisionMenu = (event) => openMenu(event, [
       !isHead ? [{ label: "Make HEAD", onSelect: () => makeHead(item.id, (r.id || r.digest)) }] : [],
+      item.kind !== "document" ? [] : first
+        ? (n > 0 ? [{ label: "Make correction", title: "Make this revision a correction of the one before", onSelect: () => changePaper("correct", item.id, (r.id || r.digest)) }] : [])
+        : [{ label: "Make new revision", title: "This is a new paper: begin a revision with it", onSelect: () => changePaper("begin", item.id, (r.id || r.digest)) }],
       r.digest ? [{ label: "Show PDF in Finder", onSelect: () => reveal({ item: item.id, digest: r.digest }) },
         ...(r.originals || []).map((o, n) => ({ label: "Show original " + (n + 1) + " in Finder", onSelect: () => reveal({ item: item.id, original: o.digest }) }))] : [],
       [{ label: "Delete revision…", danger: true, disabled: item.revisions.length < 2,
         title: item.revisions.length < 2 ? "Delete the Item to remove its last revision" : (r.digest ? "Move this revision's PDF to trash" : "Save this revision's metadata in trash"),
         onSelect: () => deleteRevision(item.id, (r.id || r.digest)) }],
     ]);
-    const li = el("li", { className: "rev", onclick: () => pick(item.id, (r.id || r.digest)),
+    const li = el("li", { className: "rev" + (first ? "" : " correction"), onclick: () => pick(item.id, (r.id || r.digest)),
       oncontextmenu: revisionMenu },
       el("div", { className: "rev-text" },
-        el("span", {}, new Date(r.added).toLocaleDateString(), isHead ? el("span", { className: "tag" }, "HEAD") : null),
+        el("span", {}, el("strong", {}, first ? "Revision " + (n + 1) : "Correction"), " · " + new Date(r.added).toLocaleDateString(), isHead ? el("span", { className: "tag" }, "HEAD") : null),
         el("span", { className: "sub", title: (r.id || r.digest) }, r.digest ? (r.source ? r.source + " · " : "") + r.digest.slice(0, 8) : "No PDF"),
         (r.tags || []).length ? Object.assign(tagPills(r.tags, true), { className: "tag-pills wrap rev-tags" }) : null),
       !isHead ? el("button", {
@@ -859,6 +868,17 @@ async function makeHead(id, digest) {
   }
 }
 
+// changePaper says, after the fact, whether a snapshot began a revision.
+async function changePaper(how, id, digest) {
+  say($("head-message"), "");
+  try {
+    await post("/api/revisions/" + how, { item: id, digest });
+    await reload();
+    pick(id, digest);
+    say($("head-message"), how === "begin" ? "Now a revision of its own." : "Now a correction of the revision before.");
+  } catch (err) { say($("head-message"), err.message, true); }
+}
+
 async function deleteRevision(id, digest) {
   const item = state.items.find((i) => i.id === id);
   if (!item || item.revisions.length < 2) return;
@@ -880,7 +900,8 @@ async function deleteRevision(id, digest) {
 $("edit").onsubmit = async (event) => {
   event.preventDefault();
   try {
-    const saved = await post("/api/fields", { item: selected.id, digest: selected.digest, fields: fieldsOf($("edit-fields")) });
+    const saved = await post("/api/fields", { item: selected.id, digest: selected.digest, fields: fieldsOf($("edit-fields")), new_revision: $("new-revision").checked });
+    $("new-revision").checked = false;
     await reload();
     pick(saved.id, headOf(saved));
     say($("edit-message"), "Saved.");
@@ -1060,15 +1081,17 @@ $("attach-pdf").onclick = async () => {
   if (!selected) return;
   const target = { ...selected };
   const count = state.items.find((i) => i.id === target.id).revisions.length;
-  const chosen = await openFile({ title: "Save PDF as a new revision", folder: state.root,
+  const chosen = await openFile({ title: $("new-revision").checked ? "Save PDF as a new revision" : "Save PDF as a correction", folder: state.root,
     filters: [{ label: "PDF", extensions: [".pdf"] }] });
   if (!chosen) return;
   const path = Array.isArray(chosen) ? chosen[0] : chosen;
   const slash = path.lastIndexOf("/");
   try {
-    const saved = await post("/api/attach", { item: target.id, digest: target.digest, dir: path.slice(0, slash) || "/", path: path.slice(slash + 1) });
+    const fresh = $("new-revision").checked;
+    const saved = await post("/api/attach", { item: target.id, digest: target.digest, dir: path.slice(0, slash) || "/", path: path.slice(slash + 1), new_revision: fresh });
+    $("new-revision").checked = false;
     state = await loadState(); selected = null; pick(saved.id, headOf(saved));
-    say($("edit-message"), saved.revisions.length > count ? "Saved as a new revision. Earlier snapshots preserved." : "Content already kept; no new revision.");
+    say($("edit-message"), saved.revisions.length === count ? "Content already kept; nothing new saved." : fresh ? "Saved as a new revision. Earlier ones preserved." : "Saved as a correction. Earlier snapshots preserved.");
   } catch (err) { say($("edit-message"), err.message, true); }
 };
 

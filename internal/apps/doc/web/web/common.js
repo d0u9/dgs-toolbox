@@ -528,6 +528,18 @@ function countriesOf(state) {
   return [...seen].sort();
 }
 
+// papersOf is an Item's revisions — its papers — in the order they began,
+// each its snapshots oldest first: the first begins it, the rest correct it.
+export function papersOf(item) {
+  const out = new Map();
+  for (const r of item.revisions) {
+    const p = r.paper || r.id || r.digest;
+    if (!out.has(p)) out.set(p, []);
+    out.get(p).push(r);
+  }
+  return [...out.values()];
+}
+
 // revisionName is a revision as a picker lists it: when it was added, its
 // ID's start, and HEAD when it is.
 export const revisionName = (r, head) => (r.added || "").slice(0, 10) + " · " + (r.id || r.digest).slice(0, 8) + (head ? " · HEAD" : "");

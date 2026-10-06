@@ -45,7 +45,7 @@ export function fill(v) {
   active = { row: rows.length - 1, group: -1 };
   drawInherit(v.inherit || []);
   top = { order: clone(v.order), numbers: clone(v.numbers), unnumbered: clone(v.unnumbered), unlisted: clone(v.unlisted) };
-  const take = (n) => ({ if: n.if || "", path: n.path || "", file: n.file || "", default: n.default, children: (n.children || []).map(take),
+  const take = (n) => ({ if: n.if || "", selection: n.selection || "", path: n.path || "", file: n.file || "", default: n.default, children: (n.children || []).map(take),
     exclude: !!n.exclude, order: clone(n.order), numbers: clone(n.numbers), unnumbered: clone(n.unnumbered), unlisted: clone(n.unlisted), ofs: [], error: "", ifError: "" });
   nodes = (v.children || []).map(take);
   drawNodes();
@@ -192,7 +192,7 @@ function drawNodes() {
     const own = ownKeys(n);
     const taken = Object.keys(n.order).filter((key) => !own.includes(key));
     const numbering = own.length > 0 || taken.length > 0;
-    const idle = !out && !n.path && !n.file && !n.children.length && !numbering && n.default == null;
+    const idle = !out && !n.path && !n.file && !n.children.length && !numbering && n.default == null && !n.selection;
     const small = (text, title, onclick) => el("button", { type: "button", className: "path-more block-more", textContent: text, title, onclick });
     const body = out
       ? [el("p", { className: "muted block-note", textContent: "What it takes is left out of the tree." }),
@@ -201,6 +201,7 @@ function drawNodes() {
         n.path || n.showPath ? field(n, "path", "folders", "Folders after the ones above")
           : small("+ folders", "Folders after the ones above; without, only the file name differs", () => { n.showPath = true; redraw(); }),
         field(n, "file", "file", "The file name, in place of the one above; empty keeps it"),
+        selectionPick(n, redraw),
         numbering ? el("div", { className: "block-order" },
           ...[...own, ...taken].map((key) => orderList(n, key, restOf(key, n)))) : null,
         taken.length
@@ -303,6 +304,7 @@ export function read() {
     if (n.default !== undefined && n.default !== null) out.default = n.default;
     if (n.children.length) out.children = n.children.map(clean);
     if (n.exclude) out.exclude = true;
+    if (n.selection && !n.exclude) out.selection = n.selection;
     return Object.assign(out, numberingOf(n, [...new Set([...ownKeys(n), ...Object.keys(n.order), ...Object.keys(n.unlisted || {})])]));
   };
   // The box shows the file as the rows make it, and as typed until the
@@ -868,17 +870,37 @@ function dateIn(value, format) {
   return format === "fy" ? one(start) : one(start) + "-" + one(end);
 }
 
+// spanPart is the start or end of a date field's value, as the server
+// derives date.start and date.end: a span's own ends, or a day alone as
+// both. Anything else has neither.
+const DAY = /^\d{4}-\d{2}(-\d{2})?$/;
+function spanPart(value, part) {
+  if (typeof value !== "string") return "";
+  const [a, b, more] = value.split("/");
+  if (more !== undefined) return "";
+  if (b === undefined) return DAY.test(a) ? a : "";
+  if (!a && !b || a && !DAY.test(a) || b && !DAY.test(b) || a && b && b < a) return "";
+  return part === "start" ? a : b;
+}
+
 function rawValue(item, choice) {
   const [name, format] = choice.split(":");
+  // date.start and date.end of the Item's own date or span. A link field
+  // such as about keeps an ID, so about.start is the linked Item's start.
+  const [base, part] = name.split(".");
+  const own = (item.fields || {})[base];
+  if ((part === "start" || part === "end") && typeof own === "string" && /^\d{4}-\d{2}|^\/\d{4}-/.test(own)) return spanPart(own, part);
   if (name.includes(".")) {
     // original.level: the key of the revision the field original links to.
-    const [field, key] = name.split(".");
+    const [field, key, part] = name.split(".");
     const [id, ref] = String((item.fields || {})[field] || "").split("@");
     const other = state.items.find((i) => i.id === id);
     const rev = other && (ref ? other.revisions.find((r) => (r.id || r.digest) === ref) : null);
     const fields = !other ? {} : !rev ? other.fields : rev.snapshot ? rev.fields || {} : { ...other.fields, ...(rev.fields || {}) };
     // original.type:zh is the linked Item's type in a language.
     if (key === "type") return format && other ? (state.templates.find((t) => t.type === other.type)?.names || {})[format] : other?.type;
+    // about.date.start: the start of the linked Item's span.
+    if (part === "start" || part === "end") return spanPart(fields[key], part);
     return fields[key];
   }
   return name === "type"
@@ -924,6 +946,21 @@ function drawOrder() {
   const lists = numberedKeys().map(({ of, rest }) => orderList(top, of, rest));
   $("order").replaceChildren(...lists);
   $("order-row").hidden = !lists.length;
+}
+
+// selectionPick is which revisions a block places: as the blocks above
+// say, HEAD only, or every revision as last corrected.
+function selectionPick(n, redraw) {
+  const chip = (value, text, title) => {
+    const b = el("button", { type: "button", className: "chip", textContent: text, title, onclick: () => { n.selection = value; changed(); redraw(); } });
+    b.setAttribute("aria-pressed", String((n.selection || "") === value));
+    return b;
+  };
+  return el("div", { className: "order-unlisted" }, el("span", { textContent: "Revisions" }),
+    el("div", { className: "segmented", role: "group", "aria-label": "Revisions it places" },
+      chip("", "As above", "Place the revisions the blocks above place"),
+      chip("head", "HEAD only", "Place only HEAD"),
+      chip("all", "All revisions", "Place every revision once, as last corrected")));
 }
 
 // unlistedPick is what s's order key gives a value it does not list: no

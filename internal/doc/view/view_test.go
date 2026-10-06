@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -58,7 +59,7 @@ func TestBuildHeadAndQuery(t *testing.T) {
 		item("A", "passport", map[string]string{"owner": "tom", "country": "CN"}, "d3"),
 		item("C", "id_card", map[string]string{"owner": "tom", "country": "CN"}, "d4"),
 	}
-	v := View{Name: "x", Selection: Head, Node: Node{If: "type == id_card", File: "{country}/{owner}/{type}.{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: Head, If: "type == id_card", File: "{country}/{owner}/{type}.{ext}"}}
 	plan, err := Build(v, items, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +76,7 @@ func TestBuildHeadAndQuery(t *testing.T) {
 
 func TestBuildAllRevisions(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"owner": "emma"}, "d1", "d2")}
-	plan, _ := Build(View{Name: "x", Selection: All, Node: Node{File: "{owner}/{type}-{revision}.{ext}"}}, items, Types{})
+	plan, _ := Build(View{Name: "x", Node: Node{Selection: All, File: "{owner}/{type}-{revision}.{ext}"}}, items, Types{})
 	if len(plan.Files) != 2 || plan.Files[0].Path != "emma/id_card-1.pdf" || plan.Files[1].Path != "emma/id_card-2.pdf" {
 		t.Fatalf("%+v", plan)
 	}
@@ -87,7 +88,7 @@ func TestBuildQueryTags(t *testing.T) {
 	b := item("B", "id_card", map[string]string{"owner": "tom"}, "d3")
 	b.Tags = []string{"Important"}
 	c := item("C", "id_card", map[string]string{"owner": "sam"}, "d4")
-	v := View{Name: "x", Selection: All, Node: Node{If: "tags in [important, original]", File: "{owner}/{revision}.{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: All, If: "tags in [important, original]", File: "{owner}/{revision}.{ext}"}}
 	plan, err := Build(v, []tree.Item{a, b, c}, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +107,7 @@ func TestBuildShared(t *testing.T) {
 	a := item("A", "letter", map[string]string{"owner": "alex"}, "d1")
 	a.SharedWith = []string{"emma"}
 	b := item("B", "letter", map[string]string{"owner": "emma"}, "d2")
-	v := View{Name: "x", Selection: Head, Node: Node{If: "owner == Emma", File: "{owner}/{id}.{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: Head, If: "owner == Emma", File: "{owner}/{id}.{ext}"}}
 	paths := func() []string {
 		plan, err := Build(v, []tree.Item{a, b}, Types{})
 		if err != nil {
@@ -142,7 +143,7 @@ func TestBuildExcludeAndSkip(t *testing.T) {
 	c := item("C", "diploma", map[string]string{"owner": "emma", "name": "学位证书"}, "d3", "d4")
 	c.Revisions[1].Tags = []string{"copy"}
 	d := item("D", "diploma", map[string]string{"owner": "emma", "name": "成绩单"}, "d5")
-	v := View{Name: "x", Selection: All, Node: Node{File: "{id}-{revision}.{ext}",
+	v := View{Name: "x", Node: Node{Selection: All, File: "{id}-{revision}.{ext}",
 		If: "id != A && !tags in [translation, copy] && name != 成绩单"}}
 	plan, err := Build(v, []tree.Item{a, b, c, d}, Types{})
 	if err != nil {
@@ -163,7 +164,7 @@ func TestBuildExcludeAndSkip(t *testing.T) {
 	g := item("G", "visa", map[string]string{"owner": "emma"}, "d8")
 	g.Retired = true
 	for status, want := range map[string][]string{"superseded": {"F-1.pdf", "G-1.pdf"}, "retired": {"F-1.pdf"}} {
-		plan, _ := Build(View{Name: "v", Selection: All, Node: Node{If: "!status ==" + status, File: "{id}-{revision}.{ext}"}}, []tree.Item{e, f, g}, Types{})
+		plan, _ := Build(View{Name: "v", Node: Node{Selection: All, If: "!status ==" + status, File: "{id}-{revision}.{ext}"}}, []tree.Item{e, f, g}, Types{})
 		var got []string
 		for _, file := range plan.Files {
 			got = append(got, file.Path)
@@ -206,7 +207,7 @@ func TestBuildContains(t *testing.T) {
 		t.Fatalf("both: %v", got)
 	}
 	for _, bad := range []string{"name has", "status is"} {
-		v := View{Name: "x", Selection: Head, Node: Node{If: bad, File: "{id}.{ext}"}}
+		v := View{Name: "x", Node: Node{Selection: Head, If: bad, File: "{id}.{ext}"}}
 		if err := v.Validate(); err == nil {
 			t.Fatalf("%q accepted", bad)
 		}
@@ -218,7 +219,7 @@ func TestBuildNumbersSkip(t *testing.T) {
 	for i, name := range []string{"身份证", "护照", "结婚证", "户口"} {
 		items = append(items, item(string(rune('A'+i)), "id_card", map[string]string{"name": name}, fmt.Sprint("d", i)))
 	}
-	v := View{Name: "x", Selection: Head, Node: Node{Order: map[string][]string{"name": {"身份证", "护照", "结婚证", "户口"}}, Numbers: map[string]map[string]int{"name": {"结婚证": 6}}, File: "{#}-{name}.{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: Head, Order: map[string][]string{"name": {"身份证", "护照", "结婚证", "户口"}}, Numbers: map[string]map[string]int{"name": {"结婚证": 6}}, File: "{#}-{name}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +257,7 @@ func TestBuildNumbersSkip(t *testing.T) {
 
 func TestBuildMissingAndDefault(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"owner": "emma"}, "d1")}
-	v := View{Name: "x", Selection: Head, Node: Node{File: "{country}/{owner}/{year}.{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: Head, File: "{country}/{owner}/{year}.{ext}"}}
 	plan, _ := Build(v, items, Types{})
 	if len(plan.Missing) != 1 || !reflect.DeepEqual(plan.Missing[0].Keys, []string{"country", "year"}) || len(plan.Files) != 0 {
 		t.Fatalf("%+v", plan)
@@ -271,12 +272,12 @@ func TestBuildMissingAndDefault(t *testing.T) {
 
 func TestBuildDates(t *testing.T) {
 	items := []tree.Item{item("A", "bill", map[string]string{"date": "2026-09-25"}, "d1")}
-	plan, _ := Build(View{Name: "x", Selection: Head, Node: Node{File: "{year}/{month}/{date}.{ext}"}}, items, Types{})
+	plan, _ := Build(View{Name: "x", Node: Node{Selection: Head, File: "{year}/{month}/{date}.{ext}"}}, items, Types{})
 	if plan.Files[0].Path != "2026/09/2026-09-25.pdf" {
 		t.Fatalf("%+v", plan)
 	}
 	span := []tree.Item{item("A", "bill", map[string]string{"date": "2026-01-01/2026-03-31"}, "d1")}
-	plan, _ = Build(View{Name: "x", Selection: Head, Node: Node{File: "{year}/{date.end}/{date}/{date:compact}.{ext}"}}, span, Types{})
+	plan, _ = Build(View{Name: "x", Node: Node{Selection: Head, File: "{year}/{date.end}/{date}/{date:compact}.{ext}"}}, span, Types{})
 	if plan.Files[0].Path != "2026/2026-03-31/2026-01-01-2026-03-31/20260101-20260331.pdf" {
 		t.Fatalf("%+v", plan)
 	}
@@ -288,7 +289,7 @@ func TestBuildClashAndNumbering(t *testing.T) {
 		item("A", "bill", map[string]string{"owner": "emma"}, "d1"),
 		item("C", "bill", map[string]string{"owner": "emma"}, "d3"),
 	}
-	v := View{Name: "x", Selection: Head, Node: Node{File: "{owner}/{type}.{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: Head, File: "{owner}/{type}.{ext}"}}
 	plan, _ := Build(v, items, Types{})
 	if len(plan.Clashes) != 1 || len(plan.Clashes[0].Files) != 3 || plan.Complete() {
 		t.Fatalf("case should clash: %+v", plan)
@@ -325,7 +326,7 @@ func TestLayoutWritesACountryInAFormat(t *testing.T) {
 		{ID: "B", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom", "country": "AU"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "sam", "country": "Atlantis"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	plan, err := Build(View{Name: "v", Selection: Head, Node: Node{File: "{country:alpha3}/{owner}-{country:en}.{ext}"}}, items, Types{})
+	plan, err := Build(View{Name: "v", Node: Node{Selection: Head, File: "{country:alpha3}/{owner}-{country:en}.{ext}"}}, items, Types{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,11 +355,11 @@ func TestKeysComeFromTheirRevision(t *testing.T) {
 			{Digest: "a", Fields: map[string]string{"expires": "2020"}},
 			{Digest: "b", Fields: map[string]string{"expires": "2030"}},
 		}}
-	plan, err := Build(View{Name: "v", Selection: All, Node: Node{File: "{owner}-{expires}.{ext}"}}, []tree.Item{item}, Types{})
+	plan, err := Build(View{Name: "v", Node: Node{Selection: All, File: "{owner}-{expires}.{ext}"}}, []tree.Item{item}, Types{})
 	if err != nil || len(plan.Files) != 2 || plan.Files[0].Path != "emma-2020.pdf" || plan.Files[1].Path != "emma-2030.pdf" {
 		t.Fatalf("%v %+v", err, plan)
 	}
-	head, _ := Build(View{Name: "v", Selection: Head, Node: Node{If: "expires == 2030", File: "{id}.{ext}"}}, []tree.Item{item}, Types{})
+	head, _ := Build(View{Name: "v", Node: Node{Selection: Head, If: "expires == 2030", File: "{id}.{ext}"}}, []tree.Item{item}, Types{})
 	if len(head.Files) != 1 {
 		t.Fatal("a condition does not read HEAD's fields")
 	}
@@ -369,8 +370,8 @@ func TestCombineFindsClashesAcrossViews(t *testing.T) {
 		item("A", "id_card", map[string]string{"owner": "emma"}, "d1"),
 		item("B", "bill", map[string]string{"owner": "emma"}, "d2"),
 	}
-	ids := View{Name: "ids", Selection: Head, Node: Node{If: "type == id_card", File: "{owner}/{type}.{ext}"}}
-	bills := View{Name: "bills", Selection: Head, Node: Node{If: "type == bill", File: "{owner}/id_card.{ext}"}}
+	ids := View{Name: "ids", Node: Node{Selection: Head, If: "type == id_card", File: "{owner}/{type}.{ext}"}}
+	bills := View{Name: "bills", Node: Node{Selection: Head, If: "type == bill", File: "{owner}/id_card.{ext}"}}
 	c, err := Combine([]View{ids, bills}, items, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -402,7 +403,7 @@ func TestNumberedKeysFollowTheOrder(t *testing.T) {
 		{ID: "B", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "alex", "country": "AU"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"owner": "alex", "country": "NZ"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"owner": {"alex", "emma"}, "country": {"CHN", "Australia"}}, File: "{#}-{owner}/{#}-{country:alpha3}/{type}.{ext}"}}
+	v := View{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"owner": {"alex", "emma"}, "country": {"CHN", "Australia"}}, File: "{#}-{owner}/{#}-{country:alpha3}/{type}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -422,9 +423,9 @@ func TestNumberedKeysFollowTheOrder(t *testing.T) {
 		t.Fatalf("missing %+v", plan.Missing)
 	}
 	for _, bad := range []View{
-		{Name: "v", Selection: Head, Node: Node{File: "{#}-{owner}.{ext}"}},
-		{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"country": {"CN", "中国"}}, File: "{#}-{country}.{ext}"}},
-		{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"owner": {}}, File: "{owner}.{ext}"}},
+		{Name: "v", Node: Node{Selection: Head, File: "{#}-{owner}.{ext}"}},
+		{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"country": {"CN", "中国"}}, File: "{#}-{country}.{ext}"}},
+		{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"owner": {}}, File: "{owner}.{ext}"}},
 	} {
 		if bad.Validate() == nil {
 			t.Errorf("%+v accepted", bad)
@@ -447,7 +448,7 @@ func TestTypeIsWrittenInALanguage(t *testing.T) {
 		{ID: "B", Type: "visa", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"}, Revisions: []tree.Revision{{Digest: "b"}}},
 	}
 	names := TypesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证", "en": "Driver licence"}}})
-	plan, err := Build(View{Name: "v", Selection: Head, Node: Node{File: "{type:zh}/{type:en}-{type}.{ext}"}}, items, names)
+	plan, err := Build(View{Name: "v", Node: Node{Selection: Head, File: "{type:zh}/{type:en}-{type}.{ext}"}}, items, names)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +475,7 @@ func TestAlternativeKeys(t *testing.T) {
 		{ID: "C", Type: "visa", Kind: tree.KindRecord, Fields: map[string]string{"country": "CN"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
 	names := TypesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}})
-	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"country": {"CN", "AU"}}, File: "{#}-{country:alpha3}/{name|type:zh}.{ext}"}}
+	v := View{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"country": {"CN", "AU"}}, File: "{#}-{country:alpha3}/{name|type:zh}.{ext}"}}
 	plan, err := Build(v, items, names)
 	if err != nil {
 		t.Fatal(err)
@@ -517,7 +518,7 @@ func TestAlternativesAreNumberedTogether(t *testing.T) {
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"name": "护照"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
 	names := TypesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}})
-	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"户口首页", "驾驶证"}}, File: "{#}-{name|type:zh}.{ext}"}}
+	v := View{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"name": {"户口首页", "驾驶证"}}, File: "{#}-{name|type:zh}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -554,7 +555,7 @@ func TestMatchesCountryInAnyForm(t *testing.T) {
 	for cond, want := range map[string]bool{
 		"country == CN": true, "country == CHN": true, "country == China": true, "owner == alex": true, "country == AU": false,
 	} {
-		plan, err := Build(View{Name: "v", Selection: Head, Node: Node{If: cond, File: "{id}.{ext}"}}, []tree.Item{item}, Types{})
+		plan, err := Build(View{Name: "v", Node: Node{Selection: Head, If: cond, File: "{id}.{ext}"}}, []tree.Item{item}, Types{})
 		if err != nil || (len(plan.Files) == 1) != want {
 			t.Errorf("%s: %v %v", cond, err, plan.Files)
 		}
@@ -566,7 +567,7 @@ func TestOptionalKey(t *testing.T) {
 		item("A", "diploma", map[string]string{"owner": "emma", "degree": "本科"}, "d1"),
 		item("B", "id_card", map[string]string{"owner": "emma"}, "d2"),
 	}
-	v := View{Name: "x", Selection: Head, Node: Node{File: "{owner}/{type}[-{degree}][ ({country:alpha2})].{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: Head, File: "{owner}/{type}[-{degree}][ ({country:alpha2})].{ext}"}}
 	plan, err := Build(v, items, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -579,12 +580,12 @@ func TestOptionalKey(t *testing.T) {
 		t.Fatalf("got %v %+v, want %v", paths, plan, want)
 	}
 	// A folder of only optional parts, all empty, would vanish: not placed.
-	plan, _ = Build(View{Name: "x", Selection: Head, Node: Node{File: "{owner}/[{degree}]/{type}.{ext}"}}, items, Types{})
+	plan, _ = Build(View{Name: "x", Node: Node{Selection: Head, File: "{owner}/[{degree}]/{type}.{ext}"}}, items, Types{})
 	if len(plan.Files) != 1 || len(plan.Missing) != 1 || plan.Missing[0].Item != "B" {
 		t.Fatalf("empty folder: %+v", plan)
 	}
 	// [/{key}] adds a folder when the key is there, and none when it is not.
-	plan, _ = Build(View{Name: "x", Selection: Head, Node: Node{File: "licence[/{degree}]/{type}[-{degree}].{ext}"}}, items, Types{})
+	plan, _ = Build(View{Name: "x", Node: Node{Selection: Head, File: "licence[/{degree}]/{type}[-{degree}].{ext}"}}, items, Types{})
 	paths = nil
 	for _, f := range plan.Files {
 		paths = append(paths, f.Path)
@@ -593,7 +594,7 @@ func TestOptionalKey(t *testing.T) {
 		t.Fatalf("got %v %+v, want %v", paths, plan, want)
 	}
 	// [/{#}-{key}] numbers the folder from the order {key}, from where numbers set.
-	v = View{Name: "x", Selection: Head, Node: Node{Order: map[string][]string{"degree": {"硕士", "本科"}}, Numbers: map[string]map[string]int{"degree": {"硕士": 10}}, File: "licence[/{#}-{degree}]/{type}.{ext}"}}
+	v = View{Name: "x", Node: Node{Selection: Head, Order: map[string][]string{"degree": {"硕士", "本科"}}, Numbers: map[string]map[string]int{"degree": {"硕士": 10}}, File: "licence[/{#}-{degree}]/{type}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -605,11 +606,11 @@ func TestOptionalKey(t *testing.T) {
 	if want := []string{"licence/11-本科/diploma.pdf", "licence/id_card.pdf"}; !reflect.DeepEqual(paths, want) || !plan.Complete() {
 		t.Fatalf("got %v %+v, want %v", paths, plan, want)
 	}
-	if err := (View{Name: "x", Selection: Head, Node: Node{File: v.File}}).Validate(); err == nil {
+	if err := (View{Name: "x", Node: Node{Selection: Head, File: v.File}}).Validate(); err == nil {
 		t.Error("[/{#}-{degree}] without an order validated")
 	}
 	// A group of several keys is left out when any of them is lacking.
-	plan, _ = Build(View{Name: "x", Selection: Head, Node: Node{File: "{owner}/{type}[ {degree}-{owner}][ {degree}-{level}].{ext}"}}, items, Types{})
+	plan, _ = Build(View{Name: "x", Node: Node{Selection: Head, File: "{owner}/{type}[ {degree}-{owner}][ {degree}-{level}].{ext}"}}, items, Types{})
 	paths = nil
 	for _, f := range plan.Files {
 		paths = append(paths, f.Path)
@@ -633,7 +634,7 @@ func TestCounterNumbersTheWholeName(t *testing.T) {
 		{ID: "B", Type: "diploma", Kind: tree.KindRecord, Fields: map[string]string{"name": "毕业证书", "level": "硕士"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "id_card", Kind: tree.KindRecord, Fields: map[string]string{"name": "护照"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"护照", "毕业证书-本科", "毕业证书-硕士"}}, File: "x/{#}-{name}[-{level}].{ext}"}}
+	v := View{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"name": {"护照", "毕业证书-本科", "毕业证书-硕士"}}, File: "x/{#}-{name}[-{level}].{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -657,7 +658,7 @@ func TestCounterEndStopsTheNumber(t *testing.T) {
 		{ID: "B", Type: "contract", Kind: tree.KindRecord, Fields: map[string]string{"name": "合同", "signed": "2019-03-22"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "invoice", Kind: tree.KindRecord, Fields: map[string]string{"name": "物业发票"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"合同", "物业发票"}}, File: "x/{#}-{name}{/#}[-{signed:compact}].{ext}"}}
+	v := View{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"name": {"合同", "物业发票"}}, File: "x/{#}-{name}{/#}[-{signed:compact}].{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -688,7 +689,7 @@ func TestUnnumbered(t *testing.T) {
 		{ID: "B", Type: "other", Kind: tree.KindRecord, Fields: map[string]string{"name": "押金"}, Revisions: []tree.Revision{{Digest: "b"}}},
 		{ID: "C", Type: "invoice", Kind: tree.KindRecord, Fields: map[string]string{"name": "物业发票"}, Revisions: []tree.Revision{{Digest: "c"}}},
 	}
-	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"合同", "押金", "物业发票"}}, Numbers: map[string]map[string]int{"name": {"合同": 0}}, Unnumbered: map[string][]string{"name": {"押金"}}, File: "x/{#}-{name}.{ext}"}}
+	v := View{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"name": {"合同", "押金", "物业发票"}}, Numbers: map[string]map[string]int{"name": {"合同": 0}}, Unnumbered: map[string][]string{"name": {"押金"}}, File: "x/{#}-{name}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -720,7 +721,7 @@ func TestUnlistedUnnumbered(t *testing.T) {
 		{ID: "A", Type: "contract", Kind: tree.KindRecord, Fields: map[string]string{"name": "合同"}, Revisions: []tree.Revision{{Digest: "a"}}},
 		{ID: "B", Type: "other", Kind: tree.KindRecord, Fields: map[string]string{"name": "账单"}, Revisions: []tree.Revision{{Digest: "b"}}},
 	}
-	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"name": {"合同"}}, File: "x/{#}-{name}.{ext}"}}
+	v := View{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"name": {"合同"}}, File: "x/{#}-{name}.{ext}"}}
 	plan, err := Build(v, items, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -786,7 +787,7 @@ func TestChildren(t *testing.T) {
 		{Type: "invoice", Lineage: []string{"invoice", "money"}},
 		{Type: "payment", Lineage: []string{"payment", "money"}},
 	})
-	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"home": {"h1", "h2"}},
+	v := View{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"home": {"h1", "h2"}},
 		Path: "{#}-{home}", File: "{name}.{ext}",
 		Children: []Node{
 			{If: "category == utility", Path: "utility", File: "{category}-{name}.{ext}"},
@@ -862,7 +863,7 @@ func TestChildren(t *testing.T) {
 // Orders named the old way, by the rest as written, are renamed for their
 // first key and moved to the node holding every {#} that numbers them.
 func TestUpgradeRenamesOrders(t *testing.T) {
-	v := View{Name: "v", Selection: Head, Node: Node{
+	v := View{Name: "v", Node: Node{Selection: Head,
 		File:     "{#}-{owner}/{#}-{name}[-{level}].{ext}",
 		Order:    map[string][]string{"{owner}": {"alex"}, "{name}[-{level}]": {"a"}, "{name}[-{level|issuer}]": {"b"}},
 		Numbers:  map[string]map[string]int{"{name}[-{level|issuer}]": {"b": 5}},
@@ -915,7 +916,7 @@ func TestLinkedKeys(t *testing.T) {
 		item(lost, "translation", map[string]string{"owner": "emma", "language": "fr"}, "d5"),
 	}
 	items[0].Revisions[0].Fields = map[string]string{"level": "本科"}
-	v := View{Name: "x", Selection: Head, Node: Node{Order: map[string][]string{"level": {"硕士研究生", "本科"}, "name": {"毕业证书", "学位证书"}}, File: "{#}-{level|original.level}[/{language}]/{#}-{name|original.name}.{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: Head, Order: map[string][]string{"level": {"硕士研究生", "本科"}, "name": {"毕业证书", "学位证书"}}, File: "{#}-{level|original.level}[/{language}]/{#}-{name|original.name}.{ext}"}}
 	plan, err := Build(v, items, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -939,7 +940,7 @@ func TestFolderGroupAddsSeveralFolders(t *testing.T) {
 		item("01K00000000000000000000001", "bill", map[string]string{"owner": "emma", "service": "水"}, "d1"),
 		item("01K00000000000000000000002", "contract", map[string]string{"owner": "emma"}, "d2"),
 	}
-	v := View{Name: "x", Selection: Head, Node: Node{File: "r[/bill/{service}]/{type}.{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: Head, File: "r[/bill/{service}]/{type}.{ext}"}}
 	plan, err := Build(v, items, Types{})
 	if err != nil {
 		t.Fatal(err)
@@ -969,7 +970,7 @@ func TestInherit(t *testing.T) {
 		item(bachelor, "diploma", map[string]string{"owner": "emma", "level": "本科", "name": "学位证书"}, "d1"),
 		item(english, "translation", map[string]string{"owner": "emma", "language": "en", "name": "degree", "original": bachelor}, "d2"),
 	}
-	v := View{Name: "x", Selection: Head, Inherit: []string{"original"}, Node: Node{Order: map[string][]string{"level": {"本科"}}, File: "{#}-{level}[/{language}]/{name}.{ext}"}}
+	v := View{Name: "x", Inherit: []string{"original"}, Node: Node{Selection: Head, Order: map[string][]string{"level": {"本科"}}, File: "{#}-{level}[/{language}]/{name}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -1004,7 +1005,7 @@ func TestInheritExcludesAndLinkedType(t *testing.T) {
 		item(ofLicence, "translation", map[string]string{"original": licence}, "d4"),
 	}
 	names := TypesOf([]tree.Template{{Type: "driver_licence", Names: map[string]string{"zh": "驾驶证"}}, {Type: "translation", Names: map[string]string{"zh": "翻译件"}}, {Type: "diploma", Names: map[string]string{"zh": "文凭"}}})
-	v := View{Name: "x", Selection: Head, Inherit: []string{"original"}, Node: Node{If: "name != 成绩单", File: "{type}/{name|original.type:zh|type:zh}.{ext}"}}
+	v := View{Name: "x", Inherit: []string{"original"}, Node: Node{Selection: Head, If: "name != 成绩单", File: "{type}/{name|original.type:zh|type:zh}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -1024,7 +1025,7 @@ func TestInheritExcludesAndLinkedType(t *testing.T) {
 func TestDateFormats(t *testing.T) {
 	a := item("01K00000000000000000000001", "tenancy", map[string]string{"start": "2010-01-01", "end": "2011-01-01"}, "d1")
 	b := item("01K00000000000000000000002", "bill", map[string]string{"tenancy": "01K00000000000000000000001", "date": "2010-08-03"}, "d2")
-	v := View{Name: "x", Selection: Head, Node: Node{If: "type == bill", File: "{tenancy.start:compact}-{tenancy.end:compact}/{date:fy}.{ext}"}}
+	v := View{Name: "x", Node: Node{Selection: Head, If: "type == bill", File: "{tenancy.start:compact}-{tenancy.end:compact}/{date:fy}.{ext}"}}
 	if err := v.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -1049,7 +1050,7 @@ func TestValueIsWrittenInALanguage(t *testing.T) {
 		{ID: "A", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"category": "房租"}, Revisions: []tree.Revision{{Digest: "a"}}},
 		{ID: "B", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"category": "电, 水"}, Revisions: []tree.Revision{{Digest: "b"}}},
 	}
-	plan, err := Build(View{Name: "v", Selection: Head, Node: Node{File: "{category:en}/{id}.{ext}"}}, items, TypesOf([]tree.Template{bill}))
+	plan, err := Build(View{Name: "v", Node: Node{Selection: Head, File: "{category:en}/{id}.{ext}"}}, items, TypesOf([]tree.Template{bill}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1065,7 +1066,7 @@ func TestValueIsWrittenInALanguage(t *testing.T) {
 // A span open at one end is written as the one day it has.
 func TestOpenSpanIsItsDay(t *testing.T) {
 	items := []tree.Item{{ID: "A", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"date": "/2019-01-20"}, Revisions: []tree.Revision{{Digest: "a"}}}}
-	plan, err := Build(View{Name: "v", Selection: Head, Node: Node{File: "{date:compact}-{date}-{year}.{ext}"}}, items, Types{})
+	plan, err := Build(View{Name: "v", Node: Node{Selection: Head, File: "{date:compact}-{date}-{year}.{ext}"}}, items, Types{})
 	if err != nil || len(plan.Files) != 1 || plan.Files[0].Path != "20190120-2019-01-20-2019.pdf" {
 		t.Fatalf("%v %+v", err, plan)
 	}
@@ -1102,7 +1103,7 @@ func offences() []tree.Item {
 // A {#} a child writes takes its order from that child alone: the rule's
 // order, though it lists the name, is not looked at.
 func TestChildCounterNumbersInItsOwnNode(t *testing.T) {
-	v := View{Name: "v", Selection: Head, Node: Node{
+	v := View{Name: "v", Node: Node{Selection: Head,
 		File:     "{#}-{name}.{ext}",
 		Order:    map[string][]string{"name": {"合同"}, "date": {"20190101-x"}},
 		Children: []Node{{If: "type == traffic_offence", Path: "{#}-{date:compact}-{name}"}},
@@ -1120,7 +1121,7 @@ func TestChildCounterNumbersInItsOwnNode(t *testing.T) {
 // Names an order does not list are numbered on after it, in the order of
 // their names, from start when the order lists nothing.
 func TestUnlistedNextNumbersOnFromStart(t *testing.T) {
-	v := View{Name: "v", Selection: Head, Node: Node{
+	v := View{Name: "v", Node: Node{Selection: Head,
 		File:  "{#}-{name}.{ext}",
 		Order: map[string][]string{"name": {"合同"}},
 		Children: []Node{{If: "type == traffic_offence", Path: "{#}-{date:compact}-{name}", File: "{name}.{ext}",
@@ -1146,7 +1147,7 @@ func TestUnlistedNextNumbersOnFromStart(t *testing.T) {
 // child an order of its own on reading, and places every PDF as before;
 // the rule's order, no longer used, goes.
 func TestUpgradeScopesOrdersAndPlacesAsBefore(t *testing.T) {
-	old := View{Name: "v", Selection: Head, Node: Node{
+	old := View{Name: "v", Node: Node{Selection: Head,
 		File:     "{#}-{name}.{ext}",
 		Order:    map[string][]string{"name": {"合同"}, "date": {"20200102-超速", "20210304-压线", "20220506-违停"}},
 		Numbers:  map[string]map[string]int{"date": {"20200102-超速": 50}},
@@ -1179,7 +1180,7 @@ func TestUpgradeScopesOrdersAndPlacesAsBefore(t *testing.T) {
 // given, and reading it again leaves it so: the rule's order is not copied
 // back into it.
 func TestEmptyListWithOneNumberStaysEmpty(t *testing.T) {
-	v := View{Name: "v", Selection: Head, Node: Node{
+	v := View{Name: "v", Node: Node{Selection: Head,
 		File:     "{#}-{name}.{ext}",
 		Order:    map[string][]string{"name": {"合同"}},
 		Children: []Node{{If: "type == traffic_offence", Path: "罚单", File: "{#}-{name}.{ext}", Unlisted: map[string]string{"name": "99"}}},
@@ -1200,7 +1201,7 @@ func TestEmptyListWithOneNumberStaysEmpty(t *testing.T) {
 // Upgrade moves a rule once: it is then marked scoped, and a child added
 // later with a {#} and no order of its own is not given the rule's order.
 func TestUpgradeOnlyOnce(t *testing.T) {
-	old := View{Name: "v", Selection: Head, Node: Node{
+	old := View{Name: "v", Node: Node{Selection: Head,
 		File:     "{#}-{name}.{ext}",
 		Order:    map[string][]string{"name": {"合同"}},
 		Children: []Node{{If: "type == traffic_offence", Path: "罚单", File: "{#}-{name}.{ext}"}},
@@ -1216,5 +1217,32 @@ func TestUpgradeOnlyOnce(t *testing.T) {
 	u.Numbering = "x"
 	if u.Validate() == nil {
 		t.Fatal("unknown numbering taken")
+	}
+}
+
+// selection: all places each revision once, as last corrected, and a child
+// may say it for its own Items while the rule keeps head.
+func TestSelectionTakesRevisionsNotCorrections(t *testing.T) {
+	card := tree.Item{ID: "01K00000000000000000000001", Type: "rego", Kind: tree.KindDocument, Revisions: []tree.Revision{
+		{ID: "a", Snapshot: true, Paper: "a", Digest: "d1", Fields: map[string]string{"date": "2024-03-15"}},
+		{ID: "b", Snapshot: true, Paper: "a", Digest: "d1", Fields: map[string]string{"date": "2024-03-16"}},
+		{ID: "c", Snapshot: true, Paper: "c", Digest: "d2", Fields: map[string]string{"date": "2025-03-15"}},
+	}, Head: "c"}
+	bill := tree.Item{ID: "01K00000000000000000000002", Type: "bill", Kind: tree.KindDocument, Revisions: []tree.Revision{
+		{ID: "x", Snapshot: true, Paper: "x", Digest: "d3", Fields: map[string]string{"date": "2024-01-01"}},
+		{ID: "y", Snapshot: true, Paper: "y", Digest: "d4", Fields: map[string]string{"date": "2025-01-01"}},
+	}, Head: "y"}
+	v := View{Name: "x", Node: Node{Selection: Head, File: "{type}-{revision}-{date}.{ext}", Children: []Node{{If: "type == rego", Selection: All}}}}
+	plan, err := Build(v, []tree.Item{card, bill}, Types{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range plan.Files {
+		got = append(got, f.Path)
+	}
+	want := []string{"bill-2-2025-01-01.pdf", "rego-1-2024-03-16.pdf", "rego-2-2025-03-15.pdf"}
+	if !slices.Equal(got, want) || len(plan.Clashes) != 0 {
+		t.Fatalf("files = %v, clashes %v; want %v", got, plan.Clashes, want)
 	}
 }

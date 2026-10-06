@@ -87,6 +87,9 @@ type RevisionMetadata struct {
 	Tags         *[]string
 	// RevisionTags are the new revision's own tags.
 	RevisionTags []string
+	// NewRevision says the owner confirmed a new paper; without it the
+	// snapshot corrects HEAD's revision.
+	NewRevision bool
 }
 
 // AddRevisionWithMetadata adds a revision and saves any Item metadata edits in
@@ -169,7 +172,7 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 		return item, nil
 	}
 	_, reused := item.Revision(SnapshotID(template.Type, full, digest))
-	ref := item.saveSnapshot(template.Type, full, digest, input.name, now)
+	ref := item.saveSnapshot(template.Type, full, digest, input.name, metadata.paper(item), now)
 	// A snapshot returned to keeps its own tags; given ones are added to them.
 	for n := range item.Revisions {
 		if item.Revisions[n].Ref() != ref {
@@ -412,6 +415,12 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 // SetFields creates a snapshot from the selected revision with validated
 // field values. Unchanged fields do nothing; older snapshots remain intact.
 func SetFields(root, id, digest string, template Template, given map[string]string, now time.Time) (Item, error) {
+	return SetFieldsAs(root, id, digest, template, given, false, now)
+}
+
+// SetFieldsAs is SetFields; with newRevision the snapshot begins a revision
+// rather than correcting the one digest is in.
+func SetFieldsAs(root, id, digest string, template Template, given map[string]string, newRevision bool, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -453,7 +462,7 @@ func SetFields(root, id, digest string, template Template, given map[string]stri
 		return item, nil
 	}
 	base := item.Revisions[at]
-	next := item.saveSnapshot(template.Type, fields, base.Digest, base.Source, now)
+	next := item.saveSnapshot(template.Type, fields, base.Digest, base.Source, correcting(item, digest, newRevision), now)
 	changes := map[string][2]string{}
 	for key, old := range previous {
 		if old != fields[key] {
