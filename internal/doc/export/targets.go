@@ -130,8 +130,8 @@ func Jobs(sources []Source, chosen map[string]string, home string, names []strin
 // checked as a whole before anything is written: each Target against the
 // tree, the Targets against each other, each Target's Views against each
 // other, and every wanted path against what is on disk.
-func PlanJobs(ctx context.Context, root string, jobs []Job, items []tree.Item) ([]JobPlan, error) {
-	templates, err := tree.LoadTemplates(root)
+func PlanJobs(ctx context.Context, st *tree.Store, jobs []Job, items []tree.Item) ([]JobPlan, error) {
+	templates, err := st.LoadTemplates()
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func PlanJobs(ctx context.Context, root string, jobs []Job, items []tree.Item) (
 		}
 		p.Views = append(p.Views, j.Snapshots...)
 		p.Problems = append(p.Problems, j.Lost...)
-		if err := CheckTarget(root, j.Path); err != nil {
+		if err := CheckTarget(st, j.Path); err != nil {
 			p.Problems = append(p.Problems, err.Error())
 		}
 		for k, other := range jobs {

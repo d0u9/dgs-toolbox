@@ -8,14 +8,14 @@ import (
 
 // ChangeType creates a new snapshot of HEAD using the target Template.
 // Earlier revisions retain their original type and complete field values.
-func ChangeType(root, id string, target Template, fields map[string]string, revisions map[string]map[string]string, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) ChangeType(id string, target Template, fields map[string]string, revisions map[string]map[string]string, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
 	if err := target.Validate(); err != nil {
 		return Item{}, err
 	}
-	item, items, err := FindItem(root, id)
+	item, items, err := st.FindItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -61,7 +61,7 @@ func ChangeType(root, id string, target Template, fields map[string]string, revi
 	if err != nil {
 		return Item{}, err
 	}
-	if err := linked(root, target, items, clean, id); err != nil {
+	if err := st.linked(target, items, clean, id); err != nil {
 		return Item{}, err
 	}
 	if other, ok := taken(target, items, clean, id); ok {
@@ -76,5 +76,5 @@ func ChangeType(root, id string, target Template, fields map[string]string, revi
 	before.NewFields = maps.Clone(next.Fields)
 	before.NewRevisions = map[string]map[string]string{next.Current(): maps.Clone(clean)}
 	next.History = append(append([]HistoryEvent(nil), item.History...), before)
-	return next, WriteItem(root, next)
+	return next, st.WriteItem(next)
 }

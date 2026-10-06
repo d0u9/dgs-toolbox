@@ -195,8 +195,8 @@ func Parse(data []byte) (Outline, error) {
 
 // LoadRules reads every rules/*.yaml under root, by name. A file whose name
 // is not its rule's name is refused.
-func LoadRules(root string) (map[string]view.View, error) {
-	rules, err := tree.ListDefinitions(tree.At(root), ruleKind())
+func LoadRules(st *tree.Store) (map[string]view.View, error) {
+	rules, err := tree.ListDefinitions(st, ruleKind())
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func LoadRules(root string) (map[string]view.View, error) {
 }
 
 func ruleKind() tree.DefinitionKind[view.View] {
-	return tree.DefinitionKind[view.View]{Dir: RulesDir, Name: func(r view.View) string { return r.Name }, Validate: func(_ string, r view.View) error { return r.Validate() }, Decode: func(_ string, data []byte) (view.View, error) {
+	return tree.DefinitionKind[view.View]{Dir: RulesDir, Name: func(r view.View) string { return r.Name }, Validate: func(_ *tree.Store, r view.View) error { return r.Validate() }, Decode: func(_ *tree.Store, data []byte) (view.View, error) {
 		var r view.View
 		d := yaml.NewDecoder(strings.NewReader(string(data)))
 		d.KnownFields(true)
@@ -221,18 +221,18 @@ func ruleKind() tree.DefinitionKind[view.View] {
 
 // ReadRule reads one rule file: it must parse, be a valid rule, and be named
 // for its rule.
-func ReadRule(path string) (view.View, error) {
-	return tree.ReadDefinitionFile(tree.At(""), ruleKind(), path)
+func ReadRule(st *tree.Store, path string) (view.View, error) {
+	return tree.ReadDefinitionFile(st, ruleKind(), path)
 }
 
 // Rules is every rule under root, sorted by name, and the Outlines using
 // each.
-func Rules(root string) ([]view.View, map[string][]string, error) {
-	rules, err := LoadRules(root)
+func Rules(st *tree.Store) ([]view.View, map[string][]string, error) {
+	rules, err := LoadRules(st)
 	if err != nil {
 		return nil, nil, err
 	}
-	outlines, err := Load(root)
+	outlines, err := Load(st)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -252,19 +252,19 @@ func Rules(root string) ([]view.View, map[string][]string, error) {
 
 // Load reads every outlines/*.yaml under root, sorted by name, each with its
 // rules. A file whose name is not its Outline's name is refused.
-func Load(root string) ([]Outline, error) {
-	outlines, _, err := load(root)
+func Load(st *tree.Store) ([]Outline, error) {
+	outlines, _, err := load(st)
 	return outlines, err
 }
 
 // load is Load, and the names of the Outlines holding their rules whole.
-func load(root string) ([]Outline, map[string]bool, error) {
-	rules, err := LoadRules(root)
+func load(st *tree.Store) ([]Outline, map[string]bool, error) {
+	rules, err := LoadRules(st)
 	if err != nil {
 		return nil, nil, err
 	}
 	whole := map[string]bool{}
-	out, err := tree.ListDefinitions(tree.At(root), tree.DefinitionKind[Outline]{Dir: Dir, Name: func(o Outline) string { return o.Name }, Decode: func(_ string, data []byte) (Outline, error) {
+	out, err := tree.ListDefinitions(st, tree.DefinitionKind[Outline]{Dir: Dir, Name: func(o Outline) string { return o.Name }, Decode: func(_ *tree.Store, data []byte) (Outline, error) {
 		o, inline, err := parse(data, rules)
 		whole[o.Name] = inline
 		return o, err
@@ -274,19 +274,19 @@ func load(root string) ([]Outline, map[string]bool, error) {
 
 // ReadFile reads one Outline file, its rules named from rules: it must
 // parse, name only rules there, be valid, and be named for its Outline.
-func ReadFile(path string, rules map[string]view.View) (Outline, error) {
-	o, _, err := readFile(path, rules)
+func ReadFile(st *tree.Store, path string, rules map[string]view.View) (Outline, error) {
+	o, _, err := readFile(st, path, rules)
 	return o, err
 }
 
-func readFile(path string, rules map[string]view.View) (Outline, bool, error) {
+func readFile(st *tree.Store, path string, rules map[string]view.View) (Outline, bool, error) {
 	var inline bool
-	k := tree.DefinitionKind[Outline]{Dir: Dir, Name: func(o Outline) string { return o.Name }, Decode: func(_ string, data []byte) (Outline, error) {
+	k := tree.DefinitionKind[Outline]{Dir: Dir, Name: func(o Outline) string { return o.Name }, Decode: func(_ *tree.Store, data []byte) (Outline, error) {
 		o, whole, err := parse(data, rules)
 		inline = whole
 		return o, err
 	}}
-	o, err := tree.ReadDefinitionFile(tree.At(""), k, path)
+	o, err := tree.ReadDefinitionFile(st, k, path)
 	return o, inline, err
 }
 
@@ -295,7 +295,7 @@ func readFile(path string, rules map[string]view.View) (Outline, bool, error) {
 // outlines/<name>.yaml naming them, once o is valid. Previous, when it names
 // another Outline, is moved to the trash after. Each file is written through a
 // temporary file and a rename.
-func Save(root, previous string, o Outline, now time.Time) error {
+func Save(st *tree.Store, previous string, o Outline, now time.Time) error {
 	for i := range o.Rules {
 		o.Rules[i] = withHead(o.Rules[i])
 	}
@@ -305,7 +305,7 @@ func Save(root, previous string, o Outline, now time.Time) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
-	if err := tree.At(root).CheckDefinitionSave(Dir, previous, o.Name); err != nil {
+	if err := st.CheckDefinitionSave(Dir, previous, o.Name); err != nil {
 		return err
 	}
 	file := named{Name: o.Name, About: o.About, Folder: o.Folder, Rules: []string{}, Snapshots: o.Snapshots}
@@ -314,19 +314,19 @@ func Save(root, previous string, o Outline, now time.Time) error {
 		if err != nil {
 			return err
 		}
-		if err := tree.At(root).WriteDefinition(RulesDir, r.Name, data); err != nil {
+		if err := st.WriteDefinition(RulesDir, r.Name, data); err != nil {
 			return err
 		}
 		file.Rules = append(file.Rules, r.Name)
 	}
-	return tree.SaveDefinition(tree.At(root), tree.DefinitionKind[named]{Dir: Dir, Name: func(o named) string { return o.Name }}, previous, file, now)
+	return tree.SaveDefinition(st, tree.DefinitionKind[named]{Dir: Dir, Name: func(o named) string { return o.Name }}, previous, file, now)
 }
 
 // Fresh refuses any of names a rule under root already has: a rule made new
 // in one Outline must not replace another Outline's.
-func Fresh(root string, names []string) error {
+func Fresh(st *tree.Store, names []string) error {
 	for _, n := range names {
-		exists, err := tree.At(root).DefinitionExists(RulesDir, n)
+		exists, err := st.DefinitionExists(RulesDir, n)
 		if err != nil {
 			return err
 		}
@@ -341,40 +341,40 @@ func Fresh(root string, names []string) error {
 // every Outline using it sees the change. With previous empty r is new and
 // must not replace a rule; with previous another name, that rule is
 // renamed first, in every Outline naming it.
-func SaveRule(root, previous string, r view.View, now time.Time) error {
+func SaveRule(st *tree.Store, previous string, r view.View, now time.Time) error {
 	r = withHead(r)
 	if err := r.Validate(); err != nil {
 		return errors.New(strings.Replace(err.Error(), "view ", "rule ", 1))
 	}
 	switch {
 	case previous == "":
-		if err := Fresh(root, []string{r.Name}); err != nil {
+		if err := Fresh(st, []string{r.Name}); err != nil {
 			return err
 		}
 	case previous != r.Name:
-		if err := RenameRule(root, previous, r.Name, now); err != nil {
+		if err := RenameRule(st, previous, r.Name, now); err != nil {
 			return err
 		}
 	}
 	if previous != "" {
 		previous = r.Name
 	}
-	return tree.SaveDefinition(tree.At(root), ruleKind(), previous, r, now)
+	return tree.SaveDefinition(st, ruleKind(), previous, r, now)
 }
 
 // RenameRule renames the rule from to to, in its file and in every Outline
 // naming it.
-func RenameRule(root, from, to string, now time.Time) error {
+func RenameRule(st *tree.Store, from string, to string, now time.Time) error {
 	if from == to {
 		return nil
 	}
 	if err := (view.View{Name: to, Node: view.Node{Selection: view.Head, File: "x"}}).Validate(); err != nil {
 		return err
 	}
-	if err := Fresh(root, []string{to}); err != nil {
+	if err := Fresh(st, []string{to}); err != nil {
 		return err
 	}
-	rules, err := LoadRules(root)
+	rules, err := LoadRules(st)
 	if err != nil {
 		return err
 	}
@@ -382,12 +382,12 @@ func RenameRule(root, from, to string, now time.Time) error {
 	if !ok {
 		return fmt.Errorf("no rule named %s", from)
 	}
-	outlines, err := Load(root)
+	outlines, err := Load(st)
 	if err != nil {
 		return err
 	}
 	r.Name = to
-	if err := tree.SaveDefinition(tree.At(root), ruleKind(), "", r, now); err != nil {
+	if err := tree.SaveDefinition(st, ruleKind(), "", r, now); err != nil {
 		return err
 	}
 	for _, o := range outlines {
@@ -398,51 +398,51 @@ func RenameRule(root, from, to string, now time.Time) error {
 			}
 		}
 		if uses {
-			if err := Save(root, o.Name, o, now); err != nil {
+			if err := Save(st, o.Name, o, now); err != nil {
 				return err
 			}
 		}
 	}
-	_, err = TrashRule(root, from, now)
+	_, err = TrashRule(st, from, now)
 	return err
 }
 
 // TrashRule moves a rule no Outline uses into the tree's trash.
-func TrashRule(root, name string, now time.Time) (string, error) {
+func TrashRule(st *tree.Store, name string, now time.Time) (string, error) {
 	if err := (view.View{Name: name, Node: view.Node{Selection: view.Head, File: "x"}}).Validate(); err != nil {
 		return "", err
 	}
-	_, used, err := Rules(root)
+	_, used, err := Rules(st)
 	if err != nil {
 		return "", err
 	}
 	if len(used[name]) > 0 {
 		return "", fmt.Errorf("the rule %s is used by %s", name, strings.Join(used[name], ", "))
 	}
-	exists, err := tree.At(root).DefinitionExists(RulesDir, name)
+	exists, err := st.DefinitionExists(RulesDir, name)
 	if err != nil {
 		return "", err
 	}
 	if !exists {
 		return "", fmt.Errorf("no rule named %s", name)
 	}
-	return tree.At(root).TrashDefinition(RulesDir, name, now)
+	return st.TrashDefinition(RulesDir, name, now)
 }
 
 // Trash moves an Outline's file into the tree's trash and answers where it
 // went. One that is not there is not an error and answers an empty path.
-func Trash(root, name string, now time.Time) (string, error) {
+func Trash(st *tree.Store, name string, now time.Time) (string, error) {
 	if !namePattern.MatchString(name) {
 		return "", fmt.Errorf("outline %q: not an outline name", name)
 	}
-	exists, err := tree.At(root).DefinitionExists(Dir, name)
+	exists, err := st.DefinitionExists(Dir, name)
 	if err != nil {
 		return "", err
 	}
 	if !exists {
 		return "", nil
 	}
-	return tree.At(root).TrashDefinition(Dir, name, now)
+	return st.TrashDefinition(Dir, name, now)
 }
 
 // Node is one folder: its name, the PDFs directly in it, and its folders.
@@ -559,12 +559,12 @@ func SnapshotUsers(outlines []Outline) map[string][]string {
 
 // RenameSnapshot renames the Snapshot from to to, in its file and in
 // every Outline putting it in its tree.
-func RenameSnapshot(root, from, to string, now time.Time) error {
-	outlines, err := Load(root)
+func RenameSnapshot(st *tree.Store, from string, to string, now time.Time) error {
+	outlines, err := Load(st)
 	if err != nil {
 		return err
 	}
-	list, err := snapshot.Load(root)
+	list, err := snapshot.Load(st)
 	if err != nil {
 		return err
 	}
@@ -578,7 +578,7 @@ func RenameSnapshot(root, from, to string, now time.Time) error {
 		return fmt.Errorf("no Snapshot named %s", from)
 	}
 	s.Name = to
-	if err := snapshot.Save(root, from, *s, false, now); err != nil {
+	if err := snapshot.Save(st, from, *s, false, now); err != nil {
 		return err
 	}
 	for _, o := range outlines {
@@ -589,7 +589,7 @@ func RenameSnapshot(root, from, to string, now time.Time) error {
 			}
 		}
 		if uses {
-			if err := Save(root, o.Name, o, now); err != nil {
+			if err := Save(st, o.Name, o, now); err != nil {
 				return err
 			}
 		}

@@ -2,6 +2,7 @@ package doc
 
 import (
 	"context"
+	"dgs-toolbox/internal/doc/tree"
 	"fmt"
 	"io"
 	"os"
@@ -36,7 +37,11 @@ func verifyAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 			fmt.Fprintf(out, "reading  %d/%d  %s\n", done+1, total, path)
 		}
 	}
-	report, err := check.Tree(context.Background(), root, progress)
+	store, err := tree.Open(root)
+	if err != nil {
+		return err
+	}
+	report, err := check.Tree(context.Background(), store, progress)
 	if err != nil {
 		return err
 	}

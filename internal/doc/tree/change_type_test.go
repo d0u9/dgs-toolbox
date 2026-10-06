@@ -12,18 +12,18 @@ func TestChangeTypePreservesPDFsAndArchivesOldFields(t *testing.T) {
 	at := time.Date(2026, 9, 26, 12, 30, 0, 0, time.UTC)
 	item := Item{ID: "A", Type: "id_card", Kind: KindDocument, Fields: map[string]string{"owner": "alex", "old_number": "42"}, Head: "new",
 		Revisions: []Revision{{Digest: "old", Fields: map[string]string{"issued": "2020-01-01"}}, {Digest: "new", Fields: map[string]string{"issued": "2024-01-01"}}}}
-	if err := WriteItem(root, item); err != nil {
+	if err := testStoreAt(root).WriteItem(item); err != nil {
 		t.Fatal(err)
 	}
 	for _, digest := range []string{"old", "new"} {
-		if err := os.WriteFile(PDFPath(root, "A", digest), []byte(digest), 0o644); err != nil {
+		if err := os.WriteFile(testStoreAt(root).PDF(Item{ID: "A"}, digest), []byte(digest), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	target := Template{Type: "student_id", Kind: KindDocument, Fields: []Field{{Key: "owner", Required: true, Distinguishing: true}, {Key: "country", Type: FieldCountry, Required: true}, {Key: "school", Required: true}, {Key: "issued", PerRevision: true}}}
 	fields := map[string]string{"owner": "alex", "country": "AU", "school": "Uni"}
 	revs := map[string]map[string]string{"old": {"issued": "2020-01-01"}, "new": {"issued": "2024-01-01"}}
-	changed, err := ChangeType(root, "A", target, fields, revs, at)
+	changed, err := testStoreAt(root).ChangeType("A", target, fields, revs, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,15 +37,15 @@ func TestChangeTypePreservesPDFsAndArchivesOldFields(t *testing.T) {
 		t.Fatalf("history: %+v", changed.History)
 	}
 	for _, digest := range []string{"old", "new"} {
-		if data, err := os.ReadFile(PDFPath(root, "A", digest)); err != nil || string(data) != digest {
+		if data, err := os.ReadFile(testStoreAt(root).PDF(Item{ID: "A"}, digest)); err != nil || string(data) != digest {
 			t.Fatalf("PDF %s: %q %v", digest, data, err)
 		}
 	}
-	saved, _, err := FindItem(root, "A")
+	saved, _, err := testStoreAt(root).FindItem("A")
 	if err != nil || !reflect.DeepEqual(saved, changed) {
 		t.Fatalf("saved: %+v %v", saved, err)
 	}
-	if _, err := ChangeType(root, "A", target, fields, revs, at); err == nil {
+	if _, err := testStoreAt(root).ChangeType("A", target, fields, revs, at); err == nil {
 		t.Fatal("same type accepted")
 	}
 }
@@ -53,14 +53,14 @@ func TestChangeTypePreservesPDFsAndArchivesOldFields(t *testing.T) {
 func TestChangeTypeRejectsMissingRevisionField(t *testing.T) {
 	root := newTree(t)
 	item := Item{ID: "A", Type: "old", Kind: KindDocument, Head: "x", Revisions: []Revision{{Digest: "x"}}}
-	if err := WriteItem(root, item); err != nil {
+	if err := testStoreAt(root).WriteItem(item); err != nil {
 		t.Fatal(err)
 	}
 	target := Template{Type: "new", Kind: KindDocument, Fields: []Field{{Key: "number", Required: true, PerRevision: true}}}
-	if _, err := ChangeType(root, "A", target, nil, nil, time.Now()); err == nil {
+	if _, err := testStoreAt(root).ChangeType("A", target, nil, nil, time.Now()); err == nil {
 		t.Fatal("missing value accepted")
 	}
-	saved, _, err := FindItem(root, "A")
+	saved, _, err := testStoreAt(root).FindItem("A")
 	if err != nil || saved.Type != "old" || len(saved.History) != 0 {
 		t.Fatalf("changed after rejection: %+v %v", saved, err)
 	}
@@ -70,10 +70,10 @@ func TestFieldHistoryHasTimeAndBeforeAfter(t *testing.T) {
 	root := newTree(t)
 	tpl := Template{Type: "card", Kind: KindDocument, Fields: []Field{{Key: "owner", Required: true, Distinguishing: true}, {Key: "number", PerRevision: true}}}
 	item := Item{ID: "A", Type: "card", Kind: KindDocument, Fields: map[string]string{"owner": "alex"}, Head: "x", Revisions: []Revision{{Digest: "x", Fields: map[string]string{"number": "1"}}}}
-	if err := WriteItem(root, item); err != nil {
+	if err := testStoreAt(root).WriteItem(item); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := SetFields(root, "A", "x", tpl, map[string]string{"owner": "alex", "number": "2"}, time.Now())
+	changed, err := testStoreAt(root).SetFields("A", "x", tpl, map[string]string{"owner": "alex", "number": "2"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,11 +21,11 @@ import (
 var ErrNoItem = errors.New("no such Item")
 
 // GetItem reads the one sidecar of the Item id, and nothing else.
-func GetItem(root, id string) (Item, error) {
+func (st *Store) GetItem(id string) (Item, error) {
 	if id == "" || strings.ContainsAny(id, `/\`) || id == "." || id == ".." {
 		return Item{}, fmt.Errorf("%w: %s", ErrNoItem, id)
 	}
-	item, err := loadItem(root, id)
+	item, err := st.loadItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -37,12 +37,12 @@ func GetItem(root, id string) (Item, error) {
 
 // FindItem returns the Item with id, read from its sidecar, and every Item a
 // write to it checks against.
-func FindItem(root, id string) (Item, []Item, error) {
-	item, err := GetItem(root, id)
+func (st *Store) FindItem(id string) (Item, []Item, error) {
+	item, err := st.GetItem(id)
 	if err != nil {
 		return Item{}, nil, err
 	}
-	items, err := others(root)
+	items, err := st.others()
 	if err != nil {
 		return Item{}, nil, err
 	}
@@ -72,8 +72,8 @@ func holder(items []Item, digest string) (Item, bool) {
 // revision's values of the Template's per_revision fields. The PDF is
 // published only after it reads back the same; the sidecar follows. A record
 // has no revisions and is refused.
-func AddRevision(ctx context.Context, root, id, source string, template Template, given map[string]string, now time.Time) (Item, error) {
-	return AddRevisionWithMetadata(ctx, root, id, source, template, given, RevisionMetadata{}, now)
+func (st *Store) AddRevision(ctx context.Context, id string, source string, template Template, given map[string]string, now time.Time) (Item, error) {
+	return st.AddRevisionWithMetadata(ctx, id, source, template, given, RevisionMetadata{}, now)
 }
 
 // RevisionMetadata optionally updates the Item's notes and tags when adding a
@@ -94,11 +94,11 @@ type RevisionMetadata struct {
 
 // AddRevisionWithMetadata adds a revision and saves any Item metadata edits in
 // the same sidecar write.
-func AddRevisionWithMetadata(ctx context.Context, root, id, source string, template Template, given map[string]string, metadata RevisionMetadata, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) AddRevisionWithMetadata(ctx context.Context, id string, source string, template Template, given map[string]string, metadata RevisionMetadata, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, items, err := FindItem(root, id)
+	item, items, err := st.FindItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -112,7 +112,7 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 	if err != nil {
 		return Item{}, err
 	}
-	input, err := prepareInput(ctx, root, append([]string{source}, metadata.Pages...))
+	input, err := st.prepareInput(ctx, append([]string{source}, metadata.Pages...))
 	if err != nil {
 		return Item{}, err
 	}
@@ -135,7 +135,7 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 	if other, ok := taken(template, items, full, id); ok {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
 	}
-	destination := PDFPath(root, id, digest)
+	destination := st.PDF(Item{ID: id}, digest)
 	copied := false
 	if _, ok := holder(items, digest); ok {
 		actual, err := FileDigest(destination)
@@ -200,7 +200,7 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 	if len(event.Changes) == 0 {
 		event.Changes = nil
 	}
-	undoOriginal, err := input.archive(ctx, root, id, metadata.KeepOriginal)
+	undoOriginal, err := input.archive(ctx, st, id, metadata.KeepOriginal)
 	if err != nil {
 		if copied {
 			os.Remove(destination)
@@ -209,7 +209,7 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 	}
 	input.annotate(&item, ref, metadata.KeepOriginal)
 	item.History = append(item.History, event)
-	if err := WriteItem(root, item); err != nil {
+	if err := st.WriteItem(item); err != nil {
 		undoOriginal()
 		if copied {
 			os.Remove(destination)
@@ -223,11 +223,11 @@ func AddRevisionWithMetadata(ctx context.Context, root, id, source string, templ
 // added by mistake is stepped back from. Nothing is removed. A document always
 // has HEAD; a record has one once it holds a snapshot, and a legacy record
 // without one is refused.
-func SetHead(root, id, digest string, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) SetHead(id string, digest string, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, items, err := FindItem(root, id)
+	item, items, err := st.FindItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -239,7 +239,7 @@ func SetHead(root, id, digest string, now time.Time) (Item, error) {
 			if item.Head == digest {
 				return item, nil
 			}
-			if err := checkSnapshotIdentity(root, item, r, items); err != nil {
+			if err := st.checkSnapshotIdentity(item, r, items); err != nil {
 				return Item{}, err
 			}
 			item.Head = digest
@@ -248,7 +248,7 @@ func SetHead(root, id, digest string, now time.Time) (Item, error) {
 				item.Fields = maps.Clone(r.Fields)
 			}
 			item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "make_head", Digest: digest})
-			return item, WriteItem(root, item)
+			return item, st.WriteItem(item)
 		}
 	}
 	return Item{}, fmt.Errorf("%s %s has no revision %s", item.Type, item.ID, digest)
@@ -256,11 +256,11 @@ func SetHead(root, id, digest string, now time.Time) (Item, error) {
 
 // TrashRevision removes one document revision and moves its PDF to trash.
 // The final revision belongs to the Item and must be deleted with Trash.
-func TrashRevision(root, id, digest string, now time.Time) (Item, string, error) {
-	if err := Require(root); err != nil {
+func (st *Store) TrashRevision(id string, digest string, now time.Time) (Item, string, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, "", err
 	}
-	item, items, err := FindItem(root, id)
+	item, items, err := st.FindItem(id)
 	if err != nil {
 		return Item{}, "", err
 	}
@@ -280,24 +280,24 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 	if item.Head == digest {
 		for n := len(item.Revisions) - 1; n >= 0; n-- {
 			if n != at {
-				if err := checkSnapshotIdentity(root, item, item.Revisions[n], items); err != nil {
+				if err := st.checkSnapshotIdentity(item, item.Revisions[n], items); err != nil {
 					return Item{}, "", err
 				}
 				break
 			}
 		}
 	}
-	from := PDFPath(root, id, item.Revisions[at].Digest)
+	from := st.PDF(Item{ID: id}, item.Revisions[at].Digest)
 	hasPDF := item.Revisions[at].Digest != ""
 	for n, r := range item.Revisions {
 		if n != at && r.Digest == item.Revisions[at].Digest {
 			hasPDF = false
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(root, TrashDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(st.root, TrashDir), 0o755); err != nil {
 		return Item{}, "", err
 	}
-	to := filepath.Join(root, TrashDir, id+"-"+digest+"-"+now.UTC().Format("20060102T150405Z")+".pdf")
+	to := filepath.Join(st.root, TrashDir, id+"-"+digest+"-"+now.UTC().Format("20060102T150405Z")+".pdf")
 	if !hasPDF {
 		to = strings.TrimSuffix(to, ".pdf") + ".yaml"
 	}
@@ -363,7 +363,7 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 		if shared {
 			continue
 		}
-		path := OriginalPath(root, item, item.Revisions[at].Digest, original)
+		path := st.OriginalPath(item, item.Revisions[at].Digest, original)
 		trashed := fmt.Sprintf("%s-original-%d%s", strings.TrimSuffix(metadataPath, ".yaml"), n+1, original.Extension)
 		err := error(nil)
 		if path == "" {
@@ -402,7 +402,7 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 		}
 	}
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "delete_revision", Digest: digest})
-	if err := WriteItem(root, item); err != nil {
+	if err := st.WriteItem(item); err != nil {
 		if undo := putBack(); undo != nil {
 			return Item{}, "", errors.Join(err, undo)
 		}
@@ -414,17 +414,17 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 
 // SetFields creates a snapshot from the selected revision with validated
 // field values. Unchanged fields do nothing; older snapshots remain intact.
-func SetFields(root, id, digest string, template Template, given map[string]string, now time.Time) (Item, error) {
-	return SetFieldsAs(root, id, digest, template, given, false, now)
+func (st *Store) SetFields(id string, digest string, template Template, given map[string]string, now time.Time) (Item, error) {
+	return st.SetFieldsAs(id, digest, template, given, false, now)
 }
 
 // SetFieldsAs is SetFields; with newRevision the snapshot begins a revision
 // rather than correcting the one digest is in.
-func SetFieldsAs(root, id, digest string, template Template, given map[string]string, newRevision bool, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) SetFieldsAs(id string, digest string, template Template, given map[string]string, newRevision bool, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, items, err := FindItem(root, id)
+	item, items, err := st.FindItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -442,7 +442,7 @@ func SetFieldsAs(root, id, digest string, template Template, given map[string]st
 	if other, ok := taken(template, items, fields, id); ok {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
 	}
-	if err := linked(root, template, items, fields, id); err != nil {
+	if err := st.linked(template, items, fields, id); err != nil {
 		return Item{}, err
 	}
 	if digest == "" {
@@ -477,7 +477,7 @@ func SetFieldsAs(root, id, digest string, template Template, given map[string]st
 	if len(changes) > 0 {
 		item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_fields", Digest: next, Changes: changes})
 	}
-	return item, WriteItem(root, item)
+	return item, st.WriteItem(item)
 }
 
 // revisionActions are the history actions whose Digest names the revision
@@ -505,11 +505,11 @@ func taken(t Template, items []Item, fields map[string]string, except string) (I
 }
 
 // SetNotes replaces an Item's notes. Surrounding space is trimmed.
-func SetNotes(root, id, notes string, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) SetNotes(id string, notes string, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, err := GetItem(root, id)
+	item, err := st.GetItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -517,15 +517,15 @@ func SetNotes(root, id, notes string, now time.Time) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	return item, WriteItem(root, item)
+	return item, st.WriteItem(item)
 }
 
 // SetTags replaces an Item's tags in their canonical spelling.
-func SetTags(root, id string, tags []string, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) SetTags(id string, tags []string, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, err := GetItem(root, id)
+	item, err := st.GetItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -533,7 +533,7 @@ func SetTags(root, id string, tags []string, now time.Time) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	return item, WriteItem(root, item)
+	return item, st.WriteItem(item)
 }
 
 // TrashDir is where a deleted Item's folder goes. Nothing in the tree is
@@ -543,23 +543,23 @@ const TrashDir = "trash"
 // Trash deletes an Item from the tree by moving its folder — sidecar and
 // every revision's PDF — into TrashDir, under its ID and when it was
 // deleted. It answers where the folder went.
-func Trash(root, id string, now time.Time) (string, error) {
-	if err := Require(root); err != nil {
+func (st *Store) Trash(id string, now time.Time) (string, error) {
+	if err := st.Require(); err != nil {
 		return "", err
 	}
-	if _, err := GetItem(root, id); err != nil {
+	if _, err := st.GetItem(id); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Join(root, TrashDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(st.root, TrashDir), 0o755); err != nil {
 		return "", err
 	}
 	// Only a layout giving each Item a folder of its own can move it whole;
 	// moving the folder a shared layout keeps sidecars in would take others.
-	folder, ok := At(root).Folder(id)
+	folder, ok := st.Folder(id)
 	if !ok {
 		return "", fmt.Errorf("item %s: this tree's layout has no Item folders to move", id)
 	}
-	to := filepath.Join(root, TrashDir, id+"-"+now.UTC().Format("20060102T150405Z"))
+	to := filepath.Join(st.root, TrashDir, id+"-"+now.UTC().Format("20060102T150405Z"))
 	if _, err := os.Lstat(to); err == nil {
 		return "", fmt.Errorf("%s is already in the trash", to)
 	}
@@ -567,11 +567,11 @@ func Trash(root, id string, now time.Time) (string, error) {
 }
 
 // SetFrequent marks or unmarks an Item as one the owner opens often.
-func SetFrequent(root, id string, frequent bool, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) SetFrequent(id string, frequent bool, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, err := GetItem(root, id)
+	item, err := st.GetItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -579,16 +579,16 @@ func SetFrequent(root, id string, frequent bool, now time.Time) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	return item, WriteItem(root, item)
+	return item, st.WriteItem(item)
 }
 
 // SetRetired marks an Item no longer used, with an optional reason, or puts it
 // back in use. Retiring an Item already retired changes only its reason.
-func SetRetired(root, id string, retired bool, reason string, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) SetRetired(id string, retired bool, reason string, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, err := GetItem(root, id)
+	item, err := st.GetItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -596,16 +596,16 @@ func SetRetired(root, id string, retired bool, reason string, now time.Time) (It
 	if err != nil {
 		return Item{}, err
 	}
-	return item, WriteItem(root, item)
+	return item, st.WriteItem(item)
 }
 
 // SetSharedWith replaces the people an Item is shared with besides its
 // owner, trimmed, without repeats, sorted.
-func SetSharedWith(root, id string, people []string, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) SetSharedWith(id string, people []string, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, err := GetItem(root, id)
+	item, err := st.GetItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -613,7 +613,7 @@ func SetSharedWith(root, id string, people []string, now time.Time) (Item, error
 	if err != nil {
 		return Item{}, err
 	}
-	return item, WriteItem(root, item)
+	return item, st.WriteItem(item)
 }
 
 // sharedList is people trimmed, without repeats, sorted, refusing the
@@ -637,11 +637,11 @@ func sharedList(owner string, people []string) ([]string, error) {
 
 // SetRevisionTags replaces one revision's own tags, in canonical spelling.
 // The Item's tags are not touched.
-func SetRevisionTags(root, id, digest string, tags []string, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) SetRevisionTags(id string, digest string, tags []string, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, err := GetItem(root, id)
+	item, err := st.GetItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -649,5 +649,5 @@ func SetRevisionTags(root, id, digest string, tags []string, now time.Time) (Ite
 	if err != nil {
 		return Item{}, err
 	}
-	return item, WriteItem(root, item)
+	return item, st.WriteItem(item)
 }

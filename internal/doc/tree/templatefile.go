@@ -8,8 +8,8 @@ import (
 )
 
 // TemplatePath is where the Template of a type is kept.
-func TemplatePath(root, typ string) string {
-	return At(root).DefinitionPath(TemplatesDir, typ)
+func (st *Store) TemplatePath(typ string) string {
+	return st.DefinitionPath(TemplatesDir, typ)
 }
 
 // SaveTemplate writes a Template file's content as it was typed, comments
@@ -18,15 +18,15 @@ func TemplatePath(root, typ string) string {
 // A new type must not exist yet. A type Items use cannot be renamed, nor its
 // kind changed: every sidecar names its type and kind. A renamed Template's
 // old file goes to the trash.
-func SaveTemplate(root, previous string, data []byte, now time.Time) (Template, error) {
-	if err := Require(root); err != nil {
+func (st *Store) SaveTemplate(previous string, data []byte, now time.Time) (Template, error) {
+	if err := st.Require(); err != nil {
 		return Template{}, err
 	}
 	t, err := ParseTemplate(data)
 	if err != nil {
 		return Template{}, err
 	}
-	raw, err := loadRawTemplates(root)
+	raw, err := st.loadRawTemplates()
 	if err != nil {
 		return Template{}, err
 	}
@@ -45,7 +45,7 @@ func SaveTemplate(root, previous string, data []byte, now time.Time) (Template, 
 			t = r
 		}
 	}
-	items, err := others(root)
+	items, err := st.others()
 	if err != nil {
 		return Template{}, err
 	}
@@ -57,7 +57,7 @@ func SaveTemplate(root, previous string, data []byte, now time.Time) (Template, 
 		}
 	}
 	if previous != t.Type {
-		if _, err := os.Lstat(TemplatePath(root, t.Type)); err == nil {
+		if _, err := os.Lstat(st.TemplatePath(t.Type)); err == nil {
 			return Template{}, fmt.Errorf("a Template of type %s already exists", t.Type)
 		}
 	}
@@ -75,7 +75,7 @@ func SaveTemplate(root, previous string, data []byte, now time.Time) (Template, 
 		}
 	}
 	// Keep the typed YAML, including comments, while storage owns publication.
-	if err := SaveDefinition(At(root), DefinitionKind[Template]{Dir: TemplatesDir, Name: func(t Template) string { return t.Type }, Encode: func(Template) ([]byte, error) { return data, nil }}, previous, t, now); err != nil {
+	if err := SaveDefinition(st, DefinitionKind[Template]{Dir: TemplatesDir, Name: func(t Template) string { return t.Type }, Encode: func(Template) ([]byte, error) { return data, nil }}, previous, t, now); err != nil {
 		return t, err
 	}
 
@@ -84,11 +84,11 @@ func SaveTemplate(root, previous string, data []byte, now time.Time) (Template, 
 
 // TrashTemplate moves a Template no Item uses into the trash, and answers
 // where it went.
-func TrashTemplate(root, typ string, now time.Time) (string, error) {
-	if err := Require(root); err != nil {
+func (st *Store) TrashTemplate(typ string, now time.Time) (string, error) {
+	if err := st.Require(); err != nil {
 		return "", err
 	}
-	items, err := others(root)
+	items, err := st.others()
 	if err != nil {
 		return "", err
 	}
@@ -101,7 +101,7 @@ func TrashTemplate(root, typ string, now time.Time) (string, error) {
 			return "", fmt.Errorf("Items of type %s exist: delete them first", typ)
 		}
 	}
-	raw, err := loadRawTemplates(root)
+	raw, err := st.loadRawTemplates()
 	if err != nil {
 		return "", err
 	}
@@ -110,9 +110,9 @@ func TrashTemplate(root, typ string, now time.Time) (string, error) {
 			return "", fmt.Errorf("type %s extends %s: change it first", r.Type, typ)
 		}
 	}
-	from := TemplatePath(root, typ)
+	from := st.TemplatePath(typ)
 	if _, err := os.Lstat(from); err != nil {
 		return "", fmt.Errorf("no Template of type %s", typ)
 	}
-	return At(root).TrashDefinition(TemplatesDir, typ, now)
+	return st.TrashDefinition(TemplatesDir, typ, now)
 }

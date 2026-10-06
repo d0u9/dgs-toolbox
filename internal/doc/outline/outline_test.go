@@ -64,13 +64,13 @@ func TestGroupNestsEveryRuleAndCounts(t *testing.T) {
 func TestSaveRenamesAndRefuses(t *testing.T) {
 	root := t.TempDir()
 	rule := view.View{Name: "all", Node: view.Node{File: "{owner}.{ext}"}}
-	if err := Save(root, "", Outline{Name: "a", Folder: "~/x", Rules: []view.View{rule}}, time.Now()); err != nil {
+	if err := Save(testStore(t, root), "", Outline{Name: "a", Folder: "~/x", Rules: []view.View{rule}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := Save(root, "a", Outline{Name: "b", Rules: []view.View{rule}}, time.Now()); err != nil {
+	if err := Save(testStore(t, root), "a", Outline{Name: "b", Rules: []view.View{rule}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	list, err := Load(root)
+	list, err := Load(testStore(t, root))
 	if err != nil || len(list) != 1 || list[0].Name != "b" || list[0].Rules[0].Selection != view.Head {
 		t.Fatalf("%v %+v", err, list)
 	}
@@ -84,7 +84,7 @@ func TestSaveRenamesAndRefuses(t *testing.T) {
 		{Name: "c", Rules: []view.View{{Name: "r", Node: view.Node{File: "{owner#}"}}}},
 		{Name: "c", Rules: []view.View{{Name: "r", Node: view.Node{File: "../x"}}}},
 	} {
-		if err := Save(root, "", bad, time.Now()); err == nil {
+		if err := Save(testStore(t, root), "", bad, time.Now()); err == nil {
 			t.Fatalf("%+v saved", bad)
 		}
 	}
@@ -97,10 +97,10 @@ func TestRulesAreSharedRenamedAndSplit(t *testing.T) {
 	root := t.TempDir()
 	ids := view.View{Name: "ids", Node: view.Node{File: "{owner}.{ext}"}}
 	cars := view.View{Name: "cars", Node: view.Node{File: "cars/{id}.{ext}"}}
-	if err := Save(root, "", Outline{Name: "phone", Rules: []view.View{ids}}, time.Now()); err != nil {
+	if err := Save(testStore(t, root), "", Outline{Name: "phone", Rules: []view.View{ids}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := Save(root, "", Outline{Name: "kindle", Rules: []view.View{ids, cars}}, time.Now()); err != nil {
+	if err := Save(testStore(t, root), "", Outline{Name: "kindle", Rules: []view.View{ids, cars}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(root, Dir, "phone.yaml"))
@@ -109,30 +109,30 @@ func TestRulesAreSharedRenamedAndSplit(t *testing.T) {
 	}
 	// Editing the rule in one Outline changes it in both.
 	ids.File = "ids/{owner}.{ext}"
-	if err := Save(root, "phone", Outline{Name: "phone", Rules: []view.View{ids}}, time.Now()); err != nil {
+	if err := Save(testStore(t, root), "phone", Outline{Name: "phone", Rules: []view.View{ids}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	list, err := Load(root)
+	list, err := Load(testStore(t, root))
 	if err != nil || list[0].Name != "kindle" || list[0].Rules[0].File != "ids/{owner}.{ext}" {
 		t.Fatalf("%v %+v", err, list)
 	}
-	if err := Fresh(root, []string{"ids"}); err == nil {
+	if err := Fresh(testStore(t, root), []string{"ids"}); err == nil {
 		t.Fatal("a new rule could replace ids")
 	}
-	if err := RenameRule(root, "ids", "people", time.Now()); err != nil {
+	if err := RenameRule(testStore(t, root), "ids", "people", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	rules, used, err := Rules(root)
+	rules, used, err := Rules(testStore(t, root))
 	if err != nil || len(rules) != 2 || rules[1].Name != "people" || len(used["people"]) != 2 {
 		t.Fatalf("%v %+v %v", err, rules, used)
 	}
-	if _, err := TrashRule(root, "people", time.Now()); err == nil {
+	if _, err := TrashRule(testStore(t, root), "people", time.Now()); err == nil {
 		t.Fatal("a rule in use was deleted")
 	}
-	if _, err := Trash(root, "kindle", time.Now()); err != nil {
+	if _, err := Trash(testStore(t, root), "kindle", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := TrashRule(root, "cars", time.Now()); err != nil {
+	if _, err := TrashRule(testStore(t, root), "cars", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -228,7 +228,7 @@ func TestTrashPreservesBytesAndRefusesCollision(t *testing.T) {
 			if dir == RulesDir {
 				trash = TrashRule
 			}
-			dest, err := trash(root, "alice", now)
+			dest, err := trash(testStore(t, root), "alice", now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -246,7 +246,7 @@ func TestTrashPreservesBytesAndRefusesCollision(t *testing.T) {
 			if err := os.WriteFile(source, data, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := trash(root, "alice", now); err == nil {
+			if _, err := trash(testStore(t, root), "alice", now); err == nil {
 				t.Fatal("accepted trash collision")
 			}
 			got, err = os.ReadFile(source)
@@ -255,10 +255,10 @@ func TestTrashPreservesBytesAndRefusesCollision(t *testing.T) {
 			}
 		})
 	}
-	if path, err := Trash(t.TempDir(), "alice", now); err != nil || path != "" {
+	if path, err := Trash(testStore(t, t.TempDir()), "alice", now); err != nil || path != "" {
 		t.Fatalf("missing Outline: %q, %v", path, err)
 	}
-	if _, err := TrashRule(t.TempDir(), "alice", now); err == nil {
+	if _, err := TrashRule(testStore(t, t.TempDir()), "alice", now); err == nil {
 		t.Fatal("accepted missing rule")
 	}
 }
@@ -272,10 +272,10 @@ func TestRenamePreservesOriginalBytes(t *testing.T) {
 			dir := RulesDir
 			if kind == "outline" {
 				dir = Dir
-				if err := Save(root, "", Outline{Name: "alice"}, now); err != nil {
+				if err := Save(testStore(t, root), "", Outline{Name: "alice"}, now); err != nil {
 					t.Fatal(err)
 				}
-			} else if err := SaveRule(root, "", rule, now); err != nil {
+			} else if err := SaveRule(testStore(t, root), "", rule, now); err != nil {
 				t.Fatal(err)
 			}
 			source := filepath.Join(root, dir, "alice.yaml")
@@ -285,12 +285,12 @@ func TestRenamePreservesOriginalBytes(t *testing.T) {
 			}
 			switch kind {
 			case "outline":
-				err = Save(root, "alice", Outline{Name: "bob"}, now)
+				err = Save(testStore(t, root), "alice", Outline{Name: "bob"}, now)
 			case "rule":
-				err = RenameRule(root, "alice", "bob", now)
+				err = RenameRule(testStore(t, root), "alice", "bob", now)
 			default:
 				rule.Name = "bob"
-				err = SaveRule(root, "alice", rule, now)
+				err = SaveRule(testStore(t, root), "alice", rule, now)
 			}
 			if err != nil {
 				t.Fatal(err)

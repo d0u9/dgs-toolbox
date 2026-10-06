@@ -2,13 +2,15 @@ package tree
 
 import (
 	"dgs-toolbox/internal/doc/layout"
+
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// Store owns filesystem paths and operations for one tree. Existing package
-// functions remain available for CLI callers and compatibility.
+// Store owns filesystem paths and operations for one opened tree.
 type Store struct {
 	root   string
 	layout layout.Layout
@@ -16,15 +18,25 @@ type Store struct {
 
 // Open verifies a tree and opens its current by-Item layout.
 func Open(root string) (*Store, error) {
-	if err := Require(root); err != nil {
+	marker, err := readMarker(root)
+	if err != nil {
 		return nil, err
 	}
-	return At(root), nil
+	if marker.Layout != nil {
+		return nil, unsupportedLayout()
+	}
+	return &Store{root: root, layout: layout.ByItem()}, nil
 }
 
-// At supplies the existing layout without requiring a marker. Low-level
-// definition readers also support constructed trees and legacy migration.
-func At(root string) *Store   { return &Store{root: root, layout: layout.ByItem()} }
+// ErrUnsupportedLayout refuses a marker describing a layout this build cannot use.
+var ErrUnsupportedLayout = errors.New("unsupported doc tree layout")
+
+func unsupportedLayout() error {
+	return fmt.Errorf("%w: this tree's layout is not supported yet", ErrUnsupportedLayout)
+}
+
+// at constructs unchecked by-Item storage only for package-internal tests.
+func at(root string) *Store   { return &Store{root: root, layout: layout.ByItem()} }
 func (s *Store) Root() string { return s.root }
 
 // Folder is the Item's own folder, when the layout gives each Item one.
@@ -61,8 +73,6 @@ func (s *Store) Sidecars() ([]string, error) {
 	}
 	return out, nil
 }
-func (s *Store) Items() ([]Item, error)    { return LoadItems(s.root) }
-func (s *Store) WriteItem(item Item) error { return WriteItem(s.root, item) }
 
 // Placing is what a layout needs of an Item: its ID and, per PDF digest, the
 // fields of the newest snapshot holding it.
@@ -75,3 +85,6 @@ func Placing(item Item) layout.Item {
 	}
 	return layout.Item{ID: item.ID, Fields: fields}
 }
+
+// Items reads every sidecar in this Store's selected layout.
+func (s *Store) Items() ([]Item, error) { return s.LoadItems() }

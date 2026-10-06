@@ -17,10 +17,10 @@ var (
 
 // UseForChecks makes items the source of the Items writes to root check
 // against. Nil goes back to reading the sidecars.
-func UseForChecks(root string, items func() ([]Item, error)) {
+func (st *Store) UseForChecks(items func() ([]Item, error)) {
 	checkMu.Lock()
 	defer checkMu.Unlock()
-	key := checkKey(root)
+	key := checkKey(st.root)
 	if items == nil {
 		delete(checkSources, key)
 		return
@@ -29,14 +29,14 @@ func UseForChecks(root string, items func() ([]Item, error)) {
 }
 
 // others is every Item a write to root checks against.
-func others(root string) ([]Item, error) {
+func (st *Store) others() ([]Item, error) {
 	checkMu.RLock()
-	source := checkSources[checkKey(root)]
+	source := checkSources[checkKey(st.root)]
 	checkMu.RUnlock()
 	if source != nil {
 		return source()
 	}
-	return LoadItems(root)
+	return st.LoadItems()
 }
 
 func checkKey(root string) string {

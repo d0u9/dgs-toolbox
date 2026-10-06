@@ -2,7 +2,7 @@ package tree
 
 import (
 	"dgs-toolbox/internal/tag"
-	"path/filepath"
+
 	"slices"
 
 	"crypto/rand"
@@ -142,19 +142,11 @@ func (i Item) FieldsAt(digest string) map[string]string {
 // CurrentFields is FieldsAt the Current revision.
 func (i Item) CurrentFields() map[string]string { return i.FieldsAt(i.Current()) }
 
-// Dir is the folder holding the Item's sidecar.
-func Dir(root, id string) string { return filepath.Dir(At(root).Sidecar(id)) }
-
-// PDFPath is where a revision's PDF is kept.
-func PDFPath(root, id, digest string) string {
-	return At(root).PDF(Item{ID: id}, digest)
-}
-
 // LoadItems reads every sidecar the layout lists, sorted by ID. A
 // sidecar that cannot be read is an error rather than a gap: a list missing
 // an Item looks complete.
-func LoadItems(root string) ([]Item, error) {
-	names, err := At(root).Sidecars()
+func (st *Store) LoadItems() ([]Item, error) {
+	names, err := st.Sidecars()
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +161,7 @@ func LoadItems(root string) ([]Item, error) {
 		go func() {
 			defer wg.Done()
 			for i := range next {
-				found[i], errs[i] = readItem(root, names[i])
+				found[i], errs[i] = st.readItem(names[i])
 			}
 		}()
 	}
@@ -195,11 +187,11 @@ func LoadItems(root string) ([]Item, error) {
 const LoadWorkers = 16
 
 // loadItem reads the Item id's sidecar; none there is no Item.
-func loadItem(root, id string) (*Item, error) { return readItem(root, At(root).Sidecar(id)) }
+func (st *Store) loadItem(id string) (*Item, error) { return st.readItem(st.Sidecar(id)) }
 
 // readItem reads the sidecar at path; none there is no Item. The sidecar
 // must be where the layout places its ID's.
-func readItem(root, path string) (*Item, error) {
+func (st *Store) readItem(path string) (*Item, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -211,7 +203,7 @@ func readItem(root, path string) (*Item, error) {
 	if err := yaml.Unmarshal(data, &item); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if item.ID == "" || At(root).Sidecar(item.ID) != path {
+	if item.ID == "" || st.Sidecar(item.ID) != path {
 		return nil, fmt.Errorf("%s: id %q is not the folder's name", path, item.ID)
 	}
 	// A sidecar from before revisions were told from snapshots is read by
@@ -222,14 +214,14 @@ func readItem(root, path string) (*Item, error) {
 
 // WriteItem replaces an Item's sidecar through a temporary file and a rename,
 // so a reader sees the old sidecar or the new one and never half of either.
-func WriteItem(root string, item Item) error {
+func (st *Store) WriteItem(item Item) error {
 	item.Revisions = slices.Clone(item.Revisions)
 	item.settlePapers()
 	data, err := yaml.Marshal(item)
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(At(root).Sidecar(item.ID), data)
+	return WriteFileAtomic(st.Sidecar(item.ID), data)
 }
 
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"

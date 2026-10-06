@@ -15,8 +15,8 @@ type testDefinition struct {
 }
 
 func TestDefinitionStoreLifecycle(t *testing.T) {
-	s := At(t.TempDir())
-	k := DefinitionKind[testDefinition]{Dir: "outlines", Name: func(v testDefinition) string { return v.Name }, Validate: func(_ string, v testDefinition) error {
+	s := testStoreAt(t.TempDir())
+	k := DefinitionKind[testDefinition]{Dir: "outlines", Name: func(v testDefinition) string { return v.Name }, Validate: func(_ *Store, v testDefinition) error {
 		if v.About == "invalid" {
 			return errors.New("invalid draft")
 		}

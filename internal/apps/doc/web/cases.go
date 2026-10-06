@@ -24,7 +24,7 @@ func (s server) caseList(w http.ResponseWriter, _ *http.Request) {
 		Cases []caseJSON `json:"cases"`
 		Error string     `json:"error,omitempty"`
 	}{Cases: []caseJSON{}}
-	all, err := cases.ForStore(s.documents).Load()
+	all, err := cases.Load(s.documents)
 	if err != nil {
 		out.Error = err.Error()
 	}
@@ -70,7 +70,7 @@ func (s server) caseChange(w http.ResponseWriter, r *http.Request) {
 	if request.Op == "new" {
 		c, err := cases.New(request.Name, request.Title, now)
 		if err == nil {
-			err = cases.ForStore(s.documents).Save(c, true)
+			err = cases.Save(s.documents, c, true)
 		}
 		s.answerCase(w, c, err)
 		return
@@ -79,7 +79,7 @@ func (s server) caseChange(w http.ResponseWriter, r *http.Request) {
 	if request.Previous != "" {
 		previous = request.Previous
 	}
-	c, err := cases.ForStore(s.documents).Find(previous)
+	c, err := cases.Find(s.documents, previous)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
@@ -127,7 +127,7 @@ func (s server) caseChange(w http.ResponseWriter, r *http.Request) {
 		err = errors.New("no change " + request.Op)
 	}
 	if err == nil {
-		err = cases.ForStore(s.documents).SaveAs(previous, c, now)
+		err = cases.SaveAs(s.documents, previous, c, now)
 	}
 	s.answerCase(w, c, err)
 }
@@ -163,7 +163,7 @@ func (s server) casePlan(ctx context.Context, request caseExportRequest) (export
 	if request.Previous != "" {
 		previous = request.Previous
 	}
-	c, err := cases.ForStore(s.documents).Find(previous)
+	c, err := cases.Find(s.documents, previous)
 	if err != nil {
 		return out, nil, http.StatusNotFound, err
 	}
@@ -179,7 +179,7 @@ func (s server) casePlan(ctx context.Context, request caseExportRequest) (export
 		out.Problems = append(out.Problems, "the Case has no Items to export")
 	}
 	jobs := []export.Job{{Path: filepath.Clean(request.Folder), Views: []view.View{c.View()}}}
-	if out.Jobs, err = export.ForStore(s.documents).PlanJobs(ctx, jobs, items); err != nil {
+	if out.Jobs, err = export.PlanJobs(ctx, s.documents, jobs, items); err != nil {
 		return out, nil, http.StatusConflict, err
 	}
 	export.AgainstOthers(out.Jobs, Others(s.trees, s.root))

@@ -3,6 +3,7 @@ package tree
 import (
 	"context"
 	"crypto/sha256"
+
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -25,7 +26,7 @@ type Original struct {
 // OriginalPath resolves a validated archive reference: an original image of
 // item's PDF pdf. Empty rejects malformed sidecar paths rather than allowing a
 // reference outside the tree.
-func OriginalPath(root string, item Item, pdf string, o Original) string {
+func (st *Store) OriginalPath(item Item, pdf string, o Original) string {
 	if id := item.ID; id == "" || id == "." || id == ".." || filepath.Base(id) != id {
 		return ""
 	}
@@ -33,7 +34,7 @@ func OriginalPath(root string, item Item, pdf string, o Original) string {
 	if err != nil || len(digest) != sha256.Size || strings.ToLower(o.Digest) != o.Digest || !docfile.IsImage("image"+o.Extension) || strings.ToLower(o.Extension) != o.Extension || filepath.Ext("image"+o.Extension) != o.Extension {
 		return ""
 	}
-	return At(root).Image(item, pdf, o)
+	return st.Image(item, pdf, o)
 }
 
 // sameOriginals reports whether two lists archive the same bytes in the same
@@ -59,7 +60,7 @@ type imageInput struct {
 // hidden folder of the tree's items, on the tree's own volume; nothing about
 // them is written elsewhere. A single PDF is taken as it is. Archival later
 // copies each image from its source and refuses one whose bytes changed.
-func prepareInput(ctx context.Context, root string, sources []string) (imageInput, error) {
+func (st *Store) prepareInput(ctx context.Context, sources []string) (imageInput, error) {
 	in := imageInput{cleanup: func() {}}
 	if len(sources) == 0 {
 		return in, errors.New("no file to import")
@@ -91,10 +92,10 @@ func prepareInput(ctx context.Context, root string, sources []string) (imageInpu
 	}
 	sumPDF := sha256.Sum256(output)
 	in.expectedPDF = hex.EncodeToString(sumPDF[:])
-	if err := os.MkdirAll(At(root).Staging(), 0755); err != nil {
+	if err := os.MkdirAll(st.Staging(), 0755); err != nil {
 		return in, err
 	}
-	dir, err := os.MkdirTemp(At(root).Staging(), ".dgs-import-*")
+	dir, err := os.MkdirTemp(st.Staging(), ".dgs-import-*")
 	if err != nil {
 		return in, err
 	}
@@ -110,7 +111,7 @@ func prepareInput(ctx context.Context, root string, sources []string) (imageInpu
 // archive copies each original image beside the PDF, each read back before
 // it is published. One already there is checked, not copied again. The
 // function returned removes what this call published.
-func (in imageInput) archive(ctx context.Context, root, id string, keep bool) (func(), error) {
+func (in imageInput) archive(ctx context.Context, st *Store, id string, keep bool) (func(), error) {
 	var published []string
 	undo := func() {
 		for _, path := range published {
@@ -121,7 +122,7 @@ func (in imageInput) archive(ctx context.Context, root, id string, keep bool) (f
 		return func() {}, nil
 	}
 	for i, original := range in.originals {
-		path := OriginalPath(root, Item{ID: id}, in.expectedPDF, original)
+		path := st.OriginalPath(Item{ID: id}, in.expectedPDF, original)
 		if path == "" {
 			undo()
 			return func() {}, fmt.Errorf("invalid original image reference")

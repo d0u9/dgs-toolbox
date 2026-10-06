@@ -140,8 +140,8 @@ func (i Item) Latest() map[string]bool {
 
 // MakeRevision begins a revision with the correction ref: it and the
 // snapshots of its revision after it in the list move to the new one.
-func MakeRevision(root, id, ref string, now time.Time) (Item, error) {
-	return changePaper(root, id, ref, now, "make_revision", func(item *Item, from string) error {
+func (st *Store) MakeRevision(id string, ref string, now time.Time) (Item, error) {
+	return st.changePaper(id, ref, now, "make_revision", func(item *Item, from string) error {
 		if item.Kind == KindRecord {
 			return fmt.Errorf("a record has one revision")
 		}
@@ -162,8 +162,8 @@ func MakeRevision(root, id, ref string, now time.Time) (Item, error) {
 }
 
 // MakeCorrection makes the revision ref begins part of the one before it.
-func MakeCorrection(root, id, ref string, now time.Time) (Item, error) {
-	return changePaper(root, id, ref, now, "make_correction", func(item *Item, from string) error {
+func (st *Store) MakeCorrection(id string, ref string, now time.Time) (Item, error) {
+	return st.changePaper(id, ref, now, "make_correction", func(item *Item, from string) error {
 		if from != ref {
 			return fmt.Errorf("snapshot %s is already a correction", ref)
 		}
@@ -186,11 +186,11 @@ func MakeCorrection(root, id, ref string, now time.Time) (Item, error) {
 	})
 }
 
-func changePaper(root, id, ref string, now time.Time, action string, change func(*Item, string) error) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) changePaper(id string, ref string, now time.Time, action string, change func(*Item, string) error) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, _, err := FindItem(root, id)
+	item, _, err := st.FindItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -202,5 +202,5 @@ func changePaper(root, id, ref string, now time.Time, action string, change func
 		return Item{}, err
 	}
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: action, Digest: ref})
-	return item, WriteItem(root, item)
+	return item, st.WriteItem(item)
 }

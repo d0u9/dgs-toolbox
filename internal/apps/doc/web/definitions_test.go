@@ -67,9 +67,9 @@ func TestMetadataPartialUpdatesAndFailedWrite(t *testing.T) {
 	now := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
 	must(t, tree.Init(root, now))
 	item := tree.Item{ID: "alice", Kind: tree.KindRecord, Type: "record", Notes: "keep", Tags: []string{"keep"}, Fields: map[string]string{"owner": "alice"}, Revisions: []tree.Revision{{ID: "r1"}}, Head: "r1"}
-	must(t, tree.WriteItem(root, item))
+	must(t, testStore(t, root).WriteItem(item))
 	h := Handler(Settings{Root: root})
-	path := tree.At(root).Sidecar(item.ID)
+	path := testStore(t, root).Sidecar(item.ID)
 	before, err := os.ReadFile(path)
 	must(t, err)
 	for _, body := range []string{

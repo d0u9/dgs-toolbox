@@ -96,16 +96,16 @@ func hasDigest(item tree.Item, digest string) bool {
 }
 
 // Compute is what merging src into the tree at root would do.
-func Compute(root string, src Source) (Plan, error) {
+func Compute(st *tree.Store, src Source) (Plan, error) {
 	plan := Plan{New: []Change{}, Changed: []Change{}, Templates: []string{}, Outlines: []string{}, Conflicts: []Conflict{}, Problems: []string{}}
-	if err := tree.Require(root); err != nil {
+	if err := st.Require(); err != nil {
 		return plan, err
 	}
-	items, err := tree.LoadItems(root)
+	items, err := st.LoadItems()
 	if err != nil {
 		return plan, err
 	}
-	ours, err := tree.LoadTemplates(root)
+	ours, err := st.LoadTemplates()
 	if err != nil {
 		return plan, err
 	}
@@ -123,11 +123,11 @@ func Compute(root string, src Source) (Plan, error) {
 			plan.Conflicts = append(plan.Conflicts, Conflict{ID: "template:" + t.Type, Kind: ConflictTemplate, Type: t.Type, Ours: mine, Theirs: t.Template})
 		}
 	}
-	outlines, err := outline.Load(root)
+	outlines, err := outline.Load(st)
 	if err != nil {
 		return plan, err
 	}
-	rules, err := outline.LoadRules(root)
+	rules, err := outline.LoadRules(st)
 	if err != nil {
 		return plan, err
 	}
@@ -363,7 +363,7 @@ type Result struct {
 // with verifiedcopy before the sidecar naming them is written, so a sidecar
 // never names a PDF that is not there. Templates come first, so an Item is
 // never written before its type is known.
-func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[string]string, now time.Time) (Result, error) {
+func Apply(ctx context.Context, st *tree.Store, src Source, plan Plan, choices map[string]string, now time.Time) (Result, error) {
 	var result Result
 	if len(plan.Problems) > 0 {
 		return result, errors.New("the merge has problems no choice resolves; nothing was changed")
@@ -403,21 +403,21 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		}
 	}
 	for _, name := range writeTemplates {
-		if err := tree.At(root).WriteDefinition(tree.TemplatesDir, name, srcTemplates[name].Data); err != nil {
+		if err := st.WriteDefinition(tree.TemplatesDir, name, srcTemplates[name].Data); err != nil {
 			return result, err
 		}
 		result.Templates++
 	}
 	for _, name := range writeOutlines {
 		previous := ""
-		exists, err := tree.At(root).DefinitionExists(outline.Dir, name)
+		exists, err := st.DefinitionExists(outline.Dir, name)
 		if err != nil {
 			return result, err
 		}
 		if exists {
 			previous = name
 		}
-		if err := outline.Save(root, previous, srcOutlines[name], now); err != nil {
+		if err := outline.Save(st, previous, srcOutlines[name], now); err != nil {
 			return result, err
 		}
 		result.Outlines++
@@ -426,7 +426,7 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 	for _, c := range plan.New {
 		s := srcItems[c.From]
 		for _, d := range c.Digests {
-			if err := copyRevision(ctx, src, s, root, c.Item, d, &result); err != nil {
+			if err := copyRevision(ctx, src, s, st, c.Item, d, &result); err != nil {
 				return result, err
 			}
 		}
@@ -440,7 +440,7 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		// it came into this one.
 		item.History = append(append([]tree.HistoryEvent(nil), s.History...),
 			tree.HistoryEvent{At: now.Format(time.RFC3339), Action: "merge"})
-		if err := tree.WriteItem(root, item); err != nil {
+		if err := st.WriteItem(item); err != nil {
 			return result, err
 		}
 		result.Items++
@@ -452,7 +452,7 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		if it, ok := touched[id]; ok {
 			return it, nil
 		}
-		it, err := tree.GetItem(root, id)
+		it, err := st.GetItem(id)
 		if err != nil {
 			return nil, err
 		}
@@ -480,7 +480,7 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 			change(c.Item, "revisions", "", strings.Join(c.Digests, ", "))
 		}
 		for _, d := range c.Digests {
-			if err := copyRevision(ctx, src, s, root, c.Item, d, &result); err != nil {
+			if err := copyRevision(ctx, src, s, st, c.Item, d, &result); err != nil {
 				return result, err
 			}
 			for _, r := range s.Revisions {
@@ -579,7 +579,7 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 			touched[id].Type = head.Type
 			touched[id].Fields = maps.Clone(head.Fields)
 		}
-		if err := tree.WriteItem(root, *touched[id]); err != nil {
+		if err := st.WriteItem(*touched[id]); err != nil {
 			return result, err
 		}
 		result.Items++
@@ -607,7 +607,7 @@ func copyPDF(ctx context.Context, from, to, digest string, result *Result) error
 	return nil
 }
 
-func copyRevision(ctx context.Context, src Source, item tree.Item, root, target, ref string, result *Result) error {
+func copyRevision(ctx context.Context, src Source, item tree.Item, st *tree.Store, target string, ref string, result *Result) error {
 	// placed is the Item as the destination keeps it, under its ID there.
 	placed := item
 	placed.ID = target
@@ -622,7 +622,7 @@ func copyRevision(ctx context.Context, src Source, item tree.Item, root, target,
 			return fmt.Errorf("source cannot resolve original image")
 		}
 		var kept []tree.Original
-		if stored, err := tree.GetItem(root, target); err == nil {
+		if stored, err := st.GetItem(target); err == nil {
 			if existing, ok := stored.Revision(ref); ok {
 				kept = existing.Originals
 			}
@@ -630,11 +630,11 @@ func copyRevision(ctx context.Context, src Source, item tree.Item, root, target,
 			return err
 		}
 		for n, o := range r.Originals {
-			from, to := src.Original(item, r.Digest, o), tree.At(root).OriginalPath(placed, r.Digest, o)
+			from, to := src.Original(item, r.Digest, o), st.OriginalPath(placed, r.Digest, o)
 			// Keep the target's extension alias when this snapshot already
 			// archives the same bytes (for example .jpg versus .jpeg).
 			if n < len(kept) && kept[n].Digest == o.Digest {
-				to = tree.At(root).OriginalPath(placed, r.Digest, kept[n])
+				to = st.OriginalPath(placed, r.Digest, kept[n])
 			}
 			if from == "" || to == "" {
 				return fmt.Errorf("invalid original image reference")
@@ -643,7 +643,7 @@ func copyRevision(ctx context.Context, src Source, item tree.Item, root, target,
 				return err
 			}
 		}
-		return copyPDF(ctx, src.PDF(item, r.Digest), tree.At(root).PDF(placed, r.Digest), r.Digest, result)
+		return copyPDF(ctx, src.PDF(item, r.Digest), st.PDF(placed, r.Digest), r.Digest, result)
 	}
 	return fmt.Errorf("no revision %s", ref)
 }

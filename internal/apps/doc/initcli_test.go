@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"dgs-toolbox/internal/config"
-	"dgs-toolbox/internal/doc/tree"
 )
 
 func TestInitAction(t *testing.T) {
@@ -15,7 +14,7 @@ func TestInitAction(t *testing.T) {
 	if err := initAction(nil, &out, []string{root}, nil, config.Default()); err != nil {
 		t.Fatal(err)
 	}
-	if err := tree.Require(root); err != nil {
+	if err := testStore(t, root).Require(); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(out.Bytes(), []byte("id_card.yaml")) {

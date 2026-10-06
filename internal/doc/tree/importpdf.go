@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"dgs-toolbox/internal/doc/country"
+
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -20,7 +22,6 @@ import (
 // ImportRequest is one loose PDF, or images, to take into the tree as a new
 // Item.
 type ImportRequest struct {
-	Root   string
 	Source string
 	// Pages are more images after Source, each a page of the PDF made from
 	// them; empty for a PDF.
@@ -50,15 +51,15 @@ var ErrTaken = errors.New("a document with these fields exists")
 // only after it reads back the same (verifiedcopy); the sidecar is written
 // after that, so a sidecar never names a PDF that is not there. The source is
 // never touched.
-func Import(ctx context.Context, request ImportRequest) (Item, error) {
-	if err := Require(request.Root); err != nil {
+func (st *Store) Import(ctx context.Context, request ImportRequest) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
 	fields, err := CleanFields(request.Template, request.Fields)
 	if err != nil {
 		return Item{}, err
 	}
-	input, err := prepareInput(ctx, request.Root, append([]string{request.Source}, request.Pages...))
+	input, err := st.prepareInput(ctx, append([]string{request.Source}, request.Pages...))
 	if err != nil {
 		return Item{}, err
 	}
@@ -68,7 +69,7 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	items, err := others(request.Root)
+	items, err := st.others()
 	if err != nil {
 		return Item{}, err
 	}
@@ -81,7 +82,7 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if other, ok := taken(request.Template, items, fields, ""); ok {
 		return Item{}, fmt.Errorf("%w: %s %s; add the PDF to it as a revision", ErrTaken, other.Type, other.ID)
 	}
-	if err := linked(request.Root, request.Template, items, fields, ""); err != nil {
+	if err := st.linked(request.Template, items, fields, ""); err != nil {
 		return Item{}, err
 	}
 	shared, err := sharedList(fields["owner"], request.SharedWith)
@@ -96,32 +97,32 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 	// even the folder. Remove takes only an empty directory.
 	result, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{
 		Source:      request.Source,
-		Destination: PDFPath(request.Root, id, digest),
+		Destination: st.PDF(Item{ID: id}, digest),
 	})
 	if err != nil {
-		_ = os.Remove(Dir(request.Root, id))
+		_ = os.Remove(filepath.Dir(st.Sidecar(id)))
 		return Item{}, err
 	}
 	if result.Digest != digest {
-		_ = os.Remove(PDFPath(request.Root, id, digest))
-		_ = os.Remove(Dir(request.Root, id))
+		_ = os.Remove(st.PDF(Item{ID: id}, digest))
+		_ = os.Remove(filepath.Dir(st.Sidecar(id)))
 		return Item{}, fmt.Errorf("%s changed while it was being imported", request.Source)
 	}
 	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags), SharedWith: shared}
 	ref := item.saveSnapshot(request.Template.Type, fields, digest, input.name, "", request.Now)
 	item.Revisions[len(item.Revisions)-1].Tags = tag.List(append(append([]string(nil), item.Tags...), request.RevisionTags...))
 	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "import", Digest: ref}}
-	undoOriginal, err := input.archive(ctx, request.Root, id, request.KeepOriginal)
+	undoOriginal, err := input.archive(ctx, st, id, request.KeepOriginal)
 	if err != nil {
-		os.Remove(PDFPath(request.Root, id, digest))
-		os.Remove(Dir(request.Root, id))
+		os.Remove(st.PDF(Item{ID: id}, digest))
+		os.Remove(filepath.Dir(st.Sidecar(id)))
 		return Item{}, err
 	}
 	input.annotate(&item, ref, request.KeepOriginal)
-	if err := WriteItem(request.Root, item); err != nil {
+	if err := st.WriteItem(item); err != nil {
 		undoOriginal()
-		_ = os.Remove(PDFPath(request.Root, id, digest))
-		_ = os.Remove(Dir(request.Root, id))
+		_ = os.Remove(st.PDF(Item{ID: id}, digest))
+		_ = os.Remove(filepath.Dir(st.Sidecar(id)))
 		return Item{}, err
 	}
 	return item, nil
@@ -210,7 +211,7 @@ func FileDigest(path string) (string, error) {
 
 // linked checks that each item field names an Item in the tree, and each
 // revision field one of its revisions, other than the Item itself.
-func linked(root string, t Template, items []Item, fields map[string]string, self string) error {
+func (st *Store) linked(t Template, items []Item, fields map[string]string, self string) error {
 	var anchors map[string]bool
 	for _, f := range t.Fields {
 		value, ok := fields[f.Key]
@@ -240,7 +241,7 @@ func linked(root string, t Template, items []Item, fields map[string]string, sel
 		for theirs, ours := range f.Match {
 			want := MatchValue(ours, fields)
 			if theirs == AnchorKey && anchors == nil {
-				templates, err := LoadTemplates(root)
+				templates, err := st.LoadTemplates()
 				if err != nil {
 					return err
 				}

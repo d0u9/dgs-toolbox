@@ -41,7 +41,7 @@ func TestExampleTemplate(t *testing.T) {
 	if err := tree.Init(root, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	templates, err := tree.LoadTemplates(root)
+	templates, err := testStore(t, root).LoadTemplates()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestTheExampleReadsAnEnglishExpiry(t *testing.T) {
 	if err := tree.Init(root, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	templates, _ := tree.LoadTemplates(root)
+	templates, _ := testStore(t, root).LoadTemplates()
 	got := All(templates, "DRIVER LICENCE\nExpiry: 03/04/2031", dates.DMY)
 	if got["id_card"]["expires"].Value != "03/04/2031" {
 		t.Fatalf("got %v", got)

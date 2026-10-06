@@ -72,7 +72,7 @@ func (s server) caseTrash(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	to, err := cases.ForStore(s.documents).Trash(request.Name, s.now())
+	to, err := cases.Trash(s.documents, request.Name, s.now())
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

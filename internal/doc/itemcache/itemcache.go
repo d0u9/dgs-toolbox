@@ -24,7 +24,8 @@ const Version = 3
 // rebuild and a write never overlap, so a write is never lost to a rebuild
 // that began before it.
 type Cache struct {
-	root string
+	root  string
+	store *tree.Store
 	// file is where the cache is kept between runs; empty keeps it only in
 	// memory.
 	file string
@@ -44,8 +45,12 @@ type onDisk struct {
 
 // New is the cache of the tree at root, kept under dir, one file per tree.
 // An empty dir keeps it only in memory.
-func New(root, dir string) *Cache {
-	c := &Cache{root: root}
+func New(store *tree.Store, dir string) *Cache {
+	root := ""
+	if store != nil {
+		root = store.Root()
+	}
+	c := &Cache{root: root, store: store}
 	if dir != "" {
 		abs, err := filepath.Abs(root)
 		if err != nil {
@@ -60,9 +65,12 @@ func New(root, dir string) *Cache {
 // Items is every Item, sorted by ID, as the sidecars say. Each is a copy
 // the caller may change.
 func (c *Cache) Items() ([]tree.Item, error) {
+	if c.store == nil {
+		return nil, tree.ErrNotATree
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	token, err := tree.ReadChangeMark(c.root)
+	token, err := c.store.ReadChangeMark()
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +90,7 @@ func (c *Cache) Items() ([]tree.Item, error) {
 func (c *Cache) Reload() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	token, err := tree.ReadChangeMark(c.root)
+	token, err := c.store.ReadChangeMark()
 	if err != nil {
 		return err
 	}
@@ -95,7 +103,7 @@ func (c *Cache) Reload() error {
 func (c *Cache) Wrote(ids ...string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	token, err := tree.WriteChangeMark(c.root)
+	token, err := c.store.WriteChangeMark()
 	if err != nil {
 		c.loaded = false
 		return err
@@ -104,7 +112,7 @@ func (c *Cache) Wrote(ids ...string) error {
 		return c.rebuild(token)
 	}
 	for _, id := range ids {
-		item, err := tree.LoadItem(c.root, id)
+		item, err := c.store.LoadItem(id)
 		if err != nil {
 			c.loaded = false
 			return err
@@ -130,13 +138,13 @@ func (c *Cache) Wrote(ids ...string) error {
 // rebuild reads every sidecar. A tree with no change mark gets one, so the
 // next question can tell whether anything changed.
 func (c *Cache) rebuild(token string) error {
-	items, err := tree.LoadItems(c.root)
+	items, err := c.store.LoadItems()
 	if err != nil {
 		c.loaded = false
 		return err
 	}
 	if token == "" {
-		if token, err = tree.WriteChangeMark(c.root); err != nil {
+		if token, err = c.store.WriteChangeMark(); err != nil {
 			c.loaded = false
 			return err
 		}
@@ -205,7 +213,7 @@ func clone(items []tree.Item) []tree.Item {
 func (c *Cache) Marked() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	token, err := tree.WriteChangeMark(c.root)
+	token, err := c.store.WriteChangeMark()
 	if err != nil {
 		c.loaded = false
 		return err

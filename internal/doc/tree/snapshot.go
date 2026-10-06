@@ -88,11 +88,11 @@ func (item Item) Revision(ref string) (Revision, bool) {
 
 // checkSnapshotIdentity applies the existing distinguishing-field rule when
 // restoring historical content, just as a field edit does.
-func checkSnapshotIdentity(root string, item Item, revision Revision, items []Item) error {
+func (st *Store) checkSnapshotIdentity(item Item, revision Revision, items []Item) error {
 	if !revision.Snapshot {
 		return nil
 	}
-	templates, err := LoadTemplates(root)
+	templates, err := st.LoadTemplates()
 	if err != nil {
 		return err
 	}

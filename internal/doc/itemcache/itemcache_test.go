@@ -26,7 +26,7 @@ func write(t *testing.T, root, id, value string) {
 	t.Helper()
 	item := tree.Item{ID: id, Type: "bill", Kind: "record", Fields: map[string]string{"issuer": value},
 		Revisions: []tree.Revision{{ID: "r1", Added: "2026-01-01"}}}
-	if err := tree.WriteItem(root, item); err != nil {
+	if err := testStore(t, root).WriteItem(item); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -39,7 +39,7 @@ func same(t *testing.T, c *Cache, root string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := tree.LoadItems(root)
+	want, err := testStore(t, root).LoadItems()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,26 +52,26 @@ func same(t *testing.T, c *Cache, root string) {
 
 func TestRebuiltFromSidecarsMatches(t *testing.T) {
 	root, dir := newTree(t, "A", "B"), t.TempDir()
-	same(t, New(root, dir), root)
+	same(t, New(testStore(t, root), dir), root)
 	// A second run takes the kept file, and answers the same.
-	same(t, New(root, dir), root)
+	same(t, New(testStore(t, root), dir), root)
 	os.RemoveAll(dir)
-	same(t, New(root, dir), root)
+	same(t, New(testStore(t, root), dir), root)
 }
 
 func TestAMissingMarkIsWritten(t *testing.T) {
 	root := newTree(t, "A")
-	if _, err := New(root, "").Items(); err != nil {
+	if _, err := New(testStore(t, root), "").Items(); err != nil {
 		t.Fatal(err)
 	}
-	if token, _ := tree.ReadChangeMark(root); token == "" {
+	if token, _ := testStore(t, root).ReadChangeMark(); token == "" {
 		t.Fatal("no change mark after the first read")
 	}
 }
 
 func TestWroteReadsOnlyTheItemsNamed(t *testing.T) {
 	root := newTree(t, "B")
-	c := New(root, t.TempDir())
+	c := New(testStore(t, root), t.TempDir())
 	same(t, c, root)
 	write(t, root, "A", "new")
 	write(t, root, "C", "new")
@@ -80,7 +80,7 @@ func TestWroteReadsOnlyTheItemsNamed(t *testing.T) {
 		t.Fatal(err)
 	}
 	same(t, c, root)
-	os.RemoveAll(tree.Dir(root, "B"))
+	os.RemoveAll(filepath.Dir(testStore(t, root).Sidecar("B")))
 	if err := c.Wrote("B"); err != nil {
 		t.Fatal(err)
 	}
@@ -89,14 +89,14 @@ func TestWroteReadsOnlyTheItemsNamed(t *testing.T) {
 
 func TestAChangeElsewhereIsSeenByItsMark(t *testing.T) {
 	root := newTree(t, "A")
-	c := New(root, "")
+	c := New(testStore(t, root), "")
 	same(t, c, root)
 	write(t, root, "A", "elsewhere")
 	// Without a new mark the cache does not look.
 	if items, _ := c.Items(); items[0].Fields["issuer"] != "one" {
 		t.Fatal("read the tree with no change marked")
 	}
-	if _, err := tree.WriteChangeMark(root); err != nil {
+	if _, err := testStore(t, root).WriteChangeMark(); err != nil {
 		t.Fatal(err)
 	}
 	same(t, c, root)
@@ -104,13 +104,13 @@ func TestAChangeElsewhereIsSeenByItsMark(t *testing.T) {
 
 func TestAnUnreadableOrOtherFileIsRebuilt(t *testing.T) {
 	root, dir := newTree(t, "A"), t.TempDir()
-	c := New(root, dir)
+	c := New(testStore(t, root), dir)
 	same(t, c, root)
 	for _, content := range []string{"not json", `{"version":999}`} {
 		if err := os.WriteFile(c.file, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		same(t, New(root, dir), root)
+		same(t, New(testStore(t, root), dir), root)
 	}
 	if _, err := os.Stat(filepath.Dir(c.file)); err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestAnUnreadableOrOtherFileIsRebuilt(t *testing.T) {
 
 func TestACopyChangedLeavesTheCache(t *testing.T) {
 	root := newTree(t, "A")
-	c := New(root, "")
+	c := New(testStore(t, root), "")
 	items, _ := c.Items()
 	items[0].Fields["issuer"] = "changed"
 	same(t, c, root)

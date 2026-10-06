@@ -102,11 +102,11 @@ type Result struct {
 
 // CheckTarget refuses a Target that is not an absolute path, or that is
 // inside the tree or holds it: an export must never write among Items.
-func CheckTarget(root, target string) error {
+func CheckTarget(st *tree.Store, target string) error {
 	if !filepath.IsAbs(target) {
 		return fmt.Errorf("target %q is not an absolute path", target)
 	}
-	absRoot, err := filepath.Abs(root)
+	absRoot, err := filepath.Abs(st.Root())
 	if err != nil {
 		return err
 	}
@@ -285,12 +285,12 @@ func readerWith(ctx context.Context, r io.Reader) io.Reader { return ctxReader{c
 // also when Apply stops early, so what was done is recorded. Progress, when
 // set, is called after each file. Published, when set, is called for each
 // file written, after it is in place.
-func Apply(ctx context.Context, root, target string, views []string, plan Plan, items []tree.Item, progress func(done, total int), published func(Action)) (Result, error) {
+func Apply(ctx context.Context, st *tree.Store, target string, views []string, plan Plan, items []tree.Item, progress func(done, total int), published func(Action)) (Result, error) {
 	var result Result
 	if len(plan.Blocked) > 0 {
 		return result, fmt.Errorf("%d file(s) cannot be written; nothing was changed", len(plan.Blocked))
 	}
-	if err := CheckTarget(root, target); err != nil {
+	if err := CheckTarget(st, target); err != nil {
 		return result, err
 	}
 	byID := map[string]tree.Item{}
@@ -380,7 +380,7 @@ func Apply(ctx context.Context, root, target string, views []string, plan Plan, 
 			return finish(err)
 		}
 		delete(pending, a.Path)
-		if err := publish(ctx, root, target, a); err != nil {
+		if err := publish(ctx, st, target, a); err != nil {
 			return finish(err)
 		}
 		done = append(done, entry(a))
@@ -391,7 +391,7 @@ func Apply(ctx context.Context, root, target string, views []string, plan Plan, 
 		tick()
 	}
 	for _, a := range plan.Add {
-		if err := publish(ctx, root, target, a); err != nil {
+		if err := publish(ctx, st, target, a); err != nil {
 			return finish(err)
 		}
 		done = append(done, entry(a))
@@ -429,9 +429,9 @@ func removeOwned(ctx context.Context, target, rel, digest string) error {
 	return nil
 }
 
-func publish(ctx context.Context, root, target string, a Action) error {
+func publish(ctx context.Context, st *tree.Store, target string, a Action) error {
 	result, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{
-		Source:      tree.At(root).PDF(tree.Item{ID: a.Item}, a.Digest),
+		Source:      st.PDF(tree.Item{ID: a.Item}, a.Digest),
 		Destination: filepath.Join(target, filepath.FromSlash(a.Path)),
 	})
 	if err != nil {

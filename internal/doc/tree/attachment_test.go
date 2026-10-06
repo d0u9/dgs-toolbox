@@ -30,8 +30,8 @@ func TestSnapshotLifecycle(t *testing.T) {
 	must(os.WriteFile(filepath.Join(root, tree.TemplatesDir, "bank_card.yaml"), data, 0600))
 	tpl, err := tree.ParseTemplate(data)
 	must(err)
-	req := tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2026-09"}, Now: now, Notes: "mobile", Tags: []string{"bank"}}
-	item, err := tree.CreateWithoutPDF(req)
+	req := tree.ImportRequest{Template: tpl, Fields: map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2026-09"}, Now: now, Notes: "mobile", Tags: []string{"bank"}}
+	item, err := testStore(t, root).CreateWithoutPDF(req)
 	must(err)
 	initial := item.Current()
 	if initial != tree.SnapshotID("bank_card", req.Fields, "") {
@@ -39,25 +39,25 @@ func TestSnapshotLifecycle(t *testing.T) {
 	}
 	archived := cases.Case{Name: "cards", Status: cases.Open, Entries: []cases.Entry{{Item: item.ID}}}
 	must(archived.Archive([]tree.Item{item}, now))
-	if _, err := tree.CreateWithoutPDF(req); !errors.Is(err, tree.ErrTaken) {
+	if _, err := testStore(t, root).CreateWithoutPDF(req); !errors.Is(err, tree.ErrTaken) {
 		t.Fatalf("duplicate: %v", err)
 	}
-	report, err := check.Tree(context.Background(), root, nil)
+	report, err := check.Tree(context.Background(), testStore(t, root), nil)
 	must(err)
 	if len(report.Problems) != 0 || report.Checked != 0 {
 		t.Fatalf("verify: %+v", report)
 	}
-	item, err = tree.AddWithoutPDF(root, item.ID, tpl, map[string]string{"expires": "2030-09"}, tree.RevisionMetadata{NewRevision: true}, now.Add(time.Hour))
+	item, err = testStore(t, root).AddWithoutPDF(item.ID, tpl, map[string]string{"expires": "2030-09"}, tree.RevisionMetadata{NewRevision: true}, now.Add(time.Hour))
 	must(err)
 	renewal := item.Current()
 	source := filepath.Join(t.TempDir(), "card.pdf")
 	must(os.WriteFile(source, []byte("%PDF-1.4 test scan"), 0600))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := tree.AttachPDF(ctx, root, item.ID, initial, source, now); err == nil {
+	if _, err := testStore(t, root).AttachPDF(ctx, item.ID, initial, source, now); err == nil {
 		t.Fatal("cancelled attachment succeeded")
 	}
-	item, err = tree.AttachPDF(context.Background(), root, item.ID, initial, source, now.Add(2*time.Hour))
+	item, err = testStore(t, root).AttachPDF(context.Background(), item.ID, initial, source, now.Add(2*time.Hour))
 	must(err)
 	attached := item.Current()
 	blob := item.CurrentDigest()
@@ -70,25 +70,25 @@ func TestSnapshotLifecycle(t *testing.T) {
 	if len(missing) != 0 || selected[0].Current() != initial || selected[0].CurrentDigest() != "" {
 		t.Fatal("Case moved to attached snapshot")
 	}
-	same, err := tree.AttachPDF(context.Background(), root, item.ID, attached, source, now)
+	same, err := testStore(t, root).AttachPDF(context.Background(), item.ID, attached, source, now)
 	must(err)
 	if len(same.Revisions) != 3 || len(same.History) != len(item.History) {
 		t.Fatal("same PDF created a snapshot")
 	}
-	item, err = tree.SetFieldsAs(root, item.ID, attached, tpl, map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2028-02"}, true, now.Add(3*time.Hour))
+	item, err = testStore(t, root).SetFieldsAs(item.ID, attached, tpl, map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2028-02"}, true, now.Add(3*time.Hour))
 	must(err)
 	edited := item.Current()
 	if len(item.Revisions) != 4 || item.CurrentDigest() != blob || item.FieldsAt(attached)["expires"] != "2026-09" {
 		t.Fatal("field edit mutated old snapshot")
 	}
-	same, err = tree.SetFields(root, item.ID, edited, tpl, item.CurrentFields(), now)
+	same, err = testStore(t, root).SetFields(item.ID, edited, tpl, item.CurrentFields(), now)
 	must(err)
 	if len(same.Revisions) != 4 || len(same.History) != len(item.History) {
 		t.Fatal("unchanged fields made history")
 	}
-	item, err = tree.SetNotes(root, item.ID, "new note", now)
+	item, err = testStore(t, root).SetNotes(item.ID, "new note", now)
 	must(err)
-	item, err = tree.SetTags(root, item.ID, []string{"new tag"}, now)
+	item, err = testStore(t, root).SetTags(item.ID, []string{"new tag"}, now)
 	must(err)
 	if item.Current() != edited || len(item.Revisions) != 4 {
 		t.Fatal("metadata made a snapshot")
@@ -104,7 +104,7 @@ func TestSnapshotLifecycle(t *testing.T) {
 	target := t.TempDir()
 	ep, err := export.Compute(context.Background(), target, []string{"cards"}, plan.Files)
 	must(err)
-	_, err = export.Apply(context.Background(), root, target, []string{"cards"}, ep, []tree.Item{item}, nil, nil)
+	_, err = export.Apply(context.Background(), testStore(t, root), target, []string{"cards"}, ep, []tree.Item{item}, nil, nil)
 	must(err)
 	back, err := merge.FromTarget(target, now)
 	must(err)
@@ -114,56 +114,56 @@ func TestSnapshotLifecycle(t *testing.T) {
 	}
 	destination := t.TempDir()
 	must(tree.Init(destination, now))
-	src, err := merge.FromTree(root)
+	src, err := merge.FromTree(testStore(t, root))
 	must(err)
-	mp, err := merge.Compute(destination, src)
+	mp, err := merge.Compute(testStore(t, destination), src)
 	must(err)
 	if len(mp.Problems) > 0 || len(mp.Conflicts) > 0 {
 		t.Fatalf("merge: %+v", mp)
 	}
-	_, err = merge.Apply(context.Background(), destination, src, mp, nil, now)
+	_, err = merge.Apply(context.Background(), testStore(t, destination), src, mp, nil, now)
 	must(err)
-	copied, _, err := tree.FindItem(destination, item.ID)
+	copied, _, err := testStore(t, destination).FindItem(item.ID)
 	must(err)
 	if len(copied.Revisions) != 4 || copied.Current() != edited {
 		t.Fatal("merge lost snapshots")
 	}
 	// A later snapshot merges without confusing HEAD's derived fields with
 	// independently edited Item metadata.
-	item, err = tree.SetFields(root, item.ID, item.Current(), tpl, map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2033-03"}, now.Add(4*time.Hour))
+	item, err = testStore(t, root).SetFields(item.ID, item.Current(), tpl, map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2033-03"}, now.Add(4*time.Hour))
 	must(err)
-	src, err = merge.FromTree(root)
+	src, err = merge.FromTree(testStore(t, root))
 	must(err)
-	mp, err = merge.Compute(destination, src)
+	mp, err = merge.Compute(testStore(t, destination), src)
 	must(err)
 	if len(mp.Problems) > 0 || len(mp.Conflicts) > 0 {
 		t.Fatalf("incremental merge: %+v", mp)
 	}
-	_, err = merge.Apply(context.Background(), destination, src, mp, nil, now)
+	_, err = merge.Apply(context.Background(), testStore(t, destination), src, mp, nil, now)
 	must(err)
-	copied, _, err = tree.FindItem(destination, item.ID)
+	copied, _, err = testStore(t, destination).FindItem(item.ID)
 	must(err)
 	if copied.Current() != item.Current() || copied.CurrentFields()["expires"] != "2033-03" {
 		t.Fatal("merge lost current snapshot")
 	}
 	// Deleting a shared-blob revision saves metadata, not the still-used PDF.
-	item, trash, err := tree.TrashRevision(root, item.ID, attached, now)
+	item, trash, err := testStore(t, root).TrashRevision(item.ID, attached, now)
 	must(err)
 	if _, err := os.Stat(trash); err != nil {
 		t.Fatal("no recoverable metadata")
 	}
-	digest, err := tree.FileDigest(tree.PDFPath(root, item.ID, blob))
+	digest, err := tree.FileDigest(testStore(t, root).PDF(tree.Item{ID: item.ID}, blob))
 	must(err)
 	if digest != blob {
 		t.Fatal("deleted another snapshot's PDF")
 	}
-	item, err = tree.SetHead(root, item.ID, initial, now)
+	item, err = testStore(t, root).SetHead(item.ID, initial, now)
 	must(err)
 	if item.CurrentFields()["expires"] != "2026-09" || item.CurrentDigest() != "" {
 		t.Fatal("HEAD did not restore fields")
 	}
-	must(os.Remove(tree.PDFPath(root, item.ID, blob)))
-	report, err = check.Tree(context.Background(), root, nil)
+	must(os.Remove(testStore(t, root).PDF(tree.Item{ID: item.ID}, blob)))
+	report, err = check.Tree(context.Background(), testStore(t, root), nil)
 	must(err)
 	if len(report.Problems) != 1 || report.Problems[0].Kind != check.Missing {
 		t.Fatalf("missing PDF: %+v", report)
@@ -186,10 +186,10 @@ func TestSnapshotHashAndLegacyFreeze(t *testing.T) {
 	}
 	tpl := tree.Template{Type: "card", Kind: tree.KindDocument, Fields: []tree.Field{{Key: "owner"}, {Key: "expires", PerRevision: true}}}
 	old := tree.Item{ID: "legacy", Type: "card", Kind: tree.KindDocument, Fields: map[string]string{"owner": "A"}, Head: "old", Revisions: []tree.Revision{{Digest: "old", Fields: map[string]string{"expires": "2030-01"}}}}
-	if err := tree.WriteItem(root, old); err != nil {
+	if err := testStore(t, root).WriteItem(old); err != nil {
 		t.Fatal(err)
 	}
-	next, err := tree.SetFields(root, old.ID, "old", tpl, map[string]string{"owner": "B"}, now)
+	next, err := testStore(t, root).SetFields(old.ID, "old", tpl, map[string]string{"owner": "B"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,27 +208,27 @@ func TestHeadCannotRestoreTakenIdentity(t *testing.T) {
 		}
 	}
 	must(tree.Init(root, now))
-	templates, err := tree.LoadTemplates(root)
+	templates, err := testStore(t, root).LoadTemplates()
 	must(err)
 	tpl := templates[0]
-	first, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Now: now, Fields: map[string]string{"owner": "A", "country": "AU"}})
+	first, err := testStore(t, root).CreateWithoutPDF(tree.ImportRequest{Template: tpl, Now: now, Fields: map[string]string{"owner": "A", "country": "AU"}})
 	must(err)
 	old := first.Current()
-	edited, err := tree.SetFields(root, first.ID, old, tpl, map[string]string{"owner": "B", "country": "AU"}, now)
+	edited, err := testStore(t, root).SetFields(first.ID, old, tpl, map[string]string{"owner": "B", "country": "AU"}, now)
 	must(err)
-	_, err = tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Now: now, Fields: map[string]string{"owner": "A", "country": "AU"}})
+	_, err = testStore(t, root).CreateWithoutPDF(tree.ImportRequest{Template: tpl, Now: now, Fields: map[string]string{"owner": "A", "country": "AU"}})
 	must(err)
-	if _, err := tree.SetHead(root, first.ID, old, now); !errors.Is(err, tree.ErrTaken) {
+	if _, err := testStore(t, root).SetHead(first.ID, old, now); !errors.Is(err, tree.ErrTaken) {
 		t.Fatalf("restored conflicting identity: %v", err)
 	}
-	saved, _, err := tree.FindItem(root, first.ID)
+	saved, _, err := testStore(t, root).FindItem(first.ID)
 	must(err)
 	if saved.Current() != edited.Current() {
 		t.Fatal("failed HEAD change wrote the sidecar")
 	}
 	saved.Revisions[len(saved.Revisions)-1].Fields["owner"] = "tampered"
-	must(tree.WriteItem(root, saved))
-	report, err := check.Tree(context.Background(), root, nil)
+	must(testStore(t, root).WriteItem(saved))
+	report, err := check.Tree(context.Background(), testStore(t, root), nil)
 	must(err)
 	if len(report.Problems) != 1 || report.Problems[0].Kind != check.BadSidecar {
 		t.Fatalf("snapshot hash mismatch not detected: %+v", report)

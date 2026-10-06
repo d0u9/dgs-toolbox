@@ -16,12 +16,12 @@ func importOne(t *testing.T, root, name, owner string) tree.Item {
 	if err := os.WriteFile(source, []byte("%PDF "+owner), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	templates, err := tree.LoadTemplates(root)
+	templates, err := testStore(t, root).LoadTemplates()
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := tree.Import(context.Background(), tree.ImportRequest{
-		Root: root, Source: source, Template: templates[0], Now: time.Now(),
+	item, err := testStore(t, root).Import(context.Background(), tree.ImportRequest{
+		Source: source, Template: templates[0], Now: time.Now(),
 		Fields: map[string]string{"owner": owner, "country": "AU"},
 	})
 	if err != nil {
@@ -45,7 +45,7 @@ func TestCleanTree(t *testing.T) {
 	}
 	importOne(t, root, "a.pdf", "emma")
 	var seen int
-	r, err := Tree(context.Background(), root, func(string, int, int) { seen++ })
+	r, err := Tree(context.Background(), testStore(t, root), func(string, int, int) { seen++ })
 	if err != nil || len(r.Problems) != 0 || r.Checked != 1 || seen != 1 || r.Items != 1 {
 		t.Fatalf("%v %+v", err, r)
 	}
@@ -60,18 +60,18 @@ func TestEveryProblem(t *testing.T) {
 	missing := importOne(t, root, "b.pdf", "tom")
 	odd := importOne(t, root, "c.pdf", "ann")
 
-	os.WriteFile(tree.PDFPath(root, changed.ID, changed.CurrentDigest()), []byte("altered"), 0o644)
-	os.Remove(tree.PDFPath(root, missing.ID, missing.CurrentDigest()))
-	os.WriteFile(filepath.Join(tree.Dir(root, odd.ID), "stray.pdf"), []byte("x"), 0o644)
+	os.WriteFile(testStore(t, root).PDF(tree.Item{ID: changed.ID}, changed.CurrentDigest()), []byte("altered"), 0o644)
+	os.Remove(testStore(t, root).PDF(tree.Item{ID: missing.ID}, missing.CurrentDigest()))
+	os.WriteFile(filepath.Join(filepath.Dir(testStore(t, root).Sidecar(odd.ID)), "stray.pdf"), []byte("x"), 0o644)
 	odd.Type, odd.Head = "passport", "0000"
-	if err := tree.WriteItem(root, odd); err != nil {
+	if err := testStore(t, root).WriteItem(odd); err != nil {
 		t.Fatal(err)
 	}
 	broken := filepath.Join(root, tree.ItemsDir, "BROKEN")
 	os.MkdirAll(broken, 0o755)
 	os.WriteFile(filepath.Join(broken, tree.SidecarName), []byte("id: [unclosed"), 0o644)
 
-	r, err := Tree(context.Background(), root, nil)
+	r, err := Tree(context.Background(), testStore(t, root), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestEveryProblem(t *testing.T) {
 }
 
 func TestNotATree(t *testing.T) {
-	if _, err := Tree(context.Background(), t.TempDir(), nil); err == nil {
+	if _, err := tree.Open(t.TempDir()); err == nil {
 		t.Fatal("checked a folder with no marker")
 	}
 }
@@ -112,7 +112,7 @@ func TestFilesBesideItems(t *testing.T) {
 	write("outlines", "wrong.yaml", "name: other\nrules: [ids]\n")
 	write("cases", "lease.yaml", "name: lease\nstatus: open\nopened: 2026-01-02T03:04:05Z\nentries:\n  - {item: GONE, added: 2026-01-02T03:04:05Z}\nneeds: []\n")
 
-	r, err := Tree(context.Background(), root, nil)
+	r, err := Tree(context.Background(), testStore(t, root), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -28,7 +28,7 @@ func (s server) snapshotList(w http.ResponseWriter, _ *http.Request) {
 		Snapshots []snapshotJSON `json:"snapshots"`
 		Error     string         `json:"error,omitempty"`
 	}{Snapshots: []snapshotJSON{}}
-	list, err := snapshot.ForStore(s.documents).Load()
+	list, err := snapshot.Load(s.documents)
 	if err != nil {
 		out.Error = err.Error()
 	}
@@ -36,7 +36,7 @@ func (s server) snapshotList(w http.ResponseWriter, _ *http.Request) {
 	if err != nil && out.Error == "" {
 		out.Error = err.Error()
 	}
-	outlines, err := outline.ForStore(s.documents).Load()
+	outlines, err := outline.Load(s.documents)
 	if err != nil && out.Error == "" {
 		out.Error = err.Error()
 	}
@@ -72,7 +72,7 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 	fail := func(status int, err error) { writeJSON(w, status, map[string]string{"error": err.Error()}) }
 	var rule *view.View
 	if request.Rule != "" {
-		rules, err := outline.ForStore(s.documents).LoadRules()
+		rules, err := outline.LoadRules(s.documents)
 		if err != nil {
 			fail(http.StatusConflict, err)
 			return
@@ -96,7 +96,7 @@ func (s server) snapshotTake(w http.ResponseWriter, r *http.Request) {
 	}
 	sn, err := snapshot.Take(request.Name, request.About, rule, items, view.TypesOf(templates), s.now())
 	if err == nil {
-		err = snapshot.ForStore(s.documents).Save("", sn, true, time.Now())
+		err = snapshot.Save(s.documents, "", sn, true, time.Now())
 	}
 	if err != nil {
 		fail(http.StatusBadRequest, err)
@@ -128,12 +128,12 @@ func (s server) snapshotSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.Previous != "" && request.Previous != sn.Name {
-		if err := outline.ForStore(s.documents).RenameSnapshot(request.Previous, sn.Name, time.Now()); err != nil {
+		if err := outline.RenameSnapshot(s.documents, request.Previous, sn.Name, time.Now()); err != nil {
 			fail(err)
 			return
 		}
 	}
-	if err := snapshot.ForStore(s.documents).Save("", sn, request.Previous == "", time.Now()); err != nil {
+	if err := snapshot.Save(s.documents, "", sn, request.Previous == "", time.Now()); err != nil {
 		fail(err)
 		return
 	}
@@ -154,7 +154,7 @@ func (s server) snapshotDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	outlines, err := outline.ForStore(s.documents).Load()
+	outlines, err := outline.Load(s.documents)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -163,7 +163,7 @@ func (s server) snapshotDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the Snapshot " + request.Name + " is used by " + strings.Join(used, ", ")})
 		return
 	}
-	trash, err := snapshot.ForStore(s.documents).Trash(request.Name, s.now())
+	trash, err := snapshot.Trash(s.documents, request.Name, s.now())
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

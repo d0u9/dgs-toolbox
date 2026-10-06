@@ -18,8 +18,8 @@ import (
 type DefinitionKind[T any] struct {
 	Dir      string
 	Name     func(T) string
-	Validate func(root string, v T) error
-	Decode   func(root string, data []byte) (T, error)
+	Validate func(store *Store, v T) error
+	Decode   func(_ *Store, data []byte) (T, error)
 	Encode   func(T) ([]byte, error)
 }
 
@@ -72,14 +72,14 @@ func decodeDefinition[T any](s *Store, k DefinitionKind[T], data []byte) (T, err
 	var v T
 	var err error
 	if k.Decode != nil {
-		v, err = k.Decode(s.root, data)
+		v, err = k.Decode(s, data)
 	} else {
 		d := yaml.NewDecoder(bytes.NewReader(data))
 		d.KnownFields(true)
 		err = d.Decode(&v)
 	}
 	if err == nil && k.Validate != nil {
-		err = k.Validate(s.root, v)
+		err = k.Validate(s, v)
 	}
 	return v, err
 }
@@ -147,7 +147,7 @@ func SaveDefinition[T any](s *Store, k DefinitionKind[T], previous string, v T, 
 		}
 	}
 	if k.Validate != nil {
-		if err := k.Validate(s.root, v); err != nil {
+		if err := k.Validate(s, v); err != nil {
 			return err
 		}
 	}
