@@ -625,3 +625,22 @@ func unmarshalItem(data []byte, item *tree.Item) error {
 	*item = answer.Item
 	return nil
 }
+
+func TestSourceBrowsingRecoversWhenTreeIsInitialized(t *testing.T) {
+	root, scans := setup(t, false)
+	h := Handler(Settings{Root: root})
+	if files := source(t, h, scans); len(files) != 2 {
+		t.Fatalf("source files: %+v", files)
+	}
+	if state(t, h).Tree {
+		t.Fatal("uninitialized folder was a tree")
+	}
+	must(t, tree.Init(root, time.Now()))
+	after := state(t, h)
+	if !after.Tree || len(after.Templates) != 1 {
+		t.Fatalf("initialized state: %+v", after)
+	}
+	if files := source(t, h, scans); len(files) != 2 {
+		t.Fatalf("source files after init: %+v", files)
+	}
+}

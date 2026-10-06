@@ -36,7 +36,11 @@ func (s server) mergeSource(dir string) (merge.Source, string, error) {
 		return merge.Source{}, "", errors.New("that is this tree")
 	}
 	if _, err := os.Stat(filepath.Join(abs, tree.MarkerName)); err == nil {
-		src, err := merge.FromTree(abs)
+		sourceStore, err := tree.Open(abs)
+		if err != nil {
+			return merge.Source{}, "", err
+		}
+		src, err := merge.FromTree(sourceStore)
 		return src, "tree", err
 	}
 	if _, err := os.Stat(filepath.Join(abs, export.ManifestName)); err == nil {
@@ -56,7 +60,7 @@ func (s server) mergePlan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	plan, err := merge.ForStore(s.documents).Compute(src)
+	plan, err := merge.Compute(s.documents, src)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -79,12 +83,12 @@ func (s server) mergeRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	plan, err := merge.ForStore(s.documents).Compute(src)
+	plan, err := merge.Compute(s.documents, src)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	result, err := merge.ForStore(s.documents).Apply(context.WithoutCancel(r.Context()), src, plan, request.Choices, s.now())
+	result, err := merge.Apply(context.WithoutCancel(r.Context()), s.documents, src, plan, request.Choices, s.now())
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "result": result})
 		return

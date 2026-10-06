@@ -18,7 +18,7 @@ writing, renaming and trashing. Their YAML formats and folders remain the same.
 
 | Kind | Domain operations | Throw away |
 |---|---|---|
-| Template | `tree.LoadTemplates`, `tree.SaveTemplate` | `tree.TrashTemplate` |
+| Template | `Store.LoadTemplates`, `Store.SaveTemplate` | `Store.TrashTemplate` |
 | Outline | `outline.Load`, `outline.Save` | `outline.Trash` |
 | rule | `outline.LoadRules`, `outline.SaveRule` | `outline.TrashRule` |
 | Snapshot | `snapshot.Load`, `snapshot.Save` | `snapshot.Trash` |
@@ -53,9 +53,9 @@ type DefinitionKind[T any] struct {
 	// Name is a definition's name, which is its file's name.
 	Name func(T) string
 	// Validate refuses a definition that may not be saved.
-	Validate func(root string, v T) error
+	Validate func(store *tree.Store, v T) error
 	// Optional codecs retain legacy forms and typed YAML comments.
-	Decode func(root string, data []byte) (T, error)
+	Decode func(store *tree.Store, data []byte) (T, error)
 	Encode func(T) ([]byte, error)
 }
 
@@ -85,7 +85,9 @@ func TrashDefinition[T any](store *tree.Store, k DefinitionKind[T], name string,
   packages, built on the store.
 - **The store belongs to `tree.Store`.** The same value that places an Item's
   files ([Storage Layouts](layout.md)) reads and writes a tree's definitions,
-  so nothing outside `tree` joins a definition's path either.
+  so nothing outside `tree` joins a definition's path either. Domain storage
+  operations take `*tree.Store`, opened through `tree.Open`, and pass it into
+  the generic store and codecs rather than constructing one from a root.
 
 `DefinitionKind` is named this way because `tree.Kind` already names an Item's
 kind. Generic functions take the Store because Go methods cannot introduce

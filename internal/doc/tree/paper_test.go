@@ -16,7 +16,7 @@ func TestOnlyTheOwnerBeginsARevision(t *testing.T) {
 	item := importOne(t, root, "old.pdf", "%PDF old", map[string]string{"owner": "emma", "country": "AU"})
 	first := item.Head
 	rescan := write(t, filepath.Join(root, "rescan.pdf"), "%PDF rescan")
-	item, err := AddRevisionWithMetadata(context.Background(), root, item.ID, rescan, idCard(t, root), nil, RevisionMetadata{}, now.Add(time.Hour))
+	item, err := testStoreAt(root).AddRevisionWithMetadata(context.Background(), item.ID, rescan, idCard(t, root), nil, RevisionMetadata{}, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestOnlyTheOwnerBeginsARevision(t *testing.T) {
 		t.Fatalf("a rescan is a correction: papers %v of %d snapshots", got, len(item.Revisions))
 	}
 	renewed := write(t, filepath.Join(root, "new.pdf"), "%PDF new")
-	item, err = AddRevisionWithMetadata(context.Background(), root, item.ID, renewed, idCard(t, root), nil, RevisionMetadata{NewRevision: true}, now.Add(2*time.Hour))
+	item, err = testStoreAt(root).AddRevisionWithMetadata(context.Background(), item.ID, renewed, idCard(t, root), nil, RevisionMetadata{NewRevision: true}, now.Add(2*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,14 +33,14 @@ func TestOnlyTheOwnerBeginsARevision(t *testing.T) {
 	}
 	fields := maps.Clone(item.CurrentFields())
 	fields["country"] = "CN"
-	item, err = SetFields(root, item.ID, "", idCard(t, root), fields, now.Add(3*time.Hour))
+	item, err = testStoreAt(root).SetFields(item.ID, "", idCard(t, root), fields, now.Add(3*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if item.RevisionNumber(item.Head) != 2 || len(item.Papers()) != 2 {
 		t.Fatalf("an edit keeps its revision: number %d papers %v", item.RevisionNumber(item.Head), item.Papers())
 	}
-	again, err := GetItem(root, item.ID)
+	again, err := testStoreAt(root).GetItem(item.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,25 +55,25 @@ func TestMakeRevisionAndMakeCorrectionUndoEachOther(t *testing.T) {
 	root := newTree(t)
 	item := importOne(t, root, "old.pdf", "%PDF old", map[string]string{"owner": "emma", "country": "AU"})
 	rescan := write(t, filepath.Join(root, "rescan.pdf"), "%PDF rescan")
-	item, err := AddRevision(context.Background(), root, item.ID, rescan, idCard(t, root), nil, now.Add(time.Hour))
+	item, err := testStoreAt(root).AddRevision(context.Background(), item.ID, rescan, idCard(t, root), nil, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	second := item.Head
-	if _, err := MakeCorrection(root, item.ID, second, now); err == nil {
+	if _, err := testStoreAt(root).MakeCorrection(item.ID, second, now); err == nil {
 		t.Fatal("a correction made a correction again")
 	}
-	item, err = MakeRevision(root, item.ID, second, now.Add(2*time.Hour))
+	item, err = testStoreAt(root).MakeRevision(item.ID, second, now.Add(2*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(item.Papers()) != 2 || item.Head != second {
 		t.Fatalf("make revision: papers %v head %s", item.Papers(), item.Head)
 	}
-	if _, err := MakeCorrection(root, item.ID, item.Papers()[0], now); err == nil {
+	if _, err := testStoreAt(root).MakeCorrection(item.ID, item.Papers()[0], now); err == nil {
 		t.Fatal("the first revision joined none")
 	}
-	item, err = MakeCorrection(root, item.ID, second, now.Add(3*time.Hour))
+	item, err = testStoreAt(root).MakeCorrection(item.ID, second, now.Add(3*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}

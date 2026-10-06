@@ -19,7 +19,7 @@ func stored(t *testing.T, root, item, content string) string {
 	t.Helper()
 	sum := sha256.Sum256([]byte(content))
 	digest := hex.EncodeToString(sum[:])
-	path := tree.PDFPath(root, item, digest)
+	path := testStore(t, root).PDF(tree.Item{ID: item}, digest)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func exportAs(t *testing.T, root, target, name string, files []view.File, items 
 		t.Fatal(err)
 	}
 	if len(plan.Blocked) == 0 {
-		if _, err := Apply(context.Background(), root, target, []string{name}, plan, items, nil, nil); err != nil {
+		if _, err := Apply(context.Background(), testStore(t, root), target, []string{name}, plan, items, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -116,7 +116,7 @@ func TestPublishedCallbackOnlyForWrittenPDFs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = Apply(context.Background(), root, target, []string{"v"}, plan, items, nil, func(a Action) {
+		_, err = Apply(context.Background(), testStore(t, root), target, []string{"v"}, plan, items, nil, func(a Action) {
 			count++
 			if a.Item != "A" || a.Digest != digest {
 				t.Fatalf("callback: %+v", a)
@@ -147,7 +147,7 @@ func TestExportLeavesOtherFilesAlone(t *testing.T) {
 	if len(plan.Blocked) != 1 || read(t, filepath.Join(target, "b.pdf")) != "<missing>" {
 		t.Fatalf("blocked: %+v", plan)
 	}
-	if _, err := Apply(context.Background(), root, target, []string{"v"}, plan, items, nil, nil); err == nil {
+	if _, err := Apply(context.Background(), testStore(t, root), target, []string{"v"}, plan, items, nil, nil); err == nil {
 		t.Fatal("Apply wrote a blocked plan")
 	}
 
@@ -188,11 +188,11 @@ func TestExportAdoptsAnIdenticalFile(t *testing.T) {
 func TestCheckTarget(t *testing.T) {
 	root := t.TempDir()
 	for _, target := range []string{root, filepath.Join(root, "out"), filepath.Dir(root), "relative"} {
-		if CheckTarget(root, target) == nil {
+		if CheckTarget(testStore(t, root), target) == nil {
 			t.Errorf("%s accepted", target)
 		}
 	}
-	if err := CheckTarget(root, t.TempDir()); err != nil {
+	if err := CheckTarget(testStore(t, root), t.TempDir()); err != nil {
 		t.Error(err)
 	}
 }
@@ -280,7 +280,7 @@ func TestPlanJobsChecksEverythingFirst(t *testing.T) {
 	same := view.View{Name: "same", Node: view.Node{Selection: view.Head, File: "{owner}/id_card.{ext}"}}
 	google := filepath.Join(out, "google")
 	nested := filepath.Join(google, "inner")
-	plans, err := PlanJobs(context.Background(), root, []Job{
+	plans, err := PlanJobs(context.Background(), testStore(t, root), []Job{
 		{Name: "google", Path: google, Views: []view.View{ids, same}},
 		{Name: "inner", Path: nested, Views: []view.View{ids}},
 	}, items)
@@ -290,7 +290,7 @@ func TestPlanJobsChecksEverythingFirst(t *testing.T) {
 	if plans[0].Ready() || len(plans[0].Combined.Clashes) != 1 || len(plans[0].Problems) != 1 || len(plans[1].Problems) != 1 {
 		t.Fatalf("plans %+v", plans)
 	}
-	plans, _ = PlanJobs(context.Background(), root, []Job{{Name: "google", Path: google, Views: []view.View{ids}}}, items)
+	plans, _ = PlanJobs(context.Background(), testStore(t, root), []Job{{Name: "google", Path: google, Views: []view.View{ids}}}, items)
 	if !plans[0].Ready() || len(plans[0].Plan.Add) != 1 || plans[0].Plan.Add[0].View != "ids" {
 		t.Fatalf("plan %+v", plans[0])
 	}

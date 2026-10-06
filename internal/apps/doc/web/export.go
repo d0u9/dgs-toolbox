@@ -46,7 +46,7 @@ func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON
 	if !request.All && len(request.Outlines) == 0 {
 		return out, nil, http.StatusBadRequest, errors.New("name the Outlines to export")
 	}
-	outlines, err := outline.ForStore(s.documents).Load()
+	outlines, err := outline.Load(s.documents)
 	if err != nil {
 		return out, nil, http.StatusConflict, err
 	}
@@ -54,7 +54,7 @@ func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON
 	if request.All {
 		names = nil
 	}
-	snapshots, err := snapshot.ForStore(s.documents).Load()
+	snapshots, err := snapshot.Load(s.documents)
 	if err != nil {
 		return out, nil, http.StatusConflict, err
 	}
@@ -65,7 +65,7 @@ func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON
 	sources := export.FromOutlines(outlines, snapshots, items)
 	jobs, problems := export.Jobs(sources, request.Folders, home(), names)
 	out.Problems = append(out.Problems, problems...)
-	if out.Jobs, err = export.ForStore(s.documents).PlanJobs(ctx, jobs, items); err != nil {
+	if out.Jobs, err = export.PlanJobs(ctx, s.documents, jobs, items); err != nil {
 		return out, nil, http.StatusConflict, err
 	}
 	export.AgainstOthers(out.Jobs, Others(s.trees, s.root))
@@ -170,7 +170,7 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 // result, not as a failed export.
 func (s server) applyExport(r *http.Request, j export.JobPlan, items []tree.Item, progress, recording func(done, total int)) (exportResultJSON, error) {
 	var published []tree.Exported
-	result, err := export.ForStore(s.documents).Apply(context.WithoutCancel(r.Context()), j.Path, j.Views, j.Plan, items, progress,
+	result, err := export.Apply(context.WithoutCancel(r.Context()), s.documents, j.Path, j.Views, j.Plan, items, progress,
 		func(a export.Action) {
 			published = append(published, tree.Exported{Item: a.Item, Digest: a.Digest, Target: j.Path, View: a.View})
 		})

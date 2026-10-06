@@ -280,11 +280,11 @@ func (c Case) View() view.View {
 }
 
 // Path is where a Case's file is.
-func Path(root, name string) string { return tree.At(root).DefinitionPath(Dir, name) }
+func Path(st *tree.Store, name string) string { return st.DefinitionPath(Dir, name) }
 
 // Load reads every cases/*.yaml under root, open ones first, then by name.
-func Load(root string) ([]Case, error) {
-	out, err := tree.ListDefinitions(tree.At(root), definitionKind())
+func Load(st *tree.Store) ([]Case, error) {
+	out, err := tree.ListDefinitions(st, definitionKind())
 	if err != nil {
 		return nil, err
 	}
@@ -299,13 +299,13 @@ func Load(root string) ([]Case, error) {
 
 // ReadFile reads one Case file: it must parse, be valid, and be named for
 // its Case.
-func ReadFile(path string) (Case, error) {
-	return tree.ReadDefinitionFile(tree.At(""), definitionKind(), path)
+func ReadFile(st *tree.Store, path string) (Case, error) {
+	return tree.ReadDefinitionFile(st, definitionKind(), path)
 }
 
 // Find is the Case of that name.
-func Find(root, name string) (Case, error) {
-	all, err := Load(root)
+func Find(st *tree.Store, name string) (Case, error) {
+	all, err := Load(st)
 	if err != nil {
 		return Case{}, err
 	}
@@ -319,19 +319,19 @@ func Find(root, name string) (Case, error) {
 
 // Save writes a Case through a temporary file and a rename. A new Case
 // refuses a name another has.
-func Save(root string, c Case, create bool) error {
-	if err := tree.Require(root); err != nil {
+func Save(st *tree.Store, c Case, create bool) error {
+	if err := st.Require(); err != nil {
 		return err
 	}
 	previous := c.Name
 	if create {
 		previous = ""
 	}
-	return tree.SaveDefinition(tree.At(root), definitionKind(), previous, c, time.Time{})
+	return tree.SaveDefinition(st, definitionKind(), previous, c, time.Time{})
 }
 
 func definitionKind() tree.DefinitionKind[Case] {
-	return tree.DefinitionKind[Case]{Dir: Dir, Name: func(c Case) string { return c.Name }, Validate: func(_ string, c Case) error { return c.Validate() }, Decode: func(_ string, data []byte) (Case, error) {
+	return tree.DefinitionKind[Case]{Dir: Dir, Name: func(c Case) string { return c.Name }, Validate: func(_ *tree.Store, c Case) error { return c.Validate() }, Decode: func(_ *tree.Store, data []byte) (Case, error) {
 		var c Case
 		d := yaml.NewDecoder(bytes.NewReader(data))
 		d.KnownFields(true)
@@ -350,25 +350,25 @@ func definitionKind() tree.DefinitionKind[Case] {
 
 // SaveAs saves a draft Case, including renames. Closing and membership changes
 // use the Case's domain operations before saving.
-func SaveAs(root, previous string, c Case, now time.Time) error {
-	if err := tree.Require(root); err != nil {
+func SaveAs(st *tree.Store, previous string, c Case, now time.Time) error {
+	if err := st.Require(); err != nil {
 		return err
 	}
-	return tree.SaveDefinition(tree.At(root), definitionKind(), previous, c, now)
+	return tree.SaveDefinition(st, definitionKind(), previous, c, now)
 }
 
 // Trash moves a Case's file into the tree's trash, and answers where it went.
 // Its Items stay where they are.
-func Trash(root, name string, now time.Time) (string, error) {
-	if err := tree.Require(root); err != nil {
+func Trash(st *tree.Store, name string, now time.Time) (string, error) {
+	if err := st.Require(); err != nil {
 		return "", err
 	}
-	exists, err := tree.At(root).DefinitionExists(Dir, name)
+	exists, err := st.DefinitionExists(Dir, name)
 	if err != nil {
 		return "", err
 	}
 	if !exists {
 		return "", fmt.Errorf("no Case named %s", name)
 	}
-	return tree.TrashDefinition(tree.At(root), definitionKind(), name, now)
+	return tree.TrashDefinition(st, definitionKind(), name, now)
 }

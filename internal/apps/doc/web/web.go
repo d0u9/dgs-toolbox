@@ -139,6 +139,7 @@ type server struct {
 	keepOriginal bool
 	root         string
 	documents    *tree.Store
+	treeError    error
 	name         string
 	// trees are every tree served, this one too, so an export can check its
 	// Target against the others.
@@ -192,13 +193,12 @@ func Handler(settings Settings) http.Handler {
 	for _, t := range trees {
 		s := shared
 		s.root, s.name = t.Root, t.Name
-		s.documents, err = tree.Open(t.Root)
-		if err != nil {
-			s.documents = tree.At(t.Root)
+		s.documents, s.treeError = tree.Open(t.Root)
+		s.items = itemcache.New(s.documents, settings.CacheDir)
+		if s.documents != nil {
+			s.documents.UseForChecks(s.items.Items)
 		}
-		s.items = itemcache.New(t.Root, settings.CacheDir)
-		tree.UseForChecks(t.Root, s.items.Items)
-		apis[t.Name] = s.followWrites(s.api())
+		apis[t.Name] = s.apiWhenReady(settings.CacheDir)
 	}
 	first := trees[0].Name
 	mux := http.NewServeMux()
@@ -311,9 +311,9 @@ func pageHandler(files http.Handler, document string) http.Handler {
 func (s server) state(w http.ResponseWriter, _ *http.Request) {
 	out := stateJSON{KeepOriginal: s.keepOriginal, Root: s.root, Name: s.name, Trees: s.trees, Templates: []tree.Template{}, Items: []tree.Item{}}
 	var problems []string
-	if err := s.documents.Require(); err == nil {
+	if err := s.requireTree(); err == nil {
 		out.Tree = true
-		if out.Templates, err = s.documents.LoadTemplates(); err != nil {
+		if out.Templates, err = s.templates(); err != nil {
 			problems = append(problems, err.Error())
 			out.Templates = []tree.Template{}
 		}
@@ -580,7 +580,7 @@ func (s server) text(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out.Page, out.Count = page, count
-	if templates, err := s.documents.LoadTemplates(); err == nil {
+	if templates, err := s.templates(); err == nil {
 		read := ocr.Result{Pages: []ocr.Page{page}}
 		for kind, found := range suggest.All(templates, read.Text(), s.dateOrder) {
 			out.Suggestions[kind] = map[string]suggestion{}
@@ -737,7 +737,7 @@ func (s server) importPDF(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	templates, err := s.documents.LoadTemplates()
+	templates, err := s.templates()
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -902,7 +902,7 @@ func (s server) templateOfItem(id string) (tree.Template, error) {
 	if err != nil {
 		return tree.Template{}, err
 	}
-	templates, err := s.documents.LoadTemplates()
+	templates, err := s.templates()
 	if err != nil {
 		return tree.Template{}, err
 	}
@@ -983,7 +983,7 @@ func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 	t, err := s.templateOfItem(request.Item)
 	if item, loadErr := s.documents.GetItem(request.Item); loadErr == nil {
 		if rev, ok := item.Revision(request.Digest); ok && rev.Type != "" {
-			templates, loadErr := s.documents.LoadTemplates()
+			templates, loadErr := s.templates()
 			if loadErr != nil {
 				err = loadErr
 			} else {
@@ -1023,7 +1023,7 @@ func (s server) changeType(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	templates, err := s.documents.LoadTemplates()
+	templates, err := s.templates()
 	if err != nil {
 		answer(w, tree.Item{}, err)
 		return
@@ -1041,7 +1041,7 @@ func (s server) changeType(w http.ResponseWriter, r *http.Request) {
 // historyLog is what was done to the tree's Items, newest first: every Item's,
 // or with ?item= one Item's.
 func (s server) historyLog(w http.ResponseWriter, r *http.Request) {
-	if err := s.documents.Require(); err != nil {
+	if err := s.requireTree(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}

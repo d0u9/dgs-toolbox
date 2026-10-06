@@ -61,12 +61,12 @@ type Progress func(path string, done, total int)
 // Tree checks root. An error is returned only when the check itself cannot
 // run — no marker, Templates that do not load, a folder that cannot be read;
 // what is wrong with the tree is in the Report.
-func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
+func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error) {
 	var report Report
-	if err := tree.Require(root); err != nil {
+	if err := st.Require(); err != nil {
 		return report, err
 	}
-	templates, err := tree.LoadTemplates(root)
+	templates, err := st.LoadTemplates()
 	if err != nil {
 		return report, err
 	}
@@ -75,7 +75,7 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 		known[t.Type] = true
 	}
 	rel := func(p string) string {
-		r, err := filepath.Rel(root, p)
+		r, err := filepath.Rel(st.Root(), p)
 		if err != nil {
 			return p
 		}
@@ -85,7 +85,7 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 		report.Problems = append(report.Problems, Problem{Kind: kind, Path: rel(path), Detail: detail})
 	}
 
-	store := tree.At(root)
+	store := st
 	sidecars, err := store.Sidecars()
 	if err != nil {
 		return report, err
@@ -169,7 +169,7 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 			}
 		}
 	}
-	if err := loose(root, store, named, add); err != nil {
+	if err := loose(store, named, add); err != nil {
 		return report, err
 	}
 
@@ -192,7 +192,7 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 			add(Changed, r.path, "now hashes to "+short(digest))
 		}
 	}
-	if err := files(root, revisions, add); err != nil {
+	if err := files(st, revisions, add); err != nil {
 		return report, err
 	}
 	sort.SliceStable(report.Problems, func(i, j int) bool { return report.Problems[i].Path < report.Problems[j].Path })
@@ -201,19 +201,19 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 
 // loose reports the PDFs the layout places that no sidecar names, and an
 // Item's own folder with no sidecar in it.
-func loose(root string, store *tree.Store, named map[string]bool, add func(Kind, string, string)) error {
-	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+func loose(store *tree.Store, named map[string]bool, add func(Kind, string, string)) error {
+	return filepath.WalkDir(store.Root(), func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(root, p)
+		rel, err := filepath.Rel(store.Root(), p)
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			// A hidden folder is an import still being written; the trash
 			// is checked by no one.
-			if p != root && (strings.HasPrefix(d.Name(), ".") || rel == tree.TrashDir) {
+			if p != store.Root() && (strings.HasPrefix(d.Name(), ".") || rel == tree.TrashDir) {
 				return filepath.SkipDir
 			}
 			if folder, ok := store.Folder(d.Name()); ok && folder == p {
@@ -241,8 +241,8 @@ func short(digest string) string {
 // each must read on its own, and what it names must be in the tree. An
 // Outline naming a rule whose file does not read is reported as naming a
 // rule the tree lacks, beside that rule's own problem.
-func files(root string, revisions map[string]map[string]bool, add func(Kind, string, string)) error {
-	glob := func(dir string) ([]string, error) { return tree.At(root).DefinitionFiles(dir) }
+func files(st *tree.Store, revisions map[string]map[string]bool, add func(Kind, string, string)) error {
+	glob := func(dir string) ([]string, error) { return st.DefinitionFiles(dir) }
 	item := func(path, what, id, revision string) {
 		revs, ok := revisions[id]
 		switch {
@@ -259,7 +259,7 @@ func files(root string, revisions map[string]map[string]bool, add func(Kind, str
 	}
 	rules := map[string]view.View{}
 	for _, path := range paths {
-		r, err := outline.ReadRule(path)
+		r, err := outline.ReadRule(st, path)
 		if err != nil {
 			add(BadFile, path, strip(path, err))
 			continue
@@ -272,7 +272,7 @@ func files(root string, revisions map[string]map[string]bool, add func(Kind, str
 	}
 	snapshots := map[string]bool{}
 	for _, path := range paths {
-		s, err := snapshot.ReadFile(path)
+		s, err := snapshot.ReadFile(st, path)
 		if err != nil {
 			add(BadFile, path, strip(path, err))
 			continue
@@ -287,7 +287,7 @@ func files(root string, revisions map[string]map[string]bool, add func(Kind, str
 		return err
 	}
 	for _, path := range paths {
-		o, err := outline.ReadFile(path, rules)
+		o, err := outline.ReadFile(st, path, rules)
 		if err != nil {
 			add(BadFile, path, strip(path, err))
 			continue
@@ -303,7 +303,7 @@ func files(root string, revisions map[string]map[string]bool, add func(Kind, str
 		return err
 	}
 	for _, path := range paths {
-		c, err := cases.ReadFile(path)
+		c, err := cases.ReadFile(st, path)
 		if err != nil {
 			add(BadFile, path, strip(path, err))
 			continue

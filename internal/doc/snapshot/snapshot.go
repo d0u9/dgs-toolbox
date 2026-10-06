@@ -211,48 +211,48 @@ func Parse(data []byte) (Snapshot, error) {
 }
 
 // Path is where the Snapshot named name is kept.
-func Path(root, name string) string { return tree.At(root).DefinitionPath(Dir, name) }
+func Path(st *tree.Store, name string) string { return st.DefinitionPath(Dir, name) }
 
 // Load reads every snapshots/*.yaml under root, sorted by name.
-func Load(root string) ([]Snapshot, error) {
-	return tree.ListDefinitions(tree.At(root), definitionKind())
+func Load(st *tree.Store) ([]Snapshot, error) {
+	return tree.ListDefinitions(st, definitionKind())
 }
 
 // ReadFile reads one Snapshot file: it must parse, be valid, and be named
 // for its Snapshot.
-func ReadFile(path string) (Snapshot, error) {
-	return tree.ReadDefinitionFile(tree.At(""), definitionKind(), path)
+func ReadFile(st *tree.Store, path string) (Snapshot, error) {
+	return tree.ReadDefinitionFile(st, definitionKind(), path)
 }
 
 // Save writes s. Create refuses a name another Snapshot has, as does a
 // rename; a rule or an Outline may share it.
 // Previous, when it names another Snapshot, is moved to the trash after: package
 // outline renames it in the Outlines using it.
-func Save(root, previous string, s Snapshot, create bool, now time.Time) error {
+func Save(st *tree.Store, previous string, s Snapshot, create bool, now time.Time) error {
 	if create {
 		previous = ""
 	} else if previous == "" {
 		previous = s.Name
 	}
-	return tree.SaveDefinition(tree.At(root), definitionKind(), previous, s, now)
+	return tree.SaveDefinition(st, definitionKind(), previous, s, now)
 }
 
 func definitionKind() tree.DefinitionKind[Snapshot] {
-	return tree.DefinitionKind[Snapshot]{Dir: Dir, Validate: func(_ string, s Snapshot) error { return s.Validate() }, Name: func(s Snapshot) string { return s.Name }, Decode: func(_ string, data []byte) (Snapshot, error) { return Parse(data) }}
+	return tree.DefinitionKind[Snapshot]{Dir: Dir, Validate: func(_ *tree.Store, s Snapshot) error { return s.Validate() }, Name: func(s Snapshot) string { return s.Name }, Decode: func(_ *tree.Store, data []byte) (Snapshot, error) { return Parse(data) }}
 }
 
 // Trash moves a Snapshot's file into the tree's trash, and answers where it
 // went. Its Items stay where they are.
-func Trash(root, name string, now time.Time) (string, error) {
+func Trash(st *tree.Store, name string, now time.Time) (string, error) {
 	if !namePattern.MatchString(name) {
 		return "", fmt.Errorf("snapshot %q: not a snapshot name", name)
 	}
-	exists, err := tree.At(root).DefinitionExists(Dir, name)
+	exists, err := st.DefinitionExists(Dir, name)
 	if err != nil {
 		return "", err
 	}
 	if !exists {
 		return "", fmt.Errorf("no Snapshot named %s", name)
 	}
-	return tree.TrashDefinition(tree.At(root), definitionKind(), name, now)
+	return tree.TrashDefinition(st, definitionKind(), name, now)
 }

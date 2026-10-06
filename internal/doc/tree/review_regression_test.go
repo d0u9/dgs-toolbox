@@ -46,30 +46,30 @@ func scan(t *testing.T, content string) string {
 func TestRenewalCannotTakeAnotherDocumentsIdentity(t *testing.T) {
 	root, tpl := cardTree(t)
 	now := time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
-	if _, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "alex", "country": "AU", "number": "1"}, Now: now}); err != nil {
+	if _, err := testStore(t, root).CreateWithoutPDF(tree.ImportRequest{Template: tpl, Fields: map[string]string{"owner": "alex", "country": "AU", "number": "1"}, Now: now}); err != nil {
 		t.Fatal(err)
 	}
-	second, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "ann", "country": "AU", "number": "2"}, Now: now.Add(time.Second)})
+	second, err := testStore(t, root).CreateWithoutPDF(tree.ImportRequest{Template: tpl, Fields: map[string]string{"owner": "ann", "country": "AU", "number": "2"}, Now: now.Add(time.Second)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	second.Fields["owner"] = "alex"
 	second.Revisions[0].Fields["owner"] = "alex"
-	if err := tree.WriteItem(root, second); err != nil {
+	if err := testStore(t, root).WriteItem(second); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tree.AddWithoutPDF(root, second.ID, tpl, map[string]string{"number": "3"}, tree.RevisionMetadata{}, now.Add(time.Hour)); !errors.Is(err, tree.ErrTaken) {
+	if _, err := testStore(t, root).AddWithoutPDF(second.ID, tpl, map[string]string{"number": "3"}, tree.RevisionMetadata{}, now.Add(time.Hour)); !errors.Is(err, tree.ErrTaken) {
 		t.Fatalf("AddWithoutPDF: %v", err)
 	}
 	source := scan(t, "%PDF card 3")
-	if _, err := tree.AddRevision(context.Background(), root, second.ID, source, tpl, map[string]string{"number": "3"}, now.Add(time.Hour)); !errors.Is(err, tree.ErrTaken) {
+	if _, err := testStore(t, root).AddRevision(context.Background(), second.ID, source, tpl, map[string]string{"number": "3"}, now.Add(time.Hour)); !errors.Is(err, tree.ErrTaken) {
 		t.Fatalf("AddRevision: %v", err)
 	}
 	digest, err := tree.FileDigest(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(tree.PDFPath(root, second.ID, digest)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(testStore(t, root).PDF(tree.Item{ID: second.ID}, digest)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("refused revision left its PDF: %v", err)
 	}
 }
@@ -77,18 +77,18 @@ func TestRenewalCannotTakeAnotherDocumentsIdentity(t *testing.T) {
 func TestReturningToSnapshotKeepsItsRevisionTags(t *testing.T) {
 	root, tpl := cardTree(t)
 	now := time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
-	item, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: map[string]string{"owner": "alex", "country": "AU", "number": "1"}, Now: now})
+	item, err := testStore(t, root).CreateWithoutPDF(tree.ImportRequest{Template: tpl, Fields: map[string]string{"owner": "alex", "country": "AU", "number": "1"}, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := scan(t, "%PDF renewal")
-	item, err = tree.AddRevisionWithMetadata(context.Background(), root, item.ID, source, tpl, map[string]string{"number": "2"}, tree.RevisionMetadata{RevisionTags: []string{"original"}}, now.Add(time.Hour))
+	item, err = testStore(t, root).AddRevisionWithMetadata(context.Background(), item.ID, source, tpl, map[string]string{"number": "2"}, tree.RevisionMetadata{RevisionTags: []string{"original"}}, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ref := item.Current()
 	notes := "edited"
-	item, err = tree.AddRevisionWithMetadata(context.Background(), root, item.ID, source, tpl, map[string]string{"number": "2"}, tree.RevisionMetadata{Notes: &notes}, now.Add(2*time.Hour))
+	item, err = testStore(t, root).AddRevisionWithMetadata(context.Background(), item.ID, source, tpl, map[string]string{"number": "2"}, tree.RevisionMetadata{Notes: &notes}, now.Add(2*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestReturningToSnapshotKeepsItsRevisionTags(t *testing.T) {
 	if !slices.Equal(r.Tags, []string{"original"}) {
 		t.Fatalf("revision tags %v, want kept", r.Tags)
 	}
-	item, err = tree.AddRevisionWithMetadata(context.Background(), root, item.ID, source, tpl, map[string]string{"number": "2"}, tree.RevisionMetadata{RevisionTags: []string{"added"}}, now.Add(3*time.Hour))
+	item, err = testStore(t, root).AddRevisionWithMetadata(context.Background(), item.ID, source, tpl, map[string]string{"number": "2"}, tree.RevisionMetadata{RevisionTags: []string{"added"}}, now.Add(3*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,16 +112,16 @@ func TestReturningToSnapshotKeepsItsRevisionTags(t *testing.T) {
 func TestSnapshotsSharingPDFKeepTheirOwnTagsAndFields(t *testing.T) {
 	root, tpl := cardTree(t)
 	now := time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
-	item, err := tree.Import(context.Background(), tree.ImportRequest{Root: root, Template: tpl, Source: scan(t, "%PDF shared"), Fields: map[string]string{"owner": "alex", "country": "AU", "number": "1"}, Now: now})
+	item, err := testStore(t, root).Import(context.Background(), tree.ImportRequest{Template: tpl, Source: scan(t, "%PDF shared"), Fields: map[string]string{"owner": "alex", "country": "AU", "number": "1"}, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	first := item.Current()
 	pdf := item.CurrentDigest()
-	if _, err := tree.SetRevisionTags(root, item.ID, first, []string{"old-number"}, now.Add(time.Minute)); err != nil {
+	if _, err := testStore(t, root).SetRevisionTags(item.ID, first, []string{"old-number"}, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	item, err = tree.SetFields(root, item.ID, first, tpl, map[string]string{"owner": "alex", "country": "AU", "number": "9"}, now.Add(time.Hour))
+	item, err = testStore(t, root).SetFields(item.ID, first, tpl, map[string]string{"owner": "alex", "country": "AU", "number": "9"}, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,10 +147,10 @@ func TestSupersessionOwnerIgnoresSurroundingSpace(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := tree.Item{ID: "old", Type: "visa", Kind: tree.KindDocument, Fields: map[string]string{"owner": "alex ", "country": "AU"}}
-	if err := tree.WriteItem(root, old); err != nil {
+	if err := testStore(t, root).WriteItem(old); err != nil {
 		t.Fatal(err)
 	}
-	if err := tree.ValidateSupersession(root, "old", "visa", map[string]string{"owner": " alex", "country": "AU"}); err != nil {
+	if err := testStore(t, root).ValidateSupersession("old", "visa", map[string]string{"owner": " alex", "country": "AU"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -160,14 +160,14 @@ func TestCreateShared(t *testing.T) {
 	root, tpl := cardTree(t)
 	now := time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC)
 	fields := map[string]string{"owner": "alex", "country": "AU", "number": "1"}
-	if _, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: fields, SharedWith: []string{"Alex"}, Now: now}); err == nil {
+	if _, err := testStore(t, root).CreateWithoutPDF(tree.ImportRequest{Template: tpl, Fields: fields, SharedWith: []string{"Alex"}, Now: now}); err == nil {
 		t.Fatal("shared with its owner")
 	}
-	item, err := tree.CreateWithoutPDF(tree.ImportRequest{Root: root, Template: tpl, Fields: fields, SharedWith: []string{"emma", " ann ", "emma"}, Now: now})
+	item, err := testStore(t, root).CreateWithoutPDF(tree.ImportRequest{Template: tpl, Fields: fields, SharedWith: []string{"emma", " ann ", "emma"}, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := tree.FindItem(root, item.ID); strings.Join(got.SharedWith, ",") != "ann,emma" {
+	if got, _, _ := testStore(t, root).FindItem(item.ID); strings.Join(got.SharedWith, ",") != "ann,emma" {
 		t.Fatalf("shared with %v", got.SharedWith)
 	}
 }

@@ -2,6 +2,7 @@ package tree
 
 import (
 	"dgs-toolbox/internal/doc/country"
+
 	"fmt"
 	"regexp"
 	"slices"
@@ -389,8 +390,8 @@ func (t Template) Validate() error {
 // included, each resolved against those it extends, sorted by type. A file
 // whose name is not its type is refused: the name is how a person finds the
 // Template to edit.
-func LoadAllTemplates(root string) ([]Template, error) {
-	raw, err := loadRawTemplates(root)
+func (st *Store) LoadAllTemplates() ([]Template, error) {
+	raw, err := st.loadRawTemplates()
 	if err != nil {
 		return nil, err
 	}
@@ -398,15 +399,15 @@ func LoadAllTemplates(root string) ([]Template, error) {
 }
 
 // loadRawTemplates reads the Template files as written, unresolved.
-func loadRawTemplates(root string) ([]Template, error) {
-	return ListDefinitions(At(root), DefinitionKind[Template]{Dir: TemplatesDir, Name: func(t Template) string { return t.Type }, Decode: func(_ string, data []byte) (Template, error) { return ParseTemplate(data) }})
+func (st *Store) loadRawTemplates() ([]Template, error) {
+	return ListDefinitions(st, DefinitionKind[Template]{Dir: TemplatesDir, Name: func(t Template) string { return t.Type }, Decode: func(_ *Store, data []byte) (Template, error) { return ParseTemplate(data) }})
 
 }
 
 // LoadTemplates is every Template an Item can be of: LoadAllTemplates
 // without the abstract ones.
-func LoadTemplates(root string) ([]Template, error) {
-	all, err := LoadAllTemplates(root)
+func (st *Store) LoadTemplates() ([]Template, error) {
+	all, err := st.LoadAllTemplates()
 	if err != nil {
 		return nil, err
 	}

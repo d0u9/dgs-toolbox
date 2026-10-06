@@ -2,6 +2,7 @@ package tree
 
 import (
 	"crypto/rand"
+
 	"encoding/hex"
 	"errors"
 	"io/fs"
@@ -16,8 +17,8 @@ import (
 const ChangeMarkName = "dgs-doctree.changed"
 
 // ReadChangeMark is the token in root's change mark; none yet is "".
-func ReadChangeMark(root string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(root, ChangeMarkName))
+func (st *Store) ReadChangeMark() (string, error) {
+	data, err := os.ReadFile(filepath.Join(st.root, ChangeMarkName))
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	}
@@ -26,8 +27,8 @@ func ReadChangeMark(root string) (string, error) {
 
 // WriteChangeMark gives root's change mark a new random token, through a
 // temporary file and a rename, and returns it.
-func WriteChangeMark(root string) (string, error) {
-	if err := Require(root); err != nil {
+func (st *Store) WriteChangeMark() (string, error) {
+	if err := st.Require(); err != nil {
 		return "", err
 	}
 	var b [16]byte
@@ -35,11 +36,11 @@ func WriteChangeMark(root string) (string, error) {
 		return "", err
 	}
 	token := hex.EncodeToString(b[:])
-	return token, WriteFileAtomic(filepath.Join(root, ChangeMarkName), []byte(token+"\n"))
+	return token, WriteFileAtomic(filepath.Join(st.root, ChangeMarkName), []byte(token+"\n"))
 }
 
 // LoadItem reads the Item id's sidecar; none there is nil and no error.
-func LoadItem(root, id string) (*Item, error) { return loadItem(root, id) }
+func (st *Store) LoadItem(id string) (*Item, error) { return st.loadItem(id) }
 
 // Clone is a copy of i sharing no map or slice with it, so a caller may
 // change one without changing the other. A history event's own maps are

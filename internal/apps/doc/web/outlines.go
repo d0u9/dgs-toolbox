@@ -68,12 +68,12 @@ func (s server) outlineList(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	out.Keys = append(fields, out.Keys...)
-	entries, err := outline.ForStore(s.documents).Load()
+	entries, err := outline.Load(s.documents)
 	if err != nil {
 		out.Error = err.Error()
 	}
 	out.Rules, out.Used = []view.View{}, map[string][]string{}
-	if rules, used, err := outline.ForStore(s.documents).Rules(); err == nil {
+	if rules, used, err := outline.Rules(s.documents); err == nil {
 		out.Rules, out.Used = rules, used
 	}
 	for _, o := range entries {
@@ -166,7 +166,7 @@ func (s server) planning(w http.ResponseWriter, o *outline.Outline) (planned, bo
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return planned{}, false
 	}
-	snapshots, err := snapshot.ForStore(s.documents).Load()
+	snapshots, err := snapshot.Load(s.documents)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return planned{}, false
@@ -194,17 +194,17 @@ func (s server) outlineSave(w http.ResponseWriter, r *http.Request) {
 	s.writing.Lock()
 	defer s.writing.Unlock()
 	fail := func(err error) { writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()}) }
-	if err := outline.ForStore(s.documents).Fresh(request.Fresh); err != nil {
+	if err := outline.Fresh(s.documents, request.Fresh); err != nil {
 		fail(err)
 		return
 	}
 	for from, to := range request.Renamed {
-		if err := outline.ForStore(s.documents).RenameRule(from, to, time.Now()); err != nil {
+		if err := outline.RenameRule(s.documents, from, to, time.Now()); err != nil {
 			fail(err)
 			return
 		}
 	}
-	if err := outline.ForStore(s.documents).Save(request.Previous, request.Outline, time.Now()); err != nil {
+	if err := outline.Save(s.documents, request.Previous, request.Outline, time.Now()); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -224,7 +224,7 @@ func (s server) outlineDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	trash, err := outline.ForStore(s.documents).Trash(request.Name, time.Now())
+	trash, err := outline.Trash(s.documents, request.Name, time.Now())
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -280,7 +280,7 @@ func (s server) ruleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	trash, err := outline.ForStore(s.documents).TrashRule(request.Name, time.Now())
+	trash, err := outline.TrashRule(s.documents, request.Name, time.Now())
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -304,7 +304,7 @@ func (s server) ruleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	if err := outline.ForStore(s.documents).SaveRule(request.Previous, request.Rule, time.Now()); err != nil {
+	if err := outline.SaveRule(s.documents, request.Previous, request.Rule, time.Now()); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

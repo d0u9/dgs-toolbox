@@ -29,7 +29,8 @@ them only read, so the reading part can later be served on its own.
   sidecar write, retaining the existing history events and domain checks.
   HEAD remains its own endpoint. The former per-property endpoints are removed.
 - Handlers use a `tree.Store` opened once per tree, with domain operations
-  composed through it. Storage paths are owned by the Store; missing-marker
+  composed through it. Domain packages and the cache retain that same Store;
+  there is no unchecked root-based fallback. Storage paths are owned by the Store; missing-marker
   source browsing remains available, and writes still require the marker.
 - All five definition kinds use the shared [definition routes](definitions.md#web-routes).
 

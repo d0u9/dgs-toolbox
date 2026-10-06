@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+
 	"time"
 
 	"dgs-toolbox/internal/config"
@@ -25,13 +25,8 @@ func initAction(_ io.Reader, out io.Writer, args []string, _ map[string]string, 
 		}
 		root = wd
 	}
-	before, _ := tree.LoadTemplates(root)
-	if err := tree.Init(root, time.Now()); err != nil {
+	if err := tree.Init(root, time.Now(), func(path string) { fmt.Fprintf(out, "wrote  %s\n", path) }); err != nil {
 		return err
-	}
-	fmt.Fprintf(out, "wrote  %s\n", filepath.Join(root, tree.MarkerName))
-	if len(before) == 0 {
-		fmt.Fprintf(out, "wrote  %s\n", tree.At(root).DefinitionPath(tree.TemplatesDir, "id_card"))
 	}
 	fmt.Fprintf(out, "\n%s is a doc tree now. Nothing else in it was touched.\nImport PDFs with `dgs doc`.\n", root)
 	return nil

@@ -37,33 +37,33 @@ type Source struct {
 }
 
 // FromTree reads a tree to merge in.
-func FromTree(root string) (Source, error) {
-	if err := tree.Require(root); err != nil {
+func FromTree(st *tree.Store) (Source, error) {
+	if err := st.Require(); err != nil {
 		return Source{}, err
 	}
-	items, err := tree.LoadItems(root)
+	items, err := st.LoadItems()
 	if err != nil {
 		return Source{}, err
 	}
-	parsed, err := tree.LoadAllTemplates(root)
+	parsed, err := st.LoadAllTemplates()
 	if err != nil {
 		return Source{}, err
 	}
 	var templates []Template
 	for _, t := range parsed {
-		data, err := tree.At(root).DefinitionBytes(tree.TemplatesDir, t.Type)
+		data, err := st.DefinitionBytes(tree.TemplatesDir, t.Type)
 		if err != nil {
 			return Source{}, err
 		}
 		templates = append(templates, Template{t, data})
 	}
-	outlines, err := outline.Load(root)
+	outlines, err := outline.Load(st)
 	if err != nil {
 		return Source{}, err
 	}
 	return Source{Items: items, Templates: templates, Outlines: outlines,
-		Original: tree.At(root).OriginalPath,
-		PDF:      tree.At(root).PDF}, nil
+		Original: st.OriginalPath,
+		PDF:      st.PDF}, nil
 }
 
 // FromTarget reads a Target back through its manifest: an Item for every ID

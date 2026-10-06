@@ -35,7 +35,7 @@ func write(t *testing.T, path, content string) string {
 
 func idCard(t *testing.T, root string) Template {
 	t.Helper()
-	templates, err := LoadTemplates(root)
+	templates, err := testStoreAt(root).LoadTemplates()
 	if err != nil || len(templates) != 1 || templates[0].Type != "id_card" {
 		t.Fatalf("templates = %+v, %v", templates, err)
 	}
@@ -44,14 +44,14 @@ func idCard(t *testing.T, root string) Template {
 
 func TestInitWritesMarkerAndExampleOnce(t *testing.T) {
 	root := newTree(t)
-	if err := Require(root); err != nil {
+	if err := testStoreAt(root).Require(); err != nil {
 		t.Fatal(err)
 	}
 	idCard(t, root)
 	if err := Init(root, now); err == nil {
 		t.Fatal("second Init succeeded")
 	}
-	if err := Require(t.TempDir()); !errors.Is(err, ErrNotATree) {
+	if err := testStoreAt(t.TempDir()).Require(); !errors.Is(err, ErrNotATree) {
 		t.Fatalf("Require on a plain folder = %v", err)
 	}
 }
@@ -65,7 +65,7 @@ func TestLoadTemplatesRefusesBadOnes(t *testing.T) {
 	} {
 		root := t.TempDir()
 		write(t, filepath.Join(root, TemplatesDir, name), content)
-		if _, err := LoadTemplates(root); err == nil {
+		if _, err := testStoreAt(root).LoadTemplates(); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
@@ -74,8 +74,8 @@ func TestLoadTemplatesRefusesBadOnes(t *testing.T) {
 func TestImportMakesAnItemAndLeavesTheSource(t *testing.T) {
 	root := newTree(t)
 	source := write(t, filepath.Join(root, "scan.pdf"), "%PDF emma")
-	item, err := Import(context.Background(), ImportRequest{
-		Root: root, Source: source, Template: idCard(t, root), Now: now,
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{
+		Source: source, Template: idCard(t, root), Now: now,
 		Fields:       map[string]string{"owner": " emma ", "country": "AU", "number": ""},
 		Notes:        "  old card for records  ",
 		Tags:         []string{"Travel Plans", "travel-plans", "  visa  "},
@@ -99,17 +99,17 @@ func TestImportMakesAnItemAndLeavesTheSource(t *testing.T) {
 	if _, ok := item.Fields["number"]; ok {
 		t.Error("empty field kept")
 	}
-	if data, err := os.ReadFile(PDFPath(root, item.ID, item.CurrentDigest())); err != nil || string(data) != "%PDF emma" {
+	if data, err := os.ReadFile(testStoreAt(root).PDF(Item{ID: item.ID}, item.CurrentDigest())); err != nil || string(data) != "%PDF emma" {
 		t.Fatalf("stored PDF: %q %v", data, err)
 	}
 	if _, err := os.Stat(source); err != nil {
 		t.Fatal("source was touched")
 	}
-	items, err := LoadItems(root)
+	items, err := testStoreAt(root).LoadItems()
 	if err != nil || len(items) != 1 || items[0].ID != item.ID || items[0].Notes != item.Notes || strings.Join(items[0].Tags, ",") != strings.Join(item.Tags, ",") {
 		t.Fatalf("LoadItems = %+v, %v", items, err)
 	}
-	updated, err := SetTags(root, item.ID, []string{"Visa", "visa", "  archive "}, time.Now())
+	updated, err := testStoreAt(root).SetTags(item.ID, []string{"Visa", "visa", "  archive "}, time.Now())
 	if err != nil || strings.Join(updated.Tags, ",") != "visa,archive" {
 		t.Fatalf("SetTags = %+v, %v", updated.Tags, err)
 	}
@@ -119,7 +119,7 @@ func TestImportRefuses(t *testing.T) {
 	root := newTree(t)
 	tpl := idCard(t, root)
 	first := write(t, filepath.Join(root, "a.pdf"), "%PDF a")
-	if _, err := Import(context.Background(), ImportRequest{Root: root, Source: first, Template: tpl, Now: now,
+	if _, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: first, Template: tpl, Now: now,
 		Fields: map[string]string{"owner": "emma", "country": "AU"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -136,13 +136,13 @@ func TestImportRefuses(t *testing.T) {
 		{"unknown key", other, map[string]string{"owner": "alex", "country": "CN", "colour": "red"}, "no field colour"},
 	}
 	for _, c := range cases {
-		_, err := Import(context.Background(), ImportRequest{Root: root, Source: c.source, Template: tpl, Now: now, Fields: c.fields})
+		_, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: c.source, Template: tpl, Now: now, Fields: c.fields})
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
 		}
 	}
 	// A different country is a different document.
-	if _, err := Import(context.Background(), ImportRequest{Root: root, Source: other, Template: tpl, Now: now,
+	if _, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: other, Template: tpl, Now: now,
 		Fields: map[string]string{"owner": "emma", "country": "CN"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestImportRefuses(t *testing.T) {
 func TestImportNeedsATree(t *testing.T) {
 	root := t.TempDir()
 	source := write(t, filepath.Join(root, "a.pdf"), "x")
-	_, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: Template{Type: "x", Kind: KindRecord}, Now: now})
+	_, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: Template{Type: "x", Kind: KindRecord}, Now: now})
 	if !errors.Is(err, ErrNotATree) {
 		t.Fatalf("err = %v", err)
 	}
@@ -171,7 +171,7 @@ func TestNewIDIsAULID(t *testing.T) {
 func importOne(t *testing.T, root, name, content string, fields map[string]string) Item {
 	t.Helper()
 	source := write(t, filepath.Join(root, name), content)
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: idCard(t, root), Fields: fields, Now: now})
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: idCard(t, root), Fields: fields, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,28 +183,28 @@ func TestRevisionsMoveHeadAndBack(t *testing.T) {
 	item := importOne(t, root, "old.pdf", "%PDF old", map[string]string{"owner": "emma", "country": "AU"})
 	first := item.Head
 	renewed := write(t, filepath.Join(root, "new.pdf"), "%PDF new")
-	item, err := AddRevision(context.Background(), root, item.ID, renewed, idCard(t, root), nil, now.Add(time.Hour))
+	item, err := testStoreAt(root).AddRevision(context.Background(), item.ID, renewed, idCard(t, root), nil, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(item.Revisions) != 2 || item.Head == first || item.Head != item.Revisions[1].Ref() {
 		t.Fatalf("after adding: %+v", item)
 	}
-	if again, err := AddRevision(context.Background(), root, item.ID, renewed, idCard(t, root), nil, now); err != nil || len(again.Revisions) != 2 {
+	if again, err := testStoreAt(root).AddRevision(context.Background(), item.ID, renewed, idCard(t, root), nil, now); err != nil || len(again.Revisions) != 2 {
 		t.Fatalf("same PDF again: %v", err)
 	}
-	if item, err = SetHead(root, item.ID, first, time.Now()); err != nil || item.Head != first {
+	if item, err = testStoreAt(root).SetHead(item.ID, first, time.Now()); err != nil || item.Head != first {
 		t.Fatalf("SetHead: %+v %v", item, err)
 	}
-	loaded, _, _ := FindItem(root, item.ID)
+	loaded, _, _ := testStoreAt(root).FindItem(item.ID)
 	if loaded.Head != first || len(loaded.Revisions) != 2 {
 		t.Fatalf("on disk: %+v", loaded)
 	}
-	if _, err := SetHead(root, item.ID, "nope", time.Now()); err == nil {
+	if _, err := testStoreAt(root).SetHead(item.ID, "nope", time.Now()); err == nil {
 		t.Fatal("HEAD moved to a digest that is not a revision")
 	}
 	for _, r := range loaded.Revisions {
-		if _, err := os.Stat(PDFPath(root, item.ID, r.Digest)); err != nil {
+		if _, err := os.Stat(testStoreAt(root).PDF(Item{ID: item.ID}, r.Digest)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -213,17 +213,17 @@ func TestRevisionsMoveHeadAndBack(t *testing.T) {
 func TestRecordsDoNotAcceptRenewals(t *testing.T) {
 	root := newTree(t)
 	write(t, filepath.Join(root, TemplatesDir, "payslip.yaml"), "type: payslip\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n")
-	templates, _ := LoadTemplates(root)
+	templates, _ := testStoreAt(root).LoadTemplates()
 	source := write(t, filepath.Join(root, "p.pdf"), "%PDF p")
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: templates[1], Fields: map[string]string{"owner": "emma", "country": "AU"}, Now: now})
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: templates[1], Fields: map[string]string{"owner": "emma", "country": "AU"}, Now: now})
 	if err != nil || item.Head == "" {
 		t.Fatalf("%+v %v", item, err)
 	}
 	other := write(t, filepath.Join(root, "q.pdf"), "%PDF q")
-	if _, err := AddRevision(context.Background(), root, item.ID, other, templates[1], nil, now); err == nil {
+	if _, err := testStoreAt(root).AddRevision(context.Background(), item.ID, other, templates[1], nil, now); err == nil {
 		t.Fatal("record took a revision")
 	}
-	if _, err := SetHead(root, item.ID, item.Revisions[0].Ref(), time.Now()); err != nil {
+	if _, err := testStoreAt(root).SetHead(item.ID, item.Revisions[0].Ref(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -233,14 +233,14 @@ func TestSetFieldsKeepsDocumentsDistinct(t *testing.T) {
 	au := importOne(t, root, "au.pdf", "%PDF au", map[string]string{"owner": "emma", "country": "AU"})
 	importOne(t, root, "cn.pdf", "%PDF cn", map[string]string{"owner": "emma", "country": "CN"})
 	tpl := idCard(t, root)
-	if _, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "emma", "country": "CN"}, time.Now()); !errors.Is(err, ErrTaken) {
+	if _, err := testStoreAt(root).SetFields(au.ID, "", tpl, map[string]string{"owner": "emma", "country": "CN"}, time.Now()); !errors.Is(err, ErrTaken) {
 		t.Fatalf("clash: %v", err)
 	}
-	item, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "emma", "country": "AU", "number": "123"}, time.Now())
+	item, err := testStoreAt(root).SetFields(au.ID, "", tpl, map[string]string{"owner": "emma", "country": "AU", "number": "123"}, time.Now())
 	if err != nil || item.CurrentFields()["number"] != "123" {
 		t.Fatalf("%+v %v", item, err)
 	}
-	if _, err := SetFields(root, au.ID, "", tpl, map[string]string{"owner": "emma"}, time.Now()); err == nil {
+	if _, err := testStoreAt(root).SetFields(au.ID, "", tpl, map[string]string{"owner": "emma"}, time.Now()); err == nil {
 		t.Fatal("required field dropped")
 	}
 }
@@ -288,7 +288,7 @@ func TestItemLinksAndNotes(t *testing.T) {
 	}}
 	add := func(owner, previous string) (Item, error) {
 		source := write(t, filepath.Join(t.TempDir(), "p.pdf"), "%PDF "+owner)
-		return Import(context.Background(), ImportRequest{Root: root, Source: source, Template: tpl, Now: now,
+		return testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: tpl, Now: now,
 			Fields: map[string]string{"owner": owner, "previous": previous}})
 	}
 	old, err := add("emma", "")
@@ -302,14 +302,14 @@ func TestItemLinksAndNotes(t *testing.T) {
 	if err != nil || current.Fields["previous"] != old.ID {
 		t.Fatal(err, current)
 	}
-	if _, err := SetFields(root, current.ID, "", tpl, map[string]string{"owner": "ann", "previous": current.ID}, time.Now()); err == nil {
+	if _, err := testStoreAt(root).SetFields(current.ID, "", tpl, map[string]string{"owner": "ann", "previous": current.ID}, time.Now()); err == nil {
 		t.Fatal("self link accepted")
 	}
-	noted, err := SetNotes(root, old.ID, "  expired; kept for the visa file \n", time.Now())
+	noted, err := testStoreAt(root).SetNotes(old.ID, "  expired; kept for the visa file \n", time.Now())
 	if err != nil || noted.Notes != "expired; kept for the visa file" {
 		t.Fatal(err, noted.Notes)
 	}
-	again, _, _ := FindItem(root, old.ID)
+	again, _, _ := testStoreAt(root).FindItem(old.ID)
 	if again.Notes != noted.Notes {
 		t.Fatal("notes not written")
 	}
@@ -322,26 +322,26 @@ func TestTrashMovesTheItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	item := Item{ID: "A", Type: "id_card", Kind: KindRecord, Revisions: []Revision{{Digest: "d"}}}
-	if err := os.MkdirAll(Dir(root, "A"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(testStoreAt(root).Sidecar("A")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(PDFPath(root, "A", "d"), []byte("pdf"), 0o644); err != nil {
+	if err := os.WriteFile(testStoreAt(root).PDF(Item{ID: "A"}, "d"), []byte("pdf"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteItem(root, item); err != nil {
+	if err := testStoreAt(root).WriteItem(item); err != nil {
 		t.Fatal(err)
 	}
-	to, err := Trash(root, "A", now)
+	to, err := testStoreAt(root).Trash("A", now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if data, err := os.ReadFile(filepath.Join(to, "d.pdf")); err != nil || string(data) != "pdf" {
 		t.Fatalf("trashed PDF: %v %q", err, data)
 	}
-	if items, err := LoadItems(root); err != nil || len(items) != 0 {
+	if items, err := testStoreAt(root).LoadItems(); err != nil || len(items) != 0 {
 		t.Fatalf("items after trash: %v %+v", err, items)
 	}
-	if _, err := Trash(root, "A", now); err == nil {
+	if _, err := testStoreAt(root).Trash("A", now); err == nil {
 		t.Fatal("trashed an Item that is gone")
 	}
 }
@@ -349,18 +349,18 @@ func TestTrashMovesTheItem(t *testing.T) {
 func TestTrashRevisionMovesPDFAndUpdatesHead(t *testing.T) {
 	root := newTree(t)
 	item := Item{ID: "A", Type: "card", Kind: KindDocument, Head: "new", Revisions: []Revision{{Digest: "old"}, {Digest: "new"}}}
-	if err := WriteItem(root, item); err != nil {
+	if err := testStoreAt(root).WriteItem(item); err != nil {
 		t.Fatal(err)
 	}
 	for _, digest := range []string{"old", "new"} {
-		if err := os.WriteFile(PDFPath(root, "A", digest), []byte(digest), 0o644); err != nil {
+		if err := os.WriteFile(testStoreAt(root).PDF(Item{ID: "A"}, digest), []byte(digest), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := TrashRevision(root, "A", "missing", now); err == nil {
+	if _, _, err := testStoreAt(root).TrashRevision("A", "missing", now); err == nil {
 		t.Fatal("missing revision accepted")
 	}
-	updated, to, err := TrashRevision(root, "A", "new", now)
+	updated, to, err := testStoreAt(root).TrashRevision("A", "new", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,13 +373,13 @@ func TestTrashRevisionMovesPDFAndUpdatesHead(t *testing.T) {
 	if data, err := os.ReadFile(to); err != nil || string(data) != "new" {
 		t.Fatalf("trash: %q %v", data, err)
 	}
-	if _, err := os.Stat(PDFPath(root, "A", "new")); !os.IsNotExist(err) {
+	if _, err := os.Stat(testStoreAt(root).PDF(Item{ID: "A"}, "new")); !os.IsNotExist(err) {
 		t.Fatalf("source PDF: %v", err)
 	}
-	if saved, _, err := FindItem(root, "A"); err != nil || saved.Head != "old" || len(saved.Revisions) != 1 {
+	if saved, _, err := testStoreAt(root).FindItem("A"); err != nil || saved.Head != "old" || len(saved.Revisions) != 1 {
 		t.Fatalf("saved: %+v %v", saved, err)
 	}
-	if _, _, err := TrashRevision(root, "A", "old", now); err == nil {
+	if _, _, err := testStoreAt(root).TrashRevision("A", "old", now); err == nil {
 		t.Fatal("last revision deleted")
 	}
 }
@@ -397,7 +397,7 @@ func TestPerRevisionFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := write(t, filepath.Join(root, "old.pdf"), "%PDF old")
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: old, Template: tpl, Now: now,
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: old, Template: tpl, Now: now,
 		Fields: map[string]string{"owner": "emma", "country": "AU", "number": "111", "expires": "2020", "note": "x"}})
 	if err != nil {
 		t.Fatal(err)
@@ -406,13 +406,13 @@ func TestPerRevisionFields(t *testing.T) {
 		t.Fatalf("import split: %+v", item)
 	}
 	renewed := write(t, filepath.Join(root, "new.pdf"), "%PDF new")
-	if _, err := AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"expires": "2030"}, now); err == nil {
+	if _, err := testStoreAt(root).AddRevision(context.Background(), item.ID, renewed, tpl, map[string]string{"expires": "2030"}, now); err == nil {
 		t.Fatal("a revision without its required number was added")
 	}
-	if _, err := AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"number": "222", "owner": "tom", "country": "AU"}, now); err == nil {
+	if _, err := testStoreAt(root).AddRevision(context.Background(), item.ID, renewed, tpl, map[string]string{"number": "222", "owner": "tom", "country": "AU"}, now); err == nil {
 		t.Fatal("a revision changed the Item's own field")
 	}
-	item, err = AddRevision(context.Background(), root, item.ID, renewed, tpl, map[string]string{"number": "222", "expires": "2030"}, now)
+	item, err = testStoreAt(root).AddRevision(context.Background(), item.ID, renewed, tpl, map[string]string{"number": "222", "expires": "2030"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func TestPerRevisionFields(t *testing.T) {
 		t.Fatalf("old card: %v", got)
 	}
 	// Editing an old snapshot creates a new HEAD and preserves both old cards.
-	item, err = SetFields(root, item.ID, first, tpl, map[string]string{"owner": "emma", "country": "AU", "number": "110", "note": "y"}, time.Now())
+	item, err = testStoreAt(root).SetFields(item.ID, first, tpl, map[string]string{"owner": "emma", "country": "AU", "number": "110", "note": "y"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,13 +444,13 @@ func TestPerRevisionFields(t *testing.T) {
 func TestRecordExportsWritesEachItemOnce(t *testing.T) {
 	root := newTree(t)
 	for _, id := range []string{"A", "B"} {
-		if err := WriteItem(root, Item{ID: id, Type: "card", Kind: KindDocument}); err != nil {
+		if err := testStoreAt(root).WriteItem(Item{ID: id, Type: "card", Kind: KindDocument}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	var steps [][2]int
-	err := RecordExports(root, []Exported{
+	err := testStoreAt(root).RecordExports([]Exported{
 		{Item: "A", Digest: "a1", Target: "/t", View: "v"},
 		{Item: "A", Digest: "a2", Target: "/t", View: "w"},
 		{Item: "B", Digest: "b1", Target: "/t", View: "v"},
@@ -462,8 +462,8 @@ func TestRecordExportsWritesEachItemOnce(t *testing.T) {
 	if !slices.Equal(steps, [][2]int{{1, 2}, {2, 2}}) {
 		t.Fatalf("progress = %v, want one step per Item written", steps)
 	}
-	a, _, _ := FindItem(root, "A")
-	b, _, _ := FindItem(root, "B")
+	a, _, _ := testStoreAt(root).FindItem("A")
+	b, _, _ := testStoreAt(root).FindItem("B")
 	if len(a.History) != 2 || a.History[1].Digest != "a2" || a.History[1].View != "w" || len(b.History) != 1 || b.History[0].Action != "export" {
 		t.Fatalf("A %+v, B %+v", a.History, b.History)
 	}
@@ -482,16 +482,16 @@ func TestInsertByTimeKeepsHistoryOrdered(t *testing.T) {
 
 func TestSetFrequentRecordsOnlyChanges(t *testing.T) {
 	root := newTree(t)
-	if err := WriteItem(root, Item{ID: "A", Type: "card", Kind: KindDocument}); err != nil {
+	if err := testStoreAt(root).WriteItem(Item{ID: "A", Type: "card", Kind: KindDocument}); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	for _, on := range []bool{true, true, false} {
-		if _, err := SetFrequent(root, "A", on, at); err != nil {
+		if _, err := testStoreAt(root).SetFrequent("A", on, at); err != nil {
 			t.Fatal(err)
 		}
 	}
-	item, _, _ := FindItem(root, "A")
+	item, _, _ := testStoreAt(root).FindItem("A")
 	if item.Frequent || len(item.History) != 2 || item.History[0].Action != "mark_frequent" || item.History[1].Action != "unmark_frequent" {
 		t.Fatalf("item: %+v", item)
 	}
@@ -522,7 +522,7 @@ func TestLogIsNewestFirstAcrossItems(t *testing.T) {
 
 func TestSetRetiredKeepsReasonAndHistory(t *testing.T) {
 	root := newTree(t)
-	if err := WriteItem(root, Item{ID: "A", Type: "card", Kind: KindDocument}); err != nil {
+	if err := testStoreAt(root).WriteItem(Item{ID: "A", Type: "card", Kind: KindDocument}); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
@@ -531,11 +531,11 @@ func TestSetRetiredKeepsReasonAndHistory(t *testing.T) {
 		reason  string
 	}{{true, " left the company "}, {true, "left the company"}, {true, "moved away"}, {false, "ignored"}}
 	for _, step := range steps {
-		if _, err := SetRetired(root, "A", step.retired, step.reason, at); err != nil {
+		if _, err := testStoreAt(root).SetRetired("A", step.retired, step.reason, at); err != nil {
 			t.Fatal(err)
 		}
 	}
-	item, _, _ := FindItem(root, "A")
+	item, _, _ := testStoreAt(root).FindItem("A")
 	var actions []string
 	for _, e := range item.History {
 		actions = append(actions, e.Action)
@@ -550,25 +550,25 @@ func TestSetRetiredKeepsReasonAndHistory(t *testing.T) {
 
 func TestSetSharedWith(t *testing.T) {
 	root := newTree(t)
-	if err := WriteItem(root, Item{ID: "A", Type: "letter", Kind: KindRecord, Fields: map[string]string{"owner": "alex"}}); err != nil {
+	if err := testStoreAt(root).WriteItem(Item{ID: "A", Type: "letter", Kind: KindRecord, Fields: map[string]string{"owner": "alex"}}); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
-	if _, err := SetSharedWith(root, "A", []string{"Alex"}, at); err == nil {
+	if _, err := testStoreAt(root).SetSharedWith("A", []string{"Alex"}, at); err == nil {
 		t.Fatal("shared with its owner")
 	}
 	for _, people := range [][]string{{" tom ", "emma", "tom", ""}, {"emma", "tom"}, nil} {
-		if _, err := SetSharedWith(root, "A", people, at); err != nil {
+		if _, err := testStoreAt(root).SetSharedWith("A", people, at); err != nil {
 			t.Fatal(err)
 		}
 		if people != nil {
-			item, _, _ := FindItem(root, "A")
+			item, _, _ := testStoreAt(root).FindItem("A")
 			if strings.Join(item.SharedWith, ",") != "emma,tom" {
 				t.Fatalf("shared with %v", item.SharedWith)
 			}
 		}
 	}
-	item, _, _ := FindItem(root, "A")
+	item, _, _ := testStoreAt(root).FindItem("A")
 	// The same people again are no change.
 	if item.SharedWith != nil || len(item.History) != 2 || item.History[1].Changes["shared_with"] != [2]string{"emma, tom", ""} {
 		t.Fatalf("item %+v", item)
@@ -579,11 +579,11 @@ func TestRevisionTagsAreTheRevisionsOwn(t *testing.T) {
 	root := newTree(t)
 	item := Item{ID: "A", Type: "card", Kind: KindDocument, Tags: []string{"home"}, Head: "y",
 		Revisions: []Revision{{Digest: "x"}, {Digest: "y"}}}
-	if err := WriteItem(root, item); err != nil {
+	if err := testStoreAt(root).WriteItem(item); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
-	got, err := SetRevisionTags(root, "A", "x", []string{"Reissued", "reissued", "home"}, at)
+	got, err := testStoreAt(root).SetRevisionTags("A", "x", []string{"Reissued", "reissued", "home"}, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +596,7 @@ func TestRevisionTagsAreTheRevisionsOwn(t *testing.T) {
 	if len(got.History) != 1 || got.History[0].Action != "edit_revision_tags" || got.History[0].Digest != "x" {
 		t.Fatalf("history: %+v", got.History)
 	}
-	if _, err := SetRevisionTags(root, "A", "nope", nil, at); err == nil {
+	if _, err := testStoreAt(root).SetRevisionTags("A", "nope", nil, at); err == nil {
 		t.Fatal("unknown revision accepted")
 	}
 }
@@ -640,7 +640,7 @@ func TestRevisionLink(t *testing.T) {
 		{Key: "original", Type: FieldRevision, Match: map[string]string{"type": "of"}},
 	}}
 	source := write(t, filepath.Join(t.TempDir(), "l.pdf"), "%PDF licence")
-	original, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: licence, Now: now,
+	original, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: licence, Now: now,
 		Fields: map[string]string{"owner": "emma"}})
 	if err != nil {
 		t.Fatal(err)
@@ -648,7 +648,7 @@ func TestRevisionLink(t *testing.T) {
 	ref := original.Revisions[0].Ref()
 	add := func(owner, value string) error {
 		source := write(t, filepath.Join(t.TempDir(), "t.pdf"), "%PDF translation "+owner)
-		_, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: translation, Now: now,
+		_, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: translation, Now: now,
 			Fields: map[string]string{"owner": owner, "original": value}})
 		return err
 	}
@@ -658,7 +658,7 @@ func TestRevisionLink(t *testing.T) {
 		}
 	}
 	source = write(t, filepath.Join(t.TempDir(), "w.pdf"), "%PDF wrong type")
-	if _, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: translation, Now: now,
+	if _, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: translation, Now: now,
 		Fields: map[string]string{"owner": "bob", "of": "diploma", "original": original.ID + "@" + ref}}); err == nil {
 		t.Error("an original of another type than of accepted")
 	}

@@ -115,18 +115,18 @@ func TestSaveLoadTrash(t *testing.T) {
 	a, _ := New("a", "", now)
 	_ = b.Archive(nil, now)
 	for _, c := range []Case{b, a} {
-		if err := Save(root, c, true); err != nil {
+		if err := Save(testStore(t, root), c, true); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := Save(root, a, true); err == nil {
+	if err := Save(testStore(t, root), a, true); err == nil {
 		t.Fatal("a second Case took a name")
 	}
-	all, err := Load(root)
+	all, err := Load(testStore(t, root))
 	if err != nil || len(all) != 2 || all[0].Name != "a" || all[1].Name != "b" {
 		t.Fatalf("open first: %v %v", all, err)
 	}
-	to, err := Trash(root, "a", now)
+	to, err := Trash(testStore(t, root), "a", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,25 +147,25 @@ func TestSaveAsRenamePreservesOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Save(root, c, true); err != nil {
+	if err := Save(testStore(t, root), c, true); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.ReadFile(Path(root, "alice"))
+	before, err := os.ReadFile(Path(testStore(t, root), "alice"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	c.Name = "bob"
-	if err := SaveAs(root, "alice", c, now); err != nil {
+	if err := SaveAs(testStore(t, root), "alice", c, now); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(root, tree.TrashDir, Dir, "alice-"+now.UTC().Format("20060102T150405Z")+".yaml"))
 	if err != nil || string(got) != string(before) {
 		t.Fatalf("trash bytes = %q, %v", got, err)
 	}
-	if _, err := os.Stat(Path(root, "alice")); !os.IsNotExist(err) {
+	if _, err := os.Stat(Path(testStore(t, root), "alice")); !os.IsNotExist(err) {
 		t.Fatal("source remains")
 	}
-	if _, err := Find(root, "bob"); err != nil {
+	if _, err := Find(testStore(t, root), "bob"); err != nil {
 		t.Fatal(err)
 	}
 }

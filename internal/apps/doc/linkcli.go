@@ -34,11 +34,16 @@ func linkAction(_ io.Reader, out io.Writer, args []string, flags map[string]stri
 		}
 		root = wd
 	}
-	templates, err := tree.LoadTemplates(root)
+	store, err := tree.Open(root)
 	if err != nil {
 		return err
 	}
-	items, err := tree.LoadItems(root)
+
+	templates, err := store.LoadTemplates()
+	if err != nil {
+		return err
+	}
+	items, err := store.LoadItems()
 	if err != nil {
 		return err
 	}
@@ -82,12 +87,12 @@ func linkAction(_ io.Reader, out io.Writer, args []string, flags map[string]stri
 	}
 	// Written or partly written, the tree has changed: a page's cache of it
 	// looks again.
-	defer tree.WriteChangeMark(root)
+	defer store.WriteChangeMark()
 	for i, p := range proposals {
 		it := byID[p.Item]
 		fields := it.FieldsAt(it.Current())
 		fields[p.Key] = p.Link
-		if _, err := tree.SetFields(root, it.ID, it.Current(), byType[it.Type], fields, time.Now()); err != nil {
+		if _, err := store.SetFields(it.ID, it.Current(), byType[it.Type], fields, time.Now()); err != nil {
 			return fmt.Errorf("%s: %w (%d of %d written)", it.ID, err, i, len(proposals))
 		}
 	}

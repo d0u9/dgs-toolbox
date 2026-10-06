@@ -38,11 +38,16 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		}
 		root = wd
 	}
-	outlines, err := outline.Load(root)
+	store, err := tree.Open(root)
 	if err != nil {
 		return err
 	}
-	items, err := tree.LoadItems(root)
+
+	outlines, err := outline.Load(store)
+	if err != nil {
+		return err
+	}
+	items, err := store.LoadItems()
 	if err != nil {
 		return err
 	}
@@ -51,13 +56,13 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 		return err
 	}
 	home, _ := os.UserHomeDir()
-	snapshots, err := snapshot.Load(root)
+	snapshots, err := snapshot.Load(store)
 	if err != nil {
 		return err
 	}
 	sources := export.FromOutlines(outlines, snapshots, items)
 	jobs, problems := export.Jobs(sources, chosen, home, args)
-	plans, err := export.PlanJobs(context.Background(), root, jobs, items)
+	plans, err := export.PlanJobs(context.Background(), store, jobs, items)
 	if err != nil {
 		return err
 	}
@@ -82,14 +87,14 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 	}
 	// Recording exports writes Items' history: a page's cache of the tree
 	// looks again.
-	defer tree.WriteChangeMark(root)
+	defer store.WriteChangeMark()
 	for _, j := range plans {
 		var published []tree.Exported
-		result, err := export.Apply(context.Background(), root, j.Path, j.Views, j.Plan, items, nil,
+		result, err := export.Apply(context.Background(), store, j.Path, j.Views, j.Plan, items, nil,
 			func(a export.Action) {
 				published = append(published, tree.Exported{Item: a.Item, Digest: a.Digest, Target: j.Path, View: a.View})
 			})
-		if recordErr := tree.RecordExports(root, published, time.Now(), nil); recordErr != nil {
+		if recordErr := store.RecordExports(published, time.Now(), nil); recordErr != nil {
 			fmt.Fprintf(out, "%s: the files are written, but their history was not recorded: %v\n", j.Name, recordErr)
 		}
 		if err != nil {

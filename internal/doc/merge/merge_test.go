@@ -66,10 +66,10 @@ func put(t *testing.T, root string, item tree.Item, contents ...string) tree.Ite
 	for _, c := range contents {
 		sum := sha256.Sum256([]byte(c))
 		d := hex.EncodeToString(sum[:])
-		if err := os.MkdirAll(tree.Dir(root, item.ID), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(testStore(t, root).Sidecar(item.ID)), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(tree.PDFPath(root, item.ID, d), []byte(c), 0o644); err != nil {
+		if err := os.WriteFile(testStore(t, root).PDF(tree.Item{ID: item.ID}, d), []byte(c), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		item.Revisions = append(item.Revisions, tree.Revision{Digest: d, Added: now.Format(time.RFC3339)})
@@ -77,7 +77,7 @@ func put(t *testing.T, root string, item tree.Item, contents ...string) tree.Ite
 	if item.Kind == tree.KindDocument {
 		item.Head = item.Revisions[len(item.Revisions)-1].Digest
 	}
-	if err := tree.WriteItem(root, item); err != nil {
+	if err := testStore(t, root).WriteItem(item); err != nil {
 		t.Fatal(err)
 	}
 	return item
@@ -90,7 +90,7 @@ func digest(c string) string {
 
 func plan(t *testing.T, root string, src Source) Plan {
 	t.Helper()
-	p, err := Compute(root, src)
+	p, err := Compute(testStore(t, root), src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func plan(t *testing.T, root string, src Source) Plan {
 
 func source(t *testing.T, root string) Source {
 	t.Helper()
-	src, err := FromTree(root)
+	src, err := FromTree(testStore(t, root))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "EMMA"}, Notes: "renewed in Sydney", Tags: []string{"travel"}, SharedWith: []string{"amy", "tom", "emma"}, Frequent: true, Retired: true, RetiredReason: "moved"}, "new passport")
 	put(t, sub, tree.Item{ID: "S2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"}}, "bill 1")
 	put(t, sub, tree.Item{ID: "S3", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom"}}, "bill 2")
-	if err := outline.Save(sub, "", outline.Outline{Name: "all", Rules: []view.View{{Name: "all", Node: view.Node{Selection: view.Head, File: "{owner}/{type}.{ext}"}}}}, time.Now()); err != nil {
+	if err := outline.Save(testStore(t, sub), "", outline.Outline{Name: "all", Rules: []view.View{{Name: "all", Node: view.Node{Selection: view.Head, File: "{owner}/{type}.{ext}"}}}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,17 +132,17 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	if len(p.Conflicts) != 1 || p.Conflicts[0].ID != "fields:F1" {
 		t.Fatalf("conflicts: %+v", p.Conflicts)
 	}
-	if _, err := Apply(context.Background(), full, src, p, nil, time.Now()); err == nil {
+	if _, err := Apply(context.Background(), testStore(t, full), src, p, nil, time.Now()); err == nil {
 		t.Fatal("applied without a choice")
 	}
-	result, err := Apply(context.Background(), full, src, p, map[string]string{"fields:F1": Ours}, now)
+	result, err := Apply(context.Background(), testStore(t, full), src, p, map[string]string{"fields:F1": Ours}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.PDFs != 2 || result.Outlines != 1 {
 		t.Fatalf("result: %+v", result)
 	}
-	f1, _, err := tree.FindItem(full, "F1")
+	f1, _, err := testStore(t, full).FindItem("F1")
 	if err != nil || f1.Head != digest("new passport") || len(f1.Revisions) != 2 || f1.Fields["owner"] != "emma" || f1.Notes != "renewed in Sydney" || len(f1.Tags) != 2 || f1.Tags[0] != "home" || f1.Tags[1] != "travel" {
 		t.Fatalf("F1: %v %+v", err, f1)
 	}
@@ -157,7 +157,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 			t.Errorf("merge event lacks %s: %+v", key, f1.History[0].Changes)
 		}
 	}
-	s3, _, err := tree.FindItem(full, "S3")
+	s3, _, err := testStore(t, full).FindItem("S3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,10 +183,10 @@ func TestHeadMovedOnBothSides(t *testing.T) {
 	if len(p.Conflicts) != 1 || p.Conflicts[0].Kind != ConflictHead {
 		t.Fatalf("plan: %+v", p)
 	}
-	if _, err := Apply(context.Background(), full, src, p, map[string]string{"head:F1": Theirs}, time.Now()); err != nil {
+	if _, err := Apply(context.Background(), testStore(t, full), src, p, map[string]string{"head:F1": Theirs}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	f1, _, _ := tree.FindItem(full, "F1")
+	f1, _, _ := testStore(t, full).FindItem("F1")
 	if f1.Head != digest("c") || len(f1.Revisions) != 3 {
 		t.Fatalf("F1: %+v", f1)
 	}
@@ -226,7 +226,7 @@ func TestTemplateConflictAndUnknownType(t *testing.T) {
 	if len(p.Conflicts) != 1 || p.Conflicts[0].ID != "template:passport" {
 		t.Fatalf("plan: %+v", p)
 	}
-	if _, err := Apply(context.Background(), full, src, p, map[string]string{"template:passport": Theirs}, time.Now()); err != nil {
+	if _, err := Apply(context.Background(), testStore(t, full), src, p, map[string]string{"template:passport": Theirs}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(filepath.Join(full, tree.TemplatesDir, "passport.yaml")); string(data) != passport+"  - key: issuer\n" {
@@ -251,7 +251,7 @@ func TestImportBackFromTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := export.Apply(context.Background(), full, target, []string{"all"}, ep, []tree.Item{it}, nil, nil); err != nil {
+	if _, err := export.Apply(context.Background(), testStore(t, full), target, []string{"all"}, ep, []tree.Item{it}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -265,10 +265,10 @@ func TestImportBackFromTarget(t *testing.T) {
 	if len(p.New) != 1 {
 		t.Fatalf("plan: %+v", p)
 	}
-	if _, err := Apply(context.Background(), empty, src, p, nil, time.Now()); err != nil {
+	if _, err := Apply(context.Background(), testStore(t, empty), src, p, nil, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	back, _, err := tree.FindItem(empty, "F1")
+	back, _, err := testStore(t, empty).FindItem("F1")
 	if err != nil || len(back.Revisions) != 2 || back.Head != digest("b") || back.Fields["owner"] != "emma" {
 		t.Fatalf("back: %v %+v", err, back)
 	}
@@ -290,10 +290,10 @@ func TestMergeReplacementRemapsSuccessor(t *testing.T) {
 	if len(p.Changed) != 1 || p.Changed[0].SupersededBy != "F2" {
 		t.Fatalf("bad remap: %+v", p)
 	}
-	if _, err := Apply(context.Background(), full, src, p, nil, now); err != nil {
+	if _, err := Apply(context.Background(), testStore(t, full), src, p, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	item, _, err := tree.FindItem(full, "F1")
+	item, _, err := testStore(t, full).FindItem("F1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,8 +332,8 @@ func TestNewOutlineChangingASharedRuleIsAConflict(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(outline.Save(full, "", outline.Outline{Name: "phone", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "{owner}.{ext}"}}}}, time.Now()))
-	must(outline.Save(sub, "", outline.Outline{Name: "kindle", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "ids/{owner}.{ext}"}}}}, time.Now()))
+	must(outline.Save(testStore(t, full), "", outline.Outline{Name: "phone", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "{owner}.{ext}"}}}}, time.Now()))
+	must(outline.Save(testStore(t, sub), "", outline.Outline{Name: "kindle", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "ids/{owner}.{ext}"}}}}, time.Now()))
 	p := plan(t, full, source(t, sub))
 	if len(p.Outlines) != 0 || len(p.Conflicts) != 1 || p.Conflicts[0].ID != "outline:kindle" {
 		t.Fatalf("plan: %+v", p)
@@ -349,24 +349,24 @@ func TestMergeCopiesArchivedOriginal(t *testing.T) {
 	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
 	item.Revisions[0].Originals = []tree.Original{original}
 	item.Revisions[0].SourceDigests = []string{original.Digest}
-	if err := os.WriteFile(tree.OriginalPath(srcRoot, item, item.Revisions[0].Digest, original), data, 0600); err != nil {
+	if err := os.WriteFile(testStore(t, srcRoot).OriginalPath(item, item.Revisions[0].Digest, original), data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := tree.WriteItem(srcRoot, item); err != nil {
+	if err := testStore(t, srcRoot).WriteItem(item); err != nil {
 		t.Fatal(err)
 	}
-	src, err := FromTree(srcRoot)
+	src, err := FromTree(testStore(t, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := Compute(dest, src)
+	plan, err := Compute(testStore(t, dest), src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+	if _, err := Apply(context.Background(), testStore(t, dest), src, plan, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	actual, err := os.ReadFile(tree.OriginalPath(dest, item, item.Revisions[0].Digest, original))
+	actual, err := os.ReadFile(testStore(t, dest).OriginalPath(item, item.Revisions[0].Digest, original))
 	if err != nil || string(actual) != string(data) {
 		t.Fatalf("original: %v", err)
 	}
@@ -376,15 +376,15 @@ func TestMergeOriginalOnExistingRevision(t *testing.T) {
 	sourceRoot := newTree(t, passport)
 	dest := newTree(t, passport)
 	item := put(t, sourceRoot, tree.Item{ID: "A", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "alice", "country": "AU"}}, "PDF")
-	src, err := FromTree(sourceRoot)
+	src, err := FromTree(testStore(t, sourceRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := Compute(dest, src)
+	plan, err := Compute(testStore(t, dest), src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+	if _, err := Apply(context.Background(), testStore(t, dest), src, plan, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	input := []byte("synthetic original image")
@@ -392,20 +392,20 @@ func TestMergeOriginalOnExistingRevision(t *testing.T) {
 	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
 	item.Revisions[0].Originals = []tree.Original{original}
 	item.Revisions[0].SourceDigests = []string{original.Digest}
-	os.WriteFile(tree.OriginalPath(sourceRoot, item, item.Revisions[0].Digest, original), input, 0600)
-	tree.WriteItem(sourceRoot, item)
-	src, err = FromTree(sourceRoot)
+	os.WriteFile(testStore(t, sourceRoot).OriginalPath(item, item.Revisions[0].Digest, original), input, 0600)
+	testStore(t, sourceRoot).WriteItem(item)
+	src, err = FromTree(testStore(t, sourceRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err = Compute(dest, src)
+	plan, err = Compute(testStore(t, dest), src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+	if _, err := Apply(context.Background(), testStore(t, dest), src, plan, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(tree.OriginalPath(dest, item, item.Revisions[0].Digest, original)); err != nil {
+	if _, err := os.Stat(testStore(t, dest).OriginalPath(item, item.Revisions[0].Digest, original)); err != nil {
 		t.Fatal("merge silently omitted original on existing revision")
 	}
 }
@@ -414,18 +414,18 @@ func TestMergeSourceAliasesPreservesTargetOriginal(t *testing.T) {
 	srcRoot := newTree(t, passport)
 	dest := newTree(t, passport)
 	item := put(t, srcRoot, tree.Item{ID: "A", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "alice", "country": "AU"}}, "PDF")
-	src, err := FromTree(srcRoot)
+	src, err := FromTree(testStore(t, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := Compute(dest, src)
+	plan, err := Compute(testStore(t, dest), src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+	if _, err := Apply(context.Background(), testStore(t, dest), src, plan, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	target, err := tree.GetItem(dest, item.ID)
+	target, err := testStore(t, dest).GetItem(item.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,23 +434,23 @@ func TestMergeSourceAliasesPreservesTargetOriginal(t *testing.T) {
 	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
 	target.Revisions[0].Originals = []tree.Original{original}
 	target.Revisions[0].SourceDigests = []string{original.Digest}
-	os.WriteFile(tree.OriginalPath(dest, item, item.Revisions[0].Digest, original), data, 0600)
-	tree.WriteItem(dest, target)
+	os.WriteFile(testStore(t, dest).OriginalPath(item, item.Revisions[0].Digest, original), data, 0600)
+	testStore(t, dest).WriteItem(target)
 	alias := sha256.Sum256([]byte("synthetic alternative input"))
 	item.Revisions[0].SourceDigests = []string{hex.EncodeToString(alias[:])}
-	tree.WriteItem(srcRoot, item)
-	src, err = FromTree(srcRoot)
+	testStore(t, srcRoot).WriteItem(item)
+	src, err = FromTree(testStore(t, srcRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err = Compute(dest, src)
+	plan, err = Compute(testStore(t, dest), src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
+	if _, err := Apply(context.Background(), testStore(t, dest), src, plan, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	target, err = tree.GetItem(dest, item.ID)
+	target, err = testStore(t, dest).GetItem(item.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,10 +469,10 @@ func TestChoosingTheirsForNewAndExistingOutlines(t *testing.T) {
 			}
 			ours := outline.Outline{Name: "alice", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "{owner}.{ext}"}}}}
 			theirs := outline.Outline{Name: name, Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "ids/{owner}.{ext}"}}}}
-			if err := outline.Save(full, "", ours, now); err != nil {
+			if err := outline.Save(testStore(t, full), "", ours, now); err != nil {
 				t.Fatal(err)
 			}
-			if err := outline.Save(sub, "", theirs, now); err != nil {
+			if err := outline.Save(testStore(t, sub), "", theirs, now); err != nil {
 				t.Fatal(err)
 			}
 			src := source(t, sub)
@@ -480,10 +480,10 @@ func TestChoosingTheirsForNewAndExistingOutlines(t *testing.T) {
 			if len(p.Conflicts) != 1 {
 				t.Fatalf("plan: %+v", p)
 			}
-			if _, err := Apply(context.Background(), full, src, p, map[string]string{p.Conflicts[0].ID: Theirs}, now); err != nil {
+			if _, err := Apply(context.Background(), testStore(t, full), src, p, map[string]string{p.Conflicts[0].ID: Theirs}, now); err != nil {
 				t.Fatal(err)
 			}
-			outlines, err := outline.Load(full)
+			outlines, err := outline.Load(testStore(t, full))
 			if err != nil {
 				t.Fatal(err)
 			}

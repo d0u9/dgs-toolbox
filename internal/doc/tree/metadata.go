@@ -21,10 +21,10 @@ type Metadata struct {
 }
 
 func (s *Store) SetMetadata(id, digest string, m Metadata, now time.Time) (Item, error) {
-	if err := Require(s.root); err != nil {
+	if err := s.Require(); err != nil {
 		return Item{}, err
 	}
-	item, err := GetItem(s.root, id)
+	item, err := s.GetItem(id)
 	if err != nil {
 		return Item{}, err
 	}

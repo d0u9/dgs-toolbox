@@ -8,8 +8,8 @@ import (
 )
 
 // ValidateSupersession checks a manually selected predecessor before import.
-func ValidateSupersession(root, oldID, typ string, fields map[string]string) error {
-	old, err := GetItem(root, oldID)
+func (st *Store) ValidateSupersession(oldID string, typ string, fields map[string]string) error {
+	old, err := st.GetItem(oldID)
 	if err != nil {
 		return err
 	}
@@ -29,21 +29,21 @@ func ValidateSupersession(root, oldID, typ string, fields map[string]string) err
 
 // Supersede stores the relationship on the predecessor in a single sidecar
 // write, together with retirement. The reverse link is derived from Items.
-func Supersede(root, oldID, newID string, now time.Time) (Item, error) {
+func (st *Store) Supersede(oldID string, newID string, now time.Time) (Item, error) {
 	if oldID == newID {
 		return Item{}, fmt.Errorf("a visa cannot replace itself")
 	}
-	next, err := GetItem(root, newID)
+	next, err := st.GetItem(newID)
 	if err != nil {
 		return Item{}, err
 	}
 	if next.Retired {
 		return Item{}, fmt.Errorf("the new visa is retired")
 	}
-	if err := ValidateSupersession(root, oldID, next.Type, next.Fields); err != nil {
+	if err := st.ValidateSupersession(oldID, next.Type, next.Fields); err != nil {
 		return Item{}, err
 	}
-	items, err := others(root)
+	items, err := st.others()
 	if err != nil {
 		return Item{}, err
 	}
@@ -52,7 +52,7 @@ func Supersede(root, oldID, newID string, now time.Time) (Item, error) {
 			return Item{}, fmt.Errorf("this visa already replaces another visa")
 		}
 	}
-	old, err := GetItem(root, oldID)
+	old, err := st.GetItem(oldID)
 	if err != nil {
 		return Item{}, err
 	}
@@ -60,12 +60,12 @@ func Supersede(root, oldID, newID string, now time.Time) (Item, error) {
 	old.Retired = true
 	old.RetiredReason = "Superseded by " + newID
 	old.History = append(old.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "supersede", Target: newID})
-	return old, WriteItem(root, old)
+	return old, st.WriteItem(old)
 }
 
 // UndoSupersession restores the predecessor to use without changing snapshots.
-func UndoSupersession(root, id string, now time.Time) (Item, error) {
-	old, err := GetItem(root, id)
+func (st *Store) UndoSupersession(id string, now time.Time) (Item, error) {
+	old, err := st.GetItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -76,5 +76,5 @@ func UndoSupersession(root, id string, now time.Time) (Item, error) {
 	old.SupersededBy = ""
 	old.Retired = false
 	old.RetiredReason = ""
-	return old, WriteItem(root, old)
+	return old, st.WriteItem(old)
 }

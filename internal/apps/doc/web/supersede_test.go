@@ -20,7 +20,7 @@ func TestImportVisaReplacement(t *testing.T) {
 	if rec.Code != 409 {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
-	items, err := tree.LoadItems(root)
+	items, err := testStore(t, root).LoadItems()
 	must(t, err)
 	if len(items) != 1 {
 		t.Fatal("invalid replacement created an item")
@@ -31,7 +31,7 @@ func TestImportVisaReplacement(t *testing.T) {
 	}
 	var next tree.Item
 	must(t, unmarshalItem(rec.Body.Bytes(), &next))
-	updated, _, err := tree.FindItem(root, old.ID)
+	updated, _, err := testStore(t, root).FindItem(old.ID)
 	must(t, err)
 	if !updated.Retired || updated.SupersededBy != next.ID {
 		t.Fatal("missing relationship")
@@ -40,7 +40,7 @@ func TestImportVisaReplacement(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	updated, _, err = tree.FindItem(root, old.ID)
+	updated, _, err = testStore(t, root).FindItem(old.ID)
 	must(t, err)
 	if updated.Retired || updated.SupersededBy != "" {
 		t.Fatal("undo failed")

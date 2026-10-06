@@ -77,8 +77,10 @@ the data, so it is computed rather than stored.
 
 ## The marker
 
-The marker gains the layout. A marker without one is a by-Item tree, so every
-existing tree reads as it does now.
+The marker can name a layout. A marker without one is a by-Item tree, so every
+existing tree reads as it does now. At step 1b, `Open` refuses any supplied
+layout (including an empty one); `Init` writes no layout. The examples below
+are the deferred step 2 design, not a layout supported by this build.
 
 ```yaml
 version: 1
@@ -162,11 +164,16 @@ same answers as using it.
 
 ## Interface
 
-A layout is one interface behind which both layouts sit, so nothing above it
-joins a path. Today 25 places outside it do — `tree.PDFPath(root, id, digest)`
-and `filepath.Join(root, tree.ItemsDir, …)` in `tree`, `check`, `export`,
-`merge` and the web handlers — and each would otherwise need to ask which
-layout it is in.
+`tree.Open(root)` is the only public entry point for an existing tree. It reads
+and checks the marker before returning a Store. A marker without `layout`
+selects `layout.ByItem()`; any supplied layout is refused as unsupported until
+step 2. `Init` continues to write the original marker with no layout.
+
+Domain operations and CLI actions pass the opened `*tree.Store` through every
+layer. Store methods own sidecar reads, writes, imports, metadata, trash and
+history; definition codecs also receive that Store. They do not reopen an
+unchecked by-Item store from a root. Root strings remain for configuration,
+initialization and display, and for plain path comparisons.
 
 ```text
 web, export, merge, check      know Items, IDs and digests; never join a path
@@ -216,11 +223,42 @@ type Folders interface {
 	Folder(id string) string
 }
 
-// Open reads the layout from a tree's marker: by Item when it names none.
-func Open(root string, m Marker) (Layout, error)
+// ByItem supplies the existing, plain-value layout.
+func ByItem() Layout
 ```
 
-- **Two implementations.** `byItem` is today's: `Sidecar` is
+```go
+package tree
+
+// Marker retains the legacy bytes when Layout is absent.
+type Marker struct {
+	Version int `yaml:"version"`
+	CreatedAt string `yaml:"created_at"`
+	Layout *LayoutPatterns `yaml:"layout,omitempty"`
+}
+type LayoutPatterns struct {
+	Path string `yaml:"path"`
+	File string `yaml:"file"`
+}
+
+// Open checks the marker and refuses every supplied layout for now.
+func Open(root string) (*Store, error)
+
+// Init creates the marker and initial Template. Optional observers receive
+// the same report paths the CLI previously computed, after successful init.
+func Init(root string, now time.Time, report ...func(string)) error
+
+func (s *Store) Root() string
+func (s *Store) Sidecar(id string) string
+func (s *Store) PDF(item Item, digest string) string
+func (s *Store) OriginalPath(item Item, pdf string, original Original) string
+func (s *Store) Sidecars() ([]string, error)
+func (s *Store) Folder(id string) (string, bool)
+func (s *Store) Items() ([]Item, error)
+func (s *Store) WriteItem(item Item) error
+```
+
+- **One implementation today; by fields deferred.** `byItem` is today's: `Sidecar` is
   `items/<id>/item.dgs-item.yaml` and `Moves` is always empty. `byFields`
   computes `PDF` from the marker's pattern in rule syntax and `Moves` by
   comparing the places of before and after.
@@ -238,7 +276,7 @@ func Open(root string, m Marker) (Layout, error)
   imports, applies `Moves` one rename at a time with the put-back of
   [Moves](#moves), and moves to the trash.
 - **Callers ask the Store.** An export's source becomes `store.PDF(item, digest)`
-  instead of `tree.PDFPath(root, a.Item, a.Digest)`; check lists sidecars
+  with no root-taking path helper; check lists sidecars
   through `Sidecars` and reports what `Owned` refuses.
 
 ## Plan
@@ -249,7 +287,13 @@ func Open(root string, m Marker) (Layout, error)
    through one store for definitions (see [Definitions](definitions.md#plan)). Existing tree layouts and file formats stay as they are. Storage regression
    tests pass; definition name checks and the web routes follow the completed
    Definitions and Web API steps.
-2. **Add by fields.** `byFields`, the marker's `layout`, `{digest:N}`, moves,
+1b. **Done — one entry point.** `tree.Open` is the only public way to a
+   Store. Domain packages and the CLI take a Store; the marker may name a
+   layout, and Open refuses one it does not know. Store methods own the
+   implementations, and no outside caller uses an unchecked constructor or
+   root-taking tree operation. Existing paths, data and web contracts stay
+   unchanged.
+2. **Deferred — add by fields.** `byFields`, the marker's `layout`, `{digest:N}`, moves,
    status and put-back, each with tests built on constructed trees.
 
 ## What does not change

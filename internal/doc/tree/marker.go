@@ -4,6 +4,7 @@
 package tree
 
 import (
+	"dgs-toolbox/internal/doc/layout"
 	"errors"
 	"fmt"
 	"os"
@@ -27,8 +28,16 @@ const (
 
 // Marker is the content of the marker file.
 type Marker struct {
-	Version   int    `yaml:"version"`
-	CreatedAt string `yaml:"created_at"`
+	Version   int             `yaml:"version"`
+	CreatedAt string          `yaml:"created_at"`
+	Layout    *LayoutPatterns `yaml:"layout,omitempty"`
+}
+
+// LayoutPatterns describes a future by-fields layout. Any non-nil value
+// is refused by Open until that layout is implemented, including an empty map.
+type LayoutPatterns struct {
+	Path string `yaml:"path"`
+	File string `yaml:"file"`
 }
 
 // ErrNotATree is returned when the marker is missing. Nothing writes into a
@@ -37,7 +46,7 @@ type Marker struct {
 var ErrNotATree = errors.New("not a doc tree: no marker file")
 
 // ReadMarker reads root's marker.
-func ReadMarker(root string) (Marker, error) {
+func readMarker(root string) (Marker, error) {
 	path := filepath.Join(root, MarkerName)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -46,9 +55,22 @@ func ReadMarker(root string) (Marker, error) {
 		}
 		return Marker{}, err
 	}
-	var marker Marker
-	if err := yaml.Unmarshal(data, &marker); err != nil {
+	// A yaml.Node distinguishes an omitted layout from an explicitly empty or
+	// null one. Every supplied layout is unsupported at this stage.
+	var raw struct {
+		Version   int       `yaml:"version"`
+		CreatedAt string    `yaml:"created_at"`
+		Layout    yaml.Node `yaml:"layout"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return Marker{}, fmt.Errorf("%s: %w", path, err)
+	}
+	marker := Marker{Version: raw.Version, CreatedAt: raw.CreatedAt}
+	if raw.Layout.Kind != 0 {
+		marker.Layout = &LayoutPatterns{}
+		if raw.Layout.Kind == yaml.MappingNode {
+			_ = raw.Layout.Decode(marker.Layout)
+		}
 	}
 	if marker.Version > MarkerVersion {
 		return Marker{}, fmt.Errorf("%s: tree version %d is newer than this build reads", path, marker.Version)
@@ -57,14 +79,25 @@ func ReadMarker(root string) (Marker, error) {
 }
 
 // Require returns an error unless root is a doc tree.
-func Require(root string) error {
-	_, err := ReadMarker(root)
+func (st *Store) Require() error {
+	if st == nil {
+		return ErrNotATree
+	}
+	marker, err := readMarker(st.root)
+	if err == nil && marker.Layout != nil {
+		return unsupportedLayout()
+	}
 	return err
 }
 
 // Init makes root a doc tree: it writes the marker and, when there is no
 // Template yet, the example one. It refuses a folder that is already a tree.
-func Init(root string, now time.Time) error {
+// Optional report observers receive the CLI report paths after success.
+func Init(root string, now time.Time, report ...func(string)) error {
+	var before []Template
+	if len(report) > 0 {
+		before, _ = (&Store{root: root, layout: layout.ByItem()}).LoadTemplates()
+	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
@@ -96,10 +129,28 @@ func Init(root string, now time.Time) error {
 		return err
 	}
 	existing, err := filepath.Glob(filepath.Join(templates, "*.yaml"))
-	if err != nil || len(existing) > 0 {
+	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(templates, "id_card.yaml"), []byte(ExampleTemplate), 0o644)
+	if len(existing) > 0 {
+		for _, notify := range report {
+			notify(path)
+			if len(before) == 0 {
+				notify(filepath.Join(templates, "id_card.yaml"))
+			}
+		}
+		return nil
+	}
+	if err := os.WriteFile(filepath.Join(templates, "id_card.yaml"), []byte(ExampleTemplate), 0o644); err != nil {
+		return err
+	}
+	for _, notify := range report {
+		notify(path)
+		if len(before) == 0 {
+			notify(filepath.Join(templates, "id_card.yaml"))
+		}
+	}
+	return nil
 }
 
 // ExampleTemplate is what Init writes into an empty templates folder, so a new

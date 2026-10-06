@@ -33,13 +33,13 @@ func TestImageImportRetentionAndDuplicate(t *testing.T) {
 		t.Run(map[bool]string{false: "PDF only", true: "retain original"}[keep], func(t *testing.T) {
 			root := newTree(t)
 			source, data := docImage(t, 120)
-			req := ImportRequest{Root: root, Source: source, Template: idCard(t, root), Fields: map[string]string{"owner": "alice", "country": "AU"}, Now: now, KeepOriginal: keep}
-			item, err := Import(context.Background(), req)
+			req := ImportRequest{Source: source, Template: idCard(t, root), Fields: map[string]string{"owner": "alice", "country": "AU"}, Now: now, KeepOriginal: keep}
+			item, err := testStoreAt(root).Import(context.Background(), req)
 			if err != nil {
 				t.Fatal(err)
 			}
 			rev := item.Revisions[0]
-			pdf, err := os.ReadFile(PDFPath(root, item.ID, rev.Digest))
+			pdf, err := os.ReadFile(testStoreAt(root).PDF(Item{ID: item.ID}, rev.Digest))
 			if err != nil || !bytes.HasPrefix(pdf, []byte("%PDF-")) {
 				t.Fatalf("PDF: %v", err)
 			}
@@ -47,7 +47,7 @@ func TestImageImportRetentionAndDuplicate(t *testing.T) {
 				t.Fatalf("revision: %+v", rev)
 			}
 			if keep {
-				original, err := os.ReadFile(OriginalPath(root, item, rev.Digest, rev.Originals[0]))
+				original, err := os.ReadFile(testStoreAt(root).OriginalPath(item, rev.Digest, rev.Originals[0]))
 				if err != nil || !bytes.Equal(original, data) {
 					t.Fatalf("original: %v", err)
 				}
@@ -56,10 +56,10 @@ func TestImageImportRetentionAndDuplicate(t *testing.T) {
 			if !bytes.Equal(original, data) {
 				t.Fatal("source changed")
 			}
-			if _, err := Import(context.Background(), req); !errors.Is(err, ErrDuplicate) {
+			if _, err := testStoreAt(root).Import(context.Background(), req); !errors.Is(err, ErrDuplicate) {
 				t.Fatalf("duplicate: %v", err)
 			}
-			loaded, err := GetItem(root, item.ID)
+			loaded, err := testStoreAt(root).GetItem(item.ID)
 			if err != nil || !slices.Equal(loaded.Revisions[0].SourceDigests, rev.SourceDigests) {
 				t.Fatalf("sidecar: %v", err)
 			}
@@ -71,12 +71,12 @@ func TestImageRevisionAndTrashPreserveOriginal(t *testing.T) {
 	root := newTree(t)
 	tpl := idCard(t, root)
 	source, _ := docImage(t, 100)
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: tpl, Fields: map[string]string{"owner": "alice", "country": "AU"}, KeepOriginal: true, Now: now})
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: tpl, Fields: map[string]string{"owner": "alice", "country": "AU"}, KeepOriginal: true, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	source, data := docImage(t, 200)
-	item, err = AddRevisionWithMetadata(context.Background(), root, item.ID, source, tpl, nil, RevisionMetadata{KeepOriginal: true}, now)
+	item, err = testStoreAt(root).AddRevisionWithMetadata(context.Background(), item.ID, source, tpl, nil, RevisionMetadata{KeepOriginal: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +84,8 @@ func TestImageRevisionAndTrashPreserveOriginal(t *testing.T) {
 	if len(rev.Originals) == 0 {
 		t.Fatal("revision original missing")
 	}
-	originalPath := OriginalPath(root, item, rev.Digest, rev.Originals[0])
-	item, to, err := TrashRevision(root, item.ID, rev.Ref(), now)
+	originalPath := testStoreAt(root).OriginalPath(item, rev.Digest, rev.Originals[0])
+	item, to, err := testStoreAt(root).TrashRevision(item.ID, rev.Ref(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,18 +115,18 @@ func TestSameImageRevisionCanArchivePreviouslyOmittedOriginal(t *testing.T) {
 	root := newTree(t)
 	source, data := docImage(t, 80)
 	tpl := idCard(t, root)
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: tpl, Fields: map[string]string{"owner": "alice", "country": "AU"}, Now: now})
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: tpl, Fields: map[string]string{"owner": "alice", "country": "AU"}, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = AddRevisionWithMetadata(context.Background(), root, item.ID, source, tpl, nil, RevisionMetadata{KeepOriginal: true}, now)
+	item, err = testStoreAt(root).AddRevisionWithMetadata(context.Background(), item.ID, source, tpl, nil, RevisionMetadata{KeepOriginal: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(item.Revisions) != 1 || len(item.Revisions[0].Originals) == 0 {
 		t.Fatal("same snapshot did not gain original")
 	}
-	original, err := os.ReadFile(OriginalPath(root, item, item.Revisions[0].Digest, item.Revisions[0].Originals[0]))
+	original, err := os.ReadFile(testStoreAt(root).OriginalPath(item, item.Revisions[0].Digest, item.Revisions[0].Originals[0]))
 	if err != nil || !bytes.Equal(original, data) {
 		t.Fatalf("original: %v", err)
 	}
@@ -148,11 +148,11 @@ func TestRetainAlternateImageEncoding(t *testing.T) {
 	second := filepath.Join(dir, "second.png")
 	os.WriteFile(first, a.Bytes(), 0600)
 	os.WriteFile(second, b.Bytes(), 0600)
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: first, Template: tpl, Fields: map[string]string{"owner": "alice", "country": "AU"}, Now: now})
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: first, Template: tpl, Fields: map[string]string{"owner": "alice", "country": "AU"}, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = AddRevisionWithMetadata(context.Background(), root, item.ID, second, tpl, nil, RevisionMetadata{KeepOriginal: true}, now)
+	item, err = testStoreAt(root).AddRevisionWithMetadata(context.Background(), item.ID, second, tpl, nil, RevisionMetadata{KeepOriginal: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,11 +165,11 @@ func TestRetainAlternateImageEncoding(t *testing.T) {
 func TestAttachSameImageCanRetainOriginal(t *testing.T) {
 	root := newTree(t)
 	source, _ := docImage(t, 80)
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: source, Template: idCard(t, root), Fields: map[string]string{"owner": "alice", "country": "AU"}, Now: now})
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: source, Template: idCard(t, root), Fields: map[string]string{"owner": "alice", "country": "AU"}, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = AttachFile(context.Background(), root, item.ID, item.Current(), []string{source}, true, now)
+	item, err = testStoreAt(root).AttachFile(context.Background(), item.ID, item.Current(), []string{source}, true, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestAttachSameImageCanRetainOriginal(t *testing.T) {
 func TestGeneratedPDFReadbackRejectsChangedTemporary(t *testing.T) {
 	root := newTree(t)
 	source, _ := docImage(t, 30)
-	input, err := prepareInput(context.Background(), root, []string{source})
+	input, err := testStoreAt(root).prepareInput(context.Background(), []string{source})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,22 +208,22 @@ func TestAlternateEncodingDoesNotReplaceArchivedOriginal(t *testing.T) {
 	second := filepath.Join(dir, "second.png")
 	os.WriteFile(first, a.Bytes(), 0600)
 	os.WriteFile(second, b.Bytes(), 0600)
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: first, Template: tpl, Fields: map[string]string{"owner": "alice", "country": "AU"}, KeepOriginal: true, Now: now})
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: first, Template: tpl, Fields: map[string]string{"owner": "alice", "country": "AU"}, KeepOriginal: true, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	original := item.Revisions[0].Originals[0]
-	if _, err := AddRevisionWithMetadata(context.Background(), root, item.ID, second, tpl, nil, RevisionMetadata{KeepOriginal: true}, now); err == nil {
+	if _, err := testStoreAt(root).AddRevisionWithMetadata(context.Background(), item.ID, second, tpl, nil, RevisionMetadata{KeepOriginal: true}, now); err == nil {
 		t.Fatal("silently accepted replacement of different archived original")
 	}
-	item, err = AddRevisionWithMetadata(context.Background(), root, item.ID, second, tpl, nil, RevisionMetadata{}, now)
+	item, err = testStoreAt(root).AddRevisionWithMetadata(context.Background(), item.ID, second, tpl, nil, RevisionMetadata{}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if item.Revisions[0].Originals[0] != original || len(item.Revisions[0].SourceDigests) != 2 {
 		t.Fatal("lost original or input alias")
 	}
-	retained, err := os.ReadFile(OriginalPath(root, item, item.Revisions[0].Digest, original))
+	retained, err := os.ReadFile(testStoreAt(root).OriginalPath(item, item.Revisions[0].Digest, original))
 	if err != nil || !bytes.Equal(retained, a.Bytes()) {
 		t.Fatalf("original: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestImagesImportAsOnePDFAndAreKnownAgain(t *testing.T) {
 	tpl := idCard(t, root)
 	first, a := docImage(t, 10)
 	second, b := docImage(t, 20)
-	item, err := Import(context.Background(), ImportRequest{Root: root, Source: first, Pages: []string{second}, Template: tpl,
+	item, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: first, Pages: []string{second}, Template: tpl,
 		Fields: map[string]string{"owner": "alice", "country": "AU"}, KeepOriginal: true, Now: now})
 	if err != nil {
 		t.Fatal(err)
@@ -244,13 +244,13 @@ func TestImagesImportAsOnePDFAndAreKnownAgain(t *testing.T) {
 		t.Fatalf("revision: %+v", rev)
 	}
 	for i, want := range [][]byte{a, b} {
-		got, err := os.ReadFile(OriginalPath(root, item, rev.Digest, rev.Originals[i]))
+		got, err := os.ReadFile(testStoreAt(root).OriginalPath(item, rev.Digest, rev.Originals[i]))
 		if err != nil || !bytes.Equal(got, want) {
 			t.Fatalf("original %d: %v", i+1, err)
 		}
 	}
 	// One of the images alone makes another PDF, but is the same image.
-	if _, err := Import(context.Background(), ImportRequest{Root: root, Source: second, Template: tpl,
+	if _, err := testStoreAt(root).Import(context.Background(), ImportRequest{Source: second, Template: tpl,
 		Fields: map[string]string{"owner": "bob", "country": "AU"}, Now: now}); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("image already in the tree: %v", err)
 	}

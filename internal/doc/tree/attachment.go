@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,8 +13,8 @@ import (
 )
 
 // CreateWithoutPDF creates an Item with a metadata-only first revision.
-func CreateWithoutPDF(request ImportRequest) (Item, error) {
-	if err := Require(request.Root); err != nil {
+func (st *Store) CreateWithoutPDF(request ImportRequest) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
 	if err := request.Template.Validate(); err != nil {
@@ -23,14 +24,14 @@ func CreateWithoutPDF(request ImportRequest) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	items, err := others(request.Root)
+	items, err := st.others()
 	if err != nil {
 		return Item{}, err
 	}
 	if other, ok := taken(request.Template, items, fields, ""); ok {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrTaken, other.Type, other.ID)
 	}
-	if err := linked(request.Root, request.Template, items, fields, ""); err != nil {
+	if err := st.linked(request.Template, items, fields, ""); err != nil {
 		return Item{}, err
 	}
 	shared, err := sharedList(fields["owner"], request.SharedWith)
@@ -44,19 +45,19 @@ func CreateWithoutPDF(request ImportRequest) (Item, error) {
 	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags), SharedWith: shared}
 	ref := item.saveSnapshot(request.Template.Type, fields, "", "", "", request.Now)
 	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "create_without_pdf", Digest: ref}}
-	if err := WriteItem(request.Root, item); err != nil {
-		_ = os.Remove(Dir(request.Root, id))
+	if err := st.WriteItem(item); err != nil {
+		_ = os.Remove(filepath.Dir(st.Sidecar(id)))
 		return Item{}, err
 	}
 	return item, nil
 }
 
 // AddWithoutPDF records a new issue without requiring a scan.
-func AddWithoutPDF(root, id string, template Template, given map[string]string, metadata RevisionMetadata, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) AddWithoutPDF(id string, template Template, given map[string]string, metadata RevisionMetadata, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, items, err := FindItem(root, id)
+	item, items, err := st.FindItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -67,7 +68,7 @@ func AddWithoutPDF(root, id string, template Template, given map[string]string, 
 	if err != nil {
 		return Item{}, err
 	}
-	if err := linked(root, template, items, fields, id); err != nil {
+	if err := st.linked(template, items, fields, id); err != nil {
 		return Item{}, err
 	}
 	full, _ := template.Split(item.CurrentFields())
@@ -88,28 +89,28 @@ func AddWithoutPDF(root, id string, template Template, given map[string]string, 
 		item.Tags = tag.List(*metadata.Tags)
 	}
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "create_revision_without_pdf", Digest: ref})
-	return item, WriteItem(root, item)
+	return item, st.WriteItem(item)
 }
 
 // AttachPDF creates a new snapshot from the selected revision and a PDF.
 // The selected revision and its references are never changed.
-func AttachPDF(ctx context.Context, root, id, ref, source string, now time.Time) (Item, error) {
-	return AttachFile(ctx, root, id, ref, []string{source}, false, now)
+func (st *Store) AttachPDF(ctx context.Context, id string, ref string, source string, now time.Time) (Item, error) {
+	return st.AttachFile(ctx, id, ref, []string{source}, false, now)
 }
 
 // AttachFile is AttachPDF for a PDF, or for images put together into one,
 // a page each, their originals optionally archived beside it.
-func AttachFile(ctx context.Context, root, id, ref string, sources []string, keepOriginal bool, now time.Time) (Item, error) {
-	return AttachFileAs(ctx, root, id, ref, sources, keepOriginal, false, now)
+func (st *Store) AttachFile(ctx context.Context, id string, ref string, sources []string, keepOriginal bool, now time.Time) (Item, error) {
+	return st.AttachFileAs(ctx, id, ref, sources, keepOriginal, false, now)
 }
 
 // AttachFileAs is AttachFile; with newRevision the snapshot begins a
 // revision rather than correcting the one ref is in.
-func AttachFileAs(ctx context.Context, root, id, ref string, sources []string, keepOriginal, newRevision bool, now time.Time) (Item, error) {
-	if err := Require(root); err != nil {
+func (st *Store) AttachFileAs(ctx context.Context, id string, ref string, sources []string, keepOriginal bool, newRevision bool, now time.Time) (Item, error) {
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
-	item, items, err := FindItem(root, id)
+	item, items, err := st.FindItem(id)
 	if err != nil {
 		return Item{}, err
 	}
@@ -121,7 +122,7 @@ func AttachFileAs(ctx context.Context, root, id, ref string, sources []string, k
 	if typ == "" {
 		typ = item.Type
 	}
-	templates, err := LoadTemplates(root)
+	templates, err := st.LoadTemplates()
 	if err != nil {
 		return Item{}, err
 	}
@@ -132,7 +133,7 @@ func AttachFileAs(ctx context.Context, root, id, ref string, sources []string, k
 			}
 		}
 	}
-	input, err := prepareInput(ctx, root, sources)
+	input, err := st.prepareInput(ctx, sources)
 	if err != nil {
 		return Item{}, err
 	}
@@ -153,19 +154,19 @@ func AttachFileAs(ctx context.Context, root, id, ref string, sources []string, k
 			return item, nil
 		}
 		// Verify the reused PDF before changing only its original metadata.
-		actual, err := FileDigest(PDFPath(root, id, digest))
+		actual, err := FileDigest(st.PDF(Item{ID: id}, digest))
 		if err != nil {
 			return Item{}, err
 		}
 		if actual != digest {
 			return Item{}, fmt.Errorf("stored PDF digest mismatch")
 		}
-		undo, err := input.archive(ctx, root, id, keepOriginal)
+		undo, err := input.archive(ctx, st, id, keepOriginal)
 		if err != nil {
 			return Item{}, err
 		}
 		input.annotate(&item, ref, keepOriginal)
-		if err := WriteItem(root, item); err != nil {
+		if err := st.WriteItem(item); err != nil {
 			undo()
 			return Item{}, err
 		}
@@ -174,7 +175,7 @@ func AttachFileAs(ctx context.Context, root, id, ref string, sources []string, k
 	if other, ok := holder(items, digest); ok && other.ID != id {
 		return Item{}, fmt.Errorf("%w: %s", ErrDuplicate, other.ID)
 	}
-	destination := PDFPath(root, id, digest)
+	destination := st.PDF(Item{ID: id}, digest)
 	copied := false
 	// A different snapshot may already own the same blob. Verify it before
 	// reusing it; never overwrite a corrupt or missing attachment silently.
@@ -205,7 +206,7 @@ func AttachFileAs(ctx context.Context, root, id, ref string, sources []string, k
 	}
 	next := item.saveSnapshot(typ, item.FieldsAt(ref), digest, input.name, correcting(item, ref, newRevision), now)
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "attach_pdf", Digest: next, Changes: map[string][2]string{"pdf": {base.Digest, digest}}})
-	undoOriginal, err := input.archive(ctx, root, id, keepOriginal)
+	undoOriginal, err := input.archive(ctx, st, id, keepOriginal)
 	if err != nil {
 		if copied {
 			os.Remove(destination)
@@ -213,7 +214,7 @@ func AttachFileAs(ctx context.Context, root, id, ref string, sources []string, k
 		return Item{}, err
 	}
 	input.annotate(&item, next, keepOriginal)
-	if err := WriteItem(root, item); err != nil {
+	if err := st.WriteItem(item); err != nil {
 		undoOriginal()
 		if copied {
 			_ = os.Remove(destination)

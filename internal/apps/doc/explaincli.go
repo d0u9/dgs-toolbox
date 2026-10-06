@@ -28,7 +28,12 @@ func explainAction(_ io.Reader, out io.Writer, args []string, flags map[string]s
 			return err
 		}
 	}
-	items, err := tree.LoadItems(root)
+	store, err := tree.Open(root)
+	if err != nil {
+		return err
+	}
+
+	items, err := store.LoadItems()
 	if err != nil {
 		return err
 	}
@@ -36,15 +41,15 @@ func explainAction(_ io.Reader, out io.Writer, args []string, flags map[string]s
 	if err != nil {
 		return err
 	}
-	outlines, err := outline.Load(root)
+	outlines, err := outline.Load(store)
 	if err != nil {
 		return err
 	}
-	snapshots, err := snapshot.Load(root)
+	snapshots, err := snapshot.Load(store)
 	if err != nil {
 		return err
 	}
-	templates, err := tree.LoadTemplates(root)
+	templates, err := store.LoadTemplates()
 	if err != nil {
 		return err
 	}
