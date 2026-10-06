@@ -53,7 +53,7 @@ a.button, a.button:visited {
    heading or a row that goes somewhere or finds something. */
 .button.secondary { color: var(--ink); border-color: var(--ink); background: var(--paper); font-weight: 600; }
 .button.secondary:hover { background: var(--ink); color: var(--on-ink); }
-.button.secondary:disabled { background: var(--paper); color: var(--ink); }
+.button.secondary:disabled { opacity: 1; border-color: var(--graphite); background: var(--cloud); color: var(--steel); }
 a.button.secondary, a.button.secondary:visited { color: var(--ink); }
 a.button.secondary:hover { color: var(--on-ink); }
 .link-button, a.link-button:visited {
