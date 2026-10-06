@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -448,14 +449,18 @@ func TestRecordExportsWritesEachItemOnce(t *testing.T) {
 		}
 	}
 	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	var steps [][2]int
 	err := RecordExports(root, []Exported{
 		{Item: "A", Digest: "a1", Target: "/t", View: "v"},
 		{Item: "A", Digest: "a2", Target: "/t", View: "w"},
 		{Item: "B", Digest: "b1", Target: "/t", View: "v"},
 		{Item: "gone", Digest: "g", Target: "/t", View: "v"},
-	}, at)
+	}, at, func(done, total int) { steps = append(steps, [2]int{done, total}) })
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !slices.Equal(steps, [][2]int{{1, 2}, {2, 2}}) {
+		t.Fatalf("progress = %v, want one step per Item written", steps)
 	}
 	a, _, _ := FindItem(root, "A")
 	b, _, _ := FindItem(root, "B")

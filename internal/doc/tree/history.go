@@ -66,8 +66,8 @@ type Exported struct {
 
 // RecordExports adds an export event for each published PDF, reading and
 // writing each Item's sidecar once however many of its PDFs were published,
-// and no other Item's.
-func RecordExports(root string, published []Exported, now time.Time) error {
+// and no other Item's. progress, when given, hears each sidecar written.
+func RecordExports(root string, published []Exported, now time.Time, progress func(done, total int)) error {
 	byID := map[string]*Item{}
 	var changed []string
 	for _, p := range published {
@@ -89,9 +89,12 @@ func RecordExports(root string, published []Exported, now time.Time) error {
 			At: now.Format(time.RFC3339), Action: "export", Digest: p.Digest, Target: p.Target, View: p.View,
 		})
 	}
-	for _, id := range changed {
+	for n, id := range changed {
 		if err := WriteItem(root, *byID[id]); err != nil {
 			return err
+		}
+		if progress != nil {
+			progress(n+1, len(changed))
 		}
 	}
 	return nil
