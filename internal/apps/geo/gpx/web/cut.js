@@ -444,33 +444,40 @@ export class CutOverlay {
     }, beforeLayer);
   }
 
-  show(track) {
+  show(track, hidden = []) {
+    this.hidden = hidden;
     if (!track) {
       this.clear();
       return;
     }
-    const features = track.cuts.map((cut) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: track.points[cut] } }));
+    const features = track.cuts.filter(cut => !hidden.some(([first, last]) => cut >= first && cut <= last)).map((cut) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: track.points[cut] } }));
     this.map.getSource(CUTS).setData({ type: "FeatureCollection", features });
     const pieces = track.pieces.map((piece, i) => ({
       type: "Feature",
       properties: { color: pieceColor(i) },
-      geometry: { type: "MultiLineString", coordinates: keptLines(track, piece) },
+      geometry: { type: "MultiLineString", coordinates: keptLines(track, piece, hidden) },
     }));
     this.map.getSource(PIECES).setData({ type: "FeatureCollection", features: pieces });
+    this.highlight(track, this.highlightedTrack === track ? this.highlightedPiece : null);
     // Above the track lines, which move up when focused; below cuts and the cursor.
     for (const layer of [...traceLayers(PIECES), ...traceLayers(SEGMENT), CUTS, this.beforeLayer]) if (this.map.getLayer(layer)) this.map.moveLayer(layer);
   }
 
   highlight(track, piece) {
+    this.highlightedTrack = track;
+    this.highlightedPiece = piece;
     if (!track || !piece) {
       this.map.getSource(SEGMENT).setData(empty());
       return;
     }
     const index = track.pieces.findIndex(candidate => candidate.first === piece.first);
-    this.map.getSource(SEGMENT).setData({ type: "Feature", properties: { color: pieceColor(Math.max(0, index)) }, geometry: { type: "MultiLineString", coordinates: keptLines(track, piece) } });
+    this.map.getSource(SEGMENT).setData({ type: "Feature", properties: { color: pieceColor(Math.max(0, index)) }, geometry: { type: "MultiLineString", coordinates: keptLines(track, piece, this.hidden || []) } });
   }
 
   clear() {
+    this.hidden = [];
+    this.highlightedTrack = null;
+    this.highlightedPiece = null;
     this.map.getSource(SEGMENT).setData(empty());
     this.map.getSource(CUTS).setData(empty());
     this.map.getSource(PIECES).setData(empty());
@@ -478,10 +485,15 @@ export class CutOverlay {
 }
 
 // keptLines are a segment's kept points, apart where the recording breaks.
-function keptLines(track, piece) {
+function keptLines(track, piece, hidden = []) {
   const lines = [];
   let current = [], previous = -1;
   for (let i = piece.first; i <= piece.last; i++) {
+    if (hidden.some(([first, last]) => i >= first && i <= last)) {
+      if (current.length > 1) lines.push(current);
+      current = []; previous = -1;
+      continue;
+    }
     if (track.removed[i]) continue;
     if (previous >= 0 && track.segments[i] !== track.segments[previous]) {
       if (current.length > 1) lines.push(current);

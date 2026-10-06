@@ -1058,7 +1058,7 @@ function applyCutPanel() {
   const open = cutting();
   if (open) {
     cutPanel.show(entry.track, { timeZone: $("timezone").value, workspace: [...state.tracks.keys()], folder: state.folder || state.config.root, home: state.config.root || "", places: state.config.places || [] });
-    cutOverlay.show(entry.track);
+    cutOverlay.show(entry.track, hiddenRanges(entry));
     timeline.setCutting({
       cuts: entry.track.cuts,
       candidates: entry.track.cutCandidates,
