@@ -621,3 +621,6 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 /* Chart heading text follows the segmented controls at the same centre. */
 .profile-head { font-size: var(--font-size-sm); line-height: var(--line-height-ui); align-items: center; }
 .profile-head #profile-name, .profile-head #profile-stats, .profile-head .readout { line-height: var(--control-height-sm); }
+
+/* The embedded SVG must scale with the compact attribution button. */
+.maplibregl-ctrl-attrib-button, .maplibregl-ctrl-attrib.maplibregl-compact::after { background-position: center; background-size: 100% 100%; background-repeat: no-repeat; }
