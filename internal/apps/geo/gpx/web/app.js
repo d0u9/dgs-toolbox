@@ -12,8 +12,7 @@ import { StopMarkers } from "./stops.js";
 import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
-import { revealButton } from "./reveal.js";
-import { CHEVRON, DIAMOND, DIAMOND_OPEN, DOWN, UP } from "./icons.js";
+import { CHEVRON } from "./icons.js";
 import { RoutePlanner } from "./route.js";
 import { waypointDialog } from "./dialog.js";
 import { chooseDialog, confirmDialog, promptDialog } from "/ui/dialog.js";
@@ -1263,7 +1262,6 @@ function trackRow(path, entry) {
     + (entry.track.unsaved ? " unsaved" : "") + (entry.visible ? "" : " hidden-track");
   // A name too long for the sidebar is cut with an ellipsis, so the tooltip
   // carries the whole name as well as where the file is.
-  tooltip(li, [entry.track.name, path]);
 
   // The disclosure sits at the row's end, so rows start flush at the left.
   const disclosure = expandable(entry)
@@ -1303,29 +1301,19 @@ function trackRow(path, entry) {
     track.unsaved ? "edited, not saved" : "",
   ];
 
-  // The row carries only what is looked at or reached for all the time:
-  // showing the file on the map, where it is on this machine, and whether
-  // dgs wrote it. Everything done to the file is in its context menu.
+  const origin = track.draft ? "New GPX, not saved yet" : track.ours ? "Created by dgs; edits stay in this GPX" : "Recording; edits stay in its sidecar";
+  tooltip(li, [track.name, ...details.filter(Boolean), track.clean.error, origin, path]);
   const actions = document.createElement("span");
   actions.className = "actions";
   if (track.draft || track.added) li.classList.add("changed");
-  if (track.clean.sidecar) li.classList.add("has-sidecar");
-  // Besides dragging, files move a step at a time among the rows listed.
+  if (track.clean.error) li.classList.add("state-error");
   const listed = filteredPaths();
   const at = listed.indexOf(path);
-  if (listed.length > 1) {
-    const all = [...state.tracks.keys()];
-    const up = iconButton("order", UP, "Move this file up", () => reorderFiles(path, listed[at - 1]));
-    const down = iconButton("order", DOWN, "Move this file down", () => reorderFiles(path, all[all.indexOf(listed[at + 1]) + 1] ?? null));
-    up.disabled = at <= 0;
-    down.disabled = at >= listed.length - 1;
-    actions.append(up, down);
-  }
-  actions.append(oursMark(track));
-  if (state.config.canReveal && !track.draft) actions.append(revealButton(path));
   actions.append(eye);
-
-  li.append(color, label(track.name, details), actions);
+  const distance = document.createElement("span");
+  distance.className = "row-distance";
+  distance.textContent = track.points.length ? format.distance(track.stats.distance) : "";
+  li.append(color, label(track.name, []), distance, actions);
   if (disclosure) li.append(disclosure);
   // A right click on a file offers what is done to the file as a whole:
   // writing it out, then taking it out of the workspace.
@@ -1379,6 +1367,16 @@ function trackRow(path, entry) {
         onSelect: () => discardSidecar(path),
       },
     ],
+    [
+      state.config.canReveal && !track.draft && { label: "Show in file manager", onSelect: async () => {
+        try { await api.reveal(path); } catch (error) { showMessage(error.message, true); }
+      } },
+      listed.length > 1 && { label: "Move up", disabled: at <= 0, onSelect: () => reorderFiles(path, listed[at - 1]) },
+      listed.length > 1 && { label: "Move down", disabled: at >= listed.length - 1, onSelect: () => {
+        const all = [...state.tracks.keys()];
+        reorderFiles(path, all[all.indexOf(listed[at + 1]) + 1] ?? null);
+      } },
+    ],
     [{ label: "Close", title: "Remove from the workspace; nothing on disk changes", onSelect: () => closeTracks([path]) }],
     ]);
   });
@@ -1399,23 +1397,6 @@ function trackRow(path, entry) {
   });
   bindRowDrag(li, { kind: "file", path });
   return li;
-}
-
-// oursMark says whether dgs wrote this GPX. A file dgs wrote keeps what is
-// done to it inside itself; any other file keeps it in a sidecar beside it,
-// so which one it is decides what a later edit writes.
-function oursMark(track) {
-  const mark = document.createElement("span");
-  mark.className = "ours-mark" + (track.ours ? " ours" : "");
-  mark.innerHTML = track.ours ? DIAMOND : DIAMOND_OPEN;
-  const title = track.draft
-    ? "A new GPX, not saved yet; dgs writes it"
-    : track.ours
-      ? "dgs wrote this GPX: what is done to it is kept inside the file"
-      : "dgs did not write this GPX: what is done to it is kept in a sidecar beside it";
-  mark.title = title;
-  mark.setAttribute("aria-label", title);
-  return mark;
 }
 
 // manyMenu is what is offered for several files at once: what can be done to
@@ -1460,7 +1441,6 @@ function partRow(path, entry, part) {
   const li = document.createElement("li");
   li.className = "part-row" + (hidden || !entry.visible ? " hidden-track" : "")
     + (state.partSelection?.path === path && state.partSelection.key === part.key ? " selected" : "");
-  tooltip(li, [part.name, part.description]);
 
   const eye = iconButton("eye", hidden ? EYE_OFF : EYE, hidden ? "Show this part" : "Hide this part", () => setPartHidden(path, part.key, !hidden));
   const glyph = document.createElement("span");
@@ -1477,20 +1457,14 @@ function partRow(path, entry, part) {
   const actions = document.createElement("span");
   actions.className = "actions";
   const ours = Boolean(entry.track.ours || entry.track.draft);
-  // Tracks, routes and waypoints of a GPX dgs wrote are put in order a step
-  // at a time, each among its own kind.
-  const kin = entry.track.parts.filter((one) => one.kind === part.kind).map((one) => one.key);
-  if (ours && kin.length > 1) {
-    const keys = kin;
-    const at = keys.indexOf(part.key);
-    const up = iconButton("order", UP, `Move this ${part.kind} up`, () => reorderParts({ kind: part.kind, path, key: part.key }, keys[at - 1]));
-    const down = iconButton("order", DOWN, `Move this ${part.kind} down`, () => reorderParts({ kind: part.kind, path, key: part.key }, keys[at + 2] ?? null));
-    up.disabled = at <= 0;
-    down.disabled = at >= keys.length - 1;
-    actions.append(up, down);
-  }
+  const kin = entry.track.parts.filter(one => one.kind === part.kind).map(one => one.key);
+  const at = kin.indexOf(part.key);
   actions.append(eye);
-  li.append(glyph, label(part.name, details), actions);
+  tooltip(li, [part.name, ...details.filter(Boolean)]);
+  const distance = document.createElement("span");
+  distance.className = "row-distance";
+  distance.textContent = part.kind === "waypoint" ? "" : format.distance(part.distance);
+  li.append(glyph, label(part.name, []), distance, actions);
   if (part.added) li.classList.add("added");
   // A right click on a track, route or waypoint offers what is done to that
   // part alone.
@@ -1517,6 +1491,10 @@ function partRow(path, entry, part) {
         onSelect: () => copyPartTo(path, part, targets, true),
       },
     ],
+    ours && kin.length > 1 ? [
+      { label: "Move up", disabled: at <= 0, onSelect: () => reorderParts({ kind, path, key: part.key }, kin[at - 1]) },
+      { label: "Move down", disabled: at >= kin.length - 1, onSelect: () => reorderParts({ kind, path, key: part.key }, kin[at + 2] ?? null) },
+    ] : [],
     kind === "waypoint" ? [{
       label: "Move on the map…",
       title: takeable ? "Drag the pin to where the waypoint belongs" : "This GPX was not written by dgs, so its waypoints stay where they were recorded",

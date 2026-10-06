@@ -174,13 +174,7 @@ export class CleanPanel {
       tab.className = "inspector-tab" + (this.tab === key ? " active" : "");
       tab.setAttribute("role", "tab");
       tab.setAttribute("aria-selected", String(this.tab === key));
-      tab.textContent = text;
-      if (count) {
-        const badge = document.createElement("span");
-        badge.className = "tab-count";
-        badge.textContent = count;
-        tab.append(badge);
-      }
+      tab.textContent = count ? `${text} (${count})` : text;
       tab.addEventListener("click", () => this.onTab(key));
       tabs.append(tab);
     }
@@ -208,7 +202,7 @@ export class CleanPanel {
         : "Nothing cleaned. The source GPX is never changed.";
       foot.title = track.clean.sidecar || "";
     }
-    parts.push(foot);
+    if (this.tab !== "segments" || track.clean.error) parts.push(foot);
     this.root.replaceChildren(...parts);
   }
 

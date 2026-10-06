@@ -10,6 +10,7 @@ import { saveFile } from "/ui/filedialog.js";
 import * as status from "/ui/statusbar.js";
 import { chooseDialog, promptDialog } from "/ui/dialog.js";
 import { openMenu } from "/ui/menu.js";
+import { tooltip } from "/ui/tooltip.js";
 import { textButton as sharedTextButton } from "/ui/controls.js";
 import { rowDoubleClick } from "/ui/selection.js";
 
@@ -161,19 +162,6 @@ export class CutPanel {
     if (!track) return;
     const parts = [];
 
-    const head = document.createElement("div");
-    head.className = "clean-head";
-    const title = document.createElement("strong");
-    title.textContent = `Segments (${track.pieces.length})`;
-    head.append(title);
-    parts.push(head);
-
-    const hint = document.createElement("p");
-    hint.className = "cut-hint";
-    hint.textContent = "Click to select; double-click to fit. Right-click for names and cuts.";
-    hint.title = "Right-click a cut or its segment for removal; drag a timeline cut to move it. Clear cuts removes them all. Zoom the timeline with the wheel for finer placement.";
-    parts.push(hint);
-
     parts.push(this.list());
 
     parts.push(this.actions());
@@ -208,6 +196,7 @@ export class CutPanel {
     count.className = "clean-count";
     count.textContent = `${chosen} of ${track.pieces.length} chosen`;
     bar.append(all, label, count);
+    tooltip(bar, ["Select segments", "Click to select; double-click to fit", "Right-click to rename or remove a cut", "Drag a timeline cut to move it"]);
     wrap.append(bar);
     track.pieces.forEach((piece, i) => wrap.append(this.row(piece, i + 1)));
     return wrap;
@@ -217,7 +206,6 @@ export class CutPanel {
     const item = document.createElement("div");
     item.className = "cut-row";
     item.classList.toggle("selected", this.selected.has(piece.first));
-    item.title = `${piece.points} points — click to select, double-click to fit, right-click for actions`;
 
     const top = document.createElement("div");
     top.className = "cut-row-top";
@@ -235,39 +223,25 @@ export class CutPanel {
     const badge = document.createElement("span");
     badge.className = "cut-number";
     badge.textContent = String(number);
-    badge.style.background = pieceColor(number - 1);
+    item.style.borderLeftColor = pieceColor(number - 1);
     const name = document.createElement("span");
     name.className = "cut-name";
-    name.textContent = piece.name || defaultName(piece, number, this.timeZone);
-    name.title = "Right-click to rename this segment";
+    const fullName = piece.name || defaultName(piece, number, this.timeZone);
+    const from = piece.start == null ? "" : format.clock(piece.start, this.timeZone, { seconds: false });
+    const to = piece.end == null ? "" : format.clock(piece.end, this.timeZone, { seconds: false });
+    name.textContent = piece.name || (from && to && from.slice(0, 10) === to.slice(0, 10) ? `${from.slice(11)}–${to.slice(11)}` : fullName);
     top.append(check, badge, name);
-    if (number > 1 && this.track.cuts.includes(piece.first)) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "cut-remove icon-button";
-      button.textContent = "×";
-      button.title = `Remove cut before segment ${number}`;
-      button.setAttribute("aria-label", button.title);
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        this.removeCut(piece.first);
-      });
-      top.append(button);
-    }
+    const distance = document.createElement("span");
+    distance.className = "row-distance";
+    distance.textContent = format.distance(piece.distance);
+    top.append(distance);
     item.append(top);
-
-    const meta = document.createElement("div");
-    meta.className = "cut-row-meta";
-    const facts = [];
-    if (piece.start != null) {
-      const from = format.clock(piece.start, this.timeZone, { seconds: false });
-      const to = format.clock(piece.end, this.timeZone, { seconds: false });
-      facts.push(from.slice(0, 10) === to.slice(0, 10) ? `${from.slice(11)}–${to.slice(11)}` : `${from.slice(5)} – ${to.slice(5)}`);
-      facts.push(format.duration((piece.end - piece.start) / 1000) || "0m");
-    }
-    facts.push(format.distance(piece.distance));
-    meta.textContent = facts.join(" · ");
-    item.append(meta);
+    tooltip(item, [fullName,
+      piece.name && from && to ? `${from} – ${to}` : "",
+      piece.start != null && piece.end != null ? format.duration((piece.end - piece.start) / 1000) || "0m" : "",
+      `${format.distance(piece.distance)} · ${piece.points} points`,
+      "Click to select · double-click to fit · right-click for actions",
+    ]);
 
     item.addEventListener("mouseenter", () => this.onHover(piece));
     item.addEventListener("mouseleave", () => this.onHover(this.selected.size === 1 ? this.track.pieces.find(piece => this.selected.has(piece.first)) : null));
@@ -391,10 +365,7 @@ export class CutPanel {
     });
     section.append(saveAs);
 
-    const foot = document.createElement("p");
-    foot.className = "clean-foot";
-    foot.textContent = "Add one segment with a name, or choose separate tracks or one named merged track for several. Save the target GPX to write the added tracks.";
-    section.append(foot);
+    tooltip(add, ["Add selected segments", "One segment asks for a name", "Several segments ask for separate tracks or one named merged track", "Save the target GPX to write the added tracks"]);
     return section;
   }
 

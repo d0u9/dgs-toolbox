@@ -189,7 +189,6 @@ body {
 .inspector-tab { display: flex; align-items: center; gap: 5px; padding: 7px 0; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--graphite); cursor: pointer; }
 .inspector-tab:hover { color: var(--ink); }
 .inspector-tab.active { color: var(--ink); border-bottom-color: var(--primary); font-weight: 600; }
-.tab-count { padding: 0 5px; border-radius: 8px; background: var(--hover); font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .inspector-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 14px 10px; }
 .inspector-body > .clean-filter:first-child { border-top: none; }
 .clean-panel > .clean-foot { margin: 0; padding: 8px 14px; border-top: 1px solid var(--hairline); }
@@ -264,28 +263,17 @@ body {
 .cut-tools .button { flex: 1 1 auto; min-width: 0; white-space: nowrap; }
 .cut-hint { margin: 0 0 8px; color: var(--graphite); font-size: 12px; line-height: 1.45; }
 .cut-list { margin: 0 -14px; }
-.cut-list-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 5px 14px; border-bottom: 1px solid var(--hairline); background: var(--paper); color: var(--graphite); font-size: 12px; }
+.cut-list-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--hairline); background: var(--paper); color: var(--graphite); font-size: 12px; }
 .cut-list-bar label { cursor: pointer; }
 .cut-list-bar .clean-count { margin-left: auto; }
 .cut-check { width: 16px; height: 16px; flex: none; margin: 0; accent-color: var(--primary); }
 .inspector { container-type: inline-size; }
-.cut-row { padding: 7px 14px; border-bottom: 1px solid var(--hairline); cursor: pointer; }
+.cut-row { padding: 13px 14px 13px 11px; border-bottom: 1px solid var(--hairline); border-left: 3px solid transparent; cursor: pointer; }
 .cut-row:hover { background: var(--hover); }
-.cut-row-top { display: flex; align-items: center; gap: 8px; }
-.cut-row-meta { margin: 2px 0 0 40px; color: var(--graphite); font-size: 12px; font-variant-numeric: tabular-nums; }
-.cut-remove { flex: none; width: 26px; height: 26px; font-size: 18px; line-height: 1; }
-.cut-number {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 9px;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-}
-.cut-name { flex: 1; min-width: 0; font-size: var(--font-size-ui); font-weight: 500; }
+.cut-row-top { display: flex; align-items: center; gap: 10px; min-height: 24px; }
+.cut-number { flex: none; width: 20px; color: var(--graphite); font-size: 13px; font-weight: 400; font-variant-numeric: tabular-nums; text-align: center; }
+.cut-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.row-distance { flex: none; color: var(--graphite); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Writing the segments out: a group of controls on one baseline. The select
    and the button beside it are the same height, the destination row and the
    new-file button share one column, and every gap comes from the spacing
@@ -509,8 +497,12 @@ body {
   line-height: 1.3;
 }
 .actions { flex: none; display: flex; align-items: center; gap: 2px; }
-.track-row { align-items: flex-start !important; }
-.track-row > .disclosure, .track-row > .actions { margin-top: 1px; }
+.list li.track-row { align-items: center; gap: 10px; min-height: 48px; padding-top: 10px; padding-bottom: 10px; }
+.track-row .ui-row-label .meta, .part-row .ui-row-label .meta { display: none; }
+.track-row .name { font-size: 14px; font-weight: 500; }
+.track-row.state-error .name { color: var(--error); }
+.track-row > .disclosure { width: 28px; height: 28px; }
+.track-row .actions > .eye { width: 28px; height: 28px; border: none; border-radius: 0; }
 .disclosure {
   flex: none;
   width: 22px;
@@ -529,7 +521,7 @@ body {
 .disclosure:hover { background: rgba(0, 0, 0, .06); }
 .disclosure.expanded { transform: rotate(90deg); }
 .track-row.expandable > .actions { right: 32px; }
-.part-row { padding-left: 34px !important; gap: 6px !important; font-size: 11.5px; }
+.part-row { padding: 9px 12px 9px 34px !important; gap: 10px !important; font-size: 13px; min-height: 40px; }
 .list li.parts-toolbar {
   padding: 2px 8px 2px 34px;
   gap: 10px;
@@ -556,14 +548,11 @@ body {
 .mini:hover:not(:disabled) { background: var(--hover); }
 .mini:disabled { opacity: .35; cursor: default; }
 .part-row .glyph { flex: none; width: 14px; text-align: center; }
-.part-row .eye { flex: none; width: 18px; padding: 0; border: none; background: none; color: var(--primary); cursor: pointer; }
+.part-row .eye { flex: none; width: 28px; height: 28px; padding: 0; border: none; background: none; color: var(--primary); cursor: pointer; }
 .part-row.hidden-track .eye { color: var(--graphite); }
 .part-row.hidden-track .label, .part-row.hidden-track .glyph { opacity: .45; }
 
-/* Every row's controls sit together at its end, in the same order on every
-   row and shown at all times: the mark saying who wrote the file, the reveal
-   button and the eye. They are the row's own width, so the name gives way to
-   them rather than sliding under them on hover. */
+/* Row controls reserve their own space, keeping names steady on hover. */
 .list li { position: relative; }
 .list li > .actions { flex: none; display: flex; align-items: center; gap: 2px; margin-left: 4px; }
 .list li > .actions .row-action { visibility: visible; }
@@ -659,35 +648,12 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .waypoint-move { width: 20px; height: 20px; border: 3px solid #fff; border-radius: 50%; background: #0072b2; box-shadow: 0 1px 6px rgba(0, 0, 0, .45); cursor: grab; }
 .waypoint-move:active { cursor: grabbing; transform: scale(1.15); }
 
-/* Whether dgs wrote a GPX. It is read, never pressed: a file dgs wrote keeps
-   what is done to it inside itself, any other file in a sidecar beside it. */
-.ours-mark {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  color: var(--steel);
-  cursor: default;
-}
-.ours-mark.ours { color: var(--primary); }
-
 /* GPX files dragged from the file manager onto the workspace. */
 .sidebar.dropping { outline: 2px dashed var(--primary); outline-offset: -2px; }
 
 /* The eye sits on the text baseline of its row, whatever the row's font. */
 .eye svg, .icon-button svg { display: block; margin: 0 auto; }
-/* A file row's icons sit as one bordered strip: same size squares, touching,
-   sharing their borders. */
-.track-row .actions { gap: 0; }
-.track-row .actions > .eye, .track-row .actions > .row-action, .track-row .actions > .order, .track-row .actions > .ours-mark {
-  width: 20px; height: 20px; padding: 0; margin: 0 0 0 -1px; display: grid; place-items: center;
-  border: 1px solid var(--hairline); border-radius: 0; background: var(--paper); color: var(--graphite);
-}
-.track-row .actions > :first-child { margin-left: 0; border-radius: 4px 0 0 4px; }
-.track-row .actions > :last-child { border-radius: 0 4px 4px 0; }
-.track-row .actions > .ours-mark { color: var(--steel); }
-.track-row .actions > .ours-mark.ours, .track-row .actions > .eye { color: var(--primary); }
+
 .track-row.hidden-track .actions > .eye { color: var(--graphite); }
 .track-row .actions > button:hover:not(:disabled) { background: #ececea; position: relative; z-index: 1; }
 .track-row .actions > .order:disabled { opacity: 1; color: var(--hairline); cursor: default; }
@@ -718,15 +684,11 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .sort-row { transition: transform .16s cubic-bezier(.2, .8, .2, 1); }
 .sort-row.sort-held { opacity: 0 !important; pointer-events: none; }
 /* A route's or waypoint's arrows, putting it one place up or down in its GPX. */
-.actions button.order { width: 16px; height: 22px; padding: 0; display: grid; place-items: center; border: none; border-radius: 5px; background: none; color: var(--graphite); cursor: pointer; }
-.actions button.order:hover:not(:disabled) { background: rgba(0, 0, 0, .06); }
-.actions button.order:hover:not(:disabled) { color: var(--primary); }
-.actions button.order:disabled { opacity: .25; cursor: default; }
 
 /* Fine text uses the bundled screen face; precision values use tabular digits.
    Coordinates and diagnostics use the shared technical face. */
 .cut-row.selected, .route-waypoint.selected, .range-row.selected { background: var(--selected); }
-.cut-row-meta, .profile-stats, .timeline-ticks, .stop-popup { font-variant-numeric: tabular-nums; }
+.profile-stats, .timeline-ticks, .stop-popup { font-variant-numeric: tabular-nums; }
 .route-label .meta { font-family: var(--font-mono); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums slashed-zero; }
 .plan-marker.selected { outline: 2px solid var(--primary); outline-offset: 2px; }
 .label .meta, .clean-foot, .cut-hint { font-weight: 400; }
