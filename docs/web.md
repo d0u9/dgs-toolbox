@@ -352,6 +352,12 @@ embedded in the binary and mounted by every server that serves a page, under
 then adds a stylesheet of its own for what only it draws — the graph canvas,
 the map workspace.
 
+Every page loads `/ui/dialog.js` for shared dialog positioning. File dialogs,
+notifications and confirmations move when their heading is dragged, with a
+mouse, pen or touch. Buttons and inputs within a heading keep their usual
+behaviour. A custom title bar uses `data-dialog-handle`. Movement stays inside
+the viewport; resizing the window brings moved dialogs back into view.
+
 The module also carries the one interaction no page should write twice: the
 **file dialog**. A page links `/ui/filedialog.css`, imports `openFile` or
 `saveFile` from `/ui/filedialog.js`, and mounts the endpoints
