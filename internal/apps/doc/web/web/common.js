@@ -164,6 +164,11 @@ function fieldHead(field) {
   return [name, note];
 }
 
+// tall marks an option card whose text fills the line — Chinese, or capitals
+// such as AUD — so it is drawn a size down and reads as large as lower-case
+// names beside it.
+const tall = (text) => /[\u3400-\u9fff]|^[A-Z0-9 ]+$/.test(text) ? " tall" : "";
+
 // inputFor is the control a field's type asks for: a date picker, a list of
 // options, a list of the tree's other Items, or a line of text. Every value
 // control has the class field-input and the field's key as its name.
@@ -311,7 +316,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
     const cards = el("div", { className: "field-choice-cards", role: "group" });
     cards.setAttribute("aria-label", field.key);
     const buttons = field.options.map((o) => {
-      const button = el("button", { type: "button", className: "button field-choice-card" }, o);
+      const button = el("button", { type: "button", className: "button field-choice-card" + tall(o) }, o);
       button.setAttribute("aria-pressed", String(picked.has(o)));
       button.onclick = () => {
         picked.has(o) ? picked.delete(o) : picked.add(o);
@@ -339,7 +344,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
       // An optional choice is cleared by clicking the picked card again.
       const cardChoices = choices;
       const buttons = cardChoices.map(([v, text]) => {
-        const button = el("button", { type: "button", className: "button field-choice-card" }, text);
+        const button = el("button", { type: "button", className: "button field-choice-card" + tall(text) }, text);
         if (!field.required) button.title = "Click again to clear";
         button.onclick = () => {
           control.value = !field.required && control.value === v ? "" : v;

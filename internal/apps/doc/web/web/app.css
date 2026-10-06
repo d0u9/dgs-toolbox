@@ -79,6 +79,7 @@ body { display: flex; flex-direction: column; }
   background: var(--paper); border-color: var(--hairline); color: var(--primary); font-weight: 600;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 14%, transparent);
 }
+.field-choice-cards .field-choice-card.tall { font-size: 12px; }
 /* A required choice still unmade: only the track's frame turns blue. */
 .field-choice-cards.needed { border-color: var(--primary); }
 .form-field .req { color: var(--error); }
