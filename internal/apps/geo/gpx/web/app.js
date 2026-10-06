@@ -13,6 +13,7 @@ import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { CHEVRON, DIAMOND, DIAMOND_OPEN, FOLDER } from "./icons.js";
+import { EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, SCISSORS, MAP_PIN_PLUS, SPLIT, CHEVRON_UP, CHEVRON_DOWN, ROTATE_CCW, ROTATE_CW, MAXIMIZE, ROWS_2, COLUMNS_2 } from "/ui/icons.js";
 import { RoutePlanner } from "./route.js";
 import { UI_SCALE, uiPx } from "./density.js";
 import { waypointDialog } from "./dialog.js";
@@ -1252,8 +1253,6 @@ const expandable = (entry) => entry.track.parts.length > 0;
 // The eye that shows or hides something on the map. Showing and hiding are
 // one state, so one control carries it: the eye open when it is drawn, the
 // eye struck through when it is not.
-const EYE = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8s2.6-4.2 7-4.2S15 8 15 8s-2.6 4.2-7 4.2S1 8 1 8z"/><circle cx="8" cy="8" r="1.9"/></svg>`;
-const EYE_OFF = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8s2.6-4.2 7-4.2S15 8 15 8s-2.6 4.2-7 4.2S1 8 1 8z"/><circle cx="8" cy="8" r="1.9"/><path d="M2.5 13.5 13.5 2.5"/></svg>`;
 
 const doubleRowClick = rowDoubleClick();
 
@@ -1264,7 +1263,7 @@ function trackRow(path, entry) {
   // A name too long for the sidebar is cut with an ellipsis, so the tooltip
   // carries the whole name as well as where the file is.
 
-  // The disclosure sits at the row's end, so rows start flush at the left.
+  // The filled triangle leads the file row and toggles only its children.
   const disclosure = expandable(entry)
     && iconButton("disclosure", CHEVRON, entry.expanded ? "Collapse" : "List its tracks, routes and waypoints", () => {
       entry.expanded = !entry.expanded;
@@ -1331,8 +1330,9 @@ function trackRow(path, entry) {
   const main = document.createElement("div");
   main.className = "file-main";
   main.append(label(track.name, []), distance);
-  li.append(main, actions);
   if (disclosure) li.append(disclosure);
+  else { const spacer = document.createElement("span"); spacer.className = "disclosure-space"; li.append(spacer); }
+  li.append(main, actions);
   li.append(color);
   // A right click on a file offers what is done to the file as a whole:
   // writing it out, then taking it out of the workspace.
@@ -1454,7 +1454,7 @@ function manyMenu(paths) {
   ];
 }
 
-const PART_GLYPH = { track: "〰", route: "┅", waypoint: "⚑" };
+const PART_GLYPH = { track: ROUTE, route: MOVE_HORIZONTAL, waypoint: MAP_PIN_PLUS };
 
 function partRow(path, entry, part) {
   const hidden = entry.hiddenParts.has(part.key);
@@ -1465,7 +1465,7 @@ function partRow(path, entry, part) {
   const eye = iconButton("eye", hidden ? EYE_OFF : EYE, hidden ? "Show this part" : "Hide this part", () => setPartHidden(path, part.key, !hidden));
   const glyph = document.createElement("span");
   glyph.className = "glyph";
-  glyph.textContent = PART_GLYPH[part.kind];
+  glyph.innerHTML = PART_GLYPH[part.kind];
   glyph.style.color = entry.color;
 
   const details = part.kind === "waypoint"
@@ -2374,17 +2374,17 @@ class ViewControl {
     const box = document.createElement("div");
     box.className = "maplibregl-ctrl maplibregl-ctrl-group view-control";
     const buttons = [
-      ["↥", "Tilt up — look further toward the horizon", () => ({ pitch: Math.min(map.getMaxPitch(), map.getPitch() + TILT_STEP) })],
-      ["↧", "Tilt down — look straight down", () => ({ pitch: Math.max(0, map.getPitch() - TILT_STEP) })],
-      ["↺", "Turn left", () => ({ bearing: map.getBearing() - TURN_STEP })],
-      ["↻", "Turn right", () => ({ bearing: map.getBearing() + TURN_STEP })],
+      [CHEVRON_UP, "Tilt up — look further toward the horizon", () => ({ pitch: Math.min(map.getMaxPitch(), map.getPitch() + TILT_STEP) })],
+      [CHEVRON_DOWN, "Tilt down — look straight down", () => ({ pitch: Math.max(0, map.getPitch() - TILT_STEP) })],
+      [ROTATE_CCW, "Turn left", () => ({ bearing: map.getBearing() - TURN_STEP })],
+      [ROTATE_CW, "Turn right", () => ({ bearing: map.getBearing() + TURN_STEP })],
     ];
     for (const [glyph, title, next] of buttons) {
       const button = document.createElement("button");
       button.type = "button";
       button.title = title;
       button.setAttribute("aria-label", title);
-      button.innerHTML = `<span aria-hidden="true">${glyph}</span>`;
+      button.innerHTML = glyph;
       let repeat = null;
       const step = () => map.easeTo({ ...next(), duration: 200 });
       const stop = () => { clearInterval(repeat); repeat = null; };
@@ -2569,6 +2569,11 @@ async function start() {
   if (saved.compare === false) state.compare = false;
   cleanPanel.ways = state.config.ways || [];
   if (cleanPanel.ways.some((way) => way.id === saved.fillProfile)) state.fill.profile = saved.fillProfile;
+  $("map-only").innerHTML = MAXIMIZE;
+  $("layout-stacked").innerHTML = ROWS_2;
+  $("layout-side").innerHTML = COLUMNS_2;
+  $("chart-fit").innerHTML = MAXIMIZE;
+  for (const [id, icon] of [["select", MOUSE_POINTER_2], ["range", MOVE_HORIZONTAL], ["lasso", LASSO], ["fill", ROUTE], ["cut", SCISSORS], ["waypoint", MAP_PIN_PLUS], ["compare", SPLIT]]) $("tool-" + id).innerHTML = icon;
   $("tool-compare").addEventListener("click", () => setCompare(!state.compare));
   if (["changes", "auto", "segments"].includes(saved.editTab)) state.editTab = saved.editTab;
   // Cut was a panel of its own; it is now the Segments tab.

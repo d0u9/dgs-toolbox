@@ -1109,3 +1109,5 @@ elevation.
 
 Map matching to roads (HMM, Newson & Krumm 2009), 3D flyover, other source
 formats such as FIT.
+
+File disclosures use a filled leading triangle. File action icons form a compact divided group like the chart toggles; map edit buttons use the shared small control dimensions. Lucide SVG icons are bundled offline and use a heavier stroke for legibility.

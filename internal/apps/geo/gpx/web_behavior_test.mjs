@@ -30,7 +30,7 @@ function treeHarness(track){
   const context=vm.createContext({
     tooltip(node,lines){node.tip=lines.filter(Boolean);},document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',DIAMOND:'ours',DIAMOND_OPEN:'recording',FOLDER:'folder',
     PART_GLYPH:{track:'track',route:'route',waypoint:'waypoint'},
-    expandable:()=>false,oursMark:()=>new Element('span'),filteredPaths:()=>['current.gpx'],
+    expandable:entry=>entry.track.parts.length>0,CHEVRON:"triangle",save(){},oursMark:()=>new Element('span'),filteredPaths:()=>['current.gpx'],
     bindRowDrag(){},copyTargets:()=>[],renderTracks(){calls.push(['render']);},
     select(path,options={}){calls.push(['select',path,plain(options)]);},
     selectionFor:()=>['current.gpx'],openMenu(event,groups){calls.push(['menu',groups.flat().filter(Boolean)]);},
@@ -514,7 +514,8 @@ test('file toolbar contains only origin, reveal and visibility; actions do not s
   const row=h.context.trackRow('current.gpx',h.entry),tools=row.all(e=>e.classList.contains('file-tools'))[0];
   assert.deepEqual(tools.children.map(e=>e.className),['ours-mark ours','row-action','eye']);
   assert.equal(row.all(e=>e.type==='color')[0].hidden,true);
-  assert.equal(row.children[0].className,'file-main');
+  assert.equal(row.children[0].className,'disclosure-space');
+  assert.equal(row.children[1].className,'file-main');
   const reveal=await tools.all(e=>e.classList.contains('row-action'))[0].fire('click');assert.equal(reveal.stopped,true);assert.deepEqual(h.calls.at(-1),['reveal','current.gpx']);
   const eye=await tools.all(e=>e.classList.contains('eye'))[0].fire('click');assert.equal(eye.stopped,true);
   assert.equal(h.calls.some(([kind])=>kind==='focus'||kind==='fit'||kind==='select'),false);
@@ -529,4 +530,12 @@ test('draft and recording origins remain distinct and remote pages omit the reve
     assert.equal(mark.classList.contains('ours'),Boolean(flags.draft||flags.ours));
     assert.ok(mark.attributes['aria-label']);assert.equal(row.all(e=>e.classList.contains('row-action')).length,0);
   }
+});
+
+test("file disclosure leads the row and expands without selecting or fitting", async()=>{
+ const h=treeHarness(treeTrack({ours:true,parts:[{kind:"track"}]})),row=h.context.trackRow("current.gpx",h.entry);
+ assert.ok(row.children[0].classList.contains("disclosure"));
+ const event=await row.children[0].fire("click");
+ assert.equal(event.stopped,true);assert.equal(h.entry.expanded,true);
+ assert.equal(h.calls.some(([kind])=>kind==="focus"||kind==="fit"||kind==="select"),false);
 });
