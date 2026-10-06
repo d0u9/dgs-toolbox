@@ -155,6 +155,8 @@ type server struct {
 	pictures *pictures
 	// writing is held while an export or a merge writes, so two never overlap.
 	writing *sync.Mutex
+	// exporting is how far the running export has got, for the page to show.
+	exporting *exportProgress
 	// items is this tree's Items, kept parsed between questions.
 	items *itemcache.Cache
 }
@@ -179,7 +181,7 @@ func Handler(settings Settings) http.Handler {
 	shared := server{
 		keepOriginal: settings.KeepOriginal == nil || *settings.KeepOriginal,
 		now:          time.Now, pictures: newPictures(pagecache.Store{Dir: settings.CacheDir}), dateOrder: settings.DateOrder, soon: settings.ExpiringWithin,
-		writing: &sync.Mutex{}, trees: trees,
+		writing: &sync.Mutex{}, exporting: &exportProgress{}, trees: trees,
 		store:  textcache.Store{Dir: settings.CacheDir},
 		reader: textread.New(read, textcache.Store{Dir: settings.CacheDir}, ocr.DefaultMaxPages, textread.DefaultWorkers),
 	}
@@ -284,6 +286,7 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/snapshots/delete", s.snapshotDelete)
 	mux.HandleFunc("POST /api/export/plan", s.exportPlan)
 	mux.HandleFunc("POST /api/export", s.exportRun)
+	mux.HandleFunc("GET /api/export/progress", s.exportProgressRead)
 	mux.HandleFunc("POST /api/merge/plan", s.mergePlan)
 	mux.HandleFunc("POST /api/merge", s.mergeRun)
 	mux.HandleFunc("GET /api/cases", s.caseList)

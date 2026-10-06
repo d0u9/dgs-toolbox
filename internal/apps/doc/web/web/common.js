@@ -8,6 +8,8 @@ import { suggest } from "/ui/combo.js";
 import { fileTree } from "/ui/filetree.js";
 import { tooltip } from "/ui/tooltip.js";
 import { iconSvg } from "/ui/icons.js";
+import { openFile } from "/ui/filedialog.js";
+import { progressDialog } from "/ui/dialog.js";
 
 // The status bar along the bottom, as on every dgs page: the tree on the
 // left, what the page shows in the middle, and every message said anywhere
@@ -668,6 +670,53 @@ export function rememberOutlineFolder(state, name, path) {
     if (path) localStorage.setItem(targetKey(state, name), path);
     else localStorage.removeItem(targetKey(state, name));
   } catch { /* not kept */ }
+}
+
+// exportOutline is Save As for an Outline, or a Snapshot in it: t is
+// {name, default}. The folder is chosen in the dialog — this browser's
+// last one for it, else its own, is offered — and the server checks the
+// whole run before anything is written. say reports; blocked gets a plan
+// that does not check. While it writes, a dialog shows how far it is.
+export async function exportOutline(state, t, { say, blocked }) {
+  const chosen = await openFile({ title: "Export " + t.name + " to", folders: true, writable: true, confirm: "Export",
+    message: "Writes " + t.name + " into this folder. An export removes only files it wrote there itself.",
+    folder: outlineFolder(state, t) || state.root, fallbacks: [state.root, ""] });
+  if (!chosen) return;
+  const where = Array.isArray(chosen) ? chosen[0] : chosen;
+  rememberOutlineFolder(state, t.name, where === t.default ? "" : where);
+  const body = { outlines: [t.name], folders: { [t.name]: where } };
+  say("Checking " + where + "…");
+  try {
+    const plan = await post("/api/export/plan", body);
+    const count = (k) => plan.jobs.reduce((n, j) => n + j.plan[k].length, 0);
+    const [add, replace, remove] = [count("add"), count("replace"), count("remove")];
+    if (!plan.ready) {
+      blocked?.(plan);
+      return say("Not exported: fix what is listed first. Nothing was written.", true);
+    }
+    if (!add && !replace && !remove) return say(where + " is up to date: nothing to write.");
+    if ((replace || remove) && !confirm(`Export ${t.name} into ${where}?\n\n${add} to add, ${replace} to replace, ${remove} to remove. Only files an export wrote there are replaced or removed.`)) {
+      return say("Not exported.");
+    }
+    say("Exporting…");
+    const box = progressDialog({ title: "Exporting " + t.name, message: "Copying into " + where + " and reading each file back." });
+    box.update(0, add + replace + remove);
+    const poll = setInterval(async () => {
+      try {
+        const p = await (await fetch(api("/api/export/progress"))).json();
+        if (p.running) box.update(p.done, p.total);
+      } catch { /* the next tick asks again */ }
+    }, 400);
+    let r;
+    try { r = (await post("/api/export", body)).results[0]; }
+    catch (err) { clearInterval(poll); box.fail(err.message); throw err; }
+    clearInterval(poll);
+    box.close();
+    say("Exported to " + where + ": " + r.result.written + " written, " + r.result.removed + " removed, " + r.result.kept + " unchanged" +
+      (r.history_error ? " (history not recorded: " + r.history_error + ")" : "") + ".");
+  } catch (err) {
+    say(err.message, true);
+  }
 }
 
 // nameTree draws a page's list of named things — Outlines, rules,

@@ -1,11 +1,9 @@
-// Outlines: making an Outline — its name, the folder it is exported to, the
-// rules that place PDFs in its tree and the Snapshots it puts in as
+// Outlines: making an Outline — its name, the rules that place PDFs in its tree and the Snapshots it puts in as
 // folders — with the tree they make redrawn beside the form as it changes.
 // Rules are made on the Rules page and Snapshots on the Snapshots page;
 // both are the tree's, and several Outlines use one. Looking through the
-// result and exporting it is the Explore page's.
-import { $, address, scrollBack, api, el, loadState, post, label, frame, say, nameTree, outlineTitle } from "/common.js";
-import { openFile } from "/ui/filedialog.js";
+// result is the Explore page's; both pages export it.
+import { $, address, scrollBack, api, el, loadState, post, label, frame, say, nameTree, outlineTitle, exportOutline } from "/common.js";
 import { outlineTree, unplaced, resizable } from "/outlinetree.js";
 
 let state = { templates: [], items: [] };
@@ -72,10 +70,9 @@ function fill() {
   }) : [el("p", { className: "muted" }, "No Snapshot yet.")]));
 }
 
-function folderShown() {
-  $("folder-path").textContent = draft.folder ? "‎" + draft.folder + "‎" : "None: chosen when exporting";
-  $("folder-path").classList.toggle("muted", !draft.folder);
-  $("folder-clear").disabled = !draft.folder;
+function exportShown() {
+  // Only a saved Outline exports, as it is saved.
+  $("export").disabled = !editing || $("dirty").hidden === false;
 }
 
 // leave asks before an unsaved edit is dropped.
@@ -92,10 +89,11 @@ function open(name) {
   delete draft.default;
   $("name").value = draft.name;
   $("about").value = draft.about || "";
-  folderShown();
   fill();
   sync();
   saved = text(draft);
+  $("dirty").hidden = true;
+  exportShown();
   tree.reset(name ? "outline:" + name : "");
   address(name ? "#" + encodeURIComponent(name) : location.pathname + location.search);
   $("title").textContent = name || "New Outline";
@@ -114,6 +112,7 @@ let asked = 0;
 function changed() {
   sync();
   $("dirty").hidden = editing === null || text(draft) === saved;
+  exportShown();
   clearTimeout(pending);
   pending = setTimeout(regroup, 200);
 }
@@ -190,16 +189,10 @@ $("form").addEventListener("submit", async (event) => {
     say($("form-message"), err.message, true);
   }
 });
-$("folder").onclick = async () => {
-  const chosen = await openFile({ title: "Export " + (draft.name || "the Outline") + " to", folders: true, writable: true, confirm: "Choose",
-    message: "The folder every machine exports this Outline to unless another is chosen on Explore. It is kept in the Outline's file.",
-    folder: draft.folder || state.root, fallbacks: [state.root, ""] });
-  if (!chosen) return;
-  draft.folder = Array.isArray(chosen) ? chosen[0] : chosen;
-  folderShown();
-  changed();
+$("export").onclick = () => {
+  const o = outlines.find((x) => x.name === editing);
+  if (o) exportOutline(state, o, { say: (text, bad) => say($("form-message"), text, bad) });
 };
-$("folder-clear").onclick = () => { draft.folder = ""; folderShown(); changed(); };
 $("new").onclick = () => leave() && open("");
 $("delete").onclick = async () => {
   if (!editing || !confirm("Delete the Outline " + editing + "? Its file under outlines/ is removed; its rules and Snapshots stay, no Item changes, and nothing exported is touched.")) return;

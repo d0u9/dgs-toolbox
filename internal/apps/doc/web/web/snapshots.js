@@ -224,8 +224,10 @@ function inline(row, path) {
   });
   input.addEventListener("blur", () => finish(false));
   row.querySelector(".ft-name").replaceChildren(input);
+  // A new folder sorts among the others, often below what the tree shows.
   requestAnimationFrame(() => {
-    input.focus();
+    input.scrollIntoView({ block: "nearest" });
+    input.focus({ preventScroll: true });
     const dot = isFolder(path) ? -1 : input.value.lastIndexOf(".");
     input.setSelectionRange(0, dot > 0 ? dot : input.value.length);
   });
