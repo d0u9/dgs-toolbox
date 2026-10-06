@@ -1058,3 +1058,5 @@ Hero photography uses `{rounded.xl}` containers at every breakpoint. The chevron
 6. When introducing a new section band, choose from `{colors.canvas}` / `{colors.cloud}` / `{colors.fog}` / `{colors.ink}` — six pre-defined surface modes is the entire surface vocabulary
 
 File explorer workspace rows can use `.ui-file-row`: 28px height for both parent and child items, with the shared small text size. Pages supply indentation and column layout without increasing the child row height.
+
+Disabled secondary buttons keep an opaque graphite outline and cloud surface; only their text becomes steel. Disabling an action must not make its button boundary disappear into the workspace.
