@@ -691,3 +691,9 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .part-row .glyph svg { width: 14px; height: 14px; display: block; }
 
 .map-button svg, .chip.icon svg { width: 14px; height: 14px; display: block; margin: auto; }
+
+/* Child rows must show selection just as their file rows do. */
+.list li.part-row { cursor: pointer; }
+.list li.part-row.selected { background: var(--selected); }
+.list li.part-row.selected:hover { background: var(--selected-hover); }
+.list li.part-row.selected .name { color: var(--ink); font-weight: 600; }
