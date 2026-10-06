@@ -29,7 +29,8 @@ test('single part click preserves camera; double click frames tracks and routes'
   const part={kind,key:'part-a',points:[[0,0]],bounds:[[0,0],[1,1]]};
   context.showPart('file-a',part);
   assert.equal(calls.some(([action])=>['fit','pan'].includes(action)),false);
-  assert.deepEqual(JSON.parse(JSON.stringify(calls.find(([action])=>action==='focus'))),['focus','file-a',{fit:false}]);
+  assert.equal(calls.some(([action])=>['visible','hidden','focus','popup'].includes(action)),false);
+  assert.equal(entry.visible,false);assert.ok(entry.hiddenParts.has('part-a'));
   context.showPart('file-a',part,{fit:true});
   assert.equal(calls.some(([action])=>action===(kind==='waypoint'?'pan':'fit')),true);
  }
