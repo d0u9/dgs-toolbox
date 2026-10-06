@@ -4,7 +4,7 @@
 import { show as showViewer, hide as hideViewer } from "/viewer.js";
 import { splitter } from "/ui/splitter.js";
 import * as statusBar from "/ui/statusbar.js";
-import { suggest } from "/combo.js";
+import { suggest } from "/ui/combo.js";
 import { fileTree } from "/ui/filetree.js";
 import { tooltip } from "/ui/tooltip.js";
 import { iconSvg } from "/ui/icons.js";
@@ -145,6 +145,79 @@ export function label(state, item) {
   return item.type + (parts.length ? " · " + parts.join(" · ") : "");
 }
 
+// chooseItem opens a table of Items to pick one from, for a link field whose
+// list is too long to read in a box: typing narrows by any field, a type
+// button keeps one type, and the newest come first after those suggested.
+// ↑/↓ move the picked row, Enter or a double click takes it, Esc cancels.
+// It resolves to the Item's ID, "" when cleared, or null when cancelled.
+export function chooseItem(state, items, suggested = [], current = "") {
+  const dateOf = (i) => i.fields?.date || i.fields?.issued || i.fields?.start || "";
+  const rank = (i) => suggested.includes(i.id) ? 0 : 1;
+  const sorted = [...items].sort((a, b) => rank(a) - rank(b) || dateOf(b).localeCompare(dateOf(a)));
+  const text = new Map(sorted.map((i) => [i.id, [label(state, i), ...Object.values(i.fields || {}), i.id].join(" ").toLowerCase()]));
+  const types = [...new Set(sorted.map((i) => i.type))].sort();
+  let only = "", picked = current, rows = [];
+  const filter = el("input", { type: "search", className: "item-dialog-filter", placeholder: "Filter by any field…", autocomplete: "off", spellcheck: false });
+  const chips = el("div", { className: "item-dialog-types" });
+  const body = el("tbody", {});
+  const count = el("span", { className: "item-dialog-count" });
+  const dialog = el("dialog", { className: "dialog item-dialog" },
+    el("h3", {}, "Choose an Item"), filter, chips,
+    el("div", { className: "item-dialog-list" },
+      el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Type"), el("th", {}, "Name"), el("th", {}, "Date"), el("th", {}, "ID"))), body)),
+    el("div", { className: "dialog-buttons" }, count,
+      el("button", { type: "button", className: "button", textContent: "Clear", onclick: () => done("") }),
+      el("button", { type: "button", className: "button", textContent: "Cancel", onclick: () => done(null) }),
+      el("button", { type: "button", className: "button primary", textContent: "Choose", onclick: () => picked && done(picked) })));
+  let finish;
+  const done = (answer) => { dialog.close(); dialog.remove(); finish(answer); };
+  const mark = () => {
+    for (const tr of body.children) tr.classList.toggle("selected", tr.dataset.id === picked);
+    body.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
+  };
+  const draw = () => {
+    chips.replaceChildren(...["", ...types].map((t) => {
+      const chip = el("button", { type: "button", className: "button small-button", textContent: t || "All" });
+      chip.setAttribute("aria-pressed", String(t === only));
+      chip.onclick = () => { only = t; draw(); filter.focus(); };
+      return chip;
+    }));
+    const words = filter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    rows = sorted.filter((i) => (!only || i.type === only) && words.every((w) => text.get(i.id).includes(w)));
+    if (rows.length && !rows.some((i) => i.id === picked)) picked = rows[0].id;
+    body.replaceChildren(...rows.map((i) => {
+      const name = label(state, i).slice(i.type.length).replace(/^ · /, "");
+      const tr = el("tr", { title: i.id, onclick: () => { picked = i.id; mark(); }, ondblclick: () => done(i.id) },
+        el("td", {}, i.type), el("td", {}, name + (suggested.includes(i.id) ? " · suggested" : "")),
+        el("td", {}, dateOf(i)), el("td", { className: "item-dialog-id" }, i.id.slice(-6)));
+      tr.dataset.id = i.id;
+      return tr;
+    }));
+    if (!rows.length) body.append(el("tr", {}, el("td", { colSpan: 4, className: "empty" }, "No Item matches.")));
+    count.textContent = rows.length + " of " + sorted.length;
+    mark();
+  };
+  filter.addEventListener("input", draw);
+  dialog.addEventListener("keydown", (event) => {
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && rows.length) {
+      event.preventDefault();
+      const at = rows.findIndex((i) => i.id === picked);
+      const next = event.key === "ArrowDown" ? Math.min(at + 1, rows.length - 1) : Math.max(at - 1, 0);
+      picked = rows[next].id;
+      mark();
+    } else if (event.key === "Enter" && event.target.tagName !== "BUTTON") {
+      event.preventDefault();
+      if (picked && rows.some((i) => i.id === picked)) done(picked);
+    }
+  });
+  dialog.addEventListener("cancel", (event) => { event.preventDefault(); done(null); });
+  document.body.append(dialog);
+  draw();
+  dialog.showModal();
+  filter.focus();
+  return new Promise((resolve) => { finish = resolve; });
+}
+
 // fieldHead is a field's name, marked when required. A field whose Template
 // describes it has a ? beside its name: hovering it shows the description,
 // clicking it shows it under the name until clicked again.
@@ -226,14 +299,44 @@ export function inputFor(field, value, placeholder, state, self, type) {
     const [id, ref] = (value || "").split("@");
     const all = (state ? state.items : []).filter((i) => i.id !== self);
     let items = all, suggested = [], chosen = !!value;
-    const pickItem = el("select", {});
+    // The Item is found by typing into a box, as a combo offers: any of its
+    // fields narrows the list. A button beside it opens chooseItem, a table
+    // to tell apart Items whose names are alike. pickItem holds the Item picked.
+    const pickItem = { value: id || "" };
     const pickRevision = el("select", { hidden: !withRevision });
+    const search = el("input", { type: "text", className: "item-search", autocomplete: "off", spellcheck: false, placeholder: "Type to find an Item…" });
+    const shown = () => {
+      const item = all.find((i) => i.id === pickItem.value);
+      search.value = item ? label(state, item) : pickItem.value;
+    };
+    // Suggested Items first; each choice ends in its ID, so two alike stay apart.
+    const offered = () => [...items.filter((i) => suggested.includes(i.id)), ...items.filter((i) => !suggested.includes(i.id))];
+    let texts = new Map();
+    const choices = () => {
+      texts = new Map(offered().map((i) => [label(state, i) + (suggested.includes(i.id) ? " · suggested" : "") + " — " + i.id,
+        [label(state, i), ...Object.values(i.fields || {}), i.id].join(" ")]));
+      return [...texts.keys()];
+    };
+    const choose = (next) => { chosen = true; pickItem.value = next; shown(); fill(""); set(); };
+    search.addEventListener("change", () => {
+      const typed = search.value.trim();
+      const next = typed.split(" — ").pop().trim();
+      if (items.some((i) => i.id === next)) choose(next);
+      else if (!typed) choose("");
+      else shown();
+    });
+    const browse = el("button", { type: "button", className: "button item-browse", title: "Find in a list" });
+    browse.setAttribute("aria-label", "Find in a list");
+    browse.innerHTML = iconSvg("list");
+    browse.onclick = async () => {
+      const next = await chooseItem(state, offered(), suggested, pickItem.value);
+      if (next !== null) choose(next);
+      search.focus();
+    };
     const draw = (want) => {
-      const keep = pickItem.value || id;
-      pickItem.replaceChildren(el("option", { value: "" }, want && !items.length ? "(no Item matches)" : ""),
-        ...items.map((i) => el("option", { value: i.id, selected: i.id === keep },
-          label(state, i) + (suggested.includes(i.id) ? " · suggested" : ""))));
-      if (keep && !items.some((i) => i.id === keep)) pickItem.value = "";
+      if (pickItem.value && !items.some((i) => i.id === pickItem.value) && want) pickItem.value = "";
+      search.placeholder = want && !items.length ? "(no Item matches)" : "Type to find an Item…";
+      if (document.activeElement !== search) shown();
     };
     // The server answers which Items agree with the field's match and which
     // its within suggests, from the form as it is now: a translation of a
@@ -264,7 +367,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
       const before = pickItem.value;
       draw(true);
       if (!chosen && !pickItem.value && suggested.length === 1) pickItem.value = suggested[0];
-      if (pickItem.value !== before) { fill(""); set(); }
+      if (pickItem.value !== before) { shown(); fill(""); set(); }
     };
     const fill = (keep) => {
       const item = items.find((i) => i.id === pickItem.value) || all.find((i) => i.id === pickItem.value);
@@ -281,9 +384,9 @@ export function inputFor(field, value, placeholder, state, self, type) {
       control.value = !pickItem.value ? "" : !withRevision ? pickItem.value : pickRevision.value ? pickItem.value + "@" + pickRevision.value : "";
       control.dispatchEvent(new Event("input", { bubbles: true }));
     };
-    pickItem.onchange = () => { chosen = true; fill(""); set(); };
     pickRevision.onchange = set;
-    const wrapper = el("div", { className: "form-field" }, ...fieldHead(field), pickItem, pickRevision, control);
+    const finder = el("div", { className: "item-finder" }, suggest(search, choices, { arrow: true, search: (c) => texts.get(c) || c }), browse);
+    const wrapper = el("div", { className: "form-field" }, ...fieldHead(field), finder, pickRevision, control);
     draw(false);
     fill(ref);
     queueMicrotask(() => {

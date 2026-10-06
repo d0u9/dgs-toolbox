@@ -171,18 +171,37 @@ $("template-filter").addEventListener("mouseup", (event) => {
   if (selectOnUp) event.preventDefault();
   selectOnUp = false;
 });
-// Down from the filter goes into the list of Templates it leaves, the
-// first match first; up and down move in it, up from the top goes back to
-// the filter, and Enter or Space picks the one focused.
+// Up and down move the picked Template, whether the keys are in the filter
+// or on the list: in the filter the caret stays there, so typing goes on,
+// and the blue row is the one picked. On the list, up from the top goes
+// back to the filter. The filter is kept while the keys move; Enter, Space
+// or a click on the picked one empties it.
 const templateChoices = () => [...$("template").querySelectorAll(".template-choice")];
+function choose(type, focus = true) {
+  typeChosen = true;
+  if (selectedTemplate !== type) {
+    selectedTemplate = type;
+    drawFields();
+  }
+  const picked = $("template").querySelector(".selected");
+  if (focus) picked?.focus();
+  else picked?.scrollIntoView({ block: "nearest" });
+}
+const typeOf = (button) => button.querySelector("strong").textContent;
 $("template-filter").addEventListener("keydown", (event) => {
-  if (event.key !== "ArrowDown" && event.key !== "Enter") return;
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Enter") return;
   const choices = templateChoices();
-  const first = choices.find((c) => !c.classList.contains("selected")) || choices[0];
-  if (!first) return;
+  if (!choices.length) return;
   event.preventDefault();
-  if (event.key === "Enter" && choices.length - (choices.some((c) => c.classList.contains("selected")) ? 1 : 0) === 1) first.click();
-  else first.focus();
+  const at = choices.findIndex((c) => c.classList.contains("selected"));
+  if (event.key === "Enter") {
+    // One Template besides the picked one matches: Enter takes it.
+    const others = choices.filter((c) => !c.classList.contains("selected"));
+    (others.length === 1 ? others[0] : choices[Math.max(at, 0)]).click();
+    return;
+  }
+  const next = at < 0 ? 0 : Math.max(0, Math.min(at + (event.key === "ArrowDown" ? 1 : -1), choices.length - 1));
+  choose(typeOf(choices[next]), false);
 });
 $("template").addEventListener("keydown", (event) => {
   if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -192,7 +211,7 @@ $("template").addEventListener("keydown", (event) => {
   event.preventDefault();
   const next = at + (event.key === "ArrowDown" ? 1 : -1);
   if (next < 0) { if (!$("template-filter").hidden) $("template-filter").focus(); }
-  else choices[Math.min(next, choices.length - 1)].focus();
+  else choose(typeOf(choices[Math.min(next, choices.length - 1)]));
 });
 
 function drawFields() {
@@ -210,13 +229,10 @@ function drawFields() {
     button.setAttribute("aria-pressed", String(choice.type === selectedTemplate));
     // A pick empties the filter, so the whole list is back for the next.
     button.onclick = () => {
-      typeChosen = true;
       const filtered = $("template-filter").value !== "";
       $("template-filter").value = "";
-      if (selectedTemplate === choice.type && !filtered) return;
-      selectedTemplate = choice.type;
-      drawFields();
-      $("template").querySelector(".selected")?.focus();
+      if (filtered) selectedTemplate = "";
+      choose(choice.type);
     };
     return button;
   }));
