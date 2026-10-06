@@ -577,10 +577,10 @@ test('GPX static buttons use shared action or setting controls and ordinary fiel
  }
 });
 
-test('Cut action buttons retain secondary and strong outlines through the actual button wrapper',()=>{
+test('Cut action buttons retain the standard secondary style through the actual button wrapper',()=>{
  const h=segmentHarness(pieces);
  for(const text of ['Cut at every stop','Clear cuts']){
   const button=h.root.all(e=>e.tagName==='BUTTON'&&e.textContent===text)[0];
-  assert.ok(button,text);assert.ok(button.classList.contains('secondary'),text);assert.ok(button.classList.contains('strong-outline'),text);
+  assert.ok(button,text);assert.ok(button.classList.contains('secondary'),text);assert.equal(button.classList.contains('strong-outline'),false,text);
  }
 });
