@@ -108,3 +108,36 @@ export async function confirmDialog({ title, message, detail, confirm = "Continu
   if (detail) { const text = document.createElement("code"); text.className = "dialog-detail"; text.textContent = detail; fields.push(text); }
   return await formDialog({ title, message, fields, confirm, cancel, danger, focusCancel: true, read: () => true }) === true;
 }
+// progressDialog shows work the page cannot stop: a bar while it runs.
+// close takes it away when the work went well; fail keeps it open with the
+// reason and OK. Escape does nothing while it runs.
+export function progressDialog({ title, message }) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "dialog progress-dialog";
+  dialog.setAttribute("aria-label", title);
+  const heading = document.createElement("h3"); heading.textContent = title;
+  const text = document.createElement("p"); text.textContent = message || "";
+  const bar = document.createElement("progress"); bar.className = "progress-bar";
+  const count = document.createElement("p"); count.className = "progress-count muted";
+  const buttons = document.createElement("div"); buttons.className = "dialog-buttons";
+  const ok = document.createElement("button"); ok.type = "button"; ok.className = "action"; ok.textContent = "OK"; ok.hidden = true;
+  buttons.append(ok); dialog.append(heading, text, bar, count, buttons);
+  let done = false;
+  dialog.addEventListener("cancel", event => { if (!done) event.preventDefault(); });
+  const end = () => { done = true; if (dialog.open) dialog.close(); dialog.remove(); };
+  ok.addEventListener("click", end);
+  document.body.append(dialog); dialog.showModal();
+  return {
+    update(value, total) {
+      if (total) { bar.max = total; bar.value = value; count.textContent = `${value} of ${total}`; }
+    },
+    close: end,
+    fail(reason) {
+      done = true;
+      bar.hidden = true; count.textContent = "";
+      text.textContent = reason;
+      text.classList.add("dialog-error");
+      ok.hidden = false; ok.focus();
+    },
+  };
+}

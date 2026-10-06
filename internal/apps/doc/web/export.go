@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"dgs-toolbox/internal/doc/export"
 	"dgs-toolbox/internal/doc/outline"
@@ -98,6 +99,27 @@ type exportResultJSON struct {
 	HistoryError string `json:"history_error,omitempty"`
 }
 
+// exportProgress is how far the running export has got: the PDFs done of
+// all its jobs' steps, and whether one runs at all.
+type exportProgress struct {
+	mu      sync.Mutex
+	Running bool `json:"running"`
+	Done    int  `json:"done"`
+	Total   int  `json:"total"`
+}
+
+func (p *exportProgress) set(running bool, done, total int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.Running, p.Done, p.Total = running, done, total
+}
+
+func (s server) exportProgressRead(w http.ResponseWriter, r *http.Request) {
+	s.exporting.mu.Lock()
+	defer s.exporting.mu.Unlock()
+	writeJSON(w, http.StatusOK, s.exporting)
+}
+
 // exportRun plans again and writes only when the whole run is ready: one
 // Outline with a problem means no Outline is written.
 func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
@@ -119,8 +141,16 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 	// The export finishes even if the page goes away: stopping midway only
 	// leaves more to do next time.
 	results := []exportResultJSON{}
+	total := 0
 	for _, j := range out.Jobs {
-		result, err := s.applyExport(r, j, items)
+		total += j.Plan.Changes()
+	}
+	s.exporting.set(true, 0, total)
+	defer s.exporting.set(false, 0, 0)
+	before := 0
+	for _, j := range out.Jobs {
+		result, err := s.applyExport(r, j, items, func(done, _ int) { s.exporting.set(true, before+done, total) })
+		before += j.Plan.Changes()
 		results = append(results, result)
 		if err != nil {
 			writeJSON(w, http.StatusConflict, map[string]any{"error": j.Path + ": " + err.Error(), "results": results})
@@ -134,9 +164,9 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 // published, also when the job stops early. The files are in place whether or
 // not the history can be written, so a failure to record is reported in the
 // result, not as a failed export.
-func (s server) applyExport(r *http.Request, j export.JobPlan, items []tree.Item) (exportResultJSON, error) {
+func (s server) applyExport(r *http.Request, j export.JobPlan, items []tree.Item, progress func(done, total int)) (exportResultJSON, error) {
 	var published []tree.Exported
-	result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, nil,
+	result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, progress,
 		func(a export.Action) {
 			published = append(published, tree.Exported{Item: a.Item, Digest: a.Digest, Target: j.Path, View: a.View})
 		})

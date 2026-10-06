@@ -44,7 +44,7 @@ Separate pages, linked from the top bar, as box's intake and browse are:
 | Values `/values/` | Every value a field or the tags hold across the Items, with how many hold each; values written more than one way sit together, and ticked values are rewritten as one. |
 | Rules `/rules/` | Making a rule: which PDFs it picks and the path each has, with the tree it makes redrawn as it changes. |
 | Snapshots `/snapshots/` | Taking a Snapshot from a rule, or beginning one empty, and editing its PDFs by hand. |
-| Outlines `/outlines/` | Making an Outline from rules and Snapshots, each Snapshot at a folder given, and the folder it is exported to, with its tree redrawn as they change. |
+| Outlines `/outlines/` | Making an Outline from rules and Snapshots, each Snapshot at a folder given, with its tree redrawn as they change. Export to… writes a saved Outline into a folder chosen then, as Save As does; the Outline's file no longer has its folder set here. |
 | Cases `/cases/` | A matter being dealt with and the Items it has needed; its export; archiving it. |
 | Merge `/merge/` | Bringing a sub-tree or an export back in (M7). |
 | Import `/import/` | Taking PDFs in. |

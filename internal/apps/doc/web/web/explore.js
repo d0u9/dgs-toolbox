@@ -4,8 +4,7 @@
 // tree, picking a PDF opens it there. Export writes the same tree into a
 // folder you choose. Outlines are made on the Outlines page, from rules
 // and Snapshots made on theirs; nothing here changes one.
-import { $, address, keep, scrollBack, api, el, loadState, post, frame, say, planNodes, showPreview, clearPreview, label, outlineFolder, rememberOutlineFolder, nameTree, outlineTitle } from "/common.js";
-import { openFile } from "/ui/filedialog.js";
+import { $, address, keep, scrollBack, api, el, loadState, post, frame, say, planNodes, showPreview, clearPreview, label, exportOutline, nameTree, outlineTitle } from "/common.js";
 import { outlineTree, find, findFile, folderFiles, pdfRow, unplaced, UNPLACED, resizable } from "/outlinetree.js";
 import { outlineView } from "/outlineview.js";
 
@@ -127,42 +126,17 @@ $("open-list").addEventListener("click", () => fold(false));
 try { fold(localStorage.getItem(LIST_KEY) === "shut"); } catch { /* open */ }
 
 // Export writes what is picked, the Outline or a Snapshot in it, into a
-// folder chosen in the dialog: this browser's last one, else the Outline's
-// own, is offered. The server checks the whole run before anything is
-// written; a run that does not check is listed beside the tree.
-$("export-button").addEventListener("click", async () => {
-  const t = target;
-  const chosen = await openFile({ title: "Export " + t.name + " to", folders: true, writable: true, confirm: "Export",
-    message: "Writes " + t.name + " into this folder. An export removes only files it wrote there itself.",
-    folder: outlineFolder(state, t) || state.root, fallbacks: [state.root, ""] });
-  if (!chosen) return;
-  const where = Array.isArray(chosen) ? chosen[0] : chosen;
-  rememberOutlineFolder(state, t.name, where === t.default ? "" : where);
-  const body = { outlines: [t.name], folders: { [t.name]: where } };
-  say($("message"), "Checking " + where + "…");
-  try {
-    const plan = await post("/api/export/plan", body);
-    const count = (k) => plan.jobs.reduce((n, j) => n + j.plan[k].length, 0);
-    const [add, replace, remove] = [count("add"), count("replace"), count("remove")];
-    if (!plan.ready) {
-      preview(null);
-      $("folder").textContent = "Not exported";
-      $("folder-count").textContent = "";
-      $("files").replaceChildren(el("li", {}, ...planNodes(state, plan)));
-      return say($("message"), "Not exported: fix what is listed first. Nothing was written.", true);
-    }
-    if (!add && !replace && !remove) return say($("message"), where + " is up to date: nothing to write.");
-    if ((replace || remove) && !confirm(`Export ${t.name} into ${where}?\n\n${add} to add, ${replace} to replace, ${remove} to remove. Only files an export wrote there are replaced or removed.`)) {
-      return say($("message"), "Not exported.");
-    }
-    say($("message"), "Exporting: copying and reading back…");
-    const r = (await post("/api/export", body)).results[0];
-    say($("message"), "Exported to " + where + ": " + r.result.written + " written, " + r.result.removed + " removed, " + r.result.kept + " unchanged" +
-      (r.history_error ? " (history not recorded: " + r.history_error + ")" : "") + ".");
-  } catch (err) {
-    say($("message"), err.message, true);
-  }
-});
+// folder chosen in the dialog; a run that does not check is listed beside
+// the tree.
+$("export-button").addEventListener("click", () => exportOutline(state, target, {
+  say: (text, bad) => say($("message"), text, bad),
+  blocked: (plan) => {
+    preview(null);
+    $("folder").textContent = "Not exported";
+    $("folder-count").textContent = "";
+    $("files").replaceChildren(el("li", {}, ...planNodes(state, plan)));
+  },
+}));
 
 (async () => {
   state = await loadState();
