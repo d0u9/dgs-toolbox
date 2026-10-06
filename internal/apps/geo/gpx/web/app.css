@@ -480,7 +480,7 @@ body {
 .track-row .actions.file-tools > button:hover:not(:disabled) { background: var(--hover); color: var(--primary); }
 .track-row .actions.file-tools > button:disabled { color: var(--steel); cursor: default; }
 .file-tools button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.file-tools svg { width: 12px; height: 12px; }
+.track-row .file-tools svg { width: 12px; height: 12px; }
 .track-row .actions.file-tools > .ours-mark.ours, .track-row .actions.file-tools > .eye[aria-pressed="true"] { color: var(--primary); }
 .track-row .ui-row-label .meta, .part-row .ui-row-label .meta { display: none; }
 .track-row .name { font-size: 12px; font-weight: 500; }
@@ -637,7 +637,7 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .sidebar.dropping { outline: 2px dashed var(--primary); outline-offset: -2px; }
 
 /* The eye sits on the text baseline of its row, whatever the row's font. */
-.eye svg, .icon-button svg { display: block; margin: 0 auto; }
+.eye svg, .icon-button svg { display: block; margin: 0 auto; width: 14px; height: 14px; }
 
 .track-row.hidden-track .actions > .eye { color: var(--graphite); }
 .track-row .actions > button:hover:not(:disabled) { background: #ececea; position: relative; z-index: 1; }

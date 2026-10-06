@@ -1,3 +1,4 @@
+import { uiPx } from "./density.js";
 // The focused track's elevation and speed profiles. Both charts share the
 // distance axis: zooming one zooms the other, and the inspected point is one
 // index shared with the map.
@@ -124,12 +125,12 @@ export class Profile {
       cursor: {
         sync: { key: SYNC_KEY },
         drag: { x: true, y: false, setScale: true },
-        points: { size: 7, fill: color, stroke: "#fff", width: 2 },
+        points: { size: uiPx(7), fill: color, stroke: "#fff", width: uiPx(2) },
       },
       scales: { x: { time: false } },
       axes: [
-        { font: axisFont, values: (_, ticks) => ticks.map((v) => `${v} km`), size: 30, grid: { stroke: "#eee" } },
-        { font: axisFont, size: 48, grid: { stroke: "#eee" } },
+        { font: axisFont, values: (_, ticks) => ticks.map((v) => `${v} km`), size: uiPx(30), grid: { stroke: "#eee" } },
+        { font: axisFont, size: uiPx(48), grid: { stroke: "#eee" } },
       ],
       series: [
         {},

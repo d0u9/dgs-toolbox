@@ -623,6 +623,15 @@ between two points. Every way of travel names the service that routes it:
 
 Only the two points go to the service. The selects group the ways by service.
 
+## Page density
+
+The whole GPX interface uses 90% of the normal design dimensions, matching
+Chrome's 90% UI scale: shared controls, typography, spacing, panels, map
+controls, dialogs, menus, tooltips and chart axes. Viewport-sized areas still
+fill the window. Pointer coordinates are not transformed; pane sizes are
+remembered in design pixels so reopening the page does not shrink them again.
+Other applications retain their normal shared-webui density.
+
 ## Planning a route
 
 *Route*, in the top bar, plans a route by hand rather than from a recording:
