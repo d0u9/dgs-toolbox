@@ -93,3 +93,9 @@ test('splitters scale remembered sizes once, preserve drag coordinates and store
   assert.equal(target.style.width,'288px');assert.equal(saved.get('pane'),'320');
   ({handle,target}=make());api.splitter({handle,target,axis:'x',min:100,key:'pane',scale:.9});assert.equal(target.style.width,'288px');
 });
+
+test("bundled Lucide icons are offline SVGs with legible strokes and a filled disclosure", async()=>{
+ const icons=await import("./assets/icons.js");
+ for(const [name,svg] of Object.entries(icons)){assert.ok(svg.includes("<svg"),name);assert.ok(svg.includes('aria-hidden="true"'),name);assert.ok(!/href=|<script|<image/.test(svg),name);}
+ assert.ok(icons.EYE.includes('stroke-width="2.8"'));assert.ok(icons.TRIANGLE_RIGHT.includes('fill="currentColor"'));
+});
