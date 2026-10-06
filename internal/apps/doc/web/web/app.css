@@ -62,6 +62,9 @@ body { display: flex; flex-direction: column; }
   font-size: 10px; color: var(--primary); background: var(--primary-soft, #c9e0fc);
 }
 .into-choices { max-height: 146px; }
+#new-revision-field { margin-top: var(--space-xxs); }
+.form-field .checks label { display: inline-flex; flex-direction: row; gap: 6px; white-space: nowrap; }
+.form-field .checks input[type="checkbox"], .side.editor .form-field .checks input[type="checkbox"] { width: auto; margin: 0; flex: none; }
 .into-choice strong { max-width: 55%; font-family: inherit; font-size: var(--font-size-xs); }
 .into-choice small { text-align: right; }
 /* A few options: one segmented control. The cards sit in a recessed track;
@@ -1116,3 +1119,6 @@ body.quicklook .view-quicklook-close { display: inline-flex; position: absolute;
 .item-dialog-list tbody tr.selected { background: var(--selected); }
 .item-dialog-id { font-family: var(--font-mono); color: var(--steel); }
 .item-dialog-count { margin-right: auto; color: var(--steel); font-size: var(--font-size-xs); }
+
+/* An Item choice ends in its ID: wrap it rather than cut it. */
+.combo-menu li { white-space: normal; overflow-wrap: anywhere; padding-block: 4px; }
