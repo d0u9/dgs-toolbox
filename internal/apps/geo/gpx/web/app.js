@@ -1210,6 +1210,7 @@ function filteredPaths() {
 }
 
 function renderTracks() {
+  for (const row of $("track-list").children) row.cancelDrag?.();
   if (cutPanel && cutting()) cutPanel.setWorkspace([...state.tracks.keys()]);
   const paths = filteredPaths();
   const items = paths.flatMap((path) => {
@@ -1555,7 +1556,7 @@ function bindRowDrag(li, held) {
   li.dataset.path = held.path;
   li.dataset.kind = held.kind;
   if (held.key) li.dataset.key = held.key;
-  longPressDrag(li, {
+  li.cancelDrag = longPressDrag(li, {
     onStart: () => {
       doubleRowClick.reset();
       dragRow = { ...held, row: li };

@@ -584,3 +584,53 @@ test('Cut action buttons retain the standard secondary style through the actual 
   assert.ok(button,text);assert.ok(button.classList.contains('secondary'),text);assert.equal(button.classList.contains('strong-outline'),false,text);
  }
 });
+
+function dragHarness(){
+ class Target extends Element {
+  removeEventListener(type,listener){this.listeners.set(type,(this.listeners.get(type)||[]).filter(fn=>fn!==listener));}
+  appendChild(child){this.append(child);}
+  cloneNode(){return new Target('li');}
+  getBoundingClientRect(){return {left:0,top:0,width:100,height:28};}
+  setPointerCapture(id){this.captured=id;}
+  releasePointerCapture(){this.captured=null;}
+ }
+ const document=new Target('document');document.body=new Target('body');document.createElement=tag=>new Target(tag);
+ const window=new Target('window'),list=new Target('ul'),row=new Target('li');list.append(row);
+ const timers=new Map();let next=0;const calls=[];
+ const context=vm.createContext({document,window,setTimeout:fn=>{timers.set(++next,fn);return next;},clearTimeout:id=>timers.delete(id)});
+ loadModule('drag',context);
+ const dispose=context.longPressDrag(row,{onStart:()=>calls.push('start'),onMove:()=>calls.push('move'),onDrop:()=>calls.push('drop'),onCancel:()=>calls.push('cancel')});
+ const down=()=>row.fire('pointerdown',{button:0,pointerType:'mouse',pointerId:1});
+ return {document,window,list,row,calls,dispose,down};
+}
+
+test('row drag can finish outside its source and repeated gestures leave no ghost or listeners',async()=>{
+ const h=dragHarness();
+ for(let i=0;i<20;i++){
+  await h.down();await h.document.fire('pointermove',{pointerId:1,clientX:30});await h.document.fire('pointerup',{pointerId:1});
+  assert.equal(h.list.children.length,1);
+  for(const type of ['pointermove','pointerup','pointercancel','keydown'])assert.equal((h.document.listeners.get(type)||[]).length,0,type);
+ }
+ assert.equal(h.calls.filter(value=>value==='drop').length,20);
+});
+
+test('lost capture, blur and list replacement cancel row drags and allow the next drag',async()=>{
+ for(const reason of ['lostpointercapture','blur','replacement']){
+  const h=dragHarness();await h.down();await h.document.fire('pointermove',{pointerId:1,clientX:30});
+  if(reason==='lostpointercapture')await h.row.fire(reason,{pointerId:1});
+  else if(reason==='blur')await h.window.fire(reason);else h.dispose();
+  assert.equal(h.list.children.length,1,reason);assert.equal(h.calls.at(-1),'cancel',reason);
+  await h.down();await h.document.fire('pointermove',{pointerId:1,clientX:30});await h.document.fire('pointerup',{pointerId:2});
+  assert.equal(h.calls.at(-1),'move');await h.document.fire('pointerup',{pointerId:1});assert.equal(h.calls.at(-1),'drop');
+ }
+});
+
+test('a missed release and a detached source cancel instead of continuing a stale drag',async()=>{
+ for(const reason of ['release','detached']){
+  const h=dragHarness();await h.down();await h.document.fire('pointermove',{pointerId:1,clientX:30,buttons:1});
+  if(reason==='detached')h.row.removed=true;
+  await h.document.fire('pointermove',{pointerId:1,clientX:40,buttons:reason==='release'?0:1});
+  assert.equal(h.calls.at(-1),'cancel');assert.equal(h.list.children.length,1);
+  await h.document.fire('pointerup',{pointerId:1});assert.equal(h.calls.includes('drop'),false);
+ }
+});
