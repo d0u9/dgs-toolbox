@@ -1127,3 +1127,11 @@ an individual track in the workspace shows only its segments; selecting the
 GPX parent shows all tracks' segments. Single clicks preserve visibility and
 the map camera. Segment edits and clearing cuts within a selected track retain
 other tracks' cuts and custom segment names.
+
+In the Segments panel, unchecked segments are excluded from the map as well as
+from Add and Save as. This includes base traces, comparison traces, fills and
+stop markers; boundaries shared with checked segments remain visible. Leaving
+segment editing restores the ordinary track display. Add opens one shared
+modal containing Save to, the track name for a single segment, and the
+separate-or-merge choice with a name for merged segments. The destination is
+chosen in that modal, rather than beforehand in the inspector.

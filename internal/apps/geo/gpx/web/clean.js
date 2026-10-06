@@ -558,13 +558,19 @@ export class CleanOverlay {
 
   // showFills bands the stretches of a track filled in along the road, from
   // the point before each route to the point after it.
-  showFills(track) {
-    const lines = (track?.fills || []).map((fill) => {
-      const line = [track.points[fill.first]];
-      for (let i = fill.first + 1; i <= fill.first + fill.points; i++) line.push(track.points[i]);
-      line.push(track.points[fill.last]);
-      return line;
-    });
+  showFills(track, hidden = []) {
+    const lines = [];
+    for (const fill of track?.fills || []) {
+      const indices = [fill.first, ...Array.from({ length: fill.points }, (_, i) => fill.first + i + 1), fill.last];
+      let line = [];
+      for (const index of indices) {
+        if (hidden.some(([first, last]) => index >= first && index <= last)) {
+          if (line.length > 1) lines.push(line);
+          line = [];
+        } else line.push(track.points[index]);
+      }
+      if (line.length > 1) lines.push(line);
+    }
     this.map.getSource(FILLED).setData({ type: "Feature", properties: {}, geometry: { type: "MultiLineString", coordinates: lines } });
   }
 

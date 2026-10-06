@@ -5,10 +5,11 @@
 // module edits cuts and names.
 
 import * as format from "./format.js";
+import { segmentSaveDialog } from "./dialog.js";
 import { addTrace, traceLayers } from "./trace.js";
 import { saveFile } from "/ui/filedialog.js";
 import * as status from "/ui/statusbar.js";
-import { chooseDialog, promptDialog } from "/ui/dialog.js";
+import { promptDialog } from "/ui/dialog.js";
 import { openMenu } from "/ui/menu.js";
 import { tooltip } from "/ui/tooltip.js";
 import { textButton as sharedTextButton } from "/ui/controls.js";
@@ -53,8 +54,8 @@ export class CutPanel {
   // onCuts(cuts, names) saves cuts and names; onHover(piece | null) and
   // onShow(piece) point at a segment; onWrite(request) writes or adds segments
   // and resolves to the server's answer.
-  constructor({ root, onCuts, onHover, onShow, onWrite }) {
-    Object.assign(this, { root, onCuts, onHover, onShow, onWrite });
+  constructor({ root, onCuts, onHover, onShow, onWrite, onSelection = () => {} }) {
+    Object.assign(this, { root, onCuts, onHover, onShow, onWrite, onSelection });
     this.track = null;
     this.selected = new Set(); // first point index of the chosen segments
     this.addPath = "";
@@ -143,6 +144,17 @@ export class CutPanel {
     this.remember();
     this.track = null;
     this.root.replaceChildren();
+    this.onSelection();
+  }
+
+  // Hide unchecked pieces, retaining boundary samples shared with checked pieces.
+  hiddenRanges() {
+    if (!this.track) return [];
+    const checked = this.track.pieces.filter(piece => this.selected.has(piece.first));
+    return this.track.pieces.filter(piece => !this.selected.has(piece.first)).map(piece => [
+      piece.first + (checked.some(other => other.last === piece.first) ? 1 : 0),
+      piece.last - (checked.some(other => other.first === piece.last) ? 1 : 0),
+    ]).filter(([first, last]) => first <= last);
   }
 
   names() {
@@ -192,6 +204,7 @@ export class CutPanel {
 
     parts.push(this.actions());
     this.root.replaceChildren(...parts);
+    this.onSelection();
   }
 
   // list shows the segments as rows of two lines: chosen, colour, number and
@@ -239,7 +252,7 @@ export class CutPanel {
     check.type = "checkbox";
     check.className = "cut-check";
     check.checked = this.selected.has(piece.first);
-    check.title = "Write this segment";
+    check.title = "Show and include this segment";
     check.addEventListener("change", () => {
       this.doubleClick.reset();
       if (check.checked) this.selected.add(piece.first);
@@ -269,7 +282,7 @@ export class CutPanel {
       "Click to select · double-click to fit · right-click for actions",
     ]);
 
-    item.addEventListener("mouseenter", () => this.onHover(piece));
+    item.addEventListener("mouseenter", () => this.onHover(this.selected.has(piece.first) ? piece : null));
     item.addEventListener("mouseleave", () => this.onHover(this.selected.size === 1 ? this.track.pieces.find(piece => this.selected.has(piece.first)) : null));
     item.addEventListener("click", (event) => {
       if (event.target.closest?.("button, input")) return;
@@ -328,13 +341,6 @@ export class CutPanel {
     );
     section.append(cutHead, cutTools);
 
-    const heading = document.createElement("div");
-    heading.className = "clean-filter-head cut-group";
-    const title = document.createElement("strong");
-    title.textContent = "Save segments to";
-    heading.append(title);
-    section.append(heading);
-
     const plural = chosen.length === 1 ? "" : "s";
     const segments = () => chosen.map((piece) => ({
       first: piece.first,
@@ -343,20 +349,6 @@ export class CutPanel {
     }));
 
     // A GPX open in the workspace: the segments become tracks in its sidecar.
-    const row = document.createElement("div");
-    row.className = "cut-target";
-    const addPath = document.createElement("select");
-    addPath.className = "cut-path";
-    addPath.disabled = this.workspace.length === 0;
-    addPath.append(...(this.workspace.length
-      ? this.workspace.map((path) => new Option(path === track.path ? `Current GPX — ${basename(path)}` : basename(path), path))
-      : [new Option("No target GPX in the workspace", "")]));
-    addPath.value = this.addPath;
-    addPath.title = this.addPath;
-    addPath.addEventListener("change", () => {
-      this.addPath = addPath.value;
-      addPath.title = this.addPath;
-    });
     const add = document.createElement("button");
     add.type = "button";
     add.className = "button primary cut-go";
@@ -364,10 +356,7 @@ export class CutPanel {
     add.title = "Add the chosen segments as separate tracks, or merge them into one named track";
     add.disabled = chosen.length === 0 || !this.addPath;
     add.addEventListener("click", () => this.addSegments(segments(), { mode: "add", path: this.addPath }, add));
-    // The select keeps the row to itself: a path is what the reader has to
-    // read in full, and the button that acts on it goes under it.
-    row.append(addPath);
-    section.append(row, add);
+    section.append(add);
 
     // Or a GPX that does not exist yet, named in the save dialog.
     const saveAs = document.createElement("button");
@@ -393,7 +382,7 @@ export class CutPanel {
     });
     section.append(saveAs);
 
-    tooltip(add, ["Add selected segments", "One segment asks for a name", "Several segments ask for separate tracks or one named merged track", "Save the target GPX to write the added tracks"]);
+    tooltip(add, ["Add selected segments", "Choose Save to in the Add dialog", "Name one track, or choose separate tracks or a named merge", "Save the target GPX to write the added tracks"]);
     return section;
   }
 
@@ -402,33 +391,12 @@ export class CutPanel {
     const path = this.track.path;
     button.disabled = true;
     try {
-      let merge = false;
-      if (segments.length > 1) {
-        const choice = await chooseDialog({
-          title: `Add ${segments.length} segments`,
-          message: "Add each segment as its own track, or merge them into one named track? Gaps remain disconnected.",
-          options: [
-            { value: "separate", label: `Separate tracks (${segments.length})` },
-            { value: "merge", label: "Merge into one track and name it" },
-          ],
-          confirm: "Continue",
-        });
-        if (!choice) return;
-        merge = choice === "merge";
-      }
-      if (segments.length === 1 || merge) {
-        const name = await promptDialog({
-          title: merge ? "Name the merged track" : "Name the segment",
-          message: merge
-            ? "The chosen segments are added as one track, in source order."
-            : "The segment is added to the chosen GPX as a track with this name.",
-          value: merge ? "Merged track" : segments[0].name,
-          confirm: merge ? "Merge and add" : "Add segment",
-        });
-        if (!name?.trim()) return;
-        if (merge) target = { ...target, merge: true, name: name.trim() };
-        else segments = [{ ...segments[0], name: name.trim() }];
-      }
+      const answer = await segmentSaveDialog({ targets: [...(this.workspace || [])], target: target.path, source: path, segments });
+      if (!answer) return;
+      this.addPath = answer.path;
+      target = { mode: "add", path: answer.path };
+      if (answer.merge) target = { ...target, merge: true, name: answer.name };
+      else if (segments.length === 1) segments = [{ ...segments[0], name: answer.name }];
       await this.write(segments, target, button, path);
     } finally {
       button.disabled = false;

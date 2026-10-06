@@ -123,7 +123,22 @@ function segmentHarness(pieces,{choice='separate',name='Named track',fail=false}
     setFocus:(path,options)=>refresh.push(['focus',path,plain(options)]),renderTracks(){},save(){},
   });
   loadShared('selection',context);const controls=loadShared('controls',context);context.sharedTextButton=controls.textButton;
-  loadModule('api',context);loadModule('cut',context);
+  context.formDialog=async options=>{
+    const fields=options.fields.flatMap(field=>field.children);
+    const target=fields.find(field=>field.attributes['aria-label']==='Save to');
+    const mode=fields.find(field=>field.attributes['aria-label']==='Add as');
+    const input=fields.find(field=>field.attributes['aria-label']==='Track name');
+    if(mode){
+      dialogs.push(['choice',{options:[{value:'separate'},{value:'merge'}]}]);
+      const value=await choose.promise;if(value==null)return null;mode.value=value;await mode.fire('change');
+    }
+    if(!mode||mode.value==='merge'){
+      const spec={value:input.value};dialogs.push(['name',spec]);nameShown.resolve(spec);
+      const value=await ask.promise;if(value==null)return null;input.value=value;
+    }
+    return options.read();
+  };
+  loadModule('dialog',context);loadModule('api',context);loadModule('cut',context);
   const app=source('app');
   vm.runInContext(app.slice(app.indexOf('async function writeSegments('),app.indexOf('// lassoDone')),context);
   const CutPanel=vm.runInContext('CutPanel',context);
@@ -824,4 +839,60 @@ test('Escape and pointer cancellation remove drag ghosts, release capture and pe
   await h.down();await h.document.fire('pointermove',{pointerId:1,clientX:30,buttons:1});await h.document.fire('pointerup',{pointerId:1});
   assert.equal(h.calls.at(-1),'drop');assert.equal(h.list.children.length,1);
  }
+});
+
+test('segment checkboxes immediately update all map paths and preserve shared checked boundaries',async()=>{
+ const h=segmentHarness([{first:0,last:2,points:3,distance:20},{first:2,last:4,points:3,distance:20}]);
+ Object.assign(h.track,{points:[[0,0],[1,0],[2,0],[3,0],[4,0]],segments:[0,0,0,0,0],removed:['','','','',''],parts:[{key:'t0',kind:'track',first:0,last:4,name:'Trip'}]});
+ const data=new Map(),map={addSource:(id,options)=>data.set(id,options.data),addLayer(){},getSource:id=>({setData:value=>data.set(id,value)})};
+ const layers=new TrackLayers(map);layers.add('a',h.track,'#0072b2');
+ const overlayData=[];Object.assign(h.context,{cutting:()=>true,focusedEntry:()=>h.state.tracks.get(h.state.focus),cutPanel:h.panel,layers,hiddenRanges:()=>[],cutOverlay:{show:(track,hidden)=>overlayData.push(plain(hidden))},cleanOverlay:{show(){},showFills(){}},stopMarkers:{show(){}}});
+ const app=source('app');vm.runInContext(app.slice(app.indexOf('let segmentVisibilityEntry'),app.indexOf('function applyCutPanel()')),h.context);
+ h.panel.onSelection=h.context.applySegmentVisibility;h.panel.show(h.track,{timeZone:'UTC',workspace:[h.track.path],folder:''});
+ const second=h.root.all(e=>e.classList.contains('cut-check')).at(-1);second.checked=false;await second.fire('change');
+ const line=()=>plain(data.get('track-a').features[0].geometry.coordinates);
+ assert.deepEqual(line(),[h.track.points.slice(0,3)]);assert.deepEqual(overlayData.at(-1),[[3,4]]);
+ const all=h.root.all(e=>e.id==='cut-all')[0];all.checked=false;await all.fire('change');assert.deepEqual(line(),[]);
+ const again=h.root.all(e=>e.id==='cut-all')[0];again.checked=true;await again.fire('change');assert.deepEqual(line(),[h.track.points]);
+ const off=h.root.all(e=>e.classList.contains('cut-check')).at(-1);off.checked=false;await off.fire('change');
+ h.context.cutting=()=>false;h.panel.hide();assert.deepEqual(line(),[h.track.points]);
+});
+
+test('hidden ranges break base and fill paths instead of bridging an unchecked segment',()=>{
+ const data=new Map(),map={addSource:(id,options)=>data.set(id,options.data),addLayer(){},getSource:id=>({setData:value=>data.set(id,value)})};
+ const track={points:Array.from({length:7},(_,i)=>[i,0]),segments:Array(7).fill(0),removed:Array(7).fill(''),parts:[{key:'t0',kind:'track',first:0,last:6,name:'Trip'}],fills:[{first:0,last:6,points:5}]};
+ const layers=new TrackLayers(map);layers.add('a',track,'#0072b2');layers.update('a',track,[[2,4]]);
+ assert.deepEqual(plain(data.get('track-a').features[0].geometry.coordinates),[track.points.slice(0,2),track.points.slice(5)]);
+ const context=vm.createContext({document:documentStub(),format});loadModule('clean',context);
+ const overlay=Object.create(vm.runInContext('CleanOverlay.prototype',context));overlay.map=map;overlay.showFills(track,[[2,4]]);
+ assert.deepEqual(plain([...data.values()].at(-1).geometry.coordinates),[track.points.slice(0,2),track.points.slice(5)]);
+});
+
+test('one Add modal selects Save to and validates naming and separate or merged tracks',async()=>{
+ for(const count of [1,2]){
+  const document=documentStub(),context=vm.createContext({document});loadShared('dialog',context);loadModule('dialog',context);
+  const pending=context.segmentSaveDialog({targets:['current.gpx','other.gpx'],target:'current.gpx',segments:Array.from({length:count},()=>({name:'Walk'}))});
+  const dialog=document.body.children.at(-1),form=dialog.all(e=>e.tagName==='FORM')[0];
+  const target=dialog.all(e=>e.attributes['aria-label']==='Save to')[0],name=dialog.all(e=>e.attributes['aria-label']==='Track name')[0];
+  assert.equal(target.value,'current.gpx');target.value='other.gpx';
+  if(count===2){const mode=dialog.all(e=>e.attributes['aria-label']==='Add as')[0];assert.equal(name.parentElement.hidden,true);mode.value='merge';await mode.fire('change');assert.equal(name.parentElement.hidden,false);}
+  name.value=' ';const rejected=await form.fire('submit');assert.equal(rejected.defaultPrevented,true);assert.equal(dialog.open,true);
+  name.value='  Named walk  ';await form.fire('submit');dialog.close();assert.deepEqual(plain(await pending),{path:'other.gpx',merge:count===2,name:'Named walk'});
+ }
+});
+
+test('separate Add keeps individual names; cancelled target selection writes nothing and target control is absent from the panel',async()=>{
+ const h=segmentHarness(pieces);assert.equal(h.root.all(e=>e.tagName==='SELECT').length,0);
+ h.context.segmentSaveDialog=async()=>null;await h.add().fire('click');assert.equal(h.requests.length,0);assert.equal(h.add().disabled,false);
+ h.context.segmentSaveDialog=async()=>({path:'another.gpx',merge:false,name:''});await h.add().fire('click');
+ assert.equal(h.requests[0].body.target.path,'another.gpx');assert.deepEqual(h.requests[0].body.segments.map(p=>p.name),['First','Second']);
+ assert.equal(h.panel.addPath,'another.gpx');
+});
+
+
+test('toggling Compare preserves unchecked segment visibility',()=>{
+ const h=twoTrackSegments();h.showPart(h.track.parts[1]);h.panel.selected.clear();
+ const shown=[];Object.assign(h.context,{cutPanel:h.panel,focusedEntry:()=>h.state.tracks.get(h.state.focus),cutting:()=>true,hiddenRanges:()=>[],cleanOverlay:{show:(track,hidden)=>shown.push([track,plain(hidden)])},applyEditTools(){},save(){}});
+ const app=source('app');vm.runInContext(app.slice(app.indexOf('function setCompare('),app.indexOf('// applyEditTools')),h.context);
+ h.context.setCompare(false);assert.equal(shown[0][0],null);h.context.setCompare(true);assert.deepEqual(shown.at(-1)[1],[[5,9]]);
 });
