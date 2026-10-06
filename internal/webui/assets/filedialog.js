@@ -8,6 +8,7 @@
 // that mounts them gets the dialog with no code of its own.
 
 import { listTable } from "/ui/listtable.js";
+import { iconSvg } from "/ui/icons.js";
 
 const ENDPOINT = "/ui/files/";
 
@@ -160,7 +161,7 @@ function dialog({
     const up = document.createElement("button");
     up.type = "button";
     up.className = "icon-button";
-    up.textContent = "↑";
+    up.innerHTML = iconSvg("arrow-up");
     up.title = "The folder above";
     up.setAttribute("aria-label", "The folder above");
     const where = document.createElement("code");
@@ -168,7 +169,7 @@ function dialog({
     const refresh = document.createElement("button");
     refresh.type = "button";
     refresh.className = "icon-button";
-    refresh.textContent = "↻";
+    refresh.innerHTML = iconSvg("rotate-cw");
     refresh.title = "Read this folder again";
     refresh.setAttribute("aria-label", "Read this folder again");
     const newFolder = document.createElement("button");

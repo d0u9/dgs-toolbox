@@ -30,7 +30,7 @@
   <span class="topbar-spacer"></span>
   <span id="paths" class="paths"></span>
   <a id="check-link" class="topbar-link topbar-alert" href="/check/" hidden>Exceptions <span id="check-count" class="topbar-count"></span></a>
-  <a class="topbar-link" href="/intake/">Intake →</a>
+  <a class="topbar-link" href="/intake/">Intake <span data-icon="arrow-right"></span></a>
 </header>
 
 <nav class="filters" aria-label="Filters">
@@ -267,14 +267,14 @@
 
 <section id="reader" class="reader" aria-label="Reader" hidden>
   <div class="reader-bar">
-    <button type="button" id="reader-close" class="button" title="Back to the grid (Esc)">← Browse <kbd>Esc</kbd></button>
+    <button type="button" id="reader-close" class="button" title="Back to the grid (Esc)"><span data-icon="arrow-left"></span> Browse <kbd>Esc</kbd></button>
     <span id="reader-title" class="reader-title"></span>
     <span id="reader-page" class="page-label"></span>
     <span class="reader-tools">
-      <button type="button" id="reader-out" class="button" title="Smaller (- or ⌘/Ctrl + wheel)">−</button>
+      <button type="button" id="reader-out" class="button" title="Smaller (- or ⌘/Ctrl + wheel)" aria-label="Smaller"><span data-icon="minus"></span></button>
       <button type="button" id="reader-fit" class="button" aria-pressed="false" title="Pages as wide as the window (w or 0)">Width</button>
       <button type="button" id="reader-whole" class="button" aria-pressed="false" title="A whole page in the window (p)">Page</button>
-      <button type="button" id="reader-in" class="button" title="Larger (+ or ⌘/Ctrl + wheel)">+</button>
+      <button type="button" id="reader-in" class="button" title="Larger (+ or ⌘/Ctrl + wheel)" aria-label="Larger"><span data-icon="plus"></span></button>
     </span>
   </div>
   <div id="reader-body" class="reader-body">
@@ -299,5 +299,6 @@
 <script src="zoom.js"></script>
 <script src="reader.js"></script>
 <script src="browse.js"></script>
+<script type="module" src="/ui/icons.js"></script>
 </body>
 </html>

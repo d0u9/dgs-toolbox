@@ -47,22 +47,16 @@
     <input id="filter" class="filter-search" type="search" placeholder="Search fields, tags, page text" aria-label="Search" spellcheck="false" autocomplete="off">
     <div id="filter-steps" class="filter-steps" aria-label="Filters"></div>
     <button id="filter-add" class="chip" type="button" aria-haspopup="true" aria-controls="facets" title="Narrow by a field, one step after another">+ Filter</button>
-    <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Show only the Items marked frequent">★ Frequent</button>
+    <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Show only the Items marked frequent"><span data-icon="star"></span> Frequent</button>
     <div class="filter-result">
       <span id="count" class="numeric"></span>
       <button type="button" id="filters-clear" class="small-inline" hidden>Clear filters</button>
     </div>
     <div class="filter-view">
       <div id="view-layout" class="segmented" role="group" aria-label="Show as">
-        <button class="chip icon-chip" type="button" data-layout="grid" aria-pressed="true" title="Cards" aria-label="Cards">
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/>
-            <rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg>
+        <button class="chip icon-chip" type="button" data-layout="grid" aria-pressed="true" title="Cards" aria-label="Cards"><span data-icon="layout-grid"></span>
         </button>
-        <button class="chip icon-chip" type="button" data-layout="list" aria-pressed="false" title="List" aria-label="List">
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-            <circle cx="3" cy="4" r="1.1" stroke="none"/><circle cx="3" cy="8" r="1.1" stroke="none"/><circle cx="3" cy="12" r="1.1" stroke="none"/>
-            <path d="M6.5 4h7.5M6.5 8h7.5M6.5 12h7.5" fill="none"/></svg>
+        <button class="chip icon-chip" type="button" data-layout="list" aria-pressed="false" title="List" aria-label="List"><span data-icon="list"></span>
         </button>
       </div>
       <label class="filter"><span>Sort</span>
@@ -73,11 +67,11 @@
           <option value="type">type</option>
         </select>
       </label>
-      <button id="view-direction" class="icon-button" type="button" data-dir="desc">↓</button>
+      <button id="view-direction" class="icon-button" type="button" data-dir="desc"><span data-icon="arrow-down"></span></button>
     </div>
   </div>
   <dialog id="facets" class="dialog facets" aria-labelledby="facets-title">
-    <div class="facets-head"><h3 id="facets-title">Filter</h3><button id="facets-close" class="icon-button" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
+    <div class="facets-head"><h3 id="facets-title">Filter</h3><button id="facets-close" class="icon-button" type="button" title="Close (Esc)" aria-label="Close"><span data-icon="x"></span></button></div>
     <p id="facets-steps" class="muted facets-steps"></p>
     <div class="facet-cols">
       <section class="facet-col facet-col-keys">
@@ -105,7 +99,7 @@
   </section>
   <section id="preview" class="preview reader" hidden>
     <div class="reader-bar">
-      <button id="reader-back" class="button" type="button">← Back <kbd>Esc</kbd></button>
+      <button id="reader-back" class="button" type="button"><span data-icon="arrow-left"></span> Back <kbd>Esc</kbd></button>
       <strong id="reader-title"></strong>
       <button id="native-pdf" class="chip" type="button" aria-pressed="false" title="Show the PDF in the browser's own viewer, to compare with the pages dgs draws">Browser viewer</button>
     </div>
@@ -114,9 +108,9 @@
     <nav id="rail" class="rail" aria-label="Pages" hidden></nav>
     <div id="viewer" class="viewer" hidden>
       <div class="viewer-bar">
-        <button type="button" id="zoom-out" class="tool" title="Zoom out (−)">−</button>
+        <button type="button" id="zoom-out" class="tool" title="Zoom out (−)" aria-label="Zoom out"><span data-icon="minus"></span></button>
         <button type="button" id="zoom-level" class="tool zoom-level" title="Actual width (0)">100%</button>
-        <button type="button" id="zoom-in" class="tool" title="Zoom in (+)">+</button>
+        <button type="button" id="zoom-in" class="tool" title="Zoom in (+)" aria-label="Zoom in"><span data-icon="plus"></span></button>
         <button type="button" id="fit-width" class="tool" title="Fit width">Width</button>
         <button type="button" id="fit-page" class="tool" title="Fit page">Page</button>
         <span class="viewer-spacer"></span>
@@ -131,17 +125,17 @@
   <aside id="side" class="side editor detail" hidden>
     <header class="detail-head">
       <h2 id="detail-head"></h2>
-      <button id="frequent" class="chip" type="button" aria-pressed="false" title="Frequent Items come first on Browse">☆ Frequent</button>
-      <button id="close" class="tool" type="button" title="Close (Esc)" aria-label="Close">×</button>
+      <button id="frequent" class="chip" type="button" aria-pressed="false" title="Frequent Items come first on Browse"><span data-icon="star"></span> Frequent</button>
+      <button id="close" class="tool" type="button" title="Close (Esc)" aria-label="Close"><span data-icon="x"></span></button>
     </header>
     <div id="detail-picture" class="detail-picture">
       <button id="detail-frame" class="detail-frame" type="button" title="Open (double-click)">
         <img id="detail-image" alt="">
       </button>
       <div class="detail-tools">
-        <button id="page-prev" class="tool" type="button" title="Previous page" aria-label="Previous page">‹</button>
+        <button id="page-prev" class="tool" type="button" title="Previous page" aria-label="Previous page"><span data-icon="chevron-left"></span></button>
         <span id="page-label" class="numeric muted"></span>
-        <button id="page-next" class="tool" type="button" title="Next page" aria-label="Next page">›</button>
+        <button id="page-next" class="tool" type="button" title="Next page" aria-label="Next page"><span data-icon="chevron-right"></span></button>
         <span class="detail-tools-end">
           <button id="open-reader" class="button secondary small-button" type="button">Open</button>
           <button id="reveal-pdf" class="button secondary small-button" type="button" title="Show this revision's PDF in its folder in Finder">Show in Finder</button>
@@ -257,5 +251,6 @@
 </main>
 <script src="/ui/tags.js"></script>
 <script type="module" src="/browse.js"></script>
+<script type="module" src="/ui/icons.js"></script>
 </body>
 </html>

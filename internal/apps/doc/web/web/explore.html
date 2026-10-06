@@ -46,14 +46,14 @@
     <div class="list-head">
       <h2>Outlines <span id="count" class="count numeric"></span></h2>
       <a class="button" href="/outlines/#new">+ New</a>
-      <button id="shut-list" class="button" type="button" title="Hide the Outlines">‹</button>
+      <button id="shut-list" class="button" type="button" title="Hide the Outlines" aria-label="Hide the Outlines"><span data-icon="panel-left-close"></span></button>
     </div>
     <p id="no-outlines" class="muted outline-empty" hidden>No Outline yet. Make one on the <a href="/outlines/">Outlines</a> page.</p>
     <div id="outlines" class="template-tree scroll"></div>
   </section>
   <section class="outline-main">
     <div class="template-bar">
-      <button id="open-list" class="button" type="button" title="Show the Outlines" hidden>›</button>
+      <button id="open-list" class="button" type="button" title="Show the Outlines" aria-label="Show the Outlines" hidden><span data-icon="panel-left-open"></span></button>
       <div class="template-title">
         <h2 id="title"></h2>
         <span id="total" class="count muted"></span>
@@ -72,7 +72,7 @@
   </aside>
   <section id="view" class="outline-view" hidden aria-label="View">
     <div class="view-head">
-      <button id="view-leave" class="button" type="button" title="Back to Explore (Esc)">← Explore</button>
+      <button id="view-leave" class="button" type="button" title="Back to Explore (Esc)"><span data-icon="arrow-left"></span> Explore</button>
       <h2 id="view-title"></h2>
       <nav id="view-crumbs" class="view-crumbs" aria-label="Folder"></nav>
       <span id="view-count" class="count muted"></span>
@@ -98,9 +98,9 @@
     <nav id="rail" class="rail" aria-label="Pages" hidden></nav>
     <div id="viewer" class="viewer" hidden>
       <div class="viewer-bar">
-        <button type="button" id="zoom-out" class="tool" title="Zoom out (−)">−</button>
+        <button type="button" id="zoom-out" class="tool" title="Zoom out (−)" aria-label="Zoom out"><span data-icon="minus"></span></button>
         <button type="button" id="zoom-level" class="tool zoom-level" title="Actual width (0)">100%</button>
-        <button type="button" id="zoom-in" class="tool" title="Zoom in (+)">+</button>
+        <button type="button" id="zoom-in" class="tool" title="Zoom in (+)" aria-label="Zoom in"><span data-icon="plus"></span></button>
         <button type="button" id="fit-width" class="tool" title="Fit width">Width</button>
         <button type="button" id="fit-page" class="tool" title="Fit page">Page</button>
         <span class="viewer-spacer"></span>
@@ -113,5 +113,6 @@
   </section>
 </main>
 <script type="module" src="/explore.js"></script>
+<script type="module" src="/ui/icons.js"></script>
 </body>
 </html>

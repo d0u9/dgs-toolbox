@@ -5,6 +5,7 @@ import { $, address, api, el, loadState, post, label, planNodes, frame, say, nam
 import { openFile } from "/ui/filedialog.js";
 import { guardByName } from "/ui/confirm.js";
 import { suggest } from "/combo.js";
+import { icon } from "/ui/icons.js";
 
 let state = { templates: [], items: [], expiry: {} };
 let cases = [];
@@ -189,7 +190,7 @@ function drawNeeds() {
         el("button", { type: "button", className: "button small-button", textContent: "Drop", title: "No longer asked for", onclick: () => change({ op: "drop", need: i }) }));
     }
     return el("li", { className: n.item ? "met" : "" },
-      el("div", { className: "row-main" }, el("span", {}, (n.item ? "✓ " : "○ ") + n.text),
+      el("div", { className: "row-main" }, el("span", {}, icon(n.item ? "check" : "circle"), " " + n.text),
         el("span", { className: "sub" }, "asked " + day(n.added) + (n.item ? " · met " + day(n.met) + " by " + (met ? label(state, met) : n.item) : ""))),
       el("div", { className: "row-tools" }, tools));
   });

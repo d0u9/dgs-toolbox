@@ -4,6 +4,7 @@
 // its form and what a change redraws; the server computes the result.
 import { $, api, el, currentFields, label, post, tagUses } from "/common.js";
 import { condition } from "/condition.js";
+import { glyph, iconSvg } from "/ui/icons.js";
 
 let state = { templates: [], items: [] };
 let keys = [];
@@ -155,14 +156,8 @@ function drawNodes() {
   const box = $("paths");
   if (!box) return;
   const redraw = () => { drawNodes(); changed(); };
-  const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
-  // icon draws a block's ↑ ↓ × as small line icons.
-  const ICONS = { "↑": "M8 13V3M4 7l4-4 4 4", "↓": "M8 3v10M4 9l4 4 4-4", "×": "M4 4l8 8M12 4l-8 8" };
-  const icon = (title, text, onclick, disabled) => {
-    const b = act(title, "", onclick, disabled);
-    b.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="' + ICONS[text] + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    return b;
-  };
+  const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, ...glyph(text), disabled, onclick });
+  const icon = act;
   const field = (n, key, label, title) => {
     const input = el("input", { className: "layout-text", value: n[key], spellcheck: false, autocomplete: "off", title,
       placeholder: key === "file" ? "the file name above" : "",
@@ -588,13 +583,13 @@ function keyPart(part, remove) {
         ...(known ? [] : [el("option", { value: k, selected: true }, k)]),
         ...options.filter(([, list]) => list.length).map(([name, list]) => el("optgroup", { label: name },
           ...list.map((o) => el("option", { value: o, selected: o === k, title: describe(o.split(/[:.]/)[0]) }, o)))));
-      const drop = part.keys.length > 1 ? el("button", { type: "button", className: "path-x", title: "Remove this alternative", textContent: "×",
+      const drop = part.keys.length > 1 ? el("button", { type: "button", className: "path-x", title: "Remove this alternative", innerHTML: iconSvg("x"),
         onclick: (event) => { event.stopPropagation(); part.keys.splice(i, 1); edited(); } }) : null;
       return [i ? el("span", { className: "path-or", textContent: "or" }) : null, pick, drop].filter(Boolean);
     }),
     el("button", { type: "button", className: "path-more", title: "Add an alternative, written when the Item lacks the keys before it", textContent: "+ or",
       onclick: (event) => { event.stopPropagation(); part.keys.push(part.keys[part.keys.length - 1]); edited(); } }),
-    el("button", { type: "button", className: "path-x", title: "Remove the key", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
+    el("button", { type: "button", className: "path-x", title: "Remove the key", innerHTML: iconSvg("x"), onclick: (event) => { event.stopPropagation(); remove(); } }));
   };
   draw();
   return box;
@@ -615,10 +610,10 @@ function partEl(part, list, r, g) {
   let node;
   if (part.counter) {
     node = el("span", { className: "path-counter", title: "Numbers the rest of this name, 01, 02, in the order below" }, "#",
-      el("button", { type: "button", className: "path-x", title: "Remove the number", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
+      el("button", { type: "button", className: "path-x", title: "Remove the number", innerHTML: iconSvg("x"), onclick: (event) => { event.stopPropagation(); remove(); } }));
   } else if (part.end) {
     node = el("span", { className: "path-counter", title: "The number stops here: what follows is written but not numbered" }, "/#",
-      el("button", { type: "button", className: "path-x", title: "Remove the stop", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
+      el("button", { type: "button", className: "path-x", title: "Remove the stop", innerHTML: iconSvg("x"), onclick: (event) => { event.stopPropagation(); remove(); } }));
   } else if (part.keys) {
     node = keyPart(part, remove);
   } else if (part.group) {
@@ -628,7 +623,7 @@ function partEl(part, list, r, g) {
       onclick: (event) => { event.stopPropagation(); active = { row: r, group: at }; drawPath(); } },
       el("span", { className: "path-group-name", textContent: "if any" }),
       ...(part.group.length ? part.group.map((p) => partEl(p, part.group, r, at)) : [el("span", { className: "muted", textContent: "click a key below" })]),
-      el("button", { type: "button", className: "path-x", title: "Remove the optional part", textContent: "×", onclick: (event) => { event.stopPropagation(); remove(); } }));
+      el("button", { type: "button", className: "path-x", title: "Remove the optional part", innerHTML: iconSvg("x"), onclick: (event) => { event.stopPropagation(); remove(); } }));
   } else {
     // Text is typed in place; what would start a key, group or folder is
     // left out, and emptied text goes. An optional folder's own text may
@@ -723,7 +718,7 @@ $("layout-text").addEventListener("keydown", (event) => { if (event.key === "Ent
 function drawPath() {
   if (active.row >= rows.length) active = { row: rows.length - 1, group: -1 };
   const last = rows.length - 1;
-  const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled,
+  const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, ...glyph(text), disabled,
     onclick: (event) => { event.stopPropagation(); onclick(); } });
   $("path").replaceChildren(...rows.map((row, r) => {
     const file = r === last;
@@ -995,7 +990,7 @@ function orderList(s, key, rest) {
       .sort((a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return x < y ? -1 : x > y ? 1 : 0; });
     // move swaps a value with the one before or after it.
     const move = (a, b) => { const next = [...values]; [next[a], next[b]] = [next[b], next[a]]; set(next); };
-    const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, textContent: text, disabled, onclick });
+    const act = (title, text, onclick, disabled) => el("button", { type: "button", className: "order-act", title, ...glyph(text), disabled, onclick });
     const counted = numbered(values, numbers[key], unnumbered[key]);
     const next = (s.unlisted || {})[key] === "next";
     // With next numbers, the values not listed follow the list's last.
@@ -1050,7 +1045,7 @@ function orderList(s, key, rest) {
             dragged = -1;
           },
         },
-          el("span", { className: "order-grip", textContent: "⋮⋮", "aria-hidden": "true" }),
+          el("span", { className: "order-grip", innerHTML: iconSvg("grip-vertical"), "aria-hidden": "true" }),
           counted[i] === null
             ? el("span", { className: "order-number unnumbered", textContent: "—", title: "Not numbered: no number, nor the text after {#}" })
             : el("input", { className: "order-number" + (Object.keys(numbers[key] || {}).some((name) => same(name, v)) ? " set" : ""), type: "text", inputMode: "numeric",

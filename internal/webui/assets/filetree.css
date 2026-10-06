@@ -10,7 +10,11 @@
 .file-tree .ft-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .file-tree .ft-icon { display: inline-flex; width: 16px; height: 16px; flex: none; color: var(--charcoal); }
 .file-tree .ft-icon svg { width: 16px; height: 16px; }
-.file-tree .ft-twist { flex: none; width: 10px; margin-right: -4px; text-align: center; font-family: var(--font-sans, inherit); font-size: 10px; color: var(--graphite); }
+/* The chevron reaches the row's left edge and its full height, so it is a
+   target to aim at, not just its glyph. */
+.file-tree .ft-twist { flex: none; display: inline-flex; align-items: center; justify-content: center; align-self: stretch; width: 24px; margin: 0 -6px 0 -8px; border-radius: 6px 0 0 6px; color: var(--graphite); }
+.file-tree .ft-twist svg { width: 14px; height: 14px; }
+.file-tree .ft-twist:hover { background: var(--selected); color: var(--charcoal); }
 .file-tree .ft-name { flex: 1 1 auto; min-width: 5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-tree .ft-name a { color: inherit; text-decoration: none; }
 .file-tree .ft-name a:hover { color: var(--primary); text-decoration: underline; }

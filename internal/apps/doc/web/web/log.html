@@ -40,7 +40,7 @@
 <main class="log-work">
   <nav class="filters" aria-label="Filters">
     <div class="filter-group">
-      <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Only the Items marked frequent">★ Frequent</button>
+      <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Only the Items marked frequent"><span data-icon="star"></span> Frequent</button>
       <label class="filter filter-search"><span>Search</span>
         <input id="filter" type="search" placeholder="Item, field or value" spellcheck="false" autocomplete="off">
       </label>
@@ -60,5 +60,6 @@
   <p id="nothing" class="message" hidden>Nothing matches these filters.</p>
 </main>
 <script type="module" src="/log.js"></script>
+<script type="module" src="/ui/icons.js"></script>
 </body>
 </html>

@@ -4,6 +4,7 @@ import { $, keep, scrollBack, api, el, size, loadState, post, templateOf, label,
 import { openFile } from "/ui/filedialog.js";
 import { splitter } from "/ui/splitter.js";
 import { fileTree } from "/ui/filetree.js";
+import { iconSvg } from "/ui/icons.js";
 
 // The import panel is as wide as the reader drags it, and never so narrow
 // that its fields do not fit.
@@ -63,7 +64,7 @@ function render() {
     closed, selected, onPick: (f) => pick(f.path),
     mark: (f) => f.item ? "Imported: already in the tree" : "",
     fileExtra: (f) => el("span", {}, size(f.size) + " · " + new Date(f.modified).toLocaleDateString(),
-      el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder", textContent: "↗",
+      el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder", innerHTML: iconSvg("square-arrow-out-up-right"),
         onclick: (event) => { event.stopPropagation(); post("/api/reveal", { dir, path: f.path }).catch((err) => alert(err.message)); } })),
     folderExtra: (path, under) => {
       const kept = under.filter((f) => f.item).length;
@@ -138,9 +139,9 @@ function drawPages() {
   const move = (i, by) => { const [p] = pages.splice(i, 1); pages.splice(i + by, 0, p); changed(); };
   $("image-pages").replaceChildren(el("li", {}, el("span", { textContent: name(selected), title: selected })),
     ...pages.map((p, i) => el("li", {}, el("span", { textContent: name(p), title: p }),
-      el("button", { type: "button", className: "text-button", textContent: "↑", title: "Earlier", disabled: i === 0, onclick: () => move(i, -1) }),
-      el("button", { type: "button", className: "text-button", textContent: "↓", title: "Later", disabled: i === pages.length - 1, onclick: () => move(i, 1) }),
-      el("button", { type: "button", className: "text-button", textContent: "×", title: "Not a page of this PDF", onclick: () => { pages.splice(i, 1); changed(); } }))));
+      el("button", { type: "button", className: "text-button", innerHTML: iconSvg("arrow-up"), title: "Earlier", disabled: i === 0, onclick: () => move(i, -1) }),
+      el("button", { type: "button", className: "text-button", innerHTML: iconSvg("arrow-down"), title: "Later", disabled: i === pages.length - 1, onclick: () => move(i, 1) }),
+      el("button", { type: "button", className: "text-button", innerHTML: iconSvg("x"), title: "Not a page of this PDF", onclick: () => { pages.splice(i, 1); changed(); } }))));
   const folder = (p) => p.slice(0, p.lastIndexOf("/") + 1);
   const others = files.filter((f) => f.image && !f.item && f.path !== selected && !pages.includes(f.path))
     .sort((a, b) => (folder(b.path) === folder(selected)) - (folder(a.path) === folder(selected)) || a.path.localeCompare(b.path));

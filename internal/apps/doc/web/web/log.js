@@ -1,6 +1,7 @@
 // Log: every event in the tree's Items' history, newest first, as the server
 // orders it. Picking an entry opens its Item on Browse.
 import { $, keep as keepEntry, scrollBack, api, el, loadState, label, frame, eventLines, eventTitles } from "/common.js";
+import { icon } from "/ui/icons.js";
 
 let state = { templates: [], items: [] };
 let entries = [];
@@ -60,7 +61,7 @@ function render() {
     const [when, ...rest] = meta.split(" · ");
     return el("li", { onclick: () => { location.href = api("/browse/") + "#" + encodeURIComponent(e.item); } },
       el("span", { className: "log-when" }, when),
-      el("span", { className: "log-item" }, it && it.frequent ? "★ " : "", it ? label(state, it) : e.item + " (deleted)",
+      el("span", { className: "log-item" }, it && it.frequent ? icon("star") : "", it && it.frequent ? " " : "", it ? label(state, it) : e.item + " (deleted)",
         el("span", { className: "sub-inline" }, e.type)),
       el("span", {}, el("strong", {}, title), rest.length ? el("span", { className: "sub-inline" }, rest.join(" · ")) : null),
       ...lines.map((line) => el("span", { className: "sub", title: line }, line)));

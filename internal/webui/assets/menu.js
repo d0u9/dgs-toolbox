@@ -3,12 +3,15 @@
 // menu goes, how it closes and how the keyboard walks it are the same on
 // every page dgs serves.
 
+import { iconSvg } from "/ui/icons.js";
+
 let open = null; // the one menu on the page, or null
 
 // openMenu shows a menu at a pointer event. sections is a list of sections,
 // each a list of items, drawn with a rule between them: a section groups the
 // commands that belong together. An item is
-//   { label, title, onSelect, disabled, danger }
+//   { label, title, onSelect, disabled, danger, checked }
+// checked, when given, draws a check before the label, or the room for one.
 // An empty or all-empty section is left out, so a caller can build sections
 // from what is there without counting first. Returns nothing; the menu closes
 // on a choice, on a click elsewhere, on Escape, on a scroll outside it and
@@ -55,6 +58,12 @@ function menuItem(menu, item) {
   button.className = "menu-item" + (item.danger ? " danger" : "");
   button.setAttribute("role", "menuitem");
   button.textContent = item.label;
+  if (item.checked !== undefined) {
+    const mark = document.createElement("span");
+    mark.className = "menu-check";
+    if (item.checked) mark.innerHTML = iconSvg("check");
+    button.prepend(mark);
+  }
   if (item.title) button.title = item.title;
   if (item.disabled) button.disabled = true;
   button.addEventListener("click", (event) => {

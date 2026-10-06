@@ -5,6 +5,7 @@
 // chooses the columns shown. Order, widths and sort are remembered in this
 // browser under a key. The page says what the columns are and what a row
 // is; drawing, sorting and remembering are the same on every page.
+import { iconSvg } from "/ui/icons.js";
 import { openMenu } from "/ui/menu.js";
 
 const el = (tag, props = {}, ...children) => {
@@ -18,8 +19,10 @@ const FILLER = 36;
 // listTable draws into host. Options:
 //   key      where order, widths and sort are kept; none keeps nothing.
 //   columns  every column there may be, or a function answering them, each
-//            { id, text, title, width = 130, cell(row), value(row),
+//            { id, text, icon, title, width = 130, cell(row), value(row),
 //              fixed, sortable = true, resizable = true, down, group }.
+//            icon names an icon from /ui/icons.js drawn instead of text
+//            in the header; text still names it in the column menu.
 //            cell answers a string, a node or a whole <td>; value is what
 //            sorts and defaults to cell's text. A fixed column is always
 //            shown, first, in the order given, and cannot be moved or
@@ -68,7 +71,7 @@ export function listTable(host, { key = "", columns, shown = [], sort = {}, lead
     for (const c of all().filter((c) => !c.fixed)) {
       const g = c.group || "";
       if (!groups.has(g)) groups.set(g, []);
-      groups.get(g).push({ label: (order.includes(c.id) ? "✓ " : " ") + c.text, onSelect: () => {
+      groups.get(g).push({ label: c.text, checked: order.includes(c.id), onSelect: () => {
         order = order.includes(c.id) ? order.filter((id) => id !== c.id) : [...order, c.id];
         keep();
         draw();
@@ -96,7 +99,8 @@ export function listTable(host, { key = "", columns, shown = [], sort = {}, lead
     const on = sortable && (s.id === c.id || (!s.id && first && !sorting));
     const th = el("th", { className: "lt-head" + (on ? " sorted" : "") + (sortable ? " sortable" : ""),
       title: c.title || [sortable && "Click to sort", movable && !c.fixed && "drag to move", chooser && "right-click for columns"].filter(Boolean).join("; ") },
-      el("span", { className: "lt-text" }, c.text, on ? el("span", { className: "lt-arrow" }, s.down ? " ▼" : " ▲") : null));
+      el("span", { className: "lt-text" }, c.icon ? el("span", { className: "icon-box", innerHTML: iconSvg(c.icon) }) : c.text,
+        on ? el("span", { className: "lt-arrow", innerHTML: iconSvg(s.down ? "chevron-down" : "chevron-up") }) : null));
     if (sortable) {
       th.setAttribute("aria-sort", on ? (s.down ? "descending" : "ascending") : "none");
       th.addEventListener("click", () => {
@@ -167,7 +171,7 @@ export function listTable(host, { key = "", columns, shown = [], sort = {}, lead
       el("thead", chooser ? { oncontextmenu: menu } : {}, el("tr", {},
         lead ? el("th", { className: "lt-lead" }, lead.head ? lead.head() : "") : null,
         ...list.map((c) => head(c, list)),
-        chooser ? el("th", { className: "lt-plus", title: "Choose columns", onclick: (event) => { event.stopPropagation(); menu(event); } }, "+") : el("th"))),
+        chooser ? el("th", { className: "lt-plus", title: "Choose columns", onclick: (event) => { event.stopPropagation(); menu(event); }, innerHTML: iconSvg("plus") }) : el("th"))),
       el("tbody", {}, ...sorted.map((r) => {
         const cells = [
           lead ? el("td", { className: "lt-lead" }, lead.cell(r)) : null,

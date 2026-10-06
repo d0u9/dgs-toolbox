@@ -10,6 +10,7 @@ import { openMenu } from "/ui/menu.js";
 import { listTable } from "/ui/listtable.js";
 import { splitter } from "/ui/splitter.js";
 import { resizable, Folded, unplaced, whyText } from "/outlinetree.js";
+import { iconSvg } from "/ui/icons.js";
 
 let state = { templates: [], items: [] };
 let snapshots = [];
@@ -150,7 +151,7 @@ function draw() {
     onPickFolder: (path) => pick(path),
     fileClass: (f) => lost.has(f.item + " " + f.revision) ? "snap-lost" : "",
     folderExtra: (_, files) => el("span", { className: "numeric" }, String(files.length)),
-    fileExtra: (f) => el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder", textContent: "↗",
+    fileExtra: (f) => el("button", { type: "button", className: "ft-reveal", title: "Show in Finder", "aria-label": "Show in Finder", innerHTML: iconSvg("square-arrow-out-up-right"),
       onclick: (event) => { event.stopPropagation(); reveal(f); } }),
     decorate: (row, { kind, path }) => {
       // Picked without a redraw, which would scroll and so shut the menu.
@@ -610,9 +611,9 @@ async function showPdf() {
     el("div", { className: "snap-pdf-page" }, el("img", { alt: "", onerror: (event) => event.target.replaceWith(el("p", { className: "muted" }, "No picture of this page.")), src: api(`/api/page?item=${encodeURIComponent(item.id)}&digest=${digest}&n=${page.n}&size=page&v=${digest}`) })),
     el("div", { className: "snap-pdf-bar" },
       el("span", { className: "snap-pdf-title", title: label(state, item) }, label(state, item)),
-      el("button", { type: "button", className: "small", textContent: "‹", title: "Page before", disabled: page.n <= 1, onclick: () => go(page.n - 1) }),
+      el("button", { type: "button", className: "small", innerHTML: iconSvg("chevron-left"), title: "Page before", disabled: page.n <= 1, onclick: () => go(page.n - 1) }),
       el("span", { className: "numeric" }, page.n + " / " + page.count),
-      el("button", { type: "button", className: "small", textContent: "›", title: "Page after", disabled: page.n >= page.count, onclick: () => go(page.n + 1) }),
+      el("button", { type: "button", className: "small", innerHTML: iconSvg("chevron-right"), title: "Page after", disabled: page.n >= page.count, onclick: () => go(page.n + 1) }),
       el("a", { href: api("/browse/?read") + "#" + item.id, target: "_blank", textContent: "Open", title: "Open it in the Browse reader" })));
   const mine = ++pdfAsked;
   try {

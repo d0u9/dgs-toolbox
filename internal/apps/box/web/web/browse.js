@@ -31,6 +31,9 @@ const state = {
   facets: new Map(),
 };
 
+// Lucide's square-arrow-out-up-right (ISC licence), as /ui/icons.js draws it:
+// this page is plain scripts, so it cannot import that module.
+const REVEAL = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg>';
 const el = (id) => document.getElementById(id);
 
 const pages = pageView(
@@ -488,7 +491,7 @@ function card(scan) {
     (state.config.sample
       ? ''
       : `<button type="button" class="card-reveal" title="Show in Finder" aria-label="Show in Finder">` +
-        `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3.5h4.5l1.5 1.5h7v8.5h-13z"/></svg></button>`) +
+        REVEAL + `</button>`) +
     `</div>` +
     `<div class="card-body">` +
     `<p class="card-title" title="${title}">${title}</p>` +
