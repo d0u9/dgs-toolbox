@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { rowDoubleClick } from './web/drag.js';
+import { rowDoubleClick } from '../../../webui/assets/selection.js';
 import { TrackLayers } from './web/tracks.js';
 const click = (timeStamp, extras = {}) => ({timeStamp, clientX: 10, clientY: 10, detail: 1, ...extras});
 test('double click survives replacement rows, resets after fit and rejects other gestures', () => {
@@ -24,7 +24,7 @@ test('single part click preserves camera; double click frames tracks and routes'
  for (const kind of ['track', 'route', 'waypoint']) {
   const calls=[];
   const entry={visible:false,hiddenParts:new Set(['part-a'])};
-  const context=vm.createContext({state:{focus:'other',tracks:new Map([['file-a',entry]])},setVisible:(...args)=>calls.push(['visible',...args]),setPartHidden:(...args)=>calls.push(['hidden',...args]),setFocus:(...args)=>calls.push(['focus',...args]),fitBox:()=>calls.push(['fit']),openWaypoint:()=>calls.push(['popup']),map:{getZoom:()=>12,easeTo:()=>calls.push(['pan'])}});
+  const context=vm.createContext({state:{focus:'other',tracks:new Map([['file-a',entry]])},select(){},renderTracks(){},setVisible:(...args)=>calls.push(['visible',...args]),setPartHidden:(...args)=>calls.push(['hidden',...args]),setFocus:(...args)=>calls.push(['focus',...args]),fitBox:()=>calls.push(['fit']),openWaypoint:()=>calls.push(['popup']),map:{getZoom:()=>12,easeTo:()=>calls.push(['pan'])}});
   vm.runInContext(code,context);
   const part={kind,key:'part-a',points:[[0,0]],bounds:[[0,0],[1,1]]};
   context.showPart('file-a',part);

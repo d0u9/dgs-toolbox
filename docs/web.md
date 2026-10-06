@@ -358,8 +358,19 @@ mouse, pen or touch. Buttons and inputs within a heading keep their usual
 behaviour. A custom title bar uses `data-dialog-handle`. Movement stays inside
 the viewport; resizing the window brings moved dialogs back into view.
 
-The module also carries the one interaction no page should write twice: the
-**file dialog**. A page links `/ui/filedialog.css`, imports `openFile` or
+The shared `controls.js` builds buttons, icon buttons and two-line row labels.
+`selection.js` recognizes double-clicks across rows that are rebuilt after
+selection, keeping single-click selection separate from framing. Shared CSS
+also owns segmented controls. Pages supply domain actions and labels.
+
+`dialog.js` owns modal forms, including prompt, choice and confirmation
+dialogs: validation, Escape/cancel, initial focus and focus restoration. Pages
+build domain-specific fields and return values through `formDialog`.
+Destructive confirmation initially focuses Cancel. Use the bundled Inter
+face, finer text for metadata and tabular digits for changing measurements;
+charts inherit the same font instead of using a separate canvas default.
+
+The module also carries the **file dialog**. A page links `/ui/filedialog.css`, imports `openFile` or
 `saveFile` from `/ui/filedialog.js`, and mounts the endpoints
 `internal/webfile` serves under `/ui/files/` — `dir`, one folder's folders and
 files, and `places`, the list down the dialog's side. A page that saves mounts

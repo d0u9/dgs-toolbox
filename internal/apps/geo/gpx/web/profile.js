@@ -115,6 +115,8 @@ export class Profile {
       container.append(empty);
       return;
     }
+    const type = getComputedStyle(container);
+    const axisFont = `${type.getPropertyValue("--font-size-xs").trim() || "11px"} ${type.fontFamily}`;
     const chart = new uPlot({
       width: container.clientWidth,
       height: container.clientHeight,
@@ -126,8 +128,8 @@ export class Profile {
       },
       scales: { x: { time: false } },
       axes: [
-        { values: (_, ticks) => ticks.map((v) => `${v} km`), size: 30, grid: { stroke: "#eee" } },
-        { size: 48, grid: { stroke: "#eee" } },
+        { font: axisFont, values: (_, ticks) => ticks.map((v) => `${v} km`), size: 30, grid: { stroke: "#eee" } },
+        { font: axisFont, size: 48, grid: { stroke: "#eee" } },
       ],
       series: [
         {},
@@ -164,6 +166,7 @@ export class Profile {
       this.onHover(null);
     });
     this.charts.push(chart);
+    document.fonts?.ready.then(() => { if (this.charts.includes(chart)) chart.redraw(); });
   }
 
   // shadeHidden hatches the distance ranges of hidden tracks over a chart.

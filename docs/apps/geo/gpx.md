@@ -558,8 +558,9 @@ edit's `×` restores just that one.
   in the panel with its time span. *Break* leaves no line and no distance
   across it, and starts a new `<trkseg>` when written, as a pause in the
   recording would. *Join* draws a straight line across and counts its
-  distance. Clicking a range on the timeline switches it or restores its
-  points; so do its row's selector and `×`; clicking the row frames it.
+  distance. Clicking a range on the timeline or its row selects it;
+  right-clicking offers join/break and restore. A double-click on the row
+  frames it. The explicit selector and `×` also remain available.
   Removed stretches are also drawn on the map, along where they were
   recorded, as a pale purple band with a dashed centre.
 - **Lasso.** With *Lasso* on, dragging on the map draws a shape; the focused
@@ -590,7 +591,8 @@ fill is made only this way, on request.
   the recording. They are banded light blue on the map, and written with
   `<src>dgs-toolbox: filled along the road</src>`.
 - Each fill is listed with its time span, length and points; clicking it
-  frames it, `×` removes it and brings back the recorded points. A fill
+  selects it, double-clicking frames it, and its right-click menu offers fit
+  and removal. `×` also removes it and brings back the recorded points. A fill
   cannot cross another.
 
 The route is stored in the sidecar as coordinates, so a fill never needs the
@@ -622,10 +624,11 @@ clicks.
 - **Waypoints.** Clicking the map adds a waypoint at the end. A click within
   40 px of the first or last point of a shown track in the workspace snaps to
   it, so a route starts or ends where a track does. Waypoints are numbered
-  markers — the start green, the end black — dragged to move them and
-  double-clicked to remove them; a small circle midway along each leg is
-  dragged to insert a waypoint there. The inspector lists them, each with `×`,
-  and clicking one centres the map on it.
+  markers — the start green, the end black — dragged to move them. A single
+  click selects a waypoint; a double-click shows it on the map. Its right-click
+  menu offers *Show on map* and *Remove waypoint*. A small circle midway along
+  each leg is dragged to insert a waypoint. The inspector follows the same
+  selection rule and also has an explicit `×` removal button.
 - **Legs.** Between each two waypoints a leg goes by car, bicycle or foot —
   asked of the public OSRM routers, which receive only its two waypoints — or
   straight, drawn dashed. *New legs* sets the way of the next one; each leg's
@@ -650,22 +653,24 @@ clicks.
 ## Segments
 
 In Edit, the inspector's *Segments* tab — or the *Cut* tool (`C`) on the map's
-tool bar, which opens it — cuts the focused track. While it is shown, clicks
-on the track and the timeline cut, and the other tools are off; picking one of
+tool bar, which opens it — cuts the focused track. While it is shown,
+right-click menus on the track and timeline offer cut commands, and the other
+tools are off; picking one of
 them goes back to *Changes*. A cut is a point
 where one segment ends and the next begins; both segments hold that point, so
 nothing is lost between them. Segments are cut from what cleaning kept.
 
 - **Proposed cuts.** Every stop proposes a cut at the point recorded midway
-  through it, shown on the timeline as a dashed mark. Clicking one cuts there;
+  through it, shown on the timeline as a dashed mark. Clicking one selects it;
+  its right-click menu offers *Cut here*;
   *Cut at every stop* takes them all.
 - **Editing cuts.** On the Segments tab, pointing at the focused track on the
-  map marks the point a cut would fall on, and clicking cuts there; clicking
-  the timeline, stop blocks included, cuts at the point under the pointer,
-  while dragging it still scrubs. Cuts are yellow handles on the timeline. drag a handle to move the
-  cut, double-click it to remove it, or use × beside the segment that starts at
-  that cut. The first segment has no cut before it. *Clear cuts* removes them all. Cuts are
-  also marked on the map.
+  map marks the point a cut would fall on. Clicking selects a point, and
+  right-clicking offers *Cut here*. Timeline clicks also select, while dragging
+  still scrubs. Cuts are yellow handles: drag one to move it, or right-click
+  for *Remove cut*. The segment row also offers removal in its right-click
+  menu and an explicit `×` button. The first segment has no cut before it.
+  *Clear cuts* removes them all. Cuts are also marked on the map.
 - **Colours.** While the tab is shown each segment is drawn over the track in
   a colour of its own, neighbours always different, with the same colour on
   its number in the table and as a strip along the foot of the timeline.
@@ -675,10 +680,13 @@ nothing is lost between them. Segments are cut from what cleaning kept.
   laid out in columns, so a narrow inspector hides nothing.
 - **Names.** A segment is named by its time span in the page's time zone —
   `2026-09-06 09:00–09:26`, or with both dates when it crosses midnight —
-  until a name is typed. A name belongs to the segment starting at its point:
+  until *Rename…* in its right-click menu opens the naming dialog.
+  *Use default name* returns to the time-span name. A name belongs to the
+  segment starting at its point:
   moving that cut keeps it; removing it merges the segment into the one before,
-  and the name goes. Pointing at a segment highlights it on the map; clicking
-  it frames it.
+  and the name goes. Pointing at a segment highlights it on the map; a single
+  click selects and highlights it, and a double-click frames it. Ctrl/Command
+  click toggles selection without framing.
 - **Actions.** Everything done to the segments is in one section under the
   table: *Cut*, holding *Cut at every stop* and *Clear cuts* with the number
   of cuts, then *Save segments to*, holding the targets with the number of
@@ -983,11 +991,12 @@ source is cleaned on its own before it is combined.
   a shared minimum spatial range of one metre. Zoomed in, cuts and ranges snap
   to single points.
 - **Cutting on the map.** In cut mode, pointing at the track marks the point a
-  cut would fall on; clicking cuts there. Shift-click on the timeline stays.
+  cut would fall on; clicking selects it and right-clicking offers *Cut here*.
 - **Edit replaces Clean.** The panel keeps the automatic filters and gathers
   removal by hand: the lasso; dragging a range on the timeline to remove the
   continuous points in it; *Remove this stop* on a stop's popup and timeline
-  block. Removed ranges are marked on the timeline; clicking one offers
+  block. Removed ranges are marked on the timeline; clicking selects a range
+  and right-clicking offers
   *Join*, *Break* and *Restore*.
 - **Join or break.** Each removed range chooses whether the points either side
   of it are joined — a straight line, counted in distance — or broken, like a

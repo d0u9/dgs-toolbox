@@ -4,6 +4,8 @@
 // ticks that follow. The periods come from the server's stops; this only lays
 // them out.
 
+import { openMenu, closeMenu } from "/ui/menu.js";
+
 import * as format from "./format.js";
 import { pieceColor } from "./cut.js";
 import { stopTitle } from "./stops.js";
@@ -53,14 +55,8 @@ export class Timeline {
 
     this.cutting = null;
     this.editing = null;
-    this.menu = document.createElement("div");
-    this.menu.className = "menu";
-    this.menu.hidden = true;
-    root.append(this.menu);
-    document.addEventListener("pointerdown", (event) => {
-      if (!this.menu.hidden && !this.menu.contains(event.target)) this.menu.hidden = true;
-    });
     bar.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
       if (event.target.closest(".timeline-cut, .timeline-candidate, .timeline-removed")) return;
       if (event.altKey) return; // Alt-drag pans; see bindZoom
       if (this.editing?.rangeTool) {
@@ -68,15 +64,20 @@ export class Timeline {
         return;
       }
       if (event.target.closest(".timeline-stop") && !this.cutting) return;
-      // While cutting, a click cuts at the point under the pointer; a drag
-      // still scrubs.
-      if (this.cutting) this.clickToCut(event);
+      // A click selects a point; cutting is an explicit context-menu action.
       try {
         bar.setPointerCapture(event.pointerId);
       } catch {
         // The scrub still follows the pointer while it stays over the bar.
       }
       this.scrub(event);
+    });
+    bar.addEventListener("contextmenu", event => {
+      if (!this.cutting) return;
+      const index = this.indexAt(event.clientX);
+      if (index == null) return;
+      this.onScrub(index); this.setIndex(index);
+      openMenu(event, [[{ label: "Cut here", onSelect: () => this.cutting?.onAdd(index) }]]);
     });
     bar.addEventListener("pointermove", (event) => {
       this.pointerX = event.clientX;
@@ -160,8 +161,9 @@ export class Timeline {
         block.textContent = String(i + 1);
         block.title = stopTitle(i, stop, this.timeZone);
         block.addEventListener("click", () => {
-          if (!this.cutting) this.onStop(i); // while cutting, a click cuts instead
+          this.onStop(i);
         });
+        block.addEventListener("dblclick", event => { event.stopPropagation(); this.onStop(i, { pan: true }); });
         block.addEventListener("mouseenter", () => this.onStopHover(i));
         block.addEventListener("mouseleave", () => this.onStopHover(null));
         blocks.push(block);
@@ -506,6 +508,7 @@ export class Timeline {
     };
     // Alt-drag on the bar moves the time under the pointer with it.
     bar.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
       if (!event.altKey || !this.full) return;
       drag(bar, () => -(this.toAxis(this.range[1]) - this.toAxis(this.range[0])) / bar.getBoundingClientRect().width)(event);
     });
@@ -628,25 +631,13 @@ export class Timeline {
     this.ticks.replaceChildren(...labels);
   }
 
-  // clickToCut cuts where a press is released without moving.
-  clickToCut(event) {
-    const startX = event.clientX;
-    const up = (e) => {
-      window.removeEventListener("pointerup", up, true);
-      if (Math.abs(e.clientX - startX) > 3 || !this.cutting) return;
-      const index = this.indexAt(e.clientX);
-      if (index != null) this.cutting.onAdd(index);
-    };
-    window.addEventListener("pointerup", up, true);
-  }
-
   // setEditing shows removals by hand and lets them be edited, or with null
   // hides them. edits are the sidecar's edits; ranges and stops show as blocks;
   // rangeTool makes dragging select a range to remove; onRange(first, last),
   // onJoin(index, join) and onRestore(index) report edits.
   setEditing(editing) {
     this.editing = editing;
-    this.menu.hidden = true;
+    closeMenu();
     this.root.classList.toggle("range-tool", Boolean(editing?.rangeTool));
     if (this.track) this.render();
   }
@@ -662,11 +653,11 @@ export class Timeline {
       const from = Math.min(...times), to = Math.max(...times);
       const block = this.block("timeline-removed" + (range.join ? " join" : ""), from, to);
       const description = `${range.kind === "stop" ? "Stop" : "Range"} removed by hand, ${range.join ? "joined across" : "broken"}`;
-      block.title = this.editing ? `${description} — click to change or restore` : description;
+      block.title = this.editing ? `${description} — right-click to change or restore` : description;
+      block.addEventListener("click", () => { this.onScrub(range.first); this.setIndex(range.first); });
       if (this.editing) {
-        block.addEventListener("click", (event) => {
-          event.stopPropagation();
-          this.openMenu(event.clientX, [
+        block.addEventListener("contextmenu", (event) => {
+          this.openMenu(event, [
             [range.join ? "Break here" : "Join across", () => onJoin(index, !range.join)],
             ["Restore these points", () => onRestore(index)],
           ]);
@@ -677,21 +668,8 @@ export class Timeline {
     return elements;
   }
 
-  openMenu(clientX, items) {
-    this.menu.replaceChildren(...items.map(([text, action]) => {
-      const button = document.createElement("button");
-      button.textContent = text;
-      button.addEventListener("click", () => {
-        this.menu.hidden = true;
-        action();
-      });
-      return button;
-    }));
-    const box = this.root.getBoundingClientRect();
-    const barBox = this.bar.getBoundingClientRect();
-    this.menu.hidden = false;
-    this.menu.style.left = `${Math.min(clientX - box.left, box.width - this.menu.offsetWidth)}px`;
-    this.menu.style.top = `${barBox.bottom - box.top + 2}px`;
+  openMenu(event, items) {
+    openMenu(event, [items.map(([label, onSelect]) => ({ label, onSelect }))]);
   }
 
   // selectRange drags out a stretch of the timeline and removes its points.
@@ -758,16 +736,19 @@ export class Timeline {
     for (const index of candidates) {
       if (cuts.includes(index) || at(index) == null) continue;
       const mark = this.mark("timeline-candidate", at(index));
-      mark.title = "Proposed cut at a stop — click to cut here";
-      mark.addEventListener("click", () => onAdd(index));
+      mark.title = "Click to select · right-click to cut here";
+      mark.addEventListener("click", () => { this.onScrub(index); this.setIndex(index); });
+      mark.addEventListener("contextmenu", event => openMenu(event, [[{ label: "Cut here", onSelect: () => onAdd(index) }]]));
       elements.push(mark);
     }
     for (const index of cuts) {
       if (at(index) == null) continue;
       const mark = this.mark("timeline-cut", at(index));
-      mark.title = `Cut at ${format.clock(at(index), this.timeZone)} — drag to move, double-click to remove`;
-      mark.addEventListener("dblclick", () => onRemove(index));
+      mark.title = `Cut at ${format.clock(at(index), this.timeZone)} — drag to move, right-click to remove`;
+      mark.addEventListener("click", () => { this.onScrub(index); this.setIndex(index); });
+      mark.addEventListener("contextmenu", event => openMenu(event, [[{ label: "Remove cut", onSelect: () => onRemove(index) }]]));
       mark.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
         event.preventDefault();
         try {
           mark.setPointerCapture(event.pointerId);

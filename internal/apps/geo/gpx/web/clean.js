@@ -6,6 +6,8 @@
 
 import * as format from "./format.js";
 import { waySelect } from "./route.js";
+import { rowDoubleClick } from "/ui/selection.js";
+import { openMenu } from "/ui/menu.js";
 
 const ORIGINAL = "clean-original";
 const REMOVED = "clean-removed";
@@ -64,13 +66,15 @@ const FILTERS = [
 export class CleanPanel {
   // onChange(params) is called with the new settings after an edit;
   // onLasso(active) and onRangeTool(active) when those tools are switched;
-  // onShowRange(range) to frame a removed range.
+  // onShowRange(range, {fit}) selects a removal and optionally frames it.
   // Filling along the road: onFillTool(active), onProfile(profile),
   // onUseFill() and onDiscardFill() for the previewed route, onRemoveFill(index)
   // and onShowFill(fill).
   // onTab(tab) is called when the tab is switched.
   constructor({ root, onChange, onLasso, onRangeTool, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab, timeZone }) {
     Object.assign(this, { root, onChange, onLasso, onRangeTool, onShowRange, onFillTool, onProfile, onUseFill, onDiscardFill, onRemoveFill, onShowFill, onTab });
+    this.selected = null;
+    this.doubleClick = rowDoubleClick();
     this.ways = []; // the routers' ways of travel, from /api/config
     this.tab = "changes"; // "changes": removals by hand and fills; "auto": the filters; "segments": cuts
     // segmentsRoot holds the Segments tab, drawn by the cut panel.
@@ -122,6 +126,7 @@ export class CleanPanel {
   }
 
   show(track) {
+    if (this.track !== track) { this.selected = null; this.doubleClick.reset(); }
     this.track = track;
     this.render();
   }
@@ -362,8 +367,15 @@ export class CleanPanel {
     meta.textContent = `${format.distance(fill.distance)} · ${fill.points} points filled`;
     if (fill.at) meta.textContent += ` · ${format.clock(fill.at, this.timeZone).slice(11)}`;
     label.append(name, meta);
-    label.title = "Show on the map";
-    label.addEventListener("click", () => this.onShowFill(fill));
+    const key = `fill:${index}`;
+    li.classList.toggle("selected", this.selected === key);
+    const pick = fit => { this.selected = key; this.onShowFill(fill, { fit }); this.render(); };
+    label.title = "Click to select · double-click to fit · right-click for actions";
+    label.addEventListener("click", event => pick(this.doubleClick(key, event)));
+    li.addEventListener("contextmenu", event => {
+      this.doubleClick.reset(); pick(false);
+      openMenu(event, [[{ label: "Fit this fill", onSelect: () => pick(true) }, { label: "Remove this fill", onSelect: () => this.onRemoveFill(index) }]]);
+    });
     const remove = document.createElement("button");
     remove.className = "remove";
     remove.textContent = "×";
@@ -397,8 +409,19 @@ export class CleanPanel {
     }
     if (edit.at) meta.textContent += ` · removed ${format.clock(edit.at, this.timeZone).slice(11)}`;
     label.append(name, meta);
-    label.title = "Show on the map";
-    label.addEventListener("click", () => this.onShowRange(edit));
+    const key = `edit:${index}`;
+    li.classList.toggle("selected", this.selected === key);
+    const pick = fit => { this.selected = key; this.onShowRange(edit, { fit }); this.render(); };
+    label.title = "Click to select · double-click to fit · right-click for actions";
+    label.addEventListener("click", event => pick(this.doubleClick(key, event)));
+    li.addEventListener("contextmenu", event => {
+      this.doubleClick.reset(); pick(false);
+      openMenu(event, [[
+        { label: "Fit these points", onSelect: () => pick(true) },
+        edit.kind !== "lasso" && { label: edit.join ? "Break here" : "Join across", onSelect: () => this.setJoin(index, !edit.join) },
+        { label: "Restore these points", onSelect: () => this.restoreEdit(index) },
+      ]]);
+    });
     li.append(label);
     if (edit.kind !== "lasso") {
       const join = document.createElement("select");

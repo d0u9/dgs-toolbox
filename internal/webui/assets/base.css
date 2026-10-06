@@ -12,6 +12,7 @@ body {
   background: var(--cloud);
   color: var(--ink);
   font: var(--font-size-ui) / var(--line-height-ui) var(--font-sans);
+  font-optical-sizing: auto;
 }
 
 /* The bar across the top of the page: the name on the left, controls after

@@ -15,13 +15,17 @@ import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { revealButton } from "./reveal.js";
 import { CHEVRON, DIAMOND, DIAMOND_OPEN, DOWN, UP } from "./icons.js";
 import { RoutePlanner } from "./route.js";
-import { chooseDialog, confirmDialog, promptDialog, waypointDialog } from "./dialog.js";
+import { waypointDialog } from "./dialog.js";
+import { chooseDialog, confirmDialog, promptDialog } from "/ui/dialog.js";
+import { button, iconButton, rowLabel as label } from "/ui/controls.js";
+import { rowDoubleClick } from "/ui/selection.js";
 import { openFile, saveFile } from "/ui/filedialog.js";
+import { tooltip } from "/ui/tooltip.js";
 import { openMenu } from "/ui/menu.js";
 import * as status from "/ui/statusbar.js";
 import { splitter, shareSplitter } from "/ui/splitter.js";
 import { Terrain, DEFAULT_EXAGGERATION } from "./terrain.js";
-import { rowDoubleClick, longPressDrag, SortGap } from "./drag.js";
+import { longPressDrag, SortGap } from "./drag.js";
 
 // Okabe-Ito-derived hues: distinct under the common red/green colour-vision
 // deficiencies, with the darker variants retained for contrast on the map.
@@ -363,7 +367,7 @@ function applyCleanPanel() {
     onJoin: (index, join) => cleanPanel.setJoin(index, join),
     onRestore: (index) => cleanPanel.restoreEdit(index),
   });
-  if (cutting()) timeline.setEditing(null); // the timeline's clicks cut instead
+  if (cutting()) timeline.setEditing(null); // cuts use their own context menu
   applyEditTools();
 }
 
@@ -381,7 +385,7 @@ function setMode(mode) {
   save();
 }
 
-// cutting says whether clicks on the track and the timeline cut: in edit mode,
+// cutting enables cut commands on the track and timeline: in edit mode,
 // on the Segments tab.
 const cutting = () => state.cleanOpen && !state.routeOpen && state.editTab === "segments" && Boolean(focusedEntry());
 
@@ -449,7 +453,7 @@ function applyEditTools() {
   } else if (open && tool === "waypoint") {
     html = `<strong>Waypoint</strong> · click the map, then choose a dgs-created GPX and name the point · ${esc} to stop`;
   } else if (open && tool === "cut") {
-    html = "<strong>Cut</strong> · click the track or the timeline to cut there; drag a cut on the timeline to move it, double-click it to remove it";
+    html = "<strong>Cut</strong> · click to select a point; right-click to add or remove a cut; drag a cut on the timeline to move it";
   } else if (open && tool === "lasso") {
     html = `<strong>Lasso</strong> · draw around points to remove them; hold <kbd>${format.keys.alt}</kbd> to restore · ${esc} to stop`;
   } else if (open && tool === "fill") {
@@ -459,7 +463,7 @@ function applyEditTools() {
     else if (fill.start != null) html = `<strong>Fill along the road</strong> · now click where it ends; near a track's end the click snaps to it · ${esc} forgets the start`;
     else html = `<strong>Fill along the road</strong> · click the track where the stretch starts · ${esc} to stop`;
   } else if (state.routeOpen) {
-    html = "<strong>Route</strong> · click the map to add a waypoint · drag a waypoint to move it, double-click to remove it · drag a small circle on a leg to insert one";
+    html = "<strong>Route</strong> · click the map to add a waypoint · drag a waypoint to move it · right-click for actions · drag a small circle on a leg to insert one";
   } else if (open) {
     html = "Tools: <kbd>R</kbd> range · <kbd>L</kbd> lasso · <kbd>F</kbd> fill along the road · <kbd>C</kbd> cut · ⚑ waypoint";
   }
@@ -620,9 +624,9 @@ async function useFill() {
   setFill({ busy: false, preview: null });
 }
 
-// showFill frames a filled stretch on the map.
-function showFill(fill) {
-  showRange({ kind: "range", first: fill.first, last: fill.last });
+// showFill selects a filled stretch and optionally frames it.
+function showFill(fill, options) {
+  showRange({ kind: "range", first: fill.first, last: fill.last }, options);
 }
 
 // ---- opening files ----
@@ -826,6 +830,7 @@ function replaceTrackPath(path, target) {
   state.tracks = new Map([...state.tracks].map(([key, value]) => [key === path ? target : key, value]));
   if (state.selection.delete(path)) state.selection.add(target);
   if (state.anchor === path) state.anchor = target;
+  if (state.partSelection?.path === path) state.partSelection.path = target;
   if (state.fill.preview?.path === path) state.fill.preview.path = target;
   entry.track.path = target;
   entry.track.name = basename(target).replace(/\.gpx$/i, "");
@@ -997,11 +1002,14 @@ function setRangeStart(index) {
   applyEditTools();
 }
 
-// showRange frames the points of a removal by hand on the map.
-function showRange(edit) {
+// showRange selects removed points and frames them only on an explicit fit.
+function showRange(edit, { fit = false } = {}) {
   const { track } = focusedEntry();
   const box = [[Infinity, Infinity], [-Infinity, -Infinity]];
   const indices = edit.kind === "lasso" ? edit.points : Array.from({ length: edit.last - edit.first + 1 }, (_, k) => edit.first + k);
+  const first = indices[0];
+  if (first != null) { inspect(first); profile.setIndex(first); timeline.setIndex(first); }
+  if (!fit) return;
   for (const i of indices) {
     const [lon, lat] = track.points[i];
     box[0] = [Math.min(box[0][0], lon), Math.min(box[0][1], lat)];
@@ -1245,40 +1253,6 @@ const expandable = (entry) => entry.track.parts.length > 0;
 const EYE = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8s2.6-4.2 7-4.2S15 8 15 8s-2.6 4.2-7 4.2S1 8 1 8z"/><circle cx="8" cy="8" r="1.9"/></svg>`;
 const EYE_OFF = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 8s2.6-4.2 7-4.2S15 8 15 8s-2.6 4.2-7 4.2S1 8 1 8z"/><circle cx="8" cy="8" r="1.9"/><path d="M2.5 13.5 13.5 2.5"/></svg>`;
 
-// iconButton is a button whose face is an icon rather than text.
-function iconButton(className, icon, title, onClick) {
-  const element = button(className, "", title, onClick);
-  element.innerHTML = icon;
-  return element;
-}
-
-function button(className, text, title, onClick) {
-  const element = document.createElement("button");
-  element.className = className;
-  element.textContent = text;
-  element.title = title;
-  element.setAttribute("aria-label", title);
-  element.addEventListener("click", (event) => {
-    event.stopPropagation();
-    onClick();
-  });
-  return element;
-}
-
-// label is a row's text: the name, up to two lines, over its details.
-function label(name, details) {
-  const box = document.createElement("span");
-  box.className = "label";
-  const title = document.createElement("span");
-  title.className = "name";
-  title.textContent = name;
-  const meta = document.createElement("span");
-  meta.className = "meta";
-  meta.textContent = details.filter(Boolean).join(" · ");
-  box.append(title, meta);
-  return box;
-}
-
 const doubleRowClick = rowDoubleClick();
 
 function trackRow(path, entry) {
@@ -1287,7 +1261,7 @@ function trackRow(path, entry) {
     + (entry.track.unsaved ? " unsaved" : "") + (entry.visible ? "" : " hidden-track");
   // A name too long for the sidebar is cut with an ellipsis, so the tooltip
   // carries the whole name as well as where the file is.
-  li.title = entry.track.name && entry.track.name !== path ? `${entry.track.name}\n${path}` : path;
+  tooltip(li, [entry.track.name, path]);
 
   // The disclosure sits at the row's end, so rows start flush at the left.
   const disclosure = expandable(entry)
@@ -1408,6 +1382,7 @@ function trackRow(path, entry) {
   });
   // Clicking a hidden track shows it: only a shown track can be focused.
   li.addEventListener("click", (event) => {
+    state.partSelection = null;
     const double = doubleRowClick(JSON.stringify([path]), event);
     const toggle = event.metaKey || event.ctrlKey;
     select(path, { toggle, range: event.shiftKey });
@@ -1481,8 +1456,9 @@ const PART_GLYPH = { track: "〰", route: "┅", waypoint: "⚑" };
 function partRow(path, entry, part) {
   const hidden = entry.hiddenParts.has(part.key);
   const li = document.createElement("li");
-  li.className = "part-row" + (hidden || !entry.visible ? " hidden-track" : "");
-  li.title = `${part.name}${part.description ? ` — ${part.description}` : ""}`;
+  li.className = "part-row" + (hidden || !entry.visible ? " hidden-track" : "")
+    + (state.partSelection?.path === path && state.partSelection.key === part.key ? " selected" : "");
+  tooltip(li, [part.name, part.description]);
 
   const eye = iconButton("eye", hidden ? EYE_OFF : EYE, hidden ? "Show this part" : "Hide this part", () => setPartHidden(path, part.key, !hidden));
   const glyph = document.createElement("span");
@@ -1959,10 +1935,13 @@ function hiddenRanges(entry) {
 
 // showPart focuses a part, showing it if hidden; double-click also frames it.
 function showPart(path, part, { fit: shouldFit = false } = {}) {
+  state.partSelection = { path, key: part.key };
+  select(path);
   const entry = state.tracks.get(path);
   if (!entry.visible) setVisible(path, true);
   if (entry.hiddenParts.has(part.key)) setPartHidden(path, part.key, false);
   if (state.focus !== path) setFocus(path, { fit: false });
+  else renderTracks();
   if (part.kind === "waypoint") {
     openWaypoint(entry, part);
     if (shouldFit) map.easeTo({ center: part.points[0], zoom: Math.max(map.getZoom(), 15), duration: 400 });
@@ -2080,7 +2059,7 @@ function timeSpan(track, min, max) {
   return from == null ? null : [from, to];
 }
 
-// selectStop opens a stop's times; from the timeline it also brings the stop
+// selectStop selects a stop and opens its times; explicit fit also brings it
 // into view.
 function selectStop(index, { pan = false } = {}) {
   const entry = focusedEntry();
@@ -2131,7 +2110,7 @@ function bindMap() {
       // pointer says it can be opened.
       const found = waypointAt(point);
       layers.setHover(found ? found.entry.id : null, found ? found.part.key : null);
-      // In cut mode the pointer says a click cuts at the marked point.
+      // In cut mode the pointer marks the point available to the cut command.
       map.getCanvas().style.cursor = found ? "pointer"
         : index >= 0 ? (cutting() ? "copy" : "crosshair") : state.fill.active || state.routeOpen ? "crosshair" : "";
       inspect(index);
@@ -2148,6 +2127,16 @@ function bindMap() {
   // name, and where it is pinned. Elsewhere the map keeps its own menu.
   map.on("contextmenu", (event) => {
     const found = waypointAt(event.point);
+    const cutEntry = focusedEntry();
+    if (!found && cutting() && cutEntry) {
+      const index = layers.nearest(cutEntry.track, event.point, 24, cutEntry.hiddenParts);
+      if (index >= 0) {
+        event.preventDefault();
+        inspect(index);
+        openMenu(event.originalEvent, [[{ label: "Cut here", onSelect: () => cutPanel.addCut(index) }]]);
+        return;
+      }
+    }
     if (!found) return;
     event.preventDefault();
     const { path, entry, part } = found;
@@ -2201,17 +2190,19 @@ function bindMap() {
       }
       return;
     }
-    // In cut mode, clicking the focused track cuts it at the point marked.
+    // Cutting still selects on click; edits live in the context menu.
     if (cutting() && focused.track.points.length) {
       const index = layers.nearest(focused.track, event.point, 24, focused.hiddenParts);
       if (index >= 0) {
-        cutPanel.addCut(index);
+        inspect(index);
+        profile.setIndex(index);
+        timeline.setIndex(index);
         return;
       }
     }
     const found = waypointAt(event.point);
     if (found) {
-      openWaypoint(found.entry, found.part);
+      showPart(found.path, found.part);
       return;
     }
     const box = [[event.point.x - 4, event.point.y - 4], [event.point.x + 4, event.point.y + 4]];
@@ -2221,7 +2212,11 @@ function bindMap() {
     if (!hit) return;
     const id = hit.layer.metadata.track;
     for (const [path, entry] of state.tracks) {
-      if (entry.id === id && path !== state.focus) setFocus(path, { fit: false });
+      if (entry.id !== id) continue;
+      state.partSelection = null;
+      select(path);
+      if (path !== state.focus) setFocus(path, { fit: false });
+      else renderTracks();
     }
   });
 }
@@ -2607,7 +2602,11 @@ async function start() {
     root: cleanPanel.segmentsRoot,
     onCuts: (cuts, names) => changeFocused((path) => api.saveSegments(path, cuts, names)),
     onHover: (piece) => cutOverlay.highlight(focusedEntry()?.track, piece),
-    onShow: (piece) => {
+    onShow: (piece, { fit = false } = {}) => {
+      cutOverlay.highlight(focusedEntry()?.track, piece);
+      profile.setIndex(piece.first);
+      timeline.setIndex(piece.first);
+      if (!fit) return;
       const box = pieceBounds(focusedEntry().track, piece);
       if (box) fitBox(box);
     },
@@ -2686,7 +2685,7 @@ async function start() {
       inspect(index);
       profile.setIndex(index);
     },
-    onStop: (index) => selectStop(index, { pan: true }),
+    onStop: (index, options) => selectStop(index, options),
     onStopHover: (index) => stopMarkers.highlight(index),
     onView: (view) => syncChartsToTimeline(view),
   });

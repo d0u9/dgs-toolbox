@@ -3,6 +3,10 @@
 // planner keeps the plan in WGS-84 and draws it in the map's system; the panel
 // lists the waypoints and legs and saves the plan as a new GPX.
 
+import { openMenu } from "/ui/menu.js";
+import { textButton } from "/ui/controls.js";
+import { rowDoubleClick } from "/ui/selection.js";
+
 import * as format from "./format.js";
 import { fromWGS84, toWGS84 } from "./gcj02.js";
 
@@ -29,6 +33,8 @@ export class RoutePlanner {
     this.source = null; // the workspace file the plan was loaded from
     this.focused = null; // { path, name, plan } of the focused file, when it holds a plan
     this.active = false;
+    this.selected = null;
+    this.doubleClick = rowDoubleClick();
     this.markers = [];
     this.handles = [];
     map.addSource(LEGS, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -71,6 +77,7 @@ export class RoutePlanner {
   // add puts a waypoint at the end, [lon, lat] in WGS-84.
   add(point) {
     this.waypoints.push(point);
+    this.selected = this.waypoints.length - 1;
     if (this.waypoints.length > 1) {
       this.legs.push(this.newLeg(this.way));
       this.route(this.legs.length - 1);
@@ -81,6 +88,7 @@ export class RoutePlanner {
   insert(legIndex, point) {
     const way = this.legs[legIndex].way;
     this.waypoints.splice(legIndex + 1, 0, point);
+    this.selected = legIndex + 1;
     this.legs.splice(legIndex, 1, this.newLeg(way), this.newLeg(way));
     this.route(legIndex);
     this.route(legIndex + 1);
@@ -96,6 +104,8 @@ export class RoutePlanner {
 
   remove(index) {
     this.waypoints.splice(index, 1);
+    if (this.selected === index) this.selected = null;
+    else if (this.selected > index) this.selected--;
     if (this.legs.length === 0) {
       // nothing to join
     } else if (index === 0) {
@@ -117,6 +127,7 @@ export class RoutePlanner {
   }
 
   reverse() {
+    if (this.selected != null) this.selected = this.waypoints.length - 1 - this.selected;
     this.waypoints.reverse();
     this.legs.reverse();
     for (const leg of this.legs) if (leg.route) leg.route = [...leg.route].reverse();
@@ -132,6 +143,7 @@ export class RoutePlanner {
     this.waypoints = [];
     this.legs = [];
     this.source = null;
+    this.selected = null;
     this.changed();
   }
 
@@ -193,6 +205,7 @@ export class RoutePlanner {
   // load takes a remembered plan, or a saved one ({ waypoints, legs: [{ way, route }] }).
   load(saved) {
     if (!saved || !Array.isArray(saved.waypoints)) return;
+    this.selected = null;
     this.name = saved.name || this.name;
     if (this.ways.some((way) => way.id === saved.way)) this.way = saved.way;
     this.writeRte = Boolean(saved.writeRte);
@@ -218,6 +231,23 @@ export class RoutePlanner {
     if (this.active) this.render();
   }
 
+  selectWaypoint(index, { fit = false } = {}) {
+    if (!this.waypoints[index]) return;
+    this.selected = index;
+    if (fit) this.map.easeTo({ center: this.display(this.waypoints[index]), duration: 400 });
+    this.draw();
+    this.render();
+  }
+
+  waypointMenu(event, index) {
+    this.doubleClick.reset();
+    this.selectWaypoint(index);
+    openMenu(event, [[
+      { label: "Show on map", onSelect: () => this.selectWaypoint(index, { fit: true }) },
+      { label: "Remove waypoint", danger: true, onSelect: () => this.remove(index) },
+    ]]);
+  }
+
   // ---- map ----
 
   draw() {
@@ -240,11 +270,13 @@ export class RoutePlanner {
       const element = document.createElement("div");
       element.className = "plan-marker" + (i === 0 ? " start" : i === this.waypoints.length - 1 ? " end" : "");
       element.textContent = String(i + 1);
-      element.title = "Drag to move · double-click to remove";
+      element.title = "Click to select · drag to move · right-click for actions";
+      element.classList.toggle("selected", i === this.selected);
+      element.addEventListener("click", event => { event.stopPropagation(); this.selectWaypoint(i, { fit: this.doubleClick(`marker:${i}`, event) }); });
+      element.addEventListener("contextmenu", event => this.waypointMenu(event, i));
       element.addEventListener("dblclick", (event) => {
         event.stopPropagation();
         event.preventDefault();
-        this.remove(i);
       });
       const marker = new maplibregl.Marker({ element, draggable: true }).setLngLat(this.display(point)).addTo(map);
       marker.on("drag", () => this.preview(i, marker.getLngLat()));
@@ -405,13 +437,15 @@ export class RoutePlanner {
       number.textContent = String(i + 1);
       const label = document.createElement("button");
       label.className = "route-label";
-      label.title = "Show it on the map";
+      label.title = "Click to select · double-click to show on the map · right-click for actions";
       label.textContent = i === 0 ? "Start" : i === this.waypoints.length - 1 ? "End" : `Waypoint ${i + 1}`;
       const where = document.createElement("span");
       where.className = "meta";
       where.textContent = `${point[1].toFixed(5)}, ${point[0].toFixed(5)}`;
       label.append(where);
-      label.addEventListener("click", () => this.map.easeTo({ center: this.display(point), duration: 400 }));
+      row.classList.toggle("selected", i === this.selected);
+      label.addEventListener("click", event => this.selectWaypoint(i, { fit: this.doubleClick(`row:${i}`, event) }));
+      row.addEventListener("contextmenu", event => this.waypointMenu(event, i));
       const remove = document.createElement("button");
       remove.className = "remove";
       remove.textContent = "×";
@@ -463,15 +497,6 @@ export function waySelect(ways, value, onChange) {
   select.value = value;
   select.addEventListener("change", () => onChange(select.value));
   return select;
-}
-
-function textButton(text, disabled, onClick) {
-  const button = document.createElement("button");
-  button.className = "text-button";
-  button.textContent = text;
-  button.disabled = disabled;
-  button.addEventListener("click", onClick);
-  return button;
 }
 
 // metres between two [lon, lat] positions, along the great circle.

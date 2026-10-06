@@ -227,3 +227,38 @@ dialog :is(h1, h2, h3, [data-dialog-handle]) {
   user-select: none;
 }
 dialog .dialog-dragging { cursor: grabbing; }
+
+/* A segmented setting, shared by chart and layout selectors. */
+.segmented-control {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  height: var(--control-height-sm);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  overflow: hidden;
+}
+.segmented-control .chip {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: none;
+  border-left: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--charcoal);
+  font-size: var(--font-size-sm);
+  line-height: 1;
+}
+.segmented-control .chip:first-child { border-left: none; }
+.segmented-control .chip:hover { background: var(--hover); color: var(--ink); }
+.segmented-control .chip[aria-pressed="true"] { background: var(--selected); color: var(--primary-deep); font-weight: 600; }
+.segmented-control .chip:disabled { opacity: .4; }
+.segmented-control .chip:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.prompt-input { width: 100%; margin-bottom: var(--space-sm); }
+
+/* A reusable name over compact details; application rows own placement. */
+.ui-row-label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ui-row-label .meta { overflow: hidden; text-overflow: ellipsis; font-weight: 400; }
