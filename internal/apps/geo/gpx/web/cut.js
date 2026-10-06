@@ -295,8 +295,8 @@ export class CutPanel {
     cutTools.append(
       textButton("Cut at every stop", candidates.length === 0, () => {
         this.onCuts([...new Set([...track.cuts, ...track.cutCandidates])].sort((a, b) => a - b), this.names());
-      }, "button secondary"),
-      textButton("Clear cuts", track.cuts.length === 0, () => this.onCuts([], this.names().filter((name) => name.start === 0)), "button secondary"),
+      }, "button secondary strong-outline"),
+      textButton("Clear cuts", track.cuts.length === 0, () => this.onCuts([], this.names().filter((name) => name.start === 0)), "button secondary strong-outline"),
     );
     section.append(cutHead, cutTools);
 

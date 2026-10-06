@@ -313,3 +313,7 @@ dialog .dialog-dragging { cursor: grabbing; }
 .list li.ui-file-row { box-sizing: border-box; height: 28px; min-height: 28px; padding: 0 var(--row-pad-x); font-size: var(--font-size-sm); }
 .ui-file-row .name { font-size: var(--font-size-sm); }
 .ui-file-row .row-distance { font-size: var(--font-size-xs); }
+
+/* Strong boundary for compact actions on a paper surface. */
+.button.strong-outline { border-width: 2px; }
+.button.strong-outline:disabled { opacity: 1; border-color: var(--graphite); }
