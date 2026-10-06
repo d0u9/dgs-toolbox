@@ -39,7 +39,7 @@ test('unfocused traces remain visible and hidden files have no casing', () => {
  const map={addSource(){},addLayer(){},setPaintProperty:(id,key,value)=>paint.set(`${id}/${key}`,value),setLayoutProperty:(id,key,value)=>layout.set(`${id}/${key}`,value),moveLayer(){}};
  const layers=new TrackLayers(map);
  layers.ids=new Set(['a','b']);layers.hidden.add('b');layers.setFocus('a');
- assert.ok([...paint].some(([key,value])=>key.startsWith('track-b-') && key.endsWith('/line-opacity') && value===0.85));
+ assert.ok([...paint].some(([key,value])=>key.startsWith('track-b-') && key.endsWith('/line-opacity') && value===1));
  assert.ok([...layout].filter(([key])=>key.startsWith('track-b-')).every(([,value])=>value==='none'));
  layers.hidden.delete('b');layers.setFocus('a');
  assert.ok([...layout].filter(([key])=>key.startsWith('track-b-')).every(([,value])=>value==='visible'));

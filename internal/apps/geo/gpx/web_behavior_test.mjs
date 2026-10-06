@@ -18,6 +18,7 @@ function loadShared(name,context){
   Object.assign(context,values);return values;
 }
 function loadModule(name,context){
+  if(name!=='trace' && source(name).includes('from "./trace.js"') && !context.addTrace)loadModule('trace',context);
   // Replace module linkage at the boundary, retaining every production method.
   vm.runInContext(source(name).replace(/^import .*;\s*$/gm,'').replace(/^export /gm,''),context,{filename:`${name}.js`});
 }
@@ -260,17 +261,17 @@ test('unfocused tracks and routes remain legible, while hidden files stay fully 
     const inactive=styles.get(`track-b-${kind}`),active=styles.get(`track-a-${kind}`);
     assert.equal(inactive.layout.visibility,'visible');
     assert.ok(inactive.paint['line-opacity']>=0.8);
-    assert.ok(inactive.paint['line-width']>=2);
+    assert.ok(inactive.paint['line-width']>=1.5);
     assert.ok(active.paint['line-width']>inactive.paint['line-width']);
   }
-  assert.equal(styles.get('track-b-casing').layout.visibility,'visible');
-  assert.ok(styles.get('track-b-casing').paint['line-opacity']>=0.6);
-  assert.ok(styles.get('track-b-casing').paint['line-width']>styles.get('track-b-line').paint['line-width']);
-  assert.deepEqual(moves.map(([id])=>id),['track-a-casing','track-a-route','track-a-line','track-a-waypoint']);
+  assert.equal(styles.get('track-b-line-casing').layout.visibility,'visible');
+  assert.ok(styles.get('track-b-line-casing').paint['line-opacity']>=0.6);
+  assert.ok(styles.get('track-b-line-casing').paint['line-width']>styles.get('track-b-line').paint['line-width']);
+  assert.deepEqual(moves.map(([id])=>id),['track-a-line-edge','track-a-line-casing','track-a-line','track-a-route-edge','track-a-route-casing','track-a-route','track-a-waypoint']);
   layers.setVisible('b',false);layers.setFocus('b');
-  for(const kind of ['line','route','casing','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'none');
+  for(const kind of ['line-edge','line-casing','line','route-edge','route-casing','route','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'none');
   layers.setVisible('b',true);layers.setFocus('a');
-  for(const kind of ['line','route','casing','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'visible');
+  for(const kind of ['line-edge','line-casing','line','route-edge','route-casing','route','waypoint'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'visible');
 });
 
 
@@ -347,10 +348,10 @@ test('map clicks select tracks or points; cut commands require their menu action
   let cutting=true;
   const context=vm.createContext({state,map:{on:(name,fn)=>listeners.set(name,fn),queryRenderedFeatures:()=>[{layer:{metadata:{track:'track-a'}}}]},layers:{nearest:()=>1,lineLayers:()=>['track-a-line']},focusedEntry:()=>entry,cutting:()=>cutting,waypointAt:()=>null,inspect:index=>calls.push(['inspect',index]),profile:{setIndex:index=>calls.push(['profile',index])},timeline:{setIndex:index=>calls.push(['timeline',index])},cutPanel:{addCut:index=>calls.push(['cut',index])},select:path=>calls.push(['select',path]),renderTracks(){},openMenu:(event,sections)=>menus.push(sections)});
   const app=source('app');vm.runInContext(app.slice(app.indexOf('function bindMap()'),app.indexOf('// ---- layout ----')),context);context.bindMap();
-  const event={point:{x:10,y:10},originalEvent:{target:new Element('div')},preventDefault(){}};
+  const event={lngLat:{lng:0,lat:1},point:{x:10,y:10},originalEvent:{target:new Element('div')},preventDefault(){}};
   listeners.get('click')(event);assert.deepEqual(calls,[['inspect',1],['profile',1],['timeline',1]]);
   listeners.get('contextmenu')(event);assert.equal(calls.some(([kind])=>kind==='cut'),false);
-  menus[0][0][0].onSelect();assert.deepEqual(calls.at(-1),['cut',1]);
+  menus[0][1][0].onSelect();assert.deepEqual(calls.at(-1),['cut',1]);
   cutting=false;listeners.get('click')(event);assert.deepEqual(calls.at(-1),['select','synthetic.gpx']);
 });
 
@@ -378,4 +379,75 @@ test('selecting a removed range or fill retains the camera until an explicit fit
   const range={kind:'range',first:0,last:1};
   context.showRange(range);context.showFill(range);assert.equal(calls.some(([kind])=>kind==='fit'),false);
   context.showRange(range,{fit:true});context.showFill(range,{fit:true});assert.equal(calls.filter(([kind])=>kind==='fit').length,2);
+});
+
+
+test('fine traces keep opaque opposing borders and distinguish every selection state',()=>{
+  const layers=new Map(),context=vm.createContext({});loadModule('trace',context);
+  const widths=vm.runInContext('TRACE_WIDTHS',context);
+  const map={addLayer:layer=>layers.set(layer.id,layer)};
+  for(const state of ['inactive','focused','segment','selected'])context.addTrace(map,{id:state,source:'test',color:'#0072b2',state,dashed:true});
+  for(const state of ['inactive','focused','segment','selected']){
+    const ids=context.traceLayers?context.traceLayers(state):vm.runInContext(`traceLayers('${state}')`,context);
+    const [edge,casing,core]=[...ids].map(id=>layers.get(id).paint);
+    assert.equal(edge['line-color'],'#17212b');assert.equal(casing['line-color'],'#ffffff');
+    assert.ok(edge['line-width']>casing['line-width']);assert.ok(casing['line-width']>core['line-width']);
+    assert.ok(edge['line-width']<5);assert.ok(core['line-width']<3);
+    for(const paint of [edge,casing,core]){
+      assert.equal(paint['line-opacity'],1);
+      assert.ok(Math.abs(paint['line-width']*paint['line-dasharray'][0]-7)<1e-9);
+      assert.ok(Math.abs(paint['line-width']*paint['line-dasharray'][1]-4)<1e-9);
+    }
+  }
+  assert.ok(widths.selected[2]>widths.segment[2]);assert.ok(widths.focused[2]>widths.inactive[2]);
+});
+
+test('highlighted segments retain their colour and never bridge a recording break',()=>{
+  const sources=new Map(),styles=new Map(),context=vm.createContext({format,document:documentStub()});loadModule('cut',context);
+  const map={addSource:(id)=>sources.set(id,{}),addLayer:layer=>styles.set(layer.id,layer),getSource:id=>({setData:data=>sources.set(id,data)})};
+  context.map=map;const overlay=vm.runInContext('new CutOverlay(map,"cursor")',context);
+  const piece={first:0,last:5};const track={pieces:[{first:9},piece],points:[[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]],removed:[false,false,false,false,false,false],segments:[0,0,0,1,1,1]};
+  overlay.highlight(track,piece);const data=sources.get('cut-segment');
+  assert.equal(data.geometry.type,'MultiLineString');assert.deepEqual(plain(data.geometry.coordinates),[track.points.slice(0,3),track.points.slice(3)]);
+  assert.equal(data.properties.color,context.pieceColor?context.pieceColor(1):vm.runInContext('pieceColor(1)',context));
+  assert.equal(styles.get('cut-segment').paint['line-opacity'],1);
+  overlay.highlight(null,null);assert.equal(sources.get('cut-segment').features.length,0);
+});
+
+test('map location context menus preserve Add waypoint alongside cuts and pin edits',async()=>{
+  const listeners=new Map(),menus=[],calls=[];let found=null,cut=false;
+  const context=vm.createContext({state:{},map:{on:(name,fn)=>listeners.set(name,fn)},waypointAt:()=>found,focusedEntry:()=>({track:{}}),cutting:()=>cut,layers:{nearest:()=>2},inspect(){},openMenu:(event,sections)=>menus.push(sections.flat()),addWaypointAt:event=>calls.push(plain(event)),cutPanel:{addCut(){}},renamePart(){},startWaypointMove(){},deletePart(){}});
+  const app=source('app');vm.runInContext(app.slice(app.indexOf('function bindMap()'),app.indexOf('// ---- layout ----')),context);context.bindMap();
+  for(const mode of ['blank','cut','pin']){
+    cut=mode==='cut';found=mode==='pin'?{path:'synthetic.gpx',entry:{track:{ours:true}},part:{}}:null;
+    const event={point:{x:1,y:1},lngLat:{lng:12,lat:34},originalEvent:{},preventDefault(){}};
+    listeners.get('contextmenu')(event);event.lngLat.lng=99;
+    await menus.at(-1).find(item=>item.label==='Add waypoint…').onSelect();assert.deepEqual(calls.at(-1),{lngLat:{lng:12,lat:34}});
+  }
+});
+
+test('adding a named waypoint uses the clicked WGS84 location and defaults to the focused writable GPX',async()=>{
+  let answer={path:'current.gpx',name:'Synthetic point',description:'Test'};const calls=[];
+  const state={focus:'current.gpx',tracks:new Map([['other.gpx',{track:{ours:true,name:'Other'}}],['recording.gpx',{track:{name:'Recording'}}],['current.gpx',{track:{draft:true,name:'Current'}}]])};
+  const context=vm.createContext({state,planner:{fromDisplay:([lng,lat])=>[lng-1,lat-2]},waypointDialog:async(targets,position)=>{calls.push(['dialog',plain(targets),plain(position)]);return answer;},api:{addWaypoint:async(...args)=>calls.push(['add',...args])},reloadEntry:async path=>calls.push(['reload',path]),renderTracks(){},setFocus:(path,options)=>calls.push(['focus',path,plain(options)]),showMessage:message=>calls.push(['message',message])});
+  const app=source('app');vm.runInContext(app.slice(app.indexOf('async function addWaypointAt('),app.indexOf('// fillEndAt')),context);
+  const event={lngLat:{lng:12,lat:34}};await context.addWaypointAt(event);
+  assert.deepEqual(calls[0],['dialog',[{path:'current.gpx',name:'Current'},{path:'other.gpx',name:'Other'}],[11,32]]);
+  assert.deepEqual(calls[1],['add','current.gpx','Synthetic point','Test',11,32]);
+  assert.deepEqual(calls.find(([kind])=>kind==='focus'),['focus','current.gpx',{fit:false}]);
+  calls.length=0;answer=null;await context.addWaypointAt(event);assert.equal(calls.some(([kind])=>kind==='add'),false);
+  calls.length=0;state.tracks=new Map([['recording.gpx',{track:{}}]]);await context.addWaypointAt(event);assert.equal(calls.some(([kind])=>kind==='dialog'||kind==='add'),false);
+});
+
+
+test('hiding parts and removing a GPX also updates every new outline layer',()=>{
+  const added=[],filters=new Map(),removed=[],sources=[];
+  const map={addSource(){},addLayer:layer=>added.push(layer.id),setFilter:(id,filter)=>filters.set(id,filter),removeLayer:id=>removed.push(id),removeSource:id=>sources.push(id)};
+  const layers=new TrackLayers(map);layers.add('a',{parts:[]},'#0072b2');layers.setHiddenParts('a',new Set(['t0','r0']));
+  const strokes=added.filter(id=>id.startsWith('track-a-'));
+  assert.equal(strokes.length,7);
+  for(const id of strokes){
+    assert.ok(filters.has(id));assert.deepEqual(plain(filters.get(id).at(-1).at(-1).at(-1)),['literal',['t0','r0']]);
+  }
+  layers.remove('a');assert.deepEqual(removed,strokes);assert.deepEqual(sources,['track-a']);assert.equal(layers.ids.size,0);
 });

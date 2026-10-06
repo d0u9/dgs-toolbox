@@ -5,6 +5,7 @@
 // module edits cuts and names.
 
 import * as format from "./format.js";
+import { addTrace, traceLayers } from "./trace.js";
 import { saveFile } from "/ui/filedialog.js";
 import * as status from "/ui/statusbar.js";
 import { chooseDialog, promptDialog } from "/ui/dialog.js";
@@ -462,20 +463,8 @@ export class CutOverlay {
     map.addSource(CUTS, { type: "geojson", data: empty() });
     map.addSource(PIECES, { type: "geojson", data: empty() });
     // Segments in their colours, drawn over the focused track while cutting.
-    map.addLayer({
-      id: PIECES,
-      type: "line",
-      source: PIECES,
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": ["get", "color"], "line-width": 5 },
-    }, beforeLayer);
-    map.addLayer({
-      id: SEGMENT,
-      type: "line",
-      source: SEGMENT,
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#ffd400", "line-width": 9, "line-opacity": 0.55 },
-    }, beforeLayer);
+    addTrace(map, { id: PIECES, source: PIECES, color: ["get", "color"], state: "segment", before: beforeLayer });
+    addTrace(map, { id: SEGMENT, source: SEGMENT, color: ["get", "color"], state: "selected", before: beforeLayer });
     map.addLayer({
       id: CUTS,
       type: "circle",
@@ -498,7 +487,7 @@ export class CutOverlay {
     }));
     this.map.getSource(PIECES).setData({ type: "FeatureCollection", features: pieces });
     // Above the track lines, which move up when focused; below cuts and the cursor.
-    for (const layer of [PIECES, SEGMENT, CUTS, this.beforeLayer]) if (this.map.getLayer(layer)) this.map.moveLayer(layer);
+    for (const layer of [...traceLayers(PIECES), ...traceLayers(SEGMENT), CUTS, this.beforeLayer]) if (this.map.getLayer(layer)) this.map.moveLayer(layer);
   }
 
   highlight(track, piece) {
@@ -506,9 +495,8 @@ export class CutOverlay {
       this.map.getSource(SEGMENT).setData(empty());
       return;
     }
-    const line = [];
-    for (let i = piece.first; i <= piece.last; i++) if (!track.removed[i]) line.push(track.points[i]);
-    this.map.getSource(SEGMENT).setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } });
+    const index = track.pieces.findIndex(candidate => candidate.first === piece.first);
+    this.map.getSource(SEGMENT).setData({ type: "Feature", properties: { color: pieceColor(Math.max(0, index)) }, geometry: { type: "MultiLineString", coordinates: keptLines(track, piece) } });
   }
 
   clear() {

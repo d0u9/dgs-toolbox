@@ -1,3 +1,5 @@
+import { addTrace, setTraceState, traceLayers } from "./trace.js";
+
 // Track layers on the map. Each workspace file draws its recorded tracks as
 // lines (the focused file on top with a casing), its planned routes as dashed
 // lines and its waypoints as dots; any part can be hidden on its own. A marker
@@ -43,32 +45,8 @@ export class TrackLayers {
     // pointer is marked by feature state rather than redrawn.
     map.addSource(sourceId(id), { type: "geojson", data: geometry(track), promoteId: "part" });
     const kind = (name) => ["==", ["get", "kind"], name];
-    map.addLayer({
-      id: casingId(id),
-      type: "line",
-      source: sourceId(id),
-      filter: kind("track"),
-      layout: { "line-join": "round", "line-cap": "round", visibility: "none" },
-      paint: { "line-color": "#ffffff", "line-width": 5.5 },
-    }, CURSOR);
-    map.addLayer({
-      id: routeId(id),
-      type: "line",
-      source: sourceId(id),
-      filter: kind("route"),
-      metadata: { track: id },
-      layout: { "line-join": "round" },
-      paint: { "line-color": color, "line-width": 1.4, "line-opacity": 0.8, "line-dasharray": [2, 1.5] },
-    }, CURSOR);
-    map.addLayer({
-      id: lineId(id),
-      type: "line",
-      source: sourceId(id),
-      filter: kind("track"),
-      metadata: { track: id },
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": color, "line-width": 2, "line-opacity": 0.8 },
-    }, CURSOR);
+    addTrace(map, { id: lineId(id), source: sourceId(id), color, filter: kind("track"), metadata: { track: id }, before: CURSOR });
+    addTrace(map, { id: routeId(id), source: sourceId(id), color, filter: kind("route"), metadata: { track: id }, dashed: true, before: CURSOR });
     map.addLayer({
       id: waypointId(id),
       type: "circle",
@@ -134,17 +112,16 @@ export class TrackLayers {
   setHiddenParts(id, keys) {
     this.hiddenParts.set(id, [...keys]);
     const shown = ["!", ["in", ["get", "part"], ["literal", [...keys]]]];
-    for (const [layer, kind] of [[casingId(id), "track"], [lineId(id), "track"], [routeId(id), "route"], [waypointId(id), "waypoint"]]) {
+    for (const [layer, kind] of [...traceLayers(lineId(id)).map(layer => [layer, "track"]), ...traceLayers(routeId(id)).map(layer => [layer, "route"]), [waypointId(id), "waypoint"]]) {
       this.map.setFilter(layer, ["all", ["==", ["get", "kind"], kind], shown]);
     }
   }
 
   applyVisibility(id) {
     const visible = !this.hidden.has(id);
-    for (const layer of [lineId(id), routeId(id), waypointId(id)]) {
+    for (const layer of layerIds(id)) {
       this.map.setLayoutProperty(layer, "visibility", visible ? "visible" : "none");
     }
-    this.map.setLayoutProperty(casingId(id), "visibility", visible ? "visible" : "none");
   }
 
   // setFocus draws one file above the others, wider and opaque.
@@ -154,12 +131,8 @@ export class TrackLayers {
     for (const other of this.ids) {
       const focused = other === id;
       this.applyVisibility(other);
-      map.setPaintProperty(casingId(other), "line-width", focused ? 5.5 : 4);
-      map.setPaintProperty(casingId(other), "line-opacity", focused ? 1 : 0.65);
-      map.setPaintProperty(routeId(other), "line-width", focused ? 2.4 : 2);
-      map.setPaintProperty(lineId(other), "line-width", focused ? 3 : 2.5);
-      map.setPaintProperty(lineId(other), "line-opacity", focused ? 1 : 0.85);
-      map.setPaintProperty(routeId(other), "line-opacity", focused ? 0.95 : 0.8);
+      setTraceState(map, lineId(other), focused ? "focused" : "inactive");
+      setTraceState(map, routeId(other), focused ? "focused" : "inactive", { dashed: true });
     }
     if (id != null && this.ids.has(id)) {
       for (const layer of layerIds(id)) map.moveLayer(layer, CURSOR);
@@ -205,10 +178,9 @@ export class TrackLayers {
 
 const sourceId = (id) => `track-${id}`;
 const lineId = (id) => `track-${id}-line`;
-const casingId = (id) => `track-${id}-casing`;
 const routeId = (id) => `track-${id}-route`;
 const waypointId = (id) => `track-${id}-waypoint`;
-const layerIds = (id) => [casingId(id), routeId(id), lineId(id), waypointId(id)];
+const layerIds = (id) => [...traceLayers(lineId(id)), ...traceLayers(routeId(id)), waypointId(id)];
 
 function emptyCollection() {
   return { type: "FeatureCollection", features: [] };
