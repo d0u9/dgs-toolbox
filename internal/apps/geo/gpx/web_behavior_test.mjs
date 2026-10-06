@@ -13,6 +13,7 @@ import {Element,documentStub} from '../../../webui/test_dom.mjs';
 const deferred=()=>{let resolve;const promise=new Promise(yes=>{resolve=yes;});return {promise,resolve};};
 
 function loadShared(name,context){
+  if(name === "dialog" && !context.window)context.window={addEventListener(){}};
   const original=sharedSource(name),names=[...original.matchAll(/export (?:function|class|const) (\w+)/g)].map(match=>match[1]);
   const values=vm.runInContext(`(()=>{${original.replace(/^export /gm,'')} return {${names.join(',')}};})()`,context);
   Object.assign(context,values);return values;

@@ -9,7 +9,7 @@ import {Element,documentStub} from './test_dom.mjs';
 function moduleIn(name,document=documentStub()){
   const code=readFileSync(new URL(`./assets/${name}.js`,import.meta.url),'utf8');
   const names=[...code.matchAll(/export (?:async )?(?:function|const|class) (\w+)/g)].map(match=>match[1]);
-  const context=vm.createContext({document});
+  const context=vm.createContext({document,window:{innerWidth:800,innerHeight:600,addEventListener(){}}});
   return {document,api:vm.runInContext(`(()=>{${code.replace(/^export /gm,'')}return {${names.join(',')}};})()`,context)};
 }
 const form=dialog=>dialog.children.find(element=>element.tagName==='FORM');
@@ -84,7 +84,7 @@ test('complete GPX and shared webui modules parse with their actual import decla
 test('splitters scale remembered sizes once, preserve drag coordinates and store design sizes',async()=>{
   const saved=new Map([['pane','300']]);
   const localStorage={getItem:key=>saved.get(key),setItem:(key,value)=>saved.set(key,value)};
-  const document=documentStub(),context=vm.createContext({document,localStorage,window:{addEventListener(){}}});
+  const document=documentStub(),context=vm.createContext({document,localStorage,window:{innerWidth:800,innerHeight:600,addEventListener(){}}});
   const code=readFileSync(new URL('./assets/splitter.js',import.meta.url),'utf8');
   const api=vm.runInContext(`(()=>{${code.replace(/^export /gm,'')}return {splitter};})()`,context);
   const make=()=>{const handle=new Element('div'),target=new Element('div');handle.hasAttribute=name=>name in handle.attributes;handle.setPointerCapture=()=>{};handle.removeEventListener=(name,fn)=>handle.listeners.set(name,(handle.listeners.get(name)||[]).filter(item=>item!==fn));target.getBoundingClientRect=()=>({width:parseFloat(target.style.width)});return {handle,target};};
@@ -95,7 +95,25 @@ test('splitters scale remembered sizes once, preserve drag coordinates and store
 });
 
 test("bundled Lucide icons are offline SVGs with legible strokes and a filled disclosure", async()=>{
- const icons=await import("./assets/icons.js");
- for(const [name,svg] of Object.entries(icons)){assert.ok(svg.includes("<svg"),name);assert.ok(svg.includes('aria-hidden="true"'),name);assert.ok(!/href=|<script|<image/.test(svg),name);}
+ const {api:icons}=moduleIn("icons");
+ for(const [name,svg] of Object.entries(icons).filter(([,svg])=>typeof svg === "string")){assert.ok(svg.includes("<svg"),name);assert.ok(svg.includes('aria-hidden="true"'),name);assert.ok(!/href=|<script|<image/.test(svg),name);}
  assert.ok(icons.EYE.includes('stroke-width="2.8"'));assert.ok(icons.TRIANGLE_RIGHT.includes('fill="currentColor"'));
+});
+
+
+test('a shared form dialog can be dragged and still validate, submit and cancel normally',async()=>{
+ const document=documentStub(),listeners=new Map();document.addEventListener=(type,fn)=>listeners.set(type,fn);
+ const {api}=moduleIn('dialog',document);const input=new Element('input');input.value='';
+ const pending=api.formDialog({title:'Name track',fields:[input],read:()=>input.value.trim()||null});
+ const dialog=document.body.children[0],heading=dialog.children[0];
+ dialog.getBoundingClientRect=()=>({left:parseFloat(dialog.style.left)||100,top:parseFloat(dialog.style.top)||100,width:300,height:200});
+ heading.closest=()=>dialog;let captured=false;heading.setPointerCapture=()=>{captured=true;};heading.hasPointerCapture=()=>captured;heading.releasePointerCapture=()=>{captured=false;};
+ const event={button:0,pointerId:1,clientX:120,clientY:110,preventDefault(){},target:{closest:selector=>selector.startsWith('button')?null:heading}};
+ listeners.get('pointerdown')(event);listeners.get('pointermove')({pointerId:1,clientX:220,clientY:160});
+ assert.equal(dialog.style.left,'200px');assert.equal(dialog.style.top,'150px');assert.equal(captured,true);
+ const invalid=await form(dialog).fire('submit');assert.equal(invalid.defaultPrevented,true);
+ listeners.get('pointerup')({pointerId:1});assert.equal(captured,false);
+ listeners.get('pointerdown')({...event,target:input});assert.equal(captured,false);
+ input.value='  Walk  ';await form(dialog).fire('submit');dialog.close();listeners.get('close')({target:dialog});assert.equal(await pending,'Walk');
+ const cancelled=api.promptDialog({title:'Rename track'});document.body.children.at(-1).close();assert.equal(await cancelled,null);
 });
