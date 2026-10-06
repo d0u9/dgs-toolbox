@@ -296,8 +296,9 @@ map. It is the interface later milestones build on.
   thickens its ring, so a dot answers the pointer before it is clicked; a
   click opens what the list's click opens. A right click on it offers what the
   waypoint alone takes — *Rename…*, *Move to a new position…* and *Delete* —
-  the same commands as its row, greyed out for the same reasons. Elsewhere on
-  the map the right click is the map's own.
+  the same commands as its row, greyed out for the same reasons. Every map
+  location also offers *Add waypoint…*, including a track point or an existing
+  waypoint; the name and destination are chosen in a modal dialog.
 
 - **Dragging rows.** There is no drag handle, because a row carries its own
   controls. With a mouse, pressing a row and moving it a few pixels takes hold
@@ -336,9 +337,12 @@ map. It is the interface later milestones build on.
   segments are drawn apart, so a gap in the recording is not bridged by a
   straight line.
 - **One focus.** Exactly one shown track is focused — the one later milestones
-  edit. It is drawn above the others, wider and with a casing; the others are
-  slightly thinner, with a light casing and enough opacity to remain visible
-  on satellite imagery. Adding a track focuses it; clicking a row, or
+  edit. It is drawn above the others with a 2 px colour core; other GPX files
+  use a 1.6 px core. Both remain opaque and have a white inner edge and a dark
+  outer edge, so they read on light maps and dark satellite imagery. The
+  complete focused stroke is 4.2 px, and the other files 3.8 px. Routes retain
+  their dash gaps through both edges. Adding a track focuses it; clicking a
+  row, or
   another track's line on the map, moves the focus. A hidden track cannot be
   focused: hiding the focused track passes the focus to the first shown one,
   and clicking a hidden row shows it. A single click in the workspace tree
@@ -674,6 +678,9 @@ nothing is lost between them. Segments are cut from what cleaning kept.
 - **Colours.** While the tab is shown each segment is drawn over the track in
   a colour of its own, neighbours always different, with the same colour on
   its number in the table and as a strip along the foot of the timeline.
+  Unselected segments have a 1.8 px core; the highlighted segment retains its
+  colour with a 2.6 px core. Both have light and dark edges, with total widths
+  of 4 px and 4.8 px respectively. Highlighting preserves recording breaks.
 - **The list.** One row per segment, two lines: its box, colour and number
   with its name, then its time span, duration and distance under them. A bar
   over the list chooses all or none and says how many are chosen. Nothing is
@@ -737,8 +744,11 @@ tracks added from other files. Saved cuts and editable route plans are
 embedded in the new file, which has `creator="dgs-toolbox"` and needs no
 sidecar. The original GPX is not written.
 
-**Adding a standalone waypoint.** In Edit, choose ⚑ and click the map. The
-tool needs no focused track — it writes into a GPX the dialog asks for — so it
+**Adding a standalone waypoint.** Right-click any map location and choose
+*Add waypoint…*, or in Edit choose ⚑ and click the map. The clicked location
+is retained while the menu and naming dialog are open. The dialog defaults
+to the focused writable GPX. The tool needs no focused track — it writes into
+a GPX the dialog asks for — so it
 stays available when the other tools, which work on the focused track, are
 not. The dialog asks for a name, optional description, and destination among
 the open GPX files created by dgs and the new GPX files not yet saved. A file

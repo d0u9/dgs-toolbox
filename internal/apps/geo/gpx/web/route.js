@@ -8,6 +8,7 @@ import { textButton } from "/ui/controls.js";
 import { rowDoubleClick } from "/ui/selection.js";
 
 import * as format from "./format.js";
+import { addTrace, traceLayers } from "./trace.js";
 import { fromWGS84, toWGS84 } from "./gcj02.js";
 
 const LEGS = "plan-legs";
@@ -38,21 +39,9 @@ export class RoutePlanner {
     this.markers = [];
     this.handles = [];
     map.addSource(LEGS, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-    map.addLayer({
-      id: `${LEGS}-casing`,
-      type: "line",
-      source: LEGS,
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#ffffff", "line-width": 7, "line-opacity": 0.9 },
-    });
-    // Legs along the road are solid; straight ones dashed.
-    const paint = {
-      "line-color": ["match", ["get", "status"], "error", "#b33c00", COLOR],
-      "line-width": 4,
-      "line-opacity": ["match", ["get", "status"], "busy", 0.45, 1],
-    };
-    map.addLayer({ id: LEGS, type: "line", source: LEGS, filter: ["!=", ["get", "way"], "line"], layout: { "line-join": "round", "line-cap": "round" }, paint });
-    map.addLayer({ id: `${LEGS}-line`, type: "line", source: LEGS, filter: ["==", ["get", "way"], "line"], layout: { "line-join": "round" }, paint: { ...paint, "line-dasharray": [1.5, 1.2] } });
+    const color = ["match", ["get", "status"], "error", "#b33c00", COLOR];
+    addTrace(map, { id: LEGS, source: LEGS, color, state: "focused", filter: ["!=", ["get", "way"], "line"] });
+    addTrace(map, { id: `${LEGS}-line`, source: LEGS, color, state: "focused", filter: ["==", ["get", "way"], "line"], dashed: true });
   }
 
   // ---- positions ----
@@ -260,7 +249,7 @@ export class RoutePlanner {
       }))
       : [];
     map.getSource(LEGS).setData({ type: "FeatureCollection", features });
-    for (const layer of [`${LEGS}-casing`, LEGS, `${LEGS}-line`]) map.moveLayer(layer);
+    for (const layer of [...traceLayers(LEGS), ...traceLayers(`${LEGS}-line`)]) map.moveLayer(layer);
     for (const marker of [...this.markers, ...this.handles]) marker.remove();
     this.markers = [];
     this.handles = [];

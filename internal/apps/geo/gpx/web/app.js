@@ -564,6 +564,8 @@ async function addWaypointAt(event) {
   // until the draft is written.
   const targets = [...state.tracks].filter(([path, entry]) => entry.track.ours || entry.track.draft)
     .map(([path, entry]) => ({ path, name: entry.track.name }));
+  // Default to the focused writable file, while retaining every eligible target.
+  targets.sort((a, b) => Number(b.path === state.focus) - Number(a.path === state.focus));
   if (!targets.length) {
     showMessage("Open a GPX created by dgs, or start a new one, before adding a waypoint; other recordings are never overwritten.", true);
     return;
@@ -2123,40 +2125,32 @@ function bindMap() {
     profile.setIndex(null);
     layers.setHover(null, null);
   });
-  // A right click on a waypoint offers what is done to that waypoint: its
-  // name, and where it is pinned. Elsewhere the map keeps its own menu.
+  // Every map location offers a named waypoint; existing points and the cut
+  // tool add their own commands without losing that location action.
   map.on("contextmenu", (event) => {
+    event.preventDefault();
+    // Keep the clicked coordinates while the menu and naming dialog are open.
+    const position = { lngLat: { lng: event.lngLat.lng, lat: event.lngLat.lat } };
+    const actions = [[{ label: "Add waypoint…", onSelect: () => addWaypointAt(position) }]];
     const found = waypointAt(event.point);
     const cutEntry = focusedEntry();
     if (!found && cutting() && cutEntry) {
       const index = layers.nearest(cutEntry.track, event.point, 24, cutEntry.hiddenParts);
       if (index >= 0) {
-        event.preventDefault();
         inspect(index);
-        openMenu(event.originalEvent, [[{ label: "Cut here", onSelect: () => cutPanel.addCut(index) }]]);
-        return;
+        actions.push([{ label: "Cut here", onSelect: () => cutPanel.addCut(index) }]);
       }
     }
-    if (!found) return;
-    event.preventDefault();
-    const { path, entry, part } = found;
-    const takeable = Boolean(entry.track.ours || entry.track.draft || part.added);
-    openMenu(event.originalEvent, [
-      [{ label: "Rename…", title: "Rename this waypoint", onSelect: () => renamePart(path, entry, part) }],
-      [{
-        label: "Move to a new position…",
-        title: takeable ? "Drag the pin to where the waypoint belongs" : "This GPX was not written by dgs, so its waypoints stay where they were recorded",
-        disabled: !takeable,
-        onSelect: () => startWaypointMove(path, part),
-      }],
-      [{
-        label: "Delete",
-        title: takeable ? "Take this waypoint out of the GPX when the edit is saved" : "This GPX was not written by dgs, so nothing is taken out of it",
-        danger: true,
-        disabled: !takeable,
-        onSelect: () => deletePart(path, entry, part),
-      }],
-    ]);
+    if (found) {
+      const { path, entry, part } = found;
+      const takeable = Boolean(entry.track.ours || entry.track.draft || part.added);
+      actions.push([
+        { label: "Rename…", onSelect: () => renamePart(path, entry, part) },
+        { label: "Move to a new position…", disabled: !takeable, onSelect: () => startWaypointMove(path, part) },
+        { label: "Delete", danger: true, disabled: !takeable, onSelect: () => deletePart(path, entry, part) },
+      ]);
+    }
+    openMenu(event.originalEvent, actions);
   });
   // Clicking another track's line focuses it.
   // Clicking a waypoint opens it.
