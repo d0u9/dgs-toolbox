@@ -1493,7 +1493,9 @@ fields:
   `description`, `kind` or `anchor`.
 - An inherited field may be listed again to make it required,
   distinguishing or `per_revision`, narrow its shape, or give it its own description and
-  patterns. Anything else — another type, options, suggest — is refused.
+  patterns. An inherited text field may also be given `suggest: true` and
+  its `options`, which only offer values and narrow none. Anything else —
+  another type, options without suggest, a select's options — is refused.
 - An abstract type has no `kind` and no Item; Import does not offer it, and
   the Templates page draws it as a folder with the types extending it. Every other type states its
   `kind`.
@@ -1521,7 +1523,10 @@ toggled on the page; its options may not hold a comma. A rule writes the
 joined value, and a condition asks for one of them with `is` (`service is
 水`). A text field with `suggest: true` offers, as it is typed,
 the values Items of the same type have saved for it, in any country and
-revision, retired Items among them; any other value can still be typed. A field's `description` says
+revision, retired Items among them; any other value can still be typed.
+Its `options`, when it lists any, are offered first, before the values
+saved: `{key: driver, suggest: true, options: [alice, bob]}` offers alice
+and bob from the start and still takes carol. A field's `description` says
 what it holds; every form shows a `?` beside the field's name, which shows it
 on hover and keeps it shown under the name when clicked. A field's `pattern` is a regular
 expression that suggests its value from the document's text (below): the

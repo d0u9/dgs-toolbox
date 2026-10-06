@@ -58,13 +58,15 @@ type Field struct {
 	// Type checks the value and picks the control the page shows. Empty is
 	// FieldText.
 	Type FieldType `yaml:"type,omitempty" json:"type,omitempty"`
-	// Options are a FieldSelect's values, and only its.
+	// Options are a FieldSelect's values; a text field that Suggests offers
+	// them first, before the values saved, and takes any other.
 	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
 	// Multiple lets a FieldSelect hold several Options, kept in the
 	// Options' order joined by MultipleSeparator: 电, 水.
 	Multiple bool `yaml:"multiple,omitempty" json:"multiple,omitempty"`
-	// Suggest offers, for a text field, the values Items of this type
-	// have saved for it; any other value can still be typed.
+	// Suggest offers, for a text field, its Options and then the values
+	// Items of this type have saved for it; any other value can still be
+	// typed.
 	Suggest bool `yaml:"suggest,omitempty" json:"suggest,omitempty"`
 	// Format is how a FieldCountry is written, and only its: zh (the
 	// default), en, alpha2 or alpha3.
@@ -329,6 +331,9 @@ func (t Template) Validate() error {
 		}
 		switch f.Type {
 		case "", FieldText, FieldDate, FieldMonth, FieldItem, FieldRevision, FieldCountry:
+			if f.Suggest && len(f.Values) == 0 {
+				break // a suggesting text field's options are offered first
+			}
 			if len(f.Options) > 0 || len(f.Values) > 0 {
 				return fmt.Errorf("type %s: key %s: options and values belong to a select field", t.Type, f.Key)
 			}
