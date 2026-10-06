@@ -517,6 +517,14 @@ shows for it:
   HEAD at first. A rule's layout may use that revision's keys (see below);
   export never copies the linked PDF.
 
+The page finds the linked Item by typing: the box narrows the Items offered
+by any of their fields, such as a number or a date, and ↑/↓ and Enter pick
+one. A button beside the box opens a table of the same Items, for a list too
+long to read in a box: a filter, one button per type, and columns for the
+type, the name, the date and the ID's end, suggested Items first and then
+the newest. ↑/↓ move the picked row, Enter or a double click takes it, and
+Clear empties the field.
+
 An `item` or `revision` field may carry `match`: a field of the linked Item
 (or `type`) mapped to a field of this form that it must equal. A
 translation's `original` has `match: {type: of, owner: owner}`: once `of`

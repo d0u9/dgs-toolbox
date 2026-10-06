@@ -1,7 +1,12 @@
 // A text box with a list of choices under it: a ▾ beside the box opens the
 // whole list, typing narrows it. ↑/↓ move, Enter or a click picks, Esc
 // closes. What is typed stays allowed; the list only offers.
-import { el } from "/common.js";
+
+const el = (tag, props, ...children) => {
+  const node = Object.assign(document.createElement(tag), props || {});
+  node.append(...children);
+  return node;
+};
 
 const menu = el("ul", { className: "combo-menu", hidden: true });
 document.body.append(menu);
@@ -12,12 +17,18 @@ addEventListener("scroll", (event) => { if (menuFor && !menu.contains(event.targ
 addEventListener("resize", closeMenu);
 
 // suggest offers choices() under input. With arrow set, the box is wrapped
-// with a ▾ button that opens the list, and the wrapper is returned.
-export function suggest(input, choices, { arrow = false } = {}) {
-  let active = -1, shown = [], all = false;
+// with a ▾ button that opens the list, and the wrapper is returned. With
+// search set, typing narrows by search(choice) rather than by the choice
+// shown, so a choice is found by text it does not show.
+export function suggest(input, choices, { arrow = false, search = null } = {}) {
+  let active = -1, shown = [], all = false, picking = false;
+  // A pick tells the page the box changed; the box itself must not take that
+  // input for typing and open the list again. The input ime.js sends once a
+  // word is composed is typing, though it is not the browser's own.
   const pick = (v) => {
     input.value = v; closeMenu();
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    picking = true;
+    try { input.dispatchEvent(new Event("input", { bubbles: true })); } finally { picking = false; }
     input.dispatchEvent(new Event("change", { bubbles: true }));
   };
   const close = () => { if (menuFor === input) closeMenu(); };
@@ -30,7 +41,8 @@ export function suggest(input, choices, { arrow = false } = {}) {
     const list = await choices();
     if (document.activeElement !== input) return;
     const exact = q && list.some((c) => c.toLowerCase() === q);
-    shown = (exact ? list : list.filter((c) => c.toLowerCase().includes(q))).slice(0, 200);
+    const text = (c) => (search ? search(c) : c).toLowerCase();
+    shown = (exact ? list : list.filter((c) => text(c).includes(q))).slice(0, 200);
     if (!shown.length) {
       if (!all) { close(); return; }
       menu.replaceChildren(el("li", { className: "empty" }, "Nothing known yet"));
@@ -41,8 +53,12 @@ export function suggest(input, choices, { arrow = false } = {}) {
         onmousedown: (event) => { event.preventDefault(); pick(c); } }, ...mark(c, exact ? "" : q))));
     }
     const r = (input.closest(".combo") || input).getBoundingClientRect();
-    menu.style.left = r.left + "px";
-    menu.style.minWidth = r.width + "px";
+    // Held inside the window: a list wider than the room right of the box
+    // moves left rather than running off the screen.
+    menu.style.minWidth = Math.min(r.width, innerWidth - 16) + "px";
+    menu.style.left = "0px";
+    menu.hidden = false;
+    menu.style.left = Math.max(8, Math.min(r.left, innerWidth - 8 - menu.offsetWidth)) + "px";
     const below = innerHeight - r.bottom;
     if (below < 200 && r.top > below) { menu.style.top = ""; menu.style.bottom = innerHeight - r.top + 4 + "px"; }
     else { menu.style.bottom = ""; menu.style.top = r.bottom + 4 + "px"; }
@@ -51,7 +67,7 @@ export function suggest(input, choices, { arrow = false } = {}) {
     menu.children[active]?.scrollIntoView({ block: "nearest" });
   };
   input.addEventListener("focus", () => { active = -1; all = true; draw(); });
-  input.addEventListener("input", (event) => { if (!event.isTrusted) return; active = -1; all = false; draw(); });
+  input.addEventListener("input", () => { if (picking) return; active = -1; all = false; draw(); });
   input.addEventListener("blur", close);
   input.addEventListener("keydown", (event) => {
     if (menuFor !== input) {

@@ -53,6 +53,8 @@ body { display: flex; flex-direction: column; }
 .template-choice.selected::before { content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; border-radius: 0 2px 2px 0; background: var(--primary); }
 .template-choice.selected strong { color: var(--primary); }
 .template-choice:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+/* The picked one is where the keys are: its colour shows it, not a ring. */
+.template-choice.selected:focus-visible { outline: none; }
 .template-choice strong { flex: none; max-width: 55%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-size: var(--font-size-xs); font-weight: 500; }
 .template-choice small { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--graphite); font-size: var(--font-size-xs); }
 .template-suggested {
@@ -781,7 +783,7 @@ body.reading #detail-frame, body.reading #page-prev, body.reading #page-next, bo
 .holders-items li + li { border-top: 1px solid var(--hairline); }
 .holders-items a { display: flex; align-items: baseline; gap: 8px; padding: 5px 10px; color: inherit; text-decoration: none; font-size: var(--font-size-xs); }
 .holders-items a:hover { background: var(--paper); color: var(--primary); }
-.holders-type { flex: none; color: var(--graphite); font-family: var(--font-mono, monospace); }
+.holders-type { flex: none; color: var(--graphite); font-family: var(--font-mono); }
 .holders-fields { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .order-chip:hover { color: var(--primary); border-color: var(--primary); border-style: solid; }
 /* Outlines: the tree an Outline's rules make, with what is picked in it
@@ -991,20 +993,6 @@ body.list-shut .outline-list { display: none; }
 .cond-bubble .cond-more:focus { max-width: none; min-width: 6ch; text-align: left; }
 .cond-bubble .cond-more::placeholder { color: var(--graphite); }
 .cond-bubble.negated .cond-op { color: var(--error); }
-/* A box's choices, from combo.js: a card under the box, the typed part marked. */
-.combo { position: relative; display: flex; align-items: stretch; min-width: 0; }
-.combo > input { flex: 1; min-width: 0; padding-right: 26px; }
-.combo-arrow { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px;
-  background: transparent; color: var(--graphite); cursor: pointer; }
-.combo-arrow::before { content: ""; position: absolute; left: 8px; top: 6px; width: 5px; height: 5px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
-.combo-arrow:hover { background: var(--hover); color: inherit; }
-.combo-menu { position: fixed; z-index: 1000; max-width: min(480px, calc(100vw - 32px)); max-height: 280px; overflow: auto; margin: 0; padding: 4px; list-style: none;
-  background: var(--paper); border: 1px solid var(--hairline-strong); border-radius: 8px; box-shadow: var(--lift-soft); font-size: var(--font-size-ui); }
-.combo-menu li { padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.combo-menu li:hover, .combo-menu li.active { background: var(--selected); }
-.combo-menu li.chosen { font-weight: 600; }
-.combo-menu li.empty { color: var(--graphite); cursor: default; background: none; }
-.combo-menu mark { background: none; color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .cond-group > .cond-x { display: none; }
 .cond-group:hover > .cond-x { display: inline; }
 /* A block's ↑ ↓ × follow its if word, faint until the block is hovered. */
@@ -1097,3 +1085,31 @@ body.quicklook .view-quicklook-close { display: inline-flex; position: absolute;
 .date-open { position: absolute; top: 0; right: 2px; bottom: 0; display: inline-flex; align-items: center; justify-content: center; width: 24px; padding: 0; border: 0; background: none; color: var(--graphite); cursor: pointer; }
 .date-open:hover { color: var(--primary); }
 .date-open .icon { width: 15px; height: 15px; }
+
+/* A link field: a box that finds the Item by typing, and a button beside it
+   that opens the table chooseItem draws, for lists too long to read in a box. */
+.item-finder { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
+.item-finder > .combo { flex: 1; }
+.item-browse { flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 0 8px; }
+.item-browse svg { width: 15px; height: 15px; }
+
+/* The table of Items: a filter, the types as buttons, and rows that scroll
+   while the buttons stay in place. The picked row is the blue one. */
+.item-dialog { width: min(760px, 92vw); max-width: none; height: min(560px, 84vh); padding: 14px var(--space-md) 12px; font-size: var(--font-size-sm); }
+.item-dialog h3 { font-size: var(--font-size-ui); }
+.item-dialog .button { min-height: var(--control-height-sm); padding: 0 10px; font-size: var(--font-size-sm); }
+.item-dialog-types .button { padding: 0 8px; font-size: var(--font-size-xs); }
+.item-dialog-filter { font-size: var(--font-size-sm); height: var(--control-height-sm); }
+.item-dialog[open] { display: flex; flex-direction: column; }
+.item-dialog-filter { flex: none; width: 100%; margin-bottom: 6px; }
+.item-dialog-types { flex: none; display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.item-dialog-list { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--hairline); border-radius: var(--radius-sm); margin-bottom: var(--space-xs); }
+.item-dialog-list table { width: 100%; border-collapse: collapse; font-size: var(--font-size-xs); }
+.item-dialog-list th { position: sticky; top: 0; background: var(--cloud); text-align: left; font-weight: 600; }
+.item-dialog-list th, .item-dialog-list td { padding: 3px 8px; white-space: nowrap; }
+.item-dialog-list td:nth-child(2) { white-space: normal; }
+.item-dialog-list tbody tr { cursor: pointer; }
+.item-dialog-list tbody tr:hover { background: var(--hover); }
+.item-dialog-list tbody tr.selected { background: var(--selected); }
+.item-dialog-id { font-family: var(--font-mono); color: var(--steel); }
+.item-dialog-count { margin-right: auto; color: var(--steel); font-size: var(--font-size-xs); }

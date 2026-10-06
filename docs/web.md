@@ -402,6 +402,14 @@ at its right only a count or a short badge, and what describes it — what it
 is for, where it is used — in the row's tooltip. A page may set the order
 sibling folders are drawn in.
 
+It also carries the **combo box**: a text box with its choices in a small
+card under it. A page links `/ui/combo.css`, imports `suggest` from
+`/ui/combo.js` and calls it with the input and a function answering the
+choices; typing narrows them, ↑/↓ and Enter pick, and a `search` function may
+answer the text a choice is found by when it differs from the text shown.
+The card is compact, 12px rows as a menu has, and is held inside the window:
+a list wider than the room right of the box moves left.
+
 It also carries the **tooltip**: what describes a thing, in a small raised
 card beside it while the pointer rests on it or the keyboard is on it. A page
 links `/ui/tooltip.css`, imports `tooltip` from `/ui/tooltip.js` and calls it

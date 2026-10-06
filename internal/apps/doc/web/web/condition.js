@@ -3,7 +3,7 @@
 // that nest. The text box it wraps stays the value; a Text switch shows it
 // for typing, and the server's reading of the text redraws the bubbles.
 import { el, post } from "/common.js";
-import { suggest } from "/combo.js";
+import { suggest } from "/ui/combo.js";
 import { glyph } from "/ui/icons.js";
 
 // The operators a bubble offers; a leading ! negates.

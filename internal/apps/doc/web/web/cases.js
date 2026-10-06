@@ -4,7 +4,7 @@
 import { $, address, api, el, loadState, post, label, planNodes, frame, say, nameTree } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { guardByName } from "/ui/confirm.js";
-import { suggest } from "/combo.js";
+import { suggest } from "/ui/combo.js";
 import { icon } from "/ui/icons.js";
 
 let state = { templates: [], items: [], expiry: {} };
