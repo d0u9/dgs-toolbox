@@ -36,4 +36,4 @@ export class Element {
   }
   all(predicate){return [this,...this.children.flatMap(child=>child instanceof Element?child.all(predicate):[])].filter(predicate);}
 }
-export const documentStub=()=>({createElement:tag=>new Element(tag),body:new Element("body"),addEventListener(){},removeEventListener(){}});
+export const documentStub=()=>({createElement:tag=>new Element(tag),body:new Element("body"),querySelectorAll:()=>[],addEventListener(){},removeEventListener(){}});

@@ -21,7 +21,7 @@ function setup() {
     hasPointerCapture: () => captured,
     releasePointerCapture: () => { captured = false; },
   };
-  vm.runInNewContext(fs.readFileSync(`${__dirname}/assets/dialog.js`, 'utf8'), { document, window });
+  vm.runInNewContext(fs.readFileSync(`${__dirname}/assets/dialog.js`, 'utf8').replace(/^export /gm, ''), { document, window });
   const down = (control = false) => listeners.pointerdown({ button: 0, pointerId: 1,
     clientX: 220, clientY: 160, preventDefault() {},
     target: { closest: (selector) => selector.startsWith('button') ? (control ? {} : null) : handle } });
