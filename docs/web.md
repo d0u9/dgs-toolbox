@@ -763,6 +763,16 @@ button is one of `.button`, `.icon-button`, `.text-button` or `.chip`. A
 page's stylesheet places a control and sizes its width; it never sets a
 control's height, padding, border, radius, background or font.
 
+Shared workspace variants in `controls.css` cover modes (`.ui-mode`),
+underlined tabs (`.ui-tab`), inline row icons (`.ui-row-icon`), divided icon
+groups (`.ui-icon-group`), map controls (`.ui-map-tool`, `.ui-map-button`,
+`.ui-map-nav`) and divider triangle grips (`.ui-fold-hide`, `.ui-fold-show`).
+These explicit variants preserve the confirmed compact editing interface.
+`.compact-controls` uses 22px actions and fields for dense editing groups.
+Map controls use 29px square targets; their SVGs use 16px artwork and the
+standard Lucide stroke of 2. Pages position these variants without reskinning
+them. The GPX page applies its confirmed 90% density to all served styles.
+
 What does not change: the palette, the radius scale (buttons at
 `{rounded.md}`, containers at `{rounded.lg}` and `{rounded.xl}`), the
 elevation levels, and the rule that `{colors.primary}` stays scarce. A dense

@@ -171,7 +171,7 @@ export class CleanPanel {
       ["segments", "Segments", track.pieces.length > 1 ? track.pieces.length : 0],
     ]) {
       const tab = document.createElement("button");
-      tab.className = "inspector-tab" + (this.tab === key ? " active" : "");
+      tab.className = "chip inspector-tab ui-tab" + (this.tab === key ? " active" : "");
       tab.setAttribute("role", "tab");
       tab.setAttribute("aria-selected", String(this.tab === key));
       tab.textContent = count ? `${text} (${count})` : text;
@@ -371,7 +371,7 @@ export class CleanPanel {
       openMenu(event, [[{ label: "Fit this fill", onSelect: () => pick(true) }, { label: "Remove this fill", onSelect: () => this.onRemoveFill(index) }]]);
     });
     const remove = document.createElement("button");
-    remove.className = "remove";
+    remove.className = "icon-button ui-row-icon remove";
     remove.textContent = "×";
     remove.title = "Remove this fill and bring back the recorded points";
     remove.addEventListener("click", () => this.onRemoveFill(index));
@@ -427,7 +427,7 @@ export class CleanPanel {
       li.append(join);
     }
     const restore = document.createElement("button");
-    restore.className = "remove";
+    restore.className = "icon-button ui-row-icon remove";
     restore.textContent = "×";
     restore.title = "Restore these points";
     restore.addEventListener("click", () => this.restoreEdit(index));

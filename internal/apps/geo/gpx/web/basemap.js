@@ -327,7 +327,7 @@ export class MapStack {
     const open = this.expanded.has(item.name);
     const adjusted = ADJUST.some(({ key }) => item.adjust[key] !== 0);
     const expand = document.createElement("button");
-    expand.className = "layer-expand";
+    expand.className = "icon-button ui-disclosure layer-expand";
     expand.classList.toggle("adjusted", adjusted);
     expand.textContent = open ? "▾" : "▸";
     expand.title = adjusted ? "Adjustments (changed)" : "Adjustments: saturation, contrast, brightness";

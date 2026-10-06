@@ -512,7 +512,7 @@ test('file toolbar contains only origin, reveal and visibility; actions do not s
   h.state.tracks.set('other.gpx',{...h.entry});h.context.filteredPaths=()=>['current.gpx','other.gpx'];
   h.context.api={reveal:async path=>h.calls.push(['reveal',path])};
   const row=h.context.trackRow('current.gpx',h.entry),tools=row.all(e=>e.classList.contains('file-tools'))[0];
-  assert.deepEqual(tools.children.map(e=>e.className),['ours-mark ours','row-action','eye']);
+  assert.deepEqual(tools.children.map(e=>e.className.split(' ')[0]),['ours-mark','row-action','eye']);
   assert.equal(row.all(e=>e.type==='color')[0].hidden,true);
   assert.equal(row.children[0].className,'disclosure-space');
   assert.equal(row.children[1].className,'file-main');
@@ -560,5 +560,17 @@ test('triangle grips isolate resize gestures and fold or restore the same panel'
   for(const type of ['pointerdown','dblclick','keydown']){const event=await nodes.get('hide-'+name).fire(type);assert.equal(event.stopped,true);}
   await nodes.get('hide-'+name).fire('click');await nodes.get('show-'+name).fire('click');
   assert.deepEqual(calls.slice(-2),[[panel,true],[panel,false]]);
+ }
+});
+
+test('GPX static buttons use shared action or setting controls and ordinary fields have no page skin',()=>{
+ const html=readFileSync(new URL('./web/index.html',import.meta.url),'utf8');
+ for(const match of html.matchAll(/<button\b([^>]*)>/g)){
+  const classes=match[1].match(/class="([^"]*)"/)?.[1].split(/\s+/)||[];
+  assert.ok(classes.some(name=>['button','icon-button','text-button','chip','action','link-button'].includes(name)),match[0]);
+ }
+ const css=readFileSync(new URL('./web/app.css',import.meta.url),'utf8');
+ for(const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)){
+  if(/\.basemap select|\.track-tools \.filter|\.clean-field input|\.stop-params input|\.route-name|\.range-join/.test(match[1])) assert.ok(!/(?:height|padding|border|background|font-size)\s*:/.test(match[2]),match[1]);
  }
 });

@@ -425,7 +425,7 @@ export class RoutePlanner {
       number.className = "plan-marker static" + (i === 0 ? " start" : i === this.waypoints.length - 1 ? " end" : "");
       number.textContent = String(i + 1);
       const label = document.createElement("button");
-      label.className = "route-label";
+      label.className = "text-button ui-content-button route-label";
       label.title = "Click to select · double-click to show on the map · right-click for actions";
       label.textContent = i === 0 ? "Start" : i === this.waypoints.length - 1 ? "End" : `Waypoint ${i + 1}`;
       const where = document.createElement("span");
@@ -436,7 +436,7 @@ export class RoutePlanner {
       label.addEventListener("click", event => this.selectWaypoint(i, { fit: this.doubleClick(`row:${i}`, event) }));
       row.addEventListener("contextmenu", event => this.waypointMenu(event, i));
       const remove = document.createElement("button");
-      remove.className = "remove";
+      remove.className = "icon-button ui-row-icon remove";
       remove.textContent = "×";
       remove.title = "Remove this waypoint";
       remove.addEventListener("click", () => this.remove(i));

@@ -26,10 +26,10 @@ body {
 #inspector-splitter { grid-column: 4; grid-row: 2; }
 .inspector { grid-column: 5; grid-row: 2; }
 .basemap { display: flex; align-items: center; gap: 8px; color: var(--graphite); }
-.basemap select.active { border-color: var(--primary); color: var(--primary); }
+
 .layers { position: relative; }
-.layers-toggle { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 10px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--paper); cursor: pointer; }
-.layers-toggle[aria-expanded="true"] { border-color: var(--primary); color: var(--primary); }
+.layers-toggle { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* MapLibre's compact credits open themselves whenever the attribution
    changes — another map shown, more tiles in. Folding them back in script
    means writing to the same element the map is writing to, so the fold is a
@@ -51,8 +51,7 @@ body {
 .layer-row { padding: 4px 6px; border-radius: 6px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
 .layer-main { display: flex; align-items: center; gap: 6px; }
 .layer-expand, .layer-expand-space { width: 18px; flex: none; }
-.layer-expand { padding: 0; border: 0; font-size: 14px; background: none; color: var(--graphite); cursor: pointer; }
-.layer-expand.adjusted { color: var(--primary); }
+
 .layer-adjust { display: grid; gap: 2px; margin: 4px 24px 2px 26px; padding: 6px 8px; border-radius: 6px; background: rgba(0, 0, 0, .035); font-size: 12px; }
 .layer-adjust label { display: grid; grid-template-columns: 70px 1fr 34px; align-items: center; gap: 6px; color: var(--graphite); }
 .layer-adjust output { text-align: right; font-variant-numeric: tabular-nums; }
@@ -74,7 +73,7 @@ body {
 .layer-exaggeration input { width: 80px; }
 .layer-exaggeration output { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 .layer-terrain.off .layer-exaggeration { opacity: .4; }
-.basemap select { max-width: 220px; padding: 3px 6px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--paper); }
+.basemap select { max-width: 220px; }
 
 .sidebar {
   width: 300px;
@@ -102,15 +101,7 @@ body {
    row of their own rather than breaking a label over two lines. */
 .panel-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .panel h2 .text-button, .panel h2 .count { flex: none; white-space: nowrap; }
-.row-action {
-  flex: none;
-  border: none;
-  background: none;
-  color: var(--graphite);
-  cursor: pointer;
-  padding: 0 2px;
-}
-.row-action:hover { color: var(--primary); }
+
 /* Focus and selection are two different things, so they are drawn two
    different ways: the focused row — the one the map and the profile are
    showing — is marked by the widest band and a name in ink, over the quietest
@@ -122,34 +113,18 @@ body {
 
 /* Colour editing stays in the context menu; file rows have no colour strip. */
 .track-row .color[hidden] { display: none; }
-.track-row .eye { flex: none; width: 18px; padding: 0; border: none; background: none; color: var(--primary); cursor: pointer; font-size: 13px; }
+
 .track-row.hidden-track .eye { color: var(--graphite); }
 .track-row.hidden-track .name, .track-row.hidden-track .meta { opacity: .45; }
 .panel h2 .count { margin-left: 6px; font-weight: 400; letter-spacing: 0; text-transform: none; }
 .track-tools { display: flex; gap: 4px; padding: 0 10px 6px; }
 .track-tools[hidden] { display: none; }
-.track-tools .filter { flex: 1; min-width: 0; padding: 2px 8px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--paper); font-size: 12px; }
-.track-row .remove {
-  border: none;
-  background: none;
-  color: var(--graphite);
-  cursor: pointer;
-  padding: 0 2px;
-  font-size: 15px;
-  visibility: hidden;
-}
-.track-row:hover .remove { visibility: visible; }
+.track-tools .filter { flex: 1; min-width: 0; }
 
 .workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .map-area { flex: 1; position: relative; min-height: 0; }
-.map { position: absolute; inset: 0; }
-
-/* Modes in the top bar */
-.modes { display: flex; gap: 2px; margin-left: 12px; padding: 2px; border-radius: 7px; background: var(--cloud); }
-.mode { padding: 3px 12px; border: none; border-radius: 5px; background: none; color: var(--graphite); cursor: pointer; }
-.mode:hover { color: var(--ink); }
-.mode[aria-pressed="true"] { background: var(--paper); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--hairline); }
-.mode:disabled { opacity: .45; cursor: default; }
+.map { position: absolute; inset: 0; }/* Modes in the top bar */
+.modes { margin-left: 12px; }
 
 /* The inspector: a column on the right, the width of its splitter */
 /* The inspector never narrows past the width its own controls need: a select
@@ -161,23 +136,12 @@ body {
 .clean-panel > .clean-head { padding: 10px 14px 6px; }
 .clean-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-tabs { display: flex; gap: 16px; padding: 0 14px; border-bottom: 1px solid var(--hairline); }
-.inspector-tab { display: flex; align-items: center; gap: 5px; padding: 7px 0; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--graphite); cursor: pointer; }
-.inspector-tab:hover { color: var(--ink); }
-.inspector-tab.active { color: var(--ink); border-bottom-color: var(--primary); font-weight: 600; }
+.inspector-tab { margin-bottom: -1px; }
 .inspector-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 14px 10px; }
 .inspector-body > .clean-filter:first-child { border-top: none; }
-.clean-panel > .clean-foot { margin: 0; padding: 8px 14px; border-top: 1px solid var(--hairline); }
-
-/* The edit tool bar on the map, and what a click does now */
-.map-tools { position: absolute; top: 70px; left: 6px; z-index: 3; display: flex; flex-direction: column; gap: 0; padding: 0; border: 1px solid var(--hairline); border-radius: 4px; background: var(--paper); box-shadow: 0 1px 4px rgba(0, 0, 0, .12); }
-.map-tools[hidden] { display: none; }
-.map-tools-gap { height: 1px; margin: 3px 4px; background: var(--hairline); }
-.map-tool:disabled { opacity: .35; cursor: default; }
-.map-tool:disabled:hover { background: none; color: var(--graphite); }
-.map-tool { width: 26px; height: 24px; display: grid; place-items: center; border: none; border-radius: 5px; background: none; color: var(--graphite); font-size: 16px; cursor: pointer; }
-.map-tool:hover { background: var(--hover); color: var(--ink); }
-.map-tool[aria-pressed="true"] { background: var(--selected); color: var(--primary); }
-.map-tool:focus-visible, .mode:focus-visible, .inspector-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.clean-panel > .clean-foot { margin: 0; padding: 8px 14px; border-top: 1px solid var(--hairline); }/* The edit tool bar on the map, and what a click does now */
+.map-tools { position: absolute; top: 70px; left: 6px; z-index: 3; }
+.map-tools-gap { margin: 3px 4px; }
 .segments-tab > .clean-head { padding-top: 8px; }
 .inspector-tabs { gap: 14px; }
 .clean-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
@@ -191,7 +155,7 @@ body {
 .clean-fields { display: grid; grid-template-columns: 1fr; gap: 3px; margin: 6px 0 0 18px; }
 .clean-field { display: grid; grid-template-columns: 1fr 64px 40px; align-items: center; gap: 4px; color: var(--graphite); }
 .clean-field.wide { display: flex; grid-template-columns: none; }
-.clean-field input[type="number"] { width: 64px; padding: 1px 4px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--paper); font-size: 12px; }
+.clean-field input[type="number"] { width: 64px; }
 .clean-field .unit { font-size: 11px; }
 .clean-filter .text-button { margin-top: 6px; }
 .clean-foot { margin: 8px 0 0; color: var(--graphite); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
@@ -206,9 +170,7 @@ body {
 .range-row .label .meta { overflow: hidden; text-overflow: ellipsis; }
 .range-row .name { font-variant-numeric: tabular-nums; }
 .range-row .meta { color: var(--graphite); font-size: 11px; }
-.range-join { padding: 1px 2px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--paper); font-size: 12px; }
-.range-row .remove { border: none; background: none; color: var(--graphite); font-size: 15px; cursor: pointer; }
-.range-row .remove:hover { color: var(--error); }
+.range-join { min-width: 0; }
 
 /* Removed ranges and the range tool on the timeline */
 .timeline { position: relative; }
@@ -260,7 +222,6 @@ body {
 .cut-go, .cut-save-as { width: 100%; margin-top: var(--space-xxs); }
 .cut-path { width: 100%; }
 .cut-go { white-space: nowrap; }
-.text-button:disabled { opacity: .4; cursor: default; }
 
 /* Cuts on the timeline */
 .timeline-candidate, .timeline-cut { position: absolute; top: 0; bottom: 0; width: 11px; margin-left: -5px; z-index: 2; }
@@ -322,7 +283,6 @@ body {
    Which charts are shown is one setting, so it is drawn as one control. */
 .chart-toggles { margin-left: var(--space-xs); }
 .layout-toggles { display: flex; margin-left: 0; border-left: 1px solid var(--hairline-strong); }
-.layout-toggles .chip { padding: 0 var(--space-xs); font-size: var(--font-size-ui); }
 
 .profile-head { display: flex; align-items: center; gap: var(--space-xs); margin-bottom: 6px; white-space: nowrap; min-width: 0; }
 .profile-head .swatch { width: 10px; height: 10px; border-radius: var(--radius-sm); flex: none; }
@@ -390,7 +350,7 @@ body {
   background: repeating-linear-gradient(135deg, rgba(255, 255, 255, .85) 0 3px, rgba(160, 160, 155, .55) 3px 6px);
   pointer-events: none;
 }
-.stop-params input { width: 52px; height: var(--control-height-sm); padding: 0 var(--space-xxs); border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--paper); font-size: var(--font-size-sm); }
+.stop-params input { width: 52px; }
 .timeline-bar {
   position: relative;
   height: 38px;
@@ -447,7 +407,7 @@ body {
 }
 .stop-marker[hidden] { display: none; }
 .stop-marker.selected { background: var(--primary); transform: scale(1.2); }
-.stop-popup { font: 12px/1.5 system-ui, -apple-system, "PingFang SC", sans-serif; font-variant-numeric: tabular-nums; }
+.stop-popup { font: var(--font-size-sm)/1.5 var(--font-sans); font-variant-numeric: tabular-nums; }
 .stop-popup strong { display: block; margin-bottom: 2px; }
 
 .hint { margin: var(--space-xxs) 0 0; font-size: var(--font-size-xs); color: var(--graphite); text-align: right; }
@@ -474,36 +434,13 @@ body {
 .actions { flex: none; display: flex; align-items: center; gap: 2px; }
 .list li.track-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px 8px; min-height: 32px; }
 .file-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.list li.track-row > .file-tools { display: flex; gap: 2px; margin-left: 0; }
-.track-row .actions.file-tools > button, .track-row .actions.file-tools > .ours-mark { flex: none; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: none; border-radius: 3px; background: transparent; color: var(--graphite); }
-.file-tools button { cursor: pointer; }
-.track-row .actions.file-tools > button:hover:not(:disabled) { background: var(--hover); color: var(--primary); }
-.track-row .actions.file-tools > button:disabled { color: var(--steel); cursor: default; }
-.file-tools button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.track-row .file-tools svg { width: 12px; height: 12px; }
-.track-row .actions.file-tools > .ours-mark.ours, .track-row .actions.file-tools > .eye[aria-pressed="true"] { color: var(--primary); }
+.list li.track-row > .file-tools { margin-left: 0; }
+
 .track-row .ui-row-label .meta, .part-row .ui-row-label .meta { display: none; }
 .track-row .name { font-size: 12px; font-weight: 500; }
 .track-row.state-error .name { color: var(--error); }
-.track-row > .disclosure { width: 18px; height: 20px; }
-.track-row > .disclosure svg { width: 12px; height: 12px; }
 .track-row .row-distance { font-size: 11px; }
-.disclosure {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: none;
-  color: var(--ink);
-  font-size: 11px;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  transition: transform .12s;
-}
-.disclosure:hover { background: rgba(0, 0, 0, .06); }
+.disclosure { flex: none; }
 .disclosure.expanded { transform: rotate(90deg); }
 .track-row.expandable > .actions { right: 32px; }
 .part-row { padding: 9px 12px 9px 34px !important; gap: 10px !important; font-size: 13px; min-height: 40px; }
@@ -533,38 +470,30 @@ body {
 .mini:hover:not(:disabled) { background: var(--hover); }
 .mini:disabled { opacity: .35; cursor: default; }
 .part-row .glyph { flex: none; width: 14px; text-align: center; }
-.part-row .eye { flex: none; width: 28px; height: 28px; padding: 0; border: none; background: none; color: var(--primary); cursor: pointer; }
+
 .part-row.hidden-track .eye { color: var(--graphite); }
 .part-row.hidden-track .label, .part-row.hidden-track .glyph { opacity: .45; }
 
 /* Row controls reserve their own space, keeping names steady on hover. */
 .list li { position: relative; }
-.list li > .actions { flex: none; display: flex; align-items: center; gap: 2px; margin-left: 4px; }
-.list li > .actions .row-action { visibility: visible; }
-.track-row .actions .remove, .track-row .actions .row-action { visibility: visible; position: static; display: block; background: none; }
+.list li > .actions:not(.ui-icon-group) { flex: none; display: flex; align-items: center; gap: 2px; margin-left: 4px; }
 
 /* A workspace GPX with tracks added to it, not yet saved as a new file. */
 .track-row.changed .name::after { content: " •"; color: var(--primary); }
-.actions .sidecar { flex: none; padding: 0 5px; border: 1px solid var(--hairline); border-radius: 5px; background: var(--paper); color: var(--graphite); font-size: 10px; white-space: nowrap; cursor: pointer; }
-.actions .sidecar:hover { border-color: var(--error); color: var(--error); }
-.actions .save-as { flex: none; padding: 0 6px; border: 1px solid var(--primary); border-radius: 5px; background: var(--paper); color: var(--primary); font-size: 11px; white-space: nowrap; cursor: pointer; }
+
 .part-row.added .glyph { font-weight: 700; }
-.part-row .actions .remove { border: none; background: none; color: var(--graphite); font-size: 15px; cursor: pointer; }
-.part-row .actions .row-action { border: none; background: none; color: var(--graphite); font-size: 11px; cursor: pointer; }
-.part-row .actions .row-action:hover { color: var(--primary); }
-.part-row .actions .remove:hover { color: var(--error); }
+
 .fill-preview { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .fill-preview .meta { flex: 1; color: var(--graphite); font-size: 11px; }
 .cut-hint.error { color: var(--error); }
-
 
 .timeline-piece { position: absolute; bottom: 0; height: 7px; z-index: 1; pointer-events: none; }
 
 /* Route mode: the plan's waypoints and legs */
 .clean-panel[hidden] { display: none; }
 .route-head { padding-bottom: 2px; }
-.route-name { flex: 1; min-width: 0; padding: 2px 6px; margin-left: -6px; border: 1px solid transparent; border-radius: 5px; background: transparent; font-size: 14px; font-weight: 600; }
-.route-name:hover, .route-name:focus { border-color: var(--hairline); background: var(--paper); }
+.route-name { flex: 1; min-width: 0; }
+
 .route-summary { display: flex; align-items: baseline; gap: 8px; padding: 0 14px 6px; font-variant-numeric: tabular-nums; }
 .route-summary strong { font-size: 18px; }
 .route-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 6px 14px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
@@ -572,10 +501,9 @@ body {
 .route-edit { margin: 8px 0; padding: 6px 8px; border-radius: 6px; background: var(--selected); }
 .route-list { list-style: none; margin: 6px 0 0; padding: 0; }
 .route-waypoint { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.route-label { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 0; border: none; background: none; text-align: left; cursor: pointer; }
+.route-label { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .route-label .meta { color: var(--graphite); font-size: 11px; font-variant-numeric: tabular-nums; }
-.route-waypoint .remove { border: none; background: none; color: var(--graphite); font-size: 15px; cursor: pointer; }
-.route-waypoint .remove:hover { color: var(--error); }
+
 /* A leg hangs between its two waypoints, on a line joining their numbers. */
 .route-leg { display: flex; align-items: center; gap: 8px; margin-left: 10px; padding: 3px 0 3px 18px; border-left: 2px solid #cc79a7; }
 .route-leg.busy { border-left-style: dashed; }
@@ -589,33 +517,15 @@ body {
 .plan-marker.handle { width: 12px; height: 12px; border: 2px solid #cc79a7; background: #fff; box-shadow: none; opacity: .85; }
 .plan-marker.handle:hover { opacity: 1; transform: scale(1.25); }
 .plan-marker.static { flex: none; cursor: default; box-shadow: none; }
-
-/* Hiding a panel. Each panel carries the button that folds it away; the map
-   then carries a small tab at that edge to bring it back, so nothing is
-   hidden without a way back in the same place. */
-.panel-hide, .panel-show {
-  border: 1px solid var(--hairline); border-radius: 6px; background: var(--paper);
-  color: var(--graphite); cursor: pointer; line-height: 1; padding: 2px 6px; font-size: 12px;
-}
-.panel-hide:hover, .panel-show:hover { color: var(--ink); border-color: var(--primary); }
 .inspector-hide { position: absolute; top: 6px; right: 8px; z-index: 3; }
 .inspector { position: relative; }
-.panel-show { position: absolute; z-index: 5; box-shadow: 0 1px 4px rgba(0, 0, 0, .2); }
+.panel-show { position: absolute; z-index: 5; }
 .panel-show.left { left: 6px; top: 50%; transform: translateY(-50%); }
 .panel-show.right { right: 6px; top: 50%; transform: translateY(-50%); }
-.panel-show.bottom { left: 50%; bottom: 6px; transform: translateX(-50%); }
-.panel-show[hidden] { display: none; }
-/* Map only: one button folds every panel away, and brings them back as they
+.panel-show.bottom { left: 50%; bottom: 6px; transform: translateX(-50%); }/* Map only: one button folds every panel away, and brings them back as they
    were. */
-.map-button {
-  position: absolute; z-index: 5; left: 6px; top: 6px; width: 26px; height: 26px;
-  display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--hairline); border-radius: 6px; background: var(--paper);
-  color: var(--graphite); cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, .2);
-}
-.map-button.terrain { top: 38px; font-size: 11px; font-weight: 600; }
-.map-button:hover { color: var(--ink); border-color: var(--primary); }
-.map-button[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
+.map-button { position: absolute; z-index: 5; left: 6px; top: 6px; }
+.map-button.terrain { top: 38px; }
 .sidebar[hidden], #sidebar-splitter[hidden] { display: none; }
 
 /* A row of the workspace held for dragging, and where it would land. The
@@ -637,10 +547,9 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .sidebar.dropping { outline: 2px dashed var(--primary); outline-offset: -2px; }
 
 /* The eye sits on the text baseline of its row, whatever the row's font. */
-.eye svg, .icon-button svg { display: block; margin: 0 auto; width: 14px; height: 14px; }
 
 .track-row.hidden-track .actions > .eye { color: var(--graphite); }
-.track-row .actions > button:hover:not(:disabled) { background: #ececea; position: relative; z-index: 1; }
+
 .track-row .actions > .order:disabled { opacity: 1; color: var(--hairline); cursor: default; }
 
 /* Rows picked out for a command that acts on several files. The focused row
@@ -663,7 +572,7 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
   box-shadow: 0 6px 18px rgba(0, 0, 0, .22); will-change: transform;
 }
 /* Tilt and turn buttons under the compass. */
-.view-control button span { font-size: 15px; line-height: 1; color: #333; }
+
 /* Sorting, shared by the workspace and the map list: the carried rows fade
    out, and the rows they pass slide aside to open the gap they would land in. */
 .sort-row { transition: transform .16s cubic-bezier(.2, .8, .2, 1); }
@@ -678,61 +587,33 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .plan-marker.selected { outline: 2px solid var(--primary); outline-offset: 2px; }
 .label .meta, .clean-foot, .cut-hint { font-weight: 400; }
 
-/* Compact icon groups share the chart toggles control rhythm. */
-.map-tool svg { width: 16px; height: 16px; }
-.map-tool { border-radius: 0; }
-.track-row .actions.file-tools { gap: 0; border: 1px solid var(--hairline); border-radius: 3px; overflow: hidden; }
-.track-row .actions.file-tools > button, .track-row .actions.file-tools > .ours-mark { width: 24px; height: 22px; border-radius: 0; }
-.track-row .actions.file-tools > :not(:first-child) { border-left: 1px solid var(--hairline); }
-.track-row .file-tools svg { width: 14px; height: 14px; }
 .disclosure-space { width: 18px; }
 
-.maplibregl-ctrl button svg { width: 16px; height: 16px; margin: auto; display: block; }
 .part-row .glyph svg { width: 14px; height: 14px; display: block; }
-
-.map-button svg, .chip.icon svg { width: 14px; height: 14px; display: block; margin: auto; }
+.map-button svg, .chip.icon svg { margin: auto; }
 
 /* Child rows must show selection just as their file rows do. */
 .list li.part-row { cursor: pointer; }
 .list li.part-row.selected { background: var(--selected); }
 .list li.part-row.selected:hover { background: var(--selected-hover); }
 .list li.part-row.selected .name { color: var(--ink); font-weight: 600; }
-
-/* All map actions use the navigation controls' compact stacked treatment. */
-.map-tools, .map-button, .maplibregl-ctrl-group {
-  border: none; border-radius: 4px; background: #fff;
-  box-shadow: 0 0 0 2px rgba(0,0,0,.1);
-}
-.map-tools, .maplibregl-ctrl-group { overflow: hidden; }
 .map-tools { top: 78px; }
-.map-button { width: 29px; height: 29px; color: #333; padding: 0; display: grid; place-items: center; }
-.map-button.terrain { top: 42px; font-size: 12px; font-weight: 700; }
-.map-tool, .maplibregl-ctrl-group button {
-  width: 29px; height: 29px;
-  padding: 0; border: none; border-radius: 0; color: #333;
-}
-.map-tools > .map-tool + .map-tool, .maplibregl-ctrl-group button + button { border-top: 1px solid #ddd; }
-.map-tools-gap { height: 0; margin: 0; border-top: 1px solid #ddd; }
-.map-tool svg, .map-button svg, .maplibregl-ctrl-group button svg { width: 18px; height: 18px; display: block; margin: auto; }
-.map-tool:hover, .map-button:hover, .maplibregl-ctrl-group button:hover { background: #f2f2f2; color: #333; }
-.map-tool[aria-pressed="true"], .map-button[aria-pressed="true"] { background: var(--selected); color: var(--primary); }
+.map-button.terrain { top: 42px; }
+.map-tools-gap { margin: 0; }
+.map-tool svg, .map-button svg, .maplibregl-ctrl-group button svg { margin: auto; }
 
 /* Segment editing uses compact rows and quiet secondary actions. */
 .cut-row .row-distance, .cut-list-bar .clean-count { font-size: 11px; }
 .cut-actions .clean-filter-head { font-size: 12px; }
-.cut-actions .text-button, .cut-actions .button, .cut-actions select { min-height: 22px; height: 22px; font-size: 12px; padding: 0 6px; }
-.cut-actions .cut-tools { gap: 4px; }
 
-/* Triangle grips belong to the divider, not to map navigation. */
-.panel-hide, .panel-show { position: absolute; z-index: 7; display: grid; place-items: center; padding: 0; border: 1px solid var(--hairline-strong); border-radius: 2px; background: var(--paper); color: var(--graphite); box-shadow: none; cursor: pointer; }
-.panel-hide.left, .panel-hide.right { width: 12px; height: 30px; top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); }
-.panel-hide.bottom { width: 30px; height: 12px; left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%); }
-.panel-show.left, .panel-show.right { width: 12px; height: 30px; top: 50%; transform: translateY(-50%); }
+.cut-actions .cut-tools { gap: 4px; }/* Triangle grips belong to the divider, not to map navigation. */
+.panel-hide, .panel-show { position: absolute; z-index: 7; }
+.panel-hide.left, .panel-hide.right { top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); }
+.panel-hide.bottom { left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%); }
+.panel-show.left, .panel-show.right { top: 50%; transform: translateY(-50%); }
 .panel-show.left { left: 0; }
 .panel-show.right { right: 0; }
-.panel-show.bottom { width: 30px; height: 12px; left: 50%; bottom: 0; transform: translateX(-50%); }
-.panel-hide svg, .panel-show svg { width: 10px; height: 10px; }
+.panel-show.bottom { left: 50%; bottom: 0; transform: translateX(-50%); }
 .panel-hide.left svg, .panel-show.right svg { transform: rotate(180deg); }
 .panel-hide.bottom svg { transform: rotate(90deg); }
 .panel-show.bottom svg { transform: rotate(-90deg); }
-.panel-hide[hidden], .panel-show[hidden] { display: none; }

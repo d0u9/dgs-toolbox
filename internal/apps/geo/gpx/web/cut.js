@@ -278,7 +278,7 @@ export class CutPanel {
   actions() {
     const { track } = this;
     const section = document.createElement("section");
-    section.className = "clean-filter enabled cut-actions";
+    section.className = "clean-filter enabled cut-actions compact-controls";
     const chosen = track.pieces.filter((piece) => this.selected.has(piece.first));
 
     const cutHead = document.createElement("div");
@@ -344,7 +344,7 @@ export class CutPanel {
     // Or a GPX that does not exist yet, named in the save dialog.
     const saveAs = document.createElement("button");
     saveAs.type = "button";
-    saveAs.className = "button cut-save-as";
+    saveAs.className = "button secondary cut-save-as";
     saveAs.textContent = `Save as a new GPX…`;
     saveAs.title = "Choose the folder and name of a new GPX holding the chosen segments";
     saveAs.disabled = chosen.length === 0;
