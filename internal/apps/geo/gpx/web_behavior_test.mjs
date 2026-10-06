@@ -684,3 +684,36 @@ test('single clicks on hidden files and child items preserve visibility and neve
  assert.equal(h.entry.visible,false);assert.ok(h.calls.some(([kind])=>kind==='select'));
  assert.equal(h.calls.some(([kind])=>['visible','fit','focus'].includes(kind)),false);
 });
+
+
+test('complete unchanged track supplies the segment display, rename dialog and export default without saving an override', async()=>{
+  const piece={first:0,last:2,points:3,distance:20,start:Date.UTC(2026,0,1,9),end:Date.UTC(2026,0,1,10)};
+  const h=segmentHarness([piece]);
+  h.panel.track.parts=[{kind:'track',first:0,last:2,name:'Synthetic walk'}];h.panel.render();
+  const row=h.root.all(e=>e.classList.contains('cut-row'))[0];
+  assert.equal(row.all(e=>e.classList.contains('cut-name'))[0].textContent,'Synthetic walk');
+  assert.deepEqual(plain(h.panel.names()),[]);
+  const menus=[];h.context.openMenu=(event,sections)=>menus.push(sections.flat());
+  await row.fire('contextmenu');
+  const rename=menus[0].find(item=>item.label==='Rename…').onSelect();
+  assert.equal(h.dialogs.at(-1)[1].value,'Synthetic walk');h.ask.resolve(null);await rename;
+  h.panel.track.parts[0].name='Renamed walk';h.panel.render();
+  const adding=h.add().fire('click');await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.dialogs.at(-1)[1].value,'Renamed walk');
+  h.ask.resolve(null);await adding;
+});
+
+test('track name fallback rejects cuts, changed geometry, removals, fills and multiple tracks; explicit names win',()=>{
+  const piece={first:0,last:2,points:3,distance:20,start:Date.UTC(2026,0,1,9),end:Date.UTC(2026,0,1,10)};
+  const h=segmentHarness([piece]);
+  const base={parts:[{kind:'track',first:0,last:2,name:'Synthetic walk'}],cuts:[],removed:[],points:[[0,0],[1,1],[2,2]],original:null,fills:[]};
+  for(const change of [{cuts:[1]},{removed:['','manual','']},{original:[[0,0],[1,2],[2,2]]},{fills:[{first:0,last:2}]},{parts:[{kind:'track',first:0,last:1,name:'A'},{kind:'track',first:2,last:2,name:'B'}]},{parts:[{kind:'track',first:0,last:2,name:' '}]}]){
+    Object.assign(h.panel.track,base,change);h.panel.render();
+    assert.equal(h.root.all(e=>e.classList.contains('cut-name'))[0].textContent,'09:00–10:00');
+  }
+  Object.assign(h.panel.track,base);piece.name='Custom segment';h.panel.render();
+  assert.equal(h.root.all(e=>e.classList.contains('cut-name'))[0].textContent,'Custom segment');
+  assert.deepEqual(plain(h.panel.names()),[{start:0,name:'Custom segment'}]);
+  piece.name='';piece.start=null;piece.end=null;h.panel.track.parts=[];h.panel.render();
+  assert.equal(h.root.all(e=>e.classList.contains('cut-name'))[0].textContent,'Segment 1');
+});

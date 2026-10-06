@@ -25,9 +25,24 @@ const PIECE_COLORS = ["#cf8800", "#00856a", "#b53686", "#0072b2", "#d55e00", "#1
 // pieceColor is the colour of the segment at a place in the list.
 export const pieceColor = (position) => PIECE_COLORS[position % PIECE_COLORS.length];
 
-// defaultName names a segment by its time span in a time zone, or by its
-// number when it has no time.
-export function defaultName(piece, number, timeZone) {
+// A complete, unchanged track keeps its track name. This is a display
+// default, never a saved segment override, so renaming the track follows through.
+export function inheritedName(piece, track) {
+  if (!track || track.cuts?.length) return "";
+  const parts = (track.parts || []).filter(part => part.kind === "track" && part.first === piece.first && part.last === piece.last);
+  if (parts.length !== 1) return "";
+  for (let i = piece.first; i <= piece.last; i++) {
+    if (track.removed?.[i]) return "";
+    if (track.original && track.points?.[i]?.some((value, axis) => value !== track.original[i]?.[axis])) return "";
+  }
+  if (track.fills?.some(fill => fill.first <= piece.last && fill.last >= piece.first)) return "";
+  return parts[0].name?.trim() || "";
+}
+
+// Otherwise use the time span, or the segment number when there is no time.
+export function defaultName(piece, number, timeZone, track) {
+  const inherited = inheritedName(piece, track);
+  if (inherited) return inherited;
   if (piece.start == null) return `Segment ${number}`;
   const from = format.clock(piece.start, timeZone, { seconds: false });
   const to = format.clock(piece.end, timeZone, { seconds: false });
@@ -226,10 +241,10 @@ export class CutPanel {
     item.style.borderLeftColor = pieceColor(number - 1);
     const name = document.createElement("span");
     name.className = "cut-name";
-    const fullName = piece.name || defaultName(piece, number, this.timeZone);
+    const fullName = piece.name || defaultName(piece, number, this.timeZone, this.track);
     const from = piece.start == null ? "" : format.clock(piece.start, this.timeZone, { seconds: false });
     const to = piece.end == null ? "" : format.clock(piece.end, this.timeZone, { seconds: false });
-    name.textContent = piece.name || (from && to && from.slice(0, 10) === to.slice(0, 10) ? `${from.slice(11)}–${to.slice(11)}` : fullName);
+    name.textContent = piece.name || inheritedName(piece, this.track) || (from && to && from.slice(0, 10) === to.slice(0, 10) ? `${from.slice(11)}–${to.slice(11)}` : fullName);
     top.append(check, badge, name);
     const distance = document.createElement("span");
     distance.className = "row-distance";
@@ -265,7 +280,7 @@ export class CutPanel {
         { label: "Fit this segment", onSelect: () => this.onShow(piece, { fit: true }) },
         { label: "Use default name", onSelect: () => this.rename(piece, "") },
         { label: "Rename…", onSelect: async () => {
-          const name = await promptDialog({ title: "Rename segment", message: "Give this segment a name.", value: piece.name, confirm: "Rename" });
+          const name = await promptDialog({ title: "Rename segment", message: "Give this segment a name.", value: fullName, confirm: "Rename" });
           if (name != null) this.rename(piece, name);
         } },
       ], this.track.cuts.includes(piece.first) ? [{ label: "Remove cut before this segment", onSelect: () => this.removeCut(piece.first) }] : []]);
@@ -311,7 +326,7 @@ export class CutPanel {
     const segments = () => chosen.map((piece) => ({
       first: piece.first,
       last: piece.last,
-      name: piece.name || defaultName(piece, track.pieces.indexOf(piece) + 1, this.timeZone),
+      name: piece.name || defaultName(piece, track.pieces.indexOf(piece) + 1, this.timeZone, track),
     }));
 
     // A GPX open in the workspace: the segments become tracks in its sidecar.
