@@ -2,6 +2,7 @@ package tree
 
 import (
 	"dgs-toolbox/internal/tag"
+	"slices"
 
 	"crypto/rand"
 	"errors"
@@ -22,11 +23,14 @@ const SidecarName = "item.dgs-item.yaml"
 
 // Revision is one issue of an Item, optionally with a PDF.
 type Revision struct {
-	Snapshot bool   `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
-	Type     string `yaml:"type,omitempty" json:"type,omitempty"`
-	ID       string `yaml:"id,omitempty" json:"id,omitempty"`
-	Digest   string `yaml:"digest" json:"digest"`
-	Added    string `yaml:"added" json:"added"`
+	Snapshot bool `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
+	// Paper is the ref of the first snapshot of the revision this snapshot
+	// belongs to: its own when it begins one, else it is a correction.
+	Paper  string `yaml:"paper,omitempty" json:"paper,omitempty"`
+	Type   string `yaml:"type,omitempty" json:"type,omitempty"`
+	ID     string `yaml:"id,omitempty" json:"id,omitempty"`
+	Digest string `yaml:"digest" json:"digest"`
+	Added  string `yaml:"added" json:"added"`
 	// Source is the name the PDF had when it was imported, for a person
 	// wondering where it came from.
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
@@ -217,12 +221,17 @@ func loadItem(root, name string) (*Item, error) {
 	if item.ID != name {
 		return nil, fmt.Errorf("%s: id %q is not the folder's name", path, item.ID)
 	}
+	// A sidecar from before revisions were told from snapshots is read by
+	// its history; that is written the next time the sidecar is.
+	item.settlePapers()
 	return &item, nil
 }
 
 // WriteItem replaces an Item's sidecar through a temporary file and a rename,
 // so a reader sees the old sidecar or the new one and never half of either.
 func WriteItem(root string, item Item) error {
+	item.Revisions = slices.Clone(item.Revisions)
+	item.settlePapers()
 	data, err := yaml.Marshal(item)
 	if err != nil {
 		return err

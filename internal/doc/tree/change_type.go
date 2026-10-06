@@ -72,7 +72,7 @@ func ChangeType(root, id string, target Template, fields map[string]string, revi
 		return Item{}, fmt.Errorf("no current revision")
 	}
 	next := item
-	before.Digest = next.saveSnapshot(target.Type, clean, base.Digest, base.Source, now)
+	before.Digest = next.saveSnapshot(target.Type, clean, base.Digest, base.Source, next.PaperOf(next.Current()), now)
 	before.NewFields = maps.Clone(next.Fields)
 	before.NewRevisions = map[string]map[string]string{next.Current(): maps.Clone(clean)}
 	next.History = append(append([]HistoryEvent(nil), item.History...), before)

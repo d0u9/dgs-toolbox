@@ -250,7 +250,7 @@ function drawFields() {
   const was = into.value;
   const documents = t.kind === "document" ? state.items.filter((i) => i.type === t.type) : [];
   into.replaceChildren(el("option", { value: "" }, "A new item"),
-    ...documents.map((i) => el("option", { value: i.id }, "New revision of " + label(state, i))));
+    ...documents.map((i) => el("option", { value: i.id }, "Add to " + label(state, i))));
   if (documents.some((i) => i.id === was)) into.value = was;
   $("into-field").hidden = documents.length === 0;
   $("into-choices").replaceChildren(...[{ id: "" }, ...documents].map((item) => {
@@ -280,6 +280,9 @@ function drawFields() {
     return button;
   }));
   const adding = into.value !== "";
+  // A new revision is the owner's word, asked each time; a record has none.
+  if ($("new-revision-field").hidden !== !adding) $("new-revision").checked = false;
+  $("new-revision-field").hidden = !adding;
   if (metadataItem !== into.value) {
     const item = state.items.find((i) => i.id === into.value);
     $("notes").value = item?.notes || "";
@@ -292,7 +295,7 @@ function drawFields() {
   $("revision-tags-field").hidden = noPDF;
   $("tags-field").hidden = false;
   $("notes-field").hidden = false;
-  $("import-button").textContent = adding ? "Add revision" : (noPDF ? "Create item" : "Import");
+  $("import-button").textContent = adding ? "Add to item" : (noPDF ? "Create item" : "Import");
   // A new revision is asked only what changes with it: the fields the
   // Template marks per_revision. The rest belong to the Item it joins.
   const asked = adding ? t.fields.filter((f) => f.per_revision) : t.fields;
@@ -394,7 +397,8 @@ $("import").onsubmit = async (event) => {
     if ($("into").value && !$("into-field").hidden) {
       revisionTags.commit();
       await post("/api/revisions", { keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
-        revision_tags: revisionTags.get() });
+        revision_tags: revisionTags.get(), new_revision: $("new-revision").checked });
+      $("new-revision").checked = false;
     } else {
       const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
         revision_tags: noPDF ? [] : (revisionTags.commit(), revisionTags.get()), shared_with: sharedWith() });

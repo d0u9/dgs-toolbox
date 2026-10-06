@@ -43,8 +43,12 @@ func (item *Item) freeze() {
 	}
 }
 
-func (item *Item) saveSnapshot(typ string, fields map[string]string, digest, source string, now time.Time) string {
+// saveSnapshot keeps a snapshot and moves HEAD to it. paper is the ref of
+// the revision it corrects; empty, it begins a revision of its own. Content
+// already kept reuses that snapshot, in the revision it is in.
+func (item *Item) saveSnapshot(typ string, fields map[string]string, digest, source, paper string, now time.Time) string {
 	item.freeze()
+	item.settlePapers()
 	ref := SnapshotID(typ, fields, digest)
 	exists := false
 	for _, r := range item.Revisions {
@@ -54,7 +58,10 @@ func (item *Item) saveSnapshot(typ string, fields map[string]string, digest, sou
 		}
 	}
 	if !exists {
-		next := Revision{ID: ref, Type: typ, Snapshot: true, Digest: digest, Source: source, Fields: maps.Clone(fields), Added: now.Format(time.RFC3339)}
+		if paper == "" {
+			paper = ref
+		}
+		next := Revision{ID: ref, Paper: paper, Type: typ, Snapshot: true, Digest: digest, Source: source, Fields: maps.Clone(fields), Added: now.Format(time.RFC3339)}
 		for _, r := range item.Revisions {
 			if r.Digest == digest && digest != "" {
 				next.SourceDigests = slices.Clone(r.SourceDigests)

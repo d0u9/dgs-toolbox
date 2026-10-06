@@ -23,7 +23,7 @@ func childrenRule() (View, []tree.Item, Types) {
 		{Type: "bill", Lineage: []string{"bill", "money"}, Fields: []tree.Field{{Key: "category", Type: tree.FieldSelect,
 			Values: tree.ValueGroups{{Name: "utility", Values: []string{"水", "电"}}}}}},
 	})
-	v := View{Name: "v", Selection: Head, Node: Node{Order: map[string][]string{"home": {"h1", "h2"}},
+	v := View{Name: "v", Node: Node{Selection: Head, Order: map[string][]string{"home": {"h1", "h2"}},
 		If:   "has(name) && home != h3",
 		Path: "{#}-{home}", File: "{name}.{ext}",
 		Children: []Node{
@@ -110,7 +110,7 @@ func TestExplainInheritedAndCleaned(t *testing.T) {
 		item(bachelor, "diploma", map[string]string{"level": "本科", "name": "学位/证书"}, "d1"),
 		item(english, "translation", map[string]string{"language": "en", "name": "degree", "original": bachelor}, "d2"),
 	}
-	v := View{Name: "x", Selection: Head, Inherit: []string{"original"}, Node: Node{Order: map[string][]string{"level": {"本科"}}, File: "{#}-{level}[/{language}]/{name}.{ext}"}}
+	v := View{Name: "x", Inherit: []string{"original"}, Node: Node{Selection: Head, Order: map[string][]string{"level": {"本科"}}, File: "{#}-{level}[/{language}]/{name}.{ext}"}}
 	en := explainOne(t, v, items, Types{}, english)
 	if level := en.Steps[1]; level.Key != "level" || level.From != "original" {
 		t.Fatalf("%+v", level)
@@ -129,8 +129,8 @@ func TestExplainInheritedAndCleaned(t *testing.T) {
 
 func TestExplainClashAcrossRules(t *testing.T) {
 	items := []tree.Item{item("A", "id_card", map[string]string{"name": "x"}, "d1")}
-	one := View{Name: "one", Selection: Head, Node: Node{File: "{name}.{ext}"}}
-	two := View{Name: "two", Selection: Head, Node: Node{File: "{name}.{ext}"}}
+	one := View{Name: "one", Node: Node{Selection: Head, File: "{name}.{ext}"}}
+	two := View{Name: "two", Node: Node{Selection: Head, File: "{name}.{ext}"}}
 	xs, err := ExplainWith([]View{one, two}, []File{{Path: "s/x.pdf", Item: "A", Digest: "d1", Revision: 1, View: "snap"}}, items, Types{}, "A")
 	if err != nil || len(xs) != 3 {
 		t.Fatalf("%v %+v", err, xs)

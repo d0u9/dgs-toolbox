@@ -13,6 +13,7 @@ const (
 	Placed      = "placed"
 	NotSelected = "not selected"
 	NotHead     = "not HEAD"
+	NotLatest   = "corrected since"
 	LeftOut     = "left out"
 	Lacking     = "lacking"
 	Clashing    = "clash"

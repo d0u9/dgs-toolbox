@@ -24,7 +24,8 @@ type Selection string
 const (
 	// Head takes a document's HEAD only, and a record's one PDF.
 	Head Selection = "head"
-	// All takes every revision.
+	// All takes every revision once: its current snapshot, never the
+	// corrections before it.
 	All Selection = "all"
 )
 
@@ -66,8 +67,6 @@ func (v Values) MarshalYAML() (any, error) {
 type View struct {
 	Name string `yaml:"name" json:"name"`
 	Node `yaml:",inline"`
-	// Selection is which revisions of a document the rule takes.
-	Selection Selection `yaml:"selection" json:"selection"`
 	// Shared also selects an Item shared with someone, as if they owned it:
 	// its If is asked with owner as each person it is shared with.
 	Shared bool `yaml:"shared,omitempty" json:"shared,omitempty"`
@@ -90,6 +89,9 @@ const NumberingScoped = "scoped"
 
 // Node is a rule, or one of its children.
 type Node struct {
+	// Selection is which revisions of a document the node places: a
+	// rule's is head or all, a child's empty for its parent's.
+	Selection Selection `yaml:"selection,omitempty" json:"selection,omitempty"`
 	// If is the condition, in package expr's language, an Item must meet.
 	// A rule without one takes every Item; a child without one is the
 	// else, and comes last.
@@ -139,7 +141,7 @@ func (n Node) Out() bool { return n.Exclude }
 
 // own reports whether a child sets anything of its own besides its If.
 func (n Node) own() bool {
-	return n.Path != "" || n.File != "" || len(n.Children) > 0 || n.Default != nil || len(n.Order) > 0 || len(n.Numbers) > 0 || len(n.Unnumbered) > 0 || len(n.Unlisted) > 0
+	return n.Selection != "" || n.Path != "" || n.File != "" || len(n.Children) > 0 || n.Default != nil || len(n.Order) > 0 || len(n.Numbers) > 0 || len(n.Unnumbered) > 0 || len(n.Unlisted) > 0
 }
 
 // walk calls fn on v's node and each below it, parents first, with where
@@ -532,6 +534,9 @@ func (v View) Validate() error {
 			return fmt.Errorf("view %s: exclude is for a child; a rule leaves out what its if does not take", v.Name)
 		}
 		for i, c := range n.Children {
+			if c.Selection != "" && c.Selection != Head && c.Selection != All {
+				return fmt.Errorf("view %s: %schild %d: selection %q is neither head nor all", v.Name, where, i+1, c.Selection)
+			}
 			if c.If == "" && i != len(n.Children)-1 {
 				return fmt.Errorf("view %s: %schild %d has no if, so it is the else and must come last", v.Name, where, i+1)
 			}

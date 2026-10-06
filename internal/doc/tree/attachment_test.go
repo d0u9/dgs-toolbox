@@ -47,7 +47,7 @@ func TestSnapshotLifecycle(t *testing.T) {
 	if len(report.Problems) != 0 || report.Checked != 0 {
 		t.Fatalf("verify: %+v", report)
 	}
-	item, err = tree.AddWithoutPDF(root, item.ID, tpl, map[string]string{"expires": "2030-09"}, tree.RevisionMetadata{}, now.Add(time.Hour))
+	item, err = tree.AddWithoutPDF(root, item.ID, tpl, map[string]string{"expires": "2030-09"}, tree.RevisionMetadata{NewRevision: true}, now.Add(time.Hour))
 	must(err)
 	renewal := item.Current()
 	source := filepath.Join(t.TempDir(), "card.pdf")
@@ -75,7 +75,7 @@ func TestSnapshotLifecycle(t *testing.T) {
 	if len(same.Revisions) != 3 || len(same.History) != len(item.History) {
 		t.Fatal("same PDF created a snapshot")
 	}
-	item, err = tree.SetFields(root, item.ID, attached, tpl, map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2028-02"}, now.Add(3*time.Hour))
+	item, err = tree.SetFieldsAs(root, item.ID, attached, tpl, map[string]string{"owner": "alex", "country": "AU", "card_name": "A", "expires": "2028-02"}, true, now.Add(3*time.Hour))
 	must(err)
 	edited := item.Current()
 	if len(item.Revisions) != 4 || item.CurrentDigest() != blob || item.FieldsAt(attached)["expires"] != "2026-09" {
@@ -93,8 +93,9 @@ func TestSnapshotLifecycle(t *testing.T) {
 	if item.Current() != edited || len(item.Revisions) != 4 {
 		t.Fatal("metadata made a snapshot")
 	}
-	// Same PDF, different fields exports distinct snapshot identities and values.
-	v := view.View{Name: "cards", Selection: view.All, Node: view.Node{File: "{revision}-{expires}.{ext}"}}
+	// Same PDF, different fields, two revisions: exports distinct snapshot
+	// identities and values.
+	v := view.View{Name: "cards", Node: view.Node{Selection: view.All, File: "{revision}-{expires}.{ext}"}}
 	plan, err := view.Build(v, []tree.Item{item}, view.Types{})
 	must(err)
 	if len(plan.Files) != 2 {

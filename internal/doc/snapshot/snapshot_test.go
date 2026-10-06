@@ -19,7 +19,7 @@ func TestTakeResolveAndKeep(t *testing.T) {
 		{ID: "B", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "tom"},
 			Revisions: []tree.Revision{{ID: "r3", Digest: "d3"}}, Head: "r3"},
 	}
-	rule := view.View{Name: "all", Selection: view.Head, Node: view.Node{File: "visa/{owner}.{ext}"}}
+	rule := view.View{Name: "all", Node: view.Node{Selection: view.Head, File: "visa/{owner}.{ext}"}}
 	now := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
 	s, err := Take("visa", "", &rule, items, view.Types{}, now)
 	if err != nil {
@@ -31,7 +31,7 @@ func TestTakeResolveAndKeep(t *testing.T) {
 	if empty, err := Take("mine", "", nil, items, view.Types{}, now); err != nil || len(empty.Files) != 0 {
 		t.Fatalf("%v %+v", err, empty)
 	}
-	gap := view.View{Name: "gap", Selection: view.Head, Node: view.Node{File: "{country}.{ext}"}}
+	gap := view.View{Name: "gap", Node: view.Node{Selection: view.Head, File: "{country}.{ext}"}}
 	if _, err := Take("x", "", &gap, items, view.Types{}, now); err == nil {
 		t.Fatal("a rule with PDFs it cannot place was taken")
 	}

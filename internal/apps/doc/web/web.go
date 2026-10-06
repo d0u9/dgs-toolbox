@@ -249,6 +249,8 @@ func (s server) api() http.Handler {
 	mux.HandleFunc("POST /api/revisions", s.addRevision)
 	mux.HandleFunc("POST /api/attach", s.attachPDF)
 	mux.HandleFunc("POST /api/head", s.setHead)
+	mux.HandleFunc("POST /api/revisions/begin", s.makeRevision)
+	mux.HandleFunc("POST /api/revisions/correct", s.makeCorrection)
 	mux.HandleFunc("POST /api/revisions/delete", s.deleteRevision)
 	mux.HandleFunc("POST /api/fields", s.setFields)
 	mux.HandleFunc("POST /api/change-type", s.changeType)
@@ -860,6 +862,8 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		Tags         *[]string         `json:"tags"`
 		// RevisionTags are the new revision's own.
 		RevisionTags []string `json:"revision_tags"`
+		// NewRevision is the owner's word that this is a new paper.
+		NewRevision bool `json:"new_revision"`
 	}
 	if !decode(w, r, &request) {
 		return
@@ -883,7 +887,7 @@ func (s server) addRevision(w http.ResponseWriter, r *http.Request) {
 		answer(w, tree.Item{}, err)
 		return
 	}
-	metadata := tree.RevisionMetadata{Pages: pages, KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags}
+	metadata := tree.RevisionMetadata{Pages: pages, KeepOriginal: s.keepImage(request.KeepOriginal), Notes: request.Notes, Tags: request.Tags, RevisionTags: request.RevisionTags, NewRevision: request.NewRevision}
 	var item tree.Item
 	if request.NoPDF {
 		item, err = tree.AddWithoutPDF(s.root, request.Item, t, request.Fields, metadata, s.now())
@@ -943,11 +947,36 @@ func (s server) deleteRevision(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"item": item, "trash": to})
 }
 
+// makeRevision and makeCorrection put right which snapshots begin a
+// revision: the owner's word, given after the snapshot was saved.
+func (s server) makeRevision(w http.ResponseWriter, r *http.Request) {
+	s.changePaper(w, r, tree.MakeRevision)
+}
+
+func (s server) makeCorrection(w http.ResponseWriter, r *http.Request) {
+	s.changePaper(w, r, tree.MakeCorrection)
+}
+
+func (s server) changePaper(w http.ResponseWriter, r *http.Request, change func(root, id, ref string, now time.Time) (tree.Item, error)) {
+	var request struct {
+		Item   string `json:"item"`
+		Digest string `json:"digest"`
+	}
+	if !decode(w, r, &request) {
+		return
+	}
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	item, err := change(s.root, request.Item, request.Digest, s.now())
+	answer(w, item, err)
+}
+
 func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Item   string            `json:"item"`
-		Digest string            `json:"digest"`
-		Fields map[string]string `json:"fields"`
+		Item        string            `json:"item"`
+		Digest      string            `json:"digest"`
+		Fields      map[string]string `json:"fields"`
+		NewRevision bool              `json:"new_revision"`
 	}
 	if !decode(w, r, &request) {
 		return
@@ -979,7 +1008,7 @@ func (s server) setFields(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	item, err := tree.SetFields(s.root, request.Item, request.Digest, t, request.Fields, s.now())
+	item, err := tree.SetFieldsAs(s.root, request.Item, request.Digest, t, request.Fields, request.NewRevision, s.now())
 	answer(w, item, err)
 }
 
@@ -1178,6 +1207,7 @@ func (s server) attachPDF(w http.ResponseWriter, r *http.Request) {
 		Digest       string
 		Dir          string
 		Path         string
+		NewRevision  bool `json:"new_revision"`
 	}
 	if !decode(w, r, &request) {
 		return
@@ -1192,7 +1222,7 @@ func (s server) attachPDF(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, err := tree.AttachFile(r.Context(), s.root, request.Item, request.Digest, append([]string{source}, pages...), s.keepImage(request.KeepOriginal), s.now())
+	item, err := tree.AttachFileAs(r.Context(), s.root, request.Item, request.Digest, append([]string{source}, pages...), s.keepImage(request.KeepOriginal), request.NewRevision, s.now())
 	answer(w, item, err)
 }
 

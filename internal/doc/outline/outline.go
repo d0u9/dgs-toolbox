@@ -395,7 +395,7 @@ func RenameRule(root, from, to string) error {
 	if from == to {
 		return nil
 	}
-	if err := (view.View{Name: to, Selection: view.Head, Node: view.Node{File: "x"}}).Validate(); err != nil {
+	if err := (view.View{Name: to, Node: view.Node{Selection: view.Head, File: "x"}}).Validate(); err != nil {
 		return err
 	}
 	if err := Fresh(root, []string{to}); err != nil {
@@ -439,7 +439,7 @@ func RenameRule(root, from, to string) error {
 
 // DeleteRule removes a rule no Outline uses.
 func DeleteRule(root, name string) error {
-	if err := (view.View{Name: name, Selection: view.Head, Node: view.Node{File: "x"}}).Validate(); err != nil {
+	if err := (view.View{Name: name, Node: view.Node{Selection: view.Head, File: "x"}}).Validate(); err != nil {
 		return err
 	}
 	_, used, err := Rules(root)

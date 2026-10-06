@@ -42,7 +42,7 @@ func CreateWithoutPDF(request ImportRequest) (Item, error) {
 		return Item{}, err
 	}
 	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags), SharedWith: shared}
-	ref := item.saveSnapshot(request.Template.Type, fields, "", "", request.Now)
+	ref := item.saveSnapshot(request.Template.Type, fields, "", "", "", request.Now)
 	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "create_without_pdf", Digest: ref}}
 	if err := WriteItem(request.Root, item); err != nil {
 		_ = os.Remove(Dir(request.Root, id))
@@ -80,7 +80,7 @@ func AddWithoutPDF(root, id string, template Template, given map[string]string, 
 	if item.CurrentDigest() == "" && SnapshotID(item.Type, item.CurrentFields(), "") == SnapshotID(item.Type, full, "") && (metadata.Notes == nil || strings.TrimSpace(*metadata.Notes) == item.Notes) && (metadata.Tags == nil || strings.Join(tag.List(*metadata.Tags), ",") == strings.Join(item.Tags, ",")) {
 		return item, nil
 	}
-	ref := item.saveSnapshot(item.Type, full, "", "", now)
+	ref := item.saveSnapshot(item.Type, full, "", "", metadata.paper(item), now)
 	if metadata.Notes != nil {
 		item.Notes = strings.TrimSpace(*metadata.Notes)
 	}
@@ -100,6 +100,12 @@ func AttachPDF(ctx context.Context, root, id, ref, source string, now time.Time)
 // AttachFile is AttachPDF for a PDF, or for images put together into one,
 // a page each, their originals optionally archived beside it.
 func AttachFile(ctx context.Context, root, id, ref string, sources []string, keepOriginal bool, now time.Time) (Item, error) {
+	return AttachFileAs(ctx, root, id, ref, sources, keepOriginal, false, now)
+}
+
+// AttachFileAs is AttachFile; with newRevision the snapshot begins a
+// revision rather than correcting the one ref is in.
+func AttachFileAs(ctx context.Context, root, id, ref string, sources []string, keepOriginal, newRevision bool, now time.Time) (Item, error) {
 	if err := Require(root); err != nil {
 		return Item{}, err
 	}
@@ -197,7 +203,7 @@ func AttachFile(ctx context.Context, root, id, ref string, sources []string, kee
 		}
 		return Item{}, err
 	}
-	next := item.saveSnapshot(typ, item.FieldsAt(ref), digest, input.name, now)
+	next := item.saveSnapshot(typ, item.FieldsAt(ref), digest, input.name, correcting(item, ref, newRevision), now)
 	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "attach_pdf", Digest: next, Changes: map[string][2]string{"pdf": {base.Digest, digest}}})
 	undoOriginal, err := input.archive(ctx, root, id, keepOriginal)
 	if err != nil {

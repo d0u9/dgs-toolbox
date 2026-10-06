@@ -108,7 +108,7 @@ func Import(ctx context.Context, request ImportRequest) (Item, error) {
 		return Item{}, fmt.Errorf("%s changed while it was being imported", request.Source)
 	}
 	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags), SharedWith: shared}
-	ref := item.saveSnapshot(request.Template.Type, fields, digest, input.name, request.Now)
+	ref := item.saveSnapshot(request.Template.Type, fields, digest, input.name, "", request.Now)
 	item.Revisions[len(item.Revisions)-1].Tags = tag.List(append(append([]string(nil), item.Tags...), request.RevisionTags...))
 	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "import", Digest: ref}}
 	undoOriginal, err := input.archive(ctx, request.Root, id, request.KeepOriginal)

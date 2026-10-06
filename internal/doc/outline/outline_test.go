@@ -28,8 +28,8 @@ func TestGroupNestsEveryRuleAndCounts(t *testing.T) {
 		item("E", "passport", map[string]string{"country": "CN", "owner": "alex"}, "d5"),
 	}
 	o := Outline{Name: "mine", Rules: []view.View{
-		{Name: "cars", Selection: view.Head, Node: view.Node{Order: map[string][]string{"plate": {"浙AF3897", "浙AT73C7"}}, If: "type == car", File: "{country:alpha2} {make}/{#}-{plate}/{id}.{ext}"}},
-		{Name: "ids", Selection: view.Head, Node: view.Node{If: "type == passport", File: "ids/{owner}.{ext}"}},
+		{Name: "cars", Node: view.Node{Selection: view.Head, Order: map[string][]string{"plate": {"浙AF3897", "浙AT73C7"}}, If: "type == car", File: "{country:alpha2} {make}/{#}-{plate}/{id}.{ext}"}},
+		{Name: "ids", Node: view.Node{Selection: view.Head, If: "type == passport", File: "ids/{owner}.{ext}"}},
 	}}
 	g, err := Group(o, nil, items, view.Types{})
 	if err != nil {
@@ -151,7 +151,7 @@ func TestGroupMountsSnapshots(t *testing.T) {
 		{Path: "gone.pdf", Item: "Z", Revision: "r9"},
 	}}
 	o := Outline{Name: "mine",
-		Rules:     []view.View{{Name: "ids", Selection: view.Head, Node: view.Node{File: "ids/{owner}.{ext}"}}},
+		Rules:     []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "ids/{owner}.{ext}"}}},
 		Snapshots: []Mount{{Name: "visa", At: "ids/2026"}}}
 	g, err := Group(o, []snapshot.Snapshot{visa}, items, view.Types{})
 	if err != nil {

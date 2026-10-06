@@ -173,6 +173,10 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 	}
 	keys["kind"] = string(item.Kind)
 	keys["revision"] = strconv.Itoa(revision)
+	if revision >= 1 && revision <= len(item.Revisions) {
+		// The paper's number: a correction keeps its revision's.
+		keys["revision"] = strconv.Itoa(item.RevisionNumber(item.Revisions[revision-1].Ref()))
+	}
 	keys["ext"] = "pdf"
 	for k, v := range fields {
 		if start, end, ok := tree.SplitSpan(v); ok {
@@ -409,6 +413,7 @@ func build(v View, items []tree.Item, types Types, watch string) (Plan, []Explan
 	next := &nextNumbers{orders: map[string]*nextOrder{}}
 	for _, item := range sorted {
 		current := item.Current()
+		latest := item.Latest()
 		for i, rev := range item.Revisions {
 			if rev.Digest == "" {
 				continue
@@ -418,9 +423,10 @@ func build(v View, items []tree.Item, types Types, watch string) (Plan, []Explan
 				x = &Explanation{Rule: v.Name, Item: item.ID, Digest: rev.Digest, Revision: i + 1}
 				explained = append(explained, x)
 			}
-			if v.Selection == Head && rev.Ref() != current {
+			// An earlier snapshot of a revision is a correction made since.
+			if !latest[rev.Ref()] {
 				if x != nil {
-					x.Result = NotHead
+					x.Result = NotLatest
 				}
 				continue
 			}
@@ -492,6 +498,19 @@ func build(v View, items []tree.Item, types Types, watch string) (Plan, []Explan
 			if out {
 				if x != nil {
 					x.Result = LeftOut
+				}
+				continue
+			}
+			// The deepest node that says which revisions it places decides.
+			selection := v.Selection
+			for _, sc := range scopes {
+				if sc.Node.Selection != "" {
+					selection = sc.Node.Selection
+				}
+			}
+			if selection == Head && rev.Ref() != current {
+				if x != nil {
+					x.Result = NotHead
 				}
 				continue
 			}
