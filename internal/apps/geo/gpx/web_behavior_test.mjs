@@ -550,3 +550,14 @@ test('clicking a child track visibly selects the rebuilt row and retains the cam
  const css=readFileSync(new URL('./web/app.css',import.meta.url),'utf8');
  assert.match(css,/\.list li\.part-row\.selected\s*\{[^}]*background: var\(--selected\)/);
 });
+
+test('panel fold and restore controls use opposite chevrons and target the same panel',async()=>{
+ const nodes=new Map(),calls=[];
+ const context=vm.createContext({CHEVRON_LEFT:'left',CHEVRON_RIGHT:'right',CHEVRON_DOWN:'down',CHEVRON_UP:'up',state:{hidden:{}},$:id=>{if(!nodes.has(id))nodes.set(id,new Element('button'));return nodes.get(id);},hidePanel:(...args)=>calls.push(args),applyPanels(){},mapOnly:()=>false,setMapOnly(){}});
+ const app=source('app');vm.runInContext(app.slice(app.indexOf('function bindPanels('),app.indexOf('// ViewControl')),context);context.bindPanels(null);
+ for(const [panel,name,a,b] of [['sidebar','workspace','left','right'],['inspector','inspector','right','left'],['profile','profile','down','up']]){
+  assert.equal(nodes.get('hide-'+name).innerHTML,a);assert.equal(nodes.get('show-'+name).innerHTML,b);
+  await nodes.get('hide-'+name).fire('click');await nodes.get('show-'+name).fire('click');
+  assert.deepEqual(calls.slice(-2),[[panel,true],[panel,false]]);
+ }
+});

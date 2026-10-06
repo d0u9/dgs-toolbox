@@ -1113,3 +1113,5 @@ formats such as FIT.
 File disclosures use a filled leading triangle. File action icons form a compact divided group like the chart toggles; map edit buttons use the shared small control dimensions. Lucide SVG icons are bundled offline and use a heavier stroke for legibility.
 
 Map action controls share the navigation controls’ white stacked groups, compact square buttons, separators, dark icons and subtle outline. Selected tools retain a blue state.
+
+Panel fold and restore controls use bundled Lucide chevrons. Both states stay on the map side, centered on the adjoining left, right or bottom boundary; the chevron points in the panel movement direction.

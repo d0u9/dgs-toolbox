@@ -13,7 +13,7 @@ import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { CHEVRON, DIAMOND, DIAMOND_OPEN, FOLDER } from "./icons.js";
-import { EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, SCISSORS, MAP_PIN_PLUS, SPLIT, CHEVRON_UP, CHEVRON_DOWN, ROTATE_CCW, ROTATE_CW, MAXIMIZE, ROWS_2, COLUMNS_2 } from "/ui/icons.js";
+import { EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, SCISSORS, MAP_PIN_PLUS, SPLIT, CHEVRON_UP, CHEVRON_DOWN, ROTATE_CCW, ROTATE_CW, MAXIMIZE, ROWS_2, COLUMNS_2, CHEVRON_LEFT, CHEVRON_RIGHT } from "/ui/icons.js";
 import { RoutePlanner } from "./route.js";
 import { UI_SCALE, uiPx } from "./density.js";
 import { waypointDialog } from "./dialog.js";
@@ -338,6 +338,7 @@ function applyCleanPanel() {
   $("inspector").hidden = !wanted || state.hidden.inspector;
   $("inspector-splitter").hidden = $("inspector").hidden;
   $("show-inspector").hidden = !(wanted && state.hidden.inspector);
+  $("hide-inspector").hidden = $("inspector").hidden;
   $("clean-panel").hidden = !open;
   $("route-panel").hidden = !state.routeOpen;
   $("mode-browse").setAttribute("aria-pressed", String(!open && !state.routeOpen));
@@ -2271,6 +2272,7 @@ function applyCharts() {
   // the reader folded them away, so the way back belongs to them, not to
   // whether there is something to chart right now.
   $("show-profile").hidden = !state.hidden.profile;
+  $("hide-profile").hidden = $("profile").hidden;
   $("toggle-elevation").setAttribute("aria-pressed", String(elevation));
   $("toggle-speed").setAttribute("aria-pressed", String(speed));
   $("layout-stacked").setAttribute("aria-pressed", String(layout !== "side"));
@@ -2302,8 +2304,8 @@ function bindCharts(saved) {
 
 // ---- folding the panels away ----
 //
-// Each panel carries the button that hides it; the map then carries a tab at
-// that edge to bring it back. *Map only* folds every panel away at once and
+// The map carries each panel control at the adjoining edge, in the same
+// position for hiding and restoring it. *Map only* folds every panel away at once and
 // remembers what was open, so pressing it again puts the page back as it was.
 
 function applyPanels() {
@@ -2311,6 +2313,7 @@ function applyPanels() {
   sidebar.hidden = state.hidden.sidebar;
   $("sidebar-splitter").hidden = state.hidden.sidebar;
   $("show-workspace").hidden = !state.hidden.sidebar;
+  $("hide-workspace").hidden = state.hidden.sidebar;
   // The charts and the edit panel are hidden by what the page is doing as
   // well — no focused track, Browse mode — so each is folded where it is
   // decided, and the tab only appears when the panel would otherwise show.
@@ -2350,6 +2353,7 @@ function setMapOnly(on) {
 }
 
 function bindPanels(saved) {
+  for (const [id, icon] of [["hide-workspace", CHEVRON_LEFT], ["show-workspace", CHEVRON_RIGHT], ["hide-inspector", CHEVRON_RIGHT], ["show-inspector", CHEVRON_LEFT], ["hide-profile", CHEVRON_DOWN], ["show-profile", CHEVRON_UP]]) $(id).innerHTML = icon;
   if (saved && typeof saved === "object") {
     for (const name of ["sidebar", "profile", "inspector"]) state.hidden[name] = saved[name] === true;
   }
