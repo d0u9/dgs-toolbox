@@ -133,3 +133,51 @@ func TestSegmentsRespectTrackBoundaries(t *testing.T) {
 		t.Fatalf("split track pieces: %+v cuts: %v", shown.Pieces, shown.Cuts)
 	}
 }
+
+func TestCleanedSegmentsKeepTrackBoundariesAndSourceIndices(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		removed []int
+		want    [][2]int
+	}{
+		{"trim both tracks", []int{0, 5}, [][2]int{{1, 2}, {3, 4}}},
+		{"first track fully removed", []int{0, 1, 2}, [][2]int{{3, 5}}},
+		{"second track fully removed", []int{3, 4, 5}, [][2]int{{0, 2}}},
+		{"all points removed", []int{0, 1, 2, 3, 4, 5}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "cleaned.gpx")
+			point := func(lat float64) gpxfile.Point { return gpxfile.Point{LatLon: geo.LatLon{Lat: lat}} }
+			tracks := []gpxfile.Track{
+				{Name: "Ride", Segments: []gpxfile.Segment{{Points: []gpxfile.Point{point(0), point(.01), point(.02)}}}},
+				{Name: "Walk", Segments: []gpxfile.Segment{{Points: []gpxfile.Point{point(1), point(1.0001), point(1.0002)}}}},
+			}
+			if err := gpxfile.Create(path, "Trip", tracks); err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(Handler(Settings{}))
+			defer server.Close()
+			defer pending.drop(path)
+			body := map[string]any{"path": path, "clean": map[string]any{"edits": []map[string]any{{"kind": "lasso", "points": tc.removed, "join": true}}}}
+			if code, result := send(t, server, http.MethodPut, "/api/clean", body); code != http.StatusOK {
+				t.Fatalf("clean: %d %v", code, result)
+			}
+			var shown trackJSON
+			get(t, server, "/api/track?path="+url.QueryEscape(path), &shown)
+			if len(shown.Pieces) != len(tc.want) {
+				t.Fatalf("pieces: %+v want %v", shown.Pieces, tc.want)
+			}
+			for i, piece := range shown.Pieces {
+				if piece.First != tc.want[i][0] || piece.Last != tc.want[i][1] || piece.Points != piece.Last-piece.First+1 {
+					t.Fatalf("piece: %+v want %v", piece, tc.want[i])
+				}
+				if shown.Segments[piece.First] != shown.Segments[piece.Last] {
+					t.Fatalf("piece crosses recording boundary: %+v", piece)
+				}
+			}
+			if len(shown.Cuts) != 0 {
+				t.Fatalf("track boundary became a saved cut: %v", shown.Cuts)
+			}
+		})
+	}
+}

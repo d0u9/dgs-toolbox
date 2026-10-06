@@ -756,3 +756,72 @@ test('application passes the selected track to the real segment panel and its ma
   h.context.applyCutPanel();assert.deepEqual(plain(h.panel.track.pieces.map(p=>p.distance)),[10]);assert.equal(overlays.at(-1).pieces.length,1);
   h.state.partSelection=null;h.context.applyCutPanel();assert.equal(h.panel.track.pieces.length,2);
 });
+
+function twoTrackSegments(){
+ const all=[{first:0,last:4,points:5,distance:200,name:'Ride'},{first:5,last:9,points:5,distance:20,name:'Walk'}];
+ const h=segmentHarness(all);
+ h.track.parts=[{key:'t0',kind:'track',first:0,last:4,name:'Ride'},{key:'t1',kind:'track',first:5,last:9,name:'Walk'}];
+ h.track.cuts=[];h.track.cutCandidates=[2,7];h.track.removed=Array(10).fill('');
+ h.showPart=part=>h.panel.show(h.track,{part,timeZone:'UTC',workspace:[h.track.path],folder:''});
+ return h;
+}
+
+test('adding a selected child captures only its original point range even if another child is selected during naming',async()=>{
+ const h=twoTrackSegments();h.showPart(h.track.parts[1]);
+ const pending=h.add().fire('click');assert.equal(h.dialogs[0][1].value,'Walk');assert.equal(h.requests.length,0);
+ h.showPart(h.track.parts[0]);h.ask.resolve('Named walk');await pending;
+ assert.deepEqual(h.requests[0].body,{path:'current.gpx',segments:[{first:5,last:9,name:'Named walk'}],target:{mode:'add',path:'current.gpx'}});
+ assert.equal(h.track.pieces[1].name,'Walk');
+});
+
+test('cut at every stop touches only the selected child and retains sibling names and existing cuts',async()=>{
+ const h=twoTrackSegments(),changes=[];h.track.cuts=[2];h.panel.onCuts=(cuts,names)=>changes.push(plain({cuts,names}));
+ h.showPart(h.track.parts[1]);
+ await h.root.all(e=>e.tagName==='BUTTON'&&e.textContent==='Cut at every stop')[0].fire('click');
+ assert.deepEqual(changes,[{cuts:[2,7],names:[{start:0,name:'Ride'},{start:5,name:'Walk'}]}]);
+});
+
+test('timeline cut additions reject sibling points, track endpoints and removed-only tracks',()=>{
+ const h=twoTrackSegments(),changes=[];h.panel.onCuts=(cuts,names)=>changes.push(plain({cuts,names}));h.showPart(h.track.parts[1]);
+ for(const index of [0,2,4,5,9])h.panel.addCut(index);
+ assert.equal(changes.length,0);h.panel.addCut(7);assert.deepEqual(changes[0].cuts,[7]);
+ h.track.removed=Array(10).fill('manual');h.showPart(h.track.parts[1]);h.panel.addCut(7);assert.equal(changes.length,1);
+});
+
+test('renaming a GPX retains independent child choices and destinations across panel hide and restore',()=>{
+ const h=twoTrackSegments();h.showPart(h.track.parts[0]);h.panel.selected.clear();
+ h.showPart(h.track.parts[1]);h.panel.addPath='current.gpx';h.panel.renamePath('current.gpx','renamed.gpx');h.track.path='renamed.gpx';
+ h.panel.hide();h.showPart(h.track.parts[0]);assert.equal(h.panel.selected.size,0);
+ h.showPart(h.track.parts[1]);assert.deepEqual([...h.panel.selected],[5]);assert.equal(h.panel.addPath,'renamed.gpx');
+ assert.equal([...h.panel.choices.keys()].some(key=>key.startsWith('current.gpx\0')),false);
+});
+
+test('cuts and geometry edits in a sibling track do not replace an unchanged child track name',()=>{
+ const h=twoTrackSegments();for(const piece of h.track.pieces)piece.name='';
+ h.track.cuts=[2];h.track.removed[2]='manual';h.track.fills=[{first:0,last:4}];h.showPart(h.track.parts[1]);
+ const row=h.root.all(e=>e.classList.contains('cut-row'))[0];assert.equal(row.all(e=>e.classList.contains('cut-name'))[0].textContent,'Walk');
+ assert.deepEqual(plain(h.panel.names()),[]);
+});
+
+test('scoped cut overlay excludes sibling paths and cut markers and stays hidden when its child is hidden',()=>{
+ const h=twoTrackSegments();h.track.cuts=[2,7];h.track.points=Array.from({length:10},(_,i)=>[i,0]);h.track.segments=[0,0,0,0,0,1,1,1,1,1];h.showPart(h.track.parts[1]);
+ const sources=new Map(),map={addSource:id=>sources.set(id,{}),addLayer(){},getLayer:()=>false,getSource:id=>({setData:data=>sources.set(id,data)})};
+ h.context.map=map;const overlay=vm.runInContext('new CutOverlay(map,"cursor")',h.context);
+ overlay.show(h.panel.track);overlay.highlight(h.panel.track,h.panel.track.pieces[0]);
+ assert.deepEqual(plain(sources.get('cut-points').features.map(f=>f.geometry.coordinates)),[[7,0]]);
+ assert.deepEqual(plain(sources.get('cut-pieces').features[0].geometry.coordinates),[h.track.points.slice(5)]);
+ overlay.show(h.panel.track,[[5,9]]);
+ assert.equal(sources.get('cut-points').features.length,0);assert.equal(sources.get('cut-segment').geometry.coordinates.length,0);
+ overlay.show(h.panel.track);assert.deepEqual(plain(sources.get('cut-segment').geometry.coordinates),[h.track.points.slice(5)]);
+});
+
+test('Escape and pointer cancellation remove drag ghosts, release capture and permit a fresh drag',async()=>{
+ for(const type of ['keydown','pointercancel']){
+  const h=dragHarness();await h.down();await h.document.fire('pointermove',{pointerId:1,clientX:30,buttons:1});
+  await h.document.fire(type,{pointerId:1,key:'Escape'});
+  assert.equal(h.calls.at(-1),'cancel');assert.equal(h.list.children.length,1);assert.equal(h.row.captured,null);
+  for(const listener of ['pointermove','pointerup','pointercancel','keydown'])assert.equal((h.document.listeners.get(listener)||[]).length,0);
+  await h.down();await h.document.fire('pointermove',{pointerId:1,clientX:30,buttons:1});await h.document.fire('pointerup',{pointerId:1});
+  assert.equal(h.calls.at(-1),'drop');assert.equal(h.list.children.length,1);
+ }
+});
