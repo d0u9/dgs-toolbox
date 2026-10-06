@@ -14,6 +14,7 @@ import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { CHEVRON, DIAMOND, DIAMOND_OPEN, FOLDER } from "./icons.js";
 import { RoutePlanner } from "./route.js";
+import { UI_SCALE, uiPx } from "./density.js";
 import { waypointDialog } from "./dialog.js";
 import { chooseDialog, confirmDialog, promptDialog } from "/ui/dialog.js";
 import { button, iconButton, rowLabel as label } from "/ui/controls.js";
@@ -2217,21 +2218,21 @@ function bindMap() {
 function bindSplitters() {
   const sidebar = document.querySelector(".sidebar");
   splitter({
-    handle: $("sidebar-splitter"), target: sidebar, axis: "x", min: 220,
-    max: () => window.innerWidth - 320, key: "dgs-gpx-size-sidebar",
+    handle: $("sidebar-splitter"), target: sidebar, axis: "x", min: uiPx(220), scale: UI_SCALE, step: uiPx(24),
+    max: () => window.innerWidth - uiPx(320), key: "dgs-gpx-size-sidebar",
   });
   splitter({
-    handle: $("profile-splitter"), target: $("profile"), invert: true, min: 180,
-    max: () => document.querySelector(".workspace").clientHeight - 120, key: "dgs-gpx-size-profile",
+    handle: $("profile-splitter"), target: $("profile"), invert: true, min: uiPx(180), scale: UI_SCALE, step: uiPx(24),
+    max: () => document.querySelector(".workspace").clientHeight - uiPx(120), key: "dgs-gpx-size-profile",
   });
   splitter({
-    handle: $("inspector-splitter"), target: $("inspector"), axis: "x", invert: true, min: 300,
-    max: () => Math.min(640, window.innerWidth - 560), key: "dgs-gpx-size-inspector",
+    handle: $("inspector-splitter"), target: $("inspector"), axis: "x", invert: true, min: uiPx(300), scale: UI_SCALE, step: uiPx(24),
+    max: () => Math.min(uiPx(640), window.innerWidth - uiPx(560)), key: "dgs-gpx-size-inspector",
   });
   chartSplit = shareSplitter({
     handles: { y: $("chart-splitter"), x: $("chart-splitter-x") },
     first: $("row-elevation"), second: $("row-speed"), container: $("charts"),
-    axis: () => (state.charts.layout === "side" ? "x" : "y"), min: 100, key: "dgs-gpx-size-chart-share",
+    axis: () => (state.charts.layout === "side" ? "x" : "y"), min: uiPx(100), key: "dgs-gpx-size-chart-share",
   });
 }
 

@@ -91,7 +91,7 @@ func Handler(settings Settings) http.Handler {
 	webui.Mount(mux)
 	webfile.Mount(mux, webfile.Options{Root: settings.Root, Writable: true})
 	mux.Handle("GET /", http.FileServerFS(static))
-	return sameOrigin(consistentEdits(mux))
+	return sameOrigin(consistentEdits(compactStyles(mux, static)))
 }
 
 // The process's drafts and pending edits are shared by every page. Each

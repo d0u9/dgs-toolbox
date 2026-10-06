@@ -358,6 +358,11 @@ mouse, pen or touch. Buttons and inputs within a heading keep their usual
 behaviour. A custom title bar uses `data-dialog-handle`. Movement stays inside
 the viewport; resizing the window brings moved dialogs back into view.
 
+A page may serve its shared and local styles through `ScaleStylesheet` for
+a confirmed compact density. It scales fixed pixel lengths, keeps relative
+units, asset URLs and literal text intact, and leaves pointer coordinates
+unchanged. Splitters accept the same scale for remembered design sizes.
+
 The shared `controls.js` builds buttons, icon buttons and two-line row labels.
 `selection.js` recognizes double-clicks across rows that are rebuilt after
 selection, keeping single-click selection separate from framing. Shared CSS

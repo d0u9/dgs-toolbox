@@ -79,3 +79,17 @@ test('complete GPX and shared webui modules parse with their actual import decla
     }
   }
 });
+
+
+test('splitters scale remembered sizes once, preserve drag coordinates and store design sizes',async()=>{
+  const saved=new Map([['pane','300']]);
+  const localStorage={getItem:key=>saved.get(key),setItem:(key,value)=>saved.set(key,value)};
+  const document=documentStub(),context=vm.createContext({document,localStorage,window:{addEventListener(){}}});
+  const code=readFileSync(new URL('./assets/splitter.js',import.meta.url),'utf8');
+  const api=vm.runInContext(`(()=>{${code.replace(/^export /gm,'')}return {splitter};})()`,context);
+  const make=()=>{const handle=new Element('div'),target=new Element('div');handle.hasAttribute=name=>name in handle.attributes;handle.setPointerCapture=()=>{};handle.removeEventListener=(name,fn)=>handle.listeners.set(name,(handle.listeners.get(name)||[]).filter(item=>item!==fn));target.getBoundingClientRect=()=>({width:parseFloat(target.style.width)});return {handle,target};};
+  let {handle,target}=make();api.splitter({handle,target,axis:'x',min:100,key:'pane',scale:.9});
+  assert.equal(target.style.width,'270px');await handle.fire('pointerdown',{button:0,clientX:200});await handle.fire('pointermove',{clientX:218});await handle.fire('pointerup');
+  assert.equal(target.style.width,'288px');assert.equal(saved.get('pane'),'320');
+  ({handle,target}=make());api.splitter({handle,target,axis:'x',min:100,key:'pane',scale:.9});assert.equal(target.style.width,'288px');
+});

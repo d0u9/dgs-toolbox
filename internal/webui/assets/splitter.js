@@ -11,7 +11,7 @@
 // moves a focused handle. set, when given, applies a size in place of the
 // target's own width or height — a grid column held in a CSS variable, say;
 // the target is still what is measured.
-export function splitter({ handle, target, axis = "y", invert = false, min = 60, max = () => Infinity, key, fallback = 0, step = 24, set = null }) {
+export function splitter({ handle, target, axis = "y", invert = false, min = 60, max = () => Infinity, key, fallback = 0, step = 24, scale = 1, set = null }) {
   const property = axis === "y" ? "height" : "width";
   const clamp = (size) => Math.round(Math.max(min, Math.min(max(), size)));
   let size = 0;
@@ -28,7 +28,7 @@ export function splitter({ handle, target, axis = "y", invert = false, min = 60,
   };
 
   const saved = Number(read(key));
-  if (saved) apply(saved);
+  if (saved) apply(saved * scale);
   else if (fallback) apply(fallback);
   if (!handle.hasAttribute("tabindex")) handle.tabIndex = 0;
 
@@ -50,7 +50,7 @@ export function splitter({ handle, target, axis = "y", invert = false, min = 60,
       handle.removeEventListener("pointercancel", up);
       handle.classList.remove("dragging");
       document.body.classList.remove("resizing-y", "resizing-x");
-      write(key, size || Math.round(target.getBoundingClientRect()[property]));
+      write(key, Math.round((size || target.getBoundingClientRect()[property]) / scale));
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", up);
@@ -60,7 +60,7 @@ export function splitter({ handle, target, axis = "y", invert = false, min = 60,
   if (fallback) {
     handle.addEventListener("dblclick", () => {
       apply(fallback);
-      write(key, size);
+      write(key, Math.round(size / scale));
     });
   }
 
@@ -74,7 +74,7 @@ export function splitter({ handle, target, axis = "y", invert = false, min = 60,
     event.stopPropagation();
     const now = size || target.getBoundingClientRect()[property];
     apply(now + direction * step * (invert ? -1 : 1));
-    write(key, size);
+    write(key, Math.round(size / scale));
   });
 
   // Keep a remembered size inside a window that got smaller.
