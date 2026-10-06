@@ -558,10 +558,10 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 /* Selection beats the list's plain hover, which is more specific than a
    single class and would otherwise wash the selection off the row under the
    pointer. Hovering a selected row deepens its own colour instead. */
-.list li.track-row.selected { background: var(--selected); }
-.list li.track-row.selected:hover { background: var(--selected-hover); }
-.list li.track-row.selected.focused { background: var(--selected); }
-.list li.track-row.selected.focused:hover { background: var(--selected-hover); }
+.list li.track-row.selected { background: color-mix(in srgb, var(--selected) 45%, var(--paper)); }
+.list li.track-row.selected:hover { background: color-mix(in srgb, var(--selected-hover) 45%, var(--paper)); }
+.list li.track-row.selected.focused { background: color-mix(in srgb, var(--selected) 45%, var(--paper)); }
+.list li.track-row.selected.focused:hover { background: color-mix(in srgb, var(--selected-hover) 45%, var(--paper)); }
 
 /* A file holding edits that are not on disk. The mark is the same dot a file
    with added tracks carries: both say the file on disk is not what is shown. */
