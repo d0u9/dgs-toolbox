@@ -197,15 +197,21 @@ func inherit(parent, child Template) (Template, error) {
 }
 
 // override is the inherited field p as child type typ narrows it with c.
+// A text field may also be given suggestions, suggest and options: they
+// only offer values, and narrow none.
 func override(typ string, p, c Field) (Field, error) {
 	rest := c
 	rest.Required, rest.Distinguishing, rest.PerRevision, rest.Description = false, false, false, ""
 	rest.Shape, rest.Pattern, rest.Patterns = nil, "", nil
+	text := p.Type == "" || p.Type == FieldText
+	if text && c.Suggest {
+		rest.Suggest, rest.Options = false, nil
+	}
 	if rest.Type == p.Type {
 		rest.Type = ""
 	}
 	if !reflect.DeepEqual(rest, Field{Key: c.Key}) {
-		return Field{}, fmt.Errorf("type %s: key %s is inherited: it may be made required, distinguishing or per_revision, narrowed in shape and described, not changed", typ, c.Key)
+		return Field{}, fmt.Errorf("type %s: key %s is inherited: it may be made required, distinguishing or per_revision, narrowed in shape, described, or, as text, given suggestions; not changed", typ, c.Key)
 	}
 	f := p
 	f.Required = p.Required || c.Required
@@ -216,6 +222,12 @@ func override(typ string, p, c Field) (Field, error) {
 	}
 	if c.Pattern != "" || len(c.Patterns) > 0 {
 		f.Pattern, f.Patterns = c.Pattern, c.Patterns
+	}
+	if text && c.Suggest {
+		f.Suggest = true
+		if len(c.Options) > 0 {
+			f.Options = c.Options
+		}
 	}
 	if len(c.Shape) > 0 {
 		for _, s := range c.Shape {

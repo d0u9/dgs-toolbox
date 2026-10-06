@@ -206,8 +206,10 @@ export function inputFor(field, value, placeholder, state, self, type) {
       autocomplete: "off", spellcheck: false });
     const typ = type || state?.items?.find((item) => item.id === self)?.type || "";
     let loaded = null;
-    const known = () => loaded ||= typ ? fetch(api("/api/values?" + new URLSearchParams({ type: typ, key: field.key })))
+    const saved = () => typ ? fetch(api("/api/values?" + new URLSearchParams({ type: typ, key: field.key })))
       .then((response) => response.ok ? response.json() : []).catch(() => []) : Promise.resolve([]);
+    // The Template's options come first, then the values saved.
+    const known = () => loaded ||= saved().then((values) => [...new Set([...(field.options || []), ...values])]);
     return el("label", { className: "form-field" }, ...fieldHead(field), suggest(control, known, { arrow: true }));
   } else if (field.type === "revision" || field.type === "item") {
     // An Item, then for a revision field one of its revisions, HEAD when the

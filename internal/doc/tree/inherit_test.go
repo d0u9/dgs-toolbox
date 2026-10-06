@@ -83,7 +83,7 @@ func TestInheritanceRefuses(t *testing.T) {
 	for name, child := range map[string]string{
 		"a changed type":  "type: x\nextends: record\nkind: record\nfields:\n  - {key: name, type: date}\n",
 		"a widened shape": "type: x\nextends: day\nkind: record\nfields:\n  - {key: date, shape: span}\n",
-		"new options":     "type: x\nextends: record\nkind: record\nfields:\n  - {key: name, suggest: true}\n",
+		"new options":     "type: x\nextends: record\nkind: record\nfields:\n  - {key: name, type: select, options: [a]}\n",
 		"no parent":       "type: x\nextends: nothing\nkind: record\n",
 		"no kind":         "type: x\nextends: record\n",
 		"a cycle":         "",
@@ -127,5 +127,49 @@ func TestValueNamesAreChecked(t *testing.T) {
 	tpl, err := ParseTemplate([]byte("type: x\nkind: record\nfields:\n  - key: owner\n    required: true\n  - key: country\n    type: country\n    required: true\n  - key: a\n    type: select\n    values: {g: [b]}\n    names: {en: {b: c}}\n"))
 	if err != nil || tpl.Fields[2].ValueName("b", "en") != "c" {
 		t.Fatalf("%v %+v", err, tpl)
+	}
+}
+
+// A text field that suggests may list options, offered before the values
+// saved; any other value is still taken. Without suggest, options belong
+// to a select field.
+func TestSuggestingTextFieldTakesOptions(t *testing.T) {
+	child := "type: x\nextends: record\nkind: record\nfields:\n  - {key: driver, suggest: true, options: [alice, bob]}\n"
+	templates, err := parseAll(t, recordBase, child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var x Template
+	for _, tpl := range templates {
+		if tpl.Type == "x" {
+			x = tpl
+		}
+	}
+	if fields, err := CleanFields(x, map[string]string{"owner": "alice", "driver": "carol"}); err != nil || fields["driver"] != "carol" {
+		t.Fatalf("a value not in the options: %v %v", fields, err)
+	}
+	plain := "type: x\nextends: record\nkind: record\nfields:\n  - {key: driver, options: [alice, bob]}\n"
+	if _, err := parseAll(t, recordBase, plain); err == nil {
+		t.Fatal("options on a text field that does not suggest were taken")
+	}
+}
+
+// An inherited text field may be given suggestions in a child: they offer
+// values and narrow none.
+func TestInheritedTextFieldTakesSuggestions(t *testing.T) {
+	child := "type: x\nextends: record\nkind: record\nfields:\n  - {key: name, suggest: true, options: [罚单, 处罚决定书]}\n"
+	templates, err := parseAll(t, recordBase, child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tpl := range templates {
+		if tpl.Type != "x" {
+			continue
+		}
+		for _, f := range tpl.Fields {
+			if f.Key == "name" && (!f.Suggest || len(f.Options) != 2) {
+				t.Fatalf("suggestions not taken: %+v", f)
+			}
+		}
 	}
 }
