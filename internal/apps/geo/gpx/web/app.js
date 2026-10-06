@@ -13,7 +13,7 @@ import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { CHEVRON, DIAMOND, DIAMOND_OPEN, FOLDER } from "./icons.js";
-import { EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, SCISSORS, MAP_PIN_PLUS, SPLIT, CHEVRON_UP, CHEVRON_DOWN, ROTATE_CCW, ROTATE_CW, MAXIMIZE, ROWS_2, COLUMNS_2, CHEVRON_LEFT, CHEVRON_RIGHT } from "/ui/icons.js";
+import { EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, SCISSORS, MAP_PIN_PLUS, SPLIT, CHEVRON_UP, CHEVRON_DOWN, ROTATE_CCW, ROTATE_CW, MAXIMIZE, ROWS_2, COLUMNS_2, CHEVRON_LEFT, CHEVRON_RIGHT, TRIANGLE_RIGHT } from "/ui/icons.js";
 import { RoutePlanner } from "./route.js";
 import { UI_SCALE, uiPx } from "./density.js";
 import { waypointDialog } from "./dialog.js";
@@ -2304,8 +2304,7 @@ function bindCharts(saved) {
 
 // ---- folding the panels away ----
 //
-// The map carries each panel control at the adjoining edge, in the same
-// position for hiding and restoring it. *Map only* folds every panel away at once and
+// Splitter grips fold each panel; a matching edge tab restores it. *Map only* folds every panel away at once and
 // remembers what was open, so pressing it again puts the page back as it was.
 
 function applyPanels() {
@@ -2353,7 +2352,11 @@ function setMapOnly(on) {
 }
 
 function bindPanels(saved) {
-  for (const [id, icon] of [["hide-workspace", CHEVRON_LEFT], ["show-workspace", CHEVRON_RIGHT], ["hide-inspector", CHEVRON_RIGHT], ["show-inspector", CHEVRON_LEFT], ["hide-profile", CHEVRON_DOWN], ["show-profile", CHEVRON_UP]]) $(id).innerHTML = icon;
+  for (const id of ["hide-workspace", "show-workspace", "hide-inspector", "show-inspector", "hide-profile", "show-profile"]) {
+    const control = $(id);
+    control.innerHTML = TRIANGLE_RIGHT;
+    for (const type of ["pointerdown", "dblclick", "keydown"]) control.addEventListener(type, event => event.stopPropagation());
+  }
   if (saved && typeof saved === "object") {
     for (const name of ["sidebar", "profile", "inspector"]) state.hidden[name] = saved[name] === true;
   }

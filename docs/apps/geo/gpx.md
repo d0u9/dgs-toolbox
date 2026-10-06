@@ -1114,4 +1114,4 @@ File disclosures use a filled leading triangle. File action icons form a compact
 
 Map action controls share the navigation controls’ white stacked groups, compact square buttons, separators, dark icons and subtle outline. Selected tools retain a blue state.
 
-Panel fold and restore controls use bundled Lucide chevrons. Both states stay on the map side, centered on the adjoining left, right or bottom boundary; the chevron points in the panel movement direction.
+Panel folding uses a filled triangle grip centered on each resize divider. Clicking the grip folds the panel without starting a resize; a flush tab at the same map boundary restores it. The triangle points in the panel movement direction.

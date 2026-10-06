@@ -723,14 +723,16 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .cut-actions .text-button, .cut-actions .button, .cut-actions select { min-height: 22px; height: 22px; font-size: 12px; padding: 0 6px; }
 .cut-actions .cut-tools { gap: 4px; }
 
-/* Panel controls stay on the map side of each adjoining boundary. */
-.panel-hide, .panel-show { position: absolute; z-index: 5; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border-radius: 4px; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
-.panel-hide.left, .panel-show.left { left: 6px; top: 50%; transform: translateY(-50%); }
-.panel-hide.right, .panel-show.right { right: 6px; top: 50%; transform: translateY(-50%); }
-.panel-hide.bottom, .panel-show.bottom { left: 50%; bottom: 6px; transform: translateX(-50%); }
-.panel-hide svg, .panel-show svg { width: 14px; height: 14px; }
+/* Triangle grips belong to the divider, not to map navigation. */
+.panel-hide, .panel-show { position: absolute; z-index: 7; display: grid; place-items: center; padding: 0; border: 1px solid var(--hairline-strong); border-radius: 2px; background: var(--paper); color: var(--graphite); box-shadow: none; cursor: pointer; }
+.panel-hide.left, .panel-hide.right { width: 12px; height: 30px; top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); }
+.panel-hide.bottom { width: 30px; height: 12px; left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%); }
+.panel-show.left, .panel-show.right { width: 12px; height: 30px; top: 50%; transform: translateY(-50%); }
+.panel-show.left { left: 0; }
+.panel-show.right { right: 0; }
+.panel-show.bottom { width: 30px; height: 12px; left: 50%; bottom: 0; transform: translateX(-50%); }
+.panel-hide svg, .panel-show svg { width: 10px; height: 10px; }
+.panel-hide.left svg, .panel-show.right svg { transform: rotate(180deg); }
+.panel-hide.bottom svg { transform: rotate(90deg); }
+.panel-show.bottom svg { transform: rotate(-90deg); }
 .panel-hide[hidden], .panel-show[hidden] { display: none; }
-
-/* Reserve the edge lane so fold buttons never cover map tools. */
-.map-tools, .map-button { left: 34px; }
-.maplibregl-ctrl-top-right .maplibregl-ctrl { margin-right: 34px; }
