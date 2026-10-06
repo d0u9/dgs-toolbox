@@ -392,7 +392,8 @@ test('fine traces keep opaque opposing borders and distinguish every selection s
     const [edge,casing,core]=[...ids].map(id=>layers.get(id).paint);
     assert.equal(edge['line-color'],'#17212b');assert.equal(casing['line-color'],'#ffffff');
     assert.ok(edge['line-width']>casing['line-width']);assert.ok(casing['line-width']>core['line-width']);
-    assert.ok(edge['line-width']<5);assert.ok(core['line-width']<3);
+    assert.ok(edge['line-width']<=5.2);assert.ok(core['line-width']>=2.6);
+    assert.ok(core['line-width']/edge['line-width']>=0.6);
     for(const paint of [edge,casing,core]){
       assert.equal(paint['line-opacity'],1);
       assert.ok(Math.abs(paint['line-width']*paint['line-dasharray'][0]-7)<1e-9);
