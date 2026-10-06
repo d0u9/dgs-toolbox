@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,7 +115,7 @@ func TestMergeMatchesAndAdds(t *testing.T) {
 	put(t, sub, tree.Item{ID: "S1", Type: "passport", Kind: tree.KindDocument, Fields: map[string]string{"owner": "EMMA"}, Notes: "renewed in Sydney", Tags: []string{"travel"}, SharedWith: []string{"amy", "tom", "emma"}, Frequent: true, Retired: true, RetiredReason: "moved"}, "new passport")
 	put(t, sub, tree.Item{ID: "S2", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "emma"}}, "bill 1")
 	put(t, sub, tree.Item{ID: "S3", Type: "bill", Kind: tree.KindRecord, Fields: map[string]string{"owner": "tom"}}, "bill 2")
-	if err := outline.Save(sub, "", outline.Outline{Name: "all", Rules: []view.View{{Name: "all", Node: view.Node{Selection: view.Head, File: "{owner}/{type}.{ext}"}}}}); err != nil {
+	if err := outline.Save(sub, "", outline.Outline{Name: "all", Rules: []view.View{{Name: "all", Node: view.Node{Selection: view.Head, File: "{owner}/{type}.{ext}"}}}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -331,8 +332,8 @@ func TestNewOutlineChangingASharedRuleIsAConflict(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(outline.Save(full, "", outline.Outline{Name: "phone", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "{owner}.{ext}"}}}}))
-	must(outline.Save(sub, "", outline.Outline{Name: "kindle", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "ids/{owner}.{ext}"}}}}))
+	must(outline.Save(full, "", outline.Outline{Name: "phone", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "{owner}.{ext}"}}}}, time.Now()))
+	must(outline.Save(sub, "", outline.Outline{Name: "kindle", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "ids/{owner}.{ext}"}}}}, time.Now()))
 	p := plan(t, full, source(t, sub))
 	if len(p.Outlines) != 0 || len(p.Conflicts) != 1 || p.Conflicts[0].ID != "outline:kindle" {
 		t.Fatalf("plan: %+v", p)
@@ -348,7 +349,7 @@ func TestMergeCopiesArchivedOriginal(t *testing.T) {
 	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
 	item.Revisions[0].Originals = []tree.Original{original}
 	item.Revisions[0].SourceDigests = []string{original.Digest}
-	if err := os.WriteFile(tree.OriginalPath(srcRoot, item.ID, original), data, 0600); err != nil {
+	if err := os.WriteFile(tree.OriginalPath(srcRoot, item, item.Revisions[0].Digest, original), data, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := tree.WriteItem(srcRoot, item); err != nil {
@@ -365,7 +366,7 @@ func TestMergeCopiesArchivedOriginal(t *testing.T) {
 	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	actual, err := os.ReadFile(tree.OriginalPath(dest, item.ID, original))
+	actual, err := os.ReadFile(tree.OriginalPath(dest, item, item.Revisions[0].Digest, original))
 	if err != nil || string(actual) != string(data) {
 		t.Fatalf("original: %v", err)
 	}
@@ -391,7 +392,7 @@ func TestMergeOriginalOnExistingRevision(t *testing.T) {
 	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
 	item.Revisions[0].Originals = []tree.Original{original}
 	item.Revisions[0].SourceDigests = []string{original.Digest}
-	os.WriteFile(tree.OriginalPath(sourceRoot, item.ID, original), input, 0600)
+	os.WriteFile(tree.OriginalPath(sourceRoot, item, item.Revisions[0].Digest, original), input, 0600)
 	tree.WriteItem(sourceRoot, item)
 	src, err = FromTree(sourceRoot)
 	if err != nil {
@@ -404,7 +405,7 @@ func TestMergeOriginalOnExistingRevision(t *testing.T) {
 	if _, err := Apply(context.Background(), dest, src, plan, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(tree.OriginalPath(dest, item.ID, original)); err != nil {
+	if _, err := os.Stat(tree.OriginalPath(dest, item, item.Revisions[0].Digest, original)); err != nil {
 		t.Fatal("merge silently omitted original on existing revision")
 	}
 }
@@ -433,7 +434,7 @@ func TestMergeSourceAliasesPreservesTargetOriginal(t *testing.T) {
 	original := tree.Original{Digest: hex.EncodeToString(sum[:]), Extension: ".png"}
 	target.Revisions[0].Originals = []tree.Original{original}
 	target.Revisions[0].SourceDigests = []string{original.Digest}
-	os.WriteFile(tree.OriginalPath(dest, item.ID, original), data, 0600)
+	os.WriteFile(tree.OriginalPath(dest, item, item.Revisions[0].Digest, original), data, 0600)
 	tree.WriteItem(dest, target)
 	alias := sha256.Sum256([]byte("synthetic alternative input"))
 	item.Revisions[0].SourceDigests = []string{hex.EncodeToString(alias[:])}
@@ -455,5 +456,49 @@ func TestMergeSourceAliasesPreservesTargetOriginal(t *testing.T) {
 	}
 	if len(target.Revisions[0].Originals) == 0 || target.Revisions[0].Originals[0] != original || len(target.Revisions[0].SourceDigests) != 2 {
 		t.Fatal("merge dropped original or alternative input")
+	}
+}
+
+func TestChoosingTheirsForNewAndExistingOutlines(t *testing.T) {
+	for _, sameName := range []bool{false, true} {
+		t.Run(fmt.Sprint(sameName), func(t *testing.T) {
+			full, sub := newTree(t, passport), newTree(t, passport)
+			name := "bob"
+			if sameName {
+				name = "alice"
+			}
+			ours := outline.Outline{Name: "alice", Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "{owner}.{ext}"}}}}
+			theirs := outline.Outline{Name: name, Rules: []view.View{{Name: "ids", Node: view.Node{Selection: view.Head, File: "ids/{owner}.{ext}"}}}}
+			if err := outline.Save(full, "", ours, now); err != nil {
+				t.Fatal(err)
+			}
+			if err := outline.Save(sub, "", theirs, now); err != nil {
+				t.Fatal(err)
+			}
+			src := source(t, sub)
+			p := plan(t, full, src)
+			if len(p.Conflicts) != 1 {
+				t.Fatalf("plan: %+v", p)
+			}
+			if _, err := Apply(context.Background(), full, src, p, map[string]string{p.Conflicts[0].ID: Theirs}, now); err != nil {
+				t.Fatal(err)
+			}
+			outlines, err := outline.Load(full)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, o := range outlines {
+				if o.Name == name {
+					found = true
+					if o.Rules[0].File != "ids/{owner}.{ext}" {
+						t.Fatalf("%+v", o)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("chosen Outline missing")
+			}
+		})
 	}
 }

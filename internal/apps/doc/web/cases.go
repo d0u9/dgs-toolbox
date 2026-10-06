@@ -24,7 +24,7 @@ func (s server) caseList(w http.ResponseWriter, _ *http.Request) {
 		Cases []caseJSON `json:"cases"`
 		Error string     `json:"error,omitempty"`
 	}{Cases: []caseJSON{}}
-	all, err := cases.Load(s.root)
+	all, err := cases.ForStore(s.documents).Load()
 	if err != nil {
 		out.Error = err.Error()
 	}
@@ -41,15 +41,16 @@ func (s server) caseList(w http.ResponseWriter, _ *http.Request) {
 
 // caseChange is one change to a Case, named by Op.
 type caseChange struct {
-	Name   string `json:"name"`
-	Op     string `json:"op"`
-	Title  string `json:"title"`
-	Notes  string `json:"notes"`
-	Layout string `json:"layout"`
-	Item   string `json:"item"`
-	Note   string `json:"note"`
-	Text   string `json:"text"`
-	Need   int    `json:"need"`
+	Name     string `json:"name"`
+	Previous string `json:"previous"`
+	Op       string `json:"op"`
+	Title    string `json:"title"`
+	Notes    string `json:"notes"`
+	Layout   string `json:"layout"`
+	Item     string `json:"item"`
+	Note     string `json:"note"`
+	Text     string `json:"text"`
+	Need     int    `json:"need"`
 }
 
 // caseChange reads the Case, changes it and writes it back. An Item put in
@@ -61,7 +62,7 @@ func (s server) caseChange(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	if err := tree.Require(s.root); err != nil {
+	if err := s.documents.Require(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
@@ -69,20 +70,16 @@ func (s server) caseChange(w http.ResponseWriter, r *http.Request) {
 	if request.Op == "new" {
 		c, err := cases.New(request.Name, request.Title, now)
 		if err == nil {
-			err = cases.Save(s.root, c, true)
+			err = cases.ForStore(s.documents).Save(c, true)
 		}
 		s.answerCase(w, c, err)
 		return
 	}
-	if request.Op == "delete" {
-		if _, err := cases.Trash(s.root, request.Name, now); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{})
-		return
+	previous := request.Name
+	if request.Previous != "" {
+		previous = request.Previous
 	}
-	c, err := cases.Find(s.root, request.Name)
+	c, err := cases.ForStore(s.documents).Find(previous)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
@@ -107,6 +104,7 @@ func (s server) caseChange(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		c.Title, c.Notes, c.Layout = request.Title, request.Notes, request.Layout
+		c.Name = request.Name
 	case "add":
 		if err = known(request.Item); err == nil {
 			err = c.Add(request.Item, request.Note, now)
@@ -129,7 +127,7 @@ func (s server) caseChange(w http.ResponseWriter, r *http.Request) {
 		err = errors.New("no change " + request.Op)
 	}
 	if err == nil {
-		err = cases.Save(s.root, c, false)
+		err = cases.ForStore(s.documents).SaveAs(previous, c, now)
 	}
 	s.answerCase(w, c, err)
 }
@@ -148,8 +146,9 @@ func (s server) answerCase(w http.ResponseWriter, c cases.Case, err error) {
 }
 
 type caseExportRequest struct {
-	Name   string `json:"name"`
-	Folder string `json:"folder"`
+	Name     string `json:"name"`
+	Previous string `json:"previous"`
+	Folder   string `json:"folder"`
 }
 
 // casePlan is what exporting a Case into a folder would do: its Items, at
@@ -160,7 +159,11 @@ func (s server) casePlan(ctx context.Context, request caseExportRequest) (export
 	if !filepath.IsAbs(request.Folder) {
 		return out, nil, http.StatusBadRequest, errors.New("the folder to export to must be an absolute path")
 	}
-	c, err := cases.Find(s.root, request.Name)
+	previous := request.Name
+	if request.Previous != "" {
+		previous = request.Previous
+	}
+	c, err := cases.ForStore(s.documents).Find(previous)
 	if err != nil {
 		return out, nil, http.StatusNotFound, err
 	}
@@ -176,7 +179,7 @@ func (s server) casePlan(ctx context.Context, request caseExportRequest) (export
 		out.Problems = append(out.Problems, "the Case has no Items to export")
 	}
 	jobs := []export.Job{{Path: filepath.Clean(request.Folder), Views: []view.View{c.View()}}}
-	if out.Jobs, err = export.PlanJobs(ctx, s.root, jobs, items); err != nil {
+	if out.Jobs, err = export.ForStore(s.documents).PlanJobs(ctx, jobs, items); err != nil {
 		return out, nil, http.StatusConflict, err
 	}
 	export.AgainstOthers(out.Jobs, Others(s.trees, s.root))

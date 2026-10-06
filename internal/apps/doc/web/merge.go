@@ -56,7 +56,7 @@ func (s server) mergePlan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	plan, err := merge.Compute(s.root, src)
+	plan, err := merge.ForStore(s.documents).Compute(src)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -79,12 +79,12 @@ func (s server) mergeRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	plan, err := merge.Compute(s.root, src)
+	plan, err := merge.ForStore(s.documents).Compute(src)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	result, err := merge.Apply(context.WithoutCancel(r.Context()), s.root, src, plan, request.Choices, s.now())
+	result, err := merge.ForStore(s.documents).Apply(context.WithoutCancel(r.Context()), src, plan, request.Choices, s.now())
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "result": result})
 		return

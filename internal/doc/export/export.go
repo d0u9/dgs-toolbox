@@ -431,7 +431,7 @@ func removeOwned(ctx context.Context, target, rel, digest string) error {
 
 func publish(ctx context.Context, root, target string, a Action) error {
 	result, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{
-		Source:      tree.PDFPath(root, a.Item, a.Digest),
+		Source:      tree.At(root).PDF(tree.Item{ID: a.Item}, a.Digest),
 		Destination: filepath.Join(target, filepath.FromSlash(a.Path)),
 	})
 	if err != nil {

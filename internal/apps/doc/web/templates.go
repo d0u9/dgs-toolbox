@@ -2,7 +2,6 @@ package web
 
 import (
 	"net/http"
-	"os"
 
 	"dgs-toolbox/internal/doc/tree"
 )
@@ -21,7 +20,7 @@ type templateEntry struct {
 // templateList answers every Template as its file is written, and how many
 // Items use it.
 func (s server) templateList(w http.ResponseWriter, r *http.Request) {
-	templates, err := tree.LoadAllTemplates(s.root)
+	templates, err := s.documents.LoadAllTemplates()
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -37,7 +36,7 @@ func (s server) templateList(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []templateEntry{}
 	for _, t := range templates {
-		data, err := os.ReadFile(tree.TemplatePath(s.root, t.Type))
+		data, err := s.documents.DefinitionBytes(tree.TemplatesDir, t.Type)
 		if err != nil {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
@@ -57,7 +56,7 @@ func (s server) templateSave(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	t, err := tree.SaveTemplate(s.root, request.Previous, []byte(request.Data), s.now())
+	t, err := s.documents.SaveTemplate(request.Previous, []byte(request.Data), s.now())
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -67,14 +66,14 @@ func (s server) templateSave(w http.ResponseWriter, r *http.Request) {
 
 func (s server) templateDelete(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Type string `json:"type"`
+		Name string `json:"name"`
 	}
 	if !decode(w, r, &request) {
 		return
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	to, err := tree.TrashTemplate(s.root, request.Type, s.now())
+	to, err := s.documents.TrashTemplate(request.Name, s.now())
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return

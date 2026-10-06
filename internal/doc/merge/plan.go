@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"sort"
@@ -404,13 +403,21 @@ func Apply(ctx context.Context, root string, src Source, plan Plan, choices map[
 		}
 	}
 	for _, name := range writeTemplates {
-		if err := writeFile(filepath.Join(root, tree.TemplatesDir, name+".yaml"), srcTemplates[name].Data); err != nil {
+		if err := tree.At(root).WriteDefinition(tree.TemplatesDir, name, srcTemplates[name].Data); err != nil {
 			return result, err
 		}
 		result.Templates++
 	}
 	for _, name := range writeOutlines {
-		if err := outline.Save(root, "", srcOutlines[name]); err != nil {
+		previous := ""
+		exists, err := tree.At(root).DefinitionExists(outline.Dir, name)
+		if err != nil {
+			return result, err
+		}
+		if exists {
+			previous = name
+		}
+		if err := outline.Save(root, previous, srcOutlines[name], now); err != nil {
 			return result, err
 		}
 		result.Outlines++
@@ -600,19 +607,10 @@ func copyPDF(ctx context.Context, from, to, digest string, result *Result) error
 	return nil
 }
 
-// writeFile replaces path through a temporary file and a rename.
-func writeFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp := path + verifiedcopy.PartSuffix
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
 func copyRevision(ctx context.Context, src Source, item tree.Item, root, target, ref string, result *Result) error {
+	// placed is the Item as the destination keeps it, under its ID there.
+	placed := item
+	placed.ID = target
 	for _, r := range item.Revisions {
 		if r.Ref() != ref {
 			continue
@@ -632,11 +630,11 @@ func copyRevision(ctx context.Context, src Source, item tree.Item, root, target,
 			return err
 		}
 		for n, o := range r.Originals {
-			from, to := src.Original(item.ID, o), tree.OriginalPath(root, target, o)
+			from, to := src.Original(item, r.Digest, o), tree.At(root).OriginalPath(placed, r.Digest, o)
 			// Keep the target's extension alias when this snapshot already
 			// archives the same bytes (for example .jpg versus .jpeg).
 			if n < len(kept) && kept[n].Digest == o.Digest {
-				to = tree.OriginalPath(root, target, kept[n])
+				to = tree.At(root).OriginalPath(placed, r.Digest, kept[n])
 			}
 			if from == "" || to == "" {
 				return fmt.Errorf("invalid original image reference")
@@ -645,7 +643,7 @@ func copyRevision(ctx context.Context, src Source, item tree.Item, root, target,
 				return err
 			}
 		}
-		return copyPDF(ctx, src.PDF(item.ID, r.Digest), tree.PDFPath(root, target, r.Digest), r.Digest, result)
+		return copyPDF(ctx, src.PDF(item, r.Digest), tree.At(root).PDF(placed, r.Digest), r.Digest, result)
 	}
 	return fmt.Errorf("no revision %s", ref)
 }

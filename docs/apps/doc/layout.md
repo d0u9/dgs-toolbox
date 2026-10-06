@@ -181,7 +181,15 @@ layout.Layout                  computes paths from plain values; touches no disk
 // writing and renaming stay in package tree.
 package layout
 
-// A Layout places an Item's files under a tree's root.
+// An Item is what a layout needs of one: its ID and, for each PDF digest,
+// the fields of the newest snapshot holding it. tree.Placing builds it.
+type Item struct {
+	ID     string
+	Fields map[string]map[string]string
+}
+
+// A Layout places an Item's files under a tree's root. Every path is
+// relative to the root.
 type Layout interface {
 	// Sidecar is where the Item's sidecar is.
 	Sidecar(id string) string
@@ -190,7 +198,7 @@ type Layout interface {
 	// Image is where an original page image of that PDF belongs.
 	Image(item Item, pdf, image, ext string) string
 	// Sidecars lists every sidecar in the tree.
-	Sidecars(root string) ([]string, error)
+	Sidecars(tree fs.FS) ([]string, error)
 	// Moves are the renames that take before's files to where after places
 	// them. By Item, there are never any.
 	Moves(before, after Item) []Move
@@ -202,6 +210,12 @@ type Layout interface {
 // A Move renames one file, both paths relative to the root.
 type Move struct{ From, To string }
 
+// Folders is a Layout that gives every Item a folder of its own, holding all
+// its files and nothing else's. Deleting such an Item moves the folder whole.
+type Folders interface {
+	Folder(id string) string
+}
+
 // Open reads the layout from a tree's marker: by Item when it names none.
 func Open(root string, m Marker) (Layout, error)
 ```
@@ -212,7 +226,14 @@ func Open(root string, m Marker) (Layout, error)
   comparing the places of before and after.
 - **`layout` is plain computation.** It takes values and returns paths, so it
   is tested with constructed Items and no filesystem, as AGENTS.md asks of a
-  domain package.
+  domain package. Listing sidecars reads an `fs.FS`, which a test builds in
+  memory.
+- **An Item folder is optional.** By Item is also `Folders`; a layout built
+  from fields is not. Deleting an Item moves its folder whole only where there
+  is one; a tree without Item folders refuses deletion until step 2 moves an
+  Item's files one by one. `check` walks the tree for loose PDFs through
+  `Owned`, and reports an Item folder without its sidecar only where the
+  layout has folders.
 - **`tree` is the only package that touches files.** It writes sidecars,
   imports, applies `Moves` one rename at a time with the put-back of
   [Moves](#moves), and moves to the trash.
@@ -222,11 +243,12 @@ func Open(root string, m Marker) (Layout, error)
 
 ## Plan
 
-1. **Refactor, no change in behaviour.** Add `layout` with `byItem` only and
+1. **Done — refactor, no layout change.** Add `layout` with `byItem` only and
    route all 25 places through the Store, the web handlers included (see
    [Web API](api.md#plan)), and Templates, Outlines, rules, Snapshots and Cases
-   through one store for definitions (see [Definitions](definitions.md#plan)). Existing trees and every existing
-   test stay as they are; the step is done when they pass unchanged.
+   through one store for definitions (see [Definitions](definitions.md#plan)). Existing tree layouts and file formats stay as they are. Storage regression
+   tests pass; definition name checks and the web routes follow the completed
+   Definitions and Web API steps.
 2. **Add by fields.** `byFields`, the marker's `layout`, `{digest:N}`, moves,
    status and put-back, each with tests built on constructed trees.
 

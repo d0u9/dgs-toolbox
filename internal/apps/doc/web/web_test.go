@@ -118,7 +118,7 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 	if len(item.Tags) != 1 || item.Tags[0] != "travel-plans" {
 		t.Fatalf("import tags = %v", item.Tags)
 	}
-	if rec := do(h, "POST", "/api/tags", `{"item":"`+item.ID+`","tags":["Visa","visa"]}`); rec.Code != http.StatusOK {
+	if rec := do(h, "POST", "/api/items/meta", `{"item":"`+item.ID+`","tags":["Visa","visa"]}`); rec.Code != http.StatusOK {
 		t.Fatalf("tags: %d %s", rec.Code, rec.Body.String())
 	}
 	item = state(t, h).Items[0]
@@ -140,7 +140,7 @@ func TestImportRevisionHeadAndFields(t *testing.T) {
 	if rev := item.Revisions[1]; len(rev.Tags) != 1 || rev.Tags[0] != "reissued" || strings.Join(item.Revisions[0].Tags, ",") != "travel-plans" {
 		t.Fatalf("revision tags: %+v", item.Revisions)
 	}
-	if rec := do(h, "POST", "/api/revision-tags", `{"item":"`+item.ID+`","digest":"`+first+`","tags":["Original"]}`); rec.Code != http.StatusOK {
+	if rec := do(h, "POST", "/api/items/meta", `{"item":"`+item.ID+`","digest":"`+first+`","revision_tags":["Original"]}`); rec.Code != http.StatusOK {
 		t.Fatalf("revision tags: %d %s", rec.Code, rec.Body.String())
 	}
 	if item = state(t, h).Items[0]; len(item.Revisions[0].Tags) != 1 || item.Revisions[0].Tags[0] != "original" {
@@ -213,7 +213,7 @@ func TestFrequentAndLog(t *testing.T) {
 		}
 	}
 	id := state(t, h).Items[0].ID
-	if rec := do(h, "POST", "/api/frequent", `{"item":"`+id+`","frequent":true}`); rec.Code != http.StatusOK {
+	if rec := do(h, "POST", "/api/items/meta", `{"item":"`+id+`","frequent":true}`); rec.Code != http.StatusOK {
 		t.Fatalf("frequent: %d %s", rec.Code, rec.Body.String())
 	}
 	for _, item := range state(t, h).Items {
@@ -221,13 +221,13 @@ func TestFrequentAndLog(t *testing.T) {
 			t.Fatalf("frequent: %+v", item)
 		}
 	}
-	if rec := do(h, "POST", "/api/retired", `{"item":"`+id+`","retired":true,"reason":"left"}`); rec.Code != http.StatusOK {
+	if rec := do(h, "POST", "/api/items/meta", `{"item":"`+id+`","retired":true,"reason":"left"}`); rec.Code != http.StatusOK {
 		t.Fatalf("retired: %d %s", rec.Code, rec.Body.String())
 	}
 	if item := state(t, h).Items[0]; !item.Retired || item.RetiredReason != "left" {
 		t.Fatalf("retired: %+v", item)
 	}
-	do(h, "POST", "/api/retired", `{"item":"`+id+`","retired":false}`)
+	do(h, "POST", "/api/items/meta", `{"item":"`+id+`","retired":false}`)
 	var log struct{ Entries []tree.LogEntry }
 	if err := json.Unmarshal(do(h, "GET", "/api/history", "").Body.Bytes(), &log); err != nil {
 		t.Fatal(err)
@@ -345,12 +345,12 @@ func TestNotes(t *testing.T) {
 	h := Handler(Settings{Root: root})
 	rec := do(h, "POST", "/api/import", `{"dir":`+q(scans)+`,"path":"emma/licence.pdf","type":"id_card","fields":{"owner":"emma","country":"AU"}}`)
 	var item tree.Item
-	must(t, json.Unmarshal(rec.Body.Bytes(), &item))
-	rec = do(h, "POST", "/api/notes", `{"item":"`+item.ID+`","notes":" kept for the visa "}`)
+	must(t, unmarshalItem(rec.Body.Bytes(), &item))
+	rec = do(h, "POST", "/api/items/meta", `{"item":"`+item.ID+`","notes":" kept for the visa "}`)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"notes":"kept for the visa"`) {
 		t.Fatal(rec.Body.String())
 	}
-	if do(h, "POST", "/api/notes", `{"item":"NOPE","notes":"x"}`).Code != http.StatusNotFound {
+	if do(h, "POST", "/api/items/meta", `{"item":"NOPE","notes":"x"}`).Code != http.StatusNotFound {
 		t.Fatal("notes on a missing Item")
 	}
 }
@@ -393,11 +393,11 @@ func TestCasesAndTheirExport(t *testing.T) {
 		`{"op":"need","name":"lease","text":"photo ID"}`,
 		`{"op":"meet","name":"lease","need":0,"item":"` + id + `"}`,
 	} {
-		if rec := do(h, "POST", "/api/cases/change", change); rec.Code != 200 {
+		if rec := do(h, "POST", "/api/defs/cases", change); rec.Code != 200 {
 			t.Fatalf("%s: %s", change, rec.Body.String())
 		}
 	}
-	if rec := do(h, "POST", "/api/cases/change", `{"op":"add","name":"lease","item":"NOPE"}`); rec.Code != 400 {
+	if rec := do(h, "POST", "/api/defs/cases", `{"op":"add","name":"lease","item":"NOPE"}`); rec.Code != 400 {
 		t.Fatal("an Item the tree lacks went in")
 	}
 	out := t.TempDir()
@@ -411,13 +411,13 @@ func TestCasesAndTheirExport(t *testing.T) {
 	if data, err := os.ReadFile(filepath.Join(out, "id_card.pdf")); err != nil || string(data) != "%PDF-1.4 x" {
 		t.Fatalf("exported: %q %v", data, err)
 	}
-	if rec := do(h, "POST", "/api/cases/change", `{"op":"archive","name":"lease"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"digest":`) {
+	if rec := do(h, "POST", "/api/defs/cases", `{"op":"archive","name":"lease"}`); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"digest":`) {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/cases/change", `{"op":"remove","name":"lease","item":"`+id+`"}`); rec.Code != 400 {
+	if rec := do(h, "POST", "/api/defs/cases", `{"op":"remove","name":"lease","item":"`+id+`"}`); rec.Code != 400 {
 		t.Fatal("an archived Case changed")
 	}
-	if rec := do(h, "POST", "/api/cases/change", `{"op":"delete","name":"lease"}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/defs/cases/trash", `{"name":"lease"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
 	if matches, _ := filepath.Glob(filepath.Join(root, "trash", "cases", "lease-*.yaml")); len(matches) != 1 {
@@ -454,7 +454,7 @@ func TestCreateWithoutPDFAndAttach(t *testing.T) {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
 	}
 	var item tree.Item
-	must(t, json.Unmarshal(rec.Body.Bytes(), &item))
+	must(t, unmarshalItem(rec.Body.Bytes(), &item))
 	ref := item.Current()
 	if ref == "" || item.CurrentDigest() != "" {
 		t.Fatalf("item: %+v", item)
@@ -467,7 +467,7 @@ func TestCreateWithoutPDFAndAttach(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("attach: %d %s", rec.Code, rec.Body.String())
 	}
-	must(t, json.Unmarshal(rec.Body.Bytes(), &item))
+	must(t, unmarshalItem(rec.Body.Bytes(), &item))
 	if len(item.Revisions) != 2 || item.Current() == ref || item.CurrentDigest() == "" {
 		t.Fatalf("attached: %+v", item)
 	}
@@ -479,7 +479,7 @@ func TestCreateWithoutPDFAndAttach(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("renew: %d %s", rec.Code, rec.Body.String())
 	}
-	must(t, json.Unmarshal(rec.Body.Bytes(), &item))
+	must(t, unmarshalItem(rec.Body.Bytes(), &item))
 	if len(item.Revisions) != 2 || item.Current() != ref || item.CurrentDigest() != "" {
 		t.Fatalf("renewed: %+v", item)
 	}
@@ -504,18 +504,18 @@ func TestOutlinesGroupSaveDelete(t *testing.T) {
 		!strings.Contains(why.Body.String(), `{owner}  owner = \"emma\"`) {
 		t.Fatal(why.Body.String())
 	}
-	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/defs/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
 	var list outlinesJSON
-	must(t, json.Unmarshal(do(h, "GET", "/api/outlines", "").Body.Bytes(), &list))
+	must(t, json.Unmarshal(do(h, "GET", "/api/defs/outlines", "").Body.Bytes(), &list))
 	if len(list.Outlines) != 1 || list.Outlines[0].Name != "people" || len(list.Outlines[0].Rules) != 2 || list.Keys[0] != "country" {
 		t.Fatalf("%+v", list)
 	}
-	if rec := do(h, "POST", "/api/outlines/delete", `{"name":"people"}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/defs/outlines/trash", `{"name":"people"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/outlines", `{"outline":{"name":"x","rules":[{"name":"r","file":"{owner#}"}]}}`); rec.Code != 400 {
+	if rec := do(h, "POST", "/api/defs/outlines", `{"outline":{"name":"x","rules":[{"name":"r","file":"{owner#}"}]}}`); rec.Code != 400 {
 		t.Fatal("bad outline saved")
 	}
 }
@@ -528,7 +528,7 @@ func TestOutlinesExportIntoTheirFolder(t *testing.T) {
 		t.Fatal(rec.Body.String())
 	}
 	o := `{"name":"phone","about":"read on the phone","rules":[{"name":"ids","file":"{owner}.{ext}"}]}`
-	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/defs/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
 	if rec := do(h, "POST", "/api/export/plan", `{"outlines":["phone"]}`); !strings.Contains(rec.Body.String(), "choose a folder") {
@@ -550,10 +550,10 @@ func TestSnapshotKeepsWhatWasTaken(t *testing.T) {
 	if rec := do(h, "POST", "/api/import", body); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","file":"{owner}.{ext}"}}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/defs/rules", `{"rule":{"name":"ids","file":"{owner}.{ext}"}}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","file":"x.{ext}"}}`); rec.Code == 200 {
+	if rec := do(h, "POST", "/api/defs/rules", `{"rule":{"name":"ids","file":"x.{ext}"}}`); rec.Code == 200 {
 		t.Fatal("a new rule replaced another")
 	}
 	if rec := do(h, "POST", "/api/snapshots/take", `{"rule":"ids","name":"visa"}`); rec.Code != 200 {
@@ -564,17 +564,17 @@ func TestSnapshotKeepsWhatWasTaken(t *testing.T) {
 	}
 	// The rule changes; the Snapshot still has emma.pdf at its top, put
 	// in the Outline's tree as the folder old/visa.
-	if rec := do(h, "POST", "/api/rules", `{"rule":{"name":"ids","file":"{country}/{owner}.{ext}"},"previous":"ids"}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/defs/rules", `{"rule":{"name":"ids","file":"{country}/{owner}.{ext}"},"previous":"ids"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
 	o := `{"name":"phone","rules":[{"name":"ids","file":"{country}/{owner}.{ext}"}],"snapshots":[{"name":"visa","at":"old"}]}`
-	if rec := do(h, "POST", "/api/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/defs/outlines", `{"outline":`+o+`}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
 	var list struct {
 		Snapshots []snapshotJSON `json:"snapshots"`
 	}
-	must(t, json.Unmarshal(do(h, "GET", "/api/snapshots", "").Body.Bytes(), &list))
+	must(t, json.Unmarshal(do(h, "GET", "/api/defs/snapshots", "").Body.Bytes(), &list))
 	if len(list.Snapshots) != 1 || list.Snapshots[0].Root.Count != 1 || list.Snapshots[0].Root.Files[0].Path != "emma.pdf" || list.Snapshots[0].Used[0] != "phone" {
 		t.Fatalf("%+v", list)
 	}
@@ -587,17 +587,17 @@ func TestSnapshotKeepsWhatWasTaken(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if rec := do(h, "POST", "/api/snapshots/delete", `{"name":"visa"}`); rec.Code == 200 {
+	if rec := do(h, "POST", "/api/defs/snapshots/trash", `{"name":"visa"}`); rec.Code == 200 {
 		t.Fatal("a Snapshot an Outline uses was deleted")
 	}
 	// Renamed, it is renamed in the Outline too.
 	list.Snapshots[0].Name = "visa-2026"
 	sn, _ := json.Marshal(list.Snapshots[0].Snapshot)
-	if rec := do(h, "POST", "/api/snapshots", `{"snapshot":`+string(sn)+`,"previous":"visa"}`); rec.Code != 200 {
+	if rec := do(h, "POST", "/api/defs/snapshots", `{"snapshot":`+string(sn)+`,"previous":"visa"}`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
 	var outlines outlinesJSON
-	must(t, json.Unmarshal(do(h, "GET", "/api/outlines", "").Body.Bytes(), &outlines))
+	must(t, json.Unmarshal(do(h, "GET", "/api/defs/outlines", "").Body.Bytes(), &outlines))
 	if outlines.Outlines[0].Snapshots[0].Name != "visa-2026" {
 		t.Fatalf("%+v", outlines.Outlines[0])
 	}
@@ -612,4 +612,16 @@ func TestRuleLayoutParses(t *testing.T) {
 	if rec := do(h, "POST", "/api/rules/layout", `{"layout":"{a"}`); rec.Code != 400 {
 		t.Fatal(rec.Body.String())
 	}
+}
+
+// unmarshalItem checks the common successful Item-change envelope.
+func unmarshalItem(data []byte, item *tree.Item) error {
+	var answer struct {
+		Item tree.Item `json:"item"`
+	}
+	if err := json.Unmarshal(data, &answer); err != nil {
+		return err
+	}
+	*item = answer.Item
+	return nil
 }

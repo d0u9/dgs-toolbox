@@ -166,7 +166,7 @@ function problems() {
 async function reload() {
   state = await loadState();
   frame(state);
-  const [answer, snaps] = await Promise.all([(await fetch(api("/api/outlines"))).json(), (await fetch(api("/api/snapshots"))).json()]);
+  const [answer, snaps] = await Promise.all([(await fetch(api("/api/defs/outlines"))).json(), (await fetch(api("/api/defs/snapshots"))).json()]);
   outlines = answer.outlines;
   rules = answer.rules || [];
   snapshots = snaps.snapshots || [];
@@ -180,7 +180,7 @@ $("form").addEventListener("submit", async (event) => {
   event.preventDefault();
   sync();
   try {
-    await post("/api/outlines", { outline: draft, previous: editing || "" });
+    await post("/api/defs/outlines", { outline: draft, previous: editing || "" });
     const name = draft.name;
     await reload();
     open(name);
@@ -197,7 +197,7 @@ $("new").onclick = () => leave() && open("");
 $("delete").onclick = async () => {
   if (!editing || !confirm("Delete the Outline " + editing + "? Its file under outlines/ is removed; its rules and Snapshots stay, no Item changes, and nothing exported is touched.")) return;
   try {
-    await post("/api/outlines/delete", { name: editing });
+    await post("/api/defs/outlines/trash", { name: editing });
     await reload();
     editing = null;
     open(outlines.length ? outlines[0].name : "");

@@ -35,19 +35,7 @@ func WriteChangeMark(root string) (string, error) {
 		return "", err
 	}
 	token := hex.EncodeToString(b[:])
-	temp, err := os.CreateTemp(root, ".changed-*.dgs-part")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(temp.Name())
-	if _, err := temp.WriteString(token + "\n"); err != nil {
-		temp.Close()
-		return "", err
-	}
-	if err := temp.Close(); err != nil {
-		return "", err
-	}
-	return token, os.Rename(temp.Name(), filepath.Join(root, ChangeMarkName))
+	return token, WriteFileAtomic(filepath.Join(root, ChangeMarkName), []byte(token+"\n"))
 }
 
 // LoadItem reads the Item id's sidecar; none there is nil and no error.

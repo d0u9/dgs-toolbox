@@ -22,7 +22,7 @@ const titleOf = (c) => c.title || c.name;
 async function load(wanted) {
   state = await loadState();
   frame(state);
-  const answer = await (await fetch(api("/api/cases"))).json();
+  const answer = await (await fetch(api("/api/defs/cases"))).json();
   cases = answer.cases;
   if (answer.error) { $("error").hidden = false; $("error").textContent = answer.error; }
   const name = wanted ?? decodeURIComponent(location.hash.slice(1));
@@ -80,7 +80,7 @@ $("new").addEventListener("click", () => { nameTouched = false; showNew(); });
 $("new-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const c = await post("/api/cases/change", { op: "new", name: $("new-name").value.trim(), title: $("new-title").value });
+    const c = await post("/api/defs/cases", { op: "new", name: $("new-name").value.trim(), title: $("new-title").value });
     await load(c.name);
   } catch (error) {
     say($("new-message"), error.message, true);
@@ -119,7 +119,7 @@ function show(c) {
 // change asks the server for one change and shows the Case it answers.
 async function change(request, done) {
   try {
-    const c = await post("/api/cases/change", { name: current.name, ...request });
+    const c = await post("/api/defs/cases", { name: current.name, ...request });
     cases = cases.map((x) => x.name === c.name ? c : x);
     show(c);
     if (done) say($("message"), done);
@@ -230,7 +230,7 @@ $("archive").addEventListener("click", () => {
 
 $("delete").addEventListener("click", async () => {
   try {
-    await post("/api/cases/change", { op: "delete", name: current.name });
+    await post("/api/defs/cases/trash", { name: current.name });
     await load("");
   } catch (error) {
     say($("message"), error.message, true);

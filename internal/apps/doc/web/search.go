@@ -76,7 +76,7 @@ func (s server) readAll(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	for _, item := range unread {
-		s.reader.Ahead(tree.PDFPath(s.root, item.ID, item.CurrentDigest()), item.CurrentDigest())
+		s.reader.Ahead(s.documents.PDF(item, item.CurrentDigest()), item.CurrentDigest())
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"queued": len(unread)})
 }

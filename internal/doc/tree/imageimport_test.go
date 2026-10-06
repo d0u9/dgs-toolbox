@@ -47,7 +47,7 @@ func TestImageImportRetentionAndDuplicate(t *testing.T) {
 				t.Fatalf("revision: %+v", rev)
 			}
 			if keep {
-				original, err := os.ReadFile(OriginalPath(root, item.ID, rev.Originals[0]))
+				original, err := os.ReadFile(OriginalPath(root, item, rev.Digest, rev.Originals[0]))
 				if err != nil || !bytes.Equal(original, data) {
 					t.Fatalf("original: %v", err)
 				}
@@ -84,7 +84,7 @@ func TestImageRevisionAndTrashPreserveOriginal(t *testing.T) {
 	if len(rev.Originals) == 0 {
 		t.Fatal("revision original missing")
 	}
-	originalPath := OriginalPath(root, item.ID, rev.Originals[0])
+	originalPath := OriginalPath(root, item, rev.Digest, rev.Originals[0])
 	item, to, err := TrashRevision(root, item.ID, rev.Ref(), now)
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestSameImageRevisionCanArchivePreviouslyOmittedOriginal(t *testing.T) {
 	if len(item.Revisions) != 1 || len(item.Revisions[0].Originals) == 0 {
 		t.Fatal("same snapshot did not gain original")
 	}
-	original, err := os.ReadFile(OriginalPath(root, item.ID, item.Revisions[0].Originals[0]))
+	original, err := os.ReadFile(OriginalPath(root, item, item.Revisions[0].Digest, item.Revisions[0].Originals[0]))
 	if err != nil || !bytes.Equal(original, data) {
 		t.Fatalf("original: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestAlternateEncodingDoesNotReplaceArchivedOriginal(t *testing.T) {
 	if item.Revisions[0].Originals[0] != original || len(item.Revisions[0].SourceDigests) != 2 {
 		t.Fatal("lost original or input alias")
 	}
-	retained, err := os.ReadFile(OriginalPath(root, item.ID, original))
+	retained, err := os.ReadFile(OriginalPath(root, item, item.Revisions[0].Digest, original))
 	if err != nil || !bytes.Equal(retained, a.Bytes()) {
 		t.Fatalf("original: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestImagesImportAsOnePDFAndAreKnownAgain(t *testing.T) {
 		t.Fatalf("revision: %+v", rev)
 	}
 	for i, want := range [][]byte{a, b} {
-		got, err := os.ReadFile(OriginalPath(root, item.ID, rev.Originals[i]))
+		got, err := os.ReadFile(OriginalPath(root, item, rev.Digest, rev.Originals[i]))
 		if err != nil || !bytes.Equal(got, want) {
 			t.Fatalf("original %d: %v", i+1, err)
 		}

@@ -85,26 +85,21 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 		report.Problems = append(report.Problems, Problem{Kind: kind, Path: rel(path), Detail: detail})
 	}
 
-	entries, err := os.ReadDir(filepath.Join(root, tree.ItemsDir))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	store := tree.At(root)
+	sidecars, err := store.Sidecars()
+	if err != nil {
 		return report, err
 	}
-	// revisions holds, per Item folder whose sidecar parses, the IDs and
-	// digests of its revisions, for the files that name them.
+	// revisions holds, per Item whose sidecar parses, the IDs and digests of
+	// its revisions, for the files that name them.
 	revisions := map[string]map[string]bool{}
+	// named holds every file a sidecar names, as the layout places it.
+	named := map[string]bool{}
 	type pending struct{ path, digest string }
 	var reads []pending
-	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		dir := filepath.Join(root, tree.ItemsDir, entry.Name())
-		named := map[string]bool{}
-		sidecar := filepath.Join(dir, tree.SidecarName)
+	for _, sidecar := range sidecars {
 		data, err := os.ReadFile(sidecar)
 		switch {
-		case errors.Is(err, fs.ErrNotExist):
-			add(BadSidecar, sidecar, "no sidecar in this Item folder")
 		case err != nil:
 			return report, err
 		default:
@@ -119,8 +114,8 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 				revs[rev.ID], revs[rev.Digest] = true, true
 			}
 			delete(revs, "")
-			revisions[entry.Name()] = revs
-			if item.ID != entry.Name() {
+			revisions[item.ID] = revs
+			if item.ID == "" || store.Sidecar(item.ID) != sidecar {
 				add(BadSidecar, sidecar, fmt.Sprintf("id %q is not the folder's name", item.ID))
 			}
 			if !known[item.Type] {
@@ -133,11 +128,11 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 				}
 				refs[rev.Ref()] = true
 				for _, o := range rev.Originals {
-					original := tree.OriginalPath(root, item.ID, o)
+					original := store.OriginalPath(item, rev.Digest, o)
 					if original == "" {
 						add(BadSidecar, sidecar, "invalid original image reference")
-					} else if !named[filepath.Base(original)] {
-						named[filepath.Base(original)] = true
+					} else if !named[original] {
+						named[original] = true
 						if _, err := os.Stat(original); errors.Is(err, fs.ErrNotExist) {
 							add(Missing, original, "original image")
 						} else {
@@ -150,7 +145,7 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 					add(BadSidecar, sidecar, "snapshot "+short(rev.ID)+" does not match its content")
 				}
 				if rev.Digest != "" {
-					named[rev.Digest+".pdf"] = true
+					named[store.PDF(item, rev.Digest)] = true
 				}
 			}
 			if item.Head != "" && !refs[item.Head] {
@@ -161,7 +156,7 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 				if rev.Digest == "" && rev.ID != "" {
 					continue
 				}
-				path := filepath.Join(dir, rev.Digest+".pdf")
+				path := store.PDF(item, rev.Digest)
 				if seenFiles[path] {
 					continue
 				}
@@ -173,15 +168,9 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 				reads = append(reads, pending{path, rev.Digest})
 			}
 		}
-		files, err := os.ReadDir(dir)
-		if err != nil {
-			return report, err
-		}
-		for _, f := range files {
-			if !f.IsDir() && strings.EqualFold(filepath.Ext(f.Name()), ".pdf") && !named[f.Name()] {
-				add(Unnamed, filepath.Join(dir, f.Name()), "no revision names this PDF")
-			}
-		}
+	}
+	if err := loose(root, store, named, add); err != nil {
+		return report, err
 	}
 
 	for i, r := range reads {
@@ -210,6 +199,37 @@ func Tree(ctx context.Context, root string, progress Progress) (Report, error) {
 	return report, nil
 }
 
+// loose reports the PDFs the layout places that no sidecar names, and an
+// Item's own folder with no sidecar in it.
+func loose(root string, store *tree.Store, named map[string]bool, add func(Kind, string, string)) error {
+	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			// A hidden folder is an import still being written; the trash
+			// is checked by no one.
+			if p != root && (strings.HasPrefix(d.Name(), ".") || rel == tree.TrashDir) {
+				return filepath.SkipDir
+			}
+			if folder, ok := store.Folder(d.Name()); ok && folder == p {
+				if _, err := os.Stat(store.Sidecar(d.Name())); errors.Is(err, fs.ErrNotExist) {
+					add(BadSidecar, store.Sidecar(d.Name()), "no sidecar in this Item folder")
+				}
+			}
+			return nil
+		}
+		if store.Owned(rel) && strings.EqualFold(filepath.Ext(p), ".pdf") && !named[p] {
+			add(Unnamed, p, "no revision names this PDF")
+		}
+		return nil
+	})
+}
+
 func short(digest string) string {
 	if len(digest) > 12 {
 		return digest[:12]
@@ -222,7 +242,7 @@ func short(digest string) string {
 // Outline naming a rule whose file does not read is reported as naming a
 // rule the tree lacks, beside that rule's own problem.
 func files(root string, revisions map[string]map[string]bool, add func(Kind, string, string)) error {
-	glob := func(dir string) ([]string, error) { return filepath.Glob(filepath.Join(root, dir, "*.yaml")) }
+	glob := func(dir string) ([]string, error) { return tree.At(root).DefinitionFiles(dir) }
 	item := func(path, what, id, revision string) {
 		revs, ok := revisions[id]
 		switch {

@@ -137,3 +137,35 @@ func TestSaveLoadTrash(t *testing.T) {
 		t.Fatal("a bad name passed")
 	}
 }
+
+func TestSaveAsRenamePreservesOriginal(t *testing.T) {
+	root := t.TempDir()
+	if err := tree.Init(root, now); err != nil {
+		t.Fatal(err)
+	}
+	c, err := New("alice", "Synthetic case", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(root, c, true); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(Path(root, "alice"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Name = "bob"
+	if err := SaveAs(root, "alice", c, now); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, tree.TrashDir, Dir, "alice-"+now.UTC().Format("20060102T150405Z")+".yaml"))
+	if err != nil || string(got) != string(before) {
+		t.Fatalf("trash bytes = %q, %v", got, err)
+	}
+	if _, err := os.Stat(Path(root, "alice")); !os.IsNotExist(err) {
+		t.Fatal("source remains")
+	}
+	if _, err := Find(root, "bob"); err != nil {
+		t.Fatal(err)
+	}
+}

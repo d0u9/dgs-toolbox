@@ -2,7 +2,6 @@ package web
 
 import (
 	"dgs-toolbox/internal/doc/tree"
-	"encoding/json"
 	"path/filepath"
 	"testing"
 )
@@ -16,7 +15,7 @@ func TestImportVisaReplacement(t *testing.T) {
 		t.Fatal(rec.Body.String())
 	}
 	var old tree.Item
-	must(t, json.Unmarshal(rec.Body.Bytes(), &old))
+	must(t, unmarshalItem(rec.Body.Bytes(), &old))
 	rec = do(h, "POST", "/api/import", `{"no_pdf":true,"type":"visa","replaces":`+q(old.ID)+`,"fields":{"owner":"emma","country":"AU","number":"invalid"}}`)
 	if rec.Code != 409 {
 		t.Fatal(rec.Code, rec.Body.String())
@@ -31,7 +30,7 @@ func TestImportVisaReplacement(t *testing.T) {
 		t.Fatal(rec.Body.String())
 	}
 	var next tree.Item
-	must(t, json.Unmarshal(rec.Body.Bytes(), &next))
+	must(t, unmarshalItem(rec.Body.Bytes(), &next))
 	updated, _, err := tree.FindItem(root, old.ID)
 	must(t, err)
 	if !updated.Retired || updated.SupersededBy != next.ID {

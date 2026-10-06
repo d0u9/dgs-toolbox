@@ -9,8 +9,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -282,21 +280,13 @@ func (c Case) View() view.View {
 }
 
 // Path is where a Case's file is.
-func Path(root, name string) string { return filepath.Join(root, Dir, name+".yaml") }
+func Path(root, name string) string { return tree.At(root).DefinitionPath(Dir, name) }
 
 // Load reads every cases/*.yaml under root, open ones first, then by name.
 func Load(root string) ([]Case, error) {
-	paths, err := filepath.Glob(filepath.Join(root, Dir, "*.yaml"))
+	out, err := tree.ListDefinitions(tree.At(root), definitionKind())
 	if err != nil {
 		return nil, err
-	}
-	out := make([]Case, 0, len(paths))
-	for _, path := range paths {
-		c, err := ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, c)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Status != out[j].Status {
@@ -310,29 +300,7 @@ func Load(root string) ([]Case, error) {
 // ReadFile reads one Case file: it must parse, be valid, and be named for
 // its Case.
 func ReadFile(path string) (Case, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Case{}, err
-	}
-	var c Case
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&c); err != nil {
-		return Case{}, fmt.Errorf("%s: %w", path, err)
-	}
-	if err := c.Validate(); err != nil {
-		return Case{}, fmt.Errorf("%s: %w", path, err)
-	}
-	if strings.TrimSuffix(filepath.Base(path), ".yaml") != c.Name {
-		return Case{}, fmt.Errorf("%s: name %q is not the file's name", path, c.Name)
-	}
-	if c.Entries == nil {
-		c.Entries = []Entry{}
-	}
-	if c.Needs == nil {
-		c.Needs = []Need{}
-	}
-	return c, nil
+	return tree.ReadDefinitionFile(tree.At(""), definitionKind(), path)
 }
 
 // Find is the Case of that name.
@@ -352,45 +320,41 @@ func Find(root, name string) (Case, error) {
 // Save writes a Case through a temporary file and a rename. A new Case
 // refuses a name another has.
 func Save(root string, c Case, create bool) error {
-	if err := c.Validate(); err != nil {
-		return err
-	}
 	if err := tree.Require(root); err != nil {
 		return err
 	}
-	path := Path(root, c.Name)
-	if _, err := os.Lstat(path); create && err == nil {
-		return fmt.Errorf("a Case named %s already exists", c.Name)
-	} else if !create && err != nil {
-		return fmt.Errorf("no Case named %s", c.Name)
+	previous := c.Name
+	if create {
+		previous = ""
 	}
-	data, err := yaml.Marshal(c)
-	if err != nil {
+	return tree.SaveDefinition(tree.At(root), definitionKind(), previous, c, time.Time{})
+}
+
+func definitionKind() tree.DefinitionKind[Case] {
+	return tree.DefinitionKind[Case]{Dir: Dir, Name: func(c Case) string { return c.Name }, Validate: func(_ string, c Case) error { return c.Validate() }, Decode: func(_ string, data []byte) (Case, error) {
+		var c Case
+		d := yaml.NewDecoder(bytes.NewReader(data))
+		d.KnownFields(true)
+		if err := d.Decode(&c); err != nil {
+			return c, err
+		}
+		if c.Entries == nil {
+			c.Entries = []Entry{}
+		}
+		if c.Needs == nil {
+			c.Needs = []Need{}
+		}
+		return c, nil
+	}}
+}
+
+// SaveAs saves a draft Case, including renames. Closing and membership changes
+// use the Case's domain operations before saving.
+func SaveAs(root, previous string, c Case, now time.Time) error {
+	if err := tree.Require(root); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	part, err := os.CreateTemp(filepath.Dir(path), ".dgs-part-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(part.Name())
-	if _, err := part.Write(data); err != nil {
-		part.Close()
-		return err
-	}
-	if err := part.Sync(); err != nil {
-		part.Close()
-		return err
-	}
-	if err := part.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(part.Name(), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(part.Name(), path)
+	return tree.SaveDefinition(tree.At(root), definitionKind(), previous, c, now)
 }
 
 // Trash moves a Case's file into the tree's trash, and answers where it went.
@@ -399,17 +363,12 @@ func Trash(root, name string, now time.Time) (string, error) {
 	if err := tree.Require(root); err != nil {
 		return "", err
 	}
-	from := Path(root, name)
-	if _, err := os.Lstat(from); err != nil {
-		return "", fmt.Errorf("no Case named %s", name)
-	}
-	dir := filepath.Join(root, tree.TrashDir, Dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	exists, err := tree.At(root).DefinitionExists(Dir, name)
+	if err != nil {
 		return "", err
 	}
-	to := filepath.Join(dir, name+"-"+now.UTC().Format("20060102T150405Z")+".yaml")
-	if _, err := os.Lstat(to); err == nil {
-		return "", fmt.Errorf("%s is already in the trash", to)
+	if !exists {
+		return "", fmt.Errorf("no Case named %s", name)
 	}
-	return to, os.Rename(from, to)
+	return tree.TrashDefinition(tree.At(root), definitionKind(), name, now)
 }

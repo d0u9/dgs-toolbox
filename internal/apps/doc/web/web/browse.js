@@ -797,7 +797,7 @@ function drawRetired(item) {
 async function setRetired(retired) {
   if (!selected) return;
   try {
-    await post("/api/retired", { item: selected.id, retired, reason: retired ? $("retire-reason").value : "" });
+    await post("/api/items/meta", { item: selected.id, retired, reason: retired ? $("retire-reason").value : "" });
     await reload();
     say($("retire-message"), retired ? "Retired." : "Back in use.");
   } catch (err) {
@@ -826,7 +826,7 @@ async function saveShared() {
   if (!selected) return;
   const people = [...$("shared-people").querySelectorAll("input:checked")].map((i) => i.value);
   try {
-    await post("/api/shared", { item: selected.id, people });
+    await post("/api/items/meta", { item: selected.id, shared_with: people });
     await reload();
     say($("shared-message"), people.length ? "Shared with " + people.join(", ") + "." : "Not shared.");
   } catch (err) {
@@ -837,7 +837,7 @@ async function saveShared() {
 
 async function setFrequent(item, frequent) {
   try {
-    await post("/api/frequent", { item: item.id, frequent });
+    await post("/api/items/meta", { item: item.id, frequent });
     await reload();
   } catch (err) {
     say($("list-message"), err.message, true);
@@ -903,7 +903,7 @@ $("edit").onsubmit = async (event) => {
     const saved = await post("/api/fields", { item: selected.id, digest: selected.digest, fields: fieldsOf($("edit-fields")), new_revision: $("new-revision").checked });
     $("new-revision").checked = false;
     await reload();
-    pick(saved.id, headOf(saved));
+    pick(saved.item.id, headOf(saved.item));
     say($("edit-message"), "Saved.");
   } catch (err) {
     say($("edit-message"), err.message, true);
@@ -914,7 +914,7 @@ $("edit").onsubmit = async (event) => {
 let cases = [];
 async function loadCases() {
   try {
-    cases = (await (await fetch(api("/api/cases"))).json()).cases || [];
+    cases = (await (await fetch(api("/api/defs/cases"))).json()).cases || [];
   } catch {
     cases = [];
   }
@@ -939,7 +939,7 @@ $("to-case-add").onclick = async () => {
   const name = $("to-case").value;
   if (!name || !selected) return;
   try {
-    await post("/api/cases/change", { op: "add", name, item: selected.id, note: $("to-case-note").value });
+    await post("/api/defs/cases", { op: "add", name, item: selected.id, note: $("to-case-note").value });
     $("to-case-note").value = "";
     await loadCases();
     casesOf = "";
@@ -954,7 +954,7 @@ $("to-case-add").onclick = async () => {
 $("notes-form").onsubmit = async (event) => {
   event.preventDefault();
   try {
-    await post("/api/notes", { item: selected.id, notes: $("notes").value });
+    await post("/api/items/meta", { item: selected.id, notes: $("notes").value });
     await reload();
     say($("notes-message"), "Saved.");
   } catch (err) {
@@ -966,7 +966,7 @@ $("revision-tags-form").onsubmit = async (event) => {
   event.preventDefault();
   revisionTags.commit();
   try {
-    await post("/api/revision-tags", { item: selected.id, digest: selected.digest, tags: revisionTags.get() });
+    await post("/api/items/meta", { item: selected.id, digest: selected.digest, revision_tags: revisionTags.get() });
     await reload();
     say($("revision-tags-message"), "Saved.");
   } catch (err) {
@@ -978,7 +978,7 @@ $("tags-form").onsubmit = async (event) => {
   event.preventDefault();
   detailTags.commit();
   try {
-    await post("/api/tags", { item: selected.id, tags: detailTags.get() });
+    await post("/api/items/meta", { item: selected.id, tags: detailTags.get() });
     await reload();
     say($("tags-message"), "Saved.");
   } catch (err) {
@@ -1090,8 +1090,8 @@ $("attach-pdf").onclick = async () => {
     const fresh = $("new-revision").checked;
     const saved = await post("/api/attach", { item: target.id, digest: target.digest, dir: path.slice(0, slash) || "/", path: path.slice(slash + 1), new_revision: fresh });
     $("new-revision").checked = false;
-    state = await loadState(); selected = null; pick(saved.id, headOf(saved));
-    say($("edit-message"), saved.revisions.length === count ? "Content already kept; nothing new saved." : fresh ? "Saved as a new revision. Earlier ones preserved." : "Saved as a correction. Earlier snapshots preserved.");
+    state = await loadState(); selected = null; pick(saved.item.id, headOf(saved.item));
+    say($("edit-message"), saved.item.revisions.length === count ? "Content already kept; nothing new saved." : fresh ? "Saved as a new revision. Earlier ones preserved." : "Saved as a correction. Earlier snapshots preserved.");
   } catch (err) { say($("edit-message"), err.message, true); }
 };
 

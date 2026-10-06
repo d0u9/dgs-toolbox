@@ -363,7 +363,7 @@ func TrashRevision(root, id, digest string, now time.Time) (Item, string, error)
 		if shared {
 			continue
 		}
-		path := OriginalPath(root, id, original)
+		path := OriginalPath(root, item, item.Revisions[at].Digest, original)
 		trashed := fmt.Sprintf("%s-original-%d%s", strings.TrimSuffix(metadataPath, ".yaml"), n+1, original.Extension)
 		err := error(nil)
 		if path == "" {
@@ -513,10 +513,9 @@ func SetNotes(root, id, notes string, now time.Time) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	old := item.Notes
-	item.Notes = strings.TrimSpace(notes)
-	if old != item.Notes {
-		item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_notes", Changes: map[string][2]string{"notes": {old, item.Notes}}})
+	item, err = applyNotes(item, notes, now)
+	if err != nil {
+		return Item{}, err
 	}
 	return item, WriteItem(root, item)
 }
@@ -530,10 +529,9 @@ func SetTags(root, id string, tags []string, now time.Time) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	old := strings.Join(item.Tags, ", ")
-	item.Tags = tag.List(tags)
-	if next := strings.Join(item.Tags, ", "); old != next {
-		item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_tags", Changes: map[string][2]string{"tags": {old, next}}})
+	item, err = applyTags(item, tags, now)
+	if err != nil {
+		return Item{}, err
 	}
 	return item, WriteItem(root, item)
 }
@@ -555,11 +553,17 @@ func Trash(root, id string, now time.Time) (string, error) {
 	if err := os.MkdirAll(filepath.Join(root, TrashDir), 0o755); err != nil {
 		return "", err
 	}
+	// Only a layout giving each Item a folder of its own can move it whole;
+	// moving the folder a shared layout keeps sidecars in would take others.
+	folder, ok := At(root).Folder(id)
+	if !ok {
+		return "", fmt.Errorf("item %s: this tree's layout has no Item folders to move", id)
+	}
 	to := filepath.Join(root, TrashDir, id+"-"+now.UTC().Format("20060102T150405Z"))
 	if _, err := os.Lstat(to); err == nil {
 		return "", fmt.Errorf("%s is already in the trash", to)
 	}
-	return to, os.Rename(Dir(root, id), to)
+	return to, os.Rename(folder, to)
 }
 
 // SetFrequent marks or unmarks an Item as one the owner opens often.
@@ -571,15 +575,10 @@ func SetFrequent(root, id string, frequent bool, now time.Time) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
-	if item.Frequent == frequent {
-		return item, nil
+	item, err = applyFrequent(item, frequent, now)
+	if err != nil {
+		return Item{}, err
 	}
-	item.Frequent = frequent
-	action := "mark_frequent"
-	if !frequent {
-		action = "unmark_frequent"
-	}
-	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: action})
 	return item, WriteItem(root, item)
 }
 
@@ -593,28 +592,10 @@ func SetRetired(root, id string, retired bool, reason string, now time.Time) (It
 	if err != nil {
 		return Item{}, err
 	}
-	if item.SupersededBy != "" {
-		return Item{}, fmt.Errorf("undo the replacement before changing retirement")
+	item, err = applyRetired(item, retired, reason, now)
+	if err != nil {
+		return Item{}, err
 	}
-	reason = strings.TrimSpace(reason)
-	if !retired {
-		reason = ""
-	}
-	if item.Retired == retired && item.RetiredReason == reason {
-		return item, nil
-	}
-	event := HistoryEvent{At: now.Format(time.RFC3339), Action: "retire"}
-	switch {
-	case !retired:
-		event.Action = "unretire"
-	case item.Retired:
-		event.Action = "edit_retired_reason"
-	}
-	if item.RetiredReason != reason {
-		event.Changes = map[string][2]string{"reason": {item.RetiredReason, reason}}
-	}
-	item.Retired, item.RetiredReason = retired, reason
-	item.History = append(item.History, event)
 	return item, WriteItem(root, item)
 }
 
@@ -628,16 +609,10 @@ func SetSharedWith(root, id string, people []string, now time.Time) (Item, error
 	if err != nil {
 		return Item{}, err
 	}
-	shared, err := sharedList(item.CurrentFields()["owner"], people)
+	item, err = applySharedWith(item, people, now)
 	if err != nil {
 		return Item{}, err
 	}
-	if slices.Equal(shared, item.SharedWith) {
-		return item, nil
-	}
-	item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "share",
-		Changes: map[string][2]string{"shared_with": {strings.Join(item.SharedWith, ", "), strings.Join(shared, ", ")}}})
-	item.SharedWith = shared
 	return item, WriteItem(root, item)
 }
 
@@ -670,17 +645,9 @@ func SetRevisionTags(root, id, digest string, tags []string, now time.Time) (Ite
 	if err != nil {
 		return Item{}, err
 	}
-	for i, r := range item.Revisions {
-		if r.Ref() != digest {
-			continue
-		}
-		old := strings.Join(r.Tags, ", ")
-		item.Revisions[i].Tags = tag.List(tags)
-		if next := strings.Join(item.Revisions[i].Tags, ", "); old != next {
-			item.History = append(item.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "edit_revision_tags", Digest: digest,
-				Changes: map[string][2]string{"tags": {old, next}}})
-		}
-		return item, WriteItem(root, item)
+	item, err = applyRevisionTags(item, digest, tags, now)
+	if err != nil {
+		return Item{}, err
 	}
-	return Item{}, fmt.Errorf("%s %s has no revision %s", item.Type, item.ID, digest)
+	return item, WriteItem(root, item)
 }
