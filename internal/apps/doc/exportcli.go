@@ -89,7 +89,7 @@ func exportAction(_ io.Reader, out io.Writer, args []string, flags map[string]st
 			func(a export.Action) {
 				published = append(published, tree.Exported{Item: a.Item, Digest: a.Digest, Target: j.Path, View: a.View})
 			})
-		if recordErr := tree.RecordExports(root, published, time.Now()); recordErr != nil {
+		if recordErr := tree.RecordExports(root, published, time.Now(), nil); recordErr != nil {
 			fmt.Fprintf(out, "%s: the files are written, but their history was not recorded: %v\n", j.Name, recordErr)
 		}
 		if err != nil {

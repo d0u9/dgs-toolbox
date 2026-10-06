@@ -128,6 +128,7 @@ export function progressDialog({ title, message }) {
   ok.addEventListener("click", end);
   document.body.append(dialog); dialog.showModal();
   return {
+    say(message) { text.textContent = message; },
     update(value, total) {
       if (total) { bar.max = total; bar.value = value; count.textContent = `${value} of ${total}`; }
     },

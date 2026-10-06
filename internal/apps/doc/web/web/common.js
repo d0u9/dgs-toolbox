@@ -704,7 +704,10 @@ export async function exportOutline(state, t, { say, blocked }) {
     const poll = setInterval(async () => {
       try {
         const p = await (await fetch(api("/api/export/progress"))).json();
-        if (p.running) box.update(p.done, p.total);
+        if (!p.running) return;
+        // After the files, each Item's sidecar records the export.
+        if (p.phase === "history") box.say("Recording the export in each Item's history.");
+        box.update(p.done, p.total);
       } catch { /* the next tick asks again */ }
     }, 400);
     let r;

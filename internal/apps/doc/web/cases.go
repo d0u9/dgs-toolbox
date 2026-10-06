@@ -218,7 +218,7 @@ func (s server) caseExportRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j := out.Jobs[0]
-	result, err := s.applyExport(r, j, items, nil)
+	result, err := s.applyExport(r, j, items, nil, nil)
 	result.Name = ""
 	results := []exportResultJSON{result}
 	if err != nil {

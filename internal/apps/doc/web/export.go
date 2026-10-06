@@ -104,14 +104,17 @@ type exportResultJSON struct {
 type exportProgress struct {
 	mu      sync.Mutex
 	Running bool `json:"running"`
-	Done    int  `json:"done"`
-	Total   int  `json:"total"`
+	// Phase is "files" while PDFs are copied and read back, "history"
+	// while the Items' sidecars record the export.
+	Phase string `json:"phase,omitempty"`
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
 }
 
-func (p *exportProgress) set(running bool, done, total int) {
+func (p *exportProgress) set(running bool, phase string, done, total int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.Running, p.Done, p.Total = running, done, total
+	p.Running, p.Phase, p.Done, p.Total = running, phase, done, total
 }
 
 func (s server) exportProgressRead(w http.ResponseWriter, r *http.Request) {
@@ -145,11 +148,12 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 	for _, j := range out.Jobs {
 		total += j.Plan.Changes()
 	}
-	s.exporting.set(true, 0, total)
-	defer s.exporting.set(false, 0, 0)
+	s.exporting.set(true, "files", 0, total)
+	defer s.exporting.set(false, "", 0, 0)
 	before := 0
 	for _, j := range out.Jobs {
-		result, err := s.applyExport(r, j, items, func(done, _ int) { s.exporting.set(true, before+done, total) })
+		result, err := s.applyExport(r, j, items, func(done, _ int) { s.exporting.set(true, "files", before+done, total) },
+			func(done, all int) { s.exporting.set(true, "history", done, all) })
 		before += j.Plan.Changes()
 		results = append(results, result)
 		if err != nil {
@@ -164,14 +168,14 @@ func (s server) exportRun(w http.ResponseWriter, r *http.Request) {
 // published, also when the job stops early. The files are in place whether or
 // not the history can be written, so a failure to record is reported in the
 // result, not as a failed export.
-func (s server) applyExport(r *http.Request, j export.JobPlan, items []tree.Item, progress func(done, total int)) (exportResultJSON, error) {
+func (s server) applyExport(r *http.Request, j export.JobPlan, items []tree.Item, progress, recording func(done, total int)) (exportResultJSON, error) {
 	var published []tree.Exported
 	result, err := export.Apply(context.WithoutCancel(r.Context()), s.root, j.Path, j.Views, j.Plan, items, progress,
 		func(a export.Action) {
 			published = append(published, tree.Exported{Item: a.Item, Digest: a.Digest, Target: j.Path, View: a.View})
 		})
 	out := exportResultJSON{Name: j.Name, Path: j.Path, Result: result}
-	if recordErr := tree.RecordExports(s.root, published, s.now()); recordErr != nil {
+	if recordErr := tree.RecordExports(s.root, published, s.now(), recording); recordErr != nil {
 		out.HistoryError = recordErr.Error()
 	}
 	return out, err
