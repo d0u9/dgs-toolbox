@@ -417,19 +417,81 @@ their original type and fields. The Item ID, notes and tags remain.
 ### Records
 
 A record is one independent historical paper: a payslip, a bill, a statement.
-It does not accept another paper as a renewal. Editing its details or adding
-its scan creates a new snapshot of that same paper, with HEAD identifying the
-current snapshot, just as for a document.
+It does not accept another paper as a renewal, so it has one revision for
+good. Editing its details or adding its scan is an edit of that revision: a
+new snapshot of the same paper, with HEAD identifying the current snapshot,
+just as for a document.
 
-### Revision snapshots
+### Revisions and their snapshots
 
-A revision is an immutable snapshot of all Template field values, the type,
-and the optional PDF. Editing fields, changing type, attaching a PDF or
-replacing a PDF creates a new snapshot and moves HEAD to it. Editing an older
-snapshot branches from its values; other snapshots remain intact. Saving
-unchanged content does nothing. Returning to content already kept reuses that
-snapshot and moves HEAD instead of storing a duplicate; that snapshot keeps
-its revision tags, and tags given with it are added.
+A **revision** is one paper: the card issued in 2020, the card issued when
+it was renewed in 2025. A **snapshot** is an immutable record of everything
+known about one revision at one time: all Template field values, the type,
+and the optional PDF; a snapshot that does not begin a revision is a
+**correction**. A revision is the run of snapshots made of the same
+paper; its current snapshot is its newest. A typo corrected, a date
+narrowed, a type changed, a scan attached or a better scan put in its place
+is the same paper known better, so it is a new snapshot of the same
+revision, never a new revision.
+
+A new revision is the owner's call, never dgs's guess. Only the owner says a
+paper is a new one — a renewal, a reissue, a replacement card — by ticking
+**New revision** when the snapshot is saved: on Import when a PDF is added
+to an Item, and on Browse when fields are edited or a PDF is attached or
+replaced. It is unticked every time, so whatever is saved without it is a
+correction of the revision being edited, whatever changed. A record never
+offers it.
+
+A snapshot already saved can be put right on Browse:
+
+- **Make new revision** on a snapshot that corrected a revision begins a
+  revision with it; the snapshots made from it afterwards move with it.
+- **Make correction** on the first snapshot of a revision makes its
+  revision part of the one before, as if it had been saved as a correction.
+
+Neither changes a snapshot's content or ID, nor moves HEAD; each is a
+history event, and undoing one is doing the other.
+
+Each snapshot names the revision it belongs to by the ID of that revision's
+first snapshot, its `paper`. The first snapshot of a revision names itself.
+The `paper` is not part of the snapshot ID (below), so two revisions may
+hold snapshots with the same content and still be told apart, and the
+revisions an Item has stay in the order they began.
+
+Editing fields, changing type, attaching a PDF or replacing a PDF creates a
+new snapshot of the revision being edited and moves HEAD to it. Editing an
+older revision's snapshot makes a snapshot of that older revision; other
+snapshots remain intact, and HEAD moves to it as before. Saving unchanged
+content does nothing. Returning to content the same revision already kept
+reuses that snapshot and moves HEAD instead of storing a duplicate; that
+snapshot keeps its revision tags, and tags given with it are added.
+
+What a revision is, rather than a snapshot, shows wherever papers are
+counted:
+
+- Browse lists an Item's revisions, numbered from 1 in the order they
+  began, each with its current snapshot's fields and PDF. A revision's
+  corrections are its history, opened under it; one may be picked to
+  read it or to make HEAD again.
+- A rule's `selection: head` takes the snapshot HEAD names, as before.
+  `selection: all` takes every revision's current snapshot — each paper
+  once, as last known — never the earlier snapshots of one paper.
+- The layout key `revision` is the revision's number, counting from 1 in
+  the order revisions began, so a corrected card keeps its number.
+- `per_revision` fields are asked for when **New revision** is ticked, and
+  are the fields that may differ from one revision to the next.
+- A Case entry and an export manifest keep the snapshot they name, so what
+  was handed over is still exactly what it was.
+
+A sidecar written before revisions were told from snapshots has no `paper`.
+It is read by its history: `import`, `create_without_pdf`,
+`import_revision` and `create_revision_without_pdf` began a revision, and a
+snapshot made by `edit_fields`, `change_type` or `attach_pdf` belongs to the
+revision of the snapshot it was made from — the one HEAD named when it was
+made. A snapshot whose history cannot be found begins a revision of its own,
+as before. This is only a first reading: the owner confirms it with **Make
+new revision** and **Make correction**. The `paper` found is written
+the next time the sidecar is written, not before.
 
 Import asks for both kinds of tags: the Item's, and the revision's own. An
 imported Item's first revision starts with the Item's tags, since at first
@@ -582,7 +644,7 @@ asks only for the per_revision ones, suggested from the new PDF's text. On
 the same form, the Item's current tags and notes can be edited and are saved
 with the new revision; they belong to the Item, not to an individual revision.
 On Browse, picking a revision shows its fields; saving edits creates a new
-snapshot. Everything else — the page's list, a rule's `if` — uses HEAD's. A
+snapshot of that revision. Everything else — the page's list, a rule's `if` — uses HEAD's. A
 layout key is the exported revision's own value, so exporting all revisions
 can name the old card and the new one differently. A distinguishing field
 names the document, so it cannot be per_revision, and a record has one issue,
@@ -706,7 +768,9 @@ order:
 ### Rules
 
 A rule is a node: an `if`, a path and a file name, and children, which
-are nodes too.
+are nodes too. A rule's `selection` is `head` or `all`; a child may give
+its own for what it places, and one without keeps its parent's, so a rule
+of HEADs can place every registration of a car by year.
 
 ```yaml
 name: rental
@@ -785,7 +849,8 @@ Template defines, such as `employer`), values derived from them (`year` and
 `month` from `date`, its start when it is a span, its end when the span is
 open at the start; `.start` and `.end` of any span, such as `{date.end}`;
 a span open at one end is written as the one day it has), `revision` (the revision's number,
-counting from 1, in order added) and `ext`.
+counting from 1 in the order revisions began; a snapshot correcting one
+keeps its number) and `ext`.
 
 A key may name a country format: `{country:alpha3}` writes the Item's country
 as `CHN` however its sidecar keeps it, and likewise `:zh` (`中国`), `:en`
@@ -1560,6 +1625,7 @@ head: <snapshot-sha256>
 revisions:
   - id: <snapshot-sha256>
     snapshot: true
+    paper: <snapshot-sha256>   # the revision's first snapshot; its own ID for that one
     type: id_card
     fields: {owner: emma, country: AU}
     digest: <pdf-sha256>   # empty when there is no attachment
