@@ -349,8 +349,8 @@ map. It is the interface later milestones build on.
   row, or
   another track's line on the map, moves the focus. A hidden track cannot be
   focused: hiding the focused track passes the focus to the first shown one,
-  and clicking a hidden row shows it. A single click in the workspace tree
-  changes focus without moving the map; a double-click fits the file or part.
+  and clicking a hidden row selects it without showing it. A single click in the workspace tree
+  selects the file or part without changing visibility, opening a waypoint popup or moving the map. Visible files also gain focus; a double-click fits the file or part.
   Adding a track fits it; *Fit all* fits every shown track. Fitting frames the bulk of a
   track's points (`track.CoreBounds`), so a few stray fixes — a stale first fix
   a thousand kilometres away — do not zoom the map out to a corner.

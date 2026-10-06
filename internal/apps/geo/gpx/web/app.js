@@ -1405,7 +1405,7 @@ function trackRow(path, entry) {
     [{ label: "Close", title: "Remove from the workspace; nothing on disk changes", onSelect: () => closeTracks([path]) }],
     ]);
   });
-  // Clicking a hidden track shows it: only a shown track can be focused.
+  // Selecting a file never changes whether it is shown.
   li.addEventListener("click", (event) => {
     state.partSelection = null;
     const double = doubleRowClick(JSON.stringify([path]), event);
@@ -1417,7 +1417,11 @@ function trackRow(path, entry) {
       renderTracks();
       return;
     }
-    if (!entry.visible) setVisible(path, true);
+    if (!entry.visible) {
+      renderTracks();
+      if (double) fitBox(entry.track.bounds);
+      return;
+    }
     setFocus(path, { fit: double });
   });
   bindRowDrag(li, { kind: "file", path });
@@ -1936,17 +1940,15 @@ function hiddenRanges(entry) {
     .map((part) => [part.first, part.last]);
 }
 
-// showPart focuses a part, showing it if hidden; double-click also frames it.
+// Selecting a part preserves visibility; only double-click frames it.
 function showPart(path, part, { fit: shouldFit = false } = {}) {
   state.partSelection = { path, key: part.key };
   select(path);
   const entry = state.tracks.get(path);
-  if (!entry.visible) setVisible(path, true);
-  if (entry.hiddenParts.has(part.key)) setPartHidden(path, part.key, false);
-  if (state.focus !== path) setFocus(path, { fit: false });
+  if (entry.visible && state.focus !== path) setFocus(path, { fit: false });
   else renderTracks();
   if (part.kind === "waypoint") {
-    openWaypoint(entry, part);
+    if (shouldFit && entry.visible && !entry.hiddenParts.has(part.key)) openWaypoint(entry, part);
     if (shouldFit) map.easeTo({ center: part.points[0], zoom: Math.max(map.getZoom(), 15), duration: 400 });
   } else if (shouldFit) {
     fitBox(part.bounds);

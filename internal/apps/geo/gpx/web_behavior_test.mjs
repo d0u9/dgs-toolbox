@@ -25,7 +25,7 @@ function loadModule(name,context){
 
 function treeHarness(track){
   const calls=[];
-  const entry={id:'a',color:'#0072b2',visible:false,hiddenParts:new Set(),track};
+  const entry={id:'a',color:'#0072b2',visible:true,hiddenParts:new Set(),track};
   const state={focus:'other.gpx',tracks:new Map([['current.gpx',entry]]),selection:new Set(),config:{canReveal:false}};
   const context=vm.createContext({
     tooltip(node,lines){node.tip=lines.filter(Boolean);},document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',DIAMOND:'ours',DIAMOND_OPEN:'recording',FOLDER:'folder',
@@ -76,7 +76,7 @@ test('actual part-row listeners retain the camera on click and frame on double c
     const h=treeHarness(treeTrack({ours:true,parts:[part]}));
     h.entry.hiddenParts.add(part.key);
     await h.context.partRow('current.gpx',h.entry,part).fire('click',{timeStamp:100});
-    assert.equal(h.entry.hiddenParts.has(part.key),false);
+    assert.equal(h.entry.hiddenParts.has(part.key),true);
     assert.equal(h.calls.some(([action])=>['fit','pan'].includes(action)),false);
     assert.deepEqual(h.calls.find(([action])=>action==='focus'),['focus',{fit:false}]);
     await h.context.partRow('current.gpx',h.entry,part).fire('click',{timeStamp:200});
@@ -668,4 +668,19 @@ test('hidden child tracks disappear from segments, cut points and existing selec
  assert.deepEqual(plain(sources.get('cut-points').features.map(f=>f.geometry.coordinates)),[points[1],points[6]]);
  overlay.show(track,[[0,7]]);assert.equal(sources.get('cut-segment').geometry.coordinates.length,0);
  overlay.show(track);assert.deepEqual(plain(sources.get('cut-segment').geometry.coordinates),[points]);
+});
+
+test('single clicks on hidden files and child items preserve visibility and never open or fit them',async()=>{
+ for(const visible of [false,true])for(const kind of ['track','route','waypoint']){
+  const part={kind,key:'p0',name:'Synthetic part',points:[[0,0]],distance:0,bounds:[[0,0],[1,1]]};
+  const h=treeHarness(treeTrack({ours:true,parts:[part]}));h.entry.visible=visible;h.entry.hiddenParts.add(part.key);
+  await h.context.partRow('current.gpx',h.entry,part).fire('click',{timeStamp:100});
+  assert.equal(h.entry.visible,visible);assert.ok(h.entry.hiddenParts.has(part.key));
+  assert.equal(h.calls.some(([kind])=>['visible','hidden','popup','fit','pan'].includes(kind)),false);
+  assert.deepEqual(plain(h.state.partSelection),{path:'current.gpx',key:part.key});
+ }
+ const h=treeHarness(treeTrack({ours:true}));h.entry.visible=false;
+ await h.context.trackRow('current.gpx',h.entry).fire('click',{timeStamp:100});
+ assert.equal(h.entry.visible,false);assert.ok(h.calls.some(([kind])=>kind==='select'));
+ assert.equal(h.calls.some(([kind])=>['visible','fit','focus'].includes(kind)),false);
 });
