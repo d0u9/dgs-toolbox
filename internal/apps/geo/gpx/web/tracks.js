@@ -66,8 +66,8 @@ export class TrackLayers {
   }
 
   // update redraws a file whose positions changed, as when converted to GCJ-02.
-  update(id, track) {
-    this.map.getSource(sourceId(id))?.setData(geometry(track));
+  update(id, track, hidden = []) {
+    this.map.getSource(sourceId(id))?.setData(geometry(track, hidden));
   }
 
   remove(id) {
@@ -188,7 +188,7 @@ function emptyCollection() {
 
 // geometry is one feature per part. A track draws each recorded segment
 // separately, so a gap in the recording is not bridged by a straight line.
-function geometry(track) {
+function geometry(track, hidden = []) {
   const features = [];
   for (const part of track.parts) {
     const properties = { part: part.key, kind: part.kind, name: part.name };
@@ -198,6 +198,11 @@ function geometry(track) {
       // Points cleaning removed are left out; the line joins what was kept.
       let previous = -1;
       for (let i = part.first; i <= part.last; i++) {
+        if (hidden.some(([first, last]) => i >= first && i <= last)) {
+          if (current.length > 1) lines.push(current);
+          current = []; previous = -1;
+          continue;
+        }
         if (track.removed[i]) continue;
         if (previous >= 0 && track.segments[i] !== track.segments[previous]) {
           lines.push(current);

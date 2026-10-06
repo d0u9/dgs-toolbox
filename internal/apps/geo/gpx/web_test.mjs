@@ -81,7 +81,14 @@ test('renaming a workspace file preserves its order, identity, selection and cam
 function segmentAdder(promptDialog, chooseDialog = () => assert.fail("unexpected multi-segment choice")) {
  const source = readFileSync(new URL('./web/cut.js', import.meta.url), 'utf8');
  const code = source.slice(source.indexOf('  async addSegments('), source.indexOf('  // write sends'));
- return vm.runInNewContext(`({${code}}).addSegments`, {promptDialog, chooseDialog});
+ const segmentSaveDialog=async ({target,segments})=>{
+  let merge=false;
+  if(segments.length>1){const choice=await chooseDialog({options:[{value:'separate'},{value:'merge'}]});if(!choice)return null;merge=choice==='merge';}
+  let name='';
+  if(segments.length===1||merge){name=await promptDialog({title:merge?'Name the merged track':'Name the segment',value:merge?'Merged track':segments[0].name});if(!name?.trim())return null;}
+  return {path:target,merge,name:name.trim()};
+ };
+ return vm.runInNewContext(`({${code}}).addSegments`, {segmentSaveDialog});
 }
 
 test('Add 1 segment asks for a name before adding and preserves the source', async () => {
@@ -98,7 +105,7 @@ test('Add 1 segment asks for a name before adding and preserves the source', asy
  await add.call({track:{path:'source.gpx'},write:async (...args)=>calls.push(args)},[segment],target,button);
  assert.equal(calls.length,1);
  assert.deepEqual(JSON.parse(JSON.stringify(calls[0][0])),[{first:10,last:20,name:'Named stop'}]);
- assert.equal(calls[0][1],target);
+ assert.deepEqual(JSON.parse(JSON.stringify(calls[0][1])),target);
  assert.equal(segment.name,'Existing name');
  assert.equal(button.disabled,false);
 });
@@ -124,7 +131,7 @@ test('multiple segments require a separate-or-merge choice before adding', async
   return 'separate';
  });
  const target={mode:'add',path:'draft:1/Trip.gpx'};
- await add.call({track:{path:'source.gpx'},write:async (value,to)=>{written=value;assert.equal(to,target);}},segments,target,button);
+ await add.call({track:{path:'source.gpx'},write:async (value,to)=>{written=value;assert.deepEqual(JSON.parse(JSON.stringify(to)),target);}},segments,target,button);
  assert.equal(choices,1);
  assert.equal(written,segments);
  assert.equal(button.disabled,false);

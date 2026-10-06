@@ -430,7 +430,9 @@ function setTool(tool) {
 function setCompare(on) {
   state.compare = on;
   const entry = focusedEntry();
-  cleanOverlay.show(on && entry ? entry.track : null, entry ? hiddenRanges(entry) : []);
+  const hidden = entry ? hiddenRanges(entry) : [];
+  if (cutting() && cutPanel.track?.path === state.focus) hidden.push(...cutPanel.hiddenRanges());
+  cleanOverlay.show(on && entry ? entry.track : null, hidden);
   applyEditTools();
   save();
 }
@@ -1053,6 +1055,31 @@ async function reloadEntry(path) {
 
 // ---- cutting: the focused track's segments ----
 
+let segmentVisibilityEntry = null;
+
+function applySegmentVisibility() {
+  const entry = cutting() && cutPanel.track?.path === state.focus ? focusedEntry() : null;
+  const previous = segmentVisibilityEntry;
+  if (segmentVisibilityEntry && segmentVisibilityEntry !== entry && layers.ids.has(segmentVisibilityEntry.id)) layers.update(segmentVisibilityEntry.id, segmentVisibilityEntry.track);
+  segmentVisibilityEntry = entry;
+  if (!entry) {
+    if (previous && focusedEntry() === previous) {
+      const hidden = hiddenRanges(previous);
+      cleanOverlay.show(state.compare ? previous.track : null, hidden);
+      cleanOverlay.showFills(previous.track, hidden);
+      stopMarkers.show(previous.track, previous.color, hidden);
+    }
+    return;
+  }
+  const hidden = [...hiddenRanges(entry), ...cutPanel.hiddenRanges()];
+  layers.update(entry.id, entry.track, hidden);
+  cutOverlay.show(cutPanel.track, hidden);
+  cleanOverlay.show(state.compare ? entry.track : null, hidden);
+  cleanOverlay.showFills(entry.track, hidden);
+  stopMarkers.show(entry.track, entry.color, hidden);
+  layers.setCursor(null);
+}
+
 function applyCutPanel() {
   const entry = focusedEntry();
   const open = cutting();
@@ -1060,7 +1087,7 @@ function applyCutPanel() {
     const selected = state.partSelection?.path === state.focus
       ? entry.track.parts.find(part => part.key === state.partSelection.key && part.kind === "track") : null;
     cutPanel.show(entry.track, { part: selected, timeZone: $("timezone").value, workspace: [...state.tracks.keys()], folder: state.folder || state.config.root, home: state.config.root || "", places: state.config.places || [] });
-    cutOverlay.show(cutPanel.track, hiddenRanges(entry));
+    cutOverlay.show(cutPanel.track, [...hiddenRanges(entry), ...cutPanel.hiddenRanges()]);
     timeline.setCutting({
       cuts: entry.track.cuts.filter(index => !selected || (index > selected.first && index < selected.last)),
       candidates: entry.track.cutCandidates.filter(index => !selected || (index > selected.first && index < selected.last)),
@@ -2622,6 +2649,7 @@ async function start() {
       if (box) fitBox(box);
     },
     onWrite: writeSegments,
+    onSelection: applySegmentVisibility,
   });
   profile = new Profile({
     root: $("profile"),
