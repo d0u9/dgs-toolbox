@@ -181,7 +181,9 @@ const (
 
 // Template is one type's fields and defaults.
 type Template struct {
-	Type string `yaml:"type" json:"type"`
+	// Locked is the initial lock setting for imports into in-place trees.
+	Locked bool   `yaml:"locked,omitempty" json:"locked,omitempty"`
+	Type   string `yaml:"type" json:"type"`
 	// Extends names the type this one inherits fields from.
 	Extends string `yaml:"extends,omitempty" json:"extends,omitempty"`
 	// Abstract types only pass fields down: no Item is of one.
@@ -208,8 +210,8 @@ type Template struct {
 var NameLanguages = []string{"zh", "en"}
 
 // MandatoryKeys are the fields every Template requires besides its type: whose
-// document it is and which country issued it.
-var MandatoryKeys = []string{"owner", "country"}
+// document it is. A country, where a Template has one, is of type country.
+var MandatoryKeys = []string{"owner"}
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
@@ -354,9 +356,8 @@ func (t Template) Validate() error {
 		if f.PerRevision && f.Distinguishing {
 			return fmt.Errorf("type %s: key %s names the document, so it cannot change per revision", t.Type, f.Key)
 		}
-		if f.Distinguishing && !f.Required {
-			return fmt.Errorf("type %s: key %s distinguishes documents, so it must be required", t.Type, f.Key)
-		}
+		// An optional distinguishing field counts empty as a value of its
+		// own: a clean copy and an annotated one are two documents.
 	}
 	for _, key := range MandatoryKeys {
 		if t.Abstract {
@@ -366,9 +367,9 @@ func (t Template) Validate() error {
 		if !ok || !f.Required {
 			return fmt.Errorf("type %s: every document has %s, so the Template needs each as a required field", t.Type, strings.Join(MandatoryKeys, " and "))
 		}
-		if key == "country" && f.Type != FieldCountry {
-			return fmt.Errorf("type %s: key country must be of type country", t.Type)
-		}
+	}
+	if f, ok := t.fieldOK("country"); ok && !t.Abstract && f.Type != FieldCountry {
+		return fmt.Errorf("type %s: key country must be of type country", t.Type)
 	}
 	for key, value := range t.Defaults {
 		if !seen[key] {

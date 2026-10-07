@@ -65,7 +65,7 @@ func (s server) plan(ctx context.Context, request exportRequest) (exportPlanJSON
 	sources := export.FromOutlines(outlines, snapshots, items)
 	jobs, problems := export.Jobs(sources, request.Folders, home(), names)
 	out.Problems = append(out.Problems, problems...)
-	if out.Jobs, err = export.PlanJobs(ctx, s.documents, jobs, items); err != nil {
+	if out.Jobs, err = export.PlanJobs(ctx, s.documents, jobs, items, s.now()); err != nil {
 		return out, nil, http.StatusConflict, err
 	}
 	export.AgainstOthers(out.Jobs, Others(s.trees, s.root))

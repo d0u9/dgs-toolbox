@@ -17,13 +17,14 @@ import (
 // cache cannot name and reads them all again.
 var (
 	readOnly = map[string]bool{
+		"/api/init":  true,
 		"/api/links": true, "/api/items/reload": true, "/api/ahead": true, "/api/reveal": true, "/api/read-all": true,
 		"/api/outlines/group": true, "/api/snapshots/names": true,
 		"/api/export/plan": true, "/api/merge/plan": true, "/api/cases/export/plan": true,
 	}
 	oneItem = map[string]bool{
 		"/api/revisions": true, "/api/head": true, "/api/revisions/delete": true, "/api/fields": true,
-		"/api/items/meta": true, "/api/change-type": true, "/api/items/delete": true,
+		"/api/files/confirm": true, "/api/items/meta": true, "/api/change-type": true, "/api/items/delete": true,
 	}
 	notItems = map[string]bool{
 		"/api/rules/layout": true, "/api/rules/if": true, "/api/snapshots/take": true,

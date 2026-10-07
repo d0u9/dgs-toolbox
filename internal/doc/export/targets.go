@@ -3,8 +3,10 @@ package export
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"dgs-toolbox/internal/doc/outline"
 	"dgs-toolbox/internal/doc/snapshot"
@@ -15,6 +17,8 @@ import (
 // Job is one folder to export into, with the rules that go there and the
 // files its Snapshots fixed.
 type Job struct {
+	Outline *outline.Outline
+	Fixed   []snapshot.Snapshot
 	// Name is the Outline's name, or empty for a folder chosen by hand.
 	Name  string
 	Path  string
@@ -50,6 +54,8 @@ func (j JobPlan) Ready() bool {
 
 // Source is an Outline, as Jobs chooses among them.
 type Source struct {
+	Outline   *outline.Outline
+	Fixed     []snapshot.Snapshot
 	Name      string
 	Folder    string
 	Rules     []view.View
@@ -64,6 +70,14 @@ func FromOutlines(outlines []outline.Outline, snapshots []snapshot.Snapshot, ite
 	out := make([]Source, 0, len(outlines))
 	for _, o := range outlines {
 		src := Source{Name: o.Name, Folder: o.Folder, Rules: o.Rules}
+		if o.Mount != nil {
+			copy := o
+			src.Outline = &copy
+			src.Fixed = snapshots
+			src.Rules = nil
+			out = append(out, src)
+			continue
+		}
 		for _, m := range o.Snapshots {
 			src.Snapshots = append(src.Snapshots, m.Name)
 		}
@@ -95,7 +109,9 @@ func Jobs(sources []Source, chosen map[string]string, home string, names []strin
 		}
 		return ""
 	}
-	empty := func(o Source) bool { return len(o.Rules) == 0 && len(o.Snapshots) == 0 }
+	empty := func(o Source) bool {
+		return (o.Outline == nil || len(o.Outline.Mount) == 0) && len(o.Rules) == 0 && len(o.Snapshots) == 0
+	}
 	byName := map[string]Source{}
 	for _, o := range sources {
 		byName[o.Name] = o
@@ -120,7 +136,7 @@ func Jobs(sources []Source, chosen map[string]string, home string, names []strin
 		case folder(o) == "":
 			problems = append(problems, "choose a folder for "+name+": it has none of its own")
 		default:
-			jobs = append(jobs, Job{Name: name, Path: folder(o), Views: o.Rules, Files: o.Files, Snapshots: o.Snapshots, Lost: o.Lost})
+			jobs = append(jobs, Job{Outline: o.Outline, Fixed: o.Fixed, Name: name, Path: folder(o), Views: o.Rules, Files: o.Files, Snapshots: o.Snapshots, Lost: o.Lost})
 		}
 	}
 	return jobs, problems
@@ -130,7 +146,11 @@ func Jobs(sources []Source, chosen map[string]string, home string, names []strin
 // checked as a whole before anything is written: each Target against the
 // tree, the Targets against each other, each Target's Views against each
 // other, and every wanted path against what is on disk.
-func PlanJobs(ctx context.Context, st *tree.Store, jobs []Job, items []tree.Item) ([]JobPlan, error) {
+func PlanJobs(ctx context.Context, st *tree.Store, jobs []Job, items []tree.Item, at ...time.Time) ([]JobPlan, error) {
+	now := time.Now()
+	if len(at) > 0 {
+		now = at[0]
+	}
 	templates, err := st.LoadTemplates()
 	if err != nil {
 		return nil, err
@@ -152,11 +172,58 @@ func PlanJobs(ctx context.Context, st *tree.Store, jobs []Job, items []tree.Item
 				p.Problems = append(p.Problems, fmt.Sprintf("the folder %s overlaps %s's, %s", j.Path, label(other), other.Path))
 			}
 		}
+		var directories []string
 		combined, err := view.CombineWith(j.Views, j.Files, items, names)
+		if j.Outline != nil {
+			g, groupErr := outline.GroupAt(*j.Outline, j.Fixed, items, names, now)
+			err = groupErr
+			combined = g.Combined
+			var collect func(*outline.Node)
+			collect = func(n *outline.Node) {
+				if n.Path != "" {
+					directories = append(directories, n.Path)
+				}
+				for _, c := range n.Children {
+					collect(c)
+				}
+			}
+			if g.Root != nil {
+				collect(g.Root)
+			}
+			if root, openErr := os.OpenRoot(j.Path); openErr == nil {
+				for _, dir := range directories {
+					info, statErr := root.Stat(filepath.FromSlash(dir))
+					if statErr != nil && !os.IsNotExist(statErr) {
+						p.Problems = append(p.Problems, statErr.Error())
+					}
+					if statErr == nil && !info.IsDir() {
+						p.Problems = append(p.Problems, dir+" is not a directory")
+					}
+				}
+				_ = root.Close()
+			} else if !os.IsNotExist(openErr) {
+				p.Problems = append(p.Problems, openErr.Error())
+			}
+			p.Views = []string{j.Outline.Name}
+			for i := range combined.Files {
+				combined.Files[i].View = j.Outline.Name
+			}
+			for _, l := range g.Lost {
+				p.Problems = append(p.Problems, l.Path+": "+l.Why)
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
 		p.Combined = combined
+		{
+			for _, f := range combined.Files {
+				_, err := st.ReadFile(f.Item, f.Digest)
+				if err != nil {
+					p.Problems = append(p.Problems, err.Error())
+				}
+			}
+		}
 		if len(p.Problems) == 0 {
 			plan, err := Compute(ctx, j.Path, p.Views, combined.Files)
 			if err != nil {
@@ -165,6 +232,7 @@ func PlanJobs(ctx context.Context, st *tree.Store, jobs []Job, items []tree.Item
 				}
 				p.Problems = append(p.Problems, err.Error())
 			}
+			plan.Directories = directories
 			p.Plan = plan
 		} else {
 			p.Plan = Plan{Add: []Action{}, Replace: []Action{}, Remove: []Action{}, Keep: []Action{}, Left: []Action{}, Blocked: []Action{}}

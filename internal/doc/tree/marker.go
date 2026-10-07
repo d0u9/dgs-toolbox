@@ -9,13 +9,43 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-// MarkerName is the file that proves a folder is a doc tree.
+// MarkerName is the file that proves a folder is a by-Item doc tree.
 const MarkerName = "dgs-doctree.yaml"
+
+// MetaDir holds everything an in-place tree keeps — its marker (MetaMarker),
+// change mark, sidecars, definitions and trash — so the root holds only the
+// owner's files. A by-Item tree keeps them at the root.
+const (
+	MetaDir    = "_dgs"
+	MetaMarker = "tree.yaml"
+)
+
+// metaOf is where root's tree keeps its metadata: MetaDir when its marker is
+// there, else the root. Both markers present is an error.
+func metaOf(root string) (string, error) {
+	_, errMeta := os.Stat(filepath.Join(root, MetaDir, MetaMarker))
+	_, errRoot := os.Stat(filepath.Join(root, MarkerName))
+	switch {
+	case errMeta == nil && errRoot == nil:
+		return "", fmt.Errorf("%s: both %s and %s exist; keep one", root, MarkerName, filepath.Join(MetaDir, MetaMarker))
+	case errMeta == nil:
+		return filepath.Join(root, MetaDir), nil
+	}
+	return root, nil
+}
+
+func markerPath(meta, root string) string {
+	if meta != root {
+		return filepath.Join(meta, MetaMarker)
+	}
+	return filepath.Join(root, MarkerName)
+}
 
 // MarkerVersion is the tree format this build creates.
 const MarkerVersion = 1
@@ -26,18 +56,19 @@ const (
 	ItemsDir     = "items"
 )
 
+// Outline formats a marker names: Doc 1 rules built from path templates, or
+// folder skeletons.
+const (
+	OutlinesPaths   = "paths"
+	OutlinesFolders = "folders"
+)
+
 // Marker is the content of the marker file.
 type Marker struct {
-	Version   int             `yaml:"version"`
-	CreatedAt string          `yaml:"created_at"`
-	Layout    *LayoutPatterns `yaml:"layout,omitempty"`
-}
-
-// LayoutPatterns describes a future by-fields layout. Any non-nil value
-// is refused by Open until that layout is implemented, including an empty map.
-type LayoutPatterns struct {
-	Path string `yaml:"path"`
-	File string `yaml:"file"`
+	Version   int     `yaml:"version"`
+	CreatedAt string  `yaml:"created_at"`
+	Layout    *string `yaml:"layout,omitempty"`
+	Outlines  string  `yaml:"outlines,omitempty"`
 }
 
 // ErrNotATree is returned when the marker is missing. Nothing writes into a
@@ -47,7 +78,11 @@ var ErrNotATree = errors.New("not a doc tree: no marker file")
 
 // ReadMarker reads root's marker.
 func readMarker(root string) (Marker, error) {
-	path := filepath.Join(root, MarkerName)
+	meta, err := metaOf(root)
+	if err != nil {
+		return Marker{}, err
+	}
+	path := markerPath(meta, root)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -56,20 +91,37 @@ func readMarker(root string) (Marker, error) {
 		return Marker{}, err
 	}
 	// A yaml.Node distinguishes an omitted layout from an explicitly empty or
-	// null one. Every supplied layout is unsupported at this stage.
+	// null one. Only the scalar in-place name is supported.
 	var raw struct {
 		Version   int       `yaml:"version"`
 		CreatedAt string    `yaml:"created_at"`
 		Layout    yaml.Node `yaml:"layout"`
+		Outlines  yaml.Node `yaml:"outlines"`
 	}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return Marker{}, fmt.Errorf("%s: %w", path, err)
 	}
 	marker := Marker{Version: raw.Version, CreatedAt: raw.CreatedAt}
 	if raw.Layout.Kind != 0 {
-		marker.Layout = &LayoutPatterns{}
-		if raw.Layout.Kind == yaml.MappingNode {
-			_ = raw.Layout.Decode(marker.Layout)
+		name := ""
+		marker.Layout = &name
+		if raw.Layout.Kind == yaml.ScalarNode && raw.Layout.Tag == "!!str" {
+			*marker.Layout = raw.Layout.Value
+		}
+	}
+	if raw.Outlines.Kind != 0 {
+		// 1 and 2 are the names early in-place trees were written with.
+		v, tag := raw.Outlines.Value, raw.Outlines.Tag
+		if raw.Outlines.Kind != yaml.ScalarNode {
+			v = ""
+		}
+		switch {
+		case tag == "!!str" && v == OutlinesFolders, tag == "!!int" && v == "2":
+			marker.Outlines = OutlinesFolders
+		case tag == "!!str" && v == OutlinesPaths, tag == "!!int" && v == "1":
+			marker.Outlines = OutlinesPaths
+		default:
+			return Marker{}, fmt.Errorf("outlines must be %s or %s", OutlinesPaths, OutlinesFolders)
 		}
 	}
 	if marker.Version > MarkerVersion {
@@ -84,28 +136,72 @@ func (st *Store) Require() error {
 		return ErrNotATree
 	}
 	marker, err := readMarker(st.root)
-	if err == nil && marker.Layout != nil {
-		return unsupportedLayout()
+	if err == nil {
+		var selected layout.Layout
+		selected, err = selectLayout(marker)
+		if err == nil {
+			_, folders := selected.(layout.Folders)
+			if st.OutlineVersion() != outlineVersion(marker) {
+				return fmt.Errorf("tree Outline version changed after opening; reopen the tree")
+			}
+			if st.InPlace() == folders {
+				return fmt.Errorf("tree layout changed after opening; reopen the tree")
+			}
+		}
 	}
 	return err
 }
 
-// Init makes root a doc tree: it writes the marker and, when there is no
-// Template yet, the example one. It refuses a folder that is already a tree.
-// Optional report observers receive the CLI report paths after success.
+// Init creates a by-Item tree. Report observers receive paths after success.
 func Init(root string, now time.Time, report ...func(string)) error {
-	var before []Template
-	if len(report) > 0 {
-		before, _ = (&Store{root: root, layout: layout.ByItem()}).LoadTemplates()
+	return InitWithLayout(root, now, "", report...)
+}
+
+// InitWithLayout creates a tree with a layout selected once at initialization.
+// Empty selects by-Item; in-place is the only other supported layout.
+func InitWithLayout(root string, now time.Time, name string, report ...func(string)) error {
+	return InitWithOptions(root, now, name, 1, report...)
+}
+
+// InitWithOptions chooses storage and Outline format independently.
+func InitWithOptions(root string, now time.Time, name string, outlines int, report ...func(string)) error {
+	if outlines != 1 && outlines != 2 {
+		return fmt.Errorf("outlines must be 1 or 2")
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	marker := Marker{Version: MarkerVersion, CreatedAt: now.Format(time.RFC3339)}
+	if outlines == 2 {
+		marker.Outlines = OutlinesFolders
+	}
+	if name != "" {
+		marker.Layout = &name
+	}
+	if _, err := selectLayout(marker); err != nil {
 		return err
 	}
-	data, err := yaml.Marshal(Marker{Version: MarkerVersion, CreatedAt: now.Format(time.RFC3339)})
+	var before []Template
+	if len(report) > 0 {
+		before, _ = at(root).LoadTemplates()
+	}
+	if _, err := metaOf(root); err != nil {
+		return err
+	}
+	meta := root
+	if name == "in-place" {
+		meta = filepath.Join(root, MetaDir)
+		if _, err := os.Stat(filepath.Join(root, MarkerName)); err == nil {
+			return fmt.Errorf("%s: already a doc tree", root)
+		}
+	} else if _, err := os.Stat(filepath.Join(root, MetaDir, MetaMarker)); err == nil {
+		return fmt.Errorf("%s: already a doc tree", root)
+	}
+	if err := os.MkdirAll(meta, 0o755); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(marker)
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(root, MarkerName)
+	path := markerPath(meta, root)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
@@ -124,7 +220,12 @@ func Init(root string, now time.Time, report ...func(string)) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	templates := filepath.Join(root, TemplatesDir)
+	if name == "in-place" {
+		if err := os.MkdirAll(filepath.Join(meta, ItemsDir), 0755); err != nil {
+			return err
+		}
+	}
+	templates := filepath.Join(meta, TemplatesDir)
 	if err := os.MkdirAll(templates, 0o755); err != nil {
 		return err
 	}
@@ -141,7 +242,11 @@ func Init(root string, now time.Time, report ...func(string)) error {
 		}
 		return nil
 	}
-	if err := os.WriteFile(filepath.Join(templates, "id_card.yaml"), []byte(ExampleTemplate), 0o644); err != nil {
+	example := ExampleTemplate
+	if name == "in-place" {
+		example = strings.Replace(example, "type: id_card\n", "type: id_card\nlocked: true              # changed identity papers must be restored, not revised\n", 1)
+	}
+	if err := os.WriteFile(filepath.Join(templates, "id_card.yaml"), []byte(example), 0o644); err != nil {
 		return err
 	}
 	for _, notify := range report {

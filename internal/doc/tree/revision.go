@@ -79,6 +79,11 @@ func (st *Store) AddRevision(ctx context.Context, id string, source string, temp
 // RevisionMetadata optionally updates the Item's notes and tags when adding a
 // revision. Nil fields preserve the values already on the Item.
 type RevisionMetadata struct {
+	Folder string
+	// Suffix places an external file beside the current revision's, named
+	// after it: a.pdf and suffix -1 give a-1.pdf.
+	Suffix string
+
 	// Pages are more images after the source, each a page of the PDF made
 	// from them; KeepOriginal archives the images beside it.
 	Pages        []string
@@ -95,7 +100,10 @@ type RevisionMetadata struct {
 // AddRevisionWithMetadata adds a revision and saves any Item metadata edits in
 // the same sidecar write.
 func (st *Store) AddRevisionWithMetadata(ctx context.Context, id string, source string, template Template, given map[string]string, metadata RevisionMetadata, now time.Time) (Item, error) {
-	if err := st.Require(); err != nil {
+	if st.InPlace() {
+		return st.addInPlaceRevision(ctx, id, source, template, given, metadata, now)
+	}
+	if err := st.RequireFileWrites(); err != nil {
 		return Item{}, err
 	}
 	item, items, err := st.FindItem(id)
@@ -200,7 +208,7 @@ func (st *Store) AddRevisionWithMetadata(ctx context.Context, id string, source 
 	if len(event.Changes) == 0 {
 		event.Changes = nil
 	}
-	undoOriginal, err := input.archive(ctx, st, id, metadata.KeepOriginal)
+	undoOriginal, err := input.archive(ctx, st, item, metadata.KeepOriginal, nil)
 	if err != nil {
 		if copied {
 			os.Remove(destination)
@@ -257,7 +265,40 @@ func (st *Store) SetHead(id string, digest string, now time.Time) (Item, error) 
 // TrashRevision removes one document revision and moves its PDF to trash.
 // The final revision belongs to the Item and must be deleted with Trash.
 func (st *Store) TrashRevision(id string, digest string, now time.Time) (Item, string, error) {
-	if err := st.Require(); err != nil {
+	if st.InPlace() {
+		item, err := st.GetItem(id)
+		if err != nil {
+			return Item{}, "", err
+		}
+		if len(item.Revisions) < 2 {
+			return Item{}, "", fmt.Errorf("delete the Item to remove its last revision")
+		}
+		remaining := item.Clone()
+		remaining.Revisions = slices.DeleteFunc(remaining.Revisions, func(r Revision) bool { return r.Ref() == digest })
+		if len(remaining.Revisions) == len(item.Revisions) {
+			return Item{}, "", fmt.Errorf("no such revision")
+		}
+		if remaining.Head == digest {
+			remaining.Head = remaining.Revisions[len(remaining.Revisions)-1].Ref()
+			others, loadErr := st.LoadItems()
+			if loadErr != nil {
+				return Item{}, "", loadErr
+			}
+			chosen, _ := remaining.Revision(remaining.Head)
+			if err := st.checkSnapshotIdentity(item, chosen, others); err != nil {
+				return Item{}, "", err
+			}
+			r, _ := remaining.Revision(remaining.Head)
+			if r.Snapshot {
+				remaining.Type, remaining.Fields = r.Type, maps.Clone(r.Fields)
+			}
+		}
+		remaining.History = append(remaining.History, HistoryEvent{At: now.Format(time.RFC3339), Action: "delete_revision", Digest: digest})
+		to, err := st.trashInPlace(item, &remaining, now)
+		return remaining, to, err
+	}
+
+	if err := st.RequireFileWrites(); err != nil {
 		return Item{}, "", err
 	}
 	item, items, err := st.FindItem(id)
@@ -294,10 +335,10 @@ func (st *Store) TrashRevision(id string, digest string, now time.Time) (Item, s
 			hasPDF = false
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(st.root, TrashDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(st.meta, TrashDir), 0o755); err != nil {
 		return Item{}, "", err
 	}
-	to := filepath.Join(st.root, TrashDir, id+"-"+digest+"-"+now.UTC().Format("20060102T150405Z")+".pdf")
+	to := filepath.Join(st.meta, TrashDir, id+"-"+digest+"-"+now.UTC().Format("20060102T150405Z")+".pdf")
 	if !hasPDF {
 		to = strings.TrimSuffix(to, ".pdf") + ".yaml"
 	}
@@ -485,7 +526,7 @@ func (st *Store) SetFieldsAs(id string, digest string, template Template, given 
 var revisionActions = map[string]bool{
 	"import": true, "import_revision": true, "create_without_pdf": true,
 	"create_revision_without_pdf": true, "attach_pdf": true, "edit_fields": true,
-	"change_type": true,
+	"change_type": true, "file_changed": true,
 }
 
 func createsRevision(action string) bool { return revisionActions[action] }
@@ -544,13 +585,21 @@ const TrashDir = "trash"
 // every revision's PDF — into TrashDir, under its ID and when it was
 // deleted. It answers where the folder went.
 func (st *Store) Trash(id string, now time.Time) (string, error) {
-	if err := st.Require(); err != nil {
+	if st.InPlace() {
+		item, err := st.GetItem(id)
+		if err != nil {
+			return "", err
+		}
+		return st.trashInPlace(item, nil, now)
+	}
+
+	if err := st.RequireFileWrites(); err != nil {
 		return "", err
 	}
 	if _, err := st.GetItem(id); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Join(st.root, TrashDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(st.meta, TrashDir), 0o755); err != nil {
 		return "", err
 	}
 	// Only a layout giving each Item a folder of its own can move it whole;
@@ -559,7 +608,7 @@ func (st *Store) Trash(id string, now time.Time) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("item %s: this tree's layout has no Item folders to move", id)
 	}
-	to := filepath.Join(st.root, TrashDir, id+"-"+now.UTC().Format("20060102T150405Z"))
+	to := filepath.Join(st.meta, TrashDir, id+"-"+now.UTC().Format("20060102T150405Z"))
 	if _, err := os.Lstat(to); err == nil {
 		return "", fmt.Errorf("%s is already in the trash", to)
 	}

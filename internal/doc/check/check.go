@@ -30,6 +30,7 @@ import (
 type Kind string
 
 const (
+	Moved       Kind = "moved"        // a recorded file found elsewhere, awaiting confirmation
 	Missing     Kind = "missing"      // a revision's PDF is not there
 	Changed     Kind = "changed"      // a PDF no longer hashes to its name
 	Unnamed     Kind = "unnamed"      // a PDF under items/ no sidecar names
@@ -42,9 +43,16 @@ const (
 
 // Problem is one thing wrong, at a path relative to the tree's root.
 type Problem struct {
-	Kind   Kind
-	Path   string
-	Detail string
+	Kind       Kind
+	Path       string
+	Detail     string
+	Item       string   `json:"item,omitempty"`
+	Digest     string   `json:"digest,omitempty"`
+	Candidates []string `json:"candidates,omitempty"`
+	Actual     string   `json:"actual,omitempty"`
+	Locked     bool     `json:"locked,omitempty"`
+	Lost       bool     `json:"lost,omitempty"`
+	Original   bool     `json:"original,omitempty"`
 }
 
 // Report is the result of a check.
@@ -95,8 +103,17 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 	revisions := map[string]map[string]bool{}
 	// named holds every file a sidecar names, as the layout places it.
 	named := map[string]bool{}
-	type pending struct{ path, digest string }
+	type pending struct {
+		path, digest string
+		itemID       string
+		locked       bool
+		original     bool
+		recorded     bool
+	}
 	var reads []pending
+	addFile := func(kind Kind, id string, locked bool, digest, path, detail string, original, lost bool) {
+		report.Problems = append(report.Problems, Problem{Kind: kind, Path: rel(path), Detail: detail, Item: id, Digest: digest, Locked: locked, Lost: lost, Original: original})
+	}
 	for _, sidecar := range sidecars {
 		data, err := os.ReadFile(sidecar)
 		switch {
@@ -105,6 +122,10 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 		default:
 			var item tree.Item
 			if err := yaml.Unmarshal(data, &item); err != nil {
+				add(BadSidecar, sidecar, err.Error())
+				break
+			}
+			if err := store.ValidateItemPaths(&item); err != nil {
 				add(BadSidecar, sidecar, err.Error())
 				break
 			}
@@ -134,9 +155,13 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 					} else if !named[original] {
 						named[original] = true
 						if _, err := os.Stat(original); errors.Is(err, fs.ErrNotExist) {
-							add(Missing, original, "original image")
+							if o.Path != "" {
+								addFile(Missing, item.ID, item.Locked, o.Digest, original, "original image", true, false)
+							} else {
+								add(Missing, original, "original image")
+							}
 						} else {
-							reads = append(reads, pending{original, o.Digest})
+							reads = append(reads, pending{path: original, digest: o.Digest, itemID: item.ID, locked: item.Locked, original: true, recorded: o.Path != ""})
 						}
 					}
 				}
@@ -157,6 +182,18 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 					continue
 				}
 				path := store.PDF(item, rev.Digest)
+				if rev.Path != "" {
+					if seenFiles[rev.Digest] {
+						continue
+					}
+					seenFiles[rev.Digest] = true
+					var err error
+					path, err = store.ReadPDF(item, rev.Digest)
+					if err != nil {
+						addFile(Missing, item.ID, item.Locked, rev.Digest, filepath.Join(store.Root(), filepath.FromSlash(rev.Path)), err.Error(), false, rev.Lost)
+						continue
+					}
+				}
 				if seenFiles[path] {
 					continue
 				}
@@ -165,7 +202,7 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 					add(Missing, path, "revision added "+rev.Added)
 					continue
 				}
-				reads = append(reads, pending{path, rev.Digest})
+				reads = append(reads, pending{path: path, digest: rev.Digest, itemID: item.ID, locked: item.Locked, recorded: rev.Path != ""})
 			}
 		}
 	}
@@ -189,7 +226,35 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 		}
 		report.Checked++
 		if digest != r.digest {
-			add(Changed, r.path, "now hashes to "+short(digest))
+			if r.recorded {
+				detail := "now hashes to " + short(digest)
+				if r.locked || r.original {
+					detail += "; restore this file from a backup"
+				}
+				addFile(Changed, r.itemID, r.locked, r.digest, r.path, detail, r.original, false)
+				report.Problems[len(report.Problems)-1].Actual = digest
+			} else {
+				add(Changed, r.path, "now hashes to "+short(digest))
+			}
+		}
+	}
+	{
+		var missing []string
+		for _, p := range report.Problems {
+			if p.Kind == Missing && p.Digest != "" {
+				missing = append(missing, p.Digest)
+			}
+		}
+		found, err := store.FindFilePaths(ctx, missing)
+		if err != nil {
+			return report, err
+		}
+		for i := range report.Problems {
+			p := &report.Problems[i]
+			if p.Kind == Missing && len(found[p.Digest]) > 0 {
+				p.Kind, p.Candidates = Moved, found[p.Digest]
+				p.Detail = "found at " + strings.Join(p.Candidates, ", ") + "; confirm before updating the recorded path"
+			}
 		}
 	}
 	if err := files(st, revisions, add); err != nil {
@@ -202,6 +267,9 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 // loose reports the PDFs the layout places that no sidecar names, and an
 // Item's own folder with no sidecar in it.
 func loose(store *tree.Store, named map[string]bool, add func(Kind, string, string)) error {
+	if !store.ReportsLooseFiles() {
+		return nil
+	}
 	return filepath.WalkDir(store.Root(), func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -213,7 +281,7 @@ func loose(store *tree.Store, named map[string]bool, add func(Kind, string, stri
 		if d.IsDir() {
 			// A hidden folder is an import still being written; the trash
 			// is checked by no one.
-			if p != store.Root() && (strings.HasPrefix(d.Name(), ".") || rel == tree.TrashDir) {
+			if p != store.Root() && (strings.HasPrefix(d.Name(), ".") || rel == tree.TrashDir || rel == tree.MetaDir) {
 				return filepath.SkipDir
 			}
 			if folder, ok := store.Folder(d.Name()); ok && folder == p {
@@ -291,6 +359,11 @@ func files(st *tree.Store, revisions map[string]map[string]bool, add func(Kind, 
 		if err != nil {
 			add(BadFile, path, strip(path, err))
 			continue
+		}
+		for _, m := range o.Mount {
+			if m.Snapshot != "" && !snapshots[m.Snapshot] {
+				add(Dangling, path, "names Snapshot "+m.Snapshot+", which is not in "+snapshot.Dir+"/")
+			}
 		}
 		for _, m := range o.Snapshots {
 			if !snapshots[m.Name] {

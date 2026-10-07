@@ -556,10 +556,10 @@ and the fields it asks for. Adding a PDF means picking a Template and answering
 only what it asks. Nothing is filed automatically: the page may suggest a
 Template (see [Suggesting a type](#suggesting-a-type)), and the owner picks.
 
-Every document has a type, an owner and a country. A Template must list
-`owner` and `country` (of type `country`) as `required` fields, for records
-as for documents; a Template without them is refused when it is loaded or
-saved.
+Every document has a type and an owner. A Template must list `owner` as a
+`required` field, for records as for documents; a Template without it is
+refused when it is loaded or saved. `country` is optional; where a Template
+has it, it is of type `country`.
 
 A field has a `type`, which checks its value and chooses the control the page
 shows for it:
@@ -647,7 +647,9 @@ On Browse, picking a revision shows its fields; saving edits creates a new
 snapshot of that revision. Everything else — the page's list, a rule's `if` — uses HEAD's. A
 layout key is the exported revision's own value, so exporting all revisions
 can name the old card and the new one differently. A distinguishing field
-names the document, so it cannot be per_revision, and a record has one issue,
+names the document, so it cannot be per_revision; it may be optional, and
+then empty is a value of its own, so a clean copy and an annotated one are two
+documents. A record has one issue,
 so its fields cannot be either. A value a sidecar keeps at the Item for a key
 made per_revision later stands for every revision without its own, until that
 revision's fields are saved.

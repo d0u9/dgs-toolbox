@@ -6,6 +6,11 @@
 import { $, address, scrollBack, api, el, loadState, post, label, frame, say, nameTree, outlineTitle, exportOutline } from "/common.js";
 import { outlineTree, unplaced, resizable } from "/outlinetree.js";
 
+const initialState=await loadState();
+if(initialState.outlines===2){
+  const {startSkeleton}=await import("/skeletonui.js");
+  await startSkeleton(initialState,"outlines");
+}else{
 let state = { templates: [], items: [] };
 let outlines = [];
 let rules = []; // every rule in the tree
@@ -214,3 +219,5 @@ reload().then((answer) => {
   state.error = err.message;
   frame(state);
 });
+
+}
