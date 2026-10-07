@@ -218,18 +218,19 @@ type cleanJSON struct {
 // partJSON is one track, route or waypoint of a file. Key names it for the
 // page: "t0", "r0", "w0".
 type partJSON struct {
-	Key         string        `json:"key"`
-	Kind        string        `json:"kind"` // "track", "route" or "waypoint"
-	Name        string        `json:"name"`
-	First       int           `json:"first"` // a track's first point index
-	Last        int           `json:"last"`
-	Segments    int           `json:"segments,omitempty"`
-	Points      [][2]float64  `json:"points,omitempty"` // a route's path, a waypoint's position
-	Distance    float64       `json:"distance,omitempty"`
-	Description string        `json:"description,omitempty"`
-	Elevation   *float64      `json:"elevation,omitempty"`
-	Time        *int64        `json:"time,omitempty"`
-	Bounds      [2][2]float64 `json:"bounds"`
+	Key         string          `json:"key"`
+	Kind        string          `json:"kind"` // "track", "route" or "waypoint"
+	Name        string          `json:"name"`
+	First       int             `json:"first"` // a track's first point index
+	Last        int             `json:"last"`
+	Segments    int             `json:"segments,omitempty"`
+	Points      [][2]float64    `json:"points,omitempty"` // a route's path, a waypoint's position
+	Distance    float64         `json:"distance,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Photos      []sidecar.Photo `json:"photos,omitempty"`
+	Elevation   *float64        `json:"elevation,omitempty"`
+	Time        *int64          `json:"time,omitempty"`
+	Bounds      [2][2]float64   `json:"bounds"`
 	// Added is set on a track added from another file: its place among the
 	// added tracks, and the file it came from.
 	Added *addedJSON `json:"added,omitempty"`
@@ -582,12 +583,13 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 	for i, wpt := range a.file.Waypoints {
 		key := a.keys.Waypoints[i]
 		part := partJSON{
-			Key:         key,
-			Kind:        "waypoint",
-			Name:        named(a, key, wpt.Name, "Waypoint", nameIndex(key)),
-			Description: wpt.Description,
-			Points:      [][2]float64{{wpt.Lon, wpt.Lat}},
+			Key:    key,
+			Kind:   "waypoint",
+			Name:   named(a, key, wpt.Name, "Waypoint", nameIndex(key)),
+			Points: [][2]float64{{wpt.Lon, wpt.Lat}},
 		}
+		shown := waypointPhotos(a, key, wpt)
+		part.Description, part.Photos = shown.Description, shown.Photos
 		if copied := nameIndex(key) - a.layout.Waypoints; copied >= 0 && copied < len(a.cleaning.Waypoints) {
 			if from := a.cleaning.Waypoints[copied].From; from != "" {
 				part.Added = &addedJSON{Index: copied, From: from}

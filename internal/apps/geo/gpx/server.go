@@ -74,6 +74,9 @@ func Handler(settings Settings) http.Handler {
 	mux.HandleFunc("POST /api/waypoint", api.addWaypoint)
 	mux.HandleFunc("PUT /api/waypoint", api.moveWaypoint)
 	mux.HandleFunc("PUT /api/part-order", api.orderParts)
+	mux.HandleFunc("POST /api/photo", api.addPhoto)
+	mux.HandleFunc("GET /api/photo", api.servePhoto)
+	mux.HandleFunc("PUT /api/waypoint-photos", api.setPhotos)
 	mux.HandleFunc("DELETE /api/part", api.deletePart)
 	mux.HandleFunc("POST /api/part/copy", api.copyPart)
 	mux.HandleFunc("POST /api/segments/write", api.writeSegments)
@@ -125,7 +128,8 @@ func sameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if mediaType != "application/json" {
+			// A photo is sent as image/webp, which forces the same preflight.
+			if mediaType != "application/json" && (mediaType != "image/webp" || r.URL.Path != "/api/photo") {
 				writeError(w, http.StatusUnsupportedMediaType, errors.New("send JSON"))
 				return
 			}

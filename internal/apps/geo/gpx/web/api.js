@@ -13,7 +13,11 @@ async function postJSON(url, body) {
 }
 
 async function sendJSON(method, url, body) {
-  const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return send(method, url, "application/json", JSON.stringify(body));
+}
+
+async function send(method, url, type, body) {
+  const response = await fetch(url, { method, headers: { "Content-Type": type }, body });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || `${response.status} ${response.statusText}`);
   return result;
@@ -50,6 +54,11 @@ export const api = {
   // copyPart copies one part into another GPX dgs wrote, and takes it out of
   // this one when move is true.
   copyPart: (path, key, target, move = false) => postJSON("api/part/copy", { path, key, target, move }),
+  // addPhoto publishes one WebP beside a GPX dgs wrote and answers its name.
+  addPhoto: async (path, blob) => (await send("POST", `api/photo?path=${encodeURIComponent(path)}`, "image/webp", blob)).name,
+  photoURL: (path, name) => `api/photo?path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`,
+  // setPhotos holds a waypoint's description and photos, [{ name, caption }].
+  setPhotos: (path, key, description, photos) => sendJSON("PUT", "api/waypoint-photos", { path, key, description, photos }),
   // moveWaypoint puts a waypoint somewhere else, [lon, lat] in WGS-84.
   moveWaypoint: (path, key, lon, lat) => sendJSON("PUT", "api/waypoint", { path, key, lon, lat }),
   // saveAs writes a GPX with the tracks added to it into a new file.

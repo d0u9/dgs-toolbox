@@ -26,3 +26,23 @@ export function rowLabel(name, details = []) {
   box.append(title, meta);
   return box;
 }
+
+// Explicit hit areas for arrows inside a number input.
+export function numberStepper(input) {
+  const group = document.createElement("span");
+  group.className = "ui-number-stepper";
+  if (input.parentNode) input.replaceWith(group);
+  group.append(input);
+  for (const [direction, glyph, title] of [[-1, "▼", "Decrease"], [1, "▲", "Increase"]]) {
+    const control = button("icon-button", glyph, title, () => {
+      if (input.disabled || input.readOnly) return;
+      const step = input.step;
+      if (step === "any") input.step = "1";
+      try { direction > 0 ? input.stepUp() : input.stepDown(); }
+      finally { input.step = step; }
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    group.append(control);
+  }
+  return group;
+}

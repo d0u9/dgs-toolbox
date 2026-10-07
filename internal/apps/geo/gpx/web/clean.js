@@ -4,6 +4,7 @@
 // and lasso selection. The server runs every filter; this module edits settings, draws the
 // result and turns a lasso into point indices on screen.
 
+import { numberStepper } from "/ui/controls.js";
 import * as format from "./format.js";
 import { waySelect } from "./route.js";
 import { rowDoubleClick } from "/ui/selection.js";
@@ -465,7 +466,7 @@ export class CleanPanel {
     const unit = document.createElement("span");
     unit.className = "unit";
     unit.textContent = field.unit;
-    label.append(name, input, unit);
+    label.append(name, numberStepper(input), unit);
     return label;
   }
 
@@ -534,20 +535,20 @@ export class CleanOverlay {
       source: PREVIEW,
       layout: { "line-join": "round", "line-cap": "round" },
       paint: { "line-color": "#ffffff", "line-width": 6 },
-    });
+    }, beforeLayer);
     map.addLayer({
       id: PREVIEW,
       type: "line",
       source: PREVIEW,
       layout: { "line-join": "round" },
       paint: { "line-color": "#0072b2", "line-width": 3, "line-dasharray": [2, 1.2] },
-    });
+    }, beforeLayer);
     map.addLayer({
       id: PENDING,
       type: "circle",
       source: PENDING,
       paint: { "circle-radius": 7, "circle-color": RULE_COLORS.manual, "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 },
-    });
+    }, beforeLayer);
   }
 
   // setPreview draws a route not yet used, or with null clears it.

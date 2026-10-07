@@ -37,3 +37,48 @@ export function segmentSaveDialog({ targets, target, source, segments }) {
     },
   });
 }
+
+// photosDialog edits one waypoint's description and photos. It answers
+// { description, photos: [{ name, caption }], files, maxSide, quality } —
+// files are the pictures chosen to add, encoded as WebP at maxSide (0 keeps
+// their size) and quality — or null when cancelled. Without a WebP encoder
+// nothing can be added.
+export function photosDialog(part, url, { canAdd, maxSide, quality: qualityValue }) {
+  const description = document.createElement("input"); description.className = "field prompt-input photo-description"; description.placeholder = "Description"; description.value = part.description || ""; description.setAttribute("aria-label", "Description");
+  const list = document.createElement("div"); list.className = "photo-list";
+  for (const photo of part.photos || []) {
+    const row = document.createElement("div"); row.className = "photo-row"; row.dataset.name = photo.name;
+    const img = document.createElement("img"); img.src = url(photo.name); img.alt = photo.caption || "";
+    const caption = document.createElement("input"); caption.className = "field"; caption.placeholder = "Caption"; caption.value = photo.caption || ""; caption.setAttribute("aria-label", "Caption");
+    const remove = document.createElement("button"); remove.type = "button"; remove.className = "button"; remove.textContent = "Remove";
+    remove.addEventListener("click", () => row.remove());
+    row.append(img, caption, remove); list.append(row);
+  }
+  const files = document.createElement("input"); files.type = "file"; files.accept = "image/*"; files.multiple = true; files.className = "field"; files.setAttribute("aria-label", "Add photos");
+  const size = document.createElement("select"); size.className = "field"; size.setAttribute("aria-label", "Longest side");
+  for (const [value, text] of [
+    // Phone screens are about 1170–1290 device pixels wide; 1600 fills a
+    // tablet or an 800-pixel window at 2×; 1920 a Full HD desktop; 2048 and
+    // 2560 a large or Retina desktop.
+    [1280, "1280 px — phone"], [1600, "1600 px — tablet"], [1920, "1920 px — Full HD"],
+    [2048, "2048 px — desktop"], [2560, "2560 px — Retina"], [0, "Original size"],
+  ]) {
+    const option = document.createElement("option"); option.value = value; option.textContent = text; size.append(option);
+  }
+  size.value = String(maxSide);
+  const quality = document.createElement("input"); quality.type = "number"; quality.min = 1; quality.max = 100; quality.value = String(qualityValue); quality.className = "field"; quality.setAttribute("aria-label", "WebP quality");
+  const field = (text, input) => { const label = document.createElement("label"); label.className = "photo-field"; label.append(text, input); return label; };
+  const settings = document.createElement("div"); settings.className = "photo-settings";
+  settings.append(field("Add photos", files), field("Longest side", size), field("WebP quality", quality));
+  const adding = canAdd ? [settings] : [];
+  return formDialog({ title: `Photos of ${part.name}`, message: "Photos are copied beside the GPX as WebP. The GPX links them when the edit is saved.",
+    fields: [description, list, ...adding], focus: description, confirm: "Apply",
+    read: () => ({
+      description: description.value.trim(),
+      photos: [...list.children].map((row) => ({ name: row.dataset.name, caption: row.querySelector("input").value.trim() })),
+      files: canAdd ? [...files.files] : [],
+      maxSide: Number(size.value),
+      quality: Math.min(100, Math.max(1, Number(quality.value) || 90)),
+    }),
+  });
+}

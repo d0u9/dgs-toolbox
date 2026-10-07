@@ -88,6 +88,7 @@
   <div class="map-area">
     <div id="map" class="map"></div>
     <button id="terrain-3d" class="icon-button map-button terrain ui-map-button" title="3D relief — tilt the map and raise the ground (D)" aria-pressed="false"><span aria-hidden="true">3D</span></button>
+    <button id="track-points" class="icon-button map-button track-points ui-map-button" title="Track points — show samples joined by thin dashed lines" aria-label="Show track points" aria-pressed="false"></button>
     <button id="map-only" class="icon-button map-button ui-map-button" title="Map only — hide the panels around it (M)" aria-pressed="false"><span aria-hidden="true">⛶</span></button>
     <button id="show-workspace" class="icon-button panel-show left ui-fold-show" hidden title="Show the workspace (W)" aria-label="Show the workspace">›</button>
     <button id="show-inspector" class="icon-button panel-show right ui-fold-show" hidden title="Show the edit panel (I)" aria-label="Show the edit panel">‹</button>
@@ -115,8 +116,8 @@
         <button id="toggle-elevation" class="chip" aria-pressed="true" title="Show or hide the elevation chart">Elevation</button>
         <button id="toggle-speed" class="chip" aria-pressed="true" title="Show or hide the speed chart">Speed</button>
         <span id="layout-toggles" class="layout-toggles">
-          <button id="layout-stacked" class="chip icon" aria-pressed="true" title="Charts one above the other">☰</button>
-          <button id="layout-side" class="chip icon" aria-pressed="false" title="Charts side by side">◫</button>
+          <button id="layout-stacked" class="chip icon-button" aria-pressed="true" title="Charts one above the other">☰</button>
+          <button id="layout-side" class="chip icon-button" aria-pressed="false" title="Charts side by side">◫</button>
         </span>
         <button id="chart-fit" class="icon-button" title="Fit — the whole track across the charts, the timeline and the map">⤢</button>
       </span>

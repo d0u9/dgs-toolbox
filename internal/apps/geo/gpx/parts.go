@@ -629,9 +629,9 @@ func onGlobe(lon, lat float64) bool {
 // are appended after the file's own; and last every kind is put in the order
 // the page gave. The point indices kept beside the file already count the
 // tracks in that order, so once the file holds them so, no index moves.
-func writeParts(path string, onDisk *gpxfile.File, held sidecar.File) (sidecar.File, error) {
+func writeParts(path, dir string, onDisk *gpxfile.File, held sidecar.File) (sidecar.File, error) {
 	if len(held.Names) == 0 && len(held.Moved) == 0 && len(held.Deleted) == 0 && len(held.Order) == 0 &&
-		len(held.Added) == 0 && len(held.Routes) == 0 && len(held.Waypoints) == 0 {
+		len(held.Added) == 0 && len(held.Routes) == 0 && len(held.Waypoints) == 0 && len(held.Photos) == 0 {
 		return held, nil
 	}
 	layout := partCounts{Tracks: len(onDisk.Tracks), Routes: len(onDisk.Routes), Waypoints: len(onDisk.Waypoints)}
@@ -657,6 +657,16 @@ func writeParts(path string, onDisk *gpxfile.File, held sidecar.File) (sidecar.F
 			continue
 		}
 		if err := gpxfile.MoveWaypoint(path, index, geo.LatLon{Lat: at[1], Lon: at[0]}); err != nil {
+			return held, err
+		}
+	}
+	for key, photos := range held.Photos {
+		kind, index, err := partKey(key)
+		if err != nil || kind != 'w' || index >= counts['w'] || deleted[key] {
+			continue
+		}
+		others, _ := splitLinks(onDisk.Waypoints[index].Links, dir)
+		if err := gpxfile.SetWaypointLinks(path, index, photos.Description, photoLinks(others, photos.Photos, dir)); err != nil {
 			return held, err
 		}
 	}
@@ -693,6 +703,9 @@ func writeParts(path string, onDisk *gpxfile.File, held sidecar.File) (sidecar.F
 	for i, waypoint := range held.Waypoints {
 		written := waypoint.Point()
 		written.Name = named('w', i, written.Name)
+		if photos, ok := held.Photos[fmt.Sprintf("w%d", counts['w']+i)]; ok {
+			written.Description, written.Links = photos.Description, photoLinks(nil, photos.Photos, dir)
+		}
 		if err := gpxfile.AddWaypoint(path, written); err != nil {
 			return held, err
 		}
@@ -754,7 +767,7 @@ func writeParts(path string, onDisk *gpxfile.File, held sidecar.File) (sidecar.F
 	}
 	// Everything above is in the file now, under the names the page gave it,
 	// so nothing of it is kept beside the file.
-	held.Names, held.Moved, held.Deleted, held.Order = nil, nil, nil, nil
+	held.Names, held.Moved, held.Deleted, held.Order, held.Photos = nil, nil, nil, nil, nil
 	held.Added, held.Routes, held.Waypoints = nil, nil, nil
 	return held, nil
 }

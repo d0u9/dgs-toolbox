@@ -17,12 +17,12 @@ export function addTrace(map, { id, source, color, state = "inactive", filter, m
     map.addLayer({ id: layer, type: "line", source, ...(filter ? { filter } : {}), ...(i === 1 && metadata ? { metadata } : {}), layout: { "line-join": "round", "line-cap": "round" }, paint }, before);
   });
 }
-export function setTraceState(map, id, state, { dashed = false } = {}) {
+export function setTraceState(map, id, state, { dashed = false, points = false } = {}) {
   traceLayers(id).forEach((layer, i) => {
-    const width = TRACE_WIDTHS[state][i];
+    const width = points ? [2, 1][i] : TRACE_WIDTHS[state][i];
     map.setPaintProperty(layer, "line-width", width);
     map.setPaintProperty(layer, "line-opacity", 1);
-    if (dashed) map.setPaintProperty(layer, "line-dasharray", [7 / width, 4 / width]);
+    map.setPaintProperty(layer, "line-dasharray", points ? [3 / width, 3 / width] : dashed ? [7 / width, 4 / width] : null);
   });
 }
 
@@ -36,4 +36,28 @@ export function inverseColor(color) {
 export function setTraceColor(map, id, color) {
   map.setPaintProperty(`${id}-edge`, "line-color", inverseColor(color));
   map.setPaintProperty(id, "line-color", color);
+}
+
+// Opposite lightness stays legible where complementary hues do not.
+export function directionColor(color) {
+  const weights = [0.299, 0.587, 0.114];
+  if (typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color)) {
+    const rgb = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16));
+    return rgb.reduce((sum, value, i) => sum + value * weights[i], 0) >= 128 ? "#1a1a1a" : "#ffffff";
+  }
+  return ["case", [">=", ["+", ...weights.map((weight, i) => ["*", weight, ["at", i, ["to-rgba", color]]])], 128], "#1a1a1a", "#ffffff"];
+}
+
+// Chevrons follow geometry order and sit inside the visible colour core.
+export function addDirection(map, { id, source, color, filter, before, width = TRACE_WIDTHS.inactive[1] }) {
+  map.addLayer({ id, type: "symbol", source, ...(filter ? { filter } : {}),
+    layout: {
+      "symbol-placement": "line", "symbol-spacing": 24,
+      "icon-image": "track-direction", "icon-rotation-alignment": "map",
+      // The thick chevron spans 12 px including its stroke.
+      "icon-keep-upright": false, "icon-size": width / 12,
+      "icon-allow-overlap": true, "icon-ignore-placement": true,
+    },
+    paint: { "icon-color": directionColor(color) },
+  }, before);
 }
