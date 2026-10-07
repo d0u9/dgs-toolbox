@@ -13,8 +13,9 @@ import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { CHEVRON, DIAMOND, DIAMOND_OPEN, FOLDER } from "./icons.js";
-import { EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, SCISSORS, MAP_PIN_PLUS, CAMERA, SPLIT, CHEVRON_UP, CHEVRON_DOWN, ROTATE_CCW, ROTATE_CW, MAXIMIZE, ROWS_2, COLUMNS_2, CHEVRON_LEFT, CHEVRON_RIGHT, TRIANGLE_RIGHT } from "/ui/icons.js";
+import { iconSvg, EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, SCISSORS, MAP_PIN_PLUS, CAMERA, SPLIT, CHEVRON_UP, CHEVRON_DOWN, ROTATE_CCW, ROTATE_CW, MAXIMIZE, ROWS_2, COLUMNS_2, CHEVRON_LEFT, CHEVRON_RIGHT, TRIANGLE_RIGHT } from "/ui/icons.js";
 import { RoutePlanner } from "./route.js";
+import { ViewGestures } from "./gestures.js";
 import { UI_SCALE, uiPx } from "./density.js";
 import { waypointDialog, photosDialog } from "./dialog.js";
 import { cropDialog } from "./crop.js";
@@ -62,7 +63,9 @@ const state = {
   cleanOpen: false, // edit mode: the inspector is open for the focused track
   routeOpen: false, // route mode: planning a route by hand in the inspector
   editTab: "changes", // the inspector's tab in edit mode: "changes", "auto" or "segments"
+  joinGaps: false, // display-only straight links across recording breaks
   trackPoints: false, // samples joined by thin dashed lines
+  showManual: true, // manually removed samples and their map bands
   compare: true, // the recording drawn under a cleaned track
   lasso: false,
   waypointTool: false,
@@ -99,6 +102,7 @@ let stack;
 let terrain;
 let terrainToggle = () => {}; // the 3D switch, from the key as well as the buttons
 let map, layers, profile, stopMarkers, timeline, chartSplit;
+let gestures; // the view gestures, the same under every tool
 
 // ---- persistence: a per-browser convenience, never required ----
 
@@ -135,7 +139,9 @@ function save() {
       editTab: state.editTab,
       routeOpen: state.routeOpen,
       route: planner?.toJSON(),
+      joinGaps: state.joinGaps,
       trackPoints: state.trackPoints,
+      showManual: state.showManual,
       compare: state.compare,
       fillProfile: state.fill.profile,
       gcj: state.gcj,
@@ -225,6 +231,7 @@ function redraw(entry) {
     return;
   }
   layers.update(entry.id, entry.track);
+  if (entry === segmentVisibilityEntry) applySegmentVisibility();
 }
 
 function removeTrack(path) {
@@ -307,10 +314,8 @@ function setFocus(path, { fit: shouldFit = true } = {}) {
   if (entry) {
     layers.setFocus(entry.id);
     const hidden = hiddenRanges(entry);
-    profile.show(entry.track, entry.color, hidden);
     stopMarkers.show(entry.track, entry.color, hidden);
-    timeline.show(entry.track, entry.color, hidden);
-    syncChartsToTimeline(timeline.view);
+    showCharts();
     cleanOverlay.show(state.compare ? entry.track : null, hidden);
     cleanOverlay.showFills(entry.track);
     if (shouldFit) fit([entry.track]);
@@ -337,7 +342,10 @@ function setFocus(path, { fit: shouldFit = true } = {}) {
 function applyCleanPanel() {
   if (!timeline) return;
   const entry = focusedEntry();
-  const open = state.cleanOpen && Boolean(entry) && !state.routeOpen;
+  const part = editPart();
+  // Edit works on one track: selecting the file, a route or a waypoint leaves it.
+  if (state.cleanOpen && !part) state.cleanOpen = false;
+  const open = state.cleanOpen && Boolean(part) && !state.routeOpen;
   const wasOpen = !$("inspector").hidden;
   const wanted = open || state.routeOpen;
   $("inspector").hidden = !wanted || state.hidden.inspector;
@@ -350,10 +358,10 @@ function applyCleanPanel() {
   $("mode-edit").setAttribute("aria-pressed", String(open));
   $("mode-route").setAttribute("aria-pressed", String(state.routeOpen));
   if (planner && planner.active !== state.routeOpen) planner.setActive(state.routeOpen);
-  $("mode-edit").disabled = !entry;
-  $("mode-edit").title = entry
-    ? "Edit the focused track: remove points by hand, fill along the road, clean automatically"
-    : "Focus a track in the workspace to edit it";
+  $("mode-edit").disabled = !part;
+  $("mode-edit").title = part
+    ? "Edit the selected track: remove points by hand, fill along the road, clean automatically"
+    : "Select a track in the workspace to edit it";
   if (wasOpen === $("inspector").hidden) map?.resize();
   if (!open) {
     state.waypointTool = false;
@@ -366,11 +374,15 @@ function applyCleanPanel() {
   }
   cleanPanel.timeZone = $("timezone").value;
   cleanPanel.fill = state.fill;
-  cleanPanel.show(entry.track);
+  const view = partView(entry.track, part);
+  cleanPanel.show(view);
   timeline.setEditing({
-    edits: entry.track.clean.params.edits,
+    edits: view.clean.params.edits,
     rangeTool: state.rangeTool,
-    onRange: (first, last) => cleanPanel.addRange(first, last, false),
+    // A range keeps to the track being edited.
+    onRange: (first, last) => {
+      if (last >= part.first && first <= part.last) cleanPanel.addRange(Math.max(first, part.first), Math.min(last, part.last), false);
+    },
     onJoin: (index, join) => cleanPanel.setJoin(index, join),
     onRestore: (index) => cleanPanel.restoreEdit(index),
   });
@@ -378,10 +390,73 @@ function applyCleanPanel() {
   applyEditTools();
 }
 
-// setMode switches between browsing, editing the focused track and planning
+// showCharts shows the focused file on the timeline and charts: all of it, or
+// only its selected track.
+function showCharts() {
+  const entry = focusedEntry();
+  if (!entry) return;
+  const hidden = hiddenRanges(entry);
+  const part = editPart();
+  layers.setSelectedPart(entry.id, part?.key);
+  profile.show(entry.track, entry.color, hidden, part);
+  timeline.show(entry.track, entry.color, hidden, part);
+  syncChartsToTimeline(timeline.view);
+}
+
+// editPart is the track Edit works on: the track selected in the focused
+// file. Selecting the file itself selects no track, even when it holds one.
+function editPart() {
+  const entry = focusedEntry();
+  const selected = state.partSelection;
+  if (!entry || selected?.path !== state.focus) return null;
+  return entry.track.parts.find((part) => part.key === selected.key && part.kind === "track") || null;
+}
+
+// pickHidden are the tracks a tool's click cannot pick: the hidden ones and,
+// in Edit, every track but the one being edited.
+function pickHidden(entry) {
+  const part = state.cleanOpen ? editPart() : null;
+  if (!part || entry !== focusedEntry()) return entry.hiddenParts;
+  return new Set([...entry.hiddenParts, ...entry.track.parts.filter((other) => other.kind === "track" && other.key !== part.key).map((other) => other.key)]);
+}
+
+// inPart reports whether an edit removes any point of a track.
+function inPart(edit, part) {
+  return edit.kind === "lasso"
+    ? edit.points.some((i) => i >= part.first && i <= part.last)
+    : edit.last >= part.first && edit.first <= part.last;
+}
+
+// partView is the file as the edit panel shows it for one track: its name,
+// its own filters, and the edits, fills, segments and counts on its points.
+// The same view is handed back while the file and track stay the same.
+const partViews = new WeakMap();
+function partView(track, part) {
+  const cached = partViews.get(track);
+  if (cached?.key === part.key) return cached.view;
+  const within = (i) => i >= part.first && i <= part.last;
+  const counts = { manual: 0, spike: 0, drift: 0, stop: 0, fill: 0, filled: 0, moved: 0 };
+  for (let i = part.first; i <= part.last; i++) {
+    if (track.removed[i]) counts[track.removed[i]] = (counts[track.removed[i]] || 0) + 1;
+    if (track.original && track.points[i].some((value, axis) => value !== track.original[i][axis])) counts.moved++;
+  }
+  const fills = track.fills.filter((fill) => within(fill.first) && within(fill.last));
+  counts.filled = fills.reduce((sum, fill) => sum + fill.points, 0);
+  const view = {
+    ...track,
+    name: part.name,
+    fills,
+    pieces: track.pieces.filter((piece) => within(piece.first) && within(piece.last)),
+    clean: { ...track.clean, counts, params: { ...structuredClone(part.clean), edits: track.clean.params.edits.filter((edit) => inPart(edit, part)) } },
+  };
+  partViews.set(track, { key: part.key, view });
+  return view;
+}
+
+// setMode switches between browsing, editing the selected track and planning
 // a route.
 function setMode(mode) {
-  const edit = mode === "edit" && Boolean(focusedEntry());
+  const edit = mode === "edit" && Boolean(editPart());
   const route = mode === "route";
   if (state.cleanOpen === edit && state.routeOpen === route) return;
   state.cleanOpen = edit;
@@ -394,7 +469,7 @@ function setMode(mode) {
 
 // cutting enables cut commands on the track and timeline: in edit mode,
 // on the Segments tab.
-const cutting = () => state.cleanOpen && !state.routeOpen && state.editTab === "segments" && Boolean(focusedEntry());
+const cutting = () => state.cleanOpen && !state.routeOpen && state.editTab === "segments" && Boolean(editPart());
 
 // setEditTab switches the inspector's tab. Segments is the Cut tool, so the
 // other tools stop there.
@@ -436,7 +511,7 @@ function setCompare(on) {
   state.compare = on;
   const entry = focusedEntry();
   const hidden = entry ? hiddenRanges(entry) : [];
-  if (cutting() && cutPanel.track?.path === state.focus) hidden.push(...cutPanel.hiddenRanges());
+  hidden.push(...uncheckedRanges());
   cleanOverlay.show(on && entry ? entry.track : null, hidden);
   applyEditTools();
   save();
@@ -447,6 +522,8 @@ function setCompare(on) {
 function applyEditTools() {
   const open = state.cleanOpen && Boolean(focusedEntry()) && !state.routeOpen;
   $("map-tools").hidden = !open;
+  // Tools that draw by dragging claim the left-button drag; Space+drag pans under every tool.
+  gestures?.setToolDrag(false);
   const tool = cutting() ? "cut" : state.waypointTool ? "waypoint" : state.rangeTool ? "range" : state.lasso ? "lasso" : state.fill.active ? "fill" : "select";
   for (const name of ["select", "range", "lasso", "fill", "cut", "waypoint"]) {
     $(`tool-${name}`).setAttribute("aria-pressed", String(open && tool === name));
@@ -464,7 +541,7 @@ function applyEditTools() {
   } else if (open && tool === "cut") {
     html = "<strong>Cut</strong> · click to select a point; right-click to add or remove a cut; drag a cut on the timeline to move it";
   } else if (open && tool === "lasso") {
-    html = `<strong>Lasso</strong> · draw around points to remove them; hold <kbd>${format.keys.alt}</kbd> to restore · ${esc} to stop`;
+    html = `<strong>Lasso</strong> · click boundary points, double-click to finish; drag to pan; hold <kbd>${format.keys.alt}</kbd> to restore · <kbd>Space</kbd>-drag pans · ${esc} to stop`;
   } else if (open && tool === "fill") {
     const { fill } = state;
     if (fill.busy) html = "<strong>Fill along the road</strong> · asking the router…";
@@ -483,11 +560,7 @@ function applyEditTools() {
 
 // pushEdit records one removal by hand on the focused track.
 function pushEdit(edit) {
-  const entry = focusedEntry();
-  if (!entry) return;
-  const params = structuredClone(entry.track.clean.params);
-  params.edits.push({ ...edit, at: Date.now() });
-  saveClean(params);
+  if (cleanPanel.track) cleanPanel.addEdit(edit);
 }
 
 function setLasso(active) {
@@ -499,6 +572,7 @@ function setLasso(active) {
   }
   lasso.setActive(active);
   cleanPanel.setLasso(active);
+  applySegmentVisibility();
   applyEditTools();
 }
 
@@ -543,7 +617,7 @@ function trackEndNear(entry, screenPoint, radius = FILL_SNAP) {
   const { track } = entry;
   let index = -1, best = radius ** 2;
   for (const part of track.parts) {
-    if (part.kind !== "track" || entry.hiddenParts.has(part.key)) continue;
+    if (part.kind !== "track" || pickHidden(entry).has(part.key)) continue;
     let first = part.first, last = part.last;
     while (first < last && track.removed[first]) first++;
     while (last > first && track.removed[last]) last--;
@@ -598,7 +672,7 @@ async function addWaypointAt(event) {
 function fillEndAt(entry, event) {
   const { track } = entry;
   let index = trackEndNear(entry, event.point);
-  if (index < 0) index = layers.nearest(track, event.point, 24, entry.hiddenParts);
+  if (index < 0) index = layers.nearest(track, event.point, 24, pickHidden(entry));
   if (index >= 0) return { index, position: track.points[index] };
   return null;
 }
@@ -886,6 +960,7 @@ async function newGPX() {
   });
   if (!name) return;
   try {
+    cutPanel?.remember();
     const { path } = await api.newDraft(name);
     await addTrack(path);
   } catch (error) {
@@ -1029,9 +1104,15 @@ function showRange(edit, { fit = false } = {}) {
   if (box[0][0] <= box[1][0]) fitBox(box);
 }
 
-// saveClean writes the focused track's cleaning and shows the result.
+// saveClean writes the selected track's cleaning, as the edit panel shows it
+// (partView), and shows the result: its filters, and its edits in place of
+// the ones on its points, beside the edits on the file's other tracks.
 async function saveClean(params) {
-  await changeFocused((path) => api.saveClean(path, params));
+  const entry = focusedEntry();
+  const part = editPart();
+  if (!entry || !part) return;
+  const others = entry.track.clean.params.edits.filter((edit) => !inPart(edit, part));
+  await changeFocused((path) => api.saveClean(path, part.first, { ...params, edits: [...others, ...params.edits] }));
 }
 
 // changeFocused runs a change to the focused track's sidecar, then fetches the
@@ -1062,8 +1143,16 @@ async function reloadEntry(path) {
 
 let segmentVisibilityEntry = null;
 
+// uncheckedRanges are the focused track's segments left unchecked: on the
+// Segments tab, and while the lasso is on, as the tab left them.
+function uncheckedRanges() {
+  if (cutting() && cutPanel.track?.path === state.focus) return cutPanel.hiddenRanges();
+  if (state.lasso && cutPanel.lastHidden?.path === state.focus) return cutPanel.lastHidden.ranges;
+  return [];
+}
+
 function applySegmentVisibility() {
-  const entry = cutting() && cutPanel.track?.path === state.focus ? focusedEntry() : null;
+  const entry = (cutting() && cutPanel.track?.path === state.focus) || state.lasso ? focusedEntry() : null;
   const previous = segmentVisibilityEntry;
   if (segmentVisibilityEntry && segmentVisibilityEntry !== entry && layers.ids.has(segmentVisibilityEntry.id)) layers.update(segmentVisibilityEntry.id, segmentVisibilityEntry.track);
   segmentVisibilityEntry = entry;
@@ -1076,7 +1165,7 @@ function applySegmentVisibility() {
     }
     return;
   }
-  const hidden = [...hiddenRanges(entry), ...cutPanel.hiddenRanges()];
+  const hidden = [...hiddenRanges(entry), ...uncheckedRanges()];
   layers.update(entry.id, entry.track, hidden);
   cutOverlay.show(cutPanel.track, hidden);
   cleanOverlay.show(state.compare ? entry.track : null, hidden);
@@ -1135,9 +1224,13 @@ function lassoDone(polygon, { restore }) {
   const entry = focusedEntry();
   if (!entry) return;
   const { track } = entry;
-  const hidden = hiddenRanges(entry);
+  const part = editPart();
+  if (!part || !cleanPanel.track) return;
+  const hidden = [...hiddenRanges(entry), ...uncheckedRanges()];
   const inside = new Set();
   track.points.forEach((point, i) => {
+    // The lasso keeps to the track being edited.
+    if (i < part.first || i > part.last) return;
     if (hidden.some(([first, last]) => i >= first && i <= last)) return;
     const wanted = restore ? track.removed[i] === "manual" : !track.removed[i];
     if (!wanted) return;
@@ -1149,7 +1242,7 @@ function lassoDone(polygon, { restore }) {
     pushEdit({ kind: "lasso", points: [...inside].sort((a, b) => a - b), join: true });
     return;
   }
-  const params = structuredClone(track.clean.params);
+  const params = structuredClone(cleanPanel.track.clean.params);
   params.edits = params.edits
     .map((edit) => (edit.kind === "lasso" ? { ...edit, points: edit.points.filter((i) => !inside.has(i)) } : edit))
     .filter((edit) => edit.kind !== "lasso" || edit.points.length);
@@ -1227,9 +1320,8 @@ function setColor(path, color) {
   if (layers.ids.has(entry.id)) layers.setColor(entry.id, color);
   if (state.focus === path) {
     const hidden = hiddenRanges(entry);
-    profile.show(entry.track, color, hidden);
     stopMarkers.show(entry.track, color, hidden);
-    timeline.show(entry.track, color, hidden);
+    showCharts();
   }
   save();
 }
@@ -1370,7 +1462,7 @@ function trackRow(path, entry) {
   main.className = "file-main";
   main.append(label(track.name, []), distance);
   if (disclosure) li.append(disclosure);
-  else { const spacer = document.createElement("span"); spacer.className = "disclosure-space"; li.append(spacer); }
+  else { const marker = document.createElement("span"); marker.className = "disclosure-space"; marker.innerHTML = iconSvg("file"); marker.setAttribute("aria-hidden", "true"); li.append(marker); }
   li.append(main, actions);
   li.append(color);
   // A right click on a file offers what is done to the file as a whole:
@@ -1445,6 +1537,7 @@ function trackRow(path, entry) {
     const double = doubleRowClick(JSON.stringify([path]), event);
     const toggle = event.metaKey || event.ctrlKey;
     select(path, { toggle, range: event.shiftKey });
+    applyCleanPanel(); // a file is not a track: Edit closes
     // Picking several rows out is not looking at one: only a plain click
     // changes the map highlight and the profile to a file.
     if (toggle || event.shiftKey) {
@@ -1452,6 +1545,7 @@ function trackRow(path, entry) {
       return;
     }
     if (!entry.visible) {
+      showCharts();
       renderTracks();
       if (double) fitBox(entry.track.bounds);
       return;
@@ -1670,8 +1764,11 @@ function dropAt(x, y, event) {
 
   const heldEntry = state.tracks.get(held.path);
   if (!heldEntry) return null;
-  // Inside its own file a part is put in order by its arrows, not dragged.
-  if (targetPath === held.path) return null;
+  // Reorder only among siblings of the same kind in a writable GPX.
+  if (targetPath === held.path) {
+    if (!writable(heldEntry) || row.dataset.kind !== held.kind || row.dataset.key === held.key) return null;
+    return { kind: "parts", before: above ? row.dataset.key : afterPart(heldEntry, held.kind, row.dataset.key) };
+  }
 
 
   const copy = copyModifier(event);
@@ -1757,6 +1854,7 @@ async function applyDrop(held, target) {
     reorderFiles(held.path, target.before);
     return;
   }
+  if (target.kind === "parts") { await reorderParts(held, target.before); return; }
   await dropIntoFile(held, target);
 }
 
@@ -2058,7 +2156,8 @@ function showPart(path, part, { fit: shouldFit = false } = {}) {
   select(path);
   const entry = state.tracks.get(path);
   if (entry.visible && state.focus !== path) setFocus(path, { fit: false });
-  else { renderTracks(); applyCutPanel(); }
+  else { showCharts(); renderTracks(); applyCutPanel(); applyCleanPanel(); }
+  if (part.kind === "track" && entry.visible && !entry.hiddenParts.has(part.key)) setMode("edit");
   if (part.kind === "waypoint") {
     if (shouldFit && entry.visible && !entry.hiddenParts.has(part.key)) openWaypoint(path, entry, part);
     if (shouldFit) map.easeTo({ center: part.points[0], zoom: Math.max(map.getZoom(), 15), duration: 400 });
@@ -2132,15 +2231,23 @@ function focusedEntry() {
   return state.focus ? state.tracks.get(state.focus) : null;
 }
 
+// inspect moves the linked cursors of the map, timeline and charts to one
+// point of the focused track. With a track segment selected, only its points
+// are linked; a point elsewhere clears every cursor.
 function inspect(index) {
   const entry = focusedEntry();
+  const selected = state.partSelection?.path === state.focus
+    ? entry?.track.parts.find(part => part.kind === "track" && part.key === state.partSelection.key) : null;
+  if (selected && index != null && (index < selected.first || index > selected.last)) index = null;
   if (!entry || index == null || index < 0) {
     layers.setCursor(null);
     timeline.setIndex(null);
+    profile.setIndex(null);
     return;
   }
   layers.setCursor(entry.track.points[index], entry.color);
   timeline.setIndex(index);
+  profile.setIndex(index);
 }
 
 // ---- the timeline's time and the charts' distance, zoomed together ----
@@ -2156,7 +2263,8 @@ function fitCharts() {
   // Frame the line the timeline shows: its kept points, not the file's
   // routes, waypoints or hidden tracks, which would pull the frame aside.
   const { track } = entry;
-  const hidden = hiddenRanges(entry);
+  const part = editPart();
+  const hidden = [...hiddenRanges(entry), ...(part ? [[0, part.first - 1], [part.last + 1, track.points.length]] : [])];
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
   track.points.forEach(([lon, lat], i) => {
     if (track.removed[i] || hidden.some(([first, last]) => i >= first && i <= last)) return;
@@ -2242,7 +2350,7 @@ function waypointAt(point, radius = 6) {
 }
 
 function bindMap() {
-  let pending = null;
+  let pending = null, hoveredPath = null, hoveredPart = null, hoverIndex = -1;
   // While the map pans, zooms or turns, the pointer is not pointing at
   // anything: finding the nearest point and redrawing the charts every frame
   // costs the frames the movement needs, most of all in 3D, where each
@@ -2259,7 +2367,13 @@ function bindMap() {
       const point = pending;
       pending = null;
       const entry = focusedEntry();
-      const index = entry && entry.track.points.length ? layers.nearest(entry.track, point, 24, entry.hiddenParts) : -1;
+      const selected = state.partSelection;
+      const part = selected?.path === state.focus ? entry?.track.parts.find(part => part.kind === "track" && part.key === selected.key) : null;
+      if (hoveredPath !== state.focus || hoveredPart !== part?.key) hoverIndex = -1;
+      hoveredPath = state.focus; hoveredPart = part?.key;
+      const hidden = part ? new Set([...entry.hiddenParts, ...entry.track.parts.filter(other => other.kind === "track" && other.key !== part.key).map(other => other.key)]) : entry?.hiddenParts;
+      const index = entry?.visible && entry.track.points.length ? layers.nearest(entry.track, point, 24, hidden, { preferred: hoverIndex, hiddenRanges: uncheckedRanges() }) : -1;
+      hoverIndex = index;
       // A waypoint under the pointer answers it by growing a little; like
       // every icon on the map, it takes the ordinary arrow, not the crosshair.
       const found = waypointAt(point);
@@ -2269,13 +2383,12 @@ function bindMap() {
       map.getCanvas().style.cursor = found ? "default"
         : index >= 0 ? (cutting() ? "copy" : "crosshair") : state.fill.active || state.routeOpen ? "crosshair" : "";
       inspect(index);
-      profile.setIndex(index >= 0 ? index : null);
     });
   });
   map.on("mouseout", () => {
     pending = null;
+    hoverIndex = -1;
     inspect(null);
-    profile.setIndex(null);
     layers.setHover(null, null);
     showPhotoHover(null);
   });
@@ -2289,7 +2402,7 @@ function bindMap() {
     const found = waypointAt(event.point);
     const cutEntry = focusedEntry();
     if (!found && cutting() && cutEntry) {
-      const index = layers.nearest(cutEntry.track, event.point, 24, cutEntry.hiddenParts);
+      const index = layers.nearest(cutEntry.track, event.point, 24, pickHidden(cutEntry));
       if (index >= 0) {
         inspect(index);
         actions.push([{ label: "Cut here", onSelect: () => cutPanel.addCut(index) }]);
@@ -2328,7 +2441,7 @@ function bindMap() {
     }
     // With the range tool, clicks on the track pick a range's start, then its end.
     if (state.rangeTool && focused) {
-      const index = layers.nearest(focused.track, event.point, 24, focused.hiddenParts);
+      const index = layers.nearest(focused.track, event.point, 24, pickHidden(focused));
       if (index < 0) return;
       if (state.rangeStart == null) {
         setRangeStart(index);
@@ -2341,7 +2454,7 @@ function bindMap() {
     }
     // Cutting still selects on click; edits live in the context menu.
     if (cutting() && focused.track.points.length) {
-      const index = layers.nearest(focused.track, event.point, 24, focused.hiddenParts);
+      const index = layers.nearest(focused.track, event.point, 24, pickHidden(focused));
       if (index >= 0) {
         inspect(index);
         profile.setIndex(index);
@@ -2363,10 +2476,13 @@ function bindMap() {
     const id = hit.layer.metadata.track;
     for (const [path, entry] of state.tracks) {
       if (entry.id !== id) continue;
-      state.partSelection = null;
+      // A click on a track's line selects that track.
+      state.partSelection = { path, key: hit.properties.part };
       select(path);
       if (path !== state.focus) setFocus(path, { fit: false });
-      else renderTracks();
+      else { showCharts(); renderTracks(); applyCutPanel(); applyCleanPanel(); }
+      const part = entry.track.parts.find(part => part.kind === "track" && part.key === hit.properties.part);
+      if (part && entry.visible && !entry.hiddenParts.has(part.key)) setMode("edit");
     }
   });
 }
@@ -2537,6 +2653,18 @@ class ViewControl {
     this.map = map;
     const box = document.createElement("div");
     box.className = "maplibregl-ctrl maplibregl-ctrl-group ui-map-nav view-control";
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.title = "Reset zoom — fit the selected track";
+    reset.setAttribute("aria-label", reset.title);
+    reset.innerHTML = MAXIMIZE;
+    reset.addEventListener("click", () => {
+      const entry = focusedEntry();
+      const part = editPart();
+      if (entry?.visible && part && !entry.hiddenParts.has(part.key)) fitBox(part.bounds);
+      else fit([...state.tracks.values()].filter((entry) => entry.visible).map((entry) => entry.track));
+    });
+    box.appendChild(reset);
     const buttons = [
       [CHEVRON_UP, "Tilt up — look further toward the horizon", () => ({ pitch: Math.min(map.getMaxPitch(), map.getPitch() + TILT_STEP) })],
       [CHEVRON_DOWN, "Tilt down — look straight down", () => ({ pitch: Math.max(0, map.getPitch() - TILT_STEP) })],
@@ -2690,6 +2818,8 @@ async function start() {
     refreshExpiredTiles: false,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
+  // Before any tool listens, so Space+drag reaches the map first.
+  gestures = new ViewGestures(map);
   map.addControl(new ViewControl(), "top-right");
   document.querySelectorAll(".maplibregl-ctrl-group").forEach(group => group.classList.add("ui-map-nav"));
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
@@ -2713,9 +2843,19 @@ async function start() {
   }
   map.addImage("track-direction", { width: 32, height: 32, data: arrow }, { pixelRatio: 2, sdf: true });
   layers = new TrackLayers(map);
+  state.joinGaps = saved.joinGaps === true;
+  layers.setJoinGaps(state.joinGaps);
+  $("connect-gaps").innerHTML = iconSvg("minus");
+  $("connect-gaps").setAttribute("aria-pressed", String(state.joinGaps));
+  $("connect-gaps").addEventListener("click", () => {
+    state.joinGaps = !state.joinGaps;
+    $("connect-gaps").setAttribute("aria-pressed", String(state.joinGaps));
+    layers.setJoinGaps(state.joinGaps);
+    save();
+  });
   state.trackPoints = saved.trackPoints === true;
   layers.setPointsVisible(state.trackPoints);
-  $("track-points").innerHTML = ROUTE;
+  $("track-points").innerHTML = iconSvg("ellipsis");
   $("track-points").setAttribute("aria-pressed", String(state.trackPoints));
   $("track-points").addEventListener("click", () => {
     state.trackPoints = !state.trackPoints;
@@ -2739,6 +2879,14 @@ async function start() {
   });
   photoHover = new maplibregl.Popup({ offset: 12, closeButton: false, closeOnClick: false, className: "photo-hover" });
   cleanOverlay = new CleanOverlay(map, "cursor");
+  state.showManual = saved.showManual !== false;
+  cleanOverlay.setManualVisible(state.showManual);
+  $("show-manual").checked = state.showManual;
+  $("show-manual").addEventListener("change", event => {
+    state.showManual = event.target.checked;
+    cleanOverlay.setManualVisible(state.showManual);
+    save();
+  });
   cleanPanel = new CleanPanel({
     root: $("clean-panel"),
     onChange: saveClean,
@@ -2874,7 +3022,6 @@ async function start() {
     ticks: $("timeline-ticks"),
     onScrub: (index) => {
       inspect(index);
-      profile.setIndex(index);
     },
     onStop: (index, options) => selectStop(index, options),
     onStopHover: (index) => stopMarkers.highlight(index),

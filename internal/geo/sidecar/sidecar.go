@@ -21,14 +21,19 @@ import (
 // Suffix is appended to the source's file name: walk.gpx has walk.gpx.dgs.json.
 const Suffix = ".dgs.json"
 
-// Version is the format this package writes.
-const Version = 1
+// Version is the format this package writes. Version 2 added Tracks; a
+// version 1 file reads the same, its Clean filters serving every track.
+const Version = 2
 
 // File is a sidecar's content.
 type File struct {
-	Version  int            `json:"version"`
-	Clean    clean.Params   `json:"clean"`
-	Segments segment.Params `json:"segments"`
+	Version int `json:"version"`
+	// Clean holds the removals made by hand, and the filters of every track
+	// without its own entry in Tracks — all of them in a version 1 file.
+	Clean clean.Params `json:"clean"`
+	// Tracks are each track's own filters, named by the track's first point.
+	Tracks   []clean.TrackFilters `json:"tracks,omitempty"`
+	Segments segment.Params       `json:"segments"`
 	// Fills are stretches filled in along the road; Added are tracks brought
 	// from other files, not yet saved into a GPX.
 	Fills []compose.Fill  `json:"fills,omitempty"`
@@ -80,8 +85,41 @@ type Photo struct {
 
 // Active reports whether the file records anything.
 func (f File) Active() bool {
-	return f.Clean.Active() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || len(f.Waypoints) > 0 ||
+	return f.Clean.Active() || f.tracksActive() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || len(f.Waypoints) > 0 ||
 		len(f.Routes) > 0 || len(f.Deleted) > 0 || len(f.Moved) > 0 || len(f.Names) > 0 || len(f.Order) > 0 || len(f.Photos) > 0 || f.Plan != nil
+}
+
+// tracksActive reports whether a track's own filters change anything. One
+// with every filter off still matters when Clean's filters are on, since it
+// stands in for them.
+func (f File) tracksActive() bool {
+	for _, t := range f.Tracks {
+		if t.Active() || f.Clean.Filters.Active() {
+			return true
+		}
+	}
+	return false
+}
+
+// SetTrack records the filters of the track whose first point is first.
+func (f *File) SetTrack(first int, filters clean.Filters) {
+	for i := range f.Tracks {
+		if f.Tracks[i].First == first {
+			f.Tracks[i].Filters = filters
+			return
+		}
+	}
+	f.Tracks = append(f.Tracks, clean.TrackFilters{First: first, Filters: filters})
+}
+
+// TrackFilters are the filters the track whose first point is first runs.
+func (f File) TrackFilters(first int) clean.Filters {
+	for _, t := range f.Tracks {
+		if t.First == first {
+			return t.Filters
+		}
+	}
+	return f.Clean.Filters
 }
 
 // Insert shifts every point index after after by count, for count points
@@ -191,6 +229,15 @@ func (f *File) remap(move func(int) (int, bool), split bool) {
 	if len(edits) == 0 {
 		f.Clean.Edits = nil
 	}
+
+	var tracks []clean.TrackFilters
+	for _, t := range f.Tracks {
+		if moved, ok := move(t.First); ok {
+			t.First = moved
+			tracks = append(tracks, t)
+		}
+	}
+	f.Tracks = tracks
 
 	var cuts []int
 	for _, cut := range f.Segments.Cuts {

@@ -28,21 +28,26 @@ export class Profile {
     observer.observe(speed);
   }
 
-  // hiddenRanges are point index ranges [first, last] shaded as hidden.
-  show(track, color, hiddenRanges = []) {
+  // hiddenRanges are point index ranges [first, last] shaded as hidden. part,
+  // a track of the file as { name, first, last }, limits the charts to its
+  // points; indices in and out stay the file's.
+  show(track, color, hiddenRanges = [], part = null) {
     this.destroy();
     this.track = track;
+    this.part = part;
+    this.offset = part ? part.first : 0;
+    const end = part ? part.last + 1 : track.distance.length;
     this.color = color;
     this.hiddenRanges = hiddenRanges;
     this.root.hidden = false;
-    this.labels.name.textContent = track.name;
+    this.labels.name.textContent = part?.name || track.name;
     this.labels.swatch.style.background = color;
     this.renderStats();
     this.labels.readout.textContent = "";
 
-    const x = track.distance.map((m) => m / 1000);
-    const speed = track.speed.map((v) => (v == null ? null : format.kmh(v)));
-    this.addChart(this.containers.elevation, x, track.elevation, color, true, "No elevation in this file", (v) => `${Math.round(v)} m`);
+    const x = track.distance.slice(this.offset, end).map((m) => m / 1000);
+    const speed = track.speed.slice(this.offset, end).map((v) => (v == null ? null : format.kmh(v)));
+    this.addChart(this.containers.elevation, x, track.elevation.slice(this.offset, end), color, true, "No elevation in this file", (v) => `${Math.round(v)} m`);
     this.addChart(this.containers.speed, x, speed, color, false, "No time in this file, so no speed", (v) => `${v.toFixed(1)} km/h`);
   }
 
@@ -50,11 +55,16 @@ export class Profile {
     this.timeZone = timeZone;
     if (!this.track) return;
     this.renderStats();
-    this.showReadout(this.charts[0]?.cursor.idx ?? null);
+    this.showReadout(this.fileIndex(this.charts[0]?.cursor.idx));
+  }
+
+  // fileIndex is the file's point index of a chart's data index.
+  fileIndex(index) {
+    return index == null || index < 0 ? null : index + this.offset;
   }
 
   renderStats() {
-    const { stats } = this.track;
+    const { stats } = this.part ? { stats: partStats(this.track, this.part) } : this.track;
     const start = stats.start ? Date.parse(stats.start) : null;
     this.labels.stats.textContent = [
       start != null ? `${format.clock(start, this.timeZone, { seconds: false })} ${format.zoneOffset(start, this.timeZone)}` : "",
@@ -72,7 +82,7 @@ export class Profile {
   }
 
   setColor(color) {
-    if (this.track) this.show(this.track, color, this.hiddenRanges);
+    if (this.track) this.show(this.track, color, this.hiddenRanges, this.part);
   }
 
   // setRange shows a distance range in km on every chart, or with null all of
@@ -93,6 +103,7 @@ export class Profile {
   // setIndex moves the chart cursor to a point chosen elsewhere (the map).
   setIndex(index) {
     if (!this.track) return;
+    if (this.part && (index < this.part.first || index > this.part.last)) index = null;
     this.fromOutside = true;
     for (const chart of this.charts) {
       if (index == null) {
@@ -141,7 +152,7 @@ export class Profile {
         setCursor: [(u) => {
           placeValue(u, formatValue);
           if (this.fromOutside) return;
-          const index = u.cursor.idx;
+          const index = this.fileIndex(u.cursor.idx);
           this.showReadout(index);
           this.onHover(index);
         }],
@@ -162,7 +173,15 @@ export class Profile {
         ready: [(u) => wheelZoom(u)],
       },
     }, [x, y], container);
-    chart.over.addEventListener("mouseleave", () => {
+    // Axes and canvas margins are part of the chart's hover surface too.
+    chart.root.addEventListener("pointermove", event => {
+      if (event.buttons || chart.over.contains(event.target)) return;
+      const box = chart.over.getBoundingClientRect();
+      const index = this.fileIndex(chart.posToIdx(Math.max(0, Math.min(box.width, event.clientX - box.left))));
+      this.setIndex(index);
+      this.onHover(index);
+    });
+    chart.root.addEventListener("mouseleave", () => {
       this.showReadout(null);
       this.onHover(null);
     });
@@ -282,4 +301,15 @@ function clampDistanceRange(min, max, dataMin, dataMax) {
 function hexAlpha(hex, alpha) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+// partStats are the stats shown for one track of a file: its start, distance
+// and duration. Climb is the file's measure and is left out.
+function partStats(track, { first, last }) {
+  const times = track.time.slice(first, last + 1).filter((t) => t != null);
+  return {
+    start: times.length ? new Date(times[0]).toISOString() : null,
+    distance: track.distance[last] - track.distance[first],
+    duration: times.length ? (times[times.length - 1] - times[0]) / 1000 : 0,
+  };
 }

@@ -30,6 +30,7 @@ export class TrackLayers {
     this.hiddenParts = new Map(); // file id -> keys of hidden parts
     this.focused = null;
     this.pointsVisible = false;
+    this.joinGaps = false;
     this.hover = null; // the waypoint under the pointer, { id, key }
     map.addSource(CURSOR, { type: "geojson", data: emptyCollection() });
     map.addLayer({
@@ -95,6 +96,22 @@ export class TrackLayers {
       paint: { "circle-radius": 2.5, "circle-color": color, "circle-stroke-color": "#ffffff", "circle-stroke-width": 0.75 },
     }, CURSOR);
     addDirection(map, { id: directionId(id), source: sourceId(id), color, filter: kind("track"), before: CURSOR });
+    map.addLayer({ id: gapId(id), type: "line", source: sourceId(id), filter: kind("track-gap"),
+      layout: { visibility: this.joinGaps ? "visible" : "none" },
+      paint: { "line-color": color, "line-width": 1.5 },
+    }, CURSOR);
+    // The thin link has no core to sit on, so its arrows are drawn in the
+    // file's own colour, wider than the line and spaced further apart.
+    map.addLayer({ id: gapDirectionId(id), type: "symbol", source: sourceId(id), filter: kind("track-gap"),
+      layout: {
+        visibility: this.joinGaps ? "visible" : "none",
+        "symbol-placement": "line", "symbol-spacing": GAP_ARROW_SPACING,
+        "icon-image": "track-direction", "icon-rotation-alignment": "map",
+        "icon-keep-upright": false, "icon-size": GAP_ARROW_SIZE / 12,
+        "icon-allow-overlap": true, "icon-ignore-placement": true,
+      },
+      paint: { "icon-color": color },
+    }, CURSOR);
     this.ids.add(id);
     if (this.pointsVisible) this.applyTrackStyle(id);
   }
@@ -131,6 +148,8 @@ export class TrackLayers {
 
   setColor(id, color) {
     setTraceColor(this.map, lineId(id), color);
+    this.map.setPaintProperty(gapId(id), "line-color", color);
+    this.map.setPaintProperty(gapDirectionId(id), "icon-color", color);
     this.map.setPaintProperty(directionId(id), "icon-color", directionColor(color));
     setTraceColor(this.map, routeId(id), color);
     this.map.setPaintProperty(pointId(id), "circle-color", color);
@@ -149,7 +168,7 @@ export class TrackLayers {
   setHiddenParts(id, keys) {
     this.hiddenParts.set(id, [...keys]);
     const shown = ["!", ["in", ["get", "part"], ["literal", [...keys]]]];
-    for (const [layer, kind] of [...traceLayers(lineId(id)).map(layer => [layer, "track"]), ...traceLayers(routeId(id)).map(layer => [layer, "route"]), [waypointId(id), "waypoint"], [pointId(id), "track-point"], [directionId(id), "track"]]) {
+    for (const [layer, kind] of [...traceLayers(lineId(id)).map(layer => [layer, "track"]), ...traceLayers(routeId(id)).map(layer => [layer, "route"]), [waypointId(id), "waypoint"], [pointId(id), "track-point"], [directionId(id), "track"], [gapId(id), "track-gap"], [gapDirectionId(id), "track-gap"]]) {
       this.map.setFilter(layer, ["all", ["==", ["get", "kind"], kind], shown]);
     }
     this.map.setFilter(photoId(id), ["all", ["==", ["get", "kind"], "waypoint"], ["boolean", ["get", "photos"], false], shown]);
@@ -158,8 +177,13 @@ export class TrackLayers {
   applyVisibility(id) {
     const visible = !this.hidden.has(id);
     for (const layer of layerIds(id)) {
-      this.map.setLayoutProperty(layer, "visibility", visible && (layer !== pointId(id) || this.pointsVisible) ? "visible" : "none");
+      this.map.setLayoutProperty(layer, "visibility", visible && (layer !== pointId(id) || this.pointsVisible) && ((layer !== gapId(id) && layer !== gapDirectionId(id)) || this.joinGaps) ? "visible" : "none");
     }
+  }
+
+  setJoinGaps(on) {
+    this.joinGaps = on;
+    for (const id of this.ids) this.applyVisibility(id);
   }
 
   setPointsVisible(on) {
@@ -174,6 +198,20 @@ export class TrackLayers {
     const state = id === this.focused ? "focused" : "inactive";
     setTraceState(this.map, lineId(id), state, { points: this.pointsVisible });
     this.map.setLayoutProperty(directionId(id), "icon-size", (this.pointsVisible ? 1 : TRACE_WIDTHS[state][1]) / 12);
+    // With one track of a file selected, its other tracks step back, so the
+    // line the pointer follows is the one that stands out.
+    const key = this.selectedPart?.id === id ? this.selectedPart.key : null;
+    const opacity = key == null ? 1 : ["case", ["==", ["get", "part"], key], 1, UNSELECTED_OPACITY];
+    for (const layer of traceLayers(lineId(id))) this.map.setPaintProperty(layer, "line-opacity", opacity);
+    this.map.setPaintProperty(directionId(id), "icon-opacity", opacity);
+  }
+
+  // setSelectedPart marks one track of a file as selected, or with a null
+  // key none.
+  setSelectedPart(id, key) {
+    const previous = this.selectedPart?.id;
+    this.selectedPart = key == null ? null : { id, key };
+    for (const other of new Set([previous, id])) if (other != null && this.ids.has(other)) this.applyTrackStyle(other);
   }
 
   // setFocus draws one file above the others, wider and opaque.
@@ -202,9 +240,12 @@ export class TrackLayers {
 
   // nearest finds the index of the track point closest to a screen point,
   // within radius pixels, or -1, skipping points of hidden tracks and points
-  // cleaning removed. Points are first filtered by the geographic box around
-  // the pointer so a long track does not project every point.
-  nearest(track, screenPoint, radius = 24, hiddenParts = new Set()) {
+  // cleaning removed. The pointer may rest on the line between two sparse
+  // points: a kept step within radius answers whichever end is nearer the
+  // pointer's foot on it. Steps wholly to one side of the geographic box
+  // around the pointer are skipped so a long track does not project every
+  // point. Recording breaks are never treated as steps.
+  nearest(track, screenPoint, radius = 24, hiddenParts = new Set(), { preferred = -1, hiddenRanges = [] } = {}) {
     const { map } = this;
     const corners = [
       map.unproject([screenPoint.x - radius, screenPoint.y - radius]),
@@ -213,18 +254,33 @@ export class TrackLayers {
     const west = Math.min(corners[0].lng, corners[1].lng), east = Math.max(corners[0].lng, corners[1].lng);
     const south = Math.min(corners[0].lat, corners[1].lat), north = Math.max(corners[0].lat, corners[1].lat);
     const skipped = track.parts.filter((part) => part.kind === "track" && hiddenParts.has(part.key));
-    let best = -1, bestDistance = radius * radius;
     const points = track.points;
+    const hidden = (i) => hiddenRanges.some(([first, last]) => i >= first && i <= last);
+    const visible = (i) => !track.removed[i] && !hidden(i) && !skipped.some((part) => i >= part.first && i <= part.last);
+    const inside = ([lon, lat]) => lon >= west && lon <= east && lat >= south && lat <= north;
+    const apart = ([lon1, lat1], [lon2, lat2]) =>
+      (lon1 < west && lon2 < west) || (lon1 > east && lon2 > east) || (lat1 < south && lat2 < south) || (lat1 > north && lat2 > north);
+    let best = -1, bestDistance = radius * radius;
+    const offer = (i, d) => {
+      if (d < bestDistance || (d === bestDistance && (best < 0 || preferred < 0 || Math.abs(i - preferred) < Math.abs(best - preferred)))) { bestDistance = d; best = i; }
+    };
+    let previous = -1;
     for (let i = 0; i < points.length; i++) {
-      const [lon, lat] = points[i];
-      if (lon < west || lon > east || lat < south || lat > north) continue;
-      if (track.removed[i] || skipped.some((part) => i >= part.first && i <= part.last)) continue;
-      const p = map.project(points[i]);
-      const d = (p.x - screenPoint.x) ** 2 + (p.y - screenPoint.y) ** 2;
-      if (d <= bestDistance) {
-        bestDistance = d;
-        best = i;
+      if (!visible(i)) {
+        if (!track.removed[i] || hidden(i)) previous = -1; // a hidden part breaks the line
+        continue;
       }
+      if (previous >= 0 && track.segments[i] === track.segments[previous] && !apart(points[previous], points[i])) {
+        const a = map.project(points[previous]), b = map.project(points[i]);
+        const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+        const t = length ? Math.max(0, Math.min(1, ((screenPoint.x - a.x) * dx + (screenPoint.y - a.y) * dy) / length)) : 0;
+        const d = (a.x + t * dx - screenPoint.x) ** 2 + (a.y + t * dy - screenPoint.y) ** 2;
+        offer(t < 0.5 ? previous : i, d);
+      } else if (inside(points[i])) {
+        const p = map.project(points[i]);
+        offer(i, (p.x - screenPoint.x) ** 2 + (p.y - screenPoint.y) ** 2);
+      }
+      previous = i;
     }
     return best;
   }
@@ -237,7 +293,12 @@ const waypointId = (id) => `track-${id}-waypoint`;
 const pointId = (id) => `track-${id}-points`;
 const directionId = (id) => `track-${id}-direction`;
 const photoId = (id) => `track-${id}-photo`;
-const layerIds = (id) => [...traceLayers(lineId(id)), ...traceLayers(routeId(id)), waypointId(id), photoId(id), pointId(id), directionId(id)];
+const gapId = (id) => `track-${id}-gap`;
+const gapDirectionId = (id) => `track-${id}-gap-direction`;
+const UNSELECTED_OPACITY = 0.3; // a selected track's siblings in its file
+const GAP_ARROW_SIZE = 8; // pixels across an arrow on a gap link
+const GAP_ARROW_SPACING = 60; // pixels between arrows on a gap link
+const layerIds = (id) => [...traceLayers(lineId(id)), ...traceLayers(routeId(id)), waypointId(id), photoId(id), pointId(id), directionId(id), gapId(id), gapDirectionId(id)];
 
 function emptyCollection() {
   return { type: "FeatureCollection", features: [] };
@@ -250,7 +311,7 @@ function geometry(track, hidden = []) {
   for (const part of track.parts) {
     const properties = { part: part.key, kind: part.kind, name: part.name, photos: Boolean(part.photos?.length) };
     if (part.kind === "track") {
-      const lines = [];
+      const lines = [], gaps = [];
       let current = [];
       // Points cleaning removed are left out; the line joins what was kept.
       let previous = -1;
@@ -262,6 +323,7 @@ function geometry(track, hidden = []) {
         }
         if (track.removed[i]) continue;
         if (previous >= 0 && track.segments[i] !== track.segments[previous]) {
+          gaps.push([track.points[previous], track.points[i]]);
           lines.push(current);
           current = [];
         }
@@ -270,6 +332,7 @@ function geometry(track, hidden = []) {
       }
       if (current.length) lines.push(current);
       features.push({ type: "Feature", properties, geometry: { type: "MultiLineString", coordinates: lines } });
+      features.push({ type: "Feature", properties: { ...properties, kind: "track-gap" }, geometry: { type: "MultiLineString", coordinates: gaps } });
       features.push({ type: "Feature", properties: { ...properties, kind: "track-point" }, geometry: { type: "MultiPoint", coordinates: lines.flat() } });
     } else if (part.kind === "route") {
       features.push({ type: "Feature", properties, geometry: { type: "LineString", coordinates: part.points } });

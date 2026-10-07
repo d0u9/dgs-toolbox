@@ -27,13 +27,30 @@ const (
 	Fill   Rule = "fill"   // replaced by a route filled in along the road
 )
 
-// Params are every filter's switch and settings, and the removals made by
-// hand. The zero value cleans nothing.
-type Params struct {
+// Filters are every filter's switch and settings. The zero value runs none.
+type Filters struct {
 	Spikes SpikesParams `json:"spikes"`
 	Drift  DriftParams  `json:"drift"`
 	Smooth SmoothParams `json:"smooth"`
 	Stops  StopsParams  `json:"stops"`
+}
+
+// Active reports whether any filter is on.
+func (f Filters) Active() bool {
+	return f.Spikes.Enabled || f.Drift.Enabled || f.Smooth.Enabled || f.Stops.Enabled
+}
+
+// TrackFilters are the filters of one track, named by its first sample: an
+// index that moves with the samples, as every other index kept beside a line.
+type TrackFilters struct {
+	First int `json:"first"`
+	Filters
+}
+
+// Params are the filters and the removals made by hand. The zero value
+// cleans nothing.
+type Params struct {
+	Filters
 	// Edits are the removals made by hand, oldest first: the history undo
 	// walks back, and each can be restored on its own.
 	Edits []Edit `json:"edits"`
@@ -137,17 +154,17 @@ type StopsParams struct {
 // Defaults are every filter's documented defaults, all switched off.
 func Defaults() Params {
 	stopDefaults := stops.Defaults()
-	return Params{
+	return Params{Filters: Filters{
 		Spikes: SpikesParams{Params: spikes.Defaults()},
 		Drift:  DriftParams{Params: hampel.Defaults()},
 		Smooth: SmoothParams{Params: kalman.Defaults()},
 		Stops:  StopsParams{Distance: stopDefaults.Distance, Duration: stopDefaults.Duration.Seconds()},
-	}
+	}}
 }
 
 // Active reports whether the params change anything.
 func (p Params) Active() bool {
-	return p.Spikes.Enabled || p.Drift.Enabled || p.Smooth.Enabled || p.Stops.Enabled || len(p.Edits) > 0 || len(p.Removed) > 0 || len(p.Ranges) > 0
+	return p.Filters.Active() || len(p.Edits) > 0 || len(p.Removed) > 0 || len(p.Ranges) > 0
 }
 
 // Result is the cleaning laid over a line: one entry per source sample.
@@ -304,6 +321,80 @@ func RunComposed(line track.Line, p Params, c Composed) Result {
 		}
 	}
 	return result
+}
+
+// RunTracks cleans a composed line track by track: each run of samples of
+// one track sees only its own samples, through its own filters — the entry
+// of tracks whose First is the run's first sample, else p's. The edits of p
+// apply wherever their samples lie.
+func RunTracks(line track.Line, p Params, tracks []TrackFilters, c Composed) Result {
+	n := len(line)
+	result := Result{Removed: make([]Rule, n), Positions: make([]geo.LatLon, n), Moved: make([]bool, n), Breaks: make([]bool, n), Filled: c.Filled}
+	own := map[int]Filters{}
+	for _, t := range tracks {
+		own[t.First] = t.Filters
+	}
+	p = p.Normalize()
+	for first := 0; first < n; {
+		last := first
+		for last+1 < n && line[last+1].Track == line[first].Track {
+			last++
+		}
+		filters, ok := own[first]
+		if !ok {
+			filters = p.Filters
+		}
+		part := RunComposed(line[first:last+1], Params{Filters: filters, Edits: within(p.Edits, first, last)}, c.within(first, last))
+		copy(result.Removed[first:], part.Removed)
+		copy(result.Positions[first:], part.Positions)
+		copy(result.Moved[first:], part.Moved)
+		copy(result.Breaks[first:], part.Breaks)
+		first = last + 1
+	}
+	return result
+}
+
+// within are the edits' samples from first to last, counted from first.
+func within(edits []Edit, first, last int) []Edit {
+	var out []Edit
+	for _, edit := range edits {
+		if edit.Kind == EditLasso {
+			var points []int
+			for _, i := range edit.Points {
+				if i >= first && i <= last {
+					points = append(points, i-first)
+				}
+			}
+			if len(points) > 0 {
+				edit.Points = points
+				out = append(out, edit)
+			}
+			continue
+		}
+		if edit.Last < first || edit.First > last {
+			continue
+		}
+		edit.First, edit.Last = max(edit.First, first)-first, min(edit.Last, last)-first
+		out = append(out, edit)
+	}
+	return out
+}
+
+// within is the composition of the samples from first to last, counted from first.
+func (c Composed) within(first, last int) Composed {
+	var out Composed
+	if c.Filled != nil {
+		out.Filled = c.Filled[first : last+1]
+	}
+	if c.Replaced != nil {
+		out.Replaced = c.Replaced[first : last+1]
+	}
+	for _, span := range c.Spans {
+		if span[1] >= first && span[0] <= last {
+			out.Spans = append(out.Spans, [2]int{max(span[0], first) - first, min(span[1], last) - first})
+		}
+	}
+	return out
 }
 
 // collapseStops keeps each stop's entry, exit and time-midpoint sample, and

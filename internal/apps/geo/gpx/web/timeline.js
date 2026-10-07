@@ -83,6 +83,10 @@ export class Timeline {
       this.pointerX = event.clientX;
       this.scrub(event);
     });
+    ticks.addEventListener("pointermove", event => {
+      if (!event.buttons) this.scrub(event);
+    });
+    ticks.addEventListener("pointerleave", () => { this.setIndex(null); this.onScrub(null); });
     bar.addEventListener("pointerleave", (event) => {
       if (event.buttons) return; // still dragging: pointer capture keeps the scrub
       this.pointerX = null;
@@ -92,15 +96,19 @@ export class Timeline {
     });
   }
 
-  // hiddenRanges are point index ranges [first, last] drawn as hidden.
-  show(track, color, hiddenRanges = []) {
-    if (this.track?.path !== track.path) this.view = null;
+  // hiddenRanges are point index ranges [first, last] drawn as hidden. part,
+  // a track of the file as { key, first, last }, limits the timeline to its
+  // points; indices stay the file's.
+  show(track, color, hiddenRanges = [], part = null) {
+    if (this.track?.path !== track.path || this.part?.key !== part?.key) this.view = null;
+    this.part = part;
     this.track = track;
     this.color = color;
     this.hiddenRanges = hiddenRanges;
     // Points cleaning removed are not scrubbed to.
     this.stuck = null; // an index into the previous track means nothing here
-    this.timed = track.time.map((t, i) => (t == null || track.removed[i] ? -1 : i)).filter((i) => i >= 0)
+    const outside = (i) => part && (i < part.first || i > part.last);
+    this.timed = track.time.map((t, i) => (t == null || track.removed[i] || outside(i) ? -1 : i)).filter((i) => i >= 0)
       .sort((a, b) => track.time[a] - track.time[b]);
     this.full = this.timed.length < 2 ? null : [track.time[this.timed[0]], track.time[this.timed[this.timed.length - 1]]];
     this.minSpan = this.full ? this.computeMinimumSpan() : 1;
@@ -157,6 +165,7 @@ export class Timeline {
         blocks.push(this.block("timeline-moving", from, to, { background: this.color }));
       }
       track.stops.forEach((stop, i) => {
+        if (this.part && (stop.last < this.part.first || stop.first > this.part.last)) return;
         const block = this.block("timeline-stop", stop.arrival, stop.departure);
         block.textContent = String(i + 1);
         block.title = stopTitle(i, stop, this.timeZone);
@@ -835,9 +844,9 @@ export class Timeline {
     if (!this.track || this.timed.length < 2) return;
     if (event.type === "pointermove" && event.buttons === 0 && event.pointerType !== "mouse") return;
     const index = this.indexAt(event.clientX);
+    // onScrub moves this cursor too, unless the point is outside what is linked.
     this.onScrub(index);
-    this.setIndex(index);
-    if (this.snap || index == null) return;
+    if (this.snap || index == null || this.cursor.hidden) return;
     // Not snapping, the cursor stays under the pointer between points.
     const rect = this.bar.getBoundingClientRect();
     const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));

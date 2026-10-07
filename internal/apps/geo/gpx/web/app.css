@@ -266,6 +266,9 @@ button, button * { cursor: default !important; }
 .lasso path { fill: rgba(111, 76, 155, .12); stroke: var(--manual); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .lasso.restore path { fill: rgba(0, 114, 178, .12); stroke: #0072b2; }
 .maplibregl-canvas-container.maplibregl-interactive.lassoing:active canvas, .maplibregl-canvas-container.lassoing canvas { cursor: crosshair !important; }
+/* Space held over the map pans under every tool: an open hand, a closed one while dragging. */
+.maplibregl-canvas-container.maplibregl-canvas-container.view-pan-ready canvas { cursor: grab !important; }
+.maplibregl-canvas-container.maplibregl-canvas-container.view-panning canvas { cursor: grabbing !important; }
 
 .profile {
   flex: none;
@@ -392,7 +395,7 @@ button, button * { cursor: default !important; }
 }
 .timeline-stop:hover { background: var(--primary); }
 .timeline-empty { height: 100%; display: grid; place-items: center; color: var(--graphite); font-size: 11px; background: var(--paper); }
-.timeline-cursor { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #d55e00; box-shadow: 0 0 0 1px rgba(255,255,255,.8); pointer-events: none; }
+.timeline-cursor { z-index: 3; position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #222; box-shadow: 0 0 0 1px #fff; pointer-events: none; }
 .timeline-cursor[hidden] { display: none; }
 
 .stop-anchor { width: 22px; height: 22px; }
@@ -452,7 +455,7 @@ button, button * { cursor: default !important; }
 .disclosure { flex: none; }
 .disclosure.expanded { transform: rotate(90deg); }
 .track-row.expandable > .actions { right: 32px; }
-.list li.part-row { margin-left: 20px; padding-left: 8px; gap: 6px; }
+.list li.part-row { margin-left: 28px; padding-left: 8px; gap: 6px; }
 .list li.parts-toolbar {
   padding: 2px 8px 2px 34px;
   gap: 10px;
@@ -585,7 +588,8 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .plan-marker.selected { outline: 2px solid var(--primary); outline-offset: 2px; }
 .label .meta, .clean-foot, .cut-hint { font-weight: 400; }
 
-.disclosure-space { width: 18px; }
+.disclosure-space { width: 18px; height: 20px; flex: none; display: grid; place-items: center; color: var(--graphite); }
+.disclosure-space svg { width: 12px; height: 12px; }
 
 .part-row .glyph svg { width: 14px; height: 14px; display: block; }
 .map-button svg, .chip.icon svg { margin: auto; }
@@ -595,7 +599,8 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .list li.part-row.selected { background: var(--selected); }
 .list li.part-row.selected:hover { background: var(--selected-hover); }
 .list li.part-row.selected .name { color: var(--ink); font-weight: 600; }
-.map-tools { top: 114px; }
+.map-tools { top: 150px; }
+.map-button.connect-gaps { top: 114px; }
 .map-button.track-points { top: 78px; }
 .map-button.terrain { top: 42px; }
 .map-tools-gap { margin: 0; }
@@ -643,3 +648,6 @@ body.row-dragging #track-list li.drop-refused { cursor: not-allowed; }
 .crop-head { display: flex; align-items: center; gap: 12px; }
 .crop-zoom { flex: 1; }
 .crop-picture { display: block; max-width: 100%; height: auto; margin: 10px auto; border-radius: 6px; touch-action: none; user-select: none; cursor: grab; }
+
+/* Keep the inspected sample visible against graph fills and grids. */
+.chart .u-cursor-x { border-right: 2px solid #d55e00; }
