@@ -30,7 +30,8 @@ export const api = {
   track: (path, stops, coordinates = "wgs84") =>
     getJSON(`api/track?path=${encodeURIComponent(path)}&coordinates=${coordinates}` + stopQuery(stops)),
   // saveClean records a track's cleaning settings in the sidecar beside it.
-  saveClean: (path, clean) => sendJSON("PUT", "api/clean", { path, clean }),
+  // first names the track whose filters these are, by its first point.
+  saveClean: (path, first, clean) => sendJSON("PUT", "api/clean", { path, first, clean }),
   // renamePart names one <trk>, <rte> or <wpt> of a file, keyed "t0", "r0", "w0".
   renamePart: (path, key, name) => sendJSON("PUT", "api/part-name", { path, key, name }),
   addWaypoint: (path, name, description, lon, lat) => postJSON("api/waypoint", { path, name, description, lon, lat }),

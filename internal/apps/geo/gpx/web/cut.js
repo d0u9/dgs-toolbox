@@ -142,6 +142,8 @@ export class CutPanel {
 
   hide() {
     this.remember();
+    // The lasso keeps hiding what the Segments tab left unchecked.
+    this.lastHidden = this.track ? { path: this.track.path, ranges: this.hiddenRanges() } : null;
     this.track = null;
     this.root.replaceChildren();
     this.onSelection();
@@ -198,6 +200,7 @@ export class CutPanel {
   render() {
     const { track } = this;
     if (!track) return;
+    this.remember();
     const parts = [];
 
     parts.push(this.list());

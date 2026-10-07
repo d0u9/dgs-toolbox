@@ -167,9 +167,9 @@ export class CleanPanel {
     tabs.className = "inspector-tabs";
     tabs.setAttribute("role", "tablist");
     for (const [key, text, count] of [
+      ["segments", "Segments", track.pieces.length > 1 ? track.pieces.length : 0],
       ["changes", "Changes", params.edits.length + track.fills.length],
       ["auto", "Automatic cleaning", autoRemoved],
-      ["segments", "Segments", track.pieces.length > 1 ? track.pieces.length : 0],
     ]) {
       const tab = document.createElement("button");
       tab.className = "chip inspector-tab ui-tab" + (this.tab === key ? " active" : "");
@@ -582,6 +582,11 @@ export class CleanOverlay {
   }
 
   // show draws a track's recording, or nothing for null or an uncleaned track.
+  setManualVisible(on) {
+    for (const id of [MANUAL, `${MANUAL}-band`]) this.map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+    this.map.setFilter(REMOVED, on ? null : ["!=", ["get", "rule"], "manual"]);
+  }
+
   show(track, hiddenRanges = []) {
     const cleaned = track && track.removed.some(Boolean) || track?.original;
     if (!cleaned) {
@@ -629,76 +634,51 @@ export class CleanOverlay {
   }
 }
 
-// Lasso lets the pointer draw a closed shape over the map. onDone(points,
-// { restore }) receives the shape in screen pixels; restore is true when Alt
-// was held.
+// Click vertices and double-click to finish; map drags remain view gestures.
 export class Lasso {
   constructor(map, { onDone, onCancel }) {
     Object.assign(this, { map, onDone, onCancel });
     this.active = false;
-    const container = map.getCanvasContainer();
+    this.points = [];
     this.svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     this.svg.classList.add("lasso");
     this.path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     this.svg.append(this.path);
-    container.append(this.svg);
-    this.onKey = (event) => {
-      if (event.key === "Escape") this.onCancel();
+    map.getCanvasContainer().append(this.svg);
+    this.draw = () => {
+      const points = this.points.map(point => { const p = map.project(point); return [p.x, p.y]; });
+      if (points.length) this.path.setAttribute("d", `M${points.map(p => p.join(",")).join("L")}Z`);
+      else this.path.removeAttribute("d");
     };
-    this.onDown = (event) => this.down(event);
+    this.onClick = event => {
+      if (event.originalEvent?.detail > 1) return;
+      if (!this.points.length) this.restore = Boolean(event.originalEvent?.altKey);
+      this.svg.classList.toggle("restore", this.restore);
+      this.points.push([event.lngLat.lng, event.lngLat.lat]);
+      this.draw();
+    };
+    this.onFinish = event => {
+      event.preventDefault();
+      const points = this.points.map(point => { const p = map.project(point); return [p.x, p.y]; });
+      this.points = [];
+      this.draw();
+      if (points.length > 2) this.onDone(points, { restore: this.restore });
+    };
+    this.onKey = event => { if (event.key === "Escape") this.onCancel(); };
   }
 
   setActive(active) {
     if (active === this.active) return;
     this.active = active;
-    const container = this.map.getCanvasContainer();
-    container.classList.toggle("lassoing", active);
-    if (active) {
-      this.map.dragPan.disable();
-      this.map.boxZoom.disable();
-      // Capture on the outer container, ahead of the map's own pointer handling.
-      this.map.getContainer().addEventListener("pointerdown", this.onDown, true);
-      window.addEventListener("keydown", this.onKey);
-    } else {
-      this.map.dragPan.enable();
-      this.map.boxZoom.enable();
-      this.map.getContainer().removeEventListener("pointerdown", this.onDown, true);
+    for (const [event, handler] of [["click", this.onClick], ["dblclick", this.onFinish], ["move", this.draw]]) {
+      if (active) this.map.on(event, handler); else this.map.off(event, handler);
+    }
+    if (active) window.addEventListener("keydown", this.onKey);
+    else {
       window.removeEventListener("keydown", this.onKey);
-      this.path.removeAttribute("d");
+      this.points = [];
+      this.draw();
     }
-  }
-
-  down(event) {
-    // Map controls (zoom buttons, attribution) keep working while lassoing.
-    if (event.button !== 0 || !this.map.getCanvasContainer().contains(event.target)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const container = this.map.getCanvasContainer();
-    const box = container.getBoundingClientRect();
-    const points = [];
-    const restore = event.altKey;
-    this.svg.classList.toggle("restore", restore);
-    try {
-      container.setPointerCapture(event.pointerId);
-    } catch {
-      // Without capture the shape still closes when the pointer is released over the map.
-    }
-    const add = (e) => {
-      points.push([e.clientX - box.left, e.clientY - box.top]);
-      this.path.setAttribute("d", `M${points.map((p) => p.join(",")).join("L")}Z`);
-    };
-    add(event);
-    const move = (e) => add(e);
-    const up = () => {
-      container.removeEventListener("pointermove", move);
-      container.removeEventListener("pointerup", up);
-      container.removeEventListener("pointercancel", up);
-      this.path.removeAttribute("d");
-      if (points.length > 2) this.onDone(points, { restore });
-    };
-    container.addEventListener("pointermove", move);
-    container.addEventListener("pointerup", up);
-    container.addEventListener("pointercancel", up);
   }
 }
 

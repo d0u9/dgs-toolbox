@@ -1533,3 +1533,53 @@ func TestReorderingTracksMovesTheirEdits(t *testing.T) {
 		t.Fatalf("edits after the save = %+v", got)
 	}
 }
+
+// Each track keeps its own automatic cleaning: turning stop collapse on for
+// the second of two stays leaves the first as recorded, and the edits made by
+// hand stay the file's.
+func TestCleanFiltersBelongToOneTrack(t *testing.T) {
+	server := httptest.NewServer(Handler(Settings{}))
+	defer server.Close()
+	stay, err := os.ReadFile(writeStayGPX(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	one := string(stay)
+	trk := one[strings.Index(one, "<trk>"):strings.Index(one, "</gpx>")]
+	path := filepath.Join(t.TempDir(), "two.gpx")
+	if err := os.WriteFile(path, []byte(strings.Replace(one, "</gpx>", trk+"</gpx>", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var before trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &before)
+	if len(before.Parts) != 2 || before.Parts[1].Clean == nil {
+		t.Fatalf("parts = %+v", before.Parts)
+	}
+	second := before.Parts[1]
+	filters := clean.Defaults()
+	filters.Stops.Enabled = true
+	filters.Edits = []clean.Edit{{Kind: clean.EditLasso, Points: []int{0}, Join: true}}
+	if code, _ := send(t, server, http.MethodPut, "/api/clean", map[string]any{"path": path, "first": second.First, "clean": filters}); code != http.StatusOK {
+		t.Fatalf("PUT = %d", code)
+	}
+	var after trackJSON
+	get(t, server, "/api/track?path="+url.QueryEscape(path), &after)
+	if after.Parts[0].Clean.Stops.Enabled || !after.Parts[1].Clean.Stops.Enabled || after.Clean.Params.Stops.Enabled {
+		t.Fatalf("filters: first %+v second %+v file %+v", after.Parts[0].Clean.Stops, after.Parts[1].Clean.Stops, after.Clean.Params.Stops)
+	}
+	stopsIn := func(first, last int) int {
+		count := 0
+		for _, rule := range after.Removed[first : last+1] {
+			if rule == clean.Stop {
+				count++
+			}
+		}
+		return count
+	}
+	if stopsIn(after.Parts[0].First, after.Parts[0].Last) != 0 || stopsIn(second.First, second.Last) == 0 {
+		t.Fatal("stop collapse did not keep to the second track")
+	}
+	if after.Removed[0] != clean.Manual || len(after.Clean.Params.Edits) != 1 {
+		t.Fatalf("edits: %+v", after.Clean.Params.Edits)
+	}
+}

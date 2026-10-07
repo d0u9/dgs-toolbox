@@ -31,7 +31,7 @@ function treeHarness(track){
   const state={focus:'other.gpx',tracks:new Map([['current.gpx',entry]]),selection:new Set(),config:{canReveal:false}};
   const context=vm.createContext({
     tooltip(node,lines){node.tip=lines.filter(Boolean);},document:documentStub(),format,state,EYE:'eye',EYE_OFF:'hidden',UP:'up',DOWN:'down',DIAMOND:'ours',DIAMOND_OPEN:'recording',FOLDER:'folder',
-    PART_GLYPH:{track:'track',route:'route',waypoint:'waypoint'},
+    iconSvg:name=>`<svg data-icon="${name}"></svg>`,PART_GLYPH:{track:'track',route:'route',waypoint:'waypoint'},
     expandable:entry=>entry.track.parts.length>0,CHEVRON:"triangle",save(){},oursMark:()=>new Element('span'),filteredPaths:()=>['current.gpx'],
     bindRowDrag(){},copyTargets:()=>[],renderTracks(){calls.push(['render']);},
     select(path,options={}){calls.push(['select',path,plain(options)]);},
@@ -39,7 +39,7 @@ function treeHarness(track){
     setVisible(path,visible){entry.visible=visible;calls.push(['visible',visible]);},
     setPartHidden(path,key,hidden){entry.hiddenParts[hidden?'add':'delete'](key);calls.push(['hidden',key,hidden]);},
     setFocus(path,options){state.focus=path;calls.push(['focus',plain(options)]);},
-    applyCutPanel(){calls.push(['cut-panel']);},fitBox(){calls.push(['fit']);},openWaypoint(){calls.push(['popup']);},
+    setMode:mode=>calls.push(["mode",mode]),applyCutPanel(){calls.push(['cut-panel']);},applyCleanPanel(){},showCharts(){},fitBox(){calls.push(['fit']);},openWaypoint(){calls.push(['popup']);},
     map:{getZoom:()=>12,easeTo(){calls.push(['pan']);}},renameGPX(path){calls.push(['rename',path]);},
   });
   loadShared('selection',context);loadShared('controls',context);context.label=context.rowLabel;
@@ -284,7 +284,7 @@ test('unfocused tracks and routes remain legible, while hidden files stay fully 
   assert.equal(styles.get('track-b-line-edge').layout.visibility,'visible');
   assert.ok(styles.get('track-b-line-edge').paint['line-opacity']>=0.6);
   assert.ok(styles.get('track-b-line-edge').paint['line-width']>styles.get('track-b-line').paint['line-width']);
-  assert.deepEqual(moves.map(([id])=>id),['track-a-line-edge','track-a-line','track-a-route-edge','track-a-route','track-a-points','track-a-direction','track-a-waypoint','track-a-photo']);
+  assert.deepEqual(moves.map(([id])=>id),['track-a-line-edge','track-a-line','track-a-route-edge','track-a-route','track-a-points','track-a-direction','track-a-gap','track-a-gap-direction','track-a-waypoint','track-a-photo']);
   layers.setVisible('b',false);layers.setFocus('b');
   for(const kind of ['line-edge','line','route-edge','route','waypoint','photo'])assert.equal(styles.get(`track-b-${kind}`).layout.visibility,'none');
   layers.setVisible('b',true);layers.setFocus('a');
@@ -360,16 +360,17 @@ test('right-button presses cannot begin moving a timeline cut',async()=>{
 
 test('map clicks select tracks or points; cut commands require their menu action',()=>{
   const listeners=new Map(),calls=[],menus=[];
-  const entry={id:'track-a',track:{points:[[0,0],[0,1]]},hiddenParts:new Set()};
+  const entry={id:'track-a',visible:true,track:{points:[[0,0],[0,1]],parts:[{kind:'track',key:'t0'}]},hiddenParts:new Set()};
   const state={tracks:new Map([['synthetic.gpx',entry]]),focus:'synthetic.gpx',fill:{active:false}};
   let cutting=true;
-  const context=vm.createContext({state,map:{on:(name,fn)=>listeners.set(name,fn),queryRenderedFeatures:()=>[{layer:{metadata:{track:'track-a'}}}]},layers:{nearest:()=>1,lineLayers:()=>['track-a-line']},focusedEntry:()=>entry,cutting:()=>cutting,waypointAt:()=>null,inspect:index=>calls.push(['inspect',index]),profile:{setIndex:index=>calls.push(['profile',index])},timeline:{setIndex:index=>calls.push(['timeline',index])},cutPanel:{addCut:index=>calls.push(['cut',index])},select:path=>calls.push(['select',path]),renderTracks(){},openMenu:(event,sections)=>menus.push(sections)});
+  const context=vm.createContext({state,pickHidden:entry=>entry.hiddenParts,showCharts(){},map:{on:(name,fn)=>listeners.set(name,fn),queryRenderedFeatures:()=>[{layer:{metadata:{track:'track-a'}},properties:{part:'t0'}}]},layers:{nearest:()=>1,lineLayers:()=>['track-a-line']},focusedEntry:()=>entry,cutting:()=>cutting,waypointAt:()=>null,inspect:index=>calls.push(['inspect',index]),profile:{setIndex:index=>calls.push(['profile',index])},timeline:{setIndex:index=>calls.push(['timeline',index])},cutPanel:{addCut:index=>calls.push(['cut',index])},setMode:mode=>calls.push(["mode",mode]),select:path=>calls.push(['select',path]),renderTracks(){},applyCutPanel(){},applyCleanPanel(){},openMenu:(event,sections)=>menus.push(sections)});
   const app=source('app');vm.runInContext(app.slice(app.indexOf('function bindMap()'),app.indexOf('// ---- layout ----')),context);context.bindMap();
   const event={lngLat:{lng:0,lat:1},point:{x:10,y:10},originalEvent:{target:new Element('div')},preventDefault(){}};
   listeners.get('click')(event);assert.deepEqual(calls,[['inspect',1],['profile',1],['timeline',1]]);
   listeners.get('contextmenu')(event);assert.equal(calls.some(([kind])=>kind==='cut'),false);
   menus[0][1][0].onSelect();assert.deepEqual(calls.at(-1),['cut',1]);
-  cutting=false;listeners.get('click')(event);assert.deepEqual(calls.at(-1),['select','synthetic.gpx']);
+  cutting=false;listeners.get('click')(event);assert.deepEqual(calls.at(-2),['select','synthetic.gpx']);assert.deepEqual(calls.at(-1),['mode','edit']);
+  assert.deepEqual(plain(state.partSelection),{path:'synthetic.gpx',key:'t0'},'a click on a line selects that track, so Edit stays open on it');
 });
 
 
@@ -434,7 +435,7 @@ test('highlighted segments retain their colour and never bridge a recording brea
 
 test('map location context menus preserve Add waypoint alongside cuts and pin edits',async()=>{
   const listeners=new Map(),menus=[],calls=[];let found=null,cut=false;
-  const context=vm.createContext({state:{},map:{on:(name,fn)=>listeners.set(name,fn)},waypointAt:()=>found,focusedEntry:()=>({track:{}}),cutting:()=>cut,layers:{nearest:()=>2},inspect(){},openMenu:(event,sections)=>menus.push(sections.flat()),addWaypointAt:event=>calls.push(plain(event)),cutPanel:{addCut(){}},renamePart(){},startWaypointMove(){},deletePart(){}});
+  const context=vm.createContext({state:{},pickHidden:entry=>entry.hiddenParts,map:{on:(name,fn)=>listeners.set(name,fn)},waypointAt:()=>found,focusedEntry:()=>({track:{}}),cutting:()=>cut,layers:{nearest:()=>2},inspect(){},openMenu:(event,sections)=>menus.push(sections.flat()),addWaypointAt:event=>calls.push(plain(event)),cutPanel:{addCut(){}},renamePart(){},startWaypointMove(){},deletePart(){}});
   const app=source('app');vm.runInContext(app.slice(app.indexOf('function bindMap()'),app.indexOf('// ---- layout ----')),context);context.bindMap();
   for(const mode of ['blank','cut','pin']){
     cut=mode==='cut';found=mode==='pin'?{path:'synthetic.gpx',entry:{track:{ours:true}},part:{}}:null;
@@ -463,7 +464,7 @@ test('hiding parts and removing a GPX also updates every new outline layer',()=>
   const map={addSource(){},addLayer:layer=>added.push(layer.id),setFilter:(id,filter)=>filters.set(id,filter),removeLayer:id=>removed.push(id),removeSource:id=>sources.push(id)};
   const layers=new TrackLayers(map);layers.add('a',{parts:[]},'#0072b2');layers.setHiddenParts('a',new Set(['t0','r0']));
   const strokes=added.filter(id=>id.startsWith('track-a-'));
-  assert.equal(strokes.length,8);
+  assert.equal(strokes.length,10);
   for(const id of strokes){
     assert.ok(filters.has(id));assert.deepEqual(plain(filters.get(id).at(-1).at(-1).at(-1)),['literal',['t0','r0']]);
     if(id==='track-a-photo')assert.deepEqual(plain(filters.get(id)[2]),['boolean',['get','photos'],false]);
@@ -868,6 +869,25 @@ test('segment checkboxes immediately update all map paths and preserve shared ch
  h.context.cutting=()=>false;h.panel.hide();assert.deepEqual(line(),[h.track.points]);
 });
 
+test('the lasso keeps unchecked segments hidden after leaving the Segments tab',async()=>{
+ const h=segmentHarness([{first:0,last:2,points:3,distance:20},{first:2,last:4,points:3,distance:20}]);
+ Object.assign(h.track,{points:[[0,0],[1,0],[2,0],[3,0],[4,0]],segments:[0,0,0,0,0],removed:['','','','',''],parts:[{key:'t0',kind:'track',first:0,last:4,name:'Trip'}]});
+ const data=new Map(),map={addSource:(id,options)=>data.set(id,options.data),addLayer(){},getSource:id=>({setData:value=>data.set(id,value)})};
+ const layers=new TrackLayers(map);layers.add('a',h.track,'#0072b2');
+ Object.assign(h.context,{cutting:()=>true,focusedEntry:()=>h.state.tracks.get(h.state.focus),cutPanel:h.panel,layers,hiddenRanges:()=>[],cutOverlay:{show(){}},cleanOverlay:{show(){},showFills(){}},stopMarkers:{show(){}}});
+ const app=source('app');vm.runInContext(app.slice(app.indexOf('let segmentVisibilityEntry'),app.indexOf('function applyCutPanel()')),h.context);
+ h.panel.onSelection=h.context.applySegmentVisibility;h.panel.show(h.track,{timeZone:'UTC',workspace:[h.track.path],folder:''});
+ const second=h.root.all(e=>e.classList.contains('cut-check')).at(-1);second.checked=false;await second.fire('change');
+ const line=()=>plain(data.get('track-a').features[0].geometry.coordinates);
+ // Picking the lasso leaves the Segments tab: the unchecked segment stays hidden.
+ h.state.lasso=true;h.context.cutting=()=>false;h.panel.hide();
+ assert.deepEqual(line(),[h.track.points.slice(0,3)]);
+ assert.deepEqual(plain(h.context.uncheckedRanges()),[[3,4]]);
+ // Turning the lasso off shows the whole track again.
+ h.state.lasso=false;h.context.applySegmentVisibility();
+ assert.deepEqual(line(),[h.track.points]);
+});
+
 test('hidden ranges break base and fill paths instead of bridging an unchecked segment',()=>{
  const data=new Map(),map={addSource:(id,options)=>data.set(id,options.data),addLayer(){},getSource:id=>({setData:value=>data.set(id,value)})};
  const track={points:Array.from({length:7},(_,i)=>[i,0]),segments:Array(7).fill(0),removed:Array(7).fill(''),parts:[{key:'t0',kind:'track',first:0,last:6,name:'Trip'}],fills:[{first:0,last:6,points:5}]};
@@ -904,6 +924,7 @@ test('toggling Compare preserves unchecked segment visibility',()=>{
  const h=twoTrackSegments();h.showPart(h.track.parts[1]);h.panel.selected.clear();
  const shown=[];Object.assign(h.context,{cutPanel:h.panel,focusedEntry:()=>h.state.tracks.get(h.state.focus),cutting:()=>true,hiddenRanges:()=>[],cleanOverlay:{show:(track,hidden)=>shown.push([track,plain(hidden)])},applyEditTools(){},save(){}});
  const app=source('app');vm.runInContext(app.slice(app.indexOf('function setCompare('),app.indexOf('// applyEditTools')),h.context);
+ vm.runInContext(app.slice(app.indexOf('// uncheckedRanges'),app.indexOf('function applySegmentVisibility')),h.context);
  h.context.setCompare(false);assert.equal(shown[0][0],null);h.context.setCompare(true);assert.deepEqual(shown.at(-1)[1],[[5,9]]);
 });
 
@@ -989,4 +1010,314 @@ test('sharpening leaves flat areas and alpha alone and steepens an edge',()=>{
   assert.deepEqual([...pixels.filter((_,i)=>i%4===0)],[100,90,210,200]);
   assert.deepEqual([...pixels.filter((_,i)=>i%4===3)],[255,200,255,255]);
   const flat=new Uint8ClampedArray(4*9).fill(77);sharpen(flat,3,3);assert.ok(flat.every(v=>v===77));
+});
+
+test('map hover between two sparse track points answers the nearer end', () => {
+  // A flat projection: one degree is one pixel.
+  const map = {project: ([x, y]) => ({x, y}), unproject: ([x, y]) => ({lng: x, lat: y})};
+  const layers = Object.create(TrackLayers.prototype);
+  layers.map = map;
+  const track = {points: [[0, 0], [200, 0], [400, 0], [600, 0]], removed: [], segments: [0, 0, 1, 1], parts: [{kind: 'track', key: 't0', first: 0, last: 3}]};
+  assert.equal(layers.nearest(track, {x: 60, y: 5}), 0);
+  assert.equal(layers.nearest(track, {x: 150, y: 5}), 1);
+  assert.equal(layers.nearest(track, {x: 300, y: 5}), -1, 'a recording break is not a step');
+  assert.equal(layers.nearest(track, {x: 100, y: 40}), -1);
+  assert.equal(layers.nearest(track, {x: 150, y: 5}, 24, new Set(['t0'])), -1);
+});
+
+// gestureHarness loads ViewGestures against a map stub that records what the view does.
+function gestureHarness(){
+  const listeners=new Map(),outer=new Map(),windowListeners=new Map(),classes=new Set(),pans=[],flags={dragPan:true,doubleClickZoom:true,boxZoom:true};
+  const handler=name=>({enable:()=>flags[name]=true,disable:()=>flags[name]=false});
+  const container={classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name),add:name=>classes.add(name),remove:name=>classes.delete(name)},
+    contains:target=>target!==null,setPointerCapture(){},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)};
+  const outerElement={addEventListener:(name,fn,options)=>outer.set(name,[...(outer.get(name)||[]),[fn,options]]),
+    removeEventListener:(name,fn)=>outer.set(name,(outer.get(name)||[]).filter(([other])=>other!==fn))};
+  const map={getCanvasContainer:()=>container,getContainer:()=>outerElement,panBy:(offset,options)=>pans.push([offset,options]),
+    dragPan:handler('dragPan'),doubleClickZoom:handler('doubleClickZoom'),boxZoom:handler('boxZoom')};
+  const timers=[];
+  const context=vm.createContext({setTimeout:fn=>timers.push(fn),window:{addEventListener:(name,fn)=>windowListeners.set(name,fn)}});
+  vm.runInContext(source('gestures').replace('export class','class')+';this.ViewGestures=ViewGestures;',context);
+  const gestures=new context.ViewGestures(map);
+  const key=(code,down,target={})=>{const event={code,target,prevented:false,preventDefault(){this.prevented=true;}};windowListeners.get(down?'keydown':'keyup')(event);return event;};
+  const press=(extra={})=>{const event={button:0,target:{},clientX:50,clientY:50,pointerId:1,prevented:false,stopped:false,
+    preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;},...extra};outer.get('pointerdown')[0][0](event);return event;};
+  return {gestures,listeners,outer,classes,pans,flags,timers,key,press};
+}
+
+test('view gestures are the same under every tool: no double-click or box zoom, Space+drag always pans',()=>{
+  const h=gestureHarness();
+  assert.equal(h.flags.doubleClickZoom,false,'double-click belongs to the tools');
+  assert.equal(h.flags.boxZoom,false,'Shift+drag belongs to the tools');
+  // A tool that does not claim the drag leaves plain drags to pan the map.
+  h.gestures.setToolDrag(false);assert.equal(h.flags.dragPan,true);
+  // A tool that claims it takes plain drags; Space+drag still pans.
+  h.gestures.setToolDrag(true);assert.equal(h.flags.dragPan,false);
+  const plain=h.press();assert.equal(plain.prevented,false);assert.equal(plain.stopped,false);assert.equal(h.pans.length,0);
+  // Space away from the map, or while typing, keeps its own meaning.
+  assert.equal(h.key('Space',true).prevented,false);assert.equal(h.classes.has('view-pan-ready'),false);
+  h.listeners.get('pointerenter')();
+  assert.equal(h.key('Space',true,{closest:()=>({})}).prevented,false);
+  // Over the map, Space shows the open hand and a drag moves the map with a closed one.
+  assert.equal(h.key('Space',true,{closest:()=>null}).prevented,true);assert.ok(h.classes.has('view-pan-ready'));
+  assert.equal(h.press({button:2}).stopped,false,'the right button still rotates and tilts');
+  const pan=h.press();
+  assert.equal(pan.prevented,true);assert.equal(pan.stopped,true,'no tool sees a Space press');assert.ok(h.classes.has('view-panning'));
+  h.listeners.get('pointermove')({clientX:40,clientY:45});h.listeners.get('pointermove')({clientX:30,clientY:45});h.listeners.get('pointerup')();
+  assert.equal(JSON.stringify(h.pans),JSON.stringify([[[10,5],{duration:0}],[[10,0],{duration:0}]]));
+  assert.equal(h.classes.has('view-panning'),false);
+  // The click that ends the pan is not a tool's click.
+  const [swallow]=h.outer.get('click').at(-1);const click={stopped:false,stopImmediatePropagation(){this.stopped=true;}};swallow(click);assert.equal(click.stopped,true);
+  h.key('Space',false);assert.equal(h.classes.has('view-pan-ready'),false);
+  // With Space released, a press goes to the tool again.
+  assert.equal(h.press().stopped,false);
+});
+
+test('lasso clicks build a polygon while drags remain map panning; finish and cancel clean up',()=>{
+ const handlers=new Map(),attributes=new Map(),done=[];
+ const node=()=>({classList:{add(){},toggle(){}},setAttribute:(key,value)=>attributes.set(key,value),removeAttribute:key=>attributes.delete(key),append(){}});
+ const context=vm.createContext({document:{createElementNS:node},window:{addEventListener(){},removeEventListener(){}}});
+ const clean=source('clean');vm.runInContext(clean.slice(clean.indexOf('export class Lasso'),clean.indexOf('// insidePolygon')).replace('export class','class')+';this.Lasso=Lasso;',context);
+ let offset=0;
+ const map={getCanvasContainer:()=>({append(){}}),project:([x,y])=>({x:x+offset,y}),on:(name,fn)=>handlers.set(name,fn),off:name=>handlers.delete(name)};
+ const lasso=new context.Lasso(map,{onDone:(...args)=>done.push(plain(args)),onCancel:()=>lasso.setActive(false)});
+ lasso.setActive(true);assert.equal(handlers.has('pointerdown'),false);
+ for(const [lng,lat] of [[0,0],[10,0],[10,10]])handlers.get('click')({lngLat:{lng,lat},originalEvent:{altKey:true,detail:1}});
+ handlers.get('click')({lngLat:{lng:10,lat:10},originalEvent:{detail:2}});
+ offset=5;handlers.get('move')();assert.match(attributes.get('d'),/^M5,0/);
+ handlers.get('dblclick')({preventDefault(){}});assert.deepEqual(done,[[[[5,0],[15,0],[15,10]],{restore:true}]]);
+ assert.equal(attributes.has('d'),false);lasso.onKey({key:'Escape'});assert.equal(handlers.size,0);
+ const app=source('app');assert.match(app,/gestures\?\.setToolDrag\(false\)/);
+});
+
+// editHarness loads Edit's track scope, the edit panel and saving against one
+// file of two tracks.
+function editHarness(){
+  const app=source('app');
+  const part=(key,first,last,stops)=>({key,kind:'track',name:key==='t0'?'Morning':'Evening',first,last,clean:{spikes:{enabled:false},drift:{enabled:false},smooth:{enabled:false},stops:{enabled:stops}}});
+  const track={parts:[part('t0',0,4,false),part('t1',5,9,true),{key:'w0',kind:'waypoint',first:0,last:0}],
+    points:Array.from({length:10},(_,i)=>[i,0]),removed:['manual','','','','','stop','stop','','manual',''],
+    fills:[{first:6,last:8,points:1}],pieces:[{first:0,last:4},{first:5,last:9}],
+    clean:{counts:{},params:{stops:{enabled:false},edits:[{kind:'lasso',points:[0],join:true},{kind:'range',first:8,last:8,join:false}]}}};
+  const state={focus:'a.gpx',tracks:new Map([['a.gpx',{track}]]),partSelection:null,cleanOpen:true,routeOpen:false,hidden:{},rangeTool:false,fill:{}};
+  const elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,{hidden:false,disabled:false,title:'',attrs:{},setAttribute(k,v){this.attrs[k]=v;}});return elements.get(id);};
+  const saved=[],shown=[],editing=[];
+  const context=vm.createContext({state,$:el,structuredClone,WeakMap,Math,
+    focusedEntry:()=>state.tracks.get(state.focus),timeline:{setEditing:value=>editing.push(value)},
+    cleanPanel:{show:view=>shown.push(view),addRange(){}},map:null,planner:null,cutting:()=>false,
+    setLasso(){},setRangeTool(){},setFillTool(){},applyEditTools(){},
+    api:{saveClean:(path,first,clean)=>{saved.push({path,first,clean});return Promise.resolve();}},
+    changeFocused:async change=>change(state.focus)});
+  vm.runInContext(app.slice(app.indexOf('function applyCleanPanel()'),app.indexOf('// setMode switches')),context);
+  vm.runInContext(app.slice(app.indexOf('// saveClean writes'),app.indexOf('// changeFocused runs')),context);
+  return {context,state,track,el,saved,shown,editing};
+}
+
+test('Edit works on a selected track only, never on its file, a route or a waypoint',()=>{
+  const h=editHarness();
+  h.context.applyCleanPanel();
+  assert.equal(h.state.cleanOpen,false,'selecting the file closes Edit');
+  assert.equal(h.el('mode-edit').disabled,true);
+  h.state.partSelection={path:'a.gpx',key:'w0'};h.state.cleanOpen=true;h.context.applyCleanPanel();
+  assert.equal(h.state.cleanOpen,false,'a waypoint is not a track');
+  h.state.partSelection={path:'a.gpx',key:'t1'};h.context.applyCleanPanel();
+  assert.equal(h.el('mode-edit').disabled,false);
+  h.state.cleanOpen=true;h.context.applyCleanPanel();
+  assert.equal(h.state.cleanOpen,true);assert.equal(h.el('clean-panel').hidden,false);
+});
+
+test('the edit panel shows one track: its filters, edits, fills, segments and counts',()=>{
+  const h=editHarness();
+  h.state.partSelection={path:'a.gpx',key:'t1'};h.context.applyCleanPanel();
+  const view=h.shown.at(-1);
+  assert.equal(view.name,'Evening');
+  assert.equal(view.clean.params.stops.enabled,true,'the track\'s own filters');
+  assert.equal(JSON.stringify(view.clean.params.edits),JSON.stringify([{kind:'range',first:8,last:8,join:false}]));
+  assert.equal(view.clean.counts.manual,1);assert.equal(view.clean.counts.stop,2);assert.equal(view.clean.counts.filled,1);
+  assert.equal(view.fills.length,1);assert.equal(view.pieces.length,1);
+  assert.equal(h.editing.at(-1).edits,view.clean.params.edits,'the timeline indexes the same edits as the panel');
+  h.context.applyCleanPanel();assert.equal(h.shown.at(-1),view,'the panel keeps its view while nothing changed');
+});
+
+test('saving an edit sends the track\'s filters and keeps the other tracks\' edits',async()=>{
+  const h=editHarness();
+  h.state.partSelection={path:'a.gpx',key:'t1'};h.context.applyCleanPanel();
+  const params=structuredClone(h.shown.at(-1).clean.params);
+  params.stops.enabled=false;params.edits=[];
+  await h.context.saveClean(params);
+  const [sent]=h.saved;
+  assert.equal(sent.first,5);assert.equal(sent.clean.stops.enabled,false);
+  assert.equal(JSON.stringify(sent.clean.edits),JSON.stringify([{kind:'lasso',points:[0],join:true}]),'the first track\'s edit stays');
+});
+
+test('in Edit, tool clicks pick points of the edited track only',()=>{
+  const app=source('app');
+  const entry={hiddenParts:new Set(['t2']),track:{parts:[{key:'t0',kind:'track'},{key:'t1',kind:'track'},{key:'t2',kind:'track'},{key:'w0',kind:'waypoint'}]}};
+  const state={cleanOpen:true};
+  const context=vm.createContext({state,focusedEntry:()=>entry,editPart:()=>entry.track.parts[1]});
+  vm.runInContext(app.slice(app.indexOf('// pickHidden are'),app.indexOf('// inPart reports')),context);
+  assert.deepEqual([...context.pickHidden(entry)].sort(),['t0','t2']);
+  state.cleanOpen=false;assert.equal(context.pickHidden(entry),entry.hiddenParts);
+  for(const call of ['layers.nearest(focused.track, event.point, 24, pickHidden(focused))','layers.nearest(track, event.point, 24, pickHidden(entry))','layers.nearest(cutEntry.track, event.point, 24, pickHidden(cutEntry))'])assert.ok(app.includes(call),call);
+});
+
+test('in Edit, a timeline range is cut to the edited track and the lasso takes its points only',()=>{
+  const h=editHarness();
+  h.state.partSelection={path:'a.gpx',key:'t1'};
+  const ranges=[];h.context.cleanPanel.addRange=(first,last)=>ranges.push([first,last]);
+  h.context.applyCleanPanel();
+  const {onRange}=h.editing.at(-1);
+  onRange(2,7);onRange(0,3);onRange(8,12);
+  assert.deepEqual(ranges,[[5,7],[8,9]],'clamped to 5..9; a range wholly on another track adds nothing');
+  // The lasso: every point lies inside the shape, only the edited track's are taken.
+  const app=source('app');const edits=[];
+  Object.assign(h.context,{map:{project:([x,y])=>({x,y})},insidePolygon:()=>true,hiddenRanges:()=>[],uncheckedRanges:()=>[],
+    cleanPanel:{track:h.shown.at(-1),addEdit:edit=>edits.push(edit)},editPart:()=>h.track.parts[1]});
+  vm.runInContext(app.slice(app.indexOf('// pushEdit records'),app.indexOf('function setLasso(')),h.context);
+  vm.runInContext(app.slice(app.indexOf('// lassoDone removes'),app.indexOf('// reportFocus tells')),h.context);
+  h.context.lassoDone([],{restore:false});
+  assert.equal(JSON.stringify(edits),JSON.stringify([{kind:'lasso',points:[7,9],join:true}]),'kept points 7 and 9 of track t1 only');
+});
+
+test('empty GPX rows carry a file icon aligned with the disclosure; children are indented further',()=>{
+ const h=treeHarness(treeTrack({parts:[]})),row=h.context.trackRow('current.gpx',h.entry);
+ assert.ok(row.children[0].classList.contains('disclosure-space'));
+ assert.match(row.children[0].innerHTML,/data-icon="file"/);
+ assert.equal(row.children[0].attributes['aria-hidden'],'true');
+ const css=readFileSync(new URL('./web/app.css',import.meta.url),'utf8');
+ assert.match(css,/\.disclosure-space\s*\{[^}]*width: 18px/);
+ assert.match(css,/\.list li\.part-row\s*\{[^}]*margin-left: 28px/);
+});
+
+test('manually removed samples and bands can be hidden without hiding automatic removals or changing data',()=>{
+ const sources=new Map(),layout=new Map(),filters=new Map(),context=vm.createContext({document:documentStub(),format});loadModule('clean',context);
+ const map={addSource(){},addLayer(){},setLayoutProperty:(id,key,value)=>layout.set(id,value),setFilter:(id,value)=>filters.set(id,plain(value)),getSource:id=>({setData:value=>sources.set(id,plain(value))})};context.map=map;
+ const overlay=vm.runInContext('new CleanOverlay(map,"cursor")',context);
+ const track={points:[[0,0],[1,0],[2,0]],removed:['manual','manual','spikes'],segments:[0,0,0]};
+ overlay.show(track);const before=JSON.stringify([...sources]);
+ overlay.setManualVisible(false);assert.equal(layout.get('clean-manual'),'none');assert.equal(layout.get('clean-manual-band'),'none');
+ assert.deepEqual(filters.get('clean-removed'),['!=',['get','rule'],'manual']);
+ overlay.setManualVisible(true);assert.equal(layout.get('clean-manual'),'visible');assert.equal(filters.get('clean-removed'),null);
+ assert.equal(JSON.stringify([...sources]),before);assert.deepEqual(track.removed,['manual','manual','spikes']);
+});
+
+test('New GPX preserves the source track segment choices through focus changes',async()=>{
+ const selectedPieces=[...pieces,{first:4,last:6,name:'Third',points:3,distance:20}],h=segmentHarness(selectedPieces);
+ const part={kind:'track',key:'t0',first:0,last:6};h.track.parts=[part];
+ const options={part,timeZone:'UTC',workspace:['current.gpx'],folder:''};h.panel.show(h.track,options);
+ const rows=()=>h.root.all(e=>e.classList.contains('cut-row'));
+ await rows()[1].fire('click',{timeStamp:100});await rows()[2].fire('click',{timeStamp:200,ctrlKey:true});
+ assert.deepEqual([...h.panel.selected],[2,4]);
+ Object.assign(h.context,{cutPanel:h.panel,promptDialog:async()=> 'Synthetic draft',api:{newDraft:async()=>({path:'draft:new'})},
+  addTrack:async()=>{h.panel.hide();h.state.focus='draft:new';},showMessage(){}});
+ const app=source('app');vm.runInContext(app.slice(app.indexOf('async function newGPX()'),app.indexOf('// discardSidecar')),h.context);
+ await h.context.newGPX();h.state.focus='current.gpx';h.panel.show(h.track,{...options,workspace:['current.gpx','draft:new']});
+ assert.deepEqual([...h.panel.selected],[2,4]);h.panel.hide();h.panel.hide();h.panel.show(h.track,options);assert.deepEqual([...h.panel.selected],[2,4]);
+});
+
+test('workspace drags reorder siblings in writable GPX files while refusing recordings and mixed kinds',async()=>{
+ const parts=[{key:'t0',kind:'track'},{key:'t1',kind:'track'},{key:'w0',kind:'waypoint'}],row={dataset:{path:'source.gpx',kind:'track',key:'t1'}},calls=[];
+ const context=vm.createContext({dragRow:{path:'source.gpx',kind:'track',key:'t0'},dragGap:{at:()=>({row,above:false})},
+  $:()=>({getBoundingClientRect:()=>({left:0,right:100})}),state:{focus:null,tracks:new Map([['source.gpx',{track:{ours:true,parts}}]])},
+  api:{orderParts:async(...args)=>calls.push(plain(args))},reloadEntry:async()=>{},renderTracks(){},showMessage(){}});
+ const app=source('app');vm.runInContext(app.slice(app.indexOf('const copyModifier'),app.indexOf('// markDrop')),context);
+ vm.runInContext(app.slice(app.indexOf('async function applyDrop'),app.indexOf('// reorderFiles')),context);
+ vm.runInContext(app.slice(app.indexOf('async function reorderParts'),app.indexOf('// dropIntoFile')),context);
+ const target=context.dropAt(50,50,{});assert.equal(target.kind,'parts');await context.applyDrop(context.dragRow,target);
+ assert.deepEqual(calls,[['source.gpx','track',['t1','t0']]]);
+ context.state.tracks.get('source.gpx').track.ours=false;assert.equal(context.dropAt(50,50,{}),null);
+ context.state.tracks.get('source.gpx').track.ours=true;row.dataset.kind='waypoint';assert.equal(context.dropAt(50,50,{}),null);
+});
+
+test('clicking a visible track enters Edit; hidden tracks, routes and waypoints do not',async()=>{
+ for(const kind of ['track','route','waypoint'])for(const visible of [true,false])for(const hidden of [true,false]){
+  const part={kind,key:'p0',points:[[0,0]],bounds:[[0,0],[1,1]]},h=treeHarness(treeTrack({parts:[part]}));
+  h.entry.visible=visible;if(hidden)h.entry.hiddenParts.add(part.key);
+  h.context.showPart('current.gpx',part);
+  assert.equal(h.calls.some(([action,mode])=>action==='mode'&&mode==='edit'),kind==='track'&&visible&&!hidden);
+  assert.equal(h.calls.some(([action])=>action==='fit'||action==='pan'),false);
+ }
+});
+
+test('map hover follows the selected track and synchronizes time, elevation and speed cursors',()=>{
+ const handlers=new Map(),frames=[],positions=[],elevation=[],speed=[],readout=new Element('span');
+ const track={points:[[0,0],[10,0],[20,0],[30,0],[10,0],[20,0]],segments:[0,0,0,0,1,1],removed:[],
+  parts:[{kind:'track',key:'t0',first:0,last:3},{kind:'track',key:'t1',first:4,last:5}],distance:[0,100,200,300,400,500],time:[0,1000,2000,3000,4000,5000],elevation:[10,20,30,40,50,60],speed:[1,2,3,4,5,6]};
+ const entry={id:'a',visible:true,track,color:'#0072b2',hiddenParts:new Set()},state={focus:'source.gpx',partSelection:{path:'source.gpx',key:'t0'},tracks:new Map([['source.gpx',entry]]),fill:{active:false}};
+ let moving=false;
+ const map={on:(name,fn)=>handlers.set(name,fn),isMoving:()=>moving,project:([x,y])=>({x,y}),unproject:([x,y])=>({lng:x,lat:y}),getCanvas:()=>({style:{}})};
+ const layers=Object.create(TrackLayers.prototype);Object.assign(layers,{map,setCursor:point=>positions.push(point),setHover(){}});
+ const context=vm.createContext({format,state,map,layers,requestAnimationFrame:fn=>frames.push(fn),waypointAt:()=>null,showPhotoHover(){},focusedEntry:()=>entry,cutting:()=>false,uncheckedRanges:()=>[]});
+ loadModule('profile',context);loadModule('timeline',context);
+ const profile=vm.runInContext('Object.create(Profile.prototype)',context),timeline=vm.runInContext('Object.create(Timeline.prototype)',context);
+ const chart=values=>({over:{clientHeight:20},valToPos:value=>value,setCursor:cursor=>values.push(cursor.left)});
+ Object.assign(profile,{track,charts:[chart(elevation),chart(speed)],labels:{readout},timeZone:'UTC'});
+ Object.assign(timeline,{track,range:[0,5000],cursor:{style:{}},percent:time=>`${time/50}%`});Object.assign(context,{profile,timeline});
+ const app=source('app');vm.runInContext(app.slice(app.indexOf('function inspect(index)'),app.indexOf('// ---- the timeline')),context);
+ vm.runInContext(app.slice(app.indexOf('function bindMap()'),app.indexOf('// ---- layout ----')),context);context.bindMap();
+ for(let i=0;i<4;i++){
+  handlers.get('mousemove')({point:{x:i*10,y:0},originalEvent:{buttons:0}});frames.shift()();
+  assert.equal(positions.at(-1),track.points[i]);assert.equal(timeline.cursor.style.left,`${i*20}%`);
+  assert.equal(elevation.at(-1),i/10);assert.equal(speed.at(-1),i/10);
+  assert.ok(readout.textContent.includes(`${track.elevation[i]} m`));
+ }
+ moving=true;handlers.get('mousemove')({point:{x:20,y:0},originalEvent:{buttons:0}});assert.equal(frames.length,0);
+ handlers.get('mouseout')();assert.equal(timeline.cursor.hidden,true);assert.equal(readout.textContent,'');
+});
+
+test('nearest hover keeps its previous branch at equal-distance crossings and excludes unchecked ranges',()=>{
+ const layers=Object.create(TrackLayers.prototype);layers.map={project:([x,y])=>({x,y}),unproject:([x,y])=>({lng:x,lat:y})};
+ const track={points:[[0,0],[10,0],[20,0],[10,0],[10,10]],removed:[],segments:[0,0,0,0,0],parts:[{kind:'track',key:'t0',first:0,last:4}]};
+ assert.equal(layers.nearest(track,{x:10,y:0},24,new Set(),{preferred:1}),1);
+ assert.equal(layers.nearest(track,{x:10,y:0},24,new Set(),{preferred:3}),3);
+ assert.equal(layers.nearest(track,{x:10,y:0},1,new Set(),{hiddenRanges:[[1,3]]}),-1);
+});
+
+test('profile axes and canvas margins inspect samples even outside the narrow uPlot overlay',async()=>{
+ const context=vm.createContext({document:documentStub(),format,uiPx:value=>value,getComputedStyle:()=>({getPropertyValue:()=>'',fontFamily:'sans-serif'})});
+ const calls=[];let chart;
+ context.uPlot=class{
+  constructor(options,data){this.root=new Element('div');this.over=new Element('div');this.over.getBoundingClientRect=()=>({left:100,width:200});this.over.contains=target=>target===this.over;this.data=data;chart=this;}
+  posToIdx(x){return Math.round(x/100);}
+ };
+ loadModule('profile',context);
+ const profile=vm.runInContext('Object.create(Profile.prototype)',context);
+ Object.assign(profile,{charts:[],offset:0,setIndex:index=>calls.push(['cursor',index]),onHover:index=>calls.push(['hover',index]),showReadout:index=>calls.push(['readout',index])});
+ const container=new Element('div');container.clientWidth=300;container.clientHeight=100;
+ profile.addChart(container,[0,1,2],[10,20,30],'#0072b2',false,'empty',String);
+ await chart.root.fire('pointermove',{clientX:200,buttons:0,target:container});assert.deepEqual(calls,[['cursor',1],['hover',1]]);
+ calls.length=0;await chart.root.fire('pointermove',{clientX:200,buttons:0,target:chart.over});assert.deepEqual(calls,[]);
+ await chart.root.fire('pointermove',{clientX:200,buttons:1,target:container});assert.deepEqual(calls,[]);
+ await chart.root.fire('mouseleave');assert.deepEqual(calls,[['readout',null],['hover',null]]);
+ const app=source('app'),inspect=app.slice(app.indexOf('function inspect(index)'),app.indexOf('// ---- the timeline'));
+ assert.match(inspect,/timeline\.setIndex\(index\)/);assert.match(inspect,/profile\.setIndex\(index\)/);
+ const css=readFileSync(new URL('./web/app.css',import.meta.url),'utf8');
+ assert.match(css,/\.timeline-cursor\s*\{[^}]*z-index: 3/);
+});
+
+
+test('map reset zoom frames the selected visible track or visible GPX files', async () => {
+  const bounds=[[1,2],[3,4]], part={key:'track-1',bounds};
+  const entry={visible:true,hiddenParts:new Set(),track:{parts:[part]}};
+  const hidden={visible:false,track:{parts:[]}};
+  const calls=[];
+  const document=documentStub();
+  const create=document.createElement;
+  document.createElement=tag=>{const node=create(tag);node.appendChild=child=>node.append(child);return node;};
+  const context=vm.createContext({document,state:{tracks:new Map([['source.gpx',entry],['hidden.gpx',hidden]])},
+    focusedEntry:()=>entry,editPart:()=>part,fitBox:box=>calls.push(['box',plain(box)]),fit:tracks=>calls.push(['files',tracks]),
+    MAXIMIZE:'fit',CHEVRON_UP:'up',CHEVRON_DOWN:'down',ROTATE_CCW:'left',ROTATE_CW:'right',clearInterval,setInterval});
+  const app=source('app');
+  vm.runInContext(app.slice(app.indexOf('const TILT_STEP'),app.indexOf('// bindTerrain'))+';globalThis.ViewControl=ViewControl;',context);
+  const control=new context.ViewControl().onAdd({});
+  const reset=control.children[0];
+  assert.match(reset.attributes['aria-label'],/Reset zoom/);
+  await reset.fire('click');
+  assert.deepEqual(calls.pop(),['box',bounds]);
+  entry.hiddenParts.add(part.key);
+  await reset.fire('click',{detail:0});
+  assert.deepEqual(Array.from(calls.pop()[1]),[entry.track]);
+  entry.visible=false;
+  await reset.fire('click');
+  assert.equal(calls.pop()[1].length,0);
 });

@@ -66,7 +66,7 @@ server exposes the API under `/api/`; everything else is the page.
 | `/ui/files/dir?path=&ext=&hidden=` | The shared file dialog's listing, mounted by `internal/webfile` rather than this app: one folder's folders and files, narrowed to the suffixes `ext` repeats. Documented in [`docs/web.md`](../../web.md). |
 | `/ui/files/places` | The folders the shared file dialog lists down its side. |
 | `/api/track?path=` | One GPX file as parallel per-point arrays: position, segment, distance, elevation, speed, time; plus its statistics, stops (with `center`, the mean position, and `anchor`, the kept sample index nearest the stop time midpoint, used for the marker) and parts — each track (as a range of those points, marked when added from another file), route and waypoint — its cleaning: the sidecar's settings, what each point was removed by, the recorded positions when cleaning moved any, and counts; its segments (`pieces`), saved cuts and proposed cuts; its fills; how many tracks were added to it, and `ours` when `dgs` wrote the file. `stopDistance` (metres) and `stopDuration` (seconds) override the stop thresholds. `coordinates=gcj02` returns positions, stop centres and bounds converted for GCJ-02 maps. |
-| `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
+| `PUT /api/clean` | Writes cleaning settings and manual removals to the companion sidecar of an external recording, or the embedded extension of a dgs GPX. `first` names the track whose filters these are, by its first point index; the edits are the file's. Without `first` the filters are the file's, for every track without its own. Settings left out keep their defaults; an edit that does nothing clears the stored state. |
 | `PUT /api/segments` | Writes cuts and segment names to the companion sidecar or embedded dgs state. |
 | `PUT /api/file-name` | Rename a draft or a GPX dgs created within its current folder; `{path,name}` returns the new `path`. `.gpx` is added when omitted. Existing GPX and sidecar names are refused; pending edits remain unsaved and follow the new path. |
 | `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. |
@@ -134,8 +134,23 @@ map. It is the interface later milestones build on.
   the map — waypoints and stop markers — and everything outside the map,
   icon buttons and the timeline bar included, use the ordinary arrow.
   Holding the mouse button shows a grabbing hand for panning; draggable pins
-  and editing tools keep their action cursors, and lasso and box selection
-  keep a crosshair.
+  and editing tools keep their action cursors, and the lasso keeps a
+  crosshair. Holding Space over the map shows an open hand under every tool,
+  and a closed hand while it pans.
+- **Map gestures.** The view keeps a fixed set of gestures, the same under
+  every tool, present and future; every other input belongs to the tools.
+
+  | View | Mouse or trackpad | Keyboard |
+  |---|---|---|
+  | Pan | Plain drag or Space+drag, under every tool | Arrow keys |
+  | Zoom | Wheel or pinch, at the pointer | `+` and `-` |
+  | Rotate and tilt | Right-button drag (Ctrl+drag on a Mac is the right button) | Shift+arrow keys |
+  | Face north | The compass button | — |
+
+  The tools own clicks and double-clicks; a plain drag always pans. The map's
+  own double-click zoom and Shift+drag box zoom are off. Space also pans while
+  the pointer is over the map and no field has the keyboard, and the click
+  that ends a Space pan reaches no tool.
 - **No folder view.** The page never lists folders of its own: the file dialog
   is the one place folders are browsed, so the whole sidebar is the workspace.
   The folder the dialogs open at starts at `geo.gpx.root` (or `--dir`) and
@@ -370,9 +385,10 @@ map. It is the interface later milestones build on.
     is the page's own — no file is written — and is remembered with the
     session. *Move up* / *Move down* in a file's right-click menu move it among
     the rows listed, for the same order without dragging.
-  - A **part** dropped inside its own file does nothing. A track, route or
-    waypoint is put in order among those of its kind using *Move up* and
-    *Move down* in its right-click menu, one place per action. The order is held beside the file, keyed as the
+  - A **part** dropped above or below another part of the same kind in its
+    own writable GPX changes their order. Different kinds and recordings are
+    refused. *Move up* and *Move down* in its right-click menu also reorder
+    one place per action. The order is held beside the file, keyed as the
     names are, and goes into the GPX itself when the file is saved. Only a
     GPX `dgs` wrote, or a new one not saved yet, offers those commands, and only
     on a kind it holds more than one of; a recording keeps the order it was
@@ -392,8 +408,12 @@ map. It is the interface later milestones build on.
   file on disk holds one part fewer.
 - **Several tracks at once.** Every shown workspace track is drawn in its own colour,
   picked from a palette and changeable from its row. A track's recorded
-  segments are drawn apart, so a gap in the recording is not bridged by a
-  straight line.
+  segments are drawn apart by default. *Connect gaps* below the map’s Track points button
+  connects the last kept point of one recorded segment to the first kept point
+  of the next with a thin straight line. Arrows in the file's colour along that line point
+  from the earlier segment to the later one. It defaults off and is remembered per
+  browser. Hidden ranges and separate tracks are not joined. This changes only
+  the map: GPX files, statistics and saved edits retain their recording breaks.
 - **One focus.** Exactly one shown track is focused — the one later milestones
   edit. It is drawn above the others with a 2 px colour core; other GPX files
   use a 1.6 px core. Both remain opaque and have a white inner edge and a dark
@@ -564,8 +584,15 @@ map. It is the interface later milestones build on.
 ## Cleaning
 
 *Edit*, in the top bar beside *Browse*, opens the inspector — a column on the
-right of the page, dragged wider or narrower — for the focused track. Its
-*Changes* tab lists removals by hand and fills along the road; *Automatic
+right of the page, dragged wider or narrower — for the selected track: one
+`<trk>` picked in the file's list or by a click on its line. Selecting the
+GPX file itself selects no track, even when it holds only one, so *Edit* is
+unavailable and closes; so it does for a route or a waypoint. Everything in
+the inspector keeps to that track: its filters, its edits and fills, its
+segments and its counts, and the range, lasso, fill and cut tools pick only
+its points. Its
+tabs are *Segments* (first; see *Segments* below), *Changes* and *Automatic
+cleaning*. *Changes* lists removals by hand and fills along the road; *Automatic
 cleaning* holds the filters. A tool bar on the map's corner picks the tool:
 select, *Range* (`R`), *Lasso* (`L`) and *Fill along the road* (`F`); `Esc`
 leaves it. Under a divider it carries *Compare with the recording*, a toggle
@@ -576,8 +603,10 @@ are saved at once to the track's sidecar (see *The sidecar* below); the source
 GPX is never written. Filters run in this order, each seeing only what the
 ones before kept.
 
-Cleaning applies to the whole file: every `<trk>` of it, joined in file order,
-under one set of settings in one sidecar. Routes and waypoints are not cleaned.
+Each `<trk>` is cleaned on its own, with its own filter settings, so a walk
+and a drive in one file can be cleaned differently; the filters never see
+another track's points. The settings live in the file's one sidecar, each
+track's named by its first point index. Routes and waypoints are not cleaned.
 Spikes, drift and smoothing stay within a recorded segment; a stop may span
 two. Hiding a track in the file's list hides it from the map and the lasso,
 not from the filters.
@@ -625,13 +654,16 @@ edit's `×` restores just that one.
   frames it. The explicit selector and `×` also remain available.
   Removed stretches are also drawn on the map, along where they were
   recorded, as a pale purple band with a dashed centre.
-- **Lasso.** With *Lasso* on, dragging on the map draws a shape; the focused
-track's kept points inside it are removed as one edit. Holding Option (Alt
-off a Mac) while drawing takes the points inside it out of earlier lasso
-edits instead. Lasso removals are
-always joined across. Map panning is off while the lasso is on; Esc or the
-button turns it off, and *Restore* returns them all. Points in hidden tracks
-are left alone.
+- **Lasso.** With *Lasso* on, click boundary vertices and double-click to
+  finish the polygon. Dragging always pans, and the boundary stays anchored
+  to its map positions. Kept points inside are removed as one edit; holding
+  Option/Alt at the first vertex instead restores earlier manual removals.
+  Lasso removals are joined across. Esc or the button cancels the unfinished
+  boundary and turns the tool off. Hidden tracks and unchecked segments stay
+  excluded from selection.
+- **Removed by hand.** The Layers panel can hide manually removed point dots
+  and their purple bands together, without hiding automatic removals or
+  changing edits. It defaults on and is remembered per browser.
 
 **Filling along the road.** For a stretch recorded badly or not at all — a
 tunnel, a phone that lost the signal — the panel's *Fill along the road* asks a
@@ -724,7 +756,7 @@ clicks.
 ## Segments
 
 In Edit, the inspector's *Segments* tab — or the *Cut* tool (`C`) on the map's
-tool bar, which opens it — cuts the focused track. While it is shown,
+tool bar, which opens it — cuts the selected track. While it is shown,
 right-click menus on the track and timeline offer cut commands, and the other
 tools are off; picking one of
 them goes back to *Changes*. A cut is a point
@@ -842,7 +874,7 @@ Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "clean": {
     "spikes": { "enabled": true, "maxSpeed": 100, "maxAcceleration": 15, "turnAngle": 160, "minJump": 30 },
     "drift": { "enabled": false, "halfWindow": 7, "threshold": 3, "minDeviation": 1, "quality": true },
@@ -854,6 +886,13 @@ Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
       { "kind": "stop", "first": 2100, "last": 2390, "join": true, "at": 1788657400000 }
     ]
   },
+  "tracks": [
+    { "first": 4160,
+      "spikes": { "enabled": false, "maxSpeed": 100, "maxAcceleration": 15, "turnAngle": 160, "minJump": 30 },
+      "drift": { "enabled": false, "halfWindow": 7, "threshold": 3, "minDeviation": 1, "quality": true },
+      "smooth": { "enabled": true, "positionSigma": 5, "acceleration": 1, "maxGap": 60 },
+      "stops": { "enabled": true, "distance": 50, "duration": 300 } }
+  ],
   "segments": {
     "cuts": [2339, 4159],
     "names": [{ "start": 2339, "name": "逛西湖" }]
@@ -869,6 +908,12 @@ Beside `walk.gpx` the page writes `walk.gpx.dgs.json`:
   ]
 }
 ```
+
+`tracks` holds each track's own filters, named by `first`, the index of its
+first point; it moves with the points as every other index does, and goes
+when that track does. A track without an entry uses the filters in `clean` —
+how version 1, which had no `tracks`, cleaned every track — so a version 1
+sidecar reads as it did. The edits in `clean` are the whole file's.
 
 Units are the SI ones the filters use: metres, seconds, m/s, m/s². An edit's
 `points` (a lasso's), `first` and `last` (a range's or stop's, both removed),
@@ -1234,3 +1279,22 @@ segment editing restores the ordinary track display. Add opens one shared
 modal containing Save to, the track name for a single segment, and the
 separate-or-merge choice with a name for merged segments. The destination is
 chosen in that modal, rather than beforehand in the inspector.
+
+Empty workspace GPX rows use a small file icon in the disclosure column so
+that they remain recognizable as parent rows. Child rows are indented 28px.
+Segment choices are kept per GPX and track scope, including across New GPX.
+
+Clicking a visible track child in the workspace or its line on the map enters
+Edit automatically. Hidden tracks, GPX parent rows, routes and waypoints do
+not enter Edit. A single click keeps the map view; double-click still frames.
+Map hover over the selected track synchronizes the timeline time cursor and
+both elevation and speed chart cursors/readouts to one kept sample. Other
+tracks and unchecked ranges are excluded. At equal-distance crossings the
+previous sample breaks the tie, so following the line does not jump branches.
+
+Chart axes and canvas margins also inspect the sample at the pointer’s horizontal
+position. Timeline ticks scrub like the timeline bar. Every hover source updates
+the map, timeline and both chart cursors through the same inspection function.
+
+The map Reset zoom button frames the selected visible track; without one it
+frames visible GPX files. It leaves the timeline and chart zoom unchanged.

@@ -40,6 +40,9 @@
     <div id="layers-panel" class="layers-panel" hidden>
       <p class="layers-hint">Top of the list is drawn on top. Drag ⋮⋮ to reorder.</p>
       <ul id="layer-list" class="layer-list"></ul>
+      <label class="layer-name" title="Show manually removed points and their purple bands">
+        <input id="show-manual" type="checkbox" checked>Removed by hand
+      </label>
       <div class="layer-terrain">
         <label class="layer-name" title="Read the elevation tiles as terrain: the map tilts and the ground rises under the tracks">
           <input id="terrain-toggle" type="checkbox">
@@ -89,6 +92,7 @@
     <div id="map" class="map"></div>
     <button id="terrain-3d" class="icon-button map-button terrain ui-map-button" title="3D relief — tilt the map and raise the ground (D)" aria-pressed="false"><span aria-hidden="true">3D</span></button>
     <button id="track-points" class="icon-button map-button track-points ui-map-button" title="Track points — show samples joined by thin dashed lines" aria-label="Show track points" aria-pressed="false"></button>
+    <button id="connect-gaps" class="icon-button map-button connect-gaps ui-map-button" title="Connect gaps — link recording endpoints with straight lines" aria-label="Connect gaps" aria-pressed="false"></button>
     <button id="map-only" class="icon-button map-button ui-map-button" title="Map only — hide the panels around it (M)" aria-pressed="false"><span aria-hidden="true">⛶</span></button>
     <button id="show-workspace" class="icon-button panel-show left ui-fold-show" hidden title="Show the workspace (W)" aria-label="Show the workspace">›</button>
     <button id="show-inspector" class="icon-button panel-show right ui-fold-show" hidden title="Show the edit panel (I)" aria-label="Show the edit panel">‹</button>
@@ -96,7 +100,7 @@
     <div id="map-tools" class="map-tools ui-map-tools" role="toolbar" aria-label="Edit tools" hidden>
       <button id="tool-select" class="icon-button map-tool ui-map-tool" aria-pressed="true" title="Select — inspect and focus (Esc)"><span aria-hidden="true">↖</span></button>
       <button id="tool-range" class="icon-button map-tool ui-map-tool" aria-pressed="false" title="Range — remove the points between two clicks on the track, or drag on the timeline (R)"><span aria-hidden="true">⟷</span></button>
-      <button id="tool-lasso" class="icon-button map-tool ui-map-tool" aria-pressed="false" title="Lasso — draw around points to remove them (L)"><span aria-hidden="true">◌</span></button>
+      <button id="tool-lasso" class="icon-button map-tool ui-map-tool" aria-pressed="false" title="Lasso — click boundary points, double-click to finish; drag to pan (L)"><span aria-hidden="true">◌</span></button>
       <button id="tool-fill" class="icon-button map-tool ui-map-tool" aria-pressed="false" title="Fill along the road — route between two clicks (F)"><span aria-hidden="true">⤳</span></button>
       <button id="tool-cut" class="icon-button map-tool ui-map-tool" aria-pressed="false" title="Cut — click the track or the timeline to cut it into segments (C)"><span aria-hidden="true">✂</span></button>
       <button id="tool-waypoint" class="icon-button map-tool ui-map-tool" aria-pressed="false" title="Waypoint — click the map and choose a GPX to add a named point"><span aria-hidden="true">⚑</span></button>

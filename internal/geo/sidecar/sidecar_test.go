@@ -163,3 +163,58 @@ func TestReorderMovesEditsWithTheirPoints(t *testing.T) {
 		t.Fatalf("split range %+v", edits)
 	}
 }
+
+// A version 1 sidecar's filters serve every track; a track given its own
+// keeps them through a save, follows its points and goes with them.
+func TestTrackFilters(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "walk.gpx")
+	if err := os.WriteFile(PathFor(source), []byte(`{"version":1,"clean":{"stops":{"enabled":true,"distance":40,"duration":300}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file, _, err := Load(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !file.TrackFilters(0).Stops.Enabled || !file.TrackFilters(100).Stops.Enabled {
+		t.Fatal("version 1 filters do not serve every track")
+	}
+	off := clean.Defaults().Filters
+	file.SetTrack(100, off)
+	if file.TrackFilters(100).Stops.Enabled || !file.TrackFilters(0).Stops.Enabled {
+		t.Fatal("a track's own filters do not stand apart")
+	}
+	if err := Save(source, file); err != nil {
+		t.Fatal(err)
+	}
+	file, _, err = Load(source)
+	if err != nil || file.Version != Version || len(file.Tracks) != 1 || file.TrackFilters(100).Stops.Enabled {
+		t.Fatalf("after save: %+v, %v", file.Tracks, err)
+	}
+	file.Insert(10, 5)
+	if file.Tracks[0].First != 105 {
+		t.Fatalf("first after insert: %d", file.Tracks[0].First)
+	}
+	file.Reorder([][2]int{{105, 200}, {0, 104}})
+	if file.Tracks[0].First != 0 {
+		t.Fatalf("first after reorder: %d", file.Tracks[0].First)
+	}
+	file.Delete(0, 95)
+	if len(file.Tracks) != 0 {
+		t.Fatalf("a deleted track keeps its filters: %+v", file.Tracks)
+	}
+}
+
+// A track's filters switched off still matter while the file's are on: the
+// sidecar is kept, so that track stays uncleaned.
+func TestTrackFiltersOffKeepTheSidecar(t *testing.T) {
+	file := File{Version: Version, Clean: clean.Defaults()}
+	file.Clean.Stops.Enabled = true
+	file.SetTrack(100, clean.Defaults().Filters)
+	if !file.Active() {
+		t.Fatal("an override of the file's filters reads as nothing")
+	}
+	file.Clean.Stops.Enabled = false
+	if file.Active() {
+		t.Fatal("filters all off read as something")
+	}
+}

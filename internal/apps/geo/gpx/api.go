@@ -218,11 +218,14 @@ type cleanJSON struct {
 // partJSON is one track, route or waypoint of a file. Key names it for the
 // page: "t0", "r0", "w0".
 type partJSON struct {
-	Key         string          `json:"key"`
-	Kind        string          `json:"kind"` // "track", "route" or "waypoint"
-	Name        string          `json:"name"`
-	First       int             `json:"first"` // a track's first point index
-	Last        int             `json:"last"`
+	Key   string `json:"key"`
+	Kind  string `json:"kind"` // "track", "route" or "waypoint"
+	Name  string `json:"name"`
+	First int    `json:"first"` // a track's first point index
+	Last  int    `json:"last"`
+	// Clean are the filters a track's points are cleaned with: its own, or
+	// the file's when it has none.
+	Clean       *clean.Filters  `json:"clean,omitempty"`
 	Segments    int             `json:"segments,omitempty"`
 	Points      [][2]float64    `json:"points,omitempty"` // a route's path, a waypoint's position
 	Distance    float64         `json:"distance,omitempty"`
@@ -381,7 +384,7 @@ func analyse(path string, params stops.Params) (analysis, error) {
 	for i, fill := range cleaning.Fills {
 		spans[i] = [2]int{fill.First, fill.Last}
 	}
-	result := clean.RunComposed(source, cleaning.Clean, clean.Composed{Filled: composed.Filled, Replaced: composed.Replaced, Spans: spans})
+	result := clean.RunTracks(source, cleaning.Clean, cleaning.Tracks, clean.Composed{Filled: composed.Filled, Replaced: composed.Replaced, Spans: spans})
 	line, index := result.Kept(source)
 	distances := track.Distances(line)
 	return analysis{
@@ -556,6 +559,8 @@ func parts(a analysis, distance []float64, bounds, view geo.Bounds) ([]partJSON,
 			continue
 		}
 		part.First, part.Last = first, last
+		filters := a.cleaning.TrackFilters(first)
+		part.Clean = &filters
 		part.Distance = distance[part.Last] - distance[part.First]
 		part.Bounds = lonLatBox(box)
 		list = append(list, part)
@@ -634,11 +639,14 @@ func extend(b, by geo.Bounds) geo.Bounds {
 	return b.Extend(by.Min).Extend(by.Max)
 }
 
-// saveClean records a track's cleaning in its sidecar. Settings the body leaves
-// out keep their defaults; a cleaning that does nothing removes the sidecar.
+// saveClean records a file's cleaning in its sidecar: the edits, and the
+// filters of the track whose first point is first — or of every track
+// without its own, when first is left out. Settings the body leaves out keep
+// their defaults; a cleaning that does nothing removes the sidecar.
 func (a api) saveClean(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path  string          `json:"path"`
+		First *int            `json:"first"`
 		Clean json.RawMessage `json:"clean"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -667,7 +675,12 @@ func (a api) saveClean(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, err)
 		return
 	}
-	file.Clean = params
+	if body.First != nil {
+		file.Clean.Edits = params.Edits
+		file.SetTrack(*body.First, params.Filters)
+	} else {
+		file.Clean = params
+	}
 	if err := saveSidecar(body.Path, file); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

@@ -191,3 +191,60 @@ func TestCollapsedTurnaroundPreservesSparseStay(t *testing.T) {
 		t.Fatal("cleaning moved the representative stay point")
 	}
 }
+
+// TestRunTracksCleansEachTrackWithItsOwnFilters joins two copies of a walk as
+// two tracks: only the second turns stop collapse on, and an edit across both
+// removes its samples in each.
+func TestRunTracksCleansEachTrackWithItsOwnFilters(t *testing.T) {
+	first, second := walkStayWalk(), walkStayWalk()
+	for i := range second {
+		second[i].Track = 1
+	}
+	line := append(append(track.Line{}, first...), second...)
+	n := len(first)
+	p := Defaults()
+	p.Edits = []Edit{{Kind: EditRange, First: n - 2, Last: n + 1, Join: true}, {Kind: EditLasso, Points: []int{5, n + 5}, Join: true}}
+	collapse := Defaults().Filters
+	collapse.Stops.Enabled = true
+	result := RunTracks(line, p, []TrackFilters{{First: n, Filters: collapse}}, Composed{})
+	stopsIn := func(from, to int) int {
+		count := 0
+		for _, rule := range result.Removed[from:to] {
+			if rule == Stop {
+				count++
+			}
+		}
+		return count
+	}
+	if stopsIn(0, n) != 0 || stopsIn(n, 2*n) == 0 {
+		t.Fatalf("stops removed: first track %d, second %d", stopsIn(0, n), stopsIn(n, 2*n))
+	}
+	for _, i := range []int{5, n - 2, n - 1, n, n + 1, n + 5} {
+		if result.Removed[i] != Manual {
+			t.Fatalf("sample %d: %q, want manual", i, result.Removed[i])
+		}
+	}
+	// A track without its own filters takes p's: the same as one run.
+	p.Stops.Enabled = true
+	if got, want := RunTracks(line, p, nil, Composed{}).Counts(), Run(line, p).Counts(); got.Manual != want.Manual || got.Stop == 0 {
+		t.Fatalf("defaults: %+v, one run %+v", got, want)
+	}
+}
+
+// A fill on the second track keeps its samples and their indices when the
+// line is cleaned track by track.
+func TestRunTracksKeepsFillsInPlace(t *testing.T) {
+	line := append(walkStayWalk(), walkStayWalk()...)
+	n := len(line) / 2
+	for i := n; i < len(line); i++ {
+		line[i].Track = 1
+	}
+	c := Composed{Filled: make([]bool, len(line)), Replaced: make([]bool, len(line)), Spans: [][2]int{{n + 10, n + 20}}}
+	c.Filled[n+11], c.Replaced[n+15] = true, true
+	p := Defaults()
+	p.Stops.Enabled = true
+	result := RunTracks(line, p, nil, c)
+	if result.Removed[n+15] != Fill || result.Removed[n+11] != Kept || !result.Filled[n+11] {
+		t.Fatalf("fill samples: replaced %q, filled %q", result.Removed[n+15], result.Removed[n+11])
+	}
+}

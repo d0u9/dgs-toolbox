@@ -32,7 +32,7 @@ export function tooltip(node, lines) {
   node.addEventListener("pointerleave", () => hide(node));
   node.addEventListener("focus", () => soon(node));
   node.addEventListener("blur", () => hide(node));
-  node.addEventListener("pointerdown", () => hide(node));
+  node.addEventListener("pointerdown", () => hide());
 }
 
 function soon(node) {
@@ -89,8 +89,17 @@ function hide(node) {
 
 const onScroll = () => hide();
 // A page that redraws a list takes the node away under the pointer, and a
-// node taken away hears no pointerleave: the next pointer move closes it.
-const onOver = (event) => { if (owner && (!owner.isConnected || !owner.contains(event.target))) hide(); };
+// node taken away hears no pointerleave: the next pointer move closes it. A
+// node inside another (a row in a row) hears no pointerleave from its parent
+// either: the innermost node with a tip under the pointer takes over.
+const onOver = (event) => {
+  if (!owner) return;
+  let near = event.target;
+  while (near && !linesOf.has(near)) near = near.parentElement;
+  if (near === owner && owner.isConnected) return;
+  hide();
+  if (near) show(near);
+};
 const onKey = (event) => { if (event.key === "Escape") hide(); };
 
 function listen(on) {
@@ -99,4 +108,5 @@ function listen(on) {
   window[method]("resize", onScroll);
   window[method]("keydown", onKey, true);
   document[method]("pointerover", onOver, true);
+  document[method]("pointermove", onOver, true);
 }

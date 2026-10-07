@@ -24,7 +24,7 @@ test('single part click preserves camera; double click frames tracks and routes'
  for (const kind of ['track', 'route', 'waypoint']) {
   const calls=[];
   const entry={visible:false,hiddenParts:new Set(['part-a'])};
-  const context=vm.createContext({state:{focus:'other',tracks:new Map([['file-a',entry]])},select(){},renderTracks(){},applyCutPanel(){},setVisible:(...args)=>calls.push(['visible',...args]),setPartHidden:(...args)=>calls.push(['hidden',...args]),setFocus:(...args)=>calls.push(['focus',...args]),fitBox:()=>calls.push(['fit']),openWaypoint:()=>calls.push(['popup']),map:{getZoom:()=>12,easeTo:()=>calls.push(['pan'])}});
+  const context=vm.createContext({state:{focus:'other',tracks:new Map([['file-a',entry]])},select(){},showCharts(){},renderTracks(){},applyCutPanel(){},applyCleanPanel(){},setVisible:(...args)=>calls.push(['visible',...args]),setPartHidden:(...args)=>calls.push(['hidden',...args]),setFocus:(...args)=>calls.push(['focus',...args]),fitBox:()=>calls.push(['fit']),openWaypoint:()=>calls.push(['popup']),map:{getZoom:()=>12,easeTo:()=>calls.push(['pan'])}});
   vm.runInContext(code,context);
   const part={kind,key:'part-a',points:[[0,0]],bounds:[[0,0],[1,1]]};
   context.showPart('file-a',part);
@@ -43,7 +43,7 @@ test('unfocused traces remain visible and hidden files have no casing', () => {
  assert.ok([...paint].some(([key,value])=>key.startsWith('track-b-') && key.endsWith('/line-opacity') && value===1));
  assert.ok([...layout].filter(([key])=>key.startsWith('track-b-') && key.endsWith('/visibility')).every(([,value])=>value==='none'));
  layers.hidden.delete('b');layers.setFocus('a');
- assert.ok([...layout].filter(([key])=>key.startsWith('track-b-') && key.endsWith('/visibility')).every(([key,value])=>value===(key.includes('-points/')?'none':'visible')));
+ assert.ok([...layout].filter(([key])=>key.startsWith('track-b-') && key.endsWith('/visibility')).every(([key,value])=>value===((key.includes('-points/') || key.includes('-gap/') || key.includes('-gap-direction/'))?'none':'visible')));
 });
 
 test('timeline jump uses the same on-track anchor as the stop marker', () => {
@@ -330,4 +330,29 @@ test('waypoints remain above every file when files are added or focus changes', 
    for(const other of ['a','b'])for(const kind of ['line','route','points','direction'])assert.ok(order.indexOf(`track-${id}-waypoint`)>order.indexOf(`track-${other}-${kind}`));
   }
  }
+});
+
+test('Connect gaps links kept recording endpoints and respects hidden ranges and parts', () => {
+ const data=new Map(),layout=new Map(),filters=new Map();
+ const map={addSource:(id,source)=>data.set(id,source.data),addLayer:layer=>layout.set(layer.id,layer.layout||{}),
+  getSource:id=>({setData:value=>data.set(id,value)}),setLayoutProperty:(id,key,value)=>layout.get(id)[key]=value,
+  setFilter:(id,value)=>filters.set(id,value)};
+ const layers=new TrackLayers(map);
+ const track={parts:[{kind:'track',key:'t0',first:0,last:4},{kind:'track',key:'t1',first:5,last:5}],
+  points:[[0,0],[1,0],[2,0],[3,0],[4,0],[9,0]],removed:[false,true,false,false,false,false],segments:[0,0,1,1,2,3]};
+ layers.add('a',track,'#0072b2');
+ const gaps=()=>data.get('track-a').features.filter(f=>f.properties.kind==='track-gap').flatMap(f=>f.geometry.coordinates);
+ assert.deepEqual(gaps(),[[[0,0],[2,0]],[[3,0],[4,0]]]);
+ assert.equal(layout.get('track-a-gap').visibility,'none');
+ assert.equal(layout.get('track-a-gap-direction').visibility,'none');
+ layers.setJoinGaps(true);assert.equal(layout.get('track-a-gap').visibility,'visible');
+ assert.equal(layout.get('track-a-gap-direction').visibility,'visible');
+ assert.equal(layout.get('track-a-gap-direction')['symbol-placement'],'line');
+ assert.equal(layout.get('track-a-gap-direction')['icon-image'],'track-direction');
+ layers.setVisible('a',false);layers.setJoinGaps(false);layers.setJoinGaps(true);
+ assert.equal(layout.get('track-a-gap').visibility,'none');
+ assert.equal(layout.get('track-a-gap-direction').visibility,'none');
+ layers.setHiddenParts('a',new Set(['t0']));assert.equal(filters.get('track-a-gap')[1][2],'track-gap');assert.equal(filters.get('track-a-gap-direction')[1][2],'track-gap');
+ layers.update('a',track,[[2,3]]);assert.deepEqual(gaps(),[]);
+ assert.deepEqual(track.segments,[0,0,1,1,2,3]);
 });
