@@ -72,6 +72,9 @@ server exposes the API under `/api/`; everything else is the page.
 | `PUT /api/part-name` | Names one `<trk>`, `<rte>` or `<wpt>`, keyed `t0`, `r0`, `w0`. The name is held under `names` until the edit is saved, which writes it into a GPX `dgs` wrote and into the sidecar of any other file. A track added here carries its name into the GPX it is written to. |
 | `POST /api/waypoint` | Adds a named standalone `<wpt>` at WGS-84 `lat`, `lon` to an existing dgs-created GPX, or to a new GPX not yet saved. It is held under `waypoints` until the edit is saved. Files from other creators are refused. |
 | `PUT /api/waypoint` | Puts the waypoint `key` names at WGS-84 `lat`, `lon`, for a pin dropped in the wrong place. Held under `moved` until the edit is saved. Only a GPX `dgs` wrote, or one carried beside a file, is moved; a recorded waypoint is refused. |
+| `POST /api/photo` | Takes one WebP, sent as an `image/webp` body, for the GPX `path` names — a dgs GPX on disk. Anything that does not decode as WebP is refused; the bytes are kept as the page encoded them. Publishes it into `<gpx name>.photos/` under the first 12 hex digits of the encoded bytes' SHA-256. Answers its `name`. An identical file already there is reused. Nothing is referenced until `PUT /api/waypoint-photos` holds it and the edit is saved. |
+| `PUT /api/waypoint-photos` | Sets the `description` and the ordered `photos` — each `name` and `caption` — of the waypoint `key` names. Held under `photos` until the edit is saved. Only a GPX `dgs` wrote, on disk, is changed; any other file is refused. |
+| `GET /api/photo?path=&name=` | One photo a waypoint of that GPX links to, as the page shows it (pending edits included); any other `name` is refused, so no other file is read. |
 | `PUT /api/part-order` | Puts a file's tracks, routes or waypoints in the order `keys` gives, `kind` being `track`, `route` or `waypoint`; the keys are every key of that kind, as the page lists them. Held under `order` until the edit is saved, which puts the elements in that order inside the GPX. Only a GPX `dgs` wrote, or a new one not saved yet, is reordered; a recording is refused. A track's points go with it, so every point index the edits keep is moved to where its point now lies. |
 | `DELETE /api/part` | Takes the `<trk>`, `<rte>` or `<wpt>` `key` names out of a file: out of what is held beside the file at once, and out of a GPX `dgs` wrote when the edit is saved, recorded under `deleted`. A track goes with the edits, cuts and fills on its points. Any other file is refused. |
 | `POST /api/part/copy` | Copies the part `key` names into the GPX `target` names, as the page shows it, and takes it out of this file when `move`. Only a GPX `dgs` wrote, or a new one not yet saved, is copied into; only a file `dgs` wrote is moved out of. |
@@ -115,6 +118,24 @@ map. It is the interface later milestones build on.
 - **Resizable.** Every boundary between panes is a drag handle: sidebar width,
   map against profile, and elevation chart against speed chart. Sizes are
   remembered per browser.
+- **Track points.** The *Track points* icon button below the map’s 3D button shows kept track samples
+  as small circles joined by thin dashed lines, using each file’s colour. It
+  defaults off and is remembered per browser. Hidden files, tracks and ranges
+  stay hidden; recording breaks are never joined. Routes and waypoints retain
+  their usual appearance.
+- **Waypoint visibility.** Waypoint circles are drawn above track lines,
+  direction textures, route previews and segment overlays.
+- **Direction.** Thick repeated `>` chevrons within visible tracks use dark
+  marks on light colours and white marks on dark colours, stay within the line
+  width, and point in recorded sample
+  order. Their screen spacing follows zoom; hidden tracks and ranges stay
+  hidden, and arrows never bridge recording breaks.
+- **Map cursor.** Only the bare map canvas defaults to a crosshair. Icons on
+  the map — waypoints and stop markers — and everything outside the map,
+  icon buttons and the timeline bar included, use the ordinary arrow.
+  Holding the mouse button shows a grabbing hand for panning; draggable pins
+  and editing tools keep their action cursors, and lasso and box selection
+  keep a crosshair.
 - **No folder view.** The page never lists folders of its own: the file dialog
   is the one place folders are browsed, so the whole sidebar is the workspace.
   The folder the dialogs open at starts at `geo.gpx.root` (or `--dir`) and
@@ -304,6 +325,39 @@ map. It is the interface later milestones build on.
   location also offers *Add waypoint…*, including a track point or an existing
   waypoint; the name and destination are chosen in a modal dialog.
 
+- **Waypoint photos.** A waypoint of a GPX `dgs` wrote, saved on disk,
+  carries a description and an ordered list of photos, each with an optional
+  caption. Any other file's waypoints offer nothing: photos live in the GPX,
+  a recording is never written, and a new GPX has no folder beside it until
+  it is saved. See *Waypoint photos* below
+  for how they are stored.
+  - *Photos…*, on the waypoint's row and its right-click menu on the map,
+    opens a modal dialog: the description, the photos as thumbnails in
+    order, each with a caption and *Remove*, a native file input for
+    pictures to add after them, the longest side they are scaled to (1280,
+    1600, 1920, 2048 — the default — or 2560 pixels, or their own size) and the WebP
+    quality (1–100, default 90). Each picture added then opens a crop
+    dialog: 5:4 (the default), 4:5, 1:1, 4:3, 3:2, 16:9, free, or no crop.
+    The crop frame stays put and the picture moves under it: dragging pans
+    it, the wheel or a slider zooms it (up to 4 screen pixels per picture
+    pixel), and dragging a corner resizes the frame, held to the ratio
+    unless it is free. The picture always covers the frame. *Skip* leaves
+    the picture out; *Cancel* gives up adding the rest. The page remembers the size, quality
+    and ratio in the browser.
+  - The page encodes the WebP itself: the browser decodes the picture,
+    applying its EXIF orientation, crops, scales (never enlarging) — a
+    picture scaled down is then lightly sharpened — and encodes it with `canvas.toBlob`, so no metadata is kept. A browser that
+    cannot encode WebP — Safari answers PNG — is told so in a dialog when
+    *Photos…* opens; there the description and captions can still be
+    edited, but nothing is added. Every change is held under `photos` until the edit
+    is saved, like a name.
+  - A waypoint with photos is drawn as the reverse of the plain dot: filled
+    with the file's colour and ringed in white, with the same hover growth.
+  - The pointer resting over such a marker shows a small thumbnail of its
+    first photo beside it, and the photo count when there are more. Its
+    popup shows the description and a strip of thumbnails with captions; a
+    click on one opens the photo in a new browser tab.
+
 - **Dragging rows.** There is no drag handle, because a row carries its own
   controls. With a mouse, pressing a row and moving it a few pixels takes hold
   of it; with a finger or pen, the press must first hold still briefly, since
@@ -327,7 +381,7 @@ map. It is the interface later milestones build on.
     moved to where its point now lies, and a removed stretch that spanned two
     tracks put apart parts in two.
   - A **part** over another file is moved into that GPX, or copied into it
-    while `Ctrl` or `Cmd` is held. It is the same work as *Move to…* and
+    while `Alt`, `Ctrl` or `Cmd` is held. It is the same work as *Move to…* and
     *Copy to…*, under the same rule: nothing is written into a recording, and
     nothing is taken out of one. A drop that would do either is refused, marks
     the row red, and says why in the status bar.
@@ -860,6 +914,51 @@ hotel and on again at its door stayed there.
 | `o` | Open the page in the default browser. |
 | `esc` | Back to the command picker. |
 | `q` | Quit. |
+
+## Waypoint photos
+
+Photos belong only to waypoints of a GPX `dgs` wrote, saved on disk. A recording's waypoints take none: there is no sidecar form, because
+the photos are written into the GPX itself.
+
+**In the GPX.** Standard GPX 1.1 elements carry everything, so other readers
+see the photos too:
+
+```xml
+<wpt lat="..." lon="...">
+  <name>Summit</name>
+  <desc>Windy at the top</desc>
+  <link href="trip.photos/3f9a0c1b2d4e.webp">
+    <text>Looking north</text>
+    <type>image/webp</type>
+  </link>
+</wpt>
+```
+
+`<desc>` is the description. Each photo is one `<link>`, in the order shown,
+with its caption as `<text>` when it has one. `href` is relative to the GPX.
+`<link>` elements whose `href` does not point into the GPX's own `.photos/`
+folder are kept as they are and not shown as photos.
+
+**The folder.** Photos sit in `<gpx name>.photos/` beside the GPX, so copying
+the GPX and its folder together keeps every link. Each photo is a WebP
+as the page encoded it (see *Waypoint photos* above). The source file is only
+read. The file is named by the first 12 hex digits of its SHA-256, with
+`.webp`, so the same image
+imported twice is one file.
+
+**Publication.** The encoded bytes are written to a same-directory
+`.dgs-part` file, read back, compared with the SHA-256 of what was encoded
+and decoded once more; only then is the final name published with
+`verifiedcopy.Publish`, which never replaces a file. A photo is written when it is added, before
+the GPX is saved; it is referenced only once the edit is saved. A photo no
+waypoint of the saved GPX links to is moved into `<gpx name>.photos/.trash/`
+when the GPX is next saved. Nothing in the folder is deleted.
+
+**Renaming.** Renaming a GPX renames its `.photos/` folder with it and
+rewrites the links, both inside the file `dgs` wrote.
+
+**Thumbnails** are the published photo scaled by the browser; the server
+makes none.
 
 ## Where the server listens
 

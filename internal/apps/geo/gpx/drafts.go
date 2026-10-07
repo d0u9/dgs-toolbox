@@ -157,8 +157,8 @@ func writeSidecarNow(path string, file sidecar.File) error {
 	}
 	// A GPX dgs wrote is ours to write: what was done to its parts goes into
 	// the file itself rather than staying beside it.
-	return gpxfile.Update(path, func(staged string) error {
-		remaining, err := writeParts(staged, parsed, file)
+	err = gpxfile.Update(path, func(staged string) error {
+		remaining, err := writeParts(staged, photoDir(path), parsed, file)
 		if err != nil {
 			return err
 		}
@@ -172,6 +172,10 @@ func writeSidecarNow(path string, file sidecar.File) error {
 		}
 		return gpxfile.WriteState(staged, data)
 	})
+	if err != nil {
+		return err
+	}
+	return trashUnlinked(path)
 }
 
 func draftName(path string) string {

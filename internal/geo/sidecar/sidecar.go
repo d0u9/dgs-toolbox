@@ -57,15 +57,31 @@ type File struct {
 	// which the file's own order gives. The order is taken into the GPX when
 	// the file is saved, so only a GPX this program wrote holds one.
 	Order map[string][]string `json:"order,omitempty"`
+	// Photos are the description and photos of waypoints, keyed as Deleted
+	// is. Only a GPX this program wrote holds any: they go into its <wpt>
+	// elements when the file is saved.
+	Photos map[string]Photos `json:"photos,omitempty"`
 	// Plan is the route a GPX was written from, when it was planned by hand,
 	// so it opens to be changed again.
 	Plan *compose.Plan `json:"plan,omitempty"`
 }
 
+// Photos is what one waypoint says of itself: its description and its
+// photos in order, each a file name in the GPX's photo folder.
+type Photos struct {
+	Description string  `json:"description,omitempty"`
+	Photos      []Photo `json:"photos,omitempty"`
+}
+
+type Photo struct {
+	Name    string `json:"name"`
+	Caption string `json:"caption,omitempty"`
+}
+
 // Active reports whether the file records anything.
 func (f File) Active() bool {
 	return f.Clean.Active() || f.Segments.Active() || len(f.Fills) > 0 || len(f.Added) > 0 || len(f.Waypoints) > 0 ||
-		len(f.Routes) > 0 || len(f.Deleted) > 0 || len(f.Moved) > 0 || len(f.Names) > 0 || len(f.Order) > 0 || f.Plan != nil
+		len(f.Routes) > 0 || len(f.Deleted) > 0 || len(f.Moved) > 0 || len(f.Names) > 0 || len(f.Order) > 0 || len(f.Photos) > 0 || f.Plan != nil
 }
 
 // Insert shifts every point index after after by count, for count points

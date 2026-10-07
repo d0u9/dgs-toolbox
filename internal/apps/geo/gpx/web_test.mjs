@@ -41,9 +41,9 @@ test('unfocused traces remain visible and hidden files have no casing', () => {
  const layers=new TrackLayers(map);
  layers.ids=new Set(['a','b']);layers.hidden.add('b');layers.setFocus('a');
  assert.ok([...paint].some(([key,value])=>key.startsWith('track-b-') && key.endsWith('/line-opacity') && value===1));
- assert.ok([...layout].filter(([key])=>key.startsWith('track-b-')).every(([,value])=>value==='none'));
+ assert.ok([...layout].filter(([key])=>key.startsWith('track-b-') && key.endsWith('/visibility')).every(([,value])=>value==='none'));
  layers.hidden.delete('b');layers.setFocus('a');
- assert.ok([...layout].filter(([key])=>key.startsWith('track-b-')).every(([,value])=>value==='visible'));
+ assert.ok([...layout].filter(([key])=>key.startsWith('track-b-') && key.endsWith('/visibility')).every(([key,value])=>value===(key.includes('-points/')?'none':'visible')));
 });
 
 test('timeline jump uses the same on-track anchor as the stop marker', () => {
@@ -266,4 +266,68 @@ test('switching files defaults to each current GPX and remembers explicit target
  assert.equal(panel.addPath,'other.gpx');
  show.call(panel,b,{workspace});
  assert.equal(panel.addPath,'a.gpx');
+});
+
+test('track point display respects cleaning, gaps, visibility, recolouring and updates', () => {
+ const sources=new Map(),styles=new Map(),filters=new Map();
+ const map={addSource:(id,source)=>sources.set(id,source.data),addLayer:layer=>styles.set(layer.id,layer),
+  setPaintProperty:(id,key,value)=>styles.get(id).paint[key]=value,
+  setLayoutProperty:(id,key,value)=>{styles.get(id).layout??={};styles.get(id).layout[key]=value;},
+  setFilter:(id,filter)=>filters.set(id,filter),moveLayer(){},
+  getSource:id=>({setData:data=>sources.set(id,data)})};
+ const layers=new TrackLayers(map);
+ const track={parts:[{kind:'track',key:'t0',first:0,last:4}],points:[[0,0],[1,0],[2,0],[3,0],[4,0]],removed:[false,true,false,false,false],segments:[0,0,0,1,1]};
+ layers.add('a',track,'#0072b2');
+ const direction=styles.get('track-a-direction');
+ assert.equal(direction.layout['symbol-placement'],'line');
+ assert.equal(direction.layout['symbol-spacing'],24);
+ assert.equal(direction.layout['icon-keep-upright'],false);
+ assert.equal(direction.layout['icon-size'],3.6/12);
+ assert.equal(direction.paint['icon-color'],'#ffffff');
+ assert.equal(direction.layout['icon-rotation-alignment'],'map');
+ assert.deepEqual(direction.filter,['==',['get','kind'],'track']);
+ assert.equal(styles.get('track-a-points').layout.visibility,'none');
+ const geometry=()=>sources.get('track-a').features;
+ assert.deepEqual(geometry().find(f=>f.properties.kind==='track-point').geometry.coordinates,[[0,0],[2,0],[3,0],[4,0]]);
+ assert.deepEqual(geometry().find(f=>f.properties.kind==='track').geometry.coordinates,[[[0,0],[2,0]],[[3,0],[4,0]]]);
+ layers.setPointsVisible(true);layers.setFocus('a');
+ assert.equal(styles.get('track-a-points').layout.visibility,'visible');
+ assert.equal(styles.get('track-a-line').paint['line-width'],1);
+ assert.equal(direction.layout['icon-size'],1/12);
+ assert.deepEqual(styles.get('track-a-line').paint['line-dasharray'],[3,3]);
+ layers.setHiddenParts('a',new Set(['t0']));
+ assert.equal(filters.get('track-a-direction')[1][2],'track');
+ assert.deepEqual(filters.get('track-a-direction')[2][1][2],['literal',['t0']]);
+ assert.equal(filters.get('track-a-points')[1][2],'track-point');
+ assert.deepEqual(filters.get('track-a-points')[2][1][2],['literal',['t0']]);
+ layers.setVisible('a',false);layers.setPointsVisible(false);layers.setPointsVisible(true);
+ assert.equal(direction.layout.visibility,'none');
+ assert.equal(styles.get('track-a-points').layout.visibility,'none');
+ layers.setVisible('a',true);layers.setColor('a','#d55e00');
+ assert.equal(styles.get('track-a-points').paint['circle-color'],'#d55e00');
+ assert.equal(direction.paint['icon-color'],'#ffffff');
+ layers.setColor('a','#e69f00');
+ assert.equal(direction.paint['icon-color'],'#1a1a1a');
+ layers.update('a',track,[[0,2]]);
+ assert.deepEqual(geometry().find(f=>f.properties.kind==='track-point').geometry.coordinates,[[3,0],[4,0]]);
+ layers.setPointsVisible(false);
+ assert.equal(styles.get('track-a-points').layout.visibility,'none');
+ assert.equal(styles.get('track-a-line').paint['line-width'],4);
+ assert.equal(direction.layout['icon-size'],4/12);
+ assert.equal(styles.get('track-a-line').paint['line-dasharray'],null);
+});
+
+test('waypoints remain above every file when files are added or focus changes', () => {
+ const order=[];
+ const insert=(id,before)=>{const old=order.indexOf(id);if(old>=0)order.splice(old,1);const at=before?order.indexOf(before):-1;order.splice(at<0?order.length:at,0,id);};
+ const map={addSource(){},addLayer:(layer,before)=>insert(layer.id,before),moveLayer:insert,setPaintProperty(){},setLayoutProperty(){}};
+ const layers=new TrackLayers(map);
+ layers.add('a',{parts:[]},'#0072b2');layers.add('b',{parts:[]},'#e69f00');
+ for(const focus of ['a','b',null]){
+  layers.setFocus(focus);
+  for(const id of ['a','b']){
+   assert.ok(order.indexOf(`track-${id}-waypoint`)>order.indexOf('cursor'));
+   for(const other of ['a','b'])for(const kind of ['line','route','points','direction'])assert.ok(order.indexOf(`track-${id}-waypoint`)>order.indexOf(`track-${other}-${kind}`));
+  }
+ }
 });

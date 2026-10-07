@@ -144,12 +144,115 @@ func writeWaypoint(b *bytes.Buffer, wpt Waypoint) {
 		_ = xml.EscapeText(b, []byte(wpt.Description))
 		b.WriteString("</desc>")
 	}
+	writeLinks(b, wpt.Links)
 	if wpt.CaptureID != "" {
 		b.WriteString(`<extensions><dgs:captureId xmlns:dgs="urn:dgs-toolbox:capture">`)
 		_ = xml.EscapeText(b, []byte(wpt.CaptureID))
 		b.WriteString("</dgs:captureId></extensions>")
 	}
 	b.WriteString("</wpt>\n")
+}
+
+func writeLinks(b *bytes.Buffer, links []Link) {
+	for _, link := range links {
+		b.WriteString(`<link href="`)
+		_ = xml.EscapeText(b, []byte(link.Href))
+		b.WriteString(`">`)
+		if link.Text != "" {
+			b.WriteString("<text>")
+			_ = xml.EscapeText(b, []byte(link.Text))
+			b.WriteString("</text>")
+		}
+		if link.Type != "" {
+			b.WriteString("<type>")
+			_ = xml.EscapeText(b, []byte(link.Type))
+			b.WriteString("</type>")
+		}
+		b.WriteString("</link>")
+	}
+}
+
+// SetWaypointLinks replaces the <desc> and every <link> of the index-th <wpt>
+// of a file written by this program, keeping every other byte. The new ones
+// go after the waypoint's <ele>, <time> or <name>, as GPX 1.1 orders them. A file created by something else is refused.
+func SetWaypointLinks(path string, index int, description string, links []Link) error {
+	data, parsed, err := readOurs(path)
+	if err != nil {
+		return err
+	}
+	if index < 0 || index >= len(parsed.Waypoints) {
+		return fmt.Errorf("%s: no waypoint %d", path, index)
+	}
+	start, end, err := partSpan(data, PartWaypoint, index)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	element := data[start:end]
+	open := bytes.IndexByte(element, '>')
+	if open < 0 || element[open-1] == '/' {
+		return fmt.Errorf("%s: waypoint %d holds nothing to keep its links in", path, index)
+	}
+	// Only the waypoint's own children are looked at, not its <extensions>.
+	limit := len(element) - len("</wpt>")
+	if at := bytes.Index(element, []byte("<extensions")); at >= 0 {
+		limit = at
+	}
+	var kept []byte
+	for at := open + 1; at < limit; {
+		from, to := childSpan(element[at:limit])
+		if from < 0 {
+			kept = append(kept, element[at:limit]...)
+			break
+		}
+		kept = append(kept, element[at:at+from]...)
+		at += to
+	}
+	insert := 0
+	for _, tag := range []string{"ele", "time", "name"} {
+		if at := bytes.Index(kept, []byte("</"+tag+">")); at >= 0 {
+			insert = max(insert, at+len("</"+tag+">"))
+		}
+	}
+	var b bytes.Buffer
+	b.Write(data[:start])
+	b.Write(element[:open+1])
+	b.Write(kept[:insert])
+	if description != "" {
+		b.WriteString("<desc>")
+		_ = xml.EscapeText(&b, []byte(description))
+		b.WriteString("</desc>")
+	}
+	writeLinks(&b, links)
+	b.Write(kept[insert:])
+	b.Write(element[limit:])
+	b.Write(data[end:])
+	return replaceFile(path, b.Bytes())
+}
+
+// childSpan finds the first <desc> or <link> element in data, answering where
+// it starts and ends, or -1 when there is none.
+func childSpan(data []byte) (int, int) {
+	from, to := -1, -1
+	for _, tag := range []string{"<desc", "<link"} {
+		at := bytes.Index(data, []byte(tag))
+		if at < 0 || (from >= 0 && at > from) {
+			continue
+		}
+		open := bytes.IndexByte(data[at:], '>')
+		if open < 0 {
+			continue
+		}
+		end := at + open + 1
+		if data[end-2] != '/' {
+			closing := bytes.Index(data[at:], []byte("</"+tag[1:]+">"))
+			if closing < 0 {
+				continue
+			}
+			end = at + closing + len(tag) + 2
+		}
+		from, to = at, end
+	}
+	return from, to
 }
 
 // Append adds tracks after the last element of an existing GPX file: before

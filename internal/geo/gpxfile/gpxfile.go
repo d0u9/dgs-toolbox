@@ -39,6 +39,15 @@ type Waypoint struct {
 	Description string
 	// CaptureID identifies a Capture waypoint in a dgs GPX extension.
 	CaptureID string
+	// Links are the waypoint's <link> elements, in file order.
+	Links []Link
+}
+
+// Link is one GPX 1.1 <link>: a href with an optional text and MIME type.
+type Link struct {
+	Href string `json:"href"`
+	Text string `json:"text,omitempty"`
+	Type string `json:"type,omitempty"`
 }
 
 // Track is one <trk>; its segments are the pieces the recorder kept apart,
@@ -120,6 +129,11 @@ type xmlPoint struct {
 	Name      string  `xml:"name"`
 	Desc      string  `xml:"desc"`
 	CaptureID string  `xml:"extensions>captureId"`
+	Links     []struct {
+		Href string `xml:"href,attr"`
+		Text string `xml:"text"`
+		Type string `xml:"type"`
+	} `xml:"link"`
 }
 
 // Parse reads a GPX document. A point with an unreadable time or elevation is
@@ -159,9 +173,18 @@ func Parse(r io.Reader) (*File, error) {
 			Name:        strings.TrimSpace(wpt.Name),
 			Description: strings.TrimSpace(wpt.Desc),
 			CaptureID:   strings.TrimSpace(wpt.CaptureID),
+			Links:       wpt.links(),
 		})
 	}
 	return file, nil
+}
+
+func (pt xmlPoint) links() []Link {
+	var links []Link
+	for _, l := range pt.Links {
+		links = append(links, Link{Href: strings.TrimSpace(l.Href), Text: strings.TrimSpace(l.Text), Type: strings.TrimSpace(l.Type)})
+	}
+	return links
 }
 
 func (pt xmlPoint) point() Point {

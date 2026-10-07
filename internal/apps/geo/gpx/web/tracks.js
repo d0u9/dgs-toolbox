@@ -1,4 +1,4 @@
-import { addTrace, setTraceState, setTraceColor, traceLayers } from "./trace.js";
+import { addTrace, setTraceState, setTraceColor, traceLayers, directionColor, addDirection, TRACE_WIDTHS } from "./trace.js";
 
 // Track layers on the map. Each workspace file draws its recorded tracks as
 // lines (the focused file on top with a casing), its planned routes as dashed
@@ -6,6 +6,21 @@ import { addTrace, setTraceState, setTraceColor, traceLayers } from "./trace.js"
 // shows the point being inspected.
 
 const CURSOR = "cursor";
+export const CAMERA_IMAGE = "waypoint-camera";
+
+// cameraImage draws Lucide's camera in white, at twice the size it is shown,
+// for the map to place over a waypoint with photos. Path2D draws it at once,
+// so a style that loses its images can be given it again when it asks.
+export function cameraImage() {
+  const size = 40, canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const g = canvas.getContext("2d");
+  g.scale(size / 24, size / 24);
+  g.strokeStyle = "#fff"; g.lineWidth = 2.2; g.lineCap = g.lineJoin = "round";
+  g.stroke(new Path2D("M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"));
+  g.beginPath(); g.arc(12, 13, 3, 0, Math.PI * 2); g.stroke();
+  return g.getImageData(0, 0, size, size);
+}
 
 export class TrackLayers {
   constructor(map) {
@@ -14,6 +29,7 @@ export class TrackLayers {
     this.hidden = new Set(); // files hidden as a whole
     this.hiddenParts = new Map(); // file id -> keys of hidden parts
     this.focused = null;
+    this.pointsVisible = false;
     this.hover = null; // the waypoint under the pointer, { id, key }
     map.addSource(CURSOR, { type: "geojson", data: emptyCollection() });
     map.addLayer({
@@ -56,13 +72,31 @@ export class TrackLayers {
       paint: {
         // A waypoint under the pointer grows a little and thickens its ring:
         // enough to answer the pointer, not enough to move the map's reading.
-        "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 7, 5],
-        "circle-color": "#ffffff",
-        "circle-stroke-color": color,
+        "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], withPhotos(11, 7), withPhotos(9, 5)],
+        // A waypoint with photos is filled with the file's colour and ringed
+        // in white, the reverse of the plain dot.
+        "circle-color": withPhotos(color, "#ffffff"),
+        "circle-stroke-color": withPhotos("#ffffff", color),
         "circle-stroke-width": ["case", ["boolean", ["feature-state", "hover"], false], 3.5, 2.5],
       },
+    });
+    // A waypoint with photos carries a camera over its dot.
+    map.addLayer({
+      id: photoId(id),
+      type: "symbol",
+      source: sourceId(id),
+      filter: ["all", kind("waypoint"), ["boolean", ["get", "photos"], false]],
+      metadata: { track: id },
+      layout: { "icon-image": CAMERA_IMAGE, "icon-size": 0.5, "icon-allow-overlap": true, "icon-ignore-placement": true },
+    });
+    map.addLayer({ id: pointId(id), type: "circle", source: sourceId(id),
+      filter: kind("track-point"), metadata: { track: id },
+      layout: { visibility: this.pointsVisible ? "visible" : "none" },
+      paint: { "circle-radius": 2.5, "circle-color": color, "circle-stroke-color": "#ffffff", "circle-stroke-width": 0.75 },
     }, CURSOR);
+    addDirection(map, { id: directionId(id), source: sourceId(id), color, filter: kind("track"), before: CURSOR });
     this.ids.add(id);
+    if (this.pointsVisible) this.applyTrackStyle(id);
   }
 
   // update redraws a file whose positions changed, as when converted to GCJ-02.
@@ -97,8 +131,11 @@ export class TrackLayers {
 
   setColor(id, color) {
     setTraceColor(this.map, lineId(id), color);
+    this.map.setPaintProperty(directionId(id), "icon-color", directionColor(color));
     setTraceColor(this.map, routeId(id), color);
-    this.map.setPaintProperty(waypointId(id), "circle-stroke-color", color);
+    this.map.setPaintProperty(pointId(id), "circle-color", color);
+    this.map.setPaintProperty(waypointId(id), "circle-color", withPhotos(color, "#ffffff"));
+    this.map.setPaintProperty(waypointId(id), "circle-stroke-color", withPhotos("#ffffff", color));
   }
 
   // setVisible shows or hides a whole file; a hidden file keeps its layers.
@@ -112,16 +149,31 @@ export class TrackLayers {
   setHiddenParts(id, keys) {
     this.hiddenParts.set(id, [...keys]);
     const shown = ["!", ["in", ["get", "part"], ["literal", [...keys]]]];
-    for (const [layer, kind] of [...traceLayers(lineId(id)).map(layer => [layer, "track"]), ...traceLayers(routeId(id)).map(layer => [layer, "route"]), [waypointId(id), "waypoint"]]) {
+    for (const [layer, kind] of [...traceLayers(lineId(id)).map(layer => [layer, "track"]), ...traceLayers(routeId(id)).map(layer => [layer, "route"]), [waypointId(id), "waypoint"], [pointId(id), "track-point"], [directionId(id), "track"]]) {
       this.map.setFilter(layer, ["all", ["==", ["get", "kind"], kind], shown]);
     }
+    this.map.setFilter(photoId(id), ["all", ["==", ["get", "kind"], "waypoint"], ["boolean", ["get", "photos"], false], shown]);
   }
 
   applyVisibility(id) {
     const visible = !this.hidden.has(id);
     for (const layer of layerIds(id)) {
-      this.map.setLayoutProperty(layer, "visibility", visible ? "visible" : "none");
+      this.map.setLayoutProperty(layer, "visibility", visible && (layer !== pointId(id) || this.pointsVisible) ? "visible" : "none");
     }
+  }
+
+  setPointsVisible(on) {
+    this.pointsVisible = on;
+    for (const id of this.ids) {
+      this.applyVisibility(id);
+      this.applyTrackStyle(id);
+    }
+  }
+
+  applyTrackStyle(id) {
+    const state = id === this.focused ? "focused" : "inactive";
+    setTraceState(this.map, lineId(id), state, { points: this.pointsVisible });
+    this.map.setLayoutProperty(directionId(id), "icon-size", (this.pointsVisible ? 1 : TRACE_WIDTHS[state][1]) / 12);
   }
 
   // setFocus draws one file above the others, wider and opaque.
@@ -131,11 +183,13 @@ export class TrackLayers {
     for (const other of this.ids) {
       const focused = other === id;
       this.applyVisibility(other);
-      setTraceState(map, lineId(other), focused ? "focused" : "inactive");
+      this.applyTrackStyle(other);
       setTraceState(map, routeId(other), focused ? "focused" : "inactive", { dashed: true });
     }
     if (id != null && this.ids.has(id)) {
-      for (const layer of layerIds(id)) map.moveLayer(layer, CURSOR);
+      for (const layer of layerIds(id).filter(layer => layer !== waypointId(id) && layer !== photoId(id))) map.moveLayer(layer, CURSOR);
+      map.moveLayer(waypointId(id));
+      map.moveLayer(photoId(id));
     }
   }
 
@@ -180,7 +234,10 @@ const sourceId = (id) => `track-${id}`;
 const lineId = (id) => `track-${id}-line`;
 const routeId = (id) => `track-${id}-route`;
 const waypointId = (id) => `track-${id}-waypoint`;
-const layerIds = (id) => [...traceLayers(lineId(id)), ...traceLayers(routeId(id)), waypointId(id)];
+const pointId = (id) => `track-${id}-points`;
+const directionId = (id) => `track-${id}-direction`;
+const photoId = (id) => `track-${id}-photo`;
+const layerIds = (id) => [...traceLayers(lineId(id)), ...traceLayers(routeId(id)), waypointId(id), photoId(id), pointId(id), directionId(id)];
 
 function emptyCollection() {
   return { type: "FeatureCollection", features: [] };
@@ -191,7 +248,7 @@ function emptyCollection() {
 function geometry(track, hidden = []) {
   const features = [];
   for (const part of track.parts) {
-    const properties = { part: part.key, kind: part.kind, name: part.name };
+    const properties = { part: part.key, kind: part.kind, name: part.name, photos: Boolean(part.photos?.length) };
     if (part.kind === "track") {
       const lines = [];
       let current = [];
@@ -213,6 +270,7 @@ function geometry(track, hidden = []) {
       }
       if (current.length) lines.push(current);
       features.push({ type: "Feature", properties, geometry: { type: "MultiLineString", coordinates: lines } });
+      features.push({ type: "Feature", properties: { ...properties, kind: "track-point" }, geometry: { type: "MultiPoint", coordinates: lines.flat() } });
     } else if (part.kind === "route") {
       features.push({ type: "Feature", properties, geometry: { type: "LineString", coordinates: part.points } });
     } else {
@@ -220,4 +278,8 @@ function geometry(track, hidden = []) {
     }
   }
   return { type: "FeatureCollection", features };
+}
+
+function withPhotos(yes, no) {
+  return ["case", ["boolean", ["get", "photos"], false], yes, no];
 }

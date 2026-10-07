@@ -1126,6 +1126,8 @@ func TestARecordingIsNeverWritten(t *testing.T) {
 		{"remove fill", http.MethodDelete, "/api/fill", map[string]any{"path": source, "index": 0}},
 		{"delete part", http.MethodDelete, "/api/part", map[string]any{"path": source, "key": "t0"}},
 		{"move waypoint", http.MethodPut, "/api/waypoint", map[string]any{"path": source, "key": "w0", "lat": 30.4, "lon": 120.4}},
+		{"photo", http.MethodPost, "/api/photo" + "?path=" + url.QueryEscape(source), map[string]any{}},
+		{"waypoint-photos", http.MethodPut, "/api/waypoint-photos", map[string]any{"path": source, "key": "w0", "description": "Windy"}},
 		{"part-order", http.MethodPut, "/api/part-order", map[string]any{"path": source, "kind": "waypoint", "keys": []string{"w0"}}},
 		{"copy part", http.MethodPost, "/api/part/copy", map[string]any{"path": source, "key": "t0", "target": target}},
 		{"move part out", http.MethodPost, "/api/part/copy", map[string]any{"path": source, "key": "t0", "target": target, "move": true}},

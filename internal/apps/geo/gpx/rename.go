@@ -123,6 +123,10 @@ func renameOwnFile(path, name string) (string, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
+	newPhotos := filepath.Join(filepath.Dir(target), photoDir(target))
+	if _, err := os.Lstat(newPhotos); err == nil {
+		return "", filebrowse.ErrExists
+	}
 	renamed, err := filebrowse.Rename(full, name)
 	if err != nil {
 		return "", err
@@ -132,6 +136,9 @@ func renameOwnFile(path, name string) (string, error) {
 			_, rollbackErr := filebrowse.Rename(renamed, filepath.Base(full))
 			return "", errors.Join(err, rollbackErr)
 		}
+	}
+	if err := renamePhotos(full, renamed); err != nil {
+		return "", err
 	}
 	return renamed, nil
 }

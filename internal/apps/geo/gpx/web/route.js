@@ -40,8 +40,8 @@ export class RoutePlanner {
     this.handles = [];
     map.addSource(LEGS, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     const color = ["match", ["get", "status"], "error", "#b33c00", COLOR];
-    addTrace(map, { id: LEGS, source: LEGS, color, state: "focused", filter: ["!=", ["get", "way"], "line"] });
-    addTrace(map, { id: `${LEGS}-line`, source: LEGS, color, state: "focused", filter: ["==", ["get", "way"], "line"], dashed: true });
+    addTrace(map, { id: LEGS, source: LEGS, color, state: "focused", before: "cursor", filter: ["!=", ["get", "way"], "line"] });
+    addTrace(map, { id: `${LEGS}-line`, source: LEGS, color, state: "focused", before: "cursor", filter: ["==", ["get", "way"], "line"], dashed: true });
   }
 
   // ---- positions ----
@@ -249,7 +249,7 @@ export class RoutePlanner {
       }))
       : [];
     map.getSource(LEGS).setData({ type: "FeatureCollection", features });
-    for (const layer of [...traceLayers(LEGS), ...traceLayers(`${LEGS}-line`)]) map.moveLayer(layer);
+    for (const layer of [...traceLayers(LEGS), ...traceLayers(`${LEGS}-line`)]) map.moveLayer(layer, "cursor");
     for (const marker of [...this.markers, ...this.handles]) marker.remove();
     this.markers = [];
     this.handles = [];

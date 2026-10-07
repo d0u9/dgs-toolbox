@@ -1060,3 +1060,8 @@ Hero photography uses `{rounded.xl}` containers at every breakpoint. The chevron
 File explorer workspace rows can use `.ui-file-row`: 28px height for both parent and child items, with the shared small text size. Pages supply indentation and column layout without increasing the child row height.
 
 Disabled secondary buttons keep an opaque graphite outline and cloud surface; only their text becomes steel. Disabling an action must not make its button boundary disappear into the workspace.
+
+Pages can wrap number inputs with `numberStepper` from `controls.js` to offer
+stacked decrease and increase buttons inside the field. Each arrow’s entire
+upper or lower half is clickable, without adding width. Native stepping preserves
+minimum, maximum and step constraints; `step="any"` buttons change by one.

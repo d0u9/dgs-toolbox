@@ -6,7 +6,7 @@
 
 import * as format from "./format.js";
 import { segmentSaveDialog } from "./dialog.js";
-import { addTrace, traceLayers } from "./trace.js";
+import { setTraceState, addTrace, traceLayers, addDirection, TRACE_WIDTHS } from "./trace.js";
 import { saveFile } from "/ui/filedialog.js";
 import * as status from "/ui/statusbar.js";
 import { promptDialog } from "/ui/dialog.js";
@@ -432,12 +432,19 @@ export class CutOverlay {
     // Segments in their colours, drawn over the focused track while cutting.
     addTrace(map, { id: PIECES, source: PIECES, color: ["get", "color"], state: "segment", before: beforeLayer });
     addTrace(map, { id: SEGMENT, source: SEGMENT, color: ["get", "color"], state: "selected", before: beforeLayer });
+    addDirection(map, { id: `${PIECES}-direction`, source: PIECES, color: ["get", "color"], before: beforeLayer, width: TRACE_WIDTHS.segment[1] });
     map.addLayer({
       id: CUTS,
       type: "circle",
       source: CUTS,
       paint: { "circle-radius": 5, "circle-color": "#ffffff", "circle-stroke-color": "#1d1d1b", "circle-stroke-width": 2.5 },
     }, beforeLayer);
+  }
+
+  setPointsVisible(on) {
+    setTraceState(this.map, PIECES, "segment", { points: on });
+    setTraceState(this.map, SEGMENT, "selected", { points: on });
+    this.map.setLayoutProperty(`${PIECES}-direction`, "icon-size", (on ? 1 : TRACE_WIDTHS.segment[1]) / 12);
   }
 
   show(track, hidden = []) {
@@ -456,7 +463,7 @@ export class CutOverlay {
     this.map.getSource(PIECES).setData({ type: "FeatureCollection", features: pieces });
     this.highlight(track, this.highlightedTrack === track ? this.highlightedPiece : null);
     // Above the track lines, which move up when focused; below cuts and the cursor.
-    for (const layer of [...traceLayers(PIECES), ...traceLayers(SEGMENT), CUTS, this.beforeLayer]) if (this.map.getLayer(layer)) this.map.moveLayer(layer);
+    for (const layer of [...traceLayers(PIECES), ...traceLayers(SEGMENT), `${PIECES}-direction`, CUTS]) if (this.map.getLayer(layer)) this.map.moveLayer(layer, this.beforeLayer);
   }
 
   highlight(track, piece) {

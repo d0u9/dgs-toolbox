@@ -6,19 +6,21 @@ import { api } from "./api.js";
 import * as format from "./format.js";
 import { MapStack } from "./basemap.js";
 import { Contours } from "./contours.js";
-import { TrackLayers } from "./tracks.js";
+import { TrackLayers, CAMERA_IMAGE, cameraImage } from "./tracks.js";
 import { Profile } from "./profile.js";
 import { StopMarkers } from "./stops.js";
 import { Timeline } from "./timeline.js";
 import { CleanPanel, CleanOverlay, Lasso, insidePolygon } from "./clean.js";
 import { CutPanel, CutOverlay, pieceBounds } from "./cut.js";
 import { CHEVRON, DIAMOND, DIAMOND_OPEN, FOLDER } from "./icons.js";
-import { EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, SCISSORS, MAP_PIN_PLUS, SPLIT, CHEVRON_UP, CHEVRON_DOWN, ROTATE_CCW, ROTATE_CW, MAXIMIZE, ROWS_2, COLUMNS_2, CHEVRON_LEFT, CHEVRON_RIGHT, TRIANGLE_RIGHT } from "/ui/icons.js";
+import { EYE, EYE_OFF, MOUSE_POINTER_2, MOVE_HORIZONTAL, LASSO, ROUTE, SCISSORS, MAP_PIN_PLUS, CAMERA, SPLIT, CHEVRON_UP, CHEVRON_DOWN, ROTATE_CCW, ROTATE_CW, MAXIMIZE, ROWS_2, COLUMNS_2, CHEVRON_LEFT, CHEVRON_RIGHT, TRIANGLE_RIGHT } from "/ui/icons.js";
 import { RoutePlanner } from "./route.js";
 import { UI_SCALE, uiPx } from "./density.js";
-import { waypointDialog } from "./dialog.js";
+import { waypointDialog, photosDialog } from "./dialog.js";
+import { cropDialog } from "./crop.js";
+import { sharpen } from "./sharpen.js";
 import { chooseDialog, confirmDialog, promptDialog } from "/ui/dialog.js";
-import { button, iconButton, rowLabel as label } from "/ui/controls.js";
+import { button, iconButton, numberStepper, rowLabel as label } from "/ui/controls.js";
 import { rowDoubleClick } from "/ui/selection.js";
 import { openFile, saveFile } from "/ui/filedialog.js";
 import { tooltip } from "/ui/tooltip.js";
@@ -60,6 +62,7 @@ const state = {
   cleanOpen: false, // edit mode: the inspector is open for the focused track
   routeOpen: false, // route mode: planning a route by hand in the inspector
   editTab: "changes", // the inspector's tab in edit mode: "changes", "auto" or "segments"
+  trackPoints: false, // samples joined by thin dashed lines
   compare: true, // the recording drawn under a cleaned track
   lasso: false,
   waypointTool: false,
@@ -86,6 +89,7 @@ const state = {
 };
 
 let waypointPopup;
+let photoHover; // the first photo of the waypoint under the pointer
 // mapReady settles once the map and its layers exist; a file opened before
 // that waits for it.
 let resolveMapReady;
@@ -131,6 +135,7 @@ function save() {
       editTab: state.editTab,
       routeOpen: state.routeOpen,
       route: planner?.toJSON(),
+      trackPoints: state.trackPoints,
       compare: state.compare,
       fillProfile: state.fill.profile,
       gcj: state.gcj,
@@ -1503,7 +1508,7 @@ function partRow(path, entry, part) {
   const eye = iconButton("eye icon-button ui-row-icon", hidden ? EYE_OFF : EYE, hidden ? "Show this part" : "Hide this part", () => setPartHidden(path, part.key, !hidden));
   const glyph = document.createElement("span");
   glyph.className = "glyph";
-  glyph.innerHTML = PART_GLYPH[part.kind];
+  glyph.innerHTML = part.photos?.length ? CAMERA : PART_GLYPH[part.kind];
   glyph.style.color = entry.color;
 
   const details = part.kind === "waypoint"
@@ -1554,6 +1559,11 @@ function partRow(path, entry, part) {
       { label: "Move down", disabled: at >= kin.length - 1, onSelect: () => reorderParts({ kind, path, key: part.key }, kin[at + 2] ?? null) },
     ] : [],
     kind === "waypoint" ? [{
+      label: "Photos…",
+      title: entry.track.ours && !entry.track.draft ? "Describe this waypoint and add photos to it" : "Only a saved GPX dgs wrote holds photos",
+      disabled: !entry.track.ours || Boolean(entry.track.draft),
+      onSelect: () => editPhotos(path, part),
+    }, {
       label: "Move on the map…",
       title: takeable ? "Drag the pin to where the waypoint belongs" : "This GPX was not written by dgs, so its waypoints stay where they were recorded",
       disabled: !takeable,
@@ -1630,9 +1640,8 @@ function endRowDrag() {
   }
 }
 
-// copyModifier says whether a part is copied rather than moved: Cmd on a Mac,
-// Ctrl elsewhere, either of which reads as a copy here.
-const copyModifier = (event) => Boolean(event && (event.metaKey || event.ctrlKey));
+// Alt, Cmd or Ctrl copies a dragged part instead of moving it.
+const copyModifier = (event) => Boolean(event && (event.altKey || event.metaKey || event.ctrlKey));
 
 // dropAt reads what a drop at a screen point would do. It answers
 //   { kind: "files", before }              put in that order, before that row
@@ -1670,7 +1679,7 @@ function dropAt(x, y, event) {
     return { kind: "refused", row, reason: `${targetEntry.track.name} was not written by dgs, so nothing is written into it.` };
   }
   if (!copy && !takeable(heldEntry, held.key)) {
-    return { kind: "refused", row, reason: `${heldEntry.track.name} was not written by dgs, so nothing is taken out of it; hold Ctrl or Cmd to copy instead.` };
+    return { kind: "refused", row, reason: `${heldEntry.track.name} was not written by dgs, so nothing is taken out of it; hold Alt, Ctrl or Cmd to copy instead.` };
   }
   return { kind: "into", path: targetPath, copy };
 }
@@ -1784,7 +1793,7 @@ async function reorderParts(held, before) {
 }
 
 // dropIntoFile moves a part into another GPX of the workspace, or copies it
-// there when Ctrl or Cmd was held.
+// there when Alt, Ctrl or Cmd was held.
 async function dropIntoFile(held, target) {
   const entry = state.tracks.get(held.path);
   const part = entry?.track.parts.find((one) => one.key === held.key);
@@ -1800,6 +1809,80 @@ async function dropIntoFile(held, target) {
   } catch (error) {
     showMessage(error.message, true);
   }
+}
+
+// editPhotos describes one waypoint and changes its photos. Chosen files are
+// published beside the GPX at once; the GPX links them when it is saved.
+async function editPhotos(path, part) {
+  // Safari draws WebP but cannot encode it: a canvas asked for WebP gives PNG.
+  const canAdd = document.createElement("canvas").toDataURL("image/webp").startsWith("data:image/webp");
+  if (!canAdd) {
+    await confirmDialog({
+      title: "This browser cannot encode WebP",
+      message: "Photos are encoded as WebP in the browser, and this one — Safari — cannot. Open this page in Chrome, Edge or Firefox to add photos. The description, captions and removals still work here.",
+      confirm: "OK",
+    });
+  }
+  let saved = { maxSide: 2048, quality: 90, ratio: "5:4" };
+  try { saved = { ...saved, ...JSON.parse(localStorage.getItem("gpx.photoEncoding") || "{}") }; } catch {}
+  const answer = await photosDialog(part, (name) => api.photoURL(path, name), { canAdd, ...saved });
+  if (!answer) return;
+  const remember = () => { try { localStorage.setItem("gpx.photoEncoding", JSON.stringify(saved)); } catch {} };
+  saved = { ...saved, maxSide: answer.maxSide, quality: answer.quality };
+  remember();
+  try {
+    const photos = [...answer.photos];
+    for (const file of answer.files) {
+      // The browser applies the EXIF orientation as it decodes.
+      const bitmap = await createImageBitmap(file).catch(() => { throw new Error(`${file.name}: this browser cannot read the picture`); });
+      try {
+        const crop = await cropDialog(bitmap, file.name, saved.ratio);
+        if (crop?.cancelled) return;
+        if (!crop) continue;
+        saved.ratio = crop.ratio;
+        remember();
+        photos.push({ name: await api.addPhoto(path, await toWebP(bitmap, crop.rect, answer.maxSide, answer.quality)), caption: "" });
+      } finally {
+        bitmap.close();
+      }
+    }
+    await api.setPhotos(path, part.key, answer.description, photos);
+    await reloadEntry(path);
+    renderTracks();
+    showMessage(`${part.name}: ${photos.length} photo${photos.length === 1 ? "" : "s"}`);
+  } catch (error) {
+    showMessage(error.message, true);
+  }
+}
+
+// toWebP draws the crop rect of a picture scaled so its longest side is at
+// most maxSide (0 keeps it, and nothing is enlarged), and encodes it as WebP
+// at quality 1–100.
+async function toWebP(bitmap, rect, maxSide, quality) {
+  const scale = maxSide ? Math.min(1, maxSide / Math.max(rect.w, rect.h)) : 1;
+  const width = Math.max(1, Math.round(rect.w * scale)), height = Math.max(1, Math.round(rect.h * scale));
+  // One large step down skips pixels and blurs fine detail; halving at a
+  // time, each step smoothed, keeps it.
+  let source = bitmap, sx = rect.x, sy = rect.y, sw = rect.w, sh = rect.h, canvas;
+  do {
+    const w = Math.max(width, Math.round(sw / 2)), h = Math.max(height, Math.round(sh / 2));
+    canvas = document.createElement("canvas");
+    canvas.width = sw / 2 >= width ? w : width;
+    canvas.height = sh / 2 >= height ? h : height;
+    const g = canvas.getContext("2d");
+    g.imageSmoothingQuality = "high";
+    g.drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    source = canvas; sx = sy = 0; sw = canvas.width; sh = canvas.height;
+  } while (sw > width || sh > height);
+  // A photo scaled down is sharpened a little, to give back what smoothing took.
+  if (scale < 1) {
+    const g = canvas.getContext("2d"), image = g.getImageData(0, 0, width, height);
+    sharpen(image.data, width, height);
+    g.putImageData(image, 0, 0);
+  }
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", quality / 100));
+  if (blob?.type !== "image/webp") throw new Error("This browser cannot encode WebP");
+  return blob;
 }
 
 // renamePart names one track, route or waypoint. A GPX dgs wrote is renamed
@@ -1977,14 +2060,14 @@ function showPart(path, part, { fit: shouldFit = false } = {}) {
   if (entry.visible && state.focus !== path) setFocus(path, { fit: false });
   else { renderTracks(); applyCutPanel(); }
   if (part.kind === "waypoint") {
-    if (shouldFit && entry.visible && !entry.hiddenParts.has(part.key)) openWaypoint(entry, part);
+    if (shouldFit && entry.visible && !entry.hiddenParts.has(part.key)) openWaypoint(path, entry, part);
     if (shouldFit) map.easeTo({ center: part.points[0], zoom: Math.max(map.getZoom(), 15), duration: 400 });
   } else if (shouldFit) {
     fitBox(part.bounds);
   }
 }
 
-function openWaypoint(entry, part) {
+function openWaypoint(path, entry, part) {
   const body = document.createElement("div");
   body.className = "stop-popup";
   const title = document.createElement("strong");
@@ -1999,6 +2082,22 @@ function openWaypoint(entry, part) {
     return line;
   });
   body.append(title, ...lines);
+  if (part.photos?.length) {
+    const strip = document.createElement("div");
+    strip.className = "photo-strip";
+    for (const photo of part.photos) {
+      const link = document.createElement("a");
+      link.href = api.photoURL(path, photo.name);
+      link.target = "_blank";
+      link.title = photo.caption || "";
+      const img = document.createElement("img");
+      img.src = link.href;
+      img.alt = photo.caption || "";
+      link.append(img);
+      strip.append(link);
+    }
+    body.append(strip);
+  }
   waypointPopup.setLngLat(part.points[0]).setDOMContent(body).addTo(map);
 }
 
@@ -2104,6 +2203,27 @@ function selectStop(index, { pan = false } = {}) {
   if (pan && !map.getBounds().contains(position)) map.easeTo({ center: position, duration: 400 });
 }
 
+// showPhotoHover shows the first photo of a waypoint beside it while the
+// pointer rests on it, with the count when it has more.
+function showPhotoHover(found) {
+  const photos = found?.part.photos;
+  if (!photos?.length || waypointPopup.isOpen()) { photoHover.remove(); return; }
+  const src = api.photoURL(found.path, photos[0].name);
+  if (photoHover.isOpen() && photoHover.getElement()?.dataset.src === src) return;
+  const body = document.createElement("div");
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = photos[0].caption || "";
+  body.append(img);
+  if (photos.length > 1) {
+    const count = document.createElement("div");
+    count.textContent = `${photos.length} photos`;
+    body.append(count);
+  }
+  photoHover.setLngLat(found.part.points[0]).setDOMContent(body).addTo(map);
+  photoHover.getElement().dataset.src = src;
+}
+
 // waypointAt is the waypoint drawn under a screen point, as { path, entry,
 // part }, or null. A few pixels around the point count, so a small dot is
 // still found by hand.
@@ -2140,12 +2260,13 @@ function bindMap() {
       pending = null;
       const entry = focusedEntry();
       const index = entry && entry.track.points.length ? layers.nearest(entry.track, point, 24, entry.hiddenParts) : -1;
-      // A waypoint under the pointer answers it: it grows a little and the
-      // pointer says it can be opened.
+      // A waypoint under the pointer answers it by growing a little; like
+      // every icon on the map, it takes the ordinary arrow, not the crosshair.
       const found = waypointAt(point);
       layers.setHover(found ? found.entry.id : null, found ? found.part.key : null);
+      showPhotoHover(found);
       // In cut mode the pointer marks the point available to the cut command.
-      map.getCanvas().style.cursor = found ? "pointer"
+      map.getCanvas().style.cursor = found ? "default"
         : index >= 0 ? (cutting() ? "copy" : "crosshair") : state.fill.active || state.routeOpen ? "crosshair" : "";
       inspect(index);
       profile.setIndex(index >= 0 ? index : null);
@@ -2156,6 +2277,7 @@ function bindMap() {
     inspect(null);
     profile.setIndex(null);
     layers.setHover(null, null);
+    showPhotoHover(null);
   });
   // Every map location offers a named waypoint; existing points and the cut
   // tool add their own commands without losing that location action.
@@ -2178,6 +2300,7 @@ function bindMap() {
       const takeable = Boolean(entry.track.ours || entry.track.draft || part.added);
       actions.push([
         { label: "Rename…", onSelect: () => renamePart(path, entry, part) },
+        { label: "Photos…", disabled: !entry.track.ours || Boolean(entry.track.draft), onSelect: () => editPhotos(path, part) },
         { label: "Move to a new position…", disabled: !takeable, onSelect: () => startWaypointMove(path, part) },
         { label: "Delete", danger: true, disabled: !takeable, onSelect: () => deletePart(path, entry, part) },
       ]);
@@ -2229,6 +2352,7 @@ function bindMap() {
     const found = waypointAt(event.point);
     if (found) {
       showPart(found.path, found.part);
+      openWaypoint(found.path, found.entry, found.part);
       return;
     }
     const box = [[event.point.x - 4, event.point.y - 4], [event.point.x + 4, event.point.y + 4]];
@@ -2577,7 +2701,29 @@ async function start() {
   // first layer the map stack does not own.
   stack.apply();
   renderStack();
+  // A signed-distance chevron lets MapLibre tint it for contrast with each track's
+  // colour. It points right; line placement supplies the travel direction.
+  const arrow = new Uint8Array(32 * 32 * 4);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    // Fold the symmetric > onto its upper stroke.
+    const px = x - 10, py = 8 - Math.abs(y - 16);
+    const t = Math.max(0, Math.min(1, (px * 12 + py * 8) / 208));
+    const distance = Math.hypot(px - t * 12, py - t * 8);
+    arrow[(y * 32 + x) * 4 + 3] = Math.max(0, Math.min(255, 255 * (0.75 - (distance - 4) / 8)));
+  }
+  map.addImage("track-direction", { width: 32, height: 32, data: arrow }, { pixelRatio: 2, sdf: true });
   layers = new TrackLayers(map);
+  state.trackPoints = saved.trackPoints === true;
+  layers.setPointsVisible(state.trackPoints);
+  $("track-points").innerHTML = ROUTE;
+  $("track-points").setAttribute("aria-pressed", String(state.trackPoints));
+  $("track-points").addEventListener("click", () => {
+    state.trackPoints = !state.trackPoints;
+    $("track-points").setAttribute("aria-pressed", String(state.trackPoints));
+    layers.setPointsVisible(state.trackPoints);
+    cutOverlay?.setPointsVisible(state.trackPoints);
+    save();
+  });
   // The hillshade goes under the tracks: above every base map, below the
   // first layer the map stack does not own.
   terrain = new Terrain(map, state.config.dem, {
@@ -2587,6 +2733,11 @@ async function start() {
   terrain.setExaggeration(state.terrain.exaggeration);
   bindPanels(saved.hiddenPanels);
   waypointPopup = new maplibregl.Popup({ offset: 10, maxWidth: "260px" });
+  // The camera over a waypoint with photos is drawn when a style first asks.
+  map.on("styleimagemissing", (event) => {
+    if (event.id === CAMERA_IMAGE && !map.hasImage(CAMERA_IMAGE)) map.addImage(CAMERA_IMAGE, cameraImage(), { pixelRatio: 2 });
+  });
+  photoHover = new maplibregl.Popup({ offset: 12, closeButton: false, closeOnClick: false, className: "photo-hover" });
   cleanOverlay = new CleanOverlay(map, "cursor");
   cleanPanel = new CleanPanel({
     root: $("clean-panel"),
@@ -2636,6 +2787,7 @@ async function start() {
   if (saved.routeOpen === true) state.routeOpen = true;
   for (const name of ["select", "range", "lasso", "fill", "cut", "waypoint"]) $(`tool-${name}`).addEventListener("click", () => setTool(name));
   cutOverlay = new CutOverlay(map, "cursor");
+  cutOverlay.setPointsVisible(state.trackPoints);
   cutPanel = new CutPanel({
     root: cleanPanel.segmentsRoot,
     onCuts: (cuts, names) => changeFocused((path) => api.saveSegments(path, cuts, names)),
@@ -2735,6 +2887,8 @@ async function start() {
 
   if (saved.stops?.distance > 0 && saved.stops?.duration > 0) state.stops = saved.stops;
   const stopDistance = $("stop-distance"), stopDuration = $("stop-duration");
+  numberStepper(stopDistance);
+  numberStepper(stopDuration);
   stopDistance.value = state.stops.distance;
   stopDuration.value = state.stops.duration / 60;
   const readStopParams = () => {
