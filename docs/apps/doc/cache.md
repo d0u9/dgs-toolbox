@@ -43,7 +43,10 @@ original images are truth in the document tree, not part of this cache.
 
 ## What it answers
 
-The cache holds each Item as its sidecar says, and indexes kept alongside:
+The cache holds each Item as its sidecar says, including in-place paths.
+Cache format version 5 discards earlier caches and rebuilds from sidecars;
+in-place path validation also applies when a disk cache is read.
+The indexes kept alongside are:
 
 | Index | Answers |
 | --- | --- |
@@ -97,3 +100,11 @@ a sidecar edited by hand. Two things notice it:
 
 The mark is not proof the cache is right; only reading the sidecars is.
 `dgs doc verify` reads them and does not use the cache.
+
+Version 6 also retains the in-place Item lock, revision file-loss markers,
+and revision/original sizes; earlier caches are discarded and rebuilt from sidecars.
+
+Doc 2 native thumbnails reuse the page-image cache with size `file`, keyed by
+recorded content digest. Cached JPEGs are decoded before use; corrupt entries
+are regenerated from a source whose digest is checked. Thumbnails remain
+outside the document tree and introduce no additional cache configuration.

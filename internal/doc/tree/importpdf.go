@@ -23,6 +23,14 @@ import (
 // Item.
 type ImportRequest struct {
 	Source string
+	// Folder is the selected in-place output directory for external files or images.
+	Folder string
+	// Path, when set, is where an external file is copied instead, relative
+	// to the root. Nothing may be there yet.
+	Path string
+	// Reuse confirms the Item whose existing object this new Item will name.
+	Reuse    string
+	Replaces string
 	// Pages are more images after Source, each a page of the PDF made from
 	// them; empty for a PDF.
 	Pages []string
@@ -47,24 +55,38 @@ var ErrDuplicate = errors.New("already in the tree")
 // fields exists: the PDF is a new revision of it, not a new Item.
 var ErrTaken = errors.New("a document with these fields exists")
 
-// Import copies Source into a new Item. The PDF is published under its digest
-// only after it reads back the same (verifiedcopy); the sidecar is written
-// after that, so a sidecar never names a PDF that is not there. The source is
-// never touched.
+// Import creates an Item from a PDF or images. By Item copies under the digest;
+// in place records an internal PDF or copies into the selected folder. Copies
+// read back before publication; the sidecar follows. The source stays untouched.
 func (st *Store) Import(ctx context.Context, request ImportRequest) (Item, error) {
 	if err := st.Require(); err != nil {
 		return Item{}, err
+	}
+	if request.Replaces != "" {
+		if err := st.ValidateSupersession(request.Replaces, request.Template.Type, request.Fields); err != nil {
+			return Item{}, err
+		}
 	}
 	fields, err := CleanFields(request.Template, request.Fields)
 	if err != nil {
 		return Item{}, err
 	}
-	input, err := st.prepareInput(ctx, append([]string{request.Source}, request.Pages...))
+	sources := append([]string{request.Source}, request.Pages...)
+	if st.InPlace() {
+		for _, source := range sources {
+			if _, err := st.relativePath(source); err != nil {
+				return Item{}, err
+			}
+		}
+	}
+	input, err := st.prepareInput(ctx, sources)
 	if err != nil {
 		return Item{}, err
 	}
 	defer input.cleanup()
-	request.Source = input.pdf
+	if !st.InPlace() {
+		request.Source = input.pdf
+	}
 	digest, err := input.digest()
 	if err != nil {
 		return Item{}, err
@@ -73,13 +95,44 @@ func (st *Store) Import(ctx context.Context, request ImportRequest) (Item, error
 	if err != nil {
 		return Item{}, err
 	}
-	if other, ok := holder(items, digest); ok {
+	var reused *Revision
+	other, duplicate := holder(items, digest)
+	if st.InPlace() && request.Reuse != "" {
+		other, err = st.GetItem(request.Reuse)
+		if err != nil {
+			return Item{}, err
+		}
+		duplicate = true
+	}
+	if duplicate {
+		if !st.InPlace() {
+			return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
+		}
+		file, err := st.ReadPDF(other, digest)
+		if err != nil {
+			return Item{}, err
+		}
+		actual, err := FileDigest(file)
+		if err != nil {
+			return Item{}, err
+		}
+		if actual != digest {
+			return Item{}, fmt.Errorf("existing object no longer matches its recorded digest")
+		}
+		if request.Reuse == "" {
+			return Item{}, &ReuseFile{Item: other.ID, Digest: digest, Path: Placing(other).Paths[digest]}
+		}
+		for _, r := range other.Revisions {
+			if r.Digest == digest {
+				reused = &r
+				break
+			}
+		}
+	}
+	if other, ok := input.heldBy(items); ok && reused == nil {
 		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
 	}
-	if other, ok := input.heldBy(items); ok {
-		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
-	}
-	if other, ok := taken(request.Template, items, fields, ""); ok {
+	if other, ok := taken(request.Template, items, fields, request.Replaces); ok {
 		return Item{}, fmt.Errorf("%w: %s %s; add the PDF to it as a revision", ErrTaken, other.Type, other.ID)
 	}
 	if err := st.linked(request.Template, items, fields, ""); err != nil {
@@ -92,6 +145,16 @@ func (st *Store) Import(ctx context.Context, request ImportRequest) (Item, error
 	id, err := NewID(request.Now)
 	if err != nil {
 		return Item{}, err
+	}
+	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags), SharedWith: shared}
+	if st.InPlace() {
+		item.Locked = request.Template.Locked
+	}
+	ref := item.saveSnapshot(request.Template.Type, fields, digest, input.name, "", request.Now)
+	item.Revisions[len(item.Revisions)-1].Tags = tag.List(append(append([]string(nil), item.Tags...), request.RevisionTags...))
+	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "import", Digest: ref}}
+	if st.InPlace() {
+		return st.importInPlace(ctx, request, input, item, digest, reused)
 	}
 	// The Item's folder is new; a failed import leaves nothing behind, not
 	// even the folder. Remove takes only an empty directory.
@@ -108,11 +171,8 @@ func (st *Store) Import(ctx context.Context, request ImportRequest) (Item, error
 		_ = os.Remove(filepath.Dir(st.Sidecar(id)))
 		return Item{}, fmt.Errorf("%s changed while it was being imported", request.Source)
 	}
-	item := Item{ID: id, Type: request.Template.Type, Kind: request.Template.Kind, Notes: strings.TrimSpace(request.Notes), Tags: tag.List(request.Tags), SharedWith: shared}
-	ref := item.saveSnapshot(request.Template.Type, fields, digest, input.name, "", request.Now)
-	item.Revisions[len(item.Revisions)-1].Tags = tag.List(append(append([]string(nil), item.Tags...), request.RevisionTags...))
-	item.History = []HistoryEvent{{At: request.Now.Format(time.RFC3339), Action: "import", Digest: ref}}
-	undoOriginal, err := input.archive(ctx, st, id, request.KeepOriginal)
+	input.size = result.Size
+	undoOriginal, err := input.archive(ctx, st, item, request.KeepOriginal, nil)
 	if err != nil {
 		os.Remove(st.PDF(Item{ID: id}, digest))
 		os.Remove(filepath.Dir(st.Sidecar(id)))
@@ -197,16 +257,22 @@ func sameValue(f Field, a, b string) bool {
 
 // FileDigest is a file's SHA-256 in lowercase hex.
 func FileDigest(path string) (string, error) {
+	digest, _, err := fileDigest(path)
+	return digest, err
+}
+
+func fileDigest(path string) (string, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer file.Close()
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
+	size, err := io.Copy(hash, file)
+	if err != nil {
+		return "", 0, err
 	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	return hex.EncodeToString(hash.Sum(nil)), size, nil
 }
 
 // linked checks that each item field names an Item in the tree, and each

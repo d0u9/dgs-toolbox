@@ -35,13 +35,11 @@ func (s server) mergeSource(dir string) (merge.Source, string, error) {
 	if abs == root {
 		return merge.Source{}, "", errors.New("that is this tree")
 	}
-	if _, err := os.Stat(filepath.Join(abs, tree.MarkerName)); err == nil {
-		sourceStore, err := tree.Open(abs)
-		if err != nil {
-			return merge.Source{}, "", err
-		}
+	if sourceStore, err := tree.Open(abs); err == nil {
 		src, err := merge.FromTree(sourceStore)
 		return src, "tree", err
+	} else if !errors.Is(err, tree.ErrNotATree) {
+		return merge.Source{}, "", err
 	}
 	if _, err := os.Stat(filepath.Join(abs, export.ManifestName)); err == nil {
 		src, err := merge.FromTarget(abs, s.now())

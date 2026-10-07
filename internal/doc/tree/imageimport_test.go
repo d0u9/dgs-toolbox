@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 )
@@ -220,7 +221,7 @@ func TestAlternateEncodingDoesNotReplaceArchivedOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.Revisions[0].Originals[0] != original || len(item.Revisions[0].SourceDigests) != 2 {
+	if !reflect.DeepEqual(item.Revisions[0].Originals[0], original) || len(item.Revisions[0].SourceDigests) != 2 {
 		t.Fatal("lost original or input alias")
 	}
 	retained, err := os.ReadFile(testStoreAt(root).OriginalPath(item, item.Revisions[0].Digest, original))

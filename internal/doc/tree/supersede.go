@@ -13,7 +13,7 @@ func (st *Store) ValidateSupersession(oldID string, typ string, fields map[strin
 	if err != nil {
 		return err
 	}
-	if typ != "visa" || old.Type != typ {
+	if (!st.InPlace() && typ != "visa") || old.Type != typ {
 		return fmt.Errorf("only visas can replace visas")
 	}
 	a, okA := country.Normalize(fields["country"], country.Format("alpha2"))

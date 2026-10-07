@@ -5,10 +5,19 @@ var actionHelp = map[string]string{
 
 Example:
   dgs doc init /path/to/documents
+  dgs doc init --layout in-place --outlines folders /path/to/documents
 
 With no directory argument, use the configured default tree, or the working
 directory when none is configured. Writes the tree marker and an example
-Template when no Template exists. Other folder contents are kept.`,
+Template when no Template exists. Other folder contents are kept.
+Omit --layout for the original by-Item layout. --layout in-place records files
+under their existing names; import external files into a chosen folder.
+--outlines paths keeps Doc 1 rules (the default); --outlines folders selects
+folder skeletons, independently of --layout. Recorded files never move when an Item
+becomes complex; only new files written by doc enter its own folder.
+Existing content requires confirmation before a new Item references it.
+Attachment changes, attachment-free Items and merge remain unsupported there.
+Deletion moves unreferenced files to trash; shared references keep them live.`,
 	"verify": `Check every PDF against its sidecar and digest. Changes nothing.
 
 Examples:

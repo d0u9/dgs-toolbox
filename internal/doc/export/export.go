@@ -78,10 +78,11 @@ type Action struct {
 
 // Plan is what an export would do to a Target.
 type Plan struct {
-	Add     []Action `json:"add"`
-	Replace []Action `json:"replace"`
-	Remove  []Action `json:"remove"`
-	Keep    []Action `json:"keep"`
+	Directories []string `json:"directories,omitempty"`
+	Add         []Action `json:"add"`
+	Replace     []Action `json:"replace"`
+	Remove      []Action `json:"remove"`
+	Keep        []Action `json:"keep"`
 	// Left are files an export wrote that are no longer wanted but were
 	// changed since: they stay, and the manifest forgets them.
 	Left []Action `json:"left"`
@@ -293,6 +294,44 @@ func Apply(ctx context.Context, st *tree.Store, target string, views []string, p
 	if err := CheckTarget(st, target); err != nil {
 		return result, err
 	}
+	// Check every selected source before any target removal or publication.
+	{
+		actions := append(append(append([]Action{}, plan.Add...), plan.Replace...), plan.Keep...)
+		for _, a := range actions {
+			if _, err := st.ReadFile(a.Item, a.Digest); err != nil {
+				return result, err
+			}
+		}
+	}
+	if len(plan.Directories) > 0 {
+		for _, dir := range plan.Directories {
+			if !filepath.IsLocal(filepath.FromSlash(dir)) || dir == "." || strings.ContainsAny(dir, "\\\x00") {
+				return result, fmt.Errorf("invalid skeleton directory")
+			}
+		}
+		if err := os.MkdirAll(target, 0755); err != nil {
+			return result, err
+		}
+		root, err := os.OpenRoot(target)
+		if err != nil {
+			return result, err
+		}
+		defer root.Close()
+		for _, dir := range plan.Directories {
+			info, statErr := root.Stat(filepath.FromSlash(dir))
+			if statErr != nil && !os.IsNotExist(statErr) {
+				return result, statErr
+			}
+			if statErr == nil && !info.IsDir() {
+				return result, fmt.Errorf("%s is not a directory", dir)
+			}
+		}
+		for _, dir := range plan.Directories {
+			if err := root.MkdirAll(filepath.FromSlash(dir), 0755); err != nil {
+				return result, err
+			}
+		}
+	}
 	byID := map[string]tree.Item{}
 	for _, it := range items {
 		byID[it.ID] = it
@@ -430,9 +469,14 @@ func removeOwned(ctx context.Context, target, rel, digest string) error {
 }
 
 func publish(ctx context.Context, st *tree.Store, target string, a Action) error {
+	source, err := st.ReadFile(a.Item, a.Digest)
+	if err != nil {
+		return err
+	}
 	result, err := verifiedcopy.Copy(ctx, verifiedcopy.Request{
-		Source:      st.PDF(tree.Item{ID: a.Item}, a.Digest),
-		Destination: filepath.Join(target, filepath.FromSlash(a.Path)),
+		Source:         source,
+		ExpectedDigest: a.Digest,
+		Destination:    filepath.Join(target, filepath.FromSlash(a.Path)),
 	})
 	if err != nil {
 		return fmt.Errorf("%s: %w", a.Path, err)

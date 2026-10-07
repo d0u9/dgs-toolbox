@@ -65,8 +65,10 @@ func (v Values) MarshalYAML() (any, error) {
 // place them, and its Children, an if/elif/else chain, place some of them
 // deeper.
 type View struct {
-	Name string `yaml:"name" json:"name"`
-	Node `yaml:",inline"`
+	Folders  []Folder `yaml:"folders,omitempty" json:"folders"`
+	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	Name     string   `yaml:"name" json:"name"`
+	Node     `yaml:",inline"`
 	// Shared also selects an Item shared with someone, as if they owned it:
 	// its If is asked with owner as each person it is shared with.
 	Shared bool `yaml:"shared,omitempty" json:"shared,omitempty"`
@@ -193,6 +195,9 @@ func (v View) walk(fn func(where string, n Node, layout string, up []Node) error
 // happens once: the rule is then marked NumberingScoped, and a rule so
 // marked is never given orders again.
 func (v View) Upgrade() View {
+	if v.Folders != nil {
+		return v
+	}
 	if v.Numbering == NumberingScoped {
 		return v.renamed()
 	}
@@ -504,6 +509,12 @@ var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 func (v View) Validate() error {
 	if !namePattern.MatchString(v.Name) {
 		return fmt.Errorf("view %q: use lowercase letters, digits, _ and -", v.Name)
+	}
+	if v.Folders != nil {
+		if err := v.Defaults.Validate(); err != nil {
+			return err
+		}
+		return ValidateFolders(v.Folders)
 	}
 	if v.Selection != Head && v.Selection != All {
 		return fmt.Errorf("view %s: selection %q is neither head nor all", v.Name, v.Selection)

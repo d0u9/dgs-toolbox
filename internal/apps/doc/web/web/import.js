@@ -15,6 +15,7 @@ const FOLDER_KEY = "dgs-doc-import-folder";
 const HIDE_KEY = "dgs-doc-import-hide-kept";
 let state = { templates: [], items: [] };
 let dir = "";
+let outputFolder = "";
 let files = [];
 let selected = "";
 // pages are more images after the selected one, each the next page of the
@@ -71,15 +72,18 @@ function render() {
       return el("span", { className: "numeric" }, kept ? `${kept}/${under.length} in tree` : String(under.length));
     },
   }));
-  if (dir && files.length === 0) say($("list-message"), "No PDFs or supported images in this folder or under it.");
+  if (dir && files.length === 0) say($("list-message"), state.capabilities.all_files?"No files in this folder or under it.":"No PDFs or supported images in this folder or under it.");
   const file = files.find((f) => f.path === selected);
   $("side").hidden = !file && !noPDF;
   $("side-splitter").hidden = $("side").hidden;
-  $("import").hidden = (!noPDF && (!file || !!file.item)) || !state.tree;
+  $("import").hidden = (!noPDF && (!file || (!!file.item && !state.capabilities.reuse_files))) || !state.tree;
   $("copy-note").hidden = noPDF;
-  $("keep-original-field").hidden = noPDF || !file || !file.image || !!file.item;
+  $("without-pdf").hidden = !!state.capabilities.reuse_files;
+  $("destination-field").hidden = !state.capabilities.import_folder || noPDF;
+  if (state.capabilities.import_folder) $("copy-note").textContent = "Files already inside this tree stay in place. External files are copied to the chosen folder and verified before publication. Images become a PDF in an Item folder. Existing content is reused only after confirmation.";
+  $("keep-original-field").hidden = noPDF || !file || !file.image || (!!file.item && !state.capabilities.reuse_files);
   if (!$("keep-original-field").hidden) drawPages();
-  $("import-title").textContent = noPDF ? "New without PDF" : file?.item ? "Already in the tree" : "Import";
+  $("import-title").textContent = noPDF ? "New without PDF" : file?.item ? (state.capabilities.reuse_files ? "New Item from stored content" : "Already in the tree") : "Import";
   $("kept").hidden = !file || !file.item;
   if (file && file.item) {
     const item = state.items.find((i) => i.id === file.item);
@@ -115,6 +119,10 @@ function pick(path) {
 
 // load shows the file picked, with its other pages, and reads its text.
 function load(path) {
+ if(! /\.pdf$/i.test(path)&&!files.find(f=>f.path===path)?.image){
+   clearPreview();suggestions={};say($("list-message"),"This file has no PDF pages or searchable page text.");return;
+ }
+
   const query = source(path);
   const shown = JSON.stringify(query);
   showPreview(query, api("/api/source/file?" + new URLSearchParams(query)));
@@ -143,7 +151,7 @@ function drawPages() {
       el("button", { type: "button", className: "text-button", innerHTML: iconSvg("arrow-down"), title: "Later", disabled: i === pages.length - 1, onclick: () => move(i, 1) }),
       el("button", { type: "button", className: "text-button", innerHTML: iconSvg("x"), title: "Not a page of this PDF", onclick: () => { pages.splice(i, 1); changed(); } }))));
   const folder = (p) => p.slice(0, p.lastIndexOf("/") + 1);
-  const others = files.filter((f) => f.image && !f.item && f.path !== selected && !pages.includes(f.path))
+  const others = files.filter((f) => f.image && (state.capabilities.reuse_files || !f.item) && f.path !== selected && !pages.includes(f.path))
     .sort((a, b) => (folder(b.path) === folder(selected)) - (folder(a.path) === folder(selected)) || a.path.localeCompare(b.path));
   $("add-page").hidden = others.length === 0;
   $("add-page").replaceChildren(el("option", { value: "", textContent: "+ Add a page…" }),
@@ -396,12 +404,25 @@ $("import").onsubmit = async (event) => {
   try {
     if ($("into").value && !$("into-field").hidden) {
       revisionTags.commit();
-      await post("/api/revisions", { keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
+      await post("/api/revisions", { folder: outputFolder, keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
         revision_tags: revisionTags.get(), new_revision: $("new-revision").checked });
       $("new-revision").checked = false;
     } else {
-      const saved = await post("/api/import", { replaces: $("replaces-field").hidden ? "" : $("replaces").value, keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
-        revision_tags: noPDF ? [] : (revisionTags.commit(), revisionTags.get()), shared_with: sharedWith() });
+      const body = { replaces: $("replaces-field").hidden ? "" : $("replaces").value, keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
+        revision_tags: noPDF ? [] : (revisionTags.commit(), revisionTags.get()), shared_with: sharedWith() };
+      body.folder = outputFolder;
+      let saved;
+      if (state.capabilities.import_folder) {
+        const response = await fetch(api("/api/import"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        saved = await response.json();
+        if (!response.ok) {
+          if (!saved.reuse) throw new Error(saved.error || response.statusText);
+          if (!confirm("Same content is already stored at " + saved.reuse.path + ".\n\nCreate a new Item referencing this file? No file will be copied.")) {
+            say($("import-message"), "Reuse cancelled. Nothing was imported."); return;
+          }
+          saved = await post("/api/import", { ...body, reuse: saved.reuse.item });
+        }
+      } else saved = await post("/api/import", body);
       if (saved.warning) { state = await loadState(); render(); say($("import-message"), saved.warning, true); return; }
     }
     const done = selected;
@@ -455,7 +476,7 @@ loadState().then(async (s) => {
   $("keep-original").checked = s.keepOriginal !== false;
   render();
   const into = new URLSearchParams(location.search).get("into");
-  if (new URLSearchParams(location.search).has("no_pdf")) {
+  if (state.capabilities.without_file && new URLSearchParams(location.search).has("no_pdf")) {
     $("without-pdf").click();
     const item = state.items.find((i) => i.id === into);
     if (item) { selectedTemplate = item.type; drawFields(); $("into").value = item.id; drawFields(); }
@@ -474,12 +495,18 @@ loadState().then(async (s) => {
 let replacesRequest = 0;
 async function drawReplaces() {
   const request = ++replacesRequest;
-  const visible = selectedTemplate === "visa" && (!$("into").value || $("into-field").hidden);
+  const visible = (state.capabilities.replacement_any_type || selectedTemplate === "visa") && (!$("into").value || $("into-field").hidden);
   $("replaces-field").hidden = !visible;
   const previous = $("replaces").value;
   $("replaces").replaceChildren(el("option", { value: "" }, "None — keep existing visas in use"));
   if (!visible) return;
   const fields = fieldsOf($("fields"));
+  if(state.capabilities.replacement_any_type){
+    const candidates=state.items.filter(i=>i.type===selectedTemplate&&!i.retired&&!i.superseded_by&&i.fields.owner===fields.owner&&i.fields.country===fields.country);
+    $("replaces").append(...candidates.map(i=>el("option",{value:i.id},label(state,i))));
+    if(candidates.some(i=>i.id===previous))$("replaces").value=previous;
+    return;
+  }
   if (!fields.owner || !fields.country) return;
   try {
     const response = await fetch(api("/api/supersession-candidates?" + new URLSearchParams({ owner: fields.owner, country: fields.country })));
@@ -490,3 +517,9 @@ async function drawReplaces() {
     if (candidates.some((i) => i.id === previous)) $("replaces").value = previous;
   } catch (err) { if (request === replacesRequest) say($("import-message"), err.message, true); }
 }
+$("choose-destination").onclick = async () => {
+  const chosen = await openFile({ title: "Store imported files", message: "Choose a folder inside this doc tree.", folders: true, folder: outputFolder || state.root, fallbacks: [state.root] });
+  if (!chosen) return;
+  outputFolder = Array.isArray(chosen) ? chosen[0] : chosen;
+  $("destination").textContent = outputFolder;
+};

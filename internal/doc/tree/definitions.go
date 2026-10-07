@@ -33,13 +33,13 @@ func definitionName(name string) error {
 // DefinitionPath is owned by the Store; kind-specific validation is performed
 // before reading, writing or trashing it.
 func (s *Store) DefinitionPath(dir, name string) string {
-	return filepath.Join(s.root, dir, name+".yaml")
+	return filepath.Join(s.meta, dir, name+".yaml")
 }
 func (s *Store) DefinitionFiles(dir string) ([]string, error) {
 	if err := definitionName(dir); err != nil {
 		return nil, err
 	}
-	return filepath.Glob(filepath.Join(s.root, dir, "*.yaml"))
+	return filepath.Glob(filepath.Join(s.meta, dir, "*.yaml"))
 }
 
 // DefinitionExists checks a name without following a symlink, so occupied
@@ -226,7 +226,7 @@ func (s *Store) TrashDefinition(dir, name string, now time.Time) (string, error)
 	if _, err := os.Lstat(from); err != nil {
 		return "", err
 	}
-	destDir := filepath.Join(s.root, TrashDir, dir)
+	destDir := filepath.Join(s.meta, TrashDir, dir)
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return "", err
 	}

@@ -570,6 +570,14 @@ export function tagUses(items) {
 
 // The top bar and the banner every page has.
 export function frame(state) {
+  if (!state.tree && $("banner") && !$("init-form")) {
+    const storage=el("select",{id:"init-layout"},el("option",{value:"",textContent:"By Item"}),el("option",{value:"in-place",textContent:"In place"}));
+    const outlines=el("select",{id:"init-outlines"},el("option",{value:"1",textContent:"Doc 1 rules"}),el("option",{value:"2",textContent:"Folder skeletons"}));
+    const form=el("form",{id:"init-form"},el("label",{},"Storage ",storage),el("label",{}," Outlines ",outlines),el("button",{type:"submit",textContent:"Initialize tree"}),el("span",{id:"init-message"}));
+    form.onsubmit=async e=>{e.preventDefault();try{await post("/api/init",{layout:storage.value,outlines:Number(outlines.value)});location.reload();}catch(error){say($("init-message"),error.message,true);}};
+    $("banner").replaceChildren(el("strong",{},"Initialize this folder"),form);
+  }
+
   $("root").textContent = state.root || "";
   statusBar.setState(state.name ? "tree " + state.name : state.tree === false ? "not a tree" : "doc tree");
   const items = (state.items || []).length;
@@ -977,7 +985,7 @@ export const eventTitles = {
   edit_tags: "Changed tags", edit_revision_tags: "Changed revision tags", make_head: "Made HEAD", delete_revision: "Deleted revision", change_type: "Changed type",
   export: "Exported", merge: "Merged", mark_frequent: "Marked frequent", unmark_frequent: "Unmarked frequent",
   retire: "Retired", unretire: "Back in use", edit_retired_reason: "Changed retired reason",
-  share: "Changed shared with",
+  share: "Changed shared with", set_locked: "Changed lock setting", file_changed: "Recorded changed file", confirm_file_path: "Confirmed file location",
 };
 
 // eventLines is one history event as a title and the lines under it. The

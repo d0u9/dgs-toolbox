@@ -315,9 +315,11 @@ function expiryBadge(item) {
   return text ? el("span", { className: "badge badge-" + e.state, title: e.date || "" }, text) : null;
 }
 
-const hasPDF = (item, ref) => !!item?.revisions.find((r) => (r.id || r.digest) === ref)?.digest;
+const fileOf=(item,ref)=>item?.revisions.find(r=>(r.id||r.digest)===ref);
+const hasFile=(item,ref)=>!!fileOf(item,ref)?.digest;
+const hasPDF = (item, ref) => hasFile(item,ref)&&(/\.pdf$/i.test(fileOf(item,ref)?.path||"file.pdf"));
 const headOf = (item) => item.head || ((item.revisions[item.revisions.length - 1] || {}).id || (item.revisions[item.revisions.length - 1] || {}).digest);
-const thumbURL = (item) => { const d = headOf(item); return api(`/api/page?item=${encodeURIComponent(item.id)}&digest=${d}&n=1&size=thumb&v=${d}`); };
+const thumbURL = (item) => { const d = headOf(item); return api(`/${hasPDF(item,d)?"api/page":"api/thumbnail"}?item=${encodeURIComponent(item.id)}&digest=${d}&n=1&size=thumb&v=${d}`); };
 
 // thumb is the first page of HEAD, or the type's name where the PDF has no
 // picture of its page (one made on a computer).
@@ -328,7 +330,7 @@ function thumb(item) {
   const wrap = el("div", { className: "card-thumb-wrap" });
   const url = thumbURL(item);
   const none = () => { noPicture.add(url); wrap.classList.add("no-picture"); wrap.dataset.type = item.type; };
-  if (!hasPDF(item, headOf(item))) {
+  if (!hasFile(item, headOf(item))) {
     wrap.classList.add("no-picture"); wrap.dataset.type = "No PDF"; return wrap;
   }
   if (noPicture.has(url)) {
@@ -468,16 +470,17 @@ function drawPage() {
   const attached = hasPDF(item, digest);
   $("detail-picture").classList.toggle("without-pdf", !attached);
   $("picture-splitter").hidden = !attached;
-  $("detail-frame").hidden = !attached;
+  $("detail-frame").hidden = !hasFile(item,digest);
   $("page-prev").hidden = !attached;
   $("page-next").hidden = !attached;
   $("open-reader").hidden = !attached;
-  $("reveal-pdf").hidden = !attached;
-  $("detail-image").hidden = !attached;
+  $("reveal-pdf").hidden = !hasFile(item,digest);
+  $("detail-image").hidden = !hasFile(item,digest);
   $("open-reader").disabled = !attached;
   if (!attached) {
-    frame.classList.add("no-picture"); frame.dataset.type = "No PDF";
-    $("page-label").textContent = "No attachment";
+    frame.classList.add("no-picture"); frame.dataset.type = hasFile(item,digest)?item.type:"No PDF";
+    if(hasFile(item,digest))$("detail-image").src=api("/api/thumbnail?"+new URLSearchParams({item:id,digest}));
+    $("page-label").textContent = hasFile(item,digest)?"This file has no PDF pages; show it in Finder.":"No attachment";
     $("page-prev").disabled = true; $("page-next").disabled = true;
     return;
   }
@@ -535,6 +538,7 @@ $("reader-back").onclick = closeReader;
 
 function render() {
   frame(state);
+  $("check-files").hidden = !state.capabilities.file_changes;
   drawSort(state.items.filter((i) => passes(i)));
   const items = shownItems();
   drawSteps();
@@ -672,12 +676,18 @@ function detail(item) {
   drawRetired(item);
   drawShared(item);
   $("history-all").href = api("/log/") + "#" + encodeURIComponent(item.id);
+  $("locked").hidden = !state.capabilities.file_changes;
+  $("locked").setAttribute("aria-pressed", String(!!item.locked));
+  $("locked").classList.toggle("on", !!item.locked);
   $("frequent").setAttribute("aria-pressed", String(!!item.frequent));
   $("frequent").classList.toggle("on", !!item.frequent);
+  $("delete-note").textContent = state.capabilities.shared_files ? "Moves this sidecar to trash; files stay while another Item references them." : "Moves this Item, with every revision’s PDF, into the tree’s trash folder.";
+  $("delete").disabled = false;
   $("attach-pdf").hidden = false;
-  $("attach-pdf").title = "Save the PDF with these fields: a correction, or a new revision when that is ticked";
+  $("attach-pdf").disabled = !state.capabilities.attachment_changes;
+  $("attach-pdf").title = !state.capabilities.attachment_changes ? "Attachment changes are not supported in in-place trees yet" : "Save the PDF with these fields: a correction, or a new revision when that is ticked";
   $("attach-pdf").textContent = hasPDF(item, selected.digest) ? "Replace PDF…" : "Attach PDF…";
-  $("new-without-pdf").hidden = item.kind !== "document";
+  $("new-without-pdf").hidden = !state.capabilities.without_file || item.kind !== "document";
   $("new-without-pdf").href = api("/import/?no_pdf=1&into=" + encodeURIComponent(item.id));
   const papers = papersOf(item);
   const paper = papers.findIndex((p) => p.some((r) => (r.id || r.digest) === selected.digest));
@@ -687,6 +697,7 @@ function detail(item) {
   // New revision is the owner's word, asked each time; a record has none.
   $("new-revision-field").hidden = item.kind !== "document";
   const chosen = item.revisions.find((r) => (r.id || r.digest) === selected.digest);
+  if (chosen?.lost) $("detail-rev").textContent += " · file lost";
   // Saving an older revision's fields branches from it and moves HEAD there.
   const branching = selected.digest !== headOf(item);
   $("save-button").textContent = branching ? "Save as new HEAD" : "Save";
@@ -1066,7 +1077,10 @@ reload().then(() => {
   back = null;
   searchText();
   const wanted = state.items.find((i) => i.id === location.hash.slice(1));
-  if (wanted) pick(wanted.id, was && wanted.revisions.some((r) => (r.id || r.digest) === was.digest) ? was.digest : headOf(wanted));
+  if (wanted) {
+    const requested=new URLSearchParams(location.search).get("digest");
+    pick(wanted.id,requested&&wanted.revisions.some(r=>(r.id||r.digest)===requested)?requested:was&&wanted.revisions.some(r=>(r.id||r.digest)===was.digest)?was.digest:headOf(wanted));
+  }
   else render();
   // ?read opens the picked Item straight in the reader, as a link from
   // another page asks.
@@ -1129,4 +1143,43 @@ $("undo-supersession").onclick = async () => {
   if (!predecessorID) return;
   try { await post("/api/supersession", {item:predecessorID}); await reload(); }
   catch (err) { say($("retire-message"),err.message,true); }
+};
+
+$("locked").onclick = async () => {
+  const item = selected && state.items.find((i) => i.id === selected.id);
+  if (!item) return;
+  try { await post("/api/items/meta", { item: item.id, locked: !item.locked }); await reload(); }
+  catch (e) { say($("edit-message"), e.message, true); }
+};
+
+$("file-check-close").onclick = () => $("file-check-report").close();
+$("check-files").onclick = async () => {
+  $("check-files").disabled = true;
+  $("file-check-report").showModal();
+  $("file-problems").replaceChildren();
+  say($("file-check-summary"), "Checking recorded files… Unlocked changes will be recorded as new revisions.");
+  try {
+    const result = await post("/api/files/check", {});
+    await reload();
+    const problems = result.report.Problems || [];
+    say($("file-check-summary"), (result.recorded?.length || 0) + " revisions recorded; " + problems.length + " files or definitions need attention.");
+    $("file-problems").replaceChildren(...problems.map((p) => {
+      const item = state.items.find((i) => i.id === p.item);
+      const row = el("li", {}, el("p", {}, (item ? label(state, item) + " · " : "") + p.Path + ": " + p.Detail));
+      for (const path of p.candidates || []) {
+        const button = el("button", { className: "button secondary", type: "button", textContent: "Use " + path });
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await post("/api/files/confirm", { item: p.item, digest: p.digest, previous: p.Path, path });
+            row.replaceChildren(el("p", {}, "Recorded " + path));
+            await reload();
+          } catch (e) { button.disabled = false; say($("file-check-summary"), e.message, true); }
+        };
+        row.append(button);
+      }
+      return row;
+    }));
+  } catch (e) { say($("file-check-summary"), e.message, true); }
+  finally { $("check-files").disabled = false; }
 };

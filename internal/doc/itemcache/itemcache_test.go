@@ -124,3 +124,40 @@ func TestACopyChangedLeavesTheCache(t *testing.T) {
 	items[0].Fields["issuer"] = "changed"
 	same(t, c, root)
 }
+
+func TestInPlaceCacheRebuildPreservesPaths(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	if err := tree.InitWithLayout(root, time.Unix(0, 0), "in-place"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := tree.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := tree.Item{ID: "alice", Type: "id_card", Revisions: []tree.Revision{{Digest: "digest", Path: "Books/card.pdf"}}}
+	if err := st.WriteItem(item); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.WriteChangeMark(); err != nil {
+		t.Fatal(err)
+	}
+	c := New(st, dir)
+	same(t, c, root)
+	same(t, New(st, dir), root)
+	for _, version := range []int{Version - 1, Version} {
+		bad := item
+		bad.Revisions = []tree.Revision{{Digest: "digest", Path: "../outside.pdf"}}
+		data, err := json.Marshal(onDisk{Version: version, Root: root, Token: c.token, Items: []tree.Item{bad}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(c.file, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		same(t, New(st, dir), root)
+	}
+	if err := os.Remove(c.file); err != nil {
+		t.Fatal(err)
+	}
+	same(t, New(st, dir), root)
+}

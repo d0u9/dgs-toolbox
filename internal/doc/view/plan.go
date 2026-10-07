@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"dgs-toolbox/internal/doc/expr"
 	"dgs-toolbox/internal/doc/tree"
@@ -22,9 +23,11 @@ const DateField = "date"
 
 // File is one PDF a View places.
 type File struct {
-	Path   string `json:"path"`
-	Item   string `json:"item"`
-	Digest string `json:"digest"`
+	Number     int    `json:"number,omitempty"`
+	NumberName string `json:"numberName,omitempty"`
+	Path       string `json:"path"`
+	Item       string `json:"item"`
+	Digest     string `json:"digest"`
 	// Revision counts from 1, in the order the Item's revisions were added.
 	Revision int `json:"revision"`
 	// View is the View that placed the file, set when Views are combined.
@@ -178,6 +181,9 @@ func KeysOf(item tree.Item, revision int) map[string]string {
 		keys["revision"] = strconv.Itoa(item.RevisionNumber(item.Revisions[revision-1].Ref()))
 	}
 	keys["ext"] = "pdf"
+	if revision >= 1 && revision <= len(item.Revisions) && item.Revisions[revision-1].Path != "" {
+		keys["ext"] = strings.TrimPrefix(path.Ext(item.Revisions[revision-1].Path), ".")
+	}
 	for k, v := range fields {
 		if start, end, ok := tree.SplitSpan(v); ok {
 			if start != "" {
@@ -350,6 +356,10 @@ func (t Types) Field(typ, key string) (tree.Field, bool) {
 // gives the same plan, numbering included. Paths are compared ignoring case,
 // as the file systems a Target usually lives on do.
 func Build(v View, items []tree.Item, types Types) (Plan, error) {
+	if v.Folders != nil {
+		r, err := BuildFolders(v.Folders, items, types, v.Defaults, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Now())
+		return r.Plan, err
+	}
 	plan, _, err := build(v, items, types, "")
 	return plan, err
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"dgs-toolbox/internal/doc/docfile"
 	"dgs-toolbox/internal/doc/search"
 	"dgs-toolbox/internal/doc/tree"
 )
@@ -29,7 +30,7 @@ func (s server) texts() ([]search.Doc, []tree.Item, error) {
 	var unread []tree.Item
 	for _, item := range items {
 		head := item.CurrentDigest()
-		if head == "" {
+		if head == "" || !docfile.IsPDF(s.documents.PDF(item, head)) {
 			continue
 		}
 		first, count, ok := s.store.Load(head, 0)

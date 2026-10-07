@@ -51,6 +51,7 @@
     <div id="filter-steps" class="filter-steps" aria-label="Filters"></div>
     <button id="filter-add" class="chip" type="button" aria-haspopup="true" aria-controls="facets" title="Narrow by a field, one step after another">+ Filter</button>
     <button id="filter-frequent" class="chip" type="button" aria-pressed="false" title="Show only the Items marked frequent"><span data-icon="star"></span> Frequent</button>
+    <button id="check-files" class="chip" type="button" hidden>Check files</button>
     <div class="filter-result">
       <span id="count" class="numeric"></span>
       <button type="button" id="filters-clear" class="small-inline" hidden>Clear filters</button>
@@ -90,6 +91,12 @@
     <p id="facet-empty" class="muted facet-empty" hidden>Nothing left to tell these Items apart by.</p>
   </dialog>
 </nav>
+<dialog id="file-check-report" aria-labelledby="file-check-title">
+  <h2 id="file-check-title">File check</h2>
+  <p id="file-check-summary" class="message" role="status"></p>
+  <ul id="file-problems"></ul>
+  <button id="file-check-close" class="button secondary" type="button">Close</button>
+</dialog>
 <main class="work">
   <section id="items-pane" class="browse-pane" aria-label="Items">
     <p id="unread" class="message" hidden><span id="unread-count"></span>
@@ -128,6 +135,7 @@
   <aside id="side" class="side editor detail" hidden>
     <header class="detail-head">
       <h2 id="detail-head"></h2>
+      <button id="locked" class="chip" type="button" aria-pressed="false" hidden title="Changed files are errors while locked">Locked</button>
       <button id="frequent" class="chip" type="button" aria-pressed="false" title="Frequent Items come first on Browse"><span data-icon="star"></span> Frequent</button>
       <button id="close" class="tool" type="button" title="Close (Esc)" aria-label="Close"><span data-icon="x"></span></button>
     </header>
@@ -246,7 +254,7 @@
     </div></div>
     <section class="detail-section danger-zone">
       <h3>Delete</h3>
-      <p class="danger-note">Moves this Item, with every revision's PDF, into the tree's trash folder.</p>
+      <p id="delete-note" class="danger-note">Moves this Item, with every revision's PDF, into the tree's trash folder.</p>
       <div class="detail-actions"><button id="delete" class="button danger" type="button">Delete Item…</button></div>
       <p id="delete-message" class="message"></p>
     </section>
