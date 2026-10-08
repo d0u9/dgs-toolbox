@@ -96,8 +96,9 @@ function passes(i, n = steps.length) {
   return (!onlyFrequent() || i.frequent) &&
     steps.slice(0, n).every((s) => valuesOf(i, s.key).includes(s.value)) &&
     // A linked field matches by the linked Item's name too, so a plate finds
-    // every document about that car.
-    (textHits.has(i.id) || matches(label(state, i) + " " + Object.entries(fields).map(([k, v]) => v + " " + shown(i, k, v)).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
+    // every document about that car. The Item's ID and its revisions' IDs
+    // and PDF digests match too, as messages and logs name them.
+    (textHits.has(i.id) || matches(i.id + " " + i.revisions.map((r) => (r.id || "") + " " + (r.digest || "")).join(" ") + " " + label(state, i) + " " + Object.entries(fields).map(([k, v]) => v + " " + shown(i, k, v)).join(" ") + " " + tagsAt(i, headOf(i)).join(" ")));
 }
 
 // facets is what the Items given can still be told apart by: each key with
@@ -270,16 +271,22 @@ function setDirection(dir) {
   b.setAttribute("aria-label", b.title);
 }
 
+// Added is when the Item was first kept; Modified is its latest change of
+// any kind. A field edit keeps a new snapshot, so the latest revision's time
+// is neither.
+const addedAt = (i) => (i.revisions[0] || {}).added || (i.history || [])[0]?.at || "";
+const modifiedAt = (i) => (i.history || []).at(-1)?.at || addedAt(i);
+const day = (t) => t ? new Date(t).toLocaleDateString() : "";
+
 function shownItems() {
   const items = state.items.filter((i) => passes(i));
   const sort = $("view-sort").value, dir = direction() === "asc" ? 1 : -1;
-  const added = (i) => (i.revisions[i.revisions.length - 1] || {}).added || "";
   // No expiry sorts after any date, whichever way round.
   const exp_ = (i) => { const e = expiryOf(i); return e.date || (e.state === "permanent" ? "9999" : ""); };
   const keyOf = sort.startsWith("field:") ? (i) => shown(i, sort.slice(6), currentFields(i)[sort.slice(6)] || "")
-    : { added, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i),
+    : { added: addedAt, modified: modifiedAt, expiry: exp_, name: (i) => label(state, i), type: (i) => i.type + " " + label(state, i),
       tags: (i) => tagsAt(i, headOf(i)).join(" "),
-      revisions: (i) => papersOf(i).length }[sort] || added;
+      revisions: (i) => papersOf(i).length }[sort] || addedAt;
   // Retired Items go last and frequent ones first, whatever the sort; the
   // sort orders each part.
   return items.sort((x, y) => {
@@ -364,6 +371,7 @@ function card(item) {
       el("p", { className: "card-details", title: details(item) }, details(item)),
       textHits.get(item.id) ? el("p", { className: "card-snippet" }, textHits.get(item.id)) : null,
       el("p", { className: "card-badges" }, sharedBadge(item), retiredBadge(item), expiryBadge(item))));
+  li.dataset.item = item.id;
   if (selected && selected.id === item.id) li.classList.add("card-selected");
   return li;
 }
@@ -391,11 +399,10 @@ function star(item) {
 // tableColumns is every column the list may show. Item, the star and the
 // thumbnail are always there; the rest are chosen from the header's menu
 // (right click, or its +): type, any field the Items hold, tags, expiry,
-// added and revisions.
-const SHOWN = ["type", "field:owner", "field:country", "tags", "expiry", "added", "revisions"];
+// added, modified and revisions.
+const SHOWN = ["type", "field:owner", "field:country", "tags", "expiry", "added", "modified", "revisions"];
 function tableColumns(items) {
   const capital = (k) => k[0].toUpperCase() + k.slice(1);
-  const added = (item) => new Date((item.revisions[item.revisions.length - 1] || {}).added || 0).toLocaleDateString();
   const fields = [...new Set([...(state.mandatory || []), ...items.flatMap((i) => Object.keys(currentFields(i)))])]
     .sort((a, b) => a.localeCompare(b));
   return [
@@ -415,7 +422,8 @@ function tableColumns(items) {
       cell: (item) => el("td", { className: "table-tags" }, tagPills(tagsAt(item, headOf(item)))) },
     { id: "expiry", text: "Expiry", width: 150,
       cell: (item) => el("td", {}, sharedBadge(item), retiredBadge(item), expiryBadge(item) || (item.retired ? null : el("span", { className: "muted" }, "—"))) },
-    { id: "added", text: "Added", down: true, width: 100, cell: (item) => el("td", { className: "numeric" }, added(item)) },
+    { id: "added", text: "Added", down: true, width: 100, cell: (item) => el("td", { className: "numeric" }, day(addedAt(item))) },
+    { id: "modified", text: "Modified", down: true, width: 100, cell: (item) => el("td", { className: "numeric" }, day(modifiedAt(item))) },
     { id: "revisions", text: "Rev.", tip: "Revisions", down: true, width: 56, cell: (item) => el("td", { className: "numeric" }, String(papersOf(item).length)) },
   ];
 }
@@ -438,6 +446,7 @@ function row(item, cells) {
   const e = expiryOf(item);
   const tr = el("tr", { className: "table-row state-" + e.state + (item.retired ? " retired" : ""), onclick: () => open(item), ondblclick: () => { open(item); openReader(); } },
     ...cells);
+  tr.dataset.item = item.id;
   if (selected && selected.id === item.id) tr.classList.add("selected", "focused");
   return tr;
 }
@@ -623,6 +632,29 @@ function close() {
   render();
 }
 $("close").onclick = close;
+function navigateItems(event) {
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+      event.target.closest('input, textarea, select, button, a, [contenteditable], dialog, #side, #preview, .context-menu') ||
+      document.body.classList.contains("reading")) return;
+  const delta = { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 }[event.key];
+  if (!delta) return;
+  const items = shownItems();
+  event.preventDefault();
+  if (!items.length) return;
+  const index = items.findIndex((item) => item.id === selected?.id);
+  const next = index < 0 ? (delta > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, index + delta));
+  if (items[next].id === selected?.id) return;
+  open(items[next]);
+  const pane = $("items-pane");
+  pane.focus({ preventScroll: true });
+  const row = [...pane.querySelectorAll("[data-item]")].find((node) => node.dataset.item === items[next].id);
+  if (!row) return;
+  const bounds = pane.getBoundingClientRect(), box = row.getBoundingClientRect();
+  if (box.top < bounds.top) pane.scrollTop += box.top - bounds.top;
+  else if (box.bottom > bounds.bottom) pane.scrollTop += box.bottom - bounds.bottom;
+}
+$("items-pane").tabIndex = 0;
+document.addEventListener("keydown", navigateItems);
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.target.closest("input, textarea, select")) return;
   if (document.body.classList.contains("reading")) closeReader();

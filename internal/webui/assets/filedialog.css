@@ -1,3 +1,4 @@
+@import url("/ui/menu.css");
 @import url("/ui/listtable.css");
 /* The shared file dialog: places down the side, a listing in columns, and a
    foot holding the type filter and the two buttons. It draws only from
@@ -144,6 +145,9 @@
   font: inherit;
   font-size: var(--font-size-sm);
 }
+
+/* Leave room for the folder icon; otherwise ellipsis hides the inline input. */
+.file-folder .file-rename { width: calc(100% - 20px); }
 
 /* Asked over the dialog when a save names a file that is already there. */
 .file-replace { width: 380px; max-width: 92vw; }

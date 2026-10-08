@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"dgs-toolbox/internal/doc/tree"
 	"encoding/json"
 	"io"
 	"log"
@@ -54,6 +55,22 @@ func (s server) followWrites(next http.Handler) http.Handler {
 			switch {
 			case notItems[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/api/defs/"):
 				err = s.items.Marked()
+			case r.URL.Path == "/api/import":
+				var saved struct {
+					Item tree.Item `json:"item"`
+				}
+				var request struct {
+					Replaces string `json:"replaces"`
+				}
+				if json.Unmarshal(answer.Body.Bytes(), &saved) == nil && saved.Item.ID != "" && json.Unmarshal(body, &request) == nil {
+					ids := []string{saved.Item.ID}
+					if request.Replaces != "" {
+						ids = append(ids, request.Replaces)
+					}
+					err = s.items.Wrote(ids...)
+				} else {
+					err = s.items.Wrote()
+				}
 			case oneItem[r.URL.Path] && json.Unmarshal(body, &named) == nil && named.Item != "":
 				err = s.items.Wrote(named.Item)
 			default:

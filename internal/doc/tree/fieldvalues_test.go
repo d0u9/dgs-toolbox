@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// Earlier revisions are history: a value no Item holds now is not offered.
 func TestFieldValues(t *testing.T) {
 	items := []Item{
 		{Type: "visa", Fields: map[string]string{"country": "Australia", "issuer": " Agency "}, Revisions: []Revision{
@@ -16,7 +17,7 @@ func TestFieldValues(t *testing.T) {
 		{Type: "visa", Retired: true, Fields: map[string]string{"country": "AUS", "issuer": "Agency"}},
 		{Type: "visa", Fields: map[string]string{"issuer": "Unknown country"}},
 	}
-	if got, want := FieldValues(items, "visa", "AU", "issuer"), []string{"Agency", "Former Agency"}; !reflect.DeepEqual(got, want) {
+	if got, want := FieldValues(items, "visa", "AU", "issuer"), []string{"Agency"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 	for _, nation := range []string{"", "invalid", "NZ"} {
@@ -47,5 +48,21 @@ func TestTypeValuesAnyCountry(t *testing.T) {
 	}
 	if got, want := TypeValues(items, "payment", "via"), []string{"CBA", "支付宝"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestTypeFieldValuesMultiple(t *testing.T) {
+	items := []Item{
+		{Type: "ticket", Fields: map[string]string{"people": "alice, bob"}, Revisions: []Revision{{Fields: map[string]string{"people": "bob,charlie, ,"}}}},
+		{Type: "ticket", Fields: map[string]string{"people": " alice "}},
+		{Type: "other", Fields: map[string]string{"people": "dana"}},
+	}
+	field := Field{Key: "people", Multiple: true}
+	if got, want := TypeFieldValues(items, "ticket", field), []string{"alice", "bob"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	field.Multiple = false
+	if got := TypeFieldValues(items, "ticket", field); !reflect.DeepEqual(got, TypeValues(items, "ticket", "people")) {
+		t.Fatalf("ordinary text split: %q", got)
 	}
 }

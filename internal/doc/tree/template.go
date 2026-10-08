@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	// Time zones are looked up in dgs itself, whatever the host has.
+	_ "time/tzdata"
 
 	"gopkg.in/yaml.v3"
 )
@@ -57,11 +59,13 @@ type Field struct {
 	// Type checks the value and picks the control the page shows. Empty is
 	// FieldText.
 	Type FieldType `yaml:"type,omitempty" json:"type,omitempty"`
-	// Options are a FieldSelect's values; a text field that Suggests offers
+	// Options are a FieldSelect's values or a FieldCountry's suggestions;
+	// a text field that Suggests offers
 	// them first, before the values saved, and takes any other.
 	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
 	// Multiple lets a FieldSelect hold several Options, kept in the
-	// Options' order joined by MultipleSeparator: 电, 水.
+	// Options' order joined by MultipleSeparator: 电, 水. A text field
+	// holds several values the same way, in the order typed: alice, bob.
 	Multiple bool `yaml:"multiple,omitempty" json:"multiple,omitempty"`
 	// Suggest offers, for a text field, its Options and then the values
 	// Items of this type have saved for it; any other value can still be
@@ -166,6 +170,10 @@ const (
 	FieldDate FieldType = "date"
 	// FieldMonth is YYYY-MM.
 	FieldMonth FieldType = "month"
+	// FieldTime is a time of day and the IANA time zone it was read in:
+	// 15:30 Asia/Shanghai, or 15:30:05 Asia/Shanghai. Its Options, when
+	// given, are the zones offered.
+	FieldTime FieldType = "time"
 	// FieldSelect is one of the field's Options.
 	FieldSelect FieldType = "select"
 	// FieldItem is another Item's ID.
@@ -192,7 +200,10 @@ type Template struct {
 	Kind        Kind   `yaml:"kind" json:"kind"`
 	// Anchor marks a Template other documents hang under: a tenancy, a
 	// vehicle. A link field with match {anchor: =true} offers its Items.
-	Anchor   bool              `yaml:"anchor,omitempty" json:"anchor,omitempty"`
+	Anchor bool `yaml:"anchor,omitempty" json:"anchor,omitempty"`
+	// Single marks a type whose Items never take a second revision: a used
+	// ticket is not reissued. Import offers no Item to add to.
+	Single   bool              `yaml:"single,omitempty" json:"single,omitempty"`
 	Fields   []Field           `yaml:"fields" json:"fields"`
 	Defaults map[string]string `yaml:"defaults" json:"defaults"`
 	// IgnoreDates are dates, YYYY-MM-DD, never suggested for a date field: a
@@ -292,8 +303,8 @@ func (t Template) Validate() error {
 		if f.Suggest && f.Type != "" && f.Type != FieldText {
 			return fmt.Errorf("type %s: key %s: suggest belongs to a text field", t.Type, f.Key)
 		}
-		if f.Multiple && f.Type != FieldSelect {
-			return fmt.Errorf("type %s: key %s: multiple belongs to a select field", t.Type, f.Key)
+		if f.Multiple && f.Type != FieldSelect && f.Type != "" && f.Type != FieldText {
+			return fmt.Errorf("type %s: key %s: multiple belongs to a select or text field", t.Type, f.Key)
 		}
 		if len(f.Shape) > 0 && f.Type != FieldDate {
 			return fmt.Errorf("type %s: key %s: shape belongs to a date field", t.Type, f.Key)
@@ -332,11 +343,20 @@ func (t Template) Validate() error {
 		}
 		switch f.Type {
 		case "", FieldText, FieldDate, FieldMonth, FieldItem, FieldRevision, FieldCountry:
+			if f.Type == FieldCountry && len(f.Values) == 0 {
+				break // Country suggestions do not restrict manual input.
+			}
 			if f.Suggest && len(f.Values) == 0 {
 				break // a suggesting text field's options are offered first
 			}
 			if len(f.Options) > 0 || len(f.Values) > 0 {
 				return fmt.Errorf("type %s: key %s: options and values belong to a select field", t.Type, f.Key)
+			}
+		case FieldTime:
+			for _, zone := range f.Options {
+				if _, err := time.LoadLocation(zone); err != nil || zone == "" || zone == "Local" {
+					return fmt.Errorf("type %s: key %s: option %q is not an IANA time zone such as Asia/Shanghai", t.Type, f.Key, zone)
+				}
 			}
 		case FieldSelect:
 			if len(f.Options) == 0 {
@@ -348,7 +368,7 @@ func (t Template) Validate() error {
 				}
 			}
 		default:
-			return fmt.Errorf("type %s: key %s: type %q is not text, date, month, select, item, revision or country", t.Type, f.Key, f.Type)
+			return fmt.Errorf("type %s: key %s: type %q is not text, date, month, time, select, item, revision or country", t.Type, f.Key, f.Type)
 		}
 		if f.PerRevision && t.Kind != KindDocument {
 			return fmt.Errorf("type %s: key %s: per_revision belongs to a document; a record has one PDF", t.Type, f.Key)
@@ -537,6 +557,8 @@ func (f Field) clean(value string) (string, error) {
 		}
 	case FieldDate:
 		return f.cleanDate(value)
+	case FieldTime:
+		return f.cleanTime(value)
 	case FieldSelect:
 		if f.Multiple {
 			return f.cleanMultiple(value)
@@ -563,6 +585,26 @@ func (f Field) clean(value string) (string, error) {
 		return kept, nil
 	}
 	return value, nil
+}
+
+// cleanTime keeps a time field's value as HH:MM[:SS] Zone. A full-width
+// colon, as a Chinese keyboard types it, is taken as a colon.
+func (f Field) cleanTime(value string) (string, error) {
+	clock, zone, _ := strings.Cut(strings.TrimSpace(strings.ReplaceAll(value, "：", ":")), " ")
+	zone = strings.TrimSpace(zone)
+	parsed, err := time.Parse("15:04:05", clock)
+	layout := "15:04:05"
+	if err != nil {
+		parsed, err = time.Parse("15:04", clock)
+		layout = "15:04"
+	}
+	if err != nil {
+		return "", fmt.Errorf("%s: %q is not a time written HH:MM or HH:MM:SS", f.Key, value)
+	}
+	if _, err := time.LoadLocation(zone); err != nil || zone == "" || zone == "Local" {
+		return "", fmt.Errorf("%s: %q needs its time zone, such as 15:30 Asia/Shanghai", f.Key, value)
+	}
+	return parsed.Format(layout) + " " + zone, nil
 }
 
 func (t Template) hasField(key string) bool {

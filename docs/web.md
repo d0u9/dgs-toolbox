@@ -554,7 +554,13 @@ The dialog is what a reader already knows from Finder and Explorer:
 - The corner **drags it to another size**, and that size is kept for the next
   dialog, as the sort order and the hidden-file toggle are. A reader who wants
   a taller listing says so once.
-- A bar over the listing: `↑` to the folder above, the full path, and `↻`.
+- A bar over the listing: `↑` to the folder above, an editable full path, and `↻`.
+  Enter opens the typed folder; relative paths start in the current folder and
+  `~` names home. Tab fills the common prefix of matching folders; suggestions
+  allow choosing among matches. Escape restores the current path.
+- Right-click a file or folder to **Rename**, or press **F2**. Open and Save
+  share the inline editor when the server permits writes. Enter commits;
+  Escape abandons the edit. An existing name is refused.
 - Three columns — *Name*, *Date Modified*, *Size*. Clicking a heading sorts by
   it, clicking it again turns the order round, marked `^` or `v`. A name sorts
   the way it reads, so `2` comes before `10`. Folders stay above files, and

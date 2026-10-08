@@ -54,6 +54,15 @@ func Mount(mux *http.ServeMux, options Options) {
 		if path == "" {
 			path = options.Root
 		}
+		base := query.Get("base")
+		if base == "" {
+			base = options.Root
+		}
+		path, err := filebrowse.ResolvePath(path, base)
+		if err != nil {
+			writeError(w, statusFor(err), err)
+			return
+		}
 		listing, err := filebrowse.List(path, filebrowse.Options{
 			Extensions: query["ext"],
 			Hidden:     truthy(query.Get("hidden")),
@@ -62,7 +71,22 @@ func Mount(mux *http.ServeMux, options Options) {
 			writeError(w, statusFor(err), err)
 			return
 		}
-		writeJSON(w, listing)
+		writeJSON(w, struct {
+			filebrowse.Listing
+			Writable bool `json:"writable"`
+		}{listing, options.Writable})
+	})
+	mux.HandleFunc("GET "+Prefix+"complete", func(w http.ResponseWriter, r *http.Request) {
+		base := r.URL.Query().Get("base")
+		if base == "" {
+			base = options.Root
+		}
+		matches, completion, err := filebrowse.Complete(r.URL.Query().Get("path"), base)
+		if err != nil {
+			writeError(w, statusFor(err), err)
+			return
+		}
+		writeJSON(w, map[string]any{"matches": matches, "completion": completion})
 	})
 	mux.HandleFunc("GET "+Prefix+"places", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, map[string]any{"places": filebrowse.Places(options.Root)})

@@ -100,6 +100,9 @@ type RevisionMetadata struct {
 // AddRevisionWithMetadata adds a revision and saves any Item metadata edits in
 // the same sidecar write.
 func (st *Store) AddRevisionWithMetadata(ctx context.Context, id string, source string, template Template, given map[string]string, metadata RevisionMetadata, now time.Time) (Item, error) {
+	if template.Single {
+		return Item{}, ErrSingle
+	}
 	if st.InPlace() {
 		return st.addInPlaceRevision(ctx, id, source, template, given, metadata, now)
 	}

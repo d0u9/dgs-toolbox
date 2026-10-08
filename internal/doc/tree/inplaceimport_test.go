@@ -270,3 +270,49 @@ func TestInPlacePhotoImportArchivesInternalOriginalWithoutChangingSource(t *test
 		t.Fatalf("alias offer: %v", err)
 	}
 }
+
+func TestInPlaceCreatesItemWithoutPDF(t *testing.T) {
+	root := t.TempDir()
+	if err := InitWithLayout(root, time.Now(), "in-place"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Capabilities().WithoutFile {
+		t.Fatal("in-place tree offers no creation without a PDF")
+	}
+	tpl := Template{Type: "trip", Kind: KindDocument, Fields: []Field{{Key: "owner", Required: true, Distinguishing: true}, {Key: "name", Required: true, Distinguishing: true}}}
+	item, err := st.CreateWithoutPDF(ImportRequest{Template: tpl, Fields: map[string]string{"owner": "alice", "name": "Trip"}, Now: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := st.LoadItems()
+	if err != nil || len(items) != 1 || items[0].ID != item.ID {
+		t.Fatal(items, err)
+	}
+}
+
+func TestImportListingNameIndexIsDiscardedBetweenScans(t *testing.T) {
+	root := t.TempDir()
+	if err := InitWithLayout(root, time.Unix(0, 0), "in-place"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range []string{"first.pdf", "second.pdf"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("synthetic"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		files, err := st.ImportFiles(root)
+		if err != nil || len(files) != i+1 {
+			t.Fatalf("listing %d: %v %v", i, files, err)
+		}
+		if st.sourceNames != nil {
+			t.Fatal("listing index retained beyond its scan")
+		}
+	}
+}

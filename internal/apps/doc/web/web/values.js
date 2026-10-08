@@ -31,13 +31,18 @@ const fold = (v) => v.toLowerCase().normalize("NFKC").replace(/[\s\p{P}\p{S}]+/g
 const typeFilter = () => $("filter-type").value;
 const items = () => state.items.filter((i) => !typeFilter() || i.type === typeFilter());
 
+// A multiple field keeps its values joined by commas; each one counts and
+// is rewritten on its own.
+const multiple = (k) => state.templates.some((t) => (t.fields || []).some((f) => f.key === k && f.multiple));
+const parts = (k, v) => !v ? [] : multiple(k) ? v.split(",").map((x) => x.trim()).filter(Boolean) : [v];
+
 // holdings maps each value of field k to the Items holding it.
 function holdings(k, list = items()) {
   const held = new Map();
   for (const item of list) {
     const values = k === TAGS
       ? new Set([...(item.tags || []), ...item.revisions.flatMap((r) => r.tags || [])])
-      : new Set([currentFields(item)[k]].filter(Boolean));
+      : new Set(parts(k, currentFields(item)[k]));
     for (const v of values) {
       if (!held.has(v)) held.set(v, []);
       held.get(v).push(item);
@@ -210,7 +215,9 @@ async function rewrite(event) {
           if ((r.tags || []).some((t) => from.includes(t))) await post("/api/items/meta", { item: item.id, digest: r.id || r.digest, revision_tags: swap(r.tags) });
         }
       } else {
-        await post("/api/fields", { item: item.id, digest: "", fields: { ...currentFields(item), [key]: to } });
+        const now = currentFields(item);
+        const next = [...new Set(parts(key, now[key]).map((v) => from.includes(v) ? to : v))].join(", ");
+        await post("/api/fields", { item: item.id, digest: "", fields: { ...now, [key]: next } });
       }
     } catch (error) {
       failed.push(label(state, item) + ": " + error.message);

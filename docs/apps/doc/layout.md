@@ -323,8 +323,10 @@ Omitting the flag creates a by-Item tree with its original marker bytes.
 By-fields patterns, empty layouts and unknown names remain unsupported.
 Browse, the Item page, PDF preview and export read the recorded paths.
 Import records internal PDFs, copies external PDFs into a chosen folder and
-converts images into PDFs there. Attachment changes, attachment-free Items,
-replacement imports, deletion and merge remain refused before writes.
+converts images into PDFs there. Items without a PDF, such as a trip an
+anchor stands for, are created as in any tree: only the sidecar is written.
+Attachment changes, replacement imports, deletion and merge remain refused
+before writes.
 
 A third layout, for a tree made over files that are already organised: an
 import leaves the file where it is, under its own name, and the Item records
@@ -431,7 +433,7 @@ In-place imports accept regular files of any type, preserving bytes and the
 extension. PDF pages, text and search reject or skip non-PDF files. Browse uses
 macOS QuickLook thumbnails from the local cache and Show in Finder for any
 file. Other platforms and builds without cgo report thumbnail unavailability.
-Attachment changes, attachment-free imports and merge remain deferred.
+Attachment changes and merge remain deferred.
 
 ### Recorded paths in V1
 

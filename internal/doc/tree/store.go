@@ -12,10 +12,12 @@ import (
 
 // Store owns filesystem paths and operations for one opened tree.
 type Store struct {
-	root     string
-	meta     string // where the marker, sidecars, definitions and trash are
-	layout   layout.Layout
-	outlines int
+	// Scoped to one source listing; never retained by the opened Store.
+	sourceNames map[string]map[string][]string
+	root        string
+	meta        string // where the marker, sidecars, definitions and trash are
+	layout      layout.Layout
+	outlines    int
 }
 
 // Open verifies a tree and selects the layout its marker names.
@@ -150,7 +152,7 @@ func (s *Store) RequireFileWrites() error {
 		return err
 	}
 	if s.InPlace() {
-		return fmt.Errorf("%w: in-place attachment changes, attachment-free Items and merge are not supported yet", ErrUnsupportedOperation)
+		return fmt.Errorf("%w: in-place attachment changes and merge are not supported yet", ErrUnsupportedOperation)
 	}
 	return nil
 }
@@ -185,7 +187,7 @@ type Capabilities struct {
 
 func (s *Store) Capabilities() Capabilities {
 	recorded := s.InPlace()
-	return Capabilities{FileChanges: recorded, ImportFolder: recorded, AllFiles: recorded, ReuseFiles: recorded, SharedFiles: recorded, AttachmentChanges: !recorded, WithoutFile: !recorded, Merge: !recorded, ReplacementAnyType: recorded}
+	return Capabilities{FileChanges: recorded, ImportFolder: recorded, AllFiles: recorded, ReuseFiles: recorded, SharedFiles: recorded, AttachmentChanges: !recorded, WithoutFile: true, Merge: !recorded, ReplacementAnyType: recorded}
 }
 func (s *Store) ReportsLooseFiles() bool { return s.layout.ReportsLooseFiles() }
 

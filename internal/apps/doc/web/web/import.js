@@ -1,6 +1,6 @@
 // Import: open a folder from anywhere, see its PDFs as the tree of folders
 // they are in, and take them in one at a time. The folder is only read.
-import { $, keep, scrollBack, api, el, size, loadState, post, templateOf, label, fieldInputs, fieldsOf, tagUses, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
+import { $, keep, scrollBack, api, el, size, loadState, post, templateOf, label, fieldInputs, currentFields, fieldsOf, tagUses, frame, say, showText, showPreview, showSource, clearPreview } from "/common.js";
 import { openFile } from "/ui/filedialog.js";
 import { splitter } from "/ui/splitter.js";
 import { fileTree } from "/ui/filetree.js";
@@ -17,6 +17,7 @@ let state = { templates: [], items: [] };
 let dir = "";
 let outputFolder = "";
 let files = [];
+let sourceChecking = false;
 let selected = "";
 // pages are more images after the selected one, each the next page of the
 // PDF they become together.
@@ -50,6 +51,16 @@ $("hide-kept").onchange = () => {
   render();
 };
 
+// The filter hides choices whose text lacks every word typed; New item and
+// the chosen one stay.
+function filterInto() {
+  const words = $("into-filter").value.toLowerCase().split(/\s+/).filter(Boolean);
+  for (const b of $("into-choices").children) {
+    b.hidden = !!b.value && b.value !== $("into").value && !words.every((w) => (b.title + " " + b.textContent).toLowerCase().includes(w));
+  }
+}
+$("into-filter").oninput = filterInto;
+
 function render() {
   frame(state);
   document.querySelector(".import-work").classList.toggle("manual-entry", noPDF);
@@ -60,7 +71,7 @@ function render() {
   $("counts").textContent = dir ? `${files.length} files · ${kept} in tree` : "";
   $("counts").title = $("counts").textContent;
   // Hidden imported PDFs leave the tree, except the one being looked at.
-  const shown = $("hide-kept").checked ? files.filter((f) => !f.item || f.path === selected) : files;
+  const shown = $("hide-kept").checked ? (sourceChecking ? [] : files.filter((f) => !f.item || f.path === selected)) : files;
   $("tree").replaceChildren(fileTree(shown, {
     closed, selected, onPick: (f) => pick(f.path),
     mark: (f) => f.item ? "Imported: already in the tree" : "",
@@ -76,9 +87,9 @@ function render() {
   const file = files.find((f) => f.path === selected);
   $("side").hidden = !file && !noPDF;
   $("side-splitter").hidden = $("side").hidden;
-  $("import").hidden = (!noPDF && (!file || (!!file.item && !state.capabilities.reuse_files))) || !state.tree;
+  $("import").hidden = (!noPDF && (sourceChecking && $("hide-kept").checked)) || (!noPDF && (!file || (!!file.item && !state.capabilities.reuse_files))) || !state.tree;
   $("copy-note").hidden = noPDF;
-  $("without-pdf").hidden = !!state.capabilities.reuse_files;
+  $("without-pdf").hidden = !state.capabilities.without_file;
   $("destination-field").hidden = !state.capabilities.import_folder || noPDF;
   if (state.capabilities.import_folder) $("copy-note").textContent = "Files already inside this tree stay in place. External files are copied to the chosen folder and verified before publication. Images become a PDF in an Item folder. Existing content is reused only after confirmation.";
   $("keep-original-field").hidden = noPDF || !file || !file.image || (!!file.item && !state.capabilities.reuse_files);
@@ -99,6 +110,7 @@ function source(path) {
 }
 
 function pick(path) {
+  if (sourceChecking && $("hide-kept").checked) return;
   noPDF = false;
   if (path !== selected) {
     $("notes").value = "";
@@ -163,9 +175,10 @@ function drawPages() {
 // looked at, so their text is there when they are picked.
 const AHEAD = 3;
 function readAhead(path) {
-  const order = files.map((f) => f.path);
-  const next = order.slice(order.indexOf(path) + 1)
-    .filter((p) => !files.find((f) => f.path === p).item).slice(0, AHEAD);
+  const next = [];
+  for (let i = files.findIndex((f) => f.path === path) + 1; i < files.length && next.length < AHEAD; i++) {
+    if (!files[i].item) next.push(files[i].path);
+  }
   if (next.length) post("/api/ahead", { dir, paths: next }).catch(() => {});
 }
 
@@ -256,7 +269,11 @@ function drawFields() {
   }
   const into = $("into");
   const was = into.value;
-  const documents = t.kind === "document" ? state.items.filter((i) => i.type === t.type) : [];
+  // Items with a file in the picked file's folder come first: a new edition
+  // usually lies beside the old one.
+  const folder = ((dir.startsWith(state.root + "/") ? dir.slice(state.root.length + 1) + "/" : "") + (selected || "")).replace(/[^/]*$/, "");
+  const near = (i) => folder !== "" && (i.revisions || []).some((r) => (r.path || "").replace(/[^/]*$/, "") === folder);
+  const documents = t.kind === "document" && !t.single ? state.items.filter((i) => i.type === t.type).sort((a, b) => near(b) - near(a)) : [];
   into.replaceChildren(el("option", { value: "" }, "A new item"),
     ...documents.map((i) => el("option", { value: i.id }, "Add to " + label(state, i))));
   if (documents.some((i) => i.id === was)) into.value = was;
@@ -287,10 +304,15 @@ function drawFields() {
     };
     return button;
   }));
+  filterInto();
+  $("into-filter").hidden = documents.length < 8;
   const adding = into.value !== "";
   // A new revision is the owner's word, asked each time; a record has none.
   if ($("new-revision-field").hidden !== !adding) $("new-revision").checked = false;
   $("new-revision-field").hidden = !adding;
+  // Only a copy is named; a file already inside the tree stays as it is.
+  $("suffix-field").hidden = !adding || noPDF || (dir + "/").startsWith(state.root + "/");
+  if ($("suffix-field").hidden) $("suffix").value = "";
   if (metadataItem !== into.value) {
     const item = state.items.find((i) => i.id === into.value);
     $("notes").value = item?.notes || "";
@@ -307,7 +329,9 @@ function drawFields() {
   // A new revision is asked only what changes with it: the fields the
   // Template marks per_revision. The rest belong to the Item it joins.
   const asked = adding ? t.fields.filter((f) => f.per_revision) : t.fields;
-  $("fields").replaceChildren(...fieldInputs(asked, null, adding ? null : t.defaults, state, undefined, t.type));
+  // A new revision starts from the current one's values, to keep or change.
+  const current = adding ? currentFields(state.items.find((i) => i.id === into.value)) : null;
+  $("fields").replaceChildren(...fieldInputs(asked, current, adding ? null : t.defaults, state, undefined, t.type));
   if (adding && !asked.length) {
     $("fields").append(el("p", { className: "message" }, "Nothing is asked: " + t.type +
       " marks no field per_revision. To keep a renewed card's own number and expiry, add per_revision: true to them on the Templates page."));
@@ -343,10 +367,24 @@ function suggest() {
   }
 }
 
+let sourceRequest = 0;
+let sourceReading = null;
 async function open(folder) {
+  const request = ++sourceRequest;
+  sourceReading?.abort();
+  const reading = sourceReading = new AbortController();
+  sourceChecking = true;
+  render();
   say($("list-message"), "Reading…");
-  const response = await fetch(api("/api/source?dir=" + encodeURIComponent(folder)));
-  const answer = await response.json();
+  let response, answer;
+  try {
+    response = await fetch(api("/api/source?metadata=1&dir=" + encodeURIComponent(folder)), { signal: reading.signal });
+    answer = await response.json();
+  } catch (error) {
+    if (reading.signal.aborted) return;
+    throw error;
+  }
+  if (request !== sourceRequest) return;
   if (!response.ok) {
     say($("list-message"), answer.error || response.statusText, true);
     return;
@@ -361,6 +399,25 @@ async function open(folder) {
   files = answer.files;
   remember(dir);
   render();
+  say($("list-message"), "Checking which files are already imported…");
+  const checked = fetch(api("/api/source?dir=" + encodeURIComponent(folder)), { signal: reading.signal })
+    .then(async (response) => {
+      const result = await response.json();
+      if (request !== sourceRequest) return;
+      if (!response.ok) throw new Error(result.error || response.statusText);
+      const imported = new Map();
+      for (const item of state.items) for (const revision of item.revisions) {
+        for (const digest of [revision.digest, ...(revision.source_digests || [])]) if (digest) imported.set(digest, item.id);
+      }
+      const current = new Map(files.map((file) => [file.path, file.item]));
+      files = result.files.map((file) => ({ ...file, item: imported.get(file.digest) || current.get(file.path) || file.item }));
+      sourceChecking = false;
+      render();
+      say($("list-message"), "");
+    }).catch((error) => {
+      if (request === sourceRequest && !reading.signal.aborted) say($("list-message"), error.message, true);
+    });
+  if ($("hide-kept").checked) await checked;
 }
 
 $("open").onclick = async () => {
@@ -396,16 +453,26 @@ function proposeType(answer) {
     $("template").querySelector(".selected")?.scrollIntoView({ block: "nearest" });
   }
 }
+function markImported(item, paths) {
+  if (!item) return;
+
+  const digests = new Set(item.revisions.flatMap((revision) => [revision.digest, ...(revision.source_digests || [])]).filter(Boolean));
+  for (const file of files) {
+    if (paths.includes(file.path) || (file.digest && digests.has(file.digest))) file.item = item.id;
+  }
+}
+
 $("import").onsubmit = async (event) => {
   event.preventDefault();
   tags.commit();
   $("import-button").disabled = true;
   say($("import-message"), noPDF ? "Saving…" : "Copying and reading back…");
   try {
+    let imported;
     if ($("into").value && !$("into-field").hidden) {
       revisionTags.commit();
-      await post("/api/revisions", { folder: outputFolder, keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
-        revision_tags: revisionTags.get(), new_revision: $("new-revision").checked });
+      imported = (await post("/api/revisions", { folder: outputFolder, suffix: $("suffix").value.trim(), keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, item: $("into").value, fields: fieldsOf($("fields")), notes: $("notes").value, tags: tags.get(),
+        revision_tags: revisionTags.get(), new_revision: $("new-revision").checked })).item;
       $("new-revision").checked = false;
     } else {
       const body = { replaces: $("replaces-field").hidden ? "" : $("replaces").value, keep_original: $("keep-original").checked, pages: noPDF ? [] : pages, no_pdf: noPDF, dir, path: selected, type: selectedTemplate, fields: fieldsOf($("fields")), notes: $("notes-field").hidden ? "" : $("notes").value, tags: tags.get(),
@@ -423,6 +490,7 @@ $("import").onsubmit = async (event) => {
           saved = await post("/api/import", { ...body, reuse: saved.reuse.item });
         }
       } else saved = await post("/api/import", body);
+      imported = saved.item;
       if (saved.warning) { state = await loadState(); render(); say($("import-message"), saved.warning, true); return; }
     }
     const done = selected;
@@ -432,10 +500,13 @@ $("import").onsubmit = async (event) => {
       say($("import-message"), "Saved without PDF. Add a scan later from Browse.");
       return;
     }
-    await open(dir);
-    const order = files.map((f) => f.path);
-    const next = order.slice(order.indexOf(done) + 1).concat(order).find((p) => !files.find((f) => f.path === p).item);
-    if (next) pick(next);
+    // Keep the opened listing; reopening is the explicit filesystem refresh.
+    markImported(imported, [done, ...pages]);
+    render();
+    say($("import-message"), "Imported.");
+    const start = files.findIndex((f) => f.path === done) + 1;
+    const next = files.slice(start).find((f) => !f.item) || files.slice(0, start).find((f) => !f.item);
+    if (next) pick(next.path);
     else say($("list-message"), "Everything in this folder is in the tree.");
   } catch (err) {
     say($("import-message"), err.message, true);
@@ -518,7 +589,7 @@ async function drawReplaces() {
   } catch (err) { if (request === replacesRequest) say($("import-message"), err.message, true); }
 }
 $("choose-destination").onclick = async () => {
-  const chosen = await openFile({ title: "Store imported files", message: "Choose a folder inside this doc tree.", folders: true, folder: outputFolder || state.root, fallbacks: [state.root] });
+  const chosen = await openFile({ title: "Store imported files", message: "Choose a folder inside this doc tree.", folders: true, writable: true, folder: outputFolder || state.root, fallbacks: [state.root] });
   if (!chosen) return;
   outputFolder = Array.isArray(chosen) ? chosen[0] : chosen;
   $("destination").textContent = outputFolder;

@@ -89,8 +89,9 @@
             <div id="template" class="template-choices" role="group" aria-labelledby="template-label"></div>
           </div></div>
         <p id="type-hint" class="message type-hint" hidden></p>
-        <div class="form-field" id="into-field"><span id="into-label">Into</span><select id="into" hidden></select><div id="into-choices" class="template-choices into-choices" role="group" aria-labelledby="into-label"></div>
-          <div class="checks" id="new-revision-field" hidden><label title="A renewal, a reissue, a new card. Unticked, this corrects the Item's current revision."><input id="new-revision" type="checkbox"> New revision</label></div></div>
+        <div class="form-field" id="into-field"><span id="into-label">Into</span><input id="into-filter" type="search" placeholder="Filter" aria-label="Filter items"><select id="into" hidden></select><div id="into-choices" class="template-choices into-choices" role="group" aria-labelledby="into-label"></div>
+          <div class="checks" id="new-revision-field" hidden><label title="A renewal, a reissue, a new card. Unticked, this corrects the Item's current revision."><input id="new-revision" type="checkbox"> New revision</label></div>
+          <div class="form-field" id="suffix-field" hidden><label for="suffix" title="Copy the file beside the current revision's, named after it: a.pdf with -1 becomes a-1.pdf. Empty uses the output folder.">Name suffix</label><input id="suffix" placeholder="-1"></div></div>
       </section>
       </div></div>
       <div class="detail-group"><h2>Details</h2><div class="detail-card">
