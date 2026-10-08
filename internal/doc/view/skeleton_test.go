@@ -109,3 +109,57 @@ func TestSkeletonNumberingSharesFolderAndReservesPinnedNames(t *testing.T) {
 		t.Fatal(result, err)
 	}
 }
+
+func TestSkeletonEachDropsEmptyFolders(t *testing.T) {
+	a := skeletonItem("a", "passport", "alice", "x", "A")
+	a.Fields["topic"], a.Fields["focus"] = "PL", "Rust"
+	b := skeletonItem("b", "passport", "alice", "x", "B")
+	b.Fields["topic"], b.Fields["focus"] = "OS", "Kernel"
+	folders := []Folder{
+		{Name: "{topic}", Each: "topic", Folders: []Folder{{Name: "{focus}", Each: "focus", If: "topic == PL", Take: Values{"passport"}}}},
+		{Name: "{topic}", Each: "topic", Take: Values{"passport"}, Folders: []Folder{{Name: "literal"}}},
+	}
+	r, err := BuildFolders(folders, []tree.Item{a, b}, skeletonTypes(), Defaults{}, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Unix(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(r.Folders, " "); got != "PL PL/Rust OS OS/literal" {
+		t.Fatal(got)
+	}
+	// A dropped group leaves no gap in {#}.
+	r, err = BuildFolders([]Folder{{Name: "{#}-{topic}", Each: "topic", If: "topic != OS", Take: Values{"passport"}}}, []tree.Item{b, a}, skeletonTypes(), Defaults{}, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Unix(0, 0))
+	if err != nil || strings.Join(r.Folders, " ") != "01-PL" {
+		t.Fatal(r.Folders, err)
+	}
+}
+
+func TestSkeletonEachStart(t *testing.T) {
+	a := skeletonItem("a", "passport", "alice", "x", "A")
+	a.Fields["topic"] = "PL"
+	r, err := BuildFolders([]Folder{{Name: "{#}-{topic}", Each: "topic", Start: 3, Take: Values{"passport"}}}, []tree.Item{a}, skeletonTypes(), Defaults{}, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Unix(0, 0))
+	if err != nil || strings.Join(r.Folders, " ") != "03-PL" {
+		t.Fatal(r.Folders, err)
+	}
+}
+
+func TestSkeletonChildrenFirstAndTakeNarrows(t *testing.T) {
+	a := skeletonItem("a", "passport", "alice", "x", "A")
+	a.Fields["topic"], a.Fields["focus"] = "PL", "Rust"
+	b := skeletonItem("b", "passport", "alice", "x", "B")
+	b.Fields["topic"] = "PL"
+	c := skeletonItem("c", "bill", "alice", "x", "C")
+	c.Fields["topic"], c.Fields["focus"] = "PL", "Rust"
+	// The parent keeps what its child leaves; the bill never reaches the child.
+	folders := []Folder{{Name: "{topic}", Each: "topic", Take: Values{"passport"}, Folders: []Folder{{Name: "{focus}", Each: "focus"}}}}
+	r, err := BuildFolders(folders, []tree.Item{a, b, c}, skeletonTypes(), Defaults{}, nil, "", map[string]bool{}, map[string]map[int]string{}, time.Unix(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := map[string]string{}
+	for _, f := range r.Files {
+		paths[f.Item] = f.Path
+	}
+	if paths["a"] != "PL/Rust/01-A.pdf" || paths["b"] != "PL/01-B.pdf" || paths["c"] != "" {
+		t.Fatal(paths)
+	}
+}

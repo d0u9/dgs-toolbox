@@ -43,12 +43,14 @@ func (d Defaults) inherit(parent Defaults) Defaults {
 }
 
 type Folder struct {
-	Name     string   `yaml:"name" json:"name"`
-	Take     Values   `yaml:"take,omitempty" json:"take,omitempty"`
-	If       string   `yaml:"if,omitempty" json:"if,omitempty"`
-	Each     string   `yaml:"each,omitempty" json:"each,omitempty"`
-	File     string   `yaml:"file,omitempty" json:"file,omitempty"`
-	Order    Values   `yaml:"order,omitempty" json:"order,omitempty"`
+	Name  string `yaml:"name" json:"name"`
+	Take  Values `yaml:"take,omitempty" json:"take,omitempty"`
+	If    string `yaml:"if,omitempty" json:"if,omitempty"`
+	Each  string `yaml:"each,omitempty" json:"each,omitempty"`
+	File  string `yaml:"file,omitempty" json:"file,omitempty"`
+	Order Values `yaml:"order,omitempty" json:"order,omitempty"`
+	// Start is the first {#} of the folders each makes; 0 starts at 1.
+	Start    int      `yaml:"start,omitempty" json:"start,omitempty"`
 	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults,omitempty"`
 	Folders  []Folder `yaml:"folders,omitempty" json:"folders,omitempty"`
 }
@@ -79,6 +81,9 @@ func ValidateFolders(folders []Folder) error {
 		}
 		if err := f.Defaults.Validate(); err != nil {
 			return err
+		}
+		if f.Start < 0 {
+			return fmt.Errorf("folder %s: start must not be negative", f.Name)
 		}
 		if f.If != "" {
 			if _, err := expr.Parse(f.If); err != nil {
@@ -176,6 +181,18 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 				}
 				filters = append(filters, e)
 			}
+			// take narrows what reaches the folders below, as if does.
+			if len(f.Take) > 0 {
+				quoted := make([]string, len(f.Take))
+				for i, t := range f.Take {
+					quoted[i] = strconv.Quote(t)
+				}
+				e, err := expr.Parse("type in [" + strings.Join(quoted, ", ") + "]")
+				if err != nil {
+					return err
+				}
+				filters = append(filters, e)
+			}
 			type group struct {
 				value string
 				keys  map[string]string
@@ -226,8 +243,10 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 					return groups[i].value < groups[j].value
 				})
 			}
-			for number, g := range groups {
-				folder, lacking, err := renderName(f.Name, g.keys, number+1)
+			// number counts only the folders kept, so a dropped one leaves no gap.
+			number := max(f.Start, 1)
+			for _, g := range groups {
+				folder, lacking, err := renderName(f.Name, g.keys, number)
 				if err != nil {
 					return err
 				}
@@ -235,8 +254,15 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 					return fmt.Errorf("folder %s lacks %s", f.Name, strings.Join(lacking, ", "))
 				}
 				folder = path.Join(parent, folder)
+				// A folder made by each that ends up holding nothing is dropped;
+				// only literal folders appear empty.
+				foldersBefore, filesBefore := len(out.Folders), len(out.Files)
 				out.Folders = append(out.Folders, folder)
-				// Each node takes its own Items before its children, top to bottom.
+				// The folders below take first; a folder with take keeps what
+				// none of them took.
+				if err := walk(f.Folders, folder, g.items, d, g.keys, filters); err != nil {
+					return err
+				}
 				var choices []choice
 				for _, item := range g.items {
 					if assigned[item.ID] {
@@ -421,9 +447,11 @@ func BuildFolders(folders []Folder, items []tree.Item, types Types, defaults Def
 					}
 					assigned[c.item.ID] = true
 				}
-				if err := walk(f.Folders, folder, g.items, d, g.keys, filters); err != nil {
-					return err
+				if f.Each != "" && len(out.Files) == filesBefore {
+					out.Folders = out.Folders[:foldersBefore]
+					continue
 				}
+				number++
 			}
 		}
 		return nil
