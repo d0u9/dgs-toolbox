@@ -47,18 +47,16 @@ func (s *Store) recordedPath(rel string) (string, error) {
 	current := root
 	parts := strings.Split(rel, "/")
 	for i, part := range parts {
-		entries, err := os.ReadDir(current)
+		matches, err := s.recordedNames(current, part)
 		if err != nil {
 			return "", err
 		}
+		if len(matches) > 1 {
+			return "", fmt.Errorf("ambiguous Unicode path %q", rel)
+		}
 		name := ""
-		for _, entry := range entries {
-			if norm.NFC.String(entry.Name()) == part {
-				if name != "" {
-					return "", fmt.Errorf("ambiguous Unicode path %q", rel)
-				}
-				name = entry.Name()
-			}
+		if len(matches) == 1 {
+			name = matches[0]
 		}
 		if name == "" {
 			return treePath(filepath.Join(current, filepath.FromSlash(strings.Join(parts[i:], "/")))), nil
@@ -97,6 +95,35 @@ func (s *Store) recordedPath(rel string) (string, error) {
 		current = next
 	}
 	return treePath(current), nil
+}
+
+// recordedNames indexes directory names only within a source-listing snapshot.
+func (s *Store) recordedNames(dir, part string) ([]string, error) {
+	if s.sourceNames != nil {
+		if names, ok := s.sourceNames[dir]; ok {
+			return names[part], nil
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	if s.sourceNames != nil {
+		names := map[string][]string{}
+		for _, entry := range entries {
+			key := norm.NFC.String(entry.Name())
+			names[key] = append(names[key], entry.Name())
+		}
+		s.sourceNames[dir] = names
+		return names[part], nil
+	}
+	var matches []string
+	for _, entry := range entries {
+		if norm.NFC.String(entry.Name()) == part {
+			matches = append(matches, entry.Name())
+		}
+	}
+	return matches, nil
 }
 
 // ValidateItemPaths checks the in-place sidecar invariant without requiring

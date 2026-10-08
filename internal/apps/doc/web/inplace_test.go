@@ -163,10 +163,8 @@ func TestInPlacePhotoImportAPIAndDeferredOperations(t *testing.T) {
 	if got := do(h, "GET", "/api/page"+query, ""); got.Code != http.StatusOK {
 		t.Fatalf("photo preview: %d %s", got.Code, got.Body.String())
 	}
-	for _, body := range []string{`{"no_pdf":true,"type":"id_card"}`} {
-		rec := do(h, "POST", "/api/import", body)
-		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "not supported yet") {
-			t.Fatal("deferred import accepted")
-		}
+	// An Item without a PDF writes only its sidecar, so it is not refused.
+	if rec := do(h, "POST", "/api/import", `{"no_pdf":true,"type":"id_card"}`); strings.Contains(rec.Body.String(), "not supported") {
+		t.Fatal("creation without a PDF refused:", rec.Body.String())
 	}
 }

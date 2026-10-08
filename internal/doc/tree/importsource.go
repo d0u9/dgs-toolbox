@@ -51,5 +51,17 @@ func (st *Store) ValidateImportSource(full string) error {
 	return err
 }
 func (st *Store) ImportFiles(dir string) ([]pdflist.File, error) {
-	return pdflist.List(os.DirFS(dir), st.InPlace())
+	files, err := pdflist.List(os.DirFS(dir), st.InPlace())
+	if err != nil || !st.InPlace() {
+		return files, err
+	}
+	scoped := *st
+	scoped.sourceNames = map[string]map[string][]string{}
+	safe := files[:0]
+	for _, file := range files {
+		if scoped.ValidateImportSource(filepath.Join(dir, filepath.FromSlash(file.Path))) == nil {
+			safe = append(safe, file)
+		}
+	}
+	return safe, nil
 }

@@ -107,7 +107,8 @@ type sourceFileJSON struct {
 	Size     int64     `json:"size"`
 	Modified time.Time `json:"modified"`
 	// Item is the Item already keeping this PDF, when one does.
-	Item string `json:"item,omitempty"`
+	Item   string `json:"item,omitempty"`
+	Digest string `json:"digest,omitempty"`
 	// Image is set for an image, which an import makes a PDF page of.
 	Image bool `json:"image,omitempty"`
 }
@@ -358,7 +359,11 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	items, _ := s.items.Items()
+	metadataOnly := r.URL.Query().Get("metadata") == "1"
+	var items []tree.Item
+	if !metadataOnly {
+		items, _ = s.items.Items()
+	}
 	kept := map[string]string{}
 	for _, item := range items {
 		for _, r := range item.Revisions {
@@ -370,17 +375,18 @@ func (s server) sourceList(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []sourceFileJSON{}
 	for _, f := range files {
-		full := filepath.Join(dir, filepath.FromSlash(f.Path))
-		if err := s.documents.ValidateImportSource(full); err != nil {
-			continue
+		if r.Context().Err() != nil {
+			return
 		}
+		full := filepath.Join(dir, filepath.FromSlash(f.Path))
 		// The tree's own files are not offered for import.
 		if rel, err := filepath.Rel(s.root, full); err == nil && within(s.root, full) && s.documents.Owned(rel) {
 			continue
 		}
 		entry := sourceFileJSON{Path: f.Path, Size: f.Size, Modified: f.Modified, Image: docfile.IsImage(f.Path)}
-		if len(kept) > 0 {
+		if !metadataOnly {
 			if digest, err := tree.FileDigest(full); err == nil {
+				entry.Digest = digest
 				entry.Item = kept[digest]
 			}
 		}
@@ -1200,7 +1206,24 @@ func (s server) values(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, tree.TypeValues(items, r.URL.Query().Get("type"), r.URL.Query().Get("key")))
+	templates, err := s.templates()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	typ, key := r.URL.Query().Get("type"), r.URL.Query().Get("key")
+	for _, template := range templates {
+		if template.Type != typ {
+			continue
+		}
+		for _, field := range template.Fields {
+			if field.Key == key {
+				writeJSON(w, http.StatusOK, tree.TypeFieldValues(items, typ, field))
+				return
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, tree.TypeValues(items, typ, key))
 }
 
 // issuers returns suggestions only for the requested type and country.

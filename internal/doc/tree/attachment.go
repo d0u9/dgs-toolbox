@@ -14,7 +14,8 @@ import (
 
 // CreateWithoutPDF creates an Item with a metadata-only first revision.
 func (st *Store) CreateWithoutPDF(request ImportRequest) (Item, error) {
-	if err := st.RequireFileWrites(); err != nil {
+	// Only a sidecar is written, so an in-place tree takes it too.
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
 	if err := request.Template.Validate(); err != nil {
@@ -54,7 +55,11 @@ func (st *Store) CreateWithoutPDF(request ImportRequest) (Item, error) {
 
 // AddWithoutPDF records a new issue without requiring a scan.
 func (st *Store) AddWithoutPDF(id string, template Template, given map[string]string, metadata RevisionMetadata, now time.Time) (Item, error) {
-	if err := st.RequireFileWrites(); err != nil {
+	if template.Single {
+		return Item{}, ErrSingle
+	}
+	// Only a sidecar is written, so an in-place tree takes it too.
+	if err := st.Require(); err != nil {
 		return Item{}, err
 	}
 	item, items, err := st.FindItem(id)

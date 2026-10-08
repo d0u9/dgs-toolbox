@@ -26,8 +26,8 @@ browser's history entry for the page, beside what its address already holds.
 
 It follows `dgs box`'s shape: a TUI plus a local web page served by the same
 process, where the interaction lives. Read [`../../tui.md`](../../tui.md) and
-[`../../web.md`](../../web.md) before changing either. The parts, in order, are
-in [`roadmap.md`](roadmap.md).
+[`../../web.md`](../../web.md) before changing either. Open decisions are recorded in
+[Doc 2.0](v2.md#deferred).
 
 The questions the page asks while a form is filled in are answered from a
 local cache of the tree, kept as [`cache.md`](cache.md) says.
@@ -569,6 +569,15 @@ shows for it:
   date the text holds (see [Dates in the text](#dates-in-the-text)).
 - `month` — `YYYY-MM`, entered with a month control. An expiry month remains
   valid through its last day.
+- `time` — a time of day and the IANA time zone it was read in, kept as
+  `15:30 Asia/Shanghai` or `15:30:05 Asia/Shanghai`. The page enters it with a
+  24-hour hour/minute/second numeric inputs and a zone list: the field's `options`, which must be IANA
+  zones, else the browser's own zone. Unique city names omit the region in
+  the displayed choices; repeated city names retain the full path. Saved values
+  always retain the full IANA zone. For a time without a saved zone, country
+  China defaults to Shanghai and Australia to Sydney. Changing country updates
+  this automatic default until a zone is chosen manually; saved zones stay intact.
+  Other countries retain the offered default. A full-width colon is taken as a colon.
 - `select` — one of the field's `options`.
 - `item` — the ID of another Item, such as a passport's previous passport. The
   page picks it from the Items. A rule's layout may use the linked Item's
@@ -628,7 +637,10 @@ one; a rule places a tenancy's leases, bills and receipts with
 tells the kinds apart with `about.type`. A document is about one anchor; a
 date two anchors' spans hold, such as a tenancy's and a car's, suggests
 both and leaves the choice.
-- `country` — a country however it is typed: its ISO code (`cn`, `CHN`), its
+- `country` — `options` may give a fixed list of suggestions; other countries
+  can still be typed. Up to six preset options appear as clickable cards
+  beside a free input. Without `options`, the page suggests countries already
+  used in the tree. A country however it is typed: its ISO code (`cn`, `CHN`), its
   English or Chinese name (`China`, `中国`) or a common alias
   (`中华人民共和国`, `PRC`), any case. It is kept in the field's `format`:
   `zh` (`中国`, the default), `en` (`China`), `alpha2` (`CN`) or `alpha3`
@@ -1599,13 +1611,21 @@ fields:
 
 The file is named after its `type`. `description` is a short explanation shown
 on the Import card and in the Templates list; older Templates may omit it.
+A Template marked `single: true` has Items that never take a second revision,
+such as a used ticket: Import offers no Item to add the PDF to, a revision of
+one is refused, and a PDF whose distinguishing fields match an Item already
+filed is told apart by those fields instead. It is not inherited.
 A `select` field lists its allowed values under `options`. With `multiple: true` it
 holds several, kept in the options' order joined by `, ` (`电, 水`), each
-toggled on the page; its options may not hold a comma. A rule writes the
+toggled on the page; its options may not hold a comma. A text field with
+`multiple: true` holds several values the same way, in the order typed
+(`alice, bob`), each a bubble on the page as tags are, with its options and
+saved values offered. A rule writes the
 joined value, and a condition asks for one of them with `is` (`service is
 水`). A text field with `suggest: true` offers, as it is typed,
-the values Items of the same type have saved for it, in any country and
-revision, retired Items among them; any other value can still be typed.
+the values Items of the same type hold for it now, in any country,
+retired Items among them; values only earlier revisions hold are history and
+are not offered. Any other value can still be typed.
 Its `options`, when it lists any, are offered first, before the values
 saved: `{key: driver, suggest: true, options: [alice, bob]}` offers alice
 and bob from the start and still takes carol. A field's `description` says

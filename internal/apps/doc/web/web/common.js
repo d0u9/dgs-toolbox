@@ -227,7 +227,7 @@ function fieldHead(field) {
   const name = el("span", { className: "field-name" }, field.key, field.required ? el("span", { className: "req" }, " *") : null);
   if (!field.description) return [name];
   const note = el("span", { className: "field-help", hidden: true }, field.description);
-  const toggle = el("button", { type: "button", className: "field-help-toggle", title: field.description, textContent: "?" });
+  const toggle = el("button", { type: "button", tabIndex: -1, className: "field-help-toggle", title: field.description, textContent: "?" });
   toggle.setAttribute("aria-label", "About " + field.key);
   toggle.setAttribute("aria-expanded", "false");
   toggle.onclick = (event) => {
@@ -247,7 +247,10 @@ const tall = (text) => /[\u3400-\u9fff]|^[A-Z0-9 ]+$/.test(text) ? " tall" : "";
 // inputFor is the control a field's type asks for: a date picker, a list of
 // options, a list of the tree's other Items, or a line of text. Every value
 // control has the class field-input and the field's key as its name.
-export function inputFor(field, value, placeholder, state, self, type) {
+export function inputFor(field, value, placeholder, state, self, type, country = "") {
+  // CARD_OPTIONS is the most preset options shown as clickable cards;
+  // more make a list.
+  const CARD_OPTIONS = 6;
   const common = { name: field.key, className: "field-input" };
   let control;
   if (field.key === "issuer" && (!field.type || field.type === "text")) {
@@ -282,6 +285,28 @@ export function inputFor(field, value, placeholder, state, self, type) {
       refresh();
     });
     return wrapper;
+  } else if (field.multiple && (!field.type || field.type === "text") && globalThis.tagField) {
+    // Several values, each a bubble; kept joined by ", " as a multiple
+    // select keeps its own.
+    control = el("input", { ...common, type: "hidden", value });
+    const typ = type || state?.items?.find((item) => item.id === self)?.type || "";
+    let names = [...(field.options || [])];
+    if (typ) fetch(api("/api/values?" + new URLSearchParams({ type: typ, key: field.key })))
+      .then((response) => response.ok ? response.json() : []).then((values) => { names = [...new Set([...names, ...values])]; }).catch(() => {});
+    const host = el("div", { className: "form-control" });
+    const bubbles = globalThis.tagField(host, {
+      known: () => names.map((name) => ({ name, count: 0 })),
+      count: () => "", fresh: "new",
+      normalize: (text) => String(text).trim(),
+      placeholder: placeholder || "",
+      onChange: (list) => {
+        control.value = list.join(", ");
+        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new Event("change", { bubbles: true }));
+      },
+    });
+    bubbles.set(String(value || "").split(",").map((part) => part.trim()).filter(Boolean));
+    return el("div", { className: "form-field" }, ...fieldHead(field), control, host);
   } else if (field.suggest && (!field.type || field.type === "text")) {
     control = el("input", { ...common, type: "text", value, placeholder: placeholder || "",
       autocomplete: "off", spellcheck: false });
@@ -442,7 +467,7 @@ export function inputFor(field, value, placeholder, state, self, type) {
     if (value && !choices.some(([v]) => v === value)) {
       control.append(el("option", { value, selected: true }, value));
     }
-    if (field.type === "select" && choices.length > 0 && choices.length <= 5 && (!value || choices.some(([v]) => v === value))) {
+    if (field.type === "select" && choices.length > 0 && choices.length <= CARD_OPTIONS && (!value || choices.some(([v]) => v === value))) {
       control.hidden = true;
       const cards = el("div", { className: "field-choice-cards", role: "group" });
       cards.setAttribute("aria-label", field.key);
@@ -469,6 +494,83 @@ export function inputFor(field, value, placeholder, state, self, type) {
         ...fieldHead(field),
         control, cards);
     }
+  } else if (field.type === "time") {
+    // Explicit clock parts keep 24-hour display independent of system locale.
+    control = el("input", { ...common, type: "hidden", value });
+    const [clock, zone] = String(value || "").split(" ");
+    const [hour = "", minute = clock ? "00" : "", second = clock ? "00" : ""] = (clock || "").split(":");
+    const part = (label, max, value) => el("input", {
+      type: "number", min: 0, max, step: 1, value, placeholder: "--",
+      inputMode: "numeric", ariaLabel: field.key + " " + label,
+      onfocus: (event) => event.target.select(),
+      onblur: (event) => {
+        if (event.target.value && event.target.validity.valid) event.target.value = event.target.value.padStart(2, "0");
+      },
+    });
+    const hours = part("hour (24-hour)", 23, hour);
+    const minutes = part("minute", 59, minute);
+    const seconds = part("second", 59, second);
+    const at = el("div", { className: "time-clock", role: "group", ariaLabel: field.key + " time (24-hour)" }, hours, ":", minutes, ":", seconds);
+    const countryZone = (nation) => {
+      const code = String(nation || "").trim().toLowerCase();
+      if (["cn", "chn", "china", "中国"].includes(code)) return "Asia/Shanghai";
+      if (["au", "aus", "australia", "澳大利亚", "澳洲"].includes(code)) return "Australia/Sydney";
+      return "";
+    };
+    const defaultZone = countryZone(country);
+    const zones = field.options?.length ? field.options : [Intl.DateTimeFormat().resolvedOptions().timeZone];
+    const offered = [...new Set([...(zone ? [zone] : []), ...(defaultZone ? [defaultZone] : []), ...zones])];
+    const city = (z) => z.split("/").at(-1).replaceAll("_", " ");
+    const counts = new Map();
+    for (const z of offered) counts.set(city(z), (counts.get(city(z)) || 0) + 1);
+    const where = el("select", { ariaLabel: field.key + " time zone" }, ...offered.map((z) =>
+      el("option", { value: z, title: z }, counts.get(city(z)) === 1 ? city(z) : z)));
+    where.title = zone || defaultZone || offered[0] || "";
+    where.value = where.title;
+    let automatic = !zone;
+    const set = () => {
+      where.title = where.value;
+      const padded = (input) => (input.value || "0").padStart(2, "0");
+      control.value = hours.value ? `${padded(hours)}:${padded(minutes)}:${padded(seconds)} ${where.value}` : "";
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const parts = [hours, minutes, seconds];
+    for (const [index, part] of parts.entries()) {
+      part.oninput = (event) => {
+        const typed = part.value;
+        if (typed) {
+          part.value = String(Math.max(0, Math.min(Number(part.max), Math.trunc(Number(typed)))));
+          for (const other of parts) if (!other.value) other.value = "00";
+        }
+        set();
+        if (event?.inputType === "insertText" && typed &&
+            (typed.length >= 2 || Number(typed) * 10 > Number(part.max))) {
+          parts[index + 1]?.focus();
+          parts[index + 1]?.select();
+        }
+      };
+    }
+    where.onchange = () => { automatic = false; set(); };
+    const wrapper = el("div", { className: "form-field" }, ...fieldHead(field), control,
+      el("div", { className: "time-zone" }, at, where));
+    queueMicrotask(() => {
+      if (!wrapper.isConnected) return;
+      const scope = wrapper.parentElement;
+      const update = () => {
+        if (!automatic || !wrapper.isConnected) return;
+        const next = countryZone(scope.querySelector('[name="country"]')?.value);
+        if (!next || next === where.value) return;
+        if (![...where.options].some((option) => option.value === next)) {
+          where.append(el("option", { value: next, title: next }, city(next)));
+        }
+        where.value = next;
+        set();
+      };
+      scope.addEventListener("input", (event) => { if (event.target.name === "country") update(); });
+      update();
+    });
+    return wrapper;
   } else if (field.type === "date" && (field.shape || []).includes("span")) {
     // A span is start/end, kept in one hidden value; an end left empty is
     // open, or, where the field also takes one day, makes it that day.
@@ -494,9 +596,23 @@ export function inputFor(field, value, placeholder, state, self, type) {
     if (field.type === "date") control.max = "9999-12-31";
     if (field.type === "month") control.max = "9999-12";
     if (field.type === "country") {
-      control.title = "Pick a country the tree has, or type any code or name: kept as the Template's format says.";
-      // The countries Items already have are offered; any other can be typed.
-      return el("label", { className: "form-field" }, ...fieldHead(field), suggest(control, () => countriesOf(state), { arrow: true }));
+      control.title = "Pick a suggested country, or type any code or name: kept as the Template's format says.";
+      if (field.options?.length && field.options.length <= CARD_OPTIONS) {
+        const cards = el("div", { className: "field-choice-cards", role: "group" });
+        cards.setAttribute("aria-label", field.key);
+        cards.append(...field.options.map((option) => {
+          const button = el("button", { type: "button", className: "button field-choice-card" + tall(option) }, option);
+          button.onclick = () => {
+            control.value = option;
+            control.dispatchEvent(new Event("input", { bubbles: true }));
+            control.dispatchEvent(new Event("change", { bubbles: true }));
+          };
+          return button;
+        }));
+        return el("div", { className: "form-field" }, ...fieldHead(field), cards, control);
+      }
+      // Explicit suggestions stay fixed; otherwise use the tree's countries.
+      return el("label", { className: "form-field" }, ...fieldHead(field), suggest(control, () => field.options?.length ? field.options : countriesOf(state), { arrow: true }));
     }
   }
   return el("label", { className: "form-field" },
@@ -516,7 +632,7 @@ function picked(input) {
 // fieldInputs is the controls for fields, each with its value and its
 // placeholder by key: what every panel that edits an Item's fields shows.
 export const fieldInputs = (fields, values, placeholders, state, self, type) =>
-  fields.map((f) => inputFor(f, values?.[f.key] || "", placeholders?.[f.key] || "", state, self, type));
+  fields.map((f) => inputFor(f, values?.[f.key] || "", placeholders?.[f.key] || "", state, self, type, values?.country || placeholders?.country || ""));
 
 // countriesOf is every value a country field of the tree's Items holds,
 // once each, sorted.

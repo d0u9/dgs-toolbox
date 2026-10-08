@@ -23,11 +23,11 @@ function normalizeTag(text) {
 }
 
 // tagList normalizes and drops the empty and the repeated, keeping order.
-function tagList(tags) {
+function tagList(tags, normalize = normalizeTag) {
   const seen = new Set();
   const out = [];
   for (const raw of tags || []) {
-    const tag = normalizeTag(raw);
+    const tag = normalize(raw);
     if (!tag || seen.has(tag)) continue;
     seen.add(tag);
     out.push(tag);
@@ -44,8 +44,11 @@ function tagList(tags) {
 //   placeholder
 //   only         only tags from known() can be taken — a filter's field
 //   limit        suggestions shown at most (8)
+//   fresh        the note beside text never used before ('new tag')
+//   normalize    how a typed value is spelled; tags by default, so a field of
+//                names passes one that only trims
 function tagField(host, options) {
-  const opts = { limit: 8, placeholder: '', only: false, ...options };
+  const opts = { limit: 8, placeholder: '', only: false, normalize: normalizeTag, fresh: 'new tag', ...options };
   const view = { tags: [], armed: false, items: [], index: -1, disabled: false };
 
   host.classList.add('tag-field');
@@ -114,7 +117,7 @@ function tagField(host, options) {
   }
 
   function add(raw) {
-    const tag = normalizeTag(raw);
+    const tag = opts.normalize(raw);
     input.value = '';
     view.armed = false;
     if (!tag || view.tags.includes(tag)) return false;
@@ -132,7 +135,7 @@ function tagField(host, options) {
       close();
       return;
     }
-    const text = normalizeTag(input.value);
+    const text = opts.normalize(input.value);
     const free = known().filter((use) => !view.tags.includes(use.name));
     let items;
     if (!text) {
@@ -168,7 +171,7 @@ function tagField(host, options) {
       name.textContent = item.name;
       const note = document.createElement('span');
       note.className = 'tag-option-count';
-      note.textContent = item.fresh ? 'new tag' : String(countOf(item.name));
+      note.textContent = item.fresh ? opts.fresh : String(countOf(item.name));
       row.append(name, note);
       row.addEventListener('mousedown', (event) => {
         event.preventDefault();
@@ -310,23 +313,23 @@ function tagField(host, options) {
   return {
     get: () => view.tags.slice(),
     set(tags) {
-      view.tags = tagList(tags);
+      view.tags = tagList(tags, opts.normalize);
       view.armed = false;
       drawBubbles();
     },
     // add takes one tag from outside, as a click on a tag elsewhere does.
     add(tag) {
-      if (view.tags.includes(normalizeTag(tag))) return;
+      if (view.tags.includes(opts.normalize(tag))) return;
       add(tag);
     },
     remove(tag) {
-      const at = view.tags.indexOf(normalizeTag(tag));
+      const at = view.tags.indexOf(opts.normalize(tag));
       if (at < 0) return;
       view.tags.splice(at, 1);
       changed();
     },
     toggle(tag) {
-      if (view.tags.includes(normalizeTag(tag))) this.remove(tag);
+      if (view.tags.includes(opts.normalize(tag))) this.remove(tag);
       else this.add(tag);
     },
     disable(disabled) {

@@ -55,6 +55,9 @@ var ErrDuplicate = errors.New("already in the tree")
 // fields exists: the PDF is a new revision of it, not a new Item.
 var ErrTaken = errors.New("a document with these fields exists")
 
+// ErrSingle refuses a revision of an Item whose Template is single.
+var ErrSingle = errors.New("this type takes no revisions")
+
 // Import creates an Item from a PDF or images. By Item copies under the digest;
 // in place records an internal PDF or copies into the selected folder. Copies
 // read back before publication; the sidecar follows. The source stays untouched.
@@ -133,6 +136,9 @@ func (st *Store) Import(ctx context.Context, request ImportRequest) (Item, error
 		return Item{}, fmt.Errorf("%w: %s %s", ErrDuplicate, other.Type, other.ID)
 	}
 	if other, ok := taken(request.Template, items, fields, request.Replaces); ok {
+		if request.Template.Single {
+			return Item{}, fmt.Errorf("%w: %s %s; tell them apart by a distinguishing field", ErrTaken, other.Type, other.ID)
+		}
 		return Item{}, fmt.Errorf("%w: %s %s; add the PDF to it as a revision", ErrTaken, other.Type, other.ID)
 	}
 	if err := st.linked(request.Template, items, fields, ""); err != nil {

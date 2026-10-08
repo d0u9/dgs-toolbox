@@ -210,6 +210,8 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 		return report, err
 	}
 
+	// Shared files are read once per check, but each reference is compared.
+	digests := map[string]string{}
 	for i, r := range reads {
 		if err := ctx.Err(); err != nil {
 			return report, err
@@ -217,14 +219,19 @@ func Tree(ctx context.Context, st *tree.Store, progress Progress) (Report, error
 		if progress != nil {
 			progress(rel(r.path), i, len(reads))
 		}
-		digest, err := tree.FileDigest(r.path)
-		if err != nil {
-			return report, err
+		digest, cached := digests[r.path]
+		if !cached {
+			var err error
+			digest, err = tree.FileDigest(r.path)
+			if err != nil {
+				return report, err
+			}
+			digests[r.path] = digest
+			if info, err := os.Stat(r.path); err == nil {
+				report.Bytes += info.Size()
+			}
+			report.Checked++
 		}
-		if info, err := os.Stat(r.path); err == nil {
-			report.Bytes += info.Size()
-		}
-		report.Checked++
 		if digest != r.digest {
 			if r.recorded {
 				detail := "now hashes to " + short(digest)

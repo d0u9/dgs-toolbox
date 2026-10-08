@@ -79,6 +79,12 @@ func (st *Store) FindFilePaths(ctx context.Context, digests []string) (map[strin
 		if entry.IsDir() || strings.HasSuffix(entry.Name(), ".dgs-part") {
 			return nil
 		}
+		// Reject impossible sizes before Unicode directory lookup and link resolution.
+		if !allSizes {
+			if info, err := os.Stat(p); err == nil && (!info.Mode().IsRegular() || !sizes[info.Size()]) {
+				return nil
+			}
+		}
 		resolved, err := st.recordedPath(rel)
 		if err != nil {
 			return nil

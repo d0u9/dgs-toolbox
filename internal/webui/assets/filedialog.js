@@ -10,6 +10,7 @@ import "/ui/dialog.js";
 // that mounts them gets the dialog with no code of its own.
 
 import { listTable } from "/ui/listtable.js";
+import { openMenu, closeMenu } from "/ui/menu.js";
 import { iconSvg } from "/ui/icons.js";
 
 const ENDPOINT = "/ui/files/";
@@ -80,9 +81,10 @@ export async function nameTaken(dir, name, { endpoint = ENDPOINT } = {}) {
 
 // listFolder reads one folder through the shared endpoint, so a page that
 // draws its own tree lists it exactly as the dialog does.
-export async function listFolder(path, { extensions = [], hidden = false, endpoint = ENDPOINT } = {}) {
+export async function listFolder(path, { extensions = [], hidden = false, base = "", endpoint = ENDPOINT } = {}) {
   const query = new URLSearchParams();
   if (path) query.set("path", path);
+  if (base) query.set("base", base);
   for (const ext of extensions) query.append("ext", ext);
   if (hidden) query.set("hidden", "1");
   return getJSON(`${endpoint}dir?${query}`);
@@ -125,8 +127,8 @@ function dialog({
   folders: pickFolders = false,
   name = "",
   // writable mounts what changes the disk: the New Folder button and F2 to
-  // rename. Saving asks for it; opening does not, unless the page says so.
-  writable = mode === "save",
+  // rename. Both modes offer it when the server permits writes.
+  writable = true,
   // replace off is for a server that will not write over a file: the dialog
   // then refuses a name that is taken rather than asking to replace it, so it
   // never answers a path the write would be refused for.
@@ -166,7 +168,14 @@ function dialog({
     up.innerHTML = iconSvg("arrow-up");
     up.title = "The folder above";
     up.setAttribute("aria-label", "The folder above");
-    const where = document.createElement("code");
+    const where = document.createElement("input");
+    where.type = "text";
+    where.setAttribute("aria-label", "Folder path");
+    where.title = "Type a path; Enter opens it, Tab completes it, Escape restores it.";
+    const candidates = document.createElement("datalist");
+    candidates.id = "file-path-candidates";
+    where.setAttribute("list", candidates.id);
+    bar.append(candidates);
     where.className = "file-where";
     const refresh = document.createElement("button");
     refresh.type = "button";
@@ -309,6 +318,11 @@ function dialog({
         if (kind === "folder") open(entry.path);
         else if (!pickFolders) submit();
       });
+      item.addEventListener("contextmenu", (event) => {
+        if (!writable || editing) return;
+        select(index);
+        openMenu(event, [[{ label: "Rename…", onSelect: renameChosen }]]);
+      });
       return item;
     };
 
@@ -423,17 +437,19 @@ function dialog({
       problem.hidden = true;
       let listing;
       try {
-        listing = await listFolder(path, { extensions: extensions(), hidden: showHidden, endpoint });
+        listing = await listFolder(path, { extensions: extensions(), hidden: showHidden, base: here, endpoint });
       } catch (error) {
         if (rest.length) return open(rest[0], ...rest.slice(1));
-        list.textContent = "";
         problem.textContent = error.message;
         problem.hidden = false;
         return;
       }
+      if (listing.writable === false) writable = false;
       here = listing.path;
       parent = listing.parent || "";
-      where.textContent = here;
+      where.value = here;
+      candidates.replaceChildren();
+      newFolder.hidden = !writable;
       up.disabled = !parent;
       chosen = new Set();
       anchor = -1;
@@ -481,6 +497,7 @@ function dialog({
       const field = document.createElement("input");
       field.type = "text";
       field.className = "file-rename";
+      field.setAttribute("aria-label", "Rename");
       field.value = value;
       cell.textContent = "";
       cell.append(field);
@@ -509,8 +526,8 @@ function dialog({
           const at = rows.findIndex((entry) => entry.path === path);
           if (at >= 0) select(at);
         } catch (error) {
-          say(error.message);
           await open(here);
+          say(error.message);
         }
       };
       field.addEventListener("keydown", (event) => {
@@ -616,7 +633,7 @@ function dialog({
     // Right or Enter steps into a folder, Left or Backspace goes up, and
     // typing jumps to the row whose name starts that way.
     const keys = (event) => {
-      if (event.target === input || editing) return;
+      if (event.target === input || event.target === where || event.target.closest(".context-menu") || editing) return;
       if (event.key === "F2" && writable) { event.preventDefault(); return renameChosen(); }
       const index = rows.findIndex((entry) => chosen.has(entry.path));
       const move = (to) => {
@@ -652,6 +669,31 @@ function dialog({
       }
     };
 
+    let completionRequest = 0;
+    const completePath = async (tab = false) => {
+      const value = where.value;
+      const request = ++completionRequest;
+      try {
+        const result = await getJSON(`${endpoint}complete?${new URLSearchParams({ path: value, base: here })}`);
+        if (request !== completionRequest || where.value !== value || !dialog.open) return;
+        candidates.replaceChildren(...result.matches.map((path) => {
+          const option = document.createElement("option");
+          option.value = path;
+          return option;
+        }));
+        if (tab && result.matches.length) {
+          where.value = result.completion;
+          where.setSelectionRange(where.value.length, where.value.length);
+        }
+      } catch (error) { if (tab) say(error.message); }
+    };
+    where.addEventListener("input", () => completePath());
+    where.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+      if (event.key === "Enter") { event.preventDefault(); open(where.value); }
+      if (event.key === "Tab" && !event.shiftKey) { event.preventDefault(); completePath(true); }
+      if (event.key === "Escape") { event.preventDefault(); ++completionRequest; where.value = here; candidates.replaceChildren(); }
+    });
     let answer = null;
     up.addEventListener("click", () => parent && open(parent));
     refresh.addEventListener("click", () => open(here));
@@ -677,7 +719,7 @@ function dialog({
     no.addEventListener("click", () => dialog.close());
     form.addEventListener("submit", (event) => { event.preventDefault(); submit(); });
     dialog.addEventListener("keydown", keys);
-    dialog.addEventListener("close", () => { dialog.remove(); resolve(answer); });
+    dialog.addEventListener("close", () => { closeMenu(); dialog.remove(); resolve(answer); });
 
     // The size the reader chose, and the size they choose now.
     if (size) {
