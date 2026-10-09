@@ -260,10 +260,10 @@ hosts:
 		groups[grp.ID] = grp
 	}
 	proc, ok := groups["srv/ss-srv"]
-	if !ok || proc.Parent != "srv/container:apps" || proc.Detail != "docker · tailnet 172.30.250.10" {
+	if !ok || !proc.Summary || proc.Parent != "srv/container:apps" || proc.Detail != "docker · tailnet 172.30.250.10" {
 		t.Errorf("process box = %+v, want it inside apps naming tailnet 172.30.250.10", proc)
 	}
-	if box, ok := groups["srv/container:apps"]; !ok || box.Parent != "srv" || box.Detail != "172.30.0.0/24" {
+	if box, ok := groups["srv/container:apps"]; !ok || !box.Region || box.ColorFilter != filterBridge+"apps" || box.Parent != "srv" || box.Detail != "172.30.0.0/24" {
 		t.Errorf("apps box = %+v, want it inside srv with its subnet", box)
 	}
 	if _, ok := groups["srv/container:tailnet"]; !ok {
@@ -271,7 +271,7 @@ hosts:
 	}
 	joins := false
 	for _, e := range g.Edges {
-		if e.Kind == kindJoins && e.From == "srv/ss-srv" && e.To == "srv/container:tailnet" && e.Label == "172.30.250.10" {
+		if e.Membership && e.Kind == kindJoins && e.From == "srv/ss-srv" && e.To == "srv/container:tailnet" && e.Label == "172.30.250.10" {
 			joins = true
 		}
 	}
@@ -299,7 +299,7 @@ hosts:
 			host = &g.Nodes[i]
 		}
 	}
-	if host == nil || host.Detail != "internet 203.0.113.50" || !slices.Equal(host.Tags, []string{"net:internet"}) {
+	if host == nil || !host.ContextOnly || host.Detail != "internet 203.0.113.50" || !slices.Equal(host.Tags, []string{"net:internet"}) {
 		t.Errorf("host = %+v, want nas on internet", host)
 	}
 }

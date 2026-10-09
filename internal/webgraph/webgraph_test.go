@@ -41,7 +41,7 @@ func TestHandler_ServesTheGraphAndThePage(t *testing.T) {
 		t.Fatalf("graph = %+v, want the one the loader returned", got)
 	}
 
-	for _, path := range []string{"/", "/app.js", "/app.css", "/vendor/cytoscape.min.js"} {
+	for _, path := range []string{"/", "/app.js", "/app.css", "/vendor/d3.min.js", "/vendor/elk.bundled.js"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusOK {

@@ -1,5 +1,5 @@
 // Package webgraph draws a node-link graph in a local web page: a small JSON
-// API and an embedded static bundle, force-directed and draggable, with
+// API and an embedded static bundle, with layered and radial layouts and
 // click events a caller acts on.
 //
 // It knows nothing about what it is drawing. A caller supplies a function
@@ -30,8 +30,15 @@ var webFiles embed.FS
 // holding processes, a package holding files. A node naming no group is
 // drawn on its own.
 type Group struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
+	// ColorFilter gives a membership region the color of this graph filter.
+	ColorFilter string `json:"colorFilter,omitempty"`
+	// Region is an overlapping membership area in the service view rather
+	// than an exclusive parent box. A component can belong to several regions.
+	Region bool `json:"region,omitempty"`
+	// Summary draws this group's contents as one node in the component view.
+	Summary bool   `json:"summary,omitempty"`
+	ID      string `json:"id"`
+	Label   string `json:"label"`
 	// Detail is a line under the label.
 	Detail string `json:"detail,omitempty"`
 	// Parent is the group this one sits inside, for a picture with more
@@ -40,12 +47,9 @@ type Group struct {
 	Parent string `json:"parent,omitempty"`
 	// Kind styles the box the way Node.Kind styles a shape.
 	Kind string `json:"kind,omitempty"`
-	// Collapse marks a box that stands for its contents when the picture is
-	// drawn small: zoomed out, the page hides what is inside it, draws the
-	// box itself as one shape, and replaces the lines in and out of its
-	// contents with one line per pair of boxes. Zoomed in, the box opens
-	// again. It is the caller saying which level of its own hierarchy is
-	// the one worth seeing first — a machine, rather than every port on it.
+	// Collapse marks a box represented by one node in the machine projection.
+	// Its contents reopen only when the reader chooses a detailed view.
+	// Connections across boxes are aggregated per directed pair.
 	Collapse bool `json:"collapse,omitempty"`
 	// Tags name the filters this box belongs to; see Graph.Filters.
 	Tags []string `json:"tags,omitempty"`
@@ -53,8 +57,11 @@ type Group struct {
 
 // Node is one shape of the graph.
 type Node struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
+	// ContextOnly marks declarations with no runtime component. The page hides
+	// them initially; the reader can include them without changing the input.
+	ContextOnly bool   `json:"contextOnly,omitempty"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
 	// Group is the container this node sits in, or empty for one drawn on
 	// its own.
 	Group string `json:"group,omitempty"`
@@ -71,9 +78,12 @@ type Node struct {
 
 // Edge is one connection. It is drawn with an arrow from From to To.
 type Edge struct {
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Label string `json:"label,omitempty"`
+	// Membership shows From in the additional container To as a reference to
+	// the same component, rather than creating another logical instance.
+	Membership bool   `json:"membership,omitempty"`
+	From       string `json:"from"`
+	To         string `json:"to"`
+	Label      string `json:"label,omitempty"`
 	// Kind styles the line the way Node.Kind styles a shape.
 	Kind string `json:"kind,omitempty"`
 	// Tags name the filters this line belongs to; see Graph.Filters. When
